@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="ru"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Настройки платформы - AIStart360</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;600;700;800&amp;family=DM+Sans:ital,wght@0,400;0,500;0,700;1,400&amp;family=JetBrains+Mono:wght@400;700&amp;family=Space+Grotesk:wght@300;400;500;600;700&amp;family=Inter:wght@300;400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "on-primary-container": "#006141",
+                        "surface-variant": "#343439",
+                        "secondary": "#bcc7de",
+                        "inverse-surface": "#e3e2e8",
+                        "on-surface-variant": "#bacbbf",
+                        "surface-container-low": "#1a1b20",
+                        "on-error": "#690005",
+                        "on-tertiary-fixed": "#291800",
+                        "inverse-on-surface": "#2f3035",
+                        "error": "#ffb4ab",
+                        "primary": "#6effc0",
+                        "on-tertiary": "#452b00",
+                        "tertiary-fixed-dim": "#ffb955",
+                        "tertiary": "#ffe1bd",
+                        "surface-container-highest": "#343439",
+                        "error-container": "#93000a",
+                        "on-error-container": "#ffdad6",
+                        "surface-container": "#1f1f24",
+                        "surface": "#121317",
+                        "inverse-primary": "#006c49",
+                        "on-surface": "#e3e2e8",
+                        "on-secondary-container": "#aeb9d0",
+                        "secondary-fixed": "#d8e3fb",
+                        "outline-variant": "#3b4a41",
+                        "outline": "#84958a",
+                        "tertiary-fixed": "#ffddb4",
+                        "on-primary": "#003824",
+                        "primary-container": "#00e5a0",
+                        "on-primary-fixed-variant": "#005236",
+                        "on-tertiary-container": "#754b00",
+                        "on-secondary-fixed-variant": "#3c475a",
+                        "surface-dim": "#121317",
+                        "secondary-fixed-dim": "#bcc7de",
+                        "surface-bright": "#38393e",
+                        "on-secondary": "#263143",
+                        "background": "#121317",
+                        "primary-fixed-dim": "#00e29e",
+                        "on-tertiary-fixed-variant": "#633f00",
+                        "surface-container-high": "#292a2e",
+                        "secondary-container": "#3e495d",
+                        "on-background": "#e3e2e8",
+                        "surface-container-lowest": "#0d0e12",
+                        "on-secondary-fixed": "#111c2d",
+                        "on-primary-fixed": "#002114",
+                        "tertiary-container": "#ffbd60",
+                        "surface-tint": "#00e29e",
+                        "primary-fixed": "#47ffb8"
+                    },
+                    fontFamily: {
+                        "headline": ["Bricolage Grotesque", "Space Grotesk"],
+                        "body": ["DM Sans", "Inter"],
+                        "mono": ["JetBrains Mono"]
+                    },
+                    borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
+                },
+            },
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        body {
+            background-color: #0A0B0F;
+            color: #e3e2e8;
+            font-family: 'DM Sans', sans-serif;
+        }
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.04);
+            backdrop-filter: blur(12px);
+        }
+        .primary-gradient {
+            background: linear-gradient(135deg, #6effc0 0%, #00e5a0 100%);
+        }
+        .bricolage { font-family: 'Bricolage Grotesque', sans-serif; }
+        .dm-sans { font-family: 'DM Sans', sans-serif; }
+        .jetbrains { font-family: 'JetBrains Mono', monospace; }
+    </style>
+</head>
+<body class="flex h-screen overflow-hidden">
+<!-- Global Top Bar (Shared Component Strategy) -->
+<header class="fixed top-0 left-0 right-0 h-16 bg-[#0A0B0F] z-50 flex justify-between items-center px-6">
+<div class="flex items-center gap-8">
+<span class="text-xl font-bold tracking-tight text-[#00E5A0] bricolage">AIStart360</span>
+<nav class="hidden md:flex items-center gap-6">
+<a class="text-[#8B95A3] hover:text-white transition-colors duration-200 dm-sans text-sm" href="#">Dashboard</a>
+<a class="text-[#8B95A3] hover:text-white transition-colors duration-200 dm-sans text-sm" href="#">Analytics</a>
+<a class="text-[#8B95A3] hover:text-white transition-colors duration-200 dm-sans text-sm" href="#">Projects</a>
+<a class="text-[#8B95A3] hover:text-white transition-colors duration-200 dm-sans text-sm" href="#">Support</a>
+</nav>
+</div>
+<div class="flex items-center gap-4">
+<div class="relative group">
+<span class="material-symbols-outlined text-[#8B95A3] cursor-pointer group-hover:text-white">notifications</span>
+</div>
+<div class="relative group">
+<span class="material-symbols-outlined text-[#00E5A0] cursor-pointer">settings</span>
+</div>
+<img alt="User Profile Avatar" class="w-8 h-8 rounded-full border border-outline-variant/20" data-alt="close-up professional headshot of a modern executive with soft studio lighting and dark background" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBMz1OC1o7oblE4inKpy75nGYmdA3ghybHyIfZxiMNIjsBZO6RdbD_rZnkT5HwrgX4xElEr0RlBp0Jt15vQ7_dfpXh_KZQIRBgsjop0oggt5GuCA3giEvt-vP0ASO3qGs4Brefzfq-f_qQ3DBMqbtHWYRHAUuSs1mqcA1i6UxBqRTgtsSes3KB3iWAhWGPgLeoTH5JdloLo4EbHwIucOhLf4EOlMO16sQy35Y9_7ixLxBhIizv0J7Es8Zdcyj6ukIZn732b8jCG83E"/>
+</div>
+</header>
+<!-- Settings Portal Layout -->
+<div class="flex pt-16 w-full h-full overflow-hidden">
+<!-- Internal Settings Side Nav (Shared Components Source) -->
+<aside class="w-64 bg-[#111318] flex flex-col py-8 px-4 gap-2 h-full">
+<div class="flex items-center gap-3 px-2 mb-8">
+<div class="w-10 h-10 bg-surface-container flex items-center justify-center rounded-lg">
+<span class="material-symbols-outlined text-[#00E5A0]">domain</span>
+</div>
+<div>
+<h3 class="text-white font-bold text-sm bricolage">Institutional Intelligence</h3>
+<p class="text-[#8B95A3] text-xs dm-sans">Admin Console</p>
+</div>
+</div>
+<nav class="flex flex-col gap-1">
+<a class="flex items-center gap-3 px-3 py-2.5 bg-[#1f1f24] text-[#00E5A0] rounded-lg transition-all duration-300" href="#">
+<span class="material-symbols-outlined text-sm">domain</span>
+<span class="text-sm font-medium dm-sans">Org Profile</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 text-[#8B95A3] hover:bg-[#1f1f24] hover:text-white rounded-lg transition-all duration-300" href="#">
+<span class="material-symbols-outlined text-sm">group</span>
+<span class="text-sm font-medium dm-sans">Users</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 text-[#8B95A3] hover:bg-[#1f1f24] hover:text-white rounded-lg transition-all duration-300" href="#">
+<span class="material-symbols-outlined text-sm">notifications_active</span>
+<span class="text-sm font-medium dm-sans">Notifications</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 text-[#8B95A3] hover:bg-[#1f1f24] hover:text-white rounded-lg transition-all duration-300" href="#">
+<span class="material-symbols-outlined text-sm">shield</span>
+<span class="text-sm font-medium dm-sans">Security</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 text-[#8B95A3] hover:bg-[#1f1f24] hover:text-white rounded-lg transition-all duration-300" href="#">
+<span class="material-symbols-outlined text-sm">payments</span>
+<span class="text-sm font-medium dm-sans">Billing</span>
+</a>
+</nav>
+<div class="mt-auto pt-6 border-t border-outline-variant/10">
+<button class="w-full primary-gradient text-[#003824] py-2.5 rounded-lg text-sm font-bold bricolage mb-6 flex items-center justify-center gap-2">
+<span class="material-symbols-outlined text-sm">upgrade</span>
+                    Upgrade Plan
+                </button>
+<a class="flex items-center gap-3 px-3 py-2 text-[#8B95A3] hover:text-white text-xs dm-sans" href="#">
+<span class="material-symbols-outlined text-sm">help</span>
+                    Help Center
+                </a>
+<a class="flex items-center gap-3 px-3 py-2 text-[#8B95A3] hover:text-white text-xs dm-sans" href="#">
+<span class="material-symbols-outlined text-sm">description</span>
+                    Documentation
+                </a>
+</div>
+</aside>
+<!-- Main Content Canvas -->
+<main class="flex-1 overflow-y-auto bg-[#0A0B0F] p-8 lg:p-12">
+<div class="max-w-5xl mx-auto">
+<!-- Editorial Header -->
+<div class="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-12">
+<div>
+<span class="text-[#00E5A0] jetbrains text-xs uppercase tracking-widest mb-2 block">System Settings</span>
+<h1 class="text-4xl md:text-5xl font-extrabold bricolage text-white tracking-tight">Organization Profile</h1>
+<p class="text-[#8B95A3] dm-sans mt-2 max-w-xl">Настройте идентификацию вашей организации и управляйте глобальными параметрами системы интеллектуального анализа.</p>
+</div>
+<!-- Institutional KPIs -->
+<div class="flex gap-4">
+<div class="bg-surface-container-lowest px-4 py-3 rounded-xl min-w-[140px]">
+<p class="text-[10px] text-[#8B95A3] uppercase jetbrains mb-1">API Usage</p>
+<p class="text-xl font-bold jetbrains text-[#00E5A0]">84.2%</p>
+<div class="w-full h-1 bg-surface-container-highest mt-2 rounded-full overflow-hidden">
+<div class="h-full bg-[#00E5A0]" style="width: 84.2%"></div>
+</div>
+</div>
+<div class="bg-surface-container-lowest px-4 py-3 rounded-xl min-w-[140px]">
+<p class="text-[10px] text-[#8B95A3] uppercase jetbrains mb-1">Active Seats</p>
+<p class="text-xl font-bold jetbrains text-white">12<span class="text-[#8B95A3]">/20</span></p>
+</div>
+</div>
+</div>
+<!-- Bento Grid Layout -->
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+<!-- Form Section (Left Spanning 2) -->
+<div class="lg:col-span-2 space-y-6">
+<div class="bg-surface-container-low p-8 rounded-2xl shadow-2xl">
+<h2 class="text-xl font-bold bricolage text-white mb-8 border-b border-outline-variant/10 pb-4">General Information</h2>
+<form class="space-y-6">
+<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+<div class="space-y-2">
+<label class="block text-xs font-medium text-[#8B95A3] dm-sans ml-1">Organization Name</label>
+<input class="w-full bg-[#111318] border-none text-white rounded-lg px-4 py-3 focus:ring-1 focus:ring-[#00E5A0] transition-all dm-sans outline-none" type="text" value="AIStart360 Institutional"/>
+</div>
+<div class="space-y-2">
+<label class="block text-xs font-medium text-[#8B95A3] dm-sans ml-1">Website</label>
+<input class="w-full bg-[#111318] border-none text-white rounded-lg px-4 py-3 focus:ring-1 focus:ring-[#00E5A0] transition-all dm-sans outline-none" type="url" value="https://aistart360.ai"/>
+</div>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+<div class="space-y-2">
+<label class="block text-xs font-medium text-[#8B95A3] dm-sans ml-1">Industry</label>
+<div class="relative">
+<select class="w-full bg-[#111318] border-none text-white rounded-lg px-4 py-3 focus:ring-1 focus:ring-[#00E5A0] appearance-none transition-all dm-sans outline-none cursor-pointer">
+<option selected="">Technology &amp; AI</option>
+<option>Fintech</option>
+<option>Health &amp; Science</option>
+<option>Manufacturing</option>
+</select>
+<span class="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-[#8B95A3]">expand_more</span>
+</div>
+</div>
+<div class="space-y-2">
+<label class="block text-xs font-medium text-[#8B95A3] dm-sans ml-1">Region</label>
+<div class="relative">
+<select class="w-full bg-[#111318] border-none text-white rounded-lg px-4 py-3 focus:ring-1 focus:ring-[#00E5A0] appearance-none transition-all dm-sans outline-none cursor-pointer">
+<option selected="">Europe (EMEA)</option>
+<option>North America</option>
+<option>Asia Pacific</option>
+<option>Latin America</option>
+</select>
+<span class="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-[#8B95A3]">expand_more</span>
+</div>
+</div>
+</div>
+<div class="pt-6 flex justify-end gap-4">
+<button class="px-6 py-2.5 rounded-lg border border-outline-variant/20 text-[#8B95A3] hover:text-white transition-colors dm-sans text-sm" type="button">Cancel</button>
+<button class="primary-gradient text-[#003824] px-8 py-2.5 rounded-lg font-bold bricolage text-sm shadow-lg shadow-[#00E5A0]/10" type="submit">Save Changes</button>
+</div>
+</form>
+</div>
+<!-- Danger Zone -->
+<div class="bg-[#111318] p-8 rounded-2xl border-l-4 border-error/40">
+<div class="flex flex-col md:flex-row md:items-center justify-between gap-6">
+<div>
+<h3 class="text-lg font-bold bricolage text-error mb-1">Delete Organization</h3>
+<p class="text-sm text-[#8B95A3] dm-sans">Удаление вашей организации приведет к безвозвратному удалению всех связанных данных и проектов.</p>
+</div>
+<button class="px-6 py-2.5 bg-error/10 text-error hover:bg-error/20 border border-error/20 rounded-lg text-sm font-bold bricolage transition-all">
+                                    Deactivate
+                                </button>
+</div>
+</div>
+</div>
+<!-- Side Assets (Right Col 1) -->
+<div class="space-y-6">
+<!-- Logo Upload Card -->
+<div class="bg-surface-container-low p-6 rounded-2xl">
+<h3 class="text-sm font-bold bricolage text-white mb-4">Branding</h3>
+<div class="group relative flex flex-col items-center justify-center border-2 border-dashed border-outline-variant/30 rounded-xl p-10 hover:border-[#00E5A0]/50 transition-all cursor-pointer bg-[#111318]">
+<div class="w-16 h-16 bg-surface-container flex items-center justify-center rounded-full mb-4 group-hover:scale-110 transition-transform">
+<span class="material-symbols-outlined text-[#00E5A0] text-3xl">cloud_upload</span>
+</div>
+<p class="text-sm text-white font-medium dm-sans">Drop Logo</p>
+<p class="text-xs text-[#8B95A3] mt-1 dm-sans">SVG, PNG or JPG (max. 5MB)</p>
+</div>
+<div class="mt-4 flex items-center gap-3 p-3 bg-surface-container-highest/30 rounded-lg">
+<img alt="Current Logo Preview" class="w-10 h-10 rounded-lg" data-alt="minimalist abstract geometric logo with dark teal and neon green accents on dark background" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDayfvb8eb0PNfL4zd8hjVVEKR2wWX1uUAy1QICgLJHkUbyCFq9h-RAug9GIJ78vz-BOmg0kRlk9Yc6cKMvRfLIA1pZReMpq4wDzvFYyeJU6Hkp-tI-18a-SPNfi6sE_zHJl8siO02ArqwwILSBkA2f7sQbW9TIBDfyKP_AuolOm4hX5IFzyG3uXpsabiQawkd6GKJJXTHeQC4AAZKfET4ZkZuvj4u2gXcdGQRp1LFy9Ue2m4xeIeLYd2IBj62uyA_jRjWDH-hdYaY"/>
+<div>
+<p class="text-[10px] text-[#8B95A3] jetbrains uppercase">Current Asset</p>
+<p class="text-xs text-white dm-sans font-medium">aistart_v1_logo.svg</p>
+</div>
+</div>
+</div>
+<!-- Info Card -->
+<div class="glass-panel p-6 rounded-2xl relative overflow-hidden">
+<div class="absolute -right-8 -top-8 w-32 h-32 bg-[#00E5A0]/10 blur-3xl rounded-full"></div>
+<h3 class="text-sm font-bold bricolage text-white mb-3">Enterprise Status</h3>
+<ul class="space-y-4">
+<li class="flex items-start gap-3">
+<span class="material-symbols-outlined text-[#00E5A0] text-lg">verified_user</span>
+<div>
+<p class="text-xs text-white font-medium dm-sans">Verified Institution</p>
+<p class="text-[10px] text-[#8B95A3] dm-sans">Tier 3 Security Clearance</p>
+</div>
+</li>
+<li class="flex items-start gap-3">
+<span class="material-symbols-outlined text-[#00E5A0] text-lg">database</span>
+<div>
+<p class="text-xs text-white font-medium dm-sans">Data Residency</p>
+<p class="text-[10px] text-[#8B95A3] dm-sans">EU-Central-1 (Frankfurt)</p>
+</div>
+</li>
+</ul>
+</div>
+<!-- Visual Ad Unit -->
+<div class="relative rounded-2xl h-48 overflow-hidden group">
+<img alt="Tech Background" class="absolute inset-0 w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all duration-700" data-alt="abstract digital infrastructure with glowing green nodes and interconnected lines representing high-speed data flow and intelligence" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCforxJYFWFx1FhFdadTrU4d7GnqV7OIDMrvRpMI5_raZABS1MwW-Tw0eTI0yE9T707BGhYHleiDanIjxGh9FPcEjQmMdzdLAK0-LS04yeejS6_OHuRY3zvzq4bZhET4BU9QwHUjJPUU_oqzvFvL4aXOtUchn7DhQiSlHdSO1AO9rgSS2LhwnB28ZAYUzPthAplwVYhm0KMJVvPXHcfLHxHRvVvqbS9UvufuBFnvnHGPWRHNHLLbFbDLwRR7GYhrvw2IVme4H3QPAk"/>
+<div class="absolute inset-0 bg-gradient-to-t from-[#0A0B0F] to-transparent"></div>
+<div class="absolute bottom-4 left-4 right-4">
+<p class="text-white font-bold text-sm bricolage">Neural Network Access</p>
+<p class="text-[10px] text-[#8B95A3] dm-sans mb-2">Upgrade for advanced modeling</p>
+<button class="text-[10px] font-bold jetbrains text-[#00E5A0] hover:underline">LEARN MORE -&gt;</button>
+</div>
+</div>
+</div>
+</div>
+</div>
+</main>
+</div>
+</body></html>

@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="ru"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;700;800&amp;family=DM+Sans:ital,wght@0,400;0,500;0,700;1,400&amp;family=JetBrains+Mono:wght@400;700&amp;family=Space+Grotesk:wght@300;400;500;600;700&amp;family=Inter:wght@300;400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        body {
+            background-color: #0A0B0F;
+            color: #e3e2e8;
+            font-family: 'Inter', sans-serif;
+        }
+        .headline-font { font-family: 'Space Grotesk', sans-serif; }
+        .data-font { font-family: 'JetBrains Mono', monospace; }
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.04);
+            backdrop-filter: blur(12px);
+        }
+    </style>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "on-surface-variant": "#bacbbf",
+              "inverse-primary": "#006c49",
+              "primary": "#6effc0",
+              "surface-container": "#1f1f24",
+              "on-error-container": "#ffdad6",
+              "on-error": "#690005",
+              "on-secondary-fixed": "#111c2d",
+              "surface-variant": "#343439",
+              "surface": "#121317",
+              "tertiary": "#ffe1bd",
+              "surface-container-high": "#292a2e",
+              "on-tertiary-container": "#754b00",
+              "secondary-container": "#3e495d",
+              "inverse-surface": "#e3e2e8",
+              "inverse-on-surface": "#2f3035",
+              "outline": "#84958a",
+              "surface-container-low": "#1a1b20",
+              "surface-container-lowest": "#0d0e12",
+              "on-secondary-container": "#aeb9d0",
+              "on-secondary": "#263143",
+              "error-container": "#93000a",
+              "background": "#121317",
+              "tertiary-fixed-dim": "#ffb955",
+              "error": "#ffb4ab",
+              "on-primary": "#003824",
+              "on-secondary-fixed-variant": "#3c475a",
+              "surface-dim": "#121317",
+              "secondary-fixed": "#d8e3fb",
+              "on-primary-container": "#006141",
+              "secondary-fixed-dim": "#bcc7de",
+              "primary-fixed": "#47ffb8",
+              "outline-variant": "#3b4a41",
+              "on-tertiary": "#452b00",
+              "on-primary-fixed": "#002114",
+              "tertiary-fixed": "#ffddb4",
+              "surface-bright": "#38393e",
+              "tertiary-container": "#ffbd60",
+              "on-background": "#e3e2e8",
+              "on-tertiary-fixed-variant": "#633f00",
+              "primary-fixed-dim": "#00e29e",
+              "on-tertiary-fixed": "#291800",
+              "surface-tint": "#00e29e",
+              "surface-container-highest": "#343439",
+              "on-surface": "#e3e2e8",
+              "primary-container": "#00e5a0",
+              "on-primary-fixed-variant": "#005236",
+              "secondary": "#bcc7de"
+            },
+            fontFamily: {
+              "headline": ["Space Grotesk"],
+              "body": ["Inter"],
+              "label": ["Space Grotesk"]
+            },
+            borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
+          },
+        },
+      }
+    </script>
+</head>
+<body class="bg-[#0A0B0F]">
+<!-- SideNavBar -->
+<aside class="fixed left-0 top-0 h-full w-[280px] z-50 bg-[#111318] flex flex-col p-6 space-y-2 shadow-2xl shadow-black/50">
+<div class="mb-10 px-2">
+<h1 class="text-2xl font-black text-white headline-font tracking-tight">Point A</h1>
+<p class="text-slate-500 text-xs tracking-widest uppercase">Business Portal</p>
+</div>
+<nav class="flex-1 space-y-1">
+<a class="flex items-center gap-3 px-4 py-3 text-slate-500 hover:text-white hover:bg-[#1f1f24]/50 rounded-lg transition-all duration-200 ease-in-out group" href="#">
+<span class="material-symbols-outlined text-xl">dashboard</span>
+<span class="text-sm font-medium">Dashboard</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 text-slate-500 hover:text-white hover:bg-[#1f1f24]/50 rounded-lg transition-all duration-200 ease-in-out group" href="#">
+<span class="material-symbols-outlined text-xl">analytics</span>
+<span class="text-sm font-medium">Market</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 text-slate-500 hover:text-white hover:bg-[#1f1f24]/50 rounded-lg transition-all duration-200 ease-in-out group" href="#">
+<span class="material-symbols-outlined text-xl">lightbulb</span>
+<span class="text-sm font-medium">Insights</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 text-[#00E5A0] bg-[#1f1f24] rounded-lg font-bold transition-all duration-200 ease-in-out group" href="#">
+<span class="material-symbols-outlined text-xl">location_on</span>
+<span class="text-sm">Point A</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 text-slate-500 hover:text-white hover:bg-[#1f1f24]/50 rounded-lg transition-all duration-200 ease-in-out group" href="#">
+<span class="material-symbols-outlined text-xl">flag</span>
+<span class="text-sm font-medium">Point B</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 text-slate-500 hover:text-white hover:bg-[#1f1f24]/50 rounded-lg transition-all duration-200 ease-in-out group" href="#">
+<span class="material-symbols-outlined text-xl">trending_up</span>
+<span class="text-sm font-medium">Growth</span>
+</a>
+</nav>
+<div class="pt-6 border-t border-[#1f1f24] space-y-1">
+<a class="flex items-center gap-3 px-4 py-2 text-slate-500 hover:text-white transition-colors" href="#">
+<span class="material-symbols-outlined text-lg">help</span>
+<span class="text-xs">Support</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-2 text-slate-500 hover:text-white transition-colors" href="#">
+<span class="material-symbols-outlined text-lg">person</span>
+<span class="text-xs">Account</span>
+</a>
+</div>
+<button class="mt-4 w-full bg-gradient-to-br from-[#6effc0] to-[#00e5a0] text-[#003824] font-bold py-3 rounded-lg flex items-center justify-center gap-2 hover:scale-[1.02] active:scale-95 transition-all">
+<span class="material-symbols-outlined">download</span>
+<span>Export Report</span>
+</button>
+</aside>
+<!-- Main Content Canvas -->
+<main class="ml-[280px] min-h-screen">
+<!-- TopAppBar -->
+<header class="fixed top-0 right-0 w-[calc(100%-280px)] z-40 bg-[#0A0B0F]/80 backdrop-blur-xl flex justify-between items-center px-8 h-16">
+<div class="flex items-center gap-4">
+<span class="text-xl font-bold tracking-tight text-[#00E5A0] headline-font">Point A: Current State</span>
+<div class="h-4 w-[1px] bg-slate-800"></div>
+<span class="text-slate-400 text-sm">Strictly Confidential</span>
+</div>
+<div class="flex items-center gap-6">
+<div class="flex items-center gap-4">
+<button class="text-slate-400 hover:text-[#6effc0] transition-colors"><span class="material-symbols-outlined">notifications</span></button>
+<button class="text-slate-400 hover:text-[#6effc0] transition-colors"><span class="material-symbols-outlined">settings</span></button>
+</div>
+<div class="w-8 h-8 rounded-full bg-surface-container overflow-hidden">
+<img alt="User profile" class="w-full h-full object-cover" data-alt="Professional headshot of a business executive in a dark suit with neutral background" src="https://lh3.googleusercontent.com/aida-public/AB6AXuC2jafBrkv4I6EvAVDm007BiY-WHL0It-l52hxRQRg4Q08SkKtv63m4W0vhQhkq5C9Lm-0-1IA7ExR6Gnb7tSrDEtHhtNIfd8zkH1d6fHCanreNYoEwgJy5jU8PTC43MIeonvWvMMUkux_ywiIbnpGQjsaA17cX3XIb1rx31MJIshFu7nhh2oosbxnXoSNkbaN-gj7-xPJu8aWhOBtq-70M6KTPo-4NMI47TkaGd98NfnfDw3RtV3carkLiFnalyuroBgLATZ0m1q0"/>
+</div>
+</div>
+</header>
+<!-- Page Canvas -->
+<div class="pt-24 pb-12 px-12 space-y-12 max-w-7xl mx-auto">
+<!-- Header Section -->
+<section class="flex flex-col md:flex-row md:items-end justify-between gap-6">
+<div class="space-y-2">
+<div class="flex items-center gap-3">
+<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-primary/10 text-primary text-[10px] font-bold tracking-widest uppercase">
+<span class="w-1.5 h-1.5 rounded-full bg-primary"></span>
+                            Диагностика завершена
+                        </span>
+</div>
+<h1 class="text-5xl font-extrabold headline-font tracking-tight text-white">Точка А: Текущее состояние</h1>
+</div>
+<button class="flex items-center gap-2 bg-white/5 hover:bg-white/10 text-white px-6 py-3 rounded-lg border border-white/10 transition-all font-medium">
+<span class="material-symbols-outlined text-xl">picture_as_pdf</span>
+<span>Скачать PDF</span>
+</button>
+</section>
+<!-- Metrics Strip -->
+<section class="grid grid-cols-1 md:grid-cols-3 gap-6">
+<!-- KPI Revenue -->
+<div class="bg-surface-container-low p-6 rounded-xl space-y-3 relative overflow-hidden group">
+<div class="text-slate-400 text-xs font-bold uppercase tracking-wider headline-font">Выручка (Annual)</div>
+<div class="flex items-baseline gap-2">
+<span class="text-4xl font-bold data-font text-white">20.0</span>
+<span class="text-xl text-slate-500 font-medium">млрд ₸</span>
+</div>
+<div class="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-primary/20 to-transparent"></div>
+</div>
+<!-- KPI Margin -->
+<div class="bg-surface-container-low p-6 rounded-xl space-y-3 relative overflow-hidden group">
+<div class="flex justify-between items-start">
+<div class="text-slate-400 text-xs font-bold uppercase tracking-wider headline-font">Валовая маржа</div>
+<div class="bg-error/10 text-error px-2 py-0.5 rounded text-[10px] font-bold flex items-center gap-1">
+<span class="material-symbols-outlined text-xs">trending_down</span>
+                            -2.4%
+                        </div>
+</div>
+<div class="flex items-baseline gap-2">
+<span class="text-4xl font-bold data-font text-white">13.8</span>
+<span class="text-xl text-slate-500 font-medium">%</span>
+</div>
+</div>
+<!-- KPI Clients -->
+<div class="bg-surface-container-low p-6 rounded-xl space-y-3 relative overflow-hidden group">
+<div class="text-slate-400 text-xs font-bold uppercase tracking-wider headline-font">Активная база</div>
+<div class="flex items-baseline gap-2">
+<span class="text-4xl font-bold data-font text-white">600+</span>
+<span class="text-xl text-slate-500 font-medium text-primary">B2B</span>
+</div>
+</div>
+</section>
+<!-- SWOT Columns -->
+<section class="grid grid-cols-1 lg:grid-cols-2 gap-10">
+<!-- Strengths -->
+<div class="space-y-6">
+<div class="flex items-center gap-4">
+<div class="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
+<span class="material-symbols-outlined text-2xl" style="font-variation-settings: 'FILL' 1;">verified</span>
+</div>
+<h2 class="text-2xl font-bold headline-font text-white">Сильные стороны</h2>
+</div>
+<div class="space-y-3">
+<div class="bg-surface-container-low border-l-4 border-primary p-5 rounded-r-xl flex justify-between items-start hover:bg-surface-container transition-colors group">
+<div class="space-y-1">
+<h4 class="font-bold text-white text-lg">Высокая лояльность ключевых клиентов</h4>
+<p class="text-slate-400 text-sm leading-relaxed">NPS в сегменте Enterprise составляет 72%, что выше среднего по рынку на 15%.</p>
+</div>
+<span class="data-font text-[10px] text-primary/60 group-hover:text-primary transition-colors">Стр. 2 ↗</span>
+</div>
+<div class="bg-surface-container-low border-l-4 border-primary p-5 rounded-r-xl flex justify-between items-start hover:bg-surface-container transition-colors group">
+<div class="space-y-1">
+<h4 class="font-bold text-white text-lg">Собственная R&amp;D инфраструктура</h4>
+<p class="text-slate-400 text-sm leading-relaxed">Полный цикл разработки позволяет внедрять кастомные фичи в 2 раза быстрее конкурентов.</p>
+</div>
+<span class="data-font text-[10px] text-primary/60 group-hover:text-primary transition-colors">Стр. 5 ↗</span>
+</div>
+<div class="bg-surface-container-low border-l-4 border-primary p-5 rounded-r-xl flex justify-between items-start hover:bg-surface-container transition-colors group">
+<div class="space-y-1">
+<h4 class="font-bold text-white text-lg">Эффективность прямых продаж</h4>
+<p class="text-slate-400 text-sm leading-relaxed">Средний чек (LTV) вырос на 22% за последние 12 месяцев благодаря апсейл-стратегии.</p>
+</div>
+<span class="data-font text-[10px] text-primary/60 group-hover:text-primary transition-colors">Стр. 8 ↗</span>
+</div>
+</div>
+</div>
+<!-- Weaknesses -->
+<div class="space-y-6">
+<div class="flex items-center gap-4">
+<div class="w-12 h-12 rounded-lg bg-error/10 flex items-center justify-center text-error">
+<span class="material-symbols-outlined text-2xl" style="font-variation-settings: 'FILL' 1;">warning</span>
+</div>
+<h2 class="text-2xl font-bold headline-font text-white">Слабые стороны</h2>
+</div>
+<div class="space-y-3">
+<div class="bg-surface-container-low border-l-4 border-error p-5 rounded-r-xl flex justify-between items-start hover:bg-surface-container transition-colors group">
+<div class="space-y-1">
+<h4 class="font-bold text-white text-lg">Высокая зависимость от ТОП-10</h4>
+<p class="text-slate-400 text-sm leading-relaxed">Уход даже одного крупного контракта создает риск кассового разрыва.</p>
+</div>
+<span class="data-font text-[10px] text-error/60 group-hover:text-error transition-colors">Стр. 12 ↗</span>
+</div>
+<div class="bg-surface-container-low border-l-4 border-error p-5 rounded-r-xl flex justify-between items-start hover:bg-surface-container transition-colors group">
+<div class="space-y-1">
+<h4 class="font-bold text-white text-lg">Устаревшая CRM-логика</h4>
+<p class="text-slate-400 text-sm leading-relaxed">Данные о клиентах фрагментированы, что мешает внедрению предиктивной аналитики.</p>
+</div>
+<span class="data-font text-[10px] text-error/60 group-hover:text-error transition-colors">Стр. 15 ↗</span>
+</div>
+<div class="bg-surface-container-low border-l-4 border-error p-5 rounded-r-xl flex justify-between items-start hover:bg-surface-container transition-colors group">
+<div class="space-y-1">
+<h4 class="font-bold text-white text-lg">Низкая операционная маржинальность</h4>
+<p class="text-slate-400 text-sm leading-relaxed">Административные расходы растут быстрее, чем валовая прибыль.</p>
+</div>
+<span class="data-font text-[10px] text-error/60 group-hover:text-error transition-colors">Стр. 21 ↗</span>
+</div>
+</div>
+</div>
+</section>
+<!-- ABC Analysis Section -->
+<section class="space-y-8">
+<div class="flex justify-between items-end">
+<div class="space-y-1">
+<h2 class="text-3xl font-bold headline-font text-white">АВС-анализ выручки</h2>
+<p class="text-slate-500 text-sm">Распределение концентрации дохода по категориям клиентов</p>
+</div>
+<div class="flex gap-4 text-[10px] font-bold tracking-widest uppercase">
+<div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-error"></span> Group A</div>
+<div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-tertiary-container"></span> Group B</div>
+<div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-primary"></span> Group C</div>
+</div>
+</div>
+<!-- Visual Stacked Bar -->
+<div class="space-y-6">
+<div class="h-16 w-full flex rounded-xl overflow-hidden shadow-2xl shadow-black/40">
+<div class="h-full bg-error flex items-center justify-center group relative overflow-hidden" style="width: 79.2%">
+<div class="absolute inset-0 bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+<span class="data-font font-bold text-black text-xl">79.2%</span>
+</div>
+<div class="h-full bg-tertiary-container flex items-center justify-center group relative overflow-hidden" style="width: 12.8%">
+<div class="absolute inset-0 bg-black/10 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+<span class="data-font font-bold text-black text-sm">12.8%</span>
+</div>
+<div class="h-full bg-primary flex items-center justify-center group relative overflow-hidden" style="width: 8%">
+<div class="absolute inset-0 bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+<span class="data-font font-bold text-[#003824] text-sm">8%</span>
+</div>
+</div>
+<!-- Risk Alert Card -->
+<div class="bg-tertiary-container/5 border border-tertiary-container/20 rounded-2xl p-8 flex flex-col md:flex-row gap-8 items-center">
+<div class="w-20 h-20 rounded-full bg-tertiary-container/10 flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-4xl text-tertiary-container">report_problem</span>
+</div>
+<div class="space-y-4">
+<div class="flex items-center gap-3">
+<h3 class="text-xl font-bold headline-font text-tertiary-container">Critical Risk Concentration</h3>
+<span class="px-2 py-0.5 rounded bg-tertiary-container text-[#452b00] text-[10px] font-black uppercase">Уровень: Высокий</span>
+</div>
+<p class="text-slate-300 leading-relaxed max-w-3xl">
+                                Текущая структура выручки демонстрирует <span class="text-tertiary-container font-bold">критическую зависимость</span>: всего 10 клиентов формируют <span class="data-font font-bold text-white underline underline-offset-4 decoration-tertiary-container/40">79.2%</span> всего дохода компании. Любое изменение в закупочной политике или финансовой устойчивости этих контрагентов может дестабилизировать операционную деятельность AIStart360 в течение 30-45 дней.
+                            </p>
+</div>
+</div>
+</div>
+</section>
+<!-- Bottom Note -->
+<footer class="pt-12 border-t border-slate-800/50 flex flex-col md:flex-row justify-between items-center gap-4 text-slate-600 text-[10px] uppercase tracking-widest font-bold">
+<div>Institutional Intelligence System — Build 4.2.0</div>
+<div class="flex gap-8">
+<span>Last Update: Oct 2023</span>
+<span>Confidentiality: Tier-1</span>
+</div>
+</footer>
+</div>
+</main>
+</body></html>

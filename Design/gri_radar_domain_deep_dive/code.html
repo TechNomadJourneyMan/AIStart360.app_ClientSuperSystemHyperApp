@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@700;800&amp;family=DM+Sans:wght@400;500;700&amp;family=JetBrains+Mono:wght@500;700&amp;family=Space+Grotesk:wght@500;700&amp;family=Inter:wght@400;500&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          colors: {
+            "surface-container-high": "#292a2e",
+            "secondary-container": "#3e495d",
+            "on-background": "#e3e2e8",
+            "surface-container-lowest": "#0d0e12",
+            "surface-bright": "#38393e",
+            "on-secondary": "#263143",
+            "background": "#121317",
+            "primary-fixed-dim": "#00e29e",
+            "on-tertiary-fixed-variant": "#633f00",
+            "on-secondary-fixed": "#111c2d",
+            "on-primary-fixed": "#002114",
+            "tertiary-container": "#ffbd60",
+            "surface-tint": "#00e29e",
+            "primary-fixed": "#47ffb8",
+            "outline": "#84958a",
+            "tertiary-fixed": "#ffddb4",
+            "on-primary": "#003824",
+            "on-secondary-container": "#aeb9d0",
+            "secondary-fixed": "#d8e3fb",
+            "outline-variant": "#3b4a41",
+            "on-tertiary-container": "#754b00",
+            "on-secondary-fixed-variant": "#3c475a",
+            "surface-dim": "#121317",
+            "secondary-fixed-dim": "#bcc7de",
+            "primary-container": "#00e5a0",
+            "on-primary-fixed-variant": "#005236",
+            "on-error-container": "#ffdad6",
+            "surface-container": "#1f1f24",
+            "on-tertiary": "#452b00",
+            "tertiary-fixed-dim": "#ffb955",
+            "tertiary": "#ffe1bd",
+            "surface-container-highest": "#343439",
+            "error-container": "#93000a",
+            "on-surface": "#e3e2e8",
+            "surface": "#121317",
+            "inverse-primary": "#006c49",
+            "inverse-surface": "#e3e2e8",
+            "on-surface-variant": "#bacbbf",
+            "on-primary-container": "#006141",
+            "surface-variant": "#343439",
+            "secondary": "#bcc7de",
+            "primary": "#6effc0",
+            "surface-container-low": "#1a1b20",
+            "on-error": "#690005",
+            "on-tertiary-fixed": "#291800",
+            "inverse-on-surface": "#2f3035",
+            "error": "#ffb4ab"
+          },
+          fontFamily: {
+            "headline": ["Bricolage Grotesque"],
+            "body": ["DM Sans"],
+            "label": ["Space Grotesk"],
+            "mono": ["JetBrains Mono"]
+          },
+          borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
+        },
+      },
+    }
+  </script>
+<style>
+    .glass-card {
+      background: rgba(255, 255, 255, 0.04);
+      backdrop-filter: blur(12px);
+    }
+    .gradient-primary {
+      background: linear-gradient(135deg, #6effc0 0%, #00e5a0 100%);
+    }
+    .material-symbols-outlined {
+      font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+      vertical-align: middle;
+    }
+    .status-pulse {
+      box-shadow: 0 0 0 0 rgba(255, 180, 171, 0.4);
+      animation: pulse-red 2s infinite;
+    }
+    @keyframes pulse-red {
+      0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(255, 180, 171, 0.7); }
+      70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(255, 180, 171, 0); }
+      100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(255, 180, 171, 0); }
+    }
+  </style>
+</head>
+<body class="bg-[#0A0B0F] text-on-background font-body min-h-screen overflow-x-hidden">
+<!-- TopAppBar Navigation Shell -->
+<header class="fixed top-0 w-full z-50 bg-[#111318] flex justify-between items-center px-6 h-16">
+<div class="flex items-center gap-8">
+<span class="text-[#00E5A0] font-headline text-xl font-bold tracking-tighter">GRI Radar</span>
+<nav class="hidden md:flex gap-6">
+<a class="text-[#8B95A3] hover:text-white transition-colors font-['Bricolage_Grotesque'] text-lg font-bold tracking-tight" href="#">Intelligence</a>
+<a class="text-[#00E5A0] border-b-2 border-[#00E5A0] pb-1 font-['Bricolage_Grotesque'] text-lg font-bold tracking-tight" href="#">Radar</a>
+<a class="text-[#8B95A3] hover:text-white transition-colors font-['Bricolage_Grotesque'] text-lg font-bold tracking-tight" href="#">Portfolio</a>
+<a class="text-[#8B95A3] hover:text-white transition-colors font-['Bricolage_Grotesque'] text-lg font-bold tracking-tight" href="#">Compliance</a>
+</nav>
+</div>
+<div class="flex items-center gap-4">
+<button class="p-2 text-[#8B95A3] hover:bg-[#1f1f24] rounded-lg transition-all"><span class="material-symbols-outlined" data-icon="notifications">notifications</span></button>
+<button class="p-2 text-[#8B95A3] hover:bg-[#1f1f24] rounded-lg transition-all"><span class="material-symbols-outlined" data-icon="settings">settings</span></button>
+<div class="w-8 h-8 rounded-full overflow-hidden bg-surface-container-high border border-outline-variant/15">
+<img alt="Analyst Profile" data-alt="Close-up portrait of a professional male financial analyst in a dark suit with soft cinematic studio lighting" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBU0FitE4TmUUxBnZMO7WVWkWQ391Jhfiu72XvfUNSO3bKbW61JEUaRYrd03hM6msBFQIz4TWWowv6xz6tfSGJI1C0WOQV70rf9eZBwPvYREPmqj_4dfdEeLE0SgBYUj749o95nsCMfRBH0lQubQdTtGMXFMjosBcej32arn7IgJUZi_MQ_7uXqN3_Wv0_AIMFeOTCosZVO5nEgjyIOIL7qOzC1-4VVOEtvAB42Q5WOOe_MNuruSzvvN5Ve6V7lAp0F1wQ_URCzgXg"/>
+</div>
+</div>
+</header>
+<!-- SideNavBar Navigation Shell -->
+<aside class="fixed left-0 top-16 h-[calc(100vh-64px)] w-64 bg-[#111318] shadow-[20px_0_40px_rgba(0,0,0,0.4)] flex flex-col py-4 gap-1 z-40 hidden lg:flex">
+<div class="px-6 mb-6">
+<h2 class="text-[#00E5A0] font-headline text-lg tracking-tight">Institutional Intelligence</h2>
+<p class="text-[#8B95A3] text-[10px] font-mono uppercase tracking-widest">Domain Analysis v4.2</p>
+</div>
+<div class="flex flex-col gap-1 px-3">
+<a class="flex items-center gap-3 px-3 py-2 text-[#8B95A3] hover:bg-[#1f1f24] hover:text-white transition-all rounded-lg font-['DM_Sans'] text-sm font-medium" href="#">
+<span class="material-symbols-outlined" data-icon="dashboard">dashboard</span> Overview
+      </a>
+<a class="flex items-center gap-3 px-3 py-2 bg-[#1f1f24] text-[#00E5A0] border-r-2 border-[#00E5A0] transition-all rounded-r-none rounded-l-lg font-['DM_Sans'] text-sm font-medium" href="#">
+<span class="material-symbols-outlined" data-icon="analytics">analytics</span> Deep Dive
+      </a>
+<a class="flex items-center gap-3 px-3 py-2 text-[#8B95A3] hover:bg-[#1f1f24] hover:text-white transition-all rounded-lg font-['DM_Sans'] text-sm font-medium" href="#">
+<span class="material-symbols-outlined" data-icon="security">security</span> Risk Matrix
+      </a>
+<a class="flex items-center gap-3 px-3 py-2 text-[#8B95A3] hover:bg-[#1f1f24] hover:text-white transition-all rounded-lg font-['DM_Sans'] text-sm font-medium" href="#">
+<span class="material-symbols-outlined" data-icon="timeline">timeline</span> Historical Data
+      </a>
+<a class="flex items-center gap-3 px-3 py-2 text-[#8B95A3] hover:bg-[#1f1f24] hover:text-white transition-all rounded-lg font-['DM_Sans'] text-sm font-medium" href="#">
+<span class="material-symbols-outlined" data-icon="psychology">psychology</span> AI Strategy
+      </a>
+</div>
+<div class="mt-auto px-3 flex flex-col gap-1 border-t border-outline-variant/10 pt-4">
+<a class="flex items-center gap-3 px-3 py-2 text-[#8B95A3] hover:bg-[#1f1f24] transition-all rounded-lg font-['DM_Sans'] text-sm font-medium" href="#">
+<span class="material-symbols-outlined" data-icon="help">help</span> Help Center
+      </a>
+<a class="flex items-center gap-3 px-3 py-2 text-[#8B95A3] hover:bg-[#1f1f24] transition-all rounded-lg font-['DM_Sans'] text-sm font-medium" href="#">
+<span class="material-symbols-outlined" data-icon="api">api</span> Export API
+      </a>
+</div>
+</aside>
+<!-- Main Content Canvas -->
+<main class="lg:ml-64 pt-24 pb-12 px-8 min-h-screen">
+<!-- Breadcrumbs -->
+<nav class="flex items-center gap-2 mb-8 text-[#8B95A3] text-sm">
+<span class="hover:text-primary transition-colors cursor-pointer">GRI</span>
+<span class="material-symbols-outlined text-sm" data-icon="chevron_right">chevron_right</span>
+<span class="text-white font-medium">Domain Analysis</span>
+</nav>
+<!-- Header Section -->
+<header class="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-12">
+<div>
+<h1 class="text-5xl font-headline font-bold text-white tracking-tight leading-none mb-2">Financial Health</h1>
+<p class="text-[#8B95A3] text-lg max-w-2xl">A comprehensive structural assessment of solvency, liquidity, and operational efficiency across high-volatility market segments.</p>
+</div>
+<div class="flex items-center gap-6 bg-surface-container-low p-6 rounded-xl">
+<div class="flex flex-col">
+<span class="text-[10px] uppercase tracking-widest text-[#8B95A3] font-mono mb-1">Current Score</span>
+<div class="flex items-baseline gap-2">
+<span class="text-5xl font-mono font-bold text-error leading-none">42.8</span>
+<span class="text-error/60 font-mono text-sm">/ 100</span>
+</div>
+</div>
+<div class="h-12 w-[1px] bg-outline-variant/20"></div>
+<div class="px-4 py-2 bg-error-container text-on-error-container rounded-lg flex items-center gap-2 status-pulse">
+<span class="material-symbols-outlined text-sm" data-icon="warning">warning</span>
+<span class="font-bold uppercase tracking-tighter text-sm">Critical</span>
+</div>
+</div>
+</header>
+<!-- Bento Grid Layout -->
+<div class="grid grid-cols-12 gap-6">
+<!-- Historical Trend (Area Chart) -->
+<section class="col-span-12 lg:col-span-8 bg-surface-container-low rounded-xl p-8 flex flex-col gap-6">
+<div class="flex justify-between items-start">
+<div>
+<h3 class="font-headline text-xl text-white">Historical Score Trend</h3>
+<p class="text-[#8B95A3] text-sm">6-month longitudinal analysis of GRI volatility.</p>
+</div>
+<div class="flex gap-2">
+<button class="px-3 py-1 text-xs font-mono rounded bg-surface-container-highest text-on-surface">1M</button>
+<button class="px-3 py-1 text-xs font-mono rounded text-[#8B95A3] hover:text-white transition-colors">3M</button>
+<button class="px-3 py-1 text-xs font-mono rounded text-[#8B95A3] hover:text-white transition-colors">6M</button>
+</div>
+</div>
+<!-- Mock Area Chart -->
+<div class="h-64 relative w-full mt-4 group">
+<svg class="w-full h-full" preserveaspectratio="none" viewbox="0 0 800 200">
+<defs>
+<lineargradient id="gradient-chart" x1="0" x2="0" y1="0" y2="1">
+<stop offset="0%" stop-color="#00E5A0" stop-opacity="0.2"></stop>
+<stop offset="100%" stop-color="#00E5A0" stop-opacity="0"></stop>
+</lineargradient>
+</defs>
+<path d="M0,150 L100,120 L200,140 L300,80 L400,100 L500,140 L600,160 L700,155 L800,140" fill="none" stroke="#00E5A0" stroke-linecap="round" stroke-linejoin="round" stroke-width="3"></path>
+<path d="M0,150 L100,120 L200,140 L300,80 L400,100 L500,140 L600,160 L700,155 L800,140 V200 H0 Z" fill="url(#gradient-chart)"></path>
+</svg>
+<!-- Chart Tooltip Mock -->
+<div class="absolute left-1/2 top-10 transform -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+<div class="glass-card p-3 rounded-lg border border-outline-variant/20 shadow-xl">
+<p class="text-[10px] text-[#8B95A3] uppercase font-mono">Aug 14, 2023</p>
+<p class="font-mono text-primary font-bold">Score: 68.2</p>
+</div>
+</div>
+</div>
+<div class="flex justify-between text-[#8B95A3] font-mono text-[10px] px-2">
+<span>MAR</span><span>APR</span><span>MAY</span><span>JUN</span><span>JUL</span><span>AUG</span>
+</div>
+</section>
+<!-- AI Insight Panel -->
+<section class="col-span-12 lg:col-span-4 bg-surface-container rounded-xl p-8 border border-outline-variant/10 relative overflow-hidden">
+<div class="absolute top-0 right-0 p-4 opacity-10">
+<span class="material-symbols-outlined text-6xl" data-icon="psychology">psychology</span>
+</div>
+<div class="flex items-center gap-3 mb-6">
+<div class="w-2 h-2 rounded-full bg-primary animate-pulse"></div>
+<h3 class="font-headline text-xl text-white">AI Intelligence Synthesis</h3>
+</div>
+<div class="space-y-6">
+<div class="p-4 bg-error-container/10 border-l-4 border-error rounded-r-lg">
+<p class="text-sm text-on-error-container leading-relaxed">
+<strong class="text-white block mb-1 font-headline">Critical Warning: Margin Erosion</strong>
+              The current score drop is primarily driven by a 14.2% increase in COGS without corresponding price adjustments in the APAC market. 
+            </p>
+</div>
+<div class="space-y-4">
+<div class="flex gap-4">
+<span class="material-symbols-outlined text-primary" data-icon="auto_awesome">auto_awesome</span>
+<p class="text-sm text-[#8B95A3]">System correlates "Price Elasticity" decrease with recent competitor aggressive discounting.</p>
+</div>
+<div class="flex gap-4">
+<span class="material-symbols-outlined text-primary" data-icon="trending_down">trending_down</span>
+<p class="text-sm text-[#8B95A3]">Operating cash flow is entering the 'Critical' zone for Q4 projections.</p>
+</div>
+</div>
+</div>
+</section>
+<!-- Domain Breakdown Grid -->
+<section class="col-span-12 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+<!-- Metric Card 1 -->
+<div class="bg-surface-container-low p-6 rounded-xl hover:bg-surface-container-high transition-all">
+<span class="text-[10px] uppercase font-mono text-[#8B95A3] block mb-2">Price Elasticity</span>
+<div class="flex justify-between items-end">
+<span class="text-3xl font-mono font-bold text-white">0.84</span>
+<div class="flex items-center gap-1 text-error text-xs font-mono">
+<span class="material-symbols-outlined text-sm" data-icon="arrow_downward">arrow_downward</span>
+              12%
+            </div>
+</div>
+<div class="w-full h-1 bg-surface-container-highest mt-4 rounded-full overflow-hidden">
+<div class="h-full bg-error w-[84%]"></div>
+</div>
+</div>
+<!-- Metric Card 2 -->
+<div class="bg-surface-container-low p-6 rounded-xl hover:bg-surface-container-high transition-all">
+<span class="text-[10px] uppercase font-mono text-[#8B95A3] block mb-2">Margin Leakage</span>
+<div class="flex justify-between items-end">
+<span class="text-3xl font-mono font-bold text-white">5.2%</span>
+<div class="flex items-center gap-1 text-primary text-xs font-mono">
+<span class="material-symbols-outlined text-sm" data-icon="arrow_upward">arrow_upward</span>
+              2.1%
+            </div>
+</div>
+<div class="w-full h-1 bg-surface-container-highest mt-4 rounded-full overflow-hidden">
+<div class="h-full bg-primary w-[35%]"></div>
+</div>
+</div>
+<!-- Metric Card 3 -->
+<div class="bg-surface-container-low p-6 rounded-xl hover:bg-surface-container-high transition-all">
+<span class="text-[10px] uppercase font-mono text-[#8B95A3] block mb-2">Solvency Ratio</span>
+<div class="flex justify-between items-end">
+<span class="text-3xl font-mono font-bold text-white">1.24</span>
+<div class="flex items-center gap-1 text-[#8B95A3] text-xs font-mono">
+              Stable
+            </div>
+</div>
+<div class="w-full h-1 bg-surface-container-highest mt-4 rounded-full overflow-hidden">
+<div class="h-full bg-tertiary-container w-[60%]"></div>
+</div>
+</div>
+<!-- Metric Card 4 -->
+<div class="bg-surface-container-low p-6 rounded-xl hover:bg-surface-container-high transition-all">
+<span class="text-[10px] uppercase font-mono text-[#8B95A3] block mb-2">Risk Exposure</span>
+<div class="flex justify-between items-end">
+<span class="text-3xl font-mono font-bold text-white">High</span>
+<span class="material-symbols-outlined text-error" data-icon="emergency">emergency</span>
+</div>
+<div class="w-full h-1 bg-surface-container-highest mt-4 rounded-full overflow-hidden">
+<div class="h-full bg-error w-[90%]"></div>
+</div>
+</div>
+</section>
+<!-- Action Plan -->
+<section class="col-span-12 bg-surface-container-low rounded-xl p-8">
+<div class="flex items-center justify-between mb-8">
+<div>
+<h3 class="font-headline text-2xl text-white">Prioritized Action Plan</h3>
+<p class="text-[#8B95A3] text-sm">Strategic levers to restore score integrity to &gt;75.0</p>
+</div>
+<button class="gradient-primary text-[#003824] px-6 py-3 rounded-lg font-bold flex items-center gap-2 hover:opacity-90 transition-all scale-[0.98] active:scale-95">
+<span class="material-symbols-outlined" data-icon="play_circle">play_circle</span>
+            Execute All
+          </button>
+</div>
+<div class="space-y-1">
+<!-- Task 1 -->
+<div class="flex items-center gap-6 p-4 hover:bg-[#1f1f24] rounded-lg group transition-all border-l-4 border-error">
+<div class="flex flex-col items-center">
+<span class="text-[10px] font-mono text-error uppercase">Urgent</span>
+<span class="text-xl font-headline text-white">01</span>
+</div>
+<div class="flex-grow">
+<h4 class="text-white font-bold font-headline">Rebalance APAC Pricing Architecture</h4>
+<p class="text-[#8B95A3] text-sm">Implement a 4.5% dynamic increase to offset supply chain volatility.</p>
+</div>
+<div class="hidden md:flex gap-4 items-center">
+<div class="flex -space-x-2">
+<img alt="Team Lead" class="w-8 h-8 rounded-full border-2 border-surface-container-low" data-alt="Portrait of a young male professional in a smart casual outfit" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCU0u2gh6fX5YCQHaFkZl8brQXrFfp5XToZGxHlUX9inzalJmABzdx59_spB2IkoJpcBWwetT6yW9-_U4_ByusFzj0hjALTrCFuPFHsqIOoIiYskxJ8FeXMGTZtvkFY_aOevo97d0HqQL6-4q7WHT_sD0PNPgz8eY0eVj24DdyUHibcgIxl-DgosMkejVNrn7tluvZODlR3k9VHK8XZvQfpFmhuYsyM5mr4LZ6z2mmtDjo9epniQy8PSOfrDjLOAZ7RGl0zFi0iZ4M"/>
+<img alt="Analyst" class="w-8 h-8 rounded-full border-2 border-surface-container-low" data-alt="Portrait of a professional woman with glasses in a focused environment" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDyNd6FHIkOcaVHMOd9Bh70OkWe0fvg0OwREAMhBpEzVlEzkZ6iqTamN2l1-6ga4cCqSnQKL-oWPX2ihAYD3Ky6O--aoJ5LuB3AD8ZCkgRfSp92dQQ0A35USrpIWcKv2Q-JI1Hxz-dyzErlqltiPCIPtsj5gDYCQfdddBIM_lydHCmXe8ZB_7z4k7aLCsNJw6hdSvAHqtJzdlHsERkAoJBq_szIeq4a46hVyeZZNw4WGXjysUEi7ch-s1GMT2FlULfELn8FVgZK9V0"/>
+</div>
+<button class="p-2 text-[#8B95A3] hover:text-white"><span class="material-symbols-outlined" data-icon="more_vert">more_vert</span></button>
+</div>
+</div>
+<!-- Task 2 -->
+<div class="flex items-center gap-6 p-4 hover:bg-[#1f1f24] rounded-lg group transition-all border-l-4 border-primary">
+<div class="flex flex-col items-center">
+<span class="text-[10px] font-mono text-primary uppercase">High</span>
+<span class="text-xl font-headline text-white">02</span>
+</div>
+<div class="flex-grow">
+<h4 class="text-white font-bold font-headline">Audit Margin Leakage in SaaS Logistics</h4>
+<p class="text-[#8B95A3] text-sm">Identify unbilled professional services and reconcile with ERP.</p>
+</div>
+<div class="hidden md:flex gap-4 items-center">
+<div class="flex -space-x-2">
+<div class="w-8 h-8 rounded-full bg-surface-container-highest border-2 border-surface-container-low flex items-center justify-center text-[10px] text-white font-bold">+3</div>
+</div>
+<button class="p-2 text-[#8B95A3] hover:text-white"><span class="material-symbols-outlined" data-icon="more_vert">more_vert</span></button>
+</div>
+</div>
+<!-- Task 3 -->
+<div class="flex items-center gap-6 p-4 hover:bg-[#1f1f24] rounded-lg group transition-all border-l-4 border-outline">
+<div class="flex flex-col items-center">
+<span class="text-[10px] font-mono text-[#8B95A3] uppercase">Medium</span>
+<span class="text-xl font-headline text-white">03</span>
+</div>
+<div class="flex-grow">
+<h4 class="text-white font-bold font-headline">Historical Liquidity Stress Test</h4>
+<p class="text-[#8B95A3] text-sm">Simulate market downturn scenarios and cash-on-hand sustainability.</p>
+</div>
+<div class="hidden md:flex gap-4 items-center">
+<button class="p-2 text-[#8B95A3] hover:text-white"><span class="material-symbols-outlined" data-icon="more_vert">more_vert</span></button>
+</div>
+</div>
+</div>
+</section>
+</div>
+</main>
+<!-- Bottom Navigation (Mobile Only) -->
+<nav class="md:hidden fixed bottom-0 left-0 w-full bg-[#111318] flex justify-around items-center py-4 z-50">
+<button class="flex flex-col items-center gap-1 text-[#00E5A0]">
+<span class="material-symbols-outlined" data-icon="analytics">analytics</span>
+<span class="text-[10px] font-medium">Radar</span>
+</button>
+<button class="flex flex-col items-center gap-1 text-[#8B95A3]">
+<span class="material-symbols-outlined" data-icon="dashboard">dashboard</span>
+<span class="text-[10px] font-medium">Overview</span>
+</button>
+<button class="flex flex-col items-center gap-1 text-[#8B95A3]">
+<span class="material-symbols-outlined" data-icon="psychology">psychology</span>
+<span class="text-[10px] font-medium">AI</span>
+</button>
+<button class="flex flex-col items-center gap-1 text-[#8B95A3]">
+<span class="material-symbols-outlined" data-icon="account_circle">account_circle</span>
+<span class="text-[10px] font-medium">Profile</span>
+</button>
+</nav>
+</body></html>

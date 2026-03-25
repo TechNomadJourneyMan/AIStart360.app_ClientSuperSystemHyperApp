@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="ru"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;700;800&amp;family=DM+Sans:wght@400;500;700&amp;family=JetBrains+Mono:wght@400;700&amp;family=Space+Grotesk:wght@400;700&amp;family=Inter:wght@400;500;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "surface-dim": "#121317",
+              "surface-container": "#1f1f24",
+              "primary-fixed": "#47ffb8",
+              "secondary": "#bcc7de",
+              "inverse-surface": "#e3e2e8",
+              "tertiary-container": "#ffbd60",
+              "on-secondary": "#263143",
+              "surface-bright": "#38393e",
+              "on-primary-container": "#006141",
+              "surface-container-high": "#292a2e",
+              "surface": "#121317",
+              "on-tertiary-container": "#754b00",
+              "on-surface": "#e3e2e8",
+              "surface-container-highest": "#343439",
+              "surface-container-low": "#1a1b20",
+              "surface-variant": "#343439",
+              "on-surface-variant": "#bacbbf",
+              "on-primary": "#003824",
+              "on-secondary-container": "#aeb9d0",
+              "on-tertiary": "#452b00",
+              "on-primary-fixed-variant": "#005236",
+              "on-tertiary-fixed-variant": "#633f00",
+              "on-secondary-fixed-variant": "#3c475a",
+              "on-primary-fixed": "#002114",
+              "secondary-fixed-dim": "#bcc7de",
+              "secondary-fixed": "#d8e3fb",
+              "primary-container": "#00e5a0",
+              "on-error-container": "#ffdad6",
+              "error": "#ffb4ab",
+              "on-error": "#690005",
+              "inverse-on-surface": "#2f3035",
+              "error-container": "#93000a",
+              "secondary-container": "#3e495d",
+              "on-background": "#e3e2e8",
+              "primary-fixed-dim": "#00e29e",
+              "outline-variant": "#3b4a41",
+              "outline": "#84958a",
+              "background": "#0A0B0F",
+              "tertiary": "#ffe1bd",
+              "inverse-primary": "#006c49",
+              "surface-container-lowest": "#0d0e12",
+              "primary": "#00E5A0",
+              "on-tertiary-fixed": "#291800",
+              "on-secondary-fixed": "#111c2d",
+              "surface-tint": "#00e29e",
+              "tertiary-fixed-dim": "#ffb955",
+              "tertiary-fixed": "#ffddb4"
+            },
+            fontFamily: {
+              "headline": ["Bricolage Grotesque", "Space Grotesk"],
+              "body": ["DM Sans", "Inter"],
+              "mono": ["JetBrains Mono"]
+            },
+            borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
+          },
+        },
+      }
+    </script>
+<style>
+      body {
+        font-family: 'DM Sans', sans-serif;
+        background-color: #0A0B0F;
+        color: #e3e2e8;
+      }
+      .font-headline { font-family: 'Bricolage Grotesque', sans-serif; }
+      .font-mono { font-family: 'JetBrains Mono', monospace; }
+      .glass {
+        background: rgba(255, 255, 255, 0.04);
+        backdrop-filter: blur(12px);
+      }
+      .critical-glow {
+        box-shadow: 0 0 20px rgba(255, 77, 77, 0.15);
+      }
+    </style>
+</head>
+<body class="flex min-h-screen">
+<!-- SideNavBar -->
+<aside class="h-screen w-64 fixed left-0 top-0 bg-[#111318] flex flex-col p-4 gap-2 z-50">
+<div class="flex items-center gap-3 px-2 py-4 mb-6">
+<div class="w-8 h-8 rounded bg-primary-container flex items-center justify-center">
+<span class="material-symbols-outlined text-on-primary" data-icon="security">security</span>
+</div>
+<div>
+<h1 class="text-[#00E5A0] font-bold text-lg leading-none">AIStart360</h1>
+<p class="text-slate-500 text-xs mt-1">Risk Control</p>
+</div>
+</div>
+<nav class="flex-1 space-y-1">
+<a class="flex items-center gap-3 px-3 py-2 text-slate-500 hover:bg-[#1f1f24] hover:text-[#00E5A0] rounded-lg transition-all group" href="#">
+<span class="material-symbols-outlined text-lg" data-icon="dashboard">dashboard</span>
+<span class="text-sm font-medium">Dashboard</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 text-[#00E5A0] bg-[#1f1f24] rounded-lg scale-[0.98] transition-all" href="#">
+<span class="material-symbols-outlined text-lg" data-icon="security" style="font-variation-settings: 'FILL' 1;">security</span>
+<span class="text-sm font-medium">Risk Assessment</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 text-slate-500 hover:bg-[#1f1f24] hover:text-[#00E5A0] rounded-lg transition-all" href="#">
+<span class="material-symbols-outlined text-lg" data-icon="shield_with_heart">shield_with_heart</span>
+<span class="text-sm font-medium">Mitigation Plans</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 text-slate-500 hover:bg-[#1f1f24] hover:text-[#00E5A0] rounded-lg transition-all" href="#">
+<span class="material-symbols-outlined text-lg" data-icon="receipt_long">receipt_long</span>
+<span class="text-sm font-medium">Audit Logs</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 text-slate-500 hover:bg-[#1f1f24] hover:text-[#00E5A0] rounded-lg transition-all" href="#">
+<span class="material-symbols-outlined text-lg" data-icon="verified_user">verified_user</span>
+<span class="text-sm font-medium">Compliance</span>
+</a>
+</nav>
+<div class="mt-auto pt-4 border-t border-slate-800/50 space-y-1">
+<button class="w-full bg-gradient-to-br from-[#6effc0] to-[#00e5a0] text-[#003824] font-bold py-2.5 rounded-lg text-sm mb-4 transition-transform active:scale-95">
+                Generate Report
+            </button>
+<a class="flex items-center gap-3 px-3 py-2 text-slate-500 hover:bg-[#1f1f24] hover:text-[#00E5A0] rounded-lg transition-all" href="#">
+<span class="material-symbols-outlined text-lg" data-icon="help_outline">help_outline</span>
+<span class="text-sm font-medium">Support</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 text-slate-500 hover:bg-[#1f1f24] hover:text-[#00E5A0] rounded-lg transition-all" href="#">
+<span class="material-symbols-outlined text-lg" data-icon="logout">logout</span>
+<span class="text-sm font-medium">Sign Out</span>
+</a>
+</div>
+</aside>
+<!-- Main Wrapper -->
+<div class="flex-1 ml-64 flex flex-col min-h-screen">
+<!-- TopAppBar -->
+<header class="sticky top-0 w-full px-8 py-4 bg-[#0A0B0F]/80 backdrop-blur-md z-40 flex justify-between items-center">
+<div class="flex items-center gap-4">
+<span class="text-xs font-mono px-2 py-1 bg-error-container/20 text-[#FF4D4D] rounded uppercase tracking-widest border border-[#FF4D4D]/20">Strictly Confidential</span>
+<h2 class="font-headline text-xl font-bold tracking-tight text-[#00E5A0]">Institutional Intelligence</h2>
+</div>
+<div class="flex items-center gap-6">
+<nav class="hidden md:flex gap-8 items-center text-sm font-medium">
+<a class="text-slate-400 hover:text-white transition-colors" href="#">Overview</a>
+<a class="text-[#00E5A0] border-b-2 border-[#00E5A0] pb-1" href="#">Risk Matrix</a>
+<a class="text-slate-400 hover:text-white transition-colors" href="#">Mitigation</a>
+<a class="text-slate-400 hover:text-white transition-colors" href="#">Reports</a>
+</nav>
+<div class="flex items-center gap-4 border-l border-slate-800 pl-6">
+<button class="text-slate-400 hover:text-[#00E5A0] transition-colors">
+<span class="material-symbols-outlined" data-icon="notifications">notifications</span>
+</button>
+<button class="text-slate-400 hover:text-[#00E5A0] transition-colors">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+</button>
+<img alt="User profile" class="w-8 h-8 rounded-full ring-2 ring-primary/20" data-alt="Close up professional headshot of a senior executive in a dark suit with neutral background and soft dramatic lighting" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAJI9q9dO-T2MoRwhOB8QYDz9SsST-xru6k4L2_uSHxVUJ5K0OIegdkAQufF-qeh94-XIGJN4Coltr7FpR9Tv1xlsRmvL1BZrrzzrkuBjgjTdHuAdnxHfLRtXNGRVu98j4YUE_W486asKt6dmXqki7kmXsrh3YWYeXJW8g2wmuvXvDgd2TyDdFvwh7_x5624VP6xurPk5kG6YHIosGqcmzrsJJNwHP3Qkq-ZI--3pNG42HQgzEB09NqbS2LKEmZEBVDjzog6ylcAMk"/>
+</div>
+</div>
+</header>
+<!-- Content Canvas -->
+<main class="p-8 flex-1 space-y-12 max-w-7xl mx-auto w-full">
+<!-- Hero Section -->
+<section class="flex flex-col md:flex-row md:items-end justify-between gap-6">
+<div>
+<h1 class="font-headline text-5xl md:text-6xl font-extrabold tracking-tight mb-3">Risk Assessment &amp; Mitigation</h1>
+<p class="text-slate-400 text-lg max-w-2xl font-body">Strategic Control &amp; Threat Neutralization</p>
+</div>
+<div class="bg-[#111318] p-4 rounded-xl flex items-center gap-6">
+<div class="flex flex-col">
+<span class="text-[10px] uppercase tracking-wider text-slate-500 font-mono mb-1">System Health</span>
+<span class="text-2xl font-mono text-[#00E5A0]">94.2%</span>
+</div>
+<div class="h-10 w-px bg-slate-800"></div>
+<div class="flex flex-col">
+<span class="text-[10px] uppercase tracking-wider text-slate-500 font-mono mb-1">Active Threats</span>
+<span class="text-2xl font-mono text-[#FF4D4D]">03</span>
+</div>
+</div>
+</section>
+<!-- Grid Layout -->
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+<!-- Risk Matrix Overview (Left Column) -->
+<div class="lg:col-span-5 space-y-6">
+<div class="bg-[#111318] p-8 rounded-2xl relative overflow-hidden">
+<div class="flex justify-between items-start mb-10">
+<h3 class="font-headline text-2xl font-bold">Risk Matrix Distribution</h3>
+<span class="material-symbols-outlined text-slate-600" data-icon="info">info</span>
+</div>
+<!-- 2x2 Grid -->
+<div class="grid grid-cols-2 grid-rows-2 gap-4 h-[320px]">
+<!-- High Prob / High Impact -->
+<div class="bg-error-container/10 border border-[#FF4D4D]/20 rounded-xl p-4 flex flex-col justify-between group hover:bg-error-container/20 transition-all">
+<span class="text-[10px] font-mono text-[#FF4D4D] uppercase tracking-tighter">Critical</span>
+<div class="flex flex-wrap gap-2">
+<div class="w-3 h-3 rounded-full bg-[#FF4D4D] animate-pulse"></div>
+</div>
+</div>
+<!-- Low Prob / High Impact -->
+<div class="bg-surface-container-low rounded-xl p-4 flex flex-col justify-between">
+<span class="text-[10px] font-mono text-slate-500 uppercase tracking-tighter">Strategic</span>
+<div class="flex flex-wrap gap-2">
+<div class="w-3 h-3 rounded-full bg-tertiary-container/40"></div>
+</div>
+</div>
+<!-- High Prob / Low Impact -->
+<div class="bg-surface-container-low rounded-xl p-4 flex flex-col justify-between">
+<span class="text-[10px] font-mono text-slate-500 uppercase tracking-tighter">Operational</span>
+<div class="flex flex-wrap gap-2">
+<div class="w-3 h-3 rounded-full bg-secondary-container"></div>
+<div class="w-3 h-3 rounded-full bg-secondary-container"></div>
+</div>
+</div>
+<!-- Low Prob / Low Impact -->
+<div class="bg-surface-container-low rounded-xl p-4 flex flex-col justify-between">
+<span class="text-[10px] font-mono text-slate-500 uppercase tracking-tighter">Minor</span>
+<div class="flex flex-wrap gap-2">
+<div class="w-3 h-3 rounded-full bg-slate-700"></div>
+</div>
+</div>
+</div>
+<div class="mt-8 flex justify-between text-[10px] font-mono uppercase text-slate-500 px-2">
+<span>Probability →</span>
+<span class="text-right">Impact →</span>
+</div>
+</div>
+<!-- Mitigation Roadmap -->
+<div class="bg-[#111318] p-8 rounded-2xl">
+<h3 class="font-headline text-2xl font-bold mb-8">Implementation Roadmap</h3>
+<div class="relative pl-8 border-l border-slate-800 space-y-12">
+<!-- Phase 1 -->
+<div class="relative">
+<div class="absolute -left-[41px] top-1 w-4 h-4 rounded-full bg-[#00E5A0] ring-4 ring-[#00E5A0]/20"></div>
+<h4 class="font-bold text-[#00E5A0] text-sm font-mono mb-1">Phase 1: Neutralize</h4>
+<p class="text-sm text-slate-400">Immediate containment of revenue leaks and critical compliance gaps.</p>
+</div>
+<!-- Phase 2 -->
+<div class="relative">
+<div class="absolute -left-[41px] top-1 w-4 h-4 rounded-full bg-slate-700 border-2 border-slate-900"></div>
+<h4 class="font-bold text-white text-sm font-mono mb-1">Phase 2: Fortify</h4>
+<p class="text-sm text-slate-400">Integration of AI-driven lead qualification and automated audit trails.</p>
+</div>
+<!-- Phase 3 -->
+<div class="relative">
+<div class="absolute -left-[41px] top-1 w-4 h-4 rounded-full bg-slate-700 border-2 border-slate-900"></div>
+<h4 class="font-bold text-slate-500 text-sm font-mono mb-1">Phase 3: Optimize</h4>
+<p class="text-sm text-slate-400">Continuous model refinement to ensure sustained ISO readiness.</p>
+</div>
+</div>
+</div>
+</div>
+<!-- Prioritized Risk List (Right Column) -->
+<div class="lg:col-span-7 space-y-6">
+<div class="flex items-center justify-between">
+<h3 class="font-headline text-2xl font-bold">Prioritized Risk Vectoring</h3>
+<span class="font-mono text-xs text-slate-500 uppercase">Sort by: Intelligence Rank</span>
+</div>
+<!-- Card 1 (CRITICAL) -->
+<div class="bg-[#111318] rounded-2xl overflow-hidden border-l-4 border-[#FF4D4D] critical-glow transition-all hover:translate-x-1">
+<div class="p-6">
+<div class="flex justify-between items-start mb-4">
+<div>
+<span class="inline-block px-2 py-0.5 rounded bg-error-container/20 text-[#FF4D4D] text-[10px] font-mono uppercase mb-2">Critical Priority</span>
+<h4 class="text-xl font-bold font-headline">Revenue Concentration Risk</h4>
+</div>
+<div class="text-right">
+<div class="text-3xl font-mono text-[#FF4D4D]">88<span class="text-sm text-slate-500">/100</span></div>
+<span class="text-[10px] font-mono uppercase text-slate-500">Risk Score</span>
+</div>
+</div>
+<p class="text-slate-400 text-sm mb-6 leading-relaxed">Explanation: Top 3 clients provide 65% of revenue. High sensitivity to client retention cycles.</p>
+<!-- Mitigation Internal Card -->
+<div class="bg-surface-container-lowest rounded-xl p-5 border border-slate-800/50">
+<div class="flex items-center gap-2 mb-3">
+<span class="material-symbols-outlined text-[#00E5A0] text-lg" data-icon="psychology">psychology</span>
+<span class="text-xs font-mono uppercase tracking-wider text-[#00E5A0]">AI Recommended Mitigation</span>
+</div>
+<h5 class="font-bold text-white mb-2">Tiered Pricing &amp; Targeted Segment Expansion</h5>
+<div class="grid grid-cols-2 gap-4 mt-4">
+<div>
+<p class="text-[10px] text-slate-500 uppercase font-mono">Expected Outcome</p>
+<p class="text-sm text-slate-200">-25% concentration (12mo)</p>
+</div>
+<div>
+<p class="text-[10px] text-slate-500 uppercase font-mono">Projected ROI</p>
+<p class="text-sm text-[#00E5A0] font-bold">+15% ARR growth</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Card 2 (WARNING) -->
+<div class="bg-[#111318] rounded-2xl overflow-hidden border-l-4 border-tertiary-container transition-all hover:translate-x-1">
+<div class="p-6">
+<div class="flex justify-between items-start mb-4">
+<div>
+<span class="inline-block px-2 py-0.5 rounded bg-tertiary-container/10 text-tertiary-container text-[10px] font-mono uppercase mb-2">Operational Warning</span>
+<h4 class="text-xl font-bold font-headline">Operational Margin Erosion</h4>
+</div>
+<div class="text-right">
+<div class="text-3xl font-mono text-tertiary-container">64<span class="text-sm text-slate-500">/100</span></div>
+<span class="text-[10px] font-mono uppercase text-slate-500">Risk Score</span>
+</div>
+</div>
+<p class="text-slate-400 text-sm mb-6 leading-relaxed">Explanation: CAC rising by 12% monthly in the cleaning segment. Channel saturation detected.</p>
+<div class="bg-surface-container-lowest rounded-xl p-5 border border-slate-800/50">
+<div class="flex items-center gap-2 mb-3">
+<span class="material-symbols-outlined text-[#00E5A0] text-lg" data-icon="auto_awesome">auto_awesome</span>
+<span class="text-xs font-mono uppercase tracking-wider text-[#00E5A0]">AI Recommended Mitigation</span>
+</div>
+<h5 class="font-bold text-white mb-2">Automated Lead Qualification &amp; Dynamic Pricing</h5>
+<div class="grid grid-cols-2 gap-4 mt-4">
+<div>
+<p class="text-[10px] text-slate-500 uppercase font-mono">Expected Outcome</p>
+<p class="text-sm text-slate-200">+3.5% Net Margin</p>
+</div>
+<div>
+<p class="text-[10px] text-slate-500 uppercase font-mono">Efficiency Gain</p>
+<p class="text-sm text-[#00E5A0] font-bold">+22% Lead-to-Close</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Card 3 (STABLE) -->
+<div class="bg-[#111318] rounded-2xl overflow-hidden border-l-4 border-secondary-container transition-all hover:translate-x-1">
+<div class="p-6">
+<div class="flex justify-between items-start mb-4">
+<div>
+<span class="inline-block px-2 py-0.5 rounded bg-secondary-container/20 text-secondary text-[10px] font-mono uppercase mb-2">Routine Monitoring</span>
+<h4 class="text-xl font-bold font-headline">Security &amp; Compliance Drift</h4>
+</div>
+<div class="text-right">
+<div class="text-3xl font-mono text-secondary">24<span class="text-sm text-slate-500">/100</span></div>
+<span class="text-[10px] font-mono uppercase text-slate-500">Risk Score</span>
+</div>
+</div>
+<p class="text-slate-400 text-sm mb-6 leading-relaxed">Explanation: Routine audit pending for ISO 27001. No active vulnerabilities detected.</p>
+<div class="bg-surface-container-lowest rounded-xl p-5 border border-slate-800/50">
+<div class="flex items-center gap-2 mb-3">
+<span class="material-symbols-outlined text-[#00E5A0] text-lg" data-icon="verified">verified</span>
+<span class="text-xs font-mono uppercase tracking-wider text-[#00E5A0]">AI Recommended Mitigation</span>
+</div>
+<h5 class="font-bold text-white mb-2">Continuous Compliance Monitoring</h5>
+<div class="grid grid-cols-2 gap-4 mt-4">
+<div>
+<p class="text-[10px] text-slate-500 uppercase font-mono">Audit Status</p>
+<p class="text-sm text-slate-200">100% Readiness</p>
+</div>
+<div>
+<p class="text-[10px] text-slate-500 uppercase font-mono">Interval</p>
+<p class="text-sm text-[#00E5A0] font-bold">Real-time Sync</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Bottom CTA / Stats -->
+<section class="grid grid-cols-1 md:grid-cols-3 gap-6 pt-12">
+<div class="bg-gradient-to-br from-[#111318] to-[#0A0B0F] p-8 rounded-2xl border border-slate-800/50">
+<span class="material-symbols-outlined text-primary mb-4" data-icon="analytics">analytics</span>
+<h5 class="text-sm font-mono text-slate-500 uppercase mb-2">Projected Recovery</h5>
+<div class="text-4xl font-headline font-bold text-white tracking-tighter">$1.24M <span class="text-xs text-[#00E5A0] font-mono">+8.4%</span></div>
+</div>
+<div class="bg-gradient-to-br from-[#111318] to-[#0A0B0F] p-8 rounded-2xl border border-slate-800/50">
+<span class="material-symbols-outlined text-primary mb-4" data-icon="speed">speed</span>
+<h5 class="text-sm font-mono text-slate-500 uppercase mb-2">Mitigation Velocity</h5>
+<div class="text-4xl font-headline font-bold text-white tracking-tighter">Fast <span class="text-xs text-[#00E5A0] font-mono">v1.2</span></div>
+</div>
+<div class="relative group cursor-pointer overflow-hidden rounded-2xl">
+<div class="absolute inset-0 bg-primary opacity-90 group-hover:opacity-100 transition-opacity"></div>
+<div class="relative p-8 h-full flex flex-col justify-between">
+<div class="text-on-primary font-bold font-headline text-2xl leading-tight">Execute Automated Strategy</div>
+<div class="flex items-center gap-2 text-on-primary font-mono text-xs uppercase font-bold tracking-widest">
+                            Authorized Access Only <span class="material-symbols-outlined text-sm" data-icon="arrow_forward">arrow_forward</span>
+</div>
+</div>
+</div>
+</section>
+</main>
+<!-- Footer Spacer -->
+<footer class="p-8 text-center text-slate-600 text-[10px] font-mono uppercase tracking-[0.2em]">
+            AIStart360 Institutional Intelligence • Engine v4.0.2 • Encrypted Session
+        </footer>
+</div>
+</body></html>

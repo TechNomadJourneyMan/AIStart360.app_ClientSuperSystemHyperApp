@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="ru"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Institutional Intelligence | Network Graph</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;600;700;800&amp;family=DM+Sans:wght@400;500;700&amp;family=JetBrains+Mono:wght@400;700&amp;family=Space+Grotesk:wght@400;600;700&amp;family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "on-secondary-container": "#aeb9d0",
+              "inverse-on-surface": "#2f3035",
+              "secondary": "#bcc7de",
+              "surface": "#121317",
+              "error": "#ffb4ab",
+              "tertiary-container": "#ffbd60",
+              "on-error-container": "#ffdad6",
+              "surface-container": "#1f1f24",
+              "primary-fixed-dim": "#00e29e",
+              "surface-container-high": "#292a2e",
+              "secondary-fixed-dim": "#bcc7de",
+              "on-primary-fixed": "#002114",
+              "secondary-fixed": "#d8e3fb",
+              "primary-container": "#00e5a0",
+              "primary": "#6effc0",
+              "tertiary-fixed": "#ffddb4",
+              "surface-variant": "#343439",
+              "on-primary": "#003824",
+              "outline": "#84958a",
+              "on-tertiary-fixed": "#291800",
+              "on-tertiary": "#452b00",
+              "on-tertiary-container": "#754b00",
+              "on-error": "#690005",
+              "surface-container-highest": "#343439",
+              "on-surface": "#e3e2e8",
+              "surface-container-low": "#1a1b20",
+              "on-secondary": "#263143",
+              "on-primary-container": "#006141",
+              "on-surface-variant": "#bacbbf",
+              "on-primary-fixed-variant": "#005236",
+              "tertiary-fixed-dim": "#ffb955",
+              "primary-fixed": "#47ffb8",
+              "inverse-primary": "#006c49",
+              "error-container": "#93000a",
+              "on-tertiary-fixed-variant": "#633f00",
+              "surface-dim": "#121317",
+              "on-secondary-fixed": "#111c2d",
+              "tertiary": "#ffe1bd",
+              "surface-bright": "#38393e",
+              "outline-variant": "#3b4a41",
+              "on-secondary-fixed-variant": "#3c475a",
+              "secondary-container": "#3e495d",
+              "surface-container-lowest": "#0d0e12",
+              "surface-tint": "#00e29e",
+              "on-background": "#e3e2e8",
+              "inverse-surface": "#e3e2e8",
+              "background": "#0A0B0F"
+            },
+            fontFamily: {
+              "headline": ["Bricolage Grotesque", "Space Grotesk", "sans-serif"],
+              "body": ["DM Sans", "Inter", "sans-serif"],
+              "label": ["DM Sans", "sans-serif"],
+              "mono": ["JetBrains Mono", "monospace"]
+            },
+            borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
+          },
+        },
+      }
+    </script>
+<style>
+      body {
+        background-color: #0A0B0F;
+        color: #e3e2e8;
+        font-family: 'DM Sans', sans-serif;
+      }
+      .glass-panel {
+        background: rgba(255, 255, 255, 0.04);
+        backdrop-filter: blur(12px);
+      }
+      .node-pulse {
+        animation: pulse 3s infinite;
+      }
+      @keyframes pulse {
+        0% { opacity: 0.4; }
+        50% { opacity: 0.8; }
+        100% { opacity: 0.4; }
+      }
+      .material-symbols-outlined {
+        font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+      }
+    </style>
+</head>
+<body class="overflow-x-hidden selection:bg-primary-container selection:text-on-primary-container">
+<!-- SideNavBar -->
+<nav class="fixed left-0 top-0 h-screen flex flex-col p-4 space-y-2 bg-[#111318] w-64 z-50 shadow-2xl shadow-black/40">
+<div class="mb-8 px-4 py-2">
+<h1 class="text-lg font-bold text-white font-headline">Network Intelligence</h1>
+<p class="text-xs text-[#8B95A3] font-body">Strategic Analysis</p>
+</div>
+<div class="space-y-1 flex-grow">
+<a class="flex items-center space-x-3 px-4 py-3 text-[#8B95A3] hover:bg-[#1f1f24] hover:text-white transition-all rounded-lg group" href="#">
+<span class="material-symbols-outlined text-xl">dashboard</span>
+<span class="font-medium">Dashboard</span>
+</a>
+<a class="flex items-center space-x-3 px-4 py-3 bg-[#1f1f24] text-[#00E5A0] rounded-lg translate-x-1 duration-200" href="#">
+<span class="material-symbols-outlined text-xl">hub</span>
+<span class="font-medium">Graph Explorer</span>
+</a>
+<a class="flex items-center space-x-3 px-4 py-3 text-[#8B95A3] hover:bg-[#1f1f24] hover:text-white transition-all rounded-lg group" href="#">
+<span class="material-symbols-outlined text-xl">corporate_fare</span>
+<span class="font-medium">Entity Registry</span>
+</a>
+<a class="flex items-center space-x-3 px-4 py-3 text-[#8B95A3] hover:bg-[#1f1f24] hover:text-white transition-all rounded-lg group" href="#">
+<span class="material-symbols-outlined text-xl">trending_up</span>
+<span class="font-medium">Growth Metrics</span>
+</a>
+<a class="flex items-center space-x-3 px-4 py-3 text-[#8B95A3] hover:bg-[#1f1f24] hover:text-white transition-all rounded-lg group" href="#">
+<span class="material-symbols-outlined text-xl">description</span>
+<span class="font-medium">Reports</span>
+</a>
+</div>
+<div class="pt-4 border-t border-outline-variant/10 space-y-1">
+<button class="w-full mb-4 py-2 bg-gradient-to-br from-[#6effc0] to-[#00e5a0] text-[#003824] font-bold rounded-lg text-sm transition-transform active:scale-95">
+                Export Data
+            </button>
+<a class="flex items-center space-x-3 px-4 py-2 text-[#8B95A3] hover:text-white transition-colors" href="#">
+<span class="material-symbols-outlined text-lg">help_outline</span>
+<span class="text-sm">Support</span>
+</a>
+<a class="flex items-center space-x-3 px-4 py-2 text-[#8B95A3] hover:text-white transition-colors" href="#">
+<span class="material-symbols-outlined text-lg">archive</span>
+<span class="text-sm">Archive</span>
+</a>
+</div>
+</nav>
+<!-- Main Content Canvas -->
+<main class="ml-64 min-h-screen relative flex flex-col">
+<!-- TopAppBar -->
+<header class="flex justify-between items-center w-full px-8 py-4 bg-[#0A0B0F] sticky top-0 z-40">
+<div class="flex items-center space-x-8">
+<span class="text-xl font-bold tracking-tight text-[#00E5A0] font-headline">Institutional Intelligence</span>
+<nav class="hidden md:flex items-center space-x-6 text-sm font-medium">
+<a class="text-[#8B95A3] hover:text-[#00E5A0] transition-colors duration-200" href="#">Network</a>
+<a class="text-[#00E5A0] border-b-2 border-[#00E5A0] pb-1" href="#">Partnerships</a>
+<a class="text-[#8B95A3] hover:text-[#00E5A0] transition-colors duration-200" href="#">Clients</a>
+<a class="text-[#8B95A3] hover:text-[#00E5A0] transition-colors duration-200" href="#">Analytics</a>
+</nav>
+</div>
+<div class="flex items-center space-x-4">
+<button class="p-2 text-[#8B95A3] hover:text-[#00E5A0] transition-colors">
+<span class="material-symbols-outlined">notifications</span>
+</button>
+<button class="p-2 text-[#8B95A3] hover:text-[#00E5A0] transition-colors">
+<span class="material-symbols-outlined">settings</span>
+</button>
+<div class="w-8 h-8 rounded-full bg-surface-container overflow-hidden ring-1 ring-[#00E5A0]/20">
+<img alt="User Profile" data-alt="professional headshot of a middle-aged male executive with sharp lighting and clean corporate aesthetic" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCKPZe6O_q7qrImQg1qlqskJN_qXYMsXUDDqC3-jPR-CKV8QDQiknLvf5dYRZHbOQkEG6-RPeTbBkx-tHkFMbp3PBq_k0eNflf5cEMP0x7qagRGd2oIDPsNDkrcebP59Tr77OQ1mhV8eIoMEDzKCEwilb2r2qF9a34tBWJ_U0N2_59xQW4wD1MKXaeN9rZyylM3uooGDm1awIr_Qx8KA7-VtOTH6RF2PFk3wgKjFMXkf_upKc4yTK1bpBuVhkBhQYNPB1y85-2se3A"/>
+</div>
+</div>
+</header>
+<section class="p-8 space-y-8 flex-grow">
+<!-- Hero Section -->
+<div class="flex flex-col md:flex-row justify-between items-end gap-6">
+<div class="space-y-2 max-w-2xl">
+<h2 class="text-4xl md:text-5xl font-extrabold font-headline leading-tight">
+                        Сетевой Граф <br/> <span class="text-[#00E5A0]">Институциональных Связей</span>
+</h2>
+<p class="text-[#8B95A3] text-lg font-body">Анализ экосистемы партнерств и клиентского капитала в реальном времени.</p>
+</div>
+<div class="bg-surface-container-low p-6 rounded-xl flex items-center space-x-6 min-w-[280px]">
+<div class="space-y-1">
+<span class="text-xs uppercase tracking-widest text-[#8B95A3] font-label">Network Health Score</span>
+<div class="flex items-baseline space-x-2">
+<span class="text-4xl font-mono font-bold text-[#00E5A0]">94.2</span>
+<span class="px-2 py-0.5 rounded bg-primary-container/10 text-[#00E5A0] text-[10px] font-bold border border-[#00E5A0]/20">STABLE</span>
+</div>
+</div>
+<div class="h-12 w-px bg-outline-variant/20"></div>
+<div class="flex flex-col">
+<span class="text-xs text-[#8B95A3] mb-1">Risk Factor</span>
+<span class="text-sm font-mono text-error">LOW</span>
+</div>
+</div>
+</div>
+<!-- Visualization Grid -->
+<div class="grid grid-cols-1 lg:grid-cols-4 gap-6 min-h-[600px]">
+<!-- Main Visualization Area -->
+<div class="lg:col-span-3 relative rounded-2xl overflow-hidden bg-[#0D0E12] group">
+<!-- Network Background Canvas -->
+<div class="absolute inset-0 opacity-40">
+<div class="absolute top-1/4 left-1/4 w-2 h-2 rounded-full bg-blue-400 shadow-[0_0_15px_rgba(96,165,250,0.8)]"></div>
+<div class="absolute top-1/2 left-1/2 w-4 h-4 rounded-full bg-[#00E5A0] shadow-[0_0_20px_rgba(0,229,160,0.8)] node-pulse"></div>
+<div class="absolute top-1/3 right-1/4 w-2.5 h-2.5 rounded-full bg-amber-400 shadow-[0_0_15px_rgba(251,191,36,0.8)]"></div>
+<!-- Simulated lines -->
+<svg class="absolute inset-0 w-full h-full stroke-current text-white/10" xmlns="http://www.w3.org/2000/svg">
+<line stroke-dasharray="4" stroke-width="1.5" x1="25%" x2="50%" y1="25%" y2="50%"></line>
+<line class="text-[#00E5A0]/20" stroke-width="2.5" x1="75%" x2="50%" y1="33%" y2="50%"></line>
+<line stroke-dasharray="2" stroke-width="1" x1="10%" x2="50%" y1="80%" y2="50%"></line>
+<circle cx="50%" cy="50%" fill="none" r="200" stroke-dasharray="8" stroke-width="0.5"></circle>
+</svg>
+</div>
+<!-- Overlay Controls -->
+<div class="absolute top-6 left-6 flex space-x-2">
+<button class="glass-panel px-4 py-2 rounded-lg text-sm font-medium border border-white/5 hover:bg-white/10 transition-colors">Клиенты</button>
+<button class="glass-panel px-4 py-2 rounded-lg text-sm font-medium border border-white/5 hover:bg-white/10 transition-colors">Партнеры</button>
+<button class="glass-panel px-4 py-2 rounded-lg text-sm font-medium border border-white/5 hover:bg-white/10 transition-colors">Потенциал</button>
+</div>
+<div class="absolute bottom-6 left-6 glass-panel p-4 rounded-xl border border-white/5 space-y-3">
+<p class="text-xs font-bold text-[#8B95A3] uppercase tracking-wider">Legend</p>
+<div class="flex flex-col space-y-2">
+<div class="flex items-center space-x-3">
+<span class="w-3 h-3 rounded-full bg-[#00E5A0]"></span>
+<span class="text-xs text-on-surface">Client Node</span>
+</div>
+<div class="flex items-center space-x-3">
+<span class="w-3 h-3 rounded-full bg-blue-400"></span>
+<span class="text-xs text-on-surface">Strategic Partner</span>
+</div>
+<div class="flex items-center space-x-3">
+<span class="w-3 h-3 rounded-full bg-amber-400"></span>
+<span class="text-xs text-on-surface">Market Competitor</span>
+</div>
+</div>
+</div>
+<!-- Graph Empty State / Placeholder -->
+<div class="h-full flex items-center justify-center pointer-events-none">
+<div class="text-center space-y-2 opacity-20">
+<span class="material-symbols-outlined text-6xl">blur_on</span>
+<p class="font-mono text-sm tracking-widest uppercase">Initializing Neural Core...</p>
+</div>
+</div>
+</div>
+<!-- Stats Sidebar -->
+<aside class="space-y-6">
+<!-- High Level Metrics -->
+<div class="bg-surface-container-low p-6 rounded-2xl space-y-6">
+<div class="space-y-1">
+<p class="text-xs text-[#8B95A3] font-label">Total Entities</p>
+<div class="flex items-baseline space-x-3">
+<h3 class="text-3xl font-mono font-bold">1,284</h3>
+<span class="text-xs text-[#00E5A0] font-mono">+12% MoM</span>
+</div>
+</div>
+<div class="space-y-1">
+<p class="text-xs text-[#8B95A3] font-label">Strategic Partnerships</p>
+<h3 class="text-3xl font-mono font-bold">48</h3>
+<p class="text-[10px] text-[#8B95A3]">Active connections with high velocity</p>
+</div>
+<div class="space-y-1">
+<p class="text-xs text-[#8B95A3] font-label">Ecosystem Potential</p>
+<h3 class="text-3xl font-mono font-bold text-[#00E5A0]">~5.4 млрд ₸</h3>
+</div>
+</div>
+<!-- Top Influencers -->
+<div class="bg-surface-container-low p-6 rounded-2xl space-y-4">
+<h4 class="text-sm font-bold font-headline uppercase tracking-wide">Top Influencers</h4>
+<div class="space-y-4">
+<div class="flex items-center justify-between p-2 hover:bg-[#1f1f24] rounded-lg transition-colors cursor-pointer group">
+<div class="flex items-center space-x-3">
+<img alt="Influencer" class="w-10 h-10 rounded-lg bg-surface-container object-cover" data-alt="portrait of a focused business leader in a dark suit with architectural background blur" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCSkEKR6znHCkTXZ4EJrBrgYPfgdxXhwXVrROOJbSS4KZw9VlbxHk-s0ipB5FjAf1lgO_ug2BHgrUJYIme-hOgjl8aAfmsa3BEfYDwgds_DfaT8QGYuVNaxumMhqHjP16UL2xZ25N531dobbgfUl65yG79p-cy8qMHpZAtfUCTM11qM2jxEDgw9kuGHHwDnwrgzcPkmcNA847_Vl8qRCGQHDfDncqZk9u-sNrgxOC2XAU9DdVNzZWmmL3dQ5Q7HcMwDz7C2zHBCFQI"/>
+<div>
+<p class="text-sm font-bold leading-none">Kaspi Bank JSC</p>
+<p class="text-[10px] text-[#8B95A3] mt-1">Tier-1 Partner</p>
+</div>
+</div>
+<div class="text-right">
+<span class="text-xs font-mono text-[#00E5A0]">214 cnx</span>
+</div>
+</div>
+<div class="flex items-center justify-between p-2 hover:bg-[#1f1f24] rounded-lg transition-colors cursor-pointer group">
+<div class="flex items-center space-x-3">
+<img alt="Influencer" class="w-10 h-10 rounded-lg bg-surface-container object-cover" data-alt="confident professional woman in a modern office with sleek neutral tones and soft lighting" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBWS9H7cm9ePP3yLFoVNoo7AT_ldDoQsAzQAL5zfMXJx-0arzdGIh5_ynkKPMQDzMg-uPZwuVmlcghLFr-nMYC4p_oCvjuq0NiGZVEL4BN2_7G7ug_T2ZibqhPQjOKiwcFtTzk9jYEoVnT1HjQBB3R5C00fAXrDLPKkizfBQjK5b-9gDwpyEno57bKkZIjkWfED_VUhasf_KWydARJ_4G_Y4VJ3TFVbSegG2cKS6ixCW4xtCMlYQ-FRAw5WcXFDlMwo97cut3n5R2c"/>
+<div>
+<p class="text-sm font-bold leading-none">AIFC Hub</p>
+<p class="text-[10px] text-[#8B95A3] mt-1">Institutional</p>
+</div>
+</div>
+<div class="text-right">
+<span class="text-xs font-mono text-[#00E5A0]">182 cnx</span>
+</div>
+</div>
+<div class="flex items-center justify-between p-2 hover:bg-[#1f1f24] rounded-lg transition-colors cursor-pointer group">
+<div class="flex items-center space-x-3">
+<img alt="Influencer" class="w-10 h-10 rounded-lg bg-surface-container object-cover" data-alt="corporate headshot of a smiling young male entrepreneur with warm natural lighting and depth of field" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBnGkP_v2sALd-p2HoUVDtVG9ozw4Z8a7oB8UKFfOzdDdIONEKHr5bfimdrhWqMrMHwErh-0cyCMMGRnVWxR8jnbzekhwpxcUPI43oeMoxPLPr0Hk53LBdryls5ZNz3jPgsvLNiT33_NnWvGjfFm8DHsMAL61PNTnxH_64TAIgxWyYfQTxKBil-DciRcR55NJmJ06R6SxD6E4lpW_0Y9oogURYufOcl59MsBl3rR5MZjnm3E-5pxguCHWqOp-t8xcYrPUaYV-EI06A"/>
+<div>
+<p class="text-sm font-bold leading-none">Astana Motors</p>
+<p class="text-[10px] text-[#8B95A3] mt-1">Strategic Client</p>
+</div>
+</div>
+<div class="text-right">
+<span class="text-xs font-mono text-[#00E5A0]">94 cnx</span>
+</div>
+</div>
+</div>
+<button class="w-full py-2 text-xs font-mono text-[#8B95A3] hover:text-[#00E5A0] transition-colors border-t border-outline-variant/10 mt-2">
+                            VIEW ALL NETWORK NODES
+                        </button>
+</div>
+</aside>
+</div>
+<!-- Entity Registry (Bottom Table) -->
+<div class="bg-surface-container-low rounded-2xl overflow-hidden">
+<div class="p-6 border-b border-outline-variant/10 flex justify-between items-center">
+<h3 class="text-xl font-bold font-headline">Entity Registry</h3>
+<div class="flex space-x-4">
+<div class="relative">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-[#8B95A3] text-sm">search</span>
+<input class="bg-[#121317] border-none text-sm rounded-lg pl-10 pr-4 py-2 w-64 focus:ring-1 focus:ring-[#00E5A0]/30 transition-all" placeholder="Search nodes..." type="text"/>
+</div>
+<button class="p-2 bg-[#121317] rounded-lg hover:text-[#00E5A0] transition-colors">
+<span class="material-symbols-outlined text-sm">filter_list</span>
+</button>
+</div>
+</div>
+<div class="overflow-x-auto">
+<table class="w-full text-left border-collapse">
+<thead>
+<tr class="text-[10px] text-[#8B95A3] uppercase tracking-widest">
+<th class="px-6 py-4 font-semibold">Entity Name</th>
+<th class="px-6 py-4 font-semibold">Type</th>
+<th class="px-6 py-4 font-semibold">Strength</th>
+<th class="px-6 py-4 font-semibold">Last Interaction</th>
+<th class="px-6 py-4 font-semibold text-right">Value (₸)</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-outline-variant/5">
+<tr class="hover:bg-[#1f1f24] transition-colors group cursor-pointer">
+<td class="px-6 py-4">
+<div class="flex items-center space-x-3">
+<div class="w-8 h-8 rounded bg-[#00E5A0]/10 flex items-center justify-center">
+<span class="material-symbols-outlined text-[#00E5A0] text-sm">corporate_fare</span>
+</div>
+<span class="font-bold text-sm">Freedom Holding Corp.</span>
+</div>
+</td>
+<td class="px-6 py-4">
+<span class="px-2 py-1 rounded text-[10px] font-bold bg-blue-400/10 text-blue-400 border border-blue-400/20">PARTNER</span>
+</td>
+<td class="px-6 py-4">
+<div class="flex space-x-0.5">
+<div class="w-1.5 h-3 bg-[#00E5A0] rounded-full"></div>
+<div class="w-1.5 h-3 bg-[#00E5A0] rounded-full"></div>
+<div class="w-1.5 h-3 bg-[#00E5A0] rounded-full"></div>
+<div class="w-1.5 h-3 bg-[#00E5A0] rounded-full"></div>
+<div class="w-1.5 h-3 bg-[#00E5A0]/20 rounded-full"></div>
+</div>
+</td>
+<td class="px-6 py-4 text-xs font-mono text-[#8B95A3]">2023-11-24 14:12</td>
+<td class="px-6 py-4 text-right font-mono font-bold text-[#00E5A0]">1.2B</td>
+</tr>
+<tr class="hover:bg-[#1f1f24] transition-colors group cursor-pointer">
+<td class="px-6 py-4">
+<div class="flex items-center space-x-3">
+<div class="w-8 h-8 rounded bg-[#00E5A0]/10 flex items-center justify-center">
+<span class="material-symbols-outlined text-[#00E5A0] text-sm">store</span>
+</div>
+<span class="font-bold text-sm">KazMunayGas</span>
+</div>
+</td>
+<td class="px-6 py-4">
+<span class="px-2 py-1 rounded text-[10px] font-bold bg-[#00E5A0]/10 text-[#00E5A0] border border-[#00E5A0]/20">CLIENT</span>
+</td>
+<td class="px-6 py-4">
+<div class="flex space-x-0.5">
+<div class="w-1.5 h-3 bg-[#00E5A0] rounded-full"></div>
+<div class="w-1.5 h-3 bg-[#00E5A0] rounded-full"></div>
+<div class="w-1.5 h-3 bg-[#00E5A0] rounded-full"></div>
+<div class="w-1.5 h-3 bg-[#00E5A0]/20 rounded-full"></div>
+<div class="w-1.5 h-3 bg-[#00E5A0]/20 rounded-full"></div>
+</div>
+</td>
+<td class="px-6 py-4 text-xs font-mono text-[#8B95A3]">2023-11-22 09:45</td>
+<td class="px-6 py-4 text-right font-mono font-bold text-[#00E5A0]">840M</td>
+</tr>
+<tr class="hover:bg-[#1f1f24] transition-colors group cursor-pointer">
+<td class="px-6 py-4">
+<div class="flex items-center space-x-3">
+<div class="w-8 h-8 rounded bg-amber-400/10 flex items-center justify-center">
+<span class="material-symbols-outlined text-amber-400 text-sm">monitoring</span>
+</div>
+<span class="font-bold text-sm">Halyk Global Markets</span>
+</div>
+</td>
+<td class="px-6 py-4">
+<span class="px-2 py-1 rounded text-[10px] font-bold bg-amber-400/10 text-amber-400 border border-amber-400/20">COMPETITOR</span>
+</td>
+<td class="px-6 py-4">
+<div class="flex space-x-0.5">
+<div class="w-1.5 h-3 bg-amber-400 rounded-full"></div>
+<div class="w-1.5 h-3 bg-amber-400/20 rounded-full"></div>
+<div class="w-1.5 h-3 bg-amber-400/20 rounded-full"></div>
+<div class="w-1.5 h-3 bg-amber-400/20 rounded-full"></div>
+<div class="w-1.5 h-3 bg-amber-400/20 rounded-full"></div>
+</div>
+</td>
+<td class="px-6 py-4 text-xs font-mono text-[#8B95A3]">2023-11-20 16:30</td>
+<td class="px-6 py-4 text-right font-mono font-bold text-[#00E5A0]">--</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="p-6 flex justify-center border-t border-outline-variant/10">
+<nav class="flex space-x-2">
+<button class="w-8 h-8 rounded flex items-center justify-center text-[#8B95A3] hover:text-white transition-colors">
+<span class="material-symbols-outlined text-sm">chevron_left</span>
+</button>
+<button class="w-8 h-8 rounded flex items-center justify-center bg-[#1f1f24] text-[#00E5A0] text-xs font-bold font-mono">1</button>
+<button class="w-8 h-8 rounded flex items-center justify-center text-[#8B95A3] hover:text-white text-xs font-bold font-mono transition-colors">2</button>
+<button class="w-8 h-8 rounded flex items-center justify-center text-[#8B95A3] hover:text-white text-xs font-bold font-mono transition-colors">3</button>
+<button class="w-8 h-8 rounded flex items-center justify-center text-[#8B95A3] hover:text-white transition-colors">
+<span class="material-symbols-outlined text-sm">chevron_right</span>
+</button>
+</nav>
+</div>
+</div>
+</section>
+<!-- Footer Decoration -->
+<footer class="p-8 mt-auto flex flex-col md:flex-row justify-between items-center text-[#8B95A3] text-[10px] font-mono tracking-widest uppercase border-t border-outline-variant/5">
+<div class="flex space-x-6 mb-4 md:mb-0">
+<span>Core.v4.2.1-stable</span>
+<span>Latency: 14ms</span>
+</div>
+<div>
+                © 2024 AIStart360 Institutional Intelligence. Access Restricted.
+            </div>
+</footer>
+</main>
+</body></html>

@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="ru"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>AIStart360 - Рынок</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;700;800&amp;family=DM+Sans:wght@400;500;700&amp;family=JetBrains+Mono:wght@400;700&amp;family=Space+Grotesk:wght@400;700&amp;family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "surface-tint": "#00e29e",
+                        "on-tertiary-fixed": "#291800",
+                        "primary-fixed-dim": "#00e29e",
+                        "on-tertiary-fixed-variant": "#633f00",
+                        "on-background": "#e3e2e8",
+                        "secondary": "#bcc7de",
+                        "primary-container": "#00e5a0",
+                        "on-primary-fixed-variant": "#005236",
+                        "surface-container-highest": "#343439",
+                        "on-surface": "#e3e2e8",
+                        "on-secondary-fixed-variant": "#3c475a",
+                        "on-primary": "#003824",
+                        "error": "#ffb4ab",
+                        "tertiary-fixed-dim": "#ffb955",
+                        "tertiary-container": "#ffbd60",
+                        "tertiary-fixed": "#ffddb4",
+                        "surface-bright": "#38393e",
+                        "on-primary-fixed": "#002114",
+                        "primary-fixed": "#47ffb8",
+                        "outline-variant": "#3b4a41",
+                        "on-tertiary": "#452b00",
+                        "secondary-fixed-dim": "#bcc7de",
+                        "secondary-fixed": "#d8e3fb",
+                        "on-primary-container": "#006141",
+                        "surface-dim": "#121317",
+                        "secondary-container": "#3e495d",
+                        "inverse-surface": "#e3e2e8",
+                        "inverse-on-surface": "#2f3035",
+                        "on-tertiary-container": "#754b00",
+                        "on-secondary": "#263143",
+                        "error-container": "#93000a",
+                        "background": "#0A0B0F",
+                        "on-secondary-container": "#aeb9d0",
+                        "surface-container-lowest": "#0d0e12",
+                        "surface-container-low": "#111318",
+                        "outline": "#84958a",
+                        "on-secondary-fixed": "#111c2d",
+                        "surface-container": "#1f1f24",
+                        "on-error-container": "#ffdad6",
+                        "on-error": "#690005",
+                        "primary": "#6effc0",
+                        "on-surface-variant": "#bacbbf",
+                        "inverse-primary": "#006c49",
+                        "surface-container-high": "#292a2e",
+                        "tertiary": "#ffe1bd",
+                        "surface-variant": "#343439",
+                        "surface": "#121317"
+                    },
+                    fontFamily: {
+                        "headline": ["Space Grotesk", "sans-serif"],
+                        "body": ["DM Sans", "sans-serif"],
+                        "label": ["Space Grotesk", "sans-serif"],
+                        "mono": ["JetBrains Mono", "monospace"]
+                    },
+                    borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
+                },
+            },
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.04);
+            backdrop-filter: blur(12px);
+        }
+        .primary-gradient {
+            background: linear-gradient(135deg, #6effc0 0%, #00e5a0 100%);
+        }
+        body {
+            background-color: #0A0B0F;
+            color: #e3e2e8;
+            font-family: 'DM Sans', sans-serif;
+        }
+    </style>
+</head>
+<body class="flex min-h-screen">
+<!-- SideNavBar -->
+<aside class="fixed left-0 top-0 h-full flex flex-col py-6 border-r border-white/5 bg-[#111318] w-64 z-50">
+<div class="px-6 mb-8 flex items-center gap-3">
+<div class="w-10 h-10 rounded-lg bg-primary flex items-center justify-center">
+<span class="material-symbols-outlined text-on-primary">insights</span>
+</div>
+<div>
+<h1 class="text-lg font-black text-white tracking-tighter">AIStart360</h1>
+<p class="font-mono text-[10px] text-slate-500 uppercase tracking-widest">Institutional Intelligence</p>
+</div>
+</div>
+<nav class="flex-1 space-y-1">
+<div class="text-slate-500 hover:text-white mx-2 px-4 py-3 flex items-center gap-3 cursor-pointer transition-all duration-200 hover:bg-[#1f1f24] rounded-lg">
+<span class="material-symbols-outlined">insights</span>
+<span class="font-body text-sm font-medium">Intelligence Hub</span>
+</div>
+<!-- Active Tab: Market Dynamics / Рынок -->
+<div class="bg-[#1f1f24] text-[#00E5A0] rounded-lg mx-2 px-4 py-3 flex items-center gap-3 glass-panel">
+<span class="material-symbols-outlined">analytics</span>
+<span class="font-body text-sm font-medium">Market Dynamics</span>
+</div>
+<div class="text-slate-500 hover:text-white mx-2 px-4 py-3 flex items-center gap-3 cursor-pointer transition-all duration-200 hover:bg-[#1f1f24] rounded-lg">
+<span class="material-symbols-outlined">pie_chart</span>
+<span class="font-body text-sm font-medium">Portfolio Alpha</span>
+</div>
+<div class="text-slate-500 hover:text-white mx-2 px-4 py-3 flex items-center gap-3 cursor-pointer transition-all duration-200 hover:bg-[#1f1f24] rounded-lg">
+<span class="material-symbols-outlined">security</span>
+<span class="font-body text-sm font-medium">Risk Vector</span>
+</div>
+<div class="text-slate-500 hover:text-white mx-2 px-4 py-3 flex items-center gap-3 cursor-pointer transition-all duration-200 hover:bg-[#1f1f24] rounded-lg">
+<span class="material-symbols-outlined">description</span>
+<span class="font-body text-sm font-medium">Reporting</span>
+</div>
+</nav>
+<div class="px-4 mt-auto">
+<button class="w-full primary-gradient text-[#003824] font-bold py-3 rounded-lg flex items-center justify-center gap-2 hover:opacity-90 transition-all">
+<span class="material-symbols-outlined">add</span>
+                New Analysis
+            </button>
+<div class="mt-6 space-y-1">
+<div class="text-slate-500 hover:text-white px-4 py-2 flex items-center gap-3 cursor-pointer text-xs">
+<span class="material-symbols-outlined text-sm">check_circle</span>
+                    System Status
+                </div>
+<div class="text-slate-500 hover:text-white px-4 py-2 flex items-center gap-3 cursor-pointer text-xs">
+<span class="material-symbols-outlined text-sm">menu_book</span>
+                    Documentation
+                </div>
+</div>
+</div>
+</aside>
+<!-- Main Content Area -->
+<main class="ml-64 flex-1 flex flex-col min-w-0">
+<!-- TopAppBar -->
+<header class="flex justify-between items-center w-full px-8 py-4 bg-[#0A0B0F]">
+<div class="flex items-center gap-2 text-sm">
+<span class="text-slate-500">AIStart360</span>
+<span class="text-slate-700">/</span>
+<span class="text-[#00E5A0] font-medium">Рынок</span>
+</div>
+<div class="flex items-center gap-8">
+<nav class="hidden lg:flex items-center gap-6">
+<a class="text-slate-400 font-medium hover:text-[#6effc0] transition-colors duration-200 text-sm" href="#">Market Analysis</a>
+<a class="text-slate-400 font-medium hover:text-[#6effc0] transition-colors duration-200 text-sm" href="#">Competitive Intelligence</a>
+<a class="text-slate-400 font-medium hover:text-[#6effc0] transition-colors duration-200 text-sm" href="#">Strategic Roadmap</a>
+</nav>
+<div class="flex items-center gap-4 border-l border-white/10 pl-8">
+<span class="text-[10px] font-mono uppercase tracking-widest text-slate-500">Strictly Confidential</span>
+<span class="material-symbols-outlined text-slate-400 hover:text-white cursor-pointer">notifications</span>
+<span class="material-symbols-outlined text-slate-400 hover:text-white cursor-pointer">settings</span>
+<div class="w-8 h-8 rounded-full bg-surface-container-highest overflow-hidden">
+<img class="w-full h-full object-cover" data-alt="close-up portrait of a professional male executive in a dark suit with a clean neutral background" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBxxgh78LD2dQlJFqGHwmuvpnhe8Bi_cAcpmNLlSWK-KU6nCjK9AgX6RUeWPx1RPSl4HZlVVUFM3Z-jnBsDl9pzsG8gXSrn8Mn-28aoVsd7iyJmWNhBnW5kOFjSebO3YWOziI3Y97PWv3K7jzSMUQsJ1R-cN9ovhcOF6GUuuabkVpOQuid8_ULo-0k6vWwYElVk0Daro6l7apaLoHjhSD_x6imxu8B6EfpXvTFXHG_purIBVPnUVHW3Yi-nuT5mY_6ibd4uwdL1ybg"/>
+</div>
+</div>
+</div>
+</header>
+<!-- Canvas -->
+<div class="p-8 space-y-10">
+<!-- Header Section -->
+<section class="flex flex-col md:flex-row md:items-end justify-between gap-6">
+<div>
+<h2 class="font-headline font-bold text-5xl tracking-tight mb-2">Картина рынка</h2>
+<p class="text-slate-400 text-lg">Рынок клининговых услуг Казахстана <span class="text-white font-mono">2025–2027</span></p>
+</div>
+<div class="flex gap-4">
+<div class="px-4 py-2 bg-surface-container-low rounded-lg flex items-center gap-3">
+<span class="w-2 h-2 rounded-full bg-primary animate-pulse"></span>
+<span class="text-xs font-mono text-slate-400">LIVE MARKET DATA FEED</span>
+</div>
+</div>
+</section>
+<!-- Stat Strip -->
+<section class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+<div class="bg-surface-container-low p-6 rounded-xl border-none">
+<p class="text-slate-500 text-xs font-medium mb-3 uppercase tracking-wider">Объём</p>
+<p class="font-mono text-2xl font-bold text-white">142 <span class="text-sm font-body text-slate-500">млрд ₸</span></p>
+</div>
+<div class="bg-surface-container-low p-6 rounded-xl border-none">
+<p class="text-slate-500 text-xs font-medium mb-3 uppercase tracking-wider">Рост YoY</p>
+<p class="font-mono text-2xl font-bold text-primary">+12%</p>
+</div>
+<div class="bg-surface-container-low p-6 rounded-xl border-none">
+<p class="text-slate-500 text-xs font-medium mb-3 uppercase tracking-wider">Прогноз 2027</p>
+<p class="font-mono text-2xl font-bold text-white">180 <span class="text-sm font-body text-slate-500">млрд ₸</span></p>
+</div>
+<div class="bg-surface-container-low p-6 rounded-xl border-none">
+<p class="text-slate-500 text-xs font-medium mb-3 uppercase tracking-wider">Доля клиента</p>
+<p class="font-mono text-2xl font-bold text-white">4.2%</p>
+</div>
+</section>
+<!-- Market Dynamics Chart Container -->
+<section class="bg-surface-container-low p-8 rounded-xl relative overflow-hidden">
+<div class="flex justify-between items-start mb-12">
+<div>
+<h3 class="font-headline text-xl font-bold mb-1">Динамика развития</h3>
+<p class="text-slate-500 text-sm">Исторические данные и прогнозный вектор</p>
+</div>
+<div class="flex items-center gap-6 text-xs font-mono">
+<div class="flex items-center gap-2">
+<span class="w-3 h-3 bg-primary/20 border border-primary rounded-sm"></span>
+<span class="text-slate-400 uppercase">Historical</span>
+</div>
+<div class="flex items-center gap-2">
+<span class="w-3 h-0 border-t-2 border-dashed border-primary"></span>
+<span class="text-slate-400 uppercase">Forecast</span>
+</div>
+</div>
+</div>
+<!-- Visual Chart Placeholder -->
+<div class="h-64 w-full flex items-end gap-1 relative">
+<div class="absolute inset-0 flex flex-col justify-between opacity-5">
+<div class="border-t border-white w-full"></div>
+<div class="border-t border-white w-full"></div>
+<div class="border-t border-white w-full"></div>
+<div class="border-t border-white w-full"></div>
+</div>
+<!-- Chart Bars/Area visualization -->
+<div class="flex-1 h-[40%] bg-primary/20 border-t-2 border-primary rounded-t-sm relative group">
+<div class="absolute -top-8 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity bg-white text-black px-2 py-1 rounded text-[10px] font-mono font-bold">114B</div>
+</div>
+<div class="flex-1 h-[48%] bg-primary/25 border-t-2 border-primary rounded-t-sm relative group"></div>
+<div class="flex-1 h-[55%] bg-primary/30 border-t-2 border-primary rounded-t-sm relative group"></div>
+<div class="flex-1 h-[65%] bg-primary/40 border-t-2 border-primary rounded-t-sm relative group"></div>
+<div class="flex-1 h-[72%] bg-primary/50 border-t-2 border-primary rounded-t-sm relative group"></div>
+<!-- Forecast Area -->
+<div class="flex-1 h-[82%] bg-primary/10 border-t-2 border-dashed border-primary/60 rounded-t-sm relative"></div>
+<div class="flex-1 h-[90%] bg-primary/10 border-t-2 border-dashed border-primary/60 rounded-t-sm relative"></div>
+<div class="flex-1 h-[100%] bg-primary/10 border-t-2 border-dashed border-primary/60 rounded-t-sm relative"></div>
+</div>
+<div class="flex justify-between mt-4 font-mono text-[10px] text-slate-500 px-2">
+<span>2020</span><span>2021</span><span>2022</span><span>2023</span><span>2024</span><span class="text-primary/60">2025F</span><span class="text-primary/60">2026F</span><span class="text-primary/60">2027F</span>
+</div>
+</section>
+<!-- Drivers & Barriers -->
+<section class="grid grid-cols-1 lg:grid-cols-2 gap-10">
+<div class="space-y-6">
+<h3 class="font-headline text-lg font-bold flex items-center gap-3">
+<span class="material-symbols-outlined text-primary">trending_up</span>
+                        Drivers
+                    </h3>
+<div class="grid grid-cols-2 gap-3">
+<div class="p-4 bg-primary/5 border border-primary/10 rounded-lg flex flex-col gap-2">
+<span class="text-primary text-xs font-bold uppercase tracking-widest">Digital Transformation</span>
+<p class="text-slate-400 text-xs leading-relaxed">Внедрение IoT-сенсоров и систем управления персоналом для оптимизации ФОТ.</p>
+</div>
+<div class="p-4 bg-primary/5 border border-primary/10 rounded-lg flex flex-col gap-2">
+<span class="text-primary text-xs font-bold uppercase tracking-widest">ESG Standards</span>
+<p class="text-slate-400 text-xs leading-relaxed">Рост спроса на эко-сертификацию среди международных арендаторов офисов класса A.</p>
+</div>
+</div>
+</div>
+<div class="space-y-6">
+<h3 class="font-headline text-lg font-bold flex items-center gap-3">
+<span class="material-symbols-outlined text-error">trending_down</span>
+                        Barriers
+                    </h3>
+<div class="grid grid-cols-2 gap-3">
+<div class="p-4 bg-error/5 border border-error/10 rounded-lg flex flex-col gap-2">
+<span class="text-error text-xs font-bold uppercase tracking-widest">Labor Shortage</span>
+<p class="text-slate-400 text-xs leading-relaxed">Дефицит линейного персонала и рост ожиданий по заработной плате на 15% ежегодно.</p>
+</div>
+<div class="p-4 bg-error/5 border border-error/10 rounded-lg flex flex-col gap-2">
+<span class="text-error text-xs font-bold uppercase tracking-widest">Inflation</span>
+<p class="text-slate-400 text-xs leading-relaxed">Рост стоимости профессиональной химии и оборудования из-за волатильности курса.</p>
+</div>
+</div>
+</div>
+</section>
+<!-- Tabs Section -->
+<section class="space-y-8">
+<div class="flex border-b border-white/5 gap-8">
+<button class="pb-4 border-b-2 border-primary text-primary font-bold text-sm">Сегменты</button>
+<button class="pb-4 border-b-2 border-transparent text-slate-500 font-medium text-sm hover:text-slate-300 transition-colors">Конкуренты</button>
+<button class="pb-4 border-b-2 border-transparent text-slate-500 font-medium text-sm hover:text-slate-300 transition-colors">Регионы</button>
+</div>
+<!-- Active Tab Content: Сегменты -->
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+<!-- Left: Pie Chart Visualization -->
+<div class="lg:col-span-5 bg-surface-container-low p-8 rounded-xl flex flex-col items-center">
+<div class="relative w-64 h-64 mb-8">
+<!-- SVG Donut Chart -->
+<svg class="w-full h-full transform -rotate-90" viewbox="0 0 36 36">
+<circle cx="18" cy="18" fill="transparent" r="15.915" stroke="#1f1f24" stroke-width="3.8"></circle>
+<circle cx="18" cy="18" fill="transparent" r="15.915" stroke="#00E5A0" stroke-dasharray="45 100" stroke-width="3.8"></circle>
+<circle cx="18" cy="18" fill="transparent" r="15.915" stroke="#006141" stroke-dasharray="30 100" stroke-dashoffset="-45" stroke-width="3.8"></circle>
+<circle cx="18" cy="18" fill="transparent" r="15.915" stroke="#3b4a41" stroke-dasharray="25 100" stroke-dashoffset="-75" stroke-width="3.8"></circle>
+</svg>
+<div class="absolute inset-0 flex flex-col items-center justify-center">
+<span class="font-mono text-3xl font-bold">142</span>
+<span class="text-[10px] text-slate-500 uppercase tracking-widest">МЛРД ₸</span>
+</div>
+</div>
+<div class="w-full space-y-3">
+<div class="flex justify-between items-center text-xs">
+<div class="flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-primary"></span>
+<span class="text-slate-400">B2B Cleaning</span>
+</div>
+<span class="font-mono text-white">45%</span>
+</div>
+<div class="flex justify-between items-center text-xs">
+<div class="flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-[#006141]"></span>
+<span class="text-slate-400">Industrial</span>
+</div>
+<span class="font-mono text-white">30%</span>
+</div>
+<div class="flex justify-between items-center text-xs">
+<div class="flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-[#3b4a41]"></span>
+<span class="text-slate-400">Retail / HoReCa</span>
+</div>
+<span class="font-mono text-white">25%</span>
+</div>
+</div>
+</div>
+<!-- Right: Segment Cards -->
+<div class="lg:col-span-7 space-y-4">
+<div class="bg-surface-container p-5 rounded-xl flex justify-between items-center border-l-4 border-primary">
+<div>
+<h4 class="font-bold text-white mb-1">B2B Cleaning</h4>
+<p class="text-xs text-slate-500">Офисные центры и бизнес-хабы Алматы и Астаны</p>
+</div>
+<div class="text-right">
+<p class="font-mono text-lg font-bold">63.9 <span class="text-[10px] text-slate-500">МЛРД ₸</span></p>
+<p class="text-primary text-[10px] font-mono">+18.4% GROWTH</p>
+</div>
+</div>
+<div class="bg-surface-container p-5 rounded-xl flex justify-between items-center border-l-4 border-[#006141]">
+<div>
+<h4 class="font-bold text-white mb-1">Industrial</h4>
+<p class="text-xs text-slate-500">Производственные цеха и логистические комплексы</p>
+</div>
+<div class="text-right">
+<p class="font-mono text-lg font-bold">42.6 <span class="text-[10px] text-slate-500">МЛРД ₸</span></p>
+<p class="text-slate-500 text-[10px] font-mono">+6.2% GROWTH</p>
+</div>
+</div>
+<div class="bg-surface-container p-5 rounded-xl flex justify-between items-center border-l-4 border-[#3b4a41]">
+<div>
+<h4 class="font-bold text-white mb-1">Retail</h4>
+<p class="text-xs text-slate-500">Торгово-развлекательные центры и сетевой ритейл</p>
+</div>
+<div class="text-right">
+<p class="font-mono text-lg font-bold">35.5 <span class="text-[10px] text-slate-500">МЛРД ₸</span></p>
+<p class="text-slate-500 text-[10px] font-mono">+9.1% GROWTH</p>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- Consulting Card (Amber) -->
+<section class="bg-tertiary-container/10 border border-tertiary-container/20 p-8 rounded-xl flex flex-col md:flex-row gap-8 items-center">
+<div class="w-16 h-16 rounded-full bg-tertiary-container flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-on-tertiary-container text-3xl">lightbulb</span>
+</div>
+<div class="flex-1 space-y-4">
+<div class="space-y-1">
+<span class="text-tertiary font-mono text-xs uppercase tracking-[0.2em] font-bold">Strategic Recommendation</span>
+<h3 class="font-headline text-2xl font-bold text-white">Ценовой анализ и стратегия</h3>
+</div>
+<p class="text-slate-300 leading-relaxed max-w-2xl">
+                        Текущая модель демпинга в тендерах B2B-сегмента ведет к деградации маржинальности ниже 8%. <span class="text-tertiary font-medium">Рекомендация:</span> переход на модель «Service-as-a-Software» с динамическим ценообразованием в зависимости от проходимости зон.
+                    </p>
+<div class="flex gap-4 pt-2">
+<button class="bg-tertiary text-on-tertiary-container px-6 py-2.5 rounded-lg text-sm font-bold hover:bg-tertiary-fixed transition-colors">
+                            Открыть полный отчет
+                        </button>
+<button class="border border-tertiary-container/40 text-tertiary px-6 py-2.5 rounded-lg text-sm font-bold hover:bg-tertiary-container/20 transition-colors">
+                            Скачать PDF
+                        </button>
+</div>
+</div>
+<div class="hidden xl:block w-64 h-40 bg-white/5 rounded-lg relative overflow-hidden">
+<!-- Subtle background visual for the card -->
+<img class="w-full h-full object-cover opacity-20 grayscale" data-alt="close-up of a high-tech digital financial terminal showing complex charts and pricing data with a warm amber glow" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBmQYIXKkyY1OShxlHkXqnuHKycTeKcIW1k526txvE6Agce8Gj4B_M8lSj0VtDAEIphLzY4w0g8xVQ-5_I8YvVUn5pXYoPY-_eApoR1gURKrreU63dpMjxwkmAsl3FiD1n0wDXDnCvaWscwYcHE8P7R0FwZefUKXxBx1hD-pHs0CkS6OyMiiMbtxYNIn-EL4sewTf3VB6UxBPHWyHc17Vpr_ugCby0IQ_2GfEtawqWgDhm3_UJVZSQ0veFf3_6h4XyjixX_wElc4RQ"/>
+<div class="absolute inset-0 bg-gradient-to-t from-background to-transparent"></div>
+</div>
+</section>
+</div>
+<!-- Footer Credits / Version -->
+<footer class="mt-auto px-8 py-6 border-t border-white/5 flex justify-between items-center text-[10px] text-slate-600 font-mono">
+<div>AIStart360 ENGINE V3.4.2 // KAZAKHSTAN MARKET MODULE</div>
+<div>STRICTLY CONFIDENTIAL - INSTITUTIONAL ACCESS ONLY</div>
+</footer>
+</main>
+<!-- Contextual FAB (Suppressed based on rules for 'Market' focus, but showing technical utility) -->
+<div class="fixed bottom-8 right-8 flex flex-col gap-3">
+<button class="w-14 h-14 primary-gradient text-on-primary rounded-full shadow-2xl flex items-center justify-center hover:scale-110 transition-transform active:scale-95 group">
+<span class="material-symbols-outlined">smart_toy</span>
+<div class="absolute right-full mr-4 bg-white text-black px-3 py-1.5 rounded text-xs font-bold whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity">Ask Analyst AI</div>
+</button>
+</div>
+</body></html>

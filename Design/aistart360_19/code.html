@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Mitigation Plans | Institutional Intelligence</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&amp;family=DM+Sans:wght@400;500;700&amp;family=JetBrains+Mono:wght@400;700&amp;family=Bricolage+Grotesque:wght@600;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          colors: {
+            "outline-variant": "#3b4a41",
+            "surface-dim": "#121317",
+            "surface": "#0A0B0F",
+            "primary-fixed": "#47ffb8",
+            "on-surface-variant": "#bacbbf",
+            "error-container": "#93000a",
+            "secondary": "#bcc7de",
+            "surface-container": "#1f1f24",
+            "surface-container-high": "#292a2e",
+            "on-secondary": "#263143",
+            "surface-container-highest": "#343439",
+            "primary-container": "#00e5a0",
+            "on-surface": "#e3e2e8",
+            "error": "#ffb4ab",
+            "primary": "#6effc0",
+            "on-primary": "#003824",
+            "surface-container-lowest": "#0d0e12",
+            "surface-container-low": "#1a1b20",
+            "background": "#0A0B0F",
+            "brand-accent": "#00E5A0",
+            "critical": "#FF4D4D"
+          },
+          fontFamily: {
+            "headline": ["Space Grotesk", "sans-serif"],
+            "body": ["DM Sans", "sans-serif"],
+            "mono": ["JetBrains Mono", "monospace"],
+            "display": ["Bricolage Grotesque", "sans-serif"]
+          },
+          borderRadius: {
+            "DEFAULT": "0.25rem",
+            "lg": "0.5rem",
+            "xl": "0.75rem",
+            "2xl": "1rem"
+          },
+        },
+      },
+    }
+  </script>
+<style>
+    .material-symbols-outlined {
+      font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+    }
+    .glass-card {
+      background: rgba(255, 255, 255, 0.03);
+      backdrop-filter: blur(12px);
+    }
+    .gradient-primary {
+      background: linear-gradient(135deg, #6effc0 0%, #00e5a0 100%);
+    }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: #0A0B0F; }
+    ::-webkit-scrollbar-thumb { background: #1f1f24; border-radius: 10px; }
+  </style>
+</head>
+<body class="bg-background text-on-surface font-body selection:bg-primary/30 selection:text-primary">
+<!-- SideNavBar Execution -->
+<aside class="fixed left-0 top-0 h-full w-64 flex flex-col p-4 gap-2 bg-[#0A0B0F] border-r-0 z-50">
+<div class="mb-8 px-2 flex items-center gap-3">
+<div class="w-8 h-8 rounded-lg gradient-primary flex items-center justify-center">
+<span class="material-symbols-outlined text-on-primary text-xl">security</span>
+</div>
+<span class="text-[#00E5A0] font-bold tracking-tighter text-xl font-headline">Intelligence</span>
+</div>
+<nav class="flex-1 flex flex-col gap-1">
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg text-[#8B95A3] hover:text-white hover:bg-[#1f1f24] transition-all duration-200 group" href="#">
+<span class="material-symbols-outlined">dashboard</span>
+<span class="font-headline text-sm tracking-tight">Dashboard</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg text-[#8B95A3] hover:text-white hover:bg-[#1f1f24] transition-all duration-200 group" href="#">
+<span class="material-symbols-outlined">security</span>
+<span class="font-headline text-sm tracking-tight">Risk Assessment</span>
+</a>
+<!-- Active Tab: Mitigation Plans -->
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg text-[#00E5A0] bg-[#1f1f24] font-medium group" href="#">
+<span class="material-symbols-outlined">verified_user</span>
+<span class="font-headline text-sm tracking-tight">Mitigation Plans</span>
+</a>
+</nav>
+<div class="mt-auto flex flex-col gap-1 pt-4 border-t border-white/5">
+<a class="flex items-center gap-3 px-4 py-2 rounded-lg text-[#8B95A3] hover:text-white hover:bg-[#1f1f24] transition-all" href="#">
+<span class="material-symbols-outlined text-sm">settings</span>
+<span class="font-headline text-sm">Settings</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-2 rounded-lg text-[#8B95A3] hover:text-white hover:bg-[#1f1f24] transition-all" href="#">
+<span class="material-symbols-outlined text-sm">help_outline</span>
+<span class="font-headline text-sm">Support</span>
+</a>
+</div>
+</aside>
+<!-- TopAppBar Execution -->
+<header class="fixed top-0 right-0 left-64 h-16 flex justify-between items-center px-8 bg-[#0A0B0F]/80 backdrop-blur-xl z-40 border-b-0">
+<div class="flex items-center gap-4">
+<div class="flex items-center gap-2 font-mono text-[10px] uppercase tracking-widest text-secondary">
+<span>Risk Control</span>
+<span class="material-symbols-outlined text-[12px]">chevron_right</span>
+<span class="text-primary">Mitigation Plans</span>
+</div>
+<div class="ml-4 px-2 py-0.5 rounded border border-critical/30 bg-critical/10 text-critical font-mono text-[10px] font-bold tracking-widest">
+        STRICTLY CONFIDENTIAL
+      </div>
+</div>
+<div class="flex items-center gap-6">
+<div class="relative">
+<span class="material-symbols-outlined text-[#8B95A3] hover:text-white cursor-pointer">notifications</span>
+<span class="absolute top-0 right-0 w-2 h-2 bg-brand-accent rounded-full border-2 border-background"></span>
+</div>
+<div class="flex items-center gap-3 group cursor-pointer">
+<div class="text-right">
+<p class="text-xs font-bold text-on-surface">DR. ARIS T.</p>
+<p class="text-[10px] text-secondary font-mono">SENIOR ANALYST</p>
+</div>
+<img alt="Analyst Profile" class="w-10 h-10 rounded-lg object-cover border border-white/10 group-active:scale-95 transition-transform" data-alt="professional portrait of a middle-aged male analyst in a dark suit with focused expression and soft cinematic lighting" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCIyrUATDH4tLiKHZGGNqjUdGWosZds-BemWWZDyS6EAjwqFMS9tNZVn4-qurZU6LGaIs5iUdX0k8m8HAl8iETXLUBwvt27BLpIPIEPx0A7KKYVv7sOf3qQdLQGgAOLWTSDFJ1N1vtICkRW6ezUuBaBuRaXz5w4Yw6S5Mf1bCOb85aj36PwKCo1kQr4UWP1ZOFyajyUMppI10kcmh6BXxfZvTFpWq018MCYz_v6BWE2Jk4fh-4S6aRZiJtD6gWTBG2n2UAZc9RcetE"/>
+</div>
+</div>
+</header>
+<!-- Main Canvas -->
+<main class="ml-64 pt-24 px-10 pb-20 max-w-[1600px]">
+<!-- Page Header -->
+<section class="flex justify-between items-end mb-12">
+<div>
+<h1 class="text-5xl font-display font-extrabold text-on-surface tracking-tight mb-2">
+          Mitigation Strategies <span class="text-white/20">&amp;</span> Defense Matrix
+        </h1>
+<p class="text-secondary text-lg max-w-2xl font-body">
+          Institutional-grade defensive maneuvers for identified risk vectors. Curating high-fidelity protocols to maintain operational integrity.
+        </p>
+</div>
+<button class="gradient-primary text-on-primary px-6 py-3 rounded-lg font-headline font-bold flex items-center gap-2 hover:opacity-90 active:scale-95 transition-all">
+<span class="material-symbols-outlined text-sm">add_moderator</span>
+        Initialize New Protocol
+      </button>
+</section>
+<!-- KPI Row -->
+<div class="grid grid-cols-4 gap-6 mb-12">
+<div class="bg-surface-container-low p-6 rounded-xl relative overflow-hidden group">
+<div class="relative z-10">
+<p class="text-[10px] font-mono text-secondary uppercase tracking-[0.2em] mb-1">Coverage Score</p>
+<div class="flex items-baseline gap-2">
+<h3 class="text-4xl font-mono font-bold text-brand-accent">92%</h3>
+<span class="text-[10px] font-mono text-brand-accent/60">+1.2% v. prev</span>
+</div>
+</div>
+<div class="absolute bottom-0 right-0 w-24 h-24 opacity-10 group-hover:opacity-20 transition-opacity">
+<span class="material-symbols-outlined text-8xl text-brand-accent" style="font-variation-settings: 'FILL' 1;">verified</span>
+</div>
+</div>
+<div class="bg-surface-container-low p-6 rounded-xl">
+<p class="text-[10px] font-mono text-secondary uppercase tracking-[0.2em] mb-1">Active Plans</p>
+<h3 class="text-4xl font-mono font-bold text-white">14</h3>
+<p class="text-[10px] font-mono text-secondary mt-2">6 EXECUTING • 8 STABLE</p>
+</div>
+<div class="bg-surface-container-low p-6 rounded-xl">
+<p class="text-[10px] font-mono text-secondary uppercase tracking-[0.2em] mb-1">Pending Review</p>
+<div class="flex items-center gap-3">
+<h3 class="text-4xl font-mono font-bold text-white">03</h3>
+<span class="w-2 h-2 rounded-full bg-critical animate-pulse"></span>
+</div>
+<p class="text-[10px] font-mono text-critical/80 mt-2">REQUIRES IMMEDIATE SIG-OFF</p>
+</div>
+<div class="bg-surface-container-low p-6 rounded-xl bg-gradient-to-br from-brand-accent/5 to-transparent">
+<p class="text-[10px] font-mono text-secondary uppercase tracking-[0.2em] mb-1">Protected Assets</p>
+<h3 class="text-4xl font-mono font-bold text-white tracking-tight">$24.8M</h3>
+<div class="w-full bg-white/5 h-1 rounded-full mt-4 overflow-hidden">
+<div class="bg-brand-accent h-full w-[88%]"></div>
+</div>
+</div>
+</div>
+<!-- Active Mitigation Plans & Defense Roadmap (Asymmetric Layout) -->
+<div class="grid grid-cols-12 gap-8">
+<!-- Plans List -->
+<div class="col-span-8 space-y-4">
+<div class="flex items-center justify-between mb-4">
+<h2 class="font-headline text-xl font-bold">Protocol Implementation Queue</h2>
+<div class="flex gap-2">
+<span class="text-[10px] font-mono px-3 py-1 rounded bg-white/5 border border-white/10 text-secondary">FILTER: ALL PRIORITY</span>
+<span class="text-[10px] font-mono px-3 py-1 rounded bg-white/5 border border-white/10 text-secondary">SORT: PROGRESS</span>
+</div>
+</div>
+<!-- Card 1 -->
+<div class="bg-surface-container p-5 rounded-xl border-l-4 border-critical group hover:bg-surface-container-high transition-colors">
+<div class="flex justify-between items-start mb-6">
+<div class="flex items-center gap-4">
+<span class="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-critical/20 text-critical tracking-tighter">CRITICAL</span>
+<h4 class="font-headline text-lg font-bold">Revenue Concentration Hedge</h4>
+</div>
+<div class="text-right">
+<p class="text-[10px] font-mono text-secondary">NET RISK IMPACT</p>
+<p class="text-lg font-mono text-brand-accent">-40.2% VOL</p>
+</div>
+</div>
+<div class="grid grid-cols-3 gap-8 items-end">
+<div class="col-span-2">
+<div class="flex justify-between text-[10px] font-mono text-secondary mb-2 uppercase tracking-widest">
+<span>Phase: Deployment</span>
+<span>72% COMPLETE</span>
+</div>
+<div class="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
+<div class="h-full gradient-primary w-[72%]"></div>
+</div>
+</div>
+<div class="flex justify-end gap-3">
+<button class="text-[10px] font-mono text-secondary hover:text-white uppercase transition-colors">Simulate</button>
+<button class="bg-white/5 hover:bg-white/10 text-white px-4 py-2 rounded font-headline text-xs font-bold transition-all">VIEW PROTOCOL</button>
+</div>
+</div>
+</div>
+<!-- Card 2 -->
+<div class="bg-surface-container p-5 rounded-xl border-l-4 border-brand-accent group hover:bg-surface-container-high transition-colors">
+<div class="flex justify-between items-start mb-6">
+<div class="flex items-center gap-4">
+<span class="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-brand-accent/20 text-brand-accent tracking-tighter">HIGH</span>
+<h4 class="font-headline text-lg font-bold">Cloud Infrastructure Redundancy (Tier 4)</h4>
+</div>
+<div class="text-right">
+<p class="text-[10px] font-mono text-secondary">NET RISK IMPACT</p>
+<p class="text-lg font-mono text-brand-accent">-12.5% FAIL</p>
+</div>
+</div>
+<div class="grid grid-cols-3 gap-8 items-end">
+<div class="col-span-2">
+<div class="flex justify-between text-[10px] font-mono text-secondary mb-2 uppercase tracking-widest">
+<span>Phase: Testing</span>
+<span>35% COMPLETE</span>
+</div>
+<div class="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
+<div class="h-full bg-white/40 w-[35%]"></div>
+</div>
+</div>
+<div class="flex justify-end gap-3">
+<button class="text-[10px] font-mono text-secondary hover:text-white uppercase transition-colors">Simulate</button>
+<button class="bg-white/5 hover:bg-white/10 text-white px-4 py-2 rounded font-headline text-xs font-bold transition-all">VIEW PROTOCOL</button>
+</div>
+</div>
+</div>
+<!-- Card 3 -->
+<div class="bg-surface-container p-5 rounded-xl border-l-4 border-brand-accent group hover:bg-surface-container-high transition-colors opacity-80">
+<div class="flex justify-between items-start mb-6">
+<div class="flex items-center gap-4">
+<span class="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-brand-accent/20 text-brand-accent tracking-tighter">HIGH</span>
+<h4 class="font-headline text-lg font-bold">IP Theft Counter-Surveillance</h4>
+</div>
+<div class="text-right">
+<p class="text-[10px] font-mono text-secondary">NET RISK IMPACT</p>
+<p class="text-lg font-mono text-brand-accent">-94.0% LEAK</p>
+</div>
+</div>
+<div class="grid grid-cols-3 gap-8 items-end">
+<div class="col-span-2">
+<div class="flex justify-between text-[10px] font-mono text-secondary mb-2 uppercase tracking-widest">
+<span>Phase: Strategy</span>
+<span>12% COMPLETE</span>
+</div>
+<div class="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
+<div class="h-full bg-white/20 w-[12%]"></div>
+</div>
+</div>
+<div class="flex justify-end gap-3">
+<button class="text-[10px] font-mono text-secondary hover:text-white uppercase transition-colors">Simulate</button>
+<button class="bg-white/5 hover:bg-white/10 text-white px-4 py-2 rounded font-headline text-xs font-bold transition-all">VIEW PROTOCOL</button>
+</div>
+</div>
+</div>
+</div>
+<!-- Defense Roadmap (Vertical Timeline) -->
+<div class="col-span-4 bg-surface-container-low rounded-xl p-8">
+<h2 class="font-headline text-xl font-bold mb-8">90-Day Defense Roadmap</h2>
+<div class="relative space-y-12 before:absolute before:inset-0 before:ml-5 before:-translate-x-px before:h-full before:w-0.5 before:bg-gradient-to-b before:from-brand-accent before:via-white/5 before:to-transparent">
+<!-- Item 1 -->
+<div class="relative flex items-center justify-between md:justify-normal group">
+<div class="flex items-center justify-center w-10 h-10 rounded-full border border-brand-accent bg-background text-brand-accent shadow shrink-0">
+<span class="material-symbols-outlined text-sm" style="font-variation-settings: 'FILL' 1;">bolt</span>
+</div>
+<div class="ml-6">
+<time class="font-mono text-[10px] text-brand-accent uppercase tracking-widest">Day 15 • JUN 12</time>
+<div class="text-on-surface font-bold text-sm">Hardened Perimeter Rollout</div>
+<p class="text-secondary text-xs mt-1">L3 security protocol activation for all nodes.</p>
+</div>
+</div>
+<!-- Item 2 -->
+<div class="relative flex items-center justify-between md:justify-normal group">
+<div class="flex items-center justify-center w-10 h-10 rounded-full border border-white/20 bg-background text-secondary shadow shrink-0">
+<span class="material-symbols-outlined text-sm">hub</span>
+</div>
+<div class="ml-6">
+<time class="font-mono text-[10px] text-secondary uppercase tracking-widest">Day 45 • JUL 12</time>
+<div class="text-on-surface font-bold text-sm">Cross-Region Node Replication</div>
+<p class="text-secondary text-xs mt-1">Multi-AZ data redundancy completion.</p>
+</div>
+</div>
+<!-- Item 3 -->
+<div class="relative flex items-center justify-between md:justify-normal group">
+<div class="flex items-center justify-center w-10 h-10 rounded-full border border-white/20 bg-background text-secondary shadow shrink-0">
+<span class="material-symbols-outlined text-sm">history_edu</span>
+</div>
+<div class="ml-6">
+<time class="font-mono text-[10px] text-secondary uppercase tracking-widest">Day 90 • AUG 27</time>
+<div class="text-on-surface font-bold text-sm">Institutional Audit Verification</div>
+<p class="text-secondary text-xs mt-1">External SOC2 Type II compliance final report.</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- AI Strategy Advisor -->
+<section class="mt-12">
+<div class="glass-card p-8 rounded-2xl flex gap-10 items-start border border-white/5">
+<div class="w-16 h-16 rounded-xl bg-brand-accent/10 flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-brand-accent text-3xl">psychology_alt</span>
+</div>
+<div class="flex-1">
+<div class="flex justify-between items-start mb-4">
+<div>
+<h2 class="font-headline text-2xl font-bold tracking-tight text-white">AI Strategy Advisor</h2>
+<p class="text-secondary text-sm">System-identified gaps in current defensive posture.</p>
+</div>
+<div class="bg-critical/10 text-critical text-[10px] font-mono px-3 py-1 rounded-full flex items-center gap-2">
+<span class="w-1.5 h-1.5 rounded-full bg-critical animate-pulse"></span>
+              2 MODERATE VULNERABILITIES DETECTED
+            </div>
+</div>
+<div class="grid grid-cols-2 gap-8 mt-6">
+<div class="p-4 rounded-lg bg-white/5 border border-white/5 hover:border-brand-accent/30 transition-colors">
+<p class="text-[10px] font-mono text-brand-accent mb-2">RECOMMENDED ACTION #01</p>
+<h5 class="font-bold text-sm mb-2">Liquidity Laddering Refinement</h5>
+<p class="text-secondary text-xs leading-relaxed">Exposure to short-term volatility in Sector 7 requires a revised laddering strategy. Reallocate 12% of liquid reserves to low-yield secure assets.</p>
+<button class="mt-4 text-brand-accent text-xs font-bold flex items-center gap-1 hover:underline">
+                Accept Recommendation <span class="material-symbols-outlined text-[14px]">arrow_forward</span>
+</button>
+</div>
+<div class="p-4 rounded-lg bg-white/5 border border-white/5 hover:border-brand-accent/30 transition-colors">
+<p class="text-[10px] font-mono text-brand-accent mb-2">RECOMMENDED ACTION #02</p>
+<h5 class="font-bold text-sm mb-2">Geographic Talent Decentralization</h5>
+<p class="text-secondary text-xs leading-relaxed">Centralization of core dev team in single jurisdiction creates regulatory bottleneck. Advisory recommends distributed infrastructure for core ops.</p>
+<button class="mt-4 text-brand-accent text-xs font-bold flex items-center gap-1 hover:underline">
+                Initialize Search <span class="material-symbols-outlined text-[14px]">arrow_forward</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+</section>
+</main>
+<!-- Footer Stats (Floating) -->
+<footer class="fixed bottom-6 right-8 left-72 px-6 py-3 bg-surface-container/90 backdrop-blur-md rounded-xl flex justify-between items-center shadow-2xl border border-white/5 z-50">
+<div class="flex items-center gap-8">
+<div class="flex flex-col">
+<span class="text-[9px] font-mono text-secondary uppercase tracking-[0.1em]">Engine Health</span>
+<div class="flex items-center gap-2">
+<div class="w-1.5 h-1.5 rounded-full bg-brand-accent"></div>
+<span class="text-xs font-mono font-bold">NOMINAL</span>
+</div>
+</div>
+<div class="w-px h-8 bg-white/10"></div>
+<div class="flex flex-col">
+<span class="text-[9px] font-mono text-secondary uppercase tracking-[0.1em]">Current Exposure</span>
+<span class="text-xs font-mono font-bold">$1,242,000</span>
+</div>
+<div class="flex flex-col">
+<span class="text-[9px] font-mono text-secondary uppercase tracking-[0.1em]">Mitigated Loss (YTD)</span>
+<span class="text-xs font-mono font-bold text-brand-accent">+$4.2M</span>
+</div>
+</div>
+<div class="flex items-center gap-4">
+<span class="text-[10px] font-mono text-white/40">SYSTEM VERSION: v2.4.12-INSTITUTIONAL</span>
+<span class="material-symbols-outlined text-white/20 text-sm">verified</span>
+</div>
+</footer>
+</body></html>

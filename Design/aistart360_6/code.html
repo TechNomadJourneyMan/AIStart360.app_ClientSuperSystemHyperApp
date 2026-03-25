@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="ru"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Institutional Intelligence | Margin Analysis</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;700;800&amp;family=Space+Grotesk:wght@300;400;500;600;700&amp;family=JetBrains+Mono:wght@400;700&amp;family=Inter:wght@400;500&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "surface-dim": "#121317",
+              "surface-container": "#1f1f24",
+              "primary-fixed": "#47ffb8",
+              "secondary": "#bcc7de",
+              "tertiary-container": "#ffbd60",
+              "inverse-surface": "#e3e2e8",
+              "on-secondary": "#263143",
+              "surface-bright": "#38393e",
+              "surface-container-high": "#292a2e",
+              "on-primary-container": "#006141",
+              "on-tertiary-container": "#754b00",
+              "surface": "#121317",
+              "surface-container-highest": "#343439",
+              "on-surface": "#e3e2e8",
+              "surface-variant": "#343439",
+              "surface-container-low": "#1a1b20",
+              "on-surface-variant": "#bacbbf",
+              "on-primary": "#003824",
+              "on-secondary-container": "#aeb9d0",
+              "on-tertiary": "#452b00",
+              "on-primary-fixed-variant": "#005236",
+              "on-tertiary-fixed-variant": "#633f00",
+              "on-secondary-fixed-variant": "#3c475a",
+              "on-primary-fixed": "#002114",
+              "error": "#ffb4ab",
+              "secondary-fixed-dim": "#bcc7de",
+              "secondary-fixed": "#d8e3fb",
+              "primary-container": "#00e5a0",
+              "on-error-container": "#ffdad6",
+              "inverse-on-surface": "#2f3035",
+              "error-container": "#93000a",
+              "on-error": "#690005",
+              "secondary-container": "#3e495d",
+              "on-background": "#e3e2e8",
+              "outline-variant": "#3b4a41",
+              "outline": "#84958a",
+              "background": "#0A0B0F",
+              "primary-fixed-dim": "#00e29e",
+              "tertiary": "#ffe1bd",
+              "inverse-primary": "#006c49",
+              "surface-container-lowest": "#0d0e12",
+              "primary": "#6effc0",
+              "on-tertiary-fixed": "#291800",
+              "surface-tint": "#00e29e",
+              "on-secondary-fixed": "#111c2d",
+              "tertiary-fixed-dim": "#ffb955",
+              "tertiary-fixed": "#ffddb4"
+            },
+            fontFamily: {
+              "headline": ["Bricolage Grotesque"],
+              "body": ["Inter"],
+              "label": ["Space Grotesk"],
+              "mono": ["JetBrains Mono"]
+            },
+            borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
+          },
+        },
+      }
+    </script>
+<style>
+      .material-symbols-outlined {
+        font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+      }
+      .glass-morphism {
+        background: rgba(255, 255, 255, 0.04);
+        backdrop-filter: blur(12px);
+      }
+      body {
+        background-color: #0A0B0F;
+        color: #e3e2e8;
+        font-family: 'Inter', sans-serif;
+      }
+    </style>
+</head>
+<body class="flex min-h-screen">
+<!-- SideNavBar Anchor -->
+<aside class="fixed left-0 top-0 h-full flex flex-col py-6 bg-[#111318] w-64 shadow-[20px_0_40px_rgba(0,0,0,0.4)] z-50">
+<div class="px-6 mb-10">
+<div class="flex items-center gap-3 mb-1">
+<div class="w-8 h-8 rounded bg-primary-container flex items-center justify-center">
+<span class="material-symbols-outlined text-on-primary text-xl" style="font-variation-settings: 'FILL' 1;">terminal</span>
+</div>
+<h2 class="text-lg font-black text-white font-headline">Terminal v4.2</h2>
+</div>
+<p class="text-xs text-slate-500 font-label">Enterprise Tier</p>
+</div>
+<nav class="flex-1 space-y-1">
+<a class="text-slate-400 hover:bg-[#1f1f24]/50 rounded-lg mx-2 px-4 py-3 flex items-center gap-3 transition-all font-label text-sm" href="#">
+<span class="material-symbols-outlined text-lg">insights</span>
+                Executive Overview
+            </a>
+<!-- ACTIVE TAB: Margin Analysis -->
+<a class="bg-[#1f1f24] text-[#00E5A0] rounded-lg mx-2 px-4 py-3 flex items-center gap-3 font-label text-sm translate-x-1 transition-transform" href="#">
+<span class="material-symbols-outlined text-lg" style="font-variation-settings: 'FILL' 1;">query_stats</span>
+                Margin Analysis
+            </a>
+<a class="text-slate-400 hover:bg-[#1f1f24]/50 rounded-lg mx-2 px-4 py-3 flex items-center gap-3 transition-all font-label text-sm" href="#">
+<span class="material-symbols-outlined text-lg">pie_chart</span>
+                Asset Allocation
+            </a>
+<a class="text-slate-400 hover:bg-[#1f1f24]/50 rounded-lg mx-2 px-4 py-3 flex items-center gap-3 transition-all font-label text-sm" href="#">
+<span class="material-symbols-outlined text-lg">security</span>
+                Risk Matrix
+            </a>
+<a class="text-slate-400 hover:bg-[#1f1f24]/50 rounded-lg mx-2 px-4 py-3 flex items-center gap-3 transition-all font-label text-sm" href="#">
+<span class="material-symbols-outlined text-lg">receipt_long</span>
+                Audit Logs
+            </a>
+</nav>
+<div class="mt-auto px-2 space-y-1">
+<button class="w-full bg-gradient-to-br from-[#6effc0] to-[#00e5a0] text-[#003824] font-bold py-3 px-4 rounded-lg flex items-center justify-center gap-2 mb-4 text-sm">
+<span class="material-symbols-outlined text-lg">file_download</span>
+                Export Dataset
+            </button>
+<a class="text-slate-400 hover:bg-[#1f1f24]/50 rounded-lg px-4 py-3 flex items-center gap-3 transition-all font-label text-sm" href="#">
+<span class="material-symbols-outlined text-lg">support_agent</span>
+                Support
+            </a>
+<a class="text-slate-400 hover:bg-[#1f1f24]/50 rounded-lg px-4 py-3 flex items-center gap-3 transition-all font-label text-sm" href="#">
+<span class="material-symbols-outlined text-lg">logout</span>
+                Sign Out
+            </a>
+</div>
+</aside>
+<!-- Main Canvas -->
+<main class="flex-1 ml-64 min-h-screen bg-[#0A0B0F] pb-20">
+<!-- TopAppBar Anchor -->
+<header class="flex justify-between items-center w-full px-8 h-16 bg-[#0A0B0F] sticky top-0 z-40">
+<div class="flex items-center gap-8">
+<h1 class="text-xl font-bold tracking-tighter text-[#00E5A0] font-headline">Institutional Intelligence</h1>
+<nav class="hidden md:flex gap-6 items-center">
+<a class="text-slate-400 dark:text-slate-500 hover:text-[#6effc0] transition-colors duration-200 font-label text-sm" href="#">Dashboard</a>
+<a class="text-[#00E5A0] border-b-2 border-[#00E5A0] pb-1 font-label text-sm" href="#">Analytics</a>
+<a class="text-slate-400 dark:text-slate-500 hover:text-[#6effc0] transition-colors duration-200 font-label text-sm" href="#">Reports</a>
+<a class="text-slate-400 dark:text-slate-500 hover:text-[#6effc0] transition-colors duration-200 font-label text-sm" href="#">Settings</a>
+</nav>
+</div>
+<div class="flex items-center gap-4">
+<div class="relative">
+<span class="material-symbols-outlined text-slate-400">notifications</span>
+<span class="absolute top-0 right-0 w-2 h-2 bg-error rounded-full"></span>
+</div>
+<span class="material-symbols-outlined text-slate-400">help_outline</span>
+<div class="w-8 h-8 rounded-full overflow-hidden border border-outline-variant/20">
+<img alt="User Profile" data-alt="Professional headshot of a business analyst in a minimalist office environment with cool tones" src="https://lh3.googleusercontent.com/aida-public/AB6AXuClRzqxQRlArAkQ1yfdYsIeNsd3Al3ZCRn_9hkGzyaxU5dezLup3a3pCfDgzRRQCxxUYdV8LdccJt143unB5JYzu_UgZvAEuoOzNPGtuMmJ9Ydu3cg-1LIVdMaWO8924PsN6upwDuh_OfenjYsheqKea-bVTobK3xPaCFnafIkJXwn1t78zQiCY7F0g6x0FR34-wsbtbHc9xvZs4A975eAIksHwooyogFmWDWPmlUcR80TzjGgD4HlvTKTFtVP3hfMssQGP3G50xK0"/>
+</div>
+</div>
+</header>
+<div class="px-8 pt-8">
+<!-- Header Section -->
+<div class="flex justify-between items-end mb-10">
+<div>
+<div class="flex items-center gap-3 mb-2">
+<span class="px-2 py-0.5 rounded bg-error/10 text-error text-[10px] font-bold tracking-widest uppercase">Status: Critical</span>
+<div class="w-1 h-1 rounded-full bg-slate-600"></div>
+<span class="text-slate-500 text-xs font-label">Последнее обновление: 14 мин. назад</span>
+</div>
+<h2 class="text-5xl font-extrabold text-white font-headline tracking-tight">Анализ маржинальности</h2>
+</div>
+<div class="text-right">
+<p class="text-slate-500 text-xs font-label mb-1">Период: Текущий месяц</p>
+<div class="flex items-center gap-2 justify-end">
+<span class="w-2 h-2 rounded-full bg-primary animate-pulse"></span>
+<span class="text-primary font-mono text-sm uppercase tracking-tighter">Live Monitor</span>
+</div>
+</div>
+</div>
+<!-- Summary Block: Bento Style -->
+<div class="grid grid-cols-12 gap-6 mb-12">
+<!-- Large Metric -->
+<div class="col-span-12 lg:col-span-4 bg-surface-container-low p-8 rounded-xl flex flex-col justify-between">
+<div>
+<p class="text-slate-400 text-sm font-label mb-4">Текущая Маржа</p>
+<h3 class="text-7xl font-mono font-bold text-white leading-none">18.2%</h3>
+</div>
+<div class="mt-8 flex items-end justify-between">
+<div class="flex items-center gap-2 text-error">
+<span class="material-symbols-outlined">trending_down</span>
+<span class="font-mono text-xl font-bold">-1.2%</span>
+<span class="text-xs text-slate-500 font-label ml-1">vs Plan</span>
+</div>
+<div class="text-right">
+<p class="text-xs text-slate-500 font-label">Убыток (мес.)</p>
+<p class="text-xl font-mono text-error font-bold">-$140k</p>
+</div>
+</div>
+</div>
+<!-- Root Cause Analysis: Chart -->
+<div class="col-span-12 lg:col-span-8 bg-surface-container-low p-8 rounded-xl relative overflow-hidden">
+<div class="flex justify-between items-start mb-8">
+<div>
+<h4 class="text-lg font-bold text-white font-headline">Margin vs. Plan</h4>
+<p class="text-slate-500 text-sm">Анализ отклонений за последние 6 месяцев</p>
+</div>
+<div class="flex gap-4">
+<div class="flex items-center gap-2">
+<span class="w-3 h-3 rounded-full bg-primary/20 border border-primary"></span>
+<span class="text-[10px] text-slate-400 font-label uppercase">Actual</span>
+</div>
+<div class="flex items-center gap-2">
+<span class="w-3 h-3 rounded-full border border-slate-600"></span>
+<span class="text-[10px] text-slate-400 font-label uppercase">Target</span>
+</div>
+</div>
+</div>
+<!-- Visual Chart Representation -->
+<div class="h-48 flex items-end gap-4 px-2">
+<div class="flex-1 bg-surface-container-highest/40 rounded-t-sm h-[70%] relative group">
+<div class="absolute -top-6 left-1/2 -translate-x-1/2 text-[10px] font-mono text-slate-500 opacity-0 group-hover:opacity-100 transition-opacity">19.4%</div>
+</div>
+<div class="flex-1 bg-surface-container-highest/40 rounded-t-sm h-[75%]"></div>
+<div class="flex-1 bg-surface-container-highest/40 rounded-t-sm h-[82%]"></div>
+<div class="flex-1 bg-surface-container-highest/40 rounded-t-sm h-[78%]"></div>
+<div class="flex-1 bg-surface-container-highest/40 rounded-t-sm h-[65%] border-t-2 border-primary shadow-[0_0_20px_rgba(0,229,160,0.2)]"></div>
+<div class="flex-1 bg-surface-container-highest rounded-t-sm h-[60%] border-t-4 border-error relative">
+<div class="absolute -top-8 left-1/2 -translate-x-1/2 text-[10px] font-mono text-error font-bold whitespace-nowrap">CRITICAL 18.2%</div>
+</div>
+</div>
+<div class="flex justify-between mt-4 px-2 text-[10px] text-slate-600 font-mono uppercase tracking-widest">
+<span>Jan</span><span>Feb</span><span>Mar</span><span>Apr</span><span>May</span><span>Jun</span>
+</div>
+</div>
+</div>
+<div class="grid grid-cols-12 gap-8">
+<!-- Contributors List -->
+<div class="col-span-12 lg:col-span-5">
+<h4 class="text-sm font-label text-slate-500 uppercase tracking-widest mb-6 px-1">Факторы влияния</h4>
+<div class="space-y-2">
+<div class="group flex justify-between items-center p-4 rounded-lg bg-surface-container-low hover:bg-surface-container transition-all cursor-default">
+<div class="flex items-center gap-4">
+<div class="w-10 h-10 rounded bg-error/10 flex items-center justify-center text-error">
+<span class="material-symbols-outlined">trending_up</span>
+</div>
+<div>
+<p class="text-white font-medium text-sm">Rising CAC</p>
+<p class="text-slate-500 text-[10px] font-label">Увеличение стоимости привлечения</p>
+</div>
+</div>
+<div class="text-right">
+<p class="text-error font-mono font-bold">+15%</p>
+<p class="text-[10px] text-slate-600 font-label">impact factor</p>
+</div>
+</div>
+<div class="group flex justify-between items-center p-4 rounded-lg bg-surface-container-low hover:bg-surface-container transition-all cursor-default">
+<div class="flex items-center gap-4">
+<div class="w-10 h-10 rounded bg-error/10 flex items-center justify-center text-error">
+<span class="material-symbols-outlined">group_remove</span>
+</div>
+<div>
+<p class="text-white font-medium text-sm">Churn in Tier 2</p>
+<p class="text-slate-500 text-[10px] font-label">Отток клиентов среднего сегмента</p>
+</div>
+</div>
+<div class="text-right">
+<p class="text-error font-mono font-bold">-5%</p>
+<p class="text-[10px] text-slate-600 font-label">impact factor</p>
+</div>
+</div>
+<div class="group flex justify-between items-center p-4 rounded-lg bg-surface-container-low hover:bg-surface-container transition-all cursor-default opacity-60">
+<div class="flex items-center gap-4">
+<div class="w-10 h-10 rounded bg-surface-container-highest flex items-center justify-center text-slate-400">
+<span class="material-symbols-outlined">inventory_2</span>
+</div>
+<div>
+<p class="text-white font-medium text-sm">Logistics Overhead</p>
+<p class="text-slate-500 text-[10px] font-label">Прочие операционные расходы</p>
+</div>
+</div>
+<div class="text-right">
+<p class="text-slate-400 font-mono font-bold">+2.1%</p>
+<p class="text-[10px] text-slate-600 font-label">stable</p>
+</div>
+</div>
+</div>
+</div>
+<!-- Simulation & Recommendations -->
+<div class="col-span-12 lg:col-span-7 space-y-8">
+<!-- Financial Impact Simulation -->
+<div class="glass-morphism p-8 rounded-xl border border-outline-variant/10">
+<div class="flex justify-between items-center mb-6">
+<h4 class="text-lg font-bold text-white font-headline">Симуляция восстановления</h4>
+<span class="material-symbols-outlined text-primary">analytics</span>
+</div>
+<div class="flex items-center gap-8">
+<div class="flex-1">
+<p class="text-[10px] text-slate-400 font-label uppercase mb-2">Сценарий 'Optimized fix'</p>
+<div class="h-2 w-full bg-surface-container rounded-full overflow-hidden">
+<div class="h-full bg-primary w-[85%]"></div>
+</div>
+</div>
+<div class="text-right">
+<p class="text-2xl font-mono text-primary font-bold">+$115k</p>
+<p class="text-[10px] text-slate-500 font-label uppercase">Возможная прибыль / мес</p>
+</div>
+</div>
+</div>
+<!-- Recommended Steps -->
+<div>
+<h4 class="text-sm font-label text-slate-500 uppercase tracking-widest mb-6 px-1">Рекомендованные действия</h4>
+<div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+<div class="bg-surface-container-low p-5 rounded-lg border-l-2 border-primary/40">
+<p class="text-[10px] text-slate-500 font-mono mb-3">STEP 01</p>
+<p class="text-white text-sm font-medium mb-4 leading-tight">Автоматизация закупок</p>
+<div class="flex items-center justify-between">
+<span class="text-primary font-mono text-xs font-bold">+$60k/mo</span>
+<span class="material-symbols-outlined text-slate-600 text-sm">bolt</span>
+</div>
+</div>
+<div class="bg-surface-container-low p-5 rounded-lg border-l-2 border-primary/40">
+<p class="text-[10px] text-slate-500 font-mono mb-3">STEP 02</p>
+<p class="text-white text-sm font-medium mb-4 leading-tight">Пересмотр условий кредитования</p>
+<div class="flex items-center justify-between">
+<span class="text-primary font-mono text-xs font-bold">+$40k/mo</span>
+<span class="material-symbols-outlined text-slate-600 text-sm">contract</span>
+</div>
+</div>
+<div class="bg-surface-container-low p-5 rounded-lg border-l-2 border-primary/40">
+<p class="text-[10px] text-slate-500 font-mono mb-3">STEP 03</p>
+<p class="text-white text-sm font-medium mb-4 leading-tight">Оптимизация маркетинга</p>
+<div class="flex items-center justify-between">
+<span class="text-primary font-mono text-xs font-bold">+$15k/mo</span>
+<span class="material-symbols-outlined text-slate-600 text-sm">filter_alt</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Final CTA -->
+<div class="pt-4">
+<button class="w-full py-5 bg-gradient-to-r from-[#6effc0] to-[#00e5a0] text-[#003824] font-bold text-lg rounded-xl shadow-[0_10px_30px_rgba(0,229,160,0.15)] flex items-center justify-center gap-4 hover:scale-[1.01] active:scale-95 transition-all">
+<span class="font-headline tracking-wide uppercase text-sm">Implement Corrective Actions</span>
+<span class="material-symbols-outlined">rocket_launch</span>
+</button>
+<p class="text-center text-[10px] text-slate-600 mt-4 font-label uppercase tracking-widest">Требуется подтверждение финансового директора (CFO)</p>
+</div>
+</div>
+</div>
+</div>
+</main>
+<!-- Contextual Details for "Institutional" Feel -->
+<div class="fixed bottom-8 right-8 flex gap-4">
+<div class="bg-surface-container-low px-4 py-2 rounded-full flex items-center gap-3 border border-outline-variant/10 shadow-xl">
+<img alt="Advisor" class="w-6 h-6 rounded-full" data-alt="Close up of a professional male analyst face, focused expression, cinematic office lighting" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAWAfeOTRioSqQb5IykUf7gTEbF4vRRQ6XJ4GKGq-aNTcQWiWbwigIjUgZkly_3z0NGjyHfHo-y14GMSU2v5CAZg8XdxZaSLJT66GhEx8V3risUNkizxzouYR26qB7p9seCI8kXmVNM_0eqwwlrKqB8uP9QWWLKRi3DOvnqLYiTlkc1eJ3Isk81s8az7amDWp4RtCe74gQyozKaqObaBpNLkTKZJi6oeKRIWcMRA62Mp3KdLCNVIxP2ud4FxmSaueUWcAMaGLISPUI"/>
+<div class="text-[10px] font-label">
+<p class="text-slate-300 font-bold leading-none">AI Advisor</p>
+<p class="text-slate-500">Ready to discuss steps</p>
+</div>
+</div>
+</div>
+</body></html>

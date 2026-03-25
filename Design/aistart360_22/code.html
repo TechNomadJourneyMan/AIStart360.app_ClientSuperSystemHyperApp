@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="ru"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;700;800&amp;family=DM+Sans:ital,wght@0,400;0,500;0,700;1,400&amp;family=JetBrains+Mono:wght@400;700&amp;family=Space+Grotesk:wght@400;700&amp;family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary-fixed": "#47ffb8",
+                        "tertiary-container": "#ffbd60",
+                        "on-secondary": "#263143",
+                        "inverse-primary": "#006c49",
+                        "surface-container-lowest": "#0d0e12",
+                        "background": "#0A0B0F",
+                        "on-tertiary-container": "#754b00",
+                        "tertiary-fixed": "#ffddb4",
+                        "on-primary": "#003824",
+                        "secondary-container": "#3e495d",
+                        "on-secondary-container": "#aeb9d0",
+                        "primary": "#6effc0",
+                        "on-primary-fixed-variant": "#005236",
+                        "on-primary-container": "#006141",
+                        "on-error": "#690005",
+                        "surface-container-high": "#292a2e",
+                        "secondary-fixed": "#d8e3fb",
+                        "error-container": "#93000a",
+                        "surface-container": "#1f1f24",
+                        "surface": "#121317",
+                        "surface-tint": "#00e29e",
+                        "on-tertiary-fixed-variant": "#633f00",
+                        "inverse-surface": "#e3e2e8",
+                        "tertiary": "#ffe1bd",
+                        "secondary-fixed-dim": "#bcc7de",
+                        "secondary": "#bcc7de",
+                        "outline-variant": "#3b4a41",
+                        "error": "#ffb4ab",
+                        "surface-container-highest": "#343439",
+                        "on-tertiary": "#452b00",
+                        "on-surface": "#e3e2e8",
+                        "inverse-on-surface": "#2f3035",
+                        "primary-fixed-dim": "#00e29e",
+                        "on-secondary-fixed-variant": "#3c475a",
+                        "on-error-container": "#ffdad6",
+                        "on-background": "#e3e2e8",
+                        "surface-container-low": "#1a1b20",
+                        "primary-container": "#00e5a0",
+                        "on-secondary-fixed": "#111c2d",
+                        "surface-variant": "#343439",
+                        "outline": "#84958a",
+                        "on-tertiary-fixed": "#291800",
+                        "on-surface-variant": "#bacbbf",
+                        "on-primary-fixed": "#002114",
+                        "tertiary-fixed-dim": "#ffb955",
+                        "surface-dim": "#121317",
+                        "surface-bright": "#38393e"
+                    },
+                    fontFamily: {
+                        "headline": ["Bricolage Grotesque", "sans-serif"],
+                        "body": ["DM Sans", "sans-serif"],
+                        "mono": ["JetBrains Mono", "monospace"],
+                        "label": ["Space Grotesk", "sans-serif"]
+                    },
+                    borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
+                },
+            },
+        }
+    </script>
+<style>
+        body { font-family: 'DM Sans', sans-serif; background-color: #0A0B0F; color: #e3e2e8; }
+        .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+        .glass { background: rgba(255, 255, 255, 0.04); backdrop-filter: blur(12px); }
+        .contract-gradient { background: linear-gradient(135deg, #6effc0 0%, #00e5a0 100%); }
+    </style>
+</head>
+<body class="bg-[#0A0B0F] overflow-x-hidden">
+<!-- SideNavBar Shell -->
+<aside class="h-screen w-64 flex flex-col fixed left-0 top-0 bg-[#0A0B0F] border-r-0 z-50 py-8 px-4">
+<div class="mb-10 px-2">
+<h2 class="text-xl font-bold tracking-tight text-[#00E5A0] font-headline">Institutional Intelligence</h2>
+<p class="text-[10px] text-[#8B95A3] font-mono tracking-widest uppercase">Contract Engine v4.0</p>
+</div>
+<nav class="flex-1 space-y-2">
+<!-- Dashboard -->
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg text-[#8B95A3] hover:text-[#00E5A0] transition-all hover:bg-[#1f1f24]" href="#">
+<span class="material-symbols-outlined" data-icon="dashboard">dashboard</span>
+<span class="font-medium">Dashboard</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg text-[#8B95A3] hover:text-[#00E5A0] transition-all hover:bg-[#1f1f24]" href="#">
+<span class="material-symbols-outlined" data-icon="monitoring">monitoring</span>
+<span class="font-medium">Market</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg text-[#8B95A3] hover:text-[#00E5A0] transition-all hover:bg-[#1f1f24]" href="#">
+<span class="material-symbols-outlined" data-icon="insights">insights</span>
+<span class="font-medium">Insights</span>
+</a>
+<!-- Contracts (Active State) -->
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg bg-[#1f1f24] text-[#00E5A0] font-medium border-l-4 border-[#00E5A0]" href="#">
+<span class="material-symbols-outlined" data-icon="description">description</span>
+<span class="font-medium">Contracts</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg text-[#8B95A3] hover:text-[#00E5A0] transition-all hover:bg-[#1f1f24]" href="#">
+<span class="material-symbols-outlined" data-icon="verified_user">verified_user</span>
+<span class="font-medium">Compliance</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg text-[#8B95A3] hover:text-[#00E5A0] transition-all hover:bg-[#1f1f24]" href="#">
+<span class="material-symbols-outlined" data-icon="archive">archive</span>
+<span class="font-medium">Archive</span>
+</a>
+</nav>
+<div class="mt-auto space-y-2 pt-6 border-t border-white/5">
+<button class="w-full contract-gradient text-[#003824] font-bold py-3 rounded-lg flex items-center justify-center gap-2 mb-6">
+<span class="material-symbols-outlined text-sm" data-icon="add">add</span>
+<span>New Contract</span>
+</button>
+<a class="flex items-center gap-3 px-4 py-2 rounded-lg text-[#8B95A3] hover:text-[#00E5A0] transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+<span class="text-sm">Settings</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-2 rounded-lg text-[#8B95A3] hover:text-[#00E5A0] transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="contact_support">contact_support</span>
+<span class="text-sm">Support</span>
+</a>
+</div>
+</aside>
+<!-- TopAppBar Shell -->
+<header class="flex justify-between items-center w-full pl-72 pr-8 py-4 bg-transparent backdrop-blur-xl sticky top-0 z-40 shadow-[0_20px_40px_rgba(0,0,0,0.4)]">
+<div class="flex items-center gap-8">
+<div class="flex gap-6">
+<a class="text-[#8B95A3] font-medium hover:text-[#6effc0] transition-colors" href="#">Main</a>
+<a class="text-[#8B95A3] font-medium hover:text-[#6effc0] transition-colors" href="#">Repository</a>
+<a class="text-[#00E5A0] border-b-2 border-[#00E5A0] pb-1 font-medium" href="#">Audit</a>
+</div>
+</div>
+<div class="flex items-center gap-6">
+<div class="relative hidden lg:block">
+<input class="bg-[#1a1b20] border-none rounded-lg py-2 pl-10 pr-4 text-sm w-64 focus:ring-1 focus:ring-[#00E5A0] text-on-surface" placeholder="Поиск контрактов..." type="text"/>
+<span class="material-symbols-outlined absolute left-3 top-2 text-[#8B95A3] text-sm" data-icon="search">search</span>
+</div>
+<div class="flex gap-4 text-[#8B95A3]">
+<span class="material-symbols-outlined cursor-pointer hover:text-[#00E5A0]" data-icon="security">security</span>
+<span class="material-symbols-outlined cursor-pointer hover:text-[#00E5A0]" data-icon="notifications">notifications</span>
+<span class="material-symbols-outlined cursor-pointer hover:text-[#00E5A0]" data-icon="help_outline">help_outline</span>
+</div>
+<img alt="User Profile" class="w-8 h-8 rounded-lg object-cover" data-alt="professional portrait of a high-end corporate executive in a dark tailored suit with soft office lighting" src="https://lh3.googleusercontent.com/aida-public/AB6AXuC0jrLgHX4Nb5ctLXaxaxF6OmuXFEiG7DtTsvnPR4CLCLkPHHL42qgETy_7XtZpo3X9ohIqnupFPDj4LGzGdNl9i1hAV23dTTLSDaj5U_Sa1vpaQlwBxpYgguXOMryNxlrZPuDaU34qnlgnxou69rIrZVmh_3rUFUkOtePCyzrV9egpUSAcczC5aeFjNytDj6KT1Wn-bNRcew-jy8iXRNgKwLo8ZBJPI44LetOt6q6eeQpePAsmIkPzA9L7Ls2GSloDLahNPD3qccA"/>
+</div>
+</header>
+<!-- Main Content Canvas -->
+<main class="pl-72 pr-8 pt-8 pb-12 min-h-screen">
+<!-- Header Section -->
+<div class="flex flex-col md:flex-row md:items-end justify-between mb-10 gap-6">
+<div>
+<nav class="flex items-center gap-2 text-xs text-[#8B95A3] mb-2 font-mono">
+<span>DASHBOARD</span>
+<span class="material-symbols-outlined text-[10px]" data-icon="chevron_right">chevron_right</span>
+<span class="text-[#00E5A0]">CONTRACTS MANAGEMENT</span>
+</nav>
+<h1 class="text-5xl font-extrabold font-headline tracking-tight text-white">Управление контрактами</h1>
+</div>
+<div class="flex gap-3">
+<button class="px-6 py-2 rounded-lg bg-[#1a1b20] text-[#00E5A0] border border-[#3b4a41]/20 font-medium flex items-center gap-2 hover:bg-[#1f1f24] transition-all">
+<span class="material-symbols-outlined text-sm" data-icon="download">download</span>
+                    Экспорт отчета
+                </button>
+</div>
+</div>
+<!-- Stats Strip -->
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-10">
+<div class="bg-[#1a1b20] p-6 rounded-xl flex flex-col gap-2">
+<span class="text-xs text-[#8B95A3] font-label uppercase tracking-widest">Всего активно</span>
+<div class="flex items-baseline gap-2">
+<span class="text-3xl font-bold font-mono text-white">142</span>
+<span class="text-xs text-[#00E5A0]">+3 в этом месяце</span>
+</div>
+</div>
+<div class="bg-[#1a1b20] p-6 rounded-xl flex flex-col gap-2">
+<span class="text-xs text-[#8B95A3] font-label uppercase tracking-widest">Общая стоимость</span>
+<div class="flex items-baseline gap-2">
+<span class="text-3xl font-bold font-mono text-white">₸2.8B</span>
+<span class="material-symbols-outlined text-sm text-[#00E5A0]" data-icon="trending_up">trending_up</span>
+</div>
+</div>
+<div class="bg-[#1a1b20] p-6 rounded-xl flex flex-col gap-2">
+<span class="text-xs text-[#8B95A3] font-label uppercase tracking-widest">Продления</span>
+<div class="flex items-baseline gap-2">
+<span class="text-3xl font-bold font-mono text-white">12</span>
+<span class="text-xs text-[#ffbd60]">Требуют внимания</span>
+</div>
+</div>
+<div class="bg-[#1a1b20] p-6 rounded-xl flex flex-col gap-2 border-l-4 border-[#00E5A0]">
+<span class="text-xs text-[#8B95A3] font-label uppercase tracking-widest">Уровень риска</span>
+<div class="flex items-baseline gap-2">
+<span class="text-3xl font-bold font-mono text-[#00E5A0]">Low</span>
+<span class="material-symbols-outlined text-sm text-[#00E5A0]" data-icon="check_circle">check_circle</span>
+</div>
+</div>
+</div>
+<div class="grid grid-cols-12 gap-6">
+<!-- Main Content Area -->
+<div class="col-span-12 lg:col-span-9 space-y-6">
+<!-- Search and Filter Bar -->
+<div class="bg-[#1a1b20] p-4 rounded-xl flex flex-wrap items-center gap-4">
+<div class="flex-1 min-w-[240px] relative">
+<span class="material-symbols-outlined absolute left-3 top-2.5 text-[#8B95A3] text-sm" data-icon="filter_list">filter_list</span>
+<input class="w-full bg-[#0d0e12] border-none rounded-lg py-2.5 pl-10 pr-4 text-sm focus:ring-2 focus:ring-[#00E5A0]/20" placeholder="Поиск по клиенту или ID..." type="text"/>
+</div>
+<div class="flex gap-2">
+<select class="bg-[#0d0e12] border-none rounded-lg text-xs py-2.5 px-4 focus:ring-2 focus:ring-[#00E5A0]/20 text-[#8B95A3]">
+<option>Статус: Все</option>
+<option>Active</option>
+<option>Review</option>
+<option>Pending</option>
+</select>
+<select class="bg-[#0d0e12] border-none rounded-lg text-xs py-2.5 px-4 focus:ring-2 focus:ring-[#00E5A0]/20 text-[#8B95A3]">
+<option>Отрасль: Все</option>
+<option>Fintech</option>
+<option>Energy</option>
+<option>Logistics</option>
+</select>
+<select class="bg-[#0d0e12] border-none rounded-lg text-xs py-2.5 px-4 focus:ring-2 focus:ring-[#00E5A0]/20 text-[#8B95A3]">
+<option>Стоимость: Любая</option>
+<option>&gt; ₸100M</option>
+<option>&gt; ₸500M</option>
+</select>
+</div>
+</div>
+<!-- Contracts Table -->
+<div class="bg-[#1a1b20] rounded-xl overflow-hidden">
+<div class="p-6 border-b border-white/5 flex justify-between items-center">
+<h3 class="text-lg font-bold font-headline">Активные контракты</h3>
+<span class="text-xs font-mono text-[#8B95A3]">ПОКАЗАНО: 48 ИЗ 142</span>
+</div>
+<table class="w-full text-left border-collapse">
+<thead>
+<tr class="text-[10px] text-[#8B95A3] uppercase tracking-widest font-mono">
+<th class="px-6 py-4 font-normal">Клиент</th>
+<th class="px-6 py-4 font-normal">Начало / Истечение</th>
+<th class="px-6 py-4 font-normal">Стоимость</th>
+<th class="px-6 py-4 font-normal">Статус</th>
+<th class="px-6 py-4 font-normal">AI Score</th>
+<th class="px-6 py-4 font-normal">Действия</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-white/5">
+<!-- Row 1 -->
+<tr class="hover:bg-[#1f1f24] transition-colors group">
+<td class="px-6 py-4">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded bg-[#00E5A0]/10 flex items-center justify-center text-[#00E5A0] font-bold text-xs">KT</div>
+<div>
+<p class="text-sm font-bold text-white">Kazakh Telecom</p>
+<p class="text-[10px] text-[#8B95A3] font-mono">ID: CN-8821</p>
+</div>
+</div>
+</td>
+<td class="px-6 py-4 text-xs font-mono">
+<p>12.01.2023</p>
+<p class="text-[#8B95A3]">12.01.2025</p>
+</td>
+<td class="px-6 py-4 font-mono text-sm text-white">₸450,000,000</td>
+<td class="px-6 py-4">
+<span class="inline-block px-2 py-1 rounded bg-[#00E5A0]/10 text-[#00E5A0] text-[10px] font-bold uppercase tracking-tighter">Active</span>
+</td>
+<td class="px-6 py-4">
+<div class="flex items-center gap-2">
+<div class="w-12 bg-white/5 h-1 rounded-full overflow-hidden">
+<div class="bg-[#00E5A0] h-full" style="width: 94%"></div>
+</div>
+<span class="text-xs font-mono text-white">94%</span>
+</div>
+</td>
+<td class="px-6 py-4">
+<span class="material-symbols-outlined text-[#8B95A3] cursor-pointer group-hover:text-white" data-icon="more_vert">more_vert</span>
+</td>
+</tr>
+<!-- Row 2 -->
+<tr class="hover:bg-[#1f1f24] transition-colors group">
+<td class="px-6 py-4">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded bg-[#ffbd60]/10 flex items-center justify-center text-[#ffbd60] font-bold text-xs">SM</div>
+<div>
+<p class="text-sm font-bold text-white">Samruk-Munaigas</p>
+<p class="text-[10px] text-[#8B95A3] font-mono">ID: CN-9042</p>
+</div>
+</div>
+</td>
+<td class="px-6 py-4 text-xs font-mono">
+<p>05.05.2023</p>
+<p class="text-[#ffbd60]">05.05.2024</p>
+</td>
+<td class="px-6 py-4 font-mono text-sm text-white">₸1,200,000,000</td>
+<td class="px-6 py-4">
+<span class="inline-block px-2 py-1 rounded bg-[#ffbd60]/10 text-[#ffbd60] text-[10px] font-bold uppercase tracking-tighter">Review</span>
+</td>
+<td class="px-6 py-4">
+<div class="flex items-center gap-2">
+<div class="w-12 bg-white/5 h-1 rounded-full overflow-hidden">
+<div class="bg-[#ffbd60] h-full" style="width: 62%"></div>
+</div>
+<span class="text-xs font-mono text-white">62%</span>
+</div>
+</td>
+<td class="px-6 py-4">
+<span class="material-symbols-outlined text-[#8B95A3] cursor-pointer group-hover:text-white" data-icon="more_vert">more_vert</span>
+</td>
+</tr>
+<!-- Row 3 -->
+<tr class="hover:bg-[#1f1f24] transition-colors group">
+<td class="px-6 py-4">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded bg-white/10 flex items-center justify-center text-white font-bold text-xs">AL</div>
+<div>
+<p class="text-sm font-bold text-white">Alatau Logistics</p>
+<p class="text-[10px] text-[#8B95A3] font-mono">ID: CN-7731</p>
+</div>
+</div>
+</td>
+<td class="px-6 py-4 text-xs font-mono">
+<p>01.10.2023</p>
+<p class="text-[#8B95A3]">01.10.2026</p>
+</td>
+<td class="px-6 py-4 font-mono text-sm text-white">₸85,000,000</td>
+<td class="px-6 py-4">
+<span class="inline-block px-2 py-1 rounded bg-white/10 text-white text-[10px] font-bold uppercase tracking-tighter">Pending</span>
+</td>
+<td class="px-6 py-4">
+<div class="flex items-center gap-2">
+<div class="w-12 bg-white/5 h-1 rounded-full overflow-hidden">
+<div class="bg-white h-full" style="width: 88%"></div>
+</div>
+<span class="text-xs font-mono text-white">88%</span>
+</div>
+</td>
+<td class="px-6 py-4">
+<span class="material-symbols-outlined text-[#8B95A3] cursor-pointer group-hover:text-white" data-icon="more_vert">more_vert</span>
+</td>
+</tr>
+</tbody>
+</table>
+<div class="p-4 bg-[#111318] flex justify-center">
+<button class="text-[10px] font-mono uppercase tracking-widest text-[#8B95A3] hover:text-[#00E5A0] transition-colors flex items-center gap-2">
+                            Загрузить еще
+                            <span class="material-symbols-outlined text-xs" data-icon="expand_more">expand_more</span>
+</button>
+</div>
+</div>
+<!-- Contract Health Radar Placeholder Section -->
+<div class="bg-[#1a1b20] p-8 rounded-xl grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
+<div>
+<h3 class="text-xl font-bold font-headline mb-2">Здоровье контрактов</h3>
+<p class="text-[#8B95A3] text-sm mb-6">Сравнение ключевых показателей эффективности по всему портфелю.</p>
+<div class="space-y-4">
+<div class="flex justify-between items-center">
+<span class="text-xs font-mono text-[#8B95A3]">COMPLIANCE</span>
+<span class="text-xs font-mono text-white">92%</span>
+</div>
+<div class="w-full bg-white/5 h-1.5 rounded-full overflow-hidden">
+<div class="bg-[#00E5A0] h-full" style="width: 92%"></div>
+</div>
+<div class="flex justify-between items-center">
+<span class="text-xs font-mono text-[#8B95A3]">PROFITABILITY</span>
+<span class="text-xs font-mono text-white">78%</span>
+</div>
+<div class="w-full bg-white/5 h-1.5 rounded-full overflow-hidden">
+<div class="bg-[#6effc0] h-full" style="width: 78%"></div>
+</div>
+<div class="flex justify-between items-center">
+<span class="text-xs font-mono text-[#8B95A3]">RELATIONSHIP</span>
+<span class="text-xs font-mono text-white">85%</span>
+</div>
+<div class="w-full bg-white/5 h-1.5 rounded-full overflow-hidden">
+<div class="bg-white/20 h-full" style="width: 85%"></div>
+</div>
+</div>
+</div>
+<div class="flex justify-center">
+<!-- Custom Radar Visualization -->
+<div class="relative w-64 h-64 flex items-center justify-center">
+<div class="absolute inset-0 border border-white/5 rounded-full"></div>
+<div class="absolute inset-8 border border-white/5 rounded-full"></div>
+<div class="absolute inset-16 border border-white/5 rounded-full"></div>
+<div class="absolute inset-24 border border-white/5 rounded-full"></div>
+<!-- Simulated Radar Shape -->
+<svg class="w-full h-full transform -rotate-90 drop-shadow-[0_0_10px_rgba(0,229,160,0.3)]" viewbox="0 0 100 100">
+<polygon fill="rgba(0, 229, 160, 0.2)" points="50,10 85,35 75,80 25,80 15,35" stroke="#00E5A0" stroke-width="1"></polygon>
+<circle cx="50" cy="10" fill="#00E5A0" r="1.5"></circle>
+<circle cx="85" cy="35" fill="#00E5A0" r="1.5"></circle>
+<circle cx="75" cy="80" fill="#00E5A0" r="1.5"></circle>
+<circle cx="25" cy="80" fill="#00E5A0" r="1.5"></circle>
+<circle cx="15" cy="35" fill="#00E5A0" r="1.5"></circle>
+</svg>
+<span class="absolute top-0 text-[8px] font-mono text-[#8B95A3]">COMPLIANCE</span>
+<span class="absolute right-0 text-[8px] font-mono text-[#8B95A3]">VALUE</span>
+<span class="absolute bottom-0 text-[8px] font-mono text-[#8B95A3]">STRATEGY</span>
+<span class="absolute left-0 text-[8px] font-mono text-[#8B95A3]">RISK</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Right Sidebar Area -->
+<div class="col-span-12 lg:col-span-3 space-y-6">
+<!-- Upcoming Actions -->
+<div class="bg-[#1a1b20] p-6 rounded-xl">
+<div class="flex items-center justify-between mb-6">
+<h3 class="font-bold font-headline">Ближайшие действия</h3>
+<span class="material-symbols-outlined text-sm text-[#8B95A3]" data-icon="event">event</span>
+</div>
+<div class="space-y-4">
+<div class="flex items-start gap-4 p-3 rounded-lg hover:bg-[#1f1f24] transition-all cursor-pointer">
+<div class="mt-1 w-2 h-2 rounded-full bg-[#ffbd60]"></div>
+<div>
+<p class="text-sm font-bold text-white">Продление: Kaspi Bank</p>
+<p class="text-[10px] text-[#8B95A3] font-mono">ОСТАЛОСЬ 4 ДНЯ</p>
+</div>
+</div>
+<div class="flex items-start gap-4 p-3 rounded-lg hover:bg-[#1f1f24] transition-all cursor-pointer">
+<div class="mt-1 w-2 h-2 rounded-full bg-white/20"></div>
+<div>
+<p class="text-sm font-bold text-white">Аудит: KazAtomProm</p>
+<p class="text-[10px] text-[#8B95A3] font-mono">15.11.2023</p>
+</div>
+</div>
+<div class="flex items-start gap-4 p-3 rounded-lg hover:bg-[#1f1f24] transition-all cursor-pointer">
+<div class="mt-1 w-2 h-2 rounded-full bg-[#00E5A0]"></div>
+<div>
+<p class="text-sm font-bold text-white">Новая версия: BI Group</p>
+<p class="text-[10px] text-[#8B95A3] font-mono">В ОЖИДАНИИ ПОДПИСИ</p>
+</div>
+</div>
+</div>
+<button class="w-full mt-6 py-2 text-xs font-mono text-[#8B95A3] border border-white/5 rounded hover:bg-[#1f1f24] transition-all">СМОТРЕТЬ КАЛЕНДАРЬ</button>
+</div>
+<!-- AI Insights -->
+<div class="bg-[#1f1f24] p-6 rounded-xl border-t-2 border-[#00E5A0] relative overflow-hidden">
+<div class="absolute top-0 right-0 p-4 opacity-10">
+<span class="material-symbols-outlined text-5xl" data-icon="psychology">psychology</span>
+</div>
+<h3 class="font-bold font-headline mb-4 flex items-center gap-2">
+<span class="material-symbols-outlined text-[#00E5A0] text-sm" data-icon="auto_awesome">auto_awesome</span>
+                        AI Insights
+                    </h3>
+<div class="space-y-4 relative z-10">
+<div class="p-3 bg-white/5 rounded-lg">
+<p class="text-xs text-white leading-relaxed">
+<span class="text-[#00E5A0] font-bold">Оптимизация:</span> Контракт с <span class="font-mono">Samruk-Munaigas</span> имеет потенциал для апселла на 12% на основе текущих паттернов потребления.
+                            </p>
+</div>
+<div class="p-3 bg-white/5 rounded-lg">
+<p class="text-xs text-white leading-relaxed">
+<span class="text-[#00E5A0] font-bold">Риск:</span> Обнаружены несоответствия в пункте 4.2 (форс-мажор) в 3-х новых контрактах сектора Fintech.
+                            </p>
+</div>
+</div>
+<div class="mt-6 pt-6 border-t border-white/5">
+<img alt="Data visualization" class="w-full h-24 object-cover rounded-lg mb-4 opacity-50 grayscale hover:grayscale-0 transition-all cursor-pointer" data-alt="high-tech abstract data dashboard showing neon green line graphs on a dark background for technical analysis" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCUbwnB-QkQtIPsMUY6DqDkNKogbs9xRD_RHp7ilByZyJXMJiXjE6V0_QSTUMnQ997HlIEn1SorI63H_ZbZ0ocR_--Zkw1aVfJnbss6ow7elmL6_yymFvRBpSz32tdwlDGgZQ-PAJRNDXx7Yc9ZHRiVVROlhHO2UEm0DE3FQfxL_xy3RDnugyXpy31gLtkWXs63edoq_T6k3NDACfmWHiF-erkaVJsUeedvrMpe08PSFXm9zl744gvGZUyW3kzht9OXS-kSJPeu1ow"/>
+<p class="text-[10px] text-[#8B95A3] font-mono leading-tight">Прогноз прибыльности портфеля на Q4: +8.4%</p>
+</div>
+</div>
+<!-- Quick Actions List -->
+<div class="bg-[#1a1b20] p-6 rounded-xl">
+<h3 class="text-[10px] font-mono uppercase tracking-widest text-[#8B95A3] mb-4">Инструментарий</h3>
+<div class="grid grid-cols-2 gap-2">
+<button class="p-4 bg-[#1f1f24] rounded-lg flex flex-col items-center gap-2 hover:bg-[#00E5A0]/10 hover:text-[#00E5A0] transition-all">
+<span class="material-symbols-outlined" data-icon="compare">compare</span>
+<span class="text-[10px] font-bold uppercase">Сравнение</span>
+</button>
+<button class="p-4 bg-[#1f1f24] rounded-lg flex flex-col items-center gap-2 hover:bg-[#00E5A0]/10 hover:text-[#00E5A0] transition-all">
+<span class="material-symbols-outlined" data-icon="policy">policy</span>
+<span class="text-[10px] font-bold uppercase">Шаблоны</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+</main>
+<!-- Contextual FAB (Only for specific primary action) -->
+<div class="fixed bottom-8 right-8 z-50">
+<button class="w-14 h-14 contract-gradient text-[#003824] rounded-xl shadow-[0_20px_40px_rgba(0,229,160,0.4)] flex items-center justify-center hover:scale-105 transition-transform">
+<span class="material-symbols-outlined text-3xl font-bold" data-icon="add">add</span>
+</button>
+</div>
+</body></html>

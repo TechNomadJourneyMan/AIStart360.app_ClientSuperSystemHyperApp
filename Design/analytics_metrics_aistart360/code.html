@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>AIStart360 | Institutional Intelligence</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;600;700;800&amp;family=DM+Sans:ital,wght@0,400;0,500;0,700;1,400&amp;family=JetBrains+Mono:wght@400;500;700&amp;family=Space+Grotesk:wght@300;400;500;600;700&amp;family=Inter:wght@300;400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "secondary-fixed-dim": "#bcc7de",
+              "surface-container-lowest": "#0d0e12",
+              "on-primary-fixed": "#002114",
+              "inverse-on-surface": "#2f3035",
+              "on-surface-variant": "#bacbbf",
+              "on-primary": "#003824",
+              "outline-variant": "#3b4a41",
+              "surface-container-highest": "#343439",
+              "primary-fixed-dim": "#00e29e",
+              "on-primary-container": "#006141",
+              "inverse-primary": "#006c49",
+              "outline": "#84958a",
+              "secondary": "#bcc7de",
+              "tertiary": "#ffe1bd",
+              "secondary-container": "#3e495d",
+              "on-secondary": "#263143",
+              "surface": "#121317",
+              "surface-container-low": "#1a1b20",
+              "on-error": "#690005",
+              "error": "#ffb4ab",
+              "secondary-fixed": "#d8e3fb",
+              "error-container": "#93000a",
+              "on-secondary-container": "#aeb9d0",
+              "on-tertiary-fixed": "#291800",
+              "on-tertiary-fixed-variant": "#633f00",
+              "primary": "#6effc0",
+              "background": "#121317",
+              "primary-fixed": "#47ffb8",
+              "on-background": "#e3e2e8",
+              "surface-variant": "#343439",
+              "tertiary-fixed-dim": "#ffb955",
+              "on-secondary-fixed-variant": "#3c475a",
+              "surface-dim": "#121317",
+              "on-error-container": "#ffdad6",
+              "on-secondary-fixed": "#111c2d",
+              "tertiary-fixed": "#ffddb4",
+              "surface-container": "#1f1f24",
+              "primary-container": "#00e5a0",
+              "on-surface": "#e3e2e8",
+              "on-primary-fixed-variant": "#005236",
+              "surface-container-high": "#292a2e",
+              "inverse-surface": "#e3e2e8",
+              "surface-bright": "#38393e",
+              "on-tertiary-container": "#754b00",
+              "on-tertiary": "#452b00",
+              "tertiary-container": "#ffbd60",
+              "surface-tint": "#00e29e"
+            },
+            fontFamily: {
+              "headline": ["Bricolage Grotesque"],
+              "body": ["DM Sans"],
+              "mono": ["JetBrains Mono"],
+              "label": ["DM Sans"]
+            },
+            borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
+          },
+        },
+      }
+    </script>
+<style>
+        body { font-family: 'DM Sans', sans-serif; background-color: #0A0B0F; color: #e3e2e8; }
+        .font-headline { font-family: 'Bricolage Grotesque', sans-serif; }
+        .font-mono { font-family: 'JetBrains Mono', monospace; }
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.04);
+            backdrop-filter: blur(12px);
+        }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+    </style>
+</head>
+<body class="selection:bg-primary selection:text-on-primary">
+<!-- SideNavBar (Shared Component) -->
+<aside class="bg-[#111318] h-screen w-64 fixed left-0 top-0 overflow-y-auto flex flex-col h-full py-6 px-4 z-50">
+<div class="flex items-center gap-3 mb-10 px-2">
+<div class="w-8 h-8 rounded bg-primary-container flex items-center justify-center">
+<span class="material-symbols-outlined text-on-primary text-xl" style="font-variation-settings: 'FILL' 1;">analytics</span>
+</div>
+<div>
+<h1 class="text-xl font-bold tracking-tight text-white font-headline">AIStart360</h1>
+<p class="text-[10px] uppercase tracking-widest text-[#8B95A3] font-mono">Institutional Intelligence</p>
+</div>
+</div>
+<nav class="flex-1 space-y-1">
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-[#8B95A3] hover:text-white hover:bg-[#1f1f24] transition-all duration-200 group" href="#">
+<span class="material-symbols-outlined group-hover:text-primary transition-colors">dashboard</span>
+<span class="font-medium">Dashboard</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-[#8B95A3] hover:text-white hover:bg-[#1f1f24] transition-all duration-200 group" href="#">
+<span class="material-symbols-outlined group-hover:text-primary transition-colors">business_center</span>
+<span class="font-medium">Clients</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-[#8B95A3] hover:text-white hover:bg-[#1f1f24] transition-all duration-200 group" href="#">
+<span class="material-symbols-outlined group-hover:text-primary transition-colors">description</span>
+<span class="font-medium">Reports</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-[#1f1f24] text-[#00E5A0] font-medium border-r-2 border-[#00E5A0] transition-all duration-200" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">monitoring</span>
+<span class="font-medium">Analytics</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-[#8B95A3] hover:text-white hover:bg-[#1f1f24] transition-all duration-200 group" href="#">
+<span class="material-symbols-outlined group-hover:text-primary transition-colors">task_alt</span>
+<span class="font-medium">Tasks</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-[#8B95A3] hover:text-white hover:bg-[#1f1f24] transition-all duration-200 group" href="#">
+<span class="material-symbols-outlined group-hover:text-primary transition-colors">group</span>
+<span class="font-medium">Team</span>
+</a>
+</nav>
+<div class="mt-auto space-y-1">
+<div class="px-3 py-2 mb-4 bg-surface-container-low rounded-lg border border-outline-variant/10">
+<p class="text-[10px] text-primary uppercase font-mono tracking-tighter">System Status</p>
+<div class="flex items-center gap-2 mt-1">
+<div class="w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></div>
+<span class="text-xs text-on-surface">System Status: Optimal</span>
+</div>
+</div>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-[#8B95A3] hover:text-white hover:bg-[#1f1f24] transition-all" href="#">
+<span class="material-symbols-outlined">settings</span>
+<span class="text-sm">Settings</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-[#8B95A3] hover:text-white hover:bg-[#1f1f24] transition-all" href="#">
+<span class="material-symbols-outlined">contact_support</span>
+<span class="text-sm">Support</span>
+</a>
+</div>
+</aside>
+<!-- TopNavBar (Shared Component) -->
+<header class="fixed top-0 right-0 w-[calc(100%-16rem)] h-16 z-40 bg-[#0A0B0F]/80 backdrop-blur-xl flex justify-between items-center px-8 w-full shadow-2xl shadow-black/40">
+<div class="flex items-center flex-1 max-w-xl">
+<div class="relative w-full">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline text-sm">search</span>
+<input class="w-full bg-surface-container-low border-none rounded-lg pl-10 pr-4 py-2 text-sm focus:ring-1 focus:ring-primary/20 text-on-surface placeholder:text-[#8B95A3]" placeholder="Search analytics data..." type="text"/>
+</div>
+</div>
+<div class="flex items-center gap-6">
+<button class="text-sm font-mono text-primary px-4 py-1.5 rounded border border-primary/20 hover:bg-primary/5 transition-all active:scale-95 duration-150">
+                Quick Action
+            </button>
+<button class="text-sm font-bold bg-gradient-to-br from-[#6effc0] to-[#00e5a0] text-on-primary px-5 py-2 rounded-lg transition-all active:scale-95 duration-150">
+                Run Report
+            </button>
+<div class="flex items-center gap-4 border-l border-outline-variant/20 pl-6 ml-2">
+<button class="relative text-[#8B95A3] hover:text-white transition-colors">
+<span class="material-symbols-outlined">notifications</span>
+<span class="absolute -top-1 -right-1 w-2 h-2 bg-primary rounded-full"></span>
+</button>
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-full bg-surface-container-highest overflow-hidden">
+<img alt="User Profile" class="w-full h-full object-cover" data-alt="Close-up portrait of a professional male analyst in high-end office environment with soft focus studio lighting" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDnGd1RV-_1cNYtzqvNqa4CzWd7XxmliYYJ-UF-_xXMgxWEwbAoW0UjJS6qdlRC1fxR3T7kcvsed8yhxijQ1OnPAItv12VsuwjdHTmynwLq2kcqPfu4lVvIjkKYhQq8fy4wh-FfdPxekG5tReCw0RxL4r0AUuHATiI3RyQgv9rlIlYpj_RVJ3yMxjBgcFnbdcc1wfjjujtR5B5plTBVbqJNb0y3bOE5l4PgdBBt7X9j7jui0fOibxJJw1lYUuUdnk9Anpxnc7-eN6k"/>
+</div>
+</div>
+</div>
+</div>
+</header>
+<!-- Main Content -->
+<main class="ml-64 pt-24 pb-12 px-10 min-h-screen">
+<!-- Header Section -->
+<div class="flex justify-between items-end mb-10">
+<div>
+<h2 class="text-4xl font-extrabold font-headline tracking-tight mb-2">Institutional Analytics</h2>
+<p class="text-[#8B95A3] max-w-lg">Deep-dive into unit economics, churn dynamics, and operational friction points across the portfolio.</p>
+</div>
+<div class="flex gap-2">
+<div class="bg-surface-container px-4 py-2 rounded-lg flex flex-col items-end">
+<span class="text-[10px] font-mono text-outline-variant uppercase">Analysis Period</span>
+<span class="text-sm font-bold">Last 180 Days</span>
+</div>
+</div>
+</div>
+<!-- KPI Data Blocks -->
+<div class="grid grid-cols-4 gap-6 mb-12">
+<div class="bg-surface-container-low p-6 rounded-xl group hover:bg-surface-container transition-colors">
+<div class="flex justify-between items-start mb-4">
+<span class="text-xs font-mono text-outline-variant uppercase tracking-widest">LTV / CAC Ratio</span>
+<span class="text-primary material-symbols-outlined text-sm">trending_up</span>
+</div>
+<div class="text-3xl font-mono font-bold text-white mb-2">5.82x</div>
+<div class="w-full h-1 bg-surface-container-highest rounded-full overflow-hidden">
+<div class="w-[72%] h-full bg-gradient-to-r from-primary/40 to-primary"></div>
+</div>
+<p class="text-[11px] text-[#8B95A3] mt-3 italic">+12% vs last quarter</p>
+</div>
+<div class="bg-surface-container-low p-6 rounded-xl group hover:bg-surface-container transition-colors">
+<div class="flex justify-between items-start mb-4">
+<span class="text-xs font-mono text-outline-variant uppercase tracking-widest">Avg. Payback</span>
+<span class="text-primary material-symbols-outlined text-sm">schedule</span>
+</div>
+<div class="text-3xl font-mono font-bold text-white mb-2">4.2 <span class="text-sm font-normal text-outline-variant">mos</span></div>
+<div class="w-full h-1 bg-surface-container-highest rounded-full overflow-hidden">
+<div class="w-[40%] h-full bg-gradient-to-r from-primary/40 to-primary"></div>
+</div>
+<p class="text-[11px] text-[#8B95A3] mt-3 italic">Record low efficiency</p>
+</div>
+<div class="bg-surface-container-low p-6 rounded-xl group hover:bg-surface-container transition-colors">
+<div class="flex justify-between items-start mb-4">
+<span class="text-xs font-mono text-outline-variant uppercase tracking-widest">Net Retention</span>
+<span class="text-primary material-symbols-outlined text-sm">sync_alt</span>
+</div>
+<div class="text-3xl font-mono font-bold text-white mb-2">124.5%</div>
+<div class="w-full h-1 bg-surface-container-highest rounded-full overflow-hidden">
+<div class="w-[85%] h-full bg-gradient-to-r from-primary/40 to-primary"></div>
+</div>
+<p class="text-[11px] text-[#8B95A3] mt-3 italic">Expanding enterprise accounts</p>
+</div>
+<div class="bg-surface-container-low p-6 rounded-xl group hover:bg-surface-container transition-colors">
+<div class="flex justify-between items-start mb-4">
+<span class="text-xs font-mono text-outline-variant uppercase tracking-widest">Burn Multiple</span>
+<span class="text-primary material-symbols-outlined text-sm">local_fire_department</span>
+</div>
+<div class="text-3xl font-mono font-bold text-white mb-2">0.85</div>
+<div class="w-full h-1 bg-surface-container-highest rounded-full overflow-hidden">
+<div class="w-[25%] h-full bg-gradient-to-r from-primary/40 to-primary"></div>
+</div>
+<p class="text-[11px] text-[#8B95A3] mt-3 italic">Hyper-efficient growth state</p>
+</div>
+</div>
+<!-- Charts Grid (Asymmetric) -->
+<div class="grid grid-cols-12 gap-8 mb-12">
+<!-- LTV / CAC Breakdown -->
+<div class="col-span-8 bg-surface-container-low p-8 rounded-2xl">
+<div class="flex justify-between items-center mb-10">
+<div>
+<h3 class="text-xl font-headline font-bold">LTV / CAC Breakdown</h3>
+<p class="text-sm text-outline-variant">Acquisition efficiency relative to lifetime value maturation</p>
+</div>
+<div class="flex gap-4">
+<div class="flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-primary"></span>
+<span class="text-[10px] font-mono uppercase">LTV Growth</span>
+</div>
+<div class="flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-surface-container-highest"></span>
+<span class="text-[10px] font-mono uppercase">CAC Target</span>
+</div>
+</div>
+</div>
+<div class="h-64 flex items-end justify-between gap-4 px-4">
+<!-- Simple Bar Representation for Chart -->
+<div class="flex flex-col items-center flex-1 group">
+<div class="relative w-full bg-surface-container-highest rounded-t-lg h-24 group-hover:h-32 transition-all duration-300">
+<div class="absolute bottom-0 w-full bg-primary/20 h-16 rounded-t-lg border-t-2 border-primary"></div>
+</div>
+<span class="mt-4 text-[10px] font-mono text-outline-variant">JAN</span>
+</div>
+<div class="flex flex-col items-center flex-1 group">
+<div class="relative w-full bg-surface-container-highest rounded-t-lg h-32 group-hover:h-40 transition-all duration-300">
+<div class="absolute bottom-0 w-full bg-primary/20 h-20 rounded-t-lg border-t-2 border-primary"></div>
+</div>
+<span class="mt-4 text-[10px] font-mono text-outline-variant">FEB</span>
+</div>
+<div class="flex flex-col items-center flex-1 group">
+<div class="relative w-full bg-surface-container-highest rounded-t-lg h-28 group-hover:h-36 transition-all duration-300">
+<div class="absolute bottom-0 w-full bg-primary/20 h-24 rounded-t-lg border-t-2 border-primary"></div>
+</div>
+<span class="mt-4 text-[10px] font-mono text-outline-variant">MAR</span>
+</div>
+<div class="flex flex-col items-center flex-1 group">
+<div class="relative w-full bg-surface-container-highest rounded-t-lg h-48 group-hover:h-56 transition-all duration-300">
+<div class="absolute bottom-0 w-full bg-primary/20 h-32 rounded-t-lg border-t-2 border-primary"></div>
+</div>
+<span class="mt-4 text-[10px] font-mono text-outline-variant">APR</span>
+</div>
+<div class="flex flex-col items-center flex-1 group">
+<div class="relative w-full bg-surface-container-highest rounded-t-lg h-56 group-hover:h-64 transition-all duration-300">
+<div class="absolute bottom-0 w-full bg-primary/30 h-44 rounded-t-lg border-t-2 border-primary"></div>
+</div>
+<span class="mt-4 text-[10px] font-mono text-outline-variant">MAY</span>
+</div>
+<div class="flex flex-col items-center flex-1 group">
+<div class="relative w-full bg-surface-container-highest rounded-t-lg h-44 group-hover:h-52 transition-all duration-300">
+<div class="absolute bottom-0 w-full bg-primary/20 h-38 rounded-t-lg border-t-2 border-primary"></div>
+</div>
+<span class="mt-4 text-[10px] font-mono text-outline-variant">JUN</span>
+</div>
+</div>
+</div>
+<!-- Churn Analysis Cohort -->
+<div class="col-span-4 bg-surface-container-low p-8 rounded-2xl">
+<h3 class="text-xl font-headline font-bold mb-2">Churn Analysis</h3>
+<p class="text-sm text-outline-variant mb-6">Cohort-based retention grid</p>
+<div class="grid grid-cols-5 gap-1 text-center font-mono">
+<div class="h-10"></div>
+<div class="text-[9px] text-outline-variant">M1</div>
+<div class="text-[9px] text-outline-variant">M2</div>
+<div class="text-[9px] text-outline-variant">M3</div>
+<div class="text-[9px] text-outline-variant">M4</div>
+<div class="text-[10px] py-3 text-left">JAN</div>
+<div class="bg-primary/90 h-10 rounded-sm"></div>
+<div class="bg-primary/70 h-10 rounded-sm"></div>
+<div class="bg-primary/50 h-10 rounded-sm"></div>
+<div class="bg-primary/30 h-10 rounded-sm"></div>
+<div class="text-[10px] py-3 text-left">FEB</div>
+<div class="bg-primary/90 h-10 rounded-sm"></div>
+<div class="bg-primary/60 h-10 rounded-sm"></div>
+<div class="bg-primary/40 h-10 rounded-sm"></div>
+<div class="bg-surface-container-highest h-10 rounded-sm"></div>
+<div class="text-[10px] py-3 text-left">MAR</div>
+<div class="bg-primary/80 h-10 rounded-sm"></div>
+<div class="bg-primary/50 h-10 rounded-sm"></div>
+<div class="bg-surface-container-highest h-10 rounded-sm"></div>
+<div class="bg-surface-container-highest h-10 rounded-sm"></div>
+<div class="text-[10px] py-3 text-left">APR</div>
+<div class="bg-primary/70 h-10 rounded-sm"></div>
+<div class="bg-surface-container-highest h-10 rounded-sm"></div>
+<div class="bg-surface-container-highest h-10 rounded-sm"></div>
+<div class="bg-surface-container-highest h-10 rounded-sm"></div>
+</div>
+<div class="mt-6 p-4 rounded-lg bg-surface-container border-l-2 border-primary">
+<p class="text-[11px] leading-relaxed text-on-surface">Significant churn reduction in M2 for APR cohort due to new onboarding flow implementation.</p>
+</div>
+</div>
+</div>
+<!-- Bottlenecks Section -->
+<div class="mb-12">
+<h3 class="text-2xl font-headline font-bold mb-6">Friction &amp; Bottlenecks</h3>
+<div class="grid grid-cols-5 gap-6">
+<!-- Market Score -->
+<div class="bg-surface-container-low p-5 rounded-xl border-b-2 border-primary">
+<span class="text-[10px] font-mono text-outline-variant uppercase block mb-4">Market Readiness</span>
+<div class="flex items-baseline gap-2 mb-4">
+<span class="text-4xl font-headline font-bold">8.4</span>
+<span class="text-sm text-outline-variant">/ 10</span>
+</div>
+<div class="flex gap-1">
+<div class="h-1 flex-1 bg-primary"></div>
+<div class="h-1 flex-1 bg-primary"></div>
+<div class="h-1 flex-1 bg-primary"></div>
+<div class="h-1 flex-1 bg-primary"></div>
+<div class="h-1 flex-1 bg-outline-variant/30"></div>
+</div>
+</div>
+<!-- ICP Score -->
+<div class="bg-surface-container-low p-5 rounded-xl border-b-2 border-primary">
+<span class="text-[10px] font-mono text-outline-variant uppercase block mb-4">ICP Alignment</span>
+<div class="flex items-baseline gap-2 mb-4">
+<span class="text-4xl font-headline font-bold">9.1</span>
+<span class="text-sm text-outline-variant">/ 10</span>
+</div>
+<div class="flex gap-1">
+<div class="h-1 flex-1 bg-primary"></div>
+<div class="h-1 flex-1 bg-primary"></div>
+<div class="h-1 flex-1 bg-primary"></div>
+<div class="h-1 flex-1 bg-primary"></div>
+<div class="h-1 flex-1 bg-primary"></div>
+</div>
+</div>
+<!-- Team Score -->
+<div class="bg-surface-container-low p-5 rounded-xl border-b-2 border-error">
+<span class="text-[10px] font-mono text-outline-variant uppercase block mb-4">Team Velocity</span>
+<div class="flex items-baseline gap-2 mb-4">
+<span class="text-4xl font-headline font-bold">4.2</span>
+<span class="text-sm text-outline-variant">/ 10</span>
+</div>
+<div class="flex gap-1">
+<div class="h-1 flex-1 bg-error"></div>
+<div class="h-1 flex-1 bg-error"></div>
+<div class="h-1 flex-1 bg-outline-variant/30"></div>
+<div class="h-1 flex-1 bg-outline-variant/30"></div>
+<div class="h-1 flex-1 bg-outline-variant/30"></div>
+</div>
+</div>
+<!-- Operations Score -->
+<div class="bg-surface-container-low p-5 rounded-xl border-b-2 border-primary">
+<span class="text-[10px] font-mono text-outline-variant uppercase block mb-4">Ops Scalability</span>
+<div class="flex items-baseline gap-2 mb-4">
+<span class="text-4xl font-headline font-bold">7.8</span>
+<span class="text-sm text-outline-variant">/ 10</span>
+</div>
+<div class="flex gap-1">
+<div class="h-1 flex-1 bg-primary"></div>
+<div class="h-1 flex-1 bg-primary"></div>
+<div class="h-1 flex-1 bg-primary"></div>
+<div class="h-1 flex-1 bg-primary"></div>
+<div class="h-1 flex-1 bg-outline-variant/30"></div>
+</div>
+</div>
+<!-- Finance Score -->
+<div class="bg-surface-container-low p-5 rounded-xl border-b-2 border-primary">
+<span class="text-[10px] font-mono text-outline-variant uppercase block mb-4">Capital Runway</span>
+<div class="flex items-baseline gap-2 mb-4">
+<span class="text-4xl font-headline font-bold">8.9</span>
+<span class="text-sm text-outline-variant">/ 10</span>
+</div>
+<div class="flex gap-1">
+<div class="h-1 flex-1 bg-primary"></div>
+<div class="h-1 flex-1 bg-primary"></div>
+<div class="h-1 flex-1 bg-primary"></div>
+<div class="h-1 flex-1 bg-primary"></div>
+<div class="h-1 flex-1 bg-primary"></div>
+</div>
+</div>
+</div>
+</div>
+<!-- AI Insights & Recommendations -->
+<div class="grid grid-cols-12 gap-8">
+<div class="col-span-12 lg:col-span-4 bg-primary/5 rounded-2xl p-8 border border-primary/10 relative overflow-hidden">
+<div class="absolute top-0 right-0 p-4 opacity-20">
+<span class="material-symbols-outlined text-6xl text-primary">auto_awesome</span>
+</div>
+<h3 class="text-xl font-headline font-bold text-primary mb-6 flex items-center gap-2">
+<span class="material-symbols-outlined text-lg">bolt</span>
+                    AI Growth Insights
+                </h3>
+<div class="space-y-6">
+<div class="flex gap-4">
+<div class="w-8 h-8 rounded bg-primary/20 flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-primary text-sm">trending_up</span>
+</div>
+<div>
+<p class="text-sm font-bold text-white mb-1">Scale Channel 04</p>
+<p class="text-xs text-outline-variant">LinkedIn Sponsored Content is yielding 4.2x LTV/CAC. Allocate 25% more budget immediately.</p>
+</div>
+</div>
+<div class="flex gap-4">
+<div class="w-8 h-8 rounded bg-error/20 flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-error text-sm">warning</span>
+</div>
+<div>
+<p class="text-sm font-bold text-white mb-1">Team Burnout Risk</p>
+<p class="text-xs text-outline-variant">Dev velocity has dropped 14% over 3 weeks. Recommend hiring lead for Platform Engineering.</p>
+</div>
+</div>
+<div class="flex gap-4">
+<div class="w-8 h-8 rounded bg-primary/20 flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-primary text-sm">rocket_launch</span>
+</div>
+<div>
+<p class="text-sm font-bold text-white mb-1">Expansion Potential</p>
+<p class="text-xs text-outline-variant">Enterprise segment is ripe for upselling custom reporting modules. Target Tier 1 accounts.</p>
+</div>
+</div>
+</div>
+</div>
+<!-- Client Scaling Priority Table -->
+<div class="col-span-12 lg:col-span-8 bg-surface-container-low rounded-2xl p-8">
+<div class="flex justify-between items-center mb-6">
+<h3 class="text-xl font-headline font-bold">Scaling Priority Queue</h3>
+<button class="text-xs font-mono text-primary flex items-center gap-1">
+                        View Full List
+                        <span class="material-symbols-outlined text-xs">arrow_forward</span>
+</button>
+</div>
+<div class="overflow-x-auto">
+<table class="w-full text-left">
+<thead>
+<tr class="text-[10px] font-mono text-outline-variant border-b border-outline-variant/10 uppercase tracking-tighter">
+<th class="pb-4 font-normal">Client Account</th>
+<th class="pb-4 font-normal">Scale Score</th>
+<th class="pb-4 font-normal">Risk Level</th>
+<th class="pb-4 font-normal text-right">Recommendation</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-outline-variant/5">
+<tr class="group hover:bg-surface-container-highest transition-colors">
+<td class="py-4">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded bg-surface-container flex items-center justify-center">
+<span class="text-xs font-bold text-primary">NX</span>
+</div>
+<div>
+<p class="text-sm font-bold">NexGen Systems</p>
+<p class="text-[10px] text-outline-variant">Enterprise SaaS</p>
+</div>
+</div>
+</td>
+<td class="py-4">
+<span class="text-sm font-mono font-bold">98/100</span>
+</td>
+<td class="py-4">
+<span class="px-2 py-0.5 rounded text-[10px] font-mono bg-primary/10 text-primary uppercase">Minimal</span>
+</td>
+<td class="py-4 text-right">
+<button class="text-xs font-bold text-primary group-hover:underline">Aggressive Scale</button>
+</td>
+</tr>
+<tr class="group hover:bg-surface-container-highest transition-colors">
+<td class="py-4">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded bg-surface-container flex items-center justify-center">
+<span class="text-xs font-bold text-primary">VT</span>
+</div>
+<div>
+<p class="text-sm font-bold">Vortx Tech</p>
+<p class="text-[10px] text-outline-variant">Infrastructure</p>
+</div>
+</div>
+</td>
+<td class="py-4">
+<span class="text-sm font-mono font-bold">74/100</span>
+</td>
+<td class="py-4">
+<span class="px-2 py-0.5 rounded text-[10px] font-mono bg-secondary-container/30 text-secondary-fixed-dim uppercase">Moderate</span>
+</td>
+<td class="py-4 text-right">
+<button class="text-xs font-bold text-on-surface/80 group-hover:underline">Stabilize Core</button>
+</td>
+</tr>
+<tr class="group hover:bg-surface-container-highest transition-colors">
+<td class="py-4">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded bg-surface-container flex items-center justify-center">
+<span class="text-xs font-bold text-primary">LP</span>
+</div>
+<div>
+<p class="text-sm font-bold">Lumina Partners</p>
+<p class="text-[10px] text-outline-variant">Financial Ops</p>
+</div>
+</div>
+</td>
+<td class="py-4">
+<span class="text-sm font-mono font-bold">82/100</span>
+</td>
+<td class="py-4">
+<span class="px-2 py-0.5 rounded text-[10px] font-mono bg-primary/10 text-primary uppercase">Minimal</span>
+</td>
+<td class="py-4 text-right">
+<button class="text-xs font-bold text-primary group-hover:underline">Expansion Phase</button>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+</main>
+</body></html>

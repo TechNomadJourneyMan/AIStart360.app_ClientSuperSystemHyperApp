@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Project Alpha | AIStart360 Institutional Intelligence</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;700;800&amp;family=DM+Sans:ital,wght@0,400;0,500;0,700;1,400&amp;family=JetBrains+Mono:wght@400;700&amp;family=Space+Grotesque:wght@400;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "on-error": "#690005",
+              "on-primary-fixed-variant": "#005236",
+              "on-primary-container": "#006141",
+              "inverse-surface": "#e3e2e8",
+              "on-tertiary-fixed-variant": "#633f00",
+              "surface-container-highest": "#343439",
+              "tertiary": "#ffe1bd",
+              "secondary-fixed-dim": "#bcc7de",
+              "secondary": "#bcc7de",
+              "outline-variant": "#3b4a41",
+              "error": "#ffb4ab",
+              "secondary-fixed": "#d8e3fb",
+              "error-container": "#93000a",
+              "surface-container-high": "#292a2e",
+              "surface-tint": "#00e29e",
+              "surface-container": "#1f1f24",
+              "surface": "#121317",
+              "background": "#0A0B0F",
+              "on-tertiary-container": "#754b00",
+              "tertiary-container": "#ffbd60",
+              "on-secondary": "#263143",
+              "primary-fixed": "#47ffb8",
+              "surface-container-lowest": "#0d0e12",
+              "inverse-primary": "#006c49",
+              "secondary-container": "#3e495d",
+              "on-secondary-container": "#aeb9d0",
+              "primary": "#6effc0",
+              "tertiary-fixed": "#ffddb4",
+              "on-primary": "#003824",
+              "surface-variant": "#343439",
+              "outline": "#84958a",
+              "on-tertiary-fixed": "#291800",
+              "on-surface-variant": "#bacbbf",
+              "on-primary-fixed": "#002114",
+              "on-background": "#e3e2e8",
+              "on-secondary-fixed": "#111c2d",
+              "surface-container-low": "#111318",
+              "primary-container": "#00E5A0",
+              "surface-bright": "#38393e",
+              "tertiary-fixed-dim": "#ffb955",
+              "surface-dim": "#121317",
+              "inverse-on-surface": "#2f3035",
+              "on-tertiary": "#452b00",
+              "on-surface": "#e3e2e8",
+              "on-error-container": "#ffdad6",
+              "primary-fixed-dim": "#00e29e",
+              "on-secondary-fixed-variant": "#3c475a"
+            },
+            fontFamily: {
+              "headline": ["Bricolage Grotesque"],
+              "body": ["DM Sans"],
+              "label": ["Space Grotesque"],
+              "mono": ["JetBrains Mono"]
+            },
+            borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
+          },
+        },
+      }
+    </script>
+<style>
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.04);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+        }
+        .ghost-border {
+            outline: 1px solid rgba(59, 74, 65, 0.15);
+        }
+        .text-gradient {
+            background: linear-gradient(135deg, #6effc0 0%, #00e5a0 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .btn-primary-gradient {
+            background: linear-gradient(135deg, #6effc0 0%, #00e5a0 100%);
+        }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+    </style>
+</head>
+<body class="bg-background text-on-background font-body selection:bg-primary selection:text-on-primary">
+<!-- TopAppBar -->
+<header class="fixed top-0 w-full z-50 bg-[#111318] font-['Space_Grotesque'] antialiased flex items-center justify-between px-8 py-4 w-full shadow-none">
+<div class="flex items-center gap-8">
+<span class="text-xl font-bold tracking-tight text-[#00E5A0]">AIStart360</span>
+<nav class="hidden md:flex items-center gap-6">
+<a class="text-gray-400 hover:text-white transition-colors" href="#">Dashboard</a>
+<a class="text-[#00E5A0] border-b-2 border-[#00E5A0] pb-1" href="#">Projects</a>
+<a class="text-gray-400 hover:text-white transition-colors" href="#">Intelligence</a>
+<a class="text-gray-400 hover:text-white transition-colors" href="#">Team</a>
+</nav>
+</div>
+<div class="flex items-center gap-4">
+<button class="p-2 text-gray-400 hover:bg-[#1f1f24] transition-all duration-200 rounded-lg active:scale-95">
+<span class="material-symbols-outlined" data-icon="notifications">notifications</span>
+</button>
+<button class="p-2 text-gray-400 hover:bg-[#1f1f24] transition-all duration-200 rounded-lg active:scale-95">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+</button>
+<img alt="User profile" class="w-8 h-8 rounded-full object-cover" data-alt="Close up portrait of a professional man in a minimalist workspace with clean lighting" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDy74cOCRZJqRLS4KS2bYaHxyvsbb_vmT_7XvJBEuEYEYgXdtBkjzdegmAdm0hS0q-LE4nTqGSUDw65lk6o3LKh6br6A3WFGBP1eKZrSK4uwDCgG9lS9x9PJhzK09xFVZ4waWHJ0ECY998sO6kxLJJGQhj27Eyzp2ZXlQv4X-2djjenHUn4WRyA75XUqiAox-cmKiVJkS2ZBVYhawHR-Qp1VcTq7kWYCq6Vwah1QFAklO6VDdQhrKpQqnPShaY1iqvFR79QSsSIAJI"/>
+</div>
+</header>
+<!-- SideNavBar -->
+<aside class="fixed left-0 top-0 h-full w-64 z-40 bg-[#111318] font-['Space_Grotesque'] flex flex-col h-full p-4 pt-24 shadow-2xl shadow-black/50">
+<div class="mb-8 px-2">
+<div class="flex items-center gap-3 mb-1">
+<div class="w-8 h-8 rounded-lg bg-surface-container flex items-center justify-center">
+<span class="material-symbols-outlined text-[#00E5A0] text-sm" data-icon="analytics">analytics</span>
+</div>
+<h2 class="text-[#00E5A0] font-bold">Project Alpha</h2>
+</div>
+<p class="text-xs text-gray-500 uppercase tracking-widest">Institutional Intelligence</p>
+</div>
+<nav class="flex-1 space-y-1">
+<a class="flex items-center gap-3 px-3 py-2 bg-[#1f1f24] text-[#00E5A0] rounded-lg transition-transform duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined" data-icon="analytics">analytics</span>
+<span>Overview</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 text-gray-500 hover:text-gray-200 hover:bg-[#1f1f24]/50 transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="assignment">assignment</span>
+<span>Task Board</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 text-gray-500 hover:text-gray-200 hover:bg-[#1f1f24]/50 transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="calendar_today">calendar_today</span>
+<span>Timeline</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 text-gray-500 hover:text-gray-200 hover:bg-[#1f1f24]/50 transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="payments">payments</span>
+<span>Budget</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 text-gray-500 hover:text-gray-200 hover:bg-[#1f1f24]/50 transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="description">description</span>
+<span>Reports</span>
+</a>
+</nav>
+<div class="mt-auto pt-4 space-y-1">
+<button class="w-full mb-4 py-2 bg-primary-container text-on-primary font-bold rounded-lg hover:opacity-90 transition-all">
+                Export Report
+            </button>
+<a class="flex items-center gap-3 px-3 py-2 text-gray-500 hover:text-gray-200" href="#">
+<span class="material-symbols-outlined" data-icon="help">help</span>
+<span>Help</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 text-gray-500 hover:text-gray-200" href="#">
+<span class="material-symbols-outlined" data-icon="archive">archive</span>
+<span>Archive</span>
+</a>
+</div>
+</aside>
+<!-- Main Content Canvas -->
+<main class="ml-64 pt-24 pb-12 px-12">
+<!-- Hero Section: Intentional Asymmetry -->
+<section class="flex flex-col md:flex-row justify-between items-start mb-12 gap-8">
+<div class="max-w-2xl">
+<div class="flex items-center gap-3 mb-4">
+<span class="bg-primary-container/10 text-primary text-[10px] font-bold tracking-[0.2em] px-2 py-1 rounded-sm uppercase">Institutional Transformation</span>
+<span class="flex items-center gap-1.5 text-xs text-secondary bg-surface-container px-2 py-1 rounded">
+<span class="w-1.5 h-1.5 rounded-full bg-primary"></span>
+                        IN PROGRESS
+                    </span>
+</div>
+<h1 class="font-headline text-5xl md:text-6xl font-extrabold tracking-tight mb-4 leading-none">Project Alpha</h1>
+<p class="text-secondary text-lg leading-relaxed max-w-xl">
+                    Implementing large-scale organizational shift focusing on AI integration and streamlined data protocols across multiple departments.
+                </p>
+</div>
+<div class="flex flex-col gap-3 w-full md:w-auto">
+<button class="btn-primary-gradient px-6 py-3 rounded-lg text-on-primary font-bold flex items-center justify-center gap-2 active:scale-95 transition-all">
+<span class="material-symbols-outlined text-lg" data-icon="edit">edit</span>
+                    Edit Project
+                </button>
+<button class="ghost-border px-6 py-3 rounded-lg text-on-background font-medium hover:bg-surface-container transition-all flex items-center justify-center gap-2">
+<span class="material-symbols-outlined text-lg" data-icon="archive">archive</span>
+                    Archive
+                </button>
+</div>
+</section>
+<!-- Metrics Row: JetBrains Mono Authority -->
+<section class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-12">
+<div class="bg-surface-container-low p-6 rounded-xl">
+<div class="flex justify-between items-start mb-4">
+<span class="text-xs font-label text-secondary uppercase tracking-widest">Budget Allocation</span>
+<span class="material-symbols-outlined text-primary/40" data-icon="payments">payments</span>
+</div>
+<div class="font-mono text-3xl font-bold mb-1">$1.2M</div>
+<div class="h-1 w-full bg-surface-container rounded-full overflow-hidden">
+<div class="h-full bg-primary w-[65%]"></div>
+</div>
+<div class="flex justify-between mt-2 text-[10px] text-secondary font-mono">
+<span>USED: $780K</span>
+<span>REM: $420K</span>
+</div>
+</div>
+<div class="bg-surface-container-low p-6 rounded-xl">
+<div class="flex justify-between items-start mb-4">
+<span class="text-xs font-label text-secondary uppercase tracking-widest">Timeline Velocity</span>
+<span class="material-symbols-outlined text-primary/40" data-icon="schedule">schedule</span>
+</div>
+<div class="font-mono text-3xl font-bold mb-1">12 / 24 <span class="text-sm font-normal text-secondary">WEEKS</span></div>
+<div class="h-1 w-full bg-surface-container rounded-full overflow-hidden">
+<div class="h-full bg-primary w-[50%]"></div>
+</div>
+<div class="flex justify-between mt-2 text-[10px] text-secondary font-mono">
+<span>PHASE 2</span>
+<span>50% COMPLETE</span>
+</div>
+</div>
+<div class="bg-surface-container-low p-6 rounded-xl">
+<div class="flex justify-between items-start mb-4">
+<span class="text-xs font-label text-secondary uppercase tracking-widest">Overall Health</span>
+<span class="material-symbols-outlined text-primary/40" data-icon="monitoring">monitoring</span>
+</div>
+<div class="font-mono text-3xl font-bold mb-1 text-primary">On Track</div>
+<div class="flex items-center gap-2 mt-2">
+<div class="flex gap-0.5">
+<div class="w-1.5 h-3 bg-primary rounded-sm"></div>
+<div class="w-1.5 h-5 bg-primary rounded-sm"></div>
+<div class="w-1.5 h-4 bg-primary rounded-sm"></div>
+<div class="w-1.5 h-6 bg-primary rounded-sm"></div>
+<div class="w-1.5 h-3 bg-primary rounded-sm"></div>
+</div>
+<span class="text-[10px] font-mono text-secondary">OPTIMAL STABILITY</span>
+</div>
+</div>
+</section>
+<!-- Bento Grid: Main Tasks and Reports -->
+<div class="grid grid-cols-12 gap-6">
+<!-- Key Tasks: Structural Integrity -->
+<div class="col-span-12 lg:col-span-8 space-y-4">
+<div class="flex items-baseline justify-between mb-4">
+<h3 class="font-headline text-2xl font-bold">Key Project Milestones</h3>
+<button class="text-primary text-xs font-mono uppercase tracking-widest hover:underline">View Roadmap</button>
+</div>
+<div class="space-y-2">
+<!-- Task Item -->
+<div class="group flex items-center justify-between p-4 bg-surface-container-low rounded-xl hover:bg-surface-container transition-all">
+<div class="flex items-center gap-4">
+<span class="material-symbols-outlined text-primary bg-primary/10 p-2 rounded-lg" data-icon="task_alt">task_alt</span>
+<div>
+<h4 class="font-medium text-sm">Governance Model Finalization</h4>
+<p class="text-xs text-secondary">Institutional legal framework alignment</p>
+</div>
+</div>
+<div class="flex items-center gap-8">
+<div class="hidden md:flex flex-col items-end">
+<span class="text-[10px] font-mono text-secondary uppercase">Due Date</span>
+<span class="text-xs font-mono">OCT 14, 2024</span>
+</div>
+<div class="flex -space-x-2">
+<img class="w-6 h-6 rounded-full border-2 border-background object-cover" data-alt="Professional woman portrait with neutral background" src="https://lh3.googleusercontent.com/aida-public/AB6AXuB4dJunZpQXun_oRCNMOgKXwQKYziMofxUuT5-rOmrMATDyp3SxCECTE82PnhqJsX4a98lyMNCmIZmo7Ppz24fLQSx1pjvm5omeNBO5KHe2xjpTjeMPYNgbO1VWkH7Ss-taMb6KO_G9gg-SE061TzzUQ80NiFMjfOXOJkcqsSywy-ZNrVxzX1xpis5zM2ZP1BzfoOjUA3Uq0PfQB2ywmiCT9QI7W-B959moLVNsZMcEO-OyxG2j3SWGJ2DJgLGd-XnIuQOKzKNIgkw"/>
+<img class="w-6 h-6 rounded-full border-2 border-background object-cover" data-alt="Professional man wearing a suit in a corporate setting" src="https://lh3.googleusercontent.com/aida-public/AB6AXuD2evEau2Epk4Ks3-Z1e-r08TQHy-n_KXXOWiql6fTtqaV9ei3CpjtVojZ59eQt-qmT8wl2qKFjNakoi_bJrLa1M-4iZcdXWSP7tX-xjU3a6gxGPHQXyVtRko0ISxR-hJicDrvpstopdlDXxpt2bYBMhulqb8Y9WlitVpSgwLiZCfDFQD5jg9EzKow4sZjKoOZB9kY5DzySBn-k696_0vEbRfnMOXr36PaMACROzJ5WNOZHxDlcaRAGA0cKiNErUyWFl8JdANRRvC4"/>
+</div>
+</div>
+</div>
+<!-- Task Item -->
+<div class="group flex items-center justify-between p-4 bg-surface-container-low rounded-xl hover:bg-surface-container transition-all">
+<div class="flex items-center gap-4">
+<span class="material-symbols-outlined text-tertiary bg-tertiary/10 p-2 rounded-lg" data-icon="hourglass_empty">hourglass_empty</span>
+<div>
+<h4 class="font-medium text-sm">Data Architecture Audit</h4>
+<p class="text-xs text-secondary">Migration of legacy systems to hybrid cloud</p>
+</div>
+</div>
+<div class="flex items-center gap-8">
+<div class="hidden md:flex flex-col items-end">
+<span class="text-[10px] font-mono text-secondary uppercase">Due Date</span>
+<span class="text-xs font-mono">NOV 02, 2024</span>
+</div>
+<div class="flex -space-x-2">
+<img class="w-6 h-6 rounded-full border-2 border-background object-cover" data-alt="Woman with professional attire and smiling expression" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBCPXxXYOXAA5mzmRdnq1YNpvXc2QNT1NSarwT3A41FKzhBuGeFdTw9eKm3bO0ht1mNif3exHTm1FE59ko4Vx2VpO7XDYP3gguxFpyg-1_VKAwRfoB7rSapgqV-6vRvzafiyVTqz2zSlHcF7r5AO10cM_ak0-06D0_jVYcpY9M3LrdbUXq0uA6RK61ZRhdp3hlSbhRaZEFUSUvr2jaStFwHnVvjV0NFIGDV07KRv115wFQ7YhxC6SWekWv-XXuCe9KaIQ1q0uPRiUs"/>
+</div>
+</div>
+</div>
+<!-- Task Item -->
+<div class="group flex items-center justify-between p-4 bg-surface-container-low rounded-xl hover:bg-surface-container transition-all">
+<div class="flex items-center gap-4">
+<span class="material-symbols-outlined text-secondary bg-surface-container p-2 rounded-lg" data-icon="pending">pending</span>
+<div>
+<h4 class="font-medium text-sm">Stakeholder Intelligence Mapping</h4>
+<p class="text-xs text-secondary">Network analysis of primary decision makers</p>
+</div>
+</div>
+<div class="flex items-center gap-8">
+<div class="hidden md:flex flex-col items-end">
+<span class="text-[10px] font-mono text-secondary uppercase">Due Date</span>
+<span class="text-xs font-mono">NOV 15, 2024</span>
+</div>
+<div class="flex -space-x-2">
+<img class="w-6 h-6 rounded-full border-2 border-background object-cover" data-alt="Close up of professional man looking focused" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBDGht9hkuomJMQ4xKwtkC4eWObDQPPSXlHb6TvC2LKLRuRS7MRz7kX3vzlE5S_xBR7rMO-1a5OOyC2T9dLpDoj9rI3MxmeNoyj4VpQNKyH8un-g2KYgOlS4ElsdbJ5tdmdjjEkUxKzO2xsXhvN4mS1XvuX_W0FKuAC1FkHDbmEjIbPCg-9iUZPz_MSCRNsYUx9XR0RvWk0dQQRQ2uMRLvCMXgb6sIPX_6-xCiEkf0NdmRZFJMXJWtd3fyWSxz_AtKnweASPFnWDPw"/>
+<div class="w-6 h-6 rounded-full border-2 border-background bg-surface-container-highest flex items-center justify-center text-[8px] font-bold">+3</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Team Section: Sidebar Panel -->
+<div class="col-span-12 lg:col-span-4">
+<div class="bg-surface-container-low rounded-xl p-6 h-full">
+<div class="flex items-center justify-between mb-6">
+<h3 class="font-headline text-xl font-bold">Core Team</h3>
+<span class="material-symbols-outlined text-secondary hover:text-primary cursor-pointer" data-icon="person_add">person_add</span>
+</div>
+<div class="space-y-4">
+<div class="flex items-center gap-3">
+<img class="w-10 h-10 rounded-lg object-cover" data-alt="Portrait of professional woman expert" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBcuwApJ7kUHaGvtiiYnLyunqAqVOH6C9_azjyuYlSbCiRVth5V3udgymXAwNymT4kwZK8gYgy4qkqn8UUkFtM4zYCUbQGpOybDN6aoB9eGaf3dNjosM6BStiJXzMhpxwwtDbeOPkGiIxkQOS-E6wEIXF17IpQwAzDZR6vwD4kG4Yr7-1c9oeYjeta9UNxCF4BbcJoitIZZjBmJ5AnsfhhL_JCCyl6HO3-bSMKXkeET8rEQoMdeiFBKLXl-kZJfDsNjVBAm1thUt54"/>
+<div>
+<p class="text-sm font-bold">Sarah Chen</p>
+<p class="text-xs text-secondary">Strategy Lead</p>
+</div>
+<span class="ml-auto material-symbols-outlined text-xs text-primary" data-icon="verified">verified</span>
+</div>
+<div class="flex items-center gap-3">
+<img class="w-10 h-10 rounded-lg object-cover" data-alt="Portrait of focused professional man" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCjlUSV7rBYzThU-YPNRrMLhkT-Iy25uxpImASATmrTtEnYEmqAZVaPpDAyC0Jq0rRQdMvh_4vn7a0zAMeUrnSUWQnw2dLmrWSaNcdOrLK0SLYYZhHDpHtrAxloFMwbhz3f14qXAEwUNVHAyHyOB4ScicZNO1tGN6AWb8UHVTD9c1b3L0shMYGNmxtWspsTCn5iZA89CMNeTtVv2ZMPwVXR4IKw2zEdIpwh_cDnO8UnQW6SD5R93BmazhpvLd0scYno_mf2F3pKwSU"/>
+<div>
+<p class="text-sm font-bold">Marcus Thorne</p>
+<p class="text-xs text-secondary">Data Architect</p>
+</div>
+</div>
+<div class="flex items-center gap-3">
+<img class="w-10 h-10 rounded-lg object-cover" data-alt="Portrait of smiling professional woman" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAj9Hdyw_7CmBjfAjVxHzyGg56UWPj4Z0PWslZi9AFyUys9Wo4IqND0QAEHReRlgiuPhm41_f5z5iK4BD5SWF9qB0ExNqctV9hCnQFtBaUjxQfuaC8X2GxnocoDpML19G1AX4inY78UrZMUkYeT85of-0rs_MLhp5bPvvqllj2KUh_osmrhB9lw_BoL6oLo2SkNL-6_iF1wFKNAby-mNZR1y1HtLzoyDi4u_UV59wwMctUT5ZeseV1_pLBhkMv80z95vNJyzY8A8GE"/>
+<div>
+<p class="text-sm font-bold">Elena Rodriguez</p>
+<p class="text-xs text-secondary">AI Integration</p>
+</div>
+</div>
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded-lg bg-surface-container flex items-center justify-center">
+<span class="material-symbols-outlined text-secondary" data-icon="groups">groups</span>
+</div>
+<div>
+<p class="text-sm font-bold">Operations Team</p>
+<p class="text-xs text-secondary">6 Contributors</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Linked Reports Section: Glassmorphism Grid -->
+<section class="mt-12">
+<h3 class="font-headline text-2xl font-bold mb-6">Intelligence Library</h3>
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+<!-- Report Card -->
+<div class="glass-panel ghost-border p-5 rounded-xl group hover:bg-white/[0.06] transition-all cursor-pointer">
+<div class="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+<span class="material-symbols-outlined text-primary" data-icon="description">description</span>
+</div>
+<h4 class="font-bold text-sm mb-1">Q3 GRI Audit</h4>
+<p class="text-xs text-secondary mb-4 line-clamp-2">Sustainability performance analysis and carbon footprint mapping.</p>
+<div class="flex items-center justify-between mt-auto pt-2">
+<span class="font-mono text-[10px] text-secondary">PDF • 4.2 MB</span>
+<span class="material-symbols-outlined text-xs" data-icon="download">download</span>
+</div>
+</div>
+<!-- Report Card -->
+<div class="glass-panel ghost-border p-5 rounded-xl group hover:bg-white/[0.06] transition-all cursor-pointer">
+<div class="w-10 h-10 bg-tertiary/10 rounded-lg flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+<span class="material-symbols-outlined text-tertiary" data-icon="insights">insights</span>
+</div>
+<h4 class="font-bold text-sm mb-1">Market Sentiment</h4>
+<p class="text-xs text-secondary mb-4 line-clamp-2">Real-time analysis of industry shifts and competitor movements.</p>
+<div class="flex items-center justify-between mt-auto pt-2">
+<span class="font-mono text-[10px] text-secondary">XLSX • 1.8 MB</span>
+<span class="material-symbols-outlined text-xs" data-icon="download">download</span>
+</div>
+</div>
+<!-- Report Card -->
+<div class="glass-panel ghost-border p-5 rounded-xl group hover:bg-white/[0.06] transition-all cursor-pointer">
+<div class="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+<span class="material-symbols-outlined text-primary" data-icon="security">security</span>
+</div>
+<h4 class="font-bold text-sm mb-1">Risk Assessment</h4>
+<p class="text-xs text-secondary mb-4 line-clamp-2">Diagnostic of technical vulnerabilities and mitigation strategies.</p>
+<div class="flex items-center justify-between mt-auto pt-2">
+<span class="font-mono text-[10px] text-secondary">PDF • 12.5 MB</span>
+<span class="material-symbols-outlined text-xs" data-icon="download">download</span>
+</div>
+</div>
+<!-- Report Card -->
+<div class="glass-panel ghost-border p-5 rounded-xl group hover:bg-white/[0.06] transition-all cursor-pointer">
+<div class="w-10 h-10 bg-secondary/10 rounded-lg flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+<span class="material-symbols-outlined text-secondary" data-icon="map">map</span>
+</div>
+<h4 class="font-bold text-sm mb-1">Global Rollout</h4>
+<p class="text-xs text-secondary mb-4 line-clamp-2">Visual timeline and regional implementation milestones.</p>
+<div class="flex items-center justify-between mt-auto pt-2">
+<span class="font-mono text-[10px] text-secondary">PPTX • 8.4 MB</span>
+<span class="material-symbols-outlined text-xs" data-icon="download">download</span>
+</div>
+</div>
+</div>
+</section>
+</main>
+<!-- Bottom Navigation for Mobile -->
+<nav class="md:hidden fixed bottom-0 left-0 w-full bg-[#111318] flex items-center justify-around py-3 px-6 z-50">
+<a class="flex flex-col items-center gap-1 text-[#00E5A0]" href="#">
+<span class="material-symbols-outlined" data-icon="analytics">analytics</span>
+<span class="text-[10px]">Overview</span>
+</a>
+<a class="flex flex-col items-center gap-1 text-gray-400" href="#">
+<span class="material-symbols-outlined" data-icon="assignment">assignment</span>
+<span class="text-[10px]">Tasks</span>
+</a>
+<a class="flex flex-col items-center gap-1 text-gray-400" href="#">
+<span class="material-symbols-outlined" data-icon="calendar_today">calendar_today</span>
+<span class="text-[10px]">Timeline</span>
+</a>
+<a class="flex flex-col items-center gap-1 text-gray-400" href="#">
+<span class="material-symbols-outlined" data-icon="description">description</span>
+<span class="text-[10px]">Reports</span>
+</a>
+</nav>
+</body></html>

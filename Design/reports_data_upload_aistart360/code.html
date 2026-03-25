@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>AIStart360 | Institutional Intelligence Reports</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;600;700;800&amp;family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,700;1,9..40,400&amp;family=JetBrains+Mono:wght@400;500&amp;family=Space+Grotesk:wght@400;700&amp;family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "secondary-fixed-dim": "#bcc7de",
+                        "surface-container-lowest": "#0d0e12",
+                        "on-primary-fixed": "#002114",
+                        "inverse-on-surface": "#2f3035",
+                        "on-surface-variant": "#bacbbf",
+                        "on-primary": "#003824",
+                        "outline-variant": "#3b4a41",
+                        "surface-container-highest": "#343439",
+                        "primary-fixed-dim": "#00e29e",
+                        "on-primary-container": "#006141",
+                        "inverse-primary": "#006c49",
+                        "outline": "#84958a",
+                        "secondary": "#bcc7de",
+                        "tertiary": "#ffe1bd",
+                        "secondary-container": "#3e495d",
+                        "on-secondary": "#263143",
+                        "surface": "#121317",
+                        "surface-container-low": "#1a1b20",
+                        "on-error": "#690005",
+                        "error": "#ffb4ab",
+                        "secondary-fixed": "#d8e3fb",
+                        "error-container": "#93000a",
+                        "on-secondary-container": "#aeb9d0",
+                        "on-tertiary-fixed": "#291800",
+                        "on-tertiary-fixed-variant": "#633f00",
+                        "primary": "#6effc0",
+                        "background": "#121317",
+                        "primary-fixed": "#47ffb8",
+                        "on-background": "#e3e2e8",
+                        "surface-variant": "#343439",
+                        "tertiary-fixed-dim": "#ffb955",
+                        "on-secondary-fixed-variant": "#3c475a",
+                        "surface-dim": "#121317",
+                        "on-error-container": "#ffdad6",
+                        "on-secondary-fixed": "#111c2d",
+                        "tertiary-fixed": "#ffddb4",
+                        "surface-container": "#1f1f24",
+                        "primary-container": "#00e5a0",
+                        "on-surface": "#e3e2e8",
+                        "on-primary-fixed-variant": "#005236",
+                        "surface-container-high": "#292a2e",
+                        "inverse-surface": "#e3e2e8",
+                        "surface-bright": "#38393e",
+                        "on-tertiary-container": "#754b00",
+                        "on-tertiary": "#452b00",
+                        "tertiary-container": "#ffbd60",
+                        "surface-tint": "#00e29e"
+                    },
+                    fontFamily: {
+                        "headline": ["Bricolage Grotesque", "Space Grotesk", "sans-serif"],
+                        "body": ["DM Sans", "Inter", "sans-serif"],
+                        "label": ["DM Sans", "sans-serif"],
+                        "mono": ["JetBrains Mono", "monospace"]
+                    },
+                    borderRadius: { "DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px" },
+                },
+            },
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .premium-gradient {
+            background: linear-gradient(135deg, #6effc0 0%, #00e5a0 100%);
+        }
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.04);
+            backdrop-filter: blur(12px);
+        }
+    </style>
+</head>
+<body class="bg-background text-on-background font-body selection:bg-primary selection:text-on-primary">
+<!-- SideNavBar Integration -->
+<aside class="h-screen w-64 fixed left-0 top-0 overflow-y-auto bg-[#111318] flex flex-col py-6 px-4 z-50">
+<div class="mb-10 px-2">
+<h1 class="text-xl font-bold tracking-tight text-white font-headline">AIStart360</h1>
+<p class="text-[10px] uppercase tracking-widest text-[#8B95A3] font-mono mt-1">Institutional Intelligence</p>
+</div>
+<nav class="flex-1 space-y-1">
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-[#8B95A3] hover:text-white hover:bg-[#1f1f24] transition-all duration-200" href="#">
+<span class="material-symbols-outlined text-lg">dashboard</span>
+<span class="text-sm font-medium">Dashboard</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-[#8B95A3] hover:text-white hover:bg-[#1f1f24] transition-all duration-200" href="#">
+<span class="material-symbols-outlined text-lg">business_center</span>
+<span class="text-sm font-medium">Clients</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-[#1f1f24] text-[#00E5A0] font-medium border-r-2 border-[#00E5A0] transition-all duration-200" href="#">
+<span class="material-symbols-outlined text-lg">description</span>
+<span class="text-sm font-medium">Reports</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-[#8B95A3] hover:text-white hover:bg-[#1f1f24] transition-all duration-200" href="#">
+<span class="material-symbols-outlined text-lg">monitoring</span>
+<span class="text-sm font-medium">Analytics</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-[#8B95A3] hover:text-white hover:bg-[#1f1f24] transition-all duration-200" href="#">
+<span class="material-symbols-outlined text-lg">task_alt</span>
+<span class="text-sm font-medium">Tasks</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-[#8B95A3] hover:text-white hover:bg-[#1f1f24] transition-all duration-200" href="#">
+<span class="material-symbols-outlined text-lg">group</span>
+<span class="text-sm font-medium">Team</span>
+</a>
+</nav>
+<div class="mt-auto space-y-1 pt-6 border-t border-outline-variant/10">
+<div class="px-3 py-2 mb-4">
+<div class="flex items-center gap-2">
+<div class="w-2 h-2 rounded-full bg-primary animate-pulse"></div>
+<span class="text-[11px] font-mono text-primary uppercase">System Status: Optimal</span>
+</div>
+</div>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-[#8B95A3] hover:text-white hover:bg-[#1f1f24] transition-colors" href="#">
+<span class="material-symbols-outlined text-lg">settings</span>
+<span class="text-sm font-medium">Settings</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-[#8B95A3] hover:text-white hover:bg-[#1f1f24] transition-colors" href="#">
+<span class="material-symbols-outlined text-lg">contact_support</span>
+<span class="text-sm font-medium">Support</span>
+</a>
+</div>
+</aside>
+<!-- TopNavBar Integration -->
+<header class="fixed top-0 right-0 w-[calc(100%-16rem)] h-16 z-40 bg-[#0A0B0F]/80 backdrop-blur-xl flex justify-between items-center px-8 shadow-2xl shadow-black/40">
+<div class="flex items-center gap-6 flex-1">
+<div class="relative w-full max-w-md group">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-sm">search</span>
+<input class="w-full bg-surface-container-low border-none rounded-lg py-2 pl-10 pr-4 text-sm focus:ring-2 focus:ring-primary/20 placeholder:text-on-surface-variant" placeholder="Search institutional data..." type="text"/>
+</div>
+</div>
+<div class="flex items-center gap-4">
+<button class="px-4 py-2 rounded-lg border border-outline-variant/20 text-xs font-mono font-medium text-primary hover:bg-primary/5 transition-colors">Quick Action</button>
+<button class="px-4 py-2 rounded-lg premium-gradient text-on-primary text-xs font-bold shadow-lg shadow-primary/10 transition-transform active:scale-95">Run Report</button>
+<div class="h-6 w-px bg-outline-variant/20 mx-2"></div>
+<button class="text-[#8B95A3] hover:text-white transition-colors">
+<span class="material-symbols-outlined">notifications</span>
+</button>
+<div class="w-8 h-8 rounded-full bg-surface-container-highest flex items-center justify-center overflow-hidden border border-outline-variant/20">
+<img class="w-full h-full object-cover" data-alt="professional headshot of a business analyst in a studio setting with soft lighting" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDtr0zcVSXgC2ofmITf-83O0nnsQrv3idlR7m7PPCNi_LUiadZaH7ZiUhACrObKMDH9D8Jj9_pfE2-n5c0ZxoV7FhpQpLqJeL252Q2qFknUmYR5ndnnwPDGt1MKM78S-6eL9RIzr0u4pvZE9SXlQEwy7k-0DO9Ex7ti0vFYTiCm2TnHX5VFlRW9VamAdTdVjnf23GYN60mcYYMCxsVTIQf87ywD14tdUUjGfjD2fB4VbrHYvK7upuMOrkJ-4LVTNNH7YYzt8H9YZEE"/>
+</div>
+</div>
+</header>
+<!-- Main Content Canvas -->
+<main class="ml-64 pt-24 px-8 pb-12 min-h-screen">
+<div class="max-w-6xl mx-auto">
+<!-- Header Section -->
+<div class="flex justify-between items-end mb-10">
+<div>
+<h2 class="font-headline text-4xl font-bold tracking-tight text-white mb-2">Report Intelligence</h2>
+<p class="text-on-surface-variant max-w-lg">Execute multi-vector extraction on business documentation. Review, validate, and publish structured insights to the client ecosystem.</p>
+</div>
+<div class="flex gap-4">
+<div class="bg-surface-container px-4 py-3 rounded-xl">
+<p class="text-[10px] font-mono text-on-surface-variant uppercase mb-1">Queue Status</p>
+<p class="font-mono text-primary text-sm">04 Pending / 12 Active</p>
+</div>
+</div>
+</div>
+<div class="grid grid-cols-12 gap-8 items-start">
+<!-- Left: Upload & Context (Asymmetric Layout) -->
+<div class="col-span-12 lg:col-span-4 space-y-6">
+<!-- Upload Zone -->
+<div class="bg-surface-container-low rounded-xl p-1 border-2 border-dashed border-outline-variant/10 hover:border-primary/30 transition-all group">
+<div class="bg-background rounded-lg p-8 flex flex-col items-center justify-center text-center cursor-pointer">
+<div class="w-14 h-14 rounded-full bg-surface-container flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+<span class="material-symbols-outlined text-primary text-3xl">upload_file</span>
+</div>
+<h3 class="font-headline text-lg font-semibold text-white mb-1">Ingest Documentation</h3>
+<p class="text-xs text-on-surface-variant mb-6 font-body">Supports PDF, XLSX, and CSV models</p>
+<button class="w-full py-2.5 rounded-lg border border-outline-variant/30 text-sm font-medium text-white hover:bg-surface-container transition-colors">Select Files</button>
+</div>
+</div>
+<!-- Extraction Progress -->
+<div class="bg-surface-container-low rounded-xl p-6">
+<h4 class="font-mono text-[10px] text-on-surface-variant uppercase tracking-widest mb-4">Live Extraction Trace</h4>
+<div class="space-y-4">
+<div class="flex items-start gap-3">
+<div class="w-1 h-8 bg-primary rounded-full"></div>
+<div>
+<p class="text-xs font-mono text-white">OCR_PASS_COMPLETE</p>
+<p class="text-[10px] text-on-surface-variant">L1 Text Layer Extracted</p>
+</div>
+</div>
+<div class="flex items-start gap-3">
+<div class="w-1 h-8 bg-primary rounded-full"></div>
+<div>
+<p class="text-xs font-mono text-white">SEMANTIC_MAPPING_ACTIVE</p>
+<p class="text-[10px] text-on-surface-variant">Identifying Fiscal Patterns...</p>
+</div>
+</div>
+<div class="flex items-start gap-3">
+<div class="w-1 h-1 bg-surface-container-highest rounded-full"></div>
+<div>
+<p class="text-xs font-mono text-on-surface-variant/40">VALIDATION_READY</p>
+<p class="text-[10px] text-on-surface-variant/40">Waiting for analyst</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Center: Extracted Preview & Categorization -->
+<div class="col-span-12 lg:col-span-8 space-y-8">
+<!-- Section Header -->
+<div class="flex items-center justify-between bg-surface-container p-4 rounded-xl">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded bg-red-900/20 flex items-center justify-center text-red-400">
+<span class="material-symbols-outlined">picture_as_pdf</span>
+</div>
+<div>
+<h3 class="text-sm font-bold text-white">Q3_SaaS_Performance_Audit.pdf</h3>
+<p class="text-[10px] text-on-surface-variant font-mono">Size: 4.2MB • Extracting 22 KPIs</p>
+</div>
+</div>
+<div class="flex items-center gap-2">
+<span class="text-[10px] font-mono text-primary bg-primary/10 px-2 py-1 rounded">94% Confidence</span>
+</div>
+</div>
+<!-- Bento Grid of Data Blocks -->
+<div class="grid grid-cols-2 gap-4">
+<!-- Market -->
+<div class="bg-surface-container-low p-6 rounded-xl hover:bg-surface-container transition-colors group">
+<div class="flex justify-between mb-4">
+<span class="material-symbols-outlined text-primary/60">hub</span>
+<span class="material-symbols-outlined text-on-surface-variant text-sm group-hover:text-primary transition-colors cursor-pointer">edit</span>
+</div>
+<h4 class="font-mono text-[10px] text-on-surface-variant uppercase mb-2">Market Dynamics</h4>
+<div class="space-y-3">
+<div>
+<p class="text-[10px] text-on-surface-variant">TAM (Total Addressable)</p>
+<p class="font-mono text-xl text-white font-bold">$14.2B</p>
+</div>
+<div class="pt-2 border-t border-outline-variant/5">
+<p class="text-[10px] text-on-surface-variant">CAGR Estimate</p>
+<p class="font-mono text-lg text-primary">12.4%</p>
+</div>
+</div>
+</div>
+<!-- ICP -->
+<div class="bg-surface-container-low p-6 rounded-xl hover:bg-surface-container transition-colors group">
+<div class="flex justify-between mb-4">
+<span class="material-symbols-outlined text-primary/60">target</span>
+<span class="material-symbols-outlined text-on-surface-variant text-sm group-hover:text-primary transition-colors cursor-pointer">edit</span>
+</div>
+<h4 class="font-mono text-[10px] text-on-surface-variant uppercase mb-2">ICP Definition</h4>
+<div class="space-y-1">
+<div class="bg-background/50 p-2 rounded text-[11px] text-white">Enterprise FinTech</div>
+<div class="bg-background/50 p-2 rounded text-[11px] text-white">Tier-1 Retail Banks</div>
+<div class="bg-background/50 p-2 rounded text-[11px] text-white">Digital-First Neobanks</div>
+</div>
+</div>
+<!-- Unit Economics (Spans 2) -->
+<div class="col-span-2 bg-surface-container-low p-6 rounded-xl hover:bg-surface-container transition-colors relative overflow-hidden">
+<div class="absolute top-0 right-0 w-32 h-full opacity-10">
+<svg class="w-full h-full" preserveaspectratio="none" viewbox="0 0 100 100">
+<path d="M0,80 Q25,20 50,50 T100,20" fill="none" stroke="#00E5A0" stroke-width="2"></path>
+</svg>
+</div>
+<div class="flex justify-between mb-6">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-primary/60">payments</span>
+<h4 class="font-mono text-[10px] text-on-surface-variant uppercase">Unit Economics</h4>
+</div>
+<span class="material-symbols-outlined text-on-surface-variant text-sm cursor-pointer">edit</span>
+</div>
+<div class="grid grid-cols-3 gap-8">
+<div>
+<p class="text-[10px] text-on-surface-variant mb-1">CAC (Blended)</p>
+<p class="font-mono text-2xl text-white font-bold">$1,450</p>
+</div>
+<div>
+<p class="text-[10px] text-on-surface-variant mb-1">LTV:CAC Ratio</p>
+<p class="font-mono text-2xl text-white font-bold">4.2x</p>
+</div>
+<div>
+<p class="text-[10px] text-on-surface-variant mb-1">Payback Period</p>
+<p class="font-mono text-2xl text-white font-bold">7.5m</p>
+</div>
+</div>
+</div>
+<!-- Team & Operations -->
+<div class="bg-surface-container-low p-6 rounded-xl hover:bg-surface-container transition-colors group">
+<div class="flex justify-between mb-4">
+<span class="material-symbols-outlined text-primary/60">badge</span>
+<span class="material-symbols-outlined text-on-surface-variant text-sm cursor-pointer">edit</span>
+</div>
+<h4 class="font-mono text-[10px] text-on-surface-variant uppercase mb-2">Team Benchmark</h4>
+<div class="flex -space-x-2 mb-4">
+<div class="w-8 h-8 rounded-full border-2 border-surface-container-low bg-surface-container-highest overflow-hidden">
+<img class="w-full h-full object-cover" data-alt="portrait of a female executive leader with a confident expression" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAPdFl1DJZbUfcqoqoU4VK4IfNXj39kyaYdWhPGYU03xAS-LwbZH7aDOcu3H4ogFVvaZL5Y9p8N49lpbrolnHHjHl0TP8bIHgiSleM0xNRBYBeTUASdJArS87goYlbjzDcRY4gNOX-KWAm192MYhHEWfMCZJmfdfttY8U-uz3HIxzO4eZ6-hCW9hDp5vYe7vJXqsoAIjy4HFpFsEPOQaVsJR3UAKtGUlWVn5C_WKofx1kYL9op-usOrkADQoInWZOM94pCHJZYYI3I"/>
+</div>
+<div class="w-8 h-8 rounded-full border-2 border-surface-container-low bg-surface-container-highest overflow-hidden">
+<img class="w-full h-full object-cover" data-alt="portrait of a male tech founder with creative lighting" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAvHSKOrqfEeLMPXed1Dtio1GA8D9vt_ydKwEg8epFyJHWpkiEcNQjdJTQyClhR7j88L3OUbw-0uAJmeof-4cejTvy_ol74xr-GNO5IwcVwn3EYoJImcLA-cY5PXh4JoljCOVIH232BEyhXzFhffIxcPuJx7PHqqV6kU1ZZTncWmGtR_NCcla_DOQfy5Im25O7jbXT0HKv-dD9hPRgo9S-UniJCnSJR2C9FAMJ1IuoQbEKudoZAE7FsGzDPNPFBbhZl4zwErcRwX0s"/>
+</div>
+<div class="w-8 h-8 rounded-full border-2 border-surface-container-low bg-surface-container-highest flex items-center justify-center text-[10px] text-on-surface font-bold">+14</div>
+</div>
+<p class="text-[11px] text-white font-medium">Headcount: 42 FTEs</p>
+<p class="text-[10px] text-on-surface-variant">Avg. Tenure: 2.8 Yrs</p>
+</div>
+<!-- Validation Checklist (Right Alignment Concept) -->
+<div class="bg-[#00E5A0]/5 p-6 rounded-xl border border-[#00E5A0]/10 flex flex-col">
+<h4 class="font-headline text-sm font-bold text-primary mb-4">Validation Checklist</h4>
+<div class="space-y-3 flex-1">
+<label class="flex items-center gap-3 cursor-pointer group">
+<input checked="" class="w-4 h-4 rounded border-outline-variant bg-surface-container text-primary focus:ring-primary ring-offset-background" type="checkbox"/>
+<span class="text-[11px] text-on-surface group-hover:text-white transition-colors">Verify MRR against Ledger</span>
+</label>
+<label class="flex items-center gap-3 cursor-pointer group">
+<input checked="" class="w-4 h-4 rounded border-outline-variant bg-surface-container text-primary focus:ring-primary ring-offset-background" type="checkbox"/>
+<span class="text-[11px] text-on-surface group-hover:text-white transition-colors">Cross-ref Market CAGR</span>
+</label>
+<label class="flex items-center gap-3 cursor-pointer group">
+<input class="w-4 h-4 rounded border-outline-variant bg-surface-container text-primary focus:ring-primary ring-offset-background" type="checkbox"/>
+<span class="text-[11px] text-on-surface group-hover:text-white transition-colors">Audit Hiring Roadmap</span>
+</label>
+</div>
+<button class="w-full mt-6 py-3 premium-gradient rounded-lg text-on-primary text-xs font-bold flex items-center justify-center gap-2 hover:opacity-90 transition-all">
+<span class="material-symbols-outlined text-sm">rocket_launch</span>
+                                Publish to Client Portal
+                            </button>
+</div>
+</div>
+</div>
+</div>
+<!-- Footer Meta -->
+<div class="mt-12 flex items-center justify-between py-6 border-t border-outline-variant/10">
+<div class="flex items-center gap-6 text-[10px] font-mono text-on-surface-variant uppercase tracking-widest">
+<p>Revision Hash: 8Xf-2291-K9</p>
+<p>Model: AI360-Extract-v4.2</p>
+<p>Last Activity: 2m ago by analyst_j_chen</p>
+</div>
+<div class="flex gap-4">
+<button class="text-xs font-medium text-on-surface-variant hover:text-white">Reject Draft</button>
+<button class="text-xs font-medium text-on-surface-variant hover:text-white">Save for Later</button>
+</div>
+</div>
+</div>
+</main>
+<!-- Contextual FAB (Only on relevant pages) -->
+<div class="fixed bottom-8 right-8 z-50">
+<button class="w-14 h-14 premium-gradient rounded-xl shadow-2xl shadow-primary/20 flex items-center justify-center text-on-primary transition-transform hover:scale-110 active:scale-95">
+<span class="material-symbols-outlined text-3xl">add_chart</span>
+</button>
+</div>
+</body></html>

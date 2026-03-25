@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="ru"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>AIStart360 - Точка Б: Целевое состояние</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;600;700;800&amp;family=DM+Sans:ital,wght@0,400;0,500;0,700;1,400&amp;family=JetBrains+Mono:wght@400;700&amp;family=Space+Grotesk:wght@300;400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "primary": "#6effc0",
+              "primary-fixed": "#47ffb8",
+              "on-primary-fixed": "#002114",
+              "inverse-primary": "#006c49",
+              "surface-dim": "#121317",
+              "outline": "#84958a",
+              "on-surface-variant": "#bacbbf",
+              "error": "#ffb4ab",
+              "surface-container-lowest": "#0d0e12",
+              "on-tertiary-fixed": "#291800",
+              "background": "#0A0B0F",
+              "on-primary-fixed-variant": "#005236",
+              "tertiary-fixed": "#ffddb4",
+              "on-error-container": "#ffdad6",
+              "tertiary-fixed-dim": "#ffb955",
+              "surface-container": "#1f1f24",
+              "secondary": "#bcc7de",
+              "on-secondary-fixed": "#111c2d",
+              "on-secondary-container": "#aeb9d0",
+              "surface-variant": "#343439",
+              "surface-container-highest": "#343439",
+              "on-surface": "#e3e2e8",
+              "surface": "#121317",
+              "outline-variant": "#3b4a41",
+              "on-tertiary-container": "#754b00",
+              "on-error": "#690005",
+              "tertiary-container": "#ffbd60",
+              "tertiary": "#ffe1bd",
+              "on-background": "#e3e2e8",
+              "surface-bright": "#38393e",
+              "on-secondary-fixed-variant": "#3c475a",
+              "surface-container-high": "#292a2e",
+              "primary-fixed-dim": "#00e29e",
+              "on-secondary": "#263143",
+              "on-primary": "#003824",
+              "secondary-container": "#3e495d",
+              "inverse-surface": "#e3e2e8",
+              "secondary-fixed": "#d8e3fb",
+              "on-tertiary": "#452b00",
+              "inverse-on-surface": "#2f3035",
+              "secondary-fixed-dim": "#bcc7de",
+              "primary-container": "#00e5a0",
+              "surface-tint": "#00e29e",
+              "on-primary-container": "#006141",
+              "error-container": "#93000a",
+              "surface-container-low": "#111318",
+              "on-tertiary-fixed-variant": "#633f00"
+            },
+            fontFamily: {
+              "headline": ["Bricolage Grotesque", "sans-serif"],
+              "body": ["DM Sans", "sans-serif"],
+              "label": ["Space Grotesk", "sans-serif"],
+              "mono": ["JetBrains Mono", "monospace"]
+            },
+            borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
+          },
+        },
+      }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .glass-card {
+            background: rgba(255, 255, 255, 0.04);
+            backdrop-filter: blur(12px);
+        }
+        .primary-gradient {
+            background: linear-gradient(135deg, #6effc0 0%, #00e5a0 100%);
+        }
+    </style>
+</head>
+<body class="bg-background text-on-surface font-body selection:bg-primary selection:text-on-primary-fixed">
+<!-- Top Navigation Anchor -->
+<header class="fixed top-0 left-0 w-full h-16 bg-[#111318] flex justify-between items-center px-6 z-40">
+<div class="flex items-center gap-8">
+<span class="font-headline text-xl font-bold text-[#00E5A0]">AIStart360</span>
+<nav class="hidden md:flex gap-6 items-center">
+<a class="font-label text-[#8B95A3] uppercase tracking-widest text-[0.75rem] hover:text-[#00E5A0] transition-colors" href="#">AIStart360</a>
+<a class="font-label text-[#00E5A0] font-bold uppercase tracking-widest text-[0.75rem]" href="#">Точка Б</a>
+</nav>
+</div>
+<div class="flex items-center gap-4">
+<span class="font-label text-[0.7rem] uppercase tracking-widest text-[#8B95A3] px-3 py-1 bg-surface-container rounded-full border border-outline-variant/15">Strictly Confidential</span>
+<div class="flex items-center gap-2">
+<button class="p-2 text-[#8B95A3] hover:bg-[#1f1f24] rounded-lg transition-all active:scale-90">
+<span class="material-symbols-outlined" data-icon="notifications">notifications</span>
+</button>
+<button class="p-2 text-[#8B95A3] hover:bg-[#1f1f24] rounded-lg transition-all active:scale-90">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+</button>
+<div class="w-8 h-8 rounded-full bg-surface-container overflow-hidden ml-2">
+<img alt="User Profile Avatar" data-alt="minimalist user avatar icon with dark background and professional aesthetic" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCQ9VWpSsGU53BVjCYs9rMArq470WQV5X9JC5jgcPc8ftMHqziQF21KzyJSfAJq6_HoIs9EzO7GRH3Mo4uVVa5ywKkxFYQvYTcQFH5DRcHgiif4ENEZuh7cHWJZhenc-4gf2YruYa9zRla56xYM3rIQODYZcbSLwKpjKkDLfupxnmFGwNoa5Dco49KucACGGpXDxv_8xVlWo2roSh_uWoB0zr4TPJrJtaQgT8rbNRQus-8_pN-uxdO10koCO85Q1Q31iQDhpIt0B_k"/>
+</div>
+</div>
+</div>
+</header>
+<!-- Side Navigation Anchor -->
+<aside class="fixed left-0 top-0 h-full w-64 bg-[#111318] flex flex-col py-6 z-50 shadow-[20px_0_40px_rgba(0,0,0,0.4)] hidden md:flex">
+<div class="px-6 mb-10">
+<h1 class="font-headline text-[#00E5A0] text-lg font-bold">AIStart360</h1>
+<p class="text-[0.65rem] text-[#8B95A3] uppercase tracking-tighter">Target State Architecture</p>
+</div>
+<nav class="flex-grow flex flex-col gap-1">
+<a class="flex items-center gap-3 px-6 py-3 text-[#8B95A3] hover:bg-[#1f1f24] hover:text-[#00E5A0] transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="dashboard">dashboard</span>
+<span class="text-sm font-medium">Dashboard</span>
+</a>
+<a class="flex items-center gap-3 px-6 py-3 text-[#8B95A3] hover:bg-[#1f1f24] hover:text-[#00E5A0] transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="trip_origin">trip_origin</span>
+<span class="text-sm font-medium">Point A</span>
+</a>
+<a class="flex items-center gap-3 px-6 py-3 bg-[#1f1f24] text-[#00E5A0] border-r-2 border-[#00E5A0] font-semibold active:translate-x-1 transition-transform" href="#">
+<span class="material-symbols-outlined" data-icon="adjust">adjust</span>
+<span class="text-sm font-medium">Point B</span>
+</a>
+<a class="flex items-center gap-3 px-6 py-3 text-[#8B95A3] hover:bg-[#1f1f24] hover:text-[#00E5A0] transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="architecture">architecture</span>
+<span class="text-sm font-medium">Strategy</span>
+</a>
+<a class="flex items-center gap-3 px-6 py-3 text-[#8B95A3] hover:bg-[#1f1f24] hover:text-[#00E5A0] transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="rocket_launch">rocket_launch</span>
+<span class="text-sm font-medium">Execution</span>
+</a>
+</nav>
+<div class="px-6 pt-6 border-t border-outline-variant/15 flex flex-col gap-1">
+<a class="flex items-center gap-3 py-2 text-[#8B95A3] hover:text-white transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="help_outline">help_outline</span>
+<span class="text-xs">Help Center</span>
+</a>
+<a class="flex items-center gap-3 py-2 text-[#8B95A3] hover:text-white transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="logout">logout</span>
+<span class="text-xs">Logout</span>
+</a>
+</div>
+</aside>
+<!-- Main Content Canvas -->
+<main class="md:ml-64 pt-24 pb-12 px-6 lg:px-12 max-w-[1600px]">
+<!-- Hero Section -->
+<section class="flex flex-col lg:flex-row justify-between items-start lg:items-end gap-6 mb-12">
+<div>
+<span class="font-label text-primary uppercase tracking-[0.2em] text-xs mb-3 block">Target Architecture</span>
+<h1 class="font-headline text-4xl lg:text-5xl font-extrabold text-on-surface leading-tight">
+                    Точка Б: <span class="text-transparent bg-clip-text bg-gradient-to-r from-primary to-primary-container">Целевое состояние</span>
+</h1>
+<p class="text-[#8B95A3] text-lg mt-3 max-w-xl">
+                    Стратегический горизонт планирования: <span class="text-on-surface font-bold">Horizon 2026</span>. Определение ключевых метрик успеха и векторов трансформации.
+                </p>
+</div>
+<div class="flex items-center gap-4 bg-surface-container-low p-6 rounded-xl border border-outline-variant/10 shadow-xl">
+<div class="flex flex-col">
+<span class="font-label text-[0.6rem] text-[#8B95A3] uppercase tracking-widest">Growth Forecast</span>
+<span class="font-mono text-4xl font-bold text-primary">+50%</span>
+</div>
+<div class="h-10 w-[2px] bg-outline-variant/20 mx-2"></div>
+<div class="flex flex-col">
+<span class="font-label text-[0.6rem] text-[#8B95A3] uppercase tracking-widest">Confidence Score</span>
+<span class="font-mono text-4xl font-bold text-on-surface">82%</span>
+</div>
+</div>
+</section>
+<!-- KPI Transformation Grid -->
+<section class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-16">
+<!-- Revenue KPI -->
+<div class="bg-surface-container-low p-6 rounded-xl hover:bg-surface-container transition-colors group">
+<div class="flex justify-between items-start mb-4">
+<span class="text-[#8B95A3] font-medium">Выручка (Revenue)</span>
+<span class="material-symbols-outlined text-primary/40 group-hover:text-primary" data-icon="payments">payments</span>
+</div>
+<div class="flex flex-col gap-1">
+<div class="flex items-baseline gap-2">
+<span class="font-mono text-2xl font-bold text-on-surface">30B</span>
+<span class="text-xs text-primary bg-primary/10 px-2 py-0.5 rounded-full font-bold">+50%</span>
+</div>
+<div class="text-[0.65rem] text-[#8B95A3] font-mono uppercase tracking-tighter">Current: 20B → Target: 30B</div>
+</div>
+<div class="mt-4 h-1.5 w-full bg-surface-container-highest rounded-full overflow-hidden">
+<div class="h-full bg-primary w-2/3"></div>
+</div>
+</div>
+<!-- Margin KPI -->
+<div class="bg-surface-container-low p-6 rounded-xl hover:bg-surface-container transition-colors group">
+<div class="flex justify-between items-start mb-4">
+<span class="text-[#8B95A3] font-medium">Маржинальность</span>
+<span class="material-symbols-outlined text-primary/40 group-hover:text-primary" data-icon="monitoring">monitoring</span>
+</div>
+<div class="flex flex-col gap-1">
+<div class="flex items-baseline gap-2">
+<span class="font-mono text-2xl font-bold text-on-surface">24.5%</span>
+<span class="text-xs text-primary bg-primary/10 px-2 py-0.5 rounded-full font-bold">+6.3%</span>
+</div>
+<div class="text-[0.65rem] text-[#8B95A3] font-mono uppercase tracking-tighter">Current: 18.2% → Target: 24.5%</div>
+</div>
+<div class="mt-4 h-1.5 w-full bg-surface-container-highest rounded-full overflow-hidden">
+<div class="h-full bg-primary w-[74%]"></div>
+</div>
+</div>
+<!-- Client Base KPI -->
+<div class="bg-surface-container-low p-6 rounded-xl hover:bg-surface-container transition-colors group">
+<div class="flex justify-between items-start mb-4">
+<span class="text-[#8B95A3] font-medium">Активная база</span>
+<span class="material-symbols-outlined text-primary/40 group-hover:text-primary" data-icon="groups">groups</span>
+</div>
+<div class="flex flex-col gap-1">
+<div class="flex items-baseline gap-2">
+<span class="font-mono text-2xl font-bold text-on-surface">12.4K</span>
+<span class="text-xs text-primary bg-primary/10 px-2 py-0.5 rounded-full font-bold">+35%</span>
+</div>
+<div class="text-[0.65rem] text-[#8B95A3] font-mono uppercase tracking-tighter">Current: 9.2K → Target: 12.4K</div>
+</div>
+<div class="mt-4 h-1.5 w-full bg-surface-container-highest rounded-full overflow-hidden">
+<div class="h-full bg-primary w-1/2"></div>
+</div>
+</div>
+<!-- Efficiency KPI -->
+<div class="bg-surface-container-low p-6 rounded-xl hover:bg-surface-container transition-colors group">
+<div class="flex justify-between items-start mb-4">
+<span class="text-[#8B95A3] font-medium">Эффективность</span>
+<span class="material-symbols-outlined text-primary/40 group-hover:text-primary" data-icon="bolt">bolt</span>
+</div>
+<div class="flex flex-col gap-1">
+<div class="flex items-baseline gap-2">
+<span class="font-mono text-2xl font-bold text-on-surface">1.8M</span>
+<span class="text-xs text-primary bg-primary/10 px-2 py-0.5 rounded-full font-bold">+22%</span>
+</div>
+<div class="text-[0.65rem] text-[#8B95A3] font-mono uppercase tracking-tighter">Current: 1.4M → Target: 1.8M / чел.</div>
+</div>
+<div class="mt-4 h-1.5 w-full bg-surface-container-highest rounded-full overflow-hidden">
+<div class="h-full bg-primary w-[40%]"></div>
+</div>
+</div>
+</section>
+<!-- Asymmetric Growth Section -->
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-8 mb-16">
+<!-- Growth Drivers List -->
+<div class="lg:col-span-7 bg-surface-container-low rounded-2xl p-8 border border-outline-variant/10">
+<h2 class="font-headline text-2xl font-bold mb-8">Драйверы роста (Prioritized)</h2>
+<div class="space-y-8">
+<!-- Driver 1 -->
+<div>
+<div class="flex justify-between items-end mb-2">
+<div>
+<h3 class="font-bold text-lg">Региональная экспансия</h3>
+<p class="text-xs text-[#8B95A3]">Открытие 12 новых представительств в СНГ</p>
+</div>
+<span class="font-mono text-primary">+18% contrib.</span>
+</div>
+<div class="h-2 w-full bg-surface-container rounded-full overflow-hidden">
+<div class="h-full bg-primary w-[85%] rounded-full shadow-[0_0_15px_rgba(110,255,192,0.3)]"></div>
+</div>
+</div>
+<!-- Driver 2 -->
+<div>
+<div class="flex justify-between items-end mb-2">
+<div>
+<h3 class="font-bold text-lg">Агентская сеть</h3>
+<p class="text-xs text-[#8B95A3]">Переход на цифровую платформу взаимодействия</p>
+</div>
+<span class="font-mono text-primary">+12% contrib.</span>
+</div>
+<div class="h-2 w-full bg-surface-container rounded-full overflow-hidden">
+<div class="h-full bg-primary w-[60%] rounded-full shadow-[0_0_15px_rgba(110,255,192,0.3)]"></div>
+</div>
+</div>
+<!-- Driver 3 -->
+<div>
+<div class="flex justify-between items-end mb-2">
+<div>
+<h3 class="font-bold text-lg">Новые AI Продукты</h3>
+<p class="text-xs text-[#8B95A3]">Запуск линейки предиктивной аналитики</p>
+</div>
+<span class="font-mono text-primary">+15% contrib.</span>
+</div>
+<div class="h-2 w-full bg-surface-container rounded-full overflow-hidden">
+<div class="h-full bg-primary w-[45%] rounded-full shadow-[0_0_15px_rgba(110,255,192,0.3)]"></div>
+</div>
+</div>
+<!-- Driver 4 -->
+<div>
+<div class="flex justify-between items-end mb-2">
+<div>
+<h3 class="font-bold text-lg">Оптимизация OPEX</h3>
+<p class="text-xs text-[#8B95A3]">Автоматизация бэк-офиса и HR процессов</p>
+</div>
+<span class="font-mono text-primary">+5% contrib.</span>
+</div>
+<div class="h-2 w-full bg-surface-container rounded-full overflow-hidden">
+<div class="h-full bg-primary w-[30%] rounded-full shadow-[0_0_15px_rgba(110,255,192,0.3)]"></div>
+</div>
+</div>
+</div>
+</div>
+<!-- Scenario Modeling Cards -->
+<div class="lg:col-span-5 flex flex-col gap-4">
+<h2 class="font-headline text-2xl font-bold mb-4">Моделирование сценариев</h2>
+<!-- Base Scenario -->
+<div class="bg-surface-container p-5 rounded-xl border border-outline-variant/10 opacity-70 hover:opacity-100 transition-opacity">
+<div class="flex justify-between items-center mb-2">
+<span class="font-label text-xs uppercase tracking-widest">Base Scenario</span>
+<span class="font-mono text-xs text-[#8B95A3]">ROI: 140%</span>
+</div>
+<div class="flex justify-between items-center">
+<span class="font-bold text-lg">Органический рост</span>
+<span class="font-mono text-on-surface">+15% Growth</span>
+</div>
+<p class="text-xs text-[#8B95A3] mt-2 italic">Минимальные риски, сохранение текущей доли рынка.</p>
+</div>
+<!-- Recommended Scenario -->
+<div class="primary-gradient p-[1px] rounded-xl shadow-[0_20px_40px_rgba(0,0,0,0.4)]">
+<div class="bg-[#111318] p-5 rounded-[11px]">
+<div class="flex justify-between items-center mb-2">
+<div class="flex items-center gap-2">
+<span class="font-label text-xs uppercase tracking-widest text-primary font-bold">Recommended</span>
+<span class="material-symbols-outlined text-primary text-sm" data-icon="verified" data-weight="fill">verified</span>
+</div>
+<span class="font-mono text-xs text-primary font-bold">ROI: 380%</span>
+</div>
+<div class="flex justify-between items-center">
+<span class="font-bold text-xl text-on-surface">Целевое состояние</span>
+<span class="font-mono text-primary text-xl font-bold">+50% Growth</span>
+</div>
+<p class="text-xs text-on-surface-variant mt-2">Оптимальный баланс между инвестициями и скоростью масштабирования.</p>
+</div>
+</div>
+<!-- Aggressive Scenario -->
+<div class="bg-surface-container p-5 rounded-xl border border-outline-variant/10 opacity-70 hover:opacity-100 transition-opacity">
+<div class="flex justify-between items-center mb-2">
+<span class="font-label text-xs uppercase tracking-widest">Aggressive Scenario</span>
+<span class="font-mono text-xs text-error">Risk: High</span>
+</div>
+<div class="flex justify-between items-center">
+<span class="font-bold text-lg">M&amp;A Стратегия</span>
+<span class="font-mono text-on-surface">+120% Growth</span>
+</div>
+<p class="text-xs text-[#8B95A3] mt-2 italic">Требует привлечения внешнего раунда инвестиций $50M+.</p>
+</div>
+</div>
+</div>
+<!-- Roadmap Timeline -->
+<section class="bg-surface-container-low rounded-2xl p-8 border border-outline-variant/10">
+<div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-4">
+<h2 class="font-headline text-2xl font-bold">Дорожная карта трансформации</h2>
+<div class="flex gap-2">
+<button class="px-4 py-2 bg-surface-container rounded-lg text-xs font-mono hover:bg-surface-container-high transition-colors">EXPORT PDF</button>
+<button class="px-4 py-2 bg-primary text-on-primary rounded-lg text-xs font-bold primary-gradient hover:shadow-lg hover:shadow-primary/20 transition-all">VIEW FULL PLAN</button>
+</div>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-3 gap-0 relative">
+<!-- Timeline Line -->
+<div class="hidden md:block absolute top-12 left-0 w-full h-[1px] bg-outline-variant/30 z-0"></div>
+<!-- Phase 1 -->
+<div class="relative z-10 pt-16 pr-8 mb-10 md:mb-0">
+<div class="absolute top-10 left-0 w-4 h-4 rounded-full bg-primary shadow-[0_0_10px_#00e5a0]"></div>
+<div class="mb-4">
+<span class="font-label text-[0.6rem] uppercase tracking-widest text-primary bg-primary/10 px-2 py-0.5 rounded">Months 1-4</span>
+<h3 class="font-bold text-xl mt-2">Phase: Fix</h3>
+</div>
+<ul class="space-y-3">
+<li class="flex items-center gap-2 text-sm text-[#8B95A3]">
+<span class="material-symbols-outlined text-xs text-primary" data-icon="check_circle">check_circle</span>
+                            Аудит инфраструктуры
+                        </li>
+<li class="flex items-center gap-2 text-sm text-[#8B95A3]">
+<span class="material-symbols-outlined text-xs text-primary" data-icon="check_circle">check_circle</span>
+                            Устранение техдолга
+                        </li>
+<li class="flex items-center gap-2 text-sm text-[#8B95A3]">
+<span class="material-symbols-outlined text-xs text-primary" data-icon="radio_button_unchecked">radio_button_unchecked</span>
+                            Реструктуризация отделов
+                        </li>
+</ul>
+</div>
+<!-- Phase 2 -->
+<div class="relative z-10 pt-16 pr-8 mb-10 md:mb-0">
+<div class="absolute top-10 left-0 w-4 h-4 rounded-full bg-surface-container-highest border-2 border-primary"></div>
+<div class="mb-4">
+<span class="font-label text-[0.6rem] uppercase tracking-widest text-[#8B95A3] bg-surface-container px-2 py-0.5 rounded">Months 5-8</span>
+<h3 class="font-bold text-xl mt-2">Phase: Growth</h3>
+</div>
+<ul class="space-y-3">
+<li class="flex items-center gap-2 text-sm text-[#8B95A3]">
+<span class="material-symbols-outlined text-xs" data-icon="radio_button_unchecked">radio_button_unchecked</span>
+                            Запуск новых регионов
+                        </li>
+<li class="flex items-center gap-2 text-sm text-[#8B95A3]">
+<span class="material-symbols-outlined text-xs" data-icon="radio_button_unchecked">radio_button_unchecked</span>
+                            Внедрение AI-предиктора
+                        </li>
+<li class="flex items-center gap-2 text-sm text-[#8B95A3]">
+<span class="material-symbols-outlined text-xs" data-icon="radio_button_unchecked">radio_button_unchecked</span>
+                            Масштабирование маркетинга
+                        </li>
+</ul>
+</div>
+<!-- Phase 3 -->
+<div class="relative z-10 pt-16 mb-10 md:mb-0">
+<div class="absolute top-10 left-0 w-4 h-4 rounded-full bg-surface-container-highest border-2 border-outline-variant"></div>
+<div class="mb-4">
+<span class="font-label text-[0.6rem] uppercase tracking-widest text-[#8B95A3] bg-surface-container px-2 py-0.5 rounded">Months 9-12</span>
+<h3 class="font-bold text-xl mt-2">Phase: Scale</h3>
+</div>
+<ul class="space-y-3">
+<li class="flex items-center gap-2 text-sm text-[#8B95A3]">
+<span class="material-symbols-outlined text-xs" data-icon="radio_button_unchecked">radio_button_unchecked</span>
+                            Выход на международный рынок
+                        </li>
+<li class="flex items-center gap-2 text-sm text-[#8B95A3]">
+<span class="material-symbols-outlined text-xs" data-icon="radio_button_unchecked">radio_button_unchecked</span>
+                            Автоматизация экосистемы
+                        </li>
+<li class="flex items-center gap-2 text-sm text-[#8B95A3]">
+<span class="material-symbols-outlined text-xs" data-icon="radio_button_unchecked">radio_button_unchecked</span>
+                            Стабилизация маржи 24%
+                        </li>
+</ul>
+</div>
+</div>
+</section>
+</main>
+<!-- Bottom Navigation Bar (Mobile Only) -->
+<nav class="md:hidden fixed bottom-0 left-0 w-full h-16 bg-[#111318] flex justify-around items-center z-50">
+<button class="flex flex-col items-center gap-1 text-[#8B95A3]">
+<span class="material-symbols-outlined" data-icon="dashboard">dashboard</span>
+<span class="text-[0.6rem] uppercase font-bold">Dash</span>
+</button>
+<button class="flex flex-col items-center gap-1 text-[#8B95A3]">
+<span class="material-symbols-outlined" data-icon="trip_origin">trip_origin</span>
+<span class="text-[0.6rem] uppercase font-bold">Point A</span>
+</button>
+<button class="flex flex-col items-center gap-1 text-primary">
+<span class="material-symbols-outlined" data-icon="adjust">adjust</span>
+<span class="text-[0.6rem] uppercase font-bold">Point B</span>
+</button>
+<button class="flex flex-col items-center gap-1 text-[#8B95A3]">
+<span class="material-symbols-outlined" data-icon="rocket_launch">rocket_launch</span>
+<span class="text-[0.6rem] uppercase font-bold">Exec</span>
+</button>
+</nav>
+</body></html>

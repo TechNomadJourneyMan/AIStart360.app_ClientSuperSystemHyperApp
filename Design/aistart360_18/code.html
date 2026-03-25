@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Strategic Recommendations | Institutional Intelligence</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@300;400;600;700;800&amp;family=DM+Sans:ital,wght@0,400;0,500;0,700;1,400&amp;family=Space+Grotesk:wght@300;400;500;600;700&amp;family=JetBrains+Mono:wght@400;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        body {
+            background-color: #0A0B0F;
+            color: #e3e2e8;
+        }
+        .glass-card {
+            background: rgba(255, 255, 255, 0.04);
+            backdrop-filter: blur(12px);
+        }
+        .gradient-cta {
+            background: linear-gradient(135deg, #6effc0 0%, #00e5a0 100%);
+        }
+        .mono-data {
+            font-family: 'JetBrains Mono', monospace;
+        }
+    </style>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              colors: {
+                "primary": "#6effc0",
+                "on-secondary-fixed-variant": "#3c475a",
+                "inverse-surface": "#e3e2e8",
+                "on-primary-container": "#006141",
+                "surface-variant": "#343439",
+                "surface-container": "#1f1f24",
+                "secondary-container": "#3e495d",
+                "surface-dim": "#121317",
+                "on-primary": "#003824",
+                "outline-variant": "#3b4a41",
+                "on-tertiary-fixed-variant": "#633f00",
+                "on-primary-fixed-variant": "#005236",
+                "secondary-fixed-dim": "#bcc7de",
+                "outline": "#84958a",
+                "secondary": "#bcc7de",
+                "surface": "#121317",
+                "tertiary-container": "#ffbd60",
+                "tertiary": "#ffe1bd",
+                "on-secondary-fixed": "#111c2d",
+                "on-error-container": "#ffdad6",
+                "on-error": "#690005",
+                "on-secondary": "#263143",
+                "on-tertiary": "#452b00",
+                "on-primary-fixed": "#002114",
+                "background": "#0A0B0F",
+                "tertiary-fixed-dim": "#ffb955",
+                "on-surface-variant": "#bacbbf",
+                "primary-fixed-dim": "#00e29e",
+                "on-tertiary-fixed": "#291800",
+                "tertiary-fixed": "#ffddb4",
+                "surface-container-low": "#111318",
+                "surface-bright": "#38393e",
+                "inverse-on-surface": "#2f3035",
+                "on-surface": "#e3e2e8",
+                "surface-container-high": "#292a2e",
+                "surface-container-lowest": "#0d0e12",
+                "on-background": "#e3e2e8",
+                "inverse-primary": "#006c49",
+                "surface-tint": "#00e29e",
+                "on-secondary-container": "#aeb9d0",
+                "surface-container-highest": "#1f1f24",
+                "secondary-fixed": "#d8e3fb",
+                "on-tertiary-container": "#754b00",
+                "error": "#ffb4ab",
+                "primary-fixed": "#47ffb8",
+                "primary-container": "#00e5a0",
+                "error-container": "#93000a"
+              },
+              fontFamily: {
+                "headline": ["Bricolage Grotesque"],
+                "body": ["DM Sans"],
+                "label": ["Space Grotesk"]
+              },
+              borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
+            },
+          },
+        }
+    </script>
+</head>
+<body class="font-body selection:bg-primary selection:text-on-primary">
+<!-- SideNavBar (Shared Component) -->
+<aside class="fixed left-0 top-0 h-screen flex flex-col h-full w-64 border-r-0 bg-[#111318] border-none shadow-none duration-200 ease-in-out font-['Space_Grotesk'] tracking-tight z-50">
+<div class="p-6">
+<div class="flex items-center gap-3 mb-10">
+<div class="w-8 h-8 bg-primary rounded flex items-center justify-center">
+<span class="material-symbols-outlined text-on-primary text-xl" style="font-variation-settings: 'FILL' 1;">architecture</span>
+</div>
+<div>
+<h1 class="text-lg font-bold text-[#00E5A0]">Institutional Intelligence</h1>
+<p class="text-[10px] text-gray-500 uppercase tracking-widest">Strategic Advisor</p>
+</div>
+</div>
+<nav class="space-y-1">
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg text-gray-400 hover:text-white transition-colors hover:bg-[#1f1f24]" href="#">
+<span class="material-symbols-outlined text-[20px]">dashboard</span>
+<span>Dashboard</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg text-[#00E5A0] bg-[#1f1f24] font-medium transition-colors" href="#">
+<span class="material-symbols-outlined text-[20px]" style="font-variation-settings: 'FILL' 1;">analytics</span>
+<span>Insights</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg text-gray-400 hover:text-white transition-colors hover:bg-[#1f1f24]" href="#">
+<span class="material-symbols-outlined text-[20px]">trending_up</span>
+<span>Growth</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg text-gray-400 hover:text-white transition-colors hover:bg-[#1f1f24]" href="#">
+<span class="material-symbols-outlined text-[20px]">gavel</span>
+<span>Compliance</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg text-gray-400 hover:text-white transition-colors hover:bg-[#1f1f24]" href="#">
+<span class="material-symbols-outlined text-[20px]">equalizer</span>
+<span>Benchmarks</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg text-gray-400 hover:text-white transition-colors hover:bg-[#1f1f24]" href="#">
+<span class="material-symbols-outlined text-[20px]">settings</span>
+<span>Settings</span>
+</a>
+</nav>
+</div>
+<div class="mt-auto p-6">
+<button class="w-full py-3 px-4 rounded-lg bg-primary/10 text-primary border border-primary/20 font-medium text-sm hover:bg-primary/20 transition-all">
+                Request Advisory
+            </button>
+</div>
+</aside>
+<!-- Main Content Shell -->
+<main class="ml-64 min-h-screen">
+<!-- TopAppBar (Shared Component) -->
+<header class="w-full h-16 sticky top-0 z-40 flex items-center justify-between px-8 bg-[#0A0B0F]/80 backdrop-blur-xl transition-all duration-300 shadow-sm shadow-black/20 font-['DM_Sans'] text-sm">
+<div class="flex items-center gap-8">
+<span class="font-['Bricolage_Grotesque'] uppercase tracking-widest text-[#00E5A0] font-bold">Strategic Diagnostics</span>
+<nav class="hidden md:flex items-center gap-6">
+<a class="text-gray-400 hover:text-white transition-colors" href="#">Q3 Reports</a>
+<a class="text-[#00E5A0] border-b-2 border-[#00E5A0] py-5" href="#">Market Outlook</a>
+</nav>
+</div>
+<div class="flex items-center gap-6">
+<div class="relative group">
+<input class="bg-surface-container-low border-none rounded-lg py-1.5 pl-10 pr-4 text-xs focus:ring-1 focus:ring-primary w-64 transition-all" placeholder="Search insights..." type="text"/>
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-lg">search</span>
+</div>
+<div class="flex items-center gap-4 text-gray-400">
+<button class="hover:text-white transition-colors"><span class="material-symbols-outlined">notifications</span></button>
+<button class="hover:text-white transition-colors"><span class="material-symbols-outlined">help_outline</span></button>
+</div>
+<button class="bg-primary text-on-primary px-4 py-1.5 rounded font-medium hover:brightness-110 transition-all">
+                    Download PDF
+                </button>
+<div class="w-8 h-8 rounded-full overflow-hidden border border-outline-variant/30">
+<img alt="User Profile" data-alt="professional portrait of a corporate executive in a dark suit against a neutral studio background with soft lighting" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBmbYgP7joDcIipZW6mMgXV6aZ3ulePp-4Vaqx85akMzIGJe02OZluuOixxMwQtonWAzNVKvKwLogJZSBosNyY16At1la-lUZOEa_FrJ_N-XeZ-43kgr7_G_JpVJyNRhHCwwlRwbLL5GOYuCGVC6Cn8iTuqsUWLlj3aQ1hxiEsZByOLGRKkVTBEde4miislwcFPOxptoQihSqsly8E9iAgZD5axMBrBY18MwtrrGvGMXf62FDQSpPv1lrnPot_wua3i_Z6C6GCDK6w"/>
+</div>
+</div>
+</header>
+<!-- Page Content -->
+<div class="p-8 max-w-7xl mx-auto space-y-8">
+<!-- Strategic Header & Summary Bar -->
+<section class="flex flex-col md:flex-row md:items-end justify-between gap-6">
+<div class="space-y-2">
+<h2 class="font-headline text-4xl font-bold tracking-tight">Strategic Recommendations</h2>
+<p class="text-gray-400 max-w-2xl font-body">Algorithmically derived operational pivots prioritized by projected EBITDA impact and implementation feasibility. High-confidence indicators are highlighted in <span class="text-primary">emerald</span>.</p>
+</div>
+<div class="flex gap-4">
+<!-- Total Potential Impact KPI -->
+<div class="bg-surface-container-lowest p-4 rounded-xl border-l-4 border-primary/40 min-w-[200px]">
+<p class="text-[10px] text-gray-500 uppercase tracking-widest font-label mb-1">Total Potential Impact</p>
+<div class="flex items-baseline gap-2">
+<span class="mono-data text-3xl font-bold text-primary">+$1.42M</span>
+<span class="text-[10px] text-primary/60 font-mono">/ Q4</span>
+</div>
+</div>
+<!-- Open Recommendations Count -->
+<div class="bg-surface-container-lowest p-4 rounded-xl border-l-4 border-outline-variant/40 min-w-[160px]">
+<p class="text-[10px] text-gray-500 uppercase tracking-widest font-label mb-1">Open Priority</p>
+<div class="flex items-baseline gap-2">
+<span class="mono-data text-3xl font-bold">12</span>
+<span class="text-[10px] text-gray-500 font-label">Active</span>
+</div>
+</div>
+</div>
+</section>
+<!-- Recommendation Grid -->
+<section class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+<!-- Card 1: Customer Retention -->
+<div class="bg-surface-container-low rounded-xl p-6 flex flex-col justify-between hover:bg-surface-container transition-all group border border-transparent hover:border-primary/10">
+<div class="space-y-6">
+<div class="flex justify-between items-start">
+<h3 class="font-headline text-xl font-semibold leading-tight text-white group-hover:text-primary transition-colors">Optimize Customer Retention</h3>
+<span class="bg-primary/10 text-primary text-[10px] font-bold px-2 py-1 rounded-sm uppercase">Priority High</span>
+</div>
+<div class="space-y-3">
+<p class="text-sm text-gray-300 font-body leading-relaxed">
+<span class="text-gray-500 font-label uppercase text-[10px] block mb-1">Problem Statement</span>
+                                Current churn models indicate a 4.2% escalation in mid-market accounts due to reactive support cycles and opaque tiered benefits.
+                            </p>
+<div class="space-y-2">
+<span class="text-gray-500 font-label uppercase text-[10px] block">Action Steps</span>
+<ul class="space-y-2">
+<li class="flex items-start gap-2 text-sm text-gray-400">
+<span class="material-symbols-outlined text-primary text-sm mt-1">check_circle</span>
+                                        Implement tier-based dynamic pricing for renewals.
+                                    </li>
+<li class="flex items-start gap-2 text-sm text-gray-400">
+<span class="material-symbols-outlined text-primary text-sm mt-1">check_circle</span>
+                                        Automate health-score based outreach triggers.
+                                    </li>
+<li class="flex items-start gap-2 text-sm text-gray-400">
+<span class="material-symbols-outlined text-primary text-sm mt-1">check_circle</span>
+                                        Establish a "VIP Liaison" protocol for $100k+ ARR.
+                                    </li>
+</ul>
+</div>
+</div>
+</div>
+<div class="mt-8 pt-6 border-t border-outline-variant/10">
+<div class="flex justify-between items-end mb-6">
+<div>
+<p class="text-[10px] text-gray-500 uppercase font-label">Financial Impact</p>
+<p class="mono-data text-xl font-bold text-primary">+$120k / mo</p>
+</div>
+<div class="text-right">
+<p class="text-[10px] text-gray-500 uppercase font-label">Confidence</p>
+<p class="mono-data text-sm text-white">94%</p>
+</div>
+</div>
+<div class="flex gap-3">
+<button class="flex-1 py-2.5 rounded-lg gradient-cta text-on-primary font-semibold text-sm hover:brightness-110 transition-all shadow-lg shadow-primary/10">
+                                Mark as Implemented
+                            </button>
+<button class="px-4 py-2.5 rounded-lg bg-surface-container-highest text-gray-400 font-medium text-sm hover:text-white transition-all">
+                                Dismiss
+                            </button>
+</div>
+</div>
+</div>
+<!-- Card 2: Streamline Procurement -->
+<div class="bg-surface-container-low rounded-xl p-6 flex flex-col justify-between hover:bg-surface-container transition-all group border border-transparent hover:border-primary/10">
+<div class="space-y-6">
+<div class="flex justify-between items-start">
+<h3 class="font-headline text-xl font-semibold leading-tight text-white group-hover:text-primary transition-colors">Streamline Procurement</h3>
+<span class="bg-outline-variant/20 text-gray-400 text-[10px] font-bold px-2 py-1 rounded-sm uppercase">Operational</span>
+</div>
+<div class="space-y-3">
+<p class="text-sm text-gray-300 font-body leading-relaxed">
+<span class="text-gray-500 font-label uppercase text-[10px] block mb-1">Problem Statement</span>
+                                Vendor fragmentation in cloud infrastructure and specialized SaaS leads to an estimated 18% redundancy in licensing costs.
+                            </p>
+<div class="space-y-2">
+<span class="text-gray-500 font-label uppercase text-[10px] block">Action Steps</span>
+<ul class="space-y-2">
+<li class="flex items-start gap-2 text-sm text-gray-400">
+<span class="material-symbols-outlined text-primary text-sm mt-1">check_circle</span>
+                                        Consolidate cloud providers under a single EA.
+                                    </li>
+<li class="flex items-start gap-2 text-sm text-gray-400">
+<span class="material-symbols-outlined text-primary text-sm mt-1">check_circle</span>
+                                        Decommission unused developer sandbox instances.
+                                    </li>
+<li class="flex items-start gap-2 text-sm text-gray-400">
+<span class="material-symbols-outlined text-primary text-sm mt-1">check_circle</span>
+                                        Renegotiate hardware maintenance contracts.
+                                    </li>
+</ul>
+</div>
+</div>
+</div>
+<div class="mt-8 pt-6 border-t border-outline-variant/10">
+<div class="flex justify-between items-end mb-6">
+<div>
+<p class="text-[10px] text-gray-500 uppercase font-label">Financial Impact</p>
+<p class="mono-data text-xl font-bold text-primary">+$85k / mo</p>
+</div>
+<div class="text-right">
+<p class="text-[10px] text-gray-500 uppercase font-label">Confidence</p>
+<p class="mono-data text-sm text-white">88%</p>
+</div>
+</div>
+<div class="flex gap-3">
+<button class="flex-1 py-2.5 rounded-lg gradient-cta text-on-primary font-semibold text-sm hover:brightness-110 transition-all shadow-lg shadow-primary/10">
+                                Mark as Implemented
+                            </button>
+<button class="px-4 py-2.5 rounded-lg bg-surface-container-highest text-gray-400 font-medium text-sm hover:text-white transition-all">
+                                Postpone
+                            </button>
+</div>
+</div>
+</div>
+<!-- Card 3: Scale Regional Sales -->
+<div class="bg-surface-container-low rounded-xl p-6 flex flex-col justify-between hover:bg-surface-container transition-all group border border-transparent hover:border-primary/10">
+<div class="space-y-6">
+<div class="flex justify-between items-start">
+<h3 class="font-headline text-xl font-semibold leading-tight text-white group-hover:text-primary transition-colors">Scale Regional Sales</h3>
+<span class="bg-primary/10 text-primary text-[10px] font-bold px-2 py-1 rounded-sm uppercase">Growth</span>
+</div>
+<div class="space-y-3">
+<p class="text-sm text-gray-300 font-body leading-relaxed">
+<span class="text-gray-500 font-label uppercase text-[10px] block mb-1">Problem Statement</span>
+                                EMEA expansion is currently bottlenecked by manual lead qualification processes, resulting in a 72-hour delay in initial touchpoints.
+                            </p>
+<div class="space-y-2">
+<span class="text-gray-500 font-label uppercase text-[10px] block">Action Steps</span>
+<ul class="space-y-2">
+<li class="flex items-start gap-2 text-sm text-gray-400">
+<span class="material-symbols-outlined text-primary text-sm mt-1">check_circle</span>
+                                        Automate lead scoring using AI intent data.
+                                    </li>
+<li class="flex items-start gap-2 text-sm text-gray-400">
+<span class="material-symbols-outlined text-primary text-sm mt-1">check_circle</span>
+                                        Localize CRM workflows for DACH region.
+                                    </li>
+<li class="flex items-start gap-2 text-sm text-gray-400">
+<span class="material-symbols-outlined text-primary text-sm mt-1">check_circle</span>
+                                        Expand BDR headcount in Frankfurt hub.
+                                    </li>
+</ul>
+</div>
+</div>
+</div>
+<div class="mt-8 pt-6 border-t border-outline-variant/10">
+<div class="flex justify-between items-end mb-6">
+<div>
+<p class="text-[10px] text-gray-500 uppercase font-label">Financial Impact</p>
+<p class="mono-data text-xl font-bold text-primary">+$310k / mo</p>
+</div>
+<div class="text-right">
+<p class="text-[10px] text-gray-500 uppercase font-label">Confidence</p>
+<p class="mono-data text-sm text-white">76%</p>
+</div>
+</div>
+<div class="flex gap-3">
+<button class="flex-1 py-2.5 rounded-lg gradient-cta text-on-primary font-semibold text-sm hover:brightness-110 transition-all shadow-lg shadow-primary/10">
+                                Mark as Implemented
+                            </button>
+<button class="px-4 py-2.5 rounded-lg bg-surface-container-highest text-gray-400 font-medium text-sm hover:text-white transition-all">
+                                Dismiss
+                            </button>
+</div>
+</div>
+</div>
+<!-- Card 4: Inventory Turn Management -->
+<div class="bg-surface-container-low rounded-xl p-6 flex flex-col justify-between hover:bg-surface-container transition-all group border border-transparent hover:border-primary/10">
+<div class="space-y-6">
+<div class="flex justify-between items-start">
+<h3 class="font-headline text-xl font-semibold leading-tight text-white group-hover:text-primary transition-colors">Inventory Turn Optimization</h3>
+<span class="bg-outline-variant/20 text-gray-400 text-[10px] font-bold px-2 py-1 rounded-sm uppercase">Efficiency</span>
+</div>
+<div class="space-y-3">
+<p class="text-sm text-gray-300 font-body leading-relaxed">
+<span class="text-gray-500 font-label uppercase text-[10px] block mb-1">Problem Statement</span>
+                                High-capital SKU surplus in Northern warehouses is tying up $2.4M in liquid capital with a 6-month turnover lag.
+                            </p>
+<div class="space-y-2">
+<span class="text-gray-500 font-label uppercase text-[10px] block">Action Steps</span>
+<ul class="space-y-2">
+<li class="flex items-start gap-2 text-sm text-gray-400">
+<span class="material-symbols-outlined text-primary text-sm mt-1">check_circle</span>
+                                        Initiate algorithmic stock rebalancing.
+                                    </li>
+<li class="flex items-start gap-2 text-sm text-gray-400">
+<span class="material-symbols-outlined text-primary text-sm mt-1">check_circle</span>
+                                        Deploy Just-in-Time (JIT) protocols for electronics.
+                                    </li>
+<li class="flex items-start gap-2 text-sm text-gray-400">
+<span class="material-symbols-outlined text-primary text-sm mt-1">check_circle</span>
+                                        Liquidate aged stock through B2B channels.
+                                    </li>
+</ul>
+</div>
+</div>
+</div>
+<div class="mt-8 pt-6 border-t border-outline-variant/10">
+<div class="flex justify-between items-end mb-6">
+<div>
+<p class="text-[10px] text-gray-500 uppercase font-label">Financial Impact</p>
+<p class="mono-data text-xl font-bold text-primary">+$210k / mo</p>
+</div>
+<div class="text-right">
+<p class="text-[10px] text-gray-500 uppercase font-label">Confidence</p>
+<p class="mono-data text-sm text-white">82%</p>
+</div>
+</div>
+<div class="flex gap-3">
+<button class="flex-1 py-2.5 rounded-lg gradient-cta text-on-primary font-semibold text-sm hover:brightness-110 transition-all shadow-lg shadow-primary/10">
+                                Mark as Implemented
+                            </button>
+<button class="px-4 py-2.5 rounded-lg bg-surface-container-highest text-gray-400 font-medium text-sm hover:text-white transition-all">
+                                Dismiss
+                            </button>
+</div>
+</div>
+</div>
+<!-- Card 5: Russian Locale Context (Asymmetric Layout element) -->
+<div class="bg-surface-container-low rounded-xl p-6 flex flex-col justify-between hover:bg-surface-container transition-all group border border-transparent hover:border-primary/10 lg:col-span-2">
+<div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+<div class="space-y-6">
+<div class="flex justify-between items-start">
+<h3 class="font-headline text-xl font-semibold leading-tight text-white group-hover:text-primary transition-colors">Адаптация локального рынка</h3>
+<span class="bg-tertiary/10 text-tertiary text-[10px] font-bold px-2 py-1 rounded-sm uppercase">Regional Pivot</span>
+</div>
+<div class="space-y-3">
+<p class="text-sm text-gray-300 font-body leading-relaxed">
+<span class="text-gray-500 font-label uppercase text-[10px] block mb-1">Problem Statement</span>
+                                    Mismatch in payment gateway configurations for CIS region leads to a 14% drop-off at checkout for high-value transactions.
+                                </p>
+<div class="space-y-2">
+<span class="text-gray-500 font-label uppercase text-[10px] block">Action Steps</span>
+<ul class="space-y-2">
+<li class="flex items-start gap-2 text-sm text-gray-400">
+<span class="material-symbols-outlined text-primary text-sm mt-1">check_circle</span>
+                                            Integrate MIR/UnionPay alternative gateways.
+                                        </li>
+<li class="flex items-start gap-2 text-sm text-gray-400">
+<span class="material-symbols-outlined text-primary text-sm mt-1">check_circle</span>
+                                            Implement RUB-pegged dynamic billing cycles.
+                                        </li>
+<li class="flex items-start gap-2 text-sm text-gray-400">
+<span class="material-symbols-outlined text-primary text-sm mt-1">check_circle</span>
+                                            Establish localized support hub in Tashkent.
+                                        </li>
+</ul>
+</div>
+</div>
+</div>
+<div class="relative rounded-xl overflow-hidden min-h-[200px] border border-outline-variant/10">
+<img alt="Corporate meeting" class="absolute inset-0 w-full h-full object-cover grayscale opacity-50 group-hover:grayscale-0 group-hover:opacity-80 transition-all duration-700" data-alt="high-tech boardroom with glass walls and minimalist furniture in a modern skyscraper with city lights at night" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDdOU0K9pVYTN2U9QvWKRjhdxwajLP6pxoZMI91TQJdK80HazZMxOh5Rre98hISS1Csj61bJBnc62iEFXxCoE-9MQOnAbLS7q6GDyxlTTf3x69ihIm5ajDBliiecRGjDk4Xl3_T8QEn4oUTH1SysiFJaLbyhGRGLwXxtX-7oevsYvcChETTiHk0unDKpaV0nLUHjLtNDaeWaf2bw2zOUud_d9kSpYNx5ev2ZYGQs4CWD8fFlDn1BnlrvanfcbC5oIy42WZK10raIbY"/>
+<div class="absolute inset-0 bg-gradient-to-t from-background via-transparent to-transparent"></div>
+<div class="absolute bottom-4 left-4">
+<p class="text-[10px] text-gray-300 uppercase font-label">Regional Growth Index</p>
+<p class="mono-data text-2xl font-bold text-white">+14.2%</p>
+</div>
+</div>
+</div>
+<div class="mt-8 pt-6 border-t border-outline-variant/10">
+<div class="flex justify-between items-end mb-6">
+<div>
+<p class="text-[10px] text-gray-500 uppercase font-label">Estimated Yield</p>
+<p class="mono-data text-xl font-bold text-primary">+$440k / qtr</p>
+</div>
+<div class="flex gap-3">
+<button class="px-8 py-2.5 rounded-lg gradient-cta text-on-primary font-semibold text-sm hover:brightness-110 transition-all shadow-lg shadow-primary/10">
+                                    Mark as Implemented
+                                </button>
+<button class="px-4 py-2.5 rounded-lg bg-surface-container-highest text-gray-400 font-medium text-sm hover:text-white transition-all">
+                                    Dismiss
+                                </button>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- Bottom Insight Toast/Callout -->
+<div class="glass-card p-6 rounded-2xl border border-outline-variant/10 flex flex-col md:flex-row items-center justify-between gap-6">
+<div class="flex items-center gap-4">
+<div class="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center">
+<span class="material-symbols-outlined text-primary" style="font-variation-settings: 'FILL' 1;">insights</span>
+</div>
+<div>
+<h4 class="font-headline text-lg font-semibold">Adaptive Learning Active</h4>
+<p class="text-sm text-gray-400">Our models are constantly refining based on implemented actions. Next batch of insights in 14h 22m.</p>
+</div>
+</div>
+<div class="flex items-center gap-3">
+<span class="text-xs text-gray-500 font-label uppercase">Last Update: Сегодня, 14:30</span>
+<button class="px-4 py-2 rounded-lg border border-outline-variant/30 text-xs font-semibold hover:bg-white/5 transition-colors">
+                        Refresh Diagnostics
+                    </button>
+</div>
+</div>
+</div>
+</main>
+</body></html>

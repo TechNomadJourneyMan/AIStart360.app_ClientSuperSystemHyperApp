@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="ru"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>GRI: Growth Readiness Index | AIStart360</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;700;800&amp;family=DM+Sans:ital,wght@0,400;0,500;0,700;1,400&amp;family=JetBrains+Mono:wght@400;700&amp;family=Space+Grotesk:wght@400;700&amp;family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "on-secondary-container": "#aeb9d0",
+                        "secondary-fixed": "#d8e3fb",
+                        "outline-variant": "#3b4a41",
+                        "on-tertiary-fixed": "#291800",
+                        "on-primary-fixed-variant": "#005236",
+                        "error-container": "#93000a",
+                        "on-error": "#690005",
+                        "tertiary-fixed": "#ffddb4",
+                        "outline": "#84958a",
+                        "inverse-surface": "#e3e2e8",
+                        "surface-container": "#1f1f24",
+                        "on-primary-container": "#006141",
+                        "tertiary-fixed-dim": "#ffb955",
+                        "secondary": "#bcc7de",
+                        "on-surface": "#e3e2e8",
+                        "surface-tint": "#00e29e",
+                        "surface-container-low": "#1a1b20",
+                        "primary-container": "#00e5a0",
+                        "primary-fixed-dim": "#00e29e",
+                        "on-primary": "#003824",
+                        "on-tertiary-container": "#754b00",
+                        "tertiary-container": "#ffbd60",
+                        "tertiary": "#ffe1bd",
+                        "on-surface-variant": "#bacbbf",
+                        "surface-dim": "#121317",
+                        "surface": "#121317",
+                        "primary-fixed": "#47ffb8",
+                        "background": "#0A0B0F",
+                        "secondary-container": "#3e495d",
+                        "on-tertiary-fixed-variant": "#633f00",
+                        "error": "#ffb4ab",
+                        "on-background": "#e3e2e8",
+                        "on-secondary": "#263143",
+                        "surface-container-lowest": "#0d0e12",
+                        "on-error-container": "#ffdad6",
+                        "surface-bright": "#38393e",
+                        "inverse-on-surface": "#2f3035",
+                        "secondary-fixed-dim": "#bcc7de",
+                        "on-tertiary": "#452b00",
+                        "on-secondary-fixed": "#111c2d",
+                        "primary": "#6effc0",
+                        "on-primary-fixed": "#002114",
+                        "on-secondary-fixed-variant": "#3c475a",
+                        "surface-container-highest": "#343439",
+                        "inverse-primary": "#006c49",
+                        "surface-variant": "#343439",
+                        "surface-container-high": "#292a2e"
+                    },
+                    fontFamily: {
+                        "headline": ["Bricolage Grotesque"],
+                        "body": ["DM Sans"],
+                        "label": ["Space Grotesk"],
+                        "mono": ["JetBrains Mono"]
+                    },
+                    borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
+                },
+            },
+        }
+    </script>
+<style>
+        .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+        .radar-grid { stroke: #3b4a41; stroke-width: 0.5; fill: none; }
+        .radar-area { fill: #00E5A0; fill-opacity: 0.12; stroke: #00E5A0; stroke-width: 2; }
+        .radar-point { fill: #00E5A0; }
+        .pulse-critical { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .4; } }
+        body { background-color: #0A0B0F; color: #e3e2e8; }
+    </style>
+</head>
+<body class="font-body selection:bg-primary selection:text-on-primary overflow-x-hidden">
+<div class="flex min-h-screen">
+<!-- SideNavBar - JSON Execution -->
+<aside class="flex flex-col h-screen w-64 border-r-0 bg-[#0A0B0F] py-6 sticky top-0 shrink-0 hidden md:flex">
+<div class="px-6 mb-10">
+<span class="text-[#00E5A0] font-bold tracking-tighter text-xl font-headline">Intelligence</span>
+<p class="font-label text-[10px] uppercase tracking-widest text-[#8B95A3] mt-1">Institutional Portal</p>
+</div>
+<nav class="flex-1 space-y-1">
+<!-- Dashboard -->
+<a class="flex items-center px-6 py-3 text-[#8B95A3] hover:text-white hover:bg-[#1f1f24] transition-all duration-200 group" href="#">
+<span class="material-symbols-outlined mr-3">dashboard</span>
+<span class="font-label text-sm tracking-tight">Dashboard</span>
+</a>
+<!-- Market -->
+<a class="flex items-center px-6 py-3 text-[#8B95A3] hover:text-white hover:bg-[#1f1f24] transition-all duration-200 group" href="#">
+<span class="material-symbols-outlined mr-3">analytics</span>
+<span class="font-label text-sm tracking-tight">Market</span>
+</a>
+<!-- Insights -->
+<a class="flex items-center px-6 py-3 text-[#8B95A3] hover:text-white hover:bg-[#1f1f24] transition-all duration-200 group" href="#">
+<span class="material-symbols-outlined mr-3">insights</span>
+<span class="font-label text-sm tracking-tight">Insights</span>
+</a>
+<!-- Point A/B -->
+<a class="flex items-center px-6 py-3 text-[#8B95A3] hover:text-white hover:bg-[#1f1f24] transition-all duration-200 group" href="#">
+<span class="material-symbols-outlined mr-3">compare_arrows</span>
+<span class="font-label text-sm tracking-tight">Point A/B</span>
+</a>
+<!-- Growth -->
+<a class="flex items-center px-6 py-3 text-[#8B95A3] hover:text-white hover:bg-[#1f1f24] transition-all duration-200 group" href="#">
+<span class="material-symbols-outlined mr-3">trending_up</span>
+<span class="font-label text-sm tracking-tight">Growth</span>
+</a>
+<!-- GRI (ACTIVE) -->
+<a class="flex items-center px-6 py-3 text-[#00E5A0] bg-[#1f1f24] border-r-2 border-[#00E5A0] font-label text-sm tracking-tight scale-[0.98] transition-transform" href="#">
+<span class="material-symbols-outlined mr-3">account_balance</span>
+<span>GRI</span>
+</a>
+<!-- Evidence -->
+<a class="flex items-center px-6 py-3 text-[#8B95A3] hover:text-white hover:bg-[#1f1f24] transition-all duration-200 group" href="#">
+<span class="material-symbols-outlined mr-3">verified</span>
+<span class="font-label text-sm tracking-tight">Evidence</span>
+</a>
+</nav>
+<div class="px-6 mt-auto">
+<div class="flex items-center p-3 rounded-xl bg-surface-container-low">
+<img alt="Executive User Profile" class="w-8 h-8 rounded-full mr-3" data-alt="Close up portrait of a professional executive in a minimal modern office setting, soft professional lighting, dark suit" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAZ7FOe6Ris63S23IzCo-Bv9ul4jaD9Ezw5qVU7u_QoP91HNCAuOqmRZf68eHyUO-JN2cfD3M1SgbqISKFyF8pRsICkpOfJna8KnuCKF5ODsHtoGan1u4TJGIT7EJ8Iz87-ZX-BaHq67REf6DRsc5_6rqSSmhmkGXnfGukaDG2IxZOY6eLrPKOZfyhiDWIVxm9kZwV-3bkS7vjc5rleWDOlyfj9OrOCpiGostJo8SuPbqa5DG4v06IXadLWDWwmCazczOQI0VsBS8s"/>
+<div class="overflow-hidden">
+<p class="text-xs font-bold truncate">Institutional User</p>
+<p class="text-[10px] text-secondary truncate uppercase font-mono tracking-tighter">Premium Access</p>
+</div>
+</div>
+</div>
+</aside>
+<!-- Main Content Canvas -->
+<main class="flex-1 min-w-0 bg-[#0A0B0F] relative">
+<!-- TopAppBar - JSON Execution -->
+<header class="w-full h-16 sticky top-0 z-40 bg-[#0A0B0F]/80 backdrop-blur-xl flex items-center justify-between px-8 border-b-0">
+<div class="flex items-center gap-6">
+<div class="flex items-center bg-surface-container-low px-3 py-1.5 rounded-lg">
+<span class="material-symbols-outlined text-secondary text-sm mr-2">search</span>
+<input class="bg-transparent border-none focus:ring-0 text-xs font-mono w-48 text-on-surface p-0" placeholder="Поиск по метрикам..." type="text"/>
+</div>
+<span class="font-mono uppercase text-[10px] tracking-widest text-[#00E5A0] font-bold">Strictly Confidential</span>
+</div>
+<div class="flex items-center gap-6">
+<span class="font-mono uppercase text-[10px] tracking-widest text-secondary">Industry: Finance</span>
+<div class="flex items-center gap-3">
+<button class="material-symbols-outlined text-secondary hover:text-white hover:bg-white/5 px-3 py-1 rounded-lg transition-colors">notifications</button>
+<button class="material-symbols-outlined text-secondary hover:text-white hover:bg-white/5 px-3 py-1 rounded-lg transition-colors">settings</button>
+</div>
+</div>
+</header>
+<div class="p-8 max-w-7xl mx-auto space-y-12">
+<!-- GRI Header Section -->
+<section class="flex flex-col md:flex-row justify-between items-start md:items-center gap-8 border-b border-outline-variant/10 pb-12">
+<div class="max-w-2xl">
+<h1 class="font-headline text-5xl md:text-7xl font-extrabold tracking-tighter mb-2">Growth Readiness Index</h1>
+<p class="text-secondary text-lg font-body italic">Диагностика бизнес-доменов: системная оценка потенциала масштабирования.</p>
+</div>
+<div class="flex flex-col items-center md:items-end">
+<div class="flex items-baseline gap-2">
+<span class="font-mono text-8xl font-bold bg-tertiary-container text-on-tertiary-container px-6 py-2 rounded-xl">56</span>
+<span class="font-mono text-2xl text-secondary">/100</span>
+</div>
+<p class="font-mono text-xs uppercase tracking-widest text-tertiary-container font-bold mt-4">Status: Under-Optimized</p>
+</div>
+</section>
+<!-- Central Intelligence: Radar Chart & Metrics -->
+<section class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
+<!-- The Interactive Radar Chart -->
+<div class="lg:col-span-7 bg-surface-container-low rounded-3xl p-8 relative overflow-hidden group">
+<div class="absolute top-0 right-0 p-6 text-right">
+<span class="font-mono text-[10px] text-primary/40 uppercase tracking-widest">Visual Layer: Business Cardiogram</span>
+</div>
+<div class="flex justify-center items-center py-10">
+<!-- Custom Radar SVG -->
+<svg class="w-full max-w-md drop-shadow-2xl" viewbox="0 0 400 400">
+<!-- Concentric Hexagons -->
+<polygon class="radar-grid" points="200,40 338,120 338,280 200,360 62,280 62,120"></polygon>
+<polygon class="radar-grid" points="200,80 304,140 304,260 200,320 96,260 96,140"></polygon>
+<polygon class="radar-grid" points="200,120 269,160 269,240 200,280 131,240 131,160"></polygon>
+<polygon class="radar-grid" points="200,160 234,180 234,220 200,240 166,220 166,180"></polygon>
+<!-- Axes -->
+<line class="radar-grid" x1="200" x2="200" y1="200" y2="40"></line>
+<line class="radar-grid" x1="200" x2="338" y1="200" y2="120"></line>
+<line class="radar-grid" x1="200" x2="338" y1="200" y2="280"></line>
+<line class="radar-grid" x1="200" x2="200" y1="200" y2="360"></line>
+<line class="radar-grid" x1="200" x2="62" y1="200" y2="280"></line>
+<line class="radar-grid" x1="200" x2="62" y1="200" y2="120"></line>
+<!-- Data Polygon (The Growth Shape) -->
+<polygon class="radar-area" points="200,100 290,160 310,250 200,320 100,260 120,130"></polygon>
+<!-- Critical Pulse Points -->
+<circle class="radar-point" cx="200" cy="100" r="4"></circle>
+<circle class="radar-point pulse-critical fill-error" cx="100" cy="260" r="6"></circle>
+<circle class="radar-point" cx="120" cy="130" r="4"></circle>
+</svg>
+</div>
+<!-- Domain Labels Around Radar (Simplified for UI representation) -->
+<div class="grid grid-cols-2 md:grid-cols-4 gap-4 mt-8">
+<div class="text-center">
+<p class="text-[10px] text-secondary font-mono uppercase">Ценообразование</p>
+<p class="font-mono text-primary font-bold">68</p>
+</div>
+<div class="text-center">
+<p class="text-[10px] text-error font-mono uppercase">Финансы</p>
+<p class="font-mono text-error font-bold pulse-critical">42</p>
+</div>
+<div class="text-center">
+<p class="text-[10px] text-secondary font-mono uppercase">Команда</p>
+<p class="font-mono text-primary font-bold">75</p>
+</div>
+<div class="text-center">
+<p class="text-[10px] text-error font-mono uppercase">Маркетинг</p>
+<p class="font-mono text-error font-bold pulse-critical">38</p>
+</div>
+</div>
+</div>
+<!-- Domain Breakdown (Accordions) -->
+<div class="lg:col-span-5 space-y-3 max-h-[600px] overflow-y-auto pr-4 custom-scrollbar">
+<!-- Card 1 -->
+<div class="bg-surface-container-low rounded-xl p-4 transition-all hover:bg-surface-container">
+<div class="flex justify-between items-center cursor-pointer">
+<div class="flex items-center gap-4">
+<span class="w-10 h-10 flex items-center justify-center bg-surface-container rounded-lg font-mono text-primary font-bold">68</span>
+<div>
+<h3 class="font-bold text-sm">Ценообразование</h3>
+<span class="text-[10px] text-primary uppercase tracking-widest font-mono">СТАБИЛЬНО</span>
+</div>
+</div>
+<span class="material-symbols-outlined text-secondary">expand_more</span>
+</div>
+<div class="mt-4 pt-4 border-t border-outline-variant/10 flex justify-between items-end">
+<div>
+<p class="text-[10px] text-secondary uppercase font-mono">Current vs Target</p>
+<p class="font-mono text-lg">68% / 85%</p>
+</div>
+<div class="w-24 h-1 bg-surface-container-highest rounded-full overflow-hidden">
+<div class="bg-primary h-full" style="width: 68%"></div>
+</div>
+</div>
+</div>
+<!-- Card 2 - Critical -->
+<div class="bg-surface-container-low border border-error/20 rounded-xl p-4 transition-all hover:bg-surface-container">
+<div class="flex justify-between items-center cursor-pointer">
+<div class="flex items-center gap-4">
+<span class="w-10 h-10 flex items-center justify-center bg-error/10 text-error rounded-lg font-mono font-bold">42</span>
+<div>
+<h3 class="font-bold text-sm">Финансовое здоровье</h3>
+<span class="text-[10px] text-error uppercase tracking-widest font-mono font-bold">КРИТИЧНО</span>
+</div>
+</div>
+<span class="material-symbols-outlined text-error pulse-critical">warning</span>
+</div>
+<div class="mt-4 pt-4 border-t border-outline-variant/10 flex justify-between items-end">
+<div>
+<p class="text-[10px] text-secondary uppercase font-mono">Current vs Target</p>
+<p class="font-mono text-lg text-error">42% / 90%</p>
+</div>
+<div class="w-24 h-1 bg-surface-container-highest rounded-full overflow-hidden">
+<div class="bg-error h-full" style="width: 42%"></div>
+</div>
+</div>
+</div>
+<!-- Card 3 -->
+<div class="bg-surface-container-low rounded-xl p-4 transition-all hover:bg-surface-container">
+<div class="flex justify-between items-center cursor-pointer">
+<div class="flex items-center gap-4">
+<span class="w-10 h-10 flex items-center justify-center bg-surface-container rounded-lg font-mono text-primary font-bold">59</span>
+<div>
+<h3 class="font-bold text-sm">Клиентский портфель</h3>
+<span class="text-[10px] text-tertiary uppercase tracking-widest font-mono">ТРЕБУЕТ ВНИМАНИЯ</span>
+</div>
+</div>
+<span class="material-symbols-outlined text-secondary">expand_more</span>
+</div>
+</div>
+<!-- Card 4 -->
+<div class="bg-surface-container-low rounded-xl p-4 transition-all hover:bg-surface-container">
+<div class="flex justify-between items-center cursor-pointer">
+<div class="flex items-center gap-4">
+<span class="w-10 h-10 flex items-center justify-center bg-surface-container rounded-lg font-mono text-primary font-bold">51</span>
+<div>
+<h3 class="font-bold text-sm">Операции</h3>
+<span class="text-[10px] text-error uppercase tracking-widest font-mono">КРИТИЧНО</span>
+</div>
+</div>
+<span class="material-symbols-outlined text-secondary">expand_more</span>
+</div>
+</div>
+<!-- Card 5 -->
+<div class="bg-surface-container-low rounded-xl p-4 transition-all hover:bg-surface-container">
+<div class="flex justify-between items-center cursor-pointer">
+<div class="flex items-center gap-4">
+<span class="w-10 h-10 flex items-center justify-center bg-surface-container rounded-lg font-mono text-primary font-bold">38</span>
+<div>
+<h3 class="font-bold text-sm">Продажи и маркетинг</h3>
+<span class="text-[10px] text-error uppercase tracking-widest font-mono font-bold">КРИТИЧНО</span>
+</div>
+</div>
+<span class="material-symbols-outlined text-secondary">expand_more</span>
+</div>
+</div>
+</div>
+</section>
+<!-- 90-Day Action Plan Footer -->
+<section class="bg-surface-container-low rounded-3xl p-8 border-t border-primary/10">
+<div class="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-10 gap-6">
+<div>
+<h2 class="font-headline text-3xl font-bold tracking-tight">План действий: 90 дней</h2>
+<p class="text-secondary mt-1">Приоритетные шаги для вывода GRI из красной зоны.</p>
+</div>
+<div class="bg-surface-container-highest p-6 rounded-2xl border border-primary/20">
+<p class="text-[10px] text-primary uppercase font-mono tracking-widest mb-2">Primary Target Q4</p>
+<div class="flex items-baseline gap-3">
+<span class="text-4xl font-mono font-bold">GM ≥ 15.0%</span>
+<span class="material-symbols-outlined text-primary">trending_up</span>
+</div>
+</div>
+</div>
+<!-- Timeline -->
+<div class="grid grid-cols-1 md:grid-cols-3 gap-8 relative">
+<!-- Week 1-4: Fix -->
+<div class="relative pl-8 border-l border-primary/30">
+<div class="absolute -left-1.5 top-0 w-3 h-3 bg-primary rounded-full"></div>
+<h4 class="font-mono text-primary text-xs uppercase tracking-widest mb-4">Weeks 1-4: Fix</h4>
+<ul class="space-y-4 text-sm text-secondary">
+<li class="flex items-start gap-3">
+<span class="material-symbols-outlined text-xs mt-1">check_circle</span>
+<span>Аудит кассовых разрывов и оптимизация OPEX.</span>
+</li>
+<li class="flex items-start gap-3">
+<span class="material-symbols-outlined text-xs mt-1">check_circle</span>
+<span>Пересмотр ценовой политики в сегменте B2B.</span>
+</li>
+</ul>
+</div>
+<!-- Week 5-8: Growth -->
+<div class="relative pl-8 border-l border-outline-variant">
+<div class="absolute -left-1.5 top-0 w-3 h-3 bg-outline-variant rounded-full"></div>
+<h4 class="font-mono text-secondary text-xs uppercase tracking-widest mb-4">Weeks 5-8: Growth</h4>
+<ul class="space-y-4 text-sm text-secondary">
+<li class="flex items-start gap-3">
+<span class="material-symbols-outlined text-xs mt-1">radio_button_unchecked</span>
+<span>Запуск воронки лидогенерации (LinkedIn/Direct).</span>
+</li>
+<li class="flex items-start gap-3">
+<span class="material-symbols-outlined text-xs mt-1">radio_button_unchecked</span>
+<span>Наем ключевых сейлз-менеджеров.</span>
+</li>
+</ul>
+</div>
+<!-- Week 9-12: Scale -->
+<div class="relative pl-8 border-l border-outline-variant">
+<div class="absolute -left-1.5 top-0 w-3 h-3 bg-outline-variant rounded-full"></div>
+<h4 class="font-mono text-secondary text-xs uppercase tracking-widest mb-4">Weeks 9-12: Scale</h4>
+<ul class="space-y-4 text-sm text-secondary">
+<li class="flex items-start gap-3">
+<span class="material-symbols-outlined text-xs mt-1">radio_button_unchecked</span>
+<span>Автоматизация системы отчетности в ERP.</span>
+</li>
+<li class="flex items-start gap-3">
+<span class="material-symbols-outlined text-xs mt-1">radio_button_unchecked</span>
+<span>Выход на рынки MENA/SEA.</span>
+</li>
+</ul>
+</div>
+</div>
+</section>
+</div>
+</main>
+</div>
+</body></html>
