@@ -1,0 +1,259 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+}
+
+// ============================================================
+// ENUMS
+// ============================================================
+
+enum UserRole {
+  SUPER_ADMIN
+  ADMIN
+  MANAGER
+  ANALYST
+  CLIENT
+}
+
+enum ClientStatus {
+  active
+  at_risk
+  inactive
+  onboarding
+}
+
+enum GrowthStage {
+  Seed
+  Early
+  Growth
+  Scale
+  Mature
+}
+
+enum SubscriptionPlan {
+  free
+  starter
+  growth
+  scale
+  enterprise
+}
+
+enum NotificationType {
+  gri_updated
+  report
+  alert
+  project
+  team
+  system
+}
+
+enum NotificationPriority {
+  urgent
+  high
+  medium
+  low
+}
+
+// ============================================================
+// MODELS
+// ============================================================
+
+model Organization {
+  id        String           @id @default(cuid())
+  name      String
+  slug      String           @unique
+  plan      SubscriptionPlan @default(free)
+  logoUrl   String?
+
+  users   User[]
+  clients Client[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("organizations")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String?  // null if OAuth-only
+  name         String
+  role         UserRole @default(MANAGER)
+  avatarUrl    String?
+  lastLogin    DateTime?
+
+  orgId  String
+  org    Organization @relation(fields: [orgId], references: [id])
+
+  // NextAuth required fields
+  accounts Account[]
+  sessions Session[]
+
+  managedClients    Client[]       @relation("ManagedClients")
+  uploadedReports   Report[]
+  notifications     Notification[]
+  activityLogs      ActivityLog[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("users")
+}
+
+// NextAuth adapter tables
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+model Client {
+  id       String       @id @default(cuid())
+  name     String
+  industry String
+  stage    GrowthStage
+  status   ClientStatus @default(active)
+  website  String?
+  notes    String?      @db.Text
+
+  orgId     String
+  org       Organization @relation(fields: [orgId], references: [id])
+  managerId String
+  manager   User         @relation("ManagedClients", fields: [managerId], references: [id])
+
+  griReports   GriReport[]
+  reports      Report[]
+  projects     Project[]
+  activityLogs ActivityLog[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("clients")
+}
+
+model GriReport {
+  id             String   @id @default(cuid())
+  clientId       String
+  client         Client   @relation(fields: [clientId], references: [id])
+  score          Int      // 0–1000
+  // Domain scores stored as JSON:
+  // { "strategy": 820, "finance": 760, "operations": 800,
+  //   "team": 710, "market": 780, "technology": 690 }
+  domains        Json
+  benchmarkScore Int?
+  version        String   @default("2.0")
+  calculatedAt   DateTime @default(now())
+
+  @@map("gri_reports")
+}
+
+model Report {
+  id         String @id @default(cuid())
+  clientId   String
+  client     Client @relation(fields: [clientId], references: [id])
+  uploadedBy String
+  uploader   User   @relation(fields: [uploadedBy], references: [id])
+
+  name     String
+  category String // GRI, Financial, Growth, Market, Custom
+  type     String // pdf, xlsx, csv, docx
+  fileUrl  String
+  fileSize Int    // bytes
+  filePath String // Supabase Storage path
+
+  uploadedAt DateTime @default(now())
+
+  @@map("reports")
+}
+
+model Project {
+  id          String    @id @default(cuid())
+  clientId    String
+  client      Client    @relation(fields: [clientId], references: [id])
+  name        String
+  status      String    @default("active") // active, in_review, completed, paused
+  startDate   DateTime?
+  endDate     DateTime?
+  // Team allocations: [{ userId, allocationPct }]
+  team        Json      @default("[]")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("projects")
+}
+
+model Notification {
+  id       String               @id @default(cuid())
+  userId   String
+  user     User                 @relation(fields: [userId], references: [id])
+  type     NotificationType
+  priority NotificationPriority @default(medium)
+  title    String
+  body     String               @db.Text
+  isRead   Boolean              @default(false)
+
+  entityType String? // 'client', 'report', 'gri', 'project'
+  entityId   String?
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, isRead])
+  @@map("notifications")
+}
+
+model ActivityLog {
+  id         String  @id @default(cuid())
+  userId     String
+  user       User    @relation(fields: [userId], references: [id])
+  clientId   String?
+  client     Client? @relation(fields: [clientId], references: [id])
+  action     String
+  entityType String
+  entityId   String
+  metadata   Json    @default("{}")
+
+  createdAt DateTime @default(now())
+
+  @@index([clientId, createdAt])
+  @@index([userId, createdAt])
+  @@map("activity_logs")
+}
