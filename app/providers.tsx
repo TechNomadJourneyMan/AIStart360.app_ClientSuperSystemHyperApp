@@ -1,33 +1,9 @@
 'use client'
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { ToastContainer } from '@/components/ui/Toast'
-import { useAuthStore } from '@/stores/auth.store'
-
-/**
- * AuthProvider — runs auth.init() on mount, syncs role to cookie
- * so middleware can protect routes server-side.
- */
-function AuthProvider({ children }: { children: React.ReactNode }) {
-  const { init, user, role, isInitialized } = useAuthStore()
-
-  useEffect(() => {
-    init()
-  }, [init])
-
-  // Sync role to a lightweight cookie for middleware SSR route protection
-  useEffect(() => {
-    if (!isInitialized) return
-    if (role) {
-      document.cookie = `aistart360_role=${role}; path=/; max-age=${7 * 24 * 3600}; SameSite=Lax`
-    } else {
-      document.cookie = 'aistart360_role=; path=/; max-age=0'
-    }
-  }, [role, isInitialized, user])
-
-  return <>{children}</>
-}
+import { SessionProvider } from 'next-auth/react'
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(
@@ -40,11 +16,11 @@ export function Providers({ children }: { children: React.ReactNode }) {
   )
 
   return (
-    <QueryClientProvider client={queryClient}>
-      <AuthProvider>
+    <SessionProvider>
+      <QueryClientProvider client={queryClient}>
         {children}
         <ToastContainer />
-      </AuthProvider>
-    </QueryClientProvider>
+      </QueryClientProvider>
+    </SessionProvider>
   )
 }

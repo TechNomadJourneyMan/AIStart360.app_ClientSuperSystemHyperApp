@@ -4,7 +4,7 @@ import CredentialsProvider from 'next-auth/providers/credentials'
 import GoogleProvider from 'next-auth/providers/google'
 import bcrypt from 'bcryptjs'
 import { prisma } from './db'
-import type { UserRole } from '@prisma/client'
+import { authConfig } from './auth.config'
 import { z } from 'zod'
 
 const loginSchema = z.object({
@@ -13,19 +13,13 @@ const loginSchema = z.object({
 })
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
+  ...authConfig,
   adapter: PrismaAdapter(prisma),
-
-  session: {
-    strategy: 'jwt',
-    maxAge: 24 * 60 * 60, // 24 часа
-  },
-
-  pages: {
-    signIn: '/login',
-    error: '/login',
-  },
-
   providers: [
+    GoogleProvider({
+      clientId: process.env.GOOGLE_CLIENT_ID!,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+    }),
     CredentialsProvider({
       name: 'Credentials',
       credentials: {
@@ -65,32 +59,5 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         }
       },
     }),
-
-    // Google OAuth (опционально)
-    GoogleProvider({
-      clientId: process.env.GOOGLE_CLIENT_ID!,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
-    }),
   ],
-
-  callbacks: {
-    async jwt({ token, user }) {
-      // При первом логине добавляем role и orgId в token
-      if (user) {
-        token.role = (user as any).role as UserRole
-        token.orgId = (user as any).orgId as string
-      }
-      return token
-    },
-
-    async session({ session, token }) {
-      // Передаём role и orgId в session.user
-      if (session.user) {
-        session.user.id = token.sub!
-        ;(session.user as any).role = token.role
-        ;(session.user as any).orgId = token.orgId
-      }
-      return session
-    },
-  },
 })

@@ -3,17 +3,21 @@ import { prisma } from '@/lib/db'
 import { requireAuth } from '@/lib/api-utils'
 import { createClient } from '@supabase/supabase-js'
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
-
 const ALLOWED_TYPES = ['application/pdf', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'text/csv', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']
 const MAX_SIZE = 50 * 1024 * 1024 // 50MB
 
 export async function POST(request: Request) {
   const { session, error } = await requireAuth()
   if (error) return error
+
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+
+  if (!supabaseUrl || !supabaseServiceKey) {
+    return NextResponse.json({ error: 'Supabase configuration missing' }, { status: 500 })
+  }
+
+  const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
   const formData = await request.formData()
   const file     = formData.get('file') as File
@@ -45,9 +49,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Upload failed', details: uploadError.message }, { status: 500 })
   }
 
-  // Get public URL (signed, 24h)
-  const { data: urlData } = await supabase.storage.from('reports').createSignedUrl(filePath, 86400)
-
   // Save to DB
   const ext = file.name.split('.').pop()?.toLowerCase() ?? 'pdf'
 
@@ -58,7 +59,7 @@ export async function POST(request: Request) {
       name:     file.name.replace(`.${ext}`, ''),
       category: category || 'Custom',
       type:     ext,
-      fileUrl:  urlData?.signedUrl ?? '',
+      fileUrl:  '', // Now unused, we use filePath to generate signed URLs
       fileSize: file.size,
       filePath,
     },

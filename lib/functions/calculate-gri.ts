@@ -4,12 +4,11 @@ import { prisma } from '@/lib/db'
 export const calculateGri = inngest.createFunction(
   {
     id: 'calculate-gri',
-    throttle: { count: 10, period: '1m' }, // 10 расчётов в минуту
+    // @ts-ignore
+    event: 'gri/calculate',
   },
-  { event: 'gri/calculate' as any },
-
   // @ts-ignore
-  async ({ event, step }) => {
+  async ({ event, step }: any) => {
     const { clientId } = event.data
 
     // Step 1: Получить данные клиента
