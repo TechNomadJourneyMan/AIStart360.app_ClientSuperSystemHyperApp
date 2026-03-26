@@ -1,0 +1,119 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  ADMIN
+  MANAGER
+  ANALYST
+  CLIENT
+}
+
+enum ClientStatus {
+  active
+  at_risk
+  inactive
+  onboarding
+}
+
+enum GrowthStage {
+  Seed
+  Early
+  Growth
+  Scale
+  Mature
+}
+
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  users     User[]
+  clients   Client[]
+
+  @@map("organizations")
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  passwordHash  String?
+  name          String
+  role          UserRole  @default(MANAGER)
+  avatarUrl     String?
+  lastLogin     DateTime?
+  orgId         String
+  org           Organization @relation(fields: [orgId], references: [id])
+  managedClients Client[]   @relation("ManagedClients")
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@map("users")
+}
+
+model Client {
+  id            String       @id @default(cuid())
+  name          String
+  industry      String
+  stage         GrowthStage
+  status        ClientStatus @default(active)
+  website       String?
+  notes         String?      @db.Text
+  orgId         String
+  org           Organization @relation(fields: [orgId], references: [id])
+  managerId     String
+  manager       User         @relation("ManagedClients", fields: [managerId], references: [id])
+  
+  // GRI Pulse specific data
+  forbesRank    Int?
+  sector        String?
+  orderCycle    Int          @default(30)
+  
+  griReports    GriReport[]
+  pulseMetrics  PulseMetric?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  @@map("clients")
+}
+
+model PulseMetric {
+  id            String   @id @default(cuid())
+  clientId      String   @unique
+  client        Client   @relation(fields: [clientId], references: [id])
+  
+  lastOrder     DateTime?
+  daysSince     Int?
+  avgCheck      Float     @default(0)
+  volumeChange  Float     @default(0)
+  riskScore     Int       @default(0)
+  churnProb     Int       @default(0)
+  churnLevel    String    @default("low") // low, medium, high
+  comment       String?   @db.Text
+  action        String    @default("monitor") // call, message, monitor
+  history       Json      @default("[]") // [48500, 46000, ...]
+
+  updatedAt     DateTime  @updatedAt
+
+  @@map("pulse_metrics")
+}
+
+model GriReport {
+  id             String   @id @default(cuid())
+  clientId       String
+  client         Client   @relation(fields: [clientId], references: [id])
+  score          Int
+  domains        Json
+  calculatedAt   DateTime @default(now())
+
+  @@map("gri_reports")
+}
