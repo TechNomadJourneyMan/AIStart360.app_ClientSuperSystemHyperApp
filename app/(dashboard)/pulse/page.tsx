@@ -1,7 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import Link from 'next/link'
+import { usePulse } from '@/hooks/usePulse'
 
 // ─── Action Modals ─────────────────────────────────────────────────────────────
 function CallModal({ client, onClose }: { client: { name: string; sector: string } | null; onClose: () => void }) {
@@ -138,127 +139,6 @@ function MessageModal({ client, onClose }: { client: { name: string; sector: str
   )
 }
 
-// ─── Forbes Kazakhstan Top 10 companies as GRI Pulse clients ─────────────────
-// Топ компаний Forbes KZ — реальные данные для демонстрации
-const FORBES_BADGE = '🏆 Forbes KZ'
-
-const TODAY_CLIENTS = [
-  {
-    id: '1', name: 'КазМунайГаз', sector: 'Нефть и газ', forbes: 1,
-    lastOrder: '26 янв', daysSince: 28, avgCheck: 48_500_000,
-    volumeChange: -42, riskScore: 94,
-    churnProb: 87, churnLevel: 'high' as const,
-    comment: 'Менеджер не выходил на связь 18 дней. Срочно требуется эскалация.',
-    action: 'call' as const, orderCycle: 21,
-    history: [48500, 46000, 42000, 37000, 28000],
-    revenue: '₸18.2 трлн', employees: '38 000',
-  },
-  {
-    id: '2', name: 'Kaspi.kz', sector: 'FinTech / E-commerce', forbes: 2,
-    lastOrder: '15 янв', daysSince: 39, avgCheck: 32_000_000,
-    volumeChange: -55, riskScore: 91,
-    churnProb: 83, churnLevel: 'high' as const,
-    comment: 'Не отвечает на запросы 3 недели. Конкурент предложил условия лучше.',
-    action: 'call' as const, orderCycle: 18,
-    history: [32000, 28500, 24000, 19000, 14400],
-    revenue: '₸2.1 трлн', employees: '22 000',
-  },
-  {
-    id: '3', name: 'Самрук-Казына', sector: 'Холдинг / Госфонд', forbes: 3,
-    lastOrder: '10 фев', daysSince: 13, avgCheck: 28_000_000,
-    volumeChange: -38, riskScore: 82,
-    churnProb: 76, churnLevel: 'high' as const,
-    comment: 'Паттерн покупки сломался — ранее сессии каждые 10 дней.',
-    action: 'call' as const, orderCycle: 10,
-    history: [28000, 26500, 25000, 21000, 17360],
-    revenue: '₸24.8 трлн', employees: '280 000',
-  },
-  {
-    id: '4', name: 'ERG (Eurasian Resources)', sector: 'Горнодобыча', forbes: 4,
-    lastOrder: '18 фев', daysSince: 5, avgCheck: 22_000_000,
-    volumeChange: -18, riskScore: 64,
-    churnProb: 54, churnLevel: 'medium' as const,
-    comment: 'Откладывает следующую сессию 2 недели. Возможно бюджетный стоп.',
-    action: 'message' as const, orderCycle: 14,
-    history: [22000, 21000, 20500, 19800, 18040],
-    revenue: '₸6.5 трлн', employees: '75 000',
-  },
-  {
-    id: '5', name: 'Halyk Bank', sector: 'Банкинг', forbes: 5,
-    lastOrder: '22 фев', daysSince: 1, avgCheck: 14_500_000,
-    volumeChange: -12, riskScore: 58,
-    churnProb: 47, churnLevel: 'medium' as const,
-    comment: 'Снизили частоту сессий. Запросили пересмотр договора.',
-    action: 'message' as const, orderCycle: 30,
-    history: [14500, 14200, 13900, 13500, 12760],
-    revenue: '₸4.8 трлн', employees: '19 000',
-  },
-  {
-    id: '6', name: 'Air Astana', sector: 'Авиация', forbes: 6,
-    lastOrder: '5 мар', daysSince: 0, avgCheck: 9_800_000,
-    volumeChange: +12, riskScore: 18,
-    churnProb: 12, churnLevel: 'low' as const,
-    comment: 'Активный клиент, растут. Запросили расширение программы.',
-    action: 'monitor' as const, orderCycle: 7,
-    history: [8200, 8600, 9000, 9400, 9800],
-    revenue: '₸892 млрд', employees: '5 400',
-  },
-]
-
-const AT_RISK_EXTENDED = [
-  ...TODAY_CLIENTS.slice(0, 3),
-  {
-    id: '7', name: 'Freedom Finance', sector: 'Инвестиции / Финансы', forbes: 7,
-    lastOrder: '28 янв', daysSince: 26, avgCheck: 11_500_000,
-    volumeChange: -65, riskScore: 97,
-    churnProb: 92, churnLevel: 'high' as const,
-    comment: 'Критично! Ключевой спонсор ушёл. Срочно — звонок CEO.',
-    action: 'call' as const, orderCycle: 14,
-    history: [11500, 9800, 7800, 5600, 4025],
-    revenue: '₸1.2 трлн', employees: '8 500',
-  },
-  {
-    id: '8', name: 'Kcell', sector: 'Телеком', forbes: 8,
-    lastOrder: '1 мар', daysSince: 4, avgCheck: 7_200_000,
-    volumeChange: -28, riskScore: 75,
-    churnProb: 67, churnLevel: 'medium' as const,
-    comment: 'Сменился контактный директор. Нет подтверждения встречи.',
-    action: 'call' as const, orderCycle: 21,
-    history: [7200, 6900, 6400, 6000, 5184],
-    revenue: '₸312 млрд', employees: '3 200',
-  },
-  {
-    id: '9', name: 'RG Brands', sector: 'FMCG / Кондитерская', forbes: 9,
-    lastOrder: '28 фев', daysSince: 5, avgCheck: 4_800_000,
-    volumeChange: -8, riskScore: 45,
-    churnProb: 38, churnLevel: 'medium' as const,
-    comment: 'Запрашивают скидку. Пересматривают бюджет Q2.',
-    action: 'message' as const, orderCycle: 30,
-    history: [4800, 4700, 4600, 4500, 4416],
-    revenue: '₸180 млрд', employees: '12 000',
-  },
-  {
-    id: '10', name: 'Forte Bank', sector: 'Банкинг', forbes: 10,
-    lastOrder: '4 мар', daysSince: 1, avgCheck: 3_600_000,
-    volumeChange: +7, riskScore: 14,
-    churnProb: 9, churnLevel: 'low' as const,
-    comment: 'Отличная динамика. Продлили контракт на год вперёд.',
-    action: 'monitor' as const, orderCycle: 14,
-    history: [3200, 3300, 3400, 3500, 3600],
-    revenue: '₸2.1 трлн', employees: '6 800',
-  },
-  ...TODAY_CLIENTS.slice(3, 6),
-]
-
-const STATS = {
-  revenueAtRisk: 108_500_000,
-  highRisk: 4,
-  mediumRisk: 3,
-  totalClients: 10,
-  processedToday: 3,
-  dailyTarget: 6,
-}
-
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function fmt(n: number) {
   if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)}Млрд ₸`
@@ -305,7 +185,7 @@ function MiniSparkline({ values }: { values: number[] }) {
   const min = Math.min(...values)
   const range = max - min || 1
   const w = 40, h = 20
-  const pts = values.map((v, i) => {
+  const pts = values.map((v: number, i: number) => {
     const x = (i / (values.length - 1)) * w
     const y = h - ((v - min) / range) * h
     return `${x},${y}`
@@ -330,9 +210,27 @@ function RiskBar({ score }: { score: number }) {
   )
 }
 
+type PulseClient = {
+  id: string
+  name: string
+  sector: string
+  forbes?: number | null
+  lastOrder: string
+  daysSince: number
+  avgCheck: number
+  volumeChange: number
+  riskScore: number
+  churnProb: number
+  churnLevel: 'high' | 'medium' | 'low'
+  comment: string
+  action: 'call' | 'message' | 'monitor'
+  history: number[]
+  orderCycle: number
+}
+
 // ─── Client Card Tab ──────────────────────────────────────────────────────────
 function ClientCard({ client, onCall, onMessage, onMonitor, isMonitored }: {
-  client: typeof TODAY_CLIENTS[0]
+  client: PulseClient
   onCall?: () => void
   onMessage?: () => void
   onMonitor?: () => void
@@ -385,7 +283,7 @@ function ClientCard({ client, onCall, onMessage, onMonitor, isMonitored }: {
       <div className="bg-surface-container rounded-xl p-4">
         <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest mb-3">История заказов (последние 5)</p>
         <div className="flex items-end gap-2 h-16">
-          {client.history.map((val, i) => {
+          {client.history.map((val: number, i: number) => {
             const max = Math.max(...client.history)
             const pct = (val / max) * 100
             const isLast = i === client.history.length - 1
@@ -435,25 +333,87 @@ type ModalClient = { name: string; sector: string }
 
 export default function PulsePage() {
   const [tab, setTab] = useState<'today' | 'risk' | 'card'>('today')
-  const [selectedClient, setSelectedClient] = useState(TODAY_CLIENTS[0])
-  const [filterRisk, setFilterRisk] = useState<'all' | 'high' | 'medium' | 'low'>('all')
+  const { data: clientsData, isLoading, error } = usePulse()
+  
+  const [monitored, setMonitored]         = useState<Set<string>>(new Set())
   const [callClient, setCallClient]       = useState<ModalClient | null>(null)
   const [messageClient, setMessageClient] = useState<ModalClient | null>(null)
-  const [monitored, setMonitored]         = useState<Set<string>>(new Set())
+  const [filterRisk, setFilterRisk]       = useState<'all' | 'high' | 'medium' | 'low'>('all')
 
   const toggleMonitor = (id: string) =>
     setMonitored(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s })
 
+  // Map backend data to frontend structure
+  const TODAY_CLIENTS = useMemo(() => {
+    if (!clientsData?.todayClients) return []
+    return (clientsData.todayClients as any[]).map(m => ({
+      id: m.id,
+      name: m.name,
+      sector: m.sector,
+      forbes: m.forbes,
+      lastOrder: m.lastOrder,
+      daysSince: m.daysSince,
+      avgCheck: m.avgCheck,
+      volumeChange: m.volumeChange,
+      riskScore: m.riskScore,
+      churnProb: m.churnProb,
+      churnLevel: m.churnLevel as 'high' | 'medium' | 'low',
+      comment: m.comment,
+      action: m.action as 'call' | 'message' | 'monitor',
+      history: m.history,
+      orderCycle: m.orderCycle || 14,
+    }))
+  }, [clientsData])
+
+  const [selectedClient, setSelectedClient] = useState<PulseClient | null>(null)
+
+  // Initialize selected client once data is loaded
+  useMemo(() => {
+    if (TODAY_CLIENTS.length > 0 && !selectedClient) {
+      setSelectedClient(TODAY_CLIENTS[0])
+    }
+  }, [TODAY_CLIENTS, selectedClient])
+
   const filteredToday = TODAY_CLIENTS.filter(
     (c) => filterRisk === 'all' || c.churnLevel === filterRisk
   )
-  const filteredRisk = AT_RISK_EXTENDED.filter(
-    (c) => filterRisk === 'all' || c.churnLevel === filterRisk
-  ).sort((a, b) => b.riskScore - a.riskScore)
+  const filteredRisk = TODAY_CLIENTS
+    .filter((c) => c.churnLevel === 'high' || c.churnLevel === 'medium')
+    .filter((c) => filterRisk === 'all' || c.churnLevel === filterRisk)
+    .sort((a, b) => b.riskScore - a.riskScore)
 
   const highRiskRevenue = TODAY_CLIENTS
     .filter((c) => c.churnLevel === 'high')
     .reduce((s, c) => s + c.avgCheck, 0)
+
+  // Dynamic Stats
+  const DYNAMIC_STATS = useMemo(() => {
+    const high = TODAY_CLIENTS.filter(c => c.churnLevel === 'high').length
+    const medium = TODAY_CLIENTS.filter(c => c.churnLevel === 'medium').length
+    return {
+      revenueAtRisk: highRiskRevenue,
+      highRisk: high,
+      mediumRisk: medium,
+      totalClients: TODAY_CLIENTS.length,
+      processedToday: 3, // Mocked for now
+      dailyTarget: 6,
+    }
+  }, [TODAY_CLIENTS, highRiskRevenue])
+
+  if (isLoading) return (
+    <div className="flex items-center justify-center min-h-[400px]">
+      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+    </div>
+  )
+
+  if (error) return (
+    <div className="p-8 text-center bg-error/10 rounded-2xl border border-error/20">
+      <p className="text-error font-medium">Ошибка загрузки данных</p>
+      <p className="text-xs text-on-surface-variant mt-2">База данных временно недоступна или не настроена</p>
+    </div>
+  )
+
+  if (!selectedClient && TODAY_CLIENTS.length > 0) return null
 
   return (
     <div className="space-y-6">
@@ -496,35 +456,35 @@ export default function PulsePage() {
             value: fmt(highRiskRevenue),
             icon: 'payments',
             color: 'error',
-            sub: `${STATS.highRisk} клиентов высокого риска`,
+            sub: `${DYNAMIC_STATS.highRisk} клиентов высокого риска`,
           },
           {
             label: 'Высокий риск',
-            value: String(STATS.highRisk),
+            value: String(DYNAMIC_STATS.highRisk),
             icon: 'crisis_alert',
             color: 'error',
             sub: 'требуют звонка сегодня',
           },
           {
             label: 'Средний риск',
-            value: String(STATS.mediumRisk),
+            value: String(DYNAMIC_STATS.mediumRisk),
             icon: 'warning',
             color: 'tertiary-container',
             sub: 'написать до конца дня',
           },
           {
             label: 'Всего клиентов',
-            value: String(STATS.totalClients),
+            value: String(DYNAMIC_STATS.totalClients),
             icon: 'group',
             color: 'on-surface-variant',
             sub: 'в активной базе',
           },
           {
             label: 'Обработано сегодня',
-            value: `${STATS.processedToday} / ${STATS.dailyTarget}`,
+            value: `${DYNAMIC_STATS.processedToday} / ${DYNAMIC_STATS.dailyTarget}`,
             icon: 'task_alt',
             color: 'primary',
-            sub: `${Math.round((STATS.processedToday / STATS.dailyTarget) * 100)}% выполнено`,
+            sub: `${Math.round((DYNAMIC_STATS.processedToday / DYNAMIC_STATS.dailyTarget) * 100)}% выполнено`,
           },
         ].map((stat) => (
           <div key={stat.label}
@@ -544,7 +504,7 @@ export default function PulsePage() {
         <div className="flex gap-1 min-w-max">
           {([
             { key: 'today', label: 'Кому звонить', labelFull: 'Кому продавать сегодня', count: TODAY_CLIENTS.length },
-            { key: 'risk',  label: 'В зоне риска', labelFull: 'Топ в зоне риска',       count: AT_RISK_EXTENDED.length },
+            { key: 'risk',  label: 'В зоне риска', labelFull: 'Топ в зоне риска',       count: filteredRisk.length },
             { key: 'card',  label: 'Карточка',     labelFull: 'Карточка клиента',        count: null },
           ] as const).map(({ key, label, labelFull, count }) => (
             <button key={key} onClick={() => setTab(key)}
@@ -591,11 +551,11 @@ export default function PulsePage() {
       {tab === 'today' && (
         <div className="space-y-4">
           {/* Alert banner */}
-          {STATS.highRisk > 0 && (
+          {DYNAMIC_STATS.highRisk > 0 && (
             <div className="flex items-center gap-3 bg-error/10 border border-error/20 rounded-xl px-5 py-3.5">
               <span className="w-2.5 h-2.5 rounded-full bg-error animate-pulse flex-shrink-0" />
               <p className="text-sm text-error font-medium">
-                <strong>{STATS.highRisk} клиента</strong> просрочили цикл заказа более чем на 10 дней.
+                <strong>{DYNAMIC_STATS.highRisk} клиента</strong> просрочили цикл заказа более чем на 10 дней.
                 Возможна потеря <strong>{fmt(highRiskRevenue)}</strong> в этом месяце.
               </p>
             </div>
@@ -760,7 +720,7 @@ export default function PulsePage() {
         <div className="space-y-3">
           {filteredRisk.map((c, i) => (
             <div key={c.id}
-              onClick={() => { setSelectedClient(c as typeof TODAY_CLIENTS[0]); setTab('card') }}
+              onClick={() => { setSelectedClient(c); setTab('card') }}
               className="bg-surface-container-low rounded-xl border border-white/[0.04] hover:border-primary/20 p-4 cursor-pointer transition-colors group">
               <div className="flex items-center gap-3 flex-wrap">
                 <span className={`text-[10px] font-mono text-on-surface-variant/50 w-5 flex-shrink-0`}>#{i + 1}</span>
@@ -803,7 +763,7 @@ export default function PulsePage() {
               <button key={c.id}
                 onClick={() => setSelectedClient(c)}
                 className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-xs transition-colors whitespace-nowrap flex-shrink-0 ${
-                  selectedClient.id === c.id
+                  selectedClient?.id === c.id
                     ? 'bg-primary/10 border-primary/30 text-primary'
                     : 'border-white/[0.06] text-on-surface-variant hover:border-white/[0.12] hover:text-on-surface'
                 }`}>
@@ -816,13 +776,15 @@ export default function PulsePage() {
           </div>
 
           <div className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-4 md:p-6">
-            <ClientCard
-              client={selectedClient}
-              onCall={() => setCallClient(selectedClient)}
-              onMessage={() => setMessageClient(selectedClient)}
-              onMonitor={() => toggleMonitor(selectedClient.id)}
-              isMonitored={monitored.has(selectedClient.id)}
-            />
+            {selectedClient && (
+              <ClientCard
+                client={selectedClient}
+                onCall={() => setCallClient(selectedClient)}
+                onMessage={() => setMessageClient(selectedClient)}
+                onMonitor={() => toggleMonitor(selectedClient.id)}
+                isMonitored={monitored.has(selectedClient.id)}
+              />
+            )}
           </div>
         </div>
       )}
