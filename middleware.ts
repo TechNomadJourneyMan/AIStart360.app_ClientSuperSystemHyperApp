@@ -6,7 +6,7 @@ const PUBLIC_PATHS = ['/login', '/register', '/forgot-password']
 // Client portal routes (waiting-room, onboarding, point-a) — accessible only to 'client' role
 // But since current auth uses localStorage (not cookies for client role),
 // we just allow them through and let the page handle auth checks via Supabase/localStorage.
-const CLIENT_PATHS = ['/waiting-room', '/onboarding', '/client']
+const CLIENT_PATHS = ['/client']
 
 const ADMIN_PATHS = [
   '/dashboard', '/gri', '/market', '/point-a', '/point-b',

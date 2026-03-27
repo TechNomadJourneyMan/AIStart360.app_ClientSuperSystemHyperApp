@@ -151,7 +151,7 @@ function FieldError({ msg }: { msg?: string }) {
 }
 
 function TextInput({ name, placeholder, register, error, type = 'text' }: {
-  name: string; placeholder?: string; register: ReturnType<typeof useForm>['register'];
+  name: string; placeholder?: string; register: any;
   error?: string; type?: string
 }) {
   return (
@@ -169,7 +169,7 @@ function TextInput({ name, placeholder, register, error, type = 'text' }: {
 
 function SelectInput({ name, options, register, error }: {
   name: string; options: { value: string; label: string }[];
-  register: ReturnType<typeof useForm>['register']; error?: string
+  register: any; error?: string
 }) {
   return (
     <div>
@@ -233,7 +233,7 @@ function BoolToggle({ label, value, onChange }: {
 }
 
 function YearTriple({ base, register, errors, prefix }: {
-  base: string; register: ReturnType<typeof useForm>['register'];
+  base: string; register: any;
   errors: Record<string, { message?: string }>; prefix: string
 }) {
   return (
@@ -302,7 +302,7 @@ export default function OnboardingPage() {
     try {
       // If step 1, also create/update company record
       if (step === 1) {
-        const compRes = await fetch('/api/v1/onboarding/company', {
+        const compRes = await fetch('/api/v1/client/onboarding/company', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -335,7 +335,7 @@ export default function OnboardingPage() {
       for (const [k, v] of Object.entries(answers)) {
         formatted[k] = { value: v }
       }
-      await fetch('/api/v1/onboarding/survey', {
+      await fetch('/api/v1/client/onboarding/survey', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user_id: userId, company_id: companyId, step, answers: formatted }),

@@ -90,16 +90,16 @@ export default function RegisterPage() {
       if (signUpError) throw new Error(signUpError.message)
       if (!authData.user) throw new Error('Не удалось создать аккаунт')
 
-      await sb.from('profiles').upsert({
+      await (sb.from('profiles') as any).upsert({
         id: authData.user.id, email: data.email,
         full_name: data.name, status: 'pending_approval',
       }, { onConflict: 'id' })
 
-      await sb.from('companies').upsert({
+      await (sb.from('companies') as any).upsert({
         user_id: authData.user.id, company_name: data.company,
       }, { onConflict: 'user_id' })
 
-      router.replace('/waiting-room')
+      router.replace('/client/waiting-room')
     } catch (err: unknown) {
       setClientError(err instanceof Error ? err.message : 'Ошибка регистрации')
     } finally {

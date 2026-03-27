@@ -144,7 +144,7 @@ export default function PointAClientPage() {
     try {
       const [diagRes, compRes] = await Promise.all([
         fetch(`/api/v1/diagnostics/current?user_id=${userId}`),
-        fetch(`/api/v1/onboarding/company?user_id=${userId}`),
+        fetch(`/api/v1/client/onboarding/company?user_id=${userId}`),
       ])
       const diagData = await diagRes.json()
       const compData = await compRes.json()
@@ -198,7 +198,7 @@ export default function PointAClientPage() {
               <span className={`material-symbols-outlined text-sm ${isRecalculating ? 'animate-spin' : ''}`}>refresh</span>
               Пересчитать
             </button>
-            <Link href="/onboarding/documents" className="text-xs font-mono text-on-surface-variant hover:text-primary border border-white/[0.08] rounded-lg px-3 py-1.5 transition-all flex items-center gap-1.5">
+            <Link href="/client/onboarding/documents" className="text-xs font-mono text-on-surface-variant hover:text-primary border border-white/[0.08] rounded-lg px-3 py-1.5 transition-all flex items-center gap-1.5">
               <span className="material-symbols-outlined text-sm">upload_file</span>
               Документы
             </Link>
@@ -223,7 +223,7 @@ export default function PointAClientPage() {
             <h2 className="font-headline text-xl font-bold text-on-surface mb-2">Диагностика не рассчитана</h2>
             <p className="text-sm text-on-surface-variant mb-6">Заполните анкету и нажмите «Пересчитать»</p>
             <div className="flex gap-3 justify-center">
-              <Link href="/onboarding" className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-primary to-[#00e29e] text-[#003824] font-bold text-sm">
+              <Link href="/client/onboarding" className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-primary to-[#00e29e] text-[#003824] font-bold text-sm">
                 Заполнить анкету
               </Link>
               <button onClick={recalculate} disabled={isRecalculating}
@@ -363,14 +363,14 @@ export default function PointAClientPage() {
             <section className="bg-surface-container-low rounded-2xl border border-white/[0.06] p-6">
               <h2 className="text-sm font-medium text-on-surface mb-4">Улучшить диагностику</h2>
               <div className="grid grid-cols-2 gap-3">
-                <Link href="/onboarding/documents" className="flex items-center gap-2 bg-surface-container rounded-xl border border-white/[0.08] hover:border-primary/30 p-4 transition-all group">
+                <Link href="/client/onboarding/documents" className="flex items-center gap-2 bg-surface-container rounded-xl border border-white/[0.08] hover:border-primary/30 p-4 transition-all group">
                   <span className="material-symbols-outlined text-xl text-primary">upload_file</span>
                   <div>
                     <p className="text-xs font-medium text-on-surface group-hover:text-primary transition-colors">Загрузить отчёт</p>
                     <p className="text-[10px] text-on-surface-variant">P&L, баланс, CRM</p>
                   </div>
                 </Link>
-                <Link href="/onboarding" className="flex items-center gap-2 bg-surface-container rounded-xl border border-white/[0.08] hover:border-primary/30 p-4 transition-all group">
+                <Link href="/client/onboarding" className="flex items-center gap-2 bg-surface-container rounded-xl border border-white/[0.08] hover:border-primary/30 p-4 transition-all group">
                   <span className="material-symbols-outlined text-xl text-primary">edit_note</span>
                   <div>
                     <p className="text-xs font-medium text-on-surface group-hover:text-primary transition-colors">Обновить анкету</p>

@@ -42,7 +42,7 @@ function LoginContent() {
       // After login, role cookie is set by AuthProvider — redirect accordingly
       const role = useAuthStore.getState().role
       if (role === 'client') {
-        router.replace('/waiting-room')
+        router.replace('/client/waiting-room')
       } else if (role === 'admin') {
         router.replace(from.startsWith('/expert') || from.startsWith('/owner') ? '/dashboard' : from)
       } else if (role === 'owner') {

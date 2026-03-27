@@ -80,7 +80,7 @@ export default function DocumentsPage() {
   const fetchDocs = useCallback(async () => {
     if (!userId) return
     try {
-      const res = await fetch(`/api/v1/onboarding/documents?user_id=${userId}`)
+      const res = await fetch(`/api/v1/client/onboarding/documents?user_id=${userId}`)
       const data = await res.json()
       if (data.ok) setUploaded(data.data)
     } catch {}
@@ -142,7 +142,7 @@ export default function DocumentsPage() {
         .createSignedUrl(storageData.path, 60 * 60 * 24 * 365) // 1 year
 
       // Register in DB + trigger n8n
-      const res = await fetch('/api/v1/onboarding/documents', {
+      const res = await fetch('/api/v1/client/onboarding/documents', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -175,7 +175,7 @@ export default function DocumentsPage() {
       <header className="sticky top-0 z-20 bg-[#0A0B0F]/90 backdrop-blur border-b border-white/[0.06] px-6 py-4">
         <div className="max-w-2xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <Link href="/onboarding" className="text-on-surface-variant hover:text-on-surface transition-colors">
+            <Link href="/client/onboarding" className="text-on-surface-variant hover:text-on-surface transition-colors">
               <span className="material-symbols-outlined text-xl">arrow_back</span>
             </Link>
             <Image src="/logo.svg" alt="AIStart360" width={120} height={22} />
@@ -348,7 +348,7 @@ export default function DocumentsPage() {
 
         {/* Actions */}
         <div className="flex gap-3 pt-4 border-t border-white/[0.06]">
-          <Link href="/onboarding"
+          <Link href="/client/onboarding"
             className="flex-1 py-3 rounded-xl border border-white/[0.08] text-on-surface-variant hover:text-on-surface text-sm font-medium text-center transition-all">
             ← К анкете
           </Link>

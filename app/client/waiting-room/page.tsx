@@ -85,8 +85,7 @@ export default function WaitingRoomPage() {
     if (!userId) return
     try {
       const sb = createClient()
-      const { data } = await sb
-        .from('profiles')
+      const { data } = await (sb.from('profiles') as any)
         .select('status')
         .eq('id', userId)
         .single()
@@ -97,7 +96,7 @@ export default function WaitingRoomPage() {
 
         if (data.status === 'approved') {
           setIsRedirecting(true)
-          setTimeout(() => router.push('/onboarding'), 2000)
+          setTimeout(() => router.push('/client/onboarding'), 2000)
         }
       }
     } catch {}
@@ -209,12 +208,12 @@ export default function WaitingRoomPage() {
           {/* CTAs */}
           {status !== 'rejected' && (
             <div className="grid grid-cols-2 gap-3">
-              <Link href="/onboarding" className="flex flex-col items-center gap-2 bg-surface-container-low hover:bg-surface-container rounded-2xl border border-white/[0.06] hover:border-primary/20 p-5 transition-all group">
+              <Link href="/client/onboarding" className="flex flex-col items-center gap-2 bg-surface-container-low hover:bg-surface-container rounded-2xl border border-white/[0.06] hover:border-primary/20 p-5 transition-all group">
                 <span className="material-symbols-outlined text-2xl text-primary">assignment</span>
                 <span className="text-xs text-center text-on-surface group-hover:text-on-surface/90 font-medium leading-tight">Заполнить анкету заранее</span>
                 <span className="text-[10px] text-on-surface-variant text-center">Ускорьте процесс проверки</span>
               </Link>
-              <Link href="/onboarding/documents" className="flex flex-col items-center gap-2 bg-surface-container-low hover:bg-surface-container rounded-2xl border border-white/[0.06] hover:border-primary/20 p-5 transition-all group">
+              <Link href="/client/onboarding/documents" className="flex flex-col items-center gap-2 bg-surface-container-low hover:bg-surface-container rounded-2xl border border-white/[0.06] hover:border-primary/20 p-5 transition-all group">
                 <span className="material-symbols-outlined text-2xl text-primary">upload_file</span>
                 <span className="text-xs text-center text-on-surface group-hover:text-on-surface/90 font-medium leading-tight">Загрузить документы</span>
                 <span className="text-[10px] text-on-surface-variant text-center">P&L, баланс, отчёты</span>
