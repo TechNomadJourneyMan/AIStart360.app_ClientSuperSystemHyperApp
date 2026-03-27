@@ -1,22 +1,21 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
-/**
- * Middleware — reads a lightweight cookie `aistart360_role` set by the client
- * after login (see AuthProvider). Used for SSR-level route protection.
- *
- * Replace with NextAuth `auth()` when real backend is connected.
- */
+const PUBLIC_PATHS = ['/login', '/register', '/forgot-password']
 
-const PUBLIC_PATHS  = ['/login', '/register', '/forgot-password']
-const ADMIN_PATHS   = [
+// Client portal routes (waiting-room, onboarding, point-a) — accessible only to 'client' role
+// But since current auth uses localStorage (not cookies for client role),
+// we just allow them through and let the page handle auth checks via Supabase/localStorage.
+const CLIENT_PATHS = ['/waiting-room', '/onboarding', '/client']
+
+const ADMIN_PATHS = [
   '/dashboard', '/gri', '/market', '/point-a', '/point-b',
   '/insights', '/competitors', '/metrics', '/settings',
   '/clients', '/reports', '/analytics', '/intelligence',
-  '/team', '/notifications', '/profile', '/users',
+  '/team', '/notifications', '/profile', '/users', '/admin',
 ]
-const EXPERT_PATHS  = ['/expert']
-const OWNER_PATHS   = ['/owner']
+const EXPERT_PATHS = ['/expert']
+const OWNER_PATHS  = ['/owner']
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
@@ -34,6 +33,12 @@ export function middleware(request: NextRequest) {
     return NextResponse.next()
   }
 
+  // Client portal pages — allow through (auth handled client-side via Supabase)
+  const isClientPortal = CLIENT_PATHS.some((p) => pathname.startsWith(p))
+  if (isClientPortal) {
+    return NextResponse.next()
+  }
+
   // Public auth pages
   const isPublic = PUBLIC_PATHS.some((p) => pathname.startsWith(p))
 
@@ -43,7 +48,10 @@ export function middleware(request: NextRequest) {
 
   // Authenticated user visiting auth page → redirect to correct panel
   if (isPublic && role) {
-    const dest = role === 'admin' ? '/dashboard' : role === 'owner' ? '/owner/dashboard' : '/expert/dashboard'
+    const dest =
+      role === 'admin' ? '/dashboard' :
+      role === 'owner' ? '/owner/dashboard' :
+      '/expert/dashboard'
     return NextResponse.redirect(new URL(dest, request.url))
   }
 
@@ -55,10 +63,7 @@ export function middleware(request: NextRequest) {
   }
 
   // Expert trying to access admin-only pages → redirect to expert panel
-  if (
-    role === 'expert' &&
-    ADMIN_PATHS.some((p) => pathname.startsWith(p))
-  ) {
+  if (role === 'expert' && ADMIN_PATHS.some((p) => pathname.startsWith(p))) {
     return NextResponse.redirect(new URL('/expert/dashboard', request.url))
   }
 

@@ -5,7 +5,7 @@
  * When a real backend is connected, replace method bodies with fetch() calls.
  */
 
-export type UserRole = 'admin' | 'expert' | 'owner'
+export type UserRole = 'admin' | 'expert' | 'owner' | 'client'
 
 export interface User {
   id: string
@@ -110,6 +110,17 @@ const SEED_USERS: User[] = [
     position: 'Собственник',
     createdAt: '2025-09-01T00:00:00Z',
     lastLogin: '2026-03-25T10:00:00Z',
+  },
+  {
+    id: 'usr_client_001',
+    name: 'Алибек Джаксыбеков',
+    email: 'client@aistart360.kz',
+    password: btoa('client123'),
+    role: 'client',
+    organization: 'Technovate KZ',
+    position: 'Основатель',
+    createdAt: '2026-01-15T00:00:00Z',
+    lastLogin: '2026-03-27T09:00:00Z',
   },
 ]
 

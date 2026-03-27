@@ -17,7 +17,7 @@ const schema = z.object({
 type Form = z.infer<typeof schema>
 
 const DEMO_ACCOUNTS = [
-  { label: 'Admin',  email: 'admin@aistart360.kz',  hint: 'admin123',  role: 'admin'  },
+  { label: 'Клиент', email: 'client@aistart360.kz',  hint: 'client123', role: 'client' },
   { label: 'Expert', email: 'expert@aistart360.kz', hint: 'expert123', role: 'expert' },
   { label: 'Owner',  email: 'owner@aistart360.kz',  hint: 'owner123',  role: 'owner'  },
 ]
@@ -40,7 +40,9 @@ function LoginContent() {
       await login(data.email, data.password)
       // After login, role cookie is set by AuthProvider — redirect accordingly
       const role = useAuthStore.getState().role
-      if (role === 'admin') {
+      if (role === 'client') {
+        router.replace('/waiting-room')
+      } else if (role === 'admin') {
         router.replace(from.startsWith('/expert') || from.startsWith('/owner') ? '/dashboard' : from)
       } else if (role === 'owner') {
         router.replace('/owner/dashboard')
@@ -146,45 +148,45 @@ function LoginContent() {
       </div>
 
       {/* ── RIGHT PANEL — Auth Form ── */}
-      <div className="flex-1 flex items-center justify-center p-6 lg:p-12">
+      <div className="flex-1 flex items-center justify-center px-5 py-8 lg:p-12 overflow-x-hidden">
         <div className="w-full max-w-[400px]">
 
           {/* Mobile logo */}
-          <div className="flex items-center gap-2 mb-8 lg:hidden">
-            <Image src="/logo-icon.svg" alt="AIStart360" width={32} height={32} />
-            <span className="font-headline text-lg font-bold text-on-surface">AIStart360</span>
+          <div className="flex items-center gap-2 mb-6 lg:hidden">
+            <Image src="/logo-icon.svg" alt="AIStart360" width={28} height={28} />
+            <span className="font-headline text-base font-bold text-on-surface">AIStart360</span>
           </div>
 
           {/* Badge */}
-          <div className="inline-flex items-center gap-2 bg-primary/10 border border-primary/20 rounded-full px-3 py-1 mb-6">
+          <div className="inline-flex items-center gap-2 bg-primary/10 border border-primary/20 rounded-full px-3 py-1 mb-4">
             <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
             <span className="text-[10px] font-mono text-primary uppercase tracking-wider">Institutional Access</span>
           </div>
 
-          <h1 className="font-headline text-3xl font-extrabold text-on-surface mb-2">
+          <h1 className="font-headline text-2xl sm:text-3xl font-extrabold text-on-surface mb-1.5">
             Войти в систему
           </h1>
-          <p className="text-sm text-on-surface-variant mb-8">
+          <p className="text-sm text-on-surface-variant mb-6">
             Введите свои данные для входа
           </p>
 
-          {/* Demo accounts */}
-          <div className="mb-6">
+          {/* Demo accounts — horizontal scroll on narrow screens */}
+          <div className="mb-5">
             <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest mb-2">
               Demo аккаунты
             </p>
-            <div className="flex gap-2">
+            <div className="grid grid-cols-3 gap-2">
               {DEMO_ACCOUNTS.map((a) => (
                 <button
                   key={a.label}
                   type="button"
                   onClick={() => fillDemo(a.email, a.hint)}
-                  className="flex-1 text-xs font-mono bg-surface-container hover:bg-surface-container-high border border-white/[0.06] hover:border-primary/30 text-on-surface-variant hover:text-primary px-3 py-2 rounded-xl transition-all text-left"
+                  className="text-xs font-mono bg-surface-container hover:bg-surface-container-high border border-white/[0.06] hover:border-primary/30 text-on-surface-variant hover:text-primary px-2.5 py-2 rounded-xl transition-all text-left min-w-0"
                 >
-                  <span className={`text-[10px] uppercase tracking-wider block mb-0.5 ${a.role === 'admin' ? 'text-primary' : 'text-secondary'}`}>
+                  <span className={`text-[10px] uppercase tracking-wider block mb-0.5 ${a.role === 'client' ? 'text-primary' : 'text-secondary'}`}>
                     {a.label}
                   </span>
-                  <span className="text-[10px] opacity-70">{a.email}</span>
+                  <span className="text-[10px] opacity-70 block truncate">{a.email}</span>
                 </button>
               ))}
             </div>

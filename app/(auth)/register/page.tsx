@@ -8,8 +8,9 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { useAuthStore } from '@/stores/auth.store'
+import { createClient } from '@/lib/supabase-client'
 
-const schema = z.object({
+const staffSchema = z.object({
   name:         z.string().min(2, 'Минимум 2 символа'),
   email:        z.string().email('Введите корректный email'),
   password:     z.string().min(6, 'Минимум 6 символов'),
@@ -23,39 +24,95 @@ const schema = z.object({
   path: ['confirm'],
 })
 
-type Form = z.infer<typeof schema>
+const clientSchema = z.object({
+  name:    z.string().min(2, 'Минимум 2 символа'),
+  email:   z.string().email('Введите корректный email'),
+  password: z.string().min(6, 'Минимум 6 символов'),
+  confirm: z.string(),
+  company: z.string().min(2, 'Введите название компании'),
+  agree:   z.boolean().refine((v) => v === true, 'Необходимо согласие'),
+}).refine((d) => d.password === d.confirm, {
+  message: 'Пароли не совпадают',
+  path: ['confirm'],
+})
+
+type StaffForm  = z.infer<typeof staffSchema>
+type ClientForm = z.infer<typeof clientSchema>
+type PortalType = 'client' | 'staff'
+
+const INPUT = 'w-full bg-surface-container border border-white/[0.08] rounded-xl pl-11 pr-4 py-3.5 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all'
 
 export default function RegisterPage() {
   const router = useRouter()
   const { register: registerUser, isLoading, error, clearError } = useAuthStore()
-  const [showPass, setShowPass] = useState(false)
-  const [step, setStep] = useState<1 | 2>(1)
 
-  const { register, handleSubmit, watch, trigger, formState: { errors } } = useForm<Form>({
-    resolver: zodResolver(schema),
+  const [portalType, setPortalType] = useState<PortalType>('client')
+  const [showPass, setShowPass]     = useState(false)
+  const [step, setStep]             = useState<1 | 2>(1)
+  const [clientLoading, setClientLoading] = useState(false)
+  const [clientError, setClientError]     = useState<string | null>(null)
+
+  const sf = useForm<StaffForm>({
+    resolver: zodResolver(staffSchema),
     defaultValues: { role: 'expert' },
   })
+  const selectedRole = sf.watch('role')
 
-  const selectedRole = watch('role')
+  const cf = useForm<ClientForm>({ resolver: zodResolver(clientSchema) })
 
   const goStep2 = async () => {
-    const ok = await trigger(['name', 'email', 'password', 'confirm'])
+    const ok = await sf.trigger(['name', 'email', 'password', 'confirm'])
     if (ok) setStep(2)
   }
 
-  const onSubmit = async (data: Form) => {
+  const onStaffSubmit = async (data: StaffForm) => {
     clearError()
     try {
       await registerUser({
-        name: data.name,
-        email: data.email,
-        password: data.password,
-        role: data.role,
-        organization: data.organization,
-        position: data.position,
+        name: data.name, email: data.email, password: data.password,
+        role: data.role, organization: data.organization, position: data.position,
       })
       router.replace(data.role === 'admin' ? '/dashboard' : '/expert/dashboard')
-    } catch { /* error shown via store */ }
+    } catch { /* shown via store */ }
+  }
+
+  const onClientSubmit = async (data: ClientForm) => {
+    setClientLoading(true)
+    setClientError(null)
+    try {
+      const sb = createClient()
+      const { data: authData, error: signUpError } = await sb.auth.signUp({
+        email: data.email,
+        password: data.password,
+        options: { data: { full_name: data.name, company: data.company } },
+      })
+      if (signUpError) throw new Error(signUpError.message)
+      if (!authData.user) throw new Error('Не удалось создать аккаунт')
+
+      await sb.from('profiles').upsert({
+        id: authData.user.id, email: data.email,
+        full_name: data.name, status: 'pending_approval',
+      }, { onConflict: 'id' })
+
+      await sb.from('companies').upsert({
+        user_id: authData.user.id, company_name: data.company,
+      }, { onConflict: 'user_id' })
+
+      router.replace('/waiting-room')
+    } catch (err: unknown) {
+      setClientError(err instanceof Error ? err.message : 'Ошибка регистрации')
+    } finally {
+      setClientLoading(false)
+    }
+  }
+
+  const switchPortal = (t: PortalType) => {
+    setPortalType(t)
+    setStep(1)
+    sf.clearErrors()
+    cf.clearErrors()
+    setClientError(null)
+    clearError()
   }
 
   return (
@@ -111,173 +168,90 @@ export default function RegisterPage() {
         </div>
       </div>
 
-      {/* RIGHT PANEL — Form */}
-      <div className="flex-1 flex items-center justify-center p-6 lg:p-12 overflow-y-auto">
+      {/* RIGHT PANEL */}
+      <div className="flex-1 flex items-center justify-center px-5 py-8 lg:p-12 overflow-y-auto overflow-x-hidden">
         <div className="w-full max-w-[420px]">
 
           {/* Mobile logo */}
-          <div className="flex items-center gap-2 mb-8 lg:hidden">
+          <div className="flex items-center gap-2 mb-6 lg:hidden">
             <Image src="/logo-icon.svg" alt="AIStart360" width={32} height={32} />
             <span className="font-headline text-lg font-bold text-on-surface">AIStart360</span>
           </div>
 
-          {/* Step indicator */}
-          <div className="flex items-center gap-3 mb-8">
-            {[1,2].map((s) => (
-              <div key={s} className="flex items-center gap-2">
-                <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-mono font-bold transition-all ${
-                  step === s ? 'bg-primary text-[#003824]' : step > s ? 'bg-primary/30 text-primary' : 'bg-surface-container text-on-surface-variant'
+          {/* Portal type toggle */}
+          <div className="flex bg-surface-container rounded-xl p-1 mb-7 gap-1">
+            {([
+              { key: 'client' as PortalType, label: 'Клиент / Бизнес', icon: 'business_center' },
+              { key: 'staff'  as PortalType, label: 'Команда',         icon: 'admin_panel_settings' },
+            ]).map((t) => (
+              <button key={t.key} type="button" onClick={() => switchPortal(t.key)}
+                className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-medium transition-all ${
+                  portalType === t.key ? 'bg-surface-container-high text-on-surface' : 'text-on-surface-variant hover:text-on-surface'
                 }`}>
-                  {step > s ? <span className="material-symbols-outlined text-sm">check</span> : s}
-                </div>
-                {s < 2 && <div className={`h-px w-8 transition-colors ${step > s ? 'bg-primary' : 'bg-surface-container-high'}`} />}
-              </div>
+                <span className="material-symbols-outlined text-sm">{t.icon}</span>
+                {t.label}
+              </button>
             ))}
-            <span className="text-xs text-on-surface-variant font-mono ml-2">
-              {step === 1 ? 'Аккаунт' : 'Профиль'}
-            </span>
           </div>
 
-          <h1 className="font-headline text-2xl font-extrabold text-on-surface mb-1">
-            {step === 1 ? 'Создать аккаунт' : 'Данные профиля'}
-          </h1>
-          <p className="text-sm text-on-surface-variant mb-7">
-            {step === 1 ? 'Шаг 1 из 2 — основные данные' : 'Шаг 2 из 2 — ваша роль и организация'}
-          </p>
+          {/* ── CLIENT FORM ─────────────────────────────────── */}
+          {portalType === 'client' && (
+            <>
+              <h1 className="font-headline text-2xl font-extrabold text-on-surface mb-1">Подать заявку</h1>
+              <p className="text-sm text-on-surface-variant mb-7">Зарегистрируйтесь как клиент для AI-диагностики бизнеса</p>
 
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-
-            {/* STEP 1 */}
-            {step === 1 && (
-              <>
-                {/* Name */}
+              <form onSubmit={cf.handleSubmit(onClientSubmit)} className="space-y-4">
                 <div>
-                  <label className="block text-xs font-mono text-on-surface-variant uppercase tracking-wider mb-2">Полное имя</label>
+                  <label className="block text-xs font-mono text-on-surface-variant uppercase tracking-wider mb-2">Ваше имя</label>
                   <div className="relative">
                     <span className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-on-surface-variant/40 text-xl">person</span>
-                    <input
-                      {...register('name')}
-                      placeholder="Иван Иванов"
-                      className="w-full bg-surface-container border border-white/[0.08] rounded-xl pl-11 pr-4 py-3.5 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all"
-                    />
+                    <input {...cf.register('name')} placeholder="Иван Иванов" className={INPUT} />
                   </div>
-                  {errors.name && <p className="text-error text-xs mt-1.5">{errors.name.message}</p>}
+                  {cf.formState.errors.name && <p className="text-error text-xs mt-1.5">{cf.formState.errors.name.message}</p>}
                 </div>
 
-                {/* Email */}
                 <div>
                   <label className="block text-xs font-mono text-on-surface-variant uppercase tracking-wider mb-2">Email</label>
                   <div className="relative">
                     <span className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-on-surface-variant/40 text-xl">mail</span>
-                    <input
-                      {...register('email')}
-                      type="email"
-                      placeholder="you@company.kz"
-                      className="w-full bg-surface-container border border-white/[0.08] rounded-xl pl-11 pr-4 py-3.5 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all"
-                    />
+                    <input {...cf.register('email')} type="email" placeholder="you@company.kz" className={INPUT} />
                   </div>
-                  {errors.email && <p className="text-error text-xs mt-1.5">{errors.email.message}</p>}
+                  {cf.formState.errors.email && <p className="text-error text-xs mt-1.5">{cf.formState.errors.email.message}</p>}
                 </div>
 
-                {/* Password */}
+                <div>
+                  <label className="block text-xs font-mono text-on-surface-variant uppercase tracking-wider mb-2">Название компании</label>
+                  <div className="relative">
+                    <span className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-on-surface-variant/40 text-xl">business</span>
+                    <input {...cf.register('company')} placeholder="ООО TechStart KZ" className={INPUT} />
+                  </div>
+                  {cf.formState.errors.company && <p className="text-error text-xs mt-1.5">{cf.formState.errors.company.message}</p>}
+                </div>
+
                 <div>
                   <label className="block text-xs font-mono text-on-surface-variant uppercase tracking-wider mb-2">Пароль</label>
                   <div className="relative">
                     <span className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-on-surface-variant/40 text-xl">lock</span>
-                    <input
-                      {...register('password')}
-                      type={showPass ? 'text' : 'password'}
-                      placeholder="Минимум 6 символов"
-                      className="w-full bg-surface-container border border-white/[0.08] rounded-xl pl-11 pr-11 py-3.5 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all"
-                    />
+                    <input {...cf.register('password')} type={showPass ? 'text' : 'password'} placeholder="Минимум 6 символов"
+                      className="w-full bg-surface-container border border-white/[0.08] rounded-xl pl-11 pr-11 py-3.5 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all" />
                     <button type="button" onClick={() => setShowPass(v => !v)} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-on-surface-variant/40 hover:text-on-surface-variant transition-colors">
                       <span className="material-symbols-outlined text-xl">{showPass ? 'visibility_off' : 'visibility'}</span>
                     </button>
                   </div>
-                  {errors.password && <p className="text-error text-xs mt-1.5">{errors.password.message}</p>}
+                  {cf.formState.errors.password && <p className="text-error text-xs mt-1.5">{cf.formState.errors.password.message}</p>}
                 </div>
 
-                {/* Confirm */}
                 <div>
                   <label className="block text-xs font-mono text-on-surface-variant uppercase tracking-wider mb-2">Подтверждение пароля</label>
                   <div className="relative">
                     <span className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-on-surface-variant/40 text-xl">lock_reset</span>
-                    <input
-                      {...register('confirm')}
-                      type="password"
-                      placeholder="Повторите пароль"
-                      className="w-full bg-surface-container border border-white/[0.08] rounded-xl pl-11 pr-4 py-3.5 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all"
-                    />
+                    <input {...cf.register('confirm')} type="password" placeholder="Повторите пароль" className={INPUT} />
                   </div>
-                  {errors.confirm && <p className="text-error text-xs mt-1.5">{errors.confirm.message}</p>}
+                  {cf.formState.errors.confirm && <p className="text-error text-xs mt-1.5">{cf.formState.errors.confirm.message}</p>}
                 </div>
 
-                <button type="button" onClick={goStep2}
-                  className="w-full py-3.5 rounded-xl bg-gradient-to-r from-primary to-[#00e29e] text-[#003824] font-bold text-sm flex items-center justify-center gap-2 hover:scale-[0.99] transition-all">
-                  Далее
-                  <span className="material-symbols-outlined text-lg">arrow_forward</span>
-                </button>
-              </>
-            )}
-
-            {/* STEP 2 */}
-            {step === 2 && (
-              <>
-                {/* Role selector */}
-                <div>
-                  <label className="block text-xs font-mono text-on-surface-variant uppercase tracking-wider mb-3">Ваша роль</label>
-                  <div className="grid grid-cols-2 gap-3">
-                    {([
-                      { value: 'admin',  label: 'Администратор', icon: 'admin_panel_settings', desc: 'Полный доступ к системе' },
-                      { value: 'expert', label: 'Эксперт',       icon: 'psychology',           desc: 'Доступ к своей панели'  },
-                    ] as const).map((r) => (
-                      <label key={r.value} className={`relative cursor-pointer rounded-xl border p-4 transition-all ${
-                        selectedRole === r.value
-                          ? 'border-primary/50 bg-primary/10'
-                          : 'border-white/[0.08] bg-surface-container hover:border-white/[0.16]'
-                      }`}>
-                        <input {...register('role')} type="radio" value={r.value} className="absolute opacity-0" />
-                        <span className={`material-symbols-outlined text-xl block mb-2 ${selectedRole === r.value ? 'text-primary' : 'text-on-surface-variant'}`}>{r.icon}</span>
-                        <p className={`text-sm font-medium ${selectedRole === r.value ? 'text-primary' : 'text-on-surface'}`}>{r.label}</p>
-                        <p className="text-[10px] text-on-surface-variant mt-0.5">{r.desc}</p>
-                        {selectedRole === r.value && (
-                          <span className="absolute top-2.5 right-2.5 material-symbols-outlined text-sm text-primary">check_circle</span>
-                        )}
-                      </label>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Organization */}
-                <div>
-                  <label className="block text-xs font-mono text-on-surface-variant uppercase tracking-wider mb-2">Организация</label>
-                  <div className="relative">
-                    <span className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-on-surface-variant/40 text-xl">business</span>
-                    <input
-                      {...register('organization')}
-                      placeholder="ООО Компания (необязательно)"
-                      className="w-full bg-surface-container border border-white/[0.08] rounded-xl pl-11 pr-4 py-3.5 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all"
-                    />
-                  </div>
-                </div>
-
-                {/* Position */}
-                <div>
-                  <label className="block text-xs font-mono text-on-surface-variant uppercase tracking-wider mb-2">Должность</label>
-                  <div className="relative">
-                    <span className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-on-surface-variant/40 text-xl">badge</span>
-                    <input
-                      {...register('position')}
-                      placeholder="CEO, Manager, Analyst..."
-                      className="w-full bg-surface-container border border-white/[0.08] rounded-xl pl-11 pr-4 py-3.5 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all"
-                    />
-                  </div>
-                </div>
-
-                {/* Agree */}
                 <label className="flex items-start gap-3 cursor-pointer group">
-                  <input {...register('agree')} type="checkbox"
-                    className="mt-0.5 w-4 h-4 rounded accent-primary flex-shrink-0 cursor-pointer" />
+                  <input {...cf.register('agree')} type="checkbox" className="mt-0.5 w-4 h-4 rounded accent-primary flex-shrink-0 cursor-pointer" />
                   <span className="text-xs text-on-surface-variant leading-relaxed group-hover:text-on-surface transition-colors">
                     Я принимаю{' '}
                     <a href="#" className="text-primary hover:underline">Условия использования</a>
@@ -285,32 +259,189 @@ export default function RegisterPage() {
                     <a href="#" className="text-primary hover:underline">Политику конфиденциальности</a>
                   </span>
                 </label>
-                {errors.agree && <p className="text-error text-xs">{errors.agree.message}</p>}
+                {cf.formState.errors.agree && <p className="text-error text-xs">{cf.formState.errors.agree.message}</p>}
 
-                {/* Error */}
-                {error && (
+                {clientError && (
                   <div className="flex items-center gap-2 bg-error/10 border border-error/20 rounded-xl px-4 py-3">
                     <span className="material-symbols-outlined text-error text-lg flex-shrink-0">error</span>
-                    <p className="text-error text-sm">{error}</p>
+                    <p className="text-error text-sm">{clientError}</p>
                   </div>
                 )}
 
-                <div className="flex gap-3">
-                  <button type="button" onClick={() => setStep(1)}
-                    className="flex-1 py-3.5 rounded-xl border border-white/[0.08] text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-all text-sm font-medium">
-                    Назад
-                  </button>
-                  <button type="submit" disabled={isLoading}
-                    className="flex-1 py-3.5 rounded-xl bg-gradient-to-r from-primary to-[#00e29e] text-[#003824] font-bold text-sm flex items-center justify-center gap-2 hover:scale-[0.99] transition-all disabled:opacity-60">
-                    {isLoading
-                      ? <><span className="w-4 h-4 border-2 border-[#003824]/30 border-t-[#003824] rounded-full animate-spin" />Регистрируем...</>
-                      : <><span className="material-symbols-outlined text-lg">person_add</span>Создать аккаунт</>
-                    }
-                  </button>
+                <button type="submit" disabled={clientLoading}
+                  className="w-full py-3.5 rounded-xl bg-gradient-to-r from-primary to-[#00e29e] text-[#003824] font-bold text-sm flex items-center justify-center gap-2 hover:scale-[0.99] transition-all disabled:opacity-60">
+                  {clientLoading
+                    ? <><span className="w-4 h-4 border-2 border-[#003824]/30 border-t-[#003824] rounded-full animate-spin" />Отправляем заявку...</>
+                    : <><span className="material-symbols-outlined text-lg">send</span>Подать заявку</>
+                  }
+                </button>
+
+                <div className="bg-surface-container rounded-xl p-4 flex gap-3">
+                  <span className="material-symbols-outlined text-primary/60 text-lg flex-shrink-0 mt-0.5">info</span>
+                  <p className="text-xs text-on-surface-variant leading-relaxed">
+                    После регистрации ваша заявка будет рассмотрена администратором в течение 1 рабочего дня. Вы получите уведомление по email.
+                  </p>
                 </div>
-              </>
-            )}
-          </form>
+              </form>
+            </>
+          )}
+
+          {/* ── STAFF FORM ──────────────────────────────────── */}
+          {portalType === 'staff' && (
+            <>
+              {/* Step indicator */}
+              <div className="flex items-center gap-3 mb-8">
+                {[1, 2].map((s) => (
+                  <div key={s} className="flex items-center gap-2">
+                    <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-mono font-bold transition-all ${
+                      step === s ? 'bg-primary text-[#003824]' : step > s ? 'bg-primary/30 text-primary' : 'bg-surface-container text-on-surface-variant'
+                    }`}>
+                      {step > s ? <span className="material-symbols-outlined text-sm">check</span> : s}
+                    </div>
+                    {s < 2 && <div className={`h-px w-8 transition-colors ${step > s ? 'bg-primary' : 'bg-surface-container-high'}`} />}
+                  </div>
+                ))}
+                <span className="text-xs text-on-surface-variant font-mono ml-2">
+                  {step === 1 ? 'Аккаунт' : 'Профиль'}
+                </span>
+              </div>
+
+              <h1 className="font-headline text-2xl font-extrabold text-on-surface mb-1">
+                {step === 1 ? 'Создать аккаунт' : 'Данные профиля'}
+              </h1>
+              <p className="text-sm text-on-surface-variant mb-7">
+                {step === 1 ? 'Шаг 1 из 2 — основные данные' : 'Шаг 2 из 2 — ваша роль и организация'}
+              </p>
+
+              <form onSubmit={sf.handleSubmit(onStaffSubmit)} className="space-y-4">
+                {step === 1 && (
+                  <>
+                    <div>
+                      <label className="block text-xs font-mono text-on-surface-variant uppercase tracking-wider mb-2">Полное имя</label>
+                      <div className="relative">
+                        <span className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-on-surface-variant/40 text-xl">person</span>
+                        <input {...sf.register('name')} placeholder="Иван Иванов" className={INPUT} />
+                      </div>
+                      {sf.formState.errors.name && <p className="text-error text-xs mt-1.5">{sf.formState.errors.name.message}</p>}
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-mono text-on-surface-variant uppercase tracking-wider mb-2">Email</label>
+                      <div className="relative">
+                        <span className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-on-surface-variant/40 text-xl">mail</span>
+                        <input {...sf.register('email')} type="email" placeholder="you@company.kz" className={INPUT} />
+                      </div>
+                      {sf.formState.errors.email && <p className="text-error text-xs mt-1.5">{sf.formState.errors.email.message}</p>}
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-mono text-on-surface-variant uppercase tracking-wider mb-2">Пароль</label>
+                      <div className="relative">
+                        <span className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-on-surface-variant/40 text-xl">lock</span>
+                        <input {...sf.register('password')} type={showPass ? 'text' : 'password'} placeholder="Минимум 6 символов"
+                          className="w-full bg-surface-container border border-white/[0.08] rounded-xl pl-11 pr-11 py-3.5 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all" />
+                        <button type="button" onClick={() => setShowPass(v => !v)} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-on-surface-variant/40 hover:text-on-surface-variant transition-colors">
+                          <span className="material-symbols-outlined text-xl">{showPass ? 'visibility_off' : 'visibility'}</span>
+                        </button>
+                      </div>
+                      {sf.formState.errors.password && <p className="text-error text-xs mt-1.5">{sf.formState.errors.password.message}</p>}
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-mono text-on-surface-variant uppercase tracking-wider mb-2">Подтверждение пароля</label>
+                      <div className="relative">
+                        <span className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-on-surface-variant/40 text-xl">lock_reset</span>
+                        <input {...sf.register('confirm')} type="password" placeholder="Повторите пароль" className={INPUT} />
+                      </div>
+                      {sf.formState.errors.confirm && <p className="text-error text-xs mt-1.5">{sf.formState.errors.confirm.message}</p>}
+                    </div>
+
+                    <button type="button" onClick={goStep2}
+                      className="w-full py-3.5 rounded-xl bg-gradient-to-r from-primary to-[#00e29e] text-[#003824] font-bold text-sm flex items-center justify-center gap-2 hover:scale-[0.99] transition-all">
+                      Далее
+                      <span className="material-symbols-outlined text-lg">arrow_forward</span>
+                    </button>
+                  </>
+                )}
+
+                {step === 2 && (
+                  <>
+                    <div>
+                      <label className="block text-xs font-mono text-on-surface-variant uppercase tracking-wider mb-3">Ваша роль</label>
+                      <div className="grid grid-cols-2 gap-3">
+                        {([
+                          { value: 'admin',  label: 'Администратор', icon: 'admin_panel_settings', desc: 'Полный доступ к системе' },
+                          { value: 'expert', label: 'Эксперт',       icon: 'psychology',           desc: 'Доступ к своей панели'  },
+                        ] as const).map((r) => (
+                          <label key={r.value} className={`relative cursor-pointer rounded-xl border p-4 transition-all ${
+                            selectedRole === r.value
+                              ? 'border-primary/50 bg-primary/10'
+                              : 'border-white/[0.08] bg-surface-container hover:border-white/[0.16]'
+                          }`}>
+                            <input {...sf.register('role')} type="radio" value={r.value} className="absolute opacity-0" />
+                            <span className={`material-symbols-outlined text-xl block mb-2 ${selectedRole === r.value ? 'text-primary' : 'text-on-surface-variant'}`}>{r.icon}</span>
+                            <p className={`text-sm font-medium ${selectedRole === r.value ? 'text-primary' : 'text-on-surface'}`}>{r.label}</p>
+                            <p className="text-[10px] text-on-surface-variant mt-0.5">{r.desc}</p>
+                            {selectedRole === r.value && (
+                              <span className="absolute top-2.5 right-2.5 material-symbols-outlined text-sm text-primary">check_circle</span>
+                            )}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-mono text-on-surface-variant uppercase tracking-wider mb-2">Организация</label>
+                      <div className="relative">
+                        <span className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-on-surface-variant/40 text-xl">business</span>
+                        <input {...sf.register('organization')} placeholder="ООО Компания (необязательно)" className={INPUT} />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-mono text-on-surface-variant uppercase tracking-wider mb-2">Должность</label>
+                      <div className="relative">
+                        <span className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-on-surface-variant/40 text-xl">badge</span>
+                        <input {...sf.register('position')} placeholder="CEO, Manager, Analyst..." className={INPUT} />
+                      </div>
+                    </div>
+
+                    <label className="flex items-start gap-3 cursor-pointer group">
+                      <input {...sf.register('agree')} type="checkbox" className="mt-0.5 w-4 h-4 rounded accent-primary flex-shrink-0 cursor-pointer" />
+                      <span className="text-xs text-on-surface-variant leading-relaxed group-hover:text-on-surface transition-colors">
+                        Я принимаю{' '}
+                        <a href="#" className="text-primary hover:underline">Условия использования</a>
+                        {' '}и{' '}
+                        <a href="#" className="text-primary hover:underline">Политику конфиденциальности</a>
+                      </span>
+                    </label>
+                    {sf.formState.errors.agree && <p className="text-error text-xs">{sf.formState.errors.agree.message}</p>}
+
+                    {error && (
+                      <div className="flex items-center gap-2 bg-error/10 border border-error/20 rounded-xl px-4 py-3">
+                        <span className="material-symbols-outlined text-error text-lg flex-shrink-0">error</span>
+                        <p className="text-error text-sm">{error}</p>
+                      </div>
+                    )}
+
+                    <div className="flex gap-3">
+                      <button type="button" onClick={() => setStep(1)}
+                        className="flex-1 py-3.5 rounded-xl border border-white/[0.08] text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-all text-sm font-medium">
+                        Назад
+                      </button>
+                      <button type="submit" disabled={isLoading}
+                        className="flex-1 py-3.5 rounded-xl bg-gradient-to-r from-primary to-[#00e29e] text-[#003824] font-bold text-sm flex items-center justify-center gap-2 hover:scale-[0.99] transition-all disabled:opacity-60">
+                        {isLoading
+                          ? <><span className="w-4 h-4 border-2 border-[#003824]/30 border-t-[#003824] rounded-full animate-spin" />Регистрируем...</>
+                          : <><span className="material-symbols-outlined text-lg">person_add</span>Создать аккаунт</>
+                        }
+                      </button>
+                    </div>
+                  </>
+                )}
+              </form>
+            </>
+          )}
 
           <p className="text-center text-xs text-on-surface-variant mt-8">
             Уже есть аккаунт?{' '}

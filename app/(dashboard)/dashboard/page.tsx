@@ -11,8 +11,8 @@ export default function DashboardPage() {
   return (
     <div className="space-y-8">
       {/* Hero */}
-      <section className="flex flex-col lg:flex-row justify-between items-start gap-8">
-        <div className="max-w-xl">
+      <section className="flex flex-col lg:flex-row justify-between items-start gap-6">
+        <div className="lg:flex-1 max-w-xl min-w-0">
           <p className="text-xs font-mono text-primary/70 uppercase tracking-[0.2em] mb-3">
             Q1 2026 · Текущий период
           </p>
@@ -26,7 +26,7 @@ export default function DashboardPage() {
         </div>
 
         {/* KPI Grid */}
-        <div className="grid grid-cols-2 gap-3 w-full lg:w-auto lg:min-w-[480px]">
+        <div className="grid grid-cols-2 gap-3 w-full lg:w-[460px] lg:shrink-0">
           {MOCK_KPI.map((kpi) => (
             <Link
               key={kpi.label}
