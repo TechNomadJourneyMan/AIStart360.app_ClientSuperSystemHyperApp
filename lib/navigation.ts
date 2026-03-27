@@ -10,6 +10,7 @@ export const PRIMARY_NAV: NavItem[] = [
   { label: 'Инсайты',    href: '/insights',    icon: 'lightbulb',     roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ANALYST'] },
   { label: 'Конкуренты', href: '/competitors', icon: 'compare_arrows',roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER'] },
   { label: 'Метрики',    href: '/metrics',     icon: 'monitoring',    roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ANALYST'] },
+  { label: 'AI Scanner', href: '/ai-scanner', icon: 'biotech',       roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER'] },
   { label: 'GRI Pulse',  href: '/pulse',       icon: 'cell_tower',    roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER'] },
 ]
 

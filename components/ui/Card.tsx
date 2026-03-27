@@ -47,3 +47,11 @@ export function CardHeader({ title, description, action, className, ...props }: 
     </div>
   )
 }
+
+export function CardContent({ className, children, ...props }: React.HTMLAttributes<HTMLDivElement>) {
+  return (
+    <div className={cn('p-0', className)} {...props}>
+      {children}
+    </div>
+  )
+}
