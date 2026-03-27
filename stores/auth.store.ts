@@ -3,6 +3,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { authService } from '@/shared/api/auth.service'
+import { registerAction, loginAction } from '@/app/actions/auth'
 import type { User, UserRole } from '@/shared/api/auth.service'
 
 type PublicUser = Omit<User, 'password'>
@@ -64,8 +65,11 @@ export const useAuthStore = create<AuthState>()(
       login: async (email, password) => {
         set({ isLoading: true, error: null })
         try {
-          const { user } = await authService.login(email, password)
-          set({ user, role: user.role, isLoading: false, error: null })
+          const res = await loginAction(email, password)
+          if (res.error) throw new Error(res.error)
+          if (!res.user) throw new Error('UNKNOWN')
+
+          set({ user: res.user as any, role: res.user.role as any, isLoading: false, error: null })
         } catch (err: unknown) {
           const code = err instanceof Error ? err.message : 'UNKNOWN'
           set({
@@ -79,8 +83,11 @@ export const useAuthStore = create<AuthState>()(
       register: async (input) => {
         set({ isLoading: true, error: null })
         try {
-          const { user } = await authService.register(input)
-          set({ user, role: user.role, isLoading: false, error: null })
+          const res = await registerAction(input)
+          if (res.error) throw new Error(res.error)
+          if (!res.user) throw new Error('UNKNOWN')
+
+          set({ user: res.user as any, role: res.user.role as any, isLoading: false, error: null })
         } catch (err: unknown) {
           const code = err instanceof Error ? err.message : 'UNKNOWN'
           set({

@@ -4,13 +4,35 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import { ToastContainer } from '@/components/ui/Toast'
 import { useAuthStore } from '@/stores/auth.store'
+import { SessionProvider, useSession } from 'next-auth/react'
 
 /**
  * AuthProvider — runs auth.init() on mount, syncs role to cookie
  * so middleware can protect routes server-side.
  */
+/**
+ * AuthSync — Synchronizes NextAuth session with Zustand authStore
+ */
+function AuthSync() {
+  const { data: session, status } = useSession()
+
+  useEffect(() => {
+    if (status === 'authenticated' && session?.user) {
+      useAuthStore.setState({
+        // @ts-ignore
+        user: session.user,
+        // @ts-ignore
+        role: session.user.role || 'expert',
+        isInitialized: true
+      })
+    }
+  }, [session, status])
+
+  return null
+}
+
 function AuthProvider({ children }: { children: React.ReactNode }) {
-  const { init, user, role, isInitialized } = useAuthStore()
+  const { init, role, isInitialized } = useAuthStore()
 
   useEffect(() => {
     init()
@@ -24,7 +46,7 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
     } else {
       document.cookie = 'aistart360_role=; path=/; max-age=0'
     }
-  }, [role, isInitialized, user])
+  }, [role, isInitialized])
 
   return <>{children}</>
 }
@@ -40,11 +62,14 @@ export function Providers({ children }: { children: React.ReactNode }) {
   )
 
   return (
-    <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        {children}
-        <ToastContainer />
-      </AuthProvider>
-    </QueryClientProvider>
+    <SessionProvider>
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <AuthSync />
+          {children}
+          <ToastContainer />
+        </AuthProvider>
+      </QueryClientProvider>
+    </SessionProvider>
   )
 }
