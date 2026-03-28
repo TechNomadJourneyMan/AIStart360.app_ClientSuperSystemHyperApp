@@ -57,6 +57,7 @@ enum AdminRequestStatus {
   approved
   rejected
   escalated
+  archived
 }
 
 enum RequestPriority {
