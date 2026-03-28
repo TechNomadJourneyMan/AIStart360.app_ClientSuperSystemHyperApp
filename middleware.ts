@@ -36,11 +36,16 @@ export function middleware(request: NextRequest) {
     return NextResponse.next()
   }
 
+  // ГИГА-Панель login page — always allow
+  if (pathname === '/giga-login') {
+    return NextResponse.next()
+  }
+
   // ГИГА-Панель: строгая изоляция — только SUPER_ADMIN
   if (pathname.startsWith(GIGA_PANEL_PATH)) {
     const role = request.cookies.get('aistart360_role')?.value
     if (role !== 'super_admin') {
-      return NextResponse.rewrite(new URL('/not-found', request.url))
+      return NextResponse.redirect(new URL('/giga-login', request.url))
     }
     return NextResponse.next()
   }
