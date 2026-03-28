@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Search,
@@ -213,7 +213,7 @@ export function CRMModule() {
   const [sortField, setSortField] = useState<'name' | 'createdAt'>('createdAt')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
 
-  const fetchUsers = async () => {
+  const fetchUsers = useCallback(async () => {
     setLoadingUsers(true)
     setUsersError(null)
     try {
@@ -226,11 +226,11 @@ export function CRMModule() {
     } finally {
       setLoadingUsers(false)
     }
-  }
+  }, [setUsers, setLoadingUsers, setUsersError])
 
   useEffect(() => {
     fetchUsers()
-  }, [])
+  }, [fetchUsers])
 
   const handleBlock = async (user: GigaUser) => {
     setBlockConfirm(null)

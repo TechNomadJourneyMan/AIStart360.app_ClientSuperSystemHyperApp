@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Search,
@@ -365,7 +365,7 @@ export function ClientsModule() {
   const [stageFilter, setStageFilter] = useState<string>('all')
   const [statusFilter, setStatusFilter] = useState<string>('all')
 
-  const fetchClients = async () => {
+  const fetchClients = useCallback(async () => {
     setLoadingClients(true)
     setClientsError(null)
     try {
@@ -378,9 +378,9 @@ export function ClientsModule() {
     } finally {
       setLoadingClients(false)
     }
-  }
+  }, [setClients, setLoadingClients, setClientsError])
 
-  useEffect(() => { fetchClients() }, [])
+  useEffect(() => { fetchClients() }, [fetchClients])
 
   const STAGES = ['Seed', 'Early', 'Growth', 'Scale', 'Mature']
   const STATUSES = ['active', 'at_risk', 'inactive', 'onboarding']

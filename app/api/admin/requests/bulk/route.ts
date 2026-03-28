@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
+import { AdminRequestStatus } from '@prisma/client'
 import { requirePermission } from '@/lib/rbac'
 import { logAudit } from '@/lib/audit'
 
@@ -59,7 +60,7 @@ export async function POST(req: NextRequest) {
   }
 
   // Only operate on non-terminal requests
-  const terminalStatuses = ['approved', 'rejected']
+  const terminalStatuses: AdminRequestStatus[] = ['approved', 'rejected']
   const result = await prisma.adminRequest.updateMany({
     where: {
       id: { in: ids },
