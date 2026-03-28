@@ -41,6 +41,9 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
   // Sync role to a lightweight cookie for middleware SSR route protection
   useEffect(() => {
     if (!isInitialized) return
+    // Never overwrite a super_admin cookie — it is managed independently
+    const current = document.cookie.match(/aistart360_role=([^;]+)/)?.[1]
+    if (current === 'super_admin') return
     if (role) {
       document.cookie = `aistart360_role=${role}; path=/; max-age=${7 * 24 * 3600}; SameSite=Lax`
     } else {

@@ -8,6 +8,9 @@ const PUBLIC_PATHS = ['/login', '/register', '/forgot-password']
 // we just allow them through and let the page handle auth checks via Supabase/localStorage.
 const CLIENT_PATHS = ['/client']
 
+// ГИГА-Панель — доступна только SUPER_ADMIN (cookie aistart360_role === 'super_admin')
+const GIGA_PANEL_PATH = '/admin-giga-panel'
+
 const ADMIN_PATHS = [
   '/dashboard', '/gri', '/market', '/point-a', '/point-b',
   '/insights', '/competitors', '/metrics', '/settings',
@@ -30,6 +33,15 @@ export function middleware(request: NextRequest) {
     pathname.endsWith('.ico') ||
     pathname === '/'
   ) {
+    return NextResponse.next()
+  }
+
+  // ГИГА-Панель: строгая изоляция — только SUPER_ADMIN
+  if (pathname.startsWith(GIGA_PANEL_PATH)) {
+    const role = request.cookies.get('aistart360_role')?.value
+    if (role !== 'super_admin') {
+      return NextResponse.rewrite(new URL('/not-found', request.url))
+    }
     return NextResponse.next()
   }
 
