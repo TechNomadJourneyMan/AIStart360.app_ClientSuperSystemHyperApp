@@ -7,9 +7,7 @@ import Image from 'next/image'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { useAuthStore } from '@/stores/auth.store'
-import { createClient } from '@/lib/supabase-client'
-import { signIn } from 'next-auth/react'
+import { createClient } from '@/lib/supabase/client'
 
 const staffSchema = z.object({
   name:         z.string().min(2, 'Минимум 2 символа'),
@@ -26,12 +24,12 @@ const staffSchema = z.object({
 })
 
 const clientSchema = z.object({
-  name:    z.string().min(2, 'Минимум 2 символа'),
-  email:   z.string().email('Введите корректный email'),
+  name:     z.string().min(2, 'Минимум 2 символа'),
+  email:    z.string().email('Введите корректный email'),
   password: z.string().min(6, 'Минимум 6 символов'),
-  confirm: z.string(),
-  company: z.string().min(2, 'Введите название компании'),
-  agree:   z.boolean().refine((v) => v === true, 'Необходимо согласие'),
+  confirm:  z.string(),
+  company:  z.string().min(2, 'Введите название компании'),
+  agree:    z.boolean().refine((v) => v === true, 'Необходимо согласие'),
 }).refine((d) => d.password === d.confirm, {
   message: 'Пароли не совпадают',
   path: ['confirm'],
@@ -43,15 +41,24 @@ type PortalType = 'client' | 'staff'
 
 const INPUT = 'w-full bg-surface-container border border-white/[0.08] rounded-xl pl-11 pr-4 py-3.5 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all'
 
+const AUTH_ERRORS: Record<string, string> = {
+  'User already registered':             'Этот email уже зарегистрирован',
+  'Password should be at least 6 characters': 'Пароль должен содержать минимум 6 символов',
+  'Unable to validate email address: invalid format': 'Некорректный формат email',
+}
+
 export default function RegisterPage() {
   const router = useRouter()
-  const { register: registerUser, isLoading, error, clearError } = useAuthStore()
 
   const [portalType, setPortalType] = useState<PortalType>('client')
   const [showPass, setShowPass]     = useState(false)
   const [step, setStep]             = useState<1 | 2>(1)
+
+  const [staffLoading, setStaffLoading] = useState(false)
+  const [staffError,   setStaffError]   = useState<string | null>(null)
+
   const [clientLoading, setClientLoading] = useState(false)
-  const [clientError, setClientError]     = useState<string | null>(null)
+  const [clientError,   setClientError]   = useState<string | null>(null)
 
   const sf = useForm<StaffForm>({
     resolver: zodResolver(staffSchema),
@@ -67,44 +74,82 @@ export default function RegisterPage() {
   }
 
   const onStaffSubmit = async (data: StaffForm) => {
-    clearError()
-    try {
-      await registerUser({
-        name: data.name, email: data.email, password: data.password,
-        role: data.role, organization: data.organization, position: data.position,
-      })
-      router.replace(data.role === 'admin' ? '/dashboard' : '/expert/dashboard')
-    } catch { /* shown via store */ }
+    setStaffLoading(true)
+    setStaffError(null)
+
+    const supabase = createClient()
+    const { data: authData, error: signUpError } = await supabase.auth.signUp({
+      email:    data.email,
+      password: data.password,
+      options: {
+        emailRedirectTo: `${window.location.origin}/auth/callback`,
+        data: {
+          full_name:    data.name,
+          role:         data.role,
+          organization: data.organization ?? '',
+          position:     data.position ?? '',
+        },
+      },
+    })
+
+    if (signUpError) {
+      setStaffError(AUTH_ERRORS[signUpError.message] ?? signUpError.message)
+      setStaffLoading(false)
+      return
+    }
+
+    // Persist role cookie for middleware while Supabase session propagates
+    if (authData.user) {
+      document.cookie = `aistart360_role=${data.role}; path=/; max-age=${60 * 60 * 24 * 7}`
+      document.cookie = `aistart360_user_id=${authData.user.id.toString()}; path=/; max-age=${60 * 60 * 24 * 7}`
+    }
+
+    router.replace(data.role === 'admin' ? '/dashboard' : '/expert/dashboard')
   }
 
   const onClientSubmit = async (data: ClientForm) => {
     setClientLoading(true)
     setClientError(null)
-    try {
-      const sb = createClient()
-      const { data: authData, error: signUpError } = await sb.auth.signUp({
-        email: data.email,
-        password: data.password,
-        options: { data: { full_name: data.name, company: data.company } },
-      })
-      if (signUpError) throw new Error(signUpError.message)
-      if (!authData.user) throw new Error('Не удалось создать аккаунт')
 
-      await (sb.from('profiles') as any).upsert({
-        id: authData.user.id, email: data.email,
-        full_name: data.name, status: 'pending_approval',
-      }, { onConflict: 'id' })
+    const supabase = createClient()
+    const { data: authData, error: signUpError } = await supabase.auth.signUp({
+      email:    data.email,
+      password: data.password,
+      options: {
+        emailRedirectTo: `${window.location.origin}/auth/callback`,
+        data: {
+          full_name: data.name,
+          company:   data.company,
+          role:      'client',
+        },
+      },
+    })
 
-      await (sb.from('companies') as any).upsert({
-        user_id: authData.user.id, company_name: data.company,
-      }, { onConflict: 'user_id' })
-
-      router.replace('/client/waiting-room')
-    } catch (err: unknown) {
-      setClientError(err instanceof Error ? err.message : 'Ошибка регистрации')
-    } finally {
+    if (signUpError) {
+      setClientError(AUTH_ERRORS[signUpError.message] ?? signUpError.message)
       setClientLoading(false)
+      return
     }
+
+    if (!authData.user) {
+      setClientError('Не удалось создать аккаунт')
+      setClientLoading(false)
+      return
+    }
+
+    const userId = authData.user.id.toString()
+
+    // Save profile and company to DB
+    await supabase.from('profiles').upsert(
+      { id: userId, email: data.email, full_name: data.name, status: 'pending_approval' },
+      { onConflict: 'id' }
+    )
+    await supabase.from('companies').upsert(
+      { user_id: userId, company_name: data.company },
+      { onConflict: 'user_id' }
+    )
+
+    router.replace('/client/waiting-room')
   }
 
   const switchPortal = (t: PortalType) => {
@@ -113,7 +158,7 @@ export default function RegisterPage() {
     sf.clearErrors()
     cf.clearErrors()
     setClientError(null)
-    clearError()
+    setStaffError(null)
   }
 
   return (
@@ -252,16 +297,22 @@ export default function RegisterPage() {
                 </div>
 
                 {/* SSO */}
-                <div className="flex items-center gap-3 my-6">
+                <div className="flex items-center gap-3 my-2">
                   <div className="flex-1 h-px bg-white/[0.06]" />
                   <span className="text-xs text-on-surface-variant font-mono uppercase tracking-widest">или через</span>
                   <div className="flex-1 h-px bg-white/[0.06]" />
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
-                  <button 
+                  <button
                     type="button"
-                    onClick={() => signIn('google')}
+                    onClick={async () => {
+                      const supabase = createClient()
+                      await supabase.auth.signInWithOAuth({
+                        provider: 'google',
+                        options: { redirectTo: `${window.location.origin}/auth/callback` },
+                      })
+                    }}
                     className="flex items-center justify-center gap-2 py-3 rounded-xl border border-white/[0.08] bg-surface-container hover:bg-surface-container-high text-on-surface text-sm transition-colors"
                   >
                     <svg className="w-4 h-4" viewBox="0 0 24 24">
@@ -272,7 +323,8 @@ export default function RegisterPage() {
                     </svg>
                     Google
                   </button>
-                  <button type="button" className="flex items-center justify-center gap-2 py-3 rounded-xl border border-white/[0.08] bg-surface-container hover:bg-surface-container-high text-on-surface text-sm transition-colors"
+                  <button type="button" disabled
+                    className="flex items-center justify-center gap-2 py-3 rounded-xl border border-white/[0.08] bg-surface-container text-on-surface text-sm opacity-50 cursor-not-allowed"
                   >
                     <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
                       <path d="M21.4 0H2.6C1.2 0 0 1.2 0 2.6v18.8C0 22.8 1.2 24 2.6 24h18.8c1.4 0 2.6-1.2 2.6-2.6V2.6C24 1.2 22.8 0 21.4 0zM7.1 20.5H3.6V9h3.6v11.5zM5.3 7.5c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm15.2 13H17V15c0-1.3 0-3-1.8-3s-2.1 1.4-2.1 2.9v5.6H9.5V9h3.4v1.6c.5-.9 1.6-1.8 3.3-1.8 3.5 0 4.2 2.3 4.2 5.3v6.4z"/>
@@ -280,6 +332,7 @@ export default function RegisterPage() {
                     LinkedIn
                   </button>
                 </div>
+
                 <label className="flex items-start gap-3 cursor-pointer group">
                   <input {...cf.register('agree')} type="checkbox" className="mt-0.5 w-4 h-4 rounded accent-primary flex-shrink-0 cursor-pointer" />
                   <span className="text-xs text-on-surface-variant leading-relaxed group-hover:text-on-surface transition-colors">
@@ -447,10 +500,10 @@ export default function RegisterPage() {
                     </label>
                     {sf.formState.errors.agree && <p className="text-error text-xs">{sf.formState.errors.agree.message}</p>}
 
-                    {error && (
+                    {staffError && (
                       <div className="flex items-center gap-2 bg-error/10 border border-error/20 rounded-xl px-4 py-3">
                         <span className="material-symbols-outlined text-error text-lg flex-shrink-0">error</span>
-                        <p className="text-error text-sm">{error}</p>
+                        <p className="text-error text-sm">{staffError}</p>
                       </div>
                     )}
 
@@ -459,9 +512,9 @@ export default function RegisterPage() {
                         className="flex-1 py-3.5 rounded-xl border border-white/[0.08] text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-all text-sm font-medium">
                         Назад
                       </button>
-                      <button type="submit" disabled={isLoading}
+                      <button type="submit" disabled={staffLoading}
                         className="flex-1 py-3.5 rounded-xl bg-gradient-to-r from-primary to-[#00e29e] text-[#003824] font-bold text-sm flex items-center justify-center gap-2 hover:scale-[0.99] transition-all disabled:opacity-60">
-                        {isLoading
+                        {staffLoading
                           ? <><span className="w-4 h-4 border-2 border-[#003824]/30 border-t-[#003824] rounded-full animate-spin" />Регистрируем...</>
                           : <><span className="material-symbols-outlined text-lg">person_add</span>Создать аккаунт</>
                         }
