@@ -1,7 +1,59 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
+import { createServerClient } from '@/lib/supabase-server'
 
 export const metadata: Metadata = { title: 'GRI — Growth Readiness Index' }
+
+// ─── portfolio GRI averages from DB ──────────────────────────────────────────
+interface PortfolioGRI {
+  overall:      number
+  product:      number
+  trust:        number
+  bizmodel:     number
+  cash:         number
+  ops:          number
+  team:         number
+  founder:      number
+  reportCount:  number
+}
+
+async function getPortfolioGRI(): Promise<PortfolioGRI | null> {
+  try {
+    const sb = createServerClient()
+    const { data } = await sb
+      .from('gri_reports')
+      .select(
+        'overall_score, product_score, trust_score, business_model_score, ' +
+        'cash_score, operations_score, team_score, founder_score'
+      )
+      .not('overall_score', 'is', null)
+      .order('calculated_at', { ascending: false })
+      .limit(50)
+
+    if (!data || data.length === 0) return null
+
+    const avg = (key: string) => {
+      const vals = data.map((r) => Number(r[key])).filter((v) => !isNaN(v) && v > 0)
+      return vals.length > 0
+        ? Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 10) / 10
+        : 0
+    }
+
+    return {
+      overall:     avg('overall_score'),
+      product:     avg('product_score'),
+      trust:       avg('trust_score'),
+      bizmodel:    avg('business_model_score'),
+      cash:        avg('cash_score'),
+      ops:         avg('operations_score'),
+      team:        avg('team_score'),
+      founder:     avg('founder_score'),
+      reportCount: data.length,
+    }
+  } catch {
+    return null
+  }
+}
 
 // ─── Real GRI data from GRI_v11_with_colored_report.xlsx ─────────────────────
 const GRI_BLOCKS = [
@@ -215,10 +267,36 @@ function scoreColor(s: number) {
   return 'text-error'
 }
 
-export default function GriPage() {
-  const totalGRI = 4.59
-  const totalPct = (totalGRI / 10) * 100
+export default async function GriPage() {
+  const portfolio = await getPortfolioGRI()
+
+  // Merge portfolio averages into GRI_BLOCKS (if real data exists)
+  const scoreMap: Record<string, number> = portfolio ? {
+    product: portfolio.product,
+    trust:   portfolio.trust,
+    bizmodel:portfolio.bizmodel,
+    cash:    portfolio.cash,
+    ops:     portfolio.ops,
+    team:    portfolio.team,
+    founder: portfolio.founder,
+  } : {}
+
+  const blocks = GRI_BLOCKS.map((b) =>
+    scoreMap[b.id] !== undefined && scoreMap[b.id] > 0
+      ? { ...b, score: scoreMap[b.id] }
+      : b
+  )
+
+  const totalGRI   = portfolio?.overall
+    ?? Number((blocks.reduce((sum, b) => sum + b.score, 0) / blocks.length).toFixed(2))
   const circumference = 2 * Math.PI * 64
+  const dialColor  = totalGRI >= 7 ? '#6effc0' : totalGRI >= 5 ? '#a78bfa' : '#f87171'
+
+  const scoreLabel =
+    totalGRI >= 8 ? 'Высокая готовность' :
+    totalGRI >= 6 ? 'Достаточный уровень' :
+    totalGRI >= 4 ? 'Средняя готовность' :
+                    'Критический уровень'
 
   return (
     <div className="space-y-10">
@@ -236,7 +314,9 @@ export default function GriPage() {
             </p>
           </div>
           <span className="text-xs font-mono text-on-surface-variant bg-surface-container border border-white/[0.06] px-3 py-1.5 rounded-xl">
-            Анализ: Марина Рахимжанова
+            {portfolio
+              ? `Портфель · ${portfolio.reportCount} отчёт${portfolio.reportCount === 1 ? '' : portfolio.reportCount < 5 ? 'а' : 'ов'}`
+              : 'Демо-анализ · Марина Рахимжанова'}
           </span>
         </div>
       </section>
@@ -245,11 +325,13 @@ export default function GriPage() {
       <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Dial */}
         <div className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-8 flex flex-col items-center">
-          <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest mb-6">Итоговый GRI</p>
+          <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest mb-6">
+            {portfolio ? 'Средний GRI портфеля' : 'Итоговый GRI'}
+          </p>
           <div className="relative w-44 h-44 mb-5">
             <svg viewBox="0 0 160 160" className="w-full h-full -rotate-90">
               <circle cx="80" cy="80" r="64" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="10" />
-              <circle cx="80" cy="80" r="64" fill="none" stroke="#f87171" strokeWidth="10" strokeLinecap="round"
+              <circle cx="80" cy="80" r="64" fill="none" stroke={dialColor} strokeWidth="10" strokeLinecap="round"
                 strokeDasharray={`${circumference * (totalGRI / 10)} ${circumference}`} />
             </svg>
             <div className="absolute inset-0 flex flex-col items-center justify-center">
@@ -257,11 +339,19 @@ export default function GriPage() {
               <span className="text-[10px] font-mono text-on-surface-variant">/ 10</span>
             </div>
           </div>
-          <span className="text-sm font-mono text-error bg-error/10 border border-error/20 px-4 py-1.5 rounded-full mb-3">
-            Средняя готовность
+          <span className={`text-sm font-mono px-4 py-1.5 rounded-full mb-3 ${
+            totalGRI >= 7 ? 'text-primary bg-primary/10 border border-primary/20' :
+            totalGRI >= 5 ? 'text-secondary bg-secondary/10 border border-secondary/20' :
+                            'text-error bg-error/10 border border-error/20'
+          }`}>
+            {scoreLabel}
           </span>
           <p className="text-xs text-on-surface-variant text-center leading-relaxed">
-            Есть потенциал, но высокий риск провала при росте. Нужен пилот и доработка ключевых блоков.
+            {totalGRI >= 7
+              ? 'Высокий уровень готовности. Можно масштабировать.'
+              : totalGRI >= 5
+              ? 'Есть основа для роста. Требуется доработка блоков.'
+              : 'Высокий риск провала при росте. Нужен пилот и доработка ключевых блоков.'}
           </p>
         </div>
 
@@ -269,7 +359,7 @@ export default function GriPage() {
         <div className="lg:col-span-2 bg-surface-container-low rounded-2xl border border-white/[0.04] p-6">
           <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest mb-5">Результаты по блокам</p>
           <div className="space-y-4">
-            {GRI_BLOCKS.map((block) => (
+            {blocks.map((block) => (
               <div key={block.id}>
                 <div className="flex items-center gap-3 mb-1.5">
                   <span className="material-symbols-outlined text-base text-on-surface-variant/50 flex-shrink-0">{block.icon}</span>
@@ -314,7 +404,7 @@ export default function GriPage() {
       <section>
         <h2 className="font-headline text-xl font-bold text-on-surface mb-6">Детальный разбор по блокам</h2>
         <div className="space-y-4">
-          {GRI_BLOCKS.map((block) => (
+          {blocks.map((block) => (
             <details key={block.id} className="group bg-surface-container-low rounded-2xl border border-white/[0.04] overflow-hidden">
               <summary className="flex items-center gap-4 px-6 py-4 cursor-pointer hover:bg-white/[0.02] transition-colors list-none">
                 <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${

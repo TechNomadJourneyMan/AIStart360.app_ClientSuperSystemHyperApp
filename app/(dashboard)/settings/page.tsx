@@ -1,18 +1,50 @@
 import type { Metadata } from 'next'
+import { createClient } from '@/lib/supabase/server'
 
 export const metadata: Metadata = { title: 'Settings' }
 
 const SECTIONS = [
-  { id: 'profile', label: 'Профиль', icon: 'person' },
-  { id: 'security', label: 'Безопасность', icon: 'lock' },
-  { id: 'notifications', label: 'Уведомления', icon: 'notifications' },
-  { id: 'appearance', label: 'Внешний вид', icon: 'palette' },
-  { id: 'team', label: 'Команда', icon: 'group' },
-  { id: 'billing', label: 'Биллинг', icon: 'credit_card' },
-  { id: 'api', label: 'API & Интеграции', icon: 'api' },
+  { id: 'profile',       label: 'Профиль',       icon: 'person'        },
+  { id: 'security',      label: 'Безопасность',  icon: 'lock'          },
+  { id: 'notifications', label: 'Уведомления',   icon: 'notifications' },
+  { id: 'appearance',    label: 'Внешний вид',   icon: 'palette'       },
+  { id: 'team',          label: 'Команда',       icon: 'group'         },
+  { id: 'billing',       label: 'Биллинг',       icon: 'credit_card'   },
+  { id: 'api',           label: 'API & Интеграции', icon: 'api'        },
 ]
 
-export default function SettingsPage() {
+export default async function SettingsPage() {
+  // ── Fetch real user from Supabase session ──────────────────────────────────
+  const supabase   = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  const meta       = user?.user_metadata ?? {}
+  const fullName   = ((meta.full_name ?? meta.name ?? '') as string).trim()
+  const nameParts  = fullName.split(' ')
+  const firstName  = nameParts[0] ?? ''
+  const lastName   = nameParts.slice(1).join(' ')
+  const email      = user?.email ?? ''
+  const position   = ((meta.position ?? '') as string).trim()
+  const initials   = [firstName[0], lastName[0]]
+    .filter(Boolean)
+    .join('')
+    .toUpperCase() || (email[0] ?? 'U').toUpperCase()
+
+  // Also try to get extra profile fields from profiles table
+  let profileExtra: { full_name?: string; status?: string } | null = null
+  if (user?.id) {
+    const { data } = await supabase
+      .from('profiles')
+      .select('full_name, status')
+      .eq('id', user.id)
+      .single()
+    profileExtra = data
+  }
+
+  const displayName = fullName || profileExtra?.full_name || email.split('@')[0] || '—'
+  const displayFirst = firstName || displayName.split(' ')[0] || '—'
+  const displayLast  = lastName  || displayName.split(' ').slice(1).join(' ') || '—'
+
   return (
     <div className="space-y-6">
       <div>
@@ -40,14 +72,14 @@ export default function SettingsPage() {
           </nav>
         </div>
 
-        {/* Profile Settings (default view) */}
+        {/* Profile Settings */}
         <div className="lg:col-span-3 space-y-6">
           {/* Avatar */}
           <div className="bg-surface-container rounded-xl p-6">
             <h3 className="font-headline text-lg font-bold text-on-surface mb-5">Фото профиля</h3>
             <div className="flex items-center gap-5">
               <div className="w-16 h-16 rounded-full bg-surface-container-high flex items-center justify-center text-xl font-headline font-bold text-primary">
-                AS
+                {initials}
               </div>
               <div>
                 <button className="text-sm text-on-surface border border-outline-variant/30 px-4 py-2 rounded-lg hover:bg-surface-container-high transition-colors">
@@ -63,17 +95,17 @@ export default function SettingsPage() {
             <h3 className="font-headline text-lg font-bold text-on-surface mb-5">Личная информация</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {[
-                { label: 'Имя', placeholder: 'Иван', value: 'Адиль' },
-                { label: 'Фамилия', placeholder: 'Иванов', value: 'Ансари' },
-                { label: 'Email', placeholder: 'you@company.com', value: 'adil@aistart360.com', type: 'email' },
-                { label: 'Должность', placeholder: 'Manager', value: 'Senior Manager' },
+                { label: 'Имя',       placeholder: 'Имя',           value: displayFirst,  type: 'text'  },
+                { label: 'Фамилия',   placeholder: 'Фамилия',       value: displayLast,   type: 'text'  },
+                { label: 'Email',     placeholder: 'you@company.com', value: email,        type: 'email' },
+                { label: 'Должность', placeholder: 'Manager',       value: position,      type: 'text'  },
               ].map((field) => (
                 <div key={field.label}>
                   <label className="block text-xs font-label text-on-surface-variant uppercase tracking-wider mb-2">
                     {field.label}
                   </label>
                   <input
-                    type={field.type ?? 'text'}
+                    type={field.type}
                     defaultValue={field.value}
                     placeholder={field.placeholder}
                     className="w-full bg-surface-container-high border border-outline-variant/30 rounded-lg px-4 py-2.5 text-sm text-on-surface placeholder:text-on-surface-variant/40 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all"
@@ -88,10 +120,10 @@ export default function SettingsPage() {
             <h3 className="font-headline text-lg font-bold text-on-surface mb-5">Уведомления</h3>
             <div className="space-y-4">
               {[
-                { label: 'Critical Alerts', desc: 'Немедленные уведомления о критических событиях', enabled: true },
-                { label: 'GRI Updates', desc: 'При пересчёте GRI для клиентов', enabled: true },
-                { label: 'Report Uploads', desc: 'При загрузке новых отчётов', enabled: false },
-                { label: 'Weekly Digest', desc: 'Еженедельная сводка по портфелю', enabled: true },
+                { label: 'Critical Alerts',  desc: 'Немедленные уведомления о критических событиях', enabled: true  },
+                { label: 'GRI Updates',      desc: 'При пересчёте GRI для клиентов',                 enabled: true  },
+                { label: 'Report Uploads',   desc: 'При загрузке новых отчётов',                     enabled: false },
+                { label: 'Weekly Digest',    desc: 'Еженедельная сводка по портфелю',                enabled: true  },
               ].map((item) => (
                 <div key={item.label} className="flex items-center justify-between py-2 border-b border-outline-variant/10 last:border-0">
                   <div>
