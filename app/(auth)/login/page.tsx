@@ -34,17 +34,31 @@ function LoginContent() {
   const params  = useSearchParams()
   const from    = params.get('from') ?? '/dashboard'
 
-  const [showPass,  setShowPass]  = useState(false)
-  const [isLoading, setIsLoading] = useState(false)
-  const [error,     setError]     = useState<string | null>(null)
+  const [showPass,     setShowPass]     = useState(false)
+  const [isLoading,    setIsLoading]    = useState(false)
+  const [error,        setError]        = useState<string | null>(null)
+  const [unconfirmed,  setUnconfirmed]  = useState(false)   // email not confirmed state
+  const [resendSent,   setResendSent]   = useState(false)
+  const [resendLoading, setResendLoading] = useState(false)
 
-  const { register, handleSubmit, setValue, formState: { errors } } = useForm<Form>({
+  const { register, handleSubmit, setValue, getValues, formState: { errors } } = useForm<Form>({
     resolver: zodResolver(schema),
   })
+
+  const resendConfirmation = async () => {
+    setResendLoading(true)
+    const supabase = createClient()
+    const email = getValues('email')
+    await supabase.auth.resend({ type: 'signup', email })
+    setResendLoading(false)
+    setResendSent(true)
+  }
 
   const onSubmit = async (data: Form) => {
     setIsLoading(true)
     setError(null)
+    setUnconfirmed(false)
+    setResendSent(false)
 
     const supabase = createClient()
 
@@ -54,7 +68,11 @@ function LoginContent() {
     })
 
     if (authError) {
-      setError(AUTH_ERRORS[authError.message] ?? 'Произошла ошибка при входе')
+      if (authError.message === 'Email not confirmed') {
+        setUnconfirmed(true)
+      } else {
+        setError(AUTH_ERRORS[authError.message] ?? 'Произошла ошибка при входе')
+      }
       setIsLoading(false)
       return
     }
@@ -263,6 +281,31 @@ function LoginContent() {
               </div>
               {errors.password && <p className="text-error text-xs mt-1.5">{errors.password.message}</p>}
             </div>
+
+            {/* Email not confirmed — resend block */}
+            {unconfirmed && (
+              <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-xl px-4 py-3 space-y-2">
+                <div className="flex items-center gap-2">
+                  <span className="material-symbols-outlined text-yellow-400 text-lg flex-shrink-0">mark_email_unread</span>
+                  <p className="text-yellow-400 text-sm font-medium">Email не подтверждён</p>
+                </div>
+                <p className="text-xs text-on-surface-variant pl-7">
+                  Проверьте почту и перейдите по ссылке в письме.
+                </p>
+                {resendSent ? (
+                  <p className="text-xs text-primary pl-7">Письмо отправлено повторно ✓</p>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={resendConfirmation}
+                    disabled={resendLoading}
+                    className="ml-7 text-xs text-primary hover:underline disabled:opacity-50"
+                  >
+                    {resendLoading ? 'Отправляем...' : 'Отправить письмо повторно'}
+                  </button>
+                )}
+              </div>
+            )}
 
             {/* Global error */}
             {error && (
