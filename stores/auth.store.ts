@@ -12,12 +12,15 @@ import { createClient } from '@/lib/supabase/client'
 export type UserRole = 'admin' | 'expert' | 'owner' | 'client' | 'super_admin'
 
 export interface PublicUser {
-  id:           string
-  name:         string
-  email:        string
-  role:         UserRole | null
+  id:            string
+  name:          string
+  email:         string
+  role:          UserRole | null
   organization?: string
-  position?:    string
+  position?:     string
+  avatar?:       string
+  createdAt?:    string
+  lastLogin?:    string
 }
 
 interface AuthState {
@@ -47,6 +50,9 @@ function supabaseUserToPublic(user: import('@supabase/supabase-js').User): Publi
     role:         (meta.role as UserRole) ?? null,
     organization: meta.organization,
     position:     meta.position,
+    avatar:       meta.avatar_url ?? meta.picture,
+    createdAt:    user.created_at,
+    lastLogin:    user.last_sign_in_at,
   }
 }
 
