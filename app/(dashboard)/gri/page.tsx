@@ -33,7 +33,7 @@ async function getPortfolioGRI(): Promise<PortfolioGRI | null> {
     if (!data || data.length === 0) return null
 
     const avg = (key: string) => {
-      const vals = data.map((r) => Number(r[key])).filter((v) => !isNaN(v) && v > 0)
+      const vals = data.map((r) => Number((r as Record<string, unknown>)[key])).filter((v) => !isNaN(v) && v > 0)
       return vals.length > 0
         ? Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 10) / 10
         : 0
