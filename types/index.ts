@@ -74,7 +74,7 @@ export interface Report {
   clientId: string
   clientName: string
   name: string
-  category: 'GRI' | 'Financial' | 'Growth' | 'Market' | 'Custom'
+  category: 'GRI' | 'Financial' | 'Growth' | 'Market' | 'Custom' | 'Intelligence' | 'Strategic' | 'AI' | 'Protocol'
   type: 'pdf' | 'xlsx' | 'csv' | 'docx'
   fileUrl: string
   fileSize: string

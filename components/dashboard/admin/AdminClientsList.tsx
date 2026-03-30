@@ -51,7 +51,7 @@ export function AdminClientsList() {
             phase: c.stage || '—',
             manager: 'Марина Р.', // Placeholder for now as manager system isn't in DB yet
             status: c.status === 'approved' ? 'active' : c.status === 'pending_approval' ? 'pending_approval' : 'at_risk'
-          })).sort((a, b) => {
+          })).sort((a: AdminClientRow, b: AdminClientRow) => {
             if (a.name.toLowerCase().includes('choco')) return -1;
             if (b.name.toLowerCase().includes('choco')) return 1;
             return 0;
