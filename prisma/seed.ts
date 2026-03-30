@@ -28,6 +28,32 @@ async function main() {
     },
   })
 
+  // 3. Create Manager Alex
+  const manager = await prisma.user.upsert({
+    where: { email: 'alex@aistart360.com' },
+    update: {},
+    create: {
+      email: 'alex@aistart360.com',
+      name: 'Alex Kim',
+      passwordHash: await bcrypt.hash('Manager123!', 12),
+      orgId: org.id,
+      role: 'MANAGER',
+    },
+  })
+
+  // 4. Create ChocoFamily Client Account
+  const chocoUser = await prisma.user.upsert({
+    where: { email: 'portal@chocofamily.kz' },
+    update: {},
+    create: {
+      email: 'portal@chocofamily.kz',
+      name: 'ChocoFamily Holding',
+      passwordHash: await bcrypt.hash('ChocoFamily2026!', 12),
+      orgId: org.id,
+      role: 'CLIENT',
+    },
+  })
+
   // 3. Create Clients from the screenshot
   const clientsData = [
     {
@@ -59,7 +85,7 @@ async function main() {
         sector: item.sector,
         stage: 'Scale',
         orgId: org.id,
-        managerId: admin.id,
+        managerId: manager.id,
         forbesRank: item.forbesRank,
         pulseMetrics: {
           create: item.metrics
@@ -68,7 +94,48 @@ async function main() {
     })
   }
 
+  // 6. Create ChocoFamily Holding specific record
+  const chocoClient = await prisma.client.create({
+    data: {
+      name: 'ChocoFamily Holding',
+      industry: 'E-commerce / FoodTech',
+      sector: 'IT Holding',
+      stage: 'Scale',
+      status: 'active',
+      orgId: org.id,
+      managerId: manager.id,
+      website: 'chocofamily.kz',
+      griReports: {
+        create: {
+          overallScore: 5.2,
+          productScore: 6.2,
+          trustScore: 4.8,
+          businessModelScore: 5.5,
+          cashScore: 4.2,
+          operationsScore: 7.1,
+          teamScore: 6.8,
+          founderScore: 5.8
+        }
+      },
+      pulseMetrics: {
+        create: {
+          lastOrder: new Date('2026-03-28'),
+          daysSince: 2,
+          avgCheck: 154000,
+          volumeChange: -24.1,
+          riskScore: 65,
+          churnProb: 45,
+          churnLevel: 'medium',
+          comment: 'Strategic pivot to B2B SaaS and AI Research. Refocusing after asset sales.',
+          action: 'monitor',
+          history: [154000, 162000, 185000, 204000, 215000]
+        }
+      }
+    }
+  })
+
   console.log('Seed completed successfully')
+  console.log('Client user created: portal@chocofamily.kz / ChocoFamily2026!')
 }
 
 main()

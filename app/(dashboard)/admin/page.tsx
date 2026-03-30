@@ -1,6 +1,9 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { SystemHealth } from '@/components/dashboard/SystemHealth'
+import { PendingClientsTable } from '@/components/dashboard/admin/PendingClientsTable'
+import { AdminClientsList } from '@/components/dashboard/admin/AdminClientsList'
+import { createServerClient } from '@/lib/supabase-server'
 
 export const metadata: Metadata = { title: 'Админ-панель — AIStart360' }
 
@@ -15,18 +18,7 @@ const PLATFORM_STATS = [
   { label: 'ARR Платформы',       value: '$284K', delta: '+18.2% MoM',        icon: 'payments',          color: 'text-primary'    },
 ]
 
-const ALL_CLIENTS = [
-  { id: '1', name: 'Vortex Labs',      industry: 'FinTech',    gri: 8.4, status: 'critical', manager: 'Марина Р.', lastActivity: '2ч',  phase: 'Масштабирование' },
-  { id: '2', name: 'Calyx Digital',    industry: 'E-commerce', gri: 7.3, status: 'at_risk',  manager: 'Адиль С.',  lastActivity: '4ч',  phase: 'Пилот 21 день'   },
-  { id: '3', name: 'Nexum Systems',    industry: 'SaaS',       gri: 6.2, status: 'active',   manager: 'Марина Р.', lastActivity: '6ч',  phase: 'GRI Воркшоп'     },
-  { id: '4', name: 'PulseCo',          industry: 'Healthcare', gri: 5.9, status: 'active',   manager: 'Нурлан К.', lastActivity: '1д',  phase: 'Онбординг'       },
-  { id: '5', name: 'Astra Ventures',   industry: 'FinTech',    gri: 4.5, status: 'at_risk',  manager: 'Адиль С.',  lastActivity: '2д',  phase: 'GRI Воркшоп'     },
-  { id: '6', name: 'TechFlow KZ',      industry: 'SaaS',       gri: 7.8, status: 'active',   manager: 'Марина Р.', lastActivity: '3ч',  phase: 'Масштабирование' },
-  { id: '7', name: 'GreenBridge',      industry: 'Logistics',  gri: 3.2, status: 'critical', manager: 'Нурлан К.', lastActivity: '5д',  phase: 'Пилот 21 день'   },
-  { id: '8', name: 'Momentum Finance', industry: 'FinTech',    gri: 6.7, status: 'active',   manager: 'Адиль С.',  lastActivity: '1ч',  phase: 'Масштабирование' },
-  { id: '9', name: 'Orbit Digital',    industry: 'E-commerce', gri: 5.1, status: 'active',   manager: 'Марина Р.', lastActivity: '8ч',  phase: 'Пилот 21 день'   },
-  { id: '10',name: 'Nova Systems',     industry: 'SaaS',       gri: 7.1, status: 'active',   manager: 'Нурлан К.', lastActivity: '12ч', phase: 'Масштабирование' },
-]
+// ALL_CLIENTS mock removed
 
 const CONTENT_SECTIONS = [
   { label: 'GRI-диагностика',  href: '/gri',         icon: 'radar',                count: '34 отчёта',    color: 'primary',   desc: 'Воркшопы и анализ по 7 блокам'         },
@@ -80,7 +72,28 @@ function GriBar({ score }: { score: number }) {
   )
 }
 
-export default function AdminPage() {
+export default async function AdminPage() {
+  const sb = createServerClient()
+
+  // Real-time counts
+  const { count: clientsCount } = await sb.from('profiles').select('*', { count: 'exact', head: true }).eq('role', 'client')
+  const { count: totalUsers } = await sb.from('profiles').select('*', { count: 'exact', head: true })
+  const { data: diagData } = await sb.from('diagnostics').select('overall_score').eq('is_current', true)
+  const avgGri = diagData && diagData.length > 0
+    ? (diagData.reduce((acc, d) => acc + (d.overall_score || 0), 0) / diagData.length / 10).toFixed(1)
+    : '0.0'
+
+  const stats = [
+    { label: 'Всего клиентов',      value: String(clientsCount ?? 0),    delta: '+0 за месяц',       icon: 'groups',            color: 'text-primary'    },
+    { label: 'Сред. GRI Score',     value: avgGri,                       delta: '+0.0 за квартал',   icon: 'monitoring',        color: 'text-primary'    },
+    { label: 'Пользователей',       value: String(totalUsers ?? 0),      delta: 'Всего в системе',   icon: 'manage_accounts',   color: 'text-on-surface' },
+    { label: 'GRI Воркшопов',       value: String(diagData?.length ?? 0),delta: 'За всё время',      icon: 'radar',             color: 'text-primary'    },
+    { label: 'Активных сегодня',    value: '—',                         delta: 'Coming soon',       icon: 'online_prediction', color: 'text-primary'    },
+    { label: 'Отчётов создано',     value: '—',                         delta: 'Coming soon',       icon: 'description',       color: 'text-secondary'  },
+    { label: 'Экспертов',           value: '—',                         delta: 'Coming soon',       icon: 'psychology',        color: 'text-secondary'  },
+    { label: 'ARR Платформы',       value: '—',                         delta: 'Coming soon',       icon: 'payments',          color: 'text-primary'    },
+  ]
+
   return (
     <div className="space-y-8">
 
@@ -115,7 +128,7 @@ export default function AdminPage() {
 
       {/* Platform Stats */}
       <section className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        {PLATFORM_STATS.map((s) => (
+        {stats.map((s) => (
           <div key={s.label} className="bg-surface-container-low rounded-2xl border border-white/[0.04] hover:border-primary/10 p-4 transition-colors">
             <div className="flex items-start justify-between mb-2">
               <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest leading-tight">{s.label}</p>
@@ -130,61 +143,14 @@ export default function AdminPage() {
       {/* System Health */}
       <SystemHealth />
 
+      {/* Pending Applications */}
+      <PendingClientsTable />
+
       {/* All Clients + Sidebar */}
       <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
         {/* Clients Table */}
-        <div className="lg:col-span-2 bg-surface-container-low rounded-2xl border border-white/[0.04] overflow-hidden">
-          <div className="flex items-center justify-between px-5 py-4 border-b border-white/[0.04]">
-            <div>
-              <h2 className="font-headline text-base font-bold text-on-surface">Все клиенты платформы</h2>
-              <p className="text-[10px] text-on-surface-variant">GRI · фаза · ответственный менеджер</p>
-            </div>
-            <Link href="/clients" className="text-xs font-mono text-primary hover:underline">Все →</Link>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-white/[0.04]">
-                  {['Компания', 'Отрасль', 'GRI', 'Фаза', 'Менеджер', 'Статус'].map(h => (
-                    <th key={h} className="text-left text-[10px] font-mono text-on-surface-variant uppercase tracking-widest px-4 py-3">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {ALL_CLIENTS.map((c) => {
-                  const st = STATUS_CONFIG[c.status as keyof typeof STATUS_CONFIG]
-                  return (
-                    <tr key={c.id} className="border-b border-white/[0.02] hover:bg-white/[0.02] transition-colors">
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2.5">
-                          <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-primary/20 to-primary/5 border border-primary/10 flex items-center justify-center text-[9px] font-bold text-primary flex-shrink-0">
-                            {c.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
-                          </div>
-                          <Link href={`/clients/${c.id}`} className="text-sm font-medium text-on-surface hover:text-primary transition-colors">
-                            {c.name}
-                          </Link>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3"><span className="text-xs text-on-surface-variant">{c.industry}</span></td>
-                      <td className="px-4 py-3"><GriBar score={c.gri} /></td>
-                      <td className="px-4 py-3">
-                        <span className="text-[10px] font-mono text-on-surface-variant bg-surface-container px-2 py-1 rounded-md whitespace-nowrap">{c.phase}</span>
-                      </td>
-                      <td className="px-4 py-3"><span className="text-xs text-on-surface-variant">{c.manager}</span></td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-1.5">
-                          <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${st.dot}`} />
-                          <span className={`text-[10px] font-mono ${st.color}`}>{st.label}</span>
-                        </div>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
+        <AdminClientsList />
 
         {/* Right column */}
         <div className="space-y-4">

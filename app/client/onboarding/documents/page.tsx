@@ -80,7 +80,7 @@ export default function DocumentsPage() {
   const fetchDocs = useCallback(async () => {
     if (!userId) return
     try {
-      const res = await fetch(`/api/v1/client/onboarding/documents?user_id=${userId}`)
+      const res = await fetch(`/api/v1/onboarding/documents?user_id=${userId}`)
       const data = await res.json()
       if (data.ok) setUploaded(data.data)
     } catch {}
@@ -142,7 +142,7 @@ export default function DocumentsPage() {
         .createSignedUrl(storageData.path, 60 * 60 * 24 * 365) // 1 year
 
       // Register in DB + trigger n8n
-      const res = await fetch('/api/v1/client/onboarding/documents', {
+      const res = await fetch('/api/v1/onboarding/documents', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

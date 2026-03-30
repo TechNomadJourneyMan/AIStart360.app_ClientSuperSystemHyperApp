@@ -1,12 +1,12 @@
 'use client'
 
 const GRI_DOMAINS = [
-  { id: 'finance',    label: 'Финансы',        score: 88, weight: 25, icon: 'payments',         desc: 'Выручка, маржа, рентабельность' },
-  { id: 'market',    label: 'Рынок',            score: 79, weight: 20, icon: 'public',            desc: 'Доля рынка, конкуренты, позиционирование' },
-  { id: 'product',   label: 'Продукт',          score: 92, weight: 20, icon: 'inventory_2',       desc: 'Продуктовый портфель, unit-экономика' },
-  { id: 'team',      label: 'Команда',          score: 71, weight: 15, icon: 'groups',            desc: 'Компетенции, структура, культура' },
-  { id: 'ops',       label: 'Операции',         score: 84, weight: 10, icon: 'precision_manufacturing', desc: 'Процессы, автоматизация, эффективность' },
-  { id: 'strategy',  label: 'Стратегия',        score: 76, weight: 10, icon: 'track_changes',     desc: 'Цели, дорожная карта, OKR' },
+  { id: 'finance',    label: 'Финансы',        score: 8.8, weight: 25, icon: 'payments',         desc: 'Выручка, маржа, рентабельность' },
+  { id: 'market',    label: 'Рынок',            score: 7.9, weight: 20, icon: 'public',            desc: 'Доля рынка, конкуренты, позиционирование' },
+  { id: 'product',   label: 'Продукт',          score: 9.2, weight: 20, icon: 'inventory_2',       desc: 'Продуктовый портфель, unit-экономика' },
+  { id: 'team',      label: 'Команда',          score: 7.1, weight: 15, icon: 'groups',            desc: 'Компетенции, структура, культура' },
+  { id: 'ops',       label: 'Операции',         score: 8.4, weight: 10, icon: 'precision_manufacturing', desc: 'Процессы, автоматизация, эффективность' },
+  { id: 'strategy',  label: 'Стратегия',        score: 7.6, weight: 10, icon: 'track_changes',     desc: 'Цели, дорожная карта, OKR' },
 ]
 
 const INSIGHTS = [
@@ -17,10 +17,10 @@ const INSIGHTS = [
 ]
 
 const HISTORY = [
-  { period: 'Q2 2025', score: 760 },
-  { period: 'Q3 2025', score: 798 },
-  { period: 'Q4 2025', score: 818 },
-  { period: 'Q1 2026', score: 842 },
+  { period: 'Q2 2025', score: 7.6 },
+  { period: 'Q3 2025', score: 7.9 },
+  { period: 'Q4 2025', score: 8.2 },
+  { period: 'Q1 2026', score: 8.4 },
 ]
 
 function ScoreBar({ score, color = 'primary' }: { score: number; color?: string }) {
@@ -28,20 +28,20 @@ function ScoreBar({ score, color = 'primary' }: { score: number; color?: string 
     <div className="h-1.5 bg-white/[0.06] rounded-full overflow-hidden">
       <div
         className={`h-full bg-${color} rounded-full transition-all duration-700`}
-        style={{ width: `${score}%` }}
+        style={{ width: `${score * 10}%` }}
       />
     </div>
   )
 }
 
 function ScoreColor(score: number) {
-  if (score >= 85) return 'text-primary'
-  if (score >= 70) return 'text-secondary'
+  if (score >= 8.5) return 'text-primary'
+  if (score >= 7.0) return 'text-secondary'
   return 'text-error'
 }
 
 export default function ExpertGriPage() {
-  const totalScore = 842
+  const totalScore = 8.4
   const circumference = 2 * Math.PI * 64
 
   return (
@@ -62,11 +62,11 @@ export default function ExpertGriPage() {
             <svg viewBox="0 0 160 160" className="w-full h-full -rotate-90">
               <circle cx="80" cy="80" r="64" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="10" />
               <circle cx="80" cy="80" r="64" fill="none" stroke="#6effc0" strokeWidth="10" strokeLinecap="round"
-                strokeDasharray={`${circumference * (totalScore / 1000)} ${circumference}`} />
+                strokeDasharray={`${circumference * (totalScore / 10)} ${circumference}`} />
             </svg>
             <div className="absolute inset-0 flex flex-col items-center justify-center">
               <span className="text-4xl font-mono font-bold text-on-surface">{totalScore}</span>
-              <span className="text-[10px] font-mono text-on-surface-variant">/ 1000</span>
+              <span className="text-[10px] font-mono text-on-surface-variant">/ 10</span>
             </div>
           </div>
           <span className="text-sm font-mono text-primary bg-primary/10 border border-primary/20 px-4 py-1.5 rounded-full mb-3">Strong Growth Ready</span>
@@ -78,7 +78,7 @@ export default function ExpertGriPage() {
           <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest mb-6">История GRI Score</p>
           <div className="flex items-end justify-around h-40 gap-4 mb-4">
             {HISTORY.map((h) => {
-              const height = (h.score / 1000) * 100
+              const height = (h.score / 10) * 100
               return (
                 <div key={h.period} className="flex flex-col items-center gap-2 flex-1">
                   <span className="text-xs font-mono text-primary">{h.score}</span>
@@ -91,8 +91,8 @@ export default function ExpertGriPage() {
           </div>
           <div className="flex items-center gap-2 mt-2">
             <span className="material-symbols-outlined text-sm text-primary">trending_up</span>
-            <span className="text-xs text-primary font-mono">+82 pts за год</span>
-            <span className="text-xs text-on-surface-variant ml-2">Средний прирост +20.5 pts/квартал</span>
+            <span className="text-xs text-primary font-mono">+0.8 за год</span>
+            <span className="text-xs text-on-surface-variant ml-2">Средний прирост +0.2/квартал</span>
           </div>
         </div>
       </section>

@@ -302,7 +302,7 @@ export default function OnboardingPage() {
     try {
       // If step 1, also create/update company record
       if (step === 1) {
-        const compRes = await fetch('/api/v1/client/onboarding/company', {
+        const compRes = await fetch('/api/v1/onboarding/company', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -335,7 +335,7 @@ export default function OnboardingPage() {
       for (const [k, v] of Object.entries(answers)) {
         formatted[k] = { value: v }
       }
-      await fetch('/api/v1/client/onboarding/survey', {
+      await fetch('/api/v1/onboarding/survey', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user_id: userId, company_id: companyId, step, answers: formatted }),

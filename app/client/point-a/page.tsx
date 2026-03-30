@@ -62,7 +62,7 @@ function BlockCard({ title, icon, score }: { title: string; icon: string; score:
           <span className="text-sm font-medium text-on-surface">{title}</span>
         </div>
         <span className={`text-xs font-mono font-bold ${lbl.color}`}>
-          {pct}/100
+          {(pct / 10).toFixed(1)}/10
         </span>
       </div>
 
@@ -144,7 +144,7 @@ export default function PointAClientPage() {
     try {
       const [diagRes, compRes] = await Promise.all([
         fetch(`/api/v1/diagnostics/current?user_id=${userId}`),
-        fetch(`/api/v1/client/onboarding/company?user_id=${userId}`),
+        fetch(`/api/v1/onboarding/company?user_id=${userId}`),
       ])
       const diagData = await diagRes.json()
       const compData = await compRes.json()
@@ -241,8 +241,8 @@ export default function PointAClientPage() {
                 <div className="relative flex-shrink-0">
                   <ScoreGauge score={score} size={140} />
                   <div className="absolute inset-0 flex flex-col items-center justify-center">
-                    <span className="font-mono text-3xl font-extrabold text-on-surface">{score}</span>
-                    <span className="text-xs text-on-surface-variant">/100</span>
+                    <span className="font-mono text-3xl font-extrabold text-on-surface">{(score / 10).toFixed(1)}</span>
+                    <span className="text-xs text-on-surface-variant">/10</span>
                   </div>
                 </div>
 

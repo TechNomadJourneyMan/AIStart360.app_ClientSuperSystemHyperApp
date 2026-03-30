@@ -26,6 +26,14 @@ export const MOCK_ALERTS: Alert[] = [
     action: { label: 'Расследовать', href: '/clients/1' },
   },
   {
+    id: 'a5',
+    severity: 'warning',
+    title: 'ChocoFamily',
+    description: 'Strategic Pivot: Asset divestiture 2023-2025 narrows ecosystem surface.',
+    time: '1h ago',
+    action: { label: 'Профиль клиента', href: '/clients/7' },
+  },
+  {
     id: 'a2',
     severity: 'warning',
     title: 'Calyx Fintech',
@@ -37,7 +45,7 @@ export const MOCK_ALERTS: Alert[] = [
     id: 'a3',
     severity: 'success',
     title: 'Nexum Systems',
-    description: 'GRI Score improved to 842. Growth readiness reached Excellent tier.',
+    description: 'GRI Score improved to 8.4. Growth readiness reached Excellent tier.',
     time: '6h ago',
     action: { label: 'Смотреть отчёт', href: '/clients/3' },
   },
@@ -55,12 +63,13 @@ export const MOCK_ALERTS: Alert[] = [
 // Activity Feed
 // ============================================================
 export const MOCK_ACTIVITY: ActivityItem[] = [
-  { id: 'act1', clientName: 'Vortex Labs',    industry: 'FinTech',    event: 'GRI Report Generated',    gri: 842, status: 'active',  time: '2h ago' },
-  { id: 'act2', clientName: 'Calyx Digital',  industry: 'E-commerce', event: 'Risk Flag Raised',         gri: 734, status: 'at risk', time: '4h ago' },
-  { id: 'act3', clientName: 'Nexum Systems',  industry: 'SaaS',       event: 'Growth Plan Updated',      gri: 621, status: 'active',  time: '6h ago' },
-  { id: 'act4', clientName: 'PulseCore',      industry: 'Healthcare', event: 'Data Upload Completed',    gri: 480, status: 'inactive', time: '8h ago' },
-  { id: 'act5', clientName: 'Astra Ventures', industry: 'FinTech',    event: 'Onboarding Completed',     gri: 910, status: 'active',  time: '1d ago' },
-  { id: 'act6', clientName: 'Forge Analytics', industry: 'SaaS',     event: 'Monthly Review Scheduled', gri: 769, status: 'active',  time: '1d ago' },
+  { id: 'act1', clientName: 'Vortex Labs',    industry: 'FinTech',    event: 'GRI Report Generated',    gri: 8.4, status: 'active',  time: '2h ago' },
+  { id: 'act2', clientName: 'Calyx Digital',  industry: 'E-commerce', event: 'Risk Flag Raised',         gri: 7.3, status: 'at risk', time: '4h ago' },
+  { id: 'act3', clientName: 'Nexum Systems',  industry: 'SaaS',       event: 'Growth Plan Updated',      gri: 6.2, status: 'active',  time: '6h ago' },
+  { id: 'act4', clientName: 'PulseCore',      industry: 'Healthcare', event: 'Data Upload Completed',    gri: 4.8, status: 'inactive', time: '8h ago' },
+  { id: 'act5', clientName: 'Astra Ventures', industry: 'FinTech',    event: 'Onboarding Completed',     gri: 9.1, status: 'active',  time: '1d ago' },
+  { id: 'act6', clientName: 'Forge Analytics', industry: 'SaaS',     event: 'Monthly Review Scheduled', gri: 7.7, status: 'active',  time: '1d ago' },
+  { id: 'act7', clientName: 'ChocoFamily',    industry: 'E-commerce', event: 'Analytical Profile Generated', gri: 5.2, status: 'active',  time: '10m ago' },
 ]
 
 // ============================================================
@@ -69,33 +78,38 @@ export const MOCK_ACTIVITY: ActivityItem[] = [
 export const MOCK_CLIENTS: Client[] = [
   {
     id: '1', name: 'Vortex Labs',    industry: 'FinTech',    stage: 'Scale',  status: 'active',
-    manager: 'Alex Kim',  managerId: 'u1', griScore: 842, previousGriScore: 818,
+    manager: 'Alex Kim',  managerId: 'u1', griScore: 8.4, previousGriScore: 8.2,
     website: 'vortexlabs.io', createdAt: '2024-01-15',
   },
   {
     id: '2', name: 'Calyx Digital',  industry: 'E-commerce', stage: 'Growth', status: 'at risk',
-    manager: 'Sarah Chen', managerId: 'u2', griScore: 734, previousGriScore: 760,
+    manager: 'Sarah Chen', managerId: 'u2', griScore: 7.3, previousGriScore: 7.6,
     website: 'calyx.co', createdAt: '2024-02-10',
   },
   {
     id: '3', name: 'Nexum Systems',  industry: 'SaaS',       stage: 'Growth', status: 'active',
-    manager: 'Alex Kim',  managerId: 'u1', griScore: 621, previousGriScore: 598,
+    manager: 'Alex Kim',  managerId: 'u1', griScore: 6.2, previousGriScore: 6.0,
     website: 'nexumsystems.com', createdAt: '2024-03-05',
   },
   {
     id: '4', name: 'PulseCore',      industry: 'Healthcare', stage: 'Early',  status: 'inactive',
-    manager: 'Maria Lopez', managerId: 'u3', griScore: 480, previousGriScore: 510,
+    manager: 'Maria Lopez', managerId: 'u3', griScore: 4.8, previousGriScore: 5.1,
     createdAt: '2024-04-20',
   },
   {
     id: '5', name: 'Astra Ventures', industry: 'FinTech',    stage: 'Scale',  status: 'active',
-    manager: 'Sarah Chen', managerId: 'u2', griScore: 910, previousGriScore: 895,
+    manager: 'Sarah Chen', managerId: 'u2', griScore: 9.1, previousGriScore: 9.0,
     website: 'astraventures.io', createdAt: '2023-11-01',
   },
   {
     id: '6', name: 'Forge Analytics', industry: 'SaaS',     stage: 'Mature', status: 'active',
-    manager: 'Alex Kim',  managerId: 'u1', griScore: 769, previousGriScore: 752,
+    manager: 'Alex Kim',  managerId: 'u1', griScore: 7.7, previousGriScore: 7.5,
     website: 'forgeanalytics.com', createdAt: '2023-09-12',
+  },
+  {
+    id: '7', name: 'ChocoFamily',    industry: 'E-commerce', stage: 'Mature', status: 'active',
+    manager: 'Alex Kim',  managerId: 'u1', griScore: 5.2, previousGriScore: 5.5,
+    website: 'chocofamily.kz', createdAt: '2026-03-30',
   },
 ]
 
@@ -128,6 +142,12 @@ export const MOCK_REPORTS: Report[] = [
     name: 'Custom Performance Dashboard', category: 'Custom', type: 'xlsx',
     fileUrl: '#', fileSize: '890 KB', uploadedBy: 'Alex Kim', uploadedAt: '15 Mar 2026',
   },
+  {
+    id: 'r6', clientId: '7', clientName: 'ChocoFamily',
+    name: 'Complete Analytical Profile', category: 'GRI', type: 'pdf',
+    fileUrl: '/app/(dashboard)/clients/ChocoFamily Data/ChocoFamily_OSINT_Analytical_Profile.pdf', 
+    fileSize: '1.2 MB', uploadedBy: 'System', uploadedAt: '30 Mar 2026',
+  },
 ]
 
 // ============================================================
@@ -141,7 +161,7 @@ export const MOCK_NOTIFICATIONS: Notification[] = [
   },
   {
     id: 'n2', type: 'gri_updated', title: 'GRI обновлён: Astra Ventures',
-    body: 'GRI Score increased to 910 — reached Excellent tier.',
+    body: 'GRI Score increased to 9.1 — reached Excellent tier.',
     read: false, entityType: 'gri', entityId: '5', time: '4h ago', createdAt: '2026-03-24T08:00:00Z',
   },
   {
@@ -219,12 +239,12 @@ export const MOCK_TEAM: TeamMember[] = [
 // GRI Domain scores (for GRI page)
 // ============================================================
 export const MOCK_GRI_DOMAINS = [
-  { id: 'fin',  label: 'Финансы',        score: 820, max: 1000, icon: 'payments',      color: '#6effc0' },
-  { id: 'mkt',  label: 'Маркетинг',      score: 710, max: 1000, icon: 'campaign',      color: '#6effc0' },
-  { id: 'ops',  label: 'Операции',       score: 760, max: 1000, icon: 'settings_suggest', color: '#6effc0' },
-  { id: 'hr',   label: 'Команда',        score: 680, max: 1000, icon: 'groups',        color: '#6effc0' },
-  { id: 'tech', label: 'Технологии',     score: 890, max: 1000, icon: 'memory',        color: '#6effc0' },
-  { id: 'strat',label: 'Стратегия',      score: 740, max: 1000, icon: 'route',         color: '#6effc0' },
+  { id: 'fin',  label: 'Финансы',        score: 8.2, max: 10, icon: 'payments',      color: '#6effc0' },
+  { id: 'mkt',  label: 'Маркетинг',      score: 7.1, max: 10, icon: 'campaign',      color: '#6effc0' },
+  { id: 'ops',  label: 'Операции',       score: 7.6, max: 10, icon: 'settings_suggest', color: '#6effc0' },
+  { id: 'hr',   label: 'Команда',        score: 6.8, max: 10, icon: 'groups',        color: '#6effc0' },
+  { id: 'tech', label: 'Технологии',     score: 8.9, max: 10, icon: 'memory',        color: '#6effc0' },
+  { id: 'strat',label: 'Стратегия',      score: 7.4, max: 10, icon: 'route',         color: '#6effc0' },
 ]
 
 // ============================================================
@@ -273,7 +293,7 @@ export const MOCK_METRICS = {
   operational: [
     { label: 'Загрузка команды', value: '74%',   delta: '+4пп',     up: false },
     { label: 'SLA соблюдение',   value: '98.4%', delta: '+0.2пп',   up: true  },
-    { label: 'Avg GRI Score',    value: '763',   delta: '+24 pts',  up: true  },
+    { label: 'Avg GRI Score',    value: '7.6',   delta: '+0.2',     up: true  },
     { label: 'GRI Reports/мес',  value: '18',    delta: '+3',       up: true  },
     { label: 'Avg Time to Value','value': '12д', delta: '-2д',      up: true  },
     { label: 'CSAT',             value: '4.7/5', delta: '+0.1',     up: true  },

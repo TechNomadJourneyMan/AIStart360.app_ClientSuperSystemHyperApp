@@ -10,15 +10,15 @@ function getScoreLevel(score: number): {
   ringColor: string
   bgColor: string
 } {
-  if (score >= 900) return { label: 'Excellent',   color: 'text-primary',            ringColor: '#6effc0', bgColor: 'bg-primary/10' }
-  if (score >= 700) return { label: 'Strong',      color: 'text-primary-fixed-dim',  ringColor: '#00e29e', bgColor: 'bg-primary-fixed-dim/10' }
-  if (score >= 500) return { label: 'Developing',  color: 'text-tertiary-container', ringColor: '#ffbd60', bgColor: 'bg-tertiary-container/10' }
+  if (score >= 9)   return { label: 'Excellent',   color: 'text-primary',            ringColor: '#6effc0', bgColor: 'bg-primary/10' }
+  if (score >= 7)   return { label: 'Strong',      color: 'text-primary-fixed-dim',  ringColor: '#00e29e', bgColor: 'bg-primary-fixed-dim/10' }
+  if (score >= 5)   return { label: 'Developing',  color: 'text-tertiary-container', ringColor: '#ffbd60', bgColor: 'bg-tertiary-container/10' }
   return              { label: 'Critical',    color: 'text-error',              ringColor: '#ffb4ab', bgColor: 'bg-error/10' }
 }
 
 export function GriScoreDial({ score, previousScore, label = 'GRI Score' }: GriScoreDialProps) {
   const level = getScoreLevel(score)
-  const pct = score / 10
+  const pct = score * 10
   // SVG arc for circular progress
   const r = 54
   const circ = 2 * Math.PI * r
@@ -49,7 +49,7 @@ export function GriScoreDial({ score, previousScore, label = 'GRI Score' }: GriS
         {/* Center Score */}
         <div className="absolute inset-0 flex flex-col items-center justify-center">
           <span className={`font-mono text-4xl font-bold leading-none ${level.color}`}>{score}</span>
-          <span className="font-mono text-[9px] text-on-surface-variant uppercase tracking-widest mt-1">/ 1000</span>
+          <span className="font-mono text-[9px] text-on-surface-variant uppercase tracking-widest mt-1">/ 10</span>
         </div>
       </div>
 
@@ -71,10 +71,10 @@ export function GriScoreDial({ score, previousScore, label = 'GRI Score' }: GriS
       {/* Score Range Legend */}
       <div className="mt-5 w-full space-y-1.5">
         {[
-          { range: '900–1000', label: 'Excellent', color: 'bg-primary' },
-          { range: '700–899',  label: 'Strong',    color: 'bg-primary-fixed-dim' },
-          { range: '500–699',  label: 'Developing', color: 'bg-tertiary-container' },
-          { range: '< 500',   label: 'Critical',  color: 'bg-error' },
+          { range: '9–10',   label: 'Excellent',  color: 'bg-primary' },
+          { range: '7–8.9',  label: 'Strong',     color: 'bg-primary-fixed-dim' },
+          { range: '5–6.9',  label: 'Developing', color: 'bg-tertiary-container' },
+          { range: '< 5',    label: 'Critical',   color: 'bg-error' },
         ].map((item) => (
           <div key={item.range} className="flex items-center gap-2">
             <div className={`w-2 h-2 rounded-full ${item.color}`} />

@@ -96,7 +96,7 @@ export default function RegisterPage() {
       }, { onConflict: 'id' })
 
       await (sb.from('companies') as any).upsert({
-        user_id: authData.user.id, company_name: data.company,
+        user_id: authData.user.id, name: data.company,
       }, { onConflict: 'user_id' })
 
       router.replace('/client/waiting-room')

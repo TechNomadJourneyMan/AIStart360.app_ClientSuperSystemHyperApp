@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useEffect } from 'react'
 
 const EXPERT_KPI = [
-  { label: 'GRI Score',      value: '842',    delta: '+24 pts', up: true,  icon: 'radar',        color: 'primary' },
+  { label: 'GRI Score',      value: '8.4',    delta: '+0.2',    up: true,  icon: 'radar',        color: 'primary' },
   { label: 'Доход (ARR)',    value: '₸28.4М', delta: '+18.2%',  up: true,  icon: 'payments',     color: 'primary' },
   { label: 'Маржа',          value: '38.4%',  delta: '+3.2 пп', up: true,  icon: 'percent',      color: 'primary' },
   { label: 'NPS',            value: '74',     delta: '+6',      up: true,  icon: 'thumb_up',     color: 'primary' },
@@ -21,7 +21,7 @@ const TASKS = [
 const ACTIVITY = [
   { icon: 'description', text: 'Q4 2025 GRI Report загружен',   time: '2 ч назад', type: 'report' },
   { icon: 'edit',        text: 'Обновлены данные профиля',       time: '1 д назад', type: 'update' },
-  { icon: 'radar',       text: 'GRI пересчитан: 842 (+24)',      time: '3 д назад', type: 'gri'    },
+  { icon: 'radar',       text: 'GRI пересчитан: 8.4 (+0.2)',     time: '3 д назад', type: 'gri'    },
   { icon: 'chat',        text: 'Новый комментарий от менеджера', time: '5 д назад', type: 'msg'    },
 ]
 
@@ -112,11 +112,11 @@ export default function ExpertDashboardPage() {
             <svg viewBox="0 0 160 160" className="w-full h-full -rotate-90">
               <circle cx="80" cy="80" r="64" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="8" />
               <circle cx="80" cy="80" r="64" fill="none" stroke="#6effc0" strokeWidth="8" strokeLinecap="round"
-                strokeDasharray={`${2 * Math.PI * 64 * 0.842} ${2 * Math.PI * 64}`} />
+                strokeDasharray={`${2 * Math.PI * 64 * 0.84} ${2 * Math.PI * 64}`} />
             </svg>
             <div className="absolute inset-0 flex flex-col items-center justify-center">
-              <span className="text-3xl font-mono font-bold text-on-surface">842</span>
-              <span className="text-[9px] font-mono text-on-surface-variant">/ 1000</span>
+              <span className="text-3xl font-mono font-bold text-on-surface">8.4</span>
+              <span className="text-[9px] font-mono text-on-surface-variant">/ 10</span>
             </div>
           </div>
           <span className="text-xs font-mono text-primary bg-primary/10 border border-primary/20 px-3 py-1 rounded-full">Strong</span>
