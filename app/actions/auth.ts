@@ -31,7 +31,7 @@ export async function registerAction(data: any) {
     
     // 4. Map UI role to Prisma UserRole
     // admin -> ADMIN, expert -> MANAGER, owner -> ADMIN
-    const prismaRole = role === 'admin' ? 'ADMIN' : role === 'owner' ? 'SUPER_ADMIN' : 'MANAGER'
+    const prismaRole = role === 'admin' ? 'ADMIN' : role === 'owner' ? 'SUPER_ADMIN' : role === 'client' ? 'CLIENT' : 'MANAGER'
     
     const user = await prisma.user.create({
       data: {
@@ -81,7 +81,7 @@ export async function loginAction(email: string, password: string) {
     if (!isValid) return { error: 'WRONG_PASSWORD' }
     
     // Map Prisma role back to UI role
-    const uiRole = user.role === 'SUPER_ADMIN' ? 'owner' : user.role === 'ADMIN' ? 'admin' : 'expert'
+    const uiRole = user.role === 'SUPER_ADMIN' ? 'owner' : user.role === 'ADMIN' ? 'admin' : user.role === 'CLIENT' ? 'client' : 'expert'
     
     // Update cookies
     const cookieStore = cookies()

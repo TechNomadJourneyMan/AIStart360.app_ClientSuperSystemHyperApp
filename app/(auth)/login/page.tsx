@@ -18,9 +18,10 @@ const schema = z.object({
 type Form = z.infer<typeof schema>
 
 const DEMO_ACCOUNTS = [
-  { label: 'Клиент', email: 'client@aistart360.kz',  hint: 'client123', role: 'client' },
-  { label: 'Expert', email: 'expert@aistart360.kz', hint: 'expert123', role: 'expert' },
-  { label: 'Owner',  email: 'owner@aistart360.kz',  hint: 'owner123',  role: 'owner'  },
+  { label: 'ChocoFamily', email: 'portal@chocofamily.kz', hint: 'ChocoFamily2026!', role: 'client' },
+  { label: 'Admin',       email: 'admin@aistart360.kz',   hint: 'admin123',         role: 'admin' },
+  { label: 'Expert',      email: 'expert@aistart360.kz',  hint: 'expert123',        role: 'expert' },
+  { label: 'Owner',       email: 'owner@aistart360.kz',   hint: 'owner123',         role: 'owner'  },
 ]
 
 function LoginContent() {
