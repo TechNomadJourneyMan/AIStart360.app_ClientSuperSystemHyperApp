@@ -217,6 +217,21 @@ model GriReport {
   @@map("gri_reports")
 }
 
+model ReportDocument {
+  id            String   @id @default(cuid())
+  name          String
+  clientName    String   @map("client_name")
+  category      String
+  type          String
+  fileUrl       String   @map("file_url")
+  fileSizeBytes Int      @map("file_size_bytes")
+  uploadedBy    String   @map("uploaded_by")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@map("report_documents")
+}
+
 // --- Admin Portal Models ------------------------------------------------------
 
 /// Company entity for admin CRM --- represents an incoming lead or registered company.

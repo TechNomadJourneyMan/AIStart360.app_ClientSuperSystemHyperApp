@@ -13,16 +13,6 @@ export async function GET() {
     const highRiskClients = clients.filter(c => c.pulseMetrics?.churnLevel === 'high')
     const mediumRiskClients = clients.filter(c => c.pulseMetrics?.churnLevel === 'medium')
     
-    // Calculate Stats
-    const stats = {
-      revenueAtRisk: highRiskClients.reduce((sum, c) => sum + (c.pulseMetrics?.avgCheck || 0), 0),
-      highRisk: highRiskClients.length,
-      mediumRisk: mediumRiskClients.length,
-      totalClients: clients.length,
-      processedToday: 3, // This would normally come from an activity log
-      dailyTarget: 6,
-    }
-
     // 2. Format Today's Clients
     const todayClients = clients
       .filter(c => c.pulseMetrics?.action !== 'monitor')
@@ -43,6 +33,16 @@ export async function GET() {
         orderCycle: c.orderCycle,
         history: c.pulseMetrics?.history as number[],
       }))
+
+    // Calculate Stats from real actionable rows.
+    const stats = {
+      revenueAtRisk: highRiskClients.reduce((sum, c) => sum + (c.pulseMetrics?.avgCheck || 0), 0),
+      highRisk: highRiskClients.length,
+      mediumRisk: mediumRiskClients.length,
+      totalClients: clients.length,
+      processedToday: todayClients.length,
+      dailyTarget: 6,
+    }
 
     return NextResponse.json({ stats, todayClients })
   } catch (error) {

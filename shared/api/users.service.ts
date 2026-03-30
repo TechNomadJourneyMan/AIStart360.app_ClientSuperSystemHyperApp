@@ -23,36 +23,34 @@ function saveUsers(users: User[]): void {
   localStorage.setItem(USERS_KEY, JSON.stringify(users))
 }
 
-function stripPassword(user: User): Omit<User, 'password'> {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { password: _, ...safe } = user
-  return safe
+function toPublicUser(user: User): User {
+  return user
 }
 
 function simulateLatency(ms = 300) {
   return new Promise<void>((r) => setTimeout(r, ms))
 }
 
-export type PublicUser = Omit<User, 'password'>
+export type PublicUser = User
 
 export const usersService = {
   /** GET /users */
   async getAll(): Promise<PublicUser[]> {
     await simulateLatency(350)
-    return getUsers().map(stripPassword)
+    return getUsers().map(toPublicUser)
   },
 
   /** GET /users?role=admin|expert */
   async getByRole(role: 'admin' | 'expert'): Promise<PublicUser[]> {
     await simulateLatency(300)
-    return getUsers().filter((u) => u.role === role).map(stripPassword)
+    return getUsers().filter((u) => u.role === role).map(toPublicUser)
   },
 
   /** GET /users/:id */
   async getById(id: string): Promise<PublicUser | null> {
     await simulateLatency(200)
     const user = getUsers().find((u) => u.id === id)
-    return user ? stripPassword(user) : null
+    return user ? toPublicUser(user) : null
   },
 
   /** PATCH /users/:id */
@@ -63,7 +61,7 @@ export const usersService = {
     if (idx === -1) throw new Error('USER_NOT_FOUND')
     users[idx] = { ...users[idx], ...patch }
     saveUsers(users)
-    return stripPassword(users[idx])
+    return toPublicUser(users[idx])
   },
 
   /** DELETE /users/:id */

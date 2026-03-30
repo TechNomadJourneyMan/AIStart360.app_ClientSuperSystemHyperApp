@@ -31,7 +31,13 @@
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-[Gates determined based on constitution file]
+Verify against `.specify/memory/constitution.md` (v1.0.0+). Confirm each gate explicitly:
+
+- [ ] **I. Code Quality** — No `btoa`/`atob`, no `any`, server/client boundary respected
+- [ ] **II. Testing Standards** — Auth/RBAC/API tests planned; DB not mocked
+- [ ] **III. UX Consistency** — All routes have content/skeleton/error boundary; no hardcoded user data
+- [ ] **IV. Performance** — Server Components used for data fetching; no N+1 queries planned
+- [ ] **Security** — RLS on all new tables; `SERVICE_ROLE_KEY` server-side only; Zod validation at boundaries
 
 ## Project Structure
 

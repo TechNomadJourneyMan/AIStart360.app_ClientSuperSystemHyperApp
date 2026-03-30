@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { MOCK_NOTIFICATIONS } from '@/lib/mock-data'
+import { prisma } from '@/lib/db'
 
 export const metadata: Metadata = { title: 'Notifications' }
 
@@ -21,8 +21,29 @@ const typeColor: Record<string, string> = {
   system:        'text-on-surface-variant bg-surface-container-high',
 }
 
-export default function NotificationsPage() {
-  const unread = MOCK_NOTIFICATIONS.filter((n) => !n.read)
+export default async function NotificationsPage() {
+  const logs = await prisma.auditLog.findMany({
+    include: {
+      performer: {
+        select: { name: true, email: true },
+      },
+    },
+    orderBy: { timestamp: 'desc' },
+    take: 40,
+  })
+
+  const notifications = logs.map((log) => ({
+    id: log.id,
+    type: log.action === 'reject' ? 'alert' : log.action === 'approve' ? 'project' : log.action === 'comment' ? 'team' : 'system',
+    title: `${log.action} · ${log.entityType}`,
+    body: `Изменение ${log.entityType} выполнено: ${log.performer.name ?? log.performer.email}`,
+    read: false,
+    entityType: log.entityType,
+    entityId: log.entityId,
+    time: new Date(log.timestamp).toLocaleString('ru-RU'),
+  }))
+
+  const unread = notifications.filter((n) => !n.read)
 
   return (
     <div className="space-y-6 max-w-2xl">
@@ -41,7 +62,7 @@ export default function NotificationsPage() {
 
       {/* Notification List */}
       <div className="space-y-2">
-        {MOCK_NOTIFICATIONS.map((notif) => {
+        {notifications.map((notif) => {
           const icon = typeIcon[notif.type] ?? 'notifications'
           const color = typeColor[notif.type] ?? typeColor.system
 
@@ -69,9 +90,9 @@ export default function NotificationsPage() {
                 </div>
                 <p className="text-xs text-on-surface-variant mt-0.5 line-clamp-2">{notif.body}</p>
                 {notif.entityType && (
-                  <a href="#" className="text-xs text-primary hover:underline mt-1 inline-block">
-                    Открыть {notif.entityType} →
-                  </a>
+                  <span className="text-xs text-primary mt-1 inline-block">
+                    {notif.entityType} #{notif.entityId}
+                  </span>
                 )}
               </div>
 
@@ -81,6 +102,13 @@ export default function NotificationsPage() {
             </div>
           )
         })}
+
+        {notifications.length === 0 && (
+          <div className="bg-surface-container rounded-xl p-8 text-center">
+            <span className="material-symbols-outlined text-4xl text-on-surface-variant/30 mb-3 block">notifications_off</span>
+            <p className="text-sm text-on-surface-variant">События пока отсутствуют</p>
+          </div>
+        )}
       </div>
     </div>
   )

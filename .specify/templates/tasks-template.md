@@ -159,6 +159,20 @@ Examples of foundational tasks (adjust based on your project):
 
 ---
 
+## Constitution Sprint Gate (ref: .specify/memory/constitution.md §Development Workflow)
+
+**Purpose**: Final verification before sprint sign-off. All items MUST be checked.
+
+- [ ] TGATE-1 `npm run build` completes without errors
+- [ ] TGATE-2 `grep -r "btoa\|atob" --include="*.ts" --include="*.tsx"` returns zero results
+- [ ] TGATE-3 All navigation items return HTTP 200 (not 404)
+- [ ] TGATE-4 Settings page shows authenticated user's real email (not hardcoded)
+- [ ] TGATE-5 All Supabase tables have RLS enabled
+- [ ] TGATE-6 Lighthouse score ≥ 80 on production Vercel URL
+- [ ] TGATE-7 No TypeScript `any` without `// TODO(type):` annotation in new files
+
+---
+
 ## Dependencies & Execution Order
 
 ### Phase Dependencies

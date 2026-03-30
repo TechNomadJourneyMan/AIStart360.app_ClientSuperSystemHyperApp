@@ -1,6 +1,6 @@
-import { auth } from '@/lib/auth'
 import { NextResponse } from 'next/server'
 import type { UserRole } from '@prisma/client'
+import { createClient } from '@/lib/supabase/server'
 
 // ─── Permission definitions ───────────────────────────────────────────────────
 
@@ -82,12 +82,36 @@ export interface AuthSession {
   }
 }
 
+function mapProfileRoleToUserRole(role: string | null | undefined): UserRole {
+  if (role === 'super_admin' || role === 'owner') return 'SUPER_ADMIN'
+  if (role === 'admin') return 'ADMIN'
+  if (role === 'manager' || role === 'expert') return 'MANAGER'
+  if (role === 'analyst') return 'ANALYST'
+  return 'CLIENT'
+}
+
 export async function getAdminSession(): Promise<AuthSession | null> {
-  const session = await auth()
-  if (!session?.user?.id) return null
-  // @ts-ignore — role is injected in auth.ts session callback
-  if (!session.user.role) return null
-  return session as unknown as AuthSession
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  if (!user?.id || !user.email) return null
+
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role, full_name')
+    .eq('id', user.id)
+    .maybeSingle()
+
+  return {
+    user: {
+      id: user.id,
+      email: user.email,
+      name: typeof profile?.full_name === 'string' ? profile.full_name : null,
+      role: mapProfileRoleToUserRole(typeof profile?.role === 'string' ? profile.role : null),
+    },
+  }
 }
 
 /**

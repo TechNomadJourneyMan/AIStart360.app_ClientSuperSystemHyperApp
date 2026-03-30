@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
+import { createClient } from '@/lib/supabase-client'
 import type { Diagnostic, BlockScore, Risk, Insight, QuickWin, DiagnosticStage } from '@/types/onboarding'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -129,13 +130,13 @@ export default function PointAClientPage() {
   const [userId, setUserId] = useState<string | null>(null)
 
   useEffect(() => {
-    try {
-      const authRaw = localStorage.getItem('aistart360_auth')
-      if (authRaw) {
-        const parsed = JSON.parse(authRaw)
-        setUserId(parsed?.state?.user?.id ?? null)
+    const sb = createClient()
+    sb.auth.getSession().then(({ data }) => {
+      const u = data.session?.user
+      if (u?.id) {
+        setUserId(u.id)
       }
-    } catch {}
+    })
   }, [])
 
   const loadData = useCallback(async () => {

@@ -10,7 +10,7 @@ export const metadata: Metadata = {
   description: 'B2B клиентский портал для управления ростом компаний. GRI диагностика, аналитика, отчёты.',
   keywords: ['AIStart360', 'GRI', 'Growth Readiness', 'B2B Portal', 'Business Intelligence'],
   authors: [{ name: 'AIStart360' }],
-  metadataBase: new URL(process.env.NEXTAUTH_URL ?? 'http://localhost:3000'),
+  metadataBase: new URL(process.env.AUTH_URL ?? 'http://localhost:3000'),
   openGraph: {
     type: 'website',
     locale: 'ru_RU',

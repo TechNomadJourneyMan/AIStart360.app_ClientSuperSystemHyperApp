@@ -114,6 +114,14 @@
 - **SC-003**: [User satisfaction metric, e.g., "90% of users successfully complete primary task on first attempt"]
 - **SC-004**: [Business metric, e.g., "Reduce support tickets related to [X] by 50%"]
 
+### Constitution Compliance *(mandatory — ref: .specify/memory/constitution.md)*
+
+- **CC-001** (Code Quality): No `btoa`/`atob`, no `any`, all new code passes `tsc --noEmit`
+- **CC-002** (Testing): Integration tests against real DB for auth/RBAC paths
+- **CC-003** (UX): All routes render content or skeleton; `error.tsx` present; no hardcoded user data
+- **CC-004** (Performance): Lighthouse ≥ 80 on production; Server Components for data fetching
+- **CC-005** (Security): RLS on new tables; Zod at all input boundaries; secrets server-side only
+
 ## Assumptions
 
 <!--

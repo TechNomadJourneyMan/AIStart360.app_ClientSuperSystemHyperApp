@@ -1,10 +1,20 @@
 import type { Metadata } from 'next'
+import { getAnalyticsData } from '@/lib/analytics-data'
 
 export const metadata: Metadata = { title: 'Analytics' }
 
 const PERIOD_OPTIONS = ['7 дней', '30 дней', '90 дней', '12 месяцев']
 
-export default function AnalyticsPage() {
+function formatMoney(value: number): string {
+  if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(1)}M`
+  if (value >= 1_000) return `$${(value / 1_000).toFixed(1)}K`
+  return `$${value.toFixed(0)}`
+}
+
+export default async function AnalyticsPage() {
+  const data = await getAnalyticsData()
+  const totalIndustryValue = data.industryBreakdown.reduce((sum, item) => sum + item.value, 0)
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -32,17 +42,17 @@ export default function AnalyticsPage() {
       {/* Top KPIs */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          { label: 'Avg GRI Score', value: '763', change: '+24', positive: true },
-          { label: 'Portfolio GMV', value: '$12.4M', change: '+3.1%', positive: true },
-          { label: 'Active Clients', value: '38', change: '+2', positive: true },
-          { label: 'Churn Rate', value: '4.2%', change: '-0.8%', positive: true },
+          { label: 'Avg GRI Score', value: String(data.kpis.avgGriScore), change: '', positive: true },
+          { label: 'Portfolio GMV', value: formatMoney(data.kpis.portfolioGmv), change: '', positive: true },
+          { label: 'Active Clients', value: String(data.kpis.activeClients), change: '', positive: true },
+          { label: 'Churn Rate', value: `${data.kpis.churnRate}%`, change: '', positive: data.kpis.churnRate <= 10 },
         ].map((kpi) => (
           <div key={kpi.label} className="bg-surface-container-low p-5 rounded-xl">
             <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest mb-2">{kpi.label}</p>
             <p className="text-3xl font-mono font-bold text-on-surface">{kpi.value}</p>
             <p className={`text-xs font-mono mt-2 flex items-center gap-1 ${kpi.positive ? 'text-primary' : 'text-error'}`}>
               <span className="material-symbols-outlined text-sm">{kpi.positive ? 'trending_up' : 'trending_down'}</span>
-              {kpi.change}
+              <span>{kpi.positive ? 'на основе реальных данных' : 'требует внимания'}</span>
             </p>
           </div>
         ))}
@@ -55,16 +65,21 @@ export default function AnalyticsPage() {
             <h3 className="font-headline text-lg font-bold text-on-surface">GRI Trend</h3>
             <span className="text-xs font-mono text-on-surface-variant">30 дней</span>
           </div>
-          {/* Chart area — подключить ResponsiveContainer + LineChart из Recharts */}
-          <div className="h-48 flex items-end gap-1.5">
-            {[42, 58, 51, 65, 70, 63, 75, 68, 72, 80, 76, 84, 79, 88, 85, 90, 87, 92, 89, 95, 91, 97, 94, 96, 93, 98, 95, 97, 99, 100].map((v, i) => (
-              <div
-                key={i}
-                className="flex-1 bg-primary/20 rounded-sm hover:bg-primary/40 transition-colors"
-                style={{ height: `${v}%` }}
-              />
-            ))}
-          </div>
+          {data.trend.length === 0 ? (
+            <div className="h-48 flex items-center justify-center text-sm text-on-surface-variant border border-dashed border-white/[0.08] rounded-xl">
+              Нет данных GRI за выбранный период
+            </div>
+          ) : (
+            <div className="h-48 flex items-end gap-1.5">
+              {data.trend.map((value, index) => (
+                <div
+                  key={index}
+                  className="flex-1 bg-primary/20 rounded-sm hover:bg-primary/40 transition-colors"
+                  style={{ height: `${value}%` }}
+                />
+              ))}
+            </div>
+          )}
           <div className="flex justify-between text-[10px] font-mono text-on-surface-variant mt-3">
             <span>1 Mar</span>
             <span>15 Mar</span>
@@ -77,28 +92,29 @@ export default function AnalyticsPage() {
             <h3 className="font-headline text-lg font-bold text-on-surface">GMV by Industry</h3>
             <span className="text-xs font-mono text-on-surface-variant">Current</span>
           </div>
-          <div className="space-y-4">
-            {[
-              { name: 'FinTech', value: 4.2, total: 12.4, color: 'bg-primary' },
-              { name: 'E-commerce', value: 3.1, total: 12.4, color: 'bg-primary-fixed-dim' },
-              { name: 'SaaS', value: 2.8, total: 12.4, color: 'bg-secondary' },
-              { name: 'Healthcare', value: 1.4, total: 12.4, color: 'bg-tertiary-container' },
-              { name: 'Other', value: 0.9, total: 12.4, color: 'bg-outline' },
-            ].map((item) => (
-              <div key={item.name}>
-                <div className="flex justify-between text-sm mb-1.5">
-                  <span className="text-on-surface-variant">{item.name}</span>
-                  <span className="font-mono text-on-surface">${item.value}M</span>
-                </div>
-                <div className="h-2 bg-surface-container-high rounded-full overflow-hidden">
-                  <div
-                    className={`h-full ${item.color} rounded-full transition-all`}
-                    style={{ width: `${(item.value / item.total) * 100}%` }}
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
+          {data.industryBreakdown.length === 0 ? (
+            <div className="h-48 flex items-center justify-center text-sm text-on-surface-variant border border-dashed border-white/[0.08] rounded-xl">
+              Данные по отраслям пока отсутствуют
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {data.industryBreakdown.map((item, index) => {
+                const width = totalIndustryValue > 0 ? (item.value / totalIndustryValue) * 100 : 0
+                const color = ['bg-primary', 'bg-primary-fixed-dim', 'bg-secondary', 'bg-tertiary-container', 'bg-outline'][index] ?? 'bg-primary'
+                return (
+                  <div key={item.name}>
+                    <div className="flex justify-between text-sm mb-1.5">
+                      <span className="text-on-surface-variant">{item.name}</span>
+                      <span className="font-mono text-on-surface">{formatMoney(item.value)}</span>
+                    </div>
+                    <div className="h-2 bg-surface-container-high rounded-full overflow-hidden">
+                      <div className={`h-full ${color} rounded-full transition-all`} style={{ width: `${width}%` }} />
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
         </div>
       </div>
 
@@ -120,13 +136,14 @@ export default function AnalyticsPage() {
               </tr>
             </thead>
             <tbody>
-              {[
-                { name: 'Vortex Labs', industry: 'FinTech', gri: 892, gmv: '$1.2M', growth: '+18%', status: 'Strong' },
-                { name: 'Calyx Digital', industry: 'E-commerce', gri: 734, gmv: '$890K', growth: '+12%', status: 'Active' },
-                { name: 'Nexum Systems', industry: 'SaaS', gri: 621, gmv: '$540K', growth: '+5%', status: 'Developing' },
-                { name: 'PulseCore', industry: 'Healthcare', gri: 480, gmv: '$230K', growth: '-2%', status: 'Critical' },
-              ].map((row, i) => (
-                <tr key={i} className="border-b border-outline-variant/10 table-row-hover">
+              {data.clientPerformance.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="px-5 py-8 text-center text-sm text-on-surface-variant">
+                    Нет клиентских метрик для отображения
+                  </td>
+                </tr>
+              ) : data.clientPerformance.map((row) => (
+                <tr key={row.id} className="border-b border-outline-variant/10 table-row-hover">
                   <td className="px-5 py-3.5 text-sm font-medium text-on-surface">{row.name}</td>
                   <td className="px-5 py-3.5 text-sm text-on-surface-variant">{row.industry}</td>
                   <td className="px-5 py-3.5">
@@ -134,9 +151,9 @@ export default function AnalyticsPage() {
                       row.gri >= 800 ? 'text-primary' : row.gri >= 700 ? 'text-primary-fixed-dim' : row.gri >= 600 ? 'text-tertiary-container' : 'text-error'
                     }`}>{row.gri}</span>
                   </td>
-                  <td className="px-5 py-3.5 font-mono text-sm text-on-surface">{row.gmv}</td>
-                  <td className={`px-5 py-3.5 font-mono text-sm ${row.growth.startsWith('+') ? 'text-primary' : 'text-error'}`}>
-                    {row.growth}
+                  <td className="px-5 py-3.5 font-mono text-sm text-on-surface">{formatMoney(row.gmv)}</td>
+                  <td className={`px-5 py-3.5 font-mono text-sm ${row.growth >= 0 ? 'text-primary' : 'text-error'}`}>
+                    {row.growth >= 0 ? '+' : ''}{row.growth}%
                   </td>
                   <td className="px-5 py-3.5">
                     <span className={`text-[10px] font-mono px-2.5 py-1 rounded-full border ${

@@ -3,11 +3,58 @@ import Link from 'next/link'
 import { AlertCard } from '@/components/dashboard/AlertCard'
 import { ActivityFeed } from '@/components/dashboard/ActivityFeed'
 import { SystemHealth } from '@/components/dashboard/SystemHealth'
-import { MOCK_KPI, MOCK_ALERTS, MOCK_ACTIVITY } from '@/lib/mock-data'
+import { KpiCard } from '@/components/dashboard/KpiCard'
+import { getDashboardKpiData } from '@/lib/dashboard-kpi'
+import { getDashboardActivity, getDashboardAlerts } from '@/lib/dashboard-stream'
 
 export const metadata: Metadata = { title: 'Дэшборд' }
 
-export default function DashboardPage() {
+export default async function DashboardPage() {
+  const [kpiData, alerts, activity] = await Promise.all([
+    getDashboardKpiData(),
+    getDashboardAlerts(),
+    getDashboardActivity(),
+  ])
+
+  const kpiCards = [
+    {
+      label: 'Клиенты',
+      value: String(kpiData.clientCount),
+      trend: '+0',
+      trendUp: true,
+      icon: 'groups',
+      sublabel: 'активных клиентов',
+      href: '/clients',
+    },
+    {
+      label: 'Организации',
+      value: String(kpiData.orgCount),
+      trend: '+0',
+      trendUp: true,
+      icon: 'domain',
+      sublabel: 'в системе',
+      href: '/clients',
+    },
+    {
+      label: 'Средний GRI',
+      value: kpiData.avgGri.toFixed(1),
+      trend: 'live',
+      trendUp: true,
+      icon: 'query_stats',
+      sublabel: 'оценка портфеля',
+      href: '/gri',
+    },
+    {
+      label: 'Критические сигналы',
+      value: String(alerts.filter((a) => a.severity === 'critical').length),
+      trend: 'now',
+      trendUp: false,
+      icon: 'warning',
+      sublabel: 'требуют внимания',
+      href: '/analytics',
+    },
+  ]
+
   return (
     <div className="space-y-8">
       {/* Hero */}
@@ -27,48 +74,17 @@ export default function DashboardPage() {
 
         {/* KPI Grid */}
         <div className="grid grid-cols-2 gap-3 w-full lg:w-[460px] lg:shrink-0">
-          {MOCK_KPI.map((kpi) => (
-            <Link
+          {kpiCards.map((kpi) => (
+            <KpiCard
               key={kpi.label}
+              label={kpi.label}
+              value={kpi.value}
+              trend={kpi.trend}
+              trendUp={kpi.trendUp}
+              icon={kpi.icon}
+              sublabel={kpi.sublabel}
               href={kpi.href}
-              className={`
-                relative bg-surface-container-low rounded-2xl p-5 overflow-hidden
-                border border-white/[0.04] hover:border-primary/20
-                transition-all duration-200 group cursor-pointer
-                ${!kpi.trendUp ? 'hover:border-error/20' : ''}
-              `}
-            >
-              <div className={`
-                absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none rounded-2xl
-                ${kpi.trendUp
-                  ? 'bg-gradient-to-br from-primary/[0.04] to-transparent'
-                  : 'bg-gradient-to-br from-error/[0.04] to-transparent'
-                }
-              `} />
-              <div className="flex items-start justify-between mb-3">
-                <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest">
-                  {kpi.label}
-                </p>
-                <span className={`material-symbols-outlined text-base opacity-40 ${kpi.trendUp ? 'text-primary' : 'text-error'}`}>
-                  {kpi.icon}
-                </span>
-              </div>
-              <h3 className="text-3xl font-mono font-bold leading-none mb-2 text-on-surface">
-                {kpi.value}
-              </h3>
-              <div className="flex items-center gap-1.5">
-                <span className={`material-symbols-outlined text-sm ${kpi.trendUp ? 'text-primary' : 'text-error'}`}>
-                  {kpi.trendUp ? 'trending_up' : 'trending_down'}
-                </span>
-                <span className={`text-xs font-mono ${kpi.trendUp ? 'text-primary' : 'text-error'}`}>
-                  {kpi.trend}
-                </span>
-                <span className="text-[10px] text-on-surface-variant ml-1">{kpi.sublabel}</span>
-              </div>
-              <span className="material-symbols-outlined text-sm absolute bottom-4 right-4 opacity-0 group-hover:opacity-40 transition-opacity text-on-surface-variant">
-                arrow_forward
-              </span>
-            </Link>
+            />
           ))}
         </div>
       </section>
@@ -84,11 +100,11 @@ export default function DashboardPage() {
             <p className="text-xs text-on-surface-variant mt-1">Требуют немедленного внимания</p>
           </div>
           <span className="font-mono text-[10px] text-error bg-error/10 px-3 py-1 rounded-full border border-error/20">
-            {MOCK_ALERTS.filter(a => a.severity === 'critical').length} алерта
+            {alerts.filter(a => a.severity === 'critical').length} алерта
           </span>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          {MOCK_ALERTS.map((alert) => (
+          {alerts.map((alert) => (
             <AlertCard key={alert.id} {...alert} />
           ))}
         </div>
@@ -103,7 +119,7 @@ export default function DashboardPage() {
               Все клиенты →
             </Link>
           </div>
-          <ActivityFeed items={MOCK_ACTIVITY} />
+          <ActivityFeed items={activity} />
         </div>
 
         {/* Side stats */}
