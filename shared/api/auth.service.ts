@@ -122,6 +122,17 @@ const SEED_USERS: User[] = [
     createdAt: '2026-01-15T00:00:00Z',
     lastLogin: '2026-03-27T09:00:00Z',
   },
+  {
+    id: 'usr_client_002',
+    name: 'ChocoFamily Portal',
+    email: 'portal@chocofamily.kz',
+    password: btoa('ChocoFamily2026!'),
+    role: 'client',
+    organization: 'ChocoFamily',
+    position: 'E-commerce · Mature Stage',
+    createdAt: '2026-01-10T00:00:00Z',
+    lastLogin: '2026-03-30T10:00:00Z',
+  },
 ]
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
