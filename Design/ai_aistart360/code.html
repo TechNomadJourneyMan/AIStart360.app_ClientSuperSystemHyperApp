@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="ru"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>AI Performance Diagnostics | Institutional Intelligence</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;600;800&amp;family=DM+Sans:ital,wght@0,400;0,500;0,700;1,400&amp;family=JetBrains+Mono:wght@400;700&amp;family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "inverse-primary": "#006c49",
+                        "surface-container-lowest": "#0d0e12",
+                        "on-background": "#e3e2e8",
+                        "on-secondary-container": "#aeb9d0",
+                        "surface-tint": "#00e29e",
+                        "inverse-on-surface": "#2f3035",
+                        "surface-container-high": "#292a2e",
+                        "on-surface": "#e3e2e8",
+                        "error-container": "#93000a",
+                        "primary-fixed": "#47ffb8",
+                        "primary-container": "#00e5a0",
+                        "surface-container-highest": "#343439",
+                        "secondary-fixed": "#d8e3fb",
+                        "on-tertiary-container": "#754b00",
+                        "error": "#ffb4ab",
+                        "on-primary-fixed": "#002114",
+                        "background": "#0A0B0F",
+                        "on-secondary": "#263143",
+                        "on-tertiary": "#452b00",
+                        "surface-bright": "#38393e",
+                        "surface-container-low": "#111318",
+                        "tertiary-fixed-dim": "#ffb955",
+                        "on-surface-variant": "#bacbbf",
+                        "tertiary-fixed": "#ffddb4",
+                        "primary-fixed-dim": "#00e29e",
+                        "on-tertiary-fixed": "#291800",
+                        "secondary-fixed-dim": "#bcc7de",
+                        "on-tertiary-fixed-variant": "#633f00",
+                        "on-primary-fixed-variant": "#005236",
+                        "on-error-container": "#ffdad6",
+                        "on-error": "#690005",
+                        "secondary": "#bcc7de",
+                        "outline": "#84958a",
+                        "tertiary-container": "#ffbd60",
+                        "tertiary": "#ffe1bd",
+                        "on-secondary-fixed": "#111c2d",
+                        "surface": "#0A0B0F",
+                        "on-primary-container": "#006141",
+                        "inverse-surface": "#e3e2e8",
+                        "on-secondary-fixed-variant": "#3c475a",
+                        "primary": "#00E5A0",
+                        "secondary-container": "#3e495d",
+                        "surface-container": "#1f1f24",
+                        "outline-variant": "#3b4a41",
+                        "surface-dim": "#0A0B0F",
+                        "on-primary": "#003824",
+                        "surface-variant": "#343439"
+                    },
+                    fontFamily: {
+                        "headline": ["Bricolage Grotesque", "sans-serif"],
+                        "body": ["DM Sans", "sans-serif"],
+                        "mono": ["JetBrains Mono", "monospace"]
+                    },
+                    borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
+                },
+            },
+        }
+    </script>
+<style>
+        body { font-family: 'DM Sans', sans-serif; background-color: #0A0B0F; color: #e3e2e8; }
+        .font-headline { font-family: 'Bricolage Grotesque', sans-serif; }
+        .font-mono { font-family: 'JetBrains Mono', monospace; }
+        .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+        .glass-card { background: rgba(255, 255, 255, 0.04); backdrop-filter: blur(12px); }
+        .brand-gradient-text { background: linear-gradient(135deg, #6effc0 0%, #00e5a0 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .primary-gradient-bg { background: linear-gradient(135deg, #6effc0 0%, #00e5a0 100%); }
+    </style>
+</head>
+<body class="bg-background text-on-surface">
+<aside class="fixed left-0 top-0 h-full flex flex-col py-6 h-screen w-64 bg-[#111318] z-50">
+<div class="px-6 mb-10">
+<h1 class="text-xl font-bold tracking-tighter text-[#00E5A0] font-headline uppercase">Institutional Intelligence</h1>
+<p class="text-[10px] font-mono text-outline opacity-60">v4.2.0-Alpha</p>
+</div>
+<nav class="flex-1 space-y-1 px-3">
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200 ease-in-out bg-[#1f1f24] text-[#00E5A0] border-l-2 border-[#00E5A0]" href="#">
+<span class="material-symbols-outlined" data-icon="insights">insights</span>
+<span class="font-medium text-sm">Intelligence</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200 ease-in-out text-[#8B95A3] hover:bg-[#111318] hover:text-white" href="#">
+<span class="material-symbols-outlined" data-icon="Model_Training">model_training</span>
+<span class="font-medium text-sm">Models</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200 ease-in-out text-[#8B95A3] hover:bg-[#111318] hover:text-white" href="#">
+<span class="material-symbols-outlined" data-icon="monitoring">monitoring</span>
+<span class="font-medium text-sm">Analytics</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200 ease-in-out text-[#8B95A3] hover:bg-[#111318] hover:text-white" href="#">
+<span class="material-symbols-outlined" data-icon="database">database</span>
+<span class="font-medium text-sm">Datasets</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200 ease-in-out text-[#8B95A3] hover:bg-[#111318] hover:text-white" href="#">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+<span class="font-medium text-sm">Settings</span>
+</a>
+</nav>
+<div class="px-6 mt-auto">
+<button class="w-full primary-gradient-bg text-on-primary font-bold py-3 rounded-lg text-sm transition-transform active:scale-95">
+                Deploy Model
+            </button>
+</div>
+</aside>
+<main class="ml-64 min-h-screen flex flex-col">
+<header class="flex justify-between items-center w-full px-8 py-4 sticky top-0 z-40 bg-[#0A0B0F]/80 backdrop-blur-xl">
+<div class="flex items-center gap-6">
+<h2 class="font-headline font-black text-[#00E5A0] text-2xl tracking-tight">Model Performance</h2>
+<nav class="hidden md:flex items-center gap-6 ml-4">
+<a class="text-[#00E5A0] border-b-2 border-[#00E5A0] pb-2 text-sm font-medium" href="#">Overview</a>
+<a class="text-[#8B95A3] hover:text-white text-sm font-medium transition-colors" href="#">Validation</a>
+<a class="text-[#8B95A3] hover:text-white text-sm font-medium transition-colors" href="#">Drift</a>
+<a class="text-[#8B95A3] hover:text-white text-sm font-medium transition-colors" href="#">Inference</a>
+</nav>
+</div>
+<div class="flex items-center gap-4">
+<div class="flex items-center bg-surface-container-low px-3 py-1.5 rounded-lg border border-outline-variant/10">
+<span class="material-symbols-outlined text-outline text-sm mr-2" data-icon="calendar_today">calendar_today</span>
+<span class="text-xs font-mono text-on-surface-variant">01 ОКТ — 28 ОКТ 2023</span>
+</div>
+<div class="flex items-center gap-2">
+<button class="p-2 text-outline hover:text-primary transition-colors">
+<span class="material-symbols-outlined" data-icon="notifications">notifications</span>
+</button>
+<button class="p-2 text-outline hover:text-primary transition-colors">
+<span class="material-symbols-outlined" data-icon="help_outline">help_outline</span>
+</button>
+<div class="h-8 w-8 rounded-full bg-surface-container-highest flex items-center justify-center overflow-hidden border border-outline-variant/20">
+<img alt="User Avatar" class="w-full h-full object-cover" data-alt="Professional headshot of a data scientist with a confident expression in a studio setting with cool lighting" src="https://lh3.googleusercontent.com/aida-public/AB6AXuA0zs22IlB0QhyVbhnRszdPJha9xc_XOaVadCds0cyxhz3V7vsobTgVPekZ0LhtgZQwkh60E-GnjBdAkCbOa1orqMN4doCOg9LTv7UoiVmXv0z8BusDAy9Bpy7DBA0G0gtAs0t5zvT3J8hLC5js0MJ8yxNWWkD4X3SvTbZt4z-xrUFGrvkirnMe5LaCAG2WIbwkEtjcDlpfubpRZhnpnq8AioTl4qCBN-kqxdiL56fy1CAbPjM6fVMMML-DZuvvmrE6JboyQF7YgdI"/>
+</div>
+</div>
+</div>
+</header>
+<div class="p-8 space-y-8">
+<div class="flex justify-between items-end">
+<div>
+<h3 class="font-headline text-3xl font-bold tracking-tight mb-2">Диагностика производительности</h3>
+<p class="text-on-surface-variant max-w-xl">Глубокий анализ точности нейронных сетей и распределения ошибок в реальном времени.</p>
+</div>
+<div class="flex gap-3">
+<select class="bg-surface-container-low border-none text-sm font-medium rounded-lg px-4 py-2.5 focus:ring-1 focus:ring-primary/30">
+<option>Все модели</option>
+<option>Vision-Alpha-4</option>
+<option>NLP-Core-v2</option>
+</select>
+</div>
+</div>
+<section class="grid grid-cols-1 md:grid-cols-4 gap-4">
+<div class="bg-surface-container-low p-5 rounded-xl border border-outline-variant/5">
+<p class="text-[11px] font-headline uppercase tracking-widest text-outline mb-1">Accuracy</p>
+<div class="flex items-baseline justify-between">
+<h4 class="text-3xl font-mono font-bold text-primary">0.9842</h4>
+<span class="text-[10px] font-mono text-primary flex items-center gap-1">
+<span class="material-symbols-outlined text-xs" data-icon="trending_up">trending_up</span> +0.4%
+                        </span>
+</div>
+<div class="mt-4 h-1 w-full bg-surface-container-highest rounded-full overflow-hidden">
+<div class="h-full primary-gradient-bg w-[98.4%]"></div>
+</div>
+<p class="mt-2 text-[10px] font-mono text-outline">СТАТУС: ОПТИМАЛЬНО</p>
+</div>
+<div class="bg-surface-container-low p-5 rounded-xl border border-outline-variant/5">
+<p class="text-[11px] font-headline uppercase tracking-widest text-outline mb-1">Precision</p>
+<div class="flex items-baseline justify-between">
+<h4 class="text-3xl font-mono font-bold text-on-surface">0.9715</h4>
+<span class="text-[10px] font-mono text-error flex items-center gap-1">
+<span class="material-symbols-outlined text-xs" data-icon="trending_down">trending_down</span> -0.1%
+                        </span>
+</div>
+<div class="mt-4 h-1 w-full bg-surface-container-highest rounded-full overflow-hidden">
+<div class="h-full bg-on-surface w-[97.1%]"></div>
+</div>
+<p class="mt-2 text-[10px] font-mono text-outline">СТАТУС: ПРОВЕРКА</p>
+</div>
+<div class="bg-surface-container-low p-5 rounded-xl border border-outline-variant/5">
+<p class="text-[11px] font-headline uppercase tracking-widest text-outline mb-1">Recall</p>
+<div class="flex items-baseline justify-between">
+<h4 class="text-3xl font-mono font-bold text-on-surface">0.9688</h4>
+<span class="text-[10px] font-mono text-primary flex items-center gap-1">
+<span class="material-symbols-outlined text-xs" data-icon="trending_up">trending_up</span> +1.2%
+                        </span>
+</div>
+<div class="mt-4 h-1 w-full bg-surface-container-highest rounded-full overflow-hidden">
+<div class="h-full bg-on-surface w-[96.8%]"></div>
+</div>
+<p class="mt-2 text-[10px] font-mono text-outline">СТАТУС: СТАБИЛЬНО</p>
+</div>
+<div class="bg-surface-container-low p-5 rounded-xl border border-outline-variant/5">
+<p class="text-[11px] font-headline uppercase tracking-widest text-outline mb-1">F1-Score</p>
+<div class="flex items-baseline justify-between">
+<h4 class="text-3xl font-mono font-bold text-primary">0.9701</h4>
+<span class="text-[10px] font-mono text-primary flex items-center gap-1">
+<span class="material-symbols-outlined text-xs" data-icon="trending_up">trending_up</span> +0.8%
+                        </span>
+</div>
+<div class="mt-4 h-1 w-full bg-surface-container-highest rounded-full overflow-hidden">
+<div class="h-full primary-gradient-bg w-[97.0%]"></div>
+</div>
+<p class="mt-2 text-[10px] font-mono text-outline">СТАТУС: ОПТИМАЛЬНО</p>
+</div>
+</section>
+<section class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+<div class="lg:col-span-2 bg-surface-container-low rounded-xl p-8 border border-outline-variant/5 relative overflow-hidden">
+<div class="flex justify-between items-start mb-12">
+<div>
+<h5 class="font-headline text-lg font-bold">Тренды точности (24ч)</h5>
+<p class="text-xs text-outline font-mono">ТЕКУЩАЯ ВЫБОРКА: 1.2M ИНФЕРЕНСОВ</p>
+</div>
+<div class="flex items-center gap-4 text-[10px] font-mono">
+<div class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-primary"></span> FACTUAL</div>
+<div class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-outline"></span> BASELINE</div>
+</div>
+</div>
+<div class="h-64 flex items-end justify-between gap-1 relative">
+<div class="absolute inset-0 flex flex-col justify-between opacity-10 pointer-events-none">
+<div class="border-t border-outline w-full"></div>
+<div class="border-t border-outline w-full"></div>
+<div class="border-t border-outline w-full"></div>
+<div class="border-t border-outline w-full"></div>
+</div>
+<div class="w-full h-full flex items-end gap-1">
+<div class="flex-1 bg-primary/20 hover:bg-primary/40 transition-colors h-[60%] rounded-t-sm"></div>
+<div class="flex-1 bg-primary/30 hover:bg-primary/50 transition-colors h-[75%] rounded-t-sm"></div>
+<div class="flex-1 bg-primary/25 hover:bg-primary/45 transition-colors h-[65%] rounded-t-sm"></div>
+<div class="flex-1 bg-primary/40 hover:bg-primary/60 transition-colors h-[85%] rounded-t-sm"></div>
+<div class="flex-1 bg-primary/50 hover:bg-primary/70 transition-colors h-[92%] rounded-t-sm"></div>
+<div class="flex-1 bg-primary/45 hover:bg-primary/65 transition-colors h-[80%] rounded-t-sm"></div>
+<div class="flex-1 bg-primary/60 hover:bg-primary/80 transition-colors h-[95%] rounded-t-sm"></div>
+<div class="flex-1 bg-primary/55 hover:bg-primary/75 transition-colors h-[88%] rounded-t-sm"></div>
+<div class="flex-1 bg-primary/70 hover:bg-primary/90 transition-colors h-[99%] rounded-t-sm"></div>
+<div class="flex-1 bg-primary/65 hover:bg-primary/85 transition-colors h-[90%] rounded-t-sm"></div>
+</div>
+</div>
+<div class="flex justify-between mt-4 text-[10px] font-mono text-outline uppercase">
+<span>00:00</span>
+<span>06:00</span>
+<span>12:00</span>
+<span>18:00</span>
+<span>23:59</span>
+</div>
+</div>
+<div class="bg-surface-container-low rounded-xl p-8 border border-outline-variant/5">
+<h5 class="font-headline text-lg font-bold mb-8">Распределение ошибок</h5>
+<div class="relative w-full aspect-square flex items-center justify-center">
+<svg class="w-full h-full" viewbox="0 0 100 100">
+<circle class="text-outline/20" cx="50" cy="50" fill="none" r="45" stroke="currentColor" stroke-width="0.5"></circle>
+<circle class="text-outline/20" cx="50" cy="50" fill="none" r="30" stroke="currentColor" stroke-width="0.5"></circle>
+<circle class="text-outline/20" cx="50" cy="50" fill="none" r="15" stroke="currentColor" stroke-width="0.5"></circle>
+<path class="text-outline/20" d="M 50 5 L 50 95 M 5 50 L 95 50" stroke="currentColor" stroke-width="0.5"></path>
+<polygon class="fill-primary/20 stroke-primary stroke-[1]" points="50,20 80,45 65,75 35,70 20,40"></polygon>
+</svg>
+</div>
+<div class="mt-8 space-y-3">
+<div class="flex justify-between items-center">
+<span class="text-xs font-medium text-outline">False Positives</span>
+<span class="text-xs font-mono font-bold">12.4%</span>
+</div>
+<div class="flex justify-between items-center">
+<span class="text-xs font-medium text-outline">False Negatives</span>
+<span class="text-xs font-mono font-bold">8.1%</span>
+</div>
+<div class="flex justify-between items-center">
+<span class="text-xs font-medium text-outline">Data Drift</span>
+<span class="text-xs font-mono font-bold">4.2%</span>
+</div>
+</div>
+</div>
+</section>
+<section class="bg-surface-container-low rounded-xl overflow-hidden border border-outline-variant/5">
+<div class="px-8 py-6 border-b border-outline-variant/5 flex justify-between items-center">
+<h5 class="font-headline text-lg font-bold">Сравнение моделей</h5>
+<button class="text-primary text-xs font-mono font-bold hover:underline">ЭКСПОРТ CSV</button>
+</div>
+<div class="overflow-x-auto">
+<table class="w-full text-left">
+<thead>
+<tr class="text-[11px] font-headline uppercase tracking-widest text-outline bg-surface-container-highest/30">
+<th class="px-8 py-4 font-semibold">Название модели</th>
+<th class="px-4 py-4 font-semibold">Версия</th>
+<th class="px-4 py-4 font-semibold">Accuracy</th>
+<th class="px-4 py-4 font-semibold">Precision</th>
+<th class="px-4 py-4 font-semibold">F1-Score</th>
+<th class="px-8 py-4 font-semibold text-right">Статус</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-outline-variant/5">
+<tr class="hover:bg-surface-container-highest/20 transition-colors group">
+<td class="px-8 py-5 font-medium text-sm">Vision-Alpha-4</td>
+<td class="px-4 py-5 font-mono text-xs opacity-60">v4.2.1</td>
+<td class="px-4 py-5 font-mono text-sm text-primary">0.9842</td>
+<td class="px-4 py-5 font-mono text-sm">0.9715</td>
+<td class="px-4 py-5 font-mono text-sm">0.9701</td>
+<td class="px-8 py-5 text-right">
+<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-primary/10 text-primary text-[10px] font-bold uppercase tracking-tight">
+<span class="w-1 h-1 rounded-full bg-primary"></span> Активна
+                                    </span>
+</td>
+</tr>
+<tr class="hover:bg-surface-container-highest/20 transition-colors group">
+<td class="px-8 py-5 font-medium text-sm">NLP-Core-v2</td>
+<td class="px-4 py-5 font-mono text-xs opacity-60">v2.0.8</td>
+<td class="px-4 py-5 font-mono text-sm">0.9412</td>
+<td class="px-4 py-5 font-mono text-sm">0.9388</td>
+<td class="px-4 py-5 font-mono text-sm">0.9400</td>
+<td class="px-8 py-5 text-right">
+<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-secondary-container/50 text-on-secondary-container text-[10px] font-bold uppercase tracking-tight">
+<span class="w-1 h-1 rounded-full bg-on-secondary-container"></span> В архиве
+                                    </span>
+</td>
+</tr>
+<tr class="hover:bg-surface-container-highest/20 transition-colors group">
+<td class="px-8 py-5 font-medium text-sm">Decision-Tree-Optim</td>
+<td class="px-4 py-5 font-mono text-xs opacity-60">v1.1.0</td>
+<td class="px-4 py-5 font-mono text-sm text-error">0.8921</td>
+<td class="px-4 py-5 font-mono text-sm text-error">0.8755</td>
+<td class="px-4 py-5 font-mono text-sm text-error">0.8838</td>
+<td class="px-8 py-5 text-right">
+<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-error-container/20 text-error text-[10px] font-bold uppercase tracking-tight">
+<span class="w-1 h-1 rounded-full bg-error"></span> Ошибка
+                                    </span>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+</div>
+<footer class="mt-auto px-8 py-6 border-t border-outline-variant/10 flex justify-between items-center text-[10px] font-mono text-outline uppercase tracking-wider">
+<div>© 2023 AIStart360 Institutional Intelligence. Все права защищены.</div>
+<div class="flex items-center gap-6">
+<div class="flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-primary animate-pulse"></span>
+                    СИСТЕМА: ONLINE
+                </div>
+<div class="flex items-center gap-2">
+                    LATENCY: 14MS
+                </div>
+<div class="flex items-center gap-2 uppercase">
+                    ЛОКАЦИЯ: МСК-ЦЕНТР
+                </div>
+</div>
+</footer>
+</main>
+</body></html>

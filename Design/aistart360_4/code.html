@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="ru"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Profit Analysis | Institutional Intelligence</title>
+<!-- Fonts -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,300..800&amp;family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&amp;family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&amp;family=Space+Grotesk:wght@300..700&amp;family=Inter:wght@100..900&amp;display=swap" rel="stylesheet"/>
+<!-- Material Symbols -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Tailwind -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "on-secondary-fixed-variant": "#3c475a",
+              "inverse-primary": "#006c49",
+              "surface-variant": "#343439",
+              "surface-tint": "#00e29e",
+              "inverse-surface": "#e3e2e8",
+              "on-surface": "#e3e2e8",
+              "on-background": "#e3e2e8",
+              "outline": "#84958a",
+              "on-surface-variant": "#bacbbf",
+              "primary": "#6effc0",
+              "primary-fixed": "#47ffb8",
+              "inverse-on-surface": "#2f3035",
+              "surface-container-lowest": "#0d0e12",
+              "on-tertiary": "#452b00",
+              "surface-container-high": "#292a2e",
+              "surface-container": "#1f1f24",
+              "secondary-fixed": "#d8e3fb",
+              "surface-container-low": "#1a1b20",
+              "on-error-container": "#ffdad6",
+              "surface": "#121317",
+              "on-tertiary-fixed": "#291800",
+              "tertiary-container": "#ffbd60",
+              "on-secondary-container": "#aeb9d0",
+              "on-tertiary-container": "#754b00",
+              "on-primary-fixed": "#002114",
+              "outline-variant": "#3b4a41",
+              "on-tertiary-fixed-variant": "#633f00",
+              "secondary-fixed-dim": "#bcc7de",
+              "error-container": "#93000a",
+              "error": "#ffb4ab",
+              "tertiary-fixed-dim": "#ffb955",
+              "primary-fixed-dim": "#00e29e",
+              "tertiary-fixed": "#ffddb4",
+              "surface-dim": "#121317",
+              "surface-container-highest": "#343439",
+              "on-primary-fixed-variant": "#005236",
+              "primary-container": "#00e5a0",
+              "surface-bright": "#38393e",
+              "on-error": "#690005",
+              "tertiary": "#ffe1bd",
+              "on-primary-container": "#006141",
+              "background": "#121317",
+              "secondary": "#bcc7de",
+              "secondary-container": "#3e495d",
+              "on-secondary-fixed": "#111c2d",
+              "on-primary": "#003824",
+              "on-secondary": "#263143"
+            },
+            fontFamily: {
+              "headline": ["Bricolage Grotesque", "Space Grotesk"],
+              "body": ["DM Sans", "Inter"],
+              "label": ["Space Grotesk"],
+              "mono": ["JetBrains Mono"]
+            },
+            borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
+          },
+        },
+      }
+    </script>
+<style>
+      .material-symbols-outlined {
+        font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+      }
+      body {
+        background-color: #0A0B0F;
+        color: #e3e2e8;
+        font-family: 'DM Sans', sans-serif;
+      }
+      .glass-card {
+        background: rgba(255, 255, 255, 0.04);
+        backdrop-filter: blur(12px);
+      }
+      .chart-gradient-bg {
+        background: linear-gradient(180deg, rgba(0, 229, 160, 0.15) 0%, rgba(0, 229, 160, 0) 100%);
+      }
+      .primary-gradient-btn {
+        background: linear-gradient(135deg, #6effc0 0%, #00e5a0 100%);
+      }
+      /* Hide scrollbar for clean institutional look */
+      ::-webkit-scrollbar { width: 4px; }
+      ::-webkit-scrollbar-track { background: transparent; }
+      ::-webkit-scrollbar-thumb { background: #1f1f24; border-radius: 10px; }
+    </style>
+</head>
+<body class="min-h-screen">
+<!-- SideNavBar Anchor -->
+<aside class="h-screen w-64 fixed left-0 top-0 bg-[#0A0B0F] flex flex-col py-6 border-r-0 z-50">
+<div class="px-6 mb-10">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded bg-primary-container flex items-center justify-center">
+<span class="material-symbols-outlined text-on-primary text-sm" style="font-variation-settings: 'FILL' 1;">analytics</span>
+</div>
+<div>
+<h1 class="font-['Bricolage_Grotesque'] text-lg font-bold text-[#00E5A0]">AIStart360</h1>
+<p class="text-[10px] uppercase tracking-widest text-[#8B95A3] font-medium">Enterprise Tier</p>
+</div>
+</div>
+</div>
+<nav class="flex-1 space-y-1">
+<!-- Active State Logic: Profit Analysis is the current page -->
+<a class="flex items-center gap-3 py-3 px-4 mx-2 text-[#8B95A3] hover:bg-[#111318] transition-colors rounded-lg group" href="#">
+<span class="material-symbols-outlined text-xl">dashboard</span>
+<span class="font-['DM_Sans'] font-medium text-sm">Dashboard</span>
+</a>
+<a class="flex items-center gap-3 py-3 px-4 bg-[#1f1f24] text-[#00E5A0] rounded-lg mx-2 translate-x-1 transition-transform" href="#">
+<span class="material-symbols-outlined text-xl" style="font-variation-settings: 'FILL' 1;">payments</span>
+<span class="font-['DM_Sans'] font-medium text-sm">Profit Analysis</span>
+</a>
+<a class="flex items-center gap-3 py-3 px-4 mx-2 text-[#8B95A3] hover:bg-[#111318] transition-colors rounded-lg" href="#">
+<span class="material-symbols-outlined text-xl">security</span>
+<span class="font-['DM_Sans'] font-medium text-sm">Risk Metrics</span>
+</a>
+<a class="flex items-center gap-3 py-3 px-4 mx-2 text-[#8B95A3] hover:bg-[#111318] transition-colors rounded-lg" href="#">
+<span class="material-symbols-outlined text-xl">monitoring</span>
+<span class="font-['DM_Sans'] font-medium text-sm">Market Data</span>
+</a>
+<a class="flex items-center gap-3 py-3 px-4 mx-2 text-[#8B95A3] hover:bg-[#111318] transition-colors rounded-lg" href="#">
+<span class="material-symbols-outlined text-xl">description</span>
+<span class="font-['DM_Sans'] font-medium text-sm">Reporting</span>
+</a>
+</nav>
+<div class="px-4 mt-auto space-y-4">
+<button class="w-full py-2.5 primary-gradient-btn text-on-primary font-bold rounded-lg text-sm flex items-center justify-center gap-2 shadow-lg shadow-primary/10 active:scale-95 transition-all">
+<span class="material-symbols-outlined text-lg">add</span>
+                New Analysis
+            </button>
+<div class="pt-4 space-y-1">
+<a class="flex items-center gap-3 py-2 px-4 text-[#8B95A3] hover:text-[#00E5A0] transition-colors" href="#">
+<span class="material-symbols-outlined text-xl">help_outline</span>
+<span class="text-xs font-medium">Support</span>
+</a>
+<a class="flex items-center gap-3 py-2 px-4 text-[#8B95A3] hover:text-error transition-colors" href="#">
+<span class="material-symbols-outlined text-xl">logout</span>
+<span class="text-xs font-medium">Sign Out</span>
+</a>
+</div>
+</div>
+</aside>
+<!-- Main Content -->
+<main class="ml-64 min-h-screen bg-[#0A0B0F]">
+<!-- TopAppBar Anchor -->
+<header class="w-full top-0 sticky z-40 bg-[#111318]/80 backdrop-blur-xl flex justify-between items-center px-8 py-4 w-full">
+<div class="flex items-center gap-8">
+<div class="relative group">
+<span class="absolute inset-y-0 left-3 flex items-center text-[#8B95A3] group-focus-within:text-[#00E5A0] transition-colors">
+<span class="material-symbols-outlined text-lg">search</span>
+</span>
+<input class="bg-[#1f1f24] border-none rounded-lg pl-10 pr-4 py-2 text-sm text-white w-64 focus:ring-1 focus:ring-primary-container focus:bg-[#1a1b20] transition-all" placeholder="Поиск по аналитике..." type="text"/>
+</div>
+<nav class="hidden md:flex items-center gap-6">
+<a class="text-[#8B95A3] hover:text-white transition-colors text-sm font-medium" href="#">Portfolio</a>
+<a class="text-[#00E5A0] border-b-2 border-[#00E5A0] pb-1 text-sm font-medium" href="#">Analysis</a>
+<a class="text-[#8B95A3] hover:text-white transition-colors text-sm font-medium" href="#">Treasury</a>
+</nav>
+</div>
+<div class="flex items-center gap-4">
+<button class="px-4 py-2 bg-[#1f1f24] text-white text-xs font-bold rounded-lg hover:bg-[#292a2e] transition-colors flex items-center gap-2">
+<span class="material-symbols-outlined text-sm">ios_share</span>
+                    Export Report
+                </button>
+<div class="flex items-center gap-1">
+<button class="p-2 text-[#8B95A3] hover:text-white hover:bg-[#1f1f24] rounded-full transition-all">
+<span class="material-symbols-outlined">notifications</span>
+</button>
+<button class="p-2 text-[#8B95A3] hover:text-white hover:bg-[#1f1f24] rounded-full transition-all">
+<span class="material-symbols-outlined">settings</span>
+</button>
+</div>
+<div class="h-8 w-8 rounded-full overflow-hidden border border-outline-variant/30">
+<img alt="User Profile Avatar" class="w-full h-full object-cover" data-alt="professional portrait of a financial analyst in dark studio lighting with sharp features and a serious focused expression" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAvugqhxkP3faRv-N2qmU_jQ-ct14tsPpELgO3Cs1DgqijsLNQyakxrDBY6NN9uxZK6Sk9EekGN1wiuRHYmlN9Tu25mKPMZINS63ev--5NlcD2VbL9-hBFK8WvRtpBx7Xudln318SnVw48n3AY26XZ22wkrPIZ8u95h1sShTMxjRV98MAmeWpXv91A4IVolvyD8bCE-T0zMwR32IpcbJ4FLW2clyZUPlk80stCFn0jIEfqWEo1iE150X1ko89Nohzvr5sH74Z1mAl8"/>
+</div>
+</div>
+</header>
+<!-- Content Canvas -->
+<div class="p-8 max-w-[1600px] mx-auto space-y-10">
+<!-- Hero KPI Section -->
+<div class="flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
+<div>
+<h2 class="font-['Bricolage_Grotesque'] text-4xl font-extrabold text-white tracking-tight mb-2">Анализ Прибыли</h2>
+<p class="font-['DM_Sans'] text-[#8B95A3] max-w-xl">Детальный обзор прибыльности предприятия с использованием прогнозных моделей ИИ и сегментации затрат.</p>
+</div>
+<div class="flex gap-4">
+<div class="bg-surface-container-low p-6 rounded-xl min-w-[200px] relative overflow-hidden group">
+<p class="text-xs font-['DM_Sans'] text-[#8B95A3] uppercase tracking-widest mb-2">Текущая Прибыль</p>
+<div class="flex items-baseline gap-2">
+<span class="font-['JetBrains_Mono'] text-3xl font-bold text-white">580</span>
+<span class="font-['DM_Sans'] text-lg text-[#8B95A3]">млн ₸</span>
+</div>
+<div class="mt-2 flex items-center gap-1 text-[#00E5A0]">
+<span class="material-symbols-outlined text-sm">trending_up</span>
+<span class="text-xs font-bold font-['JetBrains_Mono']">+12% vs target</span>
+</div>
+<div class="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+<span class="material-symbols-outlined text-4xl text-primary">payments</span>
+</div>
+</div>
+<div class="bg-surface-container-low p-6 rounded-xl min-w-[200px] border-l-2 border-primary-container">
+<p class="text-xs font-['DM_Sans'] text-[#8B95A3] uppercase tracking-widest mb-2">Confidence Score</p>
+<div class="font-['JetBrains_Mono'] text-3xl font-bold text-white">94%</div>
+<div class="mt-2 w-full bg-[#1f1f24] h-1.5 rounded-full overflow-hidden">
+<div class="bg-primary h-full w-[94%]"></div>
+</div>
+<p class="mt-2 text-[10px] text-[#8B95A3]">Прогноз на основе 128 факторов</p>
+</div>
+</div>
+</div>
+<!-- Main Analysis Grid -->
+<div class="grid grid-cols-12 gap-6">
+<!-- Profit Dynamics Chart -->
+<div class="col-span-12 lg:col-span-8 bg-surface-container-low rounded-xl p-8 flex flex-col">
+<div class="flex justify-between items-center mb-10">
+<div>
+<h3 class="font-['Bricolage_Grotesque'] text-xl font-bold text-white">Динамика Прибыли</h3>
+<p class="text-xs text-[#8B95A3]">Ежемесячная чистая прибыль 2024-2025</p>
+</div>
+<div class="flex gap-4 items-center">
+<div class="flex items-center gap-2">
+<span class="w-3 h-3 rounded-full bg-primary shadow-[0_0_8px_rgba(0,229,160,0.5)]"></span>
+<span class="text-xs text-[#8B95A3]">Факт</span>
+</div>
+<div class="flex items-center gap-2">
+<span class="w-3 h-0.5 bg-[#8B95A3] opacity-40"></span>
+<span class="text-xs text-[#8B95A3]">Цель</span>
+</div>
+</div>
+</div>
+<div class="flex-1 min-h-[300px] relative flex items-end justify-between gap-1 group">
+<!-- Mock Area Chart -->
+<div class="absolute inset-0 chart-gradient-bg opacity-30 pointer-events-none"></div>
+<svg class="absolute inset-0 w-full h-full overflow-visible" preserveaspectratio="none">
+<path d="M0,180 Q100,140 200,160 T400,100 T600,80 T800,120 T1000,40" fill="none" stroke="#00E5A0" stroke-linecap="round" stroke-width="3"></path>
+<path d="M0,200 Q100,180 200,190 T400,150 T600,140 T800,160 T1000,100" fill="none" opacity="0.3" stroke="#8B95A3" stroke-dasharray="8,4" stroke-width="1.5"></path>
+</svg>
+<!-- X-Axis Labels -->
+<div class="absolute -bottom-6 w-full flex justify-between px-2 text-[10px] text-[#8B95A3] font-['JetBrains_Mono']">
+<span>JAN 24</span><span>MAR 24</span><span>JUN 24</span><span>SEP 24</span><span>DEC 24</span><span>MAR 25</span>
+</div>
+</div>
+</div>
+<!-- Cost Structure Breakdown -->
+<div class="col-span-12 lg:col-span-4 bg-surface-container-low rounded-xl p-8">
+<h3 class="font-['Bricolage_Grotesque'] text-xl font-bold text-white mb-6">Структура Расходов</h3>
+<div class="space-y-4">
+<div class="group cursor-default">
+<div class="flex justify-between text-xs mb-1">
+<span class="text-[#8B95A3]">COGS</span>
+<span class="font-['JetBrains_Mono'] text-white">42%</span>
+</div>
+<div class="h-10 w-full bg-[#1f1f24] rounded overflow-hidden flex">
+<div class="h-full bg-primary-container/20 group-hover:bg-primary-container transition-colors" style="width: 42%"></div>
+</div>
+</div>
+<div class="group cursor-default">
+<div class="flex justify-between text-xs mb-1">
+<span class="text-[#8B95A3]">OPEX</span>
+<span class="font-['JetBrains_Mono'] text-white">28%</span>
+</div>
+<div class="h-10 w-full bg-[#1f1f24] rounded overflow-hidden">
+<div class="h-full bg-primary-container/20 group-hover:bg-primary-container transition-colors" style="width: 28%"></div>
+</div>
+</div>
+<div class="group cursor-default">
+<div class="flex justify-between text-xs mb-1">
+<span class="text-[#8B95A3]">Marketing</span>
+<span class="font-['JetBrains_Mono'] text-white">18%</span>
+</div>
+<div class="h-10 w-full bg-[#1f1f24] rounded overflow-hidden">
+<div class="h-full bg-primary-container/20 group-hover:bg-primary-container transition-colors" style="width: 18%"></div>
+</div>
+</div>
+<div class="group cursor-default p-4 bg-[#291800]/20 border-l-2 border-[#F5A623] rounded mt-6">
+<div class="flex items-center gap-2 mb-2">
+<span class="material-symbols-outlined text-[#F5A623] text-sm">warning</span>
+<span class="text-[10px] font-bold text-[#F5A623] uppercase">Margin Leak Detected</span>
+</div>
+<p class="text-[11px] text-[#8B95A3]">Необоснованный рост R&amp;D расходов в B2B сегменте (+8.4% WoW)</p>
+</div>
+</div>
+</div>
+<!-- Profit Drivers -->
+<div class="col-span-12 lg:col-span-6 bg-surface-container-low rounded-xl p-8">
+<h3 class="font-['Bricolage_Grotesque'] text-xl font-bold text-white mb-6">Драйверы Роста</h3>
+<div class="space-y-1">
+<div class="flex items-center justify-between p-4 hover:bg-surface-container transition-all rounded-lg cursor-pointer group">
+<div class="flex items-center gap-4">
+<div class="w-10 h-10 rounded-lg bg-[#111318] flex items-center justify-center text-primary">
+<span class="material-symbols-outlined">payments</span>
+</div>
+<div>
+<p class="text-sm font-bold text-white">Оптимизация цен B2B</p>
+<p class="text-xs text-[#8B95A3]">Пересмотр тарифов Enterprise сегмента</p>
+</div>
+</div>
+<div class="text-right">
+<p class="font-['JetBrains_Mono'] text-sm text-primary">+42.5M ₸</p>
+<div class="flex items-center justify-end gap-1 mt-1">
+<div class="h-1 w-12 bg-[#1f1f24] rounded-full overflow-hidden">
+<div class="h-full bg-primary w-4/5"></div>
+</div>
+<span class="text-[8px] text-[#8B95A3] font-bold">8.5/10</span>
+</div>
+</div>
+</div>
+<div class="flex items-center justify-between p-4 hover:bg-surface-container transition-all rounded-lg cursor-pointer group">
+<div class="flex items-center gap-4">
+<div class="w-10 h-10 rounded-lg bg-[#111318] flex items-center justify-center text-primary">
+<span class="material-symbols-outlined">bolt</span>
+</div>
+<div>
+<p class="text-sm font-bold text-white">Операционная эффективность</p>
+<p class="text-xs text-[#8B95A3]">Снижение затрат на логистику на 12%</p>
+</div>
+</div>
+<div class="text-right">
+<p class="font-['JetBrains_Mono'] text-sm text-primary">+28.1M ₸</p>
+<div class="flex items-center justify-end gap-1 mt-1">
+<div class="h-1 w-12 bg-[#1f1f24] rounded-full overflow-hidden">
+<div class="h-full bg-primary w-3/5"></div>
+</div>
+<span class="text-[8px] text-[#8B95A3] font-bold">6.2/10</span>
+</div>
+</div>
+</div>
+<div class="flex items-center justify-between p-4 hover:bg-surface-container transition-all rounded-lg cursor-pointer group">
+<div class="flex items-center gap-4">
+<div class="w-10 h-10 rounded-lg bg-[#111318] flex items-center justify-center text-primary">
+<span class="material-symbols-outlined">ads_click</span>
+</div>
+<div>
+<p class="text-sm font-bold text-white">LTV/CAC Ratio</p>
+<p class="text-xs text-[#8B95A3]">Улучшение удержания клиентов Q3</p>
+</div>
+</div>
+<div class="text-right">
+<p class="font-['JetBrains_Mono'] text-sm text-primary">+15.8M ₸</p>
+<div class="flex items-center justify-end gap-1 mt-1">
+<div class="h-1 w-12 bg-[#1f1f24] rounded-full overflow-hidden">
+<div class="h-full bg-primary w-2/5"></div>
+</div>
+<span class="text-[8px] text-[#8B95A3] font-bold">4.1/10</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- AI Projections (Future State) -->
+<div class="col-span-12 lg:col-span-6 bg-[#00E5A0]/5 border border-[#00E5A0]/10 rounded-xl p-8 relative overflow-hidden">
+<div class="absolute -right-20 -top-20 w-64 h-64 bg-primary/10 blur-[100px]"></div>
+<div class="relative z-10 flex flex-col h-full">
+<div class="flex items-center gap-2 mb-6">
+<span class="material-symbols-outlined text-primary text-xl">auto_awesome</span>
+<h3 class="font-['Bricolage_Grotesque'] text-xl font-bold text-white">Прогноз ИИ 2026</h3>
+</div>
+<div class="grid grid-cols-3 gap-4 flex-1">
+<div class="bg-[#111318] p-4 rounded-lg flex flex-col justify-center text-center">
+<p class="text-[10px] text-[#8B95A3] uppercase tracking-tighter mb-1">Base</p>
+<p class="font-['JetBrains_Mono'] text-lg font-bold text-white">610M</p>
+<p class="text-[10px] text-[#8B95A3] mt-1">+5% YoY</p>
+</div>
+<div class="bg-primary/20 p-4 rounded-lg flex flex-col justify-center text-center ring-1 ring-primary/40">
+<p class="text-[10px] text-primary uppercase tracking-tighter font-bold mb-1">Target</p>
+<p class="font-['JetBrains_Mono'] text-lg font-bold text-white">740M</p>
+<p class="text-[10px] text-primary mt-1">+27% YoY</p>
+</div>
+<div class="bg-[#111318] p-4 rounded-lg flex flex-col justify-center text-center">
+<p class="text-[10px] text-[#8B95A3] uppercase tracking-tighter mb-1">Aggressive</p>
+<p class="font-['JetBrains_Mono'] text-lg font-bold text-white">820M</p>
+<p class="text-[10px] text-[#8B95A3] mt-1">+41% YoY</p>
+</div>
+</div>
+<div class="mt-8 p-4 bg-[#111318] rounded-lg">
+<div class="flex justify-between items-center mb-4">
+<p class="text-xs font-bold text-white">Вероятностное распределение</p>
+<span class="text-[10px] font-['JetBrains_Mono'] text-[#8B95A3]">Q1-Q2 2026</span>
+</div>
+<div class="flex h-3 w-full rounded-full overflow-hidden">
+<div class="bg-primary/20 w-1/4"></div>
+<div class="bg-primary w-2/4"></div>
+<div class="bg-primary/60 w-1/4"></div>
+</div>
+<div class="flex justify-between mt-2 text-[9px] text-[#8B95A3] uppercase font-bold tracking-widest">
+<span>Low Risk</span>
+<span>Target Region</span>
+<span>Volatility</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Contextual Footer Metadata -->
+<div class="flex justify-between items-center py-6 border-t border-outline-variant/10">
+<div class="flex items-center gap-6">
+<div class="flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-[#00E5A0] animate-pulse"></span>
+<span class="text-[10px] text-[#8B95A3] font-medium uppercase tracking-widest">System Status: Optimal</span>
+</div>
+<div class="text-[10px] text-[#8B95A3] font-['JetBrains_Mono']">Last update: 2025-05-24 14:32:01 UTC</div>
+</div>
+<div class="flex gap-4">
+<button class="text-[10px] font-bold text-[#8B95A3] hover:text-white transition-colors uppercase tracking-widest">Documentation</button>
+<button class="text-[10px] font-bold text-[#8B95A3] hover:text-white transition-colors uppercase tracking-widest">Audit Logs</button>
+</div>
+</div>
+</div>
+</main>
+</body></html>

@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="ru"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>AIStart360 | Точка А: Текущее состояние</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;600;700;800&amp;family=DM+Sans:wght@400;500;700&amp;family=JetBrains+Mono:wght@500;700&amp;family=Inter:wght@400;500;600&amp;family=Space+Grotesk:wght@500;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .glass-card {
+            background: rgba(255, 255, 255, 0.04);
+            backdrop-filter: blur(12px);
+        }
+        .primary-gradient-bg {
+            background: linear-gradient(135deg, #6effc0 0%, #00e5a0 100%);
+        }
+    </style>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "on-secondary": "#263143",
+                        "surface-container-lowest": "#0d0e12",
+                        "on-tertiary-fixed-variant": "#633f00",
+                        "primary-fixed-dim": "#00e29e",
+                        "surface-tint": "#00e29e",
+                        "outline": "#84958a",
+                        "tertiary-fixed": "#ffddb4",
+                        "secondary-fixed-dim": "#bcc7de",
+                        "primary-fixed": "#47ffb8",
+                        "error": "#ffb4ab",
+                        "primary-container": "#00e5a0",
+                        "tertiary-fixed-dim": "#ffb955",
+                        "primary": "#6effc0",
+                        "inverse-surface": "#e3e2e8",
+                        "on-background": "#e3e2e8",
+                        "on-error-container": "#ffdad6",
+                        "inverse-primary": "#006c49",
+                        "on-tertiary-fixed": "#291800",
+                        "surface-container-low": "#1a1b20",
+                        "on-tertiary-container": "#754b00",
+                        "on-primary-container": "#006141",
+                        "surface-dim": "#121317",
+                        "outline-variant": "#3b4a41",
+                        "on-tertiary": "#452b00",
+                        "on-primary": "#003824",
+                        "surface-container-high": "#292a2e",
+                        "on-error": "#690005",
+                        "surface-bright": "#38393e",
+                        "surface-container": "#1f1f24",
+                        "surface": "#121317",
+                        "secondary-fixed": "#d8e3fb",
+                        "inverse-on-surface": "#2f3035",
+                        "secondary": "#bcc7de",
+                        "on-secondary-fixed": "#111c2d",
+                        "background": "#121317",
+                        "tertiary-container": "#ffbd60",
+                        "surface-variant": "#343439",
+                        "error-container": "#93000a",
+                        "on-secondary-container": "#aeb9d0",
+                        "on-surface-variant": "#bacbbf",
+                        "on-surface": "#e3e2e8",
+                        "on-primary-fixed": "#002114",
+                        "on-primary-fixed-variant": "#005236",
+                        "tertiary": "#ffe1bd",
+                        "surface-container-highest": "#343439",
+                        "on-secondary-fixed-variant": "#3c475a",
+                        "secondary-container": "#3e495d"
+                    },
+                    fontFamily: {
+                        "headline": ["Bricolage Grotesque"],
+                        "body": ["DM Sans"],
+                        "label": ["Space Grotesk"],
+                        "mono": ["JetBrains Mono"]
+                    },
+                    borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
+                },
+            },
+        }
+    </script>
+</head>
+<body class="bg-[#0A0B0F] text-on-surface font-body selection:bg-primary selection:text-on-primary">
+<!-- Side Navigation Shell -->
+<aside class="h-screen w-72 flex flex-col fixed left-0 top-0 bg-[#111318] z-50">
+<div class="p-8">
+<h1 class="font-headline text-xl font-bold text-white tracking-tighter">AIStart360</h1>
+<p class="text-[10px] uppercase tracking-[0.2em] text-[#8B95A3] mt-1 font-headline">Institutional Intelligence</p>
+</div>
+<nav class="flex-1 space-y-1 mt-4">
+<a class="text-[#8B95A3] hover:text-white mx-2 px-4 py-3 transition-colors flex items-center gap-3" href="#">
+<span class="material-symbols-outlined" data-icon="grid_view">grid_view</span>
+<span class="font-['DM_Sans'] text-sm tracking-tight">Dashboard</span>
+</a>
+<a class="bg-[#1f1f24] text-[#00E5A0] rounded-lg mx-2 px-4 py-3 font-semibold transition-all flex items-center gap-3" href="#">
+<span class="material-symbols-outlined" data-icon="analytics">analytics</span>
+<span class="font-['DM_Sans'] text-sm tracking-tight">Diagnostic Hub</span>
+</a>
+<a class="text-[#8B95A3] hover:text-white mx-2 px-4 py-3 transition-colors flex items-center gap-3" href="#">
+<span class="material-symbols-outlined" data-icon="inventory_2">inventory_2</span>
+<span class="font-['DM_Sans'] text-sm tracking-tight">Strategic Assets</span>
+</a>
+<a class="text-[#8B95A3] hover:text-white mx-2 px-4 py-3 transition-colors flex items-center gap-3" href="#">
+<span class="material-symbols-outlined" data-icon="hub">hub</span>
+<span class="font-['DM_Sans'] text-sm tracking-tight">Intelligence Feed</span>
+</a>
+<a class="text-[#8B95A3] hover:text-white mx-2 px-4 py-3 transition-colors flex items-center gap-3" href="#">
+<span class="material-symbols-outlined" data-icon="monitoring">monitoring</span>
+<span class="font-['DM_Sans'] text-sm tracking-tight">Performance Matrix</span>
+</a>
+<a class="text-[#8B95A3] hover:text-white mx-2 px-4 py-3 transition-colors flex items-center gap-3" href="#">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+<span class="font-['DM_Sans'] text-sm tracking-tight">Institutional Settings</span>
+</a>
+</nav>
+<div class="p-6">
+<button class="w-full py-3 px-4 primary-gradient-bg text-on-primary font-bold rounded-lg text-sm flex items-center justify-center gap-2 active:opacity-80 transition-all">
+<span class="material-symbols-outlined" data-icon="data_exploration">data_exploration</span>
+                Generate Report
+            </button>
+</div>
+</aside>
+<!-- Main Content Area -->
+<main class="ml-72 min-h-screen">
+<!-- Top App Bar Shell -->
+<header class="fixed top-0 right-0 w-[calc(100%-18rem)] z-40 bg-[#0A0B0F]/80 backdrop-blur-xl flex justify-between items-center px-8 py-4 h-16">
+<div class="flex items-center gap-8">
+<div class="flex gap-6 items-center">
+<span class="font-headline uppercase tracking-widest text-[10px] text-white font-medium border-b-0">Diagnostic</span>
+<span class="font-headline uppercase tracking-widest text-[10px] text-[#8B95A3] hover:text-[#00E5A0] transition-colors cursor-pointer">Business Audit</span>
+<span class="font-headline uppercase tracking-widest text-[10px] text-[#8B95A3] hover:text-[#00E5A0] transition-colors cursor-pointer">Q4-2023</span>
+</div>
+</div>
+<div class="flex items-center gap-6">
+<span class="font-headline uppercase tracking-widest text-[10px] text-primary font-bold px-3 py-1 bg-on-primary-fixed-variant/20 rounded">Strictly Confidential</span>
+<div class="flex items-center gap-4 text-[#8B95A3]">
+<span class="material-symbols-outlined cursor-pointer hover:text-white" data-icon="notifications">notifications</span>
+<span class="material-symbols-outlined cursor-pointer hover:text-white" data-icon="account_circle">account_circle</span>
+</div>
+</div>
+</header>
+<section class="pt-24 px-12 pb-12 max-w-7xl mx-auto">
+<!-- Header Section -->
+<div class="flex justify-between items-end mb-12">
+<div>
+<div class="flex items-center gap-4 mb-2">
+<h2 class="font-headline text-4xl font-extrabold tracking-tight text-white uppercase">Точка А: Текущее состояние</h2>
+<span class="bg-[#00E5A0]/10 text-[#00E5A0] text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-widest flex items-center gap-1">
+<span class="w-1.5 h-1.5 rounded-full bg-[#00E5A0]"></span>
+                            Диагностика завершена
+                        </span>
+</div>
+<p class="text-[#8B95A3] max-w-2xl font-body">Комплексный аудит операционной эффективности и финансовой устойчивости по состоянию на 2024-2025 гг.</p>
+</div>
+<button class="px-6 py-2.5 rounded-lg border border-outline-variant/30 text-white font-medium hover:bg-white/5 transition-all flex items-center gap-2">
+<span class="material-symbols-outlined text-lg" data-icon="download">download</span>
+                    Скачать PDF
+                </button>
+</div>
+<!-- Key Metrics 2025 -->
+<div class="grid grid-cols-3 gap-6 mb-12">
+<div class="bg-surface-container-low p-6 rounded-xl group hover:bg-surface-container transition-all">
+<p class="text-[10px] font-headline uppercase tracking-widest text-[#8B95A3] mb-4">Выручка 2025 (Прогноз)</p>
+<div class="flex items-baseline gap-2">
+<span class="font-mono text-3xl font-bold text-white tracking-tighter">482.5M</span>
+<span class="text-primary text-xs font-mono">+12.4%</span>
+</div>
+<div class="mt-4 h-1 w-full bg-surface-container-high rounded-full overflow-hidden">
+<div class="h-full primary-gradient-bg w-[78%]"></div>
+</div>
+</div>
+<div class="bg-surface-container-low p-6 rounded-xl group hover:bg-surface-container transition-all">
+<p class="text-[10px] font-headline uppercase tracking-widest text-[#8B95A3] mb-4">Маржинальность EBITDA</p>
+<div class="flex items-baseline gap-2">
+<span class="font-mono text-3xl font-bold text-white tracking-tighter">24.8%</span>
+<span class="text-error text-xs font-mono">-2.1%</span>
+</div>
+<div class="mt-4 h-1 w-full bg-surface-container-high rounded-full overflow-hidden">
+<div class="h-full bg-error w-[65%]"></div>
+</div>
+</div>
+<div class="bg-surface-container-low p-6 rounded-xl group hover:bg-surface-container transition-all">
+<p class="text-[10px] font-headline uppercase tracking-widest text-[#8B95A3] mb-4">Клиентская база</p>
+<div class="flex items-baseline gap-2">
+<span class="font-mono text-3xl font-bold text-white tracking-tighter">1,248</span>
+<span class="text-primary text-xs font-mono">+85</span>
+</div>
+<div class="mt-4 h-1 w-full bg-surface-container-high rounded-full overflow-hidden">
+<div class="h-full primary-gradient-bg w-[45%]"></div>
+</div>
+</div>
+</div>
+<!-- SWOT Section -->
+<div class="grid grid-cols-2 gap-8 mb-12">
+<!-- Strengths -->
+<div>
+<div class="flex items-center gap-3 mb-6 bg-primary/5 p-4 rounded-lg">
+<span class="material-symbols-outlined text-primary" data-icon="verified">verified</span>
+<h3 class="font-headline text-lg font-bold text-white tracking-tight">Сильные стороны</h3>
+</div>
+<div class="space-y-3">
+<div class="bg-surface-container-low p-5 rounded-lg border-l-[3px] border-[#00E5A0] relative overflow-hidden">
+<div class="flex justify-between items-start">
+<h4 class="text-sm font-bold text-white mb-2">Высокая лояльность сегмента B</h4>
+<span class="text-[10px] font-mono text-[#8B95A3]">Стр. 14</span>
+</div>
+<p class="text-xs text-[#8B95A3] leading-relaxed">Retention rate в ключевом сегменте составляет 92% за последние 18 месяцев.</p>
+</div>
+<div class="bg-surface-container-low p-5 rounded-lg border-l-[3px] border-[#00E5A0] relative overflow-hidden">
+<div class="flex justify-between items-start">
+<h4 class="text-sm font-bold text-white mb-2">Технологический стек</h4>
+<span class="text-[10px] font-mono text-[#8B95A3]">Стр. 22</span>
+</div>
+<p class="text-xs text-[#8B95A3] leading-relaxed">Архитектура системы позволяет масштабировать нагрузку в 5 раз без потери производительности.</p>
+</div>
+</div>
+</div>
+<!-- Weaknesses -->
+<div>
+<div class="flex items-center gap-3 mb-6 bg-error/5 p-4 rounded-lg">
+<span class="material-symbols-outlined text-error" data-icon="warning">warning</span>
+<h3 class="font-headline text-lg font-bold text-white tracking-tight">Слабые стороны</h3>
+</div>
+<div class="space-y-3">
+<div class="bg-surface-container-low p-5 rounded-lg border-l-[3px] border-error relative overflow-hidden">
+<div class="flex justify-between items-start">
+<h4 class="text-sm font-bold text-white mb-2">Концентрация выручки</h4>
+<span class="text-[10px] font-mono text-[#8B95A3]">Стр. 08</span>
+</div>
+<p class="text-xs text-[#8B95A3] leading-relaxed">Критическая зависимость от Топ-10 клиентов создает риски ликвидности.</p>
+</div>
+<div class="bg-surface-container-low p-5 rounded-lg border-l-[3px] border-error relative overflow-hidden">
+<div class="flex justify-between items-start">
+<h4 class="text-sm font-bold text-white mb-2">Цикл продаж (Sales Cycle)</h4>
+<span class="text-[10px] font-mono text-[#8B95A3]">Стр. 31</span>
+</div>
+<p class="text-xs text-[#8B95A3] leading-relaxed">Увеличение среднего цикла закрытия сделки с 4 до 7.5 месяцев в 2024 году.</p>
+</div>
+</div>
+</div>
+</div>
+<!-- ABC Client Analysis -->
+<div class="bg-surface-container-low p-8 rounded-xl mb-12">
+<div class="flex justify-between items-center mb-8">
+<div>
+<h3 class="font-headline text-xl font-bold text-white tracking-tight">ABC Анализ Клиентской Базы</h3>
+<p class="text-xs text-[#8B95A3] mt-1">Распределение выручки и количества контрагентов</p>
+</div>
+<div class="flex gap-4">
+<div class="flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-error"></span>
+<span class="text-[10px] font-headline uppercase text-[#8B95A3]">Segment A</span>
+</div>
+<div class="flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-[#F5A623]"></span>
+<span class="text-[10px] font-headline uppercase text-[#8B95A3]">Segment B</span>
+</div>
+<div class="flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-primary"></span>
+<span class="text-[10px] font-headline uppercase text-[#8B95A3]">Segment C</span>
+</div>
+</div>
+</div>
+<div class="space-y-12">
+<!-- Revenue Bar -->
+<div>
+<div class="flex justify-between text-[10px] font-mono mb-2 uppercase text-[#8B95A3]">
+<span>Доля в выручке</span>
+<span>Total: 100%</span>
+</div>
+<div class="h-10 w-full flex rounded-lg overflow-hidden">
+<div class="h-full bg-error w-[79.2%] flex items-center justify-center text-[10px] font-bold text-black">79.2%</div>
+<div class="h-full bg-[#F5A623] w-[15.8%] flex items-center justify-center text-[10px] font-bold text-black border-l border-[#0A0B0F]/20">15.8%</div>
+<div class="h-full bg-primary w-[5%] flex items-center justify-center text-[10px] font-bold text-black border-l border-[#0A0B0F]/20">5%</div>
+</div>
+</div>
+<!-- Client Count Bar -->
+<div>
+<div class="flex justify-between text-[10px] font-mono mb-2 uppercase text-[#8B95A3]">
+<span>Количество клиентов</span>
+<span>Total: 1,248</span>
+</div>
+<div class="h-10 w-full flex rounded-lg overflow-hidden">
+<div class="h-full bg-error w-[10%] flex items-center justify-center text-[10px] font-bold text-black">125</div>
+<div class="h-full bg-[#F5A623] w-[20%] flex items-center justify-center text-[10px] font-bold text-black border-l border-[#0A0B0F]/20">250</div>
+<div class="h-full bg-primary w-[70%] flex items-center justify-center text-[10px] font-bold text-black border-l border-[#0A0B0F]/20">873</div>
+</div>
+</div>
+</div>
+<!-- Summary VIP -->
+<div class="mt-12 grid grid-cols-4 gap-8 border-t border-outline-variant/10 pt-8">
+<div class="col-span-2">
+<h4 class="text-sm font-bold text-error uppercase tracking-tight mb-2">Фокус: Сегмент A (VIP)</h4>
+<p class="text-xs text-[#8B95A3] leading-relaxed">Наблюдается экстремальная концентрация. Потеря любого клиента из Топ-10 приведет к падению EBITDA на 8.4% в среднем. Требуется диверсификация через развитие сегмента B.</p>
+</div>
+<div>
+<p class="text-[10px] font-headline uppercase tracking-widest text-[#8B95A3] mb-2">LTV/CAC Ratio (A)</p>
+<p class="font-mono text-xl text-white">12.4x</p>
+</div>
+<div>
+<p class="text-[10px] font-headline uppercase tracking-widest text-[#8B95A3] mb-2">Avg. Ticket (A)</p>
+<p class="font-mono text-xl text-white">3.8M ₽</p>
+</div>
+</div>
+</div>
+<!-- Critical Risk Card -->
+<div class="bg-[#F5A623]/10 border-l-4 border-[#F5A623] p-6 rounded-r-xl flex items-start gap-6">
+<div class="bg-[#F5A623] p-2 rounded-lg text-[#0A0B0F]">
+<span class="material-symbols-outlined" data-icon="report">report</span>
+</div>
+<div class="flex-1">
+<div class="flex justify-between items-center mb-2">
+<h4 class="font-bold text-white text-base">Критический риск: Концентрация выручки</h4>
+<span class="bg-[#F5A623] text-[#0A0B0F] text-[10px] font-bold px-2 py-0.5 rounded uppercase">High Priority</span>
+</div>
+<p class="text-sm text-[#8B95A3] leading-relaxed">
+                        Топ-10 клиентов генерируют <span class="text-white font-mono font-bold">79.2%</span> от общей выручки компании. Текущий уровень зависимости классифицируется как «Критический». Рекомендуется немедленная разработка стратегии экспансии в смежные ниши для снижения веса ключевых аккаунтов до 50% к концу 2026 года.
+                    </p>
+</div>
+<div class="text-right">
+<p class="text-[10px] font-mono text-[#8B95A3] mb-1 uppercase tracking-widest">Risk Score</p>
+<p class="text-2xl font-mono text-[#F5A623] font-bold">8.4/10</p>
+</div>
+</div>
+</section>
+</main>
+<!-- Visual Polish: Noise Overlays/Subtle Accents -->
+<div class="fixed inset-0 pointer-events-none opacity-[0.03]" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuBTniU8kOJujOTaaSd7egTJQOORYOq1XiRkZUNalqb8H38Z96R0W2GAaRyy2EOydK_0hwxtKC_exPdzmCbfkMtiMFP7dR7_akKYm3HU-OvDcBd7pDxICvp9bjc8Xa1LpYIZvjQUqVZb2E4VuGy8wV42Sz0EJLSDJj-eCMlf4O6pkctjUm_ddF8I4a4s5GPQyySkA-RGJn-Dm5CCh9__jwkXeTU6eXD2lT-RkvIdJFfFP7ujFpTt5Ea7d8pYiuM0Q5lXbSwugMR_k3U');"></div>
+</body></html>

@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="ru"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;600;700;800&amp;family=DM+Sans:wght@400;500;700&amp;family=JetBrains+Mono:wght@400;500;700&amp;family=Space+Grotesk:wght@400;500;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "on-error": "#690005",
+                        "on-primary-fixed-variant": "#005236",
+                        "on-primary-container": "#006141",
+                        "on-tertiary-fixed-variant": "#633f00",
+                        "inverse-surface": "#e3e2e8",
+                        "tertiary": "#ffe1bd",
+                        "secondary-fixed-dim": "#bcc7de",
+                        "secondary": "#bcc7de",
+                        "outline-variant": "#3b4a41",
+                        "error": "#ffb4ab",
+                        "surface-container-highest": "#343439",
+                        "surface-container-high": "#292a2e",
+                        "secondary-fixed": "#d8e3fb",
+                        "error-container": "#93000a",
+                        "surface-container": "#1f1f24",
+                        "surface": "#121317",
+                        "surface-tint": "#00e29e",
+                        "background": "#121317",
+                        "on-tertiary-container": "#754b00",
+                        "primary-fixed": "#47ffb8",
+                        "tertiary-container": "#ffbd60",
+                        "on-secondary": "#263143",
+                        "inverse-primary": "#006c49",
+                        "surface-container-lowest": "#0d0e12",
+                        "secondary-container": "#3e495d",
+                        "on-secondary-container": "#aeb9d0",
+                        "primary": "#6effc0",
+                        "tertiary-fixed": "#ffddb4",
+                        "on-primary": "#003824",
+                        "surface-variant": "#343439",
+                        "outline": "#84958a",
+                        "on-tertiary-fixed": "#291800",
+                        "on-surface-variant": "#bacbbf",
+                        "on-primary-fixed": "#002114",
+                        "on-background": "#e3e2e8",
+                        "surface-container-low": "#1a1b20",
+                        "primary-container": "#00e5a0",
+                        "on-secondary-fixed": "#111c2d",
+                        "surface-bright": "#38393e",
+                        "tertiary-fixed-dim": "#ffb955",
+                        "surface-dim": "#121317",
+                        "inverse-on-surface": "#2f3035",
+                        "on-tertiary": "#452b00",
+                        "on-surface": "#e3e2e8",
+                        "on-error-container": "#ffdad6",
+                        "primary-fixed-dim": "#00e29e",
+                        "on-secondary-fixed-variant": "#3c475a"
+                    },
+                    fontFamily: {
+                        "headline": ["Bricolage Grotesque", "Space Grotesk", "sans-serif"],
+                        "body": ["DM Sans", "Inter", "sans-serif"],
+                        "label": ["Space Grotesk", "sans-serif"],
+                        "mono": ["JetBrains Mono", "monospace"]
+                    },
+                    borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
+                },
+            },
+        }
+    </script>
+<style>
+        body { font-family: 'DM Sans', sans-serif; background-color: #0A0B0F; color: #e3e2e8; }
+        .glass { background: rgba(255, 255, 255, 0.04); backdrop-filter: blur(12px); }
+        .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; vertical-align: middle; }
+        .sidebar-active { background-color: #1f1f24; color: #00E5A0; border-right: 2px solid #00E5A0; font-weight: 700; }
+        .primary-gradient { background: linear-gradient(135deg, #6effc0 0%, #00e5a0 100%); }
+    </style>
+</head>
+<body class="flex min-h-screen">
+<!-- SideNavBar (Authority: JSON) -->
+<aside class="h-screen w-64 fixed left-0 top-0 bg-[#111318] dark:bg-[#111318] flex flex-col py-6 px-4 font-['Space_Grotesk'] tracking-tight z-50">
+<div class="mb-10 px-2 flex items-center gap-3">
+<div class="w-8 h-8 rounded bg-primary-container flex items-center justify-center">
+<span class="material-symbols-outlined text-on-primary text-xl">insights</span>
+</div>
+<div>
+<h1 class="text-xl font-bold text-[#00E5A0]">AIStart360</h1>
+<p class="text-[10px] uppercase tracking-widest text-[#8B95A3]">Institutional Intelligence</p>
+</div>
+</div>
+<nav class="flex-1 space-y-1">
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-[#8B95A3] hover:text-white hover:bg-[#1f1f24] transition-all duration-200" href="#">
+<span class="material-symbols-outlined" data-icon="dashboard">dashboard</span>
+<span>Dashboard</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-[#8B95A3] hover:text-white hover:bg-[#1f1f24] transition-all duration-200" href="#">
+<span class="material-symbols-outlined" data-icon="analytics">analytics</span>
+<span>Analytics</span>
+</a>
+<!-- Active State Logic applied to Settings -->
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-[#00E5A0] bg-[#1f1f24] font-bold border-r-2 border-[#00E5A0] scale-98-on-click active:opacity-80" href="#">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+<span>Settings</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-[#8B95A3] hover:text-white hover:bg-[#1f1f24] transition-all duration-200" href="#">
+<span class="material-symbols-outlined" data-icon="group">group</span>
+<span>Users &amp; Roles</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-[#8B95A3] hover:text-white hover:bg-[#1f1f24] transition-all duration-200" href="#">
+<span class="material-symbols-outlined" data-icon="security">security</span>
+<span>Security</span>
+</a>
+</nav>
+<div class="mt-auto pt-6 space-y-1">
+<a class="flex items-center gap-3 px-3 py-2 text-[#8B95A3] hover:text-white transition-colors text-sm" href="#">
+<span class="material-symbols-outlined" data-icon="description">description</span>
+<span>Documentation</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 text-[#8B95A3] hover:text-white transition-colors text-sm" href="#">
+<span class="material-symbols-outlined" data-icon="help_center">help_center</span>
+<span>Support</span>
+</a>
+<div class="mt-6 p-4 rounded-xl bg-surface-container-low">
+<div class="flex items-center gap-3">
+<img alt="AIStart360 Logo" class="w-8 h-8 rounded-full bg-surface-container-highest" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAV-hgACi3DejeYZ1LYMw08lE8KXizpzphhZLI7ICeooGCOyvDJRSPFWpdty7rmzHkUYL9gwQ0Qp1ztVfwfMte8higVUtY92BR1tXjwg5_0mtpcMaz67TtjNBCleMprahHGkbSNPDnG3psHbJmRsHwiEqvk1Htlcbya58lcKQh-9NjBk09E5xVYIom_LkDwkB0FLmOToC3PXOKkqMXrLVZgYpvxT4p-40to1HOQTF9Pzit3Mn62971uij70s9BsVMpfjg41yKO1m0s"/>
+<div class="overflow-hidden">
+<p class="text-xs font-bold truncate">Константин В.</p>
+<p class="text-[10px] text-outline truncate">Enterprise Plan</p>
+</div>
+</div>
+</div>
+</div>
+</aside>
+<!-- Main Content Canvas -->
+<main class="flex-1 ml-64 bg-background min-h-screen">
+<!-- TopAppBar (Authority: JSON) -->
+<header class="fixed top-0 right-0 w-[calc(100%-16rem)] h-16 flex justify-between items-center px-8 z-40 bg-[#0A0B0F]/80 backdrop-blur-xl font-['Space_Grotesk'] text-sm">
+<div class="flex items-center gap-8">
+<h2 class="text-lg font-bold text-on-surface tracking-tight">Settings</h2>
+<nav class="flex gap-6">
+<a class="text-[#00E5A0] border-b-2 border-[#00E5A0] pb-1" href="#">Organization</a>
+<a class="text-[#8B95A3] hover:text-white transition-colors" href="#">Integrations</a>
+<a class="text-[#8B95A3] hover:text-white transition-colors" href="#">Billing</a>
+</nav>
+</div>
+<div class="flex items-center gap-6">
+<div class="relative group">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline text-lg">search</span>
+<input class="bg-surface-container-low border-none rounded-lg pl-10 pr-4 py-1.5 text-xs w-64 focus:ring-1 focus:ring-primary transition-all" placeholder="Поиск параметров..." type="text"/>
+</div>
+<div class="flex items-center gap-4 text-outline">
+<button class="hover:text-white transition-colors"><span class="material-symbols-outlined" data-icon="notifications">notifications</span></button>
+<button class="hover:text-white transition-colors"><span class="material-symbols-outlined" data-icon="settings_suggest">settings_suggest</span></button>
+<div class="h-4 w-[1px] bg-outline-variant/30"></div>
+<button class="text-[#8B95A3] hover:text-white font-medium">Support</button>
+</div>
+</div>
+</header>
+<!-- Scrollable Content -->
+<div class="pt-24 px-12 pb-20 max-w-7xl">
+<div class="grid grid-cols-12 gap-8">
+<!-- Section 1: Organization Profile (Bento Style) -->
+<div class="col-span-12 lg:col-span-7">
+<div class="p-8 rounded-xl bg-surface-container-low relative overflow-hidden h-full">
+<div class="absolute top-0 right-0 p-8 opacity-10">
+<span class="material-symbols-outlined text-8xl">corporate_fare</span>
+</div>
+<h3 class="font-headline text-2xl font-bold mb-8">Профиль Организации</h3>
+<div class="grid grid-cols-2 gap-6">
+<div class="col-span-2 flex items-center gap-6 mb-4">
+<div class="w-24 h-24 rounded-2xl bg-surface-container-high flex flex-col items-center justify-center border-2 border-dashed border-outline-variant hover:border-primary transition-colors cursor-pointer group">
+<span class="material-symbols-outlined text-outline group-hover:text-primary mb-1">upload_file</span>
+<span class="text-[10px] text-outline text-center px-2">Загрузить логотип</span>
+</div>
+<div>
+<p class="text-sm font-bold mb-1">Логотип бренда</p>
+<p class="text-xs text-outline leading-relaxed">Рекомендуется PNG или SVG.<br/>Минимум 512x512px.</p>
+</div>
+</div>
+<div class="space-y-1.5">
+<label class="text-[10px] uppercase tracking-wider text-outline font-bold">Название компании</label>
+<input class="w-full bg-surface-container-lowest border-none border-b-2 border-transparent focus:border-primary focus:ring-0 rounded-lg py-3 px-4 text-sm font-medium transition-all" type="text" value="AIStart360 Institutional"/>
+</div>
+<div class="space-y-1.5">
+<label class="text-[10px] uppercase tracking-wider text-outline font-bold">Индустрия</label>
+<select class="w-full bg-surface-container-lowest border-none focus:ring-0 rounded-lg py-3 px-4 text-sm font-medium transition-all">
+<option>Финансовые технологии</option>
+<option>Консалтинг</option>
+<option>Промышленность</option>
+</select>
+</div>
+<div class="space-y-1.5">
+<label class="text-[10px] uppercase tracking-wider text-outline font-bold">Регион</label>
+<input class="w-full bg-surface-container-lowest border-none focus:ring-0 rounded-lg py-3 px-4 text-sm font-medium transition-all" type="text" value="Восточная Европа"/>
+</div>
+<div class="space-y-1.5">
+<label class="text-[10px] uppercase tracking-wider text-outline font-bold">Налоговый ID</label>
+<input class="w-full bg-surface-container-lowest border-none focus:ring-0 rounded-lg py-3 px-4 text-sm font-medium font-mono transition-all" type="text" value="RU-990234112"/>
+</div>
+</div>
+<div class="mt-10 flex justify-end">
+<button class="px-6 py-2.5 rounded-lg primary-gradient text-on-primary font-bold text-sm hover:opacity-90 transition-opacity">
+                                Сохранить изменения
+                            </button>
+</div>
+</div>
+</div>
+<!-- Metrics / Data Block (Institutional Density) -->
+<div class="col-span-12 lg:col-span-5 grid grid-cols-1 gap-6">
+<div class="p-6 rounded-xl bg-surface-container-low flex flex-col justify-between">
+<div>
+<span class="text-[10px] uppercase tracking-widest text-outline font-bold">Лимиты хранилища</span>
+<div class="mt-2 flex items-baseline gap-2">
+<span class="text-4xl font-mono font-bold text-on-surface">84.2</span>
+<span class="text-lg font-mono text-outline">/ 100 GB</span>
+</div>
+</div>
+<div class="mt-6 w-full bg-surface-container-lowest h-1.5 rounded-full overflow-hidden">
+<div class="bg-primary h-full w-[84%]"></div>
+</div>
+</div>
+<div class="p-6 rounded-xl bg-surface-container-low">
+<span class="text-[10px] uppercase tracking-widest text-outline font-bold">Статус системы</span>
+<div class="mt-4 space-y-3">
+<div class="flex justify-between items-center">
+<span class="text-sm">API Интеграции</span>
+<span class="px-2 py-0.5 rounded bg-primary/10 text-primary text-[10px] font-bold uppercase">Stable</span>
+</div>
+<div class="flex justify-between items-center">
+<span class="text-sm">База данных</span>
+<span class="px-2 py-0.5 rounded bg-primary/10 text-primary text-[10px] font-bold uppercase">99.9% Up</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Section 2: Users & Roles (High Density Table) -->
+<div class="col-span-12">
+<div class="rounded-xl bg-surface-container-low overflow-hidden">
+<div class="p-8 flex justify-between items-end">
+<div>
+<h3 class="font-headline text-2xl font-bold">Пользователи и Роли</h3>
+<p class="text-sm text-outline mt-1">Управление доступом на основе ролей (RBAC)</p>
+</div>
+<button class="flex items-center gap-2 px-4 py-2 border border-outline-variant hover:bg-surface-container-high rounded-lg text-sm transition-colors">
+<span class="material-symbols-outlined text-sm" data-icon="person_add">person_add</span>
+                                Добавить пользователя
+                            </button>
+</div>
+<div class="overflow-x-auto">
+<table class="w-full text-left border-collapse">
+<thead>
+<tr class="border-b border-outline-variant/10 text-[10px] uppercase tracking-wider text-outline font-bold">
+<th class="px-8 py-4">Пользователь</th>
+<th class="px-8 py-4">Роль</th>
+<th class="px-8 py-4">Статус</th>
+<th class="px-8 py-4">Последняя активность</th>
+<th class="px-8 py-4 text-right">Действия</th>
+</tr>
+</thead>
+<tbody class="text-sm">
+<tr class="hover:bg-surface-container-high transition-colors group">
+<td class="px-8 py-4 flex items-center gap-3">
+<div class="w-8 h-8 rounded-full bg-surface-container-highest flex items-center justify-center font-bold text-[10px]">АМ</div>
+<div>
+<p class="font-medium">Александр Макаров</p>
+<p class="text-xs text-outline">a.makarov@aistart360.ai</p>
+</div>
+</td>
+<td class="px-8 py-4">
+<span class="text-on-surface font-medium">Owner</span>
+</td>
+<td class="px-8 py-4">
+<span class="inline-flex items-center gap-1.5 text-primary text-[10px] font-bold uppercase">
+<span class="w-1.5 h-1.5 rounded-full bg-primary"></span> Активен
+                                            </span>
+</td>
+<td class="px-8 py-4 font-mono text-xs text-outline">2023-11-24 14:32</td>
+<td class="px-8 py-4 text-right">
+<button class="text-outline hover:text-white"><span class="material-symbols-outlined">more_vert</span></button>
+</td>
+</tr>
+<tr class="hover:bg-surface-container-high transition-colors group">
+<td class="px-8 py-4 flex items-center gap-3">
+<div class="w-8 h-8 rounded-full bg-surface-container-highest flex items-center justify-center font-bold text-[10px]">ЕП</div>
+<div>
+<p class="font-medium">Елена Петрова</p>
+<p class="text-xs text-outline">e.petrova@aistart360.ai</p>
+</div>
+</td>
+<td class="px-8 py-4">
+<span class="text-on-surface font-medium">Expert</span>
+</td>
+<td class="px-8 py-4">
+<span class="inline-flex items-center gap-1.5 text-primary text-[10px] font-bold uppercase">
+<span class="w-1.5 h-1.5 rounded-full bg-primary"></span> Активен
+                                            </span>
+</td>
+<td class="px-8 py-4 font-mono text-xs text-outline">2023-11-23 09:11</td>
+<td class="px-8 py-4 text-right">
+<button class="text-outline hover:text-white"><span class="material-symbols-outlined">more_vert</span></button>
+</td>
+</tr>
+<tr class="hover:bg-surface-container-high transition-colors group">
+<td class="px-8 py-4 flex items-center gap-3">
+<div class="w-8 h-8 rounded-full bg-surface-container-highest flex items-center justify-center font-bold text-[10px]">ДД</div>
+<div>
+<p class="font-medium">Дмитрий Донской</p>
+<p class="text-xs text-outline">d.donskoy@partner.ru</p>
+</div>
+</td>
+<td class="px-8 py-4">
+<span class="text-on-surface font-medium">Viewer</span>
+</td>
+<td class="px-8 py-4">
+<span class="inline-flex items-center gap-1.5 text-outline text-[10px] font-bold uppercase">
+<span class="w-1.5 h-1.5 rounded-full bg-outline/40"></span> Оффлайн
+                                            </span>
+</td>
+<td class="px-8 py-4 font-mono text-xs text-outline">2023-11-20 18:45</td>
+<td class="px-8 py-4 text-right">
+<button class="text-outline hover:text-white"><span class="material-symbols-outlined">more_vert</span></button>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+<!-- Section 3: Integrations (Grid of Cards) -->
+<div class="col-span-12">
+<h3 class="font-headline text-2xl font-bold mb-6">Интеграции</h3>
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+<!-- Integration Card 1 -->
+<div class="p-6 rounded-xl bg-surface-container-low hover:bg-surface-container transition-all cursor-pointer group">
+<div class="flex justify-between items-start mb-6">
+<div class="w-12 h-12 rounded-lg bg-surface-container-highest flex items-center justify-center">
+<span class="material-symbols-outlined text-2xl text-blue-400">send</span>
+</div>
+<div class="flex items-center gap-1.5">
+<div class="w-2 h-2 rounded-full bg-primary animate-pulse"></div>
+<span class="text-[10px] font-bold uppercase text-primary">Connected</span>
+</div>
+</div>
+<h4 class="font-bold mb-1">Telegram Bot</h4>
+<p class="text-xs text-outline mb-4">Уведомления и AI-ассистент в мессенджере.</p>
+<button class="text-[10px] font-bold text-outline group-hover:text-primary transition-colors flex items-center gap-1">
+                                НАСТРОИТЬ <span class="material-symbols-outlined text-xs">arrow_forward</span>
+</button>
+</div>
+<!-- Integration Card 2 -->
+<div class="p-6 rounded-xl bg-surface-container-low hover:bg-surface-container transition-all cursor-pointer group">
+<div class="flex justify-between items-start mb-6">
+<div class="w-12 h-12 rounded-lg bg-surface-container-highest flex items-center justify-center">
+<span class="material-symbols-outlined text-2xl text-orange-400">hub</span>
+</div>
+<div class="flex items-center gap-1.5">
+<div class="w-2 h-2 rounded-full bg-outline/30"></div>
+<span class="text-[10px] font-bold uppercase text-outline">Disconnected</span>
+</div>
+</div>
+<h4 class="font-bold mb-1">CRM (Bitrix24)</h4>
+<p class="text-xs text-outline mb-4">Синхронизация лидов и сделок в реальном времени.</p>
+<button class="text-[10px] font-bold text-outline group-hover:text-primary transition-colors flex items-center gap-1">
+                                ПОДКЛЮЧИТЬ <span class="material-symbols-outlined text-xs">add</span>
+</button>
+</div>
+<!-- Integration Card 3 -->
+<div class="p-6 rounded-xl bg-surface-container-low hover:bg-surface-container transition-all cursor-pointer group">
+<div class="flex justify-between items-start mb-6">
+<div class="w-12 h-12 rounded-lg bg-surface-container-highest flex items-center justify-center">
+<span class="material-symbols-outlined text-2xl text-red-400">account_tree</span>
+</div>
+<div class="flex items-center gap-1.5">
+<div class="w-2 h-2 rounded-full bg-primary animate-pulse"></div>
+<span class="text-[10px] font-bold uppercase text-primary">Connected</span>
+</div>
+</div>
+<h4 class="font-bold mb-1">1С: Предприятие</h4>
+<p class="text-xs text-outline mb-4">Автоматизированный обмен бухгалтерскими данными.</p>
+<button class="text-[10px] font-bold text-outline group-hover:text-primary transition-colors flex items-center gap-1">
+                                НАСТРОИТЬ <span class="material-symbols-outlined text-xs">arrow_forward</span>
+</button>
+</div>
+<!-- Integration Card 4 -->
+<div class="p-6 rounded-xl bg-surface-container-low hover:bg-surface-container transition-all cursor-pointer group">
+<div class="flex justify-between items-start mb-6">
+<div class="w-12 h-12 rounded-lg bg-surface-container-highest flex items-center justify-center">
+<span class="material-symbols-outlined text-2xl text-purple-400">forum</span>
+</div>
+<div class="flex items-center gap-1.5">
+<div class="w-2 h-2 rounded-full bg-outline/30"></div>
+<span class="text-[10px] font-bold uppercase text-outline">Not Installed</span>
+</div>
+</div>
+<h4 class="font-bold mb-1">Slack Connect</h4>
+<p class="text-xs text-outline mb-4">Командная работа и мониторинг AI процессов.</p>
+<button class="text-[10px] font-bold text-outline group-hover:text-primary transition-colors flex items-center gap-1">
+                                УСТАНОВИТЬ <span class="material-symbols-outlined text-xs">add</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Section 4: Security (Glassmorphism & High-End UI) -->
+<div class="col-span-12 lg:col-span-8">
+<div class="p-8 rounded-xl bg-surface-container-low h-full border-l-4 border-primary/20">
+<div class="flex items-center gap-3 mb-8">
+<span class="material-symbols-outlined text-primary">verified_user</span>
+<h3 class="font-headline text-2xl font-bold">Безопасность</h3>
+</div>
+<div class="space-y-8">
+<div class="flex justify-between items-center p-4 rounded-lg bg-surface-container-lowest">
+<div>
+<p class="font-bold text-sm">Двухфакторная аутентификация (2FA)</p>
+<p class="text-xs text-outline">Повысьте уровень защиты вашего аккаунта.</p>
+</div>
+<label class="relative inline-flex items-center cursor-pointer">
+<input checked="" class="sr-only peer" type="checkbox"/>
+<div class="w-11 h-6 bg-surface-container-high peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+</label>
+</div>
+<div class="grid grid-cols-2 gap-6">
+<div class="space-y-1.5">
+<label class="text-[10px] uppercase tracking-wider text-outline font-bold">Текущий пароль</label>
+<input class="w-full bg-surface-container-lowest border-none focus:ring-0 rounded-lg py-3 px-4 text-sm font-mono" placeholder="••••••••" type="password"/>
+</div>
+<div class="space-y-1.5">
+<label class="text-[10px] uppercase tracking-wider text-outline font-bold">Новый пароль</label>
+<input class="w-full bg-surface-container-lowest border-none focus:ring-0 rounded-lg py-3 px-4 text-sm font-mono" placeholder="••••••••" type="password"/>
+</div>
+</div>
+<div class="pt-4">
+<h4 class="text-xs font-bold uppercase tracking-widest text-outline mb-4">Активные сессии</h4>
+<div class="space-y-3">
+<div class="flex justify-between items-center py-3 border-b border-outline-variant/10">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-outline">desktop_windows</span>
+<div>
+<p class="text-sm font-medium">MacOS • Chrome 119.0</p>
+<p class="text-[10px] text-outline font-mono">192.168.1.45 (Москва, РФ) • Текущая сессия</p>
+</div>
+</div>
+<span class="text-[10px] font-bold text-primary uppercase">Online</span>
+</div>
+<div class="flex justify-between items-center py-3 border-b border-outline-variant/10">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-outline">smartphone</span>
+<div>
+<p class="text-sm font-medium">iPhone 15 Pro • App</p>
+<p class="text-[10px] text-outline font-mono">85.249.16.112 (Москва, РФ)</p>
+</div>
+</div>
+<button class="text-[10px] font-bold text-error uppercase hover:underline">Завершить</button>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="col-span-12 lg:col-span-4">
+<div class="glass p-8 rounded-xl h-full border border-outline-variant/10 flex flex-col items-center text-center justify-center">
+<div class="w-20 h-20 rounded-full primary-gradient flex items-center justify-center mb-6 shadow-[0_0_30px_rgba(0,229,160,0.3)]">
+<span class="material-symbols-outlined text-on-primary text-4xl" style="font-variation-settings: 'FILL' 1;">verified</span>
+</div>
+<h3 class="font-headline text-xl font-bold mb-2">Институциональная Защита</h3>
+<p class="text-sm text-outline mb-8 leading-relaxed">Ваш аккаунт защищен по стандартам банковского шифрования AES-256. AIStart360 регулярно проходит аудит безопасности.</p>
+<button class="w-full py-3 rounded-lg border border-outline-variant hover:border-primary text-sm font-bold transition-all">
+                            Скачать отчет безопасности
+                        </button>
+</div>
+</div>
+</div>
+</div>
+</main>
+<!-- Background Decorative Elements -->
+<div class="fixed top-[-10%] right-[-10%] w-[500px] h-[500px] bg-primary/5 rounded-full blur-[120px] pointer-events-none z-0"></div>
+<div class="fixed bottom-[-5%] left-[10%] w-[300px] h-[300px] bg-primary/5 rounded-full blur-[100px] pointer-events-none z-0"></div>
+</body></html>

@@ -1,0 +1,297 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// --- Enums --------------------------------------------------------------------
+
+enum UserRole {
+  SUPER_ADMIN
+  ADMIN
+  MANAGER
+  ANALYST
+  CLIENT
+}
+
+enum UserStatus {
+  active
+  blocked
+}
+
+enum ClientStatus {
+  active
+  at_risk
+  inactive
+  onboarding
+}
+
+enum GrowthStage {
+  Seed
+  Early
+  Growth
+  Scale
+  Mature
+}
+
+enum CompanyStatus {
+  lead
+  active
+  blocked
+}
+
+enum AdminRequestType {
+  registration
+  access
+  support
+}
+
+enum AdminRequestStatus {
+  new
+  in_review
+  waiting_for_info
+  approved
+  rejected
+  escalated
+  archived
+}
+
+enum RequestPriority {
+  low
+  medium
+  high
+  critical
+}
+
+// --- Core Auth Models ---------------------------------------------------------
+
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  users     User[]
+  clients   Client[]
+
+  @@map("organizations")
+}
+
+model User {
+  id            String      @id @default(cuid())
+  email         String      @unique
+  emailVerified DateTime?   @map("email_verified")
+  passwordHash  String?
+  name          String?
+  role          UserRole    @default(MANAGER)
+  status        UserStatus  @default(active)
+  avatarUrl     String?
+  lastLogin     DateTime?
+  orgId         String?
+  org           Organization?  @relation(fields: [orgId], references: [id])
+  managedClients Client[]      @relation("ManagedClients")
+  accounts      Account[]
+  sessions      Session[]
+
+  // Admin panel relations
+  submittedRequests AdminRequest[] @relation("RequestSubmitter")
+  assignedRequests  AdminRequest[] @relation("RequestAssignee")
+  comments          Comment[]
+  auditLogs         AuditLog[]
+
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@map("users")
+}
+
+model Account {
+  id                 String  @id @default(cuid())
+  userId             String  @map("user_id")
+  type               String
+  provider           String
+  providerAccountId  String  @map("provider_account_id")
+  refresh_token      String? @db.Text
+  access_token       String? @db.Text
+  expires_at         Int?
+  token_type         String?
+  scope              String?
+  id_token           String? @db.Text
+  session_state      String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique @map("session_token")
+  userId       String   @map("user_id")
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+// --- Business Models ----------------------------------------------------------
+
+model Client {
+  id            String       @id @default(cuid())
+  name          String
+  industry      String
+  stage         GrowthStage
+  status        ClientStatus @default(active)
+  website       String?
+  notes         String?      @db.Text
+  orgId         String
+  org           Organization @relation(fields: [orgId], references: [id])
+  managerId     String
+  manager       User         @relation("ManagedClients", fields: [managerId], references: [id])
+
+  // GRI Pulse specific data
+  forbesRank    Int?
+  sector        String?
+  orderCycle    Int          @default(30)
+
+  griReports    GriReport[]
+  pulseMetrics  PulseMetric?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  @@map("clients")
+}
+
+model PulseMetric {
+  id            String   @id @default(cuid())
+  clientId      String   @unique
+  client        Client   @relation(fields: [clientId], references: [id])
+
+  lastOrder     DateTime?
+  daysSince     Int?
+  avgCheck      Float     @default(0)
+  volumeChange  Float     @default(0)
+  riskScore     Int       @default(0)
+  churnProb     Int       @default(0)
+  churnLevel    String    @default("low")
+  comment       String?   @db.Text
+  action        String    @default("monitor")
+  history       Json      @default("[]")
+
+  updatedAt     DateTime  @updatedAt
+
+  @@map("pulse_metrics")
+}
+
+model GriReport {
+  id             String   @id @default(cuid())
+  clientId       String
+  client         Client   @relation(fields: [clientId], references: [id])
+
+  overallScore   Float
+  productScore   Float    @default(0)
+  trustScore     Float    @default(0)
+  businessModelScore Float @default(0)
+  cashScore      Float    @default(0)
+  operationsScore Float   @default(0)
+  teamScore      Float    @default(0)
+  founderScore   Float    @default(0)
+
+  rawData        Json?
+  calculatedAt   DateTime @default(now())
+
+  @@map("gri_reports")
+}
+
+// --- Admin Portal Models ------------------------------------------------------
+
+/// Company entity for admin CRM --- represents an incoming lead or registered company.
+model Company {
+  id        String        @id @default(cuid())
+  name      String
+  domain    String?       @unique
+  status    CompanyStatus @default(lead)
+  notes     String?       @db.Text
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  requests  AdminRequest[]
+
+  @@map("companies")
+}
+
+/// Inbound request --- registration, access upgrade, or support ticket.
+model AdminRequest {
+  id              String             @id @default(cuid())
+  type            AdminRequestType
+  status          AdminRequestStatus @default(new)
+  priority        RequestPriority    @default(medium)
+
+  // Submitter (nullable --- can be anonymous registration)
+  userId          String?
+  user            User?              @relation("RequestSubmitter", fields: [userId], references: [id])
+
+  // Company context
+  companyId       String?
+  company         Company?           @relation(fields: [companyId], references: [id])
+
+  // Assigned admin
+  assignedAdminId String?
+  assignedAdmin   User?              @relation("RequestAssignee", fields: [assignedAdminId], references: [id])
+
+  // Tracking
+  source          String?            // utm / manual / invite / api
+  payload         Json?              // arbitrary form data from the requester
+  rejectionReason String?            @db.Text
+  slaDeadline     DateTime?          // auto-set on creation based on priority
+
+  comments        Comment[]
+
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  @@map("admin_requests")
+}
+
+/// Thread comment on an AdminRequest --- internal admin notes or external communications.
+model Comment {
+  id        String       @id @default(cuid())
+  requestId String
+  request   AdminRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    User         @relation(fields: [authorId], references: [id])
+  text      String       @db.Text
+  isInternal Boolean     @default(true) // internal note vs. message to user
+  createdAt DateTime     @default(now())
+
+  @@map("comments")
+}
+
+/// Immutable audit log --- every admin action is recorded here.
+model AuditLog {
+  id          String   @id @default(cuid())
+  entityType  String   // "request" | "user" | "company"
+  entityId    String
+  action      String   // "approve" | "reject" | "block" | "assign" | "comment" | ...
+  performedBy String
+  performer   User     @relation(fields: [performedBy], references: [id])
+  timestamp   DateTime @default(now())
+  diff        Json?    // { before: {...}, after: {...} }
+  ipAddress   String?
+
+  @@map("audit_logs")
+}

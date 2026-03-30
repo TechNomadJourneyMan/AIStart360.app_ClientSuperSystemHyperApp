@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="ru"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>AIStart360 Growth Plan</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;600;800&amp;family=DM+Sans:wght@400;500;700&amp;family=JetBrains+Mono:wght@400;700&amp;family=Space+Grotesk:wght@400;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "tertiary-fixed-dim": "#ffb955",
+                        "outline": "#84958a",
+                        "inverse-primary": "#006c49",
+                        "on-secondary-fixed": "#111c2d",
+                        "on-error-container": "#ffdad6",
+                        "surface-container-low": "#1a1b20",
+                        "outline-variant": "#3b4a41",
+                        "on-secondary-fixed-variant": "#3c475a",
+                        "surface": "#121317",
+                        "primary-fixed-dim": "#00e29e",
+                        "on-tertiary": "#452b00",
+                        "surface-container-highest": "#343439",
+                        "on-secondary": "#263143",
+                        "secondary-container": "#3e495d",
+                        "on-primary-container": "#006141",
+                        "primary-fixed": "#47ffb8",
+                        "on-surface": "#e3e2e8",
+                        "tertiary-container": "#ffbd60",
+                        "on-background": "#e3e2e8",
+                        "surface-variant": "#343439",
+                        "on-tertiary-fixed-variant": "#633f00",
+                        "primary": "#6effc0",
+                        "surface-bright": "#38393e",
+                        "on-primary": "#003824",
+                        "inverse-surface": "#e3e2e8",
+                        "surface-container": "#1f1f24",
+                        "surface-container-lowest": "#0d0e12",
+                        "inverse-on-surface": "#2f3035",
+                        "background": "#0A0B0F",
+                        "on-secondary-container": "#aeb9d0",
+                        "tertiary-fixed": "#ffddb4",
+                        "error-container": "#93000a",
+                        "error": "#ffb4ab",
+                        "tertiary": "#ffe1bd",
+                        "surface-container-high": "#292a2e",
+                        "surface-tint": "#00e29e",
+                        "on-tertiary-fixed": "#291800",
+                        "on-error": "#690005",
+                        "surface-dim": "#121317",
+                        "secondary-fixed-dim": "#bcc7de",
+                        "secondary-fixed": "#d8e3fb",
+                        "on-primary-fixed-variant": "#005236",
+                        "on-primary-fixed": "#002114",
+                        "primary-container": "#00e5a0",
+                        "on-tertiary-container": "#754b00",
+                        "on-surface-variant": "#bacbbf",
+                        "secondary": "#bcc7de"
+                    },
+                    fontFamily: {
+                        "headline": ["Bricolage Grotesque"],
+                        "body": ["DM Sans"],
+                        "label": ["Space Grotesk"],
+                        "mono": ["JetBrains Mono"]
+                    },
+                    borderRadius: { "DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px" },
+                },
+            },
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+            vertical-align: middle;
+        }
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.04);
+            backdrop-filter: blur(12px);
+        }
+        .primary-gradient {
+            background: linear-gradient(135deg, #6effc0 0%, #00e5a0 100%);
+        }
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+    </style>
+</head>
+<body class="bg-background text-on-background font-body min-h-screen selection:bg-primary selection:text-on-primary">
+<!-- SideNavBar Shell -->
+<aside class="h-screen w-64 fixed left-0 top-0 border-r-0 bg-[#111318] flex flex-col py-8 px-4 z-[60]">
+<div class="mb-10 px-2">
+<h1 class="text-[#00E5A0] font-bold tracking-tighter text-xl font-['Space_Grotesk']">Client Portal</h1>
+<p class="text-xs text-[#8B95A3] font-['Space_Grotesk'] uppercase tracking-widest mt-1">Institutional Intelligence</p>
+</div>
+<nav class="flex-1 space-y-1">
+<!-- Active Tab: Growth -->
+<a class="flex items-center gap-3 px-4 py-3 text-[#00E5A0] bg-[#1f1f24] border-l-2 border-[#00E5A0] font-semibold transition-all duration-200" href="#">
+<span class="material-symbols-outlined">trending_up</span>
+<span class="font-['Space_Grotesk'] text-sm tracking-tight">Growth</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 text-[#8B95A3] hover:text-white hover:bg-[#1f1f24] transition-all duration-200" href="#">
+<span class="material-symbols-outlined">insights</span>
+<span class="font-['Space_Grotesk'] text-sm tracking-tight">Strategy</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 text-[#8B95A3] hover:text-white hover:bg-[#1f1f24] transition-all duration-200" href="#">
+<span class="material-symbols-outlined">settings_input_component</span>
+<span class="font-['Space_Grotesk'] text-sm tracking-tight">Operations</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 text-[#8B95A3] hover:text-white hover:bg-[#1f1f24] transition-all duration-200" href="#">
+<span class="material-symbols-outlined">terminal</span>
+<span class="font-['Space_Grotesk'] text-sm tracking-tight">Intelligence</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 text-[#8B95A3] hover:text-white hover:bg-[#1f1f24] transition-all duration-200" href="#">
+<span class="material-symbols-outlined">inventory_2</span>
+<span class="font-['Space_Grotesk'] text-sm tracking-tight">Archives</span>
+</a>
+</nav>
+<div class="mt-auto pt-8 border-t border-white/5 space-y-1">
+<button class="w-full flex items-center justify-center gap-2 primary-gradient text-on-primary py-2.5 rounded-lg font-semibold text-sm mb-6 scale-95 active:scale-90 transition-transform">
+<span class="material-symbols-outlined text-lg">add</span>
+                New Diagnostic
+            </button>
+<a class="flex items-center gap-3 px-4 py-2 text-[#8B95A3] hover:text-white hover:bg-[#1f1f24] transition-colors duration-200" href="#">
+<span class="material-symbols-outlined">help_outline</span>
+<span class="font-['Space_Grotesk'] text-sm tracking-tight">Support</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-2 text-[#8B95A3] hover:text-white hover:bg-[#1f1f24] transition-colors duration-200" href="#">
+<span class="material-symbols-outlined">tune</span>
+<span class="font-['Space_Grotesk'] text-sm tracking-tight">Settings</span>
+</a>
+</div>
+</aside>
+<!-- TopAppBar Shell -->
+<header class="fixed top-0 right-0 w-[calc(100%-16rem)] z-50 bg-[#0A0B0F]/80 backdrop-blur-xl h-16 px-8 flex justify-between items-center">
+<div class="flex items-center gap-4">
+<span class="text-[#00E5A0] font-black italic font-['JetBrains_Mono'] uppercase text-xs tracking-[0.2em]">STRICTLY CONFIDENTIAL</span>
+</div>
+<div class="flex items-center gap-6">
+<div class="relative group">
+<span class="material-symbols-outlined text-[#8B95A3] group-hover:text-[#00E5A0] cursor-pointer transition-colors">search</span>
+</div>
+<span class="material-symbols-outlined text-[#8B95A3] hover:opacity-80 cursor-pointer transition-opacity">notifications</span>
+<div class="flex items-center gap-3 cursor-pointer group">
+<img alt="User" class="w-8 h-8 rounded-full border border-[#00E5A0]/20" data-alt="professional avatar of a corporate executive in a dark suit with a neutral background" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCMdFezE5rBQDwSoWg1JsUHVPrsT9T2TFUW92bHVJrnVrae2btboihIbp90mApqv5tk5Ya_rtte3sHBPuQuL-vYqscjg_xYF-aAireJI5k7gsoXmL7K0Wlw1Hhg7TlfTIXpts8KaIVRmCUa09cyDHq-IciJykDBHDa7dFjts4FxlkFmWhGVe8vF7S-3CL9V_9XDJdVAmLHuO8sD_yEa-uuBo53ZurGerF1CbbRBkhZOCyxHD7461D8trjR6FnuaRgUt9koktsoehSY"/>
+<span class="material-symbols-outlined text-[#8B95A3] group-hover:text-white transition-colors">account_circle</span>
+</div>
+</div>
+</header>
+<!-- Main Content Canvas -->
+<main class="ml-64 pt-24 pb-12 px-12 max-w-[1440px]">
+<!-- Header Section -->
+<section class="flex flex-col md:flex-row justify-between items-start md:items-end mb-12 gap-6">
+<div class="space-y-2">
+<div class="flex items-center gap-4">
+<h2 class="text-5xl font-extrabold font-headline tracking-tight text-white">План Роста</h2>
+<span class="bg-primary/10 text-primary border border-primary/20 px-3 py-1 rounded-full text-xs font-mono font-bold tracking-tighter">90 ДНЕЙ</span>
+</div>
+<p class="text-secondary max-w-xl text-lg leading-relaxed">
+                    Стратегическая дорожная карта масштабирования операционной эффективности и захвата доли рынка на основе AI-аналитики.
+                </p>
+</div>
+<div class="flex gap-4">
+<div class="bg-surface-container-low p-4 rounded-xl min-w-[160px]">
+<p class="text-[#8B95A3] text-xs font-label uppercase tracking-widest mb-1">Статус квартала</p>
+<div class="flex items-baseline gap-2">
+<span class="text-2xl font-mono text-white">64%</span>
+<span class="text-primary text-xs font-mono">▲ 12%</span>
+</div>
+</div>
+</div>
+</section>
+<!-- Section 1: RICE Prioritization (Bento Grid) -->
+<section class="mb-16">
+<div class="flex items-center justify-between mb-6">
+<h3 class="text-xl font-headline font-semibold text-white tracking-tight flex items-center gap-2">
+<span class="material-symbols-outlined text-primary">analytics</span>
+                    Приоритизация RICE
+                </h3>
+<span class="text-xs font-mono text-secondary uppercase tracking-widest">Топ инициатив</span>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+<!-- RICE Card 1 -->
+<div class="bg-surface-container-low hover:bg-surface-container transition-colors p-6 rounded-xl relative overflow-hidden group">
+<div class="absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
+<span class="text-6xl font-mono font-black italic">01</span>
+</div>
+<div class="inline-flex items-center px-2 py-0.5 rounded bg-primary-container/20 text-primary text-[10px] font-mono font-bold mb-4">
+                        RICE: 840
+                    </div>
+<h4 class="text-lg font-bold text-white mb-2 leading-tight">AI-Оптимизация воронки</h4>
+<p class="text-sm text-secondary mb-6 line-clamp-2">Внедрение предиктивного анализа поведения пользователей на этапе чекаута.</p>
+<div class="flex flex-wrap gap-2">
+<span class="px-2 py-1 bg-surface-container-highest rounded text-[10px] text-white/70 font-label">R: 12k</span>
+<span class="px-2 py-1 bg-surface-container-highest rounded text-[10px] text-white/70 font-label">I: 3.0</span>
+<span class="px-2 py-1 bg-surface-container-highest rounded text-[10px] text-white/70 font-label">C: 80%</span>
+<span class="px-2 py-1 bg-surface-container-highest rounded text-[10px] text-white/70 font-label">E: 2.0</span>
+</div>
+</div>
+<!-- RICE Card 2 -->
+<div class="bg-surface-container-low hover:bg-surface-container transition-colors p-6 rounded-xl relative overflow-hidden group">
+<div class="absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
+<span class="text-6xl font-mono font-black italic">02</span>
+</div>
+<div class="inline-flex items-center px-2 py-0.5 rounded bg-primary-container/20 text-primary text-[10px] font-mono font-bold mb-4">
+                        RICE: 720
+                    </div>
+<h4 class="text-lg font-bold text-white mb-2 leading-tight">Автоматизация LTV</h4>
+<p class="text-sm text-secondary mb-6 line-clamp-2">Персонализированные офферы на основе истории покупок через LLM-агентов.</p>
+<div class="flex flex-wrap gap-2">
+<span class="px-2 py-1 bg-surface-container-highest rounded text-[10px] text-white/70 font-label">R: 8k</span>
+<span class="px-2 py-1 bg-surface-container-highest rounded text-[10px] text-white/70 font-label">I: 4.5</span>
+<span class="px-2 py-1 bg-surface-container-highest rounded text-[10px] text-white/70 font-label">C: 50%</span>
+<span class="px-2 py-1 bg-surface-container-highest rounded text-[10px] text-white/70 font-label">E: 2.5</span>
+</div>
+</div>
+<!-- RICE Card 3 -->
+<div class="bg-surface-container-low hover:bg-surface-container transition-colors p-6 rounded-xl relative overflow-hidden group">
+<div class="absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
+<span class="text-6xl font-mono font-black italic">03</span>
+</div>
+<div class="inline-flex items-center px-2 py-0.5 rounded bg-primary-container/20 text-primary text-[10px] font-mono font-bold mb-4">
+                        RICE: 480
+                    </div>
+<h4 class="text-lg font-bold text-white mb-2 leading-tight">Реферальная сеть 2.0</h4>
+<p class="text-sm text-secondary mb-6 line-clamp-2">Запуск партнерской программы для институциональных клиентов.</p>
+<div class="flex flex-wrap gap-2">
+<span class="px-2 py-1 bg-surface-container-highest rounded text-[10px] text-white/70 font-label">R: 2k</span>
+<span class="px-2 py-1 bg-surface-container-highest rounded text-[10px] text-white/70 font-label">I: 4.0</span>
+<span class="px-2 py-1 bg-surface-container-highest rounded text-[10px] text-white/70 font-label">C: 60%</span>
+<span class="px-2 py-1 bg-surface-container-highest rounded text-[10px] text-white/70 font-label">E: 1.0</span>
+</div>
+</div>
+<!-- RICE Card 4 -->
+<div class="bg-surface-container-low hover:bg-surface-container transition-colors p-6 rounded-xl relative overflow-hidden group">
+<div class="absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
+<span class="text-6xl font-mono font-black italic">04</span>
+</div>
+<div class="inline-flex items-center px-2 py-0.5 rounded bg-primary-container/20 text-primary text-[10px] font-mono font-bold mb-4">
+                        RICE: 320
+                    </div>
+<h4 class="text-lg font-bold text-white mb-2 leading-tight">Брендинг Экспансии</h4>
+<p class="text-sm text-secondary mb-6 line-clamp-2">Обновление визуальной идентичности для выхода на рынки MENA.</p>
+<div class="flex flex-wrap gap-2">
+<span class="px-2 py-1 bg-surface-container-highest rounded text-[10px] text-white/70 font-label">R: 4k</span>
+<span class="px-2 py-1 bg-surface-container-highest rounded text-[10px] text-white/70 font-label">I: 2.0</span>
+<span class="px-2 py-1 bg-surface-container-highest rounded text-[10px] text-white/70 font-label">C: 40%</span>
+<span class="px-2 py-1 bg-surface-container-highest rounded text-[10px] text-white/70 font-label">E: 1.0</span>
+</div>
+</div>
+</div>
+</section>
+<!-- Section 2: Roadmap Timeline -->
+<section class="mb-16">
+<div class="flex items-center justify-between mb-8">
+<h3 class="text-xl font-headline font-semibold text-white tracking-tight flex items-center gap-2">
+<span class="material-symbols-outlined text-primary">route</span>
+                    Дорожная карта
+                </h3>
+</div>
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-8 relative">
+<!-- Phase 1: Fix -->
+<div class="flex flex-col gap-4">
+<div class="flex items-center gap-3 mb-2">
+<div class="w-8 h-8 rounded bg-primary/20 flex items-center justify-center text-primary font-mono text-sm">01</div>
+<h4 class="font-bold text-white uppercase tracking-wider text-sm">Weeks 1-4: Fix</h4>
+</div>
+<div class="bg-surface-container-low rounded-xl p-5 border-l-4 border-primary/40 space-y-4 min-h-[400px]">
+<div class="space-y-4">
+<label class="flex items-start gap-3 group cursor-pointer">
+<input checked="" class="mt-1 rounded border-none bg-surface-container-highest text-primary focus:ring-0 focus:ring-offset-0" type="checkbox"/>
+<div>
+<p class="text-sm text-white group-hover:text-primary transition-colors">Аудит тех-стека</p>
+<div class="flex items-center gap-2 mt-1">
+<img class="w-4 h-4 rounded-full" data-alt="avatar of a male developer with glasses and dark hair" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAEOHUa6K0Vz5QNTRraqNMrGU3P9oS58sRzxqa3i46_xxOdqNlkypb7vLxL-ye13h1Qjoujffo6eww73kjhoaje0wUXPB3p45_o3QiI4rOzIG7akWRiSoX0jk5SOjXhllIftMwjYT08qm8dlgjuDyqQ6G8OKaR3iKaVO0I4sq4u8WmD9h_ISSWbukoNYbjgZ-hvtxXBuJh9N2raNSpoT3hXUpdzyyFGQNYdqdX37yKDkwAKeUJL04NhBDYY2lkS1CnpUaiZaIfwOEc"/>
+<span class="text-[10px] font-mono text-secondary">CTO</span>
+</div>
+</div>
+</label>
+<label class="flex items-start gap-3 group cursor-pointer">
+<input checked="" class="mt-1 rounded border-none bg-surface-container-highest text-primary focus:ring-0 focus:ring-offset-0" type="checkbox"/>
+<div>
+<p class="text-sm text-white group-hover:text-primary transition-colors">Исправление багов оплаты</p>
+<div class="flex items-center gap-2 mt-1">
+<img class="w-4 h-4 rounded-full" data-alt="avatar of a female product manager with blonde hair" src="https://lh3.googleusercontent.com/aida-public/AB6AXuB4bgtyEXRjV6a9ORNsV3tVH6gTqusVRGW_ZPyZbfY0Kln5wyPM2_jXtgwHxGzinZ7IQiSM4d9FKoJsBqLzQUXjijvXP7qQ9AyCIGOohUxJuXfvDJ4i3Rmn8KyBUmVybaPw9ff8AY0oiVMlPIts0XNs1jdPEuRRzollTMJtQsaAhzL60JuVKx2U0lSDUE5nV1L9TrjKVCVJZoX8PRA_kqqRXoJb9s0ys_TYfXpjF9QIt3jR9Wygn4W29FXvrwTh22wjfoIzhPHw_AU"/>
+<span class="text-[10px] font-mono text-secondary">DEV</span>
+</div>
+</div>
+</label>
+<label class="flex items-start gap-3 group cursor-pointer">
+<input class="mt-1 rounded border-none bg-surface-container-highest text-primary focus:ring-0 focus:ring-offset-0" type="checkbox"/>
+<div>
+<p class="text-sm text-white group-hover:text-primary transition-colors">Оптимизация Core Web Vitals</p>
+<div class="flex items-center gap-2 mt-1">
+<img class="w-4 h-4 rounded-full" data-alt="avatar of a male system architect with a beard" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCGuiww-qn1-1u2fbbx5fzF1nLhqC3Zw-V3WW_84LI5_n7T4nmzTI_efZ5RkqMP9-UL-n9esod17tNtG0Vcy-yj2MjBB42nGrxHDfDnM_T7EHRMwIMQcaxugKVZShsfPaSmCD5psGOzDcLzCFoQmH-xf2T93PhOV3oF9go1_lI1MtMJexOg2KkNk0moNmQ7gHo2A9E5nPJ_8lIjrpLOMjD_KgmddLmpA8RNWwk-2IVGBn5GIG0vU4PqrXD--fMU1Bof-gPNnO5B7X8"/>
+<span class="text-[10px] font-mono text-secondary">OPS</span>
+</div>
+</div>
+</label>
+</div>
+<div class="mt-auto pt-6 border-t border-white/5">
+<p class="text-[10px] font-mono text-secondary uppercase tracking-widest mb-2">Deliverable</p>
+<p class="text-xs text-white bg-white/5 p-3 rounded italic">"Стабильная архитектура с аптаймом 99.9%"</p>
+</div>
+</div>
+</div>
+<!-- Phase 2: Growth -->
+<div class="flex flex-col gap-4">
+<div class="flex items-center gap-3 mb-2">
+<div class="w-8 h-8 rounded bg-surface-container-highest flex items-center justify-center text-white/50 font-mono text-sm">02</div>
+<h4 class="font-bold text-white uppercase tracking-wider text-sm">Weeks 5-8: Growth</h4>
+</div>
+<div class="bg-surface-container-low rounded-xl p-5 border-l-4 border-white/10 space-y-4 min-h-[400px]">
+<div class="space-y-4">
+<label class="flex items-start gap-3 group cursor-pointer opacity-80">
+<input class="mt-1 rounded border-none bg-surface-container-highest text-primary focus:ring-0 focus:ring-offset-0" type="checkbox"/>
+<div>
+<p class="text-sm text-white group-hover:text-primary transition-colors">A/B тесты онбординга</p>
+<div class="flex items-center gap-2 mt-1">
+<img class="w-4 h-4 rounded-full" data-alt="avatar of a female marketing manager with glasses" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBHkkHfWaGzjNRl7dhIJtt9lKx9i1s_uEKDKziYTcJbJ12rtT_PzWy1ciIBjhUpxpxqyV2-zWSBDR5N460b28pEab2BWIRxpJxZamp5GytvDqWky3_5UkGwl0PZwWzyxFJztR_gEL_2fh2JNoHitzXazWX7fvtBi8fUBEgnvlcFSmyFbWkhroPmv5KJCKAyWdSXy0RSn5PMsv-KNLidafINziilFn2ACqC6uVX6VmxqMc7WP2V7zyG1lSC55rzsuhOEZ7at6U2C3oc"/>
+<span class="text-[10px] font-mono text-secondary">GROWTH</span>
+</div>
+</div>
+</label>
+<label class="flex items-start gap-3 group cursor-pointer opacity-80">
+<input class="mt-1 rounded border-none bg-surface-container-highest text-primary focus:ring-0 focus:ring-offset-0" type="checkbox"/>
+<div>
+<p class="text-sm text-white group-hover:text-primary transition-colors">Запуск системы баллов</p>
+<div class="flex items-center gap-2 mt-1">
+<img class="w-4 h-4 rounded-full" data-alt="avatar of a male UI designer with short hair" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDnymU1bsLAqQG00VnBxa2vtYSWRfXFKp1y2K74w3VaX_EVc5xDxx21rl0yqK6uU687NhruFptmrGGYcIy8VC_CEmu449csHKajlP5lv1DYGK9s7AdmUeD6IbsNkF9aDFoqTbwHIhnIpgdBimD0bK6Fm8dKbl9dNMoUxjdhWLFiMJgHJm8s5vW6cdQ_Dx1Zprgor45ETJ2bxSVJBtZVuNqDx6cVxkx_3xL2xWrCdIyJGit5Y5bAMCDyNhbpWY7bBnR0MiQrwzpBVTY"/>
+<span class="text-[10px] font-mono text-secondary">PRODUCT</span>
+</div>
+</div>
+</label>
+<label class="flex items-start gap-3 group cursor-pointer opacity-80">
+<input class="mt-1 rounded border-none bg-surface-container-highest text-primary focus:ring-0 focus:ring-offset-0" type="checkbox"/>
+<div>
+<p class="text-sm text-white group-hover:text-primary transition-colors">Интеграция с CRM</p>
+<div class="flex items-center gap-2 mt-1">
+<img class="w-4 h-4 rounded-full" data-alt="avatar of a systems integrator with a neutral expression" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCZuvXweRLxzBMxA9HfAXokjC_koJHQQgYo9TJxQLakohkUnGeZTsNjSm6ybfi0rwVlUS25AE3LX_f5qKrOL7RdfYKE25UunJQKhupl9GFLVy0nt3F2gK9xL6mQfvJeNPuWd9KEkiLReGzBXyYoUFZX4XKaS9Mw7cGrlqZut5jy3rfwYbo0QIBHIIhLBOOEmWzN3TsiBxUEU7rJL7klULc6EsgNwD4u4oleCx9LM1qrMep9_TYAIrmYKbFpsp91YvKQ7au7XFRlX8s"/>
+<span class="text-[10px] font-mono text-secondary">DATA</span>
+</div>
+</div>
+</label>
+</div>
+<div class="mt-auto pt-6 border-t border-white/5">
+<p class="text-[10px] font-mono text-secondary uppercase tracking-widest mb-2">Deliverable</p>
+<p class="text-xs text-white bg-white/5 p-3 rounded italic">"Рост конверсии из триала в платную подписку на 15%"</p>
+</div>
+</div>
+</div>
+<!-- Phase 3: Scale -->
+<div class="flex flex-col gap-4">
+<div class="flex items-center gap-3 mb-2">
+<div class="w-8 h-8 rounded bg-surface-container-highest flex items-center justify-center text-white/50 font-mono text-sm">03</div>
+<h4 class="font-bold text-white uppercase tracking-wider text-sm">Weeks 9-12: Scale</h4>
+</div>
+<div class="bg-surface-container-low rounded-xl p-5 border-l-4 border-white/10 space-y-4 min-h-[400px]">
+<div class="space-y-4">
+<label class="flex items-start gap-3 group cursor-pointer opacity-50">
+<input class="mt-1 rounded border-none bg-surface-container-highest text-primary focus:ring-0 focus:ring-offset-0" type="checkbox"/>
+<div>
+<p class="text-sm text-white">Выход на рынок MENA</p>
+<div class="flex items-center gap-2 mt-1">
+<img class="w-4 h-4 rounded-full" data-alt="avatar of a female business development lead" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDEzDW7Khwpwatuj-4VbOWbIKiz-FfYL7HId8xKO6lqusO0vCHAoPPKSgZ5qORnXI2mupRygEuKc9StQwqnBhYILmcU-jrm10AHrgCVJr007qfrZCWOwpI_jq6DwfGiFJINLtmcx48-WiheV-Cpd1nXmgN-Rq9E-AuiJjOMjknayu9Qb2WzKuRvKE9LybGQXmkl9lzMa73hpYv81Ke25WhQXDy1jRuxRVN8RTa1LuvqWNOfvsT8RyS2w46bQV0sW7GDq68u6wJ-OEk"/>
+<span class="text-[10px] font-mono text-secondary">GLOBAL</span>
+</div>
+</div>
+</label>
+<label class="flex items-start gap-3 group cursor-pointer opacity-50">
+<input class="mt-1 rounded border-none bg-surface-container-highest text-primary focus:ring-0 focus:ring-offset-0" type="checkbox"/>
+<div>
+<p class="text-sm text-white">White-label решение</p>
+<div class="flex items-center gap-2 mt-1">
+<img class="w-4 h-4 rounded-full" data-alt="corporate brand identity avatar" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBqGT05YQ5XqtX-UPBzroLCsoApy0rIWc05Cc2qbCASQRjnqBkqUSGnzpE_BLEosbql10pgCoa3UY0zHysniEmofBKRDXM_P7ZOfYMnW6Tuf0-KSNzaVYXfok8R10uG8WXjbhzF2rHQ8ON2VgATolBTFPE4WgLL-lnoXBt7jKhKfeWRvsnIiHeifkE9DoInMjh5x-qy2nOOHgXSdm6W-u56qCBzcIRURib7vgtM_Ad630vR4S1sr7l87huAigMr0sUQm1J8NDwWSp4"/>
+<span class="text-[10px] font-mono text-secondary">PARTNERS</span>
+</div>
+</div>
+</label>
+<label class="flex items-start gap-3 group cursor-pointer opacity-50">
+<input class="mt-1 rounded border-none bg-surface-container-highest text-primary focus:ring-0 focus:ring-offset-0" type="checkbox"/>
+<div>
+<p class="text-sm text-white">AI-консультант 24/7</p>
+<div class="flex items-center gap-2 mt-1">
+<img class="w-4 h-4 rounded-full" data-alt="stylized robot head icon representing an AI agent" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAp7wp6ks4S1NRb7Er_760Pm3ISbzVuAg9ywG29Y5M_Hr8qSx46uxNddsAgHBosGKMMe36UPAM2xJWEVjttR9i9srR2o6gB0xlMfANgvkiSwO2gaT_xBtUyWgOxtwkl8A7mZ8VOyEbdSQqSpvuinvpE4PQHxnvOnuENHkgbDaVnkEjZIV2RVNCB-pOirWH89HsMuTuqfRGrHeCFOia3J0FcOqWsDOIcqhFdzrRdldiJbx-Rg9oFtiv4dlYspWOfJy7ancfsW2RcMVo"/>
+<span class="text-[10px] font-mono text-secondary">AI LABS</span>
+</div>
+</div>
+</label>
+</div>
+<div class="mt-auto pt-6 border-t border-white/5">
+<p class="text-[10px] font-mono text-secondary uppercase tracking-widest mb-2">Deliverable</p>
+<p class="text-xs text-white bg-white/5 p-3 rounded italic">"Достижение 500+ активных B2B аккаунтов"</p>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- Section 3: Growth ROI -->
+<footer class="mt-12">
+<div class="glass-panel border-l-4 border-primary p-8 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-8">
+<div class="space-y-2">
+<h4 class="text-primary font-mono text-sm font-bold uppercase tracking-widest">Прогноз эффективности (ROI)</h4>
+<p class="text-white text-2xl font-headline font-bold">Ожидаемый KPI к концу квартала:</p>
+</div>
+<div class="flex items-center gap-6">
+<div class="text-right">
+<p class="text-[#8B95A3] text-xs font-label uppercase tracking-widest mb-1">Целевой показатель GM</p>
+<div class="text-4xl font-mono text-white tracking-tighter">GM ≥ 15.0%</div>
+</div>
+<div class="h-12 w-px bg-white/10 hidden md:block"></div>
+<div class="flex -space-x-3">
+<img class="w-10 h-10 rounded-full border-2 border-background" data-alt="team member avatar one" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBj5j0pFKdGsBzblTcenz6iCgE8u6tCR_aJTPgmF204fdXs--jg0XmeFTJ3JNG1MK_MYzx1oukM9YoEY3Dd_fGhHGD6O1-A4caE2sHMYPh30uWn75Rd4nvDOHDBD2FF_4zM22JNAjKjSqRHNsTFTz5G1Ea5mso4LTV2iD6aaiwHhnkpkRmnMcWch6Z74UdBL4_gJ1kBhmuNKT8hKfawJwV5AHBhx2hs72mApTXcsHa7Ou_kq0YrhIGNkT73gV4CWye3LkRUI7vWUpo"/>
+<img class="w-10 h-10 rounded-full border-2 border-background" data-alt="team member avatar two" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAYcsEiaPcwjh0v-aU27L-InVsPVj4xzBjGqBFz2LrgrjCElg_fkbzzv86Xq5rx8-81bNeVmDtuCbU8u3l_GfATAabIG9fL-I8Al35uOEZwE4uVfVnmcFkDYa0Ng7To9JKJ08J43F0s9Jv6aKIBEcHpMOFH9hO83cEHLug3u4D_-lpMcQ-EEwDVk6qQEZ5daEobsc8UUdl7cW2SEMhRIoMjOJmix_oOBIrgTecjT0dlmdE5Ezkaeh1SiLcaohUY3dxYd6bFZ9uC17o"/>
+<img class="w-10 h-10 rounded-full border-2 border-background" data-alt="team member avatar three" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAp7MXb2Bwzp417GXGM1KzBxHLJCh4AWPVE18VoqbsDMpeKoqHU6ISKSdHmLTYqyJXJcWxm59W9tie5od6e_b7EIrPLF9qXq_Sw9f7chvcE6Eo1oqNkszzQw-FrS_Ck2w6H54UNd62-yqlkvUEohFXdEsPIFFFWZSyS1nGhtkNXfD7A0ho3PH93gROvkps_mbvSCWXs776kXsz2aZ4uA_rcS1mMzjGad9aSrJn2zUXgjUiNVJdGDdosFOpAD_nXhL0jJC5J-JQbrf8"/>
+<div class="w-10 h-10 rounded-full bg-surface-container-highest border-2 border-background flex items-center justify-center text-[10px] font-mono">+12</div>
+</div>
+</div>
+</div>
+</footer>
+</main>
+<!-- Contextual FAB (Hidden on this transactional screen as per mandate) -->
+</body></html>

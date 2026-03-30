@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="ru"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>AIStart360 - Авторизация</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;600;700;800&amp;family=DM+Sans:ital,wght@0,400;0,500;0,700;1,400&amp;family=JetBrains+Mono:wght@400;700&amp;family=Space+Grotesque:wght@400;500;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "surface-container": "#1f1f24",
+              "surface-container-high": "#292a2e",
+              "on-surface": "#e3e2e8",
+              "surface-bright": "#38393e",
+              "outline-variant": "#3b4a41",
+              "surface-variant": "#343439",
+              "on-secondary-container": "#aeb9d0",
+              "on-primary-fixed-variant": "#005236",
+              "error-container": "#93000a",
+              "surface-dim": "#121317",
+              "surface-container-highest": "#343439",
+              "on-tertiary-container": "#754b00",
+              "secondary-fixed-dim": "#bcc7de",
+              "on-primary": "#003824",
+              "inverse-on-surface": "#2f3035",
+              "surface-container-lowest": "#0d0e12",
+              "primary": "#00E5A0", // Updated to match brand green
+              "on-secondary-fixed": "#111c2d",
+              "secondary": "#bcc7de",
+              "on-secondary-fixed-variant": "#3c475a",
+              "on-secondary": "#263143",
+              "on-primary-fixed": "#002114",
+              "on-error-container": "#ffdad6",
+              "inverse-surface": "#e3e2e8",
+              "error": "#ffb4ab",
+              "tertiary-fixed-dim": "#ffb955",
+              "tertiary-fixed": "#ffddb4",
+              "on-tertiary-fixed-variant": "#633f00",
+              "on-background": "#e3e2e8",
+              "primary-fixed-dim": "#00e29e",
+              "outline": "#84958a",
+              "surface": "#121317",
+              "surface-tint": "#00e29e",
+              "on-error": "#690005",
+              "on-tertiary": "#452b00",
+              "tertiary": "#ffe1bd",
+              "on-tertiary-fixed": "#291800",
+              "background": "#0A0B0F", // Deep dark background
+              "on-primary-container": "#006141",
+              "primary-container": "#00e5a0",
+              "tertiary-container": "#ffbd60",
+              "primary-fixed": "#47ffb8",
+              "surface-container-low": "#15161A",
+              "secondary-fixed": "#d8e3fb",
+              "secondary-container": "#3e495d",
+              "on-surface-variant": "#bacbbf",
+              "inverse-primary": "#006c49"
+            },
+            fontFamily: {
+              "headline": ["Bricolage Grotesque", "sans-serif"],
+              "body": ["DM Sans", "sans-serif"],
+              "label": ["Space Grotesk", "sans-serif"],
+              "mono": ["JetBrains Mono", "monospace"]
+            },
+            borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
+          },
+        },
+      }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .noise-overlay {
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+            opacity: 0.05;
+        }
+        @keyframes radar-pulse {
+            0%, 100% { transform: scale(1); opacity: 0.3; }
+            50% { transform: scale(1.05); opacity: 0.5; }
+        }
+        @keyframes radar-rotate {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        .animate-radar-pulse {
+            animation: radar-pulse 4s ease-in-out infinite;
+        }
+        .animate-radar-rotate {
+            animation: radar-rotate 60s linear infinite;
+        }
+        .glass-card {
+            background: rgba(255, 255, 255, 0.03);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .glass-card:hover {
+            background: rgba(255, 255, 255, 0.06);
+            border-color: rgba(0, 229, 160, 0.3);
+            transform: translateY(-2px);
+        }
+        .input-underline {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            height: 2px;
+            width: 0;
+            background-color: #00E5A0;
+            transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        input:focus ~ .input-underline {
+            width: 100%;
+        }
+    </style>
+</head>
+<body class="bg-background text-on-background font-body selection:bg-primary selection:text-on-primary antialiased">
+<main class="min-h-screen flex flex-col md:flex-row overflow-hidden">
+<!-- LEFT PANEL: Institutional Intelligence -->
+<section class="hidden md:flex md:w-1/2 relative flex-col justify-between p-16 overflow-hidden bg-gradient-to-br from-[#0A0B0F] via-[#0D1214] to-[#0A0B0F]">
+<!-- Noise Texture -->
+<div class="absolute inset-0 noise-overlay pointer-events-none"></div>
+<!-- Top Branding -->
+<div class="relative z-10 animate-in fade-in slide-in-from-left duration-700">
+<div class="flex items-center gap-4">
+<div class="w-12 h-12 bg-primary rounded-xl flex items-center justify-center shadow-[0_0_20px_rgba(0,229,160,0.3)]">
+<span class="material-symbols-outlined text-on-primary font-bold text-2xl" data-icon="hub">hub</span>
+</div>
+<div>
+<h1 class="font-headline text-4xl font-extrabold tracking-tighter text-white leading-none">AIStart360</h1>
+<p class="mt-1 font-mono text-[10px] text-primary/80 uppercase tracking-[0.3em]">Institutional Grade Intelligence</p>
+</div>
+</div>
+<p class="mt-8 font-headline text-xl text-white/60 tracking-tight leading-relaxed max-w-sm">
+                Комплексная диагностика. Стратегическое планирование. Устойчивый рост.
+            </p>
+</div>
+<!-- Center Animated Radar -->
+<div class="relative z-10 flex-grow flex items-center justify-center">
+<div class="relative w-96 h-96 group">
+<div class="absolute inset-0 animate-radar-pulse">
+<svg class="w-full h-full opacity-20" viewbox="0 0 400 400">
+<circle cx="200" cy="200" fill="none" r="180" stroke="#00E5A0" stroke-dasharray="4 4" stroke-width="0.5"></circle>
+<circle cx="200" cy="200" fill="none" r="120" stroke="#00E5A0" stroke-dasharray="4 4" stroke-width="0.5"></circle>
+<circle cx="200" cy="200" fill="none" r="60" stroke="#00E5A0" stroke-dasharray="4 4" stroke-width="0.5"></circle>
+</svg>
+</div>
+<svg class="w-full h-full relative z-20 transition-transform duration-700 group-hover:scale-105" viewbox="0 0 400 400">
+<!-- 8 Axes -->
+<g opacity="0.15" stroke="#00E5A0" stroke-width="1">
+<line x1="200" x2="200" y1="200" y2="40"></line>
+<line x1="200" x2="313" y1="200" y2="87"></line>
+<line x1="200" x2="360" y1="200" y2="200"></line>
+<line x1="200" x2="313" y1="200" y2="313"></line>
+<line x1="200" x2="200" y1="200" y2="360"></line>
+<line x1="200" x2="87" y1="200" y2="313"></line>
+<line x1="200" x2="40" y1="200" y2="200"></line>
+<line x1="200" x2="87" y1="200" y2="87"></line>
+</g>
+<!-- Polygon -->
+<polygon class="transition-all duration-1000" fill="rgba(0,229,160,0.12)" points="200,80 290,120 340,200 280,300 200,340 110,290 60,200 120,110" stroke="#00E5A0" stroke-width="2.5"></polygon>
+<!-- Axis Labels -->
+<g class="font-mono text-[9px] tracking-[0.2em] uppercase" fill="#8B95A3">
+<text text-anchor="middle" x="200" y="25">Финансы</text>
+<text text-anchor="start" x="330" y="75">Клиенты</text>
+<text text-anchor="start" x="375" y="205">Рынок</text>
+<text text-anchor="start" x="330" y="335">Операции</text>
+<text text-anchor="middle" x="200" y="385">HR</text>
+<text text-anchor="end" x="70" y="335">Продажи</text>
+<text text-anchor="end" x="25" y="205">Цены</text>
+<text text-anchor="end" x="70" y="75">Конкуренция</text>
+</g>
+</svg>
+<div class="absolute inset-0 opacity-20 blur-[80px] rounded-full bg-primary pointer-events-none"></div>
+</div>
+</div>
+<!-- Testimonials -->
+<div class="relative z-10 w-full max-w-xl mx-auto space-y-4">
+<h3 class="font-mono text-[10px] uppercase tracking-[0.4em] text-outline/60 mb-6 text-center">Институциональное доверие</h3>
+<div class="grid grid-cols-1 gap-3">
+<div class="glass-card p-5 rounded-xl">
+<p class="font-body text-sm text-on-surface/90 leading-relaxed italic">«AIStart360 радикально изменил наш подход к анализу маржинальности. Точность инсайтов превзошла ожидания.»</p>
+<div class="mt-4 flex items-center justify-between border-t border-white/5 pt-3">
+<span class="text-[11px] font-mono text-primary uppercase tracking-wider">Александр Ковалев</span>
+<span class="px-2 py-0.5 rounded bg-white/5 text-[9px] text-outline uppercase font-label tracking-widest">CEO · TechLogistics</span>
+</div>
+</div>
+<div class="glass-card p-5 rounded-xl">
+<p class="font-body text-sm text-on-surface/90 leading-relaxed italic">«Это не просто дашборд, а стратегический компас для нашего операционного управления.»</p>
+<div class="mt-4 flex items-center justify-between border-t border-white/5 pt-3">
+<span class="text-[11px] font-mono text-primary uppercase tracking-wider">Елена Волкова</span>
+<span class="px-2 py-0.5 rounded bg-white/5 text-[9px] text-outline uppercase font-label tracking-widest">CFO · RetailOne</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Bottom Pills -->
+<div class="relative z-10 flex gap-4 justify-center pt-12 border-t border-white/5 mt-8">
+<div class="flex items-center gap-2 px-5 py-2.5 bg-white/5 border border-white/10 rounded-full">
+<span class="w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></span>
+<span class="font-label text-[11px] font-medium text-white/70 uppercase tracking-widest">500+ диагностик</span>
+</div>
+<div class="flex items-center gap-2 px-5 py-2.5 bg-white/5 border border-white/10 rounded-full">
+<span class="w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></span>
+<span class="font-label text-[11px] font-medium text-white/70 uppercase tracking-widest">27 отраслей</span>
+</div>
+<div class="flex items-center gap-2 px-5 py-2.5 bg-white/5 border border-white/10 rounded-full">
+<span class="w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></span>
+<span class="font-label text-[11px] font-medium text-white/70 uppercase tracking-widest">СНГ · MENA</span>
+</div>
+</div>
+</section>
+<!-- RIGHT PANEL: Authorization Form -->
+<section class="w-full md:w-1/2 flex flex-col bg-[#0A0B0F] justify-center items-center px-8 py-16 md:px-24 relative">
+<!-- Floating Decoration -->
+<div class="absolute top-0 right-0 w-64 h-64 bg-primary/5 blur-[100px] rounded-full pointer-events-none"></div>
+<!-- Mobile Logo -->
+<div class="md:hidden w-full flex items-center justify-between mb-16 h-[60px]">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 bg-primary rounded-lg flex items-center justify-center">
+<span class="material-symbols-outlined text-on-primary font-bold" data-icon="hub">hub</span>
+</div>
+<span class="font-headline text-2xl font-extrabold text-white tracking-tighter">AIStart360</span>
+</div>
+<div class="text-[10px] font-mono text-outline uppercase tracking-widest opacity-50">v2.4.1</div>
+</div>
+<div class="w-full max-w-md animate-in fade-in slide-in-from-bottom duration-1000">
+<!-- Institutional Header -->
+<div class="mb-12 text-center md:text-left">
+<div class="hidden md:flex items-center gap-3 mb-6">
+<div class="p-2 rounded-lg bg-primary/10">
+<span class="material-symbols-outlined text-primary text-lg" data-icon="lock_open">lock_open</span>
+</div>
+<span class="text-[10px] font-mono text-primary uppercase tracking-[0.4em] font-bold">Institutional Access Only</span>
+</div>
+<h2 class="font-headline text-5xl font-bold text-white tracking-tight leading-tight">Войти в систему</h2>
+<p class="mt-4 text-secondary/60 text-base font-body leading-relaxed">Введите корпоративные учетные данные для доступа к диагностической панели.</p>
+</div>
+<!-- Form -->
+<form class="space-y-8">
+<!-- Email Input -->
+<div class="relative group">
+<input class="peer w-full px-5 pt-8 pb-3 bg-white/[0.03] border border-white/10 rounded-xl focus:ring-0 focus:border-white/20 text-on-surface transition-all placeholder-transparent" id="email" name="email" placeholder="Email" type="email"/>
+<label class="absolute left-5 top-3 text-[10px] font-mono uppercase tracking-[0.2em] text-outline/60 transition-all peer-placeholder-shown:text-base peer-placeholder-shown:top-5 peer-placeholder-shown:font-body peer-placeholder-shown:normal-case peer-placeholder-shown:tracking-normal peer-focus:top-3 peer-focus:text-[10px] peer-focus:font-mono peer-focus:uppercase peer-focus:text-primary peer-focus:tracking-[0.2em] pointer-events-none" for="email">Электронная почта</label>
+<div class="input-underline"></div>
+</div>
+<!-- Password Input -->
+<div class="relative group">
+<input class="peer w-full px-5 pt-8 pb-3 bg-white/[0.03] border border-white/10 rounded-xl focus:ring-0 focus:border-white/20 text-on-surface transition-all placeholder-transparent" id="password" name="password" placeholder="Пароль" type="password"/>
+<label class="absolute left-5 top-3 text-[10px] font-mono uppercase tracking-[0.2em] text-outline/60 transition-all peer-placeholder-shown:text-base peer-placeholder-shown:top-5 peer-placeholder-shown:font-body peer-placeholder-shown:normal-case peer-placeholder-shown:tracking-normal peer-focus:top-3 peer-focus:text-[10px] peer-focus:font-mono peer-focus:uppercase peer-focus:text-primary peer-focus:tracking-[0.2em] pointer-events-none" for="password">Пароль</label>
+<button class="absolute right-5 top-5 text-outline/40 hover:text-primary transition-colors focus:outline-none" type="button">
+<span class="material-symbols-outlined text-xl" data-icon="visibility">visibility</span>
+</button>
+<div class="input-underline"></div>
+</div>
+<div class="flex items-center justify-between text-xs px-1">
+<label class="flex items-center gap-3 cursor-pointer group">
+<input class="w-4 h-4 rounded border-white/20 bg-transparent text-primary focus:ring-primary/20 focus:ring-offset-0 transition-all" type="checkbox"/>
+<span class="text-secondary/60 group-hover:text-secondary transition-colors font-medium">Запомнить сессию</span>
+</label>
+<a class="text-primary hover:text-primary/80 transition-all font-mono uppercase tracking-widest text-[10px]" href="#">Забыли пароль?</a>
+</div>
+<!-- Primary CTA -->
+<div class="pt-2">
+<button class="w-full py-5 bg-primary text-on-primary font-headline font-extrabold text-xl rounded-xl shadow-[0_10px_30px_rgba(0,229,160,0.15)] hover:shadow-[0_15px_40px_rgba(0,229,160,0.25)] hover:translate-y-[-2px] transition-all duration-300 active:scale-[0.98] relative overflow-hidden group" type="submit">
+<span class="relative z-10 tracking-tight">Войти в платформу</span>
+<div class="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300"></div>
+</button>
+</div>
+</form>
+<!-- Divider -->
+<div class="relative my-12">
+<div class="absolute inset-0 flex items-center">
+<div class="w-full border-t border-white/5"></div>
+</div>
+<div class="relative flex justify-center text-[10px] uppercase font-mono tracking-[0.5em]">
+<span class="bg-[#0A0B0F] px-6 text-outline/40">ИЛИ ВОЙТИ ЧЕРЕЗ</span>
+</div>
+</div>
+<!-- SSO Buttons -->
+<div class="grid grid-cols-2 gap-4">
+<button class="flex items-center justify-center gap-3 py-4 px-6 bg-white/[0.03] border border-white/5 hover:border-white/20 hover:bg-white/[0.05] rounded-xl transition-all active:scale-[0.98] group">
+<img alt="Google" class="w-5 h-5 opacity-80 group-hover:opacity-100 transition-opacity" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCQc2lqnET8_bqijuNjRuGk4MGGFjoCU2EvbRfJeN87NsXGFlzlrvf1rI9niBcxO0jJDvIZOwicq6yPXUorXANKc7srmzoqlY_-qWCvtFWAdeMHe-MatbTAknEXYAGTwfv7HPQCXJpU78kFiRE3oU1BhLw0hzUpA6l7UsjVX6OlTB4bDHKR6tEKlw7ST_A92mA_t5W9ULJ88U4b8KbwXZDrK0_0V6PkYDtIVFVzv41dcmZs12T42b7m95yuvExz_1kbAoKmFwzFXlc"/>
+<span class="text-xs font-semibold text-white/70 group-hover:text-white">Google</span>
+</button>
+<button class="flex items-center justify-center gap-3 py-4 px-6 bg-white/[0.03] border border-white/5 hover:border-white/20 hover:bg-white/[0.05] rounded-xl transition-all active:scale-[0.98] group">
+<svg class="w-5 h-5 opacity-80 group-hover:opacity-100 transition-opacity" viewbox="0 0 23 23" xmlns="http://www.w3.org/2000/svg"><path d="M11.4 24l11.4-11.4V24H11.4zM0 12.6L11.4 1.2V12.6H0zM12.6 0l11.4 11.4V0H12.6zM0 11.4L11.4 0v11.4H0z" fill="#f25022"></path><path d="M0 24h11.4V12.6H0V24z" fill="#00a4ef"></path><path d="M12.6 24H24V12.6H12.6V24z" fill="#7fba00"></path><path d="M0 11.4h11.4V0H0v11.4z" fill="#ffb900"></path><path d="M12.6 11.4H24V0H12.6v11.4z" fill="#f25022"></path></svg>
+<span class="text-xs font-semibold text-white/70 group-hover:text-white">Microsoft</span>
+</button>
+</div>
+<!-- Footer Info -->
+<div class="mt-16 space-y-6 text-center">
+<p class="text-sm text-secondary/50 font-body">
+                    Нет аккаунта организации? <a class="text-primary font-bold hover:underline underline-offset-4 decoration-primary/30" href="#">Запросить доступ →</a>
+</p>
+<div class="flex items-center justify-center gap-6 py-4 border-t border-white/5 text-[10px] font-mono text-outline/40 uppercase tracking-widest">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-sm" data-icon="verified_user">verified_user</span>
+                        ISO 27001
+                    </div>
+<div class="w-1.5 h-1.5 bg-white/10 rounded-full"></div>
+<span>Data Privacy Guaranteed</span>
+</div>
+</div>
+</div>
+</section>
+</main>
+</body></html>

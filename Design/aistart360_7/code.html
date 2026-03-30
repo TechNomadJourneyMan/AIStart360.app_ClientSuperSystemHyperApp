@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="ru"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>AIStart360 | Анализ конкурентов</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;600;700;800&amp;family=DM+Sans:ital,wght@0,400;0,500;0,700;1,400&amp;family=JetBrains+Mono:wght@400;500;700&amp;family=Space+Grotesk:wght@400;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              colors: {
+                "outline": "#84958a",
+                "on-secondary-fixed-variant": "#3c475a",
+                "tertiary-container": "#ffbd60",
+                "on-tertiary-fixed": "#291800",
+                "on-secondary-container": "#aeb9d0",
+                "surface-container-lowest": "#0d0e12",
+                "surface-container": "#1f1f24",
+                "on-primary-container": "#006141",
+                "background": "#0A0B0F",
+                "tertiary": "#ffe1bd",
+                "secondary-container": "#3e495d",
+                "surface-container-low": "#111318",
+                "surface-variant": "#343439",
+                "on-error": "#690005",
+                "primary-fixed": "#47ffb8",
+                "outline-variant": "#3b4a41",
+                "tertiary-fixed": "#ffddb4",
+                "on-tertiary-fixed-variant": "#633f00",
+                "on-secondary": "#263143",
+                "tertiary-fixed-dim": "#ffb955",
+                "surface-bright": "#38393e",
+                "surface-container-highest": "#1f1f24",
+                "surface": "#0A0B0F",
+                "on-surface": "#e3e2e8",
+                "on-error-container": "#ffdad6",
+                "on-background": "#e3e2e8",
+                "inverse-surface": "#e3e2e8",
+                "secondary": "#bcc7de",
+                "on-tertiary": "#452b00",
+                "secondary-fixed-dim": "#bcc7de",
+                "error-container": "#93000a",
+                "secondary-fixed": "#d8e3fb",
+                "primary": "#6effc0",
+                "on-tertiary-container": "#754b00",
+                "on-surface-variant": "#bacbbf",
+                "on-primary": "#003824",
+                "surface-dim": "#0A0B0F",
+                "primary-fixed-dim": "#00e29e",
+                "on-primary-fixed": "#002114",
+                "surface-tint": "#00e29e",
+                "primary-container": "#00e5a0",
+                "on-primary-fixed-variant": "#005236",
+                "surface-container-high": "#292a2e",
+                "on-secondary-fixed": "#111c2d",
+                "inverse-on-surface": "#2f3035",
+                "error": "#ffb4ab",
+                "inverse-primary": "#006c49"
+              },
+              fontFamily: {
+                "headline": ["Bricolage Grotesque", "sans-serif"],
+                "body": ["DM Sans", "sans-serif"],
+                "label": ["Space Grotesk", "sans-serif"],
+                "mono": ["JetBrains Mono", "monospace"]
+              },
+              borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
+            },
+          },
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+            vertical-align: middle;
+        }
+        .radar-grid {
+            background-image: radial-gradient(circle, rgba(110, 255, 192, 0.1) 1px, transparent 1px);
+            background-size: 30px 30px;
+        }
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.04);
+            backdrop-filter: blur(12px);
+        }
+        .gradient-primary {
+            background: linear-gradient(135deg, #6effc0 0%, #00e5a0 100%);
+        }
+    </style>
+</head>
+<body class="bg-background text-on-background font-body selection:bg-primary selection:text-on-primary">
+<!-- TopNavBar -->
+<nav class="fixed top-0 w-full z-50 bg-[#0A0B0F] border-b border-white/5 shadow-none flex justify-between items-center px-8 h-16 w-full">
+<div class="flex items-center gap-8">
+<span class="text-xl font-bold text-[#00E5A0] tracking-tighter font-headline">AIStart360</span>
+<div class="hidden md:flex gap-6 items-center">
+<a class="text-slate-400 hover:text-white transition-colors font-label text-sm" href="#">Dashboard</a>
+<a class="text-slate-400 hover:text-white transition-colors font-label text-sm" href="#">Market Intel</a>
+<a class="text-[#00E5A0] border-b-2 border-[#00E5A0] pb-1 font-label text-sm" href="#">Competitors</a>
+<a class="text-slate-400 hover:text-white transition-colors font-label text-sm" href="#">Reports</a>
+</div>
+</div>
+<div class="flex items-center gap-4">
+<button class="p-2 text-slate-400 hover:bg-white/5 transition-all rounded-lg">
+<span class="material-symbols-outlined">notifications</span>
+</button>
+<button class="p-2 text-slate-400 hover:bg-white/5 transition-all rounded-lg">
+<span class="material-symbols-outlined">settings</span>
+</button>
+<div class="w-8 h-8 rounded-full bg-surface-container overflow-hidden border border-outline-variant/20">
+<img alt="User Profile" class="w-full h-full object-cover" data-alt="professional male executive headshot with neutral background and cinematic lighting" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDvvbq9hODZbG2Iks4LQZoxMC67HsQGoWQ8f0x3ADM2m7ZpvZiP04fzwWP2ad0MDOqYqyOogl-vao_aFapgxpgCnehW-GMd-NfFsaw2LmAhkMzqYhaDBCqprJ6tIbgCJNEDcJTlM2gvj-1ooZXskHmsWykTldTH57uyMgeZ2ye1DxaqOmpIseXSc5W_eZlrndwuDKvNnqCbn7m2zBLFLOHY1i2xi1lln-MVmZtTAzp2A3DatOwhVNPYhrbWsEqYuGJ211cogAAf6Go"/>
+</div>
+</div>
+</nav>
+<!-- SideNavBar -->
+<aside class="fixed left-0 top-16 h-screen w-64 bg-[#111318] flex flex-col py-6 gap-2 transition-all duration-200 ease-in-out shadow-2xl shadow-black/50 z-40 hidden md:flex">
+<div class="px-6 mb-8">
+<div class="text-[10px] uppercase tracking-[0.2em] text-[#00E5A0] font-mono mb-1">Institutional Intel</div>
+<div class="text-[9px] text-slate-500 font-mono">Market Analysis v4.2</div>
+</div>
+<div class="flex flex-col gap-1 px-3">
+<a class="flex items-center gap-3 px-4 py-3 text-slate-500 hover:text-slate-200 hover:bg-[#1f1f24] rounded-lg transition-all font-mono text-xs uppercase tracking-widest" href="#">
+<span class="material-symbols-outlined text-lg">analytics</span>
+                Market Overview
+            </a>
+<a class="flex items-center gap-3 px-4 py-3 bg-[#1f1f24] text-[#00E5A0] border-r-4 border-[#00E5A0] rounded-l-lg transition-all font-mono text-xs uppercase tracking-widest" href="#">
+<span class="material-symbols-outlined text-lg">compare_arrows</span>
+                Direct Rivals
+            </a>
+<a class="flex items-center gap-3 px-4 py-3 text-slate-500 hover:text-slate-200 hover:bg-[#1f1f24] rounded-lg transition-all font-mono text-xs uppercase tracking-widest" href="#">
+<span class="material-symbols-outlined text-lg">grid_view</span>
+                Feature Gaps
+            </a>
+<a class="flex items-center gap-3 px-4 py-3 text-slate-500 hover:text-slate-200 hover:bg-[#1f1f24] rounded-lg transition-all font-mono text-xs uppercase tracking-widest" href="#">
+<span class="material-symbols-outlined text-lg">payments</span>
+                Pricing Tiers
+            </a>
+<a class="flex items-center gap-3 px-4 py-3 text-slate-500 hover:text-slate-200 hover:bg-[#1f1f24] rounded-lg transition-all font-mono text-xs uppercase tracking-widest" href="#">
+<span class="material-symbols-outlined text-lg">query_stats</span>
+                Win/Loss
+            </a>
+</div>
+<div class="mt-auto px-6 pb-20">
+<button class="w-full py-3 rounded-lg gradient-primary text-on-primary font-bold text-xs uppercase tracking-widest flex items-center justify-center gap-2">
+                Export Dataset
+            </button>
+</div>
+</aside>
+<!-- Main Content Canvas -->
+<main class="pt-24 pb-12 md:pl-72 pr-8 min-h-screen">
+<!-- Page Header -->
+<header class="flex flex-col md:flex-row md:items-end justify-between mb-12 gap-6">
+<div>
+<h1 class="text-5xl font-extrabold font-headline tracking-tight text-white mb-2">Анализ конкурентов</h1>
+<p class="text-slate-400 font-body text-lg">Q4 2023 Consolidated Data <span class="mx-2 text-primary/30">|</span> <span class="font-mono text-sm tracking-tighter">REF-ID: 992-ARC-01</span></p>
+</div>
+<div class="flex gap-4">
+<div class="bg-surface-container-low px-6 py-4 rounded-xl flex flex-col items-end">
+<span class="text-[10px] uppercase font-mono text-slate-500 tracking-widest">Global Rank</span>
+<span class="text-2xl font-mono text-primary font-bold">#04 / 42</span>
+</div>
+</div>
+</header>
+<!-- Section 1: Strategic Radar -->
+<section class="grid grid-cols-1 lg:grid-cols-12 gap-8 mb-12">
+<div class="lg:col-span-8 bg-surface-container-low rounded-xl p-8 radar-grid relative overflow-hidden group">
+<div class="absolute top-0 right-0 p-8">
+<span class="material-symbols-outlined text-primary/20 text-6xl group-hover:text-primary/40 transition-colors">radar</span>
+</div>
+<h3 class="text-sm font-mono uppercase tracking-[0.2em] text-slate-500 mb-8">Strategic Performance Matrix</h3>
+<div class="flex flex-col md:flex-row items-center gap-12">
+<!-- Custom SVG Radar Chart Representation -->
+<div class="relative w-64 h-64 flex items-center justify-center">
+<svg class="w-full h-full transform -rotate-90 overflow-visible" viewbox="0 0 100 100">
+<!-- Background Circles -->
+<circle cx="50" cy="50" fill="none" r="10" stroke="rgba(255,255,255,0.05)" stroke-width="0.5"></circle>
+<circle cx="50" cy="50" fill="none" r="20" stroke="rgba(255,255,255,0.05)" stroke-width="0.5"></circle>
+<circle cx="50" cy="50" fill="none" r="30" stroke="rgba(255,255,255,0.05)" stroke-width="0.5"></circle>
+<circle cx="50" cy="50" fill="none" r="40" stroke="rgba(255,255,255,0.05)" stroke-width="0.5"></circle>
+<circle cx="50" cy="50" fill="none" r="50" stroke="rgba(255,255,255,0.1)" stroke-width="0.5"></circle>
+<!-- Axes -->
+<line stroke="rgba(255,255,255,0.05)" stroke-width="0.5" x1="50" x2="100" y1="50" y2="50"></line>
+<line stroke="rgba(255,255,255,0.05)" stroke-width="0.5" x1="50" x2="34.5" y1="50" y2="97.5"></line>
+<line stroke="rgba(255,255,255,0.05)" stroke-width="0.5" x1="50" x2="10" y1="50" y2="20.6"></line>
+<!-- Competitor Shape (Static representation) -->
+<polygon fill="rgba(255,255,255,0.05)" points="90,50 65,80 30,70 20,40 50,15" stroke="rgba(255,255,255,0.2)" stroke-width="1"></polygon>
+<!-- AIStart360 Shape -->
+<polygon fill="rgba(0, 229, 160, 0.15)" points="95,50 70,85 45,90 25,30 60,10" stroke="#00E5A0" stroke-width="2"></polygon>
+</svg>
+<!-- Labels -->
+<div class="absolute -top-6 left-1/2 -translate-x-1/2 text-[10px] font-mono text-slate-300">Scalability</div>
+<div class="absolute top-1/4 -right-12 text-[10px] font-mono text-slate-300">Innovation</div>
+<div class="absolute -bottom-6 left-1/3 text-[10px] font-mono text-slate-300">Market Share</div>
+<div class="absolute top-1/2 -left-16 -translate-y-1/2 text-[10px] font-mono text-slate-300">Execution</div>
+<div class="absolute -bottom-6 right-0 text-[10px] font-mono text-slate-300">Loyalty</div>
+</div>
+<div class="flex-1 space-y-6">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-2">
+<div class="w-3 h-3 bg-primary rounded-sm"></div>
+<span class="text-sm font-bold">AIStart360</span>
+</div>
+<span class="font-mono text-xs text-primary">Top Performer</span>
+</div>
+<div class="space-y-4">
+<div class="bg-surface-container p-4 rounded-lg">
+<div class="text-[10px] text-slate-500 uppercase font-mono mb-1">Key Advantage</div>
+<div class="text-sm font-medium">Innovation Velocity +24% vs Industry</div>
+</div>
+<div class="bg-surface-container p-4 rounded-lg">
+<div class="text-[10px] text-slate-500 uppercase font-mono mb-1">Strategic Gap</div>
+<div class="text-sm font-medium">Market Share lagging by 12% in EMEA</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- KPI Sidebar -->
+<div class="lg:col-span-4 flex flex-col gap-4">
+<div class="bg-surface-container rounded-xl p-6 flex-1 border-l-4 border-primary">
+<span class="text-[10px] font-mono text-slate-500 uppercase tracking-widest">Innovation Score</span>
+<div class="text-4xl font-mono text-white mt-2">94.2<span class="text-primary text-xl ml-2">↑</span></div>
+<div class="mt-4 h-1 w-full bg-surface-container-low rounded-full">
+<div class="h-full w-[94%] bg-primary rounded-full"></div>
+</div>
+</div>
+<div class="bg-surface-container rounded-xl p-6 flex-1">
+<span class="text-[10px] font-mono text-slate-500 uppercase tracking-widest">Execution Speed</span>
+<div class="text-4xl font-mono text-white mt-2">82.0</div>
+<div class="mt-4 h-1 w-full bg-surface-container-low rounded-full">
+<div class="h-full w-[82%] bg-slate-500 rounded-full"></div>
+</div>
+</div>
+<div class="bg-surface-container rounded-xl p-6 flex-1">
+<span class="text-[10px] font-mono text-slate-500 uppercase tracking-widest">Loyalty Metric</span>
+<div class="text-4xl font-mono text-white mt-2">76.4</div>
+<div class="mt-4 h-1 w-full bg-surface-container-low rounded-full">
+<div class="h-full w-[76%] bg-slate-500 rounded-full"></div>
+</div>
+</div>
+</div>
+</section>
+<!-- Section 2: Comparison Matrix -->
+<section class="mb-12">
+<div class="bg-surface-container-low rounded-xl overflow-hidden shadow-2xl">
+<div class="px-8 py-6 border-b border-white/5 flex items-center justify-between">
+<h2 class="text-lg font-bold font-headline">Сравнительная матрица (Matrix)</h2>
+<span class="text-xs font-mono text-slate-500">Values in USD / Percentile</span>
+</div>
+<div class="overflow-x-auto">
+<table class="w-full text-left border-collapse">
+<thead>
+<tr class="bg-surface-container-high/50">
+<th class="px-8 py-4 font-mono text-[10px] uppercase tracking-widest text-slate-400">Компания</th>
+<th class="px-8 py-4 font-mono text-[10px] uppercase tracking-widest text-slate-400 text-right">Текущий ARR</th>
+<th class="px-8 py-4 font-mono text-[10px] uppercase tracking-widest text-slate-400 text-right">Рост YoY</th>
+<th class="px-8 py-4 font-mono text-[10px] uppercase tracking-widest text-slate-400 text-right">Доля рынка</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-white/5">
+<tr class="group hover:bg-surface-container-highest transition-colors">
+<td class="px-8 py-6 font-medium text-white flex items-center gap-3">
+<div class="w-2 h-2 rounded-full bg-slate-500"></div>
+                                    X-Competitor Alpha
+                                </td>
+<td class="px-8 py-6 font-mono text-right text-slate-300">$42.5M</td>
+<td class="px-8 py-6 font-mono text-right text-red-400">+12%</td>
+<td class="px-8 py-6 font-mono text-right text-slate-300">18.2%</td>
+</tr>
+<tr class="bg-primary/5 group transition-colors">
+<td class="px-8 py-6 font-bold text-primary flex items-center gap-3">
+<div class="w-2 h-2 rounded-full bg-primary animate-pulse"></div>
+                                    Ваша компания
+                                </td>
+<td class="px-8 py-6 font-mono text-right text-primary font-bold">$38.1M</td>
+<td class="px-8 py-6 font-mono text-right text-primary font-bold">+44%</td>
+<td class="px-8 py-6 font-mono text-right text-primary font-bold">14.5%</td>
+</tr>
+<tr class="group hover:bg-surface-container-highest transition-colors">
+<td class="px-8 py-6 font-medium text-white flex items-center gap-3">
+<div class="w-2 h-2 rounded-full bg-slate-500"></div>
+                                    Skyward Systems
+                                </td>
+<td class="px-8 py-6 font-mono text-right text-slate-300">$120.0M</td>
+<td class="px-8 py-6 font-mono text-right text-slate-400">+5%</td>
+<td class="px-8 py-6 font-mono text-right text-slate-300">32.1%</td>
+</tr>
+<tr class="group hover:bg-surface-container-highest transition-colors">
+<td class="px-8 py-6 font-medium text-white flex items-center gap-3">
+<div class="w-2 h-2 rounded-full bg-slate-500"></div>
+                                    Nova AI Corp
+                                </td>
+<td class="px-8 py-6 font-mono text-right text-slate-300">$21.2M</td>
+<td class="px-8 py-6 font-mono text-right text-primary">+82%</td>
+<td class="px-8 py-6 font-mono text-right text-slate-300">6.8%</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</section>
+<!-- Section 3: Efficiency Metrics -->
+<section class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-12">
+<!-- CAC Analysis -->
+<div class="bg-surface-container-low rounded-xl p-8">
+<h3 class="text-sm font-mono uppercase tracking-[0.2em] text-slate-500 mb-8 flex items-center gap-2">
+<span class="material-symbols-outlined text-sm">bar_chart</span>
+                    CAC Analysis (Cost Per Acquisition)
+                </h3>
+<div class="space-y-8">
+<div class="relative pt-6">
+<div class="flex justify-between mb-2">
+<span class="text-xs font-bold text-white uppercase tracking-wider">Your Company</span>
+<span class="font-mono text-xs text-primary">$1,240</span>
+</div>
+<div class="h-3 w-full bg-surface-container rounded-full overflow-hidden">
+<div class="h-full w-[45%] gradient-primary"></div>
+</div>
+</div>
+<div class="relative">
+<div class="flex justify-between mb-2">
+<span class="text-xs font-bold text-slate-400 uppercase tracking-wider">Industry Avg</span>
+<span class="font-mono text-xs text-slate-400">$2,100</span>
+</div>
+<div class="h-3 w-full bg-surface-container rounded-full overflow-hidden">
+<div class="h-full w-[70%] bg-slate-600"></div>
+</div>
+</div>
+<div class="relative">
+<div class="flex justify-between mb-2">
+<span class="text-xs font-bold text-slate-400 uppercase tracking-wider">Competitor A</span>
+<span class="font-mono text-xs text-slate-400">$3,450</span>
+</div>
+<div class="h-3 w-full bg-surface-container rounded-full overflow-hidden">
+<div class="h-full w-[95%] bg-slate-700"></div>
+</div>
+</div>
+</div>
+<p class="mt-8 text-xs text-slate-500 italic leading-relaxed">Your CAC efficiency is 41% better than the industry average, primarily driven by organic growth and high viral coefficient (k=1.4).</p>
+</div>
+<!-- LTV/CAC Ratio -->
+<div class="bg-surface-container-low rounded-xl p-8">
+<h3 class="text-sm font-mono uppercase tracking-[0.2em] text-slate-500 mb-8 flex items-center gap-2">
+<span class="material-symbols-outlined text-sm">speed</span>
+                    LTV/CAC Ratio (Efficiency)
+                </h3>
+<div class="grid grid-cols-2 gap-8">
+<div class="flex flex-col items-center justify-center p-6 bg-surface-container rounded-xl text-center">
+<span class="text-[10px] text-slate-500 font-mono uppercase tracking-widest mb-2">Unit Econ</span>
+<div class="text-5xl font-mono text-primary font-bold">4.2x</div>
+<div class="mt-4 px-3 py-1 bg-primary/10 text-primary text-[10px] font-bold rounded uppercase">Excellent</div>
+</div>
+<div class="flex flex-col justify-center gap-4">
+<div class="space-y-1">
+<div class="text-[10px] text-slate-500 font-mono">PAYBACK PERIOD</div>
+<div class="text-lg font-mono text-white">4.2 Months</div>
+</div>
+<div class="space-y-1">
+<div class="text-[10px] text-slate-500 font-mono">CHURN RATE</div>
+<div class="text-lg font-mono text-white">1.8%</div>
+</div>
+<div class="space-y-1">
+<div class="text-[10px] text-slate-500 font-mono">MARGIN</div>
+<div class="text-lg font-mono text-white">82%</div>
+</div>
+</div>
+</div>
+<div class="mt-8 pt-8 border-t border-white/5">
+<div class="flex items-center gap-4">
+<div class="w-12 h-12 rounded-lg bg-primary/5 flex items-center justify-center text-primary">
+<span class="material-symbols-outlined">trending_up</span>
+</div>
+<div>
+<div class="text-xs font-bold text-white">Sustainable Growth Model</div>
+<div class="text-[10px] text-slate-400 leading-tight">Unit economics support doubling marketing spend without dilution of ROI.</div>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- Section 4: AI Insights Panel -->
+<section>
+<div class="flex items-center gap-4 mb-8">
+<div class="h-px flex-1 bg-white/5"></div>
+<h3 class="text-sm font-mono uppercase tracking-[0.3em] text-slate-500">AI Intelligence Insights</h3>
+<div class="h-px flex-1 bg-white/5"></div>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+<!-- Card 1 -->
+<div class="glass-panel p-8 rounded-xl border border-white/5 hover:border-primary/20 transition-all flex flex-col gap-4">
+<div class="flex justify-between items-start">
+<span class="px-2 py-1 bg-primary/10 text-primary text-[9px] font-bold uppercase tracking-widest rounded">Opportunity</span>
+<span class="material-symbols-outlined text-primary text-xl" style="font-variation-settings: 'FILL' 1;">bolt</span>
+</div>
+<h4 class="text-lg font-bold font-headline leading-tight">Retention Opportunity in Segment B</h4>
+<p class="text-sm text-slate-400 leading-relaxed">
+                        Competitor Alpha shows a 14% drop in satisfaction in the Enterprise segment. Pivoting sales collateral toward security-first features could capture $4M in churned revenue.
+                    </p>
+</div>
+<!-- Card 2 -->
+<div class="glass-panel p-8 rounded-xl border border-white/5 hover:border-error/20 transition-all flex flex-col gap-4">
+<div class="flex justify-between items-start">
+<span class="px-2 py-1 bg-error/10 text-error text-[9px] font-bold uppercase tracking-widest rounded">Warning</span>
+<span class="material-symbols-outlined text-error text-xl" style="font-variation-settings: 'FILL' 1;">warning</span>
+</div>
+<h4 class="text-lg font-bold font-headline leading-tight">Aggressive Pricing from Nova AI</h4>
+<p class="text-sm text-slate-400 leading-relaxed">
+                        Nova AI has launched a "Freemium-to-Pro" tier targeting our mid-market base. High risk of contraction in accounts under $50k ARR if price matches are not initiated.
+                    </p>
+</div>
+<!-- Card 3 -->
+<div class="glass-panel p-8 rounded-xl border border-white/5 hover:border-tertiary-container/20 transition-all flex flex-col gap-4">
+<div class="flex justify-between items-start">
+<span class="px-2 py-1 bg-tertiary-container/10 text-tertiary-container text-[9px] font-bold uppercase tracking-widest rounded">Strategic Shift</span>
+<span class="material-symbols-outlined text-tertiary-container text-xl" style="font-variation-settings: 'FILL' 1;">lightbulb</span>
+</div>
+<h4 class="text-lg font-bold font-headline leading-tight">EMEA Expansion Feasibility</h4>
+<p class="text-sm text-slate-400 leading-relaxed">
+                        Data suggests a lack of localized compliance agents in the UK market. Early entry with our GDPR-native AI could secure a first-mover advantage with 32% expected YoY growth.
+                    </p>
+</div>
+</div>
+</section>
+</main>
+<!-- Contextual FAB (Suppressed on Details) -->
+<!-- Not rendering as per Suppression rules -->
+</body></html>

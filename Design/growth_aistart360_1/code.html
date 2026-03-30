@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="ru"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>AIStart360 | План Роста</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&amp;family=DM+Sans:ital,wght@0,400;0,500;0,700;1,400&amp;family=JetBrains+Mono:wght@400;700&amp;family=Bricolage+Grotesque:wght@600;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+            display: inline-block;
+            line-height: 1;
+            text-transform: none;
+            letter-spacing: normal;
+            word-wrap: normal;
+            white-space: nowrap;
+            direction: ltr;
+        }
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.04);
+            backdrop-filter: blur(12px);
+        }
+        .text-gradient {
+            background: linear-gradient(135deg, #6effc0 0%, #00e5a0 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .bg-gradient-primary {
+            background: linear-gradient(135deg, #6effc0 0%, #00e5a0 100%);
+        }
+        body {
+            background-color: #0A0B0F;
+            color: #e3e2e8;
+        }
+    </style>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "inverse-primary": "#006c49",
+              "tertiary": "#ffe1bd",
+              "primary": "#6effc0",
+              "on-tertiary-fixed": "#291800",
+              "surface-container-lowest": "#0d0e12",
+              "tertiary-fixed-dim": "#ffb955",
+              "surface-tint": "#00e29e",
+              "on-secondary-fixed": "#111c2d",
+              "tertiary-fixed": "#ffddb4",
+              "on-tertiary-fixed-variant": "#633f00",
+              "error": "#ffb4ab",
+              "secondary-fixed-dim": "#bcc7de",
+              "secondary-fixed": "#d8e3fb",
+              "primary-container": "#00e5a0",
+              "on-error-container": "#ffdad6",
+              "on-secondary-fixed-variant": "#3c475a",
+              "on-primary-fixed": "#002114",
+              "secondary-container": "#3e495d",
+              "on-background": "#e3e2e8",
+              "inverse-on-surface": "#2f3035",
+              "error-container": "#93000a",
+              "on-error": "#690005",
+              "outline-variant": "#3b4a41",
+              "outline": "#84958a",
+              "background": "#121317",
+              "primary-fixed-dim": "#00e29e",
+              "surface-container-high": "#292a2e",
+              "on-primary-container": "#006141",
+              "surface-container-highest": "#343439",
+              "on-surface": "#e3e2e8",
+              "on-tertiary-container": "#754b00",
+              "surface": "#121317",
+              "on-surface-variant": "#bacbbf",
+              "on-primary": "#003824",
+              "surface-variant": "#343439",
+              "surface-container-low": "#1a1b20",
+              "on-tertiary": "#452b00",
+              "on-primary-fixed-variant": "#005236",
+              "on-secondary-container": "#aeb9d0",
+              "surface-container": "#1f1f24",
+              "primary-fixed": "#47ffb8",
+              "surface-dim": "#121317",
+              "tertiary-container": "#ffbd60",
+              "inverse-surface": "#e3e2e8",
+              "secondary": "#bcc7de",
+              "surface-bright": "#38393e",
+              "on-secondary": "#263143"
+            },
+            fontFamily: {
+              "headline": ["Space Grotesk"],
+              "body": ["DM Sans"],
+              "label": ["Space Grotesk"],
+              "display": ["Bricolage Grotesque"],
+              "mono": ["JetBrains Mono"]
+            },
+            borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
+          },
+        },
+      }
+    </script>
+</head>
+<body class="font-body overflow-x-hidden">
+<!-- Side Navigation Bar -->
+<aside class="fixed left-0 top-0 h-full z-40 flex flex-col p-4 h-screen w-64 border-r-0 bg-[#0A0B0F]">
+<div class="mb-8 px-2">
+<h1 class="text-xl font-bold tracking-tighter text-[#00E5A0] font-headline">Institutional Intelligence</h1>
+<p class="font-['Space_Grotesk'] uppercase tracking-widest text-[10px] text-[#8B95A3] mt-1">Growth Engine v2.4</p>
+</div>
+<nav class="flex-1 space-y-1">
+<div class="flex items-center px-3 py-2 text-[#8B95A3] hover:text-white hover:bg-[#1f1f24] transition-colors duration-200 rounded-lg cursor-pointer">
+<span class="material-symbols-outlined mr-3" data-icon="analytics">analytics</span>
+<span class="font-['Space_Grotesk'] text-sm tracking-tight">Intelligence</span>
+</div>
+<div class="flex items-center px-3 py-2 text-[#8B95A3] hover:text-white hover:bg-[#1f1f24] transition-colors duration-200 rounded-lg cursor-pointer">
+<span class="material-symbols-outlined mr-3" data-icon="explore">explore</span>
+<span class="font-['Space_Grotesk'] text-sm tracking-tight">Strategy</span>
+</div>
+<div class="flex items-center px-3 py-2 text-[#00E5A0] bg-[#1f1f24] rounded-lg cursor-pointer">
+<span class="material-symbols-outlined mr-3" data-icon="reorder">reorder</span>
+<span class="font-['Space_Grotesk'] text-sm tracking-tight">Roadmap</span>
+</div>
+<div class="flex items-center px-3 py-2 text-[#8B95A3] hover:text-white hover:bg-[#1f1f24] transition-colors duration-200 rounded-lg cursor-pointer">
+<span class="material-symbols-outlined mr-3" data-icon="database">database</span>
+<span class="font-['Space_Grotesk'] text-sm tracking-tight">Resources</span>
+</div>
+<div class="flex items-center px-3 py-2 text-[#8B95A3] hover:text-white hover:bg-[#1f1f24] transition-colors duration-200 rounded-lg cursor-pointer">
+<span class="material-symbols-outlined mr-3" data-icon="settings">settings</span>
+<span class="font-['Space_Grotesk'] text-sm tracking-tight">Settings</span>
+</div>
+</nav>
+<div class="mt-auto pt-4">
+<button class="w-full bg-gradient-primary text-on-primary font-semibold py-3 px-4 rounded-lg flex items-center justify-center gap-2 scale-98 active:opacity-80 transition-all">
+<span class="material-symbols-outlined text-lg" data-icon="add">add</span>
+<span class="font-['Space_Grotesk'] text-sm uppercase tracking-widest">New Initiative</span>
+</button>
+<div class="flex items-center gap-3 mt-6 px-2">
+<img alt="User Profile" class="w-8 h-8 rounded-full bg-surface-container" data-alt="profile avatar for professional executive with clean lighting and dark studio background" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBJ4HQiiiDf0HVWSXgEgadmVZMbwVuPEh6i9w6NfU5LHPtmU71o-D83LbzaXrCzm5ga8xf-PjqZuA_-vVPfphUJsCUjhLPdTrdnRlRkD77EYkNp5dfJPGgyLEcOXf9l3WCofDsvIZ58T98Z9Lz3RPfEVpJyMFeiMB2-DQe8A1_kc6QIW8Qt3vRh7vvVLewPyuFlofZkfFZrOCT3-DAU2IRcjPwmvjRByEIoqKSx9WrkejrEPjSCZiKbulzu9pBn7FEyEzqla4OL2IA"/>
+<div class="overflow-hidden">
+<p class="text-xs font-bold truncate">Константин В.</p>
+<p class="text-[10px] text-[#8B95A3]">Admin Access</p>
+</div>
+</div>
+</div>
+</aside>
+<!-- Main Content Area -->
+<main class="ml-64 min-h-screen">
+<!-- Top App Bar -->
+<header class="fixed top-0 right-0 left-64 z-30 flex justify-between items-center px-8 h-16 bg-[#0A0B0F]/80 backdrop-blur-xl">
+<div class="flex items-center gap-8">
+<div class="font-['JetBrains_Mono'] text-[#00E5A0] font-bold text-lg">Growth Plan</div>
+<nav class="hidden md:flex gap-6">
+<span class="font-['Space_Grotesk'] uppercase tracking-widest text-[10px] text-[#8B95A3] hover:text-[#00E5A0] transition-all cursor-pointer">Q3 Roadmap</span>
+<span class="font-['Space_Grotesk'] uppercase tracking-widest text-[10px] text-[#8B95A3] hover:text-[#00E5A0] transition-all cursor-pointer">ROI Forecast</span>
+<span class="font-['Space_Grotesk'] uppercase tracking-widest text-[10px] text-[#00E5A0] border-b-2 border-[#00E5A0] pb-1 cursor-pointer">Execution</span>
+</nav>
+</div>
+<div class="flex items-center gap-6">
+<div class="relative group">
+<span class="material-symbols-outlined text-[#8B95A3] group-hover:text-[#00E5A0] transition-all cursor-pointer" data-icon="search">search</span>
+</div>
+<div class="flex items-center gap-4">
+<span class="material-symbols-outlined text-[#8B95A3] hover:text-[#00E5A0] transition-all cursor-pointer" data-icon="notifications">notifications</span>
+<span class="material-symbols-outlined text-[#8B95A3] hover:text-[#00E5A0] transition-all cursor-pointer" data-icon="history">history</span>
+<div class="h-6 w-px bg-outline-variant/20 mx-2"></div>
+<span class="font-['Space_Grotesk'] uppercase tracking-widest text-[10px] text-primary-container font-bold">Strictly Confidential</span>
+</div>
+</div>
+</header>
+<!-- Content Canvas -->
+<div class="pt-24 pb-12 px-10 max-w-7xl mx-auto">
+<!-- Page Header -->
+<section class="flex justify-between items-end mb-12">
+<div>
+<h2 class="font-display text-5xl font-extrabold tracking-tight mb-2">План Роста <span class="text-primary-container">(Growth)</span></h2>
+<p class="text-secondary max-w-xl">Стратегическое исполнение 90-дневного цикла: фокус на масштабируемость и автоматизацию прибыли.</p>
+</div>
+<div class="bg-surface-container-low px-6 py-3 rounded-xl flex items-center gap-4">
+<span class="font-mono text-primary text-2xl font-bold">90 ДНЕЙ</span>
+<div class="w-12 h-1 bg-outline-variant rounded-full overflow-hidden">
+<div class="bg-primary h-full w-1/3"></div>
+</div>
+<span class="font-mono text-xs text-secondary">ДЕНЬ 31/90</span>
+</div>
+</section>
+<!-- RICE Prioritization Section -->
+<section class="mb-16">
+<div class="flex items-center gap-3 mb-8">
+<div class="w-1 h-6 bg-primary"></div>
+<h3 class="font-headline text-lg font-bold uppercase tracking-widest">RICE Приоритизация</h3>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
+<!-- RICE Card 1 -->
+<div class="bg-surface-container-low rounded-xl p-6 transition-all hover:bg-surface-container group cursor-pointer">
+<div class="flex justify-between items-start mb-4">
+<span class="font-mono text-4xl font-extrabold text-[#00E5A0]/20 group-hover:text-primary transition-colors">01</span>
+<div class="bg-primary/10 px-2 py-1 rounded text-[10px] font-mono text-primary font-bold">HIGH ROI</div>
+</div>
+<h4 class="font-headline text-lg font-bold mb-2 group-hover:text-primary transition-colors">AI-Оптимизация воронки</h4>
+<p class="text-sm text-secondary mb-6 leading-relaxed">Внедрение предиктивного анализа поведения на чекауте.</p>
+<div class="grid grid-cols-2 gap-3 mt-auto">
+<div class="bg-surface-container-lowest p-2 rounded">
+<p class="text-[9px] uppercase text-secondary font-headline">RICE Score</p>
+<p class="font-mono text-primary font-bold text-lg">420</p>
+</div>
+<div class="bg-surface-container-lowest p-2 rounded">
+<p class="text-[9px] uppercase text-secondary font-headline">Confidence</p>
+<p class="font-mono text-secondary-fixed font-bold text-lg">85%</p>
+</div>
+</div>
+</div>
+<!-- RICE Card 2 -->
+<div class="bg-surface-container-low rounded-xl p-6 transition-all hover:bg-surface-container group cursor-pointer">
+<div class="flex justify-between items-start mb-4">
+<span class="font-mono text-4xl font-extrabold text-[#00E5A0]/20 group-hover:text-primary transition-colors">02</span>
+<div class="bg-primary/10 px-2 py-1 rounded text-[10px] font-mono text-primary font-bold">LTV FOCUS</div>
+</div>
+<h4 class="font-headline text-lg font-bold mb-2 group-hover:text-primary transition-colors">Автоматизация LTV</h4>
+<p class="text-sm text-secondary mb-6 leading-relaxed">Система триггерных рассылок на основе AI-сегментации.</p>
+<div class="grid grid-cols-2 gap-3 mt-auto">
+<div class="bg-surface-container-lowest p-2 rounded">
+<p class="text-[9px] uppercase text-secondary font-headline">RICE Score</p>
+<p class="font-mono text-primary font-bold text-lg">380</p>
+</div>
+<div class="bg-surface-container-lowest p-2 rounded">
+<p class="text-[9px] uppercase text-secondary font-headline">Confidence</p>
+<p class="font-mono text-secondary-fixed font-bold text-lg">70%</p>
+</div>
+</div>
+</div>
+<!-- RICE Card 3 -->
+<div class="bg-surface-container-low rounded-xl p-6 transition-all hover:bg-surface-container group cursor-pointer">
+<div class="flex justify-between items-start mb-4">
+<span class="font-mono text-4xl font-extrabold text-[#00E5A0]/20 group-hover:text-primary transition-colors">03</span>
+<div class="bg-outline-variant/20 px-2 py-1 rounded text-[10px] font-mono text-secondary font-bold">OPS EFFICIENCY</div>
+</div>
+<h4 class="font-headline text-lg font-bold mb-2 group-hover:text-primary transition-colors">CRM Enrichment</h4>
+<p class="text-sm text-secondary mb-6 leading-relaxed">Обогащение данных лидов через внешние API за 2 сек.</p>
+<div class="grid grid-cols-2 gap-3 mt-auto">
+<div class="bg-surface-container-lowest p-2 rounded">
+<p class="text-[9px] uppercase text-secondary font-headline">RICE Score</p>
+<p class="font-mono text-primary font-bold text-lg">295</p>
+</div>
+<div class="bg-surface-container-lowest p-2 rounded">
+<p class="text-[9px] uppercase text-secondary font-headline">Confidence</p>
+<p class="font-mono text-secondary-fixed font-bold text-lg">90%</p>
+</div>
+</div>
+</div>
+<!-- RICE Card 4 -->
+<div class="bg-surface-container-low rounded-xl p-6 transition-all hover:bg-surface-container group cursor-pointer">
+<div class="flex justify-between items-start mb-4">
+<span class="font-mono text-4xl font-extrabold text-[#00E5A0]/20 group-hover:text-primary transition-colors">04</span>
+<div class="bg-outline-variant/20 px-2 py-1 rounded text-[10px] font-mono text-secondary font-bold">SCALE READY</div>
+</div>
+<h4 class="font-headline text-lg font-bold mb-2 group-hover:text-primary transition-colors">Global Payouts</h4>
+<p class="text-sm text-secondary mb-6 leading-relaxed">Подключение трансграничных платежных шлюзов.</p>
+<div class="grid grid-cols-2 gap-3 mt-auto">
+<div class="bg-surface-container-lowest p-2 rounded">
+<p class="text-[9px] uppercase text-secondary font-headline">RICE Score</p>
+<p class="font-mono text-primary font-bold text-lg">210</p>
+</div>
+<div class="bg-surface-container-lowest p-2 rounded">
+<p class="text-[9px] uppercase text-secondary font-headline">Confidence</p>
+<p class="font-mono text-secondary-fixed font-bold text-lg">50%</p>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- 90-Day Roadmap (Timeline) -->
+<section class="mb-16">
+<div class="flex items-center gap-3 mb-8">
+<div class="w-1 h-6 bg-primary"></div>
+<h3 class="font-headline text-lg font-bold uppercase tracking-widest">Дорожная Карта (Timeline)</h3>
+</div>
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-px bg-outline-variant/10 rounded-2xl overflow-hidden border border-outline-variant/5">
+<!-- Phase 1: FIX -->
+<div class="bg-surface-container-low/40 p-8 flex flex-col">
+<div class="mb-8">
+<p class="font-mono text-[10px] text-primary tracking-widest uppercase mb-1">WEEKS 1-4</p>
+<h4 class="font-display text-3xl font-bold">FIX</h4>
+<div class="h-1 w-12 bg-primary mt-2"></div>
+</div>
+<div class="space-y-6 flex-1">
+<div class="group">
+<div class="flex justify-between items-center mb-1">
+<span class="text-xs font-bold uppercase tracking-wider text-on-surface">Аудит Инфраструктуры</span>
+<span class="font-mono text-[9px] px-2 py-0.5 bg-secondary-container text-on-secondary-container rounded">CTO</span>
+</div>
+<p class="text-xs text-secondary mb-2">Выявление узких мест в БД и задержек API.</p>
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-[14px] text-primary" data-icon="task_alt">task_alt</span>
+<span class="text-[10px] text-[#8B95A3] font-mono">Infrastructure Report</span>
+</div>
+</div>
+<div class="group">
+<div class="flex justify-between items-center mb-1">
+<span class="text-xs font-bold uppercase tracking-wider text-on-surface">Чистка Воронки</span>
+<span class="font-mono text-[9px] px-2 py-0.5 bg-secondary-container text-on-secondary-container rounded">OPS</span>
+</div>
+<p class="text-xs text-secondary mb-2">Устранение лишних шагов в регистрации.</p>
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-[14px] text-primary" data-icon="task_alt">task_alt</span>
+<span class="text-[10px] text-[#8B95A3] font-mono">Conversion Map v2</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Phase 2: GROWTH -->
+<div class="bg-surface-container p-8 flex flex-col border-x border-outline-variant/10">
+<div class="mb-8">
+<p class="font-mono text-[10px] text-primary tracking-widest uppercase mb-1">WEEKS 5-8</p>
+<h4 class="font-display text-3xl font-bold">GROWTH</h4>
+<div class="h-1 w-12 bg-primary mt-2"></div>
+</div>
+<div class="space-y-6 flex-1">
+<div class="group">
+<div class="flex justify-between items-center mb-1">
+<span class="text-xs font-bold uppercase tracking-wider text-on-surface">A/B Эксперименты</span>
+<span class="font-mono text-[9px] px-2 py-0.5 bg-secondary-container text-on-secondary-container rounded">GROWTH</span>
+</div>
+<p class="text-xs text-secondary mb-2">Тестирование новых офферов на high-intent трафик.</p>
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-[14px] text-primary" data-icon="pending">pending</span>
+<span class="text-[10px] text-[#8B95A3] font-mono">Growth Matrix Log</span>
+</div>
+</div>
+<div class="group">
+<div class="flex justify-between items-center mb-1">
+<span class="text-xs font-bold uppercase tracking-wider text-on-surface">Product Led Growth</span>
+<span class="font-mono text-[9px] px-2 py-0.5 bg-secondary-container text-on-secondary-container rounded">PRODUCT</span>
+</div>
+<p class="text-xs text-secondary mb-2">Внедрение реферальной петли внутри дэшборда.</p>
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-[14px] text-outline" data-icon="radio_button_unchecked">radio_button_unchecked</span>
+<span class="text-[10px] text-[#8B95A3] font-mono">Viral Loop Schema</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Phase 3: SCALE -->
+<div class="bg-surface-container-low/40 p-8 flex flex-col">
+<div class="mb-8">
+<p class="font-mono text-[10px] text-primary tracking-widest uppercase mb-1">WEEKS 9-12</p>
+<h4 class="font-display text-3xl font-bold">SCALE</h4>
+<div class="h-1 w-12 bg-primary mt-2"></div>
+</div>
+<div class="space-y-6 flex-1">
+<div class="group">
+<div class="flex justify-between items-center mb-1">
+<span class="text-xs font-bold uppercase tracking-wider text-on-surface">Global Rollout</span>
+<span class="font-mono text-[9px] px-2 py-0.5 bg-secondary-container text-on-secondary-container rounded">GLOBAL</span>
+</div>
+<p class="text-xs text-secondary mb-2">Локализация на рынки EMEA и LATAM.</p>
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-[14px] text-outline" data-icon="radio_button_unchecked">radio_button_unchecked</span>
+<span class="text-[10px] text-[#8B95A3] font-mono">Market Entry Playbook</span>
+</div>
+</div>
+<div class="group">
+<div class="flex justify-between items-center mb-1">
+<span class="text-xs font-bold uppercase tracking-wider text-on-surface">Партнерская Экосистема</span>
+<span class="font-mono text-[9px] px-2 py-0.5 bg-secondary-container text-on-secondary-container rounded">PARTNERS</span>
+</div>
+<p class="text-xs text-secondary mb-2">Запуск API для сторонних разработчиков.</p>
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-[14px] text-outline" data-icon="radio_button_unchecked">radio_button_unchecked</span>
+<span class="text-[10px] text-[#8B95A3] font-mono">SDK Documentation</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- ROI Forecast (Footer) -->
+<footer class="mt-20">
+<div class="bg-gradient-primary rounded-2xl p-8 flex flex-col md:flex-row justify-between items-center gap-8 shadow-2xl shadow-primary/10">
+<div class="flex items-center gap-6">
+<div class="bg-black/20 p-4 rounded-xl backdrop-blur-sm">
+<span class="material-symbols-outlined text-4xl text-on-primary" data-icon="trending_up">trending_up</span>
+</div>
+<div>
+<p class="font-headline text-on-primary font-bold text-sm uppercase tracking-widest opacity-80 mb-1">Прогноз Результативности</p>
+<h3 class="font-display text-on-primary text-3xl font-extrabold">Ожидаемый KPI к концу квартала: <span class="font-mono">GM ≥ 15.0%</span></h3>
+</div>
+</div>
+<div class="flex items-center gap-4 bg-black/10 px-6 py-4 rounded-2xl backdrop-blur-md">
+<div class="flex -space-x-3 overflow-hidden">
+<img alt="Team 1" class="inline-block h-10 w-10 rounded-full ring-2 ring-primary" data-alt="portrait of a focused female software engineer in a modern office, cinematic lighting" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCbzGR1QvBi5quCVEnwSGy0RQQOiGKaIOeRzoqKaoOT6i1tujYl8SXeYXvCydIu6djSY3F23xOcOC85OAREVm46m0wp6jz3-zG38rn6beWwsTMsRGn9SPCQ7EZzXmooyz51Gq9inbmWp87i_eJm807TjdOBSeaMl0NKMYIxXZmjUD2rUroIb0D8uFTkAfAIRCnFnavfJSLJ3XfWXUWFbQD9qtm9MHoxijAqXtHXw_ZrYZENY5NTZ8jGwzZ2h6Lf1xmFCSskoxSwjFY"/>
+<img alt="Team 2" class="inline-block h-10 w-10 rounded-full ring-2 ring-primary" data-alt="middle aged business consultant with glasses looking at camera, soft studio lighting" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBPCpKRYKG2rlPVFE0YSYOyTB1OZGQHUPfuqIqyhjcYrIJW7wpc5CJBowo9YMN1gW3AA6QCjbeUmtXQd4YuUrd1Pu0eRNmDgfw9OC3EhBKOTwKb24J_Vsp-6FdcBloc72vImLYhlL-hY2CLVsUpw4ErrNAZSf-w2JK-GxLmacXfPRag05_PTHlsISoE-1RERLO-Hzf2JolPJPDMNgiltJ19P-jKJkHxVsbsg-evLbdF0aoj-G6x425RK0aMfZZ9RdDepQWmKh6eHHo"/>
+<img alt="Team 3" class="inline-block h-10 w-10 rounded-full ring-2 ring-primary" data-alt="creative director in dark turtleneck against minimal grey wall, soft shadows" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAny7132xWj4nouehYe24TevUctgWLg5ZCxk5EMwqXYx6F3eg6NZaEdcDPoyiI8UYv0l6I9pC5tJpUHCaIYJn8cZdeTHfRxNm29YImkzdTxY4OIDN-EDkCnFS-CypQY3Q8cdrSao9-OBaG3HC97LDCCYBmoQ5glKuhW8Hz9l-ApxIizJe3Xcx-FfaxlQ4frKjzJCR-GVsbLucY3FrMbxRKcGXYp0XbFzLE3UDTN32OTOJ6UM2HsnzVP_x-82rYXLp45qqMZgmEdN5M"/>
+<div class="h-10 w-10 rounded-full ring-2 ring-primary bg-on-primary flex items-center justify-center text-[10px] font-bold text-primary-container">+4</div>
+</div>
+<div class="h-10 w-px bg-on-primary/20"></div>
+<div class="text-on-primary">
+<p class="text-[10px] font-bold uppercase tracking-wider">Исполнители</p>
+<p class="text-xs font-mono">AIStart Strategy Team</p>
+</div>
+</div>
+</div>
+<div class="mt-8 flex justify-between items-center text-[#8B95A3] px-2">
+<p class="text-[10px] font-mono tracking-tighter uppercase">AIStart360 Institutional Intelligence // Secure Node 882</p>
+<div class="flex gap-6">
+<span class="text-[10px] hover:text-primary transition-colors cursor-pointer uppercase tracking-widest font-headline">Export PDF</span>
+<span class="text-[10px] hover:text-primary transition-colors cursor-pointer uppercase tracking-widest font-headline">Sync Jira</span>
+</div>
+</div>
+</footer>
+</div>
+</main>
+</body></html>

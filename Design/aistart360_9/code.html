@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="ru"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Institutional Intelligence | Управление пользователями</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;700;800&amp;family=DM+Sans:wght@400;500;700&amp;family=JetBrains+Mono:wght@400;700&amp;family=Space+Grotesk:wght@400;700&amp;family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "surface-variant": "#343439",
+              "inverse-primary": "#006c49",
+              "surface-tint": "#00e29e",
+              "on-secondary-fixed-variant": "#3c475a",
+              "inverse-surface": "#e3e2e8",
+              "on-background": "#e3e2e8",
+              "on-surface": "#e3e2e8",
+              "surface-container-lowest": "#0d0e12",
+              "on-tertiary": "#452b00",
+              "inverse-on-surface": "#2f3035",
+              "surface-container-high": "#292a2e",
+              "surface-container": "#1f1f24",
+              "outline": "#84958a",
+              "on-surface-variant": "#bacbbf",
+              "primary-fixed": "#47ffb8",
+              "primary": "#6effc0",
+              "on-tertiary-fixed": "#291800",
+              "tertiary-container": "#ffbd60",
+              "surface-container-low": "#1a1b20",
+              "secondary-fixed": "#d8e3fb",
+              "surface": "#121317",
+              "on-error-container": "#ffdad6",
+              "tertiary-fixed-dim": "#ffb955",
+              "secondary-fixed-dim": "#bcc7de",
+              "error-container": "#93000a",
+              "error": "#ffb4ab",
+              "primary-fixed-dim": "#00e29e",
+              "on-tertiary-container": "#754b00",
+              "on-primary-fixed": "#002114",
+              "on-secondary-container": "#aeb9d0",
+              "outline-variant": "#3b4a41",
+              "on-tertiary-fixed-variant": "#633f00",
+              "surface-bright": "#38393e",
+              "tertiary-fixed": "#ffddb4",
+              "surface-dim": "#121317",
+              "surface-container-highest": "#343439",
+              "on-primary-fixed-variant": "#005236",
+              "primary-container": "#00e5a0",
+              "background": "#121317",
+              "tertiary": "#ffe1bd",
+              "on-primary-container": "#006141",
+              "on-error": "#690005",
+              "on-primary": "#003824",
+              "on-secondary": "#263143",
+              "secondary-container": "#3e495d",
+              "secondary": "#bcc7de",
+              "on-secondary-fixed": "#111c2d"
+            },
+            fontFamily: {
+              "headline": ["Bricolage Grotesque"],
+              "body": ["DM Sans"],
+              "mono": ["JetBrains Mono"],
+              "label": ["Space Grotesk"]
+            },
+            borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
+          },
+        },
+      }
+    </script>
+<style>
+      .material-symbols-outlined {
+        font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+      }
+      body {
+        background-color: #0A0B0F;
+        color: #e3e2e8;
+        font-family: 'DM Sans', sans-serif;
+      }
+      .glass-panel {
+        background: rgba(255, 255, 255, 0.04);
+        backdrop-filter: blur(12px);
+      }
+      .brand-gradient {
+        background: linear-gradient(135deg, #6effc0 0%, #00e5a0 100%);
+      }
+      .no-scrollbar::-webkit-scrollbar {
+        display: none;
+      }
+    </style>
+</head>
+<body class="bg-[#0A0B0F] min-h-screen">
+<!-- SideNavBar Anchor -->
+<aside class="h-screen w-64 flex-col fixed left-0 top-0 bg-[#111318] py-8 z-50 flex">
+<div class="px-6 mb-10">
+<span class="font-['Bricolage_Grotesque'] text-xl font-bold text-[#00E5A0] uppercase tracking-wider">Institutional Intelligence</span>
+<p class="font-['DM_Sans'] text-[10px] text-[#8B95A3] mt-1 tracking-[0.2em] uppercase">Enterprise Admin</p>
+</div>
+<nav class="flex-1 space-y-1">
+<a class="text-[#8B95A3] hover:text-white flex items-center gap-3 px-6 py-3 transition-all hover:bg-[#1f1f24] group" href="#">
+<span class="material-symbols-outlined" data-icon="business">business</span>
+<span class="font-['DM_Sans'] text-sm tracking-tight">Organization Profile</span>
+</a>
+<a class="text-[#00E5A0] bg-[#1f1f24] font-bold border-r-2 border-[#00E5A0] flex items-center gap-3 px-6 py-3 transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="group">group</span>
+<span class="font-['DM_Sans'] text-sm tracking-tight">Users &amp; Roles</span>
+</a>
+<a class="text-[#8B95A3] hover:text-white flex items-center gap-3 px-6 py-3 transition-all hover:bg-[#1f1f24] group" href="#">
+<span class="material-symbols-outlined" data-icon="notifications">notifications</span>
+<span class="font-['DM_Sans'] text-sm tracking-tight">Notifications</span>
+</a>
+<a class="text-[#8B95A3] hover:text-white flex items-center gap-3 px-6 py-3 transition-all hover:bg-[#1f1f24] group" href="#">
+<span class="material-symbols-outlined" data-icon="security">security</span>
+<span class="font-['DM_Sans'] text-sm tracking-tight">Security</span>
+</a>
+</nav>
+<div class="mt-auto px-6 space-y-4">
+<div class="p-4 rounded-xl bg-surface-container-low/50 border border-outline-variant/10">
+<p class="text-[10px] text-[#8B95A3] uppercase mb-2">Статус подписки</p>
+<div class="flex items-end justify-between">
+<span class="font-mono text-xl font-bold text-white">12<span class="text-[#8B95A3] text-sm font-normal">/20</span></span>
+<span class="text-[10px] text-[#00E5A0]">Active Seats</span>
+</div>
+<div class="w-full bg-surface-variant h-1 mt-2 rounded-full overflow-hidden">
+<div class="bg-[#00E5A0] h-full" style="width: 60%"></div>
+</div>
+</div>
+<div class="pt-4 border-t border-outline-variant/10 space-y-1">
+<a class="text-[#8B95A3] hover:text-white flex items-center gap-3 py-2 transition-colors" href="#">
+<span class="material-symbols-outlined text-lg" data-icon="settings">settings</span>
+<span class="text-sm">Settings</span>
+</a>
+<a class="text-[#8B95A3] hover:text-white flex items-center gap-3 py-2 transition-colors" href="#">
+<span class="material-symbols-outlined text-lg" data-icon="logout">logout</span>
+<span class="text-sm">Log Out</span>
+</a>
+</div>
+</div>
+</aside>
+<!-- TopAppBar Anchor -->
+<header class="flex justify-between items-center w-full pl-72 pr-12 h-20 bg-[#0A0B0F]/80 backdrop-blur-xl sticky top-0 z-40">
+<div class="flex items-center gap-8">
+<h1 class="font-['Bricolage_Grotesque'] text-lg font-black text-white">User Management</h1>
+<nav class="hidden md:flex items-center gap-6">
+<a class="text-[#00E5A0] font-semibold text-sm" href="#">Directory</a>
+<a class="text-[#8B95A3] font-medium text-sm hover:text-[#00E5A0] transition-colors" href="#">Permissions</a>
+<a class="text-[#8B95A3] font-medium text-sm hover:text-[#00E5A0] transition-colors" href="#">Audit Logs</a>
+</nav>
+</div>
+<div class="flex items-center gap-4">
+<button class="brand-gradient text-on-primary font-bold px-6 py-2.5 rounded-lg text-sm flex items-center gap-2 active:scale-[0.98] transition-transform">
+<span class="material-symbols-outlined text-sm" data-icon="person_add">person_add</span>
+                Add New User
+            </button>
+<div class="flex items-center gap-2 border-l border-outline-variant/20 ml-4 pl-4">
+<button class="p-2 text-[#8B95A3] hover:text-white transition-colors">
+<span class="material-symbols-outlined" data-icon="help_outline">help_outline</span>
+</button>
+<button class="p-2 text-[#8B95A3] hover:text-white transition-colors">
+<span class="material-symbols-outlined" data-icon="dark_mode">dark_mode</span>
+</button>
+<div class="w-8 h-8 rounded-full overflow-hidden ml-2 bg-surface-container">
+<img class="w-full h-full object-cover" data-alt="Corporate administrator portrait with professional neutral lighting and grey background" src="https://lh3.googleusercontent.com/aida-public/AB6AXuD8rLbVKsjdNDCJzZSlrQrO2bpbwzOPTJW_cw1cXTYjQIpV0KEkxSC7wK00LfiiEfUeS7qAvg5oP-EWxyVwohh-WGxptv9oqnOkIBk_SfoYZcRInmf3FkqH5in817yFHPpM9yG0XfA0H-Htu0cmX9geGU4ctJyclxpttd5Oq8FzIalrqUGdWX6DfFUq2JCv8qFj0FvL10P5RHTl7i5wgJB1IIMUrq57j-yskgJf2m_jupR13KLqECvQhvCHQhii1vjOx2AG2SBn5uU"/>
+</div>
+</div>
+</div>
+</header>
+<!-- Main Content Canvas -->
+<main class="ml-64 pt-6 px-12 pb-12 grid grid-cols-12 gap-8">
+<!-- Dashboard Header / Metrics Section -->
+<div class="col-span-12 flex items-baseline justify-between mb-2">
+<div>
+<h2 class="font-headline text-3xl font-extrabold text-white tracking-tight">Пользователи и роли</h2>
+<p class="text-[#8B95A3] mt-1 text-sm font-body max-w-lg">Управление доступом организации и назначение детализированных прав для аналитических модулей AIStart360.</p>
+</div>
+<div class="flex gap-4">
+<div class="bg-surface-container-low p-4 rounded-xl min-w-[160px]">
+<p class="text-[10px] text-[#8B95A3] uppercase font-label">Всего мест</p>
+<p class="font-mono text-2xl font-bold text-white">20</p>
+</div>
+<div class="bg-surface-container-low p-4 rounded-xl min-w-[160px]">
+<p class="text-[10px] text-[#8B95A3] uppercase font-label">Активно</p>
+<p class="font-mono text-2xl font-bold text-[#00E5A0]">12</p>
+</div>
+<div class="bg-surface-container-low p-4 rounded-xl min-w-[160px]">
+<p class="text-[10px] text-[#8B95A3] uppercase font-label">В ожидании</p>
+<p class="font-mono text-2xl font-bold text-tertiary-fixed-dim">03</p>
+</div>
+</div>
+</div>
+<!-- User Table Section -->
+<div class="col-span-8 space-y-4">
+<div class="bg-surface-container-low rounded-2xl overflow-hidden shadow-2xl">
+<div class="p-6 flex justify-between items-center border-b border-outline-variant/10">
+<div class="flex items-center gap-4 bg-background px-4 py-2 rounded-lg w-full max-w-sm">
+<span class="material-symbols-outlined text-[#8B95A3] text-lg" data-icon="search">search</span>
+<input class="bg-transparent border-none focus:ring-0 text-sm w-full text-white placeholder-[#8B95A3]" placeholder="Поиск по имени или email..." type="text"/>
+</div>
+<div class="flex gap-2">
+<button class="p-2 bg-surface-container hover:bg-surface-container-high rounded-lg text-[#8B95A3] transition-colors">
+<span class="material-symbols-outlined" data-icon="filter_list">filter_list</span>
+</button>
+<button class="p-2 bg-surface-container hover:bg-surface-container-high rounded-lg text-[#8B95A3] transition-colors">
+<span class="material-symbols-outlined" data-icon="download">download</span>
+</button>
+</div>
+</div>
+<div class="overflow-x-auto">
+<table class="w-full text-left border-collapse">
+<thead>
+<tr class="text-[10px] text-[#8B95A3] uppercase tracking-widest bg-[#111318]">
+<th class="px-6 py-4 font-label">Пользователь</th>
+<th class="px-6 py-4 font-label">Роль</th>
+<th class="px-6 py-4 font-label">Статус</th>
+<th class="px-6 py-4 font-label">Активность</th>
+<th class="px-6 py-4 font-label text-right">Действия</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-outline-variant/5">
+<!-- Active Row Selected -->
+<tr class="bg-surface-container-high/40 hover:bg-surface-container-high transition-colors cursor-pointer group">
+<td class="px-6 py-4">
+<div class="flex items-center gap-3">
+<div class="w-9 h-9 rounded-full bg-primary/20 flex items-center justify-center overflow-hidden border border-primary/20">
+<img class="w-full h-full object-cover" data-alt="Professional woman portrait with neutral tech background and high-key studio lighting" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBoEezv3dOWDjdhps2gxRaxGGCNPTr8uZC7WNoilep1CjiHrJUXkkkwTls-on4cEY6HYkUs46VF_FVD13HlsA5bxUQhHXnbmSUb16MaJJyj6CTKmIYa-sxyNIu6_L4b95Gc_JDbbuH1nAQBFQYT3jx-IQVGj9gMmFaYKKogQcyPzv35RFtzkVFzjbBDXJ9dYBgzdmhLyyM14Afzkq-KmIfET-VsapKK_ad0kTXIi598AXYHmNOk-BKNLBAhIuf1jjQfWCgcqfEb6Ks"/>
+</div>
+<div>
+<div class="text-sm font-bold text-white">Анна Сергеева</div>
+<div class="text-xs text-[#8B95A3]">sergeeva.a@aistart360.io</div>
+</div>
+</div>
+</td>
+<td class="px-6 py-4">
+<span class="text-[11px] font-mono px-2 py-1 bg-surface-container rounded border border-outline-variant/10 text-white">Expert</span>
+</td>
+<td class="px-6 py-4">
+<div class="flex items-center gap-2">
+<div class="w-1.5 h-1.5 rounded-full bg-[#00E5A0] shadow-[0_0_8px_#00E5A0]"></div>
+<span class="text-xs text-white">Active</span>
+</div>
+</td>
+<td class="px-6 py-4 font-mono text-[11px] text-[#8B95A3]">
+                                    2 мин. назад
+                                </td>
+<td class="px-6 py-4 text-right">
+<div class="flex justify-end gap-1">
+<button class="p-1.5 hover:text-[#00E5A0] text-[#8B95A3] transition-colors">
+<span class="material-symbols-outlined text-lg" data-icon="edit">edit</span>
+</button>
+<button class="p-1.5 hover:text-error text-[#8B95A3] transition-colors">
+<span class="material-symbols-outlined text-lg" data-icon="block">block</span>
+</button>
+</div>
+</td>
+</tr>
+<!-- Standard Row -->
+<tr class="hover:bg-surface-container-high/20 transition-colors cursor-pointer group">
+<td class="px-6 py-4">
+<div class="flex items-center gap-3">
+<div class="w-9 h-9 rounded-full bg-surface-container border border-outline-variant/10 flex items-center justify-center overflow-hidden">
+<img class="w-full h-full object-cover" data-alt="Portrait of a male data analyst in a modern office with soft blue ambient lighting" src="https://lh3.googleusercontent.com/aida-public/AB6AXuB4xch4P7qg6WdDv6k13KiQGnu-A6r8jjPk55DIhQqy-IZGyBWKjU_duMAOlhny4FtvjEg4w5EY-AkjeAFDwcYZd2BAwALhNbhgC5cawe7fQQfiQk6u9CpDX70AFRAvrT6hVMmfDPj0mu5D1W4DZ_bP-tiouUCxQVv3pSkAuV3nvGXHHEzNX8VzGYP-UC1M2KoSrGDQFglI93nUUHzuen66mtLHpuYexS-aw_0ftx9BL5tptPXLXMB0m_l567H4y7gbyVnIgXwXFVU"/>
+</div>
+<div>
+<div class="text-sm font-bold text-white">Виктор Кравцов</div>
+<div class="text-xs text-[#8B95A3]">kravtsov.v@aistart360.io</div>
+</div>
+</div>
+</td>
+<td class="px-6 py-4">
+<span class="text-[11px] font-mono px-2 py-1 bg-surface-container rounded border border-outline-variant/10 text-white">Analyst</span>
+</td>
+<td class="px-6 py-4">
+<div class="flex items-center gap-2">
+<div class="w-1.5 h-1.5 rounded-full bg-[#00E5A0]/30"></div>
+<span class="text-xs text-[#8B95A3]">Active</span>
+</div>
+</td>
+<td class="px-6 py-4 font-mono text-[11px] text-[#8B95A3]">
+                                    1 час назад
+                                </td>
+<td class="px-6 py-4 text-right">
+<div class="flex justify-end gap-1">
+<button class="p-1.5 hover:text-[#00E5A0] text-[#8B95A3] transition-colors">
+<span class="material-symbols-outlined text-lg" data-icon="edit">edit</span>
+</button>
+<button class="p-1.5 hover:text-error text-[#8B95A3] transition-colors">
+<span class="material-symbols-outlined text-lg" data-icon="block">block</span>
+</button>
+</div>
+</td>
+</tr>
+<!-- Pending Row -->
+<tr class="hover:bg-surface-container-high/20 transition-colors cursor-pointer group">
+<td class="px-6 py-4">
+<div class="flex items-center gap-3">
+<div class="w-9 h-9 rounded-full bg-surface-container-highest flex items-center justify-center">
+<span class="text-xs font-bold text-[#8B95A3]">МК</span>
+</div>
+<div>
+<div class="text-sm font-bold text-white">Марина Коваль</div>
+<div class="text-xs text-[#8B95A3]">koval.m@partner.io</div>
+</div>
+</div>
+</td>
+<td class="px-6 py-4">
+<span class="text-[11px] font-mono px-2 py-1 bg-surface-container rounded border border-outline-variant/10 text-white">Viewer</span>
+</td>
+<td class="px-6 py-4">
+<div class="flex items-center gap-2">
+<div class="w-1.5 h-1.5 rounded-full bg-tertiary-fixed-dim"></div>
+<span class="text-xs text-tertiary-fixed-dim">Pending</span>
+</div>
+</td>
+<td class="px-6 py-4 font-mono text-[11px] text-[#8B95A3]">
+                                    —
+                                </td>
+<td class="px-6 py-4 text-right">
+<div class="flex justify-end gap-1">
+<button class="p-1.5 hover:text-[#00E5A0] text-[#8B95A3] transition-colors">
+<span class="material-symbols-outlined text-lg" data-icon="mail">mail</span>
+</button>
+<button class="p-1.5 hover:text-error text-[#8B95A3] transition-colors">
+<span class="material-symbols-outlined text-lg" data-icon="delete">delete</span>
+</button>
+</div>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+<!-- Permission Side Panel (Selected User Detail) -->
+<aside class="col-span-4 space-y-6">
+<div class="glass-panel rounded-2xl p-6 border border-outline-variant/5 shadow-2xl">
+<div class="flex items-center justify-between mb-8">
+<h3 class="font-headline text-lg font-bold text-white">Детальные права</h3>
+<button class="text-xs text-[#00E5A0] font-bold uppercase tracking-wider hover:opacity-80 transition-opacity">Сохранить</button>
+</div>
+<div class="flex items-center gap-4 mb-8 p-3 bg-surface-container-low rounded-xl">
+<div class="w-12 h-12 rounded-full overflow-hidden">
+<img class="w-full h-full object-cover" data-alt="Portrait of Anna Sergeeva" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCSEfPv6mN_jZ-MT8Zp_GhmsODHOVSORPaHOzLe1-yyZeFL28YhEE23XQ6gBUUFuwamtriIhgHkf9R206lp-YaRdpM1A2Xbhw_IXACaD_gtI-Hqp030ypVa6qSB7dWax_afjFM8j0934fGZnl5Hvkghe1ctm4AfocKDpDZ5ALjoNYauryEfpm84weif9nPjpnxHpSNYAq36l7nRahW5d7GC6l4LB86UangxaR9Jaay37Ms-ePHNkvq1gSybtliJp54mV-Nss9-gRPo"/>
+</div>
+<div>
+<p class="text-sm font-bold text-white">Анна Сергеева</p>
+<p class="text-[11px] text-[#8B95A3] font-mono">ID: 99421-E</p>
+</div>
+</div>
+<div class="space-y-6">
+<div>
+<p class="text-[10px] text-[#8B95A3] uppercase tracking-widest font-label mb-4">Аналитические модули</p>
+<div class="space-y-3">
+<label class="flex items-center justify-between cursor-pointer group">
+<span class="text-sm text-on-surface">Доступ к анализу рынка</span>
+<div class="relative inline-flex items-center">
+<input checked="" class="sr-only peer" type="checkbox"/>
+<div class="w-9 h-5 bg-surface-container rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#00E5A0]"></div>
+</div>
+</label>
+<label class="flex items-center justify-between cursor-pointer group">
+<span class="text-sm text-on-surface">Права на GRI редактирование</span>
+<div class="relative inline-flex items-center">
+<input checked="" class="sr-only peer" type="checkbox"/>
+<div class="w-9 h-5 bg-surface-container rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#00E5A0]"></div>
+</div>
+</label>
+<label class="flex items-center justify-between cursor-pointer group">
+<span class="text-sm text-on-surface">Экспорт полных отчетов</span>
+<div class="relative inline-flex items-center">
+<input class="sr-only peer" type="checkbox"/>
+<div class="w-9 h-5 bg-surface-container rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#00E5A0]"></div>
+</div>
+</label>
+</div>
+</div>
+<div class="pt-6 border-t border-outline-variant/10">
+<p class="text-[10px] text-[#8B95A3] uppercase tracking-widest font-label mb-4">Системные настройки</p>
+<div class="space-y-3">
+<label class="flex items-center justify-between cursor-pointer group">
+<span class="text-sm text-on-surface">Управление ключами API</span>
+<div class="relative inline-flex items-center">
+<input class="sr-only peer" type="checkbox"/>
+<div class="w-9 h-5 bg-surface-container rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#00E5A0]"></div>
+</div>
+</label>
+<label class="flex items-center justify-between cursor-pointer group">
+<span class="text-sm text-on-surface">Доступ к логам аудита</span>
+<div class="relative inline-flex items-center">
+<input checked="" class="sr-only peer" type="checkbox"/>
+<div class="w-9 h-5 bg-surface-container rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#00E5A0]"></div>
+</div>
+</label>
+</div>
+</div>
+<div class="bg-primary/5 rounded-xl p-4 border border-primary/10">
+<div class="flex items-start gap-3">
+<span class="material-symbols-outlined text-[#00E5A0]" data-icon="info">info</span>
+<p class="text-[11px] text-[#8B95A3] leading-relaxed">Изменение прав вступит в силу немедленно. Пользователь получит уведомление по электронной почте о новых доступных модулях.</p>
+</div>
+</div>
+</div>
+</div>
+<!-- Audit Shortcut Card -->
+<div class="bg-surface-container-low rounded-2xl p-6 border border-outline-variant/5">
+<div class="flex items-center gap-3 mb-4">
+<span class="material-symbols-outlined text-[#8B95A3]" data-icon="history">history</span>
+<h4 class="font-headline text-sm font-bold text-white uppercase tracking-wider">Последняя активность</h4>
+</div>
+<div class="space-y-4">
+<div class="flex gap-3">
+<div class="w-1.5 h-1.5 rounded-full bg-[#00E5A0] mt-1.5"></div>
+<div>
+<p class="text-xs text-on-surface">Анна Сергеева вошла в систему</p>
+<p class="text-[10px] text-[#8B95A3] font-mono mt-1">14:02 · IP 192.168.1.42</p>
+</div>
+</div>
+<div class="flex gap-3">
+<div class="w-1.5 h-1.5 rounded-full bg-outline-variant mt-1.5"></div>
+<div>
+<p class="text-xs text-on-surface">Виктор Кравцов экспортировал отчет 'Q3 Market Data'</p>
+<p class="text-[10px] text-[#8B95A3] font-mono mt-1">11:45 · PDF Format</p>
+</div>
+</div>
+</div>
+</div>
+</aside>
+</main>
+</body></html>

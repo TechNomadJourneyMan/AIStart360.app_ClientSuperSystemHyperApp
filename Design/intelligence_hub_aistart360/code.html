@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Intelligence Hub | AIStart360 Intelligence</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;700;800&amp;family=DM+Sans:wght@400;500;700&amp;family=JetBrains+Mono:wght@400;700&amp;family=Space+Grotesk:wght@400;700&amp;family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "on-tertiary-fixed-variant": "#633f00",
+                        "error": "#ffb4ab",
+                        "secondary-fixed-dim": "#bcc7de",
+                        "secondary-fixed": "#d8e3fb",
+                        "primary-container": "#00e5a0",
+                        "on-error-container": "#ffdad6",
+                        "on-secondary-fixed-variant": "#3c475a",
+                        "on-primary-fixed": "#002114",
+                        "secondary-container": "#3e495d",
+                        "on-background": "#e3e2e8",
+                        "inverse-on-surface": "#2f3035",
+                        "error-container": "#93000a",
+                        "on-error": "#690005",
+                        "outline-variant": "#3b4a41",
+                        "outline": "#84958a",
+                        "background": "#0A0B0F",
+                        "primary-fixed-dim": "#00e29e",
+                        "inverse-primary": "#006c49",
+                        "tertiary": "#ffe1bd",
+                        "primary": "#6effc0",
+                        "on-tertiary-fixed": "#291800",
+                        "surface-container-lowest": "#0d0e12",
+                        "tertiary-fixed-dim": "#ffb955",
+                        "surface-tint": "#00e29e",
+                        "on-secondary-fixed": "#111c2d",
+                        "tertiary-fixed": "#ffddb4",
+                        "surface-container": "#1f1f24",
+                        "primary-fixed": "#47ffb8",
+                        "surface-dim": "#121317",
+                        "tertiary-container": "#ffbd60",
+                        "inverse-surface": "#e3e2e8",
+                        "secondary": "#bcc7de",
+                        "surface-bright": "#38393e",
+                        "on-secondary": "#263143",
+                        "surface-container-high": "#292a2e",
+                        "on-primary-container": "#006141",
+                        "surface-container-highest": "#343439",
+                        "on-surface": "#e3e2e8",
+                        "on-tertiary-container": "#754b00",
+                        "surface": "#121317",
+                        "on-surface-variant": "#bacbbf",
+                        "on-primary": "#003824",
+                        "surface-variant": "#343439",
+                        "surface-container-low": "#111318",
+                        "on-tertiary": "#452b00",
+                        "on-primary-fixed-variant": "#005236",
+                        "on-secondary-container": "#aeb9d0"
+                    },
+                    fontFamily: {
+                        "headline": ["Bricolage Grotesque"],
+                        "body": ["DM Sans"],
+                        "label": ["DM Sans"],
+                        "mono": ["JetBrains Mono"]
+                    },
+                    borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
+                },
+            },
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+            vertical-align: middle;
+        }
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.04);
+            backdrop-filter: blur(12px);
+        }
+        body {
+            background-color: #0A0B0F;
+            color: #e3e2e8;
+            font-family: 'DM Sans', sans-serif;
+        }
+    </style>
+</head>
+<body class="overflow-x-hidden">
+<!-- Top Navigation Bar -->
+<header class="fixed top-0 w-full z-50 flex justify-between items-center px-8 py-4 bg-[#0A0B0F]/80 backdrop-blur-xl">
+<div class="flex items-center gap-8">
+<span class="text-xl font-black text-[#00E5A0] font-['Bricolage_Grotesque'] uppercase tracking-tight">AIStart360 Intelligence</span>
+<nav class="hidden md:flex items-center gap-6">
+<a class="text-[#00E5A0] border-b-2 border-[#00E5A0] pb-1 font-['Bricolage_Grotesque'] font-bold text-lg uppercase tracking-tight" href="#">Market</a>
+<a class="text-[#8B95A3] hover:text-white transition-colors font-['Bricolage_Grotesque'] font-bold text-lg uppercase tracking-tight" href="#">Tech</a>
+<a class="text-[#8B95A3] hover:text-white transition-colors font-['Bricolage_Grotesque'] font-bold text-lg uppercase tracking-tight" href="#">Strategy</a>
+</nav>
+</div>
+<div class="flex items-center gap-4">
+<div class="relative hidden lg:block">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-sm">search</span>
+<input class="bg-surface-container-low border-none rounded-lg py-2 pl-10 pr-4 text-sm focus:ring-1 focus:ring-primary-container w-64 text-on-surface placeholder:text-[#8B95A3]" placeholder="Search Intelligence..." type="text"/>
+</div>
+<button class="p-2 hover:bg-[#1f1f24] rounded-lg transition-all duration-200">
+<span class="material-symbols-outlined text-[#8B95A3]">notifications</span>
+</button>
+<button class="p-2 hover:bg-[#1f1f24] rounded-lg transition-all duration-200">
+<span class="material-symbols-outlined text-[#8B95A3]">settings</span>
+</button>
+<div class="w-8 h-8 rounded-full overflow-hidden border border-outline-variant">
+<img alt="User Profile Avatar" class="w-full h-full object-cover" data-alt="close-up portrait of a professional analyst in a modern office, soft bokeh lighting, high-end editorial photography" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDXGJKwvjth_U2kbV2oQ8jmLY96sM6Z06I4VZ0Eh_xmh54el-n6PF-NdtJwHmID5WkzZwMA3Mz5JCtf-g5cFLoKmx4gLP82J5SvgxXP3_AzmQdNn10T9n4cigBg3hv3svJq1DyRCGjc0coSCozJr6fjZx9MfqLlT980EyhjTQKN5zKi3vkNsUZfvsRhOne033LniKFtqTrMDEo5XYErhNKKAL5VGxpdlkAvI7pkxTgDWhZVxfFVg2yipbhv_uihcHO3LvbEJWrsCxs"/>
+</div>
+</div>
+</header>
+<!-- Side Navigation Bar -->
+<aside class="fixed left-0 top-0 h-full flex flex-col py-6 z-40 bg-[#111318] dark:bg-[#111318] w-64 shadow-[20px_0_40px_rgba(0,0,0,0.4)] pt-24">
+<div class="px-6 mb-8">
+<div class="flex items-center gap-3 mb-2">
+<span class="material-symbols-outlined text-[#00E5A0]" style="font-variation-settings: 'FILL' 1;">hub</span>
+<h2 class="text-lg font-bold text-[#00E5A0] font-['DM_Sans'] tracking-wide">Institutional Intelligence</h2>
+</div>
+<p class="text-xs text-[#8B95A3] uppercase tracking-widest font-mono">Precision Research Engine</p>
+</div>
+<nav class="flex-grow flex flex-col gap-1">
+<a class="flex items-center gap-3 px-6 py-3 bg-[#1f1f24] text-[#00E5A0] font-bold rounded-r-lg border-l-4 border-[#00E5A0] translate-x-1 transition-transform" href="#">
+<span class="material-symbols-outlined">hub</span>
+<span class="text-sm tracking-wide">Intelligence Hub</span>
+</a>
+<a class="flex items-center gap-3 px-6 py-3 text-[#8B95A3] hover:bg-[#1f1f24]/50 hover:text-white transition-all duration-300" href="#">
+<span class="material-symbols-outlined">description</span>
+<span class="text-sm tracking-wide">Whitepapers</span>
+</a>
+<a class="flex items-center gap-3 px-6 py-3 text-[#8B95A3] hover:bg-[#1f1f24]/50 hover:text-white transition-all duration-300" href="#">
+<span class="material-symbols-outlined">analytics</span>
+<span class="text-sm tracking-wide">Sector Reports</span>
+</a>
+<a class="flex items-center gap-3 px-6 py-3 text-[#8B95A3] hover:bg-[#1f1f24]/50 hover:text-white transition-all duration-300" href="#">
+<span class="material-symbols-outlined">menu_book</span>
+<span class="text-sm tracking-wide">Institutional Knowledge</span>
+</a>
+<a class="flex items-center gap-3 px-6 py-3 text-[#8B95A3] hover:bg-[#1f1f24]/50 hover:text-white transition-all duration-300" href="#">
+<span class="material-symbols-outlined">inventory_2</span>
+<span class="text-sm tracking-wide">Archive</span>
+</a>
+</nav>
+<div class="px-6 mt-auto">
+<button class="w-full bg-gradient-to-br from-[#6effc0] to-[#00E5A0] text-[#003824] font-bold py-3 rounded-lg text-sm mb-6 flex items-center justify-center gap-2 hover:opacity-90 transition-opacity">
+<span class="material-symbols-outlined text-sm">lock</span>
+                Confidential Access
+            </button>
+<div class="flex flex-col gap-2 border-t border-outline-variant/20 pt-4">
+<a class="flex items-center gap-3 text-[#8B95A3] hover:text-white text-xs py-2 transition-colors" href="#">
+<span class="material-symbols-outlined text-base">help_outline</span>
+                    Support
+                </a>
+<a class="flex items-center gap-3 text-[#8B95A3] hover:text-white text-xs py-2 transition-colors" href="#">
+<span class="material-symbols-outlined text-base">lock</span>
+                    Security
+                </a>
+</div>
+</div>
+</aside>
+<!-- Main Content Area -->
+<main class="ml-64 pt-24 px-8 pb-12">
+<!-- Breadcrumbs & Confidential Badge -->
+<div class="flex justify-between items-center mb-10">
+<nav class="flex items-center gap-2 text-sm text-[#8B95A3] font-mono">
+<span>App</span>
+<span class="material-symbols-outlined text-xs">chevron_right</span>
+<span>Intelligence</span>
+<span class="material-symbols-outlined text-xs">chevron_right</span>
+<span class="text-primary-container">Research Hub</span>
+</nav>
+<div class="flex items-center gap-2 px-3 py-1 bg-error-container/20 border border-error/30 rounded text-error text-[10px] uppercase font-bold tracking-widest">
+<span class="w-2 h-2 bg-error rounded-full animate-pulse"></span>
+                Strictly Confidential
+            </div>
+</div>
+<div class="flex gap-8">
+<!-- Left: Main Research Flux -->
+<div class="flex-grow max-w-6xl">
+<!-- Hero Section -->
+<section class="relative h-[400px] rounded-xl overflow-hidden mb-12 group cursor-pointer">
+<img alt="Hero Report" class="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" data-alt="abstract architectural visualization of futuristic city in Central Asia with digital data overlays and emerald green lighting" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCIoH6wazk0hkcSPLU2_82oq9CaBeItqBcKvcHw7OJsdx_o1d__zsGsuX2OIv6r38JPifHj-qDgXLfeKYNIPcnvWqm96pzbhR1PU8Uk1_pIytI4Zsp_Jw8hvppgdki3z2xLEvMUMU_eQdjIo_n60dJSxgeb6K5aUdLGcOaPlQjB4Zh--tIPtTAAzL6wXZAo551MdpgN3aVk5KsTTHoZ0AunigYW0RWLGS_dwl9J2AeDWEkkhp0xks6J1d0T966w-bv3xO1g5cIupw4"/>
+<div class="absolute inset-0 bg-gradient-to-t from-[#0A0B0F] via-[#0A0B0F]/40 to-transparent"></div>
+<div class="absolute bottom-0 left-0 p-10 max-w-2xl">
+<div class="flex items-center gap-3 mb-4">
+<span class="px-3 py-1 bg-primary-container text-on-primary-container text-[10px] font-bold uppercase tracking-widest rounded-sm">Featured Sector Report</span>
+<span class="text-[#8B95A3] font-mono text-xs">Q3 2024 Analysis</span>
+</div>
+<h1 class="text-5xl font-extrabold text-white font-headline leading-tight mb-6">The Future of B2B SaaS in Central Asia</h1>
+<button class="bg-primary-container text-on-primary-container px-8 py-3 rounded-lg font-bold flex items-center gap-3 hover:translate-x-1 transition-transform">
+                            Read Analysis
+                            <span class="material-symbols-outlined">arrow_forward</span>
+</button>
+</div>
+</section>
+<!-- Filter Bar -->
+<div class="flex flex-wrap items-center justify-between gap-6 mb-8">
+<div class="flex items-center gap-2 p-1 bg-surface-container-low rounded-lg">
+<button class="px-5 py-2 text-xs font-bold uppercase tracking-wider rounded-md transition-all duration-200 bg-surface-container text-[#00E5A0]">Market</button>
+<button class="px-5 py-2 text-xs font-bold uppercase tracking-wider rounded-md transition-all duration-200 text-[#8B95A3] hover:text-white">Tech</button>
+<button class="px-5 py-2 text-xs font-bold uppercase tracking-wider rounded-md transition-all duration-200 text-[#8B95A3] hover:text-white">Strategy</button>
+<button class="px-5 py-2 text-xs font-bold uppercase tracking-wider rounded-md transition-all duration-200 text-[#8B95A3] hover:text-white">Operations</button>
+</div>
+<div class="flex items-center gap-4">
+<span class="text-xs text-[#8B95A3] font-mono uppercase">Sort by: <span class="text-white">Newest First</span></span>
+<button class="p-2 bg-surface-container-low rounded-lg text-[#8B95A3] hover:text-white">
+<span class="material-symbols-outlined">filter_list</span>
+</button>
+</div>
+</div>
+<!-- Research Grid -->
+<div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+<!-- Card 1 -->
+<div class="bg-surface-container-low rounded-xl overflow-hidden hover:bg-surface-container-high transition-all duration-300 group">
+<div class="h-48 overflow-hidden">
+<img alt="Market Report" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" data-alt="high-tech digital matrix representing financial data trends, deep blues and glowing cyan accents, professional aesthetics" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCB5P39gFp7bzf8_lKt-OsNj3f4WO1T8k3Bn8AhNlUSwC_TE3cK9-20TU9UC0FmIXJelR2wU59nYYzoIsUykoLqH5ht5vpsygQXRq1-FBAYam0J2Nd5-7QF-KvHJBY8Je0_fJGWv1JJP8la_cPpaQq0oN2Q5iMDHjJATfSA7q3G82_HVirUfAhjQiUKppUme8cb3UPbXe3uD_MOOdzJMkjX9WAHWNy49YjNnKOesvgW4DDk7_rD094PRsRRZrVmknANVGJZ4yuqsVU"/>
+</div>
+<div class="p-6">
+<div class="flex justify-between items-start mb-4">
+<span class="text-[10px] font-bold text-primary-container border border-primary-container/30 px-2 py-0.5 rounded uppercase tracking-widest">Market Alpha</span>
+<div class="flex flex-col items-end">
+<span class="text-xs font-mono text-[#8B95A3]">Confidence</span>
+<span class="text-lg font-mono font-bold text-[#00E5A0]">94%</span>
+</div>
+</div>
+<h3 class="text-xl font-bold font-headline mb-4 text-white">Generative AI Infrastructure: The Next Decade</h3>
+<div class="flex items-center justify-between pt-4 border-t border-outline-variant/10">
+<div class="flex items-center gap-2 text-[#8B95A3] text-xs">
+<span class="material-symbols-outlined text-sm">schedule</span>
+<span>8 min read</span>
+</div>
+<span class="material-symbols-outlined text-[#8B95A3] group-hover:text-primary-container transition-colors">arrow_outward</span>
+</div>
+</div>
+</div>
+<!-- Card 2 -->
+<div class="bg-surface-container-low rounded-xl overflow-hidden hover:bg-surface-container-high transition-all duration-300 group">
+<div class="h-48 overflow-hidden">
+<img alt="Tech Analysis" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" data-alt="microscopic view of a neural network circuit board, glowing gold and green pathways, technical precision" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBC5rpy4JHEmoZ1kGfUmul4uSI3sz3Fd_W_BrGrQTO6v24sUzGp4y4yBR1zBE_umsJT6L3nNXNJXVUiYXxcBiK9rQqbzmqSB25mJ7hoLFpwhSNMYaGdUFOB2kCehqHu5N8Yj0bgXwMQLnG_XzcaJwRTYxq22DI_AJOFS-DRZycOdP-QEUpaOBgLoj5B-Mj9-ZVZY8qHiq_CRNcoKOMmrePN242jv8E3Ir_SmccaSyvfLir3H3gjgKUX6PCdOjmR1Ujkn6Z03dca7dg"/>
+</div>
+<div class="p-6">
+<div class="flex justify-between items-start mb-4">
+<span class="text-[10px] font-bold text-primary-container border border-primary-container/30 px-2 py-0.5 rounded uppercase tracking-widest">Tech Vector</span>
+<div class="flex flex-col items-end">
+<span class="text-xs font-mono text-[#8B95A3]">Confidence</span>
+<span class="text-lg font-mono font-bold text-[#00E5A0]">88%</span>
+</div>
+</div>
+<h3 class="text-xl font-bold font-headline mb-4 text-white">Quantum Resilient Encryption Protocols</h3>
+<div class="flex items-center justify-between pt-4 border-t border-outline-variant/10">
+<div class="flex items-center gap-2 text-[#8B95A3] text-xs">
+<span class="material-symbols-outlined text-sm">schedule</span>
+<span>12 min read</span>
+</div>
+<span class="material-symbols-outlined text-[#8B95A3] group-hover:text-primary-container transition-colors">arrow_outward</span>
+</div>
+</div>
+</div>
+<!-- Card 3 -->
+<div class="bg-surface-container-low rounded-xl overflow-hidden hover:bg-surface-container-high transition-all duration-300 group">
+<div class="h-48 overflow-hidden">
+<img alt="Strategy Doc" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" data-alt="top-down view of marble geometric blocks arranged in a complex strategic formation, sharp lighting, obsidian background" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBlchSDCvSGPNoPYL7UuZcLSVNDZITjUUt3_Ce3D9AYGyYslghTncPQtXUxCIk9r2If_BbkmTRLWWZ2xz3WXy8_JAYRo0QSOvMDOX_lScww_PaQ9Uher3vN4mgXmrXk1OoSRyXkpia9UyuDKwB_jrR9vO3l9tMKn7Up5wk2GlShuEpjUatUgs6KaATHflr8fgKURt68RVf2e6MR6vwNq95BI9pEm6v4-bnbuG-GIqzuUfI_65KOyB_PRG2G72u1BJe2tV7lIDOuxSc"/>
+</div>
+<div class="p-6">
+<div class="flex justify-between items-start mb-4">
+<span class="text-[10px] font-bold text-primary-container border border-primary-container/30 px-2 py-0.5 rounded uppercase tracking-widest">Strategy</span>
+<div class="flex flex-col items-end">
+<span class="text-xs font-mono text-[#8B95A3]">Confidence</span>
+<span class="text-lg font-mono font-bold text-[#00E5A0]">91%</span>
+</div>
+</div>
+<h3 class="text-xl font-bold font-headline mb-4 text-white">De-risking AI Implementation in FinTech</h3>
+<div class="flex items-center justify-between pt-4 border-t border-outline-variant/10">
+<div class="flex items-center gap-2 text-[#8B95A3] text-xs">
+<span class="material-symbols-outlined text-sm">schedule</span>
+<span>15 min read</span>
+</div>
+<span class="material-symbols-outlined text-[#8B95A3] group-hover:text-primary-container transition-colors">arrow_outward</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Right: Recent Intelligence Sidebar -->
+<aside class="w-80 flex-shrink-0">
+<div class="sticky top-24 space-y-8">
+<!-- Recent Intelligence Feed -->
+<section class="bg-surface-container-low rounded-xl p-6">
+<h4 class="text-xs font-bold font-mono text-primary-container uppercase tracking-widest mb-6 border-b border-outline-variant/10 pb-4">Recent Intelligence</h4>
+<div class="space-y-6">
+<div class="group cursor-pointer">
+<span class="text-[10px] font-mono text-[#8B95A3]">14:22 UTC • Market Flash</span>
+<h5 class="text-sm font-bold text-white group-hover:text-primary-container transition-colors mt-1 leading-snug">SEC issues new guidelines on Algorithm Transparency.</h5>
+</div>
+<div class="group cursor-pointer">
+<span class="text-[10px] font-mono text-[#8B95A3]">11:05 UTC • Sector Shift</span>
+<h5 class="text-sm font-bold text-white group-hover:text-primary-container transition-colors mt-1 leading-snug">Major pivot in EU cloud sovereignty requirements detected.</h5>
+</div>
+<div class="group cursor-pointer">
+<span class="text-[10px] font-mono text-[#8B95A3]">08:45 UTC • Signal Alpha</span>
+<h5 class="text-sm font-bold text-white group-hover:text-primary-container transition-colors mt-1 leading-snug">NVDA Q3 forward-looking metrics adjusted by Institutional Desk.</h5>
+</div>
+</div>
+<button class="w-full mt-8 py-3 text-xs font-bold text-[#8B95A3] hover:text-white transition-colors border border-outline-variant/20 rounded-lg hover:bg-surface-container">
+                            View Full Activity Log
+                        </button>
+</section>
+<!-- Institutional Knowledge Links -->
+<section class="bg-surface-container-low rounded-xl p-6">
+<h4 class="text-xs font-bold font-mono text-primary-container uppercase tracking-widest mb-6 border-b border-outline-variant/10 pb-4">Knowledge Base</h4>
+<ul class="space-y-4">
+<li>
+<a class="flex items-center justify-between group" href="#">
+<span class="text-sm text-[#8B95A3] group-hover:text-white transition-colors">Risk Assessment Framework</span>
+<span class="material-symbols-outlined text-sm opacity-0 group-hover:opacity-100 transition-opacity">download</span>
+</a>
+</li>
+<li>
+<a class="flex items-center justify-between group" href="#">
+<span class="text-sm text-[#8B95A3] group-hover:text-white transition-colors">Q4 Sector Taxonomy v2.1</span>
+<span class="material-symbols-outlined text-sm opacity-0 group-hover:opacity-100 transition-opacity">download</span>
+</a>
+</li>
+<li>
+<a class="flex items-center justify-between group" href="#">
+<span class="text-sm text-[#8B95A3] group-hover:text-white transition-colors">Intelligence Disclosure Policy</span>
+<span class="material-symbols-outlined text-sm opacity-0 group-hover:opacity-100 transition-opacity">open_in_new</span>
+</a>
+</li>
+</ul>
+</section>
+<!-- KPI Insight Block -->
+<div class="bg-surface-container-lowest p-6 rounded-xl border-l-4 border-primary-container">
+<span class="text-[10px] font-mono text-[#8B95A3] uppercase tracking-widest mb-2 block">Network Confidence</span>
+<div class="flex items-end justify-between">
+<span class="text-4xl font-bold font-mono text-white">96.4</span>
+<div class="flex flex-col items-end">
+<span class="text-[#00E5A0] text-xs font-bold">+1.2%</span>
+<div class="w-20 h-1 bg-surface-container mt-1 overflow-hidden">
+<div class="w-3/4 h-full bg-[#00E5A0]"></div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</aside>
+</div>
+</main>
+</body></html>

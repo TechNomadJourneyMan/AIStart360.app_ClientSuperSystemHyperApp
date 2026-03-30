@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Clients Management | AIStart360 Institutional</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;600;700;800&amp;family=DM+Sans:wght@400;500;700&amp;family=JetBrains+Mono:wght@400;500&amp;family=Space+Grotesk:wght@400;600;700&amp;family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "secondary-fixed-dim": "#bcc7de",
+                        "surface-container-lowest": "#0d0e12",
+                        "on-primary-fixed": "#002114",
+                        "inverse-on-surface": "#2f3035",
+                        "on-surface-variant": "#bacbbf",
+                        "on-primary": "#003824",
+                        "outline-variant": "#3b4a41",
+                        "surface-container-highest": "#343439",
+                        "primary-fixed-dim": "#00e29e",
+                        "on-primary-container": "#006141",
+                        "inverse-primary": "#006c49",
+                        "outline": "#84958a",
+                        "secondary": "#bcc7de",
+                        "tertiary": "#ffe1bd",
+                        "secondary-container": "#3e495d",
+                        "on-secondary": "#263143",
+                        "surface": "#121317",
+                        "surface-container-low": "#1a1b20",
+                        "on-error": "#690005",
+                        "error": "#ffb4ab",
+                        "secondary-fixed": "#d8e3fb",
+                        "error-container": "#93000a",
+                        "on-secondary-container": "#aeb9d0",
+                        "on-tertiary-fixed": "#291800",
+                        "on-tertiary-fixed-variant": "#633f00",
+                        "primary": "#6effc0",
+                        "background": "#121317",
+                        "primary-fixed": "#47ffb8",
+                        "on-background": "#e3e2e8",
+                        "surface-variant": "#343439",
+                        "tertiary-fixed-dim": "#ffb955",
+                        "on-secondary-fixed-variant": "#3c475a",
+                        "surface-dim": "#121317",
+                        "on-error-container": "#ffdad6",
+                        "on-secondary-fixed": "#111c2d",
+                        "tertiary-fixed": "#ffddb4",
+                        "surface-container": "#1f1f24",
+                        "primary-container": "#00e5a0",
+                        "on-surface": "#e3e2e8",
+                        "on-primary-fixed-variant": "#005236",
+                        "surface-container-high": "#292a2e",
+                        "inverse-surface": "#e3e2e8",
+                        "surface-bright": "#38393e",
+                        "on-tertiary-container": "#754b00",
+                        "on-tertiary": "#452b00",
+                        "tertiary-container": "#ffbd60",
+                        "surface-tint": "#00e29e"
+                    },
+                    fontFamily: {
+                        "headline": ["Bricolage Grotesque"],
+                        "body": ["DM Sans"],
+                        "label": ["DM Sans"],
+                        "mono": ["JetBrains Mono"]
+                    },
+                    borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
+                },
+            },
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+            vertical-align: middle;
+        }
+        body {
+            background-color: #0A0B0F;
+            color: #e3e2e8;
+            font-family: 'DM Sans', sans-serif;
+        }
+        .bento-grid {
+            display: grid;
+            grid-template-columns: repeat(12, 1fr);
+            gap: 1.5rem;
+        }
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.04);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(132, 149, 138, 0.1);
+        }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+    </style>
+</head>
+<body class="overflow-hidden">
+<!-- Sidebar Navigation -->
+<aside class="h-screen w-64 fixed left-0 top-0 overflow-y-auto bg-[#111318] flex flex-col py-6 px-4 z-50">
+<div class="mb-10 px-2">
+<h1 class="text-xl font-bold tracking-tight text-white font-headline">AIStart360</h1>
+<p class="text-[10px] text-[#00E5A0] tracking-[0.2em] font-mono uppercase mt-1">Institutional Intelligence</p>
+</div>
+<nav class="flex-1 space-y-1">
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-[#8B95A3] hover:text-white transition-colors hover:bg-[#1f1f24] group" href="#">
+<span class="material-symbols-outlined text-[20px]">dashboard</span>
+<span class="text-sm font-medium">Dashboard</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-[#1f1f24] text-[#00E5A0] font-medium border-r-2 border-[#00E5A0] group" href="#">
+<span class="material-symbols-outlined text-[20px]">business_center</span>
+<span class="text-sm">Clients</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-[#8B95A3] hover:text-white transition-colors hover:bg-[#1f1f24] group" href="#">
+<span class="material-symbols-outlined text-[20px]">description</span>
+<span class="text-sm">Reports</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-[#8B95A3] hover:text-white transition-colors hover:bg-[#1f1f24] group" href="#">
+<span class="material-symbols-outlined text-[20px]">monitoring</span>
+<span class="text-sm">Analytics</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-[#8B95A3] hover:text-white transition-colors hover:bg-[#1f1f24] group" href="#">
+<span class="material-symbols-outlined text-[20px]">task_alt</span>
+<span class="text-sm">Tasks</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-[#8B95A3] hover:text-white transition-colors hover:bg-[#1f1f24] group" href="#">
+<span class="material-symbols-outlined text-[20px]">group</span>
+<span class="text-sm">Team</span>
+</a>
+</nav>
+<div class="mt-auto pt-6 border-t border-white/5 space-y-1">
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-[#8B95A3] hover:text-white transition-colors hover:bg-[#1f1f24]" href="#">
+<span class="material-symbols-outlined text-[20px]">settings</span>
+<span class="text-sm">Settings</span>
+</a>
+<div class="px-3 py-4 mt-2 rounded-xl bg-surface-container-lowest border border-white/5">
+<div class="flex items-center gap-2 mb-2">
+<div class="w-2 h-2 rounded-full bg-[#00E5A0] animate-pulse"></div>
+<span class="text-[10px] font-mono text-[#00E5A0]">SYSTEM OPTIMAL</span>
+</div>
+<p class="text-[11px] text-[#8B95A3] leading-relaxed">Intelligence nodes synchronized across 12 regions.</p>
+</div>
+</div>
+</aside>
+<!-- Main Content Wrapper -->
+<main class="ml-64 min-h-screen bg-[#0A0B0F] relative flex flex-col">
+<!-- Top Navigation -->
+<header class="h-16 flex justify-between items-center px-8 w-full bg-[#0A0B0F]/80 backdrop-blur-xl z-40 shadow-2xl shadow-black/40">
+<div class="flex items-center gap-4 w-1/3">
+<div class="relative w-full max-w-sm">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-[#8B95A3] text-lg">search</span>
+<input class="w-full bg-surface-container-low border-none rounded-lg py-2 pl-10 pr-4 text-sm focus:ring-1 focus:ring-primary/30 placeholder-[#8B95A3]" placeholder="Search institutional database..." type="text"/>
+</div>
+</div>
+<div class="flex items-center gap-6">
+<button class="flex items-center gap-2 px-4 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white text-xs font-medium transition-all">
+<span class="material-symbols-outlined text-sm">bolt</span>
+                    Quick Action
+                </button>
+<button class="bg-gradient-to-br from-primary to-primary-container text-on-primary px-5 py-1.5 rounded-lg text-xs font-bold shadow-lg shadow-primary/10 transition-transform active:scale-95">
+                    Run Report
+                </button>
+<div class="flex items-center gap-3 ml-4 pl-4 border-l border-white/10">
+<span class="material-symbols-outlined text-[#8B95A3] hover:text-white cursor-pointer transition-colors">notifications</span>
+<div class="w-8 h-8 rounded-full overflow-hidden border border-primary/20">
+<img alt="User" class="w-full h-full object-cover" data-alt="professional corporate executive headshot with neutral background and sharp lighting" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDPuuKr9dkE2iOUTHdb8v2lHWo8HDyqYr9Zus5K3WPoBINo-vwDrJsq0rNa1nqGwB9JTOWuCDly0-7UbvIbGKkDffWXEo5JS2JPn0RPKY-6SafjqXoPLWS9quaDOt0hLAEuiH-idzN12ISRiQtDnsD-CodcAFKuflfxnll4xfs09J2iCyPTYWWFThiFJ1RJ0RNa_BSbRJ5hiI6aTHFbzGqvl7iaDALe7XEUi6hcjHHDR1Hr2DgeAji4NtiYSJ3GM6Y60z7Wu80yLKU"/>
+</div>
+</div>
+</div>
+</header>
+<!-- Content Canvas -->
+<div class="flex-1 overflow-y-auto p-8 no-scrollbar">
+<!-- Header & Key Stats -->
+<div class="flex justify-between items-end mb-10">
+<div class="space-y-1">
+<h2 class="text-4xl font-headline font-extrabold text-white tracking-tight">Clients Management</h2>
+<p class="text-secondary text-sm font-body">Institutional portfolio overview and risk assessment.</p>
+</div>
+<div class="flex gap-12">
+<div class="text-right">
+<p class="text-[10px] font-mono text-secondary uppercase tracking-widest mb-1">Active Portfolios</p>
+<p class="text-3xl font-mono text-white font-bold tracking-tighter">1,284</p>
+</div>
+<div class="text-right">
+<p class="text-[10px] font-mono text-secondary uppercase tracking-widest mb-1">Avg GRI Score</p>
+<p class="text-3xl font-mono text-primary font-bold tracking-tighter">84.2<span class="text-xs ml-1 font-normal text-primary/60">/100</span></p>
+</div>
+</div>
+</div>
+<!-- Dashboard Grid -->
+<div class="bento-grid">
+<!-- Main Table Area (Left 9 Columns) -->
+<div class="col-span-9 space-y-6">
+<!-- Filters Row -->
+<div class="flex items-center justify-between bg-surface-container-low/50 p-2 rounded-xl">
+<div class="flex gap-2">
+<select class="bg-surface-container border-none text-xs text-white rounded-lg py-2 pl-4 pr-10 focus:ring-1 focus:ring-primary/20">
+<option>All Segments</option>
+<option>Fintech</option>
+<option>HealthTech</option>
+<option>Enterprise AI</option>
+</select>
+<select class="bg-surface-container border-none text-xs text-white rounded-lg py-2 pl-4 pr-10 focus:ring-1 focus:ring-primary/20">
+<option>All Stages</option>
+<option>Series A</option>
+<option>Series B</option>
+<option>Pre-IPO</option>
+</select>
+<select class="bg-surface-container border-none text-xs text-white rounded-lg py-2 pl-4 pr-10 focus:ring-1 focus:ring-primary/20">
+<option>Risk: Any</option>
+<option>Low Risk</option>
+<option>Mid Risk</option>
+<option>High Risk</option>
+</select>
+</div>
+<div class="flex gap-2 mr-2">
+<button class="p-2 rounded-lg hover:bg-white/5 text-secondary"><span class="material-symbols-outlined text-sm">filter_list</span></button>
+<button class="p-2 rounded-lg hover:bg-white/5 text-secondary"><span class="material-symbols-outlined text-sm">file_download</span></button>
+</div>
+</div>
+<!-- Clients Table -->
+<div class="bg-surface-container-low rounded-2xl overflow-hidden">
+<table class="w-full text-left border-collapse">
+<thead>
+<tr class="bg-surface-container-high/30 border-b border-white/5">
+<th class="px-6 py-4 text-[10px] font-mono font-bold text-secondary uppercase tracking-widest">Organization</th>
+<th class="px-6 py-4 text-[10px] font-mono font-bold text-secondary uppercase tracking-widest">Stage</th>
+<th class="px-6 py-4 text-[10px] font-mono font-bold text-secondary uppercase tracking-widest text-center">GRI Score</th>
+<th class="px-6 py-4 text-[10px] font-mono font-bold text-secondary uppercase tracking-widest text-right">Revenue</th>
+<th class="px-6 py-4 text-[10px] font-mono font-bold text-secondary uppercase tracking-widest">Status</th>
+<th class="px-6 py-4 text-[10px] font-mono font-bold text-secondary uppercase tracking-widest">Lead Analyst</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-white/[0.03]">
+<!-- Table Row 1 (Active) -->
+<tr class="hover:bg-surface-container-highest/40 transition-colors group cursor-pointer">
+<td class="px-6 py-4">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded-lg bg-white/5 flex items-center justify-center overflow-hidden border border-white/10">
+<img class="w-full h-full object-cover" data-alt="abstract geometric brand logo for tech company with blue and silver chrome accents" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBX_901s7JRMevhC5KdOaMhNtJZ8f43Fy-cI-LPZbTXJj5hpJGX43mDMtUVfDydD4TueGTbhRYsXI2OcacGsw2e7t7exDwBeHTwPfk62MljyCxIV-6MScBrR49lcPBvS8ozp-ohkJZW6eE3THItLwkvQ4kx-vbTo4CVvA_FA2S95La3nDbRSHbzsVXYvISe_H0JTclbKPATUuimymiP_NWWE-10t53-6_z9P7ETJ904-0TPnBMmvQUbubnaer-_yG3_doBfXAfQQSg"/>
+</div>
+<div>
+<p class="text-sm font-bold text-white">QuantumDynamics</p>
+<p class="text-[10px] text-secondary">Infrastructure • Luxembourg</p>
+</div>
+</div>
+</td>
+<td class="px-6 py-4">
+<span class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-white/5 text-secondary border border-white/10 uppercase">Series C</span>
+</td>
+<td class="px-6 py-4">
+<div class="flex flex-col items-center">
+<span class="text-sm font-mono font-bold text-primary">92.4</span>
+<div class="w-16 h-1 mt-1 bg-white/5 rounded-full overflow-hidden">
+<div class="h-full bg-primary w-4/5"></div>
+</div>
+</div>
+</td>
+<td class="px-6 py-4 text-right">
+<p class="text-sm font-mono text-white">$42.8M</p>
+<p class="text-[10px] text-[#00E5A0] font-mono">+12.4%</p>
+</td>
+<td class="px-6 py-4">
+<div class="flex items-center gap-2">
+<div class="w-1.5 h-1.5 rounded-full bg-[#00E5A0]"></div>
+<span class="text-xs text-white">Operational</span>
+</div>
+</td>
+<td class="px-6 py-4 text-secondary text-xs">
+                                        Dr. Elena Vance
+                                    </td>
+</tr>
+<!-- Table Row 2 (Selected State) -->
+<tr class="bg-surface-container-highest transition-colors group cursor-pointer border-l-2 border-primary">
+<td class="px-6 py-4">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded-lg bg-white/5 flex items-center justify-center overflow-hidden border border-white/10">
+<img class="w-full h-full object-cover" data-alt="vibrant abstract gradient logo for creative software brand with mesh texture" src="https://lh3.googleusercontent.com/aida-public/AB6AXuA25myrz6kufr7Y3J2r90zdmel7DF4H9FsjKy1_ALbhGNOM5I3GiJDjDU0_z3GNcHc9uapxwm5WxLng-Vh-Ok-paw0rKoxpS8ef_vuBbYQhYxnJ8RlV9ln3V7f7i0DrwzptTFgslI7dgpfcSed_Ao9ymKAHHmrC9jp7kF8OFX6uUO8ZzALm51SbqQ0DTpzGZMu5-G77Ze9f__lc2ih01eRfOBWudgHu0MUU1I64924cMrsXllXW1s3wpB_N8nGeUR0tN4bbALRXENg"/>
+</div>
+<div>
+<p class="text-sm font-bold text-white">NexGen Logistics</p>
+<p class="text-[10px] text-secondary">Automation • Singapore</p>
+</div>
+</div>
+</td>
+<td class="px-6 py-4">
+<span class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-white/5 text-secondary border border-white/10 uppercase">Pre-IPO</span>
+</td>
+<td class="px-6 py-4">
+<div class="flex flex-col items-center">
+<span class="text-sm font-mono font-bold text-white">78.1</span>
+<div class="w-16 h-1 mt-1 bg-white/5 rounded-full overflow-hidden">
+<div class="h-full bg-white/40 w-3/5"></div>
+</div>
+</div>
+</td>
+<td class="px-6 py-4 text-right">
+<p class="text-sm font-mono text-white">$156.2M</p>
+<p class="text-[10px] text-error font-mono">-2.1%</p>
+</td>
+<td class="px-6 py-4">
+<div class="flex items-center gap-2">
+<div class="w-1.5 h-1.5 rounded-full bg-yellow-400"></div>
+<span class="text-xs text-white">Auditing</span>
+</div>
+</td>
+<td class="px-6 py-4 text-secondary text-xs">
+                                        Marcus Sterling
+                                    </td>
+</tr>
+<!-- Table Row 3 -->
+<tr class="hover:bg-surface-container-highest/40 transition-colors group cursor-pointer">
+<td class="px-6 py-4">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded-lg bg-white/5 flex items-center justify-center overflow-hidden border border-white/10">
+<img class="w-full h-full object-cover" data-alt="minimalist architectural logo design for a modern construction firm in black and white" src="https://lh3.googleusercontent.com/aida-public/AB6AXuD-xo7h3m89WwSfl3371-Sa_zFKnm6FkJ9wgt7mdiMziTqT290bDH3ApO2FXfYGg6hqCWBCXA-o3Ox1zAiHZuW-0c0KQNrq2W2Q2V_gXdCWlWapUnHLDyBgg4ovLF3Lu3n8TinLJxUnAT5A13W3N3oSy8JoZQnOwnhF48__3bAiPUyY7LquslC8qdHYm2cRYwk_AdOaNe4nyRC860JSyQd4qQX7IHmO5gIv3gz_j14aTKwQPV0r9LHCEUQ6iGLIF-_MA5EVHH0gXMg"/>
+</div>
+<div>
+<p class="text-sm font-bold text-white">Atlas Core</p>
+<p class="text-[10px] text-secondary">Energy • Canada</p>
+</div>
+</div>
+</td>
+<td class="px-6 py-4">
+<span class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-white/5 text-secondary border border-white/10 uppercase">Series B</span>
+</td>
+<td class="px-6 py-4">
+<div class="flex flex-col items-center">
+<span class="text-sm font-mono font-bold text-primary">88.9</span>
+<div class="w-16 h-1 mt-1 bg-white/5 rounded-full overflow-hidden">
+<div class="h-full bg-primary w-3/4"></div>
+</div>
+</div>
+</td>
+<td class="px-6 py-4 text-right">
+<p class="text-sm font-mono text-white">$12.5M</p>
+<p class="text-[10px] text-[#00E5A0] font-mono">+8.9%</p>
+</td>
+<td class="px-6 py-4">
+<div class="flex items-center gap-2">
+<div class="w-1.5 h-1.5 rounded-full bg-[#00E5A0]"></div>
+<span class="text-xs text-white">Operational</span>
+</div>
+</td>
+<td class="px-6 py-4 text-secondary text-xs">
+                                        Sarah Jenkins
+                                    </td>
+</tr>
+</tbody>
+</table>
+<div class="px-6 py-4 bg-surface-container-high/20 border-t border-white/5 flex items-center justify-between">
+<p class="text-[10px] font-mono text-secondary">DISPLAYING 12 OF 1,284 ENTITIES</p>
+<div class="flex gap-2">
+<button class="p-1 px-3 text-[10px] font-bold text-white bg-white/5 rounded border border-white/10">PREV</button>
+<button class="p-1 px-3 text-[10px] font-bold text-white bg-white/10 rounded border border-white/20">NEXT</button>
+</div>
+</div>
+</div>
+</div>
+<!-- Right Quick View Panel (3 Columns) -->
+<div class="col-span-3">
+<div class="bg-surface-container rounded-2xl p-6 sticky top-0 border border-white/5 space-y-8">
+<div>
+<div class="flex items-center gap-4 mb-4">
+<div class="w-12 h-12 rounded-xl bg-white/5 overflow-hidden border border-white/10">
+<img class="w-full h-full object-cover" data-alt="vibrant abstract gradient logo for creative software brand with mesh texture" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDD9qvCyTl8KOJg8l85nPU5AtcFqgfm1tNYVaOnTMw3GHdmmOZRxGj5WroD_DngEVX5qKCl1Qo-STc4SBSXBeaKyN0fjSstHN5rR0ijBLALVfxV2b-1FeVQqI9j3Hav7s5drXRe6zyVV-LTSVns3QOrQLptTvrRka8eDpNSpQBjxOyZw8HaTc_U9dqYcFMb1eTbWTjYy9PmCvOVBJ3AoOCTZmCBcdHFDsutqq8J34FkZHfQVWo84_cCChyhu2p64zwKRCYgFAt0cYs"/>
+</div>
+<div>
+<h3 class="text-lg font-bold text-white">NexGen Logistics</h3>
+<p class="text-xs text-primary font-mono tracking-tighter">ID: NZL-8821-23</p>
+</div>
+</div>
+<div class="grid grid-cols-2 gap-4">
+<div class="bg-surface-container-low p-4 rounded-xl">
+<p class="text-[10px] font-mono text-secondary uppercase mb-1">Burn Rate</p>
+<p class="text-lg font-mono text-white">$420K<span class="text-[10px] font-normal text-secondary ml-1">/mo</span></p>
+</div>
+<div class="bg-surface-container-low p-4 rounded-xl">
+<p class="text-[10px] font-mono text-secondary uppercase mb-1">Runway</p>
+<p class="text-lg font-mono text-white">18.4<span class="text-[10px] font-normal text-secondary ml-1">mos</span></p>
+</div>
+</div>
+</div>
+<div>
+<div class="flex items-center justify-between mb-4">
+<h4 class="text-xs font-bold text-white uppercase tracking-widest">Q3 Milestone Roadmap</h4>
+<span class="text-[10px] font-mono text-secondary">62% COMPLETE</span>
+</div>
+<div class="space-y-6 relative pl-4 before:content-[''] before:absolute before:left-0 before:top-2 before:bottom-2 before:w-[2px] before:bg-white/5">
+<div class="relative">
+<div class="absolute -left-[21px] top-1 w-3 h-3 rounded-full bg-primary shadow-[0_0_8px_rgba(0,229,160,0.5)]"></div>
+<p class="text-xs font-bold text-white">Market Analysis</p>
+<p class="text-[10px] text-secondary mt-1 italic">Verified 14.08.2023</p>
+</div>
+<div class="relative">
+<div class="absolute -left-[21px] top-1 w-3 h-3 rounded-full bg-primary shadow-[0_0_8px_rgba(0,229,160,0.5)]"></div>
+<p class="text-xs font-bold text-white">Financial Audit</p>
+<p class="text-[10px] text-secondary mt-1 italic">Verified 22.09.2023</p>
+</div>
+<div class="relative opacity-50">
+<div class="absolute -left-[21px] top-1 w-3 h-3 rounded-full bg-surface-container-high border border-white/20"></div>
+<p class="text-xs font-bold text-white">Regulatory Filing</p>
+<p class="text-[10px] text-secondary mt-1">Expected 15.11.2023</p>
+</div>
+</div>
+</div>
+<button class="w-full py-3 rounded-xl bg-white/5 border border-white/10 text-white text-xs font-bold hover:bg-white/10 transition-colors">
+                            VIEW FULL PROFILE
+                        </button>
+</div>
+</div>
+</div>
+<!-- Bottom Live Audit Log -->
+<div class="mt-10 mb-8">
+<div class="flex items-center gap-3 mb-4">
+<span class="material-symbols-outlined text-primary text-sm">terminal</span>
+<h3 class="text-xs font-mono font-bold text-white uppercase tracking-[0.2em]">Live System Audit Log</h3>
+</div>
+<div class="bg-surface-container-lowest rounded-xl border border-white/5 p-4 font-mono text-[11px] leading-relaxed overflow-hidden h-32 overflow-y-auto no-scrollbar">
+<div class="flex gap-4 py-1 border-b border-white/[0.02]">
+<span class="text-secondary">[14:22:01]</span>
+<span class="text-[#00E5A0]">SUCCESS</span>
+<span class="text-white">GRI Scoring recalculation complete for <span class="underline">QuantumDynamics</span>.</span>
+</div>
+<div class="flex gap-4 py-1 border-b border-white/[0.02]">
+<span class="text-secondary">[14:21:44]</span>
+<span class="text-primary-container">INFO</span>
+<span class="text-white">User 'Marcus Sterling' modified risk profile for <span class="underline">NexGen Logistics</span>.</span>
+</div>
+<div class="flex gap-4 py-1 border-b border-white/[0.02]">
+<span class="text-secondary">[14:20:12]</span>
+<span class="text-yellow-400">WARN</span>
+<span class="text-white">Asymmetric data flow detected in node 'Asia-Central'. Latency: 42ms.</span>
+</div>
+<div class="flex gap-4 py-1 border-b border-white/[0.02]">
+<span class="text-secondary">[14:18:55]</span>
+<span class="text-[#00E5A0]">SUCCESS</span>
+<span class="text-white">Institutional report generated: 'Q3 Regional Liquidity Forecast'.</span>
+</div>
+<div class="flex gap-4 py-1">
+<span class="text-secondary">[14:15:30]</span>
+<span class="text-primary-container">INFO</span>
+<span class="text-white">System integrity check performed. No anomalies detected in current batch.</span>
+</div>
+</div>
+</div>
+</div>
+</main>
+</body></html>

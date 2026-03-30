@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="ru"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>AIStart360 - Анализ конкурентов</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;700;800&amp;family=DM+Sans:ital,wght@0,400;0,500;0,700;1,400&amp;family=JetBrains+Mono:wght@400;700&amp;family=Space+Grotesk:wght@400;700&amp;family=Inter:wght@400;500;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "secondary": "#bcc7de",
+                        "surface": "#121317",
+                        "on-secondary-container": "#aeb9d0",
+                        "inverse-on-surface": "#2f3035",
+                        "on-error-container": "#ffdad6",
+                        "surface-container": "#1f1f24",
+                        "primary-fixed-dim": "#00e29e",
+                        "error": "#ffb4ab",
+                        "tertiary-container": "#ffbd60",
+                        "secondary-fixed": "#d8e3fb",
+                        "primary-container": "#00e5a0",
+                        "surface-container-high": "#292a2e",
+                        "secondary-fixed-dim": "#bcc7de",
+                        "on-primary-fixed": "#002114",
+                        "outline": "#84958a",
+                        "on-tertiary-fixed": "#291800",
+                        "primary": "#6effc0",
+                        "tertiary-fixed": "#ffddb4",
+                        "surface-variant": "#343439",
+                        "on-primary": "#003824",
+                        "on-tertiary-container": "#754b00",
+                        "on-error": "#690005",
+                        "surface-container-highest": "#343439",
+                        "on-surface": "#e3e2e8",
+                        "surface-container-low": "#1a1b20",
+                        "on-secondary": "#263143",
+                        "on-tertiary": "#452b00",
+                        "on-primary-container": "#006141",
+                        "on-surface-variant": "#bacbbf",
+                        "on-primary-fixed-variant": "#005236",
+                        "primary-fixed": "#47ffb8",
+                        "inverse-primary": "#006c49",
+                        "error-container": "#93000a",
+                        "on-tertiary-fixed-variant": "#633f00",
+                        "surface-dim": "#121317",
+                        "on-secondary-fixed": "#111c2d",
+                        "tertiary": "#ffe1bd",
+                        "surface-bright": "#38393e",
+                        "outline-variant": "#3b4a41",
+                        "on-secondary-fixed-variant": "#3c475a",
+                        "tertiary-fixed-dim": "#ffb955",
+                        "background": "#0A0B0F",
+                        "secondary-container": "#3e495d",
+                        "surface-container-lowest": "#0d0e12",
+                        "surface-tint": "#00e29e",
+                        "on-background": "#e3e2e8",
+                        "inverse-surface": "#e3e2e8"
+                    },
+                    fontFamily: {
+                        "headline": ["Bricolage Grotesque", "Space Grotesk"],
+                        "body": ["DM Sans", "Inter"],
+                        "data": ["JetBrains Mono"],
+                        "label": ["Space Grotesk"]
+                    },
+                    borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
+                },
+            },
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        body {
+            background-color: #0A0B0F;
+            color: #e3e2e8;
+            font-family: 'DM Sans', sans-serif;
+        }
+        .radar-grid {
+            stroke: rgba(255, 255, 255, 0.07);
+            stroke-width: 1;
+        }
+        .radar-axis {
+            stroke: rgba(255, 255, 255, 0.15);
+            stroke-dasharray: 4;
+        }
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.04);
+            backdrop-filter: blur(12px);
+        }
+        .text-header { font-family: 'Bricolage Grotesque', sans-serif; }
+        .text-mono { font-family: 'JetBrains Mono', monospace; }
+    </style>
+</head>
+<body class="bg-background text-on-background overflow-hidden">
+<!-- SideNavBar -->
+<nav class="fixed left-0 top-0 h-full w-64 bg-[#111318] flex flex-col py-6 px-4 space-y-2 z-50">
+<div class="mb-8 px-2">
+<h1 class="text-lg font-black text-white text-header">AIStart360</h1>
+<p class="text-xs text-slate-400 uppercase tracking-widest">Client Portal</p>
+</div>
+<div class="space-y-1 flex-1">
+<a class="flex items-center gap-3 px-3 py-2 text-slate-400 hover:text-white hover:bg-[#1f1f24] transition-colors rounded-lg" href="#">
+<span class="material-symbols-outlined">dashboard</span>
+<span class="text-sm font-medium">Dashboard</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 text-[#00E5A0] bg-[#1f1f24] rounded-lg transition-transform translate-x-1" href="#">
+<span class="material-symbols-outlined">insert_chart</span>
+<span class="text-sm font-medium">Competitors</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 text-slate-400 hover:text-white hover:bg-[#1f1f24] transition-colors rounded-lg" href="#">
+<span class="material-symbols-outlined">language</span>
+<span class="text-sm font-medium">Market Analysis</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 text-slate-400 hover:text-white hover:bg-[#1f1f24] transition-colors rounded-lg" href="#">
+<span class="material-symbols-outlined">payments</span>
+<span class="text-sm font-medium">Funding</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 text-slate-400 hover:text-white hover:bg-[#1f1f24] transition-colors rounded-lg" href="#">
+<span class="material-symbols-outlined">description</span>
+<span class="text-sm font-medium">Reports</span>
+</a>
+</div>
+<div class="pt-4 border-t border-white/5 space-y-1">
+<a class="flex items-center gap-3 px-3 py-2 text-slate-400 hover:text-white hover:bg-[#1f1f24] transition-colors rounded-lg" href="#">
+<span class="material-symbols-outlined">help</span>
+<span class="text-sm font-medium">Support</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 text-slate-400 hover:text-white hover:bg-[#1f1f24] transition-colors rounded-lg" href="#">
+<span class="material-symbols-outlined">person</span>
+<span class="text-sm font-medium">Account</span>
+</a>
+</div>
+</nav>
+<!-- TopNavBar -->
+<header class="fixed top-0 right-0 w-[calc(100%-16rem)] h-16 bg-[#111318] flex justify-between items-center px-8 z-40">
+<div class="flex items-center gap-4 flex-1">
+<div class="relative w-full max-w-md">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">search</span>
+<input class="w-full bg-[#0A0B0F] border-none rounded-lg py-2 pl-10 pr-4 text-sm focus:ring-1 focus:ring-[#00E5A0] transition-all" placeholder="Поиск конкурентов..." type="text"/>
+</div>
+</div>
+<div class="flex items-center gap-6">
+<div class="flex items-center gap-4">
+<button class="p-2 text-slate-400 hover:bg-[#1f1f24] rounded-lg transition-colors relative">
+<span class="material-symbols-outlined">notifications</span>
+<span class="absolute top-2 right-2 w-2 h-2 bg-[#00E5A0] rounded-full"></span>
+</button>
+<button class="p-2 text-slate-400 hover:bg-[#1f1f24] rounded-lg transition-colors">
+<span class="material-symbols-outlined">settings</span>
+</button>
+</div>
+<div class="h-8 w-[1px] bg-white/5"></div>
+<div class="flex items-center gap-3">
+<div class="text-right">
+<p class="text-sm font-bold text-white leading-none">Константин В.</p>
+<p class="text-[10px] text-[#00E5A0] uppercase tracking-tighter">Premium Access</p>
+</div>
+<img alt="User profile" class="w-10 h-10 rounded-lg object-cover" data-alt="Close up portrait of a professional man in a dark studio setting with minimalist lighting" src="https://lh3.googleusercontent.com/aida-public/AB6AXuALQMCSybjyeFX_uIExXcLKlnr8h_3bprycq_0FzkEcFC4rWt6a89Us1QzkA4frbsi7g2VgIfPkeTYqD98R-p4lBgovrK6vSxvoC2OjnBUbB_S95b_cxTetDMLwDZck6Dn-0fwZqt9BdiJWli1cnv-p3JVPzTpRTvJTBRcFxj7OPcpdbFm1FcogbrtivEvSIbhXZBmUsHdG5i9vojkMPhdGIx1Xz07PEzONgHE38K5qVRHUz6mn5Kxwq0NMJiw2jR9Q4JO_aWjTFIA"/>
+</div>
+</div>
+</header>
+<!-- Main Canvas -->
+<main class="ml-64 pt-16 h-screen overflow-y-auto bg-[#0A0B0F]">
+<div class="p-8 space-y-8 max-w-[1600px] mx-auto">
+<!-- Page Header -->
+<div class="flex justify-between items-end">
+<div class="space-y-2">
+<h2 class="text-4xl font-extrabold tracking-tight text-header">Анализ конкурентов</h2>
+<p class="text-secondary max-w-xl">Сравнительный обзор стратегических показателей AIStart360 относительно ключевых игроков рынка в реальном времени.</p>
+</div>
+<div class="flex gap-3">
+<button class="px-4 py-2 bg-surface-container-low text-on-surface rounded-lg hover:bg-surface-container transition-colors text-sm font-medium flex items-center gap-2">
+<span class="material-symbols-outlined text-sm">download</span> Экспорт PDF
+                    </button>
+<button class="px-6 py-2 bg-gradient-to-br from-[#6effc0] to-[#00e5a0] text-on-primary rounded-lg font-bold text-sm shadow-lg shadow-primary/10 active:scale-95 duration-150">
+                        Обновить данные
+                    </button>
+</div>
+</div>
+<!-- Dashboard Grid -->
+<div class="grid grid-cols-12 gap-6">
+<!-- Section 1: Strategic Radar (40%) -->
+<div class="col-span-12 lg:col-span-5 flex flex-col gap-6">
+<div class="bg-surface-container-low rounded-xl p-6 relative overflow-hidden h-full">
+<div class="flex items-center justify-between mb-8">
+<h3 class="text-xl font-bold text-header flex items-center gap-2">
+<span class="material-symbols-outlined text-[#00E5A0]">radar</span>
+                                Стратегический радар
+                            </h3>
+<button class="text-slate-500 hover:text-white transition-colors">
+<span class="material-symbols-outlined">info</span>
+</button>
+</div>
+<!-- Radar Chart Placeholder (SVG) -->
+<div class="aspect-square relative flex items-center justify-center py-4">
+<svg class="w-full h-full max-w-[340px]" viewbox="0 0 400 400">
+<!-- Concentric Hexagons -->
+<polygon class="radar-grid fill-transparent" points="200,40 338,120 338,280 200,360 62,280 62,120"></polygon>
+<polygon class="radar-grid fill-transparent" points="200,80 304,140 304,260 200,320 96,260 96,140"></polygon>
+<polygon class="radar-grid fill-transparent" points="200,120 270,160 270,240 200,280 130,240 130,160"></polygon>
+<!-- Axis Lines -->
+<line class="radar-axis" x1="200" x2="200" y1="40" y2="360"></line>
+<line class="radar-axis" x1="62" x2="338" y1="120" y2="280"></line>
+<line class="radar-axis" x1="338" x2="62" y1="120" y2="280"></line>
+<!-- AIStart360 Data Polygon (Primary) -->
+<polygon fill="rgba(0, 229, 160, 0.2)" points="200,60 310,140 330,260 200,310 100,240 80,140" stroke="#00E5A0" stroke-width="3"></polygon>
+<!-- Competitor 1 (Muted) -->
+<polygon fill="rgba(139, 149, 163, 0.1)" points="200,100 240,160 250,230 200,270 150,220 160,150" stroke="#8B95A3" stroke-dasharray="4" stroke-width="2"></polygon>
+<!-- Labels -->
+<text class="fill-slate-400 text-[10px] font-bold uppercase tracking-wider" text-anchor="middle" x="200" y="30">Доля рынка</text>
+<text class="fill-slate-400 text-[10px] font-bold uppercase tracking-wider" text-anchor="start" x="350" y="115">Инновации</text>
+<text class="fill-slate-400 text-[10px] font-bold uppercase tracking-wider" text-anchor="start" x="350" y="295">Лояльность</text>
+<text class="fill-slate-400 text-[10px] font-bold uppercase tracking-wider" text-anchor="middle" x="200" y="380">Скорость</text>
+<text class="fill-slate-400 text-[10px] font-bold uppercase tracking-wider" text-anchor="end" x="50" y="295">Рентабельность</text>
+<text class="fill-slate-400 text-[10px] font-bold uppercase tracking-wider" text-anchor="end" x="50" y="115">Стек</text>
+</svg>
+</div>
+<!-- Legend -->
+<div class="mt-8 grid grid-cols-2 gap-3">
+<div class="flex items-center gap-3 p-2 bg-surface-container-highest rounded-lg cursor-pointer">
+<span class="w-3 h-3 rounded-full bg-[#00E5A0]"></span>
+<span class="text-xs font-bold">AIStart360</span>
+</div>
+<div class="flex items-center gap-3 p-2 hover:bg-surface-container-highest rounded-lg cursor-pointer transition-colors opacity-60 hover:opacity-100">
+<span class="w-3 h-3 rounded-full bg-slate-500"></span>
+<span class="text-xs font-bold">Global Consulting</span>
+</div>
+<div class="flex items-center gap-3 p-2 hover:bg-surface-container-highest rounded-lg cursor-pointer transition-colors opacity-60 hover:opacity-100">
+<span class="w-3 h-3 rounded-full bg-slate-400"></span>
+<span class="text-xs font-bold">DataInsight Pro</span>
+</div>
+<div class="flex items-center gap-3 p-2 hover:bg-surface-container-highest rounded-lg cursor-pointer transition-colors opacity-60 hover:opacity-100">
+<span class="w-3 h-3 rounded-full bg-slate-600"></span>
+<span class="text-xs font-bold">CloudLogic</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Section 2: Competitor Matrix (60%) -->
+<div class="col-span-12 lg:col-span-7">
+<div class="bg-surface-container-low rounded-xl overflow-hidden h-full flex flex-col">
+<div class="p-6">
+<h3 class="text-xl font-bold text-header flex items-center gap-2">
+<span class="material-symbols-outlined text-[#00E5A0]">grid_view</span>
+                                Матрица сравнения
+                            </h3>
+</div>
+<div class="flex-1 overflow-x-auto">
+<table class="w-full text-left border-separate border-spacing-0">
+<thead>
+<tr class="bg-surface-container-lowest">
+<th class="py-4 px-6 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Конкурент</th>
+<th class="py-4 px-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest text-center">Доля %</th>
+<th class="py-4 px-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest text-center">Инновации</th>
+<th class="py-4 px-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest text-center">NPS</th>
+<th class="py-4 px-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Преимущество</th>
+<th class="py-4 px-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Риск</th>
+<th class="py-4 px-6 text-[10px] font-bold text-slate-500 uppercase tracking-widest"></th>
+</tr>
+</thead>
+<tbody class="divide-y divide-white/5">
+<!-- Row 1 (You) -->
+<tr class="group hover:bg-[#1f1f24] transition-colors">
+<td class="py-4 px-6">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded-lg bg-gradient-to-br from-[#00E5A0] to-[#006141] flex items-center justify-center font-bold text-on-primary">AI</div>
+<div>
+<p class="text-sm font-bold">AIStart360</p>
+<p class="text-[10px] text-[#00E5A0] font-medium italic">Вы</p>
+</div>
+</div>
+</td>
+<td class="py-4 px-4 text-center">
+<span class="text-mono font-bold text-primary">12.4%</span>
+</td>
+<td class="py-4 px-4 text-center">
+<div class="inline-flex items-center justify-center w-10 h-10 rounded-full border-2 border-primary/30">
+<span class="text-xs font-bold text-primary">92</span>
+</div>
+</td>
+<td class="py-4 px-4 text-center">
+<span class="text-mono font-bold">72</span>
+</td>
+<td class="py-4 px-4">
+<p class="text-xs text-slate-300 max-w-[140px]">Генеративные алгоритмы и скорость</p>
+</td>
+<td class="py-4 px-4">
+<span class="px-2 py-1 rounded bg-[#003824] text-[#00E5A0] text-[9px] font-black uppercase tracking-tighter">Низкий</span>
+</td>
+<td class="py-4 px-6 text-right">
+<button class="p-2 hover:bg-white/10 rounded-lg transition-colors text-slate-400">
+<span class="material-symbols-outlined text-lg">open_in_new</span>
+</button>
+</td>
+</tr>
+<!-- Row 2 -->
+<tr class="group hover:bg-[#1f1f24] transition-colors">
+<td class="py-4 px-6">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded-lg bg-surface-container-highest flex items-center justify-center font-bold text-slate-400">GC</div>
+<div>
+<p class="text-sm font-bold">Global Consulting X</p>
+<p class="text-[10px] text-slate-500">Традиционный гигант</p>
+</div>
+</div>
+</td>
+<td class="py-4 px-4 text-center">
+<span class="text-mono font-bold">35.0%</span>
+</td>
+<td class="py-4 px-4 text-center">
+<div class="inline-flex items-center justify-center w-10 h-10 rounded-full border-2 border-white/5">
+<span class="text-xs font-bold">24</span>
+</div>
+</td>
+<td class="py-4 px-4 text-center">
+<span class="text-mono font-bold">45</span>
+</td>
+<td class="py-4 px-4">
+<p class="text-xs text-slate-400 max-w-[140px]">Обширная клиентская база и оффлайн</p>
+</td>
+<td class="py-4 px-4">
+<span class="px-2 py-1 rounded bg-red-900/30 text-red-400 text-[9px] font-black uppercase tracking-tighter">Высокий</span>
+</td>
+<td class="py-4 px-6 text-right">
+<button class="p-2 hover:bg-white/10 rounded-lg transition-colors text-slate-400">
+<span class="material-symbols-outlined text-lg">open_in_new</span>
+</button>
+</td>
+</tr>
+<!-- Row 3 -->
+<tr class="group hover:bg-[#1f1f24] transition-colors">
+<td class="py-4 px-6">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded-lg bg-surface-container-highest flex items-center justify-center font-bold text-slate-400">DI</div>
+<div>
+<p class="text-sm font-bold">DataInsight Pro</p>
+<p class="text-[10px] text-slate-500">Прямой конкурент</p>
+</div>
+</div>
+</td>
+<td class="py-4 px-4 text-center">
+<span class="text-mono font-bold">18.5%</span>
+</td>
+<td class="py-4 px-4 text-center">
+<div class="inline-flex items-center justify-center w-10 h-10 rounded-full border-2 border-white/10">
+<span class="text-xs font-bold">68</span>
+</div>
+</td>
+<td class="py-4 px-4 text-center">
+<span class="text-mono font-bold">68</span>
+</td>
+<td class="py-4 px-4">
+<p class="text-xs text-slate-400 max-w-[140px]">Удобство API интеграций</p>
+</td>
+<td class="py-4 px-4">
+<span class="px-2 py-1 rounded bg-yellow-900/30 text-yellow-400 text-[9px] font-black uppercase tracking-tighter">Средний</span>
+</td>
+<td class="py-4 px-6 text-right">
+<button class="p-2 hover:bg-white/10 rounded-lg transition-colors text-slate-400">
+<span class="material-symbols-outlined text-lg">open_in_new</span>
+</button>
+</td>
+</tr>
+<!-- Row 4 -->
+<tr class="group hover:bg-[#1f1f24] transition-colors">
+<td class="py-4 px-6">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded-lg bg-surface-container-highest flex items-center justify-center font-bold text-slate-400">CL</div>
+<div>
+<p class="text-sm font-bold">CloudLogic</p>
+<p class="text-[10px] text-slate-500">Аутсайдер рынка</p>
+</div>
+</div>
+</td>
+<td class="py-4 px-4 text-center">
+<span class="text-mono font-bold">8.2%</span>
+</td>
+<td class="py-4 px-4 text-center">
+<div class="inline-flex items-center justify-center w-10 h-10 rounded-full border-2 border-white/5">
+<span class="text-xs font-bold text-slate-500">42</span>
+</div>
+</td>
+<td class="py-4 px-4 text-center">
+<span class="text-mono font-bold">55</span>
+</td>
+<td class="py-4 px-4">
+<p class="text-xs text-slate-400 max-w-[140px]">Низкая стоимость владения</p>
+</td>
+<td class="py-4 px-4">
+<span class="px-2 py-1 rounded bg-yellow-900/30 text-yellow-400 text-[9px] font-black uppercase tracking-tighter">Средний</span>
+</td>
+<td class="py-4 px-6 text-right">
+<button class="p-2 hover:bg-white/10 rounded-lg transition-colors text-slate-400">
+<span class="material-symbols-outlined text-lg">open_in_new</span>
+</button>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<!-- Table Footer -->
+<div class="p-4 bg-surface-container-lowest flex items-center justify-between">
+<p class="text-[10px] text-slate-500 uppercase font-bold tracking-widest">Последнее обновление: 24 минуты назад</p>
+<div class="flex gap-2">
+<button class="p-1 text-slate-500 hover:text-white"><span class="material-symbols-outlined text-sm">chevron_left</span></button>
+<button class="p-1 text-white"><span class="material-symbols-outlined text-sm">chevron_right</span></button>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Bottom Insight Panel (Asymmetric Callout) -->
+<div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+<div class="bg-surface-container-low p-6 rounded-xl flex items-start gap-4">
+<div class="w-12 h-12 rounded-lg bg-[#00E5A0]/10 flex items-center justify-center flex-shrink-0">
+<span class="material-symbols-outlined text-[#00E5A0]">trending_up</span>
+</div>
+<div>
+<h4 class="font-bold text-sm mb-1">Потенциал роста</h4>
+<p class="text-xs text-secondary leading-relaxed">Согласно текущей динамике, ваша доля рынка может вырасти до <span class="text-primary font-bold">14.8%</span> к следующему кварталу за счет высокой лояльности пользователей.</p>
+</div>
+</div>
+<div class="bg-surface-container-low p-6 rounded-xl flex items-start gap-4">
+<div class="w-12 h-12 rounded-lg bg-red-400/10 flex items-center justify-center flex-shrink-0">
+<span class="material-symbols-outlined text-red-400">warning</span>
+</div>
+<div>
+<h4 class="font-bold text-sm mb-1">Критическая зона</h4>
+<p class="text-xs text-secondary leading-relaxed">Global Consulting X начал агрессивное снижение цен. Рекомендуется мониторинг оттока клиентов в сегменте "Enterprise".</p>
+</div>
+</div>
+<div class="bg-surface-container-low p-6 rounded-xl flex items-start gap-4">
+<div class="w-12 h-12 rounded-lg bg-blue-400/10 flex items-center justify-center flex-shrink-0">
+<span class="material-symbols-outlined text-blue-400">lightbulb</span>
+</div>
+<div>
+<h4 class="font-bold text-sm mb-1">Рекомендация</h4>
+<p class="text-xs text-secondary leading-relaxed">Инвестиции в "Технологический стек" (API) помогут переманить 15% аудитории DataInsight Pro в течение 6 месяцев.</p>
+</div>
+</div>
+</div>
+</div>
+</main>
+</body></html>

@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="ru"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>AIStart360 | Прогноз KPI</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;700;800&amp;family=DM+Sans:ital,wght@0,400;0,500;0,700;1,400&amp;family=JetBrains+Mono:wght@400;700&amp;family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        body {
+            font-family: 'DM Sans', sans-serif;
+            background-color: #0A0B0F;
+        }
+        h1, h2, h3, .headline {
+            font-family: 'Bricolage Grotesque', sans-serif;
+        }
+        .mono {
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.04);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+        }
+        .primary-gradient {
+            background: linear-gradient(135deg, #6effc0 0%, #00e5a0 100%);
+        }
+    </style>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              colors: {
+                "on-secondary": "#263143",
+                "on-error": "#690005",
+                "primary-container": "#00e5a0",
+                "surface-dim": "#121317",
+                "secondary-container": "#3e495d",
+                "surface-container": "#1f1f24",
+                "on-background": "#e3e2e8",
+                "secondary": "#bcc7de",
+                "on-primary-fixed": "#002114",
+                "surface-container-lowest": "#0d0e12",
+                "surface-container-high": "#292a2e",
+                "on-error-container": "#ffdad6",
+                "surface-bright": "#38393e",
+                "outline-variant": "#3b4a41",
+                "on-primary-container": "#006141",
+                "on-tertiary-fixed-variant": "#633f00",
+                "surface-container-highest": "#343439",
+                "inverse-primary": "#006c49",
+                "inverse-on-surface": "#2f3035",
+                "on-tertiary-container": "#754b00",
+                "on-surface-variant": "#bacbbf",
+                "primary-fixed": "#47ffb8",
+                "primary": "#6effc0",
+                "on-tertiary": "#452b00",
+                "on-primary-fixed-variant": "#005236",
+                "tertiary-fixed-dim": "#ffb955",
+                "surface-variant": "#343439",
+                "on-secondary-fixed": "#111c2d",
+                "error": "#ffb4ab",
+                "outline": "#84958a",
+                "on-primary": "#003824",
+                "tertiary-container": "#ffbd60",
+                "secondary-fixed-dim": "#bcc7de",
+                "primary-fixed-dim": "#00e29e",
+                "on-secondary-fixed-variant": "#3c475a",
+                "surface-tint": "#00e29e",
+                "surface-container-low": "#1a1b20",
+                "on-secondary-container": "#aeb9d0",
+                "secondary-fixed": "#d8e3fb",
+                "surface": "#121317",
+                "tertiary": "#ffe1bd",
+                "error-container": "#93000a",
+                "background": "#121317",
+                "on-surface": "#e3e2e8",
+                "inverse-surface": "#e3e2e8",
+                "tertiary-fixed": "#ffddb4",
+                "on-tertiary-fixed": "#291800"
+              },
+              fontFamily: {
+                "headline": ["Bricolage Grotesque"],
+                "body": ["DM Sans"],
+                "label": ["DM Sans"]
+              },
+              borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
+            },
+          },
+        }
+      </script>
+</head>
+<body class="text-on-surface">
+<!-- Top Navigation Bar -->
+<nav class="bg-[#0A0B0F] fixed top-0 w-full z-50 flex justify-between items-center px-8 h-16">
+<div class="text-xl font-bold tracking-tighter text-[#00E5A0] font-headline">INSTITUTIONAL INTELLIGENCE</div>
+<div class="hidden md:flex gap-8">
+<a class="text-[#8B95A3] hover:text-[#00E5A0] transition-colors duration-200 text-sm font-medium" href="#">FORECASTS</a>
+<a class="text-[#8B95A3] hover:text-[#00E5A0] transition-colors duration-200 text-sm font-medium" href="#">DIAGNOSTICS</a>
+<a class="text-[#8B95A3] hover:text-[#00E5A0] transition-colors duration-200 text-sm font-medium" href="#">REPORTS</a>
+</div>
+<div class="flex items-center gap-6">
+<span class="text-[10px] tracking-widest text-[#00E5A0] border border-[#00E5A0]/20 px-2 py-1">STRICTLY CONFIDENTIAL</span>
+<div class="flex gap-4 text-[#8B95A3]">
+<span class="material-symbols-outlined cursor-pointer hover:text-[#00E5A0] transition-all">notifications</span>
+<span class="material-symbols-outlined cursor-pointer hover:text-[#00E5A0] transition-all">settings</span>
+</div>
+<img alt="Executive Profile" class="w-8 h-8 rounded-full border border-outline-variant/30" data-alt="Close up portrait of a serious male executive in a dark suit against a minimalist architectural background with cool lighting" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAn9GR7vvLkKEb0GOLB2xlAZWMihGA46eBRIXjqrBy-KwGAchgdW3LlY4LHzrWs46KuYmDkAA7Q6VXR1gwqA9E1tD5Pb-z_toMa3I9olhkMLSnBapV2PQJPJ9MHmmK-1b0wVtQBGb2RbcbZxvHi6LFDTFIx_Sca8toNGnqR2VV9IPGO1zmSKntBRBGo-cRR7UOZNWEePfdDNsWRQmj3DA0CpRaUZNIAjdpAYsnzjmZfHtL7G_xq2EH-DDy9veZaOjAb64BB9QWeWC0"/>
+</div>
+</nav>
+<!-- Side Navigation Bar -->
+<aside class="fixed left-0 top-0 h-full w-64 bg-[#111318] flex flex-col py-6 pt-24 gap-2 z-40 hidden md:flex">
+<div class="px-6 mb-8">
+<div class="text-lg font-black text-[#00E5A0] font-headline leading-tight">STRATEGIC OPS</div>
+<div class="text-[10px] text-[#8B95A3] mono uppercase tracking-tighter">v4.2.0-Alpha</div>
+</div>
+<nav class="flex-1 space-y-1">
+<div class="px-6 py-3 text-[#8B95A3] hover:bg-[#1f1f24]/50 flex items-center gap-3 cursor-pointer group transition-all">
+<span class="material-symbols-outlined text-xl">dashboard</span>
+<span class="text-sm font-medium">Executive Overview</span>
+</div>
+<div class="px-6 py-3 bg-[#1f1f24] text-[#00E5A0] font-bold border-r-2 border-[#00E5A0] flex items-center gap-3 cursor-pointer translate-x-1 transition-transform">
+<span class="material-symbols-outlined text-xl">trending_up</span>
+<span class="text-sm">KPI Forecasts</span>
+</div>
+<div class="px-6 py-3 text-[#8B95A3] hover:bg-[#1f1f24]/50 flex items-center gap-3 cursor-pointer group transition-all">
+<span class="material-symbols-outlined text-xl">query_stats</span>
+<span class="text-sm font-medium">Diagnostic Engine</span>
+</div>
+<div class="px-6 py-3 text-[#8B95A3] hover:bg-[#1f1f24]/50 flex items-center gap-3 cursor-pointer group transition-all">
+<span class="material-symbols-outlined text-xl">account_tree</span>
+<span class="text-sm font-medium">Structural Analysis</span>
+</div>
+<div class="px-6 py-3 text-[#8B95A3] hover:bg-[#1f1f24]/50 flex items-center gap-3 cursor-pointer group transition-all">
+<span class="material-symbols-outlined text-xl">history</span>
+<span class="text-sm font-medium">Audit Logs</span>
+</div>
+</nav>
+<div class="px-6 mt-auto space-y-4">
+<button class="w-full primary-gradient py-3 px-4 rounded-lg text-[#003824] font-bold text-xs tracking-wider flex items-center justify-center gap-2 active:opacity-80 transition-all">
+<span class="material-symbols-outlined text-sm">add</span>
+                NEW FORECAST
+            </button>
+<div class="pt-6 space-y-2">
+<div class="flex items-center gap-3 text-[#8B95A3] text-xs hover:text-white transition-colors cursor-pointer">
+<span class="material-symbols-outlined text-lg">lan</span>
+<span>System Status</span>
+</div>
+<div class="flex items-center gap-3 text-[#8B95A3] text-xs hover:text-white transition-colors cursor-pointer">
+<span class="material-symbols-outlined text-lg">description</span>
+<span>Documentation</span>
+</div>
+</div>
+</div>
+</aside>
+<!-- Main Content Canvas -->
+<main class="ml-0 md:ml-64 pt-24 px-8 pb-12 min-h-screen">
+<!-- Header Section -->
+<header class="flex flex-col md:flex-row justify-between items-start md:items-end mb-12 gap-6">
+<div>
+<h1 class="text-5xl font-extrabold tracking-tight mb-2 text-white">Прогноз KPI</h1>
+<p class="text-[#8B95A3] max-w-xl leading-relaxed">Стратегическое моделирование финансовых и операционных показателей на основе алгоритмов глубокого обучения.</p>
+</div>
+<div class="flex flex-col sm:flex-row gap-4 w-full md:w-auto">
+<!-- Date Range Selector -->
+<div class="bg-surface-container-low px-4 py-3 rounded-lg flex items-center gap-4 cursor-pointer hover:bg-surface-container transition-all">
+<span class="material-symbols-outlined text-primary">calendar_today</span>
+<div class="flex flex-col">
+<span class="text-[10px] text-[#8B95A3] uppercase tracking-widest mono">Период прогноза</span>
+<span class="text-sm font-bold text-white uppercase">Q4 2023 — Q4 2024</span>
+</div>
+<span class="material-symbols-outlined text-[#8B95A3]">expand_more</span>
+</div>
+<!-- Model Toggle -->
+<div class="bg-surface-container-low p-1 rounded-lg flex items-center">
+<button class="px-4 py-2 text-[10px] font-bold uppercase tracking-widest text-[#8B95A3] hover:text-white transition-all">Консервативный</button>
+<button class="px-4 py-2 text-[10px] font-bold uppercase tracking-widest text-[#003824] primary-gradient rounded-md shadow-lg shadow-primary/10 transition-all">Целевой</button>
+<button class="px-4 py-2 text-[10px] font-bold uppercase tracking-widest text-[#8B95A3] hover:text-white transition-all">Агрессивный</button>
+</div>
+</div>
+</header>
+<!-- KPI Grid -->
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
+<!-- Revenue Card -->
+<div class="bg-surface-container-low p-6 rounded-xl relative overflow-hidden group">
+<div class="flex justify-between items-start mb-4">
+<span class="text-[10px] font-bold uppercase tracking-widest text-[#8B95A3]">Выручка (Прогноз)</span>
+<div class="flex items-center gap-1 text-primary text-xs mono">
+<span>+12.4%</span>
+<span class="material-symbols-outlined text-xs">trending_up</span>
+</div>
+</div>
+<div class="text-3xl font-bold mono text-white mb-6 tracking-tighter">₽124.8M</div>
+<div class="h-10 w-full flex items-end gap-[2px]">
+<!-- Sparkline Mockup -->
+<div class="w-full bg-primary/5 h-[2px] relative">
+<div class="absolute inset-0 bg-primary/20" style="clip-path: polygon(0 80%, 10% 85%, 20% 70%, 30% 75%, 40% 50%, 50% 55%, 60% 30%, 70% 35%, 80% 10%, 90% 15%, 100% 0, 100% 100%, 0 100%);"></div>
+<div class="absolute top-0 left-0 w-full h-full" style="background: linear-gradient(to right, transparent, rgba(0, 229, 160, 0.4)); clip-path: url(#spark-clip);"></div>
+</div>
+</div>
+</div>
+<!-- Margin Card -->
+<div class="bg-surface-container-low p-6 rounded-xl relative overflow-hidden">
+<div class="flex justify-between items-start mb-4">
+<span class="text-[10px] font-bold uppercase tracking-widest text-[#8B95A3]">Маржинальность</span>
+<div class="flex items-center gap-1 text-primary text-xs mono">
+<span>+2.1%</span>
+<span class="material-symbols-outlined text-xs">trending_up</span>
+</div>
+</div>
+<div class="text-3xl font-bold mono text-white mb-6 tracking-tighter">34.2%</div>
+<div class="h-10 w-full flex items-end gap-[2px]">
+<div class="w-full bg-primary/5 h-[2px] relative">
+<div class="absolute inset-0 bg-primary/20" style="clip-path: polygon(0 50%, 20% 45%, 40% 55%, 60% 30%, 80% 40%, 100% 20%, 100% 100%, 0 100%);"></div>
+</div>
+</div>
+</div>
+<!-- CAC Card -->
+<div class="bg-surface-container-low p-6 rounded-xl relative overflow-hidden">
+<div class="flex justify-between items-start mb-4">
+<span class="text-[10px] font-bold uppercase tracking-widest text-[#8B95A3]">CAC</span>
+<div class="flex items-center gap-1 text-error text-xs mono">
+<span>+4.8%</span>
+<span class="material-symbols-outlined text-xs">trending_up</span>
+</div>
+</div>
+<div class="text-3xl font-bold mono text-white mb-6 tracking-tighter">₽4.12k</div>
+<div class="h-10 w-full flex items-end gap-[2px]">
+<div class="w-full bg-error/5 h-[2px] relative">
+<div class="absolute inset-0 bg-error/20" style="clip-path: polygon(0 80%, 20% 70%, 40% 75%, 60% 50%, 80% 45%, 100% 30%, 100% 100%, 0 100%);"></div>
+</div>
+</div>
+</div>
+<!-- LTV Card -->
+<div class="bg-surface-container-low p-6 rounded-xl relative overflow-hidden">
+<div class="flex justify-between items-start mb-4">
+<span class="text-[10px] font-bold uppercase tracking-widest text-[#8B95A3]">LTV (Прогноз)</span>
+<div class="flex items-center gap-1 text-primary text-xs mono">
+<span>+18.5%</span>
+<span class="material-symbols-outlined text-xs">trending_up</span>
+</div>
+</div>
+<div class="text-3xl font-bold mono text-white mb-6 tracking-tighter">₽58.4k</div>
+<div class="h-10 w-full flex items-end gap-[2px]">
+<div class="w-full bg-primary/5 h-[2px] relative">
+<div class="absolute inset-0 bg-primary/20" style="clip-path: polygon(0 90%, 20% 85%, 40% 60%, 60% 65%, 80% 30%, 100% 10%, 100% 100%, 0 100%);"></div>
+</div>
+</div>
+</div>
+</div>
+<!-- Bento Layout for Main Chart & AI Badge -->
+<div class="grid grid-cols-12 gap-8 mb-12">
+<!-- Central Forecast Chart -->
+<div class="col-span-12 lg:col-span-9 bg-surface-container-low rounded-xl p-8 min-h-[500px] flex flex-col">
+<div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-12 gap-4">
+<div>
+<h2 class="text-2xl font-bold text-white headline">Динамика Выручки и Проекция</h2>
+<p class="text-xs text-[#8B95A3] uppercase tracking-widest mono mt-1">Данные в млн. ₽ — Помесячный анализ</p>
+</div>
+<div class="flex gap-6 items-center">
+<div class="flex items-center gap-2">
+<div class="w-3 h-[2px] bg-primary"></div>
+<span class="text-[10px] font-bold uppercase text-[#8B95A3] tracking-widest">Факт</span>
+</div>
+<div class="flex items-center gap-2">
+<div class="w-3 h-[2px] border-t border-dashed border-[#8B95A3]"></div>
+<span class="text-[10px] font-bold uppercase text-[#8B95A3] tracking-widest">Прогноз</span>
+</div>
+</div>
+</div>
+<!-- Visual Chart Canvas Mockup -->
+<div class="flex-1 relative mt-4 border-l border-b border-outline-variant/10">
+<!-- Grid Lines -->
+<div class="absolute inset-0 flex flex-col justify-between py-2">
+<div class="border-t border-outline-variant/5 w-full"></div>
+<div class="border-t border-outline-variant/5 w-full"></div>
+<div class="border-t border-outline-variant/5 w-full"></div>
+<div class="border-t border-outline-variant/5 w-full"></div>
+<div class="border-t border-outline-variant/5 w-full"></div>
+</div>
+<!-- Chart Graphic -->
+<svg class="absolute inset-0 h-full w-full preserve-3d" viewbox="0 0 1000 300">
+<!-- Factual Line -->
+<path d="M0,250 L100,240 L200,220 L300,230 L400,190 L500,180" fill="none" stroke="#00E5A0" stroke-linecap="round" stroke-width="3"></path>
+<!-- Projected Line -->
+<path d="M500,180 L600,150 L700,120 L800,130 L900,80 L1000,60" fill="none" stroke="#8B95A3" stroke-dasharray="8 8" stroke-linecap="round" stroke-width="3"></path>
+<!-- Confidence Area -->
+<path d="M500,180 L600,130 L700,90 L800,90 L900,40 L1000,20 L1000,100 L900,120 L800,170 L700,150 L600,170 L500,180" fill="url(#gradient-area)" opacity="0.1"></path>
+<defs>
+<lineargradient id="gradient-area" x1="0" x2="0" y1="0" y2="1">
+<stop offset="0%" stop-color="#00E5A0"></stop>
+<stop offset="100%" stop-color="transparent"></stop>
+</lineargradient>
+</defs>
+</svg>
+<!-- Tooltip Marker -->
+<div class="absolute top-[165px] left-[50%] -translate-x-1/2 -translate-y-1/2 group cursor-pointer">
+<div class="w-4 h-4 rounded-full bg-white border-4 border-primary shadow-[0_0_20px_rgba(0,229,160,0.5)]"></div>
+<div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-3 glass-panel p-3 rounded-lg border border-outline-variant/20 min-w-[140px] opacity-0 group-hover:opacity-100 transition-all pointer-events-none">
+<div class="text-[10px] text-[#8B95A3] uppercase mono mb-1">Май 2024</div>
+<div class="text-lg font-bold text-white mono">₽104.2M</div>
+<div class="text-[10px] text-primary font-bold">Прогноз подтвержден</div>
+</div>
+</div>
+</div>
+<div class="flex justify-between pt-6 text-[10px] font-bold text-[#8B95A3] mono uppercase tracking-widest px-2">
+<span>Янв</span><span>Фев</span><span>Мар</span><span>Апр</span><span class="text-white">Май</span><span>Июн</span><span>Июл</span><span>Авг</span><span>Сен</span><span>Окт</span><span>Ноя</span><span>Дек</span>
+</div>
+</div>
+<!-- AI Confidence Section -->
+<div class="col-span-12 lg:col-span-3 flex flex-col gap-8">
+<!-- AI Confidence Badge -->
+<div class="bg-surface-container-low rounded-xl p-8 flex flex-col items-center justify-center text-center aspect-square md:aspect-auto flex-1">
+<div class="relative w-40 h-40 mb-6">
+<!-- Gauge Circle -->
+<svg class="w-full h-full transform -rotate-90">
+<circle cx="80" cy="80" fill="transparent" r="70" stroke="rgba(255,255,255,0.05)" stroke-width="12"></circle>
+<circle cx="80" cy="80" fill="transparent" r="70" stroke="url(#primary-grad)" stroke-dasharray="440" stroke-dashoffset="26" stroke-linecap="round" stroke-width="12"></circle>
+<defs>
+<lineargradient id="primary-grad" x1="0%" x2="100%" y1="0%" y2="0%">
+<stop offset="0%" stop-color="#6effc0"></stop>
+<stop offset="100%" stop-color="#00e5a0"></stop>
+</lineargradient>
+</defs>
+</svg>
+<div class="absolute inset-0 flex flex-col items-center justify-center">
+<span class="text-4xl font-black mono text-white">94%</span>
+<span class="text-[10px] font-bold uppercase tracking-widest text-primary mt-1">Точность</span>
+</div>
+</div>
+<h3 class="text-lg font-bold text-white mb-2 headline">AI Confidence</h3>
+<p class="text-xs text-[#8B95A3] leading-relaxed">Модель подтвердила высокую надежность на основе исторических корреляций и макроэкономических паттернов.</p>
+</div>
+<!-- Strategic Summary Small Card -->
+<div class="bg-surface-container p-6 rounded-xl border-l-4 border-primary">
+<div class="flex items-center gap-2 mb-3">
+<span class="material-symbols-outlined text-primary text-lg" style="font-variation-settings: 'FILL' 1;">auto_awesome</span>
+<span class="text-xs font-bold uppercase tracking-widest text-white">Insight</span>
+</div>
+<p class="text-sm text-secondary italic leading-relaxed">«Текущая траектория указывает на потенциал превышения EBITDA на 4.2% к концу года при сохранении текущих темпов снижения CAC.»</p>
+</div>
+</div>
+</div>
+<!-- Sensitivity Analysis Section -->
+<section>
+<div class="flex items-center justify-between mb-8">
+<h2 class="text-3xl font-bold text-white headline">Анализ чувствительности</h2>
+<div class="text-[10px] font-bold uppercase tracking-widest text-[#8B95A3] flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-primary animate-pulse"></span>
+                    Live Simulation
+                </div>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+<!-- Var 1 -->
+<div class="bg-surface-container-low p-6 rounded-xl border border-transparent hover:border-outline-variant/20 transition-all cursor-pointer group">
+<div class="flex items-center justify-between mb-6">
+<div class="bg-[#1f1f24] p-3 rounded-lg text-primary group-hover:scale-110 transition-transform">
+<span class="material-symbols-outlined">trending_down</span>
+</div>
+<div class="text-right">
+<div class="text-[10px] text-[#8B95A3] uppercase mono mb-1">Impact</div>
+<div class="text-sm font-bold text-error mono">-12.5%</div>
+</div>
+</div>
+<h4 class="text-white font-bold mb-2">Рыночная волатильность</h4>
+<p class="text-xs text-[#8B95A3] leading-relaxed">Влияние внешних экономических факторов на покупательскую способность сегмента B2B Enterprise.</p>
+</div>
+<!-- Var 2 -->
+<div class="bg-surface-container-low p-6 rounded-xl border border-transparent hover:border-outline-variant/20 transition-all cursor-pointer group">
+<div class="flex items-center justify-between mb-6">
+<div class="bg-[#1f1f24] p-3 rounded-lg text-primary group-hover:scale-110 transition-transform">
+<span class="material-symbols-outlined">precision_manufacturing</span>
+</div>
+<div class="text-right">
+<div class="text-[10px] text-[#8B95A3] uppercase mono mb-1">Impact</div>
+<div class="text-sm font-bold text-primary mono">+8.2%</div>
+</div>
+</div>
+<h4 class="text-white font-bold mb-2">Операционная эффективность</h4>
+<p class="text-xs text-[#8B95A3] leading-relaxed">Повышение маржинальности за счет автоматизации внутренних процессов и оптимизации облачных затрат.</p>
+</div>
+<!-- Var 3 -->
+<div class="bg-surface-container-low p-6 rounded-xl border border-transparent hover:border-outline-variant/20 transition-all cursor-pointer group">
+<div class="flex items-center justify-between mb-6">
+<div class="bg-[#1f1f24] p-3 rounded-lg text-primary group-hover:scale-110 transition-transform">
+<span class="material-symbols-outlined">group_add</span>
+</div>
+<div class="text-right">
+<div class="text-[10px] text-[#8B95A3] uppercase mono mb-1">Impact</div>
+<div class="text-sm font-bold text-primary mono">+5.4%</div>
+</div>
+</div>
+<h4 class="text-white font-bold mb-2">Конверсия воронки</h4>
+<p class="text-xs text-[#8B95A3] leading-relaxed">Внедрение AI-скоринга лидов и персонализированных офферов для сокращения цикла продаж.</p>
+</div>
+</div>
+</section>
+</main>
+<!-- Visual Artifacts (Asymmetric Layout Accents) -->
+<div class="fixed top-[20%] right-[-5%] w-[400px] h-[400px] bg-primary/5 blur-[120px] -z-10 rounded-full"></div>
+<div class="fixed bottom-[10%] left-[-5%] w-[300px] h-[300px] bg-primary/3 blur-[100px] -z-10 rounded-full"></div>
+</body></html>

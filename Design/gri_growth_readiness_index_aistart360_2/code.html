@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="ru"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Institutional Intelligence - GRI</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;700;800&amp;family=DM+Sans:ital,wght@0,400;0,500;0,700;1,400&amp;family=JetBrains+Mono:wght@400;700&amp;family=Space+Grotesk:wght@400;700&amp;family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "surface-container-lowest": "#0d0e12",
+              "primary-fixed": "#47ffb8",
+              "tertiary-fixed": "#ffddb4",
+              "primary": "#6effc0",
+              "on-surface": "#e3e2e8",
+              "surface-variant": "#343439",
+              "on-primary-fixed-variant": "#005236",
+              "secondary-fixed-dim": "#bcc7de",
+              "tertiary-fixed-dim": "#ffb955",
+              "surface-container-high": "#292a2e",
+              "on-secondary": "#263143",
+              "on-tertiary": "#452b00",
+              "surface": "#121317",
+              "surface-container": "#1f1f24",
+              "secondary-fixed": "#d8e3fb",
+              "inverse-on-surface": "#2f3035",
+              "on-background": "#e3e2e8",
+              "background": "#121317",
+              "on-primary": "#003824",
+              "on-primary-container": "#006141",
+              "secondary": "#bcc7de",
+              "error": "#ffb4ab",
+              "inverse-primary": "#006c49",
+              "on-error-container": "#ffdad6",
+              "surface-dim": "#121317",
+              "on-tertiary-container": "#754b00",
+              "on-secondary-fixed": "#111c2d",
+              "outline-variant": "#3b4a41",
+              "on-tertiary-fixed": "#291800",
+              "surface-container-highest": "#343439",
+              "on-secondary-fixed-variant": "#3c475a",
+              "tertiary": "#ffe1bd",
+              "surface-tint": "#00e29e",
+              "on-tertiary-fixed-variant": "#633f00",
+              "on-secondary-container": "#aeb9d0",
+              "primary-container": "#00e5a0",
+              "primary-fixed-dim": "#00e29e",
+              "outline": "#84958a",
+              "on-error": "#690005",
+              "inverse-surface": "#e3e2e8",
+              "on-surface-variant": "#bacbbf",
+              "tertiary-container": "#ffbd60",
+              "surface-container-low": "#1a1b20",
+              "secondary-container": "#3e495d",
+              "surface-bright": "#38393e",
+              "error-container": "#93000a",
+              "on-primary-fixed": "#002114"
+            },
+            fontFamily: {
+              "headline": ["Bricolage Grotesque"],
+              "body": ["DM Sans"],
+              "label": ["Space Grotesk"],
+              "mono": ["JetBrains Mono"]
+            },
+            borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
+          },
+        },
+      }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .radar-chart-container {
+            background-image: radial-gradient(circle at center, #1f1f24 0%, transparent 70%);
+        }
+        .glass-card {
+            background: rgba(255, 255, 255, 0.04);
+            backdrop-filter: blur(12px);
+        }
+    </style>
+</head>
+<body class="bg-background text-on-background font-body selection:bg-primary selection:text-on-primary">
+<div class="flex min-h-screen">
+<!-- SideNavBar -->
+<aside class="hidden md:flex flex-col h-screen w-64 bg-[#111318] dark:bg-[#111318] p-4 gap-2 transition-all duration-300 ease-in-out shadow-2xl shadow-black/50 fixed left-0 top-0">
+<div class="flex items-center gap-3 px-2 mb-8">
+<div class="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
+<span class="material-symbols-outlined text-on-primary" style="font-variation-settings: 'FILL' 1;">analytics</span>
+</div>
+<div>
+<div class="text-xl font-black text-white leading-tight">Growth Readiness</div>
+<div class="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Institutional Grade</div>
+</div>
+</div>
+<nav class="flex-1 space-y-1">
+<a class="flex items-center gap-3 px-3 py-2 text-slate-400 hover:text-white hover:bg-[#1f1f24] rounded-lg transition-colors group" href="#">
+<span class="material-symbols-outlined">dashboard</span>
+<span class="font-['DM_Sans'] text-sm font-medium">Dashboard</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 text-slate-400 hover:text-white hover:bg-[#1f1f24] rounded-lg transition-colors group" href="#">
+<span class="material-symbols-outlined">language</span>
+<span class="font-['DM_Sans'] text-sm font-medium">Market</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 text-slate-400 hover:text-white hover:bg-[#1f1f24] rounded-lg transition-colors group" href="#">
+<span class="material-symbols-outlined">lightbulb</span>
+<span class="font-['DM_Sans'] text-sm font-medium">Insights</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 text-slate-400 hover:text-white hover:bg-[#1f1f24] rounded-lg transition-colors group" href="#">
+<span class="material-symbols-outlined">location_on</span>
+<span class="font-['DM_Sans'] text-sm font-medium">Point A</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 text-slate-400 hover:text-white hover:bg-[#1f1f24] rounded-lg transition-colors group" href="#">
+<span class="material-symbols-outlined">flag</span>
+<span class="font-['DM_Sans'] text-sm font-medium">Point B</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 text-slate-400 hover:text-white hover:bg-[#1f1f24] rounded-lg transition-colors group" href="#">
+<span class="material-symbols-outlined">trending_up</span>
+<span class="font-['DM_Sans'] text-sm font-medium">Growth</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 bg-[#1f1f24] text-[#00E5A0] rounded-lg border-l-4 border-[#00E5A0] transition-colors group" href="#">
+<span class="material-symbols-outlined">analytics</span>
+<span class="font-['DM_Sans'] text-sm font-medium">GRI</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 text-slate-400 hover:text-white hover:bg-[#1f1f24] rounded-lg transition-colors group" href="#">
+<span class="material-symbols-outlined">verified_user</span>
+<span class="font-['DM_Sans'] text-sm font-medium">Evidence</span>
+</a>
+</nav>
+<div class="mt-auto pt-4 space-y-1">
+<button class="w-full py-2.5 px-4 rounded-lg bg-gradient-to-br from-primary to-primary-container text-on-primary font-bold text-sm mb-4 transition-transform active:scale-95">
+                    Generate Report
+                </button>
+<a class="flex items-center gap-3 px-3 py-2 text-slate-400 hover:text-white hover:bg-[#1f1f24] transition-colors" href="#">
+<span class="material-symbols-outlined">settings</span>
+<span class="font-['DM_Sans'] text-sm font-medium">Settings</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 text-slate-400 hover:text-white hover:bg-[#1f1f24] transition-colors" href="#">
+<span class="material-symbols-outlined">help_outline</span>
+<span class="font-['DM_Sans'] text-sm font-medium">Support</span>
+</a>
+</div>
+</aside>
+<!-- Main Canvas -->
+<main class="flex-1 md:ml-64 min-h-screen flex flex-col bg-[#0A0B0F]">
+<!-- TopAppBar -->
+<header class="flex justify-between items-center w-full px-6 py-3 border-b border-white/5 bg-[#0A0B0F] sticky top-0 z-50">
+<div class="flex items-center gap-4">
+<h1 class="font-['Space_Grotesk'] tracking-tighter text-lg font-bold text-[#00E5A0]">Institutional Intelligence</h1>
+<div class="h-4 w-[1px] bg-white/10 hidden sm:block"></div>
+<span class="text-slate-500 font-label text-xs tracking-widest uppercase hidden sm:block">Strictly Confidential</span>
+</div>
+<div class="flex items-center gap-4">
+<button class="p-2 text-slate-400 hover:bg-[#1f1f24] rounded-lg transition-colors active:scale-95">
+<span class="material-symbols-outlined">notifications</span>
+</button>
+<button class="p-2 text-slate-400 hover:bg-[#1f1f24] rounded-lg transition-colors active:scale-95">
+<span class="material-symbols-outlined">settings</span>
+</button>
+<img alt="User profile avatar" class="w-8 h-8 rounded-full border border-primary/20 object-cover" data-alt="professional headshot of a business executive with a sharp suit, clean background, neutral lighting" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBEEu80UnxxhPCjNFyrxEWZ3KCGKcceF6V6q-pVNwHC0Onmk3SpOBg2CJmc_M7g8xyLRNZmxb1x1bc3HiPQVluoxU-LGI1IHI7hNQ3W12bGU55bmIjvFKhxjxSgcCHQWJ5ObN8OgEkoN8qxzZczn5EfP1EiK6BP4F8pbVNajOixXI52ySYtztqvJIhCkTEZF8QUnHmAwWmLlIinMq2v_OY7A6a0k9-uLBk7pwRzyeayqpkIMZISEN64c-TCNQps0ze8FmBDKnkHQIs"/>
+</div>
+</header>
+<!-- GRI Content -->
+<div class="flex-1 p-6 lg:p-10 space-y-10">
+<!-- Hero Header Section -->
+<div class="flex flex-col md:flex-row justify-between items-end gap-6">
+<div class="space-y-2">
+<div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-tertiary-container/10 text-tertiary-container text-xs font-mono font-bold tracking-tight border border-tertiary-container/20">
+<span class="relative flex h-2 w-2">
+<span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-tertiary-container opacity-75"></span>
+<span class="relative inline-flex rounded-full h-2 w-2 bg-tertiary-container"></span>
+</span>
+                            ТРЕБУЕТ ВНИМАНИЯ
+                        </div>
+<h2 class="text-4xl lg:text-5xl font-headline font-extrabold tracking-tighter text-white">
+                            GRI: <span class="text-primary">Индекс готовности к росту</span>
+</h2>
+</div>
+<div class="flex flex-col items-end gap-1">
+<div class="text-secondary text-xs font-label uppercase tracking-widest font-bold">Текущий балл</div>
+<div class="flex items-baseline gap-2">
+<span class="text-6xl font-mono font-bold text-tertiary-container">56</span>
+<span class="text-2xl font-mono text-slate-500">/ 100</span>
+</div>
+</div>
+</div>
+<!-- Interpretation Pills -->
+<div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+<div class="p-4 bg-surface-container-low rounded-xl flex items-center gap-4 border-l-4 border-error">
+<span class="material-symbols-outlined text-error text-3xl">warning</span>
+<div>
+<div class="text-white font-bold text-sm">Критическая зона</div>
+<div class="text-slate-500 text-xs">Операционная эффективность</div>
+</div>
+</div>
+<div class="p-4 bg-surface-container-low rounded-xl flex items-center gap-4 border-l-4 border-tertiary-container">
+<span class="material-symbols-outlined text-tertiary-container text-3xl">sentiment_neutral</span>
+<div>
+<div class="text-white font-bold text-sm">Умеренный риск</div>
+<div class="text-slate-500 text-xs">Финансовая устойчивость</div>
+</div>
+</div>
+<div class="p-4 bg-surface-container-low rounded-xl flex items-center gap-4 border-l-4 border-primary">
+<span class="material-symbols-outlined text-primary text-3xl">verified</span>
+<div>
+<div class="text-white font-bold text-sm">Готовность подтверждена</div>
+<div class="text-slate-500 text-xs">Рыночный спрос</div>
+</div>
+</div>
+</div>
+<!-- Main Visualization: Radar & Domains -->
+<div class="grid grid-cols-1 xl:grid-cols-12 gap-8 items-start">
+<!-- Radar Chart Component (Asymmetric left) -->
+<div class="xl:col-span-7 relative flex items-center justify-center p-8 bg-surface-container-lowest rounded-2xl overflow-hidden min-h-[500px]">
+<div class="absolute inset-0 radar-chart-container opacity-40"></div>
+<!-- SVG Radar Simulation -->
+<div class="relative w-full aspect-square max-w-[450px]">
+<svg class="w-full h-full drop-shadow-[0_0_15px_rgba(0,229,160,0.2)]" viewbox="0 0 400 400">
+<!-- Grid Lines -->
+<circle cx="200" cy="200" fill="none" r="180" stroke="rgba(255,255,255,0.05)" stroke-width="1"></circle>
+<circle cx="200" cy="200" fill="none" r="135" stroke="rgba(255,255,255,0.05)" stroke-width="1"></circle>
+<circle cx="200" cy="200" fill="none" r="90" stroke="rgba(255,255,255,0.05)" stroke-width="1"></circle>
+<circle cx="200" cy="200" fill="none" r="45" stroke="rgba(255,255,255,0.05)" stroke-width="1"></circle>
+<!-- Axes -->
+<line stroke="rgba(255,255,255,0.1)" stroke-dasharray="4 4" x1="200" x2="200" y1="20" y2="380"></line>
+<line stroke="rgba(255,255,255,0.1)" stroke-dasharray="4 4" x1="20" x2="380" y1="200" y2="200"></line>
+<line stroke="rgba(255,255,255,0.1)" stroke-dasharray="4 4" x1="73" x2="327" y1="73" y2="327"></line>
+<line stroke="rgba(255,255,255,0.1)" stroke-dasharray="4 4" x1="73" x2="327" y1="327" y2="73"></line>
+<!-- Data Polygon -->
+<polygon fill="rgba(0, 229, 160, 0.15)" points="200,80 300,140 330,200 290,280 200,340 110,280 60,200 120,130" stroke="#00E5A0" stroke-width="2.5"></polygon>
+<!-- Points -->
+<circle cx="200" cy="80" fill="#00E5A0" r="4"></circle>
+<circle cx="300" cy="140" fill="#00E5A0" r="4"></circle>
+<circle cx="330" cy="200" fill="#00E5A0" r="4"></circle>
+<circle cx="290" cy="280" fill="#00E5A0" r="4"></circle>
+<circle cx="200" cy="340" fill="#00E5A0" r="4"></circle>
+<circle cx="110" cy="280" fill="#00E5A0" r="4"></circle>
+<circle cx="60" cy="200" fill="#00E5A0" r="4"></circle>
+<circle cx="120" cy="130" fill="#00E5A0" r="4"></circle>
+</svg>
+<!-- Axis Labels -->
+<div class="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-4 font-label text-[10px] text-white/60 bg-background px-2">ЦЕНООБРАЗОВАНИЕ</div>
+<div class="absolute right-0 top-1/4 translate-x-1/2 font-label text-[10px] text-white/60 bg-background px-2">ФИНАНСЫ</div>
+<div class="absolute right-0 top-1/2 translate-x-12 font-label text-[10px] text-white/60 bg-background px-2 rotate-90">ПОРТФЕЛЬ</div>
+<div class="absolute right-0 bottom-1/4 translate-x-1/2 font-label text-[10px] text-white/60 bg-background px-2">ОПЕРАЦИИ</div>
+<div class="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-4 font-label text-[10px] text-white/60 bg-background px-2">ПРОДАЖИ</div>
+<div class="absolute left-0 bottom-1/4 -translate-x-1/2 font-label text-[10px] text-white/60 bg-background px-2">КОНКУРЕНЦИЯ</div>
+<div class="absolute left-0 top-1/2 -translate-x-12 font-label text-[10px] text-white/60 bg-background px-2 -rotate-90">КОМАНДА</div>
+<div class="absolute left-0 top-1/4 -translate-x-1/2 font-label text-[10px] text-white/60 bg-background px-2">СПРОС</div>
+</div>
+</div>
+<!-- Domain Accordion Cards -->
+<div class="xl:col-span-5 space-y-3">
+<h3 class="text-white font-headline text-xl font-bold mb-4 flex items-center gap-2">
+<span class="material-symbols-outlined text-primary">analytics</span>
+                            Анализ Доменов
+                        </h3>
+<!-- Domain Card: Pricing (Active/Expanded Example) -->
+<div class="bg-surface-container rounded-xl overflow-hidden">
+<button class="w-full px-5 py-4 flex items-center justify-between text-left hover:bg-surface-container-high transition-colors">
+<div class="flex items-center gap-4">
+<div class="w-10 h-10 rounded-lg bg-error/10 flex items-center justify-center text-error">
+<span class="material-symbols-outlined">payments</span>
+</div>
+<div>
+<div class="text-white font-bold text-sm uppercase tracking-tight">Ценообразование</div>
+<div class="text-error text-[10px] font-mono">КРИТИЧЕСКИЙ УРОВЕНЬ</div>
+</div>
+</div>
+<div class="flex items-center gap-6">
+<div class="font-mono text-xl font-bold text-white">42%</div>
+<span class="material-symbols-outlined text-slate-500">expand_less</span>
+</div>
+</button>
+<div class="px-5 pb-5 pt-2 space-y-4 border-t border-white/5">
+<div class="grid grid-cols-2 gap-4">
+<div class="p-3 bg-surface-container-low rounded-lg">
+<div class="text-slate-500 text-[10px] uppercase font-bold">Текущий</div>
+<div class="text-white font-mono text-lg font-bold">42%</div>
+</div>
+<div class="p-3 bg-surface-container-low rounded-lg">
+<div class="text-slate-500 text-[10px] uppercase font-bold">Цель</div>
+<div class="text-primary font-mono text-lg font-bold">75%</div>
+</div>
+</div>
+<div class="text-sm text-slate-400 leading-relaxed italic border-l-2 border-primary/30 pl-4">
+                                    "Пересмотрите структуру ценообразования. Текущая маржа не позволяет масштабироваться."
+                                </div>
+<button class="w-full py-2 bg-surface-container-highest text-primary text-xs font-bold rounded hover:bg-white/10 transition-colors">
+                                    ПРОСМОТР РЕКОМЕНДАЦИЙ
+                                </button>
+</div>
+</div>
+<!-- Domain Card: Team -->
+<div class="bg-surface-container rounded-xl overflow-hidden">
+<button class="w-full px-5 py-4 flex items-center justify-between text-left hover:bg-surface-container-high transition-colors">
+<div class="flex items-center gap-4">
+<div class="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
+<span class="material-symbols-outlined">groups</span>
+</div>
+<div>
+<div class="text-white font-bold text-sm uppercase tracking-tight">HR и Команда</div>
+<div class="text-primary text-[10px] font-mono">СТАБИЛЬНО</div>
+</div>
+</div>
+<div class="flex items-center gap-6">
+<div class="font-mono text-xl font-bold text-white">68%</div>
+<span class="material-symbols-outlined text-slate-500">expand_more</span>
+</div>
+</button>
+</div>
+<!-- Domain Card: Market -->
+<div class="bg-surface-container rounded-xl overflow-hidden">
+<button class="w-full px-5 py-4 flex items-center justify-between text-left hover:bg-surface-container-high transition-colors">
+<div class="flex items-center gap-4">
+<div class="w-10 h-10 rounded-lg bg-tertiary-container/10 flex items-center justify-center text-tertiary-container">
+<span class="material-symbols-outlined">trending_up</span>
+</div>
+<div>
+<div class="text-white font-bold text-sm uppercase tracking-tight">Рыночный спрос</div>
+<div class="text-tertiary-container text-[10px] font-mono">ВНИМАНИЕ</div>
+</div>
+</div>
+<div class="flex items-center gap-6">
+<div class="font-mono text-xl font-bold text-white">59%</div>
+<span class="material-symbols-outlined text-slate-500">expand_more</span>
+</div>
+</button>
+</div>
+</div>
+</div>
+<!-- 90-Day Action Plan -->
+<div class="space-y-6">
+<div class="flex items-center justify-between">
+<h3 class="text-white font-headline text-2xl font-bold tracking-tight">План действий на 90 дней</h3>
+<div class="text-slate-500 text-xs font-mono uppercase">Квартал 4, 2024</div>
+</div>
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+<!-- Column 1: Fix -->
+<div class="space-y-4">
+<div class="flex items-center gap-3 mb-2">
+<div class="w-8 h-8 rounded-full bg-error/20 flex items-center justify-center text-error border border-error/30 font-mono text-xs font-bold">01</div>
+<div class="text-white font-bold uppercase tracking-widest text-xs">Недели 1-4: Исправление</div>
+</div>
+<div class="bg-surface-container-low p-5 rounded-xl border-t-2 border-error space-y-4">
+<div class="flex gap-4">
+<span class="material-symbols-outlined text-error" style="font-variation-settings: 'FILL' 1;">build</span>
+<div class="text-sm text-slate-300">Аудит всех текущих контрактов на предмет маржинальности.</div>
+</div>
+<div class="flex gap-4">
+<span class="material-symbols-outlined text-error" style="font-variation-settings: 'FILL' 1;">assignment_late</span>
+<div class="text-sm text-slate-300">Ликвидация кассовых разрывов через реструктуризацию долгов.</div>
+</div>
+</div>
+</div>
+<!-- Column 2: Growth -->
+<div class="space-y-4">
+<div class="flex items-center gap-3 mb-2">
+<div class="w-8 h-8 rounded-full bg-tertiary-container/20 flex items-center justify-center text-tertiary-container border border-tertiary-container/30 font-mono text-xs font-bold">02</div>
+<div class="text-white font-bold uppercase tracking-widest text-xs">Недели 5-8: Рост</div>
+</div>
+<div class="bg-surface-container-low p-5 rounded-xl border-t-2 border-tertiary-container space-y-4">
+<div class="flex gap-4">
+<span class="material-symbols-outlined text-tertiary-container" style="font-variation-settings: 'FILL' 1;">rocket_launch</span>
+<div class="text-sm text-slate-300">Запуск новой модели ценообразования Value-Based.</div>
+</div>
+<div class="flex gap-4">
+<span class="material-symbols-outlined text-tertiary-container" style="font-variation-settings: 'FILL' 1;">campaign</span>
+<div class="text-sm text-slate-300">Масштабирование успешных маркетинговых каналов.</div>
+</div>
+</div>
+</div>
+<!-- Column 3: Scale -->
+<div class="space-y-4">
+<div class="flex items-center gap-3 mb-2">
+<div class="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-primary border border-primary/30 font-mono text-xs font-bold">03</div>
+<div class="text-white font-bold uppercase tracking-widest text-xs">Недели 9-12: Масштаб</div>
+</div>
+<div class="bg-surface-container-low p-5 rounded-xl border-t-2 border-primary space-y-4">
+<div class="flex gap-4">
+<span class="material-symbols-outlined text-primary" style="font-variation-settings: 'FILL' 1;">hub</span>
+<div class="text-sm text-slate-300">Автоматизация операционных процессов (ERP).</div>
+</div>
+<div class="flex gap-4">
+<span class="material-symbols-outlined text-primary" style="font-variation-settings: 'FILL' 1;">trending_up</span>
+<div class="text-sm text-slate-300">Формирование отдела прямых корпоративных продаж.</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Dashboard Footer KPIs -->
+<footer class="mt-auto border-t border-white/5 bg-[#111318] px-6 py-4 flex flex-wrap items-center justify-between gap-6">
+<div class="flex items-center gap-8">
+<div class="flex flex-col">
+<span class="text-[10px] text-slate-500 uppercase font-bold tracking-widest">Цель KPI</span>
+<div class="font-mono text-primary font-bold">GM &gt;= 15.0%</div>
+</div>
+<div class="flex flex-col">
+<span class="text-[10px] text-slate-500 uppercase font-bold tracking-widest">Текущий GM</span>
+<div class="font-mono text-white font-bold">12.4%</div>
+</div>
+</div>
+<div class="flex items-center gap-4 text-xs text-slate-500 font-mono">
+<span class="flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">calendar_today</span>
+                        Последнее обновление: 24.10.2024
+                    </span>
+<span class="flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">verified</span>
+                        Аудитор: Institutional Intelligence
+                    </span>
+</div>
+</footer>
+</main>
+</div>
+</body></html>

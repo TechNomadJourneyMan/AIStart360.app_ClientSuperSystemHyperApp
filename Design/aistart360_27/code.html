@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="ru"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Institutional Intelligence | Анализ конкурентов</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;600;700;800&amp;family=DM+Sans:wght@400;500;700&amp;family=JetBrains+Mono:wght@400;700&amp;family=Space+Grotesk:wght@400;600;700&amp;family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "on-surface-variant": "#bacbbf",
+              "surface-container-high": "#292a2e",
+              "secondary": "#bcc7de",
+              "primary-container": "#00e5a0",
+              "on-secondary-fixed": "#111c2d",
+              "outline-variant": "#3b4a41",
+              "surface-container-highest": "#343439",
+              "on-tertiary-container": "#754b00",
+              "surface-container-low": "#1a1b20",
+              "outline": "#84958a",
+              "on-primary-fixed": "#002114",
+              "primary-fixed": "#47ffb8",
+              "tertiary": "#ffe1bd",
+              "background": "#0A0B0F",
+              "tertiary-fixed-dim": "#ffb955",
+              "on-secondary-container": "#aeb9d0",
+              "on-background": "#e3e2e8",
+              "inverse-primary": "#006c49",
+              "on-error": "#690005",
+              "primary": "#6effc0",
+              "on-secondary-fixed-variant": "#3c475a",
+              "on-primary-fixed-variant": "#005236",
+              "on-tertiary-fixed": "#291800",
+              "on-tertiary": "#452b00",
+              "surface": "#121317",
+              "on-secondary": "#263143",
+              "error": "#ffb4ab",
+              "on-primary": "#003824",
+              "inverse-on-surface": "#2f3035",
+              "on-surface": "#e3e2e8",
+              "on-error-container": "#ffdad6",
+              "secondary-container": "#3e495d",
+              "error-container": "#93000a",
+              "tertiary-container": "#ffbd60",
+              "tertiary-fixed": "#ffddb4",
+              "surface-variant": "#343439",
+              "secondary-fixed-dim": "#bcc7de",
+              "primary-fixed-dim": "#00e29e",
+              "surface-bright": "#38393e",
+              "surface-tint": "#00e29e",
+              "surface-dim": "#121317",
+              "surface-container-lowest": "#0d0e12",
+              "surface-container": "#1f1f24",
+              "secondary-fixed": "#d8e3fb",
+              "inverse-surface": "#e3e2e8",
+              "on-tertiary-fixed-variant": "#633f00",
+              "on-primary-container": "#006141"
+            },
+            fontFamily: {
+              "headline": ["Bricolage Grotesque", "Space Grotesk", "sans-serif"],
+              "body": ["DM Sans", "Inter", "sans-serif"],
+              "label": ["Space Grotesk", "sans-serif"],
+              "data": ["JetBrains Mono", "monospace"]
+            },
+            borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
+          },
+        },
+      }
+    </script>
+<style>
+        body { font-family: 'DM Sans', sans-serif; background-color: #0A0B0F; color: #e3e2e8; }
+        .font-headline { font-family: 'Bricolage Grotesque', sans-serif; }
+        .font-data { font-family: 'JetBrains Mono', monospace; }
+        .glass { background: rgba(255, 255, 255, 0.04); backdrop-filter: blur(12px); }
+        .btn-gradient { background: linear-gradient(135deg, #6effc0 0%, #00e5a0 100%); }
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #0A0B0F; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #1f1f24; border-radius: 10px; }
+    </style>
+</head>
+<body class="overflow-hidden">
+<!-- Sidebar Navigation -->
+<aside class="h-screen w-64 fixed left-0 top-0 bg-[#0A0B0F] flex flex-col h-full py-6 px-4 z-40">
+<div class="mb-10 px-2 flex items-center gap-3">
+<div class="w-8 h-8 rounded-lg bg-primary-container flex items-center justify-center">
+<span class="material-symbols-outlined text-on-primary font-bold">analytics</span>
+</div>
+<div>
+<h1 class="text-lg font-bold text-[#00E5A0] font-headline">Intelligence Engine</h1>
+<p class="text-[10px] text-[#8B95A3] font-data tracking-widest">V3.4.0</p>
+</div>
+</div>
+<nav class="flex-1 space-y-1">
+<a class="flex items-center gap-3 px-3 py-2 text-[#8B95A3] hover:bg-[#1f1f24] hover:text-white transition-colors duration-200 group" href="#">
+<span class="material-symbols-outlined group-active:translate-x-1 transition-transform">dashboard</span>
+<span class="font-medium">Dashboard</span>
+</a>
+<!-- Active State for Competitors -->
+<a class="flex items-center gap-3 px-3 py-2 bg-[#1f1f24] text-[#00E5A0] rounded-lg group" href="#">
+<span class="material-symbols-outlined group-active:translate-x-1 transition-transform">analytics</span>
+<span class="font-medium">Competitors</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 text-[#8B95A3] hover:bg-[#1f1f24] hover:text-white transition-colors duration-200 group" href="#">
+<span class="material-symbols-outlined group-active:translate-x-1 transition-transform">map</span>
+<span class="font-medium">Market Map</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 text-[#8B95A3] hover:bg-[#1f1f24] hover:text-white transition-colors duration-200 group" href="#">
+<span class="material-symbols-outlined group-active:translate-x-1 transition-transform">payments</span>
+<span class="font-medium">Financials</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 text-[#8B95A3] hover:bg-[#1f1f24] hover:text-white transition-colors duration-200 group" href="#">
+<span class="material-symbols-outlined group-active:translate-x-1 transition-transform">description</span>
+<span class="font-medium">Reports</span>
+</a>
+</nav>
+<div class="mt-auto space-y-4">
+<button class="w-full btn-gradient text-on-primary py-2.5 rounded-lg font-bold text-sm flex items-center justify-center gap-2 active:scale-95 transition-all">
+<span class="material-symbols-outlined text-sm">add</span>
+                Add Competitor
+            </button>
+<div class="space-y-1 border-t border-outline-variant/10 pt-4">
+<a class="flex items-center gap-3 px-3 py-2 text-[#8B95A3] hover:text-white transition-colors" href="#">
+<span class="material-symbols-outlined">help_outline</span>
+<span class="text-sm">Support</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 text-[#8B95A3] hover:text-white transition-colors" href="#">
+<span class="material-symbols-outlined">archive</span>
+<span class="text-sm">Archive</span>
+</a>
+</div>
+</div>
+</aside>
+<!-- Main Content Area -->
+<main class="ml-64 min-h-screen relative flex flex-col">
+<!-- Top Navigation Bar -->
+<header class="fixed top-0 right-0 left-64 z-30 bg-[#111318] h-16 flex items-center justify-between px-8 max-w-[1440px] mx-auto w-full">
+<div class="flex items-center gap-8">
+<div class="relative group w-80">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-[#8B95A3] text-lg">search</span>
+<input class="w-full bg-[#1a1b20] border-none text-sm py-2 pl-10 pr-4 rounded-lg focus:ring-1 focus:ring-primary-container/30 text-white placeholder-[#8B95A3]" placeholder="Поиск конкурентов..." type="text"/>
+</div>
+<nav class="hidden lg:flex items-center gap-6">
+<a class="text-[#8B95A3] text-sm font-medium hover:text-white transition-colors duration-200" href="#">Market Overview</a>
+<a class="text-[#00E5A0] border-b-2 border-[#00E5A0] pb-1 text-sm font-medium" href="#">Competitors</a>
+<a class="text-[#8B95A3] text-sm font-medium hover:text-white transition-colors duration-200" href="#">Portfolio</a>
+<a class="text-[#8B95A3] text-sm font-medium hover:text-white transition-colors duration-200" href="#">Analytics</a>
+</nav>
+</div>
+<div class="flex items-center gap-4">
+<button class="w-10 h-10 flex items-center justify-center text-[#8B95A3] hover:text-white transition-colors active:scale-95">
+<span class="material-symbols-outlined">notifications</span>
+</button>
+<button class="w-10 h-10 flex items-center justify-center text-[#8B95A3] hover:text-white transition-colors active:scale-95">
+<span class="material-symbols-outlined">settings</span>
+</button>
+<div class="h-8 w-[1px] bg-outline-variant/20 mx-2"></div>
+<div class="flex items-center gap-3">
+<img class="w-8 h-8 rounded-full object-cover" data-alt="close-up portrait of a professional analyst in a modern office with warm lighting and a confident expression" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBaLC4lKcKNo_FrPhPZH0lOSw2YsxCYCNy493vfSnHKXUCnagwI87_vw1v1aSiUfU6c93O7EKtw_X9xK4gH0CqWHgciaflXrBizR71D31VWuHWogZZBoPyZSKzOsl6LSXK0qTUR59jgMWUq8oX59wLhTWmVKslbjJhWO9_m-HZW56xZekX92_bAYOmpJWAOzVE3UHtCQ-jtbB-bdACQUw10_2K4evpAM0f6wVWiyqeNAC6rHGL0bFJkdK3k0ja8DwvUwBxE7JLCN5o"/>
+</div>
+</div>
+</header>
+<!-- Content Canvas -->
+<div class="mt-16 p-8 flex-1 grid grid-cols-12 gap-8 custom-scrollbar overflow-y-auto max-w-[1600px] mx-auto w-full">
+<!-- Left Column: Competitor List -->
+<div class="col-span-12 lg:col-span-7 xl:col-span-8 space-y-8">
+<div class="flex flex-col md:flex-row md:items-end justify-between gap-4">
+<div>
+<h2 class="text-4xl font-headline font-bold text-on-background">Анализ конкурентов</h2>
+<p class="text-[#8B95A3] mt-2 font-body">Глубокое погружение в рыночные показатели и стратегические преимущества.</p>
+</div>
+<div class="flex flex-wrap gap-2">
+<button class="px-4 py-1.5 rounded-full text-xs font-bold bg-primary-container text-on-primary">All</button>
+<button class="px-4 py-1.5 rounded-full text-xs font-bold bg-surface-container-low text-[#8B95A3] hover:bg-surface-container transition-colors">Direct Competitors</button>
+<button class="px-4 py-1.5 rounded-full text-xs font-bold bg-surface-container-low text-[#8B95A3] hover:bg-surface-container transition-colors">Tier 2</button>
+<button class="px-4 py-1.5 rounded-full text-xs font-bold bg-surface-container-low text-[#8B95A3] hover:bg-surface-container transition-colors">Market Leaders</button>
+</div>
+</div>
+<!-- Competitor Grid -->
+<div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+<!-- Card 1 -->
+<div class="bg-surface-container-low p-5 rounded-xl border-l-4 border-transparent hover:border-primary-container hover:bg-surface-container transition-all cursor-pointer group">
+<div class="flex items-start justify-between mb-4">
+<div class="w-12 h-12 bg-surface-container-highest rounded-lg flex items-center justify-center p-2">
+<span class="material-symbols-outlined text-primary text-3xl">hub</span>
+</div>
+<div class="text-right">
+<p class="text-[10px] text-[#8B95A3] font-data uppercase tracking-widest">Доля рынка</p>
+<p class="text-xl font-data font-bold text-on-background">24.5%</p>
+</div>
+</div>
+<h3 class="text-lg font-headline font-bold text-on-background mb-1">DataNexus Inc.</h3>
+<p class="text-xs text-[#8B95A3] mb-4">Enterprise AI Solutions</p>
+<div class="flex items-center justify-between pt-4 border-t border-outline-variant/10">
+<span class="text-[10px] font-data text-[#8B95A3]">TEMП РОСТА</span>
+<span class="flex items-center text-[#00E5A0] font-data text-xs font-bold">+12.4% <span class="material-symbols-outlined text-xs">trending_up</span></span>
+</div>
+</div>
+<!-- Card 2 -->
+<div class="bg-surface-container-low p-5 rounded-xl border-l-4 border-transparent hover:border-primary-container hover:bg-surface-container transition-all cursor-pointer group">
+<div class="flex items-start justify-between mb-4">
+<div class="w-12 h-12 bg-surface-container-highest rounded-lg flex items-center justify-center p-2">
+<span class="material-symbols-outlined text-primary text-3xl">schema</span>
+</div>
+<div class="text-right">
+<p class="text-[10px] text-[#8B95A3] font-data uppercase tracking-widest">Доля рынка</p>
+<p class="text-xl font-data font-bold text-on-background">18.2%</p>
+</div>
+</div>
+<h3 class="text-lg font-headline font-bold text-on-background mb-1">QuantFlow</h3>
+<p class="text-xs text-[#8B95A3] mb-4">Fintech Data Pipeline</p>
+<div class="flex items-center justify-between pt-4 border-t border-outline-variant/10">
+<span class="text-[10px] font-data text-[#8B95A3]">TEMП РОСТА</span>
+<span class="flex items-center text-[#00E5A0] font-data text-xs font-bold">+8.1% <span class="material-symbols-outlined text-xs">trending_up</span></span>
+</div>
+</div>
+<!-- Card 3 -->
+<div class="bg-surface-container-low p-5 rounded-xl border-l-4 border-transparent hover:border-primary-container hover:bg-surface-container transition-all cursor-pointer group">
+<div class="flex items-start justify-between mb-4">
+<div class="w-12 h-12 bg-surface-container-highest rounded-lg flex items-center justify-center p-2">
+<span class="material-symbols-outlined text-primary text-3xl">token</span>
+</div>
+<div class="text-right">
+<p class="text-[10px] text-[#8B95A3] font-data uppercase tracking-widest">Доля рынка</p>
+<p class="text-xl font-data font-bold text-on-background">11.9%</p>
+</div>
+</div>
+<h3 class="text-lg font-headline font-bold text-on-background mb-1">Vortex Labs</h3>
+<p class="text-xs text-[#8B95A3] mb-4">Web3 Infrastructure</p>
+<div class="flex items-center justify-between pt-4 border-t border-outline-variant/10">
+<span class="text-[10px] font-data text-[#8B95A3]">TEMП РОСТА</span>
+<span class="flex items-center text-error font-data text-xs font-bold">-2.4% <span class="material-symbols-outlined text-xs">trending_down</span></span>
+</div>
+</div>
+</div>
+<!-- Extended Data Section (Asymmetric Bento Grid) -->
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+<div class="bg-surface-container-low p-6 rounded-xl flex flex-col justify-between">
+<div>
+<span class="text-[10px] font-data text-[#8B95A3] tracking-[0.2em] uppercase">Продуктовая линейка</span>
+<h4 class="text-xl font-headline font-bold mt-2">Core Feature Parity</h4>
+</div>
+<div class="mt-6 space-y-3">
+<div class="flex items-center justify-between p-3 bg-background rounded-lg">
+<span class="text-sm font-medium">Predictive Analytics</span>
+<span class="material-symbols-outlined text-primary" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+</div>
+<div class="flex items-center justify-between p-3 bg-background rounded-lg opacity-60">
+<span class="text-sm font-medium">Blockchain Interop</span>
+<span class="material-symbols-outlined text-[#8B95A3]">cancel</span>
+</div>
+<div class="flex items-center justify-between p-3 bg-background rounded-lg">
+<span class="text-sm font-medium">AutoML Workflows</span>
+<span class="material-symbols-outlined text-primary" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+</div>
+</div>
+</div>
+<div class="bg-surface-container-low p-6 rounded-xl flex flex-col justify-between min-h-[240px]">
+<div>
+<span class="text-[10px] font-data text-[#8B95A3] tracking-[0.2em] uppercase">Market Position</span>
+<h4 class="text-xl font-headline font-bold mt-2">Strategic Density</h4>
+</div>
+<div class="relative flex-1 flex items-center justify-center mt-4">
+<!-- Visual placeholder for Radar Chart -->
+<div class="w-32 h-32 rounded-full border-2 border-dashed border-outline-variant/30 flex items-center justify-center">
+<div class="w-24 h-24 rotate-45 border-2 border-primary-container/40 flex items-center justify-center">
+<div class="w-12 h-12 bg-primary-container/20 rounded-sm"></div>
+</div>
+</div>
+</div>
+<div class="flex justify-between text-[10px] font-data text-[#8B95A3] mt-4">
+<span>REACH</span>
+<span>INNOVATION</span>
+<span>COST</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Right Column: Deep-Dive Panel (Glassmorphism) -->
+<div class="col-span-12 lg:col-span-5 xl:col-span-4">
+<div class="glass border border-outline-variant/10 rounded-2xl p-8 sticky top-24 h-fit">
+<div class="flex items-center gap-4 mb-8">
+<div class="w-16 h-16 bg-white rounded-xl flex items-center justify-center overflow-hidden">
+<img class="w-10 h-10 object-contain" data-alt="minimalist abstract geometric company logo with bold clean lines on white background" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDrMBjqjVlJaSbmrId4-_Acffl3sshNgRq9UACnWk9GRxmMSPIdF-ZYbvuSrsmWiea99GFm1rwVLOm9MBLndSRvqP9zpaKZmlfzTT18qgu3W8Z0atzz1SvbBWdmDXrKwvqSC1WICBreVNgc6kRmCCYN7uULzrmJATTxDOyXaDIHQ_kjsyFQ-lB0Nbk-6oT17-Ono47CaP0Z-mnQDJs_QkubxVGiJKb0nJcoMciE6gCAFowyKoZiC1j6DcXcDqoWBA0HQ9tch9uUXys"/>
+</div>
+<div>
+<div class="flex items-center gap-2">
+<h3 class="text-2xl font-headline font-bold text-on-background">DataNexus Inc.</h3>
+<span class="bg-primary-container/10 text-primary px-2 py-0.5 rounded text-[10px] font-bold">TOP TIER</span>
+</div>
+<p class="text-[#8B95A3] text-sm">Strategic Rival</p>
+</div>
+</div>
+<div class="space-y-8">
+<!-- Financials -->
+<section>
+<h4 class="text-xs font-data text-[#8B95A3] tracking-[0.2em] uppercase mb-4">Финансовые показатели</h4>
+<div class="grid grid-cols-2 gap-4">
+<div class="bg-background/50 p-4 rounded-xl">
+<p class="text-[10px] text-[#8B95A3] mb-1">Gross Margin</p>
+<p class="text-2xl font-data font-bold text-primary">15.4%</p>
+</div>
+<div class="bg-background/50 p-4 rounded-xl">
+<p class="text-[10px] text-[#8B95A3] mb-1">Burn Rate</p>
+<p class="text-2xl font-data font-bold text-on-background">$2.4M</p>
+</div>
+</div>
+<!-- Mini Area Chart Placeholder -->
+<div class="mt-4 h-24 w-full bg-background/30 rounded-lg flex items-end px-2 pb-2 gap-1 overflow-hidden relative">
+<div class="w-full h-12 bg-primary-container/10 rounded-t-sm"></div>
+<div class="w-full h-16 bg-primary-container/15 rounded-t-sm"></div>
+<div class="w-full h-10 bg-primary-container/10 rounded-t-sm"></div>
+<div class="w-full h-20 bg-primary-container/20 rounded-t-sm"></div>
+<div class="w-full h-14 bg-primary-container/15 rounded-t-sm"></div>
+<div class="w-full h-18 bg-primary-container/25 rounded-t-sm"></div>
+<div class="absolute inset-0 bg-gradient-to-t from-background/80 to-transparent pointer-events-none"></div>
+</div>
+</section>
+<!-- Recent News -->
+<section>
+<div class="flex items-center justify-between mb-4">
+<h4 class="text-xs font-data text-[#8B95A3] tracking-[0.2em] uppercase">Новости и события</h4>
+<span class="text-[10px] text-primary cursor-pointer hover:underline">See all</span>
+</div>
+<div class="space-y-4">
+<div class="group cursor-pointer">
+<p class="text-[10px] font-data text-[#8B95A3] mb-1">12 ОКТ 2023</p>
+<h5 class="text-sm font-medium leading-snug group-hover:text-primary transition-colors">Raised $50M in Series B led by Sequoia Capital</h5>
+</div>
+<div class="group cursor-pointer">
+<p class="text-[10px] font-data text-[#8B95A3] mb-1">05 ОКТ 2023</p>
+<h5 class="text-sm font-medium leading-snug group-hover:text-primary transition-colors">New AI module launched for predictive logistics</h5>
+</div>
+<div class="group cursor-pointer">
+<p class="text-[10px] font-data text-[#8B95A3] mb-1">28 СЕН 2023</p>
+<h5 class="text-sm font-medium leading-snug group-hover:text-primary transition-colors">Strategic partnership with AWS Public Sector</h5>
+</div>
+</div>
+</section>
+<button class="w-full py-4 border border-primary-container/20 hover:bg-primary-container/5 transition-colors rounded-xl font-bold text-xs uppercase tracking-widest text-primary flex items-center justify-center gap-3">
+                            Full Profile Report
+                            <span class="material-symbols-outlined text-sm">open_in_new</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+</main>
+<!-- Contextual FAB (Hidden on Mobile) -->
+<button class="fixed bottom-8 right-8 w-14 h-14 btn-gradient text-on-primary rounded-xl shadow-2xl flex items-center justify-center active:scale-90 transition-all z-50 lg:hidden">
+<span class="material-symbols-outlined">add</span>
+</button>
+</body></html>

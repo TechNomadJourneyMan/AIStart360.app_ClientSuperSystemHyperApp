@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="ru"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Стратегические цели | AIStart360</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;700;800&amp;family=DM+Sans:ital,wght@0,400;0,500;0,700;1,400&amp;family=JetBrains+Mono:wght@400;700&amp;family=Space+Grotesk:wght@400;500;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "on-surface": "#e3e2e8",
+                        "tertiary-fixed": "#ffddb4",
+                        "surface-container-high": "#292a2e",
+                        "surface-dim": "#121317",
+                        "surface-container-lowest": "#0d0e12",
+                        "inverse-on-surface": "#2f3035",
+                        "on-background": "#e3e2e8",
+                        "surface-container-highest": "#343439",
+                        "primary": "#6effc0",
+                        "on-secondary-container": "#aeb9d0",
+                        "inverse-surface": "#e3e2e8",
+                        "on-secondary-fixed-variant": "#3c475a",
+                        "surface-tint": "#00e29e",
+                        "secondary-container": "#3e495d",
+                        "surface-container-low": "#1a1b20",
+                        "secondary-fixed": "#d8e3fb",
+                        "on-error": "#690005",
+                        "on-tertiary": "#452b00",
+                        "on-secondary-fixed": "#111c2d",
+                        "background": "#0A0B0F", /* Overridden per JSON/Design System */
+                        "surface-variant": "#343439",
+                        "surface-container": "#1f1f24",
+                        "on-tertiary-fixed-variant": "#633f00",
+                        "on-tertiary-container": "#754b00",
+                        "tertiary": "#ffe1bd",
+                        "error-container": "#93000a",
+                        "on-error-container": "#ffdad6",
+                        "inverse-primary": "#006c49",
+                        "on-tertiary-fixed": "#291800",
+                        "primary-fixed-dim": "#00e29e",
+                        "tertiary-fixed-dim": "#ffb955",
+                        "on-secondary": "#263143",
+                        "on-primary-fixed-variant": "#005236",
+                        "secondary": "#bcc7de",
+                        "primary-fixed": "#47ffb8",
+                        "error": "#ffb4ab",
+                        "on-surface-variant": "#bacbbf",
+                        "on-primary": "#003824",
+                        "surface-bright": "#38393e",
+                        "outline-variant": "#3b4a41",
+                        "surface": "#111318", /* Overridden per JSON/Design System */
+                        "secondary-fixed-dim": "#bcc7de",
+                        "on-primary-container": "#006141",
+                        "outline": "#84958a",
+                        "primary-container": "#00E5A0",
+                        "tertiary-container": "#ffbd60",
+                        "on-primary-fixed": "#002114"
+                    },
+                    fontFamily: {
+                        "headline": ["Bricolage Grotesque", "sans-serif"],
+                        "body": ["DM Sans", "sans-serif"],
+                        "label": ["Space Grotesk", "sans-serif"],
+                        "mono": ["JetBrains Mono", "monospace"]
+                    },
+                    borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
+                },
+            },
+        }
+    </script>
+<style>
+        body { font-family: 'DM Sans', sans-serif; background-color: #0A0B0F; color: #e3e2e8; }
+        .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+        .glass { background: rgba(255, 255, 255, 0.04); backdrop-filter: blur(12px); }
+        .primary-gradient { background: linear-gradient(135deg, #6effc0 0%, #00e5a0 100%); }
+    </style>
+</head>
+<body class="bg-background overflow-hidden">
+<!-- SideNavBar (Execution from JSON) -->
+<aside class="fixed left-0 top-0 h-full flex flex-col py-6 bg-[#0A0B0F] h-screen w-64 border-r-0 z-50">
+<div class="px-6 mb-10">
+<span class="text-xl font-bold tracking-tighter text-[#00E5A0]">Institutional Intelligence</span>
+<p class="text-[10px] text-[#8B95A3] uppercase tracking-widest mt-1">Strategic Hub</p>
+</div>
+<nav class="flex-1 px-3 space-y-1">
+<!-- Navigation Items Mapping -->
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg text-[#8B95A3] hover:text-white hover:bg-[#111318] transition-colors duration-200 group" href="#">
+<span class="material-symbols-outlined text-xl">insights</span>
+<span class="text-xs font-medium uppercase tracking-wider">Intelligence</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg text-[#00E5A0] bg-[#1f1f24] border-r-2 border-[#00E5A0] scale-98 transition-all" href="#">
+<span class="material-symbols-outlined text-xl">tactic</span>
+<span class="text-xs font-medium uppercase tracking-wider">Strategy</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg text-[#8B95A3] hover:text-white hover:bg-[#111318] transition-colors duration-200" href="#">
+<span class="material-symbols-outlined text-xl">query_stats</span>
+<span class="text-xs font-medium uppercase tracking-wider">Diagnostics</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg text-[#8B95A3] hover:text-white hover:bg-[#111318] transition-colors duration-200" href="#">
+<span class="material-symbols-outlined text-xl">speed</span>
+<span class="text-xs font-medium uppercase tracking-wider">Performance</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg text-[#8B95A3] hover:text-white hover:bg-[#111318] transition-colors duration-200" href="#">
+<span class="material-symbols-outlined text-xl">settings</span>
+<span class="text-xs font-medium uppercase tracking-wider">Settings</span>
+</a>
+</nav>
+<div class="px-6 mt-auto">
+<button class="w-full primary-gradient text-on-primary py-3 rounded-lg font-bold text-sm flex items-center justify-center gap-2 shadow-lg shadow-primary/10 transition-transform active:scale-95">
+<span class="material-symbols-outlined text-sm">add</span>
+                New Initiative
+            </button>
+</div>
+</aside>
+<!-- Main Shell -->
+<div class="ml-64 min-h-screen flex flex-col">
+<!-- TopAppBar (Execution from JSON) -->
+<header class="fixed top-0 right-0 left-64 z-40 flex justify-between items-center px-8 h-16 bg-[#0A0B0F]/80 backdrop-blur-xl shadow-2xl shadow-black/40">
+<div class="flex items-center gap-8">
+<span class="font-black text-[#00E5A0] text-lg uppercase tracking-tight">Diagnostics Platform</span>
+<nav class="hidden md:flex items-center gap-6">
+<a class="text-[#8B95A3] font-medium hover:text-white transition-colors text-sm" href="#">Q3 Review</a>
+<a class="text-[#8B95A3] font-medium hover:text-white transition-colors text-sm" href="#">Annual Goals</a>
+<a class="text-[#8B95A3] font-medium hover:text-white transition-colors text-sm" href="#">Risk Report</a>
+</nav>
+</div>
+<div class="flex items-center gap-6">
+<div class="relative group">
+<span class="material-symbols-outlined text-[#8B95A3] absolute left-3 top-1/2 -translate-y-1/2 text-lg">search</span>
+<input class="bg-[#111318] border-none rounded-full pl-10 pr-4 py-1.5 text-xs w-48 focus:ring-1 focus:ring-primary/30 transition-all" placeholder="Search..." type="text"/>
+</div>
+<div class="flex items-center gap-4">
+<span class="material-symbols-outlined text-[#8B95A3] hover:text-white cursor-pointer">notifications</span>
+<span class="material-symbols-outlined text-[#8B95A3] hover:text-white cursor-pointer">help_outline</span>
+<button class="text-xs font-bold text-[#00E5A0] border border-[#00E5A0]/20 px-3 py-1.5 rounded-lg hover:bg-[#00E5A0]/10 transition-colors">Export Data</button>
+<img alt="User Profile" class="w-8 h-8 rounded-full border border-outline-variant/20" data-alt="professional corporate headshot of an executive in a dark environment with soft neon accent lighting" src="https://lh3.googleusercontent.com/aida-public/AB6AXuD3Kdi84nFe2hVscRHo-y-1tQv9TFTrCFZbJbHnNI6tJvOh4uk72bAUoVpS6puG5DooEgen2t6MzpZDky3bm0XU7qOyxIq_gqdfSWcByMnZXr-upRvFu5UUEFhTRSvaIyojwABnEHZI4wl0RzlRKiabRuHRd4I9UXjGMtPlnNPtCMHlMF3B6csyQPfPyri9MwcpPYfsV0AuHmgzVd8LTOEgumx6HondQ1YKPuxcMaK43D_AeWTet8t1QwFQ5cX8rIfW12XfUNThqa8"/>
+</div>
+</div>
+</header>
+<!-- Main Content Canvas -->
+<main class="mt-16 p-8 overflow-y-auto max-h-[calc(100vh-64px)] scroll-smooth">
+<!-- Page Header Asymmetry -->
+<div class="flex flex-col md:flex-row justify-between items-start mb-12 gap-6">
+<div>
+<h1 class="text-4xl font-extrabold font-headline tracking-tight text-white mb-2 uppercase">Стратегические цели</h1>
+<p class="text-on-surface-variant font-body text-sm max-w-lg">Система мониторинга ключевых показателей роста и эффективности институционального развития на 2024-2025 гг.</p>
+</div>
+<button class="primary-gradient text-on-primary px-6 py-3 rounded-lg font-bold flex items-center gap-2 transition-all hover:shadow-[0_0_20px_rgba(0,229,160,0.3)]">
+<span class="material-symbols-outlined">add_circle</span>
+                    Новая цель
+                </button>
+</div>
+<!-- KPI Summary Blocks (Custom Institutional Component) -->
+<div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
+<div class="bg-surface-container-low p-6 rounded-xl border-l-4 border-primary/40 relative overflow-hidden">
+<div class="flex flex-col gap-1 relative z-10">
+<span class="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Всего целей</span>
+<span class="text-4xl font-mono font-bold text-white tracking-tighter">12</span>
+</div>
+<div class="absolute right-[-10%] bottom-[-20%] text-white/5 font-black text-7xl select-none">LIST</div>
+</div>
+<div class="bg-surface-container-low p-6 rounded-xl border-l-4 border-primary relative overflow-hidden">
+<div class="flex flex-col gap-1 relative z-10">
+<span class="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Завершено</span>
+<div class="flex items-baseline gap-2">
+<span class="text-4xl font-mono font-bold text-primary tracking-tighter">4</span>
+<span class="text-xs font-mono text-on-surface-variant">/ 33%</span>
+</div>
+</div>
+<div class="absolute right-4 top-1/2 -translate-y-1/2 opacity-20">
+<span class="material-symbols-outlined text-5xl text-primary" data-weight="fill">check_circle</span>
+</div>
+</div>
+<div class="bg-surface-container-low p-6 rounded-xl border-l-4 border-error relative overflow-hidden">
+<div class="flex flex-col gap-1 relative z-10">
+<span class="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">В зоне риска</span>
+<span class="text-4xl font-mono font-bold text-error tracking-tighter">2</span>
+</div>
+<div class="absolute right-4 top-1/2 -translate-y-1/2 opacity-20">
+<span class="material-symbols-outlined text-5xl text-error" data-weight="fill">warning</span>
+</div>
+</div>
+</div>
+<!-- Filters Section -->
+<div class="flex items-center gap-2 mb-6 border-b border-outline-variant/10 pb-4">
+<button class="px-6 py-2 rounded-lg bg-surface-container text-primary font-bold text-xs uppercase tracking-wider">Все</button>
+<button class="px-6 py-2 rounded-lg text-on-surface-variant hover:text-white transition-colors font-medium text-xs uppercase tracking-wider">В работе</button>
+<button class="px-6 py-2 rounded-lg text-on-surface-variant hover:text-white transition-colors font-medium text-xs uppercase tracking-wider">Завершенные</button>
+<div class="ml-auto flex items-center gap-4">
+<span class="text-xs font-mono text-on-surface-variant uppercase">Сортировать по: Дате</span>
+<span class="material-symbols-outlined text-on-surface-variant text-lg cursor-pointer">filter_list</span>
+</div>
+</div>
+<!-- Goals List (Bento-style list) -->
+<div class="flex flex-col gap-3">
+<!-- Goal Item 1 -->
+<div class="group bg-surface-container-low hover:bg-surface-container-high transition-all duration-300 rounded-xl p-5 flex flex-wrap lg:flex-nowrap items-center gap-6">
+<div class="w-10 h-10 rounded-lg bg-[#0A0B0F] flex items-center justify-center border border-outline-variant/20">
+<span class="material-symbols-outlined text-primary text-xl">business_center</span>
+</div>
+<div class="flex-1 min-w-[200px]">
+<h3 class="text-white font-bold text-lg mb-1">Увеличить маржу в B2B</h3>
+<div class="flex items-center gap-3">
+<span class="px-2 py-0.5 rounded bg-primary/10 text-primary text-[10px] font-bold uppercase tracking-tighter">В работе</span>
+<span class="text-[10px] text-on-surface-variant font-mono uppercase">Дедлайн: 31.12.2025</span>
+</div>
+</div>
+<div class="w-full lg:w-64 flex flex-col gap-2">
+<div class="flex justify-between items-end">
+<span class="text-[10px] font-mono text-on-surface-variant uppercase">Прогресс</span>
+<span class="text-xs font-mono text-white">78.8%</span>
+</div>
+<div class="h-1.5 w-full bg-surface-container-lowest rounded-full overflow-hidden">
+<div class="h-full primary-gradient w-[78.8%] rounded-full"></div>
+</div>
+</div>
+<div class="flex flex-col items-end gap-1 px-6 border-x border-outline-variant/10">
+<span class="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest">Текущее / Цель</span>
+<span class="text-sm font-mono text-primary font-bold tracking-tight">14.2% / 18.0%</span>
+</div>
+<div class="flex items-center gap-3 ml-auto">
+<button class="p-2 rounded-lg text-on-surface-variant hover:text-white hover:bg-white/5 transition-colors">
+<span class="material-symbols-outlined text-xl">edit</span>
+</button>
+<button class="flex items-center gap-2 px-4 py-2 rounded-lg bg-surface-container-highest text-on-surface text-[11px] font-bold uppercase transition-all hover:bg-primary hover:text-on-primary">
+<span class="material-symbols-outlined text-sm">done_all</span>
+                            Выполнить
+                        </button>
+</div>
+</div>
+<!-- Goal Item 2 -->
+<div class="group bg-surface-container-low hover:bg-surface-container-high transition-all duration-300 rounded-xl p-5 flex flex-wrap lg:flex-nowrap items-center gap-6">
+<div class="w-10 h-10 rounded-lg bg-[#0A0B0F] flex items-center justify-center border border-outline-variant/20">
+<span class="material-symbols-outlined text-error text-xl">speed</span>
+</div>
+<div class="flex-1 min-w-[200px]">
+<h3 class="text-white font-bold text-lg mb-1">Снижение издержек на логистику</h3>
+<div class="flex items-center gap-3">
+<span class="px-2 py-0.5 rounded bg-error/10 text-error text-[10px] font-bold uppercase tracking-tighter">Критично</span>
+<span class="text-[10px] text-on-surface-variant font-mono uppercase">Дедлайн: 15.06.2025</span>
+</div>
+</div>
+<div class="w-full lg:w-64 flex flex-col gap-2">
+<div class="flex justify-between items-end">
+<span class="text-[10px] font-mono text-on-surface-variant uppercase">Прогресс</span>
+<span class="text-xs font-mono text-white">12.4%</span>
+</div>
+<div class="h-1.5 w-full bg-surface-container-lowest rounded-full overflow-hidden">
+<div class="h-full bg-error w-[12.4%] rounded-full"></div>
+</div>
+</div>
+<div class="flex flex-col items-end gap-1 px-6 border-x border-outline-variant/10">
+<span class="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest">Текущее / Цель</span>
+<span class="text-sm font-mono text-error font-bold tracking-tight">0.8M / 6.5M</span>
+</div>
+<div class="flex items-center gap-3 ml-auto">
+<button class="p-2 rounded-lg text-on-surface-variant hover:text-white hover:bg-white/5 transition-colors">
+<span class="material-symbols-outlined text-xl">edit</span>
+</button>
+<button class="flex items-center gap-2 px-4 py-2 rounded-lg bg-surface-container-highest text-on-surface text-[11px] font-bold uppercase transition-all hover:bg-primary hover:text-on-primary">
+<span class="material-symbols-outlined text-sm">done_all</span>
+                            Выполнить
+                        </button>
+</div>
+</div>
+<!-- Goal Item 3 -->
+<div class="group bg-surface-container-low hover:bg-surface-container-high transition-all duration-300 rounded-xl p-5 flex flex-wrap lg:flex-nowrap items-center gap-6">
+<div class="w-10 h-10 rounded-lg bg-[#0A0B0F] flex items-center justify-center border border-outline-variant/20">
+<span class="material-symbols-outlined text-secondary text-xl" data-weight="fill">stars</span>
+</div>
+<div class="flex-1 min-w-[200px]">
+<h3 class="text-white/60 font-bold text-lg mb-1 line-through">Выход на рынок ОАЭ</h3>
+<div class="flex items-center gap-3">
+<span class="px-2 py-0.5 rounded bg-surface-container-highest text-on-surface-variant text-[10px] font-bold uppercase tracking-tighter">Завершено</span>
+<span class="text-[10px] text-on-surface-variant font-mono uppercase">Дедлайн: 01.01.2025</span>
+</div>
+</div>
+<div class="w-full lg:w-64 flex flex-col gap-2">
+<div class="flex justify-between items-end">
+<span class="text-[10px] font-mono text-on-surface-variant uppercase">Прогресс</span>
+<span class="text-xs font-mono text-white">100%</span>
+</div>
+<div class="h-1.5 w-full bg-surface-container-lowest rounded-full overflow-hidden">
+<div class="h-full bg-secondary-container w-full rounded-full"></div>
+</div>
+</div>
+<div class="flex flex-col items-end gap-1 px-6 border-x border-outline-variant/10">
+<span class="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest">Текущее / Цель</span>
+<span class="text-sm font-mono text-secondary font-bold tracking-tight">1.0 / 1.0</span>
+</div>
+<div class="flex items-center gap-3 ml-auto">
+<button class="p-2 rounded-lg text-on-surface-variant hover:text-white hover:bg-white/5 transition-colors">
+<span class="material-symbols-outlined text-xl">edit</span>
+</button>
+<button class="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-on-primary text-[11px] font-bold uppercase cursor-default">
+<span class="material-symbols-outlined text-sm">check</span>
+                            Выполнено
+                        </button>
+</div>
+</div>
+<!-- Goal Item 4 -->
+<div class="group bg-surface-container-low hover:bg-surface-container-high transition-all duration-300 rounded-xl p-5 flex flex-wrap lg:flex-nowrap items-center gap-6">
+<div class="w-10 h-10 rounded-lg bg-[#0A0B0F] flex items-center justify-center border border-outline-variant/20">
+<span class="material-symbols-outlined text-primary text-xl">groups</span>
+</div>
+<div class="flex-1 min-w-[200px]">
+<h3 class="text-white font-bold text-lg mb-1">Обучение AI-ассистентов (500 сотрудников)</h3>
+<div class="flex items-center gap-3">
+<span class="px-2 py-0.5 rounded bg-primary/10 text-primary text-[10px] font-bold uppercase tracking-tighter">В работе</span>
+<span class="text-[10px] text-on-surface-variant font-mono uppercase">Дедлайн: 30.10.2025</span>
+</div>
+</div>
+<div class="w-full lg:w-64 flex flex-col gap-2">
+<div class="flex justify-between items-end">
+<span class="text-[10px] font-mono text-on-surface-variant uppercase">Прогресс</span>
+<span class="text-xs font-mono text-white">45.0%</span>
+</div>
+<div class="h-1.5 w-full bg-surface-container-lowest rounded-full overflow-hidden">
+<div class="h-full primary-gradient w-[45%] rounded-full"></div>
+</div>
+</div>
+<div class="flex flex-col items-end gap-1 px-6 border-x border-outline-variant/10">
+<span class="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest">Текущее / Цель</span>
+<span class="text-sm font-mono text-primary font-bold tracking-tight">225 / 500</span>
+</div>
+<div class="flex items-center gap-3 ml-auto">
+<button class="p-2 rounded-lg text-on-surface-variant hover:text-white hover:bg-white/5 transition-colors">
+<span class="material-symbols-outlined text-xl">edit</span>
+</button>
+<button class="flex items-center gap-2 px-4 py-2 rounded-lg bg-surface-container-highest text-on-surface text-[11px] font-bold uppercase transition-all hover:bg-primary hover:text-on-primary">
+<span class="material-symbols-outlined text-sm">done_all</span>
+                            Выполнить
+                        </button>
+</div>
+</div>
+</div>
+<!-- Subtle Backdrop Texture -->
+<div class="fixed top-0 right-0 w-1/3 h-screen pointer-events-none opacity-[0.03] z-[-1]">
+<img alt="" class="w-full h-full object-cover grayscale" data-alt="ultra-minimal white wireframe technical grid pattern on dark background with subtle depth and perspective" src="https://lh3.googleusercontent.com/aida-public/AB6AXuA81gChDV0ve_wFF5D-P4MekcllMmvTtrPI_2wfmpkWKyTC4OOAPzxXBiqSmvoQ2yp1v8uP6SeYhTECGSvn-JZ2o13HFygWUdR-53AJmUGCZGyciMpJka25Fgvx3gL0IzF_cL-T8L7NpYoamImEWP8LGOtJYV5-xa55QNO3YVB6Nd1SVVRPH-D4LwFzaM-NxQHJQTBwZrSgrA2Z751zVDxxtokZl75g_xDttysyOA9-pyD9zy2SgJol0_SPL94CAVCpie5t2Jy5QWM"/>
+</div>
+</main>
+</div>
+</body></html>

@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/Users/yappa/.claude/plugins//**)",
+      "Bash(/dev/null cat:*)",
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(json.dumps\\(d, indent=2\\)\\)\")",
+      "WebSearch",
+      "Bash(specify --help)",
+      "Bash(uv tool:*)",
+      "Bash(specify extension:*)"
+    ]
+  }
+}

@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="ru"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;700;800&amp;family=DM+Sans:wght@400;500;700&amp;family=JetBrains+Mono:wght@400;700&amp;family=Space+Grotesk:wght@400;700&amp;family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              colors: {
+                "surface-container-high": "#292a2e",
+                "surface-container-lowest": "#0d0e12",
+                "secondary": "#bcc7de",
+                "on-primary-fixed": "#002114",
+                "primary-container": "#00e5a0",
+                "on-error": "#690005",
+                "surface-container": "#1f1f24",
+                "on-background": "#e3e2e8",
+                "surface-dim": "#121317",
+                "secondary-container": "#3e495d",
+                "on-secondary": "#263143",
+                "surface-container-highest": "#343439",
+                "inverse-primary": "#006c49",
+                "inverse-on-surface": "#2f3035",
+                "on-surface-variant": "#bacbbf",
+                "on-tertiary-container": "#754b00",
+                "outline-variant": "#3b4a41",
+                "on-primary-container": "#006141",
+                "on-tertiary-fixed-variant": "#633f00",
+                "surface-bright": "#38393e",
+                "on-error-container": "#ffdad6",
+                "surface-container-low": "#1a1b20",
+                "surface-tint": "#00e29e",
+                "on-secondary-fixed-variant": "#3c475a",
+                "outline": "#84958a",
+                "on-primary": "#003824",
+                "primary-fixed-dim": "#00e29e",
+                "tertiary-container": "#ffbd60",
+                "secondary-fixed-dim": "#bcc7de",
+                "primary": "#6effc0",
+                "on-tertiary": "#452b00",
+                "on-primary-fixed-variant": "#005236",
+                "primary-fixed": "#47ffb8",
+                "surface-variant": "#343439",
+                "on-secondary-fixed": "#111c2d",
+                "error": "#ffb4ab",
+                "tertiary-fixed-dim": "#ffb955",
+                "on-surface": "#e3e2e8",
+                "inverse-surface": "#e3e2e8",
+                "tertiary-fixed": "#ffddb4",
+                "on-tertiary-fixed": "#291800",
+                "background": "#0A0B0F",
+                "error-container": "#93000a",
+                "secondary-fixed": "#d8e3fb",
+                "tertiary": "#ffe1bd",
+                "surface": "#121317",
+                "on-secondary-container": "#aeb9d0"
+              },
+              fontFamily: {
+                "headline": ["Space Grotesk"],
+                "body": ["DM Sans"],
+                "technical": ["JetBrains Mono"],
+                "brand": ["Bricolage Grotesque"]
+              },
+              borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
+            },
+          },
+        }
+    </script>
+<style>
+        body { background-color: #0A0B0F; color: #e3e2e8; font-family: 'DM Sans', sans-serif; }
+        .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+        .glass-panel { background: rgba(255, 255, 255, 0.04); backdrop-filter: blur(12px); }
+        .primary-gradient { background: linear-gradient(135deg, #6effc0 0%, #00e5a0 100%); }
+    </style>
+</head>
+<body class="flex min-h-screen">
+<!-- SideNavBar -->
+<aside class="h-screen w-64 fixed left-0 top-0 bg-[#111318] flex flex-col p-4 gap-2 z-50">
+<div class="mb-8 px-2">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded-lg bg-surface-container flex items-center justify-center">
+<span class="material-symbols-outlined text-primary-container" data-icon="security" style="font-variation-settings: 'FILL' 1;">security</span>
+</div>
+<div>
+<h2 class="text-lg font-black text-white font-brand leading-none">Core Engine</h2>
+<span class="text-[10px] font-technical text-slate-500 uppercase tracking-widest">v4.2.0-stable</span>
+</div>
+</div>
+</div>
+<nav class="flex-grow flex flex-col gap-1">
+<a class="flex items-center gap-3 px-4 py-3 text-slate-500 hover:text-slate-200 hover:bg-[#1f1f24] rounded-lg transition-all translate-x-1 duration-150" href="#">
+<span class="material-symbols-outlined" data-icon="dashboard">dashboard</span>
+<span class="font-body font-medium text-xs">Dashboard</span>
+</a>
+<!-- Active Navigation -->
+<a class="flex items-center gap-3 px-4 py-3 text-[#00E5A0] bg-[#1f1f24] rounded-lg font-bold transition-all translate-x-1 duration-150" href="#">
+<span class="material-symbols-outlined" data-icon="security" style="font-variation-settings: 'FILL' 1;">security</span>
+<span class="font-body font-medium text-xs">Security Log</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 text-slate-500 hover:text-slate-200 hover:bg-[#1f1f24] rounded-lg transition-all translate-x-1 duration-150" href="#">
+<span class="material-symbols-outlined" data-icon="hub">hub</span>
+<span class="font-body font-medium text-xs">Network Traffic</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 text-slate-500 hover:text-slate-200 hover:bg-[#1f1f24] rounded-lg transition-all translate-x-1 duration-150" href="#">
+<span class="material-symbols-outlined" data-icon="group">group</span>
+<span class="font-body font-medium text-xs">User Matrix</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 text-slate-500 hover:text-slate-200 hover:bg-[#1f1f24] rounded-lg transition-all translate-x-1 duration-150" href="#">
+<span class="material-symbols-outlined" data-icon="verified_user">verified_user</span>
+<span class="font-body font-medium text-xs">Compliance</span>
+</a>
+</nav>
+<div class="mt-auto border-t border-white/5 pt-4 flex flex-col gap-1">
+<button class="w-full primary-gradient text-[#003824] font-bold py-2.5 rounded-lg text-sm mb-4 transition-all scale-95 active:opacity-80">
+                Generate Report
+            </button>
+<a class="flex items-center gap-3 px-4 py-2 text-slate-500 hover:text-slate-200 hover:bg-[#1f1f24] rounded-lg transition-all text-xs" href="#">
+<span class="material-symbols-outlined text-sm" data-icon="help">help</span>
+                Help Center
+            </a>
+<a class="flex items-center gap-3 px-4 py-2 text-slate-500 hover:text-slate-200 hover:bg-[#1f1f24] rounded-lg transition-all text-xs" href="#">
+<span class="material-symbols-outlined text-sm" data-icon="logout">logout</span>
+                Log Out
+            </a>
+</div>
+</aside>
+<!-- Main Content Canvas -->
+<main class="flex-grow ml-64 min-h-screen flex flex-col bg-[#0A0B0F]">
+<!-- TopAppBar -->
+<header class="flex justify-between items-center w-full px-8 py-4 bg-[#0A0B0F]">
+<div class="flex items-center gap-4">
+<nav class="flex items-center gap-2 text-xs font-technical text-slate-500">
+<span>Настройки</span>
+<span class="material-symbols-outlined text-[14px]" data-icon="chevron_right">chevron_right</span>
+<span>Безопасность</span>
+<span class="material-symbols-outlined text-[14px]" data-icon="chevron_right">chevron_right</span>
+<span class="text-primary-container">Журнал</span>
+</nav>
+</div>
+<div class="flex items-center gap-6">
+<div class="hidden md:flex gap-8">
+<a class="text-slate-400 font-medium hover:text-[#1f1f24] text-sm" href="#">Audit Trail</a>
+<a class="text-slate-400 font-medium hover:text-[#1f1f24] text-sm" href="#">Access Control</a>
+<a class="text-slate-400 font-medium hover:text-[#1f1f24] text-sm" href="#">Key Management</a>
+</div>
+<div class="flex items-center gap-3">
+<button class="p-2 text-slate-400 hover:bg-[#1f1f24] rounded-lg transition-all">
+<span class="material-symbols-outlined" data-icon="notifications">notifications</span>
+</button>
+<button class="p-2 text-slate-400 hover:bg-[#1f1f24] rounded-lg transition-all">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+</button>
+<div class="w-8 h-8 rounded-full overflow-hidden ml-2 border border-primary-container/20">
+<img class="w-full h-full object-cover" data-alt="Close-up of a professional security operations officer in a dark tech-focused environment" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDo05cjhbXeLKMG6AQ0h7-86RjSt7QmFdwIHjxmaDUJ0dDfqiG7J4Sn83DCHobb-S7EDCHzSxZCBMUhslGfCUeI21WBwRt4R4rIQepJtSWN-16DZLW0OAR_JODCPOVMef9jjHGPjpYx0MONlBOLX659WRgixwnOBoIgmr2yVg3aTHS7Fq4qZsEdQ80jjo1p2RHLFqhLWR6N_aFjFaotM4vRAlSeD36WP2KP-dNzlJc05LN_T6VyQ5seDfGT18REv-jJISJKGtvaSwI"/>
+</div>
+</div>
+</div>
+</header>
+<!-- Main Workspace -->
+<div class="px-8 py-6 max-w-[1600px] w-full mx-auto grid grid-cols-12 gap-8">
+<!-- Header Section -->
+<div class="col-span-12 flex flex-col md:flex-row md:items-end justify-between gap-6 mb-4">
+<div class="space-y-1">
+<h1 class="text-4xl font-headline font-bold text-on-background tracking-tight">Журнал безопасности</h1>
+<p class="text-secondary font-body max-w-2xl">Мониторинг системных событий и активности пользователей в реальном времени.</p>
+</div>
+<div class="flex items-center gap-4">
+<div class="px-4 py-2 bg-surface-container-low rounded-lg border-l-2 border-primary-container">
+<span class="block text-[10px] text-slate-500 uppercase font-technical">System Status</span>
+<span class="text-sm font-bold text-primary-container flex items-center gap-2">
+<span class="w-1.5 h-1.5 rounded-full bg-primary-container animate-pulse"></span>
+                            All systems operational
+                        </span>
+</div>
+</div>
+</div>
+<!-- Bento Layout: Dashboard View -->
+<div class="col-span-12 lg:col-span-9 space-y-8">
+<!-- Filter Bar -->
+<div class="bg-surface-container-low p-4 rounded-xl flex flex-wrap items-center gap-4">
+<div class="flex-grow min-w-[200px] relative">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm" data-icon="search">search</span>
+<input class="w-full bg-surface-container-lowest border-none rounded-lg pl-10 py-2.5 font-technical text-sm text-on-background focus:ring-1 focus:ring-primary-container/30 transition-all" placeholder="Поиск по событиям или IP..." type="text"/>
+</div>
+<div class="flex items-center gap-2 px-3 py-2 bg-surface-container-lowest rounded-lg text-slate-400 text-xs">
+<span class="material-symbols-outlined text-[16px]" data-icon="calendar_today">calendar_today</span>
+<span>24 May, 2024</span>
+<span class="material-symbols-outlined text-[16px]" data-icon="keyboard_arrow_down">keyboard_arrow_down</span>
+</div>
+<div class="flex items-center gap-1 bg-surface-container-lowest p-1 rounded-lg">
+<button class="px-3 py-1.5 text-xs font-medium rounded-md bg-surface-container-highest text-primary-container">All</button>
+<button class="px-3 py-1.5 text-xs font-medium rounded-md text-slate-500 hover:text-slate-300 transition-colors">Auth</button>
+<button class="px-3 py-1.5 text-xs font-medium rounded-md text-slate-500 hover:text-slate-300 transition-colors">Data</button>
+<button class="px-3 py-1.5 text-xs font-medium rounded-md text-slate-500 hover:text-slate-300 transition-colors">System</button>
+</div>
+<select class="bg-surface-container-lowest border-none rounded-lg px-3 py-2 text-xs text-slate-400 focus:ring-1 focus:ring-primary-container/30">
+<option>Severity: All</option>
+<option>Low</option>
+<option>Medium</option>
+<option>High</option>
+<option>Critical</option>
+</select>
+</div>
+<!-- Security Log Table -->
+<div class="overflow-hidden rounded-xl bg-surface-container-low">
+<div class="overflow-x-auto">
+<table class="w-full text-left border-collapse">
+<thead>
+<tr class="bg-surface-container-lowest/50 text-slate-500 text-[11px] uppercase tracking-widest font-technical border-b border-white/5">
+<th class="px-6 py-4 font-medium">Временная метка</th>
+<th class="px-6 py-4 font-medium">Тип события</th>
+<th class="px-6 py-4 font-medium">Пользователь/Система</th>
+<th class="px-6 py-4 font-medium">IP-адрес</th>
+<th class="px-6 py-4 font-medium">Статус</th>
+<th class="px-6 py-4 font-medium text-right">Действия</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-white/5">
+<!-- Row 1 -->
+<tr class="hover:bg-surface-container transition-colors group">
+<td class="px-6 py-5 font-technical text-sm text-slate-400">2024-05-24 14:32:01</td>
+<td class="px-6 py-5">
+<div class="flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-primary-container"></span>
+<span class="text-sm font-medium text-on-background">Авторизация</span>
+</div>
+</td>
+<td class="px-6 py-5">
+<div class="flex items-center gap-3">
+<div class="w-6 h-6 rounded-full bg-surface-container-highest flex items-center justify-center text-[10px] text-primary-container">АК</div>
+<span class="text-sm text-slate-300">Александр Ковалев</span>
+</div>
+</td>
+<td class="px-6 py-5 font-technical text-sm text-slate-500">192.168.1.104</td>
+<td class="px-6 py-5">
+<span class="px-2 py-1 rounded text-[10px] font-bold uppercase tracking-tight bg-primary-container/10 text-primary-container border border-primary-container/20">Успешно</span>
+</td>
+<td class="px-6 py-5 text-right">
+<button class="text-slate-500 hover:text-primary-container transition-colors">
+<span class="material-symbols-outlined text-[20px]" data-icon="more_vert">more_vert</span>
+</button>
+</td>
+</tr>
+<!-- Row 2 -->
+<tr class="hover:bg-surface-container transition-colors group">
+<td class="px-6 py-5 font-technical text-sm text-slate-400">2024-05-24 14:30:15</td>
+<td class="px-6 py-5">
+<div class="flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-blue-400"></span>
+<span class="text-sm font-medium text-on-background">Экспорт данных</span>
+</div>
+</td>
+<td class="px-6 py-5">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-[18px] text-blue-400" data-icon="smart_toy">smart_toy</span>
+<span class="text-sm text-slate-300">Система (AI)</span>
+</div>
+</td>
+<td class="px-6 py-5 font-technical text-sm text-slate-500">Internal</td>
+<td class="px-6 py-5">
+<span class="px-2 py-1 rounded text-[10px] font-bold uppercase tracking-tight bg-blue-400/10 text-blue-400 border border-blue-400/20">В процессе</span>
+</td>
+<td class="px-6 py-5 text-right">
+<button class="text-slate-500 hover:text-primary-container transition-colors">
+<span class="material-symbols-outlined text-[20px]" data-icon="more_vert">more_vert</span>
+</button>
+</td>
+</tr>
+<!-- Row 3 -->
+<tr class="hover:bg-surface-container transition-colors group">
+<td class="px-6 py-5 font-technical text-sm text-slate-400">2024-05-24 14:28:44</td>
+<td class="px-6 py-5">
+<div class="flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-red-400"></span>
+<span class="text-sm font-medium text-on-background">Неудачный вход</span>
+</div>
+</td>
+<td class="px-6 py-5">
+<div class="flex items-center gap-3 text-red-400">
+<span class="material-symbols-outlined text-[18px]" data-icon="no_accounts">no_accounts</span>
+<span class="text-sm">Неизвестно</span>
+</div>
+</td>
+<td class="px-6 py-5 font-technical text-sm text-slate-500">45.12.88.21</td>
+<td class="px-6 py-5">
+<span class="px-2 py-1 rounded text-[10px] font-bold uppercase tracking-tight bg-red-400/10 text-red-400 border border-red-400/20">Заблокировано</span>
+</td>
+<td class="px-6 py-5 text-right">
+<button class="text-slate-500 hover:text-primary-container transition-colors">
+<span class="material-symbols-outlined text-[20px]" data-icon="more_vert">more_vert</span>
+</button>
+</td>
+</tr>
+<!-- Row 4 -->
+<tr class="hover:bg-surface-container transition-colors group">
+<td class="px-6 py-5 font-technical text-sm text-slate-400">2024-05-24 14:25:30</td>
+<td class="px-6 py-5">
+<div class="flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-primary-container"></span>
+<span class="text-sm font-medium text-on-background">Обновление ключей</span>
+</div>
+</td>
+<td class="px-6 py-5">
+<div class="flex items-center gap-3">
+<div class="w-6 h-6 rounded-full bg-surface-container-highest flex items-center justify-center text-[10px] text-primary-container">МС</div>
+<span class="text-sm text-slate-300">Марина Соколова</span>
+</div>
+</td>
+<td class="px-6 py-5 font-technical text-sm text-slate-500">10.0.4.155</td>
+<td class="px-6 py-5">
+<span class="px-2 py-1 rounded text-[10px] font-bold uppercase tracking-tight bg-primary-container/10 text-primary-container border border-primary-container/20">Успешно</span>
+</td>
+<td class="px-6 py-5 text-right">
+<button class="text-slate-500 hover:text-primary-container transition-colors">
+<span class="material-symbols-outlined text-[20px]" data-icon="more_vert">more_vert</span>
+</button>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+<!-- Side Cards -->
+<div class="col-span-12 lg:col-span-3 space-y-6">
+<!-- Performance Stats Side Card -->
+<div class="bg-surface-container-low rounded-xl p-6 relative overflow-hidden group">
+<div class="absolute top-0 right-0 w-32 h-32 bg-primary-container/5 rounded-full -mr-16 -mt-16 blur-3xl group-hover:bg-primary-container/10 transition-colors"></div>
+<h3 class="text-xs font-technical text-slate-500 uppercase tracking-widest mb-6">Security Engine Stats</h3>
+<div class="space-y-6">
+<div class="space-y-1">
+<span class="text-[11px] text-slate-500 font-body">Активные сессии</span>
+<div class="flex items-end gap-2">
+<span class="text-3xl font-technical font-bold text-on-background">12</span>
+<span class="text-primary-container text-[10px] font-technical pb-1">+2 (1h)</span>
+</div>
+<div class="w-full h-1 bg-surface-container rounded-full overflow-hidden mt-2">
+<div class="h-full bg-primary-container w-[65%]"></div>
+</div>
+</div>
+<div class="space-y-1">
+<span class="text-[11px] text-slate-500 font-body">Запросов/сек</span>
+<div class="flex items-end gap-2">
+<span class="text-3xl font-technical font-bold text-on-background">450</span>
+<span class="text-slate-500 text-[10px] font-technical pb-1">Peak: 1.2k</span>
+</div>
+</div>
+<div class="p-4 bg-surface-container-lowest rounded-lg border border-primary-container/10">
+<span class="block text-[10px] text-slate-500 uppercase font-technical mb-1">Уровень защиты</span>
+<div class="flex items-center justify-between">
+<span class="text-sm font-bold text-primary-container">Ultra-Secure</span>
+<span class="material-symbols-outlined text-primary-container text-lg" data-icon="verified" style="font-variation-settings: 'FILL' 1;">verified</span>
+</div>
+</div>
+</div>
+<button class="w-full mt-6 py-3 border border-outline-variant/20 rounded-lg text-xs font-medium text-primary hover:bg-primary-container/5 transition-colors">
+                        View Analytics
+                    </button>
+</div>
+<!-- Live Map Preview Card -->
+<div class="bg-surface-container-low rounded-xl overflow-hidden">
+<div class="h-40 relative">
+<img class="w-full h-full object-cover opacity-50" data-alt="Stylized dark digital world map with glowing green connection nodes and data flow lines" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCrPbqgi4Nk2MG4WsInVcWiokCWqWwEfTJ-ncE5gOynxpGaHA-MawLNF18jk1p-MItybG6z1FMx35E9Janw30TkORCTa9If0LAkPqpCi3xnD74BVOTTEaNCWWoRg0uvjW1VeNXyNOytreTMM_LDzfuMfmOiiVcvrqQ_wZ2MBdewgD6M-oC4iSc6OIDp__S1xmKdsD_0akZEheU8KtBM2hTGOr7Y1OK5RFw-G3-EF_HdRA53xEuM7HoH1kuZqX6W2Opk2j5lA4tLsXQ"/>
+<div class="absolute inset-0 bg-gradient-to-t from-surface-container-low to-transparent"></div>
+<div class="absolute bottom-4 left-4">
+<span class="text-[10px] font-technical text-primary-container bg-primary-container/10 px-2 py-1 rounded">Live Global Feed</span>
+</div>
+</div>
+<div class="p-4 pt-0">
+<div class="space-y-3">
+<div class="flex justify-between items-center">
+<span class="text-xs text-slate-400">Moscow, RU</span>
+<span class="text-xs font-technical text-on-background">32 hits</span>
+</div>
+<div class="flex justify-between items-center">
+<span class="text-xs text-slate-400">Berlin, DE</span>
+<span class="text-xs font-technical text-on-background">12 hits</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</main>
+</body></html>

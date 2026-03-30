@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Institutional Intelligence | AIStart360</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;700;800&amp;family=DM+Sans:wght@400;500;700&amp;family=JetBrains+Mono:wght@400;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "surface-bright": "#38393e",
+              "outline": "#84958a",
+              "secondary-container": "#3e495d",
+              "on-tertiary": "#452b00",
+              "error": "#ffb4ab",
+              "secondary": "#bcc7de",
+              "on-tertiary-fixed": "#291800",
+              "secondary-fixed-dim": "#bcc7de",
+              "primary-fixed": "#47ffb8",
+              "surface": "#121317",
+              "on-error": "#690005",
+              "on-primary": "#003824",
+              "on-tertiary-container": "#754b00",
+              "secondary-fixed": "#d8e3fb",
+              "surface-container-lowest": "#0d0e12",
+              "surface-container-highest": "#343439",
+              "primary": "#6effc0",
+              "on-secondary-container": "#aeb9d0",
+              "error-container": "#93000a",
+              "background": "#121317",
+              "surface-container-high": "#292a2e",
+              "on-secondary": "#263143",
+              "on-primary-container": "#006141",
+              "on-background": "#e3e2e8",
+              "on-secondary-fixed": "#111c2d",
+              "inverse-surface": "#e3e2e8",
+              "surface-tint": "#00e29e",
+              "surface-container-low": "#1a1b20",
+              "on-tertiary-fixed-variant": "#633f00",
+              "primary-fixed-dim": "#00e29e",
+              "surface-variant": "#343439",
+              "tertiary-fixed-dim": "#ffb955",
+              "on-primary-fixed-variant": "#005236",
+              "primary-container": "#00e5a0",
+              "on-secondary-fixed-variant": "#3c475a",
+              "on-surface-variant": "#bacbbf",
+              "tertiary-fixed": "#ffddb4",
+              "inverse-on-surface": "#2f3035",
+              "on-primary-fixed": "#002114",
+              "on-error-container": "#ffdad6",
+              "tertiary-container": "#ffbd60",
+              "tertiary": "#ffe1bd",
+              "surface-dim": "#121317",
+              "surface-container": "#1f1f24",
+              "inverse-primary": "#006c49",
+              "outline-variant": "#3b4a41",
+              "on-surface": "#e3e2e8"
+            },
+            fontFamily: {
+              "headline": ["Bricolage Grotesque", "sans-serif"],
+              "body": ["DM Sans", "sans-serif"],
+              "mono": ["JetBrains Mono", "monospace"]
+            },
+            borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
+          },
+        },
+      }
+    </script>
+<style>
+      body {
+        background-color: #0A0B0F;
+        color: #e3e2e8;
+        font-family: 'DM Sans', sans-serif;
+      }
+      .material-symbols-outlined {
+        font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+      }
+      .glass-card {
+        background: rgba(255, 255, 255, 0.04);
+        backdrop-filter: blur(12px);
+      }
+      .custom-scrollbar::-webkit-scrollbar {
+        width: 4px;
+      }
+      .custom-scrollbar::-webkit-scrollbar-track {
+        background: #0d0e12;
+      }
+      .custom-scrollbar::-webkit-scrollbar-thumb {
+        background: #343439;
+        border-radius: 10px;
+      }
+    </style>
+</head>
+<body class="antialiased selection:bg-primary selection:text-on-primary">
+<!-- SideNavBar (Shared Component) -->
+<nav class="fixed left-0 top-0 h-screen flex flex-col py-6 px-4 bg-[#111318] w-64 shadow-[20px_0_40px_rgba(0,0,0,0.4)] z-50">
+<div class="mb-10 px-2 flex items-center gap-3">
+<div class="w-10 h-10 rounded-lg bg-primary-container flex items-center justify-center text-on-primary">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">analytics</span>
+</div>
+<div>
+<h1 class="text-lg font-black text-white leading-none">AIStart360</h1>
+<p class="text-[10px] uppercase tracking-widest text-primary font-bold mt-1">Institutional Intelligence</p>
+</div>
+</div>
+<div class="flex-1 space-y-1">
+<a class="text-[#8B95A3] hover:bg-[#1f1f24] hover:text-[#00E5A0] transition-all px-4 py-3 flex items-center gap-3 group" href="#">
+<span class="material-symbols-outlined transition-transform group-hover:translate-x-1">dashboard</span>
+<span class="font-body text-sm">Executive Summary</span>
+</a>
+<a class="bg-[#1f1f24] text-[#00E5A0] font-medium rounded-lg px-4 py-3 flex items-center gap-3 group" href="#">
+<span class="material-symbols-outlined transition-transform group-hover:translate-x-1">groups</span>
+<span class="font-body text-sm">Team Performance</span>
+</a>
+<a class="text-[#8B95A3] hover:bg-[#1f1f24] hover:text-[#00E5A0] transition-all px-4 py-3 flex items-center gap-3 group" href="#">
+<span class="material-symbols-outlined transition-transform group-hover:translate-x-1">person_search</span>
+<span class="font-body text-sm">Expert Directory</span>
+</a>
+<a class="text-[#8B95A3] hover:bg-[#1f1f24] hover:text-[#00E5A0] transition-all px-4 py-3 flex items-center gap-3 group" href="#">
+<span class="material-symbols-outlined transition-transform group-hover:translate-x-1">grid_view</span>
+<span class="font-body text-sm">Resource Grid</span>
+</a>
+<a class="text-[#8B95A3] hover:bg-[#1f1f24] hover:text-[#00E5A0] transition-all px-4 py-3 flex items-center gap-3 group" href="#">
+<span class="material-symbols-outlined transition-transform group-hover:translate-x-1">account_tree</span>
+<span class="font-body text-sm">Project Map</span>
+</a>
+</div>
+<div class="mt-auto space-y-4 pt-6 border-t border-white/5">
+<button class="w-full py-3 px-4 bg-gradient-to-br from-[#6effc0] to-[#00e5a0] text-[#003824] font-bold rounded-lg text-sm flex items-center justify-center gap-2 hover:opacity-90 transition-opacity active:scale-[0.98]">
+<span class="material-symbols-outlined text-sm">add</span>
+                New Allocation
+            </button>
+<div class="space-y-1">
+<a class="text-[#8B95A3] hover:text-white px-4 py-2 flex items-center gap-3 text-xs" href="#">
+<span class="material-symbols-outlined text-lg">description</span>
+                    Documentation
+                </a>
+<a class="text-[#8B95A3] hover:text-white px-4 py-2 flex items-center gap-3 text-xs" href="#">
+<span class="material-symbols-outlined text-lg">help_outline</span>
+                    Support
+                </a>
+</div>
+</div>
+</nav>
+<!-- Main Content Canvas -->
+<main class="ml-64 min-h-screen p-8 lg:p-12 bg-[#0A0B0F]">
+<!-- Header Section -->
+<header class="flex flex-col md:flex-row md:items-end justify-between mb-12 gap-8">
+<div class="max-w-2xl">
+<nav class="flex items-center gap-2 text-primary font-mono text-[10px] tracking-[0.2em] uppercase mb-4">
+<span>Institutional</span>
+<span class="material-symbols-outlined text-[10px]">chevron_right</span>
+<span>Human Intelligence</span>
+</nav>
+<h1 class="font-headline text-5xl font-extrabold text-white tracking-tight leading-tight">
+                    Human Intelligence <br/>
+<span class="text-primary">&amp; Allocation</span>
+</h1>
+</div>
+<div class="grid grid-cols-2 md:grid-cols-4 gap-4 w-full md:w-auto">
+<div class="bg-surface-container-low p-4 rounded-xl border-b-2 border-transparent hover:border-primary transition-all">
+<p class="text-[#8B95A3] text-[10px] font-mono uppercase tracking-wider mb-1">Total Experts</p>
+<p class="font-mono text-2xl font-bold text-white">12</p>
+</div>
+<div class="bg-surface-container-low p-4 rounded-xl border-b-2 border-transparent hover:border-primary transition-all">
+<p class="text-[#8B95A3] text-[10px] font-mono uppercase tracking-wider mb-1">Active Missions</p>
+<p class="font-mono text-2xl font-bold text-white">4</p>
+</div>
+<div class="bg-surface-container-low p-4 rounded-xl border-b-2 border-transparent hover:border-primary transition-all">
+<p class="text-[#8B95A3] text-[10px] font-mono uppercase tracking-wider mb-1">Efficiency</p>
+<p class="font-mono text-2xl font-bold text-primary">92.4%</p>
+</div>
+<div class="bg-surface-container-low p-4 rounded-xl border-b-2 border-transparent hover:border-primary transition-all">
+<p class="text-[#8B95A3] text-[10px] font-mono uppercase tracking-wider mb-1">Response Velocity</p>
+<p class="font-mono text-2xl font-bold text-white">2.4h</p>
+</div>
+</div>
+</header>
+<div class="grid grid-cols-12 gap-8">
+<!-- Left & Center Column: Matrix & Grid -->
+<div class="col-span-12 xl:col-span-8 space-y-8">
+<!-- Resource Heatmap Grid -->
+<section class="bg-surface-container-low rounded-xl p-6">
+<div class="flex items-center justify-between mb-8">
+<div>
+<h3 class="font-headline text-lg font-bold text-white">Resource Availability Grid</h3>
+<p class="text-sm text-[#8B95A3]">Diagnostic cycles across current human intelligence nodes.</p>
+</div>
+<div class="flex gap-2">
+<button class="p-2 hover:bg-surface-container-highest rounded text-[#8B95A3]"><span class="material-symbols-outlined">chevron_left</span></button>
+<span class="font-mono text-xs flex items-center px-4 bg-surface-container-lowest rounded-lg border border-white/5">CYCLE Q3-24</span>
+<button class="p-2 hover:bg-surface-container-highest rounded text-[#8B95A3]"><span class="material-symbols-outlined">chevron_right</span></button>
+</div>
+</div>
+<div class="grid grid-cols-7 gap-2">
+<!-- Legend and Grid would go here -->
+<div class="col-span-7 grid grid-cols-14 gap-1">
+<!-- Heatmap tiles simulation -->
+<!-- Row 1: Team Availability -->
+<div class="h-8 bg-primary/20 rounded-sm"></div>
+<div class="h-8 bg-primary/40 rounded-sm"></div>
+<div class="h-8 bg-primary/80 rounded-sm"></div>
+<div class="h-8 bg-primary/100 rounded-sm"></div>
+<div class="h-8 bg-surface-container-highest rounded-sm"></div>
+<div class="h-8 bg-primary/20 rounded-sm"></div>
+<div class="h-8 bg-primary/40 rounded-sm"></div>
+<div class="h-8 bg-primary/60 rounded-sm"></div>
+<div class="h-8 bg-primary/80 rounded-sm"></div>
+<div class="h-8 bg-primary/20 rounded-sm"></div>
+<div class="h-8 bg-surface-container-highest rounded-sm"></div>
+<div class="h-8 bg-primary/10 rounded-sm"></div>
+<div class="h-8 bg-primary/40 rounded-sm"></div>
+<div class="h-8 bg-primary/60 rounded-sm"></div>
+</div>
+</div>
+<div class="mt-6 flex items-center gap-6 text-[10px] font-mono text-[#8B95A3]">
+<div class="flex items-center gap-2"><div class="w-3 h-3 bg-surface-container-highest rounded-sm"></div> Fully Idle</div>
+<div class="flex items-center gap-2"><div class="w-3 h-3 bg-primary/40 rounded-sm"></div> Partial Load</div>
+<div class="flex items-center gap-2"><div class="w-3 h-3 bg-primary rounded-sm"></div> Critical Capacity</div>
+</div>
+</section>
+<!-- Team Matrix Table -->
+<section class="bg-surface-container-low rounded-xl overflow-hidden">
+<div class="p-6 border-b border-white/5 flex items-center justify-between">
+<h3 class="font-headline text-lg font-bold text-white">Expert Intelligence Matrix</h3>
+<div class="flex gap-4">
+<div class="relative">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-xs text-[#8B95A3]">search</span>
+<input class="bg-surface-container-lowest border-none rounded-lg text-xs pl-9 pr-4 py-2 w-48 focus:ring-1 focus:ring-primary" placeholder="Filter specialists..." type="text"/>
+</div>
+</div>
+</div>
+<table class="w-full text-left border-collapse">
+<thead>
+<tr class="bg-surface-container-lowest text-[#8B95A3] font-mono text-[10px] uppercase tracking-wider">
+<th class="px-6 py-4 font-normal">Expert Profile</th>
+<th class="px-6 py-4 font-normal">Current Status</th>
+<th class="px-6 py-4 font-normal">Active Project</th>
+<th class="px-6 py-4 font-normal">Load Factor</th>
+<th class="px-6 py-4 font-normal text-right">Impact Score</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-white/5">
+<!-- Expert 1 -->
+<tr class="group hover:bg-[#1f1f24] transition-colors">
+<td class="px-6 py-5">
+<div class="flex items-center gap-3">
+<img class="w-10 h-10 rounded-lg object-cover" data-alt="professional headshot of a male data scientist with glasses, neutral gray background, clean lighting" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDmsM0tEDhlZ9m_nGiWKHJjPDYlz7sM7C2wjj-y_wGoLZYIneNhBrsgiEGcXUkYpObKksnx7edzgMFQTb3BWgQ1tqsttwhcwFAmNLtOZot28if38F7D9OK25t2LthuDaBUSO4uHbNTixXPX4GQuMdqWQkF6TeSru6dpH483SxjJUenefbW0YIlgIUOuminF9GVkO9GOVJjgu1J-vcBB9xlrvZnEo83AtUPlnVZYR6xcPHqWrPo7lT2BA5VYevCtI3668MWy8EmVluE"/>
+<div>
+<p class="font-bold text-sm text-white leading-none">Marcus Thorne</p>
+<p class="text-xs text-[#8B95A3] mt-1">Algorithmic Ethics</p>
+</div>
+</div>
+</td>
+<td class="px-6 py-5">
+<span class="px-2 py-1 rounded bg-primary/10 text-primary text-[10px] font-bold uppercase tracking-widest border border-primary/20">Active</span>
+</td>
+<td class="px-6 py-5">
+<p class="text-xs font-medium text-on-background">Project: Sentinel-9</p>
+</td>
+<td class="px-6 py-5">
+<div class="w-full max-w-[120px] bg-surface-container-lowest h-1 rounded-full overflow-hidden">
+<div class="bg-primary h-full w-[85%]"></div>
+</div>
+</td>
+<td class="px-6 py-5 text-right font-mono text-sm text-white">9.82</td>
+</tr>
+<!-- Expert 2 -->
+<tr class="group hover:bg-[#1f1f24] transition-colors">
+<td class="px-6 py-5">
+<div class="flex items-center gap-3">
+<img class="w-10 h-10 rounded-lg object-cover" data-alt="professional portrait of a female research analyst, minimalist studio lighting, dark corporate attire" src="https://lh3.googleusercontent.com/aida-public/AB6AXuA_OjFXXYgKtLOkLHgKbEEtjbW1PmT6Rv9kxEAYErYXzuvrqNUKWvpxqxpujpozCQOrYMYYKYs5E3dv4v48aZbnZJ6QpvpThSsrcR__sFTfst2xsralVf0r3QmhJIJYA27OLl6MApuZ9PCrZJx7WLDXUpL1UCsj09S7BRvpGAd35fFF4H2jTuNszF69TRvYhPeorfJEyDYDcSXu8AJvoGtpuqMKPfC1cmvJ7xwOUGhEqV7bYS9axjKzfwfbK9yeKg9E-EhnOKyYAfw"/>
+<div>
+<p class="font-bold text-sm text-white leading-none">Elena Vance</p>
+<p class="text-xs text-[#8B95A3] mt-1">Semantic Architect</p>
+</div>
+</div>
+</td>
+<td class="px-6 py-5">
+<span class="px-2 py-1 rounded bg-surface-container-highest text-[#8B95A3] text-[10px] font-bold uppercase tracking-widest border border-white/10">Idle</span>
+</td>
+<td class="px-6 py-5">
+<p class="text-xs font-medium text-[#8B95A3]">Unassigned</p>
+</td>
+<td class="px-6 py-5">
+<div class="w-full max-w-[120px] bg-surface-container-lowest h-1 rounded-full overflow-hidden">
+<div class="bg-[#8B95A3] h-full w-[0%]"></div>
+</div>
+</td>
+<td class="px-6 py-5 text-right font-mono text-sm text-white">9.44</td>
+</tr>
+<!-- Expert 3 -->
+<tr class="group hover:bg-[#1f1f24] transition-colors">
+<td class="px-6 py-5">
+<div class="flex items-center gap-3">
+<img class="w-10 h-10 rounded-lg object-cover" data-alt="mature male professional profile, soft focus office environment background, sharp high-end photography" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDnow6rFysZ4oLLTw3wgv8ga2f1cgg48UNfxZ5QuKslfUXVn-xUwJBsAPsy52L9LUOS6V3df3E9pCyZHfLf5-szMH7yFIo3kJWE8TglsgmizfjG4KxEetRqL8kZ8-vW2Hx1QjHz4dE6FPnUtzMEJf_PhBaClCvc8KAgPCWPI3c66UPeFkPn-JFUQ9qjItuhmokvMmGxb3wide969n9Blapturd8oUdzXC1ti59VAwEn54M5PUXLU1FKidSqbXXH79uIfVKRHhQULes"/>
+<div>
+<p class="font-bold text-sm text-white leading-none">Julian Ross</p>
+<p class="text-xs text-[#8B95A3] mt-1">Resource Allocator</p>
+</div>
+</div>
+</td>
+<td class="px-6 py-5">
+<span class="px-2 py-1 rounded bg-secondary-container/20 text-secondary text-[10px] font-bold uppercase tracking-widest border border-secondary/20">Busy</span>
+</td>
+<td class="px-6 py-5">
+<p class="text-xs font-medium text-on-background">Vanguard Alpha</p>
+</td>
+<td class="px-6 py-5">
+<div class="w-full max-w-[120px] bg-surface-container-lowest h-1 rounded-full overflow-hidden">
+<div class="bg-primary h-full w-[98%]"></div>
+</div>
+</td>
+<td class="px-6 py-5 text-right font-mono text-sm text-white">9.12</td>
+</tr>
+</tbody>
+</table>
+</section>
+</div>
+<!-- Right Sidebar: Allocation Center -->
+<aside class="col-span-12 xl:col-span-4 space-y-8">
+<!-- Quick Assign -->
+<div class="glass-card rounded-xl p-8 border border-white/5 shadow-2xl">
+<div class="flex items-center gap-3 mb-6">
+<span class="material-symbols-outlined text-primary">bolt</span>
+<h3 class="font-headline text-xl font-bold text-white tracking-tight">Quick Assign</h3>
+</div>
+<div class="space-y-6">
+<div>
+<label class="block text-[10px] font-mono uppercase tracking-widest text-[#8B95A3] mb-3">Select Mission Target</label>
+<div class="relative">
+<select class="w-full bg-surface-container-lowest border-none rounded-lg py-3 px-4 text-sm focus:ring-1 focus:ring-primary appearance-none">
+<option>Diagnostic: Quantum Drift Analysis</option>
+<option>Integrity Check: Node 404</option>
+<option>Review: Fiscal Alignment 2025</option>
+</select>
+<span class="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-[#8B95A3] pointer-events-none">keyboard_arrow_down</span>
+</div>
+</div>
+<div>
+<label class="block text-[10px] font-mono uppercase tracking-widest text-[#8B95A3] mb-3">Recommended Expert</label>
+<div class="bg-surface-container-lowest p-4 rounded-xl flex items-center gap-4">
+<img class="w-12 h-12 rounded-lg object-cover grayscale hover:grayscale-0 transition-all" data-alt="professional profile of a female consultant with sharp focus and warm natural lighting" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCclFkUHEbXMbT_C14TMwCW7QJg33lenFpo5fqU7LAPMpcU4EZoV15yKBUuYDRd6NUNiZE7wwB30AInPw0PfPUH9Pjg0u_Mhl6jCt96tF8jnCviKKDbwSoZ2cuG0XHI9XhyJLUqoYGTYj5D0TEB-bDC31Df3XvOkTNEM0ubFKL6Z0tusxY8wSuGVwapW3DjyBbEC9wtc_qB5HuqgZccvALpKVUbyfb-ELvRgNZjKV8YFBJwyQr6zR-NTLarlXHVP0olIIWqxo5QUdE"/>
+<div class="flex-1">
+<p class="text-sm font-bold text-white">Elena Vance</p>
+<p class="text-[10px] text-primary font-mono">98% Match Confidence</p>
+</div>
+<span class="material-symbols-outlined text-primary text-xl">verified</span>
+</div>
+</div>
+<button class="w-full py-4 bg-gradient-to-br from-[#6effc0] to-[#00e5a0] text-[#003824] font-black rounded-lg text-sm tracking-widest uppercase hover:scale-[1.02] active:scale-[0.98] transition-all">
+                            Initiate Deployment
+                        </button>
+</div>
+</div>
+<!-- Initiative Queue -->
+<div class="bg-surface-container-low rounded-xl p-6">
+<h3 class="font-headline text-lg font-bold text-white mb-6 flex items-center justify-between">
+                        Initiative Queue
+                        <span class="text-xs font-mono font-normal text-primary">03 Pending</span>
+</h3>
+<div class="space-y-4 custom-scrollbar max-h-[400px] overflow-y-auto pr-2">
+<!-- Project 1 -->
+<div class="p-4 bg-surface-container-lowest rounded-xl group hover:translate-x-1 transition-transform cursor-pointer">
+<div class="flex justify-between items-start mb-2">
+<p class="text-xs font-mono text-[#8B95A3]">ID: 00982-A</p>
+<span class="material-symbols-outlined text-[#8B95A3] text-sm group-hover:text-primary">more_vert</span>
+</div>
+<h4 class="text-sm font-bold text-white mb-1">Algorithmic Auditing Cycle</h4>
+<p class="text-xs text-[#8B95A3] leading-relaxed mb-4">Requires manual oversight for bias detection in neutral networks.</p>
+<div class="flex items-center gap-2">
+<span class="text-[10px] font-mono px-2 py-0.5 rounded bg-surface-container-highest text-white">URGENT</span>
+<span class="text-[10px] font-mono px-2 py-0.5 rounded bg-surface-container-highest text-white">LEVEL 4</span>
+</div>
+</div>
+<!-- Project 2 -->
+<div class="p-4 bg-surface-container-lowest rounded-xl group hover:translate-x-1 transition-transform cursor-pointer">
+<div class="flex justify-between items-start mb-2">
+<p class="text-xs font-mono text-[#8B95A3]">ID: 00984-B</p>
+<span class="material-symbols-outlined text-[#8B95A3] text-sm group-hover:text-primary">more_vert</span>
+</div>
+<h4 class="text-sm font-bold text-white mb-1">Fiscal Architecture Review</h4>
+<p class="text-xs text-[#8B95A3] leading-relaxed mb-4">Final sign-off for regional capital allocation buffers.</p>
+<div class="flex items-center gap-2">
+<span class="text-[10px] font-mono px-2 py-0.5 rounded bg-surface-container-highest text-white">ROUTINE</span>
+<span class="text-[10px] font-mono px-2 py-0.5 rounded bg-surface-container-highest text-white">LEVEL 2</span>
+</div>
+</div>
+<!-- Project 3 -->
+<div class="p-4 bg-surface-container-lowest rounded-xl group hover:translate-x-1 transition-transform cursor-pointer">
+<div class="flex justify-between items-start mb-2">
+<p class="text-xs font-mono text-[#8B95A3]">ID: 00987-X</p>
+<span class="material-symbols-outlined text-[#8B95A3] text-sm group-hover:text-primary">more_vert</span>
+</div>
+<h4 class="text-sm font-bold text-white mb-1">Threat Model Validation</h4>
+<p class="text-xs text-[#8B95A3] leading-relaxed mb-4">Human verification of edge-case security anomalies detected by AI.</p>
+<div class="flex items-center gap-2">
+<span class="text-[10px] font-mono px-2 py-0.5 rounded bg-surface-container-highest text-white">SENSITIVE</span>
+<span class="text-[10px] font-mono px-2 py-0.5 rounded bg-surface-container-highest text-white">LEVEL 5</span>
+</div>
+</div>
+</div>
+</div>
+</aside>
+</div>
+</main>
+<!-- Decorative Corner Elements -->
+<div class="fixed top-0 right-0 w-64 h-64 pointer-events-none overflow-hidden z-0">
+<div class="absolute -top-32 -right-32 w-64 h-64 bg-primary/5 rounded-full blur-[100px]"></div>
+</div>
+<div class="fixed bottom-0 left-0 w-64 h-64 pointer-events-none overflow-hidden z-0">
+<div class="absolute -bottom-32 -left-32 w-64 h-64 bg-primary/5 rounded-full blur-[100px]"></div>
+</div>
+</body></html>

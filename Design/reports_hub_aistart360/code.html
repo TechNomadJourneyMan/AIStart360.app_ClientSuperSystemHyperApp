@@ -1,0 +1,406 @@
+<!DOCTYPE html><html class="dark" lang="ru"><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;700;800&amp;family=DM+Sans:ital,wght@0,400;0,500;0,700;1,400&amp;family=JetBrains+Mono:wght@400;500;700&amp;family=Space+Grotesque:wght@300;400;500;600;700&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 24;
+            vertical-align: middle;
+        }
+        body {
+            background-color: #0A0B0F;
+            color: #e3e2e8;
+            font-family: 'DM Sans', sans-serif;
+        }
+        .font-headline { font-family: 'Bricolage Grotesque', sans-serif; }
+        .font-mono { font-family: 'JetBrains Mono', monospace; }
+        .font-brand { font-family: 'Space Grotesque', sans-serif; }
+        
+        /* Custom scrollbar for institutional feel */
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: #0A0B0F; }
+        ::-webkit-scrollbar-thumb { background: #1f1f24; border-radius: 10px; }
+    </style>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "primary-container": "#00e5a0",
+              "on-primary-fixed-variant": "#005236",
+              "on-tertiary-container": "#754b00",
+              "on-secondary-fixed-variant": "#3c475a",
+              "surface-dim": "#121317",
+              "secondary-fixed-dim": "#bcc7de",
+              "on-secondary-container": "#aeb9d0",
+              "secondary-fixed": "#d8e3fb",
+              "outline-variant": "#3b4a41",
+              "outline": "#84958a",
+              "tertiary-fixed": "#ffddb4",
+              "on-primary": "#003824",
+              "on-secondary-fixed": "#111c2d",
+              "on-primary-fixed": "#002114",
+              "tertiary-container": "#ffbd60",
+              "surface-tint": "#00e29e",
+              "primary-fixed": "#47ffb8",
+              "surface-bright": "#38393e",
+              "on-secondary": "#263143",
+              "background": "#0A0B0F",
+              "primary-fixed-dim": "#00e29e",
+              "on-tertiary-fixed-variant": "#633f00",
+              "surface-container-high": "#292a2e",
+              "secondary-container": "#3e495d",
+              "on-background": "#e3e2e8",
+              "surface-container-lowest": "#0d0e12",
+              "surface-container-low": "#111318",
+              "on-error": "#690005",
+              "on-tertiary-fixed": "#291800",
+              "inverse-on-surface": "#2f3035",
+              "error": "#ffb4ab",
+              "primary": "#6effc0",
+              "on-primary-container": "#006141",
+              "surface-variant": "#343439",
+              "secondary": "#bcc7de",
+              "inverse-surface": "#e3e2e8",
+              "on-surface-variant": "#bacbbf",
+              "surface": "#121317",
+              "inverse-primary": "#006c49",
+              "on-surface": "#e3e2e8",
+              "on-tertiary": "#452b00",
+              "tertiary-fixed-dim": "#ffb955",
+              "tertiary": "#ffe1bd",
+              "surface-container-highest": "#1f1f24",
+              "error-container": "#93000a",
+              "on-error-container": "#ffdad6",
+              "surface-container": "#1f1f24"
+            },
+            fontFamily: {
+              "headline": ["Bricolage Grotesque"],
+              "body": ["DM Sans"],
+              "label": ["Space Grotesque"]
+            },
+            borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
+          },
+        },
+      }
+    </script>
+<style>*, ::before, ::after{--tw-border-spacing-x:0;--tw-border-spacing-y:0;--tw-translate-x:0;--tw-translate-y:0;--tw-rotate:0;--tw-skew-x:0;--tw-skew-y:0;--tw-scale-x:1;--tw-scale-y:1;--tw-pan-x: ;--tw-pan-y: ;--tw-pinch-zoom: ;--tw-scroll-snap-strictness:proximity;--tw-gradient-from-position: ;--tw-gradient-via-position: ;--tw-gradient-to-position: ;--tw-ordinal: ;--tw-slashed-zero: ;--tw-numeric-figure: ;--tw-numeric-spacing: ;--tw-numeric-fraction: ;--tw-ring-inset: ;--tw-ring-offset-width:0px;--tw-ring-offset-color:#fff;--tw-ring-color:rgb(59 130 246 / 0.5);--tw-ring-offset-shadow:0 0 #0000;--tw-ring-shadow:0 0 #0000;--tw-shadow:0 0 #0000;--tw-shadow-colored:0 0 #0000;--tw-blur: ;--tw-brightness: ;--tw-contrast: ;--tw-grayscale: ;--tw-hue-rotate: ;--tw-invert: ;--tw-saturate: ;--tw-sepia: ;--tw-drop-shadow: ;--tw-backdrop-blur: ;--tw-backdrop-brightness: ;--tw-backdrop-contrast: ;--tw-backdrop-grayscale: ;--tw-backdrop-hue-rotate: ;--tw-backdrop-invert: ;--tw-backdrop-opacity: ;--tw-backdrop-saturate: ;--tw-backdrop-sepia: ;--tw-contain-size: ;--tw-contain-layout: ;--tw-contain-paint: ;--tw-contain-style: }::backdrop{--tw-border-spacing-x:0;--tw-border-spacing-y:0;--tw-translate-x:0;--tw-translate-y:0;--tw-rotate:0;--tw-skew-x:0;--tw-skew-y:0;--tw-scale-x:1;--tw-scale-y:1;--tw-pan-x: ;--tw-pan-y: ;--tw-pinch-zoom: ;--tw-scroll-snap-strictness:proximity;--tw-gradient-from-position: ;--tw-gradient-via-position: ;--tw-gradient-to-position: ;--tw-ordinal: ;--tw-slashed-zero: ;--tw-numeric-figure: ;--tw-numeric-spacing: ;--tw-numeric-fraction: ;--tw-ring-inset: ;--tw-ring-offset-width:0px;--tw-ring-offset-color:#fff;--tw-ring-color:rgb(59 130 246 / 0.5);--tw-ring-offset-shadow:0 0 #0000;--tw-ring-shadow:0 0 #0000;--tw-shadow:0 0 #0000;--tw-shadow-colored:0 0 #0000;--tw-blur: ;--tw-brightness: ;--tw-contrast: ;--tw-grayscale: ;--tw-hue-rotate: ;--tw-invert: ;--tw-saturate: ;--tw-sepia: ;--tw-drop-shadow: ;--tw-backdrop-blur: ;--tw-backdrop-brightness: ;--tw-backdrop-contrast: ;--tw-backdrop-grayscale: ;--tw-backdrop-hue-rotate: ;--tw-backdrop-invert: ;--tw-backdrop-opacity: ;--tw-backdrop-saturate: ;--tw-backdrop-sepia: ;--tw-contain-size: ;--tw-contain-layout: ;--tw-contain-paint: ;--tw-contain-style: }/* ! tailwindcss v3.4.17 | MIT License | https://tailwindcss.com */*,::after,::before{box-sizing:border-box;border-width:0;border-style:solid;border-color:#e5e7eb}::after,::before{--tw-content:''}:host,html{line-height:1.5;-webkit-text-size-adjust:100%;-moz-tab-size:4;tab-size:4;font-family:ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";font-feature-settings:normal;font-variation-settings:normal;-webkit-tap-highlight-color:transparent}body{margin:0;line-height:inherit}hr{height:0;color:inherit;border-top-width:1px}abbr:where([title]){-webkit-text-decoration:underline dotted;text-decoration:underline dotted}h1,h2,h3,h4,h5,h6{font-size:inherit;font-weight:inherit}a{color:inherit;text-decoration:inherit}b,strong{font-weight:bolder}code,kbd,pre,samp{font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;font-feature-settings:normal;font-variation-settings:normal;font-size:1em}small{font-size:80%}sub,sup{font-size:75%;line-height:0;position:relative;vertical-align:baseline}sub{bottom:-.25em}sup{top:-.5em}table{text-indent:0;border-color:inherit;border-collapse:collapse}button,input,optgroup,select,textarea{font-family:inherit;font-feature-settings:inherit;font-variation-settings:inherit;font-size:100%;font-weight:inherit;line-height:inherit;letter-spacing:inherit;color:inherit;margin:0;padding:0}button,select{text-transform:none}button,input:where([type=button]),input:where([type=reset]),input:where([type=submit]){-webkit-appearance:button;background-color:transparent;background-image:none}:-moz-focusring{outline:auto}:-moz-ui-invalid{box-shadow:none}progress{vertical-align:baseline}::-webkit-inner-spin-button,::-webkit-outer-spin-button{height:auto}[type=search]{-webkit-appearance:textfield;outline-offset:-2px}::-webkit-search-decoration{-webkit-appearance:none}::-webkit-file-upload-button{-webkit-appearance:button;font:inherit}summary{display:list-item}blockquote,dd,dl,figure,h1,h2,h3,h4,h5,h6,hr,p,pre{margin:0}fieldset{margin:0;padding:0}legend{padding:0}menu,ol,ul{list-style:none;margin:0;padding:0}dialog{padding:0}textarea{resize:vertical}input::placeholder,textarea::placeholder{opacity:1;color:#9ca3af}[role=button],button{cursor:pointer}:disabled{cursor:default}audio,canvas,embed,iframe,img,object,svg,video{display:block;vertical-align:middle}img,video{max-width:100%;height:auto}[hidden]:where(:not([hidden=until-found])){display:none}[type='text'],input:where(:not([type])),[type='email'],[type='url'],[type='password'],[type='number'],[type='date'],[type='datetime-local'],[type='month'],[type='search'],[type='tel'],[type='time'],[type='week'],[multiple],textarea,select{-webkit-appearance:none;appearance:none;background-color:#fff;border-color:#6b7280;border-width:1px;border-radius:0px;padding-top:0.5rem;padding-right:0.75rem;padding-bottom:0.5rem;padding-left:0.75rem;font-size:1rem;line-height:1.5rem;--tw-shadow:0 0 #0000;}[type='text']:focus, input:where(:not([type])):focus, [type='email']:focus, [type='url']:focus, [type='password']:focus, [type='number']:focus, [type='date']:focus, [type='datetime-local']:focus, [type='month']:focus, [type='search']:focus, [type='tel']:focus, [type='time']:focus, [type='week']:focus, [multiple]:focus, textarea:focus, select:focus{outline:2px solid transparent;outline-offset:2px;--tw-ring-inset:var(--tw-empty,/*!*/ /*!*/);--tw-ring-offset-width:0px;--tw-ring-offset-color:#fff;--tw-ring-color:#2563eb;--tw-ring-offset-shadow:var(--tw-ring-inset) 0 0 0 var(--tw-ring-offset-width) var(--tw-ring-offset-color);--tw-ring-shadow:var(--tw-ring-inset) 0 0 0 calc(1px + var(--tw-ring-offset-width)) var(--tw-ring-color);box-shadow:var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow);border-color:#2563eb}input::placeholder,textarea::placeholder{color:#6b7280;opacity:1}::-webkit-datetime-edit-fields-wrapper{padding:0}::-webkit-date-and-time-value{min-height:1.5em;text-align:inherit}::-webkit-datetime-edit{display:inline-flex}::-webkit-datetime-edit,::-webkit-datetime-edit-year-field,::-webkit-datetime-edit-month-field,::-webkit-datetime-edit-day-field,::-webkit-datetime-edit-hour-field,::-webkit-datetime-edit-minute-field,::-webkit-datetime-edit-second-field,::-webkit-datetime-edit-millisecond-field,::-webkit-datetime-edit-meridiem-field{padding-top:0;padding-bottom:0}select{background-image:url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");background-position:right 0.5rem center;background-repeat:no-repeat;background-size:1.5em 1.5em;padding-right:2.5rem;print-color-adjust:exact}[multiple],[size]:where(select:not([size="1"])){background-image:initial;background-position:initial;background-repeat:unset;background-size:initial;padding-right:0.75rem;print-color-adjust:unset}[type='checkbox'],[type='radio']{-webkit-appearance:none;appearance:none;padding:0;print-color-adjust:exact;display:inline-block;vertical-align:middle;background-origin:border-box;-webkit-user-select:none;user-select:none;flex-shrink:0;height:1rem;width:1rem;color:#2563eb;background-color:#fff;border-color:#6b7280;border-width:1px;--tw-shadow:0 0 #0000}[type='checkbox']{border-radius:0px}[type='radio']{border-radius:100%}[type='checkbox']:focus,[type='radio']:focus{outline:2px solid transparent;outline-offset:2px;--tw-ring-inset:var(--tw-empty,/*!*/ /*!*/);--tw-ring-offset-width:2px;--tw-ring-offset-color:#fff;--tw-ring-color:#2563eb;--tw-ring-offset-shadow:var(--tw-ring-inset) 0 0 0 var(--tw-ring-offset-width) var(--tw-ring-offset-color);--tw-ring-shadow:var(--tw-ring-inset) 0 0 0 calc(2px + var(--tw-ring-offset-width)) var(--tw-ring-color);box-shadow:var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow)}[type='checkbox']:checked,[type='radio']:checked{border-color:transparent;background-color:currentColor;background-size:100% 100%;background-position:center;background-repeat:no-repeat}[type='checkbox']:checked{background-image:url("data:image/svg+xml,%3csvg viewBox='0 0 16 16' fill='white' xmlns='http://www.w3.org/2000/svg'%3e%3cpath d='M12.207 4.793a1 1 0 010 1.414l-5 5a1 1 0 01-1.414 0l-2-2a1 1 0 011.414-1.414L6.5 9.086l4.293-4.293a1 1 0 011.414 0z'/%3e%3c/svg%3e");}@media (forced-colors: active) {[type='checkbox']:checked{-webkit-appearance:auto;appearance:auto}}[type='radio']:checked{background-image:url("data:image/svg+xml,%3csvg viewBox='0 0 16 16' fill='white' xmlns='http://www.w3.org/2000/svg'%3e%3ccircle cx='8' cy='8' r='3'/%3e%3c/svg%3e");}@media (forced-colors: active) {[type='radio']:checked{-webkit-appearance:auto;appearance:auto}}[type='checkbox']:checked:hover,[type='checkbox']:checked:focus,[type='radio']:checked:hover,[type='radio']:checked:focus{border-color:transparent;background-color:currentColor}[type='checkbox']:indeterminate{background-image:url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 16 16'%3e%3cpath stroke='white' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M4 8h8'/%3e%3c/svg%3e");border-color:transparent;background-color:currentColor;background-size:100% 100%;background-position:center;background-repeat:no-repeat;}@media (forced-colors: active) {[type='checkbox']:indeterminate{-webkit-appearance:auto;appearance:auto}}[type='checkbox']:indeterminate:hover,[type='checkbox']:indeterminate:focus{border-color:transparent;background-color:currentColor}[type='file']{background:unset;border-color:inherit;border-width:0;border-radius:0;padding:0;font-size:unset;line-height:inherit}[type='file']:focus{outline:1px solid ButtonText;outline:1px auto -webkit-focus-ring-color}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0, 0, 0, 0);white-space:nowrap;border-width:0}.absolute{position:absolute}.relative{position:relative}.sticky{position:sticky}.left-3{left:0.75rem}.top-0{top:0px}.top-1\/2{top:50%}.z-50{z-index:50}.col-span-1{grid-column:span 1 / span 1}.col-span-2{grid-column:span 2 / span 2}.col-span-5{grid-column:span 5 / span 5}.mx-2{margin-left:0.5rem;margin-right:0.5rem}.mb-1{margin-bottom:0.25rem}.mb-10{margin-bottom:2.5rem}.mb-6{margin-bottom:1.5rem}.ml-1{margin-left:0.25rem}.mt-0\.5{margin-top:0.125rem}.mt-1{margin-top:0.25rem}.mt-2{margin-top:0.5rem}.mt-4{margin-top:1rem}.mt-6{margin-top:1.5rem}.mt-auto{margin-top:auto}.flex{display:flex}.inline-flex{display:inline-flex}.grid{display:grid}.hidden{display:none}.h-1{height:0.25rem}.h-10{height:2.5rem}.h-6{height:1.5rem}.h-8{height:2rem}.h-full{height:100%}.h-screen{height:100vh}.min-h-screen{min-height:100vh}.w-10{width:2.5rem}.w-11{width:2.75rem}.w-16{width:4rem}.w-64{width:16rem}.w-8{width:2rem}.w-full{width:100%}.max-w-xl{max-width:36rem}.flex-1{flex:1 1 0%}.shrink-0{flex-shrink:0}.-translate-y-1\/2{--tw-translate-y:-50%;transform:translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y))}.scale-\[0\.98\]{--tw-scale-x:0.98;--tw-scale-y:0.98;transform:translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y))}.cursor-pointer{cursor:pointer}.grid-cols-1{grid-template-columns:repeat(1, minmax(0, 1fr))}.grid-cols-12{grid-template-columns:repeat(12, minmax(0, 1fr))}.flex-col{flex-direction:column}.flex-wrap{flex-wrap:wrap}.items-start{align-items:flex-start}.items-center{align-items:center}.justify-end{justify-content:flex-end}.justify-center{justify-content:center}.justify-between{justify-content:space-between}.gap-1{gap:0.25rem}.gap-2{gap:0.5rem}.gap-3{gap:0.75rem}.gap-4{gap:1rem}.gap-6{gap:1.5rem}.space-y-1 > :not([hidden]) ~ :not([hidden]){--tw-space-y-reverse:0;margin-top:calc(0.25rem * calc(1 - var(--tw-space-y-reverse)));margin-bottom:calc(0.25rem * var(--tw-space-y-reverse))}.space-y-3 > :not([hidden]) ~ :not([hidden]){--tw-space-y-reverse:0;margin-top:calc(0.75rem * calc(1 - var(--tw-space-y-reverse)));margin-bottom:calc(0.75rem * var(--tw-space-y-reverse))}.space-y-4 > :not([hidden]) ~ :not([hidden]){--tw-space-y-reverse:0;margin-top:calc(1rem * calc(1 - var(--tw-space-y-reverse)));margin-bottom:calc(1rem * var(--tw-space-y-reverse))}.space-y-8 > :not([hidden]) ~ :not([hidden]){--tw-space-y-reverse:0;margin-top:calc(2rem * calc(1 - var(--tw-space-y-reverse)));margin-bottom:calc(2rem * var(--tw-space-y-reverse))}.overflow-hidden{overflow:hidden}.overflow-y-auto{overflow-y:auto}.truncate{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.whitespace-nowrap{white-space:nowrap}.rounded{border-radius:0.25rem}.rounded-2xl{border-radius:1rem}.rounded-full{border-radius:9999px}.rounded-lg{border-radius:0.5rem}.rounded-xl{border-radius:0.75rem}.border{border-width:1px}.border-r-0{border-right-width:0px}.border-t{border-top-width:1px}.border-dashed{border-style:dashed}.border-none{border-style:none}.border-\[\#111318\]{--tw-border-opacity:1;border-color:rgb(17 19 24 / var(--tw-border-opacity, 1))}.border-\[\#3b4a41\]{--tw-border-opacity:1;border-color:rgb(59 74 65 / var(--tw-border-opacity, 1))}.border-\[\#3b4a41\]\/10{border-color:rgb(59 74 65 / 0.1)}.border-\[\#3b4a41\]\/30{border-color:rgb(59 74 65 / 0.3)}.bg-\[\#00E5A0\]{--tw-bg-opacity:1;background-color:rgb(0 229 160 / var(--tw-bg-opacity, 1))}.bg-\[\#00E5A0\]\/10{background-color:rgb(0 229 160 / 0.1)}.bg-\[\#0A0B0F\]{--tw-bg-opacity:1;background-color:rgb(10 11 15 / var(--tw-bg-opacity, 1))}.bg-\[\#0A0B0F\]\/80{background-color:rgb(10 11 15 / 0.8)}.bg-\[\#111318\]{--tw-bg-opacity:1;background-color:rgb(17 19 24 / var(--tw-bg-opacity, 1))}.bg-\[\#111318\]\/50{background-color:rgb(17 19 24 / 0.5)}.bg-\[\#1f1f24\]{--tw-bg-opacity:1;background-color:rgb(31 31 36 / var(--tw-bg-opacity, 1))}.bg-\[\#1f1f24\]\/50{background-color:rgb(31 31 36 / 0.5)}.bg-tertiary-container{--tw-bg-opacity:1;background-color:rgb(255 189 96 / var(--tw-bg-opacity, 1))}.bg-transparent{background-color:transparent}.bg-gradient-to-br{background-image:linear-gradient(to bottom right, var(--tw-gradient-stops))}.from-\[\#111318\]{--tw-gradient-from:#111318 var(--tw-gradient-from-position);--tw-gradient-to:rgb(17 19 24 / 0) var(--tw-gradient-to-position);--tw-gradient-stops:var(--tw-gradient-from), var(--tw-gradient-to)}.from-\[\#6effc0\]{--tw-gradient-from:#6effc0 var(--tw-gradient-from-position);--tw-gradient-to:rgb(110 255 192 / 0) var(--tw-gradient-to-position);--tw-gradient-stops:var(--tw-gradient-from), var(--tw-gradient-to)}.to-\[\#00e5a0\]{--tw-gradient-to:#00e5a0 var(--tw-gradient-to-position)}.to-\[\#0A0B0F\]{--tw-gradient-to:#0A0B0F var(--tw-gradient-to-position)}.object-cover{object-fit:cover}.p-2{padding:0.5rem}.p-3{padding:0.75rem}.p-4{padding:1rem}.p-5{padding:1.25rem}.p-6{padding:1.5rem}.p-8{padding:2rem}.px-2{padding-left:0.5rem;padding-right:0.5rem}.px-3{padding-left:0.75rem;padding-right:0.75rem}.px-4{padding-left:1rem;padding-right:1rem}.px-6{padding-left:1.5rem;padding-right:1.5rem}.px-8{padding-left:2rem;padding-right:2rem}.py-0\.5{padding-top:0.125rem;padding-bottom:0.125rem}.py-1{padding-top:0.25rem;padding-bottom:0.25rem}.py-1\.5{padding-top:0.375rem;padding-bottom:0.375rem}.py-2{padding-top:0.5rem;padding-bottom:0.5rem}.py-2\.5{padding-top:0.625rem;padding-bottom:0.625rem}.py-3{padding-top:0.75rem;padding-bottom:0.75rem}.py-4{padding-top:1rem;padding-bottom:1rem}.py-6{padding-top:1.5rem;padding-bottom:1.5rem}.pl-10{padding-left:2.5rem}.pr-4{padding-right:1rem}.pt-6{padding-top:1.5rem}.text-center{text-align:center}.text-right{text-align:right}.font-\[\'JetBrains_Mono\'\]{font-family:'JetBrains Mono'}.font-\[\'Space_Grotesque\'\]{font-family:'Space Grotesque'}.font-headline{font-family:Bricolage Grotesque}.font-mono{font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace}.text-2xl{font-size:1.5rem;line-height:2rem}.text-4xl{font-size:2.25rem;line-height:2.5rem}.text-5xl{font-size:3rem;line-height:1}.text-\[10px\]{font-size:10px}.text-\[11px\]{font-size:11px}.text-lg{font-size:1.125rem;line-height:1.75rem}.text-sm{font-size:0.875rem;line-height:1.25rem}.text-xl{font-size:1.25rem;line-height:1.75rem}.text-xs{font-size:0.75rem;line-height:1rem}.font-bold{font-weight:700}.font-extrabold{font-weight:800}.font-medium{font-weight:500}.font-semibold{font-weight:600}.uppercase{text-transform:uppercase}.leading-none{line-height:1}.leading-relaxed{line-height:1.625}.tracking-tight{letter-spacing:-0.025em}.tracking-tighter{letter-spacing:-0.05em}.tracking-widest{letter-spacing:0.1em}.text-\[\#003824\]{--tw-text-opacity:1;color:rgb(0 56 36 / var(--tw-text-opacity, 1))}.text-\[\#00E5A0\]{--tw-text-opacity:1;color:rgb(0 229 160 / var(--tw-text-opacity, 1))}.text-\[\#3b4a41\]{--tw-text-opacity:1;color:rgb(59 74 65 / var(--tw-text-opacity, 1))}.text-\[\#8B95A3\]{--tw-text-opacity:1;color:rgb(139 149 163 / var(--tw-text-opacity, 1))}.text-\[\#8B95A3\]\/30{color:rgb(139 149 163 / 0.3)}.text-tertiary{--tw-text-opacity:1;color:rgb(255 225 189 / var(--tw-text-opacity, 1))}.text-white{--tw-text-opacity:1;color:rgb(255 255 255 / var(--tw-text-opacity, 1))}.shadow-\[0_20px_40px_rgba\(0\2c 0\2c 0\2c 0\.4\)\]{--tw-shadow:0 20px 40px rgba(0,0,0,0.4);--tw-shadow-colored:0 20px 40px var(--tw-shadow-color);box-shadow:var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow)}.outline-none{outline:2px solid transparent;outline-offset:2px}.backdrop-blur-xl{--tw-backdrop-blur:blur(24px);-webkit-backdrop-filter:var(--tw-backdrop-blur) var(--tw-backdrop-brightness) var(--tw-backdrop-contrast) var(--tw-backdrop-grayscale) var(--tw-backdrop-hue-rotate) var(--tw-backdrop-invert) var(--tw-backdrop-opacity) var(--tw-backdrop-saturate) var(--tw-backdrop-sepia);backdrop-filter:var(--tw-backdrop-blur) var(--tw-backdrop-brightness) var(--tw-backdrop-contrast) var(--tw-backdrop-grayscale) var(--tw-backdrop-hue-rotate) var(--tw-backdrop-invert) var(--tw-backdrop-opacity) var(--tw-backdrop-saturate) var(--tw-backdrop-sepia)}.transition-all{transition-property:all;transition-timing-function:cubic-bezier(0.4, 0, 0.2, 1);transition-duration:150ms}.transition-colors{transition-property:color, background-color, border-color, fill, stroke, -webkit-text-decoration-color;transition-property:color, background-color, border-color, text-decoration-color, fill, stroke;transition-property:color, background-color, border-color, text-decoration-color, fill, stroke, -webkit-text-decoration-color;transition-timing-function:cubic-bezier(0.4, 0, 0.2, 1);transition-duration:150ms}.transition-opacity{transition-property:opacity;transition-timing-function:cubic-bezier(0.4, 0, 0.2, 1);transition-duration:150ms}.duration-200{transition-duration:200ms}.ease-in-out{transition-timing-function:cubic-bezier(0.4, 0, 0.2, 1)}.after\:absolute::after{content:var(--tw-content);position:absolute}.after\:left-\[2px\]::after{content:var(--tw-content);left:2px}.after\:top-\[2px\]::after{content:var(--tw-content);top:2px}.after\:h-5::after{content:var(--tw-content);height:1.25rem}.after\:w-5::after{content:var(--tw-content);width:1.25rem}.after\:rounded-full::after{content:var(--tw-content);border-radius:9999px}.after\:bg-\[\#8B95A3\]::after{content:var(--tw-content);--tw-bg-opacity:1;background-color:rgb(139 149 163 / var(--tw-bg-opacity, 1))}.after\:transition-all::after{content:var(--tw-content);transition-property:all;transition-timing-function:cubic-bezier(0.4, 0, 0.2, 1);transition-duration:150ms}.after\:content-\[\'\'\]::after{--tw-content:'';content:var(--tw-content)}.hover\:border-\[\#00E5A0\]:hover{--tw-border-opacity:1;border-color:rgb(0 229 160 / var(--tw-border-opacity, 1))}.hover\:border-\[\#00E5A0\]\/50:hover{border-color:rgb(0 229 160 / 0.5)}.hover\:bg-\[\#111318\]:hover{--tw-bg-opacity:1;background-color:rgb(17 19 24 / var(--tw-bg-opacity, 1))}.hover\:bg-\[\#1f1f24\]:hover{--tw-bg-opacity:1;background-color:rgb(31 31 36 / var(--tw-bg-opacity, 1))}.hover\:text-\[\#00E5A0\]:hover{--tw-text-opacity:1;color:rgb(0 229 160 / var(--tw-text-opacity, 1))}.hover\:text-error:hover{--tw-text-opacity:1;color:rgb(255 180 171 / var(--tw-text-opacity, 1))}.hover\:text-white:hover{--tw-text-opacity:1;color:rgb(255 255 255 / var(--tw-text-opacity, 1))}.hover\:opacity-90:hover{opacity:0.9}.focus\:ring-1:focus{--tw-ring-offset-shadow:var(--tw-ring-inset) 0 0 0 var(--tw-ring-offset-width) var(--tw-ring-offset-color);--tw-ring-shadow:var(--tw-ring-inset) 0 0 0 calc(1px + var(--tw-ring-offset-width)) var(--tw-ring-color);box-shadow:var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow, 0 0 #0000)}.focus\:ring-\[\#00E5A0\]\/30:focus{--tw-ring-color:rgb(0 229 160 / 0.3)}.active\:scale-95:active{--tw-scale-x:.95;--tw-scale-y:.95;transform:translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y))}.active\:opacity-80:active{opacity:0.8}.group:hover .group-hover\:bg-\[\#00E5A0\]{--tw-bg-opacity:1;background-color:rgb(0 229 160 / var(--tw-bg-opacity, 1))}.group:hover .group-hover\:text-\[\#003824\]{--tw-text-opacity:1;color:rgb(0 56 36 / var(--tw-text-opacity, 1))}.peer:checked ~ .peer-checked\:after\:translate-x-full::after{content:var(--tw-content);--tw-translate-x:100%;transform:translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y))}.peer:checked ~ .peer-checked\:after\:border-white::after{content:var(--tw-content);--tw-border-opacity:1;border-color:rgb(255 255 255 / var(--tw-border-opacity, 1))}.peer:checked ~ .peer-checked\:after\:bg-\[\#00E5A0\]::after{content:var(--tw-content);--tw-bg-opacity:1;background-color:rgb(0 229 160 / var(--tw-bg-opacity, 1))}.peer:focus ~ .peer-focus\:outline-none{outline:2px solid transparent;outline-offset:2px}@media (min-width: 768px){.md\:col-span-4{grid-column:span 4 / span 4}.md\:col-span-8{grid-column:span 8 / span 8}.md\:flex{display:flex}.md\:w-64{width:16rem}.md\:w-auto{width:auto}.md\:grid-cols-12{grid-template-columns:repeat(12, minmax(0, 1fr))}.md\:grid-cols-2{grid-template-columns:repeat(2, minmax(0, 1fr))}.md\:grid-cols-3{grid-template-columns:repeat(3, minmax(0, 1fr))}.md\:flex-row{flex-direction:row}}</style></head>
+<body class="flex min-h-screen overflow-hidden" data-mode="connect">
+<!-- SIDEBAR NAVIGATION (Authority: JSON SideNavBar) -->
+<aside class="flex flex-col h-screen w-64 border-r-0 bg-[#0A0B0F] font-['Space_Grotesque'] tracking-tight py-6 px-4 shrink-0 overflow-y-auto">
+<div class="mb-10 px-2">
+<span class="text-lg font-bold text-[#00E5A0] tracking-tighter">Institutional Intelligence</span>
+<p class="text-[10px] uppercase tracking-widest text-[#8B95A3] mt-1">AIStart360 Engine</p>
+</div>
+<nav class="flex-1 space-y-1">
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-[#8B95A3] hover:text-white hover:bg-[#111318] transition-all duration-200 ease-in-out scale-[0.98] active:opacity-80" href="#">
+<span class="material-symbols-outlined" data-icon="dashboard">dashboard</span>
+<span class="text-sm">Dashboard</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-[#8B95A3] hover:text-white hover:bg-[#111318] transition-all duration-200 ease-in-out scale-[0.98] active:opacity-80" href="#">
+<span class="material-symbols-outlined" data-icon="analytics">analytics</span>
+<span class="text-sm">Market</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-[#8B95A3] hover:text-white hover:bg-[#111318] transition-all duration-200 ease-in-out scale-[0.98] active:opacity-80" href="#">
+<span class="material-symbols-outlined" data-icon="lightbulb">lightbulb</span>
+<span class="text-sm">Insights</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-[#8B95A3] hover:text-white hover:bg-[#111318] transition-all duration-200 ease-in-out scale-[0.98] active:opacity-80" href="#">
+<span class="material-symbols-outlined" data-icon="location_on">location_on</span>
+<span class="text-sm">Point A</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-[#8B95A3] hover:text-white hover:bg-[#111318] transition-all duration-200 ease-in-out scale-[0.98] active:opacity-80" href="#">
+<span class="material-symbols-outlined" data-icon="flag">flag</span>
+<span class="text-sm">Point B</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-[#8B95A3] hover:text-white hover:bg-[#111318] transition-all duration-200 ease-in-out scale-[0.98] active:opacity-80" href="#">
+<span class="material-symbols-outlined" data-icon="trending_up">trending_up</span>
+<span class="text-sm">Growth</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-[#8B95A3] hover:text-white hover:bg-[#111318] transition-all duration-200 ease-in-out scale-[0.98] active:opacity-80" href="#">
+<span class="material-symbols-outlined" data-icon="account_balance">account_balance</span>
+<span class="text-sm">GRI</span>
+</a>
+<!-- ACTIVE TAB: Reports -->
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-[#1f1f24] text-[#00E5A0] font-semibold transition-all duration-200 ease-in-out scale-[0.98] active:opacity-80" href="#">
+<span class="material-symbols-outlined" data-icon="description">description</span>
+<span class="text-sm">Reports</span>
+</a>
+</nav>
+<div class="mt-auto pt-6 border-t border-[#111318]">
+<div class="flex items-center gap-3 px-2">
+<div class="w-8 h-8 rounded bg-[#1f1f24] overflow-hidden flex items-center justify-center">
+<img alt="User Profile Avatar" class="w-full h-full object-cover" data-alt="Sophisticated professional avatar of an executive in a business suit with a neutral background" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBk2zBkOIaIHQ1L1VEvqvOHLX6Zm2PpNwahxZaZFLSojYdwKUpJoiHoef9j5P2Bj8Jpm0PXgsX2OEEzyUPUORLSap8xhFsB7R9qgYsNZyLGG9XgzbBa0CNn1HtzwqM2KOU-REbFMbvY17FHjG0sK5AourKCkm3uqjrS6no7z4KRpltIJI0HJhCQO9NowUthI_I1fbCSTYBLBAttKLYP1KTVptvpYSArxJ5sCkYrTQ4nsYCIe-Yj6f2u_loqVcA7mN60VoumbYdhU_4">
+</div>
+<div class="overflow-hidden">
+<p class="text-xs font-bold text-white truncate">Александр Ковальский</p>
+<p class="text-[10px] text-[#8B95A3] truncate">Executive Director</p>
+</div>
+</div>
+</div>
+</aside>
+<div class="flex-1 flex flex-col h-screen overflow-hidden">
+<!-- TOP APP BAR (Authority: JSON TopAppBar) -->
+<header class="w-full sticky top-0 z-50 bg-[#0A0B0F]/80 backdrop-blur-xl flex justify-between items-center px-8 py-4 shadow-[0_20px_40px_rgba(0,0,0,0.4)]">
+<div class="flex items-center gap-4">
+<div class="font-['JetBrains_Mono'] uppercase text-[10px] tracking-widest text-[#8B95A3]">
+<span class="hover:text-white cursor-pointer transition-colors">IC Group</span>
+<span class="mx-2 text-[#3b4a41]">/</span>
+<span class="text-[#00E5A0]">Reports Hub</span>
+</div>
+</div>
+<div class="flex items-center gap-6">
+<div class="hidden md:flex items-center gap-6 font-['JetBrains_Mono'] uppercase text-xs tracking-widest text-[#8B95A3]">
+<span class="cursor-pointer hover:text-white transition-colors">Strictly Confidential</span>
+</div>
+<div class="flex items-center gap-4 text-[#8B95A3]">
+<span class="material-symbols-outlined cursor-pointer hover:text-white transition-colors active:scale-95" data-icon="notifications">notifications</span>
+<span class="material-symbols-outlined cursor-pointer hover:text-white transition-colors active:scale-95" data-icon="settings">settings</span>
+<span class="material-symbols-outlined cursor-pointer hover:text-white transition-colors active:scale-95" data-icon="help_outline">help_outline</span>
+</div>
+</div>
+</header>
+<!-- MAIN CONTENT CANVAS -->
+<main class="flex-1 overflow-y-auto bg-[#0A0B0F] p-8 space-y-8">
+<!-- 1. EXECUTIVE SUMMARY STRIP (Asymmetric Layout) -->
+<section class="grid grid-cols-1 md:grid-cols-12 gap-6">
+<div class="md:col-span-8 flex flex-col justify-end">
+<h1 class="font-headline text-5xl font-extrabold text-white tracking-tight leading-none">Центр Отчетности</h1>
+<p class="text-[#8B95A3] mt-4 max-w-xl text-lg">Комплексный репозиторий стратегических диагностических отчетов и аудитов безопасности для институционального анализа.</p>
+</div>
+<div class="md:col-span-4 grid grid-cols-1 gap-1">
+<div class="bg-[#111318] p-6 rounded-xl flex flex-col justify-between">
+<div class="flex justify-between items-start">
+<span class="font-['JetBrains_Mono'] text-[10px] uppercase tracking-widest text-[#8B95A3]">Всего отчетов</span>
+<span class="material-symbols-outlined text-[#00E5A0]" data-icon="insert_chart">insert_chart</span>
+</div>
+<div class="mt-4">
+<span class="font-mono text-4xl font-bold text-white">128</span>
+<div class="h-1 w-full bg-[#1f1f24] mt-2 overflow-hidden">
+<div class="h-full bg-[#00E5A0]" style="width: 72%;"></div>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- KPI Cards Strip -->
+<div class="grid grid-cols-1 md:grid-cols-3 gap-1">
+<div class="bg-[#111318] p-5 flex items-center justify-between group cursor-pointer hover:bg-[#1f1f24] transition-colors">
+<div>
+<p class="text-[10px] uppercase tracking-widest text-[#8B95A3] font-mono mb-1">Последний отчет</p>
+<p class="text-white font-medium">14 Октября, 2025</p>
+</div>
+<button class="bg-transparent border border-[#3b4a41]/30 hover:border-[#00E5A0]/50 text-[#00E5A0] p-2 rounded transition-colors">
+<span class="material-symbols-outlined text-sm" data-icon="download">download</span>
+</button>
+</div>
+<div class="bg-[#111318] p-5 flex items-center justify-between">
+<div>
+<p class="text-[10px] uppercase tracking-widest text-[#8B95A3] font-mono mb-1">Запланировано</p>
+<p class="text-white font-medium">01 Ноября, 2025</p>
+</div>
+<span class="material-symbols-outlined text-[#8B95A3]/30" data-icon="event">event</span>
+</div>
+<div class="bg-[#111318] p-5 flex items-center justify-between">
+<div>
+<p class="text-[10px] uppercase tracking-widest text-[#8B95A3] font-mono mb-1">Средний GRI</p>
+<p class="text-white font-mono font-bold text-xl">84.2<span class="text-[10px] text-[#00E5A0] ml-1">▲2.4</span></p>
+</div>
+<span class="material-symbols-outlined text-[#00E5A0]" data-icon="show_chart">show_chart</span>
+</div>
+</div>
+<!-- 2. ACTION BAR -->
+<section class="flex flex-col md:flex-row gap-4 items-center justify-between bg-[#111318]/50 p-4 rounded-xl border border-[#3b4a41]/10">
+<div class="flex flex-wrap gap-2">
+<button class="px-4 py-1.5 rounded-lg text-xs font-medium bg-[#00E5A0] text-[#003824]">Все</button>
+<button class="px-4 py-1.5 rounded-lg text-xs font-medium text-[#8B95A3] hover:text-white transition-colors">Квартальные</button>
+<button class="px-4 py-1.5 rounded-lg text-xs font-medium text-[#8B95A3] hover:text-white transition-colors">Специальные</button>
+<button class="px-4 py-1.5 rounded-lg text-xs font-medium text-[#8B95A3] hover:text-white transition-colors">Аудит безопасности</button>
+</div>
+<div class="flex items-center gap-3 w-full md:w-auto">
+<div class="relative flex-1 md:w-64">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-[#8B95A3] text-sm" data-icon="search">search</span>
+<input class="w-full bg-[#111318] border-none rounded-lg pl-10 pr-4 py-2 text-sm focus:ring-1 focus:ring-[#00E5A0]/30 transition-all outline-none" placeholder="Поиск отчетов..." type="text">
+</div>
+<button class="bg-gradient-to-br from-[#6effc0] to-[#00e5a0] text-[#003824] px-6 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:opacity-90 transition-opacity whitespace-nowrap">
+<span class="material-symbols-outlined text-sm" data-icon="add">add</span>
+                        Сгенерировать отчет
+                    </button>
+</div>
+</section>
+<!-- 3. REPORT GRID/LIST -->
+<section class="space-y-1">
+<!-- Header -->
+<div class="grid grid-cols-12 gap-4 px-6 py-3 font-['JetBrains_Mono'] text-[10px] uppercase tracking-widest text-[#8B95A3]">
+<div class="col-span-5">Название отчета</div>
+<div class="col-span-2 text-center">GRI Индекс</div>
+<div class="col-span-2 text-center">Точность</div>
+<div class="col-span-1 text-center">Формат</div>
+<div class="col-span-2 text-right">Действия</div>
+</div>
+<!-- List Items -->
+<div class="space-y-1">
+<!-- Item 1 -->
+<div class="grid grid-cols-12 gap-4 items-center bg-[#111318] hover:bg-[#1f1f24] px-6 py-4 rounded-lg transition-all duration-200 group">
+<div class="col-span-5 flex items-center gap-4">
+<div class="w-10 h-10 bg-[#1f1f24] rounded-lg flex items-center justify-center text-[#00E5A0] group-hover:bg-[#00E5A0] group-hover:text-[#003824] transition-colors">
+<span class="material-symbols-outlined" data-icon="analytics">analytics</span>
+</div>
+<div>
+<h3 class="text-white font-medium text-sm">Стратегический аудит Q4 2025</h3>
+<p class="text-[11px] text-[#8B95A3] mt-0.5">Сгенерировано: 12 Окт 2025</p>
+</div>
+</div>
+<div class="col-span-2 text-center">
+<span class="font-mono text-white text-sm bg-[#0A0B0F] px-3 py-1 rounded">88.4</span>
+</div>
+<div class="col-span-2 text-center">
+<div class="flex flex-col items-center gap-1">
+<span class="text-xs text-[#00E5A0]">99.2%</span>
+<div class="w-16 h-1 bg-[#1f1f24] rounded-full overflow-hidden">
+<div class="h-full bg-[#00E5A0]" style="width: 99%;"></div>
+</div>
+</div>
+</div>
+<div class="col-span-1 text-center flex justify-center gap-2 text-[#8B95A3]">
+<span class="material-symbols-outlined text-sm hover:text-white cursor-pointer" data-icon="picture_as_pdf">picture_as_pdf</span>
+<span class="material-symbols-outlined text-sm hover:text-white cursor-pointer" data-icon="table_chart">table_chart</span>
+</div>
+<div class="col-span-2 flex justify-end gap-3 text-[#8B95A3]">
+<span class="material-symbols-outlined text-lg hover:text-[#00E5A0] cursor-pointer" data-icon="download">download</span>
+<span class="material-symbols-outlined text-lg hover:text-white cursor-pointer" data-icon="share">share</span>
+<span class="material-symbols-outlined text-lg hover:text-error cursor-pointer" data-icon="archive">archive</span>
+</div>
+</div>
+<!-- Item 2 -->
+<div class="grid grid-cols-12 gap-4 items-center bg-[#111318] hover:bg-[#1f1f24] px-6 py-4 rounded-lg transition-all duration-200 group">
+<div class="col-span-5 flex items-center gap-4">
+<div class="w-10 h-10 bg-[#1f1f24] rounded-lg flex items-center justify-center text-[#00E5A0] group-hover:bg-[#00E5A0] group-hover:text-[#003824] transition-colors">
+<span class="material-symbols-outlined" data-icon="security">security</span>
+</div>
+<div>
+<h3 class="text-white font-medium text-sm">Внеплановый аудит безопасности системы</h3>
+<p class="text-[11px] text-[#8B95A3] mt-0.5">Сгенерировано: 05 Окт 2025</p>
+</div>
+</div>
+<div class="col-span-2 text-center">
+<span class="font-mono text-white text-sm bg-[#0A0B0F] px-3 py-1 rounded">92.1</span>
+</div>
+<div class="col-span-2 text-center">
+<div class="flex flex-col items-center gap-1">
+<span class="text-xs text-[#00E5A0]">94.8%</span>
+<div class="w-16 h-1 bg-[#1f1f24] rounded-full overflow-hidden">
+<div class="h-full bg-[#00E5A0]" style="width: 94%;"></div>
+</div>
+</div>
+</div>
+<div class="col-span-1 text-center flex justify-center gap-2 text-[#8B95A3]">
+<span class="material-symbols-outlined text-sm hover:text-white cursor-pointer" data-icon="picture_as_pdf">picture_as_pdf</span>
+<span class="material-symbols-outlined text-sm hover:text-white cursor-pointer" data-icon="data_object">data_object</span>
+</div>
+<div class="col-span-2 flex justify-end gap-3 text-[#8B95A3]">
+<span class="material-symbols-outlined text-lg hover:text-[#00E5A0] cursor-pointer" data-icon="download">download</span>
+<span class="material-symbols-outlined text-lg hover:text-white cursor-pointer" data-icon="share">share</span>
+<span class="material-symbols-outlined text-lg hover:text-error cursor-pointer" data-icon="archive">archive</span>
+</div>
+</div>
+<!-- Item 3 -->
+<div class="grid grid-cols-12 gap-4 items-center bg-[#111318] hover:bg-[#1f1f24] px-6 py-4 rounded-lg transition-all duration-200 group">
+<div class="col-span-5 flex items-center gap-4">
+<div class="w-10 h-10 bg-[#1f1f24] rounded-lg flex items-center justify-center text-[#00E5A0] group-hover:bg-[#00E5A0] group-hover:text-[#003824] transition-colors">
+<span class="material-symbols-outlined" data-icon="database">database</span>
+</div>
+<div>
+<h3 class="text-white font-medium text-sm">Анализ рыночных рисков - Регион APAC</h3>
+<p class="text-[11px] text-[#8B95A3] mt-0.5">Сгенерировано: 28 Сен 2025</p>
+</div>
+</div>
+<div class="col-span-2 text-center">
+<span class="font-mono text-white text-sm bg-[#0A0B0F] px-3 py-1 rounded">76.5</span>
+</div>
+<div class="col-span-2 text-center">
+<div class="flex flex-col items-center gap-1">
+<span class="text-xs text-tertiary">82.0%</span>
+<div class="w-16 h-1 bg-[#1f1f24] rounded-full overflow-hidden">
+<div class="h-full bg-tertiary-container" style="width: 82%;"></div>
+</div>
+</div>
+</div>
+<div class="col-span-1 text-center flex justify-center gap-2 text-[#8B95A3]">
+<span class="material-symbols-outlined text-sm hover:text-white cursor-pointer" data-icon="picture_as_pdf">picture_as_pdf</span>
+</div>
+<div class="col-span-2 flex justify-end gap-3 text-[#8B95A3]">
+<span class="material-symbols-outlined text-lg hover:text-[#00E5A0] cursor-pointer" data-icon="download">download</span>
+<span class="material-symbols-outlined text-lg hover:text-white cursor-pointer" data-icon="share">share</span>
+<span class="material-symbols-outlined text-lg hover:text-error cursor-pointer" data-icon="archive">archive</span>
+</div>
+</div>
+</div>
+</section>
+<!-- 4. SCHEDULING & AUTOMATION (Bento-style Cards) -->
+<section class="grid grid-cols-1 md:grid-cols-2 gap-6">
+<div class="bg-gradient-to-br from-[#111318] to-[#0A0B0F] p-8 rounded-2xl border border-[#3b4a41]/10 flex flex-col justify-between">
+<div>
+<div class="flex items-center justify-between mb-6">
+<h2 class="font-headline text-2xl font-bold text-white">Автоматизация отчетов</h2>
+<label class="relative inline-flex items-center cursor-pointer">
+<input checked="" class="sr-only peer" type="checkbox">
+<div class="w-11 h-6 bg-[#1f1f24] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-[#8B95A3] peer-checked:after:bg-[#00E5A0] after:rounded-full after:h-5 after:w-5 after:transition-all"></div>
+</label>
+</div>
+<p class="text-[#8B95A3] text-sm leading-relaxed mb-6">Ежемесячный исполнительный отчет будет автоматически генерироваться и отправляться в первый понедельник каждого месяца.</p>
+<div class="space-y-3">
+<div class="flex items-center justify-between p-3 bg-[#1f1f24]/50 rounded-lg">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-[#00E5A0] text-sm" data-icon="schedule">schedule</span>
+<span class="text-xs text-white">Периодичность</span>
+</div>
+<span class="text-xs font-mono text-[#8B95A3]">Ежемесячно</span>
+</div>
+<div class="flex items-center justify-between p-3 bg-[#1f1f24]/50 rounded-lg">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-[#00E5A0] text-sm" data-icon="mail">mail</span>
+<span class="text-xs text-white">Формат доставки</span>
+</div>
+<span class="text-xs font-mono text-[#8B95A3]">PDF + Excel</span>
+</div>
+</div>
+</div>
+</div>
+<div class="bg-[#111318] p-8 rounded-2xl flex flex-col">
+<h2 class="font-headline text-2xl font-bold text-white mb-6">Получатели</h2>
+<div class="space-y-4 flex-1">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-3">
+<img alt="Recipient" class="w-8 h-8 rounded bg-[#1f1f24]" data-alt="Close-up of a diverse female professional avatar with glasses and a smart business look" src="https://lh3.googleusercontent.com/aida-public/AB6AXuASfm1eMQo_jLaHyOedodOaSBbKB7P9N-UbtaW8PDFzZPoOjsr_XGYi5BB-yERbCqWw7VMa7wR3E-5E2UUUPDAvq5ZFVtX6dkl3A5BpNdwryVjzAGC9cQb3A2MbFttaS8cmWNJQJRP77XxciavAjYuC2KOAdnm7xAzYQRiFfN9mHBbdNov-sMl5Egtd0AJ33Rce9RhESlAJRvAwXwI2DO6pbuTPV-LdFrtVFihlKQbh_7KQMVZ_I4QahCaMEcev_r0ml2kTIckYvAs">
+<div>
+<p class="text-xs font-medium text-white">Елена Смирнова</p>
+<p class="text-[10px] text-[#8B95A3]">e.smirnova@aistart360.io</p>
+</div>
+</div>
+<span class="text-[10px] font-mono text-[#00E5A0] bg-[#00E5A0]/10 px-2 py-0.5 rounded">Owner</span>
+</div>
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-3">
+<img alt="Recipient" class="w-8 h-8 rounded bg-[#1f1f24]" data-alt="Avatar of a male professional with short hair and a determined expression, business attire" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAIl3DL3W2IxMfiaCnjX9_YQlxSZYf2nt2u9h-Zxe9GXfpWYYW4SaqsvLH2GrvnuFuK5TQil_V_kEwRAGvq-sF9zCYNU2oogEGPjHu-Mniy7vWv6aijA3vwUR3fHEXUHR5CP-wVt9obyQL3ww-5dk38fD-NscyX5EFemnTGqBQDu4gAhP9BeqnE3lTUKXPBJkITpWJCtQ7j4mujHN7OClHZtn-4zpxvijLzX5_zq0BH4Pr9OyVnjNkNuZmmxAfvK8WqLkUIvjc3Jn0">
+<div>
+<p class="text-xs font-medium text-white">Marina R.</p>
+<p class="text-[10px] text-[#8B95A3]">marina_expert@aistart.app</p>
+</div>
+</div>
+<span class="text-[10px] font-mono text-[#8B95A3] border border-[#3b4a41] px-2 py-0.5 rounded">expert<br></span>
+</div>
+</div>
+<button class="mt-6 w-full py-2.5 rounded-lg border border-dashed border-[#3b4a41] text-[#8B95A3] text-xs font-medium hover:border-[#00E5A0] hover:text-[#00E5A0] transition-all flex items-center justify-center gap-2">
+<span class="material-symbols-outlined text-sm" data-icon="person_add">person_add</span>
+                        Добавить получателя
+                    </button>
+</div>
+</section>
+</main>
+</div>
+</body></html>
