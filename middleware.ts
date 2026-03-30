@@ -61,19 +61,21 @@ export function middleware(request: NextRequest) {
 
   // Read role cookie (set from client after localStorage login)
   const roleCookie = request.cookies.get('aistart360_role')
-  const role = roleCookie?.value as 'admin' | 'expert' | 'owner' | undefined
+  const role = roleCookie?.value as 'admin' | 'expert' | 'owner' | 'client' | undefined
 
   // Authenticated user visiting auth page → redirect to correct panel
   if (isPublic && role) {
     const dest =
       role === 'admin' ? '/dashboard' :
       role === 'owner' ? '/owner/dashboard' :
+      role === 'client' ? '/client/dashboard' :
       '/expert/dashboard'
     return NextResponse.redirect(new URL(dest, request.url))
   }
 
   // Not authenticated, accessing protected page → redirect to login
-  if (!isPublic && !role) {
+  // (client portal paths already handled above via CLIENT_PATHS)
+  if (!isPublic && !role && !isClientPortal) {
     const url = new URL('/login', request.url)
     url.searchParams.set('from', pathname)
     return NextResponse.redirect(url)

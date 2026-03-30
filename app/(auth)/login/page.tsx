@@ -43,7 +43,7 @@ function LoginContent() {
       // After login, role cookie is set by AuthProvider — redirect accordingly
       const role = useAuthStore.getState().role
       if (role === 'client') {
-        router.replace('/client/waiting-room')
+        router.replace('/client/dashboard')
       } else if (role === 'admin') {
         router.replace(from.startsWith('/expert') || from.startsWith('/owner') ? '/dashboard' : from)
       } else if (role === 'owner') {
@@ -177,7 +177,7 @@ function LoginContent() {
             <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest mb-2">
               Demo аккаунты
             </p>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 gap-2">
               {DEMO_ACCOUNTS.map((a) => (
                 <button
                   key={a.label}
