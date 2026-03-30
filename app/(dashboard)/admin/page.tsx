@@ -1,24 +1,10 @@
-import type { Metadata } from 'next'
+'use client'
+
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { SystemHealth } from '@/components/dashboard/SystemHealth'
 import { PendingClientsTable } from '@/components/dashboard/admin/PendingClientsTable'
 import { AdminClientsList } from '@/components/dashboard/admin/AdminClientsList'
-import { createServerClient } from '@/lib/supabase-server'
-
-export const metadata: Metadata = { title: 'Админ-панель — AIStart360' }
-
-const PLATFORM_STATS = [
-  { label: 'Всего клиентов',      value: '48',    delta: '+6 за месяц',       icon: 'groups',            color: 'text-primary'    },
-  { label: 'Активных сегодня',    value: '12',    delta: '25% от базы',       icon: 'online_prediction', color: 'text-primary'    },
-  { label: 'GRI Воркшопов',       value: '34',    delta: '+8 за квартал',     icon: 'radar',             color: 'text-primary'    },
-  { label: 'Отчётов создано',     value: '127',   delta: '+23 за месяц',      icon: 'description',       color: 'text-secondary'  },
-  { label: 'Пользователей',       value: '56',    delta: '8 администраторов', icon: 'manage_accounts',   color: 'text-on-surface' },
-  { label: 'Сред. GRI Score',     value: '5.8',   delta: '+0.4 за квартал',   icon: 'monitoring',        color: 'text-primary'    },
-  { label: 'Экспертов',           value: '48',    delta: 'Активных порталов', icon: 'psychology',        color: 'text-secondary'  },
-  { label: 'ARR Платформы',       value: '$284K', delta: '+18.2% MoM',        icon: 'payments',          color: 'text-primary'    },
-]
-
-// ALL_CLIENTS mock removed
 
 const CONTENT_SECTIONS = [
   { label: 'GRI-диагностика',  href: '/gri',         icon: 'radar',                count: '34 отчёта',    color: 'primary',   desc: 'Воркшопы и анализ по 7 блокам'         },
@@ -43,241 +29,165 @@ const GRI_DISTRIBUTION = [
 ]
 
 const RECENT_ACTIVITY = [
-  { icon: 'radar',        client: 'Vortex Labs',     event: 'GRI Score обновлён: 8.4 (+0.6)',       time: '2ч',  color: 'text-primary'   },
-  { icon: 'person_add',   client: 'TechFlow KZ',     event: 'Новый клиент добавлен в систему',      time: '3ч',  color: 'text-primary'   },
-  { icon: 'description',  client: 'Calyx Digital',   event: 'Отчёт Q1 2026 сгенерирован',           time: '5ч',  color: 'text-secondary' },
-  { icon: 'warning',      client: 'Astra Ventures',  event: 'Риск: Churn Rate вырос до 12%',         time: '6ч',  color: 'text-error'     },
-  { icon: 'check_circle', client: 'Nexum Systems',   event: 'Пилот 21 день — успешно завершён',     time: '1д',  color: 'text-primary'   },
-  { icon: 'payments',     client: 'Momentum Finance',event: 'CAC Payback достиг ≤30 дней',          time: '1д',  color: 'text-primary'   },
-  { icon: 'groups',       client: 'PulseCo',         event: 'Онбординг завершён, старт GRI',         time: '2д',  color: 'text-secondary' },
-  { icon: 'block',        client: 'GreenBridge',     event: 'Критический блок: Operations — 2.1',   time: '3д',  color: 'text-error'     },
+  { icon: 'radar', client: 'Vortex Labs', event: 'GRI Score обновлён: 8.4 (+0.6)', time: '2ч', color: 'text-primary' },
+  { icon: 'person_add', client: 'TechFlow KZ', event: 'Новый клиент добавлен в систему', time: '3ч', color: 'text-primary' },
+  { icon: 'description', client: 'Calyx Digital', event: 'Отчёт Q1 2026 сгенерирован', time: '5ч', color: 'text-secondary' },
+  { icon: 'warning', client: 'Astra Ventures', event: 'Риск: Churn Rate вырос до 12%', time: '6ч', color: 'text-error' },
 ]
 
-const STATUS_CONFIG = {
-  active:   { label: 'Активен',       color: 'text-primary',   dot: 'bg-primary'   },
-  at_risk:  { label: 'В зоне риска',  color: 'text-secondary', dot: 'bg-secondary' },
-  critical: { label: 'Критично',      color: 'text-error',     dot: 'bg-error'     },
-}
+export default function AdminPage() {
+  const [activeTab, setActiveTab] = useState('overview')
 
-function GriBar({ score }: { score: number }) {
-  const color = score >= 7 ? 'bg-primary' : score >= 5 ? 'bg-secondary' : 'bg-error'
-  const textColor = score >= 7 ? 'text-primary' : score >= 5 ? 'text-secondary' : 'text-error'
   return (
-    <div className="flex items-center gap-2 w-24">
-      <div className="flex-1 h-1.5 bg-white/[0.06] rounded-full overflow-hidden">
-        <div className={`h-full ${color} rounded-full`} style={{ width: `${(score / 10) * 100}%` }} />
+    <div className="space-y-8 min-h-screen pb-20">
+      {/* Header with Tab Switcher */}
+      <section className="sticky top-0 z-20 bg-surface/80 backdrop-blur-xl -mx-4 px-4 py-4 border-b border-white/5">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <h1 className="font-headline text-2xl font-black text-on-surface tracking-tight uppercase">Platform Command</h1>
+            <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-[0.2em] mt-1 opacity-60">Status: Operational · Q1 2026</p>
+          </div>
+          
+          <div className="flex bg-surface-container-high p-1 rounded-2xl border border-white/5 self-start">
+            <button
+              onClick={() => setActiveTab('overview')}
+              className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-xs font-bold transition-all duration-300 ${
+                activeTab === 'overview'
+                  ? 'bg-primary text-on-primary shadow-lg shadow-primary/20'
+                  : 'text-on-surface-variant hover:text-on-surface hover:bg-white/5'
+              }`}
+            >
+              <span className="material-symbols-outlined text-base">dashboard</span>
+              ОБЗОР
+            </button>
+            <button
+              onClick={() => setActiveTab('clients')}
+              className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-xs font-bold transition-all duration-300 ${
+                activeTab === 'clients'
+                  ? 'bg-primary text-on-primary shadow-lg shadow-primary/20'
+                  : 'text-on-surface-variant hover:text-on-surface hover:bg-white/5'
+              }`}
+            >
+              <span className="material-symbols-outlined text-base">groups</span>
+              КЛИЕНТЫ
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <div className="animate-in fade-in transition-all duration-500">
+        {activeTab === 'overview' ? (
+          <div className="space-y-8">
+             {/* Stats Grid */}
+             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                {[
+                  { label: 'Всего клиентов',      value: '48',    delta: '+6 за месяц',       icon: 'groups',            color: 'text-primary'    },
+                  { label: 'Сред. GRI Score',     value: '5.8',   delta: '+0.4 за квартал',   icon: 'monitoring',        color: 'text-primary'    },
+                  { label: 'Пользователей',       value: '56',    delta: 'Всего в системе',   icon: 'manage_accounts',   color: 'text-on-surface' },
+                  { label: 'GRI Воркшопов',       value: '34',    delta: 'За всё время',      icon: 'radar',             color: 'text-primary'    },
+                ].map(s => (
+                  <div key={s.label} className="bg-surface-container-low rounded-2xl border border-white/5 p-4 hover:border-primary/20 transition-all group">
+                     <span className={`material-symbols-outlined text-base mb-2 font-light opacity-50 group-hover:opacity-100 ${s.color}`}>{s.icon}</span>
+                     <p className={`text-2xl font-mono font-black ${s.color}`}>{s.value}</p>
+                     <p className="text-[10px] font-mono text-on-surface-variant uppercase mt-1">{s.label}</p>
+                  </div>
+                ))}
+             </div>
+
+             <SystemHealth />
+
+             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div className="lg:col-span-2 space-y-6">
+                   <div className="bg-surface-container-low rounded-3xl border border-white/5 p-6">
+                      <div className="flex items-center justify-between mb-8">
+                         <h2 className="text-xl font-black text-on-surface tracking-tighter">МОДУЛИ ПЛАТФОРМЫ</h2>
+                         <Link href="/clients" className="text-[10px] font-mono text-primary bg-primary/10 px-3 py-1 rounded-full hover:bg-primary/20 transition-colors uppercase font-bold">Base Access ↗</Link>
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                        {CONTENT_SECTIONS.slice(0, 12).map((s) => (
+                          <Link key={s.href} href={s.href} className="flex flex-col h-full bg-surface-container rounded-2xl border border-white/5 p-4 hover:bg-primary/5 hover:border-primary/30 transition-all group">
+                            <span className={`material-symbols-outlined text-xl mb-3 ${s.color === 'primary' ? 'text-primary' : 'text-secondary'}`}>{s.icon}</span>
+                            <p className="text-xs font-black text-on-surface group-hover:text-primary transition-colors leading-tight">{s.label.toUpperCase()}</p>
+                            <p className="text-[9px] text-on-surface-variant mt-auto opacity-60 font-mono">{s.count}</p>
+                          </Link>
+                        ))}
+                      </div>
+                   </div>
+                </div>
+
+                <div className="bg-surface-container-low rounded-3xl border border-white/5 p-6">
+                   <h2 className="text-xl font-black text-on-surface tracking-tighter mb-8 uppercase">Live Intel</h2>
+                   <div className="space-y-6 relative overflow-hidden">
+                      {RECENT_ACTIVITY.map((act, i) => (
+                        <div key={i} className="flex items-start gap-4 relative z-10">
+                           <div className={`w-8 h-8 rounded-full bg-surface-container-high flex items-center justify-center flex-shrink-0`}>
+                              <span className={`material-symbols-outlined text-sm ${act.color}`}>{act.icon}</span>
+                           </div>
+                           <div className="flex-1 min-w-0">
+                              <p className="text-xs font-bold text-on-surface truncate">{act.client}</p>
+                              <p className="text-[10px] text-on-surface-variant leading-relaxed mt-1">{act.event}</p>
+                           </div>
+                           <span className="text-[9px] font-mono text-on-surface-variant opacity-40">{act.time}</span>
+                        </div>
+                      ))}
+                   </div>
+                   <button className="w-full mt-8 py-3 bg-white/5 hover:bg-white/10 rounded-2xl text-[10px] font-bold text-on-surface-variant tracking-widest transition-all">VIEW ALL ACTIVITY</button>
+                </div>
+             </div>
+          </div>
+        ) : (
+          <div className="space-y-10 animate-in slide-in-from-bottom-5 duration-500">
+             <section>
+                <PendingClientsTable />
+             </section>
+
+             <section>
+                <div className="bg-surface-container-low rounded-[32px] border border-white/5 p-1 overflow-hidden">
+                   <div className="px-8 pt-8 pb-4 flex items-center justify-between">
+                      <div>
+                         <h2 className="text-2xl font-black text-on-surface tracking-tighter uppercase">Client Database V1.4</h2>
+                         <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-[0.2em] mt-1 opacity-60">Synced with Primary Node · Global Portals</p>
+                      </div>
+                      <div className="flex gap-2">
+                        <button className="w-10 h-10 rounded-full bg-surface-container-high border border-white/5 flex items-center justify-center text-on-surface hover:bg-primary hover:text-on-primary transition-all shadow-xl">
+                           <span className="material-symbols-outlined text-lg">search</span>
+                        </button>
+                        <button className="px-6 py-2.5 rounded-full bg-primary text-on-primary text-[10px] font-black tracking-widest shadow-lg shadow-primary/20 hover:scale-[0.98] active:scale-95 transition-all">
+                           DEPLOY NEW PORTAL
+                        </button>
+                      </div>
+                   </div>
+                   <AdminClientsList />
+                </div>
+             </section>
+
+             <section className="grid grid-cols-1 md:grid-cols-2 gap-6 pb-20">
+                <div className="bg-surface-container-low rounded-3xl border border-white/5 p-8">
+                   <h2 className="text-sm font-black text-on-surface tracking-widest uppercase mb-6 opacity-60 font-mono">GRI Score Distribution</h2>
+                   <div className="space-y-4">
+                      {GRI_DISTRIBUTION.map(d => (
+                        <div key={d.label}>
+                           <div className="flex justify-between text-[10px] font-mono mb-2 uppercase">
+                              <span className="text-on-surface-variant">{d.label}</span>
+                              <span className="text-on-surface font-bold">{d.pct}%</span>
+                           </div>
+                           <div className="h-1 bg-surface-container-high rounded-full overflow-hidden">
+                              <div className={`h-full ${d.color} shadow-[0_0_8px_rgba(110,255,192,0.4)]`} style={{ width: `${d.pct}%` }} />
+                           </div>
+                        </div>
+                      ))}
+                   </div>
+                </div>
+                <div className="bg-surface-container-low rounded-3xl border border-white/5 p-8 flex flex-col justify-center text-center">
+                   <span className="material-symbols-outlined text-4xl text-primary mb-4 opacity-50">auto_awesome</span>
+                   <h3 className="text-lg font-black text-on-surface leading-tight px-10">AI INSIGHT: INCREASED SCALING VELOCITY IN FINTECH SECTOR</h3>
+                   <p className="text-xs text-on-surface-variant mt-4 opacity-70">Regulatory shifts in central banking expected to boost GRI averages in H2 2026.</p>
+                   <button className="mt-8 text-[10px] font-black text-primary hover:underline uppercase tracking-widest">Read Macro Signals →</button>
+                </div>
+             </section>
+          </div>
+        )}
       </div>
-      <span className={`text-xs font-mono font-bold w-6 text-right ${textColor}`}>{score}</span>
-    </div>
-  )
-}
-
-export default async function AdminPage() {
-  const sb = createServerClient()
-
-  // Real-time counts
-  const { count: clientsCount } = await sb.from('profiles').select('*', { count: 'exact', head: true }).eq('role', 'client')
-  const { count: totalUsers } = await sb.from('profiles').select('*', { count: 'exact', head: true })
-  const { data: diagData } = await sb.from('diagnostics').select('overall_score').eq('is_current', true)
-  const avgGri = diagData && diagData.length > 0
-    ? (diagData.reduce((acc, d) => acc + (d.overall_score || 0), 0) / diagData.length / 10).toFixed(1)
-    : '0.0'
-
-  const stats = [
-    { label: 'Всего клиентов',      value: String(clientsCount ?? 0),    delta: '+0 за месяц',       icon: 'groups',            color: 'text-primary'    },
-    { label: 'Сред. GRI Score',     value: avgGri,                       delta: '+0.0 за квартал',   icon: 'monitoring',        color: 'text-primary'    },
-    { label: 'Пользователей',       value: String(totalUsers ?? 0),      delta: 'Всего в системе',   icon: 'manage_accounts',   color: 'text-on-surface' },
-    { label: 'GRI Воркшопов',       value: String(diagData?.length ?? 0),delta: 'За всё время',      icon: 'radar',             color: 'text-primary'    },
-    { label: 'Активных сегодня',    value: '—',                         delta: 'Coming soon',       icon: 'online_prediction', color: 'text-primary'    },
-    { label: 'Отчётов создано',     value: '—',                         delta: 'Coming soon',       icon: 'description',       color: 'text-secondary'  },
-    { label: 'Экспертов',           value: '—',                         delta: 'Coming soon',       icon: 'psychology',        color: 'text-secondary'  },
-    { label: 'ARR Платформы',       value: '—',                         delta: 'Coming soon',       icon: 'payments',          color: 'text-primary'    },
-  ]
-
-  return (
-    <div className="space-y-8">
-
-      {/* Header */}
-      <section>
-        <p className="text-xs font-mono text-primary/70 uppercase tracking-[0.2em] mb-3">
-          Административная панель · Q1 2026
-        </p>
-        <div className="flex items-start justify-between flex-wrap gap-4">
-          <div>
-            <h1 className="font-headline text-3xl lg:text-4xl font-extrabold text-on-surface">
-              Управление платформой
-            </h1>
-            <p className="text-on-surface-variant mt-2 text-sm">
-              Полный контроль над клиентами, контентом, пользователями и системой
-            </p>
-          </div>
-          <div className="flex gap-2">
-            <Link href="/users"
-              className="flex items-center gap-2 text-sm font-mono text-on-surface-variant border border-white/[0.06] hover:border-primary/30 px-4 py-2 rounded-xl transition-colors">
-              <span className="material-symbols-outlined text-base">manage_accounts</span>
-              Пользователи
-            </Link>
-            <Link href="/reports"
-              className="flex items-center gap-2 text-sm font-mono text-[#003824] bg-gradient-to-r from-primary to-[#00e29e] px-4 py-2 rounded-xl font-bold hover:scale-[0.98] transition-all">
-              <span className="material-symbols-outlined text-base">description</span>
-              Отчёты
-            </Link>
-          </div>
-        </div>
-      </section>
-
-      {/* Platform Stats */}
-      <section className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        {stats.map((s) => (
-          <div key={s.label} className="bg-surface-container-low rounded-2xl border border-white/[0.04] hover:border-primary/10 p-4 transition-colors">
-            <div className="flex items-start justify-between mb-2">
-              <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest leading-tight">{s.label}</p>
-              <span className={`material-symbols-outlined text-base opacity-40 ${s.color}`}>{s.icon}</span>
-            </div>
-            <p className={`text-2xl font-mono font-bold ${s.color} mb-1`}>{s.value}</p>
-            <p className="text-[10px] text-on-surface-variant">{s.delta}</p>
-          </div>
-        ))}
-      </section>
-
-      {/* System Health */}
-      <SystemHealth />
-
-      {/* Pending Applications */}
-      <PendingClientsTable />
-
-      {/* All Clients + Sidebar */}
-      <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-
-        {/* Clients Table */}
-        <AdminClientsList />
-
-        {/* Right column */}
-        <div className="space-y-4">
-          {/* GRI Distribution */}
-          <Link href="/gri" className="block bg-surface-container-low rounded-2xl border border-white/[0.04] hover:border-primary/20 p-5 transition-colors group">
-            <div className="flex items-center justify-between mb-4">
-              <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest">GRI по клиентам</p>
-              <span className="material-symbols-outlined text-sm text-on-surface-variant/30 group-hover:text-primary/60 transition-colors">arrow_forward</span>
-            </div>
-            <div className="space-y-3">
-              {GRI_DISTRIBUTION.map(d => (
-                <div key={d.label}>
-                  <div className="flex justify-between text-xs mb-1.5">
-                    <span className="text-on-surface-variant">{d.label}</span>
-                    <span className="font-mono text-on-surface">{d.count} <span className="text-on-surface-variant/50">({d.pct}%)</span></span>
-                  </div>
-                  <div className="h-1.5 bg-surface-container-high rounded-full overflow-hidden">
-                    <div className={`h-full ${d.color} rounded-full`} style={{ width: `${d.pct}%` }} />
-                  </div>
-                </div>
-              ))}
-            </div>
-            <p className="text-[10px] text-on-surface-variant mt-4">Средний GRI: <strong className="text-primary">5.8 / 10</strong></p>
-          </Link>
-
-          {/* Live Activity */}
-          <div className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-5">
-            <div className="flex items-center justify-between mb-4">
-              <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest">Активность</p>
-              <span className="text-[10px] font-mono text-primary bg-primary/10 border border-primary/20 px-2 py-0.5 rounded-full">live</span>
-            </div>
-            <div className="space-y-3">
-              {RECENT_ACTIVITY.slice(0, 6).map((act, i) => (
-                <div key={i} className="flex items-start gap-3">
-                  <span className={`material-symbols-outlined text-base flex-shrink-0 ${act.color} mt-0.5`}>{act.icon}</span>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[11px] font-medium text-on-surface leading-tight">{act.client}</p>
-                    <p className="text-[10px] text-on-surface-variant leading-tight mt-0.5">{act.event}</p>
-                  </div>
-                  <span className="text-[10px] font-mono text-on-surface-variant flex-shrink-0">{act.time}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Content Sections */}
-      <section>
-        <div className="flex items-center justify-between mb-5">
-          <div>
-            <h2 className="font-headline text-xl font-bold text-on-surface">Разделы платформы</h2>
-            <p className="text-xs text-on-surface-variant mt-1">Управление всем контентом клиентских порталов</p>
-          </div>
-        </div>
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-          {CONTENT_SECTIONS.map((s) => (
-            <Link key={s.href} href={s.href}
-              className="bg-surface-container-low rounded-xl border border-white/[0.04] hover:border-primary/30 hover:bg-primary/5 p-4 transition-all group">
-              <div className="flex items-start justify-between mb-3">
-                <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${s.color === 'primary' ? 'bg-primary/10' : 'bg-secondary/10'}`}>
-                  <span className={`material-symbols-outlined text-base ${s.color === 'primary' ? 'text-primary' : 'text-secondary'}`}>{s.icon}</span>
-                </div>
-                <span className="text-[10px] font-mono text-on-surface-variant bg-surface-container px-2 py-0.5 rounded-md">{s.count}</span>
-              </div>
-              <p className="text-sm font-semibold text-on-surface mb-1 group-hover:text-primary transition-colors">{s.label}</p>
-              <p className="text-[10px] text-on-surface-variant leading-snug">{s.desc}</p>
-            </Link>
-          ))}
-        </div>
-      </section>
-
-      {/* Users + Health */}
-      <section className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-6">
-          <div className="flex items-center justify-between mb-5">
-            <h2 className="font-headline text-base font-bold text-on-surface">Пользователи системы</h2>
-            <Link href="/users" className="text-xs font-mono text-primary hover:underline">Управление →</Link>
-          </div>
-          <div className="space-y-3">
-            {[
-              { role: 'Администраторы', count: 8,  icon: 'admin_panel_settings', color: 'text-primary',   desc: 'Полный доступ к платформе'          },
-              { role: 'Эксперты',       count: 48, icon: 'psychology',           color: 'text-secondary', desc: 'Клиентские порталы и GRI-воркшопы'  },
-            ].map(u => (
-              <div key={u.role} className="flex items-center gap-4 p-3 rounded-xl bg-surface-container border border-white/[0.04]">
-                <span className={`material-symbols-outlined text-xl ${u.color}`}>{u.icon}</span>
-                <div className="flex-1">
-                  <p className="text-sm font-medium text-on-surface">{u.role}</p>
-                  <p className="text-[10px] text-on-surface-variant">{u.desc}</p>
-                </div>
-                <span className={`text-2xl font-mono font-bold ${u.color}`}>{u.count}</span>
-              </div>
-            ))}
-          </div>
-          <Link href="/register"
-            className="mt-4 w-full flex items-center justify-center gap-2 text-sm font-mono text-on-surface-variant border border-white/[0.06] hover:border-primary/30 hover:text-primary px-4 py-2.5 rounded-xl transition-colors">
-            <span className="material-symbols-outlined text-base">person_add</span>
-            Добавить пользователя
-          </Link>
-        </div>
-
-        <div className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-6">
-          <h2 className="font-headline text-base font-bold text-on-surface mb-5">Состояние платформы</h2>
-          <div className="space-y-3">
-            {[
-              { label: 'Средний GRI Score',        value: '5.8 / 10', icon: 'radar',       ok: true  },
-              { label: 'Клиентов в Critical зоне',  value: '6 (12%)',  icon: 'warning',     ok: false },
-              { label: 'Retention 30d (средн.)',    value: '63%',      icon: 'favorite',    ok: true  },
-              { label: 'CAC Payback (средн.)',       value: '38 дней',  icon: 'payments',    ok: true  },
-              { label: 'Активных воркшопов',        value: '7 сейчас', icon: 'groups',      ok: true  },
-              { label: 'Отчётов за месяц',          value: '23 новых', icon: 'description', ok: true  },
-            ].map(item => (
-              <div key={item.label} className="flex items-center gap-3">
-                <span className={`material-symbols-outlined text-base ${item.ok ? 'text-primary' : 'text-error'}`}>{item.icon}</span>
-                <span className="text-sm text-on-surface-variant flex-1">{item.label}</span>
-                <span className={`text-sm font-mono font-bold ${item.ok ? 'text-primary' : 'text-error'}`}>{item.value}</span>
-              </div>
-            ))}
-          </div>
-          <div className="mt-4 p-3 bg-primary/5 border border-primary/10 rounded-xl">
-            <p className="text-xs text-on-surface-variant">
-              <strong className="text-on-surface">Приоритет:</strong> 6 клиентов в Critical зоне требуют работы по Operations и Team блокам.
-            </p>
-          </div>
-        </div>
-      </section>
-
     </div>
   )
 }
