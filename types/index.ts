@@ -88,8 +88,8 @@ export interface Report {
 
 export interface ActivityItem {
   id: string
-  clientName: string
-  industry: string
+  actor: string
+  actorRole: string
   event: string
   gri: number
   status: string

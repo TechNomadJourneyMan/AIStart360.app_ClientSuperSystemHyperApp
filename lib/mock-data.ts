@@ -26,14 +26,6 @@ export const MOCK_ALERTS: Alert[] = [
     action: { label: 'Расследовать', href: '/clients/1' },
   },
   {
-    id: 'a5',
-    severity: 'warning',
-    title: 'ChocoFamily',
-    description: 'Strategic Pivot: Asset divestiture 2023-2025 narrows ecosystem surface.',
-    time: '1h ago',
-    action: { label: 'Профиль клиента', href: '/clients/7' },
-  },
-  {
     id: 'a2',
     severity: 'warning',
     title: 'Calyx Fintech',
@@ -63,13 +55,24 @@ export const MOCK_ALERTS: Alert[] = [
 // Activity Feed
 // ============================================================
 export const MOCK_ACTIVITY: ActivityItem[] = [
-  { id: 'act1', clientName: 'Vortex Labs',    industry: 'FinTech',    event: 'GRI Report Generated',    gri: 8.4, status: 'active',  time: '2h ago' },
-  { id: 'act2', clientName: 'Calyx Digital',  industry: 'E-commerce', event: 'Risk Flag Raised',         gri: 7.3, status: 'at risk', time: '4h ago' },
-  { id: 'act3', clientName: 'Nexum Systems',  industry: 'SaaS',       event: 'Growth Plan Updated',      gri: 6.2, status: 'active',  time: '6h ago' },
-  { id: 'act4', clientName: 'PulseCore',      industry: 'Healthcare', event: 'Data Upload Completed',    gri: 4.8, status: 'inactive', time: '8h ago' },
-  { id: 'act5', clientName: 'Astra Ventures', industry: 'FinTech',    event: 'Onboarding Completed',     gri: 9.1, status: 'active',  time: '1d ago' },
-  { id: 'act6', clientName: 'Forge Analytics', industry: 'SaaS',     event: 'Monthly Review Scheduled', gri: 7.7, status: 'active',  time: '1d ago' },
-  { id: 'act7', clientName: 'ChocoFamily',    industry: 'E-commerce', event: 'Analytical Profile Generated', gri: 5.2, status: 'active',  time: '10m ago' },
+  {
+    id: 'act1',
+    actor: 'Stark Industries',
+    actorRole: 'Client',
+    event: 'завершил модуль GRI Diagnostics Phase 2',
+    gri: 7.2,
+    status: 'active',
+    time: '10m ago',
+  },
+  {
+    id: 'act2',
+    actor: 'Alex M.',
+    actorRole: 'Analyst',
+    event: 'обновил метрики для Stark Industries',
+    gri: 7.8,
+    status: 'active',
+    time: '1h ago',
+  },
 ]
 
 // ============================================================

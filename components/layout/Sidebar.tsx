@@ -8,13 +8,11 @@ import { useUIStore } from '@/stores/ui.store'
 import { useAuthStore } from '@/stores/auth.store'
 import { getPrimaryNavForRole, getSecondaryNavForRole } from '@/lib/navigation'
 
-const CURRENT_ROLE = 'MANAGER' as const
-
 export function Sidebar() {
   const pathname = usePathname()
   const router = useRouter()
   const { sidebarCollapsed, toggleSidebar } = useUIStore()
-  const { logout } = useAuthStore()
+  const { user, logout } = useAuthStore()
   const [moreOpen, setMoreOpen] = useState(false)
 
   const handleLogout = () => {
@@ -22,8 +20,9 @@ export function Sidebar() {
     router.push('/login')
   }
 
-  const primaryNav = getPrimaryNavForRole(CURRENT_ROLE)
-  const secondaryNav = getSecondaryNavForRole(CURRENT_ROLE)
+  const role = ((user?.role || 'client').toUpperCase()) as any
+  const primaryNav = getPrimaryNavForRole(role)
+  const secondaryNav = getSecondaryNavForRole(role)
 
   const isActive = (href: string) =>
     href === '/dashboard' ? pathname === href : pathname.startsWith(href)

@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
-import { MOCK_MARKET, MOCK_SIGNALS } from '@/lib/mock-data'
+import { auth } from '@/lib/auth'
+import { getDashboardData } from '@/lib/get-dashboard-data'
 
 export const metadata: Metadata = { title: 'Рынок' }
 
@@ -17,8 +18,11 @@ const TYPE_ICONS: Record<string, string> = {
   competitive: 'compare_arrows',
 }
 
-export default function MarketPage() {
-  const marketSignals = MOCK_SIGNALS.filter(s => ['market', 'financial', 'regulatory'].includes(s.type))
+export default async function MarketPage() {
+  const session = await auth()
+  const data = getDashboardData(session?.user?.email)
+
+  const marketSignals = data.SIGNALS.filter(s => ['market', 'financial', 'regulatory'].includes(s.type))
 
   return (
     <div className="space-y-8">
@@ -39,9 +43,9 @@ export default function MarketPage() {
       {/* TAM / SAM / SOM */}
       <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {[
-          { label: 'TAM', sublabel: 'Total Addressable Market', value: MOCK_MARKET.tam, icon: 'language', desc: 'Весь доступный рынок' },
-          { label: 'SAM', sublabel: 'Serviceable Addressable Market', value: MOCK_MARKET.sam, icon: 'travel_explore', desc: 'Обслуживаемый сегмент' },
-          { label: 'SOM', sublabel: 'Serviceable Obtainable Market', value: MOCK_MARKET.som, icon: 'my_location', desc: 'Целевой захват' },
+          { label: 'TAM', sublabel: 'Total Addressable Market', value: data.MARKET.tam, icon: 'language', desc: 'Весь доступный рынок' },
+          { label: 'SAM', sublabel: 'Serviceable Addressable Market', value: data.MARKET.sam, icon: 'travel_explore', desc: 'Обслуживаемый сегмент' },
+          { label: 'SOM', sublabel: 'Serviceable Obtainable Market', value: data.MARKET.som, icon: 'my_location', desc: 'Целевой захват' },
         ].map((m) => (
           <div key={m.label} className="bg-surface-container-low rounded-2xl border border-white/[0.04] hover:border-primary/20 p-6 transition-colors group">
             <div className="flex items-start justify-between mb-4">
@@ -67,11 +71,11 @@ export default function MarketPage() {
               <p className="text-xs text-on-surface-variant mt-1">Распределение по отраслям</p>
             </div>
             <span className="text-xs font-mono text-primary bg-primary/10 px-3 py-1 rounded-full border border-primary/20">
-              {MOCK_MARKET.growth}
+              {data.MARKET.growth}
             </span>
           </div>
           <div className="space-y-4">
-            {MOCK_MARKET.segments.map((seg) => (
+            {data.MARKET.segments.map((seg) => (
               <div key={seg.name}>
                 <div className="flex justify-between text-sm mb-1.5">
                   <span className="text-on-surface-variant">{seg.name}</span>
@@ -94,7 +98,7 @@ export default function MarketPage() {
             Ключевые тренды
           </p>
           <div className="space-y-3">
-            {MOCK_MARKET.trends.map((trend) => {
+            {data.MARKET.trends.map((trend) => {
               const colors = PRIORITY_COLORS[trend.priority as keyof typeof PRIORITY_COLORS] ?? PRIORITY_COLORS.low
               return (
                 <div

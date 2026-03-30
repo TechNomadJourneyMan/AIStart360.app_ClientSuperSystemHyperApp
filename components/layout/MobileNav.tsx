@@ -3,6 +3,9 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useState, useEffect } from 'react'
+import { useAuthStore } from '@/stores/auth.store'
+import { getNavForRole } from '@/lib/navigation'
+import type { UserRole } from '@/types'
 
 // ── Bottom bar — 4 primary tabs ─────────────────────────────────────────────
 const BOTTOM_TABS = [
@@ -58,6 +61,18 @@ const DRAWER_SECTIONS = [
 export function MobileNav() {
   const pathname = usePathname()
   const [drawerOpen, setDrawerOpen] = useState(false)
+  const { user } = useAuthStore()
+  
+  const role = ((user?.role || 'client').toUpperCase()) as UserRole
+  const allowedNav = getNavForRole(role).map(item => item.href)
+
+  // Filter out sections
+  const filteredDrawer = DRAWER_SECTIONS.map(sec => ({
+    ...sec,
+    items: sec.items.filter(item => allowedNav.includes(item.href))
+  })).filter(sec => sec.items.length > 0)
+  
+  const filteredTabs = BOTTOM_TABS.filter(item => allowedNav.includes(item.href))
 
   // Close drawer on route change
   useEffect(() => { setDrawerOpen(false) }, [pathname])
@@ -71,14 +86,14 @@ export function MobileNav() {
   const isActive = (href: string) =>
     href === '/dashboard' ? pathname === href : pathname.startsWith(href)
 
-  const isAnyDrawerActive = DRAWER_SECTIONS.flatMap(s => s.items).some(i => isActive(i.href))
+  const isAnyDrawerActive = filteredDrawer.flatMap(s => s.items).some(i => isActive(i.href))
 
   return (
     <>
       {/* ── Bottom navigation bar ── */}
       <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-[#111318]/95 backdrop-blur-xl border-t border-outline-variant/20 safe-area-bottom">
         <div className="flex">
-          {BOTTOM_TABS.map((item) => {
+          {filteredTabs.map((item) => {
             const active = isActive(item.href)
             return (
               <Link
@@ -154,7 +169,7 @@ export function MobileNav() {
 
           {/* Sections */}
           <div className="px-4 py-4 space-y-5">
-            {DRAWER_SECTIONS.map((section) => (
+            {filteredDrawer.map((section) => (
               <div key={section.title}>
                 <p className="text-[9px] font-mono text-on-surface-variant/50 uppercase tracking-[0.15em] mb-2 px-1">
                   {section.title}

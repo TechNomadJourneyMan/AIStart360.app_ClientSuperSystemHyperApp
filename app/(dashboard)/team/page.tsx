@@ -1,10 +1,14 @@
 import type { Metadata } from 'next'
-import { MOCK_TEAM } from '@/lib/mock-data'
+import { auth } from '@/lib/auth'
+import { getDashboardData } from '@/lib/get-dashboard-data'
 import { StatusBadge } from '@/components/common/StatusBadge'
 
 export const metadata: Metadata = { title: 'Team' }
 
-export default function TeamPage() {
+export default async function TeamPage() {
+  const session = await auth()
+  const data = getDashboardData(session?.user?.email)
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -39,7 +43,7 @@ export default function TeamPage() {
 
       {/* Team Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {MOCK_TEAM.map((member) => (
+        {data.TEAM.map((member) => (
           <div key={member.id} className="bg-surface-container rounded-xl p-5">
             {/* Member Info */}
             <div className="flex items-center gap-3 mb-4">

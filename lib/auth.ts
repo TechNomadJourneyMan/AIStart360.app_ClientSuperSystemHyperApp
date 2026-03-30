@@ -18,6 +18,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         session.user.id = user.id
         // @ts-ignore
         session.user.role = (user as any).role
+        // @ts-ignore
+        session.user.orgId = (user as any).orgId
       }
       return session
     },

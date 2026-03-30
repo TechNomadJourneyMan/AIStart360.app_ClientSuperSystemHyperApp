@@ -5,6 +5,14 @@ import bcrypt from 'bcryptjs'
 const prisma = new PrismaClient()
 
 async function main() {
+  console.log('Clearing existing data...')
+  await prisma.pulseMetric.deleteMany()
+  await prisma.griReport.deleteMany()
+  await prisma.client.deleteMany()
+  await prisma.user.deleteMany()
+  await prisma.organization.deleteMany()
+  console.log('Data cleared.')
+
   // 1. Create Default Org
   const org = await prisma.organization.upsert({
     where: { slug: 'aistart360' },
@@ -41,15 +49,25 @@ async function main() {
     },
   })
 
-  // 4. Create ChocoFamily Client Account
-  const chocoUser = await prisma.user.upsert({
-    where: { email: 'portal@chocofamily.kz' },
+  // 4. Create ChocoFamily Org
+  const chocoOrg = await prisma.organization.upsert({
+    where: { slug: 'chocofamily' },
     update: {},
     create: {
+      name: 'ChocoFamily Enterprise',
+      slug: 'chocofamily',
+    },
+  })
+
+  // 5. Create ChocoFamily Client Account
+  const chocoUser = await prisma.user.upsert({
+    where: { email: 'portal@chocofamily.kz' },
+    update: { orgId: chocoOrg.id },
+    create: {
       email: 'portal@chocofamily.kz',
-      name: 'ChocoFamily Holding',
+      name: 'ChocoFamily CEO',
       passwordHash: await bcrypt.hash('ChocoFamily2026!', 12),
-      orgId: org.id,
+      orgId: chocoOrg.id,
       role: 'CLIENT',
     },
   })
@@ -102,7 +120,7 @@ async function main() {
       sector: 'IT Holding',
       stage: 'Scale',
       status: 'active',
-      orgId: org.id,
+      orgId: chocoOrg.id,
       managerId: manager.id,
       website: 'chocofamily.kz',
       griReports: {

@@ -22,7 +22,7 @@ export function ActivityFeed({ items }: ActivityFeedProps) {
         <table className="w-full">
           <thead>
             <tr className="bg-surface-container-high">
-              {['Клиент', 'Событие', 'GRI', 'Статус', 'Время'].map((h) => (
+              {['Пользователь', 'Событие', 'GRI', 'Статус', 'Время'].map((h) => (
                 <th key={h} className="px-5 py-3 text-left text-[10px] font-mono uppercase tracking-widest text-on-surface-variant whitespace-nowrap first:rounded-tl-xl last:rounded-tr-xl">
                   {h}
                 </th>
@@ -34,10 +34,10 @@ export function ActivityFeed({ items }: ActivityFeedProps) {
               <tr key={item.id} className={`border-b border-outline-variant/10 last:border-0 table-row-hover ${i % 2 === 0 ? '' : 'bg-surface-container/50'}`}>
                 <td className="px-5 py-3.5">
                   <div className="flex items-center gap-3">
-                    <Avatar name={item.clientName} size="sm" />
+                    <Avatar name={item.actor} size="sm" />
                     <div>
-                      <p className="text-sm font-medium text-on-surface">{item.clientName}</p>
-                      <p className="text-xs text-on-surface-variant">{item.industry}</p>
+                      <p className="text-sm font-medium text-on-surface">{item.actor}</p>
+                      <p className="text-xs text-on-surface-variant">{item.actorRole}</p>
                     </div>
                   </div>
                 </td>

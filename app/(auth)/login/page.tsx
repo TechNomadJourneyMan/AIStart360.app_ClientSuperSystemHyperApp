@@ -43,9 +43,9 @@ function LoginContent() {
       // After login, role cookie is set by AuthProvider — redirect accordingly
       const role = useAuthStore.getState().role
       if (role === 'client') {
-        router.replace('/client/dashboard')
+        router.replace('/dashboard')
       } else if (role === 'admin') {
-        router.replace(from.startsWith('/expert') || from.startsWith('/owner') ? '/dashboard' : from)
+        router.replace(from.startsWith('/expert') || from.startsWith('/owner') || from.startsWith('/client') ? '/dashboard' : from)
       } else if (role === 'owner') {
         router.replace('/owner/dashboard')
       } else {
@@ -172,26 +172,21 @@ function LoginContent() {
             Введите свои данные для входа
           </p>
 
-          {/* Demo accounts — horizontal scroll on narrow screens */}
+          {/* Demo Button */}
           <div className="mb-5">
-            <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest mb-2">
-              Demo аккаунты
-            </p>
-            <div className="grid grid-cols-2 gap-2">
-              {DEMO_ACCOUNTS.map((a) => (
-                <button
-                  key={a.label}
-                  type="button"
-                  onClick={() => fillDemo(a.email, a.hint)}
-                  className="text-xs font-mono bg-surface-container hover:bg-surface-container-high border border-white/[0.06] hover:border-primary/30 text-on-surface-variant hover:text-primary px-2.5 py-2 rounded-xl transition-all text-left min-w-0"
-                >
-                  <span className={`text-[10px] uppercase tracking-wider block mb-0.5 ${a.role === 'client' ? 'text-primary' : 'text-secondary'}`}>
-                    {a.label}
-                  </span>
-                  <span className="text-[10px] opacity-70 block truncate">{a.email}</span>
-                </button>
-              ))}
-            </div>
+            <button
+              type="button"
+              onClick={async () => {
+                setValue('email', 'admin@aistart360.kz');
+                setValue('password', 'admin123');
+                clearError();
+                await handleSubmit(onSubmit)();
+              }}
+              className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-surface-container hover:bg-surface-container-high border border-white/[0.08] hover:border-primary/40 text-on-surface text-sm transition-all"
+            >
+              <span className="material-symbols-outlined text-primary text-lg">public</span>
+              Демо-доступ
+            </button>
           </div>
 
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">

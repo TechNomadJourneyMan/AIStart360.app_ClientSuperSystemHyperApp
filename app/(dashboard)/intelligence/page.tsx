@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
-import { MOCK_SIGNALS } from '@/lib/mock-data'
+import { auth } from '@/lib/auth'
+import { getDashboardData } from '@/lib/get-dashboard-data'
 
 export const metadata: Metadata = { title: 'Intelligence Hub' }
 
@@ -10,7 +11,10 @@ const priorityConfig = {
   low:      { label: 'Low', color: 'text-on-surface-variant bg-surface-container border-outline-variant/30', dot: 'bg-outline' },
 } as const
 
-export default function IntelligencePage() {
+export default async function IntelligencePage() {
+  const session = await auth()
+  const data = getDashboardData(session?.user?.email)
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -61,7 +65,7 @@ export default function IntelligencePage() {
 
       {/* Signal Feed */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {MOCK_SIGNALS.map((signal) => {
+        {data.SIGNALS.map((signal) => {
           const cfg = priorityConfig[signal.priority as keyof typeof priorityConfig] ?? priorityConfig.low
           return (
             <div

@@ -6,7 +6,6 @@ const PUBLIC_PATHS = ['/login', '/register', '/forgot-password']
 // Client portal routes (waiting-room, onboarding, point-a) — accessible only to 'client' role
 // But since current auth uses localStorage (not cookies for client role),
 // we just allow them through and let the page handle auth checks via Supabase/localStorage.
-const CLIENT_PATHS = ['/client']
 
 // ГИГА-Панель — доступна только SUPER_ADMIN (cookie aistart360_role === 'super_admin')
 const GIGA_PANEL_PATH = '/admin-giga-panel'
@@ -51,7 +50,7 @@ export function middleware(request: NextRequest) {
   }
 
   // Client portal pages — allow through (auth handled client-side via Supabase)
-  const isClientPortal = CLIENT_PATHS.some((p) => pathname.startsWith(p))
+  const isClientPortal = pathname.startsWith('/client')
   if (isClientPortal) {
     return NextResponse.next()
   }
@@ -68,13 +67,12 @@ export function middleware(request: NextRequest) {
     const dest =
       role === 'admin' ? '/dashboard' :
       role === 'owner' ? '/owner/dashboard' :
-      role === 'client' ? '/client/dashboard' :
+      role === 'client' ? '/dashboard' :
       '/expert/dashboard'
     return NextResponse.redirect(new URL(dest, request.url))
   }
 
   // Not authenticated, accessing protected page → redirect to login
-  // (client portal paths already handled above via CLIENT_PATHS)
   if (!isPublic && !role && !isClientPortal) {
     const url = new URL('/login', request.url)
     url.searchParams.set('from', pathname)
@@ -84,6 +82,11 @@ export function middleware(request: NextRequest) {
   // Expert trying to access admin-only pages → redirect to expert panel
   if (role === 'expert' && ADMIN_PATHS.some((p) => pathname.startsWith(p))) {
     return NextResponse.redirect(new URL('/expert/dashboard', request.url))
+  }
+
+  // Client trying to access pure admin pages → redirect to dashboard
+  if (role === 'client' && ['/clients', '/team', '/users', '/admin'].some((p) => pathname.startsWith(p))) {
+    return NextResponse.redirect(new URL('/dashboard', request.url))
   }
 
   // Owner trying to access admin or expert pages → redirect to owner panel

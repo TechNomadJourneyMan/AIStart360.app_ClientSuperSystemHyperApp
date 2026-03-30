@@ -1,9 +1,13 @@
 import type { Metadata } from 'next'
-import { MOCK_GRI_DOMAINS, MOCK_METRICS } from '@/lib/mock-data'
+import { auth } from '@/lib/auth'
+import { getDashboardData } from '@/lib/get-dashboard-data'
 
 export const metadata: Metadata = { title: 'Точка А — Текущее состояние' }
 
-export default function PointAPage() {
+export default async function PointAPage() {
+  const session = await auth()
+  const data = getDashboardData(session?.user?.email)
+
   return (
     <div className="space-y-8">
       {/* Header */}
@@ -48,7 +52,7 @@ export default function PointAPage() {
           </div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {MOCK_GRI_DOMAINS.map((domain) => {
+          {data.GRI_DOMAINS.map((domain) => {
             const pct = (domain.score / domain.max) * 100
             const isStrong = domain.score >= 700
             const isCritical = domain.score < 500

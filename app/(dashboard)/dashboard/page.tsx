@@ -3,11 +3,57 @@ import Link from 'next/link'
 import { AlertCard } from '@/components/dashboard/AlertCard'
 import { ActivityFeed } from '@/components/dashboard/ActivityFeed'
 import { SystemHealth } from '@/components/dashboard/SystemHealth'
-import { MOCK_KPI, MOCK_ALERTS, MOCK_ACTIVITY } from '@/lib/mock-data'
+import { getDashboardData } from '@/lib/get-dashboard-data'
+import { auth } from '@/lib/auth'
+import { prisma } from '@/lib/db'
 
 export const metadata: Metadata = { title: 'Дэшборд' }
 
-export default function DashboardPage() {
+export default async function DashboardPage() {
+  const session = await auth()
+  const data = getDashboardData(session?.user?.email)
+
+  let dbGriScore = null
+
+  const userOrgId = (session?.user as any)?.orgId
+  if (userOrgId) {
+    const client = await prisma.client.findFirst({
+      where: { orgId: userOrgId },
+      include: {
+        griReports: {
+          orderBy: { calculatedAt: 'desc' },
+          take: 1
+        }
+      }
+    })
+
+    if (client && client.griReports?.length > 0) {
+      dbGriScore = client.griReports[0]
+    }
+  }
+
+  const griDomains = dbGriScore ? {
+    'Продукт': dbGriScore.productScore,
+    'Бизнес-модель': dbGriScore.businessModelScore,
+    'Команда': dbGriScore.teamScore,
+    'Операции': dbGriScore.operationsScore,
+  } : {
+    'Технологии': 9.8,
+    'Рынок': 9.2,
+    'Команда': 8.9,
+    'Бизнес-модель': 8.8,
+  }
+
+  const mappedGri = Object.entries(griDomains).map(([label, score], index) => {
+    // Array of colors for mapping
+    const colors = ['bg-primary', 'bg-primary-fixed-dim', 'bg-primary/50', 'bg-primary/30']
+    return {
+      label,
+      pct: Math.round((Number(score) / 10) * 100),
+      color: colors[index % colors.length]
+    }
+  })
+
   return (
     <div className="space-y-8">
       {/* Hero */}
@@ -27,7 +73,7 @@ export default function DashboardPage() {
 
         {/* KPI Grid */}
         <div className="grid grid-cols-2 gap-3 w-full lg:w-[460px] lg:shrink-0">
-          {MOCK_KPI.map((kpi) => (
+          {data.KPI.map((kpi) => (
             <Link
               key={kpi.label}
               href={kpi.href}
@@ -84,47 +130,39 @@ export default function DashboardPage() {
             <p className="text-xs text-on-surface-variant mt-1">Требуют немедленного внимания</p>
           </div>
           <span className="font-mono text-[10px] text-error bg-error/10 px-3 py-1 rounded-full border border-error/20">
-            {MOCK_ALERTS.filter(a => a.severity === 'critical').length} алерта
+            {data.ALERTS.filter(a => a.severity === 'critical').length} алерта
           </span>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          {MOCK_ALERTS.map((alert) => (
+          {data.ALERTS.map((alert) => (
             <AlertCard key={alert.id} {...alert} />
           ))}
         </div>
       </section>
 
-      {/* Activity Feed + Portfolio Health */}
+      {/* Activity Feed + Health */}
       <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2">
           <div className="flex justify-between items-center mb-5">
-            <h2 className="font-headline text-lg font-bold text-on-surface">Активность клиентов</h2>
-            <Link href="/clients" className="text-xs font-mono text-primary hover:underline uppercase tracking-wider">
-              Все клиенты →
-            </Link>
+            <h2 className="font-headline text-lg font-bold text-on-surface">Последние события</h2>
           </div>
-          <ActivityFeed items={MOCK_ACTIVITY} />
+          <ActivityFeed items={data.ACTIVITY} />
         </div>
 
         {/* Side stats */}
         <div className="space-y-4">
-          <h2 className="font-headline text-lg font-bold text-on-surface mb-5">Здоровье портфеля</h2>
+          <h2 className="font-headline text-lg font-bold text-on-surface mb-5">Прогресс по GRI</h2>
 
           <Link href="/gri" className="block bg-surface-container rounded-2xl p-5 space-y-3 border border-white/[0.04] hover:border-primary/20 transition-colors group">
             <div className="flex items-center justify-between mb-4">
-              <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest">Распределение GRI</p>
+              <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest">GRI Скоринг (Топ Факторы)</p>
               <span className="material-symbols-outlined text-sm text-on-surface-variant/30 group-hover:text-primary/60 transition-colors">arrow_forward</span>
             </div>
-            {[
-              { label: 'Excellent (900+)', pct: 12, color: 'bg-primary' },
-              { label: 'Strong (700–899)', pct: 43, color: 'bg-primary-fixed-dim' },
-              { label: 'Developing (500–699)', pct: 31, color: 'bg-tertiary-container' },
-              { label: 'Critical (<500)', pct: 14, color: 'bg-error' },
-            ].map((item) => (
+            {mappedGri.map((item) => (
               <div key={item.label}>
                 <div className="flex justify-between text-xs mb-1.5">
                   <span className="text-on-surface-variant">{item.label}</span>
-                  <span className="font-mono text-on-surface">{item.pct}%</span>
+                  <span className="font-mono text-on-surface">{item.pct}/100</span>
                 </div>
                 <div className="h-1 bg-surface-container-high rounded-full overflow-hidden">
                   <div className={`h-full ${item.color} rounded-full transition-all duration-700`} style={{ width: `${item.pct}%` }} />
@@ -133,22 +171,21 @@ export default function DashboardPage() {
             ))}
           </Link>
 
-          <Link href="/clients" className="block bg-surface-container rounded-2xl p-5 border border-white/[0.04] hover:border-primary/20 transition-colors group">
+          <Link href="/metrics" className="block bg-surface-container rounded-2xl p-5 border border-white/[0.04] hover:border-primary/20 transition-colors group">
             <div className="flex items-center justify-between mb-4">
-              <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest">По отраслям</p>
+              <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest">Ключевые Метрики</p>
               <span className="material-symbols-outlined text-sm text-on-surface-variant/30 group-hover:text-primary/60 transition-colors">arrow_forward</span>
             </div>
             <div className="space-y-3">
               {[
-                { name: 'FinTech',    count: 14, active: true  },
-                { name: 'E-commerce', count: 11, active: false },
-                { name: 'SaaS',       count: 9,  active: false },
-                { name: 'Healthcare', count: 6,  active: false },
-                { name: 'Logistics',  count: 4,  active: false },
+                { name: 'Выручка (ARR)', value: '$2.4B', active: true  },
+                { name: 'R&D Бюджет',    value: '35%',   active: false },
+                { name: 'Доля рынка',    value: '68%',   active: false },
+                { name: 'NPS (B2B)',     value: '91',    active: false },
               ].map((item) => (
                 <div key={item.name} className="flex justify-between items-center">
                   <span className="text-sm text-on-surface-variant">{item.name}</span>
-                  <span className={`font-mono text-sm ${item.active ? 'text-primary' : 'text-on-surface'}`}>{item.count}</span>
+                  <span className={`font-mono text-sm ${item.active ? 'text-primary' : 'text-on-surface'}`}>{item.value}</span>
                 </div>
               ))}
             </div>

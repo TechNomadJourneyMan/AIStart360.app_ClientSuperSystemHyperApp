@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { EmptyState } from '@/components/common/EmptyState'
-import { MOCK_REPORTS } from '@/lib/mock-data'
+import { auth } from '@/lib/auth'
+import { getDashboardData } from '@/lib/get-dashboard-data'
 
 export const metadata: Metadata = { title: 'Reports' }
 
@@ -12,14 +13,17 @@ const categoryColors: Record<string, string> = {
   Custom:    'text-on-surface bg-surface-container-high border-outline-variant/30',
 }
 
-export default function ReportsPage() {
+export default async function ReportsPage() {
+  const session = await auth()
+  const data = getDashboardData(session?.user?.email)
+
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="font-headline text-3xl font-bold text-on-surface">Reports Hub</h1>
-          <p className="text-on-surface-variant text-sm mt-1">{MOCK_REPORTS.length} документов</p>
+          <p className="text-on-surface-variant text-sm mt-1">{data.REPORTS.length} документов</p>
         </div>
         <button className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-br from-primary to-primary-container text-on-primary text-sm font-semibold rounded-lg shadow-primary-sm hover:scale-[0.98] active:scale-95 transition-all">
           <span className="material-symbols-outlined text-lg">upload</span>
@@ -54,7 +58,7 @@ export default function ReportsPage() {
       </div>
 
       {/* Reports Grid */}
-      {MOCK_REPORTS.length === 0 ? (
+      {data.REPORTS.length === 0 ? (
         <EmptyState
           icon="folder_open"
           title="Нет отчётов"
@@ -62,7 +66,7 @@ export default function ReportsPage() {
         />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {MOCK_REPORTS.map((report) => (
+          {data.REPORTS.map((report) => (
             <div
               key={report.id}
               className="bg-surface-container rounded-xl p-5 hover:bg-surface-container-high transition-colors cursor-pointer group"

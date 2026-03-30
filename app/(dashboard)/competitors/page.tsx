@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
-import { MOCK_COMPETITORS } from '@/lib/mock-data'
+import { auth } from '@/lib/auth'
+import { getDashboardData } from '@/lib/get-dashboard-data'
 
 export const metadata: Metadata = { title: 'Конкуренты' }
 
@@ -9,7 +10,10 @@ const THREAT_COLORS = {
   low:    { text: 'text-on-surface-variant', bg: 'bg-surface-container', border: 'border-white/[0.04]', label: 'Низкий' },
 }
 
-export default function CompetitorsPage() {
+export default async function CompetitorsPage() {
+  const session = await auth()
+  const data = getDashboardData(session?.user?.email)
+
   return (
     <div className="space-y-8">
       {/* Header */}
@@ -54,7 +58,7 @@ export default function CompetitorsPage() {
           </div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {MOCK_COMPETITORS.map((comp) => {
+          {data.COMPETITORS.map((comp) => {
             const threat = THREAT_COLORS[comp.threat as keyof typeof THREAT_COLORS] ?? THREAT_COLORS.low
             return (
               <div key={comp.id} className="bg-surface-container-low rounded-2xl border border-white/[0.04] hover:border-primary/10 p-6 transition-colors">

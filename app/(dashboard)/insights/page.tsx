@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
-import { MOCK_SIGNALS } from '@/lib/mock-data'
+import { auth } from '@/lib/auth'
+import { getDashboardData } from '@/lib/get-dashboard-data'
 
 export const metadata: Metadata = { title: 'Инсайты' }
 
@@ -24,7 +25,10 @@ const INSIGHT_CARDS = [
   { icon: 'psychology', title: 'AI-инструменты ускоряют рост', desc: 'Клиенты, использующие AI-диагностику, растут на 34% быстрее.', tag: 'Исследование', color: 'secondary' },
 ]
 
-export default function InsightsPage() {
+export default async function InsightsPage() {
+  const session = await auth()
+  const data = getDashboardData(session?.user?.email)
+
   return (
     <div className="space-y-8">
       {/* Header */}
@@ -70,7 +74,7 @@ export default function InsightsPage() {
         <div className="flex justify-between items-end border-b border-outline-variant/10 pb-4 mb-5">
           <div>
             <h2 className="font-headline text-lg font-bold text-on-surface">Все сигналы</h2>
-            <p className="text-xs text-on-surface-variant mt-1">{MOCK_SIGNALS.length} активных сигналов</p>
+            <p className="text-xs text-on-surface-variant mt-1">{data.SIGNALS.length} активных сигналов</p>
           </div>
           <div className="flex gap-2">
             {['Все', 'Рынок', 'Финансы', 'Регулирование', 'Конкуренты'].map((f, i) => (
@@ -82,7 +86,7 @@ export default function InsightsPage() {
         </div>
 
         <div className="space-y-3">
-          {MOCK_SIGNALS.map((signal) => {
+          {data.SIGNALS.map((signal) => {
             const colors = PRIORITY_COLORS[signal.priority as keyof typeof PRIORITY_COLORS] ?? PRIORITY_COLORS.low
             return (
               <div
