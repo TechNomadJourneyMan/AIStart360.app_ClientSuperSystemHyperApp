@@ -7,6 +7,7 @@ import { useState } from 'react'
 import { useUIStore } from '@/stores/ui.store'
 import { useAuthStore } from '@/stores/auth.store'
 import { getPrimaryNavForRole, getSecondaryNavForRole } from '@/lib/navigation'
+import { UserRole } from '@/types'
 
 export function Sidebar() {
   const pathname = usePathname()
@@ -20,7 +21,8 @@ export function Sidebar() {
     router.push('/login')
   }
 
-  const role = ((user?.role || 'client').toUpperCase()) as any
+  // Security: fallback to 'ANALYST' if role is missing, ensure uppercase for constant lookup
+  const role = ((user?.role || 'CLIENT').toUpperCase() as UserRole) || 'ANALYST'
   const primaryNav = getPrimaryNavForRole(role)
   const secondaryNav = getSecondaryNavForRole(role)
 

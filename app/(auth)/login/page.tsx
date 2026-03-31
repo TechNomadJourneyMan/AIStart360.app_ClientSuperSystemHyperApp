@@ -27,7 +27,12 @@ const DEMO_ACCOUNTS = [
 function LoginContent() {
   const router       = useRouter()
   const params       = useSearchParams()
-  const from         = params.get('from') ?? '/dashboard'
+
+  // Security: Sanitize the 'from' parameter to prevent Open Redirect vulnerabilities.
+  // Ensure it's a relative path and doesn't contain external URLs.
+  const rawFrom = params.get('from') ?? '/dashboard'
+  const from = (rawFrom.startsWith('/') && !rawFrom.startsWith('//')) ? rawFrom : '/dashboard'
+
   const { login, isLoading, error, clearError } = useAuthStore()
 
   const [showPass, setShowPass] = useState(false)
