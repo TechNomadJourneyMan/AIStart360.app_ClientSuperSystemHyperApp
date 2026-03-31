@@ -30,7 +30,7 @@ export async function registerAction(data: any) {
     })
     
     // 4. Map UI role to Prisma UserRole
-    // admin -> ADMIN, expert -> MANAGER, owner -> ADMIN
+    // admin -> ADMIN, expert -> MANAGER, owner -> SUPER_ADMIN, client -> CLIENT
     const prismaRole = role === 'admin' ? 'ADMIN' : role === 'owner' ? 'SUPER_ADMIN' : role === 'client' ? 'CLIENT' : 'MANAGER'
     
     const user = await prisma.user.create({

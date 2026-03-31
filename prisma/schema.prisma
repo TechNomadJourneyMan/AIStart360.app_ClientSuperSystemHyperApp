@@ -103,8 +103,8 @@ model User {
   comments          Comment[]
   auditLogs         AuditLog[]
 
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
 
   @@map("users")
 }
@@ -202,7 +202,10 @@ model GriReport {
   clientId       String
   client         Client   @relation(fields: [clientId], references: [id])
 
+  // Total GRI Score (0-100)
   overallScore   Float
+
+  // 7 Blocks Scores (0-100)
   productScore   Float    @default(0)
   trustScore     Float    @default(0)
   businessModelScore Float @default(0)
@@ -211,7 +214,9 @@ model GriReport {
   teamScore      Float    @default(0)
   founderScore   Float    @default(0)
 
+  // Raw answers and data
   rawData        Json?
+
   calculatedAt   DateTime @default(now())
 
   @@map("gri_reports")
