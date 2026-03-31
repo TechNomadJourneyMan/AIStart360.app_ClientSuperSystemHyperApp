@@ -8,7 +8,8 @@ import {
 } from './choco-data'
 
 import {
-  CHOCO_MARKET, CHOCO_NOTIFICATIONS, CHOCO_GRI_DOMAINS, CHOCO_METRICS
+  CHOCO_MARKET, CHOCO_NOTIFICATIONS, CHOCO_GRI_DOMAINS, CHOCO_METRICS,
+  CHOCO_PRODUCTS, CHOCO_SCENARIOS
 } from './choco-data-ext'
 
 export function getDashboardData(email?: string | null) {
@@ -26,7 +27,9 @@ export function getDashboardData(email?: string | null) {
       MARKET: CHOCO_MARKET,
       NOTIFICATIONS: CHOCO_NOTIFICATIONS,
       GRI_DOMAINS: CHOCO_GRI_DOMAINS,
-      METRICS: CHOCO_METRICS
+      METRICS: CHOCO_METRICS,
+      PRODUCTS: CHOCO_PRODUCTS,
+      SCENARIOS: CHOCO_SCENARIOS,
     }
   }
 
@@ -41,6 +44,8 @@ export function getDashboardData(email?: string | null) {
     MARKET: MOCK_MARKET,
     NOTIFICATIONS: MOCK_NOTIFICATIONS,
     GRI_DOMAINS: MOCK_GRI_DOMAINS,
-    METRICS: MOCK_METRICS
+    METRICS: MOCK_METRICS,
+    PRODUCTS: [] as typeof CHOCO_PRODUCTS,
+    SCENARIOS: [] as typeof CHOCO_SCENARIOS,
   }
 }
