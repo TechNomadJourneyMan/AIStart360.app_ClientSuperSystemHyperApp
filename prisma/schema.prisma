@@ -1,11 +1,13 @@
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
 }
 
 datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  directUrl  = env("DIRECT_URL")
+  extensions = [vector]
 }
 
 // --- Enums --------------------------------------------------------------------
@@ -202,6 +204,8 @@ model Client {
   projects     Project[]
   activityLogs ActivityLog[]
   pulseMetrics PulseMetric?
+  diagnosticRuns DiagnosticRun[]
+  documentSummaries DocumentSummary[]
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
 
@@ -223,6 +227,8 @@ model Report {
   filePath String // Supabase Storage path
 
   uploadedAt DateTime @default(now())
+
+  documentSummaries DocumentSummary[]
 
   @@map("reports")
 }
@@ -308,7 +314,7 @@ model GriReport {
   client         Client   @relation(fields: [clientId], references: [id])
 
   // Total GRI Score (can be 0-100 or 0-1000 depending on version)
-  score          Float
+  score          Float    @default(0)
 
   // 7 Blocks Scores (0-100)  used by GRI Pulse
   productScore   Float    @default(0)
@@ -326,6 +332,8 @@ model GriReport {
   rawData        Json?
 
   calculatedAt   DateTime @default(now())
+
+  diagnosticRun  DiagnosticRun?
 
   @@map("gri_reports")
 }
@@ -407,4 +415,75 @@ model AuditLog {
   ipAddress   String?
 
   @@map("audit_logs")
+}
+
+// --- AI Diagnostic Engine Models -----------------------------------------------
+
+enum DiagnosticStatus {
+  pending
+  parsing
+  analyzing
+  hitl_review
+  completed
+  failed
+}
+
+model DiagnosticRun {
+  id          String   @id @default(cuid())
+  clientId    String
+  client      Client   @relation(fields: [clientId], references: [id])
+  
+  status      DiagnosticStatus @default(pending)
+  
+  // URLs or references to the uploaded source documents for this run
+  sourceFiles Json?      @default("[]")
+  
+  // n8n Webhook ID or Run ID for tracing and async resuming
+  n8nRunId    String?
+  
+  // If the run resulted in a generated GRI report, link it here
+  griReportId String?    @unique
+  griReport   GriReport? @relation(fields: [griReportId], references: [id])
+
+  // Any errors or metadata
+  metadata    Json?      @default("{}")
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("diagnostic_runs")
+}
+
+model DocumentSummary {
+  id          String   @id @default(cuid())
+  clientId    String
+  client      Client   @relation(fields: [clientId], references: [id])
+  reportId    String?
+  report      Report?  @relation(fields: [reportId], references: [id])
+  
+  // High-level parsed data from the document (e.g. key financial metrics, full text parsed)
+  content     String   @db.Text
+  metadata    Json?    @default("{}")
+
+  createdAt   DateTime @default(now())
+
+  chunks      DocumentChunk[]
+
+  @@map("document_summaries")
+}
+
+model DocumentChunk {
+  id                String   @id @default(cuid())
+  documentSummaryId String
+  documentSummary   DocumentSummary @relation(fields: [documentSummaryId], references: [id], onDelete: Cascade)
+  
+  content           String   @db.Text
+  
+  // Use Unsupported for pgvector's vector type
+  embedding         Unsupported("vector(1536)")?
+  
+  metadata          Json?    @default("{}")
+  createdAt         DateTime @default(now())
+
+  @@map("document_chunks")
 }

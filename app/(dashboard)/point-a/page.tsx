@@ -1,12 +1,54 @@
 import type { Metadata } from 'next'
 import { auth } from '@/lib/auth'
 import { getDashboardData } from '@/lib/get-dashboard-data'
+import { DocumentUpload } from '@/components/diagnostics/DocumentUpload'
+import { prisma } from '@/lib/db'
 
 export const metadata: Metadata = { title: 'Точка А — Текущее состояние' }
 
 export default async function PointAPage() {
   const session = await auth()
   const data = getDashboardData(session?.user?.email)
+
+  // Попытка найти реального клиента в БД для привязки отчета
+  const client = await prisma.client.findFirst({
+    where: { 
+      OR: [
+        { manager: { email: session?.user?.email ?? '' } },
+        { name: session?.user?.email === 'portal@chocofamily.kz' ? 'ChocoFamily' : 'Mock Client' }
+      ]
+    }
+  })
+
+  // Получаем последний отчет GRI из базы, если он есть
+  const latestGri = client ? await prisma.griReport.findFirst({
+    where: { clientId: client.id },
+    orderBy: { calculatedAt: 'desc' }
+  }) : null
+
+  // Объединяем мок-данные с реальными из последнего отчета
+  const displayDomains = data.GRI_DOMAINS.map(mockDomain => {
+    if (latestGri?.domains) {
+      const dbDomains = latestGri.domains as any
+      const mapping: Record<string, string> = {
+        'fin': 'finance',
+        'mkt': 'market',
+        'ops': 'operations',
+        'hr': 'team',
+        'tech': 'technology',
+        'strat': 'strategy'
+      }
+      const dbKey = mapping[mockDomain.id] || mockDomain.id
+      const scoreValue = dbDomains[dbKey]
+      
+      // Масштабируем 0-1000 из БД в 0-10 для UI
+      const score = scoreValue !== undefined ? scoreValue / 100 : mockDomain.score
+      return { ...mockDomain, score }
+    }
+    return mockDomain
+  })
+
+  const totalScore = latestGri?.score ? Math.round(latestGri.score) : 763
 
   return (
     <div className="space-y-8">
@@ -24,10 +66,15 @@ export default async function PointAPage() {
         </p>
       </section>
 
+      {/* AI Diagnostic Upload */}
+      <section className="animate-in fade-in slide-in-from-bottom-4 duration-500 delay-150">
+        <DocumentUpload clientId={client?.id ?? 'default-client-id'} />
+      </section>
+
       {/* Current State Overview */}
       <section className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
-          { label: 'Общий GRI',      value: '763',    icon: 'radar',        good: true,  note: '+24 vs Q4' },
+          { label: 'Общий GRI',      value: totalScore.toString(), icon: 'radar',        good: true,  note: latestGri ? 'Обновлено ИИ' : '+24 vs Q4' },
           { label: 'Доход',          value: '₸84.2М', icon: 'payments',     good: true,  note: '+12.4% г/г' },
           { label: 'Маржа',          value: '34.2%',  icon: 'percent',      good: true,  note: '+2.1 пп' },
           { label: 'Расходы',        value: '₸55.4М', icon: 'trending_down', good: false, note: '+8.2% г/г' },
@@ -52,7 +99,7 @@ export default async function PointAPage() {
           </div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {data.GRI_DOMAINS.map((domain) => {
+          {displayDomains.map((domain) => {
             const pct = (domain.score / domain.max) * 100
             const isStrong = domain.score >= 700
             const isCritical = domain.score < 500
