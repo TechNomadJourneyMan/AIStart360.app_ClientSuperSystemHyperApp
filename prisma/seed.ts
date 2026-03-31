@@ -125,7 +125,7 @@ async function main() {
       website: 'chocofamily.kz',
       griReports: {
         create: {
-          overallScore: 5.2,
+          score: 5.2,
           productScore: 6.2,
           trustScore: 4.8,
           businessModelScore: 5.5,

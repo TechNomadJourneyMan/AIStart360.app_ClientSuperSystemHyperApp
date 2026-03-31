@@ -251,12 +251,6 @@ export default function RegisterPage() {
                   {cf.formState.errors.confirm && <p className="text-error text-xs mt-1.5">{cf.formState.errors.confirm.message}</p>}
                 </div>
 
-                <button type="button" onClick={goStep2}
-                  className="w-full py-3.5 rounded-xl bg-gradient-to-r from-primary to-[#00e29e] text-[#003824] font-bold text-sm flex items-center justify-center gap-2 hover:scale-[0.99] transition-all">
-                  Далее
-                  <span className="material-symbols-outlined text-lg">arrow_forward</span>
-                </button>
-
                 {/* SSO */}
                 <div className="flex items-center gap-3 my-6">
                   <div className="flex-1 h-px bg-white/[0.06]" />
@@ -264,7 +258,7 @@ export default function RegisterPage() {
                   <div className="flex-1 h-px bg-white/[0.06]" />
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-2 gap-3 mb-6">
                   <button 
                     type="button"
                     onClick={() => signIn('google')}
@@ -282,9 +276,6 @@ export default function RegisterPage() {
                     <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
                       <path d="M21.4 0H2.6C1.2 0 0 1.2 0 2.6v18.8C0 22.8 1.2 24 2.6 24h18.8c1.4 0 2.6-1.2 2.6-2.6V2.6C24 1.2 22.8 0 21.4 0zM7.1 20.5H3.6V9h3.6v11.5zM5.3 7.5c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm15.2 13H17V15c0-1.3 0-3-1.8-3s-2.1 1.4-2.1 2.9v5.6H9.5V9h3.4v1.6c.5-.9 1.6-1.8 3.3-1.8 3.5 0 4.2 2.3 4.2 5.3v6.4z"/>
                     </svg>
-                    LinkedIn
-                  </button>
-                </div>
                     LinkedIn
                   </button>
                 </div>

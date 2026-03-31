@@ -38,6 +38,30 @@ enum GrowthStage {
   Mature
 }
 
+enum SubscriptionPlan {
+  free
+  starter
+  growth
+  scale
+  enterprise
+}
+
+enum NotificationType {
+  gri_updated
+  report
+  alert
+  project
+  team
+  system
+}
+
+enum NotificationPriority {
+  urgent
+  high
+  medium
+  low
+}
+
 enum CompanyStatus {
   lead
   active
@@ -94,8 +118,13 @@ model User {
   orgId         String?
   org           Organization?  @relation(fields: [orgId], references: [id])
   managedClients Client[]      @relation("ManagedClients")
-  accounts      Account[]
-  sessions      Session[]
+  accounts       Account[]
+  sessions       Session[]
+
+  // Backend implementation relations
+  uploadedReports Report[]
+  notifications   Notification[]
+  activityLogs    ActivityLog[]
 
   // Admin panel relations
   submittedRequests AdminRequest[] @relation("RequestSubmitter")
@@ -168,12 +197,88 @@ model Client {
   sector        String?
   orderCycle    Int          @default(30)
 
-  griReports    GriReport[]
-  pulseMetrics  PulseMetric?
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @updatedAt
+  griReports   GriReport[]
+  reports      Report[]
+  projects     Project[]
+  activityLogs ActivityLog[]
+  pulseMetrics PulseMetric?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
 
   @@map("clients")
+}
+
+model Report {
+  id         String @id @default(cuid())
+  clientId   String
+  client     Client @relation(fields: [clientId], references: [id])
+  uploadedBy String
+  uploader   User   @relation(fields: [uploadedBy], references: [id])
+
+  name     String
+  category String // GRI, Financial, Growth, Market, Custom
+  type     String // pdf, xlsx, csv, docx
+  fileUrl  String
+  fileSize Int    // bytes
+  filePath String // Supabase Storage path
+
+  uploadedAt DateTime @default(now())
+
+  @@map("reports")
+}
+
+model Project {
+  id          String    @id @default(cuid())
+  clientId    String
+  client      Client    @relation(fields: [clientId], references: [id])
+  name        String
+  status      String    @default("active") // active, in_review, completed, paused
+  startDate   DateTime?
+  endDate     DateTime?
+  // Team allocations: [{ userId, allocationPct }]
+  team        Json      @default("[]")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("projects")
+}
+
+model Notification {
+  id       String               @id @default(cuid())
+  userId   String
+  user     User                 @relation(fields: [userId], references: [id])
+  type     NotificationType
+  priority NotificationPriority @default(medium)
+  title    String
+  body     String               @db.Text
+  isRead   Boolean              @default(false)
+
+  entityType String? // 'client', 'report', 'gri', 'project'
+  entityId   String?
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, isRead])
+  @@map("notifications")
+}
+
+model ActivityLog {
+  id         String  @id @default(cuid())
+  userId     String
+  user       User    @relation(fields: [userId], references: [id])
+  clientId   String?
+  client     Client? @relation(fields: [clientId], references: [id])
+  action     String
+  entityType String
+  entityId   String
+  metadata   Json    @default("{}")
+
+  createdAt DateTime @default(now())
+
+  @@index([clientId, createdAt])
+  @@index([userId, createdAt])
+  @@map("activity_logs")
 }
 
 model PulseMetric {
@@ -202,10 +307,10 @@ model GriReport {
   clientId       String
   client         Client   @relation(fields: [clientId], references: [id])
 
-  // Total GRI Score (0-100)
-  overallScore   Float
+  // Total GRI Score (can be 0-100 or 0-1000 depending on version)
+  score          Float
 
-  // 7 Blocks Scores (0-100)
+  // 7 Blocks Scores (0-100)  used by GRI Pulse
   productScore   Float    @default(0)
   trustScore     Float    @default(0)
   businessModelScore Float @default(0)
@@ -213,6 +318,9 @@ model GriReport {
   operationsScore Float   @default(0)
   teamScore      Float    @default(0)
   founderScore   Float    @default(0)
+
+  // Domain scores stored as JSON (used by legacy/backend implementation)
+  domains        Json?
 
   // Raw answers and data
   rawData        Json?

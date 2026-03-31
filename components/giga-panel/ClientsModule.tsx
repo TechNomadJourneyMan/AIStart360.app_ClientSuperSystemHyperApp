@@ -96,7 +96,7 @@ function ScoreBar({ label, score }: { label: string; score: number }) {
 // ─── Client card ──────────────────────────────────────────────────────────────
 
 function ClientCard({ client, onClick }: { client: GigaClient; onClick: () => void }) {
-  const score = client.latestGri?.overallScore ?? null
+  const score = client.latestGri?.score ?? null
   const initials = client.name.slice(0, 2).toUpperCase()
 
   return (
@@ -164,7 +164,7 @@ function ClientCard({ client, onClick }: { client: GigaClient; onClick: () => vo
 // ─── Detail panel (right drawer) ─────────────────────────────────────────────
 
 function ClientDetailPanel({ client, onClose }: { client: GigaClient; onClose: () => void }) {
-  const score = client.latestGri?.overallScore ?? null
+  const score = client.latestGri?.score ?? null
   const gri = client.latestGri
   const pulse = client.pulseMetrics
 
@@ -261,10 +261,10 @@ function ClientDetailPanel({ client, onClose }: { client: GigaClient; onClose: (
               <p className="text-xs font-semibold text-slate-300 uppercase tracking-widest">GRI Индекс</p>
               <div className="flex items-center gap-2">
                 <div className="relative">
-                  <ScoreRing score={gri.overallScore} size={52} />
+                  <ScoreRing score={gri.score} size={52} />
                   <span className="absolute inset-0 flex items-center justify-center
                     text-sm font-bold text-slate-100 rotate-90">
-                    {(gri.overallScore || 0).toFixed(1)}
+                    {(gri.score || 0).toFixed(1)}
                   </span>
                 </div>
               </div>

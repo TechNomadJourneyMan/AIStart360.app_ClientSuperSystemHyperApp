@@ -26,7 +26,7 @@ export interface GigaClient {
   website?: string | null
   createdAt: string
   manager: { id: string; name: string | null; email: string } | null
-  latestGri: (GriBlock & { overallScore: number; calculatedAt: string }) | null
+  latestGri: (GriBlock & { score: number; calculatedAt: string }) | null
   pulseMetrics: {
     riskScore: number
     churnLevel: string

@@ -17,7 +17,7 @@ export async function createGriReportAction(clientId: string, answers: GriAnswer
     const report = await prisma.griReport.create({
       data: {
         clientId,
-        overallScore: result.overallScore,
+        score: result.score,
         productScore: result.productScore,
         trustScore: result.trustScore,
         businessModelScore: result.businessModelScore,
