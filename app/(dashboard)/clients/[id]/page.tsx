@@ -5,6 +5,7 @@ import { StatusBadge } from '@/components/common/StatusBadge'
 import { createServerClient } from '@/lib/supabase-server'
 import { prisma } from '@/lib/db'
 import type { BlockScore, Risk, Insight, QuickWin } from '@/types/onboarding'
+import ChocoDashboard from '@/components/choco/dashboard'
 
 export const metadata: Metadata = { title: 'Client Profile' }
 
@@ -51,6 +52,7 @@ export default async function ClientDetailPage({ params }: { params: { id: strin
   if (realData) {
     const { profile, company, diagnostic: diag } = realData
     const displayName = company?.name ?? profile?.full_name ?? profile?.email ?? 'Клиент'
+    const isChocoFamily = displayName.toLowerCase().includes('choco') || params.id === '7'
     const griScore = diag?.overall_score != null ? Math.round(diag.overall_score) / 10 : 0
 
     const blocks: Array<{ key: string; data: BlockScore | null }> = [
@@ -92,13 +94,19 @@ export default async function ClientDetailPage({ params }: { params: { id: strin
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-1 border-b border-outline-variant/20 overflow-x-auto no-scrollbar">
-          {['Point A', 'Риски', 'Инсайты', 'Быстрые победы'].map((tab, i) => (
-            <button key={tab} className={`px-5 py-3 text-sm font-medium whitespace-nowrap transition-colors border-b-2 -mb-px ${i === 0 ? 'text-primary border-primary' : 'text-on-surface-variant border-transparent hover:text-on-surface'}`}>{tab}</button>
-          ))}
-        </div>
+        {!isChocoFamily && (
+          <div className="flex gap-1 border-b border-outline-variant/20 overflow-x-auto no-scrollbar">
+            {['Point A', 'Риски', 'Инсайты', 'Быстрые победы'].map((tab, i) => (
+              <button key={tab} className={`px-5 py-3 text-sm font-medium whitespace-nowrap transition-colors border-b-2 -mb-px ${i === 0 ? 'text-primary border-primary' : 'text-on-surface-variant border-transparent hover:text-on-surface'}`}>{tab}</button>
+            ))}
+          </div>
+        )}
 
-        {diag ? (
+        {isChocoFamily ? (
+          <div className="mt-8 rounded-3xl overflow-hidden shadow-2xl border border-white/5 bg-[#111111]">
+            <ChocoDashboard />
+          </div>
+        ) : diag ? (
           <div className="space-y-6">
             {/* Score + Blocks */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -219,6 +227,8 @@ export default async function ClientDetailPage({ params }: { params: { id: strin
   if (prismaClient) {
     const stageLabel: Record<string, string> = { Seed: 'Seed', Early: 'Early', Growth: 'Growth', Scale: 'Scale', Mature: 'Mature' }
     const statusLabel: Record<string, string> = { active: 'Активный', at_risk: 'Под риском', inactive: 'Неактивный', onboarding: 'Онбординг' }
+    const isChocoFamily = prismaClient.name.toLowerCase().includes('choco') || params.id === '7'
+    
     return (
       <div className="space-y-6">
         <nav className="flex items-center gap-2 text-sm text-on-surface-variant">
@@ -245,11 +255,17 @@ export default async function ClientDetailPage({ params }: { params: { id: strin
           </div>
         </div>
 
-        <div className="bg-surface-container rounded-xl p-8 text-center">
-          <span className="material-symbols-outlined text-4xl text-on-surface-variant mb-3 block">hourglass_top</span>
-          <p className="text-on-surface font-medium mb-1">Диагностика ожидается</p>
-          <p className="text-sm text-on-surface-variant">Клиент ещё не завершил анкетирование или не запустил расчёт Point A</p>
-        </div>
+        {isChocoFamily ? (
+          <div className="mt-8 rounded-3xl overflow-hidden shadow-2xl border border-white/5 bg-[#111111]">
+            <ChocoDashboard />
+          </div>
+        ) : (
+          <div className="bg-surface-container rounded-xl p-8 text-center">
+            <span className="material-symbols-outlined text-4xl text-on-surface-variant mb-3 block">hourglass_top</span>
+            <p className="text-on-surface font-medium mb-1">Диагностика ожидается</p>
+            <p className="text-sm text-on-surface-variant">Клиент ещё не завершил анкетирование или не запустил расчёт Point A</p>
+          </div>
+        )}
       </div>
     )
   }

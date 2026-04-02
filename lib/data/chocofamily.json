@@ -1,0 +1,138 @@
+{
+  "clientProfile": {
+    "client": "Chocofamily Holding LLP",
+    "industry": "IT-Холдинг / Экосистема / Суперапп",
+    "geography": "Казахстан (20 городов)",
+    "date": "Апрель 2026",
+    "analyst": "AIStart360 Multi-AI Agent System",
+    "methodology": "OSINT Cross-Validation | 6 источников",
+    "confidence": "HIGH (финансы 2017-2020) / ESTIMATE (2024-2025)",
+    "status": "ACTIVE"
+  },
+  "kpis": [
+    { "metric": "Net Revenue 2024E", "value": "$13–16M", "confidence": "ESTIMATE", "category": "Financial" },
+    { "metric": "GMV Holding (23)", "value": "$257M", "confidence": "HIGH", "category": "Financial" },
+    { "metric": "MAU SuperApp", "value": "1M+", "confidence": "MEDIUM", "category": "User Growth" },
+    { "metric": "Total Exits", "value": "$50–55M", "confidence": "HIGH", "category": "M&A" },
+    { "metric": "Employees", "value": "~450", "confidence": "HIGH", "category": "Operations" },
+    { "metric": "Partners", "value": "3,000+", "confidence": "MEDIUM", "category": "Ecosystem" }
+  ],
+  "insights": [
+    {
+      "title": "Структурная потеря core-рынка",
+      "type": "danger",
+      "content": "Chocofood упал с 80% (2018) → 16.8% (2024). Отрицательная динамика -24.1% YoY на растущем рынке. Требуется $10-20M инвестиций для разворота.",
+      "severity": "CRITICAL"
+    },
+    {
+      "title": "Smart Restaurant — защитная дамба",
+      "type": "success",
+      "content": "400+ локаций с POS-интеграциями (R-Keeper, iiko). Единственный moat, который Kaspi и Glovo не имеют. Потенциал $10M ARR.",
+      "severity": "HIGH"
+    },
+    {
+      "title": "Серийные выходы (Exits)",
+      "type": "warning",
+      "content": "Суммарные exits ~$50-55M (Aviata, Рядом). Финансово оправдано, но разрушает экосистемную логику супераппа.",
+      "severity": "MEDIUM"
+    },
+    {
+      "title": "ИИ-ставка (Freedom AI)",
+      "type": "success",
+      "content": "Первый игрок в sovereign Kazakh language AI (Freedom AI Platform). AI Research Centre в МФЦА. Метрики пока не подтверждены.",
+      "severity": "MEDIUM"
+    },
+    {
+      "title": "Финансовая непрозрачность",
+      "type": "danger",
+      "content": "Нет публичной отчётности после делистинга в 2023. Исторические убытки накоплены до -4.65B KZT.",
+      "severity": "HIGH"
+    }
+  ],
+  "pestel": [
+    { "factor": "🏛 Политика", "impact": "Господдержка цифровизации, МФЦА sandbox", "status": "POSITIVE", "recommendation": "Активировать МФЦА для AI" },
+    { "factor": "💰 Экономика", "impact": "НДС 16% с 2026, валютные риски KZT/USD", "status": "RISK", "recommendation": "Пересчитать Unit-экономику" },
+    { "factor": "👥 Социология", "impact": "60% аудитории — женщины. Рост среднего класса", "status": "POSITIVE", "recommendation": "Усилить женский сегмент" },
+    { "factor": "🔬 Технология", "impact": "Казахский язык — low-resource AI преимущество", "status": "POSITIVE", "recommendation": "Защитить казахский LLM" },
+    { "factor": "⚖ Право", "impact": "Data localization; антимонопольный надзор", "status": "RISK", "recommendation": "Аудит compliance" }
+  ],
+  "marketShares": [
+    { "name": "Glovo", "share": 36.6, "growth": "+64.3%" },
+    { "name": "Yandex Food", "share": 25.7, "growth": "+363%" },
+    { "name": "Wolt", "share": 17.6, "growth": "+36.8%" },
+    { "name": "Chocofood", "share": 16.8, "growth": "-24.1%", "highlight": true },
+    { "name": "Airba Fresh", "share": 3.4, "growth": "+76.1%" }
+  ],
+  "threatVsOpportunity": {
+    "threat": {
+      "title": "Kaspi.kz Expansion",
+      "content": "13.5M пользователей, Kaspi Pay стандарт. Вход в Food Delivery = нулевой CAC. Критическая угроза."
+    },
+    "opportunity": {
+      "title": "Smart Restaurant SaaS",
+      "content": "25,000 ресторанов в KZ при <2% проникновении. Экспансия в Узб/Кург. Цель: $10M ARR к 2028."
+    }
+  },
+  "swot": {
+    "strengths": [
+      "Brand equity (14 лет доверия)",
+      "Chocolife 98% рынка купонов",
+      "Smart Restaurant POS-интеграции",
+      "Freedom Holding альянс",
+      "10 лет данных потребителей"
+    ],
+    "weaknesses": [
+      "Chocofood структурный упадок",
+      "Нет банковской лицензии",
+      "Финансовая непрозрачность",
+      "Fragmented brand (суббренды)"
+    ],
+    "opportunities": [
+      "Smart Restaurant → CIS SaaS",
+      "AI Licensing (Voice AI)",
+      "Choco Premium Subscription"
+    ],
+    "threats": [
+      "Kaspi.kz агрессия",
+      "Зависимость от Freedom Holding",
+      "AI execution risk (уход фаундеров)"
+    ]
+  },
+  "strategicPriorities": [
+    {
+      "id": 1,
+      "title": "Smart Restaurant CIS Scale-Up",
+      "kpi": "1,500 локаций к дек. 2026",
+      "steps": [
+        "Сформировать B2B SaaS команду",
+        "Запустить тарифную сетку (Base/Pro/Ent)",
+        "Пилот в Ташкенте (UZ)"
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Choco Premium Subscription",
+      "kpi": "50K платных подписчиков к Q3 2026",
+      "steps": [
+        "Бесплатная доставка + 25% кэшбэк",
+        "Beta на 10K TopMAU пользователях",
+        "Интеграция cross-sell в Smart Restaurant"
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Kazakh AI Licensing Platform",
+      "kpi": "2 LOI на лицензирование к Q4 2026",
+      "steps": [
+        "Фиксация IP Voice AI в МФЦА",
+        "Target: Beeline, банки, госсектор",
+        "Public benchmark vs OpenAI/Google"
+      ]
+    }
+  ],
+  "aiRoadmap": [
+    { "phase": "Phase 1 (0-30d)", "tool": "Churn Prediction Agent", "roi": "Снижение оттока на 20-30%" },
+    { "phase": "Phase 2 (30-90d)", "tool": "Predictive Logistics", "roi": "Рейтинг 2.8★ → 3.5★" },
+    { "phase": "Phase 3 (90-180d)", "tool": "Kazakh Voice Ordering", "roi": "First Mover PR coverage" }
+  ]
+}
