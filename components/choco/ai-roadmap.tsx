@@ -14,7 +14,7 @@ interface AIRoadmapProps {
 }
 
 export function AIRoadmap({ data }: AIRoadmapProps) {
-  const icons = [<Sparkles className="text-[#E50000]" />, <Brain className="text-blue-500" />, <Cpu className="text-purple-500" />, <Rocket className="text-yellow-500" />];
+  const icons = [<Sparkles key="sparkles" className="text-[#E50000]" />, <Brain key="brain" className="text-blue-500" />, <Cpu key="cpu" className="text-purple-500" />, <Rocket key="rocket" className="text-yellow-500" />];
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">

@@ -7,7 +7,7 @@ import { SWOTGrid } from "./swot-grid";
 import { StrategicRoadmap } from "./strategic-roadmap";
 import { AIRoadmap } from "./ai-roadmap";
 import { motion } from "framer-motion";
-import { ShieldAlert, Zap, TrendingUp, Lightbulb, Target, Sparkles, AlertCircle, TrendingDown } from "lucide-react";
+import { ShieldAlert, Zap, TrendingUp, Lightbulb, Target, Sparkles, AlertCircle, TrendingDown, MoveRight } from "lucide-react";
 import data from "@/lib/data/chocofamily.json"; 
 
 export default function ChocoDashboard() {

@@ -15,7 +15,7 @@ interface StrategicRoadmapProps {
 }
 
 export function StrategicRoadmap({ data }: StrategicRoadmapProps) {
-  const icons = [<Target className="text-[#E50000]" />, <LayoutDashboard className="text-blue-500" />, <Database className="text-purple-500" />];
+  const icons = [<Target key="target" className="text-[#E50000]" />, <LayoutDashboard key="dashboard" className="text-blue-500" />, <Database key="database" className="text-purple-500" />];
 
   return (
     <div className="grid grid-cols-1 gap-6">
