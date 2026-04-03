@@ -63,6 +63,12 @@ Architecture: Multi-agent AI (HITL), RAG pipelines, Expert Review workflow
 - `langfuse` — observability, trace every diagnostic run
 - `@langchain/core` + `@langchain/textsplitters` — RAG text chunking
 
+## Agentic Infrastructure
+- **Skills Directory**: Located in `.agents/skills/`. Contains 1,300+ operational playbooks.
+- **Research Reference**: `.agents/research/awesome-agents.md` summarizes leading agent frameworks.
+- **Workflow Strategy**: Use the `@skill-name` notation or reference the `SKILL.md` files for complex operations like TDD, security audits, or architectural refactors.
+- **Continuous Learning**: Before starting any new feature (e.g., GRI Diagnostic update), check for a relevant playbook in `.agents/skills`.
+
 ## Observability
 - **Langfuse**: wrap every AI call with trace. Use client from `lib/langfuse.ts`
 - Track: client_id, diagnostic_type, tokens_used, latency
