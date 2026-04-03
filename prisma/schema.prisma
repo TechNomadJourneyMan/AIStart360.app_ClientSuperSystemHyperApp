@@ -103,8 +103,27 @@ model Organization {
   updatedAt DateTime @updatedAt
   users     User[]
   clients   Client[]
+  financialSnapshots FinancialSnapshot[]
 
   @@map("organizations")
+}
+
+model FinancialSnapshot {
+  id             String       @id @default(cuid())
+  orgId          String
+  org            Organization @relation(fields: [orgId], references: [id])
+  period         String       // e.g. "Q1-2026"
+  revenueKzt     Float        // Revenue in KZT millions
+  marginPct      Float        // Net margin %
+  clientsCount   Int
+  expensesKzt    Float        // Expenses in KZT millions
+  revenueChange  Float        // % change vs prior period
+  marginChange   Float        // pp change vs prior period
+  clientsChange  Int          // absolute change vs prior period
+  expensesChange Float        // % change vs prior period
+  recordedAt     DateTime     @default(now())
+
+  @@map("financial_snapshots")
 }
 
 model User {

@@ -152,6 +152,82 @@ async function main() {
     }
   })
 
+  // 7. Seed FinancialSnapshots for AIStart360 org (default)
+  const snapshots = [
+    {
+      orgId: org.id,
+      period: 'Q4-2025',
+      revenueKzt: 74.8,
+      marginPct: 31.8,
+      clientsCount: 42,
+      expensesKzt: 51.0,
+      revenueChange: 9.2,
+      marginChange: 1.4,
+      clientsChange: 5,
+      expensesChange: 6.8,
+      recordedAt: new Date('2026-01-01'),
+    },
+    {
+      orgId: org.id,
+      period: 'Q1-2026',
+      revenueKzt: 84.2,
+      marginPct: 34.2,
+      clientsCount: 48,
+      expensesKzt: 55.4,
+      revenueChange: 12.4,
+      marginChange: 2.1,
+      clientsChange: 6,
+      expensesChange: 8.2,
+      recordedAt: new Date('2026-04-01'),
+    },
+  ]
+
+  for (const snap of snapshots) {
+    await prisma.financialSnapshot.upsert({
+      where: { id: `snap-${snap.orgId}-${snap.period}` },
+      update: snap,
+      create: { id: `snap-${snap.orgId}-${snap.period}`, ...snap },
+    })
+  }
+
+  // 8. Seed FinancialSnapshots for ChocoFamily org
+  const chocoSnaps = [
+    {
+      orgId: chocoOrg.id,
+      period: 'Q4-2025',
+      revenueKzt: 68.4,
+      marginPct: 29.5,
+      clientsCount: 38,
+      expensesKzt: 48.2,
+      revenueChange: 7.8,
+      marginChange: 1.1,
+      clientsChange: 4,
+      expensesChange: 5.9,
+      recordedAt: new Date('2026-01-01'),
+    },
+    {
+      orgId: chocoOrg.id,
+      period: 'Q1-2026',
+      revenueKzt: 84.2,
+      marginPct: 34.2,
+      clientsCount: 48,
+      expensesKzt: 55.4,
+      revenueChange: 12.4,
+      marginChange: 2.1,
+      clientsChange: 6,
+      expensesChange: 8.2,
+      recordedAt: new Date('2026-04-01'),
+    },
+  ]
+
+  for (const snap of chocoSnaps) {
+    await prisma.financialSnapshot.upsert({
+      where: { id: `snap-${snap.orgId}-${snap.period}` },
+      update: snap,
+      create: { id: `snap-${snap.orgId}-${snap.period}`, ...snap },
+    })
+  }
+
   console.log('Seed completed successfully')
   console.log('Client user created: portal@chocofamily.kz / ChocoFamily2026!')
 }

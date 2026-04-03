@@ -3,9 +3,9 @@
   "configurations": [
     {
       "name": "frontend",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
-      "autoPort": true
+      "runtimeExecutable": "/opt/homebrew/Cellar/node/24.4.1/bin/node",
+      "runtimeArgs": ["node_modules/.bin/next", "dev"],
+      "port": 3001
     }
   ]
 }
