@@ -10,6 +10,7 @@ import { z } from 'zod'
 import { useAuthStore } from '@/stores/auth.store'
 import { createClient } from '@/lib/supabase-client'
 import { signIn } from 'next-auth/react'
+import { SystemHealthCompact } from '@/components/dashboard/SystemHealthCompact'
 
 const staffSchema = z.object({
   name:         z.string().min(2, 'Минимум 2 символа'),
@@ -476,6 +477,8 @@ export default function RegisterPage() {
             Уже есть аккаунт?{' '}
             <Link href="/login" className="text-primary hover:underline font-medium">Войти</Link>
           </p>
+
+          <SystemHealthCompact />
         </div>
       </div>
     </div>

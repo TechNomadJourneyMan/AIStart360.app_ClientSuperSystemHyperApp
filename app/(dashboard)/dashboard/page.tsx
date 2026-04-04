@@ -1,7 +1,8 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import { SystemHealth } from '@/components/dashboard/SystemHealth'
-import { KpiChart } from '@/components/dashboard/KpiChart'
+import { KpiCardsGrid } from '@/components/dashboard/KpiCardsGrid'
+import { GriDiagramWidget } from '@/components/dashboard/GriDiagramWidget'
+import { GoalsBar } from '@/components/dashboard/GoalsBar'
 import { WidgetGrid } from '@/components/dashboard/WidgetGrid'
 import { getDashboardData } from '@/lib/get-dashboard-data'
 import { auth } from '@/lib/auth'
@@ -32,28 +33,49 @@ export default async function DashboardPage() {
       : null,
   ])
 
+  // Средний чек = revenue / clients (guard against zero)
+  const avgCheckVal = financialSnap && financialSnap.clientsCount > 0
+    ? financialSnap.revenueKzt / financialSnap.clientsCount
+    : null
+
   // KPI cards — prefer real DB data, fall back to mock
+  // Расходы removed; Средний чек added; numericValue + goalCategory for progress bars
   const kpiData = financialSnap ? [
-    { label: 'Доход',   value: `₸${financialSnap.revenueKzt.toFixed(1)}М`, trend: `${financialSnap.revenueChange > 0 ? '+' : ''}${financialSnap.revenueChange.toFixed(1)}%`, trendUp: financialSnap.revenueChange >= 0, sublabel: 'vs прошлый квартал',      icon: 'payments',      href: '/analytics' },
-    { label: 'Маржа',   value: `${financialSnap.marginPct.toFixed(1)}%`,   trend: `${financialSnap.marginChange > 0 ? '+' : ''}${financialSnap.marginChange.toFixed(1)} пп`, trendUp: financialSnap.marginChange >= 0, sublabel: 'чистая маржинальность', icon: 'percent',       href: '/metrics'   },
-    { label: 'Клиенты', value: String(financialSnap.clientsCount),          trend: `${financialSnap.clientsChange > 0 ? '+' : ''}${financialSnap.clientsChange}`,              trendUp: financialSnap.clientsChange >= 0, sublabel: 'активных клиентов',    icon: 'groups',        href: '/clients'   },
-    { label: 'Расходы', value: `₸${financialSnap.expensesKzt.toFixed(1)}М`,trend: `${financialSnap.expensesChange > 0 ? '+' : ''}${financialSnap.expensesChange.toFixed(1)}%`,trendUp: financialSnap.expensesChange < 0, sublabel: 'операционные расходы', icon: 'trending_down', href: '/metrics'   },
+    { label: 'Доход',       value: `₸${financialSnap.revenueKzt.toFixed(1)}М`,       trend: `${financialSnap.revenueChange > 0 ? '+' : ''}${financialSnap.revenueChange.toFixed(1)}%`,  trendUp: financialSnap.revenueChange >= 0, sublabel: 'vs прошлый квартал',   icon: 'payments',     href: '/analytics', numericValue: financialSnap.revenueKzt,    goalCategory: 'revenue'   },
+    { label: 'Маржа',       value: `${financialSnap.marginPct.toFixed(1)}%`,          trend: `${financialSnap.marginChange > 0 ? '+' : ''}${financialSnap.marginChange.toFixed(1)} пп`,   trendUp: financialSnap.marginChange >= 0,  sublabel: 'чистая маржинальность', icon: 'percent',      href: '/metrics',   numericValue: financialSnap.marginPct,     goalCategory: 'margin'    },
+    { label: 'Клиенты',     value: String(financialSnap.clientsCount),               trend: `${financialSnap.clientsChange > 0 ? '+' : ''}${financialSnap.clientsChange}`,               trendUp: financialSnap.clientsChange >= 0, sublabel: 'активных клиентов',     icon: 'groups',       href: '/clients',   numericValue: financialSnap.clientsCount,  goalCategory: 'clients'   },
+    { label: 'Средний чек', value: avgCheckVal ? `₸${avgCheckVal.toFixed(2)}М` : '—', trend: '—', trendUp: true, sublabel: 'на клиента', icon: 'receipt_long', href: '/metrics',   numericValue: avgCheckVal ?? 0,            goalCategory: 'avg_check' },
   ] : data.KPI
 
   const currentPeriod = financialSnap?.period ?? 'Q1 2026'
 
-  // GRI data
+  // GRI data — all 7 domains
   const dbGriScore = dbClient?.griReports?.[0] ?? null
-  const griDomains = dbGriScore ? {
-    'Продукт': dbGriScore.productScore,
-    'Бизнес-модель': dbGriScore.businessModelScore,
-    'Команда': dbGriScore.teamScore,
-    'Операции': dbGriScore.operationsScore,
-  } : { 'Технологии': 9.8, 'Рынок': 9.2, 'Команда': 8.9, 'Бизнес-модель': 8.8 }
+  const griDomains = dbGriScore ? [
+    { label: 'Продукт и спрос',          score: dbGriScore.productScore       },
+    { label: 'Доверие и позиционирование',score: dbGriScore.trustScore         },
+    { label: 'Бизнес-модель',             score: dbGriScore.businessModelScore },
+    { label: 'Финансовая устойчивость',   score: dbGriScore.cashScore          },
+    { label: 'Операции',                  score: dbGriScore.operationsScore    },
+    { label: 'Команда',                   score: dbGriScore.teamScore          },
+    { label: 'Готовность основателя',     score: dbGriScore.founderScore       },
+  ] : [
+    { label: 'Продукт и спрос',           score: 4.7 },
+    { label: 'Доверие и позиционирование',score: 5.2 },
+    { label: 'Бизнес-модель',             score: 7.4 },
+    { label: 'Финансовая устойчивость',   score: 5.0 },
+    { label: 'Операции',                  score: 2.1 },
+    { label: 'Команда',                   score: 2.5 },
+    { label: 'Готовность основателя',     score: 6.7 },
+  ]
 
-  const griData = Object.entries(griDomains).map(([label, score], i) => {
+  const griTotalScore = dbGriScore
+    ? Number(dbGriScore.score) || griDomains.reduce((s, d) => s + d.score, 0) / griDomains.length
+    : griDomains.reduce((s, d) => s + d.score, 0) / griDomains.length
+
+  const griData = griDomains.map(({ label, score }, i) => {
     const colors = ['#6effc0', '#00e29e', '#47ffb8', '#bcc7de']
-    return { label, pct: Math.round((Number(score) / 10) * 100), color: colors[i % colors.length] }
+    return { label, pct: Math.round((score / 10) * 100), color: colors[i % colors.length] }
   })
 
   const metricsData = [
@@ -66,77 +88,43 @@ export default async function DashboardPage() {
   return (
     <div className="space-y-6">
 
-      {/* ─── Hero + KPIs + Chart ──────────────────────────────── */}
+      {/* ─── Hero ─────────────────────────────────────────────── */}
       <section>
-        <div className="mb-5">
+        <div className="mb-4">
           <p className="text-[11px] font-mono text-primary/60 uppercase tracking-[0.2em] mb-2">
             {currentPeriod.replace('-', ' ')} · Текущий период
           </p>
           <h1 className="font-headline text-3xl lg:text-4xl font-extrabold text-on-surface leading-tight">
-            Финансовый{' '}
-            <span className="text-gradient">Обзор</span>
+            Ускоряем рост бизнеса до{' '}
+            <span className="text-gradient">$2M в год</span>
           </h1>
-          <p className="text-on-surface-variant mt-2 text-sm max-w-md leading-relaxed">
-            Ключевые показатели компании в реальном времени.
+          <p className="text-on-surface-variant mt-2 text-sm max-w-xl leading-relaxed lg:line-clamp-2">
+            Система выхода на стабильную скорость роста $2M/год на основе AI-трансформации и сопровождения топ-экспертов
           </p>
         </div>
 
+        {/* Goals bar */}
+        <div className="mb-5">
+          <GoalsBar />
+        </div>
+
+        {/* KPIs + GRI diagram */}
         <div className="grid grid-cols-1 xl:grid-cols-5 gap-4">
-          {/* KPI 2×2 */}
-          <div className="xl:col-span-2 grid grid-cols-2 gap-3 content-start">
-            {kpiData.map((kpi) => (
-              <Link
-                key={kpi.label}
-                href={kpi.href}
-                className={`
-                  relative bg-surface-container-low rounded-2xl p-5 overflow-hidden
-                  border border-white/[0.04] hover:border-primary/20
-                  transition-all duration-200 group cursor-pointer
-                  ${!kpi.trendUp ? 'hover:border-error/20' : ''}
-                `}
-              >
-                <div className={`
-                  absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none rounded-2xl
-                  ${kpi.trendUp
-                    ? 'bg-gradient-to-br from-primary/[0.05] to-transparent'
-                    : 'bg-gradient-to-br from-error/[0.05] to-transparent'}
-                `} />
-                <div className="flex items-start justify-between mb-3">
-                  <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest">
-                    {kpi.label}
-                  </p>
-                  <span className={`material-symbols-outlined text-base opacity-30 group-hover:opacity-60 transition-opacity ${kpi.trendUp ? 'text-primary' : 'text-error'}`}>
-                    {kpi.icon}
-                  </span>
-                </div>
-                <h3 className="text-2xl font-mono font-bold leading-none mb-2.5 text-on-surface">
-                  {kpi.value}
-                </h3>
-                <div className="flex items-center gap-1.5">
-                  <span className={`material-symbols-outlined text-sm ${kpi.trendUp ? 'text-primary' : 'text-error'}`}>
-                    {kpi.trendUp ? 'trending_up' : 'trending_down'}
-                  </span>
-                  <span className={`text-xs font-mono font-bold ${kpi.trendUp ? 'text-primary' : 'text-error'}`}>
-                    {kpi.trend}
-                  </span>
-                  <span className="text-[10px] text-on-surface-variant/60 ml-0.5">{kpi.sublabel}</span>
-                </div>
-                <span className="material-symbols-outlined text-sm absolute bottom-4 right-4 opacity-0 group-hover:opacity-30 transition-opacity text-on-surface-variant">
-                  arrow_forward
-                </span>
-              </Link>
-            ))}
+          {/* KPI 2×2 — click opens chart modal */}
+          <div className="xl:col-span-2">
+            <KpiCardsGrid kpiData={kpiData} />
           </div>
 
-          {/* Interactive chart */}
+          {/* GRI Diagram Widget */}
           <div className="xl:col-span-3">
-            <KpiChart />
+            <GriDiagramWidget
+              domains={griDomains}
+              totalScore={griTotalScore}
+              orgName={dbClient?.name ?? undefined}
+            />
           </div>
         </div>
       </section>
-
-      {/* ─── System Health ────────────────────────────────────── */}
-      <SystemHealth />
 
       {/* ─── Customizable Widget Grid ─────────────────────────── */}
       <WidgetGrid

@@ -170,6 +170,20 @@ export interface NavItem {
   icon: string
   roles: UserRole[]
   badge?: string
+  subItems?: Array<Omit<NavItem, 'subItems'>>
+}
+
+// ============================================================
+// Goals
+// ============================================================
+
+export interface Goal {
+  id: string
+  label: string
+  category: 'revenue' | 'margin' | 'clients' | 'avg_check' | 'custom'
+  targetValue?: number
+  targetUnit?: string
+  isCustom: boolean
 }
 
 // ============================================================

@@ -9,6 +9,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { useAuthStore } from '@/stores/auth.store'
 import { signIn } from 'next-auth/react'
+import { SystemHealthCompact } from '@/components/dashboard/SystemHealthCompact'
 
 const schema = z.object({
   email:    z.string().email('Введите корректный email'),
@@ -310,17 +311,7 @@ function LoginContent() {
             </Link>
           </p>
 
-          {/* System status */}
-          <div className="flex items-center justify-center gap-4 mt-6">
-            <div className="flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
-              <span className="text-[10px] font-mono text-primary/70">System Online</span>
-            </div>
-            <span className="text-on-surface-variant/20">·</span>
-            <span className="text-[10px] font-mono text-on-surface-variant/40">ISO 27001</span>
-            <span className="text-on-surface-variant/20">·</span>
-            <span className="text-[10px] font-mono text-on-surface-variant/40">v2.0</span>
-          </div>
+          <SystemHealthCompact />
         </div>
       </div>
     </div>

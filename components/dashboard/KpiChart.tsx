@@ -71,9 +71,9 @@ const CustomTooltip = ({ active, payload, label }: any) => {
   )
 }
 
-export function KpiChart() {
+export function KpiChart({ initialMetric = 'revenue' }: { initialMetric?: string }) {
   const [period, setPeriod] = useState('30d')
-  const [activeMetric, setActiveMetric] = useState('revenue')
+  const [activeMetric, setActiveMetric] = useState(initialMetric)
 
   const data = DATA[period]
   const metric = METRICS.find(m => m.key === activeMetric)!
