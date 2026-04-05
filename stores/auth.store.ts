@@ -217,6 +217,13 @@ export const useAuthStore = create<AuthState>()((set) => ({
       if (!data.user) throw new Error('UNKNOWN')
 
       const appUser = await buildUserFromSession(data.user)
+
+      // Dev mode bypass: automatically confirm email and sign in if session is missing
+      if (process.env.NODE_ENV !== 'production' && !data.session) {
+        await confirmEmailForDev(input.email)
+        return await get().login(input.email, input.password)
+      }
+
       set({ user: appUser, role: appUser.role, isLoading: false, error: null })
     } catch (err: unknown) {
       const code = err instanceof Error ? err.message : 'UNKNOWN'
