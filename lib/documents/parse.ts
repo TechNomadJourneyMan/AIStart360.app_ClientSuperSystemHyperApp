@@ -1,5 +1,3 @@
-const pdf = require("pdf-parse");
-import mammoth from "mammoth";
 import * as XLSX from "xlsx";
 
 export type DocumentType = "pdf" | "docx" | "xlsx" | "txt" | "unknown";
@@ -58,6 +56,9 @@ export async function parseDocument(
 
   switch (docType) {
     case "pdf": {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const pdfModule = await import("pdf-parse") as any;
+      const pdf = pdfModule.default ?? pdfModule;
       const data = await pdf(buffer);
       return {
         text: data.text.trim(),
@@ -71,6 +72,9 @@ export async function parseDocument(
     }
 
     case "docx": {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const mammothModule = await import("mammoth") as any;
+      const mammoth = mammothModule.default ?? mammothModule;
       const result = await mammoth.extractRawText({ buffer });
       return {
         text: result.value.trim(),

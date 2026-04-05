@@ -43,6 +43,7 @@ interface AuthState {
     organization?: string
     position?: string
   }) => Promise<void>
+  loginWithGoogle: () => Promise<void>
   logout: () => Promise<void>
   init: () => Promise<void>
   clearError: () => void
@@ -188,6 +189,24 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
         error: ERROR_MESSAGES[code] ?? (code || 'Произошла ошибка при входе'),
       })
       throw err
+    }
+  },
+
+  loginWithGoogle: async () => {
+    set({ isLoading: true, error: null })
+    try {
+      const supabase = createClient()
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: `${window.location.origin}/auth/callback`,
+        },
+      })
+      if (error) throw new Error(error.message)
+      // Redirect happens automatically — Supabase opens Google consent screen
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Ошибка входа через Google'
+      set({ isLoading: false, error: msg })
     }
   },
 

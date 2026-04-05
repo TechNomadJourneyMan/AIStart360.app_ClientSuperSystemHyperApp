@@ -1,9 +1,8 @@
+export const dynamic = 'force-dynamic'
+
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { parseDocument } from '@/lib/documents/parse'
-
-// Optional: Force this route to be dynamic if you rely on headers/cookies etc.
-export const dynamic = 'force-dynamic'
 
 export async function POST(req: Request) {
   try {
