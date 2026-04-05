@@ -110,7 +110,9 @@ async function buildUserFromSession(user: {
         : null,
   )
 
-  const status = (profileRes.data?.status as UserStatus) || 'approved'
+  const status = (profileRes.data?.status as UserStatus)
+    || (user.user_metadata?.status as UserStatus)
+    || 'approved'
 
   return {
     id: user.id,
@@ -193,37 +195,38 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
     set({ isLoading: true, error: null })
     try {
       const supabase = createClient()
-      const { data, error } = await supabase.auth.signUp({
-        email: input.email,
-        password: input.password,
-        options: {
-          emailRedirectTo: `${window.location.origin}/auth/callback`,
-          data: {
-            full_name: input.name,
-            role: input.role ?? 'client',
-            organization: input.organization,
-            position: input.position,
-            status: input.role === 'client' ? 'pending_approval' : 'approved',
-          },
-        },
+
+      // Use server-side admin API to create user with email_confirm: true
+      // This bypasses Supabase email verification entirely (no email sent)
+      const res = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: input.email,
+          password: input.password,
+          name: input.name,
+          role: input.role ?? 'client',
+          organization: input.organization,
+          position: input.position,
+        }),
       })
 
-      if (error) {
-        if (error.message.toLowerCase().includes('already registered')) {
-          throw new Error('EMAIL_TAKEN')
-        }
-        throw new Error(error.message)
-      }
-      if (!data.user) throw new Error('UNKNOWN')
-
-      const appUser = await buildUserFromSession(data.user)
-
-      // Dev mode bypass: automatically confirm email and sign in if session is missing
-      if (process.env.NODE_ENV !== 'production' && !data.session) {
-        await confirmEmailForDev(input.email)
-        return await get().login(input.email, input.password)
+      const json = await res.json()
+      if (!res.ok) {
+        if (json.error === 'EMAIL_TAKEN') throw new Error('EMAIL_TAKEN')
+        throw new Error(json.error ?? 'UNKNOWN')
       }
 
+      // Sign in immediately — email is already confirmed via admin API
+      const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+        email: input.email,
+        password: input.password,
+      })
+
+      if (signInError) throw new Error(signInError.message)
+      if (!signInData.user) throw new Error('UNKNOWN')
+
+      const appUser = await buildUserFromSession(signInData.user)
       set({ user: appUser, role: appUser.role, isLoading: false, error: null })
     } catch (err: unknown) {
       const code = err instanceof Error ? err.message : 'UNKNOWN'
