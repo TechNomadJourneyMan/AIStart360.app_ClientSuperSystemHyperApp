@@ -75,8 +75,9 @@ model Organization {
   slug      String   @unique
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  users     User[]
-  clients   Client[]
+  users           User[]
+  clients         Client[]
+  crmIntegrations CrmIntegration[]
 
   @@map("organizations")
 }
@@ -279,6 +280,30 @@ model Comment {
   createdAt DateTime     @default(now())
 
   @@map("comments")
+}
+
+/// CRM integration credentials for Bitrix24 / AmoCRM sync.
+model CrmIntegration {
+  id           String   @id @default(cuid())
+  orgId        String
+  org          Organization @relation(fields: [orgId], references: [id])
+  provider     String   // "bitrix24" | "amocrm"
+  domain       String   // e.g. "mycompany.bitrix24.kz" or "mycompany.amocrm.ru"
+  accessToken  String   @db.Text
+  refreshToken String?  @db.Text
+  webhookUrl   String?  // incoming webhook URL (Bitrix24)
+  expiresAt    DateTime?
+  isActive     Boolean  @default(true)
+  lastSyncAt   DateTime?
+  lastSyncStatus String? // "success" | "error" | "partial"
+  lastSyncError  String? @db.Text
+  syncedDeals    Int     @default(0)
+  syncedContacts Int     @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([orgId, provider])
+  @@map("crm_integrations")
 }
 
 /// Immutable audit log --- every admin action is recorded here.

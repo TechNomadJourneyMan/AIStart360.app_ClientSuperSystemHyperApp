@@ -1,8 +1,9 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { usePulse } from '@/hooks/usePulse'
+import type { CrmProvider, CrmStatus } from '@/lib/crm/types'
 
 // ─── Action Modals ─────────────────────────────────────────────────────────────
 function CallModal({ client, onClose }: { client: { name: string; sector: string } | null; onClose: () => void }) {
@@ -328,11 +329,391 @@ function ClientCard({ client, onCall, onMessage, onMonitor, isMonitored }: {
   )
 }
 
+// ─── CRM Integration Tab ──────────────────────────────────────────────────────
+function CrmIntegrationTab() {
+  const [integrations, setIntegrations] = useState<CrmStatus[]>([])
+  const [loading, setLoading] = useState(true)
+  const [showConnect, setShowConnect] = useState(false)
+  const [connectProvider, setConnectProvider] = useState<CrmProvider>('bitrix24')
+  const [connectDomain, setConnectDomain] = useState('')
+  const [connectToken, setConnectToken] = useState('')
+  const [connectWebhook, setConnectWebhook] = useState('')
+  const [connectLoading, setConnectLoading] = useState(false)
+  const [connectError, setConnectError] = useState<string | null>(null)
+  const [syncingId, setSyncingId] = useState<string | null>(null)
+
+  const fetchIntegrations = useCallback(async () => {
+    try {
+      const res = await fetch('/api/crm')
+      const data = await res.json()
+      setIntegrations(data.integrations || [])
+    } catch { /* empty */ }
+    setLoading(false)
+  }, [])
+
+  useEffect(() => { fetchIntegrations() }, [fetchIntegrations])
+
+  const handleConnect = async () => {
+    setConnectLoading(true)
+    setConnectError(null)
+    try {
+      const res = await fetch('/api/crm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          provider: connectProvider,
+          domain: connectDomain,
+          accessToken: connectToken,
+          webhookUrl: connectWebhook || undefined,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setConnectError(data.error || 'Ошибка подключения')
+        setConnectLoading(false)
+        return
+      }
+      setShowConnect(false)
+      setConnectDomain('')
+      setConnectToken('')
+      setConnectWebhook('')
+      fetchIntegrations()
+    } catch {
+      setConnectError('Ошибка сети')
+    }
+    setConnectLoading(false)
+  }
+
+  const handleSync = async (id: string) => {
+    setSyncingId(id)
+    try {
+      await fetch('/api/crm/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id }),
+      })
+      await fetchIntegrations()
+    } catch { /* empty */ }
+    setSyncingId(null)
+  }
+
+  const handleDisconnect = async (id: string) => {
+    if (!confirm('Отключить CRM-интеграцию?')) return
+    try {
+      await fetch('/api/crm', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id }),
+      })
+      await fetchIntegrations()
+    } catch { /* empty */ }
+  }
+
+  const providerInfo = {
+    bitrix24: {
+      name: 'Bitrix24',
+      icon: 'apartment',
+      color: 'text-blue-400',
+      bg: 'bg-blue-400/10 border-blue-400/20',
+      gradient: 'from-blue-500/20 to-blue-600/5',
+      domainHint: 'mycompany.bitrix24.kz',
+      tokenLabel: 'Webhook URL или OAuth Token',
+      docs: 'https://dev.1c-bitrix.ru/rest_help/',
+    },
+    amocrm: {
+      name: 'AmoCRM',
+      icon: 'hub',
+      color: 'text-cyan-400',
+      bg: 'bg-cyan-400/10 border-cyan-400/20',
+      gradient: 'from-cyan-500/20 to-cyan-600/5',
+      domainHint: 'mycompany.amocrm.ru',
+      tokenLabel: 'API ключ (Настройки → Интеграции)',
+      docs: 'https://www.amocrm.ru/developers/',
+    },
+  }
+
+  if (loading) return (
+    <div className="flex items-center justify-center py-20">
+      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+    </div>
+  )
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
+        <div>
+          <h2 className="text-lg font-bold text-on-surface flex items-center gap-2">
+            <span className="material-symbols-outlined text-xl text-primary">sync</span>
+            CRM-интеграции
+          </h2>
+          <p className="text-xs text-on-surface-variant mt-1">
+            Подключите Bitrix24 или AmoCRM для автоматической синхронизации сделок и контактов
+          </p>
+        </div>
+        <button
+          onClick={() => setShowConnect(true)}
+          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary/10 border border-primary/20 text-primary text-sm font-medium hover:bg-primary/20 transition-colors"
+        >
+          <span className="material-symbols-outlined text-lg">add_circle</span>
+          Подключить CRM
+        </button>
+      </div>
+
+      {/* Available CRM cards (when no integrations) */}
+      {integrations.length === 0 && !showConnect && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {(['bitrix24', 'amocrm'] as const).map(provider => {
+            const info = providerInfo[provider]
+            return (
+              <div key={provider}
+                className={`relative overflow-hidden rounded-2xl border border-white/[0.06] bg-gradient-to-br ${info.gradient} p-6 group hover:border-white/[0.12] transition-all cursor-pointer`}
+                onClick={() => { setConnectProvider(provider); setShowConnect(true) }}
+              >
+                <div className="flex items-start justify-between mb-4">
+                  <div className={`w-12 h-12 rounded-2xl ${info.bg} flex items-center justify-center`}>
+                    <span className={`material-symbols-outlined text-2xl ${info.color}`}>{info.icon}</span>
+                  </div>
+                  <span className="material-symbols-outlined text-on-surface-variant/30 group-hover:text-primary/60 transition-colors text-xl">arrow_forward</span>
+                </div>
+                <h3 className="text-lg font-bold text-on-surface mb-1">{info.name}</h3>
+                <p className="text-xs text-on-surface-variant mb-4">
+                  {provider === 'bitrix24'
+                    ? 'Синхронизация сделок, контактов и компаний. Поддержка вебхуков и OAuth.'
+                    : 'Импорт лидов, сделок и контактов. API v4 с автообновлением.'}
+                </p>
+                <div className="flex items-center gap-4 text-[10px] font-mono text-on-surface-variant/60 uppercase tracking-wider">
+                  <span className="flex items-center gap-1">
+                    <span className="material-symbols-outlined text-xs">handshake</span> Сделки
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span className="material-symbols-outlined text-xs">contacts</span> Контакты
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span className="material-symbols-outlined text-xs">sync</span> Авто-синк
+                  </span>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Connected integrations */}
+      {integrations.length > 0 && (
+        <div className="space-y-4">
+          {integrations.map(crm => {
+            const info = providerInfo[crm.provider as CrmProvider] || providerInfo.bitrix24
+            const isSyncing = syncingId === crm.id
+            return (
+              <div key={crm.id}
+                className="rounded-2xl border border-white/[0.06] bg-surface-container-low overflow-hidden"
+              >
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-5 gap-4">
+                  <div className="flex items-center gap-4">
+                    <div className={`w-11 h-11 rounded-xl ${info.bg} flex items-center justify-center flex-shrink-0`}>
+                      <span className={`material-symbols-outlined text-xl ${info.color}`}>{info.icon}</span>
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-sm font-bold text-on-surface">{info.name}</h3>
+                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono ${
+                          crm.isActive
+                            ? 'bg-primary/10 text-primary border border-primary/20'
+                            : 'bg-error/10 text-error border border-error/20'
+                        }`}>
+                          <span className={`w-1.5 h-1.5 rounded-full ${crm.isActive ? 'bg-primary' : 'bg-error'}`} />
+                          {crm.isActive ? 'Активно' : 'Отключено'}
+                        </span>
+                      </div>
+                      <p className="text-xs text-on-surface-variant font-mono mt-0.5">{crm.domain}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 w-full sm:w-auto">
+                    <button
+                      onClick={() => handleSync(crm.id)}
+                      disabled={isSyncing}
+                      className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-primary/10 border border-primary/20 text-primary text-xs font-medium hover:bg-primary/20 disabled:opacity-50 transition-colors"
+                    >
+                      <span className={`material-symbols-outlined text-sm ${isSyncing ? 'animate-spin' : ''}`}>sync</span>
+                      {isSyncing ? 'Синхронизация...' : 'Синхронизировать'}
+                    </button>
+                    <button
+                      onClick={() => handleDisconnect(crm.id)}
+                      className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl border border-white/[0.06] text-on-surface-variant text-xs hover:text-error hover:border-error/20 transition-colors"
+                    >
+                      <span className="material-symbols-outlined text-sm">link_off</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Sync stats */}
+                <div className="border-t border-white/[0.04] px-5 py-3 grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div>
+                    <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider">Сделки</p>
+                    <p className="text-lg font-mono font-bold text-on-surface">{crm.syncedDeals}</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider">Контакты</p>
+                    <p className="text-lg font-mono font-bold text-on-surface">{crm.syncedContacts}</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider">Последняя синхр.</p>
+                    <p className="text-xs font-mono text-on-surface">
+                      {crm.lastSyncAt ? new Date(crm.lastSyncAt).toLocaleString('ru-RU', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—'}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider">Статус</p>
+                    <p className={`text-xs font-mono font-medium ${
+                      crm.lastSyncStatus === 'success' ? 'text-primary' :
+                      crm.lastSyncStatus === 'partial' ? 'text-tertiary-container' :
+                      crm.lastSyncStatus === 'error' ? 'text-error' : 'text-on-surface-variant'
+                    }`}>
+                      {crm.lastSyncStatus === 'success' ? 'Успешно' :
+                       crm.lastSyncStatus === 'partial' ? 'Частично' :
+                       crm.lastSyncStatus === 'error' ? 'Ошибка' : '—'}
+                    </p>
+                    {crm.lastSyncError && (
+                      <p className="text-[10px] text-error/70 mt-0.5 truncate max-w-[200px]" title={crm.lastSyncError}>{crm.lastSyncError}</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Connect modal */}
+      {showConnect && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowConnect(false)} />
+          <div className="relative bg-[#13151c] border border-white/[0.08] rounded-2xl w-full max-w-lg shadow-2xl z-10">
+            <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-white/[0.06]">
+              <div className="flex items-center gap-3">
+                <div className={`w-10 h-10 rounded-xl ${providerInfo[connectProvider].bg} flex items-center justify-center`}>
+                  <span className={`material-symbols-outlined text-xl ${providerInfo[connectProvider].color}`}>
+                    {providerInfo[connectProvider].icon}
+                  </span>
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-on-surface">Подключить {providerInfo[connectProvider].name}</p>
+                  <p className="text-[10px] text-on-surface-variant">Введите данные для подключения</p>
+                </div>
+              </div>
+              <button onClick={() => setShowConnect(false)} className="text-on-surface-variant hover:text-on-surface">
+                <span className="material-symbols-outlined text-lg">close</span>
+              </button>
+            </div>
+            <div className="px-6 py-5 space-y-4">
+              {/* Provider selector */}
+              <div className="flex gap-2">
+                {(['bitrix24', 'amocrm'] as const).map(p => (
+                  <button key={p} onClick={() => setConnectProvider(p)}
+                    className={`flex-1 flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl border text-xs font-medium transition-colors ${
+                      connectProvider === p
+                        ? `${providerInfo[p].bg} ${providerInfo[p].color}`
+                        : 'border-white/[0.06] text-on-surface-variant hover:text-on-surface'
+                    }`}>
+                    <span className="material-symbols-outlined text-sm">{providerInfo[p].icon}</span>
+                    {providerInfo[p].name}
+                  </button>
+                ))}
+              </div>
+
+              {/* Domain */}
+              <div>
+                <label className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider block mb-1.5">Домен</label>
+                <input
+                  type="text"
+                  value={connectDomain}
+                  onChange={e => setConnectDomain(e.target.value)}
+                  placeholder={providerInfo[connectProvider].domainHint}
+                  className="w-full bg-surface-container border border-white/[0.06] rounded-xl px-3.5 py-2.5 text-sm text-on-surface placeholder:text-on-surface-variant/40 focus:outline-none focus:border-primary/30"
+                />
+              </div>
+
+              {/* Access token */}
+              <div>
+                <label className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider block mb-1.5">
+                  {providerInfo[connectProvider].tokenLabel}
+                </label>
+                <input
+                  type="password"
+                  value={connectToken}
+                  onChange={e => setConnectToken(e.target.value)}
+                  placeholder="Вставьте токен или ключ..."
+                  className="w-full bg-surface-container border border-white/[0.06] rounded-xl px-3.5 py-2.5 text-sm text-on-surface placeholder:text-on-surface-variant/40 focus:outline-none focus:border-primary/30 font-mono"
+                />
+              </div>
+
+              {/* Webhook URL (Bitrix24 only) */}
+              {connectProvider === 'bitrix24' && (
+                <div>
+                  <label className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider block mb-1.5">
+                    Webhook URL <span className="text-on-surface-variant/40">(опционально)</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={connectWebhook}
+                    onChange={e => setConnectWebhook(e.target.value)}
+                    placeholder="https://mycompany.bitrix24.kz/rest/1/abc123/"
+                    className="w-full bg-surface-container border border-white/[0.06] rounded-xl px-3.5 py-2.5 text-sm text-on-surface placeholder:text-on-surface-variant/40 focus:outline-none focus:border-primary/30 font-mono text-xs"
+                  />
+                </div>
+              )}
+
+              {/* Docs link */}
+              <a href={providerInfo[connectProvider].docs} target="_blank" rel="noopener noreferrer"
+                className="flex items-center gap-1.5 text-xs text-primary/70 hover:text-primary transition-colors">
+                <span className="material-symbols-outlined text-sm">menu_book</span>
+                Документация API {providerInfo[connectProvider].name}
+              </a>
+
+              {connectError && (
+                <div className="flex items-center gap-2 bg-error/10 border border-error/20 rounded-xl px-3 py-2.5">
+                  <span className="material-symbols-outlined text-sm text-error">error</span>
+                  <p className="text-xs text-error">{connectError}</p>
+                </div>
+              )}
+
+              <div className="flex gap-2 pt-2">
+                <button onClick={() => setShowConnect(false)}
+                  className="flex-1 px-4 py-2.5 rounded-xl border border-white/[0.08] text-sm text-on-surface-variant hover:bg-white/[0.04] transition-colors">
+                  Отмена
+                </button>
+                <button
+                  onClick={handleConnect}
+                  disabled={connectLoading || !connectDomain || !connectToken}
+                  className="flex-1 px-4 py-2.5 rounded-xl bg-primary/20 border border-primary/30 text-sm text-primary font-medium hover:bg-primary/30 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                >
+                  {connectLoading ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <span className="material-symbols-outlined text-sm animate-spin">sync</span>
+                      Проверка...
+                    </span>
+                  ) : (
+                    <span className="flex items-center justify-center gap-2">
+                      <span className="material-symbols-outlined text-sm">check</span>
+                      Подключить
+                    </span>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
 type ModalClient = { name: string; sector: string }
 
 export default function PulsePage() {
-  const [tab, setTab] = useState<'today' | 'risk' | 'card'>('today')
+  const [tab, setTab] = useState<'today' | 'risk' | 'card' | 'crm'>('today')
   const { data: clientsData, isLoading, error } = usePulse()
   
   const [monitored, setMonitored]         = useState<Set<string>>(new Set())
@@ -503,16 +884,18 @@ export default function PulsePage() {
       <div className="border-b border-white/[0.04] w-full overflow-x-auto no-scrollbar">
         <div className="flex gap-1 min-w-max">
           {([
-            { key: 'today', label: 'Кому звонить', labelFull: 'Кому продавать сегодня', count: TODAY_CLIENTS.length },
-            { key: 'risk',  label: 'В зоне риска', labelFull: 'Топ в зоне риска',       count: filteredRisk.length },
-            { key: 'card',  label: 'Карточка',     labelFull: 'Карточка клиента',        count: null },
-          ] as const).map(({ key, label, labelFull, count }) => (
+            { key: 'today', label: 'Кому звонить', labelFull: 'Кому продавать сегодня', count: TODAY_CLIENTS.length, icon: null },
+            { key: 'risk',  label: 'В зоне риска', labelFull: 'Топ в зоне риска',       count: filteredRisk.length, icon: null },
+            { key: 'card',  label: 'Карточка',     labelFull: 'Карточка клиента',        count: null, icon: null },
+            { key: 'crm',   label: 'CRM',          labelFull: 'CRM-интеграции',          count: null, icon: 'sync' },
+          ] as const).map(({ key, label, labelFull, count, icon }) => (
             <button key={key} onClick={() => setTab(key)}
               className={`flex items-center gap-2 px-4 py-3 text-sm font-medium whitespace-nowrap transition-colors border-b-2 -mb-px ${
                 tab === key
                   ? 'text-primary border-primary'
                   : 'text-on-surface-variant border-transparent hover:text-on-surface hover:border-outline-variant/50'
               }`}>
+              {icon && <span className={`material-symbols-outlined text-sm ${tab === key ? 'text-primary' : ''}`}>{icon}</span>}
               <span className="md:hidden">{label}</span>
               <span className="hidden md:inline">{labelFull}</span>
               {count !== null && (
@@ -788,6 +1171,9 @@ export default function PulsePage() {
           </div>
         </div>
       )}
+
+      {/* ─── TAB 4: CRM Integration ─── */}
+      {tab === 'crm' && <CrmIntegrationTab />}
 
     </div>
   )
