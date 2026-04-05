@@ -49,6 +49,11 @@ export interface GigaRequest {
   createdAt: string
   company?: string
   rejectionReason?: string
+  surveyData?: {
+    answers: Record<string, unknown>
+    company: Record<string, unknown> | null
+    completedSteps: number[]
+  }
 }
 
 export interface GigaUser {

@@ -48,16 +48,25 @@ export default function RegisterPage() {
       await register({ name, email, password, role, organization })
       const currentUser = useAuthStore.getState().user
       if (currentUser && role === 'client') {
-        await fetch('/api/client/register', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            userId: currentUser.id,
-            email: currentUser.email,
-            name: currentUser.name,
-            company: organization,
-          }),
-        })
+        try {
+          const res = await fetch('/api/client/register', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              userId: currentUser.id,
+              email: currentUser.email,
+              name: currentUser.name,
+              company: organization,
+            }),
+          })
+          if (!res.ok) {
+            console.warn('[register] /api/client/register returned', res.status, '— user created, admin request may be pending reconciliation')
+          }
+        } catch (clientRegErr) {
+          // Non-blocking: Supabase auth user is created, waiting-room will work.
+          // Giga Panel reconciliation will catch the missing AdminRequest.
+          console.warn('[register] /api/client/register failed:', clientRegErr)
+        }
       }
     } catch {
       // Error handled by store

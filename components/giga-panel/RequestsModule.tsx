@@ -15,9 +15,12 @@ import {
   CalendarDays,
   ChevronDown,
   RefreshCw,
+  Loader2,
+  FileText,
 } from 'lucide-react'
 import { useGigaPanelStore, type RequestCategory, type GigaRequest } from '@/stores/gigaPanel.store'
 import { RejectModal } from './RejectModal'
+import { SURVEY_LABELS, SURVEY_STEP_LABELS, formatSurveyValue, getStepFromKey } from '@/lib/survey-labels'
 
 // ─── Tab config ───────────────────────────────────────────────────────────────
 
@@ -46,6 +49,99 @@ function StatusBadge({ status }: { status: GigaRequest['status'] }) {
     <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold border ${map[status]}`}>
       {labels[status]}
     </span>
+  )
+}
+
+// ─── Single request card ──────────────────────────────────────────────────────
+
+// ─── Survey data section (displayed inside expanded card) ────────────────────
+
+function SurveySection({ requestId }: { requestId: string }) {
+  const [data, setData] = useState<{
+    answers: Record<string, unknown>
+    company: Record<string, unknown> | null
+    completedSteps: number[]
+  } | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const res = await fetch(`/api/giga-admin/requests/${requestId}/survey`)
+        if (!res.ok) throw new Error('Не удалось загрузить анкету')
+        const json = await res.json()
+        if (!cancelled) setData(json.data)
+      } catch (e) {
+        if (!cancelled) setError(e instanceof Error ? e.message : 'Ошибка')
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [requestId])
+
+  if (loading) {
+    return (
+      <div className="flex items-center gap-2 py-4 justify-center">
+        <Loader2 size={14} className="text-slate-500 animate-spin" />
+        <span className="text-[11px] text-slate-500">Загрузка анкеты...</span>
+      </div>
+    )
+  }
+
+  if (error) {
+    return <p className="text-[11px] text-red-400 py-2">{error}</p>
+  }
+
+  if (!data || data.completedSteps.length === 0) {
+    return (
+      <p className="text-[11px] text-slate-600 py-2 italic">Анкета ещё не заполнена</p>
+    )
+  }
+
+  // Group answers by step
+  const stepGroups: Record<number, { key: string; label: string; value: string }[]> = {}
+  for (const [key, val] of Object.entries(data.answers)) {
+    const step = getStepFromKey(key)
+    if (!step) continue
+    if (!stepGroups[step]) stepGroups[step] = []
+    stepGroups[step].push({
+      key,
+      label: SURVEY_LABELS[key] || key,
+      value: formatSurveyValue(key, val),
+    })
+  }
+
+  return (
+    <div className="mt-3 space-y-3">
+      <div className="flex items-center gap-1.5">
+        <FileText size={12} className="text-blue-400" />
+        <span className="text-[11px] font-semibold text-blue-300 uppercase tracking-wider">
+          Данные анкеты
+        </span>
+      </div>
+      {data.completedSteps.map((step) => {
+        const fields = stepGroups[step]
+        if (!fields?.length) return null
+        return (
+          <div key={step} className="p-2.5 rounded-lg bg-white/[0.02] border border-white/[0.04]">
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">
+              {SURVEY_STEP_LABELS[step] || `Шаг ${step}`}
+            </p>
+            <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+              {fields.map((f) => (
+                <div key={f.key} className="flex flex-col py-0.5">
+                  <span className="text-[9px] text-slate-600">{f.label}</span>
+                  <span className="text-[11px] text-slate-300 leading-tight">{f.value}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )
+      })}
+    </div>
   )
 }
 
@@ -146,7 +242,7 @@ function RequestCard({
         </button>
       </div>
 
-      {/* Expanded description */}
+      {/* Expanded description + survey data */}
       <AnimatePresence>
         {expanded && (
           <motion.div
@@ -166,6 +262,11 @@ function RequestCard({
                   </div>
                 )}
               </div>
+
+              {/* Survey data (lazy-loaded for registration requests) */}
+              {request.category === 'registration' && (
+                <SurveySection requestId={request.id} />
+              )}
             </div>
           </motion.div>
         )}

@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
+import { createServerClient } from '@/lib/supabase-server'
 
 function isSuperAdmin(req: NextRequest): boolean {
   return req.cookies.get('aistart360_role')?.value === 'super_admin'
@@ -15,8 +16,64 @@ function mapStatus(s: string): 'pending' | 'approved' | 'rejected' | 'archived' 
 }
 
 /**
+ * Reconcile orphaned Supabase profiles that have no matching AdminRequest.
+ * This catches cases where /api/client/register failed after Supabase user creation.
+ */
+async function reconcileOrphanedProfiles(existingUserIds: Set<string>) {
+  try {
+    const supabase = createServerClient()
+
+    // Find pending client profiles older than 60 seconds
+    const cutoff = new Date(Date.now() - 60_000).toISOString()
+    const { data: pendingProfiles } = await supabase
+      .from('profiles')
+      .select('id, email, full_name, organization, created_at')
+      .eq('status', 'pending_approval')
+      .eq('role', 'client')
+      .lt('created_at', cutoff)
+
+    if (!pendingProfiles?.length) return 0
+
+    let reconciled = 0
+    for (const profile of pendingProfiles) {
+      if (existingUserIds.has(profile.id)) continue
+
+      try {
+        await prisma.adminRequest.create({
+          data: {
+            type: 'registration',
+            status: 'new',
+            priority: 'medium',
+            source: 'reconciliation',
+            payload: {
+              userId: profile.id,
+              email: profile.email,
+              name: profile.full_name || profile.email,
+              company: profile.organization || '',
+              subject: `Регистрация: ${profile.full_name || profile.email}`,
+              description: `Авто-восстановленная заявка от ${profile.full_name || profile.email}`,
+            },
+          },
+        })
+        reconciled++
+      } catch {
+        // Skip duplicates or other errors
+      }
+    }
+
+    if (reconciled > 0) {
+      console.log(`[giga-admin/requests] Reconciled ${reconciled} orphaned profile(s)`)
+    }
+    return reconciled
+  } catch (error) {
+    console.warn('[giga-admin/requests] Reconciliation error:', error)
+    return 0
+  }
+}
+
+/**
  * GET /api/giga-admin/requests
- * Returns all AdminRequest records from Supabase via Prisma.
+ * Returns all AdminRequest records. Auto-reconciles orphaned Supabase profiles.
  */
 export async function GET(req: NextRequest) {
   if (!isSuperAdmin(req)) {
@@ -24,6 +81,20 @@ export async function GET(req: NextRequest) {
   }
 
   try {
+    // Collect existing userIds from AdminRequest payloads for reconciliation
+    const allRows = await prisma.adminRequest.findMany({
+      select: { payload: true },
+    })
+    const existingUserIds = new Set<string>()
+    for (const r of allRows) {
+      const uid = (r.payload as Record<string, string> | null)?.userId
+      if (uid) existingUserIds.add(uid)
+    }
+
+    // Auto-reconcile orphaned profiles (non-blocking)
+    await reconcileOrphanedProfiles(existingUserIds)
+
+    // Fetch full data
     const rows = await prisma.adminRequest.findMany({
       include: {
         user: { select: { id: true, name: true, email: true, avatarUrl: true } },

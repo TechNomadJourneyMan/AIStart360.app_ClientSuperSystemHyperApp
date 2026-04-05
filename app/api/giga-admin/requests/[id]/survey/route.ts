@@ -1,0 +1,80 @@
+export const dynamic = 'force-dynamic'
+
+import { NextRequest, NextResponse } from 'next/server'
+import { prisma } from '@/lib/db'
+import { createServerClient } from '@/lib/supabase-server'
+
+function isSuperAdmin(req: NextRequest): boolean {
+  return req.cookies.get('aistart360_role')?.value === 'super_admin'
+}
+
+/**
+ * GET /api/giga-admin/requests/[id]/survey
+ * Returns onboarding survey answers and company data for a given AdminRequest.
+ * Looks up the userId from AdminRequest.payload, then fetches from Supabase.
+ */
+export async function GET(
+  req: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  if (!isSuperAdmin(req)) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
+
+  try {
+    const adminRequest = await prisma.adminRequest.findUnique({
+      where: { id: params.id },
+    })
+
+    if (!adminRequest) {
+      return NextResponse.json({ error: 'Request not found' }, { status: 404 })
+    }
+
+    const payload = (adminRequest.payload ?? {}) as Record<string, string>
+    const userId = payload.userId
+
+    if (!userId) {
+      return NextResponse.json({ error: 'No userId in request payload' }, { status: 400 })
+    }
+
+    const supabase = createServerClient()
+
+    // Fetch survey answers
+    const { data: surveyRows } = await supabase
+      .from('survey_answers')
+      .select('question_key, answer, step')
+      .eq('user_id', userId)
+      .order('step', { ascending: true })
+
+    // Fetch company data
+    const { data: company } = await supabase
+      .from('companies')
+      .select('*')
+      .eq('user_id', userId)
+      .maybeSingle()
+
+    // Transform survey rows into flat answers map and completed steps
+    const answers: Record<string, unknown> = {}
+    const completedSteps = new Set<number>()
+
+    if (surveyRows) {
+      for (const row of surveyRows) {
+        const val = (row.answer as Record<string, unknown>)?.value ?? row.answer
+        answers[row.question_key] = val
+        completedSteps.add(row.step)
+      }
+    }
+
+    return NextResponse.json({
+      ok: true,
+      data: {
+        answers,
+        company,
+        completedSteps: Array.from(completedSteps).sort(),
+      },
+    })
+  } catch (error) {
+    console.error('[giga-admin/requests/[id]/survey] GET error:', error)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  }
+}
