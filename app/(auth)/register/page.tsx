@@ -139,15 +139,17 @@ export default function RegisterPage() {
 
     const userId = authData.user.id.toString()
 
-    // Save profile and company to DB
-    await supabase.from('profiles').upsert(
-      { id: userId, email: data.email, full_name: data.name, status: 'pending_approval' },
-      { onConflict: 'id' }
-    )
-    await supabase.from('companies').upsert(
-      { user_id: userId, company_name: data.company },
-      { onConflict: 'user_id' }
-    )
+    // Create profile, company, and admin request via server API
+    await fetch('/api/client/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        userId,
+        email: data.email,
+        name: data.name,
+        company: data.company,
+      }),
+    })
 
     router.replace('/client/waiting-room')
   }
