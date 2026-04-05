@@ -12,7 +12,6 @@ export default function RegisterPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [role, setRole] = useState<UserRole>('client')
-  const [organization, setOrganization] = useState('')
   const { register, isLoading, error, clearError, user } = useAuthStore()
   const router = useRouter()
 
@@ -35,25 +34,7 @@ export default function RegisterPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     try {
-      // 1. Core Supabase Registration
-      await register({ name, email, password, role, organization })
-      
-      // 2. Fetch the created user from store (it was set inside register)
-      const currentUser = useAuthStore.getState().user
-      
-      // 3. If client, trigger the approval flow API
-      if (currentUser && role === 'client') {
-        await fetch('/api/client/register', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            userId: currentUser.id,
-            email: currentUser.email,
-            name: currentUser.name,
-            company: organization,
-          }),
-        })
-      }
+      await register({ name, email, password, role })
     } catch (err) {
       // Error is handled by the store
     }
@@ -147,26 +128,6 @@ export default function RegisterPage() {
                 onChange={(e) => setPassword(e.target.value)}
                 className="w-full h-12 bg-surface-container-high border border-white/[0.05] rounded-2xl pl-12 pr-4 text-on-surface focus:outline-none focus:border-primary/50 focus:ring-4 focus:ring-primary/10 transition-all"
                 placeholder="Минимум 8 знаков"
-              />
-            </div>
-          </div>
-
-          {/* Organization/Company field — added for client approval flow */}
-          <div className="space-y-2">
-            <label className="block text-xs font-mono text-on-surface-variant uppercase tracking-widest ml-1">
-              Организация
-            </label>
-            <div className="relative group">
-              <span className="absolute left-4 top-1/2 -translate-y-1/2 material-symbols-outlined text-on-surface-variant/40 group-focus-within:text-primary transition-colors text-lg">
-                business
-              </span>
-              <input
-                type="text"
-                required={role === 'client'}
-                value={organization}
-                onChange={(e) => setOrganization(e.target.value)}
-                className="w-full h-12 bg-surface-container-high border border-white/[0.05] rounded-2xl pl-12 pr-4 text-on-surface focus:outline-none focus:border-primary/50 focus:ring-4 focus:ring-primary/10 transition-all"
-                placeholder="Название вашей компании"
               />
             </div>
           </div>
