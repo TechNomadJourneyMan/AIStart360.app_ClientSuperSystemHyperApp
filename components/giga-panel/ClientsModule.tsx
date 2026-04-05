@@ -25,9 +25,9 @@ import { useGigaPanelStore, type GigaClient } from '@/stores/gigaPanel.store'
 function ScoreRing({ score, size = 64 }: { score: number; size?: number }) {
   const r = size / 2 - 6
   const circ = 2 * Math.PI * r
-  const fill = ((score ?? 0) / 100) * circ
+  const fill = ((score ?? 0) / 10) * circ
   const color =
-    score >= 70 ? '#10b981' : score >= 45 ? '#f59e0b' : '#ef4444'
+    score >= 7.0 ? '#10b981' : score >= 4.5 ? '#f59e0b' : '#ef4444'
 
   return (
     <svg width={size} height={size} className="rotate-[-90deg]">
@@ -74,17 +74,17 @@ function churnIcon(level: string) {
 }
 
 function ScoreBar({ label, score }: { label: string; score: number }) {
-  const color = score >= 70 ? 'bg-emerald-500' : score >= 45 ? 'bg-amber-500' : 'bg-red-500'
+  const color = score >= 7.0 ? 'bg-emerald-500' : score >= 4.5 ? 'bg-amber-500' : 'bg-red-500'
   return (
     <div>
       <div className="flex justify-between mb-1">
         <span className="text-[10px] text-slate-500">{label}</span>
-        <span className="text-[10px] font-semibold text-slate-300">{Math.round(score)}</span>
+        <span className="text-[10px] font-semibold text-slate-300">{(score || 0).toFixed(1)}</span>
       </div>
       <div className="h-1.5 rounded-full bg-white/[0.06] overflow-hidden">
         <motion.div
           initial={{ width: 0 }}
-          animate={{ width: `${score}%` }}
+          animate={{ width: `${(score || 0) * 10}%` }}
           transition={{ duration: 0.6, ease: 'easeOut' }}
           className={`h-full rounded-full ${color}`}
         />
@@ -96,7 +96,7 @@ function ScoreBar({ label, score }: { label: string; score: number }) {
 // ─── Client card ──────────────────────────────────────────────────────────────
 
 function ClientCard({ client, onClick }: { client: GigaClient; onClick: () => void }) {
-  const score = client.latestGri?.overallScore ?? null
+  const score = client.latestGri?.score ?? null
   const initials = client.name.slice(0, 2).toUpperCase()
 
   return (
@@ -127,7 +127,7 @@ function ClientCard({ client, onClick }: { client: GigaClient; onClick: () => vo
             <ScoreRing score={score} size={44} />
             <span className="absolute inset-0 flex items-center justify-center
               text-[11px] font-bold text-slate-200 rotate-90">
-              {Math.round(score)}
+              {(score || 0).toFixed(1)}
             </span>
           </div>
         )}
@@ -164,7 +164,7 @@ function ClientCard({ client, onClick }: { client: GigaClient; onClick: () => vo
 // ─── Detail panel (right drawer) ─────────────────────────────────────────────
 
 function ClientDetailPanel({ client, onClose }: { client: GigaClient; onClose: () => void }) {
-  const score = client.latestGri?.overallScore ?? null
+  const score = client.latestGri?.score ?? null
   const gri = client.latestGri
   const pulse = client.pulseMetrics
 
@@ -261,10 +261,10 @@ function ClientDetailPanel({ client, onClose }: { client: GigaClient; onClose: (
               <p className="text-xs font-semibold text-slate-300 uppercase tracking-widest">GRI Индекс</p>
               <div className="flex items-center gap-2">
                 <div className="relative">
-                  <ScoreRing score={gri.overallScore} size={52} />
+                  <ScoreRing score={gri.score} size={52} />
                   <span className="absolute inset-0 flex items-center justify-center
                     text-sm font-bold text-slate-100 rotate-90">
-                    {Math.round(gri.overallScore)}
+                    {(gri.score || 0).toFixed(1)}
                   </span>
                 </div>
               </div>

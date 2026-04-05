@@ -1,6 +1,5 @@
 import { create } from 'zustand'
 import type { Notification } from '@/types'
-import { MOCK_NOTIFICATIONS } from '@/lib/mock-data'
 
 interface NotificationsState {
   notifications: Notification[]
@@ -13,8 +12,8 @@ interface NotificationsState {
 }
 
 export const useNotificationsStore = create<NotificationsState>((set) => ({
-  notifications: MOCK_NOTIFICATIONS,
-  unreadCount: MOCK_NOTIFICATIONS.filter((n) => !n.read).length,
+  notifications: [],
+  unreadCount: 0,
 
   markAsRead: (id) =>
     set((s) => {

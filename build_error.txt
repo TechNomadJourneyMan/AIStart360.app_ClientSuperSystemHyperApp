@@ -1,0 +1,539 @@
+
+> aistart360-portal@0.1.0 build
+> next build
+
+  ▲ Next.js 14.2.35
+  - Environments: .env.local, .env
+
+   Creating an optimized production build ...
+ ⚠ Compiled with warnings
+
+./node_modules/pdf-parse/dist/pdf-parse/cjs/index.cjs
+Critical dependency: the request of a dependency is an expression
+
+Import trace for requested module:
+./node_modules/pdf-parse/dist/pdf-parse/cjs/index.cjs
+./lib/documents/parse.ts
+./app/api/diagnostics/trigger/route.ts
+
+ ✓ Compiled successfully
+   Linting and checking validity of types ...
+
+./components/dashboard/AddMetricModal.tsx
+29:9  Warning: The 'allActiveIds' object construction makes the dependencies of useMemo Hook (at line 37) change on every render. To fix this, wrap the initialization of 'allActiveIds' in its own useMemo() Hook.  react-hooks/exhaustive-deps
+
+info  - Need to disable some ESLint rules? Learn more here: https://nextjs.org/docs/basic-features/eslint#disabling-rules
+   Collecting page data ...
+   Generating static pages (0/71) ...
+[api/dashboard/kpi] n [Error]: Dynamic server usage: Route /api/dashboard/kpi couldn't be rendered statically because it used `headers`. See more info here: https://nextjs.org/docs/messages/dynamic-server-error
+    at u (/Users/ansarisenoff/AI-Portal/.next/server/chunks/8948.js:1:51832)
+    at d (/Users/ansarisenoff/AI-Portal/.next/server/chunks/3540.js:1:1601)
+    at /Users/ansarisenoff/AI-Portal/.next/server/chunks/3540.js:404:60492
+    at p (/Users/ansarisenoff/AI-Portal/.next/server/app/api/dashboard/kpi/route.js:1:932)
+    at /Users/ansarisenoff/AI-Portal/node_modules/next/dist/compiled/next-server/app-route.runtime.prod.js:6:38417
+    at /Users/ansarisenoff/AI-Portal/node_modules/next/dist/server/lib/trace/tracer.js:140:36
+    at NoopContextManager.with (/Users/ansarisenoff/AI-Portal/node_modules/@opentelemetry/api/build/src/context/NoopContextManager.js:14:19)
+    at ContextAPI.with (/Users/ansarisenoff/AI-Portal/node_modules/@opentelemetry/api/build/src/api/context.js:51:46)
+    at NoopTracer.startActiveSpan (/Users/ansarisenoff/AI-Portal/node_modules/@opentelemetry/api/build/src/trace/NoopTracer.js:54:31)
+    at ProxyTracer.startActiveSpan (/Users/ansarisenoff/AI-Portal/node_modules/@opentelemetry/api/build/src/trace/ProxyTracer.js:27:24) {
+  description: "Route /api/dashboard/kpi couldn't be rendered statically because it used `headers`. See more info here: https://nextjs.org/docs/messages/dynamic-server-error",
+  digest: 'DYNAMIC_SERVER_USAGE'
+}
+   Generating static pages (17/71) 
+   Generating static pages (35/71) 
+   Generating static pages (53/71) 
+PrismaClientInitializationError: 
+Invalid `prisma.client.count()` invocation:
+
+
+Error querying the database: FATAL: Tenant or user not found
+    at In.handleRequestError (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:7154)
+    at In.handleAndLogRequestError (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:6188)
+    at In.request (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:5896)
+    at async l (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:128:10871)
+    at async Promise.all (index 0)
+    at async i (/Users/ansarisenoff/AI-Portal/.next/server/chunks/7459.js:1:566)
+    at async d (/Users/ansarisenoff/AI-Portal/.next/server/chunks/7459.js:1:1980) {
+  clientVersion: '5.10.0',
+  errorCode: undefined,
+  digest: '711402159'
+}
+PrismaClientInitializationError: 
+Invalid `prisma.client.count()` invocation:
+
+
+Error querying the database: FATAL: Tenant or user not found
+    at In.handleRequestError (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:7154)
+    at In.handleAndLogRequestError (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:6188)
+    at In.request (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:5896)
+    at async l (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:128:10871)
+    at async Promise.all (index 0)
+    at async i (/Users/ansarisenoff/AI-Portal/.next/server/chunks/7459.js:1:566)
+    at async d (/Users/ansarisenoff/AI-Portal/.next/server/chunks/7459.js:1:1980) {
+  clientVersion: '5.10.0',
+  errorCode: undefined,
+  digest: '711402159'
+}
+PrismaClientInitializationError: 
+Invalid `prisma.client.count()` invocation:
+
+
+Error querying the database: FATAL: Tenant or user not found
+    at In.handleRequestError (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:7154)
+    at In.handleAndLogRequestError (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:6188)
+    at In.request (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:5896)
+    at async l (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:128:10871)
+    at async Promise.all (index 0)
+    at async i (/Users/ansarisenoff/AI-Portal/.next/server/chunks/7459.js:1:566)
+    at async d (/Users/ansarisenoff/AI-Portal/.next/server/chunks/7459.js:1:1980) {
+  clientVersion: '5.10.0',
+  errorCode: undefined,
+  digest: '711402159'
+}
+
+Error occurred prerendering page "/owner/analytics". Read more: https://nextjs.org/docs/messages/prerender-error
+
+PrismaClientInitializationError: 
+Invalid `prisma.client.count()` invocation:
+
+
+Error querying the database: FATAL: Tenant or user not found
+    at In.handleRequestError (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:7154)
+    at In.handleAndLogRequestError (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:6188)
+    at In.request (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:5896)
+    at async l (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:128:10871)
+    at async Promise.all (index 0)
+    at async i (/Users/ansarisenoff/AI-Portal/.next/server/chunks/7459.js:1:566)
+    at async d (/Users/ansarisenoff/AI-Portal/.next/server/chunks/7459.js:1:1980)
+PrismaClientInitializationError: 
+Invalid `prisma.auditLog.findMany()` invocation:
+
+
+Error querying the database: FATAL: Tenant or user not found
+    at In.handleRequestError (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:7154)
+    at In.handleAndLogRequestError (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:6188)
+    at In.request (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:5896)
+    at async l (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:128:10871)
+    at async l (/Users/ansarisenoff/AI-Portal/.next/server/app/(owner)/owner/notifications/page.js:1:2920) {
+  clientVersion: '5.10.0',
+  errorCode: undefined,
+  digest: '1912829961'
+}
+PrismaClientInitializationError: 
+Invalid `prisma.auditLog.findMany()` invocation:
+
+
+Error querying the database: FATAL: Tenant or user not found
+    at In.handleRequestError (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:7154)
+    at In.handleAndLogRequestError (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:6188)
+    at In.request (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:5896)
+    at async l (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:128:10871)
+    at async l (/Users/ansarisenoff/AI-Portal/.next/server/app/(owner)/owner/notifications/page.js:1:2920) {
+  clientVersion: '5.10.0',
+  errorCode: undefined,
+  digest: '1912829961'
+}
+PrismaClientInitializationError: 
+Invalid `prisma.auditLog.findMany()` invocation:
+
+
+Error querying the database: FATAL: Tenant or user not found
+    at In.handleRequestError (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:7154)
+    at In.handleAndLogRequestError (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:6188)
+    at In.request (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:5896)
+    at async l (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:128:10871)
+    at async l (/Users/ansarisenoff/AI-Portal/.next/server/app/(owner)/owner/notifications/page.js:1:2920) {
+  clientVersion: '5.10.0',
+  errorCode: undefined,
+  digest: '1912829961'
+}
+
+Error occurred prerendering page "/owner/notifications". Read more: https://nextjs.org/docs/messages/prerender-error
+
+PrismaClientInitializationError: 
+Invalid `prisma.auditLog.findMany()` invocation:
+
+
+Error querying the database: FATAL: Tenant or user not found
+    at In.handleRequestError (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:7154)
+    at In.handleAndLogRequestError (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:6188)
+    at In.request (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:5896)
+    at async l (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:128:10871)
+    at async l (/Users/ansarisenoff/AI-Portal/.next/server/app/(owner)/owner/notifications/page.js:1:2920)
+[Dashboard] data fetch error: n [Error]: Dynamic server usage: Route /dashboard couldn't be rendered statically because it used `cookies`. See more info here: https://nextjs.org/docs/messages/dynamic-server-error
+    at u (/Users/ansarisenoff/AI-Portal/.next/server/chunks/8948.js:1:51832)
+    at p (/Users/ansarisenoff/AI-Portal/.next/server/chunks/3540.js:1:1855)
+    at i (/Users/ansarisenoff/AI-Portal/.next/server/app/(dashboard)/dashboard/page.js:43:8704)
+    at j (/Users/ansarisenoff/AI-Portal/.next/server/app/(dashboard)/dashboard/page.js:43:703)
+    at w (/Users/ansarisenoff/AI-Portal/.next/server/app/(dashboard)/dashboard/page.js:43:2476)
+    at em (/Users/ansarisenoff/AI-Portal/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:134808)
+    at e (/Users/ansarisenoff/AI-Portal/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:137693)
+    at e_ (/Users/ansarisenoff/AI-Portal/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:138168)
+    at Array.toJSON (/Users/ansarisenoff/AI-Portal/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:135777)
+    at stringify (<anonymous>) {
+  description: "Route /dashboard couldn't be rendered statically because it used `cookies`. See more info here: https://nextjs.org/docs/messages/dynamic-server-error",
+  digest: 'DYNAMIC_SERVER_USAGE'
+}
+[Dashboard] data fetch error: n [Error]: Dynamic server usage: Route /dashboard couldn't be rendered statically because it used `cookies`. See more info here: https://nextjs.org/docs/messages/dynamic-server-error
+    at u (/Users/ansarisenoff/AI-Portal/.next/server/chunks/8948.js:1:51832)
+    at p (/Users/ansarisenoff/AI-Portal/.next/server/chunks/3540.js:1:1855)
+    at i (/Users/ansarisenoff/AI-Portal/.next/server/app/(dashboard)/dashboard/page.js:43:8704)
+    at j (/Users/ansarisenoff/AI-Portal/.next/server/app/(dashboard)/dashboard/page.js:43:703)
+    at w (/Users/ansarisenoff/AI-Portal/.next/server/app/(dashboard)/dashboard/page.js:43:2476)
+    at em (/Users/ansarisenoff/AI-Portal/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:134808)
+    at e (/Users/ansarisenoff/AI-Portal/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:137693)
+    at e_ (/Users/ansarisenoff/AI-Portal/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:138168)
+    at Array.toJSON (/Users/ansarisenoff/AI-Portal/node_modules/next/dist/compiled/next-server/app-page.runtime.prod.js:12:135777)
+    at stringify (<anonymous>) {
+  description: "Route /dashboard couldn't be rendered statically because it used `cookies`. See more info here: https://nextjs.org/docs/messages/dynamic-server-error",
+  digest: 'DYNAMIC_SERVER_USAGE'
+}
+PrismaClientInitializationError: 
+Invalid `prisma.user.findMany()` invocation:
+
+
+Error querying the database: FATAL: Tenant or user not found
+    at In.handleRequestError (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:7154)
+    at In.handleAndLogRequestError (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:6188)
+    at In.request (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:5896)
+    at async l (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:128:10871)
+    at async o (/Users/ansarisenoff/AI-Portal/.next/server/app/(dashboard)/team/page.js:1:2911) {
+  clientVersion: '5.10.0',
+  errorCode: undefined,
+  digest: '1369374880'
+}
+PrismaClientInitializationError: 
+Invalid `prisma.user.findMany()` invocation:
+
+
+Error querying the database: FATAL: Tenant or user not found
+    at In.handleRequestError (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:7154)
+    at In.handleAndLogRequestError (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:6188)
+    at In.request (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:5896)
+    at async l (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:128:10871)
+    at async o (/Users/ansarisenoff/AI-Portal/.next/server/app/(dashboard)/team/page.js:1:2911) {
+  clientVersion: '5.10.0',
+  errorCode: undefined,
+  digest: '1369374880'
+}
+PrismaClientInitializationError: 
+Invalid `prisma.user.findMany()` invocation:
+
+
+Error querying the database: FATAL: Tenant or user not found
+    at In.handleRequestError (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:7154)
+    at In.handleAndLogRequestError (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:6188)
+    at In.request (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:5896)
+    at async l (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:128:10871)
+    at async o (/Users/ansarisenoff/AI-Portal/.next/server/app/(dashboard)/team/page.js:1:2911) {
+  clientVersion: '5.10.0',
+  errorCode: undefined,
+  digest: '1369374880'
+}
+
+Error occurred prerendering page "/owner/team". Read more: https://nextjs.org/docs/messages/prerender-error
+
+PrismaClientInitializationError: 
+Invalid `prisma.user.findMany()` invocation:
+
+
+Error querying the database: FATAL: Tenant or user not found
+    at In.handleRequestError (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:7154)
+    at In.handleAndLogRequestError (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:6188)
+    at In.request (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:5896)
+    at async l (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:128:10871)
+    at async o (/Users/ansarisenoff/AI-Portal/.next/server/app/(dashboard)/team/page.js:1:2911)
+PrismaClientInitializationError: 
+Invalid `prisma.client.count()` invocation:
+
+
+Error querying the database: FATAL: Tenant or user not found
+    at In.handleRequestError (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:7154)
+    at In.handleAndLogRequestError (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:6188)
+    at In.request (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:5896)
+    at async l (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:128:10871)
+    at async Promise.all (index 0)
+    at async i (/Users/ansarisenoff/AI-Portal/.next/server/chunks/7459.js:1:566)
+    at async d (/Users/ansarisenoff/AI-Portal/.next/server/chunks/7459.js:1:1980) {
+  clientVersion: '5.10.0',
+  errorCode: undefined,
+  digest: '711402159'
+}
+PrismaClientInitializationError: 
+Invalid `prisma.client.count()` invocation:
+
+
+Error querying the database: FATAL: Tenant or user not found
+    at In.handleRequestError (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:7154)
+    at In.handleAndLogRequestError (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:6188)
+    at In.request (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:5896)
+    at async l (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:128:10871)
+    at async Promise.all (index 0)
+    at async i (/Users/ansarisenoff/AI-Portal/.next/server/chunks/7459.js:1:566)
+    at async d (/Users/ansarisenoff/AI-Portal/.next/server/chunks/7459.js:1:1980) {
+  clientVersion: '5.10.0',
+  errorCode: undefined,
+  digest: '711402159'
+}
+PrismaClientInitializationError: 
+Invalid `prisma.client.count()` invocation:
+
+
+Error querying the database: FATAL: Tenant or user not found
+    at In.handleRequestError (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:7154)
+    at In.handleAndLogRequestError (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:6188)
+    at In.request (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:5896)
+    at async l (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:128:10871)
+    at async Promise.all (index 0)
+    at async i (/Users/ansarisenoff/AI-Portal/.next/server/chunks/7459.js:1:566)
+    at async d (/Users/ansarisenoff/AI-Portal/.next/server/chunks/7459.js:1:1980) {
+  clientVersion: '5.10.0',
+  errorCode: undefined,
+  digest: '711402159'
+}
+PrismaClientInitializationError: 
+Invalid `prisma.reportDocument.findMany()` invocation:
+
+
+Error querying the database: FATAL: Tenant or user not found
+    at In.handleRequestError (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:7154)
+    at In.handleAndLogRequestError (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:6188)
+    at In.request (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:5896)
+    at async l (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:128:10871)
+    at async l (/Users/ansarisenoff/AI-Portal/.next/server/app/(owner)/owner/reports/page.js:1:4488) {
+  clientVersion: '5.10.0',
+  errorCode: undefined,
+  digest: '1814276931'
+}
+PrismaClientInitializationError: 
+Invalid `prisma.reportDocument.findMany()` invocation:
+
+
+Error querying the database: FATAL: Tenant or user not found
+    at In.handleRequestError (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:7154)
+    at In.handleAndLogRequestError (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:6188)
+    at In.request (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:5896)
+    at async l (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:128:10871)
+    at async l (/Users/ansarisenoff/AI-Portal/.next/server/app/(owner)/owner/reports/page.js:1:4488) {
+  clientVersion: '5.10.0',
+  errorCode: undefined,
+  digest: '1814276931'
+}
+
+Error occurred prerendering page "/analytics". Read more: https://nextjs.org/docs/messages/prerender-error
+
+PrismaClientInitializationError: 
+Invalid `prisma.client.count()` invocation:
+
+
+Error querying the database: FATAL: Tenant or user not found
+    at In.handleRequestError (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:7154)
+    at In.handleAndLogRequestError (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:6188)
+    at In.request (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:5896)
+    at async l (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:128:10871)
+    at async Promise.all (index 0)
+    at async i (/Users/ansarisenoff/AI-Portal/.next/server/chunks/7459.js:1:566)
+    at async d (/Users/ansarisenoff/AI-Portal/.next/server/chunks/7459.js:1:1980)
+PrismaClientInitializationError: 
+Invalid `prisma.reportDocument.findMany()` invocation:
+
+
+Error querying the database: FATAL: Tenant or user not found
+    at In.handleRequestError (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:7154)
+    at In.handleAndLogRequestError (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:6188)
+    at In.request (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:5896)
+    at async l (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:128:10871)
+    at async l (/Users/ansarisenoff/AI-Portal/.next/server/app/(owner)/owner/reports/page.js:1:4488) {
+  clientVersion: '5.10.0',
+  errorCode: undefined,
+  digest: '1814276931'
+}
+
+Error occurred prerendering page "/owner/reports". Read more: https://nextjs.org/docs/messages/prerender-error
+
+PrismaClientInitializationError: 
+Invalid `prisma.reportDocument.findMany()` invocation:
+
+
+Error querying the database: FATAL: Tenant or user not found
+    at In.handleRequestError (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:7154)
+    at In.handleAndLogRequestError (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:6188)
+    at In.request (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:5896)
+    at async l (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:128:10871)
+    at async l (/Users/ansarisenoff/AI-Portal/.next/server/app/(owner)/owner/reports/page.js:1:4488)
+PrismaClientInitializationError: 
+Invalid `prisma.auditLog.findMany()` invocation:
+
+
+Error querying the database: FATAL: Tenant or user not found
+    at In.handleRequestError (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:7154)
+    at In.handleAndLogRequestError (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:6188)
+    at In.request (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:5896)
+    at async l (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:128:10871)
+    at async l (/Users/ansarisenoff/AI-Portal/.next/server/app/(dashboard)/notifications/page.js:1:3640) {
+  clientVersion: '5.10.0',
+  errorCode: undefined,
+  digest: '4253756042'
+}
+PrismaClientInitializationError: 
+Invalid `prisma.auditLog.findMany()` invocation:
+
+
+Error querying the database: FATAL: Tenant or user not found
+    at In.handleRequestError (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:7154)
+    at In.handleAndLogRequestError (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:6188)
+    at In.request (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:5896)
+    at async l (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:128:10871)
+    at async l (/Users/ansarisenoff/AI-Portal/.next/server/app/(dashboard)/notifications/page.js:1:3640) {
+  clientVersion: '5.10.0',
+  errorCode: undefined,
+  digest: '4253756042'
+}
+PrismaClientInitializationError: 
+Invalid `prisma.auditLog.findMany()` invocation:
+
+
+Error querying the database: FATAL: Tenant or user not found
+    at In.handleRequestError (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:7154)
+    at In.handleAndLogRequestError (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:6188)
+    at In.request (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:5896)
+    at async l (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:128:10871)
+    at async l (/Users/ansarisenoff/AI-Portal/.next/server/app/(dashboard)/notifications/page.js:1:3640) {
+  clientVersion: '5.10.0',
+  errorCode: undefined,
+  digest: '4253756042'
+}
+
+Error occurred prerendering page "/notifications". Read more: https://nextjs.org/docs/messages/prerender-error
+
+PrismaClientInitializationError: 
+Invalid `prisma.auditLog.findMany()` invocation:
+
+
+Error querying the database: FATAL: Tenant or user not found
+    at In.handleRequestError (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:7154)
+    at In.handleAndLogRequestError (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:6188)
+    at In.request (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:5896)
+    at async l (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:128:10871)
+    at async l (/Users/ansarisenoff/AI-Portal/.next/server/app/(dashboard)/notifications/page.js:1:3640)
+PrismaClientInitializationError: 
+Invalid `prisma.reportDocument.findMany()` invocation:
+
+
+Error querying the database: FATAL: Tenant or user not found
+    at In.handleRequestError (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:7154)
+    at In.handleAndLogRequestError (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:6188)
+    at In.request (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:5896)
+    at async l (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:128:10871)
+    at async d (/Users/ansarisenoff/AI-Portal/.next/server/app/(dashboard)/reports/page.js:1:5215) {
+  clientVersion: '5.10.0',
+  errorCode: undefined,
+  digest: '1219421603'
+}
+PrismaClientInitializationError: 
+Invalid `prisma.reportDocument.findMany()` invocation:
+
+
+Error querying the database: FATAL: Tenant or user not found
+    at In.handleRequestError (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:7154)
+    at In.handleAndLogRequestError (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:6188)
+    at In.request (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:5896)
+    at async l (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:128:10871)
+    at async d (/Users/ansarisenoff/AI-Portal/.next/server/app/(dashboard)/reports/page.js:1:5215) {
+  clientVersion: '5.10.0',
+  errorCode: undefined,
+  digest: '1219421603'
+}
+PrismaClientInitializationError: 
+Invalid `prisma.user.findMany()` invocation:
+
+
+Error querying the database: FATAL: Tenant or user not found
+    at In.handleRequestError (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:7154)
+    at In.handleAndLogRequestError (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:6188)
+    at In.request (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:5896)
+    at async l (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:128:10871)
+    at async o (/Users/ansarisenoff/AI-Portal/.next/server/app/(dashboard)/team/page.js:1:2911) {
+  clientVersion: '5.10.0',
+  errorCode: undefined,
+  digest: '1369374880'
+}
+PrismaClientInitializationError: 
+Invalid `prisma.reportDocument.findMany()` invocation:
+
+
+Error querying the database: FATAL: Tenant or user not found
+    at In.handleRequestError (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:7154)
+    at In.handleAndLogRequestError (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:6188)
+    at In.request (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:5896)
+    at async l (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:128:10871)
+    at async d (/Users/ansarisenoff/AI-Portal/.next/server/app/(dashboard)/reports/page.js:1:5215) {
+  clientVersion: '5.10.0',
+  errorCode: undefined,
+  digest: '1219421603'
+}
+PrismaClientInitializationError: 
+Invalid `prisma.user.findMany()` invocation:
+
+
+Error querying the database: FATAL: Tenant or user not found
+    at In.handleRequestError (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:7154)
+    at In.handleAndLogRequestError (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:6188)
+    at In.request (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:5896)
+    at async l (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:128:10871)
+    at async o (/Users/ansarisenoff/AI-Portal/.next/server/app/(dashboard)/team/page.js:1:2911) {
+  clientVersion: '5.10.0',
+  errorCode: undefined,
+  digest: '1369374880'
+}
+PrismaClientInitializationError: 
+Invalid `prisma.user.findMany()` invocation:
+
+
+Error querying the database: FATAL: Tenant or user not found
+    at In.handleRequestError (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:7154)
+    at In.handleAndLogRequestError (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:6188)
+    at In.request (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:5896)
+    at async l (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:128:10871)
+    at async o (/Users/ansarisenoff/AI-Portal/.next/server/app/(dashboard)/team/page.js:1:2911) {
+  clientVersion: '5.10.0',
+  errorCode: undefined,
+  digest: '1369374880'
+}
+
+Error occurred prerendering page "/reports". Read more: https://nextjs.org/docs/messages/prerender-error
+
+PrismaClientInitializationError: 
+Invalid `prisma.reportDocument.findMany()` invocation:
+
+
+Error querying the database: FATAL: Tenant or user not found
+    at In.handleRequestError (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:7154)
+    at In.handleAndLogRequestError (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:6188)
+    at In.request (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:5896)
+    at async l (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:128:10871)
+    at async d (/Users/ansarisenoff/AI-Portal/.next/server/app/(dashboard)/reports/page.js:1:5215)
+
+Error occurred prerendering page "/team". Read more: https://nextjs.org/docs/messages/prerender-error
+
+PrismaClientInitializationError: 
+Invalid `prisma.user.findMany()` invocation:
+
+
+Error querying the database: FATAL: Tenant or user not found
+    at In.handleRequestError (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:7154)
+    at In.handleAndLogRequestError (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:6188)
+    at In.request (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:123:5896)
+    at async l (/Users/ansarisenoff/AI-Portal/node_modules/@prisma/client/runtime/library.js:128:10871)
+    at async o (/Users/ansarisenoff/AI-Portal/.next/server/app/(dashboard)/team/page.js:1:2911)
+ ✓ Generating static pages (71/71)
+
+> Export encountered errors on following paths:
+	/(dashboard)/analytics/page: /analytics
+	/(dashboard)/notifications/page: /notifications
+	/(dashboard)/reports/page: /reports
+	/(dashboard)/team/page: /team
+	/(owner)/owner/analytics/page: /owner/analytics
+	/(owner)/owner/notifications/page: /owner/notifications
+	/(owner)/owner/reports/page: /owner/reports
+	/(owner)/owner/team/page: /owner/team

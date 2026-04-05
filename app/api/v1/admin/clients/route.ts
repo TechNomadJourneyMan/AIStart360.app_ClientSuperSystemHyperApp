@@ -3,6 +3,52 @@ export const dynamic = 'force-dynamic'
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 
+// POST /api/v1/admin/clients — admin-side client creation (bypasses email confirmation)
+export async function POST(req: Request) {
+  try {
+    const sb = createServerClient()
+    const { email, password, fullName, companyName, industry, stage } = await req.json()
+
+    if (!email || !password || !companyName) {
+      return NextResponse.json({ ok: false, error: 'email, password, companyName are required' }, { status: 400 })
+    }
+
+    // 1. Create auth user with service role (email_confirm skipped)
+    const { data: authData, error: authError } = await sb.auth.admin.createUser({
+      email,
+      password,
+      email_confirm: true,
+      user_metadata: { full_name: fullName ?? companyName, company: companyName },
+    })
+    if (authError) throw new Error(authError.message)
+    const userId = authData.user.id
+
+    // 2. Upsert profile as approved
+    const { error: profileError } = await sb.from('profiles').upsert({
+      id: userId,
+      email,
+      full_name: fullName ?? companyName,
+      status: 'approved',
+      approved_at: new Date().toISOString(),
+    }, { onConflict: 'id' })
+    if (profileError) throw new Error(profileError.message)
+
+    // 3. Upsert company
+    const { error: companyError } = await sb.from('companies').upsert({
+      user_id: userId,
+      name: companyName,
+      ...(industry ? { industry } : {}),
+      ...(stage    ? { stage }    : {}),
+    }, { onConflict: 'user_id' })
+    if (companyError) throw new Error(companyError.message)
+
+    return NextResponse.json({ ok: true, userId, email, companyName })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Unknown error'
+    return NextResponse.json({ ok: false, error: msg }, { status: 500 })
+  }
+}
+
 export interface AdminClientRow {
   id: string
   email: string

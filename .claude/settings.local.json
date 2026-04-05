@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/Users/yappa/.claude/plugins//**)",
+      "Bash(/dev/null cat:*)",
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(json.dumps\\(d, indent=2\\)\\)\")",
+      "WebSearch",
+      "Bash(specify --help)",
+      "Bash(uv tool:*)",
+      "Bash(specify extension:*)",
+      "Bash(grep -E \"\\\\.\\(ts|tsx\\)$\")",
+      "Bash(bash .specify/scripts/bash/create-new-feature.sh \"напиши спецификацию для закрытия всех частично и не выполненных задач, сначала напиши тесты, и да мы не меняем supabase тот что в env\" --json --short-name \"sprint1-completion\" \"Sprint 1 Completion: Auth, Error Boundaries, Real Data\")",
+      "Bash(bash .specify/scripts/bash/check-prerequisites.sh --json --paths-only)",
+      "Bash(bash .specify/scripts/bash/setup-plan.sh --json)",
+      "Bash(bash .specify/scripts/bash/update-agent-context.sh claude)",
+      "Bash(bash .specify/scripts/bash/check-prerequisites.sh --json)",
+      "Bash(bash .specify/scripts/bash/check-prerequisites.sh --json --require-tasks --include-tasks)",
+      "Bash(npm install:*)"
+    ]
+  }
+}

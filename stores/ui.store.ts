@@ -1,11 +1,17 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import type { Toast } from '@/types'
+import type { Toast, Goal } from '@/types'
 import { generateId } from '@/lib/utils'
 
 interface UIState {
   sidebarCollapsed: boolean
   toasts: Toast[]
+
+  // Pinned growth goals
+  pinnedGoals: Goal[]
+  addGoal: (goal: Goal) => void
+  removeGoal: (goalId: string) => void
+  updateGoal: (goalId: string, data: Partial<Goal>) => void
 
   // Actions
   toggleSidebar: () => void
@@ -19,9 +25,17 @@ export const useUIStore = create<UIState>()(
     (set) => ({
       sidebarCollapsed: false,
       toasts: [],
+      pinnedGoals: [],
 
       toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
       setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
+
+      addGoal: (goal) => set((s) => ({ pinnedGoals: [...s.pinnedGoals, goal] })),
+      removeGoal: (id) => set((s) => ({ pinnedGoals: s.pinnedGoals.filter((g) => g.id !== id) })),
+      updateGoal: (id, data) =>
+        set((s) => ({
+          pinnedGoals: s.pinnedGoals.map((g) => (g.id === id ? { ...g, ...data } : g)),
+        })),
 
       addToast: (toast) =>
         set((s) => ({
@@ -33,7 +47,7 @@ export const useUIStore = create<UIState>()(
     }),
     {
       name: 'aistart360-ui',
-      partialize: (s) => ({ sidebarCollapsed: s.sidebarCollapsed }),
+      partialize: (s) => ({ sidebarCollapsed: s.sidebarCollapsed, pinnedGoals: s.pinnedGoals }),
     }
   )
 )

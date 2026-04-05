@@ -74,7 +74,7 @@ export interface Report {
   clientId: string
   clientName: string
   name: string
-  category: 'GRI' | 'Financial' | 'Growth' | 'Market' | 'Custom'
+  category: 'GRI' | 'Financial' | 'Growth' | 'Market' | 'Custom' | 'Intelligence' | 'Strategic' | 'AI' | 'Protocol'
   type: 'pdf' | 'xlsx' | 'csv' | 'docx'
   fileUrl: string
   fileSize: string
@@ -88,8 +88,8 @@ export interface Report {
 
 export interface ActivityItem {
   id: string
-  clientName: string
-  industry: string
+  actor: string
+  actorRole: string
   event: string
   gri: number
   status: string
@@ -170,6 +170,20 @@ export interface NavItem {
   icon: string
   roles: UserRole[]
   badge?: string
+  subItems?: Array<Omit<NavItem, 'subItems'>>
+}
+
+// ============================================================
+// Goals
+// ============================================================
+
+export interface Goal {
+  id: string
+  label: string
+  category: 'revenue' | 'margin' | 'clients' | 'avg_check' | 'custom'
+  targetValue?: number
+  targetUnit?: string
+  isCustom: boolean
 }
 
 // ============================================================

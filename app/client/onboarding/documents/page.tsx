@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
-import { createClient } from '@/lib/supabase-client'
+import { createClient } from '@/lib/supabase/client'
 
 type DocType = 'pl_report' | 'balance_sheet' | 'marketing_report' | 'ops_report' | 'crm_export' | 'audit' | 'other'
 type ParseStatus = 'queued' | 'processing' | 'parsed' | 'error'
@@ -63,24 +63,31 @@ export default function DocumentsPage() {
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
-    try {
-      const authRaw = localStorage.getItem('aistart360_auth')
-      if (authRaw) {
-        const parsed = JSON.parse(authRaw)
-        setUserId(parsed?.state?.user?.id ?? null)
+    const bootstrap = async () => {
+      try {
+        const supabase = createClient()
+        const {
+          data: { user },
+        } = await supabase.auth.getUser()
+        setUserId(user?.id ?? null)
+
+        const onbRaw = localStorage.getItem('aistart360_onboarding')
+        if (onbRaw) {
+          const parsed = JSON.parse(onbRaw)
+          setCompanyId(parsed?.company_id ?? null)
+        }
+      } catch {
+        setUserId(null)
       }
-      const onbRaw = localStorage.getItem('aistart360_onboarding')
-      if (onbRaw) {
-        const parsed = JSON.parse(onbRaw)
-        setCompanyId(parsed?.company_id ?? null)
-      }
-    } catch {}
+    }
+
+    bootstrap()
   }, [])
 
   const fetchDocs = useCallback(async () => {
     if (!userId) return
     try {
-      const res = await fetch(`/api/v1/client/onboarding/documents?user_id=${userId}`)
+      const res = await fetch(`/api/v1/onboarding/documents?user_id=${userId}`)
       const data = await res.json()
       if (data.ok) setUploaded(data.data)
     } catch {}
@@ -142,7 +149,7 @@ export default function DocumentsPage() {
         .createSignedUrl(storageData.path, 60 * 60 * 24 * 365) // 1 year
 
       // Register in DB + trigger n8n
-      const res = await fetch('/api/v1/client/onboarding/documents', {
+      const res = await fetch('/api/v1/onboarding/documents', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

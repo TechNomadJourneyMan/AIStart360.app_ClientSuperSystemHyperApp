@@ -1,0 +1,1961 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Идеальная база — Карточка клиента</title>
+<link href="https://fonts.googleapis.com/css2?family=Geologica:wght@300;400;500;600;700;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #f0f2f8;
+  --surface: #ffffff;
+  --surface2: #f5f7fb;
+  --surface3: #eef0f6;
+  --border: #dde2ee;
+  --border2: #c8cedf;
+  --text: #0f1724;
+  --text2: #3d4a62;
+  --muted: #8491ab;
+  --amber: #c2700a;
+  --amber-dim: #c2700a;
+  --amber-glow: rgba(194,112,10,0.08);
+  --red: #c0182e;
+  --red-bg: rgba(192,24,46,0.06);
+  --green: #0a6e42;
+  --green-bg: rgba(10,110,66,0.07);
+  --blue: #1a56c4;
+  --blue-bg: rgba(26,86,196,0.07);
+  --orange: #c2380a;
+  --brand: #1e2746;
+}
+
+html { scroll-behavior: smooth; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Geologica', sans-serif;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* ── SUBTLE BACKGROUND ── */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 60% 40% at 80% 10%, rgba(194,112,10,0.04) 0%, transparent 60%),
+    radial-gradient(ellipse 40% 60% at 10% 80%, rgba(194,56,10,0.03) 0%, transparent 50%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ── TOP BAR ── */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: rgba(255,255,255,0.95);
+  backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--border);
+  padding: 0 32px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 56px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+}
+
+.topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.logo-img { height: 22px; filter: none; opacity: 1; }
+
+.topbar-sep {
+  width: 1px; height: 20px;
+  background: var(--border2);
+}
+
+.topbar-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+}
+
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.status-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 6px rgba(10,110,66,0.4);
+  animation: blink 2.5s infinite;
+}
+
+@keyframes blink {
+  0%,100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.status-text {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* ── HERO ── */
+.hero {
+  position: relative;
+  z-index: 1;
+  padding: 52px 32px 0;
+  max-width: 1280px;
+  margin: 0 auto;
+}
+
+.hero-eyebrow {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 2px;
+  color: var(--amber);
+  text-transform: uppercase;
+  margin-bottom: 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.hero-eyebrow::before {
+  content: '';
+  display: inline-block;
+  width: 28px; height: 1px;
+  background: var(--amber);
+}
+
+.hero-title {
+  font-size: clamp(36px, 5vw, 60px);
+  font-weight: 900;
+  line-height: 1.05;
+  letter-spacing: -2px;
+  margin-bottom: 16px;
+  color: var(--text);
+}
+
+.hero-title em {
+  font-style: normal;
+  color: var(--amber);
+}
+
+.hero-sub {
+  font-size: 16px;
+  color: var(--text2);
+  font-weight: 300;
+  max-width: 560px;
+  line-height: 1.6;
+  margin-bottom: 36px;
+}
+
+/* ── CLIENT META BAR ── */
+.client-meta {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 20px 28px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+  display: grid;
+  grid-template-columns: auto 1fr repeat(4, auto);
+  align-items: center;
+  gap: 24px;
+  margin-bottom: 32px;
+  position: relative;
+  overflow: hidden;
+}
+
+.client-meta::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 3px;
+  background: linear-gradient(to bottom, var(--amber), var(--orange));
+}
+
+.client-avatar {
+  width: 48px; height: 48px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, var(--amber-dim), var(--orange));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  font-weight: 900;
+  color: white;
+  flex-shrink: 0;
+}
+
+.client-info { min-width: 0; }
+
+.client-name {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.client-sub {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 2px;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.meta-stat {
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.meta-stat-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--muted);
+  margin-bottom: 3px;
+}
+
+.meta-stat-value {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.meta-stat-value.red { color: var(--red); }
+.meta-stat-value.green { color: var(--green); }
+.meta-stat-value.amber { color: var(--amber); }
+
+.meta-sep {
+  width: 1px; height: 36px;
+  background: var(--border2);
+  flex-shrink: 0;
+}
+
+/* ── LAYER NAVIGATION ── */
+.layer-nav {
+  display: flex;
+  gap: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 5px;
+  margin-bottom: 24px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+
+.layer-nav::-webkit-scrollbar { display: none; }
+
+.layer-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 16px;
+  border-radius: 8px;
+  border: none;
+  background: none;
+  color: var(--muted);
+  font-family: 'Geologica', sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s;
+  letter-spacing: 0.2px;
+}
+
+.layer-btn:hover { color: var(--text2); background: var(--surface2); }
+
+.layer-btn.active {
+  background: var(--brand);
+  color: #ffffff;
+}
+
+.layer-btn .layer-num {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 600;
+  opacity: 0.6;
+}
+
+.layer-btn.active .layer-num { opacity: 0.55; }
+
+.layer-icon { font-size: 14px; }
+
+/* ── MAIN LAYOUT ── */
+.main-wrap {
+  position: relative;
+  z-index: 1;
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 0 32px 60px;
+}
+
+/* ── LAYER PANELS ── */
+.layer-panel { display: none; animation: fadeIn 0.25s ease; }
+.layer-panel.active { display: block; }
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ── GRID LAYOUTS ── */
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+.grid-12 { display: grid; grid-template-columns: 1fr 2fr; gap: 16px; }
+.grid-21 { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; }
+
+/* ── CARDS ── */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 22px 24px;
+  position: relative;
+  overflow: hidden;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+
+.card:hover { border-color: var(--border2); box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+
+.card-accent-top {
+  position: absolute;
+  top: 0; left: 24px; right: 24px;
+  height: 2px;
+  border-radius: 0 0 2px 2px;
+}
+
+.accent-amber { background: linear-gradient(to right, var(--amber), transparent); }
+.accent-red { background: linear-gradient(to right, var(--red), transparent); }
+.accent-green { background: linear-gradient(to right, var(--green), transparent); }
+.accent-blue { background: linear-gradient(to right, var(--blue), transparent); }
+.accent-orange { background: linear-gradient(to right, var(--orange), transparent); }
+
+.card-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+  color: var(--muted);
+  margin-bottom: 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.card-label-icon { font-size: 13px; }
+
+.card-title {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+  margin-bottom: 6px;
+}
+
+/* ── FIELD ROWS ── */
+.field-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.field-row:last-child { border-bottom: none; padding-bottom: 0; }
+.field-row:first-child { padding-top: 0; }
+
+.field-label {
+  font-size: 12px;
+  color: var(--muted);
+  flex-shrink: 0;
+  min-width: 140px;
+  font-weight: 500;
+}
+
+.field-value {
+  font-size: 13px;
+  color: var(--text);
+  text-align: right;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.field-value.mono {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+}
+
+/* ── TAGS ── */
+.tag {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 20px;
+  line-height: 1.4;
+}
+
+.tag-amber { background: rgba(194,112,10,0.1); color: var(--amber); border: 1px solid rgba(194,112,10,0.3); }
+.tag-red { background: var(--red-bg); color: var(--red); border: 1px solid rgba(192,24,46,0.2); }
+.tag-green { background: var(--green-bg); color: var(--green); border: 1px solid rgba(10,110,66,0.2); }
+.tag-blue { background: var(--blue-bg); color: var(--blue); border: 1px solid rgba(26,86,196,0.2); }
+.tag-muted { background: rgba(132,145,171,0.12); color: var(--muted); border: 1px solid var(--border2); }
+
+/* ── TIMELINE ── */
+.timeline { display: flex; flex-direction: column; gap: 0; }
+
+.tl-item {
+  display: flex;
+  gap: 16px;
+  position: relative;
+}
+
+.tl-item::after {
+  content: '';
+  position: absolute;
+  left: 15px; top: 28px;
+  width: 1px;
+  height: calc(100% - 8px);
+  background: var(--border);
+}
+
+.tl-item:last-child::after { display: none; }
+
+.tl-dot-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex-shrink: 0;
+  padding-top: 4px;
+}
+
+.tl-dot {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  z-index: 1;
+}
+
+.dot-amber { background: var(--amber); box-shadow: 0 0 5px rgba(194,112,10,0.3); }
+.dot-green { background: var(--green); }
+.dot-red { background: var(--red); }
+.dot-muted { background: var(--border2); }
+.tl-content {
+  padding: 0 0 20px 0;
+  flex: 1;
+}
+
+.tl-date {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--muted);
+  margin-bottom: 3px;
+}
+
+.tl-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 3px;
+}
+
+.tl-text {
+  font-size: 12px;
+  color: var(--text2);
+  line-height: 1.5;
+}
+
+.tl-amount {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--amber);
+  margin-top: 4px;
+}
+
+/* ── BIG NUMBER ── */
+.big-num {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 36px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -1px;
+}
+
+.big-num-sub {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+/* ── PROGRESS BAR ── */
+.progress-wrap { margin: 14px 0; }
+
+.progress-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--text2);
+  margin-bottom: 6px;
+}
+
+.progress-track {
+  height: 5px;
+  background: var(--border);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.fill-amber { background: linear-gradient(to right, #a05a08, var(--amber)); }
+.fill-red { background: var(--red); }
+.fill-green { background: var(--green); }
+.fill-blue { background: var(--blue); }
+
+/* ── FUNNEL STAGE ── */
+.funnel-stages {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 14px;
+}
+
+.funnel-stage {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: 9px;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  transition: all 0.15s;
+  cursor: pointer;
+}
+
+.funnel-stage.current {
+  border-color: rgba(194,112,10,0.4);
+  background: rgba(194,112,10,0.07);
+}
+
+.funnel-stage-num {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--muted);
+  width: 20px;
+}
+
+.funnel-stage.current .funnel-stage-num { color: var(--amber); }
+
+.funnel-stage-name {
+  font-size: 13px;
+  font-weight: 500;
+  flex: 1;
+}
+
+.funnel-stage.current .funnel-stage-name { color: var(--amber); font-weight: 600; }
+.funnel-stage.done .funnel-stage-name { color: var(--muted); }
+.funnel-stage.done { opacity: 0.5; }
+
+.funnel-stage-date {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--muted);
+}
+
+/* ── BEHAVIOR HEATMAP ── */
+.behavior-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+  margin: 12px 0;
+}
+
+.bh-cell {
+  aspect-ratio: 1;
+  border-radius: 3px;
+  background: var(--surface2);
+  transition: transform 0.1s;
+  cursor: default;
+  position: relative;
+}
+
+.bh-cell:hover { transform: scale(1.3); z-index: 2; }
+
+.bh-0 { background: var(--surface2); }
+.bh-1 { background: rgba(194,112,10,0.12); }
+.bh-2 { background: rgba(194,112,10,0.28); }
+.bh-3 { background: rgba(194,112,10,0.55); }
+.bh-4 { background: var(--amber); }
+
+.behavior-events {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.bev {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  background: var(--surface2);
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+
+.bev-icon { font-size: 14px; flex-shrink: 0; }
+
+.bev-text {
+  flex: 1;
+  font-size: 12px;
+  color: var(--text2);
+}
+
+.bev-time {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--muted);
+}
+
+/* ── MATERIAL ROWS ── */
+.material-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.material-row:last-child { border-bottom: none; }
+
+.material-icon {
+  width: 36px; height: 36px;
+  border-radius: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.mat-pdf { background: rgba(192,24,46,0.08); }
+.mat-doc { background: var(--blue-bg); }
+.mat-xls { background: var(--green-bg); }
+.mat-ppt { background: rgba(194,112,10,0.08); }
+
+.material-info { flex: 1; min-width: 0; }
+
+.material-name {
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.material-meta {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 2px;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* ── NOTE CARDS ── */
+.note-card {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+  margin-bottom: 10px;
+  position: relative;
+}
+
+.note-card::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 8px; bottom: 8px;
+  width: 3px;
+  border-radius: 0 2px 2px 0;
+}
+
+.note-amber::before { background: var(--amber); }
+.note-blue::before { background: var(--blue); }
+.note-green::before { background: var(--green); }
+.note-red::before { background: var(--red); }
+
+.note-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.note-author {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text2);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.note-date {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.note-text {
+  font-size: 13px;
+  color: var(--text);
+  line-height: 1.55;
+}
+
+/* ── SECTION SPACING ── */
+.mt16 { margin-top: 16px; }
+.mt12 { margin-top: 12px; }
+.mt8 { margin-top: 8px; }
+
+/* ── INSIGHT BOX ── */
+.insight-box {
+  background: rgba(194,112,10,0.07);
+  border: 1px solid rgba(194,112,10,0.25);
+  border-radius: 10px;
+  padding: 14px 18px;
+  margin-top: 16px;
+  font-size: 13px;
+  color: var(--amber);
+  font-weight: 500;
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  line-height: 1.5;
+}
+
+.insight-icon { font-size: 15px; flex-shrink: 0; margin-top: 1px; }
+
+/* ── SCORE GAUGE ── */
+.score-circle-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 16px 0;
+}
+
+.score-circle {
+  position: relative;
+  width: 100px;
+  height: 100px;
+}
+
+.score-svg {
+  transform: rotate(-90deg);
+  width: 100%; height: 100%;
+}
+
+.score-bg-track { fill: none; stroke: var(--border); stroke-width: 8; }
+.score-fill-track { fill: none; stroke: var(--amber); stroke-width: 8; stroke-linecap: round; stroke-dasharray: 283; stroke-dashoffset: 29; transition: stroke-dashoffset 1s ease; }
+
+.score-inner {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.score-num {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 26px;
+  font-weight: 600;
+  color: var(--amber);
+  line-height: 1;
+}
+
+.score-max {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* ── RESPONSIVE ── */
+@media (max-width: 900px) {
+  .grid-2, .grid-3, .grid-12, .grid-21 { grid-template-columns: 1fr; }
+  .hero { padding: 36px 20px 0; }
+  .main-wrap { padding: 0 20px 60px; }
+  .topbar { padding: 0 20px; }
+  .client-meta { grid-template-columns: auto 1fr; gap: 14px; }
+  .meta-sep { display: none; }
+}
+</style>
+</head>
+<body>
+
+<!-- TOP BAR -->
+<div class="topbar">
+  <div class="topbar-left">
+    <img class="logo-img" src="data:image/png;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/4gHYSUNDX1BST0ZJTEUAAQEAAAHIAAAAAAQwAABtbnRyUkdCIFhZWiAH4AABAAEAAAAAAABhY3NwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAA9tYAAQAAAADTLQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAlkZXNjAAAA8AAAACRyWFlaAAABFAAAABRnWFlaAAABKAAAABRiWFlaAAABPAAAABR3dHB0AAABUAAAABRyVFJDAAABZAAAAChnVFJDAAABZAAAAChiVFJDAAABZAAAAChjcHJ0AAABjAAAADxtbHVjAAAAAAAAAAEAAAAMZW5VUwAAAAgAAAAcAHMAUgBHAEJYWVogAAAAAAAAb6IAADj1AAADkFhZWiAAAAAAAABimQAAt4UAABjaWFlaIAAAAAAAACSgAAAPhAAAts9YWVogAAAAAAAA9tYAAQAAAADTLXBhcmEAAAAAAAQAAAACZmYAAPKnAAANWQAAE9AAAApbAAAAAAAAAABtbHVjAAAAAAAAAAEAAAAMZW5VUwAAACAAAAAcAEcAbwBvAGcAbABlACAASQBuAGMALgAgADIAMAAxADb/2wBDAAUDBAQEAwUEBAQFBQUGBwwIBwcHBw8LCwkMEQ8SEhEPERETFhwXExQaFRERGCEYGh0dHx8fExciJCIeJBweHx7/2wBDAQUFBQcGBw4ICA4eFBEUHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh7/wAARCAFyB9ADASIAAhEBAxEB/8QAHAABAAEFAQEAAAAAAAAAAAAAAAUBAgMEBgcI/8QARxAAAgIBAgMEBgYJBAEDAgcAAAECAwQFEQYhMRJBUXEHEyJhgZEyNEJScqEIFBUjM1NiscFDgpLRJBZE8RdjZHOToqPh8P/EABsBAQADAQEBAQAAAAAAAAAAAAACAwQBBQYH/8QANhEBAAIBAwIDBgUEAQUBAQAAAAECAwQRMRIhBUFRBhMyYXHRIoGRobEUweHwMxUWI0LxNFL/2gAMAwEAAhEDEQA/APjIA9C9EPo5yuMM1Zuap0aNTLayxcnc19iP+X3FOfPjwUnJknaIX6bTZNTkjHjjeZc7wbwfr3FmasfSMNzgn+8vn7NVa8XL/C3Z7bwr6D9BwYQs1zIt1K/q4Rbrq3+HN/M9Q0jTcDSMCvA03FqxsapbRhXHZf8A9s2n1PjtZ43nzTtj/DX9/wBX3eg9ntNp6xbLHVb58fp90LpXC/DmlRUdP0TT8dr7UaI9r/k1u/mSzituzsttttti4ozy7Xted7Tu9+mOtI2rG0IjVOG+H9Ui46houBkb/anRHtfPbdHAcUehPh3PjKzR7rtLufSO/rK/k+f5nqjKM04dXnwzvS0wz59BptRG2SkT/P68vk/i70bcVcNuVl+A8vEX/ucXecNveusfijj2mm00013M+33zTTOQ4q9HXCvESlPL06OPkS/9xjbVz3/s/ij3tN495Zq/nH2fM6z2V/8AbTW/Kfu+TgepcW+hbX9Nc7tGvr1XHXNRS7FqXl0fwfwPNc/Cy8DJljZuNbjXR6wsg4v8z3cOpxZ43x23fLarQ6jSztmpMfx+vDXABeygAAAAAAAAAAAAAAAAAAAAAAAAAAArGMpyUYxcpN7JJbtnccKei3ivXuxY8T9n40v9bK3jy90erKsubHije87L8Gmy6i3TirMz8nDEzw5wvr/EN6q0nTL8hb87Oz2a4+cnyR77wn6H+GdGULtQU9Wylzcrl2a0/dBf5bPQKaKcamNOPVXVXHlGEIpJfBHj5/G6R2xRv85fT6P2VyX2tqLbfKO8/rx/Lxnhf0IU1qN3Eeou2XV0YvKK9zk+b+SPQ9I4J4U0qMViaHhdpfbsrVkvnLc6SRYzyMmtz5p/FZ9VpfCtJpo/8dI39Z7z+7HCuuqHYqhGEV0UVsjTz9L03Pg45un4mTF9VbTGf90b0i1kKzMd4ejNa2jaY7OC4h9FXCepwlLHxZadc+kseWy3/C+R5Fxx6Ntd4aUsmEVn4C/16Vzh+KPVefNH0xIxzSlFxkk01s0+89HT6/Nj5nePm8fXez+j1VZ2r029Y+3D41B7R6WvRpXKu3XOHaFGcU55GLBcmu+UF4+KPFz6DBnpmr1VfnniHh+bQZfd5Y+k+UgALmEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAT/AHDWVxZxRi6PjpqM3277EuVda+lL/C97R9f6PpuHo+lY+m4FMasbHgoQivBd/meXfoy8PwwuGsjXrYfv8AOs7Fba5quP8A29/keus+H8c1k5s/u4+Gv8+b9B9ntDGDTxlmPxW/jy+60o+pUo+p40PofJaUZUoyyEoWsoyrKMlBCniUK+JQnDqjIvXtC0fXcV42radj5db6esh7UfepdU/JkoywtpaazvE7S5elbx02jeHi/FfoPon27uHNQlU+qx8l7ryUlz+Z5PxNwrr/AA5d2NX026iLe0bUu1XLykuXw6n1+zFkU1ZFM6b6oW1TW0oTimmvemexp/GM2Ptf8Ufu+f1nszpc/fF+Cf2/T7PioH0pxX6I+GdX7duDGel5MufapW8N/fF/42PI+LPRfxToLnZHFWo4q5q7F3lsvfHqvzXvPc0/iWDP2idp+b5TW+BazS95r1V9Y7/5cOC6cZQm4Ti4yXJprZotN7xgAAAAAAAAAAAAAAAAF9VdltsaqoSnObUYxit234I9x9HHoUhPGq1Hi5zU5pSjgwlt2V/W/H3Iy6vW4tJXqyT95bdFoM+tv0Yo+s+UPFtK03UNVy44mm4V+XfLpXTByf5d3vPUuFPQfrGX2L+IMuvT6nzdNe07PJvovzPetG0fS9FxVi6VgY+HV3xqglv5vq/ibkj5vU+P5cnbFHTH6y+v0fsxgx/izz1T6cR93LcKcB8McMRUtO02uWRtzyb/AN5a/Jvp8NjpS6RazyL5L5J6rzvL6XFhx4a9OOsRHyWMtkXMtkShcskWMvkWMtqktkWsukWsuhKFsix9C+RY+hbV2Fkj5/8ATfwjHRdWjrODV2cHNm1OMVyrt6teT5v4M+gZEHxvo8Nd4XztNnHeVlbdfumucfzNukzThyRPl5vM8Z8PrrtLam34o7x9f88PlIF1kZQnKEltKLaa95afTPyYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAfZ/AGnx0vgrRsFR7Lqwq+2v6nFOX5tk2zHh9n9Up7H0fVx28tjIz8uvab3m0+cv17FSKUiseULSj6lSj6iFnktKMqUZZCULWUZVlGSghTxKFfEoTh1Rlheywsh1RlrLmWsnCSjKMqyjJQ65vijgnhriKuX7R02v1zXK+r2LF8V1+O6PJOKvQtquH27tBzI59S5qq3aFi92/R/ke+sob9Prs2HtWe3pLzNb4PpNZ3vXafWO0/wCfzfG+q6ZqGlZTxtSw78W5fZtg47+Xiah9i6xpem6viPF1PCoy6X9m2Clt714P3o8x4p9C+m5Pau0DMnhWPmqbvbr+fVfme1g8Wx37ZI2n9nyet9ldRi/Fgnqj04n7PCAdBxRwZxHw5Y1qWnWKnflfX7db/wBy6eT2Zz56lL1vG9Z3h8zlw5MNujJWYn5gAJKwAAAAAAAHt36NnBteTO3i3UKVKFU3VhRkuTkvpT+HRe/fwPemQHo1wIabwDouHXHsqOJCUvxSXak/m2T7PzrxHU21OotaeOI+j9R8K0ldLpaUjnbefrK1lki9lkjPD0lsi1l0i1lkJLGWyLmWyLoSWSLGXyLGW1SWyLWXSLWXQlC2RY+hfIsfQtq7C2RY+hfIsfQthJ8s+kbBWncc6vix2UVkynFJdFP2kvlI587H00bf/UvVtv8A7O//AOjA44+qwzvjrM+kPx3xCkU1eWscRaf5kABYxgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA+z+ANQjqnBWjZyl2nbhV9p/1KKUvzTJtnkf6MmvxzeGMnQrZ73YFnbgm+fq5/wDT3+Z64z821uCcGovSfKf28n6r4dqI1Gmpkjzj9/NaUfUqUfUzw2+S0oypRlkJQiuJdbwuH9MlqWoK1YsJxjZOuHa7Cb27TXXbfwLtF1vSdaxlkaVqGPl1tb71zTa811Rk13TqNX0fL0zJSdWTVKuW/duup8f5S1XhjiDJxacnIw8zDulW51TcJJp7b7o9fw/QU1lLRFtrR+mzw/FPFMnh+Stpr1Un9Yl9l+JQ+eeEvTbreCoY+vY1epUrl66O0LUvftyfyR65wn6QOF+JexVg6jCvKl/7a/2LG/dv1+BXqPDtRp+9q7x6w06PxjSavaKW2n0ntP8Av0dSywvZYZYeqoy1lzLWThJRlGVZRkodWsoVZQnDq19ChV9ChZDsLLIQshKFkYzjJbOMlumjiOKfRfwvranbXjy07Jl/q42yW/vj0f5Hcsoy7Hlvjnek7KNRpcOpr05axMfN838U+iriXR3O3FrhqeMuk6OU0vfB8/lucJdVZTbKq6uddkXtKMls18D7JfUhOJOFdA4gpcNU02m2XdbFdmyPlJc/8HrYPFbR2yRu+W1vsljtvbTW2+U8frz/AC+TgeucT+hjKp7d3D+csiHVUZHsy+Elyf5HmWtaNqui5P6vqmBfiWd3rI7KXvT6P4HrYtRjy/BL5PWeGarRz/5qTEevl+rQABcwAAA+zfR7mQz+BtGy65KSnh177dzS2a+aZNs8T/Ro4urng28JZtqVtcpW4Xaf0ovnKC8nu/iz2xn5zr9PbT6i1J9e30fqfhmprqdNS9fTafrHK1lki9lkiiHoLZFrLpFrLISWMtkRnEXEWi8P4/r9X1GjFi1vGMpe3PyiubPKOLPThXHt0cOad230WRldPNRX+Wehp9Hmz/BXt6+TFq/E9LpP+W/f08/0ex5eRRi0yvybq6aoreU5yUUviyE0PivRdc1TIwNJyHlyxodq22Ef3cd3sl2u9vn08D5e4i4m13iDId2r6nfk8+UHLaEfKK5L5H0D6DtA/YvBFGRbDs5OoP8AWJ7rmotewvlz+J6Go8PrpcPVe29p4eboPG7+Iar3eGm1I7zM8/4/d3Ui1l0i1mCH0sLZFj6F8ix9C2rsLZFj6F8iD421iGhcL52pSklKutqv3zfKP5supWbTEQ5lyVxUm9uIjd85ekbOWo8c6vlRacXkyhFp9VD2U/lE58usnKdkpye8pNtv3lp9XSvTWI9H4znyzlyWyT5zM/qAAkqAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABt4+DdalJrsRfezajpde3tWSfkTjHaXJtEIoErPS69vZskn71uamThXUpy27UV3oTjtBFolqgAg6AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA630R8Ry4Y45wc6U3HGtl+r5K7nXLlv8Hs/gfXm6lHtRaafNNHwsuT3R9aehbiJcRcA4dtk+1lYn/jX8+fails/itmfLe0Wl+HPH0n+z7D2X1ne2nt9Y/u7Qo+pUo+p8vD7LyWlGVKMshKFrPn39Jfh39V1vF4ior2rzI+qvaX+pFcn8Y8vgfQTOZ9JvDy4m4MztMhFPI7HrMff+ZHml8enxPQ8O1P9PqK3njifo83xbR/1ektSOeY+sf7s+QyqbT3T2aE4yhNwlFxlF7NPqmUPvX5a7XhT0ncV6B2Ko5rzsaPL1OU3PZeCl1R65wj6Y+G9WcaNUU9IyXy3t9qqT90l0+KXmfNwMGo8N0+fvMbT6w9fR+OazS9otvHpPf8Ay+1sbIx8qmN2NdXdVJbqcJKSfxRcz4+4e4l13QLlbpOpX42z3cFLeD84vkz1fhP03xahj8S6ftLp+s4vTzcH/h/A8TP4Pmx96fij931mi9ptNm2rl/BP6x+r2llGRegcR6Jr9Ct0nUaMnlu4Rl7cfOPVEozzJrNZ2tG0vo6ZK5K9VJ3hayhVlDsLFr6FCr6FCyHYUZRlWUZKBa+pRlX1KMnCSjNXUMLD1DFljZ2NTk0y6wtgpL8zaZa+hZWduCaxaNpeXcXeiHSs2uy/QbXgZHWNU25VSfh4r8zxTWdMztH1C3A1HHnRkVvaUZf3XivefXZxXpZ4Tp4j0Cy6mpftHFi50TS5yS6wfuf9z1NJrrVmK5J3h8p4z7O4suOcumjptHlHE/aXzaCrTTafJooe2/PWfAy8nAzaczDunRkUzU67IPZxa7z6F9G/pl0zU6a8DieyGn5ySSyGtqbX739l+fL3nzmDFrdBh1ldskd/KfN6Gg8Sz6G/VjntPMeUvuDGysbLqVuLkVX1tbqVc1JP5F1s4wi5TkoxXVt7I+J8PUc/D+qZuTj/AP5drj/YzZWtaxlR7OTqmbbHwldJr+54n/bs79snb6f5fSR7WV6e+Lv9f8Pp/i70lcKcOxnC7PWZlLpj4vty3976L4s8f4s9M/EWp9unSa69KofJOPt2tfifJfBHmAPT03hGnwd5jqn5/Z5Gs9odXqO1Z6Y+X3Zs3Kys3Jnk5mRbkXTe8rLZuUn8WYQD1YjbtDw5mZneXQejzQZcR8XYOmOLdMp9u9rurjzl8+nxPrOMYwhGEIqMYrZJLZJHkn6N/Dzx9Jy+IsivaeVL1OO39yP0n8Zcv9rPXGfLeK6j3mfpjiv8+b9G9mtH7jS+8mO9+/5eX3/NbItZdItZgh9JC2RY+hfIsfQtq7C2R4n+kPr7sysTh2ifs1L1+Rs+snyjH4Ld/FHsuoZNWFhX5l81CqiuVk5PuSW7Pk7iTVLda13M1O5vtZFrkk+5dy+Wx6vhuLqydc+T5n2q1vudNGGs97/xCOAB7z85AAAAAAAAAAAAAAAAAAAAAAAAACsU5SUYptvokBQvrqsse0ISl5IksPToxSnf7T+73I34xUVtFJLwRdXDM8oTZCx0/Kl1go+bKy0/JXSMZeUiaBZ7mrnXLnrKba/p1yj5oxnSNJrZrdGll6fCxOVO0JeHcyFsMxw7F0QC6cZQm4yTTXVFpQmAAAAAAAAAAAAABKabhpRV1q3b5xT7jTwKvXZUYteyub8idL8NN+8oWnyAAaUAAARmp4aindUtl9qP+SNOlaTTTW6Zz+XV6nInX3J8vIy5qbd4TrO7EAClMAAAAAAAAAAAAAAAAAAAAAAAAAAAuhGU3tGLk/BIyYlEsi3sR5LvfgTdFNdMOzXHb397LKY5sjNtkRDAyZLfsKPmxPAyYLf1faXue5Ngu9xVHrlzcouL2kmn7yhP5WNXfDaS2l3SXVEJfVKm11zXNfmU3xzVKLbsYAK0gAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAvoqldYq4Ldsci1JyeyTb9xsV4OTNb+r7K/qexK4uNXjwSit5d8n1ZnNFcHqhN/RCT0/Jit+wpeTNecJQl2ZxcX4NHRmO+mu6HZsjv7+9HbYI8nIu54GbLx5Y9vYfNPo/EwmeY2naVgADgAAAAAABdCMpyUYrdvogLQS2Lp0IpSu9uXh3I3I1VRWyril5F0YZnlGbw50HR+rr+5H5D1df3I/Il7j5udbnAdH6uv7kfkPV1/cj8h7j5nW5wHR+rr+5H5D1df3I/Ie4+Z1ucB0fq6/uR+Q9XX9yPyHuPmdbnAdH6uv7kfkPV1/cj8h7j5nW5wHR+rr+5H5D1df3I/Ie4+Z1ucB0fq6/uR+Q9XX9yPyHuPmdbnAdFKqqS2dcGvI08rToSTlT7MvDuZG2GY4di8IkFZxlCTjJNNdUUKUgAAAAAAAAAAAAAL667LHtXByfuRnwMV5E95bqtdX4+4ma4Qriowior3FtMU27yjNtkPHT8lrnGMfORbZg5MFu6917nuTgLfcVR65c2009mtmUJ7Kxa8iL7S2l3SRCX1Tpsdc1s0U3xzVKLbrAAVpAAAAAAAAAAAAAAAAAKxTk0km2+5G7j6dZPZ2vsLw7yVazbhyZ2aJfCq2f0K5S8kTVOHj1dIbvxlzNhJJbItjB6yjN0JDAypf6e3m0XrTMh/arXxf/RMAn7mrnXKHemZC+1W/i/+jHPByo/6e/k0TgE4anXLnZ1WQ+nCUfNFh0rSa2a3Ne7Cx7esOy/GPIhOCfKXYuggbuRp1te7rfrI/mabTT2a2ZTNZrylE7qAA46AAAAAB6h+jlxF+yeMpaVdZtjanBV7N8lZHdxf5tfE8vM2Fk3YeZTl483C6mashJdzT3Rn1WCNRhtjnzadHqZ02euWPKf/AK+4ij6kTwbrdHEXDGBrOO1tk0qU4/cmuUo/Bpoln1Pzi1Jpaa25h+r0vXJSLV4laUZUoyULIWsoyrKMlBD5a9OXD37C46yLKodnGz//ACa9ly3b9pfPf5nBn016f+HP21wVPPohvl6ZL18dlzlX0mvls/8AafMp914Vqff6eN+Y7S/M/HdH/S6u0RxbvH5/5AAei8cAAGXFycjEvjfi320XQe8Z1zcZJ+5o9H4V9MfEOmqFOrRhqtC5dqfs2pfiXX4o8zBTm0+PNG143atNrc+lt1YbTH++j6k4U9JHC3EPYpqzlh5cv9DJfYbfgn0fwe/uOvTTW6e6Piw6rhfj/ifh5xhiahO7Hj/oZHtw28FvzXwPIz+DeeKfyl9Vovayfh1Nfzj7Pqd9Ch5jwp6ZNE1BRo1uiemZD5esXt0v49Y/FfE9GwM3Dz8eORhZNWRVLpOuakvyPKy6fJhna8bPrNJrtPq674bxP8/pyzsoyrKMrhrWvqUZV9SjJwkoy19C5lr6E4dULWXFrJw6+WvSLp8NL431bCqSVcchzgl3RmlNL4KRz51Xpaya8v0iaxbXJSirY17rxhCMH+cWcqfU4ZmcdZn0h+Na6ta6rJFeOqdv1AAWMoAAAAAG3o+Bfqmq4unY0XK3ItjXFJd7exqHrH6OPDv67r2RxBkQ3owY+rp3XW2Xf8I7/wDJFGqzxgxWvPk2aDSzq9RTDHnP7eb3LQ9Oo0jRsTTMaKVWNTGuO3fsuvx6m0y+RYz4neZneX63SsViKxxC2Ray6Ray2FkLZFj6F8ix9C2rrzH9IDXngcN16NRZ2bs+X7zZ81XF7v5vZfM8COq9KmvriDjLMyarO3i0y9Rjvfk4x5brze7+Ryp9To8PusURPL8q8c1v9ZrLXie0do+kffkABqeQAAAAAAAAAAAAAAAAAAAAAAAAEvpmL6qCtmvbkuXuRo6dT67JSa9mPNk4X4ab/ilC0+QADSgAAAAANTUcVX19qK/eRXL3+4hTpSG1Wn1eR24raM+fxM+an/tCdZ8mmADOmAAAAAAAAAACR0RL1lku9JIlCI0aajkSg39KPLzRLmvD8Kq3IAC1wAAAiNZX/lJ/0IlyF1aalmNL7KSKs3wpV5agAMiwAAAAAAAAAAAAAAAAAAAAAAAAAAE1pdSrxVL7U+b/AMG2WY62ogl3RRebqxtEQpkABIDQ1mpOqNq6xez8jfNfUUnhWb9y3IXjesuxyggAYloAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAASujVJVSta5yey8iKJ3TlthV+RbhjeyN+GwADWrAABq6pUrMVy+1Dmv8kIdDkLeixf0s54y5477p0AAUpgAAAAASuj0JVu+S5vlHyIon8JbYlSX3UXYY3sjaezMADUrAAAAAAAAAAAAAAAAAAAAAEdrFK7KvS5rlIiye1BJ4du/huQJkzRtZZXgABUkAAAAAAAAF1UJWWRhFbtvYtJTR6Nou+S5vlElSvVOzkztDeorjTVGuPRIvAN0dlQAABo6vSp0K1L2of2N4xZi3xbN/usjeN6zBHLnwAYVwAAAAAAAAAAAAAGxiYtmRLlyiusmZMDCdz7dnKtfmTEIxhFRikkuiRdjxb95RtbZixsaqiPsR3l3yfUzAGmIiOFYADoAAAAAAAAGDKxar17S2l3SRnByYie0iAysazHltNbp9JLozCdHZCNkHCcU0+4hs7Eljy7Ud3W+j8DNkxdPeFlbbtUAFKQAAAAA90/Rg4i+vcM3z//ABOOm/JTS/Jnub6nxhwZrl/DnE+BrNG7eNapTin9OD5Sj8U2fZOHk05mJTl481Om6Csrku+LW6Z8X49pfdZ/eRxb+X3/ALN6z32mnFPNP4nhkKMqUZ40PpYWsoyrKMlBDFkVV30WUWxUq7IuMk+9Ncz49450aXD/ABZqOky+jRc+x74PnF/Jo+xvE+bP0kqYVekOucFs7cCqc/e+1OP9oo9/wHLNc008pj+HzPtTgrbTVyedZ/aXmQAPrHwIAAAAAAAASGja1q2jZCyNL1DIxLF31z2T810fxI8HJiLRtKVL2pPVWdpewcLemrJrUKOIsGN6XJ5GOuzLzceny28j1PhzirQeIa09L1Gq2zbd0t9mxf7XzPkwvqssqtjbVOVdkXvGUXs0/FM87N4Ziv3r2l9FovafVYNoy/jj58/r932S+pRnznwx6V+JdJ7FWbZHU8dctr/ppfi6/Pc9V4V9J3DOudmm3IenZT/0slpJv3T6P47P3Hl5dBmxd9t4+T6/ReP6PV7RFum3pPb9+HbMtfQQnGcFKElKL6NPdMPoZYe2oQ3GOuY/D2gZWp3yW9cdq4v7c30XzLeJ+KdE4cxZXalm1wnt7FMX2rJvwUV/fofPfpC4yz+LdQU7U6cKlv1GOnyj/U/GRv0ultmtEzw8LxnxrFocc1rO+SeI9PnLm8q6zJybci6TlZbNznJ9W292zGAfQvy+ZmZ3kAAcAAAAAFYpykopbtvZI+svRloC4c4MwcCUOzfKHrb+XPty5v5dPgeCehPh1cQccYzvr7WJg/8Ak3Jrk2n7MfjLb4Jn1FI+d8b1G81wx9Z/s+29lNHtFtTbz7R/dZIsZfIsZ4dX2a2Ray6Ray6EoWyOP9LOvfsHgvLtrn2cjIXqKefPeS5teS3OwkfPXp+4g/aXFENIonvj6dHsy2fKVsucvktl57m/Q4fe5Yjyju8nxzW/0mjtaJ7z2j8/8PNgAfUvyoAAAAAAAAAAAAAAAAAAAAAAAAAL6K3bdGtfaewErpFXYx/WNc5vf4G6UjFRiorolsipvrG0bKZncAB0AAAAAA1tSq9biy2XtR9pGyDkxvGxDmgZsyr1ORKHdvuvIwmGY2nZcAA4AAAAAAAALqpuuyM49Yvc6Ci2N1Ssi+T/ACOdM+Jkzx57x5xfWJbjv0z3RtG6eBhx8mm+PsSSffF9TMaomJ4VgBgycumhe1LeXdFdRMxHIuyro0UucvgvFkBKTlJyb3be7MuVkTyLO1Poui8DCZMl+qVlY2AAVpAAAAAAAAAAAAAAAAAAAAAAAAAAA6Kn+FD8KLyyn+FD8KLzfHCkAB0DBqH1K3yM5g1D6lb5EbfDJHKBABhXAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABO6d9Sr8iCJ3TvqVfkXYPiQvw2AAakAAAWX/AMGf4Wc6dFf/AAZ/hZzpmz8wnQABQmAAAAABN6ZYrMSK74+yyENjByXj27vnB8pIsx26bI2jeE6C2ucLIKUJKSfei42KwAAAAAAAAAAAAAAAAAAAC2ycYQc5vZLqwNbVbFDEce+b2RCmxm5DyLe10iuUUa5jyW6rLKxtAACtIAAAAAAABlxKXffGtdO9+CJ+MVGKjFbJLZI1dMx/U09uS9ufPyRtmvFTphVad5AAWuAAAGtqdihiS8ZckbJC6nf66/sxfsQ5IryW6au1jeWoADGtAAAAAAAAAAANvT8V3z7U+Va6+/3GHFplfcq4/F+CJ6qEa61CC2SLsWPqneUbTsqkkkktkioBqVgAAAAAAAAAAAAAAABScYzi4yW6fVFQBB52NLHs5c4P6L/wax0ORVG6p1y6P8iBvrlTbKua5r8zJlp0zvCys7rAAVJAAAH0x+jpxF+1uDZaXdZ2snTJ9jZvm65c4v8AuvgfM51Hoy4ru4Q4qp1KPaljTXqsqtfbrbW/xTSa8jzvFNJ/VaeaxzHeHqeD62NHqovb4Z7T9P8AD69KM19Kz8TVNOo1DAvhfjXwU65xe6aNhnwe0xO0v0+sxaN44WsoyrKMlDsKeJ8senPVYar6Rs6VUlKrFjDGi1/Sva//AHOR7p6V+NcXhHQZ9myM9TyYuOLSnzT++/BL82fKt1tl107rZOdk5OUpPq2+rPpvAtLaJnNbjiHx3tTrqzWumrPffef7LAAfSvjAAAAAAAAAAAAAAAAEppnEOuaZFRwNWzMeK6Rha9l8DcyeNOK8mt13a9nSi+TXrWv7HPghOOkzvMQvrqs9a9MXmI+sr7rbbrHZdZOycuspybb+LLACaiZ3AAAAAAAAACa4I0SziLinB0mCfZutXrGvswXOT+RG94pWbTxCePHbJeKV5ns96/R+4eek8GR1K+vs5OpS9bzXNVrlD5838UejSKUVV0UV0UwjCuuChCMVskktkkVkfCZs05ss5J8363o9NXTYK4q+ULJFjL5FjOVa1si1l0i1l0JQiuKtVq0Th7N1S5pRx6nJb98uiXxex8lZuTbmZl2XfJytum5zb723uz2T9I3iBqvD4cont2n+sZOz7ukIv838EeKn0vheHoxdc8z/AA/O/ajW++1MYa8U/meQAHpvmAAAAAAAAAAAAAAAAAAAAAAAAAkdGq3lK5rpyRHLm9kdBiVepx4V96XPzLcNd7bo2nsygA1qwAAAG0lu3sgAAAAAAR+s09quNyXOPJ+RFHR2wVlUoPpJbHPTi4TlB9U9mZc1dp3TpK0AFKYAAAAAAAAAAC5PdGWOTfFbRtmviYgdiZjgZZ5F81tK2b+JiAEzMgADgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOip/hQ/Ci8sp/hQ/Ci83xwpAAdAwah9St8jOYNQ+pW+RG3wyRygQAYVwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAATunfUq/Igid076lX5F2D4kL8NgAGpAAAFl/wDBn+FnOnRX/wAGf4Wc6Zs/MJ0AAUJgAAAAAAAMlN1lL3rm4mzHU8hLnGEvgaQJRaY4lzaJb/7Uu/l1/mP2pd/Lr/M0Ad95b1OmG/8AtS7+XX+Y/al38uv8zQA95b1OmG/+1Lv5df5j9qXfy6/zNAD3lvU6Yb/7Uu/l1/mP2pd/Lr/M0DawMV5E95cq11fj7jsXvM7RLkxEJDAvvyE5zhCMO5pPmbZSMVGKjFJJdEVNdYmI7q5AAdAAAUk1FNt7JdWQ2oZbvn2YvatdPeX6lmetbqrfsLq/E0TNlyb9oTrXzAAUJgAAAAAAABtabR669Nr2I82ayTbSS3b6E9h0qihQ7+svMtxU6pRtO0MwANasAAAApKSjFyk9klu2Bq6nkepo7MX7c+S9yIUzZdzvvlN9O5eCMJiyX6pW1jaAAEHQAAAAAAAAA2tNo9dkJtezDmzsRvOxM7JHTcf1NCk17c+b93uNoA3RG0bKZncAB0AAAMd91dMe1ZJL/JZmZMcevd85PoiEutndNzm92yrJkivaHYru3b9Tm3tTFRXi+bNaWXkyfO6XwMAM03tPms2hnjl5MXytl8Tax9TkntdHdeMSOB2L2jzJiHRVWQth2q5KSLzn8e6yiztwfmu5k3i3wyKu3Hr3rwNOPJFlc12ZQAWOAAAGjquP6yr1sV7UOvvRvB81szlq9UbETs5oGfOp9RkSh3PmvIwGGY2nZcAA4AAA6vgLj3XeD72sC1XYc5b2Ytrbg34rwfvR7Vw/6beE8+qK1SOVpV23tKdbtr390orf5pHzUDz9V4Zp9TPVaNp9YerovGdVo46aTvX0nvD6uu9KnAdVbsev1yS7oU2Nv4dk4ji7054yrnRwzp9k7Gtlk5SUYr3qCe7+O3keEAz4vA9Njned5+rXn9pdbkr012r9I7/vu3da1XUNZ1GzUNTyrMnJsftTm/yXgvcaQB68RFY2h4FrTaZm07yAA64AAAAAAAAAAAAAAAAAAAAAAAAAAAAAB7p+jPw44UZvE2RDnN/q2Lv4LnOX9l8GeJYGLdnZ1GHjxc7b7I1wiu9t7I+xOFdIp0Lh3B0mhJRxqVBtd8u9/F7ni+N6n3eGMcc2/h9L7M6P32pnNbin8ykWWyLmWyPlofoSyRYy+RYy2qS2Rhybq8fHsvumoVVxc5yb5RSW7ZmkecenzX/2Xwg9Npn2cjUZerez5qtc5fPkvizVp8U5ckUjzZ9Zqa6XBbNbyj/48L4x1mzX+Jc3VZt9m6x+rT+zBcor5EQAfZVrFYiI8n5DkyWyXm9uZ7gAJIAAAAAAAAAAAAAAAAAAAAAAAANvS6vWZSbXKHMmjT0qn1eN239KfP4dxuGzFXaqq07yAAscAABo6vb2KFWnzm/yNjDt9djwn37bPzInUbfW5Umn7MfZRsaNbtOVL7+aKK5N8iUx2SgAL0QAACI1insXK1LlPr5kua+fV67GlFLeS5ohkr1VdrO0oIAGJaAAAAAAAAAG1p2N6+3eX0I9ff7jsRMztBM7LMbFuv5xW0fvPob0NLht7dsm/ctjfilFJJbJdxU1Vw1jlXNpR09Lht7Fsk/ejSycW2h+3HeP3l0J4pKKlFxkk0+qFsNZ4ItLmwbGfj/q92y+hLnE1zLMTE7SsAAcAAAAZKKbLpdmuLfi+5EnjadXDaVr7cvDuJ1pNuHJmIRUK5ze0IOT9yNqvTsif0lGC97JiEYwW0YpL3IqXRgjzQm6Nhpa+3d8kZFplK6zmzeBZ7qvo51S0v2bR4z+Za9MpfSc0b4Hu6+h1SjJaX9275owWafkw6RjNf0smgRnDWXeqXOTrnB7ThKPmi06SUYyW0opr3mnkadVPnX+7l+RXbDMcOxdDgy5GPbRLayPLufcYimYmOUwAHAAAHRU/wAKH4UXllP8KH4UXm+OFIADoGHNhKeLZCC3k1yRmByY3jYQX6llfyn80P1LK/lP5onQVe4ql1ygv1LK/lP5opLDyYrd0y+HMngPcVOuXNyi4vaSafvKHQZFFd8OzOPPufeiEyqJUWuEvg/FFN8c1Si27EACtIAAAF1dc7JdmEXJ+438fTG9ndPb3RJVpNuHJmIRxmrxb7Po1S28XyJqrHpqXsVxXv7zKXRg9ZRm6Jr0y5/TnCP5mWOlw+1bJ+SJEFkYqwj1S0VplH3pv4lXptHjP5m6Dvu6+h1Sj5aXX9myS8zFPS7F9C2L81sSoOTirPkdUoG3EyK/pVvbxXMwPkdKYbsam5e3Bb+K5Mrtg9JSi6ABvZWn2V7yqfbj4d5olNqzXlKJ3AARdAAAAMuNTK+5Vx7+r8EIjcUopsul2a4t/wBkb9el8v3lvPwijfpqhTWoQWyReaq4YjlXNpR8tLq25WTTNTJwbqV2l7cfFE2Ds4qy5Fpc0CQ1XFVb9dWtot+0l3MjzNas1naVkTuAG/gYPrNrLd1DuXiK1m07QTOzVootue1cG/f3G7VpfL95b8IokoxjGKjFJJdyKmiuGscoTaWktNo+9N/Ex26XFr93Y0/6iRBP3dfRzqlz99FlEuzZHbwfczEdFfVC6twmt0/yIG+uVNsq5dUzNkx9KdbbsZO6d9Sr8iCJ3TvqVfkSwfE5fhsAA1IAAAtuTlVNLq0yE/Usr+U/midBC+OL8uxOyC/Usr+U/mh+pZX8p/NE6CHuKu9coJ4eSlv6mRhnCUHtKLi/ejoyy2qu2PZsimjk4I8pOtzoNjNxpY9m3WD+izXM8xMTtKwABwAAAAAAAAADLjUTvtUI/F+B2I3F2HjSyLNlyivpMnK4RrgoQWyRbRVCmtQguS/MyGvHTphVadwAFjgAABF6nmb70VPl9pr+xk1LM7CdNT9p/SfgRRny5PKE618wAGdMAAAAAAAAAL6a5W2xrj1bA3dIx+1N3SXKP0fMlSymuNVca49Ei820r0xsqmd5AATcAAAI7V8jZKiL5vnI3ci2NNMrJdxAWTlZOU5Pdt7spzX2jZKsLQAZVgAAAAAAAAAABN6XV6vFTa5z5siMet23wrXezoUkkkuiL8Fe+6F5AAaUAAAC22yNVcpyfJIuIvWL95KiL5LnIje3TG7sRvLSyLpX2uyXf0XgYwDDM7rQAAAAAM2HfLHuU19HpJeKMIOxO07wOkjJSipRe6a3TKkfo93ag6ZPnHmvIkDbW3VG6mY2AASAAAaOr09uhWJc4f2Ig6OyKnCUH0a2Oesi4TlF9U9jNmrtO6dJWgAoTAAAAAAAADf0XRtV1nKWNpWBkZdr6quG6Xvb6Je9nT+irgTI4v1J23uVGl47/f2rrN/cj7/f3H0houk6do2BDB0zErxqIL6MF197fezzNZ4lXTz0Vje38PofCfAMmur73JPTT95+n3fP+F6G+L74KV7wMVv7M7+1Jf8AFNfmYNU9EfGOFVKyrHxc1JbtUXLtfKW2/wAD6SZazzo8Wz779n00+yuhmu34vrv/AIfG+biZWFkSxszGux7oPaVdsHGS+DMB9YcX8LaRxPgyxtSx05pbV3xW1lb9z/wfNPGfDmdwvrdmm5u0kvaqtS2jZDua/wCj19Jra6jtxL5TxfwPL4f+OJ6qT5/dCgA2vDAAAAAAAAAAAAAAAAAAAAAAAAepfo6cOLU+KrNayIb4+mR3r3XKV0uUfkt357H0azkPRBw9/wCneBsLHtr7GVkR/WL01zUpdE/JbI69nw3iWp/qNRNo4jtD9Q8F0f8ASaStZ5nvP5rGWyLmWyMsPXWSLGXyLGW1SWyPmH0ycQrX+Ncn1M+1iYX/AI1Pg+y/al8Zb/BI959J2urh7g3Nzoz7N8oeqo8e3LkvlzfwPlOTcpOTe7b3Z9B4Pg5yz9IfG+1mt2rXTV8+8/2UAB7z4gAAAAAAAAAAAAAAAAAAAAAAAAMmNW7b4VrvfMxkno1P0rmv6Y/5JUr1W2cmdoSKSSSXRFQDcqAAAMObb6nGnPfntsvMzEVrNu9kaV9nm/Mhkt013diN5R5fRY6ro2LuZYDEtdJFqUVJdGt0VNPSbe3j9hvnB7fA3DfWeqN1MxsAA6AAAgs+r1OTKKW0XzRrkvrFXapVqXOD5+REGLJXpstrO8AAIOgAAAAATmmwUMOG32vaZBnQYn1av8KL8Ed0LsoANKAAANTVYdvEb25xe5Ck9qH1OzyIEy54/EspwAApSDbwcOV77cvZrXf4lun4zyLfa+hHr7/cTcUoxUYrZLoi7Fj6u8oWtspVXCuChCKjFeBcAakAAAAAAAAAAAAABScYzi4ySafVMiM/CdO9le7h3rwJgNJrZ80QvSLQ7E7OaBt6jjeot3ivYl093uNQx2iYnaVsTuAA4Oip/hQ/Ci8sp/hQ/Ci83xwpAAdAAAAAAAAA0tYr7WOrEucH+RumtqbSwrN+/ZL5kbxvWXY5QYAMK0NzCwZ3bTn7MPzZfpmJ61+tsXsLovEllyWyL8eLfvKFreiymqumHZrior+5eAaeEAAAAAAAAAAAAAANTOwoXpzhtGzx8TbByaxaNpInZzk4yhNxkmmuqLSZ1LFV1bsgv3kV80QxjvTplbE7gAIOhKaLBKE7NubeyIsmdI+qf7mW4Y/EjbhuAA1qwAAWXwVlM4Po0c6dK+hzyg7L+xHq5bIz544To2NMxfXWdua9iP5smSyiuNVUa49Ei8tpTphGZ3AATcAAAIrWoJW12L7Safw/+SVIvW5p2Vw70m38f/gry/C7XlHE7p31KvyIIndO+pV+RTg+JK/DYABqQAAAAAAAAAABrajWrMSfjHmiDOhyWo49jfTss54zZ47p04AAUJgAAAAAAXQhKc1CC3b6ICtNc7bFCC3bJzFohj1diPXvfiW4WNHHr8Zv6TNg148fT3nlXa24AC1EAAA0tRy/Ux9XW/3j/Ivz8pY8No87H0Xh7yFlJyk5Se7fVlOXJt2hKtdxtt7vmygBlWAAAAAAAAAAAErpGP2Yevkucvo+RoYdLvvUO7rJ+4nopJJJbJF+Gm87oWnyVABpQAAAANbUL/UUNp+3LlE5M7RvJHdoarkest9VF+zD82aQfN7gw2t1TutiNgAHHQAAAAAAAAAAb+jV73ys+6tiWNLR4dnGcvvSN02Yo2qqtyAAscAABSclCDk+iW5zts3ZZKb6ye5MatZ2MRxXWb2IUzZ7d9k6QAAoTAAAAAAAAZcWx05ELF3Pn5HQJ7rdHNE9p9nrMSD70tmaME+SF4ZwAaEAAACF1avsZbkuk1uTRHa1Deuufg9irLG9Xaz3RYAMi0AAAAADJjU25ORXj0QlZbbNQhCPWUm9kl8TGekfo/8AD/7V4xWpXQ3x9Nj63n0dj5R+XN/Apz5ow45vPk06PTW1WeuGvnL3TgrQqeHOGcLSqox7VVadsl9qx85P5kuy9ljPiptN7TaeZfruLHXFSKVjtHZay1lzLWWQthY+p5/6cdAr1bg63OhBfrWnfvoSS5uH215bc/gegPqR+v1wt0POqs27E8exS38OyzVp7zS8Whn1uCuo098VuJiXyGAD61+OAAAAAAAAAAAAAAAAAAAAAAdh6H+HVxHxzhY91fbxMeX6xkJrk4xe6i/N7L5nHn0f+jjw49N4Us1vIr7N+pT3r3XNVRey+b3flsef4nqf6fT2tHM9oer4No/6vV1rMdo7z9IepMtZdItZ8ND9QWMtkXMtkXQkskWMvkR+v6jRpGi5mp5MlGrGqlZL37Lkvi+RdSJmdoLWikTaeIeG/pFcQvO4gx9BonvRgx7duz+lbL/pbfNnlRtatnXalqeTqGRLe3ItlZN+9vc1T7bTYYw4opHk/JNfqp1eovmnzn9vIABexgAAAAAAAAAAAAAAAAAAAAAAAKpNtJdWdBjVqqiNa7lzIrSqvWZPba5Q5/EmTTgr23V3nyAAXogAApOSjFyfRLc566bstlN/ae5K6vd2MdVp85v8iHM2e287J0jzAAUJtrTLfV5UU3yn7LJs5o6DEt9djws72ufmacFvJC8ebKAC9AAAFJxU4Sg+jWzOetg67ZQfWL2OiIrWaezZG5dJcn5lOau8bpVnujwAZVgAAAAAHQYn1av8KOfOgxPq1f4UX4OZQuygA0oAAAwah9Ts8iBJ7UPqdnkQJmz8wnTgKxTlJRS3beyKG3pVfbyk30itymsbzslM7JXFpVFEa11XV+LMoBuiNuyoAB0ADBm5McavdreT6I5MxEbyM5jldTF7Stgn75IhL8m65+3N7eC6GEonP6QnFHQLIob2V1f/ACRlTTW6e6OaL67LK3vCco+TEZ/WDodECLxtSaajet195EnCUZxUoNNPvRdW8W4QmNlQASAAAYc2pXY047c9t15kAdI+j3Odnt25bdN+Rmzx3iU6LQAUJuip/hQ/Ci8sp/hQ/Ci83xwpAAdAAtnOMIOc3tFdWBcDX/XMX+dEfrmL/OiR6q+ptLYBr/rmL/OiUlnYqX8VPyTHXX1NpbJF6xepSVEXv2ecvMZWpOScaYuP9T6kc+b3KcuWJjaE619QyY1TuvjWu98/Ixm9oyTyJN9VHkU0je0QlM7QloxUYqMVsktkioBuVAAAAAADTys+qp9mHty93RGhbnZE39PsrwiV2y1q7FZlNg52VlkvpWSfmyismuk5LyZD3/yS6HRgg6s3Irf8RyXhLmSGHn13NQmuxPu8GTrlrZGazDcABY4AAAQ2q0eqv7cV7M+fkyZNfUavW4sltzj7SK8leqrtZ2lBAAxrQmdI+qf7mQxM6R9U/wBzLcPxI34bgANasAAB9CM0qntX2XPpFtLzJN9DDh1+roS7222QtXe0OxPZmAKSait5NJe8m4qDWszcaHJ2Jv3Lcs/aWNv9v5EeuseZtLcBqrUMXb+I1/tZjt1OmK/dxlN/JHJyVjzd2luW2Rqrc5vZIgMm13XSsff0LsnJsyJbzfJdEuiMJnyZOrtCda7BO6d9Sr8iCJ3TvqVfkdwfE5fhsAA1IAAAApJpJtvZIwfrmL/OicmYjk2bANf9cxf50R+uYv8AOic6q+ptLYBrvNxUt/Wr5M1cjU1s40Re/wB5nJyVjzd2lfq96jX6iL9qXX3IiSs5SlJyk22+rKGS9uqd1kRsAAi6AAAAAC5vZE1p2KqIdua/eSXyI/S6lZlJvpFdomzRhp/7IWnyAAaEAAACy+U4VuUIOcu5F4A5/Ijf23O6E033tGI6UwXYmPb1rSfiuRntgnylOLoEG/kabOKcqZdteD6mjKMoy7Mk013MptWa8pRO6gAIugAAAAAAbml0etv7cl7EOfmztY6p2cmdm/ptHqaN5L25c2bQBuiNo2VT3AAdAAAG0k2+SRA517vvcl9FcoknnynNLHp5yl9J+CK4uFVTs2u3PxZTeJvO0JRtHdGUYd9q3jDaPi+Rt16X/Mt+SJIHYw1jkm0tKOm466ub+JV6bjP76+JuAl7uvo5vKOnpcPsWyXmjWu0/IhzilNe4mgRnFWTqlzck4tqSaa7mUOgvoquW1kU/f3kXmYM6d5w3nD80U3xTVOLbtMAFSQAAJ/Bj2MSpf07/AD5mYpBbQivBbFTfEbRspAAdAAARetT3srh4Lcjjb1WXazJLwSRqGLJO9pW14AAQdAAAAAAAACV0We9VkPB7/P8A+CKN7RpbZEo+MSzFO1oRtwlwAbFYAABq6rHtYcn4NM2jFmLtYtq/pZG0bxJHLnwAYVwAAAAAH1H6F+Hf/T/BGMrodnLzf/Jv5c12vox+Edvi2eB+i/QXxFxpg4EodqiM/XX8uShHm/nyXxPrFJRSjFbJLZI8DxvUbRXDH1n+z7L2U0e821NvpH91rLGXssZ4NX261lrLmWsuhKFj6nM+k3Va9H4H1PKlJRnOl01LxnP2V/ff4HTPqeF/pEa7+sapi6DTPevGXrrkn9uS5fJf3N2ixe9yxDzfGdZGk0d7+c9o+s/7u8nAB9S/JgAAAAAAAAAAAAAAAAAAAABKcKaRdr3EWDpNCfaybVBtd0e9/Bbn2Rg4tODg0YePBQporjXCK6KKWyPEP0Y+G+3k5vFGRD2a1+rYu/3nznL4LZfFnu0j47x3U+8zxjjiv8vv/ZnR+6005rc2/iFsi1l0i1njw+mWMtkXMtkXQkskePfpIcQOjTMTh2ie0smXrshJ/Yj9FfF8/gj1+2ca4SsnJRhFNybfJJd58k+kHXpcScW52qJt0zn2KE+6uPKP/fxPZ8Iwe8zdc8V/nyfPe0us9xpPdxPe/b8vP7fmgAAfVPzkAAAAAAAAAAAAAAAAAAAAAAAAAMuJV67IhDub5+R2I3nYS2l1eqxU2van7T/wbQXIG6sbRspnuAA6ABhzLfU4859+2y8zkztG4idSt9blS26R9lGsAYZned10AAOASWjW85Ut9eaI0yY9jquhYu5kqW6bbuTG8OhBSLUopro+ZU3KgAADDmVeux5w79t15mYHJjeNhzQNrUqfVZUtl7MvaRqmGY2nZdHcABwAAAOgxPq1f4Uc+dBifVq/wovwcyhdlABpQAABg1D6nZ5ECT2ofU7PIgTNn5hOnASeiJbWy258kRhKaI/YtXvRDF8cO24SIANisAAAg9SsdmZPnyi+yvgThC6pU68qUtvZnzX+SnNv0pU5agAMqwAAAz4mTPHnuucH1iYAdiZid4HRU2wurU4PdP8AIvIDFyJ49najzT6rxJfHzKLlymoy8JcjXTJFuVU12bAG68TBflUUr2ppvwXNk5mI5cVzbVTjyk3z22XmQBnzMmeRZu+UV0RgMmS/VKysbAAK0nRU/wAKH4UXllP8KH4UXm+OFIADoGDUPqVvkZzBqH1K3yI2+GSOUCADCuAAAAAA3dHmo5Li/tR2RpF1c5VzU4vZp7olWdp3cmN4dGDDi5EMipSj1714GY2xO/eFQAG0lu+SOijaSbb2SInPzpWN11PaHe/Ealmetfqqn7C6vxNEzZcm/aE619QAFCYAAAAAmtMyHdRtL6cOT96NsidF/jz/AA/5JY2Y53qqtG0gALHANJrZ9GABzlsexbOD+zJotNnUklm2beKf5GsYLRtOy2AmdI+qf7mQxM6R9U/3Msw/E5fhuAA1qwAAADDmXqihz7+kV7zkztG4x5uZHHXZW0rH0Xh5kRddbdLeybfu7iycnOTlJ7tvdsoY75JstiuwACDoAAAAAE7p31KvyIIndO+pV+Rdg+JC/DYABqQAABZf/Bn+FnOnRX/wZ/hZzpmz8wnQABQmAAAAAAAAAAAAAJDRWvXWLv7P+SVILAuVOTGTe0XyZOmvDP4dlduQAFqIAAAAAAAAYsjHqvjtOPPua6oyg5Mb8iBy8WzHl7XOL6SMB0dkIzg4TScX1RC52LLHny5wfRmbJj6e8LK23awAKUgAAVinKSilu3yRP4lKoojWuvVvxZHaPR27HdJco8l5ksacNdo3V2nyAAXogAAAACkYqLbS5vqyoG68QAG68QAAAAAAAABGajhbJ3Ur8USNOlIfVMX1U/WwXsSfNeDM2XHt3hOtvJpF1S3sivei0vo/j1/iX9ymOU3RAA3qQAAAABA6g98yzzMBmzPrVv4mYTBbmVscAAOOgAAAAAAABt6U9s2PvTNQ2dM+uw+JKnxQ5PCcABuVAAAFtq3qmvGLLikvovyEjmwAeeuAAAAN7QNNv1jW8PS8aLlblXRrj7t3zfkluzlpisbylWs2tFY5l7r+jjw6sHh7I1++G1+fLsVNrmqo/wDb/sj1Z9TX0nAo0zS8bTsaPZpx6o1xXuSNh9T4bU55z5bZJ83614fpY0mnphjyj9/NYyxl7LGQq2rWWsuZay6EoaWr52PpmmZOoZUuzTj1ysm/cl/c+Stc1LI1fWMrU8p725Nrsl7t+i8kuR7Z+kNr36noWPolM9rc2XbsSf8Apx/7f9jwY+i8Kw9OOck+b4D2r1vvM8aes9q8/WftH8gAPVfJgAAAAAAAAAAAAAAAAAAFYptpLq+RQyYzSyam+imt/mJdjl9hejzSK9D4L0vT64pOOPGc/fKS7TfzZOyLMOcLMOiyvbsSri47eDXIvkfmt7ze82nmZfr2GlceOtK8RC2Ray6RazsLljLZFzLZF0JPPvTrr/7F4Juxqp9nJ1B+ohs+fZf0n8uXxPmY7/068Rftzja3Gpnviacv1evZ8pT6zl8+X+1HAH2fhmn9zgjfme78y8f1v9VrLbcV7R+XP7gAPQeKAAAAAAAAAAAAAAAAAAAAAAAAEpo1O0ZXNdeUSMhFykorq3sjoaK1VTGtfZWxdhrvO6Np7LwAalYAABF6zbvONKfTmyTk1GLk+iW7Oevsdt07H9p7lOa20bJVjusABlWAAAAACZ0q31mN2W/ahy+HcbhC6Xb6vKSb5T5MmjZitvVVaNpAAWOAAA09Wq7eP20ucOfwIY6SSUouLW6a2Zz+RW6rpVvuZmz177p0nyYwAUJgAAHQYn1av8KOfOgxPq1f4UX4OZQuygA0oAAAwah9Ts8iBJ7UPqdnkQJmz8wnTgJHRJbWWQ8UmRxnwbfVZUJN8t9mV0na0SlPCeABtVAAAGO+qF0OxYt1/YyATG4iMjTrYNup9uPh3mnOucHtOEo+aOjKNJrZpPzKbYYnhKLy5sE/PEx5/Spj8ORrz0yh/RlOPx3K5w2S64RAJGelyX0LU/NbGCzAyY/YUvJkJx2jyd6oaoLp1zg9pwlHzRaQdV3fTcoAAAAAAAdFT/Ch+FF5ZT/Ch+FF5vjhSAA6Bg1D6lb5Gcwah9St8iNvhkjlAgAwrgAAAAAAAF9Vk6p9qEnF+43atUmltZWpe9PYjwSrea8OTESk5aotvZpe/vkamTmXXraT7MfBGuDs5LTzJERAAZIUXT+jVN/Ahtu6xg2o4GS/sbebMkdNvfWUF8SfRafJzeGiCRjpc/tWx+CL46XD7Vsn5I77q3o51QiwTEdNx11c38TPVi0VPeFa38XzJRht5nXDX0nHlVB2TW0pdF4I3gDTWsVjaFczuAA6AAAhdWW2Y/ekahuav9cf4UaZiv8AFK2OAmdI+qf7mQxM6R9U/wBzJYficvw3AAa1YAABD6vb28jsJ8oL8yYOeyZOWRZJ895Mpzz22SpyxgAyrAAAAAAAAAndO+pV+RBE7p31KvyLsHxIX4bAANSAAALL/wCDP8LOdOiv/gz/AAs50zZ+YToAAoTAAAAAAAAAAAAAAkMDP9WlXdu4rpLwI8Eq2ms7w5MbujhZCa3hOMl7mXHNptdG0V9ZP78vmXRn+SPQ6MHOq2xdLJfMyQy8mHS6Xx5nYzx6OdCeBFU6nNcrYKS8VyZIY+RVet65bvvXeWVvW3DkxMMoAJuAAAFl9Ubq3XNcmXgcjnb6pU2yrl1X5lhLaxT2qlclzjyfkRJivXpnZbE7wFUt3sihtaZV6zLjuuUfaZGI3nZ2eyWxKlTjwh3pc/MygG6I27KQAHQAAA08vOrp3jD25/kjFqeW470VPn9p+HuIsoyZdu0JVr6ti7MyLHzm4rwjyMDbk922/MoDPMzPKzZVNp7ptGarLyK+lja8HzMAETMcCXxNQhY1C1KEvHuZvHNEjpmY01Ta90/ot93uL8eXftKFq+iUABoQAAALLq421Srl0aLwBzlkJV2ShLrF7MrT/Gh+JG5rNXZujYl9Jc/M0YvaSfgzDaOm2y2J3h0gC6IG5UAAAAAIDNW2Xb+IwmzqS2zbPfzNYw25lbHAACLoAAAAAAAAbWl/XYfH+xqm5pC3y9/CLZKnxQ5PCZABuVAAAFJvaEn7ipjyHtj2Pwi/7CRzwAPPXAAAHsf6NXD3r9Uy+I74bxxo+px219uS9pr4cvizx6uE7bI11xcpzajGKXNt9EfXfo80CPDXB+BpTS9dCtTyGu+yXOXyfL4HkeM6n3WDojm38eb6H2b0fv8AVe8mO1O/5+X3/JPMtfUuZa+p8pD9GhYyxl7LGW1SWssnKMYylJpRS3bfci9nE+mXXloXBWT6ufZycx/q9K7+f0n8Fv8AkacOOcl4pHmq1Oeunw2y24iN3g/pJ16XEXGGbnqTdEZeqx14Vx5L5838TnAD7KlIpWKx5PyDNmtmyWyX5mdwAElQAAAAAAAAAAAAAAAAAAAAA+tfQ7r9fEHAeBd6xSyMaCxr13qUVsvmtmddI+SvRdxrl8Ga7+sxUrcG/aOVQn9KPdJf1I+pOH9c0vX9Ohn6Vl15NE19l84vwa7mfD+KaC2myzaI/DPH2fpHgnidNXgikz+OvaY9fm35FrLpFrPOh7qxnO+kTXq+G+Es7U5TUbYw7FC75WS5RS/v8CV1rVdP0fAsztSyq8bHgt3Kb239y8X7j5l9K/HN3GOrpUKdWmYzax6nycn3zkvF/kj1vDtFbUZImY/DHP2eR4z4pTRYZiJ/HPEf3cZbOVtsrJvtTm3KT8Wy0A+zfmIAAAAAAAAAAAAAAAAAAAAAAAAAAN3SKe3kesfSHP4kwa2m1eqxY7rnL2mbJsx16aqrTvIACxwAAGDOjbPHcKlu5cnz25EX+z8r7i/5ImwV2xxad5di2yE/Z+V9xf8AJD9n5X3F/wAkTYI+5q71yhP2flfcX/JD9n5X3F/yRNge5qdcoT9n5X3F/wAkP2flfcX/ACRNge5qdcoVYGWmmoLdf1ImK3J1xc1tLbmveXAnSkV4cmdwAE3AAACM1mrnG5Lr7LJMx5NatonW+9cvMhevVXZ2J2lzwKtNNp9UUMS0AAA6DE+rV/hRz50GJ9Wr/Ci/BzKF2UAGlAAAGDUPqdnkQJPah9Ts8iBM2fmE6cAAKE0zpmT62r1cn7cV80bhzlc5VzU4PaS6MmcLMhelGT7Nnh4+RqxZN42lXaraABciAAAAAAAAAACjSa2aTXvNa7Bx7OkOw/GPI2gcmInk3Q+Rp1tacq36yP5mm009mtmdIa+XiV5C5rsz7pIpvh//AJTi3qggZL6Z0WOE1s/HxMZmmNkwAAdFT/Ch+FF5ZT/Ch+FF5vjhSAA6Bg1D6lb5Gcwah9St8iNvhkjlAgAwrgAAAAAAAAF1cJWTUYRbb7kSuJp8K0pXe3Pw7kTpSbcOTOyPx8W6/wChHaP3nyRv06ZXHnZJyfguSN9clsgaK4axyrm0sdVFNX0K4p+O3MyAFsRs4AAAAAAAAAAAAAAAAhtX+uP8KNM3NX+uP8KNMxZPilbHATOkfVP9zIYmdI+qf7mSw/E5fhuAA1qwAAH0Ocs/iS82dG+hzln8SXmzPn8k6LQAZ0wAAAAAAAAndO+pV+RBE7p31KvyLsHxIX4bAANSAAALL/4M/wALOdOiv/gz/CznTNn5hOgAChMAAAAAAAAAAAAAAAAAAAAAC6EpQkpRbTXRotAE3p+WsiHZlysXX3m0c9RZKm2Nke5nQRkpRUk901ujXiv1R3VWjZUAFrgAALbIqcJQl0ktmc9ZFwslB9U9joyE1SHZzJP7y3KM8dt0qS1SV0WG1c7PF7EUTelx2woe/dleGN7JW4bQANasAAAxZdvqaJWd6XLzMpHa3PaNda722yN7dNZl2I3lGSbk2292+bKAGFaAAAAAAAAndPu9fjKT+kuTNgitFntZOHityVNuO3VXdVaNpAATcAABqatDtYjl3xaZCnQZa7WLav6Wc+Zc8fiTpw6LHl2qK5eMU/yLzV0ufaw4f07o2jTWd4iUJAAdAAARGsR2yVLxiaJK61DeuFi7nsyKMeWNrSsrwAArSAAAAAAAACR0SPt2T8EkRxM6RDs4na75PctxRvZG3DcABrVgAAGvqEuzh2PxWxsGlrEtsVR+9IjedqyRyhwAYVwAAPQPQPw9+2+OKcm2HaxtPX6xPdcnJfRXz5/A+nmcB6B+HFoXA9WVdDs5epP9Ys3XNR6Qj8ufnJnfs+K8U1Pv9TO3Edn6Z4Do/wCl0ld+bd5/t+yxlr6lzLX1MUPbhYyxl7LGW1SWs+cfTzr37W4weDVPfH06Lqik+XbfOT/svge7caa1Vw9wznata1vTU/Vxf2pvlFfNo+Ssm63JyLMi6bnbbNznJ97b3bPe8Iwb2nJPl2fJe1mt6cVdNWe895+kcfv/AAxgA998GAAAAAAAAAAAAAAAAAAAAAAAAEjoWt6voWYsvSNQvw7l1dcuUvc10a9zI4HLVi0bTG8JVvak9VZ2l6ppvpy4oorUM3C0/MaX0+y65Pz2e3yRdqPpy4lurccPT9PxZP7bUrGvLdpHlIMX/TdLvv0Q9H/rOu6en3s/78+UpxDxBrXEGV+s6xqN+XPuU3tGPlFcl8ERYBsrWKxtWNoede9r2m1p3kAKxjKT2jFyfgkSRUBfOq2C3nXOK98WiwG2wAAAAAAAAAAAAAAAAAAAAAGfCq9dkxg1y33fkYCV0ars1yua5yey8ieOvVbZy07QkAAbVQAAAAAAAAAAAAAAAAAAAAAAAAAAIXVafV5Lkl7M+a8+81Ca1Sr1mK2lzhzRCmPLXayys7wAArSDoMT6tX+FHPnQYn1av8KL8HMoXZQAaUAAAYNQ+p2eRAk9qH1OzyIEzZ+YTpwAAoTAABu42oW1pRs/eR9/U36c3Ht5dtRfhLkQYLK5bQjNYl0oOerutr+hZKPu3NivUciP0uzLzRdGePNHolMgjoapH7dT+DM8NQxpdZuPmicZKz5udMtoGOF1M/o2QfxMhPfdwAAAAAAABhzMeORU4v6S5xfgyBnFwk4yWzT2Z0hFaxT2bY2pcpcn5lGanbqSrPkjwAZljoqf4UPwovLKf4UPwovN8cKQAHQMGofUrfIzmDUPqVvkRt8MkcoEAGFcAAAAABWEZTkoxW7fJIoSej0cnfJe6P8A2SpXqnZyZ2htYOLHHr7nN9WbABtiIiNoVAAOgAAAKSlGP0pJebMUsrHj1uh8zkzEDMDVlqGKuk3LyizFLVKV9Gub89kRnJWPN3aW+CMlqj+zSl5swz1HIl9Hsx8kRnNU6ZTIIzSbLLMmcpycn2e/zJMnS3VG7kxsAAkAAAhtX+uP8KNM3NX+uP8ACjTMWT4pWxwEzpH1T/cyGJnSPqn+5ksPxOX4bgANasAAB9DnLP4kvNnRvoc5Z/El5sz5/JOi0AGdMAAAAAAAAJ3TvqVfkQRO6d9Sr8i7B8SF+GwADUgAACy/+DP8LOdOiv8A4M/ws50zZ+YToAAoTAAAAAArCMpyUYptvokEm3supNYGLGitNrexrm/D3E6Um0uTOzUp0yclvbNR9y5szrTKNuc5/NG8DTGKseSvqlG26Xy3qs5+EiPuqspn2bItM6IxZNEL63Ca8n4EbYYnh2LernwX3VyqslXLqmWGVYAAAAAAAAE7psnLCr37lsQRN6WtsKHv3/uXYPiQvw2gAakAAACK1tfva5eMdiVI3XP9H4/4K8vwS7XlGE9gcsOr8JAk7pz3wq/IpwcpX4bAANSAAABE619Yh+D/ACSxF63H265+KaKs3wu15RwAMi0AAAAAAABuaR9cX4WTJEaNHfJlLwiS5rw/CrtyAAtRAABZd/Bn+FnOnQ5L2x7H4RZzxmz8wnRKaLP2bK/DmiRITTLPV5cd+kvZZNlmGd6uWjuAAtRAABhzK/W404d7XIgDpSC1Cn1OTJJezLmjPnr5p0lrgAzpgAAAAAAAKxTlJJdW9joaYKuqMF3LYidKp9Zkdtr2Yc/iTJpwV7bq7yAAvRAAAIrWp72wrXct2SpAZlnrcmyfdvsvIpzTtXZKsd2EAGVYHQejzQp8R8YafpUYt12Wdq5+Fcecn8l+Zz579+jPw6sbS8ziS+v97lP1FDa6Vp7yfxe3/ExeIan+n09r+fEfV6PhOj/q9VXHPHM/SP8AdnsFdcKqoVVxUYQSjFLuSDLmWs+Eh+qQsZa+pcy19S6EoWMsZezW1DKpwcK/MyJqFNFcrJy8Eluy6kb9kpmIjeXi/wCkhr3bvw+HaZ8oL9YvSfe+UU/zZ40SfFGr367xBm6tkfTybXJL7sekY/BJL4EYfaaXD7nFFH5L4nrJ1mqvl8p4+kcAANDAAAACqTk0km2+iR6z6P8A0LanrGPVqHEF0tNxbEpQpS3ukvFr7Px5mfU6rFpq9WWdmrS6PNq79GKu8vJQfV2meiXgTCrUZaN+tzS5zyLpSb+CaX5FdS9E/AmZW4rRI40muU6LZxa+G+35Hk/9w6bfbpn9vu9v/tbV9O/VXf8AP7PlAHtHFvoKzae3dw3qEcqPVUZG0J+Sl0fx2PJ9c0XVtEy5YurafkYdy7rYbJ+9Po170epp9bg1Mf8Ajtv8vN4+q8O1Okn/AMtNo9fL9UeADUxAAAAAAAAAAAAAAAABWEZTkoRi5Sb2SS5tlD1f0AcJVajm2cR59anRiT7GNCS5Ss6uXw5fF+4pz5q4cc3s16HR31meuGnn+0era9Hvoh/Waa9R4oc64SSlDDg9pNf1vu8lz956xpnD2h6ZUqsHSsSiK+7Ut/n1JYtZ8xm1WXNO9p/J+oaHwvTaOvTjr39Z5al+n4F8HC7Cx7IvqpVJnD8Yeirh/V6Z26bWtLzdt4yqX7uT/qj/AJW3xPQSjOYs18c71nZo1Gi0+pr05aRMPkjiXQ9R4e1SzTtSpddsecWvozXin3ojD6d9KXC1HE3DdsFWv17Gi7Mazbmntzj5P/o+Y5xlCTjJNSi9mn3M+j0mp9/TeeY5fmnjXhc+HZ+mO9Z4+35KAA1vHAAAAAAAAAAAAAAAAXVxc5xgurex0NUFXXGEekVsRWj09u52tcodPMlzThrtG6u8gAL0QAAAAAAAAAAAAAAAAAAAAAAAAAAGk1s+hz+XV6nInX3J8vI6AjtZq3jG5LpyZVmrvXdKs90WADIsDoMT6tX+FHPnQYn1av8ACi/BzKF2UAGlAAAGDUPqdnkQJPah9Ts8iBM2fmE6cAAKEwG1h4U712m+zDx8SQhp+NFc4uT97LK4rW7ozaIQoJueBjSXKDj70zQzMGdKc4Ptw7/FC2K1SLRLTABWkAAAZK77q/oWSXxMYG+w36NSsjytiprxXJklj313x7Vct/Fd6OeMmPbKm1WRfTr70XUyzHKM1dCCkJKUFJdGtypqVgAAGrqkO3hyffF7m0Yc1drEsX9JG0b1kjlAAAwrnQ473orf9KMhhwnviVfhRmN8cKQAHQMGofUrfIzmPKh6zHsh4x5HLcSRy54AGBcAAAAAKxW8kl3vY6GmCrqjBdIrYhMCPazK1/VuTxpwR2mULgAL0AAAUnKMYuUnslzbIrL1Cc240+xHx72ZdatahCpP6XNkWZ8uSd9oTrXzVlKUnvKTb97KAGdMAAAAurhKyahFbtvZASWi17Qna11eyJEsorVVMa10ii83Ur012UzO8gAJAAAIbV/rj/CjTNzV/rj/AAo0zFk+KVscBM6R9U/3MhiZ0j6p/uZLD8Tl+G4ADWrAAAfQ5yz+JLzZ0b6HOWfxJebM+fyTotABnTAAAAAAAACd036lX5EETWkvfDj7my7B8SN+G2ADUrAABZfzpn+FnOnSSW8WvFHO2RcJyi+57GfP5J0WgAzpgAAAADa0ytWZcd+kfaJsiNF+tS/A/wC6Jc1YY/CrtyAAuRAABHazVvGNyXNcmRZ0V1cba5Vy6NbEDkVTptdc1zXT3mXNXad06z5MYAKUwAAAAAOhxq/VUQr71Hn5kVpeO7bvWSXsQfzZMmnDXaN1d58gAF6IAABF62/3lcfBNkoQ2rT7WW191JFWafwpV5aZM6RLtYnZ+7JkMSOi2bWTrfet0U4p2slbhKAA1qwAADW1Kr1uLLZc4+0jZByY3jYhzQNvUcZ0W9qK/dy6e73GoYZiYnaVsTuAA46AAAAbGDjvIt229hfSZ2ImZ2gnskNIqcMdza5ze68jdKJJJJLZLoVN1Y6Y2UzO4ADoAADW1KfYwrPF8iDJPWrPZhUvHtMjDJmneyyvCqbTTXVHQY9itphYu9czniT0a76VDfvj/k7httOxaOySABqVgAAGrqVHrqN4r2480bQOTG8bSR2c0CQ1TE7EnfWvZf0ku4jzFas1naVsTuAAi6AAAVSbaSW7ZQk9LxGtr7F+Ff5JUrNp2cmdm3g0eooUX9J85eZnANsRtGyoAB0AABgzrfVY05d+2y8yBN/WLu1aqk+Ueb8zQMma29llY7AAKkm1pODkanqeNp2JBzvybY1Vx8W3sj7J4e0ujRNDw9Kxl+6xqo1p7fSa6v4vdnhH6NXDv67xHka/fXvVgQ7FTa/1JLr8Fv8AM+hmfJePanryxhjiv8vu/ZfR+7wzntzbj6R/n+FrLWXMtZ4lX1ULGWvqXMtfUuhKFjPMP0hNf/ZvC1ek0z2v1Ge0knzVcecn8Xsj06TSW7eyR8r+lrX3xDxtmZMJ9rGof6vQu7sx7/i938T1vCsHvc0TPEd/s8P2i1v9No5rHN+33/35uSAB9Y/NAAAACqW7S8QPa/0deBKM1vivVqVZXVPs4VUlycl1m/Hbovj7j35kXwjpdejcM6bpdcOz+r48ISX9W3tP57koz851+rtqs83me3l9H6l4Zoq6PT1xxHfz+q0oypRmSHowtfU1dU0/B1PFljahiUZVMusLYKS/M2n1KMsrMx3hyaxaNpeTcXehHQ89Tv0LJs0zIfNVy9ulv+8fhv5Hj3FXo/4q4blKWfps7KF/r4/7yt+/dc18Uj65ZbJKUXGSTT6p957Ol8Z1GHtaeqPn93h6z2d0mo70jon5cfp9tnw8D6r4v9GPCnESnbPC/Uct8/1jF9ht++P0X8t/eeQcWehriXSu3dpjhquOuaVfs2JfhfX4M+g03i+nz9pnpn5/d8rrPZ/V6bvEdUesfbl5mDLlY+RiZE8fKotoug9pV2QcZRfvT6GI9SJ3eJMbdpAAHAAAAAAAAA+pvRPhV4Po+0muEdnZV62Xvcm2z5ZPqn0WZcMz0f6RZCXa7NCrl7nFtNHk+L7+6r9X1fsl0/1N9+en+8OmLWXFrPAh+gwtKMqUZOHVGfNPpi0B6FxnkOuHZxc3/wAinZclv9KPwlv8Gj6WZ596dNC/avCLzqodrI0+XrVsufYfKS/s/gb9Bm93ljfiezwvaHRf1WjtMfFXvH9/2fO4APo35eAAAAAAAAAAAAAABsYFPrsmMX9Fc2diN52ErgVeqxYx73zZsAG6I2jZSAA6ABiy7fU48596XLzOTO0biK1DInPKkoTkox5LZmv623+ZP/kyx83uDFNpmd1sQv8AW2/zJ/8AJj1tv8yf/JlgOby6v9bb/Mn/AMmPW2/zJ/8AJlgG8i/1tv8AMn/yY9bb/Mn/AMmWAbyL/W2/zJ/8mPW2/wAyf/JlgG8i/wBbb/Mn/wAmPW2/zJ/8mWAbyL/W2/zJ/wDJkho98nKdU5N781uyMMmNY6r4WLufPyJUttO7kxvDoQUTTSae6fNFTaqAAALL61bVKt9JLYvAHNzi4ycZdU9mUN3V6uxkKaXKa/M0jDaOmdlsTuHQYn1av8KOfOgxPq1f4UW4OZRuygA0oAAAwah9Ts8iBJ7UPqdnkQJmz8wnTgM2HT67IjDu6vyMJv6L/Hn+H/JVSN7RCU9oSsUoxUYrZLoioBuVAAAjM/A62ULzj/0RrWz2Z0prZeHVf7X0J+KKL4d+9Uot6oMGxkYl9O7lDePiuhrmeYmOVgADgAEhp+DKU1bctormovvJVrNp2hyZ2SONFwx64vqooyAG6I2VAAAGHNfZxLH/AEmY0tXs7ON2N+c2RvO1ZI5Q4AMK5NaVJSworvi2n/f/ACbZGaLZzsrb680SZtxzvWFVuQAE3AAAQ2pYrqtdkF+7k9/JmmdI0mtmt0zUt0/Hm94pwf8AT0M98PfeE4t6oYEp+y4/zn/xD0uO3K6W/kV+6u71QiwbWThXUrtbdqPijVITExylvu2tL+vV/H+zJsgtOl2c2t+L2+ZOmnB8Ku/IAC5EAAEVrcGra59zjt//AL5keT+XQsilwfJ9U/BkHdVZTPsWRaf9zLmrMTusrPZYAClIAM2Pi3Xv2IPs/efQ7ETPAxJNtJLdsmNOxPUx9ZYv3j/Iuw8OvH9p+1Px8PI2jTjxbd5V2tuAt7a9aq+/s9ouLkQAAAABDav9cf4UaZuav9cf4UaZiyfFK2OAmdI+qf7mQxM6R9U/3Mlh+Jy/DcABrVgAAPoc5Z/El5s6N9DnLP4kvNmfP5J0WgAzpgAAAAAAABK6LLemcN+ktyKN3R7OzkuD6TX5lmKdrQjbhMAA2KwAACL1XFl23fWt0/pLw95KAjesWjYidnNAm7sHHte/ZcH4xMD0uPddL/iZpw2hZ1QiwSn7Lht/Glv5GvkafdUnKPtxXh1IzjtHk71Q0wAQdZ8Gz1WVCXdvs/iTxzRPYNyuxoy71yfmaMFvJC8ebOADQgAAAYcrGryIbS5NdGu4zA5MRPaRA5OLdQ/ajvH7y6GA6V8zBZiY9nOVUd/Fcii2D0Ti6BBMPTcfxmviVjp2MuqlLzkQ9zZ3rhDLn0NzEwLLWpWJwh7+rJSrHpr+hXFe/YyllcO3KM3W1wjXBQgtoouAL0QAAAABSTUYuT5JLdnPXTdlspv7T3JXVruxR6tP2p9fIhzNmtvOydIDLi2Om+Fng+fkYgUxOybpE00mujKmlpN6sp9VJ+1D80bpurbqjdTMbAAOgAALbIRsg4TSafcRWXp9lbcqt5w8O9EuCF6Rbl2J2c2009mtmUOhtopt+nXGXwNeWnYzfJTj5MonBPkl1whgTMdNxk+fbfmzPVj0VfQrivf3iMFvM64RWLg22tSmnCHi+rJemqFUFCC2SLwX0pFeEZncABNwAAAA1NTv9VQ4p+1Pkjlp2jcjujM6312TKS6LkjAAYZned1wX02SqtjZHqmWA4OjqnGyuM49Gty4idJyOxP1M37Mn7PuZLG2luqN1UxtIACbgAADSa2fNEZm6e93Ojmu+P/RJgjasWjuROzm5RcXtJNPwZQ6K2qq1bWQjLzRrS07Gb5KUfJlE4J8k+tDF0IynLsxi5PwRMQ07Gi+alLzZsV1V1raEIx8kIwT5k3aOFp/Zasv5vuj/ANkiAX1rFY2hCZ3AASAAADHk2xpplZLu6LxZkIbVMj11vYg/Yj+bIZL9MOxG8tWcnOblJ7tvdloBiWhWKcpKMU229kl3lDuPQlw9/wCoOPMWNkO1i4f/AJN265bRfsr4vYqz5a4cdsluIXafBbPlrirzM7PoP0VcOLhjgnB0+cUsmcfX5L/+5Lm18OS+B07L2WM/O75LZbze3Mv1nBirhx1x14iNlrLWXMtZ2q6FjLX1LmWvqXQlDj/S3xBHh3gnMyYTUcm9fq+Ou9zl3/Bbv4Hyu229292enfpD6/8AtHimvSKZ70afDaST5OyXN/JbI8wPsPCtP7rBEzzbv9n5t7Ra3+p1k1jinb8/P/fkAA9J4IAABdVLs2wlsntJPmWgD7mxb4ZONTkVPeu2CnF+Ka3RkZwHoI4mr1/gfGxp2J5mnRWPdFvn2V9B+TX9jv2fmWfDbBltjt5S/WtLnrqMNcteJhaUZUoyuGmFr6lGVfUoycEKMoVZQnDq1lGVZRkodQ/EnDOhcRUeq1fTaMlpbRscdpx8pLmjybiz0Gv27+G9RXisfK/spr/KPcS1m7Ta3Pp/gt29PJh1fhel1cf+Wnf14n9XxvxBw7regZDo1fTcjFknylKO8ZeUlyfwZFH2tmYuNmUSoy6Kr6pdYWRUk/gzzfi30N8O6op3aTOzScp80oLtVN++L6fBo97T+N0t2yxt844fKaz2Vy03tp7dUek9p+38PnEHY8Vejbirh/tWW4Ly8aP+tje2tveuq+Rx7TT2fJns48tMsdVJ3h8zn0+XBbpy1mJ+agALFIAAB7V+jlxApV5nDd8/aj/5ONu+7pOP9n8zxUluD9Ys0HiXB1WtteotTmvGL5SXybM+rw++xTV6PhWsnR6qmXy4n6Ty+uS1lmLfXk41WRTJSrtgpwa701ui9nyUP1qJ37wtKMqUZOElGYsmmvIx7KLoKddkXCcX0aa2aMrKMnBtv2l8n8Z6LZw/xLm6VPdxpsfqpP7UHzi/l+e5DntH6RGhdrHw+IKYc4P1F7S7nzi38d18UeLn1Gmy+9xRZ+SeLaL+j1d8Uccx9J4+wAC95oAAAAAAAAAABL6PV2aXa+s3y8iIOiph6uqEF9lJF2GN53QvPZeADUgAAARes27yjSnyXN+ZJyajFyb2SW7Oevsdt0rH3spzW2jZKsd1gAMqwAAAAAAAAAAAAAAABNaVb6zGUW+cOXwNshdKt9XlKLfsz5fHuJo2Yrb1VWjaQAFjgAANbUavW4sl3x9pEGdK1utmc5NbTkveZs8d4lOkrToMT6tX+FHPnQYn1av8KGDmS7KADSgAADBqH1OzyIEntQ+p2eRAmbPzCdOA29Ks7GUk+klsahWLcZJp7Nc0U1nad0pjd0gMGFkLIpUvtLlJe8zm6J3jeFQADoAAAYbcWiznKqO/iuRmByYieRpy07HfTtL4habjrr2n8TcBH3dfR3eWKnGoqe8K0n495lAJRERw4AA6AAAEHqN/rsh7P2Y8kbuqZfYi6a37T+k/BESZs19/wwnWPMABQmzYdvqciE3032fkT5zRMaVkesp9VJ+1Dp70X4bbdkLx5t0AGlAAAAAAAAAfNbMhtTxlRapQXsS/JkyauqxUsOTf2WmivLXertZ2lDVycJxkuqe50UJKUFJdGtzmyX0i/t0+pk/ah08irDbadkrw3gAaUAAAC2yELI9mcVJe9FwA1J6fjSe6jKPky1abj97m/iboIe7r6O7ywV4mPXzVSb8XzM4BKIiOHAo2km30RU0NWyOxX6mD9qX0vcjlrdMbkRutwLXdn22d3Z2XluSJE6L9Yn+H/JLEcU713dtyAAscAABDav8AXH+FGmbmr/XH+FGmYsnxStjgJnSPqn+5kMTOkfVP9zJYficvw3AAa1YAAD6HOWfxJebOjfQ5yz+JLzZnz+SdFoAM6YAAAAAAAAXVTddkZrrF7loA6OuSnCM49Gty4jdIyOXqJv3x/wCiSN1LdUbqZjYABIAAAAAAAARWrYyg/XwWyb9pe/xI86DMh28WyP8ASc+ZM1drLKzvAbem5Hqb9pP2J8magK4nad4SmN3Sgj9Ly1KKosftL6LfeSBtraLRvCmY2AASAAAAAAAAAAAAAAAAAtsnGuDnJ7JIq2km29kiH1HLd8+xDlWvzIXvFYdiN2DJulfdKyXf0XgjEAY5ndaAA4MmPbKm2Nke78yepsjbWrIPdM502cDKePZs93W+q/yW4snTO0o2jdOApCUZxUotNPoyprVgAAAAAAAAAAAAAAAABSUlGLlJpJdWBS2ca4Oc3skQOVdK+52S+C8EZtQy3fPsx5Vrp7zUMmXJ1doWVjYABUkAAATWnZXr6+xN/vI/mQpdXOVc1OD2a6MnS/TLkxu6MGvhZUciHhNdUbBsiYmN4VcAAOgAAAAAAAAAAAAAAGpn5caI9mPOx9F4HJmIjeSI3Waplerj6mD9trn7kRBWUnKTlJ7t9WUMd7zad1sRsAAg6H03+jtw2tH4LeqXV9nL1SStba5qpcoL82/ifPvBOiXcRcVafo9Kb/WLkpv7sFzk/gkz7KxcerExKsWiChVVBQhFdyS2R837Q6rppXBHn3n6f/f4fV+y+j68ltRby7R9Z/x/K59Sxl76ljPlofcQtZay5lrLapQsZFcVavRoPD+dq+Rs4Y1Tmo7/AEpfZj8XsiVZ4t+krxB6vHwuHKJ+1Z/5F6T+yuUU/ju/gb9Fg9/mrT/dmPxLVxo9LfL5xx9fJ4pqGXfnZ1+bkzc7r7JWWS8ZN7swAH3ERt2h+TzMzO8gNzStL1HVchY+nYV+Va/s1Qcj0jh30L6zl1Ru1jPp06L5+qgvW2fHmkvmyrLqMWL452a9L4fqdXO2Gkz/AB+vDysHuj9COkdjZa1ndvx7ENvlscxxL6HdcwKpX6TlU6nXHm69vV2/BPdP5/Appr8F52izdm9n/EMVeqce/wBJif2eZAy5WPfi5E8fJpnTbB7ShOOzT8jEbHjTExO0p7gbijUuEdeq1XTp9F2bqm/Ztg+sX/jwZ9ScC8c6DxfhqzT8qMMpR3txLHtZD4d696Pj0yY912PdG7Htsqtg94zhJxlF+5o8vxDwrFrPxcW9fu9fwzxjLoPw7b19Ps+5CjPmHhL0ycU6N2Kc6cNWxlycb3tYl7pr/O57Fwj6V+E+IVCqWU9Ny5cnRlezu/6ZdH+T9x8rqfCNTp+8xvHrD7PR+OaTVdot0z6T2/w7p9SjEZRnFThJSi1umnumGefD2IUZQqyhOHVrKMqyjJQ6FrLi1k4dWlH1KlH1Jw7C18+pynFvo/4Y4kUrMzT405T/APc4/sT39+3KXxTOrKMux5L456qTtKvNgx569GSsTHzfPfFXoY1zA7d2i316lSuarfsW7fHk/meaZ+FmaflTxc7Fuxr4cpV2wcZL4M+zmRuuaJpOt43qNVwKMqG3Ltx3cfJ9Uezp/GMle2WN/wCXzOs9lcOT8Wnt0z6T3j7x+747B7nxV6E8W5Tv4dz3jz6rHyd5QfuUlzXyZ5PxHwpxBw/a4arpl1MU+ViXarflJcj2sGsw5/hnv6PlNZ4Tq9H/AMlO3rHeP9+qEABqea+ifQJxB+1eEv2ZfPfJ02Xq1u+cq3zi/hzXwR6Iz5l9DmvfsLjXFds+zjZb/V7d3yXa+i/nsfTTPmfEMPus0zHE936f7O63+p0cRM969p/t+y0oypRmOHvKMoyrKMnDsI3iXS6Nb0HN0vIScMipw32+jL7L809n8D5Qz8W7Czb8PIi4202OE1709j7APAPT5oL0/iavVqYbY+oR3k0uSsj1+a2fzPV8Ny7Wmk+b5H2s0XvMNdRWO9e0/Sf8/wAvNwAe0/PwAAAAAAAAAADoqZqyqE19pJnOkppGQuz6ib2a+j/0XYbbTsjeEiADUrACjaSbb2SA1NWt7GN2E+c+XwIY2M+/197kvorlE1zHkt1WW1jaAAFboAAAAAAAAAAAAAAACqezTXVHQY1itohZ4rn5nPG/pOSq5Omb9mX0X4Mtw22nZG0bwlgAa1YAALbJKEJTfRLc52T3bfiSWrZK7PqIPdv6T/wRhlzW3nZZWAnsCSliVteGxAkhpOQoSdM3spPeL95zDbaxaN4SoANasAAGtqcuzhz9/Igze1XIVtiqg94w6+9miZMtt7LKxtAACpJlxr50WKcH5rxJvGyK8iHag+feu9HPl1c51zU4ScWu9FlMk1Rmu7owR+LqUXtG9dl/eXQ3oTjOPahJSXimaq2i3CuY2XAAkAAAAAAAAABgyMuile1Pd+C5s5MxHIzmhnZ6gnXS95d8u5GplZ1t28Y+xDwXeahRfN5VTivqq222292ygBnTAAAL6rJVWKcHs0WACfxMiGRXvHlJfSXgZjnKrJ1zU4SaaJXF1GE0o3exLx7maqZYntKuat4FItSW8WmvcVLkQAAAAANTVpqOG498mkbNk41xcpyUUu9kLn5LyLd1yhH6KK8toiNnaxvLWL6LJU2xsg+a/MsBj4Wuhx7oX1KcH5rwMhz+NfZRPtQfmu5kzi5VWRH2XtLvi+prx5It2nlVNdmcAFrgAAAAAAGnmZ1dKcYNTn+SOTaKxvJEbsuZkxx693zk/oog7Jysm5ye7b3ZW2yds3Ocm2ywyZL9UrKxs3NIl2cvbf6SaJk5yucq7Izj1i90T+PbG6pWR7+q8C3BbtsjePNkABeiAGHLvjRS5vr0ivFnJnaN5ETqclLNns90uRrFZNyk23u292UMMzvO66AltGnvRKH3ZESbGBf6i9N/QlykSx26bOWjeE6CiaaTT3TKm1UAAC2xqMJSb2SW7Odb3bZK6tkKNfqIv2pfS9yIky5rbzsnSAAFKYAAAAAAAAAAKxk4yUovZroyawcuORDsy2Vi6rx95CFYycZKUW010aJ0vNZcmN3SAjcTUU9oX8n95f5JCE4zW8JKS9zNdbxbhVMbLgASAAAACkmopuTSS72BizZqvFsl7tiANzUsv18vVw/hx/NmmZMtuqeyysbQAAqSE9nuiVwc9TSrue0u6XiRQJVvNZ7OTG7pQQuLnW07Rl7cPB9USdGVTcvYns/B8maq5IsrmswzgAscAAAAAAAAACkpRit5NJe8CpZbZCqDnZJRSNTJ1GuG8aV25ePcRl91l0u1ZJv/AAVXyxHCUV3Z87Mle+xHeNfh4moAZZmZneU4jYABx0AAAAAbOHlzx5bfSg+qJii6u6Harlv4rwOeL6rJ1T7UJOLLaZZr2Rmu7ogR+NqUZbRvXZf3l0N6E4zj2oSUl4o01tFuFcxMLgASAAAAAAAAAFJyjBbykkvFmjk6jCO8aV234voRtaK8kRu3Lra6YduyWy/uQ+blzyHsvZgui8TBdbZbPtWScmWGa+WbdoWRXYABUkAAAAAAAAurnKE1ODaa6Ml8LOhdtCzaNn5MhgTpeauTG7pQQ+LqFlW0bPbj+aJOjIquW9c0/d3mquSLK5iYZQATcAAAAAAAAAYb8mmle3Nb+C6kZlZ9t28YexDwXVkLZIq7FZlt5ufGveFLUp+PciJlJyk5SbbfVsoDLe82nusiNgAEHQAAe8fovcOqNefxNfD2pf8AjY7a6Lk5tfkvge4M5r0VaZHSfR5ouKo9mcsaN0/HtTXae/z2+B0rPzrxHUTn1V7/AD2j6Q/UvCtNGm0lKee28/WVj6ljL31LGZ4ejC1lrLmWstqlDBlXVY2PbkXTUK6oOc5PuSW7PkHjbW7eIuKc/V7W9rrX6tfdrXKK+SR9UccaVm65w7kaTg5UMSWTtCy2SbcYfa2S730Oc4V9FfCuhuF1uL+0smPP1mUlKKfio9P7nt+G6nDpa2vbvae0Q8DxrQanxC9MWPtSO8zPr/j+7wThfgniTiNxlp2nWeof+vauxX831+B6vwp6FtMxHHI4gy559q5+oq3hUvN9X+R63soxUYpJLkku4tZZm8VzZe1fwx/vmlovZrSaf8WT8c/Pj9Pvu0tM0zT9Lx1j6dhUYtSXKNUFFGyy5lrMW8zO8voq1isRFY2hY+pYy99SxllU3Fek3gjD4o02d1FUKtUqi3Talt2/6JeK/sfN2RVZRfZRdBwsrk4Ti1zi09mj7EZ8+envSK8Di+GfTBRhn1eskl9+PJv48n8z2vDc87+7n8nxntV4bTojV0jaeJ+fpLzsAHsPhQAAdNwrx1xRw1ZH9m6nZ6lPnj3e3XL3bPp8NmewcJ+nHSc1Qo4gwp6fc+Ttq3nU35dV+Z88gw6nw3T6jvavf1jl6ej8X1ek7UtvHpPeP9+j7W0nVNO1fEWVpmbRl0v7dU1Lbz8H5m4fFWj6tqWj5iy9Lzr8O9fbqm4trwfivcz1ThP046pi9ijiHChnVrk7qdoWebXR/kfP6nwLLj74p6o/d9Vo/afBk7Z46Z/WPu9/ZRnO8K8b8M8TVJ6ZqdTu2549r7Fq/wBr6+a3R0TPHvjvjnpvG0vpMWWmWvVjmJj5Bay4tYhatKPqVKPqTh2FpRlSjJw7CjKPoVZR9CcOwtMd9VV1cqrq4WQktnGS3T+BkKPqTg5efcV+ijhrWVK7CrlpWU+fboXsN++D5fLY8n4p9F/FGidq2rGWo40efrMbm9vfHqfS4Z6ODxHNi7b7x83i632f0eq79PTPrH24fGMlOubjJShOL2afJpn1L6M9e/8AUXB2Fm2T7WTCHqcjx7ceTfx6/Ez8UcGcO8Rpy1LTq3e1ssitdi1f7l1+O5G8AcG3cH5ubVjag8nTclKUa7I7TrmvLk01/ZGnVavFqsXpaGHwnwnVeGaqdp6sdu0/L0mY/wDvLryjKlGebD6xRlGVZRk4dhQ5T0qaItd4MzMeMd76F6+l96lH/tbr4nVlskmmmt0y3HeaWi0eSrUYK58VsVuJjZ8dPk9mCX4y0/8AZfFep4Cj2Y05M1Bf077x/JoiD6ms9URMPxnJjnHeaTzE7AAOoAAAAAAAABVNp7p7MoAJHF1JxSjet/6l1NyObjSX8VLzIIFtc1oRmsJuzPxoLlPtPwSI/MzbL/ZS7EPDxNQHLZbWIrEAAK0gAAAAAAAAAAAAAAAAAAAABvYmoTrShanOPc+9G9DOxpL+Jt5ogwW1y2hGaxKcnm40V/ET8kaeVqMppxpTgvvPqR4FstpIrA3u92ACpIAAG/iajKCULk5pdH3m9DNxpLf1iXmiCBbXLaEZrCcnnY0V/E38kaOXqE7E4VJwj3vvZogWy2kisQAAqSAAAAAAvrsnW94TcX7mWADeq1K6PKajNfJmxDU6X9KEo/mRILIy2hHphORzsZ/6m3mi9ZWO+l0PmQAJe/lzoh0H6zR/Oh8y15eMut0SBB338+h0JqeoY0ejlLyRgs1T+XV8ZMjARnNaXemGxdl5FvKVjS8FyNcArmZnlLYABwAAAAAAAAAABfXbZW94TlHyZtV6lkR+koz81saQJRaY4lzaJScdU+9T8pF37Uh/Kl8yKBL3t/VzphJvVF3Uv4yMc9Tta2hCEfzNACctp8zphkuutte9k3IxgFe+6QAABVNp7p7MoAN3H1G6vlPaxe/qbleo48vpdqD96IYFlctoRmsJ+OXjvpdEq8nHX+tD5nPgn7+fRzoTss3Gj/qp+SMFup1r+HCUn7+REgjOa0u9MNnIzL7uTl2Y+ETWAK5mZ5S2AAcAzY2RZjz7UHy70+jMIOxO3AmKdRomvb3gzN+uY22/rokCC2M1keiEvdqVUV+7Tm/kiMvusun27Jbvu9xjBC2SbcuxEQAAg6AADaw82yj2X7cPB93kSNefjTXObi/BohAWVy2r2RmsSnZZmMl/FT8jVydSWzjRF7/eZGA7Oa0nTCspOUnKTbb6tlACpIAAAAAAAAAAAAAAAALq7J1veE3F+5loA3K9RyIcpOM170Zo6o/tU/KRGgnGS0ebnTCV/akP5UvmUeqR7qX8yLB33t3OmEhPVLH9CqK83ual+Rdc/wB5NteHcYgRm9p5l2IiAAEXQAAAAAAAGxTmZFXJT3XhLmbdeqfzKvjFkYCcZLRxLk1iU1DUMaXVyj5oyLLxn0uiQIJxns50Q6D9Zo/nQ+ZR5WOv9aHzIAHffz6OdCclnY0f9RPyRinqdK+jGUvyIgHJzWd6Ib1upXS5QjGC+bNSy2yx7znKXmywFc2meXYiIAARdAAAAAAAAAAAAAAvrsnW94TcX7mWADeq1K6PKajNfJmzDU6X9OMo/mRALIy2hHphOxzcZ/6qXmi5ZOO/9aHzIAEvfy50Q6B5OOv9aHzLJZuNH/VT8iCB338nQl56lQvoxlL8jWt1K6XKuMYLx6s0QQnLaXemF9lllj3nNyfvZYAVpAAAAAAAAAAAAAAAABVNp7ptMoANunPyK+Tkprwkbdep1v6cJRfu5kSCcZLQ5NYTkc7Gl/qbeaL1k47/ANaHzIAE/fyj0Qn3k4663Q+ZZLOxo/6m/kiDA9/J0QlbNTrX8OuUvPkal2dkWcu12F4RNUEJyWnzSisQq22929ygBB0AAAAAAAB9yYNcacDHph9GFUYryS2MjI/hbMjqPDGl50Xur8Sqz4uCbJBn5faJi0xL9fxzFqxMcLH1LGXvqWMnCyFrLWXMtZbVKFjLX1LmWvqXQlCxljL2WMtqktZay5lrLoShY+pYy99SxltUlrPG/wBJBw20hcu3+8+XI9kZ87+nTWq9U4xeJRNTq0+HqW107e+8vlyXmmel4fWZzRPo8D2nzVx6C1Z5tMRH67/2cAAD6B+YgAAAAAAALq5zrmp1ylCcXupRezTO64T9K3FehdiqzJWpYseXqsrdvb3S6r8zgwVZcGPNG2SN1+DU5tPbqxWmJ+T6b4T9LvC2tKFWZZPSsqXJwyHvDf3TXL57Hf1W1X1RtpshZXJbxlCW6fxPiUnOGeLeIeHLlZpOp30w39qpvtVy84vl/k8XUeBVnvhnb5S+n0ftVeu1dRXf5xz+nH8Pr8o+p45wr6cMW7sU8R6e8efR3428oebi+a+bPU9D1vSdcxf1nSdQozK+/wBXLdx9zXVfE8TPo82Cfx1+z6vR+JabV/8AFfefTz/RvFGVKMphvhRlH0Kso+hOHYWlH1KlH1Jw6tDAZOHVC1lxayUOwtKMqUZOHVGUZVlGTh2FC1lxayUOvmr0zxUfSVqyW3P1T/8A4YHHnUelbKhmekLWLoPdK5VfGEVB/nE5c+owRtir9IfjviMxbWZZjjqt/MgALWIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAH1D+jvrkdU4AqwZz3v06x0yW/PsvnH+7XwPR2fJ/oY4v/8ASXF1c8iT/Z2YlTlL7q39mfwf5Nn1dCcLK42VyUoSScZJ7pp958H4xpJ0+pm3lbvH936R4DrY1Olisz+Kvaf7KPqWMvfUsZ50Pbhay1lzLWW1ShYy19S5lr6l0JQsZYy9ljLapLWWsuZZJpJttJLq2XQktfUsZyXFHpH4X0Lt1zzFmZEf9HG2m9/e+i+Z5PxX6WeINW7dGmqGl4r5fu32rWvfJ9Pgkehp9Fly94jaPm8nW+O6PSbxNuq3pHf/ABD0b0p8e4nDuDZgYF0LtWti1GMXv6lfel7/AAR872TnZZKyyTlOTcpNvm2+8W2WW2SstnKc5PeUpPdtlp7+m09cFdo5fn3iviuXxHL137RHEen+QAGh5YAAAAAAAAAAAAAGxp2dmadlRysDKuxr49LKpuLXxRrg5MRMbS7EzWd4ep8K+mjXMDsU61j16nSuTmvYtS8+jPW+FfSBwvxHCEcPUI05L642R7Fi/wAP4NnyiVTaaabTXNNHm6jwrBl71jpn5fZ72i9o9Xpu1564+fP6/fd9qvmk0UfQ+W+FfSRxVw+4V1Z363jR60ZXtx29z6r4M9a4W9MPDuqKFOpws0rIfJ9t9utv3SX+UeNn8Lz4e8RvHyfW6L2h0ep7Wnpn5/fj+HpBR9THiZOPl48cjFvrvqlzjOuSlF/FGR9TDts92JiY3haGAycJKFrLi1kodhaUZUoycOqMoyrKMnDsKGjrmfVpekZeo3NKGPVKb379lyRvHjvp94qj6uHDGFZvJtWZkk+i+zD/AC/JGjT4py5IrDB4nra6LTWyzz5fXyeQZuRZl5l2Va3Ky6yVkm+9t7swgH0/D8hmZmd5AAHAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD3D0G+k6vHqp4X4hvUa17GHlTfJeEJPw8H8Dw8GXV6THqsfu7/APxs0Oty6LLGTH+cesPuXdPmnumWM+afRz6XNW4cjVgarGep6bHZJOX72pf0t9V7n80e6cM8bcM8R1RnpuqUuxrnTY+xZH3OL/wfGarw3PpZ7xvHrH+9n6HoPF9NrKx0ztb0nn/LoGWsuZazJV60LGWvqXM5/iPi/hzh+uU9T1SiuS6Vxfbm/KK5mjHS152rG8uZMtMVeq8xEfNNs1NRzsPT8aeTnZVONTBbystmoxXxZ4txZ6bcu9zo4cwFjV9FkZPtTfvUVyXxbPLdb1rVdayf1jVM+/Knvy9ZPdLyXRHtafwjLbvknaP3fO632o0+LeuGOuf0h7fxV6ZdFwnOnRMeeo2rkrJJwr/Pm/keUcVcecS8RuVebqE6sZ/+3o9iHx25y+O5y4PbwaHDh+GO/rL5LW+NazWdr22j0jtH+fzAAa3lAAAAAAAAAAAAAAAAAAAAAAAAAAAleHuItb0DI9fpGo34r+1GMt4S84vk/ij1Phf02P2aeItP37nfjf3cX/hni4M2bSYs3xw9DR+KarR/8V+3pzH6Prvh7iPRNfx/XaTqNGSvtQUtpx84vmvkSrPjTFyMjFvjfi32UWxe8Z1ycZL4o9B4X9LvEWl9inUY16pjrk/WPs2Je6S/ymeTm8ItXvjnd9ZovazFfaupr0z6x3j9Of5fRJazkOF/SRwtryjCGb+pZL605W0Hv7n0fzOtjOM4KcJRlF9GnumeZfHfHO1o2fU6fU4tRXqxWiY+QUZUoxDQoyjNLV9X0vSaXdqOfj4sF/Mmk/keU8c+l+LjPC4Xrlu+Usy2O3/CP+X8jTg0+TLO1YYNb4nptFXfLbv6ef6Os9JvHWJwtgyxsaULtVtj+6q33Va+9L/C7z5zzMm/MyrcrJtlbdbJznOT5ybGXk35eTZk5V07rrH2pzm93J+ZiPoNNpq4K7Ry/N/FvFsviOTqt2rHEf75gANLyQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAArCUoSUoScZLo09mgDk8O15h6Z6L9b1l5ldD1fUHTsv3f6zPs/LfY9zjff+zu366ztbde09wD4zXf8AK/SvCf8Agh4h6Uda1mOVOiOrZ8amnvBZE1H5bnmE5zsk5zlKUn1be7YB9B4X/wAb5Px7/mWgA9R4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHT8GatquNmV14+p5tMHNJxrvlFP4JgGXV/8b1fB/8A9MPoHh/JyLcCMrb7Zy2XOU233nDek/VdUxqmsbUsylPk/V3yj/ZgHgYf+R+h6r/87xfNyL8i+U8i6y6W/WcnJ/mYAD6enww/LM//ACSAAkqAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAf/9k=" alt="AIStart360">
+    <div class="topbar-sep"></div>
+    <span class="topbar-label">Идеальная база · Карточка клиента</span>
+  </div>
+  <div class="topbar-right">
+    <div class="status-dot"></div>
+    <span class="status-text">GRI Pulse · live</span>
+  </div>
+</div>
+
+<div class="hero">
+  <div class="hero-eyebrow">Идеальная клиентская база</div>
+  <h1 class="hero-title">7 слоёв.<br>Один клиент.<br><em>Полная картина.</em></h1>
+  <p class="hero-sub">Не список контактов — живой актив. Каждый слой карточки это деньги, которые вы либо видите, либо теряете.</p>
+</div>
+
+<div class="main-wrap">
+
+  <!-- CLIENT META -->
+  <div class="client-meta">
+    <div class="client-avatar">К</div>
+    <div class="client-info">
+      <div class="client-name">ТОО «КазМедТех Групп»</div>
+      <div class="client-sub">БИН 180340021884 · Медицинское оборудование · Алматы</div>
+    </div>
+    <div class="meta-sep"></div>
+    <div class="meta-stat">
+      <div class="meta-stat-label">Риск-скор</div>
+      <div class="meta-stat-value red">94 / 100</div>
+    </div>
+    <div class="meta-sep"></div>
+    <div class="meta-stat">
+      <div class="meta-stat-label">LTV (12 мес)</div>
+      <div class="meta-stat-value amber">14 200 000 ₸</div>
+    </div>
+    <div class="meta-sep"></div>
+    <div class="meta-stat">
+      <div class="meta-stat-label">Последняя покупка</div>
+      <div class="meta-stat-value red">26 янв 2026</div>
+    </div>
+    <div class="meta-sep"></div>
+    <div class="meta-stat">
+      <div class="meta-stat-label">Статус</div>
+      <div class="meta-stat-value amber">⚠ В риске</div>
+    </div>
+  </div>
+
+  <!-- LAYER NAV -->
+  <div class="layer-nav">
+    <button class="layer-btn active" onclick="showLayer(0)">
+      <span class="layer-icon">👤</span>
+      <span class="layer-num">01</span>
+      Портрет
+    </button>
+    <button class="layer-btn" onclick="showLayer(1)">
+      <span class="layer-icon">💬</span>
+      <span class="layer-num">02</span>
+      Коммуникации
+    </button>
+    <button class="layer-btn" onclick="showLayer(2)">
+      <span class="layer-icon">💰</span>
+      <span class="layer-num">03</span>
+      Финансы
+    </button>
+    <button class="layer-btn" onclick="showLayer(3)">
+      <span class="layer-icon">🎯</span>
+      <span class="layer-num">04</span>
+      Воронка
+    </button>
+    <button class="layer-btn" onclick="showLayer(4)">
+      <span class="layer-icon">📁</span>
+      <span class="layer-num">05</span>
+      Материалы
+    </button>
+    <button class="layer-btn" onclick="showLayer(5)">
+      <span class="layer-icon">🔍</span>
+      <span class="layer-num">06</span>
+      Поведение
+    </button>
+    <button class="layer-btn" onclick="showLayer(6)">
+      <span class="layer-icon">📝</span>
+      <span class="layer-num">07</span>
+      Заметки команды
+    </button>
+    <button class="layer-btn" onclick="showLayer(7)">
+      <span class="layer-icon">🧩</span>
+      <span class="layer-num">08</span>
+      JTBD / ICP
+    </button>
+  </div>
+
+  <!-- ═══════════════════════════ LAYER 1: PORTRAIT ═══════════════════════════ -->
+  <div class="layer-panel active" id="layer0">
+    <div class="grid-12">
+
+      <div style="display:flex;flex-direction:column;gap:16px">
+        <div class="card">
+          <div class="card-accent-top accent-amber"></div>
+          <div class="card-label"><span class="card-label-icon">🏢</span>Компания</div>
+          <div class="field-row"><span class="field-label">Полное название</span><span class="field-value">ТОО «КазМедТех Групп»</span></div>
+          <div class="field-row"><span class="field-label">БИН</span><span class="field-value mono">180340021884</span></div>
+          <div class="field-row"><span class="field-label">Сфера</span><span class="field-value">Медицинское оборудование и расходники</span></div>
+          <div class="field-row"><span class="field-label">Размер компании</span><span class="field-value">85 сотрудников</span></div>
+          <div class="field-row"><span class="field-label">Оборот (оценочно)</span><span class="field-value mono amber">~2 800 000 000 ₸/год</span></div>
+          <div class="field-row"><span class="field-label">Наши продажи, ₸</span><span class="field-value mono">38 400 000 ₸/год</span></div>
+          <div class="field-row"><span class="field-label">Доля в выручке сегмента</span><span class="field-value mono">12,4%</span></div>
+          <div class="field-row"><span class="field-label">Доля в выручке компании</span><span class="field-value mono">8,1%</span></div>
+          <div class="field-row"><span class="field-label">Регион</span><span class="field-value">Алматы + 3 филиала по Казахстану</span></div>
+          <div class="field-row"><span class="field-label">Наличие филиалов</span><span class="field-value"><span class="tag tag-amber">Да · 3 филиала</span></span></div>
+          <div class="field-row"><span class="field-label">Покупка экспертизы</span><span class="field-value">Да — консалтинг по тендерам, юридическое сопровождение</div>
+          <div class="field-row"><span class="field-label">Рекламный бюджет</span><span class="field-value mono">~800 000 ₸/мес (Digital + OOH)</span></div>
+          <div class="field-row"><span class="field-label">Маркетинг. инструменты</span><span class="field-value"><span class="tag tag-blue">Instagram</span> <span class="tag tag-muted">Email</span> <span class="tag tag-muted">Тендеры</span></span></div>
+          <div class="field-row"><span class="field-label">Откуда пришёл</span><span class="field-value">Рекомендация от ТОО «Нур-Мед»</span></div>
+          <div class="field-row"><span class="field-label">Дата первого контакта</span><span class="field-value mono">14 марта 2024</span></div>
+        </div>
+
+        <div class="card">
+          <div class="card-accent-top accent-orange"></div>
+          <div class="card-label"><span class="card-label-icon">👤</span>Лицо, принимающее решение (ЛПР)</div>
+          <div class="field-row"><span class="field-label">ФИО</span><span class="field-value">Нурова Асель Бекова</span></div>
+          <div class="field-row"><span class="field-label">Должность</span><span class="field-value">Директор по закупкам</span></div>
+          <div class="field-row"><span class="field-label">Телефон</span><span class="field-value mono">+7 701 234 56 78</span></div>
+          <div class="field-row"><span class="field-label">Email</span><span class="field-value mono">a.nurova@kazmedtech.kz</span></div>
+          <div class="field-row"><span class="field-label">WhatsApp</span><span class="field-value">Активный, отвечает до 18:00</span></div>
+          <div class="field-row"><span class="field-label">Стиль общения</span><span class="field-value"><span class="tag tag-blue">Деловой</span> <span class="tag tag-muted">Кратко</span></span></div>
+          <div class="field-row"><span class="field-label">Личные боли</span><span class="field-value">Срывы сроков поставки, качество документов</span></div>
+          <div class="field-row"><span class="field-label">Что важно</span><span class="field-value"><span class="tag tag-amber">Надёжность</span> <span class="tag tag-amber">Скорость</span></span></div>
+        </div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:16px">
+        <!-- BUYER PERSONAS CARD -->
+        <div class="card">
+          <div class="card-accent-top accent-blue"></div>
+          <div class="card-label"><span class="card-label-icon">🎭</span>Buyer-персоны</div>
+
+          <!-- LEGEND -->
+          <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid var(--border)">
+            <span style="font-size:10px;padding:3px 9px;border-radius:20px;background:rgba(26,86,196,.1);color:var(--blue);font-weight:700">🌟 Чемпион</span>
+            <span style="font-size:10px;padding:3px 9px;border-radius:20px;background:rgba(194,112,10,.1);color:var(--amber);font-weight:700">🔑 ЛПР</span>
+            <span style="font-size:10px;padding:3px 9px;border-radius:20px;background:rgba(10,110,66,.1);color:var(--green);font-weight:700">💡 Инфлюенсер</span>
+            <span style="font-size:10px;padding:3px 9px;border-radius:20px;background:rgba(192,24,46,.1);color:var(--red);font-weight:700">🚫 Блокер</span>
+          </div>
+
+          <!-- CHAMPION -->
+          <div style="margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid var(--border)">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+              <div style="width:36px;height:36px;border-radius:9px;background:rgba(26,86,196,.12);display:flex;align-items:center;justify-content:center;font-weight:800;color:var(--blue);font-size:14px;flex-shrink:0">К</div>
+              <div style="flex:1;min-width:0">
+                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                  <span style="font-size:13px;font-weight:700">Кожахметов Арман</span>
+                  <span style="font-size:10px;padding:2px 8px;border-radius:20px;background:rgba(26,86,196,.1);color:var(--blue);font-weight:700">🌟 Чемпион</span>
+                </div>
+                <div style="font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace;margin-top:2px">Руководитель отдела снабжения · нашёл нас</div>
+              </div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;padding-left:46px">
+              <div style="font-size:11px;color:var(--text2)"><span style="color:var(--muted);font-weight:600">Цель:</span> Найти надёжного поставщика быстро</div>
+              <div style="font-size:11px;color:var(--text2)"><span style="color:var(--muted);font-weight:600">Стадия входа:</span> Инициировал поиск</div>
+              <div style="font-size:11px;color:var(--text2);grid-column:1/-1"><span style="color:var(--muted);font-weight:600">Возражения:</span> «Нужно одобрение Нуровой» — нет самостоятельного бюджета</div>
+              <div style="font-size:11px;color:var(--text2)"><span style="color:var(--muted);font-weight:600">LinkedIn:</span> <span style="color:var(--blue)">@arman_k</span></div>
+              <div style="font-size:11px;color:var(--text2)"><span style="color:var(--muted);font-weight:600">Активность:</span> <span class="tag tag-blue">Высокая</span></div>
+            </div>
+          </div>
+
+          <!-- ЛПР -->
+          <div style="margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid var(--border)">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+              <div style="width:36px;height:36px;border-radius:9px;background:rgba(194,112,10,.1);display:flex;align-items:center;justify-content:center;font-weight:800;color:var(--amber);font-size:14px;flex-shrink:0">Н</div>
+              <div style="flex:1;min-width:0">
+                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                  <span style="font-size:13px;font-weight:700">Нурова Асель</span>
+                  <span style="font-size:10px;padding:2px 8px;border-radius:20px;background:rgba(194,112,10,.1);color:var(--amber);font-weight:700">🔑 ЛПР</span>
+                </div>
+                <div style="font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace;margin-top:2px">Директор по закупкам · утверждает сделку</div>
+              </div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;padding-left:46px">
+              <div style="font-size:11px;color:var(--text2)"><span style="color:var(--muted);font-weight:600">Цель:</span> Снизить риски и соблюсти регламент</div>
+              <div style="font-size:11px;color:var(--text2)"><span style="color:var(--muted);font-weight:600">Стадия входа:</span> После первичного отбора</div>
+              <div style="font-size:11px;color:var(--text2);grid-column:1/-1"><span style="color:var(--muted);font-weight:600">Возражения:</span> «Дорого», «нужно согласовать с CFO», «нет времени переходить»</div>
+              <div style="font-size:11px;color:var(--text2)"><span style="color:var(--muted);font-weight:600">Факторы решения:</span> Надёжность + документы</div>
+              <div style="font-size:11px;color:var(--text2)"><span style="color:var(--muted);font-weight:600">Чувств. к цене:</span> <span class="tag tag-amber">Средняя</span></div>
+            </div>
+          </div>
+
+          <!-- INFLUENCER -->
+          <div style="margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid var(--border)">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+              <div style="width:36px;height:36px;border-radius:9px;background:rgba(10,110,66,.1);display:flex;align-items:center;justify-content:center;font-weight:800;color:var(--green);font-size:14px;flex-shrink:0">Б</div>
+              <div style="flex:1;min-width:0">
+                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                  <span style="font-size:13px;font-weight:700">Бейсенов Дамир</span>
+                  <span style="font-size:10px;padding:2px 8px;border-radius:20px;background:rgba(10,110,66,.1);color:var(--green);font-weight:700">💡 Инфлюенсер</span>
+                </div>
+                <div style="font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace;margin-top:2px">Главный врач · не в переговорах, но слово решающее</div>
+              </div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;padding-left:46px">
+              <div style="font-size:11px;color:var(--text2)"><span style="color:var(--muted);font-weight:600">Цель:</span> Только проверенные бренды, без экспериментов</div>
+              <div style="font-size:11px;color:var(--text2)"><span style="color:var(--muted);font-weight:600">Стадия входа:</span> При технической проверке</div>
+              <div style="font-size:11px;color:var(--text2);grid-column:1/-1"><span style="color:var(--muted);font-weight:600">Как влияет:</span> Может подтвердить выбор поставщика или отклонить технические требования</div>
+            </div>
+          </div>
+
+          <!-- BLOCKER -->
+          <div>
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+              <div style="width:36px;height:36px;border-radius:9px;background:rgba(192,24,46,.1);display:flex;align-items:center;justify-content:center;font-weight:800;color:var(--red);font-size:14px;flex-shrink:0">С</div>
+              <div style="flex:1;min-width:0">
+                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                  <span style="font-size:13px;font-weight:700">Сейткали Мейрам</span>
+                  <span style="font-size:10px;padding:2px 8px;border-radius:20px;background:rgba(192,24,46,.1);color:var(--red);font-weight:700">🚫 Блокер</span>
+                </div>
+                <div style="font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace;margin-top:2px">CFO · подписывает контракты >5 млн ₸</div>
+              </div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;padding-left:46px">
+              <div style="font-size:11px;color:var(--text2)"><span style="color:var(--muted);font-weight:600">Цель:</span> Минимизировать затраты и риски</div>
+              <div style="font-size:11px;color:var(--text2)"><span style="color:var(--muted);font-weight:600">Стадия входа:</span> Финансовое согласование</div>
+              <div style="font-size:11px;color:var(--text2);grid-column:1/-1"><span style="color:var(--muted);font-weight:600">Как может заблокировать:</span> Срежет бюджет или потребует альтернативное КП от конкурента</div>
+              <div style="font-size:11px;color:var(--text2);grid-column:1/-1"><span style="color:var(--muted);font-weight:600">Контрмера:</span> Финансовое обоснование с ROI под подпись</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-accent-top accent-green"></div>
+          <div class="card-label"><span class="card-label-icon">⚡</span>Профиль принятия решений</div>
+          <div class="progress-wrap">
+            <div class="progress-label"><span>Скорость решения</span><span style="color:var(--muted)">Медленно</span></div>
+            <div class="progress-track"><div class="progress-fill fill-amber" style="width:30%"></div></div>
+          </div>
+          <div class="progress-wrap">
+            <div class="progress-label"><span>Ориентация на цену</span><span style="color:var(--muted)">Средняя</span></div>
+            <div class="progress-track"><div class="progress-fill fill-blue" style="width:50%"></div></div>
+          </div>
+          <div class="progress-wrap">
+            <div class="progress-label"><span>Важность отношений</span><span style="color:var(--muted)">Высокая</span></div>
+            <div class="progress-track"><div class="progress-fill fill-green" style="width:85%"></div></div>
+          </div>
+          <div class="progress-wrap">
+            <div class="progress-label"><span>Технически подкован</span><span style="color:var(--muted)">Низкая</span></div>
+            <div class="progress-track"><div class="progress-fill fill-amber" style="width:25%"></div></div>
+          </div>
+          <div class="insight-box">
+            <span class="insight-icon">💡</span>
+            Продавать через доверие и надёжность, а не через характеристики продукта. Ключевое решение принимается в неформальных разговорах до финальных переговоров.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════ LAYER 2: COMMUNICATIONS ═══════════════════════════ -->
+  <div class="layer-panel" id="layer1">
+    <div class="grid-21">
+      <div style="display:flex;flex-direction:column;gap:16px">
+        <div class="card">
+          <div class="card-accent-top accent-amber"></div>
+          <div class="card-label"><span class="card-label-icon">📋</span>История контактов</div>
+          <div class="timeline">
+
+            <div class="tl-item">
+              <div class="tl-dot-wrap"><div class="tl-dot dot-red"></div></div>
+              <div class="tl-content">
+                <div class="tl-date">12 марта 2026 · 18 дней назад</div>
+                <div class="tl-title">Запрос на КП — нет ответа</div>
+                <div class="tl-text">Асель написала в WA, просила обновить смету. Менеджер отправил — подтверждения нет. Больше контактов не было.</div>
+                <div style="margin-top:6px"><span class="tag tag-red">Без ответа</span> <span class="tag tag-muted">WA</span></div>
+              </div>
+            </div>
+
+            <div class="tl-item">
+              <div class="tl-dot-wrap"><div class="tl-dot dot-amber"></div></div>
+              <div class="tl-content">
+                <div class="tl-date">26 января 2026 · Последний заказ</div>
+                <div class="tl-title">Заказ оформлен — на 40% ниже обычного</div>
+                <div class="tl-text">Объём снизился без объяснения причин. На вопрос менеджера: «всё хорошо, просто бюджет пересматриваем».</div>
+                <div class="tl-amount">1 440 000 ₸ (обычно 2 400 000 ₸)</div>
+              </div>
+            </div>
+
+            <div class="tl-item">
+              <div class="tl-dot-wrap"><div class="tl-dot dot-green"></div></div>
+              <div class="tl-content">
+                <div class="tl-date">15 января 2026 · Встреча в офисе</div>
+                <div class="tl-title">Переговоры о годовом контракте</div>
+                <div class="tl-text">Обсудили условия. Асель спросила про скидку от объёма. Договорились подготовить предложение. Атмосфера была тёплой.</div>
+                <div style="margin-top:6px"><span class="tag tag-green">Позитивно</span> <span class="tag tag-muted">Встреча</span></div>
+              </div>
+            </div>
+
+            <div class="tl-item">
+              <div class="tl-dot-wrap"><div class="tl-dot dot-green"></div></div>
+              <div class="tl-content">
+                <div class="tl-date">12 декабря 2025 · Плановый заказ</div>
+                <div class="tl-title">Заказ в норме + звонок</div>
+                <div class="tl-text">Плановая поставка. Позвонили поздравить с наступающим — остались довольны. Упомянули, что рассматривают расширение парка оборудования.</div>
+                <div class="tl-amount">2 400 000 ₸</div>
+              </div>
+            </div>
+
+            <div class="tl-item">
+              <div class="tl-dot-wrap"><div class="tl-dot dot-muted"></div></div>
+              <div class="tl-content">
+                <div class="tl-date">28 октября 2025</div>
+                <div class="tl-title">Заказ + дополнительная позиция</div>
+                <div class="tl-text">Сами добавили расходники на 200 000 ₸ сверх плана. Хороший знак — клиент доверяет ассортименту.</div>
+                <div class="tl-amount">2 650 000 ₸</div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:16px">
+        <div class="card">
+          <div class="card-accent-top accent-blue"></div>
+          <div class="card-label"><span class="card-label-icon">📊</span>Статистика контактов</div>
+          <div class="field-row"><span class="field-label">Всего контактов</span><span class="field-value mono">47</span></div>
+          <div class="field-row"><span class="field-label">За последние 90 дней</span><span class="field-value mono red">3</span></div>
+          <div class="field-row"><span class="field-label">Среднее время ответа</span><span class="field-value mono">2–4 часа</span></div>
+          <div class="field-row"><span class="field-label">Предпочтительный канал</span><span class="field-value"><span class="tag tag-green">WhatsApp</span></span></div>
+          <div class="field-row"><span class="field-label">Email открываемость</span><span class="field-value mono">68%</span></div>
+          <div class="field-row"><span class="field-label">Звонки принимает</span><span class="field-value">10:00 – 17:00</span></div>
+        </div>
+
+        <div class="card">
+          <div class="card-accent-top accent-red"></div>
+          <div class="card-label"><span class="card-label-icon">⚠</span>Незакрытые вопросы</div>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <div style="padding:10px 12px;background:var(--red-bg);border:1px solid rgba(192,24,46,0.18);border-radius:8px">
+              <div style="font-size:12px;font-weight:600;color:var(--red);margin-bottom:3px">Обновлённое КП не подтверждено</div>
+              <div style="font-size:11px;color:var(--text2)">Отправлено 12 марта. Ответа нет 18 дней.</div>
+            </div>
+            <div style="padding:10px 12px;background:var(--amber-glow);border:1px solid var(--amber-dim);border-radius:8px">
+              <div style="font-size:12px;font-weight:600;color:var(--amber);margin-bottom:3px">Предложение по годовому контракту</div>
+              <div style="font-size:11px;color:var(--text2)">Обещали подготовить на встрече 15 янв. Статус неизвестен.</div>
+            </div>
+            <div style="padding:10px 12px;background:var(--amber-glow);border:1px solid var(--amber-dim);border-radius:8px">
+              <div style="font-size:12px;font-weight:600;color:var(--amber);margin-bottom:3px">Скидка от объёма — ответ не дан</div>
+              <div style="font-size:11px;color:var(--text2)">Просили рассмотреть. Менеджер не вернулся с ответом.</div>
+            </div>
+          </div>
+          <div class="insight-box">
+            <span class="insight-icon">⚡</span>
+            3 открытых обещания без ответа. Клиент мог уйти именно из-за этого. Позвонить — и закрыть каждый пункт.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════ LAYER 3: FINANCE ═══════════════════════════ -->
+  <div class="layer-panel" id="layer2">
+    <div class="grid-3">
+      <div style="display:flex;flex-direction:column;gap:16px">
+        <div class="card">
+          <div class="card-accent-top accent-amber"></div>
+          <div class="card-label"><span class="card-label-icon">💰</span>Финансовый профиль</div>
+          <div class="field-row"><span class="field-label">Средний чек</span><span class="field-value mono amber">2 400 000 ₸</span></div>
+          <div class="field-row"><span class="field-label">Цикл покупки</span><span class="field-value mono">45 дней</span></div>
+          <div class="field-row"><span class="field-label">Частота заказов</span><span class="field-value">8 раз / год</span></div>
+          <div class="field-row"><span class="field-label">LTV за 12 мес</span><span class="field-value mono amber">14 200 000 ₸</span></div>
+          <div class="field-row"><span class="field-label">Потенциальный LTV</span><span class="field-value mono">~50 000 000 ₸</span></div>
+          <div class="field-row"><span class="field-label">Платёжная дисциплина</span><span class="field-value"><span class="tag tag-green">Без просрочек</span></span></div>
+          <div class="field-row"><span class="field-label">Оплата</span><span class="field-value">Предоплата 50% + по факту</span></div>
+        </div>
+
+        <div class="card">
+          <div class="card-accent-top accent-red"></div>
+          <div class="card-label"><span class="card-label-icon">📉</span>Динамика объёма</div>
+          <!-- Mini chart bars -->
+          <div style="display:flex;align-items:flex-end;gap:6px;height:80px;margin:8px 0 12px">
+            <div style="display:flex;flex-direction:column;align-items:center;gap:4px;flex:1">
+              <div style="background:var(--amber);border-radius:3px 3px 0 0;width:100%;height:50px"></div>
+              <div style="font-size:9px;color:var(--muted);font-family:'JetBrains Mono',monospace">Авг</div>
+            </div>
+            <div style="display:flex;flex-direction:column;align-items:center;gap:4px;flex:1">
+              <div style="background:var(--amber);border-radius:3px 3px 0 0;width:100%;height:58px"></div>
+              <div style="font-size:9px;color:var(--muted);font-family:'JetBrains Mono',monospace">Сен</div>
+            </div>
+            <div style="display:flex;flex-direction:column;align-items:center;gap:4px;flex:1">
+              <div style="background:var(--amber);border-radius:3px 3px 0 0;width:100%;height:55px"></div>
+              <div style="font-size:9px;color:var(--muted);font-family:'JetBrains Mono',monospace">Окт</div>
+            </div>
+            <div style="display:flex;flex-direction:column;align-items:center;gap:4px;flex:1">
+              <div style="background:var(--amber);border-radius:3px 3px 0 0;width:100%;height:60px"></div>
+              <div style="font-size:9px;color:var(--muted);font-family:'JetBrains Mono',monospace">Ноя</div>
+            </div>
+            <div style="display:flex;flex-direction:column;align-items:center;gap:4px;flex:1">
+              <div style="background:var(--amber);border-radius:3px 3px 0 0;width:100%;height:50px"></div>
+              <div style="font-size:9px;color:var(--muted);font-family:'JetBrains Mono',monospace">Дек</div>
+            </div>
+            <div style="display:flex;flex-direction:column;align-items:center;gap:4px;flex:1">
+              <div style="background:rgba(192,24,46,0.7);border-radius:3px 3px 0 0;width:100%;height:30px"></div>
+              <div style="font-size:9px;color:var(--red);font-family:'JetBrains Mono',monospace">Янв</div>
+            </div>
+            <div style="display:flex;flex-direction:column;align-items:center;gap:4px;flex:1">
+              <div style="background:var(--border);border-radius:3px 3px 0 0;width:100%;height:6px;opacity:0.4"></div>
+              <div style="font-size:9px;color:var(--muted);font-family:'JetBrains Mono',monospace">Фев</div>
+            </div>
+          </div>
+          <div class="field-row"><span class="field-label">Изменение объёма</span><span class="field-value mono red">−42% в январе</span></div>
+          <div class="field-row"><span class="field-label">Сезонность</span><span class="field-value">Пик: окт–ноя, спад: янв–фев</span></div>
+        </div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:16px">
+        <div class="card">
+          <div class="card-accent-top accent-green"></div>
+          <div class="card-label"><span class="card-label-icon">📈</span>История заказов</div>
+          <div class="timeline">
+            <div class="tl-item">
+              <div class="tl-dot-wrap"><div class="tl-dot dot-red"></div></div>
+              <div class="tl-content">
+                <div class="tl-date">26 янв 2026</div>
+                <div class="tl-title">Заказ №KM-2026-08</div>
+                <div class="tl-amount">1 440 000 ₸ ↓</div>
+              </div>
+            </div>
+            <div class="tl-item">
+              <div class="tl-dot-wrap"><div class="tl-dot dot-amber"></div></div>
+              <div class="tl-content">
+                <div class="tl-date">12 дек 2025</div>
+                <div class="tl-title">Заказ №KM-2025-07</div>
+                <div class="tl-amount">2 400 000 ₸</div>
+              </div>
+            </div>
+            <div class="tl-item">
+              <div class="tl-dot-wrap"><div class="tl-dot dot-amber"></div></div>
+              <div class="tl-content">
+                <div class="tl-date">28 окт 2025</div>
+                <div class="tl-title">Заказ №KM-2025-06 + апсейл</div>
+                <div class="tl-amount">2 650 000 ₸ ↑</div>
+              </div>
+            </div>
+            <div class="tl-item">
+              <div class="tl-dot-wrap"><div class="tl-dot dot-amber"></div></div>
+              <div class="tl-content">
+                <div class="tl-date">14 сен 2025</div>
+                <div class="tl-title">Заказ №KM-2025-05</div>
+                <div class="tl-amount">2 380 000 ₸</div>
+              </div>
+            </div>
+            <div class="tl-item">
+              <div class="tl-dot-wrap"><div class="tl-dot dot-muted"></div></div>
+              <div class="tl-content">
+                <div class="tl-date">2024 · 4 заказа</div>
+                <div class="tl-title">Первый год</div>
+                <div class="tl-amount">7 230 000 ₸ итого</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:16px">
+        <div class="card" style="text-align:center">
+          <div class="card-accent-top accent-red"></div>
+          <div class="card-label" style="justify-content:center">Выручка под угрозой</div>
+          <div class="big-num" style="color:var(--red);font-size:40px;margin:8px 0">2 400 000 ₸</div>
+          <div class="big-num-sub">если клиент уйдёт — потеря одного цикла</div>
+          <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border)">
+            <div style="font-size:11px;color:var(--muted);margin-bottom:6px">За 12 месяцев</div>
+            <div class="big-num" style="color:var(--red);font-size:32px">14 200 000 ₸</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-accent-top accent-amber"></div>
+          <div class="card-label"><span class="card-label-icon">🎯</span>Потенциал роста</div>
+          <div class="field-row"><span class="field-label">Текущий объём</span><span class="field-value mono">14.2 млн ₸/год</span></div>
+          <div class="field-row"><span class="field-label">Апсейл (расходники)</span><span class="field-value mono green">+3 000 000 ₸</span></div>
+          <div class="field-row"><span class="field-label">Кросс-сейл (сервис)</span><span class="field-value mono green">+2 400 000 ₸</span></div>
+          <div class="field-row"><span class="field-label">Годовой контракт</span><span class="field-value mono amber">Скидка −7%</span></div>
+          <div class="field-row"><span class="field-label">Потенциальный max</span><span class="field-value mono amber">~22 000 000 ₸</span></div>
+          <div class="insight-box">
+            <span class="insight-icon">💡</span>
+            Клиент упоминал расширение оборудования. Правильный момент для переговоров — сейчас, пока не ушёл.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════ LAYER 4: FUNNEL ═══════════════════════════ -->
+  <div class="layer-panel" id="layer3">
+    <div class="grid-12">
+      <div style="display:flex;flex-direction:column;gap:16px">
+        <div class="card">
+          <div class="card-accent-top accent-amber"></div>
+          <div class="card-label"><span class="card-label-icon">🎯</span>Стадии воронки</div>
+          <div class="funnel-stages">
+            <div class="funnel-stage done">
+              <span class="funnel-stage-num">01</span>
+              <span class="funnel-stage-name">✓ Первичный контакт</span>
+              <span class="funnel-stage-date">14 мар 2024</span>
+            </div>
+            <div class="funnel-stage done">
+              <span class="funnel-stage-num">02</span>
+              <span class="funnel-stage-name">✓ КП отправлено</span>
+              <span class="funnel-stage-date">20 мар 2024</span>
+            </div>
+            <div class="funnel-stage done">
+              <span class="funnel-stage-num">03</span>
+              <span class="funnel-stage-name">✓ Первая продажа</span>
+              <span class="funnel-stage-date">5 апр 2024</span>
+            </div>
+            <div class="funnel-stage done">
+              <span class="funnel-stage-num">04</span>
+              <span class="funnel-stage-name">✓ Повторные продажи (×7)</span>
+              <span class="funnel-stage-date">апр 2024 – янв 2026</span>
+            </div>
+            <div class="funnel-stage current">
+              <span class="funnel-stage-num">05</span>
+              <span class="funnel-stage-name">⚠ Переговоры о годовом контракте</span>
+              <span class="funnel-stage-date">с 15 янв 2026</span>
+            </div>
+            <div class="funnel-stage">
+              <span class="funnel-stage-num">06</span>
+              <span class="funnel-stage-name">Годовой контракт подписан</span>
+              <span class="funnel-stage-date">—</span>
+            </div>
+            <div class="funnel-stage">
+              <span class="funnel-stage-num">07</span>
+              <span class="funnel-stage-name">Апсейл / расширение</span>
+              <span class="funnel-stage-date">—</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-accent-top accent-red"></div>
+          <div class="card-label"><span class="card-label-icon">⚡</span>Следующий шаг</div>
+          <div style="padding:16px;background:var(--red-bg);border:1px solid rgba(192,24,46,0.18);border-radius:10px;margin-bottom:12px">
+            <div style="font-size:14px;font-weight:700;color:var(--red);margin-bottom:6px">📞 Позвонить СЕГОДНЯ</div>
+            <div style="font-size:13px;color:var(--text2);line-height:1.5">Выяснить статус КП. Закрыть вопрос по годовому контракту. Предложить персональные условия.</div>
+          </div>
+          <div class="field-row"><span class="field-label">Ответственный</span><span class="field-value">Асель Нурова → менеджер Ержан</span></div>
+          <div class="field-row"><span class="field-label">Дедлайн</span><span class="field-value mono red">30 марта 2026</span></div>
+          <div class="field-row"><span class="field-label">Вероятность сделки</span><span class="field-value mono amber">61% при звонке сегодня</span></div>
+          <div class="field-row"><span class="field-label">Вероятность потери</span><span class="field-value mono red">87% без звонка через 7 дней</span></div>
+        </div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:16px">
+        <div class="card" style="text-align:center">
+          <div class="card-accent-top accent-amber"></div>
+          <div class="card-label" style="justify-content:center">Риск-скор (GRI Pulse)</div>
+          <div class="score-circle-wrap">
+            <div class="score-circle">
+              <svg class="score-svg" viewBox="0 0 100 100">
+                <circle class="score-bg-track" cx="50" cy="50" r="45"/>
+                <circle class="score-fill-track" cx="50" cy="50" r="45" style="stroke:var(--red);stroke-dashoffset:16"/>
+              </svg>
+              <div class="score-inner">
+                <div class="score-num" style="color:var(--red)">94</div>
+                <div class="score-max">/100</div>
+              </div>
+            </div>
+            <div style="font-size:13px;font-weight:700;color:var(--red);margin-top:12px">Высокий риск ухода</div>
+            <div style="font-size:12px;color:var(--muted);margin-top:4px">Приоритет 1 — звонить сегодня</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-accent-top accent-orange"></div>
+          <div class="card-label"><span class="card-label-icon">📊</span>Факторы риска</div>
+          <div class="progress-wrap">
+            <div class="progress-label"><span>Просрочка цикла</span><span style="color:var(--red)">+18 дней</span></div>
+            <div class="progress-track"><div class="progress-fill fill-red" style="width:90%"></div></div>
+          </div>
+          <div class="progress-wrap">
+            <div class="progress-label"><span>Снижение объёма</span><span style="color:var(--red)">−42%</span></div>
+            <div class="progress-track"><div class="progress-fill fill-red" style="width:80%"></div></div>
+          </div>
+          <div class="progress-wrap">
+            <div class="progress-label"><span>Нет контакта</span><span style="color:var(--red)">18 дней</span></div>
+            <div class="progress-track"><div class="progress-fill fill-red" style="width:75%"></div></div>
+          </div>
+          <div class="progress-wrap">
+            <div class="progress-label"><span>Открытые обещания</span><span style="color:var(--amber)">3 шт</span></div>
+            <div class="progress-track"><div class="progress-fill fill-amber" style="width:60%"></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════ LAYER 5: MATERIALS ═══════════════════════════ -->
+  <div class="layer-panel" id="layer4">
+    <div class="grid-2">
+      <div style="display:flex;flex-direction:column;gap:16px">
+        <div class="card">
+          <div class="card-accent-top accent-amber"></div>
+          <div class="card-label"><span class="card-label-icon">📁</span>Отправленные материалы</div>
+
+          <div class="material-row">
+            <div class="material-icon mat-pdf">📄</div>
+            <div class="material-info">
+              <div class="material-name">КП_КазМедТех_v3_март2026.pdf</div>
+              <div class="material-meta">Отправлено 12 мар 2026 · WA</div>
+            </div>
+            <span class="tag tag-red">Не открыто</span>
+          </div>
+
+          <div class="material-row">
+            <div class="material-icon mat-pdf">📄</div>
+            <div class="material-info">
+              <div class="material-name">КП_КазМедТех_v2_январь2026.pdf</div>
+              <div class="material-meta">Отправлено 16 янв 2026 · Email</div>
+            </div>
+            <span class="tag tag-green">Открыто ×3</span>
+          </div>
+
+          <div class="material-row">
+            <div class="material-icon mat-xls">📊</div>
+            <div class="material-info">
+              <div class="material-name">Расчёт_годовой_контракт.xlsx</div>
+              <div class="material-meta">Отправлено 16 янв 2026 · Email</div>
+            </div>
+            <span class="tag tag-amber">Открыто ×1</span>
+          </div>
+
+          <div class="material-row">
+            <div class="material-icon mat-ppt">📑</div>
+            <div class="material-info">
+              <div class="material-name">Презентация_компании_2025.pptx</div>
+              <div class="material-meta">Отправлено 20 мар 2024 · Email</div>
+            </div>
+            <span class="tag tag-green">Открыто ×5</span>
+          </div>
+
+          <div class="material-row">
+            <div class="material-icon mat-doc">📝</div>
+            <div class="material-info">
+              <div class="material-name">Бриф_требования_оборудование.docx</div>
+              <div class="material-meta">Заполнено клиентом 25 мар 2024</div>
+            </div>
+            <span class="tag tag-green">Заполнен</span>
+          </div>
+
+          <div class="material-row">
+            <div class="material-icon mat-pdf">📄</div>
+            <div class="material-info">
+              <div class="material-name">Кейс_Медцентр_Нур-Мед.pdf</div>
+              <div class="material-meta">Отправлено 18 мар 2024 · WA</div>
+            </div>
+            <span class="tag tag-green">Открыто ×2</span>
+          </div>
+
+        </div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:16px">
+        <div class="card">
+          <div class="card-accent-top accent-red"></div>
+          <div class="card-label"><span class="card-label-icon">🚨</span>Внимание: последнее КП не открыто</div>
+          <div style="padding:16px;background:var(--red-bg);border:1px solid rgba(192,24,46,0.18);border-radius:10px;margin-bottom:16px">
+            <div style="font-size:13px;font-weight:600;color:var(--red);margin-bottom:8px">КП_КазМедТех_v3 отправлено 18 дней назад — статус: не открыто</div>
+            <div style="font-size:12px;color:var(--text2);line-height:1.5">Клиент либо не получил, либо игнорирует. Нельзя ждать. Нужен прямой звонок с вопросом: «Получили? Есть вопросы?»</div>
+          </div>
+          <div class="card-label"><span class="card-label-icon">📋</span>Статистика материалов</div>
+          <div class="field-row"><span class="field-label">Всего отправлено</span><span class="field-value mono">14 файлов</span></div>
+          <div class="field-row"><span class="field-label">Открыто</span><span class="field-value mono green">11 / 14</span></div>
+          <div class="field-row"><span class="field-label">Ср. просмотров на файл</span><span class="field-value mono">2.3×</span></div>
+          <div class="field-row"><span class="field-label">Самый просматриваемый</span><span class="field-value">Презентация компании (×5)</span></div>
+        </div>
+
+        <div class="card">
+          <div class="card-accent-top accent-green"></div>
+          <div class="card-label"><span class="card-label-icon">✅</span>Рекомендуемые материалы для следующего контакта</div>
+          <div class="material-row">
+            <div class="material-icon mat-xls">📊</div>
+            <div class="material-info">
+              <div class="material-name">ROI_годовой_контракт_с_экономией.xlsx</div>
+              <div class="material-meta">Подготовить до звонка · покажет выгоду скидки</div>
+            </div>
+            <span class="tag tag-muted">Создать</span>
+          </div>
+          <div class="material-row">
+            <div class="material-icon mat-pdf">📄</div>
+            <div class="material-info">
+              <div class="material-name">Кейс_расширение_парка_2025.pdf</div>
+              <div class="material-meta">Уже есть · релевантно их задаче расширения</div>
+            </div>
+            <span class="tag tag-green">Готово</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════ LAYER 6: BEHAVIOR ═══════════════════════════ -->
+  <div class="layer-panel" id="layer5">
+    <div class="grid-2">
+      <div style="display:flex;flex-direction:column;gap:16px">
+        <div class="card">
+          <div class="card-accent-top accent-amber"></div>
+          <div class="card-label"><span class="card-label-icon">🗓</span>Активность за последние 7 недель</div>
+          <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px;margin-bottom:6px">
+            <div style="font-size:9px;color:var(--muted);text-align:center;font-family:'JetBrains Mono',monospace">Пн</div>
+            <div style="font-size:9px;color:var(--muted);text-align:center;font-family:'JetBrains Mono',monospace">Вт</div>
+            <div style="font-size:9px;color:var(--muted);text-align:center;font-family:'JetBrains Mono',monospace">Ср</div>
+            <div style="font-size:9px;color:var(--muted);text-align:center;font-family:'JetBrains Mono',monospace">Чт</div>
+            <div style="font-size:9px;color:var(--muted);text-align:center;font-family:'JetBrains Mono',monospace">Пт</div>
+            <div style="font-size:9px;color:var(--muted);text-align:center;font-family:'JetBrains Mono',monospace">Сб</div>
+            <div style="font-size:9px;color:var(--muted);text-align:center;font-family:'JetBrains Mono',monospace">Вс</div>
+          </div>
+          <div class="behavior-grid" id="heatmap"></div>
+          <div style="display:flex;align-items:center;gap:8px;margin-top:8px">
+            <span style="font-size:10px;color:var(--muted)">Нет</span>
+            <div style="display:flex;gap:3px">
+              <div style="width:12px;height:12px;border-radius:2px" class="bh-0"></div>
+              <div style="width:12px;height:12px;border-radius:2px" class="bh-1"></div>
+              <div style="width:12px;height:12px;border-radius:2px" class="bh-2"></div>
+              <div style="width:12px;height:12px;border-radius:2px" class="bh-3"></div>
+              <div style="width:12px;height:12px;border-radius:2px" class="bh-4"></div>
+            </div>
+            <span style="font-size:10px;color:var(--muted)">Высокая</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-accent-top accent-blue"></div>
+          <div class="card-label"><span class="card-label-icon">🔍</span>События активности</div>
+          <div class="behavior-events">
+            <div class="bev"><span class="bev-icon">📖</span><span class="bev-text">Открыл КП v2 (январь). Провёл 4 мин 32 сек</span><span class="bev-time">16 янв</span></div>
+            <div class="bev"><span class="bev-icon">📖</span><span class="bev-text">Повторно открыл КП v2. Стр. 3–5 (цены)</span><span class="bev-time">18 янв</span></div>
+            <div class="bev"><span class="bev-icon">📖</span><span class="bev-text">Открыл таблицу расчёта годового контракта</span><span class="bev-time">19 янв</span></div>
+            <div class="bev"><span class="bev-icon">💬</span><span class="bev-text">Написал в WA: «Можно ли скидку при оплате за год?»</span><span class="bev-time">20 янв</span></div>
+            <div class="bev"><span class="bev-icon">📖</span><span class="bev-text">Третье открытие КП v2 — вернулся к разделу условий</span><span class="bev-time">22 янв</span></div>
+            <div class="bev" style="opacity:0.4"><span class="bev-icon">👁</span><span class="bev-text">КП v3 (март) — не открыто</span><span class="bev-time">12 мар</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:16px">
+        <div class="card">
+          <div class="card-accent-top accent-orange"></div>
+          <div class="card-label"><span class="card-label-icon">🗣</span>Паттерны вопросов и возражений</div>
+
+          <div style="margin-bottom:16px">
+            <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:8px">Чаще всего спрашивает</div>
+            <div style="display:flex;flex-wrap:wrap;gap:6px">
+              <span class="tag tag-amber">Скидки от объёма</span>
+              <span class="tag tag-blue">Сроки поставки</span>
+              <span class="tag tag-blue">Гарантии и сертификаты</span>
+              <span class="tag tag-amber">Условия оплаты</span>
+              <span class="tag tag-muted">Аналоги дешевле</span>
+            </div>
+          </div>
+
+          <div style="margin-bottom:16px">
+            <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:8px">Типичные возражения</div>
+            <div style="display:flex;flex-direction:column;gap:6px">
+              <div style="display:flex;gap:8px;font-size:12px;color:var(--text2);align-items:flex-start"><span style="color:var(--red);flex-shrink:0">✗</span>«Дорого, у конкурентов дешевле» → ответ: качество + сервис + гарантия</div>
+              <div style="display:flex;gap:8px;font-size:12px;color:var(--text2);align-items:flex-start"><span style="color:var(--red);flex-shrink:0">✗</span>«Нужно согласовать с руководством» → ответ: подготовить обоснование для CFO</div>
+              <div style="display:flex;gap:8px;font-size:12px;color:var(--text2);align-items:flex-start"><span style="color:var(--red);flex-shrink:0">✗</span>«Пока не готовы» → ответ: уточнить конкретный срок решения</div>
+            </div>
+          </div>
+
+          <div>
+            <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:8px">Что ускоряет решение</div>
+            <div style="display:flex;flex-direction:column;gap:6px">
+              <div style="display:flex;gap:8px;font-size:12px;color:var(--text2);align-items:flex-start"><span style="color:var(--green);flex-shrink:0">✓</span>Личный звонок от руководителя продаж</div>
+              <div style="display:flex;gap:8px;font-size:12px;color:var(--text2);align-items:flex-start"><span style="color:var(--green);flex-shrink:0">✓</span>Конкретное финансовое обоснование с цифрами</div>
+              <div style="display:flex;gap:8px;font-size:12px;color:var(--text2);align-items:flex-start"><span style="color:var(--green);flex-shrink:0">✓</span>Ограниченное по времени спецпредложение</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-accent-top accent-green"></div>
+          <div class="card-label"><span class="card-label-icon">💡</span>Поведенческий инсайт</div>
+          <div class="insight-box" style="margin-top:0">
+            <span class="insight-icon">🔎</span>
+            <div>Клиент трижды открыл КП v2, изучал раздел цен и задал вопрос о скидке за год — он <strong>был готов к сделке</strong>. Пауза наступила после того, как менеджер не ответил на вопрос о скидке. Это и есть причина охлаждения.
+            </div>
+          </div>
+          <div class="insight-box" style="background:var(--green-bg);border-color:rgba(10,110,66,0.2);color:var(--green)">
+            <span class="insight-icon">✅</span>
+            <div>КП v3 не открыто. Высока вероятность, что не дошло или потерялось в переписке. <strong>Не ждать — позвонить и выслать повторно</strong> с кратким объяснением выгоды.
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════ LAYER 7: TEAM NOTES ═══════════════════════════ -->
+  <div class="layer-panel" id="layer6">
+    <div class="grid-2">
+      <div style="display:flex;flex-direction:column;gap:16px">
+        <div class="card">
+          <div class="card-accent-top accent-amber"></div>
+          <div class="card-label"><span class="card-label-icon">📝</span>Заметки менеджеров</div>
+
+          <div class="note-card note-red">
+            <div class="note-header">
+              <span class="note-author">Ержан С. · Менеджер</span>
+              <span class="note-date">12 мар 2026</span>
+            </div>
+            <div class="note-text">Асель написала в WA, попросила обновлённую смету. Выслал КП v3. Ответа нет уже 18 дней. Не понимаю, что происходит. Думаю, надо позвонить — но не хочу давить. Жду.</div>
+          </div>
+
+          <div class="note-card note-amber">
+            <div class="note-header">
+              <span class="note-author">Ержан С. · Менеджер</span>
+              <span class="note-date">20 янв 2026</span>
+            </div>
+            <div class="note-text">Асель спросила в WA: «Можно ли скидку при оплате за год?». Сказал, что уточню — и... забыл ответить. Надо вернуться к этому. Она явно хочет работать дальше — просто не получила ответа.</div>
+          </div>
+
+          <div class="note-card note-blue">
+            <div class="note-header">
+              <span class="note-author">Ержан С. · Менеджер</span>
+              <span class="note-date">15 янв 2026</span>
+            </div>
+            <div class="note-text">Встреча в офисе прошла хорошо. Асель была в хорошем настроении. Упомянула, что главврач Бейсенов думает о покупке 2 дополнительных единиц оборудования. Это потенциальный апсейл на 4–5 млн ₸. Надо подготовить предложение.</div>
+          </div>
+
+          <div class="note-card note-green">
+            <div class="note-header">
+              <span class="note-author">Ержан С. · Менеджер</span>
+              <span class="note-date">26 янв 2026</span>
+            </div>
+            <div class="note-text">Заказ поступил, но меньше обычного. На вопрос «всё ли хорошо?» сказала «да, просто бюджет пересматриваем». Не уверен, что это вся правда. Нужно мониторить внимательнее.</div>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:16px">
+        <div class="card">
+          <div class="card-accent-top accent-blue"></div>
+          <div class="card-label"><span class="card-label-icon">👁</span>Наблюдения команды</div>
+
+          <div class="note-card note-amber">
+            <div class="note-header">
+              <span class="note-author">Рахимжанова М. · РОП</span>
+              <span class="note-date">13 мар 2026</span>
+            </div>
+            <div class="note-text">GRI Pulse поставил этого клиента в красную зону. Смотрела историю — три незакрытых вопроса от менеджера. Это наша ошибка, не клиента. Назначила звонок Ержану на завтра. Стратегия: звонить, извиниться за задержку, закрыть скидку и предложить встречу с Бейсеновым.</div>
+          </div>
+
+          <div class="note-card note-blue">
+            <div class="note-header">
+              <span class="note-author">Маркетинг</span>
+              <span class="note-date">1 фев 2026</span>
+            </div>
+            <div class="note-text">Клиент не открывал ни одну наши рассылки с января. Исключили из массовой рассылки — он явно не читает email. Основной канал — WA через менеджера.</div>
+          </div>
+
+          <div class="card" style="background:var(--surface2);border-color:var(--border2)">
+            <div class="card-label"><span class="card-label-icon">🎯</span>Итоговое резюме по клиенту</div>
+            <div style="display:flex;flex-direction:column;gap:10px">
+              <div style="display:flex;gap:10px;font-size:13px;align-items:flex-start"><span style="color:var(--green);font-weight:700;flex-shrink:0">+</span><span>Лояльный клиент, 8 заказов без претензий</span></div>
+              <div style="display:flex;gap:10px;font-size:13px;align-items:flex-start"><span style="color:var(--green);font-weight:700;flex-shrink:0">+</span><span>Платёжная дисциплина идеальная</span></div>
+              <div style="display:flex;gap:10px;font-size:13px;align-items:flex-start"><span style="color:var(--green);font-weight:700;flex-shrink:0">+</span><span>Потенциал апсейла +4–5 млн ₸ (оборудование)</span></div>
+              <div style="display:flex;gap:10px;font-size:13px;align-items:flex-start"><span style="color:var(--red);font-weight:700;flex-shrink:0">—</span><span>Охлаждение вызвано нашей ошибкой: 3 открытых вопроса без ответа</span></div>
+              <div style="display:flex;gap:10px;font-size:13px;align-items:flex-start"><span style="color:var(--red);font-weight:700;flex-shrink:0">—</span><span>Последнее КП не открыто — возможно, не получил</span></div>
+              <div style="display:flex;gap:10px;font-size:13px;align-items:flex-start"><span style="color:var(--amber);font-weight:700;flex-shrink:0">!</span><span>Ключ к возврату — честный звонок с признанием задержки + конкретное предложение</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-accent-top accent-orange"></div>
+          <div class="card-label"><span class="card-label-icon">🚀</span>Действия по итогам анализа</div>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <div style="display:flex;align-items:center;gap:12px;padding:10px 12px;background:var(--red-bg);border:1px solid rgba(192,24,46,0.18);border-radius:8px">
+              <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--red);font-weight:700;flex-shrink:0">01 СЕГОДНЯ</span>
+              <span style="font-size:12px;color:var(--text2)">Ержан звонит Асель — узнаёт, получила ли КП v3</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:12px;padding:10px 12px;background:var(--red-bg);border:1px solid rgba(192,24,46,0.18);border-radius:8px">
+              <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--red);font-weight:700;flex-shrink:0">02 СЕГОДНЯ</span>
+              <span style="font-size:12px;color:var(--text2)">Закрывает вопрос по скидке: 7% при предоплате за год</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:12px;padding:10px 12px;background:var(--amber-glow);border:1px solid var(--amber-dim);border-radius:8px">
+              <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--amber);font-weight:700;flex-shrink:0">03 НА НЕД</span>
+              <span style="font-size:12px;color:var(--text2)">Подготовить ROI-расчёт годового контракта для CFO</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:12px;padding:10px 12px;background:var(--amber-glow);border:1px solid var(--amber-dim);border-radius:8px">
+              <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--amber);font-weight:700;flex-shrink:0">04 НА НЕД</span>
+              <span style="font-size:12px;color:var(--text2)">Назначить встречу с главврачом Бейсеновым — апсейл</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:12px;padding:10px 12px;background:var(--green-bg);border:1px solid rgba(10,110,66,0.2);border-radius:8px">
+              <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--green);font-weight:700;flex-shrink:0">05 МАЙ</span>
+              <span style="font-size:12px;color:var(--text2)">Цель: подписать годовой контракт + апсейл = +19 млн ₸/год</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════ LAYER 8: JTBD / ICP ═══════════════════════════ -->
+  <div class="layer-panel" id="layer7">
+    <div class="grid-2">
+
+      <!-- LEFT COLUMN -->
+      <div style="display:flex;flex-direction:column;gap:16px">
+
+        <!-- ГОТОВНОСТЬ К ПОКУПКЕ -->
+        <div class="card">
+          <div class="card-accent-top accent-green"></div>
+          <div class="card-label"><span class="card-label-icon">🚦</span>Готовность к покупке</div>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:8px">
+            <div style="border-radius:10px;padding:12px;background:rgba(192,24,46,.06);border:1px solid rgba(192,24,46,.15);text-align:center">
+              <div style="font-size:11px;font-weight:700;color:var(--red);margin-bottom:4px">Ищут</div>
+              <div style="font-size:10px;color:var(--muted)">Осознали проблему</div>
+            </div>
+            <div style="border-radius:10px;padding:12px;background:rgba(194,112,10,.1);border:1.5px solid var(--amber);text-align:center;position:relative">
+              <div style="position:absolute;top:-8px;left:50%;transform:translateX(-50%);font-size:9px;font-weight:800;background:var(--amber);color:#fff;padding:2px 8px;border-radius:20px;white-space:nowrap">Сейчас</div>
+              <div style="font-size:11px;font-weight:700;color:var(--amber);margin-bottom:4px">Выбирают</div>
+              <div style="font-size:10px;color:var(--muted)">Сравнивают варианты</div>
+            </div>
+            <div style="border-radius:10px;padding:12px;background:rgba(10,110,66,.05);border:1px solid rgba(10,110,66,.15);text-align:center">
+              <div style="font-size:11px;font-weight:700;color:var(--green);margin-bottom:4px">Утвердили</div>
+              <div style="font-size:10px;color:var(--muted)">Готовы платить</div>
+            </div>
+          </div>
+          <div class="insight-box">
+            <span class="insight-icon">📌</span>
+            Клиент на стадии выбора — сравнивает нас с конкурентами по цене. КП v3 не открыто. Критичен быстрый контакт с закрытием вопроса о скидке.
+          </div>
+        </div>
+
+        <!-- JTBD: ЗАДАЧА КЛИЕНТА -->
+        <div class="card">
+          <div class="card-accent-top accent-amber"></div>
+          <div class="card-label"><span class="card-label-icon">🎯</span>Jobs-To-Be-Done: задача клиента</div>
+
+          <div style="margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid var(--border)">
+            <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px">1. Какую задачу клиент пытается решить?</div>
+            <div style="font-size:13px;color:var(--text);line-height:1.5">Обеспечить бесперебойные поставки медрасходников при минимуме административных затрат. Исключить ситуации дефицита оборудования в клиниках.</div>
+          </div>
+
+          <div style="margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid var(--border)">
+            <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px">2. Условия использования продукта</div>
+            <div style="font-size:13px;color:var(--text);line-height:1.5">Закупки происходят квартально, тендерные процедуры — дважды в год. Решение принимается при приближении к концу квартального бюджета.</div>
+          </div>
+
+          <div style="margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid var(--border)">
+            <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px">3. Какие альтернативы рассматривает?</div>
+            <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px">
+              <span class="tag tag-red">МедСупплай (дешевле на 8%)</span>
+              <span class="tag tag-muted">Прямой импорт из Турции</span>
+              <span class="tag tag-muted">Тендер с 3+ поставщиками</span>
+            </div>
+            <div style="font-size:12px;color:var(--text2);margin-top:8px;line-height:1.5">Выбирает нас из-за сервиса и документальной точности. Ценовой разрыв в 5–10% закрывается скоростью и надёжностью.</div>
+          </div>
+
+          <div style="margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid var(--border)">
+            <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px">4. Факторы принятия решения</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:4px">
+              <div style="background:var(--surface2);border-radius:8px;padding:8px 10px">
+                <div style="font-size:10px;font-weight:700;color:var(--muted);margin-bottom:3px">Чувств. к цене</div>
+                <div class="progress-track" style="margin-top:4px"><div class="progress-fill fill-amber" style="width:50%"></div></div>
+                <div style="font-size:10px;color:var(--muted);margin-top:3px">Средняя</div>
+              </div>
+              <div style="background:var(--surface2);border-radius:8px;padding:8px 10px">
+                <div style="font-size:10px;font-weight:700;color:var(--muted);margin-bottom:3px">Важность рекомендаций</div>
+                <div class="progress-track" style="margin-top:4px"><div class="progress-fill fill-green" style="width:85%"></div></div>
+                <div style="font-size:10px;color:var(--muted);margin-top:3px">Высокая</div>
+              </div>
+              <div style="background:var(--surface2);border-radius:8px;padding:8px 10px">
+                <div style="font-size:10px;font-weight:700;color:var(--muted);margin-bottom:3px">Конкуренты в процессе</div>
+                <div class="progress-track" style="margin-top:4px"><div class="progress-fill fill-red" style="width:65%"></div></div>
+                <div style="font-size:10px;color:var(--muted);margin-top:3px">Да, 2 конкурента</div>
+              </div>
+              <div style="background:var(--surface2);border-radius:8px;padding:8px 10px">
+                <div style="font-size:10px;font-weight:700;color:var(--muted);margin-bottom:3px">Мнение коллег</div>
+                <div class="progress-track" style="margin-top:4px"><div class="progress-fill fill-blue" style="width:70%"></div></div>
+                <div style="font-size:10px;color:var(--muted);margin-top:3px">Важно (Бейсенов)</div>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px">5. Каковы критерии успеха?</div>
+            <div style="font-size:13px;color:var(--text);line-height:1.5">Поставки без задержек, документы без ошибок, один контакт для решения любого вопроса. Успех = отсутствие проблем, которые нужно решать руководству.</div>
+          </div>
+        </div>
+
+      </div><!-- /left -->
+
+      <!-- RIGHT COLUMN -->
+      <div style="display:flex;flex-direction:column;gap:16px">
+
+        <!-- ЭМОЦИИ -->
+        <div class="card">
+          <div class="card-accent-top accent-orange"></div>
+          <div class="card-label"><span class="card-label-icon">💭</span>Эмоциональный профиль</div>
+
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+            <div style="background:var(--red-bg);border:1px solid rgba(192,24,46,.15);border-radius:10px;padding:12px">
+              <div style="font-size:11px;font-weight:700;color:var(--red);margin-bottom:6px">Сейчас испытывает</div>
+              <div style="display:flex;flex-direction:column;gap:4px">
+                <div style="font-size:12px;color:var(--text2)">😤 Раздражение от незакрытых вопросов</div>
+                <div style="font-size:12px;color:var(--text2)">😟 Неуверенность в надёжности поставщика</div>
+                <div style="font-size:12px;color:var(--text2)">⏰ Давление: квартал заканчивается</div>
+              </div>
+            </div>
+            <div style="background:var(--green-bg);border:1px solid rgba(10,110,66,.15);border-radius:10px;padding:12px">
+              <div style="font-size:11px;font-weight:700;color:var(--green);margin-bottom:6px">Хочет почувствовать</div>
+              <div style="display:flex;flex-direction:column;gap:4px">
+                <div style="font-size:12px;color:var(--text2)">✅ Уверенность в поставщике</div>
+                <div style="font-size:12px;color:var(--text2)">🤝 Уважение как к профессионалу</div>
+                <div style="font-size:12px;color:var(--text2)">🏆 Признание внутри компании</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="insight-box">
+            <span class="insight-icon">🎯</span>
+            Продавать через снятие тревоги, а не через функции. Ключевое сообщение: «Мы видели вопрос по скидке — и готовы его закрыть прямо сейчас».
+          </div>
+        </div>
+
+        <!-- УБЕЖДЕНИЯ И ОГРАНИЧЕНИЯ -->
+        <div class="card">
+          <div class="card-accent-top accent-blue"></div>
+          <div class="card-label"><span class="card-label-icon">🧠</span>Убеждения и ограничения</div>
+
+          <div style="margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid var(--border)">
+            <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px">Убеждения клиента</div>
+            <div style="display:flex;flex-direction:column;gap:6px">
+              <div style="display:flex;gap:8px;font-size:12px;color:var(--text2);align-items:flex-start">
+                <span style="color:var(--blue);flex-shrink:0;font-weight:700">→</span>
+                «Хорошего поставщика надо держать — смена стоит дороже, чем переплата»
+              </div>
+              <div style="display:flex;gap:8px;font-size:12px;color:var(--text2);align-items:flex-start">
+                <span style="color:var(--blue);flex-shrink:0;font-weight:700">→</span>
+                «Поставщик, который молчит на вопрос — поставщик, которому всё равно»
+              </div>
+              <div style="display:flex;gap:8px;font-size:12px;color:var(--text2);align-items:flex-start">
+                <span style="color:var(--blue);flex-shrink:0;font-weight:700">→</span>
+                «Рекомендация от коллег — лучший критерий отбора»
+              </div>
+            </div>
+          </div>
+
+          <div style="margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid var(--border)">
+            <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px">Ограничения клиента</div>
+            <div style="display:flex;flex-direction:column;gap:6px">
+              <div style="display:flex;gap:8px;font-size:12px;color:var(--text2);align-items:flex-start">
+                <span style="color:var(--red);flex-shrink:0;font-weight:700">⊘</span>
+                Бюджетный цикл жёсткий — решение принимается до 25-го числа квартала
+              </div>
+              <div style="display:flex;gap:8px;font-size:12px;color:var(--text2);align-items:flex-start">
+                <span style="color:var(--red);flex-shrink:0;font-weight:700">⊘</span>
+                Контракты >5 млн ₸ требуют подписи CFO — Асель не может закрыть сама
+              </div>
+              <div style="display:flex;gap:8px;font-size:12px;color:var(--text2);align-items:flex-start">
+                <span style="color:var(--red);flex-shrink:0;font-weight:700">⊘</span>
+                Тендерная документация обязательна по внутреннему регламенту от 3 млн ₸
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px">Лидеры мнения клиента</div>
+            <div style="display:flex;flex-direction:column;gap:6px">
+              <div style="display:flex;gap:8px;font-size:12px;color:var(--text2);align-items:flex-start">
+                <span style="color:var(--amber);flex-shrink:0;font-weight:700">★</span>
+                Директор ТОО «Нур-Мед» (Алматы) — рекомендовал нас, мнению доверяет
+              </div>
+              <div style="display:flex;gap:8px;font-size:12px;color:var(--text2);align-items:flex-start">
+                <span style="color:var(--amber);flex-shrink:0;font-weight:700">★</span>
+                Главный врач Бейсенов — авторитет по техническим вопросам внутри компании
+              </div>
+              <div style="display:flex;gap:8px;font-size:12px;color:var(--text2);align-items:flex-start">
+                <span style="color:var(--amber);flex-shrink:0;font-weight:700">★</span>
+                Отраслевой телеграм-канал MedBusiness KZ — следит регулярно
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ICP НЕСТАНДАРТНЫЕ КРИТЕРИИ -->
+        <div class="card">
+          <div class="card-accent-top accent-green"></div>
+          <div class="card-label"><span class="card-label-icon">🔬</span>ICP: нестандартные критерии</div>
+
+          <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px">Стратегические цели, связ. с нашим продуктом</div>
+          <div style="font-size:13px;color:var(--text);line-height:1.5;margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid var(--border)">
+            Выход на рынок тендерных закупок Минздрава РК. Открытие 2 новых клиник в регионах к 2027 году → рост потребности в расходниках ×1,5.
+          </div>
+
+          <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px">Почему не мог решить проблему сам</div>
+          <div style="font-size:13px;color:var(--text);line-height:1.5;margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid var(--border)">
+            Предыдущий поставщик систематически срывал сроки. Собственный импорт нерентабелен при объёмах до 50 млн ₸/год — нет лицензии и таможенной экспертизы.
+          </div>
+
+          <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px">Почему выбрал нашу компанию</div>
+          <div style="display:flex;flex-direction:column;gap:5px">
+            <div style="display:flex;gap:8px;font-size:12px;color:var(--text2);align-items:flex-start"><span style="color:var(--green);font-weight:700;flex-shrink:0">+</span>Рекомендация от ТОО «Нур-Мед»</div>
+            <div style="display:flex;gap:8px;font-size:12px;color:var(--text2);align-items:flex-start"><span style="color:var(--green);font-weight:700;flex-shrink:0">+</span>Наличие полного пакета сертификатов и тендерной документации</div>
+            <div style="display:flex;gap:8px;font-size:12px;color:var(--text2);align-items:flex-start"><span style="color:var(--green);font-weight:700;flex-shrink:0">+</span>Выделенный менеджер — один контакт для всех вопросов</div>
+          </div>
+        </div>
+
+      </div><!-- /right -->
+    </div>
+  </div>
+
+</div>
+
+<script>
+// Layer switching
+function showLayer(idx) {
+  document.querySelectorAll('.layer-panel').forEach((p, i) => p.classList.toggle('active', i === idx));
+  document.querySelectorAll('.layer-btn').forEach((b, i) => b.classList.toggle('active', i === idx));
+}
+
+// Generate heatmap
+const heatmap = document.getElementById('heatmap');
+const data = [0,0,1,0,0,0,0, 0,1,2,1,0,0,0, 0,0,1,0,1,0,0, 0,1,3,4,2,0,0, 0,0,1,0,0,0,0, 0,0,0,0,0,0,0, 0,0,0,0,0,0,0];
+data.forEach(v => {
+  const cell = document.createElement('div');
+  cell.className = `bh-cell bh-${v}`;
+  heatmap.appendChild(cell);
+});
+</script>
+
+</body>
+</html>

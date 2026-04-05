@@ -1,11 +1,13 @@
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
 }
 
 datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  directUrl  = env("DIRECT_URL")
+  extensions = [vector]
 }
 
 // --- Enums --------------------------------------------------------------------
@@ -36,6 +38,30 @@ enum GrowthStage {
   Growth
   Scale
   Mature
+}
+
+enum SubscriptionPlan {
+  free
+  starter
+  growth
+  scale
+  enterprise
+}
+
+enum NotificationType {
+  gri_updated
+  report
+  alert
+  project
+  team
+  system
+}
+
+enum NotificationPriority {
+  urgent
+  high
+  medium
+  low
 }
 
 enum CompanyStatus {
@@ -75,11 +101,30 @@ model Organization {
   slug      String   @unique
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  users           User[]
-  clients         Client[]
-  crmIntegrations CrmIntegration[]
+  users              User[]
+  clients            Client[]
+  crmIntegrations    CrmIntegration[]
+  financialSnapshots FinancialSnapshot[]
 
   @@map("organizations")
+}
+
+model FinancialSnapshot {
+  id             String       @id @default(cuid())
+  orgId          String
+  org            Organization @relation(fields: [orgId], references: [id])
+  period         String       // e.g. "Q1-2026"
+  revenueKzt     Float        // Revenue in KZT millions
+  marginPct      Float        // Net margin %
+  clientsCount   Int
+  expensesKzt    Float        // Expenses in KZT millions
+  revenueChange  Float        // % change vs prior period
+  marginChange   Float        // pp change vs prior period
+  clientsChange  Int          // absolute change vs prior period
+  expensesChange Float        // % change vs prior period
+  recordedAt     DateTime     @default(now())
+
+  @@map("financial_snapshots")
 }
 
 model User {
@@ -95,8 +140,13 @@ model User {
   orgId         String?
   org           Organization?  @relation(fields: [orgId], references: [id])
   managedClients Client[]      @relation("ManagedClients")
-  accounts      Account[]
-  sessions      Session[]
+  accounts       Account[]
+  sessions       Session[]
+
+  // Backend implementation relations
+  uploadedReports Report[]
+  notifications   Notification[]
+  activityLogs    ActivityLog[]
 
   // Admin panel relations
   submittedRequests AdminRequest[] @relation("RequestSubmitter")
@@ -104,8 +154,8 @@ model User {
   comments          Comment[]
   auditLogs         AuditLog[]
 
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
 
   @@map("users")
 }
@@ -169,12 +219,92 @@ model Client {
   sector        String?
   orderCycle    Int          @default(30)
 
-  griReports    GriReport[]
-  pulseMetrics  PulseMetric?
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @updatedAt
+  griReports   GriReport[]
+  reports      Report[]
+  projects     Project[]
+  activityLogs ActivityLog[]
+  pulseMetrics PulseMetric?
+  diagnosticRuns DiagnosticRun[]
+  documentSummaries DocumentSummary[]
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
 
   @@map("clients")
+}
+
+model Report {
+  id         String @id @default(cuid())
+  clientId   String
+  client     Client @relation(fields: [clientId], references: [id])
+  uploadedBy String
+  uploader   User   @relation(fields: [uploadedBy], references: [id])
+
+  name     String
+  category String // GRI, Financial, Growth, Market, Custom
+  type     String // pdf, xlsx, csv, docx
+  fileUrl  String
+  fileSize Int    // bytes
+  filePath String // Supabase Storage path
+
+  uploadedAt DateTime @default(now())
+
+  documentSummaries DocumentSummary[]
+
+  @@map("reports")
+}
+
+model Project {
+  id          String    @id @default(cuid())
+  clientId    String
+  client      Client    @relation(fields: [clientId], references: [id])
+  name        String
+  status      String    @default("active") // active, in_review, completed, paused
+  startDate   DateTime?
+  endDate     DateTime?
+  // Team allocations: [{ userId, allocationPct }]
+  team        Json      @default("[]")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("projects")
+}
+
+model Notification {
+  id       String               @id @default(cuid())
+  userId   String
+  user     User                 @relation(fields: [userId], references: [id])
+  type     NotificationType
+  priority NotificationPriority @default(medium)
+  title    String
+  body     String               @db.Text
+  isRead   Boolean              @default(false)
+
+  entityType String? // 'client', 'report', 'gri', 'project'
+  entityId   String?
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, isRead])
+  @@map("notifications")
+}
+
+model ActivityLog {
+  id         String  @id @default(cuid())
+  userId     String
+  user       User    @relation(fields: [userId], references: [id])
+  clientId   String?
+  client     Client? @relation(fields: [clientId], references: [id])
+  action     String
+  entityType String
+  entityId   String
+  metadata   Json    @default("{}")
+
+  createdAt DateTime @default(now())
+
+  @@index([clientId, createdAt])
+  @@index([userId, createdAt])
+  @@map("activity_logs")
 }
 
 model PulseMetric {
@@ -203,7 +333,10 @@ model GriReport {
   clientId       String
   client         Client   @relation(fields: [clientId], references: [id])
 
-  overallScore   Float
+  // Total GRI Score (can be 0-100 or 0-1000 depending on version)
+  score          Float    @default(0)
+
+  // 7 Blocks Scores (0-100)  used by GRI Pulse
   productScore   Float    @default(0)
   trustScore     Float    @default(0)
   businessModelScore Float @default(0)
@@ -212,10 +345,32 @@ model GriReport {
   teamScore      Float    @default(0)
   founderScore   Float    @default(0)
 
+  // Domain scores stored as JSON (used by legacy/backend implementation)
+  domains        Json?
+
+  // Raw answers and data
   rawData        Json?
+
   calculatedAt   DateTime @default(now())
 
+  diagnosticRun  DiagnosticRun?
+
   @@map("gri_reports")
+}
+
+model ReportDocument {
+  id            String   @id @default(cuid())
+  name          String
+  clientName    String   @map("client_name")
+  category      String
+  type          String
+  fileUrl       String   @map("file_url")
+  fileSizeBytes Int      @map("file_size_bytes")
+  uploadedBy    String   @map("uploaded_by")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@map("report_documents")
 }
 
 // --- Admin Portal Models ------------------------------------------------------
@@ -319,4 +474,75 @@ model AuditLog {
   ipAddress   String?
 
   @@map("audit_logs")
+}
+
+// --- AI Diagnostic Engine Models -----------------------------------------------
+
+enum DiagnosticStatus {
+  pending
+  parsing
+  analyzing
+  hitl_review
+  completed
+  failed
+}
+
+model DiagnosticRun {
+  id          String   @id @default(cuid())
+  clientId    String
+  client      Client   @relation(fields: [clientId], references: [id])
+  
+  status      DiagnosticStatus @default(pending)
+  
+  // URLs or references to the uploaded source documents for this run
+  sourceFiles Json?      @default("[]")
+  
+  // n8n Webhook ID or Run ID for tracing and async resuming
+  n8nRunId    String?
+  
+  // If the run resulted in a generated GRI report, link it here
+  griReportId String?    @unique
+  griReport   GriReport? @relation(fields: [griReportId], references: [id])
+
+  // Any errors or metadata
+  metadata    Json?      @default("{}")
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("diagnostic_runs")
+}
+
+model DocumentSummary {
+  id          String   @id @default(cuid())
+  clientId    String
+  client      Client   @relation(fields: [clientId], references: [id])
+  reportId    String?
+  report      Report?  @relation(fields: [reportId], references: [id])
+  
+  // High-level parsed data from the document (e.g. key financial metrics, full text parsed)
+  content     String   @db.Text
+  metadata    Json?    @default("{}")
+
+  createdAt   DateTime @default(now())
+
+  chunks      DocumentChunk[]
+
+  @@map("document_summaries")
+}
+
+model DocumentChunk {
+  id                String   @id @default(cuid())
+  documentSummaryId String
+  documentSummary   DocumentSummary @relation(fields: [documentSummaryId], references: [id], onDelete: Cascade)
+  
+  content           String   @db.Text
+  
+  // Use Unsupported for pgvector's vector type
+  embedding         Unsupported("vector(1536)")?
+  
+  metadata          Json?    @default("{}")
+  createdAt         DateTime @default(now())
+
+  @@map("document_chunks")
 }

@@ -3,6 +3,23 @@ import { createClient } from '@/lib/supabase/server'
 
 export const metadata: Metadata = { title: 'Settings' }
 
+function mapRoleToPosition(role: string): string {
+  switch (role) {
+    case 'super_admin':
+      return 'Владелец системы'
+    case 'admin':
+      return 'Администратор'
+    case 'expert':
+      return 'Эксперт роста'
+    case 'owner':
+      return 'Владелец бизнеса'
+    case 'client':
+      return 'Клиент'
+    default:
+      return 'Пользователь'
+  }
+}
+
 const SECTIONS = [
   { id: 'profile',       label: 'Профиль',       icon: 'person'        },
   { id: 'security',      label: 'Безопасность',  icon: 'lock'          },
@@ -14,41 +31,57 @@ const SECTIONS = [
 ]
 
 export default async function SettingsPage() {
-  // ── Fetch real user from Supabase session ──────────────────────────────────
-  const supabase   = await createClient()
+  const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
-  const meta       = user?.user_metadata ?? {}
-  const fullName   = ((meta.full_name ?? meta.name ?? '') as string).trim()
-  const nameParts  = fullName.split(' ')
-  const firstName  = nameParts[0] ?? ''
-  const lastName   = nameParts.slice(1).join(' ')
-  const email      = user?.email ?? ''
-  const position   = ((meta.position ?? '') as string).trim()
-  const initials   = [firstName[0], lastName[0]]
-    .filter(Boolean)
-    .join('')
-    .toUpperCase() || (email[0] ?? 'U').toUpperCase()
-
-  // Also try to get extra profile fields from profiles table
-  let profileExtra: { full_name?: string; status?: string } | null = null
-  if (user?.id) {
-    const { data } = await supabase
-      .from('profiles')
-      .select('full_name, status')
-      .eq('id', user.id)
-      .single()
-    profileExtra = data
+  if (!user) {
+    return (
+      <div className="space-y-4">
+        <h1 className="font-headline text-3xl font-bold text-on-surface">Настройки</h1>
+        <div className="bg-surface-container rounded-xl p-6 border border-outline-variant/30">
+          <p className="text-on-surface">Не удалось загрузить профиль пользователя.</p>
+          <p className="text-sm text-on-surface-variant mt-2">Войдите снова и попробуйте открыть страницу повторно.</p>
+        </div>
+      </div>
+    )
   }
 
-  const displayName = fullName || profileExtra?.full_name || email.split('@')[0] || '—'
-  const displayFirst = firstName || displayName.split(' ')[0] || '—'
-  const displayLast  = lastName  || displayName.split(' ').slice(1).join(' ') || '—'
+  // Fetch from profiles table for more data
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('id', user.id)
+    .maybeSingle()
+
+  const meta = user.user_metadata ?? {}
+  const fullName = (profile?.full_name ?? meta.full_name ?? meta.name ?? user.email ?? 'Пользователь') as string
+  const email = user.email ?? ''
+  
+  const role = (profile?.role ?? meta.role ?? 'client') as string
+  const position = (profile?.position ?? meta.position ?? mapRoleToPosition(role)) as string
+  const organization = (profile?.organization ?? meta.organization ?? '—') as string
+
+  const [firstName = fullName.split(' ')[0], lastName = fullName.split(' ').slice(1).join(' ')] = fullName.split(' ')
+  
+  const initials = fullName
+    .split(' ')
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? '')
+    .join('') || (email[0] ?? 'U').toUpperCase()
+
+  const fields = [
+    { label: 'Имя', placeholder: 'Иван', value: firstName, type: 'text' },
+    { label: 'Фамилия', placeholder: 'Иванов', value: lastName, type: 'text' },
+    { label: 'Email', placeholder: 'you@company.com', value: email, type: 'email' },
+    { label: 'Должность', placeholder: 'Manager', value: position, type: 'text' },
+    { label: 'Организация', placeholder: 'Компания', value: organization, type: 'text' },
+  ]
 
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="font-headline text-3xl font-bold text-on-surface">Settings</h1>
+        <h1 className="font-headline text-3xl font-bold text-on-surface">Настройки</h1>
         <p className="text-on-surface-variant text-sm mt-1">Управление аккаунтом и системой</p>
       </div>
 
@@ -94,12 +127,7 @@ export default async function SettingsPage() {
           <div className="bg-surface-container rounded-xl p-6">
             <h3 className="font-headline text-lg font-bold text-on-surface mb-5">Личная информация</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {[
-                { label: 'Имя',       placeholder: 'Имя',           value: displayFirst,  type: 'text'  },
-                { label: 'Фамилия',   placeholder: 'Фамилия',       value: displayLast,   type: 'text'  },
-                { label: 'Email',     placeholder: 'you@company.com', value: email,        type: 'email' },
-                { label: 'Должность', placeholder: 'Manager',       value: position,      type: 'text'  },
-              ].map((field) => (
+              {fields.map((field) => (
                 <div key={field.label}>
                   <label className="block text-xs font-label text-on-surface-variant uppercase tracking-wider mb-2">
                     {field.label}
@@ -120,10 +148,10 @@ export default async function SettingsPage() {
             <h3 className="font-headline text-lg font-bold text-on-surface mb-5">Уведомления</h3>
             <div className="space-y-4">
               {[
-                { label: 'Critical Alerts',  desc: 'Немедленные уведомления о критических событиях', enabled: true  },
-                { label: 'GRI Updates',      desc: 'При пересчёте GRI для клиентов',                 enabled: true  },
-                { label: 'Report Uploads',   desc: 'При загрузке новых отчётов',                     enabled: false },
-                { label: 'Weekly Digest',    desc: 'Еженедельная сводка по портфелю',                enabled: true  },
+                { label: 'Критические алерты', desc: 'Немедленные уведомления о критических событиях', enabled: true  },
+                { label: 'Обновления GRI',    desc: 'При пересчёте GRI для клиентов',                 enabled: true  },
+                { label: 'Загрузка отчётов',   desc: 'При загрузке новых отчётов',                     enabled: false },
+                { label: 'Еженедельный дайджест', desc: 'Еженедельная сводка по портфелю',                enabled: true  },
               ].map((item) => (
                 <div key={item.label} className="flex items-center justify-between py-2 border-b border-outline-variant/10 last:border-0">
                   <div>

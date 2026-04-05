@@ -6,7 +6,6 @@ import { Avatar } from '@/components/ui/Avatar'
 import { StatusBadge } from '@/components/common/StatusBadge'
 import { TableSkeleton } from '@/components/ui/Skeleton'
 import { EmptyState } from '@/components/common/EmptyState'
-import { MOCK_CLIENTS } from '@/lib/mock-data'
 import type { AdminClientRow } from '@/app/api/v1/admin/clients/route'
 
 // Unified shape used for rendering — maps both mock and real data
@@ -25,8 +24,8 @@ interface ClientRow {
 
 function toGriScore(score: number | null): number {
   if (score === null) return 0
-  // Point A engine returns 0–100; multiply by 10 for 0–1000 display
-  return Math.round(score * 10)
+  // Point A engine returns 0–100; divide by 10 for 0–10 display
+  return Math.round(score) / 10
 }
 
 function statusLabel(status: string): string {
@@ -41,14 +40,14 @@ function statusLabel(status: string): string {
 
 function ScoreBar({ score }: { score: number }) {
   const color =
-    score >= 800 ? 'bg-primary' :
-    score >= 700 ? 'bg-primary-fixed-dim' :
-    score >= 500 ? 'bg-tertiary-container' :
+    score >= 8 ? 'bg-primary' :
+    score >= 7 ? 'bg-primary-fixed-dim' :
+    score >= 5 ? 'bg-tertiary-container' :
     'bg-error'
   const textColor =
-    score >= 800 ? 'text-primary' :
-    score >= 700 ? 'text-primary-fixed-dim' :
-    score >= 500 ? 'text-tertiary-container' :
+    score >= 8 ? 'text-primary' :
+    score >= 7 ? 'text-primary-fixed-dim' :
+    score >= 5 ? 'text-tertiary-container' :
     'text-error'
   return (
     <div className="flex items-center gap-2">
@@ -57,7 +56,7 @@ function ScoreBar({ score }: { score: number }) {
       </span>
       {score > 0 && (
         <div className="w-16 h-1 bg-surface-container-high rounded-full overflow-hidden">
-          <div className={`h-full rounded-full ${color}`} style={{ width: `${score / 10}%` }} />
+          <div className={`h-full rounded-full ${color}`} style={{ width: `${score * 10}%` }} />
         </div>
       )}
     </div>
@@ -67,7 +66,6 @@ function ScoreBar({ score }: { score: number }) {
 export function ClientsTable() {
   const [clients, setClients] = useState<ClientRow[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const [usingMock, setUsingMock] = useState(false)
 
   useEffect(() => {
     fetch('/api/v1/admin/clients')
@@ -86,36 +84,11 @@ export function ClientsTable() {
           }))
           setClients(rows)
         } else {
-          // No Supabase data yet — show mock
-          const mockRows: ClientRow[] = MOCK_CLIENTS.map((c) => ({
-            id: c.id,
-            name: c.name,
-            industry: c.industry,
-            stage: c.stage,
-            griScore: c.griScore,
-            previousGriScore: c.previousGriScore,
-            status: c.status,
-            website: c.website,
-            hasRealData: false,
-          }))
-          setClients(mockRows)
-          setUsingMock(true)
+          setClients([])
         }
       })
       .catch(() => {
-        const mockRows: ClientRow[] = MOCK_CLIENTS.map((c) => ({
-          id: c.id,
-          name: c.name,
-          industry: c.industry,
-          stage: c.stage,
-          griScore: c.griScore,
-          previousGriScore: c.previousGriScore,
-          status: c.status,
-          website: c.website,
-          hasRealData: false,
-        }))
-        setClients(mockRows)
-        setUsingMock(true)
+        setClients([])
       })
       .finally(() => setIsLoading(false))
   }, [])
@@ -135,14 +108,6 @@ export function ClientsTable() {
 
   return (
     <div className="overflow-x-auto">
-      {usingMock && (
-        <div className="px-5 py-2 bg-surface-container-high border-b border-outline-variant/10 flex items-center gap-2">
-          <span className="material-symbols-outlined text-sm text-on-surface-variant">info</span>
-          <span className="text-[10px] font-mono text-on-surface-variant">
-            Demo-данные — реальные клиенты появятся после подключения Supabase
-          </span>
-        </div>
-      )}
       <table className="w-full">
         <thead>
           <tr className="border-b border-outline-variant/20">

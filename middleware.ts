@@ -2,9 +2,10 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { updateSession } from '@/lib/supabase/middleware'
 
-type UserRole = 'admin' | 'expert' | 'owner' | 'client' | 'super_admin'
+const PUBLIC_PATHS = ['/login', '/register', '/forgot-password', '/auth/callback', '/auth/reset-password']
 
-const PUBLIC_PATHS = ['/login', '/register', '/forgot-password', '/auth/callback']
+const VALID_ROLES = ['admin', 'expert', 'owner', 'client', 'super_admin'] as const
+type ValidRole = typeof VALID_ROLES[number]
 
 const GIGA_PANEL_PATH = '/admin-giga-panel'
 const GIGA_LOGIN_PATH = '/giga-login'
@@ -16,9 +17,33 @@ const ADMIN_PATHS = [
   '/team', '/notifications', '/profile', '/users', '/admin',
 ]
 const EXPERT_PATHS = ['/expert']
-const OWNER_PATHS  = ['/owner']
-// Client portal — auth handled by Supabase session check on each page
+const OWNER_PATHS = ['/owner']
 const CLIENT_PATHS = ['/client']
+const PORTAL_PATHS = ['/portal']
+
+function normalizeRole(rawRole: string | null | undefined): ValidRole {
+  if (rawRole === 'admin' || rawRole === 'expert' || rawRole === 'owner' || rawRole === 'client' || rawRole === 'super_admin') {
+    return rawRole
+  }
+  if (rawRole === 'manager' || rawRole === 'analyst') {
+    return 'expert'
+  }
+  return 'client'
+}
+
+async function resolveRole(
+  supabase: Awaited<ReturnType<typeof updateSession>>['supabase'],
+  userId: string,
+  fallbackRole: string | null,
+) {
+  const { data } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', userId)
+    .maybeSingle()
+
+  return normalizeRole(typeof data?.role === 'string' ? data.role : fallbackRole)
+}
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
@@ -36,86 +61,91 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next()
   }
 
-  // ГИГА-Панель login page — always allow
-  if (pathname === GIGA_LOGIN_PATH) {
-    return NextResponse.next()
+  // Refresh Supabase session cookies and get current user
+  const { supabase, response, user } = await updateSession(request)
+
+  const metadataRole = user && typeof user.user_metadata?.role === 'string' ? user.user_metadata.role : null
+  const role = user ? await resolveRole(supabase, user.id, metadataRole) : null
+  
+  if (role) {
+    response.headers.set('x-user-role', role)
   }
 
-  // Refresh Supabase session cookies and get current user
-  const { supabaseResponse, user } = await updateSession(request)
+  // Public auth pages (login, register, etc.)
+  const isPublic = PUBLIC_PATHS.some((p) => pathname.startsWith(p))
+  const isGigaLogin = pathname === GIGA_LOGIN_PATH
 
-  // Derive role from Supabase user metadata
-  const role = (user?.user_metadata?.role ?? null) as UserRole | null
+  if (isGigaLogin) {
+    if (user && role === 'super_admin') {
+      return NextResponse.redirect(new URL(GIGA_PANEL_PATH, request.url))
+    }
+    return response // allow access to login page
+  }
 
-  // ГИГА-Панель: строгая изоляция — только super_admin
-  // Fall back to legacy cookie for super_admin during migration period
+  // ГИГА-Панель: строгая изоляция — только SUPER_ADMIN
   if (pathname.startsWith(GIGA_PANEL_PATH)) {
+    // Also check legacy cookie during migration
     const legacyRole = request.cookies.get('aistart360_role')?.value
     if (role !== 'super_admin' && legacyRole !== 'super_admin') {
       return NextResponse.redirect(new URL(GIGA_LOGIN_PATH, request.url))
     }
-    return supabaseResponse
+    return response
   }
 
-  // Client portal — allow through (page-level auth check via Supabase)
-  if (CLIENT_PATHS.some((p) => pathname.startsWith(p))) {
-    return supabaseResponse
-  }
-
-  // Public auth pages
-  const isPublic = PUBLIC_PATHS.some((p) => pathname.startsWith(p))
-
-  // Authenticated user visiting auth page → redirect to their panel
-  if (isPublic && user) {
+  // Authenticated user visiting auth page → redirect to correct panel
+  if (isPublic && role) {
     const dest =
-      role === 'admin'       ? '/dashboard' :
-      role === 'owner'       ? '/owner/dashboard' :
-      role === 'expert'      ? '/expert/dashboard' :
-      role === 'client'      ? '/client/waiting-room' :
       role === 'super_admin' ? '/admin-giga-panel' :
-                               '/dashboard'
+      role === 'admin' ? '/dashboard' :
+      role === 'owner' ? '/owner/dashboard' :
+      role === 'client' ? '/client/waiting-room' :
+      '/expert/dashboard'
     return NextResponse.redirect(new URL(dest, request.url))
   }
 
   // Not authenticated, accessing protected page → redirect to login
   if (!isPublic && !user) {
-    // Also check legacy cookie during migration period
+    // Check legacy cookie fallback
     const legacyRole = request.cookies.get('aistart360_role')?.value
     if (!legacyRole) {
       const url = new URL('/login', request.url)
       url.searchParams.set('from', pathname)
       return NextResponse.redirect(url)
     }
-    // Legacy session present — allow through
-    return supabaseResponse
+    // Legacy session present — allow through for now
+    return response
   }
 
-  // Role-based access control
+  // ── Role-based route protection ──
   if (user) {
-    // Expert → only expert paths
+    // Expert trying to access admin-only pages
     if (role === 'expert' && ADMIN_PATHS.some((p) => pathname.startsWith(p))) {
       return NextResponse.redirect(new URL('/expert/dashboard', request.url))
     }
-    // Owner → only owner paths
+
+    // Client trying to access admin/expert/owner pages
     if (
-      role === 'owner' &&
-      (ADMIN_PATHS.some((p) => pathname.startsWith(p)) ||
-       EXPERT_PATHS.some((p) => pathname.startsWith(p)))
-    ) {
-      return NextResponse.redirect(new URL('/owner/dashboard', request.url))
-    }
-    // Client → only client paths
-    if (
-      role === 'client' &&
-      (ADMIN_PATHS.some((p) => pathname.startsWith(p)) ||
+      role === 'client' && 
+      (ADMIN_PATHS.some((p) => pathname.startsWith(p)) || 
        EXPERT_PATHS.some((p) => pathname.startsWith(p)) ||
        OWNER_PATHS.some((p) => pathname.startsWith(p)))
     ) {
-      return NextResponse.redirect(new URL('/client/waiting-room', request.url))
+      // If it's not a client portal path, redirect to waiting-room
+      if (!pathname.startsWith('/client')) {
+        return NextResponse.redirect(new URL('/client/waiting-room', request.url))
+      }
+    }
+
+    // Owner trying to access admin or expert pages
+    if (
+      role === 'owner' &&
+      (ADMIN_PATHS.some((p) => pathname.startsWith(p)) || EXPERT_PATHS.some((p) => pathname.startsWith(p)))
+    ) {
+      return NextResponse.redirect(new URL('/owner/dashboard', request.url))
     }
   }
 
-  return supabaseResponse
+  return response
 }
 
 export const config = {

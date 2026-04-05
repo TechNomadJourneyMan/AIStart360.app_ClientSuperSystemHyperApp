@@ -1,39 +1,21 @@
 'use client'
 
-// Placeholder auth hook — заменить на реальный NextAuth useSession()
-// import { useSession } from 'next-auth/react'
-
-import type { User, UserRole } from '@/types'
-
-// Mock current user
-const MOCK_USER: User = {
-  id: 'u1',
-  email: 'adil@aistart360.com',
-  name: 'Adil Ansari',
-  role: 'MANAGER',
-  orgId: 'org1',
-  createdAt: '2024-01-01',
-}
+import { useAuthStore } from '@/stores/auth.store'
+import type { UserRole } from '@/types'
 
 export function useAuth() {
-  // TODO: replace with:
-  // const { data: session, status } = useSession()
-  // return {
-  //   user: session?.user as User | null,
-  //   role: session?.user?.role as UserRole,
-  //   isLoading: status === 'loading',
-  //   isAuthenticated: status === 'authenticated',
-  // }
+  const { user, role, isLoading, isInitialized } = useAuthStore()
 
   return {
-    user: MOCK_USER,
-    role: MOCK_USER.role as UserRole,
-    isLoading: false,
-    isAuthenticated: true,
+    user,
+    role: (role?.toUpperCase() ?? null) as UserRole | null,
+    isLoading,
+    isAuthenticated: Boolean(user),
+    isInitialized,
   }
 }
 
 export function useIsRole(...roles: UserRole[]): boolean {
   const { role } = useAuth()
-  return roles.includes(role)
+  return role ? roles.includes(role) : false
 }

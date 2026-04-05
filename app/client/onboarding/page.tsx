@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
+import { createClient } from '@/lib/supabase/client'
 import Image from 'next/image'
 import Link from 'next/link'
 
@@ -269,20 +270,27 @@ export default function OnboardingPage() {
 
   // Load persisted state from localStorage
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY)
-      if (raw) {
-        const data = JSON.parse(raw)
-        setSavedAnswers(data.answers ?? {})
-        setCurrentStep(data.current_step ?? 1)
-        setCompanyId(data.company_id ?? null)
+    const bootstrap = async () => {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY)
+        if (raw) {
+          const data = JSON.parse(raw)
+          setSavedAnswers(data.answers ?? {})
+          setCurrentStep(data.current_step ?? 1)
+          setCompanyId(data.company_id ?? null)
+        }
+
+        const supabase = createClient()
+        const {
+          data: { user },
+        } = await supabase.auth.getUser()
+        setUserId(user?.id ?? null)
+      } catch {
+        setUserId(null)
       }
-      const authRaw = localStorage.getItem('aistart360_auth')
-      if (authRaw) {
-        const parsed = JSON.parse(authRaw)
-        setUserId(parsed?.state?.user?.id ?? null)
-      }
-    } catch {}
+    }
+
+    bootstrap()
   }, [])
 
   const persistLocal = useCallback((step: number, answers: Record<string, unknown>) => {
@@ -302,7 +310,7 @@ export default function OnboardingPage() {
     try {
       // If step 1, also create/update company record
       if (step === 1) {
-        const compRes = await fetch('/api/v1/client/onboarding/company', {
+        const compRes = await fetch('/api/v1/onboarding/company', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -335,7 +343,7 @@ export default function OnboardingPage() {
       for (const [k, v] of Object.entries(answers)) {
         formatted[k] = { value: v }
       }
-      await fetch('/api/v1/client/onboarding/survey', {
+      await fetch('/api/v1/onboarding/survey', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user_id: userId, company_id: companyId, step, answers: formatted }),

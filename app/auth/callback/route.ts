@@ -1,51 +1,34 @@
+import { NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
-import { cookies } from 'next/headers'
-import { NextRequest, NextResponse } from 'next/server'
+import type { NextRequest } from 'next/server'
 
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url)
-  const code  = searchParams.get('code')
-  const next  = searchParams.get('next') ?? '/'
+  const code = searchParams.get('code')
+  const next = searchParams.get('next') ?? '/dashboard'
 
   if (code) {
-    const cookieStore = await cookies()
-
+    const response = NextResponse.redirect(new URL(next, origin))
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
       {
         cookies: {
           getAll() {
-            return cookieStore.getAll()
+            return request.cookies.getAll()
           },
           setAll(cookiesToSet) {
-            cookiesToSet.forEach(({ name, value, options }) =>
-              cookieStore.set(name, value, options)
-            )
+            cookiesToSet.forEach(({ name, value, options }) => {
+              response.cookies.set(name, value, options)
+            })
           },
         },
-      }
+      },
     )
 
-    const { data, error } = await supabase.auth.exchangeCodeForSession(code)
-
-    if (!error && data.user) {
-      const role = data.user.user_metadata?.role as string | undefined
-
-      // Redirect based on role after email verification
-      const dest =
-        role === 'client'      ? '/client/waiting-room' :
-        role === 'admin'       ? '/dashboard' :
-        role === 'expert'      ? '/expert/dashboard' :
-        role === 'owner'       ? '/owner/dashboard' :
-        role === 'super_admin' ? '/admin-giga-panel' :
-        next !== '/'           ? next :
-                                 '/dashboard'
-
-      return NextResponse.redirect(`${origin}${dest}`)
-    }
+    await supabase.auth.exchangeCodeForSession(code)
+    return response
   }
 
-  // Exchange failed — redirect to login with error
-  return NextResponse.redirect(`${origin}/login?error=auth_callback_error`)
+  return NextResponse.redirect(new URL('/login', origin))
 }

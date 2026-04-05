@@ -1,0 +1,83 @@
+# AIStart360 Portal — Development Rules for Claude / Cursor
+
+## Project Context
+AIStart360.app — B2B SaaS Client Portal for AI-powered Business Diagnostics
+Market: Kazakhstan/CIS, SME clients
+Architecture: Multi-agent AI (HITL), RAG pipelines, Expert Review workflow
+
+## Tech Stack
+- **Framework**: Next.js 14 (App Router), TypeScript, React 18
+- **Styling**: Tailwind CSS v3, shadcn/ui, Radix UI primitives
+- **Database**: Supabase (PostgreSQL + pgvector), Prisma ORM
+- **Auth**: NextAuth.js v5 beta + Supabase Auth
+- **AI**: Vercel AI SDK (ai package) + @ai-sdk/anthropic + Claude API
+- **State**: Zustand (client), TanStack Query (server state)
+- **Forms**: react-hook-form + @hookform/resolvers + Zod
+- **Deployment**: Vercel (stateless functions)
+- **Orchestration**: n8n (external, port 5678)
+
+## Architecture Rules
+- **Multi-tenant by client_id** — all DB queries MUST include client isolation
+- **Row Level Security** — always design with Supabase RLS in mind
+- **Server Components by default** — use `'use client'` only when necessary
+- **Never expose SERVICE_ROLE_KEY** to client-side code
+- **Vercel functions are stateless** — no daemons, no persistent RAM/FS
+- **Use `waitUntil`** for post-response work (logging, analytics)
+- **AI calls via Vercel AI SDK** for streaming; direct @anthropic-ai/sdk for complex tool use
+
+## File Structure
+```
+/app/(dashboard)/          — authenticated dashboard routes
+/app/api/                  — API route handlers
+/components/dashboard/     — feature-specific components
+/components/ui/            — shared shadcn/ui components
+/lib/                      — utilities, mock-data, navigation
+/shared/api/               — client-side API service layer
+/prisma/                   — schema, migrations, seed
+```
+
+## Naming Conventions
+- Components: `PascalCase.tsx`
+- Utilities: `camelCase.ts`
+- API routes: `/app/api/[resource]/route.ts`
+- DB queries: Server-only, via Supabase server client (`createServerClient`)
+- Types: Suffix with `Type` or use Prisma generated types
+
+## Code Quality Rules
+- Always use **TypeScript types**, never `any`
+- **Zod schema** for all form inputs and API request validation
+- Prefer **server actions** over API routes for form mutations
+- Use `cn()` helper for conditional Tailwind classes
+- Always handle loading and error states in UI
+
+## Document Processing Modules (installed)
+- `pdf-parse` — parse client PDF uploads
+- `mammoth` — extract text from .docx files  
+- `xlsx` — parse Excel/financial statements
+- `tesseract.js` — OCR for scanned documents
+- `sharp` — image processing for thumbnails
+
+## AI / Agent Modules (installed)
+- `ai` + `@ai-sdk/anthropic` — main AI interface
+- `@anthropic-ai/sdk` — direct Claude API for complex use
+- `langfuse` — observability, trace every diagnostic run
+- `@langchain/core` + `@langchain/textsplitters` — RAG text chunking
+
+## Agentic Infrastructure
+- **Skills Directory**: Located in `.agents/skills/`. Contains 1,300+ operational playbooks.
+- **Research Reference**: `.agents/research/awesome-agents.md` summarizes leading agent frameworks.
+- **Workflow Strategy**: Use the `@skill-name` notation or reference the `SKILL.md` files for complex operations like TDD, security audits, or architectural refactors.
+- **Continuous Learning**: Before starting any new feature (e.g., GRI Diagnostic update), check for a relevant playbook in `.agents/skills`.
+
+## Observability
+- **Langfuse**: wrap every AI call with trace. Use client from `lib/langfuse.ts`
+- Track: client_id, diagnostic_type, tokens_used, latency
+- Self-hosted Langfuse runs at http://localhost:3002
+
+## When generating code
+1. Always check if a shadcn/ui component exists before creating custom UI
+2. Use `react-hook-form` + `zod` for ALL forms — no uncontrolled inputs
+3. For multi-step flows: use `@stepperize/react` or manual `useState`
+4. File uploads: use `react-dropzone` with Supabase Storage
+5. API errors: always return typed error responses with HTTP status codes
+6. Never hardcode client data — use mock-data.ts patterns for dev, real DB for prod

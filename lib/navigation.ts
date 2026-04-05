@@ -1,28 +1,38 @@
 import type { NavItem, UserRole } from '@/types'
 
+const ALL_ROLES: UserRole[] = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ANALYST', 'CLIENT']
+
 // PRIMARY navigation — shown directly in the sidebar
 export const PRIMARY_NAV: NavItem[] = [
-  { label: 'Дэшборд',    href: '/dashboard',  icon: 'dashboard',     roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ANALYST'] },
-  { label: 'GRI',        href: '/gri',         icon: 'radar',         roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ANALYST'] },
-  { label: 'Рынок',      href: '/market',      icon: 'public',        roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ANALYST'] },
-  { label: 'Точка А',    href: '/point-a',     icon: 'my_location',   roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ANALYST'] },
-  { label: 'Точка Б',    href: '/point-b',     icon: 'flag',          roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ANALYST'] },
-  { label: 'Инсайты',    href: '/insights',    icon: 'lightbulb',     roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ANALYST'] },
-  { label: 'Конкуренты', href: '/competitors', icon: 'compare_arrows',roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER'] },
-  { label: 'Метрики',    href: '/metrics',     icon: 'monitoring',    roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ANALYST'] },
-  { label: 'AI Scanner', href: '/ai-scanner', icon: 'biotech',       roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER'] },
-  { label: 'GRI Pulse',  href: '/pulse',       icon: 'cell_tower',    roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER'] },
+  { label: 'Дэшборд',   href: '/dashboard', icon: 'dashboard',   roles: ALL_ROLES },
+  { label: 'GRI',       href: '/gri',        icon: 'radar',       roles: ALL_ROLES },
+  { label: 'GRI Pulse', href: '/pulse',      icon: 'cell_tower',  roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'CLIENT'] },
+  { label: 'Точка А',   href: '/point-a',    icon: 'my_location', roles: ALL_ROLES },
+  { label: 'Точка Б',   href: '/point-b',    icon: 'flag',        roles: ALL_ROLES },
+  { label: 'Метрики',   href: '/metrics',    icon: 'monitoring',  roles: ALL_ROLES },
+  {
+    label: 'Рынок',
+    href: '/market',
+    icon: 'public',
+    roles: ALL_ROLES,
+    subItems: [
+      { label: 'Рынок',            href: '/market',             icon: 'public',         roles: ALL_ROLES },
+      { label: 'Конкуренты',       href: '/competitors',        icon: 'compare_arrows', roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'CLIENT'] },
+      { label: 'Инсайты',          href: '/insights',           icon: 'lightbulb',      roles: ALL_ROLES },
+      { label: 'Разведка',         href: '/intelligence',       icon: 'hub',            roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'CLIENT'] },
+      { label: 'Мониторинг рынка', href: '/market/monitoring',  icon: 'monitoring',     roles: ALL_ROLES },
+    ],
+  },
 ]
 
 // SECONDARY navigation — hidden behind "Ещё"
 export const SECONDARY_NAV: NavItem[] = [
-  { label: 'Клиенты',      href: '/clients',      icon: 'business_center', roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER'] },
-  { label: 'Отчёты',       href: '/reports',      icon: 'description',     roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ANALYST'] },
-  { label: 'Аналитика',    href: '/analytics',    icon: 'bar_chart',       roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ANALYST'] },
-  { label: 'Разведка',     href: '/intelligence', icon: 'hub',             roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER'] },
-  { label: 'Команда',      href: '/team',         icon: 'group',           roles: ['SUPER_ADMIN', 'ADMIN'] },
-  { label: 'Уведомления',  href: '/notifications',icon: 'notifications',   roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ANALYST', 'CLIENT'] },
-  { label: 'Пользователи', href: '/users',        icon: 'manage_accounts', roles: ['SUPER_ADMIN', 'ADMIN'] },
+  { label: 'Клиенты',      href: '/clients',      icon: 'business_center',   roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER'] },
+  { label: 'Отчёты',       href: '/reports',      icon: 'description',       roles: ALL_ROLES },
+  { label: 'Аналитика',    href: '/analytics',    icon: 'bar_chart',         roles: ALL_ROLES },
+  { label: 'Команда',      href: '/team',         icon: 'group',             roles: ['SUPER_ADMIN', 'ADMIN'] },
+  { label: 'Уведомления',  href: '/notifications',icon: 'notifications',     roles: ALL_ROLES },
+  { label: 'Пользователи', href: '/users',        icon: 'manage_accounts',   roles: ['SUPER_ADMIN', 'ADMIN'] },
   { label: 'Админ',        href: '/admin',        icon: 'admin_panel_settings', roles: ['SUPER_ADMIN', 'ADMIN'] },
 ]
 

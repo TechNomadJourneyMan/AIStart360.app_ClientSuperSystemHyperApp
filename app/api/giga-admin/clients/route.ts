@@ -42,7 +42,7 @@ export async function GET(req: NextRequest) {
         : null,
       latestGri: c.griReports[0]
         ? {
-            overallScore: c.griReports[0].overallScore,
+            score: c.griReports[0].score,
             productScore: c.griReports[0].productScore,
             trustScore: c.griReports[0].trustScore,
             businessModelScore: c.griReports[0].businessModelScore,

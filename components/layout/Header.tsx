@@ -6,6 +6,8 @@ import { useRouter } from 'next/navigation'
 import { useUIStore } from '@/stores/ui.store'
 import { useNotificationsStore } from '@/stores/notifications.store'
 import { useAuthStore } from '@/stores/auth.store'
+import { hasPermission } from '@/lib/navigation'
+import type { UserRole } from '@/types'
 
 type Lang = 'RU' | 'EN' | 'KZ'
 const LANGS: Lang[] = ['RU', 'EN', 'KZ']
@@ -34,12 +36,12 @@ export function Header() {
   const cycleLang = () => setLang((l) => LANGS[(LANGS.indexOf(l) + 1) % LANGS.length])
 
   const QUICK_ACTIONS = [
-    { label: 'Новый клиент',      icon: 'person_add',    href: '/clients'     },
-    { label: 'GRI-диагностика',   icon: 'radar',         href: '/gri'         },
-    { label: 'Создать отчёт',     icon: 'description',   href: '/reports'     },
-    { label: 'Аналитика',         icon: 'monitoring',    href: '/analytics'   },
-    { label: 'Инсайты',           icon: 'lightbulb',     href: '/insights'    },
-    { label: 'Управление командой',icon: 'groups',       href: '/team'        },
+    { label: 'Новый клиент',      icon: 'person_add',    href: '/clients',    reqPermission: 'clients.write' },
+    { label: 'GRI-диагностика',   icon: 'radar',         href: '/gri',        reqPermission: 'reports.read'  },
+    { label: 'Создать отчёт',     icon: 'description',   href: '/reports',    reqPermission: 'reports.write' },
+    { label: 'Аналитика',         icon: 'monitoring',    href: '/analytics',  reqPermission: 'analytics.read'},
+    { label: 'Инсайты',           icon: 'lightbulb',     href: '/insights',   reqPermission: 'own.reports'   },
+    { label: 'Управление командой',icon: 'groups',       href: '/team',       reqPermission: 'team.write'    },
   ]
 
   const handleLogout = () => {
@@ -106,7 +108,7 @@ export function Header() {
             <>
               <div className="fixed inset-0 z-40" onClick={() => setShowQuickAction(false)} />
               <div className="absolute left-0 top-full mt-2 w-52 bg-surface-container-low border border-white/[0.06] rounded-xl shadow-xl z-50 overflow-hidden py-1">
-                {QUICK_ACTIONS.map((action) => (
+                {QUICK_ACTIONS.filter(action => hasPermission(((user?.role || 'client').toUpperCase()) as UserRole, action.reqPermission)).map((action) => (
                   <Link key={action.href} href={action.href}
                     onClick={() => setShowQuickAction(false)}
                     className="flex items-center gap-3 px-4 py-2.5 text-sm text-on-surface-variant hover:text-on-surface hover:bg-white/[0.04] transition-colors">

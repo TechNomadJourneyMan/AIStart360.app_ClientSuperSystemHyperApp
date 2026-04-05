@@ -34,7 +34,7 @@ export interface GriAnswers {
 }
 
 export interface GriResult {
-  overallScore: number;
+  score: number;
   productScore: number;
   trustScore: number;
   businessModelScore: number;
@@ -100,7 +100,7 @@ export function calculateGri(a: GriAnswers): GriResult {
   // 7. Trust & Positioning (Placeholder for qualitative analysis)
   const trustScore = 50;
 
-  const overallScore = (
+  const score = (
     businessModelScore +
     cashScore +
     productScore +
@@ -111,7 +111,7 @@ export function calculateGri(a: GriAnswers): GriResult {
   ) / 7;
 
   return {
-    overallScore: Math.round(overallScore),
+    score: Math.round(score),
     businessModelScore: Math.round(businessModelScore),
     cashScore: Math.round(cashScore),
     productScore: Math.round(productScore),
