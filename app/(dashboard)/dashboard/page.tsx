@@ -112,7 +112,7 @@ export default async function DashboardPage() {
         <div className="grid grid-cols-1 xl:grid-cols-5 gap-4">
           {/* KPI 2×2 — click opens chart modal */}
           <div className="xl:col-span-2">
-            <KpiCardsGrid kpiData={kpiData} />
+            <KpiCardsGrid />
           </div>
 
           {/* GRI Diagram Widget */}

@@ -7,10 +7,6 @@ interface UIState {
   sidebarCollapsed: boolean
   toasts: Toast[]
 
-  // Chart modal
-  activeChartMetric: string | null
-  setActiveChartMetric: (metric: string | null) => void
-
   // Pinned growth goals
   pinnedGoals: Goal[]
   addGoal: (goal: Goal) => void
@@ -29,13 +25,10 @@ export const useUIStore = create<UIState>()(
     (set) => ({
       sidebarCollapsed: false,
       toasts: [],
-      activeChartMetric: null,
       pinnedGoals: [],
 
       toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
       setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
-
-      setActiveChartMetric: (metric) => set({ activeChartMetric: metric }),
 
       addGoal: (goal) => set((s) => ({ pinnedGoals: [...s.pinnedGoals, goal] })),
       removeGoal: (id) => set((s) => ({ pinnedGoals: s.pinnedGoals.filter((g) => g.id !== id) })),

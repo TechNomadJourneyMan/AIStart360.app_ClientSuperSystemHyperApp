@@ -3,128 +3,113 @@
 import { useState } from 'react'
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, ReferenceLine
+  ResponsiveContainer,
 } from 'recharts'
+import { PERIODS, PERIOD_CONFIG, DEFAULT_PERIOD } from '@/types/periods'
+import type { Period } from '@/types/periods'
+import { useTimeseries } from '@/hooks/useTimeseries'
 
-const PERIODS = [
-  { label: '7Д', key: '7d' },
-  { label: '30Д', key: '30d' },
-  { label: '3М', key: '3m' },
-  { label: '1Г', key: '1y' },
+const METRIC_DEFS = [
+  { key: 'revenue',   label: 'Доход (₸М)',   color: '#6effc0', unit: '₸М' },
+  { key: 'margin',    label: 'Маржа (%)',     color: '#bcc7de', unit: '%'  },
+  { key: 'clients',   label: 'Клиенты',       color: '#ffbd60', unit: ''   },
+  { key: 'avg_check', label: 'Средний чек',   color: '#c9a6ff', unit: '₸М' },
 ]
 
-const DATA: Record<string, { date: string; revenue: number; margin: number; clients: number }[]> = {
-  '7d': [
-    { date: '27 мар', revenue: 78.1, margin: 32.4, clients: 44 },
-    { date: '28 мар', revenue: 79.5, margin: 33.1, clients: 45 },
-    { date: '29 мар', revenue: 80.2, margin: 33.8, clients: 45 },
-    { date: '30 мар', revenue: 81.4, margin: 33.5, clients: 46 },
-    { date: '31 мар', revenue: 82.0, margin: 34.0, clients: 47 },
-    { date: '01 апр', revenue: 83.1, margin: 34.1, clients: 47 },
-    { date: '02 апр', revenue: 84.2, margin: 34.2, clients: 48 },
-  ],
-  '30d': [
-    { date: '03 мар', revenue: 71.0, margin: 30.5, clients: 40 },
-    { date: '08 мар', revenue: 73.2, margin: 31.2, clients: 41 },
-    { date: '13 мар', revenue: 75.8, margin: 31.9, clients: 42 },
-    { date: '18 мар', revenue: 77.4, margin: 32.5, clients: 43 },
-    { date: '23 мар', revenue: 80.1, margin: 33.2, clients: 45 },
-    { date: '28 мар', revenue: 82.0, margin: 33.8, clients: 47 },
-    { date: '02 апр', revenue: 84.2, margin: 34.2, clients: 48 },
-  ],
-  '3m': [
-    { date: 'Янв', revenue: 64.0, margin: 28.0, clients: 36 },
-    { date: 'Фев', revenue: 70.5, margin: 30.1, clients: 40 },
-    { date: 'Мар', revenue: 78.0, margin: 32.5, clients: 44 },
-    { date: 'Апр', revenue: 84.2, margin: 34.2, clients: 48 },
-  ],
-  '1y': [
-    { date: "Апр '25", revenue: 38.0, margin: 20.0, clients: 22 },
-    { date: "Июн '25", revenue: 44.5, margin: 22.5, clients: 27 },
-    { date: "Авг '25", revenue: 51.0, margin: 25.0, clients: 31 },
-    { date: "Окт '25", revenue: 58.2, margin: 27.5, clients: 35 },
-    { date: "Дек '25", revenue: 65.0, margin: 29.8, clients: 39 },
-    { date: "Фев '26", revenue: 74.0, margin: 32.0, clients: 44 },
-    { date: "Апр '26", revenue: 84.2, margin: 34.2, clients: 48 },
-  ],
-}
-
-const METRICS = [
-  { key: 'revenue', label: 'Доход (₸М)', color: '#6effc0', unit: '₸М' },
-  { key: 'margin', label: 'Маржа (%)', color: '#bcc7de', unit: '%' },
-  { key: 'clients', label: 'Клиенты', color: '#ffbd60', unit: '' },
-]
-
-const CustomTooltip = ({ active, payload, label }: any) => {
+const CustomTooltip = ({ active, payload, label, unit }: {
+  active?: boolean
+  payload?: { dataKey: string; value: number; color: string; name: string }[]
+  label?: string
+  unit: string
+}) => {
   if (!active || !payload?.length) return null
   return (
     <div className="bg-surface-container-high border border-white/10 rounded-xl px-4 py-3 shadow-modal text-xs">
       <p className="font-mono text-on-surface-variant mb-2">{label}</p>
-      {payload.map((p: any) => (
+      {payload.map((p) => (
         <div key={p.dataKey} className="flex items-center gap-2">
           <span className="w-1.5 h-1.5 rounded-full" style={{ background: p.color }} />
           <span className="text-on-surface-variant">{p.name}:</span>
-          <span className="font-mono font-bold text-on-surface">{p.value}{p.unit}</span>
+          <span className="font-mono font-bold text-on-surface">{p.value}{unit}</span>
         </div>
       ))}
     </div>
   )
 }
 
+function ChartSkeleton() {
+  return (
+    <div className="animate-pulse bg-surface-container-low rounded-2xl p-5 h-[236px] flex flex-col gap-4">
+      <div className="flex justify-between">
+        <div className="flex gap-1.5">
+          {[1, 2, 3].map((i) => <div key={i} className="h-6 w-20 bg-white/[0.06] rounded-lg" />)}
+        </div>
+        <div className="flex gap-1">
+          {[1, 2, 3, 4, 5].map((i) => <div key={i} className="h-6 w-8 bg-white/[0.04] rounded-md" />)}
+        </div>
+      </div>
+      <div className="flex-1 bg-white/[0.04] rounded-xl" />
+    </div>
+  )
+}
+
 export function KpiChart({ initialMetric = 'revenue' }: { initialMetric?: string }) {
-  const [period, setPeriod] = useState('30d')
+  const [period, setPeriod] = useState<Period>(DEFAULT_PERIOD)
   const [activeMetric, setActiveMetric] = useState(initialMetric)
 
-  const data = DATA[period]
-  const metric = METRICS.find(m => m.key === activeMetric)!
+  const metricDef = METRIC_DEFS.find((m) => m.key === activeMetric) ?? METRIC_DEFS[0]
+  const { data: tsData, isLoading } = useTimeseries(activeMetric, period)
+  const chartData = tsData?.data?.map((p) => ({ date: p.label, value: p.value })) ?? []
+
+  if (isLoading) return <ChartSkeleton />
 
   return (
     <div className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-5 flex flex-col gap-4">
-      {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
-        <div className="flex gap-1.5">
-          {METRICS.map(m => (
+        <div className="flex gap-1.5 flex-wrap">
+          {METRIC_DEFS.map((m) => (
             <button
               key={m.key}
               onClick={() => setActiveMetric(m.key)}
-              className={`
-                px-3 py-1 rounded-lg text-[11px] font-mono transition-all duration-150
-                ${activeMetric === m.key
-                  ? 'text-on-primary font-bold'
-                  : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container'}
-              `}
-              style={activeMetric === m.key ? { background: m.color + '22', color: m.color, border: `1px solid ${m.color}33` } : {}}
+              className={`px-3 py-1 rounded-lg text-[11px] font-mono transition-all duration-150 ${
+                activeMetric === m.key
+                  ? 'font-bold'
+                  : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container'
+              }`}
+              style={
+                activeMetric === m.key
+                  ? { background: m.color + '22', color: m.color, border: `1px solid ${m.color}33` }
+                  : {}
+              }
             >
               {m.label}
             </button>
           ))}
         </div>
         <div className="flex gap-1 bg-surface-container rounded-lg p-0.5">
-          {PERIODS.map(p => (
+          {PERIODS.map((p) => (
             <button
-              key={p.key}
-              onClick={() => setPeriod(p.key)}
-              className={`
-                px-3 py-1 rounded-md text-[11px] font-mono transition-all duration-150
-                ${period === p.key
+              key={p}
+              onClick={() => setPeriod(p)}
+              className={`px-3 py-1 rounded-md text-[11px] font-mono transition-all duration-150 ${
+                period === p
                   ? 'bg-surface-container-high text-on-surface'
-                  : 'text-on-surface-variant hover:text-on-surface'}
-              `}
+                  : 'text-on-surface-variant hover:text-on-surface'
+              }`}
             >
-              {p.label}
+              {PERIOD_CONFIG[p].labelRu}
             </button>
           ))}
         </div>
       </div>
 
-      {/* Chart */}
       <div className="h-44">
         <ResponsiveContainer width="100%" height="100%">
-          <AreaChart data={data} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
+          <AreaChart data={chartData} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
             <defs>
-              <linearGradient id="colorMetric" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor={metric.color} stopOpacity={0.18} />
-                <stop offset="95%" stopColor={metric.color} stopOpacity={0} />
+              <linearGradient id="colorMetricKpi" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%"  stopColor={metricDef.color} stopOpacity={0.18} />
+                <stop offset="95%" stopColor={metricDef.color} stopOpacity={0} />
               </linearGradient>
             </defs>
             <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
@@ -139,16 +124,19 @@ export function KpiChart({ initialMetric = 'revenue' }: { initialMetric?: string
               axisLine={false}
               tickLine={false}
             />
-            <Tooltip content={<CustomTooltip />} cursor={{ stroke: 'rgba(255,255,255,0.08)', strokeWidth: 1 }} />
+            <Tooltip
+              content={<CustomTooltip unit={metricDef.unit} />}
+              cursor={{ stroke: 'rgba(255,255,255,0.08)', strokeWidth: 1 }}
+            />
             <Area
               type="monotone"
-              dataKey={activeMetric}
-              name={metric.label}
-              stroke={metric.color}
+              dataKey="value"
+              name={metricDef.label}
+              stroke={metricDef.color}
               strokeWidth={2}
-              fill="url(#colorMetric)"
+              fill="url(#colorMetricKpi)"
               dot={false}
-              activeDot={{ r: 4, fill: metric.color, strokeWidth: 0 }}
+              activeDot={{ r: 4, fill: metricDef.color, strokeWidth: 0 }}
             />
           </AreaChart>
         </ResponsiveContainer>
