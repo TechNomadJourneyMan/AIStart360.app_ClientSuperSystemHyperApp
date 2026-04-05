@@ -126,7 +126,7 @@ async function buildUserFromSession(user: {
   } satisfies PublicUser
 }
 
-export const useAuthStore = create<AuthState>()((set) => ({
+export const useAuthStore = create<AuthState>()((set, get) => ({
   user: null,
   role: null,
   isLoading: false,
