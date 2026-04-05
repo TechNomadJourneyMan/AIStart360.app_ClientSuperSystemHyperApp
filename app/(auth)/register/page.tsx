@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { useAuthStore, type UserRole } from '@/stores/auth.store'
+import { useAuthStore } from '@/stores/auth.store'
 import { Logo } from '@/components/ui/Logo'
 import { ThemeSwitcher } from '@/components/ThemeSwitcher'
 
@@ -11,23 +11,22 @@ export default function RegisterPage() {
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [role, setRole] = useState<UserRole>('client')
   const [organization, setOrganization] = useState('')
   const { register, isLoading, error, clearError, user } = useAuthStore()
   const router = useRouter()
 
   useEffect(() => {
     if (user) {
-      if (user.role === 'client') {
-        router.push('/client/onboarding')
-      } else if (user.role === 'super_admin') {
+      if (user.role === 'super_admin') {
         router.push('/admin-giga-panel')
       } else if (user.role === 'owner') {
         router.push('/owner/dashboard')
       } else if (user.role === 'expert') {
         router.push('/expert/dashboard')
+      } else if (user.role === 'client') {
+        router.push('/client/onboarding')
       } else {
-        router.push('/dashboard')
+        router.push('/owner/dashboard')
       }
     }
   }, [user, router])
@@ -35,25 +34,7 @@ export default function RegisterPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     try {
-      // 1. Core Supabase Registration
-      await register({ name, email, password, role, organization })
-      
-      // 2. Fetch the created user from store (it was set inside register)
-      const currentUser = useAuthStore.getState().user
-      
-      // 3. If client, trigger the approval flow API
-      if (currentUser && role === 'client') {
-        await fetch('/api/client/register', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            userId: currentUser.id,
-            email: currentUser.email,
-            name: currentUser.name,
-            company: organization,
-          }),
-        })
-      }
+      await register({ name, email, password, role: 'owner', organization })
     } catch (err) {
       // Error is handled by the store
     }
@@ -151,7 +132,6 @@ export default function RegisterPage() {
             </div>
           </div>
 
-          {/* Organization/Company field — added for client approval flow */}
           <div className="space-y-2">
             <label className="block text-xs font-mono text-on-surface-variant uppercase tracking-widest ml-1">
               Организация
@@ -162,48 +142,12 @@ export default function RegisterPage() {
               </span>
               <input
                 type="text"
-                required={role === 'client'}
                 value={organization}
                 onChange={(e) => setOrganization(e.target.value)}
                 className="w-full h-12 bg-surface-container-high border border-white/[0.05] rounded-2xl pl-12 pr-4 text-on-surface focus:outline-none focus:border-primary/50 focus:ring-4 focus:ring-primary/10 transition-all"
                 placeholder="Название вашей компании"
               />
             </div>
-          </div>
-
-          <div className="space-y-2">
-            <label className="block text-xs font-mono text-on-surface-variant uppercase tracking-widest ml-1">
-              Ваша роль
-            </label>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => setRole('client')}
-                className={`h-11 rounded-2xl text-[13px] font-bold transition-all border ${
-                  role === 'client'
-                    ? 'bg-primary/10 border-primary text-primary shadow-sm shadow-primary/10'
-                    : 'bg-surface-container-high border-white/[0.05] text-on-surface-variant hover:border-white/[0.1] hover:text-on-surface'
-                }`}
-              >
-                Я Клиент
-              </button>
-              <button
-                type="button"
-                onClick={() => setRole('owner')}
-                className={`h-11 rounded-2xl text-[13px] font-bold transition-all border ${
-                  role === 'owner'
-                    ? 'bg-primary/10 border-primary text-primary shadow-sm shadow-primary/10'
-                    : 'bg-surface-container-high border-white/[0.05] text-on-surface-variant hover:border-white/[0.1] hover:text-on-surface'
-                }`}
-              >
-                Я Владелец
-              </button>
-            </div>
-            <p className="text-[10px] text-on-surface-variant/70 leading-relaxed mt-1 px-1">
-              {role === 'client' 
-                ? 'Для активации кабинета потребуется подтверждение администратором.' 
-                : 'Ваш кабинет будет активирован сразу после регистрации.'}
-            </p>
           </div>
 
           <button
@@ -216,7 +160,7 @@ export default function RegisterPage() {
             ) : (
               <>
                 Создать аккаунт
-                <span className="material-symbols-outlined text-base group-hover:translate-x-1 transition-transform arrow_forward">arrow_forward</span>
+                <span className="material-symbols-outlined text-base group-hover:translate-x-1 transition-transform">arrow_forward</span>
               </>
             )}
           </button>
@@ -232,7 +176,7 @@ export default function RegisterPage() {
               Войти
             </Link>
           </p>
-          
+
           {/* System status */}
           <div className="flex items-center justify-center gap-4 mt-6">
             <div className="flex items-center gap-1.5">
