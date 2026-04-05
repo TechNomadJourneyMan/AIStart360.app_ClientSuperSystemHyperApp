@@ -1,9 +1,7 @@
 import { NextResponse } from 'next/server'
-import { auth } from '@/lib/auth'
-import { prisma } from '@/lib/db'
+import { createServerClient } from '@/lib/supabase-server'
 import type { MetricSummary } from '@/types/metrics'
 
-// Mock data for orgs without DB snapshots
 const MOCK_METRICS: MetricSummary[] = [
   {
     id: 'revenue',
@@ -29,8 +27,8 @@ const MOCK_METRICS: MetricSummary[] = [
     rawValue: 34.2,
     unit: '%',
     unitPosition: 'after',
-    trend: 2.1,
-    trendAbs: 2.1,
+    trend: 2.4,
+    trendAbs: 2.4,
     trendDirection: 'up',
     trendLabel: 'чистая маржинальность',
     icon: 'percent',
@@ -77,36 +75,47 @@ const MOCK_METRICS: MetricSummary[] = [
 
 export async function GET() {
   try {
-    const session = await auth()
-    const orgId = (session?.user as any)?.orgId
+    const supabase = createServerClient()
 
-    let snapshot = null
-    if (orgId) {
-      snapshot = await prisma.financialSnapshot.findFirst({
-        where: { orgId },
-        orderBy: { recordedAt: 'desc' },
-      })
-    }
+    // Get the two most recent snapshots for trend calculation
+    const { data: snapshots, error } = await supabase
+      .from('financial_snapshots')
+      .select('*')
+      .order('recorded_at', { ascending: false })
+      .limit(2)
 
-    if (!snapshot) {
+    if (error || !snapshots || snapshots.length === 0) {
       return NextResponse.json({ source: 'mock', data: MOCK_METRICS })
     }
 
-    const avgCheck = snapshot.clientsCount > 0
-      ? snapshot.revenueKzt / snapshot.clientsCount
-      : 1.75
+    const snap = snapshots[0]
+    const prev = snapshots[1] ?? null
+
+    const avgCheck =
+      snap.clients_count > 0 ? snap.revenue_kzt / snap.clients_count : 1.75
+
+    const prevAvgCheck =
+      prev && prev.clients_count > 0
+        ? prev.revenue_kzt / prev.clients_count
+        : null
+
+    const avgCheckChange =
+      prevAvgCheck && prevAvgCheck > 0
+        ? ((avgCheck - prevAvgCheck) / prevAvgCheck) * 100
+        : 0
 
     const metrics: MetricSummary[] = [
       {
         id: 'revenue',
         label: 'Доход',
-        displayValue: `₸${snapshot.revenueKzt.toFixed(1)}М`,
-        rawValue: snapshot.revenueKzt,
+        displayValue: `₸${Number(snap.revenue_kzt).toFixed(1)}М`,
+        rawValue: Number(snap.revenue_kzt),
         unit: '₸М',
         unitPosition: 'before',
-        trend: snapshot.revenueChange,
-        trendAbs: snapshot.revenueKzt * (snapshot.revenueChange / 100),
-        trendDirection: snapshot.revenueChange > 0 ? 'up' : snapshot.revenueChange < 0 ? 'down' : 'flat',
+        trend: Number(snap.revenue_change),
+        trendAbs: Number(snap.revenue_kzt) * (Number(snap.revenue_change) / 100),
+        trendDirection:
+          snap.revenue_change > 0 ? 'up' : snap.revenue_change < 0 ? 'down' : 'flat',
         trendLabel: 'vs прошлый квартал',
         icon: 'payments',
         color: '#6effc0',
@@ -117,13 +126,14 @@ export async function GET() {
       {
         id: 'margin',
         label: 'Маржа',
-        displayValue: `${snapshot.marginPct.toFixed(1)}%`,
-        rawValue: snapshot.marginPct,
+        displayValue: `${Number(snap.margin_pct).toFixed(1)}%`,
+        rawValue: Number(snap.margin_pct),
         unit: '%',
         unitPosition: 'after',
-        trend: snapshot.marginChange,
-        trendAbs: snapshot.marginChange,
-        trendDirection: snapshot.marginChange > 0 ? 'up' : snapshot.marginChange < 0 ? 'down' : 'flat',
+        trend: Number(snap.margin_change),
+        trendAbs: Number(snap.margin_change),
+        trendDirection:
+          snap.margin_change > 0 ? 'up' : snap.margin_change < 0 ? 'down' : 'flat',
         trendLabel: 'чистая маржинальность',
         icon: 'percent',
         color: '#bcc7de',
@@ -134,13 +144,14 @@ export async function GET() {
       {
         id: 'clients',
         label: 'Клиенты',
-        displayValue: String(snapshot.clientsCount),
-        rawValue: snapshot.clientsCount,
+        displayValue: String(snap.clients_count),
+        rawValue: Number(snap.clients_count),
         unit: '',
         unitPosition: 'after',
-        trend: snapshot.clientsChange,
-        trendAbs: snapshot.clientsChange,
-        trendDirection: snapshot.clientsChange > 0 ? 'up' : snapshot.clientsChange < 0 ? 'down' : 'flat',
+        trend: Number(snap.clients_change),
+        trendAbs: Number(snap.clients_change),
+        trendDirection:
+          snap.clients_change > 0 ? 'up' : snap.clients_change < 0 ? 'down' : 'flat',
         trendLabel: 'активных клиентов',
         icon: 'groups',
         color: '#ffbd60',
@@ -155,9 +166,10 @@ export async function GET() {
         rawValue: avgCheck,
         unit: '₸М',
         unitPosition: 'before',
-        trend: 0,
-        trendAbs: 0,
-        trendDirection: 'flat',
+        trend: avgCheckChange,
+        trendAbs: avgCheck - (prevAvgCheck ?? avgCheck),
+        trendDirection:
+          avgCheckChange > 0.1 ? 'up' : avgCheckChange < -0.1 ? 'down' : 'flat',
         trendLabel: 'на клиента',
         icon: 'receipt_long',
         color: '#c9a6ff',
@@ -167,9 +179,9 @@ export async function GET() {
       },
     ]
 
-    return NextResponse.json({ source: 'db', data: metrics })
+    return NextResponse.json({ source: 'supabase', data: metrics })
   } catch (err) {
     console.error('[api/v1/metrics]', err)
-    return NextResponse.json({ source: 'error', data: [] }, { status: 500 })
+    return NextResponse.json({ source: 'error', data: MOCK_METRICS }, { status: 200 })
   }
 }

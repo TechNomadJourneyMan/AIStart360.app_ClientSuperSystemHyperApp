@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, forwardRef } from 'react'
 import * as Dialog from '@radix-ui/react-dialog'
 import { motion, AnimatePresence } from 'framer-motion'
 import Link from 'next/link'
@@ -207,9 +207,7 @@ function WidgetContent({ type, data }: { type: WidgetType; data: WidgetData }) {
 }
 
 // ─── Widget Wrapper ───────────────────────────────────────────────
-function WidgetCard({
-  widget, editMode, onRemove, onMoveUp, onMoveDown, isFirst, isLast, data,
-}: {
+interface WidgetCardProps {
   widget: WidgetInstance
   editMode: boolean
   onRemove: () => void
@@ -218,10 +216,16 @@ function WidgetCard({
   isFirst: boolean
   isLast: boolean
   data: WidgetData
-}) {
+}
+
+const WidgetCard = forwardRef(function WidgetCard(
+  { widget, editMode, onRemove, onMoveUp, onMoveDown, isFirst, isLast, data }: WidgetCardProps,
+  ref: React.ForwardedRef<HTMLDivElement>
+) {
   const meta = CATALOG[widget.type]
   return (
     <motion.div
+      ref={ref}
       layout
       initial={{ opacity: 0, scale: 0.96 }}
       animate={{ opacity: 1, scale: 1 }}
@@ -273,7 +277,7 @@ function WidgetCard({
       </div>
     </motion.div>
   )
-}
+})
 
 // ─── Add Widget Dialog ────────────────────────────────────────────
 function AddWidgetDialog({

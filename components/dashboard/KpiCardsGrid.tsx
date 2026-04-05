@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useMetricsStore } from '@/stores/metrics.store'
-import { useMetrics } from '@/hooks/useMetrics'
+import { useAllVisibleMetrics } from '@/hooks/useMetrics'
 import { useUIStore } from '@/stores/ui.store'
 import { AddMetricModal } from './AddMetricModal'
 import { MetricModal } from './MetricModal'
@@ -179,11 +179,7 @@ export function KpiCardsGrid() {
   const [addOpen, setAddOpen] = useState(false)
   const { visibleMetricIds, hiddenMetricIds, setActiveMetric, hideMetric, removeMetric, showAllMetrics } = useMetricsStore()
   const pinnedGoals = useUIStore((s) => s.pinnedGoals)
-  const { data: metrics = [], isLoading } = useMetrics()
-
-  const visibleMetrics = visibleMetricIds
-    .map((id) => metrics.find((m) => m.id === id))
-    .filter(Boolean) as MetricSummary[]
+  const { data: visibleMetrics, isLoading } = useAllVisibleMetrics(visibleMetricIds)
 
   const totalCount = visibleMetricIds.length + hiddenMetricIds.length
   const canAddMore = totalCount < MAX_METRICS

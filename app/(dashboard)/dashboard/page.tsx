@@ -6,7 +6,7 @@ import { GoalsBar } from '@/components/dashboard/GoalsBar'
 import { WidgetGrid } from '@/components/dashboard/WidgetGrid'
 import { getDashboardData } from '@/lib/get-dashboard-data'
 import { auth } from '@/lib/auth'
-import { prisma } from '@/lib/db'
+import { createServerClient } from '@/lib/supabase-server'
 import type { AlertCardProps } from '@/components/dashboard/AlertCard'
 
 export const metadata: Metadata = { title: 'Дэшборд' }
@@ -15,51 +15,41 @@ export default async function DashboardPage() {
   const session = await auth()
   const data = getDashboardData(session?.user?.email)
 
-  const userOrgId = (session?.user as any)?.orgId
-
-  // ── Real data from DB ──────────────────────────────────────────
-  const [financialSnap, dbClient] = await Promise.all([
-    // Latest financial snapshot for this org (or any org as fallback)
-    userOrgId
-      ? prisma.financialSnapshot.findFirst({ where: { orgId: userOrgId }, orderBy: { recordedAt: 'desc' } })
-          .then(r => r ?? prisma.financialSnapshot.findFirst({ orderBy: { recordedAt: 'desc' } }))
-      : prisma.financialSnapshot.findFirst({ orderBy: { recordedAt: 'desc' } }),
-    // GRI data from latest report
-    userOrgId
-      ? prisma.client.findFirst({
-          where: { orgId: userOrgId },
-          include: { griReports: { orderBy: { calculatedAt: 'desc' }, take: 1 } }
-        })
-      : null,
-  ])
+  // ── Real data from Supabase ────────────────────────────────────
+  let financialSnap: Record<string, unknown> | null = null
+  try {
+    const supabase = createServerClient()
+    const { data: snap } = await supabase
+      .from('financial_snapshots')
+      .select('*')
+      .order('recorded_at', { ascending: false })
+      .limit(1)
+      .single()
+    financialSnap = snap ?? null
+  } catch {
+    // fall through to mock
+  }
 
   // Средний чек = revenue / clients (guard against zero)
-  const avgCheckVal = financialSnap && financialSnap.clientsCount > 0
-    ? financialSnap.revenueKzt / financialSnap.clientsCount
-    : null
+  const avgCheckVal =
+    financialSnap && Number(financialSnap.clients_count) > 0
+      ? Number(financialSnap.revenue_kzt) / Number(financialSnap.clients_count)
+      : null
 
-  // KPI cards — prefer real DB data, fall back to mock
-  // Расходы removed; Средний чек added; numericValue + goalCategory for progress bars
-  const kpiData = financialSnap ? [
-    { label: 'Доход',       value: `₸${financialSnap.revenueKzt.toFixed(1)}М`,       trend: `${financialSnap.revenueChange > 0 ? '+' : ''}${financialSnap.revenueChange.toFixed(1)}%`,  trendUp: financialSnap.revenueChange >= 0, sublabel: 'vs прошлый квартал',   icon: 'payments',     href: '/analytics', numericValue: financialSnap.revenueKzt,    goalCategory: 'revenue'   },
-    { label: 'Маржа',       value: `${financialSnap.marginPct.toFixed(1)}%`,          trend: `${financialSnap.marginChange > 0 ? '+' : ''}${financialSnap.marginChange.toFixed(1)} пп`,   trendUp: financialSnap.marginChange >= 0,  sublabel: 'чистая маржинальность', icon: 'percent',      href: '/metrics',   numericValue: financialSnap.marginPct,     goalCategory: 'margin'    },
-    { label: 'Клиенты',     value: String(financialSnap.clientsCount),               trend: `${financialSnap.clientsChange > 0 ? '+' : ''}${financialSnap.clientsChange}`,               trendUp: financialSnap.clientsChange >= 0, sublabel: 'активных клиентов',     icon: 'groups',       href: '/clients',   numericValue: financialSnap.clientsCount,  goalCategory: 'clients'   },
-    { label: 'Средний чек', value: avgCheckVal ? `₸${avgCheckVal.toFixed(2)}М` : '—', trend: '—', trendUp: true, sublabel: 'на клиента', icon: 'receipt_long', href: '/metrics',   numericValue: avgCheckVal ?? 0,            goalCategory: 'avg_check' },
-  ] : data.KPI
+  const kpiData = financialSnap
+    ? [
+        { label: 'Доход',       value: `₸${Number(financialSnap.revenue_kzt).toFixed(1)}М`,  trend: `${Number(financialSnap.revenue_change) > 0 ? '+' : ''}${Number(financialSnap.revenue_change).toFixed(1)}%`,  trendUp: Number(financialSnap.revenue_change) >= 0,  sublabel: 'vs прошлый квартал',    icon: 'payments',     href: '/analytics', numericValue: Number(financialSnap.revenue_kzt),   goalCategory: 'revenue'   },
+        { label: 'Маржа',       value: `${Number(financialSnap.margin_pct).toFixed(1)}%`,     trend: `${Number(financialSnap.margin_change) > 0 ? '+' : ''}${Number(financialSnap.margin_change).toFixed(1)} пп`,  trendUp: Number(financialSnap.margin_change) >= 0,   sublabel: 'чистая маржинальность', icon: 'percent',      href: '/metrics',   numericValue: Number(financialSnap.margin_pct),    goalCategory: 'margin'    },
+        { label: 'Клиенты',     value: String(financialSnap.clients_count),                   trend: `${Number(financialSnap.clients_change) > 0 ? '+' : ''}${financialSnap.clients_change}`,                      trendUp: Number(financialSnap.clients_change) >= 0,  sublabel: 'активных клиентов',     icon: 'groups',       href: '/clients',   numericValue: Number(financialSnap.clients_count), goalCategory: 'clients'   },
+        { label: 'Средний чек', value: avgCheckVal ? `₸${avgCheckVal.toFixed(2)}М` : '—',    trend: '—', trendUp: true, sublabel: 'на клиента',                                                                                                                              icon: 'receipt_long', href: '/metrics',   numericValue: avgCheckVal ?? 0,                    goalCategory: 'avg_check' },
+      ]
+    : data.KPI
 
-  const currentPeriod = financialSnap?.period ?? 'Q1 2026'
+  const currentPeriod = (financialSnap?.period as string) ?? 'Q1 2026'
 
-  // GRI data — all 7 domains
-  const dbGriScore = dbClient?.griReports?.[0] ?? null
-  const griDomains = dbGriScore ? [
-    { label: 'Продукт и спрос',          score: dbGriScore.productScore       },
-    { label: 'Доверие и позиционирование',score: dbGriScore.trustScore         },
-    { label: 'Бизнес-модель',             score: dbGriScore.businessModelScore },
-    { label: 'Финансовая устойчивость',   score: dbGriScore.cashScore          },
-    { label: 'Операции',                  score: dbGriScore.operationsScore    },
-    { label: 'Команда',                   score: dbGriScore.teamScore          },
-    { label: 'Готовность основателя',     score: dbGriScore.founderScore       },
-  ] : [
+  // GRI data — all 7 domains (from mock until gri_reports added to Supabase)
+  const dbGriScore = null
+  const griDomains = [
     { label: 'Продукт и спрос',           score: 4.7 },
     { label: 'Доверие и позиционирование',score: 5.2 },
     { label: 'Бизнес-модель',             score: 7.4 },
@@ -69,9 +59,7 @@ export default async function DashboardPage() {
     { label: 'Готовность основателя',     score: 6.7 },
   ]
 
-  const griTotalScore = dbGriScore
-    ? Number(dbGriScore.score) || griDomains.reduce((s, d) => s + d.score, 0) / griDomains.length
-    : griDomains.reduce((s, d) => s + d.score, 0) / griDomains.length
+  const griTotalScore = griDomains.reduce((s, d) => s + d.score, 0) / griDomains.length
 
   const griData = griDomains.map(({ label, score }, i) => {
     const colors = ['#6effc0', '#00e29e', '#47ffb8', '#bcc7de']
@@ -79,7 +67,7 @@ export default async function DashboardPage() {
   })
 
   const metricsData = [
-    { name: 'Выручка (ARR)', value: financialSnap ? `₸${(financialSnap.revenueKzt * 12).toFixed(0)}М` : '$2.4B', up: true  as boolean | null },
+    { name: 'Выручка (ARR)', value: financialSnap ? `₸${(Number(financialSnap.revenue_kzt) * 12).toFixed(0)}М` : '$2.4B', up: true  as boolean | null },
     { name: 'R&D Бюджет',    value: '35%',   up: null  as boolean | null },
     { name: 'Доля рынка',    value: '68%',   up: true  as boolean | null },
     { name: 'NPS (B2B)',     value: '91',    up: true  as boolean | null },
@@ -120,7 +108,7 @@ export default async function DashboardPage() {
             <GriDiagramWidget
               domains={griDomains}
               totalScore={griTotalScore}
-              orgName={dbClient?.name ?? undefined}
+              orgName="Demo Company KZ"
             />
           </div>
         </div>
