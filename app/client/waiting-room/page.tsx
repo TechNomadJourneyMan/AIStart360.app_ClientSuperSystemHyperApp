@@ -74,11 +74,9 @@ export default function WaitingRoomPage() {
   const checkStatus = useCallback(async () => {
     if (!userId) return
     try {
-      const sb = createClient()
-      const { data } = await (sb.from('profiles') as any)
-        .select('status')
-        .eq('id', userId)
-        .single()
+      // Use server API to bypass RLS issues
+      const res = await fetch(`/api/client/status?userId=${userId}`)
+      const data = await res.json()
 
       if (data?.status) {
         setStatus(data.status as ApprovalStatus)
