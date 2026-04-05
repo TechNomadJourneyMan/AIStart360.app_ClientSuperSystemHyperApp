@@ -13,13 +13,13 @@ export async function getDashboardKpiData(db: DbClient = prisma, orgId?: string)
     db.organization.count({ where: orgId ? { id: orgId } : undefined }),
     db.griReport.aggregate({
       where: orgId ? { client: { orgId } } : undefined,
-      _avg: { overallScore: true },
+      _avg: { score: true },
     }),
   ])
 
   return {
     clientCount,
     orgCount,
-    avgGri: Number(avgGriData._avg.overallScore ?? 0),
+    avgGri: Number(avgGriData._avg.score ?? 0),
   }
 }

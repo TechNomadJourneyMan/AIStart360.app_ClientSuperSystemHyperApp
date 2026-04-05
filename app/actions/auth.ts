@@ -82,14 +82,8 @@ export async function registerAction(data: unknown) {
     })
 
     // 4. Map UI role to Prisma UserRole
-<<<<<<< HEAD
-    // admin -> ADMIN, expert -> MANAGER, owner -> SUPER_ADMIN, client -> CLIENT
-    const prismaRole = role === 'admin' ? 'ADMIN' : role === 'owner' ? 'SUPER_ADMIN' : role === 'client' ? 'CLIENT' : 'MANAGER'
-    
-=======
     const prismaRole = role === 'admin' ? 'ADMIN' : role === 'owner' ? 'SUPER_ADMIN' : role === 'client' ? 'CLIENT' : 'MANAGER'
 
->>>>>>> 41f51555aefe4444f42b51d039ecb8f312ab4ace
     const user = await prisma.user.create({
       data: {
         email,
@@ -143,15 +137,6 @@ export async function loginAction(email: string, password: string) {
     if (!isValid) return { error: 'WRONG_PASSWORD' }
 
     // Map Prisma role back to UI role
-<<<<<<< HEAD
-    const uiRole = user.role === 'SUPER_ADMIN' ? 'owner' : user.role === 'ADMIN' ? 'admin' : user.role === 'CLIENT' ? 'client' : 'expert'
-    
-    // Update cookies
-    const cookieStore = cookies()
-    cookieStore.set('aistart360_role', uiRole, { path: '/', maxAge: 60 * 60 * 24 * 7 })
-    cookieStore.set('aistart360_user_id', user.id, { path: '/', maxAge: 60 * 60 * 24 * 7 })
-    
-=======
     const uiRole = user.role === 'SUPER_ADMIN' ? 'owner'
       : user.role === 'ADMIN' ? 'admin'
       : user.role === 'CLIENT' ? 'client'
@@ -162,7 +147,6 @@ export async function loginAction(email: string, password: string) {
     cookieStore.set('aistart360_role', uiRole, COOKIE_OPTIONS)
     cookieStore.set('aistart360_user_id', user.id, COOKIE_OPTIONS)
 
->>>>>>> 41f51555aefe4444f42b51d039ecb8f312ab4ace
     // Update lastLogin
     await prisma.user.update({
       where: { id: user.id },

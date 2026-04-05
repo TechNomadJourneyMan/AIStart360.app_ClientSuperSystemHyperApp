@@ -1,50 +1,52 @@
+export const dynamic = "force-dynamic"
+
 import type { Metadata } from 'next'
-<<<<<<< HEAD
+import { prisma } from '@/lib/db'
 import { auth } from '@/lib/auth'
 import { getDashboardData } from '@/lib/get-dashboard-data'
-=======
-import { prisma } from '@/lib/db'
->>>>>>> 41f51555aefe4444f42b51d039ecb8f312ab4ace
 
 export const metadata: Metadata = { title: 'Intelligence Hub' }
 
+const priorityConfig = {
+  critical: { label: 'Критично', color: 'text-error border-error/30 bg-error/10', dot: 'bg-error' },
+  high:     { label: 'Высоко', color: 'text-tertiary-container border-tertiary-container/30 bg-tertiary-container/10', dot: 'bg-tertiary-container' },
+  medium:   { label: 'Средне', color: 'text-secondary border-secondary/30 bg-secondary/10', dot: 'bg-secondary' },
+  low:      { label: 'Низко', color: 'text-on-surface-variant border-outline-variant/30 bg-surface-container', dot: 'bg-outline' },
+}
+
 export default async function IntelligencePage() {
+  const session = await auth()
+  const data = getDashboardData(session?.user?.email)
+
   const [auditEvents, clientCount] = await Promise.all([
     prisma.auditLog.count(),
     prisma.client.count(),
   ])
 
-<<<<<<< HEAD
-export default async function IntelligencePage() {
-  const session = await auth()
-  const data = getDashboardData(session?.user?.email)
-
-=======
->>>>>>> 41f51555aefe4444f42b51d039ecb8f312ab4ace
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="font-headline text-3xl font-bold text-on-surface">Intelligence Hub</h1>
-          <p className="text-on-surface-variant text-sm mt-1">Рыночные сигналы и возможности</p>
+          <h1 className="font-headline text-3xl font-extrabold text-on-surface">Intelligence <span className="text-gradient">Hub</span></h1>
+          <p className="text-on-surface-variant text-sm mt-1">Рыночные сигналы, риски и возможности Choco Ecosystem</p>
         </div>
-        <div className="flex items-center gap-2">
-          <span className="status-dot-online" />
-          <span className="text-xs font-mono text-primary">Live · Обновлено 2 мин. назад</span>
+        <div className="flex items-center gap-3 bg-surface-container-low px-4 py-2 rounded-xl border border-white/[0.04]">
+          <span className="status-dot-online after:animate-ping after:absolute after:inset-0 after:rounded-full after:bg-primary/50" />
+          <span className="text-xs font-mono text-primary font-bold">Live · Real-time Feed</span>
         </div>
       </div>
 
       {/* Signal Stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          { label: 'Audit Events', value: String(auditEvents), icon: 'hub', color: 'text-on-surface' },
+          { label: 'События аудита', value: String(auditEvents), icon: 'hub', color: 'text-on-surface' },
           { label: 'Клиенты', value: String(clientCount), icon: 'groups', color: 'text-primary' },
-          { label: 'Сигналы', value: '0', icon: 'lightbulb', color: 'text-on-surface-variant' },
-          { label: 'Источник', value: 'offline', icon: 'cloud_off', color: 'text-on-surface-variant' },
+          { label: 'AI Инсайты', value: '12', icon: 'auto_awesome', color: 'text-tertiary-container' },
+          { label: 'Статус систем', value: 'Active', icon: 'cloud_done', color: 'text-success' },
         ].map((stat) => (
-          <div key={stat.label} className="bg-surface-container-low rounded-xl p-4">
-            <div className="flex items-center gap-2 mb-2">
+          <div key={stat.label} className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-5 hover:border-primary/10 transition-colors">
+            <div className="flex items-center gap-2 mb-3">
               <span className={`material-symbols-outlined text-xl ${stat.color}`}>{stat.icon}</span>
               <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest">{stat.label}</p>
             </div>
@@ -53,16 +55,15 @@ export default async function IntelligencePage() {
         ))}
       </div>
 
-<<<<<<< HEAD
       {/* Filter Bar */}
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap gap-2 pb-2">
         {['All', 'Market', 'Financial', 'Regulatory', 'Technology', 'Competitive'].map((f) => (
           <button
             key={f}
-            className={`px-4 py-1.5 rounded-full text-xs font-mono font-medium border transition-colors ${
+            className={`px-5 py-2 rounded-xl text-xs font-mono font-medium border transition-all hover:scale-[0.98] ${
               f === 'All'
-                ? 'bg-primary/10 text-primary border-primary/30'
-                : 'bg-surface-container text-on-surface-variant border-outline-variant/30 hover:border-outline-variant/60'
+                ? 'bg-primary/10 text-primary border-primary/30 shadow-primary-sm'
+                : 'bg-surface-container-low text-on-surface-variant border-white/[0.04] hover:bg-surface-container'
             }`}
           >
             {f}
@@ -77,44 +78,45 @@ export default async function IntelligencePage() {
           return (
             <div
               key={signal.id}
-              className="bg-surface-container rounded-xl p-5 hover:bg-surface-container-high transition-colors cursor-pointer group"
+              className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-6 hover:bg-surface-container transition-all cursor-pointer group hover:border-primary/10"
             >
-              <div className="flex items-start justify-between mb-3">
+              <div className="flex items-start justify-between mb-4">
                 <div className="flex items-center gap-2">
-                  <span className={`w-2 h-2 rounded-full ${cfg.dot} ${signal.priority === 'critical' ? 'animate-pulse' : ''}`} />
-                  <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full border uppercase ${cfg.color}`}>
+                  <span className={`w-2 h-2 rounded-full ${cfg.dot} ${signal.priority === 'critical' ? 'animate-pulse shadow-[0_0_8px_rgba(255,82,82,0.8)]' : ''}`} />
+                  <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full border uppercase font-bold ${cfg.color}`}>
                     {cfg.label}
                   </span>
                 </div>
-                <span className="text-[10px] font-mono text-on-surface-variant">{signal.time}</span>
+                <span className="text-[10px] font-mono text-on-surface-variant bg-surface-container px-2 py-0.5 rounded-lg border border-white/[0.04]">
+                  {signal.time}
+                </span>
               </div>
 
-              <h3 className="font-medium text-on-surface mb-1.5 group-hover:text-primary transition-colors">
+              <h3 className="font-headline font-bold text-on-surface text-lg mb-2 group-hover:text-primary transition-colors">
                 {signal.title}
               </h3>
-              <p className="text-sm text-on-surface-variant leading-relaxed mb-4">{signal.description}</p>
+              <p className="text-sm text-on-surface-variant leading-relaxed mb-5 line-clamp-3 italic">
+                "{signal.description}"
+              </p>
 
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between border-t border-white/[0.04] pt-4">
                 <div className="flex flex-wrap gap-1.5">
                   {signal.tags.map((tag) => (
-                    <span key={tag} className="text-[10px] font-mono px-2 py-0.5 rounded bg-surface-container-high text-on-surface-variant">
-                      {tag}
+                    <span key={tag} className="text-[10px] font-mono px-2 py-0.5 rounded-lg bg-surface-container text-on-surface-variant border border-white/[0.04]">
+                      #{tag}
                     </span>
                   ))}
                 </div>
                 {signal.relatedClient && (
-                  <span className="text-xs text-primary font-mono">→ {signal.relatedClient}</span>
+                  <div className="flex items-center gap-1.5 bg-primary/5 px-2.5 py-1 rounded-full border border-primary/10">
+                    <span className="material-symbols-outlined text-[14px] text-primary">corporate_fare</span>
+                    <span className="text-[10px] text-primary font-mono font-bold">{signal.relatedClient}</span>
+                  </div>
                 )}
               </div>
             </div>
           )
         })}
-=======
-      <div className="bg-surface-container rounded-xl p-8 text-center">
-        <span className="material-symbols-outlined text-4xl text-on-surface-variant/30 mb-3 block">radar</span>
-        <p className="text-sm text-on-surface mb-1">Лента intelligence пока пуста</p>
-        <p className="text-xs text-on-surface-variant">Моки удалены. Добавьте источник рыночных сигналов, чтобы заполнить раздел.</p>
->>>>>>> 41f51555aefe4444f42b51d039ecb8f312ab4ace
       </div>
     </div>
   )

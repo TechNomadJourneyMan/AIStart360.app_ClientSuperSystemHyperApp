@@ -1,584 +1,210 @@
 'use client'
 
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import React, { useState, useEffect } from 'react'
 import Link from 'next/link'
-import Image from 'next/image'
-import { useForm } from 'react-hook-form'
-import { zodResolver } from '@hookform/resolvers/zod'
-import { z } from 'zod'
-<<<<<<< HEAD
-import { useAuthStore } from '@/stores/auth.store'
-import { createClient } from '@/lib/supabase-client'
-import { signIn } from 'next-auth/react'
-import { SystemHealthCompact } from '@/components/dashboard/SystemHealthCompact'
-=======
-import { createClient } from '@/lib/supabase/client'
-import { isSupabaseEmailRateLimitError } from '@/lib/supabase/auth-errors'
->>>>>>> 41f51555aefe4444f42b51d039ecb8f312ab4ace
-
-const staffSchema = z.object({
-  name:         z.string().min(2, 'Минимум 2 символа'),
-  email:        z.string().email('Введите корректный email'),
-  password:     z.string().min(6, 'Минимум 6 символов'),
-  confirm:      z.string(),
-  role:         z.enum(['admin', 'expert']),
-  organization: z.string().optional(),
-  position:     z.string().optional(),
-  agree:        z.boolean().refine((v) => v === true, 'Необходимо согласие'),
-}).refine((d) => d.password === d.confirm, {
-  message: 'Пароли не совпадают',
-  path: ['confirm'],
-})
-
-const clientSchema = z.object({
-  name:    z.string().min(2, 'Минимум 2 символа'),
-  email:   z.string().email('Введите корректный email'),
-  password: z.string().min(6, 'Минимум 6 символов'),
-  confirm: z.string(),
-  company: z.string().min(2, 'Введите название компании'),
-  agree:   z.boolean().refine((v) => v === true, 'Необходимо согласие'),
-}).refine((d) => d.password === d.confirm, {
-  message: 'Пароли не совпадают',
-  path: ['confirm'],
-})
-
-type StaffForm  = z.infer<typeof staffSchema>
-type ClientForm = z.infer<typeof clientSchema>
-type PortalType = 'client' | 'staff'
-type RegisterMetadata = {
-  full_name: string
-  role: 'admin' | 'expert' | 'owner' | 'client' | 'super_admin'
-  organization?: string
-  position?: string
-}
-
-const INPUT = 'w-full bg-surface-container border border-white/[0.08] rounded-xl pl-11 pr-4 py-3.5 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all'
+import { useRouter } from 'next/navigation'
+import { useAuthStore, type UserRole } from '@/stores/auth.store'
+import { Logo } from '@/components/ui/Logo'
+import { ThemeSwitcher } from '@/components/ThemeSwitcher'
 
 export default function RegisterPage() {
+  const [name, setName] = useState('')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [role, setRole] = useState<UserRole>('client')
+  const { register, isLoading, error, clearError, user } = useAuthStore()
   const router = useRouter()
-  const supabase = createClient()
 
-  const [portalType, setPortalType] = useState<PortalType>('client')
-  const [showPass, setShowPass]     = useState(false)
-  const [step, setStep]             = useState<1 | 2>(1)
-  const [staffLoading, setStaffLoading] = useState(false)
-  const [staffError, setStaffError] = useState<string | null>(null)
-  const [successMessage, setSuccessMessage] = useState<string | null>(null)
-  const [clientLoading, setClientLoading] = useState(false)
-  const [clientError, setClientError]     = useState<string | null>(null)
-
-  const sf = useForm<StaffForm>({
-    resolver: zodResolver(staffSchema),
-    defaultValues: { role: 'expert' },
-  })
-  const selectedRole = sf.watch('role')
-
-  const cf = useForm<ClientForm>({ resolver: zodResolver(clientSchema) })
-
-  const registerThroughDevApi = async (email: string, password: string, metadata: RegisterMetadata) => {
-    const res = await fetch('/api/dev/register', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ email, password, metadata }),
-    })
-
-    const data = (await res.json()) as { error?: string }
-    if (!res.ok) {
-      throw new Error(data.error ?? 'DEV_REGISTER_FAILED')
+  useEffect(() => {
+    if (user) {
+      if (user.role === 'client' && user.status === 'pending_approval') {
+        router.push('/client/waiting-room')
+      } else if (user.role === 'super_admin') {
+        router.push('/admin-giga-panel')
+      } else if (user.role === 'owner') {
+        router.push('/owner/dashboard')
+      } else if (user.role === 'expert') {
+        router.push('/expert/dashboard')
+      } else {
+        router.push('/dashboard')
+      }
     }
-  }
+  }, [user, router])
 
-  const goStep2 = async () => {
-    const ok = await sf.trigger(['name', 'email', 'password', 'confirm'])
-    if (ok) setStep(2)
-  }
-
-  const onStaffSubmit = async (data: StaffForm) => {
-    setStaffLoading(true)
-    setStaffError(null)
-    setSuccessMessage(null)
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
     try {
-      const metadata: RegisterMetadata = {
-        full_name: data.name,
-        role: data.role,
-        organization: data.organization,
-        position: data.position,
-      }
-
-      const { error } = await supabase.auth.signUp({
-        email: data.email,
-        password: data.password,
-        options: {
-          emailRedirectTo: `${window.location.origin}/auth/callback`,
-          data: metadata,
-        },
-      })
-      if (error) {
-        if (isSupabaseEmailRateLimitError(error.message)) {
-          await registerThroughDevApi(data.email, data.password, metadata)
-          setSuccessMessage('Аккаунт создан в dev-режиме без email-подтверждения. Можете войти сразу.')
-          router.replace('/login')
-          return
-        }
-        throw new Error(error.message)
-      }
-
-      setSuccessMessage('Регистрация завершена. Проверьте email для подтверждения аккаунта.')
-      router.replace('/login')
-    } catch (err: unknown) {
-      setStaffError(err instanceof Error ? err.message : 'Ошибка регистрации')
-    } finally {
-      setStaffLoading(false)
+      await register({ name, email, password, role })
+    } catch (err) {
+      // Error is handled by the store
     }
-  }
-
-  const onClientSubmit = async (data: ClientForm) => {
-    setClientLoading(true)
-    setClientError(null)
-    setSuccessMessage(null)
-    try {
-      const metadata: RegisterMetadata = {
-        full_name: data.name,
-        role: 'client',
-        organization: data.company,
-      }
-
-      const { error: signUpError } = await supabase.auth.signUp({
-        email: data.email,
-        password: data.password,
-        options: {
-          emailRedirectTo: `${window.location.origin}/auth/callback`,
-          data: metadata,
-        },
-      })
-      if (signUpError) {
-        if (isSupabaseEmailRateLimitError(signUpError.message)) {
-          await registerThroughDevApi(data.email, data.password, metadata)
-          setSuccessMessage('Аккаунт создан в dev-режиме без email-подтверждения. Можете войти сразу.')
-          router.replace('/login')
-          return
-        }
-        throw new Error(signUpError.message)
-      }
-
-<<<<<<< HEAD
-      await (sb.from('profiles') as any).upsert({
-        id: authData.user.id, email: data.email,
-        full_name: data.name, status: 'pending_approval',
-      }, { onConflict: 'id' })
-
-      await (sb.from('companies') as any).upsert({
-        user_id: authData.user.id, name: data.company,
-      }, { onConflict: 'user_id' })
-
-      router.replace('/client/waiting-room')
-=======
-      setSuccessMessage('Заявка принята. Подтвердите email, затем войдите в портал.')
-      router.replace('/login')
->>>>>>> 41f51555aefe4444f42b51d039ecb8f312ab4ace
-    } catch (err: unknown) {
-      setClientError(err instanceof Error ? err.message : 'Ошибка регистрации')
-    } finally {
-      setClientLoading(false)
-    }
-  }
-
-  const switchPortal = (t: PortalType) => {
-    setPortalType(t)
-    setStep(1)
-    sf.clearErrors()
-    cf.clearErrors()
-    setStaffError(null)
-    setClientError(null)
-    setSuccessMessage(null)
   }
 
   return (
-    <div className="min-h-screen flex bg-[#0A0B0F]">
-
-      {/* LEFT PANEL */}
-      <div className="hidden lg:flex lg:w-[44%] relative overflow-hidden bg-[#0d0f14] flex-col justify-between p-12">
-        <div className="absolute inset-0 opacity-[0.025]"
-          style={{ backgroundImage: 'linear-gradient(rgba(110,255,192,.6) 1px,transparent 1px),linear-gradient(90deg,rgba(110,255,192,.6) 1px,transparent 1px)', backgroundSize: '40px 40px' }} />
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-80 h-80 rounded-full bg-primary/4 blur-[100px] pointer-events-none" />
-
-        <Image src="/logo.svg" alt="AIStart360" width={160} height={30} priority />
-
-        <div className="relative z-10 space-y-6">
-          <h2 className="font-headline text-3xl font-extrabold text-on-surface">
-            Присоединяйтесь к<br />
-            <span className="text-gradient">AIStart360</span>
-          </h2>
-          <p className="text-sm text-on-surface-variant leading-relaxed max-w-xs">
-            Платформа для роста бизнеса с AI-диагностикой, рыночной аналитикой и стратегическим сопровождением.
-          </p>
-
-          <div className="space-y-4">
-            {[
-              { icon: 'radar',      title: 'GRI-диагностика',    desc: 'Оценка по 6 доменам готовности к росту' },
-              { icon: 'show_chart', title: 'Рыночная аналитика', desc: 'TAM/SAM/SOM, тренды, конкуренты'       },
-              { icon: 'route',      title: 'Дорожная карта',     desc: 'Точка А → Точка Б с конкретными KPI'  },
-            ].map((f) => (
-              <div key={f.icon} className="flex items-start gap-3">
-                <div className="w-8 h-8 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0 mt-0.5">
-                  <span className="material-symbols-outlined text-base text-primary">{f.icon}</span>
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-on-surface">{f.title}</p>
-                  <p className="text-xs text-on-surface-variant">{f.desc}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="glass-card rounded-2xl p-5 border border-primary/10">
-          <div className="flex gap-3">
-            {['500+', '27', '94%'].map((v, i) => (
-              <div key={i} className="flex-1 text-center">
-                <p className="text-lg font-mono font-bold text-primary">{v}</p>
-                <p className="text-[9px] font-mono text-on-surface-variant uppercase tracking-widest mt-0.5">
-                  {['клиентов', 'отраслей', 'NPS'][i]}
-                </p>
-              </div>
-            ))}
-          </div>
-        </div>
+    <div className="min-h-screen bg-surface flex flex-col items-center justify-center p-4 relative overflow-hidden">
+      {/* Background blobs for aesthetics */}
+      <div className="absolute top-0 left-0 w-full h-full pointer-events-none">
+        <div className="absolute top-[-10%] right-[-10%] w-[40%] h-[40%] bg-primary/5 rounded-full blur-[120px]" />
+        <div className="absolute bottom-[-10%] left-[-10%] w-[40%] h-[40%] bg-primary/5 rounded-full blur-[120px]" />
       </div>
 
-      {/* RIGHT PANEL */}
-      <div className="flex-1 flex items-center justify-center px-5 py-8 lg:p-12 overflow-y-auto overflow-x-hidden">
-        <div className="w-full max-w-[420px]">
+      <div className="w-full max-w-md bg-surface-container/40 backdrop-blur-xl border border-white/[0.05] p-8 rounded-3xl shadow-2xl relative z-10 transition-all">
+        <div className="flex justify-between items-center mb-10">
+          <Logo className="h-8" />
+          <ThemeSwitcher />
+        </div>
 
-          {/* Mobile logo */}
-          <div className="flex items-center gap-2 mb-6 lg:hidden">
-            <Image src="/logo-icon.svg" alt="AIStart360" width={32} height={32} />
-            <span className="font-headline text-lg font-bold text-on-surface">AIStart360</span>
+        <div className="mb-8">
+          <h1 className="text-3xl font-headline font-extrabold text-on-surface mb-2">Начать рост</h1>
+          <p className="text-on-surface-variant text-sm">Создайте аккаунт в системе AI-ускорения</p>
+        </div>
+
+        {error && (
+          <div className="mb-6 p-4 bg-error/10 border border-error/20 rounded-2xl flex items-start gap-3 animate-in fade-in slide-in-from-top-2">
+            <span className="material-symbols-outlined text-error text-xl mt-0.5">error</span>
+            <div className="flex-1">
+              <p className="text-[13px] text-error font-medium leading-tight">{error}</p>
+            </div>
+            <button
+              onClick={clearError}
+              className="text-error/60 hover:text-error transition-colors"
+            >
+              <span className="material-symbols-outlined text-sm">close</span>
+            </button>
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-2">
+            <label className="block text-xs font-mono text-on-surface-variant uppercase tracking-widest ml-1">
+              Ваше имя
+            </label>
+            <div className="relative group">
+              <span className="absolute left-4 top-1/2 -translate-y-1/2 material-symbols-outlined text-on-surface-variant/40 group-focus-within:text-primary transition-colors text-lg">
+                person
+              </span>
+              <input
+                type="text"
+                required
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="w-full h-12 bg-surface-container-high border border-white/[0.05] rounded-2xl pl-12 pr-4 text-on-surface focus:outline-none focus:border-primary/50 focus:ring-4 focus:ring-primary/10 transition-all"
+                placeholder="Иван Иванов"
+              />
+            </div>
           </div>
 
-          {/* Portal type toggle */}
-          <div className="flex bg-surface-container rounded-xl p-1 mb-7 gap-1">
-            {([
-              { key: 'client' as PortalType, label: 'Клиент / Бизнес', icon: 'business_center' },
-              { key: 'staff'  as PortalType, label: 'Команда',         icon: 'admin_panel_settings' },
-            ]).map((t) => (
-              <button key={t.key} type="button" onClick={() => switchPortal(t.key)}
-                className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-medium transition-all ${
-                  portalType === t.key ? 'bg-surface-container-high text-on-surface' : 'text-on-surface-variant hover:text-on-surface'
-                }`}>
-                <span className="material-symbols-outlined text-sm">{t.icon}</span>
-                {t.label}
+          <div className="space-y-2">
+            <label className="block text-xs font-mono text-on-surface-variant uppercase tracking-widest ml-1">
+              Email
+            </label>
+            <div className="relative group">
+              <span className="absolute left-4 top-1/2 -translate-y-1/2 material-symbols-outlined text-on-surface-variant/40 group-focus-within:text-primary transition-colors text-lg">
+                alternate_email
+              </span>
+              <input
+                type="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full h-12 bg-surface-container-high border border-white/[0.05] rounded-2xl pl-12 pr-4 text-on-surface focus:outline-none focus:border-primary/50 focus:ring-4 focus:ring-primary/10 transition-all"
+                placeholder="name@company.com"
+              />
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <label className="block text-xs font-mono text-on-surface-variant uppercase tracking-widest ml-1">
+              Пароль
+            </label>
+            <div className="relative group">
+              <span className="absolute left-4 top-1/2 -translate-y-1/2 material-symbols-outlined text-on-surface-variant/40 group-focus-within:text-primary transition-colors text-lg">
+                lock
+              </span>
+              <input
+                type="password"
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full h-12 bg-surface-container-high border border-white/[0.05] rounded-2xl pl-12 pr-4 text-on-surface focus:outline-none focus:border-primary/50 focus:ring-4 focus:ring-primary/10 transition-all"
+                placeholder="Минимум 8 знаков"
+              />
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <label className="block text-xs font-mono text-on-surface-variant uppercase tracking-widest ml-1">
+              Ваша роль
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setRole('client')}
+                className={`h-11 rounded-2xl text-[13px] font-bold transition-all border ${
+                  role === 'client'
+                    ? 'bg-primary/10 border-primary text-primary shadow-sm shadow-primary/10'
+                    : 'bg-surface-container-high border-white/[0.05] text-on-surface-variant hover:border-white/[0.1] hover:text-on-surface'
+                }`}
+              >
+                Я Клиент
               </button>
-            ))}
+              <button
+                type="button"
+                onClick={() => setRole('owner')}
+                className={`h-11 rounded-2xl text-[13px] font-bold transition-all border ${
+                  role === 'owner'
+                    ? 'bg-primary/10 border-primary text-primary shadow-sm shadow-primary/10'
+                    : 'bg-surface-container-high border-white/[0.05] text-on-surface-variant hover:border-white/[0.1] hover:text-on-surface'
+                }`}
+              >
+                Я Владелец
+              </button>
+            </div>
+            <p className="text-[10px] text-on-surface-variant/70 leading-relaxed mt-1 px-1">
+              {role === 'client' 
+                ? 'Для активации кабинета потребуется подтверждение администратором.' 
+                : 'Ваш кабинет будет активирован сразу после регистрации.'}
+            </p>
           </div>
 
-          {/* ── CLIENT FORM ─────────────────────────────────── */}
-          {portalType === 'client' && (
-            <>
-              <h1 className="font-headline text-2xl font-extrabold text-on-surface mb-1">Подать заявку</h1>
-              <p className="text-sm text-on-surface-variant mb-7">Зарегистрируйтесь как клиент для AI-диагностики бизнеса</p>
+          <button
+            type="submit"
+            disabled={isLoading}
+            className="w-full h-12 mt-4 bg-gradient-to-r from-primary to-primary-container text-on-primary font-bold rounded-2xl shadow-lg shadow-primary/20 hover:scale-[0.99] active:scale-[0.97] transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 group"
+          >
+            {isLoading ? (
+              <span className="w-5 h-5 border-2 border-on-primary/30 border-t-on-primary rounded-full animate-spin" />
+            ) : (
+              <>
+                Создать аккаунт
+                <span className="material-symbols-outlined text-base group-hover:translate-x-1 transition-transform arrow_forward">arrow_forward</span>
+              </>
+            )}
+          </button>
+        </form>
 
-              <form onSubmit={cf.handleSubmit(onClientSubmit)} className="space-y-4">
-                <div>
-                  <label className="block text-xs font-mono text-on-surface-variant uppercase tracking-wider mb-2">Ваше имя</label>
-                  <div className="relative">
-                    <span className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-on-surface-variant/40 text-xl">person</span>
-                    <input {...cf.register('name')} placeholder="Иван Иванов" className={INPUT} />
-                  </div>
-                  {cf.formState.errors.name && <p className="text-error text-xs mt-1.5">{cf.formState.errors.name.message}</p>}
-                </div>
-
-                <div>
-                  <label className="block text-xs font-mono text-on-surface-variant uppercase tracking-wider mb-2">Email</label>
-                  <div className="relative">
-                    <span className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-on-surface-variant/40 text-xl">mail</span>
-                    <input {...cf.register('email')} type="email" placeholder="you@company.kz" className={INPUT} />
-                  </div>
-                  {cf.formState.errors.email && <p className="text-error text-xs mt-1.5">{cf.formState.errors.email.message}</p>}
-                </div>
-
-                <div>
-                  <label className="block text-xs font-mono text-on-surface-variant uppercase tracking-wider mb-2">Название компании</label>
-                  <div className="relative">
-                    <span className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-on-surface-variant/40 text-xl">business</span>
-                    <input {...cf.register('company')} placeholder="ООО TechStart KZ" className={INPUT} />
-                  </div>
-                  {cf.formState.errors.company && <p className="text-error text-xs mt-1.5">{cf.formState.errors.company.message}</p>}
-                </div>
-
-                <div>
-                  <label className="block text-xs font-mono text-on-surface-variant uppercase tracking-wider mb-2">Пароль</label>
-                  <div className="relative">
-                    <span className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-on-surface-variant/40 text-xl">lock</span>
-                    <input {...cf.register('password')} type={showPass ? 'text' : 'password'} placeholder="Минимум 6 символов"
-                      className="w-full bg-surface-container border border-white/[0.08] rounded-xl pl-11 pr-11 py-3.5 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all" />
-                    <button type="button" onClick={() => setShowPass(v => !v)} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-on-surface-variant/40 hover:text-on-surface-variant transition-colors">
-                      <span className="material-symbols-outlined text-xl">{showPass ? 'visibility_off' : 'visibility'}</span>
-                    </button>
-                  </div>
-                  {cf.formState.errors.password && <p className="text-error text-xs mt-1.5">{cf.formState.errors.password.message}</p>}
-                </div>
-
-                <div>
-                  <label className="block text-xs font-mono text-on-surface-variant uppercase tracking-wider mb-2">Подтверждение пароля</label>
-                  <div className="relative">
-                    <span className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-on-surface-variant/40 text-xl">lock_reset</span>
-                    <input {...cf.register('confirm')} type="password" placeholder="Повторите пароль" className={INPUT} />
-                  </div>
-                  {cf.formState.errors.confirm && <p className="text-error text-xs mt-1.5">{cf.formState.errors.confirm.message}</p>}
-                </div>
-
-                {/* SSO */}
-                <div className="flex items-center gap-3 my-6">
-                  <div className="flex-1 h-px bg-white/[0.06]" />
-                  <span className="text-xs text-on-surface-variant font-mono uppercase tracking-widest">или через</span>
-                  <div className="flex-1 h-px bg-white/[0.06]" />
-                </div>
-
-                <div className="grid grid-cols-2 gap-3 mb-6">
-                  <button 
-                    type="button"
-                    onClick={async () => {
-                      await supabase.auth.signInWithOAuth({
-                        provider: 'google',
-                        options: {
-                          redirectTo: `${window.location.origin}/auth/callback`,
-                        },
-                      })
-                    }}
-                    className="flex items-center justify-center gap-2 py-3 rounded-xl border border-white/[0.08] bg-surface-container hover:bg-surface-container-high text-on-surface text-sm transition-colors"
-                  >
-                    <svg className="w-4 h-4" viewBox="0 0 24 24">
-                      <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-                      <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                      <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
-                      <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
-                    </svg>
-                    Google
-                  </button>
-                  <button type="button" className="flex items-center justify-center gap-2 py-3 rounded-xl border border-white/[0.08] bg-surface-container hover:bg-surface-container-high text-on-surface text-sm transition-colors">
-                    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M21.4 0H2.6C1.2 0 0 1.2 0 2.6v18.8C0 22.8 1.2 24 2.6 24h18.8c1.4 0 2.6-1.2 2.6-2.6V2.6C24 1.2 22.8 0 21.4 0zM7.1 20.5H3.6V9h3.6v11.5zM5.3 7.5c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm15.2 13H17V15c0-1.3 0-3-1.8-3s-2.1 1.4-2.1 2.9v5.6H9.5V9h3.4v1.6c.5-.9 1.6-1.8 3.3-1.8 3.5 0 4.2 2.3 4.2 5.3v6.4z"/>
-                    </svg>
-                    LinkedIn
-                  </button>
-                </div>
-                <label className="flex items-start gap-3 cursor-pointer group">
-                  <input {...cf.register('agree')} type="checkbox" className="mt-0.5 w-4 h-4 rounded accent-primary flex-shrink-0 cursor-pointer" />
-                  <span className="text-xs text-on-surface-variant leading-relaxed group-hover:text-on-surface transition-colors">
-                    Я принимаю{' '}
-                    <a href="#" className="text-primary hover:underline">Условия использования</a>
-                    {' '}и{' '}
-                    <a href="#" className="text-primary hover:underline">Политику конфиденциальности</a>
-                  </span>
-                </label>
-                {cf.formState.errors.agree && <p className="text-error text-xs">{cf.formState.errors.agree.message}</p>}
-
-                {clientError && (
-                  <div className="flex items-center gap-2 bg-error/10 border border-error/20 rounded-xl px-4 py-3">
-                    <span className="material-symbols-outlined text-error text-lg flex-shrink-0">error</span>
-                    <p className="text-error text-sm">{clientError}</p>
-                  </div>
-                )}
-
-                {successMessage && (
-                  <div className="flex items-center gap-2 bg-primary/10 border border-primary/20 rounded-xl px-4 py-3">
-                    <span className="material-symbols-outlined text-primary text-lg flex-shrink-0">check_circle</span>
-                    <p className="text-primary text-sm">{successMessage}</p>
-                  </div>
-                )}
-
-                <button type="submit" disabled={clientLoading}
-                  className="w-full py-3.5 rounded-xl bg-gradient-to-r from-primary to-[#00e29e] text-[#003824] font-bold text-sm flex items-center justify-center gap-2 hover:scale-[0.99] transition-all disabled:opacity-60">
-                  {clientLoading
-                    ? <><span className="w-4 h-4 border-2 border-[#003824]/30 border-t-[#003824] rounded-full animate-spin" />Отправляем заявку...</>
-                    : <><span className="material-symbols-outlined text-lg">send</span>Подать заявку</>
-                  }
-                </button>
-
-                <div className="bg-surface-container rounded-xl p-4 flex gap-3">
-                  <span className="material-symbols-outlined text-primary/60 text-lg flex-shrink-0 mt-0.5">info</span>
-                  <p className="text-xs text-on-surface-variant leading-relaxed">
-                    После регистрации ваша заявка будет рассмотрена администратором в течение 1 рабочего дня. Вы получите уведомление по email.
-                  </p>
-                </div>
-              </form>
-            </>
-          )}
-
-          {/* ── STAFF FORM ──────────────────────────────────── */}
-          {portalType === 'staff' && (
-            <>
-              {/* Step indicator */}
-              <div className="flex items-center gap-3 mb-8">
-                {[1, 2].map((s) => (
-                  <div key={s} className="flex items-center gap-2">
-                    <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-mono font-bold transition-all ${
-                      step === s ? 'bg-primary text-[#003824]' : step > s ? 'bg-primary/30 text-primary' : 'bg-surface-container text-on-surface-variant'
-                    }`}>
-                      {step > s ? <span className="material-symbols-outlined text-sm">check</span> : s}
-                    </div>
-                    {s < 2 && <div className={`h-px w-8 transition-colors ${step > s ? 'bg-primary' : 'bg-surface-container-high'}`} />}
-                  </div>
-                ))}
-                <span className="text-xs text-on-surface-variant font-mono ml-2">
-                  {step === 1 ? 'Аккаунт' : 'Профиль'}
-                </span>
-              </div>
-
-              <h1 className="font-headline text-2xl font-extrabold text-on-surface mb-1">
-                {step === 1 ? 'Создать аккаунт' : 'Данные профиля'}
-              </h1>
-              <p className="text-sm text-on-surface-variant mb-7">
-                {step === 1 ? 'Шаг 1 из 2 — основные данные' : 'Шаг 2 из 2 — ваша роль и организация'}
-              </p>
-
-              <form onSubmit={sf.handleSubmit(onStaffSubmit)} className="space-y-4">
-                {step === 1 && (
-                  <>
-                    <div>
-                      <label className="block text-xs font-mono text-on-surface-variant uppercase tracking-wider mb-2">Полное имя</label>
-                      <div className="relative">
-                        <span className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-on-surface-variant/40 text-xl">person</span>
-                        <input {...sf.register('name')} placeholder="Иван Иванов" className={INPUT} />
-                      </div>
-                      {sf.formState.errors.name && <p className="text-error text-xs mt-1.5">{sf.formState.errors.name.message}</p>}
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-mono text-on-surface-variant uppercase tracking-wider mb-2">Email</label>
-                      <div className="relative">
-                        <span className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-on-surface-variant/40 text-xl">mail</span>
-                        <input {...sf.register('email')} type="email" placeholder="you@company.kz" className={INPUT} />
-                      </div>
-                      {sf.formState.errors.email && <p className="text-error text-xs mt-1.5">{sf.formState.errors.email.message}</p>}
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-mono text-on-surface-variant uppercase tracking-wider mb-2">Пароль</label>
-                      <div className="relative">
-                        <span className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-on-surface-variant/40 text-xl">lock</span>
-                        <input {...sf.register('password')} type={showPass ? 'text' : 'password'} placeholder="Минимум 6 символов"
-                          className="w-full bg-surface-container border border-white/[0.08] rounded-xl pl-11 pr-11 py-3.5 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all" />
-                        <button type="button" onClick={() => setShowPass(v => !v)} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-on-surface-variant/40 hover:text-on-surface-variant transition-colors">
-                          <span className="material-symbols-outlined text-xl">{showPass ? 'visibility_off' : 'visibility'}</span>
-                        </button>
-                      </div>
-                      {sf.formState.errors.password && <p className="text-error text-xs mt-1.5">{sf.formState.errors.password.message}</p>}
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-mono text-on-surface-variant uppercase tracking-wider mb-2">Подтверждение пароля</label>
-                      <div className="relative">
-                        <span className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-on-surface-variant/40 text-xl">lock_reset</span>
-                        <input {...sf.register('confirm')} type="password" placeholder="Повторите пароль" className={INPUT} />
-                      </div>
-                      {sf.formState.errors.confirm && <p className="text-error text-xs mt-1.5">{sf.formState.errors.confirm.message}</p>}
-                    </div>
-
-                    <button type="button" onClick={goStep2}
-                      className="w-full py-3.5 rounded-xl bg-gradient-to-r from-primary to-[#00e29e] text-[#003824] font-bold text-sm flex items-center justify-center gap-2 hover:scale-[0.99] transition-all">
-                      Далее
-                      <span className="material-symbols-outlined text-lg">arrow_forward</span>
-                    </button>
-                  </>
-                )}
-
-                {step === 2 && (
-                  <>
-                    <div>
-                      <label className="block text-xs font-mono text-on-surface-variant uppercase tracking-wider mb-3">Ваша роль</label>
-                      <div className="grid grid-cols-2 gap-3">
-                        {([
-                          { value: 'admin',  label: 'Администратор', icon: 'admin_panel_settings', desc: 'Полный доступ к системе' },
-                          { value: 'expert', label: 'Эксперт',       icon: 'psychology',           desc: 'Доступ к своей панели'  },
-                        ] as const).map((r) => (
-                          <label key={r.value} className={`relative cursor-pointer rounded-xl border p-4 transition-all ${
-                            selectedRole === r.value
-                              ? 'border-primary/50 bg-primary/10'
-                              : 'border-white/[0.08] bg-surface-container hover:border-white/[0.16]'
-                          }`}>
-                            <input {...sf.register('role')} type="radio" value={r.value} className="absolute opacity-0" />
-                            <span className={`material-symbols-outlined text-xl block mb-2 ${selectedRole === r.value ? 'text-primary' : 'text-on-surface-variant'}`}>{r.icon}</span>
-                            <p className={`text-sm font-medium ${selectedRole === r.value ? 'text-primary' : 'text-on-surface'}`}>{r.label}</p>
-                            <p className="text-[10px] text-on-surface-variant mt-0.5">{r.desc}</p>
-                            {selectedRole === r.value && (
-                              <span className="absolute top-2.5 right-2.5 material-symbols-outlined text-sm text-primary">check_circle</span>
-                            )}
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-mono text-on-surface-variant uppercase tracking-wider mb-2">Организация</label>
-                      <div className="relative">
-                        <span className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-on-surface-variant/40 text-xl">business</span>
-                        <input {...sf.register('organization')} placeholder="ООО Компания (необязательно)" className={INPUT} />
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-mono text-on-surface-variant uppercase tracking-wider mb-2">Должность</label>
-                      <div className="relative">
-                        <span className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-on-surface-variant/40 text-xl">badge</span>
-                        <input {...sf.register('position')} placeholder="CEO, Manager, Analyst..." className={INPUT} />
-                      </div>
-                    </div>
-
-                    <label className="flex items-start gap-3 cursor-pointer group">
-                      <input {...sf.register('agree')} type="checkbox" className="mt-0.5 w-4 h-4 rounded accent-primary flex-shrink-0 cursor-pointer" />
-                      <span className="text-xs text-on-surface-variant leading-relaxed group-hover:text-on-surface transition-colors">
-                        Я принимаю{' '}
-                        <a href="#" className="text-primary hover:underline">Условия использования</a>
-                        {' '}и{' '}
-                        <a href="#" className="text-primary hover:underline">Политику конфиденциальности</a>
-                      </span>
-                    </label>
-                    {sf.formState.errors.agree && <p className="text-error text-xs">{sf.formState.errors.agree.message}</p>}
-
-                    {staffError && (
-                      <div className="flex items-center gap-2 bg-error/10 border border-error/20 rounded-xl px-4 py-3">
-                        <span className="material-symbols-outlined text-error text-lg flex-shrink-0">error</span>
-                        <p className="text-error text-sm">{staffError}</p>
-                      </div>
-                    )}
-
-                    {successMessage && (
-                      <div className="flex items-center gap-2 bg-primary/10 border border-primary/20 rounded-xl px-4 py-3">
-                        <span className="material-symbols-outlined text-primary text-lg flex-shrink-0">check_circle</span>
-                        <p className="text-primary text-sm">{successMessage}</p>
-                      </div>
-                    )}
-
-                    <div className="flex gap-3">
-                      <button type="button" onClick={() => setStep(1)}
-                        className="flex-1 py-3.5 rounded-xl border border-white/[0.08] text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-all text-sm font-medium">
-                        Назад
-                      </button>
-                      <button type="submit" disabled={staffLoading}
-                        className="flex-1 py-3.5 rounded-xl bg-gradient-to-r from-primary to-[#00e29e] text-[#003824] font-bold text-sm flex items-center justify-center gap-2 hover:scale-[0.99] transition-all disabled:opacity-60">
-                        {staffLoading
-                          ? <><span className="w-4 h-4 border-2 border-[#003824]/30 border-t-[#003824] rounded-full animate-spin" />Регистрируем...</>
-                          : <><span className="material-symbols-outlined text-lg">person_add</span>Создать аккаунт</>
-                        }
-                      </button>
-                    </div>
-                  </>
-                )}
-              </form>
-            </>
-          )}
-
-          <p className="text-center text-xs text-on-surface-variant mt-8">
+        <div className="mt-8 pt-8 border-t border-white/[0.05] text-center">
+          <p className="text-sm text-on-surface-variant">
             Уже есть аккаунт?{' '}
-            <Link href="/login" className="text-primary hover:underline font-medium">Войти</Link>
+            <Link
+              href="/login"
+              className="text-primary font-bold hover:underline"
+            >
+              Войти
+            </Link>
           </p>
-
-          <SystemHealthCompact />
+          
+          {/* System status */}
+          <div className="flex items-center justify-center gap-4 mt-6">
+            <div className="flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
+              <span className="text-[10px] font-mono text-primary/70">System Online</span>
+            </div>
+            <span className="text-on-surface-variant/20">·</span>
+            <span className="text-[10px] font-mono text-on-surface-variant/40">ISO 27001</span>
+            <span className="text-on-surface-variant/20">·</span>
+            <span className="text-[10px] font-mono text-on-surface-variant/40">v2.0</span>
+          </div>
         </div>
       </div>
     </div>

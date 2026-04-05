@@ -9,7 +9,7 @@ type AnalyticsClientRow = {
     avgCheck: number
   } | null
   griReports: Array<{
-    overallScore: number
+    score: number
   }>
 }
 
@@ -19,8 +19,8 @@ type DbClient = {
     findMany: (args: unknown) => Promise<AnalyticsClientRow[]>
   }
   griReport: {
-    aggregate: (args: unknown) => Promise<{ _avg: { overallScore: number | null } }>
-    findMany: (args: unknown) => Promise<Array<{ overallScore: number }>>
+    aggregate: (args: unknown) => Promise<{ _avg: { score: number | null } }>
+    findMany: (args: unknown) => Promise<Array<{ score: number }>>
   }
 }
 
@@ -66,7 +66,7 @@ export async function getAnalyticsData(db: DbClient = prisma as unknown as DbCli
   const [activeClients, totalClients, avgGriAggregate, clients, recentReports] = await Promise.all([
     db.client.count({ where: { ...(clientWhere ?? {}), status: 'active' } }),
     db.client.count({ where: clientWhere }),
-    db.griReport.aggregate({ where: reportsWhere, _avg: { overallScore: true } }),
+    db.griReport.aggregate({ where: reportsWhere, _avg: { score: true } }),
     db.client.findMany({
       where: clientWhere,
       include: {
@@ -81,7 +81,7 @@ export async function getAnalyticsData(db: DbClient = prisma as unknown as DbCli
       where: reportsWhere,
       orderBy: { calculatedAt: 'desc' },
       take: 30,
-      select: { overallScore: true },
+      select: { score: true },
     }),
   ])
 
@@ -93,7 +93,7 @@ export async function getAnalyticsData(db: DbClient = prisma as unknown as DbCli
   const trend = recentReports
     .slice()
     .reverse()
-    .map((report: { overallScore: number }) => Math.max(0, Math.min(100, Math.round(report.overallScore))))
+    .map((report: { score: number }) => Math.max(0, Math.min(100, Math.round(report.score))))
 
   const industryMap = new Map<string, number>()
   for (const client of clients) {
@@ -108,8 +108,8 @@ export async function getAnalyticsData(db: DbClient = prisma as unknown as DbCli
 
   const clientPerformance = clients
     .map((client: AnalyticsClientRow) => {
-      const latest = client.griReports[0]?.overallScore ?? 0
-      const previous = client.griReports[1]?.overallScore ?? latest
+      const latest = client.griReports[0]?.score ?? 0
+      const previous = client.griReports[1]?.score ?? latest
       const growth = previous === 0 ? 0 : ((latest - previous) / previous) * 100
 
       return {
@@ -127,7 +127,7 @@ export async function getAnalyticsData(db: DbClient = prisma as unknown as DbCli
 
   return {
     kpis: {
-      avgGriScore: Math.round((avgGriAggregate._avg.overallScore ?? 0) * 10),
+      avgGriScore: Math.round((avgGriAggregate._avg.score ?? 0) * 10),
       portfolioGmv,
       activeClients,
       churnRate: roundTo(churnBase),

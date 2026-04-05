@@ -1,11 +1,9 @@
+export const dynamic = "force-dynamic"
+
 import type { Metadata } from 'next'
 import { EmptyState } from '@/components/common/EmptyState'
-<<<<<<< HEAD
-import { auth } from '@/lib/auth'
-import { getDashboardData } from '@/lib/get-dashboard-data'
-=======
 import { getReportDocuments, uploadReportAction } from '@/app/actions/reports'
->>>>>>> 41f51555aefe4444f42b51d039ecb8f312ab4ace
+
 
 export const metadata: Metadata = { title: 'Reports' }
 
@@ -32,12 +30,8 @@ const categoryColors: Record<string, string> = {
 }
 
 export default async function ReportsPage() {
-<<<<<<< HEAD
-  const session = await auth()
-  const data = getDashboardData(session?.user?.email)
-=======
   const reports = await getReportDocuments()
->>>>>>> 41f51555aefe4444f42b51d039ecb8f312ab4ace
+
 
   return (
     <div className="space-y-6">
@@ -45,11 +39,8 @@ export default async function ReportsPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="font-headline text-3xl font-bold text-on-surface">Reports Hub</h1>
-<<<<<<< HEAD
-          <p className="text-on-surface-variant text-sm mt-1">{data.REPORTS.length} документов</p>
-=======
           <p className="text-on-surface-variant text-sm mt-1">{reports.length} документов</p>
->>>>>>> 41f51555aefe4444f42b51d039ecb8f312ab4ace
+
         </div>
       </div>
 
@@ -109,11 +100,8 @@ export default async function ReportsPage() {
       </form>
 
       {/* Reports Grid */}
-<<<<<<< HEAD
-      {data.REPORTS.length === 0 ? (
-=======
       {reports.length === 0 ? (
->>>>>>> 41f51555aefe4444f42b51d039ecb8f312ab4ace
+
         <EmptyState
           icon="folder_open"
           title="Нет отчётов"
@@ -121,11 +109,8 @@ export default async function ReportsPage() {
         />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-<<<<<<< HEAD
-          {data.REPORTS.map((report) => (
-=======
           {reports.map((report) => (
->>>>>>> 41f51555aefe4444f42b51d039ecb8f312ab4ace
+
             <div
               key={report.id}
               className="bg-surface-container rounded-xl p-5 hover:bg-surface-container-high transition-colors cursor-pointer group"

@@ -1,5 +1,7 @@
+export const dynamic = "force-dynamic"
+
 import type { Metadata } from 'next'
-<<<<<<< HEAD
+import { prisma } from '@/lib/db'
 import { auth } from '@/lib/auth'
 import { getDashboardData } from '@/lib/get-dashboard-data'
 
@@ -23,18 +25,12 @@ export default async function MarketPage() {
   const session = await auth()
   const data = getDashboardData(session?.user?.email)
 
-  const marketSignals = data.SIGNALS.filter(s => ['market', 'financial', 'regulatory'].includes(s.type))
-=======
-import { prisma } from '@/lib/db'
-
-export const metadata: Metadata = { title: 'Рынок' }
-
-export default async function MarketPage() {
   const [organizations, clients] = await Promise.all([
     prisma.organization.count(),
     prisma.client.count(),
   ])
->>>>>>> 41f51555aefe4444f42b51d039ecb8f312ab4ace
+
+  const marketSignals = data.SIGNALS.filter(s => ['market', 'financial', 'regulatory'].includes(s.type))
 
   return (
     <div className="space-y-8">
@@ -54,15 +50,12 @@ export default async function MarketPage() {
 
       <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {[
-<<<<<<< HEAD
-          { label: 'TAM', sublabel: 'Total Addressable Market', value: data.MARKET.tam, icon: 'language', desc: 'Весь доступный рынок' },
-          { label: 'SAM', sublabel: 'Serviceable Addressable Market', value: data.MARKET.sam, icon: 'travel_explore', desc: 'Обслуживаемый сегмент' },
-          { label: 'SOM', sublabel: 'Serviceable Obtainable Market', value: data.MARKET.som, icon: 'my_location', desc: 'Целевой захват' },
-=======
-          { label: 'Организации', value: String(organizations), icon: 'apartment', desc: 'Активные организации в системе' },
-          { label: 'Клиенты', value: String(clients), icon: 'groups', desc: 'Клиентская база для анализа' },
-          { label: 'Сигналы рынка', value: '0', icon: 'hub', desc: 'Источник данных ещё не подключён' },
->>>>>>> 41f51555aefe4444f42b51d039ecb8f312ab4ace
+          { label: 'TAM', value: data.MARKET.tam, icon: 'language', desc: 'Total Addressable Market' },
+          { label: 'SAM', value: data.MARKET.sam, icon: 'travel_explore', desc: 'Serviceable Addressable Market' },
+          { label: 'SOM', value: data.MARKET.som, icon: 'my_location', desc: 'Serviceable Obtainable Market' },
+          { label: 'Организации', value: String(organizations), icon: 'apartment', desc: 'Активные в системе' },
+          { label: 'Клиенты', value: String(clients), icon: 'groups', desc: 'Клиентская база' },
+          { label: 'Сигналы', value: String(marketSignals.length), icon: 'hub', desc: 'Актуальные события' },
         ].map((m) => (
           <div key={m.label} className="bg-surface-container-low rounded-2xl border border-white/[0.04] hover:border-primary/20 p-6 transition-colors group">
             <div className="flex items-start justify-between mb-4">
@@ -77,7 +70,6 @@ export default async function MarketPage() {
         ))}
       </section>
 
-<<<<<<< HEAD
       {/* Segments + Trends */}
       <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Segment breakdown */}
@@ -120,7 +112,7 @@ export default async function MarketPage() {
               return (
                 <div
                   key={trend.label}
-                  className={`flex items-center gap-4 p-4 rounded-xl border ${colors.bg} ${colors.border} transition-colors`}
+                  className={`flex items-center gap-4 p-4 rounded-xl border ${colors.bg} ${colors.border} transition-colors hover:bg-surface-container-high cursor-pointer`}
                 >
                   <span className={`material-symbols-outlined text-xl ${colors.text}`}>{trend.icon}</span>
                   <span className="text-sm text-on-surface flex-1">{trend.label}</span>
@@ -137,18 +129,35 @@ export default async function MarketPage() {
       {/* Market Signals */}
       <section>
         <div className="flex justify-between items-end border-b border-outline-variant/10 pb-4 mb-5">
-=======
-      <section className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-6">
-        <div className="flex items-start gap-4">
-          <span className="material-symbols-outlined text-2xl text-on-surface-variant">database</span>
->>>>>>> 41f51555aefe4444f42b51d039ecb8f312ab4ace
-          <div>
-            <h2 className="font-headline text-lg font-bold text-on-surface mb-2">Данные рынка не подключены</h2>
-            <p className="text-sm text-on-surface-variant leading-relaxed">
-              Эта страница переведена в real-data режим: вместо моков показывается фактическое состояние источников.
-              Для заполнения раздела требуется подключить таблицу/интеграцию рыночных сигналов.
-            </p>
-          </div>
+          <h2 className="font-headline text-lg font-bold text-on-surface">Сигналы рынка</h2>
+        </div>
+
+        <div className="space-y-4">
+          {marketSignals.map((signal) => {
+            const colors = PRIORITY_COLORS[signal.priority as keyof typeof PRIORITY_COLORS] ?? PRIORITY_COLORS.low
+            return (
+              <div key={signal.id} className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-5 flex items-start gap-4 hover:border-primary/10 transition-colors">
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${colors.bg}`}>
+                  <span className={`material-symbols-outlined ${colors.text}`}>{TYPE_ICONS[signal.type] ?? 'info'}</span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-3 mb-1">
+                    <h3 className="text-sm font-medium text-on-surface">{signal.title}</h3>
+                    <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full border uppercase ${colors.text} ${colors.bg} ${colors.border}`}>
+                      {signal.priority}
+                    </span>
+                  </div>
+                  <p className="text-xs text-on-surface-variant line-clamp-2">{signal.description}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest">{signal.time}</p>
+                  <button className="text-xs text-primary mt-2 flex items-center gap-1 ml-auto">
+                    Детали <span className="material-symbols-outlined text-xs">chevron_right</span>
+                  </button>
+                </div>
+              </div>
+            )
+          })}
         </div>
       </section>
     </div>

@@ -3,16 +3,35 @@
 import { create } from 'zustand'
 import { createClient } from '@/lib/supabase/client'
 import { isSupabaseEmailNotConfirmedError } from '@/lib/supabase/auth-errors'
-import type { User, UserRole } from '@/shared/api/auth.service'
 
-type PublicUser = Omit<User, 'password'>
+/**
+ * auth.store.ts
+ * Supabase Auth-backed store — replaces the old localStorage + btoa implementation.
+ * Session is managed by @supabase/ssr cookies; this store provides reactive UI state.
+ */
+
+export type UserRole = 'admin' | 'expert' | 'owner' | 'client' | 'super_admin'
+export type UserStatus = 'pending_approval' | 'approved' | 'rejected'
+
+export interface PublicUser {
+  id:            string
+  name:          string
+  email:         string
+  role:          UserRole | null
+  status?:       UserStatus
+  organization?: string
+  position?:     string
+  avatar?:       string
+  createdAt?:    string
+  lastLogin?:    string
+}
 
 interface AuthState {
-  user: PublicUser | null
-  role: UserRole | null
-  isLoading: boolean
+  user:          PublicUser | null
+  role:          UserRole | null
+  isLoading:     boolean
   isInitialized: boolean
-  error: string | null
+  error:         string | null
 
   // Actions
   login: (email: string, password: string) => Promise<void>
@@ -72,7 +91,7 @@ async function buildUserFromSession(user: {
   const supabase = createClient()
   const profileRes = await supabase
     .from('profiles')
-    .select('full_name, role, organization, position')
+    .select('full_name, role, organization, position, status')
     .eq('id', user.id)
     .maybeSingle()
 
@@ -81,7 +100,7 @@ async function buildUserFromSession(user: {
       ? profileRes.data.full_name
       : typeof user.user_metadata?.full_name === 'string'
         ? user.user_metadata.full_name
-        : 'Пользователь'
+        : (user.user_metadata?.name as string) ?? 'Пользователь'
 
   const role = normalizeRole(
     typeof profileRes.data?.role === 'string'
@@ -91,14 +110,19 @@ async function buildUserFromSession(user: {
         : null,
   )
 
+  const status = (profileRes.data?.status as UserStatus) || 'approved'
+
   return {
     id: user.id,
     email: user.email ?? '',
     name: fullName,
     role,
+    status,
     createdAt: user.created_at ?? new Date().toISOString(),
-    organization: typeof profileRes.data?.organization === 'string' ? profileRes.data.organization : undefined,
-    position: typeof profileRes.data?.position === 'string' ? profileRes.data.position : undefined,
+    organization: typeof profileRes.data?.organization === 'string' ? profileRes.data.organization : (user.user_metadata?.organization as string),
+    position: typeof profileRes.data?.position === 'string' ? profileRes.data.position : (user.user_metadata?.position as string),
+    avatar: (user.user_metadata?.avatar_url as string) ?? (user.user_metadata?.picture as string),
+    lastLogin: (user as any).last_sign_in_at,
   } satisfies PublicUser
 }
 
@@ -113,15 +137,15 @@ export const useAuthStore = create<AuthState>()((set) => ({
     try {
       const supabase = createClient()
       const {
-        data: { session },
-      } = await supabase.auth.getSession()
+        data: { user },
+      } = await supabase.auth.getUser()
 
-      if (!session?.user) {
+      if (!user) {
         set({ user: null, role: null, isInitialized: true })
         return
       }
 
-      const appUser = await buildUserFromSession(session.user)
+      const appUser = await buildUserFromSession(user)
       set({ user: appUser, role: appUser.role, isInitialized: true })
     } catch {
       set({ user: null, role: null, isInitialized: true })
@@ -176,9 +200,10 @@ export const useAuthStore = create<AuthState>()((set) => ({
           emailRedirectTo: `${window.location.origin}/auth/callback`,
           data: {
             full_name: input.name,
-            role: input.role ?? 'expert',
+            role: input.role ?? 'client',
             organization: input.organization,
             position: input.position,
+            status: input.role === 'client' ? 'pending_approval' : 'approved',
           },
         },
       })
@@ -206,6 +231,13 @@ export const useAuthStore = create<AuthState>()((set) => ({
   logout: async () => {
     const supabase = createClient()
     await supabase.auth.signOut()
+    
+    // Clear legacy cookies
+    if (typeof document !== 'undefined') {
+      document.cookie = 'aistart360_role=; path=/; max-age=0'
+      document.cookie = 'aistart360_user_id=; path=/; max-age=0'
+    }
+
     set({ user: null, role: null, error: null })
     if (typeof window !== 'undefined') {
       window.location.href = '/login'

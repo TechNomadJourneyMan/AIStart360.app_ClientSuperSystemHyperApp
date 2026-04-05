@@ -37,8 +37,8 @@ export default async function OwnerClientDetailPage({ params }: { params: { id: 
     )
   }
 
-  const latestScore = client.griReports[0]?.overallScore
-  const previousScore = client.griReports[1]?.overallScore
+  const latestScore = client.griReports[0]?.score
+  const previousScore = client.griReports[1]?.score
   const griScore = latestScore ? Math.round(latestScore) : 0
   const prev = previousScore ? Math.round(previousScore) : undefined
 

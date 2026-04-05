@@ -1,19 +1,19 @@
 import type { Metadata } from 'next'
-import { getSettingsUserData } from '@/lib/settings-data'
+import { createClient } from '@/lib/supabase/server'
 
 export const metadata: Metadata = { title: 'Settings' }
 
 function mapRoleToPosition(role: string): string {
   switch (role) {
-    case 'SUPER_ADMIN':
-      return 'Владелец'
-    case 'ADMIN':
+    case 'super_admin':
+      return 'Владелец системы'
+    case 'admin':
       return 'Администратор'
-    case 'MANAGER':
-      return 'Менеджер'
-    case 'ANALYST':
-      return 'Аналитик'
-    case 'CLIENT':
+    case 'expert':
+      return 'Эксперт роста'
+    case 'owner':
+      return 'Владелец бизнеса'
+    case 'client':
       return 'Клиент'
     default:
       return 'Пользователь'
@@ -21,17 +21,18 @@ function mapRoleToPosition(role: string): string {
 }
 
 const SECTIONS = [
-  { id: 'profile', label: 'Профиль', icon: 'person' },
-  { id: 'security', label: 'Безопасность', icon: 'lock' },
-  { id: 'notifications', label: 'Уведомления', icon: 'notifications' },
-  { id: 'appearance', label: 'Внешний вид', icon: 'palette' },
-  { id: 'team', label: 'Команда', icon: 'group' },
-  { id: 'billing', label: 'Биллинг', icon: 'credit_card' },
-  { id: 'api', label: 'API & Интеграции', icon: 'api' },
+  { id: 'profile',       label: 'Профиль',       icon: 'person'        },
+  { id: 'security',      label: 'Безопасность',  icon: 'lock'          },
+  { id: 'notifications', label: 'Уведомления',   icon: 'notifications' },
+  { id: 'appearance',    label: 'Внешний вид',   icon: 'palette'       },
+  { id: 'team',          label: 'Команда',       icon: 'group'         },
+  { id: 'billing',       label: 'Биллинг',       icon: 'credit_card'   },
+  { id: 'api',           label: 'API & Интеграции', icon: 'api'        },
 ]
 
 export default async function SettingsPage() {
-  const user = await getSettingsUserData()
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
 
   if (!user) {
     return (
@@ -45,13 +46,37 @@ export default async function SettingsPage() {
     )
   }
 
-  const [firstName = user.name, lastName = ''] = user.name.split(' ')
-  const initials = user.name
+  // Fetch from profiles table for more data
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('id', user.id)
+    .maybeSingle()
+
+  const meta = user.user_metadata ?? {}
+  const fullName = (profile?.full_name ?? meta.full_name ?? meta.name ?? user.email ?? 'Пользователь') as string
+  const email = user.email ?? ''
+  
+  const role = (profile?.role ?? meta.role ?? 'client') as string
+  const position = (profile?.position ?? meta.position ?? mapRoleToPosition(role)) as string
+  const organization = (profile?.organization ?? meta.organization ?? '—') as string
+
+  const [firstName = fullName.split(' ')[0], lastName = fullName.split(' ').slice(1).join(' ')] = fullName.split(' ')
+  
+  const initials = fullName
     .split(' ')
     .filter(Boolean)
     .slice(0, 2)
     .map((part) => part[0]?.toUpperCase() ?? '')
-    .join('') || 'U'
+    .join('') || (email[0] ?? 'U').toUpperCase()
+
+  const fields = [
+    { label: 'Имя', placeholder: 'Иван', value: firstName, type: 'text' },
+    { label: 'Фамилия', placeholder: 'Иванов', value: lastName, type: 'text' },
+    { label: 'Email', placeholder: 'you@company.com', value: email, type: 'email' },
+    { label: 'Должность', placeholder: 'Manager', value: position, type: 'text' },
+    { label: 'Организация', placeholder: 'Компания', value: organization, type: 'text' },
+  ]
 
   return (
     <div className="space-y-6">
@@ -80,7 +105,7 @@ export default async function SettingsPage() {
           </nav>
         </div>
 
-        {/* Profile Settings (default view) */}
+        {/* Profile Settings */}
         <div className="lg:col-span-3 space-y-6">
           {/* Avatar */}
           <div className="bg-surface-container rounded-xl p-6">
@@ -102,19 +127,13 @@ export default async function SettingsPage() {
           <div className="bg-surface-container rounded-xl p-6">
             <h3 className="font-headline text-lg font-bold text-on-surface mb-5">Личная информация</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {[
-                { label: 'Имя', placeholder: 'Иван', value: firstName },
-                { label: 'Фамилия', placeholder: 'Иванов', value: lastName },
-                { label: 'Email', placeholder: 'you@company.com', value: user.email, type: 'email' },
-                { label: 'Должность', placeholder: 'Manager', value: mapRoleToPosition(user.role) },
-                { label: 'Организация', placeholder: 'Компания', value: user.organizationName },
-              ].map((field) => (
+              {fields.map((field) => (
                 <div key={field.label}>
                   <label className="block text-xs font-label text-on-surface-variant uppercase tracking-wider mb-2">
                     {field.label}
                   </label>
                   <input
-                    type={field.type ?? 'text'}
+                    type={field.type}
                     defaultValue={field.value}
                     placeholder={field.placeholder}
                     className="w-full bg-surface-container-high border border-outline-variant/30 rounded-lg px-4 py-2.5 text-sm text-on-surface placeholder:text-on-surface-variant/40 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all"
@@ -129,10 +148,10 @@ export default async function SettingsPage() {
             <h3 className="font-headline text-lg font-bold text-on-surface mb-5">Уведомления</h3>
             <div className="space-y-4">
               {[
-                { label: 'Critical Alerts', desc: 'Немедленные уведомления о критических событиях', enabled: true },
-                { label: 'GRI Updates', desc: 'При пересчёте GRI для клиентов', enabled: true },
-                { label: 'Report Uploads', desc: 'При загрузке новых отчётов', enabled: false },
-                { label: 'Weekly Digest', desc: 'Еженедельная сводка по портфелю', enabled: true },
+                { label: 'Критические алерты', desc: 'Немедленные уведомления о критических событиях', enabled: true  },
+                { label: 'Обновления GRI',    desc: 'При пересчёте GRI для клиентов',                 enabled: true  },
+                { label: 'Загрузка отчётов',   desc: 'При загрузке новых отчётов',                     enabled: false },
+                { label: 'Еженедельный дайджест', desc: 'Еженедельная сводка по портфелю',                enabled: true  },
               ].map((item) => (
                 <div key={item.label} className="flex items-center justify-between py-2 border-b border-outline-variant/10 last:border-0">
                   <div>
