@@ -56,7 +56,7 @@ export async function parseDocument(
 
   switch (docType) {
     case "pdf": {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      // eslint-disable-next-line
       const pdfModule = await import("pdf-parse") as any;
       const pdf = pdfModule.default ?? pdfModule;
       const data = await pdf(buffer);
@@ -72,7 +72,7 @@ export async function parseDocument(
     }
 
     case "docx": {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      // eslint-disable-next-line
       const mammothModule = await import("mammoth") as any;
       const mammoth = mammothModule.default ?? mammothModule;
       const result = await mammoth.extractRawText({ buffer });
