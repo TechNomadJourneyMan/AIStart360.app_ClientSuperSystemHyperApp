@@ -1,50 +1,59 @@
 import { NextResponse } from 'next/server'
-import bcrypt from 'bcryptjs'
-import { prisma } from '@/lib/db'
+import { createClient } from '@supabase/supabase-js'
 import { z } from 'zod'
 
 const schema = z.object({
-  email:    z.string().email(),
-  password: z.string().min(8),
-  name:     z.string().min(2),
-  orgCode:  z.string().optional(), // invite code
+  email:        z.string().email(),
+  password:     z.string().min(6),
+  name:         z.string().min(2),
+  role:         z.enum(['client', 'owner', 'admin', 'expert']).optional().default('client'),
+  organization: z.string().optional(),
+  position:     z.string().optional(),
 })
 
-export async function POST(request: Request) {
-  const body = await request.json()
-  const parsed = schema.safeParse(body)
-
-  if (!parsed.success) {
-    return NextResponse.json(
-      { error: 'Validation failed', details: parsed.error.flatten() },
-      { status: 400 }
-    )
-  }
-
-  const { email, password, name } = parsed.data
-
-  // Проверить существующий email
-  const existing = await prisma.user.findUnique({ where: { email } })
-  if (existing) {
-    return NextResponse.json({ error: 'Email already registered' }, { status: 409 })
-  }
-
-  const passwordHash = await bcrypt.hash(password, 12)
-
-  // Найти или создать дефолтную организацию
-  let org = await prisma.organization.findFirst({ where: { slug: 'default' } })
-  if (!org) {
-    org = await prisma.organization.create({
-      data: { name: 'Default Org', slug: 'default' }
-    })
-  }
-
-  const user = await prisma.user.create({
-    data: { email, passwordHash, name, orgId: org.id }
-  })
-
-  return NextResponse.json(
-    { id: user.id, email: user.email, name: user.name },
-    { status: 201 }
+function getAdminClient() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { autoRefreshToken: false, persistSession: false } }
   )
+}
+
+export async function POST(request: Request) {
+  try {
+    const body = await request.json()
+    const parsed = schema.safeParse(body)
+    if (!parsed.success) {
+      return NextResponse.json({ error: 'Validation failed' }, { status: 400 })
+    }
+
+    const { email, password, name, role, organization, position } = parsed.data
+    const admin = getAdminClient()
+
+    const status = role === 'client' ? 'pending_approval' : 'approved'
+
+    // Create user via admin API — email_confirm: true skips verification entirely
+    const { data, error } = await admin.auth.admin.createUser({
+      email,
+      password,
+      email_confirm: true,
+      user_metadata: { full_name: name, role, organization, position, status },
+    })
+
+    if (error) {
+      if (error.message.toLowerCase().includes('already registered') || error.message.toLowerCase().includes('already been registered')) {
+        return NextResponse.json({ error: 'EMAIL_TAKEN' }, { status: 409 })
+      }
+      return NextResponse.json({ error: error.message }, { status: 400 })
+    }
+
+    if (!data.user) {
+      return NextResponse.json({ error: 'UNKNOWN' }, { status: 500 })
+    }
+
+    return NextResponse.json({ ok: true, userId: data.user.id }, { status: 201 })
+  } catch (err) {
+    console.error('[auth/register] error:', err)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  }
 }
