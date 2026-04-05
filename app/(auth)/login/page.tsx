@@ -19,6 +19,8 @@ function LoginContent() {
     if (user) {
       if (user.role === 'client' && user.status === 'pending_approval') {
         router.push('/client/waiting-room')
+      } else if (user.role === 'client' && user.status === 'approved') {
+        router.push('/client/point-a')
       } else if (user.role === 'super_admin') {
         router.push('/admin-giga-panel')
       } else if (user.role === 'owner') {
