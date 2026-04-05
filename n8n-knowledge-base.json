@@ -1,0 +1,124 @@
+{
+  "nodes": {
+    "n8n-nodes-base.webhook": {
+      "name": "Webhook",
+      "description": "Receives HTTP requests and triggers workflow execution",
+      "fields": {
+        "path": {
+          "type": "string",
+          "description": "URL path for the webhook endpoint"
+        },
+        "httpMethod": {
+          "type": "options",
+          "options": [
+            "GET",
+            "POST",
+            "PUT",
+            "DELETE",
+            "PATCH"
+          ],
+          "description": "HTTP method to accept"
+        },
+        "responseMode": {
+          "type": "options",
+          "options": [
+            "onReceived",
+            "responseNode"
+          ],
+          "description": "How to respond to the webhook"
+        }
+      },
+      "triggers": true,
+      "category": "trigger"
+    },
+    "n8n-nodes-base.set": {
+      "name": "Set",
+      "description": "Sets values for data processing",
+      "fields": {
+        "values": {
+          "type": "object",
+          "description": "Values to set in the data"
+        },
+        "keepOnlySet": {
+          "type": "boolean",
+          "description": "Whether to keep only the set values"
+        }
+      },
+      "triggers": false,
+      "category": "data"
+    },
+    "n8n-nodes-base.httpRequest": {
+      "name": "HTTP Request",
+      "description": "Makes HTTP requests to external APIs",
+      "fields": {
+        "url": {
+          "type": "string",
+          "description": "URL to make the request to"
+        },
+        "method": {
+          "type": "options",
+          "options": [
+            "GET",
+            "POST",
+            "PUT",
+            "DELETE",
+            "PATCH"
+          ],
+          "description": "HTTP method"
+        },
+        "headers": {
+          "type": "object",
+          "description": "HTTP headers to send"
+        },
+        "body": {
+          "type": "string",
+          "description": "Request body data"
+        }
+      },
+      "triggers": false,
+      "category": "network"
+    },
+    "n8n-nodes-base.if": {
+      "name": "IF",
+      "description": "Conditional logic for workflow branching",
+      "fields": {
+        "conditions": {
+          "type": "array",
+          "description": "Conditions to evaluate"
+        },
+        "combineOperation": {
+          "type": "options",
+          "options": [
+            "any",
+            "all"
+          ],
+          "description": "How to combine multiple conditions"
+        }
+      },
+      "triggers": false,
+      "category": "logic"
+    }
+  },
+  "patterns": {
+    "common_issues": [
+      {
+        "pattern": "missing_trigger",
+        "description": "Workflow has no trigger node",
+        "severity": "error",
+        "solution": "Add a trigger node (webhook, schedule, etc.) to start the workflow"
+      },
+      {
+        "pattern": "disconnected_nodes",
+        "description": "Nodes are not properly connected",
+        "severity": "warning",
+        "solution": "Ensure all nodes are connected in the workflow"
+      },
+      {
+        "pattern": "missing_credentials",
+        "description": "Node requires credentials that are not configured",
+        "severity": "error",
+        "solution": "Configure credentials for nodes that require authentication"
+      }
+    ]
+  }
+}

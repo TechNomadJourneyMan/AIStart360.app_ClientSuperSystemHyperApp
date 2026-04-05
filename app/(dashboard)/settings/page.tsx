@@ -1,6 +1,24 @@
 import type { Metadata } from 'next'
+import { getSettingsUserData } from '@/lib/settings-data'
 
 export const metadata: Metadata = { title: 'Settings' }
+
+function mapRoleToPosition(role: string): string {
+  switch (role) {
+    case 'SUPER_ADMIN':
+      return 'Владелец'
+    case 'ADMIN':
+      return 'Администратор'
+    case 'MANAGER':
+      return 'Менеджер'
+    case 'ANALYST':
+      return 'Аналитик'
+    case 'CLIENT':
+      return 'Клиент'
+    default:
+      return 'Пользователь'
+  }
+}
 
 const SECTIONS = [
   { id: 'profile', label: 'Профиль', icon: 'person' },
@@ -12,11 +30,33 @@ const SECTIONS = [
   { id: 'api', label: 'API & Интеграции', icon: 'api' },
 ]
 
-export default function SettingsPage() {
+export default async function SettingsPage() {
+  const user = await getSettingsUserData()
+
+  if (!user) {
+    return (
+      <div className="space-y-4">
+        <h1 className="font-headline text-3xl font-bold text-on-surface">Настройки</h1>
+        <div className="bg-surface-container rounded-xl p-6 border border-outline-variant/30">
+          <p className="text-on-surface">Не удалось загрузить профиль пользователя.</p>
+          <p className="text-sm text-on-surface-variant mt-2">Войдите снова и попробуйте открыть страницу повторно.</p>
+        </div>
+      </div>
+    )
+  }
+
+  const [firstName = user.name, lastName = ''] = user.name.split(' ')
+  const initials = user.name
+    .split(' ')
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? '')
+    .join('') || 'U'
+
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="font-headline text-3xl font-bold text-on-surface">Settings</h1>
+        <h1 className="font-headline text-3xl font-bold text-on-surface">Настройки</h1>
         <p className="text-on-surface-variant text-sm mt-1">Управление аккаунтом и системой</p>
       </div>
 
@@ -47,7 +87,7 @@ export default function SettingsPage() {
             <h3 className="font-headline text-lg font-bold text-on-surface mb-5">Фото профиля</h3>
             <div className="flex items-center gap-5">
               <div className="w-16 h-16 rounded-full bg-surface-container-high flex items-center justify-center text-xl font-headline font-bold text-primary">
-                AS
+                {initials}
               </div>
               <div>
                 <button className="text-sm text-on-surface border border-outline-variant/30 px-4 py-2 rounded-lg hover:bg-surface-container-high transition-colors">
@@ -63,10 +103,11 @@ export default function SettingsPage() {
             <h3 className="font-headline text-lg font-bold text-on-surface mb-5">Личная информация</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {[
-                { label: 'Имя', placeholder: 'Иван', value: 'Адиль' },
-                { label: 'Фамилия', placeholder: 'Иванов', value: 'Ансари' },
-                { label: 'Email', placeholder: 'you@company.com', value: 'adil@aistart360.com', type: 'email' },
-                { label: 'Должность', placeholder: 'Manager', value: 'Senior Manager' },
+                { label: 'Имя', placeholder: 'Иван', value: firstName },
+                { label: 'Фамилия', placeholder: 'Иванов', value: lastName },
+                { label: 'Email', placeholder: 'you@company.com', value: user.email, type: 'email' },
+                { label: 'Должность', placeholder: 'Manager', value: mapRoleToPosition(user.role) },
+                { label: 'Организация', placeholder: 'Компания', value: user.organizationName },
               ].map((field) => (
                 <div key={field.label}>
                   <label className="block text-xs font-label text-on-surface-variant uppercase tracking-wider mb-2">

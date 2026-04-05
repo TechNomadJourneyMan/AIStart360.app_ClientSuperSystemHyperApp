@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
+import { createClient } from '@/lib/supabase/client'
 import Image from 'next/image'
 import Link from 'next/link'
 
@@ -269,20 +270,27 @@ export default function OnboardingPage() {
 
   // Load persisted state from localStorage
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY)
-      if (raw) {
-        const data = JSON.parse(raw)
-        setSavedAnswers(data.answers ?? {})
-        setCurrentStep(data.current_step ?? 1)
-        setCompanyId(data.company_id ?? null)
+    const bootstrap = async () => {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY)
+        if (raw) {
+          const data = JSON.parse(raw)
+          setSavedAnswers(data.answers ?? {})
+          setCurrentStep(data.current_step ?? 1)
+          setCompanyId(data.company_id ?? null)
+        }
+
+        const supabase = createClient()
+        const {
+          data: { user },
+        } = await supabase.auth.getUser()
+        setUserId(user?.id ?? null)
+      } catch {
+        setUserId(null)
       }
-      const authRaw = localStorage.getItem('aistart360_auth')
-      if (authRaw) {
-        const parsed = JSON.parse(authRaw)
-        setUserId(parsed?.state?.user?.id ?? null)
-      }
-    } catch {}
+    }
+
+    bootstrap()
   }, [])
 
   const persistLocal = useCallback((step: number, answers: Record<string, unknown>) => {

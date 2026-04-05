@@ -59,7 +59,7 @@ export default function WaitingRoomPage() {
   const [lastChecked, setLastChecked] = useState<Date>(new Date())
   const [isRedirecting, setIsRedirecting] = useState(false)
 
-  // Get user: try Supabase session first (client portal), then fall back to Zustand store (staff)
+  // Get user from Supabase session only.
   useEffect(() => {
     const sb = createClient()
     sb.auth.getSession().then(({ data }) => {
@@ -67,17 +67,7 @@ export default function WaitingRoomPage() {
       if (u?.id) {
         setUserId(u.id)
         setUserEmail(u.email ?? '')
-        return
       }
-      // Fallback: read from Zustand localStorage store
-      try {
-        const raw = localStorage.getItem('aistart360_auth')
-        if (raw) {
-          const parsed = JSON.parse(raw)
-          const user = parsed?.state?.user
-          if (user?.id) { setUserId(user.id); setUserEmail(user.email ?? '') }
-        }
-      } catch {}
     })
   }, [])
 

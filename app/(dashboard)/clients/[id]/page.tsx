@@ -221,6 +221,7 @@ export default async function ClientDetailPage({ params }: { params: { id: strin
     )
   }
 
+<<<<<<< HEAD
   // ── Prisma client fallback ────────────────────────────────────────────────
   const prismaClient = await fetchPrismaClient(params.id)
 
@@ -271,11 +272,14 @@ export default async function ClientDetailPage({ params }: { params: { id: strin
   }
 
   // ── Client Not Found ──────────────────────────────────────────────────────
+=======
+>>>>>>> 41f51555aefe4444f42b51d039ecb8f312ab4ace
   return (
     <div className="space-y-6">
       <nav className="flex items-center gap-2 text-sm text-on-surface-variant">
         <Link href="/clients" className="hover:text-on-surface transition-colors">Clients</Link>
         <span className="material-symbols-outlined text-sm">chevron_right</span>
+<<<<<<< HEAD
         <span className="text-on-surface">Не найден</span>
       </nav>
       <div className="bg-surface-container rounded-xl p-12 text-center">
@@ -285,6 +289,18 @@ export default async function ClientDetailPage({ params }: { params: { id: strin
         <Link href="/clients" className="inline-flex items-center gap-2 text-sm font-mono text-primary hover:underline">
           <span className="material-symbols-outlined text-base">arrow_back</span>
           Вернуться к списку клиентов
+=======
+        <span className="text-on-surface">Нет данных</span>
+      </nav>
+
+      <div className="bg-surface-container rounded-xl p-8 text-center">
+        <span className="material-symbols-outlined text-4xl text-on-surface-variant mb-3 block">database_off</span>
+        <p className="text-on-surface font-medium mb-1">Профиль клиента не найден</p>
+        <p className="text-sm text-on-surface-variant mb-4">Для этого клиента пока нет данных диагностики в базе.</p>
+        <Link href="/clients" className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-outline-variant/30 text-sm hover:bg-surface-container-high transition-colors">
+          <span className="material-symbols-outlined text-base">arrow_back</span>
+          Вернуться к списку
+>>>>>>> 41f51555aefe4444f42b51d039ecb8f312ab4ace
         </Link>
       </div>
     </div>

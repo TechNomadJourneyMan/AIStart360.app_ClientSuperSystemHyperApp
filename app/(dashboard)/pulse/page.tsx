@@ -390,15 +390,17 @@ export default function PulsePage() {
   const DYNAMIC_STATS = useMemo(() => {
     const high = TODAY_CLIENTS.filter(c => c.churnLevel === 'high').length
     const medium = TODAY_CLIENTS.filter(c => c.churnLevel === 'medium').length
+    const apiProcessedToday = typeof clientsData?.stats?.processedToday === 'number' ? clientsData.stats.processedToday : TODAY_CLIENTS.length
+    const apiDailyTarget = typeof clientsData?.stats?.dailyTarget === 'number' ? clientsData.stats.dailyTarget : Math.max(6, apiProcessedToday)
     return {
       revenueAtRisk: highRiskRevenue,
       highRisk: high,
       mediumRisk: medium,
       totalClients: TODAY_CLIENTS.length,
-      processedToday: 3, // Mocked for now
-      dailyTarget: 6,
+      processedToday: apiProcessedToday,
+      dailyTarget: apiDailyTarget,
     }
-  }, [TODAY_CLIENTS, highRiskRevenue])
+  }, [TODAY_CLIENTS, highRiskRevenue, clientsData])
 
   if (isLoading) return (
     <div className="flex items-center justify-center min-h-[400px]">

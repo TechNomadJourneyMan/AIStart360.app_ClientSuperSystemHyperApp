@@ -1,20 +1,26 @@
 import type { Metadata } from 'next'
+<<<<<<< HEAD
 import { auth } from '@/lib/auth'
 import { getDashboardData } from '@/lib/get-dashboard-data'
+=======
+import { prisma } from '@/lib/db'
+>>>>>>> 41f51555aefe4444f42b51d039ecb8f312ab4ace
 
 export const metadata: Metadata = { title: 'Intelligence Hub' }
 
-const priorityConfig = {
-  critical: { label: 'Critical', color: 'text-error bg-error/10 border-error/20', dot: 'bg-error' },
-  high:     { label: 'High', color: 'text-tertiary-container bg-tertiary-container/10 border-tertiary-container/20', dot: 'bg-tertiary-container' },
-  medium:   { label: 'Medium', color: 'text-secondary bg-secondary/10 border-secondary/20', dot: 'bg-secondary' },
-  low:      { label: 'Low', color: 'text-on-surface-variant bg-surface-container border-outline-variant/30', dot: 'bg-outline' },
-} as const
+export default async function IntelligencePage() {
+  const [auditEvents, clientCount] = await Promise.all([
+    prisma.auditLog.count(),
+    prisma.client.count(),
+  ])
 
+<<<<<<< HEAD
 export default async function IntelligencePage() {
   const session = await auth()
   const data = getDashboardData(session?.user?.email)
 
+=======
+>>>>>>> 41f51555aefe4444f42b51d039ecb8f312ab4ace
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -32,10 +38,10 @@ export default async function IntelligencePage() {
       {/* Signal Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {[
-          { label: 'Total Signals', value: '142', icon: 'hub', color: 'text-on-surface' },
-          { label: 'Critical', value: '8', icon: 'warning', color: 'text-error' },
-          { label: 'Opportunities', value: '23', icon: 'lightbulb', color: 'text-primary' },
-          { label: 'Processed', value: '98%', icon: 'check_circle', color: 'text-primary' },
+          { label: 'Audit Events', value: String(auditEvents), icon: 'hub', color: 'text-on-surface' },
+          { label: 'Клиенты', value: String(clientCount), icon: 'groups', color: 'text-primary' },
+          { label: 'Сигналы', value: '0', icon: 'lightbulb', color: 'text-on-surface-variant' },
+          { label: 'Источник', value: 'offline', icon: 'cloud_off', color: 'text-on-surface-variant' },
         ].map((stat) => (
           <div key={stat.label} className="bg-surface-container-low rounded-xl p-4">
             <div className="flex items-center gap-2 mb-2">
@@ -47,6 +53,7 @@ export default async function IntelligencePage() {
         ))}
       </div>
 
+<<<<<<< HEAD
       {/* Filter Bar */}
       <div className="flex flex-wrap gap-2">
         {['All', 'Market', 'Financial', 'Regulatory', 'Technology', 'Competitive'].map((f) => (
@@ -102,6 +109,12 @@ export default async function IntelligencePage() {
             </div>
           )
         })}
+=======
+      <div className="bg-surface-container rounded-xl p-8 text-center">
+        <span className="material-symbols-outlined text-4xl text-on-surface-variant/30 mb-3 block">radar</span>
+        <p className="text-sm text-on-surface mb-1">Лента intelligence пока пуста</p>
+        <p className="text-xs text-on-surface-variant">Моки удалены. Добавьте источник рыночных сигналов, чтобы заполнить раздел.</p>
+>>>>>>> 41f51555aefe4444f42b51d039ecb8f312ab4ace
       </div>
     </div>
   )

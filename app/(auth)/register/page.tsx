@@ -7,10 +7,15 @@ import Image from 'next/image'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
+<<<<<<< HEAD
 import { useAuthStore } from '@/stores/auth.store'
 import { createClient } from '@/lib/supabase-client'
 import { signIn } from 'next-auth/react'
 import { SystemHealthCompact } from '@/components/dashboard/SystemHealthCompact'
+=======
+import { createClient } from '@/lib/supabase/client'
+import { isSupabaseEmailRateLimitError } from '@/lib/supabase/auth-errors'
+>>>>>>> 41f51555aefe4444f42b51d039ecb8f312ab4ace
 
 const staffSchema = z.object({
   name:         z.string().min(2, 'Минимум 2 символа'),
@@ -41,16 +46,25 @@ const clientSchema = z.object({
 type StaffForm  = z.infer<typeof staffSchema>
 type ClientForm = z.infer<typeof clientSchema>
 type PortalType = 'client' | 'staff'
+type RegisterMetadata = {
+  full_name: string
+  role: 'admin' | 'expert' | 'owner' | 'client' | 'super_admin'
+  organization?: string
+  position?: string
+}
 
 const INPUT = 'w-full bg-surface-container border border-white/[0.08] rounded-xl pl-11 pr-4 py-3.5 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all'
 
 export default function RegisterPage() {
   const router = useRouter()
-  const { register: registerUser, isLoading, error, clearError } = useAuthStore()
+  const supabase = createClient()
 
   const [portalType, setPortalType] = useState<PortalType>('client')
   const [showPass, setShowPass]     = useState(false)
   const [step, setStep]             = useState<1 | 2>(1)
+  const [staffLoading, setStaffLoading] = useState(false)
+  const [staffError, setStaffError] = useState<string | null>(null)
+  const [successMessage, setSuccessMessage] = useState<string | null>(null)
   const [clientLoading, setClientLoading] = useState(false)
   const [clientError, setClientError]     = useState<string | null>(null)
 
@@ -62,35 +76,95 @@ export default function RegisterPage() {
 
   const cf = useForm<ClientForm>({ resolver: zodResolver(clientSchema) })
 
+  const registerThroughDevApi = async (email: string, password: string, metadata: RegisterMetadata) => {
+    const res = await fetch('/api/dev/register', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ email, password, metadata }),
+    })
+
+    const data = (await res.json()) as { error?: string }
+    if (!res.ok) {
+      throw new Error(data.error ?? 'DEV_REGISTER_FAILED')
+    }
+  }
+
   const goStep2 = async () => {
     const ok = await sf.trigger(['name', 'email', 'password', 'confirm'])
     if (ok) setStep(2)
   }
 
   const onStaffSubmit = async (data: StaffForm) => {
-    clearError()
+    setStaffLoading(true)
+    setStaffError(null)
+    setSuccessMessage(null)
     try {
-      await registerUser({
-        name: data.name, email: data.email, password: data.password,
-        role: data.role, organization: data.organization, position: data.position,
+      const metadata: RegisterMetadata = {
+        full_name: data.name,
+        role: data.role,
+        organization: data.organization,
+        position: data.position,
+      }
+
+      const { error } = await supabase.auth.signUp({
+        email: data.email,
+        password: data.password,
+        options: {
+          emailRedirectTo: `${window.location.origin}/auth/callback`,
+          data: metadata,
+        },
       })
-      router.replace(data.role === 'admin' ? '/dashboard' : '/expert/dashboard')
-    } catch { /* shown via store */ }
+      if (error) {
+        if (isSupabaseEmailRateLimitError(error.message)) {
+          await registerThroughDevApi(data.email, data.password, metadata)
+          setSuccessMessage('Аккаунт создан в dev-режиме без email-подтверждения. Можете войти сразу.')
+          router.replace('/login')
+          return
+        }
+        throw new Error(error.message)
+      }
+
+      setSuccessMessage('Регистрация завершена. Проверьте email для подтверждения аккаунта.')
+      router.replace('/login')
+    } catch (err: unknown) {
+      setStaffError(err instanceof Error ? err.message : 'Ошибка регистрации')
+    } finally {
+      setStaffLoading(false)
+    }
   }
 
   const onClientSubmit = async (data: ClientForm) => {
     setClientLoading(true)
     setClientError(null)
+    setSuccessMessage(null)
     try {
-      const sb = createClient()
-      const { data: authData, error: signUpError } = await sb.auth.signUp({
+      const metadata: RegisterMetadata = {
+        full_name: data.name,
+        role: 'client',
+        organization: data.company,
+      }
+
+      const { error: signUpError } = await supabase.auth.signUp({
         email: data.email,
         password: data.password,
-        options: { data: { full_name: data.name, company: data.company } },
+        options: {
+          emailRedirectTo: `${window.location.origin}/auth/callback`,
+          data: metadata,
+        },
       })
-      if (signUpError) throw new Error(signUpError.message)
-      if (!authData.user) throw new Error('Не удалось создать аккаунт')
+      if (signUpError) {
+        if (isSupabaseEmailRateLimitError(signUpError.message)) {
+          await registerThroughDevApi(data.email, data.password, metadata)
+          setSuccessMessage('Аккаунт создан в dev-режиме без email-подтверждения. Можете войти сразу.')
+          router.replace('/login')
+          return
+        }
+        throw new Error(signUpError.message)
+      }
 
+<<<<<<< HEAD
       await (sb.from('profiles') as any).upsert({
         id: authData.user.id, email: data.email,
         full_name: data.name, status: 'pending_approval',
@@ -101,6 +175,10 @@ export default function RegisterPage() {
       }, { onConflict: 'user_id' })
 
       router.replace('/client/waiting-room')
+=======
+      setSuccessMessage('Заявка принята. Подтвердите email, затем войдите в портал.')
+      router.replace('/login')
+>>>>>>> 41f51555aefe4444f42b51d039ecb8f312ab4ace
     } catch (err: unknown) {
       setClientError(err instanceof Error ? err.message : 'Ошибка регистрации')
     } finally {
@@ -113,8 +191,9 @@ export default function RegisterPage() {
     setStep(1)
     sf.clearErrors()
     cf.clearErrors()
+    setStaffError(null)
     setClientError(null)
-    clearError()
+    setSuccessMessage(null)
   }
 
   return (
@@ -262,7 +341,14 @@ export default function RegisterPage() {
                 <div className="grid grid-cols-2 gap-3 mb-6">
                   <button 
                     type="button"
-                    onClick={() => signIn('google')}
+                    onClick={async () => {
+                      await supabase.auth.signInWithOAuth({
+                        provider: 'google',
+                        options: {
+                          redirectTo: `${window.location.origin}/auth/callback`,
+                        },
+                      })
+                    }}
                     className="flex items-center justify-center gap-2 py-3 rounded-xl border border-white/[0.08] bg-surface-container hover:bg-surface-container-high text-on-surface text-sm transition-colors"
                   >
                     <svg className="w-4 h-4" viewBox="0 0 24 24">
@@ -295,6 +381,13 @@ export default function RegisterPage() {
                   <div className="flex items-center gap-2 bg-error/10 border border-error/20 rounded-xl px-4 py-3">
                     <span className="material-symbols-outlined text-error text-lg flex-shrink-0">error</span>
                     <p className="text-error text-sm">{clientError}</p>
+                  </div>
+                )}
+
+                {successMessage && (
+                  <div className="flex items-center gap-2 bg-primary/10 border border-primary/20 rounded-xl px-4 py-3">
+                    <span className="material-symbols-outlined text-primary text-lg flex-shrink-0">check_circle</span>
+                    <p className="text-primary text-sm">{successMessage}</p>
                   </div>
                 )}
 
@@ -447,10 +540,17 @@ export default function RegisterPage() {
                     </label>
                     {sf.formState.errors.agree && <p className="text-error text-xs">{sf.formState.errors.agree.message}</p>}
 
-                    {error && (
+                    {staffError && (
                       <div className="flex items-center gap-2 bg-error/10 border border-error/20 rounded-xl px-4 py-3">
                         <span className="material-symbols-outlined text-error text-lg flex-shrink-0">error</span>
-                        <p className="text-error text-sm">{error}</p>
+                        <p className="text-error text-sm">{staffError}</p>
+                      </div>
+                    )}
+
+                    {successMessage && (
+                      <div className="flex items-center gap-2 bg-primary/10 border border-primary/20 rounded-xl px-4 py-3">
+                        <span className="material-symbols-outlined text-primary text-lg flex-shrink-0">check_circle</span>
+                        <p className="text-primary text-sm">{successMessage}</p>
                       </div>
                     )}
 
@@ -459,9 +559,9 @@ export default function RegisterPage() {
                         className="flex-1 py-3.5 rounded-xl border border-white/[0.08] text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-all text-sm font-medium">
                         Назад
                       </button>
-                      <button type="submit" disabled={isLoading}
+                      <button type="submit" disabled={staffLoading}
                         className="flex-1 py-3.5 rounded-xl bg-gradient-to-r from-primary to-[#00e29e] text-[#003824] font-bold text-sm flex items-center justify-center gap-2 hover:scale-[0.99] transition-all disabled:opacity-60">
-                        {isLoading
+                        {staffLoading
                           ? <><span className="w-4 h-4 border-2 border-[#003824]/30 border-t-[#003824] rounded-full animate-spin" />Регистрируем...</>
                           : <><span className="material-symbols-outlined text-lg">person_add</span>Создать аккаунт</>
                         }

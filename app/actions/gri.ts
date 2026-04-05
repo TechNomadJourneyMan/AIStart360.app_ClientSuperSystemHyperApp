@@ -2,12 +2,16 @@
 
 import { prisma } from "@/lib/db"
 import { calculateGri, GriAnswers } from "@/lib/gri/logic"
-import { auth } from "@/lib/auth"
+import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from "next/cache"
 
 export async function createGriReportAction(clientId: string, answers: GriAnswers) {
-  const session = await auth()
-  if (!session?.user) {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  if (!user) {
     return { error: "Unauthorized" }
   }
 
@@ -40,12 +44,19 @@ export async function createGriReportAction(clientId: string, answers: GriAnswer
 }
 
 export async function getClientsAction() {
-  const session = await auth()
-  if (!session?.user) return []
+  const supabase = await createClient()
+  const {
+    data: { user: sessionUser },
+  } = await supabase.auth.getUser()
+  if (!sessionUser) return []
 
-  // Assuming user can see clients of their organization
-  const user = await prisma.user.findUnique({
-    where: { id: session.user.id as string },
+  const user = await prisma.user.findFirst({
+    where: {
+      OR: [
+        { id: sessionUser.id },
+        { email: sessionUser.email ?? undefined },
+      ],
+    },
     select: { orgId: true }
   })
 

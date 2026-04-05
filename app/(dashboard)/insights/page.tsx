@@ -1,16 +1,20 @@
 import type { Metadata } from 'next'
+<<<<<<< HEAD
 import { auth } from '@/lib/auth'
 import { getDashboardData } from '@/lib/get-dashboard-data'
+=======
+import { prisma } from '@/lib/db'
+>>>>>>> 41f51555aefe4444f42b51d039ecb8f312ab4ace
 
 export const metadata: Metadata = { title: 'Инсайты' }
 
-const PRIORITY_COLORS = {
-  critical: { text: 'text-error', bg: 'bg-error/10', border: 'border-error/20' },
-  high:     { text: 'text-tertiary-container', bg: 'bg-tertiary-container/10', border: 'border-tertiary-container/20' },
-  medium:   { text: 'text-secondary', bg: 'bg-secondary/10', border: 'border-secondary/20' },
-  low:      { text: 'text-on-surface-variant', bg: 'bg-surface-container', border: 'border-white/[0.04]' },
-}
+export default async function InsightsPage() {
+  const [reportCount, avgScore] = await Promise.all([
+    prisma.griReport.count(),
+    prisma.griReport.aggregate({ _avg: { overallScore: true } }),
+  ])
 
+<<<<<<< HEAD
 const TYPE_ICONS: Record<string, string> = {
   financial:   'payments',
   market:      'show_chart',
@@ -29,6 +33,8 @@ export default async function InsightsPage() {
   const session = await auth()
   const data = getDashboardData(session?.user?.email)
 
+=======
+>>>>>>> 41f51555aefe4444f42b51d039ecb8f312ab4ace
   return (
     <div className="space-y-8">
       {/* Header */}
@@ -44,31 +50,20 @@ export default async function InsightsPage() {
         </p>
       </section>
 
-      {/* Insight Cards */}
       <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {INSIGHT_CARDS.map((card) => (
-          <div key={card.title} className={`
-            bg-surface-container-low rounded-2xl border border-white/[0.04] hover:border-${card.color}/20
-            p-6 transition-colors group
-          `}>
-            <div className="flex items-start gap-4">
-              <div className={`w-10 h-10 rounded-xl bg-${card.color}/10 flex items-center justify-center flex-shrink-0`}>
-                <span className={`material-symbols-outlined text-lg text-${card.color}`}>{card.icon}</span>
-              </div>
-              <div className="flex-1">
-                <div className="flex items-start justify-between gap-2 mb-2">
-                  <h3 className="text-sm font-medium text-on-surface leading-snug">{card.title}</h3>
-                  <span className={`text-[10px] font-mono bg-${card.color}/10 text-${card.color} border border-${card.color}/20 px-2 py-0.5 rounded-full flex-shrink-0`}>
-                    {card.tag}
-                  </span>
-                </div>
-                <p className="text-xs text-on-surface-variant leading-relaxed">{card.desc}</p>
-              </div>
-            </div>
-          </div>
-        ))}
+        <div className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-6">
+          <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest mb-2">GRI отчёты</p>
+          <p className="text-3xl font-mono font-bold text-on-surface">{reportCount}</p>
+          <p className="text-xs text-on-surface-variant mt-2">Количество расчётов в базе</p>
+        </div>
+        <div className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-6">
+          <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest mb-2">Средний GRI</p>
+          <p className="text-3xl font-mono font-bold text-on-surface">{Number(avgScore._avg.overallScore ?? 0).toFixed(1)}</p>
+          <p className="text-xs text-on-surface-variant mt-2">Агрегированный показатель по отчётам</p>
+        </div>
       </section>
 
+<<<<<<< HEAD
       {/* All Signals */}
       <section>
         <div className="flex justify-between items-end border-b border-outline-variant/10 pb-4 mb-5">
@@ -128,6 +123,14 @@ export default async function InsightsPage() {
             )
           })}
         </div>
+=======
+      <section className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-6">
+        <h2 className="font-headline text-lg font-bold text-on-surface mb-3">Лента инсайтов</h2>
+        <p className="text-sm text-on-surface-variant leading-relaxed">
+          Моки удалены. Для автоматических инсайтов нужно подключить источник сигналов и слой аналитики.
+          Сейчас раздел отображает только подтверждённые данные из существующей базы.
+        </p>
+>>>>>>> 41f51555aefe4444f42b51d039ecb8f312ab4ace
       </section>
     </div>
   )

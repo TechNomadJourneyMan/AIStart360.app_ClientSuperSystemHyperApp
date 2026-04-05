@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
+import { createClient } from '@/lib/supabase/client'
 
 const schema = z.object({
   email: z.string().email('Введите корректный email'),
@@ -13,16 +14,27 @@ const schema = z.object({
 type Form = z.infer<typeof schema>
 
 export default function ForgotPasswordPage() {
+  const supabase = createClient()
   const [sent, setSent] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
+  const [requestError, setRequestError] = useState<string | null>(null)
   const { register, handleSubmit, getValues, formState: { errors } } = useForm<Form>({
     resolver: zodResolver(schema),
   })
 
-  const onSubmit = async () => {
+  const onSubmit = async (data: Form) => {
+    setRequestError(null)
     setIsLoading(true)
-    await new Promise((r) => setTimeout(r, 1000))
+    const { error } = await supabase.auth.resetPasswordForEmail(data.email, {
+      redirectTo: `${window.location.origin}/auth/reset-password`,
+    })
     setIsLoading(false)
+
+    if (error) {
+      setRequestError('Не удалось отправить письмо. Попробуйте снова.')
+      return
+    }
+
     setSent(true)
   }
 
@@ -77,6 +89,10 @@ export default function ForgotPasswordPage() {
             <p className="text-error text-xs mt-1.5">{errors.email.message}</p>
           )}
         </div>
+
+        {requestError && (
+          <p className="text-error text-xs">{requestError}</p>
+        )}
 
         <button
           type="submit"

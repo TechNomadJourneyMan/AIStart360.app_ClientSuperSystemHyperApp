@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
+<<<<<<< HEAD
 import { KpiCardsGrid } from '@/components/dashboard/KpiCardsGrid'
 import { GriDiagramWidget } from '@/components/dashboard/GriDiagramWidget'
 import { GoalsBar } from '@/components/dashboard/GoalsBar'
@@ -8,10 +9,19 @@ import { getDashboardData } from '@/lib/get-dashboard-data'
 import { auth } from '@/lib/auth'
 import { createServerClient } from '@/lib/supabase-server'
 import type { AlertCardProps } from '@/components/dashboard/AlertCard'
+=======
+import { AlertCard } from '@/components/dashboard/AlertCard'
+import { ActivityFeed } from '@/components/dashboard/ActivityFeed'
+import { SystemHealth } from '@/components/dashboard/SystemHealth'
+import { KpiCard } from '@/components/dashboard/KpiCard'
+import { getDashboardKpiData } from '@/lib/dashboard-kpi'
+import { getDashboardActivity, getDashboardAlerts } from '@/lib/dashboard-stream'
+>>>>>>> 41f51555aefe4444f42b51d039ecb8f312ab4ace
 
 export const metadata: Metadata = { title: 'Дэшборд' }
 
 export default async function DashboardPage() {
+<<<<<<< HEAD
   const session = await auth()
   const data = getDashboardData(session?.user?.email)
 
@@ -71,6 +81,51 @@ export default async function DashboardPage() {
     { name: 'R&D Бюджет',    value: '35%',   up: null  as boolean | null },
     { name: 'Доля рынка',    value: '68%',   up: true  as boolean | null },
     { name: 'NPS (B2B)',     value: '91',    up: true  as boolean | null },
+=======
+  const [kpiData, alerts, activity] = await Promise.all([
+    getDashboardKpiData(),
+    getDashboardAlerts(),
+    getDashboardActivity(),
+  ])
+
+  const kpiCards = [
+    {
+      label: 'Клиенты',
+      value: String(kpiData.clientCount),
+      trend: '+0',
+      trendUp: true,
+      icon: 'groups',
+      sublabel: 'активных клиентов',
+      href: '/clients',
+    },
+    {
+      label: 'Организации',
+      value: String(kpiData.orgCount),
+      trend: '+0',
+      trendUp: true,
+      icon: 'domain',
+      sublabel: 'в системе',
+      href: '/clients',
+    },
+    {
+      label: 'Средний GRI',
+      value: kpiData.avgGri.toFixed(1),
+      trend: 'live',
+      trendUp: true,
+      icon: 'query_stats',
+      sublabel: 'оценка портфеля',
+      href: '/gri',
+    },
+    {
+      label: 'Критические сигналы',
+      value: String(alerts.filter((a) => a.severity === 'critical').length),
+      trend: 'now',
+      trendUp: false,
+      icon: 'warning',
+      sublabel: 'требуют внимания',
+      href: '/analytics',
+    },
+>>>>>>> 41f51555aefe4444f42b51d039ecb8f312ab4ace
   ]
 
   return (
@@ -91,9 +146,26 @@ export default async function DashboardPage() {
           </p>
         </div>
 
+<<<<<<< HEAD
         {/* Goals bar */}
         <div className="mb-5">
           <GoalsBar />
+=======
+        {/* KPI Grid */}
+        <div className="grid grid-cols-2 gap-3 w-full lg:w-[460px] lg:shrink-0">
+          {kpiCards.map((kpi) => (
+            <KpiCard
+              key={kpi.label}
+              label={kpi.label}
+              value={kpi.value}
+              trend={kpi.trend}
+              trendUp={kpi.trendUp}
+              icon={kpi.icon}
+              sublabel={kpi.sublabel}
+              href={kpi.href}
+            />
+          ))}
+>>>>>>> 41f51555aefe4444f42b51d039ecb8f312ab4ace
         </div>
 
         {/* KPIs + GRI diagram */}
@@ -102,6 +174,19 @@ export default async function DashboardPage() {
           <div className="xl:col-span-2">
             <KpiCardsGrid />
           </div>
+<<<<<<< HEAD
+=======
+          <span className="font-mono text-[10px] text-error bg-error/10 px-3 py-1 rounded-full border border-error/20">
+            {alerts.filter(a => a.severity === 'critical').length} алерта
+          </span>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          {alerts.map((alert) => (
+            <AlertCard key={alert.id} {...alert} />
+          ))}
+        </div>
+      </section>
+>>>>>>> 41f51555aefe4444f42b51d039ecb8f312ab4ace
 
           {/* GRI Diagram Widget */}
           <div className="xl:col-span-3">
@@ -111,6 +196,59 @@ export default async function DashboardPage() {
               orgName="Demo Company KZ"
             />
           </div>
+<<<<<<< HEAD
+=======
+          <ActivityFeed items={activity} />
+        </div>
+
+        {/* Side stats */}
+        <div className="space-y-4">
+          <h2 className="font-headline text-lg font-bold text-on-surface mb-5">Здоровье портфеля</h2>
+
+          <Link href="/gri" className="block bg-surface-container rounded-2xl p-5 space-y-3 border border-white/[0.04] hover:border-primary/20 transition-colors group">
+            <div className="flex items-center justify-between mb-4">
+              <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest">Распределение GRI</p>
+              <span className="material-symbols-outlined text-sm text-on-surface-variant/30 group-hover:text-primary/60 transition-colors">arrow_forward</span>
+            </div>
+            {[
+              { label: 'Excellent (900+)', pct: 12, color: 'bg-primary' },
+              { label: 'Strong (700–899)', pct: 43, color: 'bg-primary-fixed-dim' },
+              { label: 'Developing (500–699)', pct: 31, color: 'bg-tertiary-container' },
+              { label: 'Critical (<500)', pct: 14, color: 'bg-error' },
+            ].map((item) => (
+              <div key={item.label}>
+                <div className="flex justify-between text-xs mb-1.5">
+                  <span className="text-on-surface-variant">{item.label}</span>
+                  <span className="font-mono text-on-surface">{item.pct}%</span>
+                </div>
+                <div className="h-1 bg-surface-container-high rounded-full overflow-hidden">
+                  <div className={`h-full ${item.color} rounded-full transition-all duration-700`} style={{ width: `${item.pct}%` }} />
+                </div>
+              </div>
+            ))}
+          </Link>
+
+          <Link href="/clients" className="block bg-surface-container rounded-2xl p-5 border border-white/[0.04] hover:border-primary/20 transition-colors group">
+            <div className="flex items-center justify-between mb-4">
+              <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest">По отраслям</p>
+              <span className="material-symbols-outlined text-sm text-on-surface-variant/30 group-hover:text-primary/60 transition-colors">arrow_forward</span>
+            </div>
+            <div className="space-y-3">
+              {[
+                { name: 'FinTech',    count: 14, active: true  },
+                { name: 'E-commerce', count: 11, active: false },
+                { name: 'SaaS',       count: 9,  active: false },
+                { name: 'Healthcare', count: 6,  active: false },
+                { name: 'Logistics',  count: 4,  active: false },
+              ].map((item) => (
+                <div key={item.name} className="flex justify-between items-center">
+                  <span className="text-sm text-on-surface-variant">{item.name}</span>
+                  <span className={`font-mono text-sm ${item.active ? 'text-primary' : 'text-on-surface'}`}>{item.count}</span>
+                </div>
+              ))}
+            </div>
+          </Link>
+>>>>>>> 41f51555aefe4444f42b51d039ecb8f312ab4ace
         </div>
       </section>
 

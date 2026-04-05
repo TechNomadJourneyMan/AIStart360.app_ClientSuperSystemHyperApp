@@ -8,8 +8,12 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { useAuthStore } from '@/stores/auth.store'
+<<<<<<< HEAD
 import { signIn } from 'next-auth/react'
 import { SystemHealthCompact } from '@/components/dashboard/SystemHealthCompact'
+=======
+import { createClient } from '@/lib/supabase/client'
+>>>>>>> 41f51555aefe4444f42b51d039ecb8f312ab4ace
 
 const schema = z.object({
   email:    z.string().email('Введите корректный email'),
@@ -37,6 +41,7 @@ function LoginContent() {
   const { login, isLoading, error, clearError } = useAuthStore()
 
   const [showPass, setShowPass] = useState(false)
+  const supabase = createClient()
 
   const { register, handleSubmit, setValue, formState: { errors } } = useForm<Form>({
     resolver: zodResolver(schema),
@@ -284,7 +289,14 @@ function LoginContent() {
             ].map((sso) => (
               <button 
                 key={sso.name} 
-                onClick={() => signIn('google')}
+                onClick={async () => {
+                  await supabase.auth.signInWithOAuth({
+                    provider: 'google',
+                    options: {
+                      redirectTo: `${window.location.origin}/auth/callback`,
+                    },
+                  })
+                }}
                 className="flex items-center justify-center gap-2 py-3 rounded-xl border border-white/[0.08] bg-surface-container hover:bg-surface-container-high text-on-surface text-sm transition-colors"
               >
                 <svg className="w-4 h-4" viewBox="0 0 24 24">
