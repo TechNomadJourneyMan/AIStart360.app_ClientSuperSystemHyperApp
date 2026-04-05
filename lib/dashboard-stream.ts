@@ -59,10 +59,10 @@ export async function getDashboardActivity(db: DbClient = prisma): Promise<Activ
 
   return reports.map((report: (typeof reports)[number]) => ({
     id: report.id,
-    actor: report.client.name,
-    actorRole: report.client.industry,
+    clientName: report.client.name,
+    industry: report.client.industry,
     event: 'Обновлён GRI-отчёт',
-    gri: Number((report.score / 100).toFixed(1)),
+    gri: Math.round(report.overallScore),
     status: report.client.status,
     time: toRelativeTime(report.calculatedAt),
   }))

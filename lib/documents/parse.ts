@@ -1,4 +1,6 @@
-const pdf = require("pdf-parse");
+import * as pdfParse from "pdf-parse";
+// @ts-ignore
+const pdf = pdfParse.default || pdfParse;
 import mammoth from "mammoth";
 import * as XLSX from "xlsx";
 
