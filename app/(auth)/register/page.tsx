@@ -18,7 +18,7 @@ export default function RegisterPage() {
 
   useEffect(() => {
     if (user) {
-      if (user.role === 'client' && user.status === 'pending_approval') {
+      if (user.role === 'client') {
         router.push('/client/onboarding')
       } else if (user.role === 'super_admin') {
         router.push('/admin-giga-panel')
