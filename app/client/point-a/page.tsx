@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase-client'
-import type { Diagnostic, BlockScore, Risk, Insight, QuickWin, DiagnosticStage } from '@/types/onboarding'
+import type { Diagnostic, BlockScore, Risk, Insight, QuickWin, DiagnosticStage, AIAnalysis, AIStatus } from '@/types/onboarding'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function stageLabel(s: DiagnosticStage | null): string {
@@ -48,7 +48,10 @@ function ScoreGauge({ score, size = 120 }: { score: number; size?: number }) {
   )
 }
 
-function BlockCard({ title, icon, score }: { title: string; icon: string; score: BlockScore | null }) {
+function BlockCard({ title, icon, score, aiBlock }: {
+  title: string; icon: string; score: BlockScore | null
+  aiBlock?: { diagnosis: string; benchmark_comparison: string; key_risk: string; top_recommendation: string }
+}) {
   const [open, setOpen] = useState(false)
   const pct = score?.score ?? 0
   const lbl = blockLabel(score?.status)
@@ -79,7 +82,7 @@ function BlockCard({ title, icon, score }: { title: string; icon: string; score:
 
       <div className="flex items-center justify-between">
         <span className={`text-xs font-mono ${lbl.color}`}>{lbl.text}</span>
-        {(score?.top_issues?.length ?? 0) > 0 && (
+        {((score?.top_issues?.length ?? 0) > 0 || aiBlock) && (
           <button onClick={() => setOpen(v => !v)} className="text-xs text-on-surface-variant hover:text-primary transition-colors flex items-center gap-1">
             {open ? 'Свернуть' : 'Подробнее'}
             <span className="material-symbols-outlined text-xs">{open ? 'expand_less' : 'expand_more'}</span>
@@ -87,9 +90,35 @@ function BlockCard({ title, icon, score }: { title: string; icon: string; score:
         )}
       </div>
 
-      {open && score && (
+      {open && (
         <div className="mt-4 pt-4 border-t border-white/[0.06] space-y-3">
-          {score.top_issues.length > 0 && (
+          {/* AI analysis (if available) */}
+          {aiBlock && (
+            <div className="bg-violet-500/5 rounded-xl border border-violet-500/10 p-3 space-y-2">
+              <div className="flex items-center gap-1.5 mb-1">
+                <span className="material-symbols-outlined text-xs text-violet-400">smart_toy</span>
+                <span className="text-[10px] font-mono text-violet-400 uppercase tracking-widest">AI-анализ</span>
+              </div>
+              <p className="text-xs text-on-surface leading-relaxed">{aiBlock.diagnosis}</p>
+              <div className="grid grid-cols-1 gap-2 mt-2">
+                <div className="flex items-start gap-2">
+                  <span className="material-symbols-outlined text-xs text-blue-400 mt-0.5 flex-shrink-0">bar_chart</span>
+                  <p className="text-xs text-on-surface-variant"><span className="text-blue-400 font-medium">Бенчмарк:</span> {aiBlock.benchmark_comparison}</p>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span className="material-symbols-outlined text-xs text-error mt-0.5 flex-shrink-0">warning</span>
+                  <p className="text-xs text-on-surface-variant"><span className="text-error font-medium">Риск:</span> {aiBlock.key_risk}</p>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span className="material-symbols-outlined text-xs text-primary mt-0.5 flex-shrink-0">lightbulb</span>
+                  <p className="text-xs text-on-surface-variant"><span className="text-primary font-medium">Рекомендация:</span> {aiBlock.top_recommendation}</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Rule-based issues */}
+          {score && score.top_issues.length > 0 && (
             <div>
               <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest mb-2">Проблемы</p>
               <ul className="space-y-1">
@@ -102,7 +131,7 @@ function BlockCard({ title, icon, score }: { title: string; icon: string; score:
               </ul>
             </div>
           )}
-          {score.recommendations.length > 0 && (
+          {score && score.recommendations.length > 0 && (
             <div>
               <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest mb-2">Рекомендации</p>
               <ul className="space-y-1">
@@ -128,6 +157,8 @@ export default function PointAClientPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [isRecalculating, setIsRecalculating] = useState(false)
   const [userId, setUserId] = useState<string | null>(null)
+  const [aiAnalysis, setAiAnalysis] = useState<AIAnalysis | null>(null)
+  const [aiStatus, setAiStatus] = useState<AIStatus>('none')
 
   useEffect(() => {
     const sb = createClient()
@@ -149,7 +180,11 @@ export default function PointAClientPage() {
       ])
       const diagData = await diagRes.json()
       const compData = await compRes.json()
-      if (diagData.ok) setDiag(diagData.data)
+      if (diagData.ok) {
+        setDiag(diagData.data)
+        setAiStatus(diagData.data?.ai_status ?? 'none')
+        setAiAnalysis(diagData.data?.ai_analysis ?? null)
+      }
       if (compData.ok) setCompany(compData.data)
     } catch {}
     setIsLoading(false)
@@ -159,9 +194,32 @@ export default function PointAClientPage() {
     if (userId) loadData()
   }, [userId, loadData])
 
+  // Poll for AI status when processing
+  useEffect(() => {
+    if (aiStatus !== 'processing' || !diag?.id) return
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/v1/diagnostics/ai-status?diagnostic_id=${diag.id}`)
+        const data = await res.json()
+        if (data.ok) {
+          setAiStatus(data.data.ai_status)
+          if (data.data.ai_analysis) {
+            setAiAnalysis(data.data.ai_analysis)
+          }
+          if (data.data.ai_status === 'completed' || data.data.ai_status === 'failed') {
+            clearInterval(interval)
+          }
+        }
+      } catch {}
+    }, 3000)
+    return () => clearInterval(interval)
+  }, [aiStatus, diag?.id])
+
   const recalculate = async () => {
     if (!userId) return
     setIsRecalculating(true)
+    setAiAnalysis(null)
+    setAiStatus('none')
     try {
       await fetch('/api/v1/diagnostics/recalculate', {
         method: 'POST',
@@ -171,6 +229,19 @@ export default function PointAClientPage() {
       await loadData()
     } catch {}
     setIsRecalculating(false)
+  }
+
+  const retryAi = async () => {
+    if (!diag?.id) return
+    setAiStatus('processing')
+    setAiAnalysis(null)
+    try {
+      await fetch('/api/v1/diagnostics/retry-ai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ diagnostic_id: diag.id }),
+      })
+    } catch {}
   }
 
   const score = diag?.overall_score ?? 0
@@ -279,6 +350,52 @@ export default function PointAClientPage() {
               </div>
             </section>
 
+            {/* AI Executive Summary */}
+            {aiStatus === 'processing' && (
+              <section className="bg-violet-500/5 rounded-2xl border border-violet-500/15 p-6">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-xl bg-violet-500/20 flex items-center justify-center animate-pulse">
+                    <span className="material-symbols-outlined text-sm text-violet-400">smart_toy</span>
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-violet-300">AI анализирует ваш бизнес...</p>
+                    <p className="text-xs text-on-surface-variant">Claude изучает данные и готовит персональные рекомендации</p>
+                  </div>
+                </div>
+                <div className="mt-4 space-y-2">
+                  <div className="h-3 bg-violet-500/10 rounded-full animate-pulse" />
+                  <div className="h-3 bg-violet-500/10 rounded-full animate-pulse w-3/4" />
+                  <div className="h-3 bg-violet-500/10 rounded-full animate-pulse w-1/2" />
+                </div>
+              </section>
+            )}
+
+            {aiStatus === 'failed' && (
+              <section className="bg-error/5 rounded-2xl border border-error/15 p-5 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <span className="material-symbols-outlined text-lg text-error">warning</span>
+                  <p className="text-sm text-on-surface-variant">AI-анализ недоступен</p>
+                </div>
+                <button onClick={retryAi}
+                  className="text-xs font-mono text-primary hover:text-primary/80 border border-primary/20 rounded-lg px-3 py-1.5 transition-all">
+                  Повторить
+                </button>
+              </section>
+            )}
+
+            {aiAnalysis && (
+              <section className="bg-violet-500/5 rounded-2xl border border-violet-500/15 p-6">
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="material-symbols-outlined text-lg text-violet-400">smart_toy</span>
+                  <h2 className="text-sm font-bold text-violet-300">AI-анализ вашего бизнеса</h2>
+                  <span className="ml-auto text-[10px] font-mono text-on-surface-variant bg-surface-container px-2 py-0.5 rounded">
+                    {aiAnalysis.model_used}
+                  </span>
+                </div>
+                <p className="text-sm text-on-surface leading-relaxed">{aiAnalysis.executive_summary}</p>
+              </section>
+            )}
+
             {/* 2. Block Scores */}
             <section>
               <div className="flex items-center justify-between mb-4">
@@ -287,10 +404,41 @@ export default function PointAClientPage() {
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {blocks.map(b => (
-                  <BlockCard key={b.key} title={b.title} icon={b.icon} score={b.data as BlockScore | null} />
+                  <BlockCard
+                    key={b.key}
+                    title={b.title}
+                    icon={b.icon}
+                    score={b.data as BlockScore | null}
+                    aiBlock={aiAnalysis?.blocks?.[b.key]}
+                  />
                 ))}
               </div>
             </section>
+
+            {/* AI Strategic Priorities */}
+            {aiAnalysis && aiAnalysis.strategic_priorities.length > 0 && (
+              <section>
+                <div className="flex items-center gap-2 mb-4">
+                  <span className="material-symbols-outlined text-lg text-violet-400">flag</span>
+                  <h2 className="font-headline text-lg font-bold text-on-surface">Стратегические приоритеты</h2>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  {aiAnalysis.strategic_priorities.map((p, i) => (
+                    <div key={i} className="bg-surface-container-low rounded-2xl border border-violet-500/10 p-5 relative">
+                      <div className="absolute top-3 right-3 w-6 h-6 rounded-full bg-violet-500/20 flex items-center justify-center">
+                        <span className="text-xs font-bold text-violet-400">{i + 1}</span>
+                      </div>
+                      <h3 className="text-sm font-bold text-on-surface mb-2 pr-8">{p.title}</h3>
+                      <p className="text-xs text-on-surface-variant mb-3">{p.rationale}</p>
+                      <div className="flex items-start gap-1.5 pt-2 border-t border-white/[0.06]">
+                        <span className="material-symbols-outlined text-xs text-primary mt-0.5">trending_up</span>
+                        <p className="text-xs text-primary">{p.expected_impact}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
 
             {/* 3. Risks */}
             {(diag.risks?.length ?? 0) > 0 && (
@@ -357,6 +505,50 @@ export default function PointAClientPage() {
                     </div>
                   ))}
                 </div>
+              </section>
+            )}
+
+            {/* AI Growth Roadmap */}
+            {aiAnalysis && aiAnalysis.growth_roadmap.length > 0 && (
+              <section>
+                <div className="flex items-center gap-2 mb-4">
+                  <span className="material-symbols-outlined text-lg text-violet-400">route</span>
+                  <h2 className="font-headline text-lg font-bold text-on-surface">Дорожная карта роста</h2>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  {aiAnalysis.growth_roadmap.map((rm) => {
+                    const labels: Record<string, { title: string; color: string }> = {
+                      '30_days':  { title: '30 дней',  color: 'text-emerald-400' },
+                      '90_days':  { title: '90 дней',  color: 'text-blue-400' },
+                      '180_days': { title: '180 дней', color: 'text-violet-400' },
+                    }
+                    const l = labels[rm.horizon] ?? { title: rm.horizon, color: 'text-on-surface-variant' }
+                    return (
+                      <div key={rm.horizon} className="bg-surface-container-low rounded-2xl border border-white/[0.06] p-5">
+                        <p className={`text-xs font-mono font-bold uppercase tracking-widest mb-3 ${l.color}`}>{l.title}</p>
+                        <ul className="space-y-2">
+                          {rm.actions.map((action, i) => (
+                            <li key={i} className="flex items-start gap-2 text-xs text-on-surface-variant">
+                              <span className="material-symbols-outlined text-xs text-primary mt-0.5 flex-shrink-0">check_circle</span>
+                              {action}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )
+                  })}
+                </div>
+              </section>
+            )}
+
+            {/* AI Industry Context */}
+            {aiAnalysis?.industry_context && (
+              <section className="bg-surface-container-low rounded-2xl border border-white/[0.06] p-5">
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="material-symbols-outlined text-lg text-blue-400">public</span>
+                  <h2 className="text-sm font-bold text-on-surface">Отраслевой контекст</h2>
+                </div>
+                <p className="text-sm text-on-surface-variant leading-relaxed">{aiAnalysis.industry_context}</p>
               </section>
             )}
 

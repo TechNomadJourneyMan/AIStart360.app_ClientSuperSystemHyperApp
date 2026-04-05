@@ -232,6 +232,40 @@ export interface Diagnostic {
   data_gaps: DataGap[] | null
   is_current: boolean
   calculated_at: string
+  ai_analysis: AIAnalysis | null
+  ai_status: AIStatus
+}
+
+// ─── AI Analysis (Layer 2 — Claude-powered) ──────────────────────────────────
+
+export type AIStatus = 'none' | 'processing' | 'completed' | 'failed'
+
+export interface AIBlockAnalysis {
+  diagnosis: string
+  benchmark_comparison: string
+  key_risk: string
+  top_recommendation: string
+}
+
+export interface StrategicPriority {
+  title: string
+  rationale: string
+  expected_impact: string
+}
+
+export interface RoadmapItem {
+  horizon: '30_days' | '90_days' | '180_days'
+  actions: string[]
+}
+
+export interface AIAnalysis {
+  executive_summary: string
+  blocks: Record<string, AIBlockAnalysis>
+  strategic_priorities: StrategicPriority[]
+  growth_roadmap: RoadmapItem[]
+  industry_context: string
+  model_used: string
+  generated_at: string
 }
 
 // ─── API Responses ────────────────────────────────────────────────────────────

@@ -60,11 +60,22 @@ export async function POST(req: NextRequest) {
         quick_wins: result.quick_wins,
         data_gaps: result.data_gaps,
         is_current: true,
+        ai_status: process.env.ANTHROPIC_API_KEY ? 'processing' : 'none',
       })
       .select()
       .single()
 
     if (diagErr) return NextResponse.json({ ok: false, error: diagErr.message }, { status: 500 })
+
+    // Fire async AI analysis (non-blocking)
+    if (process.env.ANTHROPIC_API_KEY && diag?.id) {
+      const baseUrl = req.nextUrl.origin
+      fetch(`${baseUrl}/api/v1/diagnostics/ai-analyze`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ diagnostic_id: diag.id, user_id }),
+      }).catch(err => console.error('[recalculate] Failed to fire AI analysis:', err))
+    }
 
     return NextResponse.json({ ok: true, data: { diagnostic: diag, point_a: result } })
   } catch (e) {
