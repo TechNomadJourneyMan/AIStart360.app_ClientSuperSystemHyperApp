@@ -50,83 +50,98 @@ const GROWTH_BLOCKERS = [
 ]
 
 // ─── Zod Schemas ──────────────────────────────────────────────────────────────
+// Helper: optional enum — accepts empty string or valid value, defaults to undefined
+const optionalEnum = (values: string[]) =>
+  z.preprocess(
+    (v) => (v === '' || v === undefined || v === null ? undefined : v),
+    z.enum(values as [string, ...string[]]).optional()
+  )
+
+// Helper: optional number — accepts empty/NaN as 0
+const optionalNum = z.preprocess(
+  (v) => (v === '' || v === undefined || v === null || Number.isNaN(Number(v)) ? 0 : Number(v)),
+  z.number().min(0).optional().default(0)
+)
+
+// Required fields = * (название компании, отрасль, ФИО, телефон, email)
+// Всё остальное — необязательное
 const step1Schema = z.object({
   s1_company_name:    z.string().min(2, 'Минимум 2 символа'),
-  s1_founded_at:      z.string().min(1, 'Укажите дату основания'),
+  s1_founded_at:      z.string().optional().default(''),
   s1_industry:        z.string().min(1, 'Выберите отрасль'),
-  s1_stage:           z.enum(['Startup','Growth','Scale','Mature']),
-  s1_employee_count:  z.coerce.number().min(1, 'Укажите количество сотрудников'),
-  s1_regions:         z.array(z.string()).min(1, 'Выберите хотя бы один регион'),
-  s1_business_model:  z.enum(['B2B','B2C','B2B2C','Mixed']),
-  s1_contact_name:    z.string().min(2, 'Укажите контактное лицо'),
-  s1_contact_position:z.string().min(1, 'Укажите должность'),
+  s1_stage:           optionalEnum(['Startup','Growth','Scale','Mature']),
+  s1_employee_count:  optionalNum,
+  s1_regions:         z.array(z.string()).optional().default([]),
+  s1_business_model:  optionalEnum(['B2B','B2C','B2B2C','Mixed']),
+  s1_contact_name:    z.string().min(2, 'Укажите имя и фамилию'),
+  s1_contact_position:z.string().optional().default(''),
   s1_contact_phone:   z.string().min(7, 'Укажите телефон'),
   s1_contact_email:   z.string().email('Введите корректный email'),
 })
 
 const step2Schema = z.object({
-  s2_revenue_2023:       z.coerce.number().min(0),
-  s2_revenue_2024:       z.coerce.number().min(0),
-  s2_revenue_2025:       z.coerce.number().min(0),
-  s2_new_clients_2023:   z.coerce.number().min(0),
-  s2_new_clients_2024:   z.coerce.number().min(0),
-  s2_new_clients_2025:   z.coerce.number().min(0),
-  s2_repeat_clients_2023:z.coerce.number().min(0),
-  s2_repeat_clients_2024:z.coerce.number().min(0),
-  s2_repeat_clients_2025:z.coerce.number().min(0),
-  s2_avg_check:          z.coerce.number().min(0),
-  s2_gross_margin:       z.coerce.number().min(0).max(100),
-  s2_cac:                z.coerce.number().min(0),
-  s2_ltv:                z.coerce.number().min(0),
-  s2_debt_load:          z.enum(['none','moderate','high']),
-  s2_knows_breakeven:    z.boolean(),
+  s2_revenue_2023:       optionalNum,
+  s2_revenue_2024:       optionalNum,
+  s2_revenue_2025:       optionalNum,
+  s2_new_clients_2023:   optionalNum,
+  s2_new_clients_2024:   optionalNum,
+  s2_new_clients_2025:   optionalNum,
+  s2_repeat_clients_2023:optionalNum,
+  s2_repeat_clients_2024:optionalNum,
+  s2_repeat_clients_2025:optionalNum,
+  s2_avg_check:          optionalNum,
+  s2_gross_margin:       optionalNum,
+  s2_cac:                optionalNum,
+  s2_ltv:                optionalNum,
+  s2_debt_load:          optionalEnum(['none','moderate','high']),
+  s2_knows_breakeven:    z.boolean().optional().default(false),
 })
 
 const step3Schema = z.object({
-  s3_has_crm:            z.enum(['none','excel','amocrm','bitrix24','other']),
-  s3_products_description:z.string().min(10, 'Минимум 10 символов'),
-  s3_product_count:      z.coerce.number().min(1),
-  s3_flagship_product:   z.string().min(1, 'Укажите продукт-локомотив'),
-  s3_deals_2023:         z.coerce.number().min(0),
-  s3_deals_2024:         z.coerce.number().min(0),
-  s3_deals_2025:         z.coerce.number().min(0),
-  s3_rejections_2023:    z.coerce.number().min(0),
-  s3_rejections_2024:    z.coerce.number().min(0),
-  s3_rejections_2025:    z.coerce.number().min(0),
-  s3_deal_cycle_days:    z.coerce.number().min(1),
-  s3_promo_channels:     z.array(z.string()).min(1, 'Выберите хотя бы один канал'),
-  s3_has_loyalty:        z.boolean(),
+  s3_has_crm:            optionalEnum(['none','excel','amocrm','bitrix24','other']),
+  s3_products_description:z.string().optional().default(''),
+  s3_product_count:      optionalNum,
+  s3_flagship_product:   z.string().optional().default(''),
+  s3_deals_2023:         optionalNum,
+  s3_deals_2024:         optionalNum,
+  s3_deals_2025:         optionalNum,
+  s3_rejections_2023:    optionalNum,
+  s3_rejections_2024:    optionalNum,
+  s3_rejections_2025:    optionalNum,
+  s3_deal_cycle_days:    optionalNum,
+  s3_promo_channels:     z.array(z.string()).optional().default([]),
+  s3_has_loyalty:        z.boolean().optional().default(false),
 })
 
 const step4Schema = z.object({
-  s4_dept_count:          z.coerce.number().min(1),
-  s4_has_org_chart:       z.boolean(),
-  s4_management_method:   z.enum(['manual','kpi','okr','hybrid']),
-  s4_has_regular_meetings:z.boolean(),
-  s4_reporting_tool:      z.enum(['excel','bi','crm','none']),
-  s4_task_manager:        z.enum(['none','trello','jira','notion','other']),
-  s4_has_dept_kpi:        z.boolean(),
+  s4_dept_count:          optionalNum,
+  s4_has_org_chart:       z.boolean().optional().default(false),
+  s4_management_method:   optionalEnum(['manual','kpi','okr','hybrid']),
+  s4_has_regular_meetings:z.boolean().optional().default(false),
+  s4_reporting_tool:      optionalEnum(['excel','bi','crm','none']),
+  s4_task_manager:        optionalEnum(['none','trello','jira','notion','other']),
+  s4_has_dept_kpi:        z.boolean().optional().default(false),
 })
 
 const step5Schema = z.object({
-  s5_target_audience:        z.string().min(10, 'Минимум 10 символов'),
-  s5_audience_segments:      z.array(z.string()).min(1, 'Выберите сегменты'),
-  s5_top_regions:            z.array(z.string()).min(1, 'Выберите регионы'),
-  s5_marketing_channels:     z.array(z.string()).min(1, 'Выберите каналы'),
-  s5_marketing_budget_pct:   z.coerce.number().min(0).max(100),
-  s5_has_competitor_analysis:z.boolean(),
+  s5_target_audience:        z.string().optional().default(''),
+  s5_audience_segments:      z.array(z.string()).optional().default([]),
+  s5_top_regions:            z.array(z.string()).optional().default([]),
+  s5_marketing_channels:     z.array(z.string()).optional().default([]),
+  s5_marketing_budget_pct:   optionalNum,
+  s5_has_competitor_analysis:z.boolean().optional().default(false),
   s5_competitor_1:           z.string().optional().default(''),
   s5_competitor_2:           z.string().optional().default(''),
   s5_competitor_3:           z.string().optional().default(''),
-  s5_usp:                    z.string().min(10, 'Опишите ваше УТП'),
+  s5_usp:                    z.string().optional().default(''),
 })
 
 const step6Schema = z.object({
-  s6_main_pain:        z.string().min(20, 'Минимум 20 символов'),
-  s6_goal_12months:    z.string().min(20, 'Минимум 20 символов'),
-  s6_goal_3years:      z.string().min(20, 'Минимум 20 символов'),
-  s6_growth_blockers:  z.array(z.string()).min(1, 'Выберите хотя бы один барьер'),
-  s6_expectations:     z.string().min(10, 'Минимум 10 символов'),
+  s6_main_pain:        z.string().optional().default(''),
+  s6_goal_12months:    z.string().optional().default(''),
+  s6_goal_3years:      z.string().optional().default(''),
+  s6_growth_blockers:  z.array(z.string()).optional().default([]),
+  s6_expectations:     z.string().optional().default(''),
 })
 
 type Step1 = z.infer<typeof step1Schema>
@@ -547,11 +562,11 @@ function Step1Form({ defaultValues, onNext }: { defaultValues: Record<string, un
 
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <FieldLabel>Дата основания *</FieldLabel>
+          <FieldLabel>Дата основания</FieldLabel>
           <TextInput name="s1_founded_at" type="date" register={register} error={errors.s1_founded_at?.message} />
         </div>
         <div>
-          <FieldLabel>Количество сотрудников *</FieldLabel>
+          <FieldLabel>Количество сотрудников</FieldLabel>
           <TextInput name="s1_employee_count" type="number" placeholder="45" register={register} error={errors.s1_employee_count?.message} />
         </div>
       </div>
@@ -563,7 +578,7 @@ function Step1Form({ defaultValues, onNext }: { defaultValues: Record<string, un
 
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <FieldLabel>Стадия развития *</FieldLabel>
+          <FieldLabel>Стадия развития</FieldLabel>
           <SelectInput name="s1_stage" options={[
             { value: 'Startup', label: 'Startup' },
             { value: 'Growth', label: 'Growth' },
@@ -572,7 +587,7 @@ function Step1Form({ defaultValues, onNext }: { defaultValues: Record<string, un
           ]} register={register} error={errors.s1_stage?.message} />
         </div>
         <div>
-          <FieldLabel>Бизнес-модель *</FieldLabel>
+          <FieldLabel>Бизнес-модель</FieldLabel>
           <SelectInput name="s1_business_model" options={[
             { value: 'B2B', label: 'B2B' },
             { value: 'B2C', label: 'B2C' },
@@ -583,7 +598,7 @@ function Step1Form({ defaultValues, onNext }: { defaultValues: Record<string, un
       </div>
 
       <div>
-        <FieldLabel>География присутствия *</FieldLabel>
+        <FieldLabel>География присутствия</FieldLabel>
         <MultiSelect
           options={REGIONS}
           value={regions}
@@ -600,7 +615,7 @@ function Step1Form({ defaultValues, onNext }: { defaultValues: Record<string, un
             <TextInput name="s1_contact_name" placeholder="Иван Иванов" register={register} error={errors.s1_contact_name?.message} />
           </div>
           <div>
-            <FieldLabel>Должность *</FieldLabel>
+            <FieldLabel>Должность</FieldLabel>
             <TextInput name="s1_contact_position" placeholder="CEO / CFO" register={register} error={errors.s1_contact_position?.message} />
           </div>
           <div>
@@ -673,7 +688,7 @@ function Step2Form({ defaultValues, onBack, onNext }: { defaultValues: Record<st
 
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <FieldLabel>Средний чек (₸) *</FieldLabel>
+          <FieldLabel>Средний чек (₸)</FieldLabel>
           <TextInput name="s2_avg_check" type="number" placeholder="50000" register={register} error={errors.s2_avg_check?.message} />
         </div>
         <div>
@@ -691,7 +706,7 @@ function Step2Form({ defaultValues, onBack, onNext }: { defaultValues: Record<st
       </div>
 
       <div>
-        <FieldLabel>Долговая нагрузка *</FieldLabel>
+        <FieldLabel>Долговая нагрузка</FieldLabel>
         <div className="grid grid-cols-3 gap-2">
           {([['none','Нет'],['moderate','Умеренная'],['high','Высокая']] as const).map(([v, l]) => (
             <button key={v} type="button"
@@ -728,7 +743,7 @@ function Step3Form({ defaultValues, onBack, onNext }: { defaultValues: Record<st
       <StepHeader step={3} title="Продажи и CRM" subtitle="Ваша воронка продаж и инструменты управления клиентами" />
 
       <div>
-        <FieldLabel>Есть ли CRM-система? *</FieldLabel>
+        <FieldLabel>Есть ли CRM-система?</FieldLabel>
         <SelectInput name="s3_has_crm" options={[
           { value: 'none', label: 'Нет CRM' },
           { value: 'excel', label: 'Excel / Google Sheets' },
@@ -739,7 +754,7 @@ function Step3Form({ defaultValues, onBack, onNext }: { defaultValues: Record<st
       </div>
 
       <div>
-        <FieldLabel>Описание продуктов/услуг *</FieldLabel>
+        <FieldLabel>Описание продуктов/услуг</FieldLabel>
         <textarea {...register('s3_products_description')} rows={3} placeholder="Что именно вы продаёте..."
           className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 resize-none" />
         <FieldError msg={errors.s3_products_description?.message} />
@@ -747,11 +762,11 @@ function Step3Form({ defaultValues, onBack, onNext }: { defaultValues: Record<st
 
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <FieldLabel>Количество продуктов *</FieldLabel>
+          <FieldLabel>Количество продуктов</FieldLabel>
           <TextInput name="s3_product_count" type="number" placeholder="5" register={register} error={errors.s3_product_count?.message} />
         </div>
         <div>
-          <FieldLabel>Продукт-локомотив *</FieldLabel>
+          <FieldLabel>Продукт-локомотив</FieldLabel>
           <TextInput name="s3_flagship_product" placeholder="Название главного продукта" register={register} error={errors.s3_flagship_product?.message} />
         </div>
       </div>
@@ -783,12 +798,12 @@ function Step3Form({ defaultValues, onBack, onNext }: { defaultValues: Record<st
       </div>
 
       <div>
-        <FieldLabel>Цикл сделки (дней) *</FieldLabel>
+        <FieldLabel>Цикл сделки (дней)</FieldLabel>
         <TextInput name="s3_deal_cycle_days" type="number" placeholder="30" register={register} error={errors.s3_deal_cycle_days?.message} />
       </div>
 
       <div>
-        <FieldLabel>Каналы продвижения *</FieldLabel>
+        <FieldLabel>Каналы продвижения</FieldLabel>
         <MultiSelect
           options={PROMO_CHANNELS}
           value={channels}
@@ -823,7 +838,7 @@ function Step4Form({ defaultValues, onBack, onNext }: { defaultValues: Record<st
       <StepHeader step={4} title="Операции и управление" subtitle="Как устроены процессы и управление внутри компании" />
 
       <div>
-        <FieldLabel>Количество отделов *</FieldLabel>
+        <FieldLabel>Количество отделов</FieldLabel>
         <TextInput name="s4_dept_count" type="number" placeholder="5" register={register} error={errors.s4_dept_count?.message} />
       </div>
 
@@ -834,7 +849,7 @@ function Step4Form({ defaultValues, onBack, onNext }: { defaultValues: Record<st
       </div>
 
       <div>
-        <FieldLabel>Метод управления *</FieldLabel>
+        <FieldLabel>Метод управления</FieldLabel>
         <SelectInput name="s4_management_method" options={[
           { value: 'manual', label: 'Ручное управление' },
           { value: 'kpi', label: 'По KPI' },
@@ -844,7 +859,7 @@ function Step4Form({ defaultValues, onBack, onNext }: { defaultValues: Record<st
       </div>
 
       <div>
-        <FieldLabel>Как ведётся отчётность *</FieldLabel>
+        <FieldLabel>Как ведётся отчётность</FieldLabel>
         <SelectInput name="s4_reporting_tool" options={[
           { value: 'none', label: 'Нет' },
           { value: 'excel', label: 'Excel / Google Sheets' },
@@ -854,7 +869,7 @@ function Step4Form({ defaultValues, onBack, onNext }: { defaultValues: Record<st
       </div>
 
       <div>
-        <FieldLabel>Таск-менеджер *</FieldLabel>
+        <FieldLabel>Таск-менеджер</FieldLabel>
         <SelectInput name="s4_task_manager" options={[
           { value: 'none', label: 'Не используется' },
           { value: 'trello', label: 'Trello' },
@@ -885,7 +900,7 @@ function Step5Form({ defaultValues, onBack, onNext }: { defaultValues: Record<st
       <StepHeader step={5} title="Маркетинг и клиенты" subtitle="Ваша аудитория, каналы и позиционирование на рынке" />
 
       <div>
-        <FieldLabel>Целевая аудитория *</FieldLabel>
+        <FieldLabel>Целевая аудитория</FieldLabel>
         <textarea {...register('s5_target_audience')} rows={3}
           placeholder="Опишите вашего идеального клиента: кто он, какие у него боли..."
           className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 resize-none" />
@@ -893,7 +908,7 @@ function Step5Form({ defaultValues, onBack, onNext }: { defaultValues: Record<st
       </div>
 
       <div>
-        <FieldLabel>Сегменты ЦА *</FieldLabel>
+        <FieldLabel>Сегменты ЦА</FieldLabel>
         <MultiSelect
           options={AUDIENCE_SEGMENTS}
           value={segments}
@@ -903,7 +918,7 @@ function Step5Form({ defaultValues, onBack, onNext }: { defaultValues: Record<st
       </div>
 
       <div>
-        <FieldLabel>Топ регионы по выручке *</FieldLabel>
+        <FieldLabel>Топ регионы по выручке</FieldLabel>
         <MultiSelect
           options={REGIONS}
           value={topRegions}
@@ -913,7 +928,7 @@ function Step5Form({ defaultValues, onBack, onNext }: { defaultValues: Record<st
       </div>
 
       <div>
-        <FieldLabel>Основные каналы маркетинга *</FieldLabel>
+        <FieldLabel>Основные каналы маркетинга</FieldLabel>
         <MultiSelect
           options={MARKETING_CHANNELS}
           value={mktChannels}
@@ -944,7 +959,7 @@ function Step5Form({ defaultValues, onBack, onNext }: { defaultValues: Record<st
       </div>
 
       <div>
-        <FieldLabel>Позиционирование / УТП *</FieldLabel>
+        <FieldLabel>Позиционирование / УТП</FieldLabel>
         <textarea {...register('s5_usp')} rows={3}
           placeholder="Почему клиенты выбирают вас? В чём ваше уникальное преимущество?"
           className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 resize-none" />
@@ -972,7 +987,7 @@ function Step6Form({ defaultValues, onBack, onNext, isSaving }: {
       <StepHeader step={6} title="Цели и боли" subtitle="Последний шаг — самый важный. Расскажите о ваших целях и проблемах" />
 
       <div>
-        <FieldLabel>Главная проблема / боль бизнеса *</FieldLabel>
+        <FieldLabel>Главная проблема / боль бизнеса</FieldLabel>
         <textarea {...register('s6_main_pain')} rows={4}
           placeholder="Что сейчас больше всего мешает вашему бизнесу? Опишите конкретно..."
           className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 resize-none" />
@@ -980,7 +995,7 @@ function Step6Form({ defaultValues, onBack, onNext, isSaving }: {
       </div>
 
       <div>
-        <FieldLabel>Цель на 12 месяцев (SMART) *</FieldLabel>
+        <FieldLabel>Цель на 12 месяцев (SMART)</FieldLabel>
         <textarea {...register('s6_goal_12months')} rows={3}
           placeholder="Конкретная, измеримая цель. Например: вырасти до ₸200 млн выручки к Q4 2025..."
           className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 resize-none" />
@@ -988,7 +1003,7 @@ function Step6Form({ defaultValues, onBack, onNext, isSaving }: {
       </div>
 
       <div>
-        <FieldLabel>Цель на 3 года *</FieldLabel>
+        <FieldLabel>Цель на 3 года</FieldLabel>
         <textarea {...register('s6_goal_3years')} rows={3}
           placeholder="Каким вы видите бизнес через 3 года?"
           className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 resize-none" />
@@ -996,7 +1011,7 @@ function Step6Form({ defaultValues, onBack, onNext, isSaving }: {
       </div>
 
       <div>
-        <FieldLabel>Что мешает расти? *</FieldLabel>
+        <FieldLabel>Что мешает расти?</FieldLabel>
         <MultiSelect
           options={GROWTH_BLOCKERS}
           value={blockers}
@@ -1006,7 +1021,7 @@ function Step6Form({ defaultValues, onBack, onNext, isSaving }: {
       </div>
 
       <div>
-        <FieldLabel>Чего ожидаете от диагностики? *</FieldLabel>
+        <FieldLabel>Чего ожидаете от диагностики?</FieldLabel>
         <textarea {...register('s6_expectations')} rows={3}
           placeholder="Что хотите получить в результате работы с AIStart360?"
           className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 resize-none" />
