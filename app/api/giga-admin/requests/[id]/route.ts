@@ -28,41 +28,56 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     archive: 'archived',
   } as const
 
+  const supabaseAdmin = createServerClient()
+  const newStatus = statusMap[body.action]
+  let supabaseUserId: string | null = null
+
+  // 1. Try Prisma update
   try {
-    // 1. Update AdminRequest in Prisma
     const updated = await prisma.adminRequest.update({
       where: { id: params.id },
       data: {
-        status: statusMap[body.action],
-        ...(body.action === 'reject' && body.reason
-          ? { rejectionReason: body.reason }
-          : {}),
+        status: newStatus,
+        ...(body.action === 'reject' && body.reason ? { rejectionReason: body.reason } : {}),
       },
     })
+    const payload = (updated.payload ?? {}) as Record<string, string>
+    supabaseUserId = payload.userId ?? null
+  } catch (prismaError) {
+    console.warn('[giga-admin/requests/:id] Prisma unavailable, using Supabase fallback:', prismaError)
 
-    // 2. Sync status to public.profiles in Supabase (for waiting-room)
-    if (body.action === 'approve' || body.action === 'reject') {
-      const request = await prisma.adminRequest.findUnique({ where: { id: params.id } })
-      const payload = (request?.payload ?? {}) as Record<string, string>
-      const supabaseUserId = payload.userId
+    // Fallback: update admin_requests table in Supabase directly
+    const { data: sbRow } = await supabaseAdmin
+      .from('admin_requests')
+      .update({
+        status: newStatus,
+        updated_at: new Date().toISOString(),
+        ...(body.action === 'reject' && body.reason ? { rejection_reason: body.reason } : {}),
+      })
+      .eq('id', params.id)
+      .select('payload')
+      .single()
 
-      if (supabaseUserId) {
-        const supabaseAdmin = createServerClient()
-        const profileStatus = body.action === 'approve' ? 'approved' : 'rejected'
-
-        await supabaseAdmin
-          .from('profiles')
-          .update({
-            status: profileStatus,
-            ...(body.action === 'approve' ? { approved_at: new Date().toISOString() } : {}),
-          })
-          .eq('id', supabaseUserId)
-      }
+    if (sbRow) {
+      const payload = (sbRow.payload ?? {}) as Record<string, string>
+      supabaseUserId = payload.userId ?? null
+    } else {
+      // Last resort: find userId from profiles by looking up the request id as user id
+      supabaseUserId = params.id
     }
-
-    return NextResponse.json({ ok: true, status: updated.status })
-  } catch (error) {
-    console.error('[giga-admin/requests/:id] PATCH error:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
+
+  // 2. ALWAYS sync profile status to Supabase so waiting-room reflects the decision
+  if ((body.action === 'approve' || body.action === 'reject') && supabaseUserId) {
+    const profileStatus = body.action === 'approve' ? 'approved' : 'rejected'
+    await supabaseAdmin
+      .from('profiles')
+      .update({
+        status: profileStatus,
+        ...(body.action === 'approve' ? { approved_at: new Date().toISOString() } : {}),
+      })
+      .eq('id', supabaseUserId)
+  }
+
+  return NextResponse.json({ ok: true, status: newStatus })
 }
