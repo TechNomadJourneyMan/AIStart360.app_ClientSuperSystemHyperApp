@@ -245,7 +245,7 @@ function stageLabel(s: string) {
 // ─── page ─────────────────────────────────────────────────────────────────────
 export default async function DashboardPage() {
   // Detect viewer role — clients get their personal Point A view
-  const supabase = createClient()
+  const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (user) {
     const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).maybeSingle()
