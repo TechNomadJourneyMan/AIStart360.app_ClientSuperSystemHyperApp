@@ -274,6 +274,17 @@ export default function PointAClientPage() {
               <span className="material-symbols-outlined text-sm">upload_file</span>
               Документы
             </Link>
+            <button
+              onClick={async () => {
+                const sb = createClient()
+                await sb.auth.signOut()
+                window.location.href = '/login'
+              }}
+              className="flex items-center gap-1.5 text-xs font-mono text-red-400/70 hover:text-red-400 border border-red-500/10 hover:border-red-500/20 rounded-lg px-3 py-1.5 transition-all"
+            >
+              <span className="material-symbols-outlined text-sm">logout</span>
+              Выход
+            </button>
           </div>
         </div>
       </header>
