@@ -145,6 +145,121 @@ function SurveySection({ requestId }: { requestId: string }) {
   )
 }
 
+// ─── Documents section (displayed inside expanded card) ──────────────────────
+
+const DOC_TYPE_LABELS: Record<string, string> = {
+  pl: 'P&L',
+  balance_sheet: 'Баланс',
+  cashflow: 'Денежный поток',
+  crm_export: 'CRM-экспорт',
+  tax_report: 'Налоговая отчётность',
+  other: 'Другое',
+}
+
+const PARSE_STATUS_MAP: Record<string, { label: string; color: string }> = {
+  queued:     { label: 'В очереди',   color: 'text-slate-400 border-slate-500/30 bg-slate-500/10' },
+  processing: { label: 'Обработка',   color: 'text-blue-300 border-blue-500/30 bg-blue-500/10' },
+  done:       { label: 'Готово',      color: 'text-emerald-300 border-emerald-500/30 bg-emerald-500/10' },
+  error:      { label: 'Ошибка',      color: 'text-red-300 border-red-500/30 bg-red-500/10' },
+}
+
+function formatBytes(bytes: number | null): string {
+  if (!bytes) return '—'
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function DocumentsSection({ requestId }: { requestId: string }) {
+  const [docs, setDocs] = useState<Array<{
+    id: string; file_name: string; doc_type: string; file_size: number | null
+    parse_status: string; uploaded_at: string; download_url: string | null
+  }> | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const res = await fetch(`/api/giga-admin/requests/${requestId}/documents`)
+        if (!res.ok) throw new Error('Не удалось загрузить документы')
+        const json = await res.json()
+        if (!cancelled) setDocs(json.data ?? [])
+      } catch (e) {
+        if (!cancelled) setError(e instanceof Error ? e.message : 'Ошибка')
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [requestId])
+
+  if (loading) {
+    return (
+      <div className="flex items-center gap-2 py-3 justify-center">
+        <Loader2 size={13} className="text-slate-500 animate-spin" />
+        <span className="text-[11px] text-slate-500">Загрузка документов...</span>
+      </div>
+    )
+  }
+
+  if (error) return <p className="text-[11px] text-red-400 py-2">{error}</p>
+
+  return (
+    <div className="mt-3 space-y-2">
+      <div className="flex items-center gap-1.5">
+        <FileText size={12} className="text-violet-400" />
+        <span className="text-[11px] font-semibold text-violet-300 uppercase tracking-wider">
+          Загруженные документы
+        </span>
+        <span className="ml-auto text-[10px] text-slate-600">{docs?.length ?? 0} файлов</span>
+      </div>
+
+      {(!docs || docs.length === 0) ? (
+        <p className="text-[11px] text-slate-600 italic py-1">Клиент ещё не загрузил документы</p>
+      ) : (
+        <div className="space-y-1.5">
+          {docs.map((doc) => {
+            const statusInfo = PARSE_STATUS_MAP[doc.parse_status] ?? PARSE_STATUS_MAP['queued']
+            const typeLabel = DOC_TYPE_LABELS[doc.doc_type] ?? doc.doc_type
+            const uploadedAt = new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: 'short' }).format(new Date(doc.uploaded_at))
+            return (
+              <div key={doc.id} className="flex items-center gap-2 p-2 rounded-lg bg-white/[0.02] border border-white/[0.04]">
+                <FileText size={13} className="text-violet-400 flex-shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-[11px] text-slate-300 truncate">{doc.file_name}</p>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <span className="text-[9px] text-slate-600">{typeLabel}</span>
+                    <span className="text-[9px] text-slate-700">·</span>
+                    <span className="text-[9px] text-slate-600">{formatBytes(doc.file_size)}</span>
+                    <span className="text-[9px] text-slate-700">·</span>
+                    <span className="text-[9px] text-slate-600">{uploadedAt}</span>
+                  </div>
+                </div>
+                <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full border ${statusInfo.color}`}>
+                  {statusInfo.label}
+                </span>
+                {doc.download_url && (
+                  <a
+                    href={doc.download_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex-shrink-0 text-[10px] text-blue-400 hover:text-blue-300 transition-colors ml-1"
+                    title="Скачать"
+                  >
+                    <FileText size={12} />
+                  </a>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Single request card ──────────────────────────────────────────────────────
 
 function RequestCard({
@@ -266,6 +381,11 @@ function RequestCard({
               {/* Survey data (lazy-loaded for registration requests) */}
               {request.category === 'registration' && (
                 <SurveySection requestId={request.id} />
+              )}
+
+              {/* Documents (lazy-loaded for registration requests) */}
+              {request.category === 'registration' && (
+                <DocumentsSection requestId={request.id} />
               )}
             </div>
           </motion.div>

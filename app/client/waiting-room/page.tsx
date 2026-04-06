@@ -195,11 +195,16 @@ export default function WaitingRoomPage() {
 
           {/* CTAs */}
           {status !== 'rejected' && (
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 gap-3">
               <Link href="/client/onboarding" className="flex flex-col items-center gap-2 bg-surface-container-low hover:bg-surface-container rounded-2xl border border-white/[0.06] hover:border-primary/20 p-5 transition-all group">
                 <span className="material-symbols-outlined text-2xl text-primary">assignment</span>
                 <span className="text-xs text-center text-on-surface group-hover:text-on-surface/90 font-medium leading-tight">Заполнить анкету</span>
                 <span className="text-[10px] text-on-surface-variant text-center">Ускорьте процесс проверки</span>
+              </Link>
+              <Link href="/dashboard" className="flex flex-col items-center gap-2 bg-surface-container-low hover:bg-surface-container rounded-2xl border border-white/[0.06] hover:border-primary/20 p-5 transition-all group">
+                <span className="material-symbols-outlined text-2xl text-primary">dashboard</span>
+                <span className="text-xs text-center text-on-surface group-hover:text-on-surface/90 font-medium leading-tight">Мой дашборд</span>
+                <span className="text-[10px] text-on-surface-variant text-center">Личный кабинет и аналитика</span>
               </Link>
               <Link href="/client/my-data" className="flex flex-col items-center gap-2 bg-surface-container-low hover:bg-surface-container rounded-2xl border border-white/[0.06] hover:border-primary/20 p-5 transition-all group">
                 <span className="material-symbols-outlined text-2xl text-primary">person_book</span>

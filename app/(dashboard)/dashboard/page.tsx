@@ -12,6 +12,8 @@ import { ActivityFeed } from '@/components/dashboard/ActivityFeed'
 import type { Alert, ActivityItem } from '@/types'
 import type { AlertCardProps } from '@/components/dashboard/AlertCard'
 import { prisma } from '@/lib/prisma'
+import { PointARadarWidget } from '@/components/dashboard/PointARadarWidget'
+import type { PointA, BlockScore } from '@/types/onboarding'
 
 export const metadata: Metadata = { title: 'Дэшборд' }
 
@@ -205,8 +207,162 @@ function buildGriDistRows(griDist: GriDist) {
   ]
 }
 
+// ─── client dashboard data ────────────────────────────────────────────────────
+function emptyBlock(score = 0): BlockScore {
+  return { score, status: score < 30 ? 'critical' : score < 60 ? 'weak' : 'average', top_issues: [], recommendations: [] }
+}
+
+function diagToPointA(diag: Record<string, unknown>): PointA {
+  return {
+    overall_score: (diag.overall_score as number) ?? 0,
+    health_index:  (diag.health_index  as number) ?? 0,
+    stage:         (diag.stage         as string)  ?? 'seed',
+    blocks: {
+      finance:    (diag.finance_score    as BlockScore) ?? emptyBlock(),
+      marketing:  (diag.marketing_score  as BlockScore) ?? emptyBlock(),
+      operations: (diag.operations_score as BlockScore) ?? emptyBlock(),
+      strategy:   (diag.strategy_score   as BlockScore) ?? emptyBlock(),
+      sales:      (diag.sales_score      as BlockScore) ?? emptyBlock(),
+    },
+    risks:       (diag.risks       as PointA['risks'])       ?? [],
+    insights:    (diag.insights    as PointA['insights'])    ?? [],
+    quick_wins:  (diag.quick_wins  as PointA['quick_wins'])  ?? [],
+    data_gaps:   (diag.data_gaps   as PointA['data_gaps'])   ?? [],
+  }
+}
+
+function scoreColor(s: number) {
+  if (s < 30) return '#ff6b6b'
+  if (s < 60) return '#ffbd60'
+  return '#6effc0'
+}
+
+function stageLabel(s: string) {
+  const m: Record<string, string> = { seed: 'Seed', early: 'Early', growth: 'Growth', scale: 'Scale', mature: 'Mature' }
+  return m[s] ?? s
+}
+
 // ─── page ─────────────────────────────────────────────────────────────────────
 export default async function DashboardPage() {
+  // Detect viewer role — clients get their personal Point A view
+  const supabase = createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (user) {
+    const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).maybeSingle()
+    const role = profile?.role ?? null
+    if (role === 'client') {
+      // Fetch latest diagnostic
+      const { data: diagRows } = await supabase
+        .from('diagnostics')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+      const diag = diagRows?.[0] ?? null
+
+      // Fetch company
+      const { data: companyRow } = await supabase
+        .from('companies')
+        .select('name')
+        .eq('user_id', user.id)
+        .maybeSingle()
+      const orgName = companyRow?.name ?? undefined
+
+      const pointA = diag ? diagToPointA(diag as Record<string, unknown>) : null
+      const totalScore = pointA?.overall_score ?? 0
+      const healthIndex = pointA?.health_index ?? 0
+
+      return (
+        <div className="space-y-6">
+          <section>
+            <div className="mb-4">
+              <p className="text-[11px] font-mono text-primary/60 uppercase tracking-[0.2em] mb-2">
+                Точка А · Текущая диагностика
+              </p>
+              <h1 className="font-headline text-3xl lg:text-4xl font-extrabold text-on-surface leading-tight">
+                {orgName ?? 'Мой дашборд'}
+              </h1>
+              <p className="text-on-surface-variant mt-2 text-sm max-w-xl leading-relaxed">
+                Ваши текущие показатели на основе заполненной анкеты
+              </p>
+            </div>
+
+            {pointA ? (
+              <div className="grid grid-cols-1 xl:grid-cols-5 gap-6 items-start">
+                {/* KPI cards */}
+                <div className="xl:col-span-2 grid grid-cols-2 gap-3">
+                  {[
+                    {
+                      label: 'Общий балл', value: totalScore.toFixed(0),
+                      sub: '/ 100', color: scoreColor(totalScore), icon: 'stars',
+                    },
+                    {
+                      label: 'Health Index', value: healthIndex.toFixed(0),
+                      sub: '/ 100', color: scoreColor(healthIndex), icon: 'monitor_heart',
+                    },
+                    {
+                      label: 'Стадия', value: stageLabel(pointA.stage),
+                      sub: 'бизнеса', color: '#6effc0', icon: 'trending_up',
+                    },
+                    {
+                      label: 'Финансы', value: (pointA.blocks.finance.score / 10).toFixed(1),
+                      sub: '/ 10', color: scoreColor(pointA.blocks.finance.score), icon: 'paid',
+                    },
+                  ].map(card => (
+                    <div key={card.label}
+                      className="bg-surface-container-low rounded-2xl p-5 border border-white/[0.04]">
+                      <div className="flex items-start justify-between mb-3">
+                        <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest">{card.label}</p>
+                        <span className="material-symbols-outlined text-base" style={{ color: card.color + '80' }}>{card.icon}</span>
+                      </div>
+                      <h3 className="text-3xl font-mono font-bold mb-2" style={{ color: card.color }}>{card.value}</h3>
+                      <p className="text-[10px] text-on-surface-variant">{card.sub}</p>
+                    </div>
+                  ))}
+                </div>
+                {/* Radar */}
+                <div className="xl:col-span-3">
+                  <PointARadarWidget pointA={pointA} orgName={orgName} />
+                </div>
+              </div>
+            ) : (
+              <div className="bg-surface-container-low border border-white/[0.04] rounded-2xl p-12 text-center">
+                <span className="material-symbols-outlined text-5xl text-primary/20 mb-4 block">assignment</span>
+                <p className="text-on-surface font-medium mb-2">Анкета ещё не заполнена</p>
+                <p className="text-sm text-on-surface-variant mb-6">Заполните анкету, чтобы получить AI-диагностику вашего бизнеса</p>
+                <Link href="/client/onboarding"
+                  className="inline-flex items-center gap-2 bg-primary/10 hover:bg-primary/20 border border-primary/20 text-primary text-sm px-5 py-2.5 rounded-xl transition-all">
+                  <span className="material-symbols-outlined text-base">edit_note</span>
+                  Заполнить анкету
+                </Link>
+              </div>
+            )}
+          </section>
+
+          {/* Quick nav */}
+          <section>
+            <h2 className="font-headline text-lg font-bold text-on-surface mb-4">Быстрый доступ</h2>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {[
+                { href: '/point-a', icon: 'analytics', label: 'Точка А', sub: 'AI-диагностика' },
+                { href: '/gri',     icon: 'radar',     label: 'GRI',     sub: 'Готовность к инвестициям' },
+                { href: '/metrics', icon: 'bar_chart', label: 'Метрики', sub: 'Финансовые показатели' },
+                { href: '/client/onboarding/documents', icon: 'upload_file', label: 'Документы', sub: 'P&L, баланс, отчёты' },
+              ].map(item => (
+                <Link key={item.href} href={item.href}
+                  className="flex flex-col items-center gap-2 bg-surface-container-low hover:bg-surface-container rounded-2xl border border-white/[0.04] hover:border-primary/20 p-5 transition-all group">
+                  <span className="material-symbols-outlined text-2xl text-primary/60 group-hover:text-primary transition-colors">{item.icon}</span>
+                  <span className="text-xs font-medium text-on-surface text-center">{item.label}</span>
+                  <span className="text-[10px] text-on-surface-variant text-center">{item.sub}</span>
+                </Link>
+              ))}
+            </div>
+          </section>
+        </div>
+      )
+    }
+  }
+
   const data = await getDashboardExtendedData()
   const kpi = buildKpi(data)
   const alerts = data?.alerts ?? []
