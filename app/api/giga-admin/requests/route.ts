@@ -127,7 +127,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ requests })
   } catch (error) {
     console.error('[giga-admin/requests] GET error:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return NextResponse.json({ requests: [] })
   }
 }
 
