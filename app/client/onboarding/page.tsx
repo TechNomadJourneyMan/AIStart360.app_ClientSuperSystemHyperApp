@@ -413,6 +413,17 @@ export default function OnboardingPage() {
             <span className="text-xs font-mono text-on-surface-variant">
               Шаг {currentStep} из 6
             </span>
+            <button
+              onClick={async () => {
+                const sb = createClient()
+                await sb.auth.signOut()
+                window.location.href = '/login'
+              }}
+              className="flex items-center gap-1 text-xs font-mono text-red-400/70 hover:text-red-400 border border-red-500/10 hover:border-red-500/20 rounded-lg px-2.5 py-1.5 transition-all"
+            >
+              <span className="material-symbols-outlined text-sm">logout</span>
+              Выход
+            </button>
           </div>
         </div>
 
