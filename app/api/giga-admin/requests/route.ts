@@ -1,7 +1,6 @@
 export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@/lib/db'
 import { createServerClient } from '@/lib/supabase-server'
 
 function isSuperAdmin(req: NextRequest): boolean {
@@ -12,68 +11,12 @@ function mapStatus(s: string): 'pending' | 'approved' | 'rejected' | 'archived' 
   if (s === 'approved') return 'approved'
   if (s === 'rejected') return 'rejected'
   if (s === 'archived') return 'archived'
-  return 'pending' // new | in_review | waiting_for_info | escalated
-}
-
-/**
- * Reconcile orphaned Supabase profiles that have no matching AdminRequest.
- * This catches cases where /api/client/register failed after Supabase user creation.
- */
-async function reconcileOrphanedProfiles(existingUserIds: Set<string>) {
-  try {
-    const supabase = createServerClient()
-
-    // Find pending client profiles older than 60 seconds
-    const cutoff = new Date(Date.now() - 60_000).toISOString()
-    const { data: pendingProfiles } = await supabase
-      .from('profiles')
-      .select('id, email, full_name, organization, created_at')
-      .eq('status', 'pending_approval')
-      .eq('role', 'client')
-      .lt('created_at', cutoff)
-
-    if (!pendingProfiles?.length) return 0
-
-    let reconciled = 0
-    for (const profile of pendingProfiles) {
-      if (existingUserIds.has(profile.id)) continue
-
-      try {
-        await prisma.adminRequest.create({
-          data: {
-            type: 'registration',
-            status: 'new',
-            priority: 'medium',
-            source: 'reconciliation',
-            payload: {
-              userId: profile.id,
-              email: profile.email,
-              name: profile.full_name || profile.email,
-              company: profile.organization || '',
-              subject: `Регистрация: ${profile.full_name || profile.email}`,
-              description: `Авто-восстановленная заявка от ${profile.full_name || profile.email}`,
-            },
-          },
-        })
-        reconciled++
-      } catch {
-        // Skip duplicates or other errors
-      }
-    }
-
-    if (reconciled > 0) {
-      console.log(`[giga-admin/requests] Reconciled ${reconciled} orphaned profile(s)`)
-    }
-    return reconciled
-  } catch (error) {
-    console.warn('[giga-admin/requests] Reconciliation error:', error)
-    return 0
-  }
+  return 'pending'
 }
 
 /**
  * GET /api/giga-admin/requests
- * Returns all AdminRequest records. Auto-reconciles orphaned Supabase profiles.
+ * Reads directly from Supabase: profiles (clients) + admin_requests fallback.
  */
 export async function GET(req: NextRequest) {
   if (!isSuperAdmin(req)) {
@@ -81,55 +24,72 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    // 1. Test DB connection first
-    let rows: Awaited<ReturnType<typeof prisma.adminRequest.findMany>>
-    try {
-      rows = await prisma.adminRequest.findMany({
-        include: {
-          user: { select: { id: true, name: true, email: true, avatarUrl: true } },
-          company: { select: { id: true, name: true } },
-          assignedAdmin: { select: { id: true, name: true } },
-        },
-        orderBy: { createdAt: 'desc' },
-      })
-    } catch (dbError) {
-      const msg = dbError instanceof Error ? dbError.message : String(dbError)
-      console.error('[giga-admin/requests] DB error:', msg)
-      // Return empty list instead of crashing — DB might not have the table yet
-      if (msg.includes('does not exist') || msg.includes('relation') || msg.includes('connect')) {
-        return NextResponse.json({ requests: [], _dbWarning: msg })
+    const sb = createServerClient()
+
+    // 1. Try admin_requests table first
+    const { data: adminRows, error: arError } = await sb
+      .from('admin_requests')
+      .select('*')
+      .order('created_at', { ascending: false })
+
+    // 2. Always load client profiles as source of truth
+    const { data: profiles } = await sb
+      .from('profiles')
+      .select('id, email, full_name, organization, status, role, created_at')
+      .eq('role', 'client')
+      .order('created_at', { ascending: false })
+
+    // Build requests from admin_requests if table exists
+    const requests: Array<Record<string, unknown>> = []
+    const seenUserIds = new Set<string>()
+
+    if (!arError && adminRows) {
+      for (const r of adminRows) {
+        const payload = (r.payload ?? {}) as Record<string, string>
+        const uid = payload.userId
+        if (uid) seenUserIds.add(uid)
+        requests.push({
+          id: r.id,
+          category: (r.type ?? 'registration').toLowerCase(),
+          status: mapStatus(r.status),
+          userName: payload.name ?? 'Неизвестный',
+          userEmail: payload.email ?? '—',
+          subject: payload.subject ?? `Заявка #${r.id?.slice(-6) ?? ''}`,
+          description: payload.description ?? '',
+          createdAt: r.created_at,
+          company: payload.company ?? undefined,
+          rejectionReason: r.rejection_reason ?? undefined,
+          priority: r.priority ?? 'medium',
+          assignedAdmin: null,
+          source: r.source ?? null,
+        })
       }
-      return NextResponse.json({ error: `DB error: ${msg.slice(0, 200)}` }, { status: 500 })
     }
 
-    // 2. Reconcile orphaned Supabase profiles (non-blocking, fire-and-forget)
-    const existingUserIds = new Set<string>()
-    for (const r of rows) {
-      const uid = (r.payload as Record<string, string> | null)?.userId
-      if (uid) existingUserIds.add(uid)
-    }
-    reconcileOrphanedProfiles(existingUserIds).catch(() => {})
-
-    // 3. Map to response
-    const requests = rows.map((r) => {
-      const payload = (r.payload ?? {}) as Record<string, string>
-      return {
-        id: r.id,
-        category: r.type.toLowerCase() as 'registration' | 'access' | 'support',
-        status: mapStatus(r.status),
-        userName: r.user?.name ?? payload.name ?? 'Неизвестный',
-        userEmail: r.user?.email ?? payload.email ?? '—',
-        userAvatar: r.user?.avatarUrl ?? undefined,
-        subject: payload.subject ?? `Заявка #${r.id.slice(-6)}`,
-        description: payload.description ?? payload.message ?? '',
-        createdAt: r.createdAt.toISOString(),
-        company: r.company?.name ?? payload.company ?? undefined,
-        rejectionReason: r.rejectionReason ?? undefined,
-        priority: r.priority,
-        assignedAdmin: r.assignedAdmin?.name ?? null,
-        source: r.source ?? null,
+    // 3. Add profiles not yet in admin_requests (orphaned registrations)
+    if (profiles) {
+      for (const p of profiles) {
+        if (seenUserIds.has(p.id)) continue
+        requests.push({
+          id: p.id,
+          category: 'registration',
+          status: mapStatus(p.status === 'pending_approval' ? 'pending' : p.status),
+          userName: p.full_name ?? p.email,
+          userEmail: p.email ?? '—',
+          subject: `Регистрация: ${p.full_name ?? p.email}`,
+          description: `Клиент зарегистрирован ${new Date(p.created_at).toLocaleDateString('ru-RU')}`,
+          createdAt: p.created_at,
+          company: p.organization ?? undefined,
+          rejectionReason: undefined,
+          priority: 'medium',
+          assignedAdmin: null,
+          source: 'supabase_profile',
+        })
       }
-    })
+    }
+
+    // Sort by date desc
+    requests.sort((a, b) => new Date(b.createdAt as string).getTime() - new Date(a.createdAt as string).getTime())
 
     return NextResponse.json({ requests })
   } catch (error) {
@@ -141,7 +101,7 @@ export async function GET(req: NextRequest) {
 
 /**
  * POST /api/giga-admin/requests
- * Creates a new AdminRequest (used when seeding or from client portal).
+ * Creates a new request via Supabase.
  */
 export async function POST(req: NextRequest) {
   if (!isSuperAdmin(req)) {
@@ -150,16 +110,25 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json()
-    const request = await prisma.adminRequest.create({
-      data: {
-        type: body.type ?? 'registration',
-        status: 'new',
-        priority: body.priority ?? 'medium',
-        payload: body.payload ?? {},
-        source: body.source ?? 'manual',
-      },
+    const sb = createServerClient()
+    const id = crypto.randomUUID()
+    const now = new Date().toISOString()
+
+    const { error } = await sb.from('admin_requests').insert({
+      id,
+      type: body.type ?? 'registration',
+      status: 'new',
+      priority: body.priority ?? 'medium',
+      source: body.source ?? 'manual',
+      payload: body.payload ?? {},
+      created_at: now,
+      updated_at: now,
     })
-    return NextResponse.json({ request }, { status: 201 })
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+    return NextResponse.json({ request: { id } }, { status: 201 })
   } catch (error) {
     console.error('[giga-admin/requests] POST error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
