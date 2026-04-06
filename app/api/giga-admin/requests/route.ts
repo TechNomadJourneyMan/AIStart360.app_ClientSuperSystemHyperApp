@@ -126,8 +126,85 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ requests })
   } catch (error) {
-    console.error('[giga-admin/requests] GET error:', error)
+    console.error('[giga-admin/requests] GET error (Prisma unavailable), falling back to Supabase:', error)
+    return getRequestsFromSupabase()
+  }
+}
+
+/**
+ * Supabase fallback: reads admin_requests table + orphaned profiles.
+ * Used when Prisma/PostgreSQL direct connection is unavailable.
+ */
+async function getRequestsFromSupabase(): Promise<NextResponse> {
+  try {
+    const supabase = createServerClient()
+
+    // 1. Read admin_requests table (populated by fallback in /api/client/register)
+    const { data: rows } = await supabase
+      .from('admin_requests')
+      .select('*')
+      .order('created_at', { ascending: false })
+
+    const requests: ReturnType<typeof buildRequestFromRow>[] = []
+    const seenUserIds = new Set<string>()
+
+    for (const r of rows ?? []) {
+      const payload = (r.payload ?? {}) as Record<string, string>
+      const uid = payload.userId
+      if (uid) seenUserIds.add(uid)
+      requests.push(buildRequestFromRow(r, payload))
+    }
+
+    // 2. Also pull pending profiles not yet in admin_requests (orphans)
+    const { data: profiles } = await supabase
+      .from('profiles')
+      .select('id, email, full_name, role, status, created_at')
+      .eq('role', 'client')
+      .order('created_at', { ascending: false })
+
+    for (const p of profiles ?? []) {
+      if (seenUserIds.has(p.id)) continue
+      requests.push({
+        id: p.id,
+        category: 'registration' as const,
+        status: p.status === 'approved' ? 'approved' : p.status === 'rejected' ? 'rejected' : 'pending',
+        userName: p.full_name ?? p.email ?? 'Неизвестный',
+        userEmail: p.email ?? '—',
+        userAvatar: undefined,
+        subject: `Регистрация: ${p.full_name ?? p.email}`,
+        description: `Профиль из Supabase — ${p.email}`,
+        createdAt: p.created_at ?? new Date().toISOString(),
+        company: undefined,
+        rejectionReason: undefined,
+        priority: 'medium',
+        assignedAdmin: null,
+        source: 'supabase_profile',
+      })
+    }
+
+    return NextResponse.json({ requests })
+  } catch (sbError) {
+    console.error('[giga-admin/requests] Supabase fallback also failed:', sbError)
     return NextResponse.json({ requests: [] })
+  }
+}
+
+function buildRequestFromRow(r: Record<string, unknown>, payload: Record<string, string>) {
+  return {
+    id: r.id as string,
+    category: ((r.type as string | undefined)?.toLowerCase() ?? 'registration') as 'registration' | 'access' | 'support',
+    status: mapStatus((r.status as string | undefined) ?? 'new'),
+    userName: payload.name ?? (r.user_name as string | undefined) ?? 'Неизвестный',
+    userEmail: payload.email ?? (r.user_email as string | undefined) ?? '—',
+    userAvatar: undefined as string | undefined,
+    subject: payload.subject ?? `Заявка #${(r.id as string).slice(-6)}`,
+    description: payload.description ?? payload.message ?? '',
+    createdAt: (r.created_at as string | undefined) ?? new Date().toISOString(),
+    company: payload.company || undefined,
+    rejectionReason: (r.rejection_reason as string | undefined) ?? undefined,
+    priority: (r.priority as string | undefined) ?? 'medium',
+    assignedAdmin: null as string | null,
+    source: (r.source as string | undefined) ?? null,
   }
 }
 
