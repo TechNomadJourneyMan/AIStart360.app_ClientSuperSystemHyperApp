@@ -77,33 +77,40 @@ async function reconcileOrphanedProfiles(existingUserIds: Set<string>) {
  */
 export async function GET(req: NextRequest) {
   if (!isSuperAdmin(req)) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    return NextResponse.json({ error: 'Forbidden: super_admin cookie missing' }, { status: 403 })
   }
 
   try {
-    // Collect existing userIds from AdminRequest payloads for reconciliation
-    const allRows = await prisma.adminRequest.findMany({
-      select: { payload: true },
-    })
+    // 1. Test DB connection first
+    let rows: Awaited<ReturnType<typeof prisma.adminRequest.findMany>>
+    try {
+      rows = await prisma.adminRequest.findMany({
+        include: {
+          user: { select: { id: true, name: true, email: true, avatarUrl: true } },
+          company: { select: { id: true, name: true } },
+          assignedAdmin: { select: { id: true, name: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+      })
+    } catch (dbError) {
+      const msg = dbError instanceof Error ? dbError.message : String(dbError)
+      console.error('[giga-admin/requests] DB error:', msg)
+      // Return empty list instead of crashing — DB might not have the table yet
+      if (msg.includes('does not exist') || msg.includes('relation') || msg.includes('connect')) {
+        return NextResponse.json({ requests: [], _dbWarning: msg })
+      }
+      return NextResponse.json({ error: `DB error: ${msg.slice(0, 200)}` }, { status: 500 })
+    }
+
+    // 2. Reconcile orphaned Supabase profiles (non-blocking, fire-and-forget)
     const existingUserIds = new Set<string>()
-    for (const r of allRows) {
+    for (const r of rows) {
       const uid = (r.payload as Record<string, string> | null)?.userId
       if (uid) existingUserIds.add(uid)
     }
+    reconcileOrphanedProfiles(existingUserIds).catch(() => {})
 
-    // Auto-reconcile orphaned profiles (non-blocking)
-    await reconcileOrphanedProfiles(existingUserIds)
-
-    // Fetch full data
-    const rows = await prisma.adminRequest.findMany({
-      include: {
-        user: { select: { id: true, name: true, email: true, avatarUrl: true } },
-        company: { select: { id: true, name: true } },
-        assignedAdmin: { select: { id: true, name: true } },
-      },
-      orderBy: { createdAt: 'desc' },
-    })
-
+    // 3. Map to response
     const requests = rows.map((r) => {
       const payload = (r.payload ?? {}) as Record<string, string>
       return {
@@ -126,8 +133,9 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ requests })
   } catch (error) {
-    console.error('[giga-admin/requests] GET error:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    const msg = error instanceof Error ? error.message : String(error)
+    console.error('[giga-admin/requests] GET error:', msg)
+    return NextResponse.json({ error: `Server error: ${msg.slice(0, 200)}` }, { status: 500 })
   }
 }
 

@@ -389,7 +389,7 @@ export default function OnboardingPage() {
         setIsSaving(false)
       }
       localStorage.removeItem(STORAGE_KEY)
-      router.push('/client/point-a')
+      router.push('/client/dashboard')
     }
   }
 

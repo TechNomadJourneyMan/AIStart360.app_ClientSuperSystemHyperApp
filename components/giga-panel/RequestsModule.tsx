@@ -17,6 +17,11 @@ import {
   RefreshCw,
   Loader2,
   FileText,
+  Paperclip,
+  Download,
+  FileSpreadsheet,
+  FileBarChart,
+  File,
 } from 'lucide-react'
 import { useGigaPanelStore, type RequestCategory, type GigaRequest } from '@/stores/gigaPanel.store'
 import { RejectModal } from './RejectModal'
@@ -145,6 +150,109 @@ function SurveySection({ requestId }: { requestId: string }) {
   )
 }
 
+// ─── Documents section (displayed inside expanded card) ─────────────────────
+
+const DOC_ICONS: Record<string, React.ReactNode> = {
+  'p&l': <FileBarChart size={14} className="text-emerald-400" />,
+  'balance': <FileSpreadsheet size={14} className="text-blue-400" />,
+  'crm': <FileSpreadsheet size={14} className="text-violet-400" />,
+}
+
+const PARSE_STATUS_MAP: Record<string, { label: string; cls: string }> = {
+  queued:     { label: 'В очереди',  cls: 'text-slate-500' },
+  processing: { label: 'Парсинг...', cls: 'text-amber-400' },
+  completed:  { label: 'Готово',     cls: 'text-emerald-400' },
+  failed:     { label: 'Ошибка',    cls: 'text-red-400' },
+}
+
+function formatFileSize(bytes: number | null): string {
+  if (!bytes) return '—'
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function DocumentsSection({ requestId }: { requestId: string }) {
+  const [docs, setDocs] = useState<Array<{
+    id: string; file_name: string; file_url: string; doc_type: string
+    file_size: number | null; parse_status: string; uploaded_at: string
+  }>>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const res = await fetch(`/api/giga-admin/requests/${requestId}/documents`)
+        if (!res.ok) throw new Error('Не удалось загрузить документы')
+        const json = await res.json()
+        if (!cancelled) setDocs(json.data ?? [])
+      } catch (e) {
+        if (!cancelled) setError(e instanceof Error ? e.message : 'Ошибка')
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [requestId])
+
+  if (loading) {
+    return (
+      <div className="flex items-center gap-2 py-3 justify-center">
+        <Loader2 size={14} className="text-slate-500 animate-spin" />
+        <span className="text-[11px] text-slate-500">Загрузка документов...</span>
+      </div>
+    )
+  }
+
+  if (error) {
+    return <p className="text-[11px] text-red-400 py-2">{error}</p>
+  }
+
+  if (docs.length === 0) {
+    return (
+      <p className="text-[11px] text-slate-600 py-2 italic">Документы не загружены</p>
+    )
+  }
+
+  return (
+    <div className="mt-3 space-y-2">
+      <div className="flex items-center gap-1.5">
+        <Paperclip size={12} className="text-emerald-400" />
+        <span className="text-[11px] font-semibold text-emerald-300 uppercase tracking-wider">
+          Документы ({docs.length})
+        </span>
+      </div>
+      <div className="space-y-1.5">
+        {docs.map((doc) => {
+          const icon = DOC_ICONS[doc.doc_type?.toLowerCase()] ?? <File size={14} className="text-slate-400" />
+          const ps = PARSE_STATUS_MAP[doc.parse_status] ?? { label: doc.parse_status, cls: 'text-slate-500' }
+          return (
+            <div key={doc.id} className="flex items-center gap-2.5 p-2 rounded-lg bg-white/[0.02] border border-white/[0.04]">
+              {icon}
+              <div className="flex-1 min-w-0">
+                <p className="text-[11px] text-slate-300 truncate">{doc.file_name}</p>
+                <div className="flex items-center gap-2 mt-0.5">
+                  <span className="text-[9px] text-slate-600 uppercase">{doc.doc_type}</span>
+                  <span className="text-[9px] text-slate-600">{formatFileSize(doc.file_size)}</span>
+                  <span className={`text-[9px] ${ps.cls}`}>{ps.label}</span>
+                </div>
+              </div>
+              {doc.file_url && (
+                <a href={doc.file_url} target="_blank" rel="noopener noreferrer"
+                  className="p-1 rounded hover:bg-white/[0.05] transition-colors">
+                  <Download size={12} className="text-slate-500 hover:text-slate-300" />
+                </a>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 // ─── Single request card ──────────────────────────────────────────────────────
 
 function RequestCard({
@@ -267,6 +375,11 @@ function RequestCard({
               {request.category === 'registration' && (
                 <SurveySection requestId={request.id} />
               )}
+
+              {/* Client documents (lazy-loaded for registration requests) */}
+              {request.category === 'registration' && (
+                <DocumentsSection requestId={request.id} />
+              )}
             </div>
           </motion.div>
         )}
@@ -340,7 +453,10 @@ export function RequestsModule() {
     setRequestsError(null)
     try {
       const res = await fetch('/api/giga-admin/requests')
-      if (!res.ok) throw new Error('Ошибка загрузки заявок')
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        throw new Error(body.error || `Ошибка загрузки заявок (HTTP ${res.status})`)
+      }
       const data = await res.json()
       setRequests(data.requests ?? [])
     } catch (err) {
