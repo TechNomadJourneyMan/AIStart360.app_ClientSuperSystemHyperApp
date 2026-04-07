@@ -203,13 +203,12 @@ export function Sidebar() {
                 )}
                 {/* Lock badge */}
                 {!sidebarCollapsed ? (
-                  <span className="flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-amber-500/10 border border-amber-500/20 text-amber-400 text-[9px] font-mono tracking-wide flex-shrink-0">
-                    <span className="material-symbols-outlined text-[10px]">lock</span>
+                  <span className="flex items-center px-1.5 py-0.5 rounded-md bg-amber-500/10 border border-amber-500/20 text-amber-400 text-[9px] font-mono tracking-wide flex-shrink-0">
                     Pro
                   </span>
                 ) : (
                   <span className="absolute -top-0.5 -right-0.5 w-4 h-4 flex items-center justify-center rounded-full bg-amber-500/20 border border-amber-500/30">
-                    <span className="material-symbols-outlined text-[9px] text-amber-400">lock</span>
+                    <span className="text-amber-400 text-[7px] font-mono font-bold">P</span>
                   </span>
                 )}
               </button>

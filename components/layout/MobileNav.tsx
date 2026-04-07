@@ -122,8 +122,8 @@ export function MobileNav() {
                     {item.icon}
                   </span>
                   <span className="text-[#8B95A3] opacity-40 blur-[1px]">{item.label}</span>
-                  <span className="absolute top-2 right-[calc(50%-18px)] flex items-center gap-0.5 px-1 py-0.5 rounded bg-amber-500/20 text-amber-400 text-[7px] font-mono">
-                    <span className="material-symbols-outlined text-[8px]">lock</span>Pro
+                  <span className="absolute top-2 right-[calc(50%-18px)] flex items-center px-1 py-0.5 rounded bg-amber-500/20 text-amber-400 text-[7px] font-mono">
+                    Pro
                   </span>
                 </button>
               )
@@ -226,8 +226,8 @@ export function MobileNav() {
                           </span>
                           {/* Pro overlay */}
                           <div className="absolute inset-0 flex items-center justify-center">
-                            <span className="flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-amber-500/15 border border-amber-500/25 text-amber-400 text-[8px] font-mono tracking-wide">
-                              <span className="material-symbols-outlined text-[9px]">lock</span>Pro
+                            <span className="flex items-center px-1.5 py-0.5 rounded-md bg-amber-500/15 border border-amber-500/25 text-amber-400 text-[8px] font-mono tracking-wide">
+                              Pro
                             </span>
                           </div>
                         </button>
