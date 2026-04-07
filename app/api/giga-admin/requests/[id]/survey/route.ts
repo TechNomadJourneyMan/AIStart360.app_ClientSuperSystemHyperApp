@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
+import { prisma } from '@/lib/db'
 
 function isSuperAdmin(req: NextRequest): boolean {
   return req.cookies.get('aistart360_role')?.value === 'super_admin'
@@ -9,8 +10,8 @@ function isSuperAdmin(req: NextRequest): boolean {
 
 /**
  * GET /api/giga-admin/requests/[id]/survey
- * Returns onboarding survey answers and company data.
- * Resolves userId from admin_requests or treats id as profile UUID.
+ * Returns onboarding survey answers and company data for a given AdminRequest.
+ * Resolves userId via Prisma → Supabase admin_requests fallback → params.id (orphaned profile).
  */
 export async function GET(
   req: NextRequest,
@@ -20,36 +21,51 @@ export async function GET(
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
-  try {
-    const sb = createServerClient()
+  const supabase = createServerClient()
+  let userId: string | null = null
 
-    // Resolve userId: try admin_requests first, then treat id as profile id
-    let userId: string | null = null
-    const { data: arRow } = await sb
+  // 1. Try Prisma
+  try {
+    const adminRequest = await prisma.adminRequest.findUnique({
+      where: { id: params.id },
+    })
+    if (adminRequest) {
+      const payload = (adminRequest.payload ?? {}) as Record<string, string>
+      userId = payload.userId ?? null
+    }
+  } catch {
+    // Prisma unavailable — fall through to Supabase
+  }
+
+  // 2. Supabase admin_requests fallback
+  if (!userId) {
+    const { data: sbRow } = await supabase
       .from('admin_requests')
       .select('payload')
       .eq('id', params.id)
       .maybeSingle()
 
-    if (arRow) {
-      userId = (arRow.payload as Record<string, string>)?.userId ?? null
-    } else {
-      userId = params.id
+    if (sbRow) {
+      const payload = (sbRow.payload ?? {}) as Record<string, string>
+      userId = payload.userId ?? null
     }
+  }
 
-    if (!userId) {
-      return NextResponse.json({ ok: true, data: { answers: {}, company: null, completedSteps: [] } })
-    }
+  // 3. Last resort: params.id is itself the user UUID (orphaned profile shown as request)
+  if (!userId) {
+    userId = params.id
+  }
 
+  try {
     // Fetch survey answers
-    const { data: surveyRows } = await sb
+    const { data: surveyRows } = await supabase
       .from('survey_answers')
       .select('question_key, answer, step')
       .eq('user_id', userId)
       .order('step', { ascending: true })
 
     // Fetch company data
-    const { data: company } = await sb
+    const { data: company } = await supabase
       .from('companies')
       .select('*')
       .eq('user_id', userId)
@@ -70,6 +86,7 @@ export async function GET(
     return NextResponse.json({
       ok: true,
       data: {
+        userId,
         answers,
         company,
         completedSteps: Array.from(completedSteps).sort(),

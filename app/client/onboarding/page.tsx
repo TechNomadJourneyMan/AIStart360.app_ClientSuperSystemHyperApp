@@ -287,30 +287,47 @@ export default function OnboardingPage() {
   useEffect(() => {
     const bootstrap = async () => {
       try {
+        const supabase = createClient()
+        const { data: { user } } = await supabase.auth.getUser()
+        setUserId(user?.id ?? null)
+
+        // 1. Try localStorage first (fastest, preserves in-progress step)
         const raw = localStorage.getItem(STORAGE_KEY)
         if (raw) {
           const data = JSON.parse(raw)
           setSavedAnswers(data.answers ?? {})
           setCurrentStep(data.current_step ?? 1)
           setCompanyId(data.company_id ?? null)
+          return // localStorage has data — use it
         }
 
-        const supabase = createClient()
-        const {
-          data: { user },
-        } = await supabase.auth.getUser()
-        setUserId(user?.id ?? null)
+        // 2. No localStorage → load from server (returning user, new device, or cleared cache)
+        if (user?.id) {
+          const [surveyRes, companyRes] = await Promise.all([
+            fetch(`/api/v1/onboarding/survey?user_id=${user.id}`),
+            fetch(`/api/v1/onboarding/company?user_id=${user.id}`),
+          ])
 
-        // If no local data, load answers from server (re-fill scenario)
-        if (!raw && user?.id) {
-          try {
-            const res = await fetch(`/api/v1/onboarding/survey?user_id=${user.id}`)
-            const sData = await res.json()
-            if (sData.ok && sData.data?.answers && Object.keys(sData.data.answers).length > 0) {
-              setSavedAnswers(sData.data.answers)
-              setCurrentStep(Math.min(sData.data.current_step ?? 1, 6))
+          if (surveyRes.ok) {
+            const surveyData = await surveyRes.json()
+            if (surveyData.ok && surveyData.data) {
+              const { answers: serverAnswers, completed_steps, current_step } = surveyData.data
+              if (Object.keys(serverAnswers ?? {}).length > 0) {
+                setSavedAnswers(serverAnswers)
+                const lastStep = completed_steps?.length
+                  ? Math.min(Math.max(...completed_steps) + 1, 6)
+                  : current_step ?? 1
+                setCurrentStep(lastStep)
+              }
             }
-          } catch {}
+          }
+
+          if (companyRes.ok) {
+            const companyData = await companyRes.json()
+            if (companyData.ok && companyData.data?.id) {
+              setCompanyId(companyData.data.id)
+            }
+          }
         }
       } catch {
         setUserId(null)
