@@ -380,7 +380,18 @@ export default function OnboardingPage() {
         setIsSaving(false)
       }
       localStorage.removeItem(STORAGE_KEY)
-      router.push('/client/point-a')
+      // Check approval status before redirecting
+      try {
+        const statusRes = await fetch(`/api/client/status?userId=${userId}`)
+        const statusData = await statusRes.json()
+        if (statusData.status === 'approved') {
+          router.push('/client/point-a')
+        } else {
+          router.push('/client/waiting-room')
+        }
+      } catch {
+        router.push('/client/point-a')
+      }
     }
   }
 
