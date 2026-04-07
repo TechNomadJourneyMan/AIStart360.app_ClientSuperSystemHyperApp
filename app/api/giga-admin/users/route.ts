@@ -20,25 +20,66 @@ export async function GET(req: NextRequest) {
     const sb = createServerClient()
     const { data: profiles, error } = await sb
       .from('profiles')
-      .select('id, email, full_name, role, status, organization, avatar_url, created_at, last_sign_in_at')
+      .select('id, email, full_name, role, status, organization, avatar_url, created_at')
       .order('created_at', { ascending: false })
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    const users = (profiles ?? []).map((p) => ({
-      id: p.id,
-      name: p.full_name,
-      email: p.email,
-      role: (p.role ?? 'client').toUpperCase(),
-      avatarUrl: p.avatar_url ?? null,
-      lastLogin: p.last_sign_in_at ?? null,
-      createdAt: p.created_at,
-      org: p.organization ?? null,
-      status: p.status === 'approved' ? 'active' : p.status === 'blocked' ? 'blocked' : 'pending',
-      widgets: [] as string[],
-    }))
+    // Get diagnostics for all users
+    const { data: diagnostics } = await sb
+      .from('diagnostics')
+      .select('user_id, overall_score, health_index, stage, finance_score, sales_score, operations_score, marketing_score, strategy_score, calculated_at')
+      .order('calculated_at', { ascending: false })
+
+    const diagMap = new Map<string, Record<string, unknown>>()
+    for (const d of diagnostics ?? []) {
+      if (!diagMap.has(d.user_id)) diagMap.set(d.user_id, d)
+    }
+
+    // Get survey completion status
+    const { data: surveyStats } = await sb
+      .from('survey_answers')
+      .select('user_id, step')
+
+    const surveyMap = new Map<string, Set<number>>()
+    for (const s of surveyStats ?? []) {
+      if (!surveyMap.has(s.user_id)) surveyMap.set(s.user_id, new Set())
+      surveyMap.get(s.user_id)!.add(s.step)
+    }
+
+    const users = (profiles ?? []).map((p) => {
+      const diag = diagMap.get(p.id) as Record<string, unknown> | undefined
+      const steps = surveyMap.get(p.id)
+      return {
+        id: p.id,
+        name: p.full_name,
+        email: p.email,
+        role: (p.role ?? 'client').toUpperCase(),
+        avatarUrl: p.avatar_url ?? null,
+        lastLogin: null,
+        createdAt: p.created_at,
+        org: p.organization ?? null,
+        status: p.status === 'approved' ? 'active' : p.status === 'blocked' ? 'blocked' : 'pending',
+        widgets: [] as string[],
+        surveyCompleted: steps ? steps.size >= 6 : false,
+        surveySteps: steps ? Array.from(steps).sort() : [],
+        diagnostics: diag ? {
+          overallScore: diag.overall_score,
+          healthIndex: diag.health_index,
+          stage: diag.stage,
+          calculatedAt: diag.calculated_at,
+          blocks: {
+            finance: (diag.finance_score as { score?: number } | null)?.score ?? 0,
+            sales: (diag.sales_score as { score?: number } | null)?.score ?? 0,
+            operations: (diag.operations_score as { score?: number } | null)?.score ?? 0,
+            marketing: (diag.marketing_score as { score?: number } | null)?.score ?? 0,
+            strategy: (diag.strategy_score as { score?: number } | null)?.score ?? 0,
+          },
+        } : null,
+      }
+    })
 
     return NextResponse.json({ users })
   } catch (error) {
