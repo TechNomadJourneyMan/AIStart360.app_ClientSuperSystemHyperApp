@@ -10,7 +10,7 @@ function isSuperAdmin(req: NextRequest): boolean {
 /**
  * PATCH /api/giga-admin/requests/:id
  * Actions: approve | reject | archive
- * Works with both admin_requests table and profiles table in Supabase.
+ * Uses Supabase directly. Hardened: tries multiple paths to update profile status.
  */
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   if (!isSuperAdmin(req)) {
@@ -23,6 +23,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
   try {
     // 1. Try updating admin_requests table
+    let userId: string | null = null
+
     const { data: arRow } = await sb
       .from('admin_requests')
       .update({
@@ -34,25 +36,41 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       .select('payload')
       .maybeSingle()
 
-    // Extract userId — from admin_requests payload or from profiles directly
-    let userId: string | null = null
     if (arRow) {
-      userId = (arRow.payload as Record<string, string>)?.userId ?? null
-    } else {
-      // The id might be a profile id directly (orphaned profile shown as request)
+      const payload = (arRow.payload as Record<string, string>) ?? {}
+      userId = payload.userId ?? null
+    }
+
+    // Fallback: params.id might itself be a profile UUID (orphaned profile entry)
+    if (!userId) {
       userId = params.id
     }
 
-    // 2. Update profile status in Supabase
-    if (userId && (body.action === 'approve' || body.action === 'reject')) {
+    // 2. ALWAYS sync profile status — hardened with dual attempt
+    if (body.action === 'approve' || body.action === 'reject') {
       const profileStatus = body.action === 'approve' ? 'approved' : 'rejected'
-      await sb
-        .from('profiles')
-        .update({
-          status: profileStatus,
-          ...(body.action === 'approve' ? { approved_at: new Date().toISOString() } : {}),
-        })
-        .eq('id', userId)
+
+      // Attempt 1: use resolved userId
+      if (userId) {
+        await sb
+          .from('profiles')
+          .update({
+            status: profileStatus,
+            ...(body.action === 'approve' ? { approved_at: new Date().toISOString() } : {}),
+          })
+          .eq('id', userId)
+      }
+
+      // Attempt 2: also try params.id directly if different from userId
+      if (userId !== params.id) {
+        await sb
+          .from('profiles')
+          .update({
+            status: profileStatus,
+            ...(body.action === 'approve' ? { approved_at: new Date().toISOString() } : {}),
+          })
+          .eq('id', params.id)
+      }
     }
 
     return NextResponse.json({ ok: true, status: newStatus })
