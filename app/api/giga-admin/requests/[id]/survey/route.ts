@@ -1,7 +1,6 @@
 export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@/lib/db'
 import { createServerClient } from '@/lib/supabase-server'
 
 function isSuperAdmin(req: NextRequest): boolean {
@@ -10,8 +9,8 @@ function isSuperAdmin(req: NextRequest): boolean {
 
 /**
  * GET /api/giga-admin/requests/[id]/survey
- * Returns onboarding survey answers and company data for a given AdminRequest.
- * Looks up the userId from AdminRequest.payload, then fetches from Supabase.
+ * Returns onboarding survey answers and company data.
+ * Resolves userId from admin_requests or treats id as profile UUID.
  */
 export async function GET(
   req: NextRequest,
@@ -22,38 +21,41 @@ export async function GET(
   }
 
   try {
-    const adminRequest = await prisma.adminRequest.findUnique({
-      where: { id: params.id },
-    })
+    const sb = createServerClient()
 
-    if (!adminRequest) {
-      return NextResponse.json({ error: 'Request not found' }, { status: 404 })
+    // Resolve userId: try admin_requests first, then treat id as profile id
+    let userId: string | null = null
+    const { data: arRow } = await sb
+      .from('admin_requests')
+      .select('payload')
+      .eq('id', params.id)
+      .maybeSingle()
+
+    if (arRow) {
+      userId = (arRow.payload as Record<string, string>)?.userId ?? null
+    } else {
+      userId = params.id
     }
-
-    const payload = (adminRequest.payload ?? {}) as Record<string, string>
-    const userId = payload.userId
 
     if (!userId) {
-      return NextResponse.json({ error: 'No userId in request payload' }, { status: 400 })
+      return NextResponse.json({ ok: true, data: { answers: {}, company: null, completedSteps: [] } })
     }
 
-    const supabase = createServerClient()
-
     // Fetch survey answers
-    const { data: surveyRows } = await supabase
+    const { data: surveyRows } = await sb
       .from('survey_answers')
       .select('question_key, answer, step')
       .eq('user_id', userId)
       .order('step', { ascending: true })
 
     // Fetch company data
-    const { data: company } = await supabase
+    const { data: company } = await sb
       .from('companies')
       .select('*')
       .eq('user_id', userId)
       .maybeSingle()
 
-    // Transform survey rows into flat answers map and completed steps
+    // Transform
     const answers: Record<string, unknown> = {}
     const completedSteps = new Set<number>()
 
