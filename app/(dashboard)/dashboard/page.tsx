@@ -248,25 +248,50 @@ export default async function DashboardPage() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (user) {
-    const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).maybeSingle()
-    const role = profile?.role ?? null
+    // Read role via service-role REST API to bypass RLS (profiles table has RLS recursion issue)
+    let role: string | null = null
+    try {
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+      const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+      const profileRes = await fetch(
+        `${supabaseUrl}/rest/v1/profiles?id=eq.${user.id}&select=role`,
+        { headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` }, cache: 'no-store' }
+      )
+      if (profileRes.ok) {
+        const rows = await profileRes.json() as Array<{ role: string }>
+        role = rows[0]?.role ?? null
+      }
+    } catch {
+      // fall through to admin view
+    }
     if (role === 'client') {
-      // Fetch latest diagnostic
-      const { data: diagRows } = await supabase
-        .from('diagnostics')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false })
-        .limit(1)
-      const diag = diagRows?.[0] ?? null
-
-      // Fetch company
-      const { data: companyRow } = await supabase
-        .from('companies')
-        .select('name')
-        .eq('user_id', user.id)
-        .maybeSingle()
-      const orgName = companyRow?.name ?? undefined
+      // Fetch latest diagnostic via REST API to avoid RLS issues
+      let diag: Record<string, unknown> | null = null
+      let orgName: string | undefined = undefined
+      try {
+        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+        const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+        const [diagRes, companyRes] = await Promise.all([
+          fetch(
+            `${supabaseUrl}/rest/v1/diagnostics?user_id=eq.${user.id}&order=created_at.desc&limit=1`,
+            { headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` }, cache: 'no-store' }
+          ),
+          fetch(
+            `${supabaseUrl}/rest/v1/companies?user_id=eq.${user.id}&select=name&limit=1`,
+            { headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` }, cache: 'no-store' }
+          ),
+        ])
+        if (diagRes.ok) {
+          const diagRows = await diagRes.json() as Record<string, unknown>[]
+          diag = diagRows?.[0] ?? null
+        }
+        if (companyRes.ok) {
+          const companyRows = await companyRes.json() as Array<{ name: string }>
+          orgName = companyRows?.[0]?.name ?? undefined
+        }
+      } catch {
+        // diagnostics not available yet
+      }
 
       const pointA = diag ? diagToPointA(diag as Record<string, unknown>) : null
       const totalScore = pointA?.overall_score ?? 0

@@ -27,7 +27,7 @@ export default function RegisterPage() {
       } else if (user.role === 'expert') {
         router.push('/expert/dashboard')
       } else if (user.role === 'client') {
-        router.push('/client/onboarding')
+        router.push('/client/waiting-room')
       } else {
         router.push('/owner/dashboard')
       }

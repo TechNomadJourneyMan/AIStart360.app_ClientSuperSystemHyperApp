@@ -47,7 +47,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     console.warn('[giga-admin/requests/:id] Prisma unavailable, using Supabase fallback:', prismaError)
 
     // Fallback: update admin_requests table in Supabase directly
-    const { data: sbRow } = await supabaseAdmin
+    const { data: sbRow, error: sbErr } = await supabaseAdmin
       .from('admin_requests')
       .update({
         status: newStatus,
@@ -55,28 +55,61 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
         ...(body.action === 'reject' && body.reason ? { rejection_reason: body.reason } : {}),
       })
       .eq('id', params.id)
-      .select('payload')
+      .select('*')
       .single()
 
+    if (sbErr) {
+      console.warn('[giga-admin/requests/:id] admin_requests update error:', sbErr.message)
+    }
+
     if (sbRow) {
-      const payload = (sbRow.payload ?? {}) as Record<string, string>
-      supabaseUserId = payload.userId ?? null
-    } else {
-      // Last resort: find userId from profiles by looking up the request id as user id
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const row = sbRow as any
+      const payload = (row.payload ?? {}) as Record<string, string>
+      // Try payload.userId first, then any direct user_id column on the row
+      supabaseUserId = payload.userId || row.user_id || null
+      console.log('[giga-admin/requests/:id] sbRow payload.userId:', payload.userId, 'row.user_id:', row.user_id)
+    }
+
+    // Fallback: params.id might itself be the Supabase user UUID (orphaned profile entry)
+    if (!supabaseUserId) {
       supabaseUserId = params.id
+      console.log('[giga-admin/requests/:id] falling back to params.id as supabaseUserId:', params.id)
     }
   }
 
   // 2. ALWAYS sync profile status to Supabase so waiting-room reflects the decision
-  if ((body.action === 'approve' || body.action === 'reject') && supabaseUserId) {
+  if (body.action === 'approve' || body.action === 'reject') {
     const profileStatus = body.action === 'approve' ? 'approved' : 'rejected'
-    await supabaseAdmin
-      .from('profiles')
-      .update({
-        status: profileStatus,
-        ...(body.action === 'approve' ? { approved_at: new Date().toISOString() } : {}),
-      })
-      .eq('id', supabaseUserId)
+
+    // Attempt 1: use resolved supabaseUserId (from payload.userId or params.id)
+    if (supabaseUserId) {
+      const { data: updated1, error: err1 } = await supabaseAdmin
+        .from('profiles')
+        .update({ status: profileStatus })
+        .eq('id', supabaseUserId)
+        .select('id')
+
+      if (err1) {
+        console.error('[giga-admin/requests/:id] profile update error (attempt 1):', err1)
+      } else {
+        console.log('[giga-admin/requests/:id] profile update attempt 1 rows:', updated1?.length ?? 0)
+      }
+
+      // Attempt 2: if supabaseUserId differed from params.id, also try params.id directly
+      // (covers the case where supabaseUserId was an admin_requests UUID, not a user UUID)
+      if (supabaseUserId !== params.id) {
+        const { data: updated2, error: err2 } = await supabaseAdmin
+          .from('profiles')
+          .update({ status: profileStatus })
+          .eq('id', params.id)
+          .select('id')
+
+        if (!err2 && updated2 && updated2.length > 0) {
+          console.log('[giga-admin/requests/:id] profile updated via params.id fallback')
+        }
+      }
+    }
   }
 
   return NextResponse.json({ ok: true, status: newStatus })
