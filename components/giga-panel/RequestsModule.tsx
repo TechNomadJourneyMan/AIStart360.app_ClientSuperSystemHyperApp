@@ -321,7 +321,14 @@ function RequestCard({
                   <p className="text-[11px] text-slate-500 truncate">{request.userEmail}</p>
                 </div>
               </div>
-              <StatusBadge status={request.status} />
+              <div className="flex items-center gap-1.5 flex-shrink-0">
+                {request.source === 'upgrade_modal' && (
+                  <span className="inline-flex items-center px-1.5 py-0.5 rounded-md bg-amber-500/15 border border-amber-500/25 text-amber-400 text-[9px] font-mono tracking-wide">
+                    Pro
+                  </span>
+                )}
+                <StatusBadge status={request.status} />
+              </div>
             </div>
 
             <p className="text-xs font-medium text-slate-300 mt-2 leading-snug">

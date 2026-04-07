@@ -49,6 +49,7 @@ export interface GigaRequest {
   createdAt: string
   company?: string
   rejectionReason?: string
+  source?: string | null
   surveyData?: {
     answers: Record<string, unknown>
     company: Record<string, unknown> | null
