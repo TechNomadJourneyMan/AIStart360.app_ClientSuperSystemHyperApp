@@ -16,6 +16,12 @@ const ADMIN_PATHS = [
   '/clients', '/reports', '/analytics', '/intelligence',
   '/team', '/notifications', '/profile', '/users', '/admin',
 ]
+
+// Paths inside the (dashboard) layout group that clients are allowed to access
+const CLIENT_DASHBOARD_PATHS = [
+  '/dashboard', '/gri', '/point-a', '/point-b',
+  '/metrics', '/market', '/profile', '/notifications', '/settings',
+]
 const EXPERT_PATHS = ['/expert']
 const OWNER_PATHS = ['/owner']
 const CLIENT_PATHS = ['/client']
@@ -125,11 +131,15 @@ export async function middleware(request: NextRequest) {
 
     // Client trying to access admin/expert/owner pages
     if (
-      role === 'client' && 
-      (ADMIN_PATHS.some((p) => pathname.startsWith(p)) || 
+      role === 'client' &&
+      (ADMIN_PATHS.some((p) => pathname.startsWith(p)) ||
        EXPERT_PATHS.some((p) => pathname.startsWith(p)) ||
        OWNER_PATHS.some((p) => pathname.startsWith(p)))
     ) {
+      // Allow clients through to the shared (dashboard) layout routes
+      if (CLIENT_DASHBOARD_PATHS.some((p) => pathname.startsWith(p))) {
+        return response
+      }
       // If it's not a client portal path, redirect to waiting-room
       if (!pathname.startsWith('/client')) {
         return NextResponse.redirect(new URL('/client/dashboard', request.url))

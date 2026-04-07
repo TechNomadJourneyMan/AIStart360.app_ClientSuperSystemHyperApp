@@ -81,6 +81,6 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ clients })
   } catch (error) {
     console.error('[giga-admin/clients] Error:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return NextResponse.json({ clients: [] })
   }
 }

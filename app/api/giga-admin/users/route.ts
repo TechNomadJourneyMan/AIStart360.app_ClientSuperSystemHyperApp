@@ -43,6 +43,6 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ users })
   } catch (error) {
     console.error('[giga-admin/users] Error:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return NextResponse.json({ users: [] })
   }
 }
