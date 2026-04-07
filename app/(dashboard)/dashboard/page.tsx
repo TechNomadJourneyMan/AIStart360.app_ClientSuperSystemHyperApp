@@ -300,16 +300,25 @@ export default async function DashboardPage() {
       return (
         <div className="space-y-6">
           <section>
-            <div className="mb-4">
-              <p className="text-[11px] font-mono text-primary/60 uppercase tracking-[0.2em] mb-2">
-                Точка А · Текущая диагностика
-              </p>
-              <h1 className="font-headline text-3xl lg:text-4xl font-extrabold text-on-surface leading-tight">
-                {orgName ?? 'Мой дашборд'}
-              </h1>
-              <p className="text-on-surface-variant mt-2 text-sm max-w-xl leading-relaxed">
-                Ваши текущие показатели на основе заполненной анкеты
-              </p>
+            <div className="flex items-start justify-between mb-4">
+              <div>
+                <p className="text-[11px] font-mono text-primary/60 uppercase tracking-[0.2em] mb-2">
+                  Точка А · Текущая диагностика
+                </p>
+                <h1 className="font-headline text-3xl lg:text-4xl font-extrabold text-on-surface leading-tight">
+                  {orgName ?? 'Мой дашборд'}
+                </h1>
+                <p className="text-on-surface-variant mt-2 text-sm max-w-xl leading-relaxed">
+                  Ваши текущие показатели на основе заполненной анкеты
+                </p>
+              </div>
+              {pointA && (
+                <Link href="/client/onboarding"
+                  className="flex items-center gap-2 bg-surface-container hover:bg-surface-container-high border border-white/[0.06] hover:border-primary/20 text-on-surface-variant hover:text-primary text-sm px-4 py-2.5 rounded-xl transition-all flex-shrink-0">
+                  <span className="material-symbols-outlined text-base">edit_note</span>
+                  Обновить анкету
+                </Link>
+              )}
             </div>
 
             {pointA ? (
@@ -370,7 +379,7 @@ export default async function DashboardPage() {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               {[
                 { href: '/point-a', icon: 'analytics', label: 'Точка А', sub: 'AI-диагностика' },
-                { href: '/gri',     icon: 'radar',     label: 'GRI',     sub: 'Готовность к инвестициям' },
+                { href: '/client/onboarding', icon: 'edit_note', label: 'Обновить анкету', sub: 'Изменить ответы' },
                 { href: '/metrics', icon: 'bar_chart', label: 'Метрики', sub: 'Финансовые показатели' },
                 { href: '/client/onboarding/documents', icon: 'upload_file', label: 'Документы', sub: 'P&L, баланс, отчёты' },
               ].map(item => (
