@@ -80,3 +80,69 @@ export async function GET(
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }
+
+/**
+ * PATCH /api/giga-admin/requests/[id]/survey
+ * Admin edits survey answers.
+ * Body: { answers: { question_key: value, ... } }
+ */
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  if (!isSuperAdmin(req)) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
+
+  try {
+    const sb = createServerClient()
+    const body = await req.json() as { answers: Record<string, unknown> }
+
+    if (!body.answers || Object.keys(body.answers).length === 0) {
+      return NextResponse.json({ error: 'answers required' }, { status: 400 })
+    }
+
+    // Resolve userId
+    let userId: string | null = null
+    const { data: arRow } = await sb
+      .from('admin_requests')
+      .select('payload')
+      .eq('id', params.id)
+      .maybeSingle()
+
+    if (arRow) {
+      userId = (arRow.payload as Record<string, string>)?.userId ?? null
+    } else {
+      userId = params.id
+    }
+
+    if (!userId) {
+      return NextResponse.json({ error: 'Cannot resolve userId' }, { status: 400 })
+    }
+
+    // Upsert each answer
+    const rows = Object.entries(body.answers).map(([question_key, value]) => {
+      const stepMatch = question_key.match(/^s(\d)_/)
+      const step = stepMatch ? Number(stepMatch[1]) : 1
+      return {
+        user_id: userId!,
+        question_key,
+        step,
+        answer: { value },
+      }
+    })
+
+    const { error } = await sb
+      .from('survey_answers')
+      .upsert(rows, { onConflict: 'user_id,question_key' })
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+
+    return NextResponse.json({ ok: true, updated: rows.length })
+  } catch (error) {
+    console.error('[giga-admin/requests/[id]/survey] PATCH error:', error)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  }
+}
