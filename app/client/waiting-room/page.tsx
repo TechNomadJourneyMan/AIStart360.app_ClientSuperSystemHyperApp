@@ -238,7 +238,7 @@ export default function WaitingRoomPage() {
               Написать администратору
             </a>
             <p className="text-[10px] text-on-surface-variant/50 font-mono">
-              Последняя проверка: {lastChecked.toLocaleTimeString('ru-RU')} · обновляется каждые 30 сек
+              Последняя проверка: {lastChecked.toLocaleTimeString('ru-RU', { timeZone: 'Asia/Almaty' })} · обновляется каждые 30 сек
             </p>
           </div>
 
