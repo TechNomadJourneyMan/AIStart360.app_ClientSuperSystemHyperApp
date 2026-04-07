@@ -273,7 +273,7 @@ export default async function DashboardPage() {
         const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
         const [diagRes, companyRes] = await Promise.all([
           fetch(
-            `${supabaseUrl}/rest/v1/diagnostics?user_id=eq.${user.id}&order=created_at.desc&limit=1`,
+            `${supabaseUrl}/rest/v1/diagnostics?user_id=eq.${user.id}&order=calculated_at.desc&limit=1`,
             { headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` }, cache: 'no-store' }
           ),
           fetch(
