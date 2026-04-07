@@ -19,6 +19,10 @@ import {
   ChevronDown,
   FileText,
   Loader2,
+  Pencil,
+  Save,
+  X,
+  ExternalLink,
 } from 'lucide-react'
 import { useGigaPanelStore, type GigaUser, type UserStatus } from '@/stores/gigaPanel.store'
 import { UserSettingsModal } from './UserSettingsModal'
@@ -89,6 +93,10 @@ function UserSurveyDetail({ userId }: { userId: string }) {
   } | null>(null)
   const [diag, setDiag] = useState<Record<string, unknown> | null>(null)
   const [loading, setLoading] = useState(true)
+  const [editing, setEditing] = useState(false)
+  const [editValues, setEditValues] = useState<Record<string, string>>({})
+  const [saving, setSaving] = useState(false)
+  const [impersonating, setImpersonating] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -110,6 +118,56 @@ function UserSurveyDetail({ userId }: { userId: string }) {
     return () => { cancelled = true }
   }, [userId])
 
+  const startEditing = () => {
+    if (!data) return
+    const vals: Record<string, string> = {}
+    for (const [k, v] of Object.entries(data.answers)) {
+      vals[k] = typeof v === 'object' ? JSON.stringify(v) : String(v ?? '')
+    }
+    setEditValues(vals)
+    setEditing(true)
+  }
+
+  const cancelEditing = () => { setEditing(false); setEditValues({}) }
+
+  const saveEdits = async () => {
+    setSaving(true)
+    try {
+      const answers: Record<string, unknown> = {}
+      for (const [k, v] of Object.entries(editValues)) {
+        // Try parse numbers
+        const num = Number(v)
+        answers[k] = !isNaN(num) && v.trim() !== '' && !v.includes(' ') ? num : v
+      }
+      const res = await fetch(`/api/giga-admin/requests/${userId}/survey`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ answers }),
+      })
+      if (res.ok) {
+        setData(prev => prev ? { ...prev, answers } : prev)
+        setEditing(false)
+      }
+    } catch {}
+    setSaving(false)
+  }
+
+  const openAsUser = async () => {
+    setImpersonating(true)
+    try {
+      const res = await fetch('/api/giga-admin/impersonate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId }),
+      })
+      const data = await res.json()
+      if (data.url) {
+        window.open(data.url, '_blank')
+      }
+    } catch {}
+    setImpersonating(false)
+  }
+
   if (loading) {
     return (
       <div className="flex items-center gap-2 py-6 justify-center">
@@ -123,6 +181,36 @@ function UserSurveyDetail({ userId }: { userId: string }) {
 
   return (
     <div className="px-4 py-4 space-y-4">
+      {/* Action buttons */}
+      <div className="flex items-center gap-2">
+        <button onClick={openAsUser} disabled={impersonating}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium bg-blue-500/10 border border-blue-500/20 text-blue-300 hover:bg-blue-500/20 transition-all disabled:opacity-50">
+          {impersonating ? <Loader2 size={12} className="animate-spin" /> : <ExternalLink size={12} />}
+          Открыть портал
+        </button>
+        {data && data.completedSteps.length > 0 && !editing && (
+          <button onClick={startEditing}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium bg-amber-500/10 border border-amber-500/20 text-amber-300 hover:bg-amber-500/20 transition-all">
+            <Pencil size={12} />
+            Редактировать анкету
+          </button>
+        )}
+        {editing && (
+          <>
+            <button onClick={saveEdits} disabled={saving}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 hover:bg-emerald-500/20 transition-all disabled:opacity-50">
+              {saving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
+              Сохранить
+            </button>
+            <button onClick={cancelEditing}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium bg-white/[0.05] border border-white/[0.08] text-slate-400 hover:text-slate-300 transition-all">
+              <X size={12} />
+              Отмена
+            </button>
+          </>
+        )}
+      </div>
+
       {/* Diagnostics summary */}
       {diag && (
         <div className="p-3 rounded-xl bg-violet-500/5 border border-violet-500/10">
@@ -161,28 +249,39 @@ function UserSurveyDetail({ userId }: { userId: string }) {
         </div>
       )}
 
-      {/* Survey answers */}
+      {/* Survey answers (view or edit mode) */}
       {data && data.completedSteps.length > 0 ? (
         <div className="space-y-2">
           <div className="flex items-center gap-1.5">
             <FileText size={12} className="text-blue-400" />
-            <span className="text-[11px] font-semibold text-blue-300 uppercase tracking-wider">Данные анкеты</span>
+            <span className="text-[11px] font-semibold text-blue-300 uppercase tracking-wider">
+              Данные анкеты {editing && <span className="text-amber-400 ml-1">(редактирование)</span>}
+            </span>
           </div>
           {data.completedSteps.map(step => {
-            const fields = Object.entries(data.answers)
+            const fields = Object.entries(editing ? editValues : data.answers)
               .filter(([k]) => getStepFromKey(k) === step)
-              .map(([k, v]) => ({ key: k, label: SURVEY_LABELS[k] || k, value: formatSurveyValue(k, v) }))
+              .map(([k, v]) => ({ key: k, label: SURVEY_LABELS[k] || k, value: editing ? String(v ?? '') : formatSurveyValue(k, v) }))
             if (!fields.length) return null
             return (
               <div key={step} className="p-2.5 rounded-lg bg-white/[0.02] border border-white/[0.04]">
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">
                   {SURVEY_STEP_LABELS[step] || `Шаг ${step}`}
                 </p>
-                <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+                <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
                   {fields.map(f => (
                     <div key={f.key} className="flex flex-col py-0.5">
                       <span className="text-[9px] text-slate-600">{f.label}</span>
-                      <span className="text-[11px] text-slate-300 leading-tight">{f.value}</span>
+                      {editing ? (
+                        <input
+                          type="text"
+                          value={editValues[f.key] ?? ''}
+                          onChange={e => setEditValues(prev => ({ ...prev, [f.key]: e.target.value }))}
+                          className="mt-0.5 px-2 py-1 rounded bg-white/[0.05] border border-white/[0.1] text-[11px] text-slate-200 focus:border-blue-500/40 focus:outline-none transition-all"
+                        />
+                      ) : (
+                        <span className="text-[11px] text-slate-300 leading-tight">{f.value}</span>
+                      )}
                     </div>
                   ))}
                 </div>
