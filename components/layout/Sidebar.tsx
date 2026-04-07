@@ -17,6 +17,8 @@ export function Sidebar() {
   const [moreOpen, setMoreOpen] = useState(false)
   const [openSubMenus, setOpenSubMenus] = useState<string[]>([])
   const [premiumItem, setPremiumItem] = useState<string | null>(null)
+  const [upgradeLoading, setUpgradeLoading] = useState(false)
+  const [upgradeSubmitted, setUpgradeSubmitted] = useState<Set<string>>(new Set())
 
   const PREMIUM_FEATURE_LABELS: Record<string, string> = {
     '/metrics': 'Метрики',
@@ -53,6 +55,22 @@ export function Sidebar() {
     })
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname])
+
+  async function handleUpgradeRequest() {
+    if (!user?.id || !premiumItem || upgradeLoading) return
+    setUpgradeLoading(true)
+    try {
+      await fetch('/api/v1/upgrade-request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, featureKey: premiumItem }),
+      })
+      setUpgradeSubmitted(prev => new Set(prev).add(premiumItem!))
+      setTimeout(() => setPremiumItem(null), 1500)
+    } finally {
+      setUpgradeLoading(false)
+    }
+  }
 
   const toggleSubMenu = (href: string, e: React.MouseEvent) => {
     e.preventDefault()
@@ -412,10 +430,15 @@ export function Sidebar() {
                 Закрыть
               </button>
               <button
-                onClick={() => setPremiumItem(null)}
-                className="flex-1 py-2.5 rounded-xl bg-amber-500/90 hover:bg-amber-400 text-black font-semibold text-sm transition-colors"
+                onClick={handleUpgradeRequest}
+                disabled={upgradeLoading || (premiumItem !== null && upgradeSubmitted.has(premiumItem))}
+                className="flex-1 py-2.5 rounded-xl bg-amber-500/90 hover:bg-amber-400 disabled:opacity-70 text-black font-semibold text-sm transition-colors"
               >
-                Узнать подробнее
+                {upgradeLoading
+                  ? 'Отправка...'
+                  : premiumItem && upgradeSubmitted.has(premiumItem)
+                  ? 'Заявка отправлена ✓'
+                  : 'Оставить заявку'}
               </button>
             </div>
           </div>
