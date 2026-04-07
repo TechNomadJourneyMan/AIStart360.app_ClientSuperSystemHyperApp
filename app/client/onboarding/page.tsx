@@ -287,19 +287,49 @@ export default function OnboardingPage() {
   useEffect(() => {
     const bootstrap = async () => {
       try {
+        const supabase = createClient()
+        const { data: { user } } = await supabase.auth.getUser()
+        setUserId(user?.id ?? null)
+
+        // 1. Try localStorage first (fastest, preserves in-progress step)
         const raw = localStorage.getItem(STORAGE_KEY)
         if (raw) {
           const data = JSON.parse(raw)
           setSavedAnswers(data.answers ?? {})
           setCurrentStep(data.current_step ?? 1)
           setCompanyId(data.company_id ?? null)
+          return // localStorage has data — use it
         }
 
-        const supabase = createClient()
-        const {
-          data: { user },
-        } = await supabase.auth.getUser()
-        setUserId(user?.id ?? null)
+        // 2. No localStorage → load from server (returning user, new device, or cleared cache)
+        if (user?.id) {
+          const [surveyRes, companyRes] = await Promise.all([
+            fetch(`/api/v1/onboarding/survey?user_id=${user.id}`),
+            fetch(`/api/v1/onboarding/company?user_id=${user.id}`),
+          ])
+
+          if (surveyRes.ok) {
+            const surveyData = await surveyRes.json()
+            if (surveyData.ok && surveyData.data) {
+              const { answers: serverAnswers, completed_steps, current_step } = surveyData.data
+              if (Object.keys(serverAnswers ?? {}).length > 0) {
+                setSavedAnswers(serverAnswers)
+                // Resume from last completed step + 1, or step 1 if nothing done yet
+                const lastStep = completed_steps?.length
+                  ? Math.min(Math.max(...completed_steps) + 1, 6)
+                  : current_step ?? 1
+                setCurrentStep(lastStep)
+              }
+            }
+          }
+
+          if (companyRes.ok) {
+            const companyData = await companyRes.json()
+            if (companyData.ok && companyData.data?.id) {
+              setCompanyId(companyData.data.id)
+            }
+          }
+        }
       } catch {
         setUserId(null)
       }

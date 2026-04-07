@@ -11,7 +11,7 @@ function isSuperAdmin(req: NextRequest): boolean {
 /**
  * GET /api/giga-admin/requests/[id]/survey
  * Returns onboarding survey answers and company data for a given AdminRequest.
- * Looks up the userId from AdminRequest.payload, then fetches from Supabase.
+ * Resolves userId via Prisma → Supabase admin_requests fallback → params.id (orphaned profile).
  */
 export async function GET(
   req: NextRequest,
@@ -21,24 +21,42 @@ export async function GET(
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
+  const supabase = createServerClient()
+  let userId: string | null = null
+
+  // 1. Try Prisma
   try {
     const adminRequest = await prisma.adminRequest.findUnique({
       where: { id: params.id },
     })
-
-    if (!adminRequest) {
-      return NextResponse.json({ error: 'Request not found' }, { status: 404 })
+    if (adminRequest) {
+      const payload = (adminRequest.payload ?? {}) as Record<string, string>
+      userId = payload.userId ?? null
     }
+  } catch {
+    // Prisma unavailable — fall through to Supabase
+  }
 
-    const payload = (adminRequest.payload ?? {}) as Record<string, string>
-    const userId = payload.userId
+  // 2. Supabase admin_requests fallback
+  if (!userId) {
+    const { data: sbRow } = await supabase
+      .from('admin_requests')
+      .select('payload')
+      .eq('id', params.id)
+      .maybeSingle()
 
-    if (!userId) {
-      return NextResponse.json({ error: 'No userId in request payload' }, { status: 400 })
+    if (sbRow) {
+      const payload = (sbRow.payload ?? {}) as Record<string, string>
+      userId = payload.userId ?? null
     }
+  }
 
-    const supabase = createServerClient()
+  // 3. Last resort: params.id is itself the user UUID (orphaned profile shown as request)
+  if (!userId) {
+    userId = params.id
+  }
 
+  try {
     // Fetch survey answers
     const { data: surveyRows } = await supabase
       .from('survey_answers')
@@ -68,6 +86,7 @@ export async function GET(
     return NextResponse.json({
       ok: true,
       data: {
+        userId,
         answers,
         company,
         completedSteps: Array.from(completedSteps).sort(),
