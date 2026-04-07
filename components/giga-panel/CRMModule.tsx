@@ -17,9 +17,12 @@ import {
   AlertCircle,
   ChevronUp,
   ChevronDown,
+  FileText,
+  Loader2,
 } from 'lucide-react'
 import { useGigaPanelStore, type GigaUser, type UserStatus } from '@/stores/gigaPanel.store'
 import { UserSettingsModal } from './UserSettingsModal'
+import { SURVEY_LABELS, SURVEY_STEP_LABELS, formatSurveyValue, getStepFromKey } from '@/lib/survey-labels'
 
 // ─── Filter tabs ──────────────────────────────────────────────────────────────
 
@@ -76,6 +79,124 @@ function RoleBadge({ role }: { role: string }) {
   )
 }
 
+// ─── User survey detail (expandable) ─────────────────────────────────────────
+
+function UserSurveyDetail({ userId }: { userId: string }) {
+  const [data, setData] = useState<{
+    answers: Record<string, unknown>
+    company: Record<string, unknown> | null
+    completedSteps: number[]
+  } | null>(null)
+  const [diag, setDiag] = useState<Record<string, unknown> | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const [surveyRes, diagRes] = await Promise.all([
+          fetch(`/api/giga-admin/requests/${userId}/survey`),
+          fetch(`/api/giga-admin/requests/${userId}/diagnostics`),
+        ])
+        const surveyJson = await surveyRes.json()
+        const diagJson = await diagRes.json()
+        if (!cancelled) {
+          setData(surveyJson.data ?? null)
+          setDiag(diagJson.data ?? null)
+        }
+      } catch {}
+      if (!cancelled) setLoading(false)
+    })()
+    return () => { cancelled = true }
+  }, [userId])
+
+  if (loading) {
+    return (
+      <div className="flex items-center gap-2 py-6 justify-center">
+        <Loader2 size={14} className="text-slate-500 animate-spin" />
+        <span className="text-[11px] text-slate-500">Загрузка данных...</span>
+      </div>
+    )
+  }
+
+  const scoreColor = (s: number) => s >= 70 ? 'text-emerald-400' : s >= 40 ? 'text-amber-400' : 'text-red-400'
+
+  return (
+    <div className="px-4 py-4 space-y-4">
+      {/* Diagnostics summary */}
+      {diag && (
+        <div className="p-3 rounded-xl bg-violet-500/5 border border-violet-500/10">
+          <div className="flex items-center gap-1.5 mb-2">
+            <FileText size={12} className="text-violet-400" />
+            <span className="text-[11px] font-semibold text-violet-300 uppercase tracking-wider">Результаты диагностики</span>
+          </div>
+          <div className="grid grid-cols-3 gap-2 mb-3">
+            <div className="text-center">
+              <p className="text-[9px] text-slate-600 uppercase">Балл</p>
+              <p className={`text-lg font-mono font-bold ${scoreColor((diag.overall_score as number) ?? 0)}`}>{(diag.overall_score as number) ?? 0}</p>
+            </div>
+            <div className="text-center">
+              <p className="text-[9px] text-slate-600 uppercase">Health</p>
+              <p className={`text-lg font-mono font-bold ${scoreColor((diag.health_index as number) ?? 0)}`}>{(diag.health_index as number) ?? 0}</p>
+            </div>
+            <div className="text-center">
+              <p className="text-[9px] text-slate-600 uppercase">Стадия</p>
+              <p className="text-sm font-mono font-bold text-blue-300">{(diag.stage as string) ?? '—'}</p>
+            </div>
+          </div>
+          {['finance', 'sales', 'operations', 'marketing', 'strategy'].map(key => {
+            const block = diag[`${key}_score`] as { score?: number } | null
+            const s = block?.score ?? 0
+            const labels: Record<string, string> = { finance: 'Финансы', sales: 'Продажи', operations: 'Операции', marketing: 'Маркетинг', strategy: 'Стратегия' }
+            return (
+              <div key={key} className="flex items-center gap-2">
+                <span className="text-[10px] text-slate-500 w-20">{labels[key]}</span>
+                <div className="flex-1 h-1 bg-white/[0.04] rounded-full overflow-hidden">
+                  <div className="h-full rounded-full" style={{ width: `${s}%`, background: s >= 70 ? '#6effc0' : s >= 40 ? '#fbbf24' : '#ef4444' }} />
+                </div>
+                <span className={`text-[10px] font-mono font-bold w-8 text-right ${scoreColor(s)}`}>{s}</span>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Survey answers */}
+      {data && data.completedSteps.length > 0 ? (
+        <div className="space-y-2">
+          <div className="flex items-center gap-1.5">
+            <FileText size={12} className="text-blue-400" />
+            <span className="text-[11px] font-semibold text-blue-300 uppercase tracking-wider">Данные анкеты</span>
+          </div>
+          {data.completedSteps.map(step => {
+            const fields = Object.entries(data.answers)
+              .filter(([k]) => getStepFromKey(k) === step)
+              .map(([k, v]) => ({ key: k, label: SURVEY_LABELS[k] || k, value: formatSurveyValue(k, v) }))
+            if (!fields.length) return null
+            return (
+              <div key={step} className="p-2.5 rounded-lg bg-white/[0.02] border border-white/[0.04]">
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">
+                  {SURVEY_STEP_LABELS[step] || `Шаг ${step}`}
+                </p>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+                  {fields.map(f => (
+                    <div key={f.key} className="flex flex-col py-0.5">
+                      <span className="text-[9px] text-slate-600">{f.label}</span>
+                      <span className="text-[11px] text-slate-300 leading-tight">{f.value}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      ) : !diag ? (
+        <p className="text-[11px] text-slate-600 italic py-2">Анкета не заполнена</p>
+      ) : null}
+    </div>
+  )
+}
+
 // ─── User row ─────────────────────────────────────────────────────────────────
 
 function UserRow({
@@ -87,6 +208,7 @@ function UserRow({
   onBlock: (user: GigaUser) => void
   onOpenSettings: (user: GigaUser) => void
 }) {
+  const [expanded, setExpanded] = useState(false)
   const initials = (user.name ?? user.email)
     .split(' ')
     .slice(0, 2)
@@ -103,92 +225,112 @@ function UserRow({
     }).format(new Date(iso))
   }
 
+  // Check if user has survey/diagnostics from extended API data
+  const ext = user as GigaUser & { surveyCompleted?: boolean; diagnostics?: unknown }
+  const hasSurvey = ext.surveyCompleted || !!ext.diagnostics
+
   return (
-    <motion.tr
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="group border-b border-white/[0.05] hover:bg-white/[0.03] transition-colors"
-    >
-      {/* User info */}
-      <td className="py-3 pl-4 pr-3">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-blue-500/25 to-violet-500/25
-            border border-white/[0.1] flex items-center justify-center flex-shrink-0
-            text-[11px] font-bold text-blue-300">
-            {initials.slice(0, 2)}
+    <>
+      <motion.tr
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        onClick={() => setExpanded(v => !v)}
+        className={`group border-b border-white/[0.05] hover:bg-white/[0.03] transition-colors cursor-pointer ${expanded ? 'bg-white/[0.03]' : ''}`}
+      >
+        {/* User info */}
+        <td className="py-3 pl-4 pr-3">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-blue-500/25 to-violet-500/25
+              border border-white/[0.1] flex items-center justify-center flex-shrink-0
+              text-[11px] font-bold text-blue-300">
+              {initials.slice(0, 2)}
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5">
+                <p className="text-sm font-medium text-slate-200 truncate max-w-[140px]">
+                  {user.name ?? '—'}
+                </p>
+                {hasSurvey && (
+                  <span className="text-[8px] bg-emerald-500/15 text-emerald-400 px-1 py-0.5 rounded">Анкета</span>
+                )}
+              </div>
+              <p className="text-[11px] text-slate-500 truncate max-w-[140px]">{user.email}</p>
+            </div>
           </div>
-          <div className="min-w-0">
-            <p className="text-sm font-medium text-slate-200 truncate max-w-[140px]">
-              {user.name ?? '—'}
-            </p>
-            <p className="text-[11px] text-slate-500 truncate max-w-[140px]">{user.email}</p>
+        </td>
+
+        {/* Role */}
+        <td className="py-3 px-3">
+          <RoleBadge role={user.role} />
+        </td>
+
+        {/* Status */}
+        <td className="py-3 px-3">
+          <UserStatusChip status={user.status} />
+        </td>
+
+        {/* Org */}
+        <td className="py-3 px-3">
+          <span className="text-xs text-slate-500 truncate max-w-[100px] block">
+            {user.org ?? '—'}
+          </span>
+        </td>
+
+        {/* Dates */}
+        <td className="py-3 px-3">
+          <div className="space-y-0.5">
+            <div className="flex items-center gap-1">
+              <Calendar size={10} className="text-slate-700" />
+              <span className="text-[10px] text-slate-600">{formatDate(user.createdAt)}</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <Clock size={10} className="text-slate-700" />
+              <span className="text-[10px] text-slate-600">{formatDate(user.lastLogin)}</span>
+            </div>
           </div>
-        </div>
-      </td>
+        </td>
 
-      {/* Role */}
-      <td className="py-3 px-3">
-        <RoleBadge role={user.role} />
-      </td>
-
-      {/* Status */}
-      <td className="py-3 px-3">
-        <UserStatusChip status={user.status} />
-      </td>
-
-      {/* Org */}
-      <td className="py-3 px-3">
-        <span className="text-xs text-slate-500 truncate max-w-[100px] block">
-          {user.org ?? '—'}
-        </span>
-      </td>
-
-      {/* Dates */}
-      <td className="py-3 px-3">
-        <div className="space-y-0.5">
-          <div className="flex items-center gap-1">
-            <Calendar size={10} className="text-slate-700" />
-            <span className="text-[10px] text-slate-600">{formatDate(user.createdAt)}</span>
-          </div>
-          <div className="flex items-center gap-1">
-            <Clock size={10} className="text-slate-700" />
-            <span className="text-[10px] text-slate-600">{formatDate(user.lastLogin)}</span>
-          </div>
-        </div>
-      </td>
-
-      {/* Actions */}
-      <td className="py-3 pl-3 pr-4">
-        <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-          <motion.button
-            onClick={() => onOpenSettings(user)}
-            whileHover={{ scale: 1.08 }}
-            whileTap={{ scale: 0.92 }}
-            title="Настройки дашборда"
-            className="p-1.5 rounded-lg bg-white/[0.05] border border-white/[0.08]
-              text-slate-400 hover:text-blue-300 hover:border-blue-500/30
-              hover:bg-blue-500/10 transition-all"
-          >
-            <Settings2 size={13} />
-          </motion.button>
-
-          {user.status !== 'blocked' && (
+        {/* Actions */}
+        <td className="py-3 pl-3 pr-4">
+          <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
             <motion.button
-              onClick={() => onBlock(user)}
+              onClick={(e) => { e.stopPropagation(); onOpenSettings(user) }}
               whileHover={{ scale: 1.08 }}
               whileTap={{ scale: 0.92 }}
-              title="Заблокировать пользователя"
+              title="Настройки дашборда"
               className="p-1.5 rounded-lg bg-white/[0.05] border border-white/[0.08]
-                text-slate-400 hover:text-red-300 hover:border-red-500/30
-                hover:bg-red-500/10 transition-all"
+                text-slate-400 hover:text-blue-300 hover:border-blue-500/30
+                hover:bg-blue-500/10 transition-all"
             >
-              <ShieldOff size={13} />
+              <Settings2 size={13} />
             </motion.button>
-          )}
-        </div>
-      </td>
-    </motion.tr>
+
+            {user.status !== 'blocked' && (
+              <motion.button
+                onClick={(e) => { e.stopPropagation(); onBlock(user) }}
+                whileHover={{ scale: 1.08 }}
+                whileTap={{ scale: 0.92 }}
+                title="Заблокировать пользователя"
+                className="p-1.5 rounded-lg bg-white/[0.05] border border-white/[0.08]
+                  text-slate-400 hover:text-red-300 hover:border-red-500/30
+                  hover:bg-red-500/10 transition-all"
+              >
+                <ShieldOff size={13} />
+              </motion.button>
+            )}
+          </div>
+        </td>
+      </motion.tr>
+      {/* Expanded detail row */}
+      {expanded && (
+        <tr>
+          <td colSpan={6} className="bg-white/[0.02] border-b border-white/[0.05]">
+            <UserSurveyDetail userId={user.id} />
+          </td>
+        </tr>
+      )}
+    </>
   )
 }
 
