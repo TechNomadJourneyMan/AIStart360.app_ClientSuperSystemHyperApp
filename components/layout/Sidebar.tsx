@@ -16,6 +16,13 @@ export function Sidebar() {
   const { user, logout } = useAuthStore()
   const [moreOpen, setMoreOpen] = useState(false)
   const [openSubMenus, setOpenSubMenus] = useState<string[]>([])
+  const [premiumItem, setPremiumItem] = useState<string | null>(null)
+
+  const PREMIUM_FEATURE_LABELS: Record<string, string> = {
+    '/metrics': 'Метрики',
+    '/market':  'Рынок',
+    '/point-b': 'Точка Б',
+  }
 
   const handleLogout = () => {
     logout()
@@ -26,6 +33,11 @@ export function Sidebar() {
   const role = ((user?.role || 'CLIENT').toUpperCase() as UserRole) || 'ANALYST'
   const primaryNav = getPrimaryNavForRole(role)
   const secondaryNav = getSecondaryNavForRole(role)
+
+  // Items locked behind a paid plan for CLIENT role
+  const PREMIUM_LOCKED = ['/metrics', '/market', '/point-b']
+  const isLocked = (href: string) =>
+    role === 'CLIENT' && PREMIUM_LOCKED.some((p) => href === p || href.startsWith(p + '/'))
 
   const isActive = (href: string) =>
     href === '/dashboard' ? pathname === href : pathname.startsWith(href)
@@ -54,6 +66,7 @@ export function Sidebar() {
     isActive(item.href) || (item.subItems?.some((sub) => isActive(sub.href)) ?? false)
 
   return (
+    <>
     <aside
       className={`
         hidden lg:flex fixed left-0 top-0 h-screen z-50 flex-col
@@ -165,6 +178,44 @@ export function Sidebar() {
           }
 
           // Regular item (no sub-items)
+          const locked = isLocked(item.href)
+          if (locked) {
+            const lockedKey = PREMIUM_LOCKED.find((p) => item.href === p || item.href.startsWith(p + '/')) ?? item.href
+            return (
+              <button
+                key={item.href}
+                title={sidebarCollapsed ? `${item.label} — Pro тариф` : undefined}
+                onClick={() => setPremiumItem(lockedKey)}
+                className={`
+                  relative flex items-center rounded-xl cursor-pointer select-none w-full
+                  hover:bg-amber-500/5 transition-colors duration-150
+                  ${sidebarCollapsed ? 'justify-center px-0 py-3' : 'gap-3 px-3 py-2.5'}
+                `}
+              >
+                {/* Blurred content */}
+                <span className="material-symbols-outlined text-[20px] flex-shrink-0 text-[#6b7280] opacity-40 blur-[1px]">
+                  {item.icon}
+                </span>
+                {!sidebarCollapsed && (
+                  <span className="text-sm truncate font-medium text-[#6b7280] opacity-40 blur-[1px] flex-1">
+                    {item.label}
+                  </span>
+                )}
+                {/* Lock badge */}
+                {!sidebarCollapsed ? (
+                  <span className="flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-amber-500/10 border border-amber-500/20 text-amber-400 text-[9px] font-mono tracking-wide flex-shrink-0">
+                    <span className="material-symbols-outlined text-[10px]">lock</span>
+                    Pro
+                  </span>
+                ) : (
+                  <span className="absolute -top-0.5 -right-0.5 w-4 h-4 flex items-center justify-center rounded-full bg-amber-500/20 border border-amber-500/30">
+                    <span className="material-symbols-outlined text-[9px] text-amber-400">lock</span>
+                  </span>
+                )}
+              </button>
+            )
+          }
+
           return (
             <Link
               key={item.href}
@@ -328,5 +379,50 @@ export function Sidebar() {
         </button>
       </div>
     </aside>
+
+    {/* ── Premium upgrade modal (portal-like fixed overlay) ── */}
+    {premiumItem && (
+      <>
+        <div
+          className="fixed inset-0 z-[100] bg-black/70 backdrop-blur-sm"
+          onClick={() => setPremiumItem(null)}
+        />
+        <div className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-[101] w-[340px] rounded-3xl bg-[#13151c] border border-amber-500/20 shadow-2xl overflow-hidden">
+          <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-amber-400/60 to-transparent" />
+          <div className="p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center flex-shrink-0">
+                <span className="material-symbols-outlined text-2xl text-amber-400">lock</span>
+              </div>
+              <div>
+                <p className="text-[10px] font-mono text-amber-400/70 uppercase tracking-[0.15em] mb-0.5">Pro тариф</p>
+                <p className="text-base font-bold text-on-surface">
+                  {PREMIUM_FEATURE_LABELS[premiumItem] ?? premiumItem}
+                </p>
+              </div>
+            </div>
+            <p className="text-sm text-on-surface-variant leading-relaxed mb-5">
+              Этот раздел доступен в тарифе <span className="text-amber-400 font-medium">Pro</span>.
+              Получите полный доступ к аналитике, рыночным данным и расширенным инструментам роста вашего бизнеса.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setPremiumItem(null)}
+                className="flex-1 py-2.5 rounded-xl border border-white/[0.08] text-on-surface-variant text-sm transition-colors hover:bg-white/[0.04]"
+              >
+                Закрыть
+              </button>
+              <button
+                onClick={() => setPremiumItem(null)}
+                className="flex-1 py-2.5 rounded-xl bg-amber-500/90 hover:bg-amber-400 text-black font-semibold text-sm transition-colors"
+              >
+                Узнать подробнее
+              </button>
+            </div>
+          </div>
+        </div>
+      </>
+    )}
+    </>
   )
 }
