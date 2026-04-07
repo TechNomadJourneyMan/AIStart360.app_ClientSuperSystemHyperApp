@@ -150,6 +150,118 @@ function SurveySection({ requestId }: { requestId: string }) {
   )
 }
 
+// ─── Diagnostics section (Point A results) ──────────────────────────────────
+
+function DiagnosticsSection({ requestId }: { requestId: string }) {
+  const [diag, setDiag] = useState<Record<string, unknown> | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const res = await fetch(`/api/giga-admin/requests/${requestId}/diagnostics`)
+        if (!res.ok) return
+        const json = await res.json()
+        if (!cancelled) setDiag(json.data)
+      } catch {}
+      if (!cancelled) setLoading(false)
+    })()
+    return () => { cancelled = true }
+  }, [requestId])
+
+  if (loading) {
+    return (
+      <div className="flex items-center gap-2 py-3 justify-center">
+        <Loader2 size={14} className="text-slate-500 animate-spin" />
+        <span className="text-[11px] text-slate-500">Загрузка диагностики...</span>
+      </div>
+    )
+  }
+
+  if (!diag) {
+    return <p className="text-[11px] text-slate-600 py-2 italic">Анкета не заполнена — диагностика отсутствует</p>
+  }
+
+  const score = (diag.overall_score as number) ?? 0
+  const health = (diag.health_index as number) ?? 0
+  const stage = (diag.stage as string) ?? '—'
+  const aiStatus = (diag.ai_status as string) ?? 'none'
+
+  const blockKeys = ['finance', 'sales', 'operations', 'marketing', 'strategy']
+  const blockLabels: Record<string, string> = {
+    finance: 'Финансы', sales: 'Продажи', operations: 'Операции',
+    marketing: 'Маркетинг', strategy: 'Стратегия'
+  }
+
+  const scoreColor = (s: number) => s >= 70 ? 'text-emerald-400' : s >= 40 ? 'text-amber-400' : 'text-red-400'
+
+  return (
+    <div className="mt-3 space-y-2">
+      <div className="flex items-center gap-1.5">
+        <FileText size={12} className="text-violet-400" />
+        <span className="text-[11px] font-semibold text-violet-300 uppercase tracking-wider">
+          Результаты диагностики (Point A)
+        </span>
+        {aiStatus === 'completed' && (
+          <span className="text-[9px] bg-violet-500/15 text-violet-300 px-1.5 py-0.5 rounded-full ml-auto">AI ✓</span>
+        )}
+      </div>
+
+      {/* KPI row */}
+      <div className="grid grid-cols-3 gap-2">
+        <div className="p-2 rounded-lg bg-white/[0.02] border border-white/[0.04] text-center">
+          <p className="text-[9px] text-slate-600 uppercase">Балл</p>
+          <p className={`text-lg font-mono font-bold ${scoreColor(score)}`}>{score}</p>
+          <p className="text-[9px] text-slate-600">из 100</p>
+        </div>
+        <div className="p-2 rounded-lg bg-white/[0.02] border border-white/[0.04] text-center">
+          <p className="text-[9px] text-slate-600 uppercase">Health</p>
+          <p className={`text-lg font-mono font-bold ${scoreColor(health)}`}>{health}</p>
+          <p className="text-[9px] text-slate-600">индекс</p>
+        </div>
+        <div className="p-2 rounded-lg bg-white/[0.02] border border-white/[0.04] text-center">
+          <p className="text-[9px] text-slate-600 uppercase">Стадия</p>
+          <p className="text-sm font-mono font-bold text-blue-300">{stage}</p>
+        </div>
+      </div>
+
+      {/* Block scores */}
+      <div className="p-2.5 rounded-lg bg-white/[0.02] border border-white/[0.04]">
+        <p className="text-[9px] text-slate-600 uppercase tracking-wider mb-2">Блоки оценки</p>
+        <div className="space-y-1.5">
+          {blockKeys.map(key => {
+            const blockData = diag[`${key}_score`] as { score?: number; status?: string } | null
+            const blockScore = blockData?.score ?? 0
+            return (
+              <div key={key} className="flex items-center gap-2">
+                <span className="text-[10px] text-slate-500 w-20">{blockLabels[key]}</span>
+                <div className="flex-1 h-1 bg-white/[0.04] rounded-full overflow-hidden">
+                  <div className="h-full rounded-full transition-all" style={{
+                    width: `${blockScore}%`,
+                    background: blockScore >= 70 ? '#6effc0' : blockScore >= 40 ? '#fbbf24' : '#ef4444'
+                  }} />
+                </div>
+                <span className={`text-[10px] font-mono font-bold w-8 text-right ${scoreColor(blockScore)}`}>{blockScore}</span>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* AI summary preview */}
+      {aiStatus === 'completed' && diag.ai_analysis && (
+        <div className="p-2.5 rounded-lg bg-violet-500/5 border border-violet-500/10">
+          <p className="text-[9px] text-violet-400 uppercase tracking-wider mb-1">AI Executive Summary</p>
+          <p className="text-[11px] text-slate-300 leading-relaxed line-clamp-3">
+            {(diag.ai_analysis as { executive_summary?: string })?.executive_summary ?? ''}
+          </p>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Documents section (displayed inside expanded card) ─────────────────────
 
 const DOC_ICONS: Record<string, React.ReactNode> = {
@@ -374,6 +486,11 @@ function RequestCard({
               {/* Survey data (lazy-loaded for registration requests) */}
               {request.category === 'registration' && (
                 <SurveySection requestId={request.id} />
+              )}
+
+              {/* Diagnostics results (lazy-loaded for registration requests) */}
+              {request.category === 'registration' && (
+                <DiagnosticsSection requestId={request.id} />
               )}
 
               {/* Client documents (lazy-loaded for registration requests) */}

@@ -283,7 +283,7 @@ export default function OnboardingPage() {
   const [userId, setUserId] = useState<string | null>(null)
   const [companyId, setCompanyId] = useState<string | null>(null)
 
-  // Load persisted state from localStorage
+  // Load persisted state from localStorage, then try server
   useEffect(() => {
     const bootstrap = async () => {
       try {
@@ -300,6 +300,18 @@ export default function OnboardingPage() {
           data: { user },
         } = await supabase.auth.getUser()
         setUserId(user?.id ?? null)
+
+        // If no local data, load answers from server (re-fill scenario)
+        if (!raw && user?.id) {
+          try {
+            const res = await fetch(`/api/v1/onboarding/survey?user_id=${user.id}`)
+            const sData = await res.json()
+            if (sData.ok && sData.data?.answers && Object.keys(sData.data.answers).length > 0) {
+              setSavedAnswers(sData.data.answers)
+              setCurrentStep(Math.min(sData.data.current_step ?? 1, 6))
+            }
+          } catch {}
+        }
       } catch {
         setUserId(null)
       }
