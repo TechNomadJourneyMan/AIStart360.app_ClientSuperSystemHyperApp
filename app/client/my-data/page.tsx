@@ -88,13 +88,18 @@ export default function MyDataPage() {
       {/* Header */}
       <header className="flex items-center justify-between px-6 py-5 border-b border-white/[0.06]">
         <Image src="/logo.svg" alt="AIStart360" width={140} height={26} priority />
-        <Link
-          href="/client/waiting-room"
-          className="text-xs text-on-surface-variant hover:text-primary transition-colors flex items-center gap-1"
-        >
-          <span className="material-symbols-outlined text-base">arrow_back</span>
-          Назад
-        </Link>
+        <div className="flex items-center gap-3">
+          <Link href="/client/dashboard"
+            className="text-xs text-on-surface-variant hover:text-primary transition-colors flex items-center gap-1">
+            <span className="material-symbols-outlined text-base">arrow_back</span>
+            Назад
+          </Link>
+          <button onClick={() => { document.cookie = 'aistart360_role=; path=/; max-age=0'; window.location.href = '/login' }}
+            className="text-xs text-red-400/70 hover:text-red-400 flex items-center gap-1 border border-red-500/10 px-2.5 py-1 rounded-lg transition-all">
+            <span className="material-symbols-outlined text-sm">logout</span>
+            Выход
+          </button>
+        </div>
       </header>
 
       <main className="flex-1 p-6 max-w-3xl mx-auto w-full">

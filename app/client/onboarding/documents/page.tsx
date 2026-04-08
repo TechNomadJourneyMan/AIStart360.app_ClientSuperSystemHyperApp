@@ -187,7 +187,14 @@ export default function DocumentsPage() {
             </Link>
             <Image src="/logo.svg" alt="AIStart360" width={120} height={22} />
           </div>
-          <span className="text-xs font-mono text-on-surface-variant">Загрузка документов</span>
+          <div className="flex items-center gap-3">
+            <span className="text-xs font-mono text-on-surface-variant">Загрузка документов</span>
+            <button onClick={() => { document.cookie = 'aistart360_role=; path=/; max-age=0'; window.location.href = '/login' }}
+              className="text-xs text-red-400/70 hover:text-red-400 flex items-center gap-1 border border-red-500/10 px-2 py-1 rounded-lg transition-all">
+              <span className="material-symbols-outlined text-sm">logout</span>
+              Выход
+            </button>
+          </div>
         </div>
       </header>
 
