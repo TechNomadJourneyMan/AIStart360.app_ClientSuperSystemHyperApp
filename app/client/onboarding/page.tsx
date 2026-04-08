@@ -400,6 +400,18 @@ export default function OnboardingPage() {
   const progress = Math.round(((currentStep - 1) / 6) * 100)
 
   return (
+    <div className="min-h-screen bg-[#0A0B0F] flex flex-col items-center justify-center p-6 text-center">
+      <span className="material-symbols-outlined text-4xl text-primary mb-4">info</span>
+      <h1 className="text-xl font-bold text-white mb-2">Анкета временно недоступна</h1>
+      <p className="text-on-surface-variant max-w-md mb-6">Форма заполнения анкеты в данный момент находится на техническом обслуживании.</p>
+      <Link href="/client/waiting-room" className="mt-6 px-6 py-2 bg-surface-container rounded-xl text-on-surface hover:bg-surface-container-high transition-all border border-white/[0.08]">
+        Вернуться назад
+      </Link>
+    </div>
+  )
+
+  // @ts-ignore
+  return (
     <div className="min-h-screen bg-[#0A0B0F]">
       {/* Header */}
       <header className="sticky top-0 z-20 bg-[#0A0B0F]/90 backdrop-blur border-b border-white/[0.06] px-6 py-4">

@@ -117,13 +117,7 @@ export default function MyDataPage() {
         ) : !hasData ? (
           <div className="rounded-2xl bg-surface-container-low border border-white/[0.06] p-12 text-center space-y-4">
             <span className="material-symbols-outlined text-5xl text-slate-700">assignment</span>
-            <p className="text-sm text-slate-400">Вы ещё не заполнили анкету</p>
-            <Link
-              href="/client/onboarding"
-              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold bg-primary/15 border border-primary/25 text-primary hover:bg-primary/25 transition-all"
-            >
-              Заполнить анкету
-            </Link>
+            <p className="text-sm text-slate-400">Анкета временно недоступна для заполнения</p>
           </div>
         ) : (
           <div className="space-y-4">
@@ -156,13 +150,10 @@ export default function MyDataPage() {
                         {SURVEY_STEP_LABELS[step] || `Шаг ${step}`}
                       </h2>
                     </div>
-                    <Link
-                      href={`/client/onboarding?step=${step}`}
-                      className="text-[11px] text-primary/70 hover:text-primary transition-colors flex items-center gap-1"
-                    >
-                      <span className="material-symbols-outlined text-sm">edit</span>
-                      Редактировать
-                    </Link>
+                    <div className="text-[11px] text-on-surface-variant flex items-center gap-1 opacity-50">
+                      <span className="material-symbols-outlined text-sm">edit_off</span>
+                      Редактирование недоступно
+                    </div>
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2.5">
                     {fields.map((f) => (
@@ -182,10 +173,7 @@ export default function MyDataPage() {
             {completedSteps.length < 6 && (
               <div className="rounded-2xl bg-amber-500/5 border border-amber-500/15 p-5 text-center">
                 <p className="text-xs text-amber-400">
-                  Заполнено {completedSteps.length} из 6 шагов.{' '}
-                  <Link href="/client/onboarding" className="underline hover:text-amber-300">
-                    Продолжить заполнение
-                  </Link>
+                  Заполнено {completedSteps.length} из 6 шагов. Заполнение временно приостановлено.
                 </p>
               </div>
             )}
