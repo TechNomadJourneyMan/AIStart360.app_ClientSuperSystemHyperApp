@@ -16,16 +16,9 @@ import {
   ChevronDown,
   RefreshCw,
   Loader2,
-  FileText,
-  Paperclip,
-  Download,
-  FileSpreadsheet,
-  FileBarChart,
-  File,
 } from 'lucide-react'
 import { useGigaPanelStore, type RequestCategory, type GigaRequest } from '@/stores/gigaPanel.store'
 import { RejectModal } from './RejectModal'
-import { SURVEY_LABELS, SURVEY_STEP_LABELS, formatSurveyValue, getStepFromKey } from '@/lib/survey-labels'
 import { UserDetailPanel } from './UserDetailPanel'
 
 // ─── Tab config ───────────────────────────────────────────────────────────────
@@ -58,11 +51,9 @@ function StatusBadge({ status }: { status: GigaRequest['status'] }) {
   )
 }
 
-// ─── Single request card ──────────────────────────────────────────────────────
+// ─── Legacy sections removed — replaced by UserDetailPanel ──────────────────
 
-// ─── Survey data section (displayed inside expanded card) ────────────────────
-
-function SurveySection({ requestId }: { requestId: string }) {
+function _LegacyUnused({ requestId }: { requestId: string }) {
   const [data, setData] = useState<{
     answers: Record<string, unknown>
     company: Record<string, unknown> | null
