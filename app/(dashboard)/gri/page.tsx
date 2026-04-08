@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { createServerClient } from '@/lib/supabase-server'
+import { prisma } from '@/lib/db'
 
 export const metadata: Metadata = { title: 'GRI — Growth Readiness Index' }
 
@@ -20,37 +21,74 @@ interface PortfolioGRI {
 async function getPortfolioGRI(): Promise<PortfolioGRI | null> {
   try {
     const sb = createServerClient()
-    const { data } = await sb
-      .from('gri_reports')
-      .select(
-        'overall_score, product_score, trust_score, business_model_score, ' +
-        'cash_score, operations_score, team_score, founder_score'
-      )
-      .not('overall_score', 'is', null)
-      .order('calculated_at', { ascending: false })
-      .limit(50)
+    const { data: { user: sessionUser } } = await sb.auth.getUser()
+    if (!sessionUser) return null
 
-    if (!data || data.length === 0) return null
+    const dbUser = await prisma.user.findFirst({
+      where: {
+        OR: [
+          { id: sessionUser.id },
+          { email: sessionUser.email ?? undefined },
+        ],
+      },
+      select: { orgId: true, id: true, role: true }
+    })
 
-    const avg = (key: string) => {
-      const vals = data.map((r) => Number((r as unknown as Record<string, unknown>)[key])).filter((v) => !isNaN(v) && v > 0)
+    if (!dbUser) return null
+
+    // Determine query filter based on role/org boundary
+    let clientFilter = {}
+    if (dbUser.role === 'SUPER_ADMIN') {
+      clientFilter = {} // sees everything
+    } else if (dbUser.orgId) {
+      clientFilter = { orgId: dbUser.orgId }
+    } else {
+      clientFilter = { managerId: dbUser.id }
+    }
+
+    const reports = await prisma.griReport.findMany({
+      where: {
+        client: clientFilter,
+        score: { gt: 0 }
+      },
+      select: {
+        score: true,
+        productScore: true,
+        trustScore: true,
+        businessModelScore: true,
+        cashScore: true,
+        operationsScore: true,
+        teamScore: true,
+        founderScore: true,
+      },
+      orderBy: {
+        calculatedAt: 'desc'
+      },
+      take: 50
+    })
+
+    if (reports.length === 0) return null
+
+    const avg = (key: keyof typeof reports[0]) => {
+      const vals = reports.map((r) => r[key]).filter((v) => typeof v === 'number' && v > 0) as number[]
       return vals.length > 0
         ? Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 10) / 10
         : 0
     }
 
     return {
-      overall:     avg('overall_score'),
-      product:     avg('product_score'),
-      trust:       avg('trust_score'),
-      bizmodel:    avg('business_model_score'),
-      cash:        avg('cash_score'),
-      ops:         avg('operations_score'),
-      team:        avg('team_score'),
-      founder:     avg('founder_score'),
-      reportCount: data.length,
+      overall:     avg('score'),
+      product:     avg('productScore'),
+      trust:       avg('trustScore'),
+      bizmodel:    avg('businessModelScore'),
+      cash:        avg('cashScore'),
+      ops:         avg('operationsScore'),
+      team:        avg('teamScore'),
+      founder:     avg('founderScore'),
+      reportCount: reports.length,
     }
-  } catch {
+  } catch (error) {
+    console.error("Failed to load GRI reports:", error)
     return null
   }
 }
