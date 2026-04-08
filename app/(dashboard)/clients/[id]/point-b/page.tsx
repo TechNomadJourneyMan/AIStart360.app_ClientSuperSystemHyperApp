@@ -1,13 +1,15 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 'use client'
 
 import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
-import type { PointB } from '@/types/onboarding'
+
+type PointBData = Record<string, any>
 
 export default function ClientPointBPage() {
   const params = useParams()
-  const [data, setData] = useState<PointB | null>(null)
+  const [data, setData] = useState<PointBData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -82,7 +84,7 @@ export default function ClientPointBPage() {
            <div className="h-px flex-1 bg-outline-variant/10" />
         </div>
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          {data.targets.map((target) => (
+          {(data.targets ?? []).map((target: any) => (
             <div key={target.label} className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-5 group hover:border-primary/20 transition-all">
               <div className="flex items-start justify-between mb-3">
                 <p className="text-[9px] font-mono text-on-surface-variant uppercase tracking-widest">{target.label}</p>
@@ -116,7 +118,7 @@ export default function ClientPointBPage() {
           </div>
           <div className="relative pl-12 space-y-8">
             <div className="absolute left-[20px] top-4 bottom-4 w-0.5 bg-gradient-to-b from-primary via-primary/20 to-transparent rounded-full" />
-            {data.milestones.map((m, i) => (
+            {(data.milestones ?? []).map((m: any, i: number) => (
               <div key={i} className="relative">
                 {/* Connector Dot */}
                 <div className={`
@@ -155,7 +157,7 @@ export default function ClientPointBPage() {
              <div className="h-px flex-1 bg-outline-variant/10" />
           </div>
           <div className="space-y-4">
-            {data.gap_analysis.map((item, idx) => (
+            {(data.gap_analysis ?? []).map((item: any, idx: number) => (
               <div key={idx} className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-6 hover:border-primary/20 transition-all group">
                 <div className="flex items-center gap-3 mb-4">
                   <div className={`w-10 h-10 rounded-xl flex items-center justify-center bg-${item.color}/10 border border-${item.color}/20`}>

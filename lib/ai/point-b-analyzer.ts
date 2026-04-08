@@ -1,7 +1,8 @@
 import { generateObject } from 'ai'
 import { z } from 'zod'
 import { anthropic, CLAUDE_MODELS } from './anthropic'
-import type { PointA, PointB, Company, GapItem } from '@/types/onboarding'
+import type { PointA } from '@/types/onboarding'
+import type { PointB } from '@/types/point-b'
 
 /**
  * Point B AI Analyzer — Bridges the gap between Current (A) and Target (B)
@@ -30,8 +31,8 @@ export async function analyzePointB(
   answers: Record<string, unknown>,
   pointA: PointA,
   pointBBase: PointB,
-  company: Company | null
-): Promise<Partial<PointB> | null> {
+  company: Record<string, unknown> | null
+): Promise<Record<string, unknown> | null> {
   if (!process.env.ANTHROPIC_API_KEY) {
     console.warn('[point-b-analyzer] No ANTHROPIC_API_KEY — skipping AI bridge analysis')
     return null
@@ -55,7 +56,7 @@ export async function analyzePointB(
 --- ТОЧКА Б (КУДА МЫ ИДЕМ - ЦЕЛИ) ---
 Цель на 12 месяцев: ${answers['s6_goal_12months']}
 Цель на 3 года: ${answers['s6_goal_3years']}
-Проекция выручки 2025: ${pointBBase.targets.find(t => t.label.includes('доход'))?.value}
+Проекция выручки 2025: ${pointBBase.target_kpis?.find((t: { label: string }) => t.label.includes('Выручка'))?.target ?? '—'}
 Целевой GRI: 85+ (Excellent)
 
 --- ЗАДАЧА ---
