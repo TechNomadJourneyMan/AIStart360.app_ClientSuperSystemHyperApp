@@ -192,7 +192,7 @@ function diagToPointA(diag: Record<string, unknown>): PointA {
   return {
     overall_score: (diag.overall_score as number) ?? 0,
     health_index:  (diag.health_index  as number) ?? 0,
-    stage:         (diag.stage         as string)  ?? 'seed',
+    stage:         ((diag.stage as string) ?? 'seed') as import('@/types/onboarding').DiagnosticStage,
     blocks: {
       finance:    (diag.finance_score    as BlockScore) ?? emptyBlock(),
       marketing:  (diag.marketing_score  as BlockScore) ?? emptyBlock(),
