@@ -68,10 +68,23 @@ export function UserDetailPanel({ userId }: Props) {
   }, [userId])
 
   const startEditing = () => {
-    if (!data) return
     const vals: Record<string, string> = {}
-    for (const [k, v] of Object.entries(data.answers)) {
-      vals[k] = typeof v === 'object' ? JSON.stringify(v) : String(v ?? '')
+    // Pre-fill from existing answers if available
+    if (data?.answers) {
+      for (const [k, v] of Object.entries(data.answers)) {
+        vals[k] = typeof v === 'object' ? JSON.stringify(v) : String(v ?? '')
+      }
+    }
+    // If empty, add all known survey fields with empty values
+    if (Object.keys(vals).length === 0) {
+      const allFields = Object.keys(SURVEY_LABELS)
+      for (const k of allFields) vals[k] = ''
+      // Set completedSteps so UI renders all steps
+      if (data) {
+        setData({ ...data, completedSteps: [1, 2, 3, 4, 5, 6] })
+      } else {
+        setData({ answers: {}, company: null, completedSteps: [1, 2, 3, 4, 5, 6] })
+      }
     }
     setEditValues(vals)
     setEditing(true)
@@ -100,17 +113,29 @@ export function UserDetailPanel({ userId }: Props) {
     setSaving(false)
   }
 
-  const openAsUser = async () => {
-    setImpersonating(true)
+  const getImpersonateUrl = async (redirectTo?: string): Promise<string | null> => {
     try {
       const res = await fetch('/api/giga-admin/impersonate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId }),
+        body: JSON.stringify({ userId, redirectTo }),
       })
       const d = await res.json()
-      if (d.url) window.open(d.url, '_blank')
-    } catch {}
+      return d.url ?? null
+    } catch { return null }
+  }
+
+  const openAsUser = async () => {
+    setImpersonating(true)
+    const url = await getImpersonateUrl()
+    if (url) window.open(url, '_blank')
+    setImpersonating(false)
+  }
+
+  const openOnboarding = async () => {
+    setImpersonating(true)
+    const url = await getImpersonateUrl('/client/onboarding')
+    if (url) window.open(url, '_blank')
     setImpersonating(false)
   }
 
@@ -134,11 +159,16 @@ export function UserDetailPanel({ userId }: Props) {
           {impersonating ? <Loader2 size={12} className="animate-spin" /> : <ExternalLink size={12} />}
           Открыть портал
         </button>
-        {data && data.completedSteps.length > 0 && !editing && (
+        <button onClick={openOnboarding} disabled={impersonating}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium bg-violet-500/10 border border-violet-500/20 text-violet-300 hover:bg-violet-500/20 transition-all disabled:opacity-50">
+          {impersonating ? <Loader2 size={12} className="animate-spin" /> : <FileText size={12} />}
+          Заполнить анкету от лица
+        </button>
+        {!editing && (
           <button onClick={startEditing}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium bg-amber-500/10 border border-amber-500/20 text-amber-300 hover:bg-amber-500/20 transition-all">
             <Pencil size={12} />
-            Редактировать анкету
+            {data && data.completedSteps.length > 0 ? 'Редактировать анкету' : 'Создать анкету'}
           </button>
         )}
         {editing && (
@@ -232,9 +262,12 @@ export function UserDetailPanel({ userId }: Props) {
             )
           })}
         </div>
-      ) : !diag ? (
-        <p className="text-[11px] text-slate-600 italic py-2">Анкета не заполнена</p>
-      ) : null}
+      ) : (
+        <div className="p-3 rounded-lg bg-white/[0.02] border border-white/[0.04] text-center">
+          <p className="text-[11px] text-slate-500 mb-2">Анкета не заполнена</p>
+          <p className="text-[10px] text-slate-600">Нажмите «Создать анкету» или «Заполнить анкету от лица» выше</p>
+        </div>
+      )}
 
       {/* Documents */}
       {docs.length > 0 && (

@@ -18,7 +18,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const { userId } = await req.json() as { userId: string }
+    const { userId, redirectTo } = await req.json() as { userId: string; redirectTo?: string }
     if (!userId) {
       return NextResponse.json({ error: 'userId required' }, { status: 400 })
     }
@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
       type: 'magiclink',
       email: profile.email,
       options: {
-        redirectTo: `${req.nextUrl.origin}/client/dashboard`,
+        redirectTo: `${req.nextUrl.origin}${redirectTo || '/client/dashboard'}`,
       },
     })
 
