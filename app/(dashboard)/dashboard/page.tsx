@@ -6,12 +6,11 @@ import { KpiCardsGrid } from '@/components/dashboard/KpiCardsGrid'
 import { GriDiagramWidget } from '@/components/dashboard/GriDiagramWidget'
 import { GoalsBar } from '@/components/dashboard/GoalsBar'
 import { WidgetGrid } from '@/components/dashboard/WidgetGrid'
-import { createClient } from '@/lib/supabase/server'
+import { createServerClient } from '@/lib/supabase-server'
 import { AlertCard } from '@/components/dashboard/AlertCard'
 import { ActivityFeed } from '@/components/dashboard/ActivityFeed'
 import type { Alert, ActivityItem } from '@/types'
 import type { AlertCardProps } from '@/components/dashboard/AlertCard'
-import { prisma } from '@/lib/prisma'
 import { PointARadarWidget } from '@/components/dashboard/PointARadarWidget'
 import type { PointA, BlockScore } from '@/types/onboarding'
 
@@ -49,39 +48,27 @@ interface DashboardData {
 // ─── data fetching ────────────────────────────────────────────────────────────
 async function getDashboardExtendedData(): Promise<DashboardData | null> {
   try {
-    // In this schema, 'User' represents the accounts.
-    // 'Client' represents the business entities.
-    const users = await prisma.user.findMany({
-      select: {
-        id: true,
-        status: true,
-        name: true,
-        email: true,
-        role: true
-      }
-    })
+    const sb = createServerClient()
 
+    // Users from profiles
+    const { data: profiles } = await sb
+      .from('profiles')
+      .select('id, full_name, email, role, status, created_at')
+      .order('created_at', { ascending: false })
+
+    const users = profiles ?? []
     const total = users.length
-    const active = users.filter(u => u.status === 'active').length
-    // Assuming 'pending_approval' or similar might exist in Supabase metadata,
-    // but in Prisma schema UserStatus is only 'active' | 'blocked'.
-    // Let's check AdminRequests for registrations.
-    const pendingRequests = await prisma.adminRequest.count({
-      where: { status: 'new', type: 'registration' }
-    })
+    const active = users.filter(u => u.status === 'approved').length
+    const pending = users.filter(u => u.status === 'pending_approval').length
 
-    // Diagnostics for GRI
-    // The schema has GriReport and DiagnosticRun.
-    const griReports = await prisma.griReport.findMany({
-      select: {
-        score: true,
-        clientId: true
-      }
-    })
+    // Diagnostics for GRI distribution
+    const { data: diagnostics } = await sb
+      .from('diagnostics')
+      .select('overall_score, user_id')
 
-    const scores = griReports.map(r => r.score)
+    const scores = (diagnostics ?? []).map(d => d.overall_score ?? 0)
     const griDist: GriDist = {
-      excellent:  scores.filter(s => s >= 90).length, // assuming 0-100 scale
+      excellent:  scores.filter(s => s >= 90).length,
       strong:     scores.filter(s => s >= 70 && s < 90).length,
       developing: scores.filter(s => s >= 50 && s < 70).length,
       critical:   scores.filter(s => s < 50).length,
@@ -89,48 +76,37 @@ async function getDashboardExtendedData(): Promise<DashboardData | null> {
     }
 
     // Companies
-    const companiesRaw = await prisma.company.findMany({
-      take: 10,
-      select: {
-        id: true,
-        name: true
-      }
-    })
-    
-    // Activity - using most recent users as a proxy for now
-    const recentUsers = [...users].sort((a,b) => b.id.localeCompare(a.id)).slice(0, 6)
+    const { data: companies } = await sb
+      .from('companies')
+      .select('id, name')
+      .limit(10)
+
+    // Activity from recent profiles
+    const recentUsers = users.slice(0, 6)
     const activity: ActivityItem[] = recentUsers.map(u => ({
       id: u.id,
-      actor: (u.name || u.email || 'Клиент'),
-      actorRole: u.role.toLowerCase(),
+      actor: u.full_name || u.email || 'Клиент',
+      actorRole: (u.role ?? 'client').toLowerCase(),
       event: 'Активность в системе',
       gri: 0,
-      status: u.status === 'active' ? 'active' : 'inactive',
+      status: u.status === 'approved' ? 'active' : 'inactive',
       time: 'недавно',
     }))
 
     // Alerts
     const alerts: Alert[] = []
-    if (pendingRequests > 0) {
+    if (pending > 0) {
       alerts.push({
         id: 'pending-reg',
         severity: 'info',
-        title: `${pendingRequests} заявок ожидают проверки`,
-        description: 'Новые клиенты зарегистрировались и ждут подтверждения аккаунта.',
+        title: `${pending} заявок ожидают проверки`,
+        description: 'Новые клиенты зарегистрировались и ждут подтверждения.',
         time: 'сейчас',
-        action: { label: 'Просмотреть', href: '/admin/requests' },
+        action: { label: 'Просмотреть', href: '/admin-giga-panel' },
       })
     }
 
-    return { 
-      total, 
-      active, 
-      pending: pendingRequests, 
-      griDist, 
-      activity, 
-      alerts, 
-      companies: (companiesRaw as any)
-    }
+    return { total, active, pending, griDist, activity, alerts, companies: (companies ?? []) as { id: string; name: string }[] }
   } catch (e) {
     console.error('[Dashboard] data fetch error:', e)
     return null
@@ -245,7 +221,7 @@ function stageLabel(s: string) {
 // ─── page ─────────────────────────────────────────────────────────────────────
 export default async function DashboardPage() {
   // Detect viewer role — clients get their personal Point A view
-  const supabase = await createClient()
+  const supabase = createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (user) {
     // Read role via service-role REST API to bypass RLS (profiles table has RLS recursion issue)
