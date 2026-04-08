@@ -26,6 +26,7 @@ import {
 import { useGigaPanelStore, type RequestCategory, type GigaRequest } from '@/stores/gigaPanel.store'
 import { RejectModal } from './RejectModal'
 import { SURVEY_LABELS, SURVEY_STEP_LABELS, formatSurveyValue, getStepFromKey } from '@/lib/survey-labels'
+import { UserDetailPanel } from './UserDetailPanel'
 
 // ─── Tab config ───────────────────────────────────────────────────────────────
 
@@ -483,19 +484,9 @@ function RequestCard({
                 )}
               </div>
 
-              {/* Survey data (lazy-loaded for registration requests) */}
+              {/* Full user detail: survey (editable) + diagnostics + documents + portal */}
               {request.category === 'registration' && (
-                <SurveySection requestId={request.id} />
-              )}
-
-              {/* Diagnostics results (lazy-loaded for registration requests) */}
-              {request.category === 'registration' && (
-                <DiagnosticsSection requestId={request.id} />
-              )}
-
-              {/* Client documents (lazy-loaded for registration requests) */}
-              {request.category === 'registration' && (
-                <DocumentsSection requestId={request.id} />
+                <UserDetailPanel userId={request.id} />
               )}
             </div>
           </motion.div>

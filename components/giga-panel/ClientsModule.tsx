@@ -19,6 +19,7 @@ import {
   ExternalLink,
 } from 'lucide-react'
 import { useGigaPanelStore, type GigaClient } from '@/stores/gigaPanel.store'
+import { UserDetailPanel } from './UserDetailPanel'
 
 // ─── GRI Score ring ───────────────────────────────────────────────────────────
 
@@ -334,19 +335,9 @@ function ClientDetailPanel({ client, onClose }: { client: GigaClient; onClose: (
         )}
       </div>
 
-      {/* Footer action */}
-      <div className="p-4 border-t border-white/[0.07]">
-        <a
-          href={`/clients/${client.id}`}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center justify-center gap-2 w-full px-4 py-2.5 rounded-xl
-            bg-blue-500/20 border border-blue-500/30 text-blue-300 text-sm font-semibold
-            hover:bg-blue-500/30 hover:border-blue-500/50 transition-all"
-        >
-          <ExternalLink size={14} />
-          Открыть в портале
-        </a>
+      {/* Survey + Diagnostics + Documents (editable) */}
+      <div className="border-t border-white/[0.07]">
+        <UserDetailPanel userId={client.id} />
       </div>
     </motion.div>
   )
