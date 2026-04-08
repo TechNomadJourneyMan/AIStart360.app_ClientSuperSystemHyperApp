@@ -399,6 +399,19 @@ export default function OnboardingPage() {
 
   const progress = Math.round(((currentStep - 1) / 6) * 100)
 
+  // Redirect approved users to point-a even if survey is disabled
+  useEffect(() => {
+    if (!userId) return
+    fetch(`/api/client/status?userId=${userId}`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.status === 'approved') {
+          router.push('/client/point-a')
+        }
+      })
+      .catch(() => {})
+  }, [userId, router])
+
   return (
     <div className="min-h-screen bg-[#0A0B0F] flex flex-col items-center justify-center p-6 text-center">
       <span className="material-symbols-outlined text-4xl text-primary mb-4">info</span>
