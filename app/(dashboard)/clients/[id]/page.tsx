@@ -6,6 +6,7 @@ import { createServerClient } from '@/lib/supabase-server'
 import { prisma } from '@/lib/db'
 import type { BlockScore, Risk, Insight, QuickWin } from '@/types/onboarding'
 import ChocoDashboard from '@/components/choco/dashboard'
+import InteractiveGRIDashboard from '@/components/gri/GRIDashboard'
 
 export const metadata: Metadata = { title: 'Client Profile | Admin' }
 
@@ -135,6 +136,13 @@ export default async function ClientDetailPage({ params }: { params: { id: strin
             </div>
           </div>
           <div className="flex items-center gap-3">
+            <Link 
+              href={`/clients/${params.id}/point-b`}
+              className="px-5 py-2.5 bg-tertiary-container/10 border border-tertiary-container/30 text-tertiary-container text-sm font-bold rounded-xl hover:bg-tertiary-container/20 transition-colors flex items-center gap-2"
+            >
+              <span className="material-symbols-outlined text-base">flag</span>
+              Точка Б
+            </Link>
             <button className="px-5 py-2.5 bg-surface-container-low border border-white/[0.04] text-on-surface text-sm font-bold rounded-xl hover:bg-surface-container transition-colors">
               Архив отчетов
             </button>
@@ -223,6 +231,11 @@ export default async function ClientDetailPage({ params }: { params: { id: strin
           </p>
         </div>
       )}
+
+      {/* GRI Landing Page Block */}
+      <div className="mt-12 rounded-3xl overflow-hidden border border-white/[0.04] shadow-2xl">
+        <InteractiveGRIDashboard />
+      </div>
     </div>
   )
 }

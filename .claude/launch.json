@@ -3,9 +3,9 @@
   "configurations": [
     {
       "name": "frontend",
-      "runtimeExecutable": "/usr/local/bin/node",
-      "runtimeArgs": ["node_modules/.bin/next", "dev"],
-      "autoPort": true
+      "runtimeExecutable": "/opt/homebrew/bin/node",
+      "runtimeArgs": ["/Users/ansarisenoff/AI-Portal/node_modules/.bin/next", "dev", "--port", "53001"],
+      "port": 53001
     }
   ]
 }

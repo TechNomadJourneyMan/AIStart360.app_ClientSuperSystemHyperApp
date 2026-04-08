@@ -14,11 +14,12 @@ export async function GET(req: NextRequest) {
     .select('*')
     .eq('user_id', userId)
     .eq('is_current', true)
-    .single()
+    .order('created_at', { ascending: false })
+    .limit(1)
 
-  if (error && error.code !== 'PGRST116') {
+  if (error) {
     return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
   }
 
-  return NextResponse.json({ ok: true, data: data ?? null })
+  return NextResponse.json({ ok: true, data: data?.[0] ?? null })
 }

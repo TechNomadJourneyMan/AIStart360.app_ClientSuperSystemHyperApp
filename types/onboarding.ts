@@ -213,6 +213,36 @@ export interface PointA {
   data_gaps: DataGap[]
 }
 
+export interface TargetKPI {
+  label: string
+  value: string
+  current: string
+  pct: number
+  icon: string
+}
+
+export interface GapItem {
+  label: string
+  title: string
+  gap: string
+  action: string
+  icon: string
+  color: 'primary' | 'error' | 'tertiary-container'
+}
+
+export interface PointB {
+  targets: TargetKPI[]
+  milestones: {
+    q: string
+    title: string
+    desc: string
+    status: 'current' | 'planned' | 'future'
+    icon: string
+  }[]
+  gap_analysis: GapItem[]
+  horizon_months: number
+}
+
 export interface Diagnostic {
   id: string
   user_id: string

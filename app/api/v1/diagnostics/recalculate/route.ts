@@ -41,6 +41,9 @@ export async function POST(req: NextRequest) {
     // Calculate Point A
     const result = calculatePointA(answers)
 
+    // Mark previous diagnostics as not current
+    await sb.from('diagnostics').update({ is_current: false }).eq('user_id', user_id)
+
     // Store in diagnostics table
     const { data: diag, error: diagErr } = await sb
       .from('diagnostics')
