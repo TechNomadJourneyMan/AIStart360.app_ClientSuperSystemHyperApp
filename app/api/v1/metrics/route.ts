@@ -81,23 +81,30 @@ export async function GET() {
     const { data: snapshots, error } = await supabase
       .from('financial_snapshots')
       .select('*')
-      .order('recorded_at', { ascending: false })
+      .order('recordedAt', { ascending: false })
       .limit(2)
 
     if (error || !snapshots || snapshots.length === 0) {
       return NextResponse.json({ source: 'mock', data: MOCK_METRICS })
     }
 
-    const snap = snapshots[0]
-    const prev = snapshots[1] ?? null
+    const snap = snapshots[0] as Record<string, any>
+    const prev = (snapshots[1] ?? null) as Record<string, any> | null
 
-    const avgCheck =
-      snap.clients_count > 0 ? snap.revenue_kzt / snap.clients_count : 1.75
+    // Support both camelCase (Prisma) and snake_case (Supabase native) column names
+    const revenue = Number(snap.revenueKzt ?? snap.revenue_kzt ?? 0)
+    const margin = Number(snap.marginPct ?? snap.margin_pct ?? 0)
+    const clients = Number(snap.clientsCount ?? snap.clients_count ?? 0)
+    const expenses = Number(snap.expensesKzt ?? snap.expenses_kzt ?? 0)
+    const revenueChange = Number(snap.revenueChange ?? snap.revenue_change ?? 0)
+    const marginChange = Number(snap.marginChange ?? snap.margin_change ?? 0)
+    const clientsChange = Number(snap.clientsChange ?? snap.clients_change ?? 0)
 
-    const prevAvgCheck =
-      prev && prev.clients_count > 0
-        ? prev.revenue_kzt / prev.clients_count
-        : null
+    const prevRevenue = prev ? Number(prev.revenueKzt ?? prev.revenue_kzt ?? 0) : 0
+    const prevClients = prev ? Number(prev.clientsCount ?? prev.clients_count ?? 0) : 0
+
+    const avgCheck = clients > 0 ? revenue / clients : 1.75
+    const prevAvgCheck = prev && prevClients > 0 ? prevRevenue / prevClients : null
 
     const avgCheckChange =
       prevAvgCheck && prevAvgCheck > 0
@@ -108,14 +115,13 @@ export async function GET() {
       {
         id: 'revenue',
         label: 'Доход',
-        displayValue: `₸${Number(snap.revenue_kzt).toFixed(1)}М`,
-        rawValue: Number(snap.revenue_kzt),
+        displayValue: `₸${revenue.toFixed(1)}М`,
+        rawValue: revenue,
         unit: '₸М',
         unitPosition: 'before',
-        trend: Number(snap.revenue_change),
-        trendAbs: Number(snap.revenue_kzt) * (Number(snap.revenue_change) / 100),
-        trendDirection:
-          snap.revenue_change > 0 ? 'up' : snap.revenue_change < 0 ? 'down' : 'flat',
+        trend: revenueChange,
+        trendAbs: revenue * (revenueChange / 100),
+        trendDirection: revenueChange > 0 ? 'up' : revenueChange < 0 ? 'down' : 'flat',
         trendLabel: 'vs прошлый квартал',
         icon: 'payments',
         color: '#6effc0',
@@ -126,14 +132,13 @@ export async function GET() {
       {
         id: 'margin',
         label: 'Маржа',
-        displayValue: `${Number(snap.margin_pct).toFixed(1)}%`,
-        rawValue: Number(snap.margin_pct),
+        displayValue: `${margin.toFixed(1)}%`,
+        rawValue: margin,
         unit: '%',
         unitPosition: 'after',
-        trend: Number(snap.margin_change),
-        trendAbs: Number(snap.margin_change),
-        trendDirection:
-          snap.margin_change > 0 ? 'up' : snap.margin_change < 0 ? 'down' : 'flat',
+        trend: marginChange,
+        trendAbs: marginChange,
+        trendDirection: marginChange > 0 ? 'up' : marginChange < 0 ? 'down' : 'flat',
         trendLabel: 'чистая маржинальность',
         icon: 'percent',
         color: '#bcc7de',
@@ -144,14 +149,13 @@ export async function GET() {
       {
         id: 'clients',
         label: 'Клиенты',
-        displayValue: String(snap.clients_count),
-        rawValue: Number(snap.clients_count),
+        displayValue: String(clients),
+        rawValue: clients,
         unit: '',
         unitPosition: 'after',
-        trend: Number(snap.clients_change),
-        trendAbs: Number(snap.clients_change),
-        trendDirection:
-          snap.clients_change > 0 ? 'up' : snap.clients_change < 0 ? 'down' : 'flat',
+        trend: clientsChange,
+        trendAbs: clientsChange,
+        trendDirection: clientsChange > 0 ? 'up' : clientsChange < 0 ? 'down' : 'flat',
         trendLabel: 'активных клиентов',
         icon: 'groups',
         color: '#ffbd60',
