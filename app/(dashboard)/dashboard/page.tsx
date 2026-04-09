@@ -238,9 +238,12 @@ export default async function DashboardPage() {
         role = rows[0]?.role ?? null
       }
     } catch {
-      // fall through to admin view
+      // fall through — treat as client if role unknown
     }
-    if (role === 'client') {
+    // Show client view for: explicit 'client' role, OR unknown role (safety fallback)
+    // Only admin/super_admin/expert/manager see the admin dashboard
+    const isAdmin = role === 'admin' || role === 'super_admin' || role === 'expert' || role === 'manager'
+    if (!isAdmin) {
       // Fetch latest diagnostic via REST API to avoid RLS issues
       let diag: Record<string, unknown> | null = null
       let orgName: string | undefined = undefined
