@@ -7,12 +7,27 @@ export async function GET() {
   try {
     const sb = createServerClient()
 
-    // 1. Get approved client profiles with companies
+    // 1. Get companies first (CRM clients only — not all registered users)
+    const { data: companies } = await sb
+      .from('companies')
+      .select('user_id, name, industry, employee_count')
+
+    if (!companies?.length) {
+      return NextResponse.json({
+        stats: { revenueAtRisk: 0, highRisk: 0, mediumRisk: 0, totalClients: 0, processedToday: 0, dailyTarget: 6 },
+        todayClients: [],
+      })
+    }
+
+    // Only show profiles that have a company record (real CRM clients)
+    const companyUserIds = companies.map(c => c.user_id)
+
     const { data: profiles } = await sb
       .from('profiles')
       .select('id, email, full_name, organization, created_at')
       .eq('role', 'client')
       .eq('status', 'approved')
+      .in('id', companyUserIds)
 
     if (!profiles?.length) {
       return NextResponse.json({
@@ -20,11 +35,6 @@ export async function GET() {
         todayClients: [],
       })
     }
-
-    // 2. Get companies
-    const { data: companies } = await sb
-      .from('companies')
-      .select('user_id, name, industry, employee_count')
 
     const companyMap = new Map<string, { name: string; industry: string | null; employees: number | null }>()
     for (const c of companies ?? []) {

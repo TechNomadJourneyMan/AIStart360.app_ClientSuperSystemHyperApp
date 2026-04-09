@@ -1,11 +1,12 @@
+export const dynamic = 'force-dynamic'
+
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { createServerClient } from '@/lib/supabase-server'
-import { prisma } from '@/lib/db'
 
 export const metadata: Metadata = { title: 'GRI — Growth Readiness Index' }
 
-// ─── portfolio GRI averages from DB ──────────────────────────────────────────
+// ─── portfolio GRI averages from Supabase diagnostics ────────────────────────
 interface PortfolioGRI {
   overall:      number
   product:      number
@@ -21,74 +22,40 @@ interface PortfolioGRI {
 async function getPortfolioGRI(): Promise<PortfolioGRI | null> {
   try {
     const sb = createServerClient()
-    const { data: { user: sessionUser } } = await sb.auth.getUser()
-    if (!sessionUser) return null
 
-    const dbUser = await prisma.user.findFirst({
-      where: {
-        OR: [
-          { id: sessionUser.id },
-          { email: sessionUser.email ?? undefined },
-        ],
-      },
-      select: { orgId: true, id: true, role: true }
-    })
+    // Get all diagnostics with scores
+    const { data: diagnostics } = await sb
+      .from('diagnostics')
+      .select('overall_score, finance_score, sales_score, operations_score, marketing_score, strategy_score')
+      .not('overall_score', 'is', null)
+      .gt('overall_score', 0)
 
-    if (!dbUser) return null
+    if (!diagnostics?.length) return null
 
-    // Determine query filter based on role/org boundary
-    let clientFilter = {}
-    if (dbUser.role === 'SUPER_ADMIN') {
-      clientFilter = {} // sees everything
-    } else if (dbUser.orgId) {
-      clientFilter = { orgId: dbUser.orgId }
-    } else {
-      clientFilter = { managerId: dbUser.id }
+    // Map Point A blocks to GRI 7-domain model (approximate mapping)
+    const getScore = (d: Record<string, unknown>, key: string): number => {
+      const block = d[key] as { score?: number } | null
+      return (block?.score ?? 0) / 10  // Convert 0-100 to 0-10
     }
 
-    const reports = await prisma.griReport.findMany({
-      where: {
-        client: clientFilter,
-        score: { gt: 0 }
-      },
-      select: {
-        score: true,
-        productScore: true,
-        trustScore: true,
-        businessModelScore: true,
-        cashScore: true,
-        operationsScore: true,
-        teamScore: true,
-        founderScore: true,
-      },
-      orderBy: {
-        calculatedAt: 'desc'
-      },
-      take: 50
-    })
-
-    if (reports.length === 0) return null
-
-    const avg = (key: keyof typeof reports[0]) => {
-      const vals = reports.map((r) => r[key]).filter((v) => typeof v === 'number' && v > 0) as number[]
-      return vals.length > 0
-        ? Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 10) / 10
-        : 0
+    const avgField = (extractor: (d: Record<string, unknown>) => number): number => {
+      const vals = diagnostics.map(d => extractor(d as Record<string, unknown>)).filter(v => v > 0)
+      return vals.length > 0 ? Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 10) / 10 : 0
     }
 
     return {
-      overall:     avg('score'),
-      product:     avg('productScore'),
-      trust:       avg('trustScore'),
-      bizmodel:    avg('businessModelScore'),
-      cash:        avg('cashScore'),
-      ops:         avg('operationsScore'),
-      team:        avg('teamScore'),
-      founder:     avg('founderScore'),
-      reportCount: reports.length,
+      overall:     avgField(d => (d.overall_score as number ?? 0) / 10),
+      product:     avgField(d => getScore(d, 'marketing_score')),    // Marketing → Product & Demand
+      trust:       avgField(d => getScore(d, 'strategy_score')),     // Strategy → Trust & Positioning
+      bizmodel:    avgField(d => getScore(d, 'sales_score')),        // Sales → Business Model
+      cash:        avgField(d => getScore(d, 'finance_score')),      // Finance → Cash
+      ops:         avgField(d => getScore(d, 'operations_score')),   // Operations → Operations
+      team:        avgField(d => getScore(d, 'operations_score')),   // Operations → Team (proxy)
+      founder:     avgField(d => getScore(d, 'strategy_score')),     // Strategy → Founder (proxy)
+      reportCount: diagnostics.length,
     }
   } catch (error) {
-    console.error("Failed to load GRI reports:", error)
+    console.error("Failed to load diagnostics for GRI:", error)
     return null
   }
 }
