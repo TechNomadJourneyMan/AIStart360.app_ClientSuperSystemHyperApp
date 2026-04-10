@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic"
 
 import type { Metadata } from 'next'
 import Link from 'next/link'
+import { cookies } from 'next/headers'
 import { KpiCardsGrid } from '@/components/dashboard/KpiCardsGrid'
 import { GriDiagramWidget } from '@/components/dashboard/GriDiagramWidget'
 import { GoalsBar } from '@/components/dashboard/GoalsBar'
@@ -405,6 +406,11 @@ export default async function DashboardPage() {
 
   const crmPending = crmRequests.filter(r => r.status === 'new' || r.status === 'in_review').length
 
+  // CRM activity and pending alerts only for manager/analyst/admin roles (not super_admin/owner)
+  const cookieStore = await cookies()
+  const staffRole = cookieStore.get('aistart360_role')?.value ?? null
+  const showCrmWidgets = staffRole === 'admin' || staffRole === 'manager' || staffRole === 'analyst'
+
   const griDomains = [
     { label: 'Продукт и спрос',           score: 4.7 },
     { label: 'Доверие и позиционирование',score: 5.2 },
@@ -482,7 +488,7 @@ export default async function DashboardPage() {
                     {alerts.filter(a => a.severity === 'critical').length} алерта
                   </span>
                 </div>
-                {alerts.length > 0 ? (
+                {showCrmWidgets && alerts.length > 0 ? (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {alerts.map(alert => (
                       <AlertCard key={alert.id} {...alert} />
@@ -506,11 +512,13 @@ export default async function DashboardPage() {
           </div>
 
           <aside className="space-y-6">
-              <CrmActivity
-                requests={crmReqMapped}
-                clients={crmClientsMapped}
-                pendingCount={crmPending}
-              />
+              {showCrmWidgets && (
+                <CrmActivity
+                  requests={crmReqMapped}
+                  clients={crmClientsMapped}
+                  pendingCount={crmPending}
+                />
+              )}
 
               {/* GRI Portfolio Health */}
               <div className="bg-surface-container-low border border-white/[0.04] rounded-2xl p-5">
