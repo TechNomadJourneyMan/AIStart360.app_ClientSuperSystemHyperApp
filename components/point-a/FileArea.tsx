@@ -68,7 +68,8 @@ interface FileAreaProps {
   userId: string
 }
 
-export function FileArea({ userId }: FileAreaProps) {
+export function FileArea({ userId: userIdProp }: FileAreaProps) {
+  const [resolvedUserId, setResolvedUserId] = useState(userIdProp)
   const [files, setFiles] = useState<DocFile[]>([])
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
@@ -79,7 +80,20 @@ export function FileArea({ userId }: FileAreaProps) {
   const [error, setError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  // If userId not passed from server (e.g. GigaAccessGuard login), fetch it client-side
+  useEffect(() => {
+    if (!userIdProp) {
+      fetch('/api/v1/me')
+        .then(r => r.json())
+        .then(d => { if (d.userId) setResolvedUserId(d.userId) })
+        .catch(() => {})
+    }
+  }, [userIdProp])
+
+  const userId = resolvedUserId
+
   const loadFiles = useCallback(async () => {
+    if (!userId) { setLoading(false); return }
     try {
       const res = await fetch(`/api/v1/onboarding/documents?user_id=${userId}`)
       const data = await res.json()
@@ -116,6 +130,10 @@ export function FileArea({ userId }: FileAreaProps) {
 
   const handleUpload = async () => {
     if (!pendingFile) return
+    if (!userId) {
+      setError('Не удалось определить пользователя. Попробуйте перезайти.')
+      return
+    }
     setUploading(true)
     setUploadProgress(0)
     setError(null)
