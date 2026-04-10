@@ -117,8 +117,8 @@ export default async function PointAPage() {
       <section className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
           { label: 'Общий балл', value: String(avgScore), icon: 'radar', good: avgScore >= 50, note: avgScore ? 'из 100' : 'нет данных' },
+          { label: 'Клиенты', value: '0', icon: 'groups', good: false, note: 'подключите CRM' },
           { label: 'Документы', value: String(docsCount), icon: 'description', good: docsCount > 0, note: docsCount > 0 ? 'загружено' : 'нет файлов' },
-          { label: 'Блоков', value: String(domainScores.length || 5), icon: 'category', good: true, note: 'направлений' },
           { label: 'Health', value: avgScore >= 70 ? 'High' : avgScore >= 40 ? 'Medium' : avgScore > 0 ? 'Low' : '—', icon: 'favorite', good: avgScore >= 40, note: avgScore > 0 ? 'по диагностике' : 'нет данных' },
         ].map((stat) => (
           <div key={stat.label} className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-5 hover:border-primary/10 transition-colors">
