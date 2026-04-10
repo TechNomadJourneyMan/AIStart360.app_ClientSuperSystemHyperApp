@@ -843,6 +843,26 @@ export default function PulsePage() {
         </div>
       </section>
 
+      {/* ── AI Daily Briefing ── */}
+      {clientsData?.aiBriefing && (
+        <section className="bg-gradient-to-r from-primary/[0.06] to-transparent rounded-2xl border border-primary/20 p-5">
+          <div className="flex items-start gap-3">
+            <div className="w-9 h-9 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+              <span className="material-symbols-outlined text-lg text-primary">assistant</span>
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 mb-1.5">
+                <p className="text-[10px] font-mono text-primary uppercase tracking-[0.15em]">AI-рекомендация на сегодня</p>
+                <span className="text-[8px] font-mono text-primary/50 bg-primary/10 px-1.5 py-0.5 rounded">OpenRouter</span>
+              </div>
+              <p className="text-sm text-on-surface leading-relaxed">
+                {clientsData.aiBriefing as string}
+              </p>
+            </div>
+          </div>
+        </section>
+      )}
+
       {/* ── Stats bar ── */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         {[
