@@ -149,6 +149,32 @@ export function Sidebar() {
           const hasSubItems = !sidebarCollapsed && item.subItems && item.subItems.length > 0
           const isSubOpen = openSubMenus.includes(item.href)
 
+          if (hasSubItems && isLocked(item.href)) {
+            // Locked parent item — show as locked, navigate to page with promo modal
+            const lockedKey = PREMIUM_LOCKED.find((p) => item.href === p || item.href.startsWith(p + '/')) ?? item.href
+            return (
+              <button
+                key={item.href}
+                onClick={() => { router.push(lockedKey); setPremiumItem(lockedKey) }}
+                className={`
+                  relative flex items-center rounded-xl cursor-pointer select-none w-full
+                  hover:bg-amber-500/5 transition-colors duration-150
+                  gap-3 px-3 py-2.5
+                `}
+              >
+                <span className="material-symbols-outlined text-[20px] flex-shrink-0 text-[#6b7280] opacity-55">
+                  {item.icon}
+                </span>
+                <span className="text-sm truncate font-medium text-[#6b7280] opacity-55 flex-1">
+                  {item.label}
+                </span>
+                <span className="flex items-center px-1.5 py-0.5 rounded-md bg-amber-500/10 border border-amber-500/20 text-amber-400 text-[9px] font-mono tracking-wide flex-shrink-0">
+                  Pro
+                </span>
+              </button>
+            )
+          }
+
           if (hasSubItems) {
             return (
               <div key={item.href}>

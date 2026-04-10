@@ -357,15 +357,24 @@ function CrmIntegrationTab() {
     setConnectLoading(true)
     setConnectError(null)
     try {
+      // For Bitrix24: extract domain from webhook URL, no separate token needed
+      const payload = connectProvider === 'bitrix24'
+        ? {
+            provider: 'bitrix24',
+            domain: connectWebhook.replace(/^https?:\/\//, '').split('/')[0],
+            accessToken: connectWebhook,
+            webhookUrl: connectWebhook,
+          }
+        : {
+            provider: 'amocrm',
+            domain: connectDomain,
+            accessToken: connectToken,
+          }
+
       const res = await fetch('/api/crm', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          provider: connectProvider,
-          domain: connectDomain,
-          accessToken: connectToken,
-          webhookUrl: connectWebhook || undefined,
-        }),
+        body: JSON.stringify(payload),
       })
       const data = await res.json()
       if (!res.ok) {
@@ -622,46 +631,49 @@ function CrmIntegrationTab() {
                 ))}
               </div>
 
-              {/* Domain */}
-              <div>
-                <label className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider block mb-1.5">Домен</label>
-                <input
-                  type="text"
-                  value={connectDomain}
-                  onChange={e => setConnectDomain(e.target.value)}
-                  placeholder={providerInfo[connectProvider].domainHint}
-                  className="w-full bg-surface-container border border-white/[0.06] rounded-xl px-3.5 py-2.5 text-sm text-on-surface placeholder:text-on-surface-variant/40 focus:outline-none focus:border-primary/30"
-                />
-              </div>
-
-              {/* Access token */}
-              <div>
-                <label className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider block mb-1.5">
-                  {providerInfo[connectProvider].tokenLabel}
-                </label>
-                <input
-                  type="password"
-                  value={connectToken}
-                  onChange={e => setConnectToken(e.target.value)}
-                  placeholder="Вставьте токен или ключ..."
-                  className="w-full bg-surface-container border border-white/[0.06] rounded-xl px-3.5 py-2.5 text-sm text-on-surface placeholder:text-on-surface-variant/40 focus:outline-none focus:border-primary/30 font-mono"
-                />
-              </div>
-
-              {/* Webhook URL (Bitrix24 only) */}
-              {connectProvider === 'bitrix24' && (
+              {connectProvider === 'bitrix24' ? (
+                /* Bitrix24: only Webhook URL needed */
                 <div>
                   <label className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider block mb-1.5">
-                    Webhook URL <span className="text-on-surface-variant/40">(опционально)</span>
+                    Webhook URL
                   </label>
                   <input
                     type="text"
                     value={connectWebhook}
                     onChange={e => setConnectWebhook(e.target.value)}
-                    placeholder="https://mycompany.bitrix24.kz/rest/1/abc123/"
+                    placeholder="https://b24-xxx.bitrix24.kz/rest/1/ваш_секрет/"
                     className="w-full bg-surface-container border border-white/[0.06] rounded-xl px-3.5 py-2.5 text-sm text-on-surface placeholder:text-on-surface-variant/40 focus:outline-none focus:border-primary/30 font-mono text-xs"
                   />
+                  <p className="text-[10px] text-on-surface-variant/50 mt-1.5 pl-1">
+                    Настройки → Разработчикам → Другое → Входящий вебхук
+                  </p>
                 </div>
+              ) : (
+                /* AmoCRM: domain + API key */
+                <>
+                  <div>
+                    <label className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider block mb-1.5">Домен</label>
+                    <input
+                      type="text"
+                      value={connectDomain}
+                      onChange={e => setConnectDomain(e.target.value)}
+                      placeholder={providerInfo[connectProvider].domainHint}
+                      className="w-full bg-surface-container border border-white/[0.06] rounded-xl px-3.5 py-2.5 text-sm text-on-surface placeholder:text-on-surface-variant/40 focus:outline-none focus:border-primary/30"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider block mb-1.5">
+                      {providerInfo[connectProvider].tokenLabel}
+                    </label>
+                    <input
+                      type="password"
+                      value={connectToken}
+                      onChange={e => setConnectToken(e.target.value)}
+                      placeholder="Вставьте API ключ..."
+                      className="w-full bg-surface-container border border-white/[0.06] rounded-xl px-3.5 py-2.5 text-sm text-on-surface placeholder:text-on-surface-variant/40 focus:outline-none focus:border-primary/30 font-mono"
+                    />
+                  </div>
+                </>
               )}
 
               {/* Docs link */}
@@ -685,7 +697,7 @@ function CrmIntegrationTab() {
                 </button>
                 <button
                   onClick={handleConnect}
-                  disabled={connectLoading || !connectDomain || !connectToken}
+                  disabled={connectLoading || (connectProvider === 'bitrix24' ? !connectWebhook : (!connectDomain || !connectToken))}
                   className="flex-1 px-4 py-2.5 rounded-xl bg-primary/20 border border-primary/30 text-sm text-primary font-medium hover:bg-primary/30 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                 >
                   {connectLoading ? (
