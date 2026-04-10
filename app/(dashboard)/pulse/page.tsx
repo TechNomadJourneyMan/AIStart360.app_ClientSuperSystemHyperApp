@@ -1022,8 +1022,22 @@ export default function PulsePage() {
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-white/[0.04]">
-                    {['Клиент', 'Последний заказ', 'Ср. чек', 'Изм. объёма', 'Риск-скор', 'Вер-сть оттока', 'Комментарий', 'Действие'].map((h) => (
-                      <th key={h} className="text-left text-[10px] font-mono text-on-surface-variant uppercase tracking-widest px-4 py-3 whitespace-nowrap">{h}</th>
+                    {([
+                      { label: 'Клиент', tip: 'Название сделки или компании из CRM' },
+                      { label: 'Последний заказ', tip: 'Дата последнего изменения сделки в CRM' },
+                      { label: 'Ср. чек', tip: 'Сумма сделки из CRM (поле «Сумма» в Bitrix24)' },
+                      { label: 'Изм. объёма', tip: 'Отклонение суммы сделки от среднего по портфелю: (сумма − средняя) ÷ средняя × 100%' },
+                      { label: 'Риск-скор', tip: 'Комплексная оценка 0–100: стадия сделки + дни без активности + возраст сделки + сумма vs средняя' },
+                      { label: 'Вер-сть оттока', tip: 'Вероятность потери клиента: на основе стадии (успех/провал/процесс), простоя и риск-скора' },
+                      { label: 'Комментарий', tip: 'Контекстная подсказка: крупная сделка, долгий цикл, нет активности N дней' },
+                      { label: 'Действие', tip: 'Рекомендация: Звонок (риск>60 или простой>7дн), Написать (риск>35), Мониторинг (низкий риск)' },
+                    ] as const).map((h) => (
+                      <th key={h.label} className="text-left text-[10px] font-mono text-on-surface-variant uppercase tracking-widest px-4 py-3 whitespace-nowrap relative group/th cursor-help" title={h.tip}>
+                        <span className="border-b border-dotted border-on-surface-variant/30">{h.label}</span>
+                        <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 px-3 py-2 bg-[#1a1d27] border border-white/10 rounded-xl text-[11px] text-on-surface font-normal normal-case tracking-normal leading-relaxed w-56 opacity-0 pointer-events-none group-hover/th:opacity-100 transition-opacity duration-200 z-50 shadow-xl">
+                          {h.tip}
+                        </div>
+                      </th>
                     ))}
                   </tr>
                 </thead>
