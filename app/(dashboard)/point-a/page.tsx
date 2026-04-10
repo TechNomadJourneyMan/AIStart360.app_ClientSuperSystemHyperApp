@@ -1,8 +1,8 @@
 export const dynamic = "force-dynamic"
 
 import type { Metadata } from 'next'
+import { cookies } from 'next/headers'
 import { auth } from '@/lib/auth'
-import { DocumentUpload } from '@/components/diagnostics/DocumentUpload'
 import { FileArea } from '@/components/point-a/FileArea'
 
 export const metadata: Metadata = { title: 'Точка А — Текущее состояние' }
@@ -10,12 +10,16 @@ export const metadata: Metadata = { title: 'Точка А — Текущее с�
 export default async function PointAPage() {
   const session = await auth()
 
+  // Resolve userId: staff via httpOnly cookie, clients via NextAuth session
+  const cookieStore = await cookies()
+  const staffUserId = cookieStore.get('aistart360_user_id')?.value ?? null
+  let clientId = staffUserId ?? session?.user?.id ?? null
+
   // Fetch data from Supabase REST API (bypasses RLS)
   let clientsCount = 0
   let avgScore = 0
   let domainScores: Array<{ id: string; label: string; score: number; max: number; icon: string }> = []
   let latestReports: Array<{ id: string; score: number; calculatedAt: string; clientName: string }> = []
-  let clientId = 'default-client-id'
 
   try {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
@@ -32,10 +36,10 @@ export default async function PointAPage() {
       clientsCount = profiles.length
     }
 
-    // Get user's latest diagnostic
+    // Get user's latest diagnostic (only for Supabase client users with UUID-style ID)
     const user = session?.user
     if (user?.id) {
-      clientId = user.id
+      if (!clientId) clientId = user.id
       const diagRes = await fetch(
         `${supabaseUrl}/rest/v1/diagnostics?user_id=eq.${user.id}&order=calculated_at.desc&limit=1`,
         { headers, cache: 'no-store' }
@@ -89,13 +93,6 @@ export default async function PointAPage() {
           Объективная оценка текущего состояния бизнеса.
           Загрузите документы для автоматического анализа ИИ-агентом.
         </p>
-      </section>
-
-      {/* AI Diagnostic Upload */}
-      <section className="animate-in fade-in slide-in-from-bottom-4 duration-500 delay-150">
-        <div className="bg-surface-container-low rounded-3xl border border-white/[0.04] p-1 overflow-hidden">
-          <DocumentUpload clientId={clientId} />
-        </div>
       </section>
 
       {/* Current State Overview */}
@@ -165,7 +162,7 @@ export default async function PointAPage() {
 
       {/* Interactive File Area */}
       <section className="animate-in fade-in slide-in-from-bottom-4 duration-500 delay-300">
-        <FileArea userId={clientId} />
+        <FileArea userId={clientId ?? ''} />
       </section>
 
       {/* Latest reports */}
