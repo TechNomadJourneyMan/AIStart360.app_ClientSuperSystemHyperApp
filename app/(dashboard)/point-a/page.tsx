@@ -5,6 +5,7 @@ import { cookies } from 'next/headers'
 import { auth } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
 import { FileArea } from '@/components/point-a/FileArea'
+import { SurveyOverview } from '@/components/point-a/SurveyOverview'
 
 export const metadata: Metadata = { title: 'Точка А — Текущее состояние' }
 
@@ -36,6 +37,8 @@ export default async function PointAPage() {
   let avgScore = 0
   let domainScores: Array<{ id: string; label: string; score: number; max: number; icon: string }> = []
   let latestReports: Array<{ id: string; score: number; calculatedAt: string; clientName: string }> = []
+  const surveyAnswers: Record<string, unknown> = {}
+  const surveyCompletedSteps: number[] = []
 
   try {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
@@ -93,6 +96,25 @@ export default async function PointAPage() {
         }
       }
     }
+    // Fetch survey answers for this user
+    if (clientId) {
+      const surveyRes = await fetch(
+        `${supabaseUrl}/rest/v1/survey_answers?user_id=eq.${clientId}&order=step.asc`,
+        { headers, cache: 'no-store' }
+      )
+      if (surveyRes.ok) {
+        const rows = await surveyRes.json()
+        if (Array.isArray(rows)) {
+          for (const row of rows) {
+            surveyAnswers[row.question_key] = row.answer?.value ?? row.answer
+            const step = parseInt(row.step, 10)
+            if (step && !surveyCompletedSteps.includes(step)) {
+              surveyCompletedSteps.push(step)
+            }
+          }
+        }
+      }
+    }
   } catch (err) {
     console.error('[point-a] Data fetch error:', err)
   }
@@ -130,6 +152,23 @@ export default async function PointAPage() {
             <p className={`text-[10px] font-mono uppercase tracking-tighter ${stat.good ? 'text-primary' : 'text-error'}`}>{stat.note}</p>
           </div>
         ))}
+      </section>
+
+      {/* Survey Data */}
+      <section>
+        <div className="flex justify-between items-end border-b border-outline-variant/10 pb-4 mb-4">
+          <div>
+            <h2 className="font-headline text-lg font-bold text-on-surface">Данные анкеты</h2>
+            <p className="text-xs text-on-surface-variant mt-1">Информация из бизнес-анкеты для AI-диагностики</p>
+          </div>
+          {Object.keys(surveyAnswers).length > 0 && (
+            <a href="/client/onboarding" className="text-xs text-primary/70 hover:text-primary transition-colors font-mono flex items-center gap-1">
+              <span className="material-symbols-outlined text-sm">edit</span>
+              Редактировать
+            </a>
+          )}
+        </div>
+        <SurveyOverview answers={surveyAnswers} completedSteps={surveyCompletedSteps} />
       </section>
 
       {/* Domain Diagnostics */}
