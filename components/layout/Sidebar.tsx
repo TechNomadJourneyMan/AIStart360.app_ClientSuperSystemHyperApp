@@ -147,38 +147,34 @@ export function Sidebar() {
           if (hasSubItems) {
             return (
               <div key={item.href}>
-                {/* Parent row: link + chevron toggle */}
-                <div className={`
-                  group flex items-center rounded-xl transition-all duration-150 relative
-                  ${active ? 'bg-primary/10' : 'hover:bg-white/[0.04]'}
-                `}>
+                {/* Parent row: toggle-only (no navigation — navigate via sub-items) */}
+                <button
+                  onClick={(e) => toggleSubMenu(item.href, e)}
+                  className={`
+                    group flex items-center rounded-xl transition-all duration-150 relative w-full
+                    ${active ? 'bg-primary/10' : 'hover:bg-white/[0.04]'}
+                  `}
+                >
                   {active && (
                     <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 bg-primary rounded-r-full pointer-events-none" />
                   )}
-                  <Link
-                    href={item.href}
-                    className={`flex items-center gap-3 px-3 py-2.5 flex-1 min-w-0 ${active ? 'text-primary' : 'text-[#6b7280] group-hover:text-[#c9d1d9]'}`}
-                  >
+                  <span className="flex items-center gap-3 px-3 py-2.5 flex-1 min-w-0">
                     <span
                       className={`material-symbols-outlined text-[20px] flex-shrink-0 transition-all duration-150 ${active ? 'text-primary' : 'text-[#6b7280] group-hover:text-[#c9d1d9]'}`}
                       style={active ? { fontVariationSettings: "'FILL' 0.7, 'wght' 400" } : undefined}
                     >
                       {item.icon}
                     </span>
-                    <span className={`text-sm truncate font-medium ${active ? 'text-primary' : ''}`}>
+                    <span className={`text-sm truncate font-medium ${active ? 'text-primary' : 'text-[#6b7280] group-hover:text-[#c9d1d9]'}`}>
                       {item.label}
                     </span>
-                  </Link>
-                  <button
-                    onClick={(e) => toggleSubMenu(item.href, e)}
-                    className={`pr-2.5 py-2.5 flex-shrink-0 transition-colors ${active ? 'text-primary/60' : 'text-[#6b7280]/60 hover:text-[#c9d1d9]'}`}
-                    aria-label="Раскрыть"
-                  >
+                  </span>
+                  <span className={`pr-2.5 flex-shrink-0 transition-colors ${active ? 'text-primary/60' : 'text-[#6b7280]/60 group-hover:text-[#c9d1d9]'}`}>
                     <span className={`material-symbols-outlined text-[16px] transition-transform duration-200 ${isSubOpen ? 'rotate-180' : ''}`}>
                       expand_more
                     </span>
-                  </button>
-                </div>
+                  </span>
+                </button>
 
                 {/* Sub-items */}
                 {isSubOpen && item.subItems!

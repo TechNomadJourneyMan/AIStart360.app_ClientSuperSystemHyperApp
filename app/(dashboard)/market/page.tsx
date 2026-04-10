@@ -1,6 +1,7 @@
 export const dynamic = "force-dynamic"
 
 import type { Metadata } from 'next'
+import Link from 'next/link'
 import { prisma } from '@/lib/db'
 import { auth } from '@/lib/auth'
 import { getDashboardData } from '@/lib/get-dashboard-data'
@@ -36,9 +37,18 @@ export default async function MarketPage() {
     <div className="space-y-8">
       {/* Header */}
       <section>
-        <p className="text-xs font-mono text-primary/70 uppercase tracking-[0.2em] mb-3">
-          Рыночная аналитика · Q1 2026
-        </p>
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-xs font-mono text-primary/70 uppercase tracking-[0.2em]">
+            Рыночная аналитика · Q1 2026
+          </p>
+          <Link
+            href="/dashboard"
+            className="flex items-center gap-1.5 text-xs font-mono text-on-surface-variant hover:text-primary border border-white/[0.06] hover:border-primary/30 bg-surface-container hover:bg-surface-container-high px-3 py-1.5 rounded-xl transition-all"
+          >
+            <span className="material-symbols-outlined text-sm">arrow_back</span>
+            Дашборд
+          </Link>
+        </div>
         <h1 className="font-headline text-3xl lg:text-4xl font-extrabold text-on-surface">
           Анализ{' '}
           <span className="text-gradient">Рынка</span>
