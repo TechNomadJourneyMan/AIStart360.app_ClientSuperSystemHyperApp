@@ -81,7 +81,9 @@ export async function testConnection(config: Bitrix24Config): Promise<{ ok: bool
 
 export async function fetchDeals(config: Bitrix24Config, limit = 50): Promise<CrmDeal[]> {
   const data = await callApi(config, 'crm.deal.list', {
-    select: ['ID', 'TITLE', 'OPPORTUNITY', 'CURRENCY_ID', 'STAGE_ID', 'DATE_CREATE', 'DATE_MODIFY', 'CONTACT_ID'],
+    select: ['ID', 'TITLE', 'OPPORTUNITY', 'CURRENCY_ID', 'STAGE_ID', 'STAGE_SEMANTIC_ID',
+             'DATE_CREATE', 'DATE_MODIFY', 'BEGINDATE', 'CLOSEDATE', 'CONTACT_ID',
+             'COMPANY_TITLE', 'COMMENTS', 'ASSIGNED_BY_ID', 'CATEGORY_ID'],
     order: { DATE_MODIFY: 'DESC' },
     start: 0,
   })
@@ -92,8 +94,12 @@ export async function fetchDeals(config: Bitrix24Config, limit = 50): Promise<Cr
     amount: parseFloat(d.OPPORTUNITY) || 0,
     currency: d.CURRENCY_ID || 'KZT',
     stage: d.STAGE_ID || 'NEW',
+    stageSemantic: d.STAGE_SEMANTIC_ID || '', // P=in progress, S=success, F=fail
     createdAt: d.DATE_CREATE,
     updatedAt: d.DATE_MODIFY,
+    closeDate: d.CLOSEDATE || null,
+    contactName: d.COMPANY_TITLE || undefined,
+    comment: d.COMMENTS || undefined,
   }))
 
   return deals

@@ -40,14 +40,79 @@ export async function GET() {
           ? await bitrix24.fetchDeals(config, 100)
           : await amocrm.fetchDeals(config, 100)
 
+        // Calculate portfolio-level stats for relative metrics
+        const totalDeals = deals.length
+        const avgAmount = totalDeals > 0 ? deals.reduce((s, d) => s + d.amount, 0) / totalDeals : 0
+        const wonDeals = deals.filter(d => d.stageSemantic === 'S' || d.stage === 'WON')
+        const lostDeals = deals.filter(d => d.stageSemantic === 'F' || d.stage === 'LOSE')
+        const winRate = totalDeals > 0 ? wonDeals.length / totalDeals : 0
+
         for (const deal of deals) {
           const stageInfo = STAGE_RISK[deal.stage] ?? { risk: 50, label: deal.stage }
-          const riskScore = stageInfo.risk
+          const now = Date.now()
+
+          // ── Real: days since last activity ──
+          const updatedMs = deal.updatedAt ? new Date(deal.updatedAt).getTime() : now
+          const createdMs = deal.createdAt ? new Date(deal.createdAt).getTime() : now
+          const daysSinceUpdate = Math.floor((now - updatedMs) / 86400000)
+          const dealAgeDays = Math.floor((now - createdMs) / 86400000)
+
+          // ── Real: risk score (multi-factor) ──
+          // Factor 1: Stage base risk (0-95)
+          let riskScore = stageInfo.risk
+          // Factor 2: Stale deal penalty (+1 per day without activity, max +20)
+          riskScore += Math.min(20, daysSinceUpdate * 1)
+          // Factor 3: Long deal penalty (+0.5 per day of age, max +15)
+          riskScore += Math.min(15, Math.round(dealAgeDays * 0.5))
+          // Factor 4: Below-average amount = slightly higher risk
+          if (deal.amount < avgAmount * 0.5 && deal.amount > 0) riskScore += 5
+          // Clamp 0-100
+          riskScore = Math.max(0, Math.min(100, riskScore))
+
           const health = 100 - riskScore
           const churnLevel = health < 40 ? 'high' as const : health < 60 ? 'medium' as const : 'low' as const
-          const daysSince = deal.updatedAt
-            ? Math.floor((Date.now() - new Date(deal.updatedAt).getTime()) / 86400000)
-            : null
+
+          // ── Real: volume change (deal amount vs portfolio average) ──
+          const volumeChange = avgAmount > 0
+            ? Math.round(((deal.amount - avgAmount) / avgAmount) * 100)
+            : 0
+
+          // ── Real: churn probability (based on risk + stage semantic) ──
+          let churnProb = riskScore
+          if (deal.stageSemantic === 'F') churnProb = 95
+          else if (deal.stageSemantic === 'S') churnProb = 2
+          else if (daysSinceUpdate > 7) churnProb = Math.min(90, churnProb + 10)
+          churnProb = Math.max(0, Math.min(100, churnProb))
+
+          // ── Real: sparkline from deal lifecycle ──
+          // Show deal health trajectory: creation → stages → current
+          const lifespanDays = Math.max(1, dealAgeDays)
+          const progressPct = deal.stageSemantic === 'S' ? 100
+            : deal.stageSemantic === 'F' ? 10
+            : Math.min(90, Math.round((1 - stageInfo.risk / 100) * 90))
+          const history = [
+            20, // start: deal created
+            Math.round(progressPct * 0.3),
+            Math.round(progressPct * 0.6),
+            Math.round(progressPct * 0.85),
+            progressPct, // current state
+          ]
+
+          // ── Real: contextual comment ──
+          let comment: string | null = null
+          if (deal.stageSemantic === 'S') comment = 'Сделка успешно закрыта'
+          else if (deal.stageSemantic === 'F') comment = 'Сделка потеряна'
+          else if (daysSinceUpdate > 14) comment = `Нет активности ${daysSinceUpdate} дней`
+          else if (daysSinceUpdate > 7) comment = 'Требует внимания — давно без движения'
+          else if (deal.amount > avgAmount * 2) comment = 'Крупная сделка — приоритет'
+          else if (dealAgeDays > 30 && deal.stageSemantic === 'P') comment = 'Долгий цикл — ускорить'
+
+          // ── Real: action based on multiple factors ──
+          let action: 'call' | 'message' | 'monitor' = 'monitor'
+          if (deal.stageSemantic === 'F') action = 'call' // try to win back
+          else if (daysSinceUpdate > 7) action = 'call'   // re-engage
+          else if (riskScore > 60) action = 'call'
+          else if (riskScore > 35) action = 'message'
 
           crmClients.push({
             id: `crm-${deal.id}`,
@@ -57,22 +122,16 @@ export async function GET() {
             lastOrder: deal.updatedAt
               ? new Date(deal.updatedAt).toLocaleDateString('ru-RU', { month: 'short', day: 'numeric' })
               : null,
-            daysSince,
+            daysSince: daysSinceUpdate,
             avgCheck: deal.amount || 0,
-            volumeChange: deal.stage === 'WON' ? 15 : deal.stage === 'LOSE' ? -30 : 0,
+            volumeChange,
             riskScore,
-            churnProb: Math.max(0, Math.min(100, riskScore + Math.floor(Math.random() * 10 - 5))),
+            churnProb,
             churnLevel,
-            comment: deal.stage === 'WON' ? 'Сделка закрыта' : deal.stage === 'LOSE' ? 'Клиент потерян' : null,
-            action: health < 50 ? 'call' : health < 70 ? 'message' : 'monitor',
-            orderCycle: daysSince ?? 30,
-            history: [
-              Math.round(Math.random() * 40 + 30),
-              Math.round(Math.random() * 40 + 30),
-              Math.round(Math.random() * 40 + 30),
-              Math.round(health * 0.8),
-              Math.round(health),
-            ],
+            comment,
+            action,
+            orderCycle: Math.max(1, dealAgeDays),
+            history,
           })
         }
       }

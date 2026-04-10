@@ -8,11 +8,14 @@ export interface CrmDeal {
   amount: number
   currency: string
   stage: string
+  stageSemantic?: string  // P=in progress, S=success, F=fail
   createdAt: string
   updatedAt: string
+  closeDate?: string | null
   contactName?: string
   contactEmail?: string
   contactPhone?: string
+  comment?: string
 }
 
 export interface CrmContact {
