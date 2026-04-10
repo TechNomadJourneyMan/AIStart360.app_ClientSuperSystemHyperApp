@@ -86,9 +86,14 @@ export function Sidebar() {
   }
 
   function closePremiumModal() {
+    // If on a locked page, go back to dashboard
+    const current = premiumItem
     setPremiumItem(null)
     setPromoCode('')
     setPromoError('')
+    if (current && PREMIUM_LOCKED.some(p => pathname === p || pathname.startsWith(p + '/'))) {
+      router.push('/dashboard')
+    }
   }
 
   const toggleSubMenu = (href: string, e: React.MouseEvent) => {
@@ -218,7 +223,7 @@ export function Sidebar() {
               <button
                 key={item.href}
                 title={sidebarCollapsed ? `${item.label} — Pro тариф` : undefined}
-                onClick={() => setPremiumItem(lockedKey)}
+                onClick={() => { router.push(lockedKey); setPremiumItem(lockedKey) }}
                 className={`
                   relative flex items-center rounded-xl cursor-pointer select-none w-full
                   hover:bg-amber-500/5 transition-colors duration-150
@@ -415,7 +420,7 @@ export function Sidebar() {
     {premiumItem && (
       <>
         <div
-          className="fixed inset-0 z-[100] bg-black/70 backdrop-blur-sm"
+          className="fixed inset-0 z-[100] bg-black/50 backdrop-blur-md"
           onClick={closePremiumModal}
         />
         <div className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-[101] w-[340px] rounded-3xl bg-[#13151c] border border-amber-500/20 shadow-2xl overflow-hidden">
