@@ -10,10 +10,11 @@ export const metadata: Metadata = { title: 'Точка А — Текущее с�
 export default async function PointAPage() {
   const session = await auth()
 
-  // Resolve userId: staff via httpOnly cookie, clients via NextAuth session
+  // Resolve userId: staff via httpOnly cookie, role cookie fallback, then NextAuth session
   const cookieStore = await cookies()
   const staffUserId = cookieStore.get('aistart360_user_id')?.value ?? null
-  let clientId = staffUserId ?? session?.user?.id ?? null
+  const staffRole = cookieStore.get('aistart360_role')?.value ?? null
+  let clientId = staffUserId ?? session?.user?.id ?? (staffRole ? `giga-${staffRole}` : null)
 
   // Fetch data from Supabase REST API (bypasses RLS)
   let clientsCount = 0

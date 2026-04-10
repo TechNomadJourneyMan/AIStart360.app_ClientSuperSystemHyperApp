@@ -80,10 +80,29 @@ export function FileArea({ userId: userIdProp }: FileAreaProps) {
   const [error, setError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  // If userId not passed from server (e.g. GigaAccessGuard login), fetch it client-side
+  // If userId not passed from server (e.g. GigaAccessGuard login), resolve client-side
   useEffect(() => {
     if (!userIdProp) {
-      fetch('/api/v1/me')
+      // 1. Try reading role cookie directly from document.cookie (non-httpOnly)
+      const roleCookie = document.cookie
+        .split('; ')
+        .find(c => c.startsWith('aistart360_role='))
+        ?.split('=')[1]
+      if (roleCookie) {
+        setResolvedUserId(`giga-${roleCookie}`)
+        return
+      }
+      // 2. Try reading user_id cookie (might be non-httpOnly in some flows)
+      const uidCookie = document.cookie
+        .split('; ')
+        .find(c => c.startsWith('aistart360_user_id='))
+        ?.split('=')[1]
+      if (uidCookie) {
+        setResolvedUserId(uidCookie)
+        return
+      }
+      // 3. Fallback: API call
+      fetch('/api/v1/me', { credentials: 'include' })
         .then(r => r.json())
         .then(d => { if (d.userId) setResolvedUserId(d.userId) })
         .catch(() => {})
