@@ -32,7 +32,7 @@ export default async function PointAPage() {
   let clientId = staffUserId ?? supabaseUserId ?? session?.user?.id ?? (staffRole ? `giga-${staffRole}` : null)
 
   // Fetch data from Supabase REST API (bypasses RLS)
-  let clientsCount = 0
+  let docsCount = 0
   let avgScore = 0
   let domainScores: Array<{ id: string; label: string; score: number; max: number; icon: string }> = []
   let latestReports: Array<{ id: string; score: number; calculatedAt: string; clientName: string }> = []
@@ -42,17 +42,19 @@ export default async function PointAPage() {
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
     const headers = { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` }
 
-    // Count approved clients
-    const countRes = await fetch(
-      `${supabaseUrl}/rest/v1/profiles?role=eq.client&status=eq.approved&select=id`,
-      { headers, cache: 'no-store' }
-    )
-    if (countRes.ok) {
-      const profiles = await countRes.json()
-      clientsCount = profiles.length
+    // Count user's uploaded documents
+    if (clientId) {
+      const docsRes = await fetch(
+        `${supabaseUrl}/rest/v1/documents?user_id=eq.${clientId}&select=id`,
+        { headers, cache: 'no-store' }
+      )
+      if (docsRes.ok) {
+        const docs = await docsRes.json()
+        docsCount = Array.isArray(docs) ? docs.length : 0
+      }
     }
 
-    // Get user's latest diagnostic (only for Supabase client users with UUID-style ID)
+    // Get user's latest diagnostic
     const user = session?.user
     if (user?.id) {
       if (!clientId) clientId = user.id
@@ -115,8 +117,8 @@ export default async function PointAPage() {
       <section className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
           { label: 'Общий балл', value: String(avgScore), icon: 'radar', good: avgScore >= 50, note: avgScore ? 'из 100' : 'нет данных' },
-          { label: 'Клиенты', value: String(clientsCount), icon: 'groups', good: true, note: 'на платформе' },
-          { label: 'Блоков', value: String(domainScores.length || 5), icon: 'description', good: true, note: 'направлений' },
+          { label: 'Документы', value: String(docsCount), icon: 'description', good: docsCount > 0, note: docsCount > 0 ? 'загружено' : 'нет файлов' },
+          { label: 'Блоков', value: String(domainScores.length || 5), icon: 'category', good: true, note: 'направлений' },
           { label: 'Health', value: avgScore >= 70 ? 'High' : avgScore >= 40 ? 'Medium' : avgScore > 0 ? 'Low' : '—', icon: 'favorite', good: avgScore >= 40, note: avgScore > 0 ? 'по диагностике' : 'нет данных' },
         ].map((stat) => (
           <div key={stat.label} className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-5 hover:border-primary/10 transition-colors">
