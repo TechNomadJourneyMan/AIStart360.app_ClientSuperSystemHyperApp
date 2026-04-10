@@ -15,29 +15,56 @@ interface Bitrix24Config {
   webhookUrl?: string  // e.g. "https://mycompany.bitrix24.kz/rest/1/abc123/"
 }
 
+/** Strip protocol and trailing slashes from domain input */
+function normalizeDomain(raw: string): string {
+  return raw
+    .replace(/^https?:\/\//, '')
+    .replace(/\/+$/, '')
+}
+
 function buildUrl(config: Bitrix24Config, method: string): string {
   if (config.webhookUrl) {
     // Webhook mode: https://domain/rest/USER_ID/SECRET/method.json
     return `${config.webhookUrl.replace(/\/$/, '')}/${method}.json`
   }
-  // OAuth mode
-  return `https://${config.domain}/rest/${method}.json?auth=${config.accessToken}`
+  // OAuth mode — normalize domain to prevent https://https:// double prefix
+  const domain = normalizeDomain(config.domain)
+  return `https://${domain}/rest/${method}.json?auth=${config.accessToken}`
 }
 
 async function callApi(config: Bitrix24Config, method: string, params?: Record<string, unknown>) {
   const url = buildUrl(config, method)
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: params ? JSON.stringify(params) : undefined,
-  })
 
-  if (!res.ok) {
-    const text = await res.text()
-    throw new Error(`Bitrix24 API error (${res.status}): ${text}`)
+  // 15-second timeout to avoid hanging
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 15000)
+
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: params ? JSON.stringify(params) : undefined,
+      signal: controller.signal,
+    })
+
+    if (!res.ok) {
+      const text = await res.text()
+      throw new Error(`Bitrix24 API (${res.status}): ${text.slice(0, 200)}`)
+    }
+
+    return res.json()
+  } catch (e) {
+    const err = e as Error
+    if (err.name === 'AbortError') {
+      throw new Error('Таймаут подключения — сервер Bitrix24 не отвечает')
+    }
+    if (err.message === 'fetch failed') {
+      throw new Error('Не удалось подключиться к серверу Bitrix24. Проверьте домен и доступность.')
+    }
+    throw err
+  } finally {
+    clearTimeout(timeout)
   }
-
-  return res.json()
 }
 
 export async function testConnection(config: Bitrix24Config): Promise<{ ok: boolean; error?: string }> {

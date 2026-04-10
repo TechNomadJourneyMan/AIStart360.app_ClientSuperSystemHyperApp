@@ -13,23 +13,47 @@ interface AmoCrmConfig {
   accessToken: string  // API key or OAuth access token
 }
 
+/** Strip protocol and trailing slashes from domain input */
+function normalizeDomain(raw: string): string {
+  return raw.replace(/^https?:\/\//, '').replace(/\/+$/, '')
+}
+
 async function callApi(config: AmoCrmConfig, path: string, params?: Record<string, unknown>) {
-  const url = `https://${config.domain}/api/v4/${path}`
-  const res = await fetch(url, {
-    method: params ? 'POST' : 'GET',
-    headers: {
-      'Authorization': `Bearer ${config.accessToken}`,
-      'Content-Type': 'application/json',
-    },
-    body: params ? JSON.stringify(params) : undefined,
-  })
+  const domain = normalizeDomain(config.domain)
+  const url = `https://${domain}/api/v4/${path}`
 
-  if (!res.ok) {
-    const text = await res.text()
-    throw new Error(`AmoCRM API error (${res.status}): ${text}`)
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 15000)
+
+  try {
+    const res = await fetch(url, {
+      method: params ? 'POST' : 'GET',
+      headers: {
+        'Authorization': `Bearer ${config.accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: params ? JSON.stringify(params) : undefined,
+      signal: controller.signal,
+    })
+
+    if (!res.ok) {
+      const text = await res.text()
+      throw new Error(`AmoCRM API (${res.status}): ${text.slice(0, 200)}`)
+    }
+
+    return res.json()
+  } catch (e) {
+    const err = e as Error
+    if (err.name === 'AbortError') {
+      throw new Error('Таймаут подключения — сервер AmoCRM не отвечает')
+    }
+    if (err.message === 'fetch failed') {
+      throw new Error('Не удалось подключиться к серверу AmoCRM. Проверьте домен и доступность.')
+    }
+    throw err
+  } finally {
+    clearTimeout(timeout)
   }
-
-  return res.json()
 }
 
 export async function testConnection(config: AmoCrmConfig): Promise<{ ok: boolean; error?: string }> {
