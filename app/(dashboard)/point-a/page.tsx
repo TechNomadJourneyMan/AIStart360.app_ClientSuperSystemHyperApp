@@ -3,6 +3,7 @@ export const dynamic = "force-dynamic"
 import type { Metadata } from 'next'
 import { auth } from '@/lib/auth'
 import { DocumentUpload } from '@/components/diagnostics/DocumentUpload'
+import { FileArea } from '@/components/point-a/FileArea'
 
 export const metadata: Metadata = { title: 'Точка А — Текущее состояние' }
 
@@ -161,6 +162,11 @@ export default async function PointAPage() {
           </div>
         </section>
       )}
+
+      {/* Interactive File Area */}
+      <section className="animate-in fade-in slide-in-from-bottom-4 duration-500 delay-300">
+        <FileArea userId={clientId} />
+      </section>
 
       {/* Latest reports */}
       <section>

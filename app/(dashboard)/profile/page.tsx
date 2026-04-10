@@ -1,71 +1,78 @@
 export const dynamic = 'force-dynamic'
 
 import type { Metadata } from 'next'
-import { createServerClient } from '@/lib/supabase-server'
+import { cookies } from 'next/headers'
+import { prisma } from '@/lib/db'
 
 export const metadata: Metadata = { title: 'Профиль' }
 
 export default async function ProfilePage() {
-  const sb = createServerClient()
+  const cookieStore = await cookies()
+  const userId = cookieStore.get('aistart360_user_id')?.value ?? null
 
-  // Get current user
-  const { data: { user } } = await sb.auth.getUser()
+  let user: {
+    id: string
+    name: string | null
+    email: string
+    role: string
+    createdAt: Date
+    lastLogin: Date | null
+    org: { name: string } | null
+  } | null = null
 
-  let profile: Record<string, unknown> | null = null
-  let company: Record<string, unknown> | null = null
-  let diagCount = 0
-  let surveySteps = 0
-
-  if (user?.id) {
-    // Fetch via REST to bypass RLS
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    const headers = { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` }
-
-    try {
-      const [profileRes, companyRes, diagRes, surveyRes] = await Promise.all([
-        fetch(`${supabaseUrl}/rest/v1/profiles?id=eq.${user.id}&select=*&limit=1`, { headers, cache: 'no-store' }),
-        fetch(`${supabaseUrl}/rest/v1/companies?user_id=eq.${user.id}&select=*&limit=1`, { headers, cache: 'no-store' }),
-        fetch(`${supabaseUrl}/rest/v1/diagnostics?user_id=eq.${user.id}&select=id`, { headers, cache: 'no-store' }),
-        fetch(`${supabaseUrl}/rest/v1/survey_answers?user_id=eq.${user.id}&select=step`, { headers, cache: 'no-store' }),
-      ])
-
-      if (profileRes.ok) {
-        const rows = await profileRes.json()
-        profile = rows[0] ?? null
-      }
-      if (companyRes.ok) {
-        const rows = await companyRes.json()
-        company = rows[0] ?? null
-      }
-      if (diagRes.ok) {
-        const rows = await diagRes.json()
-        diagCount = rows.length
-      }
-      if (surveyRes.ok) {
-        const rows = await surveyRes.json() as Array<{ step: number }>
-        surveySteps = new Set(rows.map(r => r.step)).size
-      }
-    } catch {}
+  if (userId) {
+    user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        createdAt: true,
+        lastLogin: true,
+        org: { select: { name: true } },
+      },
+    }).catch(() => null)
   }
 
-  const name = (profile?.full_name as string) ?? user?.email ?? 'Пользователь'
-  const email = (profile?.email as string) ?? user?.email ?? '—'
-  const role = ((profile?.role as string) ?? 'client').toUpperCase()
-  const status = (profile?.status as string) ?? 'active'
-  const org = (company?.name as string) ?? (profile?.organization as string) ?? '—'
-  const industry = (company?.industry as string) ?? null
-  const initials = name.split(/\s+/).slice(0, 2).map(w => w[0] ?? '').join('').toUpperCase() || '?'
-  const createdAt = profile?.created_at ? new Date(profile.created_at as string).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' }) : '—'
+  const name = user?.name ?? user?.email ?? 'Пользователь'
+  const email = user?.email ?? '—'
+  const org = user?.org?.name ?? '—'
+  const rawRole = user?.role ?? 'MANAGER'
 
-  const statusLabel = status === 'approved' ? 'Активен' : status === 'blocked' ? 'Заблокирован' : 'Ожидает'
-  const statusColor = status === 'approved' ? 'text-primary' : status === 'blocked' ? 'text-error' : 'text-amber-400'
-  const statusDot = status === 'approved' ? 'bg-primary' : status === 'blocked' ? 'bg-error' : 'bg-amber-400'
+  // Map Prisma role → display label
+  const roleLabel =
+    rawRole === 'SUPER_ADMIN' ? 'Владелец' :
+    rawRole === 'ADMIN' ? 'Администратор' :
+    rawRole === 'MANAGER' ? 'Менеджер' :
+    rawRole === 'ANALYST' ? 'Аналитик' : 'Пользователь'
+
+  const initials = name
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((w) => w[0] ?? '')
+    .join('')
+    .toUpperCase() || '??'
+
+  const createdAt = user?.createdAt
+    ? new Date(user.createdAt).toLocaleDateString('ru-RU', {
+        day: 'numeric', month: 'long', year: 'numeric',
+      })
+    : '—'
+
+  const lastLogin = user?.lastLogin
+    ? new Date(user.lastLogin).toLocaleDateString('ru-RU', {
+        day: 'numeric', month: 'short', year: 'numeric',
+      })
+    : 'Никогда'
 
   return (
     <div className="space-y-8 max-w-4xl">
+      {/* Header */}
       <section>
-        <p className="text-xs font-mono text-primary/70 uppercase tracking-[0.2em] mb-3">Личный кабинет</p>
+        <p className="text-xs font-mono text-primary/70 uppercase tracking-[0.2em] mb-3">
+          Личный кабинет
+        </p>
         <h1 className="font-headline text-3xl font-extrabold text-on-surface">Профиль</h1>
       </section>
 
@@ -76,78 +83,82 @@ export default async function ProfilePage() {
             <span className="text-2xl font-headline font-bold text-primary">{initials}</span>
           </div>
           <h2 className="font-headline text-lg font-bold text-on-surface">{name}</h2>
-          <p className="text-xs font-mono text-on-surface-variant mt-1 uppercase tracking-wider">{role}</p>
+          <p className="text-xs font-mono text-on-surface-variant mt-1 uppercase tracking-wider">
+            {roleLabel}
+          </p>
           <div className="flex items-center gap-2 mt-3">
-            <span className={`w-2 h-2 rounded-full ${statusDot} animate-pulse`} />
-            <span className={`text-xs font-mono ${statusColor}`}>{statusLabel}</span>
+            <span className="w-2 h-2 rounded-full bg-primary animate-pulse" />
+            <span className="text-xs font-mono text-primary">Активен</span>
           </div>
 
-          <div className="w-full mt-6 pt-6 border-t border-white/[0.04] space-y-3">
+          <div className="w-full mt-6 pt-6 border-t border-white/[0.04] space-y-3 text-left">
             <div className="flex items-center gap-3">
-              <span className="material-symbols-outlined text-base text-on-surface-variant">mail</span>
-              <span className="text-xs text-on-surface-variant">{email}</span>
+              <span className="material-symbols-outlined text-base text-on-surface-variant flex-shrink-0">mail</span>
+              <span className="text-xs text-on-surface-variant break-all">{email}</span>
             </div>
             <div className="flex items-center gap-3">
-              <span className="material-symbols-outlined text-base text-on-surface-variant">business</span>
+              <span className="material-symbols-outlined text-base text-on-surface-variant flex-shrink-0">business</span>
               <span className="text-xs text-on-surface-variant">{org}</span>
             </div>
-            {industry && (
-              <div className="flex items-center gap-3">
-                <span className="material-symbols-outlined text-base text-on-surface-variant">category</span>
-                <span className="text-xs text-on-surface-variant">{industry}</span>
-              </div>
-            )}
             <div className="flex items-center gap-3">
-              <span className="material-symbols-outlined text-base text-on-surface-variant">calendar_today</span>
+              <span className="material-symbols-outlined text-base text-on-surface-variant flex-shrink-0">calendar_today</span>
               <span className="text-xs text-on-surface-variant">Регистрация: {createdAt}</span>
             </div>
           </div>
         </div>
 
-        {/* Stats */}
+        {/* Account Info */}
         <div className="lg:col-span-2 space-y-4">
-          <div className="grid grid-cols-3 gap-3">
-            {[
-              { label: 'Диагностик', value: String(diagCount), icon: 'analytics' },
-              { label: 'Анкета', value: `${surveySteps}/6 шагов`, icon: 'assignment' },
-              { label: 'Роль', value: role, icon: 'badge' },
-            ].map(stat => (
-              <div key={stat.label} className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-4 text-center">
-                <span className="material-symbols-outlined text-xl text-primary/50 mb-2 block">{stat.icon}</span>
-                <p className="text-xl font-mono font-bold text-on-surface">{stat.value}</p>
-                <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest mt-1">{stat.label}</p>
-              </div>
-            ))}
+          <div className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-6">
+            <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest mb-4">
+              Информация об аккаунте
+            </p>
+            <div className="space-y-3">
+              {[
+                { label: 'Email',            value: email },
+                { label: 'Роль',             value: roleLabel },
+                { label: 'Статус',           value: 'Активен', highlight: true },
+                { label: 'Компания',         value: org },
+                { label: 'Дата регистрации', value: createdAt },
+                { label: 'Последний вход',   value: lastLogin },
+              ].map((f) => (
+                <div key={f.label} className="flex justify-between text-xs py-1 border-b border-white/[0.03] last:border-0">
+                  <span className="text-on-surface-variant">{f.label}</span>
+                  <span className={`font-mono ${f.highlight ? 'text-primary' : 'text-on-surface'}`}>
+                    {f.value}
+                  </span>
+                </div>
+              ))}
+            </div>
           </div>
 
-          {/* Account Info */}
+          {/* Quick Actions */}
           <div className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-6">
-            <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest mb-4">Информация об аккаунте</p>
-            <div className="space-y-3">
-              <div className="flex justify-between text-xs">
-                <span className="text-on-surface-variant">Email</span>
-                <span className="font-mono text-on-surface">{email}</span>
-              </div>
-              <div className="flex justify-between text-xs">
-                <span className="text-on-surface-variant">Роль</span>
-                <span className="font-mono text-on-surface">{role}</span>
-              </div>
-              <div className="flex justify-between text-xs">
-                <span className="text-on-surface-variant">Статус</span>
-                <span className={`font-mono ${statusColor}`}>{statusLabel}</span>
-              </div>
-              <div className="flex justify-between text-xs">
-                <span className="text-on-surface-variant">Компания</span>
-                <span className="font-mono text-on-surface">{org}</span>
-              </div>
-              <div className="flex justify-between text-xs">
-                <span className="text-on-surface-variant">Дата регистрации</span>
-                <span className="font-mono text-on-surface">{createdAt}</span>
-              </div>
-              <div className="flex justify-between text-xs">
-                <span className="text-on-surface-variant">User ID</span>
-                <span className="font-mono text-on-surface/50 text-[10px]">{user?.id?.slice(0, 8)}...</span>
-              </div>
+            <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest mb-4">
+              Безопасность
+            </p>
+            <div className="space-y-2">
+              {[
+                { label: '2FA',    value: 'Не настроена',  action: 'Включить',    danger: false },
+                { label: 'Пароль', value: 'Изменить пароль', action: 'Изменить',  danger: false },
+                { label: 'Сессии', value: '1 активная',    action: 'Завершить все', danger: true },
+              ].map((item) => (
+                <div key={item.label} className="flex items-center justify-between py-2">
+                  <div>
+                    <p className="text-xs text-on-surface">{item.label}</p>
+                    <p className="text-[10px] text-on-surface-variant">{item.value}</p>
+                  </div>
+                  <button
+                    className={`text-[10px] font-mono px-3 py-1.5 rounded-lg border transition-colors ${
+                      item.danger
+                        ? 'text-error border-error/20 hover:bg-error/10'
+                        : 'text-primary border-primary/20 hover:bg-primary/10'
+                    }`}
+                  >
+                    {item.action}
+                  </button>
+                </div>
+              ))}
             </div>
           </div>
         </div>

@@ -8,11 +8,13 @@ import { GoalsBar } from '@/components/dashboard/GoalsBar'
 import { WidgetGrid } from '@/components/dashboard/WidgetGrid'
 import { createServerClient } from '@/lib/supabase-server'
 import { AlertCard } from '@/components/dashboard/AlertCard'
-import { ActivityFeed } from '@/components/dashboard/ActivityFeed'
-import type { Alert, ActivityItem } from '@/types'
+import { CrmActivity } from '@/components/dashboard/CrmActivity'
+import type { CrmRequest, CrmClient } from '@/components/dashboard/CrmActivity'
+import type { Alert } from '@/types'
 import type { AlertCardProps } from '@/components/dashboard/AlertCard'
 import { PointARadarWidget } from '@/components/dashboard/PointARadarWidget'
 import type { PointA, BlockScore } from '@/types/onboarding'
+import { prisma } from '@/lib/db'
 
 export const metadata: Metadata = { title: 'Дэшборд' }
 
@@ -40,7 +42,6 @@ interface DashboardData {
   active:   number
   pending:  number
   griDist:  GriDist
-  activity: ActivityItem[]
   alerts:   Alert[]
   companies: { id: string; name: string }[]
 }
@@ -81,18 +82,6 @@ async function getDashboardExtendedData(): Promise<DashboardData | null> {
       .select('id, name')
       .limit(10)
 
-    // Activity from recent profiles
-    const recentUsers = users.slice(0, 6)
-    const activity: ActivityItem[] = recentUsers.map(u => ({
-      id: u.id,
-      actor: u.full_name || u.email || 'Клиент',
-      actorRole: (u.role ?? 'client').toLowerCase(),
-      event: 'Активность в системе',
-      gri: 0,
-      status: u.status === 'approved' ? 'active' : 'inactive',
-      time: 'недавно',
-    }))
-
     // Alerts
     const alerts: Alert[] = []
     if (pending > 0) {
@@ -106,7 +95,7 @@ async function getDashboardExtendedData(): Promise<DashboardData | null> {
       })
     }
 
-    return { total, active, pending, griDist, activity, alerts, companies: (companies ?? []) as { id: string; name: string }[] }
+    return { total, active, pending, griDist, alerts, companies: (companies ?? []) as { id: string; name: string }[] }
   } catch (e) {
     console.error('[Dashboard] data fetch error:', e)
     return null
@@ -376,11 +365,45 @@ export default async function DashboardPage() {
     }
   }
 
-  const data = await getDashboardExtendedData()
+  const [data, crmRequests, crmClients] = await Promise.all([
+    getDashboardExtendedData(),
+    prisma.adminRequest.findMany({
+      take: 6,
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true, type: true, status: true, priority: true, createdAt: true,
+        company: { select: { name: true } },
+      },
+    }).catch(() => []),
+    prisma.client.findMany({
+      take: 5,
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, name: true, industry: true, stage: true, status: true },
+    }).catch(() => []),
+  ])
+
   const kpi = buildKpi(data)
   const alerts = data?.alerts ?? []
-  const activity = data?.activity ?? []
   const griDistRows = buildGriDistRows(data?.griDist ?? { excellent: 0, strong: 0, developing: 0, critical: 0, total: 0 })
+
+  const crmReqMapped: CrmRequest[] = crmRequests.map((r) => ({
+    id: r.id,
+    type: r.type,
+    status: r.status,
+    priority: r.priority,
+    companyName: r.company?.name ?? null,
+    createdAt: r.createdAt.toISOString(),
+  }))
+
+  const crmClientsMapped: CrmClient[] = crmClients.map((c) => ({
+    id: c.id,
+    name: c.name,
+    industry: c.industry,
+    stage: c.stage,
+    status: c.status,
+  }))
+
+  const crmPending = crmRequests.filter(r => r.status === 'new' || r.status === 'in_review').length
 
   const griDomains = [
     { label: 'Продукт и спрос',           score: 4.7 },
@@ -473,9 +496,9 @@ export default async function DashboardPage() {
                 )}
               </section>
 
-              <WidgetGrid 
+              <WidgetGrid
                 alerts={alerts as AlertCardProps[]}
-                activity={activity}
+                activity={[]}
                 gri={[]}
                 metrics={[]}
                 criticalCount={alerts.filter(a => a.severity === 'critical').length}
@@ -483,7 +506,11 @@ export default async function DashboardPage() {
           </div>
 
           <aside className="space-y-6">
-              <ActivityFeed items={activity} />
+              <CrmActivity
+                requests={crmReqMapped}
+                clients={crmClientsMapped}
+                pendingCount={crmPending}
+              />
 
               {/* GRI Portfolio Health */}
               <div className="bg-surface-container-low border border-white/[0.04] rounded-2xl p-5">
