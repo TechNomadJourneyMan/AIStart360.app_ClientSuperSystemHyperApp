@@ -28,7 +28,7 @@ export function usePulse() {
     queryFn: async () => {
       const res = await fetch('/api/pulse')
       if (!res.ok) throw new Error('Failed to fetch pulse data')
-      return res.json() as Promise<{ stats: any, todayClients: any[] }>
+      return res.json() as Promise<{ stats: any, todayClients: any[], aiBriefing?: string | null }>
     },
   })
 }
