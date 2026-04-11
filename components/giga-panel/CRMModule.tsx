@@ -639,7 +639,7 @@ export function CRMModule() {
                   </div>
                   <div className="flex items-center gap-3 text-[10px] text-slate-600">
                     <span className="bg-white/[0.05] px-1.5 py-0.5 rounded text-slate-400">{user.role}</span>
-                    {user.organization && <span className="truncate">{user.organization}</span>}
+                    {user.org && <span className="truncate">{user.org}</span>}
                   </div>
                 </div>
             ))}
