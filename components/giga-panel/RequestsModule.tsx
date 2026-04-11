@@ -188,7 +188,7 @@ function RequestCard({
 
       {/* Actions (only for pending) */}
       {isPending && (
-        <div className="px-4 pb-4 flex items-center gap-2">
+        <div className="px-3 md:px-4 pb-3 md:pb-4 flex flex-wrap items-center gap-1.5 md:gap-2">
           <motion.button
             onClick={() => onApprove(request.id)}
             whileHover={{ scale: 1.03 }}
@@ -333,7 +333,7 @@ export function RequestsModule() {
       </div>
 
       {/* Tabs */}
-      <div className="flex items-center gap-1 p-1 rounded-xl bg-white/[0.04] border border-white/[0.07] w-fit mb-6">
+      <div className="flex items-center gap-1 p-1 rounded-xl bg-white/[0.04] border border-white/[0.07] w-full md:w-fit mb-6 overflow-x-auto">
         {TABS.map((tab) => {
           const isActive = activeRequestTab === tab.id
           return (

@@ -555,9 +555,9 @@ export function CRMModule() {
       </div>
 
       {/* Controls */}
-      <div className="flex items-center gap-3 mb-5">
+      <div className="flex flex-col md:flex-row md:items-center gap-3 mb-5">
         {/* Search */}
-        <div className="relative flex-1 max-w-xs">
+        <div className="relative flex-1 md:max-w-xs">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-600" />
           <input
             type="text"
@@ -622,7 +622,33 @@ export function CRMModule() {
             <p className="text-sm text-slate-600">Пользователи не найдены</p>
           </div>
         ) : (
-          <table className="w-full">
+          <>
+          {/* Mobile card view */}
+          <div className="md:hidden divide-y divide-white/[0.05]">
+            {filtered.map((user) => {
+              const st = STATUS_MAP[user.status] || STATUS_MAP.active
+              return (
+                <div key={user.id} className="p-3 space-y-2">
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center flex-shrink-0">
+                      <User size={16} className="text-blue-400" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-slate-200 truncate">{user.name}</p>
+                      <p className="text-[11px] text-slate-500 truncate">{user.email}</p>
+                    </div>
+                    <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${st.cls}`}>{st.label}</span>
+                  </div>
+                  <div className="flex items-center gap-3 text-[10px] text-slate-600">
+                    <span className="bg-white/[0.05] px-1.5 py-0.5 rounded text-slate-400">{user.role}</span>
+                    {user.organization && <span className="truncate">{user.organization}</span>}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+          {/* Desktop table */}
+          <table className="w-full hidden md:table">
             <thead>
               <tr className="border-b border-white/[0.07]">
                 <th className="py-3 pl-4 pr-3 text-left">
@@ -670,6 +696,7 @@ export function CRMModule() {
               </AnimatePresence>
             </tbody>
           </table>
+          </>
         )}
       </div>
 

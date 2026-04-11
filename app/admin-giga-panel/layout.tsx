@@ -1,13 +1,11 @@
-import type { Metadata } from 'next'
+'use client'
+
+import { useState } from 'react'
 import { GigaSidebar } from '@/components/giga-panel/GigaSidebar'
 
-export const metadata: Metadata = {
-  title: 'ГИГА-Панель | Super Admin',
-  description: 'Изолированная система управления — только для SUPER_ADMIN',
-  robots: 'noindex, nofollow',
-}
-
 export default function GigaPanelLayout({ children }: { children: React.ReactNode }) {
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+
   return (
     <div
       className="min-h-screen text-slate-100"
@@ -26,12 +24,23 @@ export default function GigaPanelLayout({ children }: { children: React.ReactNod
         }}
       />
 
+      {/* Mobile header with hamburger */}
+      <div className="md:hidden fixed top-0 left-0 right-0 z-50 flex items-center gap-3 px-4 py-3 bg-slate-950/90 backdrop-blur-xl border-b border-white/[0.07]">
+        <button
+          onClick={() => setSidebarOpen(true)}
+          className="w-9 h-9 rounded-xl bg-blue-500/20 border border-blue-500/30 flex items-center justify-center"
+        >
+          <span className="material-symbols-outlined text-lg text-blue-400">menu</span>
+        </button>
+        <p className="text-xs font-semibold text-blue-400 tracking-[0.15em] uppercase">ГИГА-Панель</p>
+      </div>
+
       {/* Sidebar */}
-      <GigaSidebar />
+      <GigaSidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
       {/* Main content */}
-      <main className="pl-64 min-h-screen">
-        <div className="p-8">{children}</div>
+      <main className="md:pl-64 min-h-screen">
+        <div className="pt-16 md:pt-0 p-4 md:p-8">{children}</div>
       </main>
     </div>
   )

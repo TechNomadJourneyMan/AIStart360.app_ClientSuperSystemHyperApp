@@ -181,7 +181,7 @@ function ClientDetailPanel({ client, onClose }: { client: GigaClient; onClose: (
       animate={{ x: 0, opacity: 1 }}
       exit={{ x: '100%', opacity: 0 }}
       transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-      className="fixed right-0 top-0 h-screen w-[420px] z-50
+      className="fixed right-0 top-0 h-screen w-full md:w-[420px] z-50
         bg-slate-950/95 backdrop-blur-2xl border-l border-white/[0.08]
         flex flex-col overflow-hidden"
     >
@@ -422,7 +422,7 @@ export function ClientsModule() {
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Поиск по названию..."
             className="pl-8 pr-3 py-2 rounded-xl bg-white/[0.05] border border-white/[0.08]
-              text-sm text-slate-200 placeholder:text-slate-700 w-52
+              text-sm text-slate-200 placeholder:text-slate-700 w-full md:w-52
               focus:outline-none focus:border-blue-500/40 transition-all"
           />
         </div>

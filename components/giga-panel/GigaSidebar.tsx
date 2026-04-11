@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect } from 'react'
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 import {
   LayoutDashboard,
   InboxIcon,
@@ -10,6 +10,7 @@ import {
   Shield,
   LogOut,
   ChevronRight,
+  X,
 } from 'lucide-react'
 import { useGigaPanelStore, type ActiveModule } from '@/stores/gigaPanel.store'
 
@@ -21,77 +22,66 @@ interface NavItem {
   disabled?: boolean
 }
 
-export function GigaSidebar() {
+interface GigaSidebarProps {
+  isOpen?: boolean
+  onClose?: () => void
+}
+
+export function GigaSidebar({ isOpen = false, onClose }: GigaSidebarProps) {
   const { activeModule, setActiveModule, requests, clients } = useGigaPanelStore()
 
-  // Re-pin the super_admin cookie on every render so Providers can't clear it.
-  // If this component renders, middleware already validated the role.
   useEffect(() => {
     document.cookie = 'aistart360_role=super_admin; path=/; max-age=604800; SameSite=Lax'
   })
 
+  // Close mobile drawer on escape
+  useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose?.() }
+    if (isOpen) window.addEventListener('keydown', handleEsc)
+    return () => window.removeEventListener('keydown', handleEsc)
+  }, [isOpen, onClose])
+
   const pendingCount = requests.filter((r) => r.status === 'pending').length
 
   const navItems: NavItem[] = [
-    {
-      id: 'overview',
-      label: 'Обзор',
-      icon: <LayoutDashboard size={18} />,
-      disabled: true,
-    },
-    {
-      id: 'requests',
-      label: 'Заявки',
-      icon: <InboxIcon size={18} />,
-      badge: pendingCount,
-    },
-    {
-      id: 'crm',
-      label: 'CRM / Пользователи',
-      icon: <Users2 size={18} />,
-    },
-    {
-      id: 'clients',
-      label: 'Клиенты платформы',
-      icon: <Building2 size={18} />,
-      badge: clients.length > 0 ? clients.length : undefined,
-    },
+    { id: 'overview', label: 'Обзор', icon: <LayoutDashboard size={18} />, disabled: true },
+    { id: 'requests', label: 'Заявки', icon: <InboxIcon size={18} />, badge: pendingCount },
+    { id: 'crm', label: 'CRM / Пользователи', icon: <Users2 size={18} /> },
+    { id: 'clients', label: 'Клиенты платформы', icon: <Building2 size={18} />, badge: clients.length > 0 ? clients.length : undefined },
   ]
 
   const handleNav = (id: NavItem['id'], disabled?: boolean) => {
     if (disabled) return
     setActiveModule(id as ActiveModule)
+    onClose?.() // close mobile drawer on navigation
   }
 
-  return (
-    <aside className="fixed left-0 top-0 h-screen w-64 flex flex-col z-40
-      bg-slate-950/80 backdrop-blur-xl border-r border-white/[0.07]">
-
+  const sidebarContent = (
+    <>
       {/* Logo */}
-      <div className="px-6 pt-8 pb-6">
+      <div className="px-5 md:px-6 pt-6 md:pt-8 pb-4 md:pb-6 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-blue-500/20 border border-blue-500/30
-            flex items-center justify-center">
+          <div className="w-9 h-9 rounded-xl bg-blue-500/20 border border-blue-500/30 flex items-center justify-center">
             <Shield size={18} className="text-blue-400" />
           </div>
           <div>
-            <p className="text-xs font-semibold text-blue-400 tracking-[0.15em] uppercase">
-              ГИГА-Панель
-            </p>
+            <p className="text-xs font-semibold text-blue-400 tracking-[0.15em] uppercase">ГИГА-Панель</p>
             <p className="text-[10px] text-slate-500 mt-0.5">Super Admin Console</p>
           </div>
         </div>
+        {/* Mobile close button */}
+        <button onClick={onClose} className="md:hidden w-8 h-8 rounded-lg flex items-center justify-center text-slate-500 hover:text-slate-300 hover:bg-white/[0.05] transition-colors">
+          <X size={18} />
+        </button>
       </div>
 
-      {/* Divider */}
-      <div className="mx-6 h-px bg-white/[0.06] mb-4" />
+      <div className="mx-5 md:mx-6 h-px bg-white/[0.06] mb-4" />
 
       {/* Navigation */}
       <nav className="flex-1 px-3 space-y-1">
         {navItems.map((item) => {
           const isActive = item.id === activeModule
           const isDisabled = !!item.disabled
-
           return (
             <motion.button
               key={item.id}
@@ -112,29 +102,23 @@ export function GigaSidebar() {
             >
               <span className={isActive ? 'text-blue-400' : ''}>{item.icon}</span>
               <span className="flex-1">{item.label}</span>
-
               {item.badge != null && item.badge > 0 && (
-                <span className="flex items-center justify-center h-5 min-w-5 px-1.5
-                  rounded-full bg-blue-500 text-white text-[10px] font-bold">
+                <span className="flex items-center justify-center h-5 min-w-5 px-1.5 rounded-full bg-blue-500 text-white text-[10px] font-bold">
                   {item.badge}
                 </span>
               )}
-
-              {isActive && (
-                <ChevronRight size={14} className="text-blue-400/60" />
-              )}
+              {isActive && <ChevronRight size={14} className="text-blue-400/60" />}
             </motion.button>
           )
         })}
       </nav>
 
-      {/* Divider */}
-      <div className="mx-6 h-px bg-white/[0.06] mb-4" />
+      <div className="mx-5 md:mx-6 h-px bg-white/[0.06] mb-4" />
 
       {/* Stats summary */}
-      <div className="mx-4 mb-4 p-3 rounded-xl bg-white/[0.03] border border-white/[0.06]">
+      <div className="mx-3 md:mx-4 mb-4 p-3 rounded-xl bg-white/[0.03] border border-white/[0.06]">
         <p className="text-[10px] text-slate-500 uppercase tracking-widest mb-2">Статистика</p>
-        <div className="space-y-1.5">
+        <div className="grid grid-cols-2 md:grid-cols-1 gap-1.5">
           <div className="flex justify-between text-xs">
             <span className="text-slate-500">Всего заявок</span>
             <span className="text-slate-300 font-semibold">{requests.length}</span>
@@ -145,9 +129,7 @@ export function GigaSidebar() {
           </div>
           <div className="flex justify-between text-xs">
             <span className="text-slate-500">Одобрено</span>
-            <span className="text-emerald-400 font-semibold">
-              {requests.filter((r) => r.status === 'approved').length}
-            </span>
+            <span className="text-emerald-400 font-semibold">{requests.filter((r) => r.status === 'approved').length}</span>
           </div>
           <div className="flex justify-between text-xs">
             <span className="text-slate-500">Клиентов</span>
@@ -157,9 +139,8 @@ export function GigaSidebar() {
       </div>
 
       {/* Footer */}
-      <div className="px-4 pb-6">
-        <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl
-          bg-white/[0.03] border border-white/[0.05]">
+      <div className="px-3 md:px-4 pb-4 md:pb-6">
+        <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-white/[0.03] border border-white/[0.05]">
           <div className="w-7 h-7 rounded-lg bg-red-500/20 flex items-center justify-center">
             <Shield size={13} className="text-red-400" />
           </div>
@@ -172,6 +153,41 @@ export function GigaSidebar() {
           </button>
         </div>
       </div>
-    </aside>
+    </>
+  )
+
+  return (
+    <>
+      {/* Desktop sidebar — always visible on md+ */}
+      <aside className="hidden md:flex fixed left-0 top-0 h-screen w-64 flex-col z-40 bg-slate-950/80 backdrop-blur-xl border-r border-white/[0.07]">
+        {sidebarContent}
+      </aside>
+
+      {/* Mobile drawer */}
+      <AnimatePresence>
+        {isOpen && (
+          <>
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={onClose}
+              className="md:hidden fixed inset-0 z-50 bg-black/60 backdrop-blur-sm"
+            />
+            {/* Drawer */}
+            <motion.aside
+              initial={{ x: '-100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '-100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+              className="md:hidden fixed left-0 top-0 h-screen w-72 flex flex-col z-50 bg-slate-950/95 backdrop-blur-xl border-r border-white/[0.07]"
+            >
+              {sidebarContent}
+            </motion.aside>
+          </>
+        )}
+      </AnimatePresence>
+    </>
   )
 }
