@@ -625,9 +625,7 @@ export function CRMModule() {
           <>
           {/* Mobile card view */}
           <div className="md:hidden divide-y divide-white/[0.05]">
-            {filtered.map((user) => {
-              const st = STATUS_MAP[user.status] || STATUS_MAP.active
-              return (
+            {filtered.map((user) => (
                 <div key={user.id} className="p-3 space-y-2">
                   <div className="flex items-center gap-3">
                     <div className="w-9 h-9 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center flex-shrink-0">
@@ -637,15 +635,14 @@ export function CRMModule() {
                       <p className="text-sm font-medium text-slate-200 truncate">{user.name}</p>
                       <p className="text-[11px] text-slate-500 truncate">{user.email}</p>
                     </div>
-                    <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${st.cls}`}>{st.label}</span>
+                    <UserStatusChip status={user.status} />
                   </div>
                   <div className="flex items-center gap-3 text-[10px] text-slate-600">
                     <span className="bg-white/[0.05] px-1.5 py-0.5 rounded text-slate-400">{user.role}</span>
                     {user.organization && <span className="truncate">{user.organization}</span>}
                   </div>
                 </div>
-              )
-            })}
+            ))}
           </div>
           {/* Desktop table */}
           <table className="w-full hidden md:table">
