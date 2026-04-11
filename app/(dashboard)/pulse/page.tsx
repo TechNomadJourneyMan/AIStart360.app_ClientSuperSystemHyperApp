@@ -247,7 +247,7 @@ function ClientCard({ client, onCall, onMessage, onMonitor, isMonitored }: {
         <div className="flex-1">
           <div className="flex items-center gap-2 mb-1 flex-wrap">
             <h3 className="font-headline text-xl font-bold text-on-surface">{client.name}</h3>
-            {'forbes' in client && (
+            {client.forbes != null && (
               <span className="text-[10px] font-mono bg-tertiary-container/20 text-tertiary-container border border-tertiary-container/30 px-2 py-0.5 rounded-full">
                 🏆 Forbes KZ #{(client as any).forbes}
               </span>
@@ -851,14 +851,9 @@ export default function PulsePage() {
           </p>
           <div className="flex flex-wrap items-center gap-3 mt-3">
             <div className="flex items-center gap-2">
-              <span className="material-symbols-outlined text-sm text-tertiary-container">workspace_premium</span>
-              <span className="text-xs font-mono text-tertiary-container">Forbes Kazakhstan Top 10 · демо-база клиентов</span>
+              <span className="material-symbols-outlined text-sm text-primary/50">integration_instructions</span>
+              <span className="text-xs font-mono text-on-surface-variant">Данные из CRM · Bitrix24</span>
             </div>
-            <a href="https://in.aistart360.app" target="_blank" rel="noopener noreferrer"
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-surface-container border border-white/[0.06] hover:border-primary/30 rounded-lg text-xs font-mono text-primary transition-colors">
-              <span className="material-symbols-outlined text-sm">open_in_new</span>
-              in.aistart360.app
-            </a>
           </div>
         </div>
       </section>
@@ -1024,7 +1019,7 @@ export default function PulsePage() {
                     <div className="min-w-0">
                       <div className="flex items-center gap-1.5 flex-wrap">
                         <p className="text-sm font-semibold text-on-surface">{c.name}</p>
-                        {'forbes' in c && (
+                        {c.forbes != null && (
                           <span className="text-[9px] font-mono bg-tertiary-container/20 text-tertiary-container border border-tertiary-container/20 px-1.5 py-0.5 rounded-full">
                             Forbes #{(c as any).forbes}
                           </span>
@@ -1110,7 +1105,7 @@ export default function PulsePage() {
                           <div>
                             <div className="flex items-center gap-1.5">
                               <p className="text-sm font-semibold text-on-surface group-hover:text-primary transition-colors">{c.name}</p>
-                              {'forbes' in c && (
+                              {c.forbes != null && (
                                 <span className="text-[9px] font-mono bg-tertiary-container/20 text-tertiary-container border border-tertiary-container/20 px-1.5 py-0.5 rounded-full">
                                   Forbes #{(c as any).forbes}
                                 </span>
@@ -1194,7 +1189,7 @@ export default function PulsePage() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-0.5 flex-wrap">
                     <p className="text-sm font-semibold text-on-surface group-hover:text-primary transition-colors">{c.name}</p>
-                    {'forbes' in c && (
+                    {c.forbes != null && (
                       <span className="text-[9px] font-mono bg-tertiary-container/20 text-tertiary-container border border-tertiary-container/20 px-1.5 py-0.5 rounded-full">
                         Forbes #{(c as any).forbes}
                       </span>
