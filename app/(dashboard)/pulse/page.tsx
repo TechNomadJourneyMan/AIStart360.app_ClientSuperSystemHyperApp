@@ -732,6 +732,8 @@ export default function PulsePage() {
   const [callClient, setCallClient]       = useState<ModalClient | null>(null)
   const [messageClient, setMessageClient] = useState<ModalClient | null>(null)
   const [filterRisk, setFilterRisk]       = useState<'all' | 'high' | 'medium' | 'low'>('all')
+  const [briefing, setBriefing]           = useState<string | null>(null)
+  const [briefingLoading, setBriefingLoading] = useState(false)
 
   const toggleMonitor = (id: string) =>
     setMonitored(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s })
@@ -795,6 +797,24 @@ export default function PulsePage() {
     }
   }, [TODAY_CLIENTS, highRiskRevenue, clientsData])
 
+  // Initialize briefing from API response (daily cached)
+  useEffect(() => {
+    if (clientsData?.aiBriefing && !briefing) {
+      setBriefing(clientsData.aiBriefing)
+    }
+  }, [clientsData?.aiBriefing, briefing])
+
+  // Manual refresh briefing
+  const refreshBriefing = useCallback(async () => {
+    setBriefingLoading(true)
+    try {
+      const res = await fetch('/api/pulse/briefing', { method: 'POST' })
+      const data = await res.json()
+      if (data.briefing) setBriefing(data.briefing)
+    } catch { /* non-fatal */ }
+    finally { setBriefingLoading(false) }
+  }, [])
+
   if (isLoading) return (
     <div className="flex items-center justify-center min-h-[400px]">
       <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
@@ -843,25 +863,36 @@ export default function PulsePage() {
         </div>
       </section>
 
-      {/* ── AI Daily Briefing ── */}
-      {clientsData?.aiBriefing && (
-        <section className="bg-gradient-to-r from-primary/[0.06] to-transparent rounded-2xl border border-primary/20 p-5">
-          <div className="flex items-start gap-3">
-            <div className="w-9 h-9 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center flex-shrink-0 mt-0.5">
-              <span className="material-symbols-outlined text-lg text-primary">assistant</span>
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 mb-1.5">
-                <p className="text-[10px] font-mono text-primary uppercase tracking-[0.15em]">AI-рекомендация на сегодня</p>
-                <span className="text-[8px] font-mono text-primary/50 bg-primary/10 px-1.5 py-0.5 rounded">OpenRouter</span>
-              </div>
-              <p className="text-sm text-on-surface leading-relaxed">
-                {clientsData.aiBriefing as string}
-              </p>
-            </div>
+      {/* ── Daily Briefing ── */}
+      <section className="bg-gradient-to-r from-primary/[0.06] to-transparent rounded-2xl border border-primary/20 p-5">
+        <div className="flex items-start gap-3">
+          <div className="w-9 h-9 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+            <span className="material-symbols-outlined text-lg text-primary">tips_and_updates</span>
           </div>
-        </section>
-      )}
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center justify-between mb-1.5">
+              <p className="text-[10px] font-mono text-primary uppercase tracking-[0.15em]">Рекомендация на сегодня</p>
+              <button
+                onClick={refreshBriefing}
+                disabled={briefingLoading}
+                className="flex items-center gap-1 text-[10px] font-mono text-primary/60 hover:text-primary transition-colors disabled:opacity-40"
+              >
+                <span className={`material-symbols-outlined text-sm ${briefingLoading ? 'animate-spin' : ''}`}>
+                  {briefingLoading ? 'progress_activity' : 'refresh'}
+                </span>
+                {briefingLoading ? 'Генерация...' : 'Обновить'}
+              </button>
+            </div>
+            {briefing ? (
+              <p className="text-sm text-on-surface leading-relaxed">{briefing}</p>
+            ) : (
+              <p className="text-sm text-on-surface-variant italic">
+                Нажмите «Обновить» чтобы получить рекомендацию
+              </p>
+            )}
+          </div>
+        </div>
+      </section>
 
       {/* ── Stats bar ── */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
@@ -1052,11 +1083,16 @@ export default function PulsePage() {
                       { label: 'Комментарий', tip: 'Контекстная подсказка: крупная сделка, долгий цикл, нет активности N дней' },
                       { label: 'Действие', tip: 'Рекомендация: Звонок (риск>60 или простой>7дн), Написать (риск>35), Мониторинг (низкий риск)' },
                     ] as const).map((h) => (
-                      <th key={h.label} className="text-left text-[10px] font-mono text-on-surface-variant uppercase tracking-widest px-4 py-3 whitespace-nowrap relative group/th cursor-help" title={h.tip}>
-                        <span className="border-b border-dotted border-on-surface-variant/30">{h.label}</span>
-                        <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 px-3 py-2 bg-[#1a1d27] border border-white/10 rounded-xl text-[11px] text-on-surface font-normal normal-case tracking-normal leading-relaxed w-56 opacity-0 pointer-events-none group-hover/th:opacity-100 transition-opacity duration-200 z-50 shadow-xl">
-                          {h.tip}
-                        </div>
+                      <th key={h.label} className="text-left text-[10px] font-mono text-on-surface-variant uppercase tracking-widest px-4 py-3 whitespace-nowrap">
+                        <span className="inline-flex items-center gap-1">
+                          {h.label}
+                          <span className="relative group/tip inline-flex">
+                            <span className="material-symbols-outlined text-[13px] text-on-surface-variant/40 hover:text-primary/70 transition-colors cursor-help">info</span>
+                            <span className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 px-3 py-2 bg-[#1a1d27] border border-white/10 rounded-xl text-[11px] text-on-surface font-normal normal-case tracking-normal leading-relaxed w-56 opacity-0 pointer-events-none group-hover/tip:opacity-100 transition-opacity duration-200 z-50 shadow-xl">
+                              {h.tip}
+                            </span>
+                          </span>
+                        </span>
                       </th>
                     ))}
                   </tr>
