@@ -96,8 +96,16 @@ export function getStepFromKey(key: string): number {
 /** Format a survey value for display */
 export function formatSurveyValue(key: string, value: unknown): string {
   if (value === null || value === undefined) return '—'
+  // Unwrap Supabase JSONB {value: ...} wrapper
+  if (typeof value === 'object' && value !== null && !Array.isArray(value) && 'value' in value) {
+    return formatSurveyValue(key, (value as Record<string, unknown>).value)
+  }
+  // Handle plain objects (shouldn't reach here after unwrap, but safety net)
+  if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+    try { return JSON.stringify(value) } catch { return '—' }
+  }
   if (typeof value === 'boolean') return value ? 'Да' : 'Нет'
-  if (Array.isArray(value)) return value.join(', ')
+  if (Array.isArray(value)) return value.map(v => typeof v === 'object' && v !== null && 'value' in v ? (v as any).value : v).join(', ')
   if (typeof value === 'number') {
     if (key.includes('revenue') || key.includes('avg_check') || key.includes('cac') || key.includes('ltv')) {
       return new Intl.NumberFormat('ru-KZ').format(value) + ' ₸'
