@@ -2,9 +2,47 @@ export const dynamic = 'force-dynamic'
 
 import type { Metadata } from 'next'
 import Link from 'next/link'
+import { cookies } from 'next/headers'
 import { createServerClient } from '@/lib/supabase-server'
+import { prisma } from '@/lib/db'
+import GriExpertNotesLoader from '@/components/gri/GriExpertNotesLoader'
 
 export const metadata: Metadata = { title: 'GRI — Growth Readiness Index' }
+
+// ─── Get current user (staff via cookie or supabase) ────────────────────────
+async function getCurrentUser(): Promise<{ id: string; role: string } | null> {
+  try {
+    const cookieStore = await cookies()
+    const staffUserId = cookieStore.get('aistart360_user_id')?.value ?? null
+
+    // Staff user (Prisma)
+    if (staffUserId) {
+      const user = await prisma.user.findUnique({
+        where: { id: staffUserId },
+        select: { id: true, role: true },
+      }).catch(() => null)
+      if (user) return { id: user.id, role: user.role }
+    }
+
+    // Supabase user fallback
+    const sb = createServerClient()
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    const headers = { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` }
+
+    // Try to get a user_id from diagnostics or profiles
+    const { data: profiles } = await sb
+      .from('profiles')
+      .select('id, role')
+      .limit(1)
+      .single()
+
+    if (profiles) return { id: profiles.id, role: profiles.role }
+    return null
+  } catch {
+    return null
+  }
+}
 
 // ─── portfolio GRI averages from Supabase diagnostics ────────────────────────
 interface PortfolioGRI {
@@ -273,7 +311,10 @@ function scoreColor(s: number) {
 }
 
 export default async function GriPage() {
-  const portfolio = await getPortfolioGRI()
+  const [portfolio, currentUser] = await Promise.all([
+    getPortfolioGRI(),
+    getCurrentUser(),
+  ])
 
   // Merge portfolio averages into GRI_BLOCKS (if real data exists)
   const scoreMap: Record<string, number> = portfolio ? {
@@ -458,6 +499,16 @@ export default async function GriPage() {
                     </div>
                   </div>
                 </div>
+
+                {/* Expert Notes */}
+                {currentUser && (
+                  <GriExpertNotesLoader
+                    blockId={block.id}
+                    blockLabel={block.label}
+                    userId={currentUser.id}
+                    userRole={currentUser.role}
+                  />
+                )}
               </div>
             </details>
           ))}

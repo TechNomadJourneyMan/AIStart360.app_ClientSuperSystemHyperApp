@@ -188,6 +188,7 @@ export default function ClientDashboard() {
   const [userId, setUserId] = useState<string | null>(null)
   const [aiAnalysis, setAiAnalysis] = useState<AIAnalysis | null>(null)
   const [aiStatus, setAiStatus] = useState<AIStatus>('none')
+  const [surveyData, setSurveyData] = useState<{ answers: Record<string, unknown>; completed_steps: number[] } | null>(null)
 
   useEffect(() => {
     const sb = createClient()
@@ -201,14 +202,16 @@ export default function ClientDashboard() {
     if (!userId) return
     setIsLoading(true)
     try {
-      const [diagRes, compRes, docsRes] = await Promise.all([
+      const [diagRes, compRes, docsRes, surveyRes] = await Promise.all([
         fetch(`/api/v1/diagnostics/current?user_id=${userId}`),
         fetch(`/api/v1/onboarding/company?user_id=${userId}`),
         fetch(`/api/v1/onboarding/documents?user_id=${userId}`),
+        fetch(`/api/v1/onboarding/survey?user_id=${userId}`),
       ])
       const diagData = await diagRes.json()
       const compData = await compRes.json()
       const docsData = await docsRes.json()
+      const surveyJson = await surveyRes.json()
       if (diagData.ok) {
         setDiag(diagData.data)
         setAiStatus(diagData.data?.ai_status ?? 'none')
@@ -216,6 +219,7 @@ export default function ClientDashboard() {
       }
       if (compData.ok) setCompany(compData.data)
       if (docsData.ok) setDocuments(docsData.data ?? [])
+      if (surveyJson.ok) setSurveyData(surveyJson.data)
     } catch {}
     setIsLoading(false)
   }, [userId])
@@ -332,21 +336,71 @@ export default function ClientDashboard() {
             </div>
           </div>
         ) : !diag ? (
-          <div className="text-center py-20">
-            <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-4">
-              <span className="material-symbols-outlined text-3xl text-primary">analytics</span>
+          <div className="space-y-6">
+            <div className="text-center py-12">
+              <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-4">
+                <span className="material-symbols-outlined text-3xl text-primary">analytics</span>
+              </div>
+              <h2 className="font-headline text-xl font-bold text-on-surface mb-2">Diagnostics Not Calculated</h2>
+              <p className="text-sm text-on-surface-variant mb-6">Fill out the survey to see your Point A</p>
+              <div className="flex items-center justify-center gap-3 flex-wrap">
+                <Link href="/client/onboarding" className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-primary to-[#00e29e] text-[#003824] font-bold text-sm">
+                  Fill Out Survey
+                </Link>
+                <Link href="/client/point-a" className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl border border-white/[0.08] text-on-surface-variant text-sm font-medium hover:bg-white/[0.04] transition-colors">
+                  <span className="material-symbols-outlined text-base">analytics</span>
+                  View Point A
+                </Link>
+              </div>
             </div>
-            <h2 className="font-headline text-xl font-bold text-on-surface mb-2">Diagnostics Not Calculated</h2>
-            <p className="text-sm text-on-surface-variant mb-6">Fill out the survey to see your Point A</p>
-            <div className="flex items-center justify-center gap-3 flex-wrap">
-              <Link href="/client/onboarding" className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-primary to-[#00e29e] text-[#003824] font-bold text-sm">
-                Fill Out Survey
-              </Link>
-              <Link href="/dashboard" className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl border border-white/[0.08] text-on-surface-variant text-sm font-medium hover:bg-white/[0.04] transition-colors">
-                <span className="material-symbols-outlined text-base">dashboard</span>
-                Dashboard
-              </Link>
-            </div>
+
+            {/* Survey data summary when survey is partially/fully completed but diagnostics not yet run */}
+            {surveyData && surveyData.completed_steps.length > 0 && (
+              <div className="bg-surface-container-low rounded-2xl border border-white/[0.06] p-6">
+                <div className="flex items-center gap-2 mb-4">
+                  <span className="material-symbols-outlined text-lg text-primary">fact_check</span>
+                  <h3 className="text-sm font-bold text-on-surface">Survey Progress</h3>
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+                  <div className="bg-surface-container rounded-xl p-3 text-center">
+                    <p className="text-2xl font-mono font-bold text-primary">{surveyData.completed_steps.length}</p>
+                    <p className="text-[10px] text-on-surface-variant mt-1">Steps Completed</p>
+                  </div>
+                  <div className="bg-surface-container rounded-xl p-3 text-center">
+                    <p className="text-2xl font-mono font-bold text-on-surface">{Object.keys(surveyData.answers).length}</p>
+                    <p className="text-[10px] text-on-surface-variant mt-1">Questions Answered</p>
+                  </div>
+                  <div className="bg-surface-container rounded-xl p-3 text-center">
+                    <p className="text-2xl font-mono font-bold text-on-surface">{documents.length}</p>
+                    <p className="text-[10px] text-on-surface-variant mt-1">Documents Uploaded</p>
+                  </div>
+                  <div className="bg-surface-container rounded-xl p-3 text-center">
+                    <p className="text-2xl font-mono font-bold text-amber-400">Pending</p>
+                    <p className="text-[10px] text-on-surface-variant mt-1">Diagnostic Status</p>
+                  </div>
+                </div>
+                {company?.name && (
+                  <div className="flex flex-wrap gap-2 mt-3">
+                    <span className="flex items-center gap-1.5 text-xs bg-surface-container px-3 py-1.5 rounded-lg text-on-surface-variant">
+                      <span className="material-symbols-outlined text-sm">business</span>
+                      {company.name}
+                    </span>
+                    {company.industry && (
+                      <span className="flex items-center gap-1.5 text-xs bg-surface-container px-3 py-1.5 rounded-lg text-on-surface-variant">
+                        <span className="material-symbols-outlined text-sm">category</span>
+                        {company.industry}
+                      </span>
+                    )}
+                    {company.employee_count && (
+                      <span className="flex items-center gap-1.5 text-xs bg-surface-container px-3 py-1.5 rounded-lg text-on-surface-variant">
+                        <span className="material-symbols-outlined text-sm">people</span>
+                        {company.employee_count} employees
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         ) : (
           <>
@@ -361,6 +415,7 @@ export default function ClientDashboard() {
                     {company?.name && <span>{company.name} · </span>}
                     Stage: <strong className="text-on-surface">{stageLabel(diag.stage)}</strong>
                     {company?.industry && <span> · {company.industry}</span>}
+                    <span className="text-primary/60"> · Point A Diagnostics</span>
                   </p>
                 </div>
                 <Link href="/client/onboarding" className="flex items-center gap-1.5 text-xs font-mono text-on-surface-variant hover:text-primary border border-white/[0.08] rounded-lg px-3 py-1.5 transition-all">
@@ -395,17 +450,17 @@ export default function ClientDashboard() {
                     color={healthIndex >= 70 ? 'text-primary' : healthIndex >= 45 ? 'text-amber-400' : 'text-error'}
                   />
                   <StatCard
+                    label="Documents"
+                    value={String(documents.length)}
+                    sublabel="files uploaded"
+                    icon="description"
+                    color="text-primary"
+                  />
+                  <StatCard
                     label="Stage"
                     value={stageLabel(diag.stage)}
                     sublabel="development stage"
                     icon="radar"
-                    color="text-primary"
-                  />
-                  <StatCard
-                    label="Areas"
-                    value="5"
-                    sublabel="blocks assessed"
-                    icon="checklist"
                     color="text-primary"
                   />
                 </div>
@@ -475,6 +530,31 @@ export default function ClientDashboard() {
                   />
                 ))}
               </div>
+            </section>
+
+            {/* Point A CTA Banner */}
+            <section>
+              <Link
+                href="/client/point-a"
+                className="group flex items-center justify-between bg-gradient-to-r from-primary/10 to-emerald-500/5 rounded-2xl border border-primary/20 hover:border-primary/40 p-5 transition-all"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-primary/20 flex items-center justify-center">
+                    <span className="material-symbols-outlined text-xl text-primary">analytics</span>
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-on-surface group-hover:text-primary transition-colors">
+                      View Full Point A Analysis
+                    </h3>
+                    <p className="text-xs text-on-surface-variant mt-0.5">
+                      Detailed scores, risks, insights, and personalized recommendations
+                    </p>
+                  </div>
+                </div>
+                <span className="material-symbols-outlined text-xl text-primary/60 group-hover:text-primary group-hover:translate-x-1 transition-all">
+                  arrow_forward
+                </span>
+              </Link>
             </section>
 
             {/* 4. AI Strategic Priorities */}

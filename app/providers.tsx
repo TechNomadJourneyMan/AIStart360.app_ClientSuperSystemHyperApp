@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import { ToastContainer } from '@/components/ui/Toast'
 import { useAuthStore } from '@/stores/auth.store'
-import { ThemeProvider } from 'next-themes'
+import { useThemeStore } from '@/stores/theme.store'
 
 function AuthProvider({ children }: { children: React.ReactNode }) {
   const { init } = useAuthStore()
@@ -13,8 +13,22 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
     init()
   }, [init])
 
-  // Cookies are now httpOnly and set server-side via auth actions.
-  // No client-side document.cookie sync needed.
+  return <>{children}</>
+}
+
+function ThemeSyncProvider({ children }: { children: React.ReactNode }) {
+  const { theme } = useThemeStore()
+
+  useEffect(() => {
+    const root = document.documentElement
+    if (theme === 'dark') {
+      root.classList.add('dark')
+      root.classList.remove('light')
+    } else {
+      root.classList.remove('dark')
+      root.classList.add('light')
+    }
+  }, [theme])
 
   return <>{children}</>
 }
@@ -31,12 +45,12 @@ export function Providers({ children }: { children: React.ReactNode }) {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
+      <ThemeSyncProvider>
         <AuthProvider>
           {children}
           <ToastContainer />
         </AuthProvider>
-      </ThemeProvider>
+      </ThemeSyncProvider>
     </QueryClientProvider>
   )
 }

@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { useUIStore } from '@/stores/ui.store'
 import { useNotificationsStore } from '@/stores/notifications.store'
 import { useAuthStore } from '@/stores/auth.store'
+import { useThemeStore } from '@/stores/theme.store'
 import { hasPermission } from '@/lib/navigation'
 import type { UserRole } from '@/types'
 
@@ -16,6 +17,7 @@ export function Header() {
   const { sidebarCollapsed } = useUIStore()
   const { unreadCount } = useNotificationsStore()
   const { user, logout } = useAuthStore()
+  const { theme, toggleTheme } = useThemeStore()
   const router = useRouter()
   const [searchFocused, setSearchFocused] = useState(false)
   const [showUserMenu, setShowUserMenu] = useState(false)
@@ -107,11 +109,11 @@ export function Header() {
           {showQuickAction && (
             <>
               <div className="fixed inset-0 z-40" onClick={() => setShowQuickAction(false)} />
-              <div className="absolute left-0 top-full mt-2 w-52 bg-surface-container-low border border-white/[0.06] rounded-xl shadow-xl z-50 overflow-hidden py-1">
+              <div className="absolute left-0 top-full mt-2 w-52 bg-surface-container-low border border-outline-variant/20 rounded-xl shadow-xl z-50 overflow-hidden py-1">
                 {QUICK_ACTIONS.filter(action => hasPermission(((user?.role || 'client').toUpperCase()) as UserRole, action.reqPermission)).map((action) => (
                   <Link key={action.href} href={action.href}
                     onClick={() => setShowQuickAction(false)}
-                    className="flex items-center gap-3 px-4 py-2.5 text-sm text-on-surface-variant hover:text-on-surface hover:bg-white/[0.04] transition-colors">
+                    className="flex items-center gap-3 px-4 py-2.5 text-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high/60 transition-colors">
                     <span className="material-symbols-outlined text-base text-primary/60">{action.icon}</span>
                     {action.label}
                   </Link>
@@ -146,10 +148,21 @@ export function Header() {
           <span>{lang}</span>
         </button>
 
+        {/* Theme toggle */}
+        <button
+          onClick={toggleTheme}
+          title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+          className="flex items-center justify-center w-8 h-8 rounded-lg border border-outline-variant/20 text-on-surface-variant hover:text-on-surface hover:border-primary/20 hover:bg-primary/5 transition-all duration-150"
+        >
+          <span className="material-symbols-outlined text-[18px]">
+            {theme === 'dark' ? 'light_mode' : 'dark_mode'}
+          </span>
+        </button>
+
         <div className="w-px h-6 bg-outline-variant/20 hidden md:block" />
 
         {/* Notifications */}
-        <Link href="/notifications" className="relative text-[#8B95A3] hover:text-on-surface transition-colors p-1.5 rounded-lg hover:bg-surface-container" aria-label="Notifications">
+        <Link href="/notifications" className="relative text-on-surface-variant hover:text-on-surface transition-colors p-1.5 rounded-lg hover:bg-surface-container" aria-label="Notifications">
           <span className="material-symbols-outlined text-xl">notifications</span>
           {unreadCount > 0 && (
             <span className="absolute top-0.5 right-0.5 w-4 h-4 bg-error rounded-full border-2 border-background text-[9px] font-mono text-white flex items-center justify-center">
@@ -167,7 +180,7 @@ export function Header() {
             <div className="w-8 h-8 rounded-full bg-surface-container-high border border-outline-variant/30 flex items-center justify-center text-xs font-bold text-primary group-hover:border-primary/40 transition-colors">
               {initials}
             </div>
-            <span className="hidden lg:flex items-center gap-1 text-[#8B95A3] group-hover:text-on-surface transition-colors">
+            <span className="hidden lg:flex items-center gap-1 text-on-surface-variant group-hover:text-on-surface transition-colors">
               <span className="hidden lg:block text-xs font-medium text-on-surface-variant max-w-[80px] truncate">{user?.name?.split(' ')[0]}</span>
               <span className="material-symbols-outlined text-lg">keyboard_arrow_down</span>
             </span>
@@ -176,22 +189,22 @@ export function Header() {
           {showUserMenu && (
             <>
               <div className="fixed inset-0 z-40" onClick={() => setShowUserMenu(false)} />
-              <div className="absolute right-0 top-full mt-2 w-48 bg-surface-container-low border border-white/[0.06] rounded-xl shadow-xl z-50 overflow-hidden">
-                <div className="px-4 py-3 border-b border-white/[0.04]">
+              <div className="absolute right-0 top-full mt-2 w-48 bg-surface-container-low border border-outline-variant/20 rounded-xl shadow-xl z-50 overflow-hidden">
+                <div className="px-4 py-3 border-b border-outline-variant/15">
                   <p className="text-xs font-medium text-on-surface truncate">{user?.name}</p>
                   <p className="text-[10px] text-on-surface-variant truncate">{user?.email}</p>
                 </div>
                 <Link href="/profile" onClick={() => setShowUserMenu(false)}
-                  className="flex items-center gap-2 px-4 py-2.5 text-sm text-on-surface-variant hover:text-on-surface hover:bg-white/[0.04] transition-colors">
+                  className="flex items-center gap-2 px-4 py-2.5 text-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high/60 transition-colors">
                   <span className="material-symbols-outlined text-base">account_circle</span>
                   Profile
                 </Link>
                 <Link href="/settings" onClick={() => setShowUserMenu(false)}
-                  className="flex items-center gap-2 px-4 py-2.5 text-sm text-on-surface-variant hover:text-on-surface hover:bg-white/[0.04] transition-colors">
+                  className="flex items-center gap-2 px-4 py-2.5 text-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high/60 transition-colors">
                   <span className="material-symbols-outlined text-base">settings</span>
                   Settings
                 </Link>
-                <div className="border-t border-white/[0.04]" />
+                <div className="border-t border-outline-variant/15" />
                 <button onClick={handleLogout}
                   className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-error/70 hover:text-error hover:bg-error/5 transition-colors">
                   <span className="material-symbols-outlined text-base">logout</span>

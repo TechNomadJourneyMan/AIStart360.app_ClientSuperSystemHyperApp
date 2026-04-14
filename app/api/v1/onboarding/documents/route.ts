@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
+import { notifyAdmins } from '@/lib/notifications'
 
 // GET /api/v1/onboarding/documents?user_id=xxx
 export async function GET(req: NextRequest) {
@@ -49,6 +50,14 @@ export async function POST(req: NextRequest) {
       .single()
 
     if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
+
+    // Notify admins about file upload (fire-and-forget)
+    notifyAdmins('file_uploaded', {
+      fileName: file_name,
+      docType: doc_type,
+      fileSize: file_size,
+      mimeType: mime_type,
+    }, user_id)
 
     // Trigger n8n webhook for document parsing (fire-and-forget)
     const n8nUrl = process.env.N8N_WEBHOOK_URL

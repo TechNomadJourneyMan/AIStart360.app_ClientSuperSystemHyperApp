@@ -4,6 +4,7 @@ export const maxDuration = 60 // Allow up to 60s for AI generation
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { analyzePointA } from '@/lib/ai/point-a-analyzer'
+import type { GriExpertNotes } from '@/lib/ai/point-a-analyzer'
 import { calculatePointA } from '@/lib/point-a-engine'
 import type { Company } from '@/types/onboarding'
 
@@ -47,14 +48,31 @@ export async function POST(req: NextRequest) {
       .eq('user_id', user_id)
       .maybeSingle()
 
-    // 4. Run rule-based engine to get PointA structure
+    // 4. Fetch GRI expert notes (step=0, gri_expert_* keys)
+    const { data: expertRows } = await sb
+      .from('survey_answers')
+      .select('question_key, answer')
+      .eq('user_id', user_id)
+      .eq('step', 0)
+      .like('question_key', 'gri_expert_%')
+
+    const expertNotes: GriExpertNotes = {}
+    for (const row of (expertRows ?? [])) {
+      const block = row.question_key.replace('gri_expert_', '') as keyof GriExpertNotes
+      const value = (row.answer as { value: unknown })?.value
+      if (typeof value === 'string' && value.trim()) {
+        expertNotes[block] = value
+      }
+    }
+
+    // 5. Run rule-based engine to get PointA structure
     const pointA = calculatePointA(answers)
 
-    // 5. Run AI analysis
-    const aiResult = await analyzePointA(answers, pointA, company as Company | null)
+    // 6. Run AI analysis (with expert notes)
+    const aiResult = await analyzePointA(answers, pointA, company as Company | null, expertNotes)
 
     if (aiResult) {
-      // 6. Store result
+      // 7. Store result
       await sb
         .from('diagnostics')
         .update({ ai_analysis: aiResult, ai_status: 'completed' })

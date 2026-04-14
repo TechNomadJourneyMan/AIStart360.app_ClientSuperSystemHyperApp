@@ -100,6 +100,8 @@ export async function fetchDeals(config: Bitrix24Config, limit = 50): Promise<Cr
     closeDate: d.CLOSEDATE || null,
     contactName: d.COMPANY_TITLE || undefined,
     comment: d.COMMENTS || undefined,
+    assignedById: d.ASSIGNED_BY_ID || undefined,
+    companyTitle: d.COMPANY_TITLE || undefined,
   }))
 
   return deals

@@ -16,6 +16,8 @@ export interface CrmDeal {
   contactEmail?: string
   contactPhone?: string
   comment?: string
+  assignedById?: string   // Bitrix24 ASSIGNED_BY_ID — responsible user
+  companyTitle?: string   // Company name from CRM deal
 }
 
 export interface CrmContact {
