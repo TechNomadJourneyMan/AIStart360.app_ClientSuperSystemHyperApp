@@ -16,11 +16,11 @@ function stageLabel(s: DiagnosticStage | null): string {
 
 function blockLabel(status: string | undefined): { text: string; color: string } {
   const m: Record<string, { text: string; color: string }> = {
-    critical:  { text: 'Критично',  color: 'text-error' },
-    weak:      { text: 'Слабо',     color: 'text-orange-400' },
-    average:   { text: 'Средне',    color: 'text-amber-400' },
-    strong:    { text: 'Сильно',    color: 'text-primary' },
-    excellent: { text: 'Отлично',   color: 'text-emerald-400' },
+    critical:  { text: 'Critical',   color: 'text-error' },
+    weak:      { text: 'Weak',      color: 'text-orange-400' },
+    average:   { text: 'Average',   color: 'text-amber-400' },
+    strong:    { text: 'Strong',    color: 'text-primary' },
+    excellent: { text: 'Excellent', color: 'text-emerald-400' },
   }
   return m[status ?? ''] ?? { text: '—', color: 'text-on-surface-variant' }
 }
@@ -84,7 +84,7 @@ function BlockCard({ title, icon, score, aiBlock }: {
         <span className={`text-xs font-mono ${lbl.color}`}>{lbl.text}</span>
         {((score?.top_issues?.length ?? 0) > 0 || aiBlock) && (
           <button onClick={() => setOpen(v => !v)} className="text-xs text-on-surface-variant hover:text-primary transition-colors flex items-center gap-1">
-            {open ? 'Свернуть' : 'Подробнее'}
+            {open ? 'Collapse' : 'Details'}
             <span className="material-symbols-outlined text-xs">{open ? 'expand_less' : 'expand_more'}</span>
           </button>
         )}
@@ -97,21 +97,21 @@ function BlockCard({ title, icon, score, aiBlock }: {
             <div className="bg-violet-500/5 rounded-xl border border-violet-500/10 p-3 space-y-2">
               <div className="flex items-center gap-1.5 mb-1">
                 <span className="material-symbols-outlined text-xs text-violet-400">smart_toy</span>
-                <span className="text-[10px] font-mono text-violet-400 uppercase tracking-widest">AI-анализ</span>
+                <span className="text-[10px] font-mono text-violet-400 uppercase tracking-widest">AI Analysis</span>
               </div>
               <p className="text-xs text-on-surface leading-relaxed">{aiBlock.diagnosis}</p>
               <div className="grid grid-cols-1 gap-2 mt-2">
                 <div className="flex items-start gap-2">
                   <span className="material-symbols-outlined text-xs text-blue-400 mt-0.5 flex-shrink-0">bar_chart</span>
-                  <p className="text-xs text-on-surface-variant"><span className="text-blue-400 font-medium">Бенчмарк:</span> {aiBlock.benchmark_comparison}</p>
+                  <p className="text-xs text-on-surface-variant"><span className="text-blue-400 font-medium">Benchmark:</span> {aiBlock.benchmark_comparison}</p>
                 </div>
                 <div className="flex items-start gap-2">
                   <span className="material-symbols-outlined text-xs text-error mt-0.5 flex-shrink-0">warning</span>
-                  <p className="text-xs text-on-surface-variant"><span className="text-error font-medium">Риск:</span> {aiBlock.key_risk}</p>
+                  <p className="text-xs text-on-surface-variant"><span className="text-error font-medium">Risk:</span> {aiBlock.key_risk}</p>
                 </div>
                 <div className="flex items-start gap-2">
                   <span className="material-symbols-outlined text-xs text-primary mt-0.5 flex-shrink-0">lightbulb</span>
-                  <p className="text-xs text-on-surface-variant"><span className="text-primary font-medium">Рекомендация:</span> {aiBlock.top_recommendation}</p>
+                  <p className="text-xs text-on-surface-variant"><span className="text-primary font-medium">Recommendation:</span> {aiBlock.top_recommendation}</p>
                 </div>
               </div>
             </div>
@@ -120,7 +120,7 @@ function BlockCard({ title, icon, score, aiBlock }: {
           {/* Rule-based issues */}
           {score && score.top_issues.length > 0 && (
             <div>
-              <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest mb-2">Проблемы</p>
+              <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest mb-2">Issues</p>
               <ul className="space-y-1">
                 {score.top_issues.map((iss, i) => (
                   <li key={i} className="flex items-start gap-2 text-xs text-on-surface-variant">
@@ -133,7 +133,7 @@ function BlockCard({ title, icon, score, aiBlock }: {
           )}
           {score && score.recommendations.length > 0 && (
             <div>
-              <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest mb-2">Рекомендации</p>
+              <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest mb-2">Recommendations</p>
               <ul className="space-y-1">
                 {score.recommendations.map((rec, i) => (
                   <li key={i} className="flex items-start gap-2 text-xs text-on-surface-variant">
@@ -245,14 +245,14 @@ export default function PointAClientPage() {
   }
 
   const score = diag?.overall_score ?? 0
-  const today = new Date().toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })
+  const today = new Date().toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' })
 
   const blocks = [
-    { key: 'finance',    title: 'Финансы',    icon: 'payments',   data: diag?.finance_score },
-    { key: 'sales',      title: 'Продажи',    icon: 'trending_up', data: diag?.sales_score },
-    { key: 'operations', title: 'Операции',   icon: 'settings',   data: diag?.operations_score },
-    { key: 'marketing',  title: 'Маркетинг',  icon: 'campaign',   data: diag?.marketing_score },
-    { key: 'strategy',   title: 'Стратегия',  icon: 'flag',       data: diag?.strategy_score },
+    { key: 'finance',    title: 'Finance',    icon: 'payments',   data: diag?.finance_score },
+    { key: 'sales',      title: 'Sales',      icon: 'trending_up', data: diag?.sales_score },
+    { key: 'operations', title: 'Operations', icon: 'settings',   data: diag?.operations_score },
+    { key: 'marketing',  title: 'Marketing',  icon: 'campaign',   data: diag?.marketing_score },
+    { key: 'strategy',   title: 'Strategy',   icon: 'flag',       data: diag?.strategy_score },
   ]
 
   return (
@@ -268,11 +268,11 @@ export default function PointAClientPage() {
               className="flex items-center gap-1.5 text-xs font-mono text-on-surface-variant hover:text-primary border border-white/[0.08] rounded-lg px-3 py-1.5 transition-all disabled:opacity-60"
             >
               <span className={`material-symbols-outlined text-sm ${isRecalculating ? 'animate-spin' : ''}`}>refresh</span>
-              Пересчитать
+              Recalculate
             </button>
             <Link href="/client/onboarding/documents" className="text-xs font-mono text-on-surface-variant hover:text-primary border border-white/[0.08] rounded-lg px-3 py-1.5 transition-all flex items-center gap-1.5">
               <span className="material-symbols-outlined text-sm">upload_file</span>
-              Документы
+              Documents
             </Link>
             <button
               onClick={async () => {
@@ -283,7 +283,7 @@ export default function PointAClientPage() {
               className="flex items-center gap-1.5 text-xs font-mono text-red-400/70 hover:text-red-400 border border-red-500/10 hover:border-red-500/20 rounded-lg px-3 py-1.5 transition-all"
             >
               <span className="material-symbols-outlined text-sm">logout</span>
-              Выход
+              Sign Out
             </button>
           </div>
         </div>
@@ -295,7 +295,7 @@ export default function PointAClientPage() {
           <div className="flex items-center justify-center py-20">
             <div className="flex flex-col items-center gap-4">
               <span className="w-10 h-10 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
-              <p className="text-sm text-on-surface-variant">Загружаем диагностику...</p>
+              <p className="text-sm text-on-surface-variant">Loading diagnostics...</p>
             </div>
           </div>
         ) : !diag ? (
@@ -303,15 +303,15 @@ export default function PointAClientPage() {
             <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-4">
               <span className="material-symbols-outlined text-3xl text-primary">analytics</span>
             </div>
-            <h2 className="font-headline text-xl font-bold text-on-surface mb-2">Диагностика не рассчитана</h2>
-            <p className="text-sm text-on-surface-variant mb-6">Заполните анкету и нажмите «Пересчитать»</p>
+            <h2 className="font-headline text-xl font-bold text-on-surface mb-2">Diagnostics Not Calculated</h2>
+            <p className="text-sm text-on-surface-variant mb-6">Fill out the survey and click "Recalculate"</p>
             <div className="flex gap-3 justify-center">
               <Link href="/client/onboarding" className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-primary to-[#00e29e] text-[#003824] font-bold text-sm">
-                Заполнить анкету
+                Fill Out Survey
               </Link>
               <button onClick={recalculate} disabled={isRecalculating}
                 className="px-5 py-2.5 rounded-xl border border-white/[0.08] text-on-surface-variant text-sm hover:text-on-surface transition-all">
-                Пересчитать
+                Recalculate
               </button>
             </div>
           </div>
@@ -331,14 +331,14 @@ export default function PointAClientPage() {
 
                 {/* Info */}
                 <div className="flex-1 text-center md:text-left">
-                  <p className="text-xs font-mono text-primary/70 uppercase tracking-[0.2em] mb-2">Индекс здоровья бизнеса</p>
+                  <p className="text-xs font-mono text-primary/70 uppercase tracking-[0.2em] mb-2">Business Health Index</p>
                   <h1 className="font-headline text-2xl font-extrabold text-on-surface mb-1">
-                    Добро пожаловать{company?.name ? `, ${company.name}` : ''}!
+                    Welcome{company?.name ? `, ${company.name}` : ''}!
                   </h1>
                   <div className="flex flex-wrap gap-3 justify-center md:justify-start mt-3">
                     <span className="flex items-center gap-1.5 text-xs bg-surface-container px-3 py-1.5 rounded-lg text-on-surface-variant">
                       <span className="material-symbols-outlined text-sm">radar</span>
-                      Стадия: <strong className="text-on-surface ml-1">{stageLabel(diag.stage)}</strong>
+                      Stage: <strong className="text-on-surface ml-1">{stageLabel(diag.stage)}</strong>
                     </span>
                     {company?.industry && (
                       <span className="flex items-center gap-1.5 text-xs bg-surface-container px-3 py-1.5 rounded-lg text-on-surface-variant">
@@ -349,7 +349,7 @@ export default function PointAClientPage() {
                     {company?.employee_count && (
                       <span className="flex items-center gap-1.5 text-xs bg-surface-container px-3 py-1.5 rounded-lg text-on-surface-variant">
                         <span className="material-symbols-outlined text-sm">people</span>
-                        {company.employee_count} сотрудников
+                        {company.employee_count} employees
                       </span>
                     )}
                     <span className="flex items-center gap-1.5 text-xs bg-surface-container px-3 py-1.5 rounded-lg text-on-surface-variant">
@@ -369,8 +369,8 @@ export default function PointAClientPage() {
                     <span className="material-symbols-outlined text-sm text-violet-400">smart_toy</span>
                   </div>
                   <div>
-                    <p className="text-sm font-medium text-violet-300">AI анализирует ваш бизнес...</p>
-                    <p className="text-xs text-on-surface-variant">Claude изучает данные и готовит персональные рекомендации</p>
+                    <p className="text-sm font-medium text-violet-300">AI is analyzing your business...</p>
+                    <p className="text-xs text-on-surface-variant">Claude is studying data and preparing personalized recommendations</p>
                   </div>
                 </div>
                 <div className="mt-4 space-y-2">
@@ -385,11 +385,11 @@ export default function PointAClientPage() {
               <section className="bg-error/5 rounded-2xl border border-error/15 p-5 flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <span className="material-symbols-outlined text-lg text-error">warning</span>
-                  <p className="text-sm text-on-surface-variant">AI-анализ недоступен</p>
+                  <p className="text-sm text-on-surface-variant">AI analysis unavailable</p>
                 </div>
                 <button onClick={retryAi}
                   className="text-xs font-mono text-primary hover:text-primary/80 border border-primary/20 rounded-lg px-3 py-1.5 transition-all">
-                  Повторить
+                  Retry
                 </button>
               </section>
             )}
@@ -398,7 +398,7 @@ export default function PointAClientPage() {
               <section className="bg-violet-500/5 rounded-2xl border border-violet-500/15 p-6">
                 <div className="flex items-center gap-2 mb-3">
                   <span className="material-symbols-outlined text-lg text-violet-400">smart_toy</span>
-                  <h2 className="text-sm font-bold text-violet-300">AI-анализ вашего бизнеса</h2>
+                  <h2 className="text-sm font-bold text-violet-300">AI Analysis of Your Business</h2>
                   <span className="ml-auto text-[10px] font-mono text-on-surface-variant bg-surface-container px-2 py-0.5 rounded">
                     {aiAnalysis.model_used}
                   </span>
@@ -410,8 +410,8 @@ export default function PointAClientPage() {
             {/* 2. Block Scores */}
             <section>
               <div className="flex items-center justify-between mb-4">
-                <h2 className="font-headline text-lg font-bold text-on-surface">Блоки оценки</h2>
-                <span className="text-xs text-on-surface-variant font-mono">5 направлений</span>
+                <h2 className="font-headline text-lg font-bold text-on-surface">Assessment Blocks</h2>
+                <span className="text-xs text-on-surface-variant font-mono">5 areas</span>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {blocks.map(b => (
@@ -431,7 +431,7 @@ export default function PointAClientPage() {
               <section>
                 <div className="flex items-center gap-2 mb-4">
                   <span className="material-symbols-outlined text-lg text-violet-400">flag</span>
-                  <h2 className="font-headline text-lg font-bold text-on-surface">Стратегические приоритеты</h2>
+                  <h2 className="font-headline text-lg font-bold text-on-surface">Strategic Priorities</h2>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                   {aiAnalysis.strategic_priorities.map((p, i) => (
@@ -454,7 +454,7 @@ export default function PointAClientPage() {
             {/* 3. Risks */}
             {(diag.risks?.length ?? 0) > 0 && (
               <section>
-                <h2 className="font-headline text-lg font-bold text-on-surface mb-4">Риски</h2>
+                <h2 className="font-headline text-lg font-bold text-on-surface mb-4">Risks</h2>
                 <div className="space-y-2">
                   {(diag.risks as Risk[]).map((risk, i) => {
                     const ri = riskIcon(risk.level)
@@ -464,7 +464,7 @@ export default function PointAClientPage() {
                         <div>
                           <div className="flex items-center gap-2 mb-0.5">
                             <span className={`text-xs font-mono uppercase ${ri.color}`}>
-                              {risk.level === 'critical' ? 'КРИТИЧНО' : risk.level === 'important' ? 'ВАЖНО' : 'УМЕРЕННО'}
+                              {risk.level === 'critical' ? 'CRITICAL' : risk.level === 'important' ? 'IMPORTANT' : 'MODERATE'}
                             </span>
                             <span className="text-xs text-on-surface-variant">· {risk.area}</span>
                           </div>
@@ -481,7 +481,7 @@ export default function PointAClientPage() {
             {/* 4. Insights */}
             {(diag.insights?.length ?? 0) > 0 && (
               <section>
-                <h2 className="font-headline text-lg font-bold text-on-surface mb-4">Инсайты</h2>
+                <h2 className="font-headline text-lg font-bold text-on-surface mb-4">Insights</h2>
                 <div className="space-y-2">
                   {(diag.insights as Insight[]).map((ins, i) => (
                     <div key={i} className="flex items-start gap-3 bg-surface-container-low rounded-xl border border-white/[0.06] p-4">
@@ -499,7 +499,7 @@ export default function PointAClientPage() {
             {/* 5. Quick Wins */}
             {(diag.quick_wins?.length ?? 0) > 0 && (
               <section>
-                <h2 className="font-headline text-lg font-bold text-on-surface mb-4">Быстрые победы</h2>
+                <h2 className="font-headline text-lg font-bold text-on-surface mb-4">Quick Wins</h2>
                 <div className="space-y-2">
                   {(diag.quick_wins as QuickWin[]).map((qw, i) => (
                     <div key={i} className="flex items-center gap-3 bg-surface-container-low rounded-xl border border-white/[0.06] p-4">
@@ -524,14 +524,14 @@ export default function PointAClientPage() {
               <section>
                 <div className="flex items-center gap-2 mb-4">
                   <span className="material-symbols-outlined text-lg text-violet-400">route</span>
-                  <h2 className="font-headline text-lg font-bold text-on-surface">Дорожная карта роста</h2>
+                  <h2 className="font-headline text-lg font-bold text-on-surface">Growth Roadmap</h2>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                   {aiAnalysis.growth_roadmap.map((rm) => {
                     const labels: Record<string, { title: string; color: string }> = {
-                      '30_days':  { title: '30 дней',  color: 'text-emerald-400' },
-                      '90_days':  { title: '90 дней',  color: 'text-blue-400' },
-                      '180_days': { title: '180 дней', color: 'text-violet-400' },
+                      '30_days':  { title: '30 days',  color: 'text-emerald-400' },
+                      '90_days':  { title: '90 days',  color: 'text-blue-400' },
+                      '180_days': { title: '180 days', color: 'text-violet-400' },
                     }
                     const l = labels[rm.horizon] ?? { title: rm.horizon, color: 'text-on-surface-variant' }
                     return (
@@ -557,7 +557,7 @@ export default function PointAClientPage() {
               <section className="bg-surface-container-low rounded-2xl border border-white/[0.06] p-5">
                 <div className="flex items-center gap-2 mb-3">
                   <span className="material-symbols-outlined text-lg text-blue-400">public</span>
-                  <h2 className="text-sm font-bold text-on-surface">Отраслевой контекст</h2>
+                  <h2 className="text-sm font-bold text-on-surface">Industry Context</h2>
                 </div>
                 <p className="text-sm text-on-surface-variant leading-relaxed">{aiAnalysis.industry_context}</p>
               </section>
@@ -565,20 +565,20 @@ export default function PointAClientPage() {
 
             {/* 6. Upload more */}
             <section className="bg-surface-container-low rounded-2xl border border-white/[0.06] p-6">
-              <h2 className="text-sm font-medium text-on-surface mb-4">Улучшить диагностику</h2>
+              <h2 className="text-sm font-medium text-on-surface mb-4">Improve Diagnostics</h2>
               <div className="grid grid-cols-2 gap-3">
                 <Link href="/client/onboarding/documents" className="flex items-center gap-2 bg-surface-container rounded-xl border border-white/[0.08] hover:border-primary/30 p-4 transition-all group">
                   <span className="material-symbols-outlined text-xl text-primary">upload_file</span>
                   <div>
-                    <p className="text-xs font-medium text-on-surface group-hover:text-primary transition-colors">Загрузить отчёт</p>
+                    <p className="text-xs font-medium text-on-surface group-hover:text-primary transition-colors">Upload Report</p>
                     <p className="text-[10px] text-on-surface-variant">P&L, баланс, CRM</p>
                   </div>
                 </Link>
                 <Link href="/client/onboarding" className="flex items-center gap-2 bg-surface-container rounded-xl border border-white/[0.08] hover:border-primary/30 p-4 transition-all group">
                   <span className="material-symbols-outlined text-xl text-primary">edit_note</span>
                   <div>
-                    <p className="text-xs font-medium text-on-surface group-hover:text-primary transition-colors">Обновить анкету</p>
-                    <p className="text-[10px] text-on-surface-variant">Изменить ответы</p>
+                    <p className="text-xs font-medium text-on-surface group-hover:text-primary transition-colors">Update Survey</p>
+                    <p className="text-[10px] text-on-surface-variant">Change answers</p>
                   </div>
                 </Link>
               </div>

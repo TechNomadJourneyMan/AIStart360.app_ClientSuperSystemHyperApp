@@ -7,15 +7,15 @@ import { createClient } from '@/lib/supabase-client'
 import type { PointB } from '@/types/point-b'
 
 const BLOCK_LABELS: Record<string, string> = {
-  finance: 'Финансы', sales: 'Продажи', operations: 'Операции',
-  marketing: 'Маркетинг', strategy: 'Стратегия',
+  finance: 'Finance', sales: 'Sales', operations: 'Operations',
+  marketing: 'Marketing', strategy: 'Strategy',
 }
 
 const PRIORITY_COLORS: Record<string, { bg: string; text: string; label: string }> = {
-  critical: { bg: 'bg-red-500/15', text: 'text-red-400', label: 'Критично' },
-  high:     { bg: 'bg-amber-500/15', text: 'text-amber-400', label: 'Высокий' },
-  medium:   { bg: 'bg-blue-500/15', text: 'text-blue-400', label: 'Средний' },
-  low:      { bg: 'bg-emerald-500/15', text: 'text-emerald-400', label: 'Низкий' },
+  critical: { bg: 'bg-red-500/15', text: 'text-red-400', label: 'Critical' },
+  high:     { bg: 'bg-amber-500/15', text: 'text-amber-400', label: 'High' },
+  medium:   { bg: 'bg-blue-500/15', text: 'text-blue-400', label: 'Medium' },
+  low:      { bg: 'bg-emerald-500/15', text: 'text-emerald-400', label: 'Low' },
 }
 
 export default function ClientPointBPage() {
@@ -52,14 +52,14 @@ export default function ClientPointBPage() {
           <Image src="/logo.svg" alt="AIStart360" width={120} height={22} />
           <div className="flex items-center gap-3">
             <Link href="/client/point-a" className="text-xs font-mono text-on-surface-variant hover:text-primary border border-white/[0.08] rounded-lg px-3 py-1.5 transition-all flex items-center gap-1.5">
-              <span className="material-symbols-outlined text-sm">arrow_back</span>Точка A
+              <span className="material-symbols-outlined text-sm">arrow_back</span>Point A
             </Link>
             <Link href="/client/dashboard" className="text-xs font-mono text-on-surface-variant hover:text-primary border border-white/[0.08] rounded-lg px-3 py-1.5 transition-all flex items-center gap-1.5">
-              <span className="material-symbols-outlined text-sm">dashboard</span>Дашборд
+              <span className="material-symbols-outlined text-sm">dashboard</span>Dashboard
             </Link>
             <button onClick={async () => { const sb = createClient(); await sb.auth.signOut(); window.location.href = '/login' }}
               className="flex items-center gap-1.5 text-xs font-mono text-red-400/70 hover:text-red-400 border border-red-500/10 rounded-lg px-3 py-1.5 transition-all">
-              <span className="material-symbols-outlined text-sm">logout</span>Выход
+              <span className="material-symbols-outlined text-sm">logout</span>Sign Out
             </button>
           </div>
         </div>
@@ -75,19 +75,19 @@ export default function ClientPointBPage() {
             <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-4">
               <span className="material-symbols-outlined text-3xl text-primary">flag</span>
             </div>
-            <h2 className="font-headline text-xl font-bold text-on-surface mb-2">Точка Б не рассчитана</h2>
-            <p className="text-sm text-on-surface-variant mb-6">Сначала заполните анкету и рассчитайте Точку А</p>
+            <h2 className="font-headline text-xl font-bold text-on-surface mb-2">Point B Not Calculated</h2>
+            <p className="text-sm text-on-surface-variant mb-6">First fill out the survey and calculate Point A</p>
             <Link href="/client/onboarding" className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-primary to-[#00e29e] text-[#003824] font-bold text-sm">
-              Заполнить анкету
+              Fill Out Survey
             </Link>
           </div>
         ) : (
           <>
             {/* Hero */}
             <section>
-              <p className="text-xs font-mono text-violet-400 uppercase tracking-[0.2em] mb-2">Точка Б · Целевое состояние</p>
+              <p className="text-xs font-mono text-violet-400 uppercase tracking-[0.2em] mb-2">Point B · Target State</p>
               <h1 className="font-headline text-2xl font-extrabold text-on-surface mb-1">
-                Куда вы идёте за <span className="text-violet-400">{pointB.horizon_months} месяцев</span>
+                Where you are headed in <span className="text-violet-400">{pointB.horizon_months} months</span>
               </h1>
               {pointB.user_goals.goal_12months && (
                 <p className="text-sm text-on-surface-variant mt-2 italic">"{pointB.user_goals.goal_12months}"</p>
@@ -113,7 +113,7 @@ export default function ClientPointBPage() {
 
             {/* GAP Analysis */}
             <section>
-              <h2 className="font-headline text-lg font-bold text-on-surface mb-4">GAP-анализ</h2>
+              <h2 className="font-headline text-lg font-bold text-on-surface mb-4">GAP Analysis</h2>
               <div className="space-y-3">
                 {pointB.gap_analysis.map(gap => {
                   const p = PRIORITY_COLORS[gap.priority]
@@ -143,13 +143,13 @@ export default function ClientPointBPage() {
 
             {/* Roadmap */}
             <section>
-              <h2 className="font-headline text-lg font-bold text-on-surface mb-4">Дорожная карта</h2>
+              <h2 className="font-headline text-lg font-bold text-on-surface mb-4">Roadmap</h2>
               <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
                 {pointB.roadmap.map((q, i) => (
                   <div key={q.quarter} className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-5 relative">
                     <div className="flex items-center gap-2 mb-3">
                       <span className="text-xs font-mono font-bold text-violet-400 bg-violet-500/15 px-2 py-0.5 rounded">{q.quarter}</span>
-                      <span className="text-[10px] text-on-surface-variant">+{q.expected_improvement} баллов</span>
+                      <span className="text-[10px] text-on-surface-variant">+{q.expected_improvement} points</span>
                     </div>
                     <h3 className="text-sm font-bold text-on-surface mb-3">{q.title}</h3>
                     <div className="flex flex-wrap gap-1 mb-3">
@@ -178,7 +178,7 @@ export default function ClientPointBPage() {
             {/* Growth blockers */}
             {pointB.user_goals.growth_blockers.length > 0 && (
               <section className="bg-surface-container-low rounded-2xl border border-white/[0.06] p-5">
-                <h2 className="text-sm font-bold text-on-surface mb-3">Барьеры роста (из анкеты)</h2>
+                <h2 className="text-sm font-bold text-on-surface mb-3">Growth Barriers (from survey)</h2>
                 <div className="flex flex-wrap gap-2">
                   {pointB.user_goals.growth_blockers.map(b => (
                     <span key={b} className="text-xs bg-red-500/10 text-red-400 border border-red-500/15 px-3 py-1.5 rounded-lg">{b}</span>
@@ -191,15 +191,15 @@ export default function ClientPointBPage() {
             <section className="grid grid-cols-3 gap-3">
               <Link href="/client/point-a" className="flex items-center gap-2 bg-surface-container-low rounded-xl border border-white/[0.08] hover:border-primary/30 p-4 transition-all group">
                 <span className="material-symbols-outlined text-xl text-primary">assessment</span>
-                <div><p className="text-xs font-medium text-on-surface group-hover:text-primary">Точка А</p><p className="text-[10px] text-on-surface-variant">Текущее состояние</p></div>
+                <div><p className="text-xs font-medium text-on-surface group-hover:text-primary">Point A</p><p className="text-[10px] text-on-surface-variant">Current state</p></div>
               </Link>
               <Link href="/client/onboarding" className="flex items-center gap-2 bg-surface-container-low rounded-xl border border-white/[0.08] hover:border-primary/30 p-4 transition-all group">
                 <span className="material-symbols-outlined text-xl text-primary">edit_note</span>
-                <div><p className="text-xs font-medium text-on-surface group-hover:text-primary">Обновить анкету</p><p className="text-[10px] text-on-surface-variant">Пересчитать цели</p></div>
+                <div><p className="text-xs font-medium text-on-surface group-hover:text-primary">Update Survey</p><p className="text-[10px] text-on-surface-variant">Recalculate goals</p></div>
               </Link>
               <Link href="/client/dashboard" className="flex items-center gap-2 bg-surface-container-low rounded-xl border border-white/[0.08] hover:border-primary/30 p-4 transition-all group">
                 <span className="material-symbols-outlined text-xl text-primary">dashboard</span>
-                <div><p className="text-xs font-medium text-on-surface group-hover:text-primary">Дашборд</p><p className="text-[10px] text-on-surface-variant">Обзор показателей</p></div>
+                <div><p className="text-xs font-medium text-on-surface group-hover:text-primary">Dashboard</p><p className="text-[10px] text-on-surface-variant">Overview of metrics</p></div>
               </Link>
             </section>
           </>

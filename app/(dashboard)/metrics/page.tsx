@@ -6,68 +6,68 @@ import { useState } from 'react'
 const METRIC_GOALS = [
   {
     id: 'acquisition', number: '01',
-    goal: 'Привлечение новых клиентов',
+    goal: 'Attracting new clients',
     icon: 'person_add', color: 'primary',
-    categories: ['Продажи', 'Маркетинг'],
+    categories: ['Sales', 'Marketing'],
     metrics: [
-      { label: 'Количество новых клиентов',    formula: 'Новые оплаты за период',               benchmark: 'MoM ≥15%' },
-      { label: 'Количество новых лидов',       formula: 'Входящие заявки / обращения',           benchmark: '' },
-      { label: 'Количество целевых лидов',     formula: 'Лиды, прошедшие квалификацию',          benchmark: '>60% от всех' },
-      { label: 'Стоимость привлечения (CAC)',  formula: '(Маркетинг + Продажи) / Новые клиенты', benchmark: 'LTV/CAC ≥ 3' },
-      { label: 'Стоимость лида (CPL)',         formula: 'Расходы на рекламу / Новые лиды',       benchmark: '' },
-      { label: 'Стоимость целевого лида',      formula: 'Расходы / Целевые лиды',                benchmark: '' },
-      { label: 'Расходы на рекламу',           formula: 'Совокупный рекламный бюджет',           benchmark: '' },
-      { label: 'Сумма продаж с канала',        formula: 'Выручка по источнику привлечения',      benchmark: '' },
+      { label: 'Number of new clients',    formula: 'New payments for the period',               benchmark: 'MoM ≥15%' },
+      { label: 'Number of new leads',       formula: 'Incoming requests / inquiries',           benchmark: '' },
+      { label: 'Number of qualified leads',     formula: 'Leads that passed qualification',          benchmark: '>60% of total' },
+      { label: 'Customer Acquisition Cost (CAC)',  formula: '(Marketing + Sales) / New clients', benchmark: 'LTV/CAC ≥ 3' },
+      { label: 'Cost Per Lead (CPL)',         formula: 'Advertising spend / New leads',       benchmark: '' },
+      { label: 'Cost per qualified lead',      formula: 'Spend / Qualified leads',                benchmark: '' },
+      { label: 'Advertising spend',           formula: 'Total advertising budget',           benchmark: '' },
+      { label: 'Channel sales revenue',        formula: 'Revenue by acquisition source',      benchmark: '' },
     ],
-    insight: 'Без CAC Payback ≤30–45 дней рост финансируется из кармана собственника.',
+    insight: 'Without CAC Payback ≤30-45 days, growth is funded from the owner's pocket.',
   },
   {
     id: 'retention', number: '02',
-    goal: 'Удержание и повторные продажи',
+    goal: 'Retention and repeat sales',
     icon: 'favorite', color: 'primary',
-    categories: ['Удержание', 'Клиенты'],
+    categories: ['Retention', 'Clients'],
     metrics: [
-      { label: 'Repeat Purchase Rate',    formula: 'Клиенты с ≥2 покупками / Все × 100%',       benchmark: '≥40%' },
-      { label: 'Churn Rate',              formula: 'Ушедшие / Клиенты в начале × 100%',          benchmark: '≤5%/мес' },
-      { label: 'Retention 30 / 60 / 90', formula: 'Активные через N дней / Клиенты в старте',   benchmark: '60% / 40% / 25%' },
-      { label: 'LTV (Lifetime Value)',    formula: 'Средний чек × Частота × Срок жизни',         benchmark: 'LTV/CAC ≥ 3' },
-      { label: 'Time Between Purchases', formula: 'Ср. кол-во дней между покупками',             benchmark: '' },
-      { label: 'Среднее кол-во покупок', formula: 'Всего покупок / Всего клиентов',              benchmark: '' },
-      { label: 'Повторная выручка %',    formula: 'Повторные продажи / Общая выручка × 100%',   benchmark: '40–60%' },
+      { label: 'Repeat Purchase Rate',    formula: 'Clients with ≥2 purchases / Total × 100%',       benchmark: '≥40%' },
+      { label: 'Churn Rate',              formula: 'Churned / Clients at start × 100%',          benchmark: '≤5%/mo' },
+      { label: 'Retention 30 / 60 / 90', formula: 'Active after N days / Initial clients',   benchmark: '60% / 40% / 25%' },
+      { label: 'LTV (Lifetime Value)',    formula: 'Average order value × Frequency × Lifetime',         benchmark: 'LTV/CAC ≥ 3' },
+      { label: 'Time Between Purchases', formula: 'Avg days between purchases',             benchmark: '' },
+      { label: 'Average number of purchases', formula: 'Total purchases / Total clients',              benchmark: '' },
+      { label: 'Repeat revenue %',    formula: 'Repeat sales / Total revenue × 100%',   benchmark: '40–60%' },
     ],
-    insight: 'Retention +10% → рост прибыли на 25–95%. Без retention каждый месяц — с нуля.',
+    insight: 'Retention +10% leads to 25-95% profit growth. Without retention, every month starts from zero.',
     retentionLevels: [
-      { period: '30 дней', good: '50–70%', label: 'хорошо'    },
-      { period: '60 дней', good: '30–50%', label: 'стабильно' },
-      { period: '90 дней', good: '15–30%', label: 'отлично'   },
+      { period: '30 days', good: '50–70%', label: 'good'    },
+      { period: '60 days', good: '30–50%', label: 'stable' },
+      { period: '90 days', good: '15–30%', label: 'excellent'   },
     ],
   },
   {
     id: 'avg_check', number: '03',
-    goal: 'Рост среднего чека',
+    goal: 'Average order value growth',
     icon: 'trending_up', color: 'primary',
-    categories: ['Монетизация', 'Продажи'],
+    categories: ['Monetization', 'Sales'],
     metrics: [
-      { label: 'Средний чек',       formula: 'Выручка / Кол-во сделок',                   benchmark: 'MoM ↑' },
-      { label: 'Доход на 1 клиента',formula: 'Выручка / Кол-во уникальных клиентов',      benchmark: '' },
-      { label: 'Доля апселов',      formula: 'Клиенты с апселлом / Все × 100%',           benchmark: '≥20%' },
-      { label: 'Сумма апселов',     formula: 'Выручка от апселл-продуктов',               benchmark: '' },
-      { label: 'Доля кросс-продаж', formula: 'Клиенты с кросс-покупкой / Все × 100%',    benchmark: '' },
-      { label: 'Сумма кросселлов',  formula: 'Выручка от сопутствующих продуктов',        benchmark: '' },
+      { label: 'Average order value',       formula: 'Revenue / Number of deals',                   benchmark: 'MoM ↑' },
+      { label: 'Revenue per client',formula: 'Revenue / Unique clients',      benchmark: '' },
+      { label: 'Upsell share',      formula: 'Clients with upsell / Total × 100%',           benchmark: '≥20%' },
+      { label: 'Upsell revenue',     formula: 'Revenue from upsell products',               benchmark: '' },
+      { label: 'Cross-sell share', formula: 'Clients с кросс-покупкой / Все × 100%',    benchmark: '' },
+      { label: 'Cross-sell revenue',  formula: 'Revenue from complementary products',        benchmark: '' },
     ],
-    insight: 'Рост среднего чека без роста трафика — самый эффективный путь к $2M.',
+    insight: 'Average order value growth without traffic growth is the most efficient path to $2M.',
   },
   {
     id: 'frequency', number: '04',
-    goal: 'Увеличение частоты покупки',
+    goal: 'Increasing purchase frequency',
     icon: 'repeat', color: 'secondary',
-    categories: ['Удержание', 'Монетизация'],
+    categories: ['Retention', 'Monetization'],
     metrics: [
-      { label: 'Frequency',              formula: 'Кол-во покупок за период / Клиентов', benchmark: '' },
+      { label: 'Frequency',              formula: 'Number покупок за период / Клиентов', benchmark: '' },
       { label: 'Repeat Purchase Rate',   formula: '% клиентов, вернувшихся повторно',    benchmark: '≥40%' },
       { label: 'Time Between Purchases', formula: 'Ср. дней между покупками',            benchmark: '' },
       { label: 'LTV',                    formula: 'Доход от клиента за весь период',      benchmark: '' },
-      { label: 'Retention 30/60/90',     formula: 'Удержание по временным интервалам',   benchmark: '' },
+      { label: 'Retention 30/60/90',     formula: 'Retention по временным интервалам',   benchmark: '' },
     ],
     insight: 'Один и тот же клиент, покупающий 2–5 раз = рост без роста рекламных затрат.',
   },
@@ -75,13 +75,13 @@ const METRIC_GOALS = [
     id: 'referral', number: '05',
     goal: 'Сарафанное радио',
     icon: 'share', color: 'primary',
-    categories: ['Маркетинг', 'Клиенты'],
+    categories: ['Marketing', 'Clients'],
     metrics: [
-      { label: 'Referral Rate (кол-во)', formula: 'Клиенты по рекомендации за период',      benchmark: '' },
+      { label: 'Referral Rate (кол-во)', formula: 'Clients по рекомендации за период',      benchmark: '' },
       { label: 'Referral Rate (%)',       formula: 'Реф. клиенты / Все новые × 100%',        benchmark: '≥15%' },
       { label: 'NPS',                     formula: '% Промоутеров − % Критиков (1–10)',      benchmark: '≥50' },
       { label: '% лидов по рекомендации', formula: 'Реф. лиды / Все лиды × 100%',           benchmark: '' },
-      { label: 'UGC Volume',              formula: 'Кол-во контента, созданного клиентами',  benchmark: '' },
+      { label: 'UGC Volume',              formula: 'Number контента, созданного клиентами',  benchmark: '' },
       { label: 'Share Rate',              formula: '% людей, пересылающих материалы',        benchmark: '' },
     ],
     insight: 'Реферальные клиенты платят быстрее, больше и обходятся дешевле рекламных.',
@@ -90,9 +90,9 @@ const METRIC_GOALS = [
     id: 'competitors', number: '06',
     goal: 'Переключение от конкурентов',
     icon: 'compare_arrows', color: 'secondary',
-    categories: ['Конкуренция', 'Продажи'],
+    categories: ['Конкуренция', 'Sales'],
     metrics: [
-      { label: 'Кол-во клиентов от конкурентов', formula: 'Новые, сменившие конкурента',    benchmark: '' },
+      { label: 'Number клиентов от конкурентов', formula: 'Новые, сменившие конкурента',    benchmark: '' },
       { label: '% от конкурентов',               formula: 'Реф. от конк. / Все новые × 100%', benchmark: '' },
       { label: 'Win Rate',                        formula: 'Выигранные / Все конкурентные',   benchmark: '>50%' },
       { label: 'Loss Rate',                       formula: 'Проигранные / Все конкурентные',  benchmark: '' },
@@ -103,13 +103,13 @@ const METRIC_GOALS = [
     id: 'demand', number: '07',
     goal: 'Формирование потребности',
     icon: 'psychology', color: 'primary',
-    categories: ['Маркетинг', 'Воронка'],
+    categories: ['Marketing', 'Funnel'],
     metrics: [
       { label: 'Engagement Rate',         formula: 'Взаимодействия / Охват × 100%',         benchmark: '≥3%' },
       { label: 'CR контент → диалог',     formula: '% начавших переписку из контента',       benchmark: '' },
       { label: 'CR диалог → диагностика', formula: '% дошедших до разбора',                  benchmark: '' },
       { label: '% прогретых лидов',       formula: 'Признавшие проблему / Все лиды',         benchmark: '' },
-      { label: 'Time-to-Interest',        formula: 'Время от первого касания до интереса',   benchmark: '' },
+      { label: 'Time-to-Interest',        formula: 'Time от первого касания до интереса',   benchmark: '' },
     ],
     insight: 'Без осознанной потребности цикл сделки удлиняется в 3–5 раз.',
   },
@@ -117,44 +117,44 @@ const METRIC_GOALS = [
     id: 'deal_speed', number: '08',
     goal: 'Ускорение сделки',
     icon: 'speed', color: 'secondary',
-    categories: ['Воронка', 'Продажи'],
+    categories: ['Funnel', 'Sales'],
     metrics: [
-      { label: 'Средний цикл закрытия',  formula: 'Сумма дней / Кол-во сделок',             benchmark: 'MoM ↓' },
-      { label: 'Лид → Диалог (дни)',     formula: 'Среднее время перехода',                  benchmark: '' },
-      { label: 'Диалог → Встреча (дни)', formula: 'Среднее время перехода',                  benchmark: '' },
-      { label: 'Встреча → КП (дни)',     formula: 'Среднее время перехода',                  benchmark: '' },
-      { label: 'КП → Сделка (дни)',      formula: 'Среднее время перехода',                  benchmark: '' },
+      { label: 'Средний цикл закрытия',  formula: 'Сумма дней / Number сделок',             benchmark: 'MoM ↓' },
+      { label: 'Лид → Диалог (дни)',     formula: 'Average время перехода',                  benchmark: '' },
+      { label: 'Диалог → Встреча (дни)', formula: 'Average время перехода',                  benchmark: '' },
+      { label: 'Встреча → КП (дни)',     formula: 'Average время перехода',                  benchmark: '' },
+      { label: 'КП → Сделка (дни)',      formula: 'Average время перехода',                  benchmark: '' },
     ],
     insight: 'Критичность боли 9–10 → цикл сделки короче в 3–5 раз. Это прямые деньги.',
   },
   {
     id: 'cac', number: '09',
-    goal: 'Снижение CAC',
+    goal: 'Decrease CAC',
     icon: 'savings', color: 'primary',
-    categories: ['Маркетинг', 'Монетизация'],
+    categories: ['Marketing', 'Monetization'],
     metrics: [
-      { label: 'CAC',         formula: '(Маркетинг + Продажи + Прочие) / Новые клиенты', benchmark: 'LTV > CAC×3' },
+      { label: 'CAC',         formula: '(Marketing + Sales + Прочие) / Новые клиенты', benchmark: 'LTV > CAC×3' },
       { label: 'LTV/CAC',    formula: 'LTV / CAC',                                        benchmark: '≥ 3x' },
-      { label: 'CAC Payback', formula: 'CAC / Средний чек или маржа/мес',                benchmark: '≤30–45 дней' },
+      { label: 'CAC Payback', formula: 'CAC / Average order value или маржа/mo',                benchmark: '≤30–45 дней' },
     ],
     formulaBlock: {
-      title: 'Формула CAC',
-      formula: 'CAC = (Маркетинг + Продажи + Прочие) / Новые_клиенты',
+      title: 'Formula CAC',
+      formula: 'CAC = (Marketing + Sales + Прочие) / Новые_клиенты',
       rules: ['LTV > CAC × 3 → прибыльный рост', 'CAC растёт → воронка хуже', 'CAC падает → маркетинг эффективнее'],
     },
     insight: 'CAC Payback ≤30–45 дней = безопасное масштабирование за счёт клиентов.',
   },
   {
     id: 'conversion', number: '10',
-    goal: 'Конверсия в продажи',
+    goal: 'Conversion в продажи',
     icon: 'filter_alt', color: 'primary',
-    categories: ['Воронка', 'Продажи'],
+    categories: ['Funnel', 'Sales'],
     metrics: [
       { label: 'Лид → Диалог',    formula: '% лидов, начавших диалог',           benchmark: '>60%' },
       { label: 'Диалог → Встреча',formula: '% диалогов → встреча',               benchmark: '>40%' },
       { label: 'Встреча → КП',    formula: '% встреч, получивших КП',            benchmark: '>70%' },
       { label: 'КП → Сделка',     formula: '% КП, закрытых в сделку',            benchmark: '>30%' },
-      { label: 'Time to Response', formula: 'Среднее время ответа на лид (мин)', benchmark: '<15 мин' },
+      { label: 'Time to Response', formula: 'Average время ответа на лид (мин)', benchmark: '<15 мин' },
       { label: 'Time to Close',   formula: 'Полный цикл от лида до оплаты',      benchmark: '' },
     ],
     insight: 'Улучшение на 10% на каждом этапе воронки = рост выручки ×1.5.',
@@ -163,14 +163,14 @@ const METRIC_GOALS = [
     id: 'winrate', number: '11',
     goal: 'Выбор вас, а не конкурента',
     icon: 'emoji_events', color: 'primary',
-    categories: ['Конкуренция', 'Продажи'],
+    categories: ['Конкуренция', 'Sales'],
     metrics: [
       { label: 'Win Rate',               formula: 'Выигранные конкурентные / Все × 100%',  benchmark: '>50%' },
       { label: '% выбравших вас',        formula: 'При прямом сравнении с конкурентом',    benchmark: '' },
       { label: 'Loss Rate',              formula: 'Проигранные / Все конкурентные × 100%', benchmark: '' },
       { label: '% выбравших конкурента', formula: 'При прямом сравнении',                  benchmark: '' },
     ],
-    insight: 'Сильное доверие → +40–70% конверсии. Без отстройки — уговоры вместо продаж.',
+    insight: 'Сильное доверие → +40–70% конверсии. Без отстройки — уговоры вmoто продаж.',
   },
 ]
 
@@ -179,50 +179,50 @@ const BIZ_METRICS = [
   {
     dept: 'Финансы', icon: 'payments', color: 'primary',
     items: [
-      { label: 'Выручка (год)',          value: '₸84.2М',   target: '₸110М',        trend: '+12.4%', up: true,  status: 'ok'       },
+      { label: 'Revenue (год)',          value: '₸84.2М',   target: '₸110М',        trend: '+12.4%', up: true,  status: 'ok'       },
       { label: 'Валовая маржа',          value: '34.2%',    target: '40%',           trend: '+2.1%',  up: true,  status: 'ok'       },
       { label: 'EBITDA',                 value: '₸28.7М',   target: '₸38М',         trend: '+8.3%',  up: true,  status: 'ok'       },
       { label: 'ROA',                    value: '2.73%',    target: '4–5%',          trend: '+0.4%',  up: true,  status: 'weak'     },
       { label: 'Операционные расходы',   value: '₸54.8М',   target: '≤₸55М',        trend: '+3.1%',  up: false, status: 'warn'     },
       { label: 'Себестоимость (индекс)', value: '100',      target: '90–95',         trend: '0%',     up: false, status: 'warn'     },
       { label: 'Дебиторская задолженность', value: '₸12.3М', target: '≤₸10М',      trend: '-5.2%',  up: false, status: 'warn'     },
-      { label: 'Cash Flow (мес)',        value: '₸4.2М',    target: 'Положительный', trend: '+8.7%',  up: true,  status: 'ok'       },
+      { label: 'Cash Flow (mo)',        value: '₸4.2М',    target: 'Положительный', trend: '+8.7%',  up: true,  status: 'ok'       },
     ],
   },
   {
-    dept: 'Маркетинг', icon: 'ads_click', color: 'secondary',
+    dept: 'Marketing', icon: 'ads_click', color: 'secondary',
     items: [
       { label: 'CAC',                  value: '₸45 000',  target: '≤₸38 000',  trend: '-8.3%',  up: true,  status: 'ok'   },
       { label: 'LTV/CAC',              value: '4.78x',    target: '≥5x',        trend: '+0.3x',  up: true,  status: 'ok'   },
       { label: 'CPL (стоимость лида)', value: '₸8 200',   target: '≤₸7 000',   trend: '-5.1%',  up: true,  status: 'warn' },
-      { label: 'Лидов в мес.',         value: '340',      target: '500+',       trend: '+22%',   up: true,  status: 'ok'   },
-      { label: 'Конверсия лид→клиент', value: '18.2%',    target: '≥25%',       trend: '+3.1%',  up: true,  status: 'warn' },
+      { label: 'Лидов в mo.',         value: '340',      target: '500+',       trend: '+22%',   up: true,  status: 'ok'   },
+      { label: 'Conversion лид→клиент', value: '18.2%',    target: '≥25%',       trend: '+3.1%',  up: true,  status: 'warn' },
       { label: 'NPS',                  value: '35',       target: '50+',        trend: '+3',     up: true,  status: 'warn' },
-      { label: 'Посещений сайта/мес',  value: '150 000',  target: '500 000',    trend: '+18%',   up: true,  status: 'warn' },
+      { label: 'Посещений сайта/mo',  value: '150 000',  target: '500 000',    trend: '+18%',   up: true,  status: 'warn' },
       { label: 'Фолловеры соцсети',    value: '50 000',   target: '200 000',    trend: '+12%',   up: true,  status: 'weak' },
       { label: 'Engagement Rate',      value: '2.4%',     target: '≥3%',        trend: '+0.3%',  up: true,  status: 'warn' },
     ],
   },
   {
-    dept: 'Продажи', icon: 'handshake', color: 'primary',
+    dept: 'Sales', icon: 'handshake', color: 'primary',
     items: [
-      { label: 'Средний чек',          value: '₸180 000', target: '₸210 000',   trend: '+8.2%',  up: true,  status: 'ok'   },
+      { label: 'Average order value',          value: '₸180 000', target: '₸210 000',   trend: '+8.2%',  up: true,  status: 'ok'   },
       { label: 'eCommerce средний чек',value: '₸8 500',   target: '₸10 500',    trend: '+4.1%',  up: true,  status: 'warn' },
       { label: 'Win Rate',             value: '48%',      target: '>50%',        trend: '-2%',    up: false, status: 'warn' },
       { label: 'Цикл закрытия сделки', value: '14 дней',  target: '≤10 дней',   trend: '-3д',    up: true,  status: 'warn' },
-      { label: 'Конверсия КП→Сделка', value: '28%',      target: '>30%',        trend: '+3%',    up: true,  status: 'warn' },
+      { label: 'Conversion КП→Сделка', value: '28%',      target: '>30%',        trend: '+3%',    up: true,  status: 'warn' },
       { label: 'Time to Response',     value: '18 мин',   target: '<15 мин',     trend: '-4 мин', up: true,  status: 'warn' },
-      { label: 'Выручка с продажника', value: '₸4.2М',    target: '₸6М',        trend: '+7%',    up: true,  status: 'weak' },
+      { label: 'Revenue с продажника', value: '₸4.2М',    target: '₸6М',        trend: '+7%',    up: true,  status: 'weak' },
     ],
   },
   {
     dept: 'Операции', icon: 'settings', color: 'error',
     items: [
-      { label: 'Время доставки',         value: '3–5 дн',  target: '2–3 дн',      trend: '0',      up: false, status: 'warn'     },
+      { label: 'Time доставки',         value: '3–5 дн',  target: '2–3 дн',      trend: '0',      up: false, status: 'warn'     },
       { label: 'Выполнение SLA',         value: '87%',     target: '≥95%',         trend: '+2%',    up: true,  status: 'warn'     },
       { label: 'Повторяемость процессов',value: 'GRI 1/10',target: '≥6/10',        trend: '—',      up: false, status: 'critical' },
       { label: 'Предсказуемость',        value: 'GRI 1/10',target: '≥6/10',        trend: '—',      up: false, status: 'critical' },
-      { label: 'Кол-во SKU',             value: '412',     target: '450+',         trend: '+5',     up: true,  status: 'ok'       },
+      { label: 'Number SKU',             value: '412',     target: '450+',         trend: '+5',     up: true,  status: 'ok'       },
       { label: 'Брак / возвраты',        value: '3.2%',    target: '<2%',          trend: '-0.4%',  up: true,  status: 'warn'     },
       { label: 'Производительность',     value: '₸341K/чел',target: '₸420K/чел',  trend: '+4%',    up: true,  status: 'weak'     },
     ],
@@ -232,9 +232,9 @@ const BIZ_METRICS = [
     items: [
       { label: 'Текучесть кадров',    value: '18%',   target: '<10%',   trend: '-2%',   up: true,  status: 'weak' },
       { label: 'eNPS',                value: '42',    target: '60+',    trend: '+5',    up: true,  status: 'warn' },
-      { label: 'Кол-во сотрудников',  value: '247',   target: '300',    trend: '+12',   up: true,  status: 'ok'   },
+      { label: 'Number сотрудников',  value: '247',   target: '300',    trend: '+12',   up: true,  status: 'ok'   },
       { label: 'Метрики команды GRI', value: '2.55/10',target: '≥6/10', trend: '—',    up: false, status: 'critical' },
-      { label: 'Скорость найма',      value: '23 дня',target: '≤14 дн', trend: '-3д',  up: true,  status: 'warn' },
+      { label: 'Speed найма',      value: '23 дня',target: '≤14 дн', trend: '-3д',  up: true,  status: 'warn' },
       { label: 'Процент выполнения OKR', value: '68%',target: '≥80%',  trend: '+4%',   up: true,  status: 'warn' },
     ],
   },
@@ -249,32 +249,32 @@ const BIZ_METRICS = [
     ],
   },
   {
-    dept: 'Клиенты', icon: 'person', color: 'secondary',
+    dept: 'Clients', icon: 'person', color: 'secondary',
     items: [
       { label: 'Активных клиентов', value: '1 847', target: '3 000',   trend: '+8%',    up: true,  status: 'ok'   },
       { label: 'Churn Rate',        value: '4.2%',  target: '<3%',     trend: '-0.6%',  up: true,  status: 'warn' },
       { label: 'NPS',               value: '35',    target: '50+',     trend: '+3',     up: true,  status: 'warn' },
       { label: 'Retention 30d',     value: '42%',   target: '≥60%',    trend: '+3%',    up: true,  status: 'weak' },
       { label: 'ARPU',              value: '₸180К', target: '₸240К',   trend: '+8.2%',  up: true,  status: 'ok'   },
-      { label: 'Время доставки',    value: '3–5 дн',target: '2–3 дн',  trend: '0',      up: false, status: 'warn' },
+      { label: 'Time доставки',    value: '3–5 дн',target: '2–3 дн',  trend: '0',      up: false, status: 'warn' },
     ],
   },
 ]
 
 // ─── KPI Targets from KPI_Metrics.csv ────────────────────────────────────────
 const KPI_TARGETS = [
-  { label: 'Общая выручка (год)',    current: '~90 000 млн ₸', target: '110 000–115 000 млн ₸', icon: 'payments',      category: 'Финансы',  method: 'Финотчётность KASE',    owner: 'CFO'          },
+  { label: 'Total выручка (год)',    current: '~90 000 млн ₸', target: '110 000–115 000 млн ₸', icon: 'payments',      category: 'Финансы',  method: 'Финотчётность KASE',    owner: 'CFO'          },
   { label: 'Доля рынка конфет',      current: '35–40%',         target: '40–42%',                icon: 'pie_chart',     category: 'Рынок',    method: 'Statista, BMI Research', owner: 'Market Res.'  },
   { label: 'Доля онлайн-продаж',     current: '15%',            target: '30–35%',                icon: 'shopping_cart', category: 'Цифровой', method: 'CRM, Google Analytics', owner: 'Digital'      },
   { label: 'Доля экспорта',          current: '9.9%',           target: '20%',                   icon: 'public',        category: 'Рынок',    method: 'Таможенная статистика', owner: 'Export'       },
   { label: 'ROA',                    current: '2.73%',          target: '4–5%',                  icon: 'account_balance',category: 'Финансы', method: 'Финотчётность',         owner: 'CFO'          },
-  { label: 'Среднее число SKU',      current: '400+',           target: '450+',                  icon: 'inventory_2',   category: 'Продукт',  method: 'Система ассортимента',  owner: 'Product'      },
+  { label: 'Average число SKU',      current: '400+',           target: '450+',                  icon: 'inventory_2',   category: 'Продукт',  method: 'Система ассортимента',  owner: 'Product'      },
   { label: 'Себестоимость (индекс)', current: '100 (базис)',    target: '90–95',                 icon: 'manufacturing', category: 'Финансы',  method: 'Управленческий учёт',   owner: 'Supply Chain' },
-  { label: 'Посещений сайта/мес',    current: '150 000',        target: '500 000',               icon: 'web',           category: 'Цифровой', method: 'Google Analytics',      owner: 'Digital'      },
+  { label: 'Посещений сайта/mo',    current: '150 000',        target: '500 000',               icon: 'web',           category: 'Цифровой', method: 'Google Analytics',      owner: 'Digital'      },
   { label: 'Фолловеры соцсети',      current: '50 000',         target: '200 000',               icon: 'thumb_up',      category: 'Цифровой', method: 'Соц. медиа аналитика', owner: 'SMM'          },
-  { label: 'Средний чек eCommerce',  current: '8 500 ₸',        target: '10 500 ₸',             icon: 'receipt_long',  category: 'Продажи',  method: 'POS-система, CRM',      owner: 'E-commerce'   },
-  { label: 'Время доставки',         current: '3–5 дней',       target: '2–3 дня',              icon: 'local_shipping',category: 'Операции', method: 'Логистика',             owner: 'Logistics'    },
-  { label: 'NPS',                    current: '35 баллов',      target: '50+ баллов',            icon: 'star',          category: 'Клиенты',  method: 'NPS-опросы',            owner: 'Cust. Service'},
+  { label: 'Average order value eCommerce',  current: '8 500 ₸',        target: '10 500 ₸',             icon: 'receipt_long',  category: 'Sales',  method: 'POS-система, CRM',      owner: 'E-commerce'   },
+  { label: 'Time доставки',         current: '3–5 дней',       target: '2–3 дня',              icon: 'local_shipping',category: 'Операции', method: 'Логистика',             owner: 'Logistics'    },
+  { label: 'NPS',                    current: '35 баллов',      target: '50+ баллов',            icon: 'star',          category: 'Clients',  method: 'NPS-опросы',            owner: 'Cust. Service'},
 ]
 
 // ─── GRI data ─────────────────────────────────────────────────────────────────
@@ -297,8 +297,8 @@ const GRI_TOP5 = [
 ]
 
 // ─── Category configs ─────────────────────────────────────────────────────────
-const GOAL_CATEGORIES  = ['Все', 'Продажи', 'Маркетинг', 'Удержание', 'Воронка', 'Конкуренция', 'Монетизация', 'Клиенты']
-const KPI_CATEGORIES   = ['Все KPI', 'Финансы', 'Рынок', 'Цифровой', 'Продажи', 'Продукт', 'Операции', 'Клиенты']
+const GOAL_CATEGORIES  = ['Все', 'Sales', 'Marketing', 'Retention', 'Funnel', 'Конкуренция', 'Monetization', 'Clients']
+const KPI_CATEGORIES   = ['Все KPI', 'Финансы', 'Рынок', 'Цифровой', 'Sales', 'Продукт', 'Операции', 'Clients']
 
 function cc(color: string, type: 'text' | 'bg' | 'border') {
   if (color === 'primary') {
@@ -347,7 +347,7 @@ function GoalCard({ goal, catFilter, onCatClick }: {
 
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-[9px] font-mono text-on-surface-variant/50">Цель {goal.number}</span>
+            <span className="text-[9px] font-mono text-on-surface-variant/50">Goal {goal.number}</span>
             {goal.categories.map((cat) => (
               <button key={cat}
                 onClick={(e) => { e.stopPropagation(); onCatClick(cat) }}
@@ -394,7 +394,7 @@ function GoalCard({ goal, catFilter, onCatClick }: {
             <table className="w-full">
               <thead>
                 <tr className="border-b border-white/[0.04]">
-                  {['Метрика', 'Как считать', 'Бенчмарк'].map((h) => (
+                  {['Метрика', 'Как считать', 'Benchmark'].map((h) => (
                     <th key={h} className="text-left text-[10px] font-mono text-on-surface-variant uppercase tracking-widest px-5 py-2.5">{h}</th>
                   ))}
                 </tr>
@@ -567,7 +567,7 @@ export default function MetricsPage() {
         <div className="flex flex-wrap gap-2 lg:flex-col lg:items-end">
           <div className="flex items-center gap-2 bg-primary/10 border border-primary/20 rounded-xl px-3 py-2">
             <span className="material-symbols-outlined text-sm text-primary">flag</span>
-            <span className="text-xs font-mono text-primary">Цель: $2M / год</span>
+            <span className="text-xs font-mono text-primary">Goal: $2M / год</span>
           </div>
           <div className="flex items-center gap-2 bg-surface-container border border-white/[0.06] rounded-xl px-3 py-2">
             <span className="material-symbols-outlined text-sm text-secondary">radar</span>
@@ -637,7 +637,7 @@ export default function MetricsPage() {
               {[
                 { n: '1', label: 'Программа привлечения',         icon: 'person_add'     },
                 { n: '2', label: 'Программа удержания',           icon: 'favorite'       },
-                { n: '3', label: 'Рост чека и частоты',           icon: 'trending_up'    },
+                { n: '3', label: 'Growth чека и частоты',           icon: 'trending_up'    },
                 { n: '4', label: 'Партнёрская сеть',              icon: 'hub'            },
                 { n: '5', label: 'Сарафанное радио',              icon: 'share'          },
                 { n: '6', label: 'Cash Stability (Компания-банк)', icon: 'account_balance'},
@@ -668,7 +668,7 @@ export default function MetricsPage() {
           </div>
           <div className="flex flex-wrap gap-2 items-center">
             <span className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest">Раздел:</span>
-            {['Все KPI', 'Финансы', 'Рынок', 'Цифровой', 'Продажи', 'Продукт', 'Операции', 'Клиенты'].map((cat) => (
+            {['Все KPI', 'Финансы', 'Рынок', 'Цифровой', 'Sales', 'Продукт', 'Операции', 'Clients'].map((cat) => (
               <button key={cat} onClick={() => setActiveKpiCat(cat)}
                 className={`text-[10px] font-mono uppercase px-3 py-1.5 rounded-full border transition-all duration-150 ${
                   activeKpiCat === cat
@@ -787,7 +787,7 @@ export default function MetricsPage() {
                   </div>
                   <span className={`text-sm font-mono font-bold w-12 text-right flex-shrink-0 ${clr.text}`}>{block.score}/10</span>
                   <span className={`hidden sm:inline text-[9px] font-mono px-2 py-0.5 rounded-full border ${clr.badge} flex-shrink-0 max-w-[180px] truncate`}>
-                    {block.status === 'critical' ? 'КРИТИЧЕСКИЙ БЛОК' : block.status === 'weak' ? 'Слабое место' : 'Достаточный уровень'}
+                    {block.status === 'critical' ? 'КРИТИЧЕСКИЙ БЛОК' : block.status === 'weak' ? 'Слабое moто' : 'Достаточный уровень'}
                   </span>
                 </div>
               )
@@ -820,12 +820,12 @@ export default function MetricsPage() {
 
           {/* 90-day plan */}
           <div className="bg-surface-container-low rounded-2xl border border-primary/20 p-5">
-            <p className="text-[10px] font-mono text-primary/70 uppercase tracking-[0.2em] mb-3">План · 90 дней</p>
+            <p className="text-[10px] font-mono text-primary/70 uppercase tracking-[0.2em] mb-3">План · 90 days</p>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               {[
                 { phase: 'Дни 1–30',  title: 'Стабилизация операций', items: ['Регламенты процессов', 'Метрики команды', 'Повторяемость'], color: 'error' },
                 { phase: 'Дни 31–60', title: 'Усиление позиции',       items: ['Доказательства результата', 'Trust & Positioning', 'NPS-система'], color: 'tertiary-container' },
-                { phase: 'Дни 61–90', title: 'Масштабирование',         items: ['Партнёрская модель', 'Программа привлечения', 'Cash Stability'], color: 'primary' },
+                { phase: 'Дни 61–90', title: 'Scaling',         items: ['Партнёрская модель', 'Программа привлечения', 'Cash Stability'], color: 'primary' },
               ].map((ph) => (
                 <div key={ph.phase} className={`bg-surface-container rounded-xl p-4 border border-${ph.color}/20`}>
                   <p className={`text-[9px] font-mono text-${ph.color} uppercase tracking-widest mb-1`}>{ph.phase}</p>
@@ -871,7 +871,7 @@ function GoalCardWrapper({ goal, catFilter, onCatClick, forceOpen }: {
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap mb-0.5">
-            <span className="text-[9px] font-mono text-on-surface-variant/50">Цель {goal.number}</span>
+            <span className="text-[9px] font-mono text-on-surface-variant/50">Goal {goal.number}</span>
             {goal.categories.map((cat) => (
               <button key={cat}
                 onClick={(e) => { e.stopPropagation(); onCatClick(cat) }}
@@ -903,7 +903,7 @@ function GoalCardWrapper({ goal, catFilter, onCatClick, forceOpen }: {
             <table className="w-full">
               <thead>
                 <tr className="border-b border-white/[0.04]">
-                  {['Метрика', 'Как считать', 'Бенчмарк'].map((h) => (
+                  {['Метрика', 'Как считать', 'Benchmark'].map((h) => (
                     <th key={h} className="text-left text-[10px] font-mono text-on-surface-variant uppercase tracking-widest px-5 py-2.5">{h}</th>
                   ))}
                 </tr>

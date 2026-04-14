@@ -53,7 +53,7 @@ export function FileUploadField({
 
         onChange(publicUrl)
       } catch (err: any) {
-        setError(err?.message ?? 'Ошибка загрузки файла')
+        setError(err?.message ?? 'File upload error')
         setFileName(undefined)
       } finally {
         setUploading(false)
@@ -78,12 +78,12 @@ export function FileUploadField({
 
         <div className="flex-1 min-w-0">
           {uploading ? (
-            <span className="text-sm text-on-surface-variant">Загрузка...</span>
+            <span className="text-sm text-on-surface-variant">Uploading...</span>
           ) : displayName ? (
             <span className="text-sm text-on-surface truncate block">{displayName}</span>
           ) : (
             <span className="text-sm text-on-surface-variant/50">
-              Нажмите для загрузки файла
+              Click to upload a file
             </span>
           )}
         </div>
@@ -96,7 +96,7 @@ export function FileUploadField({
             onClick={(e) => e.stopPropagation()}
             className="text-xs text-primary hover:underline"
           >
-            Открыть
+            Open
           </a>
         )}
       </div>

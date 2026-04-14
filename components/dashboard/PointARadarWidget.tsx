@@ -17,7 +17,7 @@ const CY      = 110
 const R_MAX   = 72
 const R_LABEL = 90
 
-const LABELS = ['Финансы', 'Продажи', 'Операции', 'Маркетинг', 'Стратегия']
+const LABELS = ['Finance', 'Sales', 'Operations', 'Marketing', 'Strategy']
 const KEYS   = ['finance', 'sales', 'operations', 'marketing', 'strategy'] as const
 
 function angle(i: number) { return (Math.PI * 2 * i) / N - Math.PI / 2 }
@@ -55,11 +55,11 @@ function scoreColor(s: number) {
 }
 
 function scoreLabel(s: number) {
-  if (s < 3) return 'Критично'
-  if (s < 5) return 'Низкий'
-  if (s < 7) return 'Средний'
-  if (s < 9) return 'Высокий'
-  return 'Отлично'
+  if (s < 3) return 'Critical'
+  if (s < 5) return 'Low'
+  if (s < 7) return 'Medium'
+  if (s < 9) return 'High'
+  return 'Excellent'
 }
 
 function initials(name: string) {
@@ -89,7 +89,7 @@ export function PointARadarWidget({ pointA, orgName }: Props) {
       {/* Header */}
       <div className="flex items-center justify-between mb-3">
         <div>
-          <p className="text-[10px] font-mono text-primary/60 uppercase tracking-widest">Point A — Точка А</p>
+          <p className="text-[10px] font-mono text-primary/60 uppercase tracking-widest">Point A — Diagnostics</p>
           <div className="flex items-baseline gap-1.5 mt-0.5">
             <span className="text-xl font-mono font-bold" style={{ color: overallColor }}>
               {totalScore10.toFixed(1)}
@@ -229,7 +229,7 @@ export function PointARadarWidget({ pointA, orgName }: Props) {
             </text>
             <text x={CX} y={CY + 9} textAnchor="middle" fontSize="6"
               fill="rgba(255,255,255,0.25)" fontFamily="monospace">
-              Точка А
+              Point A
             </text>
           </svg>
 
@@ -237,7 +237,7 @@ export function PointARadarWidget({ pointA, orgName }: Props) {
           <div className="flex items-center justify-center gap-4 -mt-1">
             <div className="flex items-center gap-1.5">
               <div className="w-5 h-[1.5px] bg-[#6effc0]" />
-              <span className="text-[9px] font-mono text-on-surface-variant/35">Текущий уровень</span>
+              <span className="text-[9px] font-mono text-on-surface-variant/35">Current Level</span>
             </div>
           </div>
         </div>

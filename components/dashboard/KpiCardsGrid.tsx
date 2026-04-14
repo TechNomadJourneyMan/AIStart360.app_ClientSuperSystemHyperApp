@@ -91,7 +91,7 @@ function MetricCard({
             className="text-xs font-mono font-bold"
             style={{ color: metric.trendDirection === 'down' ? '#ff6b6b' : metric.trendDirection === 'up' ? metric.color : '#84958a' }}
           >
-            {metric.trendDirection === 'up' ? '+' : ''}{metric.trend.toFixed(1)}{metric.unit === '%' ? ' пп' : '%'}
+            {metric.trendDirection === 'up' ? '+' : ''}{metric.trend.toFixed(1)}{metric.unit === '%' ? ' pp' : '%'}
           </span>
           <span className="text-[10px] text-on-surface-variant/60 ml-0.5">{metric.trendLabel}</span>
         </div>
@@ -100,7 +100,7 @@ function MetricCard({
         {goalProgress !== null && (
           <div className="mt-3">
             <div className="flex items-center justify-between mb-1">
-              <span className="text-[9px] font-mono text-on-surface-variant/40 uppercase tracking-widest">план</span>
+              <span className="text-[9px] font-mono text-on-surface-variant/40 uppercase tracking-widest">target</span>
               <span className="text-[10px] font-mono font-bold" style={{ color: progressColor(goalProgress) }}>
                 {Math.round(goalProgress)}%
               </span>
@@ -138,7 +138,7 @@ function MetricCard({
             className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-on-surface-variant hover:bg-white/[0.06] hover:text-on-surface transition-colors"
           >
             <span className="material-symbols-outlined text-sm">visibility_off</span>
-            Скрыть
+            Hide
           </button>
           {!metric.isDefault && (
             <button
@@ -146,7 +146,7 @@ function MetricCard({
               className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-error hover:bg-error/[0.08] transition-colors"
             >
               <span className="material-symbols-outlined text-sm">delete</span>
-              Удалить
+              Delete
             </button>
           )}
         </div>
@@ -160,13 +160,13 @@ function EmptyMetrics({ onShowAll, hasHidden }: { onShowAll: () => void; hasHidd
   return (
     <div className="col-span-2 flex flex-col items-center justify-center py-12 rounded-2xl border border-dashed border-white/[0.08] text-center">
       <span className="material-symbols-outlined text-4xl text-on-surface-variant/20 mb-3">bar_chart</span>
-      <p className="text-sm text-on-surface-variant mb-1">Нет видимых метрик</p>
+      <p className="text-sm text-on-surface-variant mb-1">No visible metrics</p>
       {hasHidden && (
         <button
           onClick={onShowAll}
           className="mt-3 text-xs text-primary hover:underline"
         >
-          Показать все скрытые метрики
+          Show all hidden metrics
         </button>
       )}
     </div>
@@ -191,14 +191,14 @@ export function KpiCardsGrid() {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <p className="text-[10px] font-mono text-on-surface-variant/40 uppercase tracking-widest">
-              Метрики
+              Metrics
             </p>
             {hiddenMetricIds.length > 0 && (
               <button
                 onClick={showAllMetrics}
                 className="text-[10px] font-mono text-primary/60 hover:text-primary transition-colors"
               >
-                +{hiddenMetricIds.length} скрыто
+                +{hiddenMetricIds.length} hidden
               </button>
             )}
           </div>
@@ -208,7 +208,7 @@ export function KpiCardsGrid() {
               className="flex items-center gap-1.5 text-[11px] font-mono text-on-surface-variant/40 hover:text-primary transition-colors border border-dashed border-white/[0.06] hover:border-primary/30 rounded-lg px-2.5 py-1"
             >
               <span className="material-symbols-outlined text-[14px]">add</span>
-              Метрика
+              Metric
             </button>
           )}
         </div>

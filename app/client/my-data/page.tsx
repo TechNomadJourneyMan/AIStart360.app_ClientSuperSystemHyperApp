@@ -33,7 +33,7 @@ export default function MyDataPage() {
     sb.auth.getSession().then(({ data }) => {
       const uid = data.session?.user?.id
       if (uid) setUserId(uid)
-      else setError('Не удалось определить пользователя')
+      else setError('Could not identify user')
     })
   }, [])
 
@@ -56,7 +56,7 @@ export default function MyDataPage() {
           if (companyJson.ok) setCompany(companyJson.data)
         }
       } catch {
-        if (!cancelled) setError('Ошибка загрузки данных')
+        if (!cancelled) setError('Error loading data')
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -92,28 +92,28 @@ export default function MyDataPage() {
           <Link href="/client/dashboard"
             className="text-xs text-on-surface-variant hover:text-primary transition-colors flex items-center gap-1">
             <span className="material-symbols-outlined text-base">arrow_back</span>
-            Назад
+            Back
           </Link>
           <button onClick={() => { document.cookie = 'aistart360_role=; path=/; max-age=0'; window.location.href = '/login' }}
             className="text-xs text-red-400/70 hover:text-red-400 flex items-center gap-1 border border-red-500/10 px-2.5 py-1 rounded-lg transition-all">
             <span className="material-symbols-outlined text-sm">logout</span>
-            Выход
+            Sign Out
           </button>
         </div>
       </header>
 
       <main className="flex-1 p-6 max-w-3xl mx-auto w-full">
         <div className="mb-6">
-          <h1 className="text-xl font-bold text-slate-100 tracking-tight">Мои данные</h1>
+          <h1 className="text-xl font-bold text-slate-100 tracking-tight">My Data</h1>
           <p className="text-sm text-slate-500 mt-1">
-            Данные из вашей анкеты. Вы можете отредактировать их, перейдя к нужному шагу.
+            Data from your survey. You can edit it by navigating to the relevant step.
           </p>
         </div>
 
         {loading ? (
           <div className="flex items-center justify-center py-20">
             <span className="w-5 h-5 border-2 border-primary/30 border-t-primary rounded-full animate-spin mr-3" />
-            <span className="text-sm text-slate-500">Загрузка данных...</span>
+            <span className="text-sm text-slate-500">Loading data...</span>
           </div>
         ) : error ? (
           <div className="rounded-2xl bg-red-500/5 border border-red-500/15 p-8 text-center">
@@ -122,12 +122,12 @@ export default function MyDataPage() {
         ) : !hasData ? (
           <div className="rounded-2xl bg-surface-container-low border border-white/[0.06] p-12 text-center space-y-4">
             <span className="material-symbols-outlined text-5xl text-slate-700">assignment</span>
-            <p className="text-sm text-slate-400">Вы ещё не заполнили анкету</p>
+            <p className="text-sm text-slate-400">You have not filled out the survey yet</p>
             <Link
               href="/client/onboarding"
               className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold bg-primary/15 border border-primary/25 text-primary hover:bg-primary/25 transition-all"
             >
-              Заполнить анкету
+              Fill Out Survey
             </Link>
           </div>
         ) : (
@@ -137,7 +137,7 @@ export default function MyDataPage() {
               <div className="rounded-2xl bg-surface-container-low border border-white/[0.06] p-5">
                 <div className="flex items-center gap-2 mb-3">
                   <span className="material-symbols-outlined text-lg text-primary">business</span>
-                  <h2 className="text-sm font-bold text-slate-200">Компания</h2>
+                  <h2 className="text-sm font-bold text-slate-200">Company</h2>
                 </div>
                 <p className="text-sm text-slate-300">{company.name}</p>
               </div>
@@ -158,7 +158,7 @@ export default function MyDataPage() {
                         <span className="text-[11px] font-bold text-primary">{step}</span>
                       </div>
                       <h2 className="text-sm font-bold text-slate-200">
-                        {SURVEY_STEP_LABELS[step] || `Шаг ${step}`}
+                        {SURVEY_STEP_LABELS[step] || `Step ${step}`}
                       </h2>
                     </div>
                     <Link
@@ -166,7 +166,7 @@ export default function MyDataPage() {
                       className="text-[11px] text-primary/70 hover:text-primary transition-colors flex items-center gap-1"
                     >
                       <span className="material-symbols-outlined text-sm">edit</span>
-                      Редактировать
+                      Edit
                     </Link>
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2.5">
@@ -187,9 +187,9 @@ export default function MyDataPage() {
             {completedSteps.length < 12 && (
               <div className="rounded-2xl bg-amber-500/5 border border-amber-500/15 p-5 text-center">
                 <p className="text-xs text-amber-400">
-                  Заполнено {completedSteps.length} из 12 шагов.{' '}
+                  {completedSteps.length} of 12 steps completed.{' '}
                   <Link href="/client/onboarding" className="underline hover:text-amber-300">
-                    Продолжить заполнение
+                    Continue filling out
                   </Link>
                 </p>
               </div>

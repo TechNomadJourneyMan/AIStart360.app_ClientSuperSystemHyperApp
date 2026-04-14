@@ -31,13 +31,13 @@ const CATALOG: Record<WidgetType, {
   icon: string
   span: GridSpan
 }> = {
-  alerts:        { label: 'Критические сигналы', description: 'Алерты и сигналы по клиентам',   icon: 'warning',          span: 'full'       },
-  activity:      { label: 'Последние события',    description: 'Лента активности команды',        icon: 'history',          span: 'two-thirds' },
-  gri:           { label: 'Прогресс по GRI',      description: 'GRI скоринг по факторам',        icon: 'radar',            span: 'third'      },
-  metrics:       { label: 'Ключевые метрики',     description: 'Основные бизнес-показатели',     icon: 'monitoring',       span: 'third'      },
-  chart:         { label: 'График динамики',      description: 'Интерактивный график метрик',    icon: 'show_chart',       span: 'two-thirds' },
-  'quick-links': { label: 'Быстрый доступ',       description: 'Ссылки на разделы платформы',   icon: 'grid_view',        span: 'third'      },
-  'clients-stats':{ label: 'Статистика клиентов', description: 'Обзор клиентской базы',         icon: 'groups',           span: 'third'      },
+  alerts:        { label: 'Critical Alerts', description: 'Alerts and signals by clients',   icon: 'warning',          span: 'full'       },
+  activity:      { label: 'Recent Events',    description: 'Team activity feed',        icon: 'history',          span: 'two-thirds' },
+  gri:           { label: 'GRI Progress',      description: 'GRI scoring by factors',        icon: 'radar',            span: 'third'      },
+  metrics:       { label: 'Key Metrics',     description: 'Key business indicators',     icon: 'monitoring',       span: 'third'      },
+  chart:         { label: 'Dynamics Chart',      description: 'Interactive metrics chart',    icon: 'show_chart',       span: 'two-thirds' },
+  'quick-links': { label: 'Quick Access',       description: 'Links to platform sections',   icon: 'grid_view',        span: 'third'      },
+  'clients-stats':{ label: 'Client Statistics', description: 'Client base overview',         icon: 'groups',           span: 'third'      },
 }
 
 const SPAN_CLASS: Record<GridSpan, string> = {
@@ -60,9 +60,9 @@ function AlertsWidget({ data }: { data: WidgetData }) {
   return (
     <div>
       <div className="flex items-center justify-between mb-3">
-        <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest">Требуют внимания</p>
+        <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest">Attention Required</p>
         <span className="font-mono text-[10px] text-error bg-error/10 px-2.5 py-0.5 rounded-full border border-error/20">
-          {data.criticalCount} алерта
+          {data.criticalCount} alerts
         </span>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
@@ -78,9 +78,9 @@ function ActivityWidget({ data }: { data: WidgetData }) {
   return (
     <div>
       <div className="flex items-center justify-between mb-3">
-        <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest">Лента событий</p>
+        <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest">Event Feed</p>
         <Link href="/clients" className="text-[11px] font-mono text-primary/60 hover:text-primary flex items-center gap-0.5 transition-colors">
-          Все <span className="material-symbols-outlined text-sm">chevron_right</span>
+          All <span className="material-symbols-outlined text-sm">chevron_right</span>
         </Link>
       </div>
       <ActivityFeed items={data.activity} />
@@ -92,7 +92,7 @@ function GriWidget({ data }: { data: WidgetData }) {
   return (
     <Link href="/gri" className="block group">
       <div className="flex items-center justify-between mb-3">
-        <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest">GRI Скоринг</p>
+        <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest">GRI Scoring</p>
         <span className="material-symbols-outlined text-sm text-on-surface-variant/30 group-hover:text-primary/60 transition-colors">arrow_forward</span>
       </div>
       <div className="space-y-3">
@@ -116,7 +116,7 @@ function MetricsWidget({ data }: { data: WidgetData }) {
   return (
     <Link href="/metrics" className="block group">
       <div className="flex items-center justify-between mb-3">
-        <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest">Ключевые метрики</p>
+        <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest">Key Metrics</p>
         <span className="material-symbols-outlined text-sm text-on-surface-variant/30 group-hover:text-primary/60 transition-colors">arrow_forward</span>
       </div>
       <div className="space-y-2">
@@ -136,7 +136,7 @@ function MetricsWidget({ data }: { data: WidgetData }) {
 function ChartWidget() {
   return (
     <div>
-      <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest mb-3">График динамики</p>
+      <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest mb-3">Dynamics Chart</p>
       <KpiChart />
     </div>
   )
@@ -144,16 +144,16 @@ function ChartWidget() {
 
 function QuickLinksWidget() {
   const links = [
-    { label: 'Рынок',    icon: 'public',      href: '/market'    },
-    { label: 'Клиенты',  icon: 'group',       href: '/clients'   },
-    { label: 'Метрики',  icon: 'monitoring',  href: '/metrics'   },
+    { label: 'Market',    icon: 'public',      href: '/market'    },
+    { label: 'Clients',  icon: 'group',       href: '/clients'   },
+    { label: 'Metrics',  icon: 'monitoring',  href: '/metrics'   },
     { label: 'GRI',      icon: 'radar',       href: '/gri'       },
-    { label: 'Инсайты',  icon: 'lightbulb',   href: '/insights'  },
-    { label: 'AI Скан',  icon: 'biotech',     href: '/ai-scanner'},
+    { label: 'Insights',  icon: 'lightbulb',   href: '/insights'  },
+    { label: 'AI Scan',  icon: 'biotech',     href: '/ai-scanner'},
   ]
   return (
     <div>
-      <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest mb-3">Быстрый доступ</p>
+      <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest mb-3">Quick Access</p>
       <div className="grid grid-cols-3 gap-2">
         {links.map(l => (
           <Link key={l.label} href={l.href}
@@ -169,15 +169,15 @@ function QuickLinksWidget() {
 
 function ClientsStatsWidget({ data }: { data: WidgetData }) {
   const stats = [
-    { label: 'Всего клиентов', value: data.activity.length > 0 ? '48' : '0', icon: 'groups', color: 'text-primary' },
-    { label: 'Активных',       value: '38', icon: 'check_circle', color: 'text-primary' },
-    { label: 'Под риском',     value: '6',  icon: 'warning',      color: 'text-error'   },
-    { label: 'Ср. GRI',        value: '7.6',icon: 'radar',        color: 'text-secondary'},
+    { label: 'Total Clients', value: data.activity.length > 0 ? '48' : '0', icon: 'groups', color: 'text-primary' },
+    { label: 'Active',       value: '38', icon: 'check_circle', color: 'text-primary' },
+    { label: 'At Risk',     value: '6',  icon: 'warning',      color: 'text-error'   },
+    { label: 'Avg. GRI',        value: '7.6',icon: 'radar',        color: 'text-secondary'},
   ]
   return (
     <Link href="/clients" className="block group">
       <div className="flex items-center justify-between mb-3">
-        <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest">Клиенты</p>
+        <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest">Clients</p>
         <span className="material-symbols-outlined text-sm text-on-surface-variant/30 group-hover:text-primary/60 transition-colors">arrow_forward</span>
       </div>
       <div className="grid grid-cols-2 gap-2">
@@ -296,8 +296,8 @@ function AddWidgetDialog({
           {/* Header */}
           <div className="flex items-center justify-between px-6 py-5 border-b border-white/[0.04]">
             <div>
-              <Dialog.Title className="font-headline font-bold text-on-surface text-lg">Виджеты</Dialog.Title>
-              <p className="text-xs text-on-surface-variant mt-0.5">Добавьте на дэшборд</p>
+              <Dialog.Title className="font-headline font-bold text-on-surface text-lg">Widgets</Dialog.Title>
+              <p className="text-xs text-on-surface-variant mt-0.5">Add to dashboard</p>
             </div>
             <Dialog.Close className="w-8 h-8 rounded-xl bg-surface-container-low flex items-center justify-center text-on-surface-variant hover:text-on-surface transition-colors">
               <span className="material-symbols-outlined text-sm">close</span>
@@ -330,13 +330,13 @@ function AddWidgetDialog({
                     <div className="flex items-center justify-between">
                       <p className="text-sm font-medium text-on-surface">{meta.label}</p>
                       {alreadyAdded
-                        ? <span className="text-[10px] font-mono text-on-surface-variant/40 bg-surface-container-high px-2 py-0.5 rounded-full">Добавлен</span>
+                        ? <span className="text-[10px] font-mono text-on-surface-variant/40 bg-surface-container-high px-2 py-0.5 rounded-full">Added</span>
                         : <span className="material-symbols-outlined text-sm text-on-surface-variant/30 group-hover:text-primary/60 transition-colors">add</span>
                       }
                     </div>
                     <p className="text-xs text-on-surface-variant mt-0.5">{meta.description}</p>
                     <span className="text-[10px] font-mono text-on-surface-variant/40 mt-1 inline-block">
-                      {meta.span === 'full' ? '▬▬▬ Полная ширина' : meta.span === 'two-thirds' ? '▬▬ 2/3 ширины' : '▬ 1/3 ширины'}
+                      {meta.span === 'full' ? '▬▬▬ Full width' : meta.span === 'two-thirds' ? '▬▬ 2/3 width' : '▬ 1/3 width'}
                     </span>
                   </div>
                 </button>
@@ -346,7 +346,7 @@ function AddWidgetDialog({
 
           <div className="px-6 py-4 border-t border-white/[0.04]">
             <p className="text-[10px] text-on-surface-variant/50 font-mono text-center">
-              Настройки сохраняются автоматически
+              Settings are saved automatically
             </p>
           </div>
         </Dialog.Content>
@@ -423,9 +423,9 @@ export function WidgetGrid({ alerts, activity, gri, metrics, criticalCount, user
       {/* Section toolbar */}
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h2 className="font-headline text-base font-bold text-on-surface">Мой дэшборд</h2>
+          <h2 className="font-headline text-base font-bold text-on-surface">My Dashboard</h2>
           <p className="text-[11px] text-on-surface-variant mt-0.5">
-            {widgets.length} виджет{widgets.length === 1 ? '' : widgets.length < 5 ? 'а' : 'ов'}
+            {widgets.length} widget{widgets.length === 1 ? '' : 's'}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -436,13 +436,13 @@ export function WidgetGrid({ alerts, activity, gri, metrics, criticalCount, user
                 className="flex items-center gap-1.5 text-xs font-mono px-3 py-1.5 rounded-xl bg-primary/10 border border-primary/20 text-primary hover:bg-primary/15 transition-colors"
               >
                 <span className="material-symbols-outlined text-sm">add</span>
-                Добавить
+                Add
               </button>
               <button
                 onClick={resetWidgets}
                 className="text-xs font-mono px-3 py-1.5 rounded-xl bg-surface-container border border-white/[0.06] text-on-surface-variant hover:text-on-surface transition-colors"
               >
-                Сбросить
+                Reset
               </button>
             </>
           )}
@@ -455,7 +455,7 @@ export function WidgetGrid({ alerts, activity, gri, metrics, criticalCount, user
               }`}
           >
             <span className="material-symbols-outlined text-sm">{editMode ? 'check' : 'dashboard_customize'}</span>
-            {editMode ? 'Готово' : 'Настроить'}
+            {editMode ? 'Done' : 'Customize'}
           </button>
         </div>
       </div>
@@ -486,13 +486,13 @@ export function WidgetGrid({ alerts, activity, gri, metrics, criticalCount, user
             className="col-span-3 flex flex-col items-center justify-center py-16 bg-surface-container-low rounded-2xl border border-dashed border-white/10"
           >
             <span className="material-symbols-outlined text-4xl text-on-surface-variant/20 mb-3">dashboard_customize</span>
-            <p className="text-sm text-on-surface-variant mb-4">Дэшборд пуст. Добавьте виджеты.</p>
+            <p className="text-sm text-on-surface-variant mb-4">Dashboard is empty. Add widgets.</p>
             <button
               onClick={() => setAddOpen(true)}
               className="flex items-center gap-2 text-sm font-mono px-4 py-2 rounded-xl bg-primary/10 border border-primary/20 text-primary hover:bg-primary/15 transition-colors"
             >
               <span className="material-symbols-outlined text-sm">add</span>
-              Добавить виджет
+              Add Widget
             </button>
           </motion.div>
         )}

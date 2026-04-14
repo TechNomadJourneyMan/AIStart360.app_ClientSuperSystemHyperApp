@@ -30,10 +30,10 @@ function toGriScore(score: number | null): number {
 
 function statusLabel(status: string): string {
   const map: Record<string, string> = {
-    pending_approval: 'Ожидает',
-    approved: 'Активный',
-    requires_clarification: 'Уточнение',
-    rejected: 'Отклонён',
+    pending_approval: 'Pending',
+    approved: 'Active',
+    requires_clarification: 'Clarification',
+    rejected: 'Rejected',
   }
   return map[status] ?? status
 }
@@ -99,9 +99,9 @@ export function ClientsTable() {
     return (
       <EmptyState
         icon="business_center"
-        title="Нет клиентов"
-        description="Клиенты появятся здесь после регистрации и подтверждения"
-        action={{ label: 'Добавить клиента', onClick: () => {} }}
+        title="No Clients"
+        description="Clients will appear here after registration and confirmation"
+        action={{ label: 'Add Client', onClick: () => {} }}
       />
     )
   }
@@ -111,7 +111,7 @@ export function ClientsTable() {
       <table className="w-full">
         <thead>
           <tr className="border-b border-outline-variant/20">
-            {['Клиент', 'Отрасль', 'Стадия', 'Point A', 'Статус', ''].map((h) => (
+            {['Client', 'Industry', 'Stage', 'Point A', 'Status', ''].map((h) => (
               <th key={h} className="px-5 py-3.5 text-left text-[10px] font-mono uppercase tracking-widest text-on-surface-variant whitespace-nowrap bg-surface-container-high">
                 {h}
               </th>
@@ -158,7 +158,7 @@ export function ClientsTable() {
                   <Link
                     href={`/clients/${client.id}`}
                     className="p-1.5 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors"
-                    aria-label="Открыть"
+                    aria-label="Open"
                   >
                     <span className="material-symbols-outlined text-lg">open_in_new</span>
                   </Link>
@@ -172,7 +172,7 @@ export function ClientsTable() {
       {/* Pagination */}
       <div className="flex items-center justify-between px-5 py-4 border-t border-outline-variant/10">
         <span className="text-xs text-on-surface-variant font-mono">
-          Показано {clients.length} из {clients.length}
+          Showing {clients.length} of {clients.length}
         </span>
       </div>
     </div>

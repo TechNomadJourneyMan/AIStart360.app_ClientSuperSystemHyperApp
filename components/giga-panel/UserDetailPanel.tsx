@@ -143,7 +143,7 @@ export function UserDetailPanel({ userId }: Props) {
     return (
       <div className="flex items-center gap-2 py-6 justify-center">
         <Loader2 size={14} className="text-slate-500 animate-spin" />
-        <span className="text-[11px] text-slate-500">Загрузка данных...</span>
+        <span className="text-[11px] text-slate-500">Loading data...</span>
       </div>
     )
   }
@@ -157,18 +157,18 @@ export function UserDetailPanel({ userId }: Props) {
         <button onClick={openAsUser} disabled={impersonating}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium bg-blue-500/10 border border-blue-500/20 text-blue-300 hover:bg-blue-500/20 transition-all disabled:opacity-50">
           {impersonating ? <Loader2 size={12} className="animate-spin" /> : <ExternalLink size={12} />}
-          Открыть портал
+          Open Portal
         </button>
         <button onClick={openOnboarding} disabled={impersonating}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium bg-violet-500/10 border border-violet-500/20 text-violet-300 hover:bg-violet-500/20 transition-all disabled:opacity-50">
           {impersonating ? <Loader2 size={12} className="animate-spin" /> : <FileText size={12} />}
-          Заполнить анкету от лица
+          Fill Survey on Behalf
         </button>
         {!editing && (
           <button onClick={startEditing}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium bg-amber-500/10 border border-amber-500/20 text-amber-300 hover:bg-amber-500/20 transition-all">
             <Pencil size={12} />
-            {data && data.completedSteps.length > 0 ? 'Редактировать анкету' : 'Создать анкету'}
+            {data && data.completedSteps.length > 0 ? 'Edit Survey' : 'Create Survey'}
           </button>
         )}
         {editing && (
@@ -176,12 +176,12 @@ export function UserDetailPanel({ userId }: Props) {
             <button onClick={saveEdits} disabled={saving}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 hover:bg-emerald-500/20 transition-all disabled:opacity-50">
               {saving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
-              Сохранить
+              Save
             </button>
             <button onClick={cancelEditing}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium bg-white/[0.05] border border-white/[0.08] text-slate-400 hover:text-slate-300 transition-all">
               <X size={12} />
-              Отмена
+              Cancel
             </button>
           </>
         )}
@@ -192,11 +192,11 @@ export function UserDetailPanel({ userId }: Props) {
         <div className="p-3 rounded-xl bg-violet-500/5 border border-violet-500/10">
           <div className="flex items-center gap-1.5 mb-2">
             <FileText size={12} className="text-violet-400" />
-            <span className="text-[11px] font-semibold text-violet-300 uppercase tracking-wider">Результаты диагностики</span>
+            <span className="text-[11px] font-semibold text-violet-300 uppercase tracking-wider">Diagnostics Results</span>
           </div>
           <div className="grid grid-cols-3 gap-2 mb-3">
             <div className="text-center">
-              <p className="text-[9px] text-slate-600 uppercase">Балл</p>
+              <p className="text-[9px] text-slate-600 uppercase">Score</p>
               <p className={`text-lg font-mono font-bold ${scoreColor((diag.overall_score as number) ?? 0)}`}>{(diag.overall_score as number) ?? 0}</p>
             </div>
             <div className="text-center">
@@ -204,14 +204,14 @@ export function UserDetailPanel({ userId }: Props) {
               <p className={`text-lg font-mono font-bold ${scoreColor((diag.health_index as number) ?? 0)}`}>{(diag.health_index as number) ?? 0}</p>
             </div>
             <div className="text-center">
-              <p className="text-[9px] text-slate-600 uppercase">Стадия</p>
+              <p className="text-[9px] text-slate-600 uppercase">Stage</p>
               <p className="text-sm font-mono font-bold text-blue-300">{(diag.stage as string) ?? '—'}</p>
             </div>
           </div>
           {['finance', 'sales', 'operations', 'marketing', 'strategy'].map(key => {
             const block = diag[`${key}_score`] as { score?: number } | null
             const s = block?.score ?? 0
-            const labels: Record<string, string> = { finance: 'Финансы', sales: 'Продажи', operations: 'Операции', marketing: 'Маркетинг', strategy: 'Стратегия' }
+            const labels: Record<string, string> = { finance: 'Finance', sales: 'Sales', operations: 'Operations', marketing: 'Marketing', strategy: 'Strategy' }
             return (
               <div key={key} className="flex items-center gap-2">
                 <span className="text-[10px] text-slate-500 w-20">{labels[key]}</span>
@@ -231,7 +231,7 @@ export function UserDetailPanel({ userId }: Props) {
           <div className="flex items-center gap-1.5">
             <FileText size={12} className="text-blue-400" />
             <span className="text-[11px] font-semibold text-blue-300 uppercase tracking-wider">
-              Данные анкеты {editing && <span className="text-amber-400 ml-1">(редактирование)</span>}
+              Survey Data {editing && <span className="text-amber-400 ml-1">(editing)</span>}
             </span>
           </div>
           {data.completedSteps.map(step => {
@@ -242,7 +242,7 @@ export function UserDetailPanel({ userId }: Props) {
             return (
               <div key={step} className="p-2.5 rounded-lg bg-white/[0.02] border border-white/[0.04]">
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">
-                  {SURVEY_STEP_LABELS[step] || `Шаг ${step}`}
+                  {SURVEY_STEP_LABELS[step] || `Step ${step}`}
                 </p>
                 <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
                   {fields.map(f => (
@@ -264,8 +264,8 @@ export function UserDetailPanel({ userId }: Props) {
         </div>
       ) : (
         <div className="p-3 rounded-lg bg-white/[0.02] border border-white/[0.04] text-center">
-          <p className="text-[11px] text-slate-500 mb-2">Анкета не заполнена</p>
-          <p className="text-[10px] text-slate-600">Нажмите «Создать анкету» или «Заполнить анкету от лица» выше</p>
+          <p className="text-[11px] text-slate-500 mb-2">Survey not completed</p>
+          <p className="text-[10px] text-slate-600">Click 'Create Survey' or 'Fill Survey on Behalf' above</p>
         </div>
       )}
 
@@ -274,7 +274,7 @@ export function UserDetailPanel({ userId }: Props) {
         <div className="space-y-2">
           <div className="flex items-center gap-1.5">
             <Paperclip size={12} className="text-emerald-400" />
-            <span className="text-[11px] font-semibold text-emerald-300 uppercase tracking-wider">Документы ({docs.length})</span>
+            <span className="text-[11px] font-semibold text-emerald-300 uppercase tracking-wider">Documents ({docs.length})</span>
           </div>
           {docs.map(doc => {
             const icon = DOC_ICONS[doc.doc_type?.toLowerCase()] ?? <File size={14} className="text-slate-400" />

@@ -6,11 +6,11 @@ import { usePathname, useRouter } from 'next/navigation'
 import { useAuthStore } from '@/stores/auth.store'
 
 const EXPERT_NAV = [
-  { label: 'Дэшборд',  href: '/expert/dashboard', icon: 'dashboard'    },
-  { label: 'Профиль',  href: '/expert/profile',   icon: 'account_circle' },
-  { label: 'Отчёты',  href: '/expert/reports',   icon: 'description'  },
+  { label: 'Dashboard',  href: '/expert/dashboard', icon: 'dashboard'    },
+  { label: 'Profile',  href: '/expert/profile',   icon: 'account_circle' },
+  { label: 'Reports',  href: '/expert/reports',   icon: 'description'  },
   { label: 'GRI',      href: '/expert/gri',        icon: 'radar'        },
-  { label: 'Инсайты', href: '/expert/insights',   icon: 'lightbulb'    },
+  { label: 'Insights', href: '/expert/insights',   icon: 'lightbulb'    },
 ]
 
 export function ExpertSidebar() {
@@ -81,12 +81,12 @@ export function ExpertSidebar() {
       <div className="border-t border-white/[0.04] px-2 py-3 space-y-0.5">
         <div className="flex items-center gap-2 px-3 py-1.5 mb-1">
           <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse flex-shrink-0" />
-          <span className="text-[10px] font-mono text-primary/70 tracking-wider">ЭКСПЕРТ ОНЛАЙН</span>
+          <span className="text-[10px] font-mono text-primary/70 tracking-wider">EXPERT ONLINE</span>
         </div>
         <button onClick={handleLogout}
           className="w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-[#6b7280] hover:text-error hover:bg-error/5 transition-all">
           <span className="material-symbols-outlined text-[20px]">logout</span>
-          <span className="text-sm">Выйти</span>
+          <span className="text-sm">Log Out</span>
         </button>
       </div>
     </aside>

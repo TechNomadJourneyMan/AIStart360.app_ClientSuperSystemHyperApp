@@ -8,7 +8,7 @@ import { z } from 'zod'
 import { createClient } from '@/lib/supabase/client'
 
 const schema = z.object({
-  email: z.string().email('Введите корректный email'),
+  email: z.string().email('Enter a valid email'),
 })
 
 type Form = z.infer<typeof schema>
@@ -31,7 +31,7 @@ export default function ForgotPasswordPage() {
     setIsLoading(false)
 
     if (error) {
-      setRequestError('Не удалось отправить письмо. Попробуйте снова.')
+      setRequestError('Failed to send email. Please try again.')
       return
     }
 
@@ -44,16 +44,16 @@ export default function ForgotPasswordPage() {
         <div className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-4">
           <span className="material-symbols-outlined text-primary text-3xl">mark_email_read</span>
         </div>
-        <h2 className="font-headline text-xl font-bold text-on-surface mb-2">Письмо отправлено</h2>
+        <h2 className="font-headline text-xl font-bold text-on-surface mb-2">Email Sent</h2>
         <p className="text-sm text-on-surface-variant mb-6">
-          Мы отправили ссылку для восстановления на{' '}
+          We sent a recovery link to{' '}
           <span className="text-primary font-mono">{getValues('email')}</span>
         </p>
         <Link
           href="/login"
           className="text-sm text-primary hover:underline"
         >
-          ← Вернуться ко входу
+          &larr; Back to Sign In
         </Link>
       </div>
     )
@@ -63,12 +63,12 @@ export default function ForgotPasswordPage() {
     <div className="glass-card rounded-2xl p-8 shadow-modal">
       <Link href="/login" className="inline-flex items-center gap-1 text-xs text-on-surface-variant hover:text-on-surface mb-6 transition-colors">
         <span className="material-symbols-outlined text-sm">arrow_back</span>
-        Назад
+        Back
       </Link>
 
-      <h1 className="font-headline text-2xl font-bold text-on-surface mb-1">Восстановление пароля</h1>
+      <h1 className="font-headline text-2xl font-bold text-on-surface mb-1">Password Recovery</h1>
       <p className="text-sm text-on-surface-variant mb-8">
-        Введите email и мы пришлём ссылку для сброса пароля.
+        Enter your email and we will send you a password reset link.
       </p>
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
@@ -100,9 +100,9 @@ export default function ForgotPasswordPage() {
           className="w-full py-3 rounded-lg bg-gradient-to-br from-primary to-primary-container text-on-primary font-semibold text-sm hover:scale-[0.98] active:scale-95 transition-all duration-150 disabled:opacity-60 disabled:pointer-events-none flex items-center justify-center gap-2"
         >
           {isLoading ? (
-            <><span className="w-4 h-4 border-2 border-on-primary/30 border-t-on-primary rounded-full animate-spin" />Отправляем...</>
+            <><span className="w-4 h-4 border-2 border-on-primary/30 border-t-on-primary rounded-full animate-spin" />Sending...</>
           ) : (
-            'Отправить ссылку'
+            'Send Reset Link'
           )}
         </button>
       </form>

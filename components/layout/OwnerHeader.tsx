@@ -33,7 +33,7 @@ export function OwnerHeader() {
           </div>
           <div className="hidden md:block">
             <p className="text-xs font-medium text-on-surface leading-none">{user?.name ?? 'Owner'}</p>
-            <p className="text-[9px] text-on-surface-variant mt-0.5">{user?.organization ?? 'Компания'}</p>
+            <p className="text-[9px] text-on-surface-variant mt-0.5">{user?.organization ?? 'Company'}</p>
           </div>
           <button onClick={handleLogout} className="ml-1">
             <span className="material-symbols-outlined text-base text-on-surface-variant hover:text-error transition-colors">logout</span>

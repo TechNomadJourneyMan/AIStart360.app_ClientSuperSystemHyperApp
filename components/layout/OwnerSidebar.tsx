@@ -8,25 +8,25 @@ import { useUIStore } from '@/stores/ui.store'
 import { useAuthStore } from '@/stores/auth.store'
 
 const PRIMARY_NAV = [
-  { label: 'Дэшборд',    href: '/owner/dashboard',  icon: 'dashboard'       },
+  { label: 'Dashboard',    href: '/owner/dashboard',  icon: 'dashboard'       },
   { label: 'GRI',        href: '/owner/gri',         icon: 'radar'           },
-  { label: 'Рынок',      href: '/owner/market',      icon: 'public'          },
-  { label: 'Точка А',    href: '/owner/point-a',     icon: 'my_location'     },
-  { label: 'Точка Б',    href: '/owner/point-b',     icon: 'flag'            },
-  { label: 'Инсайты',    href: '/owner/insights',    icon: 'lightbulb'       },
-  { label: 'Конкуренты', href: '/owner/competitors', icon: 'compare_arrows'  },
-  { label: 'Метрики',    href: '/owner/metrics',     icon: 'monitoring'      },
+  { label: 'Market',      href: '/owner/market',      icon: 'public'          },
+  { label: 'Point A',    href: '/owner/point-a',     icon: 'my_location'     },
+  { label: 'Point B',    href: '/owner/point-b',     icon: 'flag'            },
+  { label: 'Insights',    href: '/owner/insights',    icon: 'lightbulb'       },
+  { label: 'Competitors', href: '/owner/competitors', icon: 'compare_arrows'  },
+  { label: 'Metrics',    href: '/owner/metrics',     icon: 'monitoring'      },
 ]
 
 const SECONDARY_NAV = [
-  { label: 'Клиенты',     href: '/owner/clients',       icon: 'business_center'     },
-  { label: 'Отчёты',      href: '/owner/reports',       icon: 'description'         },
-  { label: 'Аналитика',   href: '/owner/analytics',     icon: 'bar_chart'           },
-  { label: 'Разведка',    href: '/owner/intelligence',  icon: 'hub'                 },
-  { label: 'Команда',     href: '/owner/team',          icon: 'group'               },
-  { label: 'Уведомления', href: '/owner/notifications', icon: 'notifications'       },
-  { label: 'Пользователи',href: '/owner/users',         icon: 'manage_accounts'     },
-  { label: 'Админ',       href: '/owner/admin',         icon: 'admin_panel_settings'},
+  { label: 'Clients',     href: '/owner/clients',       icon: 'business_center'     },
+  { label: 'Reports',      href: '/owner/reports',       icon: 'description'         },
+  { label: 'Analytics',   href: '/owner/analytics',     icon: 'bar_chart'           },
+  { label: 'Intelligence',    href: '/owner/intelligence',  icon: 'hub'                 },
+  { label: 'Team',     href: '/owner/team',          icon: 'group'               },
+  { label: 'Notifications', href: '/owner/notifications', icon: 'notifications'       },
+  { label: 'Users',href: '/owner/users',         icon: 'manage_accounts'     },
+  { label: 'Admin',       href: '/owner/admin',         icon: 'admin_panel_settings'},
 ]
 
 export function OwnerSidebar() {
@@ -113,7 +113,7 @@ export function OwnerSidebar() {
         {/* More toggle */}
         <button
           onClick={() => setMoreOpen((v) => !v)}
-          title={sidebarCollapsed ? 'Ещё' : undefined}
+          title={sidebarCollapsed ? 'More' : undefined}
           className={`
             group flex items-center rounded-xl transition-all duration-150 w-full
             ${sidebarCollapsed ? 'justify-center px-0 py-3' : 'gap-3 px-3 py-2.5'}
@@ -123,7 +123,7 @@ export function OwnerSidebar() {
           <span className="material-symbols-outlined text-[20px] flex-shrink-0">more_horiz</span>
           {!sidebarCollapsed && (
             <>
-              <span className="text-sm font-medium flex-1 text-left">Ещё</span>
+              <span className="text-sm font-medium flex-1 text-left">More</span>
               <span className={`material-symbols-outlined text-[16px] transition-transform duration-200 ${moreOpen ? 'rotate-180' : ''}`}>
                 expand_more
               </span>
@@ -172,13 +172,13 @@ export function OwnerSidebar() {
         {!sidebarCollapsed && (
           <div className="flex items-center gap-2 px-3 py-1.5 mb-1">
             <span className="w-1.5 h-1.5 rounded-full bg-secondary animate-pulse flex-shrink-0" />
-            <span className="text-[10px] font-mono text-secondary/70 tracking-wider">КЛИЕНТ ОНЛАЙН</span>
+            <span className="text-[10px] font-mono text-secondary/70 tracking-wider">CLIENT ONLINE</span>
           </div>
         )}
 
         <Link
           href="/owner/profile"
-          title={sidebarCollapsed ? 'Профиль' : undefined}
+          title={sidebarCollapsed ? 'Profile' : undefined}
           className={`
             group flex items-center rounded-xl transition-all duration-150
             ${isActive('/owner/profile') ? 'bg-secondary/10 text-secondary' : 'text-[#6b7280] hover:text-[#c9d1d9] hover:bg-white/[0.04]'}
@@ -186,12 +186,12 @@ export function OwnerSidebar() {
           `}
         >
           <span className="material-symbols-outlined text-[20px]">account_circle</span>
-          {!sidebarCollapsed && <span className="text-sm font-medium">Профиль</span>}
+          {!sidebarCollapsed && <span className="text-sm font-medium">Profile</span>}
         </Link>
 
         <Link
           href="/owner/settings"
-          title={sidebarCollapsed ? 'Настройки' : undefined}
+          title={sidebarCollapsed ? 'Settings' : undefined}
           className={`
             group flex items-center rounded-xl transition-all duration-150
             ${isActive('/owner/settings') ? 'bg-secondary/10 text-secondary' : 'text-[#6b7280] hover:text-[#c9d1d9] hover:bg-white/[0.04]'}
@@ -199,19 +199,19 @@ export function OwnerSidebar() {
           `}
         >
           <span className="material-symbols-outlined text-[20px]">settings</span>
-          {!sidebarCollapsed && <span className="text-sm font-medium">Настройки</span>}
+          {!sidebarCollapsed && <span className="text-sm font-medium">Settings</span>}
         </Link>
 
         <button
           onClick={handleLogout}
-          title={sidebarCollapsed ? 'Выйти' : undefined}
+          title={sidebarCollapsed ? 'Log Out' : undefined}
           className={`
             w-full flex items-center rounded-xl transition-all duration-150 text-[#6b7280] hover:text-error hover:bg-error/5
             ${sidebarCollapsed ? 'justify-center px-0 py-2.5' : 'gap-3 px-3 py-2.5'}
           `}
         >
           <span className="material-symbols-outlined text-[20px]">logout</span>
-          {!sidebarCollapsed && <span className="text-sm">Выйти</span>}
+          {!sidebarCollapsed && <span className="text-sm">Log Out</span>}
         </button>
 
         <button
@@ -220,12 +220,12 @@ export function OwnerSidebar() {
             w-full flex items-center rounded-xl transition-all duration-150 text-[#6b7280] hover:text-[#c9d1d9] hover:bg-white/[0.04]
             ${sidebarCollapsed ? 'justify-center px-0 py-2.5' : 'gap-3 px-3 py-2.5'}
           `}
-          aria-label={sidebarCollapsed ? 'Развернуть' : 'Свернуть'}
+          aria-label={sidebarCollapsed ? 'Expand' : 'Collapse'}
         >
           <span className="material-symbols-outlined text-[20px]">
             {sidebarCollapsed ? 'chevron_right' : 'chevron_left'}
           </span>
-          {!sidebarCollapsed && <span className="text-sm">Свернуть</span>}
+          {!sidebarCollapsed && <span className="text-sm">Collapse</span>}
         </button>
       </div>
     </aside>

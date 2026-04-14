@@ -11,7 +11,7 @@ export function ClientFilters() {
       {/* Search */}
       <div className="flex-1 max-w-sm">
         <Input
-          placeholder="Поиск по названию..."
+          placeholder="Search by name..."
           leftIcon="search"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
@@ -22,7 +22,7 @@ export function ClientFilters() {
       <div className="flex gap-2 flex-wrap">
         {/* Industry Filter */}
         <select className="bg-surface-container-high border border-outline-variant/30 rounded-lg px-3 py-2 text-sm text-on-surface-variant focus:outline-none focus:border-primary/30 transition-colors">
-          <option value="">Все отрасли</option>
+          <option value="">All Industries</option>
           <option>FinTech</option>
           <option>E-commerce</option>
           <option>SaaS</option>
@@ -32,7 +32,7 @@ export function ClientFilters() {
 
         {/* Status Filter */}
         <select className="bg-surface-container-high border border-outline-variant/30 rounded-lg px-3 py-2 text-sm text-on-surface-variant focus:outline-none focus:border-primary/30 transition-colors">
-          <option value="">Все статусы</option>
+          <option value="">All Statuses</option>
           <option>Active</option>
           <option>At Risk</option>
           <option>Inactive</option>
@@ -40,7 +40,7 @@ export function ClientFilters() {
 
         {/* GRI Filter */}
         <select className="bg-surface-container-high border border-outline-variant/30 rounded-lg px-3 py-2 text-sm text-on-surface-variant focus:outline-none focus:border-primary/30 transition-colors">
-          <option value="">GRI: любой</option>
+          <option value="">GRI: Any</option>
           <option>Excellent (900+)</option>
           <option>Strong (700–899)</option>
           <option>Developing (500–699)</option>
@@ -49,10 +49,10 @@ export function ClientFilters() {
 
         {/* Sort */}
         <select className="bg-surface-container-high border border-outline-variant/30 rounded-lg px-3 py-2 text-sm text-on-surface-variant focus:outline-none focus:border-primary/30 transition-colors">
-          <option>Сортировка: GRI ↓</option>
-          <option>Сортировка: GRI ↑</option>
-          <option>Сортировка: Имя</option>
-          <option>Сортировка: Дата</option>
+          <option>Sort: GRI ↓</option>
+          <option>Sort: GRI ↑</option>
+          <option>Sort: Name</option>
+          <option>Sort: Date</option>
         </select>
       </div>
     </div>

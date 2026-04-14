@@ -62,7 +62,7 @@ function ToastItem({ type, title, description, onClose }: ToastItemProps) {
       <button
         onClick={onClose}
         className="flex-shrink-0 text-on-surface-variant hover:text-on-surface transition-colors ml-1"
-        aria-label="Закрыть"
+        aria-label="Close"
       >
         <span className="material-symbols-outlined text-lg">close</span>
       </button>

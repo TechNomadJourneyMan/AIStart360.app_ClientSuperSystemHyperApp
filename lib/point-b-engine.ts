@@ -3,8 +3,8 @@ import type { PointB, TargetBlock, TargetKPI, RoadmapQuarter } from '@/types/poi
 
 const BLOCK_KEYS = ['finance', 'sales', 'operations', 'marketing', 'strategy'] as const
 const BLOCK_LABELS: Record<string, string> = {
-  finance: 'Финансы', sales: 'Продажи', operations: 'Операции',
-  marketing: 'Маркетинг', strategy: 'Стратегия',
+  finance: 'Finance', sales: 'Sales', operations: 'Operations',
+  marketing: 'Marketing', strategy: 'Strategy',
 }
 
 // ── Improvement potential by stage ───────────────────────────────────────────
@@ -51,10 +51,10 @@ function gapPriority(gap: number): 'critical' | 'high' | 'medium' | 'low' {
 }
 
 function effortFromGap(gap: number): string {
-  if (gap >= 30) return '6-12 месяцев'
-  if (gap >= 20) return '3-6 месяцев'
-  if (gap >= 10) return '1-3 месяца'
-  return '1-2 месяца'
+  if (gap >= 30) return '6-12 months'
+  if (gap >= 20) return '3-6 months'
+  if (gap >= 10) return '1-3 months'
+  return '1-2 months'
 }
 
 // ── Main calculation ─────────────────────────────────────────────────────────
@@ -119,14 +119,14 @@ export function calculatePointB(
 
   const targetKpis: TargetKPI[] = [
     {
-      label: 'Выручка',
+      label: 'Revenue',
       current: fmtMoney(revenue2025),
       target: fmtMoney(Math.round(revenue2025 * mult)),
       unit: '₸',
       progress: Math.round((1 / mult) * 100),
     },
     {
-      label: 'Маржа',
+      label: 'Margin',
       current: `${margin.toFixed(1)}%`,
       target: `${Math.min(margin + 8, 60).toFixed(1)}%`,
       unit: '%',
@@ -147,14 +147,14 @@ export function calculatePointB(
       progress: targetHealth > 0 ? Math.round((pointA.health_index / targetHealth) * 100) : 0,
     },
     {
-      label: 'Клиенты',
+      label: 'Clients',
       current: String(newClients),
       target: String(Math.round(newClients * mult)),
       unit: '',
       progress: newClients > 0 ? Math.round((1 / mult) * 100) : 0,
     },
     {
-      label: 'Стадия',
+      label: 'Stage',
       current: stage.charAt(0).toUpperCase() + stage.slice(1),
       target: targetStage.charAt(0).toUpperCase() + targetStage.slice(1),
       unit: '',
@@ -175,34 +175,34 @@ export function calculatePointB(
   const roadmap: RoadmapQuarter[] = [
     {
       quarter: 'Q1',
-      title: 'Quick Wins + Критичные блоки',
+      title: 'Quick Wins + Critical Blocks',
       focus_blocks: q1Focus.length > 0 ? q1Focus : [sortedGaps[0]?.block ?? 'finance'],
       target_overall: Math.min(100, currentOverall + stepPerQ),
-      milestones: pointA.quick_wins?.slice(0, 3).map(qw => qw.action) ?? ['Запустить первые улучшения'],
+      milestones: pointA.quick_wins?.slice(0, 3).map(qw => qw.action) ?? ['Launch initial improvements'],
       expected_improvement: stepPerQ,
     },
     {
       quarter: 'Q2',
-      title: 'Масштабирование процессов',
+      title: 'Scaling Processes',
       focus_blocks: q2Focus.length > 0 ? q2Focus : [sortedGaps[1]?.block ?? 'sales'],
       target_overall: Math.min(100, currentOverall + stepPerQ * 2),
-      milestones: ['Внедрить систематические процессы', 'Масштабировать работающие каналы'],
+      milestones: ['Implement systematic processes', 'Scale working channels'],
       expected_improvement: stepPerQ,
     },
     {
       quarter: 'Q3',
-      title: 'Оптимизация и рост',
+      title: 'Optimization and Growth',
       focus_blocks: q3Focus.length > 0 ? q3Focus : [sortedGaps[2]?.block ?? 'operations'],
       target_overall: Math.min(100, currentOverall + stepPerQ * 3),
-      milestones: ['Оптимизировать юнит-экономику', 'Запустить новые инициативы'],
+      milestones: ['Optimize unit economics', 'Launch new initiatives'],
       expected_improvement: stepPerQ,
     },
     {
       quarter: 'Q4',
-      title: 'Финализация и подготовка к следующему уровню',
+      title: 'Finalization and Next Level Preparation',
       focus_blocks: q4Focus.length > 0 ? q4Focus : ['strategy'],
       target_overall: targetOverall,
-      milestones: ['Достичь целевых показателей', `Подготовиться к стадии ${targetStage}`],
+      milestones: ['Achieve target metrics', `Prepare for ${targetStage} stage`],
       expected_improvement: stepPerQ,
     },
   ]

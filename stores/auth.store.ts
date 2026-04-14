@@ -50,12 +50,12 @@ interface AuthState {
 }
 
 const ERROR_MESSAGES: Record<string, string> = {
-  USER_NOT_FOUND: 'Пользователь с таким email не найден',
-  WRONG_PASSWORD: 'Неверный пароль',
-  EMAIL_NOT_CONFIRMED: 'Email не подтверждён',
-  EMAIL_TAKEN: 'Этот email уже зарегистрирован',
-  INVALID_SESSION: 'Сессия недействительна',
-  SESSION_EXPIRED: 'Сессия истекла, войдите снова',
+  USER_NOT_FOUND: 'User with this email not found',
+  WRONG_PASSWORD: 'Incorrect password',
+  EMAIL_NOT_CONFIRMED: 'Email not confirmed',
+  EMAIL_TAKEN: 'This email is already registered',
+  INVALID_SESSION: 'Session is invalid',
+  SESSION_EXPIRED: 'Session expired, please log in again',
 }
 
 async function confirmEmailForDev(email: string): Promise<void> {
@@ -101,7 +101,7 @@ async function buildUserFromSession(user: {
       ? profileRes.data.full_name
       : typeof user.user_metadata?.full_name === 'string'
         ? user.user_metadata.full_name
-        : (user.user_metadata?.name as string) ?? 'Пользователь'
+        : (user.user_metadata?.name as string) ?? 'User'
 
   const role = normalizeRole(
     typeof profileRes.data?.role === 'string'
@@ -186,7 +186,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
       const code = err instanceof Error ? err.message : 'UNKNOWN'
       set({
         isLoading: false,
-        error: ERROR_MESSAGES[code] ?? (code || 'Произошла ошибка при входе'),
+        error: ERROR_MESSAGES[code] ?? (code || 'An error occurred during login'),
       })
       throw err
     }
@@ -205,7 +205,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
       if (error) throw new Error(error.message)
       // Redirect happens automatically — Supabase opens Google consent screen
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Ошибка входа через Google'
+      const msg = err instanceof Error ? err.message : 'Google login error'
       set({ isLoading: false, error: msg })
     }
   },
@@ -251,7 +251,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
       const code = err instanceof Error ? err.message : 'UNKNOWN'
       set({
         isLoading: false,
-        error: ERROR_MESSAGES[code] ?? (code || 'Произошла ошибка при регистрации'),
+        error: ERROR_MESSAGES[code] ?? (code || 'An error occurred during registration'),
       })
       throw err
     }
@@ -260,7 +260,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
   logout: async () => {
     const supabase = createClient()
     await supabase.auth.signOut()
-    
+
     // Clear legacy cookies
     if (typeof document !== 'undefined') {
       document.cookie = 'aistart360_role=; path=/; max-age=0'

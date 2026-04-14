@@ -35,18 +35,18 @@ const STATUS_COLORS: Record<string, string> = {
 }
 
 const STATUS_LABELS: Record<string, string> = {
-  new:              'Новая',
-  in_review:        'На проверке',
-  waiting_for_info: 'Ждёт инфо',
-  approved:         'Одобрено',
-  rejected:         'Отклонено',
-  escalated:        'Эскалировано',
+  new:              'New',
+  in_review:        'Under Review',
+  waiting_for_info: 'Awaiting Info',
+  approved:         'Approved',
+  rejected:         'Rejected',
+  escalated:        'Escalated',
 }
 
 const TYPE_LABELS: Record<string, string> = {
-  registration: 'Регистрация',
-  access:       'Доступ',
-  support:      'Поддержка',
+  registration: 'Registration',
+  access:       'Access',
+  support:      'Support',
 }
 
 const PRIORITY_DOT: Record<string, string> = {
@@ -69,10 +69,10 @@ export function CrmActivity({ requests, clients, pendingCount }: CrmActivityProp
     <div className="space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-bold text-on-surface">CRM — Активность</h3>
+        <h3 className="text-sm font-bold text-on-surface">CRM — Activity</h3>
         <Link href="/admin/requests"
           className="text-[10px] font-mono text-primary hover:text-primary/80 transition-colors">
-          Все заявки →
+          All Requests →
         </Link>
       </div>
 
@@ -81,10 +81,10 @@ export function CrmActivity({ requests, clients, pendingCount }: CrmActivityProp
         <div className="flex items-center gap-2.5 bg-amber-400/5 border border-amber-400/20 rounded-xl px-4 py-2.5">
           <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse flex-shrink-0" />
           <span className="text-xs text-amber-400">
-            <span className="font-bold">{pendingCount}</span> заявок ожидают проверки
+            <span className="font-bold">{pendingCount}</span> requests awaiting review
           </span>
           <Link href="/admin/requests?status=new" className="ml-auto text-[10px] font-mono text-amber-400/70 hover:text-amber-400 transition-colors">
-            Открыть →
+            Open →
           </Link>
         </div>
       )}
@@ -92,11 +92,11 @@ export function CrmActivity({ requests, clients, pendingCount }: CrmActivityProp
       {/* Recent requests */}
       <div className="bg-surface-container-low rounded-2xl border border-white/[0.04] overflow-hidden">
         <div className="px-4 py-3 border-b border-white/[0.04]">
-          <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest">Последние заявки</p>
+          <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest">Recent Requests</p>
         </div>
         {requests.length === 0 ? (
           <div className="px-4 py-6 text-center">
-            <span className="text-xs text-on-surface-variant">Нет заявок</span>
+            <span className="text-xs text-on-surface-variant">No requests</span>
           </div>
         ) : (
           <div className="divide-y divide-white/[0.03]">
@@ -111,7 +111,7 @@ export function CrmActivity({ requests, clients, pendingCount }: CrmActivityProp
                       {req.companyName ?? TYPE_LABELS[req.type] ?? req.type}
                     </p>
                     <p className="text-[10px] text-on-surface-variant mt-0.5">
-                      {TYPE_LABELS[req.type] ?? req.type} · {new Date(req.createdAt).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })}
+                      {TYPE_LABELS[req.type] ?? req.type} · {new Date(req.createdAt).toLocaleDateString('en-US', { day: 'numeric', month: 'short' })}
                     </p>
                   </div>
                   <span className={`text-[9px] font-mono px-2 py-0.5 rounded-full border ${statusStyle} flex-shrink-0`}>
@@ -128,9 +128,9 @@ export function CrmActivity({ requests, clients, pendingCount }: CrmActivityProp
       {clients.length > 0 && (
         <div className="bg-surface-container-low rounded-2xl border border-white/[0.04] overflow-hidden">
           <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.04]">
-            <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest">Клиенты CRM</p>
+            <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest">Clients CRM</p>
             <Link href="/clients" className="text-[10px] font-mono text-primary/60 hover:text-primary transition-colors">
-              Все →
+              View All →
             </Link>
           </div>
           <div className="divide-y divide-white/[0.03]">

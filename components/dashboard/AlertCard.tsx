@@ -67,7 +67,7 @@ export function AlertCard({ severity, title, description, time, action }: AlertC
         <div className="flex items-center gap-2">
           <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot} animate-pulse`} />
           <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full border ${cfg.badge}`}>
-            {severity === 'critical' ? 'КРИТИЧНО' : severity === 'warning' ? 'ВНИМАНИЕ' : severity === 'success' ? 'УСПЕХ' : 'ИНФО'}
+            {severity === 'critical' ? 'CRITICAL' : severity === 'warning' ? 'WARNING' : severity === 'success' ? 'SUCCESS' : 'INFO'}
           </span>
         </div>
         <span className="font-mono text-[10px] text-on-surface-variant/60">{time}</span>

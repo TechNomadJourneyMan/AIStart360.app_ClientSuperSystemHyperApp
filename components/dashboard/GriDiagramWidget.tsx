@@ -24,7 +24,7 @@ const R_MAX    = 70
 const R_LABEL  = 88
 const BENCHMARK = 8.5
 
-const SHORT = ['Продукт', 'Доверие', 'Бизнес', 'Финансы', 'Операции', 'Команда', 'Осн-ль']
+const SHORT = ['Product', 'Trust', 'Business', 'Finance', 'Operations', 'Team', 'Founder']
 
 function angle(i: number) { return (Math.PI * 2 * i) / N - Math.PI / 2 }
 
@@ -62,11 +62,11 @@ function scoreColor(s: number) {
 }
 
 function scoreLabel(s: number) {
-  if (s < 3) return 'Критично'
-  if (s < 5) return 'Низкий'
-  if (s < 7) return 'Средний'
-  if (s < 9) return 'Высокий'
-  return 'Отлично'
+  if (s < 3) return 'Critical'
+  if (s < 5) return 'Low'
+  if (s < 7) return 'Medium'
+  if (s < 9) return 'High'
+  return 'Excellent'
 }
 
 function initials(name: string) {
@@ -95,7 +95,7 @@ export function GriDiagramWidget({ domains, totalScore, orgName }: Props) {
       {/* Header */}
       <div className="flex items-center justify-between mb-3">
         <div>
-          <p className="text-[10px] font-mono text-primary/60 uppercase tracking-widest">GRI Индекс</p>
+          <p className="text-[10px] font-mono text-primary/60 uppercase tracking-widest">GRI Index</p>
           {totalScore !== undefined && (
             <div className="flex items-baseline gap-1.5 mt-0.5">
               <span className="text-xl font-mono font-bold" style={{ color: overallColor }}>
@@ -113,7 +113,7 @@ export function GriDiagramWidget({ domains, totalScore, orgName }: Props) {
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Company avatar — "фото" */}
+          {/* Company avatar — "photo" */}
           {orgName && (
             <div
               className="w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-bold flex-shrink-0 border border-primary/20"
@@ -127,7 +127,7 @@ export function GriDiagramWidget({ domains, totalScore, orgName }: Props) {
             href="/gri"
             className="flex items-center gap-0.5 text-xs text-on-surface-variant/40 hover:text-primary transition-colors"
           >
-            Подробнее
+            Details
             <span className="material-symbols-outlined text-sm">arrow_forward</span>
           </Link>
         </div>
@@ -239,7 +239,7 @@ export function GriDiagramWidget({ domains, totalScore, orgName }: Props) {
                   <text x={tx + TT_W / 2} y={ty + 19}
                     textAnchor="middle" fontSize="9" fill={color}
                     fontFamily="monospace" fontWeight="bold">
-                    {scores[hovered].toFixed(1)} · Эталон {BENCHMARK}
+                    {scores[hovered].toFixed(1)} · Benchmark {BENCHMARK}
                   </text>
                 </g>
               )
@@ -260,11 +260,11 @@ export function GriDiagramWidget({ domains, totalScore, orgName }: Props) {
           <div className="flex items-center justify-center gap-4 -mt-1">
             <div className="flex items-center gap-1.5">
               <div className="w-5 h-[1.5px] bg-[#60a5fa]" />
-              <span className="text-[9px] font-mono text-on-surface-variant/35">Бизнес</span>
+              <span className="text-[9px] font-mono text-on-surface-variant/35">Business</span>
             </div>
             <div className="flex items-center gap-1.5">
               <svg width="20" height="4"><line x1="0" y1="2" x2="20" y2="2" stroke="#6effc0" strokeWidth="1" strokeDasharray="3 2" opacity="0.5" /></svg>
-              <span className="text-[9px] font-mono text-on-surface-variant/35">Эталон $2M</span>
+              <span className="text-[9px] font-mono text-on-surface-variant/35">Benchmark $2M</span>
             </div>
           </div>
         </div>

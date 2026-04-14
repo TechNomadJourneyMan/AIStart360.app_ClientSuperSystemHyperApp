@@ -24,11 +24,11 @@ export function SurveyOverview({ answers, completedSteps }: SurveyOverviewProps)
     return (
       <div className="bg-surface-container-low rounded-2xl border border-dashed border-white/10 p-8 text-center">
         <span className="material-symbols-outlined text-3xl text-on-surface-variant/20 mb-3 block">assignment</span>
-        <p className="text-sm text-on-surface-variant font-medium">Анкета не заполнена</p>
-        <p className="text-xs text-on-surface-variant/60 mt-1">Заполните анкету для получения AI-диагностики</p>
+        <p className="text-sm text-on-surface-variant font-medium">Survey not completed</p>
+        <p className="text-xs text-on-surface-variant/60 mt-1">Complete the survey for AI diagnostics</p>
         <a href="/client/onboarding" className="inline-flex items-center gap-1.5 mt-4 text-xs font-mono text-primary hover:text-primary/80 transition-colors">
           <span className="material-symbols-outlined text-sm">arrow_forward</span>
-          Перейти к анкете
+          Go to Survey
         </a>
       </div>
     )
@@ -68,14 +68,14 @@ export function SurveyOverview({ answers, completedSteps }: SurveyOverviewProps)
                 </span>
               </div>
               <div className="flex-1 text-left min-w-0">
-                <p className="text-sm font-medium text-on-surface">{SURVEY_STEP_LABELS[step] || `Шаг ${step}`}</p>
+                <p className="text-sm font-medium text-on-surface">{SURVEY_STEP_LABELS[step] || `Step ${step}`}</p>
                 <p className="text-[10px] text-on-surface-variant font-mono">
-                  {items.length} {items.length === 1 ? 'поле' : items.length < 5 ? 'поля' : 'полей'}
+                  {items.length} {items.length === 1 ? 'field' : items.length < 5 ? 'fields' : 'fields'}
                 </p>
               </div>
               {isCompleted && (
                 <span className="text-[9px] font-mono text-primary bg-primary/10 border border-primary/20 px-1.5 py-0.5 rounded-md flex-shrink-0">
-                  Заполнено
+                  Completed
                 </span>
               )}
               <span className={`material-symbols-outlined text-base text-on-surface-variant/50 transition-transform duration-200 flex-shrink-0 ${isOpen ? 'rotate-180' : ''}`}>

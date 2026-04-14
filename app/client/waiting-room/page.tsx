@@ -18,32 +18,32 @@ type StatusConfig = {
 
 const STATUS_CONFIG: Record<ApprovalStatus, StatusConfig> = {
   pending_approval: {
-    label: 'Заявка получена',
-    sublabel: 'Ваша заявка ожидает рассмотрения администратором',
+    label: 'Application Received',
+    sublabel: 'Your application is awaiting review by an administrator',
     icon: 'schedule',
     color: 'text-amber-400',
     bgColor: 'bg-amber-400/10',
     pulseColor: 'bg-amber-400/20',
   },
   requires_clarification: {
-    label: 'Требуется уточнение',
-    sublabel: 'Администратор запросил дополнительную информацию. Проверьте email.',
+    label: 'Clarification Required',
+    sublabel: 'The administrator has requested additional information. Check your email.',
     icon: 'info',
     color: 'text-orange-400',
     bgColor: 'bg-orange-400/10',
     pulseColor: 'bg-orange-400/20',
   },
   approved: {
-    label: 'Одобрено!',
-    sublabel: 'Ваша заявка одобрена. Добро пожаловать в AIStart360!',
+    label: 'Approved!',
+    sublabel: 'Your application has been approved. Welcome to AIStart360!',
     icon: 'check_circle',
     color: 'text-primary',
     bgColor: 'bg-primary/10',
     pulseColor: 'bg-primary/20',
   },
   rejected: {
-    label: 'Заявка отклонена',
-    sublabel: 'К сожалению, ваша заявка была отклонена. Свяжитесь с нами для уточнения.',
+    label: 'Application Rejected',
+    sublabel: 'Unfortunately, your application has been rejected. Contact us for details.',
     icon: 'cancel',
     color: 'text-error',
     bgColor: 'bg-error/10',
@@ -100,9 +100,9 @@ export default function WaitingRoomPage() {
   const cfg = STATUS_CONFIG[status]
 
   const steps = [
-    { label: 'Заявка получена', done: true },
-    { label: 'На проверке', done: status === 'approved' || status === 'requires_clarification' },
-    { label: 'Решение принято', done: status === 'approved' || status === 'rejected' },
+    { label: 'Application received', done: true },
+    { label: 'Under review', done: status === 'approved' || status === 'requires_clarification' },
+    { label: 'Decision made', done: status === 'approved' || status === 'rejected' },
   ]
 
   return (
@@ -119,7 +119,7 @@ export default function WaitingRoomPage() {
           <button onClick={() => { document.cookie = 'aistart360_role=; path=/; max-age=0'; window.location.href = '/login' }}
             className="text-xs text-red-400/70 hover:text-red-400 flex items-center gap-1 border border-red-500/10 px-2.5 py-1.5 rounded-lg transition-all">
             <span className="material-symbols-outlined text-sm">logout</span>
-            Выход
+            Sign Out
           </button>
         </div>
       </header>
@@ -152,7 +152,7 @@ export default function WaitingRoomPage() {
             {status === 'pending_approval' && (
               <div className="mt-5 inline-flex items-center gap-2 bg-surface-container px-4 py-2 rounded-xl">
                 <span className="material-symbols-outlined text-base text-on-surface-variant">timer</span>
-                <span className="text-xs text-on-surface-variant">Обычно в течение <strong className="text-on-surface">24 часов</strong></span>
+                <span className="text-xs text-on-surface-variant">Usually within <strong className="text-on-surface">24 hours</strong></span>
               </div>
             )}
 
@@ -160,7 +160,7 @@ export default function WaitingRoomPage() {
             {isRedirecting && (
               <div className="mt-5 flex items-center justify-center gap-2">
                 <span className="w-4 h-4 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
-                <span className="text-sm text-primary">Переходим в личный кабинет...</span>
+                <span className="text-sm text-primary">Redirecting to your dashboard...</span>
               </div>
             )}
           </div>
@@ -168,7 +168,7 @@ export default function WaitingRoomPage() {
           {/* Progress Steps */}
           <div className="bg-surface-container-low rounded-2xl border border-white/[0.06] p-6">
             <h2 className="text-xs font-mono text-on-surface-variant uppercase tracking-widest mb-5">
-              Статус заявки
+              Application Status
             </h2>
             <div className="flex items-center gap-0">
               {steps.map((step, i) => (
@@ -205,13 +205,13 @@ export default function WaitingRoomPage() {
             <div className="grid grid-cols-2 gap-3">
               <Link href="/client/onboarding" className="flex flex-col items-center gap-2 bg-surface-container-low hover:bg-surface-container rounded-2xl border border-white/[0.06] hover:border-primary/20 p-5 transition-all group">
                 <span className="material-symbols-outlined text-2xl text-primary">assignment</span>
-                <span className="text-xs text-center text-on-surface group-hover:text-on-surface/90 font-medium leading-tight">Заполнить анкету заранее</span>
-                <span className="text-[10px] text-on-surface-variant text-center">Ускорьте процесс проверки</span>
+                <span className="text-xs text-center text-on-surface group-hover:text-on-surface/90 font-medium leading-tight">Fill out survey in advance</span>
+                <span className="text-[10px] text-on-surface-variant text-center">Speed up the review process</span>
               </Link>
               <Link href="/client/onboarding/documents" className="flex flex-col items-center gap-2 bg-surface-container-low hover:bg-surface-container rounded-2xl border border-white/[0.06] hover:border-primary/20 p-5 transition-all group">
                 <span className="material-symbols-outlined text-2xl text-primary">upload_file</span>
-                <span className="text-xs text-center text-on-surface group-hover:text-on-surface/90 font-medium leading-tight">Загрузить документы</span>
-                <span className="text-[10px] text-on-surface-variant text-center">P&L, баланс, отчёты</span>
+                <span className="text-xs text-center text-on-surface group-hover:text-on-surface/90 font-medium leading-tight">Upload Documents</span>
+                <span className="text-[10px] text-on-surface-variant text-center">P&L, balance sheet, reports</span>
               </Link>
             </div>
           )}
@@ -219,18 +219,18 @@ export default function WaitingRoomPage() {
             <div className="grid grid-cols-3 gap-3">
               <Link href="/client/onboarding" className="flex flex-col items-center gap-2 bg-surface-container-low hover:bg-surface-container rounded-2xl border border-white/[0.06] hover:border-primary/20 p-5 transition-all group">
                 <span className="material-symbols-outlined text-2xl text-primary">assignment</span>
-                <span className="text-xs text-center text-on-surface group-hover:text-on-surface/90 font-medium leading-tight">Заполнить анкету</span>
-                <span className="text-[10px] text-on-surface-variant text-center">Ускорьте процесс проверки</span>
+                <span className="text-xs text-center text-on-surface group-hover:text-on-surface/90 font-medium leading-tight">Fill Out Survey</span>
+                <span className="text-[10px] text-on-surface-variant text-center">Speed up the review process</span>
               </Link>
               <Link href="/client/my-data" className="flex flex-col items-center gap-2 bg-surface-container-low hover:bg-surface-container rounded-2xl border border-white/[0.06] hover:border-primary/20 p-5 transition-all group">
                 <span className="material-symbols-outlined text-2xl text-primary">person_book</span>
-                <span className="text-xs text-center text-on-surface group-hover:text-on-surface/90 font-medium leading-tight">Мои данные</span>
-                <span className="text-[10px] text-on-surface-variant text-center">Просмотр введённых данных</span>
+                <span className="text-xs text-center text-on-surface group-hover:text-on-surface/90 font-medium leading-tight">My Data</span>
+                <span className="text-[10px] text-on-surface-variant text-center">View submitted data</span>
               </Link>
               <Link href="/client/onboarding/documents" className="flex flex-col items-center gap-2 bg-surface-container-low hover:bg-surface-container rounded-2xl border border-white/[0.06] hover:border-primary/20 p-5 transition-all group">
                 <span className="material-symbols-outlined text-2xl text-primary">upload_file</span>
-                <span className="text-xs text-center text-on-surface group-hover:text-on-surface/90 font-medium leading-tight">Загрузить документы</span>
-                <span className="text-[10px] text-on-surface-variant text-center">P&L, баланс, отчёты</span>
+                <span className="text-xs text-center text-on-surface group-hover:text-on-surface/90 font-medium leading-tight">Upload Documents</span>
+                <span className="text-[10px] text-on-surface-variant text-center">P&L, balance sheet, reports</span>
               </Link>
             </div>
           )}
@@ -242,10 +242,10 @@ export default function WaitingRoomPage() {
               className="inline-flex items-center gap-2 text-xs text-on-surface-variant hover:text-primary transition-colors"
             >
               <span className="material-symbols-outlined text-base">mail</span>
-              Написать администратору
+              Contact Administrator
             </a>
             <p className="text-[10px] text-on-surface-variant/50 font-mono">
-              Последняя проверка: {lastChecked.toLocaleTimeString('ru-RU', { timeZone: 'Asia/Almaty' })} · обновляется каждые 30 сек
+              Last check: {lastChecked.toLocaleTimeString('en-US', { timeZone: 'Asia/Almaty' })} · refreshes every 30 sec
             </p>
           </div>
 

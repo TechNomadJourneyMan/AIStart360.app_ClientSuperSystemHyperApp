@@ -14,39 +14,39 @@ import {
 // Detailed sub-criteria based on GRI_v8_2.csv
 const DETAILED_CRITERIA_INIT = {
     "Product & Demand": [
-        { id: "p1", name: "Критичность боли", score: 6, weight: 1.5, desc: "Насколько клиент страдает без решения" },
-        { id: "p2", name: "Потенциал высокого чека", score: 5, weight: 1.2, desc: "Возможность продавать дорого" },
-        { id: "p3", name: "Повторные покупки (LTV)", score: 7, weight: 1.0, desc: "Возвращаемость клиентов" }
+        { id: "p1", name: "Pain Criticality", score: 6, weight: 1.5, desc: "How much the client suffers without a solution" },
+        { id: "p2", name: "High Check Potential", score: 5, weight: 1.2, desc: "Ability to sell expensive" },
+        { id: "p3", name: "Repeat Purchases (LTV)", score: 7, weight: 1.0, desc: "Client return rate" }
     ],
     "Trust & Positioning": [
-        { id: "t1", name: "Доказательства результата", score: 5, weight: 1.5, desc: "Кейсы, цифры, факты" },
-        { id: "t2", name: "Отстройка от конкурентов", score: 6, weight: 1.2, desc: "Уникальность предложения" },
-        { id: "t3", name: "Медийный вес", score: 4, weight: 0.8, desc: "Цитируемость и узнаваемость" }
+        { id: "t1", name: "Proof of Results", score: 5, weight: 1.5, desc: "Cases, numbers, facts" },
+        { id: "t2", name: "Competitor differentiation", score: 6, weight: 1.2, desc: "Uniqueness of offer" },
+        { id: "t3", name: "Media Weight", score: 4, weight: 0.8, desc: "Citation and recognition" }
     ],
     "Business Model": [
-        { id: "b1", name: "Unit-экономика", score: 8, weight: 1.5, desc: "Прибыль с одной продажи" },
-        { id: "b2", name: "Масштабируемость каналов", score: 7, weight: 1.2, desc: "Можно ли залить трафик x10" },
-        { id: "b3", name: "Апсейлы и кросс-сейлы", score: 7, weight: 1.0, desc: "Допродажи текущим" }
+        { id: "b1", name: "Unit Economics", score: 8, weight: 1.5, desc: "Profit per sale" },
+        { id: "b2", name: "Channel Scalability", score: 7, weight: 1.2, desc: "Can traffic be scaled x10" },
+        { id: "b3", name: "Upsells and Cross-sells", score: 7, weight: 1.0, desc: "Additional sales to existing" }
     ],
     "Cash Stability": [
-        { id: "c1", name: "Кассовые разрывы", score: 5, weight: 1.5, desc: "Отсутствие минуса на счету" },
-        { id: "c2", name: "Финансовое планирование", score: 4, weight: 1.2, desc: "Точность P&L и Cashflow" },
-        { id: "c3", name: "Рентабельность капитала", score: 6, weight: 1.0, desc: "ROI" }
+        { id: "c1", name: "Cash Gaps", score: 5, weight: 1.5, desc: "No negative balance" },
+        { id: "c2", name: "Financial Planning", score: 4, weight: 1.2, desc: "P&L and Cashflow accuracy" },
+        { id: "c3", name: "Return on Capital", score: 6, weight: 1.0, desc: "ROI" }
     ],
     "Operations": [
-        { id: "o1", name: "Повторяемость процесса", score: 2, weight: 1.5, desc: "Результат не зависит от удачи" },
-        { id: "o2", name: "Стандарты и регламенты", score: 2, weight: 1.0, desc: "Наличие инструкций" },
-        { id: "o3", name: "Автоматизация", score: 3, weight: 1.0, desc: "CRM, ERP, Dashboards" }
+        { id: "o1", name: "Process Repeatability", score: 2, weight: 1.5, desc: "Result does not depend on luck" },
+        { id: "o2", name: "Standards and Regulations", score: 2, weight: 1.0, desc: "Availability of instructions" },
+        { id: "o3", name: "Automation", score: 3, weight: 1.0, desc: "CRM, ERP, Dashboards" }
     ],
     "Team": [
-        { id: "tm1", name: "Укомплектованность штата", score: 3, weight: 1.5, desc: "Закрыты ли ключевые позиции" },
-        { id: "tm2", name: "Скорость найма", score: 2, weight: 1.2, desc: "Время закрытия вакансии" },
-        { id: "tm3", name: "Исполнительность", score: 4, weight: 1.0, desc: "Соблюдение дедлайнов" }
+        { id: "tm1", name: "Staff Completeness", score: 3, weight: 1.5, desc: "Are key positions filled" },
+        { id: "tm2", name: "Hiring Speed", score: 2, weight: 1.2, desc: "Vacancy closure time" },
+        { id: "tm3", name: "Execution", score: 4, weight: 1.0, desc: "Meeting deadlines" }
     ],
     "Founder Readiness": [
-        { id: "f1", name: "Выход из операционки", score: 6, weight: 1.5, desc: "Фокус на стратегии" },
-        { id: "f2", name: "Энергия и ресурс", score: 8, weight: 1.0, desc: "Личная эффективность" },
-        { id: "f3", name: "Амбиции масштаба", score: 9, weight: 0.8, desc: "Желание расти x10" }
+        { id: "f1", name: "Stepping out of operations", score: 6, weight: 1.5, desc: "Focus on strategy" },
+        { id: "f2", name: "Energy and Resources", score: 8, weight: 1.0, desc: "Personal effectiveness" },
+        { id: "f3", name: "Scale Ambitions", score: 9, weight: 0.8, desc: "Desire to grow x10" }
     ]
 };
 
@@ -62,41 +62,41 @@ const SECTIONS_CONFIG = {
 
 const LIMITS_DATABASE = {
     "Operations": [
-        { name: "Повторяемость процесса", threshold: 4, priority: "1" },
-        { name: "Риски при масштабировании", threshold: 4, priority: "2" },
-        { name: "Метрики результата команды", threshold: 3, priority: "3" }
+        { name: "Process Repeatability", threshold: 4, priority: "1" },
+        { name: "Risks in Scaling", threshold: 4, priority: "2" },
+        { name: "Team Result Metrics", threshold: 3, priority: "3" }
     ],
     "Team": [
-        { name: "Укомплектованность под $2M", threshold: 4, priority: "Critical" },
-        { name: "Исполнительная дисциплина", threshold: 5, priority: "High" }
+        { name: "Staffing for $2M", threshold: 4, priority: "Critical" },
+        { name: "Executive Discipline", threshold: 5, priority: "High" }
     ],
     "Trust & Positioning": [
-        { name: "Доказательства результата", threshold: 5, priority: "High" }
+        { name: "Proof of Results", threshold: 5, priority: "High" }
     ]
 };
 
 const ACTION_PLANS = {
     "Operations": [
-        "Зафиксировать 1–3 ключевых бизнес-процесса.",
-        "Внедрить ежедневный ритм (daily stand-up).",
-        "Описать стандарты результата."
+        "Document 1-3 key business processes.",
+        "Implement a daily rhythm (daily stand-up).",
+        "Describe result standards."
     ],
     "Team": [
-        "Перераспределить нагрузку с собственника.",
-        "Внедрить систему еженедельных спринтов.",
-        "Запустить постоянный найм."
+        "Redistribute workload from the owner.",
+        "Implement a weekly sprint system.",
+        "Launch ongoing hiring."
     ],
     "Product & Demand": [
-        "Перепроверить продуктовую ценность (Offer).",
-        "Сократить Time-to-Value для клиента."
+        "Recheck product value (Offer).",
+        "Reduce Time-to-Value for the client."
     ],
     "Trust & Positioning": [
-        "Собрать 5-10 твердых кейсов.",
-        "Упаковать 'Почему мы?'."
+        "Collect 5-10 solid case studies.",
+        "Package 'Why us?'."
     ],
     "Cash Stability": [
-        "Внедрить платежный календарь.",
-        "Внедрить P&L отчет."
+        "Implement a payment calendar.",
+        "Implement a P&L report."
     ]
 };
 
@@ -247,13 +247,13 @@ export default function InteractiveGRIDashboard() {
                             onClick={() => setViewMode('dashboard')}
                             className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-all ${viewMode === 'dashboard' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
                         >
-                            <LayoutGrid size={16} /> Дашборд
+                            <LayoutGrid size={16} /> Dashboard
                         </button>
                         <button
                             onClick={() => setViewMode('table')}
                             className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-all ${viewMode === 'table' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
                         >
-                            <TableIcon size={16} /> Аудит
+                            <TableIcon size={16} /> Audit
                         </button>
                     </div>
 
@@ -261,7 +261,7 @@ export default function InteractiveGRIDashboard() {
 
                     {/* Score Display */}
                     <div className="text-right">
-                        <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Общий GRI</div>
+                        <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Overall GRI</div>
                         <div className={`text-2xl font-black leading-none ${getScoreColor(parseFloat(averageScore))}`}>{averageScore}</div>
                     </div>
                 </div>
@@ -279,13 +279,13 @@ export default function InteractiveGRIDashboard() {
                                 <div className="flex justify-between items-center mb-4">
                                     <h3 className="font-bold text-slate-800 flex items-center gap-2 text-sm uppercase tracking-wide">
                                         <Calculator className="w-4 h-4 text-blue-500" />
-                                        Экспресс-оценка
+                                        Express Assessment
                                     </h3>
                                     <button
                                         onClick={() => setViewMode('table')}
                                         className="text-xs text-blue-600 font-medium hover:underline"
                                     >
-                                        Детально →
+                                        Details →
                                     </button>
                                 </div>
                                 <div className="space-y-5">
@@ -305,17 +305,17 @@ export default function InteractiveGRIDashboard() {
                                 </div>
 
                                 <div className="mt-6 pt-6 border-t border-slate-100 space-y-2">
-                                    <p className="text-xs font-bold text-slate-400 uppercase mb-2">Симуляция сценариев</p>
+                                    <p className="text-xs font-bold text-slate-400 uppercase mb-2">Scenario Simulation</p>
                                     <div className="grid grid-cols-2 gap-2">
                                         <button onClick={() => simulateScenario('pessimistic')} className="px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-lg text-xs font-bold transition-colors border border-rose-200">
-                                            📉 Кризис
+                                            📉 Crisis
                                         </button>
                                         <button onClick={() => simulateScenario('optimistic')} className="px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg text-xs font-bold transition-colors border border-emerald-200">
-                                            🚀 Рост x2
+                                            🚀 Growth x2
                                         </button>
                                     </div>
                                     <button onClick={() => setDetailedData(DETAILED_CRITERIA_INIT)} className="w-full mt-2 px-3 py-2 text-slate-400 hover:text-slate-600 text-xs font-medium flex items-center justify-center gap-1">
-                                        <RotateCcw size={12} /> Сбросить
+                                        <RotateCcw size={12} /> Reset
                                     </button>
                                 </div>
                             </div>
@@ -324,7 +324,7 @@ export default function InteractiveGRIDashboard() {
                         {/* CENTER: Radar */}
                         <div className="lg:col-span-6 bg-white rounded-2xl shadow-sm border border-slate-200 p-4 relative flex flex-col items-center justify-center min-h-[550px]">
                             <div className="absolute top-6 left-6 z-10">
-                                <h2 className="text-xl font-bold text-slate-800">Диаграмма готовности</h2>
+                                <h2 className="text-xl font-bold text-slate-800">Readiness Diagram</h2>
                                 <div className="flex items-center gap-2 mt-1">
                                     <span className={`text-xs font-bold px-2 py-0.5 rounded border ${getScoreBadge(parseFloat(averageScore))}`}>
                                         {parseFloat(averageScore) < 4 ? "STOP SCALING" : parseFloat(averageScore) < 7 ? "RISK ZONE" : "READY TO SCALE"}
@@ -364,7 +364,7 @@ export default function InteractiveGRIDashboard() {
                                 </div>
 
                                 <div className="p-5 flex-grow overflow-y-auto custom-scrollbar">
-                                    <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Состав оценки</h4>
+                                    <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Assessment Breakdown</h4>
                                     <div className="space-y-3 mb-6">
                                         {detailedData[activeSection as keyof typeof detailedData].map((item) => (
                                             <div key={item.id} className="bg-slate-50 p-3 rounded-lg border border-slate-100">
@@ -383,10 +383,10 @@ export default function InteractiveGRIDashboard() {
                                     {scores[activeSection] < 7 && (
                                         <div className="bg-amber-50 border border-amber-100 rounded-lg p-3">
                                             <h4 className="text-xs font-bold text-amber-800 flex items-center gap-1 mb-1">
-                                                <AlertTriangle size={12} /> Внимание
+                                                <AlertTriangle size={12} /> Attention
                                             </h4>
                                             <p className="text-xs text-amber-700 leading-snug">
-                                                Низкий балл в этом блоке блокирует масштабирование. Рекомендуется поднять минимум до 7.0.
+                                                A low score in this block blocks scaling. It is recommended to raise it to at least 7.0.
                                             </p>
                                         </div>
                                     )}
@@ -397,7 +397,7 @@ export default function InteractiveGRIDashboard() {
                         {/* BOTTOM: Tables */}
                         <div className="lg:col-span-6 bg-white rounded-2xl shadow-sm border border-slate-200 p-6 h-[320px] flex flex-col">
                             <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2">
-                                <Lock className="w-5 h-5 text-rose-500" /> Топ ограничений (Bottlenecks)
+                                <Lock className="w-5 h-5 text-rose-500" /> Top Constraints (Bottlenecks)
                             </h3>
                             <div className="overflow-y-auto custom-scrollbar space-y-2 flex-grow">
                                 {activeLimits.map((limit: any, i: number) => (
@@ -412,13 +412,13 @@ export default function InteractiveGRIDashboard() {
                                         </div>
                                     </div>
                                 ))}
-                                {activeLimits.length === 0 && <div className="text-center text-slate-400 py-10">Ограничений нет</div>}
+                                {activeLimits.length === 0 && <div className="text-center text-slate-400 py-10">No constraints</div>}
                             </div>
                         </div>
 
                         <div className="lg:col-span-6 bg-white rounded-2xl shadow-sm border border-slate-200 p-6 h-[320px] flex flex-col">
                             <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2">
-                                <TrendingUp className="w-5 h-5 text-blue-500" /> План действий (Sprint Backlog)
+                                <TrendingUp className="w-5 h-5 text-blue-500" /> Action Plan (Sprint Backlog)
                             </h3>
                             <div className="overflow-y-auto custom-scrollbar space-y-2 flex-grow">
                                 {activeActions.map((item: any, i: number) => (
@@ -443,10 +443,10 @@ export default function InteractiveGRIDashboard() {
                             <div className="flex items-center gap-3">
                                 <h2 className="font-bold text-slate-800 flex items-center gap-2">
                                     <TableIcon size={18} className="text-slate-500" />
-                                    Детальный аудит
+                                    Detailed Audit
                                 </h2>
                                 <span className="text-xs px-2 py-1 bg-white border border-slate-200 rounded-md text-slate-500">
-                                    {Object.values(detailedData).flat().length} критериев
+                                    {Object.values(detailedData).flat().length} criteria
                                 </span>
                             </div>
                             <div className="flex items-center gap-3">
@@ -454,20 +454,20 @@ export default function InteractiveGRIDashboard() {
                                     onClick={() => setFilterCritical(!filterCritical)}
                                     className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors ${filterCritical ? 'bg-rose-100 text-rose-700 border-rose-200' : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'}`}
                                 >
-                                    <Filter size={14} /> Только критические
+                                    <Filter size={14} /> Critical Only
                                 </button>
                                 <button className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 transition-colors shadow-sm">
-                                    <Download size={14} /> Экспорт PDF
+                                    <Download size={14} /> Export PDF
                                 </button>
                             </div>
                         </div>
 
                         {/* Table Header */}
                         <div className="grid grid-cols-12 gap-4 px-6 py-3 bg-slate-100 border-b border-slate-200 text-xs font-bold text-slate-500 uppercase tracking-wider">
-                            <div className="col-span-4">Критерий / Вопрос</div>
-                            <div className="col-span-2 text-center">Вес</div>
-                            <div className="col-span-4">Оценка (1-10)</div>
-                            <div className="col-span-2 text-right">Влияние</div>
+                            <div className="col-span-4">Criterion / Question</div>
+                            <div className="col-span-2 text-center">Weight</div>
+                            <div className="col-span-4">Score (1-10)</div>
+                            <div className="col-span-2 text-right">Impact</div>
                         </div>
 
                         {/* Table Body */}

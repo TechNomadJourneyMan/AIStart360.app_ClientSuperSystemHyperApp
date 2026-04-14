@@ -25,11 +25,11 @@ export function MarketShareChart({ data }: { data: any[] }) {
           <p className="font-bold text-white mb-2 text-lg">{dataItem.name}</p>
           <div className="space-y-1.5">
             <div className="flex justify-between items-center gap-6 text-sm">
-              <span className="text-gray-400">Доля рынка:</span>
+              <span className="text-gray-400">Market Share:</span>
               <span className="text-white font-bold">{dataItem.share}%</span>
             </div>
             <div className="flex justify-between items-center gap-6 text-sm">
-              <span className="text-gray-400">Динамика:</span>
+              <span className="text-gray-400">Dynamics:</span>
               <span className={`font-bold ${dataItem.growth.startsWith('+') ? 'text-green-400' : 'text-[#E50000]'}`}>
                 {dataItem.growth}
               </span>

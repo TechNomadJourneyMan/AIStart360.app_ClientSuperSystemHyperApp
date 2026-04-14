@@ -56,7 +56,7 @@ export function SystemHealth() {
 
   const services = data?.services ?? []
   const allOnline = data?.allOnline ?? true
-  const summary = data?.summary ?? 'Проверка...'
+  const summary = data?.summary ?? 'Checking...'
 
   return (
     <div className="bg-surface-container-low rounded-2xl border border-white/[0.04] px-5 py-4">
@@ -69,13 +69,13 @@ export function SystemHealth() {
           <span className="text-[10px] font-mono text-on-surface-variant">{summary}</span>
           {lastUpdated && (
             <span className="text-[10px] font-mono text-on-surface-variant/30">
-              обновлено {lastUpdated.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+              updated {lastUpdated.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
             </span>
           )}
           <button
             onClick={fetchHealth}
             className="text-on-surface-variant/30 hover:text-primary transition-colors"
-            title="Обновить"
+            title="Refresh"
           >
             <span className="material-symbols-outlined text-sm">refresh</span>
           </button>

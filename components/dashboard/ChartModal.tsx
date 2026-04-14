@@ -10,10 +10,10 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { KpiChart } from './KpiChart'
 
 const METRIC_LABELS: Record<string, string> = {
-  revenue:   'Доход (₸М)',
-  margin:    'Маржа (%)',
-  clients:   'Клиенты',
-  avg_check: 'Средний чек',
+  revenue:   'Revenue (₸M)',
+  margin:    'Margin (%)',
+  clients:   'Clients',
+  avg_check: 'Avg. Check',
 }
 
 interface ChartModalProps {
@@ -51,7 +51,7 @@ export function ChartModal({ metric, onClose }: ChartModalProps) {
           >
             <div className="flex items-center justify-between mb-5">
               <div>
-                <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest mb-0.5">Динамика</p>
+                <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest mb-0.5">Dynamics</p>
                 <h3 className="text-base font-bold text-on-surface">{METRIC_LABELS[metric] ?? metric}</h3>
               </div>
               <button

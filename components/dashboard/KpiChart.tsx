@@ -10,10 +10,10 @@ import type { Period } from '@/types/periods'
 import { useTimeseries } from '@/hooks/useTimeseries'
 
 const METRIC_DEFS = [
-  { key: 'revenue',   label: 'Доход (₸М)',   color: '#6effc0', unit: '₸М' },
-  { key: 'margin',    label: 'Маржа (%)',     color: '#bcc7de', unit: '%'  },
-  { key: 'clients',   label: 'Клиенты',       color: '#ffbd60', unit: ''   },
-  { key: 'avg_check', label: 'Средний чек',   color: '#c9a6ff', unit: '₸М' },
+  { key: 'revenue',   label: 'Revenue (₸M)',   color: '#6effc0', unit: '₸M' },
+  { key: 'margin',    label: 'Margin (%)',     color: '#bcc7de', unit: '%'  },
+  { key: 'clients',   label: 'Clients',       color: '#ffbd60', unit: ''   },
+  { key: 'avg_check', label: 'Avg. Check',   color: '#c9a6ff', unit: '₸M' },
 ]
 
 const CustomTooltip = ({ active, payload, label, unit }: {

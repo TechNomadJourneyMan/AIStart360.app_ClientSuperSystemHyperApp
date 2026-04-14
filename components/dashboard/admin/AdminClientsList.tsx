@@ -14,10 +14,10 @@ type AdminClientRow = {
 }
 
 const STATUS_CONFIG = {
-  active:   { label: 'Активен',       color: 'text-primary',   dot: 'bg-primary'   },
-  at_risk:  { label: 'В зоне риска',  color: 'text-secondary', dot: 'bg-secondary' },
-  critical: { label: 'Критично',      color: 'text-error',     dot: 'bg-error'     },
-  pending_approval: { label: 'Ожидает', color: 'text-on-surface-variant', dot: 'bg-on-surface-variant' }
+  active:   { label: 'Active',       color: 'text-primary',   dot: 'bg-primary'   },
+  at_risk:  { label: 'At Risk',  color: 'text-secondary', dot: 'bg-secondary' },
+  critical: { label: 'Critical',      color: 'text-error',     dot: 'bg-error'     },
+  pending_approval: { label: 'Pending', color: 'text-on-surface-variant', dot: 'bg-on-surface-variant' }
 }
 
 function GriBar({ score }: { score: number }) {
@@ -45,7 +45,7 @@ export function AdminClientsList() {
         if (json.ok) {
           const mapped = json.data.map((c: any) => ({
             id: c.id,
-            name: c.company_name || c.full_name || 'Без названия',
+            name: c.company_name || c.full_name || 'Unnamed',
             industry: c.industry || '—',
             gri: c.overall_score ? Math.round(c.overall_score / 10 * 10) / 10 : 0, // Score is 0-100 in DB, but table uses 0.0 format
             phase: c.stage || '—',
@@ -67,22 +67,22 @@ export function AdminClientsList() {
     fetchClients()
   }, [])
 
-  if (loading) return <div className="p-8 text-center text-sm text-on-surface-variant">Загрузка базы клиентов...</div>
+  if (loading) return <div className="p-8 text-center text-sm text-on-surface-variant">Loading client database...</div>
 
   return (
     <div className="lg:col-span-2 bg-surface-container-low rounded-2xl border border-white/[0.04] overflow-hidden">
       <div className="flex items-center justify-between px-5 py-4 border-b border-white/[0.04]">
         <div>
-          <h2 className="font-headline text-base font-bold text-on-surface">Клиенты платформы</h2>
-          <p className="text-[10px] text-on-surface-variant">GRI · фаза · ответственный менеджер</p>
+          <h2 className="font-headline text-base font-bold text-on-surface">Platform Clients</h2>
+          <p className="text-[10px] text-on-surface-variant">GRI · phase · responsible manager</p>
         </div>
-        <Link href="/clients" className="text-xs font-mono text-primary hover:underline">Все →</Link>
+        <Link href="/clients" className="text-xs font-mono text-primary hover:underline">View All →</Link>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full">
           <thead>
             <tr className="border-b border-white/[0.04]">
-              {['Компания', 'Отрасль', 'GRI', 'Фаза', 'Менеджер', 'Статус'].map(h => (
+              {['Company', 'Industry', 'GRI', 'Phase', 'Manager', 'Status'].map(h => (
                 <th key={h} className="text-left text-[10px] font-mono text-on-surface-variant uppercase tracking-widest px-4 py-3">{h}</th>
               ))}
             </tr>
@@ -119,7 +119,7 @@ export function AdminClientsList() {
             })}
             {clients.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-xs text-on-surface-variant">Нет активных клиентов</td>
+                <td colSpan={6} className="px-4 py-8 text-center text-xs text-on-surface-variant">No active clients</td>
               </tr>
             )}
           </tbody>

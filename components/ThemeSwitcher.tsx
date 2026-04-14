@@ -23,7 +23,7 @@ export function ThemeSwitcher() {
     <button
       onClick={toggleTheme}
       className="w-10 h-10 flex items-center justify-center rounded-full bg-surface-container-high hover:bg-surface-container-highest border border-white/[0.05] transition-all group"
-      aria-label="Переключить тему"
+      aria-label="Toggle theme"
     >
       <span className="material-symbols-outlined text-on-surface-variant group-hover:text-primary transition-colors text-xl">
         {theme === 'dark' ? 'light_mode' : 'dark_mode'}

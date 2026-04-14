@@ -64,7 +64,7 @@ export function GriScoreDial({ score, previousScore, label = 'GRI Score' }: GriS
           <span className="material-symbols-outlined text-sm">
             {delta >= 0 ? 'trending_up' : 'trending_down'}
           </span>
-          {delta >= 0 ? '+' : ''}{delta} с прошлого периода
+          {delta >= 0 ? '+' : ''}{delta} from last period
         </div>
       )}
 

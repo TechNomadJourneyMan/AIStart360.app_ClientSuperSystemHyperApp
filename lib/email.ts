@@ -41,7 +41,7 @@ export const sendNotificationEmail = async ({
         <hr style="border:none;border-top:1px solid rgba(255,255,255,0.1);margin:24px 0">
         <p style="color:#84958a;font-size:12px">
           AIStart360 — Institutional Intelligence Platform<br>
-          Отписаться от уведомлений можно в настройках аккаунта.
+          You can unsubscribe from notifications in your account settings.
         </p>
       </div>
     </body>

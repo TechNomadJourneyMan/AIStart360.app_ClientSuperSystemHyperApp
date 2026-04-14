@@ -26,12 +26,12 @@ const ACCEPTED_TYPES: Record<string, string[]> = {
 const ACCEPT_STRING = Object.values(ACCEPTED_TYPES).flat().join(',')
 
 const DOC_TYPE_OPTIONS = [
-  { value: 'financial_report', label: 'Фин. отчёт' },
+  { value: 'financial_report', label: 'Financial Report' },
   { value: 'pl_statement',     label: 'P&L' },
-  { value: 'balance_sheet',    label: 'Баланс' },
-  { value: 'business_plan',    label: 'Бизнес-план' },
-  { value: 'presentation',     label: 'Презентация' },
-  { value: 'other',            label: 'Другое' },
+  { value: 'balance_sheet',    label: 'Balance Sheet' },
+  { value: 'business_plan',    label: 'Business-target' },
+  { value: 'presentation',     label: 'Presentation' },
+  { value: 'other',            label: 'Other' },
 ]
 
 function formatBytes(bytes: number | null): string {
@@ -58,10 +58,10 @@ function fileIconColor(mimeType: string | null): string {
 }
 
 const PARSE_STATUS: Record<string, { label: string; color: string }> = {
-  queued:     { label: 'В очереди',   color: 'text-on-surface-variant' },
-  processing: { label: 'Анализ...',   color: 'text-amber-400' },
-  done:       { label: 'Готово',      color: 'text-primary' },
-  error:      { label: 'Ошибка',      color: 'text-error' },
+  queued:     { label: 'Queued',   color: 'text-on-surface-variant' },
+  processing: { label: 'Analyzing...',   color: 'text-amber-400' },
+  done:       { label: 'Done',      color: 'text-primary' },
+  error:      { label: 'Error',      color: 'text-error' },
 }
 
 interface FileAreaProps {
@@ -129,11 +129,11 @@ export function FileArea({ userId: userIdProp }: FileAreaProps) {
   const handleFilePick = (file: File) => {
     const validMimes = Object.keys(ACCEPTED_TYPES)
     if (!validMimes.some(m => file.type === m || file.name.match(/\.(pdf|xlsx?|csv|docx?)$/i))) {
-      setError('Поддерживаются: PDF, Excel, CSV, Word')
+      setError('Supported: PDF, Excel, CSV, Word')
       return
     }
     if (file.size > 20 * 1024 * 1024) {
-      setError('Максимальный размер файла: 20 MB')
+      setError('Maximum file size: 20 MB')
       return
     }
     setError(null)
@@ -150,7 +150,7 @@ export function FileArea({ userId: userIdProp }: FileAreaProps) {
   const handleUpload = async () => {
     if (!pendingFile) return
     if (!userId) {
-      setError('Не удалось определить пользователя. Попробуйте перезайти.')
+      setError('Could not identify user. Please try logging in again.')
       return
     }
     setUploading(true)
@@ -198,7 +198,7 @@ export function FileArea({ userId: userIdProp }: FileAreaProps) {
       setPendingFile(null)
       await loadFiles()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ошибка загрузки')
+      setError(err instanceof Error ? err.message : 'Upload error')
     } finally {
       setUploading(false)
       setUploadProgress(0)
@@ -215,10 +215,10 @@ export function FileArea({ userId: userIdProp }: FileAreaProps) {
       if (data.ok) {
         setFiles(prev => prev.filter(f => f.id !== file.id))
       } else {
-        setError(data.error ?? 'Не удалось удалить файл')
+        setError(data.error ?? 'Could not delete file')
       }
     } catch {
-      setError('Ошибка удаления')
+      setError('Deletion error')
     } finally {
       setDeletingId(null)
     }
@@ -229,15 +229,15 @@ export function FileArea({ userId: userIdProp }: FileAreaProps) {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="font-headline text-lg font-bold text-on-surface">Файловая область</h2>
-          <p className="text-xs text-on-surface-variant mt-0.5">PDF, Excel, CSV, Word — до 20 МБ</p>
+          <h2 className="font-headline text-lg font-bold text-on-surface">File Area</h2>
+          <p className="text-xs text-on-surface-variant mt-0.5">PDF, Excel, CSV, Word — up to 20 MB</p>
         </div>
         <button
           onClick={() => fileInputRef.current?.click()}
           className="flex items-center gap-2 text-sm font-mono text-[#003824] bg-gradient-to-r from-primary to-[#00e29e] px-4 py-2 rounded-xl font-bold hover:scale-[0.98] transition-all"
         >
           <span className="material-symbols-outlined text-base">upload_file</span>
-          Загрузить
+          Upload
         </button>
         <input
           ref={fileInputRef}
@@ -270,7 +270,7 @@ export function FileArea({ userId: userIdProp }: FileAreaProps) {
               cloud_upload
             </span>
             <p className="text-sm text-on-surface-variant">
-              Перетащите файл сюда или <span className="text-primary">выберите</span>
+              Drag a file here or <span className="text-primary">browse</span>
             </p>
             <p className="text-[10px] font-mono text-on-surface-variant/50 uppercase tracking-wider">
               PDF · XLSX · CSV · DOCX
@@ -300,7 +300,7 @@ export function FileArea({ userId: userIdProp }: FileAreaProps) {
             {/* Doc type select */}
             <div>
               <label className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest block mb-1.5">
-                Тип документа
+                Document Type
               </label>
               <div className="flex flex-wrap gap-2">
                 {DOC_TYPE_OPTIONS.map(opt => (
@@ -328,7 +328,7 @@ export function FileArea({ userId: userIdProp }: FileAreaProps) {
                     style={{ width: `${uploadProgress}%` }}
                   />
                 </div>
-                <p className="text-[10px] font-mono text-primary">Загрузка... {uploadProgress}%</p>
+                <p className="text-[10px] font-mono text-primary">Uploading... {uploadProgress}%</p>
               </div>
             )}
 
@@ -342,12 +342,12 @@ export function FileArea({ userId: userIdProp }: FileAreaProps) {
                 {uploading ? (
                   <>
                     <span className="material-symbols-outlined text-sm animate-spin">progress_activity</span>
-                    Загрузка...
+                    Uploading...
                   </>
                 ) : (
                   <>
                     <span className="material-symbols-outlined text-sm">upload</span>
-                    Загрузить
+                    Upload
                   </>
                 )}
               </button>
@@ -356,7 +356,7 @@ export function FileArea({ userId: userIdProp }: FileAreaProps) {
                 disabled={uploading}
                 className="px-4 py-2.5 rounded-xl border border-white/[0.08] text-sm text-on-surface-variant hover:bg-white/[0.04] transition-colors disabled:opacity-40"
               >
-                Отмена
+                Cancel
               </button>
             </div>
           </div>
@@ -391,8 +391,8 @@ export function FileArea({ userId: userIdProp }: FileAreaProps) {
         ) : files.length === 0 ? (
           <div className="px-5 py-12 text-center">
             <span className="material-symbols-outlined text-4xl text-on-surface-variant/20 mb-3 block">folder_open</span>
-            <p className="text-sm text-on-surface-variant">Файлы не загружены</p>
-            <p className="text-xs text-on-surface-variant/50 mt-1">Загрузите первый документ выше</p>
+            <p className="text-sm text-on-surface-variant">No files uploaded</p>
+            <p className="text-xs text-on-surface-variant/50 mt-1">Upload your first document above</p>
           </div>
         ) : (
           <div className="divide-y divide-white/[0.03]">
@@ -424,7 +424,7 @@ export function FileArea({ userId: userIdProp }: FileAreaProps) {
 
                   {/* Date */}
                   <span className="text-[10px] font-mono text-on-surface-variant/50 hidden sm:block flex-shrink-0">
-                    {new Date(file.uploaded_at).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })}
+                    {new Date(file.uploaded_at).toLocaleDateString('en-US', { day: 'numeric', month: 'short' })}
                   </span>
 
                   {/* Actions */}
@@ -433,7 +433,7 @@ export function FileArea({ userId: userIdProp }: FileAreaProps) {
                       href={file.file_url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      title="Открыть файл"
+                      title="Open file"
                       className="w-8 h-8 flex items-center justify-center rounded-lg text-on-surface-variant hover:text-primary hover:bg-primary/10 transition-colors"
                     >
                       <span className="material-symbols-outlined text-base">open_in_new</span>
@@ -441,7 +441,7 @@ export function FileArea({ userId: userIdProp }: FileAreaProps) {
                     <button
                       onClick={() => handleDelete(file)}
                       disabled={isDeleting}
-                      title="Удалить файл"
+                      title="Delete file"
                       className="w-8 h-8 flex items-center justify-center rounded-lg text-on-surface-variant hover:text-error hover:bg-error/10 transition-colors disabled:opacity-30"
                     >
                       <span className={`material-symbols-outlined text-base ${isDeleting ? 'animate-spin' : ''}`}>
@@ -458,7 +458,7 @@ export function FileArea({ userId: userIdProp }: FileAreaProps) {
 
       {files.length > 0 && (
         <p className="text-[10px] font-mono text-on-surface-variant/40 text-right">
-          {files.length} {files.length === 1 ? 'файл' : files.length < 5 ? 'файла' : 'файлов'}
+          {files.length} {files.length === 1 ? 'file' : files.length < 5 ? 'files' : 'files'}
         </p>
       )}
     </div>

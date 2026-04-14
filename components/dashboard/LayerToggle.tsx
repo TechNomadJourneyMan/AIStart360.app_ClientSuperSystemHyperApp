@@ -3,10 +3,10 @@
 import type { DataLayer } from '@/types/metrics'
 
 const LAYERS: { key: DataLayer; label: string; icon: string; color: string }[] = [
-  { key: 'fact',     label: 'Факт',     icon: 'show_chart',   color: 'text-primary'  },
-  { key: 'forecast', label: 'Прогноз',  icon: 'trending_up',  color: 'text-secondary' },
-  { key: 'goal',     label: 'Цель',     icon: 'flag',         color: 'text-yellow-400' },
-  { key: 'compare',  label: 'Сравнение',icon: 'compare_arrows',color: 'text-on-surface-variant' },
+  { key: 'fact',     label: 'Actual',     icon: 'show_chart',   color: 'text-primary'  },
+  { key: 'forecast', label: 'Forecast',  icon: 'trending_up',  color: 'text-secondary' },
+  { key: 'goal',     label: 'Goal',     icon: 'flag',         color: 'text-yellow-400' },
+  { key: 'compare',  label: 'Comparison',icon: 'compare_arrows',color: 'text-on-surface-variant' },
 ]
 
 interface LayerToggleProps {
@@ -30,7 +30,7 @@ export function LayerToggle({ activeLayers, onToggle, availableLayers }: LayerTo
             key={l.key}
             onClick={() => !isFixed && onToggle(l.key)}
             disabled={isFixed}
-            title={isFixed ? 'Факт всегда включён' : undefined}
+            title={isFixed ? 'Actual is always on' : undefined}
             className={`
               flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-mono transition-all duration-150
               ${isActive

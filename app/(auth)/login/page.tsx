@@ -72,19 +72,19 @@ function LoginContent() {
               ))}
               {/* Center text */}
               <text x="100" y="95" textAnchor="middle" fill="#34d399" fontSize="24" fontWeight="bold">GRI</text>
-              <text x="100" y="115" textAnchor="middle" fill="#34d399" fontSize="9" letterSpacing="3" opacity="0.7">ПЛАТФОРМА</text>
+              <text x="100" y="115" textAnchor="middle" fill="#34d399" fontSize="9" letterSpacing="3" opacity="0.7">PLATFORM</text>
             </svg>
           </div>
 
           <h2 className="text-lg font-mono text-on-surface-variant/70 tracking-widest uppercase">AI & Experts</h2>
           <h1 className="text-2xl font-headline font-extrabold text-primary mt-1">Growth Platform</h1>
           <p className="text-sm text-on-surface-variant/60 mt-4 max-w-xs leading-relaxed">
-            Платформа диагностики и масштабирования бизнеса нового поколения
+            Next-generation business diagnostics and scaling platform
           </p>
 
           {/* Stats badges */}
           <div className="flex gap-3 mt-6">
-            {[['500+', 'диагностик'], ['27', 'отраслей'], ['СНГ + MENA', '']].map(([val, label], i) => (
+            {[['500+', 'diagnostics'], ['27', 'industries'], ['CIS + MENA', '']].map(([val, label], i) => (
               <div key={i} className="px-4 py-2 bg-surface-container/40 border border-white/[0.05] rounded-full">
                 <span className="text-xs font-mono text-on-surface-variant/70">
                   {val}{label ? ` · ${label}` : ''}
@@ -97,7 +97,7 @@ function LoginContent() {
         {/* Testimonial */}
         <div className="relative z-10 bg-surface-container/30 border border-white/[0.05] rounded-2xl p-5">
           <p className="text-sm text-on-surface-variant/70 italic leading-relaxed">
-            &ldquo;AIStart360 помогла нам вырасти в 3x за 12 месяцев. GRI-диагностика — это не просто отчёт, это навигатор.&rdquo;
+            &ldquo;AIStart360 helped us grow 3x in 12 months. GRI diagnostics is not just a report, it is a navigator.&rdquo;
           </p>
           <div className="flex items-center gap-3 mt-3">
             <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-xs font-bold text-primary">VS</div>
@@ -123,8 +123,8 @@ function LoginContent() {
             <span className="text-[10px] font-mono text-primary/80 uppercase tracking-[0.2em]">Institutional Access</span>
           </div>
 
-          <h1 className="text-2xl font-headline font-extrabold text-on-surface mb-1">Войти в систему</h1>
-          <p className="text-sm text-on-surface-variant/60 mb-8">Введите свои данные для входа</p>
+          <h1 className="text-2xl font-headline font-extrabold text-on-surface mb-1">Sign In</h1>
+          <p className="text-sm text-on-surface-variant/60 mb-8">Enter your credentials to log in</p>
 
           {/* Demo access */}
           <button
@@ -133,7 +133,7 @@ function LoginContent() {
             className="w-full h-12 mb-6 bg-surface-container/60 border border-white/[0.08] rounded-2xl flex items-center justify-center gap-2 text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-all"
           >
             <span className="material-symbols-outlined text-lg text-primary">public</span>
-            <span className="text-sm font-medium">Демо-доступ</span>
+            <span className="text-sm font-medium">Demo Access</span>
           </button>
 
           {error && (
@@ -161,8 +161,8 @@ function LoginContent() {
 
             <div className="space-y-1.5">
               <div className="flex justify-between items-center ml-1">
-                <label className="block text-[10px] font-mono text-on-surface-variant/60 uppercase tracking-widest">Пароль</label>
-                <Link href="/forgot-password" className="text-[11px] text-primary/70 hover:text-primary transition-colors">Забыли пароль?</Link>
+                <label className="block text-[10px] font-mono text-on-surface-variant/60 uppercase tracking-widest">Password</label>
+                <Link href="/forgot-password" className="text-[11px] text-primary/70 hover:text-primary transition-colors">Forgot password?</Link>
               </div>
               <div className="relative group">
                 <span className="absolute left-4 top-1/2 -translate-y-1/2 material-symbols-outlined text-on-surface-variant/30 group-focus-within:text-primary transition-colors text-lg">lock</span>
@@ -187,7 +187,7 @@ function LoginContent() {
               ) : (
                 <>
                   <span className="material-symbols-outlined text-lg">login</span>
-                  Войти в платформу
+                  Sign In
                 </>
               )}
             </button>
@@ -197,7 +197,7 @@ function LoginContent() {
           <div className="relative my-6">
             <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-white/[0.06]" /></div>
             <div className="relative flex justify-center">
-              <span className="px-4 text-[10px] font-mono text-on-surface-variant/40 bg-[#0a0e17] uppercase tracking-widest">или</span>
+              <span className="px-4 text-[10px] font-mono text-on-surface-variant/40 bg-[#0a0e17] uppercase tracking-widest">or</span>
             </div>
           </div>
 
@@ -224,8 +224,8 @@ function LoginContent() {
 
           {/* Footer */}
           <p className="text-center text-sm text-on-surface-variant/50 mt-8">
-            Нет аккаунта?{' '}
-            <Link href="/register" className="text-primary font-bold hover:underline">Зарегистрироваться</Link>
+            Don&apos;t have an account?{' '}
+            <Link href="/register" className="text-primary font-bold hover:underline">Sign Up</Link>
           </p>
         </div>
       </div>

@@ -20,20 +20,20 @@ export default function Step10PersonalForm({ data, onChange }: Step10PersonalFor
       <section>
         <h3 className="flex items-center gap-2 text-sm font-semibold text-on-surface mb-4">
           <span className="material-symbols-outlined text-primary text-lg">psychology</span>
-          Мотивация
+          Motivation
         </h3>
         <div className="grid grid-cols-1 gap-4">
           {/* why_opened */}
           <div>
             <label htmlFor="s10_why_opened" className="block text-xs font-mono text-on-surface-variant uppercase tracking-wider mb-2">
-              Почему открыли бизнес
+              Why You Started the Business
             </label>
             <textarea
               id="s10_why_opened"
               rows={3}
               value={str(data.s10_why_opened)}
               onChange={(e) => onChange('s10_why_opened', e.target.value)}
-              placeholder="Что стало причиной создания бизнеса..."
+              placeholder="What prompted starting the business..."
               className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all resize-none"
             />
           </div>
@@ -44,20 +44,20 @@ export default function Step10PersonalForm({ data, onChange }: Step10PersonalFor
       <section>
         <h3 className="flex items-center gap-2 text-sm font-semibold text-on-surface mb-4">
           <span className="material-symbols-outlined text-primary text-lg">emoji_events</span>
-          Лучшие результаты
+          Best Results
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {/* best_result_2y */}
           <div>
             <label htmlFor="s10_best_result_2y" className="block text-xs font-mono text-on-surface-variant uppercase tracking-wider mb-2">
-              Лучший результат за 2 года
+              Best Result in 2 Years
             </label>
             <textarea
               id="s10_best_result_2y"
               rows={3}
               value={str(data.s10_best_result_2y)}
               onChange={(e) => onChange('s10_best_result_2y', e.target.value)}
-              placeholder="Самый значимый результат за 2 года..."
+              placeholder="Most significant result in 2 years..."
               className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all resize-none"
             />
           </div>
@@ -65,14 +65,14 @@ export default function Step10PersonalForm({ data, onChange }: Step10PersonalFor
           {/* best_result_5y */}
           <div>
             <label htmlFor="s10_best_result_5y" className="block text-xs font-mono text-on-surface-variant uppercase tracking-wider mb-2">
-              Лучший результат за 5 лет
+              Best Result in 5 Years
             </label>
             <textarea
               id="s10_best_result_5y"
               rows={3}
               value={str(data.s10_best_result_5y)}
               onChange={(e) => onChange('s10_best_result_5y', e.target.value)}
-              placeholder="Самый значимый результат за 5 лет..."
+              placeholder="Most significant result in 5 years..."
               className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all resize-none"
             />
           </div>
@@ -80,14 +80,14 @@ export default function Step10PersonalForm({ data, onChange }: Step10PersonalFor
           {/* best_result_10y */}
           <div className="md:col-span-2">
             <label htmlFor="s10_best_result_10y" className="block text-xs font-mono text-on-surface-variant uppercase tracking-wider mb-2">
-              Лучший результат за 10 лет
+              Best Result in 10 Years
             </label>
             <textarea
               id="s10_best_result_10y"
               rows={3}
               value={str(data.s10_best_result_10y)}
               onChange={(e) => onChange('s10_best_result_10y', e.target.value)}
-              placeholder="Самый значимый результат за 10 лет..."
+              placeholder="Most significant result in 10 years..."
               className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all resize-none"
             />
           </div>
@@ -98,20 +98,20 @@ export default function Step10PersonalForm({ data, onChange }: Step10PersonalFor
       <section>
         <h3 className="flex items-center gap-2 text-sm font-semibold text-on-surface mb-4">
           <span className="material-symbols-outlined text-primary text-lg">visibility</span>
-          Видение компании
+          Company Vision
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {/* company_vision_2y */}
           <div>
             <label htmlFor="s10_company_vision_2y" className="block text-xs font-mono text-on-surface-variant uppercase tracking-wider mb-2">
-              Видение на 2 года
+              Vision for 2 Years
             </label>
             <textarea
               id="s10_company_vision_2y"
               rows={3}
               value={str(data.s10_company_vision_2y)}
               onChange={(e) => onChange('s10_company_vision_2y', e.target.value)}
-              placeholder="Какой вы видите компанию через 2 года..."
+              placeholder="How do you see the company in 2 years..."
               className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all resize-none"
             />
           </div>
@@ -119,14 +119,14 @@ export default function Step10PersonalForm({ data, onChange }: Step10PersonalFor
           {/* company_vision_5y */}
           <div>
             <label htmlFor="s10_company_vision_5y" className="block text-xs font-mono text-on-surface-variant uppercase tracking-wider mb-2">
-              Видение на 5 лет
+              Vision for 5 Years
             </label>
             <textarea
               id="s10_company_vision_5y"
               rows={3}
               value={str(data.s10_company_vision_5y)}
               onChange={(e) => onChange('s10_company_vision_5y', e.target.value)}
-              placeholder="Какой вы видите компанию через 5 лет..."
+              placeholder="How do you see the company in 5 years..."
               className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all resize-none"
             />
           </div>
@@ -134,14 +134,14 @@ export default function Step10PersonalForm({ data, onChange }: Step10PersonalFor
           {/* company_vision_10y */}
           <div className="md:col-span-2">
             <label htmlFor="s10_company_vision_10y" className="block text-xs font-mono text-on-surface-variant uppercase tracking-wider mb-2">
-              Видение на 10 лет
+              Vision for 10 Years
             </label>
             <textarea
               id="s10_company_vision_10y"
               rows={3}
               value={str(data.s10_company_vision_10y)}
               onChange={(e) => onChange('s10_company_vision_10y', e.target.value)}
-              placeholder="Какой вы видите компанию через 10 лет..."
+              placeholder="How do you see the company in 10 years..."
               className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all resize-none"
             />
           </div>
@@ -152,20 +152,20 @@ export default function Step10PersonalForm({ data, onChange }: Step10PersonalFor
       <section>
         <h3 className="flex items-center gap-2 text-sm font-semibold text-on-surface mb-4">
           <span className="material-symbols-outlined text-primary text-lg">report_problem</span>
-          Проблемы и оценка
+          Problems and Assessment
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {/* problems_faced */}
           <div>
             <label htmlFor="s10_problems_faced" className="block text-xs font-mono text-on-surface-variant uppercase tracking-wider mb-2">
-              С какими проблемами столкнулись
+              What Problems You Faced
             </label>
             <textarea
               id="s10_problems_faced"
               rows={3}
               value={str(data.s10_problems_faced)}
               onChange={(e) => onChange('s10_problems_faced', e.target.value)}
-              placeholder="Опишите ключевые проблемы..."
+              placeholder="Describe key problems..."
               className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all resize-none"
             />
           </div>
@@ -173,14 +173,14 @@ export default function Step10PersonalForm({ data, onChange }: Step10PersonalFor
           {/* who_to_blame */}
           <div>
             <label htmlFor="s10_who_to_blame" className="block text-xs font-mono text-on-surface-variant uppercase tracking-wider mb-2">
-              Кто виноват
+              Who is Responsible
             </label>
             <textarea
               id="s10_who_to_blame"
               rows={3}
               value={str(data.s10_who_to_blame)}
               onChange={(e) => onChange('s10_who_to_blame', e.target.value)}
-              placeholder="Кто, по вашему мнению, ответственен за проблемы..."
+              placeholder="Who, in your opinion, is responsible for the problems..."
               className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all resize-none"
             />
           </div>
@@ -188,14 +188,14 @@ export default function Step10PersonalForm({ data, onChange }: Step10PersonalFor
           {/* dept_assessment */}
           <div>
             <label htmlFor="s10_dept_assessment" className="block text-xs font-mono text-on-surface-variant uppercase tracking-wider mb-2">
-              Оценка отделов
+              Department Assessment
             </label>
             <textarea
               id="s10_dept_assessment"
               rows={3}
               value={str(data.s10_dept_assessment)}
               onChange={(e) => onChange('s10_dept_assessment', e.target.value)}
-              placeholder="Как оцениваете работу отделов..."
+              placeholder="How do you rate department performance..."
               className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all resize-none"
             />
           </div>
@@ -203,14 +203,14 @@ export default function Step10PersonalForm({ data, onChange }: Step10PersonalFor
           {/* what_depts_lack */}
           <div>
             <label htmlFor="s10_what_depts_lack" className="block text-xs font-mono text-on-surface-variant uppercase tracking-wider mb-2">
-              Чего не хватает отделам
+              What Departments Lack
             </label>
             <textarea
               id="s10_what_depts_lack"
               rows={3}
               value={str(data.s10_what_depts_lack)}
               onChange={(e) => onChange('s10_what_depts_lack', e.target.value)}
-              placeholder="Каких ресурсов или навыков не хватает..."
+              placeholder="What resources or skills are lacking..."
               className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all resize-none"
             />
           </div>
@@ -221,20 +221,20 @@ export default function Step10PersonalForm({ data, onChange }: Step10PersonalFor
       <section>
         <h3 className="flex items-center gap-2 text-sm font-semibold text-on-surface mb-4">
           <span className="material-symbols-outlined text-primary text-lg">diversity_3</span>
-          Рыночное восприятие
+          Market Perception
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {/* competitor_comparison */}
           <div>
             <label htmlFor="s10_competitor_comparison" className="block text-xs font-mono text-on-surface-variant uppercase tracking-wider mb-2">
-              Сравнение с конкурентами
+              Competitive Comparison
             </label>
             <textarea
               id="s10_competitor_comparison"
               rows={3}
               value={str(data.s10_competitor_comparison)}
               onChange={(e) => onChange('s10_competitor_comparison', e.target.value)}
-              placeholder="Как вы оцениваете себя на фоне конкурентов..."
+              placeholder="How do you rate yourself against competitors..."
               className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all resize-none"
             />
           </div>
@@ -242,14 +242,14 @@ export default function Step10PersonalForm({ data, onChange }: Step10PersonalFor
           {/* brand_perception */}
           <div>
             <label htmlFor="s10_brand_perception" className="block text-xs font-mono text-on-surface-variant uppercase tracking-wider mb-2">
-              Как воспринимают бренд
+              How the Brand is Perceived
             </label>
             <textarea
               id="s10_brand_perception"
               rows={3}
               value={str(data.s10_brand_perception)}
               onChange={(e) => onChange('s10_brand_perception', e.target.value)}
-              placeholder="Как клиенты и рынок воспринимают ваш бренд..."
+              placeholder="How clients and the market perceive your brand..."
               className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all resize-none"
             />
           </div>
@@ -257,14 +257,14 @@ export default function Step10PersonalForm({ data, onChange }: Step10PersonalFor
           {/* when_they_buy */}
           <div className="md:col-span-2">
             <label htmlFor="s10_when_they_buy" className="block text-xs font-mono text-on-surface-variant uppercase tracking-wider mb-2">
-              Когда у вас покупают
+              When Clients Buy
             </label>
             <textarea
               id="s10_when_they_buy"
               rows={3}
               value={str(data.s10_when_they_buy)}
               onChange={(e) => onChange('s10_when_they_buy', e.target.value)}
-              placeholder="В каких ситуациях клиенты принимают решение о покупке..."
+              placeholder="In what situations do clients decide to buy..."
               className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all resize-none"
             />
           </div>
@@ -275,13 +275,13 @@ export default function Step10PersonalForm({ data, onChange }: Step10PersonalFor
       <section>
         <h3 className="flex items-center gap-2 text-sm font-semibold text-on-surface mb-4">
           <span className="material-symbols-outlined text-primary text-lg">supervisor_account</span>
-          Делегирование
+          Delegation
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {/* hours_on_ops — number */}
           <div>
             <label htmlFor="s10_hours_on_ops" className="block text-xs font-mono text-on-surface-variant uppercase tracking-wider mb-2">
-              Часов в день на операционку
+              Hours per Day on Operations
             </label>
             <input
               id="s10_hours_on_ops"
@@ -298,7 +298,7 @@ export default function Step10PersonalForm({ data, onChange }: Step10PersonalFor
           {/* delegation_ready — 1-10 slider/number */}
           <div>
             <label htmlFor="s10_delegation_ready" className="block text-xs font-mono text-on-surface-variant uppercase tracking-wider mb-2">
-              Готовность делегировать (1-10)
+              Delegation Readiness (1-10)
             </label>
             <div className="flex items-center gap-3">
               <input
@@ -320,14 +320,14 @@ export default function Step10PersonalForm({ data, onChange }: Step10PersonalFor
           {/* what_stops_delegating */}
           <div className="md:col-span-2">
             <label htmlFor="s10_what_stops_delegating" className="block text-xs font-mono text-on-surface-variant uppercase tracking-wider mb-2">
-              Что мешает делегировать
+              What Prevents Delegation
             </label>
             <textarea
               id="s10_what_stops_delegating"
               rows={3}
               value={str(data.s10_what_stops_delegating)}
               onChange={(e) => onChange('s10_what_stops_delegating', e.target.value)}
-              placeholder="Что мешает вам передавать задачи команде..."
+              placeholder="What prevents you from delegating tasks to the team..."
               className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all resize-none"
             />
           </div>

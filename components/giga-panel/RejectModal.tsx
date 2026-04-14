@@ -58,7 +58,7 @@ export function RejectModal({ isOpen, requestId, userName, onConfirm, onClose }:
                   <AlertTriangle size={17} className="text-red-400" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-semibold text-slate-100">Отклонить заявку</h3>
+                  <h3 className="text-sm font-semibold text-slate-100">Reject Request</h3>
                   <p className="text-xs text-slate-500 mt-0.5">{userName}</p>
                 </div>
               </div>
@@ -73,12 +73,12 @@ export function RejectModal({ isOpen, requestId, userName, onConfirm, onClose }:
             {/* Body */}
             <div className="mb-5">
               <label className="block text-xs font-medium text-slate-400 mb-2">
-                Причина отклонения <span className="text-red-400">*</span>
+                Rejection Reason <span className="text-red-400">*</span>
               </label>
               <textarea
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
-                placeholder="Укажите причину, которая будет отправлена пользователю..."
+                placeholder="Specify the reason that will be sent to the user..."
                 rows={4}
                 className="w-full px-3 py-2.5 rounded-xl bg-white/[0.05] border border-white/[0.08]
                   text-sm text-slate-200 placeholder:text-slate-600
@@ -95,7 +95,7 @@ export function RejectModal({ isOpen, requestId, userName, onConfirm, onClose }:
                   text-slate-400 bg-white/[0.05] border border-white/[0.08]
                   hover:bg-white/[0.08] transition-all"
               >
-                Отмена
+                Cancel
               </button>
               <motion.button
                 onClick={handleConfirm}
@@ -108,7 +108,7 @@ export function RejectModal({ isOpen, requestId, userName, onConfirm, onClose }:
                   disabled:opacity-40 disabled:cursor-not-allowed
                   transition-all"
               >
-                Отклонить
+                Reject
               </motion.button>
             </div>
           </motion.div>

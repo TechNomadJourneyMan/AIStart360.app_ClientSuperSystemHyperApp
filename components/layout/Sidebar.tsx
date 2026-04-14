@@ -23,9 +23,9 @@ export function Sidebar() {
   const [promoLoading, setPromoLoading] = useState(false)
 
   const PREMIUM_FEATURE_LABELS: Record<string, string> = {
-    '/metrics': 'Метрики',
-    '/market':  'Рынок',
-    '/point-b': 'Точка Б',
+    '/metrics': 'Metrics',
+    '/market':  'Market',
+    '/point-b': 'Point B',
   }
 
   const handleLogout = () => {
@@ -76,10 +76,10 @@ export function Sidebar() {
         setPromoCode('')
         router.push(premiumItem)
       } else {
-        setPromoError('Неверный промокод')
+        setPromoError('Invalid promo code')
       }
     } catch {
-      setPromoError('Ошибка соединения')
+      setPromoError('Connection error')
     } finally {
       setPromoLoading(false)
     }
@@ -248,7 +248,7 @@ export function Sidebar() {
             return (
               <button
                 key={item.href}
-                title={sidebarCollapsed ? `${item.label} — Pro тариф` : undefined}
+                title={sidebarCollapsed ? `${item.label} — Pro plan` : undefined}
                 onClick={() => { router.push(lockedKey); setPremiumItem(lockedKey) }}
                 className={`
                   relative flex items-center rounded-xl cursor-pointer select-none w-full
@@ -318,7 +318,7 @@ export function Sidebar() {
         {/* More / Secondary nav toggle */}
         <button
           onClick={() => setMoreOpen((v) => !v)}
-          title={sidebarCollapsed ? 'Ещё' : undefined}
+          title={sidebarCollapsed ? 'More' : undefined}
           className={`
             group flex items-center rounded-xl transition-all duration-150 w-full
             ${sidebarCollapsed ? 'justify-center px-0 py-3' : 'gap-3 px-3 py-2.5'}
@@ -331,7 +331,7 @@ export function Sidebar() {
             {isAnySecondaryActive ? 'more_horiz' : 'more_horiz'}
           </span>
           {!sidebarCollapsed && (
-            <span className="text-sm font-medium flex-1 text-left">Ещё</span>
+            <span className="text-sm font-medium flex-1 text-left">More</span>
           )}
           {!sidebarCollapsed && (
             <span className={`material-symbols-outlined text-[16px] transition-transform duration-200 ${moreOpen ? 'rotate-180' : ''}`}>
@@ -382,13 +382,13 @@ export function Sidebar() {
         {!sidebarCollapsed && (
           <div className="flex items-center gap-2 px-3 py-1.5 mb-1">
             <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse flex-shrink-0" />
-            <span className="text-[10px] font-mono text-primary/70 tracking-wider">СИСТЕМА АКТИВНА</span>
+            <span className="text-[10px] font-mono text-primary/70 tracking-wider">SYSTEM ACTIVE</span>
           </div>
         )}
 
         <Link
           href="/profile"
-          title={sidebarCollapsed ? 'Профиль' : undefined}
+          title={sidebarCollapsed ? 'Profile' : undefined}
           className={`
             group flex items-center rounded-xl transition-all duration-150
             ${isActive('/profile') ? 'bg-primary/10 text-primary' : 'text-[#6b7280] hover:text-[#c9d1d9] hover:bg-white/[0.04]'}
@@ -396,12 +396,12 @@ export function Sidebar() {
           `}
         >
           <span className="material-symbols-outlined text-[20px]">account_circle</span>
-          {!sidebarCollapsed && <span className="text-sm font-medium">Профиль</span>}
+          {!sidebarCollapsed && <span className="text-sm font-medium">Profile</span>}
         </Link>
 
         <Link
           href="/settings"
-          title={sidebarCollapsed ? 'Настройки' : undefined}
+          title={sidebarCollapsed ? 'Settings' : undefined}
           className={`
             group flex items-center rounded-xl transition-all duration-150
             ${isActive('/settings') ? 'bg-primary/10 text-primary' : 'text-[#6b7280] hover:text-[#c9d1d9] hover:bg-white/[0.04]'}
@@ -409,20 +409,20 @@ export function Sidebar() {
           `}
         >
           <span className="material-symbols-outlined text-[20px]">settings</span>
-          {!sidebarCollapsed && <span className="text-sm font-medium">Настройки</span>}
+          {!sidebarCollapsed && <span className="text-sm font-medium">Settings</span>}
         </Link>
 
         {/* Logout */}
         <button
           onClick={handleLogout}
-          title={sidebarCollapsed ? 'Выйти' : undefined}
+          title={sidebarCollapsed ? 'Log Out' : undefined}
           className={`
             w-full flex items-center rounded-xl transition-all duration-150 text-[#6b7280] hover:text-error hover:bg-error/5
             ${sidebarCollapsed ? 'justify-center px-0 py-2.5' : 'gap-3 px-3 py-2.5'}
           `}
         >
           <span className="material-symbols-outlined text-[20px]">logout</span>
-          {!sidebarCollapsed && <span className="text-sm">Выйти</span>}
+          {!sidebarCollapsed && <span className="text-sm">Log Out</span>}
         </button>
 
         {/* Collapse toggle */}
@@ -432,12 +432,12 @@ export function Sidebar() {
             w-full flex items-center rounded-xl transition-all duration-150 text-[#6b7280] hover:text-[#c9d1d9] hover:bg-white/[0.04]
             ${sidebarCollapsed ? 'justify-center px-0 py-2.5' : 'gap-3 px-3 py-2.5'}
           `}
-          aria-label={sidebarCollapsed ? 'Развернуть' : 'Свернуть'}
+          aria-label={sidebarCollapsed ? 'Expand' : 'Collapse'}
         >
           <span className="material-symbols-outlined text-[20px]">
             {sidebarCollapsed ? 'chevron_right' : 'chevron_left'}
           </span>
-          {!sidebarCollapsed && <span className="text-sm">Свернуть</span>}
+          {!sidebarCollapsed && <span className="text-sm">Collapse</span>}
         </button>
       </div>
     </aside>
@@ -457,15 +457,15 @@ export function Sidebar() {
                 <span className="material-symbols-outlined text-2xl text-amber-400">lock</span>
               </div>
               <div>
-                <p className="text-[10px] font-mono text-amber-400/70 uppercase tracking-[0.15em] mb-0.5">Pro тариф</p>
+                <p className="text-[10px] font-mono text-amber-400/70 uppercase tracking-[0.15em] mb-0.5">Pro Plan</p>
                 <p className="text-base font-bold text-on-surface">
                   {PREMIUM_FEATURE_LABELS[premiumItem] ?? premiumItem}
                 </p>
               </div>
             </div>
             <p className="text-sm text-on-surface-variant leading-relaxed mb-4">
-              Введите промокод для получения доступа к разделу{' '}
-              <span className="text-amber-400 font-medium">Pro</span>.
+              Enter a promo code to access the{' '}
+              <span className="text-amber-400 font-medium">Pro</span> section.
             </p>
             <div className="mb-4 space-y-2">
               <input
@@ -473,7 +473,7 @@ export function Sidebar() {
                 value={promoCode}
                 onChange={(e) => { setPromoCode(e.target.value); setPromoError('') }}
                 onKeyDown={(e) => e.key === 'Enter' && handlePromoSubmit()}
-                placeholder="Промокод"
+                placeholder="Promo code"
                 autoFocus
                 className="w-full bg-white/[0.05] border border-white/[0.08] rounded-xl px-4 py-2.5 text-sm text-on-surface placeholder:text-on-surface-variant/40 focus:outline-none focus:border-amber-500/50 transition-colors"
               />
@@ -486,14 +486,14 @@ export function Sidebar() {
                 onClick={closePremiumModal}
                 className="flex-1 py-2.5 rounded-xl border border-white/[0.08] text-on-surface-variant text-sm transition-colors hover:bg-white/[0.04]"
               >
-                Закрыть
+                Close
               </button>
               <button
                 onClick={handlePromoSubmit}
                 disabled={promoLoading || !promoCode.trim()}
                 className="flex-1 py-2.5 rounded-xl bg-amber-500/90 hover:bg-amber-400 disabled:opacity-50 text-black font-semibold text-sm transition-colors"
               >
-                {promoLoading ? 'Проверка...' : 'Применить →'}
+                {promoLoading ? 'Checking...' : 'Apply →'}
               </button>
             </div>
           </div>

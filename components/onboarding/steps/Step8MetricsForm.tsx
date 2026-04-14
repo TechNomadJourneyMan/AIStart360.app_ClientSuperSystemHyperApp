@@ -22,14 +22,14 @@ type MetricRow = {
 }
 
 const DEFAULT_METRICS: MetricRow[] = [
-  { metric_name: 'Количество продаж', y2023: 0, y2024: 0, y2025: 0, plan_2026: 0, fact_2026: 0, completion_pct: 0 },
-  { metric_name: 'Сумма продаж', y2023: 0, y2024: 0, y2025: 0, plan_2026: 0, fact_2026: 0, completion_pct: 0 },
-  { metric_name: 'Средний чек', y2023: 0, y2024: 0, y2025: 0, plan_2026: 0, fact_2026: 0, completion_pct: 0 },
-  { metric_name: 'Кол-во новых продаж', y2023: 0, y2024: 0, y2025: 0, plan_2026: 0, fact_2026: 0, completion_pct: 0 },
-  { metric_name: 'Сумма новых продаж', y2023: 0, y2024: 0, y2025: 0, plan_2026: 0, fact_2026: 0, completion_pct: 0 },
-  { metric_name: 'Ср. чек новых', y2023: 0, y2024: 0, y2025: 0, plan_2026: 0, fact_2026: 0, completion_pct: 0 },
-  { metric_name: 'Кол-во повторных', y2023: 0, y2024: 0, y2025: 0, plan_2026: 0, fact_2026: 0, completion_pct: 0 },
-  { metric_name: 'Сумма повторных', y2023: 0, y2024: 0, y2025: 0, plan_2026: 0, fact_2026: 0, completion_pct: 0 },
+  { metric_name: 'Number of Sales', y2023: 0, y2024: 0, y2025: 0, plan_2026: 0, fact_2026: 0, completion_pct: 0 },
+  { metric_name: 'Sales Amount', y2023: 0, y2024: 0, y2025: 0, plan_2026: 0, fact_2026: 0, completion_pct: 0 },
+  { metric_name: 'Avg. Check', y2023: 0, y2024: 0, y2025: 0, plan_2026: 0, fact_2026: 0, completion_pct: 0 },
+  { metric_name: 'New Sales Count', y2023: 0, y2024: 0, y2025: 0, plan_2026: 0, fact_2026: 0, completion_pct: 0 },
+  { metric_name: 'New Sales Amount', y2023: 0, y2024: 0, y2025: 0, plan_2026: 0, fact_2026: 0, completion_pct: 0 },
+  { metric_name: 'Avg. Check New', y2023: 0, y2024: 0, y2025: 0, plan_2026: 0, fact_2026: 0, completion_pct: 0 },
+  { metric_name: 'Repeat Count', y2023: 0, y2024: 0, y2025: 0, plan_2026: 0, fact_2026: 0, completion_pct: 0 },
+  { metric_name: 'Repeat Amount', y2023: 0, y2024: 0, y2025: 0, plan_2026: 0, fact_2026: 0, completion_pct: 0 },
   { metric_name: 'CPL', y2023: 0, y2024: 0, y2025: 0, plan_2026: 0, fact_2026: 0, completion_pct: 0 },
   { metric_name: 'CAC', y2023: 0, y2024: 0, y2025: 0, plan_2026: 0, fact_2026: 0, completion_pct: 0 },
   { metric_name: 'LTV', y2023: 0, y2024: 0, y2025: 0, plan_2026: 0, fact_2026: 0, completion_pct: 0 },
@@ -40,9 +40,9 @@ const VALUE_COLUMNS = [
   { key: 'y2023', label: '2023' },
   { key: 'y2024', label: '2024' },
   { key: 'y2025', label: '2025' },
-  { key: 'plan_2026', label: 'План 2026' },
-  { key: 'fact_2026', label: 'Факт 2026' },
-  { key: 'completion_pct', label: '% выполнения' },
+  { key: 'plan_2026', label: 'Plan 2026' },
+  { key: 'fact_2026', label: 'Actual 2026' },
+  { key: 'completion_pct', label: '% Completed' },
 ] as const
 
 const getRows = (v: unknown): MetricRow[] => {
@@ -69,7 +69,7 @@ export default function Step8MetricsForm({ data, onChange }: Step8MetricsFormPro
       <section>
         <h3 className="flex items-center gap-2 text-sm font-semibold text-on-surface mb-4">
           <span className="material-symbols-outlined text-primary text-lg">monitoring</span>
-          Ключевые метрики
+          Key Metrics
         </h3>
 
         {/* Desktop table */}
@@ -78,7 +78,7 @@ export default function Step8MetricsForm({ data, onChange }: Step8MetricsFormPro
             <thead>
               <tr className="border-b border-white/[0.08]">
                 <th className="text-left text-xs font-mono text-on-surface-variant uppercase tracking-wider py-2 pr-3 min-w-[160px]">
-                  Метрика
+                  Metric
                 </th>
                 {VALUE_COLUMNS.map((col) => (
                   <th key={col.key} className="text-left text-xs font-mono text-on-surface-variant uppercase tracking-wider py-2 px-2 min-w-[100px]">
@@ -110,7 +110,7 @@ export default function Step8MetricsForm({ data, onChange }: Step8MetricsFormPro
         </div>
 
         <p className="mt-3 text-xs text-on-surface-variant/50">
-          Заполните данные по каждой метрике за прошлые годы, план и факт на 2026 год.
+          Fill in the data for each metric for past years, plan and actual for 2026.
         </p>
       </section>
     </div>

@@ -34,7 +34,7 @@ export function ActivityFeed({ items }: ActivityFeedProps) {
     return (
       <div className="bg-surface-container rounded-2xl p-8 text-center border border-white/[0.04]">
         <span className="material-symbols-outlined text-4xl text-on-surface-variant/30 mb-3 block">history</span>
-        <p className="text-sm text-on-surface-variant">Нет активности</p>
+        <p className="text-sm text-on-surface-variant">No activity</p>
       </div>
     )
   }
@@ -43,7 +43,7 @@ export function ActivityFeed({ items }: ActivityFeedProps) {
     <div className="bg-surface-container rounded-2xl overflow-hidden border border-white/[0.04]">
       {/* Table header */}
       <div className="grid grid-cols-[minmax(140px,2fr)_minmax(120px,3fr)_80px_100px_80px] px-5 py-3 bg-surface-container-high border-b border-white/[0.04]">
-        {['Пользователь', 'Событие', 'GRI', 'Статус', 'Время'].map(h => (
+        {['User', 'Event', 'GRI', 'Status', 'Time'].map(h => (
           <span key={h} className="text-[10px] font-mono uppercase tracking-widest text-on-surface-variant">{h}</span>
         ))}
       </div>

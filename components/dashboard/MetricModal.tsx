@@ -41,21 +41,21 @@ function ChartTooltip({ active, payload, label, unit, goalValue, anomalies }: {
       {value != null && (
         <div className="flex items-center gap-2 mb-1">
           <span className="w-1.5 h-1.5 rounded-full bg-primary flex-shrink-0" />
-          <span className="text-on-surface-variant">Факт:</span>
+          <span className="text-on-surface-variant">Actual:</span>
           <span className="font-mono font-bold text-on-surface ml-auto">{value}{unit}</span>
         </div>
       )}
       {forecast != null && (
         <div className="flex items-center gap-2 mb-1">
           <span className="w-1.5 h-1.5 rounded-full border border-secondary flex-shrink-0" style={{ borderStyle: 'dashed' }} />
-          <span className="text-on-surface-variant">Прогноз:</span>
+          <span className="text-on-surface-variant">Forecast:</span>
           <span className="font-mono font-bold text-secondary ml-auto">{forecast}{unit}</span>
         </div>
       )}
       {fromGoal != null && (
         <div className="flex items-center gap-2 mt-2 pt-2 border-t border-white/[0.06]">
           <span className={`text-[10px] font-mono ${fromGoal >= 0 ? 'text-primary' : 'text-error'}`}>
-            {fromGoal >= 0 ? '+' : ''}{fromGoal.toFixed(1)}% от цели
+            {fromGoal >= 0 ? '+' : ''}{fromGoal.toFixed(1)}% from goal
           </span>
         </div>
       )}
@@ -175,7 +175,7 @@ export function MetricModal() {
             <div className="flex items-start justify-between p-5 pb-4 border-b border-white/[0.06]">
               <div className="flex-1 min-w-0">
                 <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest mb-0.5">
-                  Динамика
+                  Dynamics
                 </p>
                 <h3 className="text-base font-bold text-on-surface mb-1">{metric.label}</h3>
                 <div className="flex items-center gap-3 flex-wrap">
@@ -188,7 +188,7 @@ export function MetricModal() {
                     <span className="material-symbols-outlined text-sm">
                       {metric.trendDirection === 'up' ? 'trending_up' : metric.trendDirection === 'down' ? 'trending_down' : 'trending_flat'}
                     </span>
-                    {trendSign}{metric.trend.toFixed(1)}{metric.unit === '%' ? ' пп' : '%'}
+                    {trendSign}{metric.trend.toFixed(1)}{metric.unit === '%' ? ' pp' : '%'}
                     <span className="font-normal text-on-surface-variant/60 ml-1">{metric.trendLabel}</span>
                   </div>
                 </div>
@@ -206,7 +206,7 @@ export function MetricModal() {
               <div className="px-5 py-3 bg-surface-container border-b border-white/[0.04]">
                 <div className="flex items-center justify-between mb-1.5">
                   <span className="text-[10px] font-mono text-on-surface-variant/50 uppercase tracking-widest">
-                    Прогресс к цели · {goal.targetValue}{goal.targetUnit}
+                    Progress to Goal · {goal.targetValue}{goal.targetUnit}
                   </span>
                   <div className="flex items-center gap-2">
                     <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full ${
@@ -216,7 +216,7 @@ export function MetricModal() {
                           ? 'text-yellow-400 bg-yellow-400/10'
                           : 'text-error bg-error/10'
                     }`}>
-                      {goal.trajectory === 'on_track' ? 'В норме' : goal.trajectory === 'at_risk' ? 'Под риском' : 'Отстаём'}
+                      {goal.trajectory === 'on_track' ? 'On Track' : goal.trajectory === 'at_risk' ? 'At Risk' : 'Behind'}
                     </span>
                     <span className="text-xs font-mono font-bold" style={{ color: goal.progress >= 80 ? '#6effc0' : goal.progress >= 50 ? '#ffbd60' : '#ff6b6b' }}>
                       {goal.progress}%
@@ -309,7 +309,7 @@ export function MetricModal() {
                       <Area
                         type="monotone"
                         dataKey="value"
-                        name="Факт"
+                        name="Actual"
                         stroke={color}
                         strokeWidth={2}
                         fill={`url(#grad-${metric.id})`}
@@ -323,7 +323,7 @@ export function MetricModal() {
                         <Area
                           type="monotone"
                           dataKey="forecastValue"
-                          name="Прогноз"
+                          name="Forecast"
                           stroke="#bcc7de"
                           strokeWidth={1.5}
                           strokeDasharray="5 3"
@@ -341,7 +341,7 @@ export function MetricModal() {
                           stroke="#ffd166"
                           strokeDasharray="4 2"
                           strokeWidth={1}
-                          label={{ value: `Цель: ${goal.targetValue}${goal.targetUnit}`, position: 'insideTopRight', fill: '#ffd166', fontSize: 10, fontFamily: 'JetBrains Mono' }}
+                          label={{ value: `Goal: ${goal.targetValue}${goal.targetUnit}`, position: 'insideTopRight', fill: '#ffd166', fontSize: 10, fontFamily: 'JetBrains Mono' }}
                         />
                       )}
 

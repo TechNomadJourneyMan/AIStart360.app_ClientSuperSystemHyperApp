@@ -27,20 +27,20 @@ interface PendingFile {
 }
 
 const DOC_TYPES: { value: DocType; label: string; icon: string; example: string }[] = [
-  { value: 'pl_report',        label: 'P&L (Отчёт о прибыли)',  icon: 'receipt_long',  example: 'Шаблон P&L' },
-  { value: 'balance_sheet',    label: 'Баланс',                  icon: 'account_balance',example: 'Шаблон баланса' },
-  { value: 'marketing_report', label: 'Маркетинговый отчёт',     icon: 'campaign',      example: 'Шаблон маркетинга' },
-  { value: 'ops_report',       label: 'Операционный отчёт',      icon: 'settings',      example: 'Шаблон операций' },
-  { value: 'crm_export',       label: 'CRM-выгрузка',            icon: 'people',        example: 'Шаблон CRM' },
-  { value: 'audit',            label: 'Аудит',                   icon: 'fact_check',    example: 'Шаблон аудита' },
-  { value: 'other',            label: 'Другое',                  icon: 'folder',        example: '' },
+  { value: 'pl_report',        label: 'P&L (Profit Report)',  icon: 'receipt_long',  example: 'P&L Template' },
+  { value: 'balance_sheet',    label: 'Balance Sheet',                  icon: 'account_balance',example: 'Balance Sheet Template' },
+  { value: 'marketing_report', label: 'Marketing Report',     icon: 'campaign',      example: 'Marketing Template' },
+  { value: 'ops_report',       label: 'Operations Report',      icon: 'settings',      example: 'Operations Template' },
+  { value: 'crm_export',       label: 'CRM Export',            icon: 'people',        example: 'CRM Template' },
+  { value: 'audit',            label: 'Audit',                   icon: 'fact_check',    example: 'Audit Template' },
+  { value: 'other',            label: 'Other',                  icon: 'folder',        example: '' },
 ]
 
 const STATUS_CONFIG: Record<ParseStatus, { label: string; color: string; icon: string }> = {
-  queued:     { label: 'В очереди',   color: 'text-on-surface-variant', icon: 'schedule' },
-  processing: { label: 'Обработка',   color: 'text-amber-400',          icon: 'autorenew' },
-  parsed:     { label: 'Обработан',   color: 'text-primary',            icon: 'check_circle' },
-  error:      { label: 'Ошибка',      color: 'text-error',              icon: 'error' },
+  queued:     { label: 'Queued',   color: 'text-on-surface-variant', icon: 'schedule' },
+  processing: { label: 'Processing',   color: 'text-amber-400',          icon: 'autorenew' },
+  parsed:     { label: 'Parsed',   color: 'text-primary',            icon: 'check_circle' },
+  error:      { label: 'Error',      color: 'text-error',              icon: 'error' },
 }
 
 function formatBytes(bytes: number | null): string {
@@ -103,12 +103,12 @@ export default function DocumentsPage() {
   const handleFile = (file: File) => {
     setUploadError(null)
     if (file.size > MAX_SIZE) {
-      setUploadError('Файл слишком большой. Максимум 50 МБ.')
+      setUploadError('File too large. Maximum 50 MB.')
       return
     }
     const ext = file.name.split('.').pop()?.toLowerCase()
     if (!['pdf','xlsx','csv','docx','pptx'].includes(ext ?? '')) {
-      setUploadError('Формат не поддерживается. Используйте PDF, XLSX, CSV, DOCX, PPTX.')
+      setUploadError('Unsupported format. Use PDF, XLSX, CSV, DOCX, or PPTX.')
       return
     }
     setPending({ file, doc_type: '', period_quarter: '', period_year: new Date().getFullYear().toString() })
@@ -170,7 +170,7 @@ export default function DocumentsPage() {
       setPending(null)
       await fetchDocs()
     } catch (e: unknown) {
-      setUploadError(e instanceof Error ? e.message : 'Ошибка загрузки')
+      setUploadError(e instanceof Error ? e.message : 'Upload error')
     } finally {
       setIsUploading(false)
     }
@@ -188,11 +188,11 @@ export default function DocumentsPage() {
             <Image src="/logo.svg" alt="AIStart360" width={120} height={22} />
           </div>
           <div className="flex items-center gap-3">
-            <span className="text-xs font-mono text-on-surface-variant">Загрузка документов</span>
+            <span className="text-xs font-mono text-on-surface-variant">Document Upload</span>
             <button onClick={() => { document.cookie = 'aistart360_role=; path=/; max-age=0'; window.location.href = '/login' }}
               className="text-xs text-red-400/70 hover:text-red-400 flex items-center gap-1 border border-red-500/10 px-2 py-1 rounded-lg transition-all">
               <span className="material-symbols-outlined text-sm">logout</span>
-              Выход
+              Sign Out
             </button>
           </div>
         </div>
@@ -201,9 +201,9 @@ export default function DocumentsPage() {
       <main className="max-w-2xl mx-auto px-6 py-8 space-y-6">
         {/* Title */}
         <div>
-          <p className="text-xs font-mono text-primary/70 uppercase tracking-[0.2em] mb-2">Шаг 7 — Документы</p>
-          <h1 className="font-headline text-2xl font-extrabold text-on-surface mb-1">Загрузите финансовые документы</h1>
-          <p className="text-sm text-on-surface-variant">AI-система проанализирует ваши отчёты и дополнит диагностику реальными данными</p>
+          <p className="text-xs font-mono text-primary/70 uppercase tracking-[0.2em] mb-2">Step 7 — Documents</p>
+          <h1 className="font-headline text-2xl font-extrabold text-on-surface mb-1">Upload Financial Documents</h1>
+          <p className="text-sm text-on-surface-variant">AI system will analyze your reports and enrich diagnostics with real data</p>
         </div>
 
         {/* Drop Zone */}
@@ -225,9 +225,9 @@ export default function DocumentsPage() {
               <span className="material-symbols-outlined text-3xl text-primary">cloud_upload</span>
             </div>
             <p className="text-sm font-medium text-on-surface mb-1">
-              {isDragging ? 'Отпустите файл' : 'Перетащите файл или нажмите'}
+              {isDragging ? 'Drop the file' : 'Drag and drop a file or click'}
             </p>
-            <p className="text-xs text-on-surface-variant">PDF, XLSX, CSV, DOCX, PPTX · Максимум 50 МБ</p>
+            <p className="text-xs text-on-surface-variant">PDF, XLSX, CSV, DOCX, PPTX · Max 50 MB</p>
           </div>
         )}
 
@@ -258,31 +258,31 @@ export default function DocumentsPage() {
             </div>
 
             <div>
-              <label className="block text-xs font-mono text-on-surface-variant uppercase tracking-wider mb-2">Тип документа *</label>
+              <label className="block text-xs font-mono text-on-surface-variant uppercase tracking-wider mb-2">Document Type *</label>
               <select
                 value={pending.doc_type}
                 onChange={e => setPending(p => p ? { ...p, doc_type: e.target.value as DocType } : p)}
                 className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-on-surface focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 appearance-none"
               >
-                <option value="">— Выберите тип —</option>
+                <option value="">— Select type —</option>
                 {DOC_TYPES.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
               </select>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-mono text-on-surface-variant uppercase tracking-wider mb-2">Квартал</label>
+                <label className="block text-xs font-mono text-on-surface-variant uppercase tracking-wider mb-2">Quarter</label>
                 <select
                   value={pending.period_quarter}
                   onChange={e => setPending(p => p ? { ...p, period_quarter: e.target.value } : p)}
                   className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-on-surface focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 appearance-none"
                 >
-                  <option value="">Все кварталы</option>
+                  <option value="">All quarters</option>
                   {['Q1','Q2','Q3','Q4'].map(q => <option key={q} value={q}>{q}</option>)}
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-mono text-on-surface-variant uppercase tracking-wider mb-2">Год *</label>
+                <label className="block text-xs font-mono text-on-surface-variant uppercase tracking-wider mb-2">Year *</label>
                 <select
                   value={pending.period_year}
                   onChange={e => setPending(p => p ? { ...p, period_year: e.target.value } : p)}
@@ -298,7 +298,7 @@ export default function DocumentsPage() {
                 onClick={() => setPending(null)}
                 className="px-4 py-2.5 rounded-xl border border-white/[0.08] text-on-surface-variant hover:text-on-surface text-sm transition-all"
               >
-                Отмена
+                Cancel
               </button>
               <button
                 onClick={uploadFile}
@@ -306,9 +306,9 @@ export default function DocumentsPage() {
                 className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-primary to-[#00e29e] text-[#003824] font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-60 transition-all"
               >
                 {isUploading ? (
-                  <><span className="w-4 h-4 border-2 border-[#003824]/30 border-t-[#003824] rounded-full animate-spin" />Загружаем...</>
+                  <><span className="w-4 h-4 border-2 border-[#003824]/30 border-t-[#003824] rounded-full animate-spin" />Uploading...</>
                 ) : (
-                  <><span className="material-symbols-outlined text-lg">upload</span>Загрузить</>
+                  <><span className="material-symbols-outlined text-lg">upload</span>Upload</>
                 )}
               </button>
             </div>
@@ -317,7 +317,7 @@ export default function DocumentsPage() {
 
         {/* Document type templates */}
         <div>
-          <h2 className="text-xs font-mono text-on-surface-variant uppercase tracking-widest mb-3">Примеры шаблонов</h2>
+          <h2 className="text-xs font-mono text-on-surface-variant uppercase tracking-widest mb-3">Template Examples</h2>
           <div className="grid grid-cols-2 gap-2">
             {DOC_TYPES.filter(d => d.example).map(d => (
               <div key={d.value} className="flex items-center gap-2 bg-surface-container-low rounded-xl border border-white/[0.06] p-3">
@@ -333,7 +333,7 @@ export default function DocumentsPage() {
         {uploaded.length > 0 && (
           <div>
             <h2 className="text-xs font-mono text-on-surface-variant uppercase tracking-widest mb-3">
-              Загружено ({uploaded.length})
+              Uploaded ({uploaded.length})
             </h2>
             <div className="space-y-2">
               {uploaded.map(doc => {
@@ -364,11 +364,11 @@ export default function DocumentsPage() {
         <div className="flex gap-3 pt-4 border-t border-white/[0.06]">
           <Link href="/client/onboarding"
             className="flex-1 py-3 rounded-xl border border-white/[0.08] text-on-surface-variant hover:text-on-surface text-sm font-medium text-center transition-all">
-            ← К анкете
+            ← Back to Survey
           </Link>
           <Link href="/client/point-a"
             className="flex-1 py-3 rounded-xl bg-gradient-to-r from-primary to-[#00e29e] text-[#003824] font-bold text-sm text-center transition-all hover:scale-[0.99]">
-            Перейти к диагностике →
+            Go to Diagnostics →
           </Link>
         </div>
       </main>

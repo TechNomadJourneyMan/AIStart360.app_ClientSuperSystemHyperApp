@@ -197,7 +197,7 @@ export default function OnboardingPage() {
             <span className="text-sm font-bold text-on-surface/70 hidden sm:block">AIStart360</span>
           </Link>
           <span className="text-[10px] font-mono text-on-surface-variant">
-            Шаг {currentStep} из {TOTAL_STEPS}
+            Step {currentStep} of {TOTAL_STEPS}
           </span>
         </div>
 
@@ -240,8 +240,8 @@ export default function OnboardingPage() {
               <span className="material-symbols-outlined text-lg text-primary">{stepConfig?.icon ?? 'description'}</span>
             </div>
             <div>
-              <p className="text-[10px] font-mono text-primary/60 uppercase tracking-[0.15em]">Шаг {currentStep}</p>
-              <h1 className="text-xl font-bold text-on-surface">{stepConfig?.title ?? `Шаг ${currentStep}`}</h1>
+              <p className="text-[10px] font-mono text-primary/60 uppercase tracking-[0.15em]">Step {currentStep}</p>
+              <h1 className="text-xl font-bold text-on-surface">{stepConfig?.title ?? `Step ${currentStep}`}</h1>
             </div>
           </div>
         </div>
@@ -257,17 +257,17 @@ export default function OnboardingPage() {
             <button onClick={goBack}
               className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl border border-white/[0.08] text-on-surface-variant text-sm hover:bg-white/[0.04] transition-colors">
               <span className="material-symbols-outlined text-base">arrow_back</span>
-              Назад
+              Back
             </button>
           )}
           <button onClick={goNext} disabled={isSaving}
             className="flex-1 flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-gradient-to-r from-primary to-[#00e29e] text-[#003824] font-bold text-sm hover:scale-[0.99] transition-all disabled:opacity-50">
             {isSaving ? (
-              <><span className="material-symbols-outlined text-base animate-spin">progress_activity</span> Сохранение...</>
+              <><span className="material-symbols-outlined text-base animate-spin">progress_activity</span> Saving...</>
             ) : isLastStep ? (
-              <><span className="material-symbols-outlined text-base">rocket_launch</span> Получить диагностику</>
+              <><span className="material-symbols-outlined text-base">rocket_launch</span> Get Diagnostics</>
             ) : (
-              <><span className="material-symbols-outlined text-base">arrow_forward</span> Далее</>
+              <><span className="material-symbols-outlined text-base">arrow_forward</span> Next</>
             )}
           </button>
         </div>
@@ -276,14 +276,14 @@ export default function OnboardingPage() {
         {isLastStep && (
           <div className="bg-primary/5 border border-primary/10 rounded-xl p-4 text-center mb-8">
             <p className="text-xs text-primary/80">
-              После отправки ИИ-агент проанализирует ваши данные и сформирует Точку А — объективную оценку текущего состояния бизнеса.
+              After submission, the AI agent will analyze your data and generate Point A — an objective assessment of your current business state.
             </p>
           </div>
         )}
 
         {/* Consent */}
         <p className="text-[10px] text-on-surface-variant/40 text-center px-4">
-          Я подтверждаю достоверность данных и даю согласие AIStart360 использовать их для бизнес-диагностики. Данные не передаются третьим лицам.
+          I confirm the accuracy of the data and consent to AIStart360 using it for business diagnostics. Data is not shared with third parties.
         </p>
       </main>
     </div>

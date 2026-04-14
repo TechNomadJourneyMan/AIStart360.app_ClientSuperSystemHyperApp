@@ -78,7 +78,7 @@ export function Modal({ open, onClose, title, description, size = 'md', children
             <button
               onClick={onClose}
               className="ml-4 text-on-surface-variant hover:text-on-surface transition-colors p-1 rounded-lg hover:bg-surface-container"
-              aria-label="Закрыть"
+              aria-label="Close"
             >
               <span className="material-symbols-outlined">close</span>
             </button>

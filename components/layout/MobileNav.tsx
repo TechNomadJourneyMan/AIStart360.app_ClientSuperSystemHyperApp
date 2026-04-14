@@ -9,59 +9,59 @@ import type { UserRole } from '@/types'
 
 // ── Bottom bar — 4 primary tabs ─────────────────────────────────────────────
 const BOTTOM_TABS = [
-  { label: 'Дэшборд',  href: '/dashboard', icon: 'dashboard'       },
+  { label: 'Dashboard',  href: '/dashboard', icon: 'dashboard'       },
   { label: 'GRI Pulse',href: '/pulse',      icon: 'cell_tower'      },
-  { label: 'Клиенты',  href: '/clients',    icon: 'business_center' },
-  { label: 'Метрики',  href: '/metrics',    icon: 'monitoring'      },
+  { label: 'Clients',  href: '/clients',    icon: 'business_center' },
+  { label: 'Metrics',  href: '/metrics',    icon: 'monitoring'      },
 ]
 
 // ── All sections shown in the "More" drawer ──────────────────────────────────
 const DRAWER_SECTIONS = [
   {
-    title: 'Основное',
+    title: 'Main',
     items: [
-      { label: 'Дэшборд',    href: '/dashboard',  icon: 'dashboard'        },
+      { label: 'Dashboard',    href: '/dashboard',  icon: 'dashboard'        },
       { label: 'GRI',        href: '/gri',         icon: 'radar'            },
       { label: 'GRI Pulse',  href: '/pulse',       icon: 'cell_tower'       },
-      { label: 'Метрики',    href: '/metrics',     icon: 'monitoring'       },
-      { label: 'Инсайты',    href: '/insights',    icon: 'lightbulb'        },
+      { label: 'Metrics',    href: '/metrics',     icon: 'monitoring'       },
+      { label: 'Insights',    href: '/insights',    icon: 'lightbulb'        },
     ],
   },
   {
-    title: 'Анализ',
+    title: 'Analysis',
     items: [
-      { label: 'Рынок',      href: '/market',      icon: 'public'           },
-      { label: 'Точка А',    href: '/point-a',     icon: 'my_location'      },
-      { label: 'Точка Б',    href: '/point-b',     icon: 'flag'             },
-      { label: 'Конкуренты', href: '/competitors', icon: 'compare_arrows'   },
-      { label: 'Разведка',   href: '/intelligence',icon: 'hub'              },
+      { label: 'Market',      href: '/market',      icon: 'public'           },
+      { label: 'Point A',    href: '/point-a',     icon: 'my_location'      },
+      { label: 'Point B',    href: '/point-b',     icon: 'flag'             },
+      { label: 'Competitors', href: '/competitors', icon: 'compare_arrows'   },
+      { label: 'Intelligence',   href: '/intelligence',icon: 'hub'              },
     ],
   },
   {
-    title: 'Работа',
+    title: 'Work',
     items: [
-      { label: 'Клиенты',    href: '/clients',      icon: 'business_center' },
-      { label: 'Отчёты',     href: '/reports',      icon: 'description'     },
-      { label: 'Аналитика',  href: '/analytics',    icon: 'bar_chart'       },
-      { label: 'Команда',    href: '/team',         icon: 'group'           },
+      { label: 'Clients',    href: '/clients',      icon: 'business_center' },
+      { label: 'Reports',     href: '/reports',      icon: 'description'     },
+      { label: 'Analytics',  href: '/analytics',    icon: 'bar_chart'       },
+      { label: 'Team',    href: '/team',         icon: 'group'           },
     ],
   },
   {
-    title: 'Система',
+    title: 'System',
     items: [
-      { label: 'Уведомления',href: '/notifications',icon: 'notifications'   },
-      { label: 'Пользователи',href: '/users',       icon: 'manage_accounts' },
-      { label: 'Профиль',    href: '/profile',      icon: 'account_circle'  },
-      { label: 'Настройки',  href: '/settings',     icon: 'settings'        },
-      { label: 'Админ',      href: '/admin',        icon: 'admin_panel_settings'},
+      { label: 'Notifications',href: '/notifications',icon: 'notifications'   },
+      { label: 'Users',href: '/users',       icon: 'manage_accounts' },
+      { label: 'Profile',    href: '/profile',      icon: 'account_circle'  },
+      { label: 'Settings',  href: '/settings',     icon: 'settings'        },
+      { label: 'Admin',      href: '/admin',        icon: 'admin_panel_settings'},
     ],
   },
 ]
 
 const PREMIUM_FEATURE_LABELS: Record<string, string> = {
-  '/metrics':  'Метрики',
-  '/market':   'Рынок',
-  '/point-b':  'Точка Б',
+  '/metrics':  'Metrics',
+  '/market':   'Market',
+  '/point-b':  'Point B',
 }
 
 export function MobileNav() {
@@ -178,7 +178,7 @@ export function MobileNav() {
             >
               {drawerOpen ? 'close' : 'menu'}
             </span>
-            <span>Ещё</span>
+            <span>More</span>
           </button>
         </div>
       </nav>
@@ -207,7 +207,7 @@ export function MobileNav() {
           {/* Header */}
           <div className="flex items-center justify-between px-5 py-3 border-b border-white/[0.06]">
             <div>
-              <p className="text-sm font-semibold text-on-surface">Все разделы</p>
+              <p className="text-sm font-semibold text-on-surface">All Sections</p>
               <p className="text-[10px] font-mono text-on-surface-variant/60 uppercase tracking-wider mt-0.5">AIStart360 Portal</p>
             </div>
             <button
@@ -307,7 +307,7 @@ export function MobileNav() {
                   <span className="material-symbols-outlined text-2xl text-amber-400">lock</span>
                 </div>
                 <div>
-                  <p className="text-[10px] font-mono text-amber-400/70 uppercase tracking-[0.15em] mb-0.5">Pro тариф</p>
+                  <p className="text-[10px] font-mono text-amber-400/70 uppercase tracking-[0.15em] mb-0.5">Pro Plan</p>
                   <p className="text-base font-bold text-on-surface">
                     {PREMIUM_FEATURE_LABELS[premiumItem] ?? premiumItem}
                   </p>
@@ -315,8 +315,8 @@ export function MobileNav() {
               </div>
 
               <p className="text-sm text-on-surface-variant leading-relaxed mb-5">
-                Этот раздел доступен в тарифе <span className="text-amber-400 font-medium">Pro</span>.
-                Получите полный доступ к аналитике, рыночным данным и расширенным инструментам роста вашего бизнеса.
+                This section is available on the <span className="text-amber-400 font-medium">Pro</span>.
+                Get full access to analytics, market data, and advanced business growth tools.
               </p>
 
               <div className="flex gap-3">
@@ -324,7 +324,7 @@ export function MobileNav() {
                   onClick={() => setPremiumItem(null)}
                   className="flex-1 py-2.5 rounded-xl border border-white/[0.08] text-on-surface-variant text-sm transition-colors hover:bg-white/[0.04]"
                 >
-                  Закрыть
+                  Close
                 </button>
                 <button
                   onClick={handleUpgradeRequest}
@@ -332,10 +332,10 @@ export function MobileNav() {
                   className="flex-1 py-2.5 rounded-xl bg-amber-500/90 hover:bg-amber-400 disabled:opacity-70 text-black font-semibold text-sm transition-colors"
                 >
                   {upgradeLoading
-                    ? 'Отправка...'
+                    ? 'Sending...'
                     : premiumItem && upgradeSubmitted.has(premiumItem)
-                    ? 'Заявка отправлена ✓'
-                    : 'Оставить заявку'}
+                    ? 'Request Sent ✓'
+                    : 'Submit Request'}
                 </button>
               </div>
             </div>

@@ -64,7 +64,7 @@ export function UserSettingsModal({ isOpen, user, onSave, onClose }: UserSetting
                   <LayoutDashboard size={17} className="text-blue-400" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-semibold text-slate-100">Настройки дашборда</h3>
+                  <h3 className="text-sm font-semibold text-slate-100">Dashboard Settings</h3>
                   <p className="text-xs text-slate-500 mt-0.5 truncate max-w-[220px]">
                     {user.name ?? user.email}
                   </p>
@@ -77,8 +77,8 @@ export function UserSettingsModal({ isOpen, user, onSave, onClose }: UserSetting
 
             {/* Description */}
             <p className="text-xs text-slate-500 mb-4">
-              Выберите виджеты, которые будут отображаться на дашборде пользователя.
-              Скрытые виджеты можно включить обратно в любой момент.
+              Select the widgets that will be displayed on the user dashboard.
+              Hidden widgets can be re-enabled at any time.
             </p>
 
             {/* Quick actions */}
@@ -90,7 +90,7 @@ export function UserSettingsModal({ isOpen, user, onSave, onClose }: UserSetting
                   hover:text-slate-200 hover:bg-white/[0.08] transition-all"
               >
                 <CheckSquare size={12} />
-                Все
+                All
               </button>
               <button
                 onClick={handleClearAll}
@@ -99,7 +99,7 @@ export function UserSettingsModal({ isOpen, user, onSave, onClose }: UserSetting
                   hover:text-slate-200 hover:bg-white/[0.08] transition-all"
               >
                 <Square size={12} />
-                Снять все
+                Clear All
               </button>
               <span className="ml-auto text-xs text-slate-600 self-center">
                 {selectedWidgets.length} / {ALL_WIDGETS.length}
@@ -143,7 +143,7 @@ export function UserSettingsModal({ isOpen, user, onSave, onClose }: UserSetting
                   text-slate-400 bg-white/[0.05] border border-white/[0.08]
                   hover:bg-white/[0.08] transition-all"
               >
-                Отмена
+                Cancel
               </button>
               <motion.button
                 onClick={handleSave}
@@ -153,7 +153,7 @@ export function UserSettingsModal({ isOpen, user, onSave, onClose }: UserSetting
                   bg-blue-500/20 border border-blue-500/30 text-blue-300
                   hover:bg-blue-500/30 hover:border-blue-500/50 transition-all"
               >
-                Сохранить
+                Save
               </motion.button>
             </div>
           </motion.div>

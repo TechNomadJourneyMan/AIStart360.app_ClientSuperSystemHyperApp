@@ -31,9 +31,9 @@ export async function getSettingsUserData(db: DbClient = prisma): Promise<Settin
 
   return {
     id: user.id,
-    name: user.name ?? 'Пользователь',
+    name: user.name ?? 'User',
     email: user.email,
     role: user.role,
-    organizationName: user.org?.name ?? 'Не указана',
+    organizationName: user.org?.name ?? 'Not specified',
   }
 }

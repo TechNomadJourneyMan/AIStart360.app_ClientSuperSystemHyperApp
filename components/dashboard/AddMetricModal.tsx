@@ -9,10 +9,10 @@ import type { MetricDefinition } from '@/types/metrics'
 import { toast } from '@/stores/ui.store'
 
 const CATEGORY_LABELS: Record<string, string> = {
-  financial:   'Финансовые',
-  operational: 'Операционные',
-  customer:    'Клиентские',
-  custom:      'Кастомные',
+  financial:   'Financial',
+  operational: 'Operational',
+  customer:    'Customer',
+  custom:      'Custom',
 }
 
 interface AddMetricModalProps {
@@ -55,7 +55,7 @@ export function AddMetricModal({ open, onClose }: AddMetricModalProps) {
     const canAdd = MAX_METRICS - totalCount
     const toAdd = selected.slice(0, canAdd)
     if (selected.length > canAdd) {
-      toast.warning(`Добавлено ${canAdd} из ${selected.length}`, `Достигнут лимит ${MAX_METRICS} метрик`)
+      toast.warning(`Added ${canAdd} of ${selected.length}`, `Limit of ${MAX_METRICS} metrics reached`)
     }
     toAdd.forEach((id) => addMetric(id))
     setSelected([])
@@ -89,9 +89,9 @@ export function AddMetricModal({ open, onClose }: AddMetricModalProps) {
             <div className="p-5 pb-3 border-b border-white/[0.06]">
               <div className="flex items-center justify-between mb-3">
                 <div>
-                  <h3 className="text-base font-bold text-on-surface">Добавить метрику</h3>
+                  <h3 className="text-base font-bold text-on-surface">Add Metric</h3>
                   <p className="text-[11px] text-on-surface-variant mt-0.5">
-                    {totalCount} из {MAX_METRICS} · осталось {remaining}
+                    {totalCount} of {MAX_METRICS} · {remaining} remaining
                   </p>
                 </div>
                 <button
@@ -105,7 +105,7 @@ export function AddMetricModal({ open, onClose }: AddMetricModalProps) {
                 autoFocus
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Поиск метрики..."
+                placeholder="Search metric..."
                 className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-2.5 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 transition-all"
               />
             </div>
@@ -123,7 +123,7 @@ export function AddMetricModal({ open, onClose }: AddMetricModalProps) {
               {!isLoading && filtered.length === 0 && (
                 <div className="py-10 text-center">
                   <span className="material-symbols-outlined text-3xl text-on-surface-variant/20 mb-2 block">search_off</span>
-                  <p className="text-sm text-on-surface-variant/40">Метрики не найдены</p>
+                  <p className="text-sm text-on-surface-variant/40">No metrics found</p>
                 </div>
               )}
 
@@ -175,21 +175,21 @@ export function AddMetricModal({ open, onClose }: AddMetricModalProps) {
             {/* Footer */}
             <div className="p-5 pt-3 border-t border-white/[0.06] flex items-center justify-between gap-3">
               <span className="text-xs text-on-surface-variant">
-                {selected.length > 0 ? `Выбрано: ${selected.length}` : 'Выберите метрики'}
+                {selected.length > 0 ? `Selected: ${selected.length}` : 'Select metrics'}
               </span>
               <div className="flex gap-2">
                 <button
                   onClick={onClose}
                   className="px-4 py-2 rounded-xl text-sm text-on-surface-variant hover:bg-white/[0.06] transition-all"
                 >
-                  Отмена
+                  Cancel
                 </button>
                 <button
                   onClick={handleConfirm}
                   disabled={selected.length === 0}
                   className="px-5 py-2 rounded-xl text-sm font-medium bg-primary/20 hover:bg-primary/30 text-primary transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                 >
-                  Добавить {selected.length > 0 ? `(${selected.length})` : ''}
+                  Add {selected.length > 0 ? `(${selected.length})` : ''}
                 </button>
               </div>
             </div>

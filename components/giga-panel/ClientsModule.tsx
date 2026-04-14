@@ -140,9 +140,9 @@ function ClientCard({ client, onClick }: { client: GigaClient; onClick: () => vo
           {client.stage}
         </span>
         <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${statusBadge(client.status)}`}>
-          {client.status === 'active' ? 'Активен' :
-           client.status === 'at_risk' ? 'Риск' :
-           client.status === 'onboarding' ? 'Онбординг' : 'Неактивен'}
+          {client.status === 'active' ? 'Active' :
+           client.status === 'at_risk' ? 'At Risk' :
+           client.status === 'onboarding' ? 'Onboarding' : 'Inactive'}
         </span>
         {client.pulseMetrics && (
           <span className="flex items-center gap-1 text-[10px] text-slate-500">
@@ -155,7 +155,7 @@ function ClientCard({ client, onClick }: { client: GigaClient; onClick: () => vo
       {/* Manager */}
       {client.manager && (
         <p className="text-[10px] text-slate-600 mt-2 truncate">
-          Менеджер: {client.manager.name ?? client.manager.email}
+          Manager: {client.manager.name ?? client.manager.email}
         </p>
       )}
     </motion.div>
@@ -170,7 +170,7 @@ function ClientDetailPanel({ client, onClose }: { client: GigaClient; onClose: (
   const pulse = client.pulseMetrics
 
   const formatDate = (iso: string | null) =>
-    iso ? new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: 'long', year: 'numeric' }).format(new Date(iso)) : '—'
+    iso ? new Intl.DateTimeFormat('en-US', { day: '2-digit', month: 'long', year: 'numeric' }).format(new Date(iso)) : '—'
 
   const formatMoney = (n: number) =>
     new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'KZT', maximumFractionDigits: 0 }).format(n)
@@ -212,17 +212,17 @@ function ClientDetailPanel({ client, onClose }: { client: GigaClient; onClose: (
         {/* Meta */}
         <div className="grid grid-cols-2 gap-2">
           <div className="p-3 rounded-xl bg-white/[0.03] border border-white/[0.06]">
-            <p className="text-[10px] text-slate-600 mb-0.5">Стадия</p>
+            <p className="text-[10px] text-slate-600 mb-0.5">Stage</p>
             <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${stageBadge(client.stage)}`}>
               {client.stage}
             </span>
           </div>
           <div className="p-3 rounded-xl bg-white/[0.03] border border-white/[0.06]">
-            <p className="text-[10px] text-slate-600 mb-0.5">Статус</p>
+            <p className="text-[10px] text-slate-600 mb-0.5">Status</p>
             <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${statusBadge(client.status)}`}>
-              {client.status === 'active' ? 'Активен' :
-               client.status === 'at_risk' ? 'Под риском' :
-               client.status === 'onboarding' ? 'Онбординг' : 'Неактивен'}
+              {client.status === 'active' ? 'Active' :
+               client.status === 'at_risk' ? 'At Risk' :
+               client.status === 'onboarding' ? 'Onboarding' : 'Inactive'}
             </span>
           </div>
           {client.website && (
@@ -240,7 +240,7 @@ function ClientDetailPanel({ client, onClose }: { client: GigaClient; onClose: (
           <div className="p-3 rounded-xl bg-white/[0.03] border border-white/[0.06]">
             <div className="flex items-center gap-1 mb-0.5">
               <User size={10} className="text-slate-600" />
-              <p className="text-[10px] text-slate-600">Менеджер</p>
+              <p className="text-[10px] text-slate-600">Manager</p>
             </div>
             <p className="text-xs text-slate-300 truncate">
               {client.manager?.name ?? client.manager?.email ?? '—'}
@@ -249,7 +249,7 @@ function ClientDetailPanel({ client, onClose }: { client: GigaClient; onClose: (
           <div className="p-3 rounded-xl bg-white/[0.03] border border-white/[0.06]">
             <div className="flex items-center gap-1 mb-0.5">
               <Calendar size={10} className="text-slate-600" />
-              <p className="text-[10px] text-slate-600">Создан</p>
+              <p className="text-[10px] text-slate-600">Created</p>
             </div>
             <p className="text-xs text-slate-300">{formatDate(client.createdAt)}</p>
           </div>
@@ -259,7 +259,7 @@ function ClientDetailPanel({ client, onClose }: { client: GigaClient; onClose: (
         {gri ? (
           <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/[0.07]">
             <div className="flex items-center justify-between mb-4">
-              <p className="text-xs font-semibold text-slate-300 uppercase tracking-widest">GRI Индекс</p>
+              <p className="text-xs font-semibold text-slate-300 uppercase tracking-widest">GRI Index</p>
               <div className="flex items-center gap-2">
                 <div className="relative">
                   <ScoreRing score={gri.score} size={52} />
@@ -271,22 +271,22 @@ function ClientDetailPanel({ client, onClose }: { client: GigaClient; onClose: (
               </div>
             </div>
             <div className="space-y-2.5">
-              <ScoreBar label="Продукт" score={gri.productScore} />
-              <ScoreBar label="Доверие" score={gri.trustScore} />
-              <ScoreBar label="Бизнес-модель" score={gri.businessModelScore} />
-              <ScoreBar label="Финансы" score={gri.cashScore} />
-              <ScoreBar label="Операции" score={gri.operationsScore} />
-              <ScoreBar label="Команда" score={gri.teamScore} />
-              <ScoreBar label="Основатель" score={gri.founderScore} />
+              <ScoreBar label="Product" score={gri.productScore} />
+              <ScoreBar label="Trust" score={gri.trustScore} />
+              <ScoreBar label="Business Model" score={gri.businessModelScore} />
+              <ScoreBar label="Finance" score={gri.cashScore} />
+              <ScoreBar label="Operations" score={gri.operationsScore} />
+              <ScoreBar label="Team" score={gri.teamScore} />
+              <ScoreBar label="Founder" score={gri.founderScore} />
             </div>
             <p className="text-[10px] text-slate-600 mt-3">
-              Рассчитан: {formatDate(gri.calculatedAt)}
+              Calculated: {formatDate(gri.calculatedAt)}
             </p>
           </div>
         ) : (
           <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/[0.07] text-center">
             <Activity size={20} className="text-slate-700 mx-auto mb-1" />
-            <p className="text-xs text-slate-600">GRI-отчёт не найден</p>
+            <p className="text-xs text-slate-600">GRI report not found</p>
           </div>
         )}
 
@@ -298,7 +298,7 @@ function ClientDetailPanel({ client, onClose }: { client: GigaClient; onClose: (
             </p>
             <div className="grid grid-cols-2 gap-2">
               <div className="p-2.5 rounded-xl bg-white/[0.03] border border-white/[0.05]">
-                <p className="text-[10px] text-slate-600 mb-0.5">Риск</p>
+                <p className="text-[10px] text-slate-600 mb-0.5">Risk</p>
                 <div className="flex items-center gap-1">
                   {pulse.riskScore >= 70
                     ? <AlertTriangle size={12} className="text-red-400" />
@@ -311,24 +311,24 @@ function ClientDetailPanel({ client, onClose }: { client: GigaClient; onClose: (
                 </div>
               </div>
               <div className="p-2.5 rounded-xl bg-white/[0.03] border border-white/[0.05]">
-                <p className="text-[10px] text-slate-600 mb-0.5">Отток</p>
+                <p className="text-[10px] text-slate-600 mb-0.5">Churn</p>
                 <div className="flex items-center gap-1">
                   {churnIcon(pulse.churnLevel)}
                   <span className="text-sm font-bold text-slate-200">{pulse.churnProb}%</span>
                 </div>
               </div>
               <div className="p-2.5 rounded-xl bg-white/[0.03] border border-white/[0.05]">
-                <p className="text-[10px] text-slate-600 mb-0.5">Ср. чек</p>
+                <p className="text-[10px] text-slate-600 mb-0.5">Avg. Check</p>
                 <p className="text-xs font-semibold text-slate-200">{formatMoney(pulse.avgCheck)}</p>
               </div>
               <div className="p-2.5 rounded-xl bg-white/[0.03] border border-white/[0.05]">
-                <p className="text-[10px] text-slate-600 mb-0.5">Дней с заказа</p>
+                <p className="text-[10px] text-slate-600 mb-0.5">Days Since Order</p>
                 <p className="text-sm font-bold text-slate-200">{pulse.daysSince ?? '—'}</p>
               </div>
             </div>
             {pulse.lastOrder && (
               <p className="text-[10px] text-slate-600 mt-2">
-                Последний заказ: {formatDate(pulse.lastOrder)}
+                Last Order: {formatDate(pulse.lastOrder)}
               </p>
             )}
           </div>
@@ -361,11 +361,11 @@ export function ClientsModule() {
     setClientsError(null)
     try {
       const res = await fetch('/api/giga-admin/clients')
-      if (!res.ok) throw new Error('Ошибка загрузки клиентов')
+      if (!res.ok) throw new Error('Error loading clients')
       const data = await res.json()
       setClients(data.clients)
     } catch (err) {
-      setClientsError(err instanceof Error ? err.message : 'Неизвестная ошибка')
+      setClientsError(err instanceof Error ? err.message : 'Unknown error')
     } finally {
       setLoadingClients(false)
     }
@@ -391,9 +391,9 @@ export function ClientsModule() {
       {/* Header */}
       <div className="flex items-start justify-between mb-6">
         <div>
-          <h1 className="text-xl font-bold text-slate-100 tracking-tight">Клиенты платформы</h1>
+          <h1 className="text-xl font-bold text-slate-100 tracking-tight">Platform Clients</h1>
           <p className="text-sm text-slate-500 mt-1">
-            {clients.length} клиент{clients.length !== 1 ? 'ов' : ''} — полные данные с GRI и Pulse
+            {clients.length} client{clients.length !== 1 ? 's' : ''} — full GRI and Pulse data
           </p>
         </div>
         <motion.button
@@ -407,7 +407,7 @@ export function ClientsModule() {
             disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <RefreshCw size={13} className={isLoadingClients ? 'animate-spin' : ''} />
-          Обновить
+          Refresh
         </motion.button>
       </div>
 
@@ -420,7 +420,7 @@ export function ClientsModule() {
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Поиск по названию..."
+            placeholder="Search by name..."
             className="pl-8 pr-3 py-2 rounded-xl bg-white/[0.05] border border-white/[0.08]
               text-sm text-slate-200 placeholder:text-slate-700 w-full md:w-52
               focus:outline-none focus:border-blue-500/40 transition-all"
@@ -434,7 +434,7 @@ export function ClientsModule() {
             className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all
               ${stageFilter === 'all' ? 'bg-blue-500/20 text-blue-300 border border-blue-500/25' : 'text-slate-500 hover:text-slate-300'}`}
           >
-            Все
+            All
           </button>
           {STAGES.map((s) => (
             <button
@@ -453,14 +453,14 @@ export function ClientsModule() {
       {isLoadingClients ? (
         <div className="flex items-center justify-center py-20">
           <RefreshCw size={20} className="text-slate-600 animate-spin mr-2" />
-          <span className="text-sm text-slate-600">Загрузка клиентов...</span>
+          <span className="text-sm text-slate-600">Loading clients...</span>
         </div>
       ) : clientsError ? (
         <div className="flex flex-col items-center justify-center py-20 rounded-2xl
           bg-white/[0.02] border border-white/[0.06] border-dashed">
           <p className="text-sm text-red-400">{clientsError}</p>
           <button onClick={fetchClients} className="mt-3 text-xs text-blue-400 hover:text-blue-300">
-            Попробовать снова
+            Try Again
           </button>
         </div>
       ) : filtered.length === 0 ? (
@@ -468,7 +468,7 @@ export function ClientsModule() {
           bg-white/[0.02] border border-white/[0.06] border-dashed">
           <Building2 size={32} className="text-slate-700 mb-3" />
           <p className="text-sm text-slate-600">
-            {clients.length === 0 ? 'Клиентов пока нет в базе' : 'Нет совпадений'}
+            {clients.length === 0 ? 'No clients in the database yet' : 'No matches'}
           </p>
         </div>
       ) : (

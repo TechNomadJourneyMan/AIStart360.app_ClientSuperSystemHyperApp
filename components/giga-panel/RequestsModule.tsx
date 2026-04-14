@@ -24,9 +24,9 @@ import { UserDetailPanel } from './UserDetailPanel'
 // ─── Tab config ───────────────────────────────────────────────────────────────
 
 const TABS: { id: RequestCategory; label: string; icon: React.ReactNode }[] = [
-  { id: 'registration', label: 'Регистрация', icon: <UserPlus size={15} /> },
-  { id: 'access', label: 'Доступы', icon: <KeyRound size={15} /> },
-  { id: 'support', label: 'Поддержка', icon: <HeadphonesIcon size={15} /> },
+  { id: 'registration', label: 'Registration', icon: <UserPlus size={15} /> },
+  { id: 'access', label: 'Access', icon: <KeyRound size={15} /> },
+  { id: 'support', label: 'Support', icon: <HeadphonesIcon size={15} /> },
 ]
 
 // ─── Status badge ─────────────────────────────────────────────────────────────
@@ -39,10 +39,10 @@ function StatusBadge({ status }: { status: GigaRequest['status'] }) {
     archived: 'bg-slate-500/15 text-slate-400 border-slate-500/20',
   }
   const labels = {
-    pending: 'Ожидает',
-    approved: 'Принято',
-    rejected: 'Отклонено',
-    archived: 'Архив',
+    pending: 'Pending',
+    approved: 'Approved',
+    rejected: 'Rejected',
+    archived: 'Archive',
   }
   return (
     <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold border ${map[status]}`}>
@@ -75,7 +75,7 @@ function RequestCard({
     .join('')
     .toUpperCase()
 
-  const formattedDate = new Intl.DateTimeFormat('ru-RU', {
+  const formattedDate = new Intl.DateTimeFormat('en-US', {
     day: '2-digit',
     month: 'short',
     hour: '2-digit',
@@ -152,7 +152,7 @@ function RequestCard({
             size={13}
             className={`transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`}
           />
-          {expanded ? 'Скрыть' : 'Читать подробнее'}
+          {expanded ? 'Hide' : 'Read More'}
         </button>
       </div>
 
@@ -171,7 +171,7 @@ function RequestCard({
                 <p className="text-xs text-slate-400 leading-relaxed">{request.description}</p>
                 {request.rejectionReason && (
                   <div className="mt-2 pt-2 border-t border-red-500/15">
-                    <p className="text-[10px] font-semibold text-red-400 mb-1">Причина отклонения:</p>
+                    <p className="text-[10px] font-semibold text-red-400 mb-1">Rejection Reason:</p>
                     <p className="text-xs text-red-300/70">{request.rejectionReason}</p>
                   </div>
                 )}
@@ -198,7 +198,7 @@ function RequestCard({
               hover:bg-emerald-500/25 hover:border-emerald-500/40 transition-all"
           >
             <CheckCircle size={13} />
-            Принять
+            Approve
           </motion.button>
 
           <motion.button
@@ -210,7 +210,7 @@ function RequestCard({
               hover:bg-red-500/25 hover:border-red-500/40 transition-all"
           >
             <XCircle size={13} />
-            Отклонить
+            Reject
           </motion.button>
 
           <motion.button
@@ -222,7 +222,7 @@ function RequestCard({
               hover:bg-white/[0.08] hover:text-slate-300 transition-all ml-auto"
           >
             <Archive size={13} />
-            Архив
+            Archive
           </motion.button>
         </div>
       )}
@@ -256,12 +256,12 @@ export function RequestsModule() {
       const res = await fetch('/api/giga-admin/requests')
       if (!res.ok) {
         const body = await res.json().catch(() => ({}))
-        throw new Error(body.error || `Ошибка загрузки заявок (HTTP ${res.status})`)
+        throw new Error(body.error || `Error loading requests (HTTP ${res.status})`)
       }
       const data = await res.json()
       setRequests(data.requests ?? [])
     } catch (err) {
-      setRequestsError(err instanceof Error ? err.message : 'Неизвестная ошибка')
+      setRequestsError(err instanceof Error ? err.message : 'Unknown error')
     } finally {
       setLoadingRequests(false)
     }
@@ -312,9 +312,9 @@ export function RequestsModule() {
       {/* Header */}
       <div className="flex items-start justify-between mb-6">
         <div>
-          <h1 className="text-xl font-bold text-slate-100 tracking-tight">Управление заявками</h1>
+          <h1 className="text-xl font-bold text-slate-100 tracking-tight">Request Management</h1>
           <p className="text-sm text-slate-500 mt-1">
-            Все входящие запросы — регистрации, доступы и тикеты поддержки
+            All incoming requests — registrations, access, and support tickets
           </p>
         </div>
         <motion.button
@@ -328,7 +328,7 @@ export function RequestsModule() {
             disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <RefreshCw size={13} className={isLoadingRequests ? 'animate-spin' : ''} />
-          Обновить
+          Refresh
         </motion.button>
       </div>
 
@@ -378,14 +378,14 @@ export function RequestsModule() {
           {isLoadingRequests ? (
             <div className="flex items-center justify-center py-16">
               <RefreshCw size={20} className="text-slate-600 animate-spin mr-2" />
-              <span className="text-sm text-slate-600">Загрузка заявок из Supabase...</span>
+              <span className="text-sm text-slate-600">Loading requests from Supabase...</span>
             </div>
           ) : requestsError ? (
             <div className="flex flex-col items-center justify-center py-16
               rounded-2xl bg-white/[0.02] border border-red-500/10 border-dashed">
               <p className="text-sm text-red-400">{requestsError}</p>
               <button onClick={fetchRequests} className="mt-2 text-xs text-blue-400 hover:text-blue-300">
-                Повторить
+                Retry
               </button>
             </div>
           ) : filtered.length === 0 ? (
@@ -393,7 +393,7 @@ export function RequestsModule() {
               rounded-2xl bg-white/[0.02] border border-white/[0.06] border-dashed">
               <Clock size={32} className="text-slate-700 mb-3" />
               <p className="text-sm text-slate-600">
-                {requests.length === 0 ? 'Заявок пока нет в базе данных' : 'Нет заявок в этой категории'}
+                {requests.length === 0 ? 'No requests in the database yet' : 'No requests in this category'}
               </p>
             </div>
           ) : (
@@ -403,7 +403,7 @@ export function RequestsModule() {
                 <div>
                   <div className="flex items-center gap-2 mb-3">
                     <span className="text-xs font-semibold text-amber-400 uppercase tracking-widest">
-                      Ожидают обработки
+                      Awaiting Processing
                     </span>
                     <div className="flex-1 h-px bg-amber-500/15" />
                     <span className="text-xs text-slate-600">{pendingFiltered.length}</span>
@@ -429,7 +429,7 @@ export function RequestsModule() {
                 <div>
                   <div className="flex items-center gap-2 mb-3">
                     <span className="text-xs font-semibold text-slate-600 uppercase tracking-widest">
-                      Обработанные
+                      Processed
                     </span>
                     <div className="flex-1 h-px bg-white/[0.05]" />
                     <span className="text-xs text-slate-600">{doneFiltered.length}</span>

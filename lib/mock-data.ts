@@ -7,10 +7,10 @@ import type {
 // KPI Data — Dashboard main metrics
 // ============================================================
 export const MOCK_KPI = [
-  { label: 'Доход',   value: '₸84.2М',  trend: '+12.4%',  trendUp: true,  icon: 'payments',        sublabel: 'vs прошлый квартал',  href: '/analytics' },
-  { label: 'Маржа',   value: '34.2%',   trend: '+2.1 пп', trendUp: true,  icon: 'percent',          sublabel: 'чистая маржинальность', href: '/metrics'  },
-  { label: 'Клиенты', value: '48',      trend: '+6',      trendUp: true,  icon: 'groups',           sublabel: 'активных клиентов',   href: '/clients'   },
-  { label: 'Расходы', value: '₸55.4М',  trend: '+8.2%',   trendUp: false, icon: 'trending_down',    sublabel: 'операционные расходы', href: '/metrics'  },
+  { label: 'Revenue',  value: '₸84.2M',  trend: '+12.4%',  trendUp: true,  icon: 'payments',        sublabel: 'vs previous quarter',  href: '/analytics' },
+  { label: 'Margin',   value: '34.2%',   trend: '+2.1 pp', trendUp: true,  icon: 'percent',          sublabel: 'net margin', href: '/metrics'  },
+  { label: 'Clients',  value: '48',      trend: '+6',      trendUp: true,  icon: 'groups',           sublabel: 'active clients',   href: '/clients'   },
+  { label: 'Expenses', value: '₸55.4M',  trend: '+8.2%',   trendUp: false, icon: 'trending_down',    sublabel: 'operating expenses', href: '/metrics'  },
 ]
 
 // ============================================================
@@ -23,7 +23,7 @@ export const MOCK_ALERTS: Alert[] = [
     title: 'Vortex Labs',
     description: 'GMV Drop: -24% below threshold deviation detected in scaling phase.',
     time: '2h ago',
-    action: { label: 'Расследовать', href: '/clients/1' },
+    action: { label: 'Investigate', href: '/clients/1' },
   },
   {
     id: 'a2',
@@ -31,7 +31,7 @@ export const MOCK_ALERTS: Alert[] = [
     title: 'Calyx Fintech',
     description: 'Churn Risk: Structural engagement score dropped to 4.2/10.',
     time: '4h ago',
-    action: { label: 'Обзор клиента', href: '/clients/2' },
+    action: { label: 'Client Review', href: '/clients/2' },
   },
   {
     id: 'a3',
@@ -39,15 +39,15 @@ export const MOCK_ALERTS: Alert[] = [
     title: 'Nexum Systems',
     description: 'GRI Score improved to 8.4. Growth readiness reached Excellent tier.',
     time: '6h ago',
-    action: { label: 'Смотреть отчёт', href: '/clients/3' },
+    action: { label: 'View Report', href: '/clients/3' },
   },
   {
     id: 'a4',
     severity: 'info',
-    title: 'Рыночный сигнал',
+    title: 'Market Signal',
     description: 'Regulatory update: New compliance framework announced for FinTech sector Q2.',
     time: '8h ago',
-    action: { label: 'Открыть сигнал', href: '/insights' },
+    action: { label: 'Open Signal', href: '/insights' },
   },
 ]
 
@@ -59,7 +59,7 @@ export const MOCK_ACTIVITY: ActivityItem[] = [
     id: 'act1',
     actor: 'Stark Industries',
     actorRole: 'Client',
-    event: 'завершил модуль GRI Diagnostics Phase 2',
+    event: 'completed GRI Diagnostics Phase 2 module',
     gri: 7.2,
     status: 'active',
     time: '10m ago',
@@ -68,7 +68,7 @@ export const MOCK_ACTIVITY: ActivityItem[] = [
     id: 'act2',
     actor: 'Alex M.',
     actorRole: 'Analyst',
-    event: 'обновил метрики для Stark Industries',
+    event: 'updated metrics for Stark Industries',
     gri: 7.8,
     status: 'active',
     time: '1h ago',
@@ -148,31 +148,31 @@ export const MOCK_REPORTS: Report[] = [
   {
     id: 'r6', clientId: '7', clientName: 'ChocoFamily',
     name: 'Analytical Profile (Kazakhstan)', category: 'GRI', type: 'pdf',
-    fileUrl: '/app/(dashboard)/clients/ChocoFamily Data/Аналитический_профиль_компании_ChocoFamily_(Казахстан).pdf', 
+    fileUrl: '/app/(dashboard)/clients/ChocoFamily Data/Аналитический_профиль_компании_ChocoFamily_(Казахстан).pdf',
     fileSize: '224 KB', uploadedBy: 'System', uploadedAt: '30 Mar 2026',
   },
   {
     id: 'r7', clientId: '7', clientName: 'ChocoFamily',
     name: 'OSINT Project Report', category: 'Intelligence', type: 'pdf',
-    fileUrl: '/app/(dashboard)/clients/ChocoFamily Data/ChocoFamily_OSINT_Analytical_Profile.pdf', 
+    fileUrl: '/app/(dashboard)/clients/ChocoFamily Data/ChocoFamily_OSINT_Analytical_Profile.pdf',
     fileSize: '85 KB', uploadedBy: 'Expert AI', uploadedAt: '30 Mar 2026',
   },
   {
     id: 'r8', clientId: '7', clientName: 'ChocoFamily',
     name: 'Modular Analytical Report', category: 'Strategic', type: 'pdf',
-    fileUrl: '/app/(dashboard)/clients/ChocoFamily Data/_ChocoFamily Holding_ модульный аналитический отчёт.pdf', 
+    fileUrl: '/app/(dashboard)/clients/ChocoFamily Data/_ChocoFamily Holding_ модульный аналитический отчёт.pdf',
     fileSize: '1.7 MB', uploadedBy: 'Alex Kim', uploadedAt: '30 Mar 2026',
   },
   {
     id: 'r9', clientId: '7', clientName: 'ChocoFamily',
     name: 'GPT Intelligence Summary', category: 'AI', type: 'pdf',
-    fileUrl: '/app/(dashboard)/clients/ChocoFamily Data/ChocoFamilyGPTReport.pdf', 
+    fileUrl: '/app/(dashboard)/clients/ChocoFamily Data/ChocoFamilyGPTReport.pdf',
     fileSize: '87 KB', uploadedBy: 'GPT-4o', uploadedAt: '30 Mar 2026',
   },
   {
     id: 'r10', clientId: '7', clientName: 'ChocoFamily',
     name: 'Business Strategy Protocol', category: 'Protocol', type: 'pdf',
-    fileUrl: '/app/(dashboard)/clients/ChocoFamily Data/Protocol ChocoFamily .pdf', 
+    fileUrl: '/app/(dashboard)/clients/ChocoFamily Data/Protocol ChocoFamily .pdf',
     fileSize: '322 KB', uploadedBy: 'System', uploadedAt: '30 Mar 2026',
   },
 ]
@@ -182,27 +182,27 @@ export const MOCK_REPORTS: Report[] = [
 // ============================================================
 export const MOCK_NOTIFICATIONS: Notification[] = [
   {
-    id: 'n1', type: 'alert', title: 'Критический алерт: Vortex Labs',
+    id: 'n1', type: 'alert', title: 'Critical Alert: Vortex Labs',
     body: 'GMV dropped 24% below threshold. Immediate review recommended.',
     read: false, entityType: 'client', entityId: '1', time: '2h ago', createdAt: '2026-03-24T10:00:00Z',
   },
   {
-    id: 'n2', type: 'gri_updated', title: 'GRI обновлён: Astra Ventures',
+    id: 'n2', type: 'gri_updated', title: 'GRI Updated: Astra Ventures',
     body: 'GRI Score increased to 9.1 — reached Excellent tier.',
     read: false, entityType: 'gri', entityId: '5', time: '4h ago', createdAt: '2026-03-24T08:00:00Z',
   },
   {
-    id: 'n3', type: 'report', title: 'Новый отчёт загружен',
+    id: 'n3', type: 'report', title: 'New Report Uploaded',
     body: 'Q4 GRI Full Report for Vortex Labs is now available.',
     read: false, entityType: 'report', entityId: 'r1', time: '6h ago', createdAt: '2026-03-24T06:00:00Z',
   },
   {
-    id: 'n4', type: 'project', title: 'Статус проекта изменён',
+    id: 'n4', type: 'project', title: 'Project Status Changed',
     body: 'Growth Roadmap for Nexum Systems moved to "In Review".',
     read: true, entityType: 'project', entityId: 'p1', time: '1d ago', createdAt: '2026-03-23T12:00:00Z',
   },
   {
-    id: 'n5', type: 'system', title: 'Техническое обслуживание',
+    id: 'n5', type: 'system', title: 'Scheduled Maintenance',
     body: 'Scheduled maintenance window: Sunday 02:00–04:00 UTC.',
     read: true, time: '2d ago', createdAt: '2026-03-22T10:00:00Z',
   },
@@ -214,37 +214,37 @@ export const MOCK_NOTIFICATIONS: Notification[] = [
 export const MOCK_SIGNALS: Signal[] = [
   {
     id: 's1', priority: 'critical',
-    title: 'ЦБ повышает ставку: влияние на ликвидность FinTech',
+    title: 'Central Bank Raises Rate: Impact on FinTech Liquidity',
     description: 'Unexpected rate increase of 50bps expected to tighten lending conditions for mid-stage FinTech companies in Q2 2026.',
     type: 'financial', tags: ['FinTech', 'Rates', 'Liquidity'], time: '1h ago', relatedClient: 'Vortex Labs',
   },
   {
     id: 's2', priority: 'high',
-    title: 'E-commerce CPM вырос на 23% год к году',
+    title: 'E-commerce CPM Up 23% Year-over-Year',
     description: 'Meta and Google CPM costs rising significantly in consumer retail vertical. Acquisition costs to increase across the board.',
     type: 'market', tags: ['E-commerce', 'Marketing', 'CAC'], time: '3h ago', relatedClient: 'Calyx Digital',
   },
   {
     id: 's3', priority: 'medium',
-    title: 'Новый EU-регламент: правила обработки AI-данных',
+    title: 'New EU Regulation: AI Data Processing Rules',
     description: 'EU proposes new framework for AI-driven data processing. SaaS companies serving EU customers should review data handling.',
     type: 'regulatory', tags: ['SaaS', 'Compliance', 'GDPR'], time: '6h ago',
   },
   {
     id: 's4', priority: 'medium',
-    title: 'Healthcare Tech инвестиции выросли на 34% в Q1 2026',
+    title: 'Healthcare Tech Investment Up 34% in Q1 2026',
     description: 'Global HealthTech funding up 34% QoQ. Telemedicine and diagnostic AI categories lead growth.',
     type: 'market', tags: ['Healthcare', 'Investment', 'AI'], time: '12h ago', relatedClient: 'PulseCore',
   },
   {
     id: 's5', priority: 'low',
-    title: 'Исследование SaaS: usage-based pricing вытесняет seat-based',
+    title: 'SaaS Study: Usage-Based Pricing Displacing Seat-Based',
     description: 'Annual SaaS pricing study shows seat-based pricing losing ground to usage-based models across mid-market.',
     type: 'market', tags: ['SaaS', 'Pricing', 'Benchmark'], time: '1d ago',
   },
   {
     id: 's6', priority: 'high',
-    title: 'Конкурент закрыл $40M Series B',
+    title: 'Competitor Closes $40M Series B',
     description: 'Direct competitor in B2B analytics space closes Series B. New features targeting GRI-equivalent diagnostics announced.',
     type: 'competitive', tags: ['Competitive', 'Funding', 'B2B'], time: '1d ago',
   },
@@ -266,89 +266,89 @@ export const MOCK_TEAM: TeamMember[] = [
 // GRI Domain scores (for GRI page)
 // ============================================================
 export const MOCK_GRI_DOMAINS = [
-  { id: 'fin',  label: 'Финансы',        score: 8.2, max: 10, icon: 'payments',      color: '#6effc0' },
-  { id: 'mkt',  label: 'Маркетинг',      score: 7.1, max: 10, icon: 'campaign',      color: '#6effc0' },
-  { id: 'ops',  label: 'Операции',       score: 7.6, max: 10, icon: 'settings_suggest', color: '#6effc0' },
-  { id: 'hr',   label: 'Команда',        score: 6.8, max: 10, icon: 'groups',        color: '#6effc0' },
-  { id: 'tech', label: 'Технологии',     score: 8.9, max: 10, icon: 'memory',        color: '#6effc0' },
-  { id: 'strat',label: 'Стратегия',      score: 7.4, max: 10, icon: 'route',         color: '#6effc0' },
+  { id: 'fin',  label: 'Finance',        score: 8.2, max: 10, icon: 'payments',      color: '#6effc0' },
+  { id: 'mkt',  label: 'Marketing',      score: 7.1, max: 10, icon: 'campaign',      color: '#6effc0' },
+  { id: 'ops',  label: 'Operations',     score: 7.6, max: 10, icon: 'settings_suggest', color: '#6effc0' },
+  { id: 'hr',   label: 'Team',           score: 6.8, max: 10, icon: 'groups',        color: '#6effc0' },
+  { id: 'tech', label: 'Technology',     score: 8.9, max: 10, icon: 'memory',        color: '#6effc0' },
+  { id: 'strat',label: 'Strategy',       score: 7.4, max: 10, icon: 'route',         color: '#6effc0' },
 ]
 
 // ============================================================
-// Market data (for Рынок page)
+// Market data (for Market page)
 // ============================================================
 export const MOCK_MARKET = {
-  tam: '₸4.2 трлн',
-  sam: '₸840 млрд',
-  som: '₸42 млрд',
+  tam: '₸4.2T',
+  sam: '₸840B',
+  som: '₸42B',
   growth: '+18.4% CAGR',
   segments: [
     { name: 'FinTech',    share: 34, color: '#6effc0' },
     { name: 'E-commerce', share: 28, color: '#00e29e' },
     { name: 'SaaS',       share: 22, color: '#bcc7de' },
     { name: 'Healthcare', share: 10, color: '#ffbd60' },
-    { name: 'Другие',     share: 6,  color: '#84958a' },
+    { name: 'Other',      share: 6,  color: '#84958a' },
   ],
   trends: [
-    { label: 'AI-интеграция ускоряется', priority: 'high',   icon: 'smart_toy' },
-    { label: 'Консолидация рынка B2B',   priority: 'medium', icon: 'merge' },
-    { label: 'Рост регуляторной нагрузки', priority: 'medium', icon: 'gavel' },
-    { label: 'Переход на usage-based',   priority: 'low',    icon: 'tune' },
+    { label: 'AI Integration Accelerating', priority: 'high',   icon: 'smart_toy' },
+    { label: 'B2B Market Consolidation',    priority: 'medium', icon: 'merge' },
+    { label: 'Regulatory Burden Growing',   priority: 'medium', icon: 'gavel' },
+    { label: 'Shift to Usage-Based',        priority: 'low',    icon: 'tune' },
   ],
 }
 
 // ============================================================
-// Metrics (for Метрики page)
+// Metrics (for Metrics page)
 // ============================================================
 export const MOCK_METRICS = {
   financial: [
-    { label: 'MRR',          value: '₸7.02М',  delta: '+14.2%', up: true },
-    { label: 'ARR',          value: '₸84.2М',  delta: '+14.2%', up: true },
-    { label: 'Gross Margin', value: '34.2%',   delta: '+2.1пп',  up: true },
-    { label: 'Burn Rate',    value: '₸4.62М',  delta: '-3.1%',  up: true },
-    { label: 'Runway',       value: '18 мес',  delta: '+2 мес', up: true },
+    { label: 'MRR',          value: '₸7.02M',  delta: '+14.2%', up: true },
+    { label: 'ARR',          value: '₸84.2M',  delta: '+14.2%', up: true },
+    { label: 'Gross Margin', value: '34.2%',   delta: '+2.1pp',  up: true },
+    { label: 'Burn Rate',    value: '₸4.62M',  delta: '-3.1%',  up: true },
+    { label: 'Runway',       value: '18 mo',   delta: '+2 mo',  up: true },
     { label: 'CAC',          value: '₸84K',    delta: '-8.4%',  up: true },
   ],
   growth: [
-    { label: 'New Clients',  value: '6',       delta: '+2 кв/кв', up: true },
-    { label: 'Churn Rate',   value: '2.1%',    delta: '-0.4пп',   up: true },
+    { label: 'New Clients',  value: '6',       delta: '+2 q/q',   up: true },
+    { label: 'Churn Rate',   value: '2.1%',    delta: '-0.4pp',   up: true },
     { label: 'NPS',          value: '74',      delta: '+6',       up: true },
-    { label: 'LTV',          value: '₸2.84М',  delta: '+11.2%',   up: true },
+    { label: 'LTV',          value: '₸2.84M',  delta: '+11.2%',   up: true },
     { label: 'LTV:CAC',      value: '4.82x',   delta: '+0.15',    up: true },
-    { label: 'Retention',    value: '94.2%',   delta: '+1.2пп',   up: true },
+    { label: 'Retention',    value: '94.2%',   delta: '+1.2pp',   up: true },
   ],
   operational: [
-    { label: 'Загрузка команды', value: '74%',   delta: '+4пп',     up: false },
-    { label: 'SLA соблюдение',   value: '98.4%', delta: '+0.2пп',   up: true  },
+    { label: 'Team Utilization', value: '74%',   delta: '+4pp',     up: false },
+    { label: 'SLA Compliance',   value: '98.4%', delta: '+0.2pp',   up: true  },
     { label: 'Avg GRI Score',    value: '7.6',   delta: '+0.2',     up: true  },
-    { label: 'GRI Reports/мес',  value: '18',    delta: '+3',       up: true  },
-    { label: 'Avg Time to Value','value': '12д', delta: '-2д',      up: true  },
+    { label: 'GRI Reports/mo',   value: '18',    delta: '+3',       up: true  },
+    { label: 'Avg Time to Value',value: '12d',   delta: '-2d',      up: true  },
     { label: 'CSAT',             value: '4.7/5', delta: '+0.1',     up: true  },
   ],
 }
 
 // ============================================================
-// Competitors (for Конкуренты page)
+// Competitors (for Competitors page)
 // ============================================================
 export const MOCK_COMPETITORS = [
   {
     id: 'c1', name: 'GrowthOS',     funding: '$120M Series C', stage: 'Scale',
-    strengths: ['Автоматизация', 'UI/UX'],    weaknesses: ['Нет GRI', 'Дорого'],
+    strengths: ['Automation', 'UI/UX'],    weaknesses: ['No GRI', 'Expensive'],
     threat: 'high',   market: 'US/EU', clients: 340, arr: '$28M',
   },
   {
     id: 'c2', name: 'RevIQ',        funding: '$40M Series B',  stage: 'Growth',
-    strengths: ['AI-аналитика', 'API'],       weaknesses: ['Нет B2B', 'Молодой продукт'],
+    strengths: ['AI Analytics', 'API'],       weaknesses: ['No B2B', 'Young Product'],
     threat: 'high',   market: 'EU',    clients: 120, arr: '$8M',
   },
   {
     id: 'c3', name: 'ScaleMetrics', funding: '$18M Series A',  stage: 'Early',
-    strengths: ['Дёшево', 'Быстрый онбординг'], weaknesses: ['Нет стратегии', 'Слабая команда'],
+    strengths: ['Affordable', 'Fast Onboarding'], weaknesses: ['No Strategy', 'Weak Team'],
     threat: 'medium', market: 'RU/CIS', clients: 55,  arr: '$2.4M',
   },
   {
     id: 'c4', name: 'B2B Radar',    funding: 'Bootstrapped',   stage: 'Niche',
-    strengths: ['Нишевый'],                   weaknesses: ['Нет масштабирования'],
+    strengths: ['Niche Focus'],                   weaknesses: ['No Scalability'],
     threat: 'low',    market: 'RU',    clients: 22,  arr: '$0.8M',
   },
 ]

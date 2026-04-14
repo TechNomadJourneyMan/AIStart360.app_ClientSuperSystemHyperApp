@@ -56,8 +56,8 @@ export function DocumentUpload({ clientId, onComplete }: DocumentUploadProps) {
   return (
     <Card className="w-full">
       <CardHeader 
-        title="Загрузка документов для анализа"
-        description="Загрузите бизнес-план, финансовый отчет или презентацию для автоматической диагностики Точки А."
+        title="Upload Documents for Analysis"
+        description="Upload a business plan, financial report, or presentation for automatic Point A diagnostics."
       />
       <CardContent>
         <div
@@ -77,8 +77,8 @@ export function DocumentUpload({ clientId, onComplete }: DocumentUploadProps) {
                   <Upload className="w-8 h-8 text-primary" />
                 </div>
                 <div className="space-y-1">
-                  <p className="font-semibold text-lg">Перетащите файл или кликните</p>
-                  <p className="text-sm text-muted-foreground">PDF, Word, Excel до 10MB</p>
+                  <p className="font-semibold text-lg">Drag a file or click</p>
+                  <p className="text-sm text-muted-foreground">PDF, Word, Excel up to 10MB</p>
                 </div>
               </>
             )}
@@ -93,7 +93,7 @@ export function DocumentUpload({ clientId, onComplete }: DocumentUploadProps) {
                 </div>
                 <div className="space-y-1">
                   <p className="font-semibold text-lg">
-                    {status === 'uploading' ? 'Загрузка файла...' : 'Анализ через Claude 3.5 Sonnet...'}
+                    {status === 'uploading' ? 'Uploading file...' : 'Analysis via Claude 3.5 Sonnet...'}
                   </p>
                   <p className="text-sm text-muted-foreground animate-pulse">{fileName}</p>
                 </div>
@@ -106,15 +106,15 @@ export function DocumentUpload({ clientId, onComplete }: DocumentUploadProps) {
                   <CheckCircle2 className="w-10 h-10 text-green-600" />
                 </div>
                 <div className="space-y-1">
-                  <p className="font-semibold text-xl text-green-700">Диагностика завершена!</p>
-                  <p className="text-sm text-muted-foreground">Отчет GRI успешно сформирован и сохранен.</p>
+                  <p className="font-semibold text-xl text-green-700">Diagnostics Complete!</p>
+                  <p className="text-sm text-muted-foreground">GRI report successfully generated and saved.</p>
                 </div>
                 <Button variant="outline" className="mt-4" onClick={(e) => {
                   e.stopPropagation();
                   setStatus('idle');
                   setFileName(null);
                 }}>
-                  Загрузить еще
+                  Upload More
                 </Button>
               </>
             )}
@@ -125,14 +125,14 @@ export function DocumentUpload({ clientId, onComplete }: DocumentUploadProps) {
                   <AlertCircle className="w-10 h-10 text-red-600" />
                 </div>
                 <div className="space-y-1">
-                  <p className="font-semibold text-xl text-red-600">Ошибка анализа</p>
+                  <p className="font-semibold text-xl text-red-600">Analysis Error</p>
                   <p className="text-sm text-muted-foreground max-w-xs">{error}</p>
                 </div>
                 <Button variant="outline" className="mt-4" onClick={(e) => {
                   e.stopPropagation();
                   setStatus('idle');
                 }}>
-                  Попробовать снова
+                  Try Again
                 </Button>
               </>
             )}

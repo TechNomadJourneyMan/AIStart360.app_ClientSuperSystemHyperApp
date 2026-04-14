@@ -23,7 +23,7 @@ export function SelectInput({
   onChange,
   options,
   error,
-  placeholder = '— Выберите —',
+  placeholder = '— Select —',
   className,
   register,
 }: SelectInputProps) {
