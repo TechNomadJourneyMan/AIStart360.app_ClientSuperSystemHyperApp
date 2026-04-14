@@ -93,10 +93,10 @@ export default function AiScannerPage() {
   }
 
   const steps = [
-    { title: "Клиент", icon: Users },
-    { title: "Финансы", icon: Calculator },
-    { title: "Маркетинг", icon: TrendingUp },
-    { title: "Команда", icon: Zap },
+    { title: "Client", icon: Users },
+    { title: "Finance", icon: Calculator },
+    { title: "Marketing", icon: TrendingUp },
+    { title: "Team", icon: Zap },
     { title: "Собственник", icon: UserCheck }
   ]
 
@@ -180,7 +180,7 @@ export default function AiScannerPage() {
                   className="space-y-6"
                 >
                   <h2 className="text-2xl font-semibold mb-6 flex items-center gap-2">
-                    <Calculator className="text-blue-500" /> Финансовые показатели
+                    <Calculator className="text-blue-500" /> Financial metrics
                   </h2>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="space-y-2">
@@ -241,7 +241,7 @@ export default function AiScannerPage() {
                   className="space-y-6"
                 >
                   <h2 className="text-2xl font-semibold mb-6 flex items-center gap-2">
-                    <TrendingUp className="text-green-500" /> Продукт и Маркетинг
+                    <TrendingUp className="text-green-500" /> Продукт и Marketing
                   </h2>
                   <div className="grid grid-cols-1 gap-6">
                     <div className="space-y-2">
@@ -290,7 +290,7 @@ export default function AiScannerPage() {
                   className="space-y-6"
                 >
                   <h2 className="text-2xl font-semibold mb-6 flex items-center gap-2">
-                    <Zap className="text-yellow-500" /> Команда и Масштабирование
+                    <Zap className="text-yellow-500" /> Team и Масштабирование
                   </h2>
                   <div className="grid grid-cols-1 gap-6">
                     <div className="space-y-2">
@@ -364,7 +364,7 @@ export default function AiScannerPage() {
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label>Горизонт стратегического планирования (лет)</Label>
+                      <Label>Horizon стратегического планирования (лет)</Label>
                       <Input 
                         type="number" 
                         value={formData.strategicHorizonYears} 
@@ -385,7 +385,7 @@ export default function AiScannerPage() {
                 disabled={step === 1 || isSubmitting}
                 className="gap-2 border-gray-700 hover:bg-gray-800"
               >
-                <ArrowLeft size={16} /> Назад
+                <ArrowLeft size={16} /> Back
               </Button>
 
               {step < 5 ? (
@@ -394,7 +394,7 @@ export default function AiScannerPage() {
                   disabled={step === 1 && !selectedClientId}
                   className="bg-blue-600 hover:bg-blue-700 gap-2 px-8"
                 >
-                  Далее <ArrowRight size={16} />
+                  Next <ArrowRight size={16} />
                 </Button>
               ) : (
                 <Button 
@@ -414,7 +414,7 @@ export default function AiScannerPage() {
         <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="p-4 bg-blue-600/5 rounded-lg border border-blue-600/10 flex gap-3 items-start">
             <ShieldCheck className="text-blue-500 flex-shrink-0" size={20} />
-            <p className="text-[11px] text-gray-400">Точность расчетов подтверждена методологией GRI Workshop для бизнеса $2M+</p>
+            <p className="text-[11px] text-gray-400">Точность расчетов подтверждена методологией GRI Workshop для business $2M+</p>
           </div>
           <div className="p-4 bg-green-600/5 rounded-lg border border-green-600/10 flex gap-3 items-start">
             <Zap className="text-green-500 flex-shrink-0" size={20} />

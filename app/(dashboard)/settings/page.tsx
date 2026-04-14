@@ -6,27 +6,27 @@ export const metadata: Metadata = { title: 'Settings' }
 function mapRoleToPosition(role: string): string {
   switch (role) {
     case 'super_admin':
-      return 'Владелец системы'
+      return 'System Owner'
     case 'admin':
-      return 'Администратор'
+      return 'Administrator'
     case 'expert':
-      return 'Эксперт роста'
+      return 'Growth Expert'
     case 'owner':
-      return 'Владелец бизнеса'
+      return 'Business Owner'
     case 'client':
-      return 'Клиент'
+      return 'Client'
     default:
-      return 'Пользователь'
+      return 'User'
   }
 }
 
 const SECTIONS = [
-  { id: 'profile',       label: 'Профиль',       icon: 'person'        },
-  { id: 'security',      label: 'Безопасность',  icon: 'lock'          },
-  { id: 'notifications', label: 'Уведомления',   icon: 'notifications' },
+  { id: 'profile',       label: 'Profile',       icon: 'person'        },
+  { id: 'security',      label: 'Security',  icon: 'lock'          },
+  { id: 'notifications', label: 'Notifications',   icon: 'notifications' },
   { id: 'appearance',    label: 'Внешний вид',   icon: 'palette'       },
-  { id: 'team',          label: 'Команда',       icon: 'group'         },
-  { id: 'billing',       label: 'Биллинг',       icon: 'credit_card'   },
+  { id: 'team',          label: 'Team',       icon: 'group'         },
+  { id: 'billing',       label: 'Billing',       icon: 'credit_card'   },
   { id: 'api',           label: 'API & Интеграции', icon: 'api'        },
 ]
 
@@ -54,7 +54,7 @@ export default async function SettingsPage() {
     .maybeSingle()
 
   const meta = user.user_metadata ?? {}
-  const fullName = (profile?.full_name ?? meta.full_name ?? meta.name ?? user.email ?? 'Пользователь') as string
+  const fullName = (profile?.full_name ?? meta.full_name ?? meta.name ?? user.email ?? 'User') as string
   const email = user.email ?? ''
   
   const role = (profile?.role ?? meta.role ?? 'client') as string
@@ -109,14 +109,14 @@ export default async function SettingsPage() {
         <div className="lg:col-span-3 space-y-6">
           {/* Avatar */}
           <div className="bg-surface-container rounded-xl p-6">
-            <h3 className="font-headline text-lg font-bold text-on-surface mb-5">Фото профиля</h3>
+            <h3 className="font-headline text-lg font-bold text-on-surface mb-5">Фото profiles</h3>
             <div className="flex items-center gap-5">
               <div className="w-16 h-16 rounded-full bg-surface-container-high flex items-center justify-center text-xl font-headline font-bold text-primary">
                 {initials}
               </div>
               <div>
                 <button className="text-sm text-on-surface border border-outline-variant/30 px-4 py-2 rounded-lg hover:bg-surface-container-high transition-colors">
-                  Загрузить фото
+                  Upload фото
                 </button>
                 <p className="text-xs text-on-surface-variant mt-2">JPG, PNG до 2MB</p>
               </div>
@@ -150,7 +150,7 @@ export default async function SettingsPage() {
               {[
                 { label: 'Критические алерты', desc: 'Немедленные уведомления о критических событиях', enabled: true  },
                 { label: 'Обновления GRI',    desc: 'При пересчёте GRI для клиентов',                 enabled: true  },
-                { label: 'Загрузка отчётов',   desc: 'При загрузке новых отчётов',                     enabled: false },
+                { label: 'Loading отчётов',   desc: 'При загрузке новых отчётов',                     enabled: false },
                 { label: 'Еженедельный дайджест', desc: 'Еженедельная сводка по портфелю',                enabled: true  },
               ].map((item) => (
                 <div key={item.label} className="flex items-center justify-between py-2 border-b border-outline-variant/10 last:border-0">
@@ -178,7 +178,7 @@ export default async function SettingsPage() {
               Отменить
             </button>
             <button className="px-6 py-2 bg-gradient-to-br from-primary to-primary-container text-on-primary text-sm font-semibold rounded-lg shadow-primary-sm hover:scale-[0.98] transition-all">
-              Сохранить изменения
+              Save изменения
             </button>
           </div>
         </div>

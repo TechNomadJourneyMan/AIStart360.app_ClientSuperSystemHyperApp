@@ -77,7 +77,7 @@ export async function GET(req: NextRequest) {
           userName: p.full_name ?? p.email,
           userEmail: p.email ?? '—',
           subject: `Регистрация: ${p.full_name ?? p.email}`,
-          description: `Клиент зарегистрирован ${new Date(p.created_at).toLocaleDateString('ru-RU')}`,
+          description: `Client зарегистрирован ${new Date(p.created_at).toLocaleDateString('ru-RU')}`,
           createdAt: p.created_at,
           company: p.organization ?? undefined,
           rejectionReason: undefined,

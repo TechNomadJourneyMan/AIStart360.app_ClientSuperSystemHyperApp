@@ -17,7 +17,7 @@ import { PointARadarWidget } from '@/components/dashboard/PointARadarWidget'
 import type { PointA, BlockScore } from '@/types/onboarding'
 import { prisma } from '@/lib/db'
 
-export const metadata: Metadata = { title: 'Дэшборд' }
+export const metadata: Metadata = { title: 'Dashboard' }
 
 // ─── types ────────────────────────────────────────────────────────────────────
 interface KpiCardData {
@@ -89,10 +89,10 @@ async function getDashboardExtendedData(): Promise<DashboardData | null> {
       alerts.push({
         id: 'pending-reg',
         severity: 'info',
-        title: `${pending} заявок ожидают проверки`,
-        description: 'Новые клиенты зарегистрировались и ждут подтверждения.',
-        time: 'сейчас',
-        action: { label: 'Просмотреть', href: '/admin-giga-panel' },
+        title: `${pending} applications awaiting review`,
+        description: 'New clients registered and awaiting confirmation.',
+        time: 'now',
+        action: { label: 'View', href: '/admin-giga-panel' },
       })
     }
 
@@ -107,48 +107,48 @@ async function getDashboardExtendedData(): Promise<DashboardData | null> {
 function buildKpi(data: DashboardData | null): KpiCardData[] {
   if (!data) {
     return [
-      { label: 'Пользователи', value: '—',  trend: '—',    trendUp: true,  icon: 'groups',       sublabel: 'загрузка...', href: '/users'   },
-      { label: 'Активных',  value: '—',  trend: '—',    trendUp: true,  icon: 'check_circle', sublabel: 'загрузка...', href: '/users'   },
-      { label: 'Заявки',    value: '—',  trend: '—',    trendUp: false, icon: 'hourglass_top',sublabel: 'загрузка...', href: '/admin/requests' },
-      { label: 'GRI анализов',value: '—', trend: '—',    trendUp: true,  icon: 'radar',        sublabel: 'загрузка...', href: '/gri'       },
+      { label: 'Users', value: '—',  trend: '—',    trendUp: true,  icon: 'groups',       sublabel: 'loading...', href: '/users'   },
+      { label: 'Active',  value: '—',  trend: '—',    trendUp: true,  icon: 'check_circle', sublabel: 'loading...', href: '/users'   },
+      { label: 'Applications',    value: '—',  trend: '—',    trendUp: false, icon: 'hourglass_top',sublabel: 'loading...', href: '/admin/requests' },
+      { label: 'GRI analyses',value: '—', trend: '—',    trendUp: true,  icon: 'radar',        sublabel: 'loading...', href: '/gri'       },
     ]
   }
   const activePct = data.total > 0 ? Math.round((data.active / data.total) * 100) : 0
   return [
     {
-      label:    'Пользователи',
+      label:    'Users',
       value:    String(data.total),
       trend:    data.total > 0 ? `+${data.total}` : '0',
       trendUp:  true,
       icon:     'groups',
-      sublabel: 'в системе',
+      sublabel: 'in the system',
       href:     '/users',
     },
     {
-      label:    'Активных',
+      label:    'Active',
       value:    String(data.active),
       trend:    `${activePct}%`,
       trendUp:  data.active > 0,
       icon:     'check_circle',
-      sublabel: 'статус active',
+      sublabel: 'status active',
       href:     '/users',
     },
     {
-      label:    'Заявки',
+      label:    'Applications',
       value:    String(data.pending),
-      trend:    data.pending > 0 ? 'нужна проверка' : 'нет новых',
+      trend:    data.pending > 0 ? 'needs review' : 'none new',
       trendUp:  data.pending === 0,
       icon:     'hourglass_top',
-      sublabel: 'на регистрацию',
+      sublabel: 'on registration',
       href:     '/admin/requests',
     },
     {
-      label:    'GRI анализов',
+      label:    'GRI analyses',
       value:    String(data.griDist.total),
       trend:    data.griDist.excellent > 0 ? `${data.griDist.excellent} excellent` : '—',
       trendUp:  data.griDist.excellent > 0,
       icon:     'radar',
-      sublabel: 'отчётов сформировано',
+      sublabel: 'reports generated',
       href:     '/gri',
     },
   ]
@@ -272,20 +272,20 @@ export default async function DashboardPage() {
             <div className="flex items-start justify-between mb-4">
               <div>
                 <p className="text-[11px] font-mono text-primary/60 uppercase tracking-[0.2em] mb-2">
-                  Точка А · Текущая диагностика
+                  Point A · Current Diagnostics
                 </p>
                 <h1 className="font-headline text-3xl lg:text-4xl font-extrabold text-on-surface leading-tight">
-                  {orgName ?? 'Мой дашборд'}
+                  {orgName ?? 'My Dashboard'}
                 </h1>
                 <p className="text-on-surface-variant mt-2 text-sm max-w-xl leading-relaxed">
-                  Ваши текущие показатели на основе заполненной анкеты
+                  Your current metrics based on the completed survey
                 </p>
               </div>
               {pointA && (
                 <Link href="/client/onboarding"
                   className="flex items-center gap-2 bg-surface-container hover:bg-surface-container-high border border-white/[0.06] hover:border-primary/20 text-on-surface-variant hover:text-primary text-sm px-4 py-2.5 rounded-xl transition-all flex-shrink-0">
                   <span className="material-symbols-outlined text-base">edit_note</span>
-                  Обновить анкету
+                  Refresh Survey
                 </Link>
               )}
             </div>
@@ -296,7 +296,7 @@ export default async function DashboardPage() {
                 <div className="xl:col-span-2 grid grid-cols-2 gap-3">
                   {[
                     {
-                      label: 'Общий балл', value: totalScore.toFixed(0),
+                      label: 'Overall Score', value: totalScore.toFixed(0),
                       sub: '/ 100', color: scoreColor(totalScore), icon: 'stars',
                     },
                     {
@@ -304,11 +304,11 @@ export default async function DashboardPage() {
                       sub: '/ 100', color: scoreColor(healthIndex), icon: 'monitor_heart',
                     },
                     {
-                      label: 'Стадия', value: stageLabel(pointA.stage),
-                      sub: 'бизнеса', color: '#6effc0', icon: 'trending_up',
+                      label: 'Stage', value: stageLabel(pointA.stage),
+                      sub: 'business', color: '#6effc0', icon: 'trending_up',
                     },
                     {
-                      label: 'Финансы', value: (pointA.blocks.finance.score / 10).toFixed(1),
+                      label: 'Finance', value: (pointA.blocks.finance.score / 10).toFixed(1),
                       sub: '/ 10', color: scoreColor(pointA.blocks.finance.score), icon: 'paid',
                     },
                   ].map(card => (
@@ -331,12 +331,12 @@ export default async function DashboardPage() {
             ) : (
               <div className="bg-surface-container-low border border-white/[0.04] rounded-2xl p-12 text-center">
                 <span className="material-symbols-outlined text-5xl text-primary/20 mb-4 block">assignment</span>
-                <p className="text-on-surface font-medium mb-2">Анкета ещё не заполнена</p>
-                <p className="text-sm text-on-surface-variant mb-6">Заполните анкету, чтобы получить AI-диагностику вашего бизнеса</p>
+                <p className="text-on-surface font-medium mb-2">Survey not yet completed</p>
+                <p className="text-sm text-on-surface-variant mb-6">Fill out the survey to get AI diagnostics for your business</p>
                 <Link href="/client/onboarding"
                   className="inline-flex items-center gap-2 bg-primary/10 hover:bg-primary/20 border border-primary/20 text-primary text-sm px-5 py-2.5 rounded-xl transition-all">
                   <span className="material-symbols-outlined text-base">edit_note</span>
-                  Заполнить анкету
+                  Fill out survey
                 </Link>
               </div>
             )}
@@ -344,13 +344,13 @@ export default async function DashboardPage() {
 
           {/* Quick nav */}
           <section>
-            <h2 className="font-headline text-lg font-bold text-on-surface mb-4">Быстрый доступ</h2>
+            <h2 className="font-headline text-lg font-bold text-on-surface mb-4">Quick Access</h2>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               {[
-                { href: '/point-a', icon: 'analytics', label: 'Точка А', sub: 'AI-диагностика' },
-                { href: '/client/onboarding', icon: 'edit_note', label: 'Обновить анкету', sub: 'Изменить ответы' },
-                { href: '/metrics', icon: 'bar_chart', label: 'Метрики', sub: 'Финансовые показатели' },
-                { href: '/client/onboarding/documents', icon: 'upload_file', label: 'Документы', sub: 'P&L, баланс, отчёты' },
+                { href: '/point-a', icon: 'analytics', label: 'Point A', sub: 'AI diagnostics' },
+                { href: '/client/onboarding', icon: 'edit_note', label: 'Refresh Survey', sub: 'Change answers' },
+                { href: '/metrics', icon: 'bar_chart', label: 'Metrics', sub: 'Financial metrics' },
+                { href: '/client/onboarding/documents', icon: 'upload_file', label: 'Documents', sub: 'P&L, balance, reports' },
               ].map(item => (
                 <Link key={item.href} href={item.href}
                   className="flex flex-col items-center gap-2 bg-surface-container-low hover:bg-surface-container rounded-2xl border border-white/[0.04] hover:border-primary/20 p-5 transition-all group">
@@ -412,13 +412,13 @@ export default async function DashboardPage() {
   const showCrmWidgets = staffRole === 'admin' || staffRole === 'manager' || staffRole === 'analyst'
 
   const griDomains = [
-    { label: 'Продукт и спрос',           score: 4.7 },
-    { label: 'Доверие и позиционирование',score: 5.2 },
-    { label: 'Бизнес-модель',             score: 7.4 },
-    { label: 'Финансовая устойчивость',   score: 5.0 },
-    { label: 'Операции',                  score: 2.1 },
-    { label: 'Команда',                   score: 2.5 },
-    { label: 'Готовность основателя',     score: 6.7 },
+    { label: 'Product & Demand',           score: 4.7 },
+    { label: 'Trust & Positioning',score: 5.2 },
+    { label: 'Business Model',             score: 7.4 },
+    { label: 'Financial Sustainability',   score: 5.0 },
+    { label: 'Operations',                  score: 2.1 },
+    { label: 'Team',                   score: 2.5 },
+    { label: 'Founder Readiness',     score: 6.7 },
   ]
   const griTotalScore = 4.8
 
@@ -428,14 +428,14 @@ export default async function DashboardPage() {
       <section>
         <div className="mb-4">
           <p className="text-[11px] font-mono text-primary/60 uppercase tracking-[0.2em] mb-2">
-            Q1 2026 · Текущий период
+            Q1 2026 · Current period
           </p>
           <h1 className="font-headline text-3xl lg:text-4xl font-extrabold text-on-surface leading-tight">
-            Ускоряем рост бизнеса до{' '}
-            <span className="text-gradient">$2M в год</span>
+            Accelerating business growth to{' '}
+            <span className="text-gradient">$2M/year</span>
           </h1>
           <p className="text-on-surface-variant mt-2 text-sm max-w-xl leading-relaxed">
-            Система выхода на стабильную скорость роста $2M/год на основе AI-трансформации и сопровождения топ-экспертов
+            A system for reaching stable $2M/year growth through AI transformation and expert guidance
           </p>
         </div>
 
@@ -472,7 +472,7 @@ export default async function DashboardPage() {
                  <GriDiagramWidget 
                     domains={griDomains} 
                     totalScore={griTotalScore} 
-                    orgName="Портфельный обзор"
+                    orgName="Portfolio Overview"
                  />
              </div>
         </div>
@@ -483,9 +483,9 @@ export default async function DashboardPage() {
           <div className="lg:col-span-2 space-y-6">
               <section>
                 <div className="flex items-center justify-between mb-4">
-                  <h2 className="font-headline text-lg font-bold text-on-surface">Критические сигналы</h2>
+                  <h2 className="font-headline text-lg font-bold text-on-surface">Critical Signals</h2>
                   <span className="px-2 py-0.5 rounded-full bg-error/10 border border-error/20 text-[10px] font-mono text-error">
-                    {alerts.filter(a => a.severity === 'critical').length} алерта
+                    {alerts.filter(a => a.severity === 'critical').length} alerts
                   </span>
                 </div>
                 {showCrmWidgets && alerts.length > 0 ? (
@@ -497,7 +497,7 @@ export default async function DashboardPage() {
                 ) : (
                   <div className="bg-surface-container-low border border-white/[0.04] rounded-2xl p-8 text-center">
                     <span className="material-symbols-outlined text-4xl text-primary/20 mb-2">check_circle</span>
-                    <p className="text-sm text-on-surface-variant">Все системы в норме</p>
+                    <p className="text-sm text-on-surface-variant">All systems normal</p>
                   </div>
                 )}
               </section>
@@ -522,7 +522,7 @@ export default async function DashboardPage() {
 
               {/* GRI Portfolio Health */}
               <div className="bg-surface-container-low border border-white/[0.04] rounded-2xl p-5">
-                  <h3 className="text-sm font-bold text-on-surface mb-4 uppercase tracking-widest text-[10px]">Здоровье портфеля</h3>
+                  <h3 className="text-sm font-bold text-on-surface mb-4 uppercase tracking-widest text-[10px]">Portfolio Health</h3>
                   <div className="space-y-4">
                       {griDistRows.map(row => (
                            <div key={row.label}>

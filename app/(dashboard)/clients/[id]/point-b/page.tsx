@@ -65,13 +65,13 @@ export default function ClientPointBPage() {
         </nav>
         
         <p className="text-xs font-mono text-primary/70 uppercase tracking-[0.2em] mb-2">
-          Стратегия роста · Горизонт ${data.horizon_months || 12} месяцев
+          Strategy роста · Horizon ${data.horizon_months || 12} months
         </p>
         <h1 className="font-headline text-4xl font-extrabold text-on-surface">
           Точка <span className="text-gradient">Б</span>
         </h1>
         <p className="text-on-surface-variant mt-2 text-sm max-w-xl leading-relaxed">
-          Проекция целевого состояния бизнеса на основе текущих данных и стратегических целей. 
+          Проекция целевого состояния business на основе текущих данных и стратегических goals. 
           Этот мост построен ИИ-агентом AIStart360.
         </p>
       </section>
@@ -94,7 +94,7 @@ export default function ClientPointBPage() {
                 <span className="text-[10px] text-on-surface-variant font-mono pb-1 opacity-70">цель</span>
               </div>
               <div className="flex items-center justify-between text-[10px] mb-2 font-mono">
-                <span className="text-on-surface-variant">{target.current} сейчас</span>
+                <span className="text-on-surface-variant">{target.current} now</span>
                 <span className="text-primary">{target.pct}%</span>
               </div>
               <div className="h-1 bg-surface-container-high rounded-full overflow-hidden">
@@ -185,7 +185,7 @@ export default function ClientPointBPage() {
           <div className="bg-gradient-to-br from-primary to-primary-fixed-dim rounded-3xl p-8 text-on-primary">
             <h4 className="font-headline font-bold text-lg mb-3">Готовы к масштабированию?</h4>
             <p className="text-xs opacity-90 leading-relaxed mb-6">
-              Мы подготовили подробный план действий для достижения ваших целей. 
+              Мы подготовили подробный план действий для достижения ваших goals. 
               Запишитесь на стратегическую сессию с экспертом.
             </p>
             <button className="w-full py-3 bg-white text-primary rounded-xl font-bold text-sm shadow-xl hover:scale-[0.98] transition-all">

@@ -33,14 +33,14 @@ export default function ExpertProfilePage() {
             </div>
             <button onClick={() => setEditing(!editing)}
               className="text-xs font-mono text-primary bg-primary/10 border border-primary/20 hover:bg-primary/20 px-4 py-2 rounded-xl transition-colors">
-              {editing ? 'Сохранить' : 'Редактировать'}
+              {editing ? 'Save' : 'Редактировать'}
             </button>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {[
               { label: 'Email',        value: user?.email,        icon: 'mail'     },
-              { label: 'Роль',         value: 'Эксперт',          icon: 'badge'    },
+              { label: 'Роль',         value: 'Expert',          icon: 'badge'    },
               { label: 'Организация',  value: user?.organization, icon: 'business' },
               { label: 'Должность',    value: user?.position,     icon: 'work'     },
               { label: 'Дата регистрации', value: user?.createdAt ? new Date(user.createdAt).toLocaleDateString('ru-RU') : '—', icon: 'calendar_today' },

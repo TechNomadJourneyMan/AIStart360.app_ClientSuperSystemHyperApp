@@ -39,7 +39,7 @@ export default async function ReportsPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="font-headline text-3xl font-bold text-on-surface">Reports Hub</h1>
-          <p className="text-on-surface-variant text-sm mt-1">{reports.length} документов</p>
+          <p className="text-on-surface-variant text-sm mt-1">{reports.length} documents</p>
 
         </div>
       </div>
@@ -64,13 +64,13 @@ export default async function ReportsPage() {
       <form action={uploadReportAction} className="bg-surface-container rounded-xl p-5 border border-outline-variant/20 grid grid-cols-1 md:grid-cols-5 gap-3">
         <input
           name="name"
-          placeholder="Название отчета"
+          placeholder="Report title"
           className="md:col-span-2 bg-surface-container-high border border-outline-variant/30 rounded-lg px-3 py-2 text-sm"
           required
         />
         <input
           name="clientName"
-          placeholder="Клиент"
+          placeholder="Client"
           className="bg-surface-container-high border border-outline-variant/30 rounded-lg px-3 py-2 text-sm"
           required
         />
@@ -94,9 +94,9 @@ export default async function ReportsPage() {
         />
         <button className="md:col-span-5 inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-gradient-to-br from-primary to-primary-container text-on-primary text-sm font-semibold rounded-lg shadow-primary-sm hover:scale-[0.99] active:scale-95 transition-all">
           <span className="material-symbols-outlined text-lg">upload</span>
-          Загрузить отчёт
+          Upload отчёт
         </button>
-        <p className="md:col-span-5 text-xs text-on-surface-variant/70">Поддерживаются: PDF, XLSX, CSV, DOCX. Максимум 50MB.</p>
+        <p className="md:col-span-5 text-xs text-on-surface-variant/70">Supported: PDF, XLSX, CSV, DOCX. Maximum 50MB.</p>
       </form>
 
       {/* Reports Grid */}
@@ -104,8 +104,8 @@ export default async function ReportsPage() {
 
         <EmptyState
           icon="folder_open"
-          title="Нет отчётов"
-          description="Загрузите первый отчёт, чтобы начать работу"
+          title="No reports"
+          description="Upload your first report to get started"
         />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -138,7 +138,7 @@ export default async function ReportsPage() {
 
               <div className="flex gap-2 mt-4 pt-4 border-t border-outline-variant/10 opacity-0 group-hover:opacity-100 transition-opacity">
                 <a href={report.fileUrl} target="_blank" rel="noopener noreferrer" className="flex-1 py-1.5 rounded text-xs text-on-surface border border-outline-variant/30 hover:bg-surface-container-high transition-colors text-center">
-                  Просмотр
+                  View
                 </a>
                 <a href={report.fileUrl} download className="flex-1 py-1.5 rounded text-xs text-primary border border-primary/20 hover:bg-primary/5 transition-colors text-center">
                   Скачать

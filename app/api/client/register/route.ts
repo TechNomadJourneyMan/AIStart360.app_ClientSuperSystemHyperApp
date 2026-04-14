@@ -57,7 +57,7 @@ export async function POST(req: NextRequest) {
       name: name || email,
       company: company || '',
       subject: `Регистрация: ${name || email}`,
-      description: `Новая заявка на регистрацию от ${name || email}${company ? ` (${company})` : ''}`,
+      description: `Новая заявка on registration от ${name || email}${company ? ` (${company})` : ''}`,
     }
 
     let requestId: string | null = null

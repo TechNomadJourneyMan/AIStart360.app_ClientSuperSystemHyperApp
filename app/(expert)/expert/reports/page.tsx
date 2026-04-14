@@ -51,7 +51,7 @@ export default function ExpertReportsPage() {
         <p className="text-sm font-medium text-on-surface mb-1">
           {dragging ? 'Отпустите файл для загрузки' : 'Перетащите файл или нажмите для выбора'}
         </p>
-        <p className="text-xs text-on-surface-variant">PDF, XLSX, CSV · Максимум 50 MB</p>
+        <p className="text-xs text-on-surface-variant">PDF, XLSX, CSV · Maximum 50 MB</p>
         <button className="mt-4 text-xs font-mono text-primary bg-primary/10 border border-primary/20 hover:bg-primary/20 px-5 py-2 rounded-xl transition-colors">
           Выбрать файл
         </button>

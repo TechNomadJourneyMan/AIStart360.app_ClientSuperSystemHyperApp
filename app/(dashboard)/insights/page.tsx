@@ -5,7 +5,7 @@ import { prisma } from '@/lib/db'
 import { auth } from '@/lib/auth'
 import { getDashboardData } from '@/lib/get-dashboard-data'
 
-export const metadata: Metadata = { title: 'Инсайты' }
+export const metadata: Metadata = { title: 'Insights' }
 
 const PRIORITY_COLORS = {
   critical: { text: 'text-error', bg: 'bg-error/10', border: 'border-error/20', dot: 'bg-error' },
@@ -22,10 +22,10 @@ const TYPE_ICONS: Record<string, string> = {
 }
 
 const INSIGHT_CARDS = [
-  { icon: 'lightbulb', title: 'FinTech-клиенты растут быстрее', desc: 'Средний GRI FinTech-сегмента — 876, что на 18% выше остальных отраслей.', tag: 'Паттерн', color: 'primary' },
-  { icon: 'warning', title: 'Риск оттока: 3 клиента', desc: 'Vortex Labs, Calyx Digital, PulseCore показывают признаки снижения вовлечённости.', tag: 'Риск', color: 'error' },
-  { icon: 'trending_up', title: 'Q1 2026 — рекорд NPS', desc: 'NPS достиг 74 — максимум за 18 месяцев. Главный драйвер: скорость отчётов.', tag: 'Достижение', color: 'primary' },
-  { icon: 'psychology', title: 'AI-инструменты ускоряют рост', desc: 'Клиенты, использующие AI-диагностику, растут на 34% быстрее.', tag: 'Исследование', color: 'secondary' },
+  { icon: 'lightbulb', title: 'FinTech clients grow faster', desc: 'Средний GRI FinTech-сегмента — 876, что на 18% выше остальных отраслей.', tag: 'Pattern', color: 'primary' },
+  { icon: 'warning', title: 'Churn risk: 3 clients', desc: 'Vortex Labs, Calyx Digital, PulseCore показывают признаки снижения вовлечённости.', tag: 'Risk', color: 'error' },
+  { icon: 'trending_up', title: 'Q1 2026 — рекорд NPS', desc: 'NPS достиг 74 — максимум за 18 months. Главный драйвер: скорость отчётов.', tag: 'Achievement', color: 'primary' },
+  { icon: 'psychology', title: 'AI tools accelerate growth', desc: 'Clients, использующие AI-диагностику, растут на 34% быстрее.', tag: 'Research', color: 'secondary' },
 ]
 
 export default async function InsightsPage() {
@@ -44,10 +44,10 @@ export default async function InsightsPage() {
       {/* Header */}
       <section>
         <p className="text-xs font-mono text-primary/70 uppercase tracking-[0.2em] mb-3">
-          Аналитические инсайты · Q1 2026
+          Analytical Insights · Q1 2026
         </p>
         <h1 className="font-headline text-3xl lg:text-4xl font-extrabold text-on-surface">
-          <span className="text-gradient">Инсайты</span>
+          <span className="text-gradient">Insights</span>
         </h1>
         <p className="text-on-surface-variant mt-2 text-sm max-w-xl">
           Ключевые наблюдения, паттерны и рекомендации на основе данных GRI и рыночных сигналов.
@@ -101,10 +101,10 @@ export default async function InsightsPage() {
         <div className="flex justify-between items-end border-b border-outline-variant/10 pb-4 mb-6">
           <div>
             <h2 className="font-headline text-lg font-bold text-on-surface">Все сигналы</h2>
-            <p className="text-xs text-on-surface-variant mt-1">{data.SIGNALS.length} активных событий в Choco Ecosystem</p>
+            <p className="text-xs text-on-surface-variant mt-1">{data.SIGNALS.length} active событий в Choco Ecosystem</p>
           </div>
           <div className="hidden lg:flex gap-1.5">
-            {['Все', 'Рынок', 'Финансы', 'Регуляторика', 'Конкуренты'].map((f, i) => (
+            {['Все', 'Market', 'Finance', 'Регуляторика', 'Competitors'].map((f, i) => (
               <button key={f} className={`text-[10px] font-mono px-3 py-1.5 rounded-full border transition-all ${i === 0 ? 'bg-primary text-on-primary border-primary shadow-primary-sm' : 'bg-surface-container-low text-on-surface-variant border-white/[0.04] hover:bg-surface-container'}`}>
                 {f}
               </button>

@@ -67,14 +67,14 @@ export default function GigaPanelPage() {
           <div className="hidden md:flex items-center gap-2 mb-1">
             <Shield size={14} className="text-blue-400" />
             <span className="text-xs font-semibold text-blue-400 tracking-[0.15em] uppercase">
-              ГИГА-Панель
+              GIGA Panel
             </span>
           </div>
           <h1 className="text-lg md:text-2xl font-bold text-slate-100 tracking-tight">
-            Командный центр
+            Command Center
           </h1>
           <p className="text-xs md:text-sm text-slate-500 mt-0.5">
-            Системный уровень доступа
+            System level access
           </p>
         </div>
 
@@ -91,7 +91,7 @@ export default function GigaPanelPage() {
             `}
           >
             <InboxIcon size={15} />
-            Заявки
+            Applications
             {totalPending > 0 && (
               <span className="flex items-center justify-center h-4 min-w-4 px-1 rounded-full
                 bg-blue-500 text-white text-[9px] font-bold">
@@ -123,7 +123,7 @@ export default function GigaPanelPage() {
             `}
           >
             <Building2 size={15} />
-            Клиенты
+            Clients
             {clients.length > 0 && (
               <span className="flex items-center justify-center h-4 min-w-4 px-1 rounded-full
                 bg-blue-500/30 text-blue-300 text-[9px] font-bold">
@@ -137,33 +137,33 @@ export default function GigaPanelPage() {
       {/* KPI row */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 md:gap-4 mb-6 md:mb-8">
         <KpiCard
-          label="Ожидают решения"
+          label="Awaiting decision"
           value={totalPending}
           icon={<Clock size={16} className="text-amber-400" />}
           accent="bg-amber-500/15 border border-amber-500/20"
-          sub="Требуют внимания"
+          sub="Require attention"
         />
         <KpiCard
-          label="Одобрено"
+          label="Approved"
           value={totalApproved}
           icon={<CheckCircle size={16} className="text-emerald-400" />}
           accent="bg-emerald-500/15 border border-emerald-500/20"
         />
         <KpiCard
-          label="Отклонено"
+          label="Rejected"
           value={totalRejected}
           icon={<XCircle size={16} className="text-red-400" />}
           accent="bg-red-500/15 border border-red-500/20"
         />
         <KpiCard
-          label="Заблокировано"
+          label="Blocked"
           value={totalBlocked}
           icon={<TrendingUp size={16} className="text-slate-400" />}
           accent="bg-slate-500/15 border border-slate-500/20"
           sub={`из ${users.length} пользователей`}
         />
         <KpiCard
-          label="Клиентов платформы"
+          label="Clientов платформы"
           value={clients.length}
           icon={<Building2 size={16} className="text-blue-400" />}
           accent="bg-blue-500/15 border border-blue-500/20"

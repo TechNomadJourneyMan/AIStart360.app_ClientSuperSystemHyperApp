@@ -65,11 +65,11 @@ const GRI_BLOCKS = [
   {
     id: 'product',
     label: 'Product & Demand',
-    labelRu: 'Продукт и спрос',
+    labelRu: 'Product & Demand',
     icon: 'inventory_2',
     score: 4.7,
     color: 'error',
-    status: 'Слабое место — приоритетная доработка',
+    status: 'Weak spot — priority improvement',
     description: 'Есть ли спрос, который выдерживает скорость $2M/год',
     economicLoss: '-40% выручки · длинный цикл сделки · слабый средний чек',
     criteria: [
@@ -84,11 +84,11 @@ const GRI_BLOCKS = [
   {
     id: 'trust',
     label: 'Trust & Positioning',
-    labelRu: 'Доверие и позиционирование',
+    labelRu: 'Trust & Positioning',
     icon: 'verified',
     score: 5.2,
     color: 'error',
-    status: 'Слабое место — приоритетная доработка',
+    status: 'Weak spot — priority improvement',
     description: 'Выбирают ли вас сразу. Почему вас, а не конкурента',
     economicLoss: '-30–50% конверсии · CAC ×2–3 · сделки зависают',
     criteria: [
@@ -103,7 +103,7 @@ const GRI_BLOCKS = [
   {
     id: 'bizmodel',
     label: 'Business Model',
-    labelRu: 'Бизнес-модель',
+    labelRu: 'Business Model',
     icon: 'account_tree',
     score: 7.4,
     color: 'secondary',
@@ -121,11 +121,11 @@ const GRI_BLOCKS = [
   {
     id: 'cash',
     label: 'Cash Stability',
-    labelRu: 'Финансовая устойчивость',
+    labelRu: 'Financial Sustainability',
     icon: 'account_balance',
     score: 5.0,
     color: 'error',
-    status: 'Слабое место — приоритетная доработка',
+    status: 'Weak spot — priority improvement',
     description: 'Кто финансирует рост — клиент или собственник',
     economicLoss: 'Кассовые разрывы · рост «на бумаге» · собственник докладывает деньги',
     criteria: [
@@ -137,7 +137,7 @@ const GRI_BLOCKS = [
   {
     id: 'ops',
     label: 'Operations',
-    labelRu: 'Операции',
+    labelRu: 'Operations',
     icon: 'precision_manufacturing',
     score: 2.1,
     color: 'error',
@@ -148,8 +148,8 @@ const GRI_BLOCKS = [
       { label: 'Повторяемость процесса',           score: 1 },
       { label: 'Стандарты выполнения',             score: 3 },
       { label: 'Готовые модули для тиражирования', score: 4 },
-      { label: 'Риски при масштабировании',        score: 1 },
-      { label: 'Метрики результата команды',       score: 1 },
+      { label: 'Riskи при масштабировании',        score: 1 },
+      { label: 'Metrics результата команды',       score: 1 },
       { label: 'Предсказуемость результата',       score: 1 },
       { label: 'Контроль качества',                score: 2 },
     ],
@@ -157,7 +157,7 @@ const GRI_BLOCKS = [
   {
     id: 'team',
     label: 'Team',
-    labelRu: 'Команда',
+    labelRu: 'Team',
     icon: 'groups',
     score: 2.5,
     color: 'error',
@@ -180,7 +180,7 @@ const GRI_BLOCKS = [
   {
     id: 'founder',
     label: 'Founder Readiness',
-    labelRu: 'Готовность основателя',
+    labelRu: 'Founder Readiness',
     icon: 'manage_accounts',
     score: 6.7,
     color: 'secondary',
@@ -204,8 +204,8 @@ const GRI_BLOCKS = [
 
 const TOP_5_LIMITS = [
   { rank: 1, label: 'Повторяемость процесса',              block: 'Operations',       score: 1 },
-  { rank: 2, label: 'Риски при масштабировании',           block: 'Operations',       score: 1 },
-  { rank: 3, label: 'Метрики результата команды',          block: 'Operations',       score: 1 },
+  { rank: 2, label: 'Riskи при масштабировании',           block: 'Operations',       score: 1 },
+  { rank: 3, label: 'Metrics результата команды',          block: 'Operations',       score: 1 },
   { rank: 4, label: 'Предсказуемость результата',          block: 'Operations',       score: 1 },
   { rank: 5, label: 'Доказательства результата',           block: 'Trust & Positioning', score: 2 },
 ]
@@ -214,20 +214,20 @@ const ACTION_PLAN = [
   {
     focus: 'Деньги и скорость',
     limit: 'Повторяемость процесса',
-    action: 'Зафиксировать 1–3 ключевых процесса и внедрить в ежедневный ритм команды',
+    action: 'Record 1–3 ключевых процесса и внедрить в ежедневный ритм команды',
     why: 'Даст быстрый эффект и снизит потери при росте',
     icon: 'bolt',
   },
   {
     focus: 'Деньги и скорость',
-    limit: 'Риски при масштабировании',
-    action: 'Провести аудит рисков для партнёрских каналов. Составить карту узких мест',
+    limit: 'Riskи при масштабировании',
+    action: 'Провести аудит riskов для партнёрских каналов. Составить карту узких мест',
     why: 'Без этого масштабирование ускоряет разрушение, а не рост',
     icon: 'warning',
   },
   {
     focus: 'Система и команда',
-    limit: 'Метрики результата команды',
+    limit: 'Metrics результата команды',
     action: 'Внедрить еженедельный трекинг 3–5 ключевых метрик по каждой роли',
     why: 'Невозможно управлять тем, что не измеряешь',
     icon: 'monitoring',
@@ -253,7 +253,7 @@ const RECOMMENDATIONS_30D = [
   'Перепроверить продуктовую ценность и воронку: лид → диалог → предложение → сделка',
   'Настроить базовый набор метрик: лиды, конверсия, выручка, стоимость привлечения',
   'Перераспределить нагрузку с собственника на команду через роли, ЦКП и регламенты',
-  'Подготовить и запустить пилотный период 21–30 дней с чёткими целями по деньгам',
+  'Подготовить и запустить пилотный период 21–30 days с чёткими целями по деньгам',
 ]
 
 function ScoreBar({ score, max = 10 }: { score: number; max?: number }) {
@@ -356,7 +356,7 @@ export default async function GriPage() {
               ? 'Высокий уровень готовности. Можно масштабировать.'
               : totalGRI >= 5
               ? 'Есть основа для роста. Требуется доработка блоков.'
-              : 'Высокий риск провала при росте. Нужен пилот и доработка ключевых блоков.'}
+              : 'Высокий risk провала при росте. Нужен пилот и доработка ключевых блоков.'}
           </p>
         </div>
 
@@ -489,7 +489,7 @@ export default async function GriPage() {
         <div className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-6">
           <div className="flex items-center gap-2 mb-5">
             <span className="material-symbols-outlined text-lg text-primary">calendar_today</span>
-            <h2 className="font-headline text-lg font-bold text-on-surface">Рекомендации на 30 дней</h2>
+            <h2 className="font-headline text-lg font-bold text-on-surface">Рекомендации на 30 days</h2>
           </div>
           <div className="space-y-3">
             {RECOMMENDATIONS_30D.map((rec, i) => (
@@ -511,7 +511,7 @@ export default async function GriPage() {
       <section>
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h2 className="font-headline text-xl font-bold text-on-surface">План действий на 90 дней</h2>
+            <h2 className="font-headline text-xl font-bold text-on-surface">План действий на 90 days</h2>
             <p className="text-xs text-on-surface-variant mt-1">Приоритеты по ограничениям GRI</p>
           </div>
         </div>

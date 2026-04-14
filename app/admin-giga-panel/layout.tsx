@@ -32,7 +32,7 @@ export default function GigaPanelLayout({ children }: { children: React.ReactNod
         >
           <span className="material-symbols-outlined text-lg text-blue-400">menu</span>
         </button>
-        <p className="text-xs font-semibold text-blue-400 tracking-[0.15em] uppercase">ГИГА-Панель</p>
+        <p className="text-xs font-semibold text-blue-400 tracking-[0.15em] uppercase">GIGA Panel</p>
       </div>
 
       {/* Sidebar */}

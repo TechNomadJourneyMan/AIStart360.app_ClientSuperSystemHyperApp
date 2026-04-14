@@ -4,8 +4,8 @@ import type { MetricDefinition } from '@/types/metrics'
 const CATALOG: MetricDefinition[] = [
   // --- Default 4 ---
   { id: 'revenue',     label: 'Доход',          description: 'Общая выручка за период',              category: 'financial',   icon: 'payments',      unit: '₸М', unitPosition: 'before', color: '#6effc0', isDefault: true,  isRemovable: false },
-  { id: 'margin',      label: 'Маржа',           description: 'Чистая маржинальность бизнеса',        category: 'financial',   icon: 'percent',       unit: '%',  unitPosition: 'after',  color: '#bcc7de', isDefault: true,  isRemovable: false },
-  { id: 'clients',     label: 'Клиенты',         description: 'Количество активных клиентов',         category: 'customer',    icon: 'groups',        unit: '',   unitPosition: 'after',  color: '#ffbd60', isDefault: true,  isRemovable: false },
+  { id: 'margin',      label: 'Маржа',           description: 'Чистая маржинальность business',        category: 'financial',   icon: 'percent',       unit: '%',  unitPosition: 'after',  color: '#bcc7de', isDefault: true,  isRemovable: false },
+  { id: 'clients',     label: 'Clients',         description: 'Количество active клиентов',         category: 'customer',    icon: 'groups',        unit: '',   unitPosition: 'after',  color: '#ffbd60', isDefault: true,  isRemovable: false },
   { id: 'avg_check',   label: 'Средний чек',     description: 'Средняя выручка на клиента',           category: 'financial',   icon: 'receipt_long',  unit: '₸М', unitPosition: 'before', color: '#c9a6ff', isDefault: true,  isRemovable: false },
   // --- Financial ---
   { id: 'expenses',    label: 'Расходы',         description: 'Операционные расходы',                 category: 'financial',   icon: 'trending_down', unit: '₸М', unitPosition: 'before', color: '#ff6b6b', isDefault: false, isRemovable: true },

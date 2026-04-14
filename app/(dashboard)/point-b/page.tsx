@@ -1,21 +1,21 @@
 import type { Metadata } from 'next'
 
-export const metadata: Metadata = { title: 'Точка Б — Целевое состояние' }
+export const metadata: Metadata = { title: 'Point B — Target State' }
 
 const MILESTONES = [
-  { q: 'Q2 2026', title: 'Оптимизация unit-экономики', desc: 'Снизить CAC на 20%, довести LTV:CAC до 6x', status: 'current', icon: 'tune' },
-  { q: 'Q3 2026', title: 'Масштабирование команды', desc: 'Нанять 8 менеджеров роста, запустить партнёрскую программу', status: 'planned', icon: 'group_add' },
-  { q: 'Q4 2026', title: 'Выход на новый рынок', desc: 'Запуск в 3 новых городах, ARR ₸120М', status: 'planned', icon: 'flight_takeoff' },
+  { q: 'Q2 2026', title: 'Unit economics optimization', desc: 'Снизить CAC на 20%, довести LTV:CAC до 6x', status: 'current', icon: 'tune' },
+  { q: 'Q3 2026', title: 'Team scaling', desc: 'Нанять 8 менеджеров роста, запустить партнёрскую программу', status: 'planned', icon: 'group_add' },
+  { q: 'Q4 2026', title: 'Sign Out на новый рынок', desc: 'Запуск в 3 новых городах, ARR ₸120М', status: 'planned', icon: 'flight_takeoff' },
   { q: 'Q1 2027', title: 'Серия A / Раунд финансирования', desc: 'Подготовка к раунду $5M+, валидация product-market fit', status: 'future', icon: 'rocket_launch' },
 ]
 
 const TARGETS = [
-  { label: 'Целевой ARR',     value: '₸120М',  current: '₸84.2М',  pct: 70, icon: 'payments' },
-  { label: 'Целевой GRI',     value: '850+',    current: '763',      pct: 76, icon: 'radar' },
-  { label: 'Клиентов',        value: '80',      current: '48',       pct: 60, icon: 'groups' },
+  { label: 'Target ARR',     value: '₸120М',  current: '₸84.2М',  pct: 70, icon: 'payments' },
+  { label: 'Target GRI',     value: '850+',    current: '763',      pct: 76, icon: 'radar' },
+  { label: 'Clientов',        value: '80',      current: '48',       pct: 60, icon: 'groups' },
   { label: 'Маржа',           value: '42%',     current: '34.2%',    pct: 81, icon: 'percent' },
   { label: 'NPS',             value: '85+',     current: '74',       pct: 87, icon: 'thumb_up' },
-  { label: 'Команда',         value: '45 чел',  current: '28 чел',   pct: 62, icon: 'badge' },
+  { label: 'Team',         value: '45 чел',  current: '28 чел',   pct: 62, icon: 'badge' },
 ]
 
 export default function PointBPage() {
@@ -24,14 +24,14 @@ export default function PointBPage() {
       {/* Header */}
       <section>
         <p className="text-xs font-mono text-primary/70 uppercase tracking-[0.2em] mb-3">
-          Стратегия роста · Горизонт 12 месяцев
+          Strategy роста · Horizon 12 months
         </p>
         <h1 className="font-headline text-3xl lg:text-4xl font-extrabold text-on-surface">
           Точка{' '}
           <span className="text-gradient">Б</span>
         </h1>
         <p className="text-on-surface-variant mt-2 text-sm max-w-xl">
-          Целевое состояние бизнеса — куда мы движемся и каким путём.
+          Целевое состояние business — куда мы движемся и каким путём.
         </p>
       </section>
 
@@ -50,7 +50,7 @@ export default function PointBPage() {
                 <span className="text-xs text-on-surface-variant font-mono pb-0.5">цель</span>
               </div>
               <div className="flex items-center justify-between text-xs mb-2">
-                <span className="text-on-surface-variant font-mono">{target.current} сейчас</span>
+                <span className="text-on-surface-variant font-mono">{target.current} now</span>
                 <span className="font-mono text-primary">{target.pct}%</span>
               </div>
               <div className="h-1.5 bg-surface-container-high rounded-full overflow-hidden">

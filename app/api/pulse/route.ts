@@ -8,13 +8,13 @@ export const dynamic = 'force-dynamic'
 
 /** Map Bitrix24 stage IDs to risk levels */
 const STAGE_RISK: Record<string, { risk: number; label: string }> = {
-  NEW: { risk: 30, label: 'Новая' },
-  PREPARATION: { risk: 40, label: 'Подготовка' },
-  PREPAYMENT_INVOICE: { risk: 25, label: 'Счёт' },
-  EXECUTING: { risk: 20, label: 'В работе' },
-  WON: { risk: 5, label: 'Выиграна' },
-  LOSE: { risk: 90, label: 'Проиграна' },
-  APOLOGY: { risk: 95, label: 'Отказ' },
+  NEW: { risk: 30, label: 'New' },
+  PREPARATION: { risk: 40, label: 'Preparation' },
+  PREPAYMENT_INVOICE: { risk: 25, label: 'Invoice' },
+  EXECUTING: { risk: 20, label: 'In Progress' },
+  WON: { risk: 5, label: 'Won' },
+  LOSE: { risk: 90, label: 'Lost' },
+  APOLOGY: { risk: 95, label: 'Declined' },
 }
 
 export async function GET() {
@@ -234,7 +234,7 @@ export async function GET() {
         const top5 = todayClients
           .sort((a, b) => (b.riskScore as number) - (a.riskScore as number))
           .slice(0, 5)
-          .map((c, i) => `${i + 1}. "${c.name}" — ${(c.avgCheck as number)?.toLocaleString('ru')} ₸, риск ${c.riskScore}/100, ${c.sector}, ${c.comment || 'без комментария'}`)
+          .map((c, i) => `${i + 1}. "${c.name}" — ${(c.avgCheck as number)?.toLocaleString("en")} ₸, risk ${c.riskScore}/100, ${c.sector}, ${c.comment || 'без комментария'}`)
           .join('\n')
 
         const totalRevenue = todayClients.reduce((s, c) => s + ((c.avgCheck as number) || 0), 0)
@@ -250,14 +250,14 @@ export async function GET() {
             model: 'google/gemini-2.0-flash-001',
             messages: [{
               role: 'user',
-              content: `Ты AI-ассистент продаж в системе AIStart360. Дай краткий утренний брифинг для менеджера на русском языке (3-4 предложения).
+              content: `Ты AI-ассистент продаж in the system AIStart360. Дай краткий утренний брифинг для менеджера на русском языке (3-4 предложения).
 
 Данные портфеля на сегодня:
-- Всего сделок: ${todayClients.length}
-- Общая сумма: ${totalRevenue.toLocaleString('ru')} ₸
-- Высокий риск: ${highRisk.length}
-- Средний риск: ${mediumRisk.length}
-- Выручка под угрозой: ${revenueAtRisk.toLocaleString('ru')} ₸
+- Total сделок: ${todayClients.length}
+- Общая сумма: ${totalRevenue.toLocaleString("en")} ₸
+- Высокий risk: ${highRisk.length}
+- Средний risk: ${mediumRisk.length}
+- Выручка под угрозой: ${revenueAtRisk.toLocaleString("en")} ₸
 
 ТОП-5 приоритетных сделок:
 ${top5}

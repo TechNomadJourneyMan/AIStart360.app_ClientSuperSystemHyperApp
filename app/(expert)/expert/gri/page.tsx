@@ -1,19 +1,19 @@
 'use client'
 
 const GRI_DOMAINS = [
-  { id: 'finance',    label: 'Финансы',        score: 8.8, weight: 25, icon: 'payments',         desc: 'Выручка, маржа, рентабельность' },
-  { id: 'market',    label: 'Рынок',            score: 7.9, weight: 20, icon: 'public',            desc: 'Доля рынка, конкуренты, позиционирование' },
+  { id: 'finance',    label: 'Finance',        score: 8.8, weight: 25, icon: 'payments',         desc: 'Выручка, маржа, рентабельность' },
+  { id: 'market',    label: 'Market',            score: 7.9, weight: 20, icon: 'public',            desc: 'Доля рынка, конкуренты, позиционирование' },
   { id: 'product',   label: 'Продукт',          score: 9.2, weight: 20, icon: 'inventory_2',       desc: 'Продуктовый портфель, unit-экономика' },
   { id: 'team',      label: 'Команда',          score: 7.1, weight: 15, icon: 'groups',            desc: 'Компетенции, структура, культура' },
-  { id: 'ops',       label: 'Операции',         score: 8.4, weight: 10, icon: 'precision_manufacturing', desc: 'Процессы, автоматизация, эффективность' },
-  { id: 'strategy',  label: 'Стратегия',        score: 7.6, weight: 10, icon: 'track_changes',     desc: 'Цели, дорожная карта, OKR' },
+  { id: 'ops',       label: 'Operations',         score: 8.4, weight: 10, icon: 'precision_manufacturing', desc: 'Процессы, автоматизация, эффективность' },
+  { id: 'strategy',  label: 'Strategy',        score: 7.6, weight: 10, icon: 'track_changes',     desc: 'Цели, дорожная карта, OKR' },
 ]
 
 const INSIGHTS = [
   { type: 'strength', text: 'Высокий продуктовый скор — сильная unit-экономика и чёткий PMF.', domain: 'Продукт' },
   { type: 'growth',   text: 'Команда — зона роста. Рекомендуем усилить ключевые роли.', domain: 'Команда' },
-  { type: 'growth',   text: 'Стратегический OKR требует пересмотра на H2 2026.', domain: 'Стратегия' },
-  { type: 'strength', text: 'Финансовые показатели в топ-15% среди похожих компаний.', domain: 'Финансы' },
+  { type: 'growth',   text: 'Стратегический OKR требует пересмотра на H2 2026.', domain: 'Strategy' },
+  { type: 'strength', text: 'Финансовые показатели в топ-15% среди похожих компаний.', domain: 'Finance' },
 ]
 
 const HISTORY = [
@@ -49,7 +49,7 @@ export default function ExpertGriPage() {
       {/* Header */}
       <section>
         <p className="text-xs font-mono text-primary/70 uppercase tracking-[0.2em] mb-3">Expert Portal</p>
-        <h1 className="font-headline text-3xl font-extrabold text-on-surface">GRI-диагностика</h1>
+        <h1 className="font-headline text-3xl font-extrabold text-on-surface">GRI Diagnostics</h1>
         <p className="text-on-surface-variant mt-2 text-sm">Growth Readiness Index — комплексная оценка готовности к росту</p>
       </section>
 

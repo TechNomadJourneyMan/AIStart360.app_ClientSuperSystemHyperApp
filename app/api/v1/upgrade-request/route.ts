@@ -3,9 +3,9 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 
 const FEATURE_LABELS: Record<string, string> = {
-  '/metrics': 'Метрики',
-  '/market': 'Рынок',
-  '/point-b': 'Точка Б',
+  '/metrics': 'Metrics',
+  '/market': 'Market',
+  '/point-b': 'Point B',
 }
 
 /**
@@ -42,7 +42,7 @@ export async function POST(req: NextRequest) {
       name: userName,
       email: userEmail,
       subject: `Pro тариф: ${featureLabel}`,
-      description: `Пользователь ${userName} (${userEmail}) запросил доступ к разделу "${featureLabel}" в рамках Pro тарифа.`,
+      description: `User ${userName} (${userEmail}) запросил доступ к разделу "${featureLabel}" в рамках Pro тарифа.`,
     }
 
     // Try Prisma first

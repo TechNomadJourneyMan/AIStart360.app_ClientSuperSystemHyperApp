@@ -9,15 +9,15 @@ const GRI_BLOCKS = [
   { label: 'Доверие и позиция',    score: 5.17, color: 'text-yellow-400', bg: 'bg-yellow-400/10', status: 'Слабое' },
   { label: 'Стабильность кассы',   score: 5.0,  color: 'text-yellow-400', bg: 'bg-yellow-400/10', status: 'Слабое' },
   { label: 'Продукт и спрос',      score: 4.7,  color: 'text-yellow-400', bg: 'bg-yellow-400/10', status: 'Слабое' },
-  { label: 'Команда',              score: 2.55, color: 'text-error',      bg: 'bg-error/10',      status: 'Критично' },
-  { label: 'Операции',             score: 2.14, color: 'text-error',      bg: 'bg-error/10',      status: 'Критично' },
+  { label: 'Команда',              score: 2.55, color: 'text-error',      bg: 'bg-error/10',      status: 'Critical' },
+  { label: 'Operations',             score: 2.14, color: 'text-error',      bg: 'bg-error/10',      status: 'Critical' },
 ]
 
 const TOP_LIMITS = [
-  { block: 'Операции',              issue: 'Повторяемость процесса',        score: 1 },
-  { block: 'Операции',              issue: 'Риски при масштабировании',     score: 1 },
-  { block: 'Операции',              issue: 'Метрики результата команды',    score: 1 },
-  { block: 'Операции',              issue: 'Предсказуемость результата',    score: 1 },
+  { block: 'Operations',              issue: 'Повторяемость процесса',        score: 1 },
+  { block: 'Operations',              issue: 'Риски при масштабировании',     score: 1 },
+  { block: 'Operations',              issue: 'Metrics результата команды',    score: 1 },
+  { block: 'Operations',              issue: 'Предсказуемость результата',    score: 1 },
   { block: 'Доверие и позиция',     issue: 'Доказательства результата',     score: 2 },
 ]
 
@@ -157,7 +157,7 @@ export default function OwnerDashboardPage() {
           {[
             { icon: 'event', title: 'Сессия с экспертом', desc: 'Запланируйте разбор операционного блока', color: 'text-secondary', bg: 'bg-secondary/10' },
             { icon: 'description', title: 'Полный отчёт', desc: 'Скачайте детальный GRI отчёт с планом действий', color: 'text-primary', bg: 'bg-primary/10' },
-            { icon: 'track_changes', title: 'План на 90 дней', desc: 'Приоритетные действия для роста операций', color: 'text-yellow-400', bg: 'bg-yellow-400/10' },
+            { icon: 'track_changes', title: 'План на 90 days', desc: 'Приоритетные действия для роста операций', color: 'text-yellow-400', bg: 'bg-yellow-400/10' },
           ].map((step) => (
             <div key={step.title} className="flex items-start gap-3 p-3 rounded-xl bg-white/[0.02] border border-white/[0.04] hover:bg-white/[0.04] transition-colors cursor-pointer">
               <div className={`w-8 h-8 rounded-xl ${step.bg} flex items-center justify-center flex-shrink-0`}>

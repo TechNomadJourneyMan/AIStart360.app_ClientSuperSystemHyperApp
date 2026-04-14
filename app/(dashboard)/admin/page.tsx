@@ -7,18 +7,18 @@ import { PendingClientsTable } from '@/components/dashboard/admin/PendingClients
 import { AdminClientsList } from '@/components/dashboard/admin/AdminClientsList'
 
 const CONTENT_SECTIONS = [
-  { label: 'GRI-диагностика',  href: '/gri',         icon: 'radar',                count: '34 отчёта',    color: 'primary',   desc: 'Воркшопы и анализ по 7 блокам'         },
-  { label: 'Рынок',            href: '/market',       icon: 'public',               count: '12 анализов',  color: 'primary',   desc: 'Рыночные исследования и тренды'         },
-  { label: 'Метрики',          href: '/metrics',      icon: 'monitoring',           count: '11 целей',     color: 'secondary', desc: 'KPI-система роста к $2M/год'            },
-  { label: 'Аналитика',        href: '/analytics',    icon: 'bar_chart',            count: 'Live data',    color: 'primary',   desc: 'Финансовая аналитика и тренды'          },
-  { label: 'Точка А',          href: '/point-a',      icon: 'my_location',          count: '48 профилей',  color: 'primary',   desc: 'Диагностика текущего состояния'         },
-  { label: 'Точка Б',          href: '/point-b',      icon: 'flag',                 count: '48 целей',     color: 'secondary', desc: 'Целевые показатели и дорожные карты'    },
-  { label: 'Инсайты',          href: '/insights',     icon: 'lightbulb',            count: '6 активных',   color: 'primary',   desc: 'AI-инсайты и сигналы по платформе'      },
-  { label: 'Конкуренты',       href: '/competitors',  icon: 'compare_arrows',       count: '24 профиля',   color: 'secondary', desc: 'Конкурентная разведка по клиентам'       },
+  { label: 'GRI Diagnostics',  href: '/gri',         icon: 'radar',                count: '34 reports',    color: 'primary',   desc: 'Workshops and analysis across 7 blocks'         },
+  { label: 'Market',            href: '/market',       icon: 'public',               count: '12 analyses',  color: 'primary',   desc: 'Market research and trends'         },
+  { label: 'Metrics',          href: '/metrics',      icon: 'monitoring',           count: '11 goals',     color: 'secondary', desc: 'KPI growth system to $2M/год'            },
+  { label: 'Analytics',        href: '/analytics',    icon: 'bar_chart',            count: 'Live data',    color: 'primary',   desc: 'Financial analytics and trends'          },
+  { label: 'Point A',          href: '/point-a',      icon: 'my_location',          count: '48 profiles',  color: 'primary',   desc: 'Current state diagnostics'         },
+  { label: 'Point B',          href: '/point-b',      icon: 'flag',                 count: '48 goals',     color: 'secondary', desc: 'Target metrics and roadmaps'    },
+  { label: 'Insights',          href: '/insights',     icon: 'lightbulb',            count: '6 active',   color: 'primary',   desc: 'AI insights and platform signals'      },
+  { label: 'Competitors',       href: '/competitors',  icon: 'compare_arrows',       count: '24 profiles',   color: 'secondary', desc: 'Competitive intelligence for clients'       },
   { label: 'Отчёты',           href: '/reports',      icon: 'description',          count: '127 файлов',   color: 'primary',   desc: 'Все сгенерированные отчёты'             },
-  { label: 'Команда',          href: '/team',         icon: 'group',                count: '8 экспертов',  color: 'secondary', desc: 'Управление командой экспертов'           },
-  { label: 'Клиенты',          href: '/clients',      icon: 'business_center',      count: '48 компаний',  color: 'primary',   desc: 'Полная база клиентов платформы'         },
-  { label: 'Пользователи',     href: '/users',        icon: 'manage_accounts',      count: '56 аккаунтов', color: 'primary',   desc: 'Управление доступами и ролями'          },
+  { label: 'Team',          href: '/team',         icon: 'group',                count: '8 экспертов',  color: 'secondary', desc: 'Управление командой экспертов'           },
+  { label: 'Clients',          href: '/clients',      icon: 'business_center',      count: '48 компаний',  color: 'primary',   desc: 'Полная база клиентов платформы'         },
+  { label: 'Users',     href: '/users',        icon: 'manage_accounts',      count: '56 аккаунтов', color: 'primary',   desc: 'Управление доступами и ролями'          },
 ]
 
 const GRI_DISTRIBUTION = [
@@ -32,7 +32,7 @@ const RECENT_ACTIVITY = [
   { icon: 'radar', client: 'Vortex Labs', event: 'GRI Score обновлён: 8.4 (+0.6)', time: '2ч', color: 'text-primary' },
   { icon: 'person_add', client: 'TechFlow KZ', event: 'Новый клиент добавлен в систему', time: '3ч', color: 'text-primary' },
   { icon: 'description', client: 'Calyx Digital', event: 'Отчёт Q1 2026 сгенерирован', time: '5ч', color: 'text-secondary' },
-  { icon: 'warning', client: 'Astra Ventures', event: 'Риск: Churn Rate вырос до 12%', time: '6ч', color: 'text-error' },
+  { icon: 'warning', client: 'Astra Ventures', event: 'Risk: Churn Rate вырос до 12%', time: '6ч', color: 'text-error' },
 ]
 
 export default function AdminPage() {
@@ -81,9 +81,9 @@ export default function AdminPage() {
              {/* Stats Grid */}
              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 {[
-                  { label: 'Всего клиентов',      value: '48',    delta: '+6 за месяц',       icon: 'groups',            color: 'text-primary'    },
+                  { label: 'Total clients',      value: '48',    delta: '+6 за месяц',       icon: 'groups',            color: 'text-primary'    },
                   { label: 'Сред. GRI Score',     value: '5.8',   delta: '+0.4 за квартал',   icon: 'monitoring',        color: 'text-primary'    },
-                  { label: 'Пользователей',       value: '56',    delta: 'Всего в системе',   icon: 'manage_accounts',   color: 'text-on-surface' },
+                  { label: 'Пользователей',       value: '56',    delta: 'Total in the system',   icon: 'manage_accounts',   color: 'text-on-surface' },
                   { label: 'GRI Воркшопов',       value: '34',    delta: 'За всё время',      icon: 'radar',             color: 'text-primary'    },
                 ].map(s => (
                   <div key={s.label} className="bg-surface-container-low rounded-2xl border border-white/5 p-4 hover:border-primary/20 transition-all group">

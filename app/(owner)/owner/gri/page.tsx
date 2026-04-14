@@ -31,7 +31,7 @@ const GRI_BLOCKS = [
     status: 'Слабое место, требует приоритетной доработки',
     tier: 'weak',
     description: 'Позиционирование размытое, недостаточно кейсов и доказательств результата. Сложно отличиться от конкурентов.',
-    actions: ['Зафиксировать 3 сильных кейса с цифрами', 'Обновить позиционирование на сайте', 'Запустить контент-стратегию с экспертизой'],
+    actions: ['Record 3 сильных кейса с цифрами', 'Refresh позиционирование на сайте', 'Запустить контент-стратегию с экспертизой'],
   },
   {
     id: 'cash',
@@ -65,7 +65,7 @@ const GRI_BLOCKS = [
   },
   {
     id: 'operations',
-    label: 'Операции',
+    label: 'Operations',
     score: 2.14,
     max: 10,
     status: 'КРИТИЧЕСКИЙ БЛОК — масштабирование невозможно',
@@ -76,17 +76,17 @@ const GRI_BLOCKS = [
 ]
 
 const TOP_LIMITS = [
-  { block: 'Операции',          issue: 'Повторяемость процесса',     score: 1, detail: 'Каждый раз всё делается по-разному, нет стандартов' },
-  { block: 'Операции',          issue: 'Риски при масштабировании',  score: 1, detail: 'При росте нагрузки процессы сломаются' },
-  { block: 'Операции',          issue: 'Метрики результата команды', score: 1, detail: 'Нет измеримых показателей работы команды' },
-  { block: 'Операции',          issue: 'Предсказуемость результата', score: 1, detail: 'Непонятно, какой будет результат завтра' },
+  { block: 'Operations',          issue: 'Повторяемость процесса',     score: 1, detail: 'Каждый раз всё делается по-разному, нет стандартов' },
+  { block: 'Operations',          issue: 'Риски при масштабировании',  score: 1, detail: 'При росте нагрузки процессы сломаются' },
+  { block: 'Operations',          issue: 'Metrics результата команды', score: 1, detail: 'Нет измеримых показателей работы команды' },
+  { block: 'Operations',          issue: 'Предсказуемость результата', score: 1, detail: 'Непонятно, какой будет результат завтра' },
   { block: 'Доверие и позиция', issue: 'Доказательства результата',  score: 2, detail: 'Недостаточно кейсов с измеримыми результатами' },
 ]
 
 const ACTION_PLAN = [
-  { week: '1–2', priority: 'Критично', action: 'Описать 3 ключевых операционных процесса', block: 'Операции' },
-  { week: '2–3', priority: 'Критично', action: 'Внедрить систему KPI для команды', block: 'Команда' },
-  { week: '3–4', priority: 'Высокий',  action: 'Зафиксировать 3 кейса с цифрами для сайта', block: 'Доверие' },
+  { week: '1–2', priority: 'Critical', action: 'Описать 3 ключевых операционных процесса', block: 'Operations' },
+  { week: '2–3', priority: 'Critical', action: 'Внедрить систему KPI для команды', block: 'Команда' },
+  { week: '3–4', priority: 'Высокий',  action: 'Record 3 кейса с цифрами для сайта', block: 'Доверие' },
   { week: '4–6', priority: 'Высокий',  action: 'Построить финансовую модель на 6 месяцев', block: 'Касса' },
   { week: '6–8', priority: 'Средний',  action: 'Провести custdev и замерить NPS', block: 'Продукт' },
   { week: '8–12', priority: 'Средний', action: 'Тест партнёрской модели продаж', block: 'Бизнес-модель' },
@@ -99,7 +99,7 @@ const tierColor = (tier: string) => {
 }
 
 const priorityColor = (p: string) => {
-  if (p === 'Критично') return 'text-error bg-error/10 border-error/20'
+  if (p === 'Critical') return 'text-error bg-error/10 border-error/20'
   if (p === 'Высокий')  return 'text-yellow-400 bg-yellow-400/10 border-yellow-400/20'
   return 'text-primary bg-primary/10 border-primary/20'
 }
@@ -197,7 +197,7 @@ export default function OwnerGriPage() {
         {[
           { id: 'overview', label: 'По блокам' },
           { id: 'limits',   label: 'Ограничения' },
-          { id: 'plan',     label: 'План 90 дней' },
+          { id: 'plan',     label: 'План 90 days' },
         ].map((tab) => (
           <button key={tab.id}
             onClick={() => setActiveTab(tab.id as typeof activeTab)}
@@ -232,7 +232,7 @@ export default function OwnerGriPage() {
                       <div className="flex items-center justify-between flex-wrap gap-2">
                         <h3 className="text-sm font-semibold text-on-surface">{block.label}</h3>
                         <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full ${c.bg} ${c.text} border ${c.border}`}>
-                          {block.tier === 'good' ? 'Хорошо' : block.tier === 'weak' ? 'Слабо' : 'Критично'}
+                          {block.tier === 'good' ? 'Хорошо' : block.tier === 'weak' ? 'Слабо' : 'Critical'}
                         </span>
                       </div>
                       <div className="mt-2 h-1.5 bg-white/[0.05] rounded-full overflow-hidden">
@@ -270,7 +270,7 @@ export default function OwnerGriPage() {
       {activeTab === 'limits' && (
         <div className="glass-card rounded-2xl p-5 border border-white/[0.06] space-y-3">
           <p className="text-xs text-on-surface-variant mb-4">
-            Топ-5 факторов, которые прямо сейчас блокируют рост бизнеса. Устранение этих ограничений — приоритет №1.
+            Топ-5 факторов, которые прямо now блокируют рост business. Устранение этих ограничений — приоритет №1.
           </p>
           {TOP_LIMITS.map((item, i) => (
             <div key={i} className="flex items-start gap-4 p-4 rounded-xl bg-white/[0.02] border border-white/[0.04]">

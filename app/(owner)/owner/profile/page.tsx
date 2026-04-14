@@ -10,7 +10,7 @@ export default function OwnerProfilePage() {
     { label: 'Email', value: user?.email ?? '—' },
     { label: 'Компания', value: user?.organization ?? '—' },
     { label: 'Должность', value: user?.position ?? '—' },
-    { label: 'Роль', value: 'Клиент (Owner)' },
+    { label: 'Роль', value: 'Client (Owner)' },
     { label: 'Аккаунт создан', value: user?.createdAt ? new Date(user.createdAt).toLocaleDateString('ru-RU') : '—' },
   ]
 
@@ -29,7 +29,7 @@ export default function OwnerProfilePage() {
           </span>
         </div>
         <div>
-          <h2 className="text-lg font-semibold text-on-surface">{user?.name ?? 'Клиент'}</h2>
+          <h2 className="text-lg font-semibold text-on-surface">{user?.name ?? 'Client'}</h2>
           <p className="text-sm text-on-surface-variant">{user?.position ?? 'Собственник'} · {user?.organization ?? 'Компания'}</p>
           <span className="mt-2 inline-flex items-center gap-1.5 text-[10px] font-mono bg-secondary/10 text-secondary border border-secondary/20 rounded-full px-2.5 py-0.5">
             <span className="w-1.5 h-1.5 rounded-full bg-secondary" />

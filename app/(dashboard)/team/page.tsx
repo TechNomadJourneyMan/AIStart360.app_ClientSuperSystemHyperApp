@@ -33,21 +33,21 @@ export default async function TeamPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="font-headline text-3xl font-extrabold text-on-surface">Team</h1>
-          <p className="text-on-surface-variant text-sm mt-1">Аллокация и загрузка команды в реальном времени</p>
+          <p className="text-on-surface-variant text-sm mt-1">Real-time team allocation and workload</p>
         </div>
         <button className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-br from-primary to-primary-container text-on-primary text-sm font-semibold rounded-xl shadow-primary-sm hover:scale-[0.98] transition-all">
           <span className="material-symbols-outlined text-lg">person_add</span>
-          Пригласить
+          Invite
         </button>
       </div>
 
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
-          { label: 'Всего', value: String(members.length), icon: 'group', note: 'активных профилей' },
-          { label: 'Ср. загрузка', value: `${averageLoad}%`, icon: 'workspaces', note: 'по всей команде' },
-          { label: 'Перегружены', value: String(overloadedCount), icon: 'warning', note: 'требуют внимания' },
-          { label: 'Свободны', value: String(availableCount), icon: 'check_circle', note: 'готовы к задачам' },
+          { label: 'Total', value: String(members.length), icon: 'group', note: 'active profiles' },
+          { label: 'Avg. load', value: `${averageLoad}%`, icon: 'workspaces', note: 'across the team' },
+          { label: 'Overloaded', value: String(overloadedCount), icon: 'warning', note: 'require attention' },
+          { label: 'Available', value: String(availableCount), icon: 'check_circle', note: 'ready for tasks' },
         ].map((s) => (
           <div key={s.label} className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-5">
             <div className="flex items-start justify-between mb-3">
@@ -86,7 +86,7 @@ export default async function TeamPage() {
               {/* Workload Bar */}
               <div className="mb-5 bg-surface-container rounded-xl p-3">
                 <div className="flex justify-between text-[10px] mb-1.5 uppercase font-mono tracking-widest text-on-surface-variant">
-                  <span>Загрузка</span>
+                  <span>Loading</span>
                   <span className={`font-bold ${
                     load > 90 ? 'text-error' : load > 75 ? 'text-warning' : 'text-primary'
                   }`}>{load}%</span>
@@ -104,7 +104,7 @@ export default async function TeamPage() {
               {/* Assigned Clients */}
               <div>
                 <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest mb-2 flex justify-between items-center">
-                  <span>Клиенты</span>
+                  <span>Clients</span>
                   <span className="bg-surface-container-high px-1.5 py-0.5 rounded text-primary">{member.managedClients.length}</span>
                 </p>
                 <div className="flex flex-wrap gap-1.5">

@@ -8,14 +8,14 @@ import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 
 export const metadata: Metadata = { 
-  title: 'Конкурентный Анализ | AIStart360',
-  description: 'Глубокий анализ конкурентной среды и рыночного позиционирования.'
+  title: 'Конкурентный Analysis | AIStart360',
+  description: 'Deep competitive analysis and market positioning.'
 }
 
 const THREAT_LEVELS = {
-  high: { label: 'Высокая угроза', color: 'bg-error/10 text-error border-error/20', icon: 'priority_high' },
-  medium: { label: 'Умеренная угроза', color: 'bg-warning/10 text-warning border-warning/20', icon: 'trending_flat' },
-  low: { label: 'Низкая угроза', color: 'bg-success/10 text-success border-success/20', icon: 'check_circle' },
+  high: { label: 'High Threat', color: 'bg-error/10 text-error border-error/20', icon: 'priority_high' },
+  medium: { label: 'Moderate Threat', color: 'bg-warning/10 text-warning border-warning/20', icon: 'trending_flat' },
+  low: { label: 'Low Threat', color: 'bg-success/10 text-success border-success/20', icon: 'check_circle' },
 }
 
 export default async function CompetitorsPage() {
@@ -42,12 +42,12 @@ export default async function CompetitorsPage() {
           </div>
           
           <h1 className="text-4xl lg:text-5xl xl:text-6xl font-headline font-extrabold text-on-surface leading-[1.1] mb-6 tracking-tight">
-            Анализ <br/>
-            <span className="text-gradient">Конкурентной Среды</span>
+            Analysis <br/>
+            <span className="text-gradient">Competitive Landscape</span>
           </h1>
           
           <p className="text-lg text-on-surface-variant leading-relaxed mb-8">
-            Мониторинг рыночных долей, технологического превосходства и стратегий роста основных игроков индустрии на Q1 2026.
+            Monitoring market shares, technological superiority, and growth strategies of major industry players на Q1 2026.
           </p>
 
           <div className="flex flex-wrap gap-4">
@@ -144,7 +144,7 @@ export default async function CompetitorsPage() {
                         <p className="text-lg font-bold text-on-surface font-headline">{comp.arr}</p>
                       </div>
                       <div className="bg-surface-container/50 rounded-2xl p-4 border border-white/[0.03]">
-                        <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest mb-1">Клиентская база</p>
+                        <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest mb-1">Clientская база</p>
                         <p className="text-lg font-bold text-on-surface font-headline">{comp.clients}</p>
                       </div>
                     </div>

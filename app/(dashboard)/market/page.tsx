@@ -6,7 +6,7 @@ import { prisma } from '@/lib/db'
 import { auth } from '@/lib/auth'
 import { getDashboardData } from '@/lib/get-dashboard-data'
 
-export const metadata: Metadata = { title: 'Рынок' }
+export const metadata: Metadata = { title: 'Market' }
 
 const PRIORITY_COLORS = {
   critical: { text: 'text-error', bg: 'bg-error/10', border: 'border-error/20', dot: 'bg-error' },
@@ -46,15 +46,15 @@ export default async function MarketPage() {
             className="flex items-center gap-1.5 text-xs font-mono text-on-surface-variant hover:text-primary border border-white/[0.06] hover:border-primary/30 bg-surface-container hover:bg-surface-container-high px-3 py-1.5 rounded-xl transition-all"
           >
             <span className="material-symbols-outlined text-sm">arrow_back</span>
-            Дашборд
+            Dashboard
           </Link>
         </div>
         <h1 className="font-headline text-3xl lg:text-4xl font-extrabold text-on-surface">
-          Анализ{' '}
-          <span className="text-gradient">Рынка</span>
+          Analysis{' '}
+          <span className="text-gradient">Market</span>
         </h1>
         <p className="text-on-surface-variant mt-2 text-sm max-w-xl">
-          Размер рынка, сегменты, тренды и рыночные сигналы в реальном времени.
+          Market size, segments, trends, and real-time market signals.
         </p>
       </section>
 
@@ -63,9 +63,9 @@ export default async function MarketPage() {
           { label: 'TAM', value: data.MARKET.tam, icon: 'language', desc: 'Total Addressable Market' },
           { label: 'SAM', value: data.MARKET.sam, icon: 'travel_explore', desc: 'Serviceable Addressable Market' },
           { label: 'SOM', value: data.MARKET.som, icon: 'my_location', desc: 'Serviceable Obtainable Market' },
-          { label: 'Организации', value: String(organizations), icon: 'apartment', desc: 'Активные в системе' },
-          { label: 'Клиенты', value: String(clients), icon: 'groups', desc: 'Клиентская база' },
-          { label: 'Сигналы', value: String(marketSignals.length), icon: 'hub', desc: 'Актуальные события' },
+          { label: 'Organizations', value: String(organizations), icon: 'apartment', desc: 'Active in system' },
+          { label: 'Clients', value: String(clients), icon: 'groups', desc: 'Clientская база' },
+          { label: 'Signals', value: String(marketSignals.length), icon: 'hub', desc: 'Current events' },
         ].map((m) => (
           <div key={m.label} className="bg-surface-container-low rounded-2xl border border-white/[0.04] hover:border-primary/20 p-6 transition-colors group">
             <div className="flex items-start justify-between mb-4">
@@ -139,7 +139,7 @@ export default async function MarketPage() {
       {/* Market Signals */}
       <section>
         <div className="flex justify-between items-end border-b border-outline-variant/10 pb-4 mb-5">
-          <h2 className="font-headline text-lg font-bold text-on-surface">Сигналы рынка</h2>
+          <h2 className="font-headline text-lg font-bold text-on-surface">Signals рынка</h2>
         </div>
 
         <div className="space-y-4">

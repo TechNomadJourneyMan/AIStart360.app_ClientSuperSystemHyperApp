@@ -19,14 +19,14 @@ export default async function OwnerClientDetailPage({ params }: { params: { id: 
     return (
       <div className="space-y-6">
         <nav className="flex items-center gap-2 text-sm text-on-surface-variant">
-          <Link href="/owner/clients" className="hover:text-on-surface transition-colors">Клиенты</Link>
+          <Link href="/owner/clients" className="hover:text-on-surface transition-colors">Clients</Link>
           <span className="material-symbols-outlined text-sm">chevron_right</span>
           <span className="text-on-surface">Нет данных</span>
         </nav>
 
         <div className="bg-surface-container rounded-xl p-8 text-center">
           <span className="material-symbols-outlined text-4xl text-on-surface-variant mb-3 block">database_off</span>
-          <p className="text-on-surface font-medium mb-1">Клиент не найден</p>
+          <p className="text-on-surface font-medium mb-1">Client не найден</p>
           <p className="text-sm text-on-surface-variant mb-4">В базе нет записи с таким идентификатором.</p>
           <Link href="/owner/clients" className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-outline-variant/30 text-sm hover:bg-surface-container-high transition-colors">
             <span className="material-symbols-outlined text-base">arrow_back</span>
@@ -46,7 +46,7 @@ export default async function OwnerClientDetailPage({ params }: { params: { id: 
     <div className="space-y-6">
       {/* Breadcrumb */}
       <nav className="flex items-center gap-2 text-sm text-on-surface-variant">
-        <Link href="/owner/clients" className="hover:text-on-surface transition-colors">Клиенты</Link>
+        <Link href="/owner/clients" className="hover:text-on-surface transition-colors">Clients</Link>
         <span className="material-symbols-outlined text-sm">chevron_right</span>
         <span className="text-on-surface">{client.name}</span>
       </nav>
@@ -114,7 +114,7 @@ export default async function OwnerClientDetailPage({ params }: { params: { id: 
             { label: 'GRI Reports', value: String(client.griReports.length), icon: 'description', trend: '' },
             { label: 'Статус клиента', value: client.status, icon: 'shield_check', trend: '' },
             { label: 'Отрасль', value: client.industry, icon: 'domain', trend: '' },
-            { label: 'Стадия', value: client.stage, icon: 'trending_up', trend: '' },
+            { label: 'Stage', value: client.stage, icon: 'trending_up', trend: '' },
             { label: 'Орг ID', value: client.orgId.slice(0, 8), icon: 'apartment', trend: '' },
             { label: 'Менеджер', value: client.manager.name ?? 'Назначен', icon: 'person', trend: '' },
           ].map((metric) => (

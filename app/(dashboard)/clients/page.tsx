@@ -46,9 +46,9 @@ export default async function ClientsPage() {
 
   const statCards = stats
     ? [
-        { label: 'Всего клиентов', value: String(stats.total), icon: 'business_center', color: 'text-primary' },
-        { label: 'Активных', value: String(stats.active), icon: 'check_circle', color: 'text-primary' },
-        { label: 'Ожидают', value: String(stats.pending), icon: 'hourglass_top', color: 'text-tertiary-container' },
+        { label: 'Total clients', value: String(stats.total), icon: 'business_center', color: 'text-primary' },
+        { label: 'Active', value: String(stats.active), icon: 'check_circle', color: 'text-primary' },
+        { label: 'Pending', value: String(stats.pending), icon: 'hourglass_top', color: 'text-tertiary-container' },
         { label: 'Avg Point A', value: stats.avgScore !== null ? String(stats.avgScore) : '—', icon: 'radar', color: 'text-secondary' },
       ]
     : [
@@ -64,11 +64,11 @@ export default async function ClientsPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="font-headline text-3xl font-bold text-on-surface">Clients</h1>
-          <p className="text-on-surface-variant text-sm mt-1">Управление клиентским портфелем</p>
+          <p className="text-on-surface-variant text-sm mt-1">Client portfolio management</p>
         </div>
         <button className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-br from-primary to-primary-container text-on-primary text-sm font-semibold rounded-lg shadow-primary-sm hover:scale-[0.98] active:scale-95 transition-all">
           <span className="material-symbols-outlined text-lg">add</span>
-          Добавить клиента
+          Add client
         </button>
       </div>
 

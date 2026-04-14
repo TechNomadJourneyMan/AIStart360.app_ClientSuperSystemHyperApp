@@ -19,7 +19,7 @@ const METRIC_GOALS = [
       { label: 'Advertising spend',           formula: 'Total advertising budget',           benchmark: '' },
       { label: 'Channel sales revenue',        formula: 'Revenue by acquisition source',      benchmark: '' },
     ],
-    insight: 'Without CAC Payback ≤30-45 days, growth is funded from the owner's pocket.',
+    insight: "Without CAC Payback ≤30-45 days, growth is funded from the owner's pocket.",
   },
   {
     id: 'retention', number: '02',
@@ -63,7 +63,7 @@ const METRIC_GOALS = [
     icon: 'repeat', color: 'secondary',
     categories: ['Retention', 'Monetization'],
     metrics: [
-      { label: 'Frequency',              formula: 'Number покупок за период / Клиентов', benchmark: '' },
+      { label: 'Frequency',              formula: 'Number покупок за период / Clientов', benchmark: '' },
       { label: 'Repeat Purchase Rate',   formula: '% клиентов, вернувшихся повторно',    benchmark: '≥40%' },
       { label: 'Time Between Purchases', formula: 'Ср. дней между покупками',            benchmark: '' },
       { label: 'LTV',                    formula: 'Доход от клиента за весь период',      benchmark: '' },
@@ -177,7 +177,7 @@ const METRIC_GOALS = [
 // ─── Business Metrics by Department ──────────────────────────────────────────
 const BIZ_METRICS = [
   {
-    dept: 'Финансы', icon: 'payments', color: 'primary',
+    dept: 'Finance', icon: 'payments', color: 'primary',
     items: [
       { label: 'Revenue (год)',          value: '₸84.2М',   target: '₸110М',        trend: '+12.4%', up: true,  status: 'ok'       },
       { label: 'Валовая маржа',          value: '34.2%',    target: '40%',           trend: '+2.1%',  up: true,  status: 'ok'       },
@@ -216,7 +216,7 @@ const BIZ_METRICS = [
     ],
   },
   {
-    dept: 'Операции', icon: 'settings', color: 'error',
+    dept: 'Operations', icon: 'settings', color: 'error',
     items: [
       { label: 'Time доставки',         value: '3–5 дн',  target: '2–3 дн',      trend: '0',      up: false, status: 'warn'     },
       { label: 'Выполнение SLA',         value: '87%',     target: '≥95%',         trend: '+2%',    up: true,  status: 'warn'     },
@@ -233,7 +233,7 @@ const BIZ_METRICS = [
       { label: 'Текучесть кадров',    value: '18%',   target: '<10%',   trend: '-2%',   up: true,  status: 'weak' },
       { label: 'eNPS',                value: '42',    target: '60+',    trend: '+5',    up: true,  status: 'warn' },
       { label: 'Number сотрудников',  value: '247',   target: '300',    trend: '+12',   up: true,  status: 'ok'   },
-      { label: 'Метрики команды GRI', value: '2.55/10',target: '≥6/10', trend: '—',    up: false, status: 'critical' },
+      { label: 'Metrics команды GRI', value: '2.55/10',target: '≥6/10', trend: '—',    up: false, status: 'critical' },
       { label: 'Speed найма',      value: '23 дня',target: '≤14 дн', trend: '-3д',  up: true,  status: 'warn' },
       { label: 'Процент выполнения OKR', value: '68%',target: '≥80%',  trend: '+4%',   up: true,  status: 'warn' },
     ],
@@ -244,14 +244,14 @@ const BIZ_METRICS = [
       { label: 'Доля рынка конфет',    value: '37%',     target: '40–42%',    trend: '+2%',    up: true, status: 'ok'   },
       { label: 'Доля экспорта',        value: '9.9%',    target: '20%',       trend: '+0.3%',  up: true, status: 'weak' },
       { label: 'Доля онлайн-продаж',   value: '15%',     target: '30–35%',    trend: '+3%',    up: true, status: 'weak' },
-      { label: 'Активных SKU',         value: '412',     target: '450+',      trend: '+5',     up: true, status: 'ok'   },
+      { label: 'Active SKU',         value: '412',     target: '450+',      trend: '+5',     up: true, status: 'ok'   },
       { label: 'Product Score (GRI)',  value: '4.7/10',  target: '≥7/10',     trend: '—',      up: false, status: 'warn' },
     ],
   },
   {
     dept: 'Clients', icon: 'person', color: 'secondary',
     items: [
-      { label: 'Активных клиентов', value: '1 847', target: '3 000',   trend: '+8%',    up: true,  status: 'ok'   },
+      { label: 'Active клиентов', value: '1 847', target: '3 000',   trend: '+8%',    up: true,  status: 'ok'   },
       { label: 'Churn Rate',        value: '4.2%',  target: '<3%',     trend: '-0.6%',  up: true,  status: 'warn' },
       { label: 'NPS',               value: '35',    target: '50+',     trend: '+3',     up: true,  status: 'warn' },
       { label: 'Retention 30d',     value: '42%',   target: '≥60%',    trend: '+3%',    up: true,  status: 'weak' },
@@ -263,42 +263,42 @@ const BIZ_METRICS = [
 
 // ─── KPI Targets from KPI_Metrics.csv ────────────────────────────────────────
 const KPI_TARGETS = [
-  { label: 'Total выручка (год)',    current: '~90 000 млн ₸', target: '110 000–115 000 млн ₸', icon: 'payments',      category: 'Финансы',  method: 'Финотчётность KASE',    owner: 'CFO'          },
-  { label: 'Доля рынка конфет',      current: '35–40%',         target: '40–42%',                icon: 'pie_chart',     category: 'Рынок',    method: 'Statista, BMI Research', owner: 'Market Res.'  },
+  { label: 'Total выручка (год)',    current: '~90 000 млн ₸', target: '110 000–115 000 млн ₸', icon: 'payments',      category: 'Finance',  method: 'Финотчётность KASE',    owner: 'CFO'          },
+  { label: 'Доля рынка конфет',      current: '35–40%',         target: '40–42%',                icon: 'pie_chart',     category: 'Market',    method: 'Statista, BMI Research', owner: 'Market Res.'  },
   { label: 'Доля онлайн-продаж',     current: '15%',            target: '30–35%',                icon: 'shopping_cart', category: 'Цифровой', method: 'CRM, Google Analytics', owner: 'Digital'      },
-  { label: 'Доля экспорта',          current: '9.9%',           target: '20%',                   icon: 'public',        category: 'Рынок',    method: 'Таможенная статистика', owner: 'Export'       },
-  { label: 'ROA',                    current: '2.73%',          target: '4–5%',                  icon: 'account_balance',category: 'Финансы', method: 'Финотчётность',         owner: 'CFO'          },
+  { label: 'Доля экспорта',          current: '9.9%',           target: '20%',                   icon: 'public',        category: 'Market',    method: 'Таможенная статистика', owner: 'Export'       },
+  { label: 'ROA',                    current: '2.73%',          target: '4–5%',                  icon: 'account_balance',category: 'Finance', method: 'Финотчётность',         owner: 'CFO'          },
   { label: 'Average число SKU',      current: '400+',           target: '450+',                  icon: 'inventory_2',   category: 'Продукт',  method: 'Система ассортимента',  owner: 'Product'      },
-  { label: 'Себестоимость (индекс)', current: '100 (базис)',    target: '90–95',                 icon: 'manufacturing', category: 'Финансы',  method: 'Управленческий учёт',   owner: 'Supply Chain' },
+  { label: 'Себестоимость (индекс)', current: '100 (базис)',    target: '90–95',                 icon: 'manufacturing', category: 'Finance',  method: 'Управленческий учёт',   owner: 'Supply Chain' },
   { label: 'Посещений сайта/mo',    current: '150 000',        target: '500 000',               icon: 'web',           category: 'Цифровой', method: 'Google Analytics',      owner: 'Digital'      },
   { label: 'Фолловеры соцсети',      current: '50 000',         target: '200 000',               icon: 'thumb_up',      category: 'Цифровой', method: 'Соц. медиа аналитика', owner: 'SMM'          },
   { label: 'Average order value eCommerce',  current: '8 500 ₸',        target: '10 500 ₸',             icon: 'receipt_long',  category: 'Sales',  method: 'POS-система, CRM',      owner: 'E-commerce'   },
-  { label: 'Time доставки',         current: '3–5 дней',       target: '2–3 дня',              icon: 'local_shipping',category: 'Операции', method: 'Логистика',             owner: 'Logistics'    },
+  { label: 'Time доставки',         current: '3–5 дней',       target: '2–3 дня',              icon: 'local_shipping',category: 'Operations', method: 'Логистика',             owner: 'Logistics'    },
   { label: 'NPS',                    current: '35 баллов',      target: '50+ баллов',            icon: 'star',          category: 'Clients',  method: 'NPS-опросы',            owner: 'Cust. Service'},
 ]
 
 // ─── GRI data ─────────────────────────────────────────────────────────────────
 const GRI_BLOCKS = [
-  { label: 'Бизнес-модель',         score: 7.4,  status: 'ok',       icon: 'account_tree' },
-  { label: 'Готовность основателя', score: 6.7,  status: 'ok',       icon: 'person'       },
+  { label: 'Business Model',         score: 7.4,  status: 'ok',       icon: 'account_tree' },
+  { label: 'Founder Readiness', score: 6.7,  status: 'ok',       icon: 'person'       },
   { label: 'Доверие и позиция',     score: 5.17, status: 'weak',     icon: 'verified'     },
   { label: 'Стабильность кассы',    score: 5.0,  status: 'weak',     icon: 'account_balance' },
-  { label: 'Продукт и спрос',       score: 4.7,  status: 'weak',     icon: 'inventory_2'  },
-  { label: 'Команда',               score: 2.55, status: 'critical', icon: 'group'        },
-  { label: 'Операции',              score: 2.14, status: 'critical', icon: 'settings'     },
+  { label: 'Product & Demand',       score: 4.7,  status: 'weak',     icon: 'inventory_2'  },
+  { label: 'Team',               score: 2.55, status: 'critical', icon: 'group'        },
+  { label: 'Operations',              score: 2.14, status: 'critical', icon: 'settings'     },
 ]
 
 const GRI_TOP5 = [
-  { label: 'Повторяемость процесса',   block: 'Операции',           score: 1 },
-  { label: 'Риски при масштабировании',block: 'Операции',           score: 1 },
-  { label: 'Метрики результата команды',block: 'Операции',          score: 1 },
-  { label: 'Предсказуемость результата',block: 'Операции',          score: 1 },
+  { label: 'Повторяемость процесса',   block: 'Operations',           score: 1 },
+  { label: 'Riskи при масштабировании',block: 'Operations',           score: 1 },
+  { label: 'Metrics результата команды',block: 'Operations',          score: 1 },
+  { label: 'Предсказуемость результата',block: 'Operations',          score: 1 },
   { label: 'Доказательства результата', block: 'Доверие и позиция', score: 2 },
 ]
 
 // ─── Category configs ─────────────────────────────────────────────────────────
 const GOAL_CATEGORIES  = ['Все', 'Sales', 'Marketing', 'Retention', 'Funnel', 'Конкуренция', 'Monetization', 'Clients']
-const KPI_CATEGORIES   = ['Все KPI', 'Финансы', 'Рынок', 'Цифровой', 'Sales', 'Продукт', 'Операции', 'Clients']
+const KPI_CATEGORIES   = ['Все KPI', 'Finance', 'Market', 'Цифровой', 'Sales', 'Продукт', 'Operations', 'Clients']
 
 function cc(color: string, type: 'text' | 'bg' | 'border') {
   if (color === 'primary') {
@@ -558,10 +558,10 @@ export default function MetricsPage() {
         <div>
           <p className="text-xs font-mono text-primary/70 uppercase tracking-[0.2em] mb-3">Система метрик · AIStart360</p>
           <h1 className="font-headline text-3xl lg:text-4xl font-extrabold text-on-surface">
-            Метрики <span className="text-gradient">роста</span>
+            Metrics <span className="text-gradient">роста</span>
           </h1>
           <p className="text-on-surface-variant mt-2 text-sm max-w-2xl">
-            11 целей роста · 12 KPI · 7 блоков GRI · полная бизнес-аналитика по отделам
+            11 goals роста · 12 KPI · 7 блоков GRI · полная бизнес-аналитика по отделам
           </p>
         </div>
         <div className="flex flex-wrap gap-2 lg:flex-col lg:items-end">
@@ -579,7 +579,7 @@ export default function MetricsPage() {
       {/* Tab switcher */}
       <div className="flex gap-1 bg-surface-container rounded-xl p-1 w-fit flex-wrap">
         {([
-          { key: 'goals', label: '11 целей роста',    icon: 'track_changes' },
+          { key: 'goals', label: '11 goals роста',    icon: 'track_changes' },
           { key: 'kpi',   label: 'KPI компании',      icon: 'monitoring'    },
           { key: 'biz',   label: 'Все метрики',        icon: 'bar_chart'     },
           { key: 'gri',   label: 'GRI диагностика',   icon: 'radar'         },
@@ -617,11 +617,11 @@ export default function MetricsPage() {
             <button onClick={() => setExpandAll((v) => !v)}
               className="text-[10px] font-mono text-on-surface-variant border border-white/[0.06] hover:border-primary/30 hover:text-primary px-3 py-1.5 rounded-full transition-colors flex items-center gap-1.5">
               <span className="material-symbols-outlined text-sm">{expandAll ? 'unfold_less' : 'unfold_more'}</span>
-              {expandAll ? 'Свернуть все' : 'Развернуть все'}
+              {expandAll ? 'Collapse все' : 'Развернуть все'}
             </button>
           </div>
 
-          <p className="text-xs text-on-surface-variant font-mono">Показано {filteredGoals.length} из {METRIC_GOALS.length} целей · нажмите на цель чтобы раскрыть</p>
+          <p className="text-xs text-on-surface-variant font-mono">Показано {filteredGoals.length} из {METRIC_GOALS.length} goals · нажмите на цель чтобы раскрыть</p>
 
           <div className="space-y-2">
             {filteredGoals.map((goal) => (
@@ -668,7 +668,7 @@ export default function MetricsPage() {
           </div>
           <div className="flex flex-wrap gap-2 items-center">
             <span className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest">Раздел:</span>
-            {['Все KPI', 'Финансы', 'Рынок', 'Цифровой', 'Sales', 'Продукт', 'Операции', 'Clients'].map((cat) => (
+            {['Все KPI', 'Finance', 'Market', 'Цифровой', 'Sales', 'Продукт', 'Operations', 'Clients'].map((cat) => (
               <button key={cat} onClick={() => setActiveKpiCat(cat)}
                 className={`text-[10px] font-mono uppercase px-3 py-1.5 rounded-full border transition-all duration-150 ${
                   activeKpiCat === cat
@@ -715,7 +715,7 @@ export default function MetricsPage() {
         <div className="space-y-5">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
-              <h2 className="font-headline text-xl font-bold text-on-surface">Все метрики бизнеса</h2>
+              <h2 className="font-headline text-xl font-bold text-on-surface">Все метрики business</h2>
               <p className="text-xs text-on-surface-variant mt-1">По отделам: финансы, маркетинг, продажи, операции, HR, продукт, клиенты · нажмите на отдел</p>
             </div>
             {/* Health overview */}
@@ -762,7 +762,7 @@ export default function MetricsPage() {
               <div className="flex-1">
                 <p className="text-[10px] font-mono text-on-surface-variant/60 uppercase tracking-widest mb-1">GRI Score · Итоговый</p>
                 <h2 className="font-headline text-2xl font-bold text-on-surface mb-1">Индекс готовности к росту</h2>
-                <p className="text-sm text-on-surface-variant mb-3">Сильная бизнес-модель, но Операции и Команда — критические ограничители масштабирования.</p>
+                <p className="text-sm text-on-surface-variant mb-3">Сильная бизнес-модель, но Operations и Team — критические ограничители масштабирования.</p>
                 <div className="flex flex-wrap gap-2">
                   <span className="text-[10px] font-mono px-2.5 py-1 rounded-full bg-primary/10 border border-primary/20 text-primary">2 сильных блока</span>
                   <span className="text-[10px] font-mono px-2.5 py-1 rounded-full bg-tertiary-container/10 border border-tertiary-container/20 text-tertiary-container">3 слабых</span>
@@ -823,7 +823,7 @@ export default function MetricsPage() {
             <p className="text-[10px] font-mono text-primary/70 uppercase tracking-[0.2em] mb-3">План · 90 days</p>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               {[
-                { phase: 'Дни 1–30',  title: 'Стабилизация операций', items: ['Регламенты процессов', 'Метрики команды', 'Повторяемость'], color: 'error' },
+                { phase: 'Дни 1–30',  title: 'Стабилизация операций', items: ['Регламенты процессов', 'Metrics команды', 'Повторяемость'], color: 'error' },
                 { phase: 'Дни 31–60', title: 'Усиление позиции',       items: ['Доказательства результата', 'Trust & Positioning', 'NPS-система'], color: 'tertiary-container' },
                 { phase: 'Дни 61–90', title: 'Scaling',         items: ['Партнёрская модель', 'Программа привлечения', 'Cash Stability'], color: 'primary' },
               ].map((ph) => (

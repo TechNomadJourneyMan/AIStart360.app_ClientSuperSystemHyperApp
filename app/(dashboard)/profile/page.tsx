@@ -5,7 +5,7 @@ import { cookies } from 'next/headers'
 import { prisma } from '@/lib/db'
 import { createClient } from '@/lib/supabase/server'
 
-export const metadata: Metadata = { title: 'Профиль' }
+export const metadata: Metadata = { title: 'Profile' }
 
 export default async function ProfilePage() {
   const cookieStore = await cookies()
@@ -76,7 +76,7 @@ export default async function ProfilePage() {
     createdAt = staffUser.createdAt.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })
     lastLogin = staffUser.lastLogin
       ? staffUser.lastLogin.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' })
-      : 'Никогда'
+      : 'Never'
   } else {
     name = (sbProfile?.full_name as string) ?? '—'
     email = (sbProfile?.email as string) ?? '—'
@@ -91,11 +91,11 @@ export default async function ProfilePage() {
   }
 
   const roleLabel =
-    roleRaw === 'SUPER_ADMIN' ? 'Владелец' :
-    roleRaw === 'ADMIN'       ? 'Администратор' :
+    roleRaw === 'SUPER_ADMIN' ? 'Owner' :
+    roleRaw === 'ADMIN'       ? 'Administrator' :
     roleRaw === 'MANAGER'     ? 'Менеджер' :
     roleRaw === 'ANALYST'     ? 'Аналитик' :
-    roleRaw === 'CLIENT' || roleRaw === 'client' ? 'Клиент' :
+    roleRaw === 'CLIENT' || roleRaw === 'client' ? 'Client' :
     roleRaw.toUpperCase()
 
   const isActive  = statusRaw === 'active' || statusRaw === 'approved'

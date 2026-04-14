@@ -7,7 +7,7 @@ import { createClient } from '@/lib/supabase/server'
 import { FileArea } from '@/components/point-a/FileArea'
 import { SurveyOverview } from '@/components/point-a/SurveyOverview'
 
-export const metadata: Metadata = { title: 'Точка А — Текущее состояние' }
+export const metadata: Metadata = { title: 'Point A — Current State' }
 
 export default async function PointAPage() {
   const session = await auth()
@@ -72,11 +72,11 @@ export default async function PointAPage() {
           avgScore = diag.overall_score ?? 0
 
           const blocks: Record<string, { label: string; icon: string }> = {
-            finance: { label: 'Финансы', icon: 'payments' },
-            sales: { label: 'Продажи', icon: 'trending_up' },
-            operations: { label: 'Операции', icon: 'settings' },
-            marketing: { label: 'Маркетинг', icon: 'campaign' },
-            strategy: { label: 'Стратегия', icon: 'flag' },
+            finance: { label: 'Finance', icon: 'payments' },
+            sales: { label: 'Sales', icon: 'trending_up' },
+            operations: { label: 'Operations', icon: 'settings' },
+            marketing: { label: 'Marketing', icon: 'campaign' },
+            strategy: { label: 'Strategy', icon: 'flag' },
           }
 
           domainScores = Object.entries(blocks).map(([key, meta]) => {
@@ -91,7 +91,7 @@ export default async function PointAPage() {
             id: diag.id,
             score: diag.overall_score ?? 0,
             calculatedAt: diag.calculated_at ?? diag.created_at,
-            clientName: user.email ?? 'Клиент',
+            clientName: user.email ?? 'Client',
           }]
         }
       }
@@ -130,7 +130,7 @@ export default async function PointAPage() {
           Точка <span className="text-gradient">А</span>
         </h1>
         <p className="text-on-surface-variant mt-2 text-sm max-w-xl leading-relaxed">
-          Объективная оценка текущего состояния бизнеса.
+          Объективная оценка текущего состояния business.
           Загрузите документы для автоматического анализа ИИ-агентом.
         </p>
       </section>
@@ -138,9 +138,9 @@ export default async function PointAPage() {
       {/* Current State Overview */}
       <section className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
-          { label: 'Общий балл', value: String(avgScore), icon: 'radar', good: avgScore >= 50, note: avgScore ? 'из 100' : 'нет данных' },
-          { label: 'Клиенты', value: '0', icon: 'groups', good: false, note: 'подключите CRM' },
-          { label: 'Документы', value: String(docsCount), icon: 'description', good: docsCount > 0, note: docsCount > 0 ? 'загружено' : 'нет файлов' },
+          { label: 'Overall Score', value: String(avgScore), icon: 'radar', good: avgScore >= 50, note: avgScore ? 'из 100' : 'нет данных' },
+          { label: 'Clients', value: '0', icon: 'groups', good: false, note: 'подключите CRM' },
+          { label: 'Documents', value: String(docsCount), icon: 'description', good: docsCount > 0, note: docsCount > 0 ? 'загружено' : 'нет файлов' },
           { label: 'Health', value: avgScore >= 70 ? 'High' : avgScore >= 40 ? 'Medium' : avgScore > 0 ? 'Low' : '—', icon: 'favorite', good: avgScore >= 40, note: avgScore > 0 ? 'по диагностике' : 'нет данных' },
         ].map((stat) => (
           <div key={stat.label} className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-5 hover:border-primary/10 transition-colors">
@@ -197,7 +197,7 @@ export default async function PointAPage() {
                       isStrong ? 'text-primary border-primary/20 bg-primary/5' :
                       'text-tertiary-container border-tertiary-container/20 bg-tertiary-container/5'
                     }`}>
-                      {isCritical ? 'Критично' : isStrong ? 'Сильно' : 'Средне'}
+                      {isCritical ? 'Critical' : isStrong ? 'Сильно' : 'Medium'}
                     </span>
                   </div>
                   <h3 className="text-sm font-bold text-on-surface mb-3">{domain.label}</h3>
@@ -244,7 +244,7 @@ export default async function PointAPage() {
           {latestReports.length === 0 && (
             <div className="bg-surface-container-low rounded-2xl border border-dashed border-white/10 p-12 text-center">
               <span className="material-symbols-outlined text-4xl text-on-surface-variant/20 mb-4 block">insert_chart</span>
-              <p className="text-sm text-on-surface-variant font-medium">Нет данных диагностики</p>
+              <p className="text-sm text-on-surface-variant font-medium">No data диагностики</p>
               <p className="text-xs text-on-surface-variant/60 mt-1">Заполните анкету для расчёта Точки А</p>
             </div>
           )}

@@ -5,12 +5,12 @@ import type { Metadata } from 'next'
 import { usersService, type PublicUser } from '@/shared/api/users.service'
 
 const ROLE_STYLES: Record<string, { text: string; bg: string; border: string; label: string }> = {
-  admin:  { text: 'text-primary',   bg: 'bg-primary/10',   border: 'border-primary/20',   label: 'Администратор' },
-  expert: { text: 'text-secondary', bg: 'bg-secondary/10', border: 'border-secondary/20', label: 'Эксперт'       },
-  owner:  { text: 'text-tertiary-container', bg: 'bg-tertiary-container/10', border: 'border-tertiary-container/20', label: 'Владелец' },
+  admin:  { text: 'text-primary',   bg: 'bg-primary/10',   border: 'border-primary/20',   label: 'Administrator' },
+  expert: { text: 'text-secondary', bg: 'bg-secondary/10', border: 'border-secondary/20', label: 'Expert'       },
+  owner:  { text: 'text-tertiary-container', bg: 'bg-tertiary-container/10', border: 'border-tertiary-container/20', label: 'Owner' },
 }
 
-const ROLE_FALLBACK = { text: 'text-on-surface-variant', bg: 'bg-surface-container', border: 'border-outline-variant/20', label: 'Пользователь' }
+const ROLE_FALLBACK = { text: 'text-on-surface-variant', bg: 'bg-surface-container', border: 'border-outline-variant/20', label: 'User' }
 
 function getRoleStyle(role: string) {
   return ROLE_STYLES[role] ?? ROLE_FALLBACK
@@ -44,7 +44,7 @@ export default function UsersPage() {
   const handleAddUser = async () => {
     if (!addForm.name.trim() || !addForm.email.trim()) return
     setAddSaving(true)
-    await new Promise(r => setTimeout(r, 800)) // имитация API
+    await new Promise(r => setTimeout(r, 800)) // API simulation
     const newUser: PublicUser = {
       id: Date.now().toString(),
       name: addForm.name.trim(),
@@ -105,11 +105,11 @@ export default function UsersPage() {
     <div className="space-y-8">
       {/* Header */}
       <section>
-        <p className="text-xs font-mono text-primary/70 uppercase tracking-[0.2em] mb-3">Администрирование</p>
+        <p className="text-xs font-mono text-primary/70 uppercase tracking-[0.2em] mb-3">Administration</p>
         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
           <div>
-            <h1 className="font-headline text-2xl md:text-3xl font-extrabold text-on-surface">Управление пользователями</h1>
-            <p className="text-on-surface-variant mt-2 text-sm">Просмотр, фильтрация и управление аккаунтами</p>
+            <h1 className="font-headline text-2xl md:text-3xl font-extrabold text-on-surface">User Management</h1>
+            <p className="text-on-surface-variant mt-2 text-sm">View, фильтрация и управление аккаунтами</p>
           </div>
           <button
             onClick={() => setShowAddModal(true)}
@@ -123,9 +123,9 @@ export default function UsersPage() {
       {/* Stats */}
       <section className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
-          { label: 'Всего',        value: stats.total,       icon: 'groups',            color: 'text-on-surface' },
-          { label: 'Администраторов', value: stats.admins,   icon: 'admin_panel_settings', color: 'text-primary'  },
-          { label: 'Экспертов',    value: stats.experts,     icon: 'psychology',         color: 'text-secondary' },
+          { label: 'Total',        value: stats.total,       icon: 'groups',            color: 'text-on-surface' },
+          { label: 'Administratorов', value: stats.admins,   icon: 'admin_panel_settings', color: 'text-primary'  },
+          { label: 'Expertов',    value: stats.experts,     icon: 'psychology',         color: 'text-secondary' },
           { label: 'Активны сегодня', value: stats.activeToday, icon: 'online_prediction', color: 'text-primary' },
         ].map((s) => (
           <div key={s.label} className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-5">
@@ -154,7 +154,7 @@ export default function UsersPage() {
               />
             </div>
             <div className="flex gap-2 flex-shrink-0">
-              {([['all', 'Все'], ['admin', 'Админы'], ['expert', 'Эксперты']] as const).map(([v, l]) => (
+              {([['all', 'Все'], ['admin', 'Админы'], ['expert', 'Expertы']] as const).map(([v, l]) => (
                 <button key={v} onClick={() => setRoleFilter(v)}
                   className={`text-xs font-mono px-3 py-2 rounded-xl border transition-colors whitespace-nowrap ${
                     roleFilter === v ? 'bg-primary/10 text-primary border-primary/20' : 'text-on-surface-variant border-white/[0.06] hover:border-white/[0.12]'
@@ -220,7 +220,7 @@ export default function UsersPage() {
           <table className="w-full">
             <thead>
               <tr className="border-b border-white/[0.04]">
-                {['Пользователь', 'Роль', 'Организация', 'Статус', 'Последний вход', ''].map((h) => (
+                {['User', 'Роль', 'Организация', 'Статус', 'Последний вход', ''].map((h) => (
                   <th key={h} className="text-left text-[10px] font-mono text-on-surface-variant uppercase tracking-widest px-5 py-3">{h}</th>
                 ))}
               </tr>
@@ -282,7 +282,7 @@ export default function UsersPage() {
           {!loading && filtered.length === 0 && (
             <div className="text-center py-16">
               <span className="material-symbols-outlined text-4xl text-on-surface-variant/20 block mb-3">search_off</span>
-              <p className="text-sm text-on-surface-variant">Пользователи не найдены</p>
+              <p className="text-sm text-on-surface-variant">Users не найдены</p>
               <button onClick={() => { setSearch(''); setRoleFilter('all') }} className="mt-3 text-xs text-primary hover:underline font-mono">
                 Сбросить фильтры
               </button>
@@ -337,8 +337,8 @@ export default function UsersPage() {
               <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest mb-3">Права доступа</p>
               <div className="space-y-2">
                 {(selected.role === 'admin'
-                  ? ['Все разделы', 'Управление пользователями', 'Аналитика', 'Настройки']
-                  : ['Свой дэшборд', 'Свои отчёты', 'GRI-диагностика', 'Инсайты']
+                  ? ['Все разделы', 'User Management', 'Analytics', 'Настройки']
+                  : ['Свой дэшборд', 'Свои отчёты', 'GRI Diagnostics', 'Insights']
                 ).map((perm) => (
                   <div key={perm} className="flex items-center gap-2">
                     <span className="material-symbols-outlined text-sm text-primary">check_circle</span>
@@ -372,7 +372,7 @@ export default function UsersPage() {
               {addDone ? (
                 <div className="text-center py-6">
                   <span className="material-symbols-outlined text-5xl text-primary block mb-2">check_circle</span>
-                  <p className="text-sm font-medium text-on-surface">Пользователь добавлен</p>
+                  <p className="text-sm font-medium text-on-surface">User добавлен</p>
                 </div>
               ) : (
                 <>
@@ -408,7 +408,7 @@ export default function UsersPage() {
                   <div className="flex gap-2 pt-1">
                     <button onClick={() => setShowAddModal(false)} disabled={addSaving}
                       className="flex-1 px-4 py-2.5 rounded-xl border border-white/[0.08] text-sm text-on-surface-variant hover:bg-white/[0.04] transition-colors disabled:opacity-40">
-                      Отмена
+                      Cancel
                     </button>
                     <button onClick={handleAddUser} disabled={addSaving || !addForm.name.trim() || !addForm.email.trim()}
                       className="flex-1 px-4 py-2.5 rounded-xl bg-primary/10 border border-primary/20 text-sm text-primary font-medium hover:bg-primary/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">

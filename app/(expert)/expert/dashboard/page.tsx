@@ -12,15 +12,15 @@ const EXPERT_KPI = [
 ]
 
 const TASKS = [
-  { title: 'Загрузить данные за Q1',       due: '28 Mar 2026', priority: 'high',   done: false },
+  { title: 'Upload данные за Q1',       due: '28 Mar 2026', priority: 'high',   done: false },
   { title: 'Пройти GRI-диагностику',       due: '30 Mar 2026', priority: 'high',   done: false },
   { title: 'Согласовать дорожную карту',   due: '02 Apr 2026', priority: 'medium', done: true  },
-  { title: 'Ревью отчёта по конкурентам',  due: '05 Apr 2026', priority: 'low',    done: false },
+  { title: 'Ревью reports по конкурентам',  due: '05 Apr 2026', priority: 'low',    done: false },
 ]
 
 const ACTIVITY = [
   { icon: 'description', text: 'Q4 2025 GRI Report загружен',   time: '2 ч назад', type: 'report' },
-  { icon: 'edit',        text: 'Обновлены данные профиля',       time: '1 д назад', type: 'update' },
+  { icon: 'edit',        text: 'Обновлены данные profiles',       time: '1 д назад', type: 'update' },
   { icon: 'radar',       text: 'GRI пересчитан: 8.4 (+0.2)',     time: '3 д назад', type: 'gri'    },
   { icon: 'chat',        text: 'Новый комментарий от менеджера', time: '5 д назад', type: 'msg'    },
 ]
@@ -76,7 +76,7 @@ export default function ExpertDashboardPage() {
             <p className="text-xs text-on-surface-variant">{user?.email}</p>
             <div className="flex items-center gap-1.5 mt-2">
               <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
-              <span className="text-[10px] font-mono text-primary/70">Эксперт</span>
+              <span className="text-[10px] font-mono text-primary/70">Expert</span>
             </div>
           </div>
         </div>
@@ -129,7 +129,7 @@ export default function ExpertDashboardPage() {
           <div className="flex justify-between items-center mb-5">
             <h2 className="font-headline text-lg font-bold text-on-surface">Задачи</h2>
             <span className="text-xs font-mono text-error bg-error/10 border border-error/20 px-3 py-1 rounded-full">
-              {TASKS.filter(t => !t.done).length} активных
+              {TASKS.filter(t => !t.done).length} active
             </span>
           </div>
           <div className="space-y-3">
@@ -181,10 +181,10 @@ export default function ExpertDashboardPage() {
           <h2 className="font-headline text-lg font-bold text-on-surface mb-5">Быстрые действия</h2>
           <div className="grid grid-cols-2 gap-3">
             {[
-              { label: 'Загрузить данные', icon: 'upload_file',    href: '/expert/reports' },
+              { label: 'Upload данные', icon: 'upload_file',    href: '/expert/reports' },
               { label: 'Смотреть GRI',     icon: 'radar',          href: '/expert/gri'     },
               { label: 'Мой профиль',      icon: 'account_circle', href: '/expert/profile' },
-              { label: 'Инсайты',          icon: 'lightbulb',      href: '/expert/insights'},
+              { label: 'Insights',          icon: 'lightbulb',      href: '/expert/insights'},
             ].map((action) => (
               <a key={action.label} href={action.href}
                 className="flex flex-col items-center gap-3 p-4 rounded-xl bg-surface-container border border-white/[0.04] hover:border-primary/30 hover:bg-primary/5 transition-all group text-center">

@@ -5,7 +5,7 @@ import { useState } from 'react'
 const INSIGHTS = [
   {
     id: 'i1',
-    category: 'Финансы',
+    category: 'Finance',
     title: 'Выручка растёт быстрее рынка',
     body: 'ARR вырос на 18.2% в Q4 2025 против среднеотраслевых 9.4%. Основной драйвер — расширение в сегменте Enterprise.',
     impact: 'high',
@@ -15,9 +15,9 @@ const INSIGHTS = [
   },
   {
     id: 'i2',
-    category: 'Рынок',
+    category: 'Market',
     title: 'Новая ниша: SMB-автоматизация',
-    body: 'Анализ данных показывает незакрытый спрос на автоматизацию среди SMB-компаний. Потенциал сегмента — ₸4.2 млрд к 2027.',
+    body: 'Analysis данных показывает незакрытый спрос на автоматизацию среди SMB-компаний. Потенциал сегмента — ₸4.2 млрд к 2027.',
     impact: 'high',
     type: 'opportunity',
     date: '20 Mar 2026',
@@ -45,7 +45,7 @@ const INSIGHTS = [
   },
   {
     id: 'i5',
-    category: 'Стратегия',
+    category: 'Strategy',
     title: 'OKR Q1 2026: прогресс 73%',
     body: '3 из 4 ключевых результатов выполнены на 100%. Отстаёт KR по партнёрским каналам (48%). Требует пересмотра приоритетов.',
     impact: 'medium',
@@ -55,7 +55,7 @@ const INSIGHTS = [
   },
   {
     id: 'i6',
-    category: 'Операции',
+    category: 'Operations',
     title: 'Автоматизация сэкономила 240 часов/мес',
     body: 'Внедрённые в Q4 2025 n8n-воркфлоу для отчётности и онбординга освободили ~240 часов команды ежемесячно.',
     impact: 'medium',
@@ -65,12 +65,12 @@ const INSIGHTS = [
   },
 ]
 
-const CATEGORIES = ['Все', 'Финансы', 'Рынок', 'Команда', 'Продукт', 'Стратегия', 'Операции']
+const CATEGORIES = ['Все', 'Finance', 'Market', 'Команда', 'Продукт', 'Strategy', 'Operations']
 
 const TYPE_CONFIG = {
   opportunity: { label: 'Возможность', icon: 'lightbulb',    color: 'text-primary',   bg: 'bg-primary/10',   border: 'border-primary/20'   },
   risk:         { label: 'Риск',        icon: 'warning',      color: 'text-error',     bg: 'bg-error/10',     border: 'border-error/20'     },
-  achievement:  { label: 'Достижение', icon: 'star',          color: 'text-secondary', bg: 'bg-secondary/10', border: 'border-secondary/20' },
+  achievement:  { label: 'Achievement', icon: 'star',          color: 'text-secondary', bg: 'bg-secondary/10', border: 'border-secondary/20' },
 }
 
 const IMPACT_COLORS = {
@@ -101,7 +101,7 @@ export default function ExpertInsightsPage() {
         <p className="text-xs font-mono text-primary/70 uppercase tracking-[0.2em] mb-3">Expert Portal</p>
         <div className="flex items-start justify-between">
           <div>
-            <h1 className="font-headline text-3xl font-extrabold text-on-surface">Инсайты</h1>
+            <h1 className="font-headline text-3xl font-extrabold text-on-surface">Insights</h1>
             <p className="text-on-surface-variant mt-2 text-sm">AI-аналитика на основе ваших данных</p>
           </div>
           {unreadCount > 0 && (
@@ -193,7 +193,7 @@ export default function ExpertInsightsPage() {
         {filtered.length === 0 && (
           <div className="text-center py-16">
             <span className="material-symbols-outlined text-4xl text-on-surface-variant/20 block mb-3">lightbulb</span>
-            <p className="text-sm text-on-surface-variant">Инсайты не найдены</p>
+            <p className="text-sm text-on-surface-variant">Insights не найдены</p>
             <button onClick={() => { setFilter('Все'); setTypeFilter(null) }}
               className="mt-3 text-xs text-primary hover:underline font-mono">
               Сбросить фильтры

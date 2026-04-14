@@ -42,7 +42,7 @@ async function fetchClientData(id: string) {
 }
 
 // Helper formatting functions
-function blockLabel(key: string) { return { finance:'Финансы', sales:'Продажи', operations:'Операции', marketing:'Маркетинг', strategy:'Стратегия' }[key] ?? key }
+function blockLabel(key: string) { return { finance:'Finance', sales:'Sales', operations:'Operations', marketing:'Marketing', strategy:'Strategy' }[key] ?? key }
 function blockIcon(key: string) { return { finance:'account_balance', sales:'shopping_cart', operations:'settings', marketing:'campaign', strategy:'flag' }[key] ?? 'analytics' }
 function scoreColor(s: number) { return s >= 80 ? 'text-primary' : s >= 60 ? 'text-tertiary-container' : 'text-error' }
 function barColor(s: number) { return s >= 80 ? 'bg-primary' : s >= 60 ? 'bg-tertiary-container' : 'bg-error' }
@@ -56,7 +56,7 @@ export default async function ClientDetailPage({ params }: { params: { id: strin
         <div className="w-20 h-20 rounded-3xl bg-surface-container flex items-center justify-center mb-6 border border-white/[0.04]">
           <span className="material-symbols-outlined text-4xl text-on-surface-variant/30">person_off</span>
         </div>
-        <h1 className="font-headline text-2xl font-bold text-on-surface mb-2">Клиент не найден</h1>
+        <h1 className="font-headline text-2xl font-bold text-on-surface mb-2">Client не найден</h1>
         <p className="text-on-surface-variant text-sm mb-8 max-w-sm">
           Профиль с ID <code className="bg-surface-container px-1.5 py-0.5 rounded text-primary font-mono">{params.id}</code> не существует или был удален из базы данных.
         </p>
@@ -70,7 +70,7 @@ export default async function ClientDetailPage({ params }: { params: { id: strin
 
   const name = result.type === 'prisma' 
     ? (result.data as any).name 
-    : (result.data as any).company?.name ?? (result.data as any).profile?.full_name ?? 'Клиент'
+    : (result.data as any).company?.name ?? (result.data as any).profile?.full_name ?? 'Client'
   
   const isChocoFamily = name.toLowerCase().includes('choco') || params.id === '7'
 
@@ -198,7 +198,7 @@ export default async function ClientDetailPage({ params }: { params: { id: strin
                <div className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-6">
                   <h3 className="font-headline font-bold text-on-surface mb-5 flex items-center gap-2">
                     <span className="material-symbols-outlined text-error text-xl">warning</span>
-                    Критические риски
+                    Критические riskи
                   </h3>
                   <div className="space-y-3 font-mono">
                     {(griReport.risks as any).slice(0, 3).map((risk: any, i: number) => (

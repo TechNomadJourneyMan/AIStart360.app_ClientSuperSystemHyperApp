@@ -24,10 +24,10 @@ export default function GigaPanelLoginPage() {
       if (res.ok) {
         window.location.href = '/admin-giga-panel'
       } else {
-        setError('Неверный пароль')
+        setError('Invalid password')
       }
     } catch {
-      setError('Ошибка соединения')
+      setError('Connection error')
     } finally {
       setLoading(false)
     }
@@ -57,10 +57,10 @@ export default function GigaPanelLoginPage() {
               <Shield size={22} className="text-blue-400" />
             </div>
             <p className="text-xs font-semibold text-blue-400 tracking-[0.2em] uppercase mb-1">
-              ГИГА-Панель
+              GIGA Panel
             </p>
             <p className="text-slate-500 text-sm text-center">
-              Системный уровень доступа
+              System level access
             </p>
           </div>
 
@@ -73,7 +73,7 @@ export default function GigaPanelLoginPage() {
                 type={showPassword ? 'text' : 'password'}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="Пароль администратора"
+                placeholder="Administrator password"
                 className="w-full bg-white/[0.05] border border-white/[0.08] rounded-xl
                   pl-9 pr-10 py-3 text-sm text-slate-200 placeholder:text-slate-600
                   focus:outline-none focus:border-blue-500/50 focus:bg-white/[0.07]
@@ -102,7 +102,7 @@ export default function GigaPanelLoginPage() {
                 disabled:opacity-40 disabled:cursor-not-allowed
                 transition-all duration-200"
             >
-              {loading ? 'Проверка...' : 'Войти'}
+              {loading ? 'Verifying...' : 'Sign In'}
             </button>
           </form>
         </div>

@@ -50,11 +50,11 @@ export async function GET() {
           href: '/metrics',
         },
         {
-          label: 'Клиенты',
+          label: 'Clients',
           value: String(snapshot.clientsCount),
           trend: `${snapshot.clientsChange > 0 ? '+' : ''}${snapshot.clientsChange}`,
           trendUp: snapshot.clientsChange >= 0,
-          sublabel: 'активных клиентов',
+          sublabel: 'active клиентов',
           icon: 'groups',
           href: '/clients',
         },

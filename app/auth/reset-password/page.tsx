@@ -12,7 +12,7 @@ const schema = z.object({
   password: z.string().min(8, 'Пароль минимум 8 символов'),
   confirmPassword: z.string().min(8, 'Подтверждение пароля обязательно'),
 }).refine((data) => data.password === data.confirmPassword, {
-  message: 'Пароли не совпадают',
+  message: 'Passwords do not match',
   path: ['confirmPassword'],
 })
 
@@ -82,13 +82,13 @@ function ResetPasswordContent() {
 
   return (
     <div className="glass-card rounded-2xl p-8 shadow-modal">
-      <h1 className="font-headline text-2xl font-bold text-on-surface mb-1">Новый пароль</h1>
-      <p className="text-sm text-on-surface-variant mb-8">Введите новый пароль для аккаунта {email || 'пользователя'}</p>
+      <h1 className="font-headline text-2xl font-bold text-on-surface mb-1">New password</h1>
+      <p className="text-sm text-on-surface-variant mb-8">Enter new password для аккаунта {email || 'пользователя'}</p>
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
         <div>
           <label className="block text-xs font-label font-medium text-on-surface-variant mb-2 uppercase tracking-wider">
-            Новый пароль
+            New password
           </label>
           <input
             {...register('password')}
@@ -117,7 +117,7 @@ function ResetPasswordContent() {
           disabled={isLoading}
           className="w-full py-3 rounded-lg bg-gradient-to-br from-primary to-primary-container text-on-primary font-semibold text-sm disabled:opacity-60"
         >
-          {isLoading ? 'Сохраняем...' : 'Обновить пароль'}
+          {isLoading ? 'Сохраняем...' : 'Refresh пароль'}
         </button>
       </form>
     </div>
@@ -126,7 +126,7 @@ function ResetPasswordContent() {
 
 export default function ResetPasswordPage() {
   return (
-    <Suspense fallback={<div className="glass-card rounded-2xl p-8 shadow-modal">Загрузка...</div>}>
+    <Suspense fallback={<div className="glass-card rounded-2xl p-8 shadow-modal">Loading...</div>}>
       <ResetPasswordContent />
     </Suspense>
   )

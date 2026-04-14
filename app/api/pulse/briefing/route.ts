@@ -42,7 +42,7 @@ export async function POST() {
       : await amocrm.fetchDeals(config, 100)
 
     if (deals.length === 0) {
-      return NextResponse.json({ briefing: 'Нет активных сделок в CRM.' })
+      return NextResponse.json({ briefing: 'Нет active сделок в CRM.' })
     }
 
     // Calculate stats
@@ -57,7 +57,7 @@ export async function POST() {
     }).sort((a, b) => b.risk - a.risk)
 
     const top5 = ranked.slice(0, 5).map((d, i) =>
-      `${i + 1}. "${d.title}" — ${d.amount.toLocaleString('ru')} ₸, риск ${d.risk}/100, без активности ${d.daysSince} дн.`
+      `${i + 1}. "${d.title}" — ${d.amount.toLocaleString("en")} ₸, risk ${d.risk}/100, inactive for ${d.daysSince} days`
     ).join('\n')
 
     const totalRevenue = deals.reduce((s, d) => s + d.amount, 0)
@@ -76,13 +76,13 @@ export async function POST() {
         model: 'google/gemini-2.0-flash-001',
         messages: [{
           role: 'user',
-          content: `Ты бизнес-ассистент в системе AIStart360. Дай краткий утренний брифинг для менеджера по продажам на русском языке (3-4 предложения).
+          content: `Ты бизнес-ассистент in the system AIStart360. Дай краткий утренний брифинг для менеджера по продажам на русском языке (3-4 предложения).
 
 Портфель на сегодня:
-- Всего сделок: ${deals.length}
-- Общая сумма: ${totalRevenue.toLocaleString('ru')} ₸
-- Высокий риск: ${highRisk}
-- Выручка под угрозой: ${lostRevenue.toLocaleString('ru')} ₸
+- Total сделок: ${deals.length}
+- Общая сумма: ${totalRevenue.toLocaleString("en")} ₸
+- Высокий risk: ${highRisk}
+- Выручка под угрозой: ${lostRevenue.toLocaleString("en")} ₸
 
 ТОП-5 приоритетных:
 ${top5}

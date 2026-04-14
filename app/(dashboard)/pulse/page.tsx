@@ -32,8 +32,8 @@ function CallModal({ client, onClose }: { client: { name: string; sector: string
           {status === 'done' ? (
             <div className="text-center py-4">
               <span className="material-symbols-outlined text-4xl text-primary block mb-2">check_circle</span>
-              <p className="text-sm font-medium text-on-surface">Звонок зафиксирован</p>
-              <p className="text-xs text-on-surface-variant mt-1">Действие записано в историю контактов</p>
+              <p className="text-sm font-medium text-on-surface">Call recorded</p>
+              <p className="text-xs text-on-surface-variant mt-1">Action logged to contact history</p>
             </div>
           ) : (
             <>
@@ -54,13 +54,13 @@ function CallModal({ client, onClose }: { client: { name: string; sector: string
               />
               <div className="flex gap-2">
                 <button onClick={onClose} className="flex-1 px-4 py-2.5 rounded-xl border border-white/[0.08] text-sm text-on-surface-variant hover:bg-white/[0.04] transition-colors">
-                  Отмена
+                  Cancel
                 </button>
                 <button
                   onClick={() => setStatus('done')}
                   className="flex-1 px-4 py-2.5 rounded-xl bg-error/10 border border-error/20 text-sm text-error font-medium hover:bg-error/20 transition-colors">
                   <span className="material-symbols-outlined text-sm align-middle mr-1">check</span>
-                  Зафиксировать
+                  Record
                 </button>
               </div>
             </>
@@ -102,8 +102,8 @@ function MessageModal({ client, onClose }: { client: { name: string; sector: str
           {sent ? (
             <div className="text-center py-4">
               <span className="material-symbols-outlined text-4xl text-primary block mb-2">mark_email_read</span>
-              <p className="text-sm font-medium text-on-surface">Сообщение отправлено</p>
-              <p className="text-xs text-on-surface-variant mt-1">Ответ придёт на корпоративную почту</p>
+              <p className="text-sm font-medium text-on-surface">Message sent</p>
+              <p className="text-xs text-on-surface-variant mt-1">Reply will be sent to corporate email</p>
             </div>
           ) : (
             <>
@@ -124,7 +124,7 @@ function MessageModal({ client, onClose }: { client: { name: string; sector: str
               />
               <div className="flex gap-2">
                 <button onClick={onClose} className="flex-1 px-4 py-2.5 rounded-xl border border-white/[0.08] text-sm text-on-surface-variant hover:bg-white/[0.04] transition-colors">
-                  Отмена
+                  Cancel
                 </button>
                 <button onClick={() => setSent(true)} disabled={!text.trim()}
                   className="flex-1 px-4 py-2.5 rounded-xl bg-tertiary-container/10 border border-tertiary-container/20 text-sm text-tertiary-container font-medium hover:bg-tertiary-container/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
@@ -267,7 +267,7 @@ function ClientCard({ client, onCall, onMessage, onMonitor, isMonitored }: {
         {[
           { label: 'Средний чек', value: fmt(client.avgCheck), icon: 'payments',   color: 'primary' },
           { label: 'Изм. объёма', value: `${client.volumeChange > 0 ? '+' : ''}${client.volumeChange}%`, icon: 'trending_down', color: client.volumeChange < 0 ? 'error' : 'primary' },
-          { label: 'Риск-скор',   value: String(client.riskScore), icon: 'warning', color: client.riskScore >= 80 ? 'error' : 'tertiary-container' },
+          { label: 'Risk-скор',   value: String(client.riskScore), icon: 'warning', color: client.riskScore >= 80 ? 'error' : 'tertiary-container' },
           { label: 'Дней без заказа', value: String(client.daysSince), icon: 'schedule', color: client.daysSince > client.orderCycle ? 'error' : 'primary' },
         ].map((m) => (
           <div key={m.label} className="bg-surface-container rounded-xl p-3">
@@ -581,7 +581,7 @@ function CrmIntegrationTab() {
                     }`}>
                       {crm.lastSyncStatus === 'success' ? 'Успешно' :
                        crm.lastSyncStatus === 'partial' ? 'Частично' :
-                       crm.lastSyncStatus === 'error' ? 'Ошибка' : '—'}
+                       crm.lastSyncStatus === 'error' ? 'Error' : '—'}
                     </p>
                     {crm.lastSyncError && (
                       <p className="text-[10px] text-error/70 mt-0.5 truncate max-w-[200px]" title={crm.lastSyncError}>{crm.lastSyncError}</p>
@@ -693,7 +693,7 @@ function CrmIntegrationTab() {
               <div className="flex gap-2 pt-2">
                 <button onClick={() => setShowConnect(false)}
                   className="flex-1 px-4 py-2.5 rounded-xl border border-white/[0.08] text-sm text-on-surface-variant hover:bg-white/[0.04] transition-colors">
-                  Отмена
+                  Cancel
                 </button>
                 <button
                   onClick={handleConnect}
@@ -703,7 +703,7 @@ function CrmIntegrationTab() {
                   {connectLoading ? (
                     <span className="flex items-center justify-center gap-2">
                       <span className="material-symbols-outlined text-sm animate-spin">sync</span>
-                      Проверка...
+                      Verifying...
                     </span>
                   ) : (
                     <span className="flex items-center justify-center gap-2">
@@ -847,7 +847,7 @@ export default function PulsePage() {
             <span className="text-gradient">сегодня</span>
           </h1>
           <p className="text-on-surface-variant mt-2 text-sm max-w-2xl">
-            Инструмент менеджера по продажам — видит кто уходит, у кого падает объём, и какое действие нужно прямо сейчас.
+            Инструмент менеджера по продажам — видит кто уходит, у кого падает объём, и какое действие нужно прямо now.
           </p>
           <div className="flex flex-wrap items-center gap-3 mt-3">
             <div className="flex items-center gap-2">
@@ -875,14 +875,14 @@ export default function PulsePage() {
                 <span className={`material-symbols-outlined text-sm ${briefingLoading ? 'animate-spin' : ''}`}>
                   {briefingLoading ? 'progress_activity' : 'refresh'}
                 </span>
-                {briefingLoading ? 'Генерация...' : 'Обновить'}
+                {briefingLoading ? 'Генерация...' : 'Refresh'}
               </button>
             </div>
             {briefing ? (
               <p className="text-sm text-on-surface leading-relaxed">{briefing}</p>
             ) : (
               <p className="text-sm text-on-surface-variant italic">
-                Нажмите «Обновить» чтобы получить рекомендацию
+                Нажмите «Refresh» чтобы получить рекомендацию
               </p>
             )}
           </div>
@@ -897,24 +897,24 @@ export default function PulsePage() {
             value: fmt(highRiskRevenue),
             icon: 'payments',
             color: 'error',
-            sub: `${DYNAMIC_STATS.highRisk} клиентов высокого риска`,
+            sub: `${DYNAMIC_STATS.highRisk} клиентов высокого riskа`,
           },
           {
-            label: 'Высокий риск',
+            label: 'Высокий risk',
             value: String(DYNAMIC_STATS.highRisk),
             icon: 'crisis_alert',
             color: 'error',
             sub: 'требуют звонка сегодня',
           },
           {
-            label: 'Средний риск',
+            label: 'Средний risk',
             value: String(DYNAMIC_STATS.mediumRisk),
             icon: 'warning',
             color: 'tertiary-container',
             sub: 'написать до конца дня',
           },
           {
-            label: 'Всего клиентов',
+            label: 'Total clients',
             value: String(DYNAMIC_STATS.totalClients),
             icon: 'group',
             color: 'on-surface-variant',
@@ -945,7 +945,7 @@ export default function PulsePage() {
         <div className="flex gap-1 min-w-max">
           {([
             { key: 'today', label: 'Кому звонить', labelFull: 'Кому продавать сегодня', count: TODAY_CLIENTS.length, icon: null },
-            { key: 'risk',  label: 'В зоне риска', labelFull: 'Топ в зоне риска',       count: filteredRisk.length, icon: null },
+            { key: 'risk',  label: 'В зоне riskа', labelFull: 'Топ в зоне riskа',       count: filteredRisk.length, icon: null },
             { key: 'card',  label: 'Карточка',     labelFull: 'Карточка клиента',        count: null, icon: null },
             { key: 'crm',   label: 'CRM',          labelFull: 'CRM-интеграции',          count: null, icon: 'sync' },
           ] as const).map(({ key, label, labelFull, count, icon }) => (
@@ -971,7 +971,7 @@ export default function PulsePage() {
       {/* ── Risk filter ── */}
       {tab !== 'card' && (
         <div className="flex gap-2 items-center overflow-x-auto no-scrollbar pb-0.5">
-          <span className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest flex-shrink-0">Риск:</span>
+          <span className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest flex-shrink-0">Risk:</span>
           {(['all', 'high', 'medium', 'low'] as const).map((r) => {
             const labels = { all: 'Все', high: 'Высокий', medium: 'Средний', low: 'Низкий' }
             const colors = {
@@ -1069,14 +1069,14 @@ export default function PulsePage() {
                 <thead>
                   <tr className="border-b border-white/[0.04]">
                     {([
-                      { label: 'Клиент', tip: 'Название сделки или компании из CRM' },
+                      { label: 'Client', tip: 'Название сделки или компании из CRM' },
                       { label: 'Последний заказ', tip: 'Дата последнего изменения сделки в CRM' },
                       { label: 'Ср. чек', tip: 'Сумма сделки из CRM (поле «Сумма» в Bitrix24)' },
                       { label: 'Изм. объёма', tip: 'Отклонение суммы сделки от среднего по портфелю: (сумма − средняя) ÷ средняя × 100%' },
-                      { label: 'Риск-скор', tip: 'Комплексная оценка 0–100: стадия сделки + дни без активности + возраст сделки + сумма vs средняя' },
-                      { label: 'Вер-сть оттока', tip: 'Вероятность потери клиента: на основе стадии (успех/провал/процесс), простоя и риск-скора' },
+                      { label: 'Risk-скор', tip: 'Комплексная оценка 0–100: стадия сделки + дни inactive for + возраст сделки + сумма vs средняя' },
+                      { label: 'Вер-сть оттока', tip: 'Вероятность потери клиента: на основе стадии (успех/провал/процесс), простоя и risk-скора' },
                       { label: 'Комментарий', tip: 'Контекстная подсказка: крупная сделка, долгий цикл, нет активности N дней' },
-                      { label: 'Действие', tip: 'Рекомендация: Звонок (риск>60 или простой>7дн), Написать (риск>35), Мониторинг (низкий риск)' },
+                      { label: 'Действие', tip: 'Рекомендация: Звонок (risk>60 или простой>7дн), Написать (risk>35), Мониторинг (низкий risk)' },
                     ] as const).map((h) => (
                       <th key={h.label} className="text-left text-[10px] font-mono text-on-surface-variant uppercase tracking-widest px-4 py-3 whitespace-nowrap">
                         <span className="inline-flex items-center gap-1">
@@ -1118,7 +1118,7 @@ export default function PulsePage() {
                       <td className="px-4 py-3.5">
                         <p className="text-sm text-on-surface">{c.lastOrder}</p>
                         <p className={`text-[10px] font-mono ${c.daysSince > c.orderCycle ? 'text-error' : 'text-on-surface-variant'}`}>
-                          {c.daysSince} дн. назад
+                          {c.daysSince} days назад
                         </p>
                       </td>
                       <td className="px-4 py-3.5">
