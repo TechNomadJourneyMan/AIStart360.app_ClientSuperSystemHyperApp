@@ -6,6 +6,7 @@ import { usePathname, useRouter } from 'next/navigation'
 import { useState, useEffect } from 'react'
 import { useUIStore } from '@/stores/ui.store'
 import { useAuthStore } from '@/stores/auth.store'
+import { useTranslations } from 'next-intl'
 import { getPrimaryNavForRole, getSecondaryNavForRole } from '@/lib/navigation'
 import type { NavItem, UserRole } from '@/types'
 
@@ -14,6 +15,7 @@ export function Sidebar() {
   const router = useRouter()
   const { sidebarCollapsed, toggleSidebar } = useUIStore()
   const { user, logout } = useAuthStore()
+  const t = useTranslations()
   const [moreOpen, setMoreOpen] = useState(false)
   const [openSubMenus, setOpenSubMenus] = useState<string[]>([])
   const [premiumItem, setPremiumItem] = useState<string | null>(null)
@@ -76,10 +78,10 @@ export function Sidebar() {
         setPromoCode('')
         router.push(premiumItem)
       } else {
-        setPromoError('Invalid promo code')
+        setPromoError(t('sidebar.invalidPromo'))
       }
     } catch {
-      setPromoError('Connection error')
+      setPromoError(t('sidebar.connectionError'))
     } finally {
       setPromoLoading(false)
     }
@@ -318,7 +320,7 @@ export function Sidebar() {
         {/* More / Secondary nav toggle */}
         <button
           onClick={() => setMoreOpen((v) => !v)}
-          title={sidebarCollapsed ? 'More' : undefined}
+          title={sidebarCollapsed ? t('nav.more') : undefined}
           className={`
             group flex items-center rounded-xl transition-all duration-150 w-full
             ${sidebarCollapsed ? 'justify-center px-0 py-3' : 'gap-3 px-3 py-2.5'}
@@ -331,7 +333,7 @@ export function Sidebar() {
             {isAnySecondaryActive ? 'more_horiz' : 'more_horiz'}
           </span>
           {!sidebarCollapsed && (
-            <span className="text-sm font-medium flex-1 text-left">More</span>
+            <span className="text-sm font-medium flex-1 text-left">{t('nav.more')}</span>
           )}
           {!sidebarCollapsed && (
             <span className={`material-symbols-outlined text-[16px] transition-transform duration-200 ${moreOpen ? 'rotate-180' : ''}`}>
@@ -382,13 +384,13 @@ export function Sidebar() {
         {!sidebarCollapsed && (
           <div className="flex items-center gap-2 px-3 py-1.5 mb-1">
             <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse flex-shrink-0" />
-            <span className="text-[10px] font-mono text-primary/70 tracking-wider">SYSTEM ACTIVE</span>
+            <span className="text-[10px] font-mono text-primary/70 tracking-wider">{t('common.systemActive').toUpperCase()}</span>
           </div>
         )}
 
         <Link
           href="/profile"
-          title={sidebarCollapsed ? 'Profile' : undefined}
+          title={sidebarCollapsed ? t('nav.profile') : undefined}
           className={`
             group flex items-center rounded-xl transition-all duration-150
             ${isActive('/profile') ? 'bg-primary/10 text-primary' : 'text-[#6b7280] hover:text-[#c9d1d9] hover:bg-white/[0.04]'}
@@ -396,12 +398,12 @@ export function Sidebar() {
           `}
         >
           <span className="material-symbols-outlined text-[20px]">account_circle</span>
-          {!sidebarCollapsed && <span className="text-sm font-medium">Profile</span>}
+          {!sidebarCollapsed && <span className="text-sm font-medium">{t('nav.profile')}</span>}
         </Link>
 
         <Link
           href="/settings"
-          title={sidebarCollapsed ? 'Settings' : undefined}
+          title={sidebarCollapsed ? t('nav.settings') : undefined}
           className={`
             group flex items-center rounded-xl transition-all duration-150
             ${isActive('/settings') ? 'bg-primary/10 text-primary' : 'text-[#6b7280] hover:text-[#c9d1d9] hover:bg-white/[0.04]'}
@@ -409,20 +411,20 @@ export function Sidebar() {
           `}
         >
           <span className="material-symbols-outlined text-[20px]">settings</span>
-          {!sidebarCollapsed && <span className="text-sm font-medium">Settings</span>}
+          {!sidebarCollapsed && <span className="text-sm font-medium">{t('nav.settings')}</span>}
         </Link>
 
         {/* Logout */}
         <button
           onClick={handleLogout}
-          title={sidebarCollapsed ? 'Log Out' : undefined}
+          title={sidebarCollapsed ? t('nav.logout') : undefined}
           className={`
             w-full flex items-center rounded-xl transition-all duration-150 text-[#6b7280] hover:text-error hover:bg-error/5
             ${sidebarCollapsed ? 'justify-center px-0 py-2.5' : 'gap-3 px-3 py-2.5'}
           `}
         >
           <span className="material-symbols-outlined text-[20px]">logout</span>
-          {!sidebarCollapsed && <span className="text-sm">Log Out</span>}
+          {!sidebarCollapsed && <span className="text-sm">{t('nav.logout')}</span>}
         </button>
 
         {/* Collapse toggle */}
@@ -457,15 +459,15 @@ export function Sidebar() {
                 <span className="material-symbols-outlined text-2xl text-amber-400">lock</span>
               </div>
               <div>
-                <p className="text-[10px] font-mono text-amber-400/70 uppercase tracking-[0.15em] mb-0.5">Pro Plan</p>
+                <p className="text-[10px] font-mono text-amber-400/70 uppercase tracking-[0.15em] mb-0.5">{t('sidebar.proTariff')}</p>
                 <p className="text-base font-bold text-on-surface">
                   {PREMIUM_FEATURE_LABELS[premiumItem] ?? premiumItem}
                 </p>
               </div>
             </div>
             <p className="text-sm text-on-surface-variant leading-relaxed mb-4">
-              Enter a promo code to access the{' '}
-              <span className="text-amber-400 font-medium">Pro</span> section.
+              {t('sidebar.enterPromoCode')}{' '}
+              <span className="text-amber-400 font-medium">Pro</span> {t('sidebar.proSection')}
             </p>
             <div className="mb-4 space-y-2">
               <input
@@ -473,7 +475,7 @@ export function Sidebar() {
                 value={promoCode}
                 onChange={(e) => { setPromoCode(e.target.value); setPromoError('') }}
                 onKeyDown={(e) => e.key === 'Enter' && handlePromoSubmit()}
-                placeholder="Promo code"
+                placeholder={t('sidebar.promoCode')}
                 autoFocus
                 className="w-full bg-white/[0.05] border border-white/[0.08] rounded-xl px-4 py-2.5 text-sm text-on-surface placeholder:text-on-surface-variant/40 focus:outline-none focus:border-amber-500/50 transition-colors"
               />
@@ -486,14 +488,14 @@ export function Sidebar() {
                 onClick={closePremiumModal}
                 className="flex-1 py-2.5 rounded-xl border border-white/[0.08] text-on-surface-variant text-sm transition-colors hover:bg-white/[0.04]"
               >
-                Close
+                {t('common.close')}
               </button>
               <button
                 onClick={handlePromoSubmit}
                 disabled={promoLoading || !promoCode.trim()}
                 className="flex-1 py-2.5 rounded-xl bg-amber-500/90 hover:bg-amber-400 disabled:opacity-50 text-black font-semibold text-sm transition-colors"
               >
-                {promoLoading ? 'Checking...' : 'Apply →'}
+                {promoLoading ? t('sidebar.checking') : `${t('common.apply')} →`}
               </button>
             </div>
           </div>

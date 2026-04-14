@@ -12,6 +12,7 @@ import {
   Shield,
 } from 'lucide-react'
 import { useGigaPanelStore } from '@/stores/gigaPanel.store'
+import { useTranslations } from 'next-intl'
 import { RequestsModule } from '@/components/giga-panel/RequestsModule'
 import { CRMModule } from '@/components/giga-panel/CRMModule'
 import { ClientsModule } from '@/components/giga-panel/ClientsModule'
@@ -53,6 +54,7 @@ function KpiCard({
 
 export default function GigaPanelPage() {
   const { activeModule, setActiveModule, requests, users, clients } = useGigaPanelStore()
+  const t = useTranslations()
 
   const totalPending = requests.filter((r) => r.status === 'pending').length
   const totalApproved = requests.filter((r) => r.status === 'approved').length
@@ -67,14 +69,14 @@ export default function GigaPanelPage() {
           <div className="hidden md:flex items-center gap-2 mb-1">
             <Shield size={14} className="text-blue-400" />
             <span className="text-xs font-semibold text-blue-400 tracking-[0.15em] uppercase">
-              GIGA Panel
+              {t('giga.title')}
             </span>
           </div>
           <h1 className="text-lg md:text-2xl font-bold text-slate-100 tracking-tight">
-            Command Center
+            {t('dashboard.title')}
           </h1>
           <p className="text-xs md:text-sm text-slate-500 mt-0.5">
-            System level access
+            {t('dashboard.systemAccess')}
           </p>
         </div>
 
@@ -91,7 +93,7 @@ export default function GigaPanelPage() {
             `}
           >
             <InboxIcon size={15} />
-            Applications
+            {t('giga.requests')}
             {totalPending > 0 && (
               <span className="flex items-center justify-center h-4 min-w-4 px-1 rounded-full
                 bg-blue-500 text-white text-[9px] font-bold">
@@ -110,7 +112,7 @@ export default function GigaPanelPage() {
             `}
           >
             <Users2 size={15} />
-            CRM
+            {t('giga.crm')}
           </button>
           <button
             onClick={() => setActiveModule('clients')}
@@ -123,7 +125,7 @@ export default function GigaPanelPage() {
             `}
           >
             <Building2 size={15} />
-            Clients
+            {t('nav.clients')}
             {clients.length > 0 && (
               <span className="flex items-center justify-center h-4 min-w-4 px-1 rounded-full
                 bg-blue-500/30 text-blue-300 text-[9px] font-bold">
@@ -137,37 +139,37 @@ export default function GigaPanelPage() {
       {/* KPI row */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 md:gap-4 mb-6 md:mb-8">
         <KpiCard
-          label="Awaiting decision"
+          label={t('giga.pendingDecision')}
           value={totalPending}
           icon={<Clock size={16} className="text-amber-400" />}
           accent="bg-amber-500/15 border border-amber-500/20"
-          sub="Require attention"
+          sub={t('giga.requireAttention')}
         />
         <KpiCard
-          label="Approved"
+          label={t('giga.approved')}
           value={totalApproved}
           icon={<CheckCircle size={16} className="text-emerald-400" />}
           accent="bg-emerald-500/15 border border-emerald-500/20"
         />
         <KpiCard
-          label="Rejected"
+          label={t('giga.rejected')}
           value={totalRejected}
           icon={<XCircle size={16} className="text-red-400" />}
           accent="bg-red-500/15 border border-red-500/20"
         />
         <KpiCard
-          label="Blocked"
+          label={t('giga.blocked')}
           value={totalBlocked}
           icon={<TrendingUp size={16} className="text-slate-400" />}
           accent="bg-slate-500/15 border border-slate-500/20"
-          sub={`из ${users.length} пользователей`}
+          sub={t('giga.ofUsers', { count: users.length })}
         />
         <KpiCard
-          label="Clientов платформы"
+          label={t('giga.platformClients')}
           value={clients.length}
           icon={<Building2 size={16} className="text-blue-400" />}
           accent="bg-blue-500/15 border border-blue-500/20"
-          sub="В базе данных"
+          sub={t('giga.inDatabase')}
         />
       </div>
 

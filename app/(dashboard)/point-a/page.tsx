@@ -6,10 +6,12 @@ import { auth } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
 import { FileArea } from '@/components/point-a/FileArea'
 import { SurveyOverview } from '@/components/point-a/SurveyOverview'
+import { getTranslations } from 'next-intl/server'
 
 export const metadata: Metadata = { title: 'Point A — Current State' }
 
 export default async function PointAPage() {
+  const t = await getTranslations()
   const session = await auth()
 
   // Resolve userId from ALL auth sources:
@@ -124,24 +126,23 @@ export default async function PointAPage() {
       {/* Header */}
       <section>
         <p className="text-xs font-mono text-primary/70 uppercase tracking-[0.2em] mb-3">
-          AI Диагностика · Текущее состояние
+          {t('pointA.aiDiagnostics')}
         </p>
         <h1 className="font-headline text-3xl lg:text-4xl font-extrabold text-on-surface">
-          Точка <span className="text-gradient">А</span>
+          {t('pointA.title')}
         </h1>
         <p className="text-on-surface-variant mt-2 text-sm max-w-xl leading-relaxed">
-          Объективная оценка текущего состояния business.
-          Загрузите документы для автоматического анализа ИИ-агентом.
+          {t('pointA.subtitle')}
         </p>
       </section>
 
       {/* Current State Overview */}
       <section className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
-          { label: 'Overall Score', value: String(avgScore), icon: 'radar', good: avgScore >= 50, note: avgScore ? 'из 100' : 'нет данных' },
-          { label: 'Clients', value: '0', icon: 'groups', good: false, note: 'подключите CRM' },
-          { label: 'Documents', value: String(docsCount), icon: 'description', good: docsCount > 0, note: docsCount > 0 ? 'загружено' : 'нет файлов' },
-          { label: 'Health', value: avgScore >= 70 ? 'High' : avgScore >= 40 ? 'Medium' : avgScore > 0 ? 'Low' : '—', icon: 'favorite', good: avgScore >= 40, note: avgScore > 0 ? 'по диагностике' : 'нет данных' },
+          { label: t('pointA.overallScore'), value: String(avgScore), icon: 'radar', good: avgScore >= 50, note: avgScore ? t('pointA.outOf100') : t('common.noData') },
+          { label: t('pointA.clients'), value: '0', icon: 'groups', good: false, note: t('pointA.connectCrm') },
+          { label: t('pointA.documents'), value: String(docsCount), icon: 'description', good: docsCount > 0, note: docsCount > 0 ? t('pointA.uploaded') : t('pointA.noFiles') },
+          { label: t('pointA.health'), value: avgScore >= 70 ? 'High' : avgScore >= 40 ? 'Medium' : avgScore > 0 ? 'Low' : '—', icon: 'favorite', good: avgScore >= 40, note: avgScore > 0 ? t('pointA.byDiagnostics') : t('common.noData') },
         ].map((stat) => (
           <div key={stat.label} className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-5 hover:border-primary/10 transition-colors">
             <div className="flex items-start justify-between mb-3">
@@ -158,8 +159,8 @@ export default async function PointAPage() {
       <section>
         <div className="flex justify-between items-end border-b border-outline-variant/10 pb-4 mb-4">
           <div>
-            <h2 className="font-headline text-lg font-bold text-on-surface">Данные анкеты</h2>
-            <p className="text-xs text-on-surface-variant mt-1">Информация из бизнес-анкеты для AI-диагностики</p>
+            <h2 className="font-headline text-lg font-bold text-on-surface">{t('pointA.surveyData')}</h2>
+            <p className="text-xs text-on-surface-variant mt-1">{t('pointA.surveyInfo')}</p>
           </div>
           {Object.keys(surveyAnswers).length > 0 && (
             <a href="/client/onboarding" className="text-xs text-primary/70 hover:text-primary transition-colors font-mono flex items-center gap-1">

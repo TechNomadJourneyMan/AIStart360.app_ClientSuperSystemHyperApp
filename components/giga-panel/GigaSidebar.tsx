@@ -13,6 +13,7 @@ import {
   X,
 } from 'lucide-react'
 import { useGigaPanelStore, type ActiveModule } from '@/stores/gigaPanel.store'
+import { useTranslations } from 'next-intl'
 
 interface NavItem {
   id: ActiveModule | 'overview'
@@ -29,6 +30,7 @@ interface GigaSidebarProps {
 
 export function GigaSidebar({ isOpen = false, onClose }: GigaSidebarProps) {
   const { activeModule, setActiveModule, requests, clients } = useGigaPanelStore()
+  const t = useTranslations()
 
   useEffect(() => {
     document.cookie = 'aistart360_role=super_admin; path=/; max-age=604800; SameSite=Lax'
@@ -44,10 +46,10 @@ export function GigaSidebar({ isOpen = false, onClose }: GigaSidebarProps) {
   const pendingCount = requests.filter((r) => r.status === 'pending').length
 
   const navItems: NavItem[] = [
-    { id: 'overview', label: 'Overview', icon: <LayoutDashboard size={18} />, disabled: true },
-    { id: 'requests', label: 'Requests', icon: <InboxIcon size={18} />, badge: pendingCount },
-    { id: 'crm', label: 'CRM / Users', icon: <Users2 size={18} /> },
-    { id: 'clients', label: 'Platform Clients', icon: <Building2 size={18} />, badge: clients.length > 0 ? clients.length : undefined },
+    { id: 'overview', label: t('giga.overview'), icon: <LayoutDashboard size={18} />, disabled: true },
+    { id: 'requests', label: t('giga.requests'), icon: <InboxIcon size={18} />, badge: pendingCount },
+    { id: 'crm', label: t('giga.crmUsers'), icon: <Users2 size={18} /> },
+    { id: 'clients', label: t('giga.platformClients'), icon: <Building2 size={18} />, badge: clients.length > 0 ? clients.length : undefined },
   ]
 
   const handleNav = (id: NavItem['id'], disabled?: boolean) => {
@@ -65,8 +67,8 @@ export function GigaSidebar({ isOpen = false, onClose }: GigaSidebarProps) {
             <Shield size={18} className="text-blue-400" />
           </div>
           <div>
-            <p className="text-xs font-semibold text-blue-400 tracking-[0.15em] uppercase">GIGA Panel</p>
-            <p className="text-[10px] text-slate-500 mt-0.5">Super Admin Console</p>
+            <p className="text-xs font-semibold text-blue-400 tracking-[0.15em] uppercase">{t('giga.title')}</p>
+            <p className="text-[10px] text-slate-500 mt-0.5">{t('giga.subtitle')}</p>
           </div>
         </div>
         {/* Mobile close button */}
@@ -117,22 +119,22 @@ export function GigaSidebar({ isOpen = false, onClose }: GigaSidebarProps) {
 
       {/* Stats summary */}
       <div className="mx-3 md:mx-4 mb-4 p-3 rounded-xl bg-white/[0.03] border border-white/[0.06]">
-        <p className="text-[10px] text-slate-500 uppercase tracking-widest mb-2">Statistics</p>
+        <p className="text-[10px] text-slate-500 uppercase tracking-widest mb-2">{t('giga.statistics')}</p>
         <div className="grid grid-cols-2 md:grid-cols-1 gap-1.5">
           <div className="flex justify-between text-xs">
-            <span className="text-slate-500">Total Requests</span>
+            <span className="text-slate-500">{t('giga.totalRequests')}</span>
             <span className="text-slate-300 font-semibold">{requests.length}</span>
           </div>
           <div className="flex justify-between text-xs">
-            <span className="text-slate-500">Pending</span>
+            <span className="text-slate-500">{t('giga.pending')}</span>
             <span className="text-amber-400 font-semibold">{pendingCount}</span>
           </div>
           <div className="flex justify-between text-xs">
-            <span className="text-slate-500">Approved</span>
+            <span className="text-slate-500">{t('giga.approved')}</span>
             <span className="text-emerald-400 font-semibold">{requests.filter((r) => r.status === 'approved').length}</span>
           </div>
           <div className="flex justify-between text-xs">
-            <span className="text-slate-500">Clients</span>
+            <span className="text-slate-500">{t('nav.clients')}</span>
             <span className="text-blue-400 font-semibold">{clients.length}</span>
           </div>
         </div>
@@ -146,7 +148,7 @@ export function GigaSidebar({ isOpen = false, onClose }: GigaSidebarProps) {
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-[11px] font-semibold text-slate-300 truncate">SUPER_ADMIN</p>
-            <p className="text-[10px] text-slate-600 truncate">System Access</p>
+            <p className="text-[10px] text-slate-600 truncate">{t('giga.systemAccessShort')}</p>
           </div>
           <button className="text-slate-600 hover:text-red-400 transition-colors">
             <LogOut size={14} />

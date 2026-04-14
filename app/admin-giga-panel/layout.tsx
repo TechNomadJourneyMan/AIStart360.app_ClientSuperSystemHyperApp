@@ -2,9 +2,11 @@
 
 import { useState } from 'react'
 import { GigaSidebar } from '@/components/giga-panel/GigaSidebar'
+import { useTranslations } from 'next-intl'
 
 export default function GigaPanelLayout({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const t = useTranslations()
 
   return (
     <div
@@ -32,7 +34,7 @@ export default function GigaPanelLayout({ children }: { children: React.ReactNod
         >
           <span className="material-symbols-outlined text-lg text-blue-400">menu</span>
         </button>
-        <p className="text-xs font-semibold text-blue-400 tracking-[0.15em] uppercase">GIGA Panel</p>
+        <p className="text-xs font-semibold text-blue-400 tracking-[0.15em] uppercase">{t('giga.title')}</p>
       </div>
 
       {/* Sidebar */}

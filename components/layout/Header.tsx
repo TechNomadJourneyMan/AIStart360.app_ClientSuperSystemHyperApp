@@ -7,22 +7,23 @@ import { useUIStore } from '@/stores/ui.store'
 import { useNotificationsStore } from '@/stores/notifications.store'
 import { useAuthStore } from '@/stores/auth.store'
 import { useThemeStore } from '@/stores/theme.store'
+import { useLocaleStore } from '@/stores/locale.store'
+import { useTranslations } from 'next-intl'
 import { hasPermission } from '@/lib/navigation'
 import type { UserRole } from '@/types'
 
-type Lang = 'RU' | 'EN' | 'KZ'
-const LANGS: Lang[] = ['RU', 'EN', 'KZ']
 
 export function Header() {
   const { sidebarCollapsed } = useUIStore()
   const { unreadCount } = useNotificationsStore()
   const { user, logout } = useAuthStore()
   const { theme, toggleTheme } = useThemeStore()
+  const { locale, toggleLocale } = useLocaleStore()
+  const t = useTranslations()
   const router = useRouter()
   const [searchFocused, setSearchFocused] = useState(false)
   const [showUserMenu, setShowUserMenu] = useState(false)
   const [showQuickAction, setShowQuickAction] = useState(false)
-  const [lang, setLang] = useState<Lang>('RU')
   const [time, setTime] = useState('')
 
   useEffect(() => {
@@ -34,8 +35,6 @@ export function Header() {
     const t = setInterval(update, 1000)
     return () => clearInterval(t)
   }, [])
-
-  const cycleLang = () => setLang((l) => LANGS[(LANGS.indexOf(l) + 1) % LANGS.length])
 
   const QUICK_ACTIONS = [
     { label: 'New Client',      icon: 'person_add',    href: '/clients',    reqPermission: 'clients.write' },
@@ -72,7 +71,7 @@ export function Header() {
         </span>
         <input
           type="search"
-          placeholder={searchFocused ? 'Search clients, reports...' : 'Search...'}
+          placeholder={searchFocused ? t('header.searchExpanded') : t('common.search')}
           onFocus={() => setSearchFocused(true)}
           onBlur={() => setSearchFocused(false)}
           onKeyDown={(e) => {
@@ -127,7 +126,7 @@ export function Header() {
         <Link href="/reports"
           className="hidden lg:inline-flex items-center gap-1.5 text-xs font-semibold bg-gradient-to-br from-primary to-primary-container text-on-primary px-3.5 py-1.5 rounded-lg hover:scale-[0.97] active:scale-95 transition-all duration-150">
           <span className="material-symbols-outlined text-[18px]">description</span>
-          Reports
+          {t('nav.reports')}
         </Link>
 
         <div className="w-px h-6 bg-outline-variant/20 hidden md:block" />
@@ -140,12 +139,12 @@ export function Header() {
 
         {/* Language switcher */}
         <button
-          onClick={cycleLang}
-          title={`Language: ${lang} → switch`}
+          onClick={toggleLocale}
+          title={`Language: ${locale.toUpperCase()} — switch`}
           className="flex items-center gap-1 px-2 py-1.5 rounded-lg border border-outline-variant/20 text-xs font-mono text-on-surface-variant hover:text-on-surface hover:border-primary/20 hover:bg-primary/5 transition-all duration-150"
         >
           <span className="material-symbols-outlined text-sm hidden md:inline">translate</span>
-          <span>{lang}</span>
+          <span>{locale.toUpperCase()}</span>
         </button>
 
         {/* Theme toggle */}
@@ -197,18 +196,18 @@ export function Header() {
                 <Link href="/profile" onClick={() => setShowUserMenu(false)}
                   className="flex items-center gap-2 px-4 py-2.5 text-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high/60 transition-colors">
                   <span className="material-symbols-outlined text-base">account_circle</span>
-                  Profile
+                  {t('nav.profile')}
                 </Link>
                 <Link href="/settings" onClick={() => setShowUserMenu(false)}
                   className="flex items-center gap-2 px-4 py-2.5 text-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high/60 transition-colors">
                   <span className="material-symbols-outlined text-base">settings</span>
-                  Settings
+                  {t('nav.settings')}
                 </Link>
                 <div className="border-t border-outline-variant/15" />
                 <button onClick={handleLogout}
                   className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-error/70 hover:text-error hover:bg-error/5 transition-colors">
                   <span className="material-symbols-outlined text-base">logout</span>
-                  Log Out
+                  {t('nav.logout')}
                 </button>
               </div>
             </>
