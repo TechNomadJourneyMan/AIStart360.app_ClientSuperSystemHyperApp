@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic"
 
 import type { Metadata } from 'next'
 import { prisma } from '@/lib/db'
+import { getTranslations } from 'next-intl/server'
 
 export const metadata: Metadata = { title: 'Notifications' }
 
@@ -24,6 +25,7 @@ const typeColor: Record<string, string> = {
 }
 
 export default async function NotificationsPage() {
+  const t = await getTranslations('notificationsPage')
   const logs = await prisma.auditLog.findMany({
     include: {
       performer: {
@@ -38,7 +40,7 @@ export default async function NotificationsPage() {
     id: log.id,
     type: log.action === 'reject' ? 'alert' : log.action === 'approve' ? 'project' : log.action === 'comment' ? 'team' : 'system',
     title: `${log.action} · ${log.entityType}`,
-    body: `Изменение ${log.entityType} выполнено: ${log.performer.name ?? log.performer.email}`,
+    body: t('changePerformed', { entityType: log.entityType, performer: log.performer.name ?? log.performer.email }),
     read: false,
     entityType: log.entityType,
     entityId: log.entityId,
@@ -53,11 +55,11 @@ export default async function NotificationsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="font-headline text-3xl font-bold text-on-surface">Notifications</h1>
-          <p className="text-on-surface-variant text-sm mt-1">{unread.length} непрочитанных</p>
+          <p className="text-on-surface-variant text-sm mt-1">{unread.length} {t('unread')}</p>
         </div>
         {unread.length > 0 && (
           <button className="text-xs font-mono text-primary hover:underline uppercase tracking-wider">
-            Прочитать все
+            {t('markAllRead')}
           </button>
         )}
       </div>
@@ -108,7 +110,7 @@ export default async function NotificationsPage() {
         {notifications.length === 0 && (
           <div className="bg-surface-container rounded-xl p-8 text-center">
             <span className="material-symbols-outlined text-4xl text-on-surface-variant/30 mb-3 block">notifications_off</span>
-            <p className="text-sm text-on-surface-variant">События пока отсутствуют</p>
+            <p className="text-sm text-on-surface-variant">{t('noEvents')}</p>
           </div>
         )}
       </div>

@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useAuthStore, UserRole } from '@/stores/auth.store'
 import { Logo } from '@/components/ui/Logo'
+import { useTranslations } from 'next-intl'
 
 export default function RegisterPage() {
   const [name, setName] = useState('')
@@ -17,6 +18,7 @@ export default function RegisterPage() {
   const [agreeTerms, setAgreeTerms] = useState(false)
   const { register, loginWithGoogle, isLoading, error, clearError, user } = useAuthStore()
   const router = useRouter()
+  const t = useTranslations()
 
   useEffect(() => {
     if (user) {
@@ -37,11 +39,11 @@ export default function RegisterPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (password !== confirmPassword) {
-      useAuthStore.setState({ error: 'Пароли не совпадают' })
+      useAuthStore.setState({ error: t('auth.passwordsMismatch') })
       return
     }
     if (!agreeTerms) {
-      useAuthStore.setState({ error: 'Необходимо принять условия использования' })
+      useAuthStore.setState({ error: t('auth.mustAcceptTerms') })
       return
     }
     try {
@@ -85,19 +87,19 @@ export default function RegisterPage() {
 
         <div className="relative z-10">
           <h1 className="text-3xl font-headline font-extrabold text-on-surface leading-tight">
-            Присоединяйтесь к<br />
+            {t('auth.joinAIStart').split('AIStart360')[0]}<br />
             <span className="text-primary">AIStart360</span>
           </h1>
           <p className="text-sm text-on-surface-variant/60 mt-4 max-w-sm leading-relaxed">
-            Платформа для роста бизнеса с AI-диагностикой, рыночной аналитикой и стратегическим сопровождением.
+            {t('auth.platformForGrowth')}
           </p>
 
           {/* Features */}
           <div className="mt-8 space-y-4">
             {[
-              { icon: 'radar', title: 'GRI-диагностика', desc: 'Оценка по 6 доменам готовности к росту' },
-              { icon: 'query_stats', title: 'Рыночная аналитика', desc: 'TAM/SAM/SOM, тренды, конкуренты' },
-              { icon: 'trending_up', title: 'Дорожная карта', desc: 'Точка А → Точка Б с конкретными KPI' },
+              { icon: 'radar', title: t('auth.griDiagnostics'), desc: t('auth.griDiagDesc') },
+              { icon: 'query_stats', title: t('auth.marketAnalytics'), desc: t('auth.marketAnalyticsDesc') },
+              { icon: 'trending_up', title: t('auth.roadmap'), desc: t('auth.roadmapDesc') },
             ].map((f) => (
               <div key={f.icon} className="flex items-start gap-3">
                 <span className="material-symbols-outlined text-primary text-xl mt-0.5">{f.icon}</span>
@@ -113,9 +115,9 @@ export default function RegisterPage() {
         {/* Stats */}
         <div className="relative z-10 grid grid-cols-3 gap-3">
           {[
-            { val: '500+', label: 'клиентов' },
-            { val: '27', label: 'отраслей' },
-            { val: '94%', label: 'NPS' },
+            { val: '500+', label: t('auth.clientsCount') },
+            { val: '27', label: t('auth.industriesCount') },
+            { val: '94%', label: t('auth.npsScore') },
           ].map((s) => (
             <div key={s.label} className="bg-surface-container/30 border border-white/[0.05] rounded-xl p-4 text-center">
               <p className="text-xl font-bold text-primary">{s.val}</p>
@@ -140,22 +142,22 @@ export default function RegisterPage() {
                 role === 'client' ? 'bg-surface-container-high text-on-surface shadow-sm' : 'text-on-surface-variant/60 hover:text-on-surface-variant'
               }`}>
               <span className="material-symbols-outlined text-base">business_center</span>
-              Клиент / Бизнес
+              {t('auth.clientBusiness')}
             </button>
             <button onClick={() => setRole('owner')}
               className={`h-10 rounded-lg text-sm font-medium flex items-center justify-center gap-2 transition-all ${
                 role === 'owner' ? 'bg-surface-container-high text-on-surface shadow-sm' : 'text-on-surface-variant/60 hover:text-on-surface-variant'
               }`}>
               <span className="material-symbols-outlined text-base">groups</span>
-              Команда
+              {t('auth.teamRole')}
             </button>
           </div>
 
-          <h1 className="text-2xl font-headline font-extrabold text-on-surface mb-1">Подать заявку</h1>
+          <h1 className="text-2xl font-headline font-extrabold text-on-surface mb-1">{t('auth.submitApplication')}</h1>
           <p className="text-sm text-on-surface-variant/50 mb-6">
             {role === 'client'
-              ? 'Зарегистрируйтесь как клиент для AI-диагностики бизнеса.'
-              : 'Присоединяйтесь к команде AIStart360.'}
+              ? t('auth.clientRegDesc')
+              : t('auth.teamRegDesc')}
           </p>
 
           {error && (
@@ -171,7 +173,7 @@ export default function RegisterPage() {
           <form onSubmit={handleSubmit} className="space-y-3.5">
             {/* Name */}
             <div className="space-y-1.5">
-              <label className="block text-[10px] font-mono text-on-surface-variant/60 uppercase tracking-widest ml-1">Ваше имя</label>
+              <label className="block text-[10px] font-mono text-on-surface-variant/60 uppercase tracking-widest ml-1">{t('auth.yourName')}</label>
               <div className="relative group">
                 <span className="absolute left-3.5 top-1/2 -translate-y-1/2 material-symbols-outlined text-on-surface-variant/30 group-focus-within:text-primary transition-colors text-lg">person</span>
                 <input type="text" required value={name} onChange={(e) => setName(e.target.value)}
@@ -182,7 +184,7 @@ export default function RegisterPage() {
 
             {/* Email */}
             <div className="space-y-1.5">
-              <label className="block text-[10px] font-mono text-on-surface-variant/60 uppercase tracking-widest ml-1">Email</label>
+              <label className="block text-[10px] font-mono text-on-surface-variant/60 uppercase tracking-widest ml-1">{t('auth.email')}</label>
               <div className="relative group">
                 <span className="absolute left-3.5 top-1/2 -translate-y-1/2 material-symbols-outlined text-on-surface-variant/30 group-focus-within:text-primary transition-colors text-lg">mail</span>
                 <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)}
@@ -193,7 +195,7 @@ export default function RegisterPage() {
 
             {/* Company */}
             <div className="space-y-1.5">
-              <label className="block text-[10px] font-mono text-on-surface-variant/60 uppercase tracking-widest ml-1">Название компании</label>
+              <label className="block text-[10px] font-mono text-on-surface-variant/60 uppercase tracking-widest ml-1">{t('auth.companyName')}</label>
               <div className="relative group">
                 <span className="absolute left-3.5 top-1/2 -translate-y-1/2 material-symbols-outlined text-on-surface-variant/30 group-focus-within:text-primary transition-colors text-lg">business</span>
                 <input type="text" required={role === 'client'} value={organization} onChange={(e) => setOrganization(e.target.value)}
@@ -204,12 +206,12 @@ export default function RegisterPage() {
 
             {/* Password */}
             <div className="space-y-1.5">
-              <label className="block text-[10px] font-mono text-on-surface-variant/60 uppercase tracking-widest ml-1">Пароль</label>
+              <label className="block text-[10px] font-mono text-on-surface-variant/60 uppercase tracking-widest ml-1">{t('auth.password')}</label>
               <div className="relative group">
                 <span className="absolute left-3.5 top-1/2 -translate-y-1/2 material-symbols-outlined text-on-surface-variant/30 group-focus-within:text-primary transition-colors text-lg">lock</span>
                 <input type={showPassword ? 'text' : 'password'} required value={password} onChange={(e) => setPassword(e.target.value)}
                   className="w-full h-11 bg-surface-container-high/60 border border-white/[0.06] rounded-xl pl-11 pr-11 text-sm text-on-surface focus:outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/10 transition-all placeholder:text-on-surface-variant/30"
-                  placeholder="Минимум 8 символов" />
+                  placeholder={t('auth.minChars')} />
                 <button type="button" onClick={() => setShowPassword(!showPassword)}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant/30 hover:text-on-surface-variant transition-colors">
                   <span className="material-symbols-outlined text-lg">{showPassword ? 'visibility_off' : 'visibility'}</span>
@@ -219,12 +221,12 @@ export default function RegisterPage() {
 
             {/* Confirm Password */}
             <div className="space-y-1.5">
-              <label className="block text-[10px] font-mono text-on-surface-variant/60 uppercase tracking-widest ml-1">Подтверждение пароля</label>
+              <label className="block text-[10px] font-mono text-on-surface-variant/60 uppercase tracking-widest ml-1">{t('auth.confirmPassword')}</label>
               <div className="relative group">
                 <span className="absolute left-3.5 top-1/2 -translate-y-1/2 material-symbols-outlined text-on-surface-variant/30 group-focus-within:text-primary transition-colors text-lg">lock</span>
                 <input type={showPassword ? 'text' : 'password'} required value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)}
                   className="w-full h-11 bg-surface-container-high/60 border border-white/[0.06] rounded-xl pl-11 pr-4 text-sm text-on-surface focus:outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/10 transition-all placeholder:text-on-surface-variant/30"
-                  placeholder="Повторите пароль" />
+                  placeholder={t('auth.repeatPassword')} />
               </div>
             </div>
 
@@ -232,7 +234,7 @@ export default function RegisterPage() {
             <div className="relative my-4">
               <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-white/[0.06]" /></div>
               <div className="relative flex justify-center">
-                <span className="px-3 text-[10px] font-mono text-on-surface-variant/40 bg-[#0a0e17] uppercase tracking-widest">или через</span>
+                <span className="px-3 text-[10px] font-mono text-on-surface-variant/40 bg-[#0a0e17] uppercase tracking-widest">{t('common.orVia')}</span>
               </div>
             </div>
 
@@ -261,10 +263,10 @@ export default function RegisterPage() {
               <input type="checkbox" checked={agreeTerms} onChange={(e) => setAgreeTerms(e.target.checked)}
                 className="mt-0.5 w-4 h-4 rounded border-white/[0.1] bg-surface-container-high text-primary focus:ring-primary/20 focus:ring-2" />
               <span className="text-[11px] text-on-surface-variant/60 leading-relaxed">
-                Я принимаю{' '}
-                <Link href="/terms" className="text-primary/80 hover:text-primary underline">Условия использования</Link>
-                {' '}и{' '}
-                <Link href="/privacy" className="text-primary/80 hover:text-primary underline">Политику конфиденциальности</Link>
+                {t('auth.iAcceptTerms')}{' '}
+                <Link href="/terms" className="text-primary/80 hover:text-primary underline">{t('auth.termsOfUse')}</Link>
+                {' '}{t('auth.and')}{' '}
+                <Link href="/privacy" className="text-primary/80 hover:text-primary underline">{t('auth.privacyPolicy')}</Link>
               </span>
             </label>
 
@@ -276,7 +278,7 @@ export default function RegisterPage() {
               ) : (
                 <>
                   <span className="material-symbols-outlined text-lg">play_arrow</span>
-                  Подать заявку
+                  {t('auth.submitApplication')}
                 </>
               )}
             </button>
@@ -285,15 +287,15 @@ export default function RegisterPage() {
             <div className="flex items-start gap-2 mt-3 p-3 bg-primary/5 border border-primary/10 rounded-xl">
               <span className="material-symbols-outlined text-primary/60 text-lg mt-0.5">info</span>
               <p className="text-[11px] text-on-surface-variant/60 leading-relaxed">
-                После регистрации ваша заявка будет рассмотрена администратором в течение 1 рабочего дня. Вы получите уведомление по email.
+                {t('auth.afterRegInfo')}
               </p>
             </div>
           </form>
 
           {/* Footer */}
           <p className="text-center text-sm text-on-surface-variant/50 mt-6">
-            Уже есть аккаунт?{' '}
-            <Link href="/login" className="text-primary font-bold hover:underline">Войти</Link>
+            {t('auth.alreadyHaveAccount')}{' '}
+            <Link href="/login" className="text-primary font-bold hover:underline">{t('auth.signIn')}</Link>
           </p>
         </div>
       </div>

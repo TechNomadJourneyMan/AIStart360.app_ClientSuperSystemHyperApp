@@ -27,34 +27,27 @@ import {
 import { useGigaPanelStore, type GigaUser, type UserStatus } from '@/stores/gigaPanel.store'
 import { UserSettingsModal } from './UserSettingsModal'
 import { SURVEY_LABELS, SURVEY_STEP_LABELS, formatSurveyValue, getStepFromKey } from '@/lib/survey-labels'
-
-// ─── Filter tabs ──────────────────────────────────────────────────────────────
-
-const FILTERS: { id: UserStatus | 'all'; label: string }[] = [
-  { id: 'all', label: 'Все' },
-  { id: 'active', label: 'Активные' },
-  { id: 'blocked', label: 'Заблокированные' },
-  { id: 'pending', label: 'Ожидающие' },
-]
+import { useTranslations } from 'next-intl'
 
 // ─── Status chip ──────────────────────────────────────────────────────────────
 
 function UserStatusChip({ status }: { status: UserStatus }) {
+  const t = useTranslations()
   const map = {
     active: {
       cls: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/25',
       icon: <CheckCircle size={11} />,
-      label: 'Активен',
+      label: t('giga.activeStatus'),
     },
     blocked: {
       cls: 'bg-red-500/15 text-red-300 border-red-500/25',
       icon: <XCircle size={11} />,
-      label: 'Заблокирован',
+      label: t('giga.blockedStatus'),
     },
     pending: {
       cls: 'bg-amber-500/15 text-amber-300 border-amber-500/25',
       icon: <AlertCircle size={11} />,
-      label: 'Ожидает',
+      label: t('giga.pendingStatus'),
     },
   }
   const { cls, icon, label } = map[status]
@@ -86,6 +79,7 @@ function RoleBadge({ role }: { role: string }) {
 // ─── User survey detail (expandable) ─────────────────────────────────────────
 
 function UserSurveyDetail({ userId }: { userId: string }) {
+  const t = useTranslations()
   const [data, setData] = useState<{
     answers: Record<string, unknown>
     company: Record<string, unknown> | null
@@ -172,12 +166,20 @@ function UserSurveyDetail({ userId }: { userId: string }) {
     return (
       <div className="flex items-center gap-2 py-6 justify-center">
         <Loader2 size={14} className="text-slate-500 animate-spin" />
-        <span className="text-[11px] text-slate-500">Загрузка данных...</span>
+        <span className="text-[11px] text-slate-500">{t('giga.loadingData')}</span>
       </div>
     )
   }
 
   const scoreColor = (s: number) => s >= 70 ? 'text-emerald-400' : s >= 40 ? 'text-amber-400' : 'text-red-400'
+
+  const diagBlockLabels: Record<string, string> = {
+    finance: t('giga.finance'),
+    sales: t('giga.sales'),
+    operations: t('giga.operations'),
+    marketing: t('giga.marketing'),
+    strategy: t('giga.strategy'),
+  }
 
   return (
     <div className="px-4 py-4 space-y-4">
@@ -186,13 +188,13 @@ function UserSurveyDetail({ userId }: { userId: string }) {
         <button onClick={openAsUser} disabled={impersonating}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium bg-blue-500/10 border border-blue-500/20 text-blue-300 hover:bg-blue-500/20 transition-all disabled:opacity-50">
           {impersonating ? <Loader2 size={12} className="animate-spin" /> : <ExternalLink size={12} />}
-          Открыть портал
+          {t('giga.openPortal')}
         </button>
         {data && data.completedSteps.length > 0 && !editing && (
           <button onClick={startEditing}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium bg-amber-500/10 border border-amber-500/20 text-amber-300 hover:bg-amber-500/20 transition-all">
             <Pencil size={12} />
-            Редактировать анкету
+            {t('giga.editSurvey')}
           </button>
         )}
         {editing && (
@@ -200,12 +202,12 @@ function UserSurveyDetail({ userId }: { userId: string }) {
             <button onClick={saveEdits} disabled={saving}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 hover:bg-emerald-500/20 transition-all disabled:opacity-50">
               {saving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
-              Сохранить
+              {t('common.save')}
             </button>
             <button onClick={cancelEditing}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium bg-white/[0.05] border border-white/[0.08] text-slate-400 hover:text-slate-300 transition-all">
               <X size={12} />
-              Отмена
+              {t('common.cancel')}
             </button>
           </>
         )}
@@ -216,29 +218,28 @@ function UserSurveyDetail({ userId }: { userId: string }) {
         <div className="p-3 rounded-xl bg-violet-500/5 border border-violet-500/10">
           <div className="flex items-center gap-1.5 mb-2">
             <FileText size={12} className="text-violet-400" />
-            <span className="text-[11px] font-semibold text-violet-300 uppercase tracking-wider">Результаты диагностики</span>
+            <span className="text-[11px] font-semibold text-violet-300 uppercase tracking-wider">{t('giga.diagnosticsResultsShort')}</span>
           </div>
           <div className="grid grid-cols-3 gap-2 mb-3">
             <div className="text-center">
-              <p className="text-[9px] text-slate-600 uppercase">Балл</p>
+              <p className="text-[9px] text-slate-600 uppercase">{t('giga.score')}</p>
               <p className={`text-lg font-mono font-bold ${scoreColor((diag.overall_score as number) ?? 0)}`}>{(diag.overall_score as number) ?? 0}</p>
             </div>
             <div className="text-center">
-              <p className="text-[9px] text-slate-600 uppercase">Health</p>
+              <p className="text-[9px] text-slate-600 uppercase">{t('giga.healthIndex')}</p>
               <p className={`text-lg font-mono font-bold ${scoreColor((diag.health_index as number) ?? 0)}`}>{(diag.health_index as number) ?? 0}</p>
             </div>
             <div className="text-center">
-              <p className="text-[9px] text-slate-600 uppercase">Стадия</p>
+              <p className="text-[9px] text-slate-600 uppercase">{t('giga.stage')}</p>
               <p className="text-sm font-mono font-bold text-blue-300">{(diag.stage as string) ?? '—'}</p>
             </div>
           </div>
           {['finance', 'sales', 'operations', 'marketing', 'strategy'].map(key => {
             const block = diag[`${key}_score`] as { score?: number } | null
             const s = block?.score ?? 0
-            const labels: Record<string, string> = { finance: 'Финансы', sales: 'Продажи', operations: 'Операции', marketing: 'Маркетинг', strategy: 'Стратегия' }
             return (
               <div key={key} className="flex items-center gap-2">
-                <span className="text-[10px] text-slate-500 w-20">{labels[key]}</span>
+                <span className="text-[10px] text-slate-500 w-20">{diagBlockLabels[key]}</span>
                 <div className="flex-1 h-1 bg-white/[0.04] rounded-full overflow-hidden">
                   <div className="h-full rounded-full" style={{ width: `${s}%`, background: s >= 70 ? '#6effc0' : s >= 40 ? '#fbbf24' : '#ef4444' }} />
                 </div>
@@ -255,7 +256,7 @@ function UserSurveyDetail({ userId }: { userId: string }) {
           <div className="flex items-center gap-1.5">
             <FileText size={12} className="text-blue-400" />
             <span className="text-[11px] font-semibold text-blue-300 uppercase tracking-wider">
-              Данные анкеты {editing && <span className="text-amber-400 ml-1">(редактирование)</span>}
+              {t('giga.surveyData')} {editing && <span className="text-amber-400 ml-1">({t('giga.editing')})</span>}
             </span>
           </div>
           {data.completedSteps.map(step => {
@@ -266,7 +267,7 @@ function UserSurveyDetail({ userId }: { userId: string }) {
             return (
               <div key={step} className="p-2.5 rounded-lg bg-white/[0.02] border border-white/[0.04]">
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">
-                  {SURVEY_STEP_LABELS[step] || `Шаг ${step}`}
+                  {SURVEY_STEP_LABELS[step] || `${t('giga.stepLabel')} ${step}`}
                 </p>
                 <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
                   {fields.map(f => (
@@ -290,7 +291,7 @@ function UserSurveyDetail({ userId }: { userId: string }) {
           })}
         </div>
       ) : !diag ? (
-        <p className="text-[11px] text-slate-600 italic py-2">Анкета не заполнена</p>
+        <p className="text-[11px] text-slate-600 italic py-2">{t('giga.surveyNotFilledShort')}</p>
       ) : null}
     </div>
   )
@@ -307,6 +308,7 @@ function UserRow({
   onBlock: (user: GigaUser) => void
   onOpenSettings: (user: GigaUser) => void
 }) {
+  const t = useTranslations()
   const [expanded, setExpanded] = useState(false)
   const initials = (user.name ?? user.email)
     .split(' ')
@@ -351,7 +353,7 @@ function UserRow({
                   {user.name ?? '—'}
                 </p>
                 {hasSurvey && (
-                  <span className="text-[8px] bg-emerald-500/15 text-emerald-400 px-1 py-0.5 rounded">Анкета</span>
+                  <span className="text-[8px] bg-emerald-500/15 text-emerald-400 px-1 py-0.5 rounded">{t('giga.surveyBadge')}</span>
                 )}
               </div>
               <p className="text-[11px] text-slate-500 truncate max-w-[140px]">{user.email}</p>
@@ -397,7 +399,7 @@ function UserRow({
               onClick={(e) => { e.stopPropagation(); onOpenSettings(user) }}
               whileHover={{ scale: 1.08 }}
               whileTap={{ scale: 0.92 }}
-              title="Настройки дашборда"
+              title={t('giga.dashboardSettingsTitle')}
               className="p-1.5 rounded-lg bg-white/[0.05] border border-white/[0.08]
                 text-slate-400 hover:text-blue-300 hover:border-blue-500/30
                 hover:bg-blue-500/10 transition-all"
@@ -410,7 +412,7 @@ function UserRow({
                 onClick={(e) => { e.stopPropagation(); onBlock(user) }}
                 whileHover={{ scale: 1.08 }}
                 whileTap={{ scale: 0.92 }}
-                title="Заблокировать пользователя"
+                title={t('giga.blockUser')}
                 className="p-1.5 rounded-lg bg-white/[0.05] border border-white/[0.08]
                   text-slate-400 hover:text-red-300 hover:border-red-500/30
                   hover:bg-red-500/10 transition-all"
@@ -436,6 +438,7 @@ function UserRow({
 // ─── Main CRM module ──────────────────────────────────────────────────────────
 
 export function CRMModule() {
+  const t = useTranslations()
   const {
     users,
     isLoadingUsers,
@@ -454,20 +457,27 @@ export function CRMModule() {
   const [sortField, setSortField] = useState<'name' | 'createdAt'>('createdAt')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
 
+  const FILTERS: { id: UserStatus | 'all'; label: string }[] = [
+    { id: 'all', label: t('giga.allFilter') },
+    { id: 'active', label: t('giga.activeFilter') },
+    { id: 'blocked', label: t('giga.blockedFilter') },
+    { id: 'pending', label: t('giga.pendingFilter') },
+  ]
+
   const fetchUsers = useCallback(async () => {
     setLoadingUsers(true)
     setUsersError(null)
     try {
       const res = await fetch('/api/giga-admin/users')
-      if (!res.ok) throw new Error('Ошибка загрузки пользователей')
+      if (!res.ok) throw new Error(t('giga.errorLoadingUsers'))
       const data = await res.json()
       setUsers(data.users)
     } catch (err) {
-      setUsersError(err instanceof Error ? err.message : 'Неизвестная ошибка')
+      setUsersError(err instanceof Error ? err.message : t('giga.unknownError'))
     } finally {
       setLoadingUsers(false)
     }
-  }, [setUsers, setLoadingUsers, setUsersError])
+  }, [setUsers, setLoadingUsers, setUsersError, t])
 
   useEffect(() => {
     fetchUsers()
@@ -534,9 +544,9 @@ export function CRMModule() {
       {/* Header */}
       <div className="flex items-start justify-between mb-6">
         <div>
-          <h1 className="text-xl font-bold text-slate-100 tracking-tight">CRM / Пользователи</h1>
+          <h1 className="text-xl font-bold text-slate-100 tracking-tight">{t('giga.crmUsersTitle')}</h1>
           <p className="text-sm text-slate-500 mt-1">
-            Управление аккаунтами, блокировки, настройки дашбордов
+            {t('giga.crmUsersDesc')}
           </p>
         </div>
         <motion.button
@@ -550,7 +560,7 @@ export function CRMModule() {
             disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <RefreshCw size={13} className={isLoadingUsers ? 'animate-spin' : ''} />
-          Обновить
+          {t('giga.refresh')}
         </motion.button>
       </div>
 
@@ -563,7 +573,7 @@ export function CRMModule() {
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Поиск по имени, email, компании..."
+            placeholder={t('giga.searchByNameEmailCompany')}
             className="w-full pl-8 pr-3 py-2 rounded-xl bg-white/[0.05] border border-white/[0.08]
               text-sm text-slate-200 placeholder:text-slate-700
               focus:outline-none focus:border-blue-500/40 focus:ring-1 focus:ring-blue-500/20
@@ -606,20 +616,20 @@ export function CRMModule() {
         {isLoadingUsers ? (
           <div className="flex items-center justify-center py-16">
             <RefreshCw size={20} className="text-slate-600 animate-spin mr-2" />
-            <span className="text-sm text-slate-600">Загрузка пользователей...</span>
+            <span className="text-sm text-slate-600">{t('giga.loadingUsers')}</span>
           </div>
         ) : usersError ? (
           <div className="flex flex-col items-center justify-center py-16">
             <XCircle size={28} className="text-red-500/50 mb-2" />
             <p className="text-sm text-slate-500">{usersError}</p>
             <button onClick={fetchUsers} className="mt-3 text-xs text-blue-400 hover:text-blue-300">
-              Попробовать снова
+              {t('giga.tryAgain')}
             </button>
           </div>
         ) : filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16">
             <User size={28} className="text-slate-700 mb-2" />
-            <p className="text-sm text-slate-600">Пользователи не найдены</p>
+            <p className="text-sm text-slate-600">{t('giga.usersNotFound')}</p>
           </div>
         ) : (
           <table className="w-full">
@@ -631,17 +641,17 @@ export function CRMModule() {
                     className="flex items-center gap-1 text-[10px] font-semibold
                       text-slate-500 uppercase tracking-widest hover:text-slate-300 transition-colors"
                   >
-                    Пользователь <SortIcon field="name" />
+                    {t('giga.userColumn')} <SortIcon field="name" />
                   </button>
                 </th>
                 <th className="py-3 px-3 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-widest">
-                  Роль
+                  {t('giga.roleColumn')}
                 </th>
                 <th className="py-3 px-3 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-widest">
-                  Статус
+                  {t('giga.statusColumn')}
                 </th>
                 <th className="py-3 px-3 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-widest">
-                  Компания
+                  {t('giga.companyColumn')}
                 </th>
                 <th className="py-3 px-3 text-left">
                   <button
@@ -649,11 +659,11 @@ export function CRMModule() {
                     className="flex items-center gap-1 text-[10px] font-semibold
                       text-slate-500 uppercase tracking-widest hover:text-slate-300 transition-colors"
                   >
-                    Даты <SortIcon field="createdAt" />
+                    {t('giga.datesColumn')} <SortIcon field="createdAt" />
                   </button>
                 </th>
                 <th className="py-3 pl-3 pr-4 text-right text-[10px] font-semibold text-slate-500 uppercase tracking-widest">
-                  Действия
+                  {t('giga.actionsColumn')}
                 </th>
               </tr>
             </thead>
@@ -698,12 +708,12 @@ export function CRMModule() {
                   <ShieldOff size={17} className="text-red-400" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-semibold text-slate-100">Заблокировать пользователя?</h3>
+                  <h3 className="text-sm font-semibold text-slate-100">{t('giga.blockUser')}</h3>
                   <p className="text-xs text-slate-500 mt-0.5">{blockConfirm.name ?? blockConfirm.email}</p>
                 </div>
               </div>
               <p className="text-xs text-slate-500 mb-5">
-                Сессия пользователя будет немедленно аннулирована. Действие можно отменить позже.
+                {t('giga.blockUserDesc')}
               </p>
               <div className="flex gap-3">
                 <button
@@ -712,7 +722,7 @@ export function CRMModule() {
                     text-slate-400 bg-white/[0.05] border border-white/[0.08]
                     hover:bg-white/[0.08] transition-all"
                 >
-                  Отмена
+                  {t('common.cancel')}
                 </button>
                 <motion.button
                   onClick={() => handleBlock(blockConfirm)}
@@ -722,7 +732,7 @@ export function CRMModule() {
                     bg-red-500/20 border border-red-500/30 text-red-300
                     hover:bg-red-500/30 transition-all"
                 >
-                  Заблокировать
+                  {t('giga.block')}
                 </motion.button>
               </div>
             </motion.div>

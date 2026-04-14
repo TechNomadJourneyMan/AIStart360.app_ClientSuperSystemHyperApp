@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase-client'
+import { useTranslations } from 'next-intl'
 import { PointARadarWidget } from '@/components/dashboard/PointARadarWidget'
 import type {
   Diagnostic, BlockScore, Risk, Insight, QuickWin,
@@ -181,6 +182,7 @@ function formatBytes(b: number | null) {
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 export default function ClientDashboard() {
+  const t = useTranslations('clientPointA')
   const [diag, setDiag] = useState<Diagnostic | null>(null)
   const [company, setCompany] = useState<{ name: string; industry: string | null; employee_count: number | null } | null>(null)
   const [documents, setDocuments] = useState<DocumentRow[]>([])

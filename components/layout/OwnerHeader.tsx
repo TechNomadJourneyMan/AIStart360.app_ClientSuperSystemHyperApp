@@ -2,10 +2,12 @@
 
 import { useAuthStore } from '@/stores/auth.store'
 import { useRouter } from 'next/navigation'
+import { useTranslations } from 'next-intl'
 
 export function OwnerHeader() {
   const { user, logout } = useAuthStore()
   const router = useRouter()
+  const t = useTranslations()
 
   const handleLogout = () => {
     logout()
@@ -17,7 +19,7 @@ export function OwnerHeader() {
       {/* Left */}
       <div className="flex items-center gap-3">
         <span className="text-xs font-mono text-on-surface-variant/50 uppercase tracking-widest hidden md:block">
-          Owner Portal
+          {t('owner.portal')}
         </span>
       </div>
 
@@ -33,7 +35,7 @@ export function OwnerHeader() {
           </div>
           <div className="hidden md:block">
             <p className="text-xs font-medium text-on-surface leading-none">{user?.name ?? 'Owner'}</p>
-            <p className="text-[9px] text-on-surface-variant mt-0.5">{user?.organization ?? 'Компания'}</p>
+            <p className="text-[9px] text-on-surface-variant mt-0.5">{user?.organization ?? 'Owner'}</p>
           </div>
           <button onClick={handleLogout} className="ml-1">
             <span className="material-symbols-outlined text-base text-on-surface-variant hover:text-error transition-colors">logout</span>

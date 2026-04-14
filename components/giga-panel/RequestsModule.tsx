@@ -27,29 +27,23 @@ import { useGigaPanelStore, type RequestCategory, type GigaRequest } from '@/sto
 import { RejectModal } from './RejectModal'
 import { SURVEY_LABELS, SURVEY_STEP_LABELS, formatSurveyValue, getStepFromKey } from '@/lib/survey-labels'
 import { UserDetailPanel } from './UserDetailPanel'
-
-// ─── Tab config ───────────────────────────────────────────────────────────────
-
-const TABS: { id: RequestCategory; label: string; icon: React.ReactNode }[] = [
-  { id: 'registration', label: 'Регистрация', icon: <UserPlus size={15} /> },
-  { id: 'access', label: 'Доступы', icon: <KeyRound size={15} /> },
-  { id: 'support', label: 'Поддержка', icon: <HeadphonesIcon size={15} /> },
-]
+import { useTranslations } from 'next-intl'
 
 // ─── Status badge ─────────────────────────────────────────────────────────────
 
 function StatusBadge({ status }: { status: GigaRequest['status'] }) {
+  const t = useTranslations()
   const map = {
     pending: 'bg-amber-500/15 text-amber-300 border-amber-500/25',
     approved: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/25',
     rejected: 'bg-red-500/15 text-red-300 border-red-500/25',
     archived: 'bg-slate-500/15 text-slate-400 border-slate-500/20',
   }
-  const labels = {
-    pending: 'Ожидает',
-    approved: 'Принято',
-    rejected: 'Отклонено',
-    archived: 'Архив',
+  const labels: Record<string, string> = {
+    pending: t('giga.pending'),
+    approved: t('giga.approved'),
+    rejected: t('giga.rejected'),
+    archived: t('giga.archive'),
   }
   return (
     <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold border ${map[status]}`}>
@@ -63,6 +57,7 @@ function StatusBadge({ status }: { status: GigaRequest['status'] }) {
 // ─── Survey data section (displayed inside expanded card) ────────────────────
 
 function SurveySection({ requestId }: { requestId: string }) {
+  const t = useTranslations()
   const [data, setData] = useState<{
     answers: Record<string, unknown>
     company: Record<string, unknown> | null
@@ -76,23 +71,23 @@ function SurveySection({ requestId }: { requestId: string }) {
     ;(async () => {
       try {
         const res = await fetch(`/api/giga-admin/requests/${requestId}/survey`)
-        if (!res.ok) throw new Error('Не удалось загрузить анкету')
+        if (!res.ok) throw new Error(t('giga.failedToLoadSurvey'))
         const json = await res.json()
         if (!cancelled) setData(json.data)
       } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : 'Ошибка')
+        if (!cancelled) setError(e instanceof Error ? e.message : t('common.error'))
       } finally {
         if (!cancelled) setLoading(false)
       }
     })()
     return () => { cancelled = true }
-  }, [requestId])
+  }, [requestId, t])
 
   if (loading) {
     return (
       <div className="flex items-center gap-2 py-4 justify-center">
         <Loader2 size={14} className="text-slate-500 animate-spin" />
-        <span className="text-[11px] text-slate-500">Загрузка анкеты...</span>
+        <span className="text-[11px] text-slate-500">{t('giga.loadingSurvey')}</span>
       </div>
     )
   }
@@ -103,7 +98,7 @@ function SurveySection({ requestId }: { requestId: string }) {
 
   if (!data || data.completedSteps.length === 0) {
     return (
-      <p className="text-[11px] text-slate-600 py-2 italic">Анкета ещё не заполнена</p>
+      <p className="text-[11px] text-slate-600 py-2 italic">{t('giga.surveyNotFilled')}</p>
     )
   }
 
@@ -125,7 +120,7 @@ function SurveySection({ requestId }: { requestId: string }) {
       <div className="flex items-center gap-1.5">
         <FileText size={12} className="text-blue-400" />
         <span className="text-[11px] font-semibold text-blue-300 uppercase tracking-wider">
-          Данные анкеты
+          {t('giga.surveyData')}
         </span>
       </div>
       {data.completedSteps.map((step) => {
@@ -134,7 +129,7 @@ function SurveySection({ requestId }: { requestId: string }) {
         return (
           <div key={step} className="p-2.5 rounded-lg bg-white/[0.02] border border-white/[0.04]">
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">
-              {SURVEY_STEP_LABELS[step] || `Шаг ${step}`}
+              {SURVEY_STEP_LABELS[step] || `${t('giga.stepLabel')} ${step}`}
             </p>
             <div className="grid grid-cols-2 gap-x-4 gap-y-1">
               {fields.map((f) => (
@@ -154,6 +149,7 @@ function SurveySection({ requestId }: { requestId: string }) {
 // ─── Diagnostics section (Point A results) ──────────────────────────────────
 
 function DiagnosticsSection({ requestId }: { requestId: string }) {
+  const t = useTranslations('giga')
   const [diag, setDiag] = useState<Record<string, unknown> | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -175,13 +171,13 @@ function DiagnosticsSection({ requestId }: { requestId: string }) {
     return (
       <div className="flex items-center gap-2 py-3 justify-center">
         <Loader2 size={14} className="text-slate-500 animate-spin" />
-        <span className="text-[11px] text-slate-500">Загрузка диагностики...</span>
+        <span className="text-[11px] text-slate-500">{t('loadingDiagnostics')}</span>
       </div>
     )
   }
 
   if (!diag) {
-    return <p className="text-[11px] text-slate-600 py-2 italic">Анкета не заполнена — диагностика отсутствует</p>
+    return <p className="text-[11px] text-slate-600 py-2 italic">{t('surveyNotFilledNoDiag')}</p>
   }
 
   const score = (diag.overall_score as number) ?? 0
@@ -189,10 +185,10 @@ function DiagnosticsSection({ requestId }: { requestId: string }) {
   const stage = (diag.stage as string) ?? '—'
   const aiStatus = (diag.ai_status as string) ?? 'none'
 
-  const blockKeys = ['finance', 'sales', 'operations', 'marketing', 'strategy']
+  const blockKeys = ['finance', 'sales', 'operations', 'marketing', 'strategy'] as const
   const blockLabels: Record<string, string> = {
-    finance: 'Финансы', sales: 'Продажи', operations: 'Операции',
-    marketing: 'Маркетинг', strategy: 'Стратегия'
+    finance: t('finance'), sales: t('sales'), operations: t('operations'),
+    marketing: t('marketing'), strategy: t('strategy')
   }
 
   const scoreColor = (s: number) => s >= 70 ? 'text-emerald-400' : s >= 40 ? 'text-amber-400' : 'text-red-400'
@@ -202,7 +198,7 @@ function DiagnosticsSection({ requestId }: { requestId: string }) {
       <div className="flex items-center gap-1.5">
         <FileText size={12} className="text-violet-400" />
         <span className="text-[11px] font-semibold text-violet-300 uppercase tracking-wider">
-          Результаты диагностики (Point A)
+          {t('diagnosticsResults')}
         </span>
         {aiStatus === 'completed' && (
           <span className="text-[9px] bg-violet-500/15 text-violet-300 px-1.5 py-0.5 rounded-full ml-auto">AI ✓</span>
@@ -212,27 +208,26 @@ function DiagnosticsSection({ requestId }: { requestId: string }) {
       {/* KPI row */}
       <div className="grid grid-cols-3 gap-2">
         <div className="p-2 rounded-lg bg-white/[0.02] border border-white/[0.04] text-center">
-          <p className="text-[9px] text-slate-600 uppercase">Балл</p>
+          <p className="text-[9px] text-slate-600 uppercase">{t('score')}</p>
           <p className={`text-lg font-mono font-bold ${scoreColor(score)}`}>{score}</p>
-          <p className="text-[9px] text-slate-600">из 100</p>
+          <p className="text-[9px] text-slate-600">{t('outOf100')}</p>
         </div>
         <div className="p-2 rounded-lg bg-white/[0.02] border border-white/[0.04] text-center">
-          <p className="text-[9px] text-slate-600 uppercase">Health</p>
+          <p className="text-[9px] text-slate-600 uppercase">{t('healthIndex')}</p>
           <p className={`text-lg font-mono font-bold ${scoreColor(health)}`}>{health}</p>
-          <p className="text-[9px] text-slate-600">индекс</p>
+          <p className="text-[9px] text-slate-600">{t('index')}</p>
         </div>
         <div className="p-2 rounded-lg bg-white/[0.02] border border-white/[0.04] text-center">
-          <p className="text-[9px] text-slate-600 uppercase">Стадия</p>
-          <p className="text-sm font-mono font-bold text-blue-300">{stage}</p>
+          <p className="text-[9px] text-slate-600 uppercase">{t('stage')}</p>
+          <p className="text-sm font-mono font-bold text-blue-300">{String(stage)}</p>
         </div>
       </div>
 
-      {/* Block scores */}
       <div className="p-2.5 rounded-lg bg-white/[0.02] border border-white/[0.04]">
-        <p className="text-[9px] text-slate-600 uppercase tracking-wider mb-2">Блоки оценки</p>
+        <p className="text-[9px] text-slate-600 uppercase tracking-wider mb-2">{t('assessmentBlocks')}</p>
         <div className="space-y-1.5">
           {blockKeys.map(key => {
-            const blockData = diag[`${key}_score`] as { score?: number; status?: string } | null
+            const blockData = (diag as Record<string, { score?: number; status?: string } | null>)[`${key}_score`]
             const blockScore = blockData?.score ?? 0
             return (
               <div key={key} className="flex items-center gap-2">
@@ -251,9 +246,9 @@ function DiagnosticsSection({ requestId }: { requestId: string }) {
       </div>
 
       {/* AI summary preview */}
-      {aiStatus === 'completed' && diag.ai_analysis && (
+      {aiStatus === 'completed' && !!diag.ai_analysis && (
         <div className="p-2.5 rounded-lg bg-violet-500/5 border border-violet-500/10">
-          <p className="text-[9px] text-violet-400 uppercase tracking-wider mb-1">AI Executive Summary</p>
+          <p className="text-[9px] text-violet-400 uppercase tracking-wider mb-1">{t('aiExecutiveSummary')}</p>
           <p className="text-[11px] text-slate-300 leading-relaxed line-clamp-3">
             {(diag.ai_analysis as { executive_summary?: string })?.executive_summary ?? ''}
           </p>
@@ -271,13 +266,6 @@ const DOC_ICONS: Record<string, React.ReactNode> = {
   'crm': <FileSpreadsheet size={14} className="text-violet-400" />,
 }
 
-const PARSE_STATUS_MAP: Record<string, { label: string; cls: string }> = {
-  queued:     { label: 'В очереди',  cls: 'text-slate-500' },
-  processing: { label: 'Парсинг...', cls: 'text-amber-400' },
-  completed:  { label: 'Готово',     cls: 'text-emerald-400' },
-  failed:     { label: 'Ошибка',    cls: 'text-red-400' },
-}
-
 function formatFileSize(bytes: number | null): string {
   if (!bytes) return '—'
   if (bytes < 1024) return `${bytes} B`
@@ -286,6 +274,15 @@ function formatFileSize(bytes: number | null): string {
 }
 
 function DocumentsSection({ requestId }: { requestId: string }) {
+  const t = useTranslations()
+
+  const PARSE_STATUS_MAP: Record<string, { label: string; cls: string }> = {
+    queued:     { label: t('giga.queued'),  cls: 'text-slate-500' },
+    processing: { label: t('giga.parsing'), cls: 'text-amber-400' },
+    completed:  { label: t('giga.done'),     cls: 'text-emerald-400' },
+    failed:     { label: t('common.error'),    cls: 'text-red-400' },
+  }
+
   const [docs, setDocs] = useState<Array<{
     id: string; file_name: string; file_url: string; doc_type: string
     file_size: number | null; parse_status: string; uploaded_at: string
@@ -298,23 +295,23 @@ function DocumentsSection({ requestId }: { requestId: string }) {
     ;(async () => {
       try {
         const res = await fetch(`/api/giga-admin/requests/${requestId}/documents`)
-        if (!res.ok) throw new Error('Не удалось загрузить документы')
+        if (!res.ok) throw new Error(t('giga.failedToLoadDocuments'))
         const json = await res.json()
         if (!cancelled) setDocs(json.data ?? [])
       } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : 'Ошибка')
+        if (!cancelled) setError(e instanceof Error ? e.message : t('common.error'))
       } finally {
         if (!cancelled) setLoading(false)
       }
     })()
     return () => { cancelled = true }
-  }, [requestId])
+  }, [requestId, t])
 
   if (loading) {
     return (
       <div className="flex items-center gap-2 py-3 justify-center">
         <Loader2 size={14} className="text-slate-500 animate-spin" />
-        <span className="text-[11px] text-slate-500">Загрузка документов...</span>
+        <span className="text-[11px] text-slate-500">{t('giga.loadingDocuments')}</span>
       </div>
     )
   }
@@ -325,7 +322,7 @@ function DocumentsSection({ requestId }: { requestId: string }) {
 
   if (docs.length === 0) {
     return (
-      <p className="text-[11px] text-slate-600 py-2 italic">Документы не загружены</p>
+      <p className="text-[11px] text-slate-600 py-2 italic">{t('giga.documentsNotUploaded')}</p>
     )
   }
 
@@ -334,7 +331,7 @@ function DocumentsSection({ requestId }: { requestId: string }) {
       <div className="flex items-center gap-1.5">
         <Paperclip size={12} className="text-emerald-400" />
         <span className="text-[11px] font-semibold text-emerald-300 uppercase tracking-wider">
-          Документы ({docs.length})
+          {t('giga.documents')} ({docs.length})
         </span>
       </div>
       <div className="space-y-1.5">
@@ -379,6 +376,7 @@ function RequestCard({
   onReject: (req: GigaRequest) => void
   onArchive: (id: string) => void
 }) {
+  const t = useTranslations()
   const [expanded, setExpanded] = useState(false)
   const isPending = request.status === 'pending'
 
@@ -459,7 +457,7 @@ function RequestCard({
             size={13}
             className={`transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`}
           />
-          {expanded ? 'Скрыть' : 'Читать подробнее'}
+          {expanded ? t('giga.hide') : t('giga.readMore')}
         </button>
       </div>
 
@@ -478,7 +476,7 @@ function RequestCard({
                 <p className="text-xs text-slate-400 leading-relaxed">{request.description}</p>
                 {request.rejectionReason && (
                   <div className="mt-2 pt-2 border-t border-red-500/15">
-                    <p className="text-[10px] font-semibold text-red-400 mb-1">Причина отклонения:</p>
+                    <p className="text-[10px] font-semibold text-red-400 mb-1">{t('giga.rejectionReason')}</p>
                     <p className="text-xs text-red-300/70">{request.rejectionReason}</p>
                   </div>
                 )}
@@ -505,7 +503,7 @@ function RequestCard({
               hover:bg-emerald-500/25 hover:border-emerald-500/40 transition-all"
           >
             <CheckCircle size={13} />
-            Принять
+            {t('giga.accept')}
           </motion.button>
 
           <motion.button
@@ -517,7 +515,7 @@ function RequestCard({
               hover:bg-red-500/25 hover:border-red-500/40 transition-all"
           >
             <XCircle size={13} />
-            Отклонить
+            {t('giga.decline')}
           </motion.button>
 
           <motion.button
@@ -529,7 +527,7 @@ function RequestCard({
               hover:bg-white/[0.08] hover:text-slate-300 transition-all ml-auto"
           >
             <Archive size={13} />
-            Архив
+            {t('giga.archive')}
           </motion.button>
         </div>
       )}
@@ -540,6 +538,7 @@ function RequestCard({
 // ─── Main module ──────────────────────────────────────────────────────────────
 
 export function RequestsModule() {
+  const t = useTranslations()
   const {
     activeRequestTab,
     setActiveRequestTab,
@@ -556,6 +555,12 @@ export function RequestsModule() {
 
   const [rejectTarget, setRejectTarget] = useState<GigaRequest | null>(null)
 
+  const TABS: { id: RequestCategory; label: string; icon: React.ReactNode }[] = [
+    { id: 'registration', label: t('giga.registration'), icon: <UserPlus size={15} /> },
+    { id: 'access', label: t('giga.access'), icon: <KeyRound size={15} /> },
+    { id: 'support', label: t('giga.support'), icon: <HeadphonesIcon size={15} /> },
+  ]
+
   const fetchRequests = useCallback(async () => {
     setLoadingRequests(true)
     setRequestsError(null)
@@ -563,16 +568,16 @@ export function RequestsModule() {
       const res = await fetch('/api/giga-admin/requests')
       if (!res.ok) {
         const body = await res.json().catch(() => ({}))
-        throw new Error(body.error || `Ошибка загрузки заявок (HTTP ${res.status})`)
+        throw new Error(body.error || `${t('common.error')} (HTTP ${res.status})`)
       }
       const data = await res.json()
       setRequests(data.requests ?? [])
     } catch (err) {
-      setRequestsError(err instanceof Error ? err.message : 'Неизвестная ошибка')
+      setRequestsError(err instanceof Error ? err.message : t('giga.unknownError'))
     } finally {
       setLoadingRequests(false)
     }
-  }, [setRequests, setLoadingRequests, setRequestsError])
+  }, [setRequests, setLoadingRequests, setRequestsError, t])
 
   useEffect(() => { fetchRequests() }, [fetchRequests])
 
@@ -619,9 +624,9 @@ export function RequestsModule() {
       {/* Header */}
       <div className="flex items-start justify-between mb-6">
         <div>
-          <h1 className="text-xl font-bold text-slate-100 tracking-tight">Управление заявками</h1>
+          <h1 className="text-xl font-bold text-slate-100 tracking-tight">{t('giga.requestManagement')}</h1>
           <p className="text-sm text-slate-500 mt-1">
-            Все входящие запросы — регистрации, доступы и тикеты поддержки
+            {t('giga.requestManagementDesc')}
           </p>
         </div>
         <motion.button
@@ -635,7 +640,7 @@ export function RequestsModule() {
             disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <RefreshCw size={13} className={isLoadingRequests ? 'animate-spin' : ''} />
-          Обновить
+          {t('giga.refresh')}
         </motion.button>
       </div>
 
@@ -685,14 +690,14 @@ export function RequestsModule() {
           {isLoadingRequests ? (
             <div className="flex items-center justify-center py-16">
               <RefreshCw size={20} className="text-slate-600 animate-spin mr-2" />
-              <span className="text-sm text-slate-600">Загрузка заявок из Supabase...</span>
+              <span className="text-sm text-slate-600">{t('giga.loadingRequests')}</span>
             </div>
           ) : requestsError ? (
             <div className="flex flex-col items-center justify-center py-16
               rounded-2xl bg-white/[0.02] border border-red-500/10 border-dashed">
               <p className="text-sm text-red-400">{requestsError}</p>
               <button onClick={fetchRequests} className="mt-2 text-xs text-blue-400 hover:text-blue-300">
-                Повторить
+                {t('giga.retry')}
               </button>
             </div>
           ) : filtered.length === 0 ? (
@@ -700,7 +705,7 @@ export function RequestsModule() {
               rounded-2xl bg-white/[0.02] border border-white/[0.06] border-dashed">
               <Clock size={32} className="text-slate-700 mb-3" />
               <p className="text-sm text-slate-600">
-                {requests.length === 0 ? 'Заявок пока нет в базе данных' : 'Нет заявок в этой категории'}
+                {requests.length === 0 ? t('giga.noRequestsInDb') : t('giga.noRequestsInCategory')}
               </p>
             </div>
           ) : (
@@ -710,7 +715,7 @@ export function RequestsModule() {
                 <div>
                   <div className="flex items-center gap-2 mb-3">
                     <span className="text-xs font-semibold text-amber-400 uppercase tracking-widest">
-                      Ожидают обработки
+                      {t('giga.pendingProcessing')}
                     </span>
                     <div className="flex-1 h-px bg-amber-500/15" />
                     <span className="text-xs text-slate-600">{pendingFiltered.length}</span>
@@ -736,7 +741,7 @@ export function RequestsModule() {
                 <div>
                   <div className="flex items-center gap-2 mb-3">
                     <span className="text-xs font-semibold text-slate-600 uppercase tracking-widest">
-                      Обработанные
+                      {t('giga.processed')}
                     </span>
                     <div className="flex-1 h-px bg-white/[0.05]" />
                     <span className="text-xs text-slate-600">{doneFiltered.length}</span>

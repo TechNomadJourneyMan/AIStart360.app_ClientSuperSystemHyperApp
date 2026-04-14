@@ -3,20 +3,22 @@
 import Link from 'next/link'
 import Image from 'next/image'
 import { usePathname, useRouter } from 'next/navigation'
+import { useTranslations } from 'next-intl'
 import { useAuthStore } from '@/stores/auth.store'
-
-const EXPERT_NAV = [
-  { label: 'Дэшборд',  href: '/expert/dashboard', icon: 'dashboard'    },
-  { label: 'Профиль',  href: '/expert/profile',   icon: 'account_circle' },
-  { label: 'Отчёты',  href: '/expert/reports',   icon: 'description'  },
-  { label: 'GRI',      href: '/expert/gri',        icon: 'radar'        },
-  { label: 'Инсайты', href: '/expert/insights',   icon: 'lightbulb'    },
-]
 
 export function ExpertSidebar() {
   const pathname = usePathname()
   const router   = useRouter()
+  const t = useTranslations()
   const { user, logout } = useAuthStore()
+
+  const EXPERT_NAV = [
+    { label: t('nav.dashboard'),  href: '/expert/dashboard', icon: 'dashboard'      },
+    { label: t('nav.profile'),    href: '/expert/profile',   icon: 'account_circle' },
+    { label: t('nav.reports'),    href: '/expert/reports',   icon: 'description'    },
+    { label: t('nav.gri'),        href: '/expert/gri',        icon: 'radar'          },
+    { label: t('nav.insights'),   href: '/expert/insights',   icon: 'lightbulb'      },
+  ]
 
   const isActive = (href: string) =>
     href === '/expert/dashboard' ? pathname === href : pathname.startsWith(href)
@@ -32,7 +34,7 @@ export function ExpertSidebar() {
       <div className="flex items-center gap-3 px-5 py-5 border-b border-white/[0.04]">
         <Image src="/logo-icon.svg" alt="AIStart360" width={28} height={28} />
         <div>
-          <p className="text-xs font-mono text-on-surface-variant/60 uppercase tracking-[0.2em]">Expert Portal</p>
+          <p className="text-xs font-mono text-on-surface-variant/60 uppercase tracking-[0.2em]">{t('expert.portal')}</p>
         </div>
       </div>
 
@@ -81,12 +83,12 @@ export function ExpertSidebar() {
       <div className="border-t border-white/[0.04] px-2 py-3 space-y-0.5">
         <div className="flex items-center gap-2 px-3 py-1.5 mb-1">
           <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse flex-shrink-0" />
-          <span className="text-[10px] font-mono text-primary/70 tracking-wider">ЭКСПЕРТ ОНЛАЙН</span>
+          <span className="text-[10px] font-mono text-primary/70 tracking-wider">{t('expert.online')}</span>
         </div>
         <button onClick={handleLogout}
           className="w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-[#6b7280] hover:text-error hover:bg-error/5 transition-all">
           <span className="material-symbols-outlined text-[20px]">logout</span>
-          <span className="text-sm">Выйти</span>
+          <span className="text-sm">{t('nav.logout')}</span>
         </button>
       </div>
     </aside>

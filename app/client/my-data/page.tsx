@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase-client'
+import { useTranslations } from 'next-intl'
 import {
   SURVEY_LABELS,
   SURVEY_STEP_LABELS,
@@ -22,6 +23,7 @@ interface CompanyData {
 }
 
 export default function MyDataPage() {
+  const t = useTranslations('myData')
   const [userId, setUserId] = useState<string | null>(null)
   const [survey, setSurvey] = useState<SurveyData | null>(null)
   const [company, setCompany] = useState<CompanyData | null>(null)
@@ -33,7 +35,7 @@ export default function MyDataPage() {
     sb.auth.getSession().then(({ data }) => {
       const uid = data.session?.user?.id
       if (uid) setUserId(uid)
-      else setError('Не удалось определить пользователя')
+      else setError(t('couldNotIdentifyUser'))
     })
   }, [])
 
@@ -56,7 +58,7 @@ export default function MyDataPage() {
           if (companyJson.ok) setCompany(companyJson.data)
         }
       } catch {
-        if (!cancelled) setError('Ошибка загрузки данных')
+        if (!cancelled) setError(t('dataLoadError'))
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -104,16 +106,16 @@ export default function MyDataPage() {
 
       <main className="flex-1 p-6 max-w-3xl mx-auto w-full">
         <div className="mb-6">
-          <h1 className="text-xl font-bold text-slate-100 tracking-tight">Мои данные</h1>
+          <h1 className="text-xl font-bold text-slate-100 tracking-tight">{t('title')}</h1>
           <p className="text-sm text-slate-500 mt-1">
-            Данные из вашей анкеты. Вы можете отредактировать их, перейдя к нужному шагу.
+            {t('subtitle')}
           </p>
         </div>
 
         {loading ? (
           <div className="flex items-center justify-center py-20">
             <span className="w-5 h-5 border-2 border-primary/30 border-t-primary rounded-full animate-spin mr-3" />
-            <span className="text-sm text-slate-500">Загрузка данных...</span>
+            <span className="text-sm text-slate-500">{t('loadingData')}</span>
           </div>
         ) : error ? (
           <div className="rounded-2xl bg-red-500/5 border border-red-500/15 p-8 text-center">
@@ -122,7 +124,7 @@ export default function MyDataPage() {
         ) : !hasData ? (
           <div className="rounded-2xl bg-surface-container-low border border-white/[0.06] p-12 text-center space-y-4">
             <span className="material-symbols-outlined text-5xl text-slate-700">assignment</span>
-            <p className="text-sm text-slate-400">Вы ещё не заполнили анкету</p>
+            <p className="text-sm text-slate-400">{t('surveyNotFilled')}</p>
             <Link
               href="/client/onboarding"
               className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold bg-primary/15 border border-primary/25 text-primary hover:bg-primary/25 transition-all"
@@ -137,7 +139,7 @@ export default function MyDataPage() {
               <div className="rounded-2xl bg-surface-container-low border border-white/[0.06] p-5">
                 <div className="flex items-center gap-2 mb-3">
                   <span className="material-symbols-outlined text-lg text-primary">business</span>
-                  <h2 className="text-sm font-bold text-slate-200">Компания</h2>
+                  <h2 className="text-sm font-bold text-slate-200">{t('company')}</h2>
                 </div>
                 <p className="text-sm text-slate-300">{company.name}</p>
               </div>

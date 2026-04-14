@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useMemo, useEffect, useCallback } from 'react'
+import { useTranslations } from 'next-intl'
 import Link from 'next/link'
 import { usePulse } from '@/hooks/usePulse'
 import type { CrmProvider, CrmStatus } from '@/lib/crm/types'
@@ -713,6 +714,7 @@ function CrmIntegrationTab() {
 type ModalClient = { name: string; sector: string }
 
 export default function PulsePage() {
+  const t = useTranslations('pulse')
   const [tab, setTab] = useState<'today' | 'risk' | 'card' | 'crm'>('today')
   const { data: clientsData, isLoading, error } = usePulse()
   
@@ -811,8 +813,7 @@ export default function PulsePage() {
             GRI Pulse · Монитор клиентской базы
           </p>
           <h1 className="font-headline text-2xl md:text-3xl lg:text-4xl font-extrabold text-on-surface">
-            Кому звонить{' '}
-            <span className="text-gradient">сегодня</span>
+            {t('title')}
           </h1>
           <p className="text-on-surface-variant mt-2 text-sm max-w-2xl">
             Инструмент менеджера по продажам — видит кто уходит, у кого падает объём, и какое действие нужно прямо сейчас.

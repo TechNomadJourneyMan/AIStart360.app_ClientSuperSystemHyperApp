@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
+import { useTranslations } from 'next-intl'
 import { Avatar } from '@/components/ui/Avatar'
 import { StatusBadge } from '@/components/common/StatusBadge'
 import { TableSkeleton } from '@/components/ui/Skeleton'
@@ -26,16 +27,6 @@ function toGriScore(score: number | null): number {
   if (score === null) return 0
   // Point A engine returns 0–100; divide by 10 for 0–10 display
   return Math.round(score) / 10
-}
-
-function statusLabel(status: string): string {
-  const map: Record<string, string> = {
-    pending_approval: 'Ожидает',
-    approved: 'Активный',
-    requires_clarification: 'Уточнение',
-    rejected: 'Отклонён',
-  }
-  return map[status] ?? status
 }
 
 function ScoreBar({ score }: { score: number }) {
@@ -64,8 +55,19 @@ function ScoreBar({ score }: { score: number }) {
 }
 
 export function ClientsTable() {
+  const t = useTranslations()
   const [clients, setClients] = useState<ClientRow[]>([])
   const [isLoading, setIsLoading] = useState(true)
+
+  const statusLabel = (status: string): string => {
+    const map: Record<string, string> = {
+      pending_approval: t('clients.statusPending'),
+      approved: t('clients.statusActive'),
+      requires_clarification: t('clients.statusClarification'),
+      rejected: t('clients.statusRejected'),
+    }
+    return map[status] ?? status
+  }
 
   useEffect(() => {
     fetch('/api/v1/admin/clients')
@@ -99,9 +101,9 @@ export function ClientsTable() {
     return (
       <EmptyState
         icon="business_center"
-        title="Нет клиентов"
-        description="Клиенты появятся здесь после регистрации и подтверждения"
-        action={{ label: 'Добавить клиента', onClick: () => {} }}
+        title={t('clients.noClients')}
+        description={t('clients.noClientsDesc')}
+        action={{ label: t('clients.addClient'), onClick: () => {} }}
       />
     )
   }
@@ -111,7 +113,7 @@ export function ClientsTable() {
       <table className="w-full">
         <thead>
           <tr className="border-b border-outline-variant/20">
-            {['Клиент', 'Отрасль', 'Стадия', 'Point A', 'Статус', ''].map((h) => (
+            {[t('clients.client'), t('clients.industry'), t('clients.stage'), 'Point A', t('clients.status'), ''].map((h) => (
               <th key={h} className="px-5 py-3.5 text-left text-[10px] font-mono uppercase tracking-widest text-on-surface-variant whitespace-nowrap bg-surface-container-high">
                 {h}
               </th>
@@ -158,7 +160,7 @@ export function ClientsTable() {
                   <Link
                     href={`/clients/${client.id}`}
                     className="p-1.5 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors"
-                    aria-label="Открыть"
+                    aria-label={t('clients.open')}
                   >
                     <span className="material-symbols-outlined text-lg">open_in_new</span>
                   </Link>
@@ -172,7 +174,7 @@ export function ClientsTable() {
       {/* Pagination */}
       <div className="flex items-center justify-between px-5 py-4 border-t border-outline-variant/10">
         <span className="text-xs text-on-surface-variant font-mono">
-          Показано {clients.length} из {clients.length}
+          {t('clients.showing', { count: clients.length, total: clients.length })}
         </span>
       </div>
     </div>

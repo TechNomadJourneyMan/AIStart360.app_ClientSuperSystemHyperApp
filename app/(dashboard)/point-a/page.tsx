@@ -3,10 +3,12 @@ export const dynamic = "force-dynamic"
 import type { Metadata } from 'next'
 import { auth } from '@/lib/auth'
 import { DocumentUpload } from '@/components/diagnostics/DocumentUpload'
+import { getTranslations } from 'next-intl/server'
 
 export const metadata: Metadata = { title: 'Точка А — Текущее состояние' }
 
 export default async function PointAPage() {
+  const t = await getTranslations('pointAPage')
   const session = await auth()
 
   // Fetch data from Supabase REST API (bypasses RLS)
@@ -79,14 +81,13 @@ export default async function PointAPage() {
       {/* Header */}
       <section>
         <p className="text-xs font-mono text-primary/70 uppercase tracking-[0.2em] mb-3">
-          AI Диагностика · Текущее состояние
+          {t('aiDiagLabel')}
         </p>
         <h1 className="font-headline text-3xl lg:text-4xl font-extrabold text-on-surface">
-          Точка <span className="text-gradient">А</span>
+          {t('title')} <span className="text-gradient">{t('titleA')}</span>
         </h1>
         <p className="text-on-surface-variant mt-2 text-sm max-w-xl leading-relaxed">
-          Объективная оценка текущего состояния бизнеса.
-          Загрузите документы для автоматического анализа ИИ-агентом.
+          {t('subtitle')}
         </p>
       </section>
 
@@ -100,10 +101,10 @@ export default async function PointAPage() {
       {/* Current State Overview */}
       <section className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
-          { label: 'Общий балл', value: String(avgScore), icon: 'radar', good: avgScore >= 50, note: avgScore ? 'из 100' : 'нет данных' },
+          { label: t('overallScore'), value: String(avgScore), icon: 'radar', good: avgScore >= 50, note: avgScore ? t('outOf100') : t('noData') },
           { label: 'Клиенты', value: String(clientsCount), icon: 'groups', good: true, note: 'на платформе' },
-          { label: 'Блоков', value: String(domainScores.length || 5), icon: 'description', good: true, note: 'направлений' },
-          { label: 'Health', value: avgScore >= 70 ? 'High' : avgScore >= 40 ? 'Medium' : avgScore > 0 ? 'Low' : '—', icon: 'favorite', good: avgScore >= 40, note: avgScore > 0 ? 'по диагностике' : 'нет данных' },
+          { label: t('blocks'), value: String(domainScores.length || 5), icon: 'description', good: true, note: t('directions') },
+          { label: 'Health', value: avgScore >= 70 ? 'High' : avgScore >= 40 ? 'Medium' : avgScore > 0 ? 'Low' : '—', icon: 'favorite', good: avgScore >= 40, note: avgScore > 0 ? t('byDiagnostics') : t('noData') },
         ].map((stat) => (
           <div key={stat.label} className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-5 hover:border-primary/10 transition-colors">
             <div className="flex items-start justify-between mb-3">
@@ -121,8 +122,8 @@ export default async function PointAPage() {
         <section>
           <div className="flex justify-between items-end border-b border-outline-variant/10 pb-4 mb-6">
             <div>
-              <h2 className="font-headline text-lg font-bold text-on-surface">Диагностика по блокам</h2>
-              <p className="text-xs text-on-surface-variant mt-1">Текущий уровень по каждому направлению</p>
+              <h2 className="font-headline text-lg font-bold text-on-surface">{t('blockDiagnostics')}</h2>
+              <p className="text-xs text-on-surface-variant mt-1">{t('currentLevel')}</p>
             </div>
           </div>
 
@@ -142,7 +143,7 @@ export default async function PointAPage() {
                       isStrong ? 'text-primary border-primary/20 bg-primary/5' :
                       'text-tertiary-container border-tertiary-container/20 bg-tertiary-container/5'
                     }`}>
-                      {isCritical ? 'Критично' : isStrong ? 'Сильно' : 'Средне'}
+                      {isCritical ? t('critical') : isStrong ? t('strong') : t('medium')}
                     </span>
                   </div>
                   <h3 className="text-sm font-bold text-on-surface mb-3">{domain.label}</h3>
@@ -164,7 +165,7 @@ export default async function PointAPage() {
 
       {/* Latest reports */}
       <section>
-        <h2 className="font-headline text-lg font-bold text-on-surface mb-5">Последние расчёты</h2>
+        <h2 className="font-headline text-lg font-bold text-on-surface mb-5">{t('latestCalcs')}</h2>
         <div className="grid grid-cols-1 gap-3">
           {latestReports.map((report) => (
             <div key={report.id} className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-5 flex items-center justify-between gap-4">
@@ -184,8 +185,8 @@ export default async function PointAPage() {
           {latestReports.length === 0 && (
             <div className="bg-surface-container-low rounded-2xl border border-dashed border-white/10 p-12 text-center">
               <span className="material-symbols-outlined text-4xl text-on-surface-variant/20 mb-4 block">insert_chart</span>
-              <p className="text-sm text-on-surface-variant font-medium">Нет данных диагностики</p>
-              <p className="text-xs text-on-surface-variant/60 mt-1">Заполните анкету для расчёта Точки А</p>
+              <p className="text-sm text-on-surface-variant font-medium">{t('noDiagData')}</p>
+              <p className="text-xs text-on-surface-variant/60 mt-1">{t('fillSurveyForPointA')}</p>
             </div>
           )}
         </div>

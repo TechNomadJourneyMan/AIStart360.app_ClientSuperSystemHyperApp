@@ -1,5 +1,5 @@
 'use client'
-
+import { useTranslations } from 'next-intl'
 import { useAuthStore } from '@/stores/auth.store'
 import { useRouter } from 'next/navigation'
 import { useEffect } from 'react'
@@ -32,6 +32,7 @@ const PRIORITY_COLORS = {
 }
 
 export default function ExpertDashboardPage() {
+  const t = useTranslations('expertDashboard')
   const { user, isInitialized } = useAuthStore()
   const router = useRouter()
 
@@ -120,14 +121,14 @@ export default function ExpertDashboardPage() {
             </div>
           </div>
           <span className="text-xs font-mono text-primary bg-primary/10 border border-primary/20 px-3 py-1 rounded-full">Strong</span>
-          <p className="text-xs text-on-surface-variant mt-3 text-center">Уровень готовности к росту</p>
-          <a href="/expert/gri" className="mt-4 text-xs font-mono text-primary hover:underline">Подробный анализ →</a>
+          <p className="text-xs text-on-surface-variant mt-3 text-center">{t('growthReadiness')}</p>
+          <a href="/expert/gri" className="mt-4 text-xs font-mono text-primary hover:underline">{t('detailedAnalysis')}</a>
         </div>
 
         {/* Tasks */}
         <div className="lg:col-span-2 bg-surface-container-low rounded-2xl border border-white/[0.04] p-6">
           <div className="flex justify-between items-center mb-5">
-            <h2 className="font-headline text-lg font-bold text-on-surface">Задачи</h2>
+            <h2 className="font-headline text-lg font-bold text-on-surface">{t('tasks')}</h2>
             <span className="text-xs font-mono text-error bg-error/10 border border-error/20 px-3 py-1 rounded-full">
               {TASKS.filter(t => !t.done).length} активных
             </span>
@@ -160,7 +161,7 @@ export default function ExpertDashboardPage() {
       {/* Activity */}
       <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-6">
-          <h2 className="font-headline text-lg font-bold text-on-surface mb-5">Последняя активность</h2>
+          <h2 className="font-headline text-lg font-bold text-on-surface mb-5">{t('recentActivity')}</h2>
           <div className="space-y-4">
             {ACTIVITY.map((act, i) => (
               <div key={i} className="flex items-center gap-4">
@@ -178,7 +179,7 @@ export default function ExpertDashboardPage() {
 
         {/* Quick actions */}
         <div className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-6">
-          <h2 className="font-headline text-lg font-bold text-on-surface mb-5">Быстрые действия</h2>
+          <h2 className="font-headline text-lg font-bold text-on-surface mb-5">{t('quickActions')}</h2>
           <div className="grid grid-cols-2 gap-3">
             {[
               { label: 'Загрузить данные', icon: 'upload_file',    href: '/expert/reports' },

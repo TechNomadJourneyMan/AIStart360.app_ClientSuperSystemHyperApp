@@ -1,6 +1,7 @@
 'use client'
 
-import React, { useState, useEffect, useCallback, forwardRef } from 'react'
+import React, { useState, useEffect, useCallback, forwardRef, useMemo } from 'react'
+import { useTranslations } from 'next-intl'
 import * as Dialog from '@radix-ui/react-dialog'
 import { motion, AnimatePresence } from 'framer-motion'
 import Link from 'next/link'
@@ -25,19 +26,35 @@ interface WidgetData {
 }
 
 // ─── Widget Catalog ─────────────────────────────────────────────
-const CATALOG: Record<WidgetType, {
-  label: string
-  description: string
+const CATALOG_META: Record<WidgetType, {
+  labelKey: string
+  descriptionKey: string
   icon: string
   span: GridSpan
 }> = {
-  alerts:        { label: 'Критические сигналы', description: 'Алерты и сигналы по клиентам',   icon: 'warning',          span: 'full'       },
-  activity:      { label: 'Последние события',    description: 'Лента активности команды',        icon: 'history',          span: 'two-thirds' },
-  gri:           { label: 'Прогресс по GRI',      description: 'GRI скоринг по факторам',        icon: 'radar',            span: 'third'      },
-  metrics:       { label: 'Ключевые метрики',     description: 'Основные бизнес-показатели',     icon: 'monitoring',       span: 'third'      },
-  chart:         { label: 'График динамики',      description: 'Интерактивный график метрик',    icon: 'show_chart',       span: 'two-thirds' },
-  'quick-links': { label: 'Быстрый доступ',       description: 'Ссылки на разделы платформы',   icon: 'grid_view',        span: 'third'      },
-  'clients-stats':{ label: 'Статистика клиентов', description: 'Обзор клиентской базы',         icon: 'groups',           span: 'third'      },
+  alerts:        { labelKey: 'dashboard.widgets.alerts',            descriptionKey: 'dashboard.widgets.alertsDesc',        icon: 'warning',          span: 'full'       },
+  activity:      { labelKey: 'dashboard.widgets.activity',          descriptionKey: 'dashboard.widgets.activityDesc',      icon: 'history',          span: 'two-thirds' },
+  gri:           { labelKey: 'dashboard.widgets.gri',               descriptionKey: 'dashboard.widgets.griDesc',           icon: 'radar',            span: 'third'      },
+  metrics:       { labelKey: 'dashboard.widgets.metrics',           descriptionKey: 'dashboard.widgets.metricsDesc',       icon: 'monitoring',       span: 'third'      },
+  chart:         { labelKey: 'dashboard.widgets.chart',             descriptionKey: 'dashboard.widgets.chartDesc',         icon: 'show_chart',       span: 'two-thirds' },
+  'quick-links': { labelKey: 'dashboard.widgets.quickLinks',        descriptionKey: 'dashboard.widgets.quickLinksDesc',    icon: 'grid_view',        span: 'third'      },
+  'clients-stats':{ labelKey: 'dashboard.widgets.clientsStats',    descriptionKey: 'dashboard.widgets.clientsStatsDesc',  icon: 'groups',           span: 'third'      },
+}
+
+function useCatalog() {
+  const t = useTranslations()
+  return useMemo(() => {
+    const result: Record<WidgetType, { label: string; description: string; icon: string; span: GridSpan }> = {} as any
+    for (const [key, meta] of Object.entries(CATALOG_META)) {
+      result[key as WidgetType] = {
+        label: t(meta.labelKey),
+        description: t(meta.descriptionKey),
+        icon: meta.icon,
+        span: meta.span,
+      }
+    }
+    return result
+  }, [t])
 }
 
 const SPAN_CLASS: Record<GridSpan, string> = {
@@ -57,12 +74,13 @@ const STORAGE_KEY = 'aistart360_dashboard_widgets_v2'
 // ─── Individual Widget Contents ──────────────────────────────────
 
 function AlertsWidget({ data }: { data: WidgetData }) {
+  const t = useTranslations()
   return (
     <div>
       <div className="flex items-center justify-between mb-3">
-        <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest">Требуют внимания</p>
+        <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest">{t('dashboard.widgets.needAttention')}</p>
         <span className="font-mono text-[10px] text-error bg-error/10 px-2.5 py-0.5 rounded-full border border-error/20">
-          {data.criticalCount} алерта
+          {data.criticalCount} {t('dashboard.widgets.alertsCount')}
         </span>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
@@ -75,12 +93,13 @@ function AlertsWidget({ data }: { data: WidgetData }) {
 }
 
 function ActivityWidget({ data }: { data: WidgetData }) {
+  const t = useTranslations()
   return (
     <div>
       <div className="flex items-center justify-between mb-3">
-        <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest">Лента событий</p>
+        <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest">{t('dashboard.widgets.eventFeed')}</p>
         <Link href="/clients" className="text-[11px] font-mono text-primary/60 hover:text-primary flex items-center gap-0.5 transition-colors">
-          Все <span className="material-symbols-outlined text-sm">chevron_right</span>
+          {t('dashboard.widgets.all')} <span className="material-symbols-outlined text-sm">chevron_right</span>
         </Link>
       </div>
       <ActivityFeed items={data.activity} />
@@ -89,10 +108,11 @@ function ActivityWidget({ data }: { data: WidgetData }) {
 }
 
 function GriWidget({ data }: { data: WidgetData }) {
+  const t = useTranslations()
   return (
     <Link href="/gri" className="block group">
       <div className="flex items-center justify-between mb-3">
-        <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest">GRI Скоринг</p>
+        <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest">{t('dashboard.widgets.griScoring')}</p>
         <span className="material-symbols-outlined text-sm text-on-surface-variant/30 group-hover:text-primary/60 transition-colors">arrow_forward</span>
       </div>
       <div className="space-y-3">
@@ -113,10 +133,11 @@ function GriWidget({ data }: { data: WidgetData }) {
 }
 
 function MetricsWidget({ data }: { data: WidgetData }) {
+  const t = useTranslations()
   return (
     <Link href="/metrics" className="block group">
       <div className="flex items-center justify-between mb-3">
-        <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest">Ключевые метрики</p>
+        <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest">{t('dashboard.widgets.keyMetrics')}</p>
         <span className="material-symbols-outlined text-sm text-on-surface-variant/30 group-hover:text-primary/60 transition-colors">arrow_forward</span>
       </div>
       <div className="space-y-2">
@@ -134,26 +155,28 @@ function MetricsWidget({ data }: { data: WidgetData }) {
 }
 
 function ChartWidget() {
+  const t = useTranslations()
   return (
     <div>
-      <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest mb-3">График динамики</p>
+      <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest mb-3">{t('dashboard.widgets.chartDynamics')}</p>
       <KpiChart />
     </div>
   )
 }
 
 function QuickLinksWidget() {
+  const t = useTranslations()
   const links = [
-    { label: 'Рынок',    icon: 'public',      href: '/market'    },
-    { label: 'Клиенты',  icon: 'group',       href: '/clients'   },
-    { label: 'Метрики',  icon: 'monitoring',  href: '/metrics'   },
-    { label: 'GRI',      icon: 'radar',       href: '/gri'       },
-    { label: 'Инсайты',  icon: 'lightbulb',   href: '/insights'  },
-    { label: 'AI Скан',  icon: 'biotech',     href: '/ai-scanner'},
+    { label: t('dashboard.widgets.linkMarket'),   icon: 'public',      href: '/market'    },
+    { label: t('dashboard.widgets.linkClients'),   icon: 'group',       href: '/clients'   },
+    { label: t('dashboard.widgets.linkMetrics'),   icon: 'monitoring',  href: '/metrics'   },
+    { label: 'GRI',                                icon: 'radar',       href: '/gri'       },
+    { label: t('dashboard.widgets.linkInsights'),  icon: 'lightbulb',   href: '/insights'  },
+    { label: t('dashboard.widgets.linkAIScan'),    icon: 'biotech',     href: '/ai-scanner'},
   ]
   return (
     <div>
-      <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest mb-3">Быстрый доступ</p>
+      <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest mb-3">{t('dashboard.widgets.quickAccess')}</p>
       <div className="grid grid-cols-3 gap-2">
         {links.map(l => (
           <Link key={l.label} href={l.href}
@@ -168,16 +191,17 @@ function QuickLinksWidget() {
 }
 
 function ClientsStatsWidget({ data }: { data: WidgetData }) {
+  const t = useTranslations()
   const stats = [
-    { label: 'Всего клиентов', value: data.activity.length > 0 ? '48' : '0', icon: 'groups', color: 'text-primary' },
-    { label: 'Активных',       value: '38', icon: 'check_circle', color: 'text-primary' },
-    { label: 'Под риском',     value: '6',  icon: 'warning',      color: 'text-error'   },
-    { label: 'Ср. GRI',        value: '7.6',icon: 'radar',        color: 'text-secondary'},
+    { label: t('dashboard.widgets.totalClients'), value: data.activity.length > 0 ? '48' : '0', icon: 'groups', color: 'text-primary' },
+    { label: t('dashboard.widgets.activeClients'), value: '38', icon: 'check_circle', color: 'text-primary' },
+    { label: t('dashboard.widgets.atRiskClients'), value: '6',  icon: 'warning',      color: 'text-error'   },
+    { label: t('dashboard.widgets.avgGri'),        value: '7.6',icon: 'radar',        color: 'text-secondary'},
   ]
   return (
     <Link href="/clients" className="block group">
       <div className="flex items-center justify-between mb-3">
-        <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest">Клиенты</p>
+        <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest">{t('dashboard.widgets.clients')}</p>
         <span className="material-symbols-outlined text-sm text-on-surface-variant/30 group-hover:text-primary/60 transition-colors">arrow_forward</span>
       </div>
       <div className="grid grid-cols-2 gap-2">
@@ -222,6 +246,7 @@ const WidgetCard = forwardRef(function WidgetCard(
   { widget, editMode, onRemove, onMoveUp, onMoveDown, isFirst, isLast, data }: WidgetCardProps,
   ref: React.ForwardedRef<HTMLDivElement>
 ) {
+  const CATALOG = useCatalog()
   const meta = CATALOG[widget.type]
   return (
     <motion.div
@@ -288,6 +313,8 @@ function AddWidgetDialog({
   existingTypes: WidgetType[]
   onAdd: (type: WidgetType) => void
 }) {
+  const t = useTranslations()
+  const CATALOG = useCatalog()
   return (
     <Dialog.Root open={open} onOpenChange={(o) => !o && onClose()}>
       <Dialog.Portal>
@@ -296,8 +323,8 @@ function AddWidgetDialog({
           {/* Header */}
           <div className="flex items-center justify-between px-6 py-5 border-b border-white/[0.04]">
             <div>
-              <Dialog.Title className="font-headline font-bold text-on-surface text-lg">Виджеты</Dialog.Title>
-              <p className="text-xs text-on-surface-variant mt-0.5">Добавьте на дэшборд</p>
+              <Dialog.Title className="font-headline font-bold text-on-surface text-lg">{t('dashboard.widgets.widgetsTitle')}</Dialog.Title>
+              <p className="text-xs text-on-surface-variant mt-0.5">{t('dashboard.widgets.addToDashboard')}</p>
             </div>
             <Dialog.Close className="w-8 h-8 rounded-xl bg-surface-container-low flex items-center justify-center text-on-surface-variant hover:text-on-surface transition-colors">
               <span className="material-symbols-outlined text-sm">close</span>
@@ -330,13 +357,13 @@ function AddWidgetDialog({
                     <div className="flex items-center justify-between">
                       <p className="text-sm font-medium text-on-surface">{meta.label}</p>
                       {alreadyAdded
-                        ? <span className="text-[10px] font-mono text-on-surface-variant/40 bg-surface-container-high px-2 py-0.5 rounded-full">Добавлен</span>
+                        ? <span className="text-[10px] font-mono text-on-surface-variant/40 bg-surface-container-high px-2 py-0.5 rounded-full">{t('dashboard.widgets.added')}</span>
                         : <span className="material-symbols-outlined text-sm text-on-surface-variant/30 group-hover:text-primary/60 transition-colors">add</span>
                       }
                     </div>
                     <p className="text-xs text-on-surface-variant mt-0.5">{meta.description}</p>
                     <span className="text-[10px] font-mono text-on-surface-variant/40 mt-1 inline-block">
-                      {meta.span === 'full' ? '▬▬▬ Полная ширина' : meta.span === 'two-thirds' ? '▬▬ 2/3 ширины' : '▬ 1/3 ширины'}
+                      {meta.span === 'full' ? `▬▬▬ ${t('dashboard.widgets.fullWidth')}` : meta.span === 'two-thirds' ? `▬▬ ${t('dashboard.widgets.twoThirdsWidth')}` : `▬ ${t('dashboard.widgets.thirdWidth')}`}
                     </span>
                   </div>
                 </button>
@@ -346,7 +373,7 @@ function AddWidgetDialog({
 
           <div className="px-6 py-4 border-t border-white/[0.04]">
             <p className="text-[10px] text-on-surface-variant/50 font-mono text-center">
-              Настройки сохраняются автоматически
+              {t('dashboard.widgets.settingsAutoSave')}
             </p>
           </div>
         </Dialog.Content>
@@ -366,6 +393,7 @@ export interface WidgetGridProps {
 }
 
 export function WidgetGrid({ alerts, activity, gri, metrics, criticalCount, userId }: WidgetGridProps) {
+  const t = useTranslations()
   const storageKey = userId ? `${STORAGE_KEY}_${userId}` : STORAGE_KEY
 
   const [widgets, setWidgets] = useState<WidgetInstance[]>(DEFAULT_WIDGETS)
@@ -423,9 +451,9 @@ export function WidgetGrid({ alerts, activity, gri, metrics, criticalCount, user
       {/* Section toolbar */}
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h2 className="font-headline text-base font-bold text-on-surface">Мой дэшборд</h2>
+          <h2 className="font-headline text-base font-bold text-on-surface">{t('dashboard.widgets.myDashboard')}</h2>
           <p className="text-[11px] text-on-surface-variant mt-0.5">
-            {widgets.length} виджет{widgets.length === 1 ? '' : widgets.length < 5 ? 'а' : 'ов'}
+            {t('dashboard.widgets.widgetCount', { count: widgets.length })}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -436,13 +464,13 @@ export function WidgetGrid({ alerts, activity, gri, metrics, criticalCount, user
                 className="flex items-center gap-1.5 text-xs font-mono px-3 py-1.5 rounded-xl bg-primary/10 border border-primary/20 text-primary hover:bg-primary/15 transition-colors"
               >
                 <span className="material-symbols-outlined text-sm">add</span>
-                Добавить
+                {t('dashboard.widgets.add')}
               </button>
               <button
                 onClick={resetWidgets}
                 className="text-xs font-mono px-3 py-1.5 rounded-xl bg-surface-container border border-white/[0.06] text-on-surface-variant hover:text-on-surface transition-colors"
               >
-                Сбросить
+                {t('dashboard.widgets.reset')}
               </button>
             </>
           )}
@@ -455,7 +483,7 @@ export function WidgetGrid({ alerts, activity, gri, metrics, criticalCount, user
               }`}
           >
             <span className="material-symbols-outlined text-sm">{editMode ? 'check' : 'dashboard_customize'}</span>
-            {editMode ? 'Готово' : 'Настроить'}
+            {editMode ? t('dashboard.widgets.done') : t('dashboard.widgets.customize')}
           </button>
         </div>
       </div>
@@ -486,13 +514,13 @@ export function WidgetGrid({ alerts, activity, gri, metrics, criticalCount, user
             className="col-span-3 flex flex-col items-center justify-center py-16 bg-surface-container-low rounded-2xl border border-dashed border-white/10"
           >
             <span className="material-symbols-outlined text-4xl text-on-surface-variant/20 mb-3">dashboard_customize</span>
-            <p className="text-sm text-on-surface-variant mb-4">Дэшборд пуст. Добавьте виджеты.</p>
+            <p className="text-sm text-on-surface-variant mb-4">{t('dashboard.widgets.emptyDashboard')}</p>
             <button
               onClick={() => setAddOpen(true)}
               className="flex items-center gap-2 text-sm font-mono px-4 py-2 rounded-xl bg-primary/10 border border-primary/20 text-primary hover:bg-primary/15 transition-colors"
             >
               <span className="material-symbols-outlined text-sm">add</span>
-              Добавить виджет
+              {t('dashboard.widgets.addWidget')}
             </button>
           </motion.div>
         )}

@@ -3,45 +3,43 @@
 import Link from 'next/link'
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import { useTranslations } from 'next-intl'
 import { useUIStore } from '@/stores/ui.store'
 import { useNotificationsStore } from '@/stores/notifications.store'
 import { useAuthStore } from '@/stores/auth.store'
+import { useLocaleStore } from '@/stores/locale.store'
 import { hasPermission } from '@/lib/navigation'
 import type { UserRole } from '@/types'
 
-type Lang = 'RU' | 'EN' | 'KZ'
-const LANGS: Lang[] = ['RU', 'EN', 'KZ']
-
 export function Header() {
+  const t = useTranslations()
   const { sidebarCollapsed } = useUIStore()
   const { unreadCount } = useNotificationsStore()
   const { user, logout } = useAuthStore()
+  const { locale, toggleLocale } = useLocaleStore()
   const router = useRouter()
   const [searchFocused, setSearchFocused] = useState(false)
   const [showUserMenu, setShowUserMenu] = useState(false)
   const [showQuickAction, setShowQuickAction] = useState(false)
-  const [lang, setLang] = useState<Lang>('RU')
   const [time, setTime] = useState('')
 
   useEffect(() => {
     const update = () => {
       const now = new Date()
-      setTime(now.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' }))
+      setTime(now.toLocaleTimeString(locale === 'ru' ? 'ru-RU' : 'en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }))
     }
     update()
-    const t = setInterval(update, 1000)
-    return () => clearInterval(t)
-  }, [])
-
-  const cycleLang = () => setLang((l) => LANGS[(LANGS.indexOf(l) + 1) % LANGS.length])
+    const interval = setInterval(update, 1000)
+    return () => clearInterval(interval)
+  }, [locale])
 
   const QUICK_ACTIONS = [
-    { label: 'Новый клиент',      icon: 'person_add',    href: '/clients',    reqPermission: 'clients.write' },
-    { label: 'GRI-диагностика',   icon: 'radar',         href: '/gri',        reqPermission: 'reports.read'  },
-    { label: 'Создать отчёт',     icon: 'description',   href: '/reports',    reqPermission: 'reports.write' },
-    { label: 'Аналитика',         icon: 'monitoring',    href: '/analytics',  reqPermission: 'analytics.read'},
-    { label: 'Инсайты',           icon: 'lightbulb',     href: '/insights',   reqPermission: 'own.reports'   },
-    { label: 'Управление командой',icon: 'groups',       href: '/team',       reqPermission: 'team.write'    },
+    { label: t('header.newClient'),       icon: 'person_add',    href: '/clients',    reqPermission: 'clients.write' },
+    { label: t('header.griDiagnostics'),  icon: 'radar',         href: '/gri',        reqPermission: 'reports.read'  },
+    { label: t('header.createReport'),    icon: 'description',   href: '/reports',    reqPermission: 'reports.write' },
+    { label: t('header.analytics'),       icon: 'monitoring',    href: '/analytics',  reqPermission: 'analytics.read'},
+    { label: t('header.insights'),        icon: 'lightbulb',     href: '/insights',   reqPermission: 'own.reports'   },
+    { label: t('header.teamManagement'),  icon: 'groups',        href: '/team',       reqPermission: 'team.write'    },
   ]
 
   const handleLogout = () => {
@@ -70,7 +68,7 @@ export function Header() {
         </span>
         <input
           type="search"
-          placeholder={searchFocused ? 'Поиск клиентов, отчётов...' : 'Поиск...'}
+          placeholder={searchFocused ? t('common.searchExpanded') : t('common.search')}
           onFocus={() => setSearchFocused(true)}
           onBlur={() => setSearchFocused(false)}
           onKeyDown={(e) => {
@@ -92,7 +90,7 @@ export function Header() {
         <div className="relative">
           <button
             onClick={() => setShowQuickAction(v => !v)}
-            title="Быстрое действие"
+            title={t('header.quickAction')}
             className={`inline-flex items-center gap-1.5 text-xs font-mono border px-2 py-1.5 rounded-lg transition-colors ${
               showQuickAction
                 ? 'bg-primary/10 text-primary border-primary/30'
@@ -100,7 +98,7 @@ export function Header() {
             }`}
           >
             <span className="material-symbols-outlined text-[18px]">bolt</span>
-            <span className="hidden lg:inline">Действие</span>
+            <span className="hidden lg:inline">{t('header.action')}</span>
             <span className={`hidden md:inline material-symbols-outlined text-xs transition-transform duration-200 ${showQuickAction ? 'rotate-180' : ''}`}>expand_more</span>
           </button>
 
@@ -125,7 +123,7 @@ export function Header() {
         <Link href="/reports"
           className="hidden lg:inline-flex items-center gap-1.5 text-xs font-semibold bg-gradient-to-br from-primary to-primary-container text-on-primary px-3.5 py-1.5 rounded-lg hover:scale-[0.97] active:scale-95 transition-all duration-150">
           <span className="material-symbols-outlined text-[18px]">description</span>
-          Отчёты
+          {t('nav.reports')}
         </Link>
 
         <div className="w-px h-6 bg-outline-variant/20 hidden md:block" />
@@ -138,18 +136,18 @@ export function Header() {
 
         {/* Language switcher */}
         <button
-          onClick={cycleLang}
-          title={`Язык: ${lang} → переключить`}
+          onClick={toggleLocale}
+          title={`${t('header.language')}: ${locale.toUpperCase()}`}
           className="flex items-center gap-1 px-2 py-1.5 rounded-lg border border-outline-variant/20 text-xs font-mono text-on-surface-variant hover:text-on-surface hover:border-primary/20 hover:bg-primary/5 transition-all duration-150"
         >
           <span className="material-symbols-outlined text-sm hidden md:inline">translate</span>
-          <span>{lang}</span>
+          <span>{locale.toUpperCase()}</span>
         </button>
 
         <div className="w-px h-6 bg-outline-variant/20 hidden md:block" />
 
         {/* Notifications */}
-        <Link href="/notifications" className="relative text-[#8B95A3] hover:text-on-surface transition-colors p-1.5 rounded-lg hover:bg-surface-container" aria-label="Уведомления">
+        <Link href="/notifications" className="relative text-[#8B95A3] hover:text-on-surface transition-colors p-1.5 rounded-lg hover:bg-surface-container" aria-label={t('nav.notifications')}>
           <span className="material-symbols-outlined text-xl">notifications</span>
           {unreadCount > 0 && (
             <span className="absolute top-0.5 right-0.5 w-4 h-4 bg-error rounded-full border-2 border-background text-[9px] font-mono text-white flex items-center justify-center">
@@ -184,18 +182,18 @@ export function Header() {
                 <Link href="/profile" onClick={() => setShowUserMenu(false)}
                   className="flex items-center gap-2 px-4 py-2.5 text-sm text-on-surface-variant hover:text-on-surface hover:bg-white/[0.04] transition-colors">
                   <span className="material-symbols-outlined text-base">account_circle</span>
-                  Профиль
+                  {t('nav.profile')}
                 </Link>
                 <Link href="/settings" onClick={() => setShowUserMenu(false)}
                   className="flex items-center gap-2 px-4 py-2.5 text-sm text-on-surface-variant hover:text-on-surface hover:bg-white/[0.04] transition-colors">
                   <span className="material-symbols-outlined text-base">settings</span>
-                  Настройки
+                  {t('nav.settings')}
                 </Link>
                 <div className="border-t border-white/[0.04]" />
                 <button onClick={handleLogout}
                   className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-error/70 hover:text-error hover:bg-error/5 transition-colors">
                   <span className="material-symbols-outlined text-base">logout</span>
-                  Выйти
+                  {t('nav.logout')}
                 </button>
               </div>
             </>

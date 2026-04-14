@@ -1,12 +1,13 @@
 'use client'
 
+import { useTranslations } from 'next-intl'
 import type { DataLayer } from '@/types/metrics'
 
-const LAYERS: { key: DataLayer; label: string; icon: string; color: string }[] = [
-  { key: 'fact',     label: 'Факт',     icon: 'show_chart',   color: 'text-primary'  },
-  { key: 'forecast', label: 'Прогноз',  icon: 'trending_up',  color: 'text-secondary' },
-  { key: 'goal',     label: 'Цель',     icon: 'flag',         color: 'text-yellow-400' },
-  { key: 'compare',  label: 'Сравнение',icon: 'compare_arrows',color: 'text-on-surface-variant' },
+const LAYER_DEFS: { key: DataLayer; labelKey: string; icon: string; color: string }[] = [
+  { key: 'fact',     labelKey: 'dashboard.layers.fact',     icon: 'show_chart',    color: 'text-primary'  },
+  { key: 'forecast', labelKey: 'dashboard.layers.forecast', icon: 'trending_up',   color: 'text-secondary' },
+  { key: 'goal',     labelKey: 'dashboard.layers.goal',     icon: 'flag',          color: 'text-yellow-400' },
+  { key: 'compare',  labelKey: 'dashboard.layers.compare',  icon: 'compare_arrows',color: 'text-on-surface-variant' },
 ]
 
 interface LayerToggleProps {
@@ -16,9 +17,10 @@ interface LayerToggleProps {
 }
 
 export function LayerToggle({ activeLayers, onToggle, availableLayers }: LayerToggleProps) {
+  const t = useTranslations()
   const layers = availableLayers
-    ? LAYERS.filter((l) => availableLayers.includes(l.key))
-    : LAYERS
+    ? LAYER_DEFS.filter((l) => availableLayers.includes(l.key))
+    : LAYER_DEFS
 
   return (
     <div className="flex gap-1 flex-wrap">
@@ -30,7 +32,7 @@ export function LayerToggle({ activeLayers, onToggle, availableLayers }: LayerTo
             key={l.key}
             onClick={() => !isFixed && onToggle(l.key)}
             disabled={isFixed}
-            title={isFixed ? 'Факт всегда включён' : undefined}
+            title={isFixed ? t('dashboard.layers.factAlwaysOn') : undefined}
             className={`
               flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-mono transition-all duration-150
               ${isActive
@@ -42,7 +44,7 @@ export function LayerToggle({ activeLayers, onToggle, availableLayers }: LayerTo
             <span className={`material-symbols-outlined text-[13px] ${isActive ? l.color : ''}`}>
               {l.icon}
             </span>
-            {l.label}
+            {t(l.labelKey)}
           </button>
         )
       })}

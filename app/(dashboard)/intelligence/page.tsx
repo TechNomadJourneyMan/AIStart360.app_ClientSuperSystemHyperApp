@@ -4,19 +4,21 @@ import type { Metadata } from 'next'
 import { prisma } from '@/lib/db'
 import { auth } from '@/lib/auth'
 import { getDashboardData } from '@/lib/get-dashboard-data'
+import { getTranslations } from 'next-intl/server'
 
 export const metadata: Metadata = { title: 'Intelligence Hub' }
 
-const priorityConfig = {
-  critical: { label: 'Критично', color: 'text-error border-error/30 bg-error/10', dot: 'bg-error' },
-  high:     { label: 'Высоко', color: 'text-tertiary-container border-tertiary-container/30 bg-tertiary-container/10', dot: 'bg-tertiary-container' },
-  medium:   { label: 'Средне', color: 'text-secondary border-secondary/30 bg-secondary/10', dot: 'bg-secondary' },
-  low:      { label: 'Низко', color: 'text-on-surface-variant border-outline-variant/30 bg-surface-container', dot: 'bg-outline' },
-}
-
 export default async function IntelligencePage() {
+  const t = await getTranslations('intelligencePage')
   const session = await auth()
   const data = getDashboardData(session?.user?.email)
+
+  const priorityConfig = {
+    critical: { label: t('critical'), color: 'text-error border-error/30 bg-error/10', dot: 'bg-error' },
+    high:     { label: t('high'), color: 'text-tertiary-container border-tertiary-container/30 bg-tertiary-container/10', dot: 'bg-tertiary-container' },
+    medium:   { label: t('medium'), color: 'text-secondary border-secondary/30 bg-secondary/10', dot: 'bg-secondary' },
+    low:      { label: t('low'), color: 'text-on-surface-variant border-outline-variant/30 bg-surface-container', dot: 'bg-outline' },
+  }
 
   const [auditEvents, clientCount] = await Promise.all([
     prisma.auditLog.count(),
@@ -29,7 +31,7 @@ export default async function IntelligencePage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="font-headline text-3xl font-extrabold text-on-surface">Intelligence <span className="text-gradient">Hub</span></h1>
-          <p className="text-on-surface-variant text-sm mt-1">Рыночные сигналы, риски и возможности Choco Ecosystem</p>
+          <p className="text-on-surface-variant text-sm mt-1">{t('subtitle')}</p>
         </div>
         <div className="flex items-center gap-3 bg-surface-container-low px-4 py-2 rounded-xl border border-white/[0.04]">
           <span className="status-dot-online after:animate-ping after:absolute after:inset-0 after:rounded-full after:bg-primary/50" />
@@ -40,10 +42,10 @@ export default async function IntelligencePage() {
       {/* Signal Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          { label: 'События аудита', value: String(auditEvents), icon: 'hub', color: 'text-on-surface' },
-          { label: 'Клиенты', value: String(clientCount), icon: 'groups', color: 'text-primary' },
-          { label: 'AI Инсайты', value: '12', icon: 'auto_awesome', color: 'text-tertiary-container' },
-          { label: 'Статус систем', value: 'Active', icon: 'cloud_done', color: 'text-success' },
+          { label: t('auditEvents'), value: String(auditEvents), icon: 'hub', color: 'text-on-surface' },
+          { label: t('clientsLabel'), value: String(clientCount), icon: 'groups', color: 'text-primary' },
+          { label: t('aiInsights'), value: '12', icon: 'auto_awesome', color: 'text-tertiary-container' },
+          { label: t('systemStatus'), value: 'Active', icon: 'cloud_done', color: 'text-success' },
         ].map((stat) => (
           <div key={stat.label} className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-5 hover:border-primary/10 transition-colors">
             <div className="flex items-center gap-2 mb-3">

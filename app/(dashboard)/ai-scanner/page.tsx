@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from "react"
+import { useTranslations } from 'next-intl'
 import { motion, AnimatePresence } from "framer-motion"
 import { 
   Calculator, 
@@ -31,6 +32,7 @@ const Label = ({ children, htmlFor, className = "" }: { children: React.ReactNod
 )
 
 export default function AiScannerPage() {
+  const t = useTranslations('aiScannerPage')
   const [step, setStep] = useState(1)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [clients, setClients] = useState<any[]>([])
@@ -93,11 +95,11 @@ export default function AiScannerPage() {
   }
 
   const steps = [
-    { title: "Клиент", icon: Users },
-    { title: "Финансы", icon: Calculator },
-    { title: "Маркетинг", icon: TrendingUp },
-    { title: "Команда", icon: Zap },
-    { title: "Собственник", icon: UserCheck }
+    { title: t('client'), icon: Users },
+    { title: t('finances'), icon: Calculator },
+    { title: t('marketing'), icon: TrendingUp },
+    { title: t('team'), icon: Zap },
+    { title: t('ownerLabel'), icon: UserCheck }
   ]
 
   return (
@@ -109,7 +111,7 @@ export default function AiScannerPage() {
             AI Business Scanner
           </h1>
           <p className="text-gray-400">
-            Заполните данные для детального анализа и расчета индекса GRI
+            {t('subtitle')}
           </p>
         </div>
 
@@ -149,22 +151,22 @@ export default function AiScannerPage() {
                   exit={{ opacity: 0, x: -20 }}
                   className="space-y-6"
                 >
-                  <h2 className="text-2xl font-semibold mb-6">Выберите клиента</h2>
+                  <h2 className="text-2xl font-semibold mb-6">{t('selectClient')}</h2>
                   <div className="space-y-4">
-                    <Label>Кто проходит диагностику?</Label>
+                    <Label>{t('whoGoesDiag')}</Label>
                     <select 
                       value={selectedClientId}
                       onChange={(e) => setSelectedClientId(e.target.value)}
                       className="w-full bg-[#1a1a1f] border border-gray-700 rounded-md p-3 text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50"
                     >
-                      <option value="">Выберите клиента из списка...</option>
+                      <option value="">{t('selectFromList')}</option>
                       {clients.map(c => (
                         <option key={c.id} value={c.id}>{c.name} ({c.industry})</option>
                       ))}
                     </select>
                     {clients.length === 0 && (
                       <p className="text-sm text-yellow-500/80">
-                        Похоже, у вас еще нет клиентов. Создайте клиента в разделе "Clients" перед началом.
+                        {t('noClientsYet')}
                       </p>
                     )}
                   </div>
@@ -180,11 +182,11 @@ export default function AiScannerPage() {
                   className="space-y-6"
                 >
                   <h2 className="text-2xl font-semibold mb-6 flex items-center gap-2">
-                    <Calculator className="text-blue-500" /> Финансовые показатели
+                    <Calculator className="text-blue-500" /> {t('financialMetrics')}
                   </h2>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="space-y-2">
-                      <Label>Выручка в месяц (₸)</Label>
+                      <Label>{t('revenueMonth')}</Label>
                       <Input 
                         type="number" 
                         value={formData.revenue} 
@@ -193,7 +195,7 @@ export default function AiScannerPage() {
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label>Маржинальность (%)</Label>
+                      <Label>{t('marginPct')}</Label>
                       <Input 
                         type="number" 
                         value={formData.margin} 
@@ -202,7 +204,7 @@ export default function AiScannerPage() {
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label>Стоимость привлечения (CAC)</Label>
+                      <Label>{t('cacCost')}</Label>
                       <Input 
                         type="number" 
                         value={formData.cac} 
@@ -211,7 +213,7 @@ export default function AiScannerPage() {
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label>LTV клиента</Label>
+                      <Label>{t('ltvClient')}</Label>
                       <Input 
                         type="number" 
                         value={formData.ltv} 
@@ -220,7 +222,7 @@ export default function AiScannerPage() {
                       />
                     </div>
                     <div className="space-y-2 md:col-span-2">
-                      <Label>Запас прочности (мес. Runway)</Label>
+                      <Label>{t('runwayMonths')}</Label>
                       <Input 
                         type="number" 
                         value={formData.runway} 
@@ -241,11 +243,11 @@ export default function AiScannerPage() {
                   className="space-y-6"
                 >
                   <h2 className="text-2xl font-semibold mb-6 flex items-center gap-2">
-                    <TrendingUp className="text-green-500" /> Продукт и Маркетинг
+                    <TrendingUp className="text-green-500" /> {t('productMarketing')}
                   </h2>
                   <div className="grid grid-cols-1 gap-6">
                     <div className="space-y-2">
-                      <Label>Конверсия в продажу (%)</Label>
+                      <Label>{t('conversionPct')}</Label>
                       <Input 
                         type="number" 
                         value={formData.conversionRate} 
@@ -255,8 +257,8 @@ export default function AiScannerPage() {
                     </div>
                     <div className="flex items-center justify-between p-4 bg-[#1a1a1f] rounded-lg border border-gray-700">
                       <div className="space-y-0.5">
-                        <Label>Используется ли CRM?</Label>
-                        <p className="text-xs text-gray-500">Автоматизация учета сделок</p>
+                        <Label>{t('hasCrm')}</Label>
+                        <p className="text-xs text-gray-500">{t('crmDesc')}</p>
                       </div>
                       <input 
                         type="checkbox" 
@@ -267,8 +269,8 @@ export default function AiScannerPage() {
                     </div>
                     <div className="flex items-center justify-between p-4 bg-[#1a1a1f] rounded-lg border border-gray-700">
                       <div className="space-y-0.5">
-                        <Label>Есть ли скрипты продаж?</Label>
-                        <p className="text-xs text-gray-500">Прописанные регламенты звонков</p>
+                        <Label>{t('hasSalesScripts')}</Label>
+                        <p className="text-xs text-gray-500">{t('scriptsDesc')}</p>
                       </div>
                       <input 
                         type="checkbox" 
@@ -290,11 +292,11 @@ export default function AiScannerPage() {
                   className="space-y-6"
                 >
                   <h2 className="text-2xl font-semibold mb-6 flex items-center gap-2">
-                    <Zap className="text-yellow-500" /> Команда и Масштабирование
+                    <Zap className="text-yellow-500" /> {t('teamScaling')}
                   </h2>
                   <div className="grid grid-cols-1 gap-6">
                     <div className="space-y-2">
-                      <Label>Количество сотрудников (чел.)</Label>
+                      <Label>{t('employeeCount')}</Label>
                       <Input 
                         type="number" 
                         value={formData.teamSize} 
@@ -304,8 +306,8 @@ export default function AiScannerPage() {
                     </div>
                     <div className="flex items-center justify-between p-4 bg-[#1a1a1f] rounded-lg border border-gray-700">
                       <div className="space-y-0.5">
-                        <Label>Бизнес-процессы оцифрованы?</Label>
-                        <p className="text-xs text-gray-500">Есть база знаний или регламенты</p>
+                        <Label>{t('processesDocumented')}</Label>
+                        <p className="text-xs text-gray-500">{t('processesDesc')}</p>
                       </div>
                       <input 
                         type="checkbox" 
@@ -316,8 +318,8 @@ export default function AiScannerPage() {
                     </div>
                     <div className="flex items-center justify-between p-4 bg-[#1a1a1f] rounded-lg border border-gray-700">
                       <div className="space-y-0.5">
-                        <Label>Готовность к делегированию?</Label>
-                        <p className="text-xs text-gray-500">Может ли бизнес работать без вас 1 неделю?</p>
+                        <Label>{t('delegationReady')}</Label>
+                        <p className="text-xs text-gray-500">{t('delegationDesc')}</p>
                       </div>
                       <input 
                         type="checkbox" 
@@ -339,11 +341,11 @@ export default function AiScannerPage() {
                   className="space-y-6"
                 >
                   <h2 className="text-2xl font-semibold mb-6 flex items-center gap-2">
-                    <UserCheck className="text-indigo-500" /> Личное участие собственника
+                    <UserCheck className="text-indigo-500" /> {t('ownerInvolvement')}
                   </h2>
                   <div className="grid grid-cols-1 gap-6">
                     <div className="space-y-2">
-                      <Label>Часов в неделю вы тратите на «текучку»?</Label>
+                      <Label>{t('hoursOnRoutine')}</Label>
                       <Input 
                         type="number" 
                         value={formData.ownerHoursWeekly} 
@@ -353,8 +355,8 @@ export default function AiScannerPage() {
                     </div>
                     <div className="flex items-center justify-between p-4 bg-[#1a1a1f] rounded-lg border border-gray-700">
                       <div className="space-y-0.5">
-                        <Label>Есть ли сильный заместитель (Зам СЕО)?</Label>
-                        <p className="text-xs text-gray-500">Человек, принимающий решения</p>
+                        <Label>{t('hasDeputy')}</Label>
+                        <p className="text-xs text-gray-500">{t('deputyDesc')}</p>
                       </div>
                       <input 
                         type="checkbox" 
@@ -364,7 +366,7 @@ export default function AiScannerPage() {
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label>Горизонт стратегического планирования (лет)</Label>
+                      <Label>{t('stratHorizon')}</Label>
                       <Input 
                         type="number" 
                         value={formData.strategicHorizonYears} 
@@ -385,7 +387,7 @@ export default function AiScannerPage() {
                 disabled={step === 1 || isSubmitting}
                 className="gap-2 border-gray-700 hover:bg-gray-800"
               >
-                <ArrowLeft size={16} /> Назад
+                <ArrowLeft size={16} /> {t('back')}
               </Button>
 
               {step < 5 ? (
@@ -394,7 +396,7 @@ export default function AiScannerPage() {
                   disabled={step === 1 && !selectedClientId}
                   className="bg-blue-600 hover:bg-blue-700 gap-2 px-8"
                 >
-                  Далее <ArrowRight size={16} />
+                  {t('next')} <ArrowRight size={16} />
                 </Button>
               ) : (
                 <Button 
@@ -403,7 +405,7 @@ export default function AiScannerPage() {
                   className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 gap-2 px-8 shadow-[0_0_20px_rgba(37,99,235,0.4)]"
                 >
                   {isSubmitting ? <Loader2 className="animate-spin" /> : <CheckCircle2 size={18} />}
-                  Запустить расчет GRI 
+                  {t('runGriCalc')}
                 </Button>
               )}
             </div>
@@ -414,15 +416,15 @@ export default function AiScannerPage() {
         <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="p-4 bg-blue-600/5 rounded-lg border border-blue-600/10 flex gap-3 items-start">
             <ShieldCheck className="text-blue-500 flex-shrink-0" size={20} />
-            <p className="text-[11px] text-gray-400">Точность расчетов подтверждена методологией GRI Workshop для бизнеса $2M+</p>
+            <p className="text-[11px] text-gray-400">{t('accuracyTip')}</p>
           </div>
           <div className="p-4 bg-green-600/5 rounded-lg border border-green-600/10 flex gap-3 items-start">
             <Zap className="text-green-500 flex-shrink-0" size={20} />
-            <p className="text-[11px] text-gray-400">Мгновенный бенчмаркинг по 140+ параметрам рынка и конкурентам</p>
+            <p className="text-[11px] text-gray-400">{t('benchmarkTip')}</p>
           </div>
           <div className="p-4 bg-indigo-600/5 rounded-lg border border-indigo-600/10 flex gap-3 items-start">
             <Target className="text-indigo-500 flex-shrink-0" size={20} />
-            <p className="text-[11px] text-gray-400">Адаптивные рекомендации на базе ваших реальных финансовых данных</p>
+            <p className="text-[11px] text-gray-400">{t('adaptiveTip')}</p>
           </div>
         </div>
       </div>

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useTranslations } from 'next-intl'
 
 const REPORTS = [
   { id: 'r1', name: 'GRI Full Report Q4 2025',       type: 'pdf',  size: '2.4 MB', date: '24 Mar 2026', status: 'ready',   category: 'GRI'       },
@@ -19,6 +20,7 @@ const STATUS_STYLES = {
 const TYPE_ICONS = { pdf: 'picture_as_pdf', xlsx: 'table_chart' }
 
 export default function ExpertReportsPage() {
+  const t = useTranslations('expertReports')
   const [dragging, setDragging] = useState(false)
   const [filter, setFilter] = useState('Все')
   const categories = ['Все', 'GRI', 'Financial', 'Growth', 'Market', 'Data']
@@ -29,8 +31,8 @@ export default function ExpertReportsPage() {
     <div className="space-y-8">
       <section>
         <p className="text-xs font-mono text-primary/70 uppercase tracking-[0.2em] mb-3">Expert Portal</p>
-        <h1 className="font-headline text-3xl font-extrabold text-on-surface">Отчёты</h1>
-        <p className="text-on-surface-variant mt-2 text-sm">Ваши аналитические отчёты и загруженные данные</p>
+        <h1 className="font-headline text-3xl font-extrabold text-on-surface">{t('title')}</h1>
+        <p className="text-on-surface-variant mt-2 text-sm">{t('subtitle')}</p>
       </section>
 
       {/* Upload zone */}
@@ -60,7 +62,7 @@ export default function ExpertReportsPage() {
       {/* Reports list */}
       <section>
         <div className="flex items-center justify-between mb-5">
-          <h2 className="font-headline text-lg font-bold text-on-surface">Мои отчёты</h2>
+          <h2 className="font-headline text-lg font-bold text-on-surface">{t('myReports')}</h2>
           <div className="flex gap-2">
             {categories.map((c) => (
               <button key={c} onClick={() => setFilter(c)}
@@ -122,7 +124,7 @@ export default function ExpertReportsPage() {
           {filtered.length === 0 && (
             <div className="text-center py-16">
               <span className="material-symbols-outlined text-4xl text-on-surface-variant/20 block mb-3">description</span>
-              <p className="text-sm text-on-surface-variant">Отчёты не найдены</p>
+              <p className="text-sm text-on-surface-variant">{t('reportsNotFound')}</p>
             </div>
           )}
         </div>

@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useTranslations } from 'next-intl'
 import Link from 'next/link'
 
 type AdminClientRow = {
@@ -13,11 +14,11 @@ type AdminClientRow = {
   status: string
 }
 
-const STATUS_CONFIG = {
-  active:   { label: 'Активен',       color: 'text-primary',   dot: 'bg-primary'   },
-  at_risk:  { label: 'В зоне риска',  color: 'text-secondary', dot: 'bg-secondary' },
-  critical: { label: 'Критично',      color: 'text-error',     dot: 'bg-error'     },
-  pending_approval: { label: 'Ожидает', color: 'text-on-surface-variant', dot: 'bg-on-surface-variant' }
+const STATUS_CONFIG_KEYS = {
+  active:   { labelKey: 'dashboard.admin.statusActive',   color: 'text-primary',   dot: 'bg-primary'   },
+  at_risk:  { labelKey: 'dashboard.admin.statusAtRisk',   color: 'text-secondary', dot: 'bg-secondary' },
+  critical: { labelKey: 'dashboard.admin.statusCritical', color: 'text-error',     dot: 'bg-error'     },
+  pending_approval: { labelKey: 'dashboard.admin.statusPending', color: 'text-on-surface-variant', dot: 'bg-on-surface-variant' }
 }
 
 function GriBar({ score }: { score: number }) {
@@ -34,6 +35,7 @@ function GriBar({ score }: { score: number }) {
 }
 
 export function AdminClientsList() {
+  const t = useTranslations()
   const [clients, setClients] = useState<AdminClientRow[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -45,7 +47,7 @@ export function AdminClientsList() {
         if (json.ok) {
           const mapped = json.data.map((c: any) => ({
             id: c.id,
-            name: c.company_name || c.full_name || 'Без названия',
+            name: c.company_name || c.full_name || t('dashboard.admin.noName'),
             industry: c.industry || '—',
             gri: c.overall_score ? Math.round(c.overall_score / 10 * 10) / 10 : 0, // Score is 0-100 in DB, but table uses 0.0 format
             phase: c.stage || '—',
@@ -67,29 +69,30 @@ export function AdminClientsList() {
     fetchClients()
   }, [])
 
-  if (loading) return <div className="p-8 text-center text-sm text-on-surface-variant">Загрузка базы клиентов...</div>
+  if (loading) return <div className="p-8 text-center text-sm text-on-surface-variant">{t('dashboard.admin.loadingClients')}</div>
 
   return (
     <div className="lg:col-span-2 bg-surface-container-low rounded-2xl border border-white/[0.04] overflow-hidden">
       <div className="flex items-center justify-between px-5 py-4 border-b border-white/[0.04]">
         <div>
-          <h2 className="font-headline text-base font-bold text-on-surface">Клиенты платформы</h2>
-          <p className="text-[10px] text-on-surface-variant">GRI · фаза · ответственный менеджер</p>
+          <h2 className="font-headline text-base font-bold text-on-surface">{t('dashboard.admin.platformClients')}</h2>
+          <p className="text-[10px] text-on-surface-variant">{t('dashboard.admin.platformClientsSubtitle')}</p>
         </div>
-        <Link href="/clients" className="text-xs font-mono text-primary hover:underline">Все →</Link>
+        <Link href="/clients" className="text-xs font-mono text-primary hover:underline">{t('dashboard.admin.allClients')}</Link>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full">
           <thead>
             <tr className="border-b border-white/[0.04]">
-              {['Компания', 'Отрасль', 'GRI', 'Фаза', 'Менеджер', 'Статус'].map(h => (
+              {[t('dashboard.admin.company'), t('dashboard.admin.industry'), 'GRI', t('dashboard.admin.phase'), t('dashboard.admin.manager'), t('dashboard.admin.status')].map(h => (
                 <th key={h} className="text-left text-[10px] font-mono text-on-surface-variant uppercase tracking-widest px-4 py-3">{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {clients.map((c) => {
-              const st = STATUS_CONFIG[c.status as keyof typeof STATUS_CONFIG] || STATUS_CONFIG.active
+              const stKey = STATUS_CONFIG_KEYS[c.status as keyof typeof STATUS_CONFIG_KEYS] || STATUS_CONFIG_KEYS.active
+              const st = { ...stKey, label: t(stKey.labelKey) }
               return (
                 <tr key={c.id} className="border-b border-white/[0.02] hover:bg-white/[0.02] transition-colors">
                   <td className="px-4 py-3">
@@ -119,7 +122,7 @@ export function AdminClientsList() {
             })}
             {clients.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-xs text-on-surface-variant">Нет активных клиентов</td>
+                <td colSpan={6} className="px-4 py-8 text-center text-xs text-on-surface-variant">{t('dashboard.admin.noActiveClients')}</td>
               </tr>
             )}
           </tbody>

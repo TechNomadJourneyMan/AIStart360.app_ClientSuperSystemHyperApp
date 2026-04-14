@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useTranslations } from 'next-intl'
 
 const INSIGHTS = [
   {
@@ -80,6 +81,7 @@ const IMPACT_COLORS = {
 }
 
 export default function ExpertInsightsPage() {
+  const t = useTranslations('expertInsights')
   const [filter, setFilter] = useState('Все')
   const [typeFilter, setTypeFilter] = useState<string | null>(null)
   const [readInsights, setReadInsights] = useState<Set<string>>(
@@ -101,8 +103,8 @@ export default function ExpertInsightsPage() {
         <p className="text-xs font-mono text-primary/70 uppercase tracking-[0.2em] mb-3">Expert Portal</p>
         <div className="flex items-start justify-between">
           <div>
-            <h1 className="font-headline text-3xl font-extrabold text-on-surface">Инсайты</h1>
-            <p className="text-on-surface-variant mt-2 text-sm">AI-аналитика на основе ваших данных</p>
+            <h1 className="font-headline text-3xl font-extrabold text-on-surface">{t('title')}</h1>
+            <p className="text-on-surface-variant mt-2 text-sm">{t('subtitle')}</p>
           </div>
           {unreadCount > 0 && (
             <span className="text-xs font-mono text-primary bg-primary/10 border border-primary/20 px-3 py-1.5 rounded-xl">
@@ -193,7 +195,7 @@ export default function ExpertInsightsPage() {
         {filtered.length === 0 && (
           <div className="text-center py-16">
             <span className="material-symbols-outlined text-4xl text-on-surface-variant/20 block mb-3">lightbulb</span>
-            <p className="text-sm text-on-surface-variant">Инсайты не найдены</p>
+            <p className="text-sm text-on-surface-variant">{t('notFound')}</p>
             <button onClick={() => { setFilter('Все'); setTypeFilter(null) }}
               className="mt-3 text-xs text-primary hover:underline font-mono">
               Сбросить фильтры

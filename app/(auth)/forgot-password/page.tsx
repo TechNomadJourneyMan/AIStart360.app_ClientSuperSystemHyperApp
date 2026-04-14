@@ -6,6 +6,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase/client'
+import { useTranslations } from 'next-intl'
 
 const schema = z.object({
   email: z.string().email('Введите корректный email'),
@@ -21,6 +22,7 @@ export default function ForgotPasswordPage() {
   const { register, handleSubmit, getValues, formState: { errors } } = useForm<Form>({
     resolver: zodResolver(schema),
   })
+  const t = useTranslations()
 
   const onSubmit = async (data: Form) => {
     setRequestError(null)
@@ -31,7 +33,7 @@ export default function ForgotPasswordPage() {
     setIsLoading(false)
 
     if (error) {
-      setRequestError('Не удалось отправить письмо. Попробуйте снова.')
+      setRequestError(t('auth.sendFailed'))
       return
     }
 
@@ -44,16 +46,16 @@ export default function ForgotPasswordPage() {
         <div className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-4">
           <span className="material-symbols-outlined text-primary text-3xl">mark_email_read</span>
         </div>
-        <h2 className="font-headline text-xl font-bold text-on-surface mb-2">Письмо отправлено</h2>
+        <h2 className="font-headline text-xl font-bold text-on-surface mb-2">{t('auth.emailSent')}</h2>
         <p className="text-sm text-on-surface-variant mb-6">
-          Мы отправили ссылку для восстановления на{' '}
+          {t('auth.resetLinkSent')}{' '}
           <span className="text-primary font-mono">{getValues('email')}</span>
         </p>
         <Link
           href="/login"
           className="text-sm text-primary hover:underline"
         >
-          ← Вернуться ко входу
+          {`← ${t('auth.backToLogin')}`}
         </Link>
       </div>
     )
@@ -63,18 +65,18 @@ export default function ForgotPasswordPage() {
     <div className="glass-card rounded-2xl p-8 shadow-modal">
       <Link href="/login" className="inline-flex items-center gap-1 text-xs text-on-surface-variant hover:text-on-surface mb-6 transition-colors">
         <span className="material-symbols-outlined text-sm">arrow_back</span>
-        Назад
+        {t('common.back')}
       </Link>
 
-      <h1 className="font-headline text-2xl font-bold text-on-surface mb-1">Восстановление пароля</h1>
+      <h1 className="font-headline text-2xl font-bold text-on-surface mb-1">{t('auth.passwordRecovery')}</h1>
       <p className="text-sm text-on-surface-variant mb-8">
-        Введите email и мы пришлём ссылку для сброса пароля.
+        {t('auth.enterEmailForReset')}
       </p>
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
         <div>
           <label className="block text-xs font-label font-medium text-on-surface-variant mb-2 uppercase tracking-wider">
-            Email
+            {t('auth.email')}
           </label>
           <div className="relative">
             <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant/50 text-xl">mail</span>
@@ -100,9 +102,9 @@ export default function ForgotPasswordPage() {
           className="w-full py-3 rounded-lg bg-gradient-to-br from-primary to-primary-container text-on-primary font-semibold text-sm hover:scale-[0.98] active:scale-95 transition-all duration-150 disabled:opacity-60 disabled:pointer-events-none flex items-center justify-center gap-2"
         >
           {isLoading ? (
-            <><span className="w-4 h-4 border-2 border-on-primary/30 border-t-on-primary rounded-full animate-spin" />Отправляем...</>
+            <><span className="w-4 h-4 border-2 border-on-primary/30 border-t-on-primary rounded-full animate-spin" />{t('common.sending')}</>
           ) : (
-            'Отправить ссылку'
+            t('auth.sendLink')
           )}
         </button>
       </form>

@@ -2,8 +2,10 @@
 
 import { useAuthStore } from '@/stores/auth.store'
 import { useState } from 'react'
+import { useTranslations } from 'next-intl'
 
 export default function ExpertProfilePage() {
+  const t = useTranslations('expertProfile')
   const { user } = useAuthStore()
   const [editing, setEditing] = useState(false)
   const initials = user?.name?.split(' ').map(n => n[0]).join('').slice(0,2).toUpperCase() ?? 'EX'
@@ -12,8 +14,8 @@ export default function ExpertProfilePage() {
     <div className="space-y-8 max-w-3xl">
       <section>
         <p className="text-xs font-mono text-primary/70 uppercase tracking-[0.2em] mb-3">Expert Portal</p>
-        <h1 className="font-headline text-3xl font-extrabold text-on-surface">Мой профиль</h1>
-        <p className="text-on-surface-variant mt-2 text-sm">Управление личными данными и настройками</p>
+        <h1 className="font-headline text-3xl font-extrabold text-on-surface">{t('title')}</h1>
+        <p className="text-on-surface-variant mt-2 text-sm">{t('subtitle')}</p>
       </section>
 
       {/* Profile Card */}
@@ -66,7 +68,7 @@ export default function ExpertProfilePage() {
       <section className="bg-surface-container-low rounded-2xl border border-white/[0.04] overflow-hidden">
         <div className="flex items-center gap-3 px-6 py-4 border-b border-white/[0.04]">
           <span className="material-symbols-outlined text-lg text-primary/60">security</span>
-          <h2 className="text-sm font-headline font-bold text-on-surface">Безопасность</h2>
+          <h2 className="text-sm font-headline font-bold text-on-surface">{t('security')}</h2>
         </div>
         <div className="divide-y divide-white/[0.04]">
           {[

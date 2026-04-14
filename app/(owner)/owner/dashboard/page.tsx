@@ -1,5 +1,5 @@
 'use client'
-
+import { useTranslations } from 'next-intl'
 import { useAuthStore } from '@/stores/auth.store'
 import Link from 'next/link'
 
@@ -22,6 +22,7 @@ const TOP_LIMITS = [
 ]
 
 export default function OwnerDashboardPage() {
+  const t = useTranslations('ownerDashboard')
   const { user } = useAuthStore()
   const griScore = 4.59
 
@@ -77,7 +78,7 @@ export default function OwnerDashboardPage() {
                 Средний уровень
               </span>
             </div>
-            <h2 className="text-xl font-bold text-on-surface mb-2">Индекс готовности к росту</h2>
+            <h2 className="text-xl font-bold text-on-surface mb-2">{t('griTitle')}</h2>
             <p className="text-sm text-on-surface-variant leading-relaxed max-w-lg">
               Ваш бизнес имеет сильную бизнес-модель и высокую готовность основателя, но операционный блок является критическим ограничителем для масштабирования.
             </p>
@@ -105,7 +106,7 @@ export default function OwnerDashboardPage() {
         <div className="glass-card rounded-2xl p-5 border border-white/[0.06]">
           <div className="flex items-center gap-2 mb-4">
             <span className="material-symbols-outlined text-secondary text-xl">bar_chart</span>
-            <h3 className="text-sm font-semibold text-on-surface">Оценка по блокам</h3>
+            <h3 className="text-sm font-semibold text-on-surface">{t('blockScores')}</h3>
           </div>
           <div className="space-y-3">
             {GRI_BLOCKS.map((b) => (
@@ -129,7 +130,7 @@ export default function OwnerDashboardPage() {
         <div className="glass-card rounded-2xl p-5 border border-white/[0.06]">
           <div className="flex items-center gap-2 mb-4">
             <span className="material-symbols-outlined text-error text-xl">warning</span>
-            <h3 className="text-sm font-semibold text-on-surface">Топ-5 ограничений</h3>
+            <h3 className="text-sm font-semibold text-on-surface">{t('top5Limits')}</h3>
           </div>
           <div className="space-y-2.5">
             {TOP_LIMITS.map((item, i) => (
@@ -151,7 +152,7 @@ export default function OwnerDashboardPage() {
       <div className="glass-card rounded-2xl p-5 border border-white/[0.06]">
         <div className="flex items-center gap-2 mb-4">
           <span className="material-symbols-outlined text-primary text-xl">rocket_launch</span>
-          <h3 className="text-sm font-semibold text-on-surface">Следующие шаги</h3>
+          <h3 className="text-sm font-semibold text-on-surface">{t('nextSteps')}</h3>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           {[

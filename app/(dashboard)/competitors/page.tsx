@@ -6,20 +6,22 @@ import { auth } from '@/lib/auth'
 import { getDashboardData } from '@/lib/get-dashboard-data'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
+import { getTranslations } from 'next-intl/server'
 
-export const metadata: Metadata = { 
+export const metadata: Metadata = {
   title: 'Конкурентный Анализ | AIStart360',
   description: 'Глубокий анализ конкурентной среды и рыночного позиционирования.'
 }
 
-const THREAT_LEVELS = {
-  high: { label: 'Высокая угроза', color: 'bg-error/10 text-error border-error/20', icon: 'priority_high' },
-  medium: { label: 'Умеренная угроза', color: 'bg-warning/10 text-warning border-warning/20', icon: 'trending_flat' },
-  low: { label: 'Низкая угроза', color: 'bg-success/10 text-success border-success/20', icon: 'check_circle' },
-}
-
 export default async function CompetitorsPage() {
+  const t = await getTranslations('competitorsPage')
   const session = await auth()
+
+  const THREAT_LEVELS = {
+    high: { label: t('highThreat'), color: 'bg-error/10 text-error border-error/20', icon: 'priority_high' },
+    medium: { label: t('mediumThreat'), color: 'bg-warning/10 text-warning border-warning/20', icon: 'trending_flat' },
+    low: { label: t('lowThreat'), color: 'bg-success/10 text-success border-success/20', icon: 'check_circle' },
+  }
   const data = getDashboardData(session?.user?.email)
   
   const [clientsCount, orgsCount] = await Promise.all([
@@ -42,12 +44,12 @@ export default async function CompetitorsPage() {
           </div>
           
           <h1 className="text-4xl lg:text-5xl xl:text-6xl font-headline font-extrabold text-on-surface leading-[1.1] mb-6 tracking-tight">
-            Анализ <br/>
-            <span className="text-gradient">Конкурентной Среды</span>
+            {t('title')} <br/>
+            <span className="text-gradient">{t('titleEnv')}</span>
           </h1>
           
           <p className="text-lg text-on-surface-variant leading-relaxed mb-8">
-            Мониторинг рыночных долей, технологического превосходства и стратегий роста основных игроков индустрии на Q1 2026.
+            {t('subtitle')}
           </p>
 
           <div className="flex flex-wrap gap-4">
@@ -55,14 +57,14 @@ export default async function CompetitorsPage() {
               <span className="material-symbols-outlined text-primary">sensors</span>
               <div>
                 <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest leading-none mb-1">Live Tracking</p>
-                <p className="text-sm font-bold text-on-surface">6 источников активно</p>
+                <p className="text-sm font-bold text-on-surface">6 {t('sourcesActive')}</p>
               </div>
             </div>
             <div className="flex items-center gap-3 bg-surface/50 backdrop-blur-md px-5 py-3 rounded-2xl border border-white/[0.05]">
               <span className="material-symbols-outlined text-primary">update</span>
               <div>
                 <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest leading-none mb-1">Last Update</p>
-                <p className="text-sm font-bold text-on-surface">14 минут назад</p>
+                <p className="text-sm font-bold text-on-surface">14 {t('minutesAgo')}</p>
               </div>
             </div>
           </div>
@@ -72,10 +74,10 @@ export default async function CompetitorsPage() {
       {/* Snapshot Stats */}
       <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
         {[
-          { label: 'Мониторинг', value: data.COMPETITORS.length, icon: 'visibility', trend: '+2', color: 'text-primary' },
-          { label: 'Пересечение баз', value: '42%', icon: 'hub', trend: '+5%', color: 'text-secondary' },
-          { label: 'Общий ARR сегмента', value: '$840M', icon: 'monetization_on', trend: '+12%', color: 'text-success' },
-          { label: 'Индекс агрессии', value: '7.4/10', icon: 'bolt', trend: 'High', color: 'text-error' },
+          { label: t('monitoring'), value: data.COMPETITORS.length, icon: 'visibility', trend: '+2', color: 'text-primary' },
+          { label: t('baseOverlap'), value: '42%', icon: 'hub', trend: '+5%', color: 'text-secondary' },
+          { label: t('totalArrSegment'), value: '$840M', icon: 'monetization_on', trend: '+12%', color: 'text-success' },
+          { label: t('aggressionIndex'), value: '7.4/10', icon: 'bolt', trend: 'High', color: 'text-error' },
         ].map((stat, i) => (
           <Card key={i} className="p-6 border-white/[0.05] hover:border-primary/20 transition-all group overflow-hidden relative">
             <div className="absolute -right-4 -bottom-4 opacity-[0.03] group-hover:opacity-[0.08] transition-opacity">
@@ -99,12 +101,12 @@ export default async function CompetitorsPage() {
       <section>
         <div className="flex items-center justify-between mb-8 px-2">
           <div>
-            <h2 className="text-2xl font-headline font-bold text-on-surface mb-1">Основные игроки</h2>
-            <p className="text-sm text-on-surface-variant">Сравнительный анализ по ключевым метрикам</p>
+            <h2 className="text-2xl font-headline font-bold text-on-surface mb-1">{t('mainPlayers')}</h2>
+            <p className="text-sm text-on-surface-variant">{t('comparativeAnalysis')}</p>
           </div>
           <button className="h-10 px-4 bg-surface-container-high hover:bg-surface-container-highest border border-white/[0.05] rounded-xl text-xs font-bold text-on-surface transition-all flex items-center gap-2">
             <span className="material-symbols-outlined text-sm">filter_list</span>
-            Настроить фильтры
+            {t('setupFilters')}
           </button>
         </div>
 
@@ -144,7 +146,7 @@ export default async function CompetitorsPage() {
                         <p className="text-lg font-bold text-on-surface font-headline">{comp.arr}</p>
                       </div>
                       <div className="bg-surface-container/50 rounded-2xl p-4 border border-white/[0.03]">
-                        <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest mb-1">Клиентская база</p>
+                        <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest mb-1">{t('clientBase')}</p>
                         <p className="text-lg font-bold text-on-surface font-headline">{comp.clients}</p>
                       </div>
                     </div>
@@ -158,7 +160,7 @@ export default async function CompetitorsPage() {
                     <div>
                       <p className="text-[10px] font-mono text-primary uppercase tracking-widest mb-3 flex items-center gap-2">
                         <span className="w-4 h-px bg-primary/30" />
-                        Преимущества
+                        {t('strengths')}
                       </p>
                       <div className="space-y-2">
                         {comp.strengths.map(s => (
@@ -173,7 +175,7 @@ export default async function CompetitorsPage() {
                     <div>
                       <p className="text-[10px] font-mono text-error uppercase tracking-widest mb-3 flex items-center gap-2">
                         <span className="w-4 h-px bg-error/30" />
-                        Слабые стороны
+                        {t('weaknesses')}
                       </p>
                       <div className="space-y-2">
                         {comp.weaknesses.map(w => (
@@ -197,10 +199,10 @@ export default async function CompetitorsPage() {
                         </div>
                       ))}
                     </div>
-                    <span className="text-[10px] text-on-surface-variant font-mono">12 экспертов следят</span>
+                    <span className="text-[10px] text-on-surface-variant font-mono">12 {t('expertsFollowing')}</span>
                   </div>
                   <button className="text-xs font-bold text-primary hover:underline flex items-center gap-1 group/btn">
-                    Полный отчёт
+                    {t('fullReport')}
                     <span className="material-symbols-outlined text-sm group-hover/btn:translate-x-1 transition-transform">arrow_forward</span>
                   </button>
                 </div>
@@ -216,14 +218,13 @@ export default async function CompetitorsPage() {
           <div className="w-20 h-20 rounded-3xl bg-primary/10 flex items-center justify-center mx-auto mb-8 border border-primary/20">
             <span className="material-symbols-outlined text-4xl text-primary animate-pulse">explore</span>
           </div>
-          <h2 className="text-3xl font-headline font-extrabold text-on-surface">Рыночное Позиционирование</h2>
+          <h2 className="text-3xl font-headline font-extrabold text-on-surface">{t('marketPositioning')}</h2>
           <p className="text-on-surface-variant leading-relaxed">
-            Интерактивная карта рыночного ландшафта (Magic Quadrant AIStart360) формируется в реальном времени. 
-            Пожалуйста, подключите дополнительные источники данных для построения точной проекции.
+            {t('positioningDesc')}
           </p>
           <div className="pt-4">
             <button className="px-8 h-14 bg-primary text-on-primary font-bold rounded-2xl shadow-xl shadow-primary/20 hover:scale-105 active:scale-95 transition-all">
-              Подключить Аналитику
+              {t('connectAnalytics')}
             </button>
           </div>
         </div>

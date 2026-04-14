@@ -1,5 +1,7 @@
 'use client'
 
+import { useTranslations } from 'next-intl'
+
 export default function GlobalError({
   error,
   reset,
@@ -7,6 +9,8 @@ export default function GlobalError({
   error: Error & { digest?: string }
   reset: () => void
 }) {
+  const t = useTranslations('errors')
+
   return (
     <html lang="ru">
       <body className="min-h-screen bg-gray-950 flex items-center justify-center p-4">
@@ -14,9 +18,9 @@ export default function GlobalError({
           <div className="w-16 h-16 mx-auto mb-6 rounded-full bg-red-500/20 flex items-center justify-center">
             <span className="material-symbols-rounded text-red-400 text-3xl">error</span>
           </div>
-          <h1 className="text-2xl font-bold text-white mb-2">Критическая ошибка</h1>
+          <h1 className="text-2xl font-bold text-white mb-2">{t('criticalError')}</h1>
           <p className="text-gray-400 mb-6">
-            Произошла непредвиденная ошибка. Попробуйте обновить страницу.
+            {t('unexpectedError')}
           </p>
           {error.digest && (
             <p className="text-xs text-gray-600 mb-4 font-mono">ID: {error.digest}</p>
@@ -25,7 +29,7 @@ export default function GlobalError({
             onClick={reset}
             className="px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors"
           >
-            Попробовать снова
+            {t('tryAgain')}
           </button>
         </div>
       </body>

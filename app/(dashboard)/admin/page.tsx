@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useTranslations } from 'next-intl'
 import Link from 'next/link'
 import { SystemHealth } from '@/components/dashboard/SystemHealth'
 import { PendingClientsTable } from '@/components/dashboard/admin/PendingClientsTable'
@@ -36,6 +37,7 @@ const RECENT_ACTIVITY = [
 ]
 
 export default function AdminPage() {
+  const t = useTranslations('adminPage')
   const [activeTab, setActiveTab] = useState('overview')
 
   return (
@@ -58,7 +60,7 @@ export default function AdminPage() {
               }`}
             >
               <span className="material-symbols-outlined text-base">dashboard</span>
-              ОБЗОР
+              {t('overview')}
             </button>
             <button
               onClick={() => setActiveTab('clients')}
@@ -69,7 +71,7 @@ export default function AdminPage() {
               }`}
             >
               <span className="material-symbols-outlined text-base">groups</span>
-              КЛИЕНТЫ
+              {t('clients')}
             </button>
           </div>
         </div>
@@ -81,10 +83,10 @@ export default function AdminPage() {
              {/* Stats Grid */}
              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 {[
-                  { label: 'Всего клиентов',      value: '48',    delta: '+6 за месяц',       icon: 'groups',            color: 'text-primary'    },
-                  { label: 'Сред. GRI Score',     value: '5.8',   delta: '+0.4 за квартал',   icon: 'monitoring',        color: 'text-primary'    },
-                  { label: 'Пользователей',       value: '56',    delta: 'Всего в системе',   icon: 'manage_accounts',   color: 'text-on-surface' },
-                  { label: 'GRI Воркшопов',       value: '34',    delta: 'За всё время',      icon: 'radar',             color: 'text-primary'    },
+                  { label: t('totalClients'),      value: '48',    delta: t('perMonth'),       icon: 'groups',            color: 'text-primary'    },
+                  { label: t('avgGriScore'),     value: '5.8',   delta: t('perQuarter'),   icon: 'monitoring',        color: 'text-primary'    },
+                  { label: t('usersLabel'),       value: '56',    delta: t('totalInSystem'),   icon: 'manage_accounts',   color: 'text-on-surface' },
+                  { label: t('griWorkshops'),       value: '34',    delta: t('allTime'),      icon: 'radar',             color: 'text-primary'    },
                 ].map(s => (
                   <div key={s.label} className="bg-surface-container-low rounded-2xl border border-white/5 p-4 hover:border-primary/20 transition-all group">
                      <span className={`material-symbols-outlined text-base mb-2 font-light opacity-50 group-hover:opacity-100 ${s.color}`}>{s.icon}</span>
@@ -100,7 +102,7 @@ export default function AdminPage() {
                 <div className="lg:col-span-2 space-y-6">
                    <div className="bg-surface-container-low rounded-3xl border border-white/5 p-6">
                       <div className="flex items-center justify-between mb-8">
-                         <h2 className="text-xl font-black text-on-surface tracking-tighter">МОДУЛИ ПЛАТФОРМЫ</h2>
+                         <h2 className="text-xl font-black text-on-surface tracking-tighter">{t('platformModules')}</h2>
                          <Link href="/clients" className="text-[10px] font-mono text-primary bg-primary/10 px-3 py-1 rounded-full hover:bg-primary/20 transition-colors uppercase font-bold">Base Access ↗</Link>
                       </div>
                       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">

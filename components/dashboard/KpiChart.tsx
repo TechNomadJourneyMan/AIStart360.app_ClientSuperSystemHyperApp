@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useTranslations } from 'next-intl'
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer,
@@ -9,11 +10,11 @@ import { PERIODS, PERIOD_CONFIG, DEFAULT_PERIOD } from '@/types/periods'
 import type { Period } from '@/types/periods'
 import { useTimeseries } from '@/hooks/useTimeseries'
 
-const METRIC_DEFS = [
-  { key: 'revenue',   label: 'Доход (₸М)',   color: '#6effc0', unit: '₸М' },
-  { key: 'margin',    label: 'Маржа (%)',     color: '#bcc7de', unit: '%'  },
-  { key: 'clients',   label: 'Клиенты',       color: '#ffbd60', unit: ''   },
-  { key: 'avg_check', label: 'Средний чек',   color: '#c9a6ff', unit: '₸М' },
+const METRIC_KEYS = [
+  { key: 'revenue',   labelKey: 'dashboard.kpiMetrics.revenue',  color: '#6effc0', unit: '₸М' },
+  { key: 'margin',    labelKey: 'dashboard.kpiMetrics.margin',   color: '#bcc7de', unit: '%'  },
+  { key: 'clients',   labelKey: 'dashboard.kpiMetrics.clients',  color: '#ffbd60', unit: ''   },
+  { key: 'avg_check', labelKey: 'dashboard.kpiMetrics.avgCheck', color: '#c9a6ff', unit: '₸М' },
 ]
 
 const CustomTooltip = ({ active, payload, label, unit }: {
@@ -54,9 +55,11 @@ function ChartSkeleton() {
 }
 
 export function KpiChart({ initialMetric = 'revenue' }: { initialMetric?: string }) {
+  const t = useTranslations()
   const [period, setPeriod] = useState<Period>(DEFAULT_PERIOD)
   const [activeMetric, setActiveMetric] = useState(initialMetric)
 
+  const METRIC_DEFS = METRIC_KEYS.map((m) => ({ ...m, label: t(m.labelKey) }))
   const metricDef = METRIC_DEFS.find((m) => m.key === activeMetric) ?? METRIC_DEFS[0]
   const { data: tsData, isLoading } = useTimeseries(activeMetric, period)
   const chartData = tsData?.data?.map((p) => ({ date: p.label, value: p.value })) ?? []

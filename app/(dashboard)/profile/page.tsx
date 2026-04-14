@@ -1,24 +1,26 @@
 import type { Metadata } from 'next'
+import { getTranslations } from 'next-intl/server'
 
 export const metadata: Metadata = { title: 'Профиль' }
 
-const RECENT_ACTIVITY = [
-  { action: 'Создал отчёт',   target: 'Q4 GRI Full Report',      time: '2 ч назад', icon: 'description' },
-  { action: 'Обновил клиента', target: 'Vortex Labs',              time: '4 ч назад', icon: 'edit' },
-  { action: 'Добавил сигнал', target: 'FinTech rate decision',    time: '1 д назад', icon: 'add_circle' },
-  { action: 'Просмотрел GRI', target: 'Astra Ventures — 910 pts', time: '2 д назад', icon: 'radar' },
-]
+export default async function ProfilePage() {
+  const t = await getTranslations('profilePage')
 
-export default function ProfilePage() {
+  const RECENT_ACTIVITY = [
+    { action: t('createdReport'),   target: 'Q4 GRI Full Report',      time: '2 ч назад', icon: 'description' },
+    { action: t('updatedClient'), target: 'Vortex Labs',              time: '4 ч назад', icon: 'edit' },
+    { action: t('addedSignal'), target: 'FinTech rate decision',    time: '1 д назад', icon: 'add_circle' },
+    { action: t('viewedGri'), target: 'Astra Ventures — 910 pts', time: '2 д назад', icon: 'radar' },
+  ]
   return (
     <div className="space-y-8 max-w-4xl">
       {/* Header */}
       <section>
         <p className="text-xs font-mono text-primary/70 uppercase tracking-[0.2em] mb-3">
-          Личный кабинет
+          {t('personalCabinet')}
         </p>
         <h1 className="font-headline text-3xl font-extrabold text-on-surface">
-          Профиль
+          {t('title')}
         </h1>
       </section>
 
@@ -33,7 +35,7 @@ export default function ProfilePage() {
           <p className="text-xs font-mono text-on-surface-variant mt-1 uppercase tracking-wider">Manager</p>
           <div className="flex items-center gap-2 mt-3">
             <span className="w-2 h-2 rounded-full bg-primary animate-pulse" />
-            <span className="text-xs text-primary font-mono">Активен</span>
+            <span className="text-xs text-primary font-mono">{t('activeStatus')}</span>
           </div>
 
           <div className="w-full mt-6 pt-6 border-t border-white/[0.04] space-y-3">
@@ -52,7 +54,7 @@ export default function ProfilePage() {
           </div>
 
           <button className="mt-6 w-full text-sm font-mono text-primary bg-primary/10 hover:bg-primary/20 border border-primary/20 px-4 py-2.5 rounded-xl transition-colors">
-            Редактировать
+            {t('edit')}
           </button>
         </div>
 
@@ -61,9 +63,9 @@ export default function ProfilePage() {
           {/* KPI stats for user */}
           <div className="grid grid-cols-3 gap-3">
             {[
-              { label: 'Клиентов',   value: '6',  icon: 'business_center', sub: 'под управлением' },
-              { label: 'Отчётов',    value: '18', icon: 'description',     sub: 'за квартал' },
-              { label: 'Avg GRI',    value: '763',icon: 'radar',           sub: 'средний по портфелю' },
+              { label: t('clients'),   value: '6',  icon: 'business_center', sub: t('managed') },
+              { label: t('reports'),    value: '18', icon: 'description',     sub: t('forQuarter') },
+              { label: 'Avg GRI',    value: '763',icon: 'radar',           sub: t('avgByPortfolio') },
             ].map((stat) => (
               <div key={stat.label} className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-4 text-center">
                 <span className="material-symbols-outlined text-xl text-primary/50 mb-2 block">{stat.icon}</span>
@@ -75,12 +77,12 @@ export default function ProfilePage() {
 
           {/* Performance */}
           <div className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-6">
-            <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest mb-4">Эффективность Q1 2026</p>
+            <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest mb-4">{t('performanceQ1')}</p>
             <div className="space-y-3">
               {[
-                { label: 'SLA соблюдение',    pct: 98, value: '98%' },
-                { label: 'Загрузка',          pct: 82, value: '82%' },
-                { label: 'NPS по клиентам',   pct: 88, value: '4.4/5' },
+                { label: t('slaCompliance'),    pct: 98, value: '98%' },
+                { label: t('workload'),          pct: 82, value: '82%' },
+                { label: t('clientNps'),   pct: 88, value: '4.4/5' },
               ].map((item) => (
                 <div key={item.label}>
                   <div className="flex justify-between text-xs mb-1.5">
@@ -100,7 +102,7 @@ export default function ProfilePage() {
 
           {/* Recent Activity */}
           <div className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-6">
-            <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest mb-4">Последние действия</p>
+            <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest mb-4">{t('recentActions')}</p>
             <div className="space-y-3">
               {RECENT_ACTIVITY.map((act, i) => (
                 <div key={i} className="flex items-center gap-3">

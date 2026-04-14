@@ -1,34 +1,36 @@
 'use client'
 
 import { useState } from 'react'
+import { useTranslations } from 'next-intl'
 import { useUIStore } from '@/stores/ui.store'
 import type { Goal } from '@/types'
 import { toast } from '@/stores/ui.store'
 
 const MAX_GOALS = 5
 
-const PRESET_GOALS: Goal[] = [
-  { id: 'g1',  label: 'Выйти на $2M ARR',         category: 'revenue',   targetValue: 2000000, targetUnit: 'USD', isCustom: false },
-  { id: 'g2',  label: 'Маржа 40%+',                category: 'margin',    targetValue: 40,      targetUnit: '%',   isCustom: false },
-  { id: 'g3',  label: '100 активных клиентов',      category: 'clients',   targetValue: 100,     targetUnit: '',    isCustom: false },
-  { id: 'g4',  label: 'NPS 80+',                    category: 'custom',                                             isCustom: false },
-  { id: 'g5',  label: 'CAC Payback < 30 дней',      category: 'custom',                                             isCustom: false },
-  { id: 'g6',  label: 'LTV/CAC > 3x',               category: 'custom',                                             isCustom: false },
-  { id: 'g7',  label: 'Рост MoM 15%+',              category: 'revenue',                                            isCustom: false },
-  { id: 'g8',  label: 'Retention 70%+',             category: 'custom',                                             isCustom: false },
-  { id: 'g9',  label: 'Средний чек ₸2М',            category: 'avg_check', targetValue: 2,       targetUnit: 'M₸', isCustom: false },
-  { id: 'g10', label: 'Расширить на 2 рынка',        category: 'custom',                                             isCustom: false },
-  { id: 'g11', label: 'Команда 20+ человек',         category: 'custom',                                             isCustom: false },
-]
-
 export function GoalsBar() {
+  const t = useTranslations()
   const { pinnedGoals, addGoal, removeGoal } = useUIStore()
   const [open, setOpen] = useState(false)
   const [customLabel, setCustomLabel] = useState('')
 
+  const PRESET_GOALS: Goal[] = [
+    { id: 'g1',  label: t('goals.presets.g1'),  category: 'revenue',   targetValue: 2000000, targetUnit: 'USD', isCustom: false },
+    { id: 'g2',  label: t('goals.presets.g2'),  category: 'margin',    targetValue: 40,      targetUnit: '%',   isCustom: false },
+    { id: 'g3',  label: t('goals.presets.g3'),  category: 'clients',   targetValue: 100,     targetUnit: '',    isCustom: false },
+    { id: 'g4',  label: t('goals.presets.g4'),  category: 'custom',                                             isCustom: false },
+    { id: 'g5',  label: t('goals.presets.g5'),  category: 'custom',                                             isCustom: false },
+    { id: 'g6',  label: t('goals.presets.g6'),  category: 'custom',                                             isCustom: false },
+    { id: 'g7',  label: t('goals.presets.g7'),  category: 'revenue',                                            isCustom: false },
+    { id: 'g8',  label: t('goals.presets.g8'),  category: 'custom',                                             isCustom: false },
+    { id: 'g9',  label: t('goals.presets.g9'),  category: 'avg_check', targetValue: 2,       targetUnit: 'M₸', isCustom: false },
+    { id: 'g10', label: t('goals.presets.g10'), category: 'custom',                                             isCustom: false },
+    { id: 'g11', label: t('goals.presets.g11'), category: 'custom',                                             isCustom: false },
+  ]
+
   const handleAdd = (goal: Goal) => {
     if (pinnedGoals.length >= MAX_GOALS) {
-      toast.warning('Максимум 5 целей', 'Удалите одну цель, чтобы добавить новую')
+      toast.warning(t('goals.maxGoals'), t('goals.maxGoalsHint'))
       return
     }
     if (pinnedGoals.some((g) => g.id === goal.id)) return
@@ -38,7 +40,7 @@ export function GoalsBar() {
   const handleAddCustom = () => {
     if (!customLabel.trim()) return
     if (pinnedGoals.length >= MAX_GOALS) {
-      toast.warning('Максимум 5 целей', 'Удалите одну цель, чтобы добавить новую')
+      toast.warning(t('goals.maxGoals'), t('goals.maxGoalsHint'))
       return
     }
     addGoal({
@@ -57,7 +59,7 @@ export function GoalsBar() {
       <div className="flex flex-wrap items-center gap-2">
         {pinnedGoals.length > 0 && (
           <span className="text-[10px] font-mono text-on-surface-variant/40 uppercase tracking-widest flex-shrink-0">
-            Цели:
+            {t('goals.label')}
           </span>
         )}
 
@@ -71,7 +73,7 @@ export function GoalsBar() {
             <button
               onClick={() => removeGoal(goal.id)}
               className="text-primary/30 hover:text-primary transition-colors ml-0.5"
-              aria-label="Удалить цель"
+              aria-label={t('goals.removeGoal')}
             >
               <span className="material-symbols-outlined text-[13px]">close</span>
             </button>
@@ -84,7 +86,7 @@ export function GoalsBar() {
             className="flex items-center gap-1.5 text-xs font-mono text-on-surface-variant/40 hover:text-primary transition-colors border border-dashed border-white/[0.08] hover:border-primary/30 rounded-full px-3 py-1"
           >
             <span className="material-symbols-outlined text-[14px]">add_circle</span>
-            {pinnedGoals.length === 0 ? 'Добавить цели роста' : ''}
+            {pinnedGoals.length === 0 ? t('goals.addGrowthGoals') : ''}
           </button>
         )}
       </div>
@@ -101,7 +103,7 @@ export function GoalsBar() {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between mb-1">
-              <h3 className="font-headline text-base font-bold text-on-surface">Цели роста</h3>
+              <h3 className="font-headline text-base font-bold text-on-surface">{t('goals.growthGoals')}</h3>
               <button
                 onClick={() => setOpen(false)}
                 className="w-8 h-8 flex items-center justify-center rounded-lg text-on-surface-variant/40 hover:text-on-surface hover:bg-white/[0.06] transition-all"
@@ -110,7 +112,7 @@ export function GoalsBar() {
               </button>
             </div>
             <p className="text-xs text-on-surface-variant mb-4">
-              Выбрано {pinnedGoals.length} из {MAX_GOALS}
+              {t('goals.selectedOf', { count: pinnedGoals.length, max: MAX_GOALS })}
             </p>
 
             {/* Preset list */}
@@ -143,14 +145,14 @@ export function GoalsBar() {
             {/* Custom goal input */}
             <div className="border-t border-white/[0.04] pt-4">
               <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest mb-2">
-                Кастомная цель
+                {t('goals.customGoal')}
               </p>
               <div className="flex gap-2">
                 <input
                   value={customLabel}
                   onChange={(e) => setCustomLabel(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleAddCustom()}
-                  placeholder="Введите свою цель..."
+                  placeholder={t('goals.enterGoal')}
                   className="flex-1 bg-surface-container border border-white/[0.08] rounded-xl px-4 py-2.5 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 transition-all"
                 />
                 <button

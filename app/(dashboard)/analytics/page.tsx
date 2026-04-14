@@ -2,10 +2,9 @@ export const dynamic = "force-dynamic"
 
 import type { Metadata } from 'next'
 import { getAnalyticsData } from '@/lib/analytics-data'
+import { getTranslations } from 'next-intl/server'
 
 export const metadata: Metadata = { title: 'Analytics' }
-
-const PERIOD_OPTIONS = ['7 дней', '30 дней', '90 дней', '12 месяцев']
 
 function formatMoney(value: number): string {
   if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(1)}M`
@@ -14,7 +13,9 @@ function formatMoney(value: number): string {
 }
 
 export default async function AnalyticsPage() {
+  const t = await getTranslations('analyticsPage')
   const data = await getAnalyticsData()
+  const PERIOD_OPTIONS = [t('days7'), t('days30'), t('days90'), t('months12')]
   const totalIndustryValue = data.industryBreakdown.reduce((sum, item) => sum + item.value, 0)
 
   return (
@@ -23,7 +24,7 @@ export default async function AnalyticsPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="font-headline text-3xl font-bold text-on-surface">Analytics</h1>
-          <p className="text-on-surface-variant text-sm mt-1">Метрики и производительность портфеля</p>
+          <p className="text-on-surface-variant text-sm mt-1">{t('subtitle')}</p>
         </div>
         <div className="flex gap-1 bg-surface-container rounded-lg p-1">
           {PERIOD_OPTIONS.map((period, i) => (
@@ -54,7 +55,7 @@ export default async function AnalyticsPage() {
             <p className="text-3xl font-mono font-bold text-on-surface">{kpi.value}</p>
             <p className={`text-xs font-mono mt-2 flex items-center gap-1 ${kpi.positive ? 'text-primary' : 'text-error'}`}>
               <span className="material-symbols-outlined text-sm">{kpi.positive ? 'trending_up' : 'trending_down'}</span>
-              <span>{kpi.positive ? 'на основе реальных данных' : 'требует внимания'}</span>
+              <span>{kpi.positive ? t('basedOnRealData') : t('needsAttention')}</span>
             </p>
           </div>
         ))}
@@ -69,7 +70,7 @@ export default async function AnalyticsPage() {
           </div>
           {data.trend.length === 0 ? (
             <div className="h-48 flex items-center justify-center text-sm text-on-surface-variant border border-dashed border-white/[0.08] rounded-xl">
-              Нет данных GRI за выбранный период
+              {t('noGriTrend')}
             </div>
           ) : (
             <div className="h-48 flex items-end gap-1.5">
@@ -96,7 +97,7 @@ export default async function AnalyticsPage() {
           </div>
           {data.industryBreakdown.length === 0 ? (
             <div className="h-48 flex items-center justify-center text-sm text-on-surface-variant border border-dashed border-white/[0.08] rounded-xl">
-              Данные по отраслям пока отсутствуют
+              {t('noIndustryData')}
             </div>
           ) : (
             <div className="space-y-4">
@@ -141,7 +142,7 @@ export default async function AnalyticsPage() {
               {data.clientPerformance.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="px-5 py-8 text-center text-sm text-on-surface-variant">
-                    Нет клиентских метрик для отображения
+                    {t('noClientMetrics')}
                   </td>
                 </tr>
               ) : data.clientPerformance.map((row) => (

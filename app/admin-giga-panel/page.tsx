@@ -1,5 +1,5 @@
 'use client'
-
+import { useTranslations } from 'next-intl'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   InboxIcon,
@@ -52,6 +52,7 @@ function KpiCard({
 // ─── Main page ───────────────────────────────────────────────────────────────
 
 export default function GigaPanelPage() {
+  const t = useTranslations('gigaPanel')
   const { activeModule, setActiveModule, requests, users, clients } = useGigaPanelStore()
 
   const totalPending = requests.filter((r) => r.status === 'pending').length
@@ -74,7 +75,7 @@ export default function GigaPanelPage() {
             Командный центр
           </h1>
           <p className="text-sm text-slate-500 mt-0.5">
-            Системный уровень доступа — только для авторизованных администраторов
+            {t('systemAccessDesc')}
           </p>
         </div>
 
@@ -137,37 +138,37 @@ export default function GigaPanelPage() {
       {/* KPI row */}
       <div className="grid grid-cols-5 gap-4 mb-8">
         <KpiCard
-          label="Ожидают решения"
+          label={t('pendingDecision')}
           value={totalPending}
           icon={<Clock size={16} className="text-amber-400" />}
           accent="bg-amber-500/15 border border-amber-500/20"
-          sub="Требуют внимания"
+          sub={t('needAttention')}
         />
         <KpiCard
-          label="Одобрено"
+          label={t('approved')}
           value={totalApproved}
           icon={<CheckCircle size={16} className="text-emerald-400" />}
           accent="bg-emerald-500/15 border border-emerald-500/20"
         />
         <KpiCard
-          label="Отклонено"
+          label={t('rejected')}
           value={totalRejected}
           icon={<XCircle size={16} className="text-red-400" />}
           accent="bg-red-500/15 border border-red-500/20"
         />
         <KpiCard
-          label="Заблокировано"
+          label={t('blocked')}
           value={totalBlocked}
           icon={<TrendingUp size={16} className="text-slate-400" />}
           accent="bg-slate-500/15 border border-slate-500/20"
           sub={`из ${users.length} пользователей`}
         />
         <KpiCard
-          label="Клиентов платформы"
+          label={t('platformClients')}
           value={clients.length}
           icon={<Building2 size={16} className="text-blue-400" />}
           accent="bg-blue-500/15 border border-blue-500/20"
-          sub="В базе данных"
+          sub={t('inDatabase')}
         />
       </div>
 

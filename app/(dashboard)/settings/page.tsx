@@ -1,46 +1,42 @@
 import type { Metadata } from 'next'
+import { getTranslations } from 'next-intl/server'
 import { createClient } from '@/lib/supabase/server'
 
 export const metadata: Metadata = { title: 'Settings' }
 
-function mapRoleToPosition(role: string): string {
-  switch (role) {
-    case 'super_admin':
-      return 'Владелец системы'
-    case 'admin':
-      return 'Администратор'
-    case 'expert':
-      return 'Эксперт роста'
-    case 'owner':
-      return 'Владелец бизнеса'
-    case 'client':
-      return 'Клиент'
-    default:
-      return 'Пользователь'
-  }
-}
-
-const SECTIONS = [
-  { id: 'profile',       label: 'Профиль',       icon: 'person'        },
-  { id: 'security',      label: 'Безопасность',  icon: 'lock'          },
-  { id: 'notifications', label: 'Уведомления',   icon: 'notifications' },
-  { id: 'appearance',    label: 'Внешний вид',   icon: 'palette'       },
-  { id: 'team',          label: 'Команда',       icon: 'group'         },
-  { id: 'billing',       label: 'Биллинг',       icon: 'credit_card'   },
-  { id: 'api',           label: 'API & Интеграции', icon: 'api'        },
-]
-
 export default async function SettingsPage() {
+  const t = await getTranslations()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
+
+  const mapRoleToPosition = (role: string): string => {
+    const roles: Record<string, string> = {
+      super_admin: t('settings.roles.super_admin'),
+      admin: t('settings.roles.admin'),
+      expert: t('settings.roles.expert'),
+      owner: t('settings.roles.owner'),
+      client: t('settings.roles.client'),
+    }
+    return roles[role] ?? t('settings.roles.default')
+  }
+
+  const SECTIONS = [
+    { id: 'profile',       label: t('settings.sections.profile'),       icon: 'person'        },
+    { id: 'security',      label: t('settings.sections.security'),      icon: 'lock'          },
+    { id: 'notifications', label: t('settings.sections.notifications'), icon: 'notifications' },
+    { id: 'appearance',    label: t('settings.sections.appearance'),    icon: 'palette'       },
+    { id: 'team',          label: t('settings.sections.team'),          icon: 'group'         },
+    { id: 'billing',       label: t('settings.sections.billing'),       icon: 'credit_card'   },
+    { id: 'api',           label: t('settings.sections.api'),           icon: 'api'           },
+  ]
 
   if (!user) {
     return (
       <div className="space-y-4">
-        <h1 className="font-headline text-3xl font-bold text-on-surface">Настройки</h1>
+        <h1 className="font-headline text-3xl font-bold text-on-surface">{t('settings.title')}</h1>
         <div className="bg-surface-container rounded-xl p-6 border border-outline-variant/30">
-          <p className="text-on-surface">Не удалось загрузить профиль пользователя.</p>
-          <p className="text-sm text-on-surface-variant mt-2">Войдите снова и попробуйте открыть страницу повторно.</p>
+          <p className="text-on-surface">{t('settings.profileLoadError')}</p>
+          <p className="text-sm text-on-surface-variant mt-2">{t('settings.profileLoadErrorHint')}</p>
         </div>
       </div>
     )
@@ -54,15 +50,15 @@ export default async function SettingsPage() {
     .maybeSingle()
 
   const meta = user.user_metadata ?? {}
-  const fullName = (profile?.full_name ?? meta.full_name ?? meta.name ?? user.email ?? 'Пользователь') as string
+  const fullName = (profile?.full_name ?? meta.full_name ?? meta.name ?? user.email ?? t('settings.roles.default')) as string
   const email = user.email ?? ''
-  
+
   const role = (profile?.role ?? meta.role ?? 'client') as string
   const position = (profile?.position ?? meta.position ?? mapRoleToPosition(role)) as string
   const organization = (profile?.organization ?? meta.organization ?? '—') as string
 
   const [firstName = fullName.split(' ')[0], lastName = fullName.split(' ').slice(1).join(' ')] = fullName.split(' ')
-  
+
   const initials = fullName
     .split(' ')
     .filter(Boolean)
@@ -71,18 +67,25 @@ export default async function SettingsPage() {
     .join('') || (email[0] ?? 'U').toUpperCase()
 
   const fields = [
-    { label: 'Имя', placeholder: 'Иван', value: firstName, type: 'text' },
-    { label: 'Фамилия', placeholder: 'Иванов', value: lastName, type: 'text' },
-    { label: 'Email', placeholder: 'you@company.com', value: email, type: 'email' },
-    { label: 'Должность', placeholder: 'Manager', value: position, type: 'text' },
-    { label: 'Организация', placeholder: 'Компания', value: organization, type: 'text' },
+    { label: t('settings.firstName'), placeholder: 'Ivan', value: firstName, type: 'text' },
+    { label: t('settings.lastName'), placeholder: 'Ivanov', value: lastName, type: 'text' },
+    { label: t('auth.email'), placeholder: 'you@company.com', value: email, type: 'email' },
+    { label: t('settings.position'), placeholder: 'Manager', value: position, type: 'text' },
+    { label: t('settings.organization'), placeholder: 'Company', value: organization, type: 'text' },
+  ]
+
+  const notificationItems = [
+    { label: t('settings.notificationItems.criticalAlerts'), desc: t('settings.notificationItems.criticalAlertsDesc'), enabled: true  },
+    { label: t('settings.notificationItems.griUpdates'),     desc: t('settings.notificationItems.griUpdatesDesc'),     enabled: true  },
+    { label: t('settings.notificationItems.reportUploads'),  desc: t('settings.notificationItems.reportUploadsDesc'),  enabled: false },
+    { label: t('settings.notificationItems.weeklyDigest'),   desc: t('settings.notificationItems.weeklyDigestDesc'),   enabled: true  },
   ]
 
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="font-headline text-3xl font-bold text-on-surface">Настройки</h1>
-        <p className="text-on-surface-variant text-sm mt-1">Управление аккаунтом и системой</p>
+        <h1 className="font-headline text-3xl font-bold text-on-surface">{t('settings.title')}</h1>
+        <p className="text-on-surface-variant text-sm mt-1">{t('settings.subtitle')}</p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
@@ -109,23 +112,23 @@ export default async function SettingsPage() {
         <div className="lg:col-span-3 space-y-6">
           {/* Avatar */}
           <div className="bg-surface-container rounded-xl p-6">
-            <h3 className="font-headline text-lg font-bold text-on-surface mb-5">Фото профиля</h3>
+            <h3 className="font-headline text-lg font-bold text-on-surface mb-5">{t('settings.profilePhoto')}</h3>
             <div className="flex items-center gap-5">
               <div className="w-16 h-16 rounded-full bg-surface-container-high flex items-center justify-center text-xl font-headline font-bold text-primary">
                 {initials}
               </div>
               <div>
                 <button className="text-sm text-on-surface border border-outline-variant/30 px-4 py-2 rounded-lg hover:bg-surface-container-high transition-colors">
-                  Загрузить фото
+                  {t('settings.uploadPhoto')}
                 </button>
-                <p className="text-xs text-on-surface-variant mt-2">JPG, PNG до 2MB</p>
+                <p className="text-xs text-on-surface-variant mt-2">{t('settings.photoHint')}</p>
               </div>
             </div>
           </div>
 
           {/* Personal Info */}
           <div className="bg-surface-container rounded-xl p-6">
-            <h3 className="font-headline text-lg font-bold text-on-surface mb-5">Личная информация</h3>
+            <h3 className="font-headline text-lg font-bold text-on-surface mb-5">{t('settings.personalInfo')}</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {fields.map((field) => (
                 <div key={field.label}>
@@ -145,14 +148,9 @@ export default async function SettingsPage() {
 
           {/* Notification preferences */}
           <div className="bg-surface-container rounded-xl p-6">
-            <h3 className="font-headline text-lg font-bold text-on-surface mb-5">Уведомления</h3>
+            <h3 className="font-headline text-lg font-bold text-on-surface mb-5">{t('settings.sections.notifications')}</h3>
             <div className="space-y-4">
-              {[
-                { label: 'Критические алерты', desc: 'Немедленные уведомления о критических событиях', enabled: true  },
-                { label: 'Обновления GRI',    desc: 'При пересчёте GRI для клиентов',                 enabled: true  },
-                { label: 'Загрузка отчётов',   desc: 'При загрузке новых отчётов',                     enabled: false },
-                { label: 'Еженедельный дайджест', desc: 'Еженедельная сводка по портфелю',                enabled: true  },
-              ].map((item) => (
+              {notificationItems.map((item) => (
                 <div key={item.label} className="flex items-center justify-between py-2 border-b border-outline-variant/10 last:border-0">
                   <div>
                     <p className="text-sm font-medium text-on-surface">{item.label}</p>
@@ -175,10 +173,10 @@ export default async function SettingsPage() {
           {/* Save Button */}
           <div className="flex justify-end gap-3">
             <button className="px-5 py-2 text-sm text-on-surface-variant border border-outline-variant/30 rounded-lg hover:bg-surface-container transition-colors">
-              Отменить
+              {t('common.cancel')}
             </button>
             <button className="px-6 py-2 bg-gradient-to-br from-primary to-primary-container text-on-primary text-sm font-semibold rounded-lg shadow-primary-sm hover:scale-[0.98] transition-all">
-              Сохранить изменения
+              {t('common.saveChanges')}
             </button>
           </div>
         </div>

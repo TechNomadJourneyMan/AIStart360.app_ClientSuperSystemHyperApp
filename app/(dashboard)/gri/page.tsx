@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { createServerClient } from '@/lib/supabase-server'
+import { getTranslations } from 'next-intl/server'
 
 export const metadata: Metadata = { title: 'GRI — Growth Readiness Index' }
 
@@ -268,6 +269,7 @@ function scoreColor(s: number) {
 }
 
 export default async function GriPage() {
+  const t = await getTranslations('griPage')
   const portfolio = await getPortfolioGRI()
 
   // Merge portfolio averages into GRI_BLOCKS (if real data exists)
@@ -293,10 +295,10 @@ export default async function GriPage() {
   const dialColor  = totalGRI >= 7 ? '#6effc0' : totalGRI >= 5 ? '#a78bfa' : '#f87171'
 
   const scoreLabel =
-    totalGRI >= 8 ? 'Высокая готовность' :
-    totalGRI >= 6 ? 'Достаточный уровень' :
-    totalGRI >= 4 ? 'Средняя готовность' :
-                    'Критический уровень'
+    totalGRI >= 8 ? t('highReadiness') :
+    totalGRI >= 6 ? t('sufficientLevel') :
+    totalGRI >= 4 ? t('mediumReadiness') :
+                    t('criticalLevel')
 
   return (
     <div className="space-y-10">
@@ -310,13 +312,13 @@ export default async function GriPage() {
               Growth Readiness Index
             </h1>
             <p className="text-on-surface-variant mt-2 text-sm max-w-2xl">
-              Сборка и проверка системы роста на скорость $2M/год. Фиксация узких мест, экономических потерь и реального потолка роста.
+              {t('subtitle')}
             </p>
           </div>
           <span className="text-xs font-mono text-on-surface-variant bg-surface-container border border-white/[0.06] px-3 py-1.5 rounded-xl">
             {portfolio
-              ? `Портфель · ${portfolio.reportCount} отчёт${portfolio.reportCount === 1 ? '' : portfolio.reportCount < 5 ? 'а' : 'ов'}`
-              : 'Демо-анализ · Марина Рахимжанова'}
+              ? `${t('portfolio')} · ${portfolio.reportCount} ${portfolio.reportCount === 1 ? t('report') : portfolio.reportCount < 5 ? t('reports') : t('reportsMany')}`
+              : t('demoAnalysis')}
           </span>
         </div>
       </section>
@@ -326,7 +328,7 @@ export default async function GriPage() {
         {/* Dial */}
         <div className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-8 flex flex-col items-center">
           <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest mb-6">
-            {portfolio ? 'Средний GRI портфеля' : 'Итоговый GRI'}
+            {portfolio ? t('avgPortfolioGri') : t('totalGri')}
           </p>
           <div className="relative w-44 h-44 mb-5">
             <svg viewBox="0 0 160 160" className="w-full h-full -rotate-90">
@@ -348,16 +350,16 @@ export default async function GriPage() {
           </span>
           <p className="text-xs text-on-surface-variant text-center leading-relaxed">
             {totalGRI >= 7
-              ? 'Высокий уровень готовности. Можно масштабировать.'
+              ? t('highReadyDesc')
               : totalGRI >= 5
-              ? 'Есть основа для роста. Требуется доработка блоков.'
-              : 'Высокий риск провала при росте. Нужен пилот и доработка ключевых блоков.'}
+              ? t('sufficientDesc')
+              : t('criticalDesc')}
           </p>
         </div>
 
         {/* Block scores */}
         <div className="lg:col-span-2 bg-surface-container-low rounded-2xl border border-white/[0.04] p-6">
-          <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest mb-5">Результаты по блокам</p>
+          <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest mb-5">{t('blockResults')}</p>
           <div className="space-y-4">
             {blocks.map((block) => (
               <div key={block.id}>
@@ -381,7 +383,7 @@ export default async function GriPage() {
         <div className="absolute right-6 top-1/2 -translate-y-1/2 opacity-[0.07]">
           <span className="material-symbols-outlined text-[120px] text-primary">rocket_launch</span>
         </div>
-        <p className="text-[10px] font-mono text-primary/70 uppercase tracking-[0.2em] mb-3">Почему именно $2M/год</p>
+        <p className="text-[10px] font-mono text-primary/70 uppercase tracking-[0.2em] mb-3">{t('why2m')}</p>
         <p className="text-sm text-on-surface-variant max-w-3xl leading-relaxed mb-4">
           <strong className="text-on-surface">$2M/год</strong> — это порог, после которого хаос становится фатальным. Граница между предпринимательством и управлением. Минимальная скорость для масштабирования, франшизы и передачи операционному директору.
         </p>
@@ -402,7 +404,7 @@ export default async function GriPage() {
 
       {/* 7 Blocks Detailed */}
       <section>
-        <h2 className="font-headline text-xl font-bold text-on-surface mb-6">Детальный разбор по блокам</h2>
+        <h2 className="font-headline text-xl font-bold text-on-surface mb-6">{t('detailedBlockReview')}</h2>
         <div className="space-y-4">
           {blocks.map((block) => (
             <details key={block.id} className="group bg-surface-container-low rounded-2xl border border-white/[0.04] overflow-hidden">
@@ -429,7 +431,7 @@ export default async function GriPage() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-5">
                   {/* Criteria */}
                   <div>
-                    <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest mb-3">Критерии оценки</p>
+                    <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest mb-3">{t('evaluationCriteria')}</p>
                     <div className="space-y-2.5">
                       {block.criteria.map((c) => (
                         <div key={c.label} className="flex items-center gap-3">
@@ -444,11 +446,11 @@ export default async function GriPage() {
                   {/* Economic context */}
                   <div className="space-y-4">
                     <div className="bg-surface-container rounded-xl p-4">
-                      <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest mb-2">Что проверяем</p>
+                      <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest mb-2">{t('whatWeCheck')}</p>
                       <p className="text-sm text-on-surface">{block.description}</p>
                     </div>
                     <div className="bg-error/5 border border-error/20 rounded-xl p-4">
-                      <p className="text-[10px] font-mono text-error/70 uppercase tracking-widest mb-2">Потери при слабом блоке</p>
+                      <p className="text-[10px] font-mono text-error/70 uppercase tracking-widest mb-2">{t('lossesWithWeakBlock')}</p>
                       <p className="text-sm text-on-surface-variant">{block.economicLoss}</p>
                     </div>
                   </div>
@@ -464,7 +466,7 @@ export default async function GriPage() {
         <div className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-6">
           <div className="flex items-center gap-2 mb-5">
             <span className="material-symbols-outlined text-lg text-error">block</span>
-            <h2 className="font-headline text-lg font-bold text-on-surface">ТОП-5 Ограничений</h2>
+            <h2 className="font-headline text-lg font-bold text-on-surface">{t('top5Limits')}</h2>
           </div>
           <div className="space-y-3">
             {TOP_5_LIMITS.map((item) => (
@@ -484,7 +486,7 @@ export default async function GriPage() {
         <div className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-6">
           <div className="flex items-center gap-2 mb-5">
             <span className="material-symbols-outlined text-lg text-primary">calendar_today</span>
-            <h2 className="font-headline text-lg font-bold text-on-surface">Рекомендации на 30 дней</h2>
+            <h2 className="font-headline text-lg font-bold text-on-surface">{t('recommendations30d')}</h2>
           </div>
           <div className="space-y-3">
             {RECOMMENDATIONS_30D.map((rec, i) => (
@@ -496,7 +498,7 @@ export default async function GriPage() {
           </div>
           <div className="mt-4 p-3 bg-primary/5 border border-primary/20 rounded-xl">
             <p className="text-xs text-on-surface-variant">
-              <strong className="text-on-surface">Потенциал:</strong> При доработке продукта, команды и операционной системы — движение к $2M за 2–3 года.
+              <strong className="text-on-surface">{t('potential')}:</strong> {t('potentialDesc')}
             </p>
           </div>
         </div>
@@ -506,8 +508,8 @@ export default async function GriPage() {
       <section>
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h2 className="font-headline text-xl font-bold text-on-surface">План действий на 90 дней</h2>
-            <p className="text-xs text-on-surface-variant mt-1">Приоритеты по ограничениям GRI</p>
+            <h2 className="font-headline text-xl font-bold text-on-surface">{t('actionPlan90d')}</h2>
+            <p className="text-xs text-on-surface-variant mt-1">{t('actionPlanDesc')}</p>
           </div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -519,7 +521,7 @@ export default async function GriPage() {
                 </div>
                 <span className="text-[10px] font-mono text-on-surface-variant bg-surface-container px-2 py-1 rounded-md">{item.focus}</span>
               </div>
-              <p className="text-[10px] font-mono text-error/70 uppercase tracking-widest mb-1">Ограничение</p>
+              <p className="text-[10px] font-mono text-error/70 uppercase tracking-widest mb-1">{t('limitation')}</p>
               <p className="text-sm font-semibold text-on-surface mb-3">{item.limit}</p>
               <p className="text-xs text-on-surface-variant leading-relaxed mb-3">{item.action}</p>
               <div className="flex items-start gap-2 bg-primary/5 rounded-xl p-3">
@@ -537,16 +539,16 @@ export default async function GriPage() {
           <div>
             <p className="text-[10px] font-mono text-primary/70 uppercase tracking-[0.2em] mb-2">GRI Strategy Workshop</p>
             <h3 className="font-headline text-lg font-bold text-on-surface mb-1">
-              Готов ли ваш бизнес держать скорость $2M/год?
+              {t('workshopCta')}
             </h3>
             <p className="text-sm text-on-surface-variant">
-              Разбор по 7 блокам. Собственник отвечает на вопросы → система считает GRI → вы видите точки роста, красные флаги и упущенные деньги.
+              {t('workshopDesc')}
             </p>
           </div>
           <a href="https://aistart360.app" target="_blank" rel="noopener noreferrer"
             className="flex items-center gap-2 text-sm font-mono text-[#003824] bg-gradient-to-r from-primary to-[#00e29e] px-5 py-2.5 rounded-xl font-bold hover:scale-[0.98] transition-all flex-shrink-0 whitespace-nowrap">
             <span className="material-symbols-outlined text-lg">open_in_new</span>
-            Записаться на воркшоп
+            {t('signUpWorkshop')}
           </a>
         </div>
       </section>

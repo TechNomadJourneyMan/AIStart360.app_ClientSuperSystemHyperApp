@@ -1,5 +1,5 @@
 'use client'
-
+import { useTranslations } from 'next-intl'
 const GRI_DOMAINS = [
   { id: 'finance',    label: 'Финансы',        score: 8.8, weight: 25, icon: 'payments',         desc: 'Выручка, маржа, рентабельность' },
   { id: 'market',    label: 'Рынок',            score: 7.9, weight: 20, icon: 'public',            desc: 'Доля рынка, конкуренты, позиционирование' },
@@ -41,6 +41,7 @@ function ScoreColor(score: number) {
 }
 
 export default function ExpertGriPage() {
+  const t = useTranslations('expertGri')
   const totalScore = 8.4
   const circumference = 2 * Math.PI * 64
 
@@ -49,8 +50,8 @@ export default function ExpertGriPage() {
       {/* Header */}
       <section>
         <p className="text-xs font-mono text-primary/70 uppercase tracking-[0.2em] mb-3">Expert Portal</p>
-        <h1 className="font-headline text-3xl font-extrabold text-on-surface">GRI-диагностика</h1>
-        <p className="text-on-surface-variant mt-2 text-sm">Growth Readiness Index — комплексная оценка готовности к росту</p>
+        <h1 className="font-headline text-3xl font-extrabold text-on-surface">{t('title')}</h1>
+        <p className="text-on-surface-variant mt-2 text-sm">{t('subtitle')}</p>
       </section>
 
       {/* Score + Trend */}
@@ -99,7 +100,7 @@ export default function ExpertGriPage() {
 
       {/* Domain breakdown */}
       <section>
-        <h2 className="font-headline text-lg font-bold text-on-surface mb-5">Разбивка по доменам</h2>
+        <h2 className="font-headline text-lg font-bold text-on-surface mb-5">{t('domainBreakdown')}</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {GRI_DOMAINS.map((domain) => (
             <div key={domain.id} className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-5 hover:border-primary/20 transition-colors">
@@ -124,7 +125,7 @@ export default function ExpertGriPage() {
 
       {/* Insights */}
       <section>
-        <h2 className="font-headline text-lg font-bold text-on-surface mb-5">Ключевые инсайты</h2>
+        <h2 className="font-headline text-lg font-bold text-on-surface mb-5">{t('keyInsights')}</h2>
         <div className="space-y-3">
           {INSIGHTS.map((ins, i) => (
             <div key={i} className={`flex items-start gap-4 p-4 rounded-xl border ${

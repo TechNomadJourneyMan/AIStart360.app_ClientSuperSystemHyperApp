@@ -12,7 +12,8 @@ import { ActivityFeed } from '@/components/dashboard/ActivityFeed'
 import type { Alert, ActivityItem } from '@/types'
 import type { AlertCardProps } from '@/components/dashboard/AlertCard'
 import { PointARadarWidget } from '@/components/dashboard/PointARadarWidget'
-import type { PointA, BlockScore } from '@/types/onboarding'
+import type { PointA, BlockScore, DiagnosticStage } from '@/types/onboarding'
+import { getTranslations } from 'next-intl/server'
 
 export const metadata: Metadata = { title: 'Дэшборд' }
 
@@ -192,7 +193,7 @@ function diagToPointA(diag: Record<string, unknown>): PointA {
   return {
     overall_score: (diag.overall_score as number) ?? 0,
     health_index:  (diag.health_index  as number) ?? 0,
-    stage:         (diag.stage         as string)  ?? 'seed',
+    stage:         (diag.stage         as DiagnosticStage)  ?? 'seed',
     blocks: {
       finance:    (diag.finance_score    as BlockScore) ?? emptyBlock(),
       marketing:  (diag.marketing_score  as BlockScore) ?? emptyBlock(),
@@ -220,6 +221,7 @@ function stageLabel(s: string) {
 
 // ─── page ─────────────────────────────────────────────────────────────────────
 export default async function DashboardPage() {
+  const t = await getTranslations('dashboardPage')
   // Detect viewer role — clients get their personal Point A view
   const supabase = createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -279,20 +281,20 @@ export default async function DashboardPage() {
             <div className="flex items-start justify-between mb-4">
               <div>
                 <p className="text-[11px] font-mono text-primary/60 uppercase tracking-[0.2em] mb-2">
-                  Точка А · Текущая диагностика
+                  {t('clientView.pointALabel')}
                 </p>
                 <h1 className="font-headline text-3xl lg:text-4xl font-extrabold text-on-surface leading-tight">
-                  {orgName ?? 'Мой дашборд'}
+                  {orgName ?? t('clientView.myDashboard')}
                 </h1>
                 <p className="text-on-surface-variant mt-2 text-sm max-w-xl leading-relaxed">
-                  Ваши текущие показатели на основе заполненной анкеты
+                  {t('clientView.currentMetrics')}
                 </p>
               </div>
               {pointA && (
                 <Link href="/client/onboarding"
                   className="flex items-center gap-2 bg-surface-container hover:bg-surface-container-high border border-white/[0.06] hover:border-primary/20 text-on-surface-variant hover:text-primary text-sm px-4 py-2.5 rounded-xl transition-all flex-shrink-0">
                   <span className="material-symbols-outlined text-base">edit_note</span>
-                  Обновить анкету
+                  {t('clientView.updateSurvey')}
                 </Link>
               )}
             </div>
@@ -303,7 +305,7 @@ export default async function DashboardPage() {
                 <div className="xl:col-span-2 grid grid-cols-2 gap-3">
                   {[
                     {
-                      label: 'Общий балл', value: totalScore.toFixed(0),
+                      label: t('clientView.overallScore'), value: totalScore.toFixed(0),
                       sub: '/ 100', color: scoreColor(totalScore), icon: 'stars',
                     },
                     {
@@ -311,11 +313,11 @@ export default async function DashboardPage() {
                       sub: '/ 100', color: scoreColor(healthIndex), icon: 'monitor_heart',
                     },
                     {
-                      label: 'Стадия', value: stageLabel(pointA.stage),
-                      sub: 'бизнеса', color: '#6effc0', icon: 'trending_up',
+                      label: t('clientView.stage'), value: stageLabel(pointA.stage),
+                      sub: t('clientView.business'), color: '#6effc0', icon: 'trending_up',
                     },
                     {
-                      label: 'Финансы', value: (pointA.blocks.finance.score / 10).toFixed(1),
+                      label: t('clientView.finance'), value: (pointA.blocks.finance.score / 10).toFixed(1),
                       sub: '/ 10', color: scoreColor(pointA.blocks.finance.score), icon: 'paid',
                     },
                   ].map(card => (
@@ -338,12 +340,12 @@ export default async function DashboardPage() {
             ) : (
               <div className="bg-surface-container-low border border-white/[0.04] rounded-2xl p-12 text-center">
                 <span className="material-symbols-outlined text-5xl text-primary/20 mb-4 block">assignment</span>
-                <p className="text-on-surface font-medium mb-2">Анкета ещё не заполнена</p>
-                <p className="text-sm text-on-surface-variant mb-6">Заполните анкету, чтобы получить AI-диагностику вашего бизнеса</p>
+                <p className="text-on-surface font-medium mb-2">{t('clientView.surveyNotFilled')}</p>
+                <p className="text-sm text-on-surface-variant mb-6">{t('clientView.fillSurveyForDiag')}</p>
                 <Link href="/client/onboarding"
                   className="inline-flex items-center gap-2 bg-primary/10 hover:bg-primary/20 border border-primary/20 text-primary text-sm px-5 py-2.5 rounded-xl transition-all">
                   <span className="material-symbols-outlined text-base">edit_note</span>
-                  Заполнить анкету
+                  {t('clientView.fillSurvey')}
                 </Link>
               </div>
             )}
@@ -351,13 +353,13 @@ export default async function DashboardPage() {
 
           {/* Quick nav */}
           <section>
-            <h2 className="font-headline text-lg font-bold text-on-surface mb-4">Быстрый доступ</h2>
+            <h2 className="font-headline text-lg font-bold text-on-surface mb-4">{t('clientView.quickAccess')}</h2>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               {[
-                { href: '/point-a', icon: 'analytics', label: 'Точка А', sub: 'AI-диагностика' },
-                { href: '/client/onboarding', icon: 'edit_note', label: 'Обновить анкету', sub: 'Изменить ответы' },
-                { href: '/metrics', icon: 'bar_chart', label: 'Метрики', sub: 'Финансовые показатели' },
-                { href: '/client/onboarding/documents', icon: 'upload_file', label: 'Документы', sub: 'P&L, баланс, отчёты' },
+                { href: '/point-a', icon: 'analytics', label: t('clientView.pointANav'), sub: t('clientView.aiDiagnostics') },
+                { href: '/client/onboarding', icon: 'edit_note', label: t('clientView.updateSurveyNav'), sub: t('clientView.changeAnswers') },
+                { href: '/metrics', icon: 'bar_chart', label: t('clientView.metricsNav'), sub: t('clientView.financialMetrics') },
+                { href: '/client/onboarding/documents', icon: 'upload_file', label: t('clientView.documentsNav'), sub: t('clientView.documentsDesc') },
               ].map(item => (
                 <Link key={item.href} href={item.href}
                   className="flex flex-col items-center gap-2 bg-surface-container-low hover:bg-surface-container rounded-2xl border border-white/[0.04] hover:border-primary/20 p-5 transition-all group">
@@ -396,14 +398,14 @@ export default async function DashboardPage() {
       <section>
         <div className="mb-4">
           <p className="text-[11px] font-mono text-primary/60 uppercase tracking-[0.2em] mb-2">
-            Q1 2026 · Текущий период
+            {t('adminView.currentPeriod')}
           </p>
           <h1 className="font-headline text-3xl lg:text-4xl font-extrabold text-on-surface leading-tight">
-            Ускоряем рост бизнеса до{' '}
-            <span className="text-gradient">$2M в год</span>
+            {t('adminView.heroTitle')}{' '}
+            <span className="text-gradient">{t('adminView.heroAmount')}</span>
           </h1>
           <p className="text-on-surface-variant mt-2 text-sm max-w-xl leading-relaxed">
-            Система выхода на стабильную скорость роста $2M/год на основе AI-трансформации и сопровождения топ-экспертов
+            {t('adminView.heroDesc')}
           </p>
         </div>
 
@@ -440,7 +442,7 @@ export default async function DashboardPage() {
                  <GriDiagramWidget 
                     domains={griDomains} 
                     totalScore={griTotalScore} 
-                    orgName="Портфельный обзор"
+                    orgName={t('adminView.portfolioOverview')}
                  />
              </div>
         </div>
@@ -451,9 +453,9 @@ export default async function DashboardPage() {
           <div className="lg:col-span-2 space-y-6">
               <section>
                 <div className="flex items-center justify-between mb-4">
-                  <h2 className="font-headline text-lg font-bold text-on-surface">Критические сигналы</h2>
+                  <h2 className="font-headline text-lg font-bold text-on-surface">{t('adminView.criticalSignals')}</h2>
                   <span className="px-2 py-0.5 rounded-full bg-error/10 border border-error/20 text-[10px] font-mono text-error">
-                    {alerts.filter(a => a.severity === 'critical').length} алерта
+                    {alerts.filter(a => a.severity === 'critical').length} {t('adminView.alerts')}
                   </span>
                 </div>
                 {alerts.length > 0 ? (
@@ -465,7 +467,7 @@ export default async function DashboardPage() {
                 ) : (
                   <div className="bg-surface-container-low border border-white/[0.04] rounded-2xl p-8 text-center">
                     <span className="material-symbols-outlined text-4xl text-primary/20 mb-2">check_circle</span>
-                    <p className="text-sm text-on-surface-variant">Все системы в норме</p>
+                    <p className="text-sm text-on-surface-variant">{t('adminView.allSystemsNormal')}</p>
                   </div>
                 )}
               </section>
@@ -484,7 +486,7 @@ export default async function DashboardPage() {
 
               {/* GRI Portfolio Health */}
               <div className="bg-surface-container-low border border-white/[0.04] rounded-2xl p-5">
-                  <h3 className="text-sm font-bold text-on-surface mb-4 uppercase tracking-widest text-[10px]">Здоровье портфеля</h3>
+                  <h3 className="text-sm font-bold text-on-surface mb-4 uppercase tracking-widest text-[10px]">{t('adminView.portfolioHealth')}</h3>
                   <div className="space-y-4">
                       {griDistRows.map(row => (
                            <div key={row.label}>

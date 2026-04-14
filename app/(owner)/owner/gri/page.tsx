@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useTranslations } from 'next-intl'
 
 const GRI_BLOCKS = [
   {
@@ -105,6 +106,7 @@ const priorityColor = (p: string) => {
 }
 
 export default function OwnerGriPage() {
+  const t = useTranslations('ownerGri')
   const [activeBlock, setActiveBlock] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<'overview' | 'limits' | 'plan'>('overview')
 
@@ -114,7 +116,7 @@ export default function OwnerGriPage() {
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h1 className="font-headline text-2xl font-bold text-on-surface">GRI Результаты диагностики</h1>
+        <h1 className="font-headline text-2xl font-bold text-on-surface">{t('title')}</h1>
         <p className="text-sm text-on-surface-variant mt-1">
           Growth Readiness Index · TechStart KZ · Март 2026
         </p>

@@ -12,6 +12,7 @@ import {
   ChevronRight,
 } from 'lucide-react'
 import { useGigaPanelStore, type ActiveModule } from '@/stores/gigaPanel.store'
+import { useTranslations } from 'next-intl'
 
 interface NavItem {
   id: ActiveModule | 'overview'
@@ -23,6 +24,7 @@ interface NavItem {
 
 export function GigaSidebar() {
   const { activeModule, setActiveModule, requests, clients } = useGigaPanelStore()
+  const t = useTranslations()
 
   // Re-pin the super_admin cookie on every render so Providers can't clear it.
   // If this component renders, middleware already validated the role.
@@ -35,24 +37,24 @@ export function GigaSidebar() {
   const navItems: NavItem[] = [
     {
       id: 'overview',
-      label: 'Обзор',
+      label: t('giga.overview'),
       icon: <LayoutDashboard size={18} />,
       disabled: true,
     },
     {
       id: 'requests',
-      label: 'Заявки',
+      label: t('giga.requests'),
       icon: <InboxIcon size={18} />,
       badge: pendingCount,
     },
     {
       id: 'crm',
-      label: 'CRM / Пользователи',
+      label: t('giga.crmUsers'),
       icon: <Users2 size={18} />,
     },
     {
       id: 'clients',
-      label: 'Клиенты платформы',
+      label: t('giga.platformClients'),
       icon: <Building2 size={18} />,
       badge: clients.length > 0 ? clients.length : undefined,
     },
@@ -76,9 +78,9 @@ export function GigaSidebar() {
           </div>
           <div>
             <p className="text-xs font-semibold text-blue-400 tracking-[0.15em] uppercase">
-              ГИГА-Панель
+              {t('giga.title')}
             </p>
-            <p className="text-[10px] text-slate-500 mt-0.5">Super Admin Console</p>
+            <p className="text-[10px] text-slate-500 mt-0.5">{t('giga.subtitle')}</p>
           </div>
         </div>
       </div>
@@ -133,24 +135,24 @@ export function GigaSidebar() {
 
       {/* Stats summary */}
       <div className="mx-4 mb-4 p-3 rounded-xl bg-white/[0.03] border border-white/[0.06]">
-        <p className="text-[10px] text-slate-500 uppercase tracking-widest mb-2">Статистика</p>
+        <p className="text-[10px] text-slate-500 uppercase tracking-widest mb-2">{t('giga.statistics')}</p>
         <div className="space-y-1.5">
           <div className="flex justify-between text-xs">
-            <span className="text-slate-500">Всего заявок</span>
+            <span className="text-slate-500">{t('giga.totalRequests')}</span>
             <span className="text-slate-300 font-semibold">{requests.length}</span>
           </div>
           <div className="flex justify-between text-xs">
-            <span className="text-slate-500">Ожидают</span>
+            <span className="text-slate-500">{t('giga.pending')}</span>
             <span className="text-amber-400 font-semibold">{pendingCount}</span>
           </div>
           <div className="flex justify-between text-xs">
-            <span className="text-slate-500">Одобрено</span>
+            <span className="text-slate-500">{t('giga.approved')}</span>
             <span className="text-emerald-400 font-semibold">
               {requests.filter((r) => r.status === 'approved').length}
             </span>
           </div>
           <div className="flex justify-between text-xs">
-            <span className="text-slate-500">Клиентов</span>
+            <span className="text-slate-500">{t('nav.clients')}</span>
             <span className="text-blue-400 font-semibold">{clients.length}</span>
           </div>
         </div>
@@ -164,8 +166,8 @@ export function GigaSidebar() {
             <Shield size={13} className="text-red-400" />
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-[11px] font-semibold text-slate-300 truncate">SUPER_ADMIN</p>
-            <p className="text-[10px] text-slate-600 truncate">Системный доступ</p>
+            <p className="text-[11px] font-semibold text-slate-300 truncate">{t('giga.superAdmin')}</p>
+            <p className="text-[10px] text-slate-600 truncate">{t('giga.systemAccessLabel')}</p>
           </div>
           <button className="text-slate-600 hover:text-red-400 transition-colors">
             <LogOut size={14} />

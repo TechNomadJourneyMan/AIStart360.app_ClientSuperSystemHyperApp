@@ -2,10 +2,12 @@
 
 import { useAuthStore } from '@/stores/auth.store'
 import { useRouter } from 'next/navigation'
+import { useTranslations } from 'next-intl'
 
 export function ExpertHeader() {
   const { user, logout } = useAuthStore()
   const router = useRouter()
+  const t = useTranslations()
 
   const handleLogout = () => {
     logout()
@@ -17,7 +19,7 @@ export function ExpertHeader() {
       {/* Left */}
       <div className="flex items-center gap-3">
         <span className="text-xs font-mono text-on-surface-variant/50 uppercase tracking-widest hidden md:block">
-          Expert Portal
+          {t('expert.portal')}
         </span>
       </div>
 

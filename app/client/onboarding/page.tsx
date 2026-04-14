@@ -7,6 +7,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase/client'
 import Image from 'next/image'
+import { useTranslations } from 'next-intl'
 import Link from 'next/link'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -276,6 +277,7 @@ const STEPS = [
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function OnboardingPage() {
+  const t = useTranslations('onboardingPage')
   const router = useRouter()
   const [currentStep, setCurrentStep] = useState(1)
   const [savedAnswers, setSavedAnswers] = useState<Record<string, unknown>>({})
@@ -430,11 +432,11 @@ export default function OnboardingPage() {
             {isSaving && (
               <div className="flex items-center gap-1.5 text-xs text-on-surface-variant">
                 <span className="w-3 h-3 border border-primary/50 border-t-primary rounded-full animate-spin" />
-                Сохранение...
+                ${t('saving')}
               </div>
             )}
             <span className="text-xs font-mono text-on-surface-variant">
-              Шаг {currentStep} из 6
+              {t('stepOf', { step: currentStep })}
             </span>
             <button
               onClick={async () => {
@@ -556,7 +558,7 @@ function NavButtons({ onBack, nextLabel = 'Далее', isLast = false, loading 
         className="flex-1 py-3 rounded-xl bg-gradient-to-r from-primary to-[#00e29e] text-[#003824] font-bold text-sm flex items-center justify-center gap-2 hover:scale-[0.99] transition-all disabled:opacity-60"
       >
         {loading ? (
-          <><span className="w-4 h-4 border-2 border-[#003824]/30 border-t-[#003824] rounded-full animate-spin" />Обработка...</>
+          <><span className="w-4 h-4 border-2 border-[#003824]/30 border-t-[#003824] rounded-full animate-spin" />...</>
         ) : (
           <>{isLast ? '🚀 ' : ''}{nextLabel}{!isLast && ' →'}</>
         )}

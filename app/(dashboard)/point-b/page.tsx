@@ -1,43 +1,46 @@
 import type { Metadata } from 'next'
+import { getTranslations } from 'next-intl/server'
 
 export const metadata: Metadata = { title: 'Точка Б — Целевое состояние' }
 
-const MILESTONES = [
-  { q: 'Q2 2026', title: 'Оптимизация unit-экономики', desc: 'Снизить CAC на 20%, довести LTV:CAC до 6x', status: 'current', icon: 'tune' },
-  { q: 'Q3 2026', title: 'Масштабирование команды', desc: 'Нанять 8 менеджеров роста, запустить партнёрскую программу', status: 'planned', icon: 'group_add' },
-  { q: 'Q4 2026', title: 'Выход на новый рынок', desc: 'Запуск в 3 новых городах, ARR ₸120М', status: 'planned', icon: 'flight_takeoff' },
-  { q: 'Q1 2027', title: 'Серия A / Раунд финансирования', desc: 'Подготовка к раунду $5M+, валидация product-market fit', status: 'future', icon: 'rocket_launch' },
-]
+export default async function PointBPage() {
+  const t = await getTranslations('pointBPage')
 
-const TARGETS = [
-  { label: 'Целевой ARR',     value: '₸120М',  current: '₸84.2М',  pct: 70, icon: 'payments' },
-  { label: 'Целевой GRI',     value: '850+',    current: '763',      pct: 76, icon: 'radar' },
-  { label: 'Клиентов',        value: '80',      current: '48',       pct: 60, icon: 'groups' },
-  { label: 'Маржа',           value: '42%',     current: '34.2%',    pct: 81, icon: 'percent' },
-  { label: 'NPS',             value: '85+',     current: '74',       pct: 87, icon: 'thumb_up' },
-  { label: 'Команда',         value: '45 чел',  current: '28 чел',   pct: 62, icon: 'badge' },
-]
+  const MILESTONES = [
+    { q: 'Q2 2026', title: t('q2Title'), desc: t('q2Desc'), status: 'current', icon: 'tune' },
+    { q: 'Q3 2026', title: t('q3Title'), desc: t('q3Desc'), status: 'planned', icon: 'group_add' },
+    { q: 'Q4 2026', title: t('q4Title'), desc: t('q4Desc'), status: 'planned', icon: 'flight_takeoff' },
+    { q: 'Q1 2027', title: t('q1Title'), desc: t('q1Desc'), status: 'future', icon: 'rocket_launch' },
+  ]
 
-export default function PointBPage() {
+  const TARGETS = [
+    { label: t('targetArr'),  value: '₸120М',  current: '₸84.2М',  pct: 70, icon: 'payments' },
+    { label: t('targetGri'),  value: '850+',    current: '763',      pct: 76, icon: 'radar' },
+    { label: t('clients'),    value: '80',      current: '48',       pct: 60, icon: 'groups' },
+    { label: t('margin'),     value: '42%',     current: '34.2%',    pct: 81, icon: 'percent' },
+    { label: t('nps'),        value: '85+',     current: '74',       pct: 87, icon: 'thumb_up' },
+    { label: t('team'),       value: `45 ${t('people')}`,  current: `28 ${t('people')}`,   pct: 62, icon: 'badge' },
+  ]
+
   return (
     <div className="space-y-8">
       {/* Header */}
       <section>
         <p className="text-xs font-mono text-primary/70 uppercase tracking-[0.2em] mb-3">
-          Стратегия роста · Горизонт 12 месяцев
+          {t('growthStrategy')}
         </p>
         <h1 className="font-headline text-3xl lg:text-4xl font-extrabold text-on-surface">
-          Точка{' '}
-          <span className="text-gradient">Б</span>
+          {t('title')}{' '}
+          <span className="text-gradient">{t('titleB')}</span>
         </h1>
         <p className="text-on-surface-variant mt-2 text-sm max-w-xl">
-          Целевое состояние бизнеса — куда мы движемся и каким путём.
+          {t('subtitle')}
         </p>
       </section>
 
       {/* Target KPIs */}
       <section>
-        <h2 className="font-headline text-lg font-bold text-on-surface mb-5">Целевые показатели</h2>
+        <h2 className="font-headline text-lg font-bold text-on-surface mb-5">{t('targetKpis')}</h2>
         <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
           {TARGETS.map((target) => (
             <div key={target.label} className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-5 group hover:border-primary/20 transition-colors">
@@ -47,10 +50,10 @@ export default function PointBPage() {
               </div>
               <div className="flex items-end gap-3 mb-3">
                 <span className="text-2xl font-mono font-bold text-primary">{target.value}</span>
-                <span className="text-xs text-on-surface-variant font-mono pb-0.5">цель</span>
+                <span className="text-xs text-on-surface-variant font-mono pb-0.5">{t('goal')}</span>
               </div>
               <div className="flex items-center justify-between text-xs mb-2">
-                <span className="text-on-surface-variant font-mono">{target.current} сейчас</span>
+                <span className="text-on-surface-variant font-mono">{target.current} {t('now')}</span>
                 <span className="font-mono text-primary">{target.pct}%</span>
               </div>
               <div className="h-1.5 bg-surface-container-high rounded-full overflow-hidden">
@@ -68,8 +71,8 @@ export default function PointBPage() {
       <section>
         <div className="flex justify-between items-end border-b border-outline-variant/10 pb-4 mb-5">
           <div>
-            <h2 className="font-headline text-lg font-bold text-on-surface">Дорожная карта</h2>
-            <p className="text-xs text-on-surface-variant mt-1">Ключевые вехи на пути к Точке Б</p>
+            <h2 className="font-headline text-lg font-bold text-on-surface">{t('roadmap')}</h2>
+            <p className="text-xs text-on-surface-variant mt-1">{t('roadmapDesc')}</p>
           </div>
         </div>
         <div className="relative">
@@ -95,7 +98,7 @@ export default function PointBPage() {
                   <div className="flex items-start justify-between mb-2">
                     <div>
                       <span className={`text-[10px] font-mono uppercase tracking-wider ${m.status === 'current' ? 'text-primary' : 'text-on-surface-variant'}`}>
-                        {m.q} {m.status === 'current' ? '· Текущий' : ''}
+                        {m.q} {m.status === 'current' ? `· ${t('current')}` : ''}
                       </span>
                       <h3 className="text-sm font-medium text-on-surface mt-0.5">{m.title}</h3>
                     </div>
@@ -113,12 +116,12 @@ export default function PointBPage() {
 
       {/* Gap Analysis */}
       <section>
-        <h2 className="font-headline text-lg font-bold text-on-surface mb-5">Gap-анализ</h2>
+        <h2 className="font-headline text-lg font-bold text-on-surface mb-5">{t('gapAnalysis')}</h2>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {[
-            { label: 'Приоритет 1', title: 'Unit-экономика', gap: 'CAC слишком высокий', action: 'Оптимизация воронки продаж', icon: 'priority_high', color: 'error' },
-            { label: 'Приоритет 2', title: 'Масштаб команды', gap: 'Нехватка менеджеров', action: 'Программа найма Q2 2026', icon: 'group', color: 'tertiary-container' },
-            { label: 'Приоритет 3', title: 'Автоматизация', gap: '40% процессов ручные', action: 'Внедрение CRM + workflow', icon: 'automation', color: 'primary' },
+            { label: `${t('priority')} 1`, title: t('unitEcon'), gap: t('unitEconGap'), action: t('unitEconAction'), icon: 'priority_high', color: 'error' },
+            { label: `${t('priority')} 2`, title: t('teamScale'), gap: t('teamScaleGap'), action: t('teamScaleAction'), icon: 'group', color: 'tertiary-container' },
+            { label: `${t('priority')} 3`, title: t('automation'), gap: t('automationGap'), action: t('automationAction'), icon: 'automation', color: 'primary' },
           ].map((item) => (
             <div key={item.label} className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-5">
               <span className={`text-[10px] font-mono text-${item.color} uppercase tracking-wider`}>{item.label}</span>

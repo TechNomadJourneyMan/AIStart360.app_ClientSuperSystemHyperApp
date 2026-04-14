@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useMemo } from 'react'
+import { useTranslations } from 'next-intl'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useMetricsCatalog } from '@/hooks/useMetrics'
 import { useMetricsStore } from '@/stores/metrics.store'
@@ -8,20 +9,21 @@ import { MAX_METRICS } from '@/types/metrics'
 import type { MetricDefinition } from '@/types/metrics'
 import { toast } from '@/stores/ui.store'
 
-const CATEGORY_LABELS: Record<string, string> = {
-  financial:   'Финансовые',
-  operational: 'Операционные',
-  customer:    'Клиентские',
-  custom:      'Кастомные',
-}
-
 interface AddMetricModalProps {
   open: boolean
   onClose: () => void
 }
 
 export function AddMetricModal({ open, onClose }: AddMetricModalProps) {
+  const t = useTranslations()
   const { data: catalog = [], isLoading } = useMetricsCatalog()
+
+  const CATEGORY_LABELS: Record<string, string> = {
+    financial:   t('dashboard.metricCategories.financial'),
+    operational: t('dashboard.metricCategories.operational'),
+    customer:    t('dashboard.metricCategories.customer'),
+    custom:      t('dashboard.metricCategories.custom'),
+  }
   const { visibleMetricIds, hiddenMetricIds, addMetric } = useMetricsStore()
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState<string[]>([])
@@ -55,7 +57,7 @@ export function AddMetricModal({ open, onClose }: AddMetricModalProps) {
     const canAdd = MAX_METRICS - totalCount
     const toAdd = selected.slice(0, canAdd)
     if (selected.length > canAdd) {
-      toast.warning(`Добавлено ${canAdd} из ${selected.length}`, `Достигнут лимит ${MAX_METRICS} метрик`)
+      toast.warning(t('dashboard.addMetric.addedPartial', { added: canAdd, total: selected.length }), t('dashboard.addMetric.limitReached', { max: MAX_METRICS }))
     }
     toAdd.forEach((id) => addMetric(id))
     setSelected([])
@@ -89,9 +91,9 @@ export function AddMetricModal({ open, onClose }: AddMetricModalProps) {
             <div className="p-5 pb-3 border-b border-white/[0.06]">
               <div className="flex items-center justify-between mb-3">
                 <div>
-                  <h3 className="text-base font-bold text-on-surface">Добавить метрику</h3>
+                  <h3 className="text-base font-bold text-on-surface">{t('dashboard.addMetric.title')}</h3>
                   <p className="text-[11px] text-on-surface-variant mt-0.5">
-                    {totalCount} из {MAX_METRICS} · осталось {remaining}
+                    {t('dashboard.addMetric.countOf', { count: totalCount, max: MAX_METRICS })} · {t('dashboard.addMetric.remaining', { count: remaining })}
                   </p>
                 </div>
                 <button
@@ -105,7 +107,7 @@ export function AddMetricModal({ open, onClose }: AddMetricModalProps) {
                 autoFocus
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Поиск метрики..."
+                placeholder={t('dashboard.addMetric.searchMetric')}
                 className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-2.5 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 transition-all"
               />
             </div>
@@ -123,7 +125,7 @@ export function AddMetricModal({ open, onClose }: AddMetricModalProps) {
               {!isLoading && filtered.length === 0 && (
                 <div className="py-10 text-center">
                   <span className="material-symbols-outlined text-3xl text-on-surface-variant/20 mb-2 block">search_off</span>
-                  <p className="text-sm text-on-surface-variant/40">Метрики не найдены</p>
+                  <p className="text-sm text-on-surface-variant/40">{t('dashboard.addMetric.notFound')}</p>
                 </div>
               )}
 
@@ -175,21 +177,21 @@ export function AddMetricModal({ open, onClose }: AddMetricModalProps) {
             {/* Footer */}
             <div className="p-5 pt-3 border-t border-white/[0.06] flex items-center justify-between gap-3">
               <span className="text-xs text-on-surface-variant">
-                {selected.length > 0 ? `Выбрано: ${selected.length}` : 'Выберите метрики'}
+                {selected.length > 0 ? t('dashboard.addMetric.selected', { count: selected.length }) : t('dashboard.addMetric.selectMetrics')}
               </span>
               <div className="flex gap-2">
                 <button
                   onClick={onClose}
                   className="px-4 py-2 rounded-xl text-sm text-on-surface-variant hover:bg-white/[0.06] transition-all"
                 >
-                  Отмена
+                  {t('common.cancel')}
                 </button>
                 <button
                   onClick={handleConfirm}
                   disabled={selected.length === 0}
                   className="px-5 py-2 rounded-xl text-sm font-medium bg-primary/20 hover:bg-primary/30 text-primary transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                 >
-                  Добавить {selected.length > 0 ? `(${selected.length})` : ''}
+                  {t('dashboard.addMetric.addBtn')} {selected.length > 0 ? `(${selected.length})` : ''}
                 </button>
               </div>
             </div>

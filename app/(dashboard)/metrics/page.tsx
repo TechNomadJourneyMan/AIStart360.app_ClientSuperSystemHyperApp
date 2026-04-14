@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useTranslations } from 'next-intl'
 
 // ─── 11 Goals from Metrics.docx ──────────────────────────────────────────────
 const METRIC_GOALS = [
@@ -538,6 +539,7 @@ function DeptCard({ dept }: { dept: typeof BIZ_METRICS[0] }) {
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function MetricsPage() {
+  const t = useTranslations('nav')
   const [activeGoalCat, setActiveGoalCat] = useState('Все')
   const [activeKpiCat,  setActiveKpiCat]  = useState('Все KPI')
   const [activeTab,     setActiveTab]     = useState<'goals' | 'kpi' | 'gri' | 'biz'>('goals')

@@ -1,8 +1,9 @@
 'use client'
-
+import { useTranslations } from 'next-intl'
 import { useAuthStore } from '@/stores/auth.store'
 
 export default function OwnerProfilePage() {
+  const t = useTranslations('ownerProfile')
   const { user } = useAuthStore()
 
   const fields = [
@@ -17,8 +18,8 @@ export default function OwnerProfilePage() {
   return (
     <div className="space-y-6 max-w-2xl">
       <div>
-        <h1 className="font-headline text-2xl font-bold text-on-surface">Профиль</h1>
-        <p className="text-sm text-on-surface-variant mt-1">Данные вашего аккаунта на платформе AIStart360</p>
+        <h1 className="font-headline text-2xl font-bold text-on-surface">{t('title')}</h1>
+        <p className="text-sm text-on-surface-variant mt-1">{t('subtitle')}</p>
       </div>
 
       {/* Avatar card */}
@@ -40,7 +41,7 @@ export default function OwnerProfilePage() {
 
       {/* Info fields */}
       <div className="glass-card rounded-2xl p-5 border border-white/[0.06]">
-        <h3 className="text-sm font-semibold text-on-surface mb-4">Данные аккаунта</h3>
+        <h3 className="text-sm font-semibold text-on-surface mb-4">{t('accountData')}</h3>
         <div className="space-y-3">
           {fields.map((f) => (
             <div key={f.label} className="flex items-center justify-between py-2.5 border-b border-white/[0.04] last:border-0">
@@ -53,12 +54,12 @@ export default function OwnerProfilePage() {
 
       {/* GRI link */}
       <div className="glass-card rounded-2xl p-5 border border-white/[0.06]">
-        <h3 className="text-sm font-semibold text-on-surface mb-3">Диагностика</h3>
+        <h3 className="text-sm font-semibold text-on-surface mb-3">{t('diagnostics')}</h3>
         <div className="flex items-center justify-between p-3 rounded-xl bg-white/[0.02] border border-white/[0.04]">
           <div className="flex items-center gap-3">
             <span className="material-symbols-outlined text-secondary text-xl">radar</span>
             <div>
-              <p className="text-sm text-on-surface">GRI Диагностика</p>
+              <p className="text-sm text-on-surface">{t('griDiagnostics')}</p>
               <p className="text-xs text-on-surface-variant">Март 2026 · Итоговый балл: 4.59/10</p>
             </div>
           </div>

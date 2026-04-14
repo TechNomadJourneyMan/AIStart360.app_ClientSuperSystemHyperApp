@@ -4,6 +4,7 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { usePathname, useRouter } from 'next/navigation'
 import { useState, useEffect } from 'react'
+import { useTranslations } from 'next-intl'
 import { useUIStore } from '@/stores/ui.store'
 import { useAuthStore } from '@/stores/auth.store'
 import { getPrimaryNavForRole, getSecondaryNavForRole } from '@/lib/navigation'
@@ -12,6 +13,7 @@ import type { NavItem, UserRole } from '@/types'
 export function Sidebar() {
   const pathname = usePathname()
   const router = useRouter()
+  const t = useTranslations()
   const { sidebarCollapsed, toggleSidebar } = useUIStore()
   const { user, logout } = useAuthStore()
   const [moreOpen, setMoreOpen] = useState(false)
@@ -122,7 +124,7 @@ export function Sidebar() {
                   <button
                     onClick={(e) => toggleSubMenu(item.href, e)}
                     className={`pr-2.5 py-2.5 flex-shrink-0 transition-colors ${active ? 'text-primary/60' : 'text-[#6b7280]/60 hover:text-[#c9d1d9]'}`}
-                    aria-label="Раскрыть"
+                    aria-label={t('common.expand')}
                   >
                     <span className={`material-symbols-outlined text-[16px] transition-transform duration-200 ${isSubOpen ? 'rotate-180' : ''}`}>
                       expand_more
@@ -205,7 +207,7 @@ export function Sidebar() {
         {/* More / Secondary nav toggle */}
         <button
           onClick={() => setMoreOpen((v) => !v)}
-          title={sidebarCollapsed ? 'Ещё' : undefined}
+          title={sidebarCollapsed ? t('nav.more') : undefined}
           className={`
             group flex items-center rounded-xl transition-all duration-150 w-full
             ${sidebarCollapsed ? 'justify-center px-0 py-3' : 'gap-3 px-3 py-2.5'}
@@ -218,7 +220,7 @@ export function Sidebar() {
             {isAnySecondaryActive ? 'more_horiz' : 'more_horiz'}
           </span>
           {!sidebarCollapsed && (
-            <span className="text-sm font-medium flex-1 text-left">Ещё</span>
+            <span className="text-sm font-medium flex-1 text-left">{t('nav.more')}</span>
           )}
           {!sidebarCollapsed && (
             <span className={`material-symbols-outlined text-[16px] transition-transform duration-200 ${moreOpen ? 'rotate-180' : ''}`}>
@@ -269,13 +271,13 @@ export function Sidebar() {
         {!sidebarCollapsed && (
           <div className="flex items-center gap-2 px-3 py-1.5 mb-1">
             <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse flex-shrink-0" />
-            <span className="text-[10px] font-mono text-primary/70 tracking-wider">СИСТЕМА АКТИВНА</span>
+            <span className="text-[10px] font-mono text-primary/70 tracking-wider">{t('common.systemActive')}</span>
           </div>
         )}
 
         <Link
           href="/profile"
-          title={sidebarCollapsed ? 'Профиль' : undefined}
+          title={sidebarCollapsed ? t('nav.profile') : undefined}
           className={`
             group flex items-center rounded-xl transition-all duration-150
             ${isActive('/profile') ? 'bg-primary/10 text-primary' : 'text-[#6b7280] hover:text-[#c9d1d9] hover:bg-white/[0.04]'}
@@ -283,12 +285,12 @@ export function Sidebar() {
           `}
         >
           <span className="material-symbols-outlined text-[20px]">account_circle</span>
-          {!sidebarCollapsed && <span className="text-sm font-medium">Профиль</span>}
+          {!sidebarCollapsed && <span className="text-sm font-medium">{t('nav.profile')}</span>}
         </Link>
 
         <Link
           href="/settings"
-          title={sidebarCollapsed ? 'Настройки' : undefined}
+          title={sidebarCollapsed ? t('nav.settings') : undefined}
           className={`
             group flex items-center rounded-xl transition-all duration-150
             ${isActive('/settings') ? 'bg-primary/10 text-primary' : 'text-[#6b7280] hover:text-[#c9d1d9] hover:bg-white/[0.04]'}
@@ -296,20 +298,20 @@ export function Sidebar() {
           `}
         >
           <span className="material-symbols-outlined text-[20px]">settings</span>
-          {!sidebarCollapsed && <span className="text-sm font-medium">Настройки</span>}
+          {!sidebarCollapsed && <span className="text-sm font-medium">{t('nav.settings')}</span>}
         </Link>
 
         {/* Logout */}
         <button
           onClick={handleLogout}
-          title={sidebarCollapsed ? 'Выйти' : undefined}
+          title={sidebarCollapsed ? t('nav.logout') : undefined}
           className={`
             w-full flex items-center rounded-xl transition-all duration-150 text-[#6b7280] hover:text-error hover:bg-error/5
             ${sidebarCollapsed ? 'justify-center px-0 py-2.5' : 'gap-3 px-3 py-2.5'}
           `}
         >
           <span className="material-symbols-outlined text-[20px]">logout</span>
-          {!sidebarCollapsed && <span className="text-sm">Выйти</span>}
+          {!sidebarCollapsed && <span className="text-sm">{t('nav.logout')}</span>}
         </button>
 
         {/* Collapse toggle */}
@@ -319,12 +321,12 @@ export function Sidebar() {
             w-full flex items-center rounded-xl transition-all duration-150 text-[#6b7280] hover:text-[#c9d1d9] hover:bg-white/[0.04]
             ${sidebarCollapsed ? 'justify-center px-0 py-2.5' : 'gap-3 px-3 py-2.5'}
           `}
-          aria-label={sidebarCollapsed ? 'Развернуть' : 'Свернуть'}
+          aria-label={sidebarCollapsed ? t('common.expand') : t('common.collapse')}
         >
           <span className="material-symbols-outlined text-[20px]">
             {sidebarCollapsed ? 'chevron_right' : 'chevron_left'}
           </span>
-          {!sidebarCollapsed && <span className="text-sm">Свернуть</span>}
+          {!sidebarCollapsed && <span className="text-sm">{t('common.collapse')}</span>}
         </button>
       </div>
     </aside>

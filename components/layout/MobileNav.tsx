@@ -3,65 +3,67 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useState, useEffect } from 'react'
+import { useTranslations } from 'next-intl'
 import { useAuthStore } from '@/stores/auth.store'
 import { getNavForRole } from '@/lib/navigation'
 import type { UserRole } from '@/types'
 
-// ── Bottom bar — 4 primary tabs ─────────────────────────────────────────────
-const BOTTOM_TABS = [
-  { label: 'Дэшборд',  href: '/dashboard', icon: 'dashboard'       },
-  { label: 'GRI Pulse',href: '/pulse',      icon: 'cell_tower'      },
-  { label: 'Клиенты',  href: '/clients',    icon: 'business_center' },
-  { label: 'Метрики',  href: '/metrics',    icon: 'monitoring'      },
-]
-
-// ── All sections shown in the "More" drawer ──────────────────────────────────
-const DRAWER_SECTIONS = [
-  {
-    title: 'Основное',
-    items: [
-      { label: 'Дэшборд',    href: '/dashboard',  icon: 'dashboard'        },
-      { label: 'GRI',        href: '/gri',         icon: 'radar'            },
-      { label: 'GRI Pulse',  href: '/pulse',       icon: 'cell_tower'       },
-      { label: 'Метрики',    href: '/metrics',     icon: 'monitoring'       },
-      { label: 'Инсайты',    href: '/insights',    icon: 'lightbulb'        },
-    ],
-  },
-  {
-    title: 'Анализ',
-    items: [
-      { label: 'Рынок',      href: '/market',      icon: 'public'           },
-      { label: 'Точка А',    href: '/point-a',     icon: 'my_location'      },
-      { label: 'Точка Б',    href: '/point-b',     icon: 'flag'             },
-      { label: 'Конкуренты', href: '/competitors', icon: 'compare_arrows'   },
-      { label: 'Разведка',   href: '/intelligence',icon: 'hub'              },
-    ],
-  },
-  {
-    title: 'Работа',
-    items: [
-      { label: 'Клиенты',    href: '/clients',      icon: 'business_center' },
-      { label: 'Отчёты',     href: '/reports',      icon: 'description'     },
-      { label: 'Аналитика',  href: '/analytics',    icon: 'bar_chart'       },
-      { label: 'Команда',    href: '/team',         icon: 'group'           },
-    ],
-  },
-  {
-    title: 'Система',
-    items: [
-      { label: 'Уведомления',href: '/notifications',icon: 'notifications'   },
-      { label: 'Пользователи',href: '/users',       icon: 'manage_accounts' },
-      { label: 'Профиль',    href: '/profile',      icon: 'account_circle'  },
-      { label: 'Настройки',  href: '/settings',     icon: 'settings'        },
-      { label: 'Админ',      href: '/admin',        icon: 'admin_panel_settings'},
-    ],
-  },
-]
-
 export function MobileNav() {
   const pathname = usePathname()
   const [drawerOpen, setDrawerOpen] = useState(false)
+  const t = useTranslations()
   const { user } = useAuthStore()
+
+  // ── Bottom bar — 4 primary tabs ─────────────────────────────────────────────
+  const BOTTOM_TABS = [
+    { label: t('nav.dashboard'),  href: '/dashboard', icon: 'dashboard'       },
+    { label: t('nav.pulse'),      href: '/pulse',      icon: 'cell_tower'      },
+    { label: t('nav.clients'),    href: '/clients',    icon: 'business_center' },
+    { label: t('nav.metrics'),    href: '/metrics',    icon: 'monitoring'      },
+  ]
+
+  // ── All sections shown in the "More" drawer ──────────────────────────────────
+  const DRAWER_SECTIONS = [
+    {
+      title: t('mobileNav.sections.main'),
+      items: [
+        { label: t('nav.dashboard'),    href: '/dashboard',  icon: 'dashboard'        },
+        { label: t('nav.gri'),          href: '/gri',         icon: 'radar'            },
+        { label: t('nav.pulse'),        href: '/pulse',       icon: 'cell_tower'       },
+        { label: t('nav.metrics'),      href: '/metrics',     icon: 'monitoring'       },
+        { label: t('nav.insights'),     href: '/insights',    icon: 'lightbulb'        },
+      ],
+    },
+    {
+      title: t('mobileNav.sections.analysis'),
+      items: [
+        { label: t('nav.market'),       href: '/market',      icon: 'public'           },
+        { label: t('nav.pointA'),       href: '/point-a',     icon: 'my_location'      },
+        { label: t('nav.pointB'),       href: '/point-b',     icon: 'flag'             },
+        { label: t('nav.competitors'),  href: '/competitors', icon: 'compare_arrows'   },
+        { label: t('nav.intelligence'), href: '/intelligence',icon: 'hub'              },
+      ],
+    },
+    {
+      title: t('mobileNav.sections.work'),
+      items: [
+        { label: t('nav.clients'),      href: '/clients',      icon: 'business_center' },
+        { label: t('nav.reports'),       href: '/reports',      icon: 'description'     },
+        { label: t('nav.analytics'),     href: '/analytics',    icon: 'bar_chart'       },
+        { label: t('nav.team'),          href: '/team',         icon: 'group'           },
+      ],
+    },
+    {
+      title: t('mobileNav.sections.system'),
+      items: [
+        { label: t('nav.notifications'),href: '/notifications',icon: 'notifications'   },
+        { label: t('nav.users'),        href: '/users',       icon: 'manage_accounts' },
+        { label: t('nav.profile'),      href: '/profile',      icon: 'account_circle'  },
+        { label: t('nav.settings'),     href: '/settings',     icon: 'settings'        },
+        { label: t('nav.admin'),        href: '/admin',        icon: 'admin_panel_settings'},
+      ],
+    },
+  ]
   
   const role = ((user?.role || 'client').toUpperCase()) as UserRole
   const allowedNav = getNavForRole(role).map(item => item.href)
@@ -127,7 +129,7 @@ export function MobileNav() {
             >
               {drawerOpen ? 'close' : 'menu'}
             </span>
-            <span>Ещё</span>
+            <span>{t('nav.more')}</span>
           </button>
         </div>
       </nav>
@@ -156,8 +158,8 @@ export function MobileNav() {
           {/* Header */}
           <div className="flex items-center justify-between px-5 py-3 border-b border-white/[0.06]">
             <div>
-              <p className="text-sm font-semibold text-on-surface">Все разделы</p>
-              <p className="text-[10px] font-mono text-on-surface-variant/60 uppercase tracking-wider mt-0.5">AIStart360 Portal</p>
+              <p className="text-sm font-semibold text-on-surface">{t('common.allSections')}</p>
+              <p className="text-[10px] font-mono text-on-surface-variant/60 uppercase tracking-wider mt-0.5">{t('common.portal')}</p>
             </div>
             <button
               onClick={() => setDrawerOpen(false)}

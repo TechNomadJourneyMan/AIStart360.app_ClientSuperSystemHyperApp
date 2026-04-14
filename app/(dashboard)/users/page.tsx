@@ -1,20 +1,22 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import type { Metadata } from 'next'
+import { useTranslations } from 'next-intl'
 import { usersService, type PublicUser } from '@/shared/api/users.service'
 
-const ROLE_STYLES: Record<string, { text: string; bg: string; border: string; label: string }> = {
-  admin:  { text: 'text-primary',   bg: 'bg-primary/10',   border: 'border-primary/20',   label: 'Администратор' },
-  expert: { text: 'text-secondary', bg: 'bg-secondary/10', border: 'border-secondary/20', label: 'Эксперт'       },
-  owner:  { text: 'text-tertiary-container', bg: 'bg-tertiary-container/10', border: 'border-tertiary-container/20', label: 'Владелец' },
+function getRoleStyles(t: (key: string) => string): Record<string, { text: string; bg: string; border: string; label: string }> {
+  return {
+    admin:  { text: 'text-primary',   bg: 'bg-primary/10',   border: 'border-primary/20',   label: t('administrator') },
+    expert: { text: 'text-secondary', bg: 'bg-secondary/10', border: 'border-secondary/20', label: t('expert')       },
+    owner:  { text: 'text-tertiary-container', bg: 'bg-tertiary-container/10', border: 'border-tertiary-container/20', label: t('owner') },
+  }
 }
 
-const ROLE_FALLBACK = { text: 'text-on-surface-variant', bg: 'bg-surface-container', border: 'border-outline-variant/20', label: 'Пользователь' }
-
-function getRoleStyle(role: string) {
-  return ROLE_STYLES[role] ?? ROLE_FALLBACK
+function getRoleFallback(t: (key: string) => string) {
+  return { text: 'text-on-surface-variant', bg: 'bg-surface-container', border: 'border-outline-variant/20', label: t('user') }
 }
+
+// getRoleStyle will be defined inside the component where t is available
 
 function SkeletonRow() {
   return (
@@ -29,6 +31,10 @@ function SkeletonRow() {
 }
 
 export default function UsersPage() {
+  const t = useTranslations('usersPage')
+  const ROLE_STYLES = getRoleStyles(t)
+  const ROLE_FALLBACK = getRoleFallback(t)
+  const getRoleStyle = (role: string) => ROLE_STYLES[role] ?? ROLE_FALLBACK
   const [users, setUsers]       = useState<PublicUser[]>([])
   const [loading, setLoading]   = useState(true)
   const [search, setSearch]     = useState('')
@@ -105,17 +111,17 @@ export default function UsersPage() {
     <div className="space-y-8">
       {/* Header */}
       <section>
-        <p className="text-xs font-mono text-primary/70 uppercase tracking-[0.2em] mb-3">Администрирование</p>
+        <p className="text-xs font-mono text-primary/70 uppercase tracking-[0.2em] mb-3">{t('administration')}</p>
         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
           <div>
-            <h1 className="font-headline text-2xl md:text-3xl font-extrabold text-on-surface">Управление пользователями</h1>
-            <p className="text-on-surface-variant mt-2 text-sm">Просмотр, фильтрация и управление аккаунтами</p>
+            <h1 className="font-headline text-2xl md:text-3xl font-extrabold text-on-surface">{t('title')}</h1>
+            <p className="text-on-surface-variant mt-2 text-sm">{t('subtitle')}</p>
           </div>
           <button
             onClick={() => setShowAddModal(true)}
             className="self-start flex items-center gap-2 text-sm font-mono text-[#003824] bg-gradient-to-r from-primary to-[#00e29e] px-4 py-2.5 rounded-xl font-bold hover:scale-[0.98] transition-all whitespace-nowrap flex-shrink-0">
             <span className="material-symbols-outlined text-lg">person_add</span>
-            Добавить
+            {t('add')}
           </button>
         </div>
       </section>
@@ -123,10 +129,10 @@ export default function UsersPage() {
       {/* Stats */}
       <section className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
-          { label: 'Всего',        value: stats.total,       icon: 'groups',            color: 'text-on-surface' },
-          { label: 'Администраторов', value: stats.admins,   icon: 'admin_panel_settings', color: 'text-primary'  },
-          { label: 'Экспертов',    value: stats.experts,     icon: 'psychology',         color: 'text-secondary' },
-          { label: 'Активны сегодня', value: stats.activeToday, icon: 'online_prediction', color: 'text-primary' },
+          { label: t('total'),        value: stats.total,       icon: 'groups',            color: 'text-on-surface' },
+          { label: t('admins'), value: stats.admins,   icon: 'admin_panel_settings', color: 'text-primary'  },
+          { label: t('experts'),    value: stats.experts,     icon: 'psychology',         color: 'text-secondary' },
+          { label: t('activeToday'), value: stats.activeToday, icon: 'online_prediction', color: 'text-primary' },
         ].map((s) => (
           <div key={s.label} className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-5">
             <div className="flex items-start justify-between mb-3">
@@ -149,12 +155,12 @@ export default function UsersPage() {
               <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Поиск..."
+                placeholder={t('search')}
                 className="w-full bg-surface-container border border-white/[0.06] rounded-xl pl-9 pr-4 py-2 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/40 focus:ring-1 focus:ring-primary/20 transition-all"
               />
             </div>
             <div className="flex gap-2 flex-shrink-0">
-              {([['all', 'Все'], ['admin', 'Админы'], ['expert', 'Эксперты']] as const).map(([v, l]) => (
+              {([['all', t('all')], ['admin', t('adminsFilter')], ['expert', t('expertsFilter')]] as const).map(([v, l]) => (
                 <button key={v} onClick={() => setRoleFilter(v)}
                   className={`text-xs font-mono px-3 py-2 rounded-xl border transition-colors whitespace-nowrap ${
                     roleFilter === v ? 'bg-primary/10 text-primary border-primary/20' : 'text-on-surface-variant border-white/[0.06] hover:border-white/[0.12]'
@@ -220,7 +226,7 @@ export default function UsersPage() {
           <table className="w-full">
             <thead>
               <tr className="border-b border-white/[0.04]">
-                {['Пользователь', 'Роль', 'Организация', 'Статус', 'Последний вход', ''].map((h) => (
+                {[t('userColumn'), t('roleColumn'), t('organizationColumn'), t('statusColumn'), t('lastLoginColumn'), ''].map((h) => (
                   <th key={h} className="text-left text-[10px] font-mono text-on-surface-variant uppercase tracking-widest px-5 py-3">{h}</th>
                 ))}
               </tr>
@@ -255,7 +261,7 @@ export default function UsersPage() {
                       <td className="px-5 py-3.5">
                         <div className="flex items-center gap-2">
                           <span className={`w-1.5 h-1.5 rounded-full ${isActive ? 'bg-primary animate-pulse' : 'bg-outline'}`} />
-                          <span className="text-xs text-on-surface-variant">{isActive ? 'Сегодня' : 'Оффлайн'}</span>
+                          <span className="text-xs text-on-surface-variant">{isActive ? t('today') : t('offline')}</span>
                         </div>
                       </td>
                       <td className="px-5 py-3.5 text-xs font-mono text-on-surface-variant">
@@ -282,9 +288,9 @@ export default function UsersPage() {
           {!loading && filtered.length === 0 && (
             <div className="text-center py-16">
               <span className="material-symbols-outlined text-4xl text-on-surface-variant/20 block mb-3">search_off</span>
-              <p className="text-sm text-on-surface-variant">Пользователи не найдены</p>
+              <p className="text-sm text-on-surface-variant">{t('usersNotFound')}</p>
               <button onClick={() => { setSearch(''); setRoleFilter('all') }} className="mt-3 text-xs text-primary hover:underline font-mono">
-                Сбросить фильтры
+                {t('resetFilters')}
               </button>
             </div>
           )}
@@ -294,7 +300,7 @@ export default function UsersPage() {
         {selected && (
           <div className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-4 md:p-6 space-y-5">
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-headline font-bold text-on-surface">Детали</h3>
+              <h3 className="text-sm font-headline font-bold text-on-surface">{t('details')}</h3>
               <button onClick={() => setSelected(null)} className="text-on-surface-variant hover:text-on-surface transition-colors">
                 <span className="material-symbols-outlined text-lg">close</span>
               </button>
@@ -318,9 +324,9 @@ export default function UsersPage() {
             <div className="space-y-3">
               {[
                 { icon: 'mail', label: 'Email', value: selected.email },
-                { icon: 'business', label: 'Организация', value: selected.organization ?? '—' },
-                { icon: 'calendar_today', label: 'Регистрация', value: new Date(selected.createdAt).toLocaleDateString('ru-RU') },
-                { icon: 'login', label: 'Последний вход', value: selected.lastLogin ? new Date(selected.lastLogin).toLocaleDateString('ru-RU') : '—' },
+                { icon: 'business', label: t('organizationColumn'), value: selected.organization ?? '—' },
+                { icon: 'calendar_today', label: t('registration'), value: new Date(selected.createdAt).toLocaleDateString('ru-RU') },
+                { icon: 'login', label: t('lastLogin'), value: selected.lastLogin ? new Date(selected.lastLogin).toLocaleDateString('ru-RU') : '—' },
               ].map((f) => (
                 <div key={f.label} className="flex items-start gap-3 bg-surface-container rounded-xl p-3">
                   <span className="material-symbols-outlined text-base text-primary/40 mt-0.5">{f.icon}</span>
@@ -334,11 +340,11 @@ export default function UsersPage() {
 
             {/* Permissions */}
             <div className="bg-surface-container rounded-xl p-4">
-              <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest mb-3">Права доступа</p>
+              <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest mb-3">{t('accessRights')}</p>
               <div className="space-y-2">
                 {(selected.role === 'admin'
-                  ? ['Все разделы', 'Управление пользователями', 'Аналитика', 'Настройки']
-                  : ['Свой дэшборд', 'Свои отчёты', 'GRI-диагностика', 'Инсайты']
+                  ? [t('allSections'), t('userManagement'), t('analyticsAccess'), t('settingsAccess')]
+                  : [t('ownDashboard'), t('ownReports'), t('griDiag'), t('insightsAccess')]
                 ).map((perm) => (
                   <div key={perm} className="flex items-center gap-2">
                     <span className="material-symbols-outlined text-sm text-primary">check_circle</span>
@@ -361,7 +367,7 @@ export default function UsersPage() {
                 <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center">
                   <span className="material-symbols-outlined text-lg text-primary">person_add</span>
                 </div>
-                <p className="text-sm font-semibold text-on-surface">Новый пользователь</p>
+                <p className="text-sm font-semibold text-on-surface">{t('newUser')}</p>
               </div>
               <button onClick={() => !addSaving && setShowAddModal(false)} className="text-on-surface-variant hover:text-on-surface transition-colors">
                 <span className="material-symbols-outlined text-lg">close</span>
@@ -372,14 +378,14 @@ export default function UsersPage() {
               {addDone ? (
                 <div className="text-center py-6">
                   <span className="material-symbols-outlined text-5xl text-primary block mb-2">check_circle</span>
-                  <p className="text-sm font-medium text-on-surface">Пользователь добавлен</p>
+                  <p className="text-sm font-medium text-on-surface">{t('userAdded')}</p>
                 </div>
               ) : (
                 <>
                   {[
-                    { label: 'Имя', key: 'name', placeholder: 'Алия Сейтова', type: 'text' },
+                    { label: t('name'), key: 'name', placeholder: 'Алия Сейтова', type: 'text' },
                     { label: 'Email', key: 'email', placeholder: 'aliya@company.kz', type: 'email' },
-                    { label: 'Организация', key: 'organization', placeholder: 'ТОО "Компания"', type: 'text' },
+                    { label: t('organization'), key: 'organization', placeholder: 'ТОО "Компания"', type: 'text' },
                   ].map(field => (
                     <div key={field.key}>
                       <label className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest block mb-1">{field.label}</label>
@@ -393,7 +399,7 @@ export default function UsersPage() {
                     </div>
                   ))}
                   <div>
-                    <label className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest block mb-1">Роль</label>
+                    <label className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest block mb-1">{t('role')}</label>
                     <div className="flex gap-2">
                       {(['admin', 'expert', 'owner'] as const).map(r => (
                         <button key={r} onClick={() => setAddForm(f => ({ ...f, role: r }))}
@@ -408,16 +414,16 @@ export default function UsersPage() {
                   <div className="flex gap-2 pt-1">
                     <button onClick={() => setShowAddModal(false)} disabled={addSaving}
                       className="flex-1 px-4 py-2.5 rounded-xl border border-white/[0.08] text-sm text-on-surface-variant hover:bg-white/[0.04] transition-colors disabled:opacity-40">
-                      Отмена
+                      {t('cancel')}
                     </button>
                     <button onClick={handleAddUser} disabled={addSaving || !addForm.name.trim() || !addForm.email.trim()}
                       className="flex-1 px-4 py-2.5 rounded-xl bg-primary/10 border border-primary/20 text-sm text-primary font-medium hover:bg-primary/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
                       {addSaving ? (
                         <span className="flex items-center justify-center gap-2">
                           <span className="material-symbols-outlined text-sm animate-spin">progress_activity</span>
-                          Сохранение...
+                          {t('saving')}
                         </span>
-                      ) : 'Добавить'}
+                      ) : t('addButton')}
                     </button>
                   </div>
                 </>

@@ -4,6 +4,7 @@ import type { Metadata } from 'next'
 import { prisma } from '@/lib/db'
 import { auth } from '@/lib/auth'
 import { getDashboardData } from '@/lib/get-dashboard-data'
+import { getTranslations } from 'next-intl/server'
 
 export const metadata: Metadata = { title: 'Рынок' }
 
@@ -22,6 +23,7 @@ const TYPE_ICONS: Record<string, string> = {
 }
 
 export default async function MarketPage() {
+  const t = await getTranslations('marketPage')
   const session = await auth()
   const data = getDashboardData(session?.user?.email)
 
@@ -37,14 +39,14 @@ export default async function MarketPage() {
       {/* Header */}
       <section>
         <p className="text-xs font-mono text-primary/70 uppercase tracking-[0.2em] mb-3">
-          Рыночная аналитика · Q1 2026
+          {t('marketAnalytics')}
         </p>
         <h1 className="font-headline text-3xl lg:text-4xl font-extrabold text-on-surface">
-          Анализ{' '}
-          <span className="text-gradient">Рынка</span>
+          {t('title')}{' '}
+          <span className="text-gradient">{t('titleAnalysis')}</span>
         </h1>
         <p className="text-on-surface-variant mt-2 text-sm max-w-xl">
-          Размер рынка, сегменты, тренды и рыночные сигналы в реальном времени.
+          {t('subtitle')}
         </p>
       </section>
 
@@ -53,9 +55,9 @@ export default async function MarketPage() {
           { label: 'TAM', value: data.MARKET.tam, icon: 'language', desc: 'Total Addressable Market' },
           { label: 'SAM', value: data.MARKET.sam, icon: 'travel_explore', desc: 'Serviceable Addressable Market' },
           { label: 'SOM', value: data.MARKET.som, icon: 'my_location', desc: 'Serviceable Obtainable Market' },
-          { label: 'Организации', value: String(organizations), icon: 'apartment', desc: 'Активные в системе' },
-          { label: 'Клиенты', value: String(clients), icon: 'groups', desc: 'Клиентская база' },
-          { label: 'Сигналы', value: String(marketSignals.length), icon: 'hub', desc: 'Актуальные события' },
+          { label: t('organizations'), value: String(organizations), icon: 'apartment', desc: t('activeInSystem') },
+          { label: t('clientBase'), value: String(clients), icon: 'groups', desc: t('clientBase') },
+          { label: t('signals'), value: String(marketSignals.length), icon: 'hub', desc: t('currentEvents') },
         ].map((m) => (
           <div key={m.label} className="bg-surface-container-low rounded-2xl border border-white/[0.04] hover:border-primary/20 p-6 transition-colors group">
             <div className="flex items-start justify-between mb-4">
@@ -76,8 +78,8 @@ export default async function MarketPage() {
         <div className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-6">
           <div className="flex justify-between items-start mb-6">
             <div>
-              <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest">Сегменты рынка</p>
-              <p className="text-xs text-on-surface-variant mt-1">Распределение по отраслям</p>
+              <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest">{t('marketSegments')}</p>
+              <p className="text-xs text-on-surface-variant mt-1">{t('segmentDistribution')}</p>
             </div>
             <span className="text-xs font-mono text-primary bg-primary/10 px-3 py-1 rounded-full border border-primary/20">
               {data.MARKET.growth}
@@ -104,7 +106,7 @@ export default async function MarketPage() {
         {/* Market trends */}
         <div className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-6">
           <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest mb-6">
-            Ключевые тренды
+            {t('keyTrends')}
           </p>
           <div className="space-y-3">
             {data.MARKET.trends.map((trend) => {
@@ -129,7 +131,7 @@ export default async function MarketPage() {
       {/* Market Signals */}
       <section>
         <div className="flex justify-between items-end border-b border-outline-variant/10 pb-4 mb-5">
-          <h2 className="font-headline text-lg font-bold text-on-surface">Сигналы рынка</h2>
+          <h2 className="font-headline text-lg font-bold text-on-surface">{t('marketSignals')}</h2>
         </div>
 
         <div className="space-y-4">
@@ -152,7 +154,7 @@ export default async function MarketPage() {
                 <div className="text-right">
                   <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest">{signal.time}</p>
                   <button className="text-xs text-primary mt-2 flex items-center gap-1 ml-auto">
-                    Детали <span className="material-symbols-outlined text-xs">chevron_right</span>
+                    {t('details')} <span className="material-symbols-outlined text-xs">chevron_right</span>
                   </button>
                 </div>
               </div>

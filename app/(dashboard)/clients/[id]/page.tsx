@@ -6,6 +6,7 @@ import { createServerClient } from '@/lib/supabase-server'
 import { prisma } from '@/lib/db'
 import type { BlockScore, Risk, Insight, QuickWin } from '@/types/onboarding'
 import ChocoDashboard from '@/components/choco/dashboard'
+import { getTranslations } from 'next-intl/server'
 
 export const metadata: Metadata = { title: 'Client Profile | Admin' }
 
@@ -42,12 +43,13 @@ async function fetchClientData(id: string) {
 }
 
 // Helper formatting functions
-function blockLabel(key: string) { return { finance:'Финансы', sales:'Продажи', operations:'Операции', marketing:'Маркетинг', strategy:'Стратегия' }[key] ?? key }
+function blockLabel(key: string, t: (k: string) => string) { return { finance: t('blockFinance'), sales: t('blockSales'), operations: t('blockOperations'), marketing: t('blockMarketing'), strategy: t('blockStrategy') }[key] ?? key }
 function blockIcon(key: string) { return { finance:'account_balance', sales:'shopping_cart', operations:'settings', marketing:'campaign', strategy:'flag' }[key] ?? 'analytics' }
 function scoreColor(s: number) { return s >= 80 ? 'text-primary' : s >= 60 ? 'text-tertiary-container' : 'text-error' }
 function barColor(s: number) { return s >= 80 ? 'bg-primary' : s >= 60 ? 'bg-tertiary-container' : 'bg-error' }
 
 export default async function ClientDetailPage({ params }: { params: { id: string } }) {
+  const t = await getTranslations('clientDetail')
   const result = await fetchClientData(params.id)
 
   if (!result) {
@@ -56,13 +58,13 @@ export default async function ClientDetailPage({ params }: { params: { id: strin
         <div className="w-20 h-20 rounded-3xl bg-surface-container flex items-center justify-center mb-6 border border-white/[0.04]">
           <span className="material-symbols-outlined text-4xl text-on-surface-variant/30">person_off</span>
         </div>
-        <h1 className="font-headline text-2xl font-bold text-on-surface mb-2">Клиент не найден</h1>
+        <h1 className="font-headline text-2xl font-bold text-on-surface mb-2">{t('clientNotFound')}</h1>
         <p className="text-on-surface-variant text-sm mb-8 max-w-sm">
-          Профиль с ID <code className="bg-surface-container px-1.5 py-0.5 rounded text-primary font-mono">{params.id}</code> не существует или был удален из базы данных.
+          {t('profileNotExists', { id: params.id })}
         </p>
         <Link href="/clients" className="inline-flex items-center gap-2 px-6 py-3 bg-primary text-on-primary rounded-xl font-bold hover:scale-[0.98] transition-all shadow-primary-sm">
           <span className="material-symbols-outlined text-base">arrow_back</span>
-          Вернуться к списку
+          {t('backToList')}
         </Link>
       </div>
     )
@@ -136,10 +138,10 @@ export default async function ClientDetailPage({ params }: { params: { id: strin
           </div>
           <div className="flex items-center gap-3">
             <button className="px-5 py-2.5 bg-surface-container-low border border-white/[0.04] text-on-surface text-sm font-bold rounded-xl hover:bg-surface-container transition-colors">
-              Архив отчетов
+              {t('reportArchive')}
             </button>
             <button className="px-5 py-2.5 bg-primary text-on-primary text-sm font-bold rounded-xl shadow-primary-sm hover:scale-[0.98] transition-all">
-              Запустить GRI
+              {t('runGri')}
             </button>
           </div>
         </div>
@@ -153,7 +155,7 @@ export default async function ClientDetailPage({ params }: { params: { id: strin
                <GriScoreDial score={overallScore} label="Current GRI Score" />
                <div className="mt-8 space-y-4">
                  <div className="flex justify-between items-center text-xs font-mono uppercase tracking-widest text-on-surface-variant">
-                   <span>Дата последнего GRI</span>
+                   <span>{t('lastGriDate')}</span>
                    <span className="text-on-surface font-bold">
                      {new Date(griReport.calculatedAt || griReport.calculated_at).toLocaleDateString('ru-RU')}
                    </span>
@@ -181,7 +183,7 @@ export default async function ClientDetailPage({ params }: { params: { id: strin
                      <div className="flex items-center justify-between mb-4">
                         <div className="flex items-center gap-2">
                            <span className="material-symbols-outlined text-primary text-lg">{blockIcon(block.key)}</span>
-                           <h3 className="text-[10px] font-mono font-bold uppercase tracking-widest text-on-surface-variant">{blockLabel(block.key)}</h3>
+                           <h3 className="text-[10px] font-mono font-bold uppercase tracking-widest text-on-surface-variant">{blockLabel(block.key, t)}</h3>
                         </div>
                         <span className={`text-2xl font-mono font-bold ${scoreColor(score)}`}>{score}</span>
                      </div>
@@ -198,7 +200,7 @@ export default async function ClientDetailPage({ params }: { params: { id: strin
                <div className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-6">
                   <h3 className="font-headline font-bold text-on-surface mb-5 flex items-center gap-2">
                     <span className="material-symbols-outlined text-error text-xl">warning</span>
-                    Критические риски
+                    {t('criticalRisks')}
                   </h3>
                   <div className="space-y-3 font-mono">
                     {(griReport.risks as any).slice(0, 3).map((risk: any, i: number) => (
@@ -217,9 +219,9 @@ export default async function ClientDetailPage({ params }: { params: { id: strin
           <div className="w-20 h-20 rounded-full bg-surface-container flex items-center justify-center mx-auto mb-6 border border-white/[0.04]">
             <span className="material-symbols-outlined text-4xl text-on-surface-variant/20">query_stats</span>
           </div>
-          <h2 className="font-headline text-2xl font-bold text-on-surface mb-2">Данные GRI отсутствуют</h2>
+          <h2 className="font-headline text-2xl font-bold text-on-surface mb-2">{t('noGriData')}</h2>
           <p className="text-sm text-on-surface-variant mb-8 max-w-sm mx-auto">
-            Для этого клиента еще не проводилась диагностика Точки А. Нажмите кнопку выше, чтобы запустить AI-анализ.
+            {t('noGriDesc')}
           </p>
         </div>
       )}

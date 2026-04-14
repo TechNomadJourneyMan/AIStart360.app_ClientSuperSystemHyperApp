@@ -2,8 +2,10 @@ import Link from 'next/link'
 import { GriScoreDial } from '@/components/gri/GriScoreDial'
 import { StatusBadge } from '@/components/common/StatusBadge'
 import { prisma } from '@/lib/db'
+import { getTranslations } from 'next-intl/server'
 
 export default async function OwnerClientDetailPage({ params }: { params: { id: string } }) {
+  const t = await getTranslations('ownerClientDetail')
   const client = await prisma.client.findUnique({
     where: { id: params.id },
     include: {
@@ -19,18 +21,18 @@ export default async function OwnerClientDetailPage({ params }: { params: { id: 
     return (
       <div className="space-y-6">
         <nav className="flex items-center gap-2 text-sm text-on-surface-variant">
-          <Link href="/owner/clients" className="hover:text-on-surface transition-colors">Клиенты</Link>
+          <Link href="/owner/clients" className="hover:text-on-surface transition-colors">{t('clients')}</Link>
           <span className="material-symbols-outlined text-sm">chevron_right</span>
-          <span className="text-on-surface">Нет данных</span>
+          <span className="text-on-surface">{t('noData')}</span>
         </nav>
 
         <div className="bg-surface-container rounded-xl p-8 text-center">
           <span className="material-symbols-outlined text-4xl text-on-surface-variant mb-3 block">database_off</span>
-          <p className="text-on-surface font-medium mb-1">Клиент не найден</p>
-          <p className="text-sm text-on-surface-variant mb-4">В базе нет записи с таким идентификатором.</p>
+          <p className="text-on-surface font-medium mb-1">{t('clientNotFound')}</p>
+          <p className="text-sm text-on-surface-variant mb-4">{t('noRecordDesc')}</p>
           <Link href="/owner/clients" className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-outline-variant/30 text-sm hover:bg-surface-container-high transition-colors">
             <span className="material-symbols-outlined text-base">arrow_back</span>
-            Вернуться к списку
+            {t('backToList')}
           </Link>
         </div>
       </div>
@@ -46,7 +48,7 @@ export default async function OwnerClientDetailPage({ params }: { params: { id: 
     <div className="space-y-6">
       {/* Breadcrumb */}
       <nav className="flex items-center gap-2 text-sm text-on-surface-variant">
-        <Link href="/owner/clients" className="hover:text-on-surface transition-colors">Клиенты</Link>
+        <Link href="/owner/clients" className="hover:text-on-surface transition-colors">{t('clients')}</Link>
         <span className="material-symbols-outlined text-sm">chevron_right</span>
         <span className="text-on-surface">{client.name}</span>
       </nav>
@@ -134,7 +136,7 @@ export default async function OwnerClientDetailPage({ params }: { params: { id: 
 
       {/* Domain Breakdown */}
       <div className="bg-surface-container rounded-xl p-6">
-        <h3 className="font-headline text-lg font-bold text-on-surface mb-5">GRI Domain Breakdown</h3>
+        <h3 className="font-headline text-lg font-bold text-on-surface mb-5">{t('griDomainBreakdown')}</h3>
         {client.griReports[0] ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {[
@@ -162,7 +164,7 @@ export default async function OwnerClientDetailPage({ params }: { params: { id: 
             })}
           </div>
         ) : (
-          <p className="text-sm text-on-surface-variant">GRI отчёты для клиента пока отсутствуют.</p>
+          <p className="text-sm text-on-surface-variant">{t('noGriReports')}</p>
         )}
       </div>
     </div>

@@ -7,6 +7,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase/client'
+import { useTranslations } from 'next-intl'
 
 const schema = z.object({
   password: z.string().min(8, 'Пароль минимум 8 символов'),
@@ -24,6 +25,7 @@ function ResetPasswordContent() {
   const code = params.get('code') ?? ''
   const email = params.get('email') ?? ''
   const supabase = createClient()
+  const t = useTranslations()
 
   const [isLoading, setIsLoading] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
@@ -46,7 +48,7 @@ function ResetPasswordContent() {
     setIsLoading(false)
 
     if (error) {
-      setErrorMessage('Не удалось обновить пароль. Попробуйте снова.')
+      setErrorMessage(t('auth.updateFailed'))
       return
     }
 
@@ -59,10 +61,10 @@ function ResetPasswordContent() {
   if (isInvalidLink) {
     return (
       <div className="glass-card rounded-2xl p-8 shadow-modal text-center">
-        <h1 className="font-headline text-2xl font-bold text-on-surface mb-2">Ссылка недействительна</h1>
-        <p className="text-sm text-on-surface-variant mb-6">Ссылка недействительна или истекла</p>
+        <h1 className="font-headline text-2xl font-bold text-on-surface mb-2">{t('auth.invalidLink')}</h1>
+        <p className="text-sm text-on-surface-variant mb-6">{t('auth.linkExpiredOrInvalid')}</p>
         <Link href="/forgot-password" className="text-primary text-sm hover:underline">
-          Запросить новую ссылку
+          {t('auth.requestNewLink')}
         </Link>
       </div>
     )
@@ -71,10 +73,10 @@ function ResetPasswordContent() {
   if (isDone) {
     return (
       <div className="glass-card rounded-2xl p-8 shadow-modal text-center">
-        <h1 className="font-headline text-2xl font-bold text-on-surface mb-2">Пароль обновлен</h1>
-        <p className="text-sm text-on-surface-variant mb-6">Сейчас вы будете перенаправлены на страницу входа.</p>
+        <h1 className="font-headline text-2xl font-bold text-on-surface mb-2">{t('auth.passwordUpdated')}</h1>
+        <p className="text-sm text-on-surface-variant mb-6">{t('auth.redirectToLogin')}</p>
         <Link href="/login" className="text-primary text-sm hover:underline">
-          Перейти ко входу
+          {t('auth.goToLogin')}
         </Link>
       </div>
     )
@@ -82,13 +84,13 @@ function ResetPasswordContent() {
 
   return (
     <div className="glass-card rounded-2xl p-8 shadow-modal">
-      <h1 className="font-headline text-2xl font-bold text-on-surface mb-1">Новый пароль</h1>
-      <p className="text-sm text-on-surface-variant mb-8">Введите новый пароль для аккаунта {email || 'пользователя'}</p>
+      <h1 className="font-headline text-2xl font-bold text-on-surface mb-1">{t('auth.newPassword')}</h1>
+      <p className="text-sm text-on-surface-variant mb-8">{t('auth.enterNewPasswordFor')} {email || t('auth.userFallback')}</p>
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
         <div>
           <label className="block text-xs font-label font-medium text-on-surface-variant mb-2 uppercase tracking-wider">
-            Новый пароль
+            {t('auth.newPasswordLabel')}
           </label>
           <input
             {...register('password')}
@@ -100,7 +102,7 @@ function ResetPasswordContent() {
 
         <div>
           <label className="block text-xs font-label font-medium text-on-surface-variant mb-2 uppercase tracking-wider">
-            Повторите пароль
+            {t('auth.repeatPassword')}
           </label>
           <input
             {...register('confirmPassword')}
@@ -117,16 +119,21 @@ function ResetPasswordContent() {
           disabled={isLoading}
           className="w-full py-3 rounded-lg bg-gradient-to-br from-primary to-primary-container text-on-primary font-semibold text-sm disabled:opacity-60"
         >
-          {isLoading ? 'Сохраняем...' : 'Обновить пароль'}
+          {isLoading ? t('auth.savingPassword') : t('auth.updatePassword')}
         </button>
       </form>
     </div>
   )
 }
 
+function ResetPasswordFallback() {
+  const t = useTranslations()
+  return <div className="glass-card rounded-2xl p-8 shadow-modal">{t('auth.loadingText')}</div>
+}
+
 export default function ResetPasswordPage() {
   return (
-    <Suspense fallback={<div className="glass-card rounded-2xl p-8 shadow-modal">Загрузка...</div>}>
+    <Suspense fallback={<ResetPasswordFallback />}>
       <ResetPasswordContent />
     </Suspense>
   )

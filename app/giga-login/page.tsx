@@ -2,12 +2,14 @@
 
 import { useState } from 'react'
 import { Shield, Eye, EyeOff, Lock } from 'lucide-react'
+import { useTranslations } from 'next-intl'
 
 export default function GigaPanelLoginPage() {
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const t = useTranslations()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -24,10 +26,10 @@ export default function GigaPanelLoginPage() {
       if (res.ok) {
         window.location.href = '/admin-giga-panel'
       } else {
-        setError('Неверный пароль')
+        setError(t('auth.invalidPassword'))
       }
     } catch {
-      setError('Ошибка соединения')
+      setError(t('auth.connectionError'))
     } finally {
       setLoading(false)
     }
@@ -57,10 +59,10 @@ export default function GigaPanelLoginPage() {
               <Shield size={22} className="text-blue-400" />
             </div>
             <p className="text-xs font-semibold text-blue-400 tracking-[0.2em] uppercase mb-1">
-              ГИГА-Панель
+              {t('auth.gigaPanel')}
             </p>
             <p className="text-slate-500 text-sm text-center">
-              Системный уровень доступа
+              {t('auth.systemAccessLevel')}
             </p>
           </div>
 
@@ -73,7 +75,7 @@ export default function GigaPanelLoginPage() {
                 type={showPassword ? 'text' : 'password'}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="Пароль администратора"
+                placeholder={t('auth.adminPassword')}
                 className="w-full bg-white/[0.05] border border-white/[0.08] rounded-xl
                   pl-9 pr-10 py-3 text-sm text-slate-200 placeholder:text-slate-600
                   focus:outline-none focus:border-blue-500/50 focus:bg-white/[0.07]
@@ -102,7 +104,7 @@ export default function GigaPanelLoginPage() {
                 disabled:opacity-40 disabled:cursor-not-allowed
                 transition-all duration-200"
             >
-              {loading ? 'Проверка...' : 'Войти'}
+              {loading ? t('auth.checking') : t('auth.signIn')}
             </button>
           </form>
         </div>

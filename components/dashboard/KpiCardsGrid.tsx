@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useTranslations } from 'next-intl'
 import { useMetricsStore } from '@/stores/metrics.store'
 import { useAllVisibleMetrics } from '@/hooks/useMetrics'
 import { useUIStore } from '@/stores/ui.store'
@@ -43,6 +44,7 @@ function MetricCard({
   onHide: () => void
   onRemove: () => void
 }) {
+  const t = useTranslations()
   const [showMenu, setShowMenu] = useState(false)
 
   return (
@@ -91,7 +93,7 @@ function MetricCard({
             className="text-xs font-mono font-bold"
             style={{ color: metric.trendDirection === 'down' ? '#ff6b6b' : metric.trendDirection === 'up' ? metric.color : '#84958a' }}
           >
-            {metric.trendDirection === 'up' ? '+' : ''}{metric.trend.toFixed(1)}{metric.unit === '%' ? ' пп' : '%'}
+            {metric.trendDirection === 'up' ? '+' : ''}{metric.trend.toFixed(1)}{metric.unit === '%' ? ` ${t('dashboard.chart.pp')}` : '%'}
           </span>
           <span className="text-[10px] text-on-surface-variant/60 ml-0.5">{metric.trendLabel}</span>
         </div>
@@ -100,7 +102,7 @@ function MetricCard({
         {goalProgress !== null && (
           <div className="mt-3">
             <div className="flex items-center justify-between mb-1">
-              <span className="text-[9px] font-mono text-on-surface-variant/40 uppercase tracking-widest">план</span>
+              <span className="text-[9px] font-mono text-on-surface-variant/40 uppercase tracking-widest">{t('dashboard.kpiCards.plan')}</span>
               <span className="text-[10px] font-mono font-bold" style={{ color: progressColor(goalProgress) }}>
                 {Math.round(goalProgress)}%
               </span>
@@ -138,7 +140,7 @@ function MetricCard({
             className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-on-surface-variant hover:bg-white/[0.06] hover:text-on-surface transition-colors"
           >
             <span className="material-symbols-outlined text-sm">visibility_off</span>
-            Скрыть
+            {t('dashboard.kpiCards.hide')}
           </button>
           {!metric.isDefault && (
             <button
@@ -146,7 +148,7 @@ function MetricCard({
               className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-error hover:bg-error/[0.08] transition-colors"
             >
               <span className="material-symbols-outlined text-sm">delete</span>
-              Удалить
+              {t('common.delete')}
             </button>
           )}
         </div>
@@ -157,16 +159,17 @@ function MetricCard({
 
 // Empty state
 function EmptyMetrics({ onShowAll, hasHidden }: { onShowAll: () => void; hasHidden: boolean }) {
+  const t = useTranslations()
   return (
     <div className="col-span-2 flex flex-col items-center justify-center py-12 rounded-2xl border border-dashed border-white/[0.08] text-center">
       <span className="material-symbols-outlined text-4xl text-on-surface-variant/20 mb-3">bar_chart</span>
-      <p className="text-sm text-on-surface-variant mb-1">Нет видимых метрик</p>
+      <p className="text-sm text-on-surface-variant mb-1">{t('dashboard.kpiCards.noVisibleMetrics')}</p>
       {hasHidden && (
         <button
           onClick={onShowAll}
           className="mt-3 text-xs text-primary hover:underline"
         >
-          Показать все скрытые метрики
+          {t('dashboard.kpiCards.showAllHidden')}
         </button>
       )}
     </div>
@@ -176,6 +179,7 @@ function EmptyMetrics({ onShowAll, hasHidden }: { onShowAll: () => void; hasHidd
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export function KpiCardsGrid() {
+  const t = useTranslations()
   const [addOpen, setAddOpen] = useState(false)
   const { visibleMetricIds, hiddenMetricIds, setActiveMetric, hideMetric, removeMetric, showAllMetrics } = useMetricsStore()
   const pinnedGoals = useUIStore((s) => s.pinnedGoals)
@@ -191,14 +195,14 @@ export function KpiCardsGrid() {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <p className="text-[10px] font-mono text-on-surface-variant/40 uppercase tracking-widest">
-              Метрики
+              {t('dashboard.kpiCards.metrics')}
             </p>
             {hiddenMetricIds.length > 0 && (
               <button
                 onClick={showAllMetrics}
                 className="text-[10px] font-mono text-primary/60 hover:text-primary transition-colors"
               >
-                +{hiddenMetricIds.length} скрыто
+                +{hiddenMetricIds.length} {t('dashboard.kpiCards.hidden')}
               </button>
             )}
           </div>
@@ -208,7 +212,7 @@ export function KpiCardsGrid() {
               className="flex items-center gap-1.5 text-[11px] font-mono text-on-surface-variant/40 hover:text-primary transition-colors border border-dashed border-white/[0.06] hover:border-primary/30 rounded-lg px-2.5 py-1"
             >
               <span className="material-symbols-outlined text-[14px]">add</span>
-              Метрика
+              {t('dashboard.kpiCards.metric')}
             </button>
           )}
         </div>
