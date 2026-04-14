@@ -184,10 +184,10 @@ export default function MyDataPage() {
             })}
 
             {/* Incomplete steps hint */}
-            {completedSteps.length < 6 && (
+            {completedSteps.length < 12 && (
               <div className="rounded-2xl bg-amber-500/5 border border-amber-500/15 p-5 text-center">
                 <p className="text-xs text-amber-400">
-                  Заполнено {completedSteps.length} из 6 шагов.{' '}
+                  Заполнено {completedSteps.length} из 12 шагов.{' '}
                   <Link href="/client/onboarding" className="underline hover:text-amber-300">
                     Продолжить заполнение
                   </Link>

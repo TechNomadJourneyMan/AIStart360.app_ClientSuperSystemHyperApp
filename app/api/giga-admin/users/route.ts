@@ -63,7 +63,7 @@ export async function GET(req: NextRequest) {
         org: p.organization ?? null,
         status: p.status === 'approved' ? 'active' : p.status === 'blocked' ? 'blocked' : 'pending',
         widgets: [] as string[],
-        surveyCompleted: steps ? steps.size >= 6 : false,
+        surveyCompleted: steps ? steps.size >= 12 : false,
         surveySteps: steps ? Array.from(steps).sort() : [],
         diagnostics: diag ? {
           overallScore: diag.overall_score,
