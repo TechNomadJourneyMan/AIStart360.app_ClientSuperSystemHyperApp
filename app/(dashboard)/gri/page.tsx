@@ -6,6 +6,7 @@ import { cookies } from 'next/headers'
 import { createServerClient } from '@/lib/supabase-server'
 import { prisma } from '@/lib/db'
 import GriExpertNotesLoader from '@/components/gri/GriExpertNotesLoader'
+import { getPortfolioGRI, type PortfolioGRI } from '@/lib/portfolio-gri'
 
 export const metadata: Metadata = { title: 'GRI — Growth Readiness Index' }
 
@@ -44,59 +45,7 @@ async function getCurrentUser(): Promise<{ id: string; role: string } | null> {
   }
 }
 
-// ─── portfolio GRI averages from Supabase diagnostics ────────────────────────
-interface PortfolioGRI {
-  overall:      number
-  product:      number
-  trust:        number
-  bizmodel:     number
-  cash:         number
-  ops:          number
-  team:         number
-  founder:      number
-  reportCount:  number
-}
-
-async function getPortfolioGRI(): Promise<PortfolioGRI | null> {
-  try {
-    const sb = createServerClient()
-
-    // Get all diagnostics with scores
-    const { data: diagnostics } = await sb
-      .from('diagnostics')
-      .select('overall_score, finance_score, sales_score, operations_score, marketing_score, strategy_score')
-      .not('overall_score', 'is', null)
-      .gt('overall_score', 0)
-
-    if (!diagnostics?.length) return null
-
-    // Map Point A blocks to GRI 7-domain model (approximate mapping)
-    const getScore = (d: Record<string, unknown>, key: string): number => {
-      const block = d[key] as { score?: number } | null
-      return (block?.score ?? 0) / 10  // Convert 0-100 to 0-10
-    }
-
-    const avgField = (extractor: (d: Record<string, unknown>) => number): number => {
-      const vals = diagnostics.map(d => extractor(d as Record<string, unknown>)).filter(v => v > 0)
-      return vals.length > 0 ? Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 10) / 10 : 0
-    }
-
-    return {
-      overall:     avgField(d => (d.overall_score as number ?? 0) / 10),
-      product:     avgField(d => getScore(d, 'marketing_score')),    // Marketing → Product & Demand
-      trust:       avgField(d => getScore(d, 'strategy_score')),     // Strategy → Trust & Positioning
-      bizmodel:    avgField(d => getScore(d, 'sales_score')),        // Sales → Business Model
-      cash:        avgField(d => getScore(d, 'finance_score')),      // Finance → Cash
-      ops:         avgField(d => getScore(d, 'operations_score')),   // Operations → Operations
-      team:        avgField(d => getScore(d, 'operations_score')),   // Operations → Team (proxy)
-      founder:     avgField(d => getScore(d, 'strategy_score')),     // Strategy → Founder (proxy)
-      reportCount: diagnostics.length,
-    }
-  } catch (error) {
-    console.error("Failed to load diagnostics for GRI:", error)
-    return null
-  }
-}
+// Portfolio GRI computation lives in lib/portfolio-gri.ts — imported above
 
 // ─── Real GRI data from GRI_v11_with_colored_report.xlsx ─────────────────────
 const GRI_BLOCKS = [

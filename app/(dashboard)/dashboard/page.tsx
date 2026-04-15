@@ -16,6 +16,7 @@ import type { AlertCardProps } from '@/components/dashboard/AlertCard'
 import { PointARadarWidget } from '@/components/dashboard/PointARadarWidget'
 import type { PointA, BlockScore } from '@/types/onboarding'
 import { prisma } from '@/lib/db'
+import { getPortfolioGRI } from '@/lib/portfolio-gri'
 
 export const metadata: Metadata = { title: 'Дэшборд' }
 
@@ -411,16 +412,17 @@ export default async function DashboardPage() {
   const staffRole = cookieStore.get('aistart360_role')?.value ?? null
   const showCrmWidgets = staffRole === 'admin' || staffRole === 'manager' || staffRole === 'analyst'
 
-  const griDomains = [
-    { label: 'Продукт и спрос',           score: 4.7 },
-    { label: 'Доверие и позиционирование',score: 5.2 },
-    { label: 'Бизнес-модель',             score: 7.4 },
-    { label: 'Финансовая устойчивость',   score: 5.0 },
-    { label: 'Операции',                  score: 2.1 },
-    { label: 'Команда',                   score: 2.5 },
-    { label: 'Готовность основателя',     score: 6.7 },
-  ]
-  const griTotalScore = 4.8
+  const portfolioGRI = await getPortfolioGRI()
+  const griDomains = portfolioGRI ? [
+    { label: 'Продукт и спрос',            score: portfolioGRI.product },
+    { label: 'Доверие и позиционирование', score: portfolioGRI.trust },
+    { label: 'Бизнес-модель',              score: portfolioGRI.bizmodel },
+    { label: 'Финансовая устойчивость',    score: portfolioGRI.cash },
+    { label: 'Операции',                   score: portfolioGRI.ops },
+    { label: 'Команда',                    score: portfolioGRI.team },
+    { label: 'Готовность основателя',      score: portfolioGRI.founder },
+  ] : []
+  const griTotalScore = portfolioGRI?.overall ?? 0
 
   return (
     <div className="space-y-6">

@@ -87,8 +87,37 @@ export function GriDiagramWidget({ domains, totalScore, orgName }: Props) {
   const scores = Array.from({ length: N }, (_, i) => domains[i]?.score ?? 0)
   const benchScores = Array.from({ length: N }, () => BENCHMARK)
 
+  const hasData = domains.length > 0 && scores.some(s => s > 0)
+
   const overallColor = totalScore !== undefined ? scoreColor(totalScore) : '#6effc0'
   const overallLabel = totalScore !== undefined ? scoreLabel(totalScore) : ''
+
+  // Empty state — no diagnostics in the portfolio yet
+  if (!hasData) {
+    return (
+      <div className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-4 min-h-[260px] flex flex-col">
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <p className="text-[10px] font-mono text-primary/60 uppercase tracking-widest">GRI Индекс</p>
+            <div className="flex items-baseline gap-1.5 mt-0.5">
+              <span className="text-xl font-mono font-bold text-on-surface-variant/40">—</span>
+              <span className="text-xs text-on-surface-variant/40">/ 10</span>
+            </div>
+          </div>
+          {orgName && (
+            <span className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider">{orgName}</span>
+          )}
+        </div>
+        <div className="flex-1 flex flex-col items-center justify-center text-center py-8">
+          <span className="material-symbols-outlined text-5xl text-on-surface-variant/20 mb-3">analytics</span>
+          <p className="text-sm font-medium text-on-surface-variant mb-1">Нет данных для анализа</p>
+          <p className="text-xs text-on-surface-variant/60 max-w-xs leading-relaxed">
+            GRI-индекс появится после того, как клиенты пройдут диагностику в анкете
+          </p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-4">
