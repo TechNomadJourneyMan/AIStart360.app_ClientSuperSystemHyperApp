@@ -208,7 +208,7 @@ export default function OnboardingPage() {
       </header>
 
       <main className="max-w-3xl mx-auto px-4 py-6 md:py-10">
-        {/* Step tabs (scrollable) */}
+        {/* Step tabs (scrollable, all clickable) */}
         <div className="flex gap-1 overflow-x-auto pb-3 mb-6 scrollbar-hide">
           {STEPS.map((s, i) => {
             const stepN = i + 1
@@ -217,13 +217,17 @@ export default function OnboardingPage() {
             return (
               <button
                 key={stepN}
-                onClick={() => stepN <= currentStep && setCurrentStep(stepN)}
-                disabled={stepN > currentStep}
+                onClick={() => {
+                  // Save current step before switching
+                  persistLocal(currentStep, stepData)
+                  saveToServer(currentStep, stepData)
+                  setCurrentStep(stepN)
+                }}
                 className={`
-                  flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-mono whitespace-nowrap transition-all flex-shrink-0
+                  flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-mono whitespace-nowrap transition-all flex-shrink-0 cursor-pointer
                   ${isActive ? 'bg-primary/15 text-primary border border-primary/20' :
-                    isPast ? 'bg-white/[0.04] text-on-surface-variant hover:text-on-surface' :
-                    'text-on-surface-variant/30 cursor-not-allowed'}
+                    isPast ? 'bg-white/[0.04] text-on-surface-variant hover:text-on-surface hover:bg-white/[0.06]' :
+                    'bg-white/[0.02] text-on-surface-variant/60 hover:text-on-surface-variant hover:bg-white/[0.05]'}
                 `}
               >
                 <span className="material-symbols-outlined text-xs">{s.icon}</span>

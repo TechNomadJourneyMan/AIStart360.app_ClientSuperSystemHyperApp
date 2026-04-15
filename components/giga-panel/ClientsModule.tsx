@@ -333,11 +333,11 @@ function ClientDetailPanel({ client, onClose }: { client: GigaClient; onClose: (
             )}
           </div>
         )}
-      </div>
 
-      {/* Survey + Diagnostics + Documents (editable) */}
-      <div className="border-t border-white/[0.07]">
-        <UserDetailPanel userId={client.id} />
+        {/* Survey + Diagnostics + Documents (editable) */}
+        <div className="pt-2 -mx-5 border-t border-white/[0.07]">
+          <UserDetailPanel userId={client.id} />
+        </div>
       </div>
     </motion.div>
   )
