@@ -8,6 +8,7 @@ import { randomBytes } from 'crypto'
 import { Resend } from 'resend'
 import { z } from 'zod'
 import type { Prisma, PrismaClient } from '@prisma/client'
+import { notifyAdmins } from '@/lib/notifications'
 
 type DbClient = PrismaClient | Prisma.TransactionClient
 
@@ -98,6 +99,14 @@ export async function registerAction(data: unknown) {
     const cookieStore = await cookies()
     cookieStore.set('aistart360_role', role!, COOKIE_OPTIONS)
     cookieStore.set('aistart360_user_id', user.id, COOKIE_OPTIONS)
+
+    // 6. Notify admins about new registration (fire-and-forget)
+    notifyAdmins('user_registered', {
+      name,
+      email,
+      role,
+      organization: orgName,
+    }, user.id)
 
     return {
       success: true,

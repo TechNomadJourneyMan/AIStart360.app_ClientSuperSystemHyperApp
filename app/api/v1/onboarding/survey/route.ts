@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
+import { notifyAdmins } from '@/lib/notifications'
 
 // GET /api/v1/onboarding/survey?user_id=xxx
 export async function GET(req: NextRequest) {
@@ -62,6 +63,14 @@ export async function POST(req: NextRequest) {
       .upsert(rows, { onConflict: 'user_id,question_key' })
 
     if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
+
+    // Notify admins when the final survey step is completed (step 12)
+    if (step >= 12) {
+      notifyAdmins('survey_completed', {
+        step,
+        answersCount: rows.length,
+      }, user_id)
+    }
 
     return NextResponse.json({ ok: true, data: { saved: rows.length } })
   } catch (e) {

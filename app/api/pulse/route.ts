@@ -1,8 +1,9 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { prisma } from '@/lib/db'
 import * as bitrix24 from '@/lib/crm/bitrix24'
 import * as amocrm from '@/lib/crm/amocrm'
+import type { CrmDeal } from '@/lib/crm/types'
 
 export const dynamic = 'force-dynamic'
 
@@ -17,9 +18,117 @@ const STAGE_RISK: Record<string, { risk: number; label: string }> = {
   APOLOGY: { risk: 95, label: 'Отказ' },
 }
 
-export async function GET() {
+// ─── Role / user helpers ─────────────────────────────────────────────────────
+
+type UserRole = 'super_admin' | 'admin' | 'owner' | 'expert' | 'manager' | 'client'
+
+/**
+ * Read role & userId from httpOnly cookies set during login.
+ * Falls back to Prisma user lookup when only user_id cookie is available.
+ */
+async function resolveCallerContext(req: NextRequest): Promise<{
+  role: UserRole
+  userId: string | null
+  userEmail: string | null
+  orgName: string | null
+}> {
+  const role = (req.cookies.get('aistart360_role')?.value ?? 'expert') as UserRole
+  const userId = req.cookies.get('aistart360_user_id')?.value ?? null
+
+  let userEmail: string | null = null
+  let orgName: string | null = null
+
+  if (userId) {
+    try {
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { email: true, org: { select: { name: true } } },
+      })
+      userEmail = user?.email ?? null
+      orgName = user?.org?.name ?? null
+    } catch {
+      // Non-fatal — continue with null values
+    }
+  }
+
+  return { role, userId, userEmail, orgName }
+}
+
+/**
+ * Filter CRM deals based on the caller's role.
+ * - super_admin / admin / owner: see everything
+ * - manager / expert: only deals assigned to them (ASSIGNED_BY_ID match)
+ * - client: empty list (clients should not see CRM Pulse)
+ */
+function filterDealsByRole(
+  deals: CrmDeal[],
+  role: UserRole,
+  userId: string | null,
+  orgName: string | null,
+): CrmDeal[] {
+  // Admins see all
+  if (['super_admin', 'admin', 'owner'].includes(role)) {
+    return deals
+  }
+
+  // Clients should not see CRM deals at all
+  if (role === 'client') {
+    return []
+  }
+
+  // Manager / expert — show deals assigned to them
+  // We try to match by Bitrix24 ASSIGNED_BY_ID.
+  // Since the cookie userId is the internal app ID (cuid) and Bitrix24 uses its own
+  // numeric user IDs, we need a mapping. For now we attempt a direct match first.
+  // If no deals match by assignedById, fall back to matching by company/org name
+  // so the feature degrades gracefully.
+  if (userId) {
+    const byAssigned = deals.filter(d => d.assignedById === userId)
+    if (byAssigned.length > 0) return byAssigned
+  }
+
+  // Fallback: filter by organization name match against deal company title
+  if (orgName) {
+    const normalizedOrg = orgName.toLowerCase().trim()
+    const byOrg = deals.filter(d => {
+      const dealCompany = (d.companyTitle || d.contactName || '').toLowerCase().trim()
+      return dealCompany.includes(normalizedOrg) || normalizedOrg.includes(dealCompany)
+    })
+    if (byOrg.length > 0) return byOrg
+  }
+
+  // No match found — return empty to avoid showing unrelated data
+  return []
+}
+
+/**
+ * Filter platform clients for non-admin roles.
+ */
+function filterPlatformClientsByRole(
+  clients: Array<Record<string, unknown>>,
+  role: UserRole,
+  userId: string | null,
+): Array<Record<string, unknown>> {
+  if (['super_admin', 'admin', 'owner'].includes(role)) {
+    return clients
+  }
+
+  // Client role — only their own data
+  if (role === 'client' && userId) {
+    return clients.filter(c => c.id === userId)
+  }
+
+  // Manager / expert — show all platform clients (they manage them)
+  return clients
+}
+
+export async function GET(req: NextRequest) {
   try {
     const sb = createServerClient()
+
+    // ── 0. Resolve caller context ──
+    const { role, userId, orgName } = await resolveCallerContext(req)
+
     const crmClients: Array<Record<string, unknown>> = []
 
     // ── 1. Fetch CRM deals from connected integrations ──
@@ -36,9 +145,12 @@ export async function GET() {
           webhookUrl: integration.webhookUrl ?? undefined,
         }
 
-        const deals = integration.provider === 'bitrix24'
+        let deals = integration.provider === 'bitrix24'
           ? await bitrix24.fetchDeals(config, 100)
           : await amocrm.fetchDeals(config, 100)
+
+        // ── Role-based filtering ──
+        deals = filterDealsByRole(deals, role, userId, orgName)
 
         // Calculate portfolio-level stats for relative metrics
         const totalDeals = deals.length
@@ -140,7 +252,7 @@ export async function GET() {
     }
 
     // ── 2. Fetch platform clients (companies + profiles + diagnostics) ──
-    const platformClients: Array<Record<string, unknown>> = []
+    let platformClients: Array<Record<string, unknown>> = []
 
     const { data: companies } = await sb
       .from('companies')
@@ -210,9 +322,13 @@ export async function GET() {
       }
     }
 
+    // ── Role-based filtering for platform clients ──
+    platformClients = filterPlatformClientsByRole(platformClients, role, userId)
+
     // ── 3. Merge: CRM deals first, then platform clients ──
     const todayClients = [...crmClients, ...platformClients]
 
+    // Stats reflect the filtered dataset (not global)
     const highRisk = todayClients.filter(c => c.churnLevel === 'high')
     const mediumRisk = todayClients.filter(c => c.churnLevel === 'medium')
     const revenueAtRisk = highRisk.reduce((sum, c) => sum + ((c.avgCheck as number) || 0), 0)

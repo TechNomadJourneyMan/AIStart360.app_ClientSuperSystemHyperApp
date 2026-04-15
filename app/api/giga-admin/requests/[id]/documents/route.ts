@@ -61,7 +61,7 @@ export async function GET(
         if (doc.file_url && !doc.file_url.startsWith('http')) {
           // file_url is a storage path — generate signed URL
           const { data: signed } = await supabase.storage
-            .from('client-documents')
+            .from('documents')
             .createSignedUrl(doc.file_url, 3600) // 1 hour
           if (signed?.signedUrl) downloadUrl = signed.signedUrl
         }
