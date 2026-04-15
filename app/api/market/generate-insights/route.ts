@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server'
-import { generateObject } from 'ai'
 import { z } from 'zod'
-import { anthropic, CLAUDE_MODELS } from '@/lib/ai/anthropic'
+import { chatWithOpenRouter, extractJson } from '@/lib/ai/openrouter'
 
 /**
  * POST /api/market/generate-insights
@@ -44,11 +43,6 @@ export async function POST(req: Request) {
   try {
     const { userProfile, marketData, competitorsData } = await req.json()
 
-    // Fallback path when no Anthropic key is configured — keeps the UI demoable.
-    if (!process.env.ANTHROPIC_API_KEY) {
-      return NextResponse.json({ directives: buildFallbackDirectives(userProfile?.customQuery) })
-    }
-
     const prompt = `User Profile:
 ${JSON.stringify(userProfile ?? {}, null, 2)}
 
@@ -58,16 +52,35 @@ ${JSON.stringify(marketData ?? {}, null, 2)}
 Competitors:
 ${JSON.stringify(competitorsData ?? [], null, 2)}
 
-Based on this data, provide 3 strategic directives for the user.`
+Based on this data, provide 3 strategic directives. Return ONLY a JSON object with this structure:
+{
+  "directives": [
+    {
+      "title": "string",
+      "description": "string",
+      "impact": "High" | "Medium" | "Low",
+      "category": "Opportunity" | "Risk" | "Optimization"
+    }
+  ]
+}`
 
-    const { object } = await generateObject({
-      model: anthropic(CLAUDE_MODELS.sonnet),
-      schema: responseSchema,
+    const aiResponse = await chatWithOpenRouter({
       system: SYSTEM_INSTRUCTION,
-      prompt,
+      user: prompt,
+      maxTokens: 2000,
+      jsonMode: true,
     })
 
-    return NextResponse.json(object)
+    if (aiResponse) {
+      const parsed = extractJson<{ directives: unknown }>(aiResponse)
+      if (parsed) {
+        const validation = responseSchema.safeParse(parsed)
+        if (validation.success) return NextResponse.json(validation.data)
+      }
+    }
+
+    // Fallback if no key or invalid response
+    return NextResponse.json({ directives: buildFallbackDirectives(userProfile?.customQuery) })
   } catch (error) {
     console.error('[market/generate-insights] Error:', error)
     const message = error instanceof Error ? error.message : 'Failed to generate insights'
@@ -105,7 +118,7 @@ function buildFallbackDirectives(customQuery?: string): FallbackDirective[] {
     base.unshift({
       title: `Tailored take: "${customQuery.slice(0, 80)}"`,
       description:
-        'Live AI generation is disabled (no ANTHROPIC_API_KEY configured), so this is a mock response seeded with your query. Configure ANTHROPIC_API_KEY to receive model-generated, data-grounded directives.',
+        'Live AI generation is disabled (no OPENROUTER_API_KEY configured), so this is a mock response seeded with your query. Configure OPENROUTER_API_KEY to receive model-generated, data-grounded directives.',
       impact: 'Low',
       category: 'Optimization',
     })

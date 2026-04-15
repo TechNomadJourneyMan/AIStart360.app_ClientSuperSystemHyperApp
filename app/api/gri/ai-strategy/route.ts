@@ -1,11 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { chatWithOpenRouter } from '@/lib/ai/openrouter'
 
 /**
  * AI Growth Strategy generator for the GRI Calculator.
- *
- * Ported from /tmp/analysis_ws/src/app/api/ai-strategy/route.ts — that project
- * used z-ai-web-dev-sdk (proprietary). Here we use Anthropic SDK if the key is
- * available, else fall back to a static template built from the scores.
+ * Uses OpenRouter (Claude Sonnet 4.5) if OPENROUTER_API_KEY is set,
+ * else falls back to a static template built from the scores.
  */
 
 interface StrategyRequest {
@@ -65,17 +64,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'scores is required' }, { status: 400 })
     }
 
-    // Try Anthropic if available
-    const apiKey = process.env.ANTHROPIC_API_KEY
-    if (apiKey) {
-      try {
-        const { default: Anthropic } = await import('@anthropic-ai/sdk')
-        const client = new Anthropic({ apiKey })
-        const scoresDescription = Object.entries(scores)
-          .map(([category, score]) => `${category}: ${score}/10`)
-          .join('\n')
+    const scoresDescription = Object.entries(scores)
+      .map(([category, score]) => `${category}: ${score}/10`)
+      .join('\n')
 
-        const systemPrompt = `You are a senior McKinsey-level strategy consultant. Analyze the provided GRI (Growth Readiness Index) scores and generate a concise, actionable growth strategy. ${lang === 'ru' ? 'Ответь на русском языке.' : 'Answer in English.'}
+    const systemPrompt = `You are a senior McKinsey-level strategy consultant. Analyze the provided GRI (Growth Readiness Index) scores and generate a concise, actionable growth strategy. ${lang === 'ru' ? 'Ответь на русском языке.' : 'Answer in English.'}
 
 For each category with a score below 7, provide:
 1. Root cause analysis (1-2 sentences)
@@ -84,26 +77,14 @@ For each category with a score below 7, provide:
 
 Keep the response structured, professional, and actionable. Use markdown formatting.`
 
-        const resp = await client.messages.create({
-          model: 'claude-3-5-sonnet-latest',
-          max_tokens: 2000,
-          system: systemPrompt,
-          messages: [
-            {
-              role: 'user',
-              content: `Analyze these GRI scores and generate a growth strategy:\n\n${scoresDescription}`,
-            },
-          ],
-        })
-        const block = resp.content.find((b) => b.type === 'text')
-        const strategy = block && 'text' in block ? block.text : buildStaticStrategy(scores, lang, format)
-        return NextResponse.json({ strategy })
-      } catch (err) {
-        // Fall through to static
-      }
-    }
+    const aiResponse = await chatWithOpenRouter({
+      system: systemPrompt,
+      user: `Analyze these GRI scores and generate a growth strategy:\n\n${scoresDescription}`,
+      maxTokens: 2000,
+    })
 
-    return NextResponse.json({ strategy: buildStaticStrategy(scores, lang, format) })
+    const strategy = aiResponse ?? buildStaticStrategy(scores, lang, format)
+    return NextResponse.json({ strategy })
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to generate strategy'
     return NextResponse.json({ error: message }, { status: 500 })
