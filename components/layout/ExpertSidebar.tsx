@@ -6,11 +6,12 @@ import { usePathname, useRouter } from 'next/navigation'
 import { useAuthStore } from '@/stores/auth.store'
 
 const EXPERT_NAV = [
-  { label: 'Дэшборд',  href: '/expert/dashboard', icon: 'dashboard'    },
-  { label: 'Профиль',  href: '/expert/profile',   icon: 'account_circle' },
-  { label: 'Отчёты',  href: '/expert/reports',   icon: 'description'  },
-  { label: 'GRI',      href: '/expert/gri',        icon: 'radar'        },
-  { label: 'Инсайты', href: '/expert/insights',   icon: 'lightbulb'    },
+  { label: 'Дэшборд',  href: '/expert/dashboard', icon: 'dashboard'       },
+  { label: 'Клиенты',  href: '/expert/clients',   icon: 'business_center' },
+  { label: 'Профиль',  href: '/expert/profile',   icon: 'account_circle'  },
+  { label: 'Отчёты',  href: '/expert/reports',   icon: 'description'     },
+  { label: 'GRI',      href: '/expert/gri',        icon: 'radar'           },
+  { label: 'Инсайты', href: '/expert/insights',   icon: 'lightbulb'       },
 ]
 
 export function ExpertSidebar() {

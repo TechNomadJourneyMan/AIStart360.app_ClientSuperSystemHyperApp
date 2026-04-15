@@ -12,6 +12,8 @@ import { SURVEY_LABELS, SURVEY_STEP_LABELS, formatSurveyValue, getStepFromKey } 
 
 interface Props {
   userId: string
+  /** When true: hides impersonate / edit-survey buttons. Used by the expert panel. */
+  readOnly?: boolean
 }
 
 const DOC_ICONS: Record<string, React.ReactNode> = {
@@ -27,7 +29,7 @@ function formatFileSize(bytes: number | null): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
-export function UserDetailPanel({ userId }: Props) {
+export function UserDetailPanel({ userId, readOnly = false }: Props) {
   const [data, setData] = useState<{
     answers: Record<string, unknown>
     company: Record<string, unknown> | null
@@ -152,40 +154,42 @@ export function UserDetailPanel({ userId }: Props) {
 
   return (
     <div className="px-4 py-4 space-y-4">
-      {/* Action buttons */}
-      <div className="flex items-center gap-2 flex-wrap">
-        <button onClick={openAsUser} disabled={impersonating}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium bg-blue-500/10 border border-blue-500/20 text-blue-300 hover:bg-blue-500/20 transition-all disabled:opacity-50">
-          {impersonating ? <Loader2 size={12} className="animate-spin" /> : <ExternalLink size={12} />}
-          Открыть портал
-        </button>
-        <button onClick={openOnboarding} disabled={impersonating}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium bg-violet-500/10 border border-violet-500/20 text-violet-300 hover:bg-violet-500/20 transition-all disabled:opacity-50">
-          {impersonating ? <Loader2 size={12} className="animate-spin" /> : <FileText size={12} />}
-          Заполнить анкету от лица
-        </button>
-        {!editing && (
-          <button onClick={startEditing}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium bg-amber-500/10 border border-amber-500/20 text-amber-300 hover:bg-amber-500/20 transition-all">
-            <Pencil size={12} />
-            {data && data.completedSteps.length > 0 ? 'Редактировать анкету' : 'Создать анкету'}
+      {/* Action buttons — hidden in read-only mode */}
+      {!readOnly && (
+        <div className="flex items-center gap-2 flex-wrap">
+          <button onClick={openAsUser} disabled={impersonating}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium bg-blue-500/10 border border-blue-500/20 text-blue-300 hover:bg-blue-500/20 transition-all disabled:opacity-50">
+            {impersonating ? <Loader2 size={12} className="animate-spin" /> : <ExternalLink size={12} />}
+            Открыть портал
           </button>
-        )}
-        {editing && (
-          <>
-            <button onClick={saveEdits} disabled={saving}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 hover:bg-emerald-500/20 transition-all disabled:opacity-50">
-              {saving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
-              Сохранить
+          <button onClick={openOnboarding} disabled={impersonating}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium bg-violet-500/10 border border-violet-500/20 text-violet-300 hover:bg-violet-500/20 transition-all disabled:opacity-50">
+            {impersonating ? <Loader2 size={12} className="animate-spin" /> : <FileText size={12} />}
+            Заполнить анкету от лица
+          </button>
+          {!editing && (
+            <button onClick={startEditing}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium bg-amber-500/10 border border-amber-500/20 text-amber-300 hover:bg-amber-500/20 transition-all">
+              <Pencil size={12} />
+              {data && data.completedSteps.length > 0 ? 'Редактировать анкету' : 'Создать анкету'}
             </button>
-            <button onClick={cancelEditing}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium bg-white/[0.05] border border-white/[0.08] text-slate-400 hover:text-slate-300 transition-all">
-              <X size={12} />
-              Отмена
-            </button>
-          </>
-        )}
-      </div>
+          )}
+          {editing && (
+            <>
+              <button onClick={saveEdits} disabled={saving}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 hover:bg-emerald-500/20 transition-all disabled:opacity-50">
+                {saving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
+                Сохранить
+              </button>
+              <button onClick={cancelEditing}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium bg-white/[0.05] border border-white/[0.08] text-slate-400 hover:text-slate-300 transition-all">
+                <X size={12} />
+                Отмена
+              </button>
+            </>
+          )}
+        </div>
+      )}
 
       {/* Diagnostics */}
       {diag && (
@@ -265,7 +269,9 @@ export function UserDetailPanel({ userId }: Props) {
       ) : (
         <div className="p-3 rounded-lg bg-white/[0.02] border border-white/[0.04] text-center">
           <p className="text-[11px] text-slate-500 mb-2">Анкета не заполнена</p>
-          <p className="text-[10px] text-slate-600">Нажмите «Создать анкету» или «Заполнить анкету от лица» выше</p>
+          {!readOnly && (
+            <p className="text-[10px] text-slate-600">Нажмите «Создать анкету» или «Заполнить анкету от лица» выше</p>
+          )}
         </div>
       )}
 

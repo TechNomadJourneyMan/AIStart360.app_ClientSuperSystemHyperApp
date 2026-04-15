@@ -5,9 +5,10 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase-client'
 import { PointARadarWidget } from '@/components/dashboard/PointARadarWidget'
+import { ExpertCommentsSection } from '@/components/client/ExpertCommentsSection'
 import type {
   Diagnostic, BlockScore, Risk, Insight, QuickWin,
-  DiagnosticStage, AIAnalysis, AIStatus, PointA
+  DiagnosticStage, AIAnalysis, AIStatus, PointA,
 } from '@/types/onboarding'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -772,6 +773,9 @@ export default function ClientDashboard() {
                 </div>
               </Link>
             </section>
+
+            {/* 10. Expert comments */}
+            <ExpertCommentsSection />
           </>
         )}
       </main>
