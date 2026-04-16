@@ -1,8 +1,7 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { Component, useCallback, useEffect, useState, type ErrorInfo, type ReactNode } from 'react'
 import Link from 'next/link'
-import { useRouter, useSearchParams } from 'next/navigation'
 import { UserDetailPanel } from '@/components/giga-panel/UserDetailPanel'
 import { ExpertCommentThread } from '@/components/expert/ExpertCommentThread'
 import { ExpertCommentsProvider, useExpertComments } from '@/components/expert/ExpertCommentsContext'
@@ -54,13 +53,17 @@ interface Props {
 }
 
 export default function ExpertClientDetailPage({ params }: Props) {
-  const router = useRouter()
-  const searchParams = useSearchParams()
+  // Tab stored in state + localStorage (no useSearchParams → avoids the
+  // suspense-boundary bailout that was crashing the page on Next.js 14)
+  const [activeTab, setActiveTab] = useState<TabKey>('anketa')
 
-  const initialTab = searchParams.get('tab')
-  const [activeTab, setActiveTab] = useState<TabKey>(
-    isValidTab(initialTab) ? initialTab : 'anketa',
-  )
+  // Restore last-viewed tab on mount
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem(`expert-client-tab:${params.id}`)
+      if (saved && isValidTab(saved)) setActiveTab(saved)
+    } catch { /* ignore */ }
+  }, [params.id])
 
   const [client, setClient] = useState<ExpertClient | null>(null)
   const [loading, setLoading] = useState(true)
@@ -92,9 +95,9 @@ export default function ExpertClientDetailPage({ params }: Props) {
 
   const changeTab = (k: TabKey) => {
     setActiveTab(k)
-    const qs = new URLSearchParams(searchParams.toString())
-    qs.set('tab', k)
-    router.replace(`/expert/clients/${params.id}?${qs.toString()}`, { scroll: false })
+    try {
+      window.localStorage.setItem(`expert-client-tab:${params.id}`, k)
+    } catch { /* ignore */ }
   }
 
   const displayName =
@@ -199,10 +202,18 @@ export default function ExpertClientDetailPage({ params }: Props) {
               </div>
             )}
 
-            {activeTab === 'dashboard' && <DashboardTab clientId={params.id} />}
-            {activeTab === 'point-a'   && <PointATab   clientId={params.id} />}
-            {activeTab === 'gri'       && <GRITab      clientId={params.id} />}
-            {activeTab === 'pulse'     && <PulseTab    clientId={params.id} />}
+            {activeTab === 'dashboard' && (
+              <TabErrorBoundary tab="Дэшборд"><DashboardTab clientId={params.id} /></TabErrorBoundary>
+            )}
+            {activeTab === 'point-a' && (
+              <TabErrorBoundary tab="Точка А"><PointATab clientId={params.id} /></TabErrorBoundary>
+            )}
+            {activeTab === 'gri' && (
+              <TabErrorBoundary tab="GRI"><GRITab clientId={params.id} /></TabErrorBoundary>
+            )}
+            {activeTab === 'pulse' && (
+              <TabErrorBoundary tab="Pulse"><PulseTab clientId={params.id} /></TabErrorBoundary>
+            )}
           </div>
         </ExpertCommentsProvider>
       )}
@@ -316,4 +327,45 @@ function TabCommentBadge({ tabKey }: { tabKey: TabKey }) {
       {count}
     </span>
   )
+}
+
+// ── Per-tab error boundary ──────────────────────────────────────────────────
+// Catches render-time exceptions inside a single tab so one broken tab doesn't
+// bubble up to the app-level error.tsx (which replaces the whole page).
+
+interface TabErrorBoundaryProps { tab: string; children: ReactNode }
+interface TabErrorBoundaryState { error: Error | null }
+
+class TabErrorBoundary extends Component<TabErrorBoundaryProps, TabErrorBoundaryState> {
+  state: TabErrorBoundaryState = { error: null }
+
+  static getDerivedStateFromError(error: Error): TabErrorBoundaryState {
+    return { error }
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error(`[expert tab: ${this.props.tab}]`, error, info)
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="rounded-2xl bg-error/5 border border-error/20 p-6 text-center">
+          <span className="material-symbols-outlined text-3xl text-error/60 mb-2">error</span>
+          <p className="text-sm text-on-surface font-medium">Не удалось показать вкладку «{this.props.tab}»</p>
+          <p className="text-xs text-on-surface-variant mt-1">
+            {this.state.error.message || 'Неизвестная ошибка'}
+          </p>
+          <button
+            onClick={() => this.setState({ error: null })}
+            className="mt-3 inline-flex items-center gap-1 text-xs text-primary hover:underline"
+          >
+            <span className="material-symbols-outlined text-[14px]">refresh</span>
+            Попробовать снова
+          </button>
+        </div>
+      )
+    }
+    return this.props.children
+  }
 }
