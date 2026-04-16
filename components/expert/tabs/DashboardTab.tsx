@@ -187,9 +187,11 @@ export function DashboardTab({ clientId }: Props) {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-function formatScore(s: number | null | undefined): string {
-  if (s === null || s === undefined) return '—'
-  return s.toFixed(1)
+function formatScore(s: unknown): string {
+  if (s === null || s === undefined || s === '') return '—'
+  const n = typeof s === 'number' ? s : Number(s)
+  if (!Number.isFinite(n)) return '—'
+  return n.toFixed(1)
 }
 
 function KpiCard({ label, value, icon }: { label: string; value: string; icon: string }) {

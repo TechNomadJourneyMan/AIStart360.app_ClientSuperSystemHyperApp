@@ -8,6 +8,19 @@
 import { useEffect, useState } from 'react'
 import { Commentable } from '@/components/expert/Commentable'
 
+// Coerce any DB-returned value (number | string | null) to a safe display string
+function fmt(v: unknown): string {
+  if (v === null || v === undefined || v === '') return '—'
+  const n = typeof v === 'number' ? v : Number(v)
+  if (!Number.isFinite(n)) return '—'
+  return n.toFixed(1)
+}
+function toNumber(v: unknown): number {
+  if (typeof v === 'number') return v
+  const n = Number(v)
+  return Number.isFinite(n) ? n : 0
+}
+
 interface BlockDetail {
   score?: number
   status?: 'critical' | 'weak' | 'average' | 'strong' | 'excellent'
@@ -105,12 +118,12 @@ export function PointATab({ clientId }: Props) {
               <circle cx="80" cy="80" r="64" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="10" />
               <circle
                 cx="80" cy="80" r="64" fill="none" stroke="#6effc0" strokeWidth="10" strokeLinecap="round"
-                strokeDasharray={`${2 * Math.PI * 64 * ((diag?.overall_score ?? 0) / 10)} ${2 * Math.PI * 64}`}
+                strokeDasharray={`${2 * Math.PI * 64 * (toNumber(diag?.overall_score) / 10)} ${2 * Math.PI * 64}`}
               />
             </svg>
             <div className="absolute inset-0 flex flex-col items-center justify-center">
               <span className="text-3xl font-mono font-bold text-primary">
-                {diag?.overall_score?.toFixed(1) ?? '—'}
+                {fmt(diag?.overall_score)}
               </span>
               <span className="text-[9px] font-mono text-on-surface-variant">/ 10</span>
             </div>
@@ -161,7 +174,7 @@ export function PointATab({ clientId }: Props) {
                     </div>
                     <div className="text-right">
                       <p className="text-2xl font-mono font-bold text-on-surface leading-none">
-                        {score !== null && score !== undefined ? score.toFixed(1) : '—'}
+                        {fmt(score)}
                       </p>
                       {detail?.status && (
                         <span className={`inline-block mt-1 text-[9px] font-mono uppercase px-2 py-0.5 rounded-full border ${STATUS_STYLE[detail.status] ?? ''}`}>

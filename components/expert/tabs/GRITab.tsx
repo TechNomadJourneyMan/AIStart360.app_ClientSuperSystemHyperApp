@@ -7,6 +7,18 @@ import { useEffect, useState } from 'react'
 import { Commentable } from '@/components/expert/Commentable'
 import { CATEGORIES, SUB_FACTORS } from '@/lib/gri-calculator/gri-data'
 
+function fmt(v: unknown): string {
+  if (v === null || v === undefined || v === '') return '—'
+  const n = typeof v === 'number' ? v : Number(v)
+  if (!Number.isFinite(n)) return '—'
+  return n.toFixed(1)
+}
+function toNum(v: unknown): number {
+  if (typeof v === 'number') return v
+  const n = Number(v)
+  return Number.isFinite(n) ? n : 0
+}
+
 interface GRIData {
   reportId: string | null
   overall: number
@@ -96,7 +108,7 @@ export function GRITab({ clientId }: Props) {
             GRI общий балл
           </p>
           <p className="text-4xl font-mono font-bold text-primary mt-1">
-            {data?.overall ? data.overall.toFixed(1) : '—'}
+            {fmt(data?.overall)}
           </p>
           {data?.lastCalculatedAt && (
             <p className="text-[10px] text-on-surface-variant mt-1">
@@ -110,7 +122,7 @@ export function GRITab({ clientId }: Props) {
       {/* Categories */}
       <div className="space-y-3">
         {CATEGORIES.map((cat) => {
-          const score = data?.categoryScores[cat] ?? 0
+          const score = toNum(data?.categoryScores[cat])
           const isExpanded = expanded.has(cat)
           const subs = SUB_FACTORS[cat] ?? []
 
