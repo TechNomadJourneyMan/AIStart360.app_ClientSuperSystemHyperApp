@@ -97,13 +97,13 @@ export function DashboardTab({ clientId }: Props) {
         <Commentable targetId="dashboard:kpi:stage">
           <KpiCard label="Стадия" value={data?.company?.stage ?? '—'} icon="stairs" />
         </Commentable>
-        <Commentable targetId="dashboard:kpi:directions">
-          <KpiCard label="Направления" value={data?.company?.industry ?? '—'} icon="category" />
+        <Commentable targetId="dashboard:kpi:documents">
+          <KpiCard label="Документы" value={data?.company?.industry ?? '—'} icon="description" />
         </Commentable>
       </section>
 
       {/* AI Executive Summary */}
-      <Commentable targetId="dashboard:ai-summary">
+      <Commentable targetId="dashboard:ai:executiveSummary">
         <Card title="AI Executive Summary" icon="psychology">
           {ai?.executive_summary ? (
             <p className="text-sm text-on-surface leading-relaxed whitespace-pre-wrap">
@@ -125,7 +125,7 @@ export function DashboardTab({ clientId }: Props) {
       </section>
 
       {/* Strategic Priorities */}
-      <Commentable targetId="dashboard:priorities">
+      <Commentable targetId="dashboard:priorities:section">
         <Card title="Стратегические приоритеты" icon="flag">
           <ListOrEmpty items={ai?.strategic_priorities} />
         </Card>
@@ -133,17 +133,17 @@ export function DashboardTab({ clientId }: Props) {
 
       {/* Risks / Insights / Quick Wins */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <Commentable targetId="dashboard:risks">
+        <Commentable targetId="dashboard:risks:section">
           <Card title="Риски" icon="warning" tone="error">
             <ListOrEmpty items={ai?.risks} />
           </Card>
         </Commentable>
-        <Commentable targetId="dashboard:insights">
+        <Commentable targetId="dashboard:insights:section">
           <Card title="Insights" icon="lightbulb">
             <ListOrEmpty items={ai?.insights} />
           </Card>
         </Commentable>
-        <Commentable targetId="dashboard:quickwins">
+        <Commentable targetId="dashboard:quickWins:section">
           <Card title="Quick Wins" icon="bolt">
             <ListOrEmpty items={ai?.quick_wins} />
           </Card>
@@ -152,17 +152,17 @@ export function DashboardTab({ clientId }: Props) {
 
       {/* Growth Roadmap */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <Commentable targetId="dashboard:roadmap:30_days">
+        <Commentable targetId="dashboard:roadmap:30d">
           <Card title="Roadmap: 30 дней" icon="event">
             <RoadmapBlock data={ai?.growth_roadmap?.['30_days']} />
           </Card>
         </Commentable>
-        <Commentable targetId="dashboard:roadmap:90_days">
+        <Commentable targetId="dashboard:roadmap:90d">
           <Card title="Roadmap: 90 дней" icon="event">
             <RoadmapBlock data={ai?.growth_roadmap?.['90_days']} />
           </Card>
         </Commentable>
-        <Commentable targetId="dashboard:roadmap:180_days">
+        <Commentable targetId="dashboard:roadmap:180d">
           <Card title="Roadmap: 180 дней" icon="event">
             <RoadmapBlock data={ai?.growth_roadmap?.['180_days']} />
           </Card>
@@ -170,7 +170,7 @@ export function DashboardTab({ clientId }: Props) {
       </div>
 
       {/* Industry Context */}
-      <Commentable targetId="dashboard:industry">
+      <Commentable targetId="dashboard:industryContext">
         <Card title="Industry Context" icon="business">
           {ai?.industry_context?.description ? (
             <p className="text-sm text-on-surface leading-relaxed">

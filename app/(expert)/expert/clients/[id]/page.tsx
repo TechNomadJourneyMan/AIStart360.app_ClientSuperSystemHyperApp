@@ -305,6 +305,7 @@ function TabCommentBadge({ tabKey }: { tabKey: TabKey }) {
   const { allComments } = useExpertComments()
 
   // Match tab → target group prefix (see lib/comment-targets.ts)
+  const POINT_A_LEGACY = new Set(['finance', 'sales', 'operations', 'marketing', 'strategy'])
   let count = 0
   for (const c of allComments) {
     if (!c.blockKey) {
@@ -316,7 +317,7 @@ function TabCommentBadge({ tabKey }: { tabKey: TabKey }) {
     else if (tabKey === 'pulse' && c.blockKey.startsWith('pulse:')) count++
     else if (
       tabKey === 'point-a' &&
-      ['finance', 'sales', 'operations', 'marketing', 'strategy'].includes(c.blockKey)
+      (POINT_A_LEGACY.has(c.blockKey) || c.blockKey.startsWith('pointa:'))
     )
       count++
   }
