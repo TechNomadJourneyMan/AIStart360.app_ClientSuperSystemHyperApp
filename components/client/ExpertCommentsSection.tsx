@@ -1,16 +1,26 @@
 'use client'
 
+// Client-facing read-only view of all expert comments left on their account.
+// Groups by TargetGroup (Общее / Точка А / Дэшборд / GRI / Pulse / ...),
+// then by target within each group, so clients see every advisory item an
+// expert flagged — across all 4 commentable tabs.
+
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
-  GROUP_ORDER,
-  blockLabel,
-  blockChipClass,
   formatCommentDate,
   getInitials,
   getAvatarGradient,
   type ExpertComment,
-  type BlockKey,
 } from '@/lib/expert-blocks'
+import {
+  groupOf,
+  targetLabel,
+  GROUP_LABEL,
+  GROUP_CHIP,
+  GROUP_ICON,
+  GROUP_ORDER,
+  type TargetGroup,
+} from '@/lib/comment-targets'
 
 interface AvatarProps {
   name: string | null
@@ -70,11 +80,6 @@ function ReadOnlyCard({ comment }: { comment: ExpertComment }) {
                   {roleLabel}
                 </span>
               )}
-              <span
-                className={`text-[10px] font-medium px-2 py-0.5 rounded-full border ${blockChipClass(comment.blockKey)}`}
-              >
-                {blockLabel(comment.blockKey)}
-              </span>
             </div>
             <span className="text-[10px] text-on-surface-variant/70 flex-shrink-0">
               {formatCommentDate(comment.createdAt)}
@@ -94,38 +99,58 @@ function ReadOnlyCard({ comment }: { comment: ExpertComment }) {
   )
 }
 
-interface GroupSectionProps {
-  groupKey: BlockKey | null
-  comments: ExpertComment[]
-  defaultOpen: boolean
+/** Group → Target → [Comments] */
+type GroupedMap = Map<TargetGroup, Map<string, ExpertComment[]>>
+
+function groupComments(comments: ExpertComment[]): GroupedMap {
+  const out: GroupedMap = new Map()
+  for (const c of comments) {
+    const g = groupOf(c.blockKey)
+    if (!out.has(g)) out.set(g, new Map())
+    const targetMap = out.get(g)!
+    // Use 'general' as the key when blockKey is null
+    const targetKey = c.blockKey ?? '__general__'
+    if (!targetMap.has(targetKey)) targetMap.set(targetKey, [])
+    targetMap.get(targetKey)!.push(c)
+  }
+  return out
 }
 
-function GroupSection({ groupKey, comments, defaultOpen }: GroupSectionProps) {
+function GroupSection({
+  group,
+  targets,
+  defaultOpen,
+}: {
+  group: TargetGroup
+  targets: Map<string, ExpertComment[]>
+  defaultOpen: boolean
+}) {
   const [open, setOpen] = useState(defaultOpen)
-  if (comments.length === 0) return null
+  const totalCount = Array.from(targets.values()).reduce((sum, arr) => sum + arr.length, 0)
+  if (totalCount === 0) return null
 
-  const label = blockLabel(groupKey)
   return (
     <div className="rounded-2xl bg-white/[0.02] border border-white/[0.04] overflow-hidden">
       <button
         onClick={() => setOpen((v) => !v)}
         className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/[0.02] transition-colors"
       >
-        <div className="flex items-center gap-2">
-          <span
-            className={`text-[11px] font-medium px-2 py-0.5 rounded-full border ${blockChipClass(groupKey)}`}
-          >
-            {label}
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="material-symbols-outlined text-base text-primary/70 flex-shrink-0">
+            {GROUP_ICON[group]}
           </span>
-          <span className="text-sm font-semibold text-on-surface">
-            Комментарии экспертов — {label}
+          <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full border flex-shrink-0 ${GROUP_CHIP[group]}`}>
+            {GROUP_LABEL[group]}
           </span>
-          <span className="text-[10px] font-mono text-on-surface-variant bg-white/[0.05] border border-white/[0.06] rounded-full px-2 py-0.5">
-            {comments.length}
+          <span className="text-sm font-semibold text-on-surface truncate">
+            Советы экспертов — {GROUP_LABEL[group]}
+          </span>
+          <span className="text-[10px] font-mono text-on-surface-variant bg-white/[0.05] border border-white/[0.06] rounded-full px-2 py-0.5 flex-shrink-0">
+            {totalCount}
           </span>
         </div>
         <span
-          className="material-symbols-outlined text-[18px] text-on-surface-variant transition-transform"
+          className="material-symbols-outlined text-[18px] text-on-surface-variant transition-transform flex-shrink-0"
           style={{ transform: open ? 'rotate(180deg)' : undefined }}
         >
           expand_more
@@ -133,12 +158,29 @@ function GroupSection({ groupKey, comments, defaultOpen }: GroupSectionProps) {
       </button>
 
       {open && (
-        <div className="px-4 pb-4 pt-0 space-y-3 border-t border-white/[0.04]">
-          <div className="pt-3 space-y-3">
-            {comments.map((c) => (
-              <ReadOnlyCard key={c.id} comment={c} />
-            ))}
-          </div>
+        <div className="px-4 pb-4 pt-0 border-t border-white/[0.04] space-y-3">
+          {Array.from(targets.entries()).map(([targetKey, list]) => {
+            const isGeneral = targetKey === '__general__'
+            const label = isGeneral ? 'Общее' : targetLabel(targetKey)
+            return (
+              <div key={targetKey} className="pt-3">
+                {!isGeneral && (
+                  <div className="mb-2 flex items-center gap-1.5">
+                    <span className="material-symbols-outlined text-sm text-on-surface-variant/70">
+                      arrow_right
+                    </span>
+                    <span className="text-xs font-medium text-on-surface-variant">{label}</span>
+                    <span className="text-[10px] font-mono text-on-surface-variant/60">({list.length})</span>
+                  </div>
+                )}
+                <div className="space-y-3">
+                  {list.map((c) => (
+                    <ReadOnlyCard key={c.id} comment={c} />
+                  ))}
+                </div>
+              </div>
+            )
+          })}
         </div>
       )}
     </div>
@@ -169,26 +211,14 @@ export function ExpertCommentsSection() {
     load()
   }, [load])
 
-  const grouped = useMemo(() => {
-    const map = new Map<BlockKey | 'general', ExpertComment[]>()
-    for (const c of comments) {
-      const key = (c.blockKey ?? 'general') as BlockKey | 'general'
-      if (!map.has(key)) map.set(key, [])
-      map.get(key)!.push(c)
-    }
-    return map
-  }, [comments])
+  const grouped = useMemo(() => groupComments(comments), [comments])
 
   return (
     <section className="rounded-2xl bg-surface-container-low border border-white/[0.04] p-5 w-full">
       <header className="flex items-center justify-between gap-3 mb-4">
         <div className="flex items-center gap-2">
-          <span className="material-symbols-outlined text-[22px] text-primary">
-            chat
-          </span>
-          <h2 className="font-headline text-lg font-bold text-on-surface">
-            Советы экспертов
-          </h2>
+          <span className="material-symbols-outlined text-[22px] text-primary">chat</span>
+          <h2 className="font-headline text-lg font-bold text-on-surface">Советы экспертов</h2>
           {!loading && !error && comments.length > 0 && (
             <span className="text-[10px] font-mono text-on-surface-variant bg-white/[0.05] border border-white/[0.06] rounded-full px-2 py-0.5">
               {comments.length}
@@ -201,9 +231,7 @@ export function ExpertCommentsSection() {
           className="text-[11px] text-on-surface-variant hover:text-primary transition-colors flex items-center gap-1 disabled:opacity-50"
           aria-label="Обновить"
         >
-          <span
-            className={`material-symbols-outlined text-[14px] ${loading ? 'animate-spin' : ''}`}
-          >
+          <span className={`material-symbols-outlined text-[14px] ${loading ? 'animate-spin' : ''}`}>
             refresh
           </span>
           Обновить
@@ -227,16 +255,15 @@ export function ExpertCommentsSection() {
         </div>
       ) : (
         <div className="space-y-3">
-          {GROUP_ORDER.map((key) => {
-            const mapKey = (key ?? 'general') as BlockKey | 'general'
-            const list = grouped.get(mapKey) ?? []
-            if (list.length === 0) return null
+          {GROUP_ORDER.map((g) => {
+            const targets = grouped.get(g)
+            if (!targets || targets.size === 0) return null
             return (
               <GroupSection
-                key={mapKey}
-                groupKey={key}
-                comments={list}
-                defaultOpen={key === null || list.length > 0}
+                key={g}
+                group={g}
+                targets={targets}
+                defaultOpen={g === 'general' || g === 'point-a'}
               />
             )
           })}

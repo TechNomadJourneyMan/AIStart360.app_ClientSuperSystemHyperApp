@@ -5,7 +5,7 @@ import { createServerClient } from '@/lib/supabase-server'
 import { notifyUser } from '@/lib/notifications'
 
 const EXPERT_ROLES = new Set(['expert', 'admin', 'super_admin'])
-const VALID_BLOCKS = new Set(['finance', 'sales', 'operations', 'marketing', 'strategy'])
+const MAX_TARGET_ID = 200  // see lib/comment-targets.ts — free-form TEXT, cap length
 
 // ── Service-role helper ──────────────────────────────────────────────────────
 // ALL DB reads/writes go through this to avoid profiles RLS infinite-recursion.
@@ -139,31 +139,35 @@ async function hydrateAuthors(comments: RawComment[]): Promise<RawComment[]> {
   return comments.map((c) => ({ ...c, author: byId.get(c.author_id) ?? null }))
 }
 
-// ── GET /api/expert/comments?clientId=<uuid|self>&blockKey=<optional> ────────
+// ── GET /api/expert/comments?clientId=<uuid|self>&targetId=<optional> ───────
+// Query params:
+//   clientId: 'self' | uuid  — whose comments to fetch (default: self)
+//   targetId: string | 'all' | 'general' | legacy block key
+//     omitted / 'all' → no server-side filter (used by ExpertCommentsProvider
+//     for batch-load; filtering happens client-side)
+//   blockKey (deprecated): alias of targetId — still accepted for old clients
 export async function GET(req: NextRequest) {
   const { user, profile } = await getViewer()
   if (!user) return NextResponse.json({ error: 'unauthenticated' }, { status: 401 })
 
   const clientIdParam = req.nextUrl.searchParams.get('clientId') ?? 'self'
-  const blockKey = req.nextUrl.searchParams.get('blockKey')
+  const targetId =
+    req.nextUrl.searchParams.get('targetId') ?? req.nextUrl.searchParams.get('blockKey')
 
-  // Determine the target client
   const isExpert = profile && EXPERT_ROLES.has(profile.role ?? '')
   const clientId = clientIdParam === 'self' ? user.id : clientIdParam
   if (!clientId) return NextResponse.json({ data: [] })
 
-  // Security: non-expert users can only read their own comments
   if (!isExpert && clientId !== user.id)
     return NextResponse.json({ error: 'forbidden' }, { status: 403 })
 
-  // Build PostgREST filter
   let qs = `expert_comments?client_id=eq.${clientId}`
     + `&select=id,client_id,author_id,author_title,block_key,text,created_at,updated_at`
     + `&order=created_at.desc`
 
-  if (blockKey && blockKey !== 'all') {
-    if (blockKey === 'general') qs += '&block_key=is.null'
-    else qs += `&block_key=eq.${blockKey}`
+  if (targetId && targetId !== 'all') {
+    if (targetId === 'general') qs += '&block_key=is.null'
+    else qs += `&block_key=eq.${encodeURIComponent(targetId)}`
   }
 
   const rows = await srGet<RawComment[]>(qs)
@@ -173,14 +177,17 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ data: withAuthors.map(mapComment) })
 }
 
-// ── POST /api/expert/comments  body: { clientId, blockKey?, text } ────────────
+// ── POST /api/expert/comments  body: { clientId, targetId?|blockKey?, text } ─
+// `targetId` is the generic identifier (any string from lib/comment-targets.ts
+// registry, OR any free-form ≤200 chars). `blockKey` kept as deprecated alias.
+// null/empty → general feed.
 export async function POST(req: NextRequest) {
   const { user, profile } = await getViewer()
   if (!user) return NextResponse.json({ error: 'unauthenticated' }, { status: 401 })
   if (!profile || !EXPERT_ROLES.has(profile.role ?? ''))
     return NextResponse.json({ error: 'forbidden' }, { status: 403 })
 
-  let body: { clientId?: string; blockKey?: string | null; text?: string }
+  let body: { clientId?: string; targetId?: string | null; blockKey?: string | null; text?: string }
   try {
     body = await req.json()
   } catch {
@@ -189,19 +196,20 @@ export async function POST(req: NextRequest) {
 
   const clientId = body.clientId?.trim()
   const text = body.text?.trim()
-  const blockKey = body.blockKey?.trim() || null
+  const rawTarget = (body.targetId ?? body.blockKey ?? '').toString().trim()
+  const targetId = rawTarget || null  // empty string → general feed
 
   if (!clientId) return NextResponse.json({ error: 'clientId required' }, { status: 400 })
   if (!text || text.length < 1 || text.length > 5000)
     return NextResponse.json({ error: 'text must be 1..5000 chars' }, { status: 400 })
-  if (blockKey && !VALID_BLOCKS.has(blockKey))
-    return NextResponse.json({ error: 'invalid blockKey' }, { status: 400 })
+  if (targetId && targetId.length > MAX_TARGET_ID)
+    return NextResponse.json({ error: `targetId must be ≤${MAX_TARGET_ID} chars` }, { status: 400 })
 
   const inserted = await srPost<RawComment>('expert_comments', {
     client_id: clientId,
     author_id: user.id,           // Security: always use authenticated user's id
     author_title: profile.expert_title ?? null,
-    block_key: blockKey,
+    block_key: targetId,
     text,
   })
 
