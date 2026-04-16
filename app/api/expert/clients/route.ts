@@ -11,7 +11,7 @@ const EXPERT_ROLES = new Set(['expert', 'admin', 'super_admin'])
  * manually above, then read all client profiles directly.
  */
 async function sbFetch<T = unknown>(path: string): Promise<T | null> {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const url = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? '').replace(/\/$/, '')
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
   if (!url || !key) return null
   try {
@@ -38,12 +38,13 @@ export async function GET() {
   } = await sb.auth.getUser()
   if (!user) return NextResponse.json({ error: 'unauthenticated' }, { status: 401 })
 
-  // Authorise using the session client against own row (RLS-safe)
-  const { data: viewer } = await sb
-    .from('profiles')
-    .select('role')
-    .eq('id', user.id)
-    .maybeSingle()
+  // Authorise via service-role fetch to avoid profiles RLS infinite-recursion
+  // (profiles_admin_select subqueries profiles, which re-triggers itself)
+  interface ViewerRow { id: string; role: string | null }
+  const viewers = await sbFetch<ViewerRow[]>(
+    `profiles?id=eq.${user.id}&select=id,role&limit=1`,
+  )
+  const viewer = viewers?.[0] ?? null
   if (!viewer || !EXPERT_ROLES.has(viewer.role ?? ''))
     return NextResponse.json({ error: 'forbidden' }, { status: 403 })
 

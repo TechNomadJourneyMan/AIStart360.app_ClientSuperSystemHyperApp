@@ -43,6 +43,13 @@ function mapComment(row: RawComment) {
   }
 }
 
+interface ViewerProfile {
+  id: string
+  role: string | null
+  full_name: string | null
+  expert_title: string | null
+}
+
 async function getViewer() {
   const sb = createServerClient()
   const {
@@ -50,11 +57,27 @@ async function getViewer() {
   } = await sb.auth.getUser()
   if (!user) return { sb, user: null, profile: null }
 
-  const { data: profile } = await sb
-    .from('profiles')
-    .select('id, role, full_name, expert_title')
-    .eq('id', user.id)
-    .maybeSingle()
+  // Use service-role REST to avoid profiles RLS infinite-recursion
+  // (profiles_admin_select policy subqueries profiles, re-triggering itself)
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.replace(/\/$/, '') ?? ''
+  const serviceKey =
+    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  let profile: ViewerProfile | null = null
+  try {
+    const res = await fetch(
+      `${supabaseUrl}/rest/v1/profiles?id=eq.${user.id}&select=id,role,full_name,expert_title&limit=1`,
+      {
+        headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` },
+        cache: 'no-store',
+      },
+    )
+    if (res.ok) {
+      const rows = (await res.json()) as ViewerProfile[]
+      profile = rows[0] ?? null
+    }
+  } catch {
+    // fall through → profile stays null → caller returns 403
+  }
   return { sb, user, profile }
 }
 
@@ -103,7 +126,7 @@ export async function GET(req: NextRequest) {
   const authorsById = new Map<string, AuthoredProfile>()
   if (authorIds.length > 0) {
     try {
-      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+      const supabaseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? '').replace(/\/$/, '')
       const serviceKey =
         process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
       const idList = authorIds.map((id) => `"${id}"`).join(',')
