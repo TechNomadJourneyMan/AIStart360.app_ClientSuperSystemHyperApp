@@ -30,6 +30,7 @@ export async function GET() {
 
   return NextResponse.json({
     userId: user?.id ?? null,
+    userEmail: user?.email ?? null,
     hasSupabaseUrl: !!supabaseUrl,
     supabaseUrlPrefix: supabaseUrl.slice(0, 30),
     hasServiceKey: !!serviceKey,
@@ -38,5 +39,6 @@ export async function GET() {
     keyUsedLen: keyUsed.length,
     profilesResult,
     profilesError,
+    authWorking: !!user,
   })
 }
