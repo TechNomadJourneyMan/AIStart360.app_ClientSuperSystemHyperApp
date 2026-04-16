@@ -69,11 +69,10 @@ export async function GET(req: NextRequest) {
   const clientId = clientIdParam === 'self' ? user.id : clientIdParam
   if (!clientId) return NextResponse.json({ data: [] })
 
+  // Fetch comments via session client (RLS keeps client→own, expert→all)
   let query = sb
     .from('expert_comments')
-    .select(
-      'id, client_id, author_id, author_title, block_key, text, created_at, updated_at, author:profiles!expert_comments_author_id_fkey(id, full_name, avatar_url, role, expert_title)',
-    )
+    .select('id, client_id, author_id, author_title, block_key, text, created_at, updated_at')
     .eq('client_id', clientId)
     .order('created_at', { ascending: false })
 
@@ -82,12 +81,54 @@ export async function GET(req: NextRequest) {
     else query = query.eq('block_key', blockKey)
   }
 
-  const { data, error } = await query
+  const { data: rows, error } = await query
   if (error) {
     console.error('[expert/comments] GET error:', error.message)
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
-  return NextResponse.json({ data: (data ?? []).map((r) => mapComment(r as unknown as RawComment)) })
+
+  const comments = (rows ?? []) as Array<{
+    id: string
+    client_id: string
+    author_id: string
+    author_title: string | null
+    block_key: string | null
+    text: string
+    created_at: string
+    updated_at: string
+  }>
+
+  // Hydrate author info via service role (profiles RLS blocks cross-row reads)
+  const authorIds = Array.from(new Set(comments.map((c) => c.author_id)))
+  const authorsById = new Map<string, AuthoredProfile>()
+  if (authorIds.length > 0) {
+    try {
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+      const serviceKey =
+        process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+      const idList = authorIds.map((id) => `"${id}"`).join(',')
+      const res = await fetch(
+        `${supabaseUrl}/rest/v1/profiles?id=in.(${idList})&select=id,full_name,avatar_url,role,expert_title`,
+        {
+          headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` },
+          cache: 'no-store',
+        },
+      )
+      if (res.ok) {
+        const authors = (await res.json()) as AuthoredProfile[]
+        for (const a of authors) authorsById.set(a.id, a)
+      }
+    } catch {
+      // Non-blocking — fall back to showing comments without author metadata
+    }
+  }
+
+  const withAuthors: RawComment[] = comments.map((c) => ({
+    ...c,
+    author: authorsById.get(c.author_id) ?? null,
+  }))
+
+  return NextResponse.json({ data: withAuthors.map(mapComment) })
 }
 
 // POST /api/expert/comments  body: { clientId, blockKey?, text }
@@ -123,9 +164,7 @@ export async function POST(req: NextRequest) {
       block_key: blockKey,
       text,
     })
-    .select(
-      'id, client_id, author_id, author_title, block_key, text, created_at, updated_at, author:profiles!expert_comments_author_id_fkey(id, full_name, avatar_url, role, expert_title)',
-    )
+    .select('id, client_id, author_id, author_title, block_key, text, created_at, updated_at')
     .single()
 
   if (error) {
@@ -133,7 +172,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
-  const mapped = mapComment(data as unknown as RawComment)
+  const authorProfile: AuthoredProfile = {
+    id: user.id,
+    full_name: profile.full_name ?? null,
+    avatar_url: null,
+    role: profile.role ?? null,
+    expert_title: profile.expert_title ?? null,
+  }
+  const mapped = mapComment({ ...(data as unknown as RawComment), author: authorProfile })
 
   // Fire-and-forget notify the client
   notifyUser(clientId, 'expert_comment', {
