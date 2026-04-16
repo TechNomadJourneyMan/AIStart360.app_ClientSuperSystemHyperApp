@@ -7,11 +7,79 @@ import { notifyUser } from '@/lib/notifications'
 const EXPERT_ROLES = new Set(['expert', 'admin', 'super_admin'])
 const VALID_BLOCKS = new Set(['finance', 'sales', 'operations', 'marketing', 'strategy'])
 
+// ── Service-role helper ──────────────────────────────────────────────────────
+// ALL DB reads/writes go through this to avoid profiles RLS infinite-recursion.
+// (profiles_admin_select subqueries profiles itself → 42P17)
+// Security is enforced manually in each handler rather than relying on RLS.
+
+function srBase() {
+  return {
+    url: (process.env.NEXT_PUBLIC_SUPABASE_URL ?? '').replace(/\/$/, ''),
+    key: process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+  }
+}
+
+async function srGet<T = unknown>(path: string): Promise<T | null> {
+  const { url, key } = srBase()
+  if (!url || !key) return null
+  try {
+    const res = await fetch(`${url}/rest/v1/${path}`, {
+      headers: { apikey: key, Authorization: `Bearer ${key}` },
+      cache: 'no-store',
+    })
+    if (!res.ok) {
+      console.error('[expert/comments] srGet', res.status, path)
+      return null
+    }
+    return (await res.json()) as T
+  } catch (e) {
+    console.error('[expert/comments] srGet error', e)
+    return null
+  }
+}
+
+async function srPost<T = unknown>(table: string, body: Record<string, unknown>): Promise<T | null> {
+  const { url, key } = srBase()
+  if (!url || !key) return null
+  try {
+    const res = await fetch(`${url}/rest/v1/${table}`, {
+      method: 'POST',
+      headers: {
+        apikey: key,
+        Authorization: `Bearer ${key}`,
+        'Content-Type': 'application/json',
+        Prefer: 'return=representation',
+      },
+      body: JSON.stringify(body),
+      cache: 'no-store',
+    })
+    if (!res.ok) {
+      const txt = await res.text().catch(() => '')
+      console.error('[expert/comments] srPost', res.status, txt)
+      return null
+    }
+    const rows = (await res.json()) as T[]
+    return (rows as unknown[])[0] as T ?? null
+  } catch (e) {
+    console.error('[expert/comments] srPost error', e)
+    return null
+  }
+}
+
+// ── Types ────────────────────────────────────────────────────────────────────
+
 interface AuthoredProfile {
   id: string
   full_name: string | null
   avatar_url: string | null
   role: string | null
+  expert_title: string | null
+}
+
+interface ViewerProfile {
+  id: string
+  role: string | null
+  full_name: string | null
   expert_title: string | null
 }
 
@@ -43,120 +111,71 @@ function mapComment(row: RawComment) {
   }
 }
 
-interface ViewerProfile {
-  id: string
-  role: string | null
-  full_name: string | null
-  expert_title: string | null
-}
-
+// Returns the authenticated user + their profile (via service-role, no RLS)
 async function getViewer() {
   const sb = createServerClient()
   const {
     data: { user },
   } = await sb.auth.getUser()
-  if (!user) return { sb, user: null, profile: null }
+  if (!user) return { user: null, profile: null }
 
-  // Use service-role REST to avoid profiles RLS infinite-recursion
-  // (profiles_admin_select policy subqueries profiles, re-triggering itself)
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.replace(/\/$/, '') ?? ''
-  const serviceKey =
-    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  let profile: ViewerProfile | null = null
-  try {
-    const res = await fetch(
-      `${supabaseUrl}/rest/v1/profiles?id=eq.${user.id}&select=id,role,full_name,expert_title&limit=1`,
-      {
-        headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` },
-        cache: 'no-store',
-      },
-    )
-    if (res.ok) {
-      const rows = (await res.json()) as ViewerProfile[]
-      profile = rows[0] ?? null
-    }
-  } catch {
-    // fall through → profile stays null → caller returns 403
-  }
-  return { sb, user, profile }
+  const rows = await srGet<ViewerProfile[]>(
+    `profiles?id=eq.${user.id}&select=id,role,full_name,expert_title&limit=1`,
+  )
+  const profile = rows?.[0] ?? null
+  return { user, profile }
 }
 
-// GET /api/expert/comments?clientId=<uuid|self>&blockKey=<optional>
+// Hydrates author info for a list of comment rows
+async function hydrateAuthors(comments: RawComment[]): Promise<RawComment[]> {
+  if (comments.length === 0) return comments
+  const authorIds = Array.from(new Set(comments.map((c) => c.author_id)))
+  const idList = authorIds.map((id) => `"${id}"`).join(',')
+  const authors =
+    (await srGet<AuthoredProfile[]>(
+      `profiles?id=in.(${idList})&select=id,full_name,avatar_url,role,expert_title`,
+    )) ?? []
+  const byId = new Map(authors.map((a) => [a.id, a]))
+  return comments.map((c) => ({ ...c, author: byId.get(c.author_id) ?? null }))
+}
+
+// ── GET /api/expert/comments?clientId=<uuid|self>&blockKey=<optional> ────────
 export async function GET(req: NextRequest) {
-  const { sb, user } = await getViewer()
+  const { user, profile } = await getViewer()
   if (!user) return NextResponse.json({ error: 'unauthenticated' }, { status: 401 })
 
   const clientIdParam = req.nextUrl.searchParams.get('clientId') ?? 'self'
   const blockKey = req.nextUrl.searchParams.get('blockKey')
 
+  // Determine the target client
+  const isExpert = profile && EXPERT_ROLES.has(profile.role ?? '')
   const clientId = clientIdParam === 'self' ? user.id : clientIdParam
   if (!clientId) return NextResponse.json({ data: [] })
 
-  // Fetch comments via session client (RLS keeps client→own, expert→all)
-  let query = sb
-    .from('expert_comments')
-    .select('id, client_id, author_id, author_title, block_key, text, created_at, updated_at')
-    .eq('client_id', clientId)
-    .order('created_at', { ascending: false })
+  // Security: non-expert users can only read their own comments
+  if (!isExpert && clientId !== user.id)
+    return NextResponse.json({ error: 'forbidden' }, { status: 403 })
+
+  // Build PostgREST filter
+  let qs = `expert_comments?client_id=eq.${clientId}`
+    + `&select=id,client_id,author_id,author_title,block_key,text,created_at,updated_at`
+    + `&order=created_at.desc`
 
   if (blockKey && blockKey !== 'all') {
-    if (blockKey === 'general') query = query.is('block_key', null)
-    else query = query.eq('block_key', blockKey)
+    if (blockKey === 'general') qs += '&block_key=is.null'
+    else qs += `&block_key=eq.${blockKey}`
   }
 
-  const { data: rows, error } = await query
-  if (error) {
-    console.error('[expert/comments] GET error:', error.message)
-    return NextResponse.json({ error: error.message }, { status: 500 })
-  }
+  const rows = await srGet<RawComment[]>(qs)
+  if (!rows) return NextResponse.json({ error: 'failed to load comments' }, { status: 500 })
 
-  const comments = (rows ?? []) as Array<{
-    id: string
-    client_id: string
-    author_id: string
-    author_title: string | null
-    block_key: string | null
-    text: string
-    created_at: string
-    updated_at: string
-  }>
-
-  // Hydrate author info via service role (profiles RLS blocks cross-row reads)
-  const authorIds = Array.from(new Set(comments.map((c) => c.author_id)))
-  const authorsById = new Map<string, AuthoredProfile>()
-  if (authorIds.length > 0) {
-    try {
-      const supabaseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? '').replace(/\/$/, '')
-      const serviceKey =
-        process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-      const idList = authorIds.map((id) => `"${id}"`).join(',')
-      const res = await fetch(
-        `${supabaseUrl}/rest/v1/profiles?id=in.(${idList})&select=id,full_name,avatar_url,role,expert_title`,
-        {
-          headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` },
-          cache: 'no-store',
-        },
-      )
-      if (res.ok) {
-        const authors = (await res.json()) as AuthoredProfile[]
-        for (const a of authors) authorsById.set(a.id, a)
-      }
-    } catch {
-      // Non-blocking — fall back to showing comments without author metadata
-    }
-  }
-
-  const withAuthors: RawComment[] = comments.map((c) => ({
-    ...c,
-    author: authorsById.get(c.author_id) ?? null,
-  }))
-
+  const withAuthors = await hydrateAuthors(rows)
   return NextResponse.json({ data: withAuthors.map(mapComment) })
 }
 
-// POST /api/expert/comments  body: { clientId, blockKey?, text }
+// ── POST /api/expert/comments  body: { clientId, blockKey?, text } ────────────
 export async function POST(req: NextRequest) {
-  const { sb, user, profile } = await getViewer()
+  const { user, profile } = await getViewer()
   if (!user) return NextResponse.json({ error: 'unauthenticated' }, { status: 401 })
   if (!profile || !EXPERT_ROLES.has(profile.role ?? ''))
     return NextResponse.json({ error: 'forbidden' }, { status: 403 })
@@ -178,22 +197,15 @@ export async function POST(req: NextRequest) {
   if (blockKey && !VALID_BLOCKS.has(blockKey))
     return NextResponse.json({ error: 'invalid blockKey' }, { status: 400 })
 
-  const { data, error } = await sb
-    .from('expert_comments')
-    .insert({
-      client_id: clientId,
-      author_id: user.id,
-      author_title: profile.expert_title ?? null,
-      block_key: blockKey,
-      text,
-    })
-    .select('id, client_id, author_id, author_title, block_key, text, created_at, updated_at')
-    .single()
+  const inserted = await srPost<RawComment>('expert_comments', {
+    client_id: clientId,
+    author_id: user.id,           // Security: always use authenticated user's id
+    author_title: profile.expert_title ?? null,
+    block_key: blockKey,
+    text,
+  })
 
-  if (error) {
-    console.error('[expert/comments] POST error:', error.message)
-    return NextResponse.json({ error: error.message }, { status: 500 })
-  }
+  if (!inserted) return NextResponse.json({ error: 'failed to create comment' }, { status: 500 })
 
   const authorProfile: AuthoredProfile = {
     id: user.id,
@@ -202,7 +214,7 @@ export async function POST(req: NextRequest) {
     role: profile.role ?? null,
     expert_title: profile.expert_title ?? null,
   }
-  const mapped = mapComment({ ...(data as unknown as RawComment), author: authorProfile })
+  const mapped = mapComment({ ...inserted, author: authorProfile })
 
   // Fire-and-forget notify the client
   notifyUser(clientId, 'expert_comment', {
