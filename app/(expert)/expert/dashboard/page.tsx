@@ -40,11 +40,7 @@ export default function ExpertDashboardPage() {
   }, [user, isInitialized, router])
 
   if (!isInitialized) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="w-8 h-8 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
-      </div>
-    )
+    return <DashboardSkeleton />
   }
 
   const initials = user?.name?.split(' ').map(n => n[0]).join('').slice(0,2).toUpperCase() ?? 'EX'
@@ -196,5 +192,122 @@ export default function ExpertDashboardPage() {
         </div>
       </section>
     </div>
+  )
+}
+
+// ── Skeleton loading state ──────────────────────────────────────────────────
+// Shown while auth/user data is being fetched. Mirrors the layout of the real
+// dashboard so the transition is smooth instead of a jarring "snap-in".
+
+function SkeletonBlock({ className = '' }: { className?: string }) {
+  return (
+    <div
+      className={`animate-pulse bg-gradient-to-r from-surface-container via-surface-container-high to-surface-container bg-[length:200%_100%] rounded-lg ${className}`}
+      style={{ animation: 'shimmer 1.6s ease-in-out infinite' }}
+    />
+  )
+}
+
+function DashboardSkeleton() {
+  return (
+    <>
+      <style jsx global>{`
+        @keyframes shimmer {
+          0%   { background-position: -100% 0; }
+          100% { background-position:  100% 0; }
+        }
+      `}</style>
+
+      <div className="space-y-8">
+        {/* Hero */}
+        <section className="flex flex-col md:flex-row justify-between items-start gap-6">
+          <div className="flex-1 space-y-3">
+            <SkeletonBlock className="h-3 w-36" />
+            <SkeletonBlock className="h-10 w-80 max-w-full" />
+            <SkeletonBlock className="h-3 w-60" />
+          </div>
+          <div className="flex items-center gap-4 bg-surface-container-low rounded-2xl border border-white/[0.04] p-4 min-w-[240px]">
+            <SkeletonBlock className="w-14 h-14 rounded-xl" />
+            <div className="flex-1 space-y-2">
+              <SkeletonBlock className="h-3 w-24" />
+              <SkeletonBlock className="h-2.5 w-32" />
+              <SkeletonBlock className="h-2.5 w-16" />
+            </div>
+          </div>
+        </section>
+
+        {/* KPI cards */}
+        <section className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div
+              key={i}
+              className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-5 space-y-3"
+            >
+              <div className="flex items-start justify-between">
+                <SkeletonBlock className="h-2.5 w-16" />
+                <SkeletonBlock className="h-4 w-4 rounded" />
+              </div>
+              <SkeletonBlock className="h-7 w-24" />
+              <SkeletonBlock className="h-2.5 w-12" />
+            </div>
+          ))}
+        </section>
+
+        {/* GRI + Tasks */}
+        <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-6 flex flex-col items-center gap-4">
+            <SkeletonBlock className="h-2.5 w-20" />
+            <SkeletonBlock className="w-36 h-36 rounded-full" />
+            <SkeletonBlock className="h-5 w-16 rounded-full" />
+            <SkeletonBlock className="h-2.5 w-32" />
+          </div>
+          <div className="lg:col-span-2 bg-surface-container-low rounded-2xl border border-white/[0.04] p-6 space-y-4">
+            <div className="flex justify-between items-center">
+              <SkeletonBlock className="h-5 w-20" />
+              <SkeletonBlock className="h-5 w-24 rounded-full" />
+            </div>
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div
+                key={i}
+                className="flex items-center gap-4 p-3.5 rounded-xl border border-white/[0.04] bg-surface-container"
+              >
+                <SkeletonBlock className="w-5 h-5 rounded-full" />
+                <SkeletonBlock className="flex-1 h-3" />
+                <SkeletonBlock className="h-2.5 w-16" />
+                <SkeletonBlock className="h-4 w-12 rounded-full" />
+              </div>
+            ))}
+          </div>
+        </section>
+
+        {/* Activity + Quick actions */}
+        <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-6 space-y-4">
+            <SkeletonBlock className="h-5 w-40" />
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="flex items-center gap-4">
+                <SkeletonBlock className="w-9 h-9 rounded-xl" />
+                <SkeletonBlock className="flex-1 h-3" />
+                <SkeletonBlock className="h-2.5 w-14" />
+              </div>
+            ))}
+          </div>
+          <div className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-6 space-y-4">
+            <SkeletonBlock className="h-5 w-32" />
+            <div className="grid grid-cols-2 gap-3">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div
+                  key={i}
+                  className="flex flex-col items-center gap-3 p-4 rounded-xl bg-surface-container border border-white/[0.04]"
+                >
+                  <SkeletonBlock className="h-5 w-5 rounded" />
+                  <SkeletonBlock className="h-2.5 w-20" />
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+      </div>
+    </>
   )
 }
