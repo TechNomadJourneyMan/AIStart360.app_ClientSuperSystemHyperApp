@@ -14,8 +14,21 @@ import { createServerClient } from '@/lib/supabase-server'
 export type NotificationType =
   | 'file_uploaded'
   | 'user_registered'
+  | 'user_login'
   | 'survey_completed'
+  | 'survey_step_saved'
+  | 'diagnostic_calculated'
+  | 'diagnostic_recalculated'
+  | 'document_approved'
+  | 'document_rejected'
+  | 'profile_updated'
   | 'expert_comment'
+  | 'expert_comment_edited'
+  | 'expert_comment_deleted'
+  | 'gri_strategy_generated'
+  | 'gri_report_saved'
+  | 'ai_query'
+  | 'admin_action'
 
 interface NotificationPayload {
   type: NotificationType
@@ -32,16 +45,24 @@ interface Recipient {
 
 function buildSubject(type: NotificationType): string {
   switch (type) {
-    case 'file_uploaded':
-      return 'AIStart360: Новый документ загружен'
-    case 'user_registered':
-      return 'AIStart360: Новая регистрация'
-    case 'survey_completed':
-      return 'AIStart360: Анкета завершена'
-    case 'expert_comment':
-      return 'AIStart360: Новый комментарий эксперта'
-    default:
-      return 'AIStart360: Уведомление'
+    case 'file_uploaded':           return 'AIStart360: Новый документ загружен'
+    case 'user_registered':         return 'AIStart360: Новая регистрация'
+    case 'user_login':              return 'AIStart360: Вход пользователя'
+    case 'survey_completed':        return 'AIStart360: Анкета завершена'
+    case 'survey_step_saved':       return 'AIStart360: Шаг анкеты сохранён'
+    case 'diagnostic_calculated':   return 'AIStart360: Диагностика рассчитана'
+    case 'diagnostic_recalculated': return 'AIStart360: Диагностика пересчитана'
+    case 'document_approved':       return 'AIStart360: Документ одобрен'
+    case 'document_rejected':       return 'AIStart360: Документ отклонён'
+    case 'profile_updated':         return 'AIStart360: Профиль обновлён'
+    case 'expert_comment':          return 'AIStart360: Новый комментарий эксперта'
+    case 'expert_comment_edited':   return 'AIStart360: Комментарий эксперта отредактирован'
+    case 'expert_comment_deleted':  return 'AIStart360: Комментарий эксперта удалён'
+    case 'gri_strategy_generated':  return 'AIStart360: GRI-стратегия сгенерирована'
+    case 'gri_report_saved':        return 'AIStart360: GRI-отчёт сохранён'
+    case 'ai_query':                return 'AIStart360: AI-запрос'
+    case 'admin_action':            return 'AIStart360: Действие администратора'
+    default:                         return 'AIStart360: Уведомление'
   }
 }
 
@@ -74,6 +95,73 @@ function buildEmailBody(payload: NotificationPayload): { title: string; body: st
         body: `${expert}${title} оставил(а) комментарий${block}:\n\n"${preview.slice(0, 280)}${preview.length > 280 ? '…' : ''}"`,
       }
     }
+    case 'expert_comment_edited':
+      return {
+        title: 'Комментарий эксперта отредактирован',
+        body: `${data.expertName || 'Эксперт'} изменил комментарий. Новый текст:\n\n"${String(data.preview ?? '').slice(0, 280)}"`,
+      }
+    case 'expert_comment_deleted':
+      return {
+        title: 'Комментарий эксперта удалён',
+        body: `${data.expertName || 'Эксперт'} удалил свой комментарий у клиента ${data.clientId ?? 'N/A'}.`,
+      }
+    case 'user_login':
+      return {
+        title: 'Вход пользователя',
+        body: `Пользователь ${data.userName || data.userEmail || userId || 'N/A'} вошёл в систему. Роль: ${data.role || 'N/A'}. IP: ${data.ip || 'N/A'}.`,
+      }
+    case 'survey_step_saved':
+      return {
+        title: 'Шаг анкеты сохранён',
+        body: `Пользователь ${data.userName || data.userEmail || userId || 'N/A'} сохранил шаг "${data.step ?? 'N/A'}" анкеты (${data.stepNumber ?? '?'} / ${data.totalSteps ?? '?'}).`,
+      }
+    case 'diagnostic_calculated':
+      return {
+        title: 'Диагностика рассчитана',
+        body: `Для пользователя ${data.userName || data.userEmail || userId || 'N/A'} рассчитана диагностика. Overall: ${data.overallScore ?? 'N/A'}, стадия: ${data.stage || 'N/A'}.`,
+      }
+    case 'diagnostic_recalculated':
+      return {
+        title: 'Диагностика пересчитана',
+        body: `Пользователь ${data.userName || data.userEmail || userId || 'N/A'} запустил пересчёт диагностики. Новый Overall: ${data.overallScore ?? 'N/A'}.`,
+      }
+    case 'document_approved':
+      return {
+        title: 'Документ одобрен',
+        body: `Документ "${data.fileName || 'N/A'}" одобрен для пользователя ${data.userName || data.userEmail || userId || 'N/A'}.`,
+      }
+    case 'document_rejected':
+      return {
+        title: 'Документ отклонён',
+        body: `Документ "${data.fileName || 'N/A'}" отклонён для пользователя ${data.userName || data.userEmail || userId || 'N/A'}. Причина: ${data.reason || 'не указана'}.`,
+      }
+    case 'profile_updated': {
+      const fields = Array.isArray(data.changedFields) ? (data.changedFields as string[]).join(', ') : (data.changedFields || 'N/A')
+      return {
+        title: 'Профиль обновлён',
+        body: `Пользователь ${data.userName || data.userEmail || userId || 'N/A'} обновил профиль. Изменены поля: ${fields}.`,
+      }
+    }
+    case 'gri_strategy_generated':
+      return {
+        title: 'GRI-стратегия сгенерирована',
+        body: `Пользователь ${data.userName || data.userEmail || userId || 'N/A'} сгенерировал стратегию (${data.variant || 'action_plan'}). GRI: ${data.griScore ?? 'N/A'} → target: ${data.targetGRI ?? 'N/A'}.`,
+      }
+    case 'gri_report_saved':
+      return {
+        title: 'GRI-отчёт сохранён',
+        body: `Пользователь ${data.userName || data.userEmail || userId || 'N/A'} сохранил GRI-отчёт (сессия "${data.sessionName || 'N/A'}"). Score: ${data.griScore ?? 'N/A'}.`,
+      }
+    case 'ai_query':
+      return {
+        title: 'AI-запрос',
+        body: `Пользователь ${data.userName || data.userEmail || userId || 'N/A'} отправил AI-запрос. Роут: ${data.route || 'N/A'}. Промпт (начало): "${String(data.promptPreview ?? '').slice(0, 140)}".`,
+      }
+    case 'admin_action':
+      return {
+        title: 'Действие администратора',
+        body: `${data.adminName || 'Администратор'} выполнил действие "${data.action || 'N/A'}" над пользователем ${data.targetUser || 'N/A'}.`,
+      }
     default:
       return {
         title: 'Уведомление',

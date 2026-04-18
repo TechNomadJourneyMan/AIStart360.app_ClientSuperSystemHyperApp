@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { calculatePointA } from '@/lib/point-a-engine'
+import { notifyAdmins } from '@/lib/notifications'
 
 // POST /api/v1/diagnostics/recalculate
 // Body: { user_id }
@@ -76,6 +77,13 @@ export async function POST(req: NextRequest) {
         body: JSON.stringify({ diagnostic_id: diag.id, user_id }),
       }).catch(err => console.error('[recalculate] Failed to fire AI analysis:', err))
     }
+
+    // Notify admins about diagnostic recalculation
+    notifyAdmins('diagnostic_recalculated', {
+      overallScore: result.overall_score,
+      stage: result.stage ?? null,
+      diagnosticId: diag?.id,
+    }, user_id)
 
     return NextResponse.json({ ok: true, data: { diagnostic: diag, point_a: result } })
   } catch (e) {

@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
+import { notifyAdmins } from '@/lib/notifications'
 
 // Service-role helper — bypasses RLS (profiles RLS has infinite recursion bug)
 function srBase() {
@@ -62,6 +63,11 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   )
   if (!upd?.ok) return NextResponse.json({ error: 'failed to update' }, { status: 500 })
   const updated = await upd.json()
+  notifyAdmins('expert_comment_edited', {
+    commentId: params.id,
+    authorId: user.id,
+    preview: text.slice(0, 200),
+  })
   return NextResponse.json({ data: Array.isArray(updated) ? updated[0] : updated })
 }
 
@@ -83,5 +89,9 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
 
   const del = await srFetch('DELETE', `expert_comments?id=eq.${params.id}`)
   if (!del?.ok) return NextResponse.json({ error: 'failed to delete' }, { status: 500 })
+  notifyAdmins('expert_comment_deleted', {
+    commentId: params.id,
+    authorId: user.id,
+  })
   return NextResponse.json({ ok: true })
 }

@@ -162,6 +162,14 @@ export async function loginAction(email: string, password: string) {
       data: { lastLogin: new Date() }
     })
 
+    // Fire-and-forget telegram/email notification
+    notifyAdmins('user_login', {
+      userName: user.name,
+      userEmail: user.email,
+      role: uiRole,
+      organization: user.org?.name,
+    }, user.id)
+
     return {
       success: true,
       user: {
