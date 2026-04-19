@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { prisma } from '@/lib/db'
+import { isPrivilegedViewer } from '@/lib/expert-auth'
 
 function isSuperAdmin(req: NextRequest): boolean {
   return req.cookies.get('aistart360_role')?.value === 'super_admin'
@@ -17,7 +18,9 @@ export async function GET(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  if (!isSuperAdmin(req)) {
+  // Read access: super_admin cookie OR Supabase session with expert/admin role
+  const cookieRole = req.cookies.get('aistart360_role')?.value ?? null
+  if (!(await isPrivilegedViewer(cookieRole))) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 

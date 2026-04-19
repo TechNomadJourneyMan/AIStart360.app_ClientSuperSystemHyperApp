@@ -58,3 +58,14 @@ export async function requireExpert(): Promise<ExpertViewer | null> {
   if (!viewer || !EXPERT_ROLES.has(viewer.role ?? '')) return null
   return { id: viewer.id, role: viewer.role, email: user.email ?? null }
 }
+
+/**
+ * Privileged-viewer gate for read-only endpoints shared between Giga Panel
+ * (super_admin cookie) and Expert portal (Supabase session with expert role).
+ * Returns true if the caller has EITHER credential.
+ */
+export async function isPrivilegedViewer(cookieValue: string | null): Promise<boolean> {
+  if (cookieValue === 'super_admin') return true
+  const viewer = await requireExpert()
+  return viewer !== null
+}
