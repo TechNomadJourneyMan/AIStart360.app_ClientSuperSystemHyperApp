@@ -254,11 +254,44 @@ async function getRecipient(userId: string): Promise<Recipient> {
  * Notify admins about an event. Non-blocking, fire-and-forget.
  * Tries email (Resend) and Telegram in parallel. Errors are logged, never thrown.
  */
+// ── Rate-limit cache ──────────────────────────────────────────────────────
+// In-memory dedupe: if the same (type+userId+signature) fires multiple times
+// within the window, only the first goes out to admins. Prevents spam on
+// bursty events (e.g. expert edits the same comment 5 times in a minute).
+// Lives on the Vercel function instance — resets on cold start, which is
+// fine for our purposes.
+const RATE_LIMIT_WINDOW_MS = 60_000  // 1 minute
+const rateLimitCache = new Map<string, number>()
+
+function rateLimitKey(type: string, userId: string | undefined, data: Record<string, unknown>): string {
+  // Include a small stable signature from data so edits of DIFFERENT entities
+  // still send independently. `commentId` / `id` / `preview` cover our cases.
+  const sig = (data.commentId ?? data.id ?? String(data.preview ?? '').slice(0, 40)) as string
+  return `${type}|${userId ?? ''}|${sig}`
+}
+
+function isRateLimited(key: string): boolean {
+  const now = Date.now()
+  // Opportunistic cleanup of stale keys to keep map small
+  if (rateLimitCache.size > 1000) {
+    for (const [k, t] of rateLimitCache) {
+      if (now - t > RATE_LIMIT_WINDOW_MS * 2) rateLimitCache.delete(k)
+    }
+  }
+  const last = rateLimitCache.get(key)
+  if (last && now - last < RATE_LIMIT_WINDOW_MS) return true
+  rateLimitCache.set(key, now)
+  return false
+}
+
 export async function notifyAdmins(
   type: NotificationType,
   data: Record<string, unknown>,
   userId?: string,
 ): Promise<void> {
+  // Rate-limit duplicate notifications within 60s
+  if (isRateLimited(rateLimitKey(type, userId, data))) return
+
   const payload: NotificationPayload = { type, userId, data }
   const adminEmail = process.env.ADMIN_NOTIFICATION_EMAIL || process.env.ADMIN_EMAIL
   const adminChatId = process.env.TELEGRAM_CHAT_ID
