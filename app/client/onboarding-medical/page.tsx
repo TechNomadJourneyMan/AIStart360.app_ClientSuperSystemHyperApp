@@ -22,7 +22,7 @@ export default function OnboardingMedicalPage() {
   const [success, setSuccess] = useState(false)
   const [qualityReport, setQualityReport] = useState<DataQualityReport | null>(null)
 
-  // Bootstrap user + pre-fill with their known email
+  // Bootstrap user + pre-fill with their known email + hydrate saved answers
   useEffect(() => {
     let cancelled = false
     ;(async () => {
@@ -31,7 +31,29 @@ export default function OnboardingMedicalPage() {
       if (!user) { router.replace('/login'); return }
       if (cancelled) return
       setUserId(user.id)
-      setValues((v) => ({ ...v, email: v.email || user.email || '' }))
+
+      // Load previously saved medical_* answers so user doesn't re-enter
+      const { data: rows } = await sb
+        .from('survey_answers')
+        .select('question_key, answer')
+        .eq('user_id', user.id)
+        .like('question_key', 'medical_%')
+
+      const saved: Record<string, string> = {}
+      for (const r of rows ?? []) {
+        const key = (r.question_key as string).replace(/^medical_/, '')
+        const a = r.answer as { value?: unknown } | null
+        const v = a?.value
+        if (typeof v === 'string') saved[key] = v
+      }
+
+      if (cancelled) return
+      setValues((v) => {
+        const base: Record<string, string> = { ...saved }
+        if (!base.email) base.email = user.email || ''
+        // anything user already typed in this session wins
+        return { ...base, ...v }
+      })
     })()
     return () => { cancelled = true }
   }, [router])
