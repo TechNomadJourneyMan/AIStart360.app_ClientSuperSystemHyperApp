@@ -14,6 +14,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { MEDICAL_INTAKE_FIELDS } from '@/lib/intake-schemas'
+import { validatePatientBase, type DataQualityReport } from '@/lib/data-quality'
 
 function srBase() {
   return {
@@ -38,11 +39,19 @@ async function srPost(path: string, body: unknown, extraHeaders: Record<string, 
   })
 }
 
-async function uploadFileToStorage(userId: string, file: File): Promise<string | null> {
+async function uploadFileToStorage(
+  userId: string,
+  file: File,
+  preReadBuffer?: Buffer,
+): Promise<string | null> {
   const { url, key } = srBase()
   const safeName = file.name.replace(/[^\w.\-]/g, '_')
   const objectPath = `${userId}/medical/${Date.now()}_${safeName}`
-  const buf = await file.arrayBuffer()
+  const buf = preReadBuffer ?? Buffer.from(await file.arrayBuffer())
+  // Copy into a fresh ArrayBuffer so DOM BlobPart typing is satisfied
+  const ab = new ArrayBuffer(buf.byteLength)
+  new Uint8Array(ab).set(buf)
+  const body = new Blob([ab], { type: file.type || 'application/octet-stream' })
   const res = await fetch(
     `${url}/storage/v1/object/documents/${objectPath}`,
     {
@@ -53,7 +62,7 @@ async function uploadFileToStorage(userId: string, file: File): Promise<string |
         'Content-Type': file.type || 'application/octet-stream',
         'x-upsert': 'true',
       },
-      body: buf,
+      body,
     },
   )
   if (!res.ok) {
@@ -161,14 +170,21 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'failed to save answers' }, { status: 500 })
   }
 
-  // ── 3. Upload patient base file if attached ───────────────────────────────
+  // ── 3. Upload patient base file if attached + validate ────────────────────
   const file = form.get('patient_base')
   let documentId: string | null = null
+  let qualityReport: DataQualityReport | null = null
+
   if (file && file instanceof File && file.size > 0) {
     if (file.size > 5 * 1024 * 1024) {
       return NextResponse.json({ error: 'file too large (>5MB)' }, { status: 400 })
     }
-    const storedPath = await uploadFileToStorage(user.id, file)
+
+    // Read buffer once — we use it for BOTH upload AND validation (no 2nd download)
+    const buf = Buffer.from(await file.arrayBuffer())
+
+    // Upload to Storage
+    const storedPath = await uploadFileToStorage(user.id, file, buf)
     if (storedPath) {
       const docRes = await srPost('documents', {
         user_id: user.id,
@@ -186,11 +202,19 @@ export async function POST(req: NextRequest) {
         console.error('[onboarding/medical] document insert failed', docRes.status, await docRes.text().catch(() => ''))
       }
     }
+
+    // Validate in-memory (no need to re-download)
+    try {
+      qualityReport = validatePatientBase(buf, file.name)
+    } catch (e) {
+      console.error('[onboarding/medical] validation error', e)
+    }
   }
 
   return NextResponse.json({
     ok: true,
     companyId,
     documentId,
+    qualityReport,
   })
 }

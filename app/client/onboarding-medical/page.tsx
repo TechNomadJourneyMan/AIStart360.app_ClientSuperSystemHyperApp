@@ -10,6 +10,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { MEDICAL_INTAKE_FIELDS, type IntakeField } from '@/lib/intake-schemas'
+import type { DataQualityReport, DataQualityIssue } from '@/lib/data-quality'
 
 export default function OnboardingMedicalPage() {
   const router = useRouter()
@@ -19,6 +20,7 @@ export default function OnboardingMedicalPage() {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
+  const [qualityReport, setQualityReport] = useState<DataQualityReport | null>(null)
 
   // Bootstrap user + pre-fill with their known email
   useEffect(() => {
@@ -81,8 +83,14 @@ export default function OnboardingMedicalPage() {
         const body = (await res.json().catch(() => ({}))) as { error?: string }
         throw new Error(body.error ?? `HTTP ${res.status}`)
       }
+      const body = (await res.json()) as { qualityReport?: DataQualityReport | null }
+      setQualityReport(body.qualityReport ?? null)
       setSuccess(true)
-      setTimeout(() => router.replace('/client/dashboard'), 1500)
+      // If there are critical quality issues — let user see them before redirect
+      const hasCriticalIssues = body.qualityReport?.issues.some((i) => i.severity === 'critical')
+      if (!hasCriticalIssues) {
+        setTimeout(() => router.replace('/client/dashboard'), 3500)
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Не удалось отправить')
     } finally {
@@ -139,9 +147,11 @@ export default function OnboardingMedicalPage() {
           {success && (
             <div className="rounded-xl bg-primary/5 border border-primary/20 p-3 text-sm text-primary inline-flex items-center gap-2">
               <span className="material-symbols-outlined text-base">check_circle</span>
-              Анкета отправлена! Переводим вас в кабинет…
+              Анкета отправлена! {qualityReport ? 'Отчёт по качеству данных ниже.' : 'Переводим в кабинет…'}
             </div>
           )}
+
+          {qualityReport && <QualityReportBlock report={qualityReport} />}
 
           <div className="pt-3 flex items-center justify-between gap-3">
             <p className="text-[11px] text-on-surface-variant/70">
@@ -248,6 +258,82 @@ function FieldRow({ field, value, onChange, file, onFileChange, disabled }: Fiel
       {field.hint && (
         <p className="text-[10px] text-on-surface-variant mt-1.5">{field.hint}</p>
       )}
+    </div>
+  )
+}
+
+// ── Data-quality report UI ──────────────────────────────────────────────────
+
+const ISSUE_STYLE: Record<DataQualityIssue['severity'], { bg: string; text: string; icon: string }> = {
+  critical: { bg: 'bg-error/10 border-error/20',       text: 'text-error',        icon: 'error' },
+  high:     { bg: 'bg-error/5 border-error/15',        text: 'text-error/90',     icon: 'warning' },
+  medium:   { bg: 'bg-amber-500/5 border-amber-500/20', text: 'text-amber-300',   icon: 'info' },
+  low:      { bg: 'bg-white/[0.03] border-white/[0.06]', text: 'text-on-surface-variant', icon: 'info' },
+  info:     { bg: 'bg-blue-500/5 border-blue-500/20',  text: 'text-blue-300',     icon: 'lightbulb' },
+}
+
+function QualityReportBlock({ report }: { report: DataQualityReport }) {
+  const critical = report.issues.filter((i) => i.severity === 'critical')
+  const high = report.issues.filter((i) => i.severity === 'high')
+  const others = report.issues.filter((i) => i.severity !== 'critical' && i.severity !== 'high')
+
+  return (
+    <div className="rounded-xl bg-surface-container border border-white/[0.06] p-4 mt-3">
+      <div className="flex items-start gap-3 pb-3 border-b border-white/[0.04]">
+        <span
+          className={`material-symbols-outlined text-2xl flex-shrink-0 ${
+            report.ok ? 'text-primary' : 'text-error'
+          }`}
+        >
+          {report.ok ? 'check_circle' : 'warning'}
+        </span>
+        <div>
+          <p className="text-sm font-medium text-on-surface">
+            Файл: {report.rowCount} строк, {report.columnCount} колонок
+          </p>
+          <p className="text-xs text-on-surface-variant mt-0.5">{report.summary}</p>
+        </div>
+      </div>
+
+      {report.issues.length > 0 && (
+        <ul className="space-y-2 mt-3">
+          {[...critical, ...high, ...others].map((issue, i) => {
+            const s = ISSUE_STYLE[issue.severity]
+            const pct = issue.count != null && issue.total ? Math.round((issue.count / issue.total) * 100) : null
+            return (
+              <li key={i} className={`flex items-start gap-2 rounded-lg border p-2.5 text-xs ${s.bg} ${s.text}`}>
+                <span className="material-symbols-outlined text-[15px] flex-shrink-0 mt-0.5">{s.icon}</span>
+                <div>
+                  <p>
+                    {issue.message}
+                    {issue.count != null && (
+                      <span className="ml-1 font-mono text-[11px] opacity-80">
+                        — {issue.count}{issue.total ? `/${issue.total}` : ''}{pct !== null ? ` (${pct}%)` : ''}
+                      </span>
+                    )}
+                  </p>
+                </div>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+
+      <details className="mt-3">
+        <summary className="text-[11px] text-on-surface-variant cursor-pointer hover:text-on-surface">
+          Найденные колонки
+        </summary>
+        <div className="mt-2 text-[11px] text-on-surface-variant font-mono space-y-0.5">
+          {Object.entries(report.detectedColumns).map(([k, v]) => (
+            <div key={k}>
+              <span className={v ? 'text-primary' : 'text-on-surface-variant/50'}>
+                {v ? '✓' : '✗'}
+              </span>{' '}
+              {k} → <span className="text-on-surface">{v ?? '(не найдено)'}</span>
+            </div>
+          ))}
+        </div>
+      </details>
     </div>
   )
 }
