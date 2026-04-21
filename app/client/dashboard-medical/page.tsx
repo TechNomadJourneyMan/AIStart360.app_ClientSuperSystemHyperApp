@@ -198,29 +198,46 @@ function Kpi({ label, value, icon, tone = 'default' }: { label: string; value: s
 
 function DownloadActions() {
   return (
-    <section className="flex flex-col md:flex-row gap-3">
+    <section className="grid grid-cols-1 md:grid-cols-3 gap-3">
       <DownloadCard
-        title="Скачать PDF-стратегию"
+        title="PDF-стратегия"
         description="8-страничный документ с аудитом базы, картой потерь, 9 связками и планом на 30/60/90 дней"
         icon="picture_as_pdf"
         href="/api/medical/strategy/pdf"
+        download
       />
       <DownloadCard
-        title="Скачать XLSX для обзвона"
+        title="XLSX для обзвона"
         description="4 листа: обзор, список приоритизированных пациентов, скрипты по сегментам, инструкция оператору"
         icon="table_view"
         href="/api/medical/strategy/xlsx"
+        download
+      />
+      <DownloadCard
+        title="WhatsApp-сценарии"
+        description="Библиотека готовых шаблонов по 6 категориям: cross-sell, upsell, поведенческие, сезонные"
+        icon="chat"
+        href="/client/scenarios"
       />
     </section>
   )
 }
 
-function DownloadCard({ title, description, icon, href }: { title: string; description: string; icon: string; href: string }) {
+function DownloadCard({
+  title, description, icon, href, download,
+}: {
+  title: string
+  description: string
+  icon: string
+  href: string
+  download?: boolean
+}) {
+  const linkProps = download ? { download: true } : {}
   return (
     <a
       href={href}
-      download
-      className="flex-1 rounded-2xl bg-primary/5 border border-primary/20 hover:bg-primary/10 transition-all p-5 flex items-start gap-4"
+      {...linkProps}
+      className="rounded-2xl bg-primary/5 border border-primary/20 hover:bg-primary/10 transition-all p-5 flex items-start gap-4"
     >
       <div className="w-12 h-12 rounded-xl bg-primary/15 flex items-center justify-center flex-shrink-0">
         <span className="material-symbols-outlined text-primary text-2xl">{icon}</span>
@@ -229,8 +246,8 @@ function DownloadCard({ title, description, icon, href }: { title: string; descr
         <h3 className="font-headline text-base font-bold text-on-surface">{title}</h3>
         <p className="text-xs text-on-surface-variant mt-1 line-clamp-2">{description}</p>
         <span className="inline-flex items-center gap-1 text-xs text-primary font-medium mt-2">
-          <span className="material-symbols-outlined text-sm">download</span>
-          Скачать
+          <span className="material-symbols-outlined text-sm">{download ? 'download' : 'arrow_forward'}</span>
+          {download ? 'Скачать' : 'Открыть'}
         </span>
       </div>
     </a>
