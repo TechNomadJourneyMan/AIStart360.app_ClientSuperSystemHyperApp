@@ -77,8 +77,9 @@ export default function GigaPanelLoginPage() {
       <div className="relative z-10 w-full max-w-sm px-4">
         <div className="rounded-2xl bg-white/[0.04] border border-white/[0.08] backdrop-blur-xl p-8">
           <div className="flex flex-col items-center mb-8">
-            <div className="w-12 h-12 rounded-2xl bg-blue-500/20 border border-blue-500/30 flex items-center justify-center mb-4">
-              <Shield size={22} className="text-blue-400" />
+            <div className="w-12 h-12 rounded-2xl bg-blue-500/20 border border-blue-500/30 flex items-center justify-center mb-4 overflow-hidden">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/logo-icon-blue.svg" alt="AIStart360" className="w-8 h-8" />
             </div>
             <p className="text-xs font-semibold text-blue-400 tracking-[0.2em] uppercase mb-1">
               ГИГА-Панель

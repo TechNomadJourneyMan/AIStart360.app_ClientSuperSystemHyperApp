@@ -65,7 +65,8 @@ export default function GigaPanelPage() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6 md:mb-8">
         <div>
           <div className="hidden md:flex items-center gap-2 mb-1">
-            <Shield size={14} className="text-blue-400" />
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/logo-icon-blue.svg" alt="AIStart360" className="w-4 h-4" />
             <span className="text-xs font-semibold text-blue-400 tracking-[0.15em] uppercase">
               ГИГА-Панель
             </span>

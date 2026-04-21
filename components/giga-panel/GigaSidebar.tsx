@@ -61,8 +61,9 @@ export function GigaSidebar({ isOpen = false, onClose }: GigaSidebarProps) {
       {/* Logo */}
       <div className="px-5 md:px-6 pt-6 md:pt-8 pb-4 md:pb-6 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-blue-500/20 border border-blue-500/30 flex items-center justify-center">
-            <Shield size={18} className="text-blue-400" />
+          <div className="w-9 h-9 rounded-xl bg-blue-500/20 border border-blue-500/30 flex items-center justify-center overflow-hidden">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/logo-icon-blue.svg" alt="AIStart360" className="w-6 h-6" />
           </div>
           <div>
             <p className="text-xs font-semibold text-blue-400 tracking-[0.15em] uppercase">ГИГА-Панель</p>
