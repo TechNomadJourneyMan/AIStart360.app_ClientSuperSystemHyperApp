@@ -56,6 +56,20 @@ export default function OnboardingPage() {
         const { data: { user } } = await supabase.auth.getUser()
         setUserId(user?.id ?? null)
 
+        // Redirect medical-vertical users to their 8-field clinic intake —
+        // the generic 12-step wizard doesn't fit the clinic flow.
+        if (user) {
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('vertical')
+            .eq('id', user.id)
+            .maybeSingle()
+          if (profile?.vertical === 'medical') {
+            router.replace('/client/onboarding-medical')
+            return
+          }
+        }
+
         // 1. Try localStorage
         const raw = localStorage.getItem(STORAGE_KEY)
         if (raw) {
