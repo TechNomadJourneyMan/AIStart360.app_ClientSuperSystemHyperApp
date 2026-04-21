@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase-client'
 import { PointARadarWidget } from '@/components/dashboard/PointARadarWidget'
 import { ExpertCommentsSection } from '@/components/client/ExpertCommentsSection'
@@ -182,6 +183,7 @@ function formatBytes(b: number | null) {
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 export default function ClientDashboard() {
+  const router = useRouter()
   const [diag, setDiag] = useState<Diagnostic | null>(null)
   const [company, setCompany] = useState<{ name: string; industry: string | null; employee_count: number | null } | null>(null)
   const [documents, setDocuments] = useState<DocumentRow[]>([])
@@ -191,13 +193,24 @@ export default function ClientDashboard() {
   const [aiStatus, setAiStatus] = useState<AIStatus>('none')
   const [surveyData, setSurveyData] = useState<{ answers: Record<string, unknown>; completed_steps: number[] } | null>(null)
 
+  // Vertical-aware redirect: medical clinics get their own dashboard
   useEffect(() => {
     const sb = createClient()
-    sb.auth.getSession().then(({ data }) => {
+    sb.auth.getSession().then(async ({ data }) => {
       const u = data.session?.user
-      if (u?.id) setUserId(u.id)
+      if (!u?.id) return
+      const { data: profile } = await sb
+        .from('profiles')
+        .select('vertical')
+        .eq('id', u.id)
+        .maybeSingle()
+      if (profile?.vertical === 'medical') {
+        router.replace('/client/dashboard-medical')
+        return
+      }
+      setUserId(u.id)
     })
-  }, [])
+  }, [router])
 
   const loadData = useCallback(async () => {
     if (!userId) return
