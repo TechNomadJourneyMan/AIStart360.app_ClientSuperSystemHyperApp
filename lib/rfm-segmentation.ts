@@ -147,17 +147,18 @@ interface ColumnMap {
 }
 
 function detectColumns(headers: string[]): ColumnMap {
-  const norm = (s: string) => s.toLowerCase().replace(/ё/g, 'е')
+  const norm = (s: string) => s.toLowerCase().replace(/ё/g, 'е').trim()
   const find = (patterns: RegExp[]): string | null => {
     for (const h of headers) if (patterns.some((p) => p.test(norm(h)))) return h
     return null
   }
+  // YCLIENTS export columns: Имя, Телефон, Потратил ₸, Количество посещений, Последний визит
   return {
-    name_col:       find([/фио|имя.*фам|full.*name|клиент/]),
-    phone_col:      find([/телефон|phone|mobile|моб/]),
-    last_visit_col: find([/последни[йе].*при|last.*visit|последн.*посещен|дата.*визит/]),
-    visits_col:     find([/кол.во.*при|приём|визит.*всего|count.*visit|frequency/]),
-    sum_col:        find([/общая.*сумма|сумма|всего|total|ltv|monetary/]),
+    name_col:       find([/^имя$|фио|имя.*фам|full.*name|клиент/]),
+    phone_col:      find([/^телефон$|phone|^mobile|^моб/]),
+    last_visit_col: find([/последни[йе].*визит|последни[йе].*при|last.*visit|последн.*посещен|дата.*визит/]),
+    visits_col:     find([/количество.*посещ|кол.во.*при|кол.во.*визит|^приём|count.*visit|frequency/]),
+    sum_col:        find([/потратил|оплатил|общая.*сумма|^сумма$|всего|total|ltv|monetary/]),
   }
 }
 

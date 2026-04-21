@@ -49,15 +49,17 @@ type LogicalField =
   | 'consent'
   | 'birth_date'
 
+// Patterns match YCLIENTS and common CRM exports (e.g. "Имя", "Потратил, ₸",
+// "Количество посещений", "Последний визит"). Lowercased + ё→е before match.
 const FIELD_SPECS: FieldSpec[] = [
-  { id: 'full_name',   label: 'ФИО',           patterns: [/имя.*фам|фио|full.*name|name|клиент/], required: true,  expectedFillRate: 0.95 },
-  { id: 'phone',       label: 'Телефон',       patterns: [/телефон|phone|mobile|моб/],            required: true,  expectedFillRate: 0.90 },
-  { id: 'first_visit', label: 'Первый приём',  patterns: [/первы[йи].*приём|первое.*посещен|first.*visit|регистраци/], required: false, expectedFillRate: 0.70 },
-  { id: 'last_visit',  label: 'Последний приём', patterns: [/последни[йе].*приём|последн.*посещен|last.*visit|дата.*визит/], required: true,  expectedFillRate: 0.70 },
-  { id: 'visits_count',label: 'Количество приёмов', patterns: [/кол.во.*приё|приём|визит.*всего|count.*visit|frequency/],   required: true,  expectedFillRate: 0.70 },
-  { id: 'total_sum',   label: 'Общая сумма',   patterns: [/общая.*сумма|сумма|всего|total|ltv|monetary/],                 required: true,  expectedFillRate: 0.50 },
-  { id: 'consent',     label: 'Согласие на рассылку', patterns: [/соглас|consent/],                                         required: false, expectedFillRate: 0 },
-  { id: 'birth_date',  label: 'Дата рождения', patterns: [/дата.*рожд|birth.*date|возраст/],                               required: false, expectedFillRate: 0 },
+  { id: 'full_name',   label: 'ФИО / Имя',     patterns: [/^имя$|фио|имя.*фам|full.*name|name|клиент/], required: true,  expectedFillRate: 0.95 },
+  { id: 'phone',       label: 'Телефон',       patterns: [/^телефон$|phone|^mobile|^моб/],            required: true,  expectedFillRate: 0.90 },
+  { id: 'first_visit', label: 'Первый визит',  patterns: [/первы[йи].*визит|первы[йи].*приём|первое.*посещен|first.*visit|регистраци/], required: false, expectedFillRate: 0.70 },
+  { id: 'last_visit',  label: 'Последний визит', patterns: [/последни[йе].*визит|последни[йе].*приём|последн.*посещен|last.*visit|дата.*визит/], required: true,  expectedFillRate: 0.70 },
+  { id: 'visits_count',label: 'Количество посещений', patterns: [/количество.*посещ|кол.во.*приё|кол.во.*визит|^приём|визит.*всего|count.*visit|frequency/], required: true,  expectedFillRate: 0.70 },
+  { id: 'total_sum',   label: 'Сумма (LTV)',   patterns: [/потратил|оплатил|общая.*сумма|^сумма$|всего|total|ltv|monetary/], required: true,  expectedFillRate: 0.50 },
+  { id: 'consent',     label: 'Согласие на рассылку', patterns: [/соглас.*рассыл|соглас|consent/],      required: false, expectedFillRate: 0 },
+  { id: 'birth_date',  label: 'Дата рождения', patterns: [/дата.*рожд|birth.*date|возраст/],            required: false, expectedFillRate: 0 },
 ]
 
 function normalizeHeader(h: string): string {
