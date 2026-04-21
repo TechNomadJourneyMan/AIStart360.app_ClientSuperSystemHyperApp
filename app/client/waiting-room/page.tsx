@@ -84,7 +84,9 @@ export default function WaitingRoomPage() {
 
         if (data.status === 'approved') {
           setIsRedirecting(true)
-          setTimeout(() => router.push('/client/dashboard'), 2000)
+          // Welcome-screen itself decides whether to show picker, skip to
+          // onboarding, or skip straight to dashboard based on profile state.
+          setTimeout(() => router.push('/client/welcome'), 2000)
         }
       }
     } catch {}
