@@ -294,11 +294,19 @@ export async function notifyAdmins(
 
   const payload: NotificationPayload = { type, userId, data }
   const adminEmail = process.env.ADMIN_NOTIFICATION_EMAIL || process.env.ADMIN_EMAIL
-  const adminChatId = process.env.TELEGRAM_CHAT_ID
 
-  Promise.allSettled([sendEmail(payload, adminEmail), sendTelegram(payload, adminChatId)]).catch(
-    () => {},
-  )
+  // Multi-admin Telegram: TELEGRAM_ADMIN_CHAT_IDS="id1,id2,id3" (preferred).
+  // Falls back to legacy TELEGRAM_CHAT_ID for single-admin setups.
+  const rawIds = process.env.TELEGRAM_ADMIN_CHAT_IDS || process.env.TELEGRAM_CHAT_ID || ''
+  const adminChatIds = rawIds
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s) => /^-?\d+$/.test(s))
+
+  const tasks: Array<Promise<unknown>> = [sendEmail(payload, adminEmail)]
+  for (const cid of adminChatIds) tasks.push(sendTelegram(payload, cid))
+
+  Promise.allSettled(tasks).catch(() => {})
 }
 
 /**
