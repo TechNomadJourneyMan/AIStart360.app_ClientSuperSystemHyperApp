@@ -1,13 +1,31 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Shield, Eye, EyeOff, Lock } from 'lucide-react'
+
+// Persisted key — note that localStorage is per-origin, so anyone with access
+// to this machine can read it. Use only on trusted personal devices.
+const REMEMBER_KEY = 'aistart360_giga_password'
 
 export default function GigaPanelLoginPage() {
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
+  const [remember, setRemember] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+
+  // Restore saved password (if user opted in previously)
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(REMEMBER_KEY)
+      if (saved) {
+        setPassword(saved)
+        setRemember(true)
+      }
+    } catch {
+      // privacy mode / sandboxed — ignore
+    }
+  }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -22,6 +40,12 @@ export default function GigaPanelLoginPage() {
       })
 
       if (res.ok) {
+        // Save on success — we only persist verified passwords to avoid
+        // remembering wrong attempts. Clear if user unchecked the box.
+        try {
+          if (remember) localStorage.setItem(REMEMBER_KEY, password)
+          else localStorage.removeItem(REMEMBER_KEY)
+        } catch { /* ignore */ }
         window.location.href = '/admin-giga-panel'
       } else {
         setError('Неверный пароль')
@@ -64,13 +88,27 @@ export default function GigaPanelLoginPage() {
             </p>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-4" autoComplete="on">
+            {/* Hidden username field helps the browser password manager
+                associate the saved credential with this form */}
+            <input
+              type="text"
+              name="username"
+              value="giga-admin"
+              readOnly
+              hidden
+              autoComplete="username"
+            />
+
             <div className="relative">
               <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">
                 <Lock size={15} />
               </div>
               <input
+                id="giga-password"
                 type={showPassword ? 'text' : 'password'}
+                name="password"
+                autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="Пароль администратора"
@@ -84,10 +122,21 @@ export default function GigaPanelLoginPage() {
                 type="button"
                 onClick={() => setShowPassword((v) => !v)}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+                aria-label={showPassword ? 'Скрыть пароль' : 'Показать пароль'}
               >
                 {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
               </button>
             </div>
+
+            <label className="flex items-center gap-2 text-xs text-slate-400 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={remember}
+                onChange={(e) => setRemember(e.target.checked)}
+                className="w-3.5 h-3.5 rounded border-white/[0.12] bg-white/[0.05] text-blue-500 focus:ring-blue-500/40 focus:ring-offset-0"
+              />
+              Запомнить пароль на этом устройстве
+            </label>
 
             {error && (
               <p className="text-red-400 text-xs text-center">{error}</p>
@@ -104,6 +153,11 @@ export default function GigaPanelLoginPage() {
             >
               {loading ? 'Проверка...' : 'Войти'}
             </button>
+
+            <p className="text-[10px] text-slate-600 text-center leading-relaxed">
+              Браузер также предложит сохранить пароль в свой менеджер — это
+              безопаснее, чем локальное хранение.
+            </p>
           </form>
         </div>
       </div>
