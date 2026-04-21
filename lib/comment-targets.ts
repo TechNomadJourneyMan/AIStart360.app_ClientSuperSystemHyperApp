@@ -17,6 +17,7 @@ export type TargetGroup =
   | 'gri'
   | 'pulse'
   | 'survey'
+  | 'clinic'
 
 export interface CommentTarget {
   id: string
@@ -147,12 +148,53 @@ const PULSE_TARGETS: CommentTarget[] = [
   { id: 'pulse:crm:amocrm',          label: 'AmoCRM интеграция',                group: 'pulse', section: 'CRM' },
 ]
 
+// ── Clinic vertical (medical) ───────────────────────────────────────────────
+// Segment / Bundle / Loss ids mirror the DB columns so an expert comment on
+// e.g. 'clinic:bundle:no_show' shows up next to that bundle on the client
+// dashboard.
+const CLINIC_TARGETS: CommentTarget[] = [
+  // 8 RFM segments
+  { id: 'clinic:segment:vip_retention',    label: 'VIP удержание',      group: 'clinic', section: 'Сегменты' },
+  { id: 'clinic:segment:vip_reactivation', label: 'VIP реактивация',    group: 'clinic', section: 'Сегменты' },
+  { id: 'clinic:segment:loyal_active',     label: 'Лояльные активные',  group: 'clinic', section: 'Сегменты' },
+  { id: 'clinic:segment:churn_risk',       label: 'Риск оттока',        group: 'clinic', section: 'Сегменты' },
+  { id: 'clinic:segment:sleeping',         label: 'Спящие',             group: 'clinic', section: 'Сегменты' },
+  { id: 'clinic:segment:one_time_fresh',   label: 'Разовые свежие',     group: 'clinic', section: 'Сегменты' },
+  { id: 'clinic:segment:one_time_old',     label: 'Разовые старые',     group: 'clinic', section: 'Сегменты' },
+  { id: 'clinic:segment:dead_lead',        label: 'Мёртвые лиды',       group: 'clinic', section: 'Сегменты' },
+  // 9 growth bundles
+  { id: 'clinic:bundle:no_show',                label: 'Связка: No-show защита',           group: 'clinic', section: 'Связки' },
+  { id: 'clinic:bundle:cross_sell_after_ekg',   label: 'Связка: Cross-sell после ЭКГ',     group: 'clinic', section: 'Связки' },
+  { id: 'clinic:bundle:follow_up_diagnostics',  label: 'Связка: Follow-up диагностики',    group: 'clinic', section: 'Связки' },
+  { id: 'clinic:bundle:reactivation',           label: 'Связка: Реактивация базы',         group: 'clinic', section: 'Связки' },
+  { id: 'clinic:bundle:nps_referral',           label: 'Связка: NPS + реферал',            group: 'clinic', section: 'Связки' },
+  { id: 'clinic:bundle:instant_callback',       label: 'Связка: Callback 60 сек',          group: 'clinic', section: 'Связки' },
+  { id: 'clinic:bundle:upsell_at_booking',      label: 'Связка: Upsell при подтверждении', group: 'clinic', section: 'Связки' },
+  { id: 'clinic:bundle:seasonal_campaigns',     label: 'Связка: Сезонные кампании',        group: 'clinic', section: 'Связки' },
+  { id: 'clinic:bundle:chronic_control',        label: 'Связка: Контроль хроников',        group: 'clinic', section: 'Связки' },
+  // 9 revenue loss categories
+  { id: 'clinic:loss:no_shows',                label: 'Потери: No-show',                 group: 'clinic', section: 'Потери' },
+  { id: 'clinic:loss:missed_calls',            label: 'Потери: Пропущенные звонки',      group: 'clinic', section: 'Потери' },
+  { id: 'clinic:loss:missing_follow_up',       label: 'Потери: Нет follow-up',           group: 'clinic', section: 'Потери' },
+  { id: 'clinic:loss:missing_upsell',          label: 'Потери: Нет upsell',              group: 'clinic', section: 'Потери' },
+  { id: 'clinic:loss:missing_reactivation',    label: 'Потери: Нет реактивации',         group: 'clinic', section: 'Потери' },
+  { id: 'clinic:loss:missing_chronic_control', label: 'Потери: Провал с хрониками',      group: 'clinic', section: 'Потери' },
+  { id: 'clinic:loss:weak_nps',                label: 'Потери: Слабый NPS',              group: 'clinic', section: 'Потери' },
+  { id: 'clinic:loss:missing_seasonal',        label: 'Потери: Нет сезонных кампаний',   group: 'clinic', section: 'Потери' },
+  { id: 'clinic:loss:post_diagnostic_drop',    label: 'Потери: Пост-диагностический провал', group: 'clinic', section: 'Потери' },
+  // Clinic intake items
+  { id: 'clinic:intake:patient_base',          label: 'Загрузка: База пациентов',        group: 'clinic', section: 'Anketa' },
+  { id: 'clinic:intake:pricelist',             label: 'Загрузка: Прейскурант',           group: 'clinic', section: 'Anketa' },
+  { id: 'clinic:intake:services',              label: 'Загрузка: Услуги',                group: 'clinic', section: 'Anketa' },
+]
+
 // ── Canonical flat registry ──────────────────────────────────────────────────
 export const TARGETS: CommentTarget[] = [
   ...POINT_A_TARGETS,
   ...DASHBOARD_TARGETS,
   ...GRI_TARGETS,
   ...PULSE_TARGETS,
+  ...CLINIC_TARGETS,
 ]
 
 const TARGETS_BY_ID = new Map(TARGETS.map((t) => [t.id, t]))
@@ -198,6 +240,7 @@ export const GROUP_LABEL: Record<TargetGroup, string> = {
   gri:       'GRI',
   pulse:     'GRI Pulse',
   survey:    'Анкета',
+  clinic:    'Клиника',
 }
 
 export const GROUP_ICON: Record<TargetGroup, string> = {
@@ -207,6 +250,7 @@ export const GROUP_ICON: Record<TargetGroup, string> = {
   gri:       'target',
   pulse:     'monitor_heart',
   survey:    'assignment',
+  clinic:    'medical_services',
 }
 
 export const GROUP_CHIP: Record<TargetGroup, string> = {
@@ -216,6 +260,7 @@ export const GROUP_CHIP: Record<TargetGroup, string> = {
   gri:       'bg-emerald-500/10 text-emerald-300 border-emerald-500/20',
   pulse:     'bg-amber-500/10 text-amber-300 border-amber-500/20',
   survey:    'bg-violet-500/10 text-violet-300 border-violet-500/20',
+  clinic:    'bg-teal-500/10 text-teal-300 border-teal-500/20',
 }
 
 export const GROUP_ORDER: TargetGroup[] = [
@@ -225,6 +270,7 @@ export const GROUP_ORDER: TargetGroup[] = [
   'gri',
   'pulse',
   'survey',
+  'clinic',
 ]
 
 export function groupOf(id: string | null | undefined): TargetGroup {
