@@ -81,6 +81,8 @@ export function listExtractors(): Array<{ vertical: string; docType: string; nam
 // Phase 4: medical extractors (patient-base, clinic-bundles, revenue-losses)
 // Phase 5: brand-guide + vision
 // -----------------------------------------------------------------------------
-// (Intentionally empty in Phase 0 — just the skeleton.)
+
+// Side-effect import: self-registers surveyExtractor under (generic|medical, 'survey')
+import './survey/survey-extractor'
 
 export type { Extractor, ExtractorContext, ExtractedEntity, ExtractorRegistry, AiRunStep } from './types'
