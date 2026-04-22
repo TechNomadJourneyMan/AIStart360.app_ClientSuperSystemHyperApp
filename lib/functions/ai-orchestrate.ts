@@ -22,6 +22,10 @@ import {
   runSurveyExtractor,
   persistExtractions,
   applyConsensus,
+  loadDocument,
+  parseAndClassify,
+  runDocumentExtractor,
+  stampDocumentProcessed,
 } from '@/lib/ai/pipeline-steps'
 
 // -----------------------------------------------------------------------------
@@ -91,11 +95,67 @@ export const aiOrchestrate = inngest.createFunction(
             meta: result as unknown as Record<string, unknown>,
           })
         })
+      } else if (trigger === 'document_uploaded') {
+        if (!documentId) throw new Error('document_uploaded trigger requires documentId')
+
+        const { doc, parsed, classification } = await step.run('parse-and-classify', async () => {
+          const d = await loadDocument(documentId)
+          if (!d) throw new Error(`document ${documentId} not found`)
+          const pc = await parseAndClassify(d)
+          steps.push({
+            name: 'parse-and-classify',
+            status: 'completed',
+            meta: {
+              docType: pc.classification.doc_type,
+              vertical: pc.classification.vertical,
+              confidence: pc.classification.confidence,
+              wordCount: pc.parsed.metadata.wordCount,
+            },
+          })
+          return { doc: d, parsed: pc.parsed, classification: pc.classification }
+        })
+
+        // Refine context with classifier output
+        if (!verticalHint && classification.vertical) ctx.vertical = classification.vertical
+        ctx.classifiedType = classification.doc_type
+        ctx.classificationConf = classification.confidence
+
+        const { entities, extractorName } = await step.run('extract-document', async () => {
+          const r = await runDocumentExtractor(parsed, ctx, classification.doc_type)
+          steps.push({
+            name: 'extract-document',
+            status: r.entities.length ? 'completed' : 'skipped',
+            meta: { entityCount: r.entities.length, extractor: r.extractorName },
+          })
+          return r
+        })
+
+        if (entities.length) {
+          const persisted = await step.run('persist-extractions', async () => {
+            const rows = await persistExtractions(entities, ctx)
+            steps.push({ name: 'persist-extractions', status: 'completed', meta: { persistedCount: rows.length } })
+            return rows
+          })
+
+          await step.run('consensus', async () => {
+            const result = await applyConsensus(persisted, ctx)
+            steps.push({
+              name: 'consensus',
+              status: 'completed',
+              meta: result as unknown as Record<string, unknown>,
+            })
+          })
+        }
+
+        await step.run('stamp-document', async () => {
+          await stampDocumentProcessed(documentId, classification, extractorName)
+          steps.push({ name: 'stamp-document', status: 'completed' })
+        })
       } else {
         steps.push({
-          name: 'document-trigger-placeholder',
+          name: 'unknown-trigger',
           status: 'skipped',
-          meta: { note: 'Document extractors land in Phase 2' },
+          meta: { trigger },
         })
       }
 
