@@ -40,7 +40,7 @@ export default function GigaPanelLayout({ children }: { children: React.ReactNod
 
       {/* Main content */}
       <main className="md:pl-64 min-h-screen">
-        <div className="pt-16 md:pt-0 p-4 md:p-8">{children}</div>
+        <div className="pt-20 md:pt-10 px-4 md:px-8 pb-8 md:pb-10">{children}</div>
       </main>
     </div>
   )
