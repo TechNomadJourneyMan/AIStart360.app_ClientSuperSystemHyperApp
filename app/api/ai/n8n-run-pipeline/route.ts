@@ -19,9 +19,13 @@ import { NextResponse, type NextRequest } from 'next/server'
 
 import {
   applyConsensus,
+  loadDocument,
   loadSurveyAnswers,
+  parseAndClassify,
   persistExtractions,
+  runDocumentExtractor,
   runSurveyExtractor,
+  stampDocumentProcessed,
 } from '@/lib/ai/pipeline-steps'
 import { completeRun } from '@/lib/ai/orchestrator'
 import type { AiRunStep, ExtractorContext } from '@/lib/ai/extractors/types'
@@ -72,14 +76,14 @@ export async function POST(req: NextRequest) {
   const steps: AiRunStep[] = []
 
   try {
-    const answers = await loadSurveyAnswers(payload.userId)
-    steps.push({ name: 'load-survey', status: 'completed', meta: { count: answers.length } })
-
     if (
       payload.trigger === 'survey_completed' ||
       payload.trigger === 'manual_rerun' ||
       payload.trigger === 'snapshot_changed'
     ) {
+      const answers = await loadSurveyAnswers(payload.userId)
+      steps.push({ name: 'load-survey', status: 'completed', meta: { count: answers.length } })
+
       const entities = await runSurveyExtractor(answers, ctx)
       steps.push({ name: 'extract-survey', status: 'completed', meta: { entityCount: entities.length } })
 
@@ -92,11 +96,54 @@ export async function POST(req: NextRequest) {
         status: 'completed',
         meta: result as unknown as Record<string, unknown>,
       })
+    } else if (payload.trigger === 'document_uploaded') {
+      if (!payload.documentId) throw new Error('document_uploaded requires documentId')
+
+      const doc = await loadDocument(payload.documentId)
+      if (!doc) throw new Error(`document ${payload.documentId} not found`)
+
+      const { parsed, classification } = await parseAndClassify(doc)
+      steps.push({
+        name: 'parse-and-classify',
+        status: 'completed',
+        meta: {
+          docType: classification.doc_type,
+          vertical: classification.vertical,
+          confidence: classification.confidence,
+          wordCount: parsed.metadata.wordCount,
+        },
+      })
+
+      if (!payload.verticalHint && classification.vertical) ctx.vertical = classification.vertical
+      ctx.classifiedType = classification.doc_type
+      ctx.classificationConf = classification.confidence
+
+      const { entities, extractorName } = await runDocumentExtractor(parsed, ctx, classification.doc_type)
+      steps.push({
+        name: 'extract-document',
+        status: entities.length ? 'completed' : 'skipped',
+        meta: { entityCount: entities.length, extractor: extractorName },
+      })
+
+      if (entities.length) {
+        const persisted = await persistExtractions(entities, ctx)
+        steps.push({ name: 'persist-extractions', status: 'completed', meta: { persistedCount: persisted.length } })
+
+        const result = await applyConsensus(persisted, ctx)
+        steps.push({
+          name: 'consensus',
+          status: 'completed',
+          meta: result as unknown as Record<string, unknown>,
+        })
+      }
+
+      await stampDocumentProcessed(payload.documentId, classification, extractorName)
+      steps.push({ name: 'stamp-document', status: 'completed' })
     } else {
       steps.push({
-        name: 'document-trigger-placeholder',
+        name: 'unknown-trigger',
         status: 'skipped',
-        meta: { note: 'Document extractors land in Phase 2' },
+        meta: { trigger: payload.trigger },
       })
     }
 
