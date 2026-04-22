@@ -371,12 +371,14 @@ export async function downloadDocumentBytes(doc: DocumentRow): Promise<Buffer> {
   return Buffer.from(await fileRes.arrayBuffer())
 }
 
-/** Parse + classify — returns both so callers can log classification confidence. */
+/** Parse + classify — returns both + raw buffer so medical extractors that
+ *  need bytes (e.g. patient_base RFM) can avoid a second download. */
 export async function parseAndClassify(
   doc: DocumentRow
-): Promise<{ parsed: ParsedDocument; classification: ClassificationResult }> {
+): Promise<{ parsed: ParsedDocument & { buffer?: Buffer }; classification: ClassificationResult }> {
   const bytes = await downloadDocumentBytes(doc)
-  const parsed = await parseDocument(bytes, doc.file_name, doc.mime_type ?? undefined)
+  const parsedBase = await parseDocument(bytes, doc.file_name, doc.mime_type ?? undefined)
+  const parsed: ParsedDocument & { buffer?: Buffer } = Object.assign(parsedBase, { buffer: bytes })
 
   // Classifier only runs when upload hint is 'other' / null / classified_type missing
   const needsClassification =

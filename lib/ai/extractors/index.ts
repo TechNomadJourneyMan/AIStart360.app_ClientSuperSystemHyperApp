@@ -89,5 +89,7 @@ import './generic/sales-report'
 import './generic/crm-export'
 import './generic/financial-pdf'
 import './generic/pricelist'
+// Medical — patient-base chains bundles + losses internally.
+import './medical/patient-base'
 
 export type { Extractor, ExtractorContext, ExtractedEntity, ExtractorRegistry, AiRunStep } from './types'
