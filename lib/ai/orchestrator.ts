@@ -167,18 +167,17 @@ async function runInline(runId: string, input: OrchestrateInput): Promise<Orches
       applyConsensus,
     } = await import('./pipeline-steps')
 
-    const t0 = Date.now()
-
-    // Step 1: load survey
-    const answers = await loadSurveyAnswers(input.userId)
-    steps.push({
-      name: 'load-survey',
-      status: 'completed',
-      duration_ms: Date.now() - t0,
-      meta: { count: answers.length },
-    })
-
     if (input.trigger === 'survey_completed' || input.trigger === 'manual_rerun' || input.trigger === 'snapshot_changed') {
+      // Step 1: load survey
+      const t0 = Date.now()
+      const answers = await loadSurveyAnswers(input.userId)
+      steps.push({
+        name: 'load-survey',
+        status: 'completed',
+        duration_ms: Date.now() - t0,
+        meta: { count: answers.length },
+      })
+
       // Step 2: extract
       const t1 = Date.now()
       const entities = await runSurveyExtractor(answers, ctx)
@@ -208,13 +207,84 @@ async function runInline(runId: string, input: OrchestrateInput): Promise<Orches
         duration_ms: Date.now() - t3,
         meta: result as unknown as Record<string, unknown>,
       })
-    } else {
-      // document_uploaded — Phase 2+ will add document extractor steps here
+    } else if (input.trigger === 'document_uploaded') {
+      if (!input.documentId) {
+        throw new Error('document_uploaded trigger requires documentId')
+      }
+
+      const { loadDocument, parseAndClassify, runDocumentExtractor, stampDocumentProcessed } =
+        await import('./pipeline-steps')
+
+      // Step 2: load + parse + classify
+      const t1 = Date.now()
+      const doc = await loadDocument(input.documentId)
+      if (!doc) throw new Error(`document ${input.documentId} not found`)
+      const { parsed, classification } = await parseAndClassify(doc)
       steps.push({
-        name: 'document-trigger-placeholder',
+        name: 'parse-and-classify',
+        status: 'completed',
+        duration_ms: Date.now() - t1,
+        meta: {
+          docType: classification.doc_type,
+          vertical: classification.vertical,
+          confidence: classification.confidence,
+          wordCount: parsed.metadata.wordCount,
+        },
+      })
+
+      // Update ctx vertical with classifier's guess if user wasn't explicit
+      if (!input.verticalHint && classification.vertical) {
+        ctx.vertical = classification.vertical
+      }
+      ctx.classifiedType = classification.doc_type
+      ctx.classificationConf = classification.confidence
+
+      // Step 3: extract
+      const t2 = Date.now()
+      const { entities, extractorName } = await runDocumentExtractor(parsed, ctx, classification.doc_type)
+      steps.push({
+        name: 'extract-document',
+        status: entities.length ? 'completed' : 'skipped',
+        duration_ms: Date.now() - t2,
+        meta: { entityCount: entities.length, extractor: extractorName },
+      })
+
+      if (entities.length) {
+        // Step 4: persist
+        const t3 = Date.now()
+        const persisted = await persistExtractions(entities, ctx)
+        steps.push({
+          name: 'persist-extractions',
+          status: 'completed',
+          duration_ms: Date.now() - t3,
+          meta: { persistedCount: persisted.length },
+        })
+
+        // Step 5: consensus + metrics
+        const t4 = Date.now()
+        const consensusResult = await applyConsensus(persisted, ctx)
+        steps.push({
+          name: 'consensus',
+          status: 'completed',
+          duration_ms: Date.now() - t4,
+          meta: consensusResult as unknown as Record<string, unknown>,
+        })
+      }
+
+      // Step 6: stamp the document
+      const t5 = Date.now()
+      await stampDocumentProcessed(input.documentId, classification, extractorName)
+      steps.push({
+        name: 'stamp-document',
+        status: 'completed',
+        duration_ms: Date.now() - t5,
+      })
+    } else {
+      steps.push({
+        name: 'unknown-trigger',
         status: 'skipped',
         duration_ms: 0,
-        meta: { note: 'Document extractors added in Phase 2' },
+        meta: { trigger: input.trigger },
       })
     }
 
