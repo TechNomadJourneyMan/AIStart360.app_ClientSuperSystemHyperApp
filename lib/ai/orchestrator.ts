@@ -140,12 +140,36 @@ async function dispatchInngest(runId: string, input: OrchestrateInput): Promise<
 }
 
 async function dispatchN8n(runId: string, input: OrchestrateInput): Promise<OrchestrateResult> {
-  // Branch `ai-pipeline/n8n` fills this in — fetches N8N_WEBHOOK_URL with
-  // HMAC signature and returns.
-  throw new Error(
-    '[orchestrator] AI_BACKBONE=n8n requires the n8n branch. ' +
-      'Switch to branch `ai-pipeline/n8n` or set AI_BACKBONE=inline.'
-  )
+  // Dynamic import keeps orchestrator importable in edge/test contexts.
+  const { triggerWorkflow } = await import('@/lib/n8n/client')
+
+  const result = await triggerWorkflow({
+    workflow: 'ai-orchestrate',
+    runId,
+    trigger: input.trigger,
+    userId: input.userId,
+    companyId: input.companyId,
+    documentId: input.documentId,
+    triggerEntity: input.triggerEntity,
+    verticalHint: input.verticalHint,
+  })
+
+  if (!result.ok) {
+    throw new Error(
+      `[orchestrator] n8n webhook returned ${result.status}: ${result.body.slice(0, 200)}`
+    )
+  }
+
+  if (result.executionId) {
+    await updateRunRecord({ id: runId, externalRunId: result.executionId })
+  }
+
+  return {
+    runId,
+    backbone: 'n8n',
+    inline: false,
+    externalRunId: result.executionId,
+  }
 }
 
 // -----------------------------------------------------------------------------
