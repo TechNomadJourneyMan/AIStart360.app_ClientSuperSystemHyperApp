@@ -22,6 +22,13 @@ interface WidgetData {
   gri: { label: string; pct: number; color: string }[]
   metrics: { name: string; value: string; up: boolean | null }[]
   criticalCount: number
+  /** Optional live stats from /api/dashboard/clients-stats. Falls back to em-dashes. */
+  clientsStats?: {
+    total: number
+    active: number
+    atRisk: number
+    avgGri: number | null
+  }
 }
 
 // ─── Widget Catalog ─────────────────────────────────────────────
@@ -168,11 +175,12 @@ function QuickLinksWidget() {
 }
 
 function ClientsStatsWidget({ data }: { data: WidgetData }) {
+  const cs = data.clientsStats
   const stats = [
-    { label: 'Всего клиентов', value: data.activity.length > 0 ? '48' : '0', icon: 'groups', color: 'text-primary' },
-    { label: 'Активных',       value: '38', icon: 'check_circle', color: 'text-primary' },
-    { label: 'Под риском',     value: '6',  icon: 'warning',      color: 'text-error'   },
-    { label: 'Ср. GRI',        value: '7.6',icon: 'radar',        color: 'text-secondary'},
+    { label: 'Всего клиентов', value: cs?.total  != null ? String(cs.total)  : '—', icon: 'groups',        color: 'text-primary'   },
+    { label: 'Активных',       value: cs?.active != null ? String(cs.active) : '—', icon: 'check_circle',  color: 'text-primary'   },
+    { label: 'Под риском',     value: cs?.atRisk != null ? String(cs.atRisk) : '—', icon: 'warning',       color: 'text-error'     },
+    { label: 'Ср. GRI',        value: cs?.avgGri != null ? cs.avgGri.toFixed(1) : '—', icon: 'radar',      color: 'text-secondary' },
   ]
   return (
     <Link href="/clients" className="block group">
