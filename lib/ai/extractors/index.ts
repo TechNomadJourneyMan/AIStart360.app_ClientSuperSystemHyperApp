@@ -82,7 +82,12 @@ export function listExtractors(): Array<{ vertical: string; docType: string; nam
 // Phase 5: brand-guide + vision
 // -----------------------------------------------------------------------------
 
-// Side-effect import: self-registers surveyExtractor under (generic|medical, 'survey')
+// Side-effect imports: extractors self-register under (vertical, doc_type).
+// Order doesn't matter; later registrations log a warning before overriding.
 import './survey/survey-extractor'
+import './generic/sales-report'
+import './generic/crm-export'
+import './generic/financial-pdf'
+import './generic/pricelist'
 
 export type { Extractor, ExtractorContext, ExtractedEntity, ExtractorRegistry, AiRunStep } from './types'

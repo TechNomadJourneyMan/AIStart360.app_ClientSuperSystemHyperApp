@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { notifyAdmins } from '@/lib/notifications'
+import { orchestrate } from '@/lib/ai/orchestrator'
 
 // GET /api/v1/onboarding/documents?user_id=xxx
 export async function GET(req: NextRequest) {
@@ -59,35 +60,31 @@ export async function POST(req: NextRequest) {
       mimeType: mime_type,
     }, user_id)
 
-    // Trigger n8n webhook for document parsing (fire-and-forget)
-    const n8nUrl = process.env.N8N_WEBHOOK_URL
-    if (n8nUrl && doc) {
-      fetch(n8nUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(process.env.N8N_API_KEY ? { 'X-Api-Key': process.env.N8N_API_KEY } : {}),
-        },
-        body: JSON.stringify({
-          document_id: doc.id,
-          user_id,
-          file_url,
-          doc_type,
-          period: { year: period_year, quarter: period_quarter },
-        }),
-      }).catch(() => {
-        // Non-blocking — log but don't fail
-        console.warn('[documents] n8n webhook failed for doc', doc.id)
-      })
+    // Kick off the AI orchestrator — parse + classify + extract + consensus.
+    // Non-blocking when AI_BACKBONE=inngest|n8n. Inline mode adds 5-30s
+    // depending on extractor + doc size.
+    let aiRunId: string | undefined
+    if (doc?.id && company_id) {
+      try {
+        // Flip to processing immediately so UI reflects activity
+        await sb.from('documents').update({ parse_status: 'processing' }).eq('id', doc.id)
 
-      // Update status to processing
-      await sb
-        .from('documents')
-        .update({ parse_status: 'processing' })
-        .eq('id', doc.id)
+        const res = await orchestrate({
+          trigger: 'document_uploaded',
+          userId: user_id,
+          companyId: company_id,
+          documentId: doc.id,
+          triggerEntity: `documents.${doc.id}`,
+        })
+        aiRunId = res.runId
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error('[documents] orchestrator dispatch failed:', err)
+        await sb.from('documents').update({ parse_status: 'failed' }).eq('id', doc.id)
+      }
     }
 
-    return NextResponse.json({ ok: true, data: doc })
+    return NextResponse.json({ ok: true, data: doc, ai_run_id: aiRunId })
   } catch {
     return NextResponse.json({ ok: false, error: 'Invalid request body' }, { status: 400 })
   }
