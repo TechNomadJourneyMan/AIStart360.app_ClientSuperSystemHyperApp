@@ -9,6 +9,7 @@ import type { ParsedDocument } from '@/lib/documents/parse'
 
 import { CLAUDE_MODELS } from '../../anthropic'
 import { extractWithCache } from '../../prompt-cache'
+import { extractWithVision } from '../../vision'
 import { excerpt, makeEntity } from '../base'
 import { financialExtractionSchema } from '../schemas/financial'
 import type { Extractor, ExtractorContext, ExtractedEntity, FiscalQuarter } from '../types'
@@ -45,7 +46,7 @@ invoice), return confidence below 0.3 and empty periods[].
 
 Return strict JSON only.`
 
-export const financialPdfExtractor: Extractor<ParsedDocument> = {
+export const financialPdfExtractor: Extractor<ParsedDocument & { buffer?: Buffer }> = {
   name: NAME,
   version: VERSION,
   label: 'Financial statement (pdf/docx/xlsx)',
@@ -54,47 +55,51 @@ export const financialPdfExtractor: Extractor<ParsedDocument> = {
     return true
   },
 
-  async extract(input: ParsedDocument, ctx: ExtractorContext): Promise<ExtractedEntity[]> {
+  async extract(
+    input: ParsedDocument & { buffer?: Buffer },
+    ctx: ExtractorContext
+  ): Promise<ExtractedEntity[]> {
     if (!process.env.ANTHROPIC_API_KEY) return []
-    if (!input?.text) return []
+    if (!input?.text && !input.buffer) return []
 
     const MAX_CHARS = 40_000
     const text = input.text.length > MAX_CHARS ? input.text.slice(0, MAX_CHARS) : input.text
 
-    // Heuristic: if the text is < 500 chars the PDF is probably scanned.
-    // Phase 5 routes these to Vision. For Phase 2, we flag + return empty.
-    if (text.length < 500 && input.metadata.type === 'pdf') {
-      return [
-        makeEntity({
-          entity_type: 'insight.financial_pdf',
-          value: 'Document appears to be scanned (< 500 chars extracted). Vision extractor lands in Phase 5.',
-          confidence: 0.5,
-          source_type: 'document',
-          extractor_name: NAME,
-          extractor_version: VERSION,
-          source_doc_id: ctx.documentId,
-          source_field: `doc.${input.metadata.fileName}#scanned-flag`,
-          raw_excerpt: excerpt(text, 200),
-        }),
-      ]
-    }
+    // Scanned-PDF branch: use Claude Vision on the raw PDF when pdf-parse
+    // yielded almost nothing. Keeps extractor responsibility in one place.
+    const scanned = text.length < 500 && input.metadata.type === 'pdf' && !!input.buffer
+    let data: Awaited<ReturnType<typeof financialExtractionSchema.parse>>
 
-    const userMsg = `Filename: ${input.metadata.fileName}
+    if (scanned) {
+      const res = await extractWithVision({
+        system: SYSTEM_PROMPT,
+        instruction: `Filename: ${input.metadata.fileName}\nThis PDF has very little extractable text — likely a scan. Read it visually and extract the financial data.`,
+        bytes: input.buffer!,
+        mediaType: 'application/pdf',
+        schema: financialExtractionSchema,
+        model: CLAUDE_MODELS.opus,
+        maxTokens: 3000,
+        schemaName: 'FinancialExtraction',
+      })
+      data = res.data
+    } else {
+      const userMsg = `Filename: ${input.metadata.fileName}
 Type: ${input.metadata.type}
 Word count: ${input.metadata.wordCount}
 
 --- Financial document content ---
 ${text}`
-
-    const { data } = await extractWithCache({
-      system: SYSTEM_PROMPT,
-      user: userMsg,
-      schema: financialExtractionSchema,
-      model: CLAUDE_MODELS.sonnet,
-      maxTokens: 3000,
-      temperature: 0,
-      schemaName: 'FinancialExtraction',
-    })
+      const res = await extractWithCache({
+        system: SYSTEM_PROMPT,
+        user: userMsg,
+        schema: financialExtractionSchema,
+        model: CLAUDE_MODELS.sonnet,
+        maxTokens: 3000,
+        temperature: 0,
+        schemaName: 'FinancialExtraction',
+      })
+      data = res.data
+    }
 
     const out: ExtractedEntity[] = []
     const currency = data.currency ?? 'KZT'

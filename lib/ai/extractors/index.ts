@@ -89,6 +89,7 @@ import './generic/sales-report'
 import './generic/crm-export'
 import './generic/financial-pdf'
 import './generic/pricelist'
+import './generic/brand-guide'
 // Medical — patient-base chains bundles + losses internally.
 import './medical/patient-base'
 
