@@ -128,15 +128,32 @@ function resolveBackbone(): AiBackbone {
 // -----------------------------------------------------------------------------
 
 async function dispatchInngest(runId: string, input: OrchestrateInput): Promise<OrchestrateResult> {
-  // Branch `ai-pipeline/inngest` fills this in by importing and calling
-  // `inngest.send('ai/orchestrate.v1', { data: { runId, ...input } })`.
-  //
-  // The foundation branch is backbone-agnostic — calling inngest here would
-  // require a hard dep on the Inngest client, so we throw a clear error.
-  throw new Error(
-    '[orchestrator] AI_BACKBONE=inngest requires the inngest branch. ' +
-      'Switch to branch `ai-pipeline/inngest` or set AI_BACKBONE=inline.'
-  )
+  // Dynamic import keeps orchestrator importable even when Inngest isn't
+  // initialised (edge runtime, tests).
+  const { inngest } = await import('@/lib/inngest')
+
+  const send = await inngest.send({
+    // @ts-ignore — Inngest event typing quirk with custom event names
+    name: 'ai/orchestrate.v1',
+    data: {
+      runId,
+      trigger: input.trigger,
+      userId: input.userId,
+      companyId: input.companyId,
+      documentId: input.documentId,
+      triggerEntity: input.triggerEntity,
+      verticalHint: input.verticalHint,
+    },
+  })
+
+  const externalRunId =
+    (send as { ids?: string[] } | undefined)?.ids?.[0] ?? undefined
+
+  if (externalRunId) {
+    await updateRunRecord({ id: runId, externalRunId })
+  }
+
+  return { runId, backbone: 'inngest', inline: false, externalRunId }
 }
 
 async function dispatchN8n(runId: string, input: OrchestrateInput): Promise<OrchestrateResult> {
