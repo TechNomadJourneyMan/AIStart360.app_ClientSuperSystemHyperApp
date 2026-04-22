@@ -153,26 +153,79 @@ async function dispatchN8n(runId: string, input: OrchestrateInput): Promise<Orch
 // -----------------------------------------------------------------------------
 
 async function runInline(runId: string, input: OrchestrateInput): Promise<OrchestrateResult> {
-  // In Phase 0 the pipeline is just a skeleton — no real extractor steps yet.
-  // Phases 1+ will register step handlers here (parse, classify, extract, etc).
+  const steps: AiRunStep[] = []
 
-  const steps: AiRunStep[] = [
-    {
-      name: 'placeholder',
+  const ctx = buildExtractorContext(input, runId)
+
+  try {
+    // Dynamic imports keep orchestrator.ts importable in contexts where
+    // pipeline deps (e.g. supabase REST) aren't needed.
+    const {
+      loadSurveyAnswers,
+      runSurveyExtractor,
+      persistExtractions,
+      applyConsensus,
+    } = await import('./pipeline-steps')
+
+    const t0 = Date.now()
+
+    // Step 1: load survey
+    const answers = await loadSurveyAnswers(input.userId)
+    steps.push({
+      name: 'load-survey',
       status: 'completed',
-      duration_ms: 0,
-      meta: { note: 'Phase 0 — steps registered in Phases 1+' },
-    },
-  ]
+      duration_ms: Date.now() - t0,
+      meta: { count: answers.length },
+    })
 
-  await completeRun({
-    runId,
-    status: 'completed',
-    steps,
-    totalCostUsd: 0,
-  })
+    if (input.trigger === 'survey_completed' || input.trigger === 'manual_rerun' || input.trigger === 'snapshot_changed') {
+      // Step 2: extract
+      const t1 = Date.now()
+      const entities = await runSurveyExtractor(answers, ctx)
+      steps.push({
+        name: 'extract-survey',
+        status: 'completed',
+        duration_ms: Date.now() - t1,
+        meta: { entityCount: entities.length },
+      })
 
-  return { runId, backbone: 'inline', inline: true }
+      // Step 3: persist
+      const t2 = Date.now()
+      const persisted = await persistExtractions(entities, ctx)
+      steps.push({
+        name: 'persist-extractions',
+        status: 'completed',
+        duration_ms: Date.now() - t2,
+        meta: { persistedCount: persisted.length },
+      })
+
+      // Step 4: consensus + metrics
+      const t3 = Date.now()
+      const result = await applyConsensus(persisted, ctx)
+      steps.push({
+        name: 'consensus',
+        status: 'completed',
+        duration_ms: Date.now() - t3,
+        meta: result as unknown as Record<string, unknown>,
+      })
+    } else {
+      // document_uploaded — Phase 2+ will add document extractor steps here
+      steps.push({
+        name: 'document-trigger-placeholder',
+        status: 'skipped',
+        duration_ms: 0,
+        meta: { note: 'Document extractors added in Phase 2' },
+      })
+    }
+
+    await completeRun({ runId, status: 'completed', steps, totalCostUsd: 0 })
+    return { runId, backbone: 'inline', inline: true }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    steps.push({ name: 'error', status: 'failed', error: msg })
+    await completeRun({ runId, status: 'failed', steps, error: msg })
+    throw err
+  }
 }
 
 // -----------------------------------------------------------------------------
