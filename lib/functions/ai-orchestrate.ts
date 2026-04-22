@@ -16,7 +16,13 @@
 
 import { inngest } from '@/lib/inngest'
 import { completeRun } from '@/lib/ai/orchestrator'
-import type { AiRunStep } from '@/lib/ai/extractors/types'
+import type { AiRunStep, ExtractorContext } from '@/lib/ai/extractors/types'
+import {
+  loadSurveyAnswers,
+  runSurveyExtractor,
+  persistExtractions,
+  applyConsensus,
+} from '@/lib/ai/pipeline-steps'
 
 // -----------------------------------------------------------------------------
 // aiOrchestrate — main entry
@@ -49,28 +55,61 @@ export const aiOrchestrate = inngest.createFunction(
     }
 
     const steps: AiRunStep[] = []
+    const ctx: ExtractorContext = {
+      userId,
+      companyId,
+      documentId,
+      vertical: verticalHint ?? 'generic',
+      runId,
+    }
 
-    // Phase 1+: real steps registered here.
-    // Placeholder so the run completes cleanly in Phase 0.
-    await step.run('placeholder', async () => {
-      steps.push({
-        name: 'placeholder',
-        status: 'completed',
-        duration_ms: 0,
-        meta: { trigger, userId, companyId, documentId, verticalHint },
+    try {
+      const answers = await step.run('load-survey', async () => {
+        const rows = await loadSurveyAnswers(userId)
+        steps.push({ name: 'load-survey', status: 'completed', meta: { count: rows.length } })
+        return rows
       })
-    })
 
-    await step.run('finalize', async () => {
-      await completeRun({
-        runId,
-        status: 'completed',
-        steps,
-        totalCostUsd: 0,
+      if (trigger === 'survey_completed' || trigger === 'manual_rerun' || trigger === 'snapshot_changed') {
+        const entities = await step.run('extract-survey', async () => {
+          const ents = await runSurveyExtractor(answers, ctx)
+          steps.push({ name: 'extract-survey', status: 'completed', meta: { entityCount: ents.length } })
+          return ents
+        })
+
+        const persisted = await step.run('persist-extractions', async () => {
+          const rows = await persistExtractions(entities, ctx)
+          steps.push({ name: 'persist-extractions', status: 'completed', meta: { persistedCount: rows.length } })
+          return rows
+        })
+
+        await step.run('consensus', async () => {
+          const result = await applyConsensus(persisted, ctx)
+          steps.push({
+            name: 'consensus',
+            status: 'completed',
+            meta: result as unknown as Record<string, unknown>,
+          })
+        })
+      } else {
+        steps.push({
+          name: 'document-trigger-placeholder',
+          status: 'skipped',
+          meta: { note: 'Document extractors land in Phase 2' },
+        })
+      }
+
+      await step.run('finalize', async () => {
+        await completeRun({ runId, status: 'completed', steps, totalCostUsd: 0 })
       })
-    })
 
-    return { runId, status: 'completed', stepCount: steps.length }
+      return { runId, status: 'completed', stepCount: steps.length }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      steps.push({ name: 'error', status: 'failed', error: msg })
+      await completeRun({ runId, status: 'failed', steps, error: msg })
+      throw err
+    }
   }
 )
 
