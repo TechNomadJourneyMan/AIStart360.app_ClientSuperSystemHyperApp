@@ -60,6 +60,11 @@ export interface OrchestrateResult {
  * Inline mode runs all steps synchronously and returns after completion.
  */
 export async function orchestrate(input: OrchestrateInput): Promise<OrchestrateResult> {
+  // Guard: stop all new runs when daily budget is exhausted.
+  // Fails open if Supabase is unreachable (see budget.ts).
+  const { assertBudgetAvailable } = await import('./budget')
+  await assertBudgetAvailable()
+
   const backbone = resolveBackbone()
   const runId = randomUUID()
 
