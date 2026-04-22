@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { calculatePointA } from '@/lib/point-a-engine'
 import { notifyAdmins } from '@/lib/notifications'
+import { orchestrate } from '@/lib/ai/orchestrator'
 
 // POST /api/v1/diagnostics/recalculate
 // Body: { user_id }
@@ -85,7 +86,26 @@ export async function POST(req: NextRequest) {
       diagnosticId: diag?.id,
     }, user_id)
 
-    return NextResponse.json({ ok: true, data: { diagnostic: diag, point_a: result } })
+    // Kick off the AI orchestrator — writes ai_runs + ai_extractions + metrics.
+    // Non-blocking if AI_BACKBONE=inngest|n8n. For inline this adds ~100-500ms.
+    let aiRunId: string | undefined
+    if (company?.id) {
+      try {
+        const res = await orchestrate({
+          trigger: 'survey_completed',
+          userId: user_id,
+          companyId: company.id,
+          triggerEntity: `diagnostic.${diag?.id ?? 'none'}`,
+        })
+        aiRunId = res.runId
+      } catch (err) {
+        // Don't fail the whole recalculate on orchestrator issues — it's additive.
+        // eslint-disable-next-line no-console
+        console.error('[recalculate] orchestrator failed (non-fatal):', err)
+      }
+    }
+
+    return NextResponse.json({ ok: true, data: { diagnostic: diag, point_a: result, ai_run_id: aiRunId } })
   } catch (e) {
     return NextResponse.json({ ok: false, error: 'Internal error' }, { status: 500 })
   }
