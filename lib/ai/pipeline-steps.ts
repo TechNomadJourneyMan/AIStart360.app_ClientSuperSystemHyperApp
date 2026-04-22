@@ -11,6 +11,9 @@
 
 import { randomUUID } from 'node:crypto'
 
+import { parseDocument, type ParsedDocument } from '@/lib/documents/parse'
+
+import { classifyDocument, type ClassificationResult } from './classifier'
 import {
   resolveConsensus,
   winnersToMetrics,
@@ -299,6 +302,134 @@ export async function timed<T>(
       })
     )
   }
+}
+
+// -----------------------------------------------------------------------------
+// Document pipeline steps (Phase 2)
+// -----------------------------------------------------------------------------
+
+export interface DocumentRow {
+  id: string
+  user_id: string
+  company_id: string | null
+  file_name: string
+  file_url: string | null
+  mime_type: string | null
+  doc_type: string | null
+  classified_type: string | null
+  content_hash: string | null
+  extractor_version: string | null
+}
+
+/** Load a documents row by id (service-role bypass). */
+export async function loadDocument(documentId: string): Promise<DocumentRow | null> {
+  const rows = await supaGet<DocumentRow>(
+    `documents?id=eq.${documentId}&select=id,user_id,company_id,file_name,file_url,mime_type,doc_type,classified_type,content_hash,extractor_version`
+  )
+  return rows[0] ?? null
+}
+
+/**
+ * Fetch the raw bytes of a document from Supabase Storage.
+ * file_url stored in documents is a storage path like `{user_id}/{kind}/{timestamp}_{name}`
+ * in bucket `client-documents` (by convention). If file_url is already a full
+ * https:// URL we just fetch it directly.
+ */
+export async function downloadDocumentBytes(doc: DocumentRow): Promise<Buffer> {
+  if (!doc.file_url) throw new Error(`[pipeline-steps] documents.${doc.id}.file_url is null`)
+
+  // Case 1: full URL (signed URL or public)
+  if (/^https?:\/\//.test(doc.file_url)) {
+    const res = await fetch(doc.file_url)
+    if (!res.ok) throw new Error(`[pipeline-steps] download ${doc.file_url} → ${res.status}`)
+    return Buffer.from(await res.arrayBuffer())
+  }
+
+  // Case 2: storage path — generate signed URL via Supabase REST
+  const { url, key } = getServiceRole()
+  const bucket = 'client-documents'
+  const signRes = await fetch(
+    `${url}/storage/v1/object/sign/${bucket}/${encodeURI(doc.file_url)}`,
+    {
+      method: 'POST',
+      headers: {
+        apikey: key,
+        Authorization: `Bearer ${key}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ expiresIn: 60 }),
+    }
+  )
+  if (!signRes.ok) {
+    const text = await signRes.text()
+    throw new Error(`[pipeline-steps] storage sign failed: ${signRes.status} ${text}`)
+  }
+  const { signedURL } = (await signRes.json()) as { signedURL: string }
+  const full = signedURL.startsWith('http') ? signedURL : `${url}/storage/v1${signedURL}`
+  const fileRes = await fetch(full)
+  if (!fileRes.ok) throw new Error(`[pipeline-steps] signed-url fetch → ${fileRes.status}`)
+  return Buffer.from(await fileRes.arrayBuffer())
+}
+
+/** Parse + classify — returns both so callers can log classification confidence. */
+export async function parseAndClassify(
+  doc: DocumentRow
+): Promise<{ parsed: ParsedDocument; classification: ClassificationResult }> {
+  const bytes = await downloadDocumentBytes(doc)
+  const parsed = await parseDocument(bytes, doc.file_name, doc.mime_type ?? undefined)
+
+  // Classifier only runs when upload hint is 'other' / null / classified_type missing
+  const needsClassification =
+    !doc.doc_type || doc.doc_type === 'other' || !doc.classified_type
+  const classification = needsClassification
+    ? await classifyDocument({
+        fileName: doc.file_name,
+        textSnippet: parsed.text,
+        hintType: doc.doc_type ?? undefined,
+      })
+    : {
+        doc_type: (doc.classified_type ?? doc.doc_type) as ClassificationResult['doc_type'],
+        vertical: 'generic' as const,
+        confidence: 0.9,
+        reasoning: 'Upload-declared type used (high confidence).',
+      }
+
+  return { parsed, classification }
+}
+
+/**
+ * Pick and run the right extractor for (vertical, doc_type). Returns
+ * ExtractedEntity[] (empty if no extractor matches or Claude key missing).
+ */
+export async function runDocumentExtractor(
+  parsed: ParsedDocument,
+  ctx: ExtractorContext,
+  docType: string
+): Promise<{ entities: ExtractedEntity[]; extractorName: string | null }> {
+  const extractor = dispatch(ctx, docType)
+  if (!extractor) {
+    // eslint-disable-next-line no-console
+    console.warn(`[pipeline-steps] no extractor for vertical=${ctx.vertical} docType=${docType}`)
+    return { entities: [], extractorName: null }
+  }
+
+  const entities = await extractor.extract(parsed, ctx)
+  return { entities, extractorName: `${extractor.name}@${extractor.version}` }
+}
+
+/** Patch documents.classified_type + extractor_version after extraction. */
+export async function stampDocumentProcessed(
+  documentId: string,
+  classification: ClassificationResult,
+  extractorName: string | null
+): Promise<void> {
+  await supaUpdate(`documents?id=eq.${documentId}`, {
+    classified_type: classification.doc_type,
+    classification_conf: classification.confidence,
+    extractor_version: extractorName,
+    last_extracted_at: new Date().toISOString(),
+    parse_status: 'completed',
+  })
 }
 
 // Avoid unused-warning for dispatch — referenced here so the import isn't stripped
