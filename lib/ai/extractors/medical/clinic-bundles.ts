@@ -20,7 +20,7 @@ import type { SegmentationResult } from '@/lib/rfm-segmentation'
 
 import { excerpt, makeEntity } from '../base'
 import type { Extractor, ExtractorContext, ExtractedEntity } from '../types'
-import { registerExtractor } from '../index'
+import { registerExtractor } from '../registry'
 
 const NAME = 'medical.clinic-bundles'
 const VERSION = '1.0.0'

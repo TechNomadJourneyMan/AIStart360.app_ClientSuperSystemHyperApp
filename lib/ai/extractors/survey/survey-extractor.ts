@@ -216,6 +216,6 @@ export function extractQuarter(key: string): FiscalQuarter | undefined {
 }
 
 // Self-registration — imported by lib/ai/extractors/index.ts bootstraps registration
-import { registerExtractor } from '../index'
+import { registerExtractor } from '../registry'
 registerExtractor('generic', 'survey', surveyExtractor)
 registerExtractor('medical', 'survey', surveyExtractor)
