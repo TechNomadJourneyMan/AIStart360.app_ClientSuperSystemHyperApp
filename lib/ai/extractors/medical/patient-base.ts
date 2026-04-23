@@ -23,7 +23,7 @@ import {
 
 import { excerpt, makeEntity } from '../base'
 import type { Extractor, ExtractorContext, ExtractedEntity } from '../types'
-import { registerExtractor } from '../index'
+import { registerExtractor } from '../registry'
 import { clinicBundlesExtractor } from './clinic-bundles'
 import { revenueLossesExtractor } from './revenue-losses'
 

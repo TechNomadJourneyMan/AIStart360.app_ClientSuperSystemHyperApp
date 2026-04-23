@@ -42,7 +42,7 @@ COMMENT ON COLUMN public.documents.last_extracted_at  IS 'NOW() when last extrac
 CREATE TABLE IF NOT EXISTS public.ai_runs (
   id               UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id          UUID         NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
-  company_id       UUID         REFERENCES public.companies(id) ON DELETE SET NULL,
+  company_id       TEXT         REFERENCES public.companies(id) ON DELETE SET NULL,
 
   trigger          TEXT         NOT NULL
                    CHECK (trigger IN ('document_uploaded','survey_completed','manual_rerun','snapshot_changed')),
@@ -76,7 +76,7 @@ CREATE TABLE IF NOT EXISTS public.ai_extractions (
   id                UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
   run_id            UUID         REFERENCES public.ai_runs(id) ON DELETE CASCADE,
   user_id           UUID         NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
-  company_id        UUID         REFERENCES public.companies(id) ON DELETE SET NULL,
+  company_id        TEXT         REFERENCES public.companies(id) ON DELETE SET NULL,
 
   source_type       TEXT         NOT NULL CHECK (source_type IN ('document','survey','calculated')),
   source_doc_id     UUID         REFERENCES public.documents(id) ON DELETE CASCADE,
@@ -118,7 +118,7 @@ COMMENT ON COLUMN public.ai_extractions.superseded_by IS 'When a newer extractio
 -- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.ai_conflicts (
   id             UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
-  company_id     UUID         NOT NULL REFERENCES public.companies(id) ON DELETE CASCADE,
+  company_id     TEXT         NOT NULL REFERENCES public.companies(id) ON DELETE CASCADE,
 
   entity_type    TEXT         NOT NULL,
   period_year    INTEGER,

@@ -15,7 +15,7 @@ import { extractWithCache } from '../../prompt-cache'
 import { excerpt, makeEntity } from '../base'
 import { salesReportSchema } from '../schemas/sales'
 import type { Extractor, ExtractorContext, ExtractedEntity, FiscalQuarter } from '../types'
-import { registerExtractor } from '../index'
+import { registerExtractor } from '../registry'
 
 const NAME = 'generic.sales-report'
 const VERSION = '1.0.0'

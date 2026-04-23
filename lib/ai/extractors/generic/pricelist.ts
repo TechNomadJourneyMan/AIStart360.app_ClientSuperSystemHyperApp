@@ -14,7 +14,7 @@ import { extractWithCache } from '../../prompt-cache'
 import { excerpt, makeEntity } from '../base'
 import { pricelistSchema } from '../schemas/pricelist'
 import type { Extractor, ExtractorContext, ExtractedEntity } from '../types'
-import { registerExtractor } from '../index'
+import { registerExtractor } from '../registry'
 
 const NAME = 'generic.pricelist'
 const VERSION = '1.0.0'
