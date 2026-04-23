@@ -19,7 +19,7 @@ import { extractWithVision } from '../../vision'
 import { excerpt, makeEntity } from '../base'
 import { brandExtractionSchema } from '../schemas/brand'
 import type { Extractor, ExtractorContext, ExtractedEntity } from '../types'
-import { registerExtractor } from '../index'
+import { registerExtractor } from '../registry'
 
 const NAME = 'generic.brand-guide'
 const VERSION = '1.0.0'

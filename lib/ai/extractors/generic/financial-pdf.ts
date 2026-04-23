@@ -13,7 +13,7 @@ import { extractWithVision } from '../../vision'
 import { excerpt, makeEntity } from '../base'
 import { financialExtractionSchema } from '../schemas/financial'
 import type { Extractor, ExtractorContext, ExtractedEntity, FiscalQuarter } from '../types'
-import { registerExtractor } from '../index'
+import { registerExtractor } from '../registry'
 
 const NAME = 'generic.financial-pdf'
 const VERSION = '1.0.0'
