@@ -62,7 +62,7 @@ export const brandGuideExtractor: Extractor<ParsedDocument & { buffer?: Buffer }
     input: ParsedDocument & { buffer?: Buffer },
     ctx: ExtractorContext
   ): Promise<ExtractedEntity[]> {
-    if (!process.env.ANTHROPIC_API_KEY) return []
+    if (!process.env.OPENROUTER_API_KEY && !process.env.ANTHROPIC_API_KEY) return []
 
     // ── Step 1: regex hex colors (free, always runs) ──────────────────────
     const hexMatches = [...new Set(input.text.match(HEX_REGEX) ?? [])].slice(0, 12)
