@@ -56,7 +56,7 @@ export const pricelistExtractor: Extractor<ParsedDocument> = {
   },
 
   async extract(input: ParsedDocument, ctx: ExtractorContext): Promise<ExtractedEntity[]> {
-    if (!process.env.ANTHROPIC_API_KEY) return []
+    if (!process.env.OPENROUTER_API_KEY && !process.env.ANTHROPIC_API_KEY) return []
     if (!input?.text) return []
 
     const MAX_CHARS = 50_000 // pricelists can be long

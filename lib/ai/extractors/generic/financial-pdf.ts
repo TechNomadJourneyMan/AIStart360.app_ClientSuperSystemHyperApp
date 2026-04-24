@@ -59,7 +59,7 @@ export const financialPdfExtractor: Extractor<ParsedDocument & { buffer?: Buffer
     input: ParsedDocument & { buffer?: Buffer },
     ctx: ExtractorContext
   ): Promise<ExtractedEntity[]> {
-    if (!process.env.ANTHROPIC_API_KEY) return []
+    if (!process.env.OPENROUTER_API_KEY && !process.env.ANTHROPIC_API_KEY) return []
     if (!input?.text && !input.buffer) return []
 
     const MAX_CHARS = 40_000
