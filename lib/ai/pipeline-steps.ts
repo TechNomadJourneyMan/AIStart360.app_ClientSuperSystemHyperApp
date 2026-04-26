@@ -345,26 +345,39 @@ export async function downloadDocumentBytes(doc: DocumentRow): Promise<Buffer> {
     return Buffer.from(await res.arrayBuffer())
   }
 
-  // Case 2: storage path — generate signed URL via Supabase REST
+  // Case 2: storage path — generate signed URL via Supabase REST.
+  // Try `documents` (public legacy bucket) first, then `client-documents`
+  // (newer private bucket). Both layouts are present in the prod Supabase.
   const { url, key } = getServiceRole()
-  const bucket = 'client-documents'
-  const signRes = await fetch(
-    `${url}/storage/v1/object/sign/${bucket}/${encodeURI(doc.file_url)}`,
-    {
-      method: 'POST',
-      headers: {
-        apikey: key,
-        Authorization: `Bearer ${key}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ expiresIn: 60 }),
+  const buckets = ['documents', 'client-documents']
+  let signedURL: string | null = null
+  let lastError = ''
+
+  for (const bucket of buckets) {
+    const signRes = await fetch(
+      `${url}/storage/v1/object/sign/${bucket}/${encodeURI(doc.file_url)}`,
+      {
+        method: 'POST',
+        headers: {
+          apikey: key,
+          Authorization: `Bearer ${key}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ expiresIn: 60 }),
+      }
+    )
+    if (signRes.ok) {
+      const body = (await signRes.json()) as { signedURL: string }
+      signedURL = body.signedURL
+      break
     }
-  )
-  if (!signRes.ok) {
-    const text = await signRes.text()
-    throw new Error(`[pipeline-steps] storage sign failed: ${signRes.status} ${text}`)
+    lastError = `${bucket} → ${signRes.status} ${await signRes.text().catch(() => '')}`
   }
-  const { signedURL } = (await signRes.json()) as { signedURL: string }
+
+  if (!signedURL) {
+    throw new Error(`[pipeline-steps] storage sign failed in all buckets. Last: ${lastError}`)
+  }
+
   const full = signedURL.startsWith('http') ? signedURL : `${url}/storage/v1${signedURL}`
   const fileRes = await fetch(full)
   if (!fileRes.ok) throw new Error(`[pipeline-steps] signed-url fetch → ${fileRes.status}`)
@@ -380,9 +393,9 @@ export async function parseAndClassify(
   const parsedBase = await parseDocument(bytes, doc.file_name, doc.mime_type ?? undefined)
   const parsed: ParsedDocument & { buffer?: Buffer } = Object.assign(parsedBase, { buffer: bytes })
 
-  // Classifier only runs when upload hint is 'other' / null / classified_type missing
-  const needsClassification =
-    !doc.doc_type || doc.doc_type === 'other' || !doc.classified_type
+  // Classifier runs only when upload-declared doc_type is missing or 'other'.
+  // If user explicitly chose a doc_type at upload time, trust it.
+  const needsClassification = !doc.doc_type || doc.doc_type === 'other'
   const classification = needsClassification
     ? await classifyDocument({
         fileName: doc.file_name,
@@ -390,7 +403,7 @@ export async function parseAndClassify(
         hintType: doc.doc_type ?? undefined,
       })
     : {
-        doc_type: (doc.classified_type ?? doc.doc_type) as ClassificationResult['doc_type'],
+        doc_type: doc.doc_type as ClassificationResult['doc_type'],
         vertical: 'generic' as const,
         confidence: 0.9,
         reasoning: 'Upload-declared type used (high confidence).',
