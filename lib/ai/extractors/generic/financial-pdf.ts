@@ -183,5 +183,7 @@ ${text}`
 registerExtractor('generic', 'financial_pdf', financialPdfExtractor)
 registerExtractor('generic', 'pl_report', financialPdfExtractor)
 registerExtractor('generic', 'balance_sheet', financialPdfExtractor)
+registerExtractor('generic', 'financial_report', financialPdfExtractor)
 registerExtractor('medical', 'financial_pdf', financialPdfExtractor)
 registerExtractor('medical', 'pl_report', financialPdfExtractor)
+registerExtractor('medical', 'financial_report', financialPdfExtractor)
