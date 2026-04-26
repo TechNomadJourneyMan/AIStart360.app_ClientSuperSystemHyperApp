@@ -1,6 +1,6 @@
 import * as XLSX from "xlsx";
 
-export type DocumentType = "pdf" | "docx" | "xlsx" | "txt" | "unknown";
+export type DocumentType = "pdf" | "docx" | "xlsx" | "csv" | "txt" | "unknown";
 
 export interface ParsedDocument {
   text: string;
@@ -34,6 +34,7 @@ export function detectDocumentType(
     ext === "xls"
   )
     return "xlsx";
+  if (mimeType === "text/csv" || ext === "csv") return "csv";
   if (mimeType === "text/plain" || ext === "txt") return "txt";
   return "unknown";
 }
@@ -107,12 +108,13 @@ export async function parseDocument(
       };
     }
 
+    case "csv":
     case "txt": {
       const text = buffer.toString("utf-8");
       return {
         text: text.trim(),
         metadata: {
-          type: "txt",
+          type: docType,
           wordCount: text.split(/\s+/).length,
           fileName,
         },

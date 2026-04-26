@@ -7,6 +7,14 @@
 
 import { z } from 'zod'
 
+/** Accept either string[] or single string (LLM sometimes returns one note as string). */
+const notesSchema = z
+  .preprocess(
+    (v) => (typeof v === 'string' ? [v] : v),
+    z.array(z.string().max(500)).max(8)
+  )
+  .optional()
+
 export const financialExtractionSchema = z.object({
   currency: z.enum(['KZT', 'USD', 'RUB', 'EUR', 'UAH', 'BYN']).default('KZT'),
 
@@ -53,7 +61,7 @@ export const financialExtractionSchema = z.object({
     .optional(),
 
   confidence: z.number().min(0).max(1).describe('Overall confidence in extraction quality.'),
-  notes: z.array(z.string().max(200)).max(5).optional(),
+  notes: notesSchema,
 })
 
 export type FinancialExtraction = z.infer<typeof financialExtractionSchema>
