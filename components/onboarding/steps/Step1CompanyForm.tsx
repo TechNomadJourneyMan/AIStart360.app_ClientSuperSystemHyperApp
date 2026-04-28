@@ -139,7 +139,7 @@ export default function Step1CompanyForm({
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <FieldLabel htmlFor="s1_company_name">Название компании (обязательно)</FieldLabel>
+            <FieldLabel htmlFor="s1_company_name">Название компании</FieldLabel>
             <input
               id="s1_company_name"
               type="text"
@@ -150,7 +150,7 @@ export default function Step1CompanyForm({
             />
           </div>
           <div>
-            <FieldLabel htmlFor="s1_industry">Отрасль (обязательно)</FieldLabel>
+            <FieldLabel htmlFor="s1_industry">Отрасль</FieldLabel>
             <select
               id="s1_industry"
               value={str(data.s1_industry)}
@@ -165,22 +165,7 @@ export default function Step1CompanyForm({
               ))}
             </select>
           </div>
-          <div>
-            <FieldLabel htmlFor="s1_stage">Стадия развития</FieldLabel>
-            <select
-              id="s1_stage"
-              value={str(data.s1_stage)}
-              onChange={(e) => onChange('s1_stage', e.target.value)}
-              className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-on-surface focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all appearance-none"
-            >
-              <option value="">— Выберите —</option>
-              {COMPANY_STAGES.map((s) => (
-                <option key={s.value} value={s.value}>
-                  {s.label}
-                </option>
-              ))}
-            </select>
-          </div>
+
           <div>
             <FieldLabel htmlFor="s1_employee_count">Кол-во сотрудников</FieldLabel>
             <input
@@ -210,7 +195,7 @@ export default function Step1CompanyForm({
             </select>
           </div>
           <div>
-            <FieldLabel htmlFor="s1_years_on_market">Лет на рынке (обязательно)</FieldLabel>
+            <FieldLabel htmlFor="s1_years_on_market">Лет на рынке</FieldLabel>
             <input
               id="s1_years_on_market"
               type="number"
@@ -222,7 +207,7 @@ export default function Step1CompanyForm({
             />
           </div>
           <div>
-            <FieldLabel htmlFor="s1_website">Веб-сайт (обязательно)</FieldLabel>
+            <FieldLabel htmlFor="s1_website">Веб-сайт</FieldLabel>
             <input
               id="s1_website"
               type="text"
@@ -234,7 +219,7 @@ export default function Step1CompanyForm({
           </div>
           <div className="md:col-span-2">
             <FieldLabel htmlFor="s1_social_media">
-              Социальные сети компании / владельца (обязательно)
+              Социальные сети компании / владельца
             </FieldLabel>
             <input
               id="s1_social_media"
@@ -281,8 +266,8 @@ export default function Step1CompanyForm({
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <FileUploadCard
-            label="Загрузить отчёт по продажам"
-            hint="За каждый год по месяцам: по продуктам, по клиентам, по менеджерам"
+            label="Загрузка данных за 3 года"
+            hint="Отчёт по продажам: по продуктам, клиентам, менеджерам"
             kind="sales_report"
             disabled={!userId}
             uploading={!!uploading.sales_report}
@@ -291,8 +276,8 @@ export default function Step1CompanyForm({
             onRemove={removeFile}
           />
           <FileUploadCard
-            label="Загрузить данные из CRM"
-            hint="Выгрузка за последние 3 года — AI проанализирует и заполнит поля автоматически"
+            label="Загрузка данных за 3 года"
+            hint="Выгрузка из CRM за последние 3 года"
             kind="crm_export"
             disabled={!userId}
             uploading={!!uploading.crm_export}
@@ -425,7 +410,7 @@ export default function Step1CompanyForm({
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <FieldLabel htmlFor="s1_contact_name">ФИО (обязательно)</FieldLabel>
+            <FieldLabel htmlFor="s1_contact_name">ФИО</FieldLabel>
             <input
               id="s1_contact_name"
               type="text"
@@ -447,7 +432,7 @@ export default function Step1CompanyForm({
             />
           </div>
           <div>
-            <FieldLabel htmlFor="s1_contact_phone">Телефон (обязательно)</FieldLabel>
+            <FieldLabel htmlFor="s1_contact_phone">Телефон</FieldLabel>
             <input
               id="s1_contact_phone"
               type="text"
@@ -458,7 +443,7 @@ export default function Step1CompanyForm({
             />
           </div>
           <div>
-            <FieldLabel htmlFor="s1_contact_email">Email (обязательно)</FieldLabel>
+            <FieldLabel htmlFor="s1_contact_email">Email</FieldLabel>
             <input
               id="s1_contact_email"
               type="email"
