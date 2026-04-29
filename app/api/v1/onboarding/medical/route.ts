@@ -15,6 +15,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { MEDICAL_INTAKE_FIELDS } from '@/lib/intake-schemas'
 import { validatePatientBase, type DataQualityReport } from '@/lib/data-quality'
+import { orchestrate } from '@/lib/ai/orchestrator'
 
 function srBase() {
   return {
@@ -211,10 +212,29 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // ── 4. Kick off AI orchestrator (RFM segmentation + bundles + losses) ──
+  let aiRunId: string | undefined
+  if (documentId) {
+    try {
+      const res = await orchestrate({
+        trigger: 'document_uploaded',
+        userId: user.id,
+        companyId,
+        documentId,
+        triggerEntity: `documents.${documentId}`,
+        verticalHint: 'medical',
+      })
+      aiRunId = res.runId
+    } catch (e) {
+      console.error('[onboarding/medical] orchestrator dispatch failed', e)
+    }
+  }
+
   return NextResponse.json({
     ok: true,
     companyId,
     documentId,
     qualityReport,
+    aiRunId,
   })
 }
