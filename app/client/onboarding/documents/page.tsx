@@ -133,8 +133,15 @@ export default function DocumentsPage() {
 
     try {
       const sb = createClient()
-      const ext = pending.file.name.split('.').pop()
-      const path = `${userId}/${Date.now()}_${pending.file.name}`
+      const ext = pending.file.name.split('.').pop()?.toLowerCase() ?? 'bin'
+      // Supabase Storage S3 API rejects keys with non-ASCII / spaces.
+      // Sanitize: strip ext, replace non-safe chars with _, collapse, cap length.
+      const safeName = pending.file.name
+        .replace(/\.[^.]+$/, '')
+        .replace(/[^a-zA-Z0-9._-]/g, '_')
+        .replace(/_+/g, '_')
+        .substring(0, 50) || 'file'
+      const path = `${userId}/${Date.now()}_${safeName}.${ext}`
 
       // Upload to Supabase Storage
       const { data: storageData, error: storageErr } = await sb.storage
