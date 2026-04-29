@@ -94,7 +94,7 @@ export async function POST(req: NextRequest) {
     }
   } else {
     const rows = await srGet<DocRow[]>(
-      `documents?user_id=eq.${user.id}&doc_type=eq.patient_base&select=id,user_id,file_name,file_url,doc_type&order=created_at.desc&limit=1`,
+      `documents?user_id=eq.${user.id}&doc_type=eq.patient_base&select=id,user_id,file_name,file_url,doc_type&order=uploaded_at.desc&limit=1`,
     )
     doc = rows?.[0] ?? null
   }
