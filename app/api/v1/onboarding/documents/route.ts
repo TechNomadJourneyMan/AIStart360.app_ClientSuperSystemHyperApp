@@ -1,9 +1,19 @@
 export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
 import { createServerClient } from '@/lib/supabase-server'
 import { notifyAdmins } from '@/lib/notifications'
 import { orchestrate } from '@/lib/ai/orchestrator'
+
+/** Service-role client for privileged ops that need to bypass RLS. */
+function createServiceClient() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { autoRefreshToken: false, persistSession: false } }
+  )
+}
 
 // GET /api/v1/onboarding/documents?user_id=xxx
 export async function GET(req: NextRequest) {
@@ -31,7 +41,15 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: 'Missing required fields' }, { status: 400 })
     }
 
-    const sb = createServerClient()
+    // Verify the caller's session matches the user_id (defense in depth).
+    const sbAuth = createServerClient()
+    const { data: { user } } = await sbAuth.auth.getUser()
+    if (!user || user.id !== user_id) {
+      return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // Use service-role for the insert (bypasses RLS — auth check above).
+    const sb = createServiceClient()
 
     const { data: doc, error } = await sb
       .from('documents')
