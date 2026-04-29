@@ -159,8 +159,14 @@ export function FileArea({ userId: userIdProp }: FileAreaProps) {
 
     try {
       const sb = createClient()
-      const ext = pendingFile.file.name.split('.').pop()
-      const storagePath = `${userId}/${Date.now()}_${pendingFile.file.name}`
+      const ext = pendingFile.file.name.split('.').pop()?.toLowerCase() ?? 'bin'
+      // Supabase Storage S3 API rejects keys with non-ASCII / spaces.
+      const safeName = pendingFile.file.name
+        .replace(/\.[^.]+$/, '')
+        .replace(/[^a-zA-Z0-9._-]/g, '_')
+        .replace(/_+/g, '_')
+        .substring(0, 50) || 'file'
+      const storagePath = `${userId}/${Date.now()}_${safeName}.${ext}`
 
       setUploadProgress(20)
 
