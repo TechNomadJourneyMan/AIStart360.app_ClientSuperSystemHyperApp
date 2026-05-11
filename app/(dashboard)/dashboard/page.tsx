@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic"
 
 import type { Metadata } from 'next'
 import Link from 'next/link'
+import { redirect } from 'next/navigation'
 import { cookies } from 'next/headers'
 import { KpiCardsGrid } from '@/components/dashboard/KpiCardsGrid'
 import { GriDiagramWidget } from '@/components/dashboard/GriDiagramWidget'
@@ -215,21 +216,28 @@ export default async function DashboardPage() {
   const supabase = createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (user) {
-    // Read role via service-role REST API to bypass RLS (profiles table has RLS recursion issue)
+    // Read role + vertical via service-role REST API (RLS recursion on profiles)
     let role: string | null = null
+    let vertical: string | null = null
     try {
       const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
       const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
       const profileRes = await fetch(
-        `${supabaseUrl}/rest/v1/profiles?id=eq.${user.id}&select=role`,
+        `${supabaseUrl}/rest/v1/profiles?id=eq.${user.id}&select=role,vertical`,
         { headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` }, cache: 'no-store' }
       )
       if (profileRes.ok) {
-        const rows = await profileRes.json() as Array<{ role: string }>
+        const rows = await profileRes.json() as Array<{ role: string; vertical: string | null }>
         role = rows[0]?.role ?? null
+        vertical = rows[0]?.vertical ?? null
       }
     } catch {
       // fall through — treat as client if role unknown
+    }
+
+    // Medical-vertical clients see the clinic dashboard at /client/dashboard-medical.
+    if (vertical === 'medical' && role !== 'admin' && role !== 'super_admin' && role !== 'expert' && role !== 'manager') {
+      redirect('/client/dashboard-medical')
     }
     // Show client view for: explicit 'client' role, OR unknown role (safety fallback)
     // Only admin/super_admin/expert/manager see the admin dashboard
