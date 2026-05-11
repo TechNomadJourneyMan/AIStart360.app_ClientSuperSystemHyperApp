@@ -48,6 +48,16 @@
     text-rendering: optimizeLegibility;
     vertical-align: middle;
     user-select: none;
+    /* Hide raw text until icon font loaded — prevents FOUT flash */
+    color: transparent;
+    text-shadow: 0 0 0 currentColor;
+  }
+
+  /* Once font loads, show icons */
+  html.msymbols-loaded .material-symbols-outlined,
+  html.msymbols-loaded .material-symbols-filled {
+    color: inherit;
+    text-shadow: none;
   }
 
   .material-symbols-outlined {

@@ -35,8 +35,15 @@ export default function RootLayout({
           rel="stylesheet"
         />
         <link
-          href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap"
+          href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=block"
           rel="stylesheet"
+        />
+        {/* Toggle .msymbols-loaded on <html> once Material Symbols font ready —
+            CSS hides raw text until then to prevent FOUT flash. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){if(!document.fonts){document.documentElement.classList.add('msymbols-loaded');return;}document.fonts.load('1em "Material Symbols Outlined"').then(function(){document.documentElement.classList.add('msymbols-loaded')}).catch(function(){document.documentElement.classList.add('msymbols-loaded')});})();`,
+          }}
         />
       </head>
       <body className="font-body antialiased">
