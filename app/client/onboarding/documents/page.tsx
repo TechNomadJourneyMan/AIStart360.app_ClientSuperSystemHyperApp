@@ -5,8 +5,8 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 
-type DocType = 'pl_report' | 'balance_sheet' | 'marketing_report' | 'ops_report' | 'crm_export' | 'audit' | 'other'
-type ParseStatus = 'queued' | 'processing' | 'parsed' | 'error'
+type DocType = 'pl_report' | 'balance_sheet' | 'marketing_report' | 'ops_report' | 'crm_export' | 'audit' | 'patient_base' | 'other'
+type ParseStatus = 'queued' | 'processing' | 'parsed' | 'completed' | 'failed' | 'error'
 
 interface UploadedDoc {
   id: string
@@ -33,6 +33,7 @@ const DOC_TYPES: { value: DocType; label: string; icon: string; example: string 
   { value: 'ops_report',       label: 'Операционный отчёт',      icon: 'settings',      example: 'Шаблон операций' },
   { value: 'crm_export',       label: 'CRM-выгрузка',            icon: 'people',        example: 'Шаблон CRM' },
   { value: 'audit',            label: 'Аудит',                   icon: 'fact_check',    example: 'Шаблон аудита' },
+  { value: 'patient_base',     label: 'База пациентов',          icon: 'groups',        example: '' },
   { value: 'other',            label: 'Другое',                  icon: 'folder',        example: '' },
 ]
 
@@ -40,7 +41,9 @@ const STATUS_CONFIG: Record<ParseStatus, { label: string; color: string; icon: s
   queued:     { label: 'В очереди',   color: 'text-on-surface-variant', icon: 'schedule' },
   processing: { label: 'Обработка',   color: 'text-amber-400',          icon: 'autorenew' },
   parsed:     { label: 'Обработан',   color: 'text-primary',            icon: 'check_circle' },
+  completed:  { label: 'Обработан',   color: 'text-primary',            icon: 'check_circle' },
   error:      { label: 'Ошибка',      color: 'text-error',              icon: 'error' },
+  failed:     { label: 'Ошибка',      color: 'text-error',              icon: 'error' },
 }
 
 function formatBytes(bytes: number | null): string {
@@ -344,7 +347,7 @@ export default function DocumentsPage() {
             </h2>
             <div className="space-y-2">
               {uploaded.map(doc => {
-                const st = STATUS_CONFIG[doc.parse_status]
+                const st = STATUS_CONFIG[doc.parse_status] ?? { label: doc.parse_status, color: 'text-on-surface-variant', icon: 'help' }
                 const dt = DOC_TYPES.find(d => d.value === doc.doc_type)
                 return (
                   <div key={doc.id} className="flex items-center gap-3 bg-surface-container-low rounded-xl border border-white/[0.06] p-4">
@@ -352,7 +355,7 @@ export default function DocumentsPage() {
                     <div className="flex-1 min-w-0">
                       <p className="text-sm text-on-surface truncate">{doc.file_name}</p>
                       <p className="text-xs text-on-surface-variant">
-                        {dt?.label} {doc.period_quarter && `· ${doc.period_quarter}`} {doc.period_year && `${doc.period_year}`}
+                        {dt?.label ?? doc.doc_type} {doc.period_quarter && `· ${doc.period_quarter}`} {doc.period_year && `${doc.period_year}`}
                         {doc.file_size && ` · ${formatBytes(doc.file_size)}`}
                       </p>
                     </div>
