@@ -244,28 +244,50 @@ export default async function DashboardPage() {
       try {
         const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
         const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-        const [segsRes, lossesRes] = await Promise.all([
-          fetch(
-            `${supabaseUrl}/rest/v1/patient_segments?client_id=eq.${user.id}&select=monetary_kzt`,
-            { headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` }, cache: 'no-store' }
-          ),
-          fetch(
-            `${supabaseUrl}/rest/v1/revenue_losses?client_id=eq.${user.id}&select=estimated_loss_kzt`,
-            { headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` }, cache: 'no-store' }
-          ),
-        ])
-        if (segsRes.ok) {
-          const segs = await segsRes.json() as Array<{ monetary_kzt: number }>
-          const patients = segs.length
-          const totalLtv = segs.reduce((s, r) => s + (r.monetary_kzt ?? 0), 0)
-          const avgCheck = patients > 0 ? Math.round(totalLtv / patients) : 0
-          let lossPerMonth = 0
-          if (lossesRes.ok) {
-            const losses = await lossesRes.json() as Array<{ estimated_loss_kzt: number }>
-            lossPerMonth = losses.reduce((s, r) => s + (r.estimated_loss_kzt ?? 0), 0)
-          }
-          if (patients > 0) medicalSummary = { patients, totalLtv, avgCheck, lossPerMonth }
+        // Paginate patient_segments — PostgREST default limit 1000.
+        const PAGE = 1000
+        let all: Array<{ monetary_kzt: number; frequency: number }> = []
+        let offset = 0
+        while (true) {
+          const segsRes = await fetch(
+            `${supabaseUrl}/rest/v1/patient_segments?client_id=eq.${user.id}&select=monetary_kzt,frequency`,
+            {
+              headers: {
+                apikey: serviceKey,
+                Authorization: `Bearer ${serviceKey}`,
+                Range: `${offset}-${offset + PAGE - 1}`,
+                'Range-Unit': 'items',
+              },
+              cache: 'no-store',
+            }
+          )
+          if (!segsRes.ok) break
+          const page = await segsRes.json() as Array<{ monetary_kzt: number; frequency: number }>
+          all = all.concat(page)
+          if (page.length < PAGE) break
+          offset += PAGE
+          if (offset > 50_000) break // safety cap
         }
+
+        const lossesRes = await fetch(
+          `${supabaseUrl}/rest/v1/revenue_losses?client_id=eq.${user.id}&select=estimated_loss_kzt`,
+          { headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` }, cache: 'no-store' }
+        )
+
+        const patients = all.length
+        const totalLtv = all.reduce((s, r) => s + (r.monetary_kzt ?? 0), 0)
+        // avg_check = average of (monetary / max(1, frequency)) over patients with revenue
+        // — matches lib/rfm-segmentation.ts formula.
+        const withLtv = all.filter((p) => (p.monetary_kzt ?? 0) > 0)
+        const avgCheck = withLtv.length > 0
+          ? Math.round(withLtv.reduce((s, p) => s + (p.monetary_kzt / Math.max(1, p.frequency ?? 1)), 0) / withLtv.length)
+          : 0
+        let lossPerMonth = 0
+        if (lossesRes.ok) {
+          const losses = await lossesRes.json() as Array<{ estimated_loss_kzt: number }>
+          lossPerMonth = losses.reduce((s, r) => s + (r.estimated_loss_kzt ?? 0), 0)
+        }
+        if (patients > 0) medicalSummary = { patients, totalLtv, avgCheck, lossPerMonth }
       } catch {
         /* silent — section just hidden */
       }
