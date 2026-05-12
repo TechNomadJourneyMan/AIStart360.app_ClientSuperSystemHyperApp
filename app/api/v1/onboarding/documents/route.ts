@@ -16,19 +16,81 @@ function createServiceClient() {
 }
 
 // GET /api/v1/onboarding/documents?user_id=xxx
+// Returns documents + enriched per-doc: latest ai_run summary + entity count.
 export async function GET(req: NextRequest) {
   const userId = req.nextUrl.searchParams.get('user_id')
   if (!userId) return NextResponse.json({ ok: false, error: 'user_id required' }, { status: 400 })
 
-  const sb = createServerClient()
-  const { data, error } = await sb
+  // Service-role for the enrichment joins — needs to bypass RLS on ai_runs/ai_extractions.
+  const svc = createServiceClient()
+  const { data: docs, error } = await svc
     .from('documents')
     .select('*')
     .eq('user_id', userId)
     .order('uploaded_at', { ascending: false })
 
   if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
-  return NextResponse.json({ ok: true, data: data ?? [] })
+  if (!docs || docs.length === 0) return NextResponse.json({ ok: true, data: [] })
+
+  // Fetch latest ai_run per document via trigger_entity = `documents.{id}`
+  const entities = docs.map((d) => `documents.${d.id}`)
+  const { data: runs } = await svc
+    .from('ai_runs')
+    .select('id,trigger_entity,status,steps,started_at,finished_at,backbone,total_cost_usd')
+    .in('trigger_entity', entities)
+    .order('started_at', { ascending: false })
+
+  const runByEntity = new Map<string, typeof runs extends Array<infer R> ? R : never>()
+  for (const r of runs ?? []) {
+    if (!runByEntity.has(r.trigger_entity)) runByEntity.set(r.trigger_entity, r)
+  }
+
+  // Count extracted entities per document
+  const { data: extracts } = await svc
+    .from('ai_extractions')
+    .select('document_id')
+    .in('document_id', docs.map((d) => d.id))
+
+  const extractCount = new Map<string, number>()
+  for (const e of extracts ?? []) {
+    extractCount.set(e.document_id, (extractCount.get(e.document_id) ?? 0) + 1)
+  }
+
+  // Patient segments count (medical-specific) keyed by client_id = user_id
+  let segmentsTotal: number | null = null
+  const hasPatientBase = docs.some((d) => d.doc_type === 'patient_base')
+  if (hasPatientBase) {
+    const { data: segs } = await svc
+      .from('patient_segments')
+      .select('segment')
+      .eq('client_id', userId)
+    segmentsTotal = segs?.length ?? 0
+  }
+
+  const enriched = docs.map((d) => {
+    const run = runByEntity.get(`documents.${d.id}`)
+    const stepDurations = ((run?.steps ?? []) as Array<{ name: string; duration_ms?: number }>)
+      .reduce((sum, s) => sum + (s.duration_ms ?? 0), 0)
+    return {
+      ...d,
+      ai_run: run
+        ? {
+            id: run.id,
+            status: run.status,
+            backbone: run.backbone,
+            cost_usd: run.total_cost_usd ?? 0,
+            steps: run.steps ?? [],
+            duration_ms: stepDurations,
+            started_at: run.started_at,
+            finished_at: run.finished_at,
+          }
+        : null,
+      extracted_entities: extractCount.get(d.id) ?? 0,
+      ...(d.doc_type === 'patient_base' ? { patient_segments_total: segmentsTotal } : {}),
+    }
+  })
+
+  return NextResponse.json({ ok: true, data: enriched })
 }
 
 // POST /api/v1/onboarding/documents — register document after upload
