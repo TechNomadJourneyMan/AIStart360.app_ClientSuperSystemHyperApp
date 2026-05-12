@@ -8,6 +8,24 @@ import { createClient } from '@/lib/supabase/client'
 type DocType = 'pl_report' | 'balance_sheet' | 'marketing_report' | 'ops_report' | 'crm_export' | 'audit' | 'patient_base' | 'other'
 type ParseStatus = 'queued' | 'processing' | 'parsed' | 'completed' | 'failed' | 'error'
 
+interface AiStep {
+  name: string
+  status?: string
+  duration_ms?: number
+  meta?: Record<string, unknown>
+}
+
+interface AiRunSummary {
+  id: string
+  status: string
+  backbone: string | null
+  cost_usd: number
+  steps: AiStep[]
+  duration_ms: number
+  started_at: string | null
+  finished_at: string | null
+}
+
 interface UploadedDoc {
   id: string
   file_name: string
@@ -17,6 +35,9 @@ interface UploadedDoc {
   parse_status: ParseStatus
   uploaded_at: string
   file_size: number | null
+  ai_run?: AiRunSummary | null
+  extracted_entities?: number
+  patient_segments_total?: number
 }
 
 interface PendingFile {
@@ -63,7 +84,16 @@ export default function DocumentsPage() {
   const [uploaded, setUploaded] = useState<UploadedDoc[]>([])
   const [isUploading, setIsUploading] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const toggleExpanded = (id: string) => {
+    setExpanded(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    })
+  }
 
   useEffect(() => {
     const bootstrap = async () => {
@@ -349,20 +379,77 @@ export default function DocumentsPage() {
               {uploaded.map(doc => {
                 const st = STATUS_CONFIG[doc.parse_status] ?? { label: doc.parse_status, color: 'text-on-surface-variant', icon: 'help' }
                 const dt = DOC_TYPES.find(d => d.value === doc.doc_type)
+                const isOpen = expanded.has(doc.id)
+                const ai = doc.ai_run
+                const hasDetails = ai || (doc.extracted_entities ?? 0) > 0 || typeof doc.patient_segments_total === 'number'
                 return (
-                  <div key={doc.id} className="flex items-center gap-3 bg-surface-container-low rounded-xl border border-white/[0.06] p-4">
-                    <span className={`material-symbols-outlined text-xl text-primary`}>{dt?.icon ?? 'description'}</span>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm text-on-surface truncate">{doc.file_name}</p>
-                      <p className="text-xs text-on-surface-variant">
-                        {dt?.label ?? doc.doc_type} {doc.period_quarter && `· ${doc.period_quarter}`} {doc.period_year && `${doc.period_year}`}
-                        {doc.file_size && ` · ${formatBytes(doc.file_size)}`}
-                      </p>
-                    </div>
-                    <div className={`flex items-center gap-1 ${st.color}`}>
-                      <span className={`material-symbols-outlined text-sm ${doc.parse_status === 'processing' ? 'animate-spin' : ''}`}>{st.icon}</span>
-                      <span className="text-xs font-mono">{st.label}</span>
-                    </div>
+                  <div key={doc.id} className="bg-surface-container-low rounded-xl border border-white/[0.06] overflow-hidden">
+                    <button
+                      type="button"
+                      onClick={() => hasDetails && toggleExpanded(doc.id)}
+                      className={`w-full flex items-center gap-3 p-4 text-left ${hasDetails ? 'hover:bg-white/[0.02] cursor-pointer' : 'cursor-default'}`}
+                    >
+                      <span className={`material-symbols-outlined text-xl text-primary`}>{dt?.icon ?? 'description'}</span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-on-surface truncate">{doc.file_name}</p>
+                        <p className="text-xs text-on-surface-variant">
+                          {dt?.label ?? doc.doc_type} {doc.period_quarter && `· ${doc.period_quarter}`} {doc.period_year && `${doc.period_year}`}
+                          {doc.file_size && ` · ${formatBytes(doc.file_size)}`}
+                        </p>
+                      </div>
+                      <div className={`flex items-center gap-1 ${st.color}`}>
+                        <span className={`material-symbols-outlined text-sm ${doc.parse_status === 'processing' ? 'animate-spin' : ''}`}>{st.icon}</span>
+                        <span className="text-xs font-mono">{st.label}</span>
+                      </div>
+                      {hasDetails && (
+                        <span className={`material-symbols-outlined text-sm text-on-surface-variant transition-transform ${isOpen ? 'rotate-180' : ''}`}>expand_more</span>
+                      )}
+                    </button>
+
+                    {isOpen && hasDetails && (
+                      <div className="border-t border-white/[0.06] bg-black/20 px-4 py-3 space-y-2 text-xs">
+                        {ai && (
+                          <>
+                            <div className="flex flex-wrap gap-x-4 gap-y-1 text-on-surface-variant">
+                              <span>AI run: <span className="text-on-surface font-mono">{ai.status}</span></span>
+                              {ai.backbone && <span>backbone: <span className="font-mono">{ai.backbone}</span></span>}
+                              {ai.duration_ms > 0 && <span>длительность: <span className="font-mono">{(ai.duration_ms / 1000).toFixed(1)}s</span></span>}
+                              {ai.cost_usd > 0 && <span>cost: <span className="font-mono">${ai.cost_usd.toFixed(4)}</span></span>}
+                            </div>
+                            {ai.steps.length > 0 && (
+                              <div className="space-y-1">
+                                <p className="text-on-surface-variant text-[10px] uppercase tracking-wider">Pipeline steps</p>
+                                {ai.steps.map((step, i) => (
+                                  <div key={i} className="flex items-center gap-2 font-mono">
+                                    <span className={`material-symbols-outlined text-[14px] ${step.status === 'completed' ? 'text-primary' : step.status === 'failed' ? 'text-error' : 'text-on-surface-variant'}`}>
+                                      {step.status === 'completed' ? 'check_circle' : step.status === 'failed' ? 'error' : 'schedule'}
+                                    </span>
+                                    <span className="text-on-surface">{step.name}</span>
+                                    {step.duration_ms != null && <span className="text-on-surface-variant ml-auto">{step.duration_ms}ms</span>}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </>
+                        )}
+
+                        <div className="flex flex-wrap gap-x-4 gap-y-1 text-on-surface-variant pt-2 border-t border-white/[0.04]">
+                          {(doc.extracted_entities ?? 0) > 0 && (
+                            <span>извлечено сущностей: <span className="text-on-surface font-mono">{doc.extracted_entities}</span></span>
+                          )}
+                          {typeof doc.patient_segments_total === 'number' && (
+                            <span>RFM сегментов: <span className="text-on-surface font-mono">{doc.patient_segments_total}</span></span>
+                          )}
+                        </div>
+
+                        {doc.doc_type === 'patient_base' && (doc.patient_segments_total ?? 0) > 0 && (
+                          <a href="/client/dashboard-medical" className="inline-flex items-center gap-1 text-primary hover:underline mt-1">
+                            <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
+                            Открыть кабинет клиники
+                          </a>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )
               })}
