@@ -16,6 +16,10 @@ import { createServerClient } from '@/lib/supabase-server'
 import { MEDICAL_INTAKE_FIELDS } from '@/lib/intake-schemas'
 import { validatePatientBase, type DataQualityReport } from '@/lib/data-quality'
 import { orchestrate } from '@/lib/ai/orchestrator'
+import { segmentPatients } from '@/lib/rfm-segmentation'
+import { computeBundles } from '@/lib/clinic-bundles'
+import { auditRevenueLosses } from '@/lib/revenue-audit'
+import { computeMedicalDiagnostics } from '@/lib/diagnostics-bridge'
 
 function srBase() {
   return {
@@ -34,6 +38,30 @@ async function srPost(path: string, body: unknown, extraHeaders: Record<string, 
       'Content-Type': 'application/json',
       Prefer: 'return=representation',
       ...extraHeaders,
+    },
+    body: JSON.stringify(body),
+    cache: 'no-store',
+  })
+}
+
+async function srDelete(path: string): Promise<Response> {
+  const { url, key } = srBase()
+  return fetch(`${url}/rest/v1/${path}`, {
+    method: 'DELETE',
+    headers: { apikey: key, Authorization: `Bearer ${key}`, Prefer: 'return=minimal' },
+    cache: 'no-store',
+  })
+}
+
+async function srPatch(path: string, body: unknown): Promise<Response> {
+  const { url, key } = srBase()
+  return fetch(`${url}/rest/v1/${path}`, {
+    method: 'PATCH',
+    headers: {
+      apikey: key,
+      Authorization: `Bearer ${key}`,
+      'Content-Type': 'application/json',
+      Prefer: 'return=minimal',
     },
     body: JSON.stringify(body),
     cache: 'no-store',
@@ -212,7 +240,7 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // ── 4. Kick off AI orchestrator (RFM segmentation + bundles + losses) ──
+  // ── 4. Kick off AI orchestrator (parse/classify/extract pipeline) ──
   let aiRunId: string | undefined
   if (documentId) {
     try {
@@ -230,11 +258,99 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // ── 5. Full medical audit pipeline (RFM + bundles + losses + Точка А bridge) ──
+  // Runs synchronously here so by the time the user lands on /dashboard the
+  // diagnostics row + segments are ready (no separate audit step needed).
+  let auditOk = false
+  const fileForAudit = form.get('patient_base')
+  if (fileForAudit instanceof File && fileForAudit.size > 0 && documentId) {
+    try {
+      const buf2 = Buffer.from(await fileForAudit.arrayBuffer())
+      const seg = segmentPatients(buf2, fileForAudit.name)
+      if (seg) {
+        const bundlesOut = computeBundles(seg)
+        const auditOut = auditRevenueLosses(seg, bundlesOut)
+
+        // Clean previous rows for this client
+        await srDelete(`patient_segments?client_id=eq.${user.id}`)
+        await srDelete(`growth_bundles?client_id=eq.${user.id}`)
+        await srDelete(`revenue_losses?client_id=eq.${user.id}`)
+
+        // patient_segments — chunked
+        const segRows = seg.patients.map((p) => ({
+          client_id: user.id,
+          patient_hash: p.patient_hash,
+          display_name: p.display_name,
+          recency_days: p.recency_days,
+          frequency: p.frequency,
+          monetary_kzt: p.monetary_kzt,
+          segment: p.segment,
+          priority: p.priority,
+          source_document_id: documentId,
+        }))
+        for (let i = 0; i < segRows.length; i += 500) {
+          await srPost('patient_segments', segRows.slice(i, i + 500), { Prefer: 'return=minimal' })
+        }
+
+        const bundleRows = bundlesOut.map((b) => ({
+          client_id: user.id,
+          bundle_key: b.key,
+          target_segments: b.target_segments,
+          target_patient_count: b.target_patient_count,
+          estimated_conversion: b.estimated_conversion,
+          estimated_revenue_kzt: b.estimated_revenue_kzt,
+          priority: b.priority,
+          complexity: b.complexity,
+          effect_timeline: b.effect_timeline,
+          trigger_description: b.trigger_description,
+          script_preview: b.script_preview,
+        }))
+        await srPost('growth_bundles', bundleRows, { Prefer: 'return=minimal' })
+
+        const lossRows = auditOut.losses.map((l) => ({
+          client_id: user.id,
+          loss_key: l.key,
+          estimated_loss_kzt: l.estimated_loss_kzt,
+          severity: l.severity,
+          source_data: l.source_data,
+          linked_bundle_key: l.linked_bundle_key,
+        }))
+        await srPost('revenue_losses', lossRows, { Prefer: 'return=minimal' })
+
+        // Bridge → diagnostics for /dashboard Точка А
+        const diag = computeMedicalDiagnostics({
+          userId: user.id,
+          companyId,
+          segments: seg.patients.map((p) => ({
+            monetary_kzt: p.monetary_kzt,
+            frequency: p.frequency,
+            recency_days: p.recency_days,
+            segment: p.segment,
+          })),
+          losses: auditOut.losses.map((l) => ({
+            estimated_loss_kzt: l.estimated_loss_kzt,
+            severity: l.severity,
+          })),
+          bundles: bundlesOut.map((b) => ({
+            estimated_revenue_kzt: b.estimated_revenue_kzt,
+            target_patient_count: b.target_patient_count,
+          })),
+        })
+        await srPatch(`diagnostics?user_id=eq.${user.id}&is_current=eq.true`, { is_current: false })
+        await srPost('diagnostics', diag, { Prefer: 'return=minimal' })
+        auditOk = true
+      }
+    } catch (e) {
+      console.error('[onboarding/medical] audit pipeline failed (non-fatal):', e)
+    }
+  }
+
   return NextResponse.json({
     ok: true,
     companyId,
     documentId,
     qualityReport,
     aiRunId,
+    auditOk,
   })
 }

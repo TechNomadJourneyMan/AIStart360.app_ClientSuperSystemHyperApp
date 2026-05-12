@@ -14,6 +14,7 @@ import { createServerClient } from '@/lib/supabase-server'
 import { segmentPatients } from '@/lib/rfm-segmentation'
 import { computeBundles } from '@/lib/clinic-bundles'
 import { auditRevenueLosses } from '@/lib/revenue-audit'
+import { computeMedicalDiagnostics } from '@/lib/diagnostics-bridge'
 
 function srBase() {
   return {
@@ -58,6 +59,21 @@ async function srDelete(path: string): Promise<Response> {
       Authorization: `Bearer ${key}`,
       Prefer: 'return=minimal',
     },
+    cache: 'no-store',
+  })
+}
+
+async function srPatch(path: string, body: unknown): Promise<Response> {
+  const { url, key } = srBase()
+  return fetch(`${url}/rest/v1/${path}`, {
+    method: 'PATCH',
+    headers: {
+      apikey: key,
+      Authorization: `Bearer ${key}`,
+      'Content-Type': 'application/json',
+      Prefer: 'return=minimal',
+    },
+    body: JSON.stringify(body),
     cache: 'no-store',
   })
 }
@@ -173,6 +189,37 @@ export async function POST(req: NextRequest) {
   const lRes = await srPost('revenue_losses', lossRows)
   if (!lRes.ok) {
     console.error('[audit/run] revenue_losses insert failed', lRes.status, await lRes.text().catch(() => ''))
+  }
+
+  // 4b. Bridge: derive Точка А (5 block scores) from medical pipeline output
+  // and upsert into `diagnostics` so /dashboard renders live KPI without a
+  // separate generic anketa.
+  try {
+    const companyId = (doc as { company_id?: string | null }).company_id ?? null
+    const diag = computeMedicalDiagnostics({
+      userId: user.id,
+      companyId,
+      segments: seg.patients.map((p) => ({
+        monetary_kzt: p.monetary_kzt,
+        frequency: p.frequency,
+        recency_days: p.recency_days,
+        segment: p.segment,
+      })),
+      losses: audit.losses.map((l) => ({
+        estimated_loss_kzt: l.estimated_loss_kzt,
+        severity: l.severity,
+      })),
+      bundles: bundles.map((b) => ({
+        estimated_revenue_kzt: b.estimated_revenue_kzt,
+        target_patient_count: b.target_patient_count,
+      })),
+    })
+    // mark previous diagnostics as not current
+    await srPatch(`diagnostics?user_id=eq.${user.id}&is_current=eq.true`, { is_current: false })
+    // insert new current row
+    await srPost('diagnostics', diag)
+  } catch (e) {
+    console.error('[audit/run] diagnostics bridge failed (non-fatal):', e)
   }
 
   // 5. Return condensed summary (UI doesn't need the full patient list)
