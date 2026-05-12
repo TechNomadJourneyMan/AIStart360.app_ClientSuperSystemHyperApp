@@ -88,8 +88,31 @@ export function MedicalAuditPanel() {
   const [error, setError] = useState<string | null>(null)
   const [expandedKey, setExpandedKey] = useState<BundleKey | null>(null)
 
-  const load = useCallback(async () => {
+  // Fast cached read — no recompute.
+  const loadCached = useCallback(async () => {
     setLoading(true)
+    setError(null)
+    try {
+      const res = await fetch('/api/medical/audit', { cache: 'no-store' })
+      if (res.status === 404) {
+        setData(null)
+      } else if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string }
+        throw new Error(body.error ?? `HTTP ${res.status}`)
+      } else {
+        const body = (await res.json()) as AuditResponse
+        setData(body)
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Ошибка загрузки')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  // Full recompute — only on user click.
+  const recompute = useCallback(async () => {
+    setRunning(true)
     setError(null)
     try {
       const res = await fetch('/api/medical/audit/run', {
@@ -107,14 +130,13 @@ export function MedicalAuditPanel() {
         setData(body)
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Ошибка загрузки')
+      setError(e instanceof Error ? e.message : 'Ошибка пересчёта')
     } finally {
-      setLoading(false)
       setRunning(false)
     }
   }, [])
 
-  useEffect(() => { void load() }, [load])
+  useEffect(() => { void loadCached() }, [loadCached])
 
   if (loading && !data) {
     return (
@@ -160,14 +182,14 @@ export function MedicalAuditPanel() {
           AI-аудит клиники
         </p>
         <button
-          onClick={() => { setRunning(true); void load() }}
+          onClick={() => { void recompute() }}
           disabled={loading || running}
           className="inline-flex items-center gap-1.5 text-xs text-on-surface-variant hover:text-primary disabled:opacity-50"
         >
-          <span className={`material-symbols-outlined text-[14px] ${running || loading ? 'animate-spin' : ''}`}>
+          <span className={`material-symbols-outlined text-[14px] ${running ? 'animate-spin' : ''}`}>
             refresh
           </span>
-          {running ? 'Считаем…' : 'Пересчитать'}
+          {running ? 'Пересчёт…' : 'Пересчитать'}
         </button>
       </div>
 
