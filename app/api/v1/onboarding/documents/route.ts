@@ -33,15 +33,26 @@ export async function GET(req: NextRequest) {
   if (!docs || docs.length === 0) return NextResponse.json({ ok: true, data: [] })
 
   // Fetch latest ai_run per document via trigger_entity = `documents.{id}`
+  interface AiRunRow {
+    id: string
+    trigger_entity: string
+    status: string
+    steps: Array<{ name: string; status?: string; duration_ms?: number; meta?: Record<string, unknown> }>
+    started_at: string | null
+    finished_at: string | null
+    backbone: string | null
+    total_cost_usd: number | null
+  }
   const entities = docs.map((d) => `documents.${d.id}`)
-  const { data: runs } = await svc
+  const { data: runsData } = await svc
     .from('ai_runs')
     .select('id,trigger_entity,status,steps,started_at,finished_at,backbone,total_cost_usd')
     .in('trigger_entity', entities)
     .order('started_at', { ascending: false })
 
-  const runByEntity = new Map<string, typeof runs extends Array<infer R> ? R : never>()
-  for (const r of runs ?? []) {
+  const runs = (runsData ?? []) as AiRunRow[]
+  const runByEntity = new Map<string, AiRunRow>()
+  for (const r of runs) {
     if (!runByEntity.has(r.trigger_entity)) runByEntity.set(r.trigger_entity, r)
   }
 
