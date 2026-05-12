@@ -3,6 +3,7 @@ export const dynamic = "force-dynamic"
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { cookies } from 'next/headers'
+import { MedicalAuditPanel } from '@/components/medical/MedicalAuditPanel'
 import { KpiCardsGrid } from '@/components/dashboard/KpiCardsGrid'
 import { GriDiagramWidget } from '@/components/dashboard/GriDiagramWidget'
 import { GoalsBar } from '@/components/dashboard/GoalsBar'
@@ -333,11 +334,6 @@ export default async function DashboardPage() {
                 <p className="text-[11px] font-mono text-primary/60 uppercase tracking-[0.2em]">
                   AI-аудит клиники · из загруженной базы пациентов
                 </p>
-                <Link href="/client/dashboard-medical"
-                  className="text-xs text-primary hover:underline inline-flex items-center gap-1">
-                  Открыть полный кабинет
-                  <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
-                </Link>
               </div>
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                 {[
@@ -451,6 +447,10 @@ export default async function DashboardPage() {
               ))}
             </div>
           </section>
+
+          {/* Full medical audit panel inline — replaces the separate
+              /client/dashboard-medical page for medical-vertical clients. */}
+          {vertical === 'medical' && <MedicalAuditPanel />}
         </div>
       )
     }
