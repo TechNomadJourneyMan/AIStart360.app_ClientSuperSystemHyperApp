@@ -47,13 +47,13 @@ interface PendingFile {
   period_year: string
 }
 
-const DOC_TYPES: { value: DocType; label: string; icon: string; example: string }[] = [
-  { value: 'pl_report',        label: 'P&L (Отчёт о прибыли)',  icon: 'receipt_long',  example: 'Шаблон P&L' },
-  { value: 'balance_sheet',    label: 'Баланс',                  icon: 'account_balance',example: 'Шаблон баланса' },
-  { value: 'marketing_report', label: 'Маркетинговый отчёт',     icon: 'campaign',      example: 'Шаблон маркетинга' },
-  { value: 'ops_report',       label: 'Операционный отчёт',      icon: 'settings',      example: 'Шаблон операций' },
-  { value: 'crm_export',       label: 'CRM-выгрузка',            icon: 'people',        example: 'Шаблон CRM' },
-  { value: 'audit',            label: 'Аудит',                   icon: 'fact_check',    example: 'Шаблон аудита' },
+const DOC_TYPES: { value: DocType; label: string; icon: string; example: string; templateUrl?: string }[] = [
+  { value: 'pl_report',        label: 'P&L (Отчёт о прибыли)',  icon: 'receipt_long',  example: 'Шаблон P&L',          templateUrl: '/templates/pl_report.csv' },
+  { value: 'balance_sheet',    label: 'Баланс',                  icon: 'account_balance',example: 'Шаблон баланса',      templateUrl: '/templates/balance_sheet.csv' },
+  { value: 'marketing_report', label: 'Маркетинговый отчёт',     icon: 'campaign',      example: 'Шаблон маркетинга',   templateUrl: '/templates/marketing_report.csv' },
+  { value: 'ops_report',       label: 'Операционный отчёт',      icon: 'settings',      example: 'Шаблон операций',     templateUrl: '/templates/ops_report.csv' },
+  { value: 'crm_export',       label: 'CRM-выгрузка',            icon: 'people',        example: 'Шаблон CRM',          templateUrl: '/templates/crm_export.csv' },
+  { value: 'audit',            label: 'Аудит',                   icon: 'fact_check',    example: 'Шаблон аудита',       templateUrl: '/templates/audit.csv' },
   { value: 'patient_base',     label: 'База пациентов',          icon: 'groups',        example: '' },
   { value: 'other',            label: 'Другое',                  icon: 'folder',        example: '' },
 ]
@@ -359,12 +359,17 @@ export default function DocumentsPage() {
         <div>
           <h2 className="text-xs font-mono text-on-surface-variant uppercase tracking-widest mb-3">Примеры шаблонов</h2>
           <div className="grid grid-cols-2 gap-2">
-            {DOC_TYPES.filter(d => d.example).map(d => (
-              <div key={d.value} className="flex items-center gap-2 bg-surface-container-low rounded-xl border border-white/[0.06] p-3">
+            {DOC_TYPES.filter(d => d.example && d.templateUrl).map(d => (
+              <a
+                key={d.value}
+                href={d.templateUrl}
+                download={d.templateUrl?.split('/').pop()}
+                className="flex items-center gap-2 bg-surface-container-low rounded-xl border border-white/[0.06] p-3 hover:border-primary/30 hover:bg-white/[0.02] transition-all"
+              >
                 <span className={`material-symbols-outlined text-base text-primary`}>{d.icon}</span>
                 <span className="text-xs text-on-surface flex-1">{d.label}</span>
-                <span className="material-symbols-outlined text-xs text-on-surface-variant/40">download</span>
-              </div>
+                <span className="material-symbols-outlined text-sm text-primary">download</span>
+              </a>
             ))}
           </div>
         </div>

@@ -1,0 +1,9 @@
+client_id,full_name,phone,email,first_visit_date,last_visit_date,visits_count,total_spent_kzt,avg_check_kzt,segment,status,source,notes
+1,Иванов Иван,+77071234567,ivanov@mail.ru,2024-01-15,2025-09-20,12,180000,15000,active,active,Google,
+2,Петрова Анна,+77072345678,petrova@mail.ru,2024-03-22,2025-10-05,8,96000,12000,active,active,Instagram,
+3,Сидоров Пётр,+77073456789,sidorov@mail.ru,2023-06-10,2024-12-15,3,42000,14000,sleeping,inactive,Direct,
+4,Козлов Дмитрий,+77074567890,kozlov@mail.ru,2024-08-01,2025-11-10,6,210000,35000,vip,active,Referral,
+5,Алиева Мария,+77075678901,alieva@mail.ru,2025-02-14,2025-11-15,4,72000,18000,new,active,Facebook,
+6,Жакупов Арман,+77076789012,zhakupov@mail.ru,2022-11-30,2024-03-10,2,18000,9000,churned,inactive,Google,
+7,Нурланова Айгуль,+77077890123,nurlanova@mail.ru,2023-09-12,2025-10-25,9,135000,15000,active,active,Direct,
+8,Серикбаев Тимур,+77078901234,serikbaev@mail.ru,2024-05-20,2025-11-12,5,225000,45000,vip,active,Referral,

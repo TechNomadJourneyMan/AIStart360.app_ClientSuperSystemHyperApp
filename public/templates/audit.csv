@@ -1,0 +1,7 @@
+audit_area,finding,severity,impact_estimate_kzt,recommendation,deadline,owner,status
+finance,Низкая маржа в Q3,medium,2500000,Пересмотреть цены на услуги категории A,2025-12-31,CFO,open
+operations,Высокое время обработки заказов,high,4000000,Внедрить автоматизацию back-office,2025-11-30,COO,in_progress
+marketing,Низкий ROAS на Facebook,medium,1200000,Пересмотреть креативы и аудиторию,2025-12-15,CMO,open
+sales,Отсутствие follow-up после первого визита,critical,8500000,Запустить WhatsApp касание на 3-й день,2025-11-15,Sales,open
+hr,Высокая текучесть в отделе продаж,medium,3200000,Пересмотр бонусной системы,2026-Q1,HR,planned
+compliance,Просроченные сертификаты,low,500000,Обновление календарём,2025-10-01,Legal,done
