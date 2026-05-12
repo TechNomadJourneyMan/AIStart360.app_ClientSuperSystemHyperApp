@@ -111,7 +111,9 @@ export default function OnboardingMedicalPage() {
       // If there are critical quality issues — let user see them before redirect
       const hasCriticalIssues = body.qualityReport?.issues.some((i) => i.severity === 'critical')
       if (!hasCriticalIssues) {
-        setTimeout(() => router.replace('/client/dashboard-medical'), 3500)
+        // Land on the main /dashboard — Точка А now auto-fills from medical
+        // pipeline output via diagnostics-bridge.
+        setTimeout(() => router.replace('/dashboard'), 3500)
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Не удалось отправить')
