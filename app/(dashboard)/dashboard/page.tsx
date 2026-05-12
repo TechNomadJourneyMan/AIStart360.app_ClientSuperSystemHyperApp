@@ -2,7 +2,6 @@ export const dynamic = "force-dynamic"
 
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import { redirect } from 'next/navigation'
 import { cookies } from 'next/headers'
 import { KpiCardsGrid } from '@/components/dashboard/KpiCardsGrid'
 import { GriDiagramWidget } from '@/components/dashboard/GriDiagramWidget'
@@ -235,13 +234,42 @@ export default async function DashboardPage() {
       // fall through — treat as client if role unknown
     }
 
-    // Medical-vertical clients see the clinic dashboard at /client/dashboard-medical.
-    if (vertical === 'medical' && role !== 'admin' && role !== 'super_admin' && role !== 'expert' && role !== 'manager') {
-      redirect('/client/dashboard-medical')
-    }
     // Show client view for: explicit 'client' role, OR unknown role (safety fallback)
     // Only admin/super_admin/expert/manager see the admin dashboard
     const isAdmin = role === 'admin' || role === 'super_admin' || role === 'expert' || role === 'manager'
+    // Medical client → still show /dashboard but inject medical KPIs at top (data
+    // pulled directly from patient_segments + revenue_losses, computed live).
+    let medicalSummary: { patients: number; totalLtv: number; avgCheck: number; lossPerMonth: number } | null = null
+    if (vertical === 'medical' && !isAdmin) {
+      try {
+        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+        const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+        const [segsRes, lossesRes] = await Promise.all([
+          fetch(
+            `${supabaseUrl}/rest/v1/patient_segments?client_id=eq.${user.id}&select=monetary_kzt`,
+            { headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` }, cache: 'no-store' }
+          ),
+          fetch(
+            `${supabaseUrl}/rest/v1/revenue_losses?client_id=eq.${user.id}&select=estimated_loss_kzt`,
+            { headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` }, cache: 'no-store' }
+          ),
+        ])
+        if (segsRes.ok) {
+          const segs = await segsRes.json() as Array<{ monetary_kzt: number }>
+          const patients = segs.length
+          const totalLtv = segs.reduce((s, r) => s + (r.monetary_kzt ?? 0), 0)
+          const avgCheck = patients > 0 ? Math.round(totalLtv / patients) : 0
+          let lossPerMonth = 0
+          if (lossesRes.ok) {
+            const losses = await lossesRes.json() as Array<{ estimated_loss_kzt: number }>
+            lossPerMonth = losses.reduce((s, r) => s + (r.estimated_loss_kzt ?? 0), 0)
+          }
+          if (patients > 0) medicalSummary = { patients, totalLtv, avgCheck, lossPerMonth }
+        }
+      } catch {
+        /* silent — section just hidden */
+      }
+    }
     if (!isAdmin) {
       // Fetch latest diagnostic via REST API to avoid RLS issues
       let diag: Record<string, unknown> | null = null
@@ -277,6 +305,37 @@ export default async function DashboardPage() {
 
       return (
         <div className="space-y-6">
+          {medicalSummary && (
+            <section>
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-[11px] font-mono text-primary/60 uppercase tracking-[0.2em]">
+                  AI-аудит клиники · из загруженной базы пациентов
+                </p>
+                <Link href="/client/dashboard-medical"
+                  className="text-xs text-primary hover:underline inline-flex items-center gap-1">
+                  Открыть полный кабинет
+                  <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
+                </Link>
+              </div>
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                {[
+                  { label: 'Пациентов в базе', value: medicalSummary.patients.toLocaleString('ru-RU'), icon: 'groups', color: 'text-primary' },
+                  { label: 'Суммарный LTV', value: `${(medicalSummary.totalLtv / 1_000_000).toFixed(1)}M ₸`, icon: 'payments', color: 'text-primary' },
+                  { label: 'Средний чек', value: `${medicalSummary.avgCheck.toLocaleString('ru-RU')} ₸`, icon: 'trending_up', color: 'text-on-surface' },
+                  { label: 'Оценка потерь/мес', value: `${(medicalSummary.lossPerMonth / 1_000_000).toFixed(1)}M ₸`, icon: 'warning', color: 'text-error' },
+                ].map((c, i) => (
+                  <div key={i} className="bg-surface-container-low border border-white/[0.06] rounded-2xl p-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider">{c.label}</p>
+                      <span className={`material-symbols-outlined text-[18px] ${c.color}`}>{c.icon}</span>
+                    </div>
+                    <p className={`text-2xl font-bold ${c.color}`}>{c.value}</p>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
           <section>
             <div className="flex items-start justify-between mb-4">
               <div>
