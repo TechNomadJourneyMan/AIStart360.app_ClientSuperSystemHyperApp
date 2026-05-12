@@ -1,0 +1,12 @@
+period,metric,value,unit,target,variance_pct,notes
+2025-Q1,orders_processed,1240,count,1200,3.33,
+2025-Q1,avg_processing_time,2.8,hours,3.0,-6.67,improved
+2025-Q1,defect_rate,1.2,pct,1.5,-20.0,improved
+2025-Q1,customer_satisfaction,4.6,score_1_5,4.5,2.22,
+2025-Q1,employee_utilization,82,pct,85,-3.53,
+2025-Q1,inventory_turnover,4.2,times,4.0,5.0,
+2025-Q1,on_time_delivery,94,pct,95,-1.05,
+2025-Q2,orders_processed,1480,count,1300,13.85,
+2025-Q2,avg_processing_time,2.5,hours,2.8,-10.71,improved
+2025-Q2,defect_rate,0.9,pct,1.4,-35.71,improved
+2025-Q2,customer_satisfaction,4.7,score_1_5,4.6,2.17,
