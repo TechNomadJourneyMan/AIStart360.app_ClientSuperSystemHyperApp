@@ -4,6 +4,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { cookies } from 'next/headers'
 import { MedicalAuditPanel } from '@/components/medical/MedicalAuditPanel'
+import { HeroGoalsBlock } from '@/components/dashboard/HeroGoalsBlock'
 import { KpiCardsGrid } from '@/components/dashboard/KpiCardsGrid'
 import { GriDiagramWidget } from '@/components/dashboard/GriDiagramWidget'
 import { GoalsBar } from '@/components/dashboard/GoalsBar'
@@ -365,8 +366,17 @@ export default async function DashboardPage() {
       const totalScore = pointA?.overall_score ?? 0
       const healthIndex = pointA?.health_index ?? 0
 
+      // Derive monthly revenue estimate for hero (medical: totalLtv / 36 months
+      // as a rough run-rate; user can override via input)
+      const derivedMonthly = medicalSummary && medicalSummary.totalLtv > 0
+        ? Math.round(medicalSummary.totalLtv / 36)
+        : null
+
       return (
         <div className="space-y-6">
+          {/* Hero: 3 cards + Goal inputs + GRI CTA */}
+          <HeroGoalsBlock derivedCurrent={derivedMonthly} />
+
           {medicalSummary && (
             <section>
               {/* Status pill + section header */}
