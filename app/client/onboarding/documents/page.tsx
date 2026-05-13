@@ -85,6 +85,8 @@ export default function DocumentsPage() {
   const [isUploading, setIsUploading] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const [aiSuggestion, setAiSuggestion] = useState<{ type: DocType; confidence: number; reasoning: string } | null>(null)
+  const [classifying, setClassifying] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const toggleExpanded = (id: string) => {
@@ -133,8 +135,59 @@ export default function DocumentsPage() {
     return () => clearInterval(interval)
   }, [userId, fetchDocs])
 
+  /** Read a small text excerpt from the file for AI classification.
+      For CSV/TXT — plain text. For XLSX/DOCX/PDF/PPTX — skip (binary) and
+      let server classify from filename + mime only. */
+  async function readExcerpt(file: File): Promise<string> {
+    const ext = file.name.split('.').pop()?.toLowerCase() ?? ''
+    if (ext === 'csv' || ext === 'txt') {
+      try {
+        const text = await file.slice(0, 2048).text()
+        return text
+      } catch {
+        return ''
+      }
+    }
+    return ''
+  }
+
+  /** Ask Haiku (server-side) to suggest doc_type. Silently noop on any error. */
+  async function classifyDocType(file: File) {
+    setClassifying(true)
+    setAiSuggestion(null)
+    try {
+      const textExcerpt = await readExcerpt(file)
+      const res = await fetch('/api/ai/classify-doc-type', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fileName: file.name,
+          mimeType: file.type,
+          textExcerpt,
+        }),
+      })
+      const data = await res.json() as { ok: boolean; suggestedType?: DocType; confidence?: number; reasoning?: string }
+      if (data.ok && data.suggestedType && typeof data.confidence === 'number') {
+        setAiSuggestion({
+          type: data.suggestedType,
+          confidence: data.confidence,
+          reasoning: data.reasoning ?? '',
+        })
+        // Auto-fill dropdown only if confident
+        if (data.confidence >= 0.7) {
+          setPending(p => (p ? { ...p, doc_type: data.suggestedType! } : p))
+        }
+      }
+    } catch {
+      // silent
+    } finally {
+      setClassifying(false)
+    }
+  }
+
   const handleFile = (file: File) => {
     setUploadError(null)
+    setAiSuggestion(null)
     if (file.size > MAX_SIZE) {
       setUploadError('Файл слишком большой. Максимум 50 МБ.')
       return
@@ -145,6 +198,8 @@ export default function DocumentsPage() {
       return
     }
     setPending({ file, doc_type: '', period_quarter: '', period_year: new Date().getFullYear().toString() })
+    // Fire classification in background — no await, UI stays responsive.
+    void classifyDocType(file)
   }
 
   const onDrop = (e: React.DragEvent) => {
@@ -298,7 +353,28 @@ export default function DocumentsPage() {
             </div>
 
             <div>
-              <label className="block text-xs font-mono text-on-surface-variant uppercase tracking-wider mb-2">Тип документа *</label>
+              <div className="flex items-center justify-between mb-2">
+                <label className="block text-xs font-mono text-on-surface-variant uppercase tracking-wider">Тип документа *</label>
+                {classifying && (
+                  <span className="inline-flex items-center gap-1.5 text-[10px] font-mono text-primary">
+                    <span className="material-symbols-outlined text-[12px] animate-spin">progress_activity</span>
+                    AI анализирует…
+                  </span>
+                )}
+                {!classifying && aiSuggestion && (
+                  <span
+                    className={`inline-flex items-center gap-1.5 text-[10px] font-mono px-2 py-0.5 rounded-full border ${
+                      aiSuggestion.confidence >= 0.7
+                        ? 'bg-primary/10 border-primary/30 text-primary'
+                        : 'bg-amber-500/10 border-amber-500/30 text-amber-300'
+                    }`}
+                    title={aiSuggestion.reasoning}
+                  >
+                    <span className="material-symbols-outlined text-[12px]">{aiSuggestion.confidence >= 0.7 ? 'check_circle' : 'help'}</span>
+                    {aiSuggestion.confidence >= 0.7 ? 'AI определил' : 'AI предполагает'}: {DOC_TYPES.find(d => d.value === aiSuggestion.type)?.label ?? aiSuggestion.type} · {Math.round(aiSuggestion.confidence * 100)}%
+                  </span>
+                )}
+              </div>
               <select
                 value={pending.doc_type}
                 onChange={e => setPending(p => p ? { ...p, doc_type: e.target.value as DocType } : p)}
@@ -307,6 +383,19 @@ export default function DocumentsPage() {
                 <option value="">— Выберите тип —</option>
                 {DOC_TYPES.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
               </select>
+              {!classifying && aiSuggestion && aiSuggestion.confidence < 0.7 && pending.doc_type !== aiSuggestion.type && (
+                <button
+                  type="button"
+                  onClick={() => setPending(p => p ? { ...p, doc_type: aiSuggestion.type } : p)}
+                  className="text-[11px] text-primary hover:underline mt-1.5 inline-flex items-center gap-1"
+                >
+                  <span className="material-symbols-outlined text-[12px]">auto_fix</span>
+                  Применить AI-подсказку
+                </button>
+              )}
+              {!classifying && aiSuggestion && (
+                <p className="text-[10px] text-on-surface-variant/70 mt-1.5 italic">{aiSuggestion.reasoning}</p>
+              )}
             </div>
 
             <div className="grid grid-cols-2 gap-3">
