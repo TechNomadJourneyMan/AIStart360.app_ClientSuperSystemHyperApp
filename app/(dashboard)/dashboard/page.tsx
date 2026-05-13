@@ -240,18 +240,29 @@ export default async function DashboardPage() {
     const isAdmin = role === 'admin' || role === 'super_admin' || role === 'expert' || role === 'manager'
     // Medical client → still show /dashboard but inject medical KPIs at top (data
     // pulled directly from patient_segments + revenue_losses, computed live).
-    let medicalSummary: { patients: number; totalLtv: number; avgCheck: number; lossPerMonth: number } | null = null
+    let medicalSummary: {
+      patients: number
+      totalLtv: number
+      avgCheck: number
+      lossPerMonth: number
+      activeLast90: number
+      retentionRate: number
+      sleeping: number
+      anketaFilledPct: number
+      anketaFilledCount: number
+      anketaTotal: number
+    } | null = null
     if (vertical === 'medical' && !isAdmin) {
       try {
         const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
         const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
         // Paginate patient_segments — PostgREST default limit 1000.
         const PAGE = 1000
-        let all: Array<{ monetary_kzt: number; frequency: number }> = []
+        let all: Array<{ monetary_kzt: number; frequency: number; recency_days: number }> = []
         let offset = 0
         while (true) {
           const segsRes = await fetch(
-            `${supabaseUrl}/rest/v1/patient_segments?client_id=eq.${user.id}&select=monetary_kzt,frequency`,
+            `${supabaseUrl}/rest/v1/patient_segments?client_id=eq.${user.id}&select=monetary_kzt,frequency,recency_days`,
             {
               headers: {
                 apikey: serviceKey,
@@ -263,32 +274,60 @@ export default async function DashboardPage() {
             }
           )
           if (!segsRes.ok) break
-          const page = await segsRes.json() as Array<{ monetary_kzt: number; frequency: number }>
+          const page = await segsRes.json() as Array<{ monetary_kzt: number; frequency: number; recency_days: number }>
           all = all.concat(page)
           if (page.length < PAGE) break
           offset += PAGE
           if (offset > 50_000) break // safety cap
         }
 
-        const lossesRes = await fetch(
-          `${supabaseUrl}/rest/v1/revenue_losses?client_id=eq.${user.id}&select=estimated_loss_kzt`,
-          { headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` }, cache: 'no-store' }
-        )
+        const [lossesRes, surveyRes] = await Promise.all([
+          fetch(
+            `${supabaseUrl}/rest/v1/revenue_losses?client_id=eq.${user.id}&select=estimated_loss_kzt`,
+            { headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` }, cache: 'no-store' }
+          ),
+          fetch(
+            `${supabaseUrl}/rest/v1/survey_answers?user_id=eq.${user.id}&select=question_key,answer&limit=200`,
+            { headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` }, cache: 'no-store' }
+          ),
+        ])
 
         const patients = all.length
         const totalLtv = all.reduce((s, r) => s + (r.monetary_kzt ?? 0), 0)
-        // avg_check = average of (monetary / max(1, frequency)) over patients with revenue
-        // — matches lib/rfm-segmentation.ts formula.
         const withLtv = all.filter((p) => (p.monetary_kzt ?? 0) > 0)
         const avgCheck = withLtv.length > 0
           ? Math.round(withLtv.reduce((s, p) => s + (p.monetary_kzt / Math.max(1, p.frequency ?? 1)), 0) / withLtv.length)
           : 0
+        const activeLast90 = all.filter((p) => p.recency_days <= 90).length
+        const sleeping = all.filter((p) => p.recency_days > 180 && p.recency_days < 99999).length
+        const retentionRate = patients > 0 ? Math.round((activeLast90 / patients) * 100) : 0
+
         let lossPerMonth = 0
         if (lossesRes.ok) {
           const losses = await lossesRes.json() as Array<{ estimated_loss_kzt: number }>
           lossPerMonth = losses.reduce((s, r) => s + (r.estimated_loss_kzt ?? 0), 0)
         }
-        if (patients > 0) medicalSummary = { patients, totalLtv, avgCheck, lossPerMonth }
+
+        // Anketa fill percent — count distinct non-empty medical_* answers (8 fields)
+        let anketaFilledCount = 0
+        const anketaTotal = 8
+        if (surveyRes.ok) {
+          const rows = await surveyRes.json() as Array<{ question_key: string; answer: { value?: string } | null }>
+          const filled = new Set<string>()
+          for (const r of rows) {
+            if (!r.question_key.startsWith('medical_')) continue
+            const v = (r.answer?.value ?? '').toString().trim()
+            if (v.length > 0) filled.add(r.question_key)
+          }
+          anketaFilledCount = filled.size
+        }
+        const anketaFilledPct = Math.min(100, Math.round((anketaFilledCount / anketaTotal) * 100))
+
+        if (patients > 0) medicalSummary = {
+          patients, totalLtv, avgCheck, lossPerMonth,
+          activeLast90, retentionRate, sleeping,
+          anketaFilledPct, anketaFilledCount, anketaTotal,
+        }
       } catch {
         /* silent — section just hidden */
       }
@@ -330,27 +369,170 @@ export default async function DashboardPage() {
         <div className="space-y-6">
           {medicalSummary && (
             <section>
-              <div className="flex items-center justify-between mb-3">
-                <p className="text-[11px] font-mono text-primary/60 uppercase tracking-[0.2em]">
-                  AI-аудит клиники · из загруженной базы пациентов
-                </p>
+              {/* Status pill + section header */}
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+                <div className="flex items-center gap-3">
+                  <p className="text-[11px] font-mono text-primary/60 uppercase tracking-[0.2em]">
+                    AI-аудит клиники · из загруженной базы пациентов
+                  </p>
+                  <span
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-mono font-semibold ${
+                      medicalSummary.anketaFilledPct >= 80
+                        ? 'bg-primary/15 text-primary border border-primary/30'
+                        : medicalSummary.anketaFilledPct >= 50
+                        ? 'bg-amber-500/15 text-amber-300 border border-amber-500/30'
+                        : 'bg-error/15 text-error border border-error/30'
+                    }`}
+                  >
+                    <span className={`w-1.5 h-1.5 rounded-full bg-current animate-pulse`} />
+                    Анкета {medicalSummary.anketaFilledPct}% · {medicalSummary.anketaFilledCount}/{medicalSummary.anketaTotal}
+                  </span>
+                </div>
+                <Link
+                  href="/client/onboarding-medical"
+                  className="text-xs text-on-surface-variant hover:text-primary inline-flex items-center gap-1"
+                >
+                  <span className="material-symbols-outlined text-[14px]">edit_note</span>
+                  Обновить анкету
+                </Link>
               </div>
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+
+              {/* 6 KPI cards (4 medical + retention + sleeping) с цветовой индикацией + edit pencils */}
+              <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
                 {[
-                  { label: 'Пациентов в базе', value: medicalSummary.patients.toLocaleString('ru-RU'), icon: 'groups', color: 'text-primary' },
-                  { label: 'Суммарный LTV', value: `${(medicalSummary.totalLtv / 1_000_000).toFixed(1)}M ₸`, icon: 'payments', color: 'text-primary' },
-                  { label: 'Средний чек', value: `${medicalSummary.avgCheck.toLocaleString('ru-RU')} ₸`, icon: 'trending_up', color: 'text-on-surface' },
-                  { label: 'Оценка потерь/мес', value: `${(medicalSummary.lossPerMonth / 1_000_000).toFixed(1)}M ₸`, icon: 'warning', color: 'text-error' },
-                ].map((c, i) => (
-                  <div key={i} className="bg-surface-container-low border border-white/[0.06] rounded-2xl p-4">
-                    <div className="flex items-center justify-between mb-2">
-                      <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider">{c.label}</p>
-                      <span className={`material-symbols-outlined text-[18px] ${c.color}`}>{c.icon}</span>
+                  {
+                    label: 'Пациентов в базе',
+                    value: medicalSummary.patients.toLocaleString('ru-RU'),
+                    icon: 'groups',
+                    statusTone: 'neutral' as const,
+                    editHref: '/client/onboarding-medical',
+                  },
+                  {
+                    label: 'Суммарный LTV',
+                    value: `${(medicalSummary.totalLtv / 1_000_000).toFixed(1)}M ₸`,
+                    icon: 'payments',
+                    statusTone: 'green' as const,
+                    editHref: '/client/onboarding-medical',
+                  },
+                  {
+                    label: 'Средний чек',
+                    value: `${medicalSummary.avgCheck.toLocaleString('ru-RU')} ₸`,
+                    icon: 'trending_up',
+                    statusTone: medicalSummary.avgCheck >= 15000 ? 'green' as const : medicalSummary.avgCheck >= 8000 ? 'yellow' as const : 'red' as const,
+                    editHref: '/client/onboarding-medical',
+                  },
+                  {
+                    label: 'Активные за 90 дн',
+                    value: `${medicalSummary.activeLast90.toLocaleString('ru-RU')}`,
+                    icon: 'bolt',
+                    statusTone: medicalSummary.retentionRate >= 50 ? 'green' as const : medicalSummary.retentionRate >= 30 ? 'yellow' as const : 'red' as const,
+                    sub: `Retention ${medicalSummary.retentionRate}%`,
+                    editHref: '/client/onboarding/documents',
+                  },
+                  {
+                    label: 'Спящие 180+ дн',
+                    value: medicalSummary.sleeping.toLocaleString('ru-RU'),
+                    icon: 'bedtime',
+                    statusTone: medicalSummary.sleeping > medicalSummary.patients * 0.5 ? 'red' as const : medicalSummary.sleeping > medicalSummary.patients * 0.3 ? 'yellow' as const : 'green' as const,
+                    sub: `${Math.round((medicalSummary.sleeping / Math.max(1, medicalSummary.patients)) * 100)}% базы`,
+                    editHref: '/client/onboarding/documents',
+                  },
+                  {
+                    label: 'Оценка потерь/мес',
+                    value: `${(medicalSummary.lossPerMonth / 1_000_000).toFixed(1)}M ₸`,
+                    icon: 'warning',
+                    statusTone: medicalSummary.lossPerMonth >= 10_000_000 ? 'red' as const : medicalSummary.lossPerMonth >= 5_000_000 ? 'yellow' as const : 'green' as const,
+                    editHref: '/client/onboarding-medical',
+                  },
+                ].map((c, i) => {
+                  const toneBorder = c.statusTone === 'red' ? 'border-l-error' : c.statusTone === 'yellow' ? 'border-l-amber-400' : c.statusTone === 'green' ? 'border-l-primary' : 'border-l-white/20'
+                  const toneText = c.statusTone === 'red' ? 'text-error' : c.statusTone === 'yellow' ? 'text-amber-300' : c.statusTone === 'green' ? 'text-primary' : 'text-on-surface'
+                  return (
+                    <div
+                      key={i}
+                      className={`relative group bg-surface-container-low border border-white/[0.06] border-l-[3px] ${toneBorder} rounded-2xl p-4 hover:border-white/[0.12] transition-all`}
+                    >
+                      <Link
+                        href={c.editHref}
+                        className="absolute top-2 right-2 w-6 h-6 rounded-md bg-white/[0.04] hover:bg-primary/15 text-on-surface-variant hover:text-primary opacity-0 group-hover:opacity-100 transition-all inline-flex items-center justify-center"
+                        title="Изменить в анкете"
+                      >
+                        <span className="material-symbols-outlined text-[12px]">edit</span>
+                      </Link>
+                      <div className="flex items-center justify-between mb-2 pr-6">
+                        <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider truncate">{c.label}</p>
+                        <span className={`material-symbols-outlined text-[16px] ${toneText} flex-shrink-0`}>{c.icon}</span>
+                      </div>
+                      <p className={`text-xl xl:text-2xl font-bold ${toneText}`}>{c.value}</p>
+                      {c.sub && (
+                        <p className="text-[10px] text-on-surface-variant font-mono mt-1">{c.sub}</p>
+                      )}
                     </div>
-                    <p className={`text-2xl font-bold ${c.color}`}>{c.value}</p>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
+
+              {/* Zone summary — quick read of red/yellow/green count */}
+              {(() => {
+                const lossRed = medicalSummary.lossPerMonth >= 10_000_000
+                const lossYel = !lossRed && medicalSummary.lossPerMonth >= 5_000_000
+                const checkRed = medicalSummary.avgCheck < 8000
+                const checkYel = !checkRed && medicalSummary.avgCheck < 15000
+                const retRed = medicalSummary.retentionRate < 30
+                const retYel = !retRed && medicalSummary.retentionRate < 50
+                const sleepShare = medicalSummary.sleeping / Math.max(1, medicalSummary.patients)
+                const sleepRed = sleepShare > 0.5
+                const sleepYel = !sleepRed && sleepShare > 0.3
+                const reds: string[] = []
+                const yels: string[] = []
+                const grns: string[] = []
+                if (lossRed) reds.push('Потери выручки')
+                else if (lossYel) yels.push('Потери выручки')
+                else grns.push('Потери выручки')
+                if (checkRed) reds.push('Средний чек')
+                else if (checkYel) yels.push('Средний чек')
+                else grns.push('Средний чек')
+                if (retRed) reds.push('Retention 90д')
+                else if (retYel) yels.push('Retention 90д')
+                else grns.push('Retention 90д')
+                if (sleepRed) reds.push('Спящие 180+')
+                else if (sleepYel) yels.push('Спящие 180+')
+                else grns.push('Спящие 180+')
+                return (
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-4">
+                    <div className="rounded-xl border border-error/25 bg-error/5 p-3">
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="text-[11px] font-mono uppercase tracking-wider text-error/80">Красная зона</span>
+                        <span className="text-xs font-mono font-bold text-error">{reds.length}</span>
+                      </div>
+                      <ul className="space-y-1">
+                        {reds.length === 0 && <li className="text-[11px] text-on-surface-variant">Чисто</li>}
+                        {reds.map((m) => <li key={m} className="text-xs text-on-surface">• {m}</li>)}
+                      </ul>
+                    </div>
+                    <div className="rounded-xl border border-amber-500/25 bg-amber-500/5 p-3">
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="text-[11px] font-mono uppercase tracking-wider text-amber-300/80">Жёлтая зона</span>
+                        <span className="text-xs font-mono font-bold text-amber-300">{yels.length}</span>
+                      </div>
+                      <ul className="space-y-1">
+                        {yels.length === 0 && <li className="text-[11px] text-on-surface-variant">Пусто</li>}
+                        {yels.map((m) => <li key={m} className="text-xs text-on-surface">• {m}</li>)}
+                      </ul>
+                    </div>
+                    <div className="rounded-xl border border-primary/25 bg-primary/5 p-3">
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="text-[11px] font-mono uppercase tracking-wider text-primary/80">Зелёная зона</span>
+                        <span className="text-xs font-mono font-bold text-primary">{grns.length}</span>
+                      </div>
+                      <ul className="space-y-1">
+                        {grns.length === 0 && <li className="text-[11px] text-on-surface-variant">Пока пусто</li>}
+                        {grns.map((m) => <li key={m} className="text-xs text-on-surface">• {m}</li>)}
+                      </ul>
+                    </div>
+                  </div>
+                )
+              })()}
             </section>
           )}
 
