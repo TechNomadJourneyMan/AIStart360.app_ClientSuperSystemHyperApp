@@ -6,6 +6,7 @@ import { cookies } from 'next/headers'
 import { MedicalAuditPanel } from '@/components/medical/MedicalAuditPanel'
 import { HeroGoalsBlock } from '@/components/dashboard/HeroGoalsBlock'
 import { AiQuestionsBlock } from '@/components/dashboard/AiQuestionsBlock'
+import { UniversalIntake } from '@/components/intake/UniversalIntake'
 import { KpiCardsGrid } from '@/components/dashboard/KpiCardsGrid'
 import { GriDiagramWidget } from '@/components/dashboard/GriDiagramWidget'
 import { GoalsBar } from '@/components/dashboard/GoalsBar'
@@ -375,6 +376,9 @@ export default async function DashboardPage() {
 
       return (
         <div className="space-y-6">
+          {/* Universal AI intake — drop any files / paste text, AI routes */}
+          <UniversalIntake />
+
           {/* Hero: 3 cards + Goal inputs + GRI CTA */}
           <HeroGoalsBlock derivedCurrent={derivedMonthly} />
 
