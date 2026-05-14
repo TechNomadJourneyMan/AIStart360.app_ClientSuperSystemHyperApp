@@ -234,19 +234,21 @@ export async function POST(req: NextRequest) {
         return
       }
 
-      // Kick orchestrator (non-blocking-ish — awaits dispatch only)
+      // Kick orchestrator (skip if no companyId — orchestrator requires it)
       let aiRunId: string | undefined
-      try {
-        const res = await orchestrate({
-          trigger: 'document_uploaded',
-          userId: user.id,
-          companyId: companyId ?? undefined,
-          documentId: docRow.id,
-          triggerEntity: `documents.${docRow.id}`,
-        })
-        aiRunId = res.runId
-      } catch (e) {
-        console.error('[intake] orchestrator dispatch failed', e)
+      if (companyId) {
+        try {
+          const res = await orchestrate({
+            trigger: 'document_uploaded',
+            userId: user.id,
+            companyId,
+            documentId: docRow.id,
+            triggerEntity: `documents.${docRow.id}`,
+          })
+          aiRunId = res.runId
+        } catch (e) {
+          console.error('[intake] orchestrator dispatch failed', e)
+        }
       }
 
       fileResults.push({
