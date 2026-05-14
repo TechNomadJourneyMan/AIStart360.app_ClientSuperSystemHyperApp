@@ -168,6 +168,16 @@ export async function POST(req: NextRequest) {
           triggerEntity: `documents.${doc.id}`,
         })
         aiRunId = res.runId
+
+        // Bridge: after orchestrator persists extractions, refresh the
+        // diagnostics row from ai_extractions so /dashboard + /point-a
+        // show file-derived Точка А scores. Fire-and-forget — non-fatal.
+        const baseUrl = req.nextUrl.origin
+        fetch(`${baseUrl}/api/v1/diagnostics/recalculate-from-files`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ user_id }),
+        }).catch((e) => console.error('[documents] bridge dispatch failed:', e))
       } catch (err) {
         // eslint-disable-next-line no-console
         console.error('[documents] orchestrator dispatch failed:', err)
