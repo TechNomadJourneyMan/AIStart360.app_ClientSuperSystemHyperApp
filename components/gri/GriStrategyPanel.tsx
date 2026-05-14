@@ -40,6 +40,7 @@ interface Strategy {
     confidence: number
   }
   generated_at?: string
+  completed_tasks?: string[]
 }
 
 const SEVERITY_STYLE: Record<Limitation['severity'], { bg: string; text: string; label: string }> = {
@@ -59,6 +60,7 @@ export function GriStrategyPanel() {
   const [loading, setLoading] = useState(true)
   const [generating, setGenerating] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [completed, setCompleted] = useState<Set<string>>(new Set())
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -67,12 +69,39 @@ export function GriStrategyPanel() {
       const res = await fetch('/api/ai/gri-strategy', { cache: 'no-store' })
       const data = await res.json() as { ok: boolean; strategy: Strategy | null }
       setStrategy(data.strategy ?? null)
+      setCompleted(new Set(data.strategy?.completed_tasks ?? []))
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Ошибка загрузки')
     } finally {
       setLoading(false)
     }
   }, [])
+
+  const toggleTask = useCallback(async (taskId: string) => {
+    // Optimistic update
+    const wasDone = completed.has(taskId)
+    const nextDone = !wasDone
+    setCompleted(prev => {
+      const next = new Set(prev)
+      if (nextDone) next.add(taskId); else next.delete(taskId)
+      return next
+    })
+    try {
+      const res = await fetch('/api/ai/gri-strategy/task', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ taskId, done: nextDone }),
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    } catch {
+      // Rollback on failure
+      setCompleted(prev => {
+        const next = new Set(prev)
+        if (wasDone) next.add(taskId); else next.delete(taskId)
+        return next
+      })
+    }
+  }, [completed])
 
   const regenerate = useCallback(async () => {
     setGenerating(true)
@@ -234,25 +263,61 @@ export function GriStrategyPanel() {
             const days = key === 'days_30' ? 30 : key === 'days_60' ? 60 : 90
             const tone = idx === 0 ? 'border-primary/30 bg-primary/[0.04]' : idx === 1 ? 'border-amber-400/30 bg-amber-500/[0.04]' : 'border-blue-500/30 bg-blue-500/[0.04]'
             const dotTone = idx === 0 ? 'bg-primary' : idx === 1 ? 'bg-amber-400' : 'bg-blue-500'
+            const fillTone = idx === 0 ? 'bg-primary' : idx === 1 ? 'bg-amber-400' : 'bg-blue-500'
+            const doneCount = items.reduce((acc, _, i) => acc + (completed.has(`${key}:${i}`) ? 1 : 0), 0)
+            const pct = items.length > 0 ? (doneCount / items.length) * 100 : 0
             return (
               <div key={key} className={`rounded-xl border ${tone} p-4`}>
-                <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-2">
                     <span className={`w-2 h-2 rounded-full ${dotTone}`} />
                     <h4 className="text-sm font-bold text-on-surface">{days} дней</h4>
                   </div>
-                  <span className="text-[10px] font-mono text-on-surface-variant">{items.length} задач</span>
+                  <span className="text-[10px] font-mono text-on-surface-variant">{doneCount}/{items.length}</span>
+                </div>
+                {/* Progress bar */}
+                <div className="h-1 bg-surface-container rounded-full overflow-hidden mb-3">
+                  <div className={`h-full ${fillTone} transition-all duration-300`} style={{ width: `${pct}%` }} />
                 </div>
                 <div className="space-y-2">
-                  {items.map((item, i) => (
-                    <div key={i} className="rounded-lg bg-surface-container/50 border border-white/[0.04] p-2.5">
-                      <p className="text-xs text-on-surface font-medium leading-relaxed mb-1.5">{item.task}</p>
-                      <div className="flex items-center justify-between gap-2 text-[10px] font-mono">
-                        <span className="text-on-surface-variant truncate">👤 {item.owner}</span>
-                        <span className="text-primary/80 truncate">📊 {item.kpi}</span>
+                  {items.map((item, i) => {
+                    const tid = `${key}:${i}`
+                    const isDone = completed.has(tid)
+                    return (
+                      <div
+                        key={i}
+                        className={`rounded-lg border p-2.5 transition-all ${
+                          isDone
+                            ? 'bg-primary/[0.06] border-primary/15 opacity-70'
+                            : 'bg-surface-container/50 border-white/[0.04]'
+                        }`}
+                      >
+                        <div className="flex items-start gap-2">
+                          <button
+                            type="button"
+                            onClick={() => void toggleTask(tid)}
+                            className={`flex-shrink-0 mt-0.5 w-4 h-4 rounded border transition-all flex items-center justify-center ${
+                              isDone
+                                ? 'bg-primary border-primary'
+                                : 'bg-transparent border-white/30 hover:border-primary/60'
+                            }`}
+                            title={isDone ? 'Отметить невыполненной' : 'Отметить выполненной'}
+                          >
+                            {isDone && <span className="material-symbols-outlined text-on-primary" style={{ fontSize: 12 }}>check</span>}
+                          </button>
+                          <div className="flex-1 min-w-0">
+                            <p className={`text-xs font-medium leading-relaxed mb-1.5 ${isDone ? 'line-through text-on-surface-variant' : 'text-on-surface'}`}>
+                              {item.task}
+                            </p>
+                            <div className="flex items-center justify-between gap-2 text-[10px] font-mono">
+                              <span className="text-on-surface-variant truncate">👤 {item.owner}</span>
+                              <span className="text-primary/80 truncate">📊 {item.kpi}</span>
+                            </div>
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               </div>
             )
