@@ -113,23 +113,40 @@ async function classifyFile(fileName: string, mimeType: string, excerpt: string)
       schemaName: 'doc_type_classification',
       system: `Ты классификатор бизнес-документов. По имени файла, MIME-типу и содержимому определи doc_type.
 
-Типы:
+Типы (выбери ОДИН):
 - pl_report — P&L отчёт о прибылях/убытках (revenue, cogs, profit, ebitda, margin)
-- balance_sheet — баланс (активы, пассивы, equity)
-- marketing_report — маркетинг (CAC, ROAS, channels, leads)
+- balance_sheet — бухгалтерский баланс (активы, пассивы, equity)
+- marketing_report — маркетинг (CAC, ROAS, channels, leads, реклама)
 - ops_report — операции (KPI процессов, no-show, processing time)
-- crm_export — выгрузка из CRM (бизнес-клиенты, deals, stages)
+- crm_export — выгрузка из CRM (бизнес-клиенты, deals, stages, продажи b2b)
 - audit — аудит/чеклист с findings + recommendations
-- patient_base — медицинская база пациентов (имена, телефоны, визиты, услуги)
-- other — всё остальное
+- patient_base — медицинская база пациентов (имена + телефоны + визиты + услуги). Часто файлы с "Клиенты_", "Пациенты_", "Обзвон_контакты", клиника, медцентр.
+- other — стратегия, прейскурант, скрипты, шаблоны, бизнес-план, brand guide и прочее.
+
+Правила определения по имени файла:
+- "Клиенты_*" / "Обзвон*" / "контакты_*" с медицинским контекстом → patient_base
+- "*_strategy*" / "стратегия*" / "сценарии*" / "AI_WhatsApp*" → other
+- "прейскурант*" / "pricelist*" → other
+- "P&L*" / "*баланс*" / "финотчёт*" → pl_report / balance_sheet
+- "CRM*" / "*продажи*" с b2b → crm_export
+
+Confidence:
+- 0.9+ если имя+содержимое явно говорят
+- 0.6-0.8 если только имя говорит
+- 0.3-0.5 догадка
+
+Reasoning: одно короткое предложение по-русски ПОЧЕМУ.
 
 Верни строгий JSON.`,
-      user: `Файл: "${fileName}"\nMIME: ${mimeType}\nСодержимое (2KB): ${excerpt || '(нет)'}`,
-      maxTokens: 300,
+      user: `Файл: "${fileName}"\nMIME: ${mimeType || '(не указан)'}\nСодержимое (первые 2KB): ${excerpt || '(нет содержимого — бинарный файл)'}`,
+      maxTokens: 500,
+      temperature: 0.1,
     })
     return { type: res.data.suggestedType, confidence: res.data.confidence, reasoning: res.data.reasoning }
-  } catch {
-    return { type: 'other', confidence: 0, reasoning: 'classifier failed' }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    console.error(`[intake/classify] FAILED for "${fileName}":`, msg)
+    return { type: 'other', confidence: 0, reasoning: `classifier_error: ${msg.slice(0, 100)}` }
   }
 }
 
@@ -199,8 +216,10 @@ export async function POST(req: NextRequest) {
   const svc = serviceClient()
   const fileResults: FileResult[] = []
 
-  // ── Process each file in parallel ──
-  await Promise.all(files.map(async (file): Promise<void> => {
+  // ── Process files sequentially to avoid OpenRouter concurrency throttling ──
+  // Upload is fast (Storage S3-compatible), classification ~1s each via Haiku.
+  // 6 files × 1.5s = ~9s total — well under 60s function limit.
+  for (const file of files) {
     try {
       const [excerpt, storedPath] = await Promise.all([
         readExcerpt(file),
@@ -208,7 +227,7 @@ export async function POST(req: NextRequest) {
       ])
       if (!storedPath) {
         fileResults.push({ fileName: file.name, ok: false, error: 'upload_failed' })
-        return
+        continue
       }
 
       const cls = await classifyFile(file.name, file.type, excerpt)
@@ -231,7 +250,7 @@ export async function POST(req: NextRequest) {
 
       if (insErr || !docRow) {
         fileResults.push({ fileName: file.name, ok: false, doc_type: cls.type, confidence: cls.confidence, error: 'db_insert_failed' })
-        return
+        continue
       }
 
       // Kick orchestrator (skip if no companyId — orchestrator requires it)
@@ -262,7 +281,7 @@ export async function POST(req: NextRequest) {
     } catch (e) {
       fileResults.push({ fileName: file.name, ok: false, error: e instanceof Error ? e.message : 'unknown' })
     }
-  }))
+  }
 
   // ── Process text ──
   let textResult: TextResult | null = null
