@@ -58,6 +58,12 @@ const STRATEGY_SCHEMA = z.object({
 
 export type GriStrategy = z.infer<typeof STRATEGY_SCHEMA>
 
+// Stable task id helper — composes period + index. Stable across re-fetches
+// of the same strategy (until regeneration replaces it entirely).
+export function taskId(period: 'days_30' | 'days_60' | 'days_90', index: number): string {
+  return `${period}:${index}`
+}
+
 const SYSTEM_PROMPT = `Ты — главный стратегический советник для предпринимателя. У тебя есть доступ
 к данным бизнеса (диагностика, метрики, AI-извлечения из загруженных
 отчётов, RFM-сегментация клиентов, карта потерь).
