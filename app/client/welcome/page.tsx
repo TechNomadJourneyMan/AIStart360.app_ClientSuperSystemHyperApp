@@ -14,11 +14,13 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { VERTICALS, isValidVerticalId, type VerticalId } from '@/lib/verticals'
 
-// Route each vertical sends the user to after selection
-const NEXT_ROUTE: Record<VerticalId, string> = {
+// Route each vertical sends the user to after selection (anketa path)
+const ANKETA_ROUTE: Record<VerticalId, string> = {
   generic: '/client/onboarding',
   medical: '/client/onboarding-medical',
 }
+
+type Step = 'vertical' | 'path'
 
 export default function WelcomePage() {
   const router = useRouter()
@@ -27,9 +29,11 @@ export default function WelcomePage() {
   const [loading, setLoading] = useState(true)
   const [applying, setApplying] = useState<VerticalId | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [step, setStep] = useState<Step>('vertical')
+  const [chosenVertical, setChosenVertical] = useState<VerticalId | null>(null)
 
   const applyVertical = useCallback(
-    async (vertical: VerticalId): Promise<boolean> => {
+    async (vertical: VerticalId, advance = true): Promise<boolean> => {
       setApplying(vertical)
       setError(null)
       try {
@@ -42,7 +46,11 @@ export default function WelcomePage() {
           const body = (await res.json().catch(() => ({}))) as { error?: string }
           throw new Error(body.error ?? `HTTP ${res.status}`)
         }
-        router.replace(NEXT_ROUTE[vertical])
+        setChosenVertical(vertical)
+        if (advance) {
+          setStep('path')
+          setApplying(null)
+        }
         return true
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Неизвестная ошибка')
@@ -50,7 +58,7 @@ export default function WelcomePage() {
         return false
       }
     },
-    [router],
+    [],
   )
 
   // Bootstrap: check if we should skip the picker entirely
@@ -58,10 +66,11 @@ export default function WelcomePage() {
     let cancelled = false
     ;(async () => {
       try {
-        // 1. URL param override (user came from /med-style landing with ?vertical=medical)
+        // 1. URL param override → set vertical + go straight to path picker
         const urlVertical = searchParams.get('vertical')
         if (urlVertical && isValidVerticalId(urlVertical)) {
-          await applyVertical(urlVertical)
+          await applyVertical(urlVertical, true)
+          setLoading(false)
           return
         }
 
@@ -84,14 +93,16 @@ export default function WelcomePage() {
           return
         }
 
-        // 2b. Non-default vertical already set → skip picker, go to right onboarding
+        // 2b. Non-default vertical already set → jump directly to path picker
         const v = profileRes.data?.vertical
         if (v && isValidVerticalId(v) && v !== 'generic') {
-          router.replace(NEXT_ROUTE[v])
+          setChosenVertical(v)
+          setStep('path')
+          setLoading(false)
           return
         }
 
-        // 2c. Fresh user with default vertical → show picker
+        // 2c. Fresh user with default vertical → show vertical picker
         setLoading(false)
       } catch (e) {
         if (!cancelled) {
@@ -114,12 +125,118 @@ export default function WelcomePage() {
     )
   }
 
+  // ── Step 2: path picker (anketa / files / dashboard) ──
+  if (step === 'path') {
+    const anketaHref = chosenVertical ? ANKETA_ROUTE[chosenVertical] : '/client/onboarding'
+    const verticalLabel = chosenVertical
+      ? VERTICALS.find((v) => v.id === chosenVertical)?.label ?? ''
+      : ''
+    return (
+      <div className="min-h-screen bg-surface flex items-center justify-center p-6">
+        <div className="max-w-4xl w-full">
+          <div className="text-center mb-8">
+            <button
+              type="button"
+              onClick={() => setStep('vertical')}
+              className="inline-flex items-center gap-1 text-xs text-on-surface-variant hover:text-primary mb-4"
+            >
+              <span className="material-symbols-outlined text-[14px]">arrow_back</span>
+              Изменить тип бизнеса
+            </button>
+            <p className="text-xs font-mono text-primary/70 uppercase tracking-[0.2em] mb-3">
+              AIStart360 · {verticalLabel}
+            </p>
+            <h1 className="font-headline text-3xl lg:text-4xl font-extrabold text-on-surface">
+              Как начнём?
+            </h1>
+            <p className="text-on-surface-variant mt-3 max-w-lg mx-auto text-sm">
+              Выберите путь — все три ведут к одному дашборду. Можно потом сделать остальные.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* Path 1: anketa */}
+            <button
+              type="button"
+              onClick={() => router.replace(anketaHref)}
+              className="group text-left bg-surface-container-low rounded-2xl border border-white/[0.06] hover:border-primary/40 hover:bg-primary/5 transition-all p-5"
+            >
+              <div className="w-11 h-11 rounded-xl bg-primary/15 border border-primary/25 flex items-center justify-center mb-3 group-hover:bg-primary/25 transition-colors">
+                <span className="material-symbols-outlined text-primary text-xl">edit_document</span>
+              </div>
+              <h3 className="font-headline text-base font-bold text-on-surface mb-1">Заполню анкету</h3>
+              <p className="text-xs text-on-surface-variant mb-3 leading-relaxed">
+                ~3-5 минут. Ответите на вопросы о бизнесе → AI рассчитает Точку А и базовый GRI.
+              </p>
+              <span className="inline-flex items-center gap-1 text-xs text-primary font-medium">
+                Перейти к анкете
+                <span className="material-symbols-outlined text-[14px] group-hover:translate-x-1 transition-transform">arrow_forward</span>
+              </span>
+            </button>
+
+            {/* Path 2: files */}
+            <button
+              type="button"
+              onClick={() => router.replace('/client/intake')}
+              className="group text-left bg-surface-container-low rounded-2xl border border-white/[0.06] hover:border-blue-500/40 hover:bg-blue-500/5 transition-all p-5 relative overflow-hidden"
+            >
+              <span className="absolute top-2 right-2 inline-flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 rounded-full bg-blue-500/15 text-blue-300 border border-blue-500/30">
+                ⚡ Быстрее
+              </span>
+              <div className="w-11 h-11 rounded-xl bg-blue-500/15 border border-blue-500/25 flex items-center justify-center mb-3 group-hover:bg-blue-500/25 transition-colors">
+                <span className="material-symbols-outlined text-blue-300 text-xl">cloud_upload</span>
+              </div>
+              <h3 className="font-headline text-base font-bold text-on-surface mb-1">Загружу файлы</h3>
+              <p className="text-xs text-on-surface-variant mb-3 leading-relaxed">
+                P&L, CRM, базу клиентов, что есть. AI сам определит типы и разложит по блокам.
+              </p>
+              <span className="inline-flex items-center gap-1 text-xs text-blue-300 font-medium">
+                AI-загрузка
+                <span className="material-symbols-outlined text-[14px] group-hover:translate-x-1 transition-transform">arrow_forward</span>
+              </span>
+            </button>
+
+            {/* Path 3: dashboard */}
+            <button
+              type="button"
+              onClick={() => router.replace('/client/dashboard')}
+              className="group text-left bg-surface-container-low rounded-2xl border border-white/[0.06] hover:border-purple-500/40 hover:bg-purple-500/5 transition-all p-5"
+            >
+              <div className="w-11 h-11 rounded-xl bg-purple-500/15 border border-purple-500/25 flex items-center justify-center mb-3 group-hover:bg-purple-500/25 transition-colors">
+                <span className="material-symbols-outlined text-purple-300 text-xl">dashboard</span>
+              </div>
+              <h3 className="font-headline text-base font-bold text-on-surface mb-1">Просто посмотрю</h3>
+              <p className="text-xs text-on-surface-variant mb-3 leading-relaxed">
+                Открыть пустой дашборд. Заполнить данные в любой момент позже из меню.
+              </p>
+              <span className="inline-flex items-center gap-1 text-xs text-purple-300 font-medium">
+                Открыть дашборд
+                <span className="material-symbols-outlined text-[14px] group-hover:translate-x-1 transition-transform">arrow_forward</span>
+              </span>
+            </button>
+          </div>
+
+          {error && (
+            <div className="mt-6 rounded-xl bg-error/5 border border-error/20 p-4 text-sm text-error text-center">
+              {error}
+            </div>
+          )}
+
+          <p className="text-center text-[11px] text-on-surface-variant/60 mt-8">
+            💡 Совет: «Загрузка файлов» даёт самые точные метрики. Можно начать с неё и потом дозаполнить анкету.
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  // ── Step 1: vertical picker (default first step) ──
   return (
     <div className="min-h-screen bg-surface flex items-center justify-center p-6">
       <div className="max-w-4xl w-full">
         <div className="text-center mb-10">
           <p className="text-xs font-mono text-primary/70 uppercase tracking-[0.2em] mb-3">
-            AIStart360
+            AIStart360 · Шаг 1 из 2
           </p>
           <h1 className="font-headline text-3xl lg:text-4xl font-extrabold text-on-surface">
             С чем работаем?
