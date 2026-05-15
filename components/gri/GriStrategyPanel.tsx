@@ -108,9 +108,29 @@ export function GriStrategyPanel() {
     setError(null)
     try {
       const res = await fetch('/api/ai/gri-strategy', { method: 'POST' })
-      const data = await res.json() as { ok: boolean; strategy?: Strategy; error?: string }
-      if (data.ok && data.strategy) setStrategy(data.strategy)
-      else setError(data.error ?? 'Не удалось сгенерировать')
+      const data = await res.json() as {
+        ok: boolean
+        strategy?: Strategy
+        error?: string
+        code?: string
+        missing?: string[]
+        hint?: string
+      }
+      if (data.ok && data.strategy) {
+        setStrategy(data.strategy)
+        return
+      }
+      if (data.code === 'insufficient_data') {
+        setError(
+          [
+            data.error ?? 'Недостаточно данных для генерации стратегии.',
+            data.missing?.length ? `Не хватает: ${data.missing.join(', ')}.` : '',
+            data.hint ?? '',
+          ].filter(Boolean).join(' ')
+        )
+        return
+      }
+      setError(data.error ?? 'Не удалось сгенерировать')
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Ошибка генерации')
     } finally {
