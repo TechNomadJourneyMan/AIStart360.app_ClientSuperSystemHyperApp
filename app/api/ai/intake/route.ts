@@ -59,15 +59,18 @@ const FILE_CLASSIFY_SCHEMA = z.preprocess(
   z.object({
     suggestedType: z.enum(ALLOWED_DOC_TYPES),
     confidence: z.number().min(0).max(1),
-    reasoning: z.string().max(200),
+    // Haiku writes 150-280 char reasoning regularly. Cap generously so
+    // Zod doesn't fail the entire classification → silent 0% confidence
+    // in UI. Use transform to truncate rather than reject.
+    reasoning: z.string().max(800).transform((s) => s.slice(0, 500)),
   })
 )
 
 const TEXT_ROUTE_SCHEMA = z.object({
   block: z.enum(['finance', 'sales', 'marketing', 'operations', 'strategy']),
-  category: z.string().max(80),
+  category: z.string().max(200).transform((s) => s.slice(0, 150)),
   structured: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])),
-  summary: z.string().max(300),
+  summary: z.string().max(800).transform((s) => s.slice(0, 500)),
   confidence: z.number().min(0).max(1),
 })
 
