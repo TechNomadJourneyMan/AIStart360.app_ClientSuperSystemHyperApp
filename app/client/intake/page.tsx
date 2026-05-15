@@ -34,18 +34,28 @@ export default function IntakePage() {
   return (
     <div className="min-h-screen bg-surface">
       <header className="sticky top-0 z-10 bg-surface/85 backdrop-blur-md border-b border-white/[0.06]">
-        <div className="max-w-3xl mx-auto px-6 py-4 flex items-center justify-between">
-          <div>
-            <p className="text-xs font-mono text-primary/70 uppercase tracking-[0.2em]">
-              AIStart360 · Универсальная загрузка
-            </p>
-            <h1 className="text-xl font-headline font-bold text-on-surface mt-0.5">
-              Закинь всё — AI разложит
-            </h1>
+        <div className="max-w-3xl mx-auto px-6 py-4 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <button
+              type="button"
+              onClick={() => router.back()}
+              aria-label="Назад"
+              className="w-9 h-9 rounded-lg border border-white/[0.08] hover:border-primary/40 hover:bg-primary/5 text-on-surface-variant hover:text-primary inline-flex items-center justify-center transition-all flex-shrink-0"
+            >
+              <span className="material-symbols-outlined text-[18px]">arrow_back</span>
+            </button>
+            <div className="min-w-0">
+              <p className="text-xs font-mono text-primary/70 uppercase tracking-[0.2em] truncate">
+                AIStart360 · Универсальная загрузка
+              </p>
+              <h1 className="text-xl font-headline font-bold text-on-surface mt-0.5 truncate">
+                Закинь всё — AI разложит
+              </h1>
+            </div>
           </div>
           <Link
-            href="/dashboard"
-            className="text-xs text-on-surface-variant hover:text-primary inline-flex items-center gap-1"
+            href="/client/dashboard"
+            className="text-xs text-on-surface-variant hover:text-primary inline-flex items-center gap-1 flex-shrink-0"
           >
             <span className="material-symbols-outlined text-[14px]">dashboard</span>
             На дашборд
