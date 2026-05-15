@@ -215,8 +215,22 @@ async function fetchBusinessContext(userId: string): Promise<string> {
   return lines.join('\n') || '# Нет данных. Юзер только зарегистрировался.'
 }
 
+class InsufficientDataError extends Error {
+  code = 'insufficient_data' as const
+  constructor(public missingSections: string[]) {
+    super(`Недостаточно данных для генерации стратегии. Нужно: ${missingSections.join(', ')}`)
+  }
+}
+
 async function generateStrategy(userId: string): Promise<GriStrategy> {
   const context = await fetchBusinessContext(userId)
+
+  // Don't burn $0.10 of Opus on an empty profile — short-circuit with a
+  // structured error the UI can render with an actionable CTA.
+  const isEmpty = context.startsWith('# Нет данных') || context.length < 200
+  if (isEmpty) {
+    throw new InsufficientDataError(['анкета', 'хотя бы один загруженный файл'])
+  }
 
   const result = await extractWithCache({
     model: CLAUDE_MODELS.opus,
@@ -224,7 +238,10 @@ async function generateStrategy(userId: string): Promise<GriStrategy> {
     schemaName: 'gri_strategy',
     system: SYSTEM_PROMPT,
     user: `# Контекст бизнеса пользователя\n\n${context}\n\nСоставь топ-5 ограничений роста и план действий 30/60/90 дней.`,
-    maxTokens: 4000,
+    // Opus easily writes 5000-6000 output tokens for full strategy.
+    // 4000 was cutting it off mid-JSON → schema parse failed with all
+    // fields undefined.
+    maxTokens: 8000,
     temperature: 0.4,
   })
 
@@ -290,6 +307,18 @@ export async function POST() {
     await persistStrategy(user.id, strategy)
     return NextResponse.json({ ok: true, strategy })
   } catch (e) {
+    if (e instanceof InsufficientDataError) {
+      return NextResponse.json(
+        {
+          ok: false,
+          code: e.code,
+          error: e.message,
+          missing: e.missingSections,
+          hint: 'Загрузите файлы через /client/intake или пройдите анкету — потом нажмите «Пересчитать».',
+        },
+        { status: 422 }
+      )
+    }
     const msg = e instanceof Error ? e.message : String(e)
     console.error('[gri-strategy POST]', msg)
     return NextResponse.json({ ok: false, error: msg }, { status: 500 })
