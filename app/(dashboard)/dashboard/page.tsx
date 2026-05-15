@@ -6,7 +6,6 @@ import { cookies } from 'next/headers'
 import { MedicalAuditPanel } from '@/components/medical/MedicalAuditPanel'
 import { HeroGoalsBlock } from '@/components/dashboard/HeroGoalsBlock'
 import { AiQuestionsBlock } from '@/components/dashboard/AiQuestionsBlock'
-import { UniversalIntake } from '@/components/intake/UniversalIntake'
 import { KpiCardsGrid } from '@/components/dashboard/KpiCardsGrid'
 import { GriDiagramWidget } from '@/components/dashboard/GriDiagramWidget'
 import { GoalsBar } from '@/components/dashboard/GoalsBar'
@@ -376,9 +375,6 @@ export default async function DashboardPage() {
 
       return (
         <div className="space-y-6">
-          {/* Universal AI intake — drop any files / paste text, AI routes */}
-          <UniversalIntake />
-
           {/* Hero: 3 cards + Goal inputs + GRI CTA */}
           <HeroGoalsBlock derivedCurrent={derivedMonthly} />
 
@@ -628,16 +624,21 @@ export default async function DashboardPage() {
           {/* Quick nav */}
           <section>
             <h2 className="font-headline text-lg font-bold text-on-surface mb-4">Быстрый доступ</h2>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-3">
               {[
+                { href: '/client/intake', icon: 'auto_awesome', label: 'AI-загрузка', sub: 'Файлы + текст → AI', highlight: true },
                 { href: '/point-a', icon: 'analytics', label: 'Точка А', sub: 'AI-диагностика' },
                 { href: '/client/onboarding', icon: 'edit_note', label: 'Обновить анкету', sub: 'Изменить ответы' },
                 { href: '/metrics', icon: 'bar_chart', label: 'Метрики', sub: 'Финансовые показатели' },
-                { href: '/client/onboarding/documents', icon: 'upload_file', label: 'Документы', sub: 'P&L, баланс, отчёты' },
+                { href: '/client/onboarding/documents', icon: 'folder_open', label: 'Документы', sub: 'Список + статусы' },
               ].map(item => (
                 <Link key={item.href} href={item.href}
-                  className="flex flex-col items-center gap-2 bg-surface-container-low hover:bg-surface-container rounded-2xl border border-white/[0.04] hover:border-primary/20 p-5 transition-all group">
-                  <span className="material-symbols-outlined text-2xl text-primary/60 group-hover:text-primary transition-colors">{item.icon}</span>
+                  className={`flex flex-col items-center gap-2 rounded-2xl border p-5 transition-all group ${
+                    item.highlight
+                      ? 'bg-gradient-to-br from-primary/[0.08] to-blue-500/[0.05] border-primary/30 hover:border-primary/50 hover:bg-primary/[0.10]'
+                      : 'bg-surface-container-low hover:bg-surface-container border-white/[0.04] hover:border-primary/20'
+                  }`}>
+                  <span className={`material-symbols-outlined text-2xl transition-colors ${item.highlight ? 'text-primary' : 'text-primary/60 group-hover:text-primary'}`}>{item.icon}</span>
                   <span className="text-xs font-medium text-on-surface text-center">{item.label}</span>
                   <span className="text-[10px] text-on-surface-variant text-center">{item.sub}</span>
                 </Link>
