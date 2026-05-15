@@ -207,13 +207,57 @@ export async function POST(req: NextRequest) {
     if (k.startsWith('file') && v instanceof File && v.size > 0) files.push(v)
   }
   const text = (form.get('text') ?? '').toString().trim()
-  const companyId = (form.get('companyId') ?? '').toString() || null
+  let companyId = (form.get('companyId') ?? '').toString() || null
 
   if (files.length === 0 && !text) {
     return NextResponse.json({ error: 'no_files_no_text' }, { status: 400 })
   }
 
   const svc = serviceClient()
+
+  // ── Resolve companyId. If client didn't supply, find or create one for
+  //    this user so the orchestrator can actually run (it requires companyId).
+  if (!companyId) {
+    try {
+      const { data: existing } = await svc
+        .from('companies')
+        .select('id')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+      if (existing && existing.length > 0) {
+        companyId = existing[0].id as string
+      } else {
+        // Look up display name from profiles
+        const { data: profile } = await svc
+          .from('profiles')
+          .select('organization,full_name,vertical')
+          .eq('id', user.id)
+          .single()
+        const defaultName = (profile?.organization as string | undefined)?.trim()
+          || (profile?.full_name as string | undefined)?.trim()
+          || 'Моя компания'
+        const vertical = (profile?.vertical as string | undefined) ?? 'generic'
+        const { data: created, error: createErr } = await svc
+          .from('companies')
+          .insert({
+            user_id: user.id,
+            name: defaultName,
+            stage: 'Growth',
+            vertical,
+          })
+          .select('id')
+          .single()
+        if (!createErr && created) {
+          companyId = created.id as string
+        } else {
+          console.error('[intake] auto-create company failed:', createErr?.message)
+        }
+      }
+    } catch (e) {
+      console.error('[intake] companyId resolution failed:', e instanceof Error ? e.message : e)
+    }
+  }
   const fileResults: FileResult[] = []
 
   // ── Process files sequentially to avoid OpenRouter concurrency throttling ──
