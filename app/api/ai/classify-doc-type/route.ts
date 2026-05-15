@@ -28,11 +28,26 @@ const UI_DOC_TYPES = [
   'other',
 ] as const
 
-const SCHEMA = z.object({
-  suggestedType: z.enum(UI_DOC_TYPES),
-  confidence: z.number().min(0).max(1),
-  reasoning: z.string().max(280),
-})
+// Haiku is inconsistent on field name (returns `doc_type` ~50% of the time).
+// Preprocess: accept either `suggestedType` or `doc_type`, normalize to former.
+const SCHEMA = z.preprocess(
+  (raw) => {
+    if (!raw || typeof raw !== 'object') return raw
+    const r = raw as Record<string, unknown>
+    if (!r.suggestedType && r.doc_type) r.suggestedType = r.doc_type
+    if (!r.suggestedType && r.type) r.suggestedType = r.type
+    if (typeof r.confidence !== 'number' && typeof r.confidence === 'string') {
+      const n = parseFloat(r.confidence)
+      if (!Number.isNaN(n)) r.confidence = n
+    }
+    return r
+  },
+  z.object({
+    suggestedType: z.enum(UI_DOC_TYPES),
+    confidence: z.number().min(0).max(1),
+    reasoning: z.string().max(280),
+  })
+)
 
 const SYSTEM_PROMPT = `Ты классификатор документов для платформы AIStart360.
 

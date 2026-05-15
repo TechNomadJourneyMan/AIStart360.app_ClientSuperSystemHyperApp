@@ -42,11 +42,26 @@ const ALLOWED_DOC_TYPES = [
   'crm_export', 'audit', 'patient_base', 'other',
 ] as const
 
-const FILE_CLASSIFY_SCHEMA = z.object({
-  suggestedType: z.enum(ALLOWED_DOC_TYPES),
-  confidence: z.number().min(0).max(1),
-  reasoning: z.string().max(200),
-})
+// Haiku occasionally returns `doc_type` instead of `suggestedType`. Preprocess
+// accepts both then validates the canonical shape.
+const FILE_CLASSIFY_SCHEMA = z.preprocess(
+  (raw) => {
+    if (!raw || typeof raw !== 'object') return raw
+    const r = raw as Record<string, unknown>
+    if (!r.suggestedType && r.doc_type) r.suggestedType = r.doc_type
+    if (!r.suggestedType && r.type) r.suggestedType = r.type
+    if (typeof r.confidence === 'string') {
+      const n = parseFloat(r.confidence)
+      if (!Number.isNaN(n)) r.confidence = n
+    }
+    return r
+  },
+  z.object({
+    suggestedType: z.enum(ALLOWED_DOC_TYPES),
+    confidence: z.number().min(0).max(1),
+    reasoning: z.string().max(200),
+  })
+)
 
 const TEXT_ROUTE_SCHEMA = z.object({
   block: z.enum(['finance', 'sales', 'marketing', 'operations', 'strategy']),
@@ -237,14 +252,14 @@ export async function POST(req: NextRequest) {
         const defaultName = (profile?.organization as string | undefined)?.trim()
           || (profile?.full_name as string | undefined)?.trim()
           || 'Моя компания'
-        const vertical = (profile?.vertical as string | undefined) ?? 'generic'
+        // companies table doesn't have a `vertical` column in current schema —
+        // vertical lives on profiles. Insert without it.
         const { data: created, error: createErr } = await svc
           .from('companies')
           .insert({
             user_id: user.id,
             name: defaultName,
             stage: 'Growth',
-            vertical,
           })
           .select('id')
           .single()
