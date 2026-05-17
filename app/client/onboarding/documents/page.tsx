@@ -8,6 +8,26 @@ import { createClient } from '@/lib/supabase/client'
 type DocType = 'pl_report' | 'balance_sheet' | 'marketing_report' | 'ops_report' | 'crm_export' | 'audit' | 'other'
 type ParseStatus = 'queued' | 'processing' | 'parsed' | 'error'
 
+type DiagnosticTab = 'finance' | 'sales' | 'operations' | 'marketing' | 'strategy' | 'anketa'
+
+interface ExtractedField {
+  key: string
+  label: string
+  value: string
+  tab: DiagnosticTab
+  parameter: string
+  confidence: number
+  source_excerpt: string
+}
+
+interface ParsedData {
+  summary: string
+  fields: ExtractedField[]
+  raw_text_preview?: string
+  extracted_at?: string
+  model_used?: string
+}
+
 interface UploadedDoc {
   id: string
   file_name: string
@@ -17,6 +37,17 @@ interface UploadedDoc {
   parse_status: ParseStatus
   uploaded_at: string
   file_size: number | null
+  parsed_data: ParsedData | null
+  parse_error: string | null
+}
+
+const TAB_META: Record<DiagnosticTab, { label: string; icon: string; color: string }> = {
+  finance:    { label: 'Финансы',   icon: 'payments',     color: 'text-emerald-400' },
+  sales:      { label: 'Продажи',   icon: 'trending_up',  color: 'text-sky-400' },
+  operations: { label: 'Операции',  icon: 'settings',     color: 'text-orange-400' },
+  marketing:  { label: 'Маркетинг', icon: 'campaign',     color: 'text-pink-400' },
+  strategy:   { label: 'Стратегия', icon: 'flag',         color: 'text-violet-400' },
+  anketa:     { label: 'Анкета',    icon: 'description',  color: 'text-slate-400' },
 }
 
 interface PendingFile {
@@ -49,6 +80,15 @@ function formatBytes(bytes: number | null): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
+function pluralFields(n: number): string {
+  const last = n % 10
+  const lastTwo = n % 100
+  if (lastTwo >= 11 && lastTwo <= 14) return 'параметров'
+  if (last === 1) return 'параметр'
+  if (last >= 2 && last <= 4) return 'параметра'
+  return 'параметров'
+}
+
 const ACCEPTED = '.pdf,.xlsx,.csv,.docx,.pptx'
 const MAX_SIZE = 50 * 1024 * 1024
 
@@ -60,6 +100,8 @@ export default function DocumentsPage() {
   const [uploaded, setUploaded] = useState<UploadedDoc[]>([])
   const [isUploading, setIsUploading] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
+  const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [reprocessingIds, setReprocessingIds] = useState<Set<string>>(new Set())
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -92,6 +134,23 @@ export default function DocumentsPage() {
       if (data.ok) setUploaded(data.data)
     } catch {}
   }, [userId])
+
+  const reprocess = useCallback(async (docId: string) => {
+    setReprocessingIds(prev => new Set(prev).add(docId))
+    try {
+      await fetch(`/api/v1/onboarding/documents/${docId}/process`, { method: 'POST' })
+    } catch {}
+    // Refresh shortly after — parse_status will flip to processing immediately,
+    // then polling picks up parsed/error when the route returns.
+    setTimeout(() => {
+      setReprocessingIds(prev => {
+        const next = new Set(prev)
+        next.delete(docId)
+        return next
+      })
+      fetchDocs()
+    }, 600)
+  }, [fetchDocs])
 
   useEffect(() => {
     if (!userId) return
@@ -169,6 +228,15 @@ export default function DocumentsPage() {
 
       setPending(null)
       await fetchDocs()
+
+      // Primary trigger: inline server-side processing. Fire-and-forget — the
+      // server route runs the parse in its own invocation; the UI polls for
+      // status updates every 10s.
+      if (result.data?.id) {
+        fetch(`/api/v1/onboarding/documents/${result.data.id}/process`, {
+          method: 'POST',
+        }).catch(() => {})
+      }
     } catch (e: unknown) {
       setUploadError(e instanceof Error ? e.message : 'Ошибка загрузки')
     } finally {
@@ -339,20 +407,168 @@ export default function DocumentsPage() {
               {uploaded.map(doc => {
                 const st = STATUS_CONFIG[doc.parse_status]
                 const dt = DOC_TYPES.find(d => d.value === doc.doc_type)
+                const canExpand = doc.parse_status === 'parsed' || doc.parse_status === 'error'
+                const isExpanded = expandedId === doc.id
+                const fieldGroups = doc.parsed_data?.fields
+                  ? doc.parsed_data.fields.reduce<Record<DiagnosticTab, ExtractedField[]>>((acc, f) => {
+                      (acc[f.tab] ||= []).push(f)
+                      return acc
+                    }, {} as Record<DiagnosticTab, ExtractedField[]>)
+                  : null
+
                 return (
-                  <div key={doc.id} className="flex items-center gap-3 bg-surface-container-low rounded-xl border border-white/[0.06] p-4">
-                    <span className={`material-symbols-outlined text-xl text-primary`}>{dt?.icon ?? 'description'}</span>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm text-on-surface truncate">{doc.file_name}</p>
-                      <p className="text-xs text-on-surface-variant">
-                        {dt?.label} {doc.period_quarter && `· ${doc.period_quarter}`} {doc.period_year && `${doc.period_year}`}
-                        {doc.file_size && ` · ${formatBytes(doc.file_size)}`}
-                      </p>
-                    </div>
-                    <div className={`flex items-center gap-1 ${st.color}`}>
-                      <span className={`material-symbols-outlined text-sm ${doc.parse_status === 'processing' ? 'animate-spin' : ''}`}>{st.icon}</span>
-                      <span className="text-xs font-mono">{st.label}</span>
-                    </div>
+                  <div key={doc.id} className="bg-surface-container-low rounded-xl border border-white/[0.06] overflow-hidden">
+                    <button
+                      type="button"
+                      onClick={() => canExpand && setExpandedId(isExpanded ? null : doc.id)}
+                      disabled={!canExpand}
+                      className={`w-full flex items-center gap-3 p-4 text-left transition-colors ${
+                        canExpand ? 'hover:bg-white/[0.02] cursor-pointer' : 'cursor-default'
+                      }`}
+                    >
+                      <span className="material-symbols-outlined text-xl text-primary">{dt?.icon ?? 'description'}</span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-on-surface truncate">{doc.file_name}</p>
+                        <p className="text-xs text-on-surface-variant">
+                          {dt?.label} {doc.period_quarter && `· ${doc.period_quarter}`} {doc.period_year && `${doc.period_year}`}
+                          {doc.file_size && ` · ${formatBytes(doc.file_size)}`}
+                        </p>
+                      </div>
+                      <div className={`flex items-center gap-1 ${st.color}`}>
+                        <span className={`material-symbols-outlined text-sm ${doc.parse_status === 'processing' ? 'animate-spin' : ''}`}>{st.icon}</span>
+                        <span className="text-xs font-mono">{st.label}</span>
+                      </div>
+                      {doc.parse_status !== 'processing' && (
+                        <span
+                          role="button"
+                          tabIndex={0}
+                          aria-label="Переобработать файл"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            if (!reprocessingIds.has(doc.id)) reprocess(doc.id)
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault()
+                              e.stopPropagation()
+                              if (!reprocessingIds.has(doc.id)) reprocess(doc.id)
+                            }
+                          }}
+                          className={`text-[10px] font-mono px-2 py-1 rounded-lg border transition-all ${
+                            reprocessingIds.has(doc.id)
+                              ? 'border-white/[0.08] text-on-surface-variant/60 cursor-not-allowed'
+                              : 'border-primary/30 text-primary hover:bg-primary/10 cursor-pointer'
+                          }`}
+                        >
+                          {reprocessingIds.has(doc.id) ? '...' : 'Переобработать'}
+                        </span>
+                      )}
+                      {canExpand && (
+                        <span
+                          className={`material-symbols-outlined text-base text-on-surface-variant transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+                        >
+                          expand_more
+                        </span>
+                      )}
+                    </button>
+
+                    {canExpand && isExpanded && (
+                      <div className="px-4 pb-4 pt-1 border-t border-white/[0.04] space-y-4">
+                        {doc.parse_status === 'error' && (
+                          <div className="bg-error/10 border border-error/20 rounded-xl px-4 py-3">
+                            <p className="text-xs font-mono text-error uppercase tracking-widest mb-1">Ошибка обработки</p>
+                            <p className="text-sm text-on-surface">{doc.parse_error ?? 'Неизвестная ошибка'}</p>
+                            <p className="text-[11px] text-on-surface-variant mt-2">
+                              Нажмите «Переобработать» в строке файла, чтобы попробовать ещё раз.
+                            </p>
+                          </div>
+                        )}
+
+                        {!doc.parsed_data && doc.parse_status === 'parsed' && (
+                          <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl px-4 py-3">
+                            <p className="text-xs font-mono text-amber-300 uppercase tracking-widest mb-1">Нет данных в БД</p>
+                            <p className="text-sm text-on-surface/90">
+                              Файл помечен как обработанный, но <code className="text-amber-300">parsed_data</code> пуст — скорее всего, обработан старым пайплайном (n8n) до выкатки нового парсера. Нажмите «Переобработать», чтобы прогнать через новый Claude-экстрактор.
+                            </p>
+                          </div>
+                        )}
+
+                        {doc.parsed_data?.summary && (
+                          <div>
+                            <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest mb-1.5">Резюме документа</p>
+                            <p className="text-sm text-on-surface/90 leading-relaxed">{doc.parsed_data.summary}</p>
+                          </div>
+                        )}
+
+                        {fieldGroups && Object.keys(fieldGroups).length > 0 && (
+                          <div className="space-y-3">
+                            <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest">
+                              Извлечённые данные · {doc.parsed_data!.fields.length} {pluralFields(doc.parsed_data!.fields.length)}
+                            </p>
+                            {(Object.entries(fieldGroups) as [DiagnosticTab, ExtractedField[]][]).map(([tab, fields]) => {
+                              const meta = TAB_META[tab]
+                              return (
+                                <div key={tab} className="bg-surface-container rounded-xl border border-white/[0.04] p-3">
+                                  <div className="flex items-center gap-2 mb-2">
+                                    <span className={`material-symbols-outlined text-base ${meta.color}`}>{meta.icon}</span>
+                                    <span className="text-xs font-mono uppercase tracking-widest text-on-surface">
+                                      Вкладка: {meta.label}
+                                    </span>
+                                    <span className="text-[10px] font-mono text-on-surface-variant ml-auto">
+                                      {fields.length} {pluralFields(fields.length)}
+                                    </span>
+                                  </div>
+                                  <ul className="space-y-2">
+                                    {fields.map((f, i) => (
+                                      <li key={`${f.key}-${i}`} className="border-l-2 border-white/[0.06] pl-3">
+                                        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                                          <span className="text-xs font-mono text-on-surface-variant">{f.parameter}:</span>
+                                          <span className="text-sm font-semibold text-on-surface">{f.value}</span>
+                                          <span className="text-[10px] font-mono text-on-surface-variant/60 ml-auto">
+                                            {Math.round(f.confidence * 100)}%
+                                          </span>
+                                        </div>
+                                        {f.source_excerpt && (
+                                          <p className="text-[11px] text-on-surface-variant/80 mt-1 italic line-clamp-2">
+                                            «{f.source_excerpt}»
+                                          </p>
+                                        )}
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        )}
+
+                        {doc.parsed_data && (!doc.parsed_data.fields || doc.parsed_data.fields.length === 0) && doc.parse_status === 'parsed' && (
+                          <div className="bg-amber-500/5 border border-amber-500/15 rounded-xl px-4 py-3">
+                            <p className="text-[11px] text-on-surface-variant">
+                              Структурированные параметры не извлечены. Возможные причины: документ не содержит бизнес-цифр, либо <code>ANTHROPIC_API_KEY</code> не задан в окружении. Текст файла прочитан — см. ниже.
+                            </p>
+                          </div>
+                        )}
+
+                        {doc.parsed_data?.raw_text_preview && (
+                          <details className="bg-surface-container/60 rounded-xl border border-white/[0.04] open:pb-3">
+                            <summary className="cursor-pointer px-3 py-2 text-[10px] font-mono uppercase tracking-widest text-on-surface-variant hover:text-on-surface select-none">
+                              Сырой текст из файла ({doc.parsed_data.raw_text_preview.length} симв.)
+                            </summary>
+                            <pre className="text-[11px] text-on-surface-variant/90 leading-relaxed mt-1 px-3 whitespace-pre-wrap break-words max-h-64 overflow-auto">
+{doc.parsed_data.raw_text_preview}
+                            </pre>
+                          </details>
+                        )}
+
+                        {doc.parsed_data && (doc.parsed_data.extracted_at || doc.parsed_data.model_used) && (
+                          <p className="text-[10px] font-mono text-on-surface-variant/50">
+                            {doc.parsed_data.model_used && <>модель: {doc.parsed_data.model_used} · </>}
+                            {doc.parsed_data.extracted_at && <>обработано: {new Date(doc.parsed_data.extracted_at).toLocaleString('ru-RU')}</>}
+                          </p>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )
               })}
