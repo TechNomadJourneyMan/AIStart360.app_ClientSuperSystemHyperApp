@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { notifyAdmins } from '@/lib/notifications'
+import { inngest } from '@/lib/inngest'
 
 // GET /api/v1/onboarding/documents?user_id=xxx
 export async function GET(req: NextRequest) {
@@ -59,32 +60,24 @@ export async function POST(req: NextRequest) {
       mimeType: mime_type,
     }, user_id)
 
-    // Trigger n8n webhook for document parsing (fire-and-forget)
-    const n8nUrl = process.env.N8N_WEBHOOK_URL
-    if (n8nUrl && doc) {
-      fetch(n8nUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(process.env.N8N_API_KEY ? { 'X-Api-Key': process.env.N8N_API_KEY } : {}),
-        },
-        body: JSON.stringify({
-          document_id: doc.id,
-          user_id,
-          file_url,
-          doc_type,
-          period: { year: period_year, quarter: period_quarter },
-        }),
-      }).catch(() => {
-        // Non-blocking — log but don't fail
-        console.warn('[documents] n8n webhook failed for doc', doc.id)
-      })
-
-      // Update status to processing
-      await sb
-        .from('documents')
-        .update({ parse_status: 'processing' })
-        .eq('id', doc.id)
+    // Best-effort: also queue via Inngest if it's configured (provides retries
+    // and observability). Client also fires an inline /process call as the
+    // primary path, so Inngest is optional and safe to skip on failure.
+    if (doc) {
+      try {
+        await inngest.send({
+          name: 'document/parse',
+          data: {
+            document_id: doc.id,
+            file_url,
+            file_name,
+            mime_type: mime_type ?? null,
+            doc_type,
+          },
+        })
+      } catch (err) {
+        console.warn('[documents] inngest send failed (ok — using inline fallback) for doc', doc.id, err)
+      }
     }
 
     return NextResponse.json({ ok: true, data: doc })
