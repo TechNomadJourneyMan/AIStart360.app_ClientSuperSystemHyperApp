@@ -124,11 +124,46 @@ export async function POST(req: NextRequest) {
     // Use service-role for the insert (bypasses RLS — auth check above).
     const sb = createServiceClient()
 
+    // Resolve / auto-create companyId so orchestrator can actually run.
+    // Without it, documents got stuck `parse_status: 'queued'` forever.
+    let resolvedCompanyId: string | null = company_id ?? null
+    if (!resolvedCompanyId) {
+      try {
+        const { data: existing } = await sb
+          .from('companies')
+          .select('id')
+          .eq('user_id', user_id)
+          .order('created_at', { ascending: false })
+          .limit(1)
+        if (existing && existing.length > 0) {
+          resolvedCompanyId = existing[0].id as string
+        } else {
+          const { data: profile } = await sb
+            .from('profiles')
+            .select('organization,full_name,vertical')
+            .eq('id', user_id)
+            .single()
+          const name = (profile?.organization as string | undefined)?.trim()
+            || (profile?.full_name as string | undefined)?.trim()
+            || 'Моя компания'
+          const vertical = (profile?.vertical as string | undefined) ?? 'generic'
+          const { data: created } = await sb
+            .from('companies')
+            .insert({ user_id, name, stage: 'Growth', vertical })
+            .select('id')
+            .single()
+          if (created) resolvedCompanyId = created.id as string
+        }
+      } catch (e) {
+        console.error('[documents] auto-company resolve failed:', e)
+      }
+    }
+
     const { data: doc, error } = await sb
       .from('documents')
       .insert({
         user_id,
-        company_id: company_id ?? null,
+        company_id: resolvedCompanyId,
         file_name,
         file_url,
         file_size: file_size ?? null,
@@ -155,7 +190,7 @@ export async function POST(req: NextRequest) {
     // Non-blocking when AI_BACKBONE=inngest|n8n. Inline mode adds 5-30s
     // depending on extractor + doc size.
     let aiRunId: string | undefined
-    if (doc?.id && company_id) {
+    if (doc?.id && resolvedCompanyId) {
       try {
         // Flip to processing immediately so UI reflects activity
         await sb.from('documents').update({ parse_status: 'processing' }).eq('id', doc.id)
@@ -163,7 +198,7 @@ export async function POST(req: NextRequest) {
         const res = await orchestrate({
           trigger: 'document_uploaded',
           userId: user_id,
-          companyId: company_id,
+          companyId: resolvedCompanyId,
           documentId: doc.id,
           triggerEntity: `documents.${doc.id}`,
         })
