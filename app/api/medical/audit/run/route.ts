@@ -80,12 +80,19 @@ async function srPatch(path: string, body: unknown): Promise<Response> {
 
 async function downloadFromStorage(objectPath: string): Promise<ArrayBuffer | null> {
   const { url, key } = srBase()
-  const res = await fetch(`${url}/storage/v1/object/documents/${objectPath}`, {
-    headers: { apikey: key, Authorization: `Bearer ${key}` },
-    cache: 'no-store',
-  })
-  if (!res.ok) return null
-  return res.arrayBuffer()
+  // Try `documents` (legacy bucket) first, then `client-documents` (newer
+  // Universal Intake bucket), then `medical` (medical-specific bucket). All
+  // three layouts are present in prod Supabase; match the try-multiple-buckets
+  // pattern used in lib/ai/pipeline-steps.ts::downloadDocumentBytes.
+  const buckets = ['documents', 'client-documents', 'medical']
+  for (const bucket of buckets) {
+    const res = await fetch(`${url}/storage/v1/object/${bucket}/${objectPath}`, {
+      headers: { apikey: key, Authorization: `Bearer ${key}` },
+      cache: 'no-store',
+    })
+    if (res.ok) return res.arrayBuffer()
+  }
+  return null
 }
 
 export async function POST(req: NextRequest) {
