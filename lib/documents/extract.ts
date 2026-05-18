@@ -1,190 +1,286 @@
-import { z } from 'zod'
-import { generateObject } from 'ai'
-import { anthropic, CLAUDE_MODELS } from '@/lib/ai/anthropic'
-import { parseDocument, type ParsedDocument } from '@/lib/documents/parse'
+import { z } from "zod";
+import { chatWithOpenRouter, extractJson, hasOpenRouterKey, OPENROUTER_MODELS } from "@/lib/ai/openrouter";
+import { parseDocument } from "@/lib/documents/parse";
 
-export type DiagnosticTab =
-  | 'finance'
-  | 'sales'
-  | 'operations'
-  | 'marketing'
-  | 'strategy'
-  | 'anketa'
+type ParsedFieldValue = string | number | boolean | string[] | number[];
 
-export const TAB_LABELS: Record<DiagnosticTab, string> = {
-  finance: 'Финансы',
-  sales: 'Продажи',
-  operations: 'Операции',
-  marketing: 'Маркетинг',
-  strategy: 'Стратегия',
-  anketa: 'Анкета',
+export interface ParsedDataField {
+  key: string;
+  label: string;
+  value: ParsedFieldValue;
+  target_tab: string;
+  target_parameter: string;
+  source?: string;
+  confidence?: number;
 }
 
-export const DOC_TYPE_PRIMARY_TAB: Record<string, DiagnosticTab> = {
-  pl_report: 'finance',
-  balance_sheet: 'finance',
-  marketing_report: 'marketing',
-  ops_report: 'operations',
-  crm_export: 'sales',
-  audit: 'strategy',
-  other: 'anketa',
+export interface DocumentExtraction {
+  summary: string;
+  fields: ParsedDataField[];
 }
-
-const extractedFieldSchema = z.object({
-  key: z
-    .string()
-    .describe('snake_case machine-readable key, e.g. revenue_2024, avg_check, ltv'),
-  label: z
-    .string()
-    .describe('Краткое название параметра на русском, например "Выручка 2024"'),
-  value: z
-    .string()
-    .describe('Значение как строка — число с единицами, текст или диапазон'),
-  tab: z
-    .enum(['finance', 'sales', 'operations', 'marketing', 'strategy', 'anketa'])
-    .describe('Вкладка диагностики, в которую идёт этот параметр'),
-  parameter: z
-    .string()
-    .describe('Название параметра на вкладке (например "Годовая выручка", "Средний чек")'),
-  confidence: z.number().min(0).max(1).describe('Уверенность извлечения 0-1'),
-  source_excerpt: z
-    .string()
-    .max(300)
-    .describe('Короткая дословная цитата из документа (до 300 символов)'),
-})
-
-const extractionSchema = z.object({
-  summary: z.string().describe('Один абзац-резюме документа на русском (до 600 символов)'),
-  fields: z.array(extractedFieldSchema).max(40),
-})
-
-export type ExtractedField = z.infer<typeof extractedFieldSchema>
-export type ExtractionResult = z.infer<typeof extractionSchema>
 
 export interface ParsedDataPayload {
-  summary: string
-  fields: ExtractedField[]
-  raw_text_preview: string
-  extracted_at: string
-  model_used?: string
+  summary: string;
+  fields: ParsedDataField[];
+  raw_text_preview: string;
+  extracted_at: string;
+  model_used: string;
 }
 
-const TAB_GUIDE = `
-Вкладки и какие параметры на них:
-- finance (Финансы): выручка, прибыль/убыток, маржа, расходы, P&L строки, баланс, активы, пассивы, OPEX, CAPEX, ARR/MRR, оборотный капитал, кредиты, дебиторка, кредиторка
-- sales (Продажи): конверсия воронки, средний чек, LTV, churn, количество сделок/клиентов, CAC, лиды, NPS, выручка по сегментам
-- operations (Операции): производительность, цикл выполнения, SLA, штат, процессы, время отгрузки, брак, утилизация мощностей
-- marketing (Маркетинг): CAC по каналам, источники трафика, ROI кампаний, бренд, охват, доля рынка, бюджет на маркетинг
-- strategy (Стратегия): миссия, цели, конкуренты, рынок, продукт, рост, портфель, инвестиции, M&A
-- anketa (Анкета): общие данные компании, отрасль, география, штат, год основания — фактологические сведения
-`.trim()
-
-function buildPrompt(docType: string, primaryTab: DiagnosticTab, text: string) {
-  const trimmed = text.slice(0, 25000)
-  return `Ты — бизнес-аналитик. Извлеки из документа компании структурированные параметры.
-
-Тип документа: ${docType}
-Приоритетная вкладка диагностики: ${primaryTab}
-
-${TAB_GUIDE}
-
-Правила:
-- Извлекай только реальные факты из документа. Не выдумывай.
-- Каждый параметр привяжи к одной вкладке (tab) и укажи название параметра (parameter).
-- confidence: 1.0 — значение явно указано в документе; 0.7-0.9 — выведено из контекста; <0.5 не возвращай.
-- source_excerpt: короткая (до 300 символов) дословная цитата.
-- Максимум 40 параметров. Лучше меньше — но точнее.
-- Если документ не содержит бизнес-данных (например, маркетинговая брошюра без цифр), верни fields: [] и summary с описанием содержимого.
-
-Документ (первые ${trimmed.length} символов из ${text.length}):
-\`\`\`
-${trimmed}
-\`\`\``
+interface ExtractFromDocumentInput {
+  buffer: Buffer;
+  fileName: string;
+  mimeType: string | null;
+  docType: string;
 }
 
-export async function extractFromDocument(opts: {
-  buffer: Buffer
-  fileName: string
-  mimeType?: string | null
-  docType: string
-}): Promise<{ extraction: ExtractionResult; rawTextPreview: string; modelUsed?: string }> {
-  const ext = opts.fileName.toLowerCase().split('.').pop()
-  const primaryTab = DOC_TYPE_PRIMARY_TAB[opts.docType] ?? 'anketa'
+const fieldSchema = z.object({
+  key: z.string().min(1),
+  label: z.string().min(1),
+  value: z.union([
+    z.string(),
+    z.number(),
+    z.boolean(),
+    z.array(z.string()),
+    z.array(z.number()),
+  ]),
+  target_tab: z.string().min(1),
+  target_parameter: z.string().min(1),
+  source: z.string().optional(),
+  confidence: z.number().min(0).max(1).optional(),
+});
 
-  let parsed: ParsedDocument
-  try {
-    if (ext === 'csv') {
-      const text = opts.buffer.toString('utf-8')
-      parsed = {
-        text: text.trim(),
-        metadata: {
-          type: 'txt',
-          wordCount: text.split(/\s+/).length,
-          fileName: opts.fileName,
-        },
-      }
-    } else if (ext === 'pptx') {
+const extractionSchema = z.object({
+  summary: z.string().min(1),
+  fields: z.array(fieldSchema).max(60),
+});
+
+const TARGET_HINTS: Array<{ pattern: RegExp; tab: string; parameter: string }> = [
+  { pattern: /revenue|выруч|доход/i, tab: "Финансы", parameter: "Выручка" },
+  { pattern: /net_profit|profit|прибыл/i, tab: "Финансы", parameter: "Чистая прибыль" },
+  { pattern: /margin|марж/i, tab: "Финансы", parameter: "Маржинальность" },
+  { pattern: /expense|cost|расход|себесто/i, tab: "Финансы", parameter: "Расходы" },
+  { pattern: /breakeven|безуб/i, tab: "Финансы", parameter: "Точка безубыточности" },
+  { pattern: /cac/i, tab: "Работа с базой", parameter: "CAC" },
+  { pattern: /ltv/i, tab: "Работа с базой", parameter: "LTV" },
+  { pattern: /avg_check|средн.*чек/i, tab: "Ключевые метрики", parameter: "Средний чек" },
+  { pattern: /client|клиент/i, tab: "Работа с базой", parameter: "Клиенты" },
+  { pattern: /deal|lead|сдел|лид/i, tab: "Работа с базой", parameter: "Воронка продаж" },
+  { pattern: /marketing|реклам|канал/i, tab: "Маркетинг", parameter: "Маркетинговые показатели" },
+  { pattern: /staff|employee|штат|сотруд/i, tab: "Орг. структура", parameter: "Команда / штат" },
+];
+
+const HEURISTIC_PATTERNS: Array<{
+  key: string;
+  label: string;
+  pattern: RegExp;
+  targetTab: string;
+  targetParameter: string;
+}> = [
+  {
+    key: "revenue",
+    label: "Выручка",
+    pattern: /(?:выручк[аи]?|revenue|доход)[^\d]{0,80}([\d\s.,]+)\s*(млн|тыс|₸|тг|тенге|kzt)?/i,
+    targetTab: "Финансы",
+    targetParameter: "Выручка",
+  },
+  {
+    key: "net_profit",
+    label: "Чистая прибыль",
+    pattern: /(?:чистая прибыль|net profit|прибыль)[^\d-]{0,80}(-?[\d\s.,]+)\s*(млн|тыс|₸|тг|тенге|kzt)?/i,
+    targetTab: "Финансы",
+    targetParameter: "Чистая прибыль",
+  },
+  {
+    key: "gross_margin",
+    label: "Маржинальность",
+    pattern: /(?:маржинальность|маржа|gross margin|margin)[^\d]{0,80}([\d\s.,]+)\s*%?/i,
+    targetTab: "Финансы",
+    targetParameter: "Маржинальность",
+  },
+  {
+    key: "cac",
+    label: "CAC",
+    pattern: /(?:cac|стоимость привлечения клиента)[^\d]{0,80}([\d\s.,]+)\s*(₸|тг|тенге|kzt)?/i,
+    targetTab: "Работа с базой",
+    targetParameter: "CAC",
+  },
+  {
+    key: "ltv",
+    label: "LTV",
+    pattern: /(?:ltv|lifetime value|ценность клиента)[^\d]{0,80}([\d\s.,]+)\s*(₸|тг|тенге|kzt)?/i,
+    targetTab: "Работа с базой",
+    targetParameter: "LTV",
+  },
+  {
+    key: "avg_check",
+    label: "Средний чек",
+    pattern: /(?:средний чек|avg\.?\s*check|average check)[^\d]{0,80}([\d\s.,]+)\s*(₸|тг|тенге|kzt)?/i,
+    targetTab: "Ключевые метрики",
+    targetParameter: "Средний чек",
+  },
+];
+
+function compactText(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
+}
+
+function normalizeNumber(raw: string, unit?: string): string | number {
+  const normalized = raw.replace(/\s/g, "").replace(",", ".");
+  const number = Number(normalized);
+  if (!Number.isFinite(number)) return raw.trim();
+  if (!unit) return number;
+
+  const lowerUnit = unit.toLowerCase();
+  if (lowerUnit === "млн") return number * 1_000_000;
+  if (lowerUnit === "тыс") return number * 1_000;
+  return number;
+}
+
+function inferTarget(key: string, fallbackTab: string, fallbackParameter: string) {
+  const hint = TARGET_HINTS.find(item => item.pattern.test(key));
+  return {
+    target_tab: hint?.tab ?? fallbackTab,
+    target_parameter: hint?.parameter ?? fallbackParameter,
+  };
+}
+
+function heuristicExtract(text: string): DocumentExtraction {
+  const fields: ParsedDataField[] = [];
+
+  for (const item of HEURISTIC_PATTERNS) {
+    const match = text.match(item.pattern);
+    if (!match) continue;
+
+    const source = compactText(match[0]);
+    fields.push({
+      key: item.key,
+      label: item.label,
+      value: normalizeNumber(match[1], match[2]),
+      target_tab: item.targetTab,
+      target_parameter: item.targetParameter,
+      source,
+      confidence: 0.55,
+    });
+  }
+
+  return {
+    summary: fields.length > 0
+      ? `Автоматически найдено ${fields.length} бизнес-показателей. Проверьте значения перед использованием в диагностике.`
+      : "Документ распознан, но структурированные бизнес-показатели не найдены автоматически.",
+    fields,
+  };
+}
+
+function normalizeExtraction(extraction: DocumentExtraction): DocumentExtraction {
+  return {
+    summary: extraction.summary,
+    fields: extraction.fields.map((field, index) => {
+      const target = inferTarget(field.key, field.target_tab, field.target_parameter);
       return {
-        extraction: {
-          summary:
-            'Файл PPTX загружен. Автоматический разбор презентаций пока не реализован — отметьте файл вручную или конвертируйте в PDF/DOCX.',
-          fields: [],
-        },
-        rawTextPreview: '',
-      }
-    } else {
-      parsed = await parseDocument(opts.buffer, opts.fileName, opts.mimeType ?? undefined)
-    }
-  } catch (err) {
-    return {
-      extraction: {
-        summary: `Файл загружен, но автоматический парсинг недоступен: ${err instanceof Error ? err.message : 'unknown error'}`,
-        fields: [],
-      },
-      rawTextPreview: '',
-    }
-  }
+        key: field.key || `field_${index + 1}`,
+        label: field.label || field.key || `Поле ${index + 1}`,
+        value: field.value,
+        target_tab: target.target_tab,
+        target_parameter: target.target_parameter,
+        source: field.source,
+        confidence: field.confidence,
+      };
+    }),
+  };
+}
 
-  const rawTextPreview = parsed.text.slice(0, 2000)
+async function extractWithAi(text: string, docType: string): Promise<DocumentExtraction | null> {
+  if (!hasOpenRouterKey()) return null;
 
-  if (!process.env.ANTHROPIC_API_KEY) {
-    return {
-      extraction: {
-        summary: `Документ загружен (${parsed.text.length} символов). LLM-анализ недоступен — не задан ANTHROPIC_API_KEY.`,
-        fields: [],
-      },
-      rawTextPreview,
-    }
-  }
+  const systemPrompt = `You extract structured business metrics from client documents for AIStart360 diagnostics.
+Return only facts present in the document. Do not invent values.
+Each field must state where it should be used in the client questionnaire/diagnostic tabs.
+Use Russian labels for target_tab and target_parameter.
+Typical tabs: Финансы, Работа с базой, Маркетинг, Орг. структура, Цели, Ключевые метрики, Диагностика.
+Respond with a valid JSON object matching this schema exactly:
+{"summary":"<string>","fields":[{"key":"<snake_case>","label":"<string>","value":"<string|number>","target_tab":"<string>","target_parameter":"<string>","source":"<string>","confidence":<0-1>}]}`;
 
-  if (parsed.text.length < 30) {
-    return {
-      extraction: {
-        summary: 'Документ слишком короткий или пуст — извлекать нечего.',
-        fields: [],
-      },
-      rawTextPreview,
-    }
-  }
+  const userPrompt = `Document type selected by user: ${docType}
+
+Extract important business data from this document:
+- financial metrics: revenue, profit, margins, expenses, debt, breakeven
+- sales/client metrics: leads, deals, conversions, CAC, LTV, average check, repeat clients
+- marketing metrics: channels, budget, campaign performance
+- operations/team metrics: staff, departments, processes, reporting
+
+For each field include:
+- key: stable snake_case key
+- label: human-readable source field name
+- value: extracted value
+- target_tab: where this data should be shown/used
+- target_parameter: exact parameter name inside that tab
+- source: short quote or nearby text from the document
+- confidence: 0..1
+
+Document text:
+${text.slice(0, 30000)}`;
 
   try {
-    const result = await generateObject({
-      model: anthropic(CLAUDE_MODELS.sonnet),
-      schema: extractionSchema,
-      prompt: buildPrompt(opts.docType, primaryTab, parsed.text),
-    })
-    return {
-      extraction: result.object,
-      rawTextPreview,
-      modelUsed: CLAUDE_MODELS.sonnet,
+    const raw = await chatWithOpenRouter({
+      model: OPENROUTER_MODELS.sonnet,
+      system: systemPrompt,
+      user: userPrompt,
+      maxTokens: 4000,
+      temperature: 0.2,
+      jsonMode: true,
+    });
+
+    if (!raw) return null;
+
+    const parsed = extractJson<unknown>(raw);
+    if (!parsed) return null;
+
+    const result = extractionSchema.safeParse(parsed);
+    if (!result.success) {
+      console.warn("[documents/extract] schema validation failed", result.error.issues.slice(0, 3));
+      return null;
     }
-  } catch (err) {
+
+    return normalizeExtraction(result.data);
+  } catch (error) {
+    console.warn("[documents/extract] AI extraction failed, using heuristic fallback", error);
+    return null;
+  }
+}
+
+export async function extractFromDocument(input: ExtractFromDocumentInput): Promise<{
+  extraction: DocumentExtraction;
+  rawTextPreview: string;
+  modelUsed: string;
+}> {
+  const parsed = await parseDocument(input.buffer, input.fileName, input.mimeType ?? undefined);
+  const text = parsed.text.trim();
+  const rawTextPreview = text.slice(0, 2500);
+
+  if (!text) {
     return {
       extraction: {
-        summary: `Парсинг текста выполнен, но LLM-извлечение упало: ${err instanceof Error ? err.message : 'unknown error'}`,
+        summary: "Файл распознан, но текст для анализа не найден.",
         fields: [],
       },
       rawTextPreview,
-    }
+      modelUsed: "document-parser",
+    };
   }
+
+  const aiExtraction = await extractWithAi(text, input.docType);
+  if (aiExtraction) {
+    return {
+      extraction: aiExtraction,
+      rawTextPreview,
+      modelUsed: OPENROUTER_MODELS.sonnet,
+    };
+  }
+
+  return {
+    extraction: heuristicExtract(text),
+    rawTextPreview,
+    modelUsed: "heuristic-parser",
+  };
 }
