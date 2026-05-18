@@ -38,7 +38,7 @@ export const parseDocumentFn = inngest.createFunction(
         const { extraction, rawTextPreview, modelUsed } = await extractFromDocument({
           buffer: Buffer.from(arrayBuffer),
           fileName: file_name,
-          mimeType: mime_type,
+          mimeType: mime_type ?? null,
           docType: doc_type,
         })
         const parsed: ParsedDataPayload = {
