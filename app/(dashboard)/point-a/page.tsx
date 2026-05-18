@@ -25,6 +25,7 @@ import { FileArea } from '@/components/point-a/FileArea'
 import { HeroGoalsBlock } from '@/components/dashboard/HeroGoalsBlock'
 import { AiQuestionsBlock } from '@/components/dashboard/AiQuestionsBlock'
 import { MedicalAuditPanel } from '@/components/medical/MedicalAuditPanel'
+import { readBlockScores } from '@/lib/diagnostics-shape'
 
 export const metadata: Metadata = { title: 'Точка А — Текущее состояние' }
 
@@ -92,14 +93,16 @@ export default async function PointAPage() {
         const d = rows[0]
         if (d) {
           overallScore = (d.overall_score as number) ?? 0
-          const blockScores = (d.block_scores as Record<string, { score?: number; max?: number }>) ?? {}
+          // Schema stores 5 separate JSONB columns. readBlockScores normalizes
+          // them into a unified map regardless of which shape is present.
+          const blockScores = readBlockScores(d)
           for (const [id, meta] of Object.entries(DOMAIN_META)) {
-            const bs = blockScores[id]
+            const bs = blockScores[id as keyof typeof blockScores]
             if (bs) {
               domainScores.push({
                 id, label: meta.label, icon: meta.icon,
                 score: Math.round(bs.score ?? 0),
-                max: bs.max ?? 100,
+                max: bs.max ?? 10,
               })
             }
           }
