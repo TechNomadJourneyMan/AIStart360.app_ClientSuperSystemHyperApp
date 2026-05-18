@@ -310,7 +310,15 @@ async function runInline(runId: string, input: OrchestrateInput): Promise<Orches
       })
     }
 
-    await completeRun({ runId, status: 'completed', steps, totalCostUsd: 0 })
+    // Sum per-step cost_usd from step.meta where extractors recorded it.
+    // Previously hard-coded 0 → budget guard in lib/ai/budget.ts never saw
+    // any usage on the default inline backbone.
+    const totalCostUsd = steps.reduce((sum, s) => {
+      const m = s.meta as Record<string, unknown> | undefined
+      const c = typeof m?.cost_usd === 'number' ? m.cost_usd : 0
+      return sum + c
+    }, 0)
+    await completeRun({ runId, status: 'completed', steps, totalCostUsd })
     return { runId, backbone: 'inline', inline: true }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
