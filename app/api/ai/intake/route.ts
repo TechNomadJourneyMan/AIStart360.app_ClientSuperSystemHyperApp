@@ -220,12 +220,24 @@ export async function POST(req: NextRequest) {
   let form: FormData
   try { form = await req.formData() } catch { return NextResponse.json({ error: 'invalid_form' }, { status: 400 }) }
 
+  // Size limits — mirror /api/v1/onboarding/medical (5MB) but with per-file
+  // and cumulative ceilings appropriate for multi-file intake.
+  const PER_FILE_LIMIT = 50 * 1024 * 1024 // 50 MB per file
+  const TOTAL_LIMIT = 200 * 1024 * 1024   // 200 MB cumulative
+
   const files: File[] = []
   for (const [k, v] of form.entries()) {
-    if (k.startsWith('file') && v instanceof File && v.size > 0) files.push(v)
+    if (k.startsWith('file') && v instanceof File) files.push(v)
   }
   const text = (form.get('text') ?? '').toString().trim()
   let companyId = (form.get('companyId') ?? '').toString() || null
+
+  // Cumulative-size guard — reject the whole request before doing any
+  // expensive work (upload, classification, orchestrator).
+  const totalSize = files.reduce((sum, f) => sum + f.size, 0)
+  if (totalSize > TOTAL_LIMIT) {
+    return NextResponse.json({ error: 'payload_too_large' }, { status: 413 })
+  }
 
   if (files.length === 0 && !text) {
     return NextResponse.json({ error: 'no_files_no_text' }, { status: 400 })
@@ -282,6 +294,18 @@ export async function POST(req: NextRequest) {
   // Upload is fast (Storage S3-compatible), classification ~1s each via Haiku.
   // 6 files × 1.5s = ~9s total — well under 60s function limit.
   for (const file of files) {
+    // Skip empty files (size 0) — they have no content to classify/parse.
+    if (file.size === 0) {
+      fileResults.push({ fileName: file.name, ok: false, error: 'empty_file' })
+      continue
+    }
+    // Skip files over the per-file ceiling. Cumulative-size already
+    // checked above, so individual oversize files reach here only when
+    // total stayed under 200 MB.
+    if (file.size > PER_FILE_LIMIT) {
+      fileResults.push({ fileName: file.name, ok: false, error: 'file_too_large' })
+      continue
+    }
     try {
       const [excerpt, storedPath] = await Promise.all([
         readExcerpt(file),
