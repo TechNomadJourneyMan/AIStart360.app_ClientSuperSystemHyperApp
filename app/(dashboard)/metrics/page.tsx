@@ -1,6 +1,31 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import {
+  getBizDescription,
+  getGriDescription,
+  getKpiDescription,
+  getGoalDescription,
+  formatSource,
+  type MetricSource,
+} from '@/lib/metrics/descriptions'
+
+// ─── Modal types ──────────────────────────────────────────────────────────────
+type ModalProps = {
+  open: boolean
+  onClose: () => void
+  title: string
+  what: string
+  why: string
+  how: string
+  current_state?: string
+  formula?: string
+  benchmark?: string
+  owner?: string | null
+  method?: string | null
+  category?: string
+  sources: MetricSource[]
+}
 
 // ─── 11 Goals from Metrics.docx ──────────────────────────────────────────────
 const METRIC_GOALS = [
@@ -457,7 +482,13 @@ function GoalCard({ goal, catFilter, onCatClick }: {
 }
 
 // ─── Collapsible Business Metrics Department ─────────────────────────────────
-function DeptCard({ dept }: { dept: typeof BIZ_METRICS[0] }) {
+function DeptCard({
+  dept,
+  onItemClick,
+}: {
+  dept: typeof BIZ_METRICS[0]
+  onItemClick?: (item: typeof BIZ_METRICS[number]['items'][number]) => void
+}) {
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
 
@@ -512,9 +543,15 @@ function DeptCard({ dept }: { dept: typeof BIZ_METRICS[0] }) {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-0 divide-y divide-white/[0.03] sm:divide-y-0">
             {items.map((item, i) => {
               const st = statusIcon(item.status)
+              const hasDesc = !!getBizDescription(dept.dept, item.label)
               return (
-                <div key={i}
-                  className="flex items-start gap-3 px-5 py-3.5 hover:bg-white/[0.02] border-b border-white/[0.03] transition-colors sm:border-r sm:last:border-r-0">
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => onItemClick?.(item)}
+                  className="group relative flex items-start gap-3 px-5 py-3.5 hover:bg-white/[0.04] border-b border-white/[0.03] transition-colors sm:border-r sm:last:border-r-0 cursor-pointer text-left w-full"
+                  title="Подробное описание метрики"
+                >
                   <span className={`material-symbols-outlined text-sm flex-shrink-0 mt-0.5 ${st.cls}`}>{st.icon}</span>
                   <div className="flex-1 min-w-0">
                     <p className="text-[11px] text-on-surface-variant mb-0.5 truncate">{item.label}</p>
@@ -526,7 +563,16 @@ function DeptCard({ dept }: { dept: typeof BIZ_METRICS[0] }) {
                       <span className={`text-[9px] font-mono ${item.up ? 'text-primary' : 'text-error'}`}>{item.trend}</span>
                     </div>
                   </div>
-                </div>
+                  <span
+                    className={`material-symbols-outlined text-sm absolute top-2 right-2 transition-opacity ${
+                      hasDesc
+                        ? 'text-primary/40 opacity-0 group-hover:opacity-100'
+                        : 'text-on-surface-variant/20 opacity-30'
+                    }`}
+                  >
+                    info
+                  </span>
+                </button>
               )
             })}
           </div>
@@ -542,6 +588,54 @@ export default function MetricsPage() {
   const [activeKpiCat,  setActiveKpiCat]  = useState('Все KPI')
   const [activeTab,     setActiveTab]     = useState<'goals' | 'kpi' | 'gri' | 'biz'>('goals')
   const [expandAll,     setExpandAll]     = useState(false)
+  const [modal, setModal] = useState<ModalProps | null>(null)
+
+  // Helper: open modal with description; if no description, show stub.
+  const openMetricModal = (
+    title: string,
+    desc:
+      | {
+          what: string
+          why: string
+          how: string
+          current_state?: string
+          formula?: string
+          benchmark?: string
+          owner?: string | null
+          method?: string | null
+          category?: string
+          sources: MetricSource[]
+        }
+      | undefined,
+  ) => {
+    if (!desc) {
+      setModal({
+        open: true,
+        onClose: () => setModal(null),
+        title,
+        what: 'Описание скоро будет добавлено.',
+        why: '',
+        how: '',
+        sources: [],
+      })
+      return
+    }
+    setModal({
+      open: true,
+      onClose: () => setModal(null),
+      title,
+      what: desc.what,
+      why: desc.why,
+      how: desc.how,
+      current_state: desc.current_state,
+      formula: desc.formula,
+      benchmark: desc.benchmark,
+      owner: desc.owner,
+      method: desc.method,
+      category: desc.category,
+      sources: desc.sources,
+    })
+  }
 
   const filteredGoals = METRIC_GOALS.filter(
     (g) => activeGoalCat === 'Все' || g.categories.includes(activeGoalCat)
@@ -625,7 +719,30 @@ export default function MetricsPage() {
 
           <div className="space-y-2">
             {filteredGoals.map((goal) => (
-              <GoalCardWrapper key={goal.id} goal={goal} catFilter={activeGoalCat} onCatClick={setActiveGoalCat} forceOpen={expandAll} />
+              <GoalCardWrapper
+                key={goal.id}
+                goal={goal}
+                catFilter={activeGoalCat}
+                onCatClick={setActiveGoalCat}
+                forceOpen={expandAll}
+                onRowClick={(label) => {
+                  const goalDesc = getGoalDescription(goal.number)
+                  const item = goalDesc?.items.find((it) => it.label === label)
+                  openMetricModal(
+                    label,
+                    item
+                      ? {
+                          what: item.what,
+                          why: item.why,
+                          how: item.how,
+                          formula: item.formula,
+                          benchmark: item.benchmark,
+                          sources: item.sources,
+                        }
+                      : undefined,
+                  )
+                }}
+              />
             ))}
           </div>
 
@@ -680,32 +797,67 @@ export default function MetricsPage() {
             ))}
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filteredKpis.map((kpi, i) => (
-              <div key={i} className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-5 hover:border-secondary/20 transition-colors">
-                <div className="flex items-start justify-between mb-4">
-                  <div className="w-10 h-10 rounded-xl bg-secondary/10 border border-secondary/20 flex items-center justify-center">
-                    <span className="material-symbols-outlined text-base text-secondary">{kpi.icon}</span>
+            {filteredKpis.map((kpi, i) => {
+              const kpiDesc = getKpiDescription(kpi.label)
+              const hasDesc = !!kpiDesc
+              return (
+                <button
+                  type="button"
+                  key={i}
+                  onClick={() =>
+                    openMetricModal(
+                      kpi.label,
+                      kpiDesc
+                        ? {
+                            what: kpiDesc.what,
+                            why: kpiDesc.why,
+                            how: kpiDesc.how,
+                            current_state: kpiDesc.current_state,
+                            owner: kpiDesc.owner ?? kpi.owner,
+                            method: kpiDesc.method ?? kpi.method,
+                            category: kpiDesc.category ?? kpi.category,
+                            sources: kpiDesc.sources,
+                          }
+                        : undefined,
+                    )
+                  }
+                  className="group relative bg-surface-container-low rounded-2xl border border-white/[0.04] p-5 hover:border-secondary/20 hover:bg-white/[0.02] transition-colors text-left w-full cursor-pointer"
+                  title="Подробное описание KPI"
+                >
+                  <div className="flex items-start justify-between mb-4">
+                    <div className="w-10 h-10 rounded-xl bg-secondary/10 border border-secondary/20 flex items-center justify-center">
+                      <span className="material-symbols-outlined text-base text-secondary">{kpi.icon}</span>
+                    </div>
+                    <span className="text-[9px] font-mono uppercase px-2 py-0.5 bg-surface-container border border-white/[0.06] rounded-full text-on-surface-variant">{kpi.category}</span>
                   </div>
-                  <span className="text-[9px] font-mono uppercase px-2 py-0.5 bg-surface-container border border-white/[0.06] rounded-full text-on-surface-variant">{kpi.category}</span>
-                </div>
-                <p className="text-xs font-mono text-on-surface-variant mb-2 uppercase tracking-wider">{kpi.label}</p>
-                <div className="flex items-end gap-2 mb-3">
-                  <div>
-                    <p className="text-[9px] text-on-surface-variant/60 mb-0.5">Текущее</p>
-                    <p className="text-base font-mono font-bold text-on-surface">{kpi.current}</p>
+                  <p className="text-xs font-mono text-on-surface-variant mb-2 uppercase tracking-wider">{kpi.label}</p>
+                  <div className="flex items-end gap-2 mb-3">
+                    <div>
+                      <p className="text-[9px] text-on-surface-variant/60 mb-0.5">Текущее</p>
+                      <p className="text-base font-mono font-bold text-on-surface">{kpi.current}</p>
+                    </div>
+                    <span className="material-symbols-outlined text-primary mb-0.5 text-sm">arrow_forward</span>
+                    <div>
+                      <p className="text-[9px] text-primary/70 mb-0.5">Целевое</p>
+                      <p className="text-base font-mono font-bold text-primary">{kpi.target}</p>
+                    </div>
                   </div>
-                  <span className="material-symbols-outlined text-primary mb-0.5 text-sm">arrow_forward</span>
-                  <div>
-                    <p className="text-[9px] text-primary/70 mb-0.5">Целевое</p>
-                    <p className="text-base font-mono font-bold text-primary">{kpi.target}</p>
+                  <div className="pt-2.5 border-t border-white/[0.04] flex items-center justify-between">
+                    <p className="text-[9px] text-on-surface-variant/50">{kpi.method}</p>
+                    <p className="text-[9px] font-mono text-on-surface-variant/40">{kpi.owner}</p>
                   </div>
-                </div>
-                <div className="pt-2.5 border-t border-white/[0.04] flex items-center justify-between">
-                  <p className="text-[9px] text-on-surface-variant/50">{kpi.method}</p>
-                  <p className="text-[9px] font-mono text-on-surface-variant/40">{kpi.owner}</p>
-                </div>
-              </div>
-            ))}
+                  <span
+                    className={`material-symbols-outlined text-sm absolute top-3 right-3 transition-opacity ${
+                      hasDesc
+                        ? 'text-primary/40 opacity-0 group-hover:opacity-100'
+                        : 'text-on-surface-variant/20 opacity-30'
+                    }`}
+                  >
+                    info
+                  </span>
+                </button>
+              )
+            })}
           </div>
         </div>
       )}
@@ -736,7 +888,11 @@ export default function MetricsPage() {
 
           <div className="space-y-2">
             {BIZ_METRICS.map((dept) => (
-              <DeptCard key={dept.dept} dept={dept} />
+              <DeptCard
+                key={dept.dept}
+                dept={dept}
+                onItemClick={(item) => openMetricModal(item.label, getBizDescription(dept.dept, item.label))}
+              />
             ))}
           </div>
         </div>
@@ -776,8 +932,15 @@ export default function MetricsPage() {
           <div className="space-y-2">
             {GRI_BLOCKS.map((block) => {
               const clr = griColor(block.status)
+              const hasDesc = !!getGriDescription(block.label)
               return (
-                <div key={block.label} className="bg-surface-container-low rounded-xl border border-white/[0.04] p-4 flex items-center gap-4">
+                <button
+                  type="button"
+                  key={block.label}
+                  onClick={() => openMetricModal(block.label, getGriDescription(block.label))}
+                  className="group relative bg-surface-container-low rounded-xl border border-white/[0.04] p-4 flex items-center gap-4 w-full text-left hover:bg-white/[0.02] hover:border-white/[0.08] transition-colors cursor-pointer"
+                  title="Подробное описание блока GRI"
+                >
                   <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${block.status === 'critical' ? 'bg-error/10' : block.status === 'weak' ? 'bg-tertiary-container/10' : 'bg-primary/10'}`}>
                     <span className={`material-symbols-outlined text-sm ${clr.text}`}>{block.icon}</span>
                   </div>
@@ -789,7 +952,16 @@ export default function MetricsPage() {
                   <span className={`hidden sm:inline text-[9px] font-mono px-2 py-0.5 rounded-full border ${clr.badge} flex-shrink-0 max-w-[180px] truncate`}>
                     {block.status === 'critical' ? 'КРИТИЧЕСКИЙ БЛОК' : block.status === 'weak' ? 'Слабое место' : 'Достаточный уровень'}
                   </span>
-                </div>
+                  <span
+                    className={`material-symbols-outlined text-sm flex-shrink-0 transition-opacity ${
+                      hasDesc
+                        ? 'text-primary/40 opacity-0 group-hover:opacity-100'
+                        : 'text-on-surface-variant/20 opacity-30'
+                    }`}
+                  >
+                    info
+                  </span>
+                </button>
               )
             })}
           </div>
@@ -845,16 +1017,19 @@ export default function MetricsPage() {
         </div>
       )}
 
+      {/* Metric detail modal */}
+      {modal && <MetricDetailModal {...modal} />}
     </div>
   )
 }
 
 // Wrapper to allow forced open from parent
-function GoalCardWrapper({ goal, catFilter, onCatClick, forceOpen }: {
+function GoalCardWrapper({ goal, catFilter, onCatClick, forceOpen, onRowClick }: {
   goal: typeof METRIC_GOALS[0]
   catFilter: string
   onCatClick: (c: string) => void
   forceOpen: boolean
+  onRowClick?: (label: string) => void
 }) {
   const [localOpen, setLocalOpen] = useState(false)
   const open = forceOpen || localOpen
@@ -909,18 +1084,41 @@ function GoalCardWrapper({ goal, catFilter, onCatClick, forceOpen }: {
                 </tr>
               </thead>
               <tbody>
-                {goal.metrics.map((m, i) => (
-                  <tr key={i} className="border-b border-white/[0.02] hover:bg-white/[0.02] transition-colors">
-                    <td className="px-5 py-2.5"><p className="text-sm font-medium text-on-surface">{m.label}</p></td>
-                    <td className="px-5 py-2.5"><p className="text-xs font-mono text-on-surface-variant bg-surface-container px-2 py-0.5 rounded inline-block">{m.formula}</p></td>
-                    <td className="px-5 py-2.5">
-                      {m.benchmark
-                        ? <span className={`text-[10px] font-mono uppercase px-2 py-0.5 rounded-full border ${cc(goal.color,'bg')} ${cc(goal.color,'text')} ${cc(goal.color,'border')}`}>{m.benchmark}</span>
-                        : <span className="text-xs text-on-surface-variant/30">—</span>
-                      }
-                    </td>
-                  </tr>
-                ))}
+                {goal.metrics.map((m, i) => {
+                  const goalDesc = getGoalDescription(goal.number)
+                  const item = goalDesc?.items.find((it) => it.label === m.label)
+                  const hasDesc = !!item
+                  return (
+                    <tr
+                      key={i}
+                      onClick={() => onRowClick?.(m.label)}
+                      className="group border-b border-white/[0.02] hover:bg-white/[0.04] transition-colors cursor-pointer"
+                      title="Подробное описание метрики"
+                    >
+                      <td className="px-5 py-2.5">
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-medium text-on-surface">{m.label}</p>
+                          <span
+                            className={`material-symbols-outlined text-sm transition-opacity ${
+                              hasDesc
+                                ? 'text-primary/40 opacity-0 group-hover:opacity-100'
+                                : 'text-on-surface-variant/20 opacity-30'
+                            }`}
+                          >
+                            info
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-5 py-2.5"><p className="text-xs font-mono text-on-surface-variant bg-surface-container px-2 py-0.5 rounded inline-block">{m.formula}</p></td>
+                      <td className="px-5 py-2.5">
+                        {m.benchmark
+                          ? <span className={`text-[10px] font-mono uppercase px-2 py-0.5 rounded-full border ${cc(goal.color,'bg')} ${cc(goal.color,'text')} ${cc(goal.color,'border')}`}>{m.benchmark}</span>
+                          : <span className="text-xs text-on-surface-variant/30">—</span>
+                        }
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>
@@ -951,5 +1149,172 @@ function GoalCardWrapper({ goal, catFilter, onCatClick, forceOpen }: {
         </>
       )}
     </section>
+  )
+}
+
+// ─── Source type → icon mapping ───────────────────────────────────────────────
+function sourceIcon(type: MetricSource['type']): { icon: string; cls: string } {
+  switch (type) {
+    case 'survey':   return { icon: 'quiz',        cls: 'text-primary' }
+    case 'document': return { icon: 'description', cls: 'text-secondary' }
+    case 'prisma':   return { icon: 'database',    cls: 'text-tertiary-container' }
+    case 'external': return { icon: 'cloud',       cls: 'text-primary' }
+    case 'manual':   return { icon: 'edit',        cls: 'text-on-surface-variant' }
+    case 'missing':  return { icon: 'warning',     cls: 'text-error' }
+    default:         return { icon: 'help',        cls: 'text-on-surface-variant' }
+  }
+}
+
+// ─── Metric Detail Modal ──────────────────────────────────────────────────────
+function MetricDetailModal({
+  open,
+  onClose,
+  title,
+  what,
+  why,
+  how,
+  current_state,
+  formula,
+  benchmark,
+  owner,
+  method,
+  category,
+  sources,
+}: ModalProps) {
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [open, onClose])
+
+  if (!open) return null
+
+  const hasChips = !!(owner || method || category)
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center px-4 bg-black/60 backdrop-blur-sm"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+    >
+      <div
+        className="relative w-full max-w-2xl max-h-[80vh] overflow-y-auto bg-surface-container-low rounded-2xl border border-white/[0.04] shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="sticky top-0 bg-surface-container-low/95 backdrop-blur-sm flex items-center justify-between gap-4 px-6 py-4 border-b border-white/[0.04]">
+          <h3 className="font-headline text-lg font-bold text-on-surface flex-1 min-w-0 pr-2 truncate">{title}</h3>
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center hover:bg-white/[0.04] text-on-surface-variant hover:text-on-surface transition-colors"
+            aria-label="Закрыть"
+          >
+            <span className="material-symbols-outlined text-lg">close</span>
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="px-6 py-5 space-y-5">
+          {hasChips && (
+            <div className="flex flex-wrap gap-1.5">
+              {category && (
+                <span className="text-[10px] font-mono uppercase tracking-wider px-2.5 py-1 rounded-full bg-primary/10 border border-primary/20 text-primary">
+                  {category}
+                </span>
+              )}
+              {owner && (
+                <span className="text-[10px] font-mono uppercase tracking-wider px-2.5 py-1 rounded-full bg-surface-container border border-white/[0.06] text-on-surface-variant">
+                  Owner: {owner}
+                </span>
+              )}
+              {method && (
+                <span className="text-[10px] font-mono uppercase tracking-wider px-2.5 py-1 rounded-full bg-surface-container border border-white/[0.06] text-on-surface-variant">
+                  Метод: {method}
+                </span>
+              )}
+            </div>
+          )}
+
+          {what && (
+            <section>
+              <p className="text-[10px] font-mono text-primary/70 uppercase tracking-[0.2em] mb-2">Что это</p>
+              <p className="text-sm text-on-surface leading-relaxed">{what}</p>
+            </section>
+          )}
+
+          {why && (
+            <section>
+              <p className="text-[10px] font-mono text-primary/70 uppercase tracking-[0.2em] mb-2">Зачем</p>
+              <p className="text-sm text-on-surface-variant leading-relaxed">{why}</p>
+            </section>
+          )}
+
+          {how && (
+            <section>
+              <p className="text-[10px] font-mono text-primary/70 uppercase tracking-[0.2em] mb-2">Как считается</p>
+              <p className="text-sm text-on-surface-variant leading-relaxed">{how}</p>
+            </section>
+          )}
+
+          {formula && (
+            <section>
+              <p className="text-[10px] font-mono text-primary/70 uppercase tracking-[0.2em] mb-2">Формула</p>
+              <pre className="text-xs font-mono text-primary bg-primary/5 border border-primary/20 rounded-lg px-3 py-2 whitespace-pre-wrap break-words">
+                {formula}
+              </pre>
+            </section>
+          )}
+
+          {benchmark && (
+            <section>
+              <p className="text-[10px] font-mono text-primary/70 uppercase tracking-[0.2em] mb-2">Бенчмарк</p>
+              <span className="inline-block text-xs font-mono uppercase px-3 py-1 rounded-full bg-secondary/10 border border-secondary/20 text-secondary">
+                {benchmark}
+              </span>
+            </section>
+          )}
+
+          {current_state && (
+            <section className="bg-primary/5 border border-primary/20 rounded-xl px-4 py-3">
+              <p className="text-[10px] font-mono text-primary uppercase tracking-[0.2em] mb-1">Текущее состояние</p>
+              <p className="text-sm text-on-surface leading-relaxed">{current_state}</p>
+            </section>
+          )}
+
+          {sources && sources.length > 0 && (
+            <section>
+              <p className="text-[10px] font-mono text-primary/70 uppercase tracking-[0.2em] mb-2">Источники данных</p>
+              <ul className="space-y-1.5">
+                {sources.map((src, i) => {
+                  const ico = sourceIcon(src.type)
+                  return (
+                    <li
+                      key={i}
+                      className="flex items-start gap-2.5 bg-surface-container rounded-lg border border-white/[0.04] px-3 py-2"
+                    >
+                      <span className={`material-symbols-outlined text-sm flex-shrink-0 mt-0.5 ${ico.cls}`}>
+                        {ico.icon}
+                      </span>
+                      <span className="text-xs text-on-surface-variant leading-relaxed break-words">
+                        {formatSource(src)}
+                      </span>
+                    </li>
+                  )
+                })}
+              </ul>
+            </section>
+          )}
+
+          {(!sources || sources.length === 0) && !what && !why && !how && (
+            <p className="text-sm text-on-surface-variant italic">Описание скоро будет добавлено.</p>
+          )}
+        </div>
+      </div>
+    </div>
   )
 }
