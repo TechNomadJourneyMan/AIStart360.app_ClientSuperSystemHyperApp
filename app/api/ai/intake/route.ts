@@ -4,13 +4,18 @@ export const maxDuration = 60
 /**
  * POST /api/ai/intake
  *
- * Universal intake endpoint — accepts mixed payload:
- *   - files[]: any supported business doc (pdf/xlsx/csv/docx/txt)
+ * Universal intake endpoint — accepts JSON manifest payload:
+ *   - files[]: array of {fileName, storagePath, size, mimeType} —
+ *              files were uploaded directly browser → Supabase Storage
+ *              (bucket 'client-documents') by the client. This bypasses
+ *              the Vercel 4.5 MB serverless body limit that caused 413
+ *              "Request Entity Too Large" → "Unexpected token R…" JSON
+ *              parse failures on multi-MB xlsx uploads.
  *   - text: free-form notes / data dump
  *   - companyId (optional)
  *
  * For each file:
- *   1. Sanitize name, upload to Supabase Storage (bucket 'client-documents')
+ *   1. Read first 2 KB from Storage for excerpt (csv/txt)
  *   2. AI auto-classify doc_type via Haiku (filename + mime + content excerpt)
  *   3. Insert into documents table with classified doc_type
  *   4. Trigger orchestrator (parse → extract → consensus → bridge)
@@ -74,6 +79,23 @@ const TEXT_ROUTE_SCHEMA = z.object({
   confidence: z.number().min(0).max(1),
 })
 
+// Manifest of files already uploaded directly to Storage from the
+// browser. The endpoint only needs metadata + the Storage path to
+// fetch the bytes server-side as needed.
+const INTAKE_FILE_SCHEMA = z.object({
+  fileName: z.string().min(1).max(255),
+  storagePath: z.string().min(1).max(500),
+  size: z.number().int().nonnegative(),
+  mimeType: z.string().max(200).optional().default(''),
+})
+const INTAKE_BODY_SCHEMA = z.object({
+  files: z.array(INTAKE_FILE_SCHEMA).max(20).optional().default([]),
+  text: z.string().max(8000).optional(),
+  companyId: z.string().uuid().nullable().optional(),
+})
+
+type IntakeFile = z.infer<typeof INTAKE_FILE_SCHEMA>
+
 interface FileResult {
   fileName: string
   ok: boolean
@@ -102,25 +124,25 @@ function serviceClient() {
   )
 }
 
-function sanitizeName(name: string): { stem: string; ext: string } {
-  const ext = (name.split('.').pop() ?? 'bin').toLowerCase()
-  const stem = name.replace(/\.[^.]+$/, '')
-    .replace(/[^a-zA-Z0-9._-]/g, '_')
-    .replace(/_+/g, '_')
-    .substring(0, 50) || 'file'
-  return { stem, ext }
-}
-
-async function readExcerpt(file: File): Promise<string> {
-  const ext = file.name.split('.').pop()?.toLowerCase() ?? ''
-  if (ext === 'csv' || ext === 'txt') {
-    try {
-      return await file.slice(0, 2048).text()
-    } catch {
-      return ''
-    }
+async function readExcerptFromStorage(
+  svc: ReturnType<typeof serviceClient>,
+  fileName: string,
+  storagePath: string
+): Promise<string> {
+  const ext = fileName.split('.').pop()?.toLowerCase() ?? ''
+  // Only fetch excerpts for text-like formats. Binary docs (xlsx,
+  // pdf, docx, pptx) classify fine from filename + mime alone, and
+  // downloading them just to slice 2 KB wastes bandwidth + time.
+  if (ext !== 'csv' && ext !== 'txt') return ''
+  try {
+    const { data: blob, error } = await svc.storage
+      .from('client-documents')
+      .download(storagePath)
+    if (error || !blob) return ''
+    return await blob.slice(0, 2048).text()
+  } catch {
+    return ''
   }
-  return ''
 }
 
 async function classifyFile(fileName: string, mimeType: string, excerpt: string): Promise<{ type: DocType; confidence: number; reasoning: string }> {
@@ -199,41 +221,39 @@ async function routeText(text: string): Promise<z.infer<typeof TEXT_ROUTE_SCHEMA
   }
 }
 
-async function uploadFile(svc: ReturnType<typeof serviceClient>, userId: string, file: File): Promise<string | null> {
-  const { stem, ext } = sanitizeName(file.name)
-  const path = `${userId}/${Date.now()}_${stem}.${ext}`
-  const { error } = await svc.storage
-    .from('client-documents')
-    .upload(path, file, { contentType: file.type || 'application/octet-stream', upsert: false })
-  if (error) {
-    console.error('[intake] storage upload failed', error.message)
-    return null
-  }
-  return path
-}
-
 export async function POST(req: NextRequest) {
   const sbAuth = createServerClient()
   const { data: { user } } = await sbAuth.auth.getUser()
   if (!user) return NextResponse.json({ error: 'unauthenticated' }, { status: 401 })
 
-  let form: FormData
-  try { form = await req.formData() } catch { return NextResponse.json({ error: 'invalid_form' }, { status: 400 }) }
+  // Files are already in Storage — request body is a small JSON
+  // manifest, so we never hit Vercel's 4.5 MB body limit.
+  let rawBody: unknown
+  try {
+    rawBody = await req.json()
+  } catch {
+    return NextResponse.json({ error: 'invalid_json' }, { status: 400 })
+  }
 
-  // Size limits — mirror /api/v1/onboarding/medical (5MB) but with per-file
-  // and cumulative ceilings appropriate for multi-file intake.
+  const parsed = INTAKE_BODY_SCHEMA.safeParse(rawBody)
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: 'invalid_body', details: parsed.error.issues.slice(0, 5) },
+      { status: 400 }
+    )
+  }
+
+  // Size limits — kept as a defence-in-depth check on the manifest's
+  // reported sizes, even though the bytes themselves are already in
+  // Storage. Prevents abuse via inflated metadata that would later
+  // hammer the orchestrator with huge files.
   const PER_FILE_LIMIT = 50 * 1024 * 1024 // 50 MB per file
   const TOTAL_LIMIT = 200 * 1024 * 1024   // 200 MB cumulative
 
-  const files: File[] = []
-  for (const [k, v] of form.entries()) {
-    if (k.startsWith('file') && v instanceof File) files.push(v)
-  }
-  const text = (form.get('text') ?? '').toString().trim()
-  let companyId = (form.get('companyId') ?? '').toString() || null
+  const files: IntakeFile[] = parsed.data.files
+  const text = (parsed.data.text ?? '').trim()
+  let companyId: string | null = parsed.data.companyId ?? null
 
-  // Cumulative-size guard — reject the whole request before doing any
-  // expensive work (upload, classification, orchestrator).
   const totalSize = files.reduce((sum, f) => sum + f.size, 0)
   if (totalSize > TOTAL_LIMIT) {
     return NextResponse.json({ error: 'payload_too_large' }, { status: 413 })
@@ -296,27 +316,23 @@ export async function POST(req: NextRequest) {
   for (const file of files) {
     // Skip empty files (size 0) — they have no content to classify/parse.
     if (file.size === 0) {
-      fileResults.push({ fileName: file.name, ok: false, error: 'empty_file' })
+      fileResults.push({ fileName: file.fileName, ok: false, error: 'empty_file' })
       continue
     }
     // Skip files over the per-file ceiling. Cumulative-size already
     // checked above, so individual oversize files reach here only when
     // total stayed under 200 MB.
     if (file.size > PER_FILE_LIMIT) {
-      fileResults.push({ fileName: file.name, ok: false, error: 'file_too_large' })
+      fileResults.push({ fileName: file.fileName, ok: false, error: 'file_too_large' })
       continue
     }
     try {
-      const [excerpt, storedPath] = await Promise.all([
-        readExcerpt(file),
-        uploadFile(svc, user.id, file),
-      ])
-      if (!storedPath) {
-        fileResults.push({ fileName: file.name, ok: false, error: 'upload_failed' })
-        continue
-      }
+      // Files are already in Storage (uploaded directly by client);
+      // we just need an excerpt for classification.
+      const excerpt = await readExcerptFromStorage(svc, file.fileName, file.storagePath)
+      const storedPath = file.storagePath
 
-      const cls = await classifyFile(file.name, file.type, excerpt)
+      const cls = await classifyFile(file.fileName, file.mimeType, excerpt)
 
       // Insert documents row
       const { data: docRow, error: insErr } = await svc
@@ -324,10 +340,10 @@ export async function POST(req: NextRequest) {
         .insert({
           user_id: user.id,
           company_id: companyId,
-          file_name: file.name,
+          file_name: file.fileName,
           file_url: storedPath,
           file_size: file.size,
-          mime_type: file.type || null,
+          mime_type: file.mimeType || null,
           doc_type: cls.type,
           parse_status: 'queued',
         })
@@ -335,7 +351,7 @@ export async function POST(req: NextRequest) {
         .single()
 
       if (insErr || !docRow) {
-        fileResults.push({ fileName: file.name, ok: false, doc_type: cls.type, confidence: cls.confidence, error: 'db_insert_failed' })
+        fileResults.push({ fileName: file.fileName, ok: false, doc_type: cls.type, confidence: cls.confidence, error: 'db_insert_failed' })
         continue
       }
 
@@ -357,7 +373,7 @@ export async function POST(req: NextRequest) {
       }
 
       fileResults.push({
-        fileName: file.name,
+        fileName: file.fileName,
         ok: true,
         doc_type: cls.type,
         confidence: cls.confidence,
@@ -365,7 +381,7 @@ export async function POST(req: NextRequest) {
         ai_run_id: aiRunId,
       })
     } catch (e) {
-      fileResults.push({ fileName: file.name, ok: false, error: e instanceof Error ? e.message : 'unknown' })
+      fileResults.push({ fileName: file.fileName, ok: false, error: e instanceof Error ? e.message : 'unknown' })
     }
   }
 

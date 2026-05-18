@@ -3,9 +3,32 @@
 /**
  * UniversalIntake — single drop zone + free-form textarea.
  * Submits to /api/ai/intake; renders per-item routing result.
+ *
+ * Upload flow: files go directly browser → Supabase Storage (bucket
+ * 'client-documents'), then a JSON manifest with metadata is POSTed
+ * to /api/ai/intake. This bypasses Vercel's 4.5 MB serverless body
+ * limit that previously caused 413 → "Unexpected token R, Request En…
+ * is not valid JSON" crashes on multi-MB xlsx uploads.
  */
 
 import { useCallback, useRef, useState } from 'react'
+import { createClient as createSupabaseClient } from '@/lib/supabase/client'
+
+interface UploadedFileManifest {
+  fileName: string
+  storagePath: string
+  size: number
+  mimeType: string
+}
+
+function sanitizeStem(name: string): { stem: string; ext: string } {
+  const ext = (name.split('.').pop() ?? 'bin').toLowerCase()
+  const stem = name.replace(/\.[^.]+$/, '')
+    .replace(/[^a-zA-Z0-9._-]/g, '_')
+    .replace(/_+/g, '_')
+    .substring(0, 50) || 'file'
+  return { stem, ext }
+}
 
 type DocType =
   | 'pl_report' | 'balance_sheet' | 'marketing_report' | 'ops_report'
@@ -112,12 +135,62 @@ export function UniversalIntake({ companyId }: { companyId?: string | null }) {
     setError(null)
     setResult(null)
     try {
-      const fd = new FormData()
-      files.forEach((f, i) => fd.append(`file${i}`, f))
-      if (text.trim()) fd.append('text', text)
-      if (companyId) fd.append('companyId', companyId)
+      const sb = createSupabaseClient()
+      const { data: userData, error: userErr } = await sb.auth.getUser()
+      if (userErr || !userData.user) {
+        setError('Нужно войти в систему, чтобы загружать файлы')
+        setSubmitting(false)
+        return
+      }
+      const userId = userData.user.id
 
-      const res = await fetch('/api/ai/intake', { method: 'POST', body: fd })
+      // Upload each file directly to Storage so we never push >4.5 MB
+      // through the Vercel serverless function.
+      const uploaded: UploadedFileManifest[] = []
+      for (const f of files) {
+        const { stem, ext } = sanitizeStem(f.name)
+        const path = `${userId}/${Date.now()}_${stem}.${ext}`
+        const { error: upErr } = await sb.storage
+          .from('client-documents')
+          .upload(path, f, {
+            contentType: f.type || 'application/octet-stream',
+            upsert: false,
+          })
+        if (upErr) {
+          setError(`Не удалось загрузить "${f.name}": ${upErr.message}`)
+          setSubmitting(false)
+          return
+        }
+        uploaded.push({
+          fileName: f.name,
+          storagePath: path,
+          size: f.size,
+          mimeType: f.type || '',
+        })
+      }
+
+      const body: { files: UploadedFileManifest[]; text?: string; companyId?: string } = {
+        files: uploaded,
+      }
+      if (text.trim()) body.text = text
+      if (companyId) body.companyId = companyId
+
+      const res = await fetch('/api/ai/intake', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+
+      // Defensive: 413 / 500 from Vercel's edge often return plain text
+      // ("Request Entity Too Large", HTML error page, etc.). Parsing as
+      // JSON would throw "Unexpected token R, Request En… is not valid
+      // JSON" with no useful info. Detect non-JSON and surface raw text.
+      const contentType = res.headers.get('content-type') ?? ''
+      if (!contentType.includes('application/json')) {
+        const raw = await res.text()
+        throw new Error(`HTTP ${res.status}: ${raw.slice(0, 200) || 'no body'}`)
+      }
+
       const data = await res.json() as IntakeResponse | { error: string }
       if ('error' in data) {
         setError(data.error)
