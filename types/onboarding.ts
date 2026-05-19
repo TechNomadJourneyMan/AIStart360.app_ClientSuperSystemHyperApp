@@ -211,6 +211,23 @@ export interface PointA {
   insights: Insight[]
   quick_wins: QuickWin[]
   data_gaps: DataGap[]
+  intelligence?: PointAIntelligence
+}
+
+// ─── Phase 4 — Aggregator v2 Intelligence ────────────────────────────────────
+export interface PointAIntelligence {
+  by_department: Array<{
+    department: string
+    coverage: number
+    strongest: Array<{ metric_id: string; label: string; value: number | null; unit: string; confidence: number }>
+    weakest:   Array<{ metric_id: string; label: string; value: number | null; unit: string; confidence: number; reason: string }>
+  }>
+  top_strengths: Array<{ metric_id: string; label: string; value: number | null; unit: string; namespace: string }>
+  top_gaps: Array<{ metric_id: string; label: string; suggested_source: string; reason: string }>
+  coverage: { biz: number; kpi: number; gri: number; goal: number; overall: number }
+  trends: Array<{ metric_id: string; direction: 'up'|'down'|'flat'; delta_pct: number }>
+  generated_at: string
+  resolver_version: string
 }
 
 export interface Diagnostic {

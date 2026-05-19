@@ -76,6 +76,66 @@ export async function chatWithOpenRouter(opts: ChatOptions): Promise<string | nu
 }
 
 /**
+ * Generate embeddings via OpenRouter's OpenAI-compatible embeddings endpoint.
+ *
+ * Returns an array of embedding vectors (one per input string) or `null` on
+ * any failure. Never throws.
+ *
+ * Defaults:
+ *   - model: openai/text-embedding-3-small (1536 dims, cheap)
+ *   - dimensions: 1536 (matches the pgvector(1536) column on DocumentChunk)
+ *
+ * Note: not every OpenRouter-routed model honours the `dimensions` parameter.
+ * Callers should still verify the returned vector length before persisting.
+ */
+export async function embedWithOpenRouter(
+  texts: string[],
+  opts?: { model?: string; dimensions?: number }
+): Promise<number[][] | null> {
+  const apiKey = process.env.OPENROUTER_API_KEY
+  if (!apiKey) return null
+  if (!Array.isArray(texts) || texts.length === 0) return []
+
+  const model = opts?.model ?? 'openai/text-embedding-3-small'
+  const dimensions = opts?.dimensions ?? 1536
+
+  try {
+    const res = await fetch('https://openrouter.ai/api/v1/embeddings', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+        'HTTP-Referer': process.env.AUTH_URL ?? 'https://aistart360.vercel.app',
+        'X-Title': 'AIStart360',
+      },
+      body: JSON.stringify({ model, input: texts, dimensions }),
+    })
+    if (!res.ok) {
+      console.error('[openrouter:embed]', res.status, await res.text().catch(() => ''))
+      return null
+    }
+    const json = (await res.json()) as {
+      data?: Array<{ embedding?: number[] }>
+    }
+    const data = json.data ?? []
+    if (data.length !== texts.length) {
+      console.warn(
+        `[openrouter:embed] length mismatch: requested=${texts.length} got=${data.length}`
+      )
+    }
+    const vectors: number[][] = []
+    for (const item of data) {
+      if (!item || !Array.isArray(item.embedding)) return null
+      vectors.push(item.embedding)
+    }
+    return vectors
+  } catch (err) {
+    console.error('[openrouter:embed] fetch failed:', err)
+    return null
+  }
+}
+
+/**
  * Extracts a JSON payload from a model response. Handles fenced code blocks,
  * inline JSON, and plain text. Returns `null` if no valid JSON is found.
  */

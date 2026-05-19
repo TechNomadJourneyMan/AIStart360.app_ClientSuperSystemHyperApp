@@ -104,7 +104,7 @@ export async function middleware(request: NextRequest) {
       role === 'super_admin' ? '/admin-giga-panel' :
       role === 'admin' ? '/dashboard' :
       role === 'owner' ? '/owner/dashboard' :
-      role === 'client' ? '/client/dashboard' :
+      role === 'client' ? '/dashboard' :
       '/expert/dashboard'
     return NextResponse.redirect(new URL(dest, request.url))
   }
@@ -140,9 +140,9 @@ export async function middleware(request: NextRequest) {
       if (CLIENT_DASHBOARD_PATHS.some((p) => pathname.startsWith(p))) {
         return response
       }
-      // If it's not a client portal path, redirect to waiting-room
+      // If it's not a client portal path, redirect to the cabinet (sidebar dashboard)
       if (!pathname.startsWith('/client')) {
-        return NextResponse.redirect(new URL('/client/dashboard', request.url))
+        return NextResponse.redirect(new URL('/dashboard', request.url))
       }
     }
 

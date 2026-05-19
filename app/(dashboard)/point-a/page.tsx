@@ -6,6 +6,7 @@ import { auth } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
 import { FileArea } from '@/components/point-a/FileArea'
 import { SurveyOverview } from '@/components/point-a/SurveyOverview'
+import PointAIntelligenceSection from '@/components/point-a/PointAIntelligenceSection'
 
 export const metadata: Metadata = { title: 'Точка А — Текущее состояние' }
 
@@ -39,6 +40,7 @@ export default async function PointAPage() {
   let latestReports: Array<{ id: string; score: number; calculatedAt: string; clientName: string }> = []
   const surveyAnswers: Record<string, unknown> = {}
   const surveyCompletedSteps: number[] = []
+  let companyId: string | null = null
 
   try {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
@@ -93,6 +95,19 @@ export default async function PointAPage() {
             calculatedAt: diag.calculated_at ?? diag.created_at,
             clientName: user.email ?? 'Клиент',
           }]
+        }
+      }
+    }
+    // Fetch first company for this user (for Point A intelligence aggregator)
+    if (clientId) {
+      const companyRes = await fetch(
+        `${supabaseUrl}/rest/v1/companies?user_id=eq.${clientId}&select=id&limit=1`,
+        { headers, cache: 'no-store' }
+      )
+      if (companyRes.ok) {
+        const companies = await companyRes.json()
+        if (Array.isArray(companies) && companies[0]?.id) {
+          companyId = String(companies[0].id)
         }
       }
     }
@@ -215,6 +230,11 @@ export default async function PointAPage() {
             })}
           </div>
         </section>
+      )}
+
+      {/* Phase 6 final — Real-time intelligence layer (live resolver + realtime sync) */}
+      {clientId && (
+        <PointAIntelligenceSection userId={clientId} companyId={companyId} />
       )}
 
       {/* Interactive File Area */}

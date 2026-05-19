@@ -14,6 +14,7 @@ import type { CrmRequest, CrmClient } from '@/components/dashboard/CrmActivity'
 import type { Alert } from '@/types'
 import type { AlertCardProps } from '@/components/dashboard/AlertCard'
 import { PointARadarWidget } from '@/components/dashboard/PointARadarWidget'
+import PointAIntelligenceSection from '@/components/point-a/PointAIntelligenceSection'
 import type { PointA, BlockScore } from '@/types/onboarding'
 import { prisma } from '@/lib/db'
 import { getPortfolioGRI } from '@/lib/portfolio-gri'
@@ -238,6 +239,7 @@ export default async function DashboardPage() {
       // Fetch latest diagnostic via REST API to avoid RLS issues
       let diag: Record<string, unknown> | null = null
       let orgName: string | undefined = undefined
+      let companyId: string | null = null
       try {
         const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
         const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -247,7 +249,7 @@ export default async function DashboardPage() {
             { headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` }, cache: 'no-store' }
           ),
           fetch(
-            `${supabaseUrl}/rest/v1/companies?user_id=eq.${user.id}&select=name&limit=1`,
+            `${supabaseUrl}/rest/v1/companies?user_id=eq.${user.id}&select=id,name&limit=1`,
             { headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` }, cache: 'no-store' }
           ),
         ])
@@ -256,8 +258,9 @@ export default async function DashboardPage() {
           diag = diagRows?.[0] ?? null
         }
         if (companyRes.ok) {
-          const companyRows = await companyRes.json() as Array<{ name: string }>
+          const companyRows = await companyRes.json() as Array<{ id: string; name: string }>
           orgName = companyRows?.[0]?.name ?? undefined
+          companyId = companyRows?.[0]?.id ? String(companyRows[0].id) : null
         }
       } catch {
         // diagnostics not available yet
@@ -305,12 +308,12 @@ export default async function DashboardPage() {
                       sub: '/ 100', color: scoreColor(healthIndex), icon: 'monitor_heart',
                     },
                     {
-                      label: 'Стадия', value: stageLabel(pointA.stage),
-                      sub: 'бизнеса', color: '#6effc0', icon: 'trending_up',
-                    },
-                    {
                       label: 'Финансы', value: (pointA.blocks.finance.score / 10).toFixed(1),
                       sub: '/ 10', color: scoreColor(pointA.blocks.finance.score), icon: 'paid',
+                    },
+                    {
+                      label: 'Продажи', value: (pointA.blocks.sales.score / 10).toFixed(1),
+                      sub: '/ 10', color: scoreColor(pointA.blocks.sales.score), icon: 'trending_up',
                     },
                   ].map(card => (
                     <div key={card.label}
@@ -342,6 +345,67 @@ export default async function DashboardPage() {
               </div>
             )}
           </section>
+
+          {/* Insights / Risks / Quick Wins from Point A engine */}
+          {pointA && (
+            <>
+              {pointA.insights.length > 0 && (
+                <section>
+                  <h2 className="text-xs font-mono text-primary/70 uppercase tracking-[0.2em] mb-3">Инсайты</h2>
+                  <div className="space-y-2">
+                    {pointA.insights.slice(0, 5).map((ins, i) => (
+                      <div key={i} className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-4 flex items-start gap-3">
+                        <span className="material-symbols-outlined text-primary/70 text-base mt-0.5">lightbulb</span>
+                        <div>
+                          <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest mb-1">{ins.area}</p>
+                          <p className="text-sm text-on-surface">{ins.text}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              {pointA.risks.length > 0 && (
+                <section>
+                  <h2 className="text-xs font-mono text-error/80 uppercase tracking-[0.2em] mb-3">Риски</h2>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {pointA.risks.slice(0, 6).map((r, i) => (
+                      <div key={i} className={`rounded-2xl border p-4 ${
+                        r.level === 'critical' ? 'border-error/40 bg-error/[0.06]' :
+                        r.level === 'important' ? 'border-error/25 bg-error/[0.03]' :
+                        'border-amber-400/25 bg-amber-400/[0.03]'
+                      }`}>
+                        <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest mb-1">{r.area}</p>
+                        <p className="text-sm text-on-surface font-medium mb-1">{r.text}</p>
+                        <p className="text-xs text-on-surface-variant">{r.impact}</p>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              {pointA.quick_wins.length > 0 && (
+                <section>
+                  <h2 className="text-xs font-mono text-primary/70 uppercase tracking-[0.2em] mb-3">Quick Wins</h2>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {pointA.quick_wins.slice(0, 6).map((qw, i) => (
+                      <div key={i} className="bg-primary/[0.04] border border-primary/30 rounded-2xl p-4">
+                        <div className="flex items-start justify-between mb-2">
+                          <p className="text-[10px] font-mono text-primary/70 uppercase tracking-widest">{qw.area}</p>
+                          <span className="text-[10px] font-mono text-on-surface-variant bg-surface-container-high rounded px-2 py-0.5">{qw.timeline}</span>
+                        </div>
+                        <p className="text-sm text-on-surface font-medium">{qw.action}</p>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
+            </>
+          )}
+
+          {/* Phase 6 final — Real-time Intelligence layer */}
+          <PointAIntelligenceSection userId={user.id} companyId={companyId} />
 
           {/* Quick nav */}
           <section>

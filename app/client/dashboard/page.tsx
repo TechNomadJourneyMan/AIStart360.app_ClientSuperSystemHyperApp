@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase-client'
 import { PointARadarWidget } from '@/components/dashboard/PointARadarWidget'
 import { ExpertCommentsSection } from '@/components/client/ExpertCommentsSection'
+import PointAIntelligenceSection from '@/components/point-a/PointAIntelligenceSection'
 import type {
   Diagnostic, BlockScore, Risk, Insight, QuickWin,
   DiagnosticStage, AIAnalysis, AIStatus, PointA,
@@ -186,6 +187,7 @@ export default function ClientDashboard() {
   const router = useRouter()
   const [diag, setDiag] = useState<Diagnostic | null>(null)
   const [company, setCompany] = useState<{ name: string; industry: string | null; employee_count: number | null } | null>(null)
+  const [companyId, setCompanyId] = useState<string | null>(null)
   const [documents, setDocuments] = useState<DocumentRow[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [userId, setUserId] = useState<string | null>(null)
@@ -231,7 +233,10 @@ export default function ClientDashboard() {
         setAiStatus(diagData.data?.ai_status ?? 'none')
         setAiAnalysis(diagData.data?.ai_analysis ?? null)
       }
-      if (compData.ok) setCompany(compData.data)
+      if (compData.ok) {
+        setCompany(compData.data)
+        if (compData.data?.id) setCompanyId(String(compData.data.id))
+      }
       if (docsData.ok) setDocuments(docsData.data ?? [])
       if (surveyJson.ok) setSurveyData(surveyJson.data)
     } catch {}
@@ -418,6 +423,37 @@ export default function ClientDashboard() {
           </div>
         ) : (
           <>
+            {/* 0. Sections navigation grid — primary cabinet entry points */}
+            <section>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xs font-mono text-primary/70 uppercase tracking-[0.2em]">
+                  Разделы кабинета
+                </h2>
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+                {[
+                  { href: '/client/point-a',  icon: 'target',       label: 'Точка А',  sub: 'AI-диагностика' },
+                  { href: '/client/point-b',  icon: 'flag',         label: 'Точка Б',  sub: 'Цели роста' },
+                  { href: '/gri',             icon: 'radar',        label: 'GRI',      sub: 'Индекс роста' },
+                  { href: '/metrics',         icon: 'analytics',    label: 'Метрики',  sub: '122 показателя' },
+                  { href: '/market',          icon: 'language',     label: 'Рынок',    sub: 'Конкуренты' },
+                  { href: '/client/my-data',  icon: 'description',  label: 'Документы', sub: 'P&L, баланс' },
+                ].map((s) => (
+                  <Link
+                    key={s.href}
+                    href={s.href}
+                    className="group bg-surface-container-low rounded-2xl border border-white/[0.04] hover:border-primary/30 p-4 transition-all hover:bg-surface-container"
+                  >
+                    <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center mb-3 group-hover:bg-primary/20 transition-colors">
+                      <span className="material-symbols-outlined text-base text-primary">{s.icon}</span>
+                    </div>
+                    <p className="text-sm font-bold text-on-surface group-hover:text-primary transition-colors">{s.label}</p>
+                    <p className="text-[10px] text-on-surface-variant mt-0.5 font-mono">{s.sub}</p>
+                  </Link>
+                ))}
+              </div>
+            </section>
+
             {/* 1. Hero: Radar + KPIs */}
             <section>
               <div className="flex items-center justify-between mb-4">
@@ -426,8 +462,7 @@ export default function ClientDashboard() {
                     My Dashboard
                   </h1>
                   <p className="text-xs text-on-surface-variant mt-0.5">
-                    {company?.name && <span>{company.name} · </span>}
-                    Stage: <strong className="text-on-surface">{stageLabel(diag.stage)}</strong>
+                    {company?.name && <span>{company.name}</span>}
                     {company?.industry && <span> · {company.industry}</span>}
                     <span className="text-primary/60"> · Point A Diagnostics</span>
                   </p>
@@ -471,10 +506,10 @@ export default function ClientDashboard() {
                     color="text-primary"
                   />
                   <StatCard
-                    label="Stage"
-                    value={stageLabel(diag.stage)}
-                    sublabel="development stage"
-                    icon="radar"
+                    label="Industry"
+                    value={company?.industry ?? '—'}
+                    sublabel="business sector"
+                    icon="business"
                     color="text-primary"
                   />
                 </div>
@@ -705,6 +740,13 @@ export default function ClientDashboard() {
                   <h2 className="text-sm font-bold text-on-surface">Industry Context</h2>
                 </div>
                 <p className="text-sm text-on-surface-variant leading-relaxed">{aiAnalysis.industry_context}</p>
+              </section>
+            )}
+
+            {/* 9b. Phase 6 final — Real-time Intelligence layer */}
+            {userId && (
+              <section>
+                <PointAIntelligenceSection userId={userId} companyId={companyId} />
               </section>
             )}
 

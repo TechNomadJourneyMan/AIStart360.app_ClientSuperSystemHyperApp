@@ -4,16 +4,10 @@ import { useEffect, useState, useCallback } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase-client'
-import type { Diagnostic, BlockScore, Risk, Insight, QuickWin, DiagnosticStage, AIAnalysis, AIStatus } from '@/types/onboarding'
+import type { Diagnostic, BlockScore, Risk, Insight, QuickWin, AIAnalysis, AIStatus } from '@/types/onboarding'
+import PointAIntelligenceSection from '@/components/point-a/PointAIntelligenceSection'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-function stageLabel(s: DiagnosticStage | null): string {
-  const map: Record<DiagnosticStage, string> = {
-    seed: 'Seed', early: 'Early', growth: 'Growth', scale: 'Scale', mature: 'Mature'
-  }
-  return s ? map[s] : '—'
-}
-
 function blockLabel(status: string | undefined): { text: string; color: string } {
   const m: Record<string, { text: string; color: string }> = {
     critical:  { text: 'Критично',  color: 'text-error' },
@@ -154,6 +148,7 @@ function BlockCard({ title, icon, score, aiBlock }: {
 export default function PointAClientPage() {
   const [diag, setDiag] = useState<Diagnostic | null>(null)
   const [company, setCompany] = useState<{ name: string; industry: string | null; employee_count: number | null } | null>(null)
+  const [companyId, setCompanyId] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isRecalculating, setIsRecalculating] = useState(false)
   const [userId, setUserId] = useState<string | null>(null)
@@ -184,8 +179,12 @@ export default function PointAClientPage() {
         setDiag(diagData.data)
         setAiStatus(diagData.data?.ai_status ?? 'none')
         setAiAnalysis(diagData.data?.ai_analysis ?? null)
+        if (diagData.data?.company_id) setCompanyId(String(diagData.data.company_id))
       }
-      if (compData.ok) setCompany(compData.data)
+      if (compData.ok) {
+        setCompany(compData.data)
+        if (compData.data?.id) setCompanyId(String(compData.data.id))
+      }
     } catch {}
     setIsLoading(false)
   }, [userId])
@@ -261,7 +260,11 @@ export default function PointAClientPage() {
       <header className="sticky top-0 z-20 bg-[#0A0B0F]/90 backdrop-blur border-b border-white/[0.06] px-6 py-4">
         <div className="max-w-3xl mx-auto flex items-center justify-between">
           <Image src="/logo.svg" alt="AIStart360" width={120} height={22} />
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 flex-wrap">
+            <Link href="/dashboard" className="text-xs font-mono text-on-surface-variant hover:text-primary border border-white/[0.08] hover:border-primary/30 rounded-lg px-3 py-1.5 transition-all flex items-center gap-1.5">
+              <span className="material-symbols-outlined text-sm">dashboard</span>
+              Кабинет
+            </Link>
             <button
               onClick={recalculate}
               disabled={isRecalculating}
@@ -336,10 +339,6 @@ export default function PointAClientPage() {
                     Добро пожаловать{company?.name ? `, ${company.name}` : ''}!
                   </h1>
                   <div className="flex flex-wrap gap-3 justify-center md:justify-start mt-3">
-                    <span className="flex items-center gap-1.5 text-xs bg-surface-container px-3 py-1.5 rounded-lg text-on-surface-variant">
-                      <span className="material-symbols-outlined text-sm">radar</span>
-                      Стадия: <strong className="text-on-surface ml-1">{stageLabel(diag.stage)}</strong>
-                    </span>
                     {company?.industry && (
                       <span className="flex items-center gap-1.5 text-xs bg-surface-container px-3 py-1.5 rounded-lg text-on-surface-variant">
                         <span className="material-symbols-outlined text-sm">business</span>
@@ -560,6 +559,13 @@ export default function PointAClientPage() {
                   <h2 className="text-sm font-bold text-on-surface">Отраслевой контекст</h2>
                 </div>
                 <p className="text-sm text-on-surface-variant leading-relaxed">{aiAnalysis.industry_context}</p>
+              </section>
+            )}
+
+            {/* 5b. Phase 6 final — Real-time Intelligence Section */}
+            {userId && (
+              <section>
+                <PointAIntelligenceSection userId={userId} companyId={companyId} />
               </section>
             )}
 

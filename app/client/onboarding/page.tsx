@@ -132,7 +132,7 @@ export default function OnboardingPage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             user_id: userId, name: answers['s1_company_name'], industry: answers['s1_industry'],
-            stage: answers['s1_stage'], employee_count: answers['s1_employee_count'],
+            employee_count: answers['s1_employee_count'],
             founded_at: answers['s1_founded_at'], business_model: answers['s1_business_model'],
             regions: answers['s1_regions'], contact_name: answers['s1_contact_name'],
             contact_position: answers['s1_contact_position'], contact_phone: answers['s1_contact_phone'],

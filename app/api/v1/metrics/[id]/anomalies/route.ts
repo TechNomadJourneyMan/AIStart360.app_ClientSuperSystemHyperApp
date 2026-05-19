@@ -1,34 +1,60 @@
+// ============================================================
+// app/api/v1/metrics/[id]/anomalies/route.ts
+// GET /api/v1/metrics/:id/anomalies?period=ALL
+//
+// Pulls the metric's history for the caller's company, runs the
+// pure rolling-z anomaly detector, returns the contract expected
+// by `hooks/useTimeseries.ts::useAnomalies`:
+//   { data: AnomalyPoint[] }
+// ============================================================
+
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
-import type { AnomalyPoint } from '@/types/metrics'
-import type { Period } from '@/types/periods'
+import { z } from 'zod'
+import { createClient } from '@/lib/supabase/server'
+import { fetchTimeseries, type FetchPeriod } from '@/lib/metrics/timeseries-fetch'
+import { detectAnomalies } from '@/lib/metrics/anomalies'
 
-const MOCK_ANOMALIES: Record<string, AnomalyPoint[]> = {
-  revenue: [
-    {
-      timestamp: new Date(Date.now() - 15 * 24 * 3600_000).toISOString(),
-      label: '18 мар',
-      value: 77.4,
-      severity: 'warning',
-      description: 'Замедление роста — выручка ниже тренда на 8.3%. Возможен разовый отток клиента.',
-    },
-  ],
-  churn: [
-    {
-      timestamp: new Date(Date.now() - 8 * 24 * 3600_000).toISOString(),
-      label: '25 мар',
-      value: 7.1,
-      severity: 'critical',
-      description: 'Резкий рост оттока +69% — требует немедленного анализа когорты.',
-    },
-  ],
-}
+const PeriodSchema = z.enum(['1M', '3M', '6M', '1Y', 'ALL']).default('ALL')
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: { id: string } | Promise<{ id: string }> },
 ) {
-  const { id } = params
-  const anomalies: AnomalyPoint[] = MOCK_ANOMALIES[id] ?? []
-  return NextResponse.json({ data: anomalies })
+  try {
+    const resolved = await Promise.resolve(params)
+    const metricId = resolved.id
+
+    const parsed = PeriodSchema.safeParse(req.nextUrl.searchParams.get('period') ?? 'ALL')
+    if (!parsed.success) {
+      return NextResponse.json({ error: 'Invalid period' }, { status: 400 })
+    }
+    const period: FetchPeriod = parsed.data
+
+    const supabase = await createClient()
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser()
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const { data: companyRow } = await supabase
+      .from('companies')
+      .select('id')
+      .eq('user_id', user.id)
+      .maybeSingle()
+
+    const companyId = companyRow?.id as string | undefined
+    const series = companyId
+      ? await fetchTimeseries(supabase, { companyId, metricKey: metricId, period })
+      : []
+
+    const data = detectAnomalies(series)
+    return NextResponse.json({ data })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error'
+    return NextResponse.json({ error: message }, { status: 500 })
+  }
 }

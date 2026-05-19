@@ -12,6 +12,12 @@ export interface ParsedDataField {
   target_parameter: string;
   source?: string;
   confidence?: number;
+  /**
+   * Phase-2: canonical metric id from `lib/metrics/registry.ts`. Populated by
+   * `bindFieldsToMetrics` after extraction. `null` means the binder ran but
+   * couldn't find a confident match; `undefined` means the binder hasn't run.
+   */
+  metric_id?: string | null;
 }
 
 export interface DocumentExtraction {
@@ -48,6 +54,7 @@ const fieldSchema = z.object({
   target_parameter: z.string().min(1),
   source: z.string().optional(),
   confidence: z.number().min(0).max(1).optional(),
+  metric_id: z.string().nullable().optional(),
 });
 
 const extractionSchema = z.object({
@@ -185,9 +192,29 @@ function normalizeExtraction(extraction: DocumentExtraction): DocumentExtraction
         target_parameter: target.target_parameter,
         source: field.source,
         confidence: field.confidence,
+        metric_id: field.metric_id ?? undefined,
       };
     }),
   };
+}
+
+/**
+ * Post-extraction step: bind each field to a canonical registry metric id.
+ * Dynamically imported to avoid a hard cycle between `extract.ts` and
+ * `bind-fields.ts`. Never throws — on failure the original fields pass through.
+ */
+async function bindFieldsSafely(
+  fields: ParsedDataField[],
+  docType: string
+): Promise<ParsedDataField[]> {
+  try {
+    const mod = await import("@/lib/documents/bind-fields");
+    const result = await mod.bindFieldsToMetrics(fields, docType);
+    return result.fields;
+  } catch (err) {
+    console.warn("[documents/extract] bindFieldsToMetrics failed; passthrough", err);
+    return fields;
+  }
 }
 
 async function extractWithAi(text: string, docType: string): Promise<DocumentExtraction | null> {
@@ -271,15 +298,18 @@ export async function extractFromDocument(input: ExtractFromDocumentInput): Prom
 
   const aiExtraction = await extractWithAi(text, input.docType);
   if (aiExtraction) {
+    const bound = await bindFieldsSafely(aiExtraction.fields, input.docType);
     return {
-      extraction: aiExtraction,
+      extraction: { summary: aiExtraction.summary, fields: bound },
       rawTextPreview,
       modelUsed: OPENROUTER_MODELS.sonnet,
     };
   }
 
+  const heur = heuristicExtract(text);
+  const bound = await bindFieldsSafely(heur.fields, input.docType);
   return {
-    extraction: heuristicExtract(text),
+    extraction: { summary: heur.summary, fields: bound },
     rawTextPreview,
     modelUsed: "heuristic-parser",
   };

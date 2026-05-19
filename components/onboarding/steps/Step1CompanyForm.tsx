@@ -6,7 +6,6 @@ import { FieldLabel } from '@/components/onboarding/shared'
 import {
   INDUSTRIES,
   REGIONS,
-  COMPANY_STAGES,
   BUSINESS_MODELS,
 } from '@/components/onboarding/constants/options'
 import { createClient } from '@/lib/supabase/client'

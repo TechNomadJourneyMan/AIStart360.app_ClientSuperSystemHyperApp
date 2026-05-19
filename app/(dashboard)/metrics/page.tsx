@@ -9,6 +9,7 @@ import {
   formatSource,
   type MetricSource,
 } from '@/lib/metrics/descriptions'
+import MetricsLiveCatalog from '@/components/metrics/MetricsLiveCatalog'
 
 // ─── Modal types ──────────────────────────────────────────────────────────────
 type ModalProps = {
@@ -669,6 +670,9 @@ export default function MetricsPage() {
           </div>
         </div>
       </section>
+
+      {/* Phase 6 final — Real-time intelligence catalog (filterable, drill-down, live values) */}
+      <MetricsLiveCatalog />
 
       {/* Tab switcher */}
       <div className="flex gap-1 bg-surface-container rounded-xl p-1 w-fit flex-wrap">

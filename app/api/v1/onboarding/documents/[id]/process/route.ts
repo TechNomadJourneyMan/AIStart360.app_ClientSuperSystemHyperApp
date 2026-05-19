@@ -8,6 +8,7 @@ import {
   extractFromDocument,
   type ParsedDataPayload,
 } from '@/lib/documents/extract'
+import { parseDocument } from '@/lib/documents/parse'
 
 // POST /api/v1/onboarding/documents/[id]/process
 // Inline document parsing. Fetches the document, parses it, runs LLM extraction,
@@ -73,6 +74,52 @@ export async function POST(
       .eq('id', doc.id)
 
     if (updateErr) throw new Error(updateErr.message)
+
+    // Fire-and-forget: chunk + embed the parsed text into pgvector storage so
+    // it becomes available to RAG. Gated behind ENABLE_DOCUMENT_EMBEDDINGS so
+    // production traffic doesn't burn embedding credits until we're ready.
+    void (async () => {
+      if (process.env.ENABLE_DOCUMENT_EMBEDDINGS !== 'true') return
+      try {
+        const { prisma } = await import('@/lib/db')
+        const { embedAndStoreChunks } = await import('@/lib/documents/embed')
+
+        // Best-effort owner → Client lookup. The Supabase `documents.user_id`
+        // → `profiles.id` chain doesn't map 1:1 to the Prisma `Client` model
+        // in every environment, so we skip silently if no client is found.
+        const ownerClient = await prisma.client.findFirst({
+          where: { managerId: (doc as { user_id?: string }).user_id ?? '__none__' },
+          select: { id: true },
+        }).catch(() => null)
+        if (!ownerClient) return
+
+        // Re-parse to obtain full text (extract.ts only retains a preview).
+        const reFile = await fetch(doc.file_url).catch(() => null)
+        if (!reFile || !reFile.ok) return
+        const reBuffer = Buffer.from(await reFile.arrayBuffer())
+        const parsed = await parseDocument(
+          reBuffer,
+          doc.file_name,
+          doc.mime_type ?? undefined,
+        )
+        if (!parsed.text?.trim()) return
+
+        const summary = await prisma.documentSummary.create({
+          data: {
+            clientId: ownerClient.id,
+            content: parsed.text,
+            metadata: { source_document_id: doc.id },
+          },
+        })
+
+        const result = await embedAndStoreChunks(summary.id, parsed.text)
+        if (result.error) {
+          console.warn('[documents/process] embed result', result)
+        }
+      } catch (e) {
+        console.warn('[documents/process] embed failed', e)
+      }
+    })()
 
     return NextResponse.json({
       ok: true,
