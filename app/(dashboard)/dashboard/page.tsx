@@ -15,6 +15,7 @@ import type { Alert } from '@/types'
 import type { AlertCardProps } from '@/components/dashboard/AlertCard'
 import { PointARadarWidget } from '@/components/dashboard/PointARadarWidget'
 import PointAIntelligenceSection from '@/components/point-a/PointAIntelligenceSection'
+import PointADashboardSectionsBoundary from '@/components/dashboard/PointADashboardSections'
 import type { PointA, BlockScore } from '@/types/onboarding'
 import { prisma } from '@/lib/db'
 import { getPortfolioGRI } from '@/lib/portfolio-gri'
@@ -403,6 +404,9 @@ export default async function DashboardPage() {
               )}
             </>
           )}
+
+          {/* Point A v3 — spec-compliant Top Sales Table · Retention curve · 6 metric blocks · RFM · Loss map */}
+          <PointADashboardSectionsBoundary />
 
           {/* Phase 6 final — Real-time Intelligence layer */}
           <PointAIntelligenceSection userId={user.id} companyId={companyId} />
