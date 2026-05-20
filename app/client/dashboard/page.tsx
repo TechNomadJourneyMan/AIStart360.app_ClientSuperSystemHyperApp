@@ -8,6 +8,7 @@ import { createClient } from '@/lib/supabase-client'
 import { PointARadarWidget } from '@/components/dashboard/PointARadarWidget'
 import { ExpertCommentsSection } from '@/components/client/ExpertCommentsSection'
 import PointAIntelligenceSection from '@/components/point-a/PointAIntelligenceSection'
+import PointADashboardSectionsBoundary from '@/components/dashboard/PointADashboardSections'
 import type {
   Diagnostic, BlockScore, Risk, Insight, QuickWin,
   DiagnosticStage, AIAnalysis, AIStatus, PointA,
@@ -515,6 +516,10 @@ export default function ClientDashboard() {
                 </div>
               </div>
             </section>
+
+            {/* 1.5 — New spec-driven cabinet sections (Top Sales Table,
+                Retention Curve, 6 metric blocks, RFM, Loss Map) */}
+            <PointADashboardSectionsBoundary />
 
             {/* 2. AI Status / Executive Summary */}
             {aiStatus === 'processing' && (

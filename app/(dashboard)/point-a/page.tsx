@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/server'
 import { FileArea } from '@/components/point-a/FileArea'
 import { SurveyOverview } from '@/components/point-a/SurveyOverview'
 import PointAIntelligenceSection from '@/components/point-a/PointAIntelligenceSection'
+import PointADashboardSectionsBoundary from '@/components/dashboard/PointADashboardSections'
 
 export const metadata: Metadata = { title: 'Точка А — Текущее состояние' }
 
@@ -168,6 +169,10 @@ export default async function PointAPage() {
           </div>
         ))}
       </section>
+
+      {/* New spec-driven cabinet sections (Top Sales Table, Retention
+          Curve, 6 metric blocks, RFM, Loss Map) — mirrors /client/dashboard */}
+      <PointADashboardSectionsBoundary />
 
       {/* Survey Data */}
       <section>

@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase-client'
 import type { Diagnostic, BlockScore, Risk, Insight, QuickWin, AIAnalysis, AIStatus } from '@/types/onboarding'
 import PointAIntelligenceSection from '@/components/point-a/PointAIntelligenceSection'
+import PointADashboardSectionsBoundary from '@/components/dashboard/PointADashboardSections'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function blockLabel(status: string | undefined): { text: string; color: string } {
@@ -359,6 +360,10 @@ export default function PointAClientPage() {
                 </div>
               </div>
             </section>
+
+            {/* New spec-driven cabinet sections (Top Sales Table,
+                Retention Curve, 6 metric blocks, RFM, Loss Map) */}
+            <PointADashboardSectionsBoundary />
 
             {/* AI Executive Summary */}
             {aiStatus === 'processing' && (
