@@ -14,6 +14,7 @@ import type { CrmRequest, CrmClient } from '@/components/dashboard/CrmActivity'
 import type { Alert } from '@/types'
 import type { AlertCardProps } from '@/components/dashboard/AlertCard'
 import { PointARadarWidget } from '@/components/dashboard/PointARadarWidget'
+import { GRIAssessmentRadarWidget } from '@/components/dashboard/GRIAssessmentRadarWidget'
 import PointAIntelligenceSection from '@/components/point-a/PointAIntelligenceSection'
 import PointADashboardSectionsBoundary from '@/components/dashboard/PointADashboardSections'
 import type { PointA, BlockScore } from '@/types/onboarding'
@@ -241,16 +242,21 @@ export default async function DashboardPage() {
       let diag: Record<string, unknown> | null = null
       let orgName: string | undefined = undefined
       let companyId: string | null = null
+      let griAssessment: { gri_index: number; section_avgs: Record<string, number>; created_at: string } | null = null
       try {
         const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
         const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-        const [diagRes, companyRes] = await Promise.all([
+        const [diagRes, companyRes, griRes] = await Promise.all([
           fetch(
             `${supabaseUrl}/rest/v1/diagnostics?user_id=eq.${user.id}&order=calculated_at.desc&limit=1`,
             { headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` }, cache: 'no-store' }
           ),
           fetch(
             `${supabaseUrl}/rest/v1/companies?user_id=eq.${user.id}&select=id,name&limit=1`,
+            { headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` }, cache: 'no-store' }
+          ),
+          fetch(
+            `${supabaseUrl}/rest/v1/gri_assessments?user_id=eq.${user.id}&is_current=eq.true&select=gri_index,section_avgs,created_at&limit=1`,
             { headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` }, cache: 'no-store' }
           ),
         ])
@@ -262,6 +268,16 @@ export default async function DashboardPage() {
           const companyRows = await companyRes.json() as Array<{ id: string; name: string }>
           orgName = companyRows?.[0]?.name ?? undefined
           companyId = companyRows?.[0]?.id ? String(companyRows[0].id) : null
+        }
+        if (griRes.ok) {
+          const griRows = await griRes.json() as Array<{ gri_index: number; section_avgs: Record<string, number>; created_at: string }>
+          if (griRows?.[0]) {
+            griAssessment = {
+              gri_index: Number(griRows[0].gri_index ?? 0),
+              section_avgs: griRows[0].section_avgs ?? {},
+              created_at: griRows[0].created_at,
+            }
+          }
         }
       } catch {
         // diagnostics not available yet
@@ -328,9 +344,13 @@ export default async function DashboardPage() {
                     </div>
                   ))}
                 </div>
-                {/* Radar */}
+                {/* Radar — prefer GRI Assessment if available, else Point A */}
                 <div className="xl:col-span-3">
-                  <PointARadarWidget pointA={pointA} orgName={orgName} />
+                  {griAssessment ? (
+                    <GRIAssessmentRadarWidget data={griAssessment} orgName={orgName} stage={pointA.stage} />
+                  ) : (
+                    <PointARadarWidget pointA={pointA} orgName={orgName} />
+                  )}
                 </div>
               </div>
             ) : (

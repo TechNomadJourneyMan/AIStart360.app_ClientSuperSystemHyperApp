@@ -8,7 +8,12 @@
  * events and receive the full row payload.
  */
 
-export type WatchedTable = 'metrics' | 'diagnostics' | 'documents'
+export type WatchedTable =
+  | 'metrics'
+  | 'diagnostics'
+  | 'documents'
+  | 'gri_assessments'
+  | 'companies'
 
 export type RealtimeEvent = 'INSERT' | 'UPDATE' | 'DELETE' | '*'
 

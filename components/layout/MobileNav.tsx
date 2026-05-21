@@ -212,7 +212,8 @@ export function MobileNav() {
             </div>
             <button
               onClick={() => setDrawerOpen(false)}
-              className="w-8 h-8 flex items-center justify-center rounded-full bg-surface-container hover:bg-surface-container-high transition-colors"
+              aria-label="Закрыть"
+              className="w-11 h-11 flex items-center justify-center rounded-full bg-surface-container hover:bg-surface-container-high transition-colors"
             >
               <span className="material-symbols-outlined text-base text-on-surface-variant">close</span>
             </button>

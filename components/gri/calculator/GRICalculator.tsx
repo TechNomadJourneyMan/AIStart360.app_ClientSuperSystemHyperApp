@@ -205,6 +205,9 @@ export default function GRICalculator() {
   const [comparePrevious, setComparePrevious] = useState(false)
   const [previousScores, setPreviousScores] = useState<Record<string, number> | null>(null)
 
+  // Assessment-derived canonical GRI (preferred when sliders match synced averages)
+  const [assessmentGri, setAssessmentGri] = useState<number | null>(null)
+
   // Inline Accordion
   const [expandedCategory, setExpandedCategory] = useState<string | null>(null)
   const [accordionChecked, setAccordionChecked] = useState<Record<string, Record<string, boolean>>>({})
@@ -273,6 +276,78 @@ export default function GRICalculator() {
     }
   }, [])
 
+  // ── Auto-sync from GRI Assessment (aistart_gri_assessment_v1) ──
+  useEffect(() => {
+    // Section ID → Calculator category label (Calculator uses
+    // "Founder Ready" instead of "Owner Readiness" — match the actual key).
+    const SECTION_TO_CATEGORY: Record<string, string> = {
+      "product-demand": "Product & Demand",
+      "trust-positioning": "Trust & Positioning",
+      "business-model": "Business Model",
+      "cash-stability": "Cash Stability",
+      "operations": "Operations",
+      "team": "Team",
+      "owner-readiness": "Founder Ready",
+    }
+
+    const syncFromAssessment = () => {
+      try {
+        const raw = localStorage.getItem("aistart_gri_assessment_v1")
+        if (!raw) return
+        const parsed = JSON.parse(raw) as {
+          scores?: Record<string, Record<string, number>>
+          griIndex?: number
+        }
+        const assessmentScores = parsed?.scores
+        if (!assessmentScores || typeof assessmentScores !== "object") return
+
+        const updates: Record<string, number> = {}
+        for (const [sectionId, categoryKey] of Object.entries(SECTION_TO_CATEGORY)) {
+          const map = assessmentScores[sectionId]
+          if (!map || typeof map !== "object") continue
+          const values = Object.values(map).filter(
+            (v): v is number => typeof v === "number",
+          )
+          if (!values.length) continue
+          const avg = values.reduce((a, b) => a + b, 0) / values.length
+          const clamped = Math.max(0, Math.min(10, Math.round(avg)))
+          updates[categoryKey] = clamped
+        }
+
+        if (Object.keys(updates).length === 0) return
+
+        setScores((prev) => ({ ...prev, ...updates }))
+        setBaseScores((prev) => ({ ...prev, ...updates }))
+        setPlannedScores((prev) => ({ ...prev, ...updates }))
+
+        if (typeof parsed?.griIndex === "number" && parsed.griIndex > 0) {
+          setAssessmentGri(parsed.griIndex)
+        }
+      } catch {
+        // ignore — assessment data is optional
+      }
+    }
+
+    // Initial sync on mount
+    syncFromAssessment()
+
+    // Listen for cross-tab updates via storage event
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === "aistart_gri_assessment_v1") syncFromAssessment()
+    }
+    // Same-tab updates fire a custom event from GRIAssessment.tsx
+    const handleCustom = () => syncFromAssessment()
+
+    window.addEventListener("storage", handleStorage)
+    window.addEventListener("gri:assessment-updated", handleCustom as EventListener)
+
+    return () => {
+      window.removeEventListener("storage", handleStorage)
+      window.removeEventListener("gri:assessment-updated", handleCustom as EventListener)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const benchmarkScores = useMemo(
     () => getBlendedBenchmark(selectedNiche, selectedSize),
     [selectedNiche, selectedSize]
@@ -281,6 +356,12 @@ export default function GRICalculator() {
   const activeScores = planningMode ? plannedScores : scores
   const griScore = useMemo(() => computeGRI(activeScores), [activeScores])
   const plannedGRI = useMemo(() => (planningMode ? computeGRI(plannedScores) : 0), [planningMode, plannedScores])
+
+  const slidersMatchBase = useMemo(
+    () => !planningMode && CATEGORIES.every((c) => scores[c] === baseScores[c]),
+    [planningMode, scores, baseScores]
+  )
+  const displayGri = assessmentGri != null && slidersMatchBase ? assessmentGri : griScore
   const redZones = useMemo(() => CATEGORIES.filter((c) => activeScores[c] < 5), [activeScores])
   const hasRedZones = redZones.length > 0
 
@@ -759,7 +840,7 @@ export default function GRICalculator() {
           <div className="flex items-center gap-2">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" className="gap-1.5 text-xs">
+                <Button variant="outline" className="h-10 gap-1.5 text-xs px-3">
                   <Download className="w-3.5 h-3.5" />
                   <span className="hidden sm:inline">{t.download}</span>
                 </Button>
@@ -773,11 +854,11 @@ export default function GRICalculator() {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-            <Button variant="outline" size="sm" onClick={() => setPublishDialogOpen(true)} className="gap-1.5 text-xs">
+            <Button variant="outline" onClick={() => setPublishDialogOpen(true)} className="h-10 gap-1.5 text-xs px-3">
               <ExternalLink className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">{t.publish}</span>
             </Button>
-            <Button variant="outline" size="sm" onClick={toggleLanguage} className="gap-2 text-xs sm:text-sm">
+            <Button variant="outline" onClick={toggleLanguage} className="h-10 gap-2 text-xs sm:text-sm px-3">
               <Globe className="w-3.5 h-3.5" />
               <span className="font-medium">{lang === "ru" ? "RU" : "EN"}</span>
             </Button>
@@ -961,7 +1042,7 @@ export default function GRICalculator() {
                   </div>
                   <div className="flex items-center gap-2">
                     <Select value={selectedNiche} onValueChange={setSelectedNiche}>
-                      <SelectTrigger className="w-[160px] text-xs h-8">
+                      <SelectTrigger className="w-[160px] text-xs h-10">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -973,7 +1054,7 @@ export default function GRICalculator() {
                       </SelectContent>
                     </Select>
                     <Select value={selectedSize} onValueChange={setSelectedSize}>
-                      <SelectTrigger className="w-[120px] text-xs h-8">
+                      <SelectTrigger className="w-[120px] text-xs h-10">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -1038,7 +1119,7 @@ export default function GRICalculator() {
                       {t.planningMode}
                     </Label>
                   </div>
-                  <Button variant="outline" size="sm" onClick={openSaveDialog} className="h-7 gap-1.5 text-[0.7rem] px-2">
+                  <Button variant="outline" onClick={openSaveDialog} className="h-10 gap-1.5 text-[0.7rem] px-3">
                     <Save className="w-3 h-3" />
                     {t.saveSession}
                   </Button>
@@ -1249,10 +1330,10 @@ export default function GRICalculator() {
                         className="min-h-[120px] max-h-[240px] pr-20"
                       />
                       <div className="absolute top-2 right-2 flex items-center gap-1">
-                        <Button variant="ghost" size="sm" onClick={() => { setShowPasteMode(false); setFinancialData("") }} className="h-7 px-2 text-xs">
+                        <Button variant="ghost" size="sm" onClick={() => { setShowPasteMode(false); setFinancialData("") }} className="h-9 px-3 text-xs">
                           <X className="w-3 h-3" />
                         </Button>
-                        <Button variant="ghost" size="sm" onClick={() => fileInputRef.current?.click()} className="h-7 px-2 text-xs">
+                        <Button variant="ghost" size="sm" onClick={() => fileInputRef.current?.click()} className="h-9 px-3 text-xs">
                           <Paperclip className="w-3.5 h-3.5" />
                         </Button>
                       </div>
@@ -1357,7 +1438,7 @@ export default function GRICalculator() {
                           <p className="text-[0.65rem] text-white/40">{t.analysisDesc}</p>
                         </div>
                       </div>
-                      <Button variant="ghost" size="sm" onClick={() => { setFinancialAnalysis(null); setFinancialData(""); setShowPasteMode(false) }} className="h-7 w-7 p-0">
+                      <Button variant="ghost" size="sm" aria-label="Очистить" onClick={() => { setFinancialAnalysis(null); setFinancialData(""); setShowPasteMode(false) }} className="h-10 w-10 p-0">
                         <X className="w-3.5 h-3.5" />
                       </Button>
                     </div>
@@ -1511,7 +1592,7 @@ export default function GRICalculator() {
                           <p className="text-[0.65rem] text-white/40">{t.strategyDesc}</p>
                         </div>
                       </div>
-                      <Button variant="ghost" size="sm" onClick={() => setStrategyText("")} className="h-7 w-7 p-0">
+                      <Button variant="ghost" size="sm" aria-label="Очистить" onClick={() => setStrategyText("")} className="h-10 w-10 p-0">
                         <X className="w-3.5 h-3.5" />
                       </Button>
                     </div>
@@ -1545,7 +1626,7 @@ export default function GRICalculator() {
                 </div>
                 <div className="flex items-end gap-2">
                   <span className="text-4xl sm:text-5xl font-bold text-white gri-score-clickable" onClick={openGRIHistory} title={t.griHistory}>
-                    <AnimatedGRI value={griScore} />
+                    <AnimatedGRI value={displayGri} />
                   </span>
                   <span className="text-sm text-white/30 mb-1.5">/ 10</span>
                 </div>
@@ -1553,9 +1634,9 @@ export default function GRICalculator() {
                 <div className="mt-3 h-1.5 rounded-full bg-white/[0.06] overflow-hidden">
                   <motion.div
                     className="h-full rounded-full"
-                    style={{ background: griScore < 5 ? "#ef4444" : griScore <= 7 ? "#f59e0b" : "#10b981" }}
+                    style={{ background: displayGri < 5 ? "#ef4444" : displayGri <= 7 ? "#f59e0b" : "#10b981" }}
                     initial={{ width: 0 }}
-                    animate={{ width: `${(griScore / 10) * 100}%` }}
+                    animate={{ width: `${(displayGri / 10) * 100}%` }}
                     transition={{ duration: 0.6, ease: "easeOut" }}
                   />
                 </div>

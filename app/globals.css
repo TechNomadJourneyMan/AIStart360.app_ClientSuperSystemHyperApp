@@ -56,6 +56,20 @@
 
   .no-scrollbar::-webkit-scrollbar { display: none; }
   .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+  /* ── Tap target tuning ── */
+  button,
+  a,
+  a[role="button"],
+  [role="button"],
+  input[type="button"],
+  input[type="submit"],
+  input[type="reset"],
+  label,
+  summary {
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: rgba(110, 255, 192, 0.2);
+  }
 }
 
 @layer components {

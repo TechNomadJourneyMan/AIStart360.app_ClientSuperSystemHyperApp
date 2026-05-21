@@ -218,7 +218,7 @@ export function Sidebar() {
                         href={sub.href}
                         className={`
                           group flex items-center gap-2.5 rounded-xl transition-all duration-150 relative
-                          pl-9 pr-3 py-2 mt-0.5
+                          pl-9 pr-3 py-2.5 mt-0.5 min-h-[40px]
                           ${subActive
                             ? 'bg-primary/10 text-primary'
                             : 'text-[#6b7280] hover:text-[#c9d1d9] hover:bg-white/[0.04]'}
@@ -349,8 +349,8 @@ export function Sidebar() {
               href={item.href}
               title={sidebarCollapsed ? item.label : undefined}
               className={`
-                group flex items-center rounded-xl transition-all duration-150 relative
-                ${sidebarCollapsed ? 'justify-center px-0 py-2.5' : 'gap-3 px-3 py-2 pl-9'}
+                group flex items-center rounded-xl transition-all duration-150 relative min-h-[40px]
+                ${sidebarCollapsed ? 'justify-center px-0 py-2.5' : 'gap-3 px-3 py-2.5 pl-9'}
                 ${active
                   ? 'bg-primary/10 text-primary'
                   : 'text-[#6b7280] hover:text-[#c9d1d9] hover:bg-white/[0.04]'

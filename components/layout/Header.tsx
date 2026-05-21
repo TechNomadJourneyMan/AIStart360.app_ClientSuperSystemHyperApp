@@ -1,12 +1,13 @@
 'use client'
 
 import Link from 'next/link'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { useUIStore } from '@/stores/ui.store'
 import { useNotificationsStore } from '@/stores/notifications.store'
 import { useAuthStore } from '@/stores/auth.store'
 import { hasPermission } from '@/lib/navigation'
+import { createClient } from '@/lib/supabase/client'
 import type { UserRole } from '@/types'
 
 type Lang = 'RU' | 'EN' | 'KZ'
@@ -22,6 +23,9 @@ export function Header() {
   const [showQuickAction, setShowQuickAction] = useState(false)
   const [lang, setLang] = useState<Lang>('RU')
   const [time, setTime] = useState('')
+  const [uploadStatus, setUploadStatus] = useState<'idle' | 'uploading' | 'done' | 'error'>('idle')
+  const [uploadMessage, setUploadMessage] = useState<string>('')
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   useEffect(() => {
     const update = () => {
@@ -35,14 +39,122 @@ export function Header() {
 
   const cycleLang = () => setLang((l) => LANGS[(LANGS.indexOf(l) + 1) % LANGS.length])
 
-  const QUICK_ACTIONS = [
-    { label: 'Новый клиент',      icon: 'person_add',    href: '/clients',    reqPermission: 'clients.write' },
-    { label: 'GRI-диагностика',   icon: 'radar',         href: '/gri',        reqPermission: 'reports.read'  },
-    { label: 'Создать отчёт',     icon: 'description',   href: '/reports',    reqPermission: 'reports.write' },
-    { label: 'Аналитика',         icon: 'monitoring',    href: '/analytics',  reqPermission: 'analytics.read'},
-    { label: 'Инсайты',           icon: 'lightbulb',     href: '/insights',   reqPermission: 'own.reports'   },
-    { label: 'Управление командой',icon: 'groups',       href: '/team',       reqPermission: 'team.write'    },
+  interface QuickAction {
+    label: string
+    icon: string
+    href: string
+    reqPermission?: string
+  }
+  interface QuickActionGroup {
+    title: string
+    items: QuickAction[]
+  }
+
+  const QUICK_ACTION_GROUPS: QuickActionGroup[] = [
+    {
+      title: 'Файлы',
+      items: [
+        { label: 'Загрузить файл', icon: 'upload_file', href: '#upload' },
+        { label: 'Мои документы',  icon: 'folder_open', href: '/point-a#files' },
+      ],
+    },
+    {
+      title: 'Диагностика',
+      items: [
+        { label: 'Заполнить анкету',  icon: 'edit_note',  href: '/client/onboarding' },
+        { label: 'GRI Assessment',    icon: 'radar',      href: '/gri' },
+        { label: 'Точка А',           icon: 'my_location', href: '/point-a' },
+      ],
+    },
+    {
+      title: 'Аналитика',
+      items: [
+        { label: 'Метрики роста',  icon: 'monitoring',  href: '/metrics' },
+        { label: 'Инсайты',        icon: 'lightbulb',   href: '/insights' },
+        { label: 'Отчёты',         icon: 'description', href: '/reports' },
+      ],
+    },
+    {
+      title: 'Стратегия',
+      items: [
+        { label: 'Точка Б — цели роста', icon: 'flag', href: '/point-b' },
+      ],
+    },
+    {
+      title: 'Команда',
+      items: [
+        { label: 'Новый клиент',        icon: 'person_add', href: '/clients', reqPermission: 'clients.write' },
+        { label: 'Управление командой', icon: 'groups',     href: '/team',    reqPermission: 'team.write'    },
+      ],
+    },
   ]
+
+  const userRole = ((user?.role || 'client').toUpperCase()) as UserRole
+  const visibleGroups = QUICK_ACTION_GROUPS
+    .map((g) => ({
+      ...g,
+      items: g.items.filter((a) => !a.reqPermission || hasPermission(userRole, a.reqPermission)),
+    }))
+    .filter((g) => g.items.length > 0)
+
+  const triggerFilePicker = () => {
+    setShowQuickAction(false)
+    setUploadStatus('idle')
+    setUploadMessage('')
+    fileInputRef.current?.click()
+  }
+
+  const handleFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    if (!user?.id) {
+      setUploadStatus('error')
+      setUploadMessage('Нужно войти в аккаунт')
+      return
+    }
+    try {
+      setUploadStatus('uploading')
+      setUploadMessage(`Загрузка ${file.name}…`)
+      const sb = createClient()
+      const storagePath = `${user.id}/${Date.now()}_${file.name}`
+      const { error: uploadError } = await sb.storage
+        .from('documents')
+        .upload(storagePath, file, {
+          contentType: file.type || 'application/octet-stream',
+          upsert: false,
+        })
+      if (uploadError) throw new Error(uploadError.message)
+      const { data: { publicUrl } } = sb.storage.from('documents').getPublicUrl(storagePath)
+      const res = await fetch('/api/v1/onboarding/documents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: user.id,
+          file_name: file.name,
+          file_url: publicUrl,
+          file_size: file.size,
+          mime_type: file.type,
+          doc_type: 'financial_report',
+        }),
+      })
+      const result = await res.json()
+      if (!result.ok) throw new Error(result.error ?? 'Ошибка загрузки')
+      setUploadStatus('done')
+      setUploadMessage(`✅ ${file.name} загружен`)
+      window.setTimeout(() => {
+        setUploadStatus('idle')
+        setUploadMessage('')
+      }, 3500)
+    } catch (err) {
+      setUploadStatus('error')
+      setUploadMessage(err instanceof Error ? err.message : 'Ошибка загрузки')
+      window.setTimeout(() => {
+        setUploadStatus('idle')
+        setUploadMessage('')
+      }, 5000)
+    }
+  }
 
   const handleLogout = () => {
     logout()
@@ -63,21 +175,30 @@ export function Header() {
         left-0
       `}
     >
-      {/* Left: Search */}
+      {/* Left: Search — role-aware destination */}
       <div className={`relative transition-all duration-200 ${searchFocused ? 'w-56 lg:w-72' : 'w-32 lg:w-44'}`}>
         <span className="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-on-surface-variant/50 text-[18px] pointer-events-none">
           search
         </span>
         <input
           type="search"
-          placeholder={searchFocused ? 'Поиск клиентов, отчётов...' : 'Поиск...'}
+          placeholder={
+            searchFocused
+              ? (hasPermission(userRole, 'clients.read')
+                  ? 'Поиск клиентов, отчётов...'
+                  : 'Поиск метрик, документов...')
+              : 'Поиск...'
+          }
           onFocus={() => setSearchFocused(true)}
           onBlur={() => setSearchFocused(false)}
           onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              const q = (e.target as HTMLInputElement).value.trim()
-              if (q) router.push(`/clients?q=${encodeURIComponent(q)}`)
-            }
+            if (e.key !== 'Enter') return
+            const q = (e.target as HTMLInputElement).value.trim()
+            if (!q) return
+            const dest = hasPermission(userRole, 'clients.read')
+              ? `/clients?q=${encodeURIComponent(q)}`
+              : `/metrics?q=${encodeURIComponent(q)}`
+            router.push(dest)
           }}
           className="w-full bg-surface-container-low border border-outline-variant/20 rounded-lg pl-8 pr-7 py-1.5 text-xs text-on-surface placeholder:text-on-surface-variant/40 focus:outline-none focus:border-primary/30 focus:ring-1 focus:ring-primary/10 transition-all"
         />
@@ -93,7 +214,7 @@ export function Header() {
           <button
             onClick={() => setShowQuickAction(v => !v)}
             title="Быстрое действие"
-            className={`inline-flex items-center gap-1.5 text-xs font-mono border px-2 py-1.5 rounded-lg transition-colors ${
+            className={`inline-flex items-center gap-1.5 text-xs font-mono border px-2.5 py-2.5 min-h-[40px] rounded-lg transition-colors ${
               showQuickAction
                 ? 'bg-primary/10 text-primary border-primary/30'
                 : 'text-primary border-primary/20 hover:bg-primary/5'
@@ -107,23 +228,71 @@ export function Header() {
           {showQuickAction && (
             <>
               <div className="fixed inset-0 z-40" onClick={() => setShowQuickAction(false)} />
-              <div className="absolute left-0 top-full mt-2 w-52 bg-surface-container-low border border-white/[0.06] rounded-xl shadow-xl z-50 overflow-hidden py-1">
-                {QUICK_ACTIONS.filter(action => hasPermission(((user?.role || 'client').toUpperCase()) as UserRole, action.reqPermission)).map((action) => (
-                  <Link key={action.href} href={action.href}
-                    onClick={() => setShowQuickAction(false)}
-                    className="flex items-center gap-3 px-4 py-2.5 text-sm text-on-surface-variant hover:text-on-surface hover:bg-white/[0.04] transition-colors">
-                    <span className="material-symbols-outlined text-base text-primary/60">{action.icon}</span>
-                    {action.label}
-                  </Link>
+              <div className="absolute left-0 top-full mt-2 w-64 max-h-[80vh] overflow-y-auto bg-surface-container-low border border-white/[0.06] rounded-xl shadow-xl z-50 py-2">
+                {visibleGroups.map((group, groupIdx) => (
+                  <div key={group.title}>
+                    {groupIdx > 0 && <div className="my-1.5 border-t border-white/[0.04]" />}
+                    <div className="px-4 py-1.5 text-[10px] font-mono uppercase tracking-[0.16em] text-on-surface-variant/50">
+                      {group.title}
+                    </div>
+                    {group.items.map((action) => {
+                      if (action.href === '#upload') {
+                        return (
+                          <button
+                            key={action.label}
+                            type="button"
+                            onClick={triggerFilePicker}
+                            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-on-surface-variant hover:text-on-surface hover:bg-white/[0.04] transition-colors text-left min-h-[40px]"
+                          >
+                            <span className="material-symbols-outlined text-base text-primary/60">{action.icon}</span>
+                            {action.label}
+                          </button>
+                        )
+                      }
+                      return (
+                        <Link key={action.href} href={action.href}
+                          onClick={() => setShowQuickAction(false)}
+                          className="flex items-center gap-3 px-4 py-2.5 text-sm text-on-surface-variant hover:text-on-surface hover:bg-white/[0.04] transition-colors min-h-[40px]">
+                          <span className="material-symbols-outlined text-base text-primary/60">{action.icon}</span>
+                          {action.label}
+                        </Link>
+                      )
+                    })}
+                  </div>
                 ))}
               </div>
             </>
           )}
         </div>
 
+        <input
+          ref={fileInputRef}
+          type="file"
+          className="hidden"
+          accept=".pdf,.xlsx,.xls,.csv,.doc,.docx,.txt,.png,.jpg,.jpeg"
+          onChange={handleFileSelected}
+        />
+
+        {uploadMessage && (
+          <div
+            className={`hidden md:flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-mono border ${
+              uploadStatus === 'uploading'
+                ? 'bg-primary/5 border-primary/20 text-primary'
+                : uploadStatus === 'done'
+                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                  : 'bg-error/10 border-error/30 text-error'
+            }`}
+          >
+            {uploadStatus === 'uploading' && (
+              <span className="material-symbols-outlined text-sm animate-pulse">cloud_upload</span>
+            )}
+            <span className="truncate max-w-[220px]">{uploadMessage}</span>
+          </div>
+        )}
+
         {/* Run Report */}
         <Link href="/reports"
-          className="hidden lg:inline-flex items-center gap-1.5 text-xs font-semibold bg-gradient-to-br from-primary to-primary-container text-on-primary px-3.5 py-1.5 rounded-lg hover:scale-[0.97] active:scale-95 transition-all duration-150">
+          className="hidden lg:inline-flex items-center gap-1.5 text-xs font-semibold bg-gradient-to-br from-primary to-primary-container text-on-primary px-3.5 py-2.5 min-h-[40px] rounded-lg hover:scale-[0.97] active:scale-95 transition-all duration-150">
           <span className="material-symbols-outlined text-[18px]">description</span>
           Отчёты
         </Link>
@@ -140,7 +309,8 @@ export function Header() {
         <button
           onClick={cycleLang}
           title={`Язык: ${lang} → переключить`}
-          className="flex items-center gap-1 px-2 py-1.5 rounded-lg border border-outline-variant/20 text-xs font-mono text-on-surface-variant hover:text-on-surface hover:border-primary/20 hover:bg-primary/5 transition-all duration-150"
+          aria-label={`Сменить язык, текущий: ${lang}`}
+          className="flex items-center gap-1 px-2.5 py-2.5 min-h-[40px] min-w-[40px] justify-center rounded-lg border border-outline-variant/20 text-xs font-mono text-on-surface-variant hover:text-on-surface hover:border-primary/20 hover:bg-primary/5 transition-all duration-150"
         >
           <span className="material-symbols-outlined text-sm hidden md:inline">translate</span>
           <span>{lang}</span>
@@ -149,7 +319,7 @@ export function Header() {
         <div className="w-px h-6 bg-outline-variant/20 hidden md:block" />
 
         {/* Notifications */}
-        <Link href="/notifications" className="relative text-[#8B95A3] hover:text-on-surface transition-colors p-1.5 rounded-lg hover:bg-surface-container" aria-label="Уведомления">
+        <Link href="/notifications" className="relative text-[#8B95A3] hover:text-on-surface transition-colors p-2.5 min-w-[40px] min-h-[40px] flex items-center justify-center rounded-lg hover:bg-surface-container" aria-label="Уведомления">
           <span className="material-symbols-outlined text-xl">notifications</span>
           {unreadCount > 0 && (
             <span className="absolute top-0.5 right-0.5 w-4 h-4 bg-error rounded-full border-2 border-background text-[9px] font-mono text-white flex items-center justify-center">
@@ -162,9 +332,10 @@ export function Header() {
         <div className="relative">
           <button
             onClick={() => setShowUserMenu(v => !v)}
-            className="flex items-center gap-2 cursor-pointer group"
+            aria-label="Меню пользователя"
+            className="flex items-center gap-2 cursor-pointer group p-1 -m-1 min-h-[40px]"
           >
-            <div className="w-8 h-8 rounded-full bg-surface-container-high border border-outline-variant/30 flex items-center justify-center text-xs font-bold text-primary group-hover:border-primary/40 transition-colors">
+            <div className="w-9 h-9 rounded-full bg-surface-container-high border border-outline-variant/30 flex items-center justify-center text-xs font-bold text-primary group-hover:border-primary/40 transition-colors">
               {initials}
             </div>
             <span className="hidden lg:flex items-center gap-1 text-[#8B95A3] group-hover:text-on-surface transition-colors">

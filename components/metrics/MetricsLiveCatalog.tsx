@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import MetricSearchBox from './MetricSearchBox'
 import DepartmentChips from './DepartmentChips'
@@ -83,6 +83,56 @@ export default function MetricsLiveCatalog({ userId }: Props) {
 
   // Wire realtime invalidation when user has a userId
   useRealtimeMetrics(userId ?? null)
+
+  // ── Auto-materialize when every catalog item is null ──────────────────────
+  // Single-shot per mount: if the response has items but every `value` is
+  // null, kick the resolver via POST /api/v1/metrics/materialize, then
+  // re-fetch the catalog. Subsequent renders never retry.
+  const materializeAttempted = useRef(false)
+  const [materializeStatus, setMaterializeStatus] = useState<
+    'idle' | 'running' | 'error'
+  >('idle')
+
+  async function runMaterialize(force = false) {
+    if (!force && materializeAttempted.current) return
+    materializeAttempted.current = true
+    setMaterializeStatus('running')
+    try {
+      const res = await fetch('/api/v1/metrics/materialize', {
+        method: 'POST',
+        cache: 'no-store',
+      })
+      const json = (await res.json()) as
+        | { ok: true; data: { written: number; total: number; skipped: number } }
+        | { ok: false; error: string }
+      if (!json.ok) {
+        // `no_company` is an expected empty state, not a hard failure.
+        if ('error' in json && json.error === 'no_company') {
+          setMaterializeStatus('idle')
+          return
+        }
+        throw new Error('error' in json ? json.error : 'materialize failed')
+      }
+      await qc.invalidateQueries({ queryKey: ['metrics-catalog'] })
+      await refetch()
+      setMaterializeStatus('idle')
+    } catch (err) {
+      console.error('[metrics] materialize failed', err)
+      setMaterializeStatus('error')
+    }
+  }
+
+  useEffect(() => {
+    if (materializeAttempted.current) return
+    if (isLoading || isError) return
+    const list = data?.items ?? []
+    if (list.length === 0) return
+    const allNull = list.every((it) => it.value === null)
+    if (allNull) {
+      void runMaterialize()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, isLoading, isError])
 
   const total = data?.total ?? 0
   const totalPages = Math.max(1, Math.ceil(total / pageSize))
@@ -170,17 +220,28 @@ export default function MetricsLiveCatalog({ userId }: Props) {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          {materializeStatus === 'running' && (
+            <span className="inline-flex items-center gap-1.5 text-on-surface-variant font-mono text-[10px] px-2.5 py-1 rounded-full bg-surface-container border border-white/[0.04]">
+              <span className="material-symbols-outlined text-[12px] animate-spin">progress_activity</span>
+              Считаем метрики…
+            </span>
+          )}
+          {materializeStatus === 'error' && (
+            <span className="inline-flex items-center gap-1.5 text-error font-mono text-[10px] px-2.5 py-1 rounded-full bg-error/5 border border-error/20">
+              <span className="material-symbols-outlined text-[12px]">error</span>
+              Не удалось рассчитать метрики
+            </span>
+          )}
           <MetricSortToggle value={sort} onChange={setSort} />
           <button
             onClick={() => {
-              qc.invalidateQueries({ queryKey: ['metrics-catalog'] })
-              refetch()
+              void runMaterialize(true)
             }}
             className="inline-flex items-center gap-1.5 text-xs font-mono text-on-surface-variant border border-white/[0.04] hover:border-primary/40 hover:text-primary rounded-xl px-3 py-2 transition-colors"
-            title="Обновить"
+            title="Пересчитать"
           >
             <span className="material-symbols-outlined text-base">refresh</span>
-            Обновить
+            Пересчитать
           </button>
         </div>
       </div>

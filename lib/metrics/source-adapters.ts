@@ -102,7 +102,8 @@ export function resolveDocumentSource(
   })
 
   for (const doc of sorted) {
-    const fields = doc.parsedData?.fields ?? []
+    const rawFields = doc.parsedData?.fields
+    const fields = Array.isArray(rawFields) ? rawFields : []
     const match = fields.find((f) => fieldMatchesSource(f, source, metricId))
     if (match) {
       return {

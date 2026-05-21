@@ -8,6 +8,7 @@ import { FileArea } from '@/components/point-a/FileArea'
 import PointAQuickToolbar from '@/components/point-a/PointAQuickToolbar'
 import { SurveyOverview } from '@/components/point-a/SurveyOverview'
 import PointAIntelligenceSection from '@/components/point-a/PointAIntelligenceSection'
+import GRIAssessmentBlock from '@/components/point-a/GRIAssessmentBlock'
 import PointADashboardSectionsBoundary from '@/components/dashboard/PointADashboardSections'
 
 export const metadata: Metadata = { title: 'Точка А — Текущее состояние' }
@@ -239,6 +240,11 @@ export default async function PointAPage() {
             })}
           </div>
         </section>
+      )}
+
+      {/* GRI Assessment — full 7-section deep dive results */}
+      {clientId && (
+        <GRIAssessmentBlock userId={clientId} />
       )}
 
       {/* Phase 6 final — Real-time intelligence layer (live resolver + realtime sync) */}
