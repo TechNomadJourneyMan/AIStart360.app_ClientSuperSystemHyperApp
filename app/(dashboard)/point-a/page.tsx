@@ -5,6 +5,7 @@ import { cookies } from 'next/headers'
 import { auth } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
 import { FileArea } from '@/components/point-a/FileArea'
+import PointAQuickToolbar from '@/components/point-a/PointAQuickToolbar'
 import { SurveyOverview } from '@/components/point-a/SurveyOverview'
 import PointAIntelligenceSection from '@/components/point-a/PointAIntelligenceSection'
 import PointADashboardSectionsBoundary from '@/components/dashboard/PointADashboardSections'
@@ -137,6 +138,9 @@ export default async function PointAPage() {
 
   return (
     <div className="space-y-8">
+      {/* Sticky quick-action toolbar — file upload, survey, documents, recalc */}
+      <PointAQuickToolbar userId={clientId} />
+
       {/* Header */}
       <section>
         <p className="text-xs font-mono text-primary/70 uppercase tracking-[0.2em] mb-3">
