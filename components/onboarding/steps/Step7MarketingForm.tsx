@@ -129,6 +129,46 @@ export default function Step7MarketingForm({ data, onChange }: Step7MarketingFor
         </div>
       </section>
 
+      {/* ── Воронка и AI-коммуникации (loss-map signals) ───────────────────── */}
+      <section>
+        <h3 className="flex items-center gap-2 text-sm font-semibold text-on-surface mb-4">
+          <span className="material-symbols-outlined text-primary text-lg">filter_alt</span>
+          Воронка и AI-коммуникации
+        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <FieldLabel htmlFor="s7_leads_per_month">Лидов в месяц (входящие)</FieldLabel>
+            <input id="s7_leads_per_month" type="number" min={0} value={num(data.s7_leads_per_month) || ''} onChange={(e) => onChange('s7_leads_per_month', Number(e.target.value) || 0)} placeholder="200" className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all" />
+          </div>
+          <div>
+            <FieldLabel htmlFor="s7_no_show_rate">Доля no-show (%)</FieldLabel>
+            <div className="relative">
+              <input id="s7_no_show_rate" type="number" min={0} max={100} step={0.1} value={num(data.s7_no_show_rate) || ''} onChange={(e) => onChange('s7_no_show_rate', Number(e.target.value) || 0)} placeholder="15" className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-3 pr-10 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all" />
+              <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs text-on-surface-variant">%</span>
+            </div>
+          </div>
+          <div>
+            <FieldLabel htmlFor="s7_missed_calls_rate">Пропущенных звонков (%)</FieldLabel>
+            <div className="relative">
+              <input id="s7_missed_calls_rate" type="number" min={0} max={100} step={0.1} value={num(data.s7_missed_calls_rate) || ''} onChange={(e) => onChange('s7_missed_calls_rate', Number(e.target.value) || 0)} placeholder="8" className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-3 pr-10 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all" />
+              <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs text-on-surface-variant">%</span>
+            </div>
+          </div>
+          <div>
+            <FieldLabel htmlFor="s7_avg_check_target_kzt">Целевой средний чек (₸)</FieldLabel>
+            <input id="s7_avg_check_target_kzt" type="number" min={0} value={num(data.s7_avg_check_target_kzt) || ''} onChange={(e) => onChange('s7_avg_check_target_kzt', Number(e.target.value) || 0)} placeholder="100000" className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all" />
+          </div>
+          <div>
+            <FieldLabel htmlFor="s7_repeat_freq_days">Частота повторной покупки (дни)</FieldLabel>
+            <input id="s7_repeat_freq_days" type="number" min={0} value={num(data.s7_repeat_freq_days) || ''} onChange={(e) => onChange('s7_repeat_freq_days', Number(e.target.value) || 0)} placeholder="90" className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all" />
+          </div>
+          <div>
+            <FieldLabel htmlFor="s7_nps_score">Текущий NPS</FieldLabel>
+            <input id="s7_nps_score" type="number" min={-100} max={100} step={1} value={num(data.s7_nps_score) || ''} onChange={(e) => onChange('s7_nps_score', Number(e.target.value) || 0)} placeholder="35" className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all" />
+          </div>
+        </div>
+      </section>
+
       {/* ── Глубокий анализ конкурентов ────────────────────────────────────── */}
       <section>
         <h3 className="flex items-center gap-2 text-sm font-semibold text-on-surface mb-4">

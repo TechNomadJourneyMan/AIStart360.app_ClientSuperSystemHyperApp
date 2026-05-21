@@ -35,18 +35,22 @@ export const parseDocumentFn = inngest.createFunction(
           throw new Error(`Не удалось скачать файл (HTTP ${res.status})`)
         }
         const arrayBuffer = await res.arrayBuffer()
-        const { extraction, rawTextPreview, modelUsed } = await extractFromDocument({
-          buffer: Buffer.from(arrayBuffer),
-          fileName: file_name,
-          mimeType: mime_type ?? null,
-          docType: doc_type,
-        })
+        const { extraction, rawTextPreview, modelUsed, rawRows, clientRows, classification } =
+          await extractFromDocument({
+            buffer: Buffer.from(arrayBuffer),
+            fileName: file_name,
+            mimeType: mime_type ?? null,
+            docType: doc_type,
+          })
         const parsed: ParsedDataPayload = {
           summary: extraction.summary,
           fields: extraction.fields,
           raw_text_preview: rawTextPreview,
           extracted_at: new Date().toISOString(),
           model_used: modelUsed,
+          ...(rawRows && rawRows.length > 0 ? { raw_rows: rawRows } : {}),
+          ...(clientRows && clientRows.length > 0 ? { client_rows: clientRows } : {}),
+          ...(classification ? { classification } : {}),
         }
         return parsed
       })

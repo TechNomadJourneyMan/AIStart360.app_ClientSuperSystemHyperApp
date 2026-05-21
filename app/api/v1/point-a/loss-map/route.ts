@@ -26,15 +26,18 @@ function ok(data: LossMap): NextResponse {
 /**
  * GET /api/v1/point-a/loss-map
  *
- * Loss-map signals come from the survey + parsed funnel docs:
- *   AOV       → s2_avg_check
- *   leads/mes → s5n_leads_per_month or s3_leads_per_month
- *   no-show%  → s5n_no_show_rate
- *   missed%   → s5n_missed_rate or 1 - s5n_funnel_lead_to_call
- *   target_AOV → s2_avg_check_target
- *   NPS       → s5n_will_return_nps
- *   LTV       → s2_ltv
- *   freqDays  → s2_repeat_freq_days
+ * Loss-map signals come from the survey + parsed funnel docs.  Step 7
+ * canonical keys (`s7_*`) take precedence; legacy `s5n_* / s2_*` keys
+ * are kept as fall-backs so previously-seeded accounts keep working.
+ *
+ *   AOV         → s2_avg_check
+ *   leads/mes   → s7_leads_per_month → s5n_leads_per_month → s3_leads_per_month
+ *   no-show%    → s7_no_show_rate → s5n_no_show_rate
+ *   missed%     → s7_missed_calls_rate → s5n_missed_rate → 1 - s5n_funnel_lead_to_call
+ *   target_AOV  → s7_avg_check_target_kzt → s2_avg_check_target
+ *   NPS         → s7_nps_score → s5n_will_return_nps
+ *   LTV         → s2_ltv
+ *   freqDays    → s7_repeat_freq_days → s2_repeat_freq_days
  *
  * Anything missing degrades gracefully (the matching bucket = 0).
  */
@@ -61,19 +64,27 @@ export async function GET() {
     )
     const s = resolver.surveyAnswers
 
-    // Extract spec signals; null when missing.
+    // Extract spec signals; null when missing. Prefer step-7 canonical keys,
+    // fall back to legacy s5n_* / s2_* keys for already-seeded users.
     const aov   = num(s['s2_avg_check']) ?? 0
-    const leads = num(s['s5n_leads_per_month']) ?? num(s['s3_leads_per_month']) ?? 0
-    const noShow = clamp01(num(s['s5n_no_show_rate']))
-    let missed = clamp01(num(s['s5n_missed_rate']))
+    const leads = num(s['s7_leads_per_month'])
+      ?? num(s['s5n_leads_per_month'])
+      ?? num(s['s3_leads_per_month'])
+      ?? 0
+    const noShow =
+      clamp01(num(s['s7_no_show_rate']))
+      || clamp01(num(s['s5n_no_show_rate']))
+    let missed =
+      clamp01(num(s['s7_missed_calls_rate']))
+      || clamp01(num(s['s5n_missed_rate']))
     if (missed === 0) {
       const leadToCall = clamp01(num(s['s5n_funnel_lead_to_call']))
       if (leadToCall > 0 && leadToCall < 1) missed = 1 - leadToCall
     }
-    const targetAov = num(s['s2_avg_check_target'])
-    const nps  = num(s['s5n_will_return_nps'])
+    const targetAov = num(s['s7_avg_check_target_kzt']) ?? num(s['s2_avg_check_target'])
+    const nps  = num(s['s7_nps_score']) ?? num(s['s5n_will_return_nps'])
     const ltv  = num(s['s2_ltv']) ?? 0
-    const freq = num(s['s2_repeat_freq_days']) ?? 90
+    const freq = num(s['s7_repeat_freq_days']) ?? num(s['s2_repeat_freq_days']) ?? 90
 
     const inputs: LossMapInputs = {
       avg_check_kzt: aov,

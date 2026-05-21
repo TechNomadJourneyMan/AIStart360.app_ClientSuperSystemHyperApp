@@ -1,6 +1,12 @@
 import { z } from "zod";
 import { chatWithOpenRouter, extractJson, hasOpenRouterKey, OPENROUTER_MODELS } from "@/lib/ai/openrouter";
 import { parseDocument } from "@/lib/documents/parse";
+import {
+  extractSalesRows,
+  extractClientRows,
+  type SalesRow,
+  type ClientBaseRow,
+} from "@/lib/documents/extract-rows";
 
 type ParsedFieldValue = string | number | boolean | string[] | number[];
 
@@ -31,6 +37,24 @@ export interface ParsedDataPayload {
   raw_text_preview: string;
   extracted_at: string;
   model_used: string;
+  /**
+   * Phase-3: row-level data lifted out of sales/CRM documents. Populated
+   * by `extract-rows.ts` when `classified_type` indicates sales-style data.
+   * Consumed by `lib/point-a/v3/top-table.ts`.
+   */
+  raw_rows?: SalesRow[];
+  /**
+   * Phase-3: one row per unique client, populated when `classified_type`
+   * is `client_base` / `patient_base`. Consumed by
+   * `lib/point-a/v3/client-base-loader.ts`.
+   */
+  client_rows?: ClientBaseRow[];
+  /**
+   * Phase-3 marker: high-level intent of the document
+   * ("sales_report" | "client_base" | "patient_base" | doc_type | null).
+   * `client-base-loader.ts` already special-cases this field.
+   */
+  classification?: string | null;
 }
 
 interface ExtractFromDocumentInput {
@@ -276,14 +300,45 @@ ${text.slice(0, 30000)}`;
   }
 }
 
+/**
+ * Documents whose `classified_type` (or `doc_type` fallback) indicates that
+ * the file is a stream of sales/transaction rows. We attempt to lift raw
+ * rows for these.
+ */
+const SALES_LIKE_TYPES = new Set([
+  "sales_report",
+  "crm_export",
+]);
+
+/**
+ * Documents whose primary content is a client base / patient base.
+ */
+const CLIENT_LIKE_TYPES = new Set([
+  "client_base",
+  "patient_base",
+]);
+
 export async function extractFromDocument(input: ExtractFromDocumentInput): Promise<{
   extraction: DocumentExtraction;
   rawTextPreview: string;
   modelUsed: string;
+  rawRows?: SalesRow[];
+  clientRows?: ClientBaseRow[];
+  classification: string | null;
 }> {
   const parsed = await parseDocument(input.buffer, input.fileName, input.mimeType ?? undefined);
   const text = parsed.text.trim();
   const rawTextPreview = text.slice(0, 2500);
+
+  const docTypeLower = (input.docType ?? "").toLowerCase();
+  const hints = { fileName: input.fileName, mimeType: input.mimeType };
+
+  // Decide classification up-front from the declared doc_type. The
+  // classifier (`lib/documents/classify.ts`) runs at upload time; here we
+  // only honour what was already saved on the record.
+  let classification: string | null = null;
+  if (SALES_LIKE_TYPES.has(docTypeLower)) classification = docTypeLower;
+  else if (CLIENT_LIKE_TYPES.has(docTypeLower)) classification = docTypeLower;
 
   if (!text) {
     return {
@@ -293,16 +348,41 @@ export async function extractFromDocument(input: ExtractFromDocumentInput): Prom
       },
       rawTextPreview,
       modelUsed: "document-parser",
+      classification,
     };
   }
 
+  // Row-level extraction runs in parallel with aggregate AI extraction.
+  const rowsPromise: Promise<{
+    rawRows?: SalesRow[];
+    clientRows?: ClientBaseRow[];
+  }> = (async () => {
+    try {
+      if (SALES_LIKE_TYPES.has(docTypeLower)) {
+        const rows = await extractSalesRows(text, hints);
+        return { rawRows: rows };
+      }
+      if (CLIENT_LIKE_TYPES.has(docTypeLower)) {
+        const rows = await extractClientRows(text, hints);
+        return { clientRows: rows };
+      }
+    } catch (err) {
+      console.warn("[documents/extract] row extraction failed", err);
+    }
+    return {};
+  })();
+
   const aiExtraction = await extractWithAi(text, input.docType);
+  const rowsResult = await rowsPromise;
+
   if (aiExtraction) {
     const bound = await bindFieldsSafely(aiExtraction.fields, input.docType);
     return {
       extraction: { summary: aiExtraction.summary, fields: bound },
       rawTextPreview,
       modelUsed: OPENROUTER_MODELS.sonnet,
+      ...rowsResult,
+      classification,
     };
   }
 
@@ -312,5 +392,7 @@ export async function extractFromDocument(input: ExtractFromDocumentInput): Prom
     extraction: { summary: heur.summary, fields: bound },
     rawTextPreview,
     modelUsed: "heuristic-parser",
+    ...rowsResult,
+    classification,
   };
 }

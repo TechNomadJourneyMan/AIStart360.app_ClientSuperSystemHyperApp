@@ -49,12 +49,13 @@ export async function POST(
     }
     const buffer = Buffer.from(await fileRes.arrayBuffer())
 
-    const { extraction, rawTextPreview, modelUsed } = await extractFromDocument({
-      buffer,
-      fileName: doc.file_name,
-      mimeType: doc.mime_type,
-      docType: doc.doc_type,
-    })
+    const { extraction, rawTextPreview, modelUsed, rawRows, clientRows, classification } =
+      await extractFromDocument({
+        buffer,
+        fileName: doc.file_name,
+        mimeType: doc.mime_type,
+        docType: doc.doc_type,
+      })
 
     const payload: ParsedDataPayload = {
       summary: extraction.summary,
@@ -62,6 +63,9 @@ export async function POST(
       raw_text_preview: rawTextPreview,
       extracted_at: new Date().toISOString(),
       model_used: modelUsed,
+      ...(rawRows && rawRows.length > 0 ? { raw_rows: rawRows } : {}),
+      ...(clientRows && clientRows.length > 0 ? { client_rows: clientRows } : {}),
+      ...(classification ? { classification } : {}),
     }
 
     const { error: updateErr } = await sb

@@ -188,6 +188,14 @@ export const SURVEY_LABELS: Record<string, string> = {
   s7n_competitor_2_analysis: 'Анализ конкурента 2',
   s7n_competitor_3_analysis: 'Анализ конкурента 3',
 
+  // ── Step 7 — Funnel & AI-comms signals (loss-map inputs) ───────────────
+  s7_leads_per_month: 'Лидов в месяц (входящие)',
+  s7_no_show_rate: 'Доля no-show (%)',
+  s7_missed_calls_rate: 'Доля пропущенных звонков (%)',
+  s7_avg_check_target_kzt: 'Целевой средний чек (₸)',
+  s7_repeat_freq_days: 'Частота повторной покупки (дни)',
+  s7_nps_score: 'Текущий NPS',
+
   // ── Step 8 — Ключевые метрики ──────────────────────────────────────────
   s8n_metrics_table: 'Таблица ключевых метрик',
 

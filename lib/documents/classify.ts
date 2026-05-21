@@ -17,6 +17,8 @@ export type DocType =
   | 'marketing_report'
   | 'ops_report'
   | 'crm_export'
+  | 'sales_report'
+  | 'client_base'
   | 'audit'
   | 'financial_report'
   | 'patient_base'
@@ -51,6 +53,8 @@ const ALLOWED: DocType[] = [
   'marketing_report',
   'ops_report',
   'crm_export',
+  'sales_report',
+  'client_base',
   'audit',
   'financial_report',
   'patient_base',
@@ -66,6 +70,8 @@ const ALLOWED: DocType[] = [
 // Medical/domain-specific types beat generic financial/ops types, which beat 'other'.
 const SPECIFICITY: Record<DocType, number> = {
   patient_base: 10,
+  client_base: 10,
+  sales_report: 9,
   packages: 9,
   services_catalog: 9,
   scripts: 9,
@@ -124,6 +130,22 @@ const FILENAME_PATTERNS: Record<Exclude<DocType, 'other'>, RegExp[]> = {
     /amo[\s_-]?crm/i,
     /deals?/i,
     /сделки/i,
+  ],
+  sales_report: [
+    /sales[_\s-]?report/i,
+    /отчёт.*продаж/i,
+    /отчет.*продаж/i,
+    /продажи/i,
+    /sales/i,
+    /transactions/i,
+    /транзакц/i,
+  ],
+  client_base: [
+    /client[_\s-]?base/i,
+    /база.*клиент/i,
+    /клиент.*база/i,
+    /customer[_\s-]?base/i,
+    /база.*покупател/i,
   ],
   audit: [/audit/i, /аудит/i, /inspection/i, /проверк/i],
   financial_report: [
@@ -253,6 +275,30 @@ const TEXT_KEYWORDS: Record<Exclude<DocType, 'other'>, string[]> = {
     'lead source',
     'contact',
     'ответственный',
+  ],
+  sales_report: [
+    'продажа',
+    'продажи',
+    'выручка по продажам',
+    'отчёт о продажах',
+    'отчет о продажах',
+    'sales report',
+    'transactions',
+    'sales transactions',
+    'дата продажи',
+    'sum of sales',
+  ],
+  client_base: [
+    'база клиентов',
+    'клиентская база',
+    'first_purchase_date',
+    'last_purchase_date',
+    'дата первой покупки',
+    'дата последней покупки',
+    'покупательская база',
+    'client base',
+    'customer base',
+    'lifetime value',
   ],
   audit: [
     'аудит',
