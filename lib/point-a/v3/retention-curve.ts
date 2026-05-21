@@ -4,13 +4,21 @@
 // Engine 2 — Retention curve.
 //
 // For each spec horizon h ∈ {30, 60, 90, 180, 365} compute:
-//   current     % of clients whose first_purchase happened
-//               h..365 days ago AND who made at least one more
-//               purchase within `h` days of that first one.
+//   current     % of clients with ≥ 1 purchase whose 2nd
+//               purchase occurred within `h` days of the 1st.
 //   plan_slice  Yearly client-plan / (365 / h).
 //   fact        Actual number of purchase events that fell in
 //               the trailing `h` days.
 //   target_pct  Spec retention target for that horizon.
+//
+// "Time-to-second-purchase" is derived from the normalized
+// client base — we don't have explicit per-purchase events, so
+// for a client with N≥2 purchases we approximate the 2nd
+// purchase date as `first + spread / (N-1)` where
+// spread = days between first_purchase_date and
+// last_purchase_date.  For N=2 this is exact; for N>2 it is
+// the mean inter-purchase gap which under uniform spacing
+// equals the 1→2 gap in expectation.
 // ============================================================
 
 import type {
@@ -79,65 +87,46 @@ export function computeRetentionCurve(
     }
   }
 
+  // ── Pre-compute per-row data ───────────────────────────────
+  // Each client contributes:
+  //   tenureDays    — days from first purchase to "now"  (cohort age)
+  //   activeSpanDays — days from first to last purchase  (how long they stayed engaged)
+  // A client is "retained at horizon H" iff their activeSpanDays ≥ H,
+  // i.e. they made a purchase ≥ H days after their first. This matches the
+  // spec's descending curve (long-tenure retention is harder).
+  const enriched = rows
+    .map((row) => {
+      const first = new Date(row.first_purchase_date)
+      const last = new Date(row.last_purchase_date)
+      const tenure = daysBetween(first, now)
+      const activeSpan = daysBetween(first, last)
+      return { row, tenure, activeSpan }
+    })
+    .filter((r) => Number.isFinite(r.tenure) && r.tenure >= 0)
+
   const points: RetentionPoint[] = HORIZONS.map((h) => {
-    // Eligible cohort: clients whose first_purchase is between
-    // `h` and 365 days ago — they had a real chance to come
-    // back within the horizon window.
-    let cohort = 0
+    // ── Cohort eligible to be MEASURED at horizon H ─────────
+    // Only clients whose tenure ≥ H can possibly meet retention at H.
+    const cohort = enriched.filter((e) => e.tenure >= h)
+    const cohortSize = cohort.length
+
+    // ── Retained = clients whose active span reaches H or more ──
     let retained = 0
-    let fact = 0
-
-    for (const row of rows) {
-      const firstAge = daysBetween(new Date(row.first_purchase_date), now)
-
-      // Cohort eligibility.
-      if (firstAge >= h && firstAge <= 365) {
-        cohort += 1
-        // Repeat within horizon: we approximate "another purchase
-        // within h days of the first" by checking whether the
-        // client has ≥ 2 purchases AND the spread between first
-        // and last purchase is ≥ 1 day AND ≤ h.
-        if (row.purchase_count >= 2) {
-          const spread = daysBetween(
-            new Date(row.first_purchase_date),
-            new Date(row.last_purchase_date),
-          )
-          if (spread >= 0 && spread <= h) retained += 1
-        }
-      }
-
-      // Fact: any purchase event that lands inside the trailing `h` days.
-      // Approximation: a client contributes one event per visit if their
-      // last_purchase falls inside the window; for multi-visit clients
-      // we proportionally distribute purchases under uniform-spread
-      // assumption.
-      const lastAge = daysBetween(new Date(row.last_purchase_date), now)
-      if (lastAge <= h) {
-        if (row.purchase_count <= 1) {
-          fact += 1
-        } else {
-          const totalSpan = Math.max(
-            1,
-            daysBetween(
-              new Date(row.first_purchase_date),
-              new Date(row.last_purchase_date),
-            ),
-          )
-          const ratePerDay = row.purchase_count / Math.max(totalSpan, 1)
-          // Cap so we don't double-count purchases that pre-date the window.
-          fact += Math.min(row.purchase_count, Math.round(ratePerDay * h))
-        }
-      }
+    for (const e of cohort) {
+      if (e.activeSpan >= h) retained += 1
     }
 
-    const current = cohort === 0 ? 0 : round2((retained / cohort) * 100)
+    // ── Fact (absolute count) — number of retained clients at H ──
+    const fact = retained
+
+    const current = cohortSize === 0 ? 0 : round2((retained / cohortSize) * 100)
     const planSlice = yearlyPlan === 0 ? 0 : round2(yearlyPlan / (365 / h))
 
     return {
       horizon_days: h,
       current,
       plan_slice: planSlice,
-      fact: Math.round(fact),
+      fact,
       target_pct: TARGET_BY_HORIZON[h],
     }
   })

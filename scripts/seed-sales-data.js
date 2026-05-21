@@ -234,6 +234,31 @@ async function main() {
   if (e2) { console.error('client doc upsert failed:', e2.message); process.exit(1) }
   console.log(`✓ client_base document upserted (${clientRows.length} clients)`)
 
+  // 3a. Seed funnel + AI-comms signals so loss-map shows real numbers.
+  const funnelAnswers = [
+    ['s7_leads_per_month',       200],
+    ['s7_no_show_rate',          0.15],
+    ['s7_missed_calls_rate',     0.08],
+    ['s7_avg_check_target_kzt',  100000],
+    ['s7_repeat_freq_days',      90],
+    ['s7_nps_score',             35],
+    ['s2_avg_check',             75000],
+    ['s2_ltv',                   350000],
+  ]
+  for (const [key, value] of funnelAnswers) {
+    const step = parseInt(key.match(/s(\d+)/)?.[1] ?? '0', 10)
+    const { error } = await sb.from('survey_answers').upsert({
+      user_id: user.id,
+      company_id: companyId,
+      step,
+      question_key: key,
+      answer: { value },
+      answered_at: new Date().toISOString(),
+    }, { onConflict: 'user_id,question_key' })
+    if (error) console.warn(`  ⚠ survey ${key}: ${error.message}`)
+  }
+  console.log(`✓ seeded ${funnelAnswers.length} funnel signals for loss-map`)
+
   // Set explicit revenue targets on companies row for plan-vs-fact math
   const target12m = 360_000_000 // 360M ₸ in 2026
   const target3y  = 1_500_000_000 // 1.5B ₸ cumulative

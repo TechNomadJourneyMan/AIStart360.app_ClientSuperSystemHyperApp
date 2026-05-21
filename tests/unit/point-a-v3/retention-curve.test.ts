@@ -16,6 +16,10 @@ function daysAgo(n: number): string {
   return new Date(NOW.getTime() - n * 86_400_000).toISOString()
 }
 
+function range(n: number): number[] {
+  return Array.from({ length: n }, (_, i) => i)
+}
+
 function row(
   id: string,
   opts: {
@@ -69,31 +73,81 @@ describe('computeRetentionCurve', () => {
     expect(p365.plan_slice).toBe(1200)
   })
 
-  it('retention current% reflects repeat-within-horizon clients', () => {
-    // Two cohorts:
-    //   - 4 clients first-purchased 200d ago; 3 of them had a 2nd visit within 30d
-    //   - 4 clients first-purchased 100d ago; 1 of them returned within 30d
+  it('retention current% reflects active-span ≥ horizon over eligible cohort', () => {
+    // Denominator at horizon H = cohort with tenure ≥ H (first purchase ≥H days ago)
+    // Numerator = of that cohort, clients whose active span ≥ H (still engaged at H)
+    // Spec direction: higher % at shorter horizons (most stick around early, fewer long-term).
     const rows: ClientBaseRow[] = [
-      // 200d cohort
-      row('a1', { first: 200, last: 180, visits: 2, spent: 80_000 }), // spread=20d → retained at 30d
-      row('a2', { first: 200, last: 195, visits: 2, spent: 80_000 }), // spread=5d  → retained at 30d
-      row('a3', { first: 200, last: 197, visits: 3, spent: 90_000 }), // spread=3d  → retained at 30d
-      row('a4', { first: 200, last: 200, visits: 1, spent: 50_000 }), // one-time   → not retained
-      // 100d cohort
-      row('b1', { first: 100, last: 95,  visits: 2, spent: 60_000 }),
-      row('b2', { first: 100, last: 100, visits: 1, spent: 40_000 }),
-      row('b3', { first: 100, last: 100, visits: 1, spent: 40_000 }),
-      row('b4', { first: 100, last: 100, visits: 1, spent: 40_000 }),
+      // All clients have tenure 200d so they are part of every H ≤ 180 cohort
+      row('a1', { first: 200, last: 180, visits: 2, spent: 80_000 }), // span=20 — retained at 30 only
+      row('a2', { first: 200, last: 150, visits: 2, spent: 80_000 }), // span=50 — retained at 30, not 60
+      row('a3', { first: 200, last: 100, visits: 3, spent: 90_000 }), // span=100 — retained at 30/60/90
+      row('a4', { first: 200, last: 200, visits: 1, spent: 50_000 }), // span=0
+      row('b1', { first: 100, last: 50,  visits: 2, spent: 60_000 }), // span=50 — retained at 30
     ]
     const res = computeRetentionCurve(rows, { now: NOW })
-    const p30 = res.points.find((p) => p.horizon_days === 30)!
-    // 30d cohort = first 30..365 days ago = all 8 clients
-    // retained = a1,a2,a3 (spread≤30) + b1 (spread=5) = 4
-    // current = 4/8 = 50%
-    expect(p30.current).toBe(50)
+    const byH = Object.fromEntries(res.points.map((p) => [p.horizon_days, p.current]))
+    // At H=30: eligible cohort = 5 (all tenure ≥ 30). Span ≥30 = a2 (50), a3 (100), b1 (50) → 3/5 = 60%
+    expect(byH[30]).toBe(60)
+    // At H=60: eligible cohort = 5. Span ≥60 = a3 (100) only → 1/5 = 20%
+    expect(byH[60]).toBe(20)
+    // At H=180: eligible = 5. Span ≥180 = 0 → 0%
+    expect(byH[180]).toBe(0)
+    // Curve must descend (or stay flat).
+    const horizons: number[] = [30, 60, 90, 180, 365]
+    for (let i = 1; i < horizons.length; i++) {
+      expect(byH[horizons[i]]).toBeLessThanOrEqual(byH[horizons[i - 1]])
+    }
   })
 
-  it('current is 0 when no client has another purchase within the horizon', () => {
+  it('retention curve descends monotonically as horizon grows', () => {
+    // Larger H = stricter "still engaged ≥ H days" filter ⇒ fewer pass.
+    const rows: ClientBaseRow[] = [
+      // 100 clients with assorted active spans bucketed into the 5 horizons.
+      // Each tier has tenure 800d so they are eligible for every horizon.
+      ...range(20).map((i) => row(`s10-${i}`,  { first: 800, last: 800 - 10,  visits: 2, spent: 100_000 })), // span=10  retained at H≤10  (none of {30,60,...})
+      ...range(20).map((i) => row(`s50-${i}`,  { first: 800, last: 800 - 50,  visits: 2, spent: 100_000 })), // span=50  retained at H≤50  (30 only)
+      ...range(20).map((i) => row(`s80-${i}`,  { first: 800, last: 800 - 80,  visits: 2, spent: 100_000 })), // span=80  retained at 30,60
+      ...range(20).map((i) => row(`s150-${i}`, { first: 800, last: 800 - 150, visits: 2, spent: 100_000 })), // span=150 retained at 30,60,90
+      ...range(20).map((i) => row(`s400-${i}`, { first: 800, last: 800 - 400, visits: 2, spent: 100_000 })), // span=400 retained at all 5
+    ]
+    const res = computeRetentionCurve(rows, { now: NOW })
+    const byH = Object.fromEntries(res.points.map((p) => [p.horizon_days, p.current]))
+    // Cohort size = 100 (all tenure 800 ≥ every H).
+    // H=30:  retained s50+s80+s150+s400 = 80/100 = 80%
+    // H=60:  retained s80+s150+s400 = 60/100 = 60%
+    // H=90:  retained s150+s400 = 40/100 = 40%
+    // H=180: retained s400 = 20/100 = 20%
+    // H=365: retained s400 (span=400≥365) = 20%
+    expect(byH[30]).toBe(80)
+    expect(byH[60]).toBe(60)
+    expect(byH[90]).toBe(40)
+    expect(byH[180]).toBe(20)
+    expect(byH[365]).toBe(20)
+    // Strict non-ascending check.
+    const horizons: number[] = [30, 60, 90, 180, 365]
+    for (let i = 1; i < horizons.length; i++) {
+      expect(byH[horizons[i]]).toBeLessThanOrEqual(byH[horizons[i - 1]])
+    }
+  })
+
+  it('different horizons produce different percentages on a mixed cohort', () => {
+    // Spec smoke check: curve should NOT be flat across all 5 horizons.
+    const rows: ClientBaseRow[] = [
+      row('a', { first: 800, last: 800 - 10,  visits: 2, spent: 100_000 }),
+      row('b', { first: 800, last: 800 - 50,  visits: 2, spent: 100_000 }),
+      row('c', { first: 800, last: 800 - 80,  visits: 2, spent: 100_000 }),
+      row('d', { first: 800, last: 800 - 150, visits: 2, spent: 100_000 }),
+      row('e', { first: 800, last: 800 - 300, visits: 2, spent: 100_000 }),
+    ]
+    const res = computeRetentionCurve(rows, { now: NOW })
+    const pcts = res.points.map((p) => p.current)
+    const unique = new Set(pcts)
+    expect(unique.size).toBeGreaterThan(1)
+  })
+
+  it('current is 0 when no client has an active span ≥ horizon', () => {
+    // Single-purchase clients have span=0 — they cannot be retained at any H>0.
     const rows = [
       row('a', { first: 200, last: 200, visits: 1, spent: 80_000 }),
       row('b', { first: 200, last: 200, visits: 1, spent: 80_000 }),
@@ -107,15 +161,19 @@ describe('computeRetentionCurve', () => {
     expect(res.points.every((p) => p.plan_slice === 0)).toBe(true)
   })
 
-  it('fact column counts purchases inside the trailing horizon window', () => {
+  it('fact equals the number of retained clients (descends with horizon)', () => {
+    // Active span = horizon ⇒ retained at all H ≤ span.
     const rows = [
-      // 2 purchases spread over 60d, last 10d ago — should land in the 30d window once
-      row('a', { first: 60, last: 10, visits: 2, spent: 100_000 }),
+      row('a', { first: 800, last: 800 - 200, visits: 2, spent: 100_000 }), // span=200
+      row('b', { first: 800, last: 800 - 200, visits: 2, spent: 100_000 }),
+      row('c', { first: 800, last: 800 - 50,  visits: 2, spent: 100_000 }), // span=50
     ]
     const res = computeRetentionCurve(rows, { now: NOW })
     const p30 = res.points.find((p) => p.horizon_days === 30)!
-    expect(p30.fact).toBeGreaterThanOrEqual(1)
+    const p180 = res.points.find((p) => p.horizon_days === 180)!
     const p365 = res.points.find((p) => p.horizon_days === 365)!
-    expect(p365.fact).toBeGreaterThanOrEqual(p30.fact)
+    expect(p30.fact).toBe(3)   // all spans ≥30
+    expect(p180.fact).toBe(2)  // a, b
+    expect(p365.fact).toBe(0)  // none ≥365
   })
 })
