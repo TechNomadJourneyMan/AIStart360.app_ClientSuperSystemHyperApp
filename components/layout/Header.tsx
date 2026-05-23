@@ -290,8 +290,9 @@ export function Header() {
           </div>
         )}
 
-        {/* Run Report */}
-        <Link href="/reports"
+        {/* Отчёты — открывает клиентский отчёт (Точка А + цели + данные анкеты) */}
+        <Link href="/client/point-a"
+          title="Отчёт по Точке А — индекс здоровья, цели, данные анкеты и документы"
           className="hidden lg:inline-flex items-center gap-1.5 text-xs font-semibold bg-gradient-to-br from-primary to-primary-container text-on-primary px-3.5 py-2.5 min-h-[40px] rounded-lg hover:scale-[0.97] active:scale-95 transition-all duration-150">
           <span className="material-symbols-outlined text-[18px]">description</span>
           Отчёты

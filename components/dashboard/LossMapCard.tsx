@@ -190,38 +190,82 @@ export function LossMapCardView(props: LossMapCardViewProps) {
             animate: { opacity: 1, y: 0 },
             transition: { duration: 0.4 },
             className:
-              'rounded-2xl border border-error/20 bg-gradient-to-r from-error/[0.08] to-error/[0.02] p-5 flex items-center justify-between gap-4',
+              'rounded-2xl border border-error/20 bg-gradient-to-r from-error/[0.08] to-error/[0.02] p-3 flex items-center justify-between gap-3',
           },
           h(
             'div',
-            null,
+            { className: 'flex items-center gap-3 min-w-0 flex-1' },
             h(
-              'p',
+              'div',
               {
                 className:
-                  'text-[10px] font-mono uppercase tracking-widest text-error mb-1',
+                  'w-8 h-8 rounded-xl bg-error/15 flex items-center justify-center flex-shrink-0',
               },
-              'Общие потери в год',
+              h(
+                'span',
+                {
+                  className: 'material-symbols-outlined text-base text-error',
+                  'aria-hidden': 'true',
+                },
+                'trending_down',
+              ),
             ),
             h(
-              'p',
-              { className: 'text-3xl font-mono font-bold text-on-surface' },
-              formatKzt(totalKzt),
+              'div',
+              { className: 'min-w-0' },
+              h(
+                'p',
+                {
+                  className:
+                    'text-[9px] font-mono uppercase tracking-widest text-error/80',
+                },
+                'Общие потери в год',
+              ),
+              h(
+                'p',
+                { className: 'text-lg font-mono font-bold text-on-surface leading-tight' },
+                formatKzt(totalKzt),
+              ),
             ),
           ),
           h(
             'div',
-            {
-              className:
-                'w-12 h-12 rounded-2xl bg-error/15 flex items-center justify-center',
-            },
+            { className: 'flex items-center gap-1.5 flex-shrink-0' },
             h(
-              'span',
+              'a',
               {
-                className: 'material-symbols-outlined text-2xl text-error',
-                'aria-hidden': 'true',
+                href: '/point-b',
+                className:
+                  'inline-flex items-center gap-1 text-[11px] font-mono text-error hover:text-error/80 bg-error/10 hover:bg-error/15 border border-error/30 px-2.5 py-1.5 rounded-lg transition-colors',
               },
-              'trending_down',
+              h(
+                'span',
+                { className: 'material-symbols-outlined text-[14px]', 'aria-hidden': 'true' },
+                'shield',
+              ),
+              'Снизить',
+            ),
+            h(
+              'a',
+              {
+                href: 'https://tidycal.com/istart/gtm',
+                target: '_blank',
+                rel: 'noopener noreferrer',
+                className:
+                  'inline-flex items-center gap-1 text-[11px] font-mono text-on-primary bg-primary hover:bg-primary/90 px-2.5 py-1.5 rounded-lg transition-colors',
+                title: 'Обсудить план возврата выручки с экспертом',
+              },
+              h(
+                'span',
+                { className: 'material-symbols-outlined text-[14px]', 'aria-hidden': 'true' },
+                'support_agent',
+              ),
+              'Вернуть выручку',
+              h(
+                'span',
+                { className: 'material-symbols-outlined text-[12px] opacity-70', 'aria-hidden': 'true' },
+                'open_in_new',
+              ),
             ),
           ),
         )

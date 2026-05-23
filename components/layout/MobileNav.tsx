@@ -71,6 +71,21 @@ export function MobileNav() {
   const [upgradeLoading, setUpgradeLoading] = useState(false)
   const [upgradeSubmitted, setUpgradeSubmitted] = useState<Set<string>>(new Set())
   const { user } = useAuthStore()
+  const [docsHasFiles, setDocsHasFiles] = useState<boolean | null>(null)
+  const [docCount, setDocCount] = useState(0)
+
+  useEffect(() => {
+    let cancelled = false
+    fetch('/api/v1/onboarding/status', { credentials: 'include' })
+      .then((r) => r.json())
+      .then((j) => {
+        if (cancelled || !j?.ok) return
+        setDocsHasFiles(Boolean(j.data?.documents?.has_files))
+        setDocCount(Number(j.data?.documents?.count ?? 0))
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [])
 
   const role = ((user?.role || 'client').toUpperCase()) as UserRole
   const allowedNav = getNavForRole(role).map(item => item.href)
@@ -221,6 +236,45 @@ export function MobileNav() {
 
           {/* Sections */}
           <div className="px-4 py-4 space-y-5">
+            {/* Upload files quick action — pulses when no docs uploaded */}
+            <Link
+              href="/client/onboarding/documents"
+              onClick={() => setDrawerOpen(false)}
+              className={`relative flex items-center gap-3 rounded-2xl p-3.5 border transition-all w-full ${
+                docsHasFiles === false
+                  ? 'bg-primary/10 border-primary/30 shadow-[0_0_24px_rgba(110,255,192,0.4)] animate-pulse'
+                  : 'bg-surface-container border-white/[0.06] hover:border-white/[0.12]'
+              }`}
+            >
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${
+                docsHasFiles === false ? 'bg-primary/15' : 'bg-white/[0.04]'
+              }`}>
+                <span className={`material-symbols-outlined text-[22px] ${
+                  docsHasFiles === false ? 'text-primary' : 'text-on-surface-variant'
+                }`}>
+                  cloud_upload
+                </span>
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className={`text-sm font-semibold ${
+                  docsHasFiles === false ? 'text-primary' : 'text-on-surface'
+                }`}>
+                  Загрузить файлы
+                </p>
+                <p className="text-[11px] text-on-surface-variant/80 truncate">
+                  {docsHasFiles === false
+                    ? 'AI ждёт P&L / отчёты / клиентов'
+                    : `Документов: ${docCount}`}
+                </p>
+              </div>
+              {docsHasFiles === false && (
+                <span className="absolute top-2 right-2 flex w-2.5 h-2.5">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
+                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-400" />
+                </span>
+              )}
+            </Link>
+
             {filteredDrawer.map((section) => (
               <div key={section.title}>
                 <p className="text-[9px] font-mono text-on-surface-variant/50 uppercase tracking-[0.15em] mb-2 px-1">

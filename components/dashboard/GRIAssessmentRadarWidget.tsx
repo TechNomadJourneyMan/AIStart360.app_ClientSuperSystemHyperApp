@@ -1,6 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import Link from 'next/link'
+import { GRIDynamicsModal } from './GRIDynamicsModal'
 
 interface GriAssessmentData {
   gri_index: number
@@ -100,6 +102,27 @@ function ttY(py: number) {
 
 export function GRIAssessmentRadarWidget({ data, orgName, stage }: Props) {
   const [hovered, setHovered] = useState<number | null>(null)
+  const [dynamicsOpen, setDynamicsOpen] = useState(false)
+  const [helpOpen, setHelpOpen] = useState(false)
+  const helpRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    if (!helpOpen) return
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') setHelpOpen(false)
+    }
+    function onClick(e: MouseEvent) {
+      if (helpRef.current && !helpRef.current.contains(e.target as Node)) {
+        setHelpOpen(false)
+      }
+    }
+    document.addEventListener('keydown', onKey)
+    document.addEventListener('mousedown', onClick)
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      document.removeEventListener('mousedown', onClick)
+    }
+  }, [helpOpen])
 
   const scores = AXES.map((a) => data.section_avgs[a.id] ?? 0)
   const overall = data.gri_index ?? 0
@@ -116,7 +139,7 @@ export function GRIAssessmentRadarWidget({ data, orgName, stage }: Props) {
   }
 
   return (
-    <div className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-4">
+    <div className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-4 relative">
       <div className="flex items-center justify-between mb-3">
         <div>
           <p className="text-[10px] font-mono text-primary/60 uppercase tracking-widest">
@@ -137,6 +160,25 @@ export function GRIAssessmentRadarWidget({ data, orgName, stage }: Props) {
         </div>
 
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setHelpOpen((v) => !v)}
+            aria-label="Что такое GRI"
+            aria-expanded={helpOpen}
+            className="w-6 h-6 rounded-full bg-surface-container-high hover:bg-primary/15 text-on-surface-variant hover:text-primary flex items-center justify-center transition-colors focus:outline-none focus:ring-2 focus:ring-primary/40"
+          >
+            <span className="material-symbols-outlined text-[14px]">help</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setDynamicsOpen(true)}
+            className="flex items-center gap-1.5 bg-primary/10 hover:bg-primary/15 border border-primary/20 hover:border-primary/40 text-primary text-[11px] font-mono px-2.5 py-1.5 rounded-lg transition-all group"
+            title="Открыть динамику GRI и фильтры по периоду"
+          >
+            <span className="material-symbols-outlined text-[14px]">show_chart</span>
+            <span className="hidden sm:inline">Динамика</span>
+            <span className="material-symbols-outlined text-[12px] opacity-60 group-hover:opacity-100 transition-all">north_east</span>
+          </button>
           {orgName && (
             <div
               className="w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-bold flex-shrink-0 border border-primary/20"
@@ -363,6 +405,83 @@ export function GRIAssessmentRadarWidget({ data, orgName, stage }: Props) {
           })}
         </div>
       </div>
+
+      {/* Bottom CTA strip */}
+      <div className="mt-4 pt-3 border-t border-white/[0.05] flex flex-wrap gap-2">
+        <a
+          href="https://tidycal.com/istart/gtm"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex-1 min-w-[140px] inline-flex items-center justify-center gap-1.5 bg-primary/10 hover:bg-primary/15 border border-primary/30 hover:border-primary/50 text-primary text-[11px] font-mono px-2.5 py-1.5 rounded-xl transition-colors focus:outline-none focus:ring-2 focus:ring-primary/40"
+        >
+          <span className="material-symbols-outlined text-[13px]">event_available</span>
+          <span>Записаться на консультацию</span>
+        </a>
+        <Link
+          href="/gri"
+          className="flex-1 min-w-[120px] inline-flex items-center justify-center gap-1.5 bg-transparent hover:bg-white/[0.04] border border-white/10 hover:border-white/20 text-on-surface-variant hover:text-on-surface text-[11px] font-mono px-2.5 py-1.5 rounded-xl transition-colors focus:outline-none focus:ring-2 focus:ring-primary/40"
+        >
+          <span className="material-symbols-outlined text-[13px]">restart_alt</span>
+          <span>Пройти GRI ещё раз</span>
+        </Link>
+      </div>
+
+      {/* Help popover */}
+      {helpOpen && (
+        <div
+          ref={helpRef}
+          role="dialog"
+          aria-label="Что такое GRI"
+          className="absolute top-12 right-3 z-30 w-[340px] max-w-[calc(100vw-32px)] bg-surface-container-high border border-white/10 rounded-2xl shadow-modal p-4 animate-in fade-in slide-in-from-top-1 duration-150"
+        >
+          <button
+            type="button"
+            onClick={() => setHelpOpen(false)}
+            aria-label="Закрыть"
+            className="absolute top-2 right-2 w-6 h-6 rounded-full hover:bg-white/[0.06] text-on-surface-variant hover:text-on-surface flex items-center justify-center transition-colors focus:outline-none focus:ring-2 focus:ring-primary/40"
+          >
+            <span className="material-symbols-outlined text-[16px]">close</span>
+          </button>
+          <h4 className="font-headline text-base font-bold text-on-surface mb-2 pr-6">
+            Что такое GRI?
+          </h4>
+          <div className="space-y-2.5 text-[12px] leading-relaxed text-on-surface-variant">
+            <p>
+              <span className="font-bold text-on-surface">GRI (Growth Readiness Index)</span> — индекс готовности
+              бизнеса к масштабированию. Оценивает 7 блоков: продукт и спрос, доверие и позиционирование,
+              бизнес-модель, финансовая устойчивость, операции, команда, готовность основателя.
+            </p>
+            <p>
+              <span className="font-bold text-on-surface">Зачем это бизнесу:</span> GRI находит узкие места, которые
+              ломаются при ускорении до $2M/год. Получаете TOP-5 ограничений с ценой недоработки и Action Plan на
+              90 дней.
+            </p>
+          </div>
+          <div className="mt-4 flex flex-col gap-2">
+            <a
+              href="https://tidycal.com/istart/gtm"
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={() => setHelpOpen(false)}
+              className="inline-flex items-center justify-center gap-1.5 bg-primary hover:bg-primary/90 text-on-primary text-[12px] font-mono font-bold px-3 py-2 rounded-xl transition-colors focus:outline-none focus:ring-2 focus:ring-primary/40"
+              style={{ background: '#6effc0', color: '#0A0B0F' }}
+            >
+              <span className="material-symbols-outlined text-[14px]">event_available</span>
+              Записаться на консультацию
+            </a>
+            <Link
+              href="/gri"
+              onClick={() => setHelpOpen(false)}
+              className="inline-flex items-center justify-center gap-1.5 bg-transparent border border-primary/30 hover:border-primary/60 hover:bg-primary/10 text-primary text-[12px] font-mono px-3 py-2 rounded-xl transition-colors focus:outline-none focus:ring-2 focus:ring-primary/40"
+            >
+              <span className="material-symbols-outlined text-[14px]">play_arrow</span>
+              Пройти тест GRI
+            </Link>
+          </div>
+        </div>
+      )}
+
+      <GRIDynamicsModal open={dynamicsOpen} onClose={() => setDynamicsOpen(false)} />
     </div>
   )
 }

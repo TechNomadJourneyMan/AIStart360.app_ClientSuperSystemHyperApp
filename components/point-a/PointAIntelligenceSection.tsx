@@ -17,6 +17,7 @@ export default function PointAIntelligenceSection({ userId, companyId }: Props) 
   const realtime = useRealtimePointA(userId, companyId)
 
   const [departmentFilter, setDepartmentFilter] = useState<string | null>(null)
+  const [activeTab, setActiveTab] = useState<'strengths' | 'gaps' | 'departments' | 'actions'>('strengths')
 
   const intelligence = data?.intelligence ?? null
   const risks: Risk[] = data?.risks ?? []
@@ -81,260 +82,290 @@ export default function PointAIntelligenceSection({ userId, companyId }: Props) 
   const departments = intelligence.by_department.map((d) => d.department)
 
   return (
-    <section className="space-y-8">
-      {/* Header bar with realtime status + recalc button */}
-      <div className="flex flex-wrap items-end justify-between gap-3 border-b border-outline-variant/10 pb-4">
-        <div>
-          <p className="text-xs font-mono text-primary/70 uppercase tracking-[0.2em] mb-1">
-            Интеллект-слой · {intelligence.resolver_version}
-          </p>
-          <h2 className="font-headline text-xl font-bold text-on-surface">Real-time Intelligence</h2>
-          <p className="text-xs text-on-surface-variant mt-1 font-mono">
-            Покрытие данных:{' '}
-            <span className="text-primary">{Math.round(intelligence.coverage.overall * 100)}%</span>
-            {' · '}
-            <span title="Realtime канал Supabase" className="inline-flex items-center gap-1">
-              <span
-                className={`inline-block w-1.5 h-1.5 rounded-full ${
-                  realtime.status === 'open'
-                    ? 'bg-primary animate-pulse'
-                    : realtime.status === 'connecting'
-                    ? 'bg-amber-400/70'
-                    : 'bg-on-surface-variant/40'
-                }`}
-              />
-              {realtime.status === 'open'
-                ? 'Realtime активен'
-                : realtime.status === 'connecting'
-                ? 'Подключение…'
-                : 'Realtime недоступен'}
-            </span>
-          </p>
-        </div>
-        <button
-          onClick={() => recalc.mutate()}
-          disabled={recalc.isPending}
-          className="inline-flex items-center gap-2 text-xs font-mono text-primary border border-primary/40 hover:bg-primary/10 disabled:opacity-50 rounded-xl px-3 py-2 transition-colors"
-        >
-          <span className={`material-symbols-outlined text-base ${recalc.isPending ? 'animate-spin' : ''}`}>
-            {recalc.isPending ? 'progress_activity' : 'refresh'}
-          </span>
-          {recalc.isPending ? 'Пересчёт…' : 'Пересчитать'}
-        </button>
-      </div>
-
-      {/* Coverage strip */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-        {(['biz', 'kpi', 'gri', 'goal'] as const).map((ns) => {
-          const ratio = intelligence.coverage[ns] ?? 0
-          const label = ns === 'biz' ? 'Бизнес' : ns === 'kpi' ? 'KPI' : ns === 'gri' ? 'GRI' : 'Цели'
-          return (
-            <div
-              key={ns}
-              className="bg-surface-container-low rounded-xl border border-white/[0.04] p-3"
+    <section className="space-y-5">
+      {/* Compact bar — live status + recalc + coverage chips */}
+      <div className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-3 space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <span
+              title="Realtime канал Supabase"
+              className="inline-flex items-center gap-1.5 text-[10px] font-mono uppercase tracking-wider"
             >
-              <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest mb-1">
-                {label}
-              </p>
-              <p className="text-xl font-mono font-bold text-on-surface">
-                {Math.round(ratio * 100)}%
-              </p>
-              <div className="h-1 mt-2 bg-surface-container rounded-full overflow-hidden">
-                <div
-                  className={`h-full ${ratio >= 0.5 ? 'bg-primary' : ratio >= 0.2 ? 'bg-tertiary-container' : 'bg-error'}`}
-                  style={{ width: `${ratio * 100}%` }}
+              <span className="relative flex w-2 h-2">
+                {realtime.status === 'open' && (
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-70" />
+                )}
+                <span
+                  className={`relative inline-flex w-2 h-2 rounded-full ${
+                    realtime.status === 'open'
+                      ? 'bg-primary'
+                      : realtime.status === 'connecting'
+                      ? 'bg-amber-400'
+                      : 'bg-on-surface-variant/40'
+                  }`}
                 />
+              </span>
+              <span
+                className={
+                  realtime.status === 'open'
+                    ? 'text-primary'
+                    : realtime.status === 'connecting'
+                    ? 'text-amber-400'
+                    : 'text-on-surface-variant/70'
+                }
+              >
+                {realtime.status === 'open' ? 'live' : realtime.status === 'connecting' ? 'connecting' : 'offline'}
+              </span>
+            </span>
+            <span className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider">
+              · Покрытие <span className="text-primary">{Math.round(intelligence.coverage.overall * 100)}%</span>
+            </span>
+          </div>
+          <button
+            onClick={() => recalc.mutate()}
+            disabled={recalc.isPending}
+            className="inline-flex items-center gap-1 text-[11px] font-mono text-primary border border-primary/40 hover:bg-primary/10 disabled:opacity-50 rounded-lg px-2.5 py-1.5 transition-colors"
+          >
+            <span className={`material-symbols-outlined text-[14px] ${recalc.isPending ? 'animate-spin' : ''}`}>
+              {recalc.isPending ? 'progress_activity' : 'refresh'}
+            </span>
+            {recalc.isPending ? 'Пересчёт…' : 'Пересчитать'}
+          </button>
+        </div>
+
+        {/* Compact live coverage bars */}
+        <div className="grid grid-cols-5 gap-1.5">
+          {(['biz', 'kpi', 'gri', 'goal'] as const).map((ns) => {
+            const ratio = intelligence.coverage[ns] ?? 0
+            const label = ns === 'biz' ? 'Бизнес' : ns === 'kpi' ? 'KPI' : ns === 'gri' ? 'GRI' : 'Цели'
+            const barClass =
+              ratio >= 0.5 ? 'bg-primary' : ratio >= 0.2 ? 'bg-amber-400' : 'bg-error/70'
+            return (
+              <div key={ns} className="bg-surface-container rounded-lg px-2 py-1.5">
+                <div className="flex items-baseline justify-between gap-1">
+                  <span className="text-[9px] font-mono text-on-surface-variant uppercase tracking-wide truncate">
+                    {label}
+                  </span>
+                  <span className="text-[11px] font-mono font-bold text-on-surface tabular-nums">
+                    {Math.round(ratio * 100)}%
+                  </span>
+                </div>
+                <div className="h-0.5 mt-1 bg-surface-container-high rounded-full overflow-hidden">
+                  <div
+                    className={`h-full transition-all duration-700 ${barClass} ${
+                      realtime.status === 'open' ? 'animate-pulse' : ''
+                    }`}
+                    style={{ width: `${ratio * 100}%` }}
+                  />
+                </div>
               </div>
+            )
+          })}
+          <div className="bg-primary/[0.08] rounded-lg px-2 py-1.5 border border-primary/30">
+            <div className="flex items-baseline justify-between gap-1">
+              <span className="text-[9px] font-mono text-primary/70 uppercase tracking-wide">Всего</span>
+              <span className="text-[11px] font-mono font-bold text-primary tabular-nums">
+                {Math.round(intelligence.coverage.overall * 100)}%
+              </span>
             </div>
-          )
-        })}
-        <div className="bg-primary/[0.06] rounded-xl border border-primary/30 p-3">
-          <p className="text-[10px] font-mono text-primary/70 uppercase tracking-widest mb-1">
-            Всего
-          </p>
-          <p className="text-xl font-mono font-bold text-primary">
-            {Math.round(intelligence.coverage.overall * 100)}%
-          </p>
-          <div className="h-1 mt-2 bg-surface-container rounded-full overflow-hidden">
-            <div className="h-full bg-primary" style={{ width: `${intelligence.coverage.overall * 100}%` }} />
+            <div className="h-0.5 mt-1 bg-surface-container-high rounded-full overflow-hidden">
+              <div
+                className={`h-full bg-primary transition-all duration-700 ${
+                  realtime.status === 'open' ? 'animate-pulse' : ''
+                }`}
+                style={{ width: `${intelligence.coverage.overall * 100}%` }}
+              />
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Top strengths */}
-      {intelligence.top_strengths.length > 0 && (
-        <div>
-          <h3 className="text-xs font-mono text-primary/70 uppercase tracking-[0.2em] mb-3">
-            Сильные стороны
-          </h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-            {intelligence.top_strengths.slice(0, 6).map((s) => (
-              <div
-                key={s.metric_id}
-                className="bg-surface-container-low rounded-2xl border border-primary/20 bg-primary/[0.03] p-4"
-              >
-                <div className="flex items-start justify-between mb-2">
-                  <p className="text-xs text-on-surface-variant font-mono uppercase tracking-widest">
-                    {s.namespace}
-                  </p>
-                  <span className="material-symbols-outlined text-primary/70 text-sm">
-                    trending_up
-                  </span>
-                </div>
-                <p className="text-sm text-on-surface font-bold mb-2 leading-snug">{s.label}</p>
-                <p className="text-xl font-mono text-primary">
-                  {s.value !== null && s.value !== undefined ? String(s.value) : '—'}
-                  {s.unit ? <span className="text-xs text-on-surface-variant ml-1">{s.unit}</span> : null}
-                </p>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Top gaps */}
-      {intelligence.top_gaps.length > 0 && (
-        <div>
-          <h3 className="text-xs font-mono text-primary/70 uppercase tracking-[0.2em] mb-3">
-            Что добавить для точности
-          </h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {intelligence.top_gaps.slice(0, 6).map((g) => (
-              <div
-                key={g.metric_id}
-                className="bg-surface-container-low rounded-2xl border border-dashed border-white/10 p-4"
-              >
-                <div className="flex items-start justify-between mb-2">
-                  <span className="material-symbols-outlined text-on-surface-variant/60 text-sm">
-                    help
-                  </span>
-                </div>
-                <p className="text-sm text-on-surface font-bold mb-1 leading-snug">{g.label}</p>
-                <p className="text-xs text-on-surface-variant/80 font-mono">{g.suggested_source}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* By department drilldown */}
-      {departments.length > 0 && (
-        <div>
-          <div className="flex items-end justify-between mb-3">
-            <h3 className="text-xs font-mono text-primary/70 uppercase tracking-[0.2em]">
-              По департаментам
-            </h3>
-            <div className="flex gap-1.5 overflow-x-auto scrollbar-thin">
-              <button
-                onClick={() => setDepartmentFilter(null)}
-                className={`text-[11px] font-mono rounded-full border px-2.5 py-1 whitespace-nowrap transition-colors ${
-                  departmentFilter === null
-                    ? 'bg-primary/15 text-primary border-primary/40'
-                    : 'bg-surface-container text-on-surface-variant border-white/[0.04] hover:border-white/15'
-                }`}
-              >
-                Все
-              </button>
-              {departments.map((d) => (
+      {/* Interactive tabbed intelligence panel — strengths / gaps / departments / actions */}
+      {(intelligence.top_strengths.length > 0 ||
+        intelligence.top_gaps.length > 0 ||
+        departments.length > 0 ||
+        risks.length > 0 ||
+        quickWins.length > 0) && (
+        <div className="bg-surface-container-low rounded-2xl border border-white/[0.04] overflow-hidden">
+          {/* Tab strip */}
+          <div className="flex items-center gap-1 p-1.5 border-b border-white/[0.04] bg-surface-container/40 overflow-x-auto scrollbar-thin">
+            {[
+              { key: 'strengths' as const, label: 'Сильные стороны', icon: 'trending_up', count: intelligence.top_strengths.length },
+              { key: 'gaps' as const, label: 'Пробелы', icon: 'help', count: intelligence.top_gaps.length },
+              { key: 'departments' as const, label: 'Департаменты', icon: 'apartment', count: departments.length },
+              { key: 'actions' as const, label: 'Действия', icon: 'bolt', count: risks.length + quickWins.length },
+            ].filter((t) => t.count > 0).map((tab) => {
+              const isActive = activeTab === tab.key
+              return (
                 <button
-                  key={d}
-                  onClick={() => setDepartmentFilter(d)}
-                  className={`text-[11px] font-mono rounded-full border px-2.5 py-1 whitespace-nowrap transition-colors ${
-                    departmentFilter === d
-                      ? 'bg-primary/15 text-primary border-primary/40'
-                      : 'bg-surface-container text-on-surface-variant border-white/[0.04] hover:border-white/15'
+                  key={tab.key}
+                  type="button"
+                  onClick={() => setActiveTab(tab.key)}
+                  className={`flex items-center gap-1.5 text-[11px] font-mono rounded-lg px-2.5 py-1.5 whitespace-nowrap transition-all ${
+                    isActive
+                      ? 'bg-primary/15 text-primary border border-primary/40 shadow-[0_0_0_1px_rgba(110,255,192,0.1)]'
+                      : 'text-on-surface-variant border border-transparent hover:bg-surface-container hover:text-on-surface'
                   }`}
                 >
-                  {d}
+                  <span className="material-symbols-outlined text-[14px]">{tab.icon}</span>
+                  <span>{tab.label}</span>
+                  <span
+                    className={`text-[9px] font-mono px-1.5 py-0.5 rounded ${
+                      isActive ? 'bg-primary/20 text-primary' : 'bg-surface-container-high text-on-surface-variant'
+                    }`}
+                  >
+                    {tab.count}
+                  </span>
                 </button>
-              ))}
-            </div>
+              )
+            })}
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {filteredDepartments.map((d) => (
-              <div
-                key={d.department}
-                className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-5"
-              >
-                <div className="flex items-start justify-between mb-4">
-                  <div>
-                    <p className="text-sm font-bold text-on-surface">{d.department}</p>
-                    <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest mt-0.5">
-                      Покрытие {Math.round(d.coverage * 100)}%
+          <div className="p-3">
+            {activeTab === 'strengths' && (
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-2">
+                {intelligence.top_strengths.slice(0, 12).map((s) => (
+                  <div
+                    key={s.metric_id}
+                    className="rounded-xl border border-primary/20 bg-primary/[0.04] p-2.5 hover:bg-primary/[0.07] transition-colors"
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <p className="text-[9px] text-on-surface-variant font-mono uppercase tracking-wider truncate">
+                        {s.namespace}
+                      </p>
+                      <span className="material-symbols-outlined text-primary/70 text-[12px]">trending_up</span>
+                    </div>
+                    <p className="text-[11px] text-on-surface font-bold leading-tight mb-1 line-clamp-2 min-h-[28px]">
+                      {s.label}
+                    </p>
+                    <p className="text-sm font-mono font-bold text-primary tabular-nums">
+                      {s.value !== null && s.value !== undefined ? String(s.value) : '—'}
+                      {s.unit ? <span className="text-[9px] text-on-surface-variant ml-0.5">{s.unit}</span> : null}
                     </p>
                   </div>
-                </div>
-                {d.strongest.length > 0 && (
-                  <div className="mb-3">
-                    <p className="text-[10px] font-mono text-primary/70 uppercase tracking-widest mb-2">
-                      Сильное
-                    </p>
-                    <ul className="space-y-1.5">
-                      {d.strongest.map((m) => (
-                        <li
-                          key={m.metric_id}
-                          className="flex items-center justify-between text-xs"
-                        >
-                          <span className="text-on-surface truncate mr-2">{m.label}</span>
-                          <span className="font-mono text-primary whitespace-nowrap">
-                            {m.value !== null && m.value !== undefined ? String(m.value) : '—'}{' '}
-                            <span className="text-on-surface-variant">{m.unit}</span>
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-                {d.weakest.length > 0 && (
-                  <div>
-                    <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest mb-2">
-                      Не хватает
-                    </p>
-                    <ul className="space-y-1.5">
-                      {d.weakest.map((m) => (
-                        <li key={m.metric_id} className="text-xs">
-                          <span className="text-on-surface">{m.label}</span>
-                          <p className="text-[10px] text-on-surface-variant/70 font-mono mt-0.5">
-                            {m.reason}
-                          </p>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
+                ))}
               </div>
-            ))}
-          </div>
-        </div>
-      )}
+            )}
 
-      {/* Risks + Quick Wins as PointAInsightCard */}
-      {(risks.length > 0 || quickWins.length > 0) && (
-        <div>
-          <h3 className="text-xs font-mono text-primary/70 uppercase tracking-[0.2em] mb-3">
-            Действия
-          </h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {risks.slice(0, 4).map((r, i) => (
-              <PointAInsightCard
-                key={`risk-${i}`}
-                kind="risk"
-                level={r.level}
-                area={r.area}
-                text={r.text}
-                impact={r.impact}
-              />
-            ))}
-            {quickWins.slice(0, 4).map((q, i) => (
-              <PointAInsightCard
-                key={`qw-${i}`}
-                kind="quick_win"
-                area={q.area}
-                text={q.action}
-                timeline={q.timeline}
-              />
-            ))}
+            {activeTab === 'gaps' && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                {intelligence.top_gaps.slice(0, 12).map((g) => (
+                  <div
+                    key={g.metric_id}
+                    className="rounded-xl border border-dashed border-white/10 p-2.5 hover:border-white/20 transition-colors flex items-start gap-2"
+                  >
+                    <span className="material-symbols-outlined text-on-surface-variant/60 text-[14px] mt-0.5 flex-shrink-0">help</span>
+                    <div className="min-w-0">
+                      <p className="text-[11px] text-on-surface font-bold leading-tight mb-0.5">{g.label}</p>
+                      <p className="text-[10px] text-on-surface-variant/70 font-mono leading-snug truncate">{g.suggested_source}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {activeTab === 'departments' && (
+              <div className="space-y-2">
+                <div className="flex gap-1 overflow-x-auto scrollbar-thin">
+                  <button
+                    onClick={() => setDepartmentFilter(null)}
+                    className={`text-[10px] font-mono rounded-md border px-2 py-0.5 whitespace-nowrap transition-colors ${
+                      departmentFilter === null
+                        ? 'bg-primary/15 text-primary border-primary/40'
+                        : 'bg-surface-container text-on-surface-variant border-white/[0.04] hover:border-white/15'
+                    }`}
+                  >
+                    Все
+                  </button>
+                  {departments.map((d) => (
+                    <button
+                      key={d}
+                      onClick={() => setDepartmentFilter(d)}
+                      className={`text-[10px] font-mono rounded-md border px-2 py-0.5 whitespace-nowrap transition-colors ${
+                        departmentFilter === d
+                          ? 'bg-primary/15 text-primary border-primary/40'
+                          : 'bg-surface-container text-on-surface-variant border-white/[0.04] hover:border-white/15'
+                      }`}
+                    >
+                      {d}
+                    </button>
+                  ))}
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
+                  {filteredDepartments.map((d) => {
+                    const cov = Math.round(d.coverage * 100)
+                    const covColor = cov >= 60 ? 'bg-primary' : cov >= 30 ? 'bg-amber-400' : 'bg-error/70'
+                    return (
+                      <div
+                        key={d.department}
+                        className="rounded-xl border border-white/[0.04] bg-surface-container/50 p-2.5 hover:border-primary/20 transition-colors"
+                      >
+                        <div className="flex items-center justify-between mb-1.5 gap-2">
+                          <p className="text-[11px] font-bold text-on-surface truncate">{d.department}</p>
+                          <span className="text-[10px] font-mono text-on-surface-variant tabular-nums flex-shrink-0">{cov}%</span>
+                        </div>
+                        <div className="h-0.5 bg-surface-container-high rounded-full overflow-hidden mb-2">
+                          <div className={`h-full ${covColor}`} style={{ width: `${cov}%` }} />
+                        </div>
+                        {d.strongest.length > 0 && (
+                          <ul className="space-y-0.5 mb-1.5">
+                            {d.strongest.slice(0, 3).map((m) => (
+                              <li
+                                key={m.metric_id}
+                                className="flex items-center justify-between text-[10px] gap-1"
+                              >
+                                <span className="text-on-surface/85 truncate flex items-center gap-1 min-w-0">
+                                  <span className="w-1 h-1 rounded-full bg-primary flex-shrink-0" />
+                                  {m.label}
+                                </span>
+                                <span className="font-mono text-primary tabular-nums whitespace-nowrap">
+                                  {m.value !== null && m.value !== undefined ? String(m.value) : '—'}
+                                  {m.unit ? <span className="text-on-surface-variant/60 ml-0.5">{m.unit}</span> : null}
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                        {d.weakest.length > 0 && (
+                          <ul className="space-y-0.5 pt-1.5 border-t border-white/[0.04]">
+                            {d.weakest.slice(0, 3).map((m) => (
+                              <li key={m.metric_id} className="text-[10px] flex items-center gap-1 text-on-surface-variant">
+                                <span className="w-1 h-1 rounded-full bg-on-surface-variant/40 flex-shrink-0" />
+                                <span className="truncate">{m.label}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'actions' && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                {risks.slice(0, 4).map((r, i) => (
+                  <PointAInsightCard
+                    key={`risk-${i}`}
+                    kind="risk"
+                    level={r.level}
+                    area={r.area}
+                    text={r.text}
+                    impact={r.impact}
+                  />
+                ))}
+                {quickWins.slice(0, 4).map((q, i) => (
+                  <PointAInsightCard
+                    key={`qw-${i}`}
+                    kind="quick_win"
+                    area={q.area}
+                    text={q.action}
+                    timeline={q.timeline}
+                  />
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}

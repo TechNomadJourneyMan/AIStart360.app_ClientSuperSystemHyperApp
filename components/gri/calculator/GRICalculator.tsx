@@ -290,7 +290,18 @@ export default function GRICalculator() {
       "owner-readiness": "Founder Ready",
     }
 
-    const syncFromAssessment = () => {
+    const applyUpdates = (updates: Record<string, number>, griIndex?: number) => {
+      if (Object.keys(updates).length > 0) {
+        setScores((prev) => ({ ...prev, ...updates }))
+        setBaseScores((prev) => ({ ...prev, ...updates }))
+        setPlannedScores((prev) => ({ ...prev, ...updates }))
+      }
+      if (typeof griIndex === "number" && griIndex > 0) {
+        setAssessmentGri(griIndex)
+      }
+    }
+
+    const syncFromLocalStorage = () => {
       try {
         const raw = localStorage.getItem("aistart_gri_assessment_v1")
         if (!raw) return
@@ -313,19 +324,42 @@ export default function GRICalculator() {
           const clamped = Math.max(0, Math.min(10, Math.round(avg)))
           updates[categoryKey] = clamped
         }
-
-        if (Object.keys(updates).length === 0) return
-
-        setScores((prev) => ({ ...prev, ...updates }))
-        setBaseScores((prev) => ({ ...prev, ...updates }))
-        setPlannedScores((prev) => ({ ...prev, ...updates }))
-
-        if (typeof parsed?.griIndex === "number" && parsed.griIndex > 0) {
-          setAssessmentGri(parsed.griIndex)
-        }
+        applyUpdates(updates, parsed?.griIndex)
       } catch {
         // ignore — assessment data is optional
       }
+    }
+
+    // Server is the authoritative source — pull current GRI assessment from
+    // /api/v1/gri/assessment so the calculator's sliders + score match the
+    // dashboard widget and the standalone assessment results page.
+    const syncFromServer = async () => {
+      try {
+        const res = await fetch("/api/v1/gri/assessment", { credentials: "include" })
+        const json = await res.json()
+        const current = json?.data?.current
+        if (!current) {
+          // No server row yet — fall back to localStorage so legacy users
+          // don't lose their work.
+          syncFromLocalStorage()
+          return
+        }
+        const sectionAvgs = (current.section_avgs ?? {}) as Record<string, number>
+        const updates: Record<string, number> = {}
+        for (const [sectionId, categoryKey] of Object.entries(SECTION_TO_CATEGORY)) {
+          const v = sectionAvgs[sectionId]
+          if (typeof v !== "number" || v <= 0) continue
+          updates[categoryKey] = Math.max(0, Math.min(10, Math.round(v)))
+        }
+        applyUpdates(updates, typeof current.gri_index === "number" ? current.gri_index : undefined)
+      } catch {
+        // network / auth failure — degrade gracefully to localStorage.
+        syncFromLocalStorage()
+      }
+    }
+
+    const syncFromAssessment = () => {
+      void syncFromServer()
     }
 
     // Initial sync on mount
@@ -827,12 +861,16 @@ export default function GRICalculator() {
           style={{ background: "rgba(10, 10, 10, 0.85)", backdropFilter: "blur(16px)" }}
         >
           <div className="flex items-center gap-3">
-            <div className="relative flex items-center">
-              <TrendingUp className="w-6 h-6 text-[#2563eb]" />
-              <h1 className="ml-2 text-xl sm:text-2xl font-bold logo-glow text-white">
-                A<span style={{ color: "#ef4444" }}>I</span>Start360
-              </h1>
-            </div>
+            <a href="/dashboard" className="flex items-center" aria-label="AIStart360 — на главную">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/logo.svg"
+                alt="AIStart360"
+                width={140}
+                height={28}
+                className="h-7 w-auto"
+              />
+            </a>
             <Badge variant="outline" className="text-[0.6rem] sm:text-xs text-white/40 border-white/10 hidden sm:flex">
               GRI Calculator
             </Badge>

@@ -13,10 +13,12 @@ import { CrmActivity } from '@/components/dashboard/CrmActivity'
 import type { CrmRequest, CrmClient } from '@/components/dashboard/CrmActivity'
 import type { Alert } from '@/types'
 import type { AlertCardProps } from '@/components/dashboard/AlertCard'
-import { PointARadarWidget } from '@/components/dashboard/PointARadarWidget'
 import { GRIAssessmentRadarWidget } from '@/components/dashboard/GRIAssessmentRadarWidget'
+import { AIInsightsCarousel, type AIInsight } from '@/components/dashboard/AIInsightsCarousel'
+import { OnboardingStatusBadges } from '@/components/dashboard/OnboardingStatusBadges'
 import PointAIntelligenceSection from '@/components/point-a/PointAIntelligenceSection'
 import PointADashboardSectionsBoundary from '@/components/dashboard/PointADashboardSections'
+import GrowthSnapshotHero from '@/components/dashboard/GrowthSnapshotHero'
 import type { PointA, BlockScore } from '@/types/onboarding'
 import { prisma } from '@/lib/db'
 import { getPortfolioGRI } from '@/lib/portfolio-gri'
@@ -212,6 +214,34 @@ function stageLabel(s: string) {
   return m[s] ?? s
 }
 
+// Combine insights / risks / quick-wins from the Point A engine into one
+// real-time stream for the right-rail carousel. Severity is derived from the
+// source: risks → warning/critical, quick_wins → positive, insights → neutral
+// (upgraded to positive when the text reads like good news).
+function buildLiveInsights(pointA: PointA): AIInsight[] {
+  const positiveRe = /(растёт|выросла?|рост|улучш|опереж|превыш|сильн)/i
+
+  const fromInsights: AIInsight[] = pointA.insights.map((i) => ({
+    area: i.area,
+    text: i.text,
+    severity: positiveRe.test(i.text) ? 'positive' : 'neutral',
+  }))
+
+  const fromRisks: AIInsight[] = pointA.risks.map((r) => ({
+    area: r.area,
+    text: r.text,
+    severity: r.level === 'critical' ? 'critical' : 'warning',
+  }))
+
+  const fromWins: AIInsight[] = pointA.quick_wins.map((w) => ({
+    area: w.area,
+    text: w.action,
+    severity: 'positive',
+  }))
+
+  return [...fromRisks, ...fromInsights, ...fromWins].slice(0, 8)
+}
+
 // ─── page ─────────────────────────────────────────────────────────────────────
 export default async function DashboardPage() {
   // Detect viewer role — clients get their personal Point A view
@@ -302,91 +332,56 @@ export default async function DashboardPage() {
                   Ваши текущие показатели на основе заполненной анкеты
                 </p>
               </div>
-              {pointA && (
-                <Link href="/client/onboarding"
-                  className="flex items-center gap-2 bg-surface-container hover:bg-surface-container-high border border-white/[0.06] hover:border-primary/20 text-on-surface-variant hover:text-primary text-sm px-4 py-2.5 rounded-xl transition-all flex-shrink-0">
-                  <span className="material-symbols-outlined text-base">edit_note</span>
-                  Обновить анкету
-                </Link>
-              )}
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <OnboardingStatusBadges />
+              </div>
             </div>
 
+            {/* New Growth Snapshot Hero — owns goal capture, plan/fact gap,
+                GRI CTA, consultation link, and onboarding-progress shortcuts.
+                Replaces the previous AI-insights carousel + CTA stack. */}
+            <GrowthSnapshotHero />
+
             {pointA ? (
-              <div className="grid grid-cols-1 xl:grid-cols-5 gap-6 items-start">
-                {/* KPI cards */}
-                <div className="xl:col-span-2 grid grid-cols-2 gap-3">
-                  {[
-                    {
-                      label: 'Общий балл', value: totalScore.toFixed(0),
-                      sub: '/ 100', color: scoreColor(totalScore), icon: 'stars',
-                    },
-                    {
-                      label: 'Health Index', value: healthIndex.toFixed(0),
-                      sub: '/ 100', color: scoreColor(healthIndex), icon: 'monitor_heart',
-                    },
-                    {
-                      label: 'Финансы', value: (pointA.blocks.finance.score / 10).toFixed(1),
-                      sub: '/ 10', color: scoreColor(pointA.blocks.finance.score), icon: 'paid',
-                    },
-                    {
-                      label: 'Продажи', value: (pointA.blocks.sales.score / 10).toFixed(1),
-                      sub: '/ 10', color: scoreColor(pointA.blocks.sales.score), icon: 'trending_up',
-                    },
-                  ].map(card => (
-                    <div key={card.label}
-                      className="bg-surface-container-low rounded-2xl p-5 border border-white/[0.04]">
-                      <div className="flex items-start justify-between mb-3">
-                        <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest">{card.label}</p>
-                        <span className="material-symbols-outlined text-base" style={{ color: card.color + '80' }}>{card.icon}</span>
-                      </div>
-                      <h3 className="text-3xl font-mono font-bold mb-2" style={{ color: card.color }}>{card.value}</h3>
-                      <p className="text-[10px] text-on-surface-variant">{card.sub}</p>
-                    </div>
-                  ))}
-                </div>
-                {/* Radar — prefer GRI Assessment if available, else Point A */}
-                <div className="xl:col-span-3">
+              <div className="grid grid-cols-1 xl:grid-cols-5 gap-6 items-start mt-6">
+                {/* Radar — kept (GRI radar owned by another agent) */}
+                <div className="xl:col-span-3 order-1">
                   {griAssessment ? (
                     <GRIAssessmentRadarWidget data={griAssessment} orgName={orgName} stage={pointA.stage} />
-                  ) : (
-                    <PointARadarWidget pointA={pointA} orgName={orgName} />
-                  )}
+                  ) : null}
+                </div>
+
+                {/* AI Insights carousel kept as its own small column */}
+                <div className="xl:col-span-2 order-2">
+                  <AIInsightsCarousel insights={buildLiveInsights(pointA)} />
                 </div>
               </div>
             ) : (
-              <div className="bg-surface-container-low border border-white/[0.04] rounded-2xl p-12 text-center">
+              <div className="bg-surface-container-low border border-white/[0.04] rounded-2xl p-10 text-center">
                 <span className="material-symbols-outlined text-5xl text-primary/20 mb-4 block">assignment</span>
                 <p className="text-on-surface font-medium mb-2">Анкета ещё не заполнена</p>
-                <p className="text-sm text-on-surface-variant mb-6">Заполните анкету, чтобы получить AI-диагностику вашего бизнеса</p>
-                <Link href="/client/onboarding"
-                  className="inline-flex items-center gap-2 bg-primary/10 hover:bg-primary/20 border border-primary/20 text-primary text-sm px-5 py-2.5 rounded-xl transition-all">
-                  <span className="material-symbols-outlined text-base">edit_note</span>
-                  Заполнить анкету
-                </Link>
+                <p className="text-sm text-on-surface-variant mb-6 max-w-md mx-auto">
+                  Заполните анкету и прикрепите финансовые документы — AI сформирует диагностику вашего бизнеса.
+                </p>
+                <div className="flex flex-wrap items-center justify-center gap-2.5">
+                  <Link href="/client/onboarding"
+                    className="inline-flex items-center gap-2 bg-primary/10 hover:bg-primary/20 border border-primary/30 hover:border-primary/50 text-primary text-sm px-5 py-2.5 rounded-xl transition-all">
+                    <span className="material-symbols-outlined text-base">edit_note</span>
+                    Заполнить анкету
+                  </Link>
+                  <Link href="/client/onboarding/documents"
+                    className="inline-flex items-center gap-2 bg-surface-container hover:bg-surface-container-high border border-white/[0.06] hover:border-primary/20 text-on-surface hover:text-primary text-sm px-5 py-2.5 rounded-xl transition-all">
+                    <span className="material-symbols-outlined text-base">upload_file</span>
+                    Прикрепить файлы
+                  </Link>
+                </div>
               </div>
             )}
           </section>
 
-          {/* Insights / Risks / Quick Wins from Point A engine */}
+          {/* Risks / Quick Wins from Point A engine (insights moved to right-rail carousel) */}
           {pointA && (
             <>
-              {pointA.insights.length > 0 && (
-                <section>
-                  <h2 className="text-xs font-mono text-primary/70 uppercase tracking-[0.2em] mb-3">Инсайты</h2>
-                  <div className="space-y-2">
-                    {pointA.insights.slice(0, 5).map((ins, i) => (
-                      <div key={i} className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-4 flex items-start gap-3">
-                        <span className="material-symbols-outlined text-primary/70 text-base mt-0.5">lightbulb</span>
-                        <div>
-                          <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest mb-1">{ins.area}</p>
-                          <p className="text-sm text-on-surface">{ins.text}</p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </section>
-              )}
-
               {pointA.risks.length > 0 && (
                 <section>
                   <h2 className="text-xs font-mono text-error/80 uppercase tracking-[0.2em] mb-3">Риски</h2>

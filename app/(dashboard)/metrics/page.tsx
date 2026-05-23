@@ -6,6 +6,7 @@ import { auth } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
 import MetricsPageClient from '@/components/metrics/MetricsPageClient'
 import { loadMetricsPageData } from '@/lib/metrics/page-data'
+import { OnboardingStatusBadges } from '@/components/dashboard/OnboardingStatusBadges'
 
 export const metadata: Metadata = { title: 'Метрики — AIStart360' }
 
@@ -43,11 +44,16 @@ export default async function MetricsPage() {
   const pageData = await loadMetricsPageData(userId)
 
   return (
-    <MetricsPageClient
-      userId={pageData.userId}
-      griAssessment={pageData.griAssessment}
-      company={pageData.company}
-      surveyAnswers={pageData.surveyAnswers}
-    />
+    <>
+      <div className="flex items-center justify-end gap-2 px-4 pt-4">
+        <OnboardingStatusBadges />
+      </div>
+      <MetricsPageClient
+        userId={pageData.userId}
+        griAssessment={pageData.griAssessment}
+        company={pageData.company}
+        surveyAnswers={pageData.surveyAnswers}
+      />
+    </>
   )
 }

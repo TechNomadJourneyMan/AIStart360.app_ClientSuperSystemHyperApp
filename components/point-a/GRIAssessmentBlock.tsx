@@ -255,49 +255,96 @@ export default async function GRIAssessmentBlock({ userId }: { userId: string })
         </Link>
       </div>
 
-      {/* Header: GRI score + delta */}
-      <div className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-6 mb-4">
-        <div className="flex flex-wrap items-end justify-between gap-6">
-          <div>
-            <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest mb-2">
-              GRI Index
-            </p>
-            <div className="flex items-baseline gap-3">
-              <span className={`text-6xl font-mono font-black ${status.tone.text}`}>
-                {griIndex.toFixed(1)}
-              </span>
-              <span className="text-xs font-mono text-on-surface-variant">/ 10</span>
-              {delta !== null && Math.abs(delta) >= 0.05 && (
-                <span
-                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-xl text-[11px] font-mono font-bold border ${
-                    delta > 0
-                      ? 'text-primary border-primary/20 bg-primary/5'
-                      : 'text-error border-error/20 bg-error/5'
-                  }`}
-                >
-                  <span className="material-symbols-outlined text-sm">
-                    {delta > 0 ? 'trending_up' : 'trending_down'}
-                  </span>
-                  {delta > 0 ? '+' : ''}
-                  {delta.toFixed(1)}
+      {/* Compact header: GRI summary (left) + quick-action CTAs (right) */}
+      <div className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-4 mb-4">
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 items-center">
+          {/* GRI summary — compact, single row */}
+          <div className="lg:col-span-2 flex flex-wrap items-baseline gap-3">
+            <div>
+              <p className="text-[9px] font-mono text-on-surface-variant uppercase tracking-[0.18em]">GRI Index</p>
+              <div className="flex items-baseline gap-1.5 mt-0.5">
+                <span className={`text-3xl font-mono font-black ${status.tone.text}`}>
+                  {griIndex.toFixed(1)}
                 </span>
-              )}
+                <span className="text-[10px] font-mono text-on-surface-variant">/ 10</span>
+              </div>
             </div>
-            <p className={`text-xs font-mono uppercase tracking-widest mt-3 ${status.tone.text}`}>
+            {delta !== null && Math.abs(delta) >= 0.05 && (
+              <span
+                className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[10px] font-mono font-bold border ${
+                  delta > 0
+                    ? 'text-primary border-primary/20 bg-primary/5'
+                    : 'text-error border-error/20 bg-error/5'
+                }`}
+              >
+                <span className="material-symbols-outlined text-[12px]">
+                  {delta > 0 ? 'trending_up' : 'trending_down'}
+                </span>
+                {delta > 0 ? '+' : ''}{delta.toFixed(1)}
+              </span>
+            )}
+            <span className={`text-[10px] font-mono uppercase tracking-widest px-1.5 py-0.5 rounded-md border ${status.tone.text} ${status.tone.border} ${status.tone.bg}`}>
               {status.label}
-            </p>
+            </span>
+            <div className="ml-auto text-right">
+              <p className="text-[9px] font-mono text-on-surface-variant uppercase tracking-widest">Цель</p>
+              <p className="text-sm font-mono font-bold text-primary">8.5+</p>
+            </div>
           </div>
-          <div className="text-right">
-            <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest">
-              Цель
-            </p>
-            <p className="text-2xl font-mono font-bold text-primary">8.5+</p>
+
+          {/* Quick-action CTAs — fills the previously-empty right zone */}
+          <div className="lg:col-span-3 grid grid-cols-2 lg:grid-cols-3 gap-1.5">
+            <Link
+              href="/gri"
+              className="flex items-center gap-1.5 bg-primary/10 hover:bg-primary/15 border border-primary/30 text-primary text-[11px] font-mono px-2.5 py-1.5 rounded-lg transition-colors"
+              title="Открыть калькулятор и пройти GRI заново"
+            >
+              <span className="material-symbols-outlined text-[14px]">play_arrow</span>
+              <span className="truncate">Пройти GRI</span>
+            </Link>
+            <Link
+              href="/client/onboarding"
+              className="flex items-center gap-1.5 bg-surface-container hover:bg-surface-container-high border border-white/[0.06] hover:border-primary/20 text-on-surface text-[11px] font-mono px-2.5 py-1.5 rounded-lg transition-colors"
+              title="Заполнить анкету или приложить документы"
+            >
+              <span className="material-symbols-outlined text-[14px] text-primary/70">edit_note</span>
+              <span className="truncate">Анкета · файлы</span>
+            </Link>
+            <Link
+              href="/gri"
+              className="flex items-center gap-1.5 bg-surface-container hover:bg-surface-container-high border border-white/[0.06] hover:border-primary/20 text-on-surface text-[11px] font-mono px-2.5 py-1.5 rounded-lg transition-colors"
+              title="Перейти к экспорту: «Скачать» в шапке калькулятора генерирует PDF"
+            >
+              <span className="material-symbols-outlined text-[14px] text-primary/70">download</span>
+              <span className="truncate">PDF отчёт</span>
+            </Link>
+            <Link
+              href="/point-b"
+              className="flex items-center gap-1.5 bg-surface-container hover:bg-surface-container-high border border-white/[0.06] hover:border-primary/20 text-on-surface text-[11px] font-mono px-2.5 py-1.5 rounded-lg transition-colors"
+              title="Сгенерировать стратегию роста на основе GRI"
+            >
+              <span className="material-symbols-outlined text-[14px] text-primary/70">auto_awesome</span>
+              <span className="truncate">Стратегия роста</span>
+            </Link>
+            <a
+              href="https://tidycal.com/istart/gtm"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1.5 bg-primary hover:bg-primary/90 text-on-primary text-[11px] font-mono px-2.5 py-1.5 rounded-lg transition-colors col-span-2 lg:col-span-1"
+              title="Записаться на консультацию с экспертом"
+            >
+              <span className="material-symbols-outlined text-[14px]">event_available</span>
+              <span className="truncate">Консультация</span>
+              <span className="material-symbols-outlined text-[12px] opacity-70 ml-auto">open_in_new</span>
+            </a>
           </div>
         </div>
       </div>
 
-      {/* 7-section bars */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+      {/* 7-section bars — use a 7-col equal grid on wide screens so all
+          sections fit on a single row without orphan cells. Falls back to
+          2/3/4 on smaller screens. */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-3 mb-6">
         {sectionBars.map(({ section, avg, trend }) => {
           const pct = (avg / 10) * 100
           const tone = colorForScore(avg)
@@ -306,21 +353,22 @@ export default async function GRIAssessmentBlock({ userId }: { userId: string })
           return (
             <div
               key={section.id}
-              className="bg-surface-container-low rounded-2xl border border-white/[0.04] hover:border-primary/10 p-5 transition-all"
+              className="bg-surface-container-low rounded-xl border border-white/[0.04] hover:border-primary/10 p-3 transition-all"
+              title={section.title}
             >
-              <div className="flex items-start justify-between mb-3">
+              <div className="flex items-start justify-between mb-2 gap-1">
                 <span
-                  className={`text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded-full border ${tone.text} ${tone.border} ${tone.bg}`}
+                  className={`text-[9px] font-mono font-bold uppercase px-1.5 py-0.5 rounded-md border ${tone.text} ${tone.border} ${tone.bg}`}
                 >
-                  {isCritical ? 'Критично' : isStrong ? 'Сильно' : 'Средне'}
+                  {isCritical ? 'Крит' : isStrong ? 'Сильно' : 'Средне'}
                 </span>
                 {trend !== null && (
                   <span
-                    className={`inline-flex items-center gap-0.5 text-[10px] font-mono ${
+                    className={`inline-flex items-center gap-0.5 text-[10px] font-mono tabular-nums ${
                       trend > 0 ? 'text-primary' : 'text-error'
                     }`}
                   >
-                    <span className="material-symbols-outlined text-sm">
+                    <span className="material-symbols-outlined text-[11px]">
                       {trend > 0 ? 'trending_up' : 'trending_down'}
                     </span>
                     {trend > 0 ? '+' : ''}
@@ -328,16 +376,16 @@ export default async function GRIAssessmentBlock({ userId }: { userId: string })
                   </span>
                 )}
               </div>
-              <h3 className="text-sm font-bold text-on-surface mb-3">{section.shortTitle}</h3>
-              <div className="flex items-end justify-between mb-2">
-                <span className="text-3xl font-mono font-bold text-on-surface">{avg.toFixed(1)}</span>
-                <span className="text-[10px] text-on-surface-variant font-mono uppercase tracking-widest">
-                  / 10
-                </span>
+              <h3 className="text-[11px] font-bold text-on-surface mb-2 leading-tight line-clamp-2 min-h-[28px]">
+                {section.shortTitle}
+              </h3>
+              <div className="flex items-baseline gap-1 mb-1.5">
+                <span className="text-xl font-mono font-bold text-on-surface tabular-nums">{avg.toFixed(1)}</span>
+                <span className="text-[9px] text-on-surface-variant font-mono">/ 10</span>
               </div>
-              <div className="h-1.5 bg-surface-container rounded-full overflow-hidden border border-white/[0.02]">
+              <div className="h-1 bg-surface-container rounded-full overflow-hidden">
                 <div
-                  className={`h-full rounded-full transition-all duration-1000 ${tone.bar}`}
+                  className={`h-full rounded-full transition-all duration-700 ${tone.bar}`}
                   style={{ width: `${pct}%` }}
                 />
               </div>

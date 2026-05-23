@@ -8,6 +8,7 @@ import { useUIStore } from '@/stores/ui.store'
 import { useAuthStore } from '@/stores/auth.store'
 import { getPrimaryNavForRole, getSecondaryNavForRole } from '@/lib/navigation'
 import type { NavItem, UserRole } from '@/types'
+import { UploadFilesNavItem } from './UploadFilesNavItem'
 
 export function Sidebar() {
   const pathname = usePathname()
@@ -311,6 +312,9 @@ export function Sidebar() {
             </Link>
           )
         })}
+
+        {/* Upload files quick-action — pulses brightly when no docs uploaded */}
+        <UploadFilesNavItem collapsed={sidebarCollapsed} />
 
         {/* Divider */}
         <div className="mx-3 my-1.5 border-t border-white/[0.04]" />

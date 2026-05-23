@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import type { RFMResult, RFMSegmentRow } from '@/types/point-a-v3'
 import type { ApiResult } from '@/types/onboarding'
+import { CRMConnectModal } from './CRMConnectModal'
 
 const h = React.createElement
 
@@ -74,6 +75,73 @@ export interface RFMSegmentsGridViewProps {
   isLoading?: boolean
   isError?: boolean
   hasClientBase?: boolean
+}
+
+function RFMActionsCard() {
+  const [crmOpen, setCrmOpen] = useState(false)
+  return (
+    <>
+      <div
+        data-testid="rfm-actions-cta"
+        className="rounded-2xl border border-primary/30 bg-gradient-to-br from-primary/[0.07] to-primary/[0.02] p-4 flex flex-col gap-3"
+      >
+        <div className="flex items-start gap-2">
+          <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-primary/15 text-primary flex-shrink-0">
+            <span className="material-symbols-outlined text-base" aria-hidden="true">
+              rocket_launch
+            </span>
+          </div>
+          <div className="min-w-0">
+            <p className="text-[10px] font-mono uppercase tracking-widest text-primary/70">
+              Усилить базу
+            </p>
+            <h3 className="text-sm font-bold text-on-surface leading-tight">
+              Подключите данные клиентов
+            </h3>
+          </div>
+        </div>
+        <p className="text-[11px] text-on-surface-variant leading-snug">
+          Чтобы RFM-сегментация была точнее — подгрузите базу или подключите CRM. Запустим персональные сценарии для каждого сегмента.
+        </p>
+        <div className="flex flex-col gap-1.5 mt-auto">
+          <a
+            href="/client/onboarding/documents"
+            className="inline-flex items-center justify-between gap-2 bg-primary/10 hover:bg-primary/15 border border-primary/30 text-primary text-[11px] font-mono px-2.5 py-1.5 rounded-lg transition-colors"
+          >
+            <span className="inline-flex items-center gap-1.5">
+              <span className="material-symbols-outlined text-[14px]">upload_file</span>
+              Прикрепить базу клиентов
+            </span>
+            <span className="material-symbols-outlined text-[12px] opacity-60">arrow_forward</span>
+          </a>
+          <button
+            type="button"
+            onClick={() => setCrmOpen(true)}
+            className="inline-flex items-center justify-between gap-2 bg-surface-container hover:bg-surface-container-high border border-white/[0.06] hover:border-primary/30 text-on-surface hover:text-primary text-[11px] font-mono px-2.5 py-1.5 rounded-lg transition-colors"
+          >
+            <span className="inline-flex items-center gap-1.5">
+              <span className="material-symbols-outlined text-[14px] text-primary/70">sync_alt</span>
+              Подключить CRM
+            </span>
+            <span className="material-symbols-outlined text-[12px] opacity-60">add</span>
+          </button>
+          <a
+            href="https://tidycal.com/istart/gtm"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center justify-between gap-2 bg-primary text-on-primary hover:bg-primary/90 text-[11px] font-mono px-2.5 py-1.5 rounded-lg transition-colors"
+          >
+            <span className="inline-flex items-center gap-1.5">
+              <span className="material-symbols-outlined text-[14px]">event_available</span>
+              Обсудить с экспертом
+            </span>
+            <span className="material-symbols-outlined text-[12px] opacity-70">open_in_new</span>
+          </a>
+        </div>
+      </div>
+      <CRMConnectModal open={crmOpen} onClose={() => setCrmOpen(false)} />
+    </>
+  )
 }
 
 export function RFMSegmentsGridView(props: RFMSegmentsGridViewProps) {
@@ -272,6 +340,10 @@ export function RFMSegmentsGridView(props: RFMSegmentsGridViewProps) {
         ),
       )
     }),
+    // 8th cell — fills the orphan slot with quick-action CTAs (attach base,
+    // connect CRM, talk to expert). Always rendered so the grid stays
+    // symmetric on xl:grid-cols-4.
+    h(RFMActionsCard, { key: 'rfm-actions' }),
   )
 
   return h('div', null, banner, grid)

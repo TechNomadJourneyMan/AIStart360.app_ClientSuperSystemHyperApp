@@ -1,71 +1,79 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-
-// ─── Helpers ──────────────────────────────────────────────────────────────
-
-const FX_RATE_USD_KZT = 450
-
-/**
- * Parse a Russian/English revenue string into KZT.
- * Accepts:
- *   "360 млн ₸"  → 360_000_000
- *   "1.5 млрд"    → 1_500_000_000
- *   "$2M ARR"     → 900_000_000 (via FX)
- *   "200000000"   → 200_000_000
- */
-function parseAmount(raw: string): number | null {
-  if (!raw.trim()) return null
-  const cleaned = raw.replace(/\s/g, '').toLowerCase()
-  const numMatch = cleaned.match(/([0-9]+([.,][0-9]+)?)/)
-  if (!numMatch) return null
-  const n = parseFloat(numMatch[1].replace(',', '.'))
-  if (!Number.isFinite(n)) return null
-
-  let multiplier = 1
-  if (/млрд|b(?!yte)|bn|billion/i.test(cleaned)) multiplier = 1_000_000_000
-  else if (/млн|m(?!s)|million/i.test(cleaned)) multiplier = 1_000_000
-  else if (/тыс|k(?!g)/i.test(cleaned)) multiplier = 1_000
-
-  let kzt = n * multiplier
-  if (/\$|usd|долл/i.test(cleaned)) kzt *= FX_RATE_USD_KZT
-  return Math.round(kzt)
-}
-
-function formatKzt(value: number | null): string {
-  if (value === null) return ''
-  if (value >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(1).replace('.0', '')} млрд ₸`
-  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(0)} млн ₸`
-  if (value >= 1_000) return `${(value / 1_000).toFixed(0)} тыс ₸`
-  return `${value.toLocaleString('ru-RU')} ₸`
-}
-
-// ─── Component ────────────────────────────────────────────────────────────
+import { parseAmount, formatKzt } from '@/lib/format/kzt'
 
 interface TargetsData {
   target_revenue_12m_kzt: number | null
   target_revenue_3y_kzt: number | null
 }
 
+interface PeriodGoals {
+  goal_week: string | null
+  goal_month: string | null
+}
+
 export default function RevenueTargetsCard() {
   const [data, setData] = useState<TargetsData | null>(null)
+  const [periodGoals, setPeriodGoals] = useState<PeriodGoals>({ goal_week: null, goal_month: null })
   const [editing, setEditing] = useState(false)
+  const [editingGoals, setEditingGoals] = useState(false)
   const [draft12m, setDraft12m] = useState('')
   const [draft3y, setDraft3y] = useState('')
+  const [draftWeek, setDraftWeek] = useState('')
+  const [draftMonth, setDraftMonth] = useState('')
   const [saving, setSaving] = useState(false)
+  const [savingGoals, setSavingGoals] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     try {
-      const r = await fetch('/api/v1/companies/targets', { credentials: 'include' })
-      const j = await r.json()
-      if (j.ok) setData(j.data)
+      const [targetsRes, goalsRes] = await Promise.all([
+        fetch('/api/v1/companies/targets', { credentials: 'include' }),
+        fetch('/api/v1/companies/period-goals', { credentials: 'include' }),
+      ])
+      const targetsJ = await targetsRes.json()
+      const goalsJ = await goalsRes.json()
+      if (targetsJ.ok) setData(targetsJ.data)
+      if (goalsJ.ok) setPeriodGoals(goalsJ.data)
     } catch {
-      // empty state — let user enter targets
+      // empty state
     }
   }, [])
 
   useEffect(() => { load() }, [load])
+
+  const startEditGoals = () => {
+    setDraftWeek(periodGoals.goal_week ?? '')
+    setDraftMonth(periodGoals.goal_month ?? '')
+    setEditingGoals(true)
+  }
+
+  const saveGoals = async () => {
+    setSavingGoals(true)
+    try {
+      const r = await fetch('/api/v1/companies/period-goals', {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          goal_week: draftWeek.trim() || null,
+          goal_month: draftMonth.trim() || null,
+        }),
+      })
+      const j = await r.json()
+      if (!j.ok) throw new Error(j.error || 'Ошибка сохранения')
+      setPeriodGoals({
+        goal_week: draftWeek.trim() || null,
+        goal_month: draftMonth.trim() || null,
+      })
+      setEditingGoals(false)
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setSavingGoals(false)
+    }
+  }
 
   const startEdit = () => {
     setDraft12m(data?.target_revenue_12m_kzt ? formatKzt(data.target_revenue_12m_kzt) : '')
@@ -94,11 +102,7 @@ export default function RevenueTargetsCard() {
       if (!j.ok) throw new Error(j.error || 'Ошибка сохранения')
       setData(j.data)
       setEditing(false)
-      // Trigger a global re-fetch by reloading the page once.
-      if (typeof window !== 'undefined') {
-        // Use a soft reload — keeps scroll position, refreshes server data.
-        window.location.reload()
-      }
+      if (typeof window !== 'undefined') window.location.reload()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Ошибка')
     } finally {
@@ -106,67 +110,12 @@ export default function RevenueTargetsCard() {
     }
   }
 
-  return (
-    <section
-      className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-5"
-      aria-label="Цели по выручке"
-    >
-      <div className="flex items-start justify-between mb-4">
-        <div>
-          <p className="text-[10px] font-mono text-primary/70 uppercase tracking-widest mb-1">
-            Цели · план роста
-          </p>
-          <h3 className="font-headline text-base font-bold text-on-surface">
-            Целевая выручка
-          </h3>
-          <p className="text-xs text-on-surface-variant mt-1">
-            Без целей таблица «План vs Факт» не сможет посчитать % выполнения.
-          </p>
-        </div>
-        {!editing && (
-          <button
-            type="button"
-            onClick={startEdit}
-            className="inline-flex items-center gap-1.5 text-xs font-mono text-primary hover:text-primary/80 transition-colors px-3 py-1.5 rounded-lg border border-primary/30 hover:border-primary/60"
-          >
-            <span className="material-symbols-outlined text-base">
-              {data?.target_revenue_12m_kzt || data?.target_revenue_3y_kzt ? 'edit' : 'add'}
-            </span>
-            {data?.target_revenue_12m_kzt || data?.target_revenue_3y_kzt ? 'Изменить' : 'Задать цели'}
-          </button>
-        )}
-      </div>
+  const hasTargets = Boolean(data?.target_revenue_12m_kzt || data?.target_revenue_3y_kzt)
+  const hasGoals = Boolean(periodGoals.goal_week || periodGoals.goal_month)
 
-      {!editing ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="bg-surface-container rounded-xl p-4 border border-white/[0.03]">
-            <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest mb-2">
-              План на 12 месяцев
-            </p>
-            <p className="text-xl font-mono font-bold text-primary">
-              {data?.target_revenue_12m_kzt ? formatKzt(data.target_revenue_12m_kzt) : '—'}
-            </p>
-            <p className="text-[10px] text-on-surface-variant mt-1.5 font-mono">
-              {data?.target_revenue_12m_kzt
-                ? `${formatKzt(Math.round(data.target_revenue_12m_kzt / 12))} в месяц`
-                : 'Не задано'}
-            </p>
-          </div>
-          <div className="bg-surface-container rounded-xl p-4 border border-white/[0.03]">
-            <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest mb-2">
-              План на 3 года
-            </p>
-            <p className="text-xl font-mono font-bold text-primary">
-              {data?.target_revenue_3y_kzt ? formatKzt(data.target_revenue_3y_kzt) : '—'}
-            </p>
-            <p className="text-[10px] text-on-surface-variant mt-1.5 font-mono">
-              {data?.target_revenue_3y_kzt
-                ? `${formatKzt(Math.round(data.target_revenue_3y_kzt / 36))} в месяц (средн.)`
-                : 'Не задано'}
-            </p>
-          </div>
-        </div>
-      ) : (
+  if (editing) {
+    return (
+      <section className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-3.5">
         <div className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
@@ -181,9 +130,7 @@ export default function RevenueTargetsCard() {
                 className="w-full bg-surface-container border border-white/[0.06] rounded-xl px-3 py-2 text-sm font-mono text-on-surface focus:outline-none focus:border-primary/40"
               />
               <p className="text-[10px] text-on-surface-variant mt-1 font-mono">
-                {parseAmount(draft12m) !== null
-                  ? `= ${formatKzt(parseAmount(draft12m))}`
-                  : 'Введите сумму'}
+                {parseAmount(draft12m) !== null ? `= ${formatKzt(parseAmount(draft12m))}` : 'Введите сумму'}
               </p>
             </div>
             <div>
@@ -198,17 +145,11 @@ export default function RevenueTargetsCard() {
                 className="w-full bg-surface-container border border-white/[0.06] rounded-xl px-3 py-2 text-sm font-mono text-on-surface focus:outline-none focus:border-primary/40"
               />
               <p className="text-[10px] text-on-surface-variant mt-1 font-mono">
-                {parseAmount(draft3y) !== null
-                  ? `= ${formatKzt(parseAmount(draft3y))}`
-                  : 'Введите сумму'}
+                {parseAmount(draft3y) !== null ? `= ${formatKzt(parseAmount(draft3y))}` : 'Введите сумму'}
               </p>
             </div>
           </div>
-
-          {error && (
-            <p className="text-xs text-error font-mono">{error}</p>
-          )}
-
+          {error && <p className="text-xs text-error font-mono">{error}</p>}
           <div className="flex items-center gap-2">
             <button
               type="button"
@@ -228,7 +169,177 @@ export default function RevenueTargetsCard() {
             </button>
           </div>
         </div>
-      )}
+      </section>
+    )
+  }
+
+  return (
+    <section
+      aria-label="Цели по выручке"
+      className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-3.5 space-y-2.5"
+    >
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <div className="w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center">
+            <span className="material-symbols-outlined text-[14px] text-primary">flag</span>
+          </div>
+          <div>
+            <p className="text-[9px] font-mono text-primary/60 uppercase tracking-[0.18em]">Цели · план роста</p>
+            <h3 className="font-headline text-[13px] font-bold text-on-surface leading-tight">Целевая выручка</h3>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 flex-1 min-w-[200px]">
+          <div className="bg-surface-container rounded-xl px-3 py-2 border border-white/[0.03] min-w-[140px]">
+            <span className="text-[9px] font-mono text-on-surface-variant uppercase tracking-widest block">12 мес</span>
+            <span className="text-sm font-mono font-bold text-primary leading-tight block">
+              {data?.target_revenue_12m_kzt ? formatKzt(data.target_revenue_12m_kzt) : '—'}
+            </span>
+            <span className="text-[9px] font-mono text-on-surface-variant/70 block">
+              {data?.target_revenue_12m_kzt ? `${formatKzt(Math.round(data.target_revenue_12m_kzt / 12))} / мес` : 'Не задано'}
+            </span>
+          </div>
+          <div className="bg-surface-container rounded-xl px-3 py-2 border border-white/[0.03] min-w-[140px]">
+            <span className="text-[9px] font-mono text-on-surface-variant uppercase tracking-widest block">3 года</span>
+            <span className="text-sm font-mono font-bold text-primary leading-tight block">
+              {data?.target_revenue_3y_kzt ? formatKzt(data.target_revenue_3y_kzt) : '—'}
+            </span>
+            <span className="text-[9px] font-mono text-on-surface-variant/70 block">
+              {data?.target_revenue_3y_kzt ? `${formatKzt(Math.round(data.target_revenue_3y_kzt / 36))} / мес (ср.)` : 'Не задано'}
+            </span>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 flex-shrink-0 ml-auto">
+          {hasTargets && (
+            <a
+              href="/point-b"
+              className="inline-flex items-center gap-1 text-[11px] font-mono text-primary hover:text-primary/80 transition-colors px-2.5 py-1.5 rounded-lg bg-primary/10 hover:bg-primary/15 border border-primary/20"
+            >
+              <span className="material-symbols-outlined text-[14px]">trending_up</span>
+              План vs Факт
+            </a>
+          )}
+          <button
+            type="button"
+            onClick={startEdit}
+            className="inline-flex items-center gap-1 text-[11px] font-mono text-primary hover:text-primary/80 transition-colors px-2.5 py-1.5 rounded-lg border border-primary/30 hover:border-primary/60"
+          >
+            <span className="material-symbols-outlined text-[14px]">{hasTargets ? 'edit' : 'add'}</span>
+            {hasTargets ? 'Изменить' : 'Задать'}
+          </button>
+          <a
+            href="https://tidycal.com/istart/gtm"
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Спланировать рост и обсудить достижение целей с экспертом"
+            className="inline-flex items-center gap-1 text-[11px] font-mono text-on-primary bg-primary hover:bg-primary/90 transition-colors px-2.5 py-1.5 rounded-lg"
+          >
+            <span className="material-symbols-outlined text-[14px]">trending_up</span>
+            <span className="hidden sm:inline">Спланировать рост</span>
+            <span className="sm:hidden">Рост</span>
+            <span className="material-symbols-outlined text-[12px] opacity-70">open_in_new</span>
+          </a>
+        </div>
+      </div>
+
+      <div className="pt-2 border-t border-white/[0.04]">
+        {editingGoals ? (
+          <div className="space-y-2">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              <div>
+                <label className="block text-[9px] font-mono text-on-surface-variant uppercase tracking-widest mb-1">
+                  Цель · Неделя
+                </label>
+                <input
+                  type="text"
+                  value={draftWeek}
+                  onChange={(e) => setDraftWeek(e.target.value)}
+                  placeholder="например: закрыть 5 сделок"
+                  className="w-full bg-surface-container border border-white/[0.06] rounded-lg px-2.5 py-1.5 text-xs text-on-surface focus:outline-none focus:border-primary/40"
+                />
+              </div>
+              <div>
+                <label className="block text-[9px] font-mono text-on-surface-variant uppercase tracking-widest mb-1">
+                  Цель · Месяц
+                </label>
+                <input
+                  type="text"
+                  value={draftMonth}
+                  onChange={(e) => setDraftMonth(e.target.value)}
+                  placeholder="например: выручка 30 млн ₸"
+                  className="w-full bg-surface-container border border-white/[0.06] rounded-lg px-2.5 py-1.5 text-xs text-on-surface focus:outline-none focus:border-primary/40"
+                />
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={saveGoals}
+                disabled={savingGoals}
+                className="px-3 py-1.5 rounded-lg bg-primary text-on-primary text-[11px] font-mono font-bold uppercase hover:bg-primary/90 disabled:opacity-50 transition-colors"
+              >
+                {savingGoals ? 'Сохраняем…' : 'Сохранить'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditingGoals(false)}
+                disabled={savingGoals}
+                className="px-3 py-1.5 rounded-lg text-[11px] font-mono text-on-surface-variant hover:text-on-surface transition-colors"
+              >
+                Отмена
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex flex-wrap items-start gap-3">
+            <div className="flex flex-wrap gap-3 flex-1 min-w-[200px]">
+              <div className="flex items-start gap-2 min-w-[200px] flex-1">
+                <span className="material-symbols-outlined text-[14px] text-primary/70 mt-0.5 flex-shrink-0">
+                  calendar_view_week
+                </span>
+                <div className="min-w-0">
+                  <p className="text-[9px] font-mono text-on-surface-variant uppercase tracking-widest mb-0.5">
+                    Цель · Неделя
+                  </p>
+                  <p className="text-xs leading-snug">
+                    {periodGoals.goal_week ? (
+                      <span className="text-on-surface">{periodGoals.goal_week}</span>
+                    ) : (
+                      <span className="text-on-surface-variant/70">Не задана — нажмите «Изменить цели»</span>
+                    )}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-start gap-2 min-w-[200px] flex-1">
+                <span className="material-symbols-outlined text-[14px] text-primary/70 mt-0.5 flex-shrink-0">
+                  calendar_month
+                </span>
+                <div className="min-w-0">
+                  <p className="text-[9px] font-mono text-on-surface-variant uppercase tracking-widest mb-0.5">
+                    Цель · Месяц
+                  </p>
+                  <p className="text-xs leading-snug">
+                    {periodGoals.goal_month ? (
+                      <span className="text-on-surface">{periodGoals.goal_month}</span>
+                    ) : (
+                      <span className="text-on-surface-variant/70">Не задана — нажмите «Изменить цели»</span>
+                    )}
+                  </p>
+                </div>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={startEditGoals}
+              className="inline-flex items-center gap-1 text-[11px] font-mono text-primary hover:text-primary/80 transition-colors px-2.5 py-1.5 rounded-lg border border-primary/30 hover:border-primary/60 flex-shrink-0"
+            >
+              <span className="material-symbols-outlined text-[14px]">{hasGoals ? 'edit' : 'add'}</span>
+              {hasGoals ? 'Изменить цели' : 'Задать цели'}
+            </button>
+          </div>
+        )}
+      </div>
     </section>
   )
 }

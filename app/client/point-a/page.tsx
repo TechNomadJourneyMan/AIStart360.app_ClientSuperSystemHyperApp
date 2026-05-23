@@ -7,6 +7,8 @@ import { createClient } from '@/lib/supabase-client'
 import type { Diagnostic, BlockScore, Risk, Insight, QuickWin, AIAnalysis, AIStatus } from '@/types/onboarding'
 import PointAIntelligenceSection from '@/components/point-a/PointAIntelligenceSection'
 import PointADashboardSectionsBoundary from '@/components/dashboard/PointADashboardSections'
+import GrowthSnapshotHero from '@/components/dashboard/GrowthSnapshotHero'
+import MyDataSection from '@/components/client/MyDataSection'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function blockLabel(status: string | undefined): { text: string; color: string } {
@@ -259,7 +261,7 @@ export default function PointAClientPage() {
     <div className="min-h-screen bg-[#0A0B0F]">
       {/* Header */}
       <header className="sticky top-0 z-20 bg-[#0A0B0F]/90 backdrop-blur border-b border-white/[0.06] px-6 py-4">
-        <div className="max-w-3xl mx-auto flex items-center justify-between">
+        <div className="max-w-7xl mx-auto flex items-center justify-between">
           <Image src="/logo.svg" alt="AIStart360" width={120} height={22} />
           <div className="flex items-center gap-2 flex-wrap">
             <Link href="/dashboard" className="text-xs font-mono text-on-surface-variant hover:text-primary border border-white/[0.08] hover:border-primary/30 rounded-lg px-3 py-1.5 transition-all flex items-center gap-1.5">
@@ -293,7 +295,7 @@ export default function PointAClientPage() {
         </div>
       </header>
 
-      <main className="max-w-3xl mx-auto px-6 py-8 space-y-8">
+      <main className="max-w-7xl mx-auto px-6 py-8 space-y-8">
 
         {isLoading ? (
           <div className="flex items-center justify-center py-20">
@@ -321,10 +323,9 @@ export default function PointAClientPage() {
           </div>
         ) : (
           <>
-            {/* 1. Hero Block */}
+            {/* 1. Welcome Hero — company name + health gauge at the very top */}
             <section className="bg-surface-container-low rounded-2xl border border-white/[0.06] p-6">
               <div className="flex flex-col md:flex-row items-center md:items-start gap-6">
-                {/* Gauge */}
                 <div className="relative flex-shrink-0">
                   <ScoreGauge score={score} size={140} />
                   <div className="absolute inset-0 flex flex-col items-center justify-center">
@@ -332,14 +333,15 @@ export default function PointAClientPage() {
                     <span className="text-xs text-on-surface-variant">/10</span>
                   </div>
                 </div>
-
-                {/* Info */}
                 <div className="flex-1 text-center md:text-left">
                   <p className="text-xs font-mono text-primary/70 uppercase tracking-[0.2em] mb-2">Индекс здоровья бизнеса</p>
                   <h1 className="font-headline text-2xl font-extrabold text-on-surface mb-1">
                     Добро пожаловать{company?.name ? `, ${company.name}` : ''}!
                   </h1>
-                  <div className="flex flex-wrap gap-3 justify-center md:justify-start mt-3">
+                  <p className="text-xs text-on-surface-variant max-w-md mx-auto md:mx-0">
+                    Ваш отчёт по Точке А — снимок текущего состояния, цели на 1–3 года, диагностика по 7 блокам и данные анкеты в одном месте.
+                  </p>
+                  <div className="flex flex-wrap gap-2 justify-center md:justify-start mt-3">
                     {company?.industry && (
                       <span className="flex items-center gap-1.5 text-xs bg-surface-container px-3 py-1.5 rounded-lg text-on-surface-variant">
                         <span className="material-symbols-outlined text-sm">business</span>
@@ -356,12 +358,22 @@ export default function PointAClientPage() {
                       <span className="material-symbols-outlined text-sm">calendar_today</span>
                       {today}
                     </span>
+                    <a
+                      href="#my-data"
+                      className="flex items-center gap-1.5 text-xs bg-primary/10 hover:bg-primary/15 border border-primary/30 px-3 py-1.5 rounded-lg text-primary transition-colors"
+                    >
+                      <span className="material-symbols-outlined text-sm">folder_managed</span>
+                      Мои данные
+                    </a>
                   </div>
                 </div>
               </div>
             </section>
 
-            {/* New spec-driven cabinet sections (Top Sales Table,
+            {/* 2. Growth Snapshot Hero — Точка А snapshot + AI карта роста + GRI */}
+            <GrowthSnapshotHero />
+
+            {/* 3. New spec-driven cabinet sections (Top Sales Table,
                 Retention Curve, 6 metric blocks, RFM, Loss Map) */}
             <PointADashboardSectionsBoundary />
 
@@ -594,6 +606,10 @@ export default function PointAClientPage() {
                 </Link>
               </div>
             </section>
+
+            {/* My Data — merged from former /client/my-data: survey answers
+                grouped by step + uploaded documents list. Anchored at #my-data. */}
+            <MyDataSection userId={userId} />
           </>
         )}
       </main>

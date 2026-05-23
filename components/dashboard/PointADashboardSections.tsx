@@ -7,7 +7,10 @@ import { RetentionCurveWidget } from './RetentionCurveWidget'
 import { MetricBlockV3List } from './MetricBlockV3'
 import { RFMSegmentsGrid } from './RFMSegmentsGrid'
 import { LossMapCard } from './LossMapCard'
-import RevenueTargetsCard from './RevenueTargetsCard'
+// RevenueTargetsCard intentionally not rendered here — the new
+// GrowthSnapshotHero (mounted at the top of /dashboard, /point-a,
+// /client/dashboard, /client/point-a) now owns targets + period goals
+// + planning CTAs. The file is kept in the repo for other consumers.
 
 /**
  * PointADashboardSections — bundles the new spec-driven dashboard
@@ -25,10 +28,6 @@ export function PointADashboardSections() {
 
   return (
     <div className="space-y-10">
-      {/* Revenue targets — must come BEFORE filter/top-table so users
-          can set 12m + 3y plans that drive the План/Факт math. */}
-      <RevenueTargetsCard />
-
       {/* Filter bar */}
       <section>
         <div className="flex items-end justify-between mb-3">

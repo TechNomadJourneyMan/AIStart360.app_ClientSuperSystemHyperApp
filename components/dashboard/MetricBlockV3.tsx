@@ -82,6 +82,15 @@ export function MetricBlockV3Card({
       ? 0
       : Math.round(((metrics.length - noDataCount) / metrics.length) * 100)
 
+  const barColor =
+    criticalCount > 0
+      ? 'bg-error'
+      : filledPct >= 60
+      ? 'bg-primary'
+      : filledPct >= 20
+      ? 'bg-amber-400'
+      : 'bg-on-surface-variant/40'
+
   return (
     <section
       data-testid={`metric-block-${blockId}`}
@@ -90,54 +99,61 @@ export function MetricBlockV3Card({
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-center justify-between gap-4 p-5 hover:bg-white/[0.02] transition-colors text-left focus:outline-none focus:ring-2 focus:ring-primary/40"
+        className="w-full flex items-center justify-between gap-3 px-3 py-2.5 hover:bg-white/[0.02] transition-colors text-left focus:outline-none focus:ring-2 focus:ring-primary/40"
         aria-expanded={open}
         aria-controls={`metric-block-body-${blockId}`}
       >
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+        <div className="flex items-center gap-2.5 min-w-0 flex-1">
+          <div className="w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
             <span
-              className="material-symbols-outlined text-base text-primary"
+              className="material-symbols-outlined text-[14px] text-primary"
               aria-hidden="true"
             >
               {BLOCK_ICON[blockId]}
             </span>
           </div>
-          <div>
-            <p className="text-[10px] font-mono uppercase tracking-[0.2em] text-primary/70">
-              Блок {def.order}
-            </p>
-            <h3 className="font-headline text-base font-bold text-on-surface">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-baseline gap-1.5">
+              <span className="text-[9px] font-mono uppercase tracking-[0.18em] text-primary/60">
+                Блок {def.order}
+              </span>
+              {criticalCount > 0 && (
+                <span className="text-[9px] font-mono uppercase text-error">· {criticalCount} крит.</span>
+              )}
+            </div>
+            <h3 className="font-headline text-[13px] font-bold text-on-surface truncate leading-snug">
               {def.label_ru}
             </h3>
+            <div className="flex items-center gap-2 mt-1">
+              <div className="h-1 flex-1 bg-surface-container rounded-full overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all duration-500 ${barColor}`}
+                  style={{ width: `${filledPct}%` }}
+                />
+              </div>
+              <span className="text-[10px] font-mono text-on-surface-variant tabular-nums flex-shrink-0">
+                {filledPct}%
+              </span>
+            </div>
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
-          <div className="hidden sm:flex items-center gap-3 text-[10px] font-mono uppercase tracking-widest">
-            {criticalCount > 0 && (
-              <span className="text-error">{criticalCount} крит.</span>
-            )}
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <div className="hidden md:flex items-center gap-1.5 text-[9px] font-mono uppercase">
             {goodCount > 0 && (
-              <span className="text-primary">{goodCount} норма</span>
+              <span className="text-primary px-1.5 py-0.5 rounded bg-primary/10">
+                {goodCount}
+              </span>
             )}
             {noDataCount > 0 && (
-              <span className="text-on-surface-variant">
-                {noDataCount} нет данных
+              <span className="text-on-surface-variant px-1.5 py-0.5 rounded bg-surface-container">
+                {noDataCount}
               </span>
             )}
           </div>
-          <div className="text-right">
-            <p className="text-xs font-mono font-bold text-on-surface">
-              {filledPct}%
-            </p>
-            <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest">
-              заполнено
-            </p>
-          </div>
           <span
-            className={`material-symbols-outlined text-base text-on-surface-variant transition-transform ${
-              open ? 'rotate-180' : ''
+            className={`material-symbols-outlined text-base text-on-surface-variant transition-transform duration-300 ease-out ${
+              open ? 'rotate-180 text-primary' : ''
             }`}
             aria-hidden="true"
           >
@@ -153,19 +169,41 @@ export function MetricBlockV3Card({
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.25, ease: 'easeOut' }}
+            transition={{
+              height: { duration: 0.35, ease: [0.22, 1, 0.36, 1] },
+              opacity: { duration: 0.25, ease: 'easeOut' },
+            }}
             className="overflow-hidden"
           >
-            <div className="border-t border-white/[0.04] px-5 py-4">
-              <p className="text-xs text-on-surface-variant mb-3 leading-relaxed">
+            <motion.div
+              className="border-t border-white/[0.04] px-3 py-3"
+              initial={{ y: -4 }}
+              animate={{ y: 0 }}
+              exit={{ y: -4 }}
+              transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
+            >
+              <p className="text-[11px] text-on-surface-variant mb-2 leading-snug">
                 {def.description_ru}
               </p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+              <motion.div
+                className="grid grid-cols-1 sm:grid-cols-2 gap-2"
+                initial="closed"
+                animate="open"
+                variants={{
+                  open: { transition: { staggerChildren: 0.035, delayChildren: 0.08 } },
+                  closed: {},
+                }}
+              >
                 {metrics.map((m) => {
                   const status = STATUS_META[m.status] ?? STATUS_META.no_data
                   return (
-                    <div
+                    <motion.div
                       key={m.key}
+                      variants={{
+                        open: { opacity: 1, y: 0, scale: 1 },
+                        closed: { opacity: 0, y: 6, scale: 0.98 },
+                      }}
+                      transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
                       className={`rounded-xl border border-white/[0.04] p-3 ${status.bg}`}
                     >
                       <div className="flex items-start justify-between mb-1">
@@ -190,11 +228,11 @@ export function MetricBlockV3Card({
                       <p className="text-[10px] font-mono text-on-surface-variant mt-1 truncate">
                         Цель: {String(m.target)}
                       </p>
-                    </div>
+                    </motion.div>
                   )
                 })}
-              </div>
-            </div>
+              </motion.div>
+            </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
@@ -236,11 +274,14 @@ export function MetricBlockV3List() {
 
   if (isLoading) {
     return (
-      <div className="space-y-3" data-testid="metric-block-v3-skeleton">
+      <div
+        className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2"
+        data-testid="metric-block-v3-skeleton"
+      >
         {Array.from({ length: 6 }).map((_, i) => (
           <div
             key={i}
-            className="h-20 rounded-2xl border border-white/[0.04] bg-surface-container-low animate-pulse"
+            className="h-14 rounded-2xl border border-white/[0.04] bg-surface-container-low animate-pulse"
           />
         ))}
       </div>
@@ -264,7 +305,7 @@ export function MetricBlockV3List() {
   }
 
   return (
-    <div className="space-y-3">
+    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2 auto-rows-min">
       {V3_BLOCKS.map((def) => {
         const block = payload.blocks[def.id]
         const metrics = Object.values(block) as V3Metric[]
@@ -273,7 +314,7 @@ export function MetricBlockV3List() {
             key={def.id}
             blockId={def.id}
             metrics={metrics}
-            defaultOpen={def.id === 'sales'}
+            defaultOpen={false}
           />
         )
       })}

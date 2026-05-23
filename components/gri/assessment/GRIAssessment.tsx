@@ -160,8 +160,61 @@ export default function GRIAssessment() {
   const postedRef = useRef(false)
 
   useEffect(() => {
-    setState(loadState())
+    const local = loadState()
+    setState(local)
     setHydrated(true)
+
+    // Sync from server (authoritative GRI assessment) so the results view
+    // matches the dashboard widget. Only seeds when the user has nothing
+    // locally — never overwrites work-in-progress.
+    const hasLocalScores =
+      Object.values(local.scores).some(
+        (s) => s && Object.values(s).some((v) => typeof v === 'number' && v > 0),
+      )
+    if (hasLocalScores) return
+
+    ;(async () => {
+      try {
+        const res = await fetch('/api/v1/gri/assessment', { credentials: 'include' })
+        const j = await res.json()
+        const current = j?.data?.current
+        const sectionAvgs = current?.section_avgs as Record<string, number> | undefined
+        if (!sectionAvgs) return
+
+        // Reconstruct minimal per-criterion scores so sectionAvgsMemo + griIndex
+        // resolve to the server values. Each section gets a single synthetic
+        // criterion holding the section average.
+        const synth: Record<string, Record<string, number>> = {}
+        const completed: Record<string, boolean> = {}
+        for (const sec of GRI_SECTIONS) {
+          const v = sectionAvgs[sec.id]
+          if (typeof v !== 'number' || v <= 0) continue
+          const firstCrit = sec.criteria[0]?.id ?? 'avg'
+          synth[sec.id] = { [firstCrit]: v }
+          completed[sec.id] = true
+        }
+        if (Object.keys(synth).length === 0) return
+
+        setState((prev) => ({
+          ...prev,
+          scores: { ...prev.scores, ...synth },
+          completedSections: { ...prev.completedSections, ...completed },
+          sectionAvgs,
+          griIndex: typeof current.gri_index === 'number' ? current.gri_index : prev.griIndex,
+        }))
+        // If the server has a complete assessment, jump straight to results so
+        // the chart matches what the dashboard widget displays.
+        const allCovered = GRI_SECTIONS.every(
+          (s) => typeof sectionAvgs[s.id] === 'number' && sectionAvgs[s.id] > 0,
+        )
+        if (allCovered) {
+          // Defer so the state update above commits first.
+          setTimeout(() => setStep({ kind: 'results' }), 0)
+        }
+      } catch {
+        // server unreachable — local state is fine
+      }
+    })()
   }, [])
 
   useEffect(() => {

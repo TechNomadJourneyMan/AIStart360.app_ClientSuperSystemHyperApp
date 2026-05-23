@@ -10,6 +10,8 @@ import { SurveyOverview } from '@/components/point-a/SurveyOverview'
 import PointAIntelligenceSection from '@/components/point-a/PointAIntelligenceSection'
 import GRIAssessmentBlock from '@/components/point-a/GRIAssessmentBlock'
 import PointADashboardSectionsBoundary from '@/components/dashboard/PointADashboardSections'
+import { OnboardingStatusBadges } from '@/components/dashboard/OnboardingStatusBadges'
+import GrowthSnapshotHero from '@/components/dashboard/GrowthSnapshotHero'
 
 export const metadata: Metadata = { title: 'Точка А — Текущее состояние' }
 
@@ -144,36 +146,25 @@ export default async function PointAPage() {
 
       {/* Header */}
       <section>
-        <p className="text-xs font-mono text-primary/70 uppercase tracking-[0.2em] mb-3">
-          AI Диагностика · Текущее состояние
-        </p>
-        <h1 className="font-headline text-3xl lg:text-4xl font-extrabold text-on-surface">
-          Точка <span className="text-gradient">А</span>
-        </h1>
-        <p className="text-on-surface-variant mt-2 text-sm max-w-xl leading-relaxed">
-          Объективная оценка текущего состояния бизнеса.
-          Загрузите документы для автоматического анализа ИИ-агентом.
-        </p>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-mono text-primary/70 uppercase tracking-[0.2em] mb-3">
+              AI Диагностика · Текущее состояние
+            </p>
+            <h1 className="font-headline text-3xl lg:text-4xl font-extrabold text-on-surface">
+              Точка <span className="text-gradient">А</span>
+            </h1>
+            <p className="text-on-surface-variant mt-2 text-sm max-w-xl leading-relaxed">
+              Объективная оценка текущего состояния бизнеса.
+              Загрузите документы для автоматического анализа ИИ-агентом.
+            </p>
+          </div>
+          <OnboardingStatusBadges />
+        </div>
       </section>
 
-      {/* Current State Overview */}
-      <section className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {[
-          { label: 'Общий балл', value: String(avgScore), icon: 'radar', good: avgScore >= 50, note: avgScore ? 'из 100' : 'нет данных' },
-          { label: 'Клиенты', value: '0', icon: 'groups', good: false, note: 'подключите CRM' },
-          { label: 'Документы', value: String(docsCount), icon: 'description', good: docsCount > 0, note: docsCount > 0 ? 'загружено' : 'нет файлов' },
-          { label: 'Health', value: avgScore >= 70 ? 'High' : avgScore >= 40 ? 'Medium' : avgScore > 0 ? 'Low' : '—', icon: 'favorite', good: avgScore >= 40, note: avgScore > 0 ? 'по диагностике' : 'нет данных' },
-        ].map((stat) => (
-          <div key={stat.label} className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-5 hover:border-primary/10 transition-colors">
-            <div className="flex items-start justify-between mb-3">
-              <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest">{stat.label}</p>
-              <span className={`material-symbols-outlined text-base ${stat.good ? 'text-primary/50' : 'text-error/50'}`}>{stat.icon}</span>
-            </div>
-            <p className="text-2xl font-mono font-bold text-on-surface mb-1">{stat.value}</p>
-            <p className={`text-[10px] font-mono uppercase tracking-tighter ${stat.good ? 'text-primary' : 'text-error'}`}>{stat.note}</p>
-          </div>
-        ))}
-      </section>
+      {/* Growth Snapshot Hero — Точка А snapshot + AI carta rosta + GRI CTA */}
+      <GrowthSnapshotHero />
 
       {/* New spec-driven cabinet sections (Top Sales Table, Retention
           Curve, 6 metric blocks, RFM, Loss Map) — mirrors /client/dashboard */}

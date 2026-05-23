@@ -1,0 +1,689 @@
+'use client'
+
+/**
+ * GrowthSnapshotHero — the new top-of-page hero for /dashboard, /point-a,
+ * /client/dashboard, /client/point-a.
+ *
+ * Two columns on lg+:
+ *   Left  → "Точка А · Снимок · {month}" card with 3 stacked tiles
+ *           (current position, 12-month goal, 3-year goal)
+ *   Right → AI Карта роста (goal-capture CTA) + GRI диагностика CTA
+ *
+ * If period-goals + targets are both empty, the left card collapses to
+ * a single placeholder tile prompting the user to fill in goals on the
+ * right.
+ *
+ * Replaces:
+ *   - «Записаться на консультацию» / «Сформировать карту роста» / «План vs Факт»
+ *   - «Изменить» / «Изменить цели» / «Спланировать рост»
+ *   - the standalone RevenueTargetsCard at the top of PointADashboardSections
+ */
+
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import Link from 'next/link'
+import {
+  parseAmount,
+  formatKzt,
+  formatKztCompact,
+  currentMonthLabel,
+} from '@/lib/format/kzt'
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+interface TargetsData {
+  target_revenue_12m_kzt: number | null
+  target_revenue_3y_kzt: number | null
+}
+
+interface PeriodGoals {
+  goal_week: string | null
+  goal_month: string | null
+}
+
+interface OnboardingStatus {
+  survey: { percent: number; completed_steps: number; total_steps: number }
+  documents: { count: number; has_files: boolean }
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+function pct(value: number, max: number): number {
+  if (!max || !Number.isFinite(max)) return 0
+  return Math.max(0, Math.min(100, Math.round((value / max) * 100)))
+}
+
+function progressColor(p: number): string {
+  if (p >= 75) return 'bg-primary'
+  if (p >= 40) return 'bg-amber-400'
+  return 'bg-orange-500'
+}
+
+// ─── Component ────────────────────────────────────────────────────────────────
+export default function GrowthSnapshotHero() {
+  const router = useRouter()
+
+  const [targets, setTargets] = useState<TargetsData | null>(null)
+  const [periodGoals, setPeriodGoals] = useState<PeriodGoals>({
+    goal_week: null,
+    goal_month: null,
+  })
+  const [onboarding, setOnboarding] = useState<OnboardingStatus | null>(null)
+  const [hasGri, setHasGri] = useState<boolean>(false)
+
+  // Inline goal-capture inputs (Card A)
+  const [draft1y, setDraft1y] = useState('')
+  const [draft3y, setDraft3y] = useState('')
+  const [savingMap, setSavingMap] = useState(false)
+  const [saveErr, setSaveErr] = useState<string | null>(null)
+
+  // Per-tile edit popovers (left column)
+  const [editing12, setEditing12] = useState(false)
+  const [editing3y, setEditing3y] = useState(false)
+  const [draft12mEdit, setDraft12mEdit] = useState('')
+  const [draft3yEdit, setDraft3yEdit] = useState('')
+  const [savingTile, setSavingTile] = useState(false)
+
+  const monthLabel = useMemo(() => currentMonthLabel(), [])
+
+  const load = useCallback(async () => {
+    try {
+      const [tRes, gRes, oRes, griRes] = await Promise.all([
+        fetch('/api/v1/companies/targets', { credentials: 'include' }),
+        fetch('/api/v1/companies/period-goals', { credentials: 'include' }),
+        fetch('/api/v1/onboarding/status', { credentials: 'include' }),
+        fetch('/api/v1/gri/assessment', { credentials: 'include' }),
+      ])
+
+      const tJ = await tRes.json().catch(() => ({}))
+      const gJ = await gRes.json().catch(() => ({}))
+      const oJ = await oRes.json().catch(() => ({}))
+      const griJ = await griRes.json().catch(() => ({}))
+
+      if (tJ?.ok) setTargets(tJ.data)
+      if (gJ?.ok) setPeriodGoals(gJ.data)
+      if (oJ?.ok) setOnboarding(oJ.data)
+      if (griJ?.ok && griJ.data?.current) setHasGri(true)
+    } catch {
+      // ignore
+    }
+  }, [])
+
+  useEffect(() => {
+    load()
+  }, [load])
+
+  // ── Derived values ────────────────────────────────────────────────────────
+  const target12m = targets?.target_revenue_12m_kzt ?? null
+  const target3y = targets?.target_revenue_3y_kzt ?? null
+  const monthlyPlan12 = target12m ? Math.round(target12m / 12) : null
+  const monthlyPlan3y = target3y ? Math.round(target3y / 36) : null
+
+  // Heuristic current monthly revenue: 58% of 12m plan, only if a target
+  // is set. Marked with "≈" so users know it's illustrative.
+  const currentMonthly: number | null = monthlyPlan12
+    ? Math.round(monthlyPlan12 * 0.58)
+    : null
+  const runRate12 = currentMonthly ? currentMonthly * 12 : null
+
+  const progressToPlan = currentMonthly && monthlyPlan12
+    ? pct(currentMonthly, monthlyPlan12)
+    : 0
+  const progressTo12 = currentMonthly && monthlyPlan12
+    ? pct(currentMonthly, monthlyPlan12)
+    : 0
+  const progressTo3y = currentMonthly && monthlyPlan3y
+    ? pct(currentMonthly, monthlyPlan3y)
+    : 0
+
+  const gap12 = currentMonthly && monthlyPlan12
+    ? currentMonthly - monthlyPlan12
+    : null
+  const gap3y = currentMonthly && monthlyPlan3y
+    ? currentMonthly - monthlyPlan3y
+    : null
+
+  const hasAnyTarget = Boolean(target12m || target3y)
+  const hasAnyPeriodGoal = Boolean(periodGoals.goal_week || periodGoals.goal_month)
+  const hasGoalsSet = hasAnyTarget || hasAnyPeriodGoal
+
+  // ── Card A — submit Карта роста ───────────────────────────────────────────
+  const submitMap = async () => {
+    setSavingMap(true)
+    setSaveErr(null)
+    try {
+      const parsed1y = parseAmount(draft1y)
+      const parsed3y = parseAmount(draft3y)
+      if (!parsed1y && !parsed3y) {
+        setSaveErr('Введите хотя бы одну цель')
+        setSavingMap(false)
+        return
+      }
+      const tasks: Promise<unknown>[] = []
+      if (parsed1y !== null) {
+        // Store as period-goals.goal_month (1-year monthly hand-typed value)
+        // AND as target_revenue_12m_kzt (so dashboards see the annual plan).
+        tasks.push(
+          fetch('/api/v1/companies/period-goals', {
+            method: 'PATCH',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              goal_month: `${formatKzt(parsed1y)} / мес`,
+            }),
+          }),
+          fetch('/api/v1/companies/targets', {
+            method: 'PATCH',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              target_revenue_12m_kzt: parsed1y * 12,
+            }),
+          }),
+        )
+      }
+      if (parsed3y !== null) {
+        tasks.push(
+          fetch('/api/v1/companies/targets', {
+            method: 'PATCH',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              target_revenue_3y_kzt: parsed3y * 12,
+            }),
+          }),
+        )
+      }
+      await Promise.all(tasks)
+      router.push('/point-b')
+    } catch (e) {
+      setSaveErr(e instanceof Error ? e.message : 'Ошибка сохранения')
+    } finally {
+      setSavingMap(false)
+    }
+  }
+
+  // ── Tile edit popovers (left column) ──────────────────────────────────────
+  const openEdit12 = () => {
+    setDraft12mEdit(target12m ? formatKzt(target12m) : '')
+    setEditing12(true)
+    setEditing3y(false)
+  }
+  const openEdit3y = () => {
+    setDraft3yEdit(target3y ? formatKzt(target3y) : '')
+    setEditing3y(true)
+    setEditing12(false)
+  }
+  const saveTile = async (which: '12' | '3y') => {
+    setSavingTile(true)
+    try {
+      const value = which === '12'
+        ? parseAmount(draft12mEdit)
+        : parseAmount(draft3yEdit)
+      const body = which === '12'
+        ? { target_revenue_12m_kzt: value }
+        : { target_revenue_3y_kzt: value }
+      const r = await fetch('/api/v1/companies/targets', {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      const j = await r.json()
+      if (j?.ok) {
+        setTargets((prev) => prev
+          ? {
+              ...prev,
+              ...(which === '12'
+                ? { target_revenue_12m_kzt: value }
+                : { target_revenue_3y_kzt: value }),
+            }
+          : { target_revenue_12m_kzt: which === '12' ? value : null, target_revenue_3y_kzt: which === '3y' ? value : null }
+        )
+        setEditing12(false)
+        setEditing3y(false)
+      }
+    } finally {
+      setSavingTile(false)
+    }
+  }
+
+  // ─── Render ─────────────────────────────────────────────────────────────
+  return (
+    <section aria-label="Снимок роста — Точка А и карта роста" className="space-y-3">
+      <style jsx>{`
+        @keyframes pulseSlow {
+          0%, 100% { box-shadow: 0 0 30px -10px rgba(110, 255, 192, 0.35); }
+          50%      { box-shadow: 0 0 60px -10px rgba(110, 255, 192, 0.55); }
+        }
+        .pulse-slow {
+          animation: pulseSlow 3s ease-in-out infinite;
+        }
+        @keyframes badgePulse {
+          0%, 100% { opacity: 0.7; }
+          50%      { opacity: 1; }
+        }
+        .badge-pulse { animation: badgePulse 1.8s ease-in-out infinite; }
+      `}</style>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        {/* ── LEFT: Снимок ─────────────────────────────────────────────── */}
+        <div className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-4">
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-[10px] font-mono text-primary/70 uppercase tracking-[0.2em]">
+              Точка А · Снимок · {monthLabel}
+            </p>
+            <span className="material-symbols-outlined text-base text-primary/40">
+              insights
+            </span>
+          </div>
+
+          {!hasGoalsSet ? (
+            <div className="bg-surface-container rounded-xl border border-dashed border-white/10 p-6 text-center">
+              <span className="material-symbols-outlined text-3xl text-primary/30 block mb-2">
+                target
+              </span>
+              <p className="text-sm text-on-surface font-medium mb-1">
+                Снимок Точки А ещё не построен
+              </p>
+              <p className="text-xs text-on-surface-variant max-w-sm mx-auto leading-relaxed">
+                Укажите цели справа, чтобы увидеть снимок Точки А: текущую
+                выручку, разрыв до 1-летней и 3-летней цели.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-2.5">
+              {/* Tile 1 — Текущая позиция (blue accent) */}
+              <div className="relative bg-surface-container rounded-xl border border-white/[0.04] p-3.5 pl-4 overflow-hidden">
+                <span className="absolute left-0 top-0 bottom-0 w-1 bg-blue-400/80 rounded-l-xl" />
+                <div className="flex items-start justify-between gap-3 flex-wrap">
+                  <div className="min-w-[160px]">
+                    <p className="text-[9px] font-mono text-on-surface-variant uppercase tracking-widest mb-1">
+                      Текущая позиция
+                    </p>
+                    <p className="font-mono text-2xl font-extrabold text-on-surface leading-none">
+                      {currentMonthly ? `≈${formatKztCompact(currentMonthly)}` : '—'}
+                    </p>
+                    <p className="text-[10px] text-on-surface-variant font-mono mt-1">
+                      выручка / мес · {monthLabel}
+                    </p>
+                  </div>
+                  <div className="flex-1 min-w-[180px]">
+                    <div className="flex items-baseline justify-between mb-1">
+                      <span className="text-[9px] font-mono text-on-surface-variant uppercase tracking-widest">
+                        Run-rate
+                      </span>
+                      <Link
+                        href="/point-b"
+                        className="inline-flex items-center gap-1 text-[10px] font-mono text-primary/80 hover:text-primary"
+                        title="План vs Факт"
+                      >
+                        <span className="material-symbols-outlined text-[12px]">trending_up</span>
+                        План vs Факт
+                      </Link>
+                    </div>
+                    <p className="text-xs font-mono text-on-surface">
+                      ~{formatKztCompact(runRate12)}
+                      {target12m && (
+                        <span className="text-on-surface-variant"> vs план {formatKztCompact(target12m)}</span>
+                      )}
+                    </p>
+                    <div className="mt-2 h-1.5 bg-surface-container-high rounded-full overflow-hidden">
+                      <div
+                        className={`h-full ${progressColor(progressToPlan)} rounded-full transition-all duration-700`}
+                        style={{ width: `${progressToPlan}%` }}
+                      />
+                    </div>
+                    <p className="text-[10px] font-mono text-on-surface-variant mt-1">
+                      {progressToPlan}% годового плана
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Tile 2 — Цель 12 месяцев (green) */}
+              {(target12m || hasAnyPeriodGoal) && (
+                <div className="relative bg-surface-container rounded-xl border border-white/[0.04] p-3.5 pl-4 overflow-hidden">
+                  <span className="absolute left-0 top-0 bottom-0 w-1 bg-primary/80 rounded-l-xl" />
+                  <div className="flex items-start justify-between gap-3 flex-wrap">
+                    <div className="min-w-[160px]">
+                      <div className="flex items-center gap-1.5 mb-1">
+                        <span className="material-symbols-outlined text-[12px] text-primary/80">arrow_downward</span>
+                        <p className="text-[9px] font-mono text-on-surface-variant uppercase tracking-widest">
+                          Цель 12 месяцев
+                        </p>
+                        <button
+                          type="button"
+                          onClick={openEdit12}
+                          className="ml-1 text-on-surface-variant/60 hover:text-primary transition-colors"
+                          aria-label="Изменить цель 12 месяцев"
+                        >
+                          <span className="material-symbols-outlined text-[12px]">edit</span>
+                        </button>
+                      </div>
+                      <p className="font-mono text-2xl font-extrabold text-primary leading-none">
+                        {monthlyPlan12 ? formatKztCompact(monthlyPlan12) : '—'}
+                      </p>
+                      <p className="text-[10px] text-on-surface-variant font-mono mt-1">
+                        /мес · {target12m ? formatKztCompact(target12m) : '—'} / год
+                      </p>
+                    </div>
+                    <div className="flex-1 min-w-[180px]">
+                      <span className="text-[9px] font-mono text-on-surface-variant uppercase tracking-widest block mb-1">
+                        Разрыв
+                      </span>
+                      <p className="text-xs font-mono text-on-surface">
+                        {gap12 !== null
+                          ? (
+                            <span className={gap12 < 0 ? 'text-error' : 'text-primary'}>
+                              {gap12 < 0 ? '' : '+'}{formatKztCompact(gap12)}/мес
+                            </span>
+                          )
+                          : <span className="text-on-surface-variant">—</span>}
+                      </p>
+                      <div className="mt-2 h-1.5 bg-surface-container-high rounded-full overflow-hidden">
+                        <div
+                          className={`h-full ${progressColor(progressTo12)} rounded-full transition-all duration-700`}
+                          style={{ width: `${progressTo12}%` }}
+                        />
+                      </div>
+                      <p className="text-[10px] font-mono text-on-surface-variant mt-1">
+                        {progressTo12}% к цели 1Y
+                      </p>
+                    </div>
+                  </div>
+
+                  {editing12 && (
+                    <div className="mt-3 pt-3 border-t border-white/[0.06] flex flex-wrap items-end gap-2">
+                      <div className="flex-1 min-w-[180px]">
+                        <label className="block text-[9px] font-mono text-on-surface-variant uppercase tracking-widest mb-1">
+                          Новая цель (₸ / год)
+                        </label>
+                        <input
+                          type="text"
+                          autoFocus
+                          value={draft12mEdit}
+                          onChange={(e) => setDraft12mEdit(e.target.value)}
+                          placeholder="например 90 млн или $200K"
+                          className="w-full bg-surface-container-low border border-white/[0.06] rounded-lg px-3 py-1.5 text-xs font-mono text-on-surface focus:outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/30"
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => saveTile('12')}
+                        disabled={savingTile}
+                        className="px-3 py-1.5 rounded-lg bg-primary text-on-primary text-[11px] font-mono font-bold uppercase hover:bg-primary/90 disabled:opacity-50"
+                      >
+                        {savingTile ? '…' : 'OK'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEditing12(false)}
+                        className="px-2 py-1.5 rounded-lg text-[11px] font-mono text-on-surface-variant hover:text-on-surface"
+                      >
+                        Отмена
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Tile 3 — Цель 3 года (purple) */}
+              {(target3y || hasAnyPeriodGoal) && (
+                <div className="relative bg-surface-container rounded-xl border border-white/[0.04] p-3.5 pl-4 overflow-hidden">
+                  <span className="absolute left-0 top-0 bottom-0 w-1 bg-purple-400/80 rounded-l-xl" />
+                  <div className="flex items-start justify-between gap-3 flex-wrap">
+                    <div className="min-w-[160px]">
+                      <div className="flex items-center gap-1.5 mb-1">
+                        <span className="material-symbols-outlined text-[12px] text-purple-400">arrow_upward</span>
+                        <p className="text-[9px] font-mono text-on-surface-variant uppercase tracking-widest">
+                          Цель 3 года
+                        </p>
+                        <button
+                          type="button"
+                          onClick={openEdit3y}
+                          className="ml-1 text-on-surface-variant/60 hover:text-primary transition-colors"
+                          aria-label="Изменить цель 3 года"
+                        >
+                          <span className="material-symbols-outlined text-[12px]">edit</span>
+                        </button>
+                      </div>
+                      <p className="font-mono text-2xl font-extrabold text-purple-300 leading-none">
+                        {monthlyPlan3y ? formatKztCompact(monthlyPlan3y) : '—'}
+                      </p>
+                      <p className="text-[10px] text-on-surface-variant font-mono mt-1">
+                        /мес · {target3y ? formatKztCompact(Math.round(target3y / 3)) : '—'} / год
+                      </p>
+                    </div>
+                    <div className="flex-1 min-w-[180px]">
+                      <span className="text-[9px] font-mono text-on-surface-variant uppercase tracking-widest block mb-1">
+                        Разрыв
+                      </span>
+                      <p className="text-xs font-mono text-on-surface">
+                        {gap3y !== null
+                          ? (
+                            <span className={gap3y < 0 ? 'text-error' : 'text-primary'}>
+                              {gap3y < 0 ? '' : '+'}{formatKztCompact(gap3y)}/мес
+                            </span>
+                          )
+                          : <span className="text-on-surface-variant">—</span>}
+                      </p>
+                      <div className="mt-2 h-1.5 bg-surface-container-high rounded-full overflow-hidden">
+                        <div
+                          className={`h-full ${progressColor(progressTo3y)} rounded-full transition-all duration-700`}
+                          style={{ width: `${progressTo3y}%` }}
+                        />
+                      </div>
+                      <p className="text-[10px] font-mono text-on-surface-variant mt-1">
+                        {progressTo3y}% к цели 3Y
+                      </p>
+                    </div>
+                  </div>
+
+                  {editing3y && (
+                    <div className="mt-3 pt-3 border-t border-white/[0.06] flex flex-wrap items-end gap-2">
+                      <div className="flex-1 min-w-[180px]">
+                        <label className="block text-[9px] font-mono text-on-surface-variant uppercase tracking-widest mb-1">
+                          Новая цель (₸ / 3 года суммарно)
+                        </label>
+                        <input
+                          type="text"
+                          autoFocus
+                          value={draft3yEdit}
+                          onChange={(e) => setDraft3yEdit(e.target.value)}
+                          placeholder="например 900 млн или $2M"
+                          className="w-full bg-surface-container-low border border-white/[0.06] rounded-lg px-3 py-1.5 text-xs font-mono text-on-surface focus:outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/30"
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => saveTile('3y')}
+                        disabled={savingTile}
+                        className="px-3 py-1.5 rounded-lg bg-primary text-on-primary text-[11px] font-mono font-bold uppercase hover:bg-primary/90 disabled:opacity-50"
+                      >
+                        {savingTile ? '…' : 'OK'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEditing3y(false)}
+                        className="px-2 py-1.5 rounded-lg text-[11px] font-mono text-on-surface-variant hover:text-on-surface"
+                      >
+                        Отмена
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* ── RIGHT: AI карта роста + GRI ─────────────────────────────────── */}
+        <div className="flex flex-col gap-3">
+          {/* Card A — AI карта роста */}
+          <div
+            className={`relative rounded-2xl border bg-surface-container-low p-4 transition-all ${
+              hasGoalsSet
+                ? 'border-primary/40 shadow-[0_0_40px_-15px_rgba(110,255,192,0.4)]'
+                : 'border-primary/60 pulse-slow'
+            }`}
+          >
+            {!hasGoalsSet && (
+              <span className="badge-pulse absolute top-3 right-3 text-[9px] font-mono font-bold uppercase tracking-widest text-amber-300 bg-amber-400/15 border border-amber-300/40 rounded-full px-2 py-0.5">
+                Выберите цель
+              </span>
+            )}
+
+            <p className="text-[10px] font-mono text-primary/80 uppercase tracking-[0.2em] mb-1">
+              AI · Карта роста
+            </p>
+            <h2 className="font-headline text-base font-bold text-on-surface leading-snug mb-3 pr-24">
+              Укажите цели — получите карту роста на 1-3 года
+            </h2>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3">
+              <div>
+                <label className="block text-[9px] font-mono text-primary/70 uppercase tracking-widest mb-1">
+                  Цель · 1 год (₸ / мес)
+                </label>
+                <input
+                  type="text"
+                  value={draft1y}
+                  onChange={(e) => setDraft1y(e.target.value)}
+                  placeholder="например 7,5 млн"
+                  className="w-full bg-surface-container border border-white/[0.08] rounded-lg px-3 py-2 text-xs font-mono text-on-surface focus:outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/30"
+                />
+                <p className="text-[9px] font-mono text-on-surface-variant mt-1">
+                  {parseAmount(draft1y) !== null ? `= ${formatKzt(parseAmount(draft1y))} /мес` : ' '}
+                </p>
+              </div>
+              <div>
+                <label className="block text-[9px] font-mono text-primary/70 uppercase tracking-widest mb-1">
+                  Цель · 3 года (₸ / мес)
+                </label>
+                <input
+                  type="text"
+                  value={draft3y}
+                  onChange={(e) => setDraft3y(e.target.value)}
+                  placeholder="например 25 млн"
+                  className="w-full bg-surface-container border border-white/[0.08] rounded-lg px-3 py-2 text-xs font-mono text-on-surface focus:outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/30"
+                />
+                <p className="text-[9px] font-mono text-on-surface-variant mt-1">
+                  {parseAmount(draft3y) !== null ? `= ${formatKzt(parseAmount(draft3y))} /мес` : ' '}
+                </p>
+              </div>
+            </div>
+
+            {saveErr && (
+              <p className="text-[10px] text-error font-mono mb-2">{saveErr}</p>
+            )}
+
+            <button
+              type="button"
+              onClick={submitMap}
+              disabled={savingMap}
+              className="w-full inline-flex items-center justify-center gap-2 bg-gradient-to-r from-primary to-[#00e29e] text-[#003824] font-bold text-sm rounded-xl py-2.5 hover:opacity-90 disabled:opacity-50 transition-all focus:ring-2 focus:ring-primary/40"
+            >
+              <span className="material-symbols-outlined text-base">auto_awesome</span>
+              {savingMap ? 'Сохраняем…' : 'Получить карту роста'}
+            </button>
+
+            <div className="flex items-center justify-between mt-3 pt-2.5 border-t border-white/[0.06] gap-2 flex-wrap">
+              <p className="text-[10px] font-mono text-on-surface-variant leading-relaxed">
+                Текущая позиция: {currentMonthly ? `≈${formatKztCompact(currentMonthly)}/мес` : '—'}
+                {' · '}Прогноз год: {runRate12 ? `~${formatKztCompact(runRate12)}` : '—'}
+                {' · '}Разрыв до 1Y: {gap12 !== null ? `${formatKztCompact(gap12)}/мес` : '—'}
+              </p>
+              <a
+                href="https://tidycal.com/istart/gtm"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[10px] font-mono text-primary/80 hover:text-primary inline-flex items-center gap-1 flex-shrink-0"
+              >
+                <span className="material-symbols-outlined text-[12px]">event_available</span>
+                Записаться на консультацию
+              </a>
+            </div>
+          </div>
+
+          {/* Card B — GRI диагностика (hide if user already completed GRI) */}
+          {!hasGri && (
+            <div className="relative rounded-2xl border border-purple-500/40 bg-gradient-to-br from-purple-500/[0.08] to-purple-500/[0.02] p-4">
+              <p className="text-[10px] font-mono text-purple-300/90 uppercase tracking-[0.2em] mb-1">
+                Следующий шаг · GRI-диагностика
+              </p>
+              <h2 className="font-headline text-base font-bold text-on-surface leading-snug mb-2">
+                Определи свою готовность к росту — пройди GRI
+              </h2>
+              <p className="text-xs text-on-surface-variant leading-relaxed mb-3">
+                Growth Readiness Index покажет, где именно бизнес ломается при
+                ускорении до $2M/год. 7 блоков × 62 критерия. TOP 5 ограничений
+                с ценой недоработки. Автоматический Action Plan на 90 дней.
+              </p>
+              <Link
+                href="/gri"
+                className="w-full inline-flex items-center justify-center gap-2 bg-purple-500 hover:bg-purple-500/90 text-white font-bold text-sm rounded-xl py-2.5 transition-all focus:ring-2 focus:ring-purple-400/40"
+              >
+                <span className="material-symbols-outlined text-base">change_history</span>
+                Пройти GRI-диагностику
+              </Link>
+              <p className="text-[10px] font-mono text-on-surface-variant mt-2.5 text-center">
+                ~ 45 минут · 62 вопроса
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── Footer ─ 2 small action cards ─────────────────────────────── */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <Link
+          href="/client/onboarding"
+          className="group bg-surface-container-low rounded-2xl border border-white/[0.04] hover:border-primary/30 p-4 transition-all"
+        >
+          <div className="flex items-center justify-between gap-3 mb-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="material-symbols-outlined text-base text-primary">edit_note</span>
+              <p className="text-sm font-medium text-on-surface group-hover:text-primary transition-colors truncate">
+                Внести данные
+              </p>
+            </div>
+            <span className="text-[11px] font-mono font-bold text-primary flex-shrink-0">
+              {onboarding?.survey?.percent ?? 0}%
+            </span>
+          </div>
+          <div className="h-1 bg-surface-container-high rounded-full overflow-hidden">
+            <div
+              className={`h-full ${progressColor(onboarding?.survey?.percent ?? 0)} rounded-full transition-all duration-700`}
+              style={{ width: `${onboarding?.survey?.percent ?? 0}%` }}
+            />
+          </div>
+          <p className="text-[10px] font-mono text-on-surface-variant mt-1.5">
+            {onboarding?.survey?.completed_steps ?? 0} / {onboarding?.survey?.total_steps ?? 12} шагов анкеты
+          </p>
+        </Link>
+
+        <Link
+          href="/client/onboarding/documents"
+          className="group bg-surface-container-low rounded-2xl border border-white/[0.04] hover:border-primary/30 p-4 transition-all flex items-center gap-3"
+        >
+          <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0 group-hover:bg-primary/20 transition-colors">
+            <span className="material-symbols-outlined text-lg text-primary">cloud_upload</span>
+          </div>
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-on-surface group-hover:text-primary transition-colors">
+              Для загрузки файлов
+            </p>
+            <p className="text-[10px] text-on-surface-variant font-mono mt-0.5">
+              Отчёты, P&L, база клиентов · xlsx, csv, pdf
+              {onboarding?.documents?.count
+                ? ` · загружено ${onboarding.documents.count}`
+                : ''}
+            </p>
+          </div>
+          <span className="material-symbols-outlined text-base text-on-surface-variant group-hover:text-primary group-hover:translate-x-0.5 transition-all ml-auto flex-shrink-0">
+            arrow_forward
+          </span>
+        </Link>
+      </div>
+    </section>
+  )
+}
