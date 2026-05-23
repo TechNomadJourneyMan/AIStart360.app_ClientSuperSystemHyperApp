@@ -3,8 +3,24 @@
 import { useQuery } from '@tanstack/react-query'
 import type { MetricSummary, MetricDefinition } from '@/types/metrics'
 
-async function fetchMetrics(): Promise<MetricSummary[]> {
-  const res = await fetch('/api/v1/metrics')
+export interface MetricsFilters {
+  period?: string | null
+  product?: string | null
+  manager?: string | null
+}
+
+function buildMetricsQuery(filters?: MetricsFilters): string {
+  if (!filters) return ''
+  const qs = new URLSearchParams()
+  if (filters.period) qs.set('period', filters.period)
+  if (filters.product) qs.set('product', filters.product)
+  if (filters.manager) qs.set('manager', filters.manager)
+  const s = qs.toString()
+  return s ? `?${s}` : ''
+}
+
+async function fetchMetrics(filters?: MetricsFilters): Promise<MetricSummary[]> {
+  const res = await fetch(`/api/v1/metrics${buildMetricsQuery(filters)}`)
   if (!res.ok) throw new Error('Failed to fetch metrics')
   const json = await res.json()
   return json.data as MetricSummary[]
@@ -38,10 +54,10 @@ function catalogToSummary(def: MetricDefinition): MetricSummary {
   }
 }
 
-export function useMetrics() {
+export function useMetrics(filters?: MetricsFilters) {
   return useQuery({
-    queryKey: ['metrics'],
-    queryFn: fetchMetrics,
+    queryKey: ['metrics', filters?.period ?? null, filters?.product ?? null, filters?.manager ?? null],
+    queryFn: () => fetchMetrics(filters),
     staleTime: 5 * 60_000,
   })
 }

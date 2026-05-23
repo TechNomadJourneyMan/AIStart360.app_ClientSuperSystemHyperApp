@@ -8,10 +8,16 @@ import { FileArea } from '@/components/point-a/FileArea'
 import PointAQuickToolbar from '@/components/point-a/PointAQuickToolbar'
 import { SurveyOverview } from '@/components/point-a/SurveyOverview'
 import PointAIntelligenceSection from '@/components/point-a/PointAIntelligenceSection'
-import GRIAssessmentBlock from '@/components/point-a/GRIAssessmentBlock'
 import PointADashboardSectionsBoundary from '@/components/dashboard/PointADashboardSections'
 import { OnboardingStatusBadges } from '@/components/dashboard/OnboardingStatusBadges'
 import GrowthSnapshotHero from '@/components/dashboard/GrowthSnapshotHero'
+import KeyMetricsHero from '@/components/point-a/v2/KeyMetricsHero'
+import MetricZonesGrid from '@/components/point-a/v2/MetricZonesGrid'
+import CompanyDataCard from '@/components/point-a/v2/CompanyDataCard'
+import MarketAnalysisCard from '@/components/point-a/v2/MarketAnalysisCard'
+import InsightsFeed from '@/components/point-a/v2/InsightsFeed'
+import PointAQuickPills from '@/components/point-a/v2/PointAQuickPills'
+import PointAFilterSection from '@/components/point-a/v2/PointAFilterSection'
 
 export const metadata: Metadata = { title: 'Точка А — Текущее состояние' }
 
@@ -140,9 +146,12 @@ export default async function PointAPage() {
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-8 relative pb-24">
       {/* Sticky quick-action toolbar — file upload, survey, documents, recalc */}
       <PointAQuickToolbar userId={clientId} />
+
+      {/* Sticky bottom pill bar — scroll-spy across the page sections */}
+      <PointAQuickPills />
 
       {/* Header */}
       <section>
@@ -164,11 +173,43 @@ export default async function PointAPage() {
       </section>
 
       {/* Growth Snapshot Hero — Точка А snapshot + AI carta rosta + GRI CTA */}
-      <GrowthSnapshotHero />
+      <section id="growth-snapshot">
+        <GrowthSnapshotHero />
+      </section>
 
-      {/* New spec-driven cabinet sections (Top Sales Table, Retention
-          Curve, 6 metric blocks, RFM, Loss Map) — mirrors /client/dashboard */}
-      <PointADashboardSectionsBoundary />
+      {/* Filters — drive the KeyMetricsHero report below via URL params */}
+      <PointAFilterSection />
+
+      {/* Key metrics hero — 6 главных KPI + бейджи зон (replaces «Топ-таблица») */}
+      <section id="key-metrics" aria-label="Ключевые метрики">
+        <KeyMetricsHero />
+      </section>
+
+      {/* 3-column zones grid — Красная / Жёлтая / Зелёная (replaces «6 блоков») */}
+      <section id="metric-zones" aria-label="Метрики по зонам">
+        <MetricZonesGrid />
+      </section>
+
+      {/* Company anketa — full-width row, all 7 blocks expanded inline */}
+      {clientId && (
+        <section id="company-data" aria-label="Данные компании">
+          <CompanyDataCard userId={clientId} />
+        </section>
+      )}
+
+      {/* Market analysis — full-width row, big tiles + Гига Рынок CTA */}
+      {clientId && (
+        <section id="market-analysis" aria-label="Анализ рынка">
+          <MarketAnalysisCard userId={clientId} />
+        </section>
+      )}
+
+      {/* Spec-driven sections — keeps Filters + Retention + RFM + Loss Map.
+          (Top Sales table is sr-only inside; 6-blocks list removed — both
+          replaced above.) */}
+      <section id="loss-map">
+        <PointADashboardSectionsBoundary />
+      </section>
 
       {/* Survey Data */}
       <section>
@@ -233,10 +274,12 @@ export default async function PointAPage() {
         </section>
       )}
 
-      {/* GRI Assessment — full 7-section deep dive results */}
-      {clientId && (
-        <GRIAssessmentBlock userId={clientId} />
-      )}
+      {/* GRI Assessment — moved into the popup opened via «Открыть GRI» in GrowthSnapshotHero */}
+
+      {/* Insights mega-block — AI / Эксперт / Клиент Q&A feed (replaces AIInsightsCarousel) */}
+      <section id="insights" aria-label="Уточняющие вопросы">
+        <InsightsFeed />
+      </section>
 
       {/* Phase 6 final — Real-time intelligence layer (live resolver + realtime sync) */}
       {clientId && (

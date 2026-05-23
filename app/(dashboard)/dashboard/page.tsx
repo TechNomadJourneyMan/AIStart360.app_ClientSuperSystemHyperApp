@@ -13,12 +13,18 @@ import { CrmActivity } from '@/components/dashboard/CrmActivity'
 import type { CrmRequest, CrmClient } from '@/components/dashboard/CrmActivity'
 import type { Alert } from '@/types'
 import type { AlertCardProps } from '@/components/dashboard/AlertCard'
-import { GRIAssessmentRadarWidget } from '@/components/dashboard/GRIAssessmentRadarWidget'
 import { AIInsightsCarousel, type AIInsight } from '@/components/dashboard/AIInsightsCarousel'
 import { OnboardingStatusBadges } from '@/components/dashboard/OnboardingStatusBadges'
 import PointAIntelligenceSection from '@/components/point-a/PointAIntelligenceSection'
 import PointADashboardSectionsBoundary from '@/components/dashboard/PointADashboardSections'
 import GrowthSnapshotHero from '@/components/dashboard/GrowthSnapshotHero'
+import KeyMetricsHero from '@/components/point-a/v2/KeyMetricsHero'
+import MetricZonesGrid from '@/components/point-a/v2/MetricZonesGrid'
+import CompanyDataCard from '@/components/point-a/v2/CompanyDataCard'
+import MarketAnalysisCard from '@/components/point-a/v2/MarketAnalysisCard'
+import InsightsFeed from '@/components/point-a/v2/InsightsFeed'
+import PointAQuickPills from '@/components/point-a/v2/PointAQuickPills'
+import PointAFilterSection from '@/components/point-a/v2/PointAFilterSection'
 import type { PointA, BlockScore } from '@/types/onboarding'
 import { prisma } from '@/lib/db'
 import { getPortfolioGRI } from '@/lib/portfolio-gri'
@@ -272,21 +278,16 @@ export default async function DashboardPage() {
       let diag: Record<string, unknown> | null = null
       let orgName: string | undefined = undefined
       let companyId: string | null = null
-      let griAssessment: { gri_index: number; section_avgs: Record<string, number>; created_at: string } | null = null
       try {
         const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
         const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-        const [diagRes, companyRes, griRes] = await Promise.all([
+        const [diagRes, companyRes] = await Promise.all([
           fetch(
             `${supabaseUrl}/rest/v1/diagnostics?user_id=eq.${user.id}&order=calculated_at.desc&limit=1`,
             { headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` }, cache: 'no-store' }
           ),
           fetch(
             `${supabaseUrl}/rest/v1/companies?user_id=eq.${user.id}&select=id,name&limit=1`,
-            { headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` }, cache: 'no-store' }
-          ),
-          fetch(
-            `${supabaseUrl}/rest/v1/gri_assessments?user_id=eq.${user.id}&is_current=eq.true&select=gri_index,section_avgs,created_at&limit=1`,
             { headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` }, cache: 'no-store' }
           ),
         ])
@@ -299,16 +300,6 @@ export default async function DashboardPage() {
           orgName = companyRows?.[0]?.name ?? undefined
           companyId = companyRows?.[0]?.id ? String(companyRows[0].id) : null
         }
-        if (griRes.ok) {
-          const griRows = await griRes.json() as Array<{ gri_index: number; section_avgs: Record<string, number>; created_at: string }>
-          if (griRows?.[0]) {
-            griAssessment = {
-              gri_index: Number(griRows[0].gri_index ?? 0),
-              section_avgs: griRows[0].section_avgs ?? {},
-              created_at: griRows[0].created_at,
-            }
-          }
-        }
       } catch {
         // diagnostics not available yet
       }
@@ -318,7 +309,10 @@ export default async function DashboardPage() {
       const healthIndex = pointA?.health_index ?? 0
 
       return (
-        <div className="space-y-6">
+        <div className="space-y-6 relative pb-24">
+          {/* Sticky bottom pill bar — scroll-spy across the page sections */}
+          <PointAQuickPills />
+
           <section>
             <div className="flex items-start justify-between mb-4">
               <div>
@@ -343,19 +337,9 @@ export default async function DashboardPage() {
             <GrowthSnapshotHero />
 
             {pointA ? (
-              <div className="grid grid-cols-1 xl:grid-cols-5 gap-6 items-start mt-6">
-                {/* Radar — kept (GRI radar owned by another agent) */}
-                <div className="xl:col-span-3 order-1">
-                  {griAssessment ? (
-                    <GRIAssessmentRadarWidget data={griAssessment} orgName={orgName} stage={pointA.stage} />
-                  ) : null}
-                </div>
-
-                {/* AI Insights carousel kept as its own small column */}
-                <div className="xl:col-span-2 order-2">
-                  <AIInsightsCarousel insights={buildLiveInsights(pointA)} />
-                </div>
-              </div>
+              /* Inline AIInsightsCarousel removed — InsightsFeed below owns the
+                 unified AI / Эксперт / Клиент Q&A stream. */
+              null
             ) : (
               <div className="bg-surface-container-low border border-white/[0.04] rounded-2xl p-10 text-center">
                 <span className="material-symbols-outlined text-5xl text-primary/20 mb-4 block">assignment</span>
@@ -420,8 +404,38 @@ export default async function DashboardPage() {
             </>
           )}
 
-          {/* Point A v3 — spec-compliant Top Sales Table · Retention curve · 6 metric blocks · RFM · Loss map */}
-          <PointADashboardSectionsBoundary />
+          {/* Filters drive the new KeyMetricsHero report below via URL params */}
+          <PointAFilterSection />
+
+          {/* Key metrics hero — 6 главных KPI + бейджи зон */}
+          <section id="key-metrics" aria-label="Ключевые метрики">
+            <KeyMetricsHero />
+          </section>
+
+          {/* 3-column zones grid */}
+          <section id="metric-zones" aria-label="Метрики по зонам">
+            <MetricZonesGrid />
+          </section>
+
+          {/* Company anketa — full-width row, all 7 blocks expanded inline */}
+          <section id="company-data" aria-label="Данные компании">
+            <CompanyDataCard userId={user.id} />
+          </section>
+
+          {/* Market analysis — full-width row, big tiles + Гига Рынок CTA */}
+          <section id="market-analysis" aria-label="Анализ рынка">
+            <MarketAnalysisCard userId={user.id} />
+          </section>
+
+          {/* Spec-compliant sections: Retention curve · RFM · Loss map (TopSales sr-only) */}
+          <section id="loss-map">
+            <PointADashboardSectionsBoundary />
+          </section>
+
+          {/* Insights mega-block — AI / Эксперт / Клиент Q&A feed */}
+          <section id="insights" aria-label="Уточняющие вопросы">
+            <InsightsFeed />
+          </section>
 
           {/* Phase 6 final — Real-time Intelligence layer */}
           <PointAIntelligenceSection userId={user.id} companyId={companyId} />

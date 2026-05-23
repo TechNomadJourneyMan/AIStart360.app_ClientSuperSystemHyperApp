@@ -28,6 +28,7 @@ import {
   formatKztCompact,
   currentMonthLabel,
 } from '@/lib/format/kzt'
+import { GRIAssessmentRadarWidget } from './GRIAssessmentRadarWidget'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface TargetsData {
@@ -43,6 +44,12 @@ interface PeriodGoals {
 interface OnboardingStatus {
   survey: { percent: number; completed_steps: number; total_steps: number }
   documents: { count: number; has_files: boolean }
+}
+
+interface GriAssessmentData {
+  gri_index: number
+  section_avgs: Record<string, number>
+  created_at?: string
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -68,6 +75,10 @@ export default function GrowthSnapshotHero() {
   })
   const [onboarding, setOnboarding] = useState<OnboardingStatus | null>(null)
   const [hasGri, setHasGri] = useState<boolean>(false)
+  const [griData, setGriData] = useState<GriAssessmentData | null>(null)
+  const [griModalOpen, setGriModalOpen] = useState(false)
+  // Real monthly revenue from documents/metrics (not a heuristic)
+  const [liveMonthlyRevenue, setLiveMonthlyRevenue] = useState<number | null>(null)
 
   // Inline goal-capture inputs (Card A)
   const [draft1y, setDraft1y] = useState('')
@@ -86,22 +97,49 @@ export default function GrowthSnapshotHero() {
 
   const load = useCallback(async () => {
     try {
-      const [tRes, gRes, oRes, griRes] = await Promise.all([
+      const [tRes, gRes, oRes, griRes, mRes] = await Promise.all([
         fetch('/api/v1/companies/targets', { credentials: 'include' }),
         fetch('/api/v1/companies/period-goals', { credentials: 'include' }),
         fetch('/api/v1/onboarding/status', { credentials: 'include' }),
         fetch('/api/v1/gri/assessment', { credentials: 'include' }),
+        fetch('/api/v1/metrics?keys=revenue,revenue_monthly,monthly_revenue', {
+          credentials: 'include',
+        }),
       ])
 
       const tJ = await tRes.json().catch(() => ({}))
       const gJ = await gRes.json().catch(() => ({}))
       const oJ = await oRes.json().catch(() => ({}))
       const griJ = await griRes.json().catch(() => ({}))
+      const mJ = await mRes.json().catch(() => ({}))
+
+      // Live monthly revenue — first hit among the candidate metric keys.
+      const items: Array<{ id?: string; value?: number | null; unit?: string }> =
+        (mJ?.ok && Array.isArray(mJ.data?.items) ? mJ.data.items : []) ?? []
+      const revenueItem = items.find((it) => {
+        const v = typeof it.value === 'number' ? it.value : null
+        return v !== null && v > 0
+      })
+      if (revenueItem && typeof revenueItem.value === 'number') {
+        setLiveMonthlyRevenue(revenueItem.value)
+      }
 
       if (tJ?.ok) setTargets(tJ.data)
       if (gJ?.ok) setPeriodGoals(gJ.data)
       if (oJ?.ok) setOnboarding(oJ.data)
-      if (griJ?.ok && griJ.data?.current) setHasGri(true)
+      if (griJ?.ok && griJ.data?.current) {
+        setHasGri(true)
+        const cur = griJ.data.current as {
+          gri_index?: number
+          section_avgs?: Record<string, number>
+          created_at?: string
+        }
+        setGriData({
+          gri_index: Number(cur.gri_index ?? 0),
+          section_avgs: cur.section_avgs ?? {},
+          created_at: cur.created_at,
+        })
+      }
     } catch {
       // ignore
     }
@@ -111,17 +149,30 @@ export default function GrowthSnapshotHero() {
     load()
   }, [load])
 
+  // Bridge: `PointAQuickPills` dispatches this CustomEvent when the user
+  // clicks the «GRI» pill so the modal can be opened from anywhere on the
+  // page without prop-drilling.
+  useEffect(() => {
+    const onOpen = () => setGriModalOpen(true)
+    window.addEventListener('aistart360:open-gri', onOpen)
+    return () => window.removeEventListener('aistart360:open-gri', onOpen)
+  }, [])
+
   // ── Derived values ────────────────────────────────────────────────────────
   const target12m = targets?.target_revenue_12m_kzt ?? null
   const target3y = targets?.target_revenue_3y_kzt ?? null
   const monthlyPlan12 = target12m ? Math.round(target12m / 12) : null
   const monthlyPlan3y = target3y ? Math.round(target3y / 36) : null
 
-  // Heuristic current monthly revenue: 58% of 12m plan, only if a target
-  // is set. Marked with "≈" so users know it's illustrative.
-  const currentMonthly: number | null = monthlyPlan12
-    ? Math.round(monthlyPlan12 * 0.58)
-    : null
+  // Prefer real revenue from the metrics resolver (documents/anketa);
+  // fall back to a 58%-of-plan heuristic only if the resolver hasn't
+  // produced a value yet. `isLiveRevenue` controls the "≈" prefix.
+  const isLiveRevenue = liveMonthlyRevenue !== null && liveMonthlyRevenue > 0
+  const currentMonthly: number | null = isLiveRevenue
+    ? Math.round(liveMonthlyRevenue!)
+    : monthlyPlan12
+      ? Math.round(monthlyPlan12 * 0.58)
+      : null
   const runRate12 = currentMonthly ? currentMonthly * 12 : null
 
   const progressToPlan = currentMonthly && monthlyPlan12
@@ -291,19 +342,42 @@ export default function GrowthSnapshotHero() {
             </div>
           ) : (
             <div className="space-y-2.5">
-              {/* Tile 1 — Текущая позиция (blue accent) */}
-              <div className="relative bg-surface-container rounded-xl border border-white/[0.04] p-3.5 pl-4 overflow-hidden">
-                <span className="absolute left-0 top-0 bottom-0 w-1 bg-blue-400/80 rounded-l-xl" />
+              {/* Tile 1 — Текущая позиция (brand accent) */}
+              <div className="relative bg-surface-container rounded-xl border border-white/[0.04] p-5 pl-6 overflow-hidden">
+                <span
+                  className="absolute left-0 top-0 bottom-0 w-1 rounded-l-xl"
+                  style={{ background: 'linear-gradient(180deg, #e87a35, #dc524b)' }}
+                />
                 <div className="flex items-start justify-between gap-3 flex-wrap">
-                  <div className="min-w-[160px]">
-                    <p className="text-[9px] font-mono text-on-surface-variant uppercase tracking-widest mb-1">
-                      Текущая позиция
+                  <div className="min-w-[180px]">
+                    <div className="flex items-center gap-2 mb-2">
+                      <p className="text-[11px] font-mono text-on-surface-variant uppercase tracking-[0.18em]">
+                        Текущая позиция
+                      </p>
+                      {isLiveRevenue && (
+                        <span
+                          className="text-[9px] font-mono font-bold uppercase tracking-widest rounded-full px-1.5 py-0.5 border"
+                          style={{
+                            color: '#e87a35',
+                            borderColor: 'rgba(232,122,53,0.4)',
+                            background: 'rgba(232,122,53,0.08)',
+                          }}
+                          title="Значение собрано из анкеты и загруженных файлов"
+                        >
+                          LIVE
+                        </span>
+                      )}
+                    </div>
+                    <p className="font-mono text-5xl font-black text-on-surface leading-[0.95] tracking-tight">
+                      {currentMonthly
+                        ? `${isLiveRevenue ? '' : '≈'}${formatKztCompact(currentMonthly)}`
+                        : '—'}
                     </p>
-                    <p className="font-mono text-2xl font-extrabold text-on-surface leading-none">
-                      {currentMonthly ? `≈${formatKztCompact(currentMonthly)}` : '—'}
-                    </p>
-                    <p className="text-[10px] text-on-surface-variant font-mono mt-1">
+                    <p className="text-[11px] text-on-surface-variant font-mono mt-2">
                       выручка / мес · {monthLabel}
+                      {!isLiveRevenue && currentMonthly && (
+                        <span className="text-amber-400/80"> · оценка</span>
+                      )}
                     </p>
                   </div>
                   <div className="flex-1 min-w-[180px]">
@@ -359,10 +433,10 @@ export default function GrowthSnapshotHero() {
                           <span className="material-symbols-outlined text-[12px]">edit</span>
                         </button>
                       </div>
-                      <p className="font-mono text-2xl font-extrabold text-primary leading-none">
+                      <p className="font-mono text-4xl font-black text-primary leading-[0.95] tracking-tight">
                         {monthlyPlan12 ? formatKztCompact(monthlyPlan12) : '—'}
                       </p>
-                      <p className="text-[10px] text-on-surface-variant font-mono mt-1">
+                      <p className="text-[11px] text-on-surface-variant font-mono mt-1.5">
                         /мес · {target12m ? formatKztCompact(target12m) : '—'} / год
                       </p>
                     </div>
@@ -446,10 +520,10 @@ export default function GrowthSnapshotHero() {
                           <span className="material-symbols-outlined text-[12px]">edit</span>
                         </button>
                       </div>
-                      <p className="font-mono text-2xl font-extrabold text-purple-300 leading-none">
+                      <p className="font-mono text-4xl font-black text-purple-300 leading-[0.95] tracking-tight">
                         {monthlyPlan3y ? formatKztCompact(monthlyPlan3y) : '—'}
                       </p>
-                      <p className="text-[10px] text-on-surface-variant font-mono mt-1">
+                      <p className="text-[11px] text-on-surface-variant font-mono mt-1.5">
                         /мес · {target3y ? formatKztCompact(Math.round(target3y / 3)) : '—'} / год
                       </p>
                     </div>
@@ -535,7 +609,7 @@ export default function GrowthSnapshotHero() {
             <p className="text-[10px] font-mono text-primary/80 uppercase tracking-[0.2em] mb-1">
               AI · Карта роста
             </p>
-            <h2 className="font-headline text-base font-bold text-on-surface leading-snug mb-3 pr-24">
+            <h2 className="font-headline text-xl font-extrabold text-on-surface leading-tight mb-3 pr-24 tracking-tight">
               Укажите цели — получите карту роста на 1-3 года
             </h2>
 
@@ -580,56 +654,91 @@ export default function GrowthSnapshotHero() {
               type="button"
               onClick={submitMap}
               disabled={savingMap}
-              className="w-full inline-flex items-center justify-center gap-2 bg-gradient-to-r from-primary to-[#00e29e] text-[#003824] font-bold text-sm rounded-xl py-2.5 hover:opacity-90 disabled:opacity-50 transition-all focus:ring-2 focus:ring-primary/40"
+              className="w-full inline-flex items-center justify-center gap-2 text-white font-bold text-base rounded-xl py-3.5 hover:brightness-110 disabled:opacity-50 transition-all focus:ring-2"
+              style={{
+                background: 'linear-gradient(90deg, #e87a35, #dc524b)',
+                boxShadow: '0 0 30px -10px rgba(232,122,53,0.55)',
+              }}
             >
-              <span className="material-symbols-outlined text-base">auto_awesome</span>
+              <span className="material-symbols-outlined text-lg">auto_awesome</span>
               {savingMap ? 'Сохраняем…' : 'Получить карту роста'}
             </button>
 
             <div className="flex items-center justify-between mt-3 pt-2.5 border-t border-white/[0.06] gap-2 flex-wrap">
               <p className="text-[10px] font-mono text-on-surface-variant leading-relaxed">
-                Текущая позиция: {currentMonthly ? `≈${formatKztCompact(currentMonthly)}/мес` : '—'}
+                Текущая позиция: {currentMonthly ? `${isLiveRevenue ? '' : '≈'}${formatKztCompact(currentMonthly)}/мес` : '—'}
                 {' · '}Прогноз год: {runRate12 ? `~${formatKztCompact(runRate12)}` : '—'}
                 {' · '}Разрыв до 1Y: {gap12 !== null ? `${formatKztCompact(gap12)}/мес` : '—'}
               </p>
+            </div>
+          </div>
+
+          {/* Card B — GRI диагностика (always visible; «Открыть GRI» enabled
+              after the user has completed the test). One brand-orange CTA;
+              secondary actions live as plain ghost links below. */}
+          <div
+            className="relative rounded-2xl border bg-surface-container-low p-4"
+            style={{ borderColor: 'rgba(232,122,53,0.35)' }}
+          >
+            <p
+              className="text-[10px] font-mono uppercase tracking-[0.2em] mb-1"
+              style={{ color: '#e87a35' }}
+            >
+              Следующий шаг · GRI-диагностика
+            </p>
+            <h2 className="font-headline text-xl font-extrabold text-on-surface leading-tight mb-2 tracking-tight">
+              Определи свою готовность к росту — пройди GRI
+            </h2>
+            <p className="text-xs text-on-surface-variant leading-relaxed mb-4">
+              Growth Readiness Index покажет, где именно бизнес ломается при
+              ускорении до $2M/год. 7 блоков × 62 критерия. TOP 5 ограничений
+              с ценой недоработки. Автоматический Action Plan на 90 дней.
+            </p>
+            <Link
+              href="/gri"
+              className="w-full inline-flex items-center justify-center gap-2 text-white font-bold text-base rounded-xl py-3.5 transition-all focus:ring-2 hover:brightness-110"
+              style={{
+                background: 'linear-gradient(90deg, #e87a35, #dc524b)',
+                boxShadow: '0 0 30px -10px rgba(232,122,53,0.55)',
+              }}
+            >
+              <span className="material-symbols-outlined text-lg">change_history</span>
+              {hasGri ? 'Пройти GRI заново' : 'Пройти GRI-диагностику'}
+            </Link>
+
+            <div className="flex items-center justify-center gap-4 mt-3 flex-wrap">
+              <button
+                type="button"
+                onClick={() => setGriModalOpen(true)}
+                disabled={!hasGri || !griData}
+                title={
+                  hasGri
+                    ? 'Открыть результаты GRI'
+                    : 'Пройдите GRI, чтобы открыть результаты'
+                }
+                className="text-[11px] font-mono text-on-surface-variant hover:text-on-surface inline-flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <span className="material-symbols-outlined text-[14px]">insights</span>
+                Открыть GRI
+              </button>
+              <span className="text-on-surface-variant/30">·</span>
               <a
                 href="https://tidycal.com/istart/gtm"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-[10px] font-mono text-primary/80 hover:text-primary inline-flex items-center gap-1 flex-shrink-0"
+                className="text-[11px] font-mono text-on-surface-variant hover:text-on-surface inline-flex items-center gap-1"
               >
-                <span className="material-symbols-outlined text-[12px]">event_available</span>
-                Записаться на консультацию
+                <span className="material-symbols-outlined text-[14px]">forum</span>
+                Связаться с экспертом
               </a>
             </div>
-          </div>
 
-          {/* Card B — GRI диагностика (hide if user already completed GRI) */}
-          {!hasGri && (
-            <div className="relative rounded-2xl border border-purple-500/40 bg-gradient-to-br from-purple-500/[0.08] to-purple-500/[0.02] p-4">
-              <p className="text-[10px] font-mono text-purple-300/90 uppercase tracking-[0.2em] mb-1">
-                Следующий шаг · GRI-диагностика
-              </p>
-              <h2 className="font-headline text-base font-bold text-on-surface leading-snug mb-2">
-                Определи свою готовность к росту — пройди GRI
-              </h2>
-              <p className="text-xs text-on-surface-variant leading-relaxed mb-3">
-                Growth Readiness Index покажет, где именно бизнес ломается при
-                ускорении до $2M/год. 7 блоков × 62 критерия. TOP 5 ограничений
-                с ценой недоработки. Автоматический Action Plan на 90 дней.
-              </p>
-              <Link
-                href="/gri"
-                className="w-full inline-flex items-center justify-center gap-2 bg-purple-500 hover:bg-purple-500/90 text-white font-bold text-sm rounded-xl py-2.5 transition-all focus:ring-2 focus:ring-purple-400/40"
-              >
-                <span className="material-symbols-outlined text-base">change_history</span>
-                Пройти GRI-диагностику
-              </Link>
-              <p className="text-[10px] font-mono text-on-surface-variant mt-2.5 text-center">
-                ~ 45 минут · 62 вопроса
-              </p>
-            </div>
-          )}
+            <p className="text-[10px] font-mono text-on-surface-variant mt-3 text-center">
+              ~ 45 минут · 62 вопроса
+              {hasGri && griData?.created_at &&
+                ` · последняя оценка ${new Date(griData.created_at).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })}`}
+            </p>
+          </div>
         </div>
       </div>
 
@@ -684,6 +793,61 @@ export default function GrowthSnapshotHero() {
           </span>
         </Link>
       </div>
+
+      {/* GRI popup — radar widget shown via "Открыть GRI" */}
+      {griModalOpen && griData && (
+        <GriRadarPopup data={griData} onClose={() => setGriModalOpen(false)} />
+      )}
     </section>
+  )
+}
+
+// ─── GRI radar popup ──────────────────────────────────────────────────────────
+function GriRadarPopup({
+  data,
+  onClose,
+}: {
+  data: GriAssessmentData
+  onClose: () => void
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      document.body.style.overflow = prev
+    }
+  }, [onClose])
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="GRI Assessment"
+      className="fixed inset-0 z-[100] flex items-start justify-center p-4 sm:p-6 md:p-10 overflow-y-auto"
+    >
+      <div
+        className="fixed inset-0 bg-black/75 backdrop-blur-md animate-in fade-in duration-200"
+        onClick={onClose}
+        aria-hidden="true"
+      />
+      <div className="relative z-10 w-full max-w-3xl my-auto rounded-2xl bg-surface border border-white/[0.06] shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Закрыть"
+          className="absolute top-3 right-3 z-20 w-9 h-9 rounded-xl bg-surface-container border border-white/[0.06] text-on-surface-variant hover:text-on-surface hover:border-primary/30 flex items-center justify-center transition-colors"
+        >
+          <span className="material-symbols-outlined text-base">close</span>
+        </button>
+        <div className="p-4 sm:p-5 pt-12">
+          <GRIAssessmentRadarWidget data={data} />
+        </div>
+      </div>
+    </div>
   )
 }

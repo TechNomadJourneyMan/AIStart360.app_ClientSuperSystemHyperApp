@@ -73,7 +73,15 @@ const MOCK_METRICS: MetricSummary[] = [
   },
 ]
 
-export async function GET() {
+export async function GET(req: Request) {
+  // Accept (and echo) the standard Point A filter triplet so the cache key
+  // varies per filter. Server-side filtering of the snapshot rows is a TODO
+  // until financial_snapshots carries the product/manager dimensions.
+  const { searchParams } = new URL(req.url)
+  const _period = searchParams.get('period')
+  const _product = searchParams.get('product')
+  const _manager = searchParams.get('manager')
+  void _period; void _product; void _manager
   try {
     const supabase = createServerClient()
 
