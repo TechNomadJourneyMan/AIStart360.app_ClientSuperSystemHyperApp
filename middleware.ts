@@ -62,7 +62,8 @@ export async function middleware(request: NextRequest) {
     pathname.endsWith('.svg') ||
     pathname.endsWith('.png') ||
     pathname.endsWith('.ico') ||
-    pathname === '/'
+    pathname === '/' ||
+    pathname.startsWith('/presentation')
   ) {
     return NextResponse.next()
   }

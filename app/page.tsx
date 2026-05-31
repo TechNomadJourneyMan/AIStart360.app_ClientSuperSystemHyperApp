@@ -127,13 +127,13 @@ export default function LandingPage() {
                 Запустить диагностику бесплатно
                 <span className="material-symbols-outlined transition-transform group-hover:translate-x-1">arrow_forward</span>
               </Link>
-              <a
-                href="#modules"
+              <Link
+                href="/presentation"
                 className="border border-white/[0.08] text-on-surface px-6 py-3.5 rounded-xl flex items-center gap-2 hover:border-primary/40 hover:text-primary transition-colors"
               >
-                <span className="material-symbols-outlined">play_circle</span>
-                Как это работает
-              </a>
+                <span className="material-symbols-outlined">slideshow</span>
+                Посмотреть презентацию
+              </Link>
             </div>
 
             {/* Stats strip */}
