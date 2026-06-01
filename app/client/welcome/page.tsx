@@ -16,8 +16,9 @@ import { VERTICALS, isValidVerticalId, type VerticalId } from '@/lib/verticals'
 
 // Route each vertical sends the user to after selection (anketa path)
 const ANKETA_ROUTE: Record<VerticalId, string> = {
-  generic: '/client/onboarding',
-  medical: '/client/onboarding-medical',
+  generic:   '/client/onboarding',
+  medical:   '/client/onboarding-medical',
+  ecommerce: '/client/onboarding-ecommerce',
 }
 
 type Step = 'vertical' | 'path'

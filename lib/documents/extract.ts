@@ -308,6 +308,12 @@ ${text.slice(0, 30000)}`;
 const SALES_LIKE_TYPES = new Set([
   "sales_report",
   "crm_export",
+  // E-commerce sales-shaped feeds
+  "marketplace_report",   // Wildberries / Ozon / Kaspi / Uzum weekly export
+  "ads_report",           // Meta / Yandex Direct / TikTok / Google Ads weekly
+  "cart_funnel",          // GA4 / Posthog checkout-step export
+  "inventory_csv",        // ERP / POS stock + ABC export
+  "ga4_export",           // Google Analytics 4 audience / conversion report
 ]);
 
 /**
@@ -316,6 +322,7 @@ const SALES_LIKE_TYPES = new Set([
 const CLIENT_LIKE_TYPES = new Set([
   "client_base",
   "patient_base",
+  "ecommerce_customers",  // Shopify / Bitrix customer export with order history
 ]);
 
 export async function extractFromDocument(input: ExtractFromDocumentInput): Promise<{
