@@ -15,11 +15,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
 
 interface StepDef {
   key: string
   num: string
+  icon: string
+  shortTitle: string
   title: string
   hint: string
   fields: FieldDef[]
@@ -41,6 +44,8 @@ const STEPS: StepDef[] = [
   {
     key: 'platform',
     num: '01',
+    icon: 'storefront',
+    shortTitle: 'Платформа',
     title: 'Платформа магазина',
     hint: 'На чём крутится сайт. Если несколько — отметь все.',
     fields: [
@@ -58,6 +63,8 @@ const STEPS: StepDef[] = [
   {
     key: 'marketplaces',
     num: '02',
+    icon: 'shopping_bag',
+    shortTitle: 'Маркетплейсы',
     title: 'Маркетплейсы',
     hint: 'Где ещё продаёте. Можно несколько или «не работаем».',
     fields: [
@@ -74,6 +81,8 @@ const STEPS: StepDef[] = [
   {
     key: 'traffic',
     num: '03',
+    icon: 'ads_click',
+    shortTitle: 'Трафик',
     title: 'Каналы трафика',
     hint: 'Откуда идёт основная часть посетителей и сколько на это тратите.',
     fields: [
@@ -91,6 +100,8 @@ const STEPS: StepDef[] = [
   {
     key: 'catalog',
     num: '04',
+    icon: 'inventory_2',
+    shortTitle: 'Каталог',
     title: 'Каталог',
     hint: 'Сколько товаров и какие тащат маржу.',
     fields: [
@@ -104,6 +115,8 @@ const STEPS: StepDef[] = [
   {
     key: 'funnel',
     num: '05',
+    icon: 'filter_alt',
+    shortTitle: 'Воронка',
     title: 'Воронка покупки',
     hint: 'Если не знаете точных цифр — поставьте предположение, потом подключим GA4.',
     fields: [
@@ -118,6 +131,8 @@ const STEPS: StepDef[] = [
   {
     key: 'logistics',
     num: '06',
+    icon: 'local_shipping',
+    shortTitle: 'Логистика',
     title: 'Логистика и возвраты',
     hint: 'Как доставляете и что часто возвращают.',
     fields: [
@@ -136,6 +151,8 @@ const STEPS: StepDef[] = [
   {
     key: 'finance',
     num: '07',
+    icon: 'payments',
+    shortTitle: 'Финансы',
     title: 'Финансы и сезонность',
     hint: 'Опционально — для прогноза кэша и плана роста.',
     fields: [
@@ -239,36 +256,68 @@ export default function OnboardingEcommercePage() {
   }
 
   return (
-    <div className="min-h-screen bg-surface text-on-surface">
+    <div className="min-h-screen bg-[#0c0e14] text-on-surface">
 
-      {/* Top bar */}
-      <header className="border-b border-white/[0.04] bg-surface/80 backdrop-blur-xl sticky top-0 z-50">
-        <div className="max-w-4xl mx-auto px-6 py-3 flex items-center justify-between">
-          <Link href="/client/welcome" className="flex items-center gap-2 text-on-surface-variant hover:text-on-surface transition-colors">
-            <span className="material-symbols-outlined text-base">arrow_back</span>
-            <span className="text-sm">Изменить тип бизнеса</span>
+      {/* Header — same chrome as /client/onboarding */}
+      <header className="sticky top-0 z-30 bg-[#0c0e14]/90 backdrop-blur-xl border-b border-white/[0.06]">
+        <div className="max-w-3xl mx-auto px-4 py-3 flex items-center justify-between">
+          <Link href="/client/welcome" className="flex items-center gap-2 group">
+            <Image src="/images/logo.svg" alt="AIStart360" width={28} height={28} className="opacity-80 group-hover:opacity-100 transition-opacity" />
+            <span className="text-sm font-bold text-on-surface/70 hidden sm:block">AIStart360</span>
+            <span className="text-[10px] font-mono text-primary/70 hidden md:inline ml-2">/ e-commerce</span>
           </Link>
-          <p className="text-xs font-mono text-on-surface-variant">
-            E-COM ОНБОРДИНГ · {stepIdx + 1} / {total}
-          </p>
+          <span className="text-[10px] font-mono text-on-surface-variant">
+            Шаг {stepIdx + 1} из {total}
+          </span>
         </div>
-        <div className="h-0.5 bg-surface-container">
-          <div className="h-full bg-primary transition-all duration-300" style={{ width: `${pct}%` }} />
+        <div className="h-0.5 bg-white/[0.04]">
+          <div
+            className="h-full bg-gradient-to-r from-primary to-[#00e29e] transition-all duration-500"
+            style={{ width: `${pct}%` }}
+          />
         </div>
       </header>
 
-      <main className="max-w-3xl mx-auto px-6 py-12">
-        <div className="mb-8">
-          <p className="text-xs font-mono text-primary uppercase tracking-[0.2em] mb-3">
-            Шаг {step.num}
-          </p>
-          <h1 className="font-headline text-3xl lg:text-4xl font-extrabold text-on-surface mb-3">
-            {step.title}
-          </h1>
-          <p className="text-on-surface-variant text-sm">{step.hint}</p>
+      <main className="max-w-3xl mx-auto px-4 py-6 md:py-10">
+        {/* Step tabs (scrollable) — same as /client/onboarding */}
+        <div className="flex gap-1 overflow-x-auto pb-3 mb-6 scrollbar-hide">
+          {STEPS.map((s, i) => {
+            const isActive = i === stepIdx
+            const isPast = i < stepIdx
+            return (
+              <button
+                key={s.key}
+                onClick={() => setStepIdx(i)}
+                className={`
+                  flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-mono whitespace-nowrap transition-all flex-shrink-0 cursor-pointer
+                  ${isActive ? 'bg-primary/15 text-primary border border-primary/20' :
+                    isPast ? 'bg-white/[0.04] text-on-surface-variant hover:text-on-surface hover:bg-white/[0.06]' :
+                    'bg-white/[0.02] text-on-surface-variant/60 hover:text-on-surface-variant hover:bg-white/[0.05]'}
+                `}
+              >
+                <span className="material-symbols-outlined text-xs">{s.icon}</span>
+                {s.shortTitle}
+              </button>
+            )
+          })}
         </div>
 
-        <div className="space-y-5">
+        {/* Step header — icon-circle + title */}
+        <div className="mb-6">
+          <div className="flex items-center gap-3 mb-2">
+            <div className="w-10 h-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center">
+              <span className="material-symbols-outlined text-lg text-primary">{step.icon}</span>
+            </div>
+            <div>
+              <p className="text-[10px] font-mono text-primary/60 uppercase tracking-[0.15em]">Шаг {step.num}</p>
+              <h1 className="text-xl font-bold text-on-surface">{step.title}</h1>
+            </div>
+          </div>
+          <p className="text-sm text-on-surface-variant ml-[52px]">{step.hint}</p>
+        </div>
+
+        {/* Step form */}
+        <div className="mb-8 space-y-5">
           {step.fields.map((f) => (
             <FieldInput
               key={f.key}
@@ -280,38 +329,35 @@ export default function OnboardingEcommercePage() {
         </div>
 
         {error && (
-          <div className="mt-6 rounded-xl bg-error/10 border border-error/20 p-4 text-sm text-error">
+          <div className="mb-6 rounded-xl bg-error/10 border border-error/20 p-4 text-sm text-error">
             {error}
           </div>
         )}
 
-        <div className="mt-10 flex items-center justify-between">
-          <button
-            onClick={prev}
-            disabled={stepIdx === 0}
-            className="px-5 py-2.5 rounded-xl border border-white/[0.08] text-on-surface-variant text-sm hover:text-on-surface hover:border-white/20 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-          >
-            ← Назад
-          </button>
+        {/* Navigation — same gradient CTA as generic onboarding */}
+        <div className="flex items-center gap-3 pb-8">
+          {stepIdx > 0 && (
+            <button
+              onClick={prev}
+              className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl border border-white/[0.08] text-on-surface-variant text-sm hover:bg-white/[0.04] transition-colors"
+            >
+              <span className="material-symbols-outlined text-base">arrow_back</span>
+              Назад
+            </button>
+          )}
           <button
             onClick={next}
             disabled={submitting}
-            className="px-6 py-2.5 rounded-xl bg-primary text-on-primary text-sm font-semibold hover:shadow-lg hover:shadow-primary/30 disabled:opacity-50 transition-all flex items-center gap-2"
+            className="flex-1 flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-gradient-to-r from-primary to-[#00e29e] text-[#003824] font-bold text-sm hover:scale-[0.99] transition-all disabled:opacity-50"
           >
-            {submitting ? 'Завершаем…' : stepIdx === total - 1 ? 'Готово → в кабинет' : 'Дальше →'}
+            {submitting ? (
+              <><span className="material-symbols-outlined text-base animate-spin">progress_activity</span> Сохранение...</>
+            ) : stepIdx === total - 1 ? (
+              <><span className="material-symbols-outlined text-base">rocket_launch</span> Получить дашборд</>
+            ) : (
+              <><span className="material-symbols-outlined text-base">arrow_forward</span> Далее</>
+            )}
           </button>
-        </div>
-
-        {/* Dots */}
-        <div className="mt-10 flex items-center justify-center gap-1.5">
-          {STEPS.map((_, i) => (
-            <button
-              key={i}
-              onClick={() => setStepIdx(i)}
-              className={`h-2 rounded-full transition-all ${i === stepIdx ? 'w-6 bg-primary' : i < stepIdx ? 'w-2 bg-primary/40' : 'w-2 bg-on-surface-variant/20 hover:bg-on-surface-variant/40'}`}
-              aria-label={`Шаг ${i + 1}`}
-            />
-          ))}
         </div>
       </main>
     </div>
