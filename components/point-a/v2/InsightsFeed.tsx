@@ -9,7 +9,7 @@
  */
 
 import Link from 'next/link'
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { InsightItem, type InsightFeedItem } from './InsightItem'
 
 type FilterKey = 'all' | 'ai' | 'expert' | 'client'
@@ -133,7 +133,7 @@ interface Props {
 
 export function InsightsFeed({
   initialItems,
-  limit = 4,
+  limit = 0, // 0 = no limit; slideshow flips through all items
   hideFooterLink = false,
   showSearch = true,
   hideHeader = false,
@@ -142,6 +142,7 @@ export function InsightsFeed({
   const [loading, setLoading] = useState(!initialItems)
   const [filter, setFilter] = useState<FilterKey>('all')
   const [query, setQuery] = useState('')
+  const [idx, setIdx] = useState(0)
 
   useEffect(() => {
     if (initialItems) return
@@ -187,6 +188,33 @@ export function InsightsFeed({
   }, [items, filter, query])
 
   const visible = limit > 0 ? filtered.slice(0, limit) : filtered
+
+  // ─── Slideshow: reset idx when filter/query/items change or list shrinks ───
+  useEffect(() => {
+    setIdx(0)
+  }, [filter, query, items])
+
+  useEffect(() => {
+    if (idx > visible.length - 1) setIdx(Math.max(0, visible.length - 1))
+  }, [visible.length, idx])
+
+  const go = useCallback((n: number) => {
+    if (visible.length === 0) return
+    const next = ((n % visible.length) + visible.length) % visible.length // wrap-around
+    setIdx(next)
+  }, [visible.length])
+
+  // Keyboard nav: ← / →
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
+      if (e.key === 'ArrowRight') { e.preventDefault(); go(idx + 1) }
+      else if (e.key === 'ArrowLeft') { e.preventDefault(); go(idx - 1) }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [idx, go])
 
   // ─── Header ───
   const Header = !hideHeader && (
@@ -260,23 +288,20 @@ export function InsightsFeed({
     </div>
   )
 
-  // ─── Body ───
+  // ─── Body (slideshow: one question at a time) ───
+  const current = visible[Math.min(idx, Math.max(0, visible.length - 1))]
+  const total = visible.length
+  const safeIdx = Math.min(idx, Math.max(0, total - 1))
+
   const Body = (
     <div>
       {loading ? (
-        <div className="space-y-3">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <div
-              key={i}
-              className="rounded-2xl border border-white/[0.04] bg-surface-container-low p-5 animate-pulse"
-            >
-              <div className="h-3 w-32 bg-white/[0.06] rounded mb-3" />
-              <div className="h-4 w-3/4 bg-white/[0.08] rounded mb-2" />
-              <div className="h-3 w-1/2 bg-white/[0.05] rounded" />
-            </div>
-          ))}
+        <div className="rounded-2xl border border-white/[0.04] bg-surface-container-low p-5 animate-pulse">
+          <div className="h-3 w-32 bg-white/[0.06] rounded mb-3" />
+          <div className="h-4 w-3/4 bg-white/[0.08] rounded mb-2" />
+          <div className="h-3 w-1/2 bg-white/[0.05] rounded" />
         </div>
-      ) : visible.length === 0 ? (
+      ) : total === 0 ? (
         <div className="rounded-2xl border border-white/[0.04] bg-surface-container-low p-8 text-center">
           <span className="material-symbols-outlined text-on-surface-variant/40 text-3xl">
             inbox
@@ -286,7 +311,57 @@ export function InsightsFeed({
           </p>
         </div>
       ) : (
-        visible.map((it) => <InsightItem key={it.id} item={it} />)
+        <>
+          {/* Slide stage */}
+          <div className="relative">
+            {current && <InsightItem key={current.id} item={current} />}
+          </div>
+
+          {/* Slideshow controls */}
+          <div className="mt-4 flex items-center justify-between gap-3 flex-wrap">
+            <button
+              onClick={() => go(safeIdx - 1)}
+              disabled={total <= 1}
+              aria-label="Предыдущий вопрос"
+              className="inline-flex items-center gap-1.5 rounded-xl border border-white/[0.06] bg-surface-container-low text-on-surface-variant text-xs font-medium px-3 py-1.5 hover:border-primary/40 hover:text-primary transition-colors disabled:opacity-30 disabled:hover:border-white/[0.06] disabled:hover:text-on-surface-variant focus:outline-none focus:ring-2 focus:ring-primary/40"
+            >
+              <span className="material-symbols-outlined text-[16px]">arrow_back</span>
+              Назад
+            </button>
+
+            {/* Dots + counter */}
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-1.5 max-w-[280px] overflow-x-auto">
+                {visible.map((it, i) => (
+                  <button
+                    key={it.id}
+                    onClick={() => go(i)}
+                    aria-label={`Вопрос ${i + 1}: ${it.category}`}
+                    title={`${i + 1}. ${it.category}`}
+                    className={`flex-shrink-0 h-2 rounded-full transition-all focus:outline-none focus:ring-2 focus:ring-primary/40 ${
+                      i === safeIdx
+                        ? 'w-6 bg-primary'
+                        : 'w-2 bg-on-surface-variant/30 hover:bg-on-surface-variant/60'
+                    }`}
+                  />
+                ))}
+              </div>
+              <span className="font-mono text-[11px] text-on-surface-variant whitespace-nowrap">
+                {safeIdx + 1} / {total}
+              </span>
+            </div>
+
+            <button
+              onClick={() => go(safeIdx + 1)}
+              disabled={total <= 1}
+              aria-label="Следующий вопрос"
+              className="inline-flex items-center gap-1.5 rounded-xl bg-primary/15 border border-primary/40 text-primary text-xs font-semibold px-3 py-1.5 hover:bg-primary/25 transition-colors disabled:opacity-30 disabled:hover:bg-primary/15 focus:outline-none focus:ring-2 focus:ring-primary/40"
+            >
+              Дальше
+              <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
+            </button>
+          </div>
+        </>
       )}
     </div>
   )
