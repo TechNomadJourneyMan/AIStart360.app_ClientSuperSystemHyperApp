@@ -154,6 +154,39 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* ── TRUST STRIP ───────────────────────────────────── */}
+      <section aria-label="Доверие" className="border-t border-white/[0.04] bg-surface-container-low/60">
+        <div className="max-w-7xl mx-auto px-6 py-8">
+          <div className="flex flex-col lg:flex-row items-center justify-between gap-6">
+            <p className="text-[10px] font-mono text-on-surface-variant/60 uppercase tracking-[0.25em] flex-shrink-0">
+              нам доверяют
+            </p>
+            <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-3 lg:flex-1">
+              {[
+                { icon: 'inventory_2',    v: '500+',          l: 'диагностик · 2024–26' },
+                { icon: 'category',       v: '27',            l: 'отраслей покрыто' },
+                { icon: 'public',         v: 'СНГ + MENA',    l: 'регионы запуска' },
+                { icon: 'verified',       v: '92%',           l: 'точность AI-парсера' },
+                { icon: 'shield_lock',    v: 'self-host',     l: 'данные на твоей инфре' },
+              ].map((b) => (
+                <div
+                  key={b.l}
+                  className="flex items-center gap-2.5 px-4 py-2 rounded-xl bg-surface-container border border-white/[0.06]"
+                >
+                  <span className="material-symbols-outlined text-primary text-base">{b.icon}</span>
+                  <div className="flex items-baseline gap-2">
+                    <span className="font-mono font-bold text-on-surface text-sm">{b.v}</span>
+                    <span className="text-[10px] text-on-surface-variant/70 uppercase tracking-wider whitespace-nowrap">
+                      {b.l}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* ── MODULES ────────────────────────────────────────── */}
       <section id="modules" className="border-t border-white/[0.04] bg-surface-container-low/30">
         <div className="max-w-7xl mx-auto px-6 py-20">
