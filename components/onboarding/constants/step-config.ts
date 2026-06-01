@@ -9,7 +9,7 @@ export const STEPS = [
   { n: 1, title: 'Регистрация', icon: 'how_to_reg' },
   { n: 2, title: 'Цели', icon: 'flag' },
   { n: 3, title: 'О компании', icon: 'business' },
-  { n: 4, title: 'Загрузка данных', icon: 'cloud_upload' },
+  { n: 4, title: 'HR', icon: 'groups' },
   { n: 5, title: 'Проверка данных', icon: 'rule' },
   { n: 6, title: 'Уточняющий опрос', icon: 'quiz' },
   { n: 7, title: 'Финансы', icon: 'payments' },

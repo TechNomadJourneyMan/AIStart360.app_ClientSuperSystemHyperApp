@@ -47,6 +47,7 @@ export default function OnboardingPage() {
   const [isSaving, setIsSaving] = useState(false)
   const [userId, setUserId] = useState<string | null>(null)
   const [companyId, setCompanyId] = useState<string | null>(null)
+  const [hasDocs, setHasDocs] = useState(false)
 
   // Bootstrap: load from localStorage → server
   useEffect(() => {
@@ -56,18 +57,17 @@ export default function OnboardingPage() {
         const { data: { user } } = await supabase.auth.getUser()
         setUserId(user?.id ?? null)
 
-        // Redirect medical-vertical users to their 8-field clinic intake —
-        // the generic 12-step wizard doesn't fit the clinic flow.
-        if (user) {
-          const { data: profile } = await supabase
-            .from('profiles')
-            .select('vertical')
-            .eq('id', user.id)
-            .maybeSingle()
-          if (profile?.vertical === 'medical') {
-            router.replace('/client/onboarding-medical')
-            return
-          }
+        // Note: medical-vertical users are NOT force-redirected to the short
+        // clinic intake anymore — the full 12-step survey is available to
+        // everyone, and the clinic form stays reachable as an optional link.
+
+        // Check whether any documents are already uploaded (controls the
+        // "Сформировать Точку А" early-exit button).
+        if (user?.id) {
+          fetch('/api/v1/onboarding/status', { credentials: 'include' })
+            .then((r) => r.json())
+            .then((j) => { if (j?.ok && j.data?.documents?.has_files) setHasDocs(true) })
+            .catch(() => {})
         }
 
         // 1. Try localStorage
@@ -195,11 +195,40 @@ export default function OnboardingPage() {
     }
   }
 
+  // Early exit: form Точка А now and finish the survey later. Survey progress
+  // stays in localStorage + server, so the user can come back any time.
+  const finishEarly = async () => {
+    persistLocal(currentStep, stepData)
+    await saveToServer(currentStep, stepData)
+    if (userId) {
+      setIsSaving(true)
+      try {
+        await fetch('/api/v1/diagnostics/recalculate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ user_id: userId }),
+        })
+      } catch {}
+      setIsSaving(false)
+    }
+    router.push('/client/point-a')
+  }
+
   const goBack = () => setCurrentStep(s => Math.max(1, s - 1))
   const progress = Math.round(((currentStep - 1) / TOTAL_STEPS) * 100)
   const stepConfig = STEPS[currentStep - 1]
   const isLastStep = currentStep === TOTAL_STEPS
   const StepForm = STEP_FORMS[currentStep]
+
+  // The early-exit button appears once the user has something to form a
+  // Точка А from: either a filled plan (goals on step 2) or uploaded files.
+  const planFilled = Boolean(
+    (typeof stepData['s2n_goal_12m_what'] === 'string' && (stepData['s2n_goal_12m_what'] as string).trim()) ||
+    (typeof stepData['s2n_goal_3y_what'] === 'string' && (stepData['s2n_goal_3y_what'] as string).trim()) ||
+    (typeof savedAnswers['s2n_goal_12m_what'] === 'string' && (savedAnswers['s2n_goal_12m_what'] as string).trim()) ||
+    (typeof savedAnswers['s2n_goal_3y_what'] === 'string' && (savedAnswers['s2n_goal_3y_what'] as string).trim())
+  )
+  const canFinishEarly = !isLastStep && (planFilled || hasDocs)
 
   return (
     <div className="min-h-screen bg-[#0c0e14] text-on-surface">
@@ -207,7 +236,7 @@ export default function OnboardingPage() {
       <header className="sticky top-0 z-30 bg-[#0c0e14]/90 backdrop-blur-xl border-b border-white/[0.06]">
         <div className="max-w-3xl mx-auto px-4 py-3 flex items-center justify-between">
           <Link href="/client/dashboard" className="flex items-center gap-2 group">
-            <Image src="/images/logo.svg" alt="AIStart360" width={28} height={28} className="opacity-80 group-hover:opacity-100 transition-opacity" />
+            <Image src="/logo-icon.svg" alt="AIStart360" width={28} height={28} className="opacity-80 group-hover:opacity-100 transition-opacity" />
             <span className="text-sm font-bold text-on-surface/70 hidden sm:block">AIStart360</span>
           </Link>
           <span className="text-[10px] font-mono text-on-surface-variant">
@@ -222,6 +251,30 @@ export default function OnboardingPage() {
       </header>
 
       <main className="max-w-3xl mx-auto px-4 py-6 md:py-10">
+        {/* File upload — separate window, available from the very start */}
+        <Link
+          href="/client/onboarding/documents"
+          className="group flex items-center gap-3 mb-5 rounded-xl border border-primary/20 bg-primary/[0.06] hover:bg-primary/[0.1] px-4 py-3 transition-colors"
+        >
+          <div className="w-9 h-9 rounded-lg bg-primary/15 flex items-center justify-center flex-shrink-0">
+            <span className="material-symbols-outlined text-primary text-lg">cloud_upload</span>
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold text-on-surface">
+              Загрузить файлы
+              {hasDocs && (
+                <span className="ml-2 text-[10px] font-mono text-primary align-middle">✓ загружено</span>
+              )}
+            </p>
+            <p className="text-[11px] text-on-surface-variant">
+              Отчёты, P&amp;L, база клиентов · xlsx, csv, pdf — в отдельном окне, можно в любой момент
+            </p>
+          </div>
+          <span className="material-symbols-outlined text-on-surface-variant group-hover:text-primary group-hover:translate-x-0.5 transition-all flex-shrink-0">
+            arrow_forward
+          </span>
+        </Link>
+
         {/* Step tabs (scrollable, all clickable) */}
         <div className="flex gap-1 overflow-x-auto pb-3 mb-6 scrollbar-hide">
           {STEPS.map((s, i) => {
@@ -289,6 +342,23 @@ export default function OnboardingPage() {
             )}
           </button>
         </div>
+
+        {/* Early exit — form Точка А now, finish the survey later */}
+        {canFinishEarly && (
+          <div className="mb-8 -mt-2">
+            <button
+              onClick={finishEarly}
+              disabled={isSaving}
+              className="w-full flex items-center justify-center gap-2 px-5 py-3 rounded-xl border border-primary/30 bg-primary/[0.06] text-primary font-semibold text-sm hover:bg-primary/[0.12] transition-colors disabled:opacity-50"
+            >
+              <span className="material-symbols-outlined text-base">insights</span>
+              Сформировать Точку А и перейти в кабинет
+            </button>
+            <p className="text-[10px] text-on-surface-variant/60 text-center mt-2">
+              Анкета сохранится — её можно дозаполнить в любой момент.
+            </p>
+          </div>
+        )}
 
         {/* Last step info */}
         {isLastStep && (

@@ -35,7 +35,7 @@ const POINT_A_TARGETS: CommentTarget[] = [
   { id: 'marketing',  label: 'Маркетинг', group: 'point-a', section: 'Блоки' },
   { id: 'strategy',   label: 'Стратегия', group: 'point-a', section: 'Блоки' },
   // Hero / AI sections
-  { id: 'pointa:hero:gauge',              label: 'Индекс здоровья бизнеса (шкала)', group: 'point-a', section: 'Hero' },
+  { id: 'pointa:hero:gauge',              label: 'Индекс готовности к росту (шкала)', group: 'point-a', section: 'Hero' },
   { id: 'pointa:ai:executiveSummary',     label: 'AI-анализ бизнеса',               group: 'point-a', section: 'AI' },
   { id: 'pointa:priorities:section',      label: 'Стратегические приоритеты',       group: 'point-a', section: 'Анализ' },
   { id: 'pointa:risks:section',           label: 'Риски',                           group: 'point-a', section: 'Анализ' },

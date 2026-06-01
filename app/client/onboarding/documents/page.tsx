@@ -501,7 +501,7 @@ export default function DocumentsPage() {
       <main className="max-w-2xl mx-auto px-6 py-8 space-y-6">
         {/* Title */}
         <div>
-          <p className="text-xs font-mono text-primary/70 uppercase tracking-[0.2em] mb-2">Шаг 7 — Документы</p>
+          <p className="text-xs font-mono text-primary/70 uppercase tracking-[0.2em] mb-2">Документы · загрузка файлов</p>
           <h1 className="font-headline text-2xl font-extrabold text-on-surface mb-1">Загрузите финансовые документы</h1>
           <p className="text-sm text-on-surface-variant">AI-система проанализирует ваши отчёты и дополнит диагностику реальными данными</p>
         </div>

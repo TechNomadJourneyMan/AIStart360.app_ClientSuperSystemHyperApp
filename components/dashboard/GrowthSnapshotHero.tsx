@@ -60,8 +60,8 @@ function pct(value: number, max: number): number {
 
 function progressColor(p: number): string {
   if (p >= 75) return 'bg-primary'
-  if (p >= 40) return 'bg-amber-400'
-  return 'bg-orange-500'
+  if (p >= 40) return 'bg-[#e87a35]'
+  return 'bg-[#dc524b]'
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -415,7 +415,7 @@ export default function GrowthSnapshotHero() {
 
               {/* Tile 2 — Цель 12 месяцев (green) */}
               {(target12m || hasAnyPeriodGoal) && (
-                <div className="relative bg-surface-container rounded-xl border border-white/[0.04] p-3.5 pl-4 overflow-hidden">
+                <div className="relative bg-surface-container rounded-xl border border-white/[0.04] p-5 pl-6 overflow-hidden">
                   <span className="absolute left-0 top-0 bottom-0 w-1 bg-primary/80 rounded-l-xl" />
                   <div className="flex items-start justify-between gap-3 flex-wrap">
                     <div className="min-w-[160px]">
@@ -502,12 +502,12 @@ export default function GrowthSnapshotHero() {
 
               {/* Tile 3 — Цель 3 года (purple) */}
               {(target3y || hasAnyPeriodGoal) && (
-                <div className="relative bg-surface-container rounded-xl border border-white/[0.04] p-3.5 pl-4 overflow-hidden">
-                  <span className="absolute left-0 top-0 bottom-0 w-1 bg-purple-400/80 rounded-l-xl" />
+                <div className="relative bg-surface-container rounded-xl border border-white/[0.04] p-5 pl-6 overflow-hidden">
+                  <span className="absolute left-0 top-0 bottom-0 w-1 bg-primary/80 rounded-l-xl" />
                   <div className="flex items-start justify-between gap-3 flex-wrap">
                     <div className="min-w-[160px]">
                       <div className="flex items-center gap-1.5 mb-1">
-                        <span className="material-symbols-outlined text-[12px] text-purple-400">arrow_upward</span>
+                        <span className="material-symbols-outlined text-[12px] text-primary/80">arrow_upward</span>
                         <p className="text-[9px] font-mono text-on-surface-variant uppercase tracking-widest">
                           Цель 3 года
                         </p>
@@ -520,7 +520,7 @@ export default function GrowthSnapshotHero() {
                           <span className="material-symbols-outlined text-[12px]">edit</span>
                         </button>
                       </div>
-                      <p className="font-mono text-4xl font-black text-purple-300 leading-[0.95] tracking-tight">
+                      <p className="font-mono text-4xl font-black text-primary leading-[0.95] tracking-tight">
                         {monthlyPlan3y ? formatKztCompact(monthlyPlan3y) : '—'}
                       </p>
                       <p className="text-[11px] text-on-surface-variant font-mono mt-1.5">

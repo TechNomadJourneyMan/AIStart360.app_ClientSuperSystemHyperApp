@@ -130,7 +130,7 @@ export function PointATab({ clientId }: Props) {
           </div>
           <div>
             <p className="text-[10px] font-mono uppercase tracking-widest text-primary/70 mb-1">
-              Индекс здоровья бизнеса
+              Индекс готовности к росту
             </p>
             <h2 className="font-headline text-2xl font-extrabold text-on-surface">
               Точка А

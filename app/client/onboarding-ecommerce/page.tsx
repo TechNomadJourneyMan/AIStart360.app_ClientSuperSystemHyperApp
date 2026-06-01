@@ -262,7 +262,7 @@ export default function OnboardingEcommercePage() {
       <header className="sticky top-0 z-30 bg-[#0c0e14]/90 backdrop-blur-xl border-b border-white/[0.06]">
         <div className="max-w-3xl mx-auto px-4 py-3 flex items-center justify-between">
           <Link href="/client/welcome" className="flex items-center gap-2 group">
-            <Image src="/images/logo.svg" alt="AIStart360" width={28} height={28} className="opacity-80 group-hover:opacity-100 transition-opacity" />
+            <Image src="/logo-icon.svg" alt="AIStart360" width={28} height={28} className="opacity-80 group-hover:opacity-100 transition-opacity" />
             <span className="text-sm font-bold text-on-surface/70 hidden sm:block">AIStart360</span>
             <span className="text-[10px] font-mono text-primary/70 hidden md:inline ml-2">/ e-commerce</span>
           </Link>

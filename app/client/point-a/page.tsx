@@ -334,7 +334,7 @@ export default function PointAClientPage() {
                   </div>
                 </div>
                 <div className="flex-1 text-center md:text-left">
-                  <p className="text-xs font-mono text-primary/70 uppercase tracking-[0.2em] mb-2">Индекс здоровья бизнеса</p>
+                  <p className="text-xs font-mono text-primary/70 uppercase tracking-[0.2em] mb-2">Индекс готовности к росту</p>
                   <h1 className="font-headline text-2xl font-extrabold text-on-surface mb-1">
                     Добро пожаловать{company?.name ? `, ${company.name}` : ''}!
                   </h1>
