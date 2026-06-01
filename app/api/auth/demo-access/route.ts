@@ -123,10 +123,10 @@ export async function POST() {
       email,
       password,
       userId,
-      // Demo users land directly in the onboarding flow ("что за бизнес"
-      // questionnaire + document upload) instead of the empty /client/point-a
-      // dashboard placeholder.
-      redirect: '/client/onboarding',
+      // Demo users land on the welcome screen: pick vertical (тип бизнеса),
+      // then pick the start path (анкета / загрузка файлов / просто посмотреть).
+      // Full new-account modelling — same flow as a fresh registration.
+      redirect: '/client/welcome',
       message: 'Demo account ready. Use these credentials to sign in.',
     },
     { status: 200 },

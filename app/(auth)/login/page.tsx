@@ -24,7 +24,8 @@ function LoginContent() {
         && sessionStorage.getItem('aistart360_demo_pending') === '1'
       if (demoPending && user.role === 'client') {
         sessionStorage.removeItem('aistart360_demo_pending')
-        router.push('/client/onboarding')
+        // Welcome screen: pick тип бизнеса → анкета/файлы/просто посмотреть
+        router.push('/client/welcome')
         return
       }
       if (user.role === 'client' && user.status === 'pending_approval') {
