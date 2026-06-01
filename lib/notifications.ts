@@ -248,6 +248,56 @@ async function getRecipient(userId: string): Promise<Recipient> {
   }
 }
 
+// ── Display-name cache + resolver ──────────────────────────────────────────
+// Telegram + email use `data.userName || data.userEmail || userId`. Most call
+// sites only pass userId, so the message reads "Пользователь <uuid>". Resolve
+// full_name / organization / email from profiles once per minute per userId
+// and inject into `data` before the message is built.
+const NAME_CACHE_TTL_MS = 60_000
+const nameCache = new Map<string, { value: { name: string | null; email: string | null }; t: number }>()
+
+async function resolveUserDisplay(
+  userId: string,
+): Promise<{ name: string | null; email: string | null }> {
+  const now = Date.now()
+  const hit = nameCache.get(userId)
+  if (hit && now - hit.t < NAME_CACHE_TTL_MS) return hit.value
+  try {
+    const sb = createServerClient()
+    const { data } = await sb
+      .from('profiles')
+      .select('full_name, organization, email')
+      .eq('id', userId)
+      .maybeSingle()
+    const row = (data ?? null) as
+      | { full_name?: string | null; organization?: string | null; email?: string | null }
+      | null
+    const name = row?.full_name?.trim()
+      ? `${row.full_name.trim()}${row.organization?.trim() ? ` · ${row.organization.trim()}` : ''}`
+      : null
+    const value = { name, email: row?.email?.trim() ?? null }
+    nameCache.set(userId, { value, t: now })
+    return value
+  } catch {
+    return { name: null, email: null }
+  }
+}
+
+/**
+ * Mutates `data` in place (cheap) so message builders pick up `userName` /
+ * `userEmail`. Only fills missing fields — caller-supplied names win.
+ */
+async function enrichUserDisplay(
+  data: Record<string, unknown>,
+  userId: string | undefined,
+): Promise<void> {
+  if (!userId) return
+  if (data.userName && data.userEmail) return
+  const { name, email } = await resolveUserDisplay(userId)
+  if (!data.userName && name) data.userName = name
+  if (!data.userEmail && email) data.userEmail = email
+}
+
 // ─── Public API ─────────────────────────────────────────────────────────────
 
 /**
@@ -292,6 +342,10 @@ export async function notifyAdmins(
   // Rate-limit duplicate notifications within 60s
   if (isRateLimited(rateLimitKey(type, userId, data))) return
 
+  // Inject userName / userEmail from profiles so message reads
+  // "Пользователь Иван Петров · Acme" instead of a raw UUID.
+  await enrichUserDisplay(data, userId)
+
   const payload: NotificationPayload = { type, userId, data }
   const adminEmail = process.env.ADMIN_NOTIFICATION_EMAIL || process.env.ADMIN_EMAIL
 
@@ -320,6 +374,7 @@ export async function notifyUser(
   type: NotificationType,
   data: Record<string, unknown>,
 ): Promise<void> {
+  await enrichUserDisplay(data, userId)
   const payload: NotificationPayload = { type, userId, data }
   const recipient = await getRecipient(userId)
 
