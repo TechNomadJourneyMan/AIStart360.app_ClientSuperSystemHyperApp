@@ -137,19 +137,47 @@ export default function DashboardEcommercePage() {
 // ─── Sections ─────────────────────────────────────────────────────────────
 
 function Topbar() {
+  // Header chrome matches /client/dashboard-medical for cross-vertical
+  // consistency: eyebrow + title on the left, action set on the right.
   return (
-    <header className="border-b border-white/[0.04] bg-surface/80 backdrop-blur-xl sticky top-0 z-50">
-      <div className="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
-        <Link href="/" className="flex items-center gap-2">
-          <span className="material-symbols-outlined text-primary">shopping_cart</span>
-          <span className="font-headline font-extrabold">AIStart<span className="text-primary">360</span></span>
-          <span className="text-xs text-on-surface-variant/60 ml-2 hidden sm:inline">/ e-commerce</span>
-        </Link>
-        <nav className="flex items-center gap-5 text-sm text-on-surface-variant">
-          <Link href="/client/onboarding-ecommerce" className="hover:text-primary transition-colors">Анкета</Link>
-          <Link href="/client/intake" className="hover:text-primary transition-colors">Загрузить файлы</Link>
-          <Link href="/login" className="px-3 py-1.5 rounded-lg border border-white/[0.08] hover:border-primary/40 hover:text-primary transition-colors">Выйти</Link>
-        </nav>
+    <header className="sticky top-0 z-10 bg-surface/80 backdrop-blur-md border-b border-white/[0.06]">
+      <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+        <div>
+          <p className="text-xs font-mono text-primary/70 uppercase tracking-[0.2em]">
+            AI-операционка для онлайн-ритейла
+          </p>
+          <h1 className="text-xl font-headline font-bold text-on-surface mt-0.5">
+            Кабинет интернет-магазина
+          </h1>
+        </div>
+        <div className="flex items-center gap-4">
+          <Link
+            href="/client/onboarding-ecommerce"
+            className="text-xs text-on-surface-variant hover:text-primary transition-colors hidden sm:inline-flex items-center gap-1"
+          >
+            <span className="material-symbols-outlined text-[14px]">edit_note</span>
+            Анкета
+          </Link>
+          <Link
+            href="/client/intake"
+            className="text-xs text-on-surface-variant hover:text-primary transition-colors hidden sm:inline-flex items-center gap-1"
+          >
+            <span className="material-symbols-outlined text-[14px]">upload</span>
+            Файлы
+          </Link>
+          <Link
+            href="/settings/business-type"
+            className="text-xs text-on-surface-variant hover:text-primary transition-colors hidden md:inline"
+          >
+            Настройки
+          </Link>
+          <button
+            className="inline-flex items-center gap-1.5 text-xs text-on-surface-variant hover:text-primary transition-colors"
+          >
+            <span className="material-symbols-outlined text-[14px]">refresh</span>
+            Пересчитать
+          </button>
+        </div>
       </div>
     </header>
   )
