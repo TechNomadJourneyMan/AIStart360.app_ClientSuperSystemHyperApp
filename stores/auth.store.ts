@@ -259,8 +259,32 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
 
   logout: async () => {
     const supabase = createClient()
+
+    // ── Demo-session cleanup ────────────────────────────────────────────
+    // If the current session was created via /api/auth/demo-access we mark
+    // the user with user_metadata.demo === true. On logout we ask the
+    // server to delete that auth.users row so the account doesn't outlive
+    // its single session. Best-effort: never block logout on failure.
+    if (typeof window !== 'undefined') {
+      const demoUserId = sessionStorage.getItem('aistart360_demo_user_id')
+      if (demoUserId) {
+        try {
+          await fetch('/api/auth/demo-access/cleanup', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId: demoUserId }),
+            keepalive: true,
+          })
+        } catch {
+          // ignore — daily cron sweep would still catch stale demo users
+        }
+        sessionStorage.removeItem('aistart360_demo_user_id')
+        sessionStorage.removeItem('aistart360_demo_pending')
+      }
+    }
+
     await supabase.auth.signOut()
-    
+
     // Clear legacy cookies
     if (typeof document !== 'undefined') {
       document.cookie = 'aistart360_role=; path=/; max-age=0'

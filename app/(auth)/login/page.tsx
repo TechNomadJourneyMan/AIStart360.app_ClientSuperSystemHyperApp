@@ -19,6 +19,14 @@ function LoginContent() {
 
   useEffect(() => {
     if (user) {
+      // Demo session — go to onboarding to capture business + documents.
+      const demoPending = typeof window !== 'undefined'
+        && sessionStorage.getItem('aistart360_demo_pending') === '1'
+      if (demoPending && user.role === 'client') {
+        sessionStorage.removeItem('aistart360_demo_pending')
+        router.push('/client/onboarding')
+        return
+      }
       if (user.role === 'client' && user.status === 'pending_approval') {
         router.push('/client/waiting-room')
       } else if (user.role === 'client' && user.status === 'approved') {
@@ -60,14 +68,30 @@ function LoginContent() {
         const txt = await res.text()
         throw new Error(`HTTP ${res.status}: ${txt.slice(0, 160)}`)
       }
-      const json = await res.json() as { ok: boolean; email?: string; password?: string; detail?: string; error?: string }
+      const json = await res.json() as {
+        ok: boolean
+        email?: string
+        password?: string
+        userId?: string
+        redirect?: string
+        detail?: string
+        error?: string
+      }
       if (!json.ok || !json.email || !json.password) {
         throw new Error(json.detail ?? json.error ?? 'Не удалось создать демо-аккаунт')
       }
       // Reflect credentials in the form (so the user can see / save them).
       setEmail(json.email)
       setPassword(json.password)
-      // Sign in immediately. The useEffect above handles role-based redirect.
+      // Mark the session as demo so it lives one session only:
+      //   - useEffect routes to /client/onboarding instead of /client/point-a
+      //   - logout() in stores/auth.store.ts calls cleanup endpoint to
+      //     delete the auth.users row (best-effort).
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem('aistart360_demo_pending', '1')
+        if (json.userId) sessionStorage.setItem('aistart360_demo_user_id', json.userId)
+      }
+      // Sign in immediately. The useEffect above handles redirect.
       await login(json.email, json.password)
     } catch (e) {
       setDemoError(e instanceof Error ? e.message : 'Демо-доступ недоступен')
