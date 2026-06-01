@@ -10,6 +10,8 @@ function LoginContent() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
+  const [demoLoading, setDemoLoading] = useState(false)
+  const [demoError, setDemoError] = useState<string | null>(null)
   const { login, loginWithGoogle, isLoading, error, clearError, user } = useAuthStore()
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -39,6 +41,38 @@ function LoginContent() {
       await login(email, password)
     } catch {
       // Error handled by store
+    }
+  }
+
+  const handleDemoAccess = async () => {
+    if (demoLoading || isLoading) return
+    setDemoError(null)
+    setDemoLoading(true)
+    clearError?.()
+    try {
+      const res = await fetch('/api/auth/demo-access', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        cache: 'no-store',
+      })
+      const ct = res.headers.get('content-type') ?? ''
+      if (!ct.includes('application/json')) {
+        const txt = await res.text()
+        throw new Error(`HTTP ${res.status}: ${txt.slice(0, 160)}`)
+      }
+      const json = await res.json() as { ok: boolean; email?: string; password?: string; detail?: string; error?: string }
+      if (!json.ok || !json.email || !json.password) {
+        throw new Error(json.detail ?? json.error ?? 'Не удалось создать демо-аккаунт')
+      }
+      // Reflect credentials in the form (so the user can see / save them).
+      setEmail(json.email)
+      setPassword(json.password)
+      // Sign in immediately. The useEffect above handles role-based redirect.
+      await login(json.email, json.password)
+    } catch (e) {
+      setDemoError(e instanceof Error ? e.message : 'Демо-доступ недоступен')
+    } finally {
+      setDemoLoading(false)
     }
   }
 
@@ -129,12 +163,32 @@ function LoginContent() {
           {/* Demo access */}
           <button
             type="button"
-            onClick={() => { setEmail('admin@aistart360.kz'); setPassword('admin123') }}
-            className="w-full h-12 mb-6 bg-surface-container/60 border border-white/[0.08] rounded-2xl flex items-center justify-center gap-2 text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-all"
+            onClick={handleDemoAccess}
+            disabled={demoLoading || isLoading}
+            className="w-full h-12 mb-3 bg-surface-container/60 border border-white/[0.08] rounded-2xl flex items-center justify-center gap-2 text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-all disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <span className="material-symbols-outlined text-lg text-primary">public</span>
-            <span className="text-sm font-medium">Демо-доступ</span>
+            {demoLoading ? (
+              <>
+                <span className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                <span className="text-sm font-medium">Создаём демо-аккаунт…</span>
+              </>
+            ) : (
+              <>
+                <span className="material-symbols-outlined text-lg text-primary">public</span>
+                <span className="text-sm font-medium">Демо-доступ — войти как гость</span>
+              </>
+            )}
           </button>
+          {demoError && (
+            <div className="mb-3 p-3 bg-error/10 border border-error/20 rounded-xl flex items-start gap-2">
+              <span className="material-symbols-outlined text-error text-lg mt-0.5">error</span>
+              <p className="text-[13px] text-error font-medium flex-1">{demoError}</p>
+              <button onClick={() => setDemoError(null)} className="text-error/60 hover:text-error">
+                <span className="material-symbols-outlined text-sm">close</span>
+              </button>
+            </div>
+          )}
+          <div className="mb-6" />
 
           {error && (
             <div className="mb-4 p-3 bg-error/10 border border-error/20 rounded-xl flex items-start gap-2">
