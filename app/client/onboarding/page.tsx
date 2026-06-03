@@ -269,14 +269,20 @@ export default function OnboardingPage() {
           {StepForm && <StepForm data={stepData} onChange={handleFieldChange} userId={userId ?? undefined} />}
         </div>
 
-        {/* Navigation buttons */}
+        {/* Navigation buttons. Back always visible: prev step or welcome picker. */}
         <div className="flex items-center gap-3 pb-8">
-          {currentStep > 1 && (
+          {currentStep > 1 ? (
             <button onClick={goBack}
               className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl border border-white/[0.08] text-on-surface-variant text-sm hover:bg-white/[0.04] transition-colors">
               <span className="material-symbols-outlined text-base">arrow_back</span>
               Назад
             </button>
+          ) : (
+            <Link href="/client/welcome"
+              className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl border border-white/[0.08] text-on-surface-variant text-sm hover:bg-white/[0.04] transition-colors">
+              <span className="material-symbols-outlined text-base">arrow_back</span>
+              Назад
+            </Link>
           )}
           <button onClick={goNext} disabled={isSaving}
             className="flex-1 flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-gradient-to-r from-primary to-[#00e29e] text-[#003824] font-bold text-sm hover:scale-[0.99] transition-all disabled:opacity-50">
