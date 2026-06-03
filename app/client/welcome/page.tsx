@@ -90,7 +90,7 @@ export default function WelcomePage() {
 
         // 2a. Onboarding already done → straight to dashboard (existing users)
         if (companyRes.data && companyRes.data.length > 0) {
-          router.replace('/client/dashboard')
+          router.replace('/dashboard')
           return
         }
 
@@ -197,10 +197,10 @@ export default function WelcomePage() {
               </span>
             </button>
 
-            {/* Path 3: dashboard */}
+            {/* Path 3: dashboard — full sidebar cabinet (shared (dashboard) layout) */}
             <button
               type="button"
-              onClick={() => router.replace('/client/dashboard')}
+              onClick={() => router.replace('/dashboard')}
               className="group text-left bg-surface-container-low rounded-2xl border border-white/[0.06] hover:border-purple-500/40 hover:bg-purple-500/5 transition-all p-5"
             >
               <div className="w-11 h-11 rounded-xl bg-purple-500/15 border border-purple-500/25 flex items-center justify-center mb-3 group-hover:bg-purple-500/25 transition-colors">
