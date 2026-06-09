@@ -489,6 +489,67 @@
   color: rgba(96, 165, 250, 0.9) !important;
 }
 
+/* ═════════════════════════════════════════════════════════════════ */
+/* ── LANDING PAGE (public /) entrance + ambient motion ──────────── */
+/* ═════════════════════════════════════════════════════════════════ */
+
+@keyframes landing-rise {
+  from { opacity: 0; transform: translateY(18px); }
+  to   { opacity: 1; transform: translateY(0);    }
+}
+.landing-rise {
+  animation: landing-rise 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes landing-float {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-10px); }
+}
+.landing-float {
+  animation: landing-float 7s ease-in-out infinite;
+}
+
+/* ── Aurora background blobs (presentation + hero atmosphere) ── */
+@keyframes aurora-drift {
+  0%   { transform: translate(0, 0) scale(1); }
+  33%  { transform: translate(7%, -5%) scale(1.12); }
+  66%  { transform: translate(-6%, 6%) scale(0.94); }
+  100% { transform: translate(0, 0) scale(1); }
+}
+.aurora-blob {
+  animation: aurora-drift 22s ease-in-out infinite;
+  will-change: transform;
+}
+
+/* Subtle dotted grid texture for slide backdrops */
+.slide-grid {
+  background-image: radial-gradient(rgba(255, 255, 255, 0.06) 1px, transparent 1px);
+  background-size: 26px 26px;
+}
+
+/* Slide enter animation — replays on every slide change (key remount) */
+@keyframes slide-enter {
+  from { opacity: 0; transform: translateY(22px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.slide-enter {
+  animation: slide-enter 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .slide-enter { animation: none; }
+}
+
+/* Hairline gradient separator used across landing sections */
+.landing-hairline {
+  background-image: linear-gradient(90deg, transparent, rgba(110, 255, 192, 0.35), transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .landing-rise,
+  .landing-float,
+  .aurora-blob { animation: none; }
+}
+
 /* ── Action item clickable ── */
 .strategy-content li.strategy-action-item {
   cursor: pointer;

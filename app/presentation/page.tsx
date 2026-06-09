@@ -5,7 +5,9 @@
 // Mirrors AIStart360_Overview.pptx but optimised for browser
 
 import Link from 'next/link'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import Image from 'next/image'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { InfoHint } from '@/components/landing/InfoHint'
 
 // ─── Slide registry ──────────────────────────────────────────
 const SLIDES = [
@@ -19,8 +21,7 @@ const SLIDES = [
   { id: 8, key: 'point-b',   title: 'Точка Б + план' },
   { id: 9, key: 'parser',    title: 'AI-парсер' },
   { id: 10, key: 'stack',    title: 'Стек + интеграции' },
-  { id: 11, key: 'pricing',  title: 'Тарифы' },
-  { id: 12, key: 'next',     title: 'Следующие шаги' },
+  { id: 11, key: 'next',     title: 'Следующие шаги' },
 ] as const
 
 type SlideKey = typeof SLIDES[number]['key']
@@ -29,9 +30,9 @@ type SlideKey = typeof SLIDES[number]['key']
 
 function SlideShell({ eyebrow, children }: { eyebrow?: string; children: React.ReactNode }) {
   return (
-    <div className="w-full h-full flex flex-col">
+    <div className="w-full min-h-full flex flex-col">
       {eyebrow && (
-        <p className="text-xs font-mono text-primary uppercase tracking-[0.2em] mb-3">{eyebrow}</p>
+        <p className="text-[10px] sm:text-xs font-mono text-primary uppercase tracking-[0.2em] mb-3">{eyebrow}</p>
       )}
       <div className="flex-1 flex flex-col">{children}</div>
     </div>
@@ -40,20 +41,18 @@ function SlideShell({ eyebrow, children }: { eyebrow?: string; children: React.R
 
 function Cover() {
   return (
-    <div className="relative w-full h-full flex flex-col justify-center">
-      <div className="absolute -top-20 -right-20 w-[420px] h-[420px] bg-primary/15 rounded-full blur-3xl pointer-events-none" />
-      <div className="absolute -bottom-20 -left-20 w-[300px] h-[300px] bg-secondary/10 rounded-full blur-3xl pointer-events-none" />
+    <div className="relative w-full min-h-full flex flex-col justify-center py-6">
       <div className="relative">
-        <p className="text-xs font-mono text-primary uppercase tracking-[0.3em] mb-5">AI-ОПЕРАЦИОНКА · 2026</p>
-        <h1 className="font-headline text-7xl lg:text-9xl font-extrabold leading-[0.95] tracking-tight">AIStart360</h1>
-        <p className="font-headline text-2xl lg:text-4xl text-primary mt-6 font-bold">Управляй по цифрам, а не по ощущениям</p>
-        <p className="text-lg lg:text-xl text-on-surface-variant mt-6 max-w-2xl leading-relaxed">
+        <p className="text-[10px] sm:text-xs font-mono text-primary uppercase tracking-[0.3em] mb-4 sm:mb-5">AI-ОПЕРАЦИОНКА · 2026</p>
+        <h1 className="font-headline text-5xl sm:text-7xl lg:text-9xl font-extrabold leading-[0.95] tracking-tight">AIStart360</h1>
+        <p className="font-headline text-xl sm:text-2xl lg:text-4xl text-primary mt-4 sm:mt-6 font-bold">Управляй по цифрам, а не по ощущениям</p>
+        <p className="text-base sm:text-lg lg:text-xl text-on-surface-variant mt-4 sm:mt-6 max-w-2xl leading-relaxed">
           Платформа диагностики, метрик и плана роста для собственника малого и среднего бизнеса. AI извлекает цифры из ваших отчётов и держит руку на пульсе.
         </p>
-        <div className="mt-10 flex flex-wrap gap-3">
+        <div className="mt-7 sm:mt-10 flex flex-wrap gap-2.5 sm:gap-3">
           <span className="px-4 py-2 rounded-xl bg-surface-container border border-white/[0.06] text-sm">122 метрики · 7 GRI · 11 целей · 12 KPI</span>
           <span className="px-4 py-2 rounded-xl bg-surface-container border border-white/[0.06] text-sm">Pilot 30 дней — бесплатно</span>
-          <span className="px-4 py-2 rounded-xl bg-primary/10 border border-primary/30 text-sm text-primary font-semibold">aistart360.vercel.app</span>
+          <span className="px-4 py-2 rounded-xl bg-primary/10 border border-primary/30 text-sm text-primary font-semibold">aistart360.app</span>
         </div>
       </div>
     </div>
@@ -68,8 +67,8 @@ function Problem() {
   ]
   return (
     <SlideShell eyebrow="ПРОБЛЕМА">
-      <h2 className="font-headline text-4xl lg:text-5xl font-extrabold mb-10">Собственники не управляют бизнесом по цифрам</h2>
-      <div className="grid grid-cols-3 gap-5 flex-1">
+      <h2 className="font-headline text-2xl sm:text-4xl lg:text-5xl font-extrabold mb-10">Собственники не управляют бизнесом по цифрам</h2>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-5 flex-1">
         {items.map((p) => (
           <div key={p.v} className="rounded-2xl border border-white/[0.06] bg-surface-container-low p-7 flex flex-col">
             <div className="h-1 w-full bg-error/80 rounded-full mb-6" />
@@ -86,18 +85,18 @@ function Problem() {
 
 function Solution() {
   const mods = [
-    { n: '1', icon: 'monitor_heart', t: 'Диагностика', d: 'Анкета 12 шагов + AI-парсинг P&L, баланса, CRM-выгрузок.' },
-    { n: '2', icon: 'bar_chart',     t: 'Метрики',     d: '122 показателя по 7 отделам, привязанных к источникам.' },
-    { n: '3', icon: 'route',         t: 'План',         d: 'Точка А → Точка Б. 11 целей, 90-дневный маршрут.' },
+    { n: '1', icon: 'monitor_heart', t: 'Диагностика', d: 'Анкета 12 шагов + AI-парсинг P&L, баланса, CRM-выгрузок.', term: 'ии-диагностика' as const },
+    { n: '2', icon: 'bar_chart',     t: 'Метрики',     d: '122 показателя по 7 отделам, привязанных к источникам.', term: 'метрики' as const },
+    { n: '3', icon: 'route',         t: 'План',         d: 'Точка А → Точка Б. 11 целей, 90-дневный маршрут.', term: 'точка-б' as const },
     { n: '4', icon: 'bolt',          t: 'Исполнение',   d: 'CRM/CDP/аналитика, Telegram + email алёрты.' },
   ]
   return (
     <SlideShell eyebrow="РЕШЕНИЕ">
-      <h2 className="font-headline text-4xl lg:text-5xl font-extrabold mb-5">AIStart360 — операционка собственника</h2>
+      <h2 className="font-headline text-2xl sm:text-4xl lg:text-5xl font-extrabold mb-5">AIStart360 — операционка собственника</h2>
       <p className="text-lg text-on-surface-variant max-w-3xl mb-10">
         Заполняешь анкету + закидываешь отчёты → AI считает «где ты сейчас», показывает «куда двигаться» и предупреждает когда что-то идёт не так.
       </p>
-      <div className="grid grid-cols-4 gap-4 flex-1">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 flex-1">
         {mods.map((m) => (
           <div key={m.n} className="rounded-2xl border border-white/[0.06] bg-surface-container-low p-6 flex flex-col">
             <div className="flex items-start justify-between mb-5">
@@ -106,7 +105,10 @@ function Solution() {
               </div>
               <span className="font-mono text-2xl text-on-surface-variant/40 font-bold">{m.n}</span>
             </div>
-            <h3 className="font-headline text-xl font-bold">{m.t}</h3>
+            <h3 className="font-headline text-xl font-bold">
+              {m.t}
+              {'term' in m && m.term ? <InfoHint term={m.term} /> : null}
+            </h3>
             <p className="text-sm text-on-surface-variant mt-2 leading-relaxed">{m.d}</p>
           </div>
         ))}
@@ -123,8 +125,8 @@ function Audience() {
   ]
   return (
     <SlideShell eyebrow="ДЛЯ КОГО">
-      <h2 className="font-headline text-4xl lg:text-5xl font-extrabold mb-10">SMB с выручкой $300K — $10M / год</h2>
-      <div className="grid grid-cols-3 gap-5 flex-1">
+      <h2 className="font-headline text-2xl sm:text-4xl lg:text-5xl font-extrabold mb-10">SMB с выручкой $300K — $10M / год</h2>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-5 flex-1">
         {personas.map((p) => (
           <div key={p.n} className="rounded-2xl border border-white/[0.06] bg-surface-container-low p-7 flex flex-col">
             <p className="font-headline text-4xl font-extrabold text-primary">{p.n}</p>
@@ -159,9 +161,9 @@ function PointA() {
   ]
   return (
     <SlideShell eyebrow="МОДУЛЬ 1">
-      <h2 className="font-headline text-4xl lg:text-5xl font-extrabold mb-8">Точка А — снимок состояния</h2>
-      <div className="grid grid-cols-2 gap-6 flex-1">
-        <div className="rounded-2xl border border-white/[0.06] bg-surface-container-low p-6">
+      <h2 className="font-headline text-2xl sm:text-4xl lg:text-5xl font-extrabold mb-8">Точка А<InfoHint term="точка-а" size="md" /> — снимок состояния</h2>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 lg:gap-6 flex-1">
+        <div className="rounded-2xl border border-white/[0.06] bg-surface-container-low p-5 sm:p-6">
           <p className="text-xs font-mono text-primary uppercase tracking-wider mb-5">Как формируется</p>
           <div className="space-y-3.5">
             {steps.map((st) => (
@@ -226,9 +228,9 @@ function Metrics() {
   ]
   return (
     <SlideShell eyebrow="МОДУЛЬ 2">
-      <h2 className="font-headline text-4xl lg:text-5xl font-extrabold mb-3">122 метрики с привязкой к источнику</h2>
+      <h2 className="font-headline text-2xl sm:text-4xl lg:text-5xl font-extrabold mb-3">122 метрики<InfoHint term="метрики" size="md" /> с привязкой к источнику</h2>
       <p className="text-on-surface-variant mb-8 max-w-3xl">Каждая метрика знает откуда брать данные: поле анкеты, выгрузка из 1С/CRM, документ, GA или внешний API.</p>
-      <div className="grid grid-cols-4 gap-4 flex-1">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 flex-1">
         {depts.map((d) => (
           <div key={d.name} className="rounded-2xl border border-white/[0.06] bg-surface-container-low p-5 flex flex-col">
             <div className="flex items-center justify-between mb-4">
@@ -267,10 +269,10 @@ function GRI() {
 
   return (
     <SlideShell eyebrow="МОДУЛЬ 3">
-      <h2 className="font-headline text-4xl lg:text-5xl font-extrabold mb-3">GRI Pulse — 7 блоков</h2>
+      <h2 className="font-headline text-2xl sm:text-4xl lg:text-5xl font-extrabold mb-3">GRI Pulse<InfoHint term="gri-pulse" size="md" /> — 7 блоков</h2>
       <p className="text-on-surface-variant mb-8 max-w-3xl">Не аудит — маршрут. Видно где «бутылочное горлышко» и куда инвестировать рубль чтобы получить пять.</p>
-      <div className="grid grid-cols-3 gap-6 flex-1">
-        <div className="col-span-2 rounded-2xl border border-white/[0.06] bg-surface-container-low p-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 lg:gap-6 flex-1">
+        <div className="lg:col-span-2 rounded-2xl border border-white/[0.06] bg-surface-container-low p-5 sm:p-6">
           <div className="space-y-3">
             {items.map((b) => {
               const c = clr(b.st)
@@ -315,8 +317,8 @@ function PointB() {
   ]
   return (
     <SlideShell eyebrow="МОДУЛЬ 4">
-      <h2 className="font-headline text-4xl lg:text-5xl font-extrabold mb-8">Точка Б — план на 90 дней</h2>
-      <div className="grid grid-cols-5 gap-3 mb-6">
+      <h2 className="font-headline text-2xl sm:text-4xl lg:text-5xl font-extrabold mb-8">Точка Б<InfoHint term="точка-б" size="md" /> — план на 90 дней</h2>
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-6">
         {targets.map((t) => (
           <div key={t.k} className="rounded-xl border border-white/[0.06] bg-surface-container-low p-4">
             <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider">{t.k}</p>
@@ -328,7 +330,7 @@ function PointB() {
           </div>
         ))}
       </div>
-      <div className="grid grid-cols-3 gap-4 flex-1">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 flex-1">
         {phases.map((ph) => (
           <div key={ph.p} className={`rounded-2xl border-2 ${ph.c} border-l-4 bg-surface-container-low p-5 flex flex-col`}>
             <p className={`text-xs font-mono uppercase tracking-wider font-bold ${ph.c.split(' ')[1]}`}>{ph.p}</p>
@@ -351,21 +353,24 @@ function PointB() {
 function Parser() {
   const stages = [
     { icon: 'upload_file',  t: 'Файл',          d: 'PDF · DOCX · XLSX · CSV · TXT до 50МБ' },
-    { icon: 'auto_awesome', t: 'AI-парсер',     d: 'OpenRouter Sonnet · zod-валидация · fallback' },
+    { icon: 'auto_awesome', t: 'AI-парсер',     d: 'OpenRouter Sonnet · zod-валидация · fallback', term: 'ai-парсер' as const },
     { icon: 'route',        t: 'Поля → отделы', d: 'Выручка → Финансы · CAC → Маркетинг · SKU → Операции' },
   ]
   const types = ['P&L отчёт', 'Бухбаланс', 'Marketing report', 'Ops report', 'CRM-export', 'Аудит', 'Прайс-лист', 'Другое']
   return (
     <SlideShell eyebrow="AI-ПАРСЕР">
-      <h2 className="font-headline text-4xl lg:text-5xl font-extrabold mb-3">Документы → данные за 8 секунд</h2>
+      <h2 className="font-headline text-2xl sm:text-4xl lg:text-5xl font-extrabold mb-3">Документы → данные за 8 секунд</h2>
       <p className="text-on-surface-variant mb-10 max-w-3xl">Закидываете файл → AI извлекает 30–60 ключевых полей и мапит в нужные разделы дашборда.</p>
-      <div className="grid grid-cols-3 gap-4 mb-8">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
         {stages.map((st, i) => (
           <div key={i} className="rounded-2xl border border-white/[0.06] bg-surface-container-low p-6">
             <div className="w-12 h-12 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center mb-4">
               <span className="material-symbols-outlined text-primary">{st.icon}</span>
             </div>
-            <p className="font-headline text-xl font-bold">{st.t}</p>
+            <p className="font-headline text-xl font-bold">
+              {st.t}
+              {'term' in st && st.term ? <InfoHint term={st.term} /> : null}
+            </p>
             <p className="text-sm text-on-surface-variant mt-2 leading-relaxed">{st.d}</p>
           </div>
         ))}
@@ -395,8 +400,8 @@ function Stack() {
   ]
   return (
     <SlideShell eyebrow="СТЕК + ИНТЕГРАЦИИ">
-      <h2 className="font-headline text-4xl lg:text-5xl font-extrabold mb-10">Не заменяем — подключаемся</h2>
-      <div className="grid grid-cols-2 gap-5 flex-1">
+      <h2 className="font-headline text-2xl sm:text-4xl lg:text-5xl font-extrabold mb-10">Не заменяем — подключаемся</h2>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-5 flex-1">
         {groups.map((g) => (
           <div key={g.t} className="rounded-2xl border border-white/[0.06] bg-surface-container-low p-6 flex flex-col">
             <p className="text-xs font-mono text-primary uppercase tracking-wider font-bold mb-4">{g.t}</p>
@@ -414,44 +419,6 @@ function Stack() {
   )
 }
 
-function Pricing() {
-  return (
-    <SlideShell eyebrow="ТАРИФЫ">
-      <h2 className="font-headline text-4xl lg:text-5xl font-extrabold mb-10">Pilot бесплатно · Pro $300–800/мес</h2>
-      <div className="grid grid-cols-2 gap-5 flex-1">
-        <div className="rounded-2xl border border-white/[0.06] bg-surface-container-low p-7 flex flex-col">
-          <p className="text-xs font-mono text-on-surface-variant uppercase tracking-wider">PILOT · 30 ДНЕЙ</p>
-          <p className="font-headline text-5xl font-extrabold mt-3">Бесплатно</p>
-          <p className="text-on-surface-variant mt-4 flex-1">Полный доступ. Анкета + парсинг 2 кварталов. Точка А, GRI, 11 целей.</p>
-          <ul className="space-y-2 mt-6">
-            {['122 метрики', 'AI-парсер до 20 документов', 'Telegram + email алёрты', '1 пользователь'].map((it) => (
-              <li key={it} className="flex items-center gap-2 text-sm text-on-surface-variant">
-                <span className="material-symbols-outlined text-primary text-base">check</span>{it}
-              </li>
-            ))}
-          </ul>
-        </div>
-        <div className="rounded-2xl border border-primary/30 bg-primary/5 p-7 flex flex-col relative overflow-hidden">
-          <div className="absolute -top-20 -right-20 w-60 h-60 bg-primary/10 rounded-full blur-3xl pointer-events-none" />
-          <p className="text-xs font-mono text-primary uppercase tracking-wider relative">PRO · ПОДПИСКА</p>
-          <p className="font-headline text-5xl font-extrabold mt-3 relative">$300–800 / мес</p>
-          <p className="text-on-surface-variant mt-4 flex-1 relative">Цена зависит от объёма документов и пользователей. Окупаемость ~6 недель.</p>
-          <ul className="space-y-2 mt-6 relative">
-            {['Всё из Pilot', 'Безлимит парсинга', 'Bitrix24 / AmoCRM / 1С / GA', 'Эксперт-сопровождение', 'До 10 пользователей'].map((it) => (
-              <li key={it} className="flex items-center gap-2 text-sm">
-                <span className="material-symbols-outlined text-primary text-base">check_circle</span>{it}
-              </li>
-            ))}
-          </ul>
-        </div>
-      </div>
-      <div className="mt-6 rounded-xl border border-primary/30 bg-primary/10 p-4 text-center">
-        <p className="text-sm font-bold text-primary">Эффект через 90 дней: +15% чек · −20% CAC · +30% retention 30d</p>
-      </div>
-    </SlideShell>
-  )
-}
-
 function Next() {
   const next = [
     { n: '01', t: 'Демо 30 минут',  d: 'Покажем платформу. Ответим на технические вопросы.', when: 'На этой неделе' },
@@ -460,7 +427,7 @@ function Next() {
   ]
   return (
     <SlideShell eyebrow="СЛЕДУЮЩИЕ ШАГИ">
-      <h2 className="font-headline text-4xl lg:text-5xl font-extrabold mb-10">3 шага — через 90 дней по цифрам</h2>
+      <h2 className="font-headline text-2xl sm:text-4xl lg:text-5xl font-extrabold mb-10">3 шага — через 90 дней по цифрам</h2>
       <div className="space-y-4 flex-1">
         {next.map((n) => (
           <div key={n.n} className="rounded-2xl border border-white/[0.06] bg-surface-container-low p-6 flex items-center gap-6">
@@ -473,13 +440,16 @@ function Next() {
           </div>
         ))}
       </div>
+      <div className="mt-6 rounded-xl border border-primary/30 bg-primary/10 p-4 text-center">
+        <p className="text-sm font-bold text-primary">Эффект через 90 дней: +15% чек · −20% CAC · +30% retention 30d</p>
+      </div>
       <div className="mt-6 flex items-center justify-center gap-4">
         <Link href="/register" className="bg-primary text-on-primary font-semibold px-8 py-3.5 rounded-xl flex items-center gap-2 hover:shadow-xl hover:shadow-primary/30 transition-all">
-          <span className="material-symbols-outlined">rocket_launch</span>Запустить пилот
+          <span className="material-symbols-outlined">rocket_launch</span>Запустить диагностику бесплатно
         </Link>
         <Link href="/" className="border border-white/[0.08] px-6 py-3.5 rounded-xl hover:border-primary/40 hover:text-primary transition-colors">На главную</Link>
       </div>
-      <p className="text-center text-xs text-on-surface-variant mt-4">hello@aistart360.app · aistart360.vercel.app · Almaty / Tashkent</p>
+      <p className="text-center text-xs text-on-surface-variant mt-4">hello@aistart360.app · aistart360.app · Almaty / Tashkent</p>
     </SlideShell>
   )
 }
@@ -487,7 +457,37 @@ function Next() {
 const SLIDE_COMPONENTS: Record<SlideKey, () => JSX.Element> = {
   cover: Cover, problem: Problem, solution: Solution, audience: Audience,
   'point-a': PointA, metrics: Metrics, gri: GRI, 'point-b': PointB,
-  parser: Parser, stack: Stack, pricing: Pricing, next: Next,
+  parser: Parser, stack: Stack, next: Next,
+}
+
+// Цвет фона-«ауроры» подобран по смыслу слайда (проблема — красный, решение/
+// цель — teal, аудитория — лаванда, AI-парсер — фиолет/синий и т.д.)
+const SLIDE_BG: Record<SlideKey, [string, string]> = {
+  cover:     ['bg-primary/20',            'bg-secondary/12'],
+  problem:   ['bg-error/14',              'bg-tertiary-container/10'],
+  solution:  ['bg-primary/16',            'bg-primary/10'],
+  audience:  ['bg-secondary/16',          'bg-primary/10'],
+  'point-a': ['bg-tertiary-container/16', 'bg-primary/10'],
+  metrics:   ['bg-primary/14',            'bg-secondary/10'],
+  gri:       ['bg-primary/16',            'bg-tertiary-container/12'],
+  'point-b': ['bg-primary/20',            'bg-primary/10'],
+  parser:    ['bg-violet-500/18',         'bg-blue-500/12'],
+  stack:     ['bg-blue-500/16',           'bg-primary/10'],
+  next:      ['bg-primary/20',            'bg-secondary/12'],
+}
+
+function SlideBackdrop({ theme }: { theme: SlideKey }) {
+  const [a, b] = SLIDE_BG[theme]
+  return (
+    <div className="absolute inset-0 overflow-hidden pointer-events-none">
+      <div className={`aurora-blob absolute -top-[20%] -right-[10%] w-[60%] h-[75%] rounded-full blur-3xl ${a}`} />
+      <div
+        className={`aurora-blob absolute -bottom-[25%] -left-[12%] w-[55%] h-[70%] rounded-full blur-3xl ${b}`}
+        style={{ animationDelay: '-9s' }}
+      />
+      <div className="absolute inset-0 slide-grid opacity-60" />
+    </div>
+  )
 }
 
 // ─── Page ────────────────────────────────────────────────────
@@ -514,22 +514,31 @@ export default function PresentationPage() {
   const current = SLIDES[idx]
   const Component = useMemo(() => SLIDE_COMPONENTS[current.key], [current.key])
 
+  // Свайпы на мобильных
+  const touchX = useRef<number | null>(null)
+  const onTouchStart = (e: React.TouchEvent) => { touchX.current = e.touches[0].clientX }
+  const onTouchEnd = (e: React.TouchEvent) => {
+    if (touchX.current === null) return
+    const dx = e.changedTouches[0].clientX - touchX.current
+    if (Math.abs(dx) > 56) go(idx + (dx < 0 ? 1 : -1))
+    touchX.current = null
+  }
+
   return (
     <div className="min-h-screen bg-surface text-on-surface flex flex-col">
 
       {/* Top bar */}
       <header className="border-b border-white/[0.04] bg-surface/80 backdrop-blur-xl sticky top-0 z-50">
-        <div className="max-w-[1400px] mx-auto px-6 py-3 flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-2">
-            <span className="material-symbols-outlined text-primary">radar</span>
-            <span className="font-headline font-extrabold">
-              AIStart<span className="text-primary">360</span>
-            </span>
-            <span className="text-xs text-on-surface-variant/60 ml-2 hidden sm:inline">/ presentation</span>
+        <div className="max-w-[1400px] mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-3">
+          <Link href="/" className="flex items-center gap-2.5 shrink-0">
+            <Image src="/logo.svg" alt="AIStart360" width={132} height={24} priority className="h-5 sm:h-6 w-auto" />
+            <span className="text-xs text-on-surface-variant/60 ml-1 hidden sm:inline">/ presentation</span>
           </Link>
-          <div className="flex items-center gap-4">
-            <p className="text-xs font-mono text-on-surface-variant">{idx + 1} / {total} · {current.title}</p>
-            <Link href="/" className="text-xs text-on-surface-variant hover:text-primary transition-colors">
+          <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+            <p className="text-xs font-mono text-on-surface-variant truncate">
+              {idx + 1} / {total}<span className="hidden sm:inline"> · {current.title}</span>
+            </p>
+            <Link href="/" className="text-on-surface-variant hover:text-primary transition-colors shrink-0">
               <span className="material-symbols-outlined text-base align-middle">close</span>
             </Link>
           </div>
@@ -541,26 +550,35 @@ export default function PresentationPage() {
       </header>
 
       {/* Slide stage */}
-      <main className="flex-1 flex items-stretch p-6 lg:p-12">
-        <div className="max-w-[1400px] w-full mx-auto rounded-3xl border border-white/[0.04] bg-surface-container-low/30 p-10 lg:p-14 relative overflow-hidden">
-          <Component />
+      <main
+        onTouchStart={onTouchStart}
+        onTouchEnd={onTouchEnd}
+        className="flex-1 flex items-stretch p-3 sm:p-6 lg:p-12 min-h-0"
+      >
+        <div className="relative max-w-[1400px] w-full mx-auto rounded-2xl sm:rounded-3xl border border-white/[0.04] bg-surface-container-low/30 overflow-hidden flex">
+          <SlideBackdrop theme={current.key} />
+          <div className="relative z-10 w-full overflow-y-auto no-scrollbar p-5 sm:p-10 lg:p-14">
+            <div key={current.key} className="slide-enter w-full min-h-full">
+              <Component />
+            </div>
+          </div>
         </div>
       </main>
 
       {/* Bottom nav */}
       <footer className="border-t border-white/[0.04] bg-surface/80 backdrop-blur-xl sticky bottom-0 z-50">
-        <div className="max-w-[1400px] mx-auto px-6 py-3 flex items-center justify-between gap-4">
+        <div className="max-w-[1400px] mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-3 sm:gap-4">
           <button
             onClick={() => go(idx - 1)}
             disabled={idx === 0}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl border border-white/[0.06] text-sm hover:border-primary/40 hover:text-primary disabled:opacity-30 disabled:hover:border-white/[0.06] disabled:hover:text-on-surface transition-colors"
+            className="flex items-center gap-2 px-3 sm:px-4 py-2 rounded-xl border border-white/[0.06] text-sm hover:border-primary/40 hover:text-primary disabled:opacity-30 disabled:hover:border-white/[0.06] disabled:hover:text-on-surface transition-colors shrink-0"
           >
             <span className="material-symbols-outlined text-base">arrow_back</span>
-            Назад
+            <span className="hidden sm:inline">Назад</span>
           </button>
 
           {/* Dots */}
-          <div className="flex items-center gap-1.5 overflow-x-auto max-w-[60%]">
+          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar max-w-[55%] sm:max-w-[60%]">
             {SLIDES.map((s, i) => (
               <button
                 key={s.id}
@@ -575,9 +593,9 @@ export default function PresentationPage() {
           <button
             onClick={() => go(idx + 1)}
             disabled={idx === total - 1}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-primary text-on-primary text-sm font-semibold hover:shadow-lg hover:shadow-primary/30 disabled:opacity-30 disabled:hover:shadow-none transition-all"
+            className="flex items-center gap-2 px-3 sm:px-4 py-2 rounded-xl bg-primary text-on-primary text-sm font-semibold hover:shadow-lg hover:shadow-primary/30 disabled:opacity-30 disabled:hover:shadow-none transition-all shrink-0"
           >
-            Дальше
+            <span className="hidden sm:inline">Дальше</span>
             <span className="material-symbols-outlined text-base">arrow_forward</span>
           </button>
         </div>
