@@ -82,8 +82,10 @@ export function News() {
       {news.length === 0 ? (
         <div className="text-center p-12 border border-dashed border-white/10 rounded-2xl bg-surface-container-low/50">
           <Newspaper className="h-12 w-12 text-on-surface-variant/40 mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-on-surface mb-2">No News Found</h3>
-          <p className="text-on-surface-variant">Click the sync button to fetch fresh news.</p>
+          <h3 className="text-lg font-medium text-on-surface mb-2">Новостей пока нет.</h3>
+          <p className="text-on-surface-variant">
+            Здесь появится лента новостей после подключения источников.
+          </p>
         </div>
       ) : (
         <div className="columns-1 md:columns-2 lg:columns-3 gap-4 space-y-4">

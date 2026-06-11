@@ -23,15 +23,16 @@ import { MOCK_MARKET_DATA, formatKZT, type MarketData } from './mock-data'
  * that table from eGov / Adata.
  */
 export function MarketOverview() {
-  const [data, setData] = useState<MarketData>(MOCK_MARKET_DATA)
+  const [data] = useState<MarketData>(MOCK_MARKET_DATA)
   const [syncing, setSyncing] = useState(false)
 
+  const isEmpty = data.totalVolume === 0 && data.chartData.length === 0
+
   const handleSync = async () => {
+    // No real backend feed yet — do not fabricate a refresh.
     setSyncing(true)
     try {
-      // Simulate a refresh; in production this would call a backend sync route.
-      await new Promise((r) => setTimeout(r, 600))
-      setData({ ...MOCK_MARKET_DATA })
+      // TODO(supabase): POST to /api/market/sync-macro and re-read live data.
     } finally {
       setSyncing(false)
     }
@@ -67,107 +68,120 @@ export function MarketOverview() {
         </Button>
       </div>
 
-      {/* KPI grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard
-          label="Total Volume"
-          value={formatKZT(data.totalVolume)}
-          hint={`+${data.yoyGrowth}% YoY`}
-          hintTone="primary"
-          icon={<BarChart3 className="h-4 w-4 text-primary" />}
-        />
-        <StatCard
-          label="YoY Growth"
-          value={`${data.yoyGrowth}%`}
-          hint="Consistent upward trend"
-          icon={<TrendingUp className="h-4 w-4 text-primary" />}
-        />
-        <StatCard
-          label="Active Players"
-          value={String(data.activePlayers)}
-          hint="Registered entities"
-          icon={<Users className="h-4 w-4 text-primary" />}
-        />
-        <StatCard
-          label="Market Temp"
-          value={data.marketTemp}
-          valueTone="error"
-          hint="High competition & activity"
-          icon={<Activity className="h-4 w-4 text-error" />}
-        />
-      </div>
-
-      {/* Chart + PESTEL */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="col-span-1 lg:col-span-2 bg-surface-container-low rounded-2xl border border-white/[0.04] p-6">
-          <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest mb-6">
-            5-Year Growth Trajectory
+      {isEmpty ? (
+        <div className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-12 text-center">
+          <BarChart3 className="h-12 w-12 text-on-surface-variant/40 mx-auto mb-4" />
+          <h3 className="text-lg font-medium text-on-surface mb-2">Анализ рынка</h3>
+          <p className="text-on-surface-variant max-w-md mx-auto">
+            Данные рынка ещё не подключены. Здесь появится объём рынка, динамика и PESTEL после
+            интеграции источников.
           </p>
-          <div className="h-[300px] w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={data.chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="colorVolume" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#6effc0" stopOpacity={0.35} />
-                    <stop offset="95%" stopColor="#6effc0" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <XAxis
-                  dataKey="year"
-                  stroke="#84958a"
-                  fontSize={12}
-                  tickLine={false}
-                  axisLine={false}
-                />
-                <YAxis
-                  stroke="#84958a"
-                  fontSize={12}
-                  tickLine={false}
-                  axisLine={false}
-                  tickFormatter={(v) => `${v}B`}
-                />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: '#1a1b20',
-                    borderColor: '#3b4a41',
-                    color: '#e3e2e8',
-                    borderRadius: 12,
-                  }}
-                  itemStyle={{ color: '#6effc0' }}
-                />
-                <Area
-                  type="monotone"
-                  dataKey="volume"
-                  stroke="#6effc0"
-                  strokeWidth={2}
-                  fillOpacity={1}
-                  fill="url(#colorVolume)"
-                />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
         </div>
+      ) : (
+        <>
+          {/* KPI grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <StatCard
+              label="Total Volume"
+              value={formatKZT(data.totalVolume)}
+              hint={`+${data.yoyGrowth}% YoY`}
+              hintTone="primary"
+              icon={<BarChart3 className="h-4 w-4 text-primary" />}
+            />
+            <StatCard
+              label="YoY Growth"
+              value={`${data.yoyGrowth}%`}
+              hint="Consistent upward trend"
+              icon={<TrendingUp className="h-4 w-4 text-primary" />}
+            />
+            <StatCard
+              label="Active Players"
+              value={String(data.activePlayers)}
+              hint="Registered entities"
+              icon={<Users className="h-4 w-4 text-primary" />}
+            />
+            <StatCard
+              label="Market Temp"
+              value={data.marketTemp}
+              valueTone="error"
+              hint="High competition & activity"
+              icon={<Activity className="h-4 w-4 text-error" />}
+            />
+          </div>
 
-        <div className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-6">
-          <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest mb-4">
-            PESTEL Factors
-          </p>
-          <div className="space-y-4">
-            {data.pestel.map((item) => (
-              <div
-                key={item.factor}
-                className="flex flex-col gap-1 border-b border-white/[0.05] pb-3 last:border-0 last:pb-0"
-              >
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium text-on-surface">{item.factor}</span>
-                  {trendBadge(item.trend)}
-                </div>
-                <p className="text-xs text-on-surface-variant">{item.description}</p>
+          {/* Chart + PESTEL */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="col-span-1 lg:col-span-2 bg-surface-container-low rounded-2xl border border-white/[0.04] p-6">
+              <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest mb-6">
+                5-Year Growth Trajectory
+              </p>
+              <div className="h-[300px] w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={data.chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="colorVolume" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#6effc0" stopOpacity={0.35} />
+                        <stop offset="95%" stopColor="#6effc0" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <XAxis
+                      dataKey="year"
+                      stroke="#84958a"
+                      fontSize={12}
+                      tickLine={false}
+                      axisLine={false}
+                    />
+                    <YAxis
+                      stroke="#84958a"
+                      fontSize={12}
+                      tickLine={false}
+                      axisLine={false}
+                      tickFormatter={(v) => `${v}B`}
+                    />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: '#1a1b20',
+                        borderColor: '#3b4a41',
+                        color: '#e3e2e8',
+                        borderRadius: 12,
+                      }}
+                      itemStyle={{ color: '#6effc0' }}
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="volume"
+                      stroke="#6effc0"
+                      strokeWidth={2}
+                      fillOpacity={1}
+                      fill="url(#colorVolume)"
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
               </div>
-            ))}
+            </div>
+
+            <div className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-6">
+              <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest mb-4">
+                PESTEL Factors
+              </p>
+              <div className="space-y-4">
+                {data.pestel.map((item) => (
+                  <div
+                    key={item.factor}
+                    className="flex flex-col gap-1 border-b border-white/[0.05] pb-3 last:border-0 last:pb-0"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium text-on-surface">{item.factor}</span>
+                      {trendBadge(item.trend)}
+                    </div>
+                    <p className="text-xs text-on-surface-variant">{item.description}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
-        </div>
-      </div>
+        </>
+      )}
     </div>
   )
 }

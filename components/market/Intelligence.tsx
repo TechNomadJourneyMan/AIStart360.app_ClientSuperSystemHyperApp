@@ -111,8 +111,8 @@ export function Intelligence() {
 
           {trackedCompetitors.length === 0 ? (
             <div className="text-sm text-on-surface-variant/70 p-4 border border-dashed border-white/10 rounded-xl">
-              No competitors are currently being tracked. Head to the Competitors tab and click
-              Start Monitoring on any company.
+              Сейчас нет отслеживаемых конкурентов. Перейдите во вкладку «Конкуренты» и включите
+              мониторинг для нужной компании.
             </div>
           ) : (
             <div className="flex flex-col gap-3">
@@ -145,9 +145,9 @@ export function Intelligence() {
           {alerts.length === 0 ? (
             <div className="text-center p-12 border border-dashed border-white/10 rounded-2xl bg-surface-container-low/50">
               <Activity className="h-12 w-12 text-on-surface-variant/40 mx-auto mb-4" />
-              <h4 className="text-lg font-medium text-on-surface mb-2">No Alerts Found</h4>
+              <h4 className="text-lg font-medium text-on-surface mb-2">Сигналов пока нет</h4>
               <p className="text-on-surface-variant">
-                Click the sync button to scrape competitor websites.
+                Здесь появятся события по конкурентам, когда источники будут подключены.
               </p>
             </div>
           ) : (

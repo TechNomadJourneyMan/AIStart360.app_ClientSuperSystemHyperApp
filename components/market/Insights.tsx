@@ -41,6 +41,12 @@ export function Insights() {
   const marketData: MarketData = MOCK_MARKET_DATA
   const competitorsData: Competitor[] = MOCK_COMPETITORS
 
+  // No real market or competitor data yet — can't synthesize honest insights.
+  const hasData =
+    marketData.totalVolume > 0 ||
+    marketData.chartData.length > 0 ||
+    competitorsData.length > 0
+
   const generateInsights = async () => {
     setLoading(true)
     setError(null)
@@ -101,33 +107,45 @@ export function Insights() {
         </div>
       )}
 
-      <div className="relative">
-        <div className="absolute -inset-0.5 bg-gradient-to-r from-primary/20 to-primary/0 rounded-lg blur opacity-50 pointer-events-none" />
-        <div className="relative flex flex-col sm:flex-row gap-2 bg-surface-container-low/90 p-2 rounded-lg border border-primary/20 backdrop-blur-md">
-          <Input
-            placeholder="Ask Market AI... (e.g., 'How should I position against Kaspi?')"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            className="flex-1"
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !loading) generateInsights()
-            }}
-          />
-          <Button onClick={generateInsights} disabled={loading} className="sm:w-auto shrink-0">
-            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Generate'}
-          </Button>
-        </div>
-      </div>
-
-      {!hasGenerated && !loading && (
+      {!hasData ? (
         <div className="flex-1 flex flex-col items-center justify-center text-center p-12 border border-dashed border-white/10 rounded-2xl bg-surface-container-low/50">
           <Sparkles className="h-12 w-12 text-primary/30 mb-4" />
-          <h3 className="text-lg font-medium text-on-surface mb-2">Ready for Analysis</h3>
+          <h3 className="text-lg font-medium text-on-surface mb-2">Недостаточно данных для инсайтов</h3>
           <p className="text-on-surface-variant max-w-md">
-            Enter a specific query above or just click Generate to get strategic directives based on
-            your current market position.
+            Заполните анкету и подключите источники рынка.
           </p>
         </div>
+      ) : (
+        <>
+          <div className="relative">
+            <div className="absolute -inset-0.5 bg-gradient-to-r from-primary/20 to-primary/0 rounded-lg blur opacity-50 pointer-events-none" />
+            <div className="relative flex flex-col sm:flex-row gap-2 bg-surface-container-low/90 p-2 rounded-lg border border-primary/20 backdrop-blur-md">
+              <Input
+                placeholder="Ask Market AI... (e.g., 'How should I position against Kaspi?')"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                className="flex-1"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !loading) generateInsights()
+                }}
+              />
+              <Button onClick={generateInsights} disabled={loading} className="sm:w-auto shrink-0">
+                {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Generate'}
+              </Button>
+            </div>
+          </div>
+
+          {!hasGenerated && !loading && (
+            <div className="flex-1 flex flex-col items-center justify-center text-center p-12 border border-dashed border-white/10 rounded-2xl bg-surface-container-low/50">
+              <Sparkles className="h-12 w-12 text-primary/30 mb-4" />
+              <h3 className="text-lg font-medium text-on-surface mb-2">Ready for Analysis</h3>
+              <p className="text-on-surface-variant max-w-md">
+                Enter a specific query above or just click Generate to get strategic directives based on
+                your current market position.
+              </p>
+            </div>
+          )}
+        </>
       )}
 
       {loading && (

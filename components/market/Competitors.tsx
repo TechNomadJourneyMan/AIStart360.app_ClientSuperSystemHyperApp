@@ -132,9 +132,9 @@ export function Competitors() {
       {filtered.length === 0 ? (
         <div className="text-center p-12 border border-dashed border-white/10 rounded-2xl bg-surface-container-low/50">
           <Building2 className="h-12 w-12 text-on-surface-variant/40 mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-on-surface mb-2">No Competitors Found</h3>
+          <h3 className="text-lg font-medium text-on-surface mb-2">Конкуренты не добавлены</h3>
           <p className="text-on-surface-variant mb-4">
-            Adjust your filters or click Sync to fetch fresh OSINT data.
+            Добавьте конкурентов в анкете (блок «Продукт») — они появятся здесь.
           </p>
         </div>
       ) : (
