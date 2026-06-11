@@ -13,7 +13,7 @@ Status: ☐ open · ◐ in progress · ☑ done. IDs reference `technical-audit.
 ## Phase 2 — Mock/fake data removal (the core mandate) — PRIORITY
 - ☑ **D3** `/api/v1/metrics`: empty/error → `{source,data:[]}`, never MOCK_METRICS. *Accept:* new user sees empty tiles, not ₸84.2М.
 - ☑ **D4** `/api/v1/metrics/[id]/goals`: real query or null; no MOCK_GOALS.
-- ☑ **D1** `lib/get-dashboard-data.ts` + `/insights` + `/intelligence` + `/competitors`: remove Choco fabrications; show "Данных нет" empty states (Choco only behind explicit demo flag). *Accept:* non‑demo user sees empty states, no fake companies.
+- ☑ **D1** Choco **fully removed** (data files, `components/choco/*`, `get-dashboard-data.ts`, raw assets, `clients/[id]` view, AdminClientsList pin, market fallback). `/insights` + `/intelligence` + `/competitors` are honest empty‑state pages. *Verified:* grep "choco" clean, build 95/95.
 - ☑ **D8** `/insights` `INSIGHT_CARDS`: removed/empty‑stated.
 - ☑ **D5** `/api/market/osint`: no `buildMock*`; empty/"источник не подключён".
 - ☑ **D6** Point A insights page + `InsightsFeed`: loading/empty/retry instead of MOCK items.
