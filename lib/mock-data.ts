@@ -80,11 +80,6 @@ export const MOCK_ACTIVITY: ActivityItem[] = [
 // ============================================================
 export const MOCK_CLIENTS: Client[] = [
   {
-    id: '7', name: 'ChocoFamily',    industry: 'E-commerce', stage: 'Mature', status: 'active',
-    manager: 'Alex Kim',  managerId: 'u1', griScore: 5.2, previousGriScore: 5.5,
-    website: 'chocofamily.kz', createdAt: '2026-03-30',
-  },
-  {
     id: '1', name: 'Vortex Labs',    industry: 'FinTech',    stage: 'Scale',  status: 'active',
     manager: 'Alex Kim',  managerId: 'u1', griScore: 8.4, previousGriScore: 8.2,
     website: 'vortexlabs.io', createdAt: '2024-01-15',
@@ -144,36 +139,6 @@ export const MOCK_REPORTS: Report[] = [
     id: 'r5', clientId: '6', clientName: 'Forge Analytics',
     name: 'Custom Performance Dashboard', category: 'Custom', type: 'xlsx',
     fileUrl: '#', fileSize: '890 KB', uploadedBy: 'Alex Kim', uploadedAt: '15 Mar 2026',
-  },
-  {
-    id: 'r6', clientId: '7', clientName: 'ChocoFamily',
-    name: 'Analytical Profile (Kazakhstan)', category: 'GRI', type: 'pdf',
-    fileUrl: '/app/(dashboard)/clients/ChocoFamily Data/Аналитический_профиль_компании_ChocoFamily_(Казахстан).pdf', 
-    fileSize: '224 KB', uploadedBy: 'System', uploadedAt: '30 Mar 2026',
-  },
-  {
-    id: 'r7', clientId: '7', clientName: 'ChocoFamily',
-    name: 'OSINT Project Report', category: 'Intelligence', type: 'pdf',
-    fileUrl: '/app/(dashboard)/clients/ChocoFamily Data/ChocoFamily_OSINT_Analytical_Profile.pdf', 
-    fileSize: '85 KB', uploadedBy: 'Expert AI', uploadedAt: '30 Mar 2026',
-  },
-  {
-    id: 'r8', clientId: '7', clientName: 'ChocoFamily',
-    name: 'Modular Analytical Report', category: 'Strategic', type: 'pdf',
-    fileUrl: '/app/(dashboard)/clients/ChocoFamily Data/_ChocoFamily Holding_ модульный аналитический отчёт.pdf', 
-    fileSize: '1.7 MB', uploadedBy: 'Alex Kim', uploadedAt: '30 Mar 2026',
-  },
-  {
-    id: 'r9', clientId: '7', clientName: 'ChocoFamily',
-    name: 'GPT Intelligence Summary', category: 'AI', type: 'pdf',
-    fileUrl: '/app/(dashboard)/clients/ChocoFamily Data/ChocoFamilyGPTReport.pdf', 
-    fileSize: '87 KB', uploadedBy: 'GPT-4o', uploadedAt: '30 Mar 2026',
-  },
-  {
-    id: 'r10', clientId: '7', clientName: 'ChocoFamily',
-    name: 'Business Strategy Protocol', category: 'Protocol', type: 'pdf',
-    fileUrl: '/app/(dashboard)/clients/ChocoFamily Data/Protocol ChocoFamily .pdf', 
-    fileSize: '322 KB', uploadedBy: 'System', uploadedAt: '30 Mar 2026',
   },
 ]
 

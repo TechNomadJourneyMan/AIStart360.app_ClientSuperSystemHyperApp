@@ -10,9 +10,9 @@ import { chatWithOpenRouter, extractJson } from '@/lib/ai/openrouter'
  * category }. Uses Anthropic via the Vercel AI SDK (generateObject with a
  * Zod schema) — matching the pattern in lib/ai/point-a-analyzer.ts.
  *
- * The original source project used Google Gemini. If ANTHROPIC_API_KEY is
- * not set, we fall back to a deterministic mock response so the Insights tab
- * remains demoable in any environment.
+ * If no AI key is configured (or the model returns an invalid response) we
+ * return an honest empty { source:'not_connected', directives:[] } payload
+ * instead of fabricated data.
  */
 
 const directiveSchema = z.object({
@@ -79,49 +79,13 @@ Based on this data, provide 3 strategic directives. Return ONLY a JSON object wi
       }
     }
 
-    // Fallback if no key or invalid response
-    return NextResponse.json({ directives: buildFallbackDirectives(userProfile?.customQuery) })
+    // No AI key configured or invalid response — return an honest empty payload
+    // rather than fabricated directives. Mirrors the not_connected shape used by
+    // app/api/market/osint/route.ts.
+    return NextResponse.json({ source: 'not_connected', directives: [] })
   } catch (error) {
     console.error('[market/generate-insights] Error:', error)
     const message = error instanceof Error ? error.message : 'Failed to generate insights'
     return NextResponse.json({ error: message }, { status: 500 })
   }
-}
-
-type FallbackDirective = z.infer<typeof directiveSchema>
-
-function buildFallbackDirectives(customQuery?: string): FallbackDirective[] {
-  const base: FallbackDirective[] = [
-    {
-      title: 'Expand into the B2G digital-services segment',
-      description:
-        'Government digitalization (Digital Kazakhstan) creates a predictable revenue channel. Your low B2G dependency combined with the sector\'s 18.5% YoY growth indicates strong upside if you build compliance and tender-response capabilities.',
-      impact: 'High',
-      category: 'Opportunity',
-    },
-    {
-      title: 'Harden data-localization compliance before Q3',
-      description:
-        'The new Kazakhstan data-localization law materially raises operating costs for SaaS vendors without local infrastructure. Start provisioning KZ-region storage and publish a compliance one-pager for enterprise buyers.',
-      impact: 'Medium',
-      category: 'Risk',
-    },
-    {
-      title: 'Segment pricing for mid-market vs. enterprise',
-      description:
-        'Top competitors (Kolesa, Chocofamily) show a growing divergence between B2C and B2B pricing tiers. A mid-market tier priced 30-40% below enterprise would capture underserved 50-200 employee companies.',
-      impact: 'Medium',
-      category: 'Optimization',
-    },
-  ]
-  if (customQuery && customQuery.trim().length > 0) {
-    base.unshift({
-      title: `Tailored take: "${customQuery.slice(0, 80)}"`,
-      description:
-        'Live AI generation is disabled (no OPENROUTER_API_KEY configured), so this is a mock response seeded with your query. Configure OPENROUTER_API_KEY to receive model-generated, data-grounded directives.',
-      impact: 'Low',
-      category: 'Optimization',
-    })
-  }
-  return base
 }

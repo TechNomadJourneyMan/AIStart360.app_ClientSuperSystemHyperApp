@@ -113,18 +113,6 @@ export const MOCK_COMPETITORS: Competitor[] = [
     isTracked: true,
   },
   {
-    id: 'c-002',
-    name: 'Chocofamily Holding',
-    category: 'Indirect',
-    bin_iin: '100140019876',
-    url: 'https://chocofamily.kz',
-    estRevenue: 28_500_000_000,
-    taxesPaid: 2_100_000_000,
-    b2gDependency: 12,
-    tags: ['E-commerce', 'Fintech', 'B2C'],
-    isTracked: true,
-  },
-  {
     id: 'c-003',
     name: 'Documentolog',
     category: 'Direct',
@@ -182,14 +170,6 @@ export const MOCK_INTELLIGENCE_ALERTS: IntelligenceAlert[] = [
     description:
       'Won a ₸180M contract with the Ministry of Digital Development for classified-ad data syndication.',
     timestamp: new Date(Date.now() - 1000 * 60 * 60 * 5).toISOString(),
-  },
-  {
-    id: 'a-002',
-    competitorName: 'Chocofamily Holding',
-    type: 'New Vacancy',
-    description:
-      'Opened 12 senior engineering positions; heavy emphasis on Go, Kafka, and payment infrastructure.',
-    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 18).toISOString(),
   },
   {
     id: 'a-003',
