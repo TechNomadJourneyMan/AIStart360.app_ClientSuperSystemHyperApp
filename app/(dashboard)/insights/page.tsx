@@ -4,6 +4,7 @@ import type { Metadata } from 'next'
 import { prisma } from '@/lib/db'
 import { auth } from '@/lib/auth'
 import { getDashboardData } from '@/lib/get-dashboard-data'
+import { EmptyState } from '@/components/common/EmptyState'
 
 export const metadata: Metadata = { title: 'Инсайты' }
 
@@ -74,7 +75,17 @@ export default async function InsightsPage() {
         </div>
       </section>
 
-      {/* Key Insight Cards */}
+      {!data.isDemo && (
+        <EmptyState
+          icon="lightbulb"
+          title="Инсайтов пока нет"
+          description="Аналитические инсайты появятся после прохождения диагностики и накопления данных по компании."
+        />
+      )}
+
+      {/* Key Insight Cards + signal feed (demo case study only) */}
+      {data.isDemo && (
+      <>
       <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {INSIGHT_CARDS.map((card) => (
           <div key={card.title} className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-6 hover:bg-surface-container transition-colors cursor-pointer group">
@@ -157,6 +168,8 @@ export default async function InsightsPage() {
           })}
         </div>
       </section>
+      </>
+      )}
     </div>
   )
 }

@@ -19,87 +19,42 @@ import { NextResponse } from 'next/server'
  * Request body:
  *   { action: 'news' | 'competitors' | 'intelligence', ...params }
  */
+// Real OSINT requires external providers (Exa.ai for search/news/competitors,
+// Firecrawl for scraping). Until those credentials are configured we return
+// EMPTY results with `source: 'not_connected'` — never fabricated news,
+// competitors, or "intelligence". The UI must render an explicit empty state
+// ("Источник данных не подключён"). See docs/technical-audit.md (D5).
+function osintConnected(): boolean {
+  return Boolean(process.env.EXA_API_KEY && process.env.FIRECRAWL_API_KEY)
+}
+
 export async function POST(req: Request) {
   try {
     const body = await req.json()
     const { action, url, competitorName } = body ?? {}
 
-    if (action === 'news') {
-      return NextResponse.json({ data: buildMockNews() })
+    if (action !== 'news' && action !== 'competitors' && action !== 'intelligence') {
+      return NextResponse.json({ error: 'Invalid action' }, { status: 400 })
     }
 
-    if (action === 'competitors') {
-      return NextResponse.json({ data: buildMockCompetitors() })
+    if (action === 'intelligence' && (!url || !competitorName)) {
+      return NextResponse.json(
+        { error: 'url and competitorName are required' },
+        { status: 400 },
+      )
     }
 
-    if (action === 'intelligence') {
-      if (!url || !competitorName) {
-        return NextResponse.json(
-          { error: 'url and competitorName are required' },
-          { status: 400 },
-        )
-      }
-      return NextResponse.json({ data: buildMockIntelligence(competitorName) })
+    if (!osintConnected()) {
+      // No real source wired → honest empty payload, not mock data.
+      return NextResponse.json({ source: 'not_connected', data: [] })
     }
 
-    return NextResponse.json({ error: 'Invalid action' }, { status: 400 })
+    // TODO(osint): real Exa.ai + Firecrawl pipeline goes here, returning the
+    // same { source, data } shape with live results.
+    return NextResponse.json({ source: 'not_connected', data: [] })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to fetch OSINT data'
     console.error('[market/osint] Error:', error)
-    return NextResponse.json({ error: message }, { status: 500 })
+    return NextResponse.json({ error: message, data: [] }, { status: 500 })
   }
-}
-
-function buildMockNews() {
-  const now = Date.now()
-  return [
-    {
-      source: 'BusinessFM',
-      headline: 'IT sector attracts record foreign investment in Kazakhstan Q1',
-      summary:
-        'International investors poured $180M into Kazakh IT startups in the first quarter, a 42% YoY increase led by fintech and AI companies.',
-      timestamp: new Date(now - 1000 * 60 * 90).toISOString(),
-      tags: ['Investment', 'Fintech', 'AI'],
-    },
-    {
-      source: 'Atameken Business',
-      headline: 'New tax incentives approved for IT-park residents',
-      summary:
-        'The Parliament extended the 0% corporate income tax regime for Astana Hub residents through 2030, removing a major policy risk for scaling SaaS vendors.',
-      timestamp: new Date(now - 1000 * 60 * 60 * 4).toISOString(),
-      tags: ['Regulation', 'Astana Hub'],
-    },
-  ]
-}
-
-function buildMockCompetitors() {
-  return [
-    {
-      name: 'NovaByte KZ',
-      category: 'Direct',
-      bin_iin: '230540051122',
-      url: 'https://novabyte.kz',
-      estRevenue: 4_600_000_000,
-      taxesPaid: 420_000_000,
-      b2gDependency: 38,
-      tags: ['Consulting', 'Cloud', 'B2B'],
-      isTracked: false,
-    },
-  ]
-}
-
-function buildMockIntelligence(competitorName: string) {
-  const now = Date.now()
-  return [
-    {
-      type: 'New Vacancy',
-      description: `${competitorName} posted 5 new engineering roles focused on AI/ML — signals a new product line is in development.`,
-      timestamp: new Date(now - 1000 * 60 * 60 * 2).toISOString(),
-    },
-    {
-      type: 'Tender Win',
-      description: `${competitorName} won a state tender worth ₸140M for a digital infrastructure modernization contract.`,
-      timestamp: new Date(now - 1000 * 60 * 60 * 26).toISOString(),
-    },
-  ]
 }

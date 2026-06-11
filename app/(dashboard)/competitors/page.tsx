@@ -6,6 +6,7 @@ import { auth } from '@/lib/auth'
 import { getDashboardData } from '@/lib/get-dashboard-data'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
+import { EmptyState } from '@/components/common/EmptyState'
 
 export const metadata: Metadata = { 
   title: 'Конкурентный Анализ | AIStart360',
@@ -54,20 +55,25 @@ export default async function CompetitorsPage() {
             <div className="flex items-center gap-3 bg-surface/50 backdrop-blur-md px-5 py-3 rounded-2xl border border-white/[0.05]">
               <span className="material-symbols-outlined text-primary">sensors</span>
               <div>
-                <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest leading-none mb-1">Live Tracking</p>
-                <p className="text-sm font-bold text-on-surface">6 источников активно</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-3 bg-surface/50 backdrop-blur-md px-5 py-3 rounded-2xl border border-white/[0.05]">
-              <span className="material-symbols-outlined text-primary">update</span>
-              <div>
-                <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest leading-none mb-1">Last Update</p>
-                <p className="text-sm font-bold text-on-surface">14 минут назад</p>
+                <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest leading-none mb-1">Отслеживается</p>
+                <p className="text-sm font-bold text-on-surface">{data.COMPETITORS.length} конкурентов</p>
               </div>
             </div>
           </div>
         </div>
       </section>
+
+      {!data.isDemo && (
+        <EmptyState
+          icon="radar"
+          title="Данных по конкурентам нет"
+          description="Конкурентный анализ появится после заполнения анкеты (блок «Продукт и конкуренты») и подключения источников рыночных данных."
+        />
+      )}
+
+      {data.isDemo && (
+      <>
+      {/* Snapshot Stats */}
 
       {/* Snapshot Stats */}
       <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
@@ -209,6 +215,8 @@ export default async function CompetitorsPage() {
           })}
         </div>
       </section>
+      </>
+      )}
 
       {/* Landscape Map (Premium Version) */}
       <section className="relative overflow-hidden rounded-[2.5rem] bg-gradient-to-br from-surface-container-low to-surface border border-white/[0.05] p-10 lg:p-14 text-center">

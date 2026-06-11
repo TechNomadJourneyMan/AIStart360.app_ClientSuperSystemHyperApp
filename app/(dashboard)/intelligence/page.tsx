@@ -4,6 +4,7 @@ import type { Metadata } from 'next'
 import { prisma } from '@/lib/db'
 import { auth } from '@/lib/auth'
 import { getDashboardData } from '@/lib/get-dashboard-data'
+import { EmptyState } from '@/components/common/EmptyState'
 
 export const metadata: Metadata = { title: 'Intelligence Hub' }
 
@@ -29,7 +30,7 @@ export default async function IntelligencePage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="font-headline text-3xl font-extrabold text-on-surface">Intelligence <span className="text-gradient">Hub</span></h1>
-          <p className="text-on-surface-variant text-sm mt-1">Рыночные сигналы, риски и возможности Choco Ecosystem</p>
+          <p className="text-on-surface-variant text-sm mt-1">Рыночные сигналы, риски и возможности вашей компании</p>
         </div>
         <div className="flex items-center gap-3 bg-surface-container-low px-4 py-2 rounded-xl border border-white/[0.04]">
           <span className="status-dot-online after:animate-ping after:absolute after:inset-0 after:rounded-full after:bg-primary/50" />
@@ -42,7 +43,7 @@ export default async function IntelligencePage() {
         {[
           { label: 'События аудита', value: String(auditEvents), icon: 'hub', color: 'text-on-surface' },
           { label: 'Клиенты', value: String(clientCount), icon: 'groups', color: 'text-primary' },
-          { label: 'AI Инсайты', value: '12', icon: 'auto_awesome', color: 'text-tertiary-container' },
+          { label: 'AI Инсайты', value: String(data.SIGNALS.length), icon: 'auto_awesome', color: 'text-tertiary-container' },
           { label: 'Статус систем', value: 'Active', icon: 'cloud_done', color: 'text-success' },
         ].map((stat) => (
           <div key={stat.label} className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-5 hover:border-primary/10 transition-colors">
@@ -71,7 +72,16 @@ export default async function IntelligencePage() {
         ))}
       </div>
 
+      {!data.isDemo && (
+        <EmptyState
+          icon="sensors"
+          title="Сигналов пока нет"
+          description="Рыночные сигналы и инсайты появятся после подключения источников данных и прохождения диагностики."
+        />
+      )}
+
       {/* Signal Feed */}
+      {data.isDemo && (
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {data.SIGNALS.map((signal) => {
           const cfg = priorityConfig[signal.priority as keyof typeof priorityConfig] ?? priorityConfig.low
@@ -118,6 +128,7 @@ export default async function IntelligencePage() {
           )
         })}
       </div>
+      )}
     </div>
   )
 }

@@ -23,7 +23,6 @@ function ResetPasswordContent() {
   const router = useRouter()
   const code = params.get('code') ?? ''
   const email = params.get('email') ?? ''
-  const supabase = createClient()
 
   const [isLoading, setIsLoading] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
@@ -39,6 +38,7 @@ function ResetPasswordContent() {
     setErrorMessage(null)
     setIsLoading(true)
 
+    const supabase = createClient()
     const { error } = await supabase.auth.updateUser({
       password: data.password,
     })

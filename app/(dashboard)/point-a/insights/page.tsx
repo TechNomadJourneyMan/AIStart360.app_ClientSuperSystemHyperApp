@@ -6,9 +6,9 @@
  * Social-feed style: sticky filter bar, "Создать вопрос" composer, per-item
  * comments thread with mock replies, "Загрузить ещё" pagination.
  *
- * UI-only — wires to `/api/v1/point-a/insights` if available, otherwise falls
- * back to a richer mock set. Mutations (create / answer / confirm) are stubbed
- * locally so the page is fully interactive in dev.
+ * Wires to `/api/v1/point-a/insights`. When the API has no items the feed shows
+ * an explicit empty state — never fabricated AI/expert/client questions.
+ * The composer adds locally-created client questions to the in-memory list.
  */
 
 import Link from 'next/link'
@@ -33,118 +33,6 @@ interface Counts {
 interface ApiResponse {
   ok: boolean
   data?: { items: InsightFeedItem[]; counts: Counts }
-}
-
-const FULL_MOCK_ITEMS: InsightFeedItem[] = [
-  {
-    id: 'fm-1',
-    type: 'ai',
-    category: 'ВЫРУЧКА',
-    question_text:
-      'В апреле выручка выросла на 18% при том же ARPU. Это разовый эффект сезонности или новый базовый уровень — стоит зашить в прогноз?',
-    status: 'pending_confirmation',
-    created_at: new Date(Date.now() - 1000 * 60 * 30).toISOString(),
-  },
-  {
-    id: 'fm-2',
-    type: 'expert',
-    category: 'СТРАТЕГИЯ',
-    question_text:
-      'Вы планируете запуск второго направления через 4 месяца — есть ли у команды свободный продуктовый ресурс или придётся переключать текущих людей?',
-    author_name: 'Эксперт · Наталья К.',
-    status: 'awaiting_answer',
-    created_at: new Date(Date.now() - 1000 * 60 * 60 * 5).toISOString(),
-  },
-  {
-    id: 'fm-3',
-    type: 'ai',
-    category: 'ВОРОНКА',
-    question_text:
-      'Конверсия из заявки в платёж упала с 22% до 16% за последние 6 недель. Это связано с новой формой регистрации или с изменением источников трафика?',
-    answer_text:
-      'Изменили форму 3 недели назад — добавили шаг с подтверждением телефона. Похоже, это и есть причина.',
-    answer_author_name: 'Иван Петров',
-    answer_author_role: 'client',
-    answered_at: new Date(Date.now() - 1000 * 60 * 60 * 8).toISOString(),
-    status: 'confirmed',
-    created_at: new Date(Date.now() - 1000 * 60 * 60 * 18).toISOString(),
-  },
-  {
-    id: 'fm-4',
-    type: 'client',
-    category: 'КЛИЕНТЫ',
-    question_text:
-      'Какие сегменты клиентов сейчас приносят больше всего LTV и стоит ли увеличить бюджет именно на них?',
-    author_name: 'Иван Петров',
-    status: 'pending_ai',
-    created_at: new Date(Date.now() - 1000 * 60 * 60 * 26).toISOString(),
-  },
-  {
-    id: 'fm-5',
-    type: 'expert',
-    category: 'ОРГСТРУКТУРА',
-    question_text:
-      'Кто отвечает за P&L по направлению B2B и есть ли у этого человека прямой доступ к маркетинговому бюджету?',
-    author_name: 'Эксперт · Дмитрий В.',
-    status: 'awaiting_answer',
-    created_at: new Date(Date.now() - 1000 * 60 * 60 * 30).toISOString(),
-  },
-  {
-    id: 'fm-6',
-    type: 'ai',
-    category: 'КОНКУРЕНТЫ',
-    question_text:
-      'Два прямых конкурента в апреле снизили цены на 15%. Стоит ли реагировать ценой или удержать позиционирование за счёт ценности?',
-    status: 'pending_confirmation',
-    created_at: new Date(Date.now() - 1000 * 60 * 60 * 40).toISOString(),
-  },
-  {
-    id: 'fm-7',
-    type: 'expert',
-    category: 'ВЫРУЧКА',
-    question_text:
-      'Маржа по новому продукту 12% против 34% у основного. Заложили ли вы это в плановую структуру выручки или считали по средней?',
-    author_name: 'Эксперт · Наталья К.',
-    status: 'awaiting_answer',
-    created_at: new Date(Date.now() - 1000 * 60 * 60 * 56).toISOString(),
-  },
-  {
-    id: 'fm-8',
-    type: 'ai',
-    category: 'СТРАТЕГИЯ',
-    question_text:
-      'В вашей анкете отмечено «выход на 3 новых региона за год». Есть ли у вас критерии успеха для региона, чтобы решать — масштабировать или закрыть?',
-    status: 'pending_ai',
-    created_at: new Date(Date.now() - 1000 * 60 * 60 * 72).toISOString(),
-  },
-]
-
-const MOCK_COMMENTS: Record<string, InsightComment[]> = {
-  'fm-3': [
-    {
-      id: 'c-1',
-      author_role: 'ai',
-      author_name: 'AIStart360',
-      text: 'Учли в прогнозе — целевой план на май пересчитан с конверсией 18%.',
-      created_at: new Date(Date.now() - 1000 * 60 * 60 * 7).toISOString(),
-    },
-    {
-      id: 'c-2',
-      author_role: 'expert',
-      author_name: 'Эксперт · Наталья К.',
-      text: 'Рекомендую вернуть прежнюю форму и сделать A/B тест в течение 2 недель.',
-      created_at: new Date(Date.now() - 1000 * 60 * 60 * 4).toISOString(),
-    },
-  ],
-  'fm-2': [
-    {
-      id: 'c-3',
-      author_role: 'client',
-      author_name: 'Иван Петров',
-      text: 'Думаю над этим — пока склоняюсь к найму нового PM.',
-      created_at: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(),
-    },
-  ],
 }
 
 // ─── Page ────────────────────────────────────────────────────────────────────
@@ -175,10 +63,10 @@ export default function InsightsPage() {
         if (json?.ok && json.data?.items?.length) {
           setItems(json.data.items)
         } else {
-          setItems(FULL_MOCK_ITEMS)
+          setItems([])
         }
       } catch {
-        if (!cancelled) setItems(FULL_MOCK_ITEMS)
+        if (!cancelled) setItems([])
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -391,7 +279,7 @@ export default function InsightsPage() {
         ) : (
           <>
             {visible.map((it) => {
-              const comments = MOCK_COMMENTS[it.id] ?? []
+              const comments: InsightComment[] = []
               const expanded = expandedComments.has(it.id)
               const previewComments = expanded ? comments : comments.slice(0, 2)
               const hiddenComments = comments.length - previewComments.length

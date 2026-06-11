@@ -14,7 +14,6 @@ const schema = z.object({
 type Form = z.infer<typeof schema>
 
 export default function ForgotPasswordPage() {
-  const supabase = createClient()
   const [sent, setSent] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [requestError, setRequestError] = useState<string | null>(null)
@@ -25,6 +24,7 @@ export default function ForgotPasswordPage() {
   const onSubmit = async (data: Form) => {
     setRequestError(null)
     setIsLoading(true)
+    const supabase = createClient()
     const { error } = await supabase.auth.resetPasswordForEmail(data.email, {
       redirectTo: `${window.location.origin}/auth/reset-password`,
     })
