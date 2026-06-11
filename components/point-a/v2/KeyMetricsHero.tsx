@@ -5,10 +5,12 @@
  *
  * Data source: `useMetrics()` -> `/api/v1/metrics`.
  *
- * The live endpoint currently returns 4 default metrics (revenue, margin,
- * clients, avg_check). For LTV / CAC / no_show_rate we use placeholder ids
- * documented with TODO comments — when the resolver wires them, just align
- * the `apiId` field below and the tiles will hydrate automatically.
+ * The live endpoint (`/api/v1/metrics`) currently returns 4 default metrics
+ * (revenue, clients, avg_check, margin). LTV / CAC / no_show_rate are NOT yet
+ * exposed by the resolver/catalog, so their tiles render an explicit EMPTY
+ * state ("—" + «нет данных») — never a fabricated value. The moment the
+ * endpoint starts returning an id matching the tile's `apiId`, the tile
+ * hydrates automatically (see `byId.get(spec.apiId)` below).
  *
  * The <MetricModal/> is mounted globally on the page; this component opens
  * it by calling `setActiveMetric(id)` on the metrics Zustand store.
@@ -182,7 +184,9 @@ function MetricTile({ spec, metric, onOpen }: TileProps) {
   const { zone, deltaLabel } = spec.rule(metric)
   const styles = ZONE_STYLES[zone]
   const value = metric?.displayValue ?? spec.placeholderValue ?? '—'
-  const dim = !metric
+  // Empty state: no live value from the endpoint. Render a clean
+  // "нет данных" affordance instead of a value/trend that doesn't exist.
+  const isEmpty = !metric
 
   return (
     <motion.button
@@ -191,10 +195,10 @@ function MetricTile({ spec, metric, onOpen }: TileProps) {
       whileHover={metric ? { scale: 1.015, y: -1 } : undefined}
       whileTap={metric ? { scale: 0.99 } : undefined}
       transition={{ duration: 0.15 }}
-      disabled={!metric}
-      aria-label={`${spec.label}: ${value}, ${styles.label}`}
+      disabled={isEmpty}
+      aria-label={isEmpty ? `${spec.label}: нет данных` : `${spec.label}: ${value}, ${styles.label}`}
       className={`group relative flex flex-col gap-3 rounded-2xl border ${styles.border} ${styles.bg} px-4 py-4 text-left transition-colors focus:outline-none focus:ring-2 focus:ring-primary/40 ${
-        metric ? 'hover:bg-white/[0.02] cursor-pointer' : 'cursor-not-allowed opacity-70'
+        metric ? 'hover:bg-white/[0.02] cursor-pointer' : 'cursor-default'
       }`}
     >
       <div className="flex items-start justify-between gap-2">
@@ -209,18 +213,23 @@ function MetricTile({ spec, metric, onOpen }: TileProps) {
         <span className={`w-1.5 h-1.5 rounded-full ${styles.dot} flex-shrink-0 mt-1`} aria-hidden="true" />
       </div>
 
-      <div className={`text-2xl font-mono font-bold leading-none ${dim ? 'text-on-surface-variant/60' : 'text-on-surface'}`}>
+      <div className={`text-2xl font-mono font-bold leading-none ${isEmpty ? 'text-on-surface-variant/50' : 'text-on-surface'}`}>
         {value}
       </div>
 
-      <div className={`text-[11px] font-mono ${styles.text} flex items-center gap-1`}>
-        {metric ? (
+      {isEmpty ? (
+        <div className="flex items-center gap-1 text-[11px] font-mono text-on-surface-variant/70">
+          <span className="material-symbols-outlined text-[12px]">do_not_disturb_on</span>
+          <span className="truncate">нет данных</span>
+        </div>
+      ) : (
+        <div className={`text-[11px] font-mono ${styles.text} flex items-center gap-1`}>
           <span className="material-symbols-outlined text-[12px]">
             {zone === 'red' ? 'trending_down' : zone === 'green' ? 'trending_up' : 'trending_flat'}
           </span>
-        ) : null}
-        <span className="truncate">{deltaLabel}</span>
-      </div>
+          <span className="truncate">{deltaLabel}</span>
+        </div>
+      )}
     </motion.button>
   )
 }
