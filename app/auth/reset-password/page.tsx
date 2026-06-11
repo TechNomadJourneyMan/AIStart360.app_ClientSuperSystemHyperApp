@@ -8,6 +8,11 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase/client'
 
+// Avoid static prerender: the Supabase browser client requires env vars that
+// are not present at build time. Forcing dynamic rendering prevents the
+// "@supabase/ssr: Your project's URL and API key are required" crash.
+export const dynamic = 'force-dynamic'
+
 const schema = z.object({
   password: z.string().min(8, 'Пароль минимум 8 символов'),
   confirmPassword: z.string().min(8, 'Подтверждение пароля обязательно'),

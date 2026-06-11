@@ -308,14 +308,19 @@ export async function GET(req: NextRequest) {
             avgCheck: diag?.financeScore ? diag.financeScore * 10000 : 0,
             volumeChange: diag ? (diag.salesScore - 50) : 0,
             riskScore,
-            churnProb: Math.max(0, Math.min(100, riskScore + Math.floor(Math.random() * 10 - 5))),
+            // Churn probability is derived deterministically from the risk score.
+            // No random jitter — we never present noise as data.
+            churnProb: riskScore,
             churnLevel: health < 40 ? 'high' : health < 60 ? 'medium' : 'low',
             comment: !diag ? 'Анкета не заполнена' : health < 40 ? 'Требует внимания' : null,
             action: health < 50 ? 'call' : health < 70 ? 'message' : 'monitor',
             orderCycle: 30,
+            // Deterministic sparkline: a smooth ramp toward the current health
+            // score. With no real per-client history available we show a flat
+            // trajectory ending at the actual health value rather than random noise.
             history: [
-              Math.round(Math.random() * 40 + 30), Math.round(Math.random() * 40 + 30),
-              Math.round(Math.random() * 40 + 30), Math.round(health * 0.8), Math.round(health),
+              Math.round(health * 0.6), Math.round(health * 0.7),
+              Math.round(health * 0.8), Math.round(health * 0.9), Math.round(health),
             ],
           })
         }
