@@ -20,20 +20,9 @@
 import Link from 'next/link'
 import MarketAnalysisFooter from './MarketAnalysisFooter'
 
-interface SurveyAnswerRow {
-  question_key: string
-  answer: { value?: unknown } | null
-}
-
 interface MarketSnapshotRow {
   data: Partial<MarketSnapshot> | null
   computed_at: string | null
-}
-
-function pickStringAnswer(rows: SurveyAnswerRow[], key: string): string | null {
-  const row = rows.find((r) => r.question_key === key)
-  const v = row?.answer?.value
-  return typeof v === 'string' && v.trim() ? v.trim() : null
 }
 
 interface MarketSnapshot {
@@ -48,24 +37,18 @@ interface MarketSnapshot {
   source: 'db' | 'mock'
 }
 
-// Static fallback snapshot — used ONLY when no `market_snapshots` row exists
-// for this user. Tagged `source: 'mock'` so the UI renders a clear TEST chip.
-function buildSnapshot(vertical: string | null, city: string | null): MarketSnapshot {
-  const verticalLabel = vertical?.toLowerCase().includes('розниц')
-    ? 'рынок розницы KZ'
-    : vertical
-      ? `рынок: ${vertical.toLowerCase()}`
-      : 'рынок розницы KZ'
-  const cityLabel = city || 'Алматы'
-
+// Empty placeholder snapshot — used ONLY when no `market_snapshots` row exists
+// for this user. Data-integrity rule: we never render fabricated market numbers;
+// without a real OSINT/AI snapshot the card shows an honest empty state.
+function buildSnapshot(): MarketSnapshot {
   return {
-    tam: { value: '4.8 млрд $', caption: verticalLabel },
-    sam: { value: '820 млн $', delta: '+14% CAGR' },
-    som: { value: '32 млн $', caption: 'Достижим для $2M' },
-    trendWindow: { open: true, caption: '18–24 мес' },
-    mainTrend: 'E-commerce + доставка в день',
-    competitorWeakness: 'Sulpak — слабый онлайн, плохой сервис',
-    microSegment: `Семьи 35+, средний доход, ${cityLabel}`,
+    tam: { value: '—', caption: '' },
+    sam: { value: '—', delta: '' },
+    som: { value: '—', caption: '' },
+    trendWindow: { open: false, caption: '' },
+    mainTrend: '',
+    competitorWeakness: '',
+    microSegment: '',
     updatedAt: new Date(),
     source: 'mock',
   }
@@ -98,31 +81,16 @@ export default async function MarketAnalysisCard({ userId }: { userId: string })
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
-  // 1. Pull vertical/city from survey to tailor the fallback snapshot.
-  // 2. Pull the user's market_snapshots row (real OSINT/AI output) — if it
-  //    exists, those values override the fallback.
-  let vertical: string | null = null
-  let city: string | null = null
+  // Pull the user's market_snapshots row (real OSINT/AI output). Without it the
+  // card renders an honest empty state — never fabricated market numbers.
   let dbRow: MarketSnapshotRow | null = null
   if (supabaseUrl && serviceKey) {
     const headers = { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` }
     try {
-      const [surveyRes, snapshotRes] = await Promise.all([
-        fetch(
-          `${supabaseUrl}/rest/v1/survey_answers?user_id=eq.${userId}&question_key=in.(s1_industry,s1_niche,s1_city,s1_geo)&select=question_key,answer`,
-          { headers, cache: 'no-store' },
-        ),
-        fetch(
-          `${supabaseUrl}/rest/v1/market_snapshots?user_id=eq.${userId}&order=computed_at.desc&limit=1`,
-          { headers, cache: 'no-store' },
-        ),
-      ])
-      if (surveyRes.ok) {
-        const rows = (await surveyRes.json()) as SurveyAnswerRow[]
-        vertical =
-          pickStringAnswer(rows, 's1_industry') || pickStringAnswer(rows, 's1_niche')
-        city = pickStringAnswer(rows, 's1_city') || pickStringAnswer(rows, 's1_geo')
-      }
+      const snapshotRes = await fetch(
+        `${supabaseUrl}/rest/v1/market_snapshots?user_id=eq.${userId}&order=computed_at.desc&limit=1`,
+        { headers, cache: 'no-store' },
+      )
       if (snapshotRes.ok) {
         const rows = (await snapshotRes.json()) as MarketSnapshotRow[]
         dbRow = Array.isArray(rows) && rows[0] ? rows[0] : null
@@ -132,7 +100,7 @@ export default async function MarketAnalysisCard({ userId }: { userId: string })
     }
   }
 
-  const snap = mergeDbSnapshot(buildSnapshot(vertical, city), dbRow)
+  const snap = mergeDbSnapshot(buildSnapshot(), dbRow)
   const isMock = snap.source === 'mock'
 
   return (
@@ -160,9 +128,9 @@ export default async function MarketAnalysisCard({ userId }: { userId: string })
                       borderColor: 'rgba(232,122,53,0.4)',
                       background: 'rgba(232,122,53,0.08)',
                     }}
-                    title="OSINT-пайплайн не нашёл свежих данных для этого пользователя — показан тестовый снимок"
+                    title="OSINT-пайплайн ещё не сформировал снимок рынка для этого пользователя"
                   >
-                    Тестовые данные
+                    Нет данных
                   </span>
                 )}
               </div>
@@ -172,9 +140,11 @@ export default async function MarketAnalysisCard({ userId }: { userId: string })
             </div>
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
-            <span className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest px-2 py-1 rounded-md border border-white/[0.06] bg-surface-container">
-              Обновлено {formatUpdated(snap.updatedAt)}
-            </span>
+            {!isMock && (
+              <span className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest px-2 py-1 rounded-md border border-white/[0.06] bg-surface-container">
+                Обновлено {formatUpdated(snap.updatedAt)}
+              </span>
+            )}
             <Link
               href="/market"
               className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-white font-bold text-sm hover:brightness-110 focus:ring-2 transition-all"
@@ -189,6 +159,19 @@ export default async function MarketAnalysisCard({ userId }: { userId: string })
           </div>
         </div>
 
+        {isMock ? (
+          /* ── Honest empty state: no fabricated market numbers ─────────── */
+          <div className="bg-surface-container rounded-xl border border-white/[0.04] p-8 text-center mb-5">
+            <span className="material-symbols-outlined text-3xl text-on-surface-variant/60">public_off</span>
+            <p className="text-sm font-bold text-on-surface mt-3">Анализ рынка ещё не сформирован</p>
+            <p className="text-xs text-on-surface-variant mt-1.5 max-w-md mx-auto leading-relaxed">
+              TAM/SAM/SOM, тренды и слабости конкурентов появятся здесь после
+              подключения источников рынка и обработки данных AI-агентами.
+              Заполните анкету (отрасль и конкуренты) — это ускорит анализ.
+            </p>
+          </div>
+        ) : (
+        <>
         {/* ── 4 tiles ───────────────────────────────────────────────────── */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5 [&>a]:p-5">
           {/* TAM */}
@@ -313,6 +296,8 @@ export default async function MarketAnalysisCard({ userId }: { userId: string })
             </p>
           </div>
         </div>
+        </>
+        )}
 
         {/* ── Quick links to /market sub-sections (Гига Раздел Рынок) ────── */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-5">
