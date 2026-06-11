@@ -25,11 +25,11 @@ Safe (test‑only, leave): `prisma/seed.ts`, `scripts/seed-*.js`, `scripts/demo-
 
 | ID | Sev | File:line | Finding | Fix | Status |
 |---|---|---|---|---|---|
-| A1 | **Critical** | `app/api/v1/admin/pending-users/route.ts:7-21` | GET lists all pending users (email/phone/org) with **no auth**. | Require admin + permission. | ☐ |
+| A1 | **Critical** | `app/api/v1/admin/*` (all 6 routes) | GET pending-users + **approve-user/approve/reject had NO auth** — anyone could approve/reject any account (account takeover) or list pending users. | Added `requireSupabaseAdmin()` (lib/supabase-admin-guard.ts) gating role ∈ {admin, super_admin} on pending-users, approve-user, clients (GET+POST), users/[id]/approve, users/[id]/reject. | ☑ |
 | A2 | **Critical** | `app/api/giga-admin/auth/route.ts:8-22` | Super‑admin via plaintext env password, no rate‑limit, no audit; cookie `httpOnly:false`. | Hash secret, rate‑limit, `httpOnly:true`, audit. | ☐ |
 | A3 | High | `app/api/auth/register/route.ts:9,39` | `role` accepted from client (`owner/admin/expert`); `email_confirm:true` skips verification. | Force `role:'client'` + `pending_approval`; verify email. | ☐ |
 | A4 | High | `app/api/dev/register/route.ts`; `app/api/dev/confirm-email` | Dev backdoors gated only by `NODE_ENV!=='production'`. | Remove from prod build or IP‑gate. | ☐ |
-| A5 | High | `app/api/v1/onboarding/documents/route.ts:8-21`; `…/onboarding/company`; `…/diagnostics/current`; `app/api/client/status` | Accept `user_id` from query, no ownership check → cross‑tenant read. | Derive user from session; verify ownership; rely on RLS. | ☐ |
+| A5 | High | `app/api/v1/onboarding/documents`; `…/onboarding/company`; `…/diagnostics/current`; `app/api/client/status`; `…/upgrade-request` | Accepted `user_id`/`userId` from request, no ownership check → cross‑tenant read (client/status used service role, the real leak). | All now require a Supabase session and use the **session** user id; request‑supplied id ignored; POSTs can't write as another user. Frontend callers unchanged. | ☑ |
 | A6 | High | `app/giga-login/page.tsx:8-47` | Super‑admin password stored in `localStorage`. | Remove; use browser password manager only. | ☐ |
 | A7 | Med | `middleware.ts:94-124` | Legacy `aistart360_role` cookie allowed through "for now" if Supabase session absent. | Remove fallback / expire. | ☐ |
 | A8 | Med | `app/api/giga-admin/impersonate/route.ts` | Impersonation has no audit trail. | Log actor/target/time; notify user. | ☐ |

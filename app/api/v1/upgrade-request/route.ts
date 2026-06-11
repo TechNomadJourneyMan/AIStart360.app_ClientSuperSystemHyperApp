@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
+import { createServerClient } from '@/lib/supabase-server'
 
 const FEATURE_LABELS: Record<string, string> = {
   '/metrics': 'Метрики',
@@ -10,16 +11,22 @@ const FEATURE_LABELS: Record<string, string> = {
 
 /**
  * POST /api/v1/upgrade-request
- * Records a Pro upgrade request from a client and creates an AdminRequest (type=access).
- * Body: { userId: string, featureKey: string }
+ * Records a Pro upgrade request from the authenticated client.
+ * Body: { featureKey: string }. The user id comes from the session, not the
+ * body, so requests can't be spoofed for another user. See technical-audit A5.
  */
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json()
-    const { userId, featureKey } = body as { userId?: string; featureKey?: string }
+    const sb = createServerClient()
+    const { data: { user } } = await sb.auth.getUser()
+    if (!user) return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
+    const userId = user.id
 
-    if (!userId || !featureKey) {
-      return NextResponse.json({ ok: false, error: 'userId and featureKey required' }, { status: 400 })
+    const body = await req.json()
+    const { featureKey } = body as { featureKey?: string }
+
+    if (!featureKey) {
+      return NextResponse.json({ ok: false, error: 'featureKey required' }, { status: 400 })
     }
 
     const featureLabel = FEATURE_LABELS[featureKey] ?? featureKey
