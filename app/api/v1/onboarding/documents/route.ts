@@ -5,33 +5,38 @@ import { createServerClient } from '@/lib/supabase-server'
 import { notifyAdmins } from '@/lib/notifications'
 import { inngest } from '@/lib/inngest'
 
-// GET /api/v1/onboarding/documents?user_id=xxx
-export async function GET(req: NextRequest) {
-  const userId = req.nextUrl.searchParams.get('user_id')
-  if (!userId) return NextResponse.json({ ok: false, error: 'user_id required' }, { status: 400 })
-
+// GET /api/v1/onboarding/documents — the caller's own documents (session user).
+// user_id is no longer trusted from the query. See technical-audit A5.
+export async function GET(_req: NextRequest) {
   const sb = createServerClient()
+  const { data: { user } } = await sb.auth.getUser()
+  if (!user) return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
+
   const { data, error } = await sb
     .from('documents')
     .select('*')
-    .eq('user_id', userId)
+    .eq('user_id', user.id)
     .order('uploaded_at', { ascending: false })
 
   if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
   return NextResponse.json({ ok: true, data: data ?? [] })
 }
 
-// POST /api/v1/onboarding/documents — register document after upload
+// POST /api/v1/onboarding/documents — register a document for the caller.
+// user_id comes from the session, never the body. See technical-audit A5.
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
-    const { user_id, company_id, file_name, file_url, file_size, mime_type, doc_type, period_quarter, period_year } = body
+    const { company_id, file_name, file_url, file_size, mime_type, doc_type, period_quarter, period_year } = body
 
-    if (!user_id || !file_name || !file_url || !doc_type) {
+    if (!file_name || !file_url || !doc_type) {
       return NextResponse.json({ ok: false, error: 'Missing required fields' }, { status: 400 })
     }
 
     const sb = createServerClient()
+    const { data: { user } } = await sb.auth.getUser()
+    if (!user) return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
+    const user_id = user.id
 
     const { data: doc, error } = await sb
       .from('documents')
