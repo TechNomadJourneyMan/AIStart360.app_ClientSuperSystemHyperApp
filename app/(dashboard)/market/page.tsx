@@ -1,18 +1,20 @@
 export const dynamic = 'force-dynamic'
 
 import type { Metadata } from 'next'
-import { MarketPortal } from '@/components/market/MarketPortal'
+import MarketAppEmbed from '@/components/market/MarketAppEmbed'
 
-export const metadata: Metadata = { title: 'Market Intelligence' }
+export const metadata: Metadata = { title: 'Рынок · Mark-analytics' }
 
 /**
- * /market — Market Intelligence Portal.
+ * /market — продукт «Рынок» (Mark-analytics).
  *
- * The outer DashboardShell enforces authentication, so this page is just a
- * thin wrapper that mounts the client-side tabbed portal. Data currently
- * comes from static mock fixtures in components/market/mock-data.ts;
- * TODO(supabase) comments in each view mark the integration points.
+ * Решение владельца продукта (июнь 2026): прежний «Competitor & Market Radar»
+ * удалён; раздел целиком занимает встроенное приложение Mark-analytics
+ * (карта рынка KZ, анализ ниши TAM/SAM/SOM, каталог компаний, виджеты).
+ * Вход — только через личный кабинет (DashboardShell даёт auth-гейт),
+ * сессия кабинета пробрасывается в приложение через postMessage.
+ * Чек-лист «50 вопросов» живёт отдельной страницей: /market/analysis.
  */
 export default function MarketPage() {
-  return <MarketPortal />
+  return <MarketAppEmbed />
 }

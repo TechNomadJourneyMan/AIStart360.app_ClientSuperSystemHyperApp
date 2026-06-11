@@ -1,20 +1,12 @@
 /**
- * MarketAnalysisCard — section card for /point-a showing the AI market analysis
- * snapshot (TAM/SAM/SOM + tracked trends, weaknesses, micro-segments).
+ * MarketAnalysisCard — section card for /point-a showing the per-user market
+ * analysis snapshot (TAM/SAM/SOM + main trend, competitor weakness, micro-segment).
  *
- * Data source: NO real aggregator exists yet for the per-user market analysis.
- * The Market Intelligence Portal (/market) uses a static fixture
- * (`components/market/mock-data.ts`) and the only live endpoints are
- * `/api/market/osint` (sync) and `/api/market/generate-insights`. Neither is
- * a per-tenant market-snapshot read.
- *
- * → We fall back to a derived static snapshot, scoped by user vertical when
- *   possible. The component is server-rendered so the upstream wiring can
- *   later move into a real `/api/v1/market/*` endpoint without changing the
- *   call-site.
- *
- * TODO: wire real market analysis aggregator (per-tenant, sourced from
- * Supabase `market_overview` + AI-generated insights table).
+ * Data source: latest `public.market_snapshots` row for the user. Snapshots are
+ * built from confirmed answers of the «Чек-лист 50 вопросов» (/market/analysis,
+ * tables from migration 028). Without a snapshot the card renders an honest
+ * empty state — never fabricated market numbers. The full market product lives
+ * at /market (embedded Mark-analytics app).
  */
 
 import Link from 'next/link'

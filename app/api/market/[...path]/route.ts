@@ -19,14 +19,18 @@ import { createClient } from '@/lib/supabase/server'
 // Forwardable upstream paths (prefix match). Anything else → 404.
 const ALLOWLIST = [
   'news/recent',
+  // Directory: list, detail, similar, timeline, insights (prefix covers companies/<id>/*)
   'companies',
   'competitors/options',
   'competitors/wizard',
-  'tenders/recent',
+  // Tender registry: /tenders (filtered list) + /tenders/recent
+  'tenders',
   // Read-only aggregate KPIs (/analytics/overview, /industry-distribution, ...)
   'analytics',
   'trends',
+  'regions',
   'search',
+  'persons',
 ] as const
 
 const UPSTREAM_TIMEOUT_MS = 8000
