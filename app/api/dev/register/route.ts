@@ -14,8 +14,12 @@ type RegisterPayload = {
 
 const ALLOWED_ROLES = new Set(['admin', 'expert', 'owner', 'client', 'super_admin'])
 
+// Dev-only backdoor: can mint accounts of ANY role (incl. admin/super_admin),
+// so it must be impossible to reach in production. Requires BOTH a non-prod
+// NODE_ENV and an explicit opt-in flag, so a misconfigured NODE_ENV alone can
+// never open it. Off by default everywhere. See audit A4.
 function isDevMode() {
-  return process.env.NODE_ENV !== 'production'
+  return process.env.NODE_ENV !== 'production' && process.env.ENABLE_DEV_AUTH_ROUTES === '1'
 }
 
 function getAdminClient() {

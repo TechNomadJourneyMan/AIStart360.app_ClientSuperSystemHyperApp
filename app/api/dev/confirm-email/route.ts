@@ -1,8 +1,10 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
+// Dev-only: requires non-prod NODE_ENV AND an explicit opt-in flag, so a
+// misconfigured NODE_ENV alone can never open it. Off by default. See audit A4.
 function isDevMode() {
-  return process.env.NODE_ENV !== 'production'
+  return process.env.NODE_ENV !== 'production' && process.env.ENABLE_DEV_AUTH_ROUTES === '1'
 }
 
 function getAdminClient() {
