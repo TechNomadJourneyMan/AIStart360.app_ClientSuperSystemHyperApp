@@ -3,6 +3,7 @@
 import { useState, useMemo, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { usePulse } from '@/hooks/usePulse'
+import GriPulseWidget from '@/components/pulse/GriPulseWidget'
 import type { CrmProvider, CrmStatus } from '@/lib/crm/types'
 
 // ─── Action Modals ─────────────────────────────────────────────────────────────
@@ -724,7 +725,28 @@ function CrmIntegrationTab() {
 // ─── Main component ───────────────────────────────────────────────────────────
 type ModalClient = { name: string; sector: string }
 
+// Top-level page: GRI Pulse weekly survey (primary) + CRM deals monitor (below).
 export default function PulsePage() {
+  return (
+    <div className="space-y-10">
+      {/* ── Primary: GRI Pulse weekly survey ── */}
+      <GriPulseWidget />
+
+      {/* ── Secondary: CRM deals monitor ── */}
+      <div className="space-y-6">
+        <div className="flex items-center gap-3 pt-2 border-t border-white/[0.04]">
+          <span className="material-symbols-outlined text-lg text-on-surface-variant">monitoring</span>
+          <p className="text-xs font-mono text-on-surface-variant uppercase tracking-[0.2em] pt-4">
+            Монитор сделок CRM
+          </p>
+        </div>
+        <CrmMonitorSection />
+      </div>
+    </div>
+  )
+}
+
+function CrmMonitorSection() {
   const [tab, setTab] = useState<'today' | 'risk' | 'card' | 'crm'>('today')
   const { data: clientsData, isLoading, error } = usePulse()
   
@@ -840,7 +862,7 @@ export default function PulsePage() {
       <section className="flex flex-col lg:flex-row justify-between items-start gap-4">
         <div className="flex-1">
           <p className="text-xs font-mono text-primary/70 uppercase tracking-[0.2em] mb-3">
-            GRI Pulse · Монитор клиентской базы
+            CRM · Монитор клиентской базы
           </p>
           <h1 className="font-headline text-2xl md:text-3xl lg:text-4xl font-extrabold text-on-surface">
             Кому звонить{' '}
