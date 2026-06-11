@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useCallback, useEffect, useState } from 'react'
 import {
   TrendingDown,
   Award,
@@ -11,70 +11,57 @@ import {
   Loader2,
 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
+import { type IntelligenceAlert } from './mock-data'
 import {
-  MOCK_COMPETITORS,
-  MOCK_INTELLIGENCE_ALERTS,
-  type IntelligenceAlert,
-  type Competitor,
-} from './mock-data'
+  getIntelligenceAlerts,
+  getCompetitors,
+  statusLineFor,
+  type MarketApiError,
+  type MarketCompetitor,
+} from '@/lib/market-api'
 
 /**
- * Intelligence / Monitoring Radar view — competitor activity feed.
+ * Intelligence / Monitoring Radar view — market signal feed.
  *
- * TODO(supabase): Subscribe to `intelligence_alerts` scoped by tracked
- * competitor_ids. The Sync button should trigger a Firecrawl-backed job on
- * the server that writes new alerts into the table.
+ * Signals are derived (honestly labelled «Тендер») from GET /tenders/recent via
+ * the Mark-analytics proxy (lib/market-api.ts). No fabricated price-drop / legal
+ * signals — only real tender records. The "Active Targets" panel lists tracked
+ * companies from the directory. When the backend is unconfigured/unavailable the
+ * honest empty state is kept with a subtle status line.
  */
 export function Intelligence() {
-  const [alerts, setAlerts] = useState<IntelligenceAlert[]>(
-    [...MOCK_INTELLIGENCE_ALERTS].sort(
-      (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
-    ),
-  )
-  const [competitors] = useState<Competitor[]>(MOCK_COMPETITORS)
+  const [alerts, setAlerts] = useState<IntelligenceAlert[]>([])
+  const [competitors, setCompetitors] = useState<MarketCompetitor[]>([])
   const [syncing, setSyncing] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [statusLine, setStatusLine] = useState<string | null>(null)
 
   const trackedCompetitors = competitors.filter((c) => c.isTracked)
 
-  const handleSync = async () => {
+  const load = useCallback(async () => {
     setSyncing(true)
-    setError(null)
     try {
-      const targetCompetitor = trackedCompetitors[0] ?? competitors[0]
-      if (!targetCompetitor) throw new Error('No competitors available to sync')
-      const res = await fetch('/api/market/osint', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'intelligence',
-          url: targetCompetitor.url,
-          competitorName: targetCompetitor.name,
-        }),
-      })
-      const result = await res.json()
-      if (!res.ok) throw new Error(result.error || 'Failed to sync')
-      if (Array.isArray(result.data) && result.data.length > 0) {
-        const incoming: IntelligenceAlert[] = result.data.map(
-          (item: Omit<IntelligenceAlert, 'id' | 'competitorName'>, idx: number) => ({
-            ...item,
-            id: `sync-${Date.now()}-${idx}`,
-            competitorName: targetCompetitor.name,
-          }),
-        )
-        setAlerts((prev) =>
-          [...incoming, ...prev].sort(
-            (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
-          ),
-        )
+      const [alertsRes, compRes] = await Promise.all([
+        getIntelligenceAlerts(),
+        getCompetitors({ region: 'Kazakhstan' }),
+      ])
+      if (alertsRes.ok) {
+        setAlerts(alertsRes.data)
+        setStatusLine(null)
+      } else {
+        setAlerts([])
+        setStatusLine(statusLineFor(alertsRes.error as MarketApiError))
       }
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Failed to sync'
-      setError(message)
+      setCompetitors(compRes.ok ? compRes.data : [])
     } finally {
       setSyncing(false)
     }
-  }
+  }, [])
+
+  useEffect(() => {
+    void load()
+  }, [load])
+
+  const handleSync = load
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
@@ -93,15 +80,9 @@ export function Intelligence() {
           ) : (
             <RefreshCw className="h-4 w-4 mr-2" />
           )}
-          Sync via Firecrawl
+          Sync Signals
         </Button>
       </div>
-
-      {error && (
-        <div className="p-4 bg-error/10 border border-error/20 rounded-lg text-error text-sm">
-          {error}
-        </div>
-      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         <div className="lg:col-span-1 space-y-4">
@@ -149,6 +130,9 @@ export function Intelligence() {
               <p className="text-on-surface-variant">
                 Здесь появятся события по конкурентам, когда источники будут подключены.
               </p>
+              {statusLine && (
+                <p className="text-xs text-on-surface-variant/60 mt-4">{statusLine}</p>
+              )}
             </div>
           ) : (
             <div className="relative border-l border-white/10 ml-4 space-y-6 pb-4">

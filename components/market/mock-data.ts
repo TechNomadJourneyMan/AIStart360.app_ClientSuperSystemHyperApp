@@ -17,6 +17,8 @@
 
 export interface MarketData {
   totalVolume: number
+  /** Currency of totalVolume — Mark-analytics reports USD; never mislabel units. */
+  volumeCurrency?: 'KZT' | 'USD'
   yoyGrowth: number
   activePlayers: number
   marketTemp: string
@@ -86,4 +88,10 @@ export function formatKZT(value: number): string {
   if (value >= 1_000_000_000) return `\u20B8${(value / 1_000_000_000).toFixed(1)}B`
   if (value >= 1_000_000) return `\u20B8${(value / 1_000_000).toFixed(1)}M`
   return `\u20B8${value.toLocaleString()}`
+}
+
+export function formatUSD(value: number): string {
+  if (value >= 1_000_000_000) return `$${(value / 1_000_000_000).toFixed(1)}B`
+  if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(1)}M`
+  return `$${value.toLocaleString()}`
 }

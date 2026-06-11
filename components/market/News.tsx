@@ -1,56 +1,49 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useCallback, useEffect, useState } from 'react'
 import { Newspaper, RefreshCw, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
-import { MOCK_NEWS, type NewsItem } from './mock-data'
+import { type NewsItem } from './mock-data'
+import { getNews, statusLineFor, type MarketApiError } from '@/lib/market-api'
 
 /**
- * News view — aggregated business news feed.
+ * News view — aggregated KZ business news feed.
  *
- * TODO(supabase): Subscribe to the `news` table with a niche+region filter.
- * The Sync button calls /api/market/osint which currently returns mock data;
- * once the Exa pipeline is wired, have it upsert news rows in Supabase.
+ * Reads GET /news/recent via the Mark-analytics proxy (lib/market-api.ts). When
+ * the backend is unconfigured/unavailable it keeps the honest empty state with a
+ * subtle status line. The Sync button refetches.
  */
 export function News() {
-  const [news, setNews] = useState<NewsItem[]>(
-    [...MOCK_NEWS].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()),
-  )
+  const [news, setNews] = useState<NewsItem[]>([])
   const [syncing, setSyncing] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [statusLine, setStatusLine] = useState<string | null>(null)
 
-  const handleSync = async () => {
+  const load = useCallback(async () => {
     setSyncing(true)
-    setError(null)
     try {
-      const res = await fetch('/api/market/osint', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'news', niche: 'IT Consulting', region: 'Kazakhstan' }),
-      })
-      const result = await res.json()
-      if (!res.ok) throw new Error(result.error || 'Failed to sync')
-      if (Array.isArray(result.data) && result.data.length > 0) {
-        const incoming: NewsItem[] = result.data.map(
-          (item: Omit<NewsItem, 'id'>, idx: number) => ({
-            ...item,
-            id: `sync-${Date.now()}-${idx}`,
-          }),
-        )
-        setNews((prev) =>
-          [...incoming, ...prev].sort(
+      const res = await getNews()
+      if (res.ok) {
+        setNews(
+          [...res.data].sort(
             (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
           ),
         )
+        setStatusLine(null)
+      } else {
+        setNews([])
+        setStatusLine(statusLineFor(res.error as MarketApiError))
       }
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Failed to sync'
-      setError(message)
     } finally {
       setSyncing(false)
     }
-  }
+  }, [])
+
+  useEffect(() => {
+    void load()
+  }, [load])
+
+  const handleSync = load
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
@@ -69,15 +62,9 @@ export function News() {
           ) : (
             <RefreshCw className="h-4 w-4 mr-2" />
           )}
-          Sync via Exa OSINT
+          Sync Feed
         </Button>
       </div>
-
-      {error && (
-        <div className="p-4 bg-error/10 border border-error/20 rounded-lg text-error text-sm">
-          {error}
-        </div>
-      )}
 
       {news.length === 0 ? (
         <div className="text-center p-12 border border-dashed border-white/10 rounded-2xl bg-surface-container-low/50">
@@ -86,6 +73,9 @@ export function News() {
           <p className="text-on-surface-variant">
             Здесь появится лента новостей после подключения источников.
           </p>
+          {statusLine && (
+            <p className="text-xs text-on-surface-variant/60 mt-4">{statusLine}</p>
+          )}
         </div>
       ) : (
         <div className="columns-1 md:columns-2 lg:columns-3 gap-4 space-y-4">

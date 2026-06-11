@@ -1,59 +1,66 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useCallback, useEffect, useState } from 'react'
 import { Search, ExternalLink, Radar, Building2, RefreshCw, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { Input } from '@/components/ui/Input'
+import { COMPETITOR_CATEGORIES, formatKZT } from './mock-data'
 import {
-  MOCK_COMPETITORS,
-  COMPETITOR_CATEGORIES,
-  formatKZT,
-  type Competitor,
-} from './mock-data'
+  getCompetitors,
+  statusLineFor,
+  type MarketApiError,
+  type MarketCompetitor,
+} from '@/lib/market-api'
+
+/** Format a money value honestly with its own currency (USD passthrough, else KZT). */
+function formatMoney(value: number, currency: string): string {
+  if (currency === 'KZT') return formatKZT(value)
+  if (currency === 'USD') {
+    if (value >= 1_000_000_000) return `$${(value / 1_000_000_000).toFixed(1)}B`
+    if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(1)}M`
+    return `$${value.toLocaleString()}`
+  }
+  return `${value.toLocaleString()} ${currency}`
+}
 
 /**
  * Competitor Directory view — searchable + filterable card grid.
  *
- * TODO(supabase): Fetch from a `competitors` table scoped by niche/region.
- * Sync button currently calls /api/market/osint (returns mock data); wire it
- * to upsert rows into Supabase when the live OSINT pipeline is ready.
+ * Reads the company directory (GET /companies) via the Mark-analytics proxy
+ * (lib/market-api.ts). When the backend is unconfigured/unavailable it keeps the
+ * honest empty state with a subtle status line. The Sync button refetches.
  */
 export function Competitors() {
-  const [competitors, setCompetitors] = useState<Competitor[]>(MOCK_COMPETITORS)
+  const [competitors, setCompetitors] = useState<MarketCompetitor[]>([])
   const [search, setSearch] = useState('')
   const [activeCategory, setActiveCategory] = useState<(typeof COMPETITOR_CATEGORIES)[number]>('All')
   const [syncing, setSyncing] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [statusLine, setStatusLine] = useState<string | null>(null)
 
-  const handleSync = async () => {
+  const load = useCallback(async (query?: string) => {
     setSyncing(true)
-    setError(null)
     try {
-      const res = await fetch('/api/market/osint', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'competitors', niche: 'IT Consulting', region: 'Kazakhstan' }),
-      })
-      const result = await res.json()
-      if (!res.ok) throw new Error(result.error || 'Failed to sync')
-      if (Array.isArray(result.data) && result.data.length > 0) {
-        // Merge rather than replace, keeping existing entries as baseline.
-        const incoming: Competitor[] = result.data.map(
-          (item: Omit<Competitor, 'id'>, idx: number) => ({
-            ...item,
-            id: `sync-${Date.now()}-${idx}`,
-          }),
-        )
-        setCompetitors((prev) => [...incoming, ...prev])
+      // No region filter: upstream `region` expects a KZ oblast (KATO), not a
+      // country — passing "Kazakhstan" silently matches nothing.
+      const res = await getCompetitors({ query })
+      if (res.ok) {
+        setCompetitors(res.data)
+        setStatusLine(null)
+      } else {
+        setCompetitors([])
+        setStatusLine(statusLineFor(res.error as MarketApiError))
       }
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Failed to sync'
-      setError(message)
     } finally {
       setSyncing(false)
     }
-  }
+  }, [])
+
+  useEffect(() => {
+    void load()
+  }, [load])
+
+  const handleSync = () => load(search || undefined)
 
   const toggleTracked = (id: string) => {
     setCompetitors((prev) =>
@@ -88,15 +95,9 @@ export function Competitors() {
           ) : (
             <RefreshCw className="h-4 w-4 mr-2" />
           )}
-          Sync via Exa OSINT
+          Sync Directory
         </Button>
       </div>
-
-      {error && (
-        <div className="p-4 bg-error/10 border border-error/20 rounded-lg text-error text-sm">
-          {error}
-        </div>
-      )}
 
       <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between">
         <div className="relative w-full md:w-96">
@@ -136,6 +137,9 @@ export function Competitors() {
           <p className="text-on-surface-variant mb-4">
             Добавьте конкурентов в анкете (блок «Продукт») — они появятся здесь.
           </p>
+          {statusLine && (
+            <p className="text-xs text-on-surface-variant/60">{statusLine}</p>
+          )}
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -149,7 +153,7 @@ export function Competitors() {
 }
 
 interface CompetitorCardProps {
-  comp: Competitor
+  comp: MarketCompetitor
   onToggleTracked: (id: string) => void
 }
 
@@ -202,7 +206,7 @@ function CompetitorCard({ comp, onToggleTracked }: CompetitorCardProps) {
               Est. Revenue
             </p>
             <p className="text-sm font-medium text-on-surface tabular-nums">
-              {formatKZT(comp.estRevenue || 0)}
+              {formatMoney(comp.estRevenue || 0, comp.currency)}
             </p>
           </div>
           <div>
@@ -210,7 +214,7 @@ function CompetitorCard({ comp, onToggleTracked }: CompetitorCardProps) {
               Taxes Paid
             </p>
             <p className="text-sm font-medium text-on-surface tabular-nums">
-              {formatKZT(comp.taxesPaid || 0)}
+              {formatMoney(comp.taxesPaid || 0, comp.currency)}
             </p>
           </div>
         </div>

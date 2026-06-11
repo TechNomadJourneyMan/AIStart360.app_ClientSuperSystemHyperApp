@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useCallback, useEffect, useState } from 'react'
 import {
   AreaChart,
   Area,
@@ -12,31 +12,48 @@ import {
 import { TrendingUp, Users, Activity, BarChart3, RefreshCw, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
-import { MOCK_MARKET_DATA, formatKZT, type MarketData } from './mock-data'
+import { MOCK_MARKET_DATA, formatKZT, formatUSD, type MarketData } from './mock-data'
+import { getMarketOverview, statusLineFor, type MarketApiError } from '@/lib/market-api'
 
 /**
  * Market Overview view — volume, YoY growth, active players, PESTEL breakdown.
  *
- * TODO(supabase): Replace `useState(MOCK_MARKET_DATA)` with a read from the
- * `market_overview` table (singleton row keyed by niche + region). The Sync
- * button should POST to a future /api/market/sync-macro route that populates
- * that table from eGov / Adata.
+ * Reads /analytics/kz via the Mark-analytics proxy (lib/market-api.ts). When the
+ * backend is unconfigured/unavailable it keeps the honest empty state and shows a
+ * subtle status line. The Sync button refetches live data.
  */
 export function MarketOverview() {
-  const [data] = useState<MarketData>(MOCK_MARKET_DATA)
+  const [data, setData] = useState<MarketData>(MOCK_MARKET_DATA)
   const [syncing, setSyncing] = useState(false)
+  // YoY chip is shown only when upstream actually provided the figure.
+  const [hasYoy, setHasYoy] = useState(false)
+  const [statusLine, setStatusLine] = useState<string | null>(null)
 
   const isEmpty = data.totalVolume === 0 && data.chartData.length === 0
 
-  const handleSync = async () => {
-    // No real backend feed yet — do not fabricate a refresh.
+  const load = useCallback(async () => {
     setSyncing(true)
     try {
-      // TODO(supabase): POST to /api/market/sync-macro and re-read live data.
+      const res = await getMarketOverview()
+      if (res.ok) {
+        setData(res.data)
+        setHasYoy(res.data.yoyGrowth !== 0)
+        setStatusLine(null)
+      } else {
+        setData(MOCK_MARKET_DATA)
+        setHasYoy(false)
+        setStatusLine(statusLineFor(res.error as MarketApiError))
+      }
     } finally {
       setSyncing(false)
     }
-  }
+  }, [])
+
+  useEffect(() => {
+    void load()
+  }, [load])
+
+  const handleSync = load
 
   const trendBadge = (trend: 'positive' | 'negative' | 'neutral') => {
     if (trend === 'positive') return <Badge variant="primary">positive</Badge>
@@ -76,6 +93,9 @@ export function MarketOverview() {
             Данные рынка ещё не подключены. Здесь появится объём рынка, динамика и PESTEL после
             интеграции источников.
           </p>
+          {statusLine && (
+            <p className="text-xs text-on-surface-variant/60 mt-4">{statusLine}</p>
+          )}
         </div>
       ) : (
         <>
@@ -83,17 +103,24 @@ export function MarketOverview() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <StatCard
               label="Total Volume"
-              value={formatKZT(data.totalVolume)}
-              hint={`+${data.yoyGrowth}% YoY`}
-              hintTone="primary"
+              value={
+                data.volumeCurrency === 'USD'
+                  ? formatUSD(data.totalVolume)
+                  : formatKZT(data.totalVolume)
+              }
+              hint={hasYoy ? `+${data.yoyGrowth}% YoY` : 'Суммарная выручка компаний каталога'}
+              hintTone={hasYoy ? 'primary' : 'muted'}
               icon={<BarChart3 className="h-4 w-4 text-primary" />}
             />
-            <StatCard
-              label="YoY Growth"
-              value={`${data.yoyGrowth}%`}
-              hint="Consistent upward trend"
-              icon={<TrendingUp className="h-4 w-4 text-primary" />}
-            />
+            {/* YoY chip only when upstream actually provided the figure — never 0% as if real. */}
+            {hasYoy && (
+              <StatCard
+                label="YoY Growth"
+                value={`${data.yoyGrowth}%`}
+                hint="Consistent upward trend"
+                icon={<TrendingUp className="h-4 w-4 text-primary" />}
+              />
+            )}
             <StatCard
               label="Active Players"
               value={String(data.activePlayers)}

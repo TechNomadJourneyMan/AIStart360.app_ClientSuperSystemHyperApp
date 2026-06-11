@@ -1,16 +1,12 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { Sparkles, ArrowRight, X, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Badge } from '@/components/ui/Badge'
-import {
-  MOCK_MARKET_DATA,
-  MOCK_COMPETITORS,
-  type MarketData,
-  type Competitor,
-} from './mock-data'
+import { MOCK_MARKET_DATA, type MarketData } from './mock-data'
+import { getMarketOverview, getCompetitors, type MarketCompetitor } from '@/lib/market-api'
 
 interface Directive {
   title: string
@@ -37,9 +33,22 @@ export function Insights() {
   const [hasGenerated, setHasGenerated] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // Seed context — in production, fetched from Supabase. TODO(supabase).
-  const marketData: MarketData = MOCK_MARKET_DATA
-  const competitorsData: Competitor[] = MOCK_COMPETITORS
+  // Context for AI insights, fetched from the Mark-analytics backend on mount.
+  const [marketData, setMarketData] = useState<MarketData>(MOCK_MARKET_DATA)
+  const [competitorsData, setCompetitorsData] = useState<MarketCompetitor[]>([])
+
+  useEffect(() => {
+    let active = true
+    void (async () => {
+      const [overview, comps] = await Promise.all([getMarketOverview(), getCompetitors()])
+      if (!active) return
+      if (overview.ok) setMarketData(overview.data)
+      if (comps.ok) setCompetitorsData(comps.data)
+    })()
+    return () => {
+      active = false
+    }
+  }, [])
 
   // No real market or competitor data yet — can't synthesize honest insights.
   const hasData =
