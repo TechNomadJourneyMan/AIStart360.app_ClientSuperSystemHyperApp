@@ -19,16 +19,26 @@ export interface PortfolioGRI {
  *
  * Returns `null` if no diagnostics exist or on DB error.
  * Scores are on 0–10 scale (converted from 0–100 stored values).
+ *
+ * @param companyId Optional. When provided, only diagnostics for that company
+ *   are aggregated (so an owner sees their own portfolio, not every org's).
+ *   Omitting it preserves the original "all orgs" behaviour.
  */
-export async function getPortfolioGRI(): Promise<PortfolioGRI | null> {
+export async function getPortfolioGRI(companyId?: string | null): Promise<PortfolioGRI | null> {
   try {
     const sb = createServerClient()
 
-    const { data: diagnostics } = await sb
+    let query = sb
       .from('diagnostics')
       .select('overall_score, finance_score, sales_score, operations_score, marketing_score, strategy_score')
       .not('overall_score', 'is', null)
       .gt('overall_score', 0)
+
+    if (companyId) {
+      query = query.eq('company_id', companyId)
+    }
+
+    const { data: diagnostics } = await query
 
     if (!diagnostics?.length) return null
 
