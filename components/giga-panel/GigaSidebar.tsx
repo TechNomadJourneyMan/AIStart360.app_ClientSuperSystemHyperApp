@@ -30,9 +30,10 @@ interface GigaSidebarProps {
 export function GigaSidebar({ isOpen = false, onClose }: GigaSidebarProps) {
   const { activeModule, setActiveModule, requests, clients } = useGigaPanelStore()
 
-  useEffect(() => {
-    document.cookie = 'aistart360_role=super_admin; path=/; max-age=604800; SameSite=Lax'
-  })
+  // NOTE: super-admin access is gated by the signed, httpOnly `aistart360_giga`
+  // cookie set server-side at /api/giga-admin/auth. The client must NOT write a
+  // role cookie — an unsigned `aistart360_role=super_admin` would be a forgeable
+  // privilege-escalation vector and is no longer trusted by any reader.
 
   // Close mobile drawer on escape
   useEffect(() => {

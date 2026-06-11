@@ -4,9 +4,15 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { prisma } from '@/lib/db'
 import { isPrivilegedViewer } from '@/lib/expert-auth'
+import { GIGA_COOKIE_NAME, verifyGigaRole } from '@/lib/giga-cookie'
+
+// A2b: giga access is granted only by the HMAC-SIGNED `aistart360_giga` cookie.
+function gigaRole(req: NextRequest): string | null {
+  return verifyGigaRole(req.cookies.get(GIGA_COOKIE_NAME)?.value)
+}
 
 function isSuperAdmin(req: NextRequest): boolean {
-  return req.cookies.get('aistart360_role')?.value === 'super_admin'
+  return gigaRole(req) === 'super_admin'
 }
 
 /**
@@ -18,8 +24,8 @@ export async function GET(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  // Read access: super_admin cookie OR Supabase session with expert/admin role
-  const cookieRole = req.cookies.get('aistart360_role')?.value ?? null
+  // Read access: signed super_admin giga cookie OR Supabase session with expert/admin role
+  const cookieRole = gigaRole(req)
   if (!(await isPrivilegedViewer(cookieRole))) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }

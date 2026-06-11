@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { isPrivilegedViewer } from '@/lib/expert-auth'
+import { GIGA_COOKIE_NAME, verifyGigaRole } from '@/lib/giga-cookie'
 
 /**
  * GET /api/giga-admin/requests/[id]/documents
@@ -13,8 +14,8 @@ export async function GET(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  // Read access: super_admin cookie OR Supabase session with expert/admin role
-  const cookieRole = req.cookies.get('aistart360_role')?.value ?? null
+  // Read access: signed super_admin giga cookie OR Supabase session with expert/admin role
+  const cookieRole = verifyGigaRole(req.cookies.get(GIGA_COOKIE_NAME)?.value)
   if (!(await isPrivilegedViewer(cookieRole))) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }

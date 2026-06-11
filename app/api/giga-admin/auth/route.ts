@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { authRateLimit } from '@/lib/rate-limit'
+import { signGigaRole, GIGA_COOKIE_NAME } from '@/lib/giga-cookie'
 
 // Brute-force protection for the single shared super-admin password.
 // Uses Upstash when configured; otherwise a small in-memory fallback so the
@@ -54,7 +55,10 @@ export async function POST(req: NextRequest) {
   }
 
   const response = NextResponse.json({ ok: true })
-  response.cookies.set('aistart360_role', 'super_admin', {
+  // A2b: set an HMAC-SIGNED giga token in a DEDICATED cookie (aistart360_giga).
+  // We do NOT reuse the overloaded `aistart360_role` cookie (which carries
+  // normal-user roles) — see lib/giga-cookie.ts for the naming rationale.
+  response.cookies.set(GIGA_COOKIE_NAME, signGigaRole('super_admin'), {
     path: '/',
     maxAge: 60 * 60 * 24 * 7, // 7 days
     sameSite: 'lax',
