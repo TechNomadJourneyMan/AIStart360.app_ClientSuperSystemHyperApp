@@ -1,5 +1,6 @@
 export const dynamic = 'force-dynamic'
 
+import { Suspense } from 'react'
 import type { Metadata } from 'next'
 import MarketAppEmbed from '@/components/market/MarketAppEmbed'
 
@@ -16,5 +17,9 @@ export const metadata: Metadata = { title: 'Рынок · Mark-analytics' }
  * Чек-лист «50 вопросов» живёт отдельной страницей: /market/analysis.
  */
 export default function MarketPage() {
-  return <MarketAppEmbed />
+  return (
+    <Suspense fallback={null}>
+      <MarketAppEmbed />
+    </Suspense>
+  )
 }

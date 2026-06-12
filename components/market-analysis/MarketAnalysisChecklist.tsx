@@ -14,6 +14,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast, Toaster } from 'sonner'
+import { MarketDataPanel, type ConfirmedAnswer } from './MarketDataPanel'
 
 // ── API contract types ──────────────────────────────────────────────────────
 
@@ -114,10 +115,49 @@ const BLOCK_META: Record<
   },
 }
 
-const SOURCE_LABEL: Record<AnswerSource, string> = {
-  ai: 'AI',
-  user: 'вручную',
-  expert: 'эксперт',
+// Source chip styling: «Эксперт» (teal), «Владелец» (grey), «AI» (amber).
+const SOURCE_CHIP: Record<AnswerSource, { label: string; color: string; bg: string; border: string; icon: string }> = {
+  expert: {
+    label: 'Эксперт',
+    color: '#6effc0',
+    bg: 'rgba(110,255,192,0.10)',
+    border: 'rgba(110,255,192,0.35)',
+    icon: 'workspace_premium',
+  },
+  user: {
+    label: 'Владелец',
+    color: 'rgba(255,255,255,0.65)',
+    bg: 'rgba(255,255,255,0.05)',
+    border: 'rgba(255,255,255,0.12)',
+    icon: 'person',
+  },
+  ai: {
+    label: 'AI',
+    color: '#fcd34d',
+    bg: 'rgba(252,211,77,0.10)',
+    border: 'rgba(252,211,77,0.35)',
+    icon: 'auto_awesome',
+  },
+}
+
+// Filter modes over the question rows.
+type FilterMode = 'all' | 'confirmed' | 'ai_draft' | 'expert'
+
+const FILTERS: Array<{ id: FilterMode; label: string }> = [
+  { id: 'all', label: 'Все' },
+  { id: 'confirmed', label: 'Подтверждённые' },
+  { id: 'ai_draft', label: 'Черновики AI' },
+  { id: 'expert', label: 'От экспертов' },
+]
+
+function matchesFilter(q: Question, mode: FilterMode): boolean {
+  if (mode === 'all') return true
+  const a = q.answer
+  if (!a) return false
+  if (mode === 'confirmed') return a.status === 'confirmed'
+  if (mode === 'ai_draft') return a.source === 'ai' && a.status === 'draft'
+  if (mode === 'expert') return a.source === 'expert'
+  return true
 }
 
 function blockMeta(id: string) {
@@ -145,6 +185,7 @@ export function MarketAnalysisChecklist() {
   // null = key not configured banner; 'error' = generic failure banner
   const [generateState, setGenerateState] = useState<'idle' | 'not_configured' | 'error'>('idle')
   const [openBlocks, setOpenBlocks] = useState<Record<string, boolean>>({ A: true })
+  const [filter, setFilter] = useState<FilterMode>('all')
 
   const fetchData = useCallback(async () => {
     setLoading(true)
@@ -241,6 +282,9 @@ export function MarketAnalysisChecklist() {
       })),
     [data],
   )
+
+  // «Инсайты»: latest confirmed expert/AI answers, longest-confidence first.
+  const insights = useMemo(() => buildInsights(data?.blocks ?? []), [data])
 
   return (
     <div className="relative">
@@ -401,13 +445,21 @@ export function MarketAnalysisChecklist() {
           <ErrorCard onRetry={() => void fetchData()} />
         ) : (
           <>
+            {/* «Инсайты» — динамичные ответы экспертов/AI как карточки */}
+            <InsightsStrip insights={insights} />
+
             {!hasAnyAnswer && <EmptyExplainer />}
+
+            {/* Фильтр по статусу/источнику */}
+            <FilterRow active={filter} onChange={setFilter} />
+
             <div className="space-y-3">
               {(data?.blocks ?? []).map((block) => (
                 <BlockSection
                   key={block.id}
                   block={block}
                   open={!!openBlocks[block.id]}
+                  filter={filter}
                   onToggle={() =>
                     setOpenBlocks((prev) => ({ ...prev, [block.id]: !prev[block.id] }))
                   }
@@ -427,17 +479,26 @@ export function MarketAnalysisChecklist() {
 function BlockSection({
   block,
   open,
+  filter,
   onToggle,
   onPatch,
 }: {
   block: Block
   open: boolean
+  filter: FilterMode
   onToggle: () => void
   onPatch: (key: string, action: PatchAction, text?: string) => Promise<boolean>
 }) {
   const m = blockMeta(block.id)
   const answered = countAnswered(block)
   const total = block.questions.length
+
+  const visibleQuestions = block.questions.filter((q) => matchesFilter(q, filter))
+
+  // Confirmed A1–A3 (and any confirmed answers) feed the market-data panel's tiles.
+  const confirmedAnswers: ConfirmedAnswer[] = block.questions
+    .filter((q) => q.answer?.status === 'confirmed' && (q.answer.text ?? '').trim())
+    .map((q) => ({ key: q.key, text: q.answer!.text }))
 
   return (
     <section className="bg-surface-container-low rounded-2xl border border-white/[0.04] shadow-card overflow-hidden">
@@ -489,10 +550,21 @@ function BlockSection({
       </button>
 
       {open && (
-        <div className="border-t border-white/[0.04] p-4 sm:p-5 space-y-3">
-          {block.questions.map((q) => (
-            <QuestionRow key={q.key} question={q} accent={m.color} onPatch={onPatch} />
-          ))}
+        <div className="border-t border-white/[0.04] p-4 sm:p-5">
+          {/* Compact live market-data panel (Blocks A / B / E) */}
+          <MarketDataPanel blockId={block.id} accent={m.color} confirmed={confirmedAnswers} />
+
+          {visibleQuestions.length === 0 ? (
+            <p className="text-xs text-on-surface-variant/60 italic py-2">
+              Нет вопросов под выбранный фильтр
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {visibleQuestions.map((q) => (
+                <QuestionRow key={q.key} question={q} accent={m.color} onPatch={onPatch} />
+              ))}
+            </div>
+          )}
         </div>
       )}
     </section>
@@ -652,32 +724,46 @@ function QuestionRow({
 function AnswerChip({ answer }: { answer: QuestionAnswer }) {
   const { status, source, confidence } = answer
 
-  if (status === 'draft') {
-    return (
-      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md border border-amber-400/40 bg-amber-400/[0.08] text-[10px] font-mono uppercase tracking-wide text-amber-300">
-        <span className="material-symbols-outlined text-[13px]">auto_awesome</span>
-        AI · предположение
-        {confidence != null && (
-          <span className="text-amber-200/80 tabular-nums">· {formatConfidence(confidence)}%</span>
-        )}
-      </span>
-    )
-  }
-
-  if (status === 'confirmed') {
-    return (
-      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md border border-primary/40 bg-primary/[0.08] text-[10px] font-mono uppercase tracking-wide text-primary">
-        <span className="material-symbols-outlined text-[13px]">verified</span>
-        Подтверждено · {SOURCE_LABEL[source]}
-      </span>
-    )
-  }
-
-  // disputed
   return (
-    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md border border-error/40 bg-error/[0.08] text-[10px] font-mono uppercase tracking-wide text-error">
-      <span className="material-symbols-outlined text-[13px]">flag</span>
-      Оспорено · {SOURCE_LABEL[source]}
+    <div className="flex items-center gap-1.5 flex-wrap">
+      {/* Status chip */}
+      {status === 'draft' && (
+        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md border border-amber-400/40 bg-amber-400/[0.08] text-[10px] font-mono uppercase tracking-wide text-amber-300">
+          <span className="material-symbols-outlined text-[13px]">auto_awesome</span>
+          AI · предположение
+          {confidence != null && (
+            <span className="text-amber-200/80 tabular-nums">· {formatConfidence(confidence)}%</span>
+          )}
+        </span>
+      )}
+      {status === 'confirmed' && (
+        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md border border-primary/40 bg-primary/[0.08] text-[10px] font-mono uppercase tracking-wide text-primary">
+          <span className="material-symbols-outlined text-[13px]">verified</span>
+          Подтверждено
+        </span>
+      )}
+      {status === 'disputed' && (
+        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md border border-error/40 bg-error/[0.08] text-[10px] font-mono uppercase tracking-wide text-error">
+          <span className="material-symbols-outlined text-[13px]">flag</span>
+          Оспорено
+        </span>
+      )}
+
+      {/* Source chip: Эксперт / Владелец / AI */}
+      <SourceChip source={source} />
+    </div>
+  )
+}
+
+function SourceChip({ source }: { source: AnswerSource }) {
+  const c = SOURCE_CHIP[source]
+  return (
+    <span
+      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[10px] font-mono uppercase tracking-wide"
+      style={{ color: c.color, background: c.bg, borderColor: c.border }}
+    >
+      <span className="material-symbols-outlined text-[13px]">{c.icon}</span>
+      {c.label}
     </span>
   )
 }
@@ -742,6 +828,121 @@ function EmptyExplainer() {
         повысит точность.
       </p>
     </div>
+  )
+}
+
+// ── Filter row ───────────────────────────────────────────────────────────────
+
+function FilterRow({
+  active,
+  onChange,
+}: {
+  active: FilterMode
+  onChange: (m: FilterMode) => void
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <span className="text-[10px] font-mono uppercase tracking-[0.2em] text-on-surface-variant/60 mr-1">
+        Фильтр
+      </span>
+      {FILTERS.map((f) => {
+        const isActive = active === f.id
+        return (
+          <button
+            key={f.id}
+            type="button"
+            onClick={() => onChange(f.id)}
+            aria-pressed={isActive}
+            className={`px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors ${
+              isActive
+                ? 'border-primary/40 bg-primary/10 text-primary'
+                : 'border-white/[0.06] text-on-surface-variant hover:text-on-surface hover:border-white/[0.12]'
+            }`}
+          >
+            {f.label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+// ── Insights strip ───────────────────────────────────────────────────────────
+
+interface Insight {
+  blockId: string
+  questionKey: string
+  questionText: string
+  excerpt: string
+  source: AnswerSource
+}
+
+function buildInsights(blocks: Block[]): Insight[] {
+  const rows: Array<Insight & { confidence: number; updated: number }> = []
+  for (const block of blocks) {
+    for (const q of block.questions) {
+      const a = q.answer
+      if (!a || a.status !== 'confirmed') continue
+      if (a.source !== 'expert' && a.source !== 'ai') continue
+      const text = (a.text ?? '').trim()
+      if (!text) continue
+      rows.push({
+        blockId: block.id,
+        questionKey: q.key,
+        questionText: q.text,
+        excerpt: text,
+        source: a.source,
+        confidence: a.confidence == null ? 0 : a.confidence <= 1 ? a.confidence * 100 : a.confidence,
+        updated: a.updated_at ? Date.parse(a.updated_at) || 0 : 0,
+      })
+    }
+  }
+  // longest-confidence first, then most recent.
+  rows.sort((x, y) => y.confidence - x.confidence || y.updated - x.updated)
+  return rows.slice(0, 4).map(({ confidence: _c, updated: _u, ...rest }) => rest)
+}
+
+function InsightsStrip({ insights }: { insights: Insight[] }) {
+  return (
+    <section>
+      <p className="text-[10px] font-mono uppercase tracking-[0.2em] text-primary/70 mb-2">
+        Инсайты · динамичные ответы
+      </p>
+      {insights.length === 0 ? (
+        <div className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-5 text-center">
+          <span className="material-symbols-outlined text-2xl text-on-surface-variant/40">lightbulb</span>
+          <p className="text-xs text-on-surface-variant mt-2">
+            Подтверждённые инсайты появятся здесь
+          </p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          {insights.map((ins) => {
+            const m = blockMeta(ins.blockId)
+            return (
+              <div
+                key={ins.questionKey}
+                className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-4 flex flex-col gap-2"
+              >
+                <div className="flex items-center gap-2">
+                  <span
+                    className="inline-flex items-center justify-center w-6 h-6 rounded-md border text-[11px] font-mono font-black"
+                    style={{ background: m.tint, borderColor: m.border, color: m.color }}
+                  >
+                    {ins.blockId}
+                  </span>
+                  <SourceChip source={ins.source} />
+                </div>
+                <p className="text-[11px] text-on-surface-variant leading-snug line-clamp-2">
+                  {ins.questionText}
+                </p>
+                <p className="text-sm text-on-surface leading-relaxed line-clamp-3">{ins.excerpt}</p>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </section>
   )
 }
 
