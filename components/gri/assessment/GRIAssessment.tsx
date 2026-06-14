@@ -373,7 +373,7 @@ export default function GRIAssessment() {
             </div>
             <div className="flex gap-6 pt-2">
               <div>
-                <div className="text-3xl font-black text-white">4.9</div>
+                <div className="text-3xl font-black text-white">—</div>
                 <div className="text-[10px] text-white/40 uppercase font-bold">текущий GRI</div>
               </div>
               <div className="w-px bg-white/10 h-12" />
@@ -382,11 +382,15 @@ export default function GRIAssessment() {
                 <div className="text-[10px] text-white/40 uppercase font-bold">цель GRI</div>
               </div>
             </div>
+            <p className="text-[11px] text-white/40 leading-relaxed">
+              Ваш индекс появится после прохождения теста — справа показан
+              иллюстративный профиль для примера.
+            </p>
           </div>
           <div className="lg:col-span-2 bg-white/[0.03] border border-white/10 rounded-2xl p-4 backdrop-blur-sm">
             <GriRadar data={DEMO_DATA} height={320} />
             <div className="text-center mt-1 text-[11px] text-white/40">
-              Сравнение: <span className="text-blue-300 font-bold">Ваш бизнес</span> vs{' '}
+              Пример профиля (иллюстрация) vs{' '}
               <span className="text-emerald-300 font-bold">Эталон $2M</span>
             </div>
           </div>

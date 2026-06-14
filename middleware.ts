@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { updateSession } from '@/lib/supabase/middleware'
+import { GIGA_COOKIE_NAME, verifyGigaRoleEdge } from '@/lib/giga-cookie-edge'
 
 const PUBLIC_PATHS = ['/login', '/register', '/forgot-password', '/auth/callback', '/auth/reset-password']
 
@@ -82,8 +83,14 @@ export async function middleware(request: NextRequest) {
   const isPublic = PUBLIC_PATHS.some((p) => pathname.startsWith(p))
   const isGigaLogin = pathname === GIGA_LOGIN_PATH
 
+  // A2b: the giga gate is the HMAC-SIGNED `aistart360_giga` cookie, verified
+  // here on the Edge runtime via Web Crypto. The unsigned `aistart360_role`
+  // string is NO LONGER accepted for giga access.
+  const hasGigaAccess =
+    (await verifyGigaRoleEdge(request.cookies.get(GIGA_COOKIE_NAME)?.value)) === 'super_admin'
+
   if (isGigaLogin) {
-    if (user && role === 'super_admin') {
+    if ((user && role === 'super_admin') || hasGigaAccess) {
       return NextResponse.redirect(new URL(GIGA_PANEL_PATH, request.url))
     }
     return response // allow access to login page
@@ -91,9 +98,7 @@ export async function middleware(request: NextRequest) {
 
   // ГИГА-Панель: строгая изоляция — только SUPER_ADMIN
   if (pathname.startsWith(GIGA_PANEL_PATH)) {
-    // Also check legacy cookie during migration
-    const legacyRole = request.cookies.get('aistart360_role')?.value
-    if (role !== 'super_admin' && legacyRole !== 'super_admin') {
+    if (role !== 'super_admin' && !hasGigaAccess) {
       return NextResponse.redirect(new URL(GIGA_LOGIN_PATH, request.url))
     }
     return response
@@ -110,17 +115,14 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL(dest, request.url))
   }
 
-  // Not authenticated, accessing protected page → redirect to login
+  // Not authenticated, accessing protected page → redirect to login.
+  // A7: the legacy `aistart360_role` cookie bypass has been REMOVED — route-group
+  // protection now always requires a valid Supabase session. (The giga-panel
+  // path is handled above via its dedicated signed cookie and returns early.)
   if (!isPublic && !user) {
-    // Check legacy cookie fallback
-    const legacyRole = request.cookies.get('aistart360_role')?.value
-    if (!legacyRole) {
-      const url = new URL('/login', request.url)
-      url.searchParams.set('from', pathname)
-      return NextResponse.redirect(url)
-    }
-    // Legacy session present — allow through for now
-    return response
+    const url = new URL('/login', request.url)
+    url.searchParams.set('from', pathname)
+    return NextResponse.redirect(url)
   }
 
   // ── Role-based route protection ──

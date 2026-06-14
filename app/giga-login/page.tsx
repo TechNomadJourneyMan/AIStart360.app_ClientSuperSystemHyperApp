@@ -1,31 +1,13 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { Shield, Eye, EyeOff, Lock } from 'lucide-react'
-
-// Persisted key — note that localStorage is per-origin, so anyone with access
-// to this machine can read it. Use only on trusted personal devices.
-const REMEMBER_KEY = 'aistart360_giga_password'
 
 export default function GigaPanelLoginPage() {
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
-  const [remember, setRemember] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
-
-  // Restore saved password (if user opted in previously)
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem(REMEMBER_KEY)
-      if (saved) {
-        setPassword(saved)
-        setRemember(true)
-      }
-    } catch {
-      // privacy mode / sandboxed — ignore
-    }
-  }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -40,13 +22,11 @@ export default function GigaPanelLoginPage() {
       })
 
       if (res.ok) {
-        // Save on success — we only persist verified passwords to avoid
-        // remembering wrong attempts. Clear if user unchecked the box.
-        try {
-          if (remember) localStorage.setItem(REMEMBER_KEY, password)
-          else localStorage.removeItem(REMEMBER_KEY)
-        } catch { /* ignore */ }
+        // The password is never persisted client-side. The browser's own
+        // password manager (hidden username field below) handles "remember".
         window.location.href = '/admin-giga-panel'
+      } else if (res.status === 429) {
+        setError('Слишком много попыток. Попробуйте позже.')
       } else {
         setError('Неверный пароль')
       }
@@ -128,16 +108,6 @@ export default function GigaPanelLoginPage() {
                 {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
               </button>
             </div>
-
-            <label className="flex items-center gap-2 text-xs text-slate-400 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={remember}
-                onChange={(e) => setRemember(e.target.checked)}
-                className="w-3.5 h-3.5 rounded border-white/[0.12] bg-white/[0.05] text-blue-500 focus:ring-blue-500/40 focus:ring-offset-0"
-              />
-              Запомнить пароль на этом устройстве
-            </label>
 
             {error && (
               <p className="text-red-400 text-xs text-center">{error}</p>

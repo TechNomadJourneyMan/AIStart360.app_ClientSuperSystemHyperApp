@@ -7,6 +7,11 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase/client'
 
+// Avoid static prerender: the Supabase browser client requires env vars that
+// are not present at build time. Forcing dynamic rendering prevents the
+// "@supabase/ssr: Your project's URL and API key are required" crash.
+export const dynamic = 'force-dynamic'
+
 const schema = z.object({
   email: z.string().email('Введите корректный email'),
 })
@@ -14,7 +19,6 @@ const schema = z.object({
 type Form = z.infer<typeof schema>
 
 export default function ForgotPasswordPage() {
-  const supabase = createClient()
   const [sent, setSent] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [requestError, setRequestError] = useState<string | null>(null)
@@ -25,6 +29,7 @@ export default function ForgotPasswordPage() {
   const onSubmit = async (data: Form) => {
     setRequestError(null)
     setIsLoading(true)
+    const supabase = createClient()
     const { error } = await supabase.auth.resetPasswordForEmail(data.email, {
       redirectTo: `${window.location.origin}/auth/reset-password`,
     })

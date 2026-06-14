@@ -2,6 +2,11 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
+import { GRI_SECTIONS } from '@/lib/gri-assessment/sections'
+import {
+  computeTop5Limits,
+  generate90DayPlan,
+} from '@/lib/gri-calculator/top5-action-plan'
 
 // Section IDs from lib/gri-assessment/sections.ts. We don't import to keep
 // this route resilient to widget edits — the resolver-style approach is to
@@ -91,7 +96,11 @@ export async function POST(req: NextRequest) {
     const section_avgs = computeSectionAvgs(typedScores)
     const gri_index = computeGriIndex(section_avgs)
 
-    const row = {
+    // Derived insights — TOP-5 limitations and the 90-day action plan.
+    const top_5_limits = computeTop5Limits(typedScores, GRI_SECTIONS)
+    const action_plan_90d = generate90DayPlan(top_5_limits, section_avgs)
+
+    const baseRow = {
       user_id: userId,
       company_id: companyId,
       onboarding: (onboarding && typeof onboarding === 'object') ? onboarding : {},
@@ -102,18 +111,36 @@ export async function POST(req: NextRequest) {
         ? completedSections
         : {},
     }
+    // Persist derived columns best-effort: if the JSONB columns don't exist yet
+    // (migration not applied), retry the insert without them.
+    const rowWithDerived = { ...baseRow, top_5_limits, action_plan_90d }
 
-    const { data: inserted, error: insertErr } = await sb
+    const isMissingColumnError = (msg: string | undefined): boolean =>
+      typeof msg === 'string' &&
+      /column .* does not exist|could not find the .* column|schema cache/i.test(msg)
+
+    let { data: inserted, error: insertErr } = await sb
       .from('gri_assessments')
-      .insert(row)
+      .insert(rowWithDerived)
       .select('id, gri_index, section_avgs, created_at')
       .single()
+
+    if (insertErr && isMissingColumnError(insertErr.message)) {
+      ;({ data: inserted, error: insertErr } = await sb
+        .from('gri_assessments')
+        .insert(baseRow)
+        .select('id, gri_index, section_avgs, created_at')
+        .single())
+    }
 
     if (insertErr) {
       return NextResponse.json({ ok: false, error: insertErr.message }, { status: 500 })
     }
 
-    return NextResponse.json({ ok: true, data: inserted })
+    return NextResponse.json({
+      ok: true,
+      data: { ...inserted, top_5_limits, action_plan_90d },
+    })
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'Invalid request'
     return NextResponse.json({ ok: false, error: msg }, { status: 400 })

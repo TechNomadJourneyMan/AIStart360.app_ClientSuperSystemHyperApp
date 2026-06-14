@@ -3,15 +3,17 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 
-// POST /api/v1/onboarding/company — upsert company record
+// POST /api/v1/onboarding/company — upsert the caller's own company record.
+// user_id comes from the session, never the body. See technical-audit A5.
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
-    const { user_id, ...companyData } = body
-
-    if (!user_id) return NextResponse.json({ ok: false, error: 'user_id required' }, { status: 400 })
+    const { user_id: _ignored, ...companyData } = body
 
     const sb = createServerClient()
+    const { data: { user } } = await sb.auth.getUser()
+    if (!user) return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
+    const user_id = user.id
 
     // Check if company already exists
     const { data: existing } = await sb
@@ -46,16 +48,16 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// GET /api/v1/onboarding/company?user_id=xxx
-export async function GET(req: NextRequest) {
-  const userId = req.nextUrl.searchParams.get('user_id')
-  if (!userId) return NextResponse.json({ ok: false, error: 'user_id required' }, { status: 400 })
-
+// GET /api/v1/onboarding/company — the caller's own company (session user only).
+export async function GET(_req: NextRequest) {
   const sb = createServerClient()
+  const { data: { user } } = await sb.auth.getUser()
+  if (!user) return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
+
   const { data, error } = await sb
     .from('companies')
     .select('*')
-    .eq('user_id', userId)
+    .eq('user_id', user.id)
     .single()
 
   if (error && error.code !== 'PGRST116') {

@@ -16,14 +16,64 @@ type ParsedField = NonNullable<NonNullable<ParsedDataShape['fields']>[number]>
 
 // ─── Numeric coercion ────────────────────────────────────────
 
+/**
+ * Robustly coerce a survey/document/manual value to a number.
+ *
+ * Handles the messy formatted strings owners type into the survey:
+ *   "84 200 000"  → 84200000   (thin-space / regular-space grouping)
+ *   "84 200 000 ₸" → 84200000  (currency suffix/prefix)
+ *   "₸84.2М" / "84,2 млн" → 84200000  (abbreviated millions)
+ *   "120 тыс" / "120K" → 120000  (abbreviated thousands)
+ *
+ * Percentage strings ("+15%", "±15%", "-10%") deliberately return
+ * `null` — a percentage change is NOT an absolute value and must never
+ * be mistaken for revenue/margin. Use `parsePercentChange` for those.
+ */
 export function coerceNumeric(raw: unknown): number | null {
   if (raw === null || raw === undefined) return null
   if (typeof raw === 'number') return Number.isFinite(raw) ? raw : null
   if (typeof raw === 'boolean') return raw ? 1 : 0
   if (typeof raw === 'string') {
-    const cleaned = raw.replace(/\s|₸|kzt|тг|тенге/gi, '').replace(',', '.')
-    if (cleaned === '' || cleaned === '-') return null
+    let s = raw.trim()
+    if (s === '') return null
+    // A bare percentage is a relative figure, not an absolute value.
+    if (/%/.test(s)) return null
+
+    // Detect a scale suffix (млн/млрд/тыс or a trailing b/m/k/Cyrillic
+    // м/к after the digits) before stripping non-numeric chars.
+    let multiplier = 1
+    if (/(млрд|billion|\d\s*bn?(?![\p{L}\d])|\d\s*млд)/iu.test(s)) multiplier = 1_000_000_000
+    else if (/(млн|million|\d\s*m(?![\p{L}\d])|\d\s*м(?![\p{L}\d]))/iu.test(s)) multiplier = 1_000_000
+    else if (/(тыс|thousand|\d\s*k(?![\p{L}\d])|\d\s*к(?![\p{L}\d]))/iu.test(s)) multiplier = 1_000
+
+    // Strip currency, spaces, scale words and any remaining letters;
+    // normalise decimal comma.
+    const cleaned = s
+      .replace(/\s|₸|kzt|тг|тенге/gi, '')
+      .replace(/,/g, '.')
+      .replace(/[^\d.+-]/g, '')
+    if (cleaned === '' || cleaned === '-' || cleaned === '+') return null
     const n = Number(cleaned)
+    if (!Number.isFinite(n)) return null
+    return n * multiplier
+  }
+  return null
+}
+
+/**
+ * Parse a percentage-change string into a signed number of percent.
+ *   "+15%" → 15 · "-10%" → -10 · "±15%" → 15 · "15" → 15
+ * Returns null when no numeric component is present.
+ * Used for fields like `s9n_change_vs_2023` so a revenue YoY delta can
+ * be derived even when the prior-year absolute revenue was not entered.
+ */
+export function parsePercentChange(raw: unknown): number | null {
+  if (raw === null || raw === undefined) return null
+  if (typeof raw === 'number') return Number.isFinite(raw) ? raw : null
+  if (typeof raw === 'string') {
+    const m = raw.replace(',', '.').match(/-?\d+(?:\.\d+)?/)
+    if (!m) return null
+    const n = Number(m[0])
     return Number.isFinite(n) ? n : null
   }
   return null
@@ -31,6 +81,30 @@ export function coerceNumeric(raw: unknown): number | null {
 
 // ─── Survey adapter ──────────────────────────────────────────
 
+/**
+ * Unwrap the Supabase JSONB `{ value: ... }` envelope if it survived
+ * into the resolver context. `gatherResolverContext` normally unwraps
+ * this already, but callers that build `surveyAnswers` differently may
+ * not — so we defend here to keep the adapter robust.
+ */
+function unwrapAnswer(raw: unknown): unknown {
+  if (
+    raw !== null &&
+    typeof raw === 'object' &&
+    !Array.isArray(raw) &&
+    'value' in (raw as Record<string, unknown>)
+  ) {
+    return (raw as Record<string, unknown>).value
+  }
+  return raw
+}
+
+/**
+ * Resolve a declared survey-sourced metric against the pre-fetched
+ * `surveyAnswers` map. Maps `source.key` (the survey question_key) to
+ * the owner's answer, coercing to a number when possible. Returns a
+ * `miss` (never fabricates) when the answer is absent or empty.
+ */
 export function resolveSurveySource(
   source: MetricSource,
   ctx: ResolverContext,
@@ -42,10 +116,19 @@ export function resolveSurveySource(
   if (!key) {
     return { source, status: 'miss', reason: 'source.key missing' }
   }
-  const value = ctx.surveyAnswers[key]
-  if (value === undefined || value === null || value === '') {
+  const value = unwrapAnswer(ctx.surveyAnswers[key])
+
+  // Treat undefined / null / empty-string / whitespace / empty-array as
+  // "not answered" — missing means miss, never a fabricated zero.
+  const isEmpty =
+    value === undefined ||
+    value === null ||
+    (typeof value === 'string' && value.trim() === '') ||
+    (Array.isArray(value) && value.length === 0)
+  if (isEmpty) {
     return { source, status: 'miss', reason: `survey key "${key}" not answered` }
   }
+
   return {
     source,
     status: 'hit',

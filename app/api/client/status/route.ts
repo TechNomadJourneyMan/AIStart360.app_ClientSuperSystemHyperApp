@@ -1,18 +1,25 @@
 export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
+import { createServerClient } from '@/lib/supabase-server'
 
 /**
- * GET /api/client/status?userId=xxx
- * Returns profile approval status using service role (bypasses RLS).
- * Uses direct REST API call to avoid Supabase SDK issues with RLS infinite recursion.
+ * GET /api/client/status
+ * Returns the APPROVAL STATUS OF THE AUTHENTICATED USER only.
+ *
+ * The user id comes from the session — never from the query string — so this
+ * endpoint can no longer be used to enumerate other users' approval status.
+ * The read still uses the service role (direct REST) to avoid an RLS recursion
+ * issue on profiles, but only for the caller's own id. See technical-audit A5.
  */
-export async function GET(req: NextRequest) {
+export async function GET(_req: NextRequest) {
   try {
-    const userId = req.nextUrl.searchParams.get('userId')
-    if (!userId) {
-      return NextResponse.json({ error: 'userId required' }, { status: 400 })
+    const sb = createServerClient()
+    const { data: { user } } = await sb.auth.getUser()
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+    const userId = user.id
 
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!

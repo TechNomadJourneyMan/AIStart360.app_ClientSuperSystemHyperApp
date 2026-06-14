@@ -2,9 +2,11 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
+import { GIGA_COOKIE_NAME, verifyGigaRole } from '@/lib/giga-cookie'
 
+// A2b: verify the HMAC-SIGNED giga cookie, not an unsigned static string.
 function isSuperAdmin(req: NextRequest): boolean {
-  return req.cookies.get('aistart360_role')?.value === 'super_admin'
+  return verifyGigaRole(req.cookies.get(GIGA_COOKIE_NAME)?.value) === 'super_admin'
 }
 
 /**

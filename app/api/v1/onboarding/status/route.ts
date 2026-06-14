@@ -28,23 +28,34 @@ export async function GET() {
       .eq('user_id', userId),
   ])
 
+  // Goal text can live under legacy keys (s6_goal_*) or the current
+  // 12-step form keys (s2n_goal_*). Read all known aliases and keep the
+  // first non-empty answer, preferring the legacy key when both exist.
+  const GOAL_12M_KEYS = ['s6_goal_12months', 's2n_goal_12m_what', 's2n_goal_12m_metrics']
+  const GOAL_3Y_KEYS = ['s6_goal_3years', 's2n_goal_3y_what', 's2n_goal_3y_metrics']
+  const goal12mByKey: Record<string, string> = {}
+  const goal3yByKey: Record<string, string> = {}
+
   const steps = new Set<number>()
-  let goal12m: string | null = null
-  let goal3y: string | null = null
   for (const r of survey ?? []) {
-    // step 0 is reserved for synthetic metadata (period goals) — skip it
-    // from the survey progress calculation.
+    // Onboarding wizard steps are 1..12; step 0 is reserved for synthetic
+    // metadata (period goals) and is not a real questionnaire step, so it
+    // never counts toward progress. If a medical/alternate path ever needs
+    // step 0 counted, add it explicitly here.
     if (typeof r.step === 'number' && r.step >= 1) steps.add(r.step)
-    if (r.question_key === 's6_goal_12months') {
-      const v = (r.answer as { value: unknown })?.value
-      if (typeof v === 'string' && v.trim()) goal12m = v
-    }
-    if (r.question_key === 's6_goal_3years') {
-      const v = (r.answer as { value: unknown })?.value
-      if (typeof v === 'string' && v.trim()) goal3y = v
+
+    const v = (r.answer as { value: unknown })?.value
+    if (typeof v === 'string' && v.trim()) {
+      if (GOAL_12M_KEYS.includes(r.question_key)) goal12mByKey[r.question_key] = v
+      if (GOAL_3Y_KEYS.includes(r.question_key)) goal3yByKey[r.question_key] = v
     }
   }
 
+  const goal12m = GOAL_12M_KEYS.map((k) => goal12mByKey[k]).find(Boolean) ?? null
+  const goal3y = GOAL_3Y_KEYS.map((k) => goal3yByKey[k]).find(Boolean) ?? null
+
+  // Completion % = distinct answered wizard steps (1..12) / TOTAL_STEPS.
+  // Steps are deduped via the Set so multiple answers in one step count once.
   const completed = steps.size
   const percent = Math.round((completed / TOTAL_STEPS) * 100)
 

@@ -2,10 +2,15 @@ export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
+import { requireSupabaseAdmin } from '@/lib/supabase-admin-guard'
 
-// POST /api/v1/admin/clients — admin-side client creation (bypasses email confirmation)
+// POST /api/v1/admin/clients — admin-side client creation (bypasses email
+// confirmation). Admin only. See technical-audit A1.
 export async function POST(req: Request) {
   try {
+    const guard = await requireSupabaseAdmin()
+    if ('error' in guard) return guard.error
+
     const sb = createServerClient()
     const { email, password, fullName, companyName, industry, stage } = await req.json()
 
@@ -69,9 +74,12 @@ export interface AdminClientRow {
   calculated_at: string | null
 }
 
-// GET /api/v1/admin/clients
+// GET /api/v1/admin/clients — admin only. See technical-audit A1.
 export async function GET() {
   try {
+    const guard = await requireSupabaseAdmin()
+    if ('error' in guard) return guard.error
+
     const sb = createServerClient()
 
     const { data: profiles, error } = await sb

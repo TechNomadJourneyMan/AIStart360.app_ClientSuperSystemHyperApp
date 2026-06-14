@@ -5,7 +5,6 @@ import { StatusBadge } from '@/components/common/StatusBadge'
 import { createServerClient } from '@/lib/supabase-server'
 import { prisma } from '@/lib/db'
 import type { BlockScore, Risk, Insight, QuickWin } from '@/types/onboarding'
-import ChocoDashboard from '@/components/choco/dashboard'
 
 export const metadata: Metadata = { title: 'Client Profile | Admin' }
 
@@ -71,30 +70,6 @@ export default async function ClientDetailPage({ params }: { params: { id: strin
   const name = result.type === 'prisma' 
     ? (result.data as any).name 
     : (result.data as any).company?.name ?? (result.data as any).profile?.full_name ?? 'Клиент'
-  
-  const isChocoFamily = name.toLowerCase().includes('choco') || params.id === '7'
-
-  // Special view for ChocoFamily
-  if (isChocoFamily) {
-    return (
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <nav className="flex items-center gap-2 text-xs font-mono text-on-surface-variant uppercase tracking-widest">
-            <Link href="/clients" className="hover:text-primary transition-colors">Clients</Link>
-            <span className="material-symbols-outlined text-xs">chevron_right</span>
-            <span className="text-on-surface font-bold">{name}</span>
-          </nav>
-          <div className="flex items-center gap-2 bg-primary/10 px-3 py-1 rounded-full border border-primary/20">
-            <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
-            <span className="text-[10px] font-mono text-primary font-bold">Ecosystem Sync Active</span>
-          </div>
-        </div>
-        <div className="mt-4 rounded-3xl overflow-hidden shadow-2xl border border-white/5 bg-[#0a0a0a]">
-          <ChocoDashboard />
-        </div>
-      </div>
-    )
-  }
 
   // Common UI variables
   const data = result.data as any

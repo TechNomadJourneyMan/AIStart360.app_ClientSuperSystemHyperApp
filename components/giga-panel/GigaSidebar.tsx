@@ -7,6 +7,7 @@ import {
   InboxIcon,
   Users2,
   Building2,
+  Lightbulb,
   Shield,
   LogOut,
   ChevronRight,
@@ -30,9 +31,10 @@ interface GigaSidebarProps {
 export function GigaSidebar({ isOpen = false, onClose }: GigaSidebarProps) {
   const { activeModule, setActiveModule, requests, clients } = useGigaPanelStore()
 
-  useEffect(() => {
-    document.cookie = 'aistart360_role=super_admin; path=/; max-age=604800; SameSite=Lax'
-  })
+  // NOTE: super-admin access is gated by the signed, httpOnly `aistart360_giga`
+  // cookie set server-side at /api/giga-admin/auth. The client must NOT write a
+  // role cookie — an unsigned `aistart360_role=super_admin` would be a forgeable
+  // privilege-escalation vector and is no longer trusted by any reader.
 
   // Close mobile drawer on escape
   useEffect(() => {
@@ -48,6 +50,7 @@ export function GigaSidebar({ isOpen = false, onClose }: GigaSidebarProps) {
     { id: 'requests', label: 'Заявки', icon: <InboxIcon size={18} />, badge: pendingCount },
     { id: 'crm', label: 'CRM / Пользователи', icon: <Users2 size={18} /> },
     { id: 'clients', label: 'Клиенты платформы', icon: <Building2 size={18} />, badge: clients.length > 0 ? clients.length : undefined },
+    { id: 'market-insights', label: 'Инсайты рынка', icon: <Lightbulb size={18} /> },
   ]
 
   const handleNav = (id: NavItem['id'], disabled?: boolean) => {

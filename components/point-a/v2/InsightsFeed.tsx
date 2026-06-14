@@ -4,8 +4,8 @@
  * InsightsFeed — "Уточняющие вопросы" feed for /point-a.
  *
  * Replaces the old <AIInsightsCarousel /> on the orchestrator page.
- * Pure client component: pulls from `/api/v1/point-a/insights`, falls back to
- * a hardcoded list of 6 mock items if the endpoint is missing.
+ * Pure client component: pulls from `/api/v1/point-a/insights`. When there are
+ * no items it shows an empty state — it never fabricates questions.
  */
 
 import Link from 'next/link'
@@ -27,73 +27,6 @@ interface ApiResponse {
   ok: boolean
   data?: { items: InsightFeedItem[]; counts: Counts }
 }
-
-// ─── Mock fallback (one per category) ────────────────────────────────────────
-
-const MOCK_ITEMS: InsightFeedItem[] = [
-  {
-    id: 'mock-1',
-    type: 'ai',
-    category: 'ВЫРУЧКА',
-    question_text:
-      'В апреле выручка выросла на 18% при том же ARPU. Это разовый эффект сезонности или новый базовый уровень — стоит зашить в прогноз?',
-    status: 'pending_confirmation',
-    created_at: new Date(Date.now() - 1000 * 60 * 30).toISOString(),
-  },
-  {
-    id: 'mock-2',
-    type: 'expert',
-    category: 'СТРАТЕГИЯ',
-    question_text:
-      'Вы планируете запуск второго направления через 4 месяца — есть ли у команды свободный продуктовый ресурс или придётся переключать текущих людей?',
-    author_name: 'Эксперт · Наталья К.',
-    status: 'awaiting_answer',
-    created_at: new Date(Date.now() - 1000 * 60 * 60 * 5).toISOString(),
-  },
-  {
-    id: 'mock-3',
-    type: 'ai',
-    category: 'ВОРОНКА',
-    question_text:
-      'Конверсия из заявки в платёж упала с 22% до 16% за последние 6 недель. Это связано с новой формой регистрации или с изменением источников трафика?',
-    answer_text:
-      'Изменили форму 3 недели назад — добавили шаг с подтверждением телефона. Похоже, это и есть причина.',
-    answer_author_name: 'Иван Петров',
-    answer_author_role: 'client',
-    answered_at: new Date(Date.now() - 1000 * 60 * 60 * 8).toISOString(),
-    status: 'confirmed',
-    created_at: new Date(Date.now() - 1000 * 60 * 60 * 18).toISOString(),
-  },
-  {
-    id: 'mock-4',
-    type: 'client',
-    category: 'КЛИЕНТЫ',
-    question_text:
-      'Какие сегменты клиентов сейчас приносят больше всего LTV и стоит ли увеличить бюджет именно на них?',
-    author_name: 'Иван Петров',
-    status: 'pending_ai',
-    created_at: new Date(Date.now() - 1000 * 60 * 60 * 26).toISOString(),
-  },
-  {
-    id: 'mock-5',
-    type: 'expert',
-    category: 'ОРГСТРУКТУРА',
-    question_text:
-      'Кто отвечает за P&L по направлению B2B и есть ли у этого человека прямой доступ к маркетинговому бюджету?',
-    author_name: 'Эксперт · Дмитрий В.',
-    status: 'awaiting_answer',
-    created_at: new Date(Date.now() - 1000 * 60 * 60 * 30).toISOString(),
-  },
-  {
-    id: 'mock-6',
-    type: 'ai',
-    category: 'КОНКУРЕНТЫ',
-    question_text:
-      'Два прямых конкурента в апреле снизили цены на 15%. Стоит ли реагировать ценой или удержать позиционирование за счёт ценности?',
-    status: 'pending_confirmation',
-    created_at: new Date(Date.now() - 1000 * 60 * 60 * 40).toISOString(),
-  },
-]
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -157,10 +90,10 @@ export function InsightsFeed({
         if (json?.ok && json.data?.items?.length) {
           setItems(json.data.items)
         } else {
-          setItems(MOCK_ITEMS)
+          setItems([])
         }
       } catch {
-        if (!cancelled) setItems(MOCK_ITEMS)
+        if (!cancelled) setItems([])
       } finally {
         if (!cancelled) setLoading(false)
       }

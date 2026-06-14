@@ -6,11 +6,68 @@ import type {
   PointA, BlockScore, BlockStatus, DiagnosticStage,
   Risk, Insight, QuickWin, DataGap
 } from '@/types/onboarding'
+import { coerceNumeric, parsePercentChange } from '@/lib/metrics/source-adapters'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function clamp(v: number, min = 0, max = 100): number {
   return Math.max(min, Math.min(max, v))
+}
+
+// ─── Survey-key alias readers ─────────────────────────────────────────────────
+// The onboarding survey was extended to a 12-step form. The newer finance step
+// writes `s9n_*` keys and the newer goals step writes `s2n_*` keys, while older
+// submissions still carry the legacy `s2_*` / `s6_*` keys. To avoid scoring 0
+// for either cohort, every read here checks ALL known aliases and uses the first
+// non-empty / non-zero value found.
+
+/** First value across `keys` that coerces to a finite, non-zero number. */
+function readNumberAlias(a: Record<string, unknown>, keys: string[]): number {
+  let firstZero: number | null = null
+  for (const k of keys) {
+    const n = coerceNumeric(a[k])
+    if (n !== null && Number.isFinite(n)) {
+      if (n !== 0) return n
+      if (firstZero === null) firstZero = 0
+    }
+  }
+  // Only fall back to an explicit 0 if some alias was actually answered.
+  return firstZero ?? 0
+}
+
+/** First non-empty string across `keys` (e.g. for goal text). */
+function readStringAlias(a: Record<string, unknown>, keys: string[]): string {
+  for (const k of keys) {
+    const v = a[k]
+    if (typeof v === 'string' && v.trim() !== '') return v
+  }
+  return ''
+}
+
+/**
+ * Annual revenue for `year`, checking both legacy and current form keys.
+ *  - 2023 → s2_revenue_2023
+ *  - 2024 → s2_revenue_2024, s9n_revenue_2024 (current finance step)
+ *  - 2025 → s2_revenue_2025
+ * Formatted strings ("84 200 000", "₸84.2М") are coerced robustly.
+ * Percentage-change strings ("±15%") are NEVER read as revenue.
+ */
+function readRevenueYear(a: Record<string, unknown>, year: 2023 | 2024 | 2025): number {
+  switch (year) {
+    case 2023: return readNumberAlias(a, ['s2_revenue_2023'])
+    case 2024: return readNumberAlias(a, ['s2_revenue_2024', 's9n_revenue_2024'])
+    case 2025: return readNumberAlias(a, ['s2_revenue_2025'])
+  }
+}
+
+/** 12-month goal text from legacy + current goal-step keys. */
+function readGoal12m(a: Record<string, unknown>): string {
+  return readStringAlias(a, ['s6_goal_12months', 's2n_goal_12m_what', 's2n_goal_12m_metrics'])
+}
+
+/** 3-year goal text from legacy + current goal-step keys. */
+function readGoal3y(a: Record<string, unknown>): string {
+  return readStringAlias(a, ['s6_goal_3years', 's2n_goal_3y_what', 's2n_goal_3y_metrics'])
 }
 
 function statusFromScore(score: number): BlockStatus {
@@ -36,18 +93,27 @@ function scoreFinance(a: Record<string, unknown>): BlockScore {
   const issues: string[] = []
   const recs: string[] = []
 
-  const rev23 = Number(a['s2_revenue_2023'] ?? 0)
-  const rev24 = Number(a['s2_revenue_2024'] ?? 0)
-  const rev25 = Number(a['s2_revenue_2025'] ?? 0)
+  const rev23 = readRevenueYear(a, 2023)
+  const rev24 = readRevenueYear(a, 2024)
+  const rev25 = readRevenueYear(a, 2025)
   const margin = Number(a['s2_gross_margin'] ?? 0)
   const ltv = Number(a['s2_ltv'] ?? 0)
   const cac = Number(a['s2_cac'] ?? 1)
   const knowsBE = Boolean(a['s2_knows_breakeven'])
   const debt = String(a['s2_debt_load'] ?? 'none')
+  // Current finance step captures YoY change as a string ("+15%", "±15%")
+  // instead of a 2023 absolute. Use it as a growth fallback when needed.
+  const changeVs2023 = parsePercentChange(a['s9n_change_vs_2023'])
 
-  // Revenue growth YoY
+  // Revenue growth YoY — prefer two absolute years; otherwise fall back to
+  // the declared percentage change vs 2023 (s9n_change_vs_2023).
+  let growth: number | null = null
   if (rev24 > 0 && rev23 > 0) {
-    const growth = ((rev24 - rev23) / rev23) * 100
+    growth = ((rev24 - rev23) / rev23) * 100
+  } else if (rev24 > 0 && changeVs2023 !== null) {
+    growth = changeVs2023
+  }
+  if (growth !== null) {
     if (growth > 20) score += 20
     else if (growth > 0) score += 10
     else { issues.push('Выручка не растёт или падает'); recs.push('Проанализировать причины стагнации выручки') }
@@ -251,8 +317,8 @@ function scoreStrategy(a: Record<string, unknown>): BlockScore {
   const issues: string[] = []
   const recs: string[] = []
 
-  const goal3y = String(a['s6_goal_3years'] ?? '')
-  const goal12m = String(a['s6_goal_12months'] ?? '')
+  const goal3y = readGoal3y(a)
+  const goal12m = readGoal12m(a)
   const pain = String(a['s6_main_pain'] ?? '')
   const blockers = Array.isArray(a['s6_growth_blockers']) ? a['s6_growth_blockers'] : []
 
@@ -336,11 +402,14 @@ function generateInsights(answers: Record<string, unknown>): Insight[] {
     }
   }
 
-  const rev24 = Number(answers['s2_revenue_2024'] ?? 0)
-  const rev23 = Number(answers['s2_revenue_2023'] ?? 0)
+  const rev24 = readRevenueYear(answers, 2024)
+  const rev23 = readRevenueYear(answers, 2023)
+  const changeVs2023 = parsePercentChange(answers['s9n_change_vs_2023'])
   if (rev23 > 0 && rev24 > rev23) {
     const g = Math.round(((rev24 - rev23) / rev23) * 100)
     insights.push({ text: `Выручка растёт на ${g}% г/г — фиксируйте драйверы роста`, area: 'Финансы' })
+  } else if (rev24 > 0 && changeVs2023 !== null && changeVs2023 > 0) {
+    insights.push({ text: `Выручка растёт на ${Math.round(changeVs2023)}% г/г — фиксируйте драйверы роста`, area: 'Финансы' })
   }
 
   const channels = Array.isArray(answers['s5_marketing_channels']) ? answers['s5_marketing_channels'] : []
@@ -382,13 +451,24 @@ function generateQuickWins(answers: Record<string, unknown>, blocks: PointA['blo
 
 function detectDataGaps(answers: Record<string, unknown>): DataGap[] {
   const gaps: DataGap[] = []
+
+  // Alias-aware critical fields: a gap is reported only when NONE of the
+  // listed aliases hold a usable value. This keeps owners who filled the
+  // newer 12-step form (s9n_*/s2n_*) from being flagged as "missing".
+  // Revenue 2024 — present if any revenue alias coerces to a non-zero number.
+  if (readRevenueYear(answers, 2024) === 0) {
+    gaps.push({ field: 's2_revenue_2024', step: 9, impact: 'Выручка за 2024 — основа финансового анализа' })
+  }
+  // 12-month goal — present if any goal alias holds non-empty text.
+  if (readGoal12m(answers) === '') {
+    gaps.push({ field: 's6_goal_12months', step: 2, impact: 'Цель на 12 месяцев — основа стратегического блока' })
+  }
+
   const critical: Array<[string, number, string]> = [
-    ['s2_revenue_2024', 2, 'Выручка за 2024 — основа финансового анализа'],
     ['s2_gross_margin', 2, 'Маржинальность — ключевой показатель здоровья'],
     ['s2_cac', 2, 'CAC — для расчёта эффективности маркетинга'],
     ['s2_ltv', 2, 'LTV — для расчёта LTV/CAC'],
     ['s3_has_crm', 3, 'Наличие CRM влияет на оценку продаж'],
-    ['s6_goal_12months', 6, 'Цель на 12 месяцев — основа стратегического блока'],
   ]
   for (const [key, step, impact] of critical) {
     const val = answers[key]
