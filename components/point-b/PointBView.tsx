@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import Link from 'next/link'
 import { motion } from 'framer-motion'
 import type { PointBV2, GapEntry, Scenario, Lever } from '@/lib/point-b/engine'
@@ -31,6 +32,8 @@ export interface PointBViewProps {
   error?: string | null
   reason?: string | null
   onRecalculate?: () => void
+  /** Save current annual revenue (when missing) directly from this page. */
+  onSaveCurrentRevenue?: (year: number) => Promise<void>
 }
 
 // ─── State: loading skeleton ──────────────────────────────────────────────────
@@ -115,7 +118,68 @@ function NoDiagnostic() {
 
 // ─── Insufficient-data honest panel ──────────────────────────────────────────
 
-function InsufficientPanel({ missing, confidence }: { missing: string[]; confidence: number }) {
+function RevenueQuickInput({ onSave }: { onSave: (year: number) => Promise<void> }) {
+  const [val, setVal] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+
+  const submit = async () => {
+    const n = Number(val.replace(/[^\d.]/g, ''))
+    if (!Number.isFinite(n) || n <= 0) {
+      setErr('Введите положительное число')
+      return
+    }
+    setErr(null)
+    setSaving(true)
+    try {
+      await onSave(n)
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Не удалось сохранить')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="rounded-xl bg-surface-container/60 border border-primary/20 p-3.5">
+      <p className="text-[10px] font-mono text-primary/80 uppercase tracking-widest mb-2">
+        Указать текущую выручку сейчас
+      </p>
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          type="text"
+          inputMode="numeric"
+          value={val}
+          onChange={(e) => setVal(e.target.value)}
+          placeholder="Годовая выручка, ₸"
+          className="flex-1 min-w-[180px] bg-surface-container-high border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50"
+        />
+        <button
+          onClick={submit}
+          disabled={saving}
+          className="inline-flex items-center gap-1.5 bg-primary/10 hover:bg-primary/20 border border-primary/30 text-primary text-sm px-4 py-2 rounded-lg transition-all disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-primary/40"
+        >
+          <span className="material-symbols-outlined text-base" aria-hidden>
+            {saving ? 'progress_activity' : 'save'}
+          </span>
+          {saving ? 'Сохранение…' : 'Рассчитать план'}
+        </button>
+      </div>
+      {err && <p className="text-xs text-error mt-2">{err}</p>}
+    </div>
+  )
+}
+
+function InsufficientPanel({
+  missing,
+  confidence,
+  onSaveCurrentRevenue,
+}: {
+  missing: string[]
+  confidence: number
+  onSaveCurrentRevenue?: (year: number) => Promise<void>
+}) {
+  const needsRevenue = missing.some((m) => /выруч/i.test(m))
   return (
     <div className="rounded-2xl border border-amber-400/25 bg-amber-400/[0.05] p-6">
       <div className="flex items-start gap-3">
@@ -149,6 +213,10 @@ function InsufficientPanel({ missing, confidence }: { missing: string[]; confide
                 ))}
               </ul>
             </div>
+          )}
+
+          {needsRevenue && onSaveCurrentRevenue && (
+            <RevenueQuickInput onSave={onSaveCurrentRevenue} />
           )}
 
           <div className="rounded-xl bg-surface-container/60 border border-white/[0.06] p-3.5">
@@ -695,6 +763,7 @@ export default function PointBView({
   error = null,
   reason = null,
   onRecalculate,
+  onSaveCurrentRevenue,
 }: PointBViewProps) {
   if (loading) return <LoadingSkeleton />
   if (error) return <ErrorPanel error={error} onRecalculate={onRecalculate} />
@@ -724,6 +793,7 @@ export default function PointBView({
         <InsufficientPanel
           missing={pointB.data_sufficiency.missing}
           confidence={pointB.data_sufficiency.confidence}
+          onSaveCurrentRevenue={onSaveCurrentRevenue}
         />
       )}
 

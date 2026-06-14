@@ -77,6 +77,20 @@ describe('parseGoals', () => {
     expect(g.current_revenue_year).toBeNull()
   })
 
+  it('reads explicit current revenue (s1_current_revenue_*) with priority over s2_*', () => {
+    // The s1_* survey / Point B page input captures current revenue directly.
+    const g = parseGoals({
+      s1_current_revenue_year: 90_000_000,
+      s2_revenue_2024: 60_000_000, // present but lower priority
+    })
+    expect(g.current_revenue_year).toBe(90_000_000)
+  })
+
+  it('derives current annual revenue from a monthly current-revenue field', () => {
+    const g = parseGoals({ s1_current_revenue_month: 5_000_000 })
+    expect(g.current_revenue_year).toBe(60_000_000)
+  })
+
   it('captures qualitative goal text and growth blockers', () => {
     const g = parseGoals(answersWithGoals())
     expect(g.goal_3y_text).toContain('лидером')

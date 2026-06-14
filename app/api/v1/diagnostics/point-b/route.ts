@@ -121,13 +121,47 @@ export async function GET(_req: NextRequest) {
       if (v != null && Number.isFinite(Number(v))) currentRevenueYear = Number(v)
     }
 
-    // 5. Compute (no DB write — persistence is a separate, owner-approved step).
+    // 5. Compute.
     const pointA = diagToPointA(diag)
     const pointB = calculatePointBV2(pointA, answers, {
       diagnosticId: diag.id as string,
       griTop5,
       currentRevenueYear,
     })
+
+    // 6. Persist the current snapshot (owner-approved). One is_current row per
+    //    diagnostic — full PointBV2 lives in `roadmap`; scalar columns mirror it
+    //    for queryability. Non-fatal: a write failure never breaks the read.
+    try {
+      const payload = {
+        diagnostic_id: diag.id as string,
+        horizon_months: 36,
+        target_overall: pointB.target_overall_score,
+        target_health: pointB.target_health_index,
+        target_stage: pointB.target_stage,
+        target_blocks: pointB.target_blocks,
+        target_kpis: pointB.levers,
+        gap_analysis: pointB.gap,
+        roadmap: pointB,
+        ai_strategy: pointB.ai_strategy,
+        ai_status: pointB.ai_status,
+        is_current: true,
+        calculated_at: pointB.generated_at,
+      }
+      const { data: existing } = await sb
+        .from('point_b_analysis')
+        .select('id')
+        .eq('diagnostic_id', diag.id as string)
+        .eq('is_current', true)
+        .maybeSingle()
+      if (existing) {
+        await sb.from('point_b_analysis').update(payload).eq('id', existing.id)
+      } else {
+        await sb.from('point_b_analysis').insert(payload)
+      }
+    } catch (persistErr) {
+      console.error('[point-b] persist failed (non-fatal):', persistErr)
+    }
 
     return NextResponse.json({ ok: true, data: pointB })
   } catch (error) {

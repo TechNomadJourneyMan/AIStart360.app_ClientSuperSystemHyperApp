@@ -51,6 +51,17 @@ export default function PointBContainer() {
     load()
   }, [load])
 
+  const saveCurrentRevenue = useCallback(async (year: number) => {
+    const res = await fetch('/api/v1/diagnostics/point-b/current-revenue', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ revenue_year: year }),
+    })
+    const json = (await res.json()) as { ok: boolean; error?: string }
+    if (!res.ok || !json.ok) throw new Error(json.error || 'Не удалось сохранить выручку')
+    await load()
+  }, [load])
+
   return (
     <PointBView
       pointB={pointB}
@@ -58,6 +69,7 @@ export default function PointBContainer() {
       error={error}
       reason={reason}
       onRecalculate={load}
+      onSaveCurrentRevenue={saveCurrentRevenue}
     />
   )
 }

@@ -185,9 +185,13 @@ function str(v: unknown): string {
 // ─── parseGoals ──────────────────────────────────────────────────────────
 
 export function parseGoals(answers: Record<string, unknown>): PointBGoals {
-  const currentYear = firstPos(answers, [
-    's2_revenue_2025', 's2_revenue_2024', 's9n_revenue_2024', 's2_revenue_2023',
-  ])
+  // Explicit current-revenue fields (s1_* survey / Point B page input) win over
+  // the year-tagged s2_* / s9n_* legacy keys.
+  const explicitCurrentMonth = posNum(answers.s1_current_revenue_month)
+  const currentYear =
+    posNum(answers.s1_current_revenue_year) ??
+    (explicitCurrentMonth != null ? explicitCurrentMonth * 12 : null) ??
+    firstPos(answers, ['s2_revenue_2025', 's2_revenue_2024', 's9n_revenue_2024', 's2_revenue_2023'])
 
   const g12yRaw = posNum(answers.s1_goal_12m_revenue_year)
   const g12mRaw = posNum(answers.s1_goal_12m_revenue_month)
