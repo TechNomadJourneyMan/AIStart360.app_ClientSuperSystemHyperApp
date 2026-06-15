@@ -136,9 +136,6 @@ function ClientCard({ client, onClick }: { client: GigaClient; onClick: () => vo
 
       {/* Badges */}
       <div className="flex items-center gap-1.5 flex-wrap">
-        <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${stageBadge(client.stage)}`}>
-          {client.stage}
-        </span>
         <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${statusBadge(client.status)}`}>
           {client.status === 'active' ? 'Активен' :
            client.status === 'at_risk' ? 'Риск' :
@@ -211,12 +208,6 @@ function ClientDetailPanel({ client, onClose }: { client: GigaClient; onClose: (
 
         {/* Meta */}
         <div className="grid grid-cols-2 gap-2">
-          <div className="p-3 rounded-xl bg-white/[0.03] border border-white/[0.06]">
-            <p className="text-[10px] text-slate-600 mb-0.5">Стадия</p>
-            <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${stageBadge(client.stage)}`}>
-              {client.stage}
-            </span>
-          </div>
           <div className="p-3 rounded-xl bg-white/[0.03] border border-white/[0.06]">
             <p className="text-[10px] text-slate-600 mb-0.5">Статус</p>
             <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${statusBadge(client.status)}`}>

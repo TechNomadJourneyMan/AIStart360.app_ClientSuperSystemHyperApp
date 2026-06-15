@@ -356,16 +356,12 @@ function ComparisonRow({
   )
 }
 
-function cap(s: string): string {
-  if (!s) return DASH
-  return s.charAt(0).toUpperCase() + s.slice(1)
-}
 
 function Comparison({ pointB }: { pointB: PointBV2 }) {
   const blocks = Object.entries(pointB.target_blocks)
   return (
     <Section eyebrow="A → B" title="Сравнение текущего и целевого состояния" icon="compare_arrows">
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <ComparisonRow
           label="Общий балл (GRI)"
           current={DASH}
@@ -376,7 +372,6 @@ function Comparison({ pointB }: { pointB: PointBV2 }) {
           current={DASH}
           target={formatScore(pointB.target_health_index)}
         />
-        <ComparisonRow label="Стадия" current={DASH} target={cap(pointB.target_stage)} />
       </div>
 
       {blocks.length > 0 && (

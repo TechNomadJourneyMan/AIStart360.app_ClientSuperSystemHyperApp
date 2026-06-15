@@ -273,11 +273,6 @@ function HeaderCard({
                 {client.industry}
               </span>
             )}
-            {client.stage && (
-              <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-300">
-                {client.stage}
-              </span>
-            )}
             <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-primary/10 border border-primary/20 text-primary inline-flex items-center gap-1">
               <span className="material-symbols-outlined text-[12px]">forum</span>
               {liveCount} коммент.

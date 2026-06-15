@@ -111,7 +111,7 @@ export function ClientsTable() {
       <table className="w-full">
         <thead>
           <tr className="border-b border-outline-variant/20">
-            {['Клиент', 'Отрасль', 'Стадия', 'Point A', 'Статус', ''].map((h) => (
+            {['Клиент', 'Отрасль', 'Point A', 'Статус', ''].map((h) => (
               <th key={h} className="px-5 py-3.5 text-left text-[10px] font-mono uppercase tracking-widest text-on-surface-variant whitespace-nowrap bg-surface-container-high">
                 {h}
               </th>
@@ -134,13 +134,6 @@ export function ClientsTable() {
 
               {/* Industry */}
               <td className="px-5 py-4 text-sm text-on-surface-variant">{client.industry}</td>
-
-              {/* Stage */}
-              <td className="px-5 py-4">
-                <span className="text-xs font-mono text-on-surface-variant bg-surface-container-high px-2.5 py-1 rounded-full">
-                  {client.stage}
-                </span>
-              </td>
 
               {/* Point A Score */}
               <td className="px-5 py-4">

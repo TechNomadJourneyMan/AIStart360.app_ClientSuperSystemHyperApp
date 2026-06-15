@@ -67,10 +67,6 @@ export default async function OwnerClientDetailPage({ params }: { params: { id: 
               {client.industry}
             </span>
             <span className="flex items-center gap-1.5">
-              <span className="material-symbols-outlined text-base">trending_up</span>
-              {client.stage}
-            </span>
-            <span className="flex items-center gap-1.5">
               <span className="material-symbols-outlined text-base">person</span>
               {client.manager.name ?? client.manager.email}
             </span>
@@ -114,7 +110,6 @@ export default async function OwnerClientDetailPage({ params }: { params: { id: 
             { label: 'GRI Reports', value: String(client.griReports.length), icon: 'description', trend: '' },
             { label: 'Статус клиента', value: client.status, icon: 'shield_check', trend: '' },
             { label: 'Отрасль', value: client.industry, icon: 'domain', trend: '' },
-            { label: 'Стадия', value: client.stage, icon: 'trending_up', trend: '' },
             { label: 'Орг ID', value: client.orgId.slice(0, 8), icon: 'apartment', trend: '' },
             { label: 'Менеджер', value: client.manager.name ?? 'Назначен', icon: 'person', trend: '' },
           ].map((metric) => (

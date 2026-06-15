@@ -198,7 +198,7 @@ export default function ExpertDashboardPage() {
                       {c.companyName ?? c.fullName ?? c.email ?? 'Клиент'}
                     </p>
                     <p className="text-xs text-on-surface-variant truncate">
-                      {[c.industry, c.stage].filter(Boolean).join(' · ') || 'нет данных'}
+                      {c.industry || 'нет данных'}
                     </p>
                   </div>
                   <div className="flex items-center gap-3 flex-shrink-0">

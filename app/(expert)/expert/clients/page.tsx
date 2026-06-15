@@ -82,11 +82,6 @@ function ClientCard({ client }: { client: ExpertClient }) {
               {client.industry}
             </span>
           )}
-          {client.stage && (
-            <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-300">
-              {client.stage}
-            </span>
-          )}
         </div>
 
         <div className="flex items-center justify-between text-[11px] text-on-surface-variant">

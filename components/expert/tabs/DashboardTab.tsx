@@ -94,9 +94,6 @@ export function DashboardTab({ clientId }: Props) {
         <Commentable targetId="dashboard:kpi:healthIndex">
           <KpiCard label="Health Index" value={formatScore(diag?.overall_score)} icon="favorite" />
         </Commentable>
-        <Commentable targetId="dashboard:kpi:stage">
-          <KpiCard label="Стадия" value={data?.company?.stage ?? '—'} icon="stairs" />
-        </Commentable>
         <Commentable targetId="dashboard:kpi:documents">
           <KpiCard label="Документы" value={data?.company?.industry ?? '—'} icon="description" />
         </Commentable>
