@@ -188,7 +188,17 @@ export async function GET(_req: NextRequest) {
       console.error('[point-b] persist failed (non-fatal):', persistErr)
     }
 
-    return NextResponse.json({ ok: true, data: pointB })
+    // 7. Latest approved expert correction (so the client sees the expert version).
+    const { data: ev } = await sb
+      .from('point_b_versions')
+      .select('expert_notes, author_name, created_at')
+      .eq('diagnostic_id', diag.id as string)
+      .eq('is_approved', true)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    return NextResponse.json({ ok: true, data: pointB, expert_version: ev ?? null })
   } catch (error) {
     console.error('[point-b] error:', error)
     return NextResponse.json({ ok: false, error: 'Internal server error' }, { status: 500 })

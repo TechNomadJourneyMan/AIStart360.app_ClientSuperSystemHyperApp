@@ -18,6 +18,7 @@ export default function PointBContainer() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [reason, setReason] = useState<string | null>(null)
+  const [expertNote, setExpertNote] = useState<{ expert_notes: string; author_name?: string | null; created_at?: string } | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -29,6 +30,7 @@ export default function PointBContainer() {
         data?: PointBV2 | null
         reason?: string
         error?: string
+        expert_version?: { expert_notes: string; author_name?: string | null; created_at?: string } | null
       }
       if (!res.ok || !json.ok) {
         setError(json.error || `Ошибка загрузки (${res.status})`)
@@ -37,6 +39,7 @@ export default function PointBContainer() {
       } else {
         setPointB(json.data ?? null)
         setReason(json.reason ?? null)
+        setExpertNote(json.expert_version ?? null)
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Ошибка сети')
@@ -70,6 +73,7 @@ export default function PointBContainer() {
       reason={reason}
       onRecalculate={load}
       onSaveCurrentRevenue={saveCurrentRevenue}
+      expertNote={expertNote}
     />
   )
 }

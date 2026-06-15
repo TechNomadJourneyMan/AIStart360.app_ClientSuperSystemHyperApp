@@ -37,6 +37,8 @@ export interface PointBViewProps {
   onSaveCurrentRevenue?: (year: number) => Promise<void>
   /** Whose Action Plan to load (omit = current user; staff passes the client id). */
   actionPlanUserId?: string
+  /** Latest approved expert correction of this plan (shown to the client). */
+  expertNote?: { expert_notes: string; author_name?: string | null; created_at?: string } | null
 }
 
 // ─── State: loading skeleton ──────────────────────────────────────────────────
@@ -790,6 +792,7 @@ export default function PointBView({
   onRecalculate,
   onSaveCurrentRevenue,
   actionPlanUserId,
+  expertNote,
 }: PointBViewProps) {
   if (loading) return <LoadingSkeleton />
   if (error) return <ErrorPanel error={error} onRecalculate={onRecalculate} />
@@ -824,6 +827,19 @@ export default function PointBView({
       )}
 
       <Hero pointB={pointB} />
+
+      {expertNote?.expert_notes && (
+        <div className="rounded-2xl border border-secondary/30 bg-secondary/[0.06] p-5">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="material-symbols-outlined text-secondary text-lg" aria-hidden>verified</span>
+            <p className="text-[10px] font-mono text-secondary uppercase tracking-widest">
+              Экспертная корректировка{expertNote.author_name ? ` · ${expertNote.author_name}` : ''}
+            </p>
+          </div>
+          <p className="text-sm text-on-surface leading-relaxed whitespace-pre-wrap">{expertNote.expert_notes}</p>
+        </div>
+      )}
+
       <Comparison pointB={pointB} />
       <GapAnalysis gap={pointB.gap} />
       <HowToAchieve d={pointB.growth_decomposition} />
