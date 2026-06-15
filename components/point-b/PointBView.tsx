@@ -24,6 +24,7 @@ import {
 } from './shared'
 import { TrajectoryChart } from './TrajectoryChart'
 import { HorizonPlans } from './HorizonPlans'
+import { ActionPlanBoard } from '@/components/action-plan/ActionPlanBoard'
 import { AiStrategy } from './AiStrategy'
 
 export interface PointBViewProps {
@@ -34,6 +35,8 @@ export interface PointBViewProps {
   onRecalculate?: () => void
   /** Save current annual revenue (when missing) directly from this page. */
   onSaveCurrentRevenue?: (year: number) => Promise<void>
+  /** Whose Action Plan to load (omit = current user; staff passes the client id). */
+  actionPlanUserId?: string
 }
 
 // ─── State: loading skeleton ──────────────────────────────────────────────────
@@ -786,6 +789,7 @@ export default function PointBView({
   reason = null,
   onRecalculate,
   onSaveCurrentRevenue,
+  actionPlanUserId,
 }: PointBViewProps) {
   if (loading) return <LoadingSkeleton />
   if (error) return <ErrorPanel error={error} onRecalculate={onRecalculate} />
@@ -830,6 +834,10 @@ export default function PointBView({
 
       <Section eyebrow="План действий" title="Горизонты планирования" icon="route">
         <HorizonPlans horizons={pointB.horizons} />
+      </Section>
+
+      <Section eyebrow="Карта роста" title="План действий (90 дней)" icon="checklist">
+        <ActionPlanBoard userId={actionPlanUserId} />
       </Section>
 
       <Top5Limits limits={pointB.top5_limits} />

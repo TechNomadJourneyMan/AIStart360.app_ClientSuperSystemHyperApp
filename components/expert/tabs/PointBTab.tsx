@@ -37,5 +37,5 @@ export function PointBTab({ clientId }: { clientId: string }) {
 
   useEffect(() => { load() }, [load])
 
-  return <PointBView pointB={pointB} loading={loading} error={error} reason={reason} onRecalculate={load} />
+  return <PointBView pointB={pointB} loading={loading} error={error} reason={reason} onRecalculate={load} actionPlanUserId={clientId} />
 }
