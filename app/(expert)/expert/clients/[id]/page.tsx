@@ -7,6 +7,7 @@ import { ExpertCommentThread } from '@/components/expert/ExpertCommentThread'
 import { ExpertCommentsProvider, useExpertComments } from '@/components/expert/ExpertCommentsContext'
 import { DashboardTab } from '@/components/expert/tabs/DashboardTab'
 import { PointATab } from '@/components/expert/tabs/PointATab'
+import { PointBTab } from '@/components/expert/tabs/PointBTab'
 import { GRITab } from '@/components/expert/tabs/GRITab'
 import { PulseTab } from '@/components/expert/tabs/PulseTab'
 import { getAvatarGradient, getInitials } from '@/lib/expert-blocks'
@@ -34,18 +35,19 @@ function scoreBadgeClass(score: number | null): string {
   return 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20'
 }
 
-type TabKey = 'anketa' | 'dashboard' | 'point-a' | 'gri' | 'pulse'
+type TabKey = 'anketa' | 'dashboard' | 'point-a' | 'point-b' | 'gri' | 'pulse'
 
 const TABS: Array<{ key: TabKey; label: string; icon: string }> = [
   { key: 'anketa',    label: 'Анкета',    icon: 'assignment' },
   { key: 'dashboard', label: 'Дэшборд',   icon: 'dashboard' },
   { key: 'point-a',   label: 'Точка А',   icon: 'radar' },
+  { key: 'point-b',   label: 'Точка Б',   icon: 'flag' },
   { key: 'gri',       label: 'GRI',       icon: 'target' },
   { key: 'pulse',     label: 'Pulse',     icon: 'monitor_heart' },
 ]
 
 function isValidTab(v: string | null): v is TabKey {
-  return v === 'anketa' || v === 'dashboard' || v === 'point-a' || v === 'gri' || v === 'pulse'
+  return v === 'anketa' || v === 'dashboard' || v === 'point-a' || v === 'point-b' || v === 'gri' || v === 'pulse'
 }
 
 interface Props {
@@ -207,6 +209,9 @@ export default function ExpertClientDetailPage({ params }: Props) {
             )}
             {activeTab === 'point-a' && (
               <TabErrorBoundary tab="Точка А"><PointATab clientId={params.id} /></TabErrorBoundary>
+            )}
+            {activeTab === 'point-b' && (
+              <TabErrorBoundary tab="Точка Б"><PointBTab clientId={params.id} /></TabErrorBoundary>
             )}
             {activeTab === 'gri' && (
               <TabErrorBoundary tab="GRI"><GRITab clientId={params.id} /></TabErrorBoundary>
