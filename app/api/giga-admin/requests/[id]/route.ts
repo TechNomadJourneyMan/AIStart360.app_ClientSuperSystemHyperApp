@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { GIGA_COOKIE_NAME, verifyGigaRole } from '@/lib/giga-cookie'
+import { logAudit } from '@/lib/audit'
 
 // A2b: verify the HMAC-SIGNED giga cookie, not an unsigned static string.
 function isSuperAdmin(req: NextRequest): boolean {
@@ -74,6 +75,16 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
           .eq('id', params.id)
       }
     }
+
+    // Audit the super-admin decision (fire-and-forget; never blocks the response).
+    await logAudit({
+      entityType: 'request',
+      entityId: params.id,
+      action: body.action === 'approve' ? 'request.approved' : body.action === 'reject' ? 'request.rejected' : 'request.status_changed',
+      performedBy: 'giga:super_admin',
+      diff: { action: body.action, newStatus, userId, ...(body.reason ? { reason: body.reason } : {}) },
+      ipAddress: req.headers.get('x-forwarded-for') ?? undefined,
+    })
 
     return NextResponse.json({ ok: true, status: newStatus })
   } catch (error) {

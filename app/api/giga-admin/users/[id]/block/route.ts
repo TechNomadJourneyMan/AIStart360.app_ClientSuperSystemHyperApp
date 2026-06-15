@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { GIGA_COOKIE_NAME, verifyGigaRole } from '@/lib/giga-cookie'
+import { logAudit } from '@/lib/audit'
 
 // A2b: verify the HMAC-SIGNED giga cookie, not an unsigned static string.
 function isSuperAdmin(req: NextRequest): boolean {
@@ -33,6 +34,15 @@ export async function POST(
     // Delete all active NextAuth sessions for this user
     await prisma.session.deleteMany({
       where: { userId: id },
+    })
+
+    await logAudit({
+      entityType: 'user',
+      entityId: id,
+      action: 'user.blocked',
+      performedBy: 'giga:super_admin',
+      diff: { effect: 'all_sessions_invalidated' },
+      ipAddress: req.headers.get('x-forwarded-for') ?? undefined,
     })
 
     return NextResponse.json({
