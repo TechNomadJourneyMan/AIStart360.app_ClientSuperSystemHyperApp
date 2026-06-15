@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { motion } from 'framer-motion'
-import type { PointBV2, GapEntry, Scenario, Lever } from '@/lib/point-b/engine'
+import type { PointBV2, GapEntry, Scenario, Lever, GrowthDecomposition } from '@/lib/point-b/engine'
 import {
   Section,
   Card,
@@ -750,6 +750,33 @@ function Top5Limits({ limits }: { limits: PointBV2['top5_limits'] }) {
   )
 }
 
+// ─── How to achieve the goal (growth decomposition) ───────────────────────────
+
+function HowToAchieve({ d }: { d: GrowthDecomposition }) {
+  return (
+    <Section eyebrow="Как достичь" title="Как достичь цель за 12 месяцев" icon="trending_up">
+      <div className="rounded-2xl border border-primary/20 bg-primary/[0.04] p-5 space-y-4">
+        <p className="text-sm text-on-surface leading-relaxed">{d.summary}</p>
+        {d.steps.length > 0 && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {d.steps.map((s) => (
+              <div key={s.key} className="rounded-xl bg-surface-container-low border border-white/[0.06] p-4">
+                <div className="flex items-center justify-between mb-1.5">
+                  <p className="text-sm font-semibold text-on-surface">{s.label}</p>
+                  {s.uplift_pct != null && (
+                    <span className="text-xs font-mono font-bold text-primary">+{formatPercent(s.uplift_pct)}</span>
+                  )}
+                </div>
+                <p className="text-xs text-on-surface-variant leading-relaxed">{s.note}</p>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </Section>
+  )
+}
+
 // ─── Main view ────────────────────────────────────────────────────────────────
 
 export default function PointBView({
@@ -795,6 +822,7 @@ export default function PointBView({
       <Hero pointB={pointB} />
       <Comparison pointB={pointB} />
       <GapAnalysis gap={pointB.gap} />
+      <HowToAchieve d={pointB.growth_decomposition} />
       <RealismDetail pointB={pointB} />
       <Trajectory pointB={pointB} />
       <Scenarios scenarios={pointB.scenarios} />

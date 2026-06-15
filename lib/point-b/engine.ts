@@ -87,6 +87,23 @@ export interface Lever {
   data_available: boolean
 }
 
+export interface GrowthStep {
+  key: string
+  label: string
+  unit: string
+  current: number | null
+  target: number | null
+  uplift_pct: number | null
+  note: string
+}
+
+export interface GrowthDecomposition {
+  required_multiplier: number | null
+  required_uplift_per_lever_pct: number | null
+  steps: GrowthStep[]
+  summary: string
+}
+
 export interface HorizonPlan {
   horizon: 'three_year' | 'one_year' | 'quarter' | 'month' | 'week'
   title: string
@@ -120,6 +137,8 @@ export interface PointBV2 {
   }
   scenarios: Scenario[]
   levers: Lever[]
+  /** Concrete "how to reach the 12-month goal" decomposition across levers. */
+  growth_decomposition: GrowthDecomposition
 
   target_blocks: Record<string, TargetBlock>
   target_overall_score: number
@@ -494,6 +513,50 @@ function buildLevers(answers: Record<string, unknown>, goals: PointBGoals): Leve
   return defs
 }
 
+// ─── Growth decomposition ("how to reach the 12-month goal") ───────────────
+
+const fmtMoneyShort = (n: number): string =>
+  n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)} млн ₸` : n >= 1000 ? `${Math.round(n / 1000)} тыс ₸` : `${Math.round(n)} ₸`
+
+function buildGrowthDecomposition(
+  current: number | null,
+  goal12m: number | null,
+  answers: Record<string, unknown>,
+): GrowthDecomposition {
+  if (current == null || current <= 0 || goal12m == null || goal12m <= 0) {
+    return {
+      required_multiplier: null,
+      required_uplift_per_lever_pct: null,
+      steps: [],
+      summary: 'Укажите текущую выручку и цель на 12 месяцев — и здесь появится пошаговый план: на сколько поднять лиды, конверсию, средний чек и повторные продажи, чтобы прийти к цели.',
+    }
+  }
+  const mult = goal12m / current
+  // Revenue ≈ Leads × Conversion × AvgCheck × Repeat — split the required growth
+  // evenly across the 4 levers (their product equals the revenue multiplier).
+  const each = Math.pow(mult, 1 / 4)
+  const uplift = Math.round((each - 1) * 1000) / 10
+  const avgCheck = posNum(answers.s7_avg_check) ?? posNum(answers.s2_avg_check) ?? posNum(answers.s1_avg_check)
+
+  const steps: GrowthStep[] = [
+    { key: 'leads', label: 'Лиды / трафик', unit: '%', current: null, target: null, uplift_pct: uplift, note: `Нарастить поток заявок примерно на +${uplift}%` },
+    { key: 'conversion', label: 'Конверсия в продажу', unit: '%', current: null, target: null, uplift_pct: uplift, note: `Поднять конверсию из лида в сделку на +${uplift}%` },
+    {
+      key: 'avg_check', label: 'Средний чек', unit: '₸',
+      current: avgCheck, target: avgCheck != null ? Math.round(avgCheck * each) : null, uplift_pct: uplift,
+      note: avgCheck != null ? `${fmtMoneyShort(avgCheck)} → ${fmtMoneyShort(avgCheck * each)}` : `Увеличить средний чек на +${uplift}%`,
+    },
+    { key: 'repeat', label: 'Повторные продажи / удержание', unit: '%', current: null, target: null, uplift_pct: uplift, note: `Повысить повторные покупки и удержание на +${uplift}%` },
+  ]
+
+  return {
+    required_multiplier: Math.round(mult * 100) / 100,
+    required_uplift_per_lever_pct: uplift,
+    steps,
+    summary: `Чтобы вырасти в ${(Math.round(mult * 10) / 10)}× за 12 месяцев, по каждому из четырёх рычагов нужен рост примерно +${uplift}% (их эффект перемножается). Рычаги можно перебалансировать — усильте те, где у вас больше потенциала.`,
+  }
+}
+
 // ─── Horizon plans ───────────────────────────────────────────────────────
 
 function buildHorizons(
@@ -657,6 +720,7 @@ export function calculatePointBV2(
     trajectory: { monthly_12m: monthly12m, quarterly_3y },
     scenarios: buildScenarios(cur, goals.goal_12m_revenue_year, goals.goal_3y_revenue_year),
     levers: buildLevers(answers, goals),
+    growth_decomposition: buildGrowthDecomposition(cur, goals.goal_12m_revenue_year, answers),
     target_blocks: targetBlocks,
     target_overall_score: targetOverall,
     target_health_index: targetHealth,

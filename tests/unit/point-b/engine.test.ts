@@ -230,6 +230,21 @@ describe('calculatePointBV2', () => {
     expect(gap3y.required_cagr).toBeCloseTo(115.44, 1)
   })
 
+  it('builds a growth decomposition that answers HOW to reach the 12m goal', () => {
+    const pb = calculatePointBV2(makePointA(), answersWithGoals())
+    const d = pb.growth_decomposition
+    expect(d.required_multiplier).toBeCloseTo(2, 1) // 60M → 120M
+    expect(d.steps).toHaveLength(4)
+    expect(d.required_uplift_per_lever_pct).toBeGreaterThan(0)
+    expect(d.steps.map((s) => s.key)).toEqual(['leads', 'conversion', 'avg_check', 'repeat'])
+  })
+
+  it('growth decomposition degrades honestly without current revenue or goal', () => {
+    const d = calculatePointBV2(makePointA(), {}).growth_decomposition
+    expect(d.required_multiplier).toBeNull()
+    expect(d.steps).toHaveLength(0)
+  })
+
   it('exposes all five planning horizons (3y, 1y, quarter, month, week)', () => {
     const pb = calculatePointBV2(makePointA(), answersWithGoals())
     expect(pb.horizons.three_year).toBeDefined()
