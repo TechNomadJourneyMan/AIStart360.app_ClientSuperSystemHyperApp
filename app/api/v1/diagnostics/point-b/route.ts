@@ -147,10 +147,17 @@ export async function GET(_req: NextRequest) {
       goal3yYear,
     })
 
-    // 6. Persist the current snapshot (owner-approved). One is_current row per
-    //    diagnostic — full PointBV2 lives in `roadmap`; scalar columns mirror it
-    //    for queryability. Non-fatal: a write failure never breaks the read.
+    // 6. Persist the current snapshot. One is_current row per diagnostic — full
+    //    PointBV2 lives in `roadmap`; scalar columns mirror it for queryability.
+    //    Writes via the SERVICE ROLE (point_b_analysis RLS has no owner-write
+    //    policy on prod, which silently no-op'd session writes). Non-fatal.
     try {
+      const { createClient: createSrClient } = await import('@supabase/supabase-js')
+      const admin = createSrClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.SUPABASE_SERVICE_ROLE_KEY!,
+        { auth: { autoRefreshToken: false, persistSession: false } },
+      )
       const payload = {
         diagnostic_id: diag.id as string,
         horizon_months: 36,
@@ -166,16 +173,16 @@ export async function GET(_req: NextRequest) {
         is_current: true,
         calculated_at: pointB.generated_at,
       }
-      const { data: existing } = await sb
+      const { data: existing } = await admin
         .from('point_b_analysis')
         .select('id')
         .eq('diagnostic_id', diag.id as string)
         .eq('is_current', true)
         .maybeSingle()
       if (existing) {
-        await sb.from('point_b_analysis').update(payload).eq('id', existing.id)
+        await admin.from('point_b_analysis').update(payload).eq('id', existing.id)
       } else {
-        await sb.from('point_b_analysis').insert(payload)
+        await admin.from('point_b_analysis').insert(payload)
       }
     } catch (persistErr) {
       console.error('[point-b] persist failed (non-fatal):', persistErr)

@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { notifyUser } from '@/lib/notifications'
+import { logAudit } from '@/lib/audit'
 
 const EXPERT_ROLES = new Set(['expert', 'admin', 'super_admin'])
 const MAX_TARGET_ID = 200  // see lib/comment-targets.ts — free-form TEXT, cap length
@@ -223,6 +224,16 @@ export async function POST(req: NextRequest) {
     expert_title: profile.expert_title ?? null,
   }
   const mapped = mapComment({ ...inserted, author: authorProfile })
+
+  // Audit the expert action (fire-and-forget; never blocks the response).
+  logAudit({
+    entityType: 'user',
+    entityId: clientId,
+    action: 'expert.comment_added',
+    performedBy: user.id,
+    diff: { block_key: targetId, preview: text.slice(0, 120) },
+    ipAddress: req.headers.get('x-forwarded-for') ?? undefined,
+  })
 
   // Fire-and-forget notify the client
   notifyUser(clientId, 'expert_comment', {
