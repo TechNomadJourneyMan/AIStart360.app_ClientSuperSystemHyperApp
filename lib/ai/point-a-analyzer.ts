@@ -1,6 +1,5 @@
-import { generateObject } from 'ai'
 import { z } from 'zod'
-import { anthropic, CLAUDE_MODELS } from './anthropic'
+import { chatWithOpenRouter, hasOpenRouterKey, extractJson, OPENROUTER_MODELS } from './openrouter'
 import type { PointA, AIAnalysis, Company } from '@/types/onboarding'
 
 // GRI expert note type for prompt enrichment
@@ -312,18 +311,16 @@ export async function analyzePointA(
   company: Company | null,
   expertNotes?: GriExpertNotes | null,
 ): Promise<AIAnalysis | null> {
-  // Skip if no API key
-  if (!process.env.ANTHROPIC_API_KEY) {
-    console.warn('[point-a-analyzer] No ANTHROPIC_API_KEY — skipping AI analysis')
+  // Skip if no API key (honest degradation — no fabrication without an LLM)
+  if (!hasOpenRouterKey()) {
+    console.warn('[point-a-analyzer] No OPENROUTER_API_KEY — skipping AI analysis')
     return null
   }
 
   try {
     const prompt = buildPrompt(answers, pointA, company, expertNotes)
 
-    const { object } = await generateObject({
-      model: anthropic(CLAUDE_MODELS.sonnet),
-      schema: aiAnalysisSchema,
+    const raw = await chatWithOpenRouter({
       system: `You are a senior business consultant for the AIStart360 platform (Kazakhstan).
 You analyze company data from ALL 12 blocks of the onboarding survey, the results of automatic scoring, and the GRI (Growth Readiness Index) 7-block framework.
 The 12 survey steps are: Company, Goals, Positioning, Org Structure, Client Base, CJM, Marketing, Key Metrics, Finance, Personal/Founder, Influence Map, Systems & Tools.
@@ -333,15 +330,27 @@ Respond strictly in English. Be specific — use numbers from the data, not gene
 Cross-reference data across all 12 steps for multi-dimensional insights (e.g., funnel metrics with marketing spend, org structure with delegation readiness, CJM with client feedback).
 Compare with real benchmarks for the industry and development stage in Kazakhstan/CIS.
 Recommendations must be actionable: with specific tools, metrics, and timelines.
-Do not repeat what the rule-based scoring already said — add value through context, cross-metric insights, and strategic perspective.`,
-      prompt,
+Do not repeat what the rule-based scoring already said — add value through context, cross-metric insights, and strategic perspective.
+Respond with ONLY a valid JSON object matching the required schema — no markdown, no commentary.`,
+      user: prompt,
+      model: OPENROUTER_MODELS.sonnet,
+      jsonMode: true,
+      maxTokens: 4000,
     })
+    if (!raw) return null
+
+    const parsed = aiAnalysisSchema.safeParse(extractJson(raw))
+    if (!parsed.success) {
+      console.error('[point-a-analyzer] schema validation failed:', parsed.error.message)
+      return null
+    }
+    const object = parsed.data
 
     return {
       ...object,
       // Normalize blocks to Record<string, AIBlockAnalysis>
       blocks: object.blocks as unknown as Record<string, import('@/types/onboarding').AIBlockAnalysis>,
-      model_used: CLAUDE_MODELS.sonnet,
+      model_used: OPENROUTER_MODELS.sonnet,
       generated_at: new Date().toISOString(),
     }
   } catch (error) {

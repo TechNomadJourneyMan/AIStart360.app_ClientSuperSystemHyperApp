@@ -1,6 +1,5 @@
-import { generateObject } from 'ai'
 import { z } from 'zod'
-import { anthropic, CLAUDE_MODELS } from './anthropic'
+import { chatWithOpenRouter, hasOpenRouterKey, extractJson, OPENROUTER_MODELS } from './openrouter'
 import type { PointA } from '@/types/onboarding'
 import type { PointB } from '@/types/point-b'
 
@@ -33,8 +32,8 @@ export async function analyzePointB(
   pointBBase: PointB,
   company: Record<string, unknown> | null
 ): Promise<Record<string, unknown> | null> {
-  if (!process.env.ANTHROPIC_API_KEY) {
-    console.warn('[point-b-analyzer] No ANTHROPIC_API_KEY — skipping AI bridge analysis')
+  if (!hasOpenRouterKey()) {
+    console.warn('[point-b-analyzer] No OPENROUTER_API_KEY — skipping AI bridge analysis')
     return null
   }
 
@@ -66,13 +65,23 @@ export async function analyzePointB(
 Язык: Русский.
 `
 
-    const { object } = await generateObject({
-      model: anthropic(CLAUDE_MODELS.sonnet),
-      schema: pointBAISchema,
+    const raw = await chatWithOpenRouter({
       system: `Ты — ведущий стратег AIStart360. Твоя роль — построить мост между текущим хаосом (Точка А) и масштабируемым бизнесом (Точка Б).
-Используй данные скоринга Точки А для выявления реальных препятствий.`,
-      prompt,
+Используй данные скоринга Точки А для выявления реальных препятствий.
+Ответь СТРОГО валидным JSON по схеме, без markdown и пояснений:
+{"strategic_bridge_summary": string, "gap_analysis": [{"title": string, "gap": string, "action": string, "priority_level": "Приоритет 1"|"Приоритет 2"|"Приоритет 3", "icon": string, "color": "primary"|"error"|"tertiary-container"}] (ровно 3 элемента), "milestones": [{"q": string, "title": string, "desc": string, "icon": string, "status": "current"|"planned"|"future"}] (ровно 4 элемента)}`,
+      user: prompt,
+      model: OPENROUTER_MODELS.sonnet,
+      jsonMode: true,
+      maxTokens: 1500,
     })
+    if (!raw) return null
+    const parsed = pointBAISchema.safeParse(extractJson(raw))
+    if (!parsed.success) {
+      console.error('[point-b-analyzer] schema validation failed:', parsed.error.message)
+      return null
+    }
+    const object = parsed.data
 
     return {
       gap_analysis: object.gap_analysis.map(g => ({
