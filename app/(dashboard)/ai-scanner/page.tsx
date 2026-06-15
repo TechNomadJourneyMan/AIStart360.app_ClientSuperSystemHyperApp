@@ -20,7 +20,7 @@ import {
 import { Button } from "@/components/ui/Button"
 import { Input } from "@/components/ui/Input"
 import { Card, CardContent } from "@/components/ui/Card"
-import { createGriReportAction, getClientsAction } from "@/app/actions/gri"
+import { calculateGri, type GriResult } from "@/lib/gri/logic"
 import { useRouter } from "next/navigation"
 
 // Simple Label component since shadcn one is missing
@@ -66,9 +66,29 @@ export default function AiScannerPage() {
     strategicHorizonYears: 1
   })
 
+  const [baseline, setBaseline] = useState<{ has_assessment: boolean; gri_index?: number | null; section_avgs?: Record<string, number>; top_5_limits?: any[] } | null>(null)
+  const [loadingBaseline, setLoadingBaseline] = useState(false)
+  const [forecast, setForecast] = useState<GriResult | null>(null)
+
+  // Load REAL clients (Supabase) so the forecast is anchored to the same data
+  // as the GRI test (user_id-keyed), not the disconnected Prisma client list.
   useEffect(() => {
-    getClientsAction().then(setClients)
+    fetch('/api/expert/clients', { cache: 'no-store' })
+      .then(r => r.json())
+      .then(j => setClients((j.data ?? []).map((c: any) => ({ id: c.id, name: c.companyName || c.fullName || c.email || 'Клиент', industry: c.industry || '—' }))))
+      .catch(() => setClients([]))
   }, [])
+
+  // When a client is selected, load their REAL GRI from the 62-criteria test.
+  useEffect(() => {
+    if (!selectedClientId) { setBaseline(null); setForecast(null); return }
+    setLoadingBaseline(true)
+    fetch(`/api/gri/baseline?userId=${selectedClientId}`, { cache: 'no-store' })
+      .then(r => r.json())
+      .then(j => setBaseline(j.ok ? j.data : { has_assessment: false }))
+      .catch(() => setBaseline({ has_assessment: false }))
+      .finally(() => setLoadingBaseline(false))
+  }, [selectedClientId])
 
   const updateField = (field: string, value: any) => {
     setFormData(prev => ({ ...prev, [field]: value }))
@@ -77,20 +97,20 @@ export default function AiScannerPage() {
   const nextStep = () => setStep(s => Math.min(s + 1, 5))
   const prevStep = () => setStep(s => Math.max(s - 1, 1))
 
-  const handleSubmit = async () => {
+  const handleSubmit = () => {
     if (!selectedClientId) return
     setIsSubmitting(true)
-    
-    // Mapping internal names to GriAnswers format if necessary
-    const result = await createGriReportAction(selectedClientId, formData as any)
-    
-    if (result.success) {
-      router.push("/pulse")
-    } else {
-      alert(result.error)
-    }
+    // Forecast (what-if) GRI from the entered growth drivers, shown against the
+    // client's REAL test baseline on the same 0–10 scale. This is a projection
+    // tool — it does not persist a separate, disconnected score.
+    setForecast(calculateGri(formData as any))
+    setStep(6)
     setIsSubmitting(false)
   }
+
+  // Convert the 0–100 calculator scale to the 0–10 GRI-test scale for comparison.
+  const to10 = (v: number) => Math.round((v / 10) * 10) / 10
+  const baseIndex = baseline?.has_assessment && typeof baseline.gri_index === 'number' ? baseline.gri_index : null
 
   const steps = [
     { title: "Клиент", icon: Users },
@@ -166,6 +186,23 @@ export default function AiScannerPage() {
                       <p className="text-sm text-yellow-500/80">
                         Похоже, у вас еще нет клиентов. Создайте клиента в разделе "Clients" перед началом.
                       </p>
+                    )}
+
+                    {selectedClientId && (
+                      <div className="mt-4 rounded-lg border border-blue-600/20 bg-blue-600/5 p-4">
+                        <p className="text-[11px] uppercase tracking-wider text-blue-400 mb-2">Текущий GRI клиента (из GRI-теста)</p>
+                        {loadingBaseline ? (
+                          <p className="text-sm text-gray-400">Загрузка…</p>
+                        ) : baseIndex !== null ? (
+                          <div className="flex items-baseline gap-3 flex-wrap">
+                            <span className="text-3xl font-bold text-white">{baseIndex.toFixed(1)}</span>
+                            <span className="text-sm text-gray-400">/ 10</span>
+                            <span className="text-xs text-gray-500 ml-2">Прогноз ниже строится от этой реальной базы — данные синхронизированы с тестом.</span>
+                          </div>
+                        ) : (
+                          <p className="text-sm text-yellow-500/80">GRI-тест ещё не пройден этим клиентом — попросите клиента пройти GRI-тест для реальной базы прогноза.</p>
+                        )}
+                      </div>
                     )}
                   </div>
                 </motion.div>
@@ -377,6 +414,34 @@ export default function AiScannerPage() {
               )}
             </AnimatePresence>
 
+            {step === 6 && forecast && (
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
+                <h2 className="text-2xl font-semibold">Прогноз GRI</h2>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="rounded-lg border border-gray-700 bg-[#1a1a1f] p-5">
+                    <p className="text-[11px] uppercase tracking-wider text-gray-400 mb-2">Текущий (GRI-тест)</p>
+                    <p className="text-3xl font-bold text-white">{baseIndex !== null ? baseIndex.toFixed(1) : '—'}<span className="text-sm text-gray-500"> / 10</span></p>
+                  </div>
+                  <div className="rounded-lg border border-blue-600/30 bg-blue-600/10 p-5">
+                    <p className="text-[11px] uppercase tracking-wider text-blue-400 mb-2">Прогноз (калькулятор)</p>
+                    <p className="text-3xl font-bold text-blue-300">{to10(forecast.score).toFixed(1)}<span className="text-sm text-gray-500"> / 10</span></p>
+                    {baseIndex !== null && (
+                      <p className="text-xs mt-1 text-gray-400">Δ {to10(forecast.score) - baseIndex >= 0 ? '+' : ''}{(to10(forecast.score) - baseIndex).toFixed(1)} к базе</p>
+                    )}
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  {([['Бизнес-модель', forecast.businessModelScore], ['Денежная стабильность', forecast.cashScore], ['Продукт и спрос', forecast.productScore], ['Операции', forecast.operationsScore], ['Команда', forecast.teamScore], ['Готовность собственника', forecast.founderScore], ['Доверие и позиционирование', forecast.trustScore]] as Array<[string, number]>).map(([label, val]) => (
+                    <div key={label}>
+                      <div className="flex justify-between text-xs mb-1"><span className="text-gray-400">{label}</span><span className="text-gray-300">{to10(val).toFixed(1)}/10</span></div>
+                      <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden"><div className="h-full bg-blue-600 rounded-full" style={{ width: `${Math.min(100, val)}%` }} /></div>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-xs text-gray-500">Это прогноз (what-if) по введённым драйверам. Реальный GRI измеряется GRI-тестом — обе оценки на шкале 0–10, данные синхронизированы.</p>
+              </motion.div>
+            )}
+
             {/* Actions */}
             <div className="flex justify-between mt-12 pt-6 border-t border-gray-800">
               <Button 
@@ -396,14 +461,21 @@ export default function AiScannerPage() {
                 >
                   Далее <ArrowRight size={16} />
                 </Button>
-              ) : (
-                <Button 
+              ) : step === 5 ? (
+                <Button
                   onClick={handleSubmit}
                   disabled={isSubmitting}
                   className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 gap-2 px-8 shadow-[0_0_20px_rgba(37,99,235,0.4)]"
                 >
                   {isSubmitting ? <Loader2 className="animate-spin" /> : <CheckCircle2 size={18} />}
-                  Запустить расчет GRI 
+                  Рассчитать прогноз
+                </Button>
+              ) : (
+                <Button
+                  onClick={() => { setStep(5); setForecast(null) }}
+                  className="bg-blue-600 hover:bg-blue-700 gap-2 px-8"
+                >
+                  <ArrowLeft size={16} /> Изменить параметры
                 </Button>
               )}
             </div>
