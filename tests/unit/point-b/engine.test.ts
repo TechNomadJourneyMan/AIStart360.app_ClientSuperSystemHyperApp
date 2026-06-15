@@ -253,6 +253,14 @@ describe('calculatePointBV2', () => {
     expect(gap3y.target_revenue).toBeNull()
   })
 
+  it('uses goal overrides (companies.target_*) over survey goals — stays in sync with Точка А', () => {
+    const answers = { s1_current_revenue_year: 60_000_000, s1_goal_3y_revenue_year: 500_000_000, s1_goal_12m_revenue_year: 100_000_000 }
+    const pb = calculatePointBV2(makePointA(), answers, { goal12mYear: 120_000_000, goal3yYear: 600_000_000 })
+    expect(pb.gap.find((g) => g.horizon === '3y')!.target_revenue).toBe(600_000_000)
+    expect(pb.gap.find((g) => g.horizon === '12m')!.target_revenue).toBe(120_000_000)
+    expect(pb.goals.goal_3y_revenue_year).toBe(600_000_000)
+  })
+
   it('uses currentRevenueYear from the metrics layer when the survey lacks revenue', () => {
     // Newer survey (s1_*) captures goals but no current revenue → it must come
     // from public.metrics. The API supplies it via options.currentRevenueYear.

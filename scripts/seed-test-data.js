@@ -125,7 +125,11 @@ async function ensureAccount(client, { email, role, name }) {
 async function seedClient(client, user) {
   const companyId = `test-co-${user.id.slice(0, 8)}`
   await client.from('companies').upsert(
-    { id: companyId, user_id: user.id, name: 'Алтын Маркет', industry: 'Ритейл / E-commerce', stage: 'Growth', business_model: 'Mixed' },
+    {
+      id: companyId, user_id: user.id, name: 'Алтын Маркет', industry: 'Ритейл / E-commerce', business_model: 'Mixed',
+      // Goals via the canonical store (Point A widget ↔ Point B), annual KZT.
+      target_revenue_12m_kzt: 240000000, target_revenue_3y_kzt: 600000000,
+    },
     { onConflict: 'id' },
   )
   console.log(`  ✓ company ${companyId}`)

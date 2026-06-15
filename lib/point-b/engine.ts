@@ -150,6 +150,13 @@ export interface PointBOptions {
    * stores goals but no current revenue). Survey value takes precedence.
    */
   currentRevenueYear?: number | null
+  /**
+   * Goal overrides (annual KZT) from companies.target_revenue_12m/3y_kzt — the
+   * canonical goal store written by the Point A goal widget. When present these
+   * WIN over the survey goals, so Point B stays in sync with Точка А.
+   */
+  goal12mYear?: number | null
+  goal3yYear?: number | null
 }
 
 // ─── Block metadata ────────────────────────────────────────────────────────
@@ -582,6 +589,17 @@ export function calculatePointBV2(
   if (goals.current_revenue_year == null && options.currentRevenueYear != null && options.currentRevenueYear > 0) {
     goals.current_revenue_year = options.currentRevenueYear
     goals.current_revenue_month = Math.round(options.currentRevenueYear / 12)
+  }
+
+  // Goals from the Point A widget (companies.target_*) are the canonical source
+  // and WIN over survey goals — keeps Точка Б in sync with Точка А goal-setting.
+  if (options.goal12mYear != null && options.goal12mYear > 0) {
+    goals.goal_12m_revenue_year = options.goal12mYear
+    goals.goal_12m_revenue_month = Math.round(options.goal12mYear / 12)
+  }
+  if (options.goal3yYear != null && options.goal3yYear > 0) {
+    goals.goal_3y_revenue_year = options.goal3yYear
+    goals.goal_3y_revenue_month = Math.round(options.goal3yYear / 12)
   }
 
   const stage: DiagnosticStage = pointA.stage ?? 'seed'

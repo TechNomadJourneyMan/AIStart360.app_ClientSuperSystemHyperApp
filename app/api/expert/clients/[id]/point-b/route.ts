@@ -90,10 +90,22 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
     if (v != null && Number.isFinite(Number(v))) currentRevenueYear = Number(v)
   }
 
+  // Goals from the Point A widget (companies.target_*) — canonical, in sync with Точка А.
+  let goal12mYear: number | null = null
+  let goal3yYear: number | null = null
+  const compRows = await srGet<Array<{ target_revenue_12m_kzt: number | null; target_revenue_3y_kzt: number | null }>>(
+    `companies?user_id=eq.${clientId}&select=target_revenue_12m_kzt,target_revenue_3y_kzt&limit=1`,
+  )
+  const comp = compRows?.[0]
+  if (comp?.target_revenue_12m_kzt != null && Number.isFinite(Number(comp.target_revenue_12m_kzt))) goal12mYear = Number(comp.target_revenue_12m_kzt)
+  if (comp?.target_revenue_3y_kzt != null && Number.isFinite(Number(comp.target_revenue_3y_kzt))) goal3yYear = Number(comp.target_revenue_3y_kzt)
+
   const pointB = calculatePointBV2(diagToPointA(diag), answers, {
     diagnosticId: diag.id as string,
     griTop5,
     currentRevenueYear,
+    goal12mYear,
+    goal3yYear,
   })
 
   return NextResponse.json({ ok: true, data: pointB })

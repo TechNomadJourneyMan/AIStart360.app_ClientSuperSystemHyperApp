@@ -121,12 +121,30 @@ export async function GET(_req: NextRequest) {
       if (v != null && Number.isFinite(Number(v))) currentRevenueYear = Number(v)
     }
 
+    // 4b. Goals from the Point A goal widget (companies.target_revenue_12m/3y_kzt,
+    //     annual KZT). Canonical source — keeps Точка Б in sync with Точка А.
+    let goal12mYear: number | null = null
+    let goal3yYear: number | null = null
+    {
+      const { data: comp } = await sb
+        .from('companies')
+        .select('target_revenue_12m_kzt, target_revenue_3y_kzt')
+        .eq('user_id', user.id)
+        .maybeSingle()
+      const t12 = comp?.target_revenue_12m_kzt
+      const t3y = comp?.target_revenue_3y_kzt
+      if (t12 != null && Number.isFinite(Number(t12))) goal12mYear = Number(t12)
+      if (t3y != null && Number.isFinite(Number(t3y))) goal3yYear = Number(t3y)
+    }
+
     // 5. Compute.
     const pointA = diagToPointA(diag)
     const pointB = calculatePointBV2(pointA, answers, {
       diagnosticId: diag.id as string,
       griTop5,
       currentRevenueYear,
+      goal12mYear,
+      goal3yYear,
     })
 
     // 6. Persist the current snapshot (owner-approved). One is_current row per
