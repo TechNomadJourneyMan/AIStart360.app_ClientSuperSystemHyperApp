@@ -33,6 +33,10 @@ export interface PointBViewProps {
   error?: string | null
   reason?: string | null
   onRecalculate?: () => void
+  /** Kick off (or retry) the async AI strategy generation + polling. */
+  onGenerate?: () => void
+  /** Live AI generation status, driven by the container's poller. */
+  aiStatus?: PointBV2['ai_status']
   /** Save current annual revenue (when missing) directly from this page. */
   onSaveCurrentRevenue?: (year: number) => Promise<void>
   /** Whose Action Plan to load (omit = current user; staff passes the client id). */
@@ -790,6 +794,8 @@ export default function PointBView({
   error = null,
   reason = null,
   onRecalculate,
+  onGenerate,
+  aiStatus,
   onSaveCurrentRevenue,
   actionPlanUserId,
   expertNote,
@@ -799,12 +805,32 @@ export default function PointBView({
   if (reason === 'no_diagnostic' || pointB === null) return <NoDiagnostic />
 
   const insufficient = pointB.data_sufficiency.sufficient === false
+  // Live status preferred over the snapshot baked into pointB by the GET route.
+  const liveAiStatus = aiStatus ?? pointB.ai_status
+  const generating = liveAiStatus === 'processing'
+  const hasPlan = liveAiStatus === 'completed' && pointB.ai_strategy != null
 
   return (
     <div className="space-y-12">
-      {/* Optional refresh control */}
-      {onRecalculate && (
-        <div className="flex justify-end -mb-6">
+      {/* Plan controls: primary generate CTA + subtle recalculate. */}
+      <div className="flex flex-wrap justify-end items-center gap-2 -mb-6">
+        {onGenerate && (
+          <button
+            onClick={onGenerate}
+            disabled={insufficient || generating}
+            className="inline-flex items-center gap-1.5 text-sm font-semibold text-on-primary bg-gradient-to-r from-primary to-primary-fixed-dim hover:opacity-90 rounded-xl px-4 py-2 transition-all disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-primary/40"
+            aria-label={hasPlan ? 'Обновить план' : 'Сформировать план'}
+          >
+            <span
+              className={`material-symbols-outlined text-base ${generating ? 'animate-spin' : ''}`}
+              aria-hidden
+            >
+              {generating ? 'progress_activity' : 'auto_awesome'}
+            </span>
+            {generating ? 'Формируем план…' : hasPlan ? 'Обновить план' : 'Сформировать план'}
+          </button>
+        )}
+        {onRecalculate && (
           <button
             onClick={onRecalculate}
             className="inline-flex items-center gap-1.5 text-xs font-mono text-on-surface-variant hover:text-primary border border-white/[0.08] hover:border-primary/30 rounded-lg px-3 py-1.5 transition-all focus:outline-none focus:ring-2 focus:ring-primary/40"
@@ -815,8 +841,8 @@ export default function PointBView({
             </span>
             Пересчитать
           </button>
-        </div>
-      )}
+        )}
+      </div>
 
       {insufficient && (
         <InsufficientPanel
@@ -859,7 +885,52 @@ export default function PointBView({
       <Top5Limits limits={pointB.top5_limits} />
 
       <Section eyebrow="AI" title="AI-стратегия" icon="smart_toy">
-        <AiStrategy status={pointB.ai_status} strategy={pointB.ai_strategy} />
+        {generating ? (
+          <div className="rounded-2xl border border-violet-500/15 bg-violet-500/[0.05] p-6">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-xl bg-violet-500/20 flex items-center justify-center animate-pulse">
+                <span className="material-symbols-outlined text-sm text-violet-400" aria-hidden>
+                  smart_toy
+                </span>
+              </div>
+              <div>
+                <p className="text-sm font-medium text-violet-300">AI формирует стратегию…</p>
+                <p className="text-xs text-on-surface-variant">
+                  Claude строит мост между Точкой А и Точкой Б — это займёт до 2 минут.
+                </p>
+              </div>
+            </div>
+            <div className="mt-4 space-y-2">
+              <div className="h-3 bg-violet-500/10 rounded-full animate-pulse" />
+              <div className="h-3 bg-violet-500/10 rounded-full animate-pulse w-3/4" />
+              <div className="h-3 bg-violet-500/10 rounded-full animate-pulse w-1/2" />
+            </div>
+          </div>
+        ) : liveAiStatus === 'failed' ? (
+          <div className="rounded-2xl border border-error/20 bg-error/[0.04] p-6 text-center">
+            <span className="material-symbols-outlined text-3xl text-error/60 mb-2 block" aria-hidden>
+              error
+            </span>
+            <p className="text-sm font-medium text-on-surface mb-1">
+              Не удалось сгенерировать AI-стратегию
+            </p>
+            <p className="text-xs text-on-surface-variant mb-4">Попробуйте сформировать план ещё раз.</p>
+            {onGenerate && (
+              <button
+                onClick={onGenerate}
+                disabled={insufficient}
+                className="inline-flex items-center gap-1.5 text-xs font-mono text-primary hover:text-primary/80 border border-primary/20 rounded-lg px-3 py-1.5 transition-all disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-primary/40"
+              >
+                <span className="material-symbols-outlined text-sm" aria-hidden>
+                  refresh
+                </span>
+                Повторить
+              </button>
+            )}
+          </div>
+        ) : (
+          <AiStrategy status={liveAiStatus} strategy={pointB.ai_strategy} />
+        )}
       </Section>
     </div>
   )

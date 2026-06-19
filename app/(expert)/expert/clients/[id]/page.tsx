@@ -10,6 +10,7 @@ import { PointATab } from '@/components/expert/tabs/PointATab'
 import { PointBTab } from '@/components/expert/tabs/PointBTab'
 import { GRITab } from '@/components/expert/tabs/GRITab'
 import { PulseTab } from '@/components/expert/tabs/PulseTab'
+import { ExpertCasesTable } from '@/components/expert/ExpertCasesTable'
 import { getAvatarGradient, getInitials } from '@/lib/expert-blocks'
 
 interface ExpertClient {
@@ -35,7 +36,7 @@ function scoreBadgeClass(score: number | null): string {
   return 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20'
 }
 
-type TabKey = 'anketa' | 'dashboard' | 'point-a' | 'point-b' | 'gri' | 'pulse'
+type TabKey = 'anketa' | 'dashboard' | 'point-a' | 'point-b' | 'gri' | 'pulse' | 'cases'
 
 const TABS: Array<{ key: TabKey; label: string; icon: string }> = [
   { key: 'anketa',    label: 'Анкета',    icon: 'assignment' },
@@ -44,10 +45,19 @@ const TABS: Array<{ key: TabKey; label: string; icon: string }> = [
   { key: 'point-b',   label: 'Точка Б',   icon: 'flag' },
   { key: 'gri',       label: 'GRI',       icon: 'target' },
   { key: 'pulse',     label: 'Pulse',     icon: 'monitor_heart' },
+  { key: 'cases',     label: 'Кейсы',     icon: 'support_agent' },
 ]
 
 function isValidTab(v: string | null): v is TabKey {
-  return v === 'anketa' || v === 'dashboard' || v === 'point-a' || v === 'point-b' || v === 'gri' || v === 'pulse'
+  return (
+    v === 'anketa' ||
+    v === 'dashboard' ||
+    v === 'point-a' ||
+    v === 'point-b' ||
+    v === 'gri' ||
+    v === 'pulse' ||
+    v === 'cases'
+  )
 }
 
 interface Props {
@@ -218,6 +228,9 @@ export default function ExpertClientDetailPage({ params }: Props) {
             )}
             {activeTab === 'pulse' && (
               <TabErrorBoundary tab="Pulse"><PulseTab clientId={params.id} /></TabErrorBoundary>
+            )}
+            {activeTab === 'cases' && (
+              <TabErrorBoundary tab="Кейсы"><ExpertCasesTable clientId={params.id} /></TabErrorBoundary>
             )}
           </div>
         </ExpertCommentsProvider>

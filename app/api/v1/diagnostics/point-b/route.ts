@@ -2,7 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
-import { calculatePointBV2, type PointBOptions } from '@/lib/point-b/engine'
+import { calculatePointBV2, type PointBOptions, type PointBV2 } from '@/lib/point-b/engine'
 import type { PointA, BlockScore } from '@/types/onboarding'
 
 /**
@@ -151,6 +151,14 @@ export async function GET(_req: NextRequest) {
     //    PointBV2 lives in `roadmap`; scalar columns mirror it for queryability.
     //    Writes via the SERVICE ROLE (point_b_analysis RLS has no owner-write
     //    policy on prod, which silently no-op'd session writes). Non-fatal.
+    //
+    //    The async AI bridge (POST /point-b/ai-generate) owns ai_strategy +
+    //    ai_status. GET only recomputes the rule-based snapshot, so it must
+    //    READ-THEN-MERGE those two columns — never clobber them with the engine
+    //    defaults (null/'none'). We overlay the persisted values back onto the
+    //    response below so the client sees the AI strategy when it exists.
+    let aiStrategy: Record<string, unknown> | null = pointB.ai_strategy
+    let aiStatus: PointBV2['ai_status'] = pointB.ai_status
     try {
       const { createClient: createSrClient } = await import('@supabase/supabase-js')
       const admin = createSrClient(
@@ -158,6 +166,19 @@ export async function GET(_req: NextRequest) {
         process.env.SUPABASE_SERVICE_ROLE_KEY!,
         { auth: { autoRefreshToken: false, persistSession: false } },
       )
+      const { data: existing } = await admin
+        .from('point_b_analysis')
+        .select('id, ai_strategy, ai_status')
+        .eq('diagnostic_id', diag.id as string)
+        .eq('is_current', true)
+        .maybeSingle()
+
+      // Preserve any AI bridge result already written by ai-generate.
+      if (existing) {
+        aiStrategy = (existing.ai_strategy as Record<string, unknown> | null) ?? null
+        aiStatus = (existing.ai_status as PointBV2['ai_status'] | null) ?? 'none'
+      }
+
       const payload = {
         diagnostic_id: diag.id as string,
         horizon_months: 36,
@@ -168,25 +189,29 @@ export async function GET(_req: NextRequest) {
         target_kpis: pointB.levers,
         gap_analysis: pointB.gap,
         roadmap: pointB,
-        ai_strategy: pointB.ai_strategy,
-        ai_status: pointB.ai_status,
         is_current: true,
         calculated_at: pointB.generated_at,
       }
-      const { data: existing } = await admin
-        .from('point_b_analysis')
-        .select('id')
-        .eq('diagnostic_id', diag.id as string)
-        .eq('is_current', true)
-        .maybeSingle()
       if (existing) {
+        // Note: ai_strategy + ai_status intentionally omitted — only ai-generate
+        // mutates them, so the recompute never clobbers an existing AI bridge.
         await admin.from('point_b_analysis').update(payload).eq('id', existing.id)
       } else {
-        await admin.from('point_b_analysis').insert(payload)
+        // First snapshot — seed the AI fields to the engine defaults (none/null).
+        await admin.from('point_b_analysis').insert({
+          ...payload,
+          ai_strategy: aiStrategy,
+          ai_status: aiStatus,
+        })
       }
     } catch (persistErr) {
       console.error('[point-b] persist failed (non-fatal):', persistErr)
     }
+
+    // Overlay the persisted AI bridge onto the live recompute (engine emits
+    // null/'none'; the persisted row may hold a completed strategy).
+    pointB.ai_strategy = aiStrategy
+    pointB.ai_status = aiStatus
 
     // 7. Latest approved expert correction (so the client sees the expert version).
     const { data: ev } = await sb

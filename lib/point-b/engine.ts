@@ -731,3 +731,81 @@ export function calculatePointBV2(
     ai_status: 'none',
   }
 }
+
+// ─── AI prompt context (single source of truth for the analyzer) ───────────
+
+/**
+ * Serialize the DETERMINISTIC Point B result into a compact RU prompt context.
+ *
+ * This is the single source of truth handed to the AI strategy analyzer
+ * (`lib/ai/point-b-analyzer.ts`). It carries ONLY the numbers the engine has
+ * already computed (gap multiplier / required CAGR / MoM / QoQ, realism, TOP-5
+ * limits, weak blocks, growth decomposition + levers, and the horizon plans).
+ * The analyzer feeds this in as GROUND TRUTH and is instructed to produce only
+ * narrative — it must never restate or invent revenue/target figures, so this
+ * context is the only place numbers ever appear.
+ */
+export function buildPointBAiContext(pointB: PointBV2): string {
+  const pct = (n: number | null, digits = 0): string =>
+    n == null || !Number.isFinite(n) ? '—' : `${n.toFixed(digits)}%`
+  const mult = (n: number | null): string =>
+    n == null || !Number.isFinite(n) ? '—' : `${(Math.round(n * 10) / 10)}×`
+
+  const gap12 = pointB.gap.find((g) => g.horizon === '12m')
+  const gap3y = pointB.gap.find((g) => g.horizon === '3y')
+
+  const gapLine = (label: string, g: GapEntry | undefined): string => {
+    if (!g || !g.data_complete) return `${label}: данных недостаточно`
+    return `${label}: множитель ${mult(g.multiplier)}, требуемый CAGR ${pct(g.required_cagr)}, MoM ${pct(g.required_mom_growth, 1)}, QoQ ${pct(g.required_qoq_growth, 1)}`
+  }
+
+  const levers = pointB.levers
+    .filter((l) => l.data_available)
+    .map((l) => `  - ${l.label} (${l.linked_block}, сложность: ${l.difficulty}): ${l.expected_effect}`)
+    .join('\n')
+
+  const decompSteps = pointB.growth_decomposition.steps
+    .map((s) => `  - ${s.label}: ${s.note}`)
+    .join('\n')
+
+  const top5 = pointB.top5_limits
+    .map((t) => `  ${t.rank}. ${t.title} [блок: ${t.block || '—'}, серьёзность: ${t.severity}]`)
+    .join('\n')
+
+  const horizon = (h: HorizonPlan): string =>
+    `  • ${h.title}\n    Фокус: ${h.focus.join(', ') || '—'}\n    Действия: ${h.actions.join('; ') || '—'}`
+
+  return `--- ЦЕЛИ (что хочет владелец) ---
+Цель на 12 месяцев: ${pointB.goals.goal_12m_text || '—'}
+Цель на 3 года: ${pointB.goals.goal_3y_text || '—'}
+Главная боль: ${pointB.goals.main_pain || '—'}
+Ограничители роста (со слов владельца): ${pointB.goals.growth_blockers.join(', ') || '—'}
+
+--- РАЗРЫВ (детерминированный расчёт — НЕ переписывай цифры) ---
+${gapLine('12 месяцев', gap12)}
+${gapLine('3 года', gap3y)}
+
+--- РЕАЛИСТИЧНОСТЬ ЦЕЛИ ---
+Уровень: ${pointB.realism.level} (уверенность ${pointB.realism.score}/100)
+Обоснование: ${pointB.realism.rationale.join(' ') || '—'}
+Слабые блоки, угрожающие цели: ${pointB.realism.weak_blocks.join(', ') || '—'}
+Факторы риска:
+${pointB.realism.risk_factors.map((r) => `  - ${r}`).join('\n') || '  - —'}
+
+--- TOP-5 ОГРАНИЧЕНИЙ РОСТА ---
+${top5 || '  —'}
+
+--- РЫЧАГИ РОСТА (где есть данные) ---
+${levers || '  - (данных по конкретным рычагам нет — опирайся на TOP-5 и слабые блоки)'}
+
+--- ДЕКОМПОЗИЦИЯ РОСТА (как достичь цели на 12 мес) ---
+Требуемый множитель выручки: ${mult(pointB.growth_decomposition.required_multiplier)}
+${decompSteps || '  - —'}
+
+--- ГОРИЗОНТЫ ПЛАНИРОВАНИЯ (от стратегии к неделе) ---
+${horizon(pointB.horizons.three_year)}
+${horizon(pointB.horizons.one_year)}
+${horizon(pointB.horizons.quarter)}
+${horizon(pointB.horizons.month)}
+${horizon(pointB.horizons.week)}`
+}

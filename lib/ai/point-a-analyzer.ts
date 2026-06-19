@@ -1,5 +1,6 @@
 import { z } from 'zod'
-import { chatWithOpenRouter, hasOpenRouterKey, extractJson, OPENROUTER_MODELS } from './openrouter'
+import { generateObjectViaOpenRouter } from './structured'
+import { OPENROUTER_MODELS, hasOpenRouterKey } from './openrouter'
 import type { PointA, AIAnalysis, Company } from '@/types/onboarding'
 
 // GRI expert note type for prompt enrichment
@@ -35,10 +36,10 @@ const aiAnalysisSchema = z.object({
     title: z.string().describe('Short priority title'),
     rationale: z.string().describe('Why this is a priority — based on data'),
     expected_impact: z.string().describe('Expected impact upon implementation'),
-  })).min(2).max(3).describe('Top 3 strategic priorities'),
+  })).min(2).max(4).describe('Top strategic priorities'),
   growth_roadmap: z.array(z.object({
     horizon: z.enum(['30_days', '90_days', '180_days']),
-    actions: z.array(z.string()).min(2).max(3).describe('Specific action steps'),
+    actions: z.array(z.string()).min(2).max(6).describe('Specific action steps'),
   })).length(3).describe('Roadmap: 30, 90, and 180 days'),
   industry_context: z.string().describe('Industry context: benchmarks, trends, company market position'),
 })
@@ -305,6 +306,97 @@ ${expertSection ? 'IMPORTANT: Integrate the GRI Expert Notes into your analysis.
 
 // ─── Main analyzer function ──────────────────────────────────────────────────
 
+/*
+ * PERFORMANCE + MODEL ROUTING: a single Sonnet call generating the full analysis
+ * (~4-5K tokens) takes 90-150s — far too long for a user to wait. We split the
+ * work into FOUR small parts that run concurrently (Promise.all):
+ *
+ *   1. summary    — executive_summary + industry_context        → Sonnet (high)
+ *   2. priorities — strategic_priorities                         → Sonnet (high)
+ *   3. blocksA    — finance, sales, operations                  → Haiku  (medium)
+ *   4. blocksB    — marketing, strategy + growth_roadmap        → Haiku  (medium)
+ *
+ * The model is auto-selected by complexity: the strategic narrative is quality-
+ * sensitive (Sonnet) but kept small; per-block diagnostics are lighter and
+ * latency-critical (Haiku, ~2x faster). Wall-clock ≈ the slowest part (~15s).
+ */
+
+const SHARED_SYSTEM = `You are a senior business consultant for the AIStart360 platform (Kazakhstan).
+You analyze company data from ALL 12 blocks of the onboarding survey, the results of automatic scoring, and the GRI (Growth Readiness Index) 7-block framework.
+The 12 survey steps are: Company, Goals, Positioning, Org Structure, Client Base, CJM, Marketing, Key Metrics, Finance, Personal/Founder, Influence Map, Systems & Tools.
+The GRI 7 blocks are: Product & Demand, Trust & Positioning, Business Model, Cash Stability, Operations, Team, Founder Readiness.
+If GRI Expert Notes from human analysts are provided, integrate them prominently — they represent professional judgment and carry high weight.
+Respond strictly in English.
+BREVITY IS MANDATORY: every string field is ONE sentence of at most 25 words. Roadmap actions are at most 12 words each. Never exceed these limits — be dense and specific, not verbose.
+Be specific: use real numbers from the data, name concrete tools, give timelines. Compare with real benchmarks for the industry and stage in Kazakhstan/CIS.
+Do not repeat what the rule-based scoring already said. Output must be a single minified JSON object and nothing else.`
+
+const summarySchema = z.object({
+  executive_summary: aiAnalysisSchema.shape.executive_summary,
+  industry_context: aiAnalysisSchema.shape.industry_context,
+})
+
+const prioritiesSchema = z.object({
+  strategic_priorities: aiAnalysisSchema.shape.strategic_priorities,
+})
+
+const blocksASchema = z.object({
+  finance: aiBlockSchema,
+  sales: aiBlockSchema,
+  operations: aiBlockSchema,
+})
+
+const blocksBSchema = z.object({
+  marketing: aiBlockSchema,
+  strategy: aiBlockSchema,
+  growth_roadmap: aiAnalysisSchema.shape.growth_roadmap,
+})
+
+const SUMMARY_FORMAT = `
+
+--- OUTPUT FORMAT (summary only) ---
+Return ONLY one valid JSON object (no markdown, no commentary):
+{
+  "executive_summary": "string (3-5 sentences: overall picture, strengths, key issues)",
+  "industry_context": "string (benchmarks, trends, market position)"
+}`
+
+const PRIORITIES_FORMAT = `
+
+--- OUTPUT FORMAT (priorities only) ---
+Return ONLY one valid JSON object (no markdown, no commentary):
+{
+  "strategic_priorities": [ { "title": "string", "rationale": "string", "expected_impact": "string" } ]
+}
+Rule: "strategic_priorities" must have 2 to 4 items.`
+
+const BLOCK_FIELDS = `{ "diagnosis": "string", "benchmark_comparison": "string", "key_risk": "string", "top_recommendation": "string" }`
+
+const BLOCKS_A_FORMAT = `
+
+--- OUTPUT FORMAT (3 blocks only) ---
+Return ONLY one valid JSON object (no markdown, no commentary):
+{
+  "finance":    ${BLOCK_FIELDS},
+  "sales":      ${BLOCK_FIELDS},
+  "operations": ${BLOCK_FIELDS}
+}`
+
+const BLOCKS_B_FORMAT = `
+
+--- OUTPUT FORMAT (2 blocks + roadmap only) ---
+Return ONLY one valid JSON object (no markdown, no commentary):
+{
+  "marketing": ${BLOCK_FIELDS},
+  "strategy":  ${BLOCK_FIELDS},
+  "growth_roadmap": [
+    { "horizon": "30_days",  "actions": ["string", "string"] },
+    { "horizon": "90_days",  "actions": ["string", "string"] },
+    { "horizon": "180_days", "actions": ["string", "string"] }
+  ]
+}
+Rule: "growth_roadmap" must have exactly 3 items with horizons "30_days","90_days","180_days" in that order; each "actions" has 2-5 short items.`
+
 export async function analyzePointA(
   answers: Record<string, unknown>,
   pointA: PointA,
@@ -318,39 +410,61 @@ export async function analyzePointA(
   }
 
   try {
-    const prompt = buildPrompt(answers, pointA, company, expertNotes)
+    const context = buildPrompt(answers, pointA, company, expertNotes)
 
-    const raw = await chatWithOpenRouter({
-      system: `You are a senior business consultant for the AIStart360 platform (Kazakhstan).
-You analyze company data from ALL 12 blocks of the onboarding survey, the results of automatic scoring, and the GRI (Growth Readiness Index) 7-block framework.
-The 12 survey steps are: Company, Goals, Positioning, Org Structure, Client Base, CJM, Marketing, Key Metrics, Finance, Personal/Founder, Influence Map, Systems & Tools.
-The GRI 7 blocks are: Product & Demand, Trust & Positioning, Business Model, Cash Stability, Operations, Team, Founder Readiness.
-If GRI Expert Notes from human analysts are provided, integrate them prominently into your analysis — they represent professional judgment and should carry high weight.
-Respond strictly in English. Be specific — use numbers from the data, not generic phrases.
-Cross-reference data across all 12 steps for multi-dimensional insights (e.g., funnel metrics with marketing spend, org structure with delegation readiness, CJM with client feedback).
-Compare with real benchmarks for the industry and development stage in Kazakhstan/CIS.
-Recommendations must be actionable: with specific tools, metrics, and timelines.
-Do not repeat what the rule-based scoring already said — add value through context, cross-metric insights, and strategic perspective.
-Respond with ONLY a valid JSON object matching the required schema — no markdown, no commentary.`,
-      user: prompt,
-      model: OPENROUTER_MODELS.sonnet,
-      jsonMode: true,
-      maxTokens: 4000,
-    })
-    if (!raw) return null
+    const [summary, priorities, blocksA, blocksB] = await Promise.all([
+      generateObjectViaOpenRouter({
+        label: 'point-a:summary',
+        complexity: 'high',
+        maxTokens: 1200,
+        schema: summarySchema,
+        system: SHARED_SYSTEM,
+        user: context + SUMMARY_FORMAT,
+      }),
+      generateObjectViaOpenRouter({
+        label: 'point-a:priorities',
+        complexity: 'high',
+        maxTokens: 1500,
+        schema: prioritiesSchema,
+        system: SHARED_SYSTEM,
+        user: context + PRIORITIES_FORMAT,
+      }),
+      generateObjectViaOpenRouter({
+        label: 'point-a:blocksA',
+        complexity: 'medium',
+        maxTokens: 2000,
+        schema: blocksASchema,
+        system: SHARED_SYSTEM,
+        user: context + BLOCKS_A_FORMAT,
+      }),
+      generateObjectViaOpenRouter({
+        label: 'point-a:blocksB',
+        complexity: 'medium',
+        maxTokens: 2000,
+        schema: blocksBSchema,
+        system: SHARED_SYSTEM,
+        user: context + BLOCKS_B_FORMAT,
+      }),
+    ])
 
-    const parsed = aiAnalysisSchema.safeParse(extractJson(raw))
-    if (!parsed.success) {
-      console.error('[point-a-analyzer] schema validation failed:', parsed.error.message)
-      return null
+    // Honest fallback: if any part failed, we don't fabricate a partial analysis.
+    if (!summary || !priorities || !blocksA || !blocksB) return null
+
+    const blocks = {
+      finance: blocksA.finance,
+      sales: blocksA.sales,
+      operations: blocksA.operations,
+      marketing: blocksB.marketing,
+      strategy: blocksB.strategy,
     }
-    const object = parsed.data
 
     return {
-      ...object,
-      // Normalize blocks to Record<string, AIBlockAnalysis>
-      blocks: object.blocks as unknown as Record<string, import('@/types/onboarding').AIBlockAnalysis>,
-      model_used: OPENROUTER_MODELS.sonnet,
+      executive_summary: summary.executive_summary,
+      industry_context: summary.industry_context,
+      strategic_priorities: priorities.strategic_priorities,
+      growth_roadmap: blocksB.growth_roadmap,
+      blocks: blocks as unknown as Record<string, import('@/types/onboarding').AIBlockAnalysis>,
+      model_used: `${OPENROUTER_MODELS.sonnet} + ${OPENROUTER_MODELS.haiku} (auto)`,
       generated_at: new Date().toISOString(),
     }
   } catch (error) {

@@ -1,5 +1,8 @@
 export const dynamic = 'force-dynamic'
-export const maxDuration = 60 // Allow up to 60s for AI generation
+// Full Point A analysis is a large structured generation (~4-5K tokens) that can
+// take 90-150s on Claude Sonnet. This route runs async (fire-and-forget from
+// recalculate, polled via ai-status), so a generous budget is fine.
+export const maxDuration = 300
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'

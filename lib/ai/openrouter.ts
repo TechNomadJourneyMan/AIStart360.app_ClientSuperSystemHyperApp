@@ -19,13 +19,79 @@ export const OPENROUTER_MODELS = {
   gpt4mini: 'openai/gpt-4o-mini',
 } as const
 
+/**
+ * Quality/speed tiers for automatic model routing.
+ *   fast  — Claude Haiku 4.5: ~2x faster than Sonnet, strong quality. Default
+ *           for short/structured/classification work and latency-critical paths.
+ *   smart — Claude Sonnet 4.5: deeper reasoning for strategy & nuanced analysis.
+ *   max   — Claude Opus 4.1: highest quality, slowest — reserve for rare cases.
+ *
+ * Measured round-trips (incl. routing): Haiku ~250w 6.7s / ~600w 10.8s;
+ * Sonnet ~250w 11.5s / ~600w 23.1s.
+ */
+export const MODEL_TIERS = {
+  fast:  OPENROUTER_MODELS.haiku,
+  smart: OPENROUTER_MODELS.sonnet,
+  max:   OPENROUTER_MODELS.opus,
+} as const
+
+/** Task complexity → drives automatic model selection. */
+export type Complexity = 'low' | 'medium' | 'high' | 'max'
+
+/**
+ * Map a task's complexity to the most suitable model, balancing quality and
+ * speed. `low`/`medium` favour Haiku (fast, cheap, good); `high` uses Sonnet for
+ * deeper reasoning; `max` uses Opus for the few highest-stakes generations.
+ */
+export function pickModel(complexity: Complexity): string {
+  switch (complexity) {
+    case 'max':  return MODEL_TIERS.max
+    case 'high': return MODEL_TIERS.smart
+    case 'low':
+    case 'medium':
+    default:     return MODEL_TIERS.fast
+  }
+}
+
+/**
+ * Heuristic complexity estimate used when a caller specifies neither `model` nor
+ * `complexity`. Larger expected outputs and longer prompts imply harder tasks.
+ */
+export function autoComplexity(opts: { user: string; system?: string; maxTokens?: number }): Complexity {
+  const promptChars = (opts.user?.length ?? 0) + (opts.system?.length ?? 0)
+  const maxTokens = opts.maxTokens ?? 2000
+  // Big, open-ended generations → reason harder. Short ones → go fast.
+  if (maxTokens >= 3000 || promptChars >= 12_000) return 'high'
+  if (maxTokens <= 600 && promptChars < 4_000) return 'low'
+  return 'medium'
+}
+
 interface ChatOptions {
   system?: string
   user: string
+  /** Explicit model id. Wins over `complexity`. */
   model?: string
+  /** Quality/speed tier. When set (and `model` is not), selects the model. */
+  complexity?: Complexity
   maxTokens?: number
   temperature?: number
   jsonMode?: boolean
+}
+
+/**
+ * Resolve which model a call should use: an explicit `model` always wins; else
+ * the `complexity` tier; else an automatic estimate from prompt size/maxTokens.
+ */
+export function resolveModel(opts: {
+  model?: string
+  complexity?: Complexity
+  user: string
+  system?: string
+  maxTokens?: number
+}): string {
+  if (opts.model) return opts.model
+  if (opts.complexity) return pickModel(opts.complexity)
+  return pickModel(autoComplexity(opts))
 }
 
 export function hasOpenRouterKey(): boolean {
@@ -45,7 +111,13 @@ export async function chatWithOpenRouter(opts: ChatOptions): Promise<string | nu
   messages.push({ role: 'user', content: opts.user })
 
   const body: Record<string, unknown> = {
-    model: opts.model ?? OPENROUTER_MODELS.sonnet,
+    model: resolveModel({
+      model: opts.model,
+      complexity: opts.complexity,
+      user: opts.user,
+      system: opts.system,
+      maxTokens: opts.maxTokens,
+    }),
     messages,
     max_tokens: opts.maxTokens ?? 2000,
     temperature: opts.temperature ?? 0.7,

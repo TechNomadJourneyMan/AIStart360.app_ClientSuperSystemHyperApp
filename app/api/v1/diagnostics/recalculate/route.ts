@@ -42,6 +42,16 @@ export async function POST(req: NextRequest) {
     // Calculate Point A
     const result = calculatePointA(answers)
 
+    // Retire any previous current diagnostics for this user before inserting the
+    // new one, so exactly one row stays is_current=true. Without this, repeated
+    // recalculations accumulate multiple is_current rows and downstream
+    // `.single()/.maybeSingle()` reads (Point A current, Point B) break.
+    await sb
+      .from('diagnostics')
+      .update({ is_current: false })
+      .eq('user_id', user_id)
+      .eq('is_current', true)
+
     // Store in diagnostics table
     const { data: diag, error: diagErr } = await sb
       .from('diagnostics')
@@ -61,7 +71,7 @@ export async function POST(req: NextRequest) {
         quick_wins: result.quick_wins,
         data_gaps: result.data_gaps,
         is_current: true,
-        ai_status: process.env.ANTHROPIC_API_KEY ? 'processing' : 'none',
+        ai_status: process.env.OPENROUTER_API_KEY ? 'processing' : 'none',
       })
       .select()
       .single()
@@ -69,13 +79,22 @@ export async function POST(req: NextRequest) {
     if (diagErr) return NextResponse.json({ ok: false, error: diagErr.message }, { status: 500 })
 
     // Fire async AI analysis (non-blocking)
-    if (process.env.ANTHROPIC_API_KEY && diag?.id) {
+    if (process.env.OPENROUTER_API_KEY && diag?.id) {
       const baseUrl = req.nextUrl.origin
+      // Point A full analysis.
       fetch(`${baseUrl}/api/v1/diagnostics/ai-analyze`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ diagnostic_id: diag.id, user_id }),
       }).catch(err => console.error('[recalculate] Failed to fire AI analysis:', err))
+
+      // Point B strategic bridge (AUTO trigger). Self-guards on insufficient
+      // data, so firing it unconditionally here is safe.
+      fetch(`${baseUrl}/api/v1/diagnostics/point-b/ai-generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ diagnostic_id: diag.id, user_id }),
+      }).catch(err => console.error('[recalculate] Failed to fire Point B AI generate:', err))
     }
 
     // Notify admins about diagnostic recalculation

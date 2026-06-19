@@ -87,3 +87,40 @@ export interface ScenarioOutcome {
   revenue_growth: string
   key_assumption: string
 }
+
+/**
+ * AI-generated NARRATIVE strategy for the goal-driven Point B (v2) engine.
+ *
+ * This is intentionally narrative-only: every numeric ground-truth (gap
+ * multiplier, required CAGR/MoM/QoQ, target revenue, scores) is produced
+ * deterministically by {@link calculatePointBV2}. The LLM never emits a target
+ * or revenue number — the Zod schema in `lib/ai/point-b-analyzer.ts` contains
+ * NO numeric fields, so a hallucinated figure cannot leak into the UI.
+ *
+ * Kept permissive (plain string/array fields) so the generic, defensive
+ * renderer in `components/point-b/AiStrategy.tsx` keeps working even if the
+ * model adds an extra block.
+ */
+export interface PointBStrategy {
+  /** 3–5 sentence narrative of how to bridge the gap from current state to the goal. */
+  strategic_bridge_summary: string
+  /** One entry per weak block / TOP-5 limit: what the gap is and the action to close it. */
+  gap_bridge: Array<{
+    block: string
+    gap: string
+    action: string
+    priority: 'Приоритет 1' | 'Приоритет 2' | 'Приоритет 3'
+  }>
+  /** Sequenced milestones derived from the deterministic horizons / TOP-5 limits. */
+  milestones: Array<{
+    q: string
+    title: string
+    desc: string
+    status: 'current' | 'planned' | 'future'
+  }>
+  /** One mitigation per deterministic realism.risk_factor. */
+  risk_mitigations: Array<{
+    risk: string
+    mitigation: string
+  }>
+}
