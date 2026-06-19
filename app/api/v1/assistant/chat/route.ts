@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { buildAssistantContext } from '@/lib/assistant/context'
 import { CHAT_SCRIPTS, hydrate } from '@/lib/assistant/chat-scripts'
+import { localeFromRequestCookie } from '@/lib/i18n/locale'
 
 /**
  * POST /api/v1/assistant/chat
@@ -43,8 +44,10 @@ export async function POST(req: NextRequest) {
   }
 
   try {
+    // Portal locale from the caller's cookie (no server-to-server fire here).
+    const locale = localeFromRequestCookie(req)
     const ctx = await buildAssistantContext(user.id, sb)
-    const result = hydrate(script, ctx)
+    const result = hydrate(script, ctx, locale)
 
     return NextResponse.json({
       ok: true,

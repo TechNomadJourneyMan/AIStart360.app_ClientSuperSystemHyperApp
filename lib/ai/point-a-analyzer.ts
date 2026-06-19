@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { generateObjectViaOpenRouter } from './structured'
 import { OPENROUTER_MODELS, hasOpenRouterKey } from './openrouter'
 import type { PointA, AIAnalysis, Company } from '@/types/onboarding'
+import type { Locale } from '@/lib/i18n/locale'
 
 // GRI expert note type for prompt enrichment
 export interface GriExpertNotes {
@@ -321,15 +322,26 @@ ${expertSection ? 'IMPORTANT: Integrate the GRI Expert Notes into your analysis.
  * latency-critical (Haiku, ~2x faster). Wall-clock ≈ the slowest part (~15s).
  */
 
-const SHARED_SYSTEM = `You are a senior business consultant for the AIStart360 platform (Kazakhstan).
+// Output-language line switches by locale; the rest of the system prompt is the
+// same English instruction set (schema field DESCRIPTIONS stay English — they are
+// instructions, not generated content). Add a new case here per future locale.
+function languageLine(locale: Locale): string {
+  return locale === 'en'
+    ? 'Respond strictly in English.'
+    : 'Respond strictly in Russian (по-русски).'
+}
+
+function buildSharedSystem(locale: Locale): string {
+  return `You are a senior business consultant for the AIStart360 platform (Kazakhstan).
 You analyze company data from ALL 12 blocks of the onboarding survey, the results of automatic scoring, and the GRI (Growth Readiness Index) 7-block framework.
 The 12 survey steps are: Company, Goals, Positioning, Org Structure, Client Base, CJM, Marketing, Key Metrics, Finance, Personal/Founder, Influence Map, Systems & Tools.
 The GRI 7 blocks are: Product & Demand, Trust & Positioning, Business Model, Cash Stability, Operations, Team, Founder Readiness.
 If GRI Expert Notes from human analysts are provided, integrate them prominently — they represent professional judgment and carry high weight.
-Respond strictly in English.
+${languageLine(locale)}
 BREVITY IS MANDATORY: every string field is ONE sentence of at most 25 words. Roadmap actions are at most 12 words each. Never exceed these limits — be dense and specific, not verbose.
 Be specific: use real numbers from the data, name concrete tools, give timelines. Compare with real benchmarks for the industry and stage in Kazakhstan/CIS.
 Do not repeat what the rule-based scoring already said. Output must be a single minified JSON object and nothing else.`
+}
 
 const summarySchema = z.object({
   executive_summary: aiAnalysisSchema.shape.executive_summary,
@@ -402,6 +414,7 @@ export async function analyzePointA(
   pointA: PointA,
   company: Company | null,
   expertNotes?: GriExpertNotes | null,
+  locale: Locale = 'ru',
 ): Promise<AIAnalysis | null> {
   // Skip if no API key (honest degradation — no fabrication without an LLM)
   if (!hasOpenRouterKey()) {
@@ -411,6 +424,7 @@ export async function analyzePointA(
 
   try {
     const context = buildPrompt(answers, pointA, company, expertNotes)
+    const system = buildSharedSystem(locale)
 
     const [summary, priorities, blocksA, blocksB] = await Promise.all([
       generateObjectViaOpenRouter({
@@ -418,7 +432,7 @@ export async function analyzePointA(
         complexity: 'high',
         maxTokens: 1200,
         schema: summarySchema,
-        system: SHARED_SYSTEM,
+        system,
         user: context + SUMMARY_FORMAT,
       }),
       generateObjectViaOpenRouter({
@@ -426,7 +440,7 @@ export async function analyzePointA(
         complexity: 'high',
         maxTokens: 1500,
         schema: prioritiesSchema,
-        system: SHARED_SYSTEM,
+        system,
         user: context + PRIORITIES_FORMAT,
       }),
       generateObjectViaOpenRouter({
@@ -434,7 +448,7 @@ export async function analyzePointA(
         complexity: 'medium',
         maxTokens: 2000,
         schema: blocksASchema,
-        system: SHARED_SYSTEM,
+        system,
         user: context + BLOCKS_A_FORMAT,
       }),
       generateObjectViaOpenRouter({
@@ -442,7 +456,7 @@ export async function analyzePointA(
         complexity: 'medium',
         maxTokens: 2000,
         schema: blocksBSchema,
-        system: SHARED_SYSTEM,
+        system,
         user: context + BLOCKS_B_FORMAT,
       }),
     ])

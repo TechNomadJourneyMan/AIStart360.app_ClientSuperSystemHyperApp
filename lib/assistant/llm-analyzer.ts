@@ -19,6 +19,7 @@
 
 import { z } from 'zod'
 import { generateObjectViaOpenRouter, hasOpenRouterKey } from '@/lib/ai/structured'
+import type { Locale } from '@/lib/i18n/locale'
 import type { AssistantContext, LlmAnalysis, ValidationIssue } from './types'
 
 // ─── Zod schema — matches LlmAnalysis in types.ts field-for-field ────────────
@@ -70,7 +71,27 @@ const llmAnalysisSchemaLoose = llmAnalysisSchema.extend({
 
 // ─── Prompt building (FROM THE CURATED SNAPSHOT ONLY) ────────────────────────
 
-const SYSTEM = `Ты — старший бизнес-аналитик платформы AIStart360 (Казахстан).
+// Russian by default; English when locale==='en'. The anti-hallucination rules
+// (use only snapshot fields, insufficient_data + missing_data on gaps) are
+// preserved verbatim in both languages — only the output language switches.
+function buildSystem(locale: Locale): string {
+  if (locale === 'en') {
+    return `You are a senior business analyst of the AIStart360 platform (Kazakhstan).
+You are given a CURATED structured snapshot of the company's data (Point A across 5 blocks, Point B: gap/realism/data sufficiency, GRI top limits, revenue goals, current revenue). This is the ONLY source — you have no other data.
+
+STRICT HONESTY RULES (anti-hallucination):
+- Use ONLY the fields from the snapshot. NEVER invent numbers, percentages, revenue, benchmarks, or facts that are not in the data.
+- If a field is null/empty — treat it as NO data. Do not substitute a guess.
+- If key inputs are missing (no Point A diagnostics, no goals, no revenue) — set "insufficient_data": true, list the gaps in "missing_data", and lower "confidence". Do not pretend the analysis is complete.
+- "confidence" reflects data completeness: little data → low confidence.
+- You may rely on qualitative survey answers (free text), but without invented specifics.
+
+BREVITY IS MANDATORY: each array item is one sentence of up to 18 words. "situation_summary" — 2–4 sentences. Arrays are short (0–5 items; missing_data up to 8). Be dense and specific, no filler.
+Expert escalation: recommended=true on critical risks, an unrealistic goal, or clear contradictions; otherwise false.
+Write strictly in English. Return ONE valid minified JSON object and nothing else.`
+  }
+
+  return `Ты — старший бизнес-аналитик платформы AIStart360 (Казахстан).
 Тебе дают КУРИРОВАННЫЙ структурированный снимок данных компании (Точка А по 5 блокам, Точка Б: разрыв/реализм/достаточность данных, GRI топ-ограничения, цели по выручке, текущая выручка). Это ЕДИНСТВЕННЫЙ источник — других данных у тебя нет.
 
 ЖЁСТКИЕ ПРАВИЛА ЧЕСТНОСТИ (анти-галлюцинация):
@@ -83,6 +104,7 @@ const SYSTEM = `Ты — старший бизнес-аналитик платф
 КРАТКОСТЬ ОБЯЗАТЕЛЬНА: каждый элемент массива — одно предложение до 18 слов. "situation_summary" — 2–4 предложения. Массивы короткие (0–5 пунктов; missing_data до 8). Будь плотным и конкретным, без воды.
 Эскалация эксперту: recommended=true при критических рисках, нереалистичной цели или явных противоречиях; иначе false.
 Пиши строго по-русски. Верни ОДИН валидный минифицированный JSON-объект и ничего больше.`
+}
 
 /** Render a number or '—' for the prompt (never fabricate when null). */
 function n(v: number | null | undefined): string {
@@ -126,7 +148,8 @@ function qualitativeAnswers(answers: Record<string, unknown>): string {
  * Build the user prompt from the curated snapshot ONLY. Every numeric slot is
  * rendered via n()/list() so a null surfaces as '—' (honest gap), never a guess.
  */
-function buildUserPrompt(ctx: AssistantContext): string {
+function buildUserPrompt(ctx: AssistantContext, locale: Locale = 'ru'): string {
+  const en = locale === 'en'
   const c = ctx.company
   const a = ctx.pointA
   const b = ctx.pointB
@@ -181,11 +204,19 @@ ${blockLines}
 --- КАЧЕСТВЕННЫЕ ОТВЕТЫ (из анкеты) ---
 ${qualitativeAnswers(ctx.answers ?? {})}
 
---- ЗАДАЧА ---
+${
+  en
+    ? `--- TASK ---
+Produce an objective situational analysis based ONLY on this data. If there is no meaningful data (no diagnostics, goals, or revenue) — honestly set insufficient_data:true and list the gaps. Do not invent numbers or benchmarks. Respect the brevity limits.
+
+--- OUTPUT FORMAT ---
+Return ONE valid minified JSON object (no markdown, no comments):`
+    : `--- ЗАДАЧА ---
 Сделай объективный ситуационный анализ ТОЛЬКО по этим данным. Если значимых данных нет (нет диагностики, целей или выручки) — честно установи insufficient_data:true и перечисли пробелы. Не выдумывай числа и бенчмарки. Соблюдай лимиты краткости.
 
 --- ФОРМАТ ВЫВОДА ---
-Верни ОДИН валидный минифицированный JSON-объект (без markdown, без комментариев):
+Верни ОДИН валидный минифицированный JSON-объект (без markdown, без комментариев):`
+}
 {
   "situation_summary": "строка",
   "strengths": ["строка"],
@@ -213,7 +244,10 @@ ${qualitativeAnswers(ctx.answers ?? {})}
  * Never throws. The model is forced to be honest about gaps via the system
  * rules + the schema (insufficient_data + missing_data).
  */
-export async function analyzeWithLlm(ctx: AssistantContext): Promise<LlmAnalysis | null> {
+export async function analyzeWithLlm(
+  ctx: AssistantContext,
+  locale: Locale = 'ru',
+): Promise<LlmAnalysis | null> {
   if (!hasOpenRouterKey()) {
     console.warn('[assistant:llm-analyzer] No OPENROUTER_API_KEY — skipping LLM analysis')
     return null
@@ -226,8 +260,8 @@ export async function analyzeWithLlm(ctx: AssistantContext): Promise<LlmAnalysis
       maxTokens: 1600, // bounded for speed (short arrays + one-sentence strings).
       temperature: 0.3, // low: keep it grounded in the snapshot.
       schema: llmAnalysisSchemaLoose,
-      system: SYSTEM,
-      user: buildUserPrompt(ctx),
+      system: buildSystem(locale),
+      user: buildUserPrompt(ctx, locale),
     })
 
     if (!result) return null
@@ -260,12 +294,26 @@ const semanticCheckSchema = z.object({
     .max(8),
 })
 
-const SEMANTIC_SYSTEM = `Ты — контролёр качества данных AIStart360. Тебе дают курированный снимок данных компании. Найди СЕМАНТИЧЕСКИЕ проблемы, которые не ловят формальные проверки:
+// Russian by default; English when locale==='en'. NOTE: the issue payload fields
+// stay named message_ru/hint_ru (a stable wire contract); only the language of
+// the text the model writes into them switches with the locale.
+function buildSemanticSystem(locale: Locale): string {
+  if (locale === 'en') {
+    return `You are the AIStart360 data quality controller. You are given a curated snapshot of the company's data. Find SEMANTIC problems that formal checks miss:
+- contradictions between sections (e.g. an ambitious goal with an empty team and zero revenue);
+- vague/low-substance qualitative answers (generic words with no specifics);
+- inconsistent metrics (values that logically do not add up).
+
+RULES: rely ONLY on the snapshot data; do not invent. If a field is null — that is not a problem (the formal check already knows), do not duplicate "field is empty". Report only real semantic problems. If there are none — return an empty issues array. Each message_ru/hint_ru — one sentence of up to 18 words, in English. Return ONE JSON object {"issues":[...]} and nothing else.`
+  }
+
+  return `Ты — контролёр качества данных AIStart360. Тебе дают курированный снимок данных компании. Найди СЕМАНТИЧЕСКИЕ проблемы, которые не ловят формальные проверки:
 - противоречия между разделами (например, амбициозная цель при пустой команде и нулевой выручке);
 - расплывчатые/малосодержательные качественные ответы (общие слова без конкретики);
 - несогласованные метрики (значения, которые логически не сходятся).
 
 ПРАВИЛА: опирайся ТОЛЬКО на данные снимка; не выдумывай. Если поле null — это не проблема (об этом уже знает формальная проверка), не дублируй «поле пустое». Сообщай только реальные смысловые проблемы. Если их нет — верни пустой массив issues. Каждое message_ru/hint_ru — одно предложение до 18 слов, по-русски. Верни ОДИН JSON-объект {"issues":[...]} и ничего больше.`
+}
 
 /**
  * Optional Layer-3 semantic checks feeding the validator pipeline. Surfaces
@@ -274,7 +322,10 @@ const SEMANTIC_SYSTEM = `Ты — контролёр качества данны
  * is no key, the call fails, or nothing semantic is found — so the validator
  * orchestrator can always merge it safely.
  */
-export async function llmSemanticChecks(ctx: AssistantContext): Promise<ValidationIssue[]> {
+export async function llmSemanticChecks(
+  ctx: AssistantContext,
+  locale: Locale = 'ru',
+): Promise<ValidationIssue[]> {
   if (!hasOpenRouterKey()) return []
 
   try {
@@ -284,8 +335,8 @@ export async function llmSemanticChecks(ctx: AssistantContext): Promise<Validati
       maxTokens: 1000,
       temperature: 0.2,
       schema: semanticCheckSchema,
-      system: SEMANTIC_SYSTEM,
-      user: buildUserPrompt(ctx),
+      system: buildSemanticSystem(locale),
+      user: buildUserPrompt(ctx, locale),
     })
 
     if (!result) return []

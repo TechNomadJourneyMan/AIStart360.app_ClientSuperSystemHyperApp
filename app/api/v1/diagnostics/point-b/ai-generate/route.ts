@@ -9,6 +9,7 @@ import { createServerClient } from '@/lib/supabase-server'
 import { analyzePointBStrategy } from '@/lib/ai/point-b-analyzer'
 import { calculatePointBV2, type PointBOptions } from '@/lib/point-b/engine'
 import type { PointA, BlockScore } from '@/types/onboarding'
+import { localeFromRequestCookie, normalizeLocale } from '@/lib/i18n/locale'
 
 /**
  * POST /api/v1/diagnostics/point-b/ai-generate
@@ -70,6 +71,12 @@ export async function POST(req: NextRequest) {
     const body = await req.json().catch(() => ({} as Record<string, unknown>))
     let diagnosticId = (body.diagnostic_id as string | undefined) ?? undefined
     let userId = (body.user_id as string | undefined) ?? undefined
+
+    // Locale: server-to-server fires (recalculate) pass it in the body since
+    // cookies aren't forwarded; manual UI invocation falls back to the cookie.
+    const locale = body.locale != null
+      ? normalizeLocale(String(body.locale))
+      : localeFromRequestCookie(req)
 
     const sb = createServerClient()
 
@@ -208,7 +215,7 @@ export async function POST(req: NextRequest) {
         }
       : null
 
-    const strategy = await analyzePointBStrategy(pointB, company)
+    const strategy = await analyzePointBStrategy(pointB, company, locale)
 
     if (strategy) {
       await writeAi('completed', strategy as unknown as Record<string, unknown>)

@@ -7,6 +7,7 @@ import { buildAssistantContext } from '@/lib/assistant/context'
 import { analyzeWithLlm } from '@/lib/assistant/llm-analyzer'
 import { hasOpenRouterKey } from '@/lib/ai/structured'
 import type { LlmAnalysis } from '@/lib/assistant/types'
+import { localeFromRequestCookie } from '@/lib/i18n/locale'
 
 /**
  * POST /api/v1/assistant/analyze
@@ -24,12 +25,15 @@ import type { LlmAnalysis } from '@/lib/assistant/types'
  */
 type LlmStatus = 'none' | 'completed' | 'failed' | 'insufficient_data'
 
-export async function POST(_req: NextRequest) {
+export async function POST(req: NextRequest) {
   const sb = createServerClient()
   const { data: { user } } = await sb.auth.getUser()
   if (!user) {
     return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
   }
+
+  // Portal locale from the caller's cookie (no server-to-server fire here).
+  const locale = localeFromRequestCookie(req)
 
   try {
     const ctx = await buildAssistantContext(user.id, sb)
@@ -41,7 +45,7 @@ export async function POST(_req: NextRequest) {
       // Honest degradation — no fabrication when the model is unavailable.
       llm_status = 'none'
     } else {
-      analysis = await analyzeWithLlm(ctx)
+      analysis = await analyzeWithLlm(ctx, locale)
       if (!analysis) {
         // analyzeWithLlm never throws — null means the call/parse failed.
         llm_status = 'failed'

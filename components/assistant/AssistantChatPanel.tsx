@@ -16,11 +16,64 @@
  *   • Footer "Позвать эксперта" → POST /api/v1/assistant/escalate
  *     { trigger_type: 'user_requested_help' }.
  *
- * Tone: calm, professional, business-oriented. Russian copy, premium dark tokens.
+ * Tone: calm, professional, business-oriented. Copy follows the portal locale
+ * (cookie → default Russian); premium dark tokens.
  */
 
 import { useCallback, useEffect, useState } from 'react'
 import { getSection } from '@/lib/assistant/sections'
+import { getClientLocale, type Locale } from '@/lib/i18n/locale'
+
+// ─── Localized copy (portal locale; ru is the default surface) ──────────────
+const T: Record<Locale, {
+  title: string
+  subtitle: string
+  close: string
+  insufficient: string
+  source: string
+  noScripts: string
+  answerFailed: string
+  networkError: string
+  escalated: string
+  sending: string
+  callExpert: string
+  escalateFailed: string
+  disclaimer: string
+  openAssistant: string
+}> = {
+  ru: {
+    title: 'Ассистент',
+    subtitle: 'Готовые вопросы по вашим данным',
+    close: 'Закрыть',
+    insufficient: 'Недостаточно данных для точного ответа — заполните анкету или загрузите отчёты.',
+    source: 'Источник',
+    noScripts: 'Готовые вопросы пока недоступны.',
+    answerFailed: 'Не удалось получить ответ',
+    networkError: 'Ошибка сети',
+    escalated: 'Запрос отправлен — эксперт свяжется с вами',
+    sending: 'Отправляем…',
+    callExpert: 'Позвать эксперта',
+    escalateFailed: 'Не удалось отправить запрос',
+    disclaimer: 'Ассистент отвечает только по вашим данным — без догадок.',
+    openAssistant: 'Открыть ассистента',
+  },
+  en: {
+    title: 'Assistant',
+    subtitle: 'Ready-made questions about your data',
+    close: 'Close',
+    insufficient: 'Not enough data for a precise answer — complete the survey or upload reports.',
+    source: 'Source',
+    noScripts: 'Ready-made questions are not available yet.',
+    answerFailed: 'Could not get an answer',
+    networkError: 'Network error',
+    escalated: 'Request sent — an expert will be in touch',
+    sending: 'Sending…',
+    callExpert: 'Call an expert',
+    escalateFailed: 'Could not send the request',
+    disclaimer: 'The assistant answers only from your data — no guesswork.',
+    openAssistant: 'Open the assistant',
+  },
+}
 
 interface ScriptItem {
   id: string
@@ -54,6 +107,13 @@ export function AssistantChatPanel({ open, onClose }: { open: boolean; onClose: 
   const [escalating, setEscalating] = useState(false)
   const [escalated, setEscalated] = useState(false)
   const [escalateError, setEscalateError] = useState<string | null>(null)
+  // Locale read after mount (cookie isn't available during SSR); default ru.
+  const [locale, setLocale] = useState<Locale>('ru')
+  const t = T[locale]
+
+  useEffect(() => {
+    setLocale(getClientLocale())
+  }, [])
 
   const loadScripts = useCallback(async () => {
     setLoadingScripts(true)
@@ -105,10 +165,10 @@ export function AssistantChatPanel({ open, onClose }: { open: boolean; onClose: 
           insufficient: Boolean(json.insufficient),
         })
       } else {
-        setAnswerError(json.error || 'Не удалось получить ответ')
+        setAnswerError(json.error || t.answerFailed)
       }
     } catch {
-      setAnswerError('Ошибка сети')
+      setAnswerError(t.networkError)
     } finally {
       setAnswerLoading(false)
     }
@@ -126,9 +186,9 @@ export function AssistantChatPanel({ open, onClose }: { open: boolean; onClose: 
       })
       const json = (await res.json()) as { ok: boolean; error?: string }
       if (res.ok && json.ok) setEscalated(true)
-      else setEscalateError(json.error || 'Не удалось отправить запрос')
+      else setEscalateError(json.error || t.escalateFailed)
     } catch {
-      setEscalateError('Ошибка сети')
+      setEscalateError(t.networkError)
     } finally {
       setEscalating(false)
     }
@@ -149,7 +209,7 @@ export function AssistantChatPanel({ open, onClose }: { open: boolean; onClose: 
       <aside
         role="dialog"
         aria-modal="true"
-        aria-label="Ассистент"
+        aria-label={t.title}
         className={`fixed top-0 right-0 z-50 h-full w-full max-w-md bg-[#0c0e14] border-l border-white/[0.08] shadow-2xl flex flex-col transition-transform duration-300 ${
           open ? 'translate-x-0' : 'translate-x-full'
         }`}
@@ -161,14 +221,14 @@ export function AssistantChatPanel({ open, onClose }: { open: boolean; onClose: 
               <span className="material-symbols-outlined text-base text-primary">assistant</span>
             </div>
             <div>
-              <h2 className="text-sm font-bold text-on-surface">Ассистент</h2>
-              <p className="text-[10px] text-on-surface-variant">Готовые вопросы по вашим данным</p>
+              <h2 className="text-sm font-bold text-on-surface">{t.title}</h2>
+              <p className="text-[10px] text-on-surface-variant">{t.subtitle}</p>
             </div>
           </div>
           <button
             onClick={onClose}
             className="w-8 h-8 rounded-lg flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:bg-white/[0.05] transition-all"
-            aria-label="Закрыть"
+            aria-label={t.close}
           >
             <span className="material-symbols-outlined text-lg">close</span>
           </button>
@@ -198,14 +258,14 @@ export function AssistantChatPanel({ open, onClose }: { open: boolean; onClose: 
                         info
                       </span>
                       <p className="text-[11px] text-amber-300 leading-snug">
-                        Недостаточно данных для точного ответа — заполните анкету или загрузите отчёты.
+                        {t.insufficient}
                       </p>
                     </div>
                   )}
                   <p className="text-sm text-on-surface leading-relaxed whitespace-pre-line">{answer.answer_ru}</p>
                   {answer.used_data && (
                     <p className="mt-3 pt-3 border-t border-white/[0.06] text-[10px] font-mono text-on-surface-variant">
-                      Источник: {answer.used_data}
+                      {t.source}: {answer.used_data}
                     </p>
                   )}
                 </>
@@ -221,7 +281,7 @@ export function AssistantChatPanel({ open, onClose }: { open: boolean; onClose: 
               ))}
             </div>
           ) : groups.length === 0 ? (
-            <p className="text-xs text-on-surface-variant text-center py-8">Готовые вопросы пока недоступны.</p>
+            <p className="text-xs text-on-surface-variant text-center py-8">{t.noScripts}</p>
           ) : (
             groups.map((group) => (
               <div key={group.section}>
@@ -270,7 +330,7 @@ export function AssistantChatPanel({ open, onClose }: { open: boolean; onClose: 
           {escalated ? (
             <div className="flex items-center gap-2 text-sm text-primary bg-primary/10 border border-primary/25 rounded-xl px-4 py-2.5">
               <span className="material-symbols-outlined text-base">mark_email_read</span>
-              Запрос отправлен — эксперт свяжется с вами
+              {t.escalated}
             </div>
           ) : (
             <button
@@ -281,12 +341,12 @@ export function AssistantChatPanel({ open, onClose }: { open: boolean; onClose: 
               <span className={`material-symbols-outlined text-base ${escalating ? 'animate-spin' : ''}`}>
                 {escalating ? 'progress_activity' : 'support_agent'}
               </span>
-              {escalating ? 'Отправляем…' : 'Позвать эксперта'}
+              {escalating ? t.sending : t.callExpert}
             </button>
           )}
           {escalateError && <p className="text-xs text-error text-center">{escalateError}</p>}
           <p className="text-[10px] text-on-surface-variant/60 text-center">
-            Ассистент отвечает только по вашим данным — без догадок.
+            {t.disclaimer}
           </p>
         </footer>
       </aside>
@@ -300,15 +360,22 @@ export function AssistantChatPanel({ open, onClose }: { open: boolean; onClose: 
  */
 export function AssistantChatLauncher() {
   const [open, setOpen] = useState(false)
+  const [locale, setLocale] = useState<Locale>('ru')
+  const t = T[locale]
+
+  useEffect(() => {
+    setLocale(getClientLocale())
+  }, [])
+
   return (
     <>
       <button
         onClick={() => setOpen(true)}
         className="fixed bottom-6 right-6 z-30 inline-flex items-center gap-2 px-4 py-3 rounded-2xl bg-gradient-to-r from-primary to-[#00e29e] text-[#003824] font-bold text-sm shadow-lg shadow-primary/20 hover:scale-[0.98] transition-transform"
-        aria-label="Открыть ассистента"
+        aria-label={t.openAssistant}
       >
         <span className="material-symbols-outlined text-lg">assistant</span>
-        <span className="hidden sm:inline">Ассистент</span>
+        <span className="hidden sm:inline">{t.title}</span>
       </button>
       <AssistantChatPanel open={open} onClose={() => setOpen(false)} />
     </>

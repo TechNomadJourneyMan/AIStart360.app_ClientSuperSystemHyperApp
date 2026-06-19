@@ -10,6 +10,7 @@ import { analyzePointA } from '@/lib/ai/point-a-analyzer'
 import type { GriExpertNotes } from '@/lib/ai/point-a-analyzer'
 import { calculatePointA } from '@/lib/point-a-engine'
 import type { Company } from '@/types/onboarding'
+import { localeFromRequestCookie, normalizeLocale } from '@/lib/i18n/locale'
 
 /**
  * POST /api/v1/diagnostics/ai-analyze
@@ -20,10 +21,17 @@ import type { Company } from '@/types/onboarding'
  */
 export async function POST(req: NextRequest) {
   try {
-    const { diagnostic_id, user_id } = await req.json()
+    const { diagnostic_id, user_id, locale: bodyLocale } = await req.json()
     if (!diagnostic_id || !user_id) {
       return NextResponse.json({ ok: false, error: 'diagnostic_id and user_id required' }, { status: 400 })
     }
+
+    // Server-to-server fires (recalculate → ai-analyze) do NOT forward cookies,
+    // so the caller's locale arrives in the body. Fall back to this request's
+    // cookie (direct invocation), then the portal default.
+    const locale = bodyLocale != null
+      ? normalizeLocale(String(bodyLocale))
+      : localeFromRequestCookie(req)
 
     const sb = createServerClient()
 
@@ -72,7 +80,7 @@ export async function POST(req: NextRequest) {
     const pointA = calculatePointA(answers)
 
     // 6. Run AI analysis (with expert notes)
-    const aiResult = await analyzePointA(answers, pointA, company as Company | null, expertNotes)
+    const aiResult = await analyzePointA(answers, pointA, company as Company | null, expertNotes, locale)
 
     if (aiResult) {
       // 7. Store result

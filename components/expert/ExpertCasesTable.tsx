@@ -19,11 +19,13 @@
  * type mirrors the DB columns rather than the camelCase ExpertCase type. The
  * status/priority unions are reused verbatim from the pinned ExpertCase type.
  *
- * Russian copy, premium dark tokens (mirrors components/expert/tabs/PointBTab.tsx).
+ * Copy follows the portal locale (cookie → default Russian); premium dark tokens
+ * (mirrors components/expert/tabs/PointBTab.tsx).
  */
 
 import { useCallback, useEffect, useState } from 'react'
 import type { ExpertCase, ValidationIssue, EscalationTrigger } from '@/lib/assistant/types'
+import { getClientLocale, type Locale } from '@/lib/i18n/locale'
 
 /** Row shape as returned by GET (snake_case DB columns). */
 interface ExpertCaseRow {
@@ -48,25 +50,80 @@ interface ExpertCaseRow {
 const STATUS_OPTIONS: ExpertCase['status'][] = ['new', 'in_progress', 'resolved', 'closed']
 const PRIORITY_OPTIONS: ExpertCase['priority'][] = ['low', 'medium', 'high', 'critical']
 
-const STATUS_LABEL: Record<ExpertCase['status'], string> = {
-  new: 'Новая',
-  in_progress: 'В работе',
-  resolved: 'Решена',
-  closed: 'Закрыта',
-}
-const PRIORITY_LABEL: Record<ExpertCase['priority'], string> = {
-  low: 'Низкий',
-  medium: 'Средний',
-  high: 'Высокий',
-  critical: 'Критический',
-}
-const TRIGGER_LABEL: Record<EscalationTrigger, string> = {
-  user_requested_help: 'Запрос клиента',
-  validation_issue: 'Ошибка валидации',
-  llm_recommendation: 'Рекомендация ИИ',
-  critical_risk: 'Критический риск',
-  incomplete_data: 'Неполные данные',
-  manual: 'Вручную',
+// ─── Localized copy (portal locale; ru is the default surface) ──────────────
+// detected_issues.message_ru and case title/summary come from the API and are
+// rendered verbatim; only this component's own chrome is localized.
+const T: Record<Locale, {
+  dateLocale: string
+  statusLabel: Record<ExpertCase['status'], string>
+  priorityLabel: Record<ExpertCase['priority'], string>
+  triggerLabel: Record<EscalationTrigger, string>
+  errorWithStatus: (status: number) => string
+  networkError: string
+  updateFailed: string
+  updateNetworkError: string
+  retry: string
+  emptyTitle: string
+  emptySub: string
+  heading: string
+  refresh: string
+  priorityAria: string
+  statusAria: string
+  assistantRec: string
+  issues: (n: number) => string
+}> = {
+  ru: {
+    dateLocale: 'ru-RU',
+    statusLabel: { new: 'Новая', in_progress: 'В работе', resolved: 'Решена', closed: 'Закрыта' },
+    priorityLabel: { low: 'Низкий', medium: 'Средний', high: 'Высокий', critical: 'Критический' },
+    triggerLabel: {
+      user_requested_help: 'Запрос клиента',
+      validation_issue: 'Ошибка валидации',
+      llm_recommendation: 'Рекомендация ИИ',
+      critical_risk: 'Критический риск',
+      incomplete_data: 'Неполные данные',
+      manual: 'Вручную',
+    },
+    errorWithStatus: (status) => `Ошибка ${status}`,
+    networkError: 'Ошибка сети',
+    updateFailed: 'Не удалось обновить кейс',
+    updateNetworkError: 'Ошибка сети при обновлении',
+    retry: 'Повторить',
+    emptyTitle: 'Обращений к эксперту нет',
+    emptySub: 'Здесь появятся эскалации по этому клиенту.',
+    heading: 'Кейсы эксперта',
+    refresh: 'Обновить',
+    priorityAria: 'Приоритет',
+    statusAria: 'Статус',
+    assistantRec: 'Рекомендация ассистента',
+    issues: (n) => `Замечания ассистента (${n})`,
+  },
+  en: {
+    dateLocale: 'en-US',
+    statusLabel: { new: 'New', in_progress: 'In progress', resolved: 'Resolved', closed: 'Closed' },
+    priorityLabel: { low: 'Low', medium: 'Medium', high: 'High', critical: 'Critical' },
+    triggerLabel: {
+      user_requested_help: 'Client request',
+      validation_issue: 'Validation issue',
+      llm_recommendation: 'AI recommendation',
+      critical_risk: 'Critical risk',
+      incomplete_data: 'Incomplete data',
+      manual: 'Manual',
+    },
+    errorWithStatus: (status) => `Error ${status}`,
+    networkError: 'Network error',
+    updateFailed: 'Could not update the case',
+    updateNetworkError: 'Network error while updating',
+    retry: 'Retry',
+    emptyTitle: 'No expert requests',
+    emptySub: 'Escalations for this client will appear here.',
+    heading: 'Expert cases',
+    refresh: 'Refresh',
+    priorityAria: 'Priority',
+    statusAria: 'Status',
+    assistantRec: 'Assistant recommendation',
+    issues: (n) => `Assistant notes (${n})`,
+  },
 }
 
 const PRIORITY_STYLE: Record<ExpertCase['priority'], { dot: string; text: string; ring: string }> = {
@@ -96,6 +153,13 @@ export function ExpertCasesTable({ clientId }: { clientId: string }) {
   const [error, setError] = useState<string | null>(null)
   const [savingId, setSavingId] = useState<string | null>(null)
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
+  // Locale read after mount (cookie isn't available during SSR); default ru.
+  const [locale, setLocale] = useState<Locale>('ru')
+  const t = T[locale]
+
+  useEffect(() => {
+    setLocale(getClientLocale())
+  }, [])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -104,7 +168,7 @@ export function ExpertCasesTable({ clientId }: { clientId: string }) {
       const res = await fetch(`/api/expert/clients/${clientId}/expert-cases`, { cache: 'no-store' })
       const json = (await res.json()) as { ok: boolean; data?: ExpertCaseRow[]; error?: string }
       if (!res.ok || !json.ok) {
-        setError(json.error || `Ошибка ${res.status}`)
+        setError(json.error || t.errorWithStatus(res.status))
         setCases([])
       } else {
         const rows = (json.data ?? []).slice().sort((a, b) => {
@@ -115,12 +179,12 @@ export function ExpertCasesTable({ clientId }: { clientId: string }) {
         setCases(rows)
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Ошибка сети')
+      setError(e instanceof Error ? e.message : t.networkError)
       setCases([])
     } finally {
       setLoading(false)
     }
-  }, [clientId])
+  }, [clientId, t])
 
   useEffect(() => {
     load()
@@ -143,11 +207,11 @@ export function ExpertCasesTable({ clientId }: { clientId: string }) {
       if (!res.ok || !json.ok) {
         // Revert on failure.
         await load()
-        setError(json.error || 'Не удалось обновить кейс')
+        setError(json.error || t.updateFailed)
       }
     } catch {
       await load()
-      setError('Ошибка сети при обновлении')
+      setError(t.updateNetworkError)
     } finally {
       setSavingId(null)
     }
@@ -174,7 +238,7 @@ export function ExpertCasesTable({ clientId }: { clientId: string }) {
           onClick={load}
           className="text-xs font-mono text-on-surface-variant hover:text-on-surface border border-white/[0.08] rounded-lg px-3 py-1.5 transition-all"
         >
-          Повторить
+          {t.retry}
         </button>
       </div>
     )
@@ -186,8 +250,8 @@ export function ExpertCasesTable({ clientId }: { clientId: string }) {
         <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-3">
           <span className="material-symbols-outlined text-2xl text-primary">support_agent</span>
         </div>
-        <p className="text-sm text-on-surface mb-1">Обращений к эксперту нет</p>
-        <p className="text-xs text-on-surface-variant">Здесь появятся эскалации по этому клиенту.</p>
+        <p className="text-sm text-on-surface mb-1">{t.emptyTitle}</p>
+        <p className="text-xs text-on-surface-variant">{t.emptySub}</p>
       </div>
     )
   }
@@ -197,7 +261,7 @@ export function ExpertCasesTable({ clientId }: { clientId: string }) {
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-bold text-on-surface flex items-center gap-2">
           <span className="material-symbols-outlined text-base text-primary">support_agent</span>
-          Кейсы эксперта
+          {t.heading}
           <span className="text-xs font-mono text-on-surface-variant">({cases.length})</span>
         </h3>
         <button
@@ -205,7 +269,7 @@ export function ExpertCasesTable({ clientId }: { clientId: string }) {
           className="text-xs font-mono text-on-surface-variant hover:text-primary border border-white/[0.08] rounded-lg px-3 py-1.5 transition-all flex items-center gap-1.5"
         >
           <span className="material-symbols-outlined text-sm">refresh</span>
-          Обновить
+          {t.refresh}
         </button>
       </div>
 
@@ -223,18 +287,18 @@ export function ExpertCasesTable({ clientId }: { clientId: string }) {
                 <div className="flex items-center gap-2 mb-1 flex-wrap">
                   <span className={`inline-flex items-center gap-1.5 text-[11px] font-mono ${pr.text}`}>
                     <span className={`w-2 h-2 rounded-full ${pr.dot}`} />
-                    {PRIORITY_LABEL[c.priority]}
+                    {t.priorityLabel[c.priority]}
                   </span>
                   <span className="text-[10px] font-mono text-on-surface-variant bg-surface-container px-2 py-0.5 rounded">
-                    {TRIGGER_LABEL[c.trigger_type] ?? c.trigger_type}
+                    {t.triggerLabel[c.trigger_type] ?? c.trigger_type}
                   </span>
                   <span className={`text-[11px] font-mono ${STATUS_STYLE[c.status]}`}>
-                    {STATUS_LABEL[c.status]}
+                    {t.statusLabel[c.status]}
                   </span>
                 </div>
                 <p className="text-sm font-semibold text-on-surface truncate">{c.title}</p>
                 <p className="text-[10px] font-mono text-on-surface-variant mt-0.5">
-                  {new Date(c.created_at).toLocaleString('ru-RU', {
+                  {new Date(c.created_at).toLocaleString(t.dateLocale, {
                     day: 'numeric',
                     month: 'short',
                     hour: '2-digit',
@@ -250,11 +314,11 @@ export function ExpertCasesTable({ clientId }: { clientId: string }) {
                   disabled={savingId === c.id}
                   onChange={(e) => patchCase(c.id, { priority: e.target.value as ExpertCase['priority'] })}
                   className="bg-surface-container border border-white/[0.08] rounded-lg text-[11px] text-on-surface px-2 py-1.5 focus:outline-none focus:border-primary/40 disabled:opacity-50"
-                  aria-label="Приоритет"
+                  aria-label={t.priorityAria}
                 >
                   {PRIORITY_OPTIONS.map((p) => (
                     <option key={p} value={p} className="bg-[#0c0e14]">
-                      {PRIORITY_LABEL[p]}
+                      {t.priorityLabel[p]}
                     </option>
                   ))}
                 </select>
@@ -263,11 +327,11 @@ export function ExpertCasesTable({ clientId }: { clientId: string }) {
                   disabled={savingId === c.id}
                   onChange={(e) => patchCase(c.id, { status: e.target.value as ExpertCase['status'] })}
                   className="bg-surface-container border border-white/[0.08] rounded-lg text-[11px] text-on-surface px-2 py-1.5 focus:outline-none focus:border-primary/40 disabled:opacity-50"
-                  aria-label="Статус"
+                  aria-label={t.statusAria}
                 >
                   {STATUS_OPTIONS.map((s) => (
                     <option key={s} value={s} className="bg-[#0c0e14]">
-                      {STATUS_LABEL[s]}
+                      {t.statusLabel[s]}
                     </option>
                   ))}
                 </select>
@@ -295,7 +359,7 @@ export function ExpertCasesTable({ clientId }: { clientId: string }) {
                 </span>
                 <div>
                   <p className="text-[10px] font-mono text-primary uppercase tracking-widest mb-0.5">
-                    Рекомендация ассистента
+                    {t.assistantRec}
                   </p>
                   <p className="text-xs text-on-surface leading-relaxed">{c.assistant_recommendation}</p>
                 </div>
@@ -310,7 +374,7 @@ export function ExpertCasesTable({ clientId }: { clientId: string }) {
                   className="flex items-center gap-1.5 text-[11px] font-mono text-on-surface-variant hover:text-on-surface transition-colors"
                 >
                   <span className="material-symbols-outlined text-sm">{isOpen ? 'expand_less' : 'expand_more'}</span>
-                  Замечания ассистента ({issues.length})
+                  {t.issues(issues.length)}
                 </button>
                 {isOpen && (
                   <ul className="mt-2 space-y-1.5">

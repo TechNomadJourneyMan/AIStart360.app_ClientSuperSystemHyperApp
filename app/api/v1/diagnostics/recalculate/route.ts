@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { calculatePointA } from '@/lib/point-a-engine'
 import { notifyAdmins } from '@/lib/notifications'
+import { localeFromRequestCookie } from '@/lib/i18n/locale'
 
 // POST /api/v1/diagnostics/recalculate
 // Body: { user_id }
@@ -11,6 +12,10 @@ export async function POST(req: NextRequest) {
   try {
     const { user_id } = await req.json()
     if (!user_id) return NextResponse.json({ ok: false, error: 'user_id required' }, { status: 400 })
+
+    // The caller's portal locale lives in this request's cookie. Server-to-server
+    // fires below do NOT forward cookies, so we pass it explicitly in their bodies.
+    const locale = localeFromRequestCookie(req)
 
     const sb = createServerClient()
 
@@ -81,19 +86,19 @@ export async function POST(req: NextRequest) {
     // Fire async AI analysis (non-blocking)
     if (process.env.OPENROUTER_API_KEY && diag?.id) {
       const baseUrl = req.nextUrl.origin
-      // Point A full analysis.
+      // Point A full analysis. Cookies aren't forwarded, so pass locale in body.
       fetch(`${baseUrl}/api/v1/diagnostics/ai-analyze`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ diagnostic_id: diag.id, user_id }),
+        body: JSON.stringify({ diagnostic_id: diag.id, user_id, locale }),
       }).catch(err => console.error('[recalculate] Failed to fire AI analysis:', err))
 
       // Point B strategic bridge (AUTO trigger). Self-guards on insufficient
-      // data, so firing it unconditionally here is safe.
+      // data, so firing it unconditionally here is safe. Pass locale in body.
       fetch(`${baseUrl}/api/v1/diagnostics/point-b/ai-generate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ diagnostic_id: diag.id, user_id }),
+        body: JSON.stringify({ diagnostic_id: diag.id, user_id, locale }),
       }).catch(err => console.error('[recalculate] Failed to fire Point B AI generate:', err))
     }
 

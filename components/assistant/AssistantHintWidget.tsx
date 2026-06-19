@@ -16,7 +16,8 @@
  *
  * Anti-hallucination: the widget only renders snapshot-derived values returned by
  * the route. It never invents numbers; missing data simply shows an empty/0 state.
- * All copy is Russian; theme tokens match the existing premium dark surface.
+ * Copy follows the portal locale (cookie → default Russian); theme tokens match
+ * the existing premium dark surface.
  */
 
 import { useCallback, useEffect, useState } from 'react'
@@ -26,6 +27,72 @@ import type {
   SectionCompletion,
   ValidationIssue,
 } from '@/lib/assistant/types'
+import { getClientLocale, type Locale } from '@/lib/i18n/locale'
+
+// ─── Localized copy (portal locale; ru is the default surface) ──────────────
+const T: Record<Locale, {
+  statusChip: Record<AssistantStatus, string>
+  unavailable: string
+  refresh: string
+  readiness: string
+  errors: (n: number) => string
+  warnings: (n: number) => string
+  watchOut: string
+  noCriticalIssues: string
+  escalated: string
+  sending: string
+  callExpert: string
+  escalateFailed: string
+  networkError: string
+  ready: string
+}> = {
+  ru: {
+    statusChip: {
+      not_started: 'Не начато',
+      in_progress: 'В процессе',
+      needs_attention: 'Требует внимания',
+      ready_for_analysis: 'Готово к анализу',
+      ready_for_expert_review: 'Готово к проверке экспертом',
+      completed: 'Завершено',
+    },
+    unavailable: 'Готовность анкеты пока недоступна.',
+    refresh: 'Обновить',
+    readiness: 'Готовность к анализу',
+    errors: (n) => `${n} ошибок`,
+    warnings: (n) => `${n} предупр.`,
+    watchOut: 'На что обратить внимание',
+    noCriticalIssues: 'Критичных замечаний нет.',
+    escalated: 'Запрос отправлен — эксперт скоро свяжется',
+    sending: 'Отправляем…',
+    callExpert: 'Позвать эксперта',
+    escalateFailed: 'Не удалось отправить запрос',
+    networkError: 'Ошибка сети',
+    ready: 'готово',
+  },
+  en: {
+    statusChip: {
+      not_started: 'Not started',
+      in_progress: 'In progress',
+      needs_attention: 'Needs attention',
+      ready_for_analysis: 'Ready for analysis',
+      ready_for_expert_review: 'Ready for expert review',
+      completed: 'Completed',
+    },
+    unavailable: 'Survey readiness is not available yet.',
+    refresh: 'Refresh',
+    readiness: 'Readiness for analysis',
+    errors: (n) => `${n} errors`,
+    warnings: (n) => `${n} warnings`,
+    watchOut: 'What to pay attention to',
+    noCriticalIssues: 'No critical issues.',
+    escalated: 'Request sent — an expert will be in touch shortly',
+    sending: 'Sending…',
+    callExpert: 'Call an expert',
+    escalateFailed: 'Could not send the request',
+    networkError: 'Network error',
+    ready: 'ready',
+  },
+}
 
 interface StatusResponse {
   ok: boolean
@@ -42,48 +109,42 @@ interface StatusResponse {
   error?: string
 }
 
-// ─── Status → chip presentation ─────────────────────────────────────────────
+// ─── Status → chip presentation (label comes from the locale dict above) ─────
 const STATUS_CHIP: Record<
   AssistantStatus,
-  { label: string; color: string; bg: string; border: string; icon: string }
+  { color: string; bg: string; border: string; icon: string }
 > = {
   not_started: {
-    label: 'Не начато',
     color: 'text-on-surface-variant',
     bg: 'bg-surface-container',
     border: 'border-white/[0.08]',
     icon: 'radio_button_unchecked',
   },
   in_progress: {
-    label: 'В процессе',
     color: 'text-blue-400',
     bg: 'bg-blue-400/10',
     border: 'border-blue-400/20',
     icon: 'hourglass_top',
   },
   needs_attention: {
-    label: 'Требует внимания',
     color: 'text-amber-400',
     bg: 'bg-amber-400/10',
     border: 'border-amber-400/20',
     icon: 'warning',
   },
   ready_for_analysis: {
-    label: 'Готово к анализу',
     color: 'text-primary',
     bg: 'bg-primary/10',
     border: 'border-primary/25',
     icon: 'task_alt',
   },
   ready_for_expert_review: {
-    label: 'Готово к проверке экспертом',
     color: 'text-violet-400',
     bg: 'bg-violet-500/10',
     border: 'border-violet-500/20',
     icon: 'verified',
   },
   completed: {
-    label: 'Завершено',
     color: 'text-emerald-400',
     bg: 'bg-emerald-400/10',
     border: 'border-emerald-400/20',
@@ -98,7 +159,7 @@ const SEVERITY_STYLE: Record<ValidationIssue['severity'], { color: string; icon:
   info: { color: 'text-blue-400', icon: 'info' },
 }
 
-function CompletionRing({ pct, size = 96 }: { pct: number; size?: number }) {
+function CompletionRing({ pct, readyLabel, size = 96 }: { pct: number; readyLabel: string; size?: number }) {
   const clamped = Math.max(0, Math.min(100, Math.round(pct)))
   const r = size / 2 - 8
   const circ = 2 * Math.PI * r
@@ -129,7 +190,7 @@ function CompletionRing({ pct, size = 96 }: { pct: number; size?: number }) {
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
         <span className="font-mono text-xl font-extrabold text-on-surface">{clamped}%</span>
-        <span className="text-[9px] text-on-surface-variant uppercase tracking-widest">готово</span>
+        <span className="text-[9px] text-on-surface-variant uppercase tracking-widest">{readyLabel}</span>
       </div>
     </div>
   )
@@ -158,6 +219,13 @@ export default function AssistantHintWidget() {
   const [escalating, setEscalating] = useState(false)
   const [escalated, setEscalated] = useState(false)
   const [escalateError, setEscalateError] = useState<string | null>(null)
+  // Locale read after mount (cookie isn't available during SSR); default ru.
+  const [locale, setLocale] = useState<Locale>('ru')
+  const t = T[locale]
+
+  useEffect(() => {
+    setLocale(getClientLocale())
+  }, [])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -188,9 +256,9 @@ export default function AssistantHintWidget() {
       })
       const json = (await res.json()) as { ok: boolean; error?: string }
       if (res.ok && json.ok) setEscalated(true)
-      else setEscalateError(json.error || 'Не удалось отправить запрос')
+      else setEscalateError(json.error || t.escalateFailed)
     } catch {
-      setEscalateError('Ошибка сети')
+      setEscalateError(t.networkError)
     } finally {
       setEscalating(false)
     }
@@ -216,13 +284,13 @@ export default function AssistantHintWidget() {
       <section className="bg-surface-container-low rounded-2xl border border-white/[0.06] p-5 flex items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <span className="material-symbols-outlined text-lg text-on-surface-variant">assistant</span>
-          <p className="text-sm text-on-surface-variant">Готовность анкеты пока недоступна.</p>
+          <p className="text-sm text-on-surface-variant">{t.unavailable}</p>
         </div>
         <button
           onClick={load}
           className="text-xs font-mono text-primary hover:text-primary/80 border border-primary/20 rounded-lg px-3 py-1.5 transition-all"
         >
-          Обновить
+          {t.refresh}
         </button>
       </section>
     )
@@ -239,12 +307,12 @@ export default function AssistantHintWidget() {
       <div className="flex flex-col md:flex-row md:items-start gap-6">
         {/* Ring + readiness chip */}
         <div className="flex flex-col items-center gap-3 flex-shrink-0">
-          <CompletionRing pct={completion.overall_pct} />
+          <CompletionRing pct={completion.overall_pct} readyLabel={t.ready} />
           <span
             className={`inline-flex items-center gap-1.5 text-[11px] font-mono px-2.5 py-1 rounded-lg border ${chip.bg} ${chip.color} ${chip.border}`}
           >
             <span className="material-symbols-outlined text-xs">{chip.icon}</span>
-            {chip.label}
+            {t.statusChip[status]}
           </span>
         </div>
 
@@ -253,16 +321,16 @@ export default function AssistantHintWidget() {
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <span className="material-symbols-outlined text-lg text-primary">assistant</span>
-              <h2 className="text-sm font-bold text-on-surface">Готовность к анализу</h2>
+              <h2 className="text-sm font-bold text-on-surface">{t.readiness}</h2>
             </div>
             {data.readiness && (
               <span className="text-[10px] font-mono text-on-surface-variant">
                 {data.readiness.error_count > 0 && (
-                  <span className="text-error">{data.readiness.error_count} ошибок</span>
+                  <span className="text-error">{t.errors(data.readiness.error_count)}</span>
                 )}
                 {data.readiness.error_count > 0 && data.readiness.warning_count > 0 && ' · '}
                 {data.readiness.warning_count > 0 && (
-                  <span className="text-amber-400">{data.readiness.warning_count} предупр.</span>
+                  <span className="text-amber-400">{t.warnings(data.readiness.warning_count)}</span>
                 )}
               </span>
             )}
@@ -281,7 +349,7 @@ export default function AssistantHintWidget() {
           {topIssues.length > 0 ? (
             <div className="space-y-1.5 mb-4">
               <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest">
-                На что обратить внимание
+                {t.watchOut}
               </p>
               {topIssues.map((iss) => {
                 const sv = SEVERITY_STYLE[iss.severity]
@@ -298,7 +366,7 @@ export default function AssistantHintWidget() {
           ) : (
             <div className="flex items-center gap-2 mb-4 text-xs text-emerald-400">
               <span className="material-symbols-outlined text-sm">check_circle</span>
-              Критичных замечаний нет.
+              {t.noCriticalIssues}
             </div>
           )}
 
@@ -307,7 +375,7 @@ export default function AssistantHintWidget() {
             {escalated ? (
               <span className="inline-flex items-center gap-2 text-sm text-primary bg-primary/10 border border-primary/25 rounded-xl px-4 py-2.5">
                 <span className="material-symbols-outlined text-base">mark_email_read</span>
-                Запрос отправлен — эксперт скоро свяжется
+                {t.escalated}
               </span>
             ) : (
               <button
@@ -318,7 +386,7 @@ export default function AssistantHintWidget() {
                 <span className={`material-symbols-outlined text-base ${escalating ? 'animate-spin' : ''}`}>
                   {escalating ? 'progress_activity' : 'support_agent'}
                 </span>
-                {escalating ? 'Отправляем…' : 'Позвать эксперта'}
+                {escalating ? t.sending : t.callExpert}
               </button>
             )}
             {escalateError && <span className="text-xs text-error">{escalateError}</span>}

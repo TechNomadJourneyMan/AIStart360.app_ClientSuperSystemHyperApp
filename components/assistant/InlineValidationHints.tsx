@@ -25,6 +25,25 @@
 
 import { useEffect, useRef, useState } from 'react'
 import type { ValidationIssue } from '@/lib/assistant/types'
+import { getClientLocale, type Locale } from '@/lib/i18n/locale'
+
+// ─── Localized banner copy (portal locale; ru is the default surface) ───────
+// Per-field message_ru/hint_ru come from the /validate route and are rendered
+// verbatim; only the component's own banner copy is localized here.
+const T: Record<Locale, { bannerError: string; bannerWarning: string; bannerInfo: string }> = {
+  ru: {
+    bannerError:
+      'Заполните обязательные поля — это не блокирует переход, но повышает точность диагностики.',
+    bannerWarning: 'Похоже на противоречие в ответах — проверьте отмеченные поля.',
+    bannerInfo: 'Есть рекомендации по заполнению.',
+  },
+  en: {
+    bannerError:
+      'Fill in the required fields — this does not block navigation, but it improves diagnostic accuracy.',
+    bannerWarning: 'This looks like a contradiction in the answers — check the flagged fields.',
+    bannerInfo: 'There are recommendations for filling this in.',
+  },
+}
 
 interface InlineValidationHintsProps {
   /** Section id matching ValidationIssue.section / SECTION_FIELD_MAP key. */
@@ -88,8 +107,14 @@ export default function InlineValidationHints({
 }: InlineValidationHintsProps) {
   const [issues, setIssues] = useState<ValidationIssue[]>([])
   const [loading, setLoading] = useState(false)
+  // Locale read after mount (cookie isn't available during SSR); default ru.
+  const [locale, setLocale] = useState<Locale>('ru')
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const abortRef = useRef<AbortController | null>(null)
+
+  useEffect(() => {
+    setLocale(getClientLocale())
+  }, [])
 
   // Stable serialization so the effect only refires on actual answer changes.
   const draftKey = JSON.stringify(draftAnswers ?? {})
@@ -151,12 +176,13 @@ export default function InlineValidationHints({
         ? { color: 'text-amber-400', bg: 'bg-amber-400/[0.06]', border: 'border-amber-400/15', icon: 'warning' }
         : { color: 'text-blue-400', bg: 'bg-blue-400/[0.06]', border: 'border-blue-400/15', icon: 'info' }
 
+  const t = T[locale]
   const bannerText =
     errorCount > 0
-      ? 'Заполните обязательные поля — это не блокирует переход, но повышает точность диагностики.'
+      ? t.bannerError
       : warningCount > 0
-        ? 'Похоже на противоречие в ответах — проверьте отмеченные поля.'
-        : 'Есть рекомендации по заполнению.'
+        ? t.bannerWarning
+        : t.bannerInfo
 
   return (
     <div className={`rounded-xl border ${bannerTone.border} ${bannerTone.bg} p-4 space-y-3`}>

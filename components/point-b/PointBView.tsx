@@ -1,8 +1,9 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { motion } from 'framer-motion'
+import { getClientLocale, type Locale } from '@/lib/i18n/locale'
 import type { PointBV2, GapEntry, Scenario, Lever, GrowthDecomposition } from '@/lib/point-b/engine'
 import {
   Section,
@@ -43,6 +44,53 @@ export interface PointBViewProps {
   actionPlanUserId?: string
   /** Latest approved expert correction of this plan (shown to the client). */
   expertNote?: { expert_notes: string; author_name?: string | null; created_at?: string } | null
+}
+
+// ─── Localized AI-section copy (portal locale; ru is the default surface) ─────
+// Only the AI-strategy section + its generate/processing/failed button states
+// follow the portal locale in this phase; the rest of the page stays Russian.
+const AI_T: Record<Locale, {
+  generateAria: string
+  updateAria: string
+  generating: string
+  update: string
+  generate: string
+  eyebrow: string
+  sectionTitle: string
+  processingTitle: string
+  processingSub: string
+  failedTitle: string
+  failedSub: string
+  retry: string
+}> = {
+  ru: {
+    generateAria: 'Сформировать план',
+    updateAria: 'Обновить план',
+    generating: 'Формируем план…',
+    update: 'Обновить план',
+    generate: 'Сформировать план',
+    eyebrow: 'AI',
+    sectionTitle: 'AI-стратегия',
+    processingTitle: 'AI формирует стратегию…',
+    processingSub: 'Claude строит мост между Точкой А и Точкой Б — это займёт до 2 минут.',
+    failedTitle: 'Не удалось сгенерировать AI-стратегию',
+    failedSub: 'Попробуйте сформировать план ещё раз.',
+    retry: 'Повторить',
+  },
+  en: {
+    generateAria: 'Generate plan',
+    updateAria: 'Update plan',
+    generating: 'Generating plan…',
+    update: 'Update plan',
+    generate: 'Generate plan',
+    eyebrow: 'AI',
+    sectionTitle: 'AI strategy',
+    processingTitle: 'AI is building the strategy…',
+    processingSub: 'Claude is bridging Point A and Point B — this takes up to 2 minutes.',
+    failedTitle: 'Could not generate the AI strategy',
+    failedSub: 'Try generating the plan again.',
+    retry: 'Retry',
+  },
 }
 
 // ─── State: loading skeleton ──────────────────────────────────────────────────
@@ -800,6 +848,14 @@ export default function PointBView({
   actionPlanUserId,
   expertNote,
 }: PointBViewProps) {
+  // Locale read after mount (cookie isn't available during SSR); default ru.
+  // Only the AI-strategy section follows it in this phase.
+  const [aiLocale, setAiLocale] = useState<Locale>('ru')
+  useEffect(() => {
+    setAiLocale(getClientLocale())
+  }, [])
+  const ai = AI_T[aiLocale]
+
   if (loading) return <LoadingSkeleton />
   if (error) return <ErrorPanel error={error} onRecalculate={onRecalculate} />
   if (reason === 'no_diagnostic' || pointB === null) return <NoDiagnostic />
@@ -819,7 +875,7 @@ export default function PointBView({
             onClick={onGenerate}
             disabled={insufficient || generating}
             className="inline-flex items-center gap-1.5 text-sm font-semibold text-on-primary bg-gradient-to-r from-primary to-primary-fixed-dim hover:opacity-90 rounded-xl px-4 py-2 transition-all disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-primary/40"
-            aria-label={hasPlan ? 'Обновить план' : 'Сформировать план'}
+            aria-label={hasPlan ? ai.updateAria : ai.generateAria}
           >
             <span
               className={`material-symbols-outlined text-base ${generating ? 'animate-spin' : ''}`}
@@ -827,7 +883,7 @@ export default function PointBView({
             >
               {generating ? 'progress_activity' : 'auto_awesome'}
             </span>
-            {generating ? 'Формируем план…' : hasPlan ? 'Обновить план' : 'Сформировать план'}
+            {generating ? ai.generating : hasPlan ? ai.update : ai.generate}
           </button>
         )}
         {onRecalculate && (
@@ -884,7 +940,7 @@ export default function PointBView({
 
       <Top5Limits limits={pointB.top5_limits} />
 
-      <Section eyebrow="AI" title="AI-стратегия" icon="smart_toy">
+      <Section eyebrow={ai.eyebrow} title={ai.sectionTitle} icon="smart_toy">
         {generating ? (
           <div className="rounded-2xl border border-violet-500/15 bg-violet-500/[0.05] p-6">
             <div className="flex items-center gap-3">
@@ -894,9 +950,9 @@ export default function PointBView({
                 </span>
               </div>
               <div>
-                <p className="text-sm font-medium text-violet-300">AI формирует стратегию…</p>
+                <p className="text-sm font-medium text-violet-300">{ai.processingTitle}</p>
                 <p className="text-xs text-on-surface-variant">
-                  Claude строит мост между Точкой А и Точкой Б — это займёт до 2 минут.
+                  {ai.processingSub}
                 </p>
               </div>
             </div>
@@ -912,9 +968,9 @@ export default function PointBView({
               error
             </span>
             <p className="text-sm font-medium text-on-surface mb-1">
-              Не удалось сгенерировать AI-стратегию
+              {ai.failedTitle}
             </p>
-            <p className="text-xs text-on-surface-variant mb-4">Попробуйте сформировать план ещё раз.</p>
+            <p className="text-xs text-on-surface-variant mb-4">{ai.failedSub}</p>
             {onGenerate && (
               <button
                 onClick={onGenerate}
@@ -924,7 +980,7 @@ export default function PointBView({
                 <span className="material-symbols-outlined text-sm" aria-hidden>
                   refresh
                 </span>
-                Повторить
+                {ai.retry}
               </button>
             )}
           </div>

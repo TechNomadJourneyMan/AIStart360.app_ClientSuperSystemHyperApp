@@ -140,20 +140,30 @@ export interface ExpertCase {
 // ─── Chat scripts (ready-made Q&A 7.1–7.12) ─────────────────────────────────
 
 /**
- * A ready-made assistant question + Russian answer-script template. The chat
+ * A ready-made assistant question + bilingual answer-script template. The chat
  * API hydrates `scriptOutline` against {@link AssistantContext}; every numeric
- * slot must fall back to a "Недостаточно данных" branch when the ctx field is
- * null (никаких выдуманных цифр).
+ * slot must fall back to a "Недостаточно данных" / "Not enough data" branch when
+ * the ctx field is null (никаких выдуманных цифр).
+ *
+ * Russian (`question`, `scriptOutline`, `valueLine`) is the default surface.
+ * The `*_en` fields carry the English equivalents — hydrate() and the scripts
+ * route pick the right pair off the portal {@link import('@/lib/i18n/locale').Locale}.
  */
 export interface ChatScript {
   id: string
   section: string
   question: string
+  /** English equivalent of {@link question} (rendered when locale==='en'). */
+  question_en: string
   intent: string
   /** Which ctx fields this script reads (documentation + hydration map). */
   usesData: string
   scriptOutline: string
+  /** English equivalent of {@link scriptOutline} (documentation + outline). */
+  outline_en: string
   valueLine?: string
+  /** English equivalent of {@link valueLine}. */
+  valueLine_en?: string
 }
 
 // ─── AssistantContext — the curated snapshot the LLM sees ────────────────────

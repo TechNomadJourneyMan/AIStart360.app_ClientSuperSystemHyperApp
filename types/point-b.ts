@@ -104,12 +104,23 @@ export interface ScenarioOutcome {
 export interface PointBStrategy {
   /** 3–5 sentence narrative of how to bridge the gap from current state to the goal. */
   strategic_bridge_summary: string
-  /** One entry per weak block / TOP-5 limit: what the gap is and the action to close it. */
+  /**
+   * One entry per weak block / TOP-5 limit: what the gap is and the action to
+   * close it. The priority label is localized: Russian ('Приоритет N') when the
+   * portal locale is 'ru', English ('Priority N') when 'en'. Both label sets are
+   * accepted so a strategy generated under either locale type-checks and renders.
+   */
   gap_bridge: Array<{
     block: string
     gap: string
     action: string
-    priority: 'Приоритет 1' | 'Приоритет 2' | 'Приоритет 3'
+    priority:
+      | 'Приоритет 1'
+      | 'Приоритет 2'
+      | 'Приоритет 3'
+      | 'Priority 1'
+      | 'Priority 2'
+      | 'Priority 3'
   }>
   /** Sequenced milestones derived from the deterministic horizons / TOP-5 limits. */
   milestones: Array<{
