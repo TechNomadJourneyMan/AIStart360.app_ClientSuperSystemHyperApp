@@ -1,6 +1,6 @@
-import { generateObject } from 'ai'
 import { z } from 'zod'
-import { anthropic, CLAUDE_MODELS } from './anthropic'
+import { generateObjectViaOpenRouter } from './structured'
+import { hasOpenRouterKey } from './openrouter'
 import type { PointA } from '@/types/onboarding'
 import type { PointB } from '@/types/point-b'
 
@@ -33,8 +33,8 @@ export async function analyzePointB(
   pointBBase: PointB,
   company: Record<string, unknown> | null
 ): Promise<Record<string, unknown> | null> {
-  if (!process.env.ANTHROPIC_API_KEY) {
-    console.warn('[point-b-analyzer] No ANTHROPIC_API_KEY — skipping AI bridge analysis')
+  if (!hasOpenRouterKey()) {
+    console.warn('[point-b-analyzer] No OPENROUTER_API_KEY — skipping AI bridge analysis')
     return null
   }
 
@@ -64,15 +64,32 @@ export async function analyzePointB(
 Будь предельно конкретен. Если в Точке А нет CRM — в Gap-анализе должен быть пункт про CRM. 
 Если цель — рост в 2 раза, в Roadmap должны быть шаги по масштабированию маркетинга.
 Язык: Русский.
+
+--- ФОРМАТ ОТВЕТА ---
+Верни ТОЛЬКО валидный JSON-объект (без markdown и комментариев) строго такой структуры:
+{
+  "strategic_bridge_summary": "строка (3-5 предложений)",
+  "gap_analysis": [
+    { "title": "строка", "gap": "строка", "action": "строка", "priority_level": "Приоритет 1", "icon": "material_symbol_name", "color": "primary" }
+  ],
+  "milestones": [
+    { "q": "Q2 2026", "title": "строка", "desc": "строка", "icon": "material_symbol_name", "status": "current" }
+  ]
+}
+Правила: "gap_analysis" — РОВНО 3 элемента; "priority_level" ∈ {"Приоритет 1","Приоритет 2","Приоритет 3"}; "color" ∈ {"primary","error","tertiary-container"}.
+"milestones" — РОВНО 4 элемента; "status" ∈ {"current","planned","future"}.
 `
 
-    const { object } = await generateObject({
-      model: anthropic(CLAUDE_MODELS.sonnet),
+    const object = await generateObjectViaOpenRouter({
+      label: 'point-b-analyzer',
+      complexity: 'high',
       schema: pointBAISchema,
       system: `Ты — ведущий стратег AIStart360. Твоя роль — построить мост между текущим хаосом (Точка А) и масштабируемым бизнесом (Точка Б).
 Используй данные скоринга Точки А для выявления реальных препятствий.`,
-      prompt,
+      user: prompt,
     })
+
+    if (!object) return null
 
     return {
       gap_analysis: object.gap_analysis.map(g => ({

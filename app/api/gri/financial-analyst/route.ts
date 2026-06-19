@@ -31,7 +31,7 @@ function buildStaticAnalysis(data: string, lang: 'ru' | 'en') {
           score: cashScore,
           justification: hasLoss
             ? 'Обнаружены признаки убытков в данных. Требуется ревизия расходов и работа с кассовым потоком.'
-            : 'Базовая оценка на основе общих метрик. Для точного анализа подключите AI через ANTHROPIC_API_KEY.',
+            : 'Базовая оценка на основе общих метрик. Для точного анализа подключите AI через OPENROUTER_API_KEY.',
         },
         business_model: {
           score: bmScore,
@@ -46,7 +46,7 @@ function buildStaticAnalysis(data: string, lang: 'ru' | 'en') {
         net_profit_margin: hasLoss ? 'Отрицательная' : 'Нет данных',
       },
       mckinsey_insights: [
-        'Для детального анализа добавьте переменную окружения ANTHROPIC_API_KEY.',
+        'Для детального анализа добавьте переменную окружения OPENROUTER_API_KEY.',
         hasLoss
           ? 'Приоритет: стабилизация cash flow и сокращение непроизводительных расходов.'
           : 'Приоритет: зафиксировать юнит-экономику и масштабировать ROI-каналы.',
@@ -60,7 +60,7 @@ function buildStaticAnalysis(data: string, lang: 'ru' | 'en') {
         score: cashScore,
         justification: hasLoss
           ? 'Signs of losses detected. Expense review and cash flow work required.'
-          : 'Baseline score from overall metrics. For a precise analysis, set ANTHROPIC_API_KEY.',
+          : 'Baseline score from overall metrics. For a precise analysis, set OPENROUTER_API_KEY.',
       },
       business_model: {
         score: bmScore,
@@ -75,7 +75,7 @@ function buildStaticAnalysis(data: string, lang: 'ru' | 'en') {
       net_profit_margin: hasLoss ? 'Negative' : 'No data',
     },
     mckinsey_insights: [
-      'For a detailed analysis, set the ANTHROPIC_API_KEY environment variable.',
+      'For a detailed analysis, set the OPENROUTER_API_KEY environment variable.',
       hasLoss
         ? 'Priority: stabilize cash flow and cut non-productive expenses.'
         : 'Priority: lock in unit economics and scale ROI-positive channels.',

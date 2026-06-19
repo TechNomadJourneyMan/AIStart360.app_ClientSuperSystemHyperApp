@@ -3,8 +3,8 @@
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { parseDocument } from '@/lib/documents/parse'
-import { anthropic } from '@/lib/ai/anthropic'
-import { generateObject } from 'ai'
+import { generateObjectViaOpenRouter } from '@/lib/ai/structured'
+import { OPENROUTER_MODELS } from '@/lib/ai/openrouter'
 import { z } from 'zod'
 import { withTrace } from '@/lib/langfuse'
 import { revalidatePath } from 'next/cache'
@@ -46,19 +46,36 @@ export async function runPointADiagnostic(formData: FormData) {
         const buffer = Buffer.from(await file.arrayBuffer())
         const doc = await parseDocument(buffer, file.name)
 
-        // Step 2: AI Analysis
-        const { object: analysis } = await generateObject({
-          model: anthropic('claude-3-5-sonnet-latest'),
+        // Step 2: AI Analysis (via OpenRouter — single OPENROUTER_API_KEY)
+        const analysis = await generateObjectViaOpenRouter({
+          label: 'gri-document-diagnostic',
+          model: OPENROUTER_MODELS.sonnet,
+          maxTokens: 2000,
           schema: GriSchema,
-          system: `You are a high-level business consultant specializing in the GRI (Growth Readiness Index) framework. 
+          system: `You are a high-level business consultant specializing in the GRI (Growth Readiness Index) framework.
           Your task is to analyze the provided document and evaluate the company across 6 key domains: Strategy, Finance, Operations, Team, Market, and Technology.
-          Provide a score from 0-1000 for each domain and an overall aggregate score. 
+          Provide a score from 0-1000 for each domain and an overall aggregate score.
           Also provide a brief summary and 3-5 actionable recommendations based on the data.`,
-          prompt: `Analyze the following business document for GRI diagnostic:
-          
-          Document Content:
-          ${doc.text.substring(0, 30000)}`,
+          user: `Analyze the following business document for GRI diagnostic.
+
+Return ONLY a valid JSON object with this exact shape (no markdown, no commentary):
+{
+  "score": <number 0-1000>,
+  "domains": {
+    "strategy": <0-1000>, "finance": <0-1000>, "operations": <0-1000>,
+    "team": <0-1000>, "market": <0-1000>, "technology": <0-1000>
+  },
+  "summary": "<string>",
+  "recommendations": ["<string>", "<string>", "<string>"]
+}
+
+Document Content:
+${doc.text.substring(0, 30000)}`,
         })
+
+        if (!analysis) {
+          throw new Error('AI GRI analysis unavailable (OPENROUTER_API_KEY not set or model error)')
+        }
 
         // Step 3: Save to Database
         const report = await prisma.griReport.create({

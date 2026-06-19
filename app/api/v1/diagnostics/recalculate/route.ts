@@ -61,7 +61,7 @@ export async function POST(req: NextRequest) {
         quick_wins: result.quick_wins,
         data_gaps: result.data_gaps,
         is_current: true,
-        ai_status: process.env.ANTHROPIC_API_KEY ? 'processing' : 'none',
+        ai_status: process.env.OPENROUTER_API_KEY ? 'processing' : 'none',
       })
       .select()
       .single()
@@ -69,7 +69,7 @@ export async function POST(req: NextRequest) {
     if (diagErr) return NextResponse.json({ ok: false, error: diagErr.message }, { status: 500 })
 
     // Fire async AI analysis (non-blocking)
-    if (process.env.ANTHROPIC_API_KEY && diag?.id) {
+    if (process.env.OPENROUTER_API_KEY && diag?.id) {
       const baseUrl = req.nextUrl.origin
       fetch(`${baseUrl}/api/v1/diagnostics/ai-analyze`, {
         method: 'POST',
