@@ -29,6 +29,8 @@ export type NotificationType =
   | 'gri_report_saved'
   | 'ai_query'
   | 'admin_action'
+  | 'expert_case_created'
+  | 'expert_case_updated'
 
 interface NotificationPayload {
   type: NotificationType
@@ -62,6 +64,8 @@ function buildSubject(type: NotificationType): string {
     case 'gri_report_saved':        return 'AIStart360: GRI-отчёт сохранён'
     case 'ai_query':                return 'AIStart360: AI-запрос'
     case 'admin_action':            return 'AIStart360: Действие администратора'
+    case 'expert_case_created':     return 'AIStart360: Новое обращение к эксперту'
+    case 'expert_case_updated':     return 'AIStart360: Обращение к эксперту обновлено'
     default:                         return 'AIStart360: Уведомление'
   }
 }
@@ -162,6 +166,25 @@ function buildEmailBody(payload: NotificationPayload): { title: string; body: st
         title: 'Действие администратора',
         body: `${data.adminName || 'Администратор'} выполнил действие "${data.action || 'N/A'}" над пользователем ${data.targetUser || 'N/A'}.`,
       }
+    case 'expert_case_created': {
+      const priority = String(data.priority ?? 'medium')
+      const trigger = String(data.triggerType ?? 'manual')
+      const userMessage = data.userMessage ? String(data.userMessage) : ''
+      const msgLine = userMessage
+        ? `\n\nСообщение клиента: "${userMessage.slice(0, 280)}${userMessage.length > 280 ? '…' : ''}"`
+        : ''
+      return {
+        title: 'Новое обращение к эксперту',
+        body: `Открыто обращение «${data.title || 'N/A'}» от клиента ${data.userName || data.userEmail || userId || 'N/A'}. Приоритет: ${priority}, триггер: ${trigger}.${msgLine}`,
+      }
+    }
+    case 'expert_case_updated': {
+      const status = String(data.status ?? 'N/A')
+      return {
+        title: 'Обращение к эксперту обновлено',
+        body: `Обращение «${data.title || 'N/A'}» (клиент ${data.userName || data.userEmail || userId || 'N/A'}) обновлено. Статус: ${status}, приоритет: ${data.priority ?? 'N/A'}.`,
+      }
+    }
     default:
       return {
         title: 'Уведомление',
@@ -179,6 +202,9 @@ function buildCta(type: NotificationType): { label: string; url: string } {
   const base = process.env.AUTH_URL || 'https://aistart360.vercel.app'
   if (type === 'expert_comment') {
     return { label: 'Открыть дашборд', url: `${base}/client/dashboard` }
+  }
+  if (type === 'expert_case_created' || type === 'expert_case_updated') {
+    return { label: 'Открыть портал эксперта', url: `${base}/expert/dashboard` }
   }
   return { label: 'Open Giga Panel', url: `${base}/admin-giga-panel` }
 }
@@ -315,8 +341,10 @@ const rateLimitCache = new Map<string, number>()
 
 function rateLimitKey(type: string, userId: string | undefined, data: Record<string, unknown>): string {
   // Include a small stable signature from data so edits of DIFFERENT entities
-  // still send independently. `commentId` / `id` / `preview` cover our cases.
-  const sig = (data.commentId ?? data.id ?? String(data.preview ?? '').slice(0, 40)) as string
+  // still send independently. `caseId` keeps distinct expert cases from being
+  // collapsed into one another (two escalations for the same user must both
+  // fire); `commentId` / `id` / `preview` cover the remaining cases.
+  const sig = (data.caseId ?? data.commentId ?? data.id ?? String(data.preview ?? '').slice(0, 40)) as string
   return `${type}|${userId ?? ''}|${sig}`
 }
 

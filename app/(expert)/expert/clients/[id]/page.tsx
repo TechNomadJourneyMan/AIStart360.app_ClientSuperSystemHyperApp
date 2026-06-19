@@ -7,8 +7,10 @@ import { ExpertCommentThread } from '@/components/expert/ExpertCommentThread'
 import { ExpertCommentsProvider, useExpertComments } from '@/components/expert/ExpertCommentsContext'
 import { DashboardTab } from '@/components/expert/tabs/DashboardTab'
 import { PointATab } from '@/components/expert/tabs/PointATab'
+import { PointBTab } from '@/components/expert/tabs/PointBTab'
 import { GRITab } from '@/components/expert/tabs/GRITab'
 import { PulseTab } from '@/components/expert/tabs/PulseTab'
+import { ExpertCasesTable } from '@/components/expert/ExpertCasesTable'
 import { getAvatarGradient, getInitials } from '@/lib/expert-blocks'
 
 interface ExpertClient {
@@ -34,18 +36,28 @@ function scoreBadgeClass(score: number | null): string {
   return 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20'
 }
 
-type TabKey = 'anketa' | 'dashboard' | 'point-a' | 'gri' | 'pulse'
+type TabKey = 'anketa' | 'dashboard' | 'point-a' | 'point-b' | 'gri' | 'pulse' | 'cases'
 
 const TABS: Array<{ key: TabKey; label: string; icon: string }> = [
   { key: 'anketa',    label: 'Анкета',    icon: 'assignment' },
   { key: 'dashboard', label: 'Дэшборд',   icon: 'dashboard' },
   { key: 'point-a',   label: 'Точка А',   icon: 'radar' },
+  { key: 'point-b',   label: 'Точка Б',   icon: 'flag' },
   { key: 'gri',       label: 'GRI',       icon: 'target' },
   { key: 'pulse',     label: 'Pulse',     icon: 'monitor_heart' },
+  { key: 'cases',     label: 'Кейсы',     icon: 'support_agent' },
 ]
 
 function isValidTab(v: string | null): v is TabKey {
-  return v === 'anketa' || v === 'dashboard' || v === 'point-a' || v === 'gri' || v === 'pulse'
+  return (
+    v === 'anketa' ||
+    v === 'dashboard' ||
+    v === 'point-a' ||
+    v === 'point-b' ||
+    v === 'gri' ||
+    v === 'pulse' ||
+    v === 'cases'
+  )
 }
 
 interface Props {
@@ -208,11 +220,17 @@ export default function ExpertClientDetailPage({ params }: Props) {
             {activeTab === 'point-a' && (
               <TabErrorBoundary tab="Точка А"><PointATab clientId={params.id} /></TabErrorBoundary>
             )}
+            {activeTab === 'point-b' && (
+              <TabErrorBoundary tab="Точка Б"><PointBTab clientId={params.id} /></TabErrorBoundary>
+            )}
             {activeTab === 'gri' && (
               <TabErrorBoundary tab="GRI"><GRITab clientId={params.id} /></TabErrorBoundary>
             )}
             {activeTab === 'pulse' && (
               <TabErrorBoundary tab="Pulse"><PulseTab clientId={params.id} /></TabErrorBoundary>
+            )}
+            {activeTab === 'cases' && (
+              <TabErrorBoundary tab="Кейсы"><ExpertCasesTable clientId={params.id} /></TabErrorBoundary>
             )}
           </div>
         </ExpertCommentsProvider>
@@ -266,11 +284,6 @@ function HeaderCard({
             {client.industry && (
               <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-white/[0.05] border border-white/[0.06] text-on-surface-variant">
                 {client.industry}
-              </span>
-            )}
-            {client.stage && (
-              <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-300">
-                {client.stage}
               </span>
             )}
             <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-primary/10 border border-primary/20 text-primary inline-flex items-center gap-1">

@@ -6,6 +6,8 @@ import { createClient } from '@/lib/supabase/client'
 import Image from 'next/image'
 import Link from 'next/link'
 import { TOTAL_STEPS, STEPS } from '@/components/onboarding/constants/step-config'
+import InlineValidationHints from '@/components/assistant/InlineValidationHints'
+import { getSectionByStep } from '@/lib/assistant/sections'
 
 // Step form components
 import Step1CompanyForm from '@/components/onboarding/steps/Step1CompanyForm'
@@ -219,6 +221,8 @@ export default function OnboardingPage() {
   const stepConfig = STEPS[currentStep - 1]
   const isLastStep = currentStep === TOTAL_STEPS
   const StepForm = STEP_FORMS[currentStep]
+  // Map the wizard step (1–12) to its assistant section id for inline hints.
+  const sectionId = getSectionByStep(currentStep)?.id ?? null
 
   // The early-exit button appears once the user has something to form a
   // Точка А from: either a filled plan (goals on step 2) or uploaded files.
@@ -320,6 +324,13 @@ export default function OnboardingPage() {
         {/* Step form */}
         <div className="mb-8">
           {StepForm && <StepForm data={stepData} onChange={handleFieldChange} userId={userId ?? undefined} />}
+
+          {/* Inline validation hints — non-blocking, warns but never prevents navigation */}
+          {sectionId && (
+            <div className="mt-5">
+              <InlineValidationHints section={sectionId} draftAnswers={stepData} />
+            </div>
+          )}
         </div>
 
         {/* Navigation buttons */}

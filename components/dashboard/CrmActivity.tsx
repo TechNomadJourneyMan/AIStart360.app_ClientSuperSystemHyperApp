@@ -145,9 +145,6 @@ export function CrmActivity({ requests, clients, pendingCount }: CrmActivityProp
                   <p className="text-xs text-on-surface truncate">{client.name}</p>
                   <p className="text-[10px] text-on-surface-variant">{client.industry}</p>
                 </div>
-                <span className={`text-[9px] font-mono ${CLIENT_STAGE[client.stage] ?? 'text-on-surface-variant'}`}>
-                  {client.stage}
-                </span>
               </div>
             ))}
           </div>

@@ -9,9 +9,7 @@ import { useAuthStore } from '@/stores/auth.store'
 import { hasPermission } from '@/lib/navigation'
 import { createClient } from '@/lib/supabase/client'
 import type { UserRole } from '@/types'
-
-type Lang = 'RU' | 'EN' | 'KZ'
-const LANGS: Lang[] = ['RU', 'EN', 'KZ']
+import { getClientLocale, setClientLocale, type Locale } from '@/lib/i18n/locale'
 
 export function Header() {
   const { sidebarCollapsed } = useUIStore()
@@ -21,7 +19,7 @@ export function Header() {
   const [searchFocused, setSearchFocused] = useState(false)
   const [showUserMenu, setShowUserMenu] = useState(false)
   const [showQuickAction, setShowQuickAction] = useState(false)
-  const [lang, setLang] = useState<Lang>('RU')
+  const [locale, setLocale] = useState<Locale>('ru')
   const [time, setTime] = useState('')
   const [uploadStatus, setUploadStatus] = useState<'idle' | 'uploading' | 'done' | 'error'>('idle')
   const [uploadMessage, setUploadMessage] = useState<string>('')
@@ -37,7 +35,15 @@ export function Header() {
     return () => clearInterval(t)
   }, [])
 
-  const cycleLang = () => setLang((l) => LANGS[(LANGS.indexOf(l) + 1) % LANGS.length])
+  // Hydrate the toggle from the persisted cookie. The cookie isn't available
+  // during SSR, so we read it after mount to keep server/client markup in sync.
+  useEffect(() => {
+    setLocale(getClientLocale())
+  }, [])
+
+  // Persisted RU↔EN toggle. setClientLocale writes the cookie and reloads so
+  // server route handlers (AI insights, new-module labels) pick up the change.
+  const toggleLocale = () => setClientLocale(locale === 'ru' ? 'en' : 'ru')
 
   interface QuickAction {
     label: string
@@ -306,15 +312,15 @@ export function Header() {
           <span className="tabular-nums w-[58px]">{time}</span>
         </div>
 
-        {/* Language switcher */}
+        {/* Language switcher — persisted RU↔EN, drives AI insights + module labels */}
         <button
-          onClick={cycleLang}
-          title={`Язык: ${lang} → переключить`}
-          aria-label={`Сменить язык, текущий: ${lang}`}
+          onClick={toggleLocale}
+          title={`Язык: ${locale.toUpperCase()} → переключить на ${(locale === 'ru' ? 'en' : 'ru').toUpperCase()}`}
+          aria-label={`Сменить язык, текущий: ${locale.toUpperCase()}`}
           className="flex items-center gap-1 px-2.5 py-2.5 min-h-[40px] min-w-[40px] justify-center rounded-lg border border-outline-variant/20 text-xs font-mono text-on-surface-variant hover:text-on-surface hover:border-primary/20 hover:bg-primary/5 transition-all duration-150"
         >
           <span className="material-symbols-outlined text-sm hidden md:inline">translate</span>
-          <span>{lang}</span>
+          <span>{locale.toUpperCase()}</span>
         </button>
 
         <div className="w-px h-6 bg-outline-variant/20 hidden md:block" />

@@ -227,10 +227,6 @@ function UserSurveyDetail({ userId }: { userId: string }) {
               <p className="text-[9px] text-slate-600 uppercase">Health</p>
               <p className={`text-lg font-mono font-bold ${scoreColor((diag.health_index as number) ?? 0)}`}>{(diag.health_index as number) ?? 0}</p>
             </div>
-            <div className="text-center">
-              <p className="text-[9px] text-slate-600 uppercase">Стадия</p>
-              <p className="text-sm font-mono font-bold text-blue-300">{(diag.stage as string) ?? '—'}</p>
-            </div>
           </div>
           {['finance', 'sales', 'operations', 'marketing', 'strategy'].map(key => {
             const block = diag[`${key}_score`] as { score?: number } | null

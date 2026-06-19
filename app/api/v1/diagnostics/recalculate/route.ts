@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { calculatePointA } from '@/lib/point-a-engine'
 import { notifyAdmins } from '@/lib/notifications'
+import { localeFromRequestCookie } from '@/lib/i18n/locale'
 
 // POST /api/v1/diagnostics/recalculate
 // Body: { user_id }
@@ -11,6 +12,10 @@ export async function POST(req: NextRequest) {
   try {
     const { user_id } = await req.json()
     if (!user_id) return NextResponse.json({ ok: false, error: 'user_id required' }, { status: 400 })
+
+    // The caller's portal locale lives in this request's cookie. Server-to-server
+    // fires below do NOT forward cookies, so we pass it explicitly in their bodies.
+    const locale = localeFromRequestCookie(req)
 
     const sb = createServerClient()
 
@@ -42,6 +47,16 @@ export async function POST(req: NextRequest) {
     // Calculate Point A
     const result = calculatePointA(answers)
 
+    // Retire any previous current diagnostics for this user before inserting the
+    // new one, so exactly one row stays is_current=true. Without this, repeated
+    // recalculations accumulate multiple is_current rows and downstream
+    // `.single()/.maybeSingle()` reads (Point A current, Point B) break.
+    await sb
+      .from('diagnostics')
+      .update({ is_current: false })
+      .eq('user_id', user_id)
+      .eq('is_current', true)
+
     // Store in diagnostics table
     const { data: diag, error: diagErr } = await sb
       .from('diagnostics')
@@ -61,7 +76,7 @@ export async function POST(req: NextRequest) {
         quick_wins: result.quick_wins,
         data_gaps: result.data_gaps,
         is_current: true,
-        ai_status: process.env.ANTHROPIC_API_KEY ? 'processing' : 'none',
+        ai_status: process.env.OPENROUTER_API_KEY ? 'processing' : 'none',
       })
       .select()
       .single()
@@ -69,13 +84,22 @@ export async function POST(req: NextRequest) {
     if (diagErr) return NextResponse.json({ ok: false, error: diagErr.message }, { status: 500 })
 
     // Fire async AI analysis (non-blocking)
-    if (process.env.ANTHROPIC_API_KEY && diag?.id) {
+    if (process.env.OPENROUTER_API_KEY && diag?.id) {
       const baseUrl = req.nextUrl.origin
+      // Point A full analysis. Cookies aren't forwarded, so pass locale in body.
       fetch(`${baseUrl}/api/v1/diagnostics/ai-analyze`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ diagnostic_id: diag.id, user_id }),
+        body: JSON.stringify({ diagnostic_id: diag.id, user_id, locale }),
       }).catch(err => console.error('[recalculate] Failed to fire AI analysis:', err))
+
+      // Point B strategic bridge (AUTO trigger). Self-guards on insufficient
+      // data, so firing it unconditionally here is safe. Pass locale in body.
+      fetch(`${baseUrl}/api/v1/diagnostics/point-b/ai-generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ diagnostic_id: diag.id, user_id, locale }),
+      }).catch(err => console.error('[recalculate] Failed to fire Point B AI generate:', err))
     }
 
     // Notify admins about diagnostic recalculation

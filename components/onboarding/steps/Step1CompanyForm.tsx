@@ -71,6 +71,16 @@ export default function Step1CompanyForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data.s1_goal_3y_revenue_month])
 
+  // Current revenue: month × 12 → year. Feeds Point A/Point B gap analysis.
+  useEffect(() => {
+    const m = num(data.s1_current_revenue_month)
+    const expected = m * 12
+    if (num(data.s1_current_revenue_year) !== expected) {
+      onChange('s1_current_revenue_year', expected)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data.s1_current_revenue_month])
+
   // ── File uploads (to Supabase Storage 'client-documents' bucket) ─────────
   const [uploading, setUploading] = useState<Record<string, boolean>>({})
   const [uploadError, setUploadError] = useState<string | null>(null)
@@ -297,6 +307,41 @@ export default function Step1CompanyForm({
           <span className="material-symbols-outlined text-primary text-lg">flag</span>
           Ключевые цели
         </h3>
+
+        {/* Текущая выручка — нужна для расчёта разрыва до цели (Точка Б) */}
+        <div className="rounded-xl bg-surface-container border border-white/[0.06] p-4 mb-4">
+          <p className="text-xs font-semibold text-on-surface-variant uppercase tracking-widest mb-1">
+            Текущая выручка (сейчас)
+          </p>
+          <p className="text-[11px] text-on-surface-variant/70 mb-3">
+            Нужна, чтобы рассчитать разрыв до цели и план роста в Точке Б.
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <FieldLabel htmlFor="s1_current_revenue_month">Выручка / месяц, ₸</FieldLabel>
+              <input
+                id="s1_current_revenue_month"
+                type="number"
+                min={0}
+                value={num(data.s1_current_revenue_month) || ''}
+                onChange={(e) => onChange('s1_current_revenue_month', Number(e.target.value) || 0)}
+                placeholder="800 000"
+                className="w-full bg-surface-container-high border border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50"
+              />
+            </div>
+            <div>
+              <FieldLabel htmlFor="s1_current_revenue_year">Выручка / год, ₸ (автоматически)</FieldLabel>
+              <input
+                id="s1_current_revenue_year"
+                type="text"
+                readOnly
+                value={fmtMoney(num(data.s1_current_revenue_year))}
+                placeholder="—"
+                className="w-full bg-black/20 border border-white/[0.04] rounded-lg px-3 py-2.5 text-sm text-on-surface-variant cursor-not-allowed"
+              />
+            </div>
+          </div>
+        </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {/* Цель на 12 мес */}
