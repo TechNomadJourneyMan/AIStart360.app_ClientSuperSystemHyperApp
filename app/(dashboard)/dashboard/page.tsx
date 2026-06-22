@@ -28,6 +28,7 @@ import PointAFilterSection from '@/components/point-a/v2/PointAFilterSection'
 import type { PointA, BlockScore } from '@/types/onboarding'
 import { prisma } from '@/lib/db'
 import { getPortfolioGRI } from '@/lib/portfolio-gri'
+import { ShareButton } from '@/components/share/ShareButton'
 
 export const metadata: Metadata = { title: 'Дэшборд' }
 
@@ -326,7 +327,10 @@ export default async function DashboardPage() {
                   Ваши текущие показатели на основе заполненной анкеты
                 </p>
               </div>
-              <div className="flex items-center gap-2 flex-shrink-0">
+              <div className="flex items-center gap-2 flex-shrink-0 flex-wrap justify-end">
+                {pointA && companyId && (
+                  <ShareButton type="point_a" companyId={companyId} />
+                )}
                 <OnboardingStatusBadges />
               </div>
             </div>

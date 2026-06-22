@@ -105,6 +105,8 @@ model Organization {
   clients            Client[]
   crmIntegrations    CrmIntegration[]
   financialSnapshots FinancialSnapshot[]
+  // Subscription.orgId is a free-form tenant key, not a FK to organizations -
+  // see the note on the Subscription model. No back-relation here.
 
   @@map("organizations")
 }
@@ -545,4 +547,114 @@ model DocumentChunk {
   createdAt         DateTime @default(now())
 
   @@map("document_chunks")
+}
+
+// --- Growth/Acquisition + Sharing + Billing Models -----------------------------
+
+enum SharedReportType {
+  survey
+  gri
+  point_a
+  point_b
+}
+
+enum AcquiringProvider {
+  stripe
+  cloudpayments
+  kaspi
+  halyk
+  mir
+}
+
+enum SubscriptionTier {
+  pilot
+  pro
+  enterprise
+}
+
+enum SubscriptionStatus {
+  trialing
+  active
+  past_due
+  canceled
+}
+
+enum PaymentStatus {
+  stub
+  pending
+  succeeded
+  failed
+}
+
+/// Lead captured by the public "mini-GRI" diagnostic on the landing page.
+model MiniGriLead {
+  id           String   @id @default(cuid())
+  email        String
+  locale       String   @default("ru")
+  answers      Json
+  overallScore Int      @map("overall_score")
+  blockScores  Json     @map("block_scores")
+  source       String?
+  converted    Boolean  @default(false)
+  createdAt    DateTime @default(now())
+
+  @@index([email])
+  @@index([createdAt])
+  @@map("mini_gri_leads")
+}
+
+/// Shareable read-only link to a report (survey/gri/point_a/point_b) for a company.
+model SharedReport {
+  id            String           @id @default(cuid())
+  token         String           @unique
+  type          SharedReportType
+  companyId     String
+  createdById   String?
+  // Roles allowed to be referenced: "expert", "admin", "client_employee".
+  // Empty array = anyone-with-link.
+  audienceRoles String[]         @default([])
+  expiresAt     DateTime?
+  revoked       Boolean          @default(false)
+  views         Int              @default(0)
+  createdAt     DateTime         @default(now())
+
+  @@index([token])
+  @@index([companyId])
+  @@map("shared_reports")
+}
+
+/// Billing subscription for an organization (one-to-one with Organization).
+model Subscription {
+  id               String             @id @default(cuid())
+  // orgId is a free-form tenant key (companies.id / auth user id), NOT an
+  // organizations.id. It is intentionally NOT a FK relation: the billing tenant
+  // here is the company/user, and forcing organizations(id) made every trial
+  // upsert fail its FK and silently no-op. Mirrors PaymentTransaction.orgId.
+  orgId            String             @unique
+  tier             SubscriptionTier   @default(pilot)
+  status           SubscriptionStatus @default(trialing)
+  provider         AcquiringProvider?
+  trialEndsAt      DateTime?
+  currentPeriodEnd DateTime?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  @@map("subscriptions")
+}
+
+/// Individual payment/checkout transaction. Money stored as integer minor units.
+model PaymentTransaction {
+  id         String            @id @default(cuid())
+  orgId      String
+  provider   AcquiringProvider
+  amount     Int // minor units (e.g. cents)
+  currency   String            @default("USD") // ISO 4217, e.g. "USD", "KZT"
+  planKey    String?
+  status     PaymentStatus     @default(stub)
+  externalId String?
+  metadata   Json?
+  createdAt  DateTime          @default(now())
+
+  @@index([orgId])
+  @@map("payment_transactions")
 }

@@ -1,7 +1,105 @@
 import Link from 'next/link'
+import CheckoutButton from '@/app/_components/CheckoutButton'
+import { getPlan } from '@/lib/payments'
 
 // Public landing — рассказывает о AIStart360 и ведёт на /login
 // Auth'd users всё равно увидят landing; кликают «Войти» → middleware вернёт их в их панель.
+
+// ── A/B POSITIONING VARIANTS ──────────────────────────────────────────────
+// Switchable via ?v=1|2|3|4. v1 is the baseline («Операционная система роста»).
+// Each variant swaps the hero badge, headline, subheadline and primary CTA;
+// the rest of the page is shared. Pick with searchParams.v.
+type HeroVariant = {
+  badge: string
+  headlineTop: string
+  headlineAccent: string
+  headlineBottom?: string
+  subheadline: React.ReactNode
+  primaryCta: { label: string; href: string }
+}
+
+const VARIANTS: Record<'1' | '2' | '3' | '4', HeroVariant> = {
+  // v1 — Операционная система роста (baseline)
+  '1': {
+    badge: 'Операционная система роста · v1.0',
+    headlineTop: 'Управляйте ростом',
+    headlineAccent: 'по цифрам',
+    headlineBottom: 'от диагностики до маршрута',
+    subheadline: (
+      <>
+        AIStart360 — операционная система роста для собственника: от{' '}
+        <span className="text-primary font-semibold">диагностики</span> до{' '}
+        <span className="text-primary font-semibold">90-дневного маршрута</span> и{' '}
+        <span className="text-primary font-semibold">живых метрик</span>. Закидываете
+        отчёты — AI извлекает 30–60 ключевых полей.
+      </>
+    ),
+    primaryCta: { label: 'Запустить диагностику бесплатно', href: '/register' },
+  },
+  // v2 — GRI Health Check
+  '2': {
+    badge: 'GRI Health Check · 7 блоков',
+    headlineTop: 'Проверьте готовность',
+    headlineAccent: 'бизнеса к росту',
+    headlineBottom: 'за 5 минут',
+    subheadline: (
+      <>
+        GRI-диагностика по{' '}
+        <span className="text-primary font-semibold">7 блокам</span> с{' '}
+        <span className="text-primary font-semibold">бенчмарками</span> по отрасли.
+        Узнайте, где «бутылочное горлышко» и что чинить первым — без аудита и Excel.
+      </>
+    ),
+    primaryCta: { label: 'Узнать GRI бесплатно за 5 минут', href: '/gri-free' },
+  },
+  // v3 — AI-агентство роста
+  '3': {
+    badge: 'AI-агентство роста',
+    headlineTop: 'Ваша внешняя',
+    headlineAccent: 'команда роста',
+    headlineBottom: 'AI · эксперты · внедрение',
+    subheadline: (
+      <>
+        <span className="text-primary font-semibold">AI-диагностика</span> +{' '}
+        <span className="text-primary font-semibold">эксперты</span> +{' '}
+        <span className="text-primary font-semibold">внедрение</span>. Внешняя команда
+        роста, которая берёт цифры из ваших отчётов и доводит план до результата.
+      </>
+    ),
+    primaryCta: { label: 'Собрать команду роста', href: '/register' },
+  },
+  // v4 — Точка А → Точка Б
+  '4': {
+    badge: 'Точка А → Точка Б · 90 дней',
+    headlineTop: 'Где вы сейчас,',
+    headlineAccent: 'куда хотите',
+    headlineBottom: 'и как пройти путь за 90 дней',
+    subheadline: (
+      <>
+        <span className="text-primary font-semibold">Точка А</span> — честная картина по
+        цифрам. <span className="text-primary font-semibold">Точка Б</span> — 11 целей
+        роста. Между ними — <span className="text-primary font-semibold">90-дневный
+        маршрут</span> с gap-анализом и бенчмарками.
+      </>
+    ),
+    primaryCta: { label: 'Построить маршрут А → Б', href: '/register' },
+  },
+}
+
+function pickVariant(v: string | string[] | undefined): HeroVariant {
+  const raw = Array.isArray(v) ? v[0] : v
+  if (raw === '2' || raw === '3' || raw === '4') return VARIANTS[raw]
+  return VARIANTS['1']
+}
+
+// Human-readable amount from PLANS (minor units → major, $300 / $149).
+function planPrice(key: string): string {
+  const p = getPlan(key)
+  if (!p) return ''
+  const major = p.amount / 100
+  const symbol = p.currency === 'USD' ? '$' : ''
+  return `${symbol}${major.toLocaleString('ru-RU')}`
+}
 
 const MODULES = [
   {
@@ -56,7 +154,15 @@ function griColor(s: string) {
   return 'bg-primary text-primary'
 }
 
-export default function LandingPage() {
+export default function LandingPage({
+  searchParams,
+}: {
+  searchParams: { v?: string | string[] }
+}) {
+  const variant = pickVariant(searchParams?.v)
+  const proMonthlyPrice = planPrice('pro_monthly')
+  const proOnetimePrice = planPrice('pro_onetime')
+
   return (
     <div className="min-h-screen bg-surface text-on-surface">
 
@@ -103,36 +209,39 @@ export default function LandingPage() {
             <div className="inline-flex items-center gap-2 bg-primary/10 border border-primary/20 px-3 py-1.5 rounded-full mb-8">
               <span className="status-dot-online" />
               <span className="text-xs font-mono text-primary uppercase tracking-wider">
-                AI-операционка · v1.0
+                {variant.badge}
               </span>
             </div>
 
             <h1 className="font-headline text-5xl lg:text-7xl font-extrabold leading-[1.05] tracking-tight">
-              Управляйте бизнесом <br />
-              <span className="text-gradient">по цифрам</span>, <br />
-              а не по ощущениям
+              {variant.headlineTop} <br />
+              <span className="text-gradient">{variant.headlineAccent}</span>
+              {variant.headlineBottom && (
+                <>
+                  , <br />
+                  {variant.headlineBottom}
+                </>
+              )}
             </h1>
 
             <p className="mt-8 text-xl text-on-surface-variant max-w-2xl leading-relaxed">
-              AIStart360 — диагностика, метрики и план роста для собственника.
-              Закидываете отчёты — AI извлекает 30–60 ключевых полей.
-              Получаете <span className="text-primary font-semibold">Точку А</span>, <span className="text-primary font-semibold">11 целей</span> и <span className="text-primary font-semibold">90-дневный маршрут</span>.
+              {variant.subheadline}
             </p>
 
             <div className="mt-10 flex flex-wrap gap-4">
               <Link
-                href="/register"
+                href={variant.primaryCta.href}
                 className="group bg-primary text-on-primary font-semibold px-6 py-3.5 rounded-xl flex items-center gap-2 hover:shadow-xl hover:shadow-primary/30 transition-all"
               >
-                Запустить диагностику бесплатно
+                {variant.primaryCta.label}
                 <span className="material-symbols-outlined transition-transform group-hover:translate-x-1">arrow_forward</span>
               </Link>
               <Link
-                href="/presentation"
-                className="border border-white/[0.08] text-on-surface px-6 py-3.5 rounded-xl flex items-center gap-2 hover:border-primary/40 hover:text-primary transition-colors"
+                href="/gri-free"
+                className="group border border-primary/30 text-primary px-6 py-3.5 rounded-xl flex items-center gap-2 hover:border-primary/60 hover:bg-primary/5 transition-colors"
               >
-                <span className="material-symbols-outlined">slideshow</span>
-                Посмотреть презентацию
+                <span className="material-symbols-outlined">bolt</span>
+                Узнать GRI бесплатно за 5 минут
               </Link>
             </div>
 
@@ -400,12 +509,36 @@ export default function LandingPage() {
       {/* ── PRICING / CTA ─────────────────────────────────── */}
       <section id="pricing" className="border-t border-white/[0.04] bg-surface-container-low/30">
         <div className="max-w-7xl mx-auto px-6 py-20">
+          <div className="max-w-2xl mb-12">
+            <p className="text-xs font-mono text-primary uppercase tracking-[0.2em] mb-3">
+              Тарифы
+            </p>
+            <h2 className="font-headline text-4xl lg:text-5xl font-extrabold leading-tight">
+              Начните бесплатно — <br />
+              <span className="text-gradient">платите, когда увидите ценность</span>
+            </h2>
+            <p className="mt-6 text-lg text-on-surface-variant">
+              30 дней пилота без карты. Дальше — подписка {proMonthlyPrice}/мес или разовый
+              доступ {proOnetimePrice}. Без скрытых платежей.
+            </p>
+            <Link
+              href="/gri-free"
+              className="mt-6 inline-flex items-center gap-2 text-sm font-semibold text-primary hover:underline underline-offset-4"
+            >
+              <span className="material-symbols-outlined text-base">bolt</span>
+              Узнать GRI бесплатно за 5 минут
+              <span className="material-symbols-outlined text-base">arrow_forward</span>
+            </Link>
+          </div>
+
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+            {/* ── PILOT ── */}
             <div className="bg-surface-container-low rounded-3xl border border-white/[0.04] p-8 flex flex-col">
               <p className="text-xs font-mono text-on-surface-variant uppercase tracking-[0.2em] mb-3">
-                Pilot
+                Pilot · бесплатно
               </p>
-              <h3 className="font-headline text-3xl font-extrabold mb-4">30 дней бесплатно</h3>
+              <h3 className="font-headline text-3xl font-extrabold mb-1">30 дней бесплатно</h3>
+              <p className="font-mono text-sm text-on-surface-variant mb-4">$0 · без карты</p>
               <p className="text-on-surface-variant mb-6 flex-1">
                 Анкета + парсинг 2 кварталов отчётов. Получаете Точку А, GRI, 11 целей,
                 90-дневный план. Без обязательств.
@@ -420,23 +553,28 @@ export default function LandingPage() {
               </ul>
               <Link
                 href="/register"
-                className="border border-white/[0.08] text-on-surface text-center font-semibold px-6 py-3.5 rounded-xl hover:border-primary/40 hover:text-primary transition-colors"
+                className="border border-white/[0.08] text-on-surface text-center font-semibold px-6 py-3.5 rounded-xl hover:border-primary/40 hover:text-primary transition-colors focus:outline-none focus:ring-2 focus:ring-primary/40"
               >
                 Начать пилот
               </Link>
             </div>
 
+            {/* ── PRO (hybrid: subscription + one-time) ── */}
             <div className="bg-primary/5 rounded-3xl border border-primary/30 p-8 flex flex-col relative overflow-hidden">
               <div className="absolute -top-20 -right-20 w-80 h-80 bg-primary/10 rounded-full blur-3xl pointer-events-none" />
               <p className="text-xs font-mono text-primary uppercase tracking-[0.2em] mb-3">
-                Pro · подписка
+                Pro · полный доступ
               </p>
-              <h3 className="font-headline text-3xl font-extrabold mb-4">
-                $300–800 / мес
+              <h3 className="font-headline text-3xl font-extrabold mb-1">
+                {proMonthlyPrice} / мес
+                <span className="text-on-surface-variant/60 text-lg font-bold">
+                  {' '}или {proOnetimePrice} разово
+                </span>
               </h3>
+              <p className="font-mono text-sm text-on-surface-variant mb-4">подписка или разовая покупка</p>
               <p className="text-on-surface-variant mb-6 flex-1">
-                После пилота. Цена зависит от объёма документов и числа пользователей.
-                Окупается за ~6 недель только за счёт снижения CAC на 5%.
+                После пилота. Подписка обновляет метрики и сопровождение каждый месяц;
+                разовый доступ — для одного полного цикла диагностики и стратегии.
               </p>
               <ul className="space-y-2 mb-8 text-sm">
                 {[
@@ -452,12 +590,23 @@ export default function LandingPage() {
                   </li>
                 ))}
               </ul>
-              <Link
-                href="/register"
-                className="bg-primary text-on-primary text-center font-semibold px-6 py-3.5 rounded-xl hover:shadow-xl hover:shadow-primary/30 transition-all"
-              >
-                Запустить → demo на 30 минут
-              </Link>
+
+              {/* Two checkout options — both map to PLANS via /api/checkout */}
+              <div className="flex flex-col gap-3">
+                <CheckoutButton
+                  planKey="pro_monthly"
+                  label={`Оформить подписку · ${proMonthlyPrice}/мес`}
+                  variant="primary"
+                />
+                <CheckoutButton
+                  planKey="pro_onetime"
+                  label={`Разовый доступ · ${proOnetimePrice}`}
+                  variant="outline"
+                />
+                <p className="text-[11px] text-on-surface-variant/60 text-center mt-1">
+                  Оплата через Stripe · CloudPayments · Kaspi · Halyk · Мир
+                </p>
+              </div>
             </div>
           </div>
         </div>

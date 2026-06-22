@@ -159,24 +159,18 @@ function Topbar() {
             Анкета
           </Link>
           <Link
-            href="/client/intake"
+            href="/client/onboarding-ecommerce"
             className="text-xs text-on-surface-variant hover:text-primary transition-colors hidden sm:inline-flex items-center gap-1"
           >
             <span className="material-symbols-outlined text-[14px]">upload</span>
             Файлы
           </Link>
           <Link
-            href="/settings/business-type"
+            href="/settings"
             className="text-xs text-on-surface-variant hover:text-primary transition-colors hidden md:inline"
           >
             Настройки
           </Link>
-          <button
-            className="inline-flex items-center gap-1.5 text-xs text-on-surface-variant hover:text-primary transition-colors"
-          >
-            <span className="material-symbols-outlined text-[14px]">refresh</span>
-            Пересчитать
-          </button>
         </div>
       </div>
     </header>
@@ -194,14 +188,10 @@ function Hero() {
           <p className="text-on-surface-variant mt-1.5 text-sm">{company.industry} · {company.platform}</p>
         </div>
         <div className="flex gap-3">
-          <Link href="/client/intake" className="px-5 py-2.5 rounded-xl border border-white/[0.08] hover:border-primary/40 hover:text-primary transition-colors text-sm">
+          <Link href="/client/onboarding-ecommerce" className="px-5 py-2.5 rounded-xl border border-white/[0.08] hover:border-primary/40 hover:text-primary transition-colors text-sm">
             <span className="material-symbols-outlined text-base align-middle mr-1">upload</span>
             Загрузить отчёт
           </Link>
-          <button className="px-5 py-2.5 rounded-xl bg-primary text-on-primary font-semibold text-sm hover:shadow-lg hover:shadow-primary/30 transition-all">
-            <span className="material-symbols-outlined text-base align-middle mr-1">sync</span>
-            Пересчитать
-          </button>
         </div>
       </div>
     </section>

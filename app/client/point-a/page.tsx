@@ -11,6 +11,7 @@ import GrowthSnapshotHero from '@/components/dashboard/GrowthSnapshotHero'
 import MyDataSection from '@/components/client/MyDataSection'
 import AssistantHintWidget from '@/components/assistant/AssistantHintWidget'
 import { AssistantChatLauncher } from '@/components/assistant/AssistantChatPanel'
+import { ShareButton } from '@/components/share/ShareButton'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function blockLabel(status: string | undefined): { text: string; color: string } {
@@ -266,6 +267,7 @@ export default function PointAClientPage() {
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <Image src="/logo.svg" alt="AIStart360" width={120} height={22} />
           <div className="flex items-center gap-2 flex-wrap">
+            {companyId && <ShareButton type="point_a" companyId={companyId} />}
             <Link href="/dashboard" className="text-xs font-mono text-on-surface-variant hover:text-primary border border-white/[0.08] hover:border-primary/30 rounded-lg px-3 py-1.5 transition-all flex items-center gap-1.5">
               <span className="material-symbols-outlined text-sm">dashboard</span>
               Кабинет
@@ -614,6 +616,15 @@ export default function PointAClientPage() {
 
             {/* My Data — merged from former /client/my-data: survey answers
                 grouped by step + uploaded documents list. Anchored at #my-data. */}
+            {companyId && (
+              <div className="flex items-center justify-between gap-3 flex-wrap" id="my-data">
+                <div>
+                  <p className="text-xs font-mono text-primary/70 uppercase tracking-[0.2em] mb-1">Анкета · Источник данных</p>
+                  <h2 className="font-headline text-lg font-bold text-on-surface">Мои данные</h2>
+                </div>
+                <ShareButton type="survey" companyId={companyId} />
+              </div>
+            )}
             <MyDataSection userId={userId} />
           </>
         )}

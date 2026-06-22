@@ -4,6 +4,7 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase-client'
 import PointBContainer from '@/components/point-b/PointBContainer'
+import { ShareButtonAuto } from '@/components/share/ShareButtonAuto'
 
 export default function ClientPointBPage() {
   return (
@@ -12,6 +13,7 @@ export default function ClientPointBPage() {
         <div className="max-w-5xl mx-auto flex items-center justify-between">
           <Image src="/logo.svg" alt="AIStart360" width={120} height={22} />
           <div className="flex items-center gap-3">
+            <ShareButtonAuto type="point_b" />
             <Link href="/client/point-a" className="text-xs font-mono text-on-surface-variant hover:text-primary border border-white/[0.08] rounded-lg px-3 py-1.5 transition-all flex items-center gap-1.5">
               <span className="material-symbols-outlined text-sm">arrow_back</span>Точка A
             </Link>

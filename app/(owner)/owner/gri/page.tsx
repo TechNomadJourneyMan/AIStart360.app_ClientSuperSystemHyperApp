@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { ShareButtonAuto } from '@/components/share/ShareButtonAuto'
 
 // 7 GRI blocks (section ids ↔ Russian labels) in canonical order.
 const BLOCK_LABELS: { id: string; label: string }[] = [
@@ -161,12 +162,15 @@ export default function OwnerGriPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="font-headline text-2xl font-bold text-on-surface">GRI Результаты диагностики</h1>
-        <p className="text-sm text-on-surface-variant mt-1">
-          Growth Readiness Index
-          {current?.created_at ? ` · ${new Date(current.created_at).toLocaleDateString('ru-RU')}` : ''}
-        </p>
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <h1 className="font-headline text-2xl font-bold text-on-surface">GRI Результаты диагностики</h1>
+          <p className="text-sm text-on-surface-variant mt-1">
+            Growth Readiness Index
+            {current?.created_at ? ` · ${new Date(current.created_at).toLocaleDateString('ru-RU')}` : ''}
+          </p>
+        </div>
+        <ShareButtonAuto type="gri" />
       </div>
 
       {/* Score hero */}

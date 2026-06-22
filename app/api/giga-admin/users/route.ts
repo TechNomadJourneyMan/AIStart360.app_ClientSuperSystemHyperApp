@@ -22,7 +22,7 @@ export async function GET(req: NextRequest) {
     const sb = createServerClient()
     const { data: profiles, error } = await sb
       .from('profiles')
-      .select('id, email, full_name, role, status, organization, avatar_url, created_at')
+      .select('id, email, full_name, role, status, organization, avatar_url, created_at, widget_config')
       .order('created_at', { ascending: false })
 
     if (error) {
@@ -64,7 +64,9 @@ export async function GET(req: NextRequest) {
         createdAt: p.created_at,
         org: p.organization ?? null,
         status: p.status === 'approved' ? 'active' : p.status === 'blocked' ? 'blocked' : 'pending',
-        widgets: [] as string[],
+        widgets: (Array.isArray((p as { widget_config?: unknown }).widget_config)
+          ? ((p as { widget_config?: string[] }).widget_config as string[])
+          : []),
         surveyCompleted: steps ? steps.size >= 12 : false,
         surveySteps: steps ? Array.from(steps).sort() : [],
         diagnostics: diag ? {

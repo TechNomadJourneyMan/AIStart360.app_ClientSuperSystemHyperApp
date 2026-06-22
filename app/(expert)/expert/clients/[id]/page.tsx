@@ -11,6 +11,7 @@ import { PointBTab } from '@/components/expert/tabs/PointBTab'
 import { GRITab } from '@/components/expert/tabs/GRITab'
 import { PulseTab } from '@/components/expert/tabs/PulseTab'
 import { ExpertCasesTable } from '@/components/expert/ExpertCasesTable'
+import { ExpertClientShare } from '@/components/share/ExpertClientShare'
 import { getAvatarGradient, getInitials } from '@/lib/expert-blocks'
 
 interface ExpertClient {
@@ -129,6 +130,9 @@ export default function ExpertClientDetailPage({ params }: Props) {
           <span className="material-symbols-outlined text-[16px]">arrow_back</span>
           К списку клиентов
         </Link>
+        {!loading && !notFound && client && (
+          <ExpertClientShare clientId={params.id} />
+        )}
       </header>
 
       {loading ? (

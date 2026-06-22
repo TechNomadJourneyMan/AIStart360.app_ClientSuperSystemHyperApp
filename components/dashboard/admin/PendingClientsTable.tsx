@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { toast } from 'sonner'
 
 type PendingUser = {
   id: string
@@ -18,7 +19,8 @@ export function PendingClientsTable() {
   const [users, setUsers] = useState<PendingUser[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  
+  const [pendingId, setPendingId] = useState<string | null>(null)
+
   const fetchUsers = async () => {
     try {
       setLoading(true)
@@ -38,7 +40,9 @@ export function PendingClientsTable() {
   }, [])
 
   const handleApprove = async (userId: string) => {
+    if (pendingId) return
     if (!confirm('Одобрить новую заявку?')) return
+    setPendingId(userId)
     try {
       const res = await fetch('/api/v1/admin/approve-user', {
         method: 'POST',
@@ -47,14 +51,18 @@ export function PendingClientsTable() {
       })
       const json = await res.json()
       if (!json.ok) throw new Error(json.error)
-      fetchUsers()
+      await fetchUsers()
     } catch (err: any) {
-      alert(`Ошибка: ${err.message}`)
+      toast.error(`Ошибка: ${err.message}`)
+    } finally {
+      setPendingId(null)
     }
   }
 
   const handleReject = async (userId: string) => {
+    if (pendingId) return
     if (!confirm('Отклонить новую заявку?')) return
+    setPendingId(userId)
     try {
       const res = await fetch('/api/v1/admin/approve-user', {
         method: 'POST',
@@ -63,9 +71,11 @@ export function PendingClientsTable() {
       })
       const json = await res.json()
       if (!json.ok) throw new Error(json.error)
-      fetchUsers()
+      await fetchUsers()
     } catch (err: any) {
-      alert(`Ошибка: ${err.message}`)
+      toast.error(`Ошибка: ${err.message}`)
+    } finally {
+      setPendingId(null)
     }
   }
 
@@ -120,11 +130,25 @@ export function PendingClientsTable() {
                   </td>
                   <td className="px-4 py-3 w-[120px]">
                      <div className="flex gap-2">
-                       <button onClick={() => handleApprove(u.id)} className="w-8 h-8 flex items-center justify-center rounded-lg bg-primary/10 text-primary hover:bg-primary/20 transition-colors tooltip-base" title="Одобрить">
-                         <span className="material-symbols-outlined text-sm">check</span>
+                       <button
+                         onClick={() => handleApprove(u.id)}
+                         disabled={pendingId === u.id}
+                         className="w-8 h-8 flex items-center justify-center rounded-lg bg-primary/10 text-primary hover:bg-primary/20 transition-colors tooltip-base disabled:opacity-50 disabled:pointer-events-none"
+                         title="Одобрить"
+                       >
+                         <span className={`material-symbols-outlined text-sm ${pendingId === u.id ? 'animate-spin' : ''}`}>
+                           {pendingId === u.id ? 'progress_activity' : 'check'}
+                         </span>
                        </button>
-                       <button onClick={() => handleReject(u.id)} className="w-8 h-8 flex items-center justify-center rounded-lg bg-error/10 text-error hover:bg-error/20 transition-colors tooltip-base" title="Отклонить">
-                         <span className="material-symbols-outlined text-sm">close</span>
+                       <button
+                         onClick={() => handleReject(u.id)}
+                         disabled={pendingId === u.id}
+                         className="w-8 h-8 flex items-center justify-center rounded-lg bg-error/10 text-error hover:bg-error/20 transition-colors tooltip-base disabled:opacity-50 disabled:pointer-events-none"
+                         title="Отклонить"
+                       >
+                         <span className={`material-symbols-outlined text-sm ${pendingId === u.id ? 'animate-spin' : ''}`}>
+                           {pendingId === u.id ? 'progress_activity' : 'close'}
+                         </span>
                        </button>
                      </div>
                   </td>

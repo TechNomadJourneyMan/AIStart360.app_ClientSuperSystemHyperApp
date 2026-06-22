@@ -1637,12 +1637,6 @@ export default function GRICalculator() {
                     <div
                       className="strategy-content text-sm max-h-96 overflow-y-auto gri-slider-scroll pr-2"
                       dangerouslySetInnerHTML={{ __html: renderMarkdown(strategyText) }}
-                      onClick={(e) => {
-                        const target = e.target as HTMLElement
-                        if (target.classList.contains("strategy-action-item")) {
-                          toast.info(t.viewDetails + "... (coming soon)")
-                        }
-                      }}
                     />
                   </CardContent>
                 </Card>

@@ -33,6 +33,7 @@ import type {
 import { InternalEscalationAdapter } from './internal-adapter'
 import { TelegramEscalationAdapter } from './telegram-adapter'
 import { EmailEscalationAdapter } from './email-adapter'
+import { WhatsAppEscalationAdapter } from './whatsapp-adapter'
 
 // ─── Adapter contract ───────────────────────────────────────────────────────
 
@@ -98,14 +99,17 @@ export class EscalationDispatcher {
 }
 
 /**
- * The default dispatcher: InternalAdapter (always on) + env-gated Telegram/Email
- * stubs. Construct once and reuse — adapters read their env flags lazily in
- * isEnabled(), so a single instance respects runtime config changes per call.
+ * The default dispatcher: InternalAdapter (always on) + env-gated dedicated
+ * expert channels (Telegram / Email / WhatsApp). Construct once and reuse —
+ * adapters read their env flags lazily in isEnabled(), so a single instance
+ * respects runtime config changes per call. The expert channels auto-activate
+ * once their creds are present (no extra enable flag required).
  */
 export const defaultEscalationDispatcher = new EscalationDispatcher([
   new InternalEscalationAdapter(),
   new TelegramEscalationAdapter(),
   new EmailEscalationAdapter(),
+  new WhatsAppEscalationAdapter(),
 ])
 
 // ─── Case construction + dispatch ───────────────────────────────────────────

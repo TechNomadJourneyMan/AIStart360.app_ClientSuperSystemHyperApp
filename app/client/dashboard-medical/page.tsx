@@ -124,7 +124,7 @@ export default function MedicalDashboardPage() {
           </div>
           <div className="flex items-center gap-3">
             <Link
-              href="/settings/business-type"
+              href="/settings"
               className="text-xs text-on-surface-variant hover:text-primary"
             >
               Настройки

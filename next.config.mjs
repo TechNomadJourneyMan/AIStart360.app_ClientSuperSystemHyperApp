@@ -68,6 +68,21 @@ const nextConfig = {
       },
     ],
   },
+  // pdfkit loads its built-in .afm font-metric files from disk at runtime.
+  // Bundling it into the server chunk rewrites that path and breaks PDF
+  // generation (ENOENT .next/server/vendor-chunks/data/Helvetica.afm). Keep it
+  // external so it resolves from node_modules. Used by app/api/export/report.
+  experimental: {
+    serverComponentsExternalPackages: ['pdfkit'],
+  },
+  // The PDF export route embeds custom TTF fonts read from disk at runtime.
+  // Next's serverless tracer doesn't see those reads, so without this the TTFs
+  // are pruned from the bundle and /api/export/report ENOENTs on Vercel (→ 500
+  // render_failed). Force-trace public/fonts into that route's bundle. Next
+  // 14.2.x: this key lives at the TOP LEVEL of nextConfig (not under experimental).
+  outputFileTracingIncludes: {
+    '/api/export/report': ['./public/fonts/**'],
+  },
 }
 
 export default nextConfig

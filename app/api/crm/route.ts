@@ -2,15 +2,25 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
+import { requireAuth } from '@/lib/api-utils'
 import * as bitrix24 from '@/lib/crm/bitrix24'
 import * as amocrm from '@/lib/crm/amocrm'
 
 /**
- * GET /api/crm — list all CRM integrations for the current org
+ * GET /api/crm — list CRM integrations for the caller's org
  */
 export async function GET() {
   try {
+    const { session, error } = await requireAuth()
+    if (error) return error
+
+    const orgId = (session!.user as any).orgId as string | undefined
+    if (!orgId) {
+      return NextResponse.json({ error: 'No organization' }, { status: 403 })
+    }
+
     const integrations = await prisma.crmIntegration.findMany({
+      where: { orgId },
       orderBy: { createdAt: 'desc' },
       select: {
         id: true,
@@ -38,6 +48,14 @@ export async function GET() {
  */
 export async function POST(req: NextRequest) {
   try {
+    const { session, error } = await requireAuth()
+    if (error) return error
+
+    const orgId = (session!.user as any).orgId as string | undefined
+    if (!orgId) {
+      return NextResponse.json({ error: 'No organization' }, { status: 403 })
+    }
+
     const body = await req.json() as {
       provider: 'bitrix24' | 'amocrm'
       domain: string
@@ -59,18 +77,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: testResult.error || 'Connection failed' }, { status: 400 })
     }
 
-    // Find or create org (use first org for now)
-    let org = await prisma.organization.findFirst()
-    if (!org) {
-      org = await prisma.organization.create({
-        data: { name: 'Default', slug: 'default' },
-      })
-    }
-
-    // Upsert integration
+    // Upsert integration scoped to the caller's org
     const integration = await prisma.crmIntegration.upsert({
       where: {
-        orgId_provider: { orgId: org.id, provider: body.provider },
+        orgId_provider: { orgId, provider: body.provider },
       },
       update: {
         domain: body.domain,
@@ -80,7 +90,7 @@ export async function POST(req: NextRequest) {
         updatedAt: new Date(),
       },
       create: {
-        orgId: org.id,
+        orgId,
         provider: body.provider,
         domain: body.domain,
         accessToken: body.accessToken,
@@ -109,7 +119,23 @@ export async function POST(req: NextRequest) {
  */
 export async function DELETE(req: NextRequest) {
   try {
+    const { session, error } = await requireAuth()
+    if (error) return error
+
+    const orgId = (session!.user as any).orgId as string | undefined
+    if (!orgId) {
+      return NextResponse.json({ error: 'No organization' }, { status: 403 })
+    }
+
     const { id } = await req.json() as { id: string }
+
+    // Verify the integration belongs to the caller's org before deleting so a
+    // guessed id cannot affect another tenant.
+    const integration = await prisma.crmIntegration.findFirst({ where: { id, orgId } })
+    if (!integration) {
+      return NextResponse.json({ error: 'Integration not found' }, { status: 404 })
+    }
+
     await prisma.crmIntegration.delete({ where: { id } })
     return NextResponse.json({ ok: true })
   } catch (error) {

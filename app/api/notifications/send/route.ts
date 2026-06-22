@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { notifyAdmins, type NotificationType } from '@/lib/notifications'
+import { requireAuth } from '@/lib/api-utils'
 
 export const dynamic = 'force-dynamic'
 
@@ -13,6 +14,9 @@ const VALID_TYPES: NotificationType[] = ['file_uploaded', 'user_registered', 'su
  * Returns immediately — notification delivery is fire-and-forget.
  */
 export async function POST(req: NextRequest) {
+  const { error } = await requireAuth()
+  if (error) return error
+
   try {
     const body = await req.json()
     const { type, userId, data } = body

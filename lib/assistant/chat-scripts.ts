@@ -28,7 +28,7 @@ import { type Locale, DEFAULT_LOCALE } from '@/lib/i18n/locale'
 export const CHAT_SCRIPTS: ChatScript[] = [
   {
     id: '7.1',
-    section: '7.1 Главная ценность',
+    section: '1 Главная ценность',
     question: 'Какую главную пользу даёт мне эта платформа прямо сейчас?',
     question_en: 'What is the main value this platform gives me right now?',
     intent:
@@ -43,7 +43,7 @@ export const CHAT_SCRIPTS: ChatScript[] = [
   },
   {
     id: '7.2',
-    section: '7.2 Dashboard',
+    section: '2 Dashboard',
     question: 'Что показывает мой дашборд и на что смотреть в первую очередь?',
     question_en: 'What does my dashboard show and what should I look at first?',
     intent: 'Сориентировать в дашборде и приоритезировать внимание (7.2 Dashboard)',
@@ -57,7 +57,7 @@ export const CHAT_SCRIPTS: ChatScript[] = [
   },
   {
     id: '7.3',
-    section: '7.3 Анкета',
+    section: '3 Анкета',
     question: 'Насколько заполнена моя анкета и что осталось?',
     question_en: 'How complete is my survey and what is left?',
     intent: 'Показать прогресс и точные пробелы без воды (7.3 Анкета)',
@@ -71,7 +71,7 @@ export const CHAT_SCRIPTS: ChatScript[] = [
   },
   {
     id: '7.4',
-    section: '7.4 Загрузка файлов',
+    section: '4 Загрузка файлов',
     question: 'Какие файлы загрузить, чтобы анализ был точнее?',
     question_en: 'Which files should I upload to make the analysis more accurate?',
     intent: 'Объяснить пользу загрузки файлов и закрыть пробелы данными (7.4 Загрузка файлов)',
@@ -85,7 +85,7 @@ export const CHAT_SCRIPTS: ChatScript[] = [
   },
   {
     id: '7.5',
-    section: '7.5 Point A',
+    section: '5 Point A',
     question: 'Что такое моя Точка А и почему такой результат?',
     question_en: 'What is my Point A and why this result?',
     intent: 'Прозрачно объяснить оценку текущего состояния (7.5 Point A)',
@@ -99,7 +99,7 @@ export const CHAT_SCRIPTS: ChatScript[] = [
   },
   {
     id: '7.6',
-    section: '7.6 Point B',
+    section: '6 Point B',
     question: 'Какая у меня Точка Б и реалистична ли цель?',
     question_en: 'What is my Point B and is the goal realistic?',
     intent: 'Показать цель, разрыв и реалистичность без выдуманных чисел (7.6 Point B)',
@@ -114,7 +114,7 @@ export const CHAT_SCRIPTS: ChatScript[] = [
   },
   {
     id: '7.7',
-    section: '7.7 GRI',
+    section: '7 GRI',
     question: 'Что такое индекс GRI и что он говорит о готовности к росту?',
     question_en: 'What is the GRI index and what does it say about growth readiness?',
     intent: 'Объяснить GRI и топ-ограничения (7.7 GRI)',
@@ -128,7 +128,7 @@ export const CHAT_SCRIPTS: ChatScript[] = [
   },
   {
     id: '7.8',
-    section: '7.8 Метрики',
+    section: '8 Метрики',
     question: 'Какие метрики у меня в норме, а какие проседают?',
     question_en: 'Which of my metrics are healthy and which are lagging?',
     intent: 'Дать честный срез ключевых метрик (7.8 Метрики)',
@@ -143,7 +143,7 @@ export const CHAT_SCRIPTS: ChatScript[] = [
   },
   {
     id: '7.9',
-    section: '7.9 Карта роста / Action Plan',
+    section: '9 Карта роста / Action Plan',
     question: 'Каков мой план роста и что делать в ближайшие 90 дней?',
     question_en: 'What is my growth plan and what should I do in the next 90 days?',
     intent: 'Превратить разрыв в конкретные шаги (7.9 Карта роста/Action Plan)',
@@ -157,7 +157,7 @@ export const CHAT_SCRIPTS: ChatScript[] = [
   },
   {
     id: '7.10',
-    section: '7.10 AI-инсайты',
+    section: '10 AI-инсайты',
     question: 'Какие AI-инсайты и риски нашёл анализ по моему бизнесу?',
     question_en: 'What AI insights and risks did the analysis find for my business?',
     intent: 'Передать выводы LLM-анализа с пометкой уверенности (7.10 AI-инсайты)',
@@ -172,7 +172,7 @@ export const CHAT_SCRIPTS: ChatScript[] = [
   },
   {
     id: '7.11',
-    section: '7.11 Экспертная проверка',
+    section: '11 Экспертная проверка',
     question: 'Когда мне нужен живой эксперт и как его позвать?',
     question_en: 'When do I need a human expert and how do I call one?',
     intent: 'Объяснить экспертную проверку и запустить эскалацию (7.11 Экспертная проверка)',
@@ -186,7 +186,7 @@ export const CHAT_SCRIPTS: ChatScript[] = [
   },
   {
     id: '7.12',
-    section: '7.12 Админ-панель',
+    section: '12 Админ-панель',
     question: 'Что видит администратор/команда и кто работает с моими данными?',
     question_en: 'What does the admin/team see and who works with my data?',
     intent: 'Прозрачно объяснить роль админ-панели и конфиденциальность (7.12 Админ-панель)',
@@ -300,7 +300,7 @@ const COPY: Record<Locale, {
     s71_filled: (pct) => `Анкета заполнена на ${pct}%.`,
     s71_score: (score, stagePart, pct) =>
       `Сейчас ваш общий балл — ${score}/100${stagePart}. Анкета заполнена на ${pct}%.`,
-    s71_stage: (stage) => `, стадия — «${stage}»`,
+    s71_stage: (_stage) => ``, // «Стадия» removed from display per product decision (kept in data only)
     s71_nudge: (pct, next) =>
       `Сейчас заполнено ${pct}% — чтобы польза была максимальной, ${next}.`,
     s71_add: (list) => `добавьте: ${list}`,
@@ -331,7 +331,7 @@ const COPY: Record<Locale, {
     s75_noDiag:
       'Точка А ещё не рассчитана. Пройдите анкету или загрузите отчёты — тогда я покажу общий балл, индекс здоровья и разбивку по блокам.',
     s75_health: (h) => `, индекс здоровья ${h}`,
-    s75_stage: (stage) => `, стадия «${stage}»`,
+    s75_stage: (_stage) => ``, // «Стадия» removed from display per product decision (kept in data only)
     s75_strong: (list) => ` Сильнее всего: ${list}.`,
     s75_weak: (list) => ` Слабее всего: ${list}.`,
     s75_body: (score, healthPart, stagePart, strongPart, weakPart) =>

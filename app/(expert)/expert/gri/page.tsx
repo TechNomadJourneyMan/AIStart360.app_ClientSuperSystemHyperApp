@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { ShareButtonAuto } from '@/components/share/ShareButtonAuto'
 
 // 7 GRI blocks (section ids ↔ Russian labels + icons) in canonical order.
 const BLOCKS: { id: string; label: string; icon: string; desc: string }[] = [
@@ -88,10 +89,13 @@ export default function ExpertGriPage() {
   return (
     <div className="space-y-8">
       {/* Header */}
-      <section>
-        <p className="text-xs font-mono text-primary/70 uppercase tracking-[0.2em] mb-3">Expert Portal</p>
-        <h1 className="font-headline text-3xl font-extrabold text-on-surface">GRI-диагностика</h1>
-        <p className="text-on-surface-variant mt-2 text-sm">Growth Readiness Index — комплексная оценка готовности к росту</p>
+      <section className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <p className="text-xs font-mono text-primary/70 uppercase tracking-[0.2em] mb-3">Expert Portal</p>
+          <h1 className="font-headline text-3xl font-extrabold text-on-surface">GRI-диагностика</h1>
+          <p className="text-on-surface-variant mt-2 text-sm">Growth Readiness Index — комплексная оценка готовности к росту</p>
+        </div>
+        <ShareButtonAuto type="gri" />
       </section>
 
       {loading ? (

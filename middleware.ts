@@ -64,7 +64,19 @@ export async function middleware(request: NextRequest) {
     pathname.endsWith('.png') ||
     pathname.endsWith('.ico') ||
     pathname === '/' ||
-    pathname.startsWith('/presentation')
+    pathname.startsWith('/presentation') ||
+    pathname.startsWith('/gri-free') ||
+    // Public legal pages — linked from the registration consent checkbox.
+    pathname.startsWith('/terms') ||
+    pathname.startsWith('/privacy') ||
+    // Public read-only shared report links (/r/<token>) — no auth required.
+    pathname === '/r' ||
+    pathname.startsWith('/r/') ||
+    // Demo acquiring + checkout outcome pages must render for anonymous visitors
+    // (the stub is a public payment-flow demo; success/cancel may be hit pre-auth).
+    pathname.startsWith('/checkout/stub') ||
+    pathname.startsWith('/checkout/success') ||
+    pathname.startsWith('/checkout/cancel')
   ) {
     return NextResponse.next()
   }

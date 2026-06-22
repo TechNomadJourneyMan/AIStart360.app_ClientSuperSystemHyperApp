@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import { Toaster } from 'sonner'
 import { Providers } from './providers'
 import './globals.css'
 
@@ -41,6 +42,8 @@ export default function RootLayout({
       </head>
       <body className="font-body antialiased">
         <Providers>{children}</Providers>
+        {/* Single global sonner Toaster — used by ShareButton et al. */}
+        <Toaster theme="dark" position="bottom-right" richColors />
       </body>
     </html>
   )

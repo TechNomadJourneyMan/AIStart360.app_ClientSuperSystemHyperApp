@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
+import { requireAuth } from '@/lib/api-utils'
 import * as bitrix24 from '@/lib/crm/bitrix24'
 import * as amocrm from '@/lib/crm/amocrm'
 
@@ -11,9 +12,18 @@ import * as amocrm from '@/lib/crm/amocrm'
  */
 export async function POST(req: NextRequest) {
   try {
+    const { session, error } = await requireAuth()
+    if (error) return error
+
+    const orgId = (session!.user as any).orgId as string | undefined
+    if (!orgId) {
+      return NextResponse.json({ error: 'No organization' }, { status: 403 })
+    }
+
     const { id } = await req.json() as { id: string }
 
-    const integration = await prisma.crmIntegration.findUnique({ where: { id } })
+    // Scope to the caller's org so a guessed id cannot sync another tenant's CRM.
+    const integration = await prisma.crmIntegration.findFirst({ where: { id, orgId } })
     if (!integration) {
       return NextResponse.json({ error: 'Integration not found' }, { status: 404 })
     }

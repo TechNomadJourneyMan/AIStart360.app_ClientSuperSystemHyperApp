@@ -101,7 +101,6 @@ export function ClientsTable() {
         icon="business_center"
         title="Нет клиентов"
         description="Клиенты появятся здесь после регистрации и подтверждения"
-        action={{ label: 'Добавить клиента', onClick: () => {} }}
       />
     )
   }

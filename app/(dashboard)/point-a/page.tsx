@@ -18,6 +18,7 @@ import MarketAnalysisCard from '@/components/point-a/v2/MarketAnalysisCard'
 import InsightsFeed from '@/components/point-a/v2/InsightsFeed'
 import PointAQuickPills from '@/components/point-a/v2/PointAQuickPills'
 import PointAFilterSection from '@/components/point-a/v2/PointAFilterSection'
+import { ShareButton } from '@/components/share/ShareButton'
 
 export const metadata: Metadata = { title: 'Точка А — Текущее состояние' }
 
@@ -168,7 +169,10 @@ export default async function PointAPage() {
               Загрузите документы для автоматического анализа ИИ-агентом.
             </p>
           </div>
-          <OnboardingStatusBadges />
+          <div className="flex items-center gap-2 flex-wrap">
+            {companyId && <ShareButton type="point_a" companyId={companyId} />}
+            <OnboardingStatusBadges />
+          </div>
         </div>
       </section>
 
@@ -218,12 +222,17 @@ export default async function PointAPage() {
             <h2 className="font-headline text-lg font-bold text-on-surface">Данные анкеты</h2>
             <p className="text-xs text-on-surface-variant mt-1">Информация из бизнес-анкеты для AI-диагностики</p>
           </div>
-          {Object.keys(surveyAnswers).length > 0 && (
-            <a href="/client/onboarding" className="text-xs text-primary/70 hover:text-primary transition-colors font-mono flex items-center gap-1">
-              <span className="material-symbols-outlined text-sm">edit</span>
-              Редактировать
-            </a>
-          )}
+          <div className="flex items-center gap-3 flex-wrap">
+            {companyId && Object.keys(surveyAnswers).length > 0 && (
+              <ShareButton type="survey" companyId={companyId} />
+            )}
+            {Object.keys(surveyAnswers).length > 0 && (
+              <a href="/client/onboarding" className="text-xs text-primary/70 hover:text-primary transition-colors font-mono flex items-center gap-1">
+                <span className="material-symbols-outlined text-sm">edit</span>
+                Редактировать
+              </a>
+            )}
+          </div>
         </div>
         <SurveyOverview answers={surveyAnswers} completedSteps={surveyCompletedSteps} />
       </section>

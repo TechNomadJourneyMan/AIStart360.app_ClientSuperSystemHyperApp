@@ -20,7 +20,8 @@
  * (cookie → default Russian); premium dark tokens.
  */
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { toast, Toaster } from 'sonner'
 import { getSection } from '@/lib/assistant/sections'
 import { getClientLocale, type Locale } from '@/lib/i18n/locale'
 
@@ -40,6 +41,13 @@ const T: Record<Locale, {
   escalateFailed: string
   disclaimer: string
   openAssistant: string
+  searchPlaceholder: string
+  noMatches: string
+  askPlaceholder: string
+  askButton: string
+  asking: string
+  askToExpert: string
+  expertHandoff: string
 }> = {
   ru: {
     title: 'Ассистент',
@@ -56,6 +64,13 @@ const T: Record<Locale, {
     escalateFailed: 'Не удалось отправить запрос',
     disclaimer: 'Ассистент отвечает только по вашим данным — без догадок.',
     openAssistant: 'Открыть ассистента',
+    searchPlaceholder: 'Поиск по вопросам…',
+    noMatches: 'Ничего не найдено по запросу.',
+    askPlaceholder: 'Задайте свой вопрос…',
+    askButton: 'Спросить',
+    asking: 'Думаю…',
+    askToExpert: 'Передаём эксперту…',
+    expertHandoff: 'Вопрос передан эксперту — он свяжется с вами',
   },
   en: {
     title: 'Assistant',
@@ -72,6 +87,13 @@ const T: Record<Locale, {
     escalateFailed: 'Could not send the request',
     disclaimer: 'The assistant answers only from your data — no guesswork.',
     openAssistant: 'Open the assistant',
+    searchPlaceholder: 'Search questions…',
+    noMatches: 'No questions match your search.',
+    askPlaceholder: 'Ask your own question…',
+    askButton: 'Ask',
+    asking: 'Thinking…',
+    askToExpert: 'Handing to an expert…',
+    expertHandoff: 'Your question has been passed to an expert — they will be in touch',
   },
 }
 
@@ -92,17 +114,47 @@ interface ChatAnswer {
   insufficient: boolean
 }
 
+/**
+ * Unified model for the PINNED answer card. It carries either a hydrated
+ * prepared-question answer (`kind: 'script'`), a free-text AI answer
+ * (`kind: 'free'`), or the expert-handoff state (`kind: 'expert'`) when the AI
+ * couldn't answer the free question and the case was created server-side.
+ */
+type PinnedAnswer =
+  | { kind: 'script'; question: string; answer: ChatAnswer }
+  | { kind: 'free'; question: string; answer: string }
+  | { kind: 'expert'; question: string; answer: string | null }
+
 function sectionLabel(key: string): string {
   return getSection(key)?.label ?? key
+}
+
+/** Case-insensitive substring match for the live question filter. */
+function matchesQuery(item: ScriptItem, query: string): boolean {
+  if (!query) return true
+  const q = query.toLowerCase()
+  return (
+    item.question.toLowerCase().includes(q) ||
+    (item.valueLine ?? '').toLowerCase().includes(q)
+  )
 }
 
 export function AssistantChatPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [groups, setGroups] = useState<ScriptGroup[]>([])
   const [loadingScripts, setLoadingScripts] = useState(false)
   const [activeId, setActiveId] = useState<string | null>(null)
-  const [answer, setAnswer] = useState<ChatAnswer | null>(null)
+  // The single PINNED answer (prepared OR free OR expert-handoff) — sticky at top.
+  const [pinned, setPinned] = useState<PinnedAnswer | null>(null)
   const [answerLoading, setAnswerLoading] = useState(false)
   const [answerError, setAnswerError] = useState<string | null>(null)
+
+  // Live filter over the prepared-question list (ask #2).
+  const [query, setQuery] = useState('')
+
+  // Free-text question input (ask #4 / #5).
+  const [freeQuestion, setFreeQuestion] = useState('')
+  const [asking, setAsking] = useState(false)
+  const bodyRef = useRef<HTMLDivElement>(null)
 
   const [escalating, setEscalating] = useState(false)
   const [escalated, setEscalated] = useState(false)
@@ -114,6 +166,16 @@ export function AssistantChatPanel({ open, onClose }: { open: boolean; onClose: 
   useEffect(() => {
     setLocale(getClientLocale())
   }, [])
+
+  // Filtered groups: drop questions that don't match the query, then drop now-
+  // empty sections. Memoized so typing stays snappy.
+  const filteredGroups = useMemo<ScriptGroup[]>(() => {
+    const q = query.trim()
+    if (!q) return groups
+    return groups
+      .map((g) => ({ ...g, scripts: g.scripts.filter((s) => matchesQuery(s, q)) }))
+      .filter((g) => g.scripts.length > 0)
+  }, [groups, query])
 
   const loadScripts = useCallback(async () => {
     setLoadingScripts(true)
@@ -144,11 +206,17 @@ export function AssistantChatPanel({ open, onClose }: { open: boolean; onClose: 
     return () => window.removeEventListener('keydown', onKey)
   }, [open, onClose])
 
+  // Keep the pinned card in view whenever a new answer starts/arrives.
+  const scrollToTop = useCallback(() => {
+    bodyRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
+  }, [])
+
   const ask = async (item: ScriptItem) => {
     setActiveId(item.id)
-    setAnswer(null)
+    setPinned(null)
     setAnswerError(null)
     setAnswerLoading(true)
+    scrollToTop()
     try {
       const res = await fetch('/api/v1/assistant/chat', {
         method: 'POST',
@@ -158,11 +226,15 @@ export function AssistantChatPanel({ open, onClose }: { open: boolean; onClose: 
       })
       const json = (await res.json()) as { ok: boolean; error?: string } & Partial<ChatAnswer>
       if (res.ok && json.ok && typeof json.answer_ru === 'string') {
-        setAnswer({
-          answer_ru: json.answer_ru,
-          used_data: json.used_data ?? '',
-          section: json.section ?? item.section,
-          insufficient: Boolean(json.insufficient),
+        setPinned({
+          kind: 'script',
+          question: item.question,
+          answer: {
+            answer_ru: json.answer_ru,
+            used_data: json.used_data ?? '',
+            section: json.section ?? item.section,
+            insufficient: Boolean(json.insufficient),
+          },
         })
       } else {
         setAnswerError(json.error || t.answerFailed)
@@ -171,6 +243,50 @@ export function AssistantChatPanel({ open, onClose }: { open: boolean; onClose: 
       setAnswerError(t.networkError)
     } finally {
       setAnswerLoading(false)
+    }
+  }
+
+  // Free-text question → POST /api/v1/assistant/ask. The answer (or the
+  // expert-handoff state) lands in the PINNED card; on escalation a toast also
+  // confirms it. The server creates the ExpertCase when it escalates.
+  const askFree = async () => {
+    const q = freeQuestion.trim()
+    if (!q || asking) return
+    setActiveId(null)
+    setPinned(null)
+    setAnswerError(null)
+    setAnswerLoading(true)
+    setAsking(true)
+    scrollToTop()
+    try {
+      const res = await fetch('/api/v1/assistant/ask', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ question: q }),
+      })
+      const json = (await res.json()) as {
+        ok: boolean
+        escalated?: boolean
+        answer?: string | null
+        error?: string
+      }
+      if (res.ok && json.ok) {
+        if (json.escalated) {
+          setPinned({ kind: 'expert', question: q, answer: json.answer ?? null })
+          toast.success(t.expertHandoff)
+        } else {
+          setPinned({ kind: 'free', question: q, answer: json.answer ?? '' })
+        }
+        setFreeQuestion('')
+      } else {
+        setAnswerError(json.error || t.answerFailed)
+      }
+    } catch {
+      setAnswerError(t.networkError)
+    } finally {
+      setAnswerLoading(false)
+      setAsking(false)
     }
   }
 
@@ -235,41 +351,102 @@ export function AssistantChatPanel({ open, onClose }: { open: boolean; onClose: 
         </header>
 
         {/* Body */}
-        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
-          {/* Active answer */}
-          {(answerLoading || answer || answerError) && (
-            <div className="rounded-2xl border border-primary/15 bg-primary/[0.04] p-4">
-              {answerLoading ? (
-                <div className="space-y-2">
-                  <div className="h-2.5 bg-white/[0.06] rounded-full animate-pulse" />
-                  <div className="h-2.5 bg-white/[0.05] rounded-full animate-pulse w-3/4" />
-                  <div className="h-2.5 bg-white/[0.05] rounded-full animate-pulse w-1/2" />
-                </div>
-              ) : answerError ? (
-                <p className="flex items-start gap-2 text-xs text-error">
-                  <span className="material-symbols-outlined text-sm mt-0.5">error</span>
-                  {answerError}
-                </p>
-              ) : answer ? (
-                <>
-                  {answer.insufficient && (
-                    <div className="flex items-start gap-2 mb-3 rounded-lg border border-amber-400/20 bg-amber-400/10 px-3 py-2">
-                      <span className="material-symbols-outlined text-sm text-amber-400 mt-0.5 flex-shrink-0">
-                        info
+        <div ref={bodyRef} className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
+          {/* PINNED answer — stays at the top while the list below scrolls (ask #1). */}
+          {(answerLoading || pinned || answerError) && (
+            <div className="sticky top-0 z-10 -mx-5 px-5 pt-0.5 pb-3 bg-[#0c0e14]">
+              <div className="rounded-2xl border border-primary/15 bg-primary/[0.04] p-4 shadow-lg shadow-black/20">
+                {answerLoading ? (
+                  <div className="space-y-2">
+                    <div className="h-2.5 bg-white/[0.06] rounded-full animate-pulse" />
+                    <div className="h-2.5 bg-white/[0.05] rounded-full animate-pulse w-3/4" />
+                    <div className="h-2.5 bg-white/[0.05] rounded-full animate-pulse w-1/2" />
+                  </div>
+                ) : answerError ? (
+                  <p className="flex items-start gap-2 text-xs text-error">
+                    <span className="material-symbols-outlined text-sm mt-0.5">error</span>
+                    {answerError}
+                  </p>
+                ) : pinned ? (
+                  <>
+                    {/* Echo the question being answered. */}
+                    <p className="flex items-start gap-1.5 mb-2.5 text-[11px] font-mono text-on-surface-variant uppercase tracking-widest">
+                      <span className="material-symbols-outlined text-xs mt-px text-primary/70">
+                        {pinned.kind === 'expert' ? 'support_agent' : 'help'}
                       </span>
-                      <p className="text-[11px] text-amber-300 leading-snug">
-                        {t.insufficient}
-                      </p>
-                    </div>
-                  )}
-                  <p className="text-sm text-on-surface leading-relaxed whitespace-pre-line">{answer.answer_ru}</p>
-                  {answer.used_data && (
-                    <p className="mt-3 pt-3 border-t border-white/[0.06] text-[10px] font-mono text-on-surface-variant">
-                      {t.source}: {answer.used_data}
+                      <span className="normal-case tracking-normal text-[12px] text-on-surface/80 break-words">
+                        {pinned.question}
+                      </span>
                     </p>
-                  )}
-                </>
-              ) : null}
+
+                    {pinned.kind === 'script' ? (
+                      <>
+                        {pinned.answer.insufficient && (
+                          <div className="flex items-start gap-2 mb-3 rounded-lg border border-amber-400/20 bg-amber-400/10 px-3 py-2">
+                            <span className="material-symbols-outlined text-sm text-amber-400 mt-0.5 flex-shrink-0">
+                              info
+                            </span>
+                            <p className="text-[11px] text-amber-300 leading-snug">{t.insufficient}</p>
+                          </div>
+                        )}
+                        <p className="text-sm text-on-surface leading-relaxed whitespace-pre-line">
+                          {pinned.answer.answer_ru}
+                        </p>
+                        {pinned.answer.used_data && (
+                          <p className="mt-3 pt-3 border-t border-white/[0.06] text-[10px] font-mono text-on-surface-variant">
+                            {t.source}: {pinned.answer.used_data}
+                          </p>
+                        )}
+                      </>
+                    ) : pinned.kind === 'free' ? (
+                      <p className="text-sm text-on-surface leading-relaxed whitespace-pre-line">
+                        {pinned.answer}
+                      </p>
+                    ) : (
+                      // Expert handoff — the AI couldn't answer; case created server-side.
+                      <>
+                        <div className="flex items-start gap-2 rounded-lg border border-primary/25 bg-primary/10 px-3 py-2.5">
+                          <span className="material-symbols-outlined text-base text-primary mt-0.5 flex-shrink-0">
+                            mark_email_read
+                          </span>
+                          <p className="text-sm text-primary leading-snug">{t.expertHandoff}</p>
+                        </div>
+                        {pinned.answer && (
+                          <p className="mt-3 text-sm text-on-surface-variant leading-relaxed whitespace-pre-line">
+                            {pinned.answer}
+                          </p>
+                        )}
+                      </>
+                    )}
+                  </>
+                ) : null}
+              </div>
+            </div>
+          )}
+
+          {/* Search filter over the prepared questions (ask #2). */}
+          {!loadingScripts && groups.length > 0 && (
+            <div className="relative">
+              <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-base text-on-surface-variant pointer-events-none">
+                search
+              </span>
+              <input
+                type="text"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder={t.searchPlaceholder}
+                aria-label={t.searchPlaceholder}
+                className="w-full rounded-xl border border-white/[0.08] bg-surface-container-low pl-9 pr-9 py-2.5 text-sm text-on-surface placeholder:text-on-surface-variant focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary/30 transition-all"
+              />
+              {query && (
+                <button
+                  onClick={() => setQuery('')}
+                  aria-label={t.close}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 w-6 h-6 rounded-lg flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:bg-white/[0.06] transition-all"
+                >
+                  <span className="material-symbols-outlined text-base">close</span>
+                </button>
+              )}
             </div>
           )}
 
@@ -282,8 +459,10 @@ export function AssistantChatPanel({ open, onClose }: { open: boolean; onClose: 
             </div>
           ) : groups.length === 0 ? (
             <p className="text-xs text-on-surface-variant text-center py-8">{t.noScripts}</p>
+          ) : filteredGroups.length === 0 ? (
+            <p className="text-xs text-on-surface-variant text-center py-8">{t.noMatches}</p>
           ) : (
-            groups.map((group) => (
+            filteredGroups.map((group) => (
               <div key={group.section}>
                 <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest mb-2">
                   {sectionLabel(group.section)}
@@ -325,8 +504,40 @@ export function AssistantChatPanel({ open, onClose }: { open: boolean; onClose: 
           )}
         </div>
 
-        {/* Footer — call an expert */}
-        <footer className="px-5 py-4 border-t border-white/[0.06] flex-shrink-0 space-y-2">
+        {/* Footer — free-text question + call an expert */}
+        <footer className="px-5 py-4 border-t border-white/[0.06] flex-shrink-0 space-y-3">
+          {/* Free-text question (ask #4 / #5). Enter sends; Shift+Enter = newline. */}
+          <div className="rounded-2xl border border-white/[0.08] bg-surface-container-low focus-within:border-primary/30 focus-within:ring-2 focus-within:ring-primary/20 transition-all">
+            <textarea
+              value={freeQuestion}
+              onChange={(e) => setFreeQuestion(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault()
+                  askFree()
+                }
+              }}
+              rows={2}
+              maxLength={1000}
+              disabled={asking}
+              placeholder={t.askPlaceholder}
+              aria-label={t.askPlaceholder}
+              className="w-full resize-none bg-transparent px-3.5 pt-3 pb-1.5 text-sm text-on-surface placeholder:text-on-surface-variant focus:outline-none disabled:opacity-60"
+            />
+            <div className="flex items-center justify-end px-2.5 pb-2.5">
+              <button
+                onClick={askFree}
+                disabled={asking || !freeQuestion.trim()}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-primary text-[#003824] font-semibold text-sm hover:bg-primary/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-primary/40"
+              >
+                <span className={`material-symbols-outlined text-base ${asking ? 'animate-spin' : ''}`}>
+                  {asking ? 'progress_activity' : 'send'}
+                </span>
+                {asking ? t.asking : t.askButton}
+              </button>
+            </div>
+          </div>
+
           {escalated ? (
             <div className="flex items-center gap-2 text-sm text-primary bg-primary/10 border border-primary/25 rounded-xl px-4 py-2.5">
               <span className="material-symbols-outlined text-base">mark_email_read</span>
@@ -350,6 +561,10 @@ export function AssistantChatPanel({ open, onClose }: { open: boolean; onClose: 
           </p>
         </footer>
       </aside>
+
+      {/* Local toaster so the expert-handoff confirmation renders even when no
+          global <Toaster/> is mounted in a layout. */}
+      <Toaster position="bottom-center" theme="dark" richColors />
     </>
   )
 }

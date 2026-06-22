@@ -72,7 +72,8 @@ export const SECTION_FIELD_MAP: AssistantSection[] = [
     required: [
       { key: 's1_company_name', format: 'text', minLen: 2 },
       { key: 's1_industry', format: 'text', minLen: 2 },
-      { key: 's1_stage', format: 'enum' },
+      // Стадия (s1_stage) intentionally NOT required/displayed — kept in data only
+      // for the realism rules to read opportunistically (see validators/rules.ts).
       { key: 's1_contact_email', format: 'email' },
     ],
     recommended: [
@@ -184,7 +185,11 @@ export const SECTION_FIELD_MAP: AssistantSection[] = [
       { key: 's9n_net_profit', format: 'money' },
       { key: 's9n_net_margin', aliases: ['s2_gross_margin'], format: 'percent' },
       { key: 's9n_change_vs_2023', format: 'percent' },
-      { key: 's9n_breakeven_point', aliases: ['s2_knows_breakeven'], format: 'money' },
+      // NB: do NOT alias s2_knows_breakeven here — that is a boolean «знает ли
+      // точку безубыточности» (yes/no), not the numeric break-even amount. Aliasing
+      // it made the validator read `true` into a money field → false
+      // "должно быть числом, содержит true" warning.
+      { key: 's9n_breakeven_point', format: 'money' },
       { key: 's9n_transparency_pct', format: 'percent' },
       { key: 's9n_accounting_method', format: 'enum' },
       { key: 's9n_tax_system', format: 'enum' },

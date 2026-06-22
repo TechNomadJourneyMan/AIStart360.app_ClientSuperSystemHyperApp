@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useAuthStore } from '@/stores/auth.store'
 import Link from 'next/link'
+import { ShareButtonAuto } from '@/components/share/ShareButtonAuto'
 
 // 7 GRI blocks (section ids ↔ Russian labels) in canonical order.
 const BLOCK_LABELS: { id: string; label: string }[] = [
@@ -98,11 +99,14 @@ export default function OwnerDashboardPage() {
             {hasAssessment ? ' · GRI Диагностика завершена' : ' · GRI-диагностика ещё не пройдена'}
           </p>
         </div>
-        <Link href="/owner/gri"
-          className="flex items-center gap-2 px-4 py-2 rounded-xl bg-secondary/10 border border-secondary/20 text-secondary text-sm font-medium hover:bg-secondary/20 transition-colors">
-          <span className="material-symbols-outlined text-lg">radar</span>
-          {hasAssessment ? 'Полный отчёт GRI' : 'Пройти GRI-диагностику'}
-        </Link>
+        <div className="flex items-center gap-2 flex-wrap">
+          {hasAssessment && <ShareButtonAuto type="gri" />}
+          <Link href="/owner/gri"
+            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-secondary/10 border border-secondary/20 text-secondary text-sm font-medium hover:bg-secondary/20 transition-colors">
+            <span className="material-symbols-outlined text-lg">radar</span>
+            {hasAssessment ? 'Полный отчёт GRI' : 'Пройти GRI-диагностику'}
+          </Link>
+        </div>
       </div>
 
       {loading ? (
