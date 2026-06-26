@@ -70,6 +70,17 @@
     touch-action: manipulation;
     -webkit-tap-highlight-color: rgba(110, 255, 192, 0.2);
   }
+
+  /* ── Copy / paste / cut on every text field, incl. mobile ──
+     Force text selection + the iOS/Android callout on all text inputs so an
+     ancestor `select-none` (Tailwind) can never hide the copy-paste menu. */
+  input:not([type="checkbox"]):not([type="radio"]):not([type="button"]):not([type="submit"]):not([type="reset"]):not([type="range"]):not([type="color"]),
+  textarea,
+  [contenteditable="true"] {
+    -webkit-user-select: text;
+    user-select: text;
+    -webkit-touch-callout: default;
+  }
 }
 
 @layer components {
