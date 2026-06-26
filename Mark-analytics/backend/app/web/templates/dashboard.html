@@ -1,0 +1,2571 @@
+<!doctype html>
+<html lang="ru" data-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AIStart360 — Market Intelligence</title>
+  <style>
+    /* ─── Design tokens ─────────────────────────────────────────── */
+    :root[data-theme="dark"]{
+      --bg:#0a0d14; --bg-elev:#11151f; --bg-elev2:#1a1f2c;
+      --border:#1f2533; --border-strong:#2a3142;
+      --text:#e6e9ef; --text-dim:#9aa3b3; --muted:#6b7384;
+      --accent:#7c5cff; --accent-soft:rgba(124,92,255,.14); --accent-strong:#9079ff;
+      --ok:#3dd68c; --ok-soft:rgba(61,214,140,.12);
+      --warn:#f5b942; --warn-soft:rgba(245,185,66,.12);
+      --danger:#ef5b5b; --danger-soft:rgba(239,91,91,.12);
+      --info:#5b8def; --info-soft:rgba(91,141,239,.12);
+      --shadow:0 6px 24px rgba(0,0,0,.32);
+      --radius:8px; --radius-sm:6px;
+    }
+    :root[data-theme="light"]{
+      --bg:#f7f8fa; --bg-elev:#ffffff; --bg-elev2:#f1f3f7;
+      --border:#e6e8ee; --border-strong:#d4d8e0;
+      --text:#0c1322; --text-dim:#4b5365; --muted:#7a8194;
+      --accent:#6948f4; --accent-soft:rgba(105,72,244,.10); --accent-strong:#5638db;
+      --ok:#1aa564; --ok-soft:rgba(26,165,100,.10);
+      --warn:#c98a13; --warn-soft:rgba(201,138,19,.12);
+      --danger:#d83a3a; --danger-soft:rgba(216,58,58,.10);
+      --info:#3563d2; --info-soft:rgba(53,99,210,.10);
+      --shadow:0 4px 14px rgba(15,22,40,.06);
+    }
+    *{box-sizing:border-box}
+    html,body{margin:0;padding:0;background:var(--bg);color:var(--text)}
+    body{
+      font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",Inter,"Segoe UI",Roboto,sans-serif;
+      font-size:13px;line-height:1.45;-webkit-font-smoothing:antialiased;
+    }
+    code,pre,.mono{font-family:"JetBrains Mono","SF Mono",Menlo,Consolas,monospace;font-size:12px}
+    a{color:var(--accent-strong);text-decoration:none}
+    a:hover{color:var(--accent)}
+    button{font:inherit;cursor:pointer}
+    ::-webkit-scrollbar{width:10px;height:10px}
+    ::-webkit-scrollbar-track{background:transparent}
+    ::-webkit-scrollbar-thumb{background:var(--border-strong);border-radius:6px}
+    ::-webkit-scrollbar-thumb:hover{background:var(--muted)}
+
+    /* ─── Layout shell ──────────────────────────────────────────── */
+    .shell{display:grid;grid-template-rows:54px 1fr;height:100vh;overflow:hidden}
+    header.topbar{
+      display:grid;grid-template-columns:220px 1fr auto;align-items:center;
+      gap:14px;padding:0 20px;background:var(--bg-elev);
+      border-bottom:1px solid var(--border);
+    }
+    .brand{display:flex;align-items:center;gap:8px;font-weight:600;font-size:14px;letter-spacing:-.01em}
+    .brand-dot{width:8px;height:8px;border-radius:50%;background:var(--accent);box-shadow:0 0 12px var(--accent)}
+    .brand-sub{font-size:11px;color:var(--muted);font-weight:400;margin-left:6px}
+    .topbar-search{position:relative;max-width:420px;width:100%;justify-self:center}
+    .topbar-search input{
+      width:100%;padding:7px 10px 7px 30px;background:var(--bg-elev2);color:var(--text);
+      border:1px solid var(--border);border-radius:var(--radius-sm);font:inherit;outline:none;
+    }
+    .topbar-search input::placeholder{color:var(--muted)}
+    .topbar-search input:focus{border-color:var(--accent);background:var(--bg)}
+    .topbar-search svg{position:absolute;left:9px;top:50%;transform:translateY(-50%);color:var(--muted)}
+    .topbar-search kbd{
+      position:absolute;right:8px;top:50%;transform:translateY(-50%);
+      font-size:10px;color:var(--muted);background:var(--bg);border:1px solid var(--border);
+      padding:1px 5px;border-radius:3px;font-family:inherit;
+    }
+    .topbar-right{display:flex;align-items:center;gap:14px;font-size:12.5px;color:var(--text-dim)}
+    .topbar-right a{color:var(--text-dim)}
+    .topbar-right a:hover{color:var(--text)}
+    .iconbtn{
+      background:transparent;border:1px solid transparent;color:var(--text-dim);
+      width:30px;height:30px;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;
+    }
+    .iconbtn:hover{background:var(--bg-elev2);color:var(--text);border-color:var(--border)}
+
+    .status-pill{
+      display:inline-flex;align-items:center;gap:6px;padding:3px 8px;
+      background:var(--bg-elev2);border:1px solid var(--border);border-radius:12px;
+      font-size:11.5px;color:var(--text-dim);
+    }
+    .dot{width:7px;height:7px;border-radius:50%}
+    .dot.ok{background:var(--ok);box-shadow:0 0 8px var(--ok)}
+    .dot.warn{background:var(--warn);box-shadow:0 0 8px var(--warn)}
+    .dot.err{background:var(--danger);box-shadow:0 0 8px var(--danger)}
+
+    /* ─── Body grid ─────────────────────────────────────────────── */
+    .body{display:grid;grid-template-columns:220px 1fr;overflow:hidden;min-height:0}
+    .body.rail-collapsed{grid-template-columns:56px 1fr}
+    nav.rail{
+      background:var(--bg-elev);border-right:1px solid var(--border);
+      padding:12px 8px;display:flex;flex-direction:column;gap:2px;overflow:auto;
+    }
+    .rail-group-title{
+      font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);
+      padding:10px 12px 6px;
+    }
+    .rail-item{
+      display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:6px;
+      color:var(--text-dim);cursor:pointer;font-size:13px;font-weight:500;user-select:none;
+    }
+    .rail-item:hover{background:var(--bg-elev2);color:var(--text)}
+    .rail-item.active{background:var(--accent-soft);color:var(--accent-strong)}
+    .rail-item svg{flex-shrink:0;width:16px;height:16px}
+    .rail-item .badge-mini{
+      margin-left:auto;font-size:10.5px;background:var(--bg-elev2);color:var(--muted);
+      padding:1px 6px;border-radius:8px;
+    }
+    .rail-collapsed .rail-item{justify-content:center;padding:8px}
+    .rail-collapsed .rail-label,.rail-collapsed .badge-mini,.rail-collapsed .rail-group-title{display:none}
+    .rail-collapse-btn{
+      margin-top:auto;padding:8px 10px;color:var(--muted);font-size:12px;
+      display:flex;align-items:center;gap:8px;border-radius:6px;cursor:pointer;
+    }
+    .rail-collapse-btn:hover{background:var(--bg-elev2);color:var(--text)}
+
+    main{overflow:auto;padding:20px 24px}
+    .view{display:none}
+    .view.active{display:block}
+
+    .view-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
+    .view-title{font-size:18px;font-weight:600;letter-spacing:-.01em}
+    .view-subtitle{font-size:12.5px;color:var(--muted);margin-top:2px}
+
+    /* ─── KPI tiles ─────────────────────────────────────────────── */
+    .kpi-row{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-bottom:16px}
+    .kpi{
+      background:var(--bg-elev);border:1px solid var(--border);border-radius:var(--radius);
+      padding:12px 14px;min-height:88px;display:flex;flex-direction:column;justify-content:space-between;
+      position:relative;overflow:hidden;
+    }
+    .kpi-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+    .kpi-value{font-size:22px;font-weight:600;letter-spacing:-.02em;line-height:1.15;margin-top:2px}
+    .kpi-delta{font-size:11.5px;display:flex;align-items:center;gap:4px;margin-top:6px;color:var(--text-dim)}
+    .kpi-delta.up{color:var(--ok)}
+    .kpi-delta.down{color:var(--danger)}
+    .kpi-spark{position:absolute;right:8px;bottom:8px;opacity:.5}
+
+    /* ─── Grid ──────────────────────────────────────────────────── */
+    .grid12{display:grid;grid-template-columns:repeat(12,1fr);gap:12px}
+    .card{
+      background:var(--bg-elev);border:1px solid var(--border);border-radius:var(--radius);
+      padding:14px 16px;
+    }
+    .card-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+    .card-title{font-size:13px;font-weight:600;letter-spacing:-.005em}
+    .card-meta{font-size:11.5px;color:var(--muted)}
+    .span-4{grid-column:span 4}
+    .span-6{grid-column:span 6}
+    .span-8{grid-column:span 8}
+    .span-12{grid-column:span 12}
+
+    /* ─── Charts ────────────────────────────────────────────────── */
+    .bar-row{display:flex;align-items:center;gap:10px;margin-bottom:7px;font-size:12px;cursor:pointer}
+    .bar-row:hover .bar-label{color:var(--text)}
+    .bar-label{flex:0 0 130px;color:var(--text-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .bar-track{flex:1;height:18px;background:var(--bg-elev2);border-radius:4px;position:relative;overflow:hidden}
+    .bar-fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--accent-strong));border-radius:4px;transition:width .4s ease}
+    .bar-fill.stack-active{background:var(--ok)}
+    .bar-fill.stack-liq{background:var(--danger);opacity:.85}
+    .bar-value{flex:0 0 70px;text-align:right;color:var(--text);font-variant-numeric:tabular-nums}
+
+    /* ─── Growth list ──────────────────────────────────────────── */
+    .growth-list{display:flex;flex-direction:column;gap:4px}
+    .growth-row{
+      display:grid;grid-template-columns:30px 1fr auto;align-items:center;gap:10px;
+      padding:7px 8px;border-radius:6px;cursor:pointer;
+    }
+    .growth-row:hover{background:var(--bg-elev2)}
+    .avatar{
+      width:28px;height:28px;border-radius:6px;background:var(--accent-soft);
+      color:var(--accent-strong);display:flex;align-items:center;justify-content:center;
+      font-weight:600;font-size:11px;letter-spacing:.02em;
+    }
+    .growth-name{font-size:12.5px;font-weight:500;color:var(--text);line-height:1.3}
+    .growth-sub{font-size:11px;color:var(--muted);margin-top:1px}
+    .growth-rev{font-size:12px;font-variant-numeric:tabular-nums;color:var(--ok);font-weight:500}
+
+    /* ─── Insight cards ─────────────────────────────────────────── */
+    .insights-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px}
+    .insight{
+      background:var(--bg-elev);border:1px solid var(--border);border-left:3px solid var(--info);
+      border-radius:var(--radius);padding:12px 14px;
+    }
+    .insight.ok{border-left-color:var(--ok)}
+    .insight.warn{border-left-color:var(--warn)}
+    .insight.danger{border-left-color:var(--danger)}
+    .insight-title{font-size:12.5px;font-weight:600;margin-bottom:4px}
+    .insight-body{font-size:11.5px;color:var(--text-dim);line-height:1.5}
+
+    /* ─── Toolbar / Filters ─────────────────────────────────────── */
+    .toolbar{
+      display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+      padding:10px 12px;background:var(--bg-elev);border:1px solid var(--border);
+      border-radius:var(--radius);margin-bottom:10px;
+    }
+    .input,.select{
+      background:var(--bg-elev2);color:var(--text);border:1px solid var(--border);
+      border-radius:var(--radius-sm);padding:6px 9px;font:inherit;outline:none;min-width:0;
+    }
+    .input:focus,.select:focus{border-color:var(--accent)}
+    .input.sm{padding:5px 8px;font-size:12px}
+    .btn{
+      background:var(--accent);color:#fff;border:none;border-radius:var(--radius-sm);
+      padding:6px 12px;font:inherit;font-weight:500;font-size:12.5px;
+      display:inline-flex;align-items:center;gap:6px;transition:filter .12s;
+    }
+    .btn:hover{filter:brightness(1.07)}
+    .btn.ghost{background:transparent;color:var(--text-dim);border:1px solid var(--border)}
+    .btn.ghost:hover{color:var(--text);background:var(--bg-elev2)}
+    .btn.subtle{background:var(--bg-elev2);color:var(--text);border:1px solid var(--border)}
+    .btn.subtle:hover{background:var(--border)}
+    .btn.danger{background:var(--danger)}
+    .chip-row{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;min-height:24px}
+    .chip{
+      display:inline-flex;align-items:center;gap:6px;padding:3px 8px;font-size:11.5px;
+      background:var(--accent-soft);color:var(--accent-strong);border:1px solid transparent;
+      border-radius:12px;
+    }
+    .chip .x{cursor:pointer;opacity:.7}
+    .chip .x:hover{opacity:1}
+
+    /* ─── Tables ────────────────────────────────────────────────── */
+    .table-wrap{
+      background:var(--bg-elev);border:1px solid var(--border);border-radius:var(--radius);
+      overflow:auto;
+    }
+    table.data{width:100%;border-collapse:separate;border-spacing:0;font-size:12.5px}
+    table.data th{
+      text-align:left;padding:8px 12px;border-bottom:1px solid var(--border);
+      color:var(--muted);font-weight:500;font-size:11px;text-transform:uppercase;letter-spacing:.05em;
+      background:var(--bg-elev);position:sticky;top:0;z-index:2;user-select:none;cursor:pointer;white-space:nowrap;
+    }
+    table.data th .sort{margin-left:4px;opacity:.5;font-size:10px}
+    table.data th.active .sort{opacity:1;color:var(--accent-strong)}
+    table.data td{padding:7px 12px;border-bottom:1px solid var(--border);height:32px;vertical-align:middle;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:240px}
+    table.data tbody tr{cursor:pointer}
+    table.data tbody tr:hover{background:var(--bg-elev2)}
+    table.data th:first-child,table.data td:first-child{position:sticky;left:0;background:var(--bg-elev);z-index:1}
+    table.data tbody tr:hover td:first-child{background:var(--bg-elev2)}
+    table.data tbody tr:nth-child(2n) td{background:rgba(255,255,255,.012)}
+    table.data tbody tr:nth-child(2n) td:first-child{background:var(--bg-elev)}
+
+    .badge{
+      display:inline-block;padding:1px 7px;font-size:10.5px;border-radius:3px;
+      background:var(--bg-elev2);color:var(--text-dim);border:1px solid var(--border);
+      font-weight:500;letter-spacing:.02em;
+    }
+    .badge.ok,.badge.active{background:var(--ok-soft);color:var(--ok);border-color:transparent}
+    .badge.danger,.badge.liquidated{background:var(--danger-soft);color:var(--danger);border-color:transparent}
+    .badge.warn,.badge.reorganizing,.badge.suspended{background:var(--warn-soft);color:var(--warn);border-color:transparent}
+    .badge.info{background:var(--info-soft);color:var(--info);border-color:transparent}
+    .badge.accent{background:var(--accent-soft);color:var(--accent-strong);border-color:transparent}
+    .badge.method-GET{background:var(--info-soft);color:var(--info)}
+    .badge.method-POST{background:var(--ok-soft);color:var(--ok)}
+    .badge.method-DELETE{background:var(--danger-soft);color:var(--danger)}
+    .badge.method-PUT,.badge.method-PATCH{background:var(--warn-soft);color:var(--warn)}
+
+    /* ─── Filter toggle chips + groups ──────────────────────────── */
+    .filter-groups{display:flex;flex-wrap:wrap;gap:14px;margin:6px 0 12px}
+    .filter-group{
+      display:flex;align-items:center;gap:8px;
+      background:var(--bg-elev);border:1px solid var(--border);
+      padding:6px 10px;border-radius:8px;
+    }
+    .filter-group-label{
+      font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;
+      color:var(--muted);padding-right:6px;border-right:1px solid var(--border);margin-right:2px;
+    }
+    .toggle-set{display:flex;flex-wrap:wrap;gap:4px}
+    .toggle{
+      background:transparent;color:var(--text-dim);border:1px solid transparent;
+      padding:4px 10px;border-radius:6px;font:inherit;font-size:12px;cursor:pointer;
+      transition:background .12s,color .12s,border-color .12s;
+      font-variant-numeric:tabular-nums;
+    }
+    .toggle:hover{background:var(--bg-elev2);color:var(--text)}
+    .toggle.active{
+      background:var(--accent-soft);color:var(--accent-strong);
+      border-color:var(--accent-soft-strong, var(--accent-soft));
+      box-shadow:inset 0 0 0 1px rgba(124,92,255,.35);
+    }
+
+    /* ─── Wizard ─────────────────────────────────────────────────── */
+    .wiz-step{display:none}
+    .wiz-step.active{display:block}
+    .wiz-q{font-size:14px;font-weight:600;margin-bottom:10px;color:var(--text)}
+    .wiz-help{font-size:12px;color:var(--muted);margin-bottom:14px}
+    .wiz-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+    .wiz-grid.three{grid-template-columns:repeat(3,1fr)}
+    .wiz-grid.five{grid-template-columns:repeat(5,1fr)}
+    .wiz-option{
+      cursor:pointer;background:var(--bg-elev);border:1px solid var(--border);
+      padding:12px;border-radius:8px;font-size:13px;color:var(--text);
+      display:flex;align-items:center;justify-content:space-between;gap:8px;
+      transition:.12s;
+    }
+    .wiz-option:hover{background:var(--bg-elev2);border-color:var(--accent-soft-strong, var(--accent))}
+    .wiz-option.selected{
+      background:var(--accent-soft);color:var(--accent-strong);
+      border-color:var(--accent);
+    }
+    .wiz-option .lbl{font-weight:500}
+    .wiz-option .hint{font-size:10.5px;color:var(--muted)}
+    .wiz-option.selected .hint{color:var(--accent-strong);opacity:.85}
+
+    .niche-summary{
+      background:linear-gradient(135deg,rgba(124,92,255,.10),transparent);
+      border:1px solid var(--accent);border-radius:8px;padding:14px 16px;margin-bottom:12px;
+    }
+    .niche-summary .lbl{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+    .niche-summary .val{font-size:17px;font-weight:600;margin-top:2px}
+    .niche-meta{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;font-size:11.5px}
+    .niche-meta .kv{background:var(--bg-elev2);padding:3px 8px;border-radius:4px;color:var(--text-dim)}
+    .niche-meta .kv b{color:var(--text);font-weight:500;margin-left:4px}
+
+    .comp-row{
+      display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid var(--border);
+      cursor:pointer;transition:background .12s;
+    }
+    .comp-row:hover{background:var(--bg-elev2)}
+    .comp-row:last-child{border-bottom:0}
+    .comp-avatar{
+      width:32px;height:32px;border-radius:8px;background:var(--accent-soft);
+      display:flex;align-items:center;justify-content:center;color:var(--accent-strong);
+      font-weight:600;font-size:11px;flex-shrink:0;
+    }
+    .comp-info{flex:1;min-width:0}
+    .comp-info .nm{font-weight:500;color:var(--text);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .comp-info .meta{font-size:11.5px;color:var(--muted);margin-top:1px}
+    .comp-rev{font-variant-numeric:tabular-nums;color:var(--ok);font-weight:500;font-size:13px}
+    .comp-score{font-size:10.5px;background:var(--bg-elev2);padding:2px 6px;border-radius:3px;color:var(--text-dim);margin-left:6px}
+
+    /* ─── Admin sub-tabs ────────────────────────────────────────── */
+    .subtab{
+      padding:9px 14px;font-size:12.5px;font-weight:500;color:var(--muted);
+      cursor:pointer;border-bottom:2px solid transparent;transition:.12s;
+    }
+    .subtab:hover{color:var(--text)}
+    .subtab.active{color:var(--accent-strong);border-bottom-color:var(--accent)}
+
+    .jobs-table{width:100%;border-collapse:collapse;font-size:12px}
+    .jobs-table th,.jobs-table td{padding:7px 10px;border-bottom:1px solid var(--border);text-align:left}
+    .jobs-table th{color:var(--muted);font-weight:500;text-transform:uppercase;font-size:10.5px;letter-spacing:.05em}
+    .jobs-table tr:hover{background:var(--bg-elev2)}
+    .status-pill-sm{display:inline-block;padding:1px 6px;border-radius:3px;font-size:10.5px;font-weight:500}
+    .status-pill-sm.ok{background:var(--ok-soft);color:var(--ok)}
+    .status-pill-sm.running{background:var(--info-soft);color:var(--info)}
+    .status-pill-sm.failed{background:var(--danger-soft);color:var(--danger)}
+    .status-pill-sm.partial{background:var(--warn-soft);color:var(--warn)}
+
+    /* ─── Drawer ────────────────────────────────────────────────── */
+    .scrim{
+      position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:40;opacity:0;
+      pointer-events:none;transition:opacity .15s;
+    }
+    .scrim.open{opacity:1;pointer-events:auto}
+    .drawer{
+      position:fixed;top:0;right:0;height:100vh;width:480px;max-width:100vw;
+      background:var(--bg-elev);border-left:1px solid var(--border);
+      transform:translateX(100%);transition:transform .22s ease;
+      z-index:50;display:flex;flex-direction:column;box-shadow:var(--shadow);
+    }
+    .drawer.open{transform:translateX(0)}
+    .drawer-head{padding:14px 18px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+    .drawer-title{font-size:15px;font-weight:600;letter-spacing:-.01em}
+    .drawer-sub{font-size:11.5px;color:var(--muted);margin-top:3px}
+    .drawer-tabs{display:flex;gap:0;padding:0 10px;border-bottom:1px solid var(--border)}
+    .drawer-tab{
+      padding:8px 12px;font-size:12px;font-weight:500;color:var(--muted);
+      cursor:pointer;border-bottom:2px solid transparent;
+    }
+    .drawer-tab:hover{color:var(--text)}
+    .drawer-tab.active{color:var(--accent-strong);border-bottom-color:var(--accent)}
+    .drawer-body{flex:1;overflow:auto;padding:16px 18px}
+    .drawer-pane{display:none}
+    .drawer-pane.active{display:block}
+
+    .kv-row{display:grid;grid-template-columns:130px 1fr;gap:10px;padding:5px 0;font-size:12px;border-bottom:1px dashed var(--border)}
+    .kv-row:last-child{border-bottom:0}
+    .kv-key{color:var(--muted)}
+    .kv-val{color:var(--text)}
+
+    .meter{display:flex;align-items:center;gap:10px;margin-bottom:8px;font-size:12px}
+    .meter-label{flex:0 0 130px;color:var(--text-dim)}
+    .meter-track{flex:1;height:6px;background:var(--bg-elev2);border-radius:3px;overflow:hidden}
+    .meter-fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--accent-strong));border-radius:3px}
+    .meter-val{flex:0 0 36px;text-align:right;font-variant-numeric:tabular-nums;color:var(--text)}
+
+    pre.json{
+      background:var(--bg);color:var(--text-dim);padding:12px;border-radius:var(--radius-sm);
+      border:1px solid var(--border);overflow:auto;max-height:60vh;font-size:11.5px;line-height:1.5;
+    }
+
+    /* ─── Skeletons ─────────────────────────────────────────────── */
+    .skel{
+      background:linear-gradient(90deg,var(--bg-elev2) 0%,var(--bg-elev2) 40%,var(--border) 50%,var(--bg-elev2) 60%);
+      background-size:200% 100%;animation:skel 1.4s linear infinite;border-radius:4px;
+    }
+    @keyframes skel{from{background-position:200% 0}to{background-position:-200% 0}}
+    .skel-line{height:10px;margin:4px 0}
+    .skel-block{height:160px}
+
+    /* ─── Toasts ────────────────────────────────────────────────── */
+    .toast-stack{
+      position:fixed;top:14px;right:14px;z-index:60;display:flex;flex-direction:column;gap:8px;
+      pointer-events:none;
+    }
+    .toast{
+      pointer-events:auto;background:var(--bg-elev);border:1px solid var(--border);
+      border-left:3px solid var(--info);padding:10px 14px;border-radius:var(--radius);
+      font-size:12.5px;color:var(--text);min-width:240px;max-width:380px;box-shadow:var(--shadow);
+      animation:toast-in .2s ease;
+    }
+    .toast.err{border-left-color:var(--danger)}
+    .toast.ok{border-left-color:var(--ok)}
+    @keyframes toast-in{from{transform:translateX(20px);opacity:0}to{transform:translateX(0);opacity:1}}
+
+    /* ─── Empty & misc ──────────────────────────────────────────── */
+    .empty{
+      display:flex;flex-direction:column;align-items:center;justify-content:center;
+      padding:36px 20px;color:var(--muted);text-align:center;gap:8px;
+    }
+    .empty svg{opacity:.5}
+    .muted{color:var(--muted)}
+
+    /* ─── Modal (cmd+K stub) ────────────────────────────────────── */
+    .modal{
+      position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:55;
+      display:none;align-items:flex-start;justify-content:center;padding-top:110px;
+    }
+    .modal.open{display:flex}
+    .modal-card{
+      background:var(--bg-elev);border:1px solid var(--border);border-radius:var(--radius);
+      width:560px;max-width:95vw;padding:14px;box-shadow:var(--shadow);
+    }
+    .modal-card h4{margin:0 0 8px;font-size:13px;font-weight:600}
+
+    /* ─── Saved views dropdown ──────────────────────────────────── */
+    .dropdown{position:relative;display:inline-block}
+    .dropdown-menu{
+      display:none;position:absolute;top:calc(100% + 4px);left:0;z-index:30;min-width:240px;
+      background:var(--bg-elev);border:1px solid var(--border);border-radius:var(--radius);
+      box-shadow:var(--shadow);padding:4px;
+    }
+    .dropdown.open .dropdown-menu{display:block}
+    .dropdown-item{
+      display:flex;align-items:center;justify-content:space-between;
+      padding:6px 10px;border-radius:5px;font-size:12.5px;color:var(--text);cursor:pointer;
+    }
+    .dropdown-item:hover{background:var(--bg-elev2)}
+    .dropdown-item .x{opacity:0;color:var(--danger);font-size:14px;line-height:1}
+    .dropdown-item:hover .x{opacity:.7}
+    .dropdown-item .x:hover{opacity:1}
+    .dropdown-divider{height:1px;background:var(--border);margin:4px 0}
+
+    /* ─── Columns drawer (small floating panel) ─────────────────── */
+    .col-popover{
+      position:absolute;background:var(--bg-elev);border:1px solid var(--border);
+      border-radius:var(--radius);box-shadow:var(--shadow);padding:8px;z-index:30;
+      max-height:320px;overflow:auto;min-width:200px;
+    }
+    .col-popover label{display:flex;align-items:center;gap:8px;padding:4px 6px;border-radius:4px;font-size:12px;cursor:pointer}
+    .col-popover label:hover{background:var(--bg-elev2)}
+
+    @media (max-width:980px){
+      .kpi-row{grid-template-columns:repeat(3,1fr)}
+      .span-4,.span-6,.span-8{grid-column:span 12}
+      .body{grid-template-columns:56px 1fr}
+      .rail-label{display:none}
+    }
+    @media (max-width:600px){
+      .kpi-row{grid-template-columns:repeat(2,1fr)}
+      header.topbar{grid-template-columns:auto 1fr auto;gap:8px;padding:0 12px}
+      .topbar-search{display:none}
+      main{padding:14px}
+    }
+  </style>
+</head>
+<body>
+<div class="shell">
+
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-dot"></span>
+      AIStart360
+      <span class="brand-sub mono">v0.1</span>
+    </div>
+    <div class="topbar-search">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3-3"/></svg>
+      <input id="cmdk-input" placeholder="Найти компанию, фильтр, отчёт…" />
+      <kbd>⌘K</kbd>
+    </div>
+    <div class="topbar-right">
+      <span class="status-pill" id="ai-status"><span class="dot warn"></span>AI: …</span>
+      <span class="status-pill" id="health-pill"><span class="dot warn"></span>API: …</span>
+      <button class="iconbtn" id="theme-toggle" aria-label="Сменить тему">
+        <svg id="theme-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="body" id="body">
+
+    <nav class="rail" id="rail">
+      <div class="rail-group-title">Аналитика</div>
+      <div class="rail-item active" data-view="overview">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>
+        <span class="rail-label">Обзор</span>
+      </div>
+      <div class="rail-item" data-view="companies">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7h18M3 12h18M3 17h18"/></svg>
+        <span class="rail-label">Компании</span>
+        <span class="badge-mini" id="rail-co-count">—</span>
+      </div>
+      <div class="rail-item" data-view="competitors">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="9" r="3"/><circle cx="17" cy="9" r="3"/><path d="M3 19c0-3 3-5 6-5s6 2 6 5"/><path d="M14 14c2 0 5 2 5 5"/></svg>
+        <span class="rail-label">Конкуренты</span>
+        <span class="badge-mini">wizard</span>
+      </div>
+      <div class="rail-item" data-view="forecasts">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17l6-6 4 4 8-8"/><path d="M14 7h7v7"/></svg>
+        <span class="rail-label">Калькуляторы</span>
+      </div>
+
+      <div class="rail-group-title">Справочник</div>
+      <div class="rail-item" data-view="filters">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 5h18M6 12h12M10 19h4"/></svg>
+        <span class="rail-label">Фильтры</span>
+        <span class="badge-mini">29</span>
+      </div>
+      <div class="rail-item" data-view="admin" id="rail-admin" style="display:none">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3l-2 2-3 7 3 7 2 2M16 3l2 2 3 7-3 7-2 2"/><path d="M14 8l-4 8"/></svg>
+        <span class="rail-label">API Explorer</span>
+        <span class="badge-mini">admin</span>
+      </div>
+
+      <div class="rail-collapse-btn" id="rail-toggle">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path id="rail-toggle-path" d="M15 18l-6-6 6-6"/></svg>
+        <span class="rail-label">Свернуть</span>
+      </div>
+    </nav>
+
+    <main>
+      <!-- ───── OVERVIEW ───── -->
+      <section class="view active" id="view-overview">
+        <div class="view-header">
+          <div>
+            <div class="view-title">Обзор рынка</div>
+            <div class="view-subtitle">Live аналитика по 29 фильтрам · обновлено: <span id="ov-updated">сейчас</span></div>
+          </div>
+          <div style="display:flex;gap:8px">
+            <button class="btn ghost" id="ov-refresh">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
+              Обновить
+            </button>
+          </div>
+        </div>
+
+        <div class="kpi-row" id="kpi-row">
+          <!-- filled by JS -->
+        </div>
+
+        <div class="grid12">
+          <div class="card span-6">
+            <div class="card-head">
+              <div class="card-title">Распределение по отраслям</div>
+              <div class="card-meta">top-10 · клик → фильтр</div>
+            </div>
+            <div id="chart-industry"><div class="skel skel-block"></div></div>
+          </div>
+          <div class="card span-6">
+            <div class="card-head">
+              <div class="card-title">Сравнение стран</div>
+              <div class="card-meta">active vs liquidated</div>
+            </div>
+            <div id="chart-country"><div class="skel skel-block"></div></div>
+          </div>
+
+          <div class="card span-8">
+            <div class="card-head">
+              <div class="card-title">Лидеры по выручке</div>
+              <div class="card-meta">top-10 · клик → карточка</div>
+            </div>
+            <div id="chart-growth"><div class="skel skel-block"></div></div>
+          </div>
+          <div class="card span-4">
+            <div class="card-head">
+              <div class="card-title">Размер компаний</div>
+              <div class="card-meta">по выручке</div>
+            </div>
+            <div id="chart-size"><div class="skel skel-block"></div></div>
+          </div>
+
+          <div class="card span-12">
+            <div class="card-head">
+              <div class="card-title">AI Insights</div>
+              <div class="card-meta">автоматические наблюдения</div>
+            </div>
+            <div id="chart-insights" class="insights-row"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ───── COMPANIES ───── -->
+      <section class="view" id="view-companies">
+        <div class="view-header">
+          <div>
+            <div class="view-title">Компании</div>
+            <div class="view-subtitle">Реестр и поиск по 29 фильтрам</div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <div class="dropdown" id="views-dropdown">
+              <button class="btn ghost" id="views-btn">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 4h14v4H5zM5 11h14v4H5zM5 18h14v3H5z"/></svg>
+                Сохранённые виды <span class="muted mono" id="views-current"></span>
+              </button>
+              <div class="dropdown-menu" id="views-menu"></div>
+            </div>
+            <button class="btn subtle" id="save-view-btn">Сохранить вид</button>
+            <button class="btn" id="export-btn">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>
+              CSV
+            </button>
+          </div>
+        </div>
+
+        <div class="toolbar">
+          <input class="input" id="f-q" placeholder="Поиск по имени или описанию…" style="flex:1;min-width:240px" />
+          <button class="btn ghost" id="more-filters-btn">+ Ещё фильтры</button>
+          <button class="btn ghost" id="reset-filters-btn">Сбросить</button>
+          <button class="btn ghost" id="columns-btn" style="position:relative">Колонки</button>
+        </div>
+
+        <div class="filter-groups" id="filter-groups">
+          <div class="filter-group">
+            <div class="filter-group-label">Страна</div>
+            <div class="toggle-set" data-key="country" data-multi="1">
+              <button class="toggle" data-val="KZ">🇰🇿 KZ</button>
+              <button class="toggle" data-val="RU">🇷🇺 RU</button>
+              <button class="toggle" data-val="UZ">🇺🇿 UZ</button>
+              <button class="toggle" data-val="KG">🇰🇬 KG</button>
+              <button class="toggle" data-val="BY">🇧🇾 BY</button>
+            </div>
+          </div>
+          <div class="filter-group">
+            <div class="filter-group-label">Отрасль</div>
+            <div class="toggle-set" data-key="industry">
+              <button class="toggle" data-val="62.01">Разработка ПО</button>
+              <button class="toggle" data-val="47.91">Розница online</button>
+              <button class="toggle" data-val="64.19">Финансы</button>
+              <button class="toggle" data-val="56.10">Рестораны</button>
+              <button class="toggle" data-val="49.41">Логистика</button>
+              <button class="toggle" data-val="86.10">Медицина</button>
+              <button class="toggle" data-val="71.12">Инжиниринг</button>
+              <button class="toggle" data-val="68.20">Недвижимость</button>
+            </div>
+          </div>
+          <div class="filter-group">
+            <div class="filter-group-label">Статус</div>
+            <div class="toggle-set" data-key="status">
+              <button class="toggle" data-val="active">✓ active</button>
+              <button class="toggle" data-val="liquidated">× liquidated</button>
+              <button class="toggle" data-val="reorganizing">↻ reorganizing</button>
+              <button class="toggle" data-val="suspended">⊘ suspended</button>
+            </div>
+          </div>
+          <div class="filter-group">
+            <div class="filter-group-label">Размер</div>
+            <div class="toggle-set" data-key="company_size">
+              <button class="toggle" data-val="micro" title="до 10 сотр.">micro &lt;10</button>
+              <button class="toggle" data-val="small" title="10–49 сотр.">small 10–49</button>
+              <button class="toggle" data-val="medium" title="50–249 сотр.">medium 50–249</button>
+              <button class="toggle" data-val="large" title="250–999 сотр.">large 250–999</button>
+              <button class="toggle" data-val="enterprise" title="1000+ сотр.">enterprise 1000+</button>
+            </div>
+          </div>
+          <div class="filter-group">
+            <div class="filter-group-label">Выручка</div>
+            <div class="toggle-set" data-key="revenue_usd">
+              <button class="toggle" data-val="..100000">&lt;$100K</button>
+              <button class="toggle" data-val="100000..1000000">$100K–1M</button>
+              <button class="toggle" data-val="1000000..10000000">$1M–10M</button>
+              <button class="toggle" data-val="10000000..100000000">$10M–100M</button>
+              <button class="toggle" data-val="100000000..">$100M+</button>
+            </div>
+          </div>
+          <div class="filter-group">
+            <div class="filter-group-label">Возраст</div>
+            <div class="toggle-set" data-key="business_age_years">
+              <button class="toggle" data-val="0..2">&lt;2 лет</button>
+              <button class="toggle" data-val="2..5">2–5</button>
+              <button class="toggle" data-val="5..10">5–10</button>
+              <button class="toggle" data-val="10..20">10–20</button>
+              <button class="toggle" data-val="20..">20+</button>
+            </div>
+          </div>
+          <div class="filter-group">
+            <div class="filter-group-label">Собственность</div>
+            <div class="toggle-set" data-key="ownership_type">
+              <button class="toggle" data-val="private">🏢 частная</button>
+              <button class="toggle" data-val="state">🏛️ гос.</button>
+              <button class="toggle" data-val="samruk">🇰🇿 Самрук</button>
+              <button class="toggle" data-val="foreign">🌍 иностр.</button>
+              <button class="toggle" data-val="mixed">⚖️ смеш.</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="chip-row" id="active-chips"></div>
+
+        <div class="table-wrap">
+          <table class="data" id="co-table">
+            <thead><tr id="co-thead"></tr></thead>
+            <tbody id="co-tbody"><tr><td colspan="8"><div class="skel skel-line" style="width:80%"></div></td></tr></tbody>
+          </table>
+        </div>
+        <div class="muted" style="margin-top:8px;font-size:11.5px" id="co-foot"></div>
+      </section>
+
+      <!-- ───── COMPETITORS ───── -->
+      <section class="view" id="view-competitors">
+        <div class="view-header">
+          <div>
+            <div class="view-title">Найти конкурентов</div>
+            <div class="view-subtitle">Пройдите мини-тест — мы подберём топ-12 игроков под ваши параметры</div>
+          </div>
+          <button class="btn ghost" id="wiz-reset">Начать заново</button>
+        </div>
+
+        <div class="grid12">
+          <div class="card span-5">
+            <div class="card-head">
+              <div class="card-title">Мини-тест</div>
+              <div class="card-meta" id="wiz-progress">шаг 1 / 5</div>
+            </div>
+            <div id="wiz-steps"></div>
+            <div style="display:flex;gap:8px;margin-top:16px">
+              <button class="btn ghost" id="wiz-back" disabled>← Назад</button>
+              <div style="flex:1"></div>
+              <button class="btn" id="wiz-next">Далее →</button>
+            </div>
+          </div>
+          <div class="card span-7">
+            <div class="card-head">
+              <div class="card-title">Результат</div>
+              <div class="card-meta" id="wiz-niche-meta"></div>
+            </div>
+            <div id="wiz-result">
+              <div class="empty"><div>Заполните анкету — справа появится список конкурентов и сводка по нише.</div></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ───── FORECASTS ───── -->
+      <section class="view" id="view-forecasts">
+        <div class="view-header">
+          <div>
+            <div class="view-title">Калькуляторы рынка</div>
+            <div class="view-subtitle">TAM/SAM/SOM, CAC/LTV, Unit Economics, Market Growth</div>
+          </div>
+        </div>
+        <div class="grid12">
+          <div class="card span-4">
+            <div class="card-head"><div class="card-title">Параметры</div></div>
+            <div style="display:flex;flex-direction:column;gap:10px">
+              <label class="muted" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em">Тип расчёта</label>
+              <select class="select" id="fc-type">
+                <option value="tam_sam_som">TAM / SAM / SOM</option>
+                <option value="cac_ltv">CAC / LTV / Payback</option>
+                <option value="unit_economics">Unit Economics</option>
+                <option value="market_growth">Market Growth Forecast</option>
+              </select>
+              <label class="muted" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em">Inputs (JSON)</label>
+              <textarea class="input mono" id="fc-inputs" rows="14" style="font-size:11.5px;line-height:1.5"></textarea>
+              <div style="display:flex;gap:8px">
+                <button class="btn" id="fc-run">Рассчитать</button>
+                <button class="btn ghost" id="fc-defaults">Дефолты</button>
+              </div>
+            </div>
+          </div>
+          <div class="card span-8">
+            <div class="card-head"><div class="card-title">Результат</div><div class="card-meta" id="fc-meta"></div></div>
+            <div id="fc-result"><div class="empty"><div>Выберите тип и нажмите «Рассчитать»</div></div></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ───── FILTERS ───── -->
+      <section class="view" id="view-filters">
+        <div class="view-header">
+          <div>
+            <div class="view-title">Реестр фильтров</div>
+            <div class="view-subtitle">29 параметров: <code>GET /api/v1/filters</code></div>
+          </div>
+          <input class="input sm" id="fl-search" placeholder="Поиск фильтра…" style="width:240px"/>
+        </div>
+        <div id="filters-groups"></div>
+      </section>
+
+      <!-- ───── ADMIN — Console (gated) ───── -->
+      <section class="view" id="view-admin">
+        <div class="view-header">
+          <div>
+            <div class="view-title">Admin Console <span class="status-pill" style="font-size:11px"><span class="dot ok"></span>admin</span></div>
+            <div class="view-subtitle">Ingest мониторинг + REST endpoints · только для операторов</div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <button class="btn ghost" id="admin-lock">🔒 Lock</button>
+          </div>
+        </div>
+
+        <!-- Admin sub-tabs -->
+        <div class="tabs" id="admin-subtabs" style="display:flex;gap:0;margin-bottom:14px;border-bottom:1px solid var(--border)">
+          <div class="subtab active" data-sub="ingest">📥 Ingest</div>
+          <div class="subtab" data-sub="api">🔌 API endpoints</div>
+        </div>
+
+        <!-- INGEST PANE -->
+        <div class="admin-pane active" id="admin-ingest">
+          <div class="kpi-row" id="ingest-kpis"></div>
+          <div class="grid12">
+            <div class="card span-7">
+              <div class="card-head">
+                <div class="card-title">Ingest jobs (последние 25)</div>
+                <div class="card-meta" id="jobs-meta">—</div>
+              </div>
+              <div id="jobs-table"><div class="empty">загрузка…</div></div>
+            </div>
+            <div class="card span-5">
+              <div class="card-head">
+                <div class="card-title">Запустить enrichment</div>
+                <div class="card-meta">stat.gov.kz · 1..50 за раз</div>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:10px;padding:4px 0">
+                <label class="muted" style="font-size:11px;text-transform:uppercase">Источник</label>
+                <select class="select" id="ig-source">
+                  <option value="kz_stat_gov">stat.gov.kz (Statistical Business Register)</option>
+                </select>
+                <label class="muted" style="font-size:11px;text-transform:uppercase">Тип запуска</label>
+                <div style="display:flex;gap:4px">
+                  <button class="toggle active" data-mode="batch" id="ig-mode-batch">Batch</button>
+                  <button class="toggle" data-mode="single" id="ig-mode-single">Single BIN</button>
+                </div>
+                <div id="ig-batch-fields">
+                  <label class="muted" style="font-size:11px;text-transform:uppercase">Сколько компаний</label>
+                  <input class="input" id="ig-limit" type="number" value="10" min="1" max="50"/>
+                </div>
+                <div id="ig-single-fields" style="display:none">
+                  <label class="muted" style="font-size:11px;text-transform:uppercase">BIN (12 цифр)</label>
+                  <input class="input mono" id="ig-bin" placeholder="020640000017"/>
+                </div>
+                <button class="btn" id="ig-run">▶ Запустить</button>
+                <div id="ig-result" style="margin-top:6px"></div>
+              </div>
+            </div>
+
+            <div class="card span-12">
+              <div class="card-head">
+                <div class="card-title">Источники данных</div>
+                <div class="card-meta">распределение компаний по `data_source`</div>
+              </div>
+              <div id="sources-chart"></div>
+            </div>
+
+            <!-- Firecrawl panel -->
+            <div class="card span-12">
+              <div class="card-head">
+                <div class="card-title">🔥 Firecrawl — anti-bot scraping</div>
+                <div class="card-meta" id="fc-status-meta">проверка статуса…</div>
+              </div>
+              <div id="fc-banner" class="muted" style="font-size:12px;margin-bottom:12px"></div>
+              <div class="grid12">
+                <div class="card span-6" style="background:var(--bg-elev2);padding:12px">
+                  <div class="card-head"><div class="card-title" style="font-size:13px">Scrape URL → upsert</div></div>
+                  <div style="display:flex;gap:8px;margin-top:8px">
+                    <input class="input mono" id="fc-url"
+                            placeholder="https://kompra.kz/company/… или любой URL"
+                            style="flex:1"/>
+                    <button class="btn" id="fc-scrape-btn">▶ Scrape</button>
+                  </div>
+                  <div id="fc-url-result" class="muted" style="font-size:12px;margin-top:8px"></div>
+                </div>
+                <div class="card span-6" style="background:var(--bg-elev2);padding:12px">
+                  <div class="card-head"><div class="card-title" style="font-size:13px">Batch — kompra.kz discovery</div></div>
+                  <div style="display:flex;gap:8px;margin-top:8px;align-items:center">
+                    <label class="muted" style="font-size:11.5px">N</label>
+                    <input class="input" id="fc-batch-count" type="number" value="10" min="1" max="50"
+                            style="width:80px"/>
+                    <button class="btn" id="fc-batch-btn">▶ Discover + scrape</button>
+                  </div>
+                  <div id="fc-batch-result" class="muted" style="font-size:12px;margin-top:8px"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- API ENDPOINTS PANE -->
+        <div class="admin-pane" id="admin-api" style="display:none">
+          <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center">
+            <a class="btn ghost" href="/docs" target="_blank">Swagger UI</a>
+            <a class="btn ghost" href="/redoc" target="_blank">ReDoc</a>
+            <a class="btn ghost" href="/openapi.json" target="_blank">OpenAPI JSON</a>
+            <div style="flex:1"></div>
+            <input class="input sm" id="ep-search" placeholder="Поиск endpoint…" style="flex:0 0 240px"/>
+          </div>
+          <div id="api-groups"></div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+</div>
+
+<!-- ─── Drawer ─── -->
+<div class="scrim" id="scrim"></div>
+<aside class="drawer" id="drawer" aria-hidden="true">
+  <div class="drawer-head">
+    <div>
+      <div class="drawer-title" id="d-title">—</div>
+      <div class="drawer-sub mono" id="d-sub">—</div>
+    </div>
+    <button class="iconbtn" id="d-close" aria-label="Закрыть">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+    </button>
+  </div>
+  <div class="drawer-tabs" id="d-tabs">
+    <div class="drawer-tab active" data-pane="overview">Overview</div>
+    <div class="drawer-tab" data-pane="insights">Insights</div>
+    <div class="drawer-tab" data-pane="similar">Similar</div>
+    <div class="drawer-tab" data-pane="timeline">Timeline</div>
+    <div class="drawer-tab" data-pane="raw">Raw JSON</div>
+  </div>
+  <div class="drawer-body">
+    <div class="drawer-pane active" id="d-pane-overview"></div>
+    <div class="drawer-pane" id="d-pane-insights"></div>
+    <div class="drawer-pane" id="d-pane-similar"></div>
+    <div class="drawer-pane" id="d-pane-timeline"></div>
+    <div class="drawer-pane" id="d-pane-raw"></div>
+  </div>
+</aside>
+
+<!-- ─── Cmd+K stub ─── -->
+<div class="modal" id="cmdk-modal">
+  <div class="modal-card">
+    <h4>Глобальный поиск</h4>
+    <input class="input" id="cmdk-modal-input" placeholder="Поиск компании…" style="width:100%" autofocus />
+    <div class="muted" style="font-size:11.5px;margin-top:8px">Заглушка — будет реализовано в следующем спринте.</div>
+  </div>
+</div>
+
+<!-- ─── More filters drawer (reuse drawer styles) ─── -->
+<aside class="drawer" id="filters-drawer" style="width:380px" aria-hidden="true">
+  <div class="drawer-head">
+    <div>
+      <div class="drawer-title">Дополнительные фильтры</div>
+      <div class="drawer-sub">29 параметров API</div>
+    </div>
+    <button class="iconbtn" id="filters-close" aria-label="Закрыть">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+    </button>
+  </div>
+  <div class="drawer-body" id="filters-drawer-body"></div>
+</aside>
+
+<!-- ─── Toast stack ─── -->
+<div class="toast-stack" id="toasts"></div>
+
+<script>
+/* ════════════════════════════════════════════════════════════════════
+   AIStart360 dashboard — vanilla JS, no build, single file.
+   ════════════════════════════════════════════════════════════════════ */
+
+const API = '/api/v1';
+const $ = (id) => document.getElementById(id);
+const el = (tag, attrs={}, ...children) => {
+  const n = document.createElement(tag);
+  for (const [k,v] of Object.entries(attrs)) {
+    if (k === 'class') n.className = v;
+    else if (k === 'html') n.innerHTML = v;
+    else if (k.startsWith('on')) n.addEventListener(k.slice(2), v);
+    else if (v !== null && v !== undefined) n.setAttribute(k, v);
+  }
+  for (const c of children.flat()) {
+    if (c == null) continue;
+    n.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);
+  }
+  return n;
+};
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+/* ─── Constants (must be declared BEFORE `state` because state init uses them) ─── */
+const DEFAULT_COLUMNS = ['name','country','industry','size','status','employee_count','revenue_usd','tags','updated_at'];
+const ALL_COLUMNS = [
+  {key:'name', label:'Название', sortable:true},
+  {key:'country', label:'Страна', sortable:true},
+  {key:'industry', label:'Отрасль'},
+  {key:'size', label:'Размер', sortable:false},
+  {key:'status', label:'Статус', sortable:true},
+  {key:'employee_count', label:'Сотр.', sortable:true, num:true},
+  {key:'revenue_usd', label:'Выручка $', sortable:true, num:true},
+  {key:'legal_form', label:'Форма'},
+  {key:'ownership', label:'Собственность'},
+  {key:'kato', label:'КАТО', num:true},
+  {key:'tags', label:'Теги'},
+  {key:'website', label:'Сайт'},
+  {key:'confidence', label:'Conf.', num:true},
+  {key:'source', label:'Источник'},
+  {key:'updated_at', label:'Обновлено', sortable:true},
+  {key:'id', label:'ID'},
+];
+function loadColumns() {
+  try {
+    const raw = JSON.parse(localStorage.getItem('mark.columns'));
+    if (Array.isArray(raw) && raw.length) return raw;
+  } catch {}
+  return DEFAULT_COLUMNS;
+}
+function loadSavedViews() {
+  try {
+    const raw = JSON.parse(localStorage.getItem('mark.savedViews'));
+    if (Array.isArray(raw) && raw.length) return raw;
+  } catch {}
+  return [
+    {id:'all', name:'Все', filters:{}, columns:null},
+    {id:'kz_it50', name:'KZ IT 50+', filters:{country:['KZ'], industry:'62.01', employee_count:'50..'}, columns:null},
+    {id:'ru_mkt', name:'Активные RU маркетплейсы', filters:{country:['RU'], niche_tags:'marketplace', status:'active'}, columns:null},
+    {id:'liq', name:'Liquidated', filters:{status:'liquidated'}, columns:null},
+  ];
+}
+
+/* ─── State ─────────────────────────────────────────────────────── */
+const state = {
+  theme: localStorage.getItem('mark.theme') || 'dark',
+  activeView: 'overview',
+  filters: {},
+  savedViews: loadSavedViews(),
+  currentViewId: null,
+  columns: loadColumns(),
+  sort: {key:null, dir:'asc'},
+  openCompanyId: null,
+  filterCatalog: null,
+  openapi: null,
+  abort: {},
+};
+
+function persistSavedViews() { localStorage.setItem('mark.savedViews', JSON.stringify(state.savedViews)); }
+function persistColumns() { localStorage.setItem('mark.columns', JSON.stringify(state.columns)); }
+
+/* ─── Format helpers ────────────────────────────────────────────── */
+const fmtNum = (n) => {
+  if (n === null || n === undefined || n === '') return '—';
+  return Number(n).toLocaleString('ru-RU');
+};
+const fmtMoney = (v) => {
+  if (v === null || v === undefined || v === '') return '—';
+  const n = Number(v);
+  if (!isFinite(n)) return '—';
+  if (n >= 1e9) return '$' + (n/1e9).toFixed(2) + 'B';
+  if (n >= 1e6) return '$' + (n/1e6).toFixed(2) + 'M';
+  if (n >= 1e3) return '$' + (n/1e3).toFixed(1) + 'K';
+  return '$' + n.toFixed(0);
+};
+const fmtPct = (v, digits=1) => v === null || v === undefined ? '—' : Number(v).toFixed(digits) + '%';
+const fmtDate = (s) => { if (!s) return '—'; const d = new Date(s); return isNaN(d) ? s : d.toLocaleDateString('ru-RU'); };
+const relTime = (s) => {
+  if (!s) return '—';
+  const d = new Date(s); if (isNaN(d)) return s;
+  const sec = (Date.now() - d.getTime())/1000;
+  if (sec < 60) return 'только что';
+  if (sec < 3600) return Math.round(sec/60)+'м назад';
+  if (sec < 86400) return Math.round(sec/3600)+'ч назад';
+  return Math.round(sec/86400)+'д назад';
+};
+
+/* ─── Network ───────────────────────────────────────────────────── */
+async function fetchJSON(url, {params, signalKey, method='GET', body} = {}) {
+  if (params) {
+    const qs = new URLSearchParams();
+    for (const [k,v] of Object.entries(params)) {
+      if (v === null || v === undefined || v === '') continue;
+      if (Array.isArray(v)) { if (v.length) qs.set(k, v.join(',')); }
+      else qs.set(k, v);
+    }
+    const sep = url.includes('?') ? '&' : '?';
+    if ([...qs].length) url = url + sep + qs.toString();
+  }
+  if (signalKey) {
+    state.abort[signalKey]?.abort();
+    state.abort[signalKey] = new AbortController();
+  }
+  const opts = { method, signal: state.abort[signalKey]?.signal };
+  if (body) { opts.body = JSON.stringify(body); opts.headers = {'Content-Type':'application/json'}; }
+  const r = await fetch(url, opts);
+  let j = null;
+  try { j = await r.json(); } catch {}
+  if (!r.ok) {
+    const e = new Error(j?.errors?.[0]?.message || `HTTP ${r.status}`);
+    e.code = j?.errors?.[0]?.code || `HTTP_${r.status}`;
+    throw e;
+  }
+  return j;
+}
+
+/* ─── Toasts ────────────────────────────────────────────────────── */
+function toast(msg, kind='info', ttl=4000) {
+  const t = el('div', {class:'toast '+(kind==='err'?'err':kind==='ok'?'ok':'')}, msg);
+  $('toasts').appendChild(t);
+  setTimeout(()=>{ t.style.opacity='0'; t.style.transform='translateX(20px)'; t.style.transition='.2s'; setTimeout(()=>t.remove(),250); }, ttl);
+}
+
+/* ─── Theme ─────────────────────────────────────────────────────── */
+function applyTheme() {
+  document.documentElement.setAttribute('data-theme', state.theme);
+  const icon = $('theme-icon');
+  icon.innerHTML = state.theme === 'dark'
+    ? '<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>'
+    : '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>';
+}
+$('theme-toggle').onclick = () => {
+  state.theme = state.theme === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('mark.theme', state.theme);
+  applyTheme();
+};
+applyTheme();
+
+/* ─── Rail nav + collapse ───────────────────────────────────────── */
+document.querySelectorAll('.rail-item').forEach(item => {
+  item.onclick = () => switchView(item.dataset.view);
+});
+function switchView(name) {
+  state.activeView = name;
+  document.querySelectorAll('.rail-item').forEach(x => x.classList.toggle('active', x.dataset.view === name));
+  document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.id === 'view-'+name));
+  if (name === 'overview') loadOverview();
+  if (name === 'companies') { renderColumnHeaders(); loadCompanies(); renderActiveChips(); renderSavedViewsMenu(); }
+  if (name === 'competitors') initWizard();
+  if (name === 'forecasts') resetForecast();
+  if (name === 'filters') loadFiltersView();
+  if (name === 'admin') {
+    if (!state.adminUnlocked) {
+      promptAdminUnlock();
+      return;
+    }
+    initAdminSubtabs();
+    loadIngestPanel();
+    loadApiView();
+  }
+}
+
+/* ─── Admin gate ────────────────────────────────────────────────── */
+state.adminUnlocked = localStorage.getItem('mark.adminUnlocked') === '1';
+function setAdminVisibility() {
+  const item = $('rail-admin');
+  if (item) item.style.display = state.adminUnlocked ? '' : 'none';
+}
+setAdminVisibility();
+
+// URL flag: ?admin=1 unlocks
+if (new URLSearchParams(location.search).get('admin') === '1') {
+  state.adminUnlocked = true;
+  localStorage.setItem('mark.adminUnlocked', '1');
+  setAdminVisibility();
+  toast('Admin режим включён', 'ok');
+}
+
+// Keyboard shortcut: Ctrl/Cmd + Shift + A toggles admin gate
+window.addEventListener('keydown', (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'A' || e.key === 'a')) {
+    e.preventDefault();
+    if (state.adminUnlocked) {
+      state.adminUnlocked = false;
+      localStorage.removeItem('mark.adminUnlocked');
+      setAdminVisibility();
+      toast('Admin режим отключён', 'info');
+      if (state.activeView === 'admin') switchView('overview');
+    } else {
+      promptAdminUnlock();
+    }
+  }
+});
+
+function promptAdminUnlock() {
+  const code = prompt('Введите admin-код для доступа к API Explorer:\n(в dev: admin)');
+  if (code === null) return;
+  // Dev gate: hardcoded 'admin'. In prod this validates a Supabase role claim.
+  if (code === 'admin') {
+    state.adminUnlocked = true;
+    localStorage.setItem('mark.adminUnlocked', '1');
+    setAdminVisibility();
+    toast('Доступ разрешён', 'ok');
+    switchView('admin');
+  } else {
+    toast('Неверный код', 'err');
+  }
+}
+$('rail-toggle').onclick = () => {
+  $('body').classList.toggle('rail-collapsed');
+  const path = $('rail-toggle-path');
+  if ($('body').classList.contains('rail-collapsed')) path.setAttribute('d','M9 18l6-6-6-6');
+  else path.setAttribute('d','M15 18l-6-6 6-6');
+};
+
+/* ─── Health + AI checks ────────────────────────────────────────── */
+async function checkHealth() {
+  try {
+    const j = await (await fetch('/health')).json();
+    $('health-pill').innerHTML = `<span class="dot ok"></span>API · v${j.version}`;
+  } catch {
+    $('health-pill').innerHTML = `<span class="dot err"></span>API offline`;
+  }
+}
+async function checkAI() {
+  try {
+    const r = await fetch(`${API}/ai/ping`, {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'});
+    if (r.ok) {
+      const j = await r.json();
+      $('ai-status').innerHTML = `<span class="dot ok"></span>AI · ${esc(j.data?.provider || 'ok')}`;
+    } else {
+      const j = await r.json().catch(()=>({}));
+      const code = j.errors?.[0]?.code || 'error';
+      $('ai-status').innerHTML = `<span class="dot warn"></span>AI · ${esc(code)}`;
+    }
+  } catch {
+    $('ai-status').innerHTML = `<span class="dot err"></span>AI unreachable`;
+  }
+}
+checkHealth(); checkAI();
+
+/* ════════════════════════════════════════════════════════════════
+   OVERVIEW
+   ════════════════════════════════════════════════════════════════ */
+async function loadOverview() {
+  $('ov-updated').textContent = '…';
+  renderKPIsSkeleton();
+  const f = state.filters;
+  await Promise.allSettled([
+    loadOverviewKPIs(f),
+    loadIndustryChart(f),
+    loadCountryChart(f),
+    loadGrowthLeaders(f),
+    loadSizeChart(f),
+    loadInsights(f),
+  ]);
+  $('ov-updated').textContent = new Date().toLocaleTimeString('ru-RU');
+}
+$('ov-refresh').onclick = loadOverview;
+
+function renderKPIsSkeleton() {
+  $('kpi-row').innerHTML = Array.from({length:6}).map(()=>
+    `<div class="kpi"><div class="skel skel-line" style="width:60%"></div><div class="skel skel-line" style="width:80%;height:20px;margin-top:8px"></div></div>`
+  ).join('');
+}
+
+async function loadOverviewKPIs(filters) {
+  try {
+    const j = await fetchJSON(`${API}/analytics/overview`, {params:filters, signalKey:'ov_kpi'});
+    const d = j.data || {};
+    const activeShare = d.total_companies ? (d.active/d.total_companies*100) : 0;
+    const kpis = [
+      {label:'Всего компаний', value:fmtNum(d.total_companies), delta:`+${d.new_this_month||0} за месяц`, deltaCls:'up'},
+      {label:'Активных', value:fmtNum(d.active), delta:fmtPct(activeShare,1)+' доля', deltaCls:''},
+      {label:'Ликвидировано', value:fmtNum(d.liquidated), delta:'mortality ' + fmtPct(d.mortality_rate_pct,2), deltaCls:'down'},
+      {label:'Выручка ∑', value:fmtMoney(d.revenue_total_usd), delta:'avg ' + fmtMoney(d.revenue_avg_usd), deltaCls:''},
+      {label:'Сотрудников ∑', value:fmtNum(d.employees_total), delta:'avg ' + fmtNum(Math.round(d.employees_avg||0)), deltaCls:''},
+      {label:'Стран · отраслей', value:`${d.countries_count||0} · ${d.industries_count||0}`, delta:'охват рынка', deltaCls:''},
+    ];
+    $('kpi-row').innerHTML = kpis.map(k => `
+      <div class="kpi">
+        <div class="kpi-label">${esc(k.label)}</div>
+        <div>
+          <div class="kpi-value">${esc(k.value)}</div>
+          <div class="kpi-delta ${k.deltaCls}">${esc(k.delta)}</div>
+        </div>
+      </div>
+    `).join('');
+    $('rail-co-count').textContent = fmtNum(d.total_companies);
+  } catch (e) {
+    if (e.name === 'AbortError') return;
+    $('kpi-row').innerHTML = `<div class="kpi" style="grid-column:span 6;color:var(--danger)">Ошибка: ${esc(e.message)}</div>`;
+  }
+}
+
+/* ─── Simple SVG charts ─────────────────────────────────────────── */
+function barChart(container, data, {valueKey, labelKey, colorKey, onClick, fmtFn=fmtNum, suffix=''}) {
+  if (!data.length) { container.innerHTML = emptyState('Нет данных'); return; }
+  const max = Math.max(...data.map(d => Number(d[valueKey])||0)) || 1;
+  container.innerHTML = '';
+  data.forEach(d => {
+    const v = Number(d[valueKey]) || 0;
+    const w = Math.max(2, (v/max)*100);
+    const row = el('div', {class:'bar-row', onclick: () => onClick && onClick(d)},
+      el('div', {class:'bar-label', title:d[labelKey]}, String(d[labelKey] ?? '—')),
+      el('div', {class:'bar-track'}, el('div', {class:'bar-fill'+(colorKey?' '+d[colorKey]:''), style:`width:${w}%`})),
+      el('div', {class:'bar-value'}, fmtFn(v) + suffix),
+    );
+    container.appendChild(row);
+  });
+}
+
+function stackedBarChart(container, data, {labelKey, segments, onClick}) {
+  if (!data.length) { container.innerHTML = emptyState('Нет данных'); return; }
+  const totals = data.map(d => segments.reduce((s,seg) => s + (Number(d[seg.key])||0), 0));
+  const max = Math.max(...totals) || 1;
+  container.innerHTML = '';
+  data.forEach((d, i) => {
+    const total = totals[i];
+    const row = el('div', {class:'bar-row', onclick: () => onClick && onClick(d)},
+      el('div', {class:'bar-label', title:d[labelKey]}, String(d[labelKey] ?? '—')),
+      el('div', {class:'bar-track', style:'display:flex'}),
+      el('div', {class:'bar-value'}, fmtNum(total)),
+    );
+    const track = row.children[1];
+    segments.forEach(seg => {
+      const v = Number(d[seg.key]) || 0;
+      if (v <= 0) return;
+      const w = (v / max) * 100;
+      const part = el('div', {style:`width:${w}%;background:${seg.color};height:100%`, title:`${seg.label}: ${v}`});
+      track.appendChild(part);
+    });
+    container.appendChild(row);
+  });
+}
+
+function donutChart(container, data, {valueKey, labelKey, fmtFn=fmtNum}) {
+  if (!data.length) { container.innerHTML = emptyState('Нет данных'); return; }
+  const total = data.reduce((s,d) => s + (Number(d[valueKey])||0), 0) || 1;
+  const colors = ['#7c5cff','#5b8def','#3dd68c','#f5b942','#ef5b5b','#9079ff','#65d2ff','#b4ee9b'];
+  const cx=70, cy=70, r=52, sw=14; const C=2*Math.PI*r;
+  let acc = 0;
+  let segs = '';
+  data.forEach((d,i) => {
+    const v = Number(d[valueKey])||0; if (v<=0) return;
+    const frac = v/total;
+    const dash = frac*C;
+    const off = -acc*C;
+    segs += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${colors[i%colors.length]}" stroke-width="${sw}" stroke-dasharray="${dash} ${C-dash}" stroke-dashoffset="${off}" transform="rotate(-90 ${cx} ${cy})"/>`;
+    acc += frac;
+  });
+  const legend = data.map((d,i) => `
+    <div style="display:flex;align-items:center;gap:8px;font-size:11.5px;padding:3px 0">
+      <span style="width:9px;height:9px;border-radius:2px;background:${colors[i%colors.length]}"></span>
+      <span class="muted" style="flex:1">${esc(d[labelKey])}</span>
+      <span class="mono">${fmtFn(d[valueKey])}</span>
+    </div>
+  `).join('');
+  container.innerHTML = `
+    <div style="display:flex;align-items:center;gap:14px">
+      <svg width="140" height="140" viewBox="0 0 140 140">
+        ${segs}
+        <text x="${cx}" y="${cy-4}" text-anchor="middle" fill="var(--text)" font-size="18" font-weight="600">${fmtNum(total)}</text>
+        <text x="${cx}" y="${cy+12}" text-anchor="middle" fill="var(--muted)" font-size="10">всего</text>
+      </svg>
+      <div style="flex:1">${legend}</div>
+    </div>`;
+}
+
+function emptyState(msg) {
+  return `<div class="empty"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4-4"/></svg><div>${esc(msg)}</div></div>`;
+}
+
+async function loadIndustryChart(filters) {
+  try {
+    const j = await fetchJSON(`${API}/analytics/industry-distribution`, {params:{...filters, limit:10}, signalKey:'ind'});
+    barChart($('chart-industry'), (j.data||[]).map(d => ({
+      label: d.industry_label || d.industry_code,
+      companies: d.companies,
+      code: d.industry_code,
+    })), {
+      valueKey:'companies', labelKey:'label',
+      onClick: (d) => { state.filters.industry = d.code; onFiltersChanged(); switchView('companies'); },
+    });
+  } catch (e) {
+    if (e.name === 'AbortError') return;
+    $('chart-industry').innerHTML = emptyState('Ошибка: ' + e.message);
+  }
+}
+
+async function loadCountryChart(filters) {
+  try {
+    const j = await fetchJSON(`${API}/analytics/country-distribution`, {params:filters, signalKey:'co'});
+    const rows = (j.data||[]).map(d => ({
+      country: d.country,
+      active: d.active,
+      liquidated: Math.max(0, (d.companies||0) - (d.active||0)),
+    }));
+    stackedBarChart($('chart-country'), rows, {
+      labelKey:'country',
+      segments:[
+        {key:'active', label:'Активные', color:'var(--ok)'},
+        {key:'liquidated', label:'Прочее/Ликвид.', color:'var(--danger)'},
+      ],
+      onClick: (d) => { state.filters.country = [d.country]; onFiltersChanged(); switchView('companies'); },
+    });
+  } catch (e) {
+    if (e.name === 'AbortError') return;
+    $('chart-country').innerHTML = emptyState('Ошибка: ' + e.message);
+  }
+}
+
+async function loadGrowthLeaders(filters) {
+  try {
+    const j = await fetchJSON(`${API}/analytics/growth-leaders`, {params:{...filters, limit:10}, signalKey:'gl'});
+    const list = j.data || [];
+    if (!list.length) { $('chart-growth').innerHTML = emptyState('Нет данных'); return; }
+    $('chart-growth').innerHTML = `<div class="growth-list">${list.map(c => `
+      <div class="growth-row" data-id="${esc(c.id)}">
+        <div class="avatar">${esc((c.name||'?').slice(0,2).toUpperCase())}</div>
+        <div>
+          <div class="growth-name">${esc(c.name)}</div>
+          <div class="growth-sub">${esc(c.country||'')} · ${esc(c.industry_label||'—')} · ${fmtNum(c.employees)} сотр.</div>
+        </div>
+        <div class="growth-rev">${fmtMoney(c.revenue_usd)}</div>
+      </div>
+    `).join('')}</div>`;
+    $('chart-growth').querySelectorAll('.growth-row').forEach(r => {
+      r.onclick = () => openCompanyDrawer(r.dataset.id);
+    });
+  } catch (e) {
+    if (e.name === 'AbortError') return;
+    $('chart-growth').innerHTML = emptyState('Ошибка: ' + e.message);
+  }
+}
+
+async function loadSizeChart(filters) {
+  try {
+    const j = await fetchJSON(`${API}/analytics/size-distribution`, {params:filters, signalKey:'sz'});
+    const data = (j.data||[]).map(d => ({label:d.bucket, companies:d.companies, revenue:d.revenue_usd}));
+    donutChart($('chart-size'), data, {valueKey:'companies', labelKey:'label'});
+  } catch (e) {
+    if (e.name === 'AbortError') return;
+    // Server endpoint may 500 — fall back to status-breakdown
+    try {
+      const j2 = await fetchJSON(`${API}/analytics/status-breakdown`, {params:filters, signalKey:'sb'});
+      const data = (j2.data||[]).map(d => ({label:d.status, companies:d.companies}));
+      donutChart($('chart-size'), data, {valueKey:'companies', labelKey:'label'});
+    } catch (e2) {
+      $('chart-size').innerHTML = emptyState('Endpoint недоступен');
+    }
+  }
+}
+
+async function loadInsights(filters) {
+  try {
+    const j = await fetchJSON(`${API}/analytics/insights`, {params:filters, signalKey:'ins'});
+    const list = j.data || [];
+    if (!list.length) { $('chart-insights').innerHTML = emptyState('Нет инсайтов'); return; }
+    $('chart-insights').innerHTML = list.map(i => `
+      <div class="insight ${esc(i.severity||'info')}">
+        <div class="insight-title">${esc(i.title||'—')}</div>
+        <div class="insight-body">${esc(i.body||'')}</div>
+      </div>
+    `).join('');
+  } catch (e) {
+    if (e.name === 'AbortError') return;
+    // Build fallback insights from overview data so card isn't empty
+    $('chart-insights').innerHTML = `
+      <div class="insight info">
+        <div class="insight-title">AI insights endpoint недоступен</div>
+        <div class="insight-body">Используется fallback. Проверьте логи: <code>GET /api/v1/analytics/insights</code>.</div>
+      </div>
+    `;
+  }
+}
+
+/* ════════════════════════════════════════════════════════════════
+   COMPANIES
+   ════════════════════════════════════════════════════════════════ */
+
+function onFiltersChanged() {
+  renderActiveChips();
+  state.currentViewId = null;
+  $('views-current').textContent = '';
+  if (state.activeView === 'companies') loadCompanies();
+  if (state.activeView === 'overview') loadOverview();
+}
+
+function syncFiltersToToolbar() {
+  $('f-q').value = state.filters.q || '';
+  // Sync toggle chips
+  document.querySelectorAll('#filter-groups .toggle-set').forEach(set => {
+    const key = set.dataset.key;
+    const multi = set.dataset.multi === '1';
+    const val = state.filters[key];
+    set.querySelectorAll('.toggle').forEach(btn => {
+      const v = btn.dataset.val;
+      const active = multi
+        ? (Array.isArray(val) && val.includes(v))
+        : (val === v);
+      btn.classList.toggle('active', active);
+    });
+  });
+}
+
+function wireToggleSets() {
+  document.querySelectorAll('#filter-groups .toggle-set').forEach(set => {
+    const key = set.dataset.key;
+    const multi = set.dataset.multi === '1';
+    set.querySelectorAll('.toggle').forEach(btn => {
+      btn.onclick = () => {
+        const v = btn.dataset.val;
+        if (multi) {
+          const cur = new Set(state.filters[key] || []);
+          if (cur.has(v)) cur.delete(v); else cur.add(v);
+          state.filters[key] = cur.size ? Array.from(cur) : undefined;
+        } else {
+          state.filters[key] = (state.filters[key] === v) ? undefined : v;
+        }
+        syncFiltersToToolbar();
+        onFiltersChanged();
+      };
+    });
+  });
+}
+wireToggleSets();
+
+$('f-q').addEventListener('input', debounce(() => {
+  state.filters.q = $('f-q').value.trim() || undefined;
+  onFiltersChanged();
+}, 300));
+
+$('reset-filters-btn').onclick = () => {
+  state.filters = {};
+  syncFiltersToToolbar();
+  onFiltersChanged();
+};
+$('export-btn').onclick = () => {
+  const qs = new URLSearchParams();
+  for (const [k,v] of Object.entries(state.filters)) {
+    if (v === undefined || v === null || v === '') continue;
+    qs.set(k, Array.isArray(v) ? v.join(',') : v);
+  }
+  qs.set('format', 'csv');
+  window.location = `${API}/export/companies?` + qs.toString();
+  toast('Скачивание CSV началось', 'ok');
+};
+
+function debounce(fn, ms) { let t; return (...a) => { clearTimeout(t); t = setTimeout(()=>fn(...a), ms); }; }
+
+function renderActiveChips() {
+  const c = $('active-chips');
+  c.innerHTML = '';
+  for (const [k,v] of Object.entries(state.filters)) {
+    if (v === undefined || v === null || v === '' || (Array.isArray(v) && !v.length)) continue;
+    const txt = Array.isArray(v) ? v.join(', ') : v;
+    const chip = el('div', {class:'chip'},
+      el('span', {}, `${k} = ${txt}`),
+      el('span', {class:'x', onclick:() => { delete state.filters[k]; syncFiltersToToolbar(); onFiltersChanged(); }}, '✕'),
+    );
+    c.appendChild(chip);
+  }
+}
+
+function renderColumnHeaders() {
+  const cols = state.columns.map(k => ALL_COLUMNS.find(c => c.key === k)).filter(Boolean);
+  $('co-thead').innerHTML = cols.map(c => {
+    const isActive = state.sort.key === c.key;
+    const arrow = isActive ? (state.sort.dir === 'asc' ? '▲' : '▼') : '↕';
+    return `<th class="${isActive?'active':''}" data-key="${esc(c.key)}">${esc(c.label)} <span class="sort">${arrow}</span></th>`;
+  }).join('');
+  $('co-thead').querySelectorAll('th').forEach(th => {
+    th.onclick = () => {
+      const k = th.dataset.key;
+      if (state.sort.key === k) state.sort.dir = state.sort.dir === 'asc' ? 'desc' : 'asc';
+      else { state.sort.key = k; state.sort.dir = 'asc'; }
+      renderColumnHeaders(); renderRows(state._lastRows || []);
+    };
+  });
+}
+
+function rowCellValue(c, key) {
+  if (key === 'industry') return c.industry?.label || c.industry?.code || '';
+  if (key === 'tags') return (c.tags||[]).join(',');
+  return c[key];
+}
+function renderRows(rows) {
+  state._lastRows = rows;
+  const cols = state.columns.map(k => ALL_COLUMNS.find(c => c.key === k)).filter(Boolean);
+  if (state.sort.key) {
+    const k = state.sort.key, dir = state.sort.dir === 'asc' ? 1 : -1;
+    rows = [...rows].sort((a,b) => {
+      const av = rowCellValue(a,k), bv = rowCellValue(b,k);
+      if (av == null) return 1; if (bv == null) return -1;
+      const an = Number(av), bn = Number(bv);
+      if (!isNaN(an) && !isNaN(bn)) return (an-bn)*dir;
+      return String(av).localeCompare(String(bv))*dir;
+    });
+  }
+  if (!rows.length) {
+    $('co-tbody').innerHTML = `<tr><td colspan="${cols.length}">${emptyState('Ничего не найдено. Попробуйте сбросить фильтры.')}</td></tr>`;
+    return;
+  }
+  $('co-tbody').innerHTML = rows.map(c => {
+    const tds = cols.map(col => {
+      const k = col.key;
+      let cell;
+      if (k === 'name') cell = `<b>${esc(c.name)}</b>${c.legal_form?` <span class="muted">${esc(c.legal_form)}</span>`:''}`;
+      else if (k === 'country') cell = `<span class="badge accent">${esc(c.country||'—')}</span>`;
+      else if (k === 'industry') cell = c.industry?.code ? `<code>${esc(c.industry.code)}</code> <span class="muted">${esc(c.industry.label||'')}</span>` : '<span class="muted">—</span>';
+      else if (k === 'status') cell = c.status ? `<span class="badge ${esc(c.status)}">${esc(c.status)}</span>` : '<span class="muted">—</span>';
+      else if (k === 'employee_count') cell = fmtNum(c.employee_count);
+      else if (k === 'revenue_usd') cell = fmtMoney(c.revenue_usd);
+      else if (k === 'tags') cell = (c.tags||[]).map(t => `<span class="badge">${esc(t)}</span>`).join(' ') || '<span class="muted">—</span>';
+      else if (k === 'website') cell = c.website ? `<a href="${esc(c.website)}" target="_blank" onclick="event.stopPropagation()">${esc(c.website.replace(/^https?:\/\//,''))}</a>` : '<span class="muted">—</span>';
+      else if (k === 'confidence') cell = c.confidence ? Number(c.confidence).toFixed(2) : '—';
+      else if (k === 'updated_at') cell = `<span title="${esc(c.updated_at||'')}">${relTime(c.updated_at)}</span>`;
+      else if (k === 'id') cell = `<code class="muted">${esc((c.id||'').slice(0,8))}</code>`;
+      else if (k === 'size') {
+        const s = c.size_category;
+        if (!s) {
+          // Fallback: bucket by employee_count if size_category absent
+          const e = c.employee_count;
+          const b = e == null ? null : (e < 10 ? 'micro' : e < 50 ? 'small' : e < 250 ? 'medium' : e < 1000 ? 'large' : 'enterprise');
+          cell = b ? `<span class="badge" title="auto-bucket">${esc(b)}</span>` : '<span class="muted">—</span>';
+        } else {
+          cell = `<span class="badge accent">${esc(s)}</span>`;
+        }
+      }
+      else if (k === 'ownership') {
+        const m = {private:'🏢 частная', state:'🏛️ гос.', samruk:'🇰🇿 Самрук', foreign:'🌍 иностр.', mixed:'⚖️ смеш.'};
+        cell = c.ownership_type_detail ? `<span class="badge">${esc(m[c.ownership_type_detail] || c.ownership_type_detail)}</span>` : '<span class="muted">—</span>';
+      }
+      else if (k === 'kato') cell = c.kato_code ? `<code class="muted">${esc(c.kato_code)}</code>` : '<span class="muted">—</span>';
+      else if (k === 'source') cell = c.data_source ? `<span class="badge info">${esc(c.data_source)}</span>` : '<span class="muted">seed</span>';
+      else cell = esc(c[k] ?? '—');
+      return `<td>${cell}</td>`;
+    }).join('');
+    return `<tr data-id="${esc(c.id)}">${tds}</tr>`;
+  }).join('');
+  $('co-tbody').querySelectorAll('tr').forEach(tr => tr.onclick = () => openCompanyDrawer(tr.dataset.id));
+}
+
+async function loadCompanies() {
+  $('co-tbody').innerHTML = `<tr><td colspan="${state.columns.length}"><div class="skel skel-line"></div></td></tr>`;
+  try {
+    const j = await fetchJSON(`${API}/companies`, {params:{...state.filters, limit:100}, signalKey:'co_list'});
+    const rows = j.data || [];
+    renderRows(rows);
+    $('co-foot').textContent = `показано ${rows.length} из ~${j.meta?.page?.total_estimate ?? '—'} · фильтров: ${(j.meta?.filters_applied||[]).length}`;
+  } catch (e) {
+    if (e.name === 'AbortError') return;
+    $('co-tbody').innerHTML = `<tr><td colspan="${state.columns.length}" style="color:var(--danger)">Ошибка: ${esc(e.message)} <button class="btn ghost" style="margin-left:8px" onclick="loadCompanies()">Повторить</button></td></tr>`;
+    toast('Ошибка загрузки компаний: ' + e.message, 'err');
+  }
+}
+
+/* ─── Columns popover ───────────────────────────────────────────── */
+let colPop = null;
+$('columns-btn').onclick = (ev) => {
+  ev.stopPropagation();
+  if (colPop) { colPop.remove(); colPop = null; return; }
+  colPop = el('div', {class:'col-popover'});
+  ALL_COLUMNS.forEach(c => {
+    const checked = state.columns.includes(c.key);
+    const lbl = el('label', {},
+      Object.assign(document.createElement('input'), {type:'checkbox', checked}),
+      document.createTextNode(c.label),
+    );
+    lbl.querySelector('input').onchange = (e) => {
+      if (e.target.checked) { if (!state.columns.includes(c.key)) state.columns.push(c.key); }
+      else state.columns = state.columns.filter(k => k !== c.key);
+      persistColumns();
+      renderColumnHeaders();
+      renderRows(state._lastRows || []);
+    };
+    colPop.appendChild(lbl);
+  });
+  document.body.appendChild(colPop);
+  const r = $('columns-btn').getBoundingClientRect();
+  colPop.style.top = (r.bottom+4)+'px';
+  colPop.style.left = (r.right - 220)+'px';
+  setTimeout(() => document.addEventListener('click', closeCol, {once:true}), 0);
+};
+function closeCol(e) { if (colPop && !colPop.contains(e.target)) { colPop.remove(); colPop = null; } else if (colPop) { setTimeout(() => document.addEventListener('click', closeCol, {once:true}), 0); } }
+
+/* ─── More filters drawer ───────────────────────────────────────── */
+const EXTRA_FILTERS = [
+  {key:'region', label:'Регион (текст)', type:'text'},
+  {key:'city', label:'Город (текст)', type:'text'},
+  {key:'sub_industry', label:'Под-отрасль', type:'text'},
+  {key:'niche_tags', label:'Ниша / теги', type:'text'},
+  {key:'employee_count', label:'Сотрудников (min..max)', type:'range'},
+  {key:'revenue_usd', label:'Выручка $ (min..max)', type:'range'},
+  {key:'business_age_years', label:'Возраст (лет, min..max)', type:'range'},
+  {key:'company_size', label:'Размер', type:'enum', values:['micro','small','medium','large','enterprise']},
+  {key:'legal_form', label:'Форма', type:'text'},
+  {key:'b2_orientation', label:'B2', type:'enum', values:['b2b','b2c','b2g']},
+  {key:'online_offline', label:'Канал', type:'enum', values:['online','offline','hybrid']},
+  {key:'lifecycle_stage', label:'Стадия', type:'enum', values:['idea','startup','growth','mature']},
+  {key:'hiring_activity', label:'Найм', type:'enum', values:['low','medium','high']},
+  {key:'risk_level', label:'Риск', type:'enum', values:['low','medium','high']},
+  {key:'sanctions_flag', label:'Санкции', type:'enum', values:['true','false']},
+  {key:'government_participation', label:'Гос. участие', type:'enum', values:['none','partial','full']},
+];
+
+$('more-filters-btn').onclick = () => {
+  const body = $('filters-drawer-body');
+  body.innerHTML = EXTRA_FILTERS.map(f => {
+    const v = state.filters[f.key] ?? '';
+    if (f.type === 'enum') {
+      const opts = `<option value="">—</option>` + f.values.map(x => `<option value="${esc(x)}" ${v===x?'selected':''}>${esc(x)}</option>`).join('');
+      return `<div style="margin-bottom:10px"><label class="muted" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:4px">${esc(f.label)}</label><select class="select" style="width:100%" data-fk="${esc(f.key)}">${opts}</select></div>`;
+    }
+    if (f.type === 'range') {
+      const [mn='', mx=''] = String(v||'').split('..');
+      return `<div style="margin-bottom:10px"><label class="muted" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:4px">${esc(f.label)}</label>
+        <div style="display:flex;gap:6px"><input class="input" data-fk="${esc(f.key)}" data-part="min" placeholder="min" value="${esc(mn)}" style="width:50%"/><input class="input" data-fk="${esc(f.key)}" data-part="max" placeholder="max" value="${esc(mx)}" style="width:50%"/></div></div>`;
+    }
+    return `<div style="margin-bottom:10px"><label class="muted" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:4px">${esc(f.label)}</label><input class="input" style="width:100%" data-fk="${esc(f.key)}" value="${esc(v)}"/></div>`;
+  }).join('') + `<button class="btn" id="apply-more" style="width:100%;margin-top:8px">Применить</button>`;
+  $('filters-drawer').classList.add('open'); $('scrim').classList.add('open');
+  body.querySelector('#apply-more').onclick = () => {
+    body.querySelectorAll('[data-fk]').forEach(inp => {
+      const k = inp.dataset.fk;
+      if (inp.dataset.part) {
+        const cur = String(state.filters[k]||'').split('..');
+        if (inp.dataset.part === 'min') cur[0] = inp.value.trim();
+        else cur[1] = inp.value.trim();
+        const merged = `${cur[0]||''}..${cur[1]||''}`;
+        state.filters[k] = (merged === '..' ? undefined : merged);
+      } else {
+        state.filters[k] = inp.value.trim() || undefined;
+      }
+    });
+    closeFiltersDrawer();
+    onFiltersChanged();
+  };
+};
+function closeFiltersDrawer() { $('filters-drawer').classList.remove('open'); $('scrim').classList.remove('open'); }
+$('filters-close').onclick = closeFiltersDrawer;
+
+/* ─── Saved views ───────────────────────────────────────────────── */
+function renderSavedViewsMenu() {
+  const m = $('views-menu');
+  m.innerHTML = state.savedViews.map(v => `
+    <div class="dropdown-item" data-id="${esc(v.id)}">
+      <span>${esc(v.name)}</span>
+      <span class="x" data-del="${esc(v.id)}" title="Удалить">×</span>
+    </div>
+  `).join('');
+  m.querySelectorAll('.dropdown-item').forEach(item => {
+    item.onclick = (e) => {
+      if (e.target.dataset.del) {
+        state.savedViews = state.savedViews.filter(v => v.id !== e.target.dataset.del);
+        persistSavedViews();
+        renderSavedViewsMenu();
+        return;
+      }
+      const v = state.savedViews.find(x => x.id === item.dataset.id);
+      if (!v) return;
+      state.filters = JSON.parse(JSON.stringify(v.filters || {}));
+      if (v.columns) { state.columns = v.columns; persistColumns(); renderColumnHeaders(); }
+      state.currentViewId = v.id;
+      $('views-current').textContent = ' · ' + v.name;
+      syncFiltersToToolbar();
+      onFiltersChanged();
+      $('views-dropdown').classList.remove('open');
+    };
+  });
+}
+$('views-btn').onclick = (e) => { e.stopPropagation(); $('views-dropdown').classList.toggle('open'); };
+document.addEventListener('click', (e) => { if (!$('views-dropdown').contains(e.target)) $('views-dropdown').classList.remove('open'); });
+$('save-view-btn').onclick = () => {
+  const name = prompt('Название сохранённого вида:', 'Новый вид');
+  if (!name) return;
+  const id = 'v' + Date.now();
+  state.savedViews.push({id, name, filters: JSON.parse(JSON.stringify(state.filters)), columns:[...state.columns]});
+  persistSavedViews();
+  renderSavedViewsMenu();
+  toast('Вид «'+name+'» сохранён', 'ok');
+};
+
+/* ════════════════════════════════════════════════════════════════
+   COMPANY DRAWER
+   ════════════════════════════════════════════════════════════════ */
+$('d-close').onclick = closeDrawer;
+$('scrim').onclick = () => { closeDrawer(); closeFiltersDrawer(); };
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') { closeDrawer(); closeFiltersDrawer(); $('cmdk-modal').classList.remove('open'); }
+  if ((e.metaKey||e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); $('cmdk-modal').classList.add('open'); $('cmdk-modal-input').focus(); }
+});
+$('cmdk-modal').onclick = (e) => { if (e.target.id === 'cmdk-modal') $('cmdk-modal').classList.remove('open'); };
+
+document.querySelectorAll('#d-tabs .drawer-tab').forEach(t => {
+  t.onclick = () => {
+    document.querySelectorAll('#d-tabs .drawer-tab').forEach(x => x.classList.remove('active'));
+    document.querySelectorAll('.drawer-pane').forEach(x => x.classList.remove('active'));
+    t.classList.add('active');
+    $('d-pane-'+t.dataset.pane).classList.add('active');
+  };
+});
+
+function closeDrawer() {
+  $('drawer').classList.remove('open'); $('scrim').classList.remove('open');
+  state.openCompanyId = null;
+}
+
+async function openCompanyDrawer(id) {
+  if (!id) return;
+  state.openCompanyId = id;
+  $('drawer').classList.add('open'); $('scrim').classList.add('open');
+  $('d-title').textContent = 'Загрузка…';
+  $('d-sub').textContent = id;
+  ['overview','insights','similar','timeline','raw'].forEach(p => $('d-pane-'+p).innerHTML = `<div class="skel skel-line"></div><div class="skel skel-line" style="width:80%"></div><div class="skel skel-line" style="width:60%"></div>`);
+
+  // load all detail data in parallel
+  const [det, ins, sim, tl] = await Promise.allSettled([
+    fetchJSON(`${API}/companies/${id}`),
+    fetchJSON(`${API}/companies/${id}/insights`),
+    fetchJSON(`${API}/companies/${id}/similar`),
+    fetchJSON(`${API}/companies/${id}/timeline`),
+  ]);
+
+  const c = det.status === 'fulfilled' ? det.value.data : null;
+  if (!c) {
+    $('d-title').textContent = 'Ошибка';
+    $('d-pane-overview').innerHTML = `<div class="empty" style="color:var(--danger)">${esc(det.reason?.message || 'no data')}</div>`;
+    return;
+  }
+  $('d-title').textContent = c.name;
+  $('d-sub').innerHTML = `${esc(c.country||'')} · ${esc(c.industry?.code||'')} ${esc(c.industry?.label||'')} · <code>${esc(c.id)}</code>`;
+
+  const meterRow = (label, v, max=1) => {
+    const pct = v != null ? Math.min(100, (v/max)*100) : 0;
+    return `<div class="meter">
+      <div class="meter-label">${esc(label)}</div>
+      <div class="meter-track"><div class="meter-fill" style="width:${pct}%"></div></div>
+      <div class="meter-val">${v != null ? Number(v).toFixed(2) : '—'}</div>
+    </div>`;
+  };
+  $('d-pane-overview').innerHTML = `
+    <div style="margin-bottom:14px">
+      ${c.status ? `<span class="badge ${esc(c.status)}">${esc(c.status)}</span>` : ''}
+      ${(c.tags||[]).map(t => `<span class="badge accent" style="margin-left:4px">${esc(t)}</span>`).join('')}
+    </div>
+    <div class="kv-row"><div class="kv-key">BIN/ИНН</div><div class="kv-val mono">${esc(c.bin||c.inn||c.ogrn||'—')}</div></div>
+    <div class="kv-row"><div class="kv-key">Форма</div><div class="kv-val">${esc(c.legal_form||'—')}</div></div>
+    <div class="kv-row"><div class="kv-key">Зарегистрирован</div><div class="kv-val">${fmtDate(c.registered_at)}</div></div>
+    <div class="kv-row"><div class="kv-key">Сотрудников</div><div class="kv-val">${fmtNum(c.employee_count)}</div></div>
+    <div class="kv-row"><div class="kv-key">Выручка</div><div class="kv-val">${fmtMoney(c.revenue_usd)}</div></div>
+    <div class="kv-row"><div class="kv-key">Капитализация</div><div class="kv-val">${fmtMoney(c.capitalization_usd)}</div></div>
+    <div class="kv-row"><div class="kv-key">Сайт</div><div class="kv-val">${c.website?`<a href="${esc(c.website)}" target="_blank">${esc(c.website)}</a>`:'—'}</div></div>
+    <div class="kv-row"><div class="kv-key">Email · Phone</div><div class="kv-val">${esc(c.email||'—')} · ${esc(c.phone||'—')}</div></div>
+    <div class="kv-row"><div class="kv-key">Описание</div><div class="kv-val">${esc(c.description||'—')}</div></div>
+    <div class="kv-row"><div class="kv-key">Обновлено</div><div class="kv-val">${relTime(c.updated_at)}</div></div>
+    <h4 style="margin:18px 0 8px;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">Scores</h4>
+    ${meterRow('Confidence', c.confidence, 1)}
+    ${meterRow('Digital maturity', c.digital_maturity ?? c.scores?.digital_maturity, 1)}
+    ${meterRow('Data completeness', c.data_completeness ?? c.scores?.data_completeness, 1)}
+    ${meterRow('AI growth score', c.ai_growth_score ?? c.scores?.ai_growth_score, 1)}
+    ${meterRow('Risk score', c.risk_score, 100)}
+  `;
+
+  const insList = ins.status === 'fulfilled' ? (ins.value.data || []) : [];
+  $('d-pane-insights').innerHTML = insList.length
+    ? insList.map(i => `<div class="insight ${esc(i.severity||'info')}" style="margin-bottom:8px"><div class="insight-title">${esc(i.title||'—')}</div><div class="insight-body">${esc(i.body||'')}</div></div>`).join('')
+    : emptyState('Нет инсайтов');
+
+  const simList = sim.status === 'fulfilled' ? (sim.value.data || []) : [];
+  $('d-pane-similar').innerHTML = simList.length
+    ? `<div class="growth-list">${simList.slice(0,5).map(s => `
+        <div class="growth-row" data-id="${esc(s.id)}">
+          <div class="avatar">${esc((s.name||'?').slice(0,2).toUpperCase())}</div>
+          <div><div class="growth-name">${esc(s.name)}</div><div class="growth-sub">${esc(s.country||'')} · ${esc(s.industry?.label||s.industry_label||'')}</div></div>
+          <div class="growth-rev">${fmtMoney(s.revenue_usd)}</div>
+        </div>`).join('')}</div>`
+    : emptyState('Нет лукэлайков');
+  $('d-pane-similar').querySelectorAll('.growth-row').forEach(r => r.onclick = () => openCompanyDrawer(r.dataset.id));
+
+  const tlList = tl.status === 'fulfilled' ? (tl.value.data || []) : [];
+  $('d-pane-timeline').innerHTML = tlList.length
+    ? tlList.map(t => `<div style="display:grid;grid-template-columns:80px 1fr;gap:10px;padding:7px 0;border-bottom:1px dashed var(--border);font-size:12px">
+        <div class="muted mono">${fmtDate(t.date||t.at||t.timestamp)}</div>
+        <div><b>${esc(t.event||t.type||t.title||'event')}</b>${t.description?`<div class="muted" style="margin-top:2px">${esc(t.description)}</div>`:''}</div>
+      </div>`).join('')
+    : emptyState('Нет событий');
+
+  $('d-pane-raw').innerHTML = `<pre class="json">${esc(JSON.stringify(c, null, 2))}</pre>`;
+}
+
+/* ════════════════════════════════════════════════════════════════
+   FORECASTS
+   ════════════════════════════════════════════════════════════════ */
+const FC_DEFAULTS = {
+  tam_sam_som: {industry_code:'62.01', regions:['KZ'], target_segment:'smb', addressable_pct:0.30, obtainable_pct:0.05, horizon_years:3},
+  cac_ltv: {acquisition_cost_usd:50, visitors_to_customer_rate:0.02, arpu_monthly_usd:30, monthly_churn_rate:0.05, gross_margin_pct:0.7, horizon_months:36},
+  unit_economics: {revenue_per_unit_usd:100, cogs_per_unit_usd:40, opex_per_unit_usd:25, tax_rate_pct:0.20},
+  market_growth: {industry_code:'62.01', regions:['KZ'], horizon_years:3, model:'linear'},
+};
+function resetForecast() {
+  const t = $('fc-type').value;
+  $('fc-inputs').value = JSON.stringify(FC_DEFAULTS[t], null, 2);
+  $('fc-result').innerHTML = `<div class="empty"><div>Выберите тип и нажмите «Рассчитать»</div></div>`;
+  $('fc-meta').textContent = t;
+}
+$('fc-type').onchange = resetForecast;
+$('fc-defaults').onclick = resetForecast;
+$('fc-run').onclick = async () => {
+  const type = $('fc-type').value;
+  let inputs;
+  try { inputs = JSON.parse($('fc-inputs').value); }
+  catch (e) { $('fc-result').innerHTML = `<div class="empty" style="color:var(--danger)">JSON error: ${esc(e.message)}</div>`; return; }
+  $('fc-result').innerHTML = `<div class="skel skel-line"></div><div class="skel skel-block" style="margin-top:8px"></div>`;
+  try {
+    const r = await fetch(`/web/forecast?type=${type}`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(inputs)});
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.errors?.[0]?.message || 'forecast failed');
+    renderForecast(type, j.data);
+  } catch (e) {
+    $('fc-result').innerHTML = `<div class="empty" style="color:var(--danger)">${esc(e.message)}</div>`;
+    toast('Ошибка расчёта: ' + e.message, 'err');
+  }
+};
+
+function renderForecast(type, data) {
+  const o = data.output || {};
+  let kpis = '', chart = '';
+  if (type === 'tam_sam_som') {
+    kpis = kpiCells([
+      ['TAM', fmtMoney(o.tam_usd)],
+      ['SAM', fmtMoney(o.sam_usd)],
+      ['SOM', fmtMoney(o.som_usd)],
+    ]);
+    chart = sankeyTamSamSom(o.tam_usd, o.sam_usd, o.som_usd);
+  } else if (type === 'cac_ltv') {
+    kpis = kpiCells([
+      ['CAC', '$'+(o.cac_usd ?? '—')],
+      ['LTV', '$'+(o.ltv_usd ?? '—')],
+      ['LTV : CAC', (o.ltv_cac_ratio ?? '—')+'x'],
+      ['Payback', (o.payback_months ?? '—')+' мес'],
+    ]);
+    const curve = data.chart?.cohort_curve || [];
+    chart = lineChart(curve, {x:'month', y:'revenue_usd', title:'Cohort revenue'});
+    if (o.recommended_actions?.length) {
+      chart += `<div style="margin-top:12px"><h4 style="margin:0 0 6px;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">Рекомендации</h4>${o.recommended_actions.map(a => `<div style="font-size:12.5px;margin-bottom:4px">→ ${esc(a)}</div>`).join('')}</div>`;
+    }
+  } else if (type === 'unit_economics') {
+    kpis = kpiCells([
+      ['Gross margin', fmtPct((o.gross_margin_pct||0)*100)],
+      ['Operating margin', fmtPct((o.operating_margin_pct||0)*100)],
+      ['Net margin', fmtPct((o.net_margin_pct||0)*100)],
+    ]);
+  } else if (type === 'market_growth') {
+    kpis = kpiCells([
+      ['CAGR', (o.cagr_pct ?? '—')+'%'],
+      ['Истор. лет', (o.historical?.length || 0)],
+      ['Прогноз. лет', (o.forecast?.length || 0)],
+    ]);
+    const series = [...(o.historical||[]).map(p => ({x:p.year, y:p.value, kind:'hist'})), ...(o.forecast||[]).map(p => ({x:p.year, y:p.value, kind:'fc'}))];
+    chart = lineChart(series, {x:'x', y:'y', title:'Историч. + прогноз', highlight:'fc'});
+  }
+  $('fc-result').innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-bottom:14px">${kpis}</div>
+    ${chart}
+    <details style="margin-top:14px"><summary class="muted" style="cursor:pointer;font-size:12px">Raw output</summary><pre class="json" style="margin-top:8px">${esc(JSON.stringify(data, null, 2))}</pre></details>
+  `;
+}
+function kpiCells(arr) {
+  return arr.map(([l,v]) => `<div class="kpi"><div class="kpi-label">${esc(l)}</div><div class="kpi-value">${esc(v)}</div></div>`).join('');
+}
+function sankeyTamSamSom(tam, sam, som) {
+  if (!tam) return '';
+  const W = 480, H = 200; const pad = 10;
+  const t = Math.max(1, tam), s = sam||0, o = som||0;
+  const wT = H - pad*2;
+  const wS = Math.max(8, (s/t) * wT);
+  const wO = Math.max(4, (o/t) * wT);
+  const x1=20, x2=220, x3=420;
+  return `<svg width="100%" height="${H}" viewBox="0 0 ${W} ${H}" style="background:var(--bg);border-radius:6px">
+    <rect x="${x1}" y="${(H-wT)/2}" width="20" height="${wT}" fill="var(--accent)" opacity=".8"/>
+    <text x="${x1+30}" y="${H/2}" fill="var(--text)" font-size="11" alignment-baseline="middle">TAM ${fmtMoney(tam)}</text>
+    <path d="M ${x1+20} ${(H-wT)/2} C ${(x1+x2)/2} ${(H-wT)/2}, ${(x1+x2)/2} ${(H-wS)/2}, ${x2} ${(H-wS)/2}
+             L ${x2} ${(H+wS)/2} C ${(x1+x2)/2} ${(H+wS)/2}, ${(x1+x2)/2} ${(H+wT)/2}, ${x1+20} ${(H+wT)/2} Z"
+       fill="var(--accent)" opacity=".25"/>
+    <rect x="${x2}" y="${(H-wS)/2}" width="20" height="${wS}" fill="var(--info)" opacity=".8"/>
+    <text x="${x2+30}" y="${H/2}" fill="var(--text)" font-size="11" alignment-baseline="middle">SAM ${fmtMoney(sam)}</text>
+    <path d="M ${x2+20} ${(H-wS)/2} C ${(x2+x3)/2} ${(H-wS)/2}, ${(x2+x3)/2} ${(H-wO)/2}, ${x3} ${(H-wO)/2}
+             L ${x3} ${(H+wO)/2} C ${(x2+x3)/2} ${(H+wO)/2}, ${(x2+x3)/2} ${(H+wS)/2}, ${x2+20} ${(H+wS)/2} Z"
+       fill="var(--info)" opacity=".25"/>
+    <rect x="${x3}" y="${(H-wO)/2}" width="20" height="${wO}" fill="var(--ok)" opacity=".9"/>
+    <text x="${x3-6}" y="${H/2}" fill="var(--text)" font-size="11" alignment-baseline="middle" text-anchor="end">SOM ${fmtMoney(som)}</text>
+  </svg>`;
+}
+function lineChart(series, {x,y,title,highlight}={}) {
+  if (!series?.length) return '';
+  const W=480, H=180, padL=44, padR=14, padT=24, padB=24;
+  const xs = series.map(p => Number(p[x])||0);
+  const ys = series.map(p => Number(p[y])||0);
+  const minX = Math.min(...xs), maxX = Math.max(...xs);
+  const minY = 0, maxY = Math.max(...ys, 1);
+  const sx = (v) => padL + ((v-minX)/Math.max(1,(maxX-minX))) * (W-padL-padR);
+  const sy = (v) => H-padB - ((v-minY)/(maxY-minY)) * (H-padT-padB);
+  const points = series.map(p => `${sx(p[x])},${sy(p[y])}`).join(' ');
+  const dots = series.map(p => `<circle cx="${sx(p[x])}" cy="${sy(p[y])}" r="3" fill="${highlight && p.kind===highlight?'var(--accent)':'var(--info)'}"/>`).join('');
+  const grid = [0,.25,.5,.75,1].map(t => {
+    const yv = minY + t*(maxY-minY);
+    const yp = sy(yv);
+    return `<line x1="${padL}" x2="${W-padR}" y1="${yp}" y2="${yp}" stroke="var(--border)" stroke-dasharray="2 3"/><text x="${padL-6}" y="${yp+3}" fill="var(--muted)" font-size="9" text-anchor="end">${fmtMoney(yv)}</text>`;
+  }).join('');
+  return `<div style="font-size:11px;color:var(--muted);margin-bottom:4px">${esc(title||'')}</div>
+    <svg width="100%" height="${H}" viewBox="0 0 ${W} ${H}" style="background:var(--bg);border-radius:6px">
+      ${grid}
+      <polyline points="${points}" fill="none" stroke="var(--accent)" stroke-width="2"/>
+      ${dots}
+    </svg>`;
+}
+
+/* ════════════════════════════════════════════════════════════════
+   FILTERS REGISTRY VIEW
+   ════════════════════════════════════════════════════════════════ */
+const FILTER_GROUPS = {
+  'География':       ['country','region','city'],
+  'Отрасль':         ['industry','sub_industry','niche_tags'],
+  'Размер':          ['company_size','employee_count','revenue_usd'],
+  'Юридическое':     ['legal_form','status','business_age_years','profitability'],
+  'Сигналы':         ['b2_orientation','online_offline','lifecycle_stage','hiring_activity','media_presence','sentiment'],
+  'Риск':            ['government_participation','sanctions_flag','risk_level'],
+};
+
+async function loadFiltersView() {
+  const root = $('filters-groups');
+  root.innerHTML = `<div class="card"><div class="skel skel-line"></div><div class="skel skel-line" style="width:80%"></div></div>`;
+  if (!state.filterCatalog) {
+    try {
+      const j = await fetchJSON(`${API}/filters`);
+      state.filterCatalog = j.data || [];
+    } catch (e) {
+      root.innerHTML = `<div class="card" style="color:var(--danger)">Ошибка: ${esc(e.message)}</div>`; return;
+    }
+  }
+  renderFiltersGroups($('fl-search').value);
+}
+$('fl-search').addEventListener('input', () => renderFiltersGroups($('fl-search').value));
+
+function renderFiltersGroups(q='') {
+  const root = $('filters-groups');
+  const ql = q.trim().toLowerCase();
+  const byKey = Object.fromEntries((state.filterCatalog||[]).map(f => [f.key, f]));
+  const seen = new Set();
+  root.innerHTML = Object.entries(FILTER_GROUPS).map(([grp, keys]) => {
+    const items = keys.map(k => byKey[k]).filter(Boolean)
+      .filter(f => !ql || f.key.includes(ql) || (f.backed_by||'').includes(ql));
+    items.forEach(f => seen.add(f.key));
+    if (!items.length) return '';
+    return `<div class="card" style="margin-bottom:10px">
+      <div class="card-head"><div class="card-title">${esc(grp)}</div><div class="card-meta">${items.length}</div></div>
+      <table class="data" style="border:none">
+        <thead><tr><th>Ключ</th><th>Тип</th><th>Источник</th><th>Допустимые значения</th></tr></thead>
+        <tbody>
+          ${items.map(f => `<tr><td><code>${esc(f.key)}</code></td><td><span class="badge info">${esc(f.type)}</span></td><td class="muted mono">${esc(f.backed_by||'—')}</td><td>${(f.values||[]).slice(0,12).map(v => `<span class="badge">${esc(v)}</span>`).join(' ') || '<span class="muted">свободное</span>'}</td></tr>`).join('')}
+        </tbody>
+      </table>
+    </div>`;
+  }).join('');
+  // ungrouped tail
+  const tail = (state.filterCatalog||[]).filter(f => !seen.has(f.key) && (!ql || f.key.includes(ql)));
+  if (tail.length) {
+    root.insertAdjacentHTML('beforeend', `<div class="card"><div class="card-head"><div class="card-title">Прочее</div><div class="card-meta">${tail.length}</div></div>
+      <table class="data" style="border:none"><tbody>${tail.map(f => `<tr><td><code>${esc(f.key)}</code></td><td><span class="badge info">${esc(f.type)}</span></td><td class="muted mono">${esc(f.backed_by||'—')}</td></tr>`).join('')}</tbody></table></div>`);
+  }
+}
+
+/* ════════════════════════════════════════════════════════════════
+   API VIEW
+   ════════════════════════════════════════════════════════════════ */
+async function loadApiView() {
+  const root = $('api-groups');
+  root.innerHTML = `<div class="card"><div class="skel skel-line"></div></div>`;
+  if (!state.openapi) {
+    try { state.openapi = await (await fetch('/openapi.json')).json(); }
+    catch (e) { root.innerHTML = `<div class="card" style="color:var(--danger)">Ошибка: ${esc(e.message)}</div>`; return; }
+  }
+  renderApiGroups($('ep-search').value);
+}
+$('ep-search').addEventListener('input', () => renderApiGroups($('ep-search').value));
+
+function renderApiGroups(q='') {
+  const root = $('api-groups');
+  const ql = q.trim().toLowerCase();
+  const byTag = {};
+  for (const [path, methods] of Object.entries(state.openapi.paths || {})) {
+    for (const [m, def] of Object.entries(methods)) {
+      const tag = (def.tags && def.tags[0]) || 'misc';
+      if (ql && !path.toLowerCase().includes(ql) && !(def.summary||'').toLowerCase().includes(ql)) continue;
+      (byTag[tag] ||= []).push({m:m.toUpperCase(), path, summary:def.summary||''});
+    }
+  }
+  root.innerHTML = Object.entries(byTag).sort().map(([tag, rows]) => `
+    <div class="card" style="margin-bottom:10px">
+      <div class="card-head"><div class="card-title">${esc(tag)}</div><div class="card-meta">${rows.length} endpoints</div></div>
+      <table class="data" style="border:none">
+        <tbody>
+          ${rows.sort((a,b) => a.path.localeCompare(b.path)).map(r => `
+            <tr data-curl="${esc(`curl -s '${location.origin}${r.path}'`)}">
+              <td style="width:80px"><span class="badge method-${esc(r.m)}">${esc(r.m)}</span></td>
+              <td><code>${esc(r.path)}</code></td>
+              <td class="muted">${esc(r.summary)}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  `).join('');
+  root.querySelectorAll('tr[data-curl]').forEach(tr => tr.onclick = () => {
+    navigator.clipboard.writeText(tr.dataset.curl).then(() => toast('curl скопирован', 'ok')).catch(() => toast('Не удалось скопировать', 'err'));
+  });
+}
+
+/* ════════════════════════════════════════════════════════════════
+   COMPETITORS WIZARD
+   ════════════════════════════════════════════════════════════════ */
+
+const WIZ_STATE = {
+  step: 0,
+  options: null,        // fetched from /competitors/options
+  answers: {
+    category: null,
+    audience: 'mixed',
+    stage: 'growth',
+    regions: ['KZ'],
+    price: 'mid',
+  },
+};
+const WIZ_STEPS = [
+  {key:'category', q:'Какой у вас продукт или ниша?',
+    help:'Выберите ближайшую категорию — мы подберём отрасль ОКЭД автоматически.',
+    grid:'three', multi:false},
+  {key:'audience', q:'Кому вы продаёте?',
+    help:'Это сместит подбор по тегам B2B / B2C / B2G.', grid:'three', multi:false},
+  {key:'stage', q:'На какой стадии бизнес?',
+    help:'Покажем игроков соответствующего размера для бенчмарка.', grid:'three', multi:false},
+  {key:'regions', q:'В каких странах ищете конкурентов?',
+    help:'Можно выбрать несколько.', grid:'five', multi:true},
+  {key:'price', q:'Ценовой сегмент?',
+    help:'Сузим выборку по выручке.', grid:'three', multi:false},
+];
+
+async function initWizard() {
+  if (!WIZ_STATE.options) {
+    try {
+      const r = await fetch(`${API}/competitors/options`);
+      const j = await r.json();
+      WIZ_STATE.options = j.data;
+    } catch (e) {
+      $('wiz-steps').innerHTML = `<div class="empty" style="color:var(--danger)">Не удалось загрузить опции: ${esc(e.message)}</div>`;
+      return;
+    }
+  }
+  WIZ_STATE.step = 0;
+  renderWizard();
+}
+
+function renderWizard() {
+  const root = $('wiz-steps');
+  if (!root) return;
+  const stepDef = WIZ_STEPS[WIZ_STATE.step];
+  const opts = WIZ_STATE.options[stepDef.key === 'regions' ? 'regions'
+                                : stepDef.key === 'category' ? 'categories'
+                                : stepDef.key + 's'];
+  const curVal = WIZ_STATE.answers[stepDef.key];
+  const isSelected = (v) => stepDef.multi ? (Array.isArray(curVal) && curVal.includes(v)) : (curVal === v);
+
+  root.innerHTML = `
+    <div class="wiz-step active">
+      <div class="wiz-q">${esc(stepDef.q)}</div>
+      <div class="wiz-help">${esc(stepDef.help)}</div>
+      <div class="wiz-grid ${stepDef.grid}">
+        ${opts.map(o => `
+          <div class="wiz-option ${isSelected(o.key) ? 'selected' : ''}" data-val="${esc(o.key)}">
+            <span class="lbl">${esc(o.label)}</span>
+            ${stepDef.multi ? `<span class="hint">${isSelected(o.key) ? '✓' : ''}</span>` : ''}
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  `;
+  root.querySelectorAll('.wiz-option').forEach(opt => {
+    opt.onclick = () => {
+      const v = opt.dataset.val;
+      if (stepDef.multi) {
+        const cur = new Set(WIZ_STATE.answers[stepDef.key] || []);
+        if (cur.has(v)) cur.delete(v); else cur.add(v);
+        WIZ_STATE.answers[stepDef.key] = Array.from(cur);
+      } else {
+        WIZ_STATE.answers[stepDef.key] = v;
+      }
+      renderWizard();
+    };
+  });
+  $('wiz-progress').textContent = `шаг ${WIZ_STATE.step+1} / ${WIZ_STEPS.length}`;
+  $('wiz-back').disabled = WIZ_STATE.step === 0;
+  const isLast = WIZ_STATE.step === WIZ_STEPS.length - 1;
+  $('wiz-next').textContent = isLast ? 'Найти конкурентов →' : 'Далее →';
+  // Disable "Next" if no selection
+  const hasAnswer = stepDef.multi
+    ? Array.isArray(curVal) && curVal.length > 0
+    : !!curVal;
+  $('wiz-next').disabled = !hasAnswer;
+}
+
+function bindWizardNav() {
+  $('wiz-back').onclick = () => { if (WIZ_STATE.step > 0) { WIZ_STATE.step--; renderWizard(); } };
+  $('wiz-next').onclick = async () => {
+    if (WIZ_STATE.step < WIZ_STEPS.length - 1) {
+      WIZ_STATE.step++; renderWizard(); return;
+    }
+    await submitWizard();
+  };
+  $('wiz-reset').onclick = () => {
+    WIZ_STATE.step = 0;
+    WIZ_STATE.answers = {category:null, audience:'mixed', stage:'growth', regions:['KZ'], price:'mid'};
+    $('wiz-result').innerHTML = `<div class="empty"><div>Заполните анкету.</div></div>`;
+    $('wiz-niche-meta').textContent = '';
+    renderWizard();
+  };
+}
+bindWizardNav();
+
+async function submitWizard() {
+  const result = $('wiz-result');
+  result.innerHTML = `<div class="card"><div class="skel skel-line"></div><div class="skel skel-line" style="margin-top:10px"></div></div>`;
+  $('wiz-niche-meta').textContent = 'ищем…';
+  try {
+    const r = await fetch(`${API}/competitors/wizard`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(WIZ_STATE.answers),
+    });
+    const j = await r.json();
+    if (!r.ok) throw new Error((j.errors && j.errors[0]?.message) || 'wizard failed');
+    renderCompetitorsResult(j.data);
+  } catch (e) {
+    result.innerHTML = `<div class="empty" style="color:var(--danger)">Ошибка: ${esc(e.message)}</div>`;
+  }
+}
+
+function renderCompetitorsResult(data) {
+  const niche = data.matched_niche;
+  const summary = data.summary || {};
+  const competitors = data.competitors || [];
+  $('wiz-niche-meta').textContent = `${niche.category_label} · ${niche.regions.join(', ')} · ${competitors.length} матчей`;
+  const root = $('wiz-result');
+  const summaryHtml = summary.status === 'ok' ? `
+    <div class="niche-summary">
+      <div class="lbl">сводка по нише</div>
+      <div class="val">${esc(summary.message || '')}</div>
+      <div class="niche-meta">
+        <span class="kv">отрасли<b>${niche.industries.join(', ')}</b></span>
+        <span class="kv">аудитория<b>${esc(niche.audience)}</b></span>
+        <span class="kv">стадия<b>${esc(niche.stage)}</b></span>
+        <span class="kv">регионы<b>${niche.regions.join(', ')}</b></span>
+        <span class="kv">сегмент<b>${esc(niche.price_segment)}</b></span>
+        <span class="kv">концентрация лидера<b>${(summary.concentration||0).toFixed(0)}%</b></span>
+      </div>
+    </div>
+  ` : `<div class="niche-summary" style="border-color:var(--warn)"><div class="lbl">сводка</div><div class="val">${esc(summary.message || 'нет результатов')}</div></div>`;
+
+  const listHtml = competitors.length ? `
+    <div class="card" style="padding:0">
+      <div class="card-head" style="padding:14px 16px">
+        <div class="card-title">Найденные конкуренты</div>
+        <div class="card-meta">отсортировано по выручке · совпадению тегов</div>
+      </div>
+      ${competitors.map(c => `
+        <div class="comp-row" data-id="${esc(c.id)}">
+          <div class="comp-avatar">${esc((c.name||'?').replace(/[ТОООО]+\s*/,'').slice(0,2).toUpperCase())}</div>
+          <div class="comp-info">
+            <div class="nm">${esc(c.name)}</div>
+            <div class="meta">${esc(c.country)} · ${esc(c.industry_label||'—')} · ${c.employee_count ? c.employee_count + ' сотр.' : 'нет данных'}</div>
+          </div>
+          <div class="comp-rev">${c.revenue_usd ? '$' + fmtMoney(c.revenue_usd) : '—'}</div>
+          ${c.tag_match_score > 0 ? `<span class="comp-score">tag match ${c.tag_match_score}</span>` : ''}
+        </div>
+      `).join('')}
+    </div>
+  ` : `<div class="empty">Нет совпадений. Попробуйте расширить регионы или поменять стадию/сегмент.</div>`;
+
+  root.innerHTML = summaryHtml + listHtml;
+  // Click competitor → open in companies drawer if drawer module supports it
+  root.querySelectorAll('.comp-row').forEach(row => {
+    row.onclick = () => { if (typeof openCompany === 'function') openCompany(row.dataset.id); };
+  });
+}
+
+/* ════════════════════════════════════════════════════════════════
+   ADMIN — Ingest panel
+   ════════════════════════════════════════════════════════════════ */
+
+function adminToken() {
+  return localStorage.getItem('mark.adminToken') || 'local-dev-secret-not-for-prod';
+}
+
+async function adminFetch(path, opts={}) {
+  const r = await fetch(`${API}${path}`, {
+    ...opts,
+    headers: {'X-Admin-Token': adminToken(), 'Content-Type': 'application/json', ...(opts.headers||{})},
+  });
+  return r.json();
+}
+
+function initAdminSubtabs() {
+  document.querySelectorAll('#admin-subtabs .subtab').forEach(tab => {
+    tab.onclick = () => {
+      document.querySelectorAll('#admin-subtabs .subtab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      const sub = tab.dataset.sub;
+      $('admin-ingest').style.display = sub === 'ingest' ? '' : 'none';
+      $('admin-api').style.display = sub === 'api' ? '' : 'none';
+    };
+  });
+
+  // Mode toggle
+  document.querySelectorAll('#admin-ingest [data-mode]').forEach(btn => {
+    btn.onclick = () => {
+      document.querySelectorAll('#admin-ingest [data-mode]').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const single = btn.dataset.mode === 'single';
+      $('ig-batch-fields').style.display = single ? 'none' : '';
+      $('ig-single-fields').style.display = single ? '' : 'none';
+    };
+  });
+
+  $('ig-run').onclick = runEnrichment;
+
+  // Firecrawl bindings (after DOM is rendered)
+  const fcUrlBtn = $('fc-scrape-btn');
+  if (fcUrlBtn) fcUrlBtn.onclick = runFirecrawlUrl;
+  const fcBatchBtn = $('fc-batch-btn');
+  if (fcBatchBtn) fcBatchBtn.onclick = runFirecrawlBatch;
+  const fcUrlInput = $('fc-url');
+  if (fcUrlInput) fcUrlInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') runFirecrawlUrl();
+  });
+}
+
+async function loadIngestPanel() {
+  // KPIs + jobs + sources chart + firecrawl status, in parallel
+  const [stats, jobs, fcStatus] = await Promise.all([
+    adminFetch('/admin/ingest/stats').catch(() => null),
+    adminFetch('/admin/ingest/jobs?limit=25').catch(() => null),
+    adminFetch('/admin/firecrawl/status').catch(() => null),
+  ]);
+
+  if (stats?.data) renderIngestKpis(stats.data);
+  if (jobs?.data) renderJobsTable(jobs.data);
+  if (stats?.data) renderSourcesChart(stats.data.by_source);
+  if (fcStatus?.data) renderFirecrawlStatus(fcStatus.data);
+}
+
+function renderFirecrawlStatus(s) {
+  const meta = $('fc-status-meta');
+  const banner = $('fc-banner');
+  if (!s.configured) {
+    meta.innerHTML = `<span class="status-pill-sm failed">не настроен</span>`;
+    banner.innerHTML = `⚠ <code>FIRECRAWL_API_KEY</code> не задан. Получите ключ на <a href="https://firecrawl.dev" target="_blank">firecrawl.dev</a> (500 scrapes бесплатно) и добавьте в <code>backend/.env</code>. Без ключа scrape вернёт «no data».`;
+    return;
+  }
+  if (s.healthy) {
+    meta.innerHTML = `<span class="status-pill-sm ok">healthy</span> · ${esc(s.base_url)}`;
+    banner.textContent = '';
+  } else {
+    meta.innerHTML = `<span class="status-pill-sm partial">ключ задан, но не отвечает</span>`;
+    banner.textContent = s.error || 'Probe failed — проверьте сеть/ключ.';
+  }
+}
+
+async function runFirecrawlUrl() {
+  const url = $('fc-url').value.trim();
+  if (!url) { toast('Введите URL', 'err'); return; }
+  $('fc-url-result').innerHTML = '<span class="muted">Scraping…</span>';
+  $('fc-scrape-btn').disabled = true;
+  try {
+    const j = await adminFetch('/admin/firecrawl/scrape-url', {
+      method: 'POST', body: JSON.stringify({url}),
+    });
+    if (j.errors?.length) {
+      $('fc-url-result').innerHTML = `<span style="color:var(--danger)">${esc(j.errors[0].message)}</span>`;
+    } else {
+      const o = j.data?.output || {};
+      const d = o.details || {};
+      const cls = o.status === 'ok' ? 'ok' : (o.status === 'failed' ? 'failed' : 'partial');
+      $('fc-url-result').innerHTML = `
+        <span class="status-pill-sm ${cls}">${esc(o.status||'?')}</span>
+        added=${o.added||0} · updated=${o.updated||0} · failed=${o.failed||0}
+        ${d.bin ? '· BIN <code>' + esc(d.bin) + '</code>' : ''}
+        ${d.reason ? '· ' + esc(d.reason) : ''}
+      `;
+    }
+    loadIngestPanel();
+  } catch (e) {
+    $('fc-url-result').innerHTML = `<span style="color:var(--danger)">${esc(e.message)}</span>`;
+  } finally {
+    $('fc-scrape-btn').disabled = false;
+  }
+}
+
+async function runFirecrawlBatch() {
+  const count = Math.min(50, parseInt($('fc-batch-count').value) || 10);
+  $('fc-batch-result').innerHTML = '<span class="muted">Discovery + scrape…</span>';
+  $('fc-batch-btn').disabled = true;
+  try {
+    const j = await adminFetch('/admin/firecrawl/scrape-batch', {
+      method: 'POST', body: JSON.stringify({count}),
+    });
+    if (j.errors?.length) {
+      $('fc-batch-result').innerHTML = `<span style="color:var(--danger)">${esc(j.errors[0].message)}</span>`;
+    } else {
+      const o = j.data?.output || {};
+      const cls = o.status === 'ok' ? 'ok' : (o.status === 'failed' ? 'failed' : 'partial');
+      $('fc-batch-result').innerHTML = `
+        <span class="status-pill-sm ${cls}">${esc(o.status||'?')}</span>
+        processed=${o.processed||0} · added=${o.added||0} · updated=${o.updated||0} · failed=${o.failed||0}
+      `;
+    }
+    loadIngestPanel();
+  } catch (e) {
+    $('fc-batch-result').innerHTML = `<span style="color:var(--danger)">${esc(e.message)}</span>`;
+  } finally {
+    $('fc-batch-btn').disabled = false;
+  }
+}
+
+function renderIngestKpis(s) {
+  const cards = [
+    {label:'Всего компаний', value:fmtNum(s.total_companies)},
+    {label:'KZ компаний', value:fmtNum(s.kz_companies), delta: `${Math.round(s.kz_companies/Math.max(s.total_companies,1)*100)}% базы`},
+    {label:'Источников', value:s.by_source.length},
+    {label:'Без КАТО (KZ)', value:fmtNum(s.quality_gaps.missing_kato), delta:'нужен enrich', cls: s.quality_gaps.missing_kato > 0 ? 'warn' : ''},
+    {label:'Без отрасли (KZ)', value:fmtNum(s.quality_gaps.missing_industry), cls: s.quality_gaps.missing_industry > 0 ? 'warn' : ''},
+  ];
+  $('ingest-kpis').innerHTML = cards.map(c => `
+    <div class="kpi">
+      <div class="kpi-label">${esc(c.label)}</div>
+      <div>
+        <div class="kpi-value">${esc(c.value)}</div>
+        ${c.delta ? `<div class="kpi-delta ${c.cls||''}">${esc(c.delta)}</div>` : ''}
+      </div>
+    </div>
+  `).join('');
+}
+
+function renderJobsTable(jobs) {
+  $('jobs-meta').textContent = `${jobs.length} записей`;
+  if (!jobs.length) {
+    $('jobs-table').innerHTML = `<div class="empty">Ingest ещё не запускался. Жмите ▶ справа.</div>`;
+    return;
+  }
+  $('jobs-table').innerHTML = `
+    <table class="jobs-table">
+      <thead><tr>
+        <th>Started</th><th>Source</th><th>Kind</th><th>Status</th>
+        <th style="text-align:right">Proc</th><th style="text-align:right">Added</th>
+        <th style="text-align:right">Updated</th><th style="text-align:right">Failed</th>
+        <th style="text-align:right">Dur</th>
+      </tr></thead>
+      <tbody>
+        ${jobs.map(j => `
+          <tr title="${esc(j.id)}${j.error ? '\\nerror: ' + esc(j.error) : ''}">
+            <td class="mono">${esc(relativeTime(j.started_at))}</td>
+            <td>${esc(j.source)}</td>
+            <td><span class="badge">${esc(j.kind)}</span></td>
+            <td><span class="status-pill-sm ${esc(j.status)}">${esc(j.status)}</span></td>
+            <td style="text-align:right">${j.items_processed}</td>
+            <td style="text-align:right;color:var(--ok)">${j.items_added}</td>
+            <td style="text-align:right">${j.items_updated}</td>
+            <td style="text-align:right;color:${j.items_failed > 0 ? 'var(--danger)' : 'var(--muted)'}">${j.items_failed}</td>
+            <td style="text-align:right" class="mono muted">${j.duration_s ? j.duration_s.toFixed(1) + 's' : '—'}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+function renderSourcesChart(sources) {
+  const total = sources.reduce((a, s) => a + s.count, 0);
+  const max = Math.max(...sources.map(s => s.count));
+  $('sources-chart').innerHTML = `
+    <div style="display:flex;flex-direction:column;gap:6px;padding:4px 0">
+      ${sources.map(s => `
+        <div style="display:flex;align-items:center;gap:10px;font-size:12px">
+          <div style="flex:0 0 200px" class="mono">${esc(s.source)}</div>
+          <div style="flex:1;height:14px;background:var(--bg-elev2);border-radius:3px;overflow:hidden">
+            <div style="width:${(s.count/max*100).toFixed(1)}%;height:100%;background:var(--accent);border-radius:3px"></div>
+          </div>
+          <div style="flex:0 0 60px;text-align:right" class="mono">${fmtNum(s.count)}</div>
+          <div style="flex:0 0 50px;text-align:right" class="mono muted">${Math.round(s.count/total*100)}%</div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+async function runEnrichment() {
+  const mode = document.querySelector('#admin-ingest [data-mode].active')?.dataset.mode || 'batch';
+  const source = $('ig-source').value;
+  const limit = mode === 'batch' ? Math.min(50, parseInt($('ig-limit').value) || 10) : 1;
+  const bin = mode === 'single' ? $('ig-bin').value.trim() : null;
+
+  $('ig-result').innerHTML = `<div class="muted">Запуск…</div>`;
+  $('ig-run').disabled = true;
+  try {
+    const qs = new URLSearchParams({source, limit: String(limit)});
+    if (bin) qs.set('bin', bin);
+    const j = await adminFetch(`/admin/ingest/run?${qs.toString()}`, {method:'POST'});
+    if (j.errors?.length) {
+      $('ig-result').innerHTML = `<div style="color:var(--danger)">${esc(j.errors[0].message)}</div>`;
+    } else {
+      const o = j.data?.output || {};
+      $('ig-result').innerHTML = `
+        <div style="color:var(--ok)">
+          ✓ Job ${esc((o.ingest_job_id||'').slice(0,8))}…<br>
+          processed=${o.processed||0} · added=${o.added||0} · updated=${o.updated||0} · failed=${o.failed||0}
+        </div>
+      `;
+      // Refresh jobs table
+      loadIngestPanel();
+    }
+  } catch (e) {
+    $('ig-result').innerHTML = `<div style="color:var(--danger)">${esc(e.message)}</div>`;
+  } finally {
+    $('ig-run').disabled = false;
+  }
+}
+
+function relativeTime(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso); const now = new Date();
+  const s = Math.round((now - d) / 1000);
+  if (s < 60) return `${s}s ago`;
+  if (s < 3600) return `${Math.round(s/60)}m ago`;
+  if (s < 86400) return `${Math.round(s/3600)}h ago`;
+  return `${Math.round(s/86400)}d ago`;
+}
+
+/* ─── Admin lock button ─────────────────────────────────────────── */
+const adminLockBtn = $('admin-lock');
+if (adminLockBtn) {
+  adminLockBtn.onclick = () => {
+    state.adminUnlocked = false;
+    localStorage.removeItem('mark.adminUnlocked');
+    setAdminVisibility();
+    toast('Admin режим заблокирован', 'info');
+    switchView('overview');
+  };
+}
+
+/* ─── Bootstrap ─────────────────────────────────────────────────── */
+renderColumnHeaders();
+renderActiveChips();
+renderSavedViewsMenu();
+syncFiltersToToolbar();
+loadOverview();
+
+/* ─── Auto-refresh ──────────────────────────────────────────────── */
+// Re-fetch active view periodically so dashboard reflects live DB / ingest changes.
+setInterval(() => {
+  if (document.hidden) return;          // skip when tab not visible
+  const v = state.activeView;
+  if (v === 'overview') loadOverview();
+  else if (v === 'companies') loadCompanies();
+  else if (v === 'admin' && state.adminUnlocked && typeof loadIngestPanel === 'function') loadIngestPanel();
+}, 30_000);
+// Health check every 60s
+setInterval(() => { if (!document.hidden && typeof checkHealth === 'function') checkHealth(); }, 60_000);
+</script>
+</body>
+</html>

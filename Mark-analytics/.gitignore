@@ -1,0 +1,54 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+.Python
+build/
+dist/
+.venv/
+venv/
+.eggs/
+pip-wheel-metadata/
+
+# Tooling
+.ruff_cache/
+.pytest_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+
+# Local caches
+.cache/
+.fastembed/
+
+# Env
+.env
+.env.local
+.env.*.local
+*.env
+
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Node (frontend lives elsewhere but in case of tooling)
+node_modules/
+
+# Docker volumes (if mounted in repo)
+infra/docker/data/
+infra/docker/minio-data/
+
+# Local SQLite (tests)
+*.sqlite
+*.db-journal
+
+# Logs
+*.log

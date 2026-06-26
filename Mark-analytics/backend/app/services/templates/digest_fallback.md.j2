@@ -1,0 +1,20 @@
+{# Digest fallback template — deterministic Markdown.
+   Used when the LLM render fails parse or schema validation.
+   Spec: docs/aistart360/08-world-monitor-feature-parity.md §5 Track B
+   Version: 1 #}
+# {{ title }}
+
+{% if items|length == 0 %}
+_No new matches in this window._
+{% else %}
+{% for item in items %}
+### {{ loop.index }}. {{ item.title }}
+{{ item.summary }}
+
+{% if item.url %}[Open]({{ item.url }}){% endif %}{% if item.entity_id %} · id `{{ item.entity_id }}`{% endif %}
+
+{% endfor %}
+{% endif %}
+
+---
+_Generated {{ generated_at }} · {{ items|length }} item(s)._

@@ -1,0 +1,23 @@
+# Railway service config. Two services in one project:
+#   - mark-api    (this file applied to the "api" service)
+#   - mark-worker (use railway-worker.toml or separate service in dashboard)
+#
+# Railway picks this up automatically when project root contains railway.toml.
+# For two services, duplicate as railway-worker.toml and set per-service in
+# the Railway dashboard via "Config-as-code path".
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "infra/docker/Dockerfile.api"
+buildContext = "backend"
+
+[deploy]
+startCommand = "uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 2"
+healthcheckPath = "/health"
+healthcheckTimeout = 30
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 5
+
+[deploy.envs]
+PORT = "8000"
+APP_ENV = "production"

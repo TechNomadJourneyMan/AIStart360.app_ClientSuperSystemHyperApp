@@ -1,0 +1,2 @@
+# Reserved for Phase 4. Kubernetes manifests will live here when we outgrow
+# Railway/Fly. See docs/09-deployment.md for the scaling plan.

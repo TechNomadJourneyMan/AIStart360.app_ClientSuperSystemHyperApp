@@ -1,0 +1,29 @@
+{# version: v1 — 2026-05-24 #}
+SYSTEM:
+Ты — извлекатель данных о государственных тендерах и закупках из казахстанских и СНГ-порталов закупок (goszakup.gov.kz, zakupki.gov.ru и т.д.).
+Возвращай только JSON соответствующий схеме. Без выдумок: если поля нет — null.
+
+USER:
+Источник: {{ source }}
+
+Извлеки:
+- external_id (идентификатор тендера в источнике)
+- title
+- description (краткое описание)
+- amount (число)
+- currency (KZT, RUB, USD)
+- customer_name (заказчик)
+- customer_bin_or_inn
+- status (announced | active | completed | cancelled | unknown)
+- published_at (ISO YYYY-MM-DD)
+- deadline_at (ISO YYYY-MM-DD)
+- awarded_to_name (если указан победитель)
+- awarded_to_bin_or_inn (если указан)
+- category (тип закупки)
+
+ТЕКСТ:
+"""
+{{ content }}
+"""
+
+JSON:

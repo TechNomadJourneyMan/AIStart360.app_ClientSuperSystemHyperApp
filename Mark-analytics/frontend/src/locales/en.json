@@ -1,0 +1,276 @@
+{
+  "app": {
+    "title": "Market KZ"
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "map": "Map",
+    "marketAnalysis": "Market analysis",
+    "companies": "Companies",
+    "alerts": "Alerts"
+  },
+  "auth": {
+    "signIn": "Sign in",
+    "signUp": "Sign up",
+    "signOut": "Sign out",
+    "email": "Email",
+    "password": "Password",
+    "confirmPassword": "Confirm password",
+    "magicLink": "Send sign-in link",
+    "checkInbox": "Check your inbox",
+    "continueWithGoogle": "Continue with Google",
+    "profile": "Profile",
+    "settings": "Settings",
+    "usage": "Usage",
+    "upgrade": "Upgrade"
+  },
+  "theme": {
+    "toggle": "Toggle theme",
+    "dark": "Dark",
+    "light": "Light"
+  },
+  "search": {
+    "placeholder": "Search companies, persons, tenders…",
+    "empty": "Type to search across companies, persons, tenders",
+    "noMatches": "No matches found",
+    "loading": "Searching…",
+    "shortcut": "Press ⌘K to open search",
+    "group": {
+      "companies": "Companies",
+      "persons": "Persons",
+      "tenders": "Tenders"
+    }
+  },
+  "common": {
+    "loading": "Loading…",
+    "retry": "Retry",
+    "error": "Something went wrong",
+    "close": "Close",
+    "cancel": "Cancel"
+  },
+  "map": {
+    "legend": {
+      "title": "Industries"
+    },
+    "tooltip": {
+      "industry": "Industry",
+      "region": "Region",
+      "revenue": "Revenue"
+    },
+    "layer": {
+      "companies": "Companies",
+      "regions": "Regions"
+    }
+  },
+  "region": {
+    "tooltip": {
+      "companies": "Companies",
+      "byIndustry": "Top industries",
+      "bySize": "By size",
+      "topCompanies": "Top companies"
+    },
+    "popup": {
+      "title": "Local market",
+      "companies": "Companies",
+      "marketRevenue": "Market size",
+      "topIndustries": "Top 3 industries",
+      "topCompanies": "Top 3 companies",
+      "empty": "No company data",
+      "details": "Details"
+    },
+    "metric": {
+      "label": "Metric",
+      "count": "Count",
+      "revenue": "Revenue",
+      "employees": "Employees",
+      "risk": "Risk"
+    },
+    "risk": {
+      "title": "Risk breakdown",
+      "subscore": {
+        "liquidations_3m": "Liquidations (3m)",
+        "court_cases_6m": "Court cases (6m)",
+        "sanctions_hits": "Sanctions hits",
+        "complaints_count": "Complaints"
+      },
+      "degraded": "Not yet wired",
+      "score": "Composite score"
+    },
+    "drawer": {
+      "title": "Region",
+      "topIndustries": "Top 10 industries",
+      "openHeatmap": "Open in industry heatmap"
+    }
+  },
+  "drawer": {
+    "tab": {
+      "overview": "Overview",
+      "financials": "Financials",
+      "news": "News",
+      "owners": "Owners",
+      "timeline": "Timeline"
+    },
+    "close": "Close",
+    "loading": "Loading company…",
+    "error": "Failed to load company",
+    "label": {
+      "source": "Source"
+    }
+  },
+  "widget": {
+    "demo": "Demo data",
+    "macro": {
+      "title": "Macro indicators",
+      "gdp": "GDP YoY",
+      "inflation": "Inflation CPI",
+      "fx": "KZT / USD",
+      "oil": "Brent",
+      "rate": "NBK base rate"
+    },
+    "ticker": {
+      "title": "Markets"
+    },
+    "heatmap": {
+      "title": "Industry × region",
+      "industry": "Industry",
+      "region": "Region"
+    },
+    "top": {
+      "title": "Top companies"
+    },
+    "size": {
+      "title": "Company size mix"
+    },
+    "tenders": {
+      "title": "Recent tenders"
+    },
+    "news": {
+      "title": "News feed",
+      "empty": "No recent news",
+      "error": "Could not load news right now"
+    },
+    "builder": {
+      "picker": {
+        "title": "Add a widget",
+        "description": "Pick a widget type to add to your dashboard.",
+        "add": "Add widget"
+      },
+      "editor": {
+        "title_create": "New widget",
+        "title_edit": "Edit widget",
+        "save": "Save"
+      },
+      "ai_suggest": {
+        "button": "Ask AI",
+        "label": "Describe the widget you want",
+        "placeholder": "e.g., a bar chart of top industries by revenue",
+        "go": "Suggest",
+        "thinking": "Thinking…",
+        "retry_hint": "try rephrasing"
+      },
+      "confirm_delete": "Delete this widget?",
+      "confirm_reset": "Reset dashboard to defaults? This removes all widgets.",
+      "reset_defaults": "Reset to defaults",
+      "empty": "No widgets yet — add one to get started."
+    }
+  },
+  "dashboard": {
+    "customize": "Customize widgets",
+    "toggleVisibility": "Show/hide",
+    "resetLayout": "Reset layout",
+    "dragHandle": "Drag widget"
+  },
+  "competitors": {
+    "title": "Market & competitor analysis",
+    "subtitle": "Pick your niche and see your market, competitors and its size in real time",
+    "survey": {
+      "intro": "Take a short survey to define your niche.",
+      "step": "Step {{current}} of {{total}}",
+      "back": "Back",
+      "next": "Next",
+      "submit": "Show my market",
+      "skipOptional": "This step is optional — you can skip it.",
+      "categoryRequired": "Pick a category to continue.",
+      "multiSelectHint": "You can select multiple options.",
+      "businessNameLabel": "Your company name (optional)",
+      "businessNamePlaceholder": "e.g. Acme LLC",
+      "steps": {
+        "category": "Niche",
+        "audience": "Audience",
+        "stage": "Stage",
+        "regions": "Regions",
+        "price": "Price segment"
+      },
+      "questions": {
+        "category": "What does your company do?",
+        "audience": "Who do you sell to?",
+        "stage": "What stage is the business at?",
+        "regions": "Which regions do you operate in?",
+        "price": "Which price segment are you in?"
+      }
+    },
+    "results": {
+      "niche": "Your niche",
+      "yourCompany": "Your company",
+      "changeParams": "Change parameters",
+      "reset": "Reset parameters",
+      "regions": "Regions",
+      "segment": "Segment",
+      "audience": "Audience",
+      "tune": "Fine-tune",
+      "tunePrice": "Price segment",
+      "tuneRegions": "Regions",
+      "addressablePct": "Addressable market (SAM, %)",
+      "obtainablePct": "Obtainable share (SOM, %)",
+      "recalculating": "Recalculating…",
+      "empty": "No companies matched this niche. Try changing the parameters — regions or category.",
+      "leaderNone": "—"
+    },
+    "kpi": {
+      "marketVolume": "Market volume",
+      "tam": "TAM — total market",
+      "sam": "SAM — serviceable market",
+      "som": "SOM — obtainable market",
+      "competitors": "Competitors",
+      "leader": "Market leader",
+      "concentration": "Concentration",
+      "hhi": "HHI index",
+      "top3": "Top-3 share",
+      "avgRevenue": "Avg. revenue",
+      "totalEmployees": "Total employees"
+    },
+    "competition": {
+      "low": "Low competition",
+      "moderate": "Moderate competition",
+      "high": "High competition"
+    },
+    "charts": {
+      "shares": "Market shares",
+      "revenue": "Revenue distribution",
+      "size": "By company size",
+      "regions": "By region",
+      "others": "Others",
+      "companies": "companies",
+      "noData": "No data"
+    },
+    "map": {
+      "title": "Competitor map",
+      "hint": "Click a company to open its profile."
+    },
+    "table": {
+      "title": "Competitors",
+      "name": "Name",
+      "revenue": "Revenue",
+      "employees": "Employees",
+      "region": "Region",
+      "share": "Share, %",
+      "tags": "Tags",
+      "empty": "No competitors to display."
+    },
+    "error": {
+      "options": "Failed to load survey options.",
+      "wizard": "Failed to build the market analysis.",
+      "retry": "Retry"
+    }
+  }
+}

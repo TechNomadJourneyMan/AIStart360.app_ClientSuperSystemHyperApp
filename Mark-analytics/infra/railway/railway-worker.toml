@@ -1,0 +1,11 @@
+# Railway service config for the Arq worker.
+# Apply via Railway dashboard → service settings → "Config-as-code path".
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "infra/docker/Dockerfile.worker"
+buildContext = "backend"
+
+[deploy]
+startCommand = "arq app.workers.main.WorkerSettings"
+restartPolicyType = "ALWAYS"

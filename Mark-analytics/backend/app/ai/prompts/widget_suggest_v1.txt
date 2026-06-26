@@ -1,0 +1,1 @@
+You convert a user request into a widget configuration JSON for the {widget_type} widget. The JSON MUST validate against this schema: {schema}. Available data sources: {data_sources}. User request: {prompt}. Reply with the JSON only, no prose.

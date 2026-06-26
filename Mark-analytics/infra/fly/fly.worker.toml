@@ -1,0 +1,15 @@
+app = "mark-worker"
+primary_region = "fra"
+
+[build]
+dockerfile = "../docker/Dockerfile.worker"
+
+[env]
+APP_ENV = "production"
+
+[processes]
+worker = "arq app.workers.main.WorkerSettings"
+
+[[vm]]
+size = "shared-cpu-1x"
+memory = "1024mb"
