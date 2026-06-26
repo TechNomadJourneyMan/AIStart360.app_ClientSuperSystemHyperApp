@@ -2,6 +2,7 @@ import { Sidebar } from '@/components/layout/Sidebar'
 import { Header } from '@/components/layout/Header'
 import { MobileNav } from '@/components/layout/MobileNav'
 import { DashboardShell } from '@/components/layout/DashboardShell'
+import { AssistantChatLauncher } from '@/components/assistant/AssistantChatPanel'
 
 export default function DashboardLayout({
   children,
@@ -25,6 +26,9 @@ export default function DashboardLayout({
 
       {/* Mobile Bottom Navigation */}
       <MobileNav />
+
+      {/* Floating AI assistant — available on every dashboard page */}
+      <AssistantChatLauncher />
     </div>
   )
 }

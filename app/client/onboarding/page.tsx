@@ -279,8 +279,9 @@ export default function OnboardingPage() {
           </span>
         </Link>
 
-        {/* Step tabs (scrollable, all clickable) */}
-        <div className="flex gap-1 overflow-x-auto pb-3 mb-6 scrollbar-hide">
+        {/* Step tabs — sticky under the header; wraps so ALL 12 step buttons stay
+            visible at once (no horizontal scrolling). */}
+        <div className="sticky top-[54px] z-20 -mx-4 px-4 py-3 mb-6 bg-[#0c0e14]/95 backdrop-blur-xl border-b border-white/[0.06] flex flex-wrap gap-1.5">
           {STEPS.map((s, i) => {
             const stepN = i + 1
             const isActive = stepN === currentStep

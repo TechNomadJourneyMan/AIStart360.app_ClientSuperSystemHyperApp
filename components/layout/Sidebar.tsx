@@ -128,7 +128,7 @@ export function Sidebar() {
             alt="AIStart360"
             width={32}
             height={32}
-            className="flex-shrink-0"
+            className="h-8 w-auto flex-shrink-0"
           />
         ) : (
           <Image
@@ -136,7 +136,7 @@ export function Sidebar() {
             alt="AIStart360"
             width={148}
             height={27}
-            className="flex-shrink-0"
+            className="h-7 w-auto flex-shrink-0"
             priority
           />
         )}

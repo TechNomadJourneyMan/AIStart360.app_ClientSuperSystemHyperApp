@@ -586,7 +586,7 @@ export function AssistantChatLauncher() {
     <>
       <button
         onClick={() => setOpen(true)}
-        className="fixed bottom-6 right-6 z-30 inline-flex items-center gap-2 px-4 py-3 rounded-2xl bg-gradient-to-r from-primary to-[#00e29e] text-[#003824] font-bold text-sm shadow-lg shadow-primary/20 hover:scale-[0.98] transition-transform"
+        className="fixed bottom-20 right-4 lg:bottom-6 lg:right-6 z-30 inline-flex items-center gap-2 px-4 py-3 rounded-2xl bg-gradient-to-r from-primary to-[#00e29e] text-[#003824] font-bold text-sm shadow-lg shadow-primary/20 hover:scale-[0.98] transition-transform"
         aria-label={t.openAssistant}
       >
         <span className="material-symbols-outlined text-lg">assistant</span>
