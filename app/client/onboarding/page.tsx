@@ -94,14 +94,13 @@ export default function OnboardingPage() {
           if (surveyRes.ok) {
             const surveyData = await surveyRes.json()
             if (surveyData.ok && surveyData.data) {
-              const { answers: serverAnswers, completed_steps } = surveyData.data
+              const { answers: serverAnswers } = surveyData.data
               if (Object.keys(serverAnswers ?? {}).length > 0) {
                 setSavedAnswers(serverAnswers)
                 setStepData(serverAnswers)
-                const lastStep = completed_steps?.length
-                  ? Math.min(Math.max(...completed_steps) + 1, TOTAL_STEPS)
-                  : 1
-                setCurrentStep(lastStep)
+                // Do NOT auto-jump to the last unfilled step — start at step 1 and
+                // let the user move freely via the (now fully visible) step tabs.
+                setCurrentStep(1)
               }
             }
           }
@@ -114,6 +113,25 @@ export default function OnboardingPage() {
     }
     bootstrap()
   }, [])
+
+  // Continuous autosave — persist the in-progress step to localStorage on every
+  // change (debounced). Guarantees no data loss on step switch / refresh / loss of
+  // connection. Writes localStorage directly (no setState) to avoid render loops.
+  useEffect(() => {
+    if (!Object.keys(stepData).length) return
+    const id = setTimeout(() => {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({
+          current_step: currentStep,
+          answers: { ...savedAnswers, ...stepData },
+          company_id: companyId,
+          saved_at: new Date().toISOString(),
+        }))
+      } catch { /* storage full / unavailable — ignore */ }
+    }, 600)
+    return () => clearTimeout(id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stepData, currentStep])
 
   const persistLocal = useCallback((step: number, answers: Record<string, unknown>) => {
     const merged = { ...savedAnswers, ...answers }
@@ -320,6 +338,14 @@ export default function OnboardingPage() {
               <h1 className="text-xl font-bold text-on-surface">{stepConfig?.title ?? `Шаг ${currentStep}`}</h1>
             </div>
           </div>
+
+          {/* Fill-in hint for this step */}
+          {stepConfig?.hint && (
+            <div className="flex items-start gap-2 rounded-lg border border-primary/15 bg-primary/[0.05] px-3 py-2">
+              <span className="material-symbols-outlined text-sm text-primary/70 mt-0.5 flex-shrink-0">lightbulb</span>
+              <p className="text-xs text-on-surface-variant leading-snug">{stepConfig.hint}</p>
+            </div>
+          )}
         </div>
 
         {/* Step form */}

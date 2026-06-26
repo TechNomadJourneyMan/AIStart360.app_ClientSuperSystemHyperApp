@@ -5,19 +5,20 @@
 
 export const TOTAL_STEPS = 12
 
+// `hint` — a short fill-in tip shown under each step title to guide the user.
 export const STEPS = [
-  { n: 1, title: 'Регистрация', icon: 'how_to_reg' },
-  { n: 2, title: 'Цели', icon: 'flag' },
-  { n: 3, title: 'О компании', icon: 'business' },
-  { n: 4, title: 'HR', icon: 'groups' },
-  { n: 5, title: 'Проверка данных', icon: 'rule' },
-  { n: 6, title: 'Уточняющий опрос', icon: 'quiz' },
-  { n: 7, title: 'Финансы', icon: 'payments' },
-  { n: 8, title: 'Аудит базы', icon: 'analytics' },
-  { n: 9, title: 'Сегментация', icon: 'groups' },
-  { n: 10, title: 'Диагностика потерь', icon: 'trending_down' },
-  { n: 11, title: 'Стратегия', icon: 'route' },
-  { n: 12, title: 'Метрики и дашборд', icon: 'monitoring' },
+  { n: 1,  title: 'Регистрация',        icon: 'how_to_reg',    hint: 'Контактные данные ответственного лица — для входа и связи.' },
+  { n: 2,  title: 'Цели',               icon: 'flag',          hint: 'Сформулируйте цель на 12 месяцев и на 3 года в деньгах — это основа Точки Б.' },
+  { n: 3,  title: 'О компании',         icon: 'business',      hint: 'Отрасль, модель, регионы, размер. Чем точнее — тем точнее диагностика.' },
+  { n: 4,  title: 'HR',                 icon: 'groups',        hint: 'Структура команды и роли — оцениваем ресурс для роста.' },
+  { n: 5,  title: 'Проверка данных',    icon: 'rule',          hint: 'Проверьте загруженные файлы и распознанные значения перед анализом.' },
+  { n: 6,  title: 'Уточняющий опрос',   icon: 'quiz',          hint: 'Короткие вопросы, чтобы AI точнее понял контекст бизнеса.' },
+  { n: 7,  title: 'Финансы',            icon: 'payments',      hint: 'Маркетинговые каналы, бюджет, ROI. Можно указать примерные значения.' },
+  { n: 8,  title: 'Аудит базы',         icon: 'analytics',     hint: 'Метрики по годам (2023–2025), план и факт 2026. Можно вставить таблицу из Excel.' },
+  { n: 9,  title: 'Сегментация',        icon: 'groups',        hint: 'Разбивка клиентской базы по сегментам (RFM).' },
+  { n: 10, title: 'Диагностика потерь', icon: 'trending_down', hint: 'Где утекает выручка — отток, недозагрузка, низкий чек.' },
+  { n: 11, title: 'Стратегия',          icon: 'route',         hint: 'Приоритетные направления роста на основе диагностики.' },
+  { n: 12, title: 'Метрики и дашборд',  icon: 'monitoring',    hint: 'Финальная сверка ключевых метрик перед формированием Точки А.' },
 ] as const
 
 export type StepConfig = (typeof STEPS)[number]
