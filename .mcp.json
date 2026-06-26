@@ -3,6 +3,20 @@
     "supabase": {
       "type": "http",
       "url": "https://mcp.supabase.com/mcp?project_ref=ofthtcqqewegxsujywxt"
+    },
+    "mark-analytics": {
+      "command": "uv",
+      "args": [
+        "run",
+        "--directory",
+        "Mark-analytics/tools/mark-analytics-mcp",
+        "mark-analytics-mcp",
+        "--transport",
+        "stdio"
+      ],
+      "env": {
+        "MK_BASE_URL": "http://localhost:8000"
+      }
     }
   }
 }
