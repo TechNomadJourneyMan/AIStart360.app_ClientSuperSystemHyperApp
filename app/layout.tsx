@@ -1,4 +1,4 @@
-import type { Metadata } from 'next'
+import type { Metadata, Viewport } from 'next'
 import { Toaster } from 'sonner'
 import { Providers } from './providers'
 import './globals.css'
@@ -12,6 +12,8 @@ export const metadata: Metadata = {
   keywords: ['AIStart360', 'GRI', 'Growth Readiness', 'B2B Portal', 'Business Intelligence'],
   authors: [{ name: 'AIStart360' }],
   metadataBase: new URL(process.env.AUTH_URL ?? 'http://localhost:3000'),
+  manifest: '/manifest.webmanifest',
+  appleWebApp: { capable: true, title: 'AIStart360', statusBarStyle: 'black-translucent' },
   openGraph: {
     type: 'website',
     locale: 'ru_RU',
@@ -19,6 +21,13 @@ export const metadata: Metadata = {
     title: 'AIStart360 — Institutional Intelligence',
     description: 'B2B клиентский портал для управления ростом компаний.',
   },
+}
+
+export const viewport: Viewport = {
+  themeColor: '#0A0B0F',
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',
 }
 
 export default function RootLayout({

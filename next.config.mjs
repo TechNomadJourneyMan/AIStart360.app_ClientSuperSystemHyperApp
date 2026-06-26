@@ -1,3 +1,19 @@
+import withPWAInit from '@ducanh2912/next-pwa'
+
+// PWA / service worker. Disabled in development so it never interferes with the
+// dev server / HMR; it only activates in the production build. Network-first for
+// navigations keeps content fresh and falls back to cache when offline.
+const withPWA = withPWAInit({
+  dest: 'public',
+  disable: process.env.NODE_ENV === 'development',
+  register: true,
+  cacheOnFrontEndNav: true,
+  reloadOnOnline: true,
+  workboxOptions: {
+    disableDevLogs: true,
+  },
+})
+
 /** @type {import('next').NextConfig} */
 
 // Origin of the embedded «Рынок» product (Mark-analytics SPA). The /market page
@@ -86,4 +102,4 @@ const nextConfig = {
   },
 }
 
-export default nextConfig
+export default withPWA(nextConfig)

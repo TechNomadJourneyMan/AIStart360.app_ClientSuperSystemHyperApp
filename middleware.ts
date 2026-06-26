@@ -63,6 +63,13 @@ export async function middleware(request: NextRequest) {
     pathname.endsWith('.svg') ||
     pathname.endsWith('.png') ||
     pathname.endsWith('.ico') ||
+    // PWA service worker, workbox runtime and web manifest must be served as-is
+    // (no auth redirect) or SW registration / install fails.
+    pathname === '/manifest.webmanifest' ||
+    pathname === '/sw.js' ||
+    pathname.startsWith('/workbox-') ||
+    pathname.startsWith('/swe-worker-') ||
+    pathname.startsWith('/fallback-') ||
     pathname === '/' ||
     pathname.startsWith('/presentation') ||
     pathname.startsWith('/gri-free') ||
