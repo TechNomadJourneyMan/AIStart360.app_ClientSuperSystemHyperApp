@@ -178,7 +178,7 @@ export default function WelcomePage() {
             {/* Path 2: files */}
             <button
               type="button"
-              onClick={() => router.replace('/client/intake')}
+              onClick={() => router.replace('/client/onboarding/documents')}
               className="group text-left bg-surface-container-low rounded-2xl border border-white/[0.06] hover:border-blue-500/40 hover:bg-blue-500/5 transition-all p-5 relative overflow-hidden"
             >
               <span className="absolute top-2 right-2 inline-flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 rounded-full bg-blue-500/15 text-blue-300 border border-blue-500/30">

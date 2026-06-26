@@ -169,7 +169,13 @@ function AnimatedGRI({ value }: { value: number }) {
 // ─────────────────────────────────────────────────────
 
 function renderMarkdown(text: string): string {
+  // Escape HTML entities FIRST so any markup in the (AI-generated) strategy text
+  // cannot inject active content when rendered via dangerouslySetInnerHTML. The
+  // markdown tags added below are the only HTML in the output (XSS hardening).
   let html = text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
     .replace(/^### (.+)$/gm, "<h3>$1</h3>")
     .replace(/^## (.+)$/gm, "<h3>$1</h3>")
     .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")

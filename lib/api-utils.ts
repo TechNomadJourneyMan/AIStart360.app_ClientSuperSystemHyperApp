@@ -21,3 +21,11 @@ export async function requireRole(...roles: UserRole[]) {
 
   return { session: session!, role }
 }
+
+/** Staff (non-CLIENT) roles that may manage org-owned CRM records. */
+const STAFF_ROLES: readonly string[] = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ANALYST']
+
+/** True when the given role string is a staff role (i.e. not a self-serve CLIENT). */
+export function isStaffRole(role: unknown): boolean {
+  return typeof role === 'string' && STAFF_ROLES.includes(role)
+}

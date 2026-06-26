@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { z } from 'zod'
+import { isRateLimited } from '@/lib/rate-limit'
 
 // Public self-registration. Only the two roles offered in the UI are allowed
 // ('client' = бизнес, 'owner' = команда AIStart360). admin/expert/super_admin
@@ -24,6 +25,14 @@ function getAdminClient() {
 
 export async function POST(request: Request) {
   try {
+    // Throttle public self-registration to curb mass account creation / abuse.
+    if (await isRateLimited(request, 'auth-register')) {
+      return NextResponse.json(
+        { error: 'Слишком много попыток. Попробуйте позже.' },
+        { status: 429 },
+      )
+    }
+
     const body = await request.json()
     const parsed = schema.safeParse(body)
     if (!parsed.success) {

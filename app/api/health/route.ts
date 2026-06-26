@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
+import { getMissingServerEnv } from '@/lib/env'
 
 interface ServiceResult {
   name: string
@@ -67,16 +68,29 @@ export async function GET(request: Request) {
     uptime: '98.2%',
   }
 
-  const services: ServiceResult[] = [apiGw, griEngine, db, reportService, notifications]
+  // Honest configuration check: report missing critical env (Supabase/DB keys)
+  // instead of falsely showing "all systems operational" on a misconfigured deploy.
+  const missingEnv = getMissingServerEnv()
+  const configResult: ServiceResult = {
+    name: 'Configuration',
+    status: missingEnv.length === 0 ? 'online' : 'offline',
+    latencyMs: 0,
+    uptime: missingEnv.length === 0 ? '100%' : '0%',
+  }
+
+  const services: ServiceResult[] = [apiGw, griEngine, db, reportService, notifications, configResult]
   const degradedCount = services.filter(s => s.status !== 'online').length
 
   return NextResponse.json({
     services,
     allOnline: degradedCount === 0,
     degradedCount,
+    missingEnv,
     summary: degradedCount === 0
       ? 'Все сервисы работают'
-      : `${degradedCount} сервис${degradedCount === 1 ? '' : 'а'} с замедлением`,
+      : missingEnv.length > 0
+        ? `Не заданы переменные окружения: ${missingEnv.join(', ')}`
+        : `${degradedCount} сервис${degradedCount === 1 ? '' : 'а'} с замедлением`,
     timestamp: new Date().toISOString(),
   }, {
     headers: { 'Cache-Control': 'no-store, max-age=0' },

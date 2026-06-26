@@ -44,6 +44,10 @@ export default function RegisterPage() {
       useAuthStore.setState({ error: 'Необходимо принять условия использования' })
       return
     }
+    if (password.length < 8) {
+      useAuthStore.setState({ error: 'Пароль должен быть не менее 8 символов' })
+      return
+    }
     try {
       await register({ name, email, password, role, organization })
       const currentUser = useAuthStore.getState().user

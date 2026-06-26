@@ -2,9 +2,16 @@ const { Client } = require('pg');
 const fs = require('fs');
 
 async function main() {
-  const client = new Client({
-    connectionString: "postgresql://postgres.tpxwrwxpdcwmiynjjquy:WHj-nY3-y63-7jg@aws-1-eu-west-1.pooler.supabase.com:6543/postgres?pgbouncer=true"
-  });
+  // SECURITY: never hardcode credentials. Read the connection string from the
+  // environment (DATABASE_URL is the pooled string; DIRECT_URL the direct one).
+  const connectionString = process.env.DATABASE_URL || process.env.DIRECT_URL;
+  if (!connectionString) {
+    console.error(
+      'Missing DATABASE_URL (or DIRECT_URL). Set it in your environment / .env.local before running this script.'
+    );
+    process.exit(1);
+  }
+  const client = new Client({ connectionString });
 
   try {
     await client.connect();
