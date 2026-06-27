@@ -122,7 +122,8 @@ export default function Step8MetricsForm({ data, onChange }: Step8MetricsFormPro
           </span>
         </div>
 
-        <div className="overflow-x-auto -mx-1 px-1">
+        {/* Tablet / desktop: full table */}
+        <div className="hidden md:block overflow-x-auto -mx-1 px-1">
           <table className="w-full text-sm border-separate border-spacing-0">
             <thead>
               <tr>
@@ -175,6 +176,48 @@ export default function Step8MetricsForm({ data, onChange }: Step8MetricsFormPro
               ))}
             </tbody>
           </table>
+        </div>
+
+        {/* Mobile: one card per metric, values in a 2-col grid (no horizontal scroll) */}
+        <div className="md:hidden space-y-3">
+          {metricsRows.map((row, rowIdx) => (
+            <div key={rowIdx} className="rounded-xl border border-white/[0.06] bg-surface-container-low p-3">
+              <div className="flex items-center gap-2 mb-3">
+                <input
+                  type="text"
+                  value={row.metric_name}
+                  onChange={(e) => updateName(rowIdx, e.target.value)}
+                  placeholder="Название метрики"
+                  className="flex-1 min-w-0 bg-transparent border-b border-white/[0.1] focus:border-primary/50 px-1 py-1.5 text-sm font-semibold text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none transition-colors"
+                />
+                <button
+                  type="button"
+                  onClick={() => removeRow(rowIdx)}
+                  aria-label="Удалить метрику"
+                  className="w-8 h-8 rounded-lg flex items-center justify-center text-on-surface-variant/50 hover:text-error hover:bg-error/10 transition-all flex-shrink-0"
+                >
+                  <span className="material-symbols-outlined text-base">close</span>
+                </button>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                {VALUE_COLUMNS.map((col, colIdx) => (
+                  <label key={col.key} className="block">
+                    <span className="block text-[9px] font-mono text-on-surface-variant/70 uppercase tracking-wider mb-1">
+                      {col.label}
+                    </span>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={(row as Record<string, unknown>)[col.key] as number || ''}
+                      onChange={(e) => updateCell(rowIdx, col.key, parseNum(e.target.value))}
+                      onPaste={(e) => handlePaste(e, rowIdx, colIdx)}
+                      className="w-full bg-surface-container border border-white/[0.08] rounded-lg px-2.5 py-2 text-sm text-on-surface focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all"
+                    />
+                  </label>
+                ))}
+              </div>
+            </div>
+          ))}
         </div>
 
         <div className="mt-3 flex items-center justify-between gap-3 flex-wrap">

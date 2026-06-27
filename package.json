@@ -63,6 +63,7 @@
     "next-auth": "^5.0.0-beta.30",
     "next-intl": "^4.9.1",
     "next-themes": "^0.3.0",
+    "nextjs-toploader": "^3.9.17",
     "pdf-parse": "^2.4.5",
     "pdfkit": "^0.18.0",
     "pg": "^8.20.0",

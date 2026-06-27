@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next'
 import { Toaster } from 'sonner'
+import NextTopLoader from 'nextjs-toploader'
 import { Providers } from './providers'
 import './globals.css'
 
@@ -50,6 +51,8 @@ export default function RootLayout({
         />
       </head>
       <body className="font-body antialiased">
+        {/* Top navigation progress bar — instant feedback on every click/route change */}
+        <NextTopLoader color="#6effc0" height={2} showSpinner={false} shadow="0 0 8px #6effc0,0 0 4px #6effc0" />
         <Providers>{children}</Providers>
         {/* Single global sonner Toaster — used by ShareButton et al. */}
         <Toaster theme="dark" position="bottom-right" richColors />
