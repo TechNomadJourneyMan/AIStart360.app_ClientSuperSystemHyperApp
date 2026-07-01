@@ -7,10 +7,16 @@ import DepartmentChips from './DepartmentChips'
 import MetricSortToggle from './MetricSortToggle'
 import NamespaceTabs from './NamespaceTabs'
 import { SORT_OPTIONS, NAMESPACE_TABS, type SortMode, type Namespace } from './_utils'
+import dynamic from 'next/dynamic'
 import MetricHealthCard from '@/components/dashboard/MetricHealthCard'
-import MetricDrillDownModalV2 from '@/components/dashboard/MetricDrillDownModalV2'
 import { useRealtimeMetrics } from '@/hooks/useRealtimeMetrics'
 import { getBizDescription, getKpiDescription, getGriDescription } from '@/lib/metrics/descriptions'
+
+// recharts lives inside the drill-down modal — load it lazily, only when the
+// drill-down is opened, so it stays out of the metrics page first-load JS.
+const MetricDrillDownModalV2 = dynamic(() => import('@/components/dashboard/MetricDrillDownModalV2'), {
+  ssr: false,
+})
 
 interface CatalogItem {
   id: string

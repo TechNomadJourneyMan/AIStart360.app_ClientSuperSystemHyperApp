@@ -9,6 +9,7 @@ interface NotificationsState {
   markAsRead: (id: string) => void
   markAllAsRead: () => void
   addNotification: (notif: Notification) => void
+  setUnreadCount: (n: number) => void
 }
 
 export const useNotificationsStore = create<NotificationsState>((set) => ({
@@ -37,4 +38,6 @@ export const useNotificationsStore = create<NotificationsState>((set) => ({
       notifications: [notif, ...s.notifications],
       unreadCount: s.unreadCount + (notif.read ? 0 : 1),
     })),
+
+  setUnreadCount: (n) => set({ unreadCount: Math.max(0, n) }),
 }))

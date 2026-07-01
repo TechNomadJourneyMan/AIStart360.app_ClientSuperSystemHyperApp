@@ -126,6 +126,7 @@ model FinancialSnapshot {
   expensesChange Float        // % change vs prior period
   recordedAt     DateTime     @default(now())
 
+  @@index([orgId])
   @@map("financial_snapshots")
 }
 
@@ -159,6 +160,7 @@ model User {
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
 
+  @@index([orgId])
   @@map("users")
 }
 
@@ -179,6 +181,7 @@ model Account {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([provider, providerAccountId])
+  @@index([userId])
   @@map("accounts")
 }
 
@@ -189,6 +192,7 @@ model Session {
   expires      DateTime
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@index([userId])
   @@map("sessions")
 }
 
@@ -231,6 +235,8 @@ model Client {
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
 
+  @@index([orgId])
+  @@index([managerId])
   @@map("clients")
 }
 
@@ -252,6 +258,8 @@ model Report {
 
   documentSummaries DocumentSummary[]
 
+  @@index([clientId])
+  @@index([uploadedBy])
   @@map("reports")
 }
 
@@ -269,6 +277,7 @@ model Project {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@index([clientId])
   @@map("projects")
 }
 
@@ -357,6 +366,7 @@ model GriReport {
 
   diagnosticRun  DiagnosticRun?
 
+  @@index([clientId, calculatedAt])
   @@map("gri_reports")
 }
 
@@ -372,6 +382,7 @@ model ReportDocument {
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
 
+  @@index([uploadedBy])
   @@map("report_documents")
 }
 
@@ -422,6 +433,10 @@ model AdminRequest {
   createdAt       DateTime           @default(now())
   updatedAt       DateTime           @updatedAt
 
+  @@index([status, createdAt])
+  @@index([assignedAdminId])
+  @@index([companyId])
+  @@index([userId])
   @@map("admin_requests")
 }
 
@@ -436,6 +451,8 @@ model Comment {
   isInternal Boolean     @default(true) // internal note vs. message to user
   createdAt DateTime     @default(now())
 
+  @@index([requestId])
+  @@index([authorId])
   @@map("comments")
 }
 
@@ -475,6 +492,8 @@ model AuditLog {
   diff        Json?    // { before: {...}, after: {...} }
   ipAddress   String?
 
+  @@index([entityType, entityId])
+  @@index([performedBy])
   @@map("audit_logs")
 }
 
@@ -512,6 +531,7 @@ model DiagnosticRun {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  @@index([clientId])
   @@map("diagnostic_runs")
 }
 
@@ -530,6 +550,8 @@ model DocumentSummary {
 
   chunks      DocumentChunk[]
 
+  @@index([clientId])
+  @@index([reportId])
   @@map("document_summaries")
 }
 
@@ -546,6 +568,7 @@ model DocumentChunk {
   metadata          Json?    @default("{}")
   createdAt         DateTime @default(now())
 
+  @@index([documentSummaryId])
   @@map("document_chunks")
 }
 

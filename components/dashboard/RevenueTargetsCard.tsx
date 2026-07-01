@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
 import { parseAmount, formatKzt } from '@/lib/format/kzt'
 
 interface TargetsData {
@@ -14,6 +15,7 @@ interface PeriodGoals {
 }
 
 export default function RevenueTargetsCard() {
+  const router = useRouter()
   const [data, setData] = useState<TargetsData | null>(null)
   const [periodGoals, setPeriodGoals] = useState<PeriodGoals>({ goal_week: null, goal_month: null })
   const [editing, setEditing] = useState(false)
@@ -102,7 +104,9 @@ export default function RevenueTargetsCard() {
       if (!j.ok) throw new Error(j.error || 'Ошибка сохранения')
       setData(j.data)
       setEditing(false)
-      if (typeof window !== 'undefined') window.location.reload()
+      // Re-run server components (Point B "план vs факт" reads these targets)
+      // without nuking the whole page + re-triggering every widget's fetch.
+      router.refresh()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Ошибка')
     } finally {

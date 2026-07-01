@@ -15,13 +15,13 @@ const ADMIN_PATHS = [
   '/dashboard', '/gri', '/market', '/point-a', '/point-b',
   '/insights', '/competitors', '/metrics', '/settings',
   '/clients', '/reports', '/analytics', '/intelligence',
-  '/team', '/notifications', '/profile', '/users', '/admin',
+  '/team', '/notifications', '/profile', '/users', '/admin', '/activity',
 ]
 
 // Paths inside the (dashboard) layout group that clients are allowed to access
 const CLIENT_DASHBOARD_PATHS = [
   '/dashboard', '/gri', '/point-a', '/point-b',
-  '/metrics', '/market', '/profile', '/notifications', '/settings',
+  '/metrics', '/market', '/profile', '/notifications', '/settings', '/activity',
 ]
 const EXPERT_PATHS = ['/expert']
 const OWNER_PATHS = ['/owner']

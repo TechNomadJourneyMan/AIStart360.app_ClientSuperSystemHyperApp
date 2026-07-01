@@ -76,6 +76,12 @@ interface ChatOptions {
   maxTokens?: number
   temperature?: number
   jsonMode?: boolean
+  /**
+   * Abort the request after this many ms. Prevents a stalled OpenRouter/model
+   * response from hanging the whole route indefinitely. Default 45s (covers a
+   * slow Sonnet/Opus generation); pass a smaller value on latency-critical paths.
+   */
+  timeoutMs?: number
 }
 
 /**
@@ -124,6 +130,8 @@ export async function chatWithOpenRouter(opts: ChatOptions): Promise<string | nu
   }
   if (opts.jsonMode) body.response_format = { type: 'json_object' }
 
+  const timeoutMs = opts.timeoutMs ?? 45_000
+
   try {
     const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
@@ -134,6 +142,8 @@ export async function chatWithOpenRouter(opts: ChatOptions): Promise<string | nu
         'X-Title': 'AIStart360',
       },
       body: JSON.stringify(body),
+      // Hard cap so a stalled model/network never hangs the route forever.
+      signal: AbortSignal.timeout(timeoutMs),
     })
     if (!res.ok) {
       console.error('[openrouter]', res.status, await res.text().catch(() => ''))
@@ -142,7 +152,11 @@ export async function chatWithOpenRouter(opts: ChatOptions): Promise<string | nu
     const json = await res.json()
     return json.choices?.[0]?.message?.content ?? null
   } catch (err) {
-    console.error('[openrouter] fetch failed:', err)
+    if (err instanceof Error && err.name === 'TimeoutError') {
+      console.error(`[openrouter] request timed out after ${timeoutMs}ms`)
+    } else {
+      console.error('[openrouter] fetch failed:', err)
+    }
     return null
   }
 }
@@ -181,6 +195,8 @@ export async function embedWithOpenRouter(
         'X-Title': 'AIStart360',
       },
       body: JSON.stringify({ model, input: texts, dimensions }),
+      // Hard cap so a stalled embeddings call never hangs the pipeline forever.
+      signal: AbortSignal.timeout(20_000),
     })
     if (!res.ok) {
       console.error('[openrouter:embed]', res.status, await res.text().catch(() => ''))
@@ -202,7 +218,11 @@ export async function embedWithOpenRouter(
     }
     return vectors
   } catch (err) {
-    console.error('[openrouter:embed] fetch failed:', err)
+    if (err instanceof Error && err.name === 'TimeoutError') {
+      console.error('[openrouter:embed] request timed out after 20000ms')
+    } else {
+      console.error('[openrouter:embed] fetch failed:', err)
+    }
     return null
   }
 }

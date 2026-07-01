@@ -2,9 +2,16 @@
 
 import { useState, useMemo, useEffect, useCallback } from 'react'
 import Link from 'next/link'
+import dynamic from 'next/dynamic'
 import { usePulse } from '@/hooks/usePulse'
-import GriPulseWidget from '@/components/pulse/GriPulseWidget'
 import type { CrmProvider, CrmStatus } from '@/lib/crm/types'
+
+// recharts lives inside GriPulseWidget — load it lazily so it stays out of this
+// (already large) pulse page's first-load JS.
+const GriPulseWidget = dynamic(() => import('@/components/pulse/GriPulseWidget'), {
+  ssr: false,
+  loading: () => <div className="h-64 animate-pulse bg-surface-container-low rounded-2xl" />,
+})
 
 // ─── Action Modals ─────────────────────────────────────────────────────────────
 function CallModal({ client, onClose }: { client: { name: string; sector: string } | null; onClose: () => void }) {

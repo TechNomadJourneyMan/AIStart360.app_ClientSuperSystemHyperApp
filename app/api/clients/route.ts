@@ -21,25 +21,30 @@ export async function GET(request: Request) {
     ...(status && { status: status as any }),
   }
 
-  const [clients, total] = await Promise.all([
-    prisma.client.findMany({
-      where,
-      include: {
-        manager: { select: { id: true, name: true } },
-        griReports: {
-          orderBy: { calculatedAt: 'desc' },
-          take: 1,
-          select: { score: true, calculatedAt: true },
+  try {
+    const [clients, total] = await Promise.all([
+      prisma.client.findMany({
+        where,
+        include: {
+          manager: { select: { id: true, name: true } },
+          griReports: {
+            orderBy: { calculatedAt: 'desc' },
+            take: 1,
+            select: { score: true, calculatedAt: true },
+          },
         },
-      },
-      skip: (page - 1) * limit,
-      take: limit,
-      orderBy: { createdAt: 'desc' },
-    }),
-    prisma.client.count({ where }),
-  ])
+        skip: (page - 1) * limit,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+      }),
+      prisma.client.count({ where }),
+    ])
 
-  return NextResponse.json({ data: clients, meta: { total, page, limit } })
+    return NextResponse.json({ data: clients, meta: { total, page, limit } })
+  } catch (err) {
+    console.error('[api/clients GET]', err)
+    return NextResponse.json({ error: 'Failed to load clients' }, { status: 500 })
+  }
 }
 
 // POST /api/clients
@@ -64,12 +69,17 @@ export async function POST(request: Request) {
 
   const orgId = (session!.user as any).orgId
 
-  const client = await prisma.client.create({
-    data: {
-      ...parsed.data,
-      orgId,
-    },
-  })
+  try {
+    const client = await prisma.client.create({
+      data: {
+        ...parsed.data,
+        orgId,
+      },
+    })
 
-  return NextResponse.json(client, { status: 201 })
+    return NextResponse.json(client, { status: 201 })
+  } catch (err) {
+    console.error('[api/clients POST]', err)
+    return NextResponse.json({ error: 'Failed to create client' }, { status: 500 })
+  }
 }

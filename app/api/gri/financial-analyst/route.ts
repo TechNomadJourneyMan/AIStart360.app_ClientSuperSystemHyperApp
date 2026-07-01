@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { chatWithOpenRouter, extractJson } from '@/lib/ai/openrouter'
+import { isRateLimited } from '@/lib/rate-limit'
 
 /**
  * Financial Analyst for the GRI Calculator.
@@ -85,6 +86,12 @@ function buildStaticAnalysis(data: string, lang: 'ru' | 'en') {
 
 export async function POST(request: NextRequest) {
   try {
+    // Fires paid Claude Sonnet calls — cap per IP so an anonymous caller can't
+    // run up unbounded cost against the model budget.
+    if (await isRateLimited(request, 'gri-ai-financial', { max: 20 })) {
+      return NextResponse.json({ error: 'Слишком много запросов. Попробуйте через минуту.' }, { status: 429 })
+    }
+
     const body: FinancialAnalystRequest = await request.json()
     const { financialData, scores, lang } = body
 

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { chatWithOpenRouter } from '@/lib/ai/openrouter'
+import { isRateLimited } from '@/lib/rate-limit'
 
 /**
  * AI Growth Strategy generator for the GRI Calculator.
@@ -57,6 +58,12 @@ function buildStaticStrategy(scores: Record<string, number>, lang: 'ru' | 'en', 
 
 export async function POST(request: NextRequest) {
   try {
+    // This route fires paid Claude Sonnet calls; without a limiter an anonymous
+    // caller could run up unbounded cost / DoS the model budget. Cap per IP.
+    if (await isRateLimited(request, 'gri-ai-strategy', { max: 20 })) {
+      return NextResponse.json({ error: 'Слишком много запросов. Попробуйте через минуту.' }, { status: 429 })
+    }
+
     const body: StrategyRequest = await request.json()
     const { scores, lang = 'ru', format = 'default' } = body
 

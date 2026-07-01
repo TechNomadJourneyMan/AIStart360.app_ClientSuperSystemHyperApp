@@ -4,11 +4,19 @@ import React, { useState, useEffect, useCallback, forwardRef } from 'react'
 import * as Dialog from '@radix-ui/react-dialog'
 import { motion, AnimatePresence } from 'framer-motion'
 import Link from 'next/link'
+import dynamic from 'next/dynamic'
 import { AlertCard } from './AlertCard'
 import { ActivityFeed } from './ActivityFeed'
-import { KpiChart } from './KpiChart'
 import type { AlertCardProps } from './AlertCard'
 import type { ActivityItem } from '@/types'
+
+// recharts is heavy (~150–400 КБ gz). Load the chart only when the optional
+// 'chart' widget is actually rendered, so it never lands in the dashboard's
+// first-load JS. Pattern mirrors gri/page.tsx.
+const KpiChart = dynamic(() => import('./KpiChart').then((m) => m.KpiChart), {
+  ssr: false,
+  loading: () => <div className="h-64 animate-pulse bg-surface-container-high rounded-xl" />,
+})
 
 // ─── Types ──────────────────────────────────────────────────────
 type WidgetType = 'alerts' | 'activity' | 'gri' | 'metrics' | 'chart' | 'quick-links' | 'clients-stats'

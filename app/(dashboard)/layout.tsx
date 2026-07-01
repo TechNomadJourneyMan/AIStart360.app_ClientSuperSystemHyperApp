@@ -3,6 +3,7 @@ import { Header } from '@/components/layout/Header'
 import { MobileNav } from '@/components/layout/MobileNav'
 import { DashboardShell } from '@/components/layout/DashboardShell'
 import { AssistantChatLauncher } from '@/components/assistant/AssistantChatPanel'
+import { NotificationsBellSync } from '@/components/notifications/NotificationsBellSync'
 
 export default function DashboardLayout({
   children,
@@ -29,6 +30,9 @@ export default function DashboardLayout({
 
       {/* Floating AI assistant — available on every dashboard page */}
       <AssistantChatLauncher />
+
+      {/* Keeps the header bell's unread badge in sync with the real feed */}
+      <NotificationsBellSync />
     </div>
   )
 }

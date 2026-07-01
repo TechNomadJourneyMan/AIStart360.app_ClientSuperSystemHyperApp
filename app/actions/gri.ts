@@ -64,6 +64,8 @@ export async function getClientsAction() {
 
   return prisma.client.findMany({
     where: { orgId: user.orgId },
-    orderBy: { name: 'asc' }
+    orderBy: { name: 'asc' },
+    // Bound the result — selectors/lists don't need an unbounded org dump.
+    take: 500,
   })
 }

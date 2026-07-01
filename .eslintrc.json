@@ -4,5 +4,24 @@
     "react/no-unescaped-entities": "off",
     "@next/next/no-img-element": "off",
     "@next/next/no-page-custom-font": "off"
-  }
+  },
+  "overrides": [
+    {
+      "files": ["components/**/*.{ts,tsx}"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              { "name": "tesseract.js", "message": "Server-only (heavy WASM OCR). Use it in lib/ from an API route, never in a client component — it bloats the browser bundle by multiple MB." },
+              { "name": "xlsx", "message": "Server-only. Keep in lib/ used by API routes; do not ship to the client bundle." },
+              { "name": "pdfkit", "message": "Server-only. Keep in lib/reports used by API routes." },
+              { "name": "pdf-parse", "message": "Server-only. Keep in lib/documents used by API routes." },
+              { "name": "mammoth", "message": "Server-only. Keep in lib/documents used by API routes." }
+            ]
+          }
+        ]
+      }
+    }
+  ]
 }

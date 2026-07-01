@@ -71,6 +71,11 @@ export async function getAnalyticsData(db: DbClient = prisma, orgId?: string): P
           take: 2,
         },
       },
+      // OOM backstop: bound the org-wide fetch. Aggregates stay correct for any
+      // realistic org; the proper fix is SQL aggregation (groupBy/_sum) — see
+      // B11 in docs/AUDIT-performance-2026-07-01.md. Without this a huge org
+      // would load every client + relations into memory on each analytics render.
+      take: 2000,
     }),
     db.griReport.findMany({
       where: reportsWhere,

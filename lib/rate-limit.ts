@@ -1,15 +1,35 @@
 import { Ratelimit } from '@upstash/ratelimit'
 import { Redis } from '@upstash/redis'
 
-// 10 запросов в минуту на auth endpoints
-export const authRateLimit =
-  process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN
-    ? new Ratelimit({
-        redis: Redis.fromEnv(),
-        limiter: Ratelimit.slidingWindow(10, '1m'),
-        analytics: true,
-      })
-    : null
+const upstashEnabled = Boolean(
+  process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN,
+)
+const redis = upstashEnabled ? Redis.fromEnv() : null
+
+// 10 запросов в минуту — дефолтный лимитер для auth endpoints (back-compat export).
+export const authRateLimit = redis
+  ? new Ratelimit({ redis, limiter: Ratelimit.slidingWindow(10, '1m'), analytics: true })
+  : null
+
+// Кэш лимитеров по (max, windowMs), чтобы per-bucket opts реально соблюдались, а
+// не подменялись общим 10/мин. Раньше ветка Upstash всегда брала authRateLimit и
+// игнорировала opts.max — «дорогой AI = 3/мин» молча превращался в 10/мин.
+const limiterCache = new Map<string, Ratelimit>()
+function getUpstashLimiter(max: number, windowMs: number): Ratelimit | null {
+  if (!redis) return null
+  const key = `${max}:${windowMs}`
+  let rl = limiterCache.get(key)
+  if (!rl) {
+    const windowSec = Math.max(1, Math.round(windowMs / 1000))
+    rl = new Ratelimit({
+      redis,
+      limiter: Ratelimit.slidingWindow(max, `${windowSec} s` as Parameters<typeof Ratelimit.slidingWindow>[1]),
+      analytics: true,
+    })
+    limiterCache.set(key, rl)
+  }
+  return rl
+}
 
 // ── Shared limiter helper ────────────────────────────────────────────────────
 // Uses Upstash when configured; otherwise a best-effort in-memory fallback so
@@ -50,13 +70,12 @@ export async function isRateLimited(
   opts: { max?: number; windowMs?: number } = {},
 ): Promise<boolean> {
   const ip = clientIp(req)
-  if (authRateLimit) {
-    const { success } = await authRateLimit.limit(`${bucket}:${ip}`)
+  const max = opts.max ?? DEFAULT_MAX
+  const windowMs = opts.windowMs ?? DEFAULT_WINDOW_MS
+  const limiter = getUpstashLimiter(max, windowMs)
+  if (limiter) {
+    const { success } = await limiter.limit(`${bucket}:${ip}`)
     return !success
   }
-  return memoryLimited(
-    `${bucket}:${ip}`,
-    opts.max ?? DEFAULT_MAX,
-    opts.windowMs ?? DEFAULT_WINDOW_MS,
-  )
+  return memoryLimited(`${bucket}:${ip}`, max, windowMs)
 }

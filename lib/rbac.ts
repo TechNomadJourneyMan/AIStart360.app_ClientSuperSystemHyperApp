@@ -1,3 +1,4 @@
+import { cache } from 'react'
 import { NextResponse } from 'next/server'
 import type { UserRole } from '@prisma/client'
 import { createClient } from '@/lib/supabase/server'
@@ -90,7 +91,10 @@ function mapProfileRoleToUserRole(role: string | null | undefined): UserRole {
   return 'CLIENT'
 }
 
-export async function getAdminSession(): Promise<AuthSession | null> {
+// Wrapped in React `cache()` so multiple guards/components in the SAME request
+// (requireAuth → requirePermission, plus any RSC that needs the session) share
+// ONE getUser()+profiles round-trip instead of re-hitting Supabase each time.
+export const getAdminSession = cache(async (): Promise<AuthSession | null> => {
   const supabase = await createClient()
   const {
     data: { user },
@@ -112,7 +116,7 @@ export async function getAdminSession(): Promise<AuthSession | null> {
       role: mapProfileRoleToUserRole(typeof profile?.role === 'string' ? profile.role : null),
     },
   }
-}
+})
 
 /**
  * Require authentication. Returns 401 response or the session.

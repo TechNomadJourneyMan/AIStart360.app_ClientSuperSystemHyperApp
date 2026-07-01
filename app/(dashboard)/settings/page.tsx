@@ -1,34 +1,9 @@
 import type { Metadata } from 'next'
 import { createClient } from '@/lib/supabase/server'
+import { SettingsClient, type SettingsInitial, type Prefs } from '@/components/settings/SettingsClient'
 
 export const metadata: Metadata = { title: 'Settings' }
-
-function mapRoleToPosition(role: string): string {
-  switch (role) {
-    case 'super_admin':
-      return 'Владелец системы'
-    case 'admin':
-      return 'Администратор'
-    case 'expert':
-      return 'Эксперт роста'
-    case 'owner':
-      return 'Владелец бизнеса'
-    case 'client':
-      return 'Клиент'
-    default:
-      return 'Пользователь'
-  }
-}
-
-const SECTIONS = [
-  { id: 'profile',       label: 'Профиль',       icon: 'person'        },
-  { id: 'security',      label: 'Безопасность',  icon: 'lock'          },
-  { id: 'notifications', label: 'Уведомления',   icon: 'notifications' },
-  { id: 'appearance',    label: 'Внешний вид',   icon: 'palette'       },
-  { id: 'team',          label: 'Команда',       icon: 'group'         },
-  { id: 'billing',       label: 'Биллинг',       icon: 'credit_card'   },
-  { id: 'api',           label: 'API & Интеграции', icon: 'api'        },
-]
+export const dynamic = 'force-dynamic'
 
 export default async function SettingsPage() {
   const supabase = await createClient()
@@ -46,37 +21,23 @@ export default async function SettingsPage() {
     )
   }
 
-  // Fetch from profiles table for more data
   const { data: profile } = await supabase
     .from('profiles')
     .select('*')
     .eq('id', user.id)
     .maybeSingle()
 
-  const meta = user.user_metadata ?? {}
+  const meta = (user.user_metadata ?? {}) as Record<string, unknown>
   const fullName = (profile?.full_name ?? meta.full_name ?? meta.name ?? user.email ?? 'Пользователь') as string
-  const email = user.email ?? ''
-  
-  const role = (profile?.role ?? meta.role ?? 'client') as string
-  const position = (profile?.position ?? meta.position ?? mapRoleToPosition(role)) as string
-  const organization = (profile?.organization ?? meta.organization ?? '—') as string
 
-  const [firstName = fullName.split(' ')[0], lastName = fullName.split(' ').slice(1).join(' ')] = fullName.split(' ')
-  
-  const initials = fullName
-    .split(' ')
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase() ?? '')
-    .join('') || (email[0] ?? 'U').toUpperCase()
-
-  const fields = [
-    { label: 'Имя', placeholder: 'Иван', value: firstName, type: 'text' },
-    { label: 'Фамилия', placeholder: 'Иванов', value: lastName, type: 'text' },
-    { label: 'Email', placeholder: 'you@company.com', value: email, type: 'email' },
-    { label: 'Должность', placeholder: 'Manager', value: position, type: 'text' },
-    { label: 'Организация', placeholder: 'Компания', value: organization, type: 'text' },
-  ]
+  const initial: SettingsInitial = {
+    firstName: fullName.split(' ')[0] ?? '',
+    lastName: fullName.split(' ').slice(1).join(' '),
+    email: user.email ?? '',
+    position: (profile?.position ?? meta.position ?? '') as string,
+    organization: (profile?.organization ?? meta.organization ?? '') as string,
+    phone: (profile?.phone ?? meta.phone ?? '') as string,
+  }
 
   return (
     <div className="space-y-6">
@@ -85,104 +46,7 @@ export default async function SettingsPage() {
         <p className="text-on-surface-variant text-sm mt-1">Управление аккаунтом и системой</p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-        {/* Settings Nav */}
-        <div className="lg:col-span-1">
-          <nav className="bg-surface-container rounded-xl overflow-hidden">
-            {SECTIONS.map((section, i) => (
-              <button
-                key={section.id}
-                className={`w-full flex items-center gap-3 px-4 py-3 text-sm transition-colors text-left ${
-                  i === 0
-                    ? 'bg-surface-container-high text-primary border-l-2 border-primary'
-                    : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high border-l-2 border-transparent'
-                } ${i < SECTIONS.length - 1 ? 'border-b border-outline-variant/10' : ''}`}
-              >
-                <span className="material-symbols-outlined text-lg">{section.icon}</span>
-                <span className="font-medium">{section.label}</span>
-              </button>
-            ))}
-          </nav>
-        </div>
-
-        {/* Profile Settings */}
-        <div className="lg:col-span-3 space-y-6">
-          {/* Avatar */}
-          <div className="bg-surface-container rounded-xl p-6">
-            <h3 className="font-headline text-lg font-bold text-on-surface mb-5">Фото профиля</h3>
-            <div className="flex items-center gap-5">
-              <div className="w-16 h-16 rounded-full bg-surface-container-high flex items-center justify-center text-xl font-headline font-bold text-primary">
-                {initials}
-              </div>
-              <div>
-                <button className="text-sm text-on-surface border border-outline-variant/30 px-4 py-2 rounded-lg hover:bg-surface-container-high transition-colors">
-                  Загрузить фото
-                </button>
-                <p className="text-xs text-on-surface-variant mt-2">JPG, PNG до 2MB</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Personal Info */}
-          <div className="bg-surface-container rounded-xl p-6">
-            <h3 className="font-headline text-lg font-bold text-on-surface mb-5">Личная информация</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {fields.map((field) => (
-                <div key={field.label}>
-                  <label className="block text-xs font-label text-on-surface-variant uppercase tracking-wider mb-2">
-                    {field.label}
-                  </label>
-                  <input
-                    type={field.type}
-                    defaultValue={field.value}
-                    placeholder={field.placeholder}
-                    className="w-full bg-surface-container-high border border-outline-variant/30 rounded-lg px-4 py-2.5 text-sm text-on-surface placeholder:text-on-surface-variant/40 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all"
-                  />
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Notification preferences */}
-          <div className="bg-surface-container rounded-xl p-6">
-            <h3 className="font-headline text-lg font-bold text-on-surface mb-5">Уведомления</h3>
-            <div className="space-y-4">
-              {[
-                { label: 'Критические алерты', desc: 'Немедленные уведомления о критических событиях', enabled: true  },
-                { label: 'Обновления GRI',    desc: 'При пересчёте GRI для клиентов',                 enabled: true  },
-                { label: 'Загрузка отчётов',   desc: 'При загрузке новых отчётов',                     enabled: false },
-                { label: 'Еженедельный дайджест', desc: 'Еженедельная сводка по портфелю',                enabled: true  },
-              ].map((item) => (
-                <div key={item.label} className="flex items-center justify-between py-2 border-b border-outline-variant/10 last:border-0">
-                  <div>
-                    <p className="text-sm font-medium text-on-surface">{item.label}</p>
-                    <p className="text-xs text-on-surface-variant">{item.desc}</p>
-                  </div>
-                  <div
-                    className={`w-11 h-6 rounded-full cursor-pointer transition-colors relative ${
-                      item.enabled ? 'bg-primary' : 'bg-surface-container-high'
-                    }`}
-                  >
-                    <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-transform ${
-                      item.enabled ? 'translate-x-6' : 'translate-x-1'
-                    }`} />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Save Button */}
-          <div className="flex justify-end gap-3">
-            <button className="px-5 py-2 text-sm text-on-surface-variant border border-outline-variant/30 rounded-lg hover:bg-surface-container transition-colors">
-              Отменить
-            </button>
-            <button className="px-6 py-2 bg-gradient-to-br from-primary to-primary-container text-on-primary text-sm font-semibold rounded-lg shadow-primary-sm hover:scale-[0.98] transition-all">
-              Сохранить изменения
-            </button>
-          </div>
-        </div>
-      </div>
+      <SettingsClient initial={initial} preferences={(profile?.preferences ?? {}) as Prefs} />
     </div>
   )
 }

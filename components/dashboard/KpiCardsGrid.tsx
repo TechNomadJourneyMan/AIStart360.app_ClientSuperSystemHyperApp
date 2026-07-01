@@ -5,9 +5,15 @@ import { useMetricsStore } from '@/stores/metrics.store'
 import { useAllVisibleMetrics } from '@/hooks/useMetrics'
 import { useUIStore } from '@/stores/ui.store'
 import { AddMetricModal } from './AddMetricModal'
-import { MetricModal } from './MetricModal'
+import dynamic from 'next/dynamic'
 import { MAX_METRICS } from '@/types/metrics'
 import type { MetricSummary } from '@/types/metrics'
+
+// recharts lives inside MetricModal — load it lazily and only when a metric is
+// actually opened, so it never enters the metrics/point-a first-load JS bundle.
+const MetricModal = dynamic(() => import('./MetricModal').then((m) => m.MetricModal), {
+  ssr: false,
+})
 
 function progressColor(pct: number) {
   if (pct >= 80) return '#6effc0'
@@ -177,7 +183,7 @@ function EmptyMetrics({ onShowAll, hasHidden }: { onShowAll: () => void; hasHidd
 
 export function KpiCardsGrid() {
   const [addOpen, setAddOpen] = useState(false)
-  const { visibleMetricIds, hiddenMetricIds, setActiveMetric, hideMetric, removeMetric, showAllMetrics } = useMetricsStore()
+  const { visibleMetricIds, hiddenMetricIds, setActiveMetric, hideMetric, removeMetric, showAllMetrics, activeMetricId } = useMetricsStore()
   const pinnedGoals = useUIStore((s) => s.pinnedGoals)
   const { data: visibleMetrics, isLoading } = useAllVisibleMetrics(visibleMetricIds)
 
@@ -243,7 +249,7 @@ export function KpiCardsGrid() {
       </div>
 
       <AddMetricModal open={addOpen} onClose={() => setAddOpen(false)} />
-      <MetricModal />
+      {activeMetricId && <MetricModal />}
     </>
   )
 }

@@ -14,7 +14,14 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast, Toaster } from 'sonner'
-import { MarketDataPanel, type ConfirmedAnswer } from './MarketDataPanel'
+import dynamic from 'next/dynamic'
+import type { ConfirmedAnswer } from './MarketDataPanel'
+
+// recharts lives inside MarketDataPanel — load it lazily; the panel only renders
+// when a block is expanded, so recharts loads on demand.
+const MarketDataPanel = dynamic(() => import('./MarketDataPanel').then((m) => m.MarketDataPanel), {
+  ssr: false,
+})
 
 // ── API contract types ──────────────────────────────────────────────────────
 

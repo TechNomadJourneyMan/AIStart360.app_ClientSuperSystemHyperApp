@@ -23,10 +23,17 @@ import {
   formatScore,
   DASH,
 } from './shared'
-import { TrajectoryChart } from './TrajectoryChart'
+import dynamic from 'next/dynamic'
 import { HorizonPlans } from './HorizonPlans'
 import { ActionPlanBoard } from '@/components/action-plan/ActionPlanBoard'
 import { AiStrategy } from './AiStrategy'
+
+// recharts lives inside TrajectoryChart — load it lazily so it stays out of the
+// large Point B page's first-load JS.
+const TrajectoryChart = dynamic(() => import('./TrajectoryChart').then((m) => m.TrajectoryChart), {
+  ssr: false,
+  loading: () => <div className="h-64 animate-pulse bg-surface-container-low rounded-xl" />,
+})
 
 export interface PointBViewProps {
   pointB: PointBV2 | null

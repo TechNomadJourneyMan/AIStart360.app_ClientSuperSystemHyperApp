@@ -37,6 +37,8 @@ export async function GET(req: Request) {
     return NextResponse.json({ source: 'empty', data: [] as MetricSummary[] })
   } catch (err) {
     console.error('[api/v1/metrics]', err)
-    return NextResponse.json({ source: 'error', data: [] as MetricSummary[] }, { status: 200 })
+    // Return a real 5xx so the client (fetchMetrics throws on !res.ok) and
+    // monitoring can distinguish a server failure from an honestly-empty list.
+    return NextResponse.json({ source: 'error', error: 'metrics_failed' }, { status: 500 })
   }
 }

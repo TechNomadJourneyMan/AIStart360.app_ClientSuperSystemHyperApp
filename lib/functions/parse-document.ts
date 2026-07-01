@@ -30,7 +30,9 @@ export const parseDocumentFn = inngest.createFunction(
 
     try {
       const payload = await step.run('download-and-extract', async () => {
-        const res = await fetch(file_url)
+        // Cap the download so a slow/hanging file URL can't stall the parse
+        // step indefinitely. Inngest still retries the step on throw.
+        const res = await fetch(file_url, { signal: AbortSignal.timeout(60_000) })
         if (!res.ok) {
           throw new Error(`Не удалось скачать файл (HTTP ${res.status})`)
         }

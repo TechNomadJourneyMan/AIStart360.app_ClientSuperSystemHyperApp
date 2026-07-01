@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
 
 type AdminClientRow = {
@@ -36,34 +36,52 @@ function GriBar({ score }: { score: number }) {
 export function AdminClientsList() {
   const [clients, setClients] = useState<AdminClientRow[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(false)
 
-  useEffect(() => {
-    const fetchClients = async () => {
-      try {
-        const res = await fetch('/api/v1/admin/clients')
-        const json = await res.json()
-        if (json.ok) {
-          const mapped = json.data.map((c: any) => ({
-            id: c.id,
-            name: c.company_name || c.full_name || 'Без названия',
-            industry: c.industry || '—',
-            gri: c.overall_score ? Math.round(c.overall_score / 10 * 10) / 10 : 0, // Score is 0-100 in DB, but table uses 0.0 format
-            phase: c.stage || '—',
-            manager: 'Марина Р.', // Placeholder for now as manager system isn't in DB yet
-            status: c.status === 'approved' ? 'active' : c.status === 'pending_approval' ? 'pending_approval' : 'at_risk'
-          }))
-          setClients(mapped)
-        }
-      } catch (err) {
-        console.error('Failed to fetch clients:', err)
-      } finally {
-        setLoading(false)
+  const fetchClients = useCallback(async () => {
+    setLoading(true)
+    setError(false)
+    try {
+      const res = await fetch('/api/v1/admin/clients')
+      const json = await res.json()
+      // Guard against a malformed `{ ok:true }` with missing/non-array data —
+      // otherwise json.data.map() throws and crashes the whole admin surface.
+      if (json.ok && Array.isArray(json.data)) {
+        const mapped = json.data.map((c: any) => ({
+          id: c.id,
+          name: c.company_name || c.full_name || 'Без названия',
+          industry: c.industry || '—',
+          gri: c.overall_score ? Math.round(c.overall_score / 10 * 10) / 10 : 0, // Score is 0-100 in DB, but table uses 0.0 format
+          phase: c.stage || '—',
+          manager: 'Марина Р.', // Placeholder for now as manager system isn't in DB yet
+          status: c.status === 'approved' ? 'active' : c.status === 'pending_approval' ? 'pending_approval' : 'at_risk'
+        }))
+        setClients(mapped)
+      } else {
+        setError(true)
       }
+    } catch (err) {
+      console.error('Failed to fetch clients:', err)
+      setError(true)
+    } finally {
+      setLoading(false)
     }
-    fetchClients()
   }, [])
 
+  useEffect(() => { fetchClients() }, [fetchClients])
+
   if (loading) return <div className="p-8 text-center text-sm text-on-surface-variant">Загрузка базы клиентов...</div>
+
+  // Distinguish a real failure from an empty list so the admin can retry
+  // instead of being told there are "no clients" when the API is down.
+  if (error) return (
+    <div className="p-8 text-center text-sm text-on-surface-variant">
+      <p className="mb-3">Не удалось загрузить базу клиентов.</p>
+      <button type="button" onClick={fetchClients} className="text-xs font-mono text-primary hover:underline">
+        Повторить
+      </button>
+    </div>
+  )
 
   return (
     <div className="lg:col-span-2 bg-surface-container-low rounded-2xl border border-white/[0.04] overflow-hidden">

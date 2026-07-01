@@ -11,14 +11,19 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
   const unreadOnly = searchParams.get('unread') === 'true'
 
-  const notifications = await prisma.notification.findMany({
-    where: {
-      userId,
-      ...(unreadOnly && { isRead: false }),
-    },
-    orderBy: { createdAt: 'desc' },
-    take: 50,
-  })
+  try {
+    const notifications = await prisma.notification.findMany({
+      where: {
+        userId,
+        ...(unreadOnly && { isRead: false }),
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+    })
 
-  return NextResponse.json(notifications)
+    return NextResponse.json(notifications)
+  } catch (err) {
+    console.error('[api/notifications]', err)
+    return NextResponse.json({ error: 'Failed to load notifications' }, { status: 500 })
+  }
 }

@@ -59,6 +59,8 @@ export async function createReportMetadata(
 export async function getReportDocuments(db: DbClient = prisma) {
   return db.reportDocument.findMany({
     orderBy: { createdAt: 'desc' },
+    // Cap the list — the Reports hub shows recent docs, not an unbounded dump.
+    take: 100,
   })
 }
 
