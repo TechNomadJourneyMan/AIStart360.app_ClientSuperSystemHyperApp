@@ -253,6 +253,24 @@ const DEFS: HintDef[] = [
     },
   },
   {
+    // Возвращение в портал: короткое приветствие раз за браузер-сессию
+    // (показывается напрямую из evaluate, минуя cooldown-движок — сессионный
+    // ритуал; sessionStorage-гейт ставит вызывающая сторона).
+    id: 'welcome_back',
+    type: 'greeting',
+    state: 'greeting',
+    priority: 0,
+    screens: [],
+    mutable: false,
+    build: () => ({
+      text: 'С возвращением! 🐾 Я рядом — спрашивайте, если что-то понадобится.',
+      actions: [
+        { label: 'Спросить Гри', kind: 'open_chat' },
+        { label: 'Позже', kind: 'later' },
+      ],
+    }),
+  },
+  {
     // AI-инсайт (OpenRouter): текст приходит готовым в params.text — единственный
     // LLM-питаемый пузырь. Управляется тумблером behavior.aiInsights, не mute.
     id: 'ai_insight',

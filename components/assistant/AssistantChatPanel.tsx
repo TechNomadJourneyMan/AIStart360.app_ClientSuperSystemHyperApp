@@ -1,29 +1,29 @@
 'use client'
 
 /**
- * components/assistant/AssistantChatPanel.tsx
+ * components/assistant/AssistantChatPanel.tsx — the Гри chat.
  *
- * Slide-over assistant panel (overlay, not a route). Launchable from the client
- * landing page / onboarding via the exported <AssistantChatLauncher/> dock button
- * (new file only — not wired into any page by this change).
+ * v1.2: a real multi-turn chat thread (client-side session memory) instead of
+ * a single pinned answer. Layout:
  *
- * Behaviour:
- *   • GET /api/v1/assistant/scripts → ready-made questions grouped by section
- *     (7.1–7.12). Only safe presentational fields ship to the client.
- *   • Clicking a question → POST /api/v1/assistant/chat { scriptId } → renders the
- *     hydrated Russian answer with an honest "Недостаточно данных" state when the
- *     snapshot lacks the data (the route flips `insufficient`; we never fabricate).
- *   • Footer "Позвать эксперта" → POST /api/v1/assistant/escalate
- *     { trigger_type: 'user_requested_help' }.
+ *   header  — title, page-mode subtitle, hamburger (all questions ⇄ this page)
+ *   body    — Гри's page tip → collapsible quick questions (page-scoped,
+ *             searchable) → the message thread (+ typing indicator)
+ *   footer  — ONE universal input + three actions:
+ *             [Спросить Гри] → POST /api/v1/assistant/converse (history-aware)
+ *             [Инсайт]       → POST /api/v1/assistant/insight
+ *             [Эксперт]      → POST /api/v1/assistant/escalate
  *
- * Tone: calm, professional, business-oriented. Copy follows the portal locale
- * (cookie → default Russian); premium dark tokens.
+ * Safety contract stays intact: facts come only from the caller's own curated
+ * snapshot server-side; the thread lives in memory only (a reload starts
+ * fresh); ready-made questions still go through /chat (deterministic hydrate).
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { getSection } from '@/lib/assistant/sections'
 import { SCREEN_PANEL_SECTIONS, SCREEN_TIPS } from '@/lib/assistant/mascot/hints'
+import { MascotAvatar } from '@/components/assistant/mascot/MascotAvatar'
 import { getClientLocale, type Locale } from '@/lib/i18n/locale'
 
 // ─── Localized copy (portal locale; ru is the default surface) ──────────────
@@ -47,16 +47,23 @@ const T: Record<Locale, {
   askPlaceholder: string
   askButton: string
   asking: string
-  askToExpert: string
-  expertHandoff: string
   pageTip: string
   onThisPage: string
   showAll: string
   showPageOnly: string
+  quickQuestions: string
+  typing: string
+  welcome: string
+  insightBtn: string
+  insightLabel: string
+  insightFail: string
+  askExpertWith: string
+  offTopic: string
+  expertRouted: string
 }> = {
   ru: {
-    title: 'Ассистент',
-    subtitle: 'Готовые вопросы по вашим данным',
+    title: 'Гри',
+    subtitle: 'Чат по вашим данным',
     close: 'Закрыть',
     insufficient: 'Недостаточно данных для точного ответа — заполните анкету или загрузите отчёты.',
     source: 'Источник',
@@ -65,25 +72,32 @@ const T: Record<Locale, {
     networkError: 'Ошибка сети',
     escalated: 'Запрос отправлен — эксперт свяжется с вами',
     sending: 'Отправляем…',
-    callExpert: 'Позвать эксперта',
+    callExpert: 'Эксперт',
     escalateFailed: 'Не удалось отправить запрос',
-    disclaimer: 'Ассистент отвечает только по вашим данным — без догадок.',
+    disclaimer: 'Гри отвечает только по вашим данным — без догадок.',
     openAssistant: 'Открыть ассистента',
     searchPlaceholder: 'Поиск по вопросам…',
     noMatches: 'Ничего не найдено по запросу.',
-    askPlaceholder: 'Задайте свой вопрос…',
-    askButton: 'Спросить',
+    askPlaceholder: 'Спросите Гри о ваших данных…',
+    askButton: 'Спросить Гри',
     asking: 'Думаю…',
-    askToExpert: 'Передаём эксперту…',
-    expertHandoff: 'Вопрос передан эксперту — он свяжется с вами',
     pageTip: 'Совет Гри',
     onThisPage: 'По этой странице',
     showAll: 'Показать все вопросы',
     showPageOnly: 'Только по этой странице',
+    quickQuestions: 'Быстрые вопросы',
+    typing: 'Гри печатает…',
+    welcome: 'Мяу! Я Гри 🐾 Спрашивайте про ваш бизнес и диагностику — отвечаю только по вашим данным, без догадок. Ниже есть быстрые вопросы по этой странице.',
+    insightBtn: 'Инсайт',
+    insightLabel: 'Инсайт Гри',
+    insightFail: 'Пока не хватает данных для инсайта — заполните ещё немного анкеты 🐾',
+    askExpertWith: 'Позвать эксперта с этим вопросом',
+    offTopic: 'не по теме данных',
+    expertRouted: 'Запрос передан эксперту — он свяжется с вами 🐾',
   },
   en: {
-    title: 'Assistant',
-    subtitle: 'Ready-made questions about your data',
+    title: 'Gree',
+    subtitle: 'Chat about your data',
     close: 'Close',
     insufficient: 'Not enough data for a precise answer — complete the survey or upload reports.',
     source: 'Source',
@@ -92,21 +106,28 @@ const T: Record<Locale, {
     networkError: 'Network error',
     escalated: 'Request sent — an expert will be in touch',
     sending: 'Sending…',
-    callExpert: 'Call an expert',
+    callExpert: 'Expert',
     escalateFailed: 'Could not send the request',
-    disclaimer: 'The assistant answers only from your data — no guesswork.',
+    disclaimer: 'Gree answers only from your data — no guesswork.',
     openAssistant: 'Open the assistant',
     searchPlaceholder: 'Search questions…',
     noMatches: 'No questions match your search.',
-    askPlaceholder: 'Ask your own question…',
-    askButton: 'Ask',
+    askPlaceholder: 'Ask Gree about your data…',
+    askButton: 'Ask Gree',
     asking: 'Thinking…',
-    askToExpert: 'Handing to an expert…',
-    expertHandoff: 'Your question has been passed to an expert — they will be in touch',
     pageTip: 'Gree’s tip',
     onThisPage: 'On this page',
     showAll: 'Show all questions',
     showPageOnly: 'Only for this page',
+    quickQuestions: 'Quick questions',
+    typing: 'Gree is typing…',
+    welcome: 'Meow! I’m Gree 🐾 Ask about your business and diagnostics — I answer only from your data, no guesswork. Quick questions for this page are below.',
+    insightBtn: 'Insight',
+    insightLabel: 'Gree’s insight',
+    insightFail: 'Not enough data for an insight yet — fill in a bit more of the survey 🐾',
+    askExpertWith: 'Ask an expert this question',
+    offTopic: 'off-topic for your data',
+    expertRouted: 'Handed to an expert — they will be in touch 🐾',
   },
 }
 
@@ -120,29 +141,26 @@ interface ScriptGroup {
   section: string
   scripts: ScriptItem[]
 }
-interface ChatAnswer {
-  answer_ru: string
-  used_data: string
-  section: string
-  insufficient: boolean
+
+/** One thread entry. `system` renders as a centered notice. */
+interface ChatMsg {
+  id: string
+  role: 'user' | 'gree' | 'system'
+  text: string
+  kind?: 'free' | 'script' | 'insight'
+  insufficient?: boolean
+  usedData?: string
+  needsExpert?: boolean
+  offTopic?: boolean
 }
 
-/**
- * Unified model for the PINNED answer card. It carries either a hydrated
- * prepared-question answer (`kind: 'script'`), a free-text AI answer
- * (`kind: 'free'`), or the expert-handoff state (`kind: 'expert'`) when the AI
- * couldn't answer the free question and the case was created server-side.
- */
-type PinnedAnswer =
-  | { kind: 'script'; question: string; answer: ChatAnswer }
-  | { kind: 'free'; question: string; answer: string }
-  | { kind: 'expert'; question: string; answer: string | null }
+let msgSeq = 0
+const nextId = () => `m${Date.now().toString(36)}${(msgSeq++).toString(36)}`
 
 function sectionLabel(key: string): string {
   return getSection(key)?.label ?? key
 }
 
-/** Case-insensitive substring match for the live question filter. */
 function matchesQuery(item: ScriptItem, query: string): boolean {
   if (!query) return true
   const q = query.toLowerCase()
@@ -164,26 +182,18 @@ export function AssistantChatPanel({
 }) {
   const [groups, setGroups] = useState<ScriptGroup[]>([])
   const [loadingScripts, setLoadingScripts] = useState(false)
-  const [activeId, setActiveId] = useState<string | null>(null)
-  // Page-context mode: relevant sections first, the rest behind the hamburger.
   const [showAll, setShowAll] = useState(false)
-  // The single PINNED answer (prepared OR free OR expert-handoff) — sticky at top.
-  const [pinned, setPinned] = useState<PinnedAnswer | null>(null)
-  const [answerLoading, setAnswerLoading] = useState(false)
-  const [answerError, setAnswerError] = useState<string | null>(null)
-
-  // Live filter over the prepared-question list (ask #2).
+  const [quickOpen, setQuickOpen] = useState(true)
   const [query, setQuery] = useState('')
 
-  // Free-text question input (ask #4 / #5).
-  const [freeQuestion, setFreeQuestion] = useState('')
-  const [asking, setAsking] = useState(false)
-  const bodyRef = useRef<HTMLDivElement>(null)
+  const [messages, setMessages] = useState<ChatMsg[]>([])
+  const [busy, setBusy] = useState<null | 'ask' | 'insight' | 'expert' | 'script'>(null)
+  const [input, setInput] = useState('')
 
-  const [escalating, setEscalating] = useState(false)
-  const [escalated, setEscalated] = useState(false)
-  const [escalateError, setEscalateError] = useState<string | null>(null)
-  // Locale read after mount (cookie isn't available during SSR); default ru.
+  const bodyRef = useRef<HTMLDivElement>(null)
+  const threadEndRef = useRef<HTMLDivElement>(null)
+  const welcomedRef = useRef(false)
+
   const [locale, setLocale] = useState<Locale>('ru')
   const t = T[locale]
 
@@ -191,8 +201,7 @@ export function AssistantChatPanel({
     setLocale(getClientLocale())
   }, [])
 
-  // Filtered groups: drop questions that don't match the query, then drop now-
-  // empty sections. Memoized so typing stays snappy.
+  // ── Quick-question catalog (page-scoped + hamburger + search) ──────────────
   const filteredGroups = useMemo<ScriptGroup[]>(() => {
     const q = query.trim()
     if (!q) return groups
@@ -201,16 +210,12 @@ export function AssistantChatPanel({
       .filter((g) => g.scripts.length > 0)
   }, [groups, query])
 
-  // Page context: sections relevant to the current screen + Гри's tip.
   const relevantSections = currentScreen ? SCREEN_PANEL_SECTIONS[currentScreen] ?? null : null
   const pageTip = currentScreen ? SCREEN_TIPS[currentScreen] ?? null : null
 
-  // What actually renders: a live search always looks through EVERYTHING;
-  // otherwise page mode shows the relevant sections first (rest via hamburger).
   const displayGroups = useMemo<ScriptGroup[]>(() => {
     if (query.trim() || showAll || !relevantSections) return filteredGroups
     const relevant = filteredGroups.filter((g) => relevantSections.includes(g.section))
-    // Keep the screen's own order (e.g. GRI before Point A on /gri).
     relevant.sort(
       (a, b) => relevantSections.indexOf(a.section) - relevantSections.indexOf(b.section),
     )
@@ -219,7 +224,6 @@ export function AssistantChatPanel({
 
   const pageMode = !!relevantSections && !showAll && !query.trim()
 
-  // A new screen starts in page mode again.
   useEffect(() => {
     setShowAll(false)
   }, [currentScreen])
@@ -243,6 +247,15 @@ export function AssistantChatPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
 
+  // Гри greets once per mounted session when the thread is empty.
+  useEffect(() => {
+    if (open && !welcomedRef.current && messages.length === 0) {
+      welcomedRef.current = true
+      setMessages([{ id: nextId(), role: 'gree', text: t.welcome, kind: 'free' }])
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open])
+
   // Close on Escape.
   useEffect(() => {
     if (!open) return
@@ -253,109 +266,172 @@ export function AssistantChatPanel({
     return () => window.removeEventListener('keydown', onKey)
   }, [open, onClose])
 
-  // Keep the pinned card in view whenever a new answer starts/arrives.
-  const scrollToTop = useCallback(() => {
-    bodyRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
+  // Keep the thread pinned to the newest message.
+  useEffect(() => {
+    threadEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
+  }, [messages, busy])
+
+  const push = useCallback((msg: Omit<ChatMsg, 'id'>) => {
+    setMessages((prev) => [...prev, { ...msg, id: nextId() }])
   }, [])
 
-  const ask = async (item: ScriptItem) => {
-    setActiveId(item.id)
-    setPinned(null)
-    setAnswerError(null)
-    setAnswerLoading(true)
-    scrollToTop()
-    try {
-      const res = await fetch('/api/v1/assistant/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ scriptId: item.id }),
-      })
-      const json = (await res.json()) as { ok: boolean; error?: string } & Partial<ChatAnswer>
-      if (res.ok && json.ok && typeof json.answer_ru === 'string') {
-        setPinned({
-          kind: 'script',
-          question: item.question,
-          answer: {
-            answer_ru: json.answer_ru,
-            used_data: json.used_data ?? '',
-            section: json.section ?? item.section,
-            insufficient: Boolean(json.insufficient),
-          },
-        })
-      } else {
-        setAnswerError(json.error || t.answerFailed)
-      }
-    } catch {
-      setAnswerError(t.networkError)
-    } finally {
-      setAnswerLoading(false)
-    }
-  }
+  /** Last turns of the thread → the /converse history payload. */
+  const historyPayload = useCallback(() => {
+    return messages
+      .filter((m) => (m.role === 'user' || m.role === 'gree') && m.kind !== 'insight')
+      .slice(-8)
+      .map((m) => ({
+        role: m.role === 'user' ? ('user' as const) : ('assistant' as const),
+        content: m.text.slice(0, 600),
+      }))
+  }, [messages])
 
-  // Free-text question → POST /api/v1/assistant/ask. The answer (or the
-  // expert-handoff state) lands in the PINNED card; on escalation a toast also
-  // confirms it. The server creates the ExpertCase when it escalates.
-  const askFree = async () => {
-    const q = freeQuestion.trim()
-    if (!q || asking) return
-    setActiveId(null)
-    setPinned(null)
-    setAnswerError(null)
-    setAnswerLoading(true)
-    setAsking(true)
-    scrollToTop()
+  // ── Actions ─────────────────────────────────────────────────────────────────
+
+  const askGree = useCallback(async () => {
+    const q = input.trim()
+    if (!q || busy) return
+    setInput('')
+    const history = historyPayload()
+    push({ role: 'user', text: q, kind: 'free' })
+    setBusy('ask')
     try {
-      const res = await fetch('/api/v1/assistant/ask', {
+      const res = await fetch('/api/v1/assistant/converse', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ question: q }),
+        body: JSON.stringify({ message: q, history, screen: currentScreen }),
       })
       const json = (await res.json()) as {
         ok: boolean
-        escalated?: boolean
         answer?: string | null
+        needs_expert?: boolean
+        on_topic?: boolean
         error?: string
       }
       if (res.ok && json.ok) {
-        if (json.escalated) {
-          setPinned({ kind: 'expert', question: q, answer: json.answer ?? null })
-          toast.success(t.expertHandoff)
+        if (json.answer) {
+          push({
+            role: 'gree',
+            text: json.answer,
+            kind: 'free',
+            needsExpert: !!json.needs_expert,
+            offTopic: json.on_topic === false,
+          })
         } else {
-          setPinned({ kind: 'free', question: q, answer: json.answer ?? '' })
+          push({ role: 'gree', text: t.insufficient, kind: 'free', needsExpert: true })
         }
-        setFreeQuestion('')
       } else {
-        setAnswerError(json.error || t.answerFailed)
+        push({ role: 'system', text: json.error === 'rate_limited' ? '⏳ ' + t.answerFailed : t.answerFailed })
       }
     } catch {
-      setAnswerError(t.networkError)
+      push({ role: 'system', text: t.networkError })
     } finally {
-      setAnswerLoading(false)
-      setAsking(false)
+      setBusy(null)
     }
-  }
+  }, [input, busy, historyPayload, push, currentScreen, t])
 
-  const callExpert = async () => {
-    setEscalating(true)
-    setEscalateError(null)
+  const askScript = useCallback(
+    async (item: ScriptItem) => {
+      if (busy) return
+      push({ role: 'user', text: item.question, kind: 'script' })
+      setBusy('script')
+      setQuickOpen(false)
+      try {
+        const res = await fetch('/api/v1/assistant/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ scriptId: item.id }),
+        })
+        const json = (await res.json()) as {
+          ok: boolean
+          answer_ru?: string
+          used_data?: string
+          insufficient?: boolean
+          error?: string
+        }
+        if (res.ok && json.ok && typeof json.answer_ru === 'string') {
+          push({
+            role: 'gree',
+            text: json.answer_ru,
+            kind: 'script',
+            insufficient: !!json.insufficient,
+            usedData: json.used_data || undefined,
+          })
+        } else {
+          push({ role: 'system', text: json.error || t.answerFailed })
+        }
+      } catch {
+        push({ role: 'system', text: t.networkError })
+      } finally {
+        setBusy(null)
+      }
+    },
+    [busy, push, t],
+  )
+
+  const askInsight = useCallback(async () => {
+    if (busy) return
+    setBusy('insight')
     try {
-      const res = await fetch('/api/v1/assistant/escalate', {
+      const res = await fetch('/api/v1/assistant/insight', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ trigger_type: 'user_requested_help' }),
+        body: JSON.stringify({ screen: currentScreen ?? 'chat' }),
       })
-      const json = (await res.json()) as { ok: boolean; error?: string }
-      if (res.ok && json.ok) setEscalated(true)
-      else setEscalateError(json.error || t.escalateFailed)
+      const json = (await res.json()) as { ok: boolean; insight?: string | null }
+      push({
+        role: 'gree',
+        text: json.ok && json.insight ? json.insight : t.insightFail,
+        kind: 'insight',
+      })
     } catch {
-      setEscalateError(t.networkError)
+      push({ role: 'system', text: t.networkError })
     } finally {
-      setEscalating(false)
+      setBusy(null)
     }
-  }
+  }, [busy, push, currentScreen, t])
+
+  const callExpert = useCallback(
+    async (question?: string) => {
+      if (busy) return
+      const userMessage =
+        question ??
+        input.trim() ??
+        undefined
+      setBusy('expert')
+      try {
+        const res = await fetch('/api/v1/assistant/escalate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            trigger_type: 'user_requested_help',
+            ...(userMessage ? { userMessage } : {}),
+          }),
+        })
+        const json = (await res.json()) as { ok: boolean; error?: string }
+        if (res.ok && json.ok) {
+          push({ role: 'system', text: t.expertRouted })
+          toast.success(t.escalated)
+          if (!question) setInput('')
+        } else {
+          push({ role: 'system', text: json.error || t.escalateFailed })
+        }
+      } catch {
+        push({ role: 'system', text: t.networkError })
+      } finally {
+        setBusy(null)
+      }
+    },
+    [busy, input, push, t],
+  )
+
+  // ── Render ──────────────────────────────────────────────────────────────────
+
+  const quickCount = displayGroups.reduce((n, g) => n + g.scripts.length, 0)
 
   return (
     <>
@@ -380,8 +456,8 @@ export function AssistantChatPanel({
         {/* Header */}
         <header className="flex items-center justify-between px-5 py-4 border-b border-white/[0.06] flex-shrink-0">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-primary/10 flex items-center justify-center">
-              <span className="material-symbols-outlined text-base text-primary">assistant</span>
+            <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center overflow-hidden">
+              <MascotAvatar pose="idle" size={30} headOnly paused />
             </div>
             <div>
               <h2 className="text-sm font-bold text-on-surface">{t.title}</h2>
@@ -391,10 +467,12 @@ export function AssistantChatPanel({
             </div>
           </div>
           <div className="flex items-center gap-1">
-            {/* Hamburger: full catalog ↔ page-only questions. */}
             {relevantSections && (
               <button
-                onClick={() => setShowAll((v) => !v)}
+                onClick={() => {
+                  setShowAll((v) => !v)
+                  setQuickOpen(true)
+                }}
                 aria-pressed={showAll}
                 aria-label={showAll ? t.showPageOnly : t.showAll}
                 title={showAll ? t.showPageOnly : t.showAll}
@@ -418,81 +496,9 @@ export function AssistantChatPanel({
         </header>
 
         {/* Body */}
-        <div ref={bodyRef} className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
-          {/* PINNED answer — stays at the top while the list below scrolls (ask #1). */}
-          {(answerLoading || pinned || answerError) && (
-            <div className="sticky top-0 z-10 -mx-5 px-5 pt-0.5 pb-3 bg-[#0c0e14]">
-              <div className="rounded-2xl border border-primary/15 bg-primary/[0.04] p-4 shadow-lg shadow-black/20">
-                {answerLoading ? (
-                  <div className="space-y-2">
-                    <div className="h-2.5 bg-white/[0.06] rounded-full animate-pulse" />
-                    <div className="h-2.5 bg-white/[0.05] rounded-full animate-pulse w-3/4" />
-                    <div className="h-2.5 bg-white/[0.05] rounded-full animate-pulse w-1/2" />
-                  </div>
-                ) : answerError ? (
-                  <p className="flex items-start gap-2 text-xs text-error">
-                    <span className="material-symbols-outlined text-sm mt-0.5">error</span>
-                    {answerError}
-                  </p>
-                ) : pinned ? (
-                  <>
-                    {/* Echo the question being answered. */}
-                    <p className="flex items-start gap-1.5 mb-2.5 text-[11px] font-mono text-on-surface-variant uppercase tracking-widest">
-                      <span className="material-symbols-outlined text-xs mt-px text-primary/70">
-                        {pinned.kind === 'expert' ? 'support_agent' : 'help'}
-                      </span>
-                      <span className="normal-case tracking-normal text-[12px] text-on-surface/80 break-words">
-                        {pinned.question}
-                      </span>
-                    </p>
-
-                    {pinned.kind === 'script' ? (
-                      <>
-                        {pinned.answer.insufficient && (
-                          <div className="flex items-start gap-2 mb-3 rounded-lg border border-amber-400/20 bg-amber-400/10 px-3 py-2">
-                            <span className="material-symbols-outlined text-sm text-amber-400 mt-0.5 flex-shrink-0">
-                              info
-                            </span>
-                            <p className="text-[11px] text-amber-300 leading-snug">{t.insufficient}</p>
-                          </div>
-                        )}
-                        <p className="text-sm text-on-surface leading-relaxed whitespace-pre-line">
-                          {pinned.answer.answer_ru}
-                        </p>
-                        {pinned.answer.used_data && (
-                          <p className="mt-3 pt-3 border-t border-white/[0.06] text-[10px] font-mono text-on-surface-variant">
-                            {t.source}: {pinned.answer.used_data}
-                          </p>
-                        )}
-                      </>
-                    ) : pinned.kind === 'free' ? (
-                      <p className="text-sm text-on-surface leading-relaxed whitespace-pre-line">
-                        {pinned.answer}
-                      </p>
-                    ) : (
-                      // Expert handoff — the AI couldn't answer; case created server-side.
-                      <>
-                        <div className="flex items-start gap-2 rounded-lg border border-primary/25 bg-primary/10 px-3 py-2.5">
-                          <span className="material-symbols-outlined text-base text-primary mt-0.5 flex-shrink-0">
-                            mark_email_read
-                          </span>
-                          <p className="text-sm text-primary leading-snug">{t.expertHandoff}</p>
-                        </div>
-                        {pinned.answer && (
-                          <p className="mt-3 text-sm text-on-surface-variant leading-relaxed whitespace-pre-line">
-                            {pinned.answer}
-                          </p>
-                        )}
-                      </>
-                    )}
-                  </>
-                ) : null}
-              </div>
-            </div>
-          )}
-
-          {/* Гри's page tip — a short, static piece of advice for this screen. */}
-          {pageTip && !pinned && !answerLoading && (
+        <div ref={bodyRef} className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+          {/* Гри's page tip — visible while the thread is fresh. */}
+          {pageTip && messages.length <= 1 && (
             <div className="flex items-start gap-2.5 rounded-2xl border border-primary/15 bg-primary/[0.05] px-3.5 py-3">
               <span className="material-symbols-outlined text-base text-primary mt-0.5 flex-shrink-0">
                 pets
@@ -506,152 +512,237 @@ export function AssistantChatPanel({
             </div>
           )}
 
-          {/* Search filter over the prepared questions (ask #2). */}
-          {!loadingScripts && groups.length > 0 && (
-            <div className="relative">
-              <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-base text-on-surface-variant pointer-events-none">
-                search
+          {/* Quick questions — collapsible, page-scoped, searchable. */}
+          <div className="rounded-2xl border border-white/[0.06] bg-surface-container-low/60">
+            <button
+              onClick={() => setQuickOpen((v) => !v)}
+              aria-expanded={quickOpen}
+              className="w-full flex items-center justify-between px-3.5 py-2.5 text-left"
+            >
+              <span className="flex items-center gap-2 text-xs font-semibold text-on-surface">
+                <span className="material-symbols-outlined text-base text-primary">bolt</span>
+                {t.quickQuestions}
+                {quickCount > 0 && (
+                  <span className="text-[10px] font-mono text-on-surface-variant">{quickCount}</span>
+                )}
               </span>
-              <input
-                type="text"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder={t.searchPlaceholder}
-                aria-label={t.searchPlaceholder}
-                className="w-full rounded-xl border border-white/[0.08] bg-surface-container-low pl-9 pr-9 py-2.5 text-sm text-on-surface placeholder:text-on-surface-variant focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary/30 transition-all"
-              />
-              {query && (
-                <button
-                  onClick={() => setQuery('')}
-                  aria-label={t.close}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 w-6 h-6 rounded-lg flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:bg-white/[0.06] transition-all"
-                >
-                  <span className="material-symbols-outlined text-base">close</span>
-                </button>
-              )}
-            </div>
-          )}
+              <span className="material-symbols-outlined text-base text-on-surface-variant">
+                {quickOpen ? 'expand_less' : 'expand_more'}
+              </span>
+            </button>
 
-          {/* Script catalog */}
-          {loadingScripts ? (
-            <div className="space-y-2">
-              {[0, 1, 2, 3].map((i) => (
-                <div key={i} className="h-10 bg-white/[0.04] rounded-xl animate-pulse" />
-              ))}
-            </div>
-          ) : groups.length === 0 ? (
-            <p className="text-xs text-on-surface-variant text-center py-8">{t.noScripts}</p>
-          ) : displayGroups.length === 0 ? (
-            <p className="text-xs text-on-surface-variant text-center py-8">{t.noMatches}</p>
-          ) : (
-            displayGroups.map((group) => (
-              <div key={group.section}>
-                <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest mb-2">
-                  {sectionLabel(group.section)}
-                </p>
-                <div className="space-y-1.5">
-                  {group.scripts.map((item) => {
-                    const isActive = item.id === activeId
-                    return (
+            {quickOpen && (
+              <div className="px-3.5 pb-3.5 space-y-3">
+                {!loadingScripts && groups.length > 0 && (
+                  <div className="relative">
+                    <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-base text-on-surface-variant pointer-events-none">
+                      search
+                    </span>
+                    <input
+                      type="text"
+                      value={query}
+                      onChange={(e) => setQuery(e.target.value)}
+                      placeholder={t.searchPlaceholder}
+                      aria-label={t.searchPlaceholder}
+                      className="w-full rounded-xl border border-white/[0.08] bg-surface-container-low pl-9 pr-9 py-2 text-sm text-on-surface placeholder:text-on-surface-variant focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary/30 transition-all"
+                    />
+                    {query && (
                       <button
-                        key={item.id}
-                        onClick={() => ask(item)}
-                        className={`w-full text-left flex items-start gap-2 rounded-xl border px-3 py-2.5 transition-all ${
-                          isActive
-                            ? 'border-primary/30 bg-primary/10'
-                            : 'border-white/[0.06] bg-surface-container-low hover:border-primary/20 hover:bg-white/[0.03]'
-                        }`}
+                        onClick={() => setQuery('')}
+                        aria-label={t.close}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 w-6 h-6 rounded-lg flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:bg-white/[0.06] transition-all"
                       >
-                        <span
-                          className={`material-symbols-outlined text-sm mt-0.5 flex-shrink-0 ${
-                            isActive ? 'text-primary' : 'text-on-surface-variant'
-                          }`}
-                        >
-                          help
-                        </span>
-                        <div className="min-w-0">
-                          <p className={`text-xs leading-snug ${isActive ? 'text-primary' : 'text-on-surface'}`}>
-                            {item.question}
-                          </p>
-                          {item.valueLine && (
-                            <p className="text-[10px] text-on-surface-variant mt-0.5">{item.valueLine}</p>
-                          )}
-                        </div>
+                        <span className="material-symbols-outlined text-base">close</span>
                       </button>
-                    )
-                  })}
+                    )}
+                  </div>
+                )}
+
+                {loadingScripts ? (
+                  <div className="space-y-2">
+                    {[0, 1, 2].map((i) => (
+                      <div key={i} className="h-9 bg-white/[0.04] rounded-xl animate-pulse" />
+                    ))}
+                  </div>
+                ) : groups.length === 0 ? (
+                  <p className="text-xs text-on-surface-variant text-center py-4">{t.noScripts}</p>
+                ) : displayGroups.length === 0 ? (
+                  <p className="text-xs text-on-surface-variant text-center py-4">{t.noMatches}</p>
+                ) : (
+                  displayGroups.map((group) => (
+                    <div key={group.section}>
+                      <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest mb-1.5">
+                        {sectionLabel(group.section)}
+                      </p>
+                      <div className="space-y-1.5">
+                        {group.scripts.map((item) => (
+                          <button
+                            key={item.id}
+                            onClick={() => askScript(item)}
+                            disabled={!!busy}
+                            className="w-full text-left flex items-start gap-2 rounded-xl border px-3 py-2 transition-all border-white/[0.06] bg-surface-container-low hover:border-primary/20 hover:bg-white/[0.03] disabled:opacity-50"
+                          >
+                            <span className="material-symbols-outlined text-sm mt-0.5 flex-shrink-0 text-on-surface-variant">
+                              help
+                            </span>
+                            <span className="text-xs leading-snug text-on-surface">{item.question}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ))
+                )}
+
+                {pageMode && !loadingScripts && filteredGroups.length > displayGroups.length && (
+                  <button
+                    onClick={() => setShowAll(true)}
+                    className="w-full flex items-center justify-center gap-2 rounded-xl border border-white/[0.06] px-3 py-2 text-xs text-on-surface-variant hover:text-on-surface hover:border-primary/20 hover:bg-white/[0.03] transition-all"
+                  >
+                    <span className="material-symbols-outlined text-base">menu</span>
+                    {t.showAll}
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Thread */}
+          <div className="space-y-3" aria-live="polite">
+            {messages.map((m) =>
+              m.role === 'system' ? (
+                <p key={m.id} className="text-center text-[11px] text-on-surface-variant px-4">
+                  {m.text}
+                </p>
+              ) : m.role === 'user' ? (
+                <div key={m.id} className="flex justify-end">
+                  <div className="max-w-[85%] rounded-2xl rounded-br-md border border-primary/25 bg-primary/10 px-3.5 py-2.5">
+                    <p className="text-sm text-on-surface leading-relaxed whitespace-pre-line">{m.text}</p>
+                  </div>
+                </div>
+              ) : (
+                <div key={m.id} className="flex items-end gap-2">
+                  <div className="w-7 h-7 rounded-full bg-surface-container-high flex-shrink-0 flex items-center justify-center overflow-hidden">
+                    <MascotAvatar pose="idle" size={22} headOnly paused />
+                  </div>
+                  <div className="max-w-[85%] rounded-2xl rounded-bl-md border border-white/[0.08] bg-surface-container-low px-3.5 py-2.5">
+                    {m.kind === 'insight' && (
+                      <p className="flex items-center gap-1 text-[10px] font-mono text-primary/80 uppercase tracking-widest mb-1">
+                        <span className="material-symbols-outlined text-xs">tips_and_updates</span>
+                        {t.insightLabel}
+                      </p>
+                    )}
+                    {m.insufficient && (
+                      <p className="flex items-start gap-1.5 mb-2 text-[11px] text-amber-300 leading-snug">
+                        <span className="material-symbols-outlined text-sm mt-px flex-shrink-0">info</span>
+                        {t.insufficient}
+                      </p>
+                    )}
+                    <p className="text-sm text-on-surface leading-relaxed whitespace-pre-line">{m.text}</p>
+                    {m.usedData && (
+                      <p className="mt-2 pt-2 border-t border-white/[0.06] text-[10px] font-mono text-on-surface-variant">
+                        {t.source}: {m.usedData}
+                      </p>
+                    )}
+                    {m.needsExpert && (
+                      <button
+                        onClick={() => {
+                          const lastUser = [...messages].reverse().find((x) => x.role === 'user')
+                          void callExpert(lastUser?.text)
+                        }}
+                        className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/[0.06] px-2.5 py-1.5 text-[11px] font-semibold text-primary hover:bg-primary/[0.12] transition-colors"
+                      >
+                        <span className="material-symbols-outlined text-sm">support_agent</span>
+                        {t.askExpertWith}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ),
+            )}
+
+            {/* Typing indicator */}
+            {busy && busy !== 'expert' && (
+              <div className="flex items-end gap-2">
+                <div className="w-7 h-7 rounded-full bg-surface-container-high flex-shrink-0 flex items-center justify-center overflow-hidden">
+                  <MascotAvatar pose="loading" size={22} headOnly paused />
+                </div>
+                <div className="rounded-2xl rounded-bl-md border border-white/[0.08] bg-surface-container-low px-3.5 py-2.5">
+                  <span className="text-xs text-on-surface-variant inline-flex items-center gap-1.5">
+                    {t.typing}
+                    <span className="inline-flex gap-0.5">
+                      {[0, 1, 2].map((i) => (
+                        <span
+                          key={i}
+                          className="w-1 h-1 rounded-full bg-primary/70 animate-bounce"
+                          style={{ animationDelay: `${i * 150}ms` }}
+                        />
+                      ))}
+                    </span>
+                  </span>
                 </div>
               </div>
-            ))
-          )}
-
-          {/* Page mode: the rest of the catalog is one tap away. */}
-          {pageMode && !loadingScripts && filteredGroups.length > displayGroups.length && (
-            <button
-              onClick={() => setShowAll(true)}
-              className="w-full flex items-center justify-center gap-2 rounded-xl border border-white/[0.06] px-3 py-2.5 text-xs text-on-surface-variant hover:text-on-surface hover:border-primary/20 hover:bg-white/[0.03] transition-all"
-            >
-              <span className="material-symbols-outlined text-base">menu</span>
-              {t.showAll}
-            </button>
-          )}
+            )}
+            <div ref={threadEndRef} />
+          </div>
         </div>
 
-        {/* Footer — free-text question + call an expert */}
-        <footer className="px-5 py-4 border-t border-white/[0.06] flex-shrink-0 space-y-3">
-          {/* Free-text question (ask #4 / #5). Enter sends; Shift+Enter = newline. */}
+        {/* Footer — the universal input + three actions. */}
+        <footer className="px-5 py-4 border-t border-white/[0.06] flex-shrink-0 space-y-2.5">
           <div className="rounded-2xl border border-white/[0.08] bg-surface-container-low focus-within:border-primary/30 focus-within:ring-2 focus-within:ring-primary/20 transition-all">
             <textarea
-              value={freeQuestion}
-              onChange={(e) => setFreeQuestion(e.target.value)}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault()
-                  askFree()
+                  void askGree()
                 }
               }}
               rows={2}
               maxLength={1000}
-              disabled={asking}
+              disabled={busy === 'ask'}
               placeholder={t.askPlaceholder}
               aria-label={t.askPlaceholder}
               className="w-full resize-none bg-transparent px-3.5 pt-3 pb-1.5 text-sm text-on-surface placeholder:text-on-surface-variant focus:outline-none disabled:opacity-60"
             />
-            <div className="flex items-center justify-end px-2.5 pb-2.5">
-              <button
-                onClick={askFree}
-                disabled={asking || !freeQuestion.trim()}
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-primary text-[#003824] font-semibold text-sm hover:bg-primary/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-primary/40"
-              >
-                <span className={`material-symbols-outlined text-base ${asking ? 'animate-spin' : ''}`}>
-                  {asking ? 'progress_activity' : 'send'}
-                </span>
-                {asking ? t.asking : t.askButton}
-              </button>
-            </div>
           </div>
 
-          {escalated ? (
-            <div className="flex items-center gap-2 text-sm text-primary bg-primary/10 border border-primary/25 rounded-xl px-4 py-2.5">
-              <span className="material-symbols-outlined text-base">mark_email_read</span>
-              {t.escalated}
-            </div>
-          ) : (
+          <div className="flex items-center gap-2">
             <button
-              onClick={callExpert}
-              disabled={escalating}
-              className="w-full inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl border border-primary/30 bg-primary/[0.06] text-primary font-semibold text-sm hover:bg-primary/[0.12] transition-colors disabled:opacity-60"
+              onClick={() => void askGree()}
+              disabled={!!busy || !input.trim()}
+              className="flex-1 inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-primary text-[#003824] font-semibold text-sm hover:bg-primary/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-primary/40"
             >
-              <span className={`material-symbols-outlined text-base ${escalating ? 'animate-spin' : ''}`}>
-                {escalating ? 'progress_activity' : 'support_agent'}
+              <span className={`material-symbols-outlined text-base ${busy === 'ask' ? 'animate-spin' : ''}`}>
+                {busy === 'ask' ? 'progress_activity' : 'send'}
               </span>
-              {escalating ? t.sending : t.callExpert}
+              {busy === 'ask' ? t.asking : t.askButton}
             </button>
-          )}
-          {escalateError && <p className="text-xs text-error text-center">{escalateError}</p>}
-          <p className="text-[10px] text-on-surface-variant/60 text-center">
-            {t.disclaimer}
-          </p>
+            <button
+              onClick={() => void askInsight()}
+              disabled={!!busy}
+              title={t.insightLabel}
+              className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl border border-primary/30 bg-primary/[0.06] text-primary font-semibold text-xs hover:bg-primary/[0.12] transition-colors disabled:opacity-50"
+            >
+              <span className={`material-symbols-outlined text-base ${busy === 'insight' ? 'animate-spin' : ''}`}>
+                {busy === 'insight' ? 'progress_activity' : 'tips_and_updates'}
+              </span>
+              {t.insightBtn}
+            </button>
+            <button
+              onClick={() => void callExpert()}
+              disabled={!!busy}
+              title={t.escalated}
+              className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl border border-white/[0.1] text-on-surface-variant font-semibold text-xs hover:text-on-surface hover:border-primary/25 hover:bg-white/[0.03] transition-colors disabled:opacity-50"
+            >
+              <span className={`material-symbols-outlined text-base ${busy === 'expert' ? 'animate-spin' : ''}`}>
+                {busy === 'expert' ? 'progress_activity' : 'support_agent'}
+              </span>
+              {t.callExpert}
+            </button>
+          </div>
+
+          <p className="text-[10px] text-on-surface-variant/60 text-center">{t.disclaimer}</p>
         </footer>
       </aside>
     </>
@@ -659,8 +750,8 @@ export function AssistantChatPanel({
 }
 
 /**
- * Floating dock button + panel state. Drop this anywhere (e.g. in the client
- * landing page) to get a fixed launcher in the corner that opens the panel.
+ * Floating dock button + panel state. Kept as the feature-flag/error fallback
+ * for the mascot (MascotLauncher) — same panel, no page context.
  */
 export function AssistantChatLauncher() {
   const [open, setOpen] = useState(false)

@@ -62,6 +62,13 @@ describe('resolveHint / catalog', () => {
     expect(localCandidate('nope')).toBeNull()
   })
 
+  it('welcome_back is a greeting-pose bubble with an open-chat action', () => {
+    const wb = resolveHint(localCandidate('welcome_back')!)
+    expect(wb?.state).toBe('greeting')
+    expect(wb?.text).toContain('С возвращением')
+    expect(wb?.actions.some((a) => a.kind === 'open_chat')).toBe(true)
+  })
+
   it('ai_insight renders the prepared text and never crashes without it', () => {
     const withText = resolveHint({
       id: 'ai_insight',

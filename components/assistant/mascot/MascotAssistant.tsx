@@ -133,6 +133,9 @@ export default function MascotAssistant() {
   const [controlsOpen, setControlsOpen] = useState(false)
   const [scrolling, setScrolling] = useState(false)
   const [tabHidden, setTabHidden] = useState(false)
+  const [hoverWave, setHoverWave] = useState(false)
+  const lastWaveRef = useRef(0)
+  const waveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const screenRef = useRef(screen)
   const scrollTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -207,6 +210,23 @@ export default function MascotAssistant() {
       if (document.visibilityState === 'hidden') return
       if (isTypingTarget(document.activeElement)) return
       if (foreignDialogOpen()) return
+
+      // Возвращение в портал: короткая волна-приветствие раз за браузер-сессию
+      // (сессионный ритуал — уважает жёсткие блоки выше, минует cooldown-движок).
+      if (
+        s.settings.greeted &&
+        typeof window !== 'undefined' &&
+        !window.sessionStorage.getItem('aistart_gree_welcomed')
+      ) {
+        window.sessionStorage.setItem('aistart_gree_welcomed', '1')
+        const wb = localCandidate('welcome_back')
+        const r = wb ? resolveHint(wb) : null
+        if (r) {
+          s.showHint(r, screen, Date.now())
+          trackMascotEvent('hint_shown', { screen, refId: 'welcome_back' })
+          return
+        }
+      }
 
       // Спит — будим только ради важного (ошибки/незавершённое/следующий шаг);
       // мотивационные и обучающие пузыри сон не прерывают.
@@ -526,6 +546,37 @@ export default function MascotAssistant() {
     void requestInsight(true)
   }, [requestInsight])
 
+  /** Наведение: стоп на месте + короткое махание лапой (не чаще раза в 30 с). */
+  const onAvatarEnter = useCallback(() => {
+    behavior.setHold(true)
+    const s = useMascotStore.getState()
+    const now = Date.now()
+    if (
+      !s.activeHint &&
+      !s.chatOpen &&
+      s.state === 'idle' &&
+      behavior.visual !== 'sleep' &&
+      !reducedMotion &&
+      now - lastWaveRef.current > 30_000
+    ) {
+      lastWaveRef.current = now
+      setHoverWave(true)
+      if (waveTimer.current) clearTimeout(waveTimer.current)
+      waveTimer.current = setTimeout(() => setHoverWave(false), 1_800)
+    }
+  }, [behavior, reducedMotion])
+
+  const onAvatarLeave = useCallback(() => {
+    behavior.setHold(false)
+  }, [behavior])
+
+  useEffect(
+    () => () => {
+      if (waveTimer.current) clearTimeout(waveTimer.current)
+    },
+    [],
+  )
+
   const onHide = useCallback(
     (period: HidePeriod) => {
       setControlsOpen(false)
@@ -553,7 +604,7 @@ export default function MascotAssistant() {
   if (hiddenNow) return null
 
   const pendingBadge = !!context && context.hints.length > 0
-  const avatarPose = chatOpen ? 'idle' : state
+  const avatarPose = chatOpen ? 'idle' : hoverWave && state === 'idle' ? 'greeting' : state
   const paused = tabHidden || scrolling
 
   return (
@@ -621,10 +672,10 @@ export default function MascotAssistant() {
       ) : (
         <div
           className="relative group"
-          // Наведение = «стой, я к тебе»: кот мягко останавливается и ждёт,
-          // чтобы по нему можно было попасть кликом (ТЗ v1.1).
-          onPointerEnter={() => behavior.setHold(true)}
-          onPointerLeave={() => behavior.setHold(false)}
+          // Наведение = «стой, я к тебе»: кот останавливается, машет лапой
+          // и ждёт клика (ТЗ v1.1/v1.2).
+          onPointerEnter={onAvatarEnter}
+          onPointerLeave={onAvatarLeave}
         >
           <button
             onClick={() => openChat('avatar')}

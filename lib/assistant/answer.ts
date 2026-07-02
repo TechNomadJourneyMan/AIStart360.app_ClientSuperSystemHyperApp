@@ -120,10 +120,11 @@ function qualitativeAnswers(answers: Record<string, unknown>, locale: Locale): s
 }
 
 /**
- * Build the user prompt from the curated snapshot ONLY + the user's question.
- * Every numeric slot is rendered via n()/list() so a null surfaces as '—'.
+ * Serialize the curated snapshot into the canonical prompt block. Exported so
+ * the multi-turn Гри chat (lib/assistant/gree-chat.ts) feeds the model the
+ * exact same whitelisted view of the data as single-shot answers do.
  */
-function buildUserPrompt(ctx: AssistantContext, question: string, locale: Locale): string {
+export function serializeSnapshot(ctx: AssistantContext, locale: Locale): string {
   const en = locale === 'en'
   const c = ctx.company
   const a = ctx.pointA
@@ -137,7 +138,7 @@ function buildUserPrompt(ctx: AssistantContext, question: string, locale: Locale
 
   const weakest = a.weakest_blocks.map((bl) => `${bl.label} ${n(bl.score)}`).join(', ') || '—'
 
-  const snapshot = `${en ? 'COMPANY DATA SNAPSHOT (curated — no other source).' : 'СНИМОК ДАННЫХ КОМПАНИИ (курированный — другого источника нет).'}
+  return `${en ? 'COMPANY DATA SNAPSHOT (curated — no other source).' : 'СНИМОК ДАННЫХ КОМПАНИИ (курированный — другого источника нет).'}
 
 --- ${en ? 'COMPANY' : 'КОМПАНИЯ'} ---
 ${en ? 'Name' : 'Название'}: ${c.name ?? '—'}
@@ -175,6 +176,15 @@ ${en ? 'Canonical revenue (₸)' : 'Каноническая выручка (₸
 
 --- ${en ? 'QUALITATIVE ANSWERS (from the survey)' : 'КАЧЕСТВЕННЫЕ ОТВЕТЫ (из анкеты)'} ---
 ${qualitativeAnswers(ctx.answers ?? {}, locale)}`
+}
+
+/**
+ * Build the user prompt from the curated snapshot ONLY + the user's question.
+ * Every numeric slot is rendered via n()/list() so a null surfaces as '—'.
+ */
+function buildUserPrompt(ctx: AssistantContext, question: string, locale: Locale): string {
+  const en = locale === 'en'
+  const snapshot = serializeSnapshot(ctx, locale)
 
   const task = en
     ? `--- USER QUESTION ---
