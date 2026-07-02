@@ -374,22 +374,30 @@ function Hero({ pointB }: { pointB: PointBV2 }) {
       </div>
 
       {/* Realism badge */}
-      <div className={`flex flex-wrap items-center gap-3 rounded-2xl border ${r.border} ${r.bg} px-4 py-3`}>
-        <span className={`material-symbols-outlined text-xl ${r.text}`} aria-hidden>
-          {r.icon}
-        </span>
-        <div>
-          <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest">
-            Реалистичность цели
-          </p>
-          <p className={`text-sm font-bold ${r.text}`}>{r.label}</p>
+      <div className={`rounded-2xl border ${r.border} ${r.bg} px-4 py-3`}>
+        <div className="flex flex-wrap items-center gap-3">
+          <span className={`material-symbols-outlined text-xl ${r.text}`} aria-hidden>
+            {r.icon}
+          </span>
+          <div>
+            <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest">
+              Реалистичность цели
+            </p>
+            <p className={`text-sm font-bold ${r.text}`}>{r.label}</p>
+          </div>
+          <div className="ml-auto text-right">
+            <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest">Оценка</p>
+            <p className={`text-lg font-mono font-bold ${r.text}`}>
+              {pointB.realism.level === 'unknown' ? DASH : `${pointB.realism.score}/100`}
+            </p>
+          </div>
         </div>
-        <div className="ml-auto text-right">
-          <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest">Оценка</p>
-          <p className={`text-lg font-mono font-bold ${r.text}`}>
-            {pointB.realism.level === 'unknown' ? DASH : `${pointB.realism.score}/100`}
+        {/* One-line "почему" — never show a bare verdict without the reason (DG-3) */}
+        {pointB.realism.headline && (
+          <p className="mt-2 pt-2 border-t border-white/[0.06] text-xs text-on-surface-variant leading-relaxed">
+            {pointB.realism.headline}
           </p>
-        </div>
+        )}
       </div>
     </motion.section>
   )

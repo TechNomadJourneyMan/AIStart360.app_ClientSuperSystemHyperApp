@@ -62,6 +62,7 @@ export interface Scenario {
 export interface Realism {
   score: number // 0-100 confidence in achievability
   level: 'realistic' | 'ambitious' | 'aggressive' | 'unrealistic' | 'unknown'
+  headline: string // one-line "why this verdict" for the user (DG-3)
   rationale: string[]
   risk_factors: string[]
   weak_blocks: string[]
@@ -365,6 +366,7 @@ export function assessRealism(
     return {
       score: 0,
       level: 'unknown',
+      headline: 'Недостаточно данных для оценки — укажите текущую выручку и цель.',
       rationale: ['Недостаточно данных для оценки реалистичности: нет текущей выручки или цели.'],
       risk_factors: [],
       weak_blocks,
@@ -396,8 +398,22 @@ export function assessRealism(
     risk_factors.push(`Блок «${BLOCK_LABELS[b] ?? b}» не выдержит рост без укрепления.`)
   }
 
+  // One-line "почему": verdict + the single biggest driver (growth multiple or
+  // CAGR) + the weakest block if any. Shown next to the score so the user never
+  // sees a bare "Нереалистично 15/100" without a reason. (DG-3)
+  const LEVEL_WORD: Record<RealLevel, string> = {
+    realistic: 'Реалистично', ambitious: 'Амбициозно', aggressive: 'Агрессивно', unrealistic: 'Нереалистично',
+  }
+  const mult = gap3y.multiplier != null && gap3y.multiplier > 0
+    ? `рост ×${gap3y.multiplier.toFixed(1)} за ${gap3y.months} мес (CAGR ~${cagr.toFixed(0)}%)`
+    : `среднегодовой рост ~${cagr.toFixed(0)}%`
+  const weakestLabel = weak_blocks.length > 0 ? (BLOCK_LABELS[weak_blocks[0]] ?? weak_blocks[0]) : null
+  const headline = weakestLabel
+    ? `${LEVEL_WORD[level]}: ${mult}, а блок «${weakestLabel}» пока слабый — сначала укрепите его.`
+    : `${LEVEL_WORD[level]}: ${mult}.`
+
   const score = Math.max(0, Math.min(100, LEVEL_SCORE[level] - 5 * weak_blocks.length))
-  return { score, level, rationale, risk_factors, weak_blocks }
+  return { score, level, headline, rationale, risk_factors, weak_blocks }
 }
 
 // ─── dataSufficiency ─────────────────────────────────────────────────────

@@ -145,9 +145,13 @@ function LossAversionBar({ sectionAvg }: { sectionAvg: number }) {
   )
 }
 
-const DEMO_DATA = GRI_SECTIONS.map((s) => ({
+// Illustrative-only radar for the pre-test landing (clearly labelled
+// "Пример профиля (иллюстрация)"). Varied per-section so it reads as a sample
+// shape, not a flat/real profile a client might mistake for their own score.
+const DEMO_SAMPLE_SCORES = [6.2, 4.1, 7.0, 3.4, 5.5, 4.8, 6.6]
+const DEMO_DATA = GRI_SECTIONS.map((s, i) => ({
   subject: s.shortTitle,
-  score: 4.9,
+  score: DEMO_SAMPLE_SCORES[i % DEMO_SAMPLE_SCORES.length],
   benchmark: 8,
 }))
 

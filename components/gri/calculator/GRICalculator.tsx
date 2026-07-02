@@ -810,15 +810,18 @@ export default function GRICalculator() {
   }, [activeScores, griScore, selectedNiche, selectedSize])
 
   const handlePublish = useCallback(() => {
-    const fakeUrl = `https://aistart360.app/preview/${Date.now().toString(36)}`
+    // Copy the REAL page URL — there is no server-side snapshot backend for the
+    // calculator, so we must not hand out a fabricated /preview/<id> link that
+    // 404s. A working link to this page is honest. (Audit TR-2, 2026-07-02.)
+    const realUrl = typeof window !== 'undefined' ? window.location.href : 'https://aistart360.app/gri'
     navigator.clipboard
-      .writeText(fakeUrl)
+      .writeText(realUrl)
       .then(() => {
         toast.success(t.publishLink)
         setPublishDialogOpen(false)
       })
-      .catch(() => toast.error("Failed to copy link"))
-  }, [t.publishLink])
+      .catch(() => toast.error(lang === 'ru' ? 'Не удалось скопировать ссылку' : 'Failed to copy link'))
+  }, [t.publishLink, lang])
 
   const openGRIHistory = useCallback(() => {
     try {

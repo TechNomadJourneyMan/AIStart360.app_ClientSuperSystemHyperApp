@@ -19,7 +19,7 @@ const KpiChart = dynamic(() => import('./KpiChart').then((m) => m.KpiChart), {
 })
 
 // ─── Types ──────────────────────────────────────────────────────
-type WidgetType = 'alerts' | 'activity' | 'gri' | 'metrics' | 'chart' | 'quick-links' | 'clients-stats'
+type WidgetType = 'alerts' | 'activity' | 'gri' | 'metrics' | 'chart' | 'quick-links'
 type GridSpan = 'full' | 'two-thirds' | 'third'
 
 interface WidgetInstance { id: string; type: WidgetType }
@@ -45,7 +45,6 @@ const CATALOG: Record<WidgetType, {
   metrics:       { label: 'Ключевые метрики',     description: 'Основные бизнес-показатели',     icon: 'monitoring',       span: 'third'      },
   chart:         { label: 'График динамики',      description: 'Интерактивный график метрик',    icon: 'show_chart',       span: 'two-thirds' },
   'quick-links': { label: 'Быстрый доступ',       description: 'Ссылки на разделы платформы',   icon: 'grid_view',        span: 'third'      },
-  'clients-stats':{ label: 'Статистика клиентов', description: 'Обзор клиентской базы',         icon: 'groups',           span: 'third'      },
 }
 
 const SPAN_CLASS: Record<GridSpan, string> = {
@@ -175,32 +174,6 @@ function QuickLinksWidget() {
   )
 }
 
-function ClientsStatsWidget({ data }: { data: WidgetData }) {
-  const stats = [
-    { label: 'Всего клиентов', value: data.activity.length > 0 ? '48' : '0', icon: 'groups', color: 'text-primary' },
-    { label: 'Активных',       value: '38', icon: 'check_circle', color: 'text-primary' },
-    { label: 'Под риском',     value: '6',  icon: 'warning',      color: 'text-error'   },
-    { label: 'Ср. GRI',        value: '7.6',icon: 'radar',        color: 'text-secondary'},
-  ]
-  return (
-    <Link href="/clients" className="block group">
-      <div className="flex items-center justify-between mb-3">
-        <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest">Клиенты</p>
-        <span className="material-symbols-outlined text-sm text-on-surface-variant/30 group-hover:text-primary/60 transition-colors">arrow_forward</span>
-      </div>
-      <div className="grid grid-cols-2 gap-2">
-        {stats.map(s => (
-          <div key={s.label} className="bg-surface-container-high rounded-xl p-3 border border-white/[0.03]">
-            <span className={`material-symbols-outlined text-sm ${s.color} opacity-60 mb-1 block`}>{s.icon}</span>
-            <p className={`text-xl font-mono font-bold ${s.color}`}>{s.value}</p>
-            <p className="text-[10px] text-on-surface-variant mt-0.5">{s.label}</p>
-          </div>
-        ))}
-      </div>
-    </Link>
-  )
-}
-
 function WidgetContent({ type, data }: { type: WidgetType; data: WidgetData }) {
   switch (type) {
     case 'alerts':        return <AlertsWidget data={data} />
@@ -209,7 +182,6 @@ function WidgetContent({ type, data }: { type: WidgetType; data: WidgetData }) {
     case 'metrics':       return <MetricsWidget data={data} />
     case 'chart':         return <ChartWidget />
     case 'quick-links':   return <QuickLinksWidget />
-    case 'clients-stats': return <ClientsStatsWidget data={data} />
     default:              return null
   }
 }
@@ -387,7 +359,12 @@ export function WidgetGrid({ alerts, activity, gri, metrics, criticalCount, user
       const saved = localStorage.getItem(storageKey)
       if (saved) {
         const parsed = JSON.parse(saved)
-        if (Array.isArray(parsed) && parsed.length > 0) setWidgets(parsed)
+        // Drop any stale/removed widget types (e.g. the retired fabricated
+        // 'clients-stats') so old saved layouts don't crash on CATALOG lookup.
+        const clean = Array.isArray(parsed)
+          ? parsed.filter((w) => w && typeof w.type === 'string' && w.type in CATALOG)
+          : []
+        if (clean.length > 0) setWidgets(clean)
       }
     } catch {}
   }, [storageKey])
