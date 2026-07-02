@@ -13,7 +13,6 @@ import { CrmActivity } from '@/components/dashboard/CrmActivity'
 import type { CrmRequest, CrmClient } from '@/components/dashboard/CrmActivity'
 import type { Alert } from '@/types'
 import type { AlertCardProps } from '@/components/dashboard/AlertCard'
-import { AIInsightsCarousel, type AIInsight } from '@/components/dashboard/AIInsightsCarousel'
 import { OnboardingStatusBadges } from '@/components/dashboard/OnboardingStatusBadges'
 import PointAIntelligenceSection from '@/components/point-a/PointAIntelligenceSection'
 import PointADashboardSectionsBoundary from '@/components/dashboard/PointADashboardSections'
@@ -222,33 +221,6 @@ function stageLabel(s: string) {
   return m[s] ?? s
 }
 
-// Combine insights / risks / quick-wins from the Point A engine into one
-// real-time stream for the right-rail carousel. Severity is derived from the
-// source: risks → warning/critical, quick_wins → positive, insights → neutral
-// (upgraded to positive when the text reads like good news).
-function buildLiveInsights(pointA: PointA): AIInsight[] {
-  const positiveRe = /(растёт|выросла?|рост|улучш|опереж|превыш|сильн)/i
-
-  const fromInsights: AIInsight[] = pointA.insights.map((i) => ({
-    area: i.area,
-    text: i.text,
-    severity: positiveRe.test(i.text) ? 'positive' : 'neutral',
-  }))
-
-  const fromRisks: AIInsight[] = pointA.risks.map((r) => ({
-    area: r.area,
-    text: r.text,
-    severity: r.level === 'critical' ? 'critical' : 'warning',
-  }))
-
-  const fromWins: AIInsight[] = pointA.quick_wins.map((w) => ({
-    area: w.area,
-    text: w.action,
-    severity: 'positive',
-  }))
-
-  return [...fromRisks, ...fromInsights, ...fromWins].slice(0, 8)
-}
 
 // ─── page ─────────────────────────────────────────────────────────────────────
 export default async function DashboardPage() {
