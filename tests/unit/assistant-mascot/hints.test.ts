@@ -9,8 +9,12 @@ import {
   normalizeScreen,
   resolveHint,
   screenAllowed,
+  SCREEN_PANEL_SECTIONS,
+  SCREEN_TIPS,
 } from '@/lib/assistant/mascot/hints'
 import { computeServerHints } from '@/lib/assistant/mascot/server-hints'
+import { normalizeMascotSettings } from '@/lib/assistant/mascot/settings-server'
+import { CHAT_SCRIPTS } from '@/lib/assistant/chat-scripts'
 import type { CompletionReport, SectionCompletion } from '@/lib/assistant/types'
 
 describe('normalizeScreen', () => {
@@ -58,12 +62,55 @@ describe('resolveHint / catalog', () => {
     expect(localCandidate('nope')).toBeNull()
   })
 
+  it('ai_insight renders the prepared text and never crashes without it', () => {
+    const withText = resolveHint({
+      id: 'ai_insight',
+      priority: 3,
+      params: { text: 'GRI 6.2 — начните с удержания команды.' },
+    })
+    expect(withText?.text).toBe('GRI 6.2 — начните с удержания команды.')
+    expect(withText?.actions.some((a) => a.kind === 'open_chat')).toBe(true)
+    const withoutText = resolveHint({ id: 'ai_insight', priority: 3 })
+    expect(withoutText?.text).toContain('чат')
+  })
+
   it('greeting is allowed anywhere; survey hints only on the survey', () => {
     const greeting = resolveHint(localCandidate('greeting')!)!
     expect(screenAllowed(greeting, '/anything')).toBe(true)
     const edu = resolveHint(localCandidate('complex_section')!)!
     expect(screenAllowed(edu, '/dashboard')).toBe(false)
     expect(screenAllowed(edu, '/client/onboarding')).toBe(true)
+  })
+})
+
+describe('panel page-context maps', () => {
+  it('every mapped panel section exists in CHAT_SCRIPTS (no drift)', () => {
+    const known = new Set(CHAT_SCRIPTS.map((s) => s.section))
+    for (const [screen, sections] of Object.entries(SCREEN_PANEL_SECTIONS)) {
+      for (const section of sections) {
+        expect(known.has(section), `${screen} → «${section}» отсутствует в CHAT_SCRIPTS`).toBe(true)
+      }
+    }
+  })
+
+  it('tips are short enough for the panel card', () => {
+    for (const tip of Object.values(SCREEN_TIPS)) {
+      expect(tip.length).toBeLessThanOrEqual(160)
+    }
+  })
+})
+
+describe('normalizeMascotSettings — behavior', () => {
+  it('defaults all behavior switches to on', () => {
+    const s = normalizeMascotSettings({})
+    expect(s.behavior).toEqual({ walking: true, sleep: true, aiInsights: true })
+  })
+
+  it('keeps explicit false values and drops junk', () => {
+    const s = normalizeMascotSettings({
+      behavior: { walking: false, sleep: 'нет', aiInsights: false, extra: 1 },
+    })
+    expect(s.behavior).toEqual({ walking: false, sleep: true, aiInsights: false })
   })
 })
 

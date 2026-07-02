@@ -25,6 +25,20 @@ export type HintFrequency = 'normal' | 'rare' | 'off'
 export type MascotCorner = 'br' | 'bl' | 'tr' | 'tl'
 export type HidePeriod = 'session' | '24h' | '7d' | 'forever'
 
+/** Idle-life visual overlays (ТЗ v1.1 «живой кот»): rendered by MascotAvatar
+ *  on top of the functional pose while the mascot has nothing to say. */
+export type MascotBehaviorVisual = 'walk' | 'sleep' | 'rub' | null
+
+/** Advanced behavior switches (Settings › Ассистент › Поведение). */
+export interface MascotBehaviorSettings {
+  /** Occasional strolls along the bottom edge (desktop only). */
+  walking: boolean
+  /** Falls asleep after ~2 min without user activity. */
+  sleep: boolean
+  /** AI-generated insights via OpenRouter (auto once per session + menu). */
+  aiInsights: boolean
+}
+
 export interface MascotSettings {
   /** Master switch; false = «скрыть навсегда» until re-enabled in settings. */
   mascotEnabled: boolean
@@ -37,6 +51,13 @@ export interface MascotSettings {
   dismissedHints: string[]
   /** One-time greeting shown (scenario 1) — never repeats once true. */
   greeted: boolean
+  behavior: MascotBehaviorSettings
+}
+
+export const DEFAULT_MASCOT_BEHAVIOR: MascotBehaviorSettings = {
+  walking: true,
+  sleep: true,
+  aiInsights: true,
 }
 
 export const DEFAULT_MASCOT_SETTINGS: MascotSettings = {
@@ -46,6 +67,7 @@ export const DEFAULT_MASCOT_SETTINGS: MascotSettings = {
   position: null,
   dismissedHints: [],
   greeted: false,
+  behavior: DEFAULT_MASCOT_BEHAVIOR,
 }
 
 /** True when the mascot must not render at all (master switch or timed hide). */

@@ -1,61 +1,87 @@
 'use client'
 
 /**
- * components/assistant/mascot/MascotAvatar.tsx — the cat «Гри» (SVG + Framer Motion).
+ * components/assistant/mascot/MascotAvatar.tsx — the cat «Гри» v2.
  *
- * A minimal dark-glassmorphism cat in brand colors: dark body, teal (#6effc0)
- * eyes/collar/tail tip. Poses are driven by the mascot finite state (ТЗ §4.2)
- * through variants on sub-groups (ears, head, paws, sparkle); the idle
- * breathing/blink loops pause under prefers-reduced-motion, when the tab is
- * hidden (`paused`) and in minimized/head-only mode.
+ * Cuter build (big eyes with double highlights, peach blush, heart nose,
+ * rounded ears, bell collar, toe-bean front paws) + an idle-life layer on top
+ * of the functional poses (ТЗ v1.1):
+ *
+ *   pose      — functional state (idle/greeting/hint/question/insight/loading/error)
+ *   behavior  — idle-life overlay while the mascot has nothing to say:
+ *               'walk' (leg cycle + bob), 'sleep' (closed eyes + Zzz),
+ *               'rub' (rocking against the screen edge + heart)
+ *
+ * A busy pose always wins over behavior. All loops stop under
+ * prefers-reduced-motion, `paused` (hidden tab / scrolling) and in head-only
+ * mode. Facing/flip while walking is the parent's job (scaleX on the wrapper).
  *
  * Pure presentational: no store access — MascotAssistant orchestrates.
  */
 
 import { motion, useReducedMotion } from 'framer-motion'
-import type { MascotState } from '@/lib/assistant/mascot/types'
+import type { MascotBehaviorVisual, MascotState } from '@/lib/assistant/mascot/types'
 
 const TEAL = '#6effc0'
 const TEAL_DIM = '#00e29e'
 const BODY = '#1a1e27'
 const BODY_DARK = '#12151c'
 const INK = '#0A0B0F'
+const BLUSH = '#ff9d8a'
 
 interface MascotAvatarProps {
   pose: MascotState
+  /** Idle-life overlay; ignored while a busy pose is active. */
+  behavior?: MascotBehaviorVisual
   /** Rendered box size in px. */
   size?: number
-  /** Freeze all loops (hidden tab, reduced motion is handled internally). */
+  /** Freeze all loops (hidden tab; reduced motion is handled internally). */
   paused?: boolean
   /** Head-only chip for the minimized state. */
   headOnly?: boolean
 }
 
-// Pose → sub-group variant names (framer propagates via the `animate` prop).
-function earVariant(pose: MascotState): string {
+const BUSY_POSES: MascotState[] = ['greeting', 'hint', 'question', 'insight', 'loading', 'error']
+
+function earVariant(pose: MascotState, sleeping: boolean): string {
+  if (sleeping) return 'sleepy'
   if (pose === 'insight' || pose === 'greeting') return 'perk'
   if (pose === 'error') return 'down'
   return 'rest'
 }
-function headVariant(pose: MascotState): string {
+function headVariant(pose: MascotState, sleeping: boolean): string {
+  if (sleeping) return 'sleepy'
   if (pose === 'question') return 'tiltRight'
   if (pose === 'loading') return 'tiltLeft'
   if (pose === 'error') return 'droop'
   return 'straight'
 }
 
-export function MascotAvatar({ pose, size = 84, paused = false, headOnly = false }: MascotAvatarProps) {
+export function MascotAvatar({
+  pose,
+  behavior = null,
+  size = 84,
+  paused = false,
+  headOnly = false,
+}: MascotAvatarProps) {
   const reduced = useReducedMotion()
   const animate = !reduced && !paused
 
+  const busy = BUSY_POSES.includes(pose)
+  const effective: MascotBehaviorVisual = busy || headOnly ? null : behavior
+  const sleeping = effective === 'sleep'
+  const walking = effective === 'walk' && animate
+  const rubbing = effective === 'rub' && animate
+
   const svgOrigin = { transformBox: 'fill-box', transformOrigin: 'center' } as const
 
-  const eyes =
+  const eyesSquint =
     pose === 'error' ? { scaleY: 0.45 } : pose === 'loading' ? { scaleY: 0.7 } : { scaleY: 1 }
+  const blinkLoop = animate && !sleeping && pose !== 'error' && pose !== 'loading'
 
   return (
     <svg
-      viewBox={headOnly ? '28 14 64 60' : '0 0 120 120'}
+      viewBox={headOnly ? '26 12 68 62' : '0 0 122 120'}
       width={size}
       height={size}
       role="img"
@@ -68,162 +94,275 @@ export function MascotAvatar({ pose, size = 84, paused = false, headOnly = false
           <stop offset="100%" stopColor={BODY_DARK} />
         </linearGradient>
         <radialGradient id="gri-glow" cx="50%" cy="50%" r="50%">
-          <stop offset="0%" stopColor={TEAL} stopOpacity="0.55" />
+          <stop offset="0%" stopColor={TEAL} stopOpacity="0.5" />
           <stop offset="100%" stopColor={TEAL} stopOpacity="0" />
         </radialGradient>
       </defs>
 
-      {!headOnly && (
-        <>
-          {/* Tail — behind the body, teal tip; gentle sway in idle. */}
-          <motion.g
-            style={svgOrigin}
-            animate={animate ? { rotate: [0, 3, 0, -2, 0] } : { rotate: 0 }}
-            transition={animate ? { duration: 6, repeat: Infinity, ease: 'easeInOut' } : undefined}
-          >
-            <path
-              d="M86 96 Q108 90 105 68"
-              fill="none"
-              stroke={BODY}
-              strokeWidth="8"
-              strokeLinecap="round"
-            />
-            <circle cx="105" cy="66" r="5" fill={TEAL_DIM} opacity="0.9" />
-          </motion.g>
-
-          {/* Body with breathing loop. */}
-          <motion.g
-            style={svgOrigin}
-            animate={animate ? { scaleY: [1, 1.02, 1] } : { scaleY: 1 }}
-            transition={animate ? { duration: 3.6, repeat: Infinity, ease: 'easeInOut' } : undefined}
-          >
-            <ellipse cx="60" cy="88" rx="31" ry="25" fill="url(#gri-body)" stroke="rgba(255,255,255,0.08)" />
-            <ellipse cx="60" cy="94" rx="16" ry="11" fill="rgba(255,255,255,0.035)" />
-          </motion.g>
-
-          {/* Front paws. */}
-          <ellipse cx="48" cy="110" rx="8" ry="4.5" fill={BODY_DARK} stroke="rgba(255,255,255,0.06)" />
-          <ellipse cx="72" cy="110" rx="8" ry="4.5" fill={BODY_DARK} stroke="rgba(255,255,255,0.06)" />
-        </>
-      )}
-
-      {/* Head group (tilts by pose). */}
+      {/* Root inner group — the rub rock is applied to the whole cat. */}
       <motion.g
         style={svgOrigin}
-        variants={{
-          straight: { rotate: 0, y: 0 },
-          tiltRight: { rotate: 9, y: 0 },
-          tiltLeft: { rotate: -7, y: 1 },
-          droop: { rotate: 3, y: 3 },
-        }}
-        animate={headVariant(pose)}
-        transition={{ type: 'spring', stiffness: 260, damping: 20 }}
+        animate={rubbing ? { rotate: [-5, 7, -5, 7, -4], x: [0, 6, 0, 6, 0] } : { rotate: 0, x: 0 }}
+        transition={rubbing ? { duration: 2.4, repeat: Infinity, ease: 'easeInOut' } : { duration: 0.3 }}
       >
-        {/* Ears */}
-        <motion.path
-          d="M39 40 L34 15 Q47 19 52 30 Z"
-          fill="url(#gri-body)"
-          stroke="rgba(255,255,255,0.08)"
-          style={{ transformBox: 'fill-box', transformOrigin: 'bottom center' }}
-          variants={{ rest: { rotate: 0 }, perk: { rotate: -8 }, down: { rotate: -30 } }}
-          animate={earVariant(pose)}
-          transition={{ type: 'spring', stiffness: 300, damping: 18 }}
-        />
-        <motion.path
-          d="M81 40 L86 15 Q73 19 68 30 Z"
-          fill="url(#gri-body)"
-          stroke="rgba(255,255,255,0.08)"
-          style={{ transformBox: 'fill-box', transformOrigin: 'bottom center' }}
-          variants={{ rest: { rotate: 0 }, perk: { rotate: 8 }, down: { rotate: 30 } }}
-          animate={earVariant(pose)}
-          transition={{ type: 'spring', stiffness: 300, damping: 18 }}
-        />
-        <path d="M41 36 L38 22 Q45 25 48 31 Z" fill={TEAL} opacity="0.22" />
-        <path d="M79 36 L82 22 Q75 25 72 31 Z" fill={TEAL} opacity="0.22" />
+        {!headOnly && (
+          <>
+            {/* Tail — teal tip; sways gently, wags while walking, still in sleep. */}
+            <motion.g
+              style={svgOrigin}
+              animate={
+                walking
+                  ? { rotate: [-4, 9, -4] }
+                  : animate && !sleeping
+                    ? { rotate: [0, 3, 0, -2, 0] }
+                    : { rotate: sleeping ? -6 : 0 }
+              }
+              transition={
+                walking
+                  ? { duration: 1.1, repeat: Infinity, ease: 'easeInOut' }
+                  : animate && !sleeping
+                    ? { duration: 6, repeat: Infinity, ease: 'easeInOut' }
+                    : { duration: 0.4 }
+              }
+            >
+              <path
+                d="M87 95 Q110 89 106 66"
+                fill="none"
+                stroke={BODY}
+                strokeWidth="8.5"
+                strokeLinecap="round"
+              />
+              <circle cx="106" cy="64" r="5.6" fill={TEAL_DIM} opacity="0.95" />
+            </motion.g>
 
-        {/* Face */}
-        <circle cx="60" cy="50" r="27" fill="url(#gri-body)" stroke="rgba(255,255,255,0.08)" />
+            {/* Body — breathing (slow in sleep), bobbing while walking. */}
+            <motion.g
+              style={svgOrigin}
+              animate={
+                walking
+                  ? { y: [0, -2, 0], scaleY: 1 }
+                  : animate
+                    ? { scaleY: sleeping ? [0.96, 0.985, 0.96] : [1, 1.02, 1], y: sleeping ? 3 : 0 }
+                    : { scaleY: sleeping ? 0.96 : 1, y: sleeping ? 3 : 0 }
+              }
+              transition={
+                walking
+                  ? { duration: 0.42, repeat: Infinity, ease: 'easeInOut' }
+                  : animate
+                    ? { duration: sleeping ? 5 : 3.6, repeat: Infinity, ease: 'easeInOut' }
+                    : { duration: 0.4 }
+              }
+            >
+              <ellipse cx="60" cy="88" rx="31" ry="25" fill="url(#gri-body)" stroke="rgba(255,255,255,0.09)" />
+              <ellipse cx="60" cy="95" rx="17" ry="11" fill="rgba(255,255,255,0.045)" />
+            </motion.g>
 
-        {/* Eyes: soft glow + teal iris + dark pupil slit; blink loop. */}
-        <ellipse cx="50" cy="50" rx="9" ry="9" fill="url(#gri-glow)" />
-        <ellipse cx="70" cy="50" rx="9" ry="9" fill="url(#gri-glow)" />
+            {/* Paws: two pairs — they step while walking, tuck in sleep. */}
+            <motion.g
+              animate={walking ? { y: [0, -3.5, 0], x: [0, 1.5, 0] } : { y: 0, x: 0, opacity: sleeping ? 0 : 1 }}
+              transition={walking ? { duration: 0.42, repeat: Infinity, ease: 'easeInOut' } : { duration: 0.3 }}
+            >
+              <ellipse cx="46" cy="110" rx="8.5" ry="5" fill={BODY_DARK} stroke="rgba(255,255,255,0.07)" />
+              {/* toe beans */}
+              <g stroke="rgba(255,255,255,0.14)" strokeWidth="1" strokeLinecap="round">
+                <path d="M43 110 L43 112" />
+                <path d="M46.5 110.5 L46.5 112.5" />
+                <path d="M50 110 L50 112" />
+              </g>
+            </motion.g>
+            <motion.g
+              animate={walking ? { y: [-3.5, 0, -3.5], x: [1.5, 0, 1.5] } : { y: 0, x: 0, opacity: sleeping ? 0 : 1 }}
+              transition={walking ? { duration: 0.42, repeat: Infinity, ease: 'easeInOut' } : { duration: 0.3 }}
+            >
+              <ellipse cx="74" cy="110" rx="8.5" ry="5" fill={BODY_DARK} stroke="rgba(255,255,255,0.07)" />
+              <g stroke="rgba(255,255,255,0.14)" strokeWidth="1" strokeLinecap="round">
+                <path d="M71 110 L71 112" />
+                <path d="M74.5 110.5 L74.5 112.5" />
+                <path d="M78 110 L78 112" />
+              </g>
+            </motion.g>
+          </>
+        )}
+
+        {/* Head group (tilts by pose; nods lower in sleep). */}
         <motion.g
           style={svgOrigin}
-          animate={
-            animate && pose !== 'error' && pose !== 'loading'
-              ? { scaleY: [1, 1, 0.08, 1] }
-              : eyes
-          }
-          transition={
-            animate && pose !== 'error' && pose !== 'loading'
-              ? { duration: 0.5, times: [0, 0.9, 0.95, 1], repeat: Infinity, repeatDelay: 3.8 }
-              : { duration: 0.25 }
-          }
+          variants={{
+            straight: { rotate: 0, y: 0 },
+            tiltRight: { rotate: 9, y: 0 },
+            tiltLeft: { rotate: -7, y: 1 },
+            droop: { rotate: 3, y: 3 },
+            sleepy: { rotate: 5, y: 5 },
+          }}
+          animate={headVariant(pose, sleeping)}
+          transition={{ type: 'spring', stiffness: 240, damping: 20 }}
         >
-          <ellipse cx="50" cy="50" rx="4.6" ry="5.6" fill={TEAL} />
-          <ellipse cx="70" cy="50" rx="4.6" ry="5.6" fill={TEAL} />
-          <ellipse cx="50" cy="50.5" rx="1.7" ry="3.6" fill={INK} />
-          <ellipse cx="70" cy="50.5" rx="1.7" ry="3.6" fill={INK} />
-          <circle cx="51.4" cy="47.8" r="1" fill="#eafff5" opacity="0.9" />
-          <circle cx="71.4" cy="47.8" r="1" fill="#eafff5" opacity="0.9" />
-        </motion.g>
-
-        {/* Nose + mouth + whiskers */}
-        <path d="M57.6 59 L62.4 59 L60 62.4 Z" fill={TEAL_DIM} opacity="0.85" />
-        <path d="M56 65 Q60 68 64 65" fill="none" stroke="rgba(255,255,255,0.28)" strokeWidth="1.4" strokeLinecap="round" />
-        <g stroke="rgba(255,255,255,0.13)" strokeWidth="1.2" strokeLinecap="round">
-          <path d="M30 52 L42 53" />
-          <path d="M31 59 L42 57" />
-          <path d="M90 52 L78 53" />
-          <path d="M89 59 L78 57" />
-        </g>
-
-        {/* Insight sparkle near the right ear. */}
-        <motion.path
-          d="M92 20 L94 26 L100 28 L94 30 L92 36 L90 30 L84 28 L90 26 Z"
-          fill={TEAL}
-          style={svgOrigin}
-          initial={false}
-          animate={
-            pose === 'insight'
-              ? { opacity: [0, 1, 0.6, 1], scale: [0.6, 1.15, 0.95, 1] }
-              : { opacity: 0, scale: 0.6 }
-          }
-          transition={{ duration: 0.9 }}
-        />
-      </motion.g>
-
-      {!headOnly && (
-        <>
-          {/* Collar — the brand accent. */}
-          <path d="M42 71 Q60 80 78 71 L78 76 Q60 85 42 76 Z" fill={TEAL} opacity="0.9" />
-          <circle cx="60" cy="80" r="2.6" fill="#eafff5" />
-
-          {/* Waving paw (greeting). */}
-          <motion.g
+          {/* Ears — rounder, with soft teal inner. */}
+          <motion.path
+            d="M40 39 Q33 20 36 15 Q49 17 53 29 Q46 35 40 39 Z"
+            fill="url(#gri-body)"
+            stroke="rgba(255,255,255,0.09)"
             style={{ transformBox: 'fill-box', transformOrigin: 'bottom center' }}
+            variants={{ rest: { rotate: 0 }, perk: { rotate: -8 }, down: { rotate: -30 }, sleepy: { rotate: -14 } }}
+            animate={earVariant(pose, sleeping)}
+            transition={{ type: 'spring', stiffness: 300, damping: 18 }}
+          />
+          <motion.path
+            d="M80 39 Q87 20 84 15 Q71 17 67 29 Q74 35 80 39 Z"
+            fill="url(#gri-body)"
+            stroke="rgba(255,255,255,0.09)"
+            style={{ transformBox: 'fill-box', transformOrigin: 'bottom center' }}
+            variants={{ rest: { rotate: 0 }, perk: { rotate: 8 }, down: { rotate: 30 }, sleepy: { rotate: 14 } }}
+            animate={earVariant(pose, sleeping)}
+            transition={{ type: 'spring', stiffness: 300, damping: 18 }}
+          />
+          <path d="M41 34 Q38 23 39 20 Q46 23 49 30 Z" fill={TEAL} opacity="0.2" />
+          <path d="M79 34 Q82 23 81 20 Q74 23 71 30 Z" fill={TEAL} opacity="0.2" />
+
+          {/* Face */}
+          <circle cx="60" cy="50" r="27.5" fill="url(#gri-body)" stroke="rgba(255,255,255,0.09)" />
+
+          {/* Blush cheeks */}
+          <ellipse cx="42" cy="58" rx="5" ry="3" fill={BLUSH} opacity="0.15" />
+          <ellipse cx="78" cy="58" rx="5" ry="3" fill={BLUSH} opacity="0.15" />
+
+          {/* Eyes: glow + iris + pupil + double highlight; closed arcs in sleep. */}
+          {sleeping ? (
+            <g stroke={TEAL_DIM} strokeWidth="2.2" strokeLinecap="round" fill="none" opacity="0.85">
+              <path d="M44 51 Q50 55.5 56 51" />
+              <path d="M64 51 Q70 55.5 76 51" />
+            </g>
+          ) : (
+            <>
+              <ellipse cx="50" cy="50" rx="9.5" ry="9.5" fill="url(#gri-glow)" />
+              <ellipse cx="70" cy="50" rx="9.5" ry="9.5" fill="url(#gri-glow)" />
+              <motion.g
+                style={svgOrigin}
+                animate={blinkLoop ? { scaleY: [1, 1, 0.08, 1] } : eyesSquint}
+                transition={
+                  blinkLoop
+                    ? { duration: 0.5, times: [0, 0.9, 0.95, 1], repeat: Infinity, repeatDelay: 3.6 }
+                    : { duration: 0.25 }
+                }
+              >
+                <ellipse cx="50" cy="50" rx="5.2" ry="6.3" fill={TEAL} />
+                <ellipse cx="70" cy="50" rx="5.2" ry="6.3" fill={TEAL} />
+                <ellipse cx="50" cy="50.6" rx="1.9" ry="4" fill={INK} />
+                <ellipse cx="70" cy="50.6" rx="1.9" ry="4" fill={INK} />
+                <circle cx="51.8" cy="47.4" r="1.25" fill="#eafff5" opacity="0.95" />
+                <circle cx="71.8" cy="47.4" r="1.25" fill="#eafff5" opacity="0.95" />
+                <circle cx="48.6" cy="52.4" r="0.7" fill="#eafff5" opacity="0.6" />
+                <circle cx="68.6" cy="52.4" r="0.7" fill="#eafff5" opacity="0.6" />
+              </motion.g>
+            </>
+          )}
+
+          {/* Heart nose + smile + whiskers */}
+          <path
+            d="M60 59.4 C58.6 57.6 56.4 58.4 56.4 60 C56.4 61.4 58.4 62.6 60 63.6 C61.6 62.6 63.6 61.4 63.6 60 C63.6 58.4 61.4 57.6 60 59.4 Z"
+            fill={TEAL_DIM}
+            opacity="0.9"
+          />
+          <path
+            d={sleeping ? 'M56.5 66.5 Q60 68 63.5 66.5' : 'M55 65.5 Q57.5 68.3 60 66.3 Q62.5 68.3 65 65.5'}
+            fill="none"
+            stroke="rgba(255,255,255,0.32)"
+            strokeWidth="1.4"
+            strokeLinecap="round"
+          />
+          <g stroke="rgba(255,255,255,0.14)" strokeWidth="1.2" strokeLinecap="round" fill="none">
+            <path d="M28 51 Q36 52 42 53" />
+            <path d="M29 59 Q37 58 42 56.5" />
+            <path d="M92 51 Q84 52 78 53" />
+            <path d="M91 59 Q83 58 78 56.5" />
+          </g>
+
+          {/* Insight sparkle near the right ear. */}
+          <motion.path
+            d="M93 19 L95 25 L101 27 L95 29 L93 35 L91 29 L85 27 L91 25 Z"
+            fill={TEAL}
+            style={svgOrigin}
             initial={false}
             animate={
-              pose === 'greeting'
-                ? { opacity: 1, rotate: animate ? [0, -24, 8, -24, 0] : -12 }
-                : { opacity: 0, rotate: 0 }
+              pose === 'insight'
+                ? { opacity: [0, 1, 0.6, 1], scale: [0.6, 1.15, 0.95, 1] }
+                : { opacity: 0, scale: 0.6 }
             }
-            transition={pose === 'greeting' && animate ? { duration: 1.6, repeat: 2 } : { duration: 0.2 }}
-          >
-            <ellipse cx="92" cy="72" rx="6.4" ry="11" fill={BODY} stroke="rgba(255,255,255,0.1)" />
-            <ellipse cx="92" cy="64" rx="5" ry="4" fill={BODY} />
-          </motion.g>
+            transition={{ duration: 0.9 }}
+          />
+        </motion.g>
 
-          {/* Thinking paw at the chin (loading). */}
-          <motion.g
-            initial={false}
-            animate={pose === 'loading' ? { opacity: 1, y: 0 } : { opacity: 0, y: 4 }}
-            transition={{ duration: 0.25 }}
-          >
-            <ellipse cx="73" cy="67" rx="5.6" ry="7.5" fill={BODY} stroke="rgba(255,255,255,0.1)" />
-          </motion.g>
-        </>
-      )}
+        {!headOnly && (
+          <>
+            {/* Collar with a tiny bell. */}
+            <path d="M41 71 Q60 81 79 71 L79 76.5 Q60 86.5 41 76.5 Z" fill={TEAL} opacity="0.92" />
+            <circle cx="60" cy="81" r="3.2" fill="#eafff5" />
+            <circle cx="60" cy="81" r="1.1" fill={TEAL_DIM} />
+
+            {/* Waving paw (greeting). */}
+            <motion.g
+              style={{ transformBox: 'fill-box', transformOrigin: 'bottom center' }}
+              initial={false}
+              animate={
+                pose === 'greeting'
+                  ? { opacity: 1, rotate: animate ? [0, -24, 8, -24, 0] : -12 }
+                  : { opacity: 0, rotate: 0 }
+              }
+              transition={pose === 'greeting' && animate ? { duration: 1.6, repeat: 2 } : { duration: 0.2 }}
+            >
+              <ellipse cx="93" cy="72" rx="6.6" ry="11" fill={BODY} stroke="rgba(255,255,255,0.11)" />
+              <ellipse cx="93" cy="63.5" rx="5.2" ry="4.2" fill={BODY} />
+              <g stroke="rgba(255,255,255,0.16)" strokeWidth="1" strokeLinecap="round">
+                <path d="M90.6 61.5 L90.6 63.5" />
+                <path d="M93 61 L93 63" />
+                <path d="M95.4 61.5 L95.4 63.5" />
+              </g>
+            </motion.g>
+
+            {/* Thinking paw at the chin (loading). */}
+            <motion.g
+              initial={false}
+              animate={pose === 'loading' ? { opacity: 1, y: 0 } : { opacity: 0, y: 4 }}
+              transition={{ duration: 0.25 }}
+            >
+              <ellipse cx="73" cy="67" rx="5.8" ry="7.6" fill={BODY} stroke="rgba(255,255,255,0.11)" />
+            </motion.g>
+
+            {/* Zzz while sleeping. */}
+            {sleeping && (
+              <g fontFamily="inherit" fontWeight="700" fill={TEAL} aria-hidden>
+                {[0, 1, 2].map((i) => (
+                  <motion.text
+                    key={i}
+                    x={88 + i * 8}
+                    y={40 - i * 10}
+                    fontSize={9 + i * 3}
+                    initial={{ opacity: 0, y: 6 }}
+                    animate={animate ? { opacity: [0, 0.9, 0], y: [6, -6, -14] } : { opacity: 0.6 }}
+                    transition={
+                      animate
+                        ? { duration: 2.8, repeat: Infinity, delay: i * 0.7, ease: 'easeOut' }
+                        : undefined
+                    }
+                  >
+                    z
+                  </motion.text>
+                ))}
+              </g>
+            )}
+
+            {/* A little heart while rubbing. */}
+            <motion.path
+              d="M97 46 C95 43.4 91.6 44.6 91.6 47 C91.6 49.2 94.6 51 97 52.8 C99.4 51 102.4 49.2 102.4 47 C102.4 44.6 99 43.4 97 46 Z"
+              fill={BLUSH}
+              initial={false}
+              animate={rubbing ? { opacity: [0, 0.9, 0], y: [0, -8, -14], scale: [0.7, 1, 0.9] } : { opacity: 0 }}
+              transition={rubbing ? { duration: 2.4, repeat: Infinity, ease: 'easeOut' } : { duration: 0.2 }}
+              style={svgOrigin}
+            />
+          </>
+        )}
+      </motion.g>
     </svg>
   )
 }

@@ -23,6 +23,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { getSection } from '@/lib/assistant/sections'
+import { SCREEN_PANEL_SECTIONS, SCREEN_TIPS } from '@/lib/assistant/mascot/hints'
 import { getClientLocale, type Locale } from '@/lib/i18n/locale'
 
 // ─── Localized copy (portal locale; ru is the default surface) ──────────────
@@ -48,6 +49,10 @@ const T: Record<Locale, {
   asking: string
   askToExpert: string
   expertHandoff: string
+  pageTip: string
+  onThisPage: string
+  showAll: string
+  showPageOnly: string
 }> = {
   ru: {
     title: 'Ассистент',
@@ -71,6 +76,10 @@ const T: Record<Locale, {
     asking: 'Думаю…',
     askToExpert: 'Передаём эксперту…',
     expertHandoff: 'Вопрос передан эксперту — он свяжется с вами',
+    pageTip: 'Совет Гри',
+    onThisPage: 'По этой странице',
+    showAll: 'Показать все вопросы',
+    showPageOnly: 'Только по этой странице',
   },
   en: {
     title: 'Assistant',
@@ -94,6 +103,10 @@ const T: Record<Locale, {
     asking: 'Thinking…',
     askToExpert: 'Handing to an expert…',
     expertHandoff: 'Your question has been passed to an expert — they will be in touch',
+    pageTip: 'Gree’s tip',
+    onThisPage: 'On this page',
+    showAll: 'Show all questions',
+    showPageOnly: 'Only for this page',
   },
 }
 
@@ -139,10 +152,21 @@ function matchesQuery(item: ScriptItem, query: string): boolean {
   )
 }
 
-export function AssistantChatPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function AssistantChatPanel({
+  open,
+  onClose,
+  currentScreen,
+}: {
+  open: boolean
+  onClose: () => void
+  /** Normalized screen (hints.normalizeScreen) — enables the page-context mode. */
+  currentScreen?: string
+}) {
   const [groups, setGroups] = useState<ScriptGroup[]>([])
   const [loadingScripts, setLoadingScripts] = useState(false)
   const [activeId, setActiveId] = useState<string | null>(null)
+  // Page-context mode: relevant sections first, the rest behind the hamburger.
+  const [showAll, setShowAll] = useState(false)
   // The single PINNED answer (prepared OR free OR expert-handoff) — sticky at top.
   const [pinned, setPinned] = useState<PinnedAnswer | null>(null)
   const [answerLoading, setAnswerLoading] = useState(false)
@@ -176,6 +200,29 @@ export function AssistantChatPanel({ open, onClose }: { open: boolean; onClose: 
       .map((g) => ({ ...g, scripts: g.scripts.filter((s) => matchesQuery(s, q)) }))
       .filter((g) => g.scripts.length > 0)
   }, [groups, query])
+
+  // Page context: sections relevant to the current screen + Гри's tip.
+  const relevantSections = currentScreen ? SCREEN_PANEL_SECTIONS[currentScreen] ?? null : null
+  const pageTip = currentScreen ? SCREEN_TIPS[currentScreen] ?? null : null
+
+  // What actually renders: a live search always looks through EVERYTHING;
+  // otherwise page mode shows the relevant sections first (rest via hamburger).
+  const displayGroups = useMemo<ScriptGroup[]>(() => {
+    if (query.trim() || showAll || !relevantSections) return filteredGroups
+    const relevant = filteredGroups.filter((g) => relevantSections.includes(g.section))
+    // Keep the screen's own order (e.g. GRI before Point A on /gri).
+    relevant.sort(
+      (a, b) => relevantSections.indexOf(a.section) - relevantSections.indexOf(b.section),
+    )
+    return relevant.length > 0 ? relevant : filteredGroups
+  }, [filteredGroups, query, showAll, relevantSections])
+
+  const pageMode = !!relevantSections && !showAll && !query.trim()
+
+  // A new screen starts in page mode again.
+  useEffect(() => {
+    setShowAll(false)
+  }, [currentScreen])
 
   const loadScripts = useCallback(async () => {
     setLoadingScripts(true)
@@ -338,16 +385,36 @@ export function AssistantChatPanel({ open, onClose }: { open: boolean; onClose: 
             </div>
             <div>
               <h2 className="text-sm font-bold text-on-surface">{t.title}</h2>
-              <p className="text-[10px] text-on-surface-variant">{t.subtitle}</p>
+              <p className="text-[10px] text-on-surface-variant">
+                {pageMode ? t.onThisPage : t.subtitle}
+              </p>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="w-8 h-8 rounded-lg flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:bg-white/[0.05] transition-all"
-            aria-label={t.close}
-          >
-            <span className="material-symbols-outlined text-lg">close</span>
-          </button>
+          <div className="flex items-center gap-1">
+            {/* Hamburger: full catalog ↔ page-only questions. */}
+            {relevantSections && (
+              <button
+                onClick={() => setShowAll((v) => !v)}
+                aria-pressed={showAll}
+                aria-label={showAll ? t.showPageOnly : t.showAll}
+                title={showAll ? t.showPageOnly : t.showAll}
+                className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${
+                  showAll
+                    ? 'text-primary bg-primary/10'
+                    : 'text-on-surface-variant hover:text-on-surface hover:bg-white/[0.05]'
+                }`}
+              >
+                <span className="material-symbols-outlined text-lg">menu</span>
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              className="w-8 h-8 rounded-lg flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:bg-white/[0.05] transition-all"
+              aria-label={t.close}
+            >
+              <span className="material-symbols-outlined text-lg">close</span>
+            </button>
+          </div>
         </header>
 
         {/* Body */}
@@ -424,6 +491,21 @@ export function AssistantChatPanel({ open, onClose }: { open: boolean; onClose: 
             </div>
           )}
 
+          {/* Гри's page tip — a short, static piece of advice for this screen. */}
+          {pageTip && !pinned && !answerLoading && (
+            <div className="flex items-start gap-2.5 rounded-2xl border border-primary/15 bg-primary/[0.05] px-3.5 py-3">
+              <span className="material-symbols-outlined text-base text-primary mt-0.5 flex-shrink-0">
+                pets
+              </span>
+              <div className="min-w-0">
+                <p className="text-[10px] font-mono text-primary/70 uppercase tracking-widest mb-0.5">
+                  {t.pageTip}
+                </p>
+                <p className="text-xs text-on-surface leading-snug">{pageTip}</p>
+              </div>
+            </div>
+          )}
+
           {/* Search filter over the prepared questions (ask #2). */}
           {!loadingScripts && groups.length > 0 && (
             <div className="relative">
@@ -459,10 +541,10 @@ export function AssistantChatPanel({ open, onClose }: { open: boolean; onClose: 
             </div>
           ) : groups.length === 0 ? (
             <p className="text-xs text-on-surface-variant text-center py-8">{t.noScripts}</p>
-          ) : filteredGroups.length === 0 ? (
+          ) : displayGroups.length === 0 ? (
             <p className="text-xs text-on-surface-variant text-center py-8">{t.noMatches}</p>
           ) : (
-            filteredGroups.map((group) => (
+            displayGroups.map((group) => (
               <div key={group.section}>
                 <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest mb-2">
                   {sectionLabel(group.section)}
@@ -501,6 +583,17 @@ export function AssistantChatPanel({ open, onClose }: { open: boolean; onClose: 
                 </div>
               </div>
             ))
+          )}
+
+          {/* Page mode: the rest of the catalog is one tap away. */}
+          {pageMode && !loadingScripts && filteredGroups.length > displayGroups.length && (
+            <button
+              onClick={() => setShowAll(true)}
+              className="w-full flex items-center justify-center gap-2 rounded-xl border border-white/[0.06] px-3 py-2.5 text-xs text-on-surface-variant hover:text-on-surface hover:border-primary/20 hover:bg-white/[0.03] transition-all"
+            >
+              <span className="material-symbols-outlined text-base">menu</span>
+              {t.showAll}
+            </button>
           )}
         </div>
 

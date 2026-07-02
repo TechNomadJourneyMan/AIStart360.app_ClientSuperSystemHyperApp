@@ -25,6 +25,14 @@ const patchSchema = z
     position: z.object({ corner: z.enum(['br', 'bl', 'tr', 'tl']) }).nullable().optional(),
     dismissedHints: z.array(z.string().max(64)).max(50).optional(),
     greeted: z.boolean().optional(),
+    behavior: z
+      .object({
+        walking: z.boolean().optional(),
+        sleep: z.boolean().optional(),
+        aiInsights: z.boolean().optional(),
+      })
+      .strict()
+      .optional(),
   })
   .strict()
 

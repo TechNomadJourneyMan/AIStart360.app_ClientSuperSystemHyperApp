@@ -14,7 +14,11 @@ import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { MascotAvatar } from '@/components/assistant/mascot/MascotAvatar'
 import { useMascotStore } from '@/lib/assistant/mascot/state'
-import type { HintFrequency, MascotSettings } from '@/lib/assistant/mascot/types'
+import type {
+  HintFrequency,
+  MascotBehaviorSettings,
+  MascotSettings,
+} from '@/lib/assistant/mascot/types'
 
 const FREQ_OPTIONS: Array<{ value: HintFrequency; label: string; desc: string }> = [
   { value: 'normal', label: 'Обычная', desc: 'До 8 подсказок за сессию, пауза от 90 секунд' },
@@ -26,6 +30,28 @@ const MUTABLE_TYPES: Array<{ key: string; label: string }> = [
   { key: 'education', label: 'Обучающие советы' },
   { key: 'motivation', label: 'Мотивационные сообщения' },
   { key: 'idle', label: 'Предложение помощи при бездействии' },
+]
+
+const BEHAVIOR_OPTIONS: Array<{
+  key: keyof MascotBehaviorSettings
+  label: string
+  desc: string
+}> = [
+  {
+    key: 'walking',
+    label: 'Прогулки по экрану',
+    desc: 'Иногда прохаживается вдоль нижнего края и трётся спинкой (только на десктопе)',
+  },
+  {
+    key: 'sleep',
+    label: 'Сон при бездействии',
+    desc: 'Засыпает через ~2 минуты тишины; будит любое движение мыши или важная подсказка',
+  },
+  {
+    key: 'aiInsights',
+    label: 'AI-инсайты (OpenRouter)',
+    desc: 'Один автоматический инсайт за сессию + пункт «Инсайт от Гри» в меню кота',
+  },
 ]
 
 export function AssistantSettingsPanel() {
@@ -169,6 +195,34 @@ export function AssistantSettingsPanel() {
                   </button>
                 )
               })}
+            </div>
+          </div>
+
+          {/* Advanced behavior */}
+          <div>
+            <p className="text-sm font-medium text-on-surface mb-1">Поведение</p>
+            <p className="text-xs text-on-surface-variant mb-2">
+              Живые повадки Гри — можно выключить любую, кот не обидится.
+            </p>
+            <div className="divide-y divide-outline-variant/10">
+              {BEHAVIOR_OPTIONS.map((b) => (
+                <div key={b.key} className="flex items-center justify-between gap-4 py-2.5">
+                  <div className="min-w-0">
+                    <p className="text-sm text-on-surface">{b.label}</p>
+                    <p className="text-xs text-on-surface-variant mt-0.5">{b.desc}</p>
+                  </div>
+                  <Toggle
+                    checked={settings.behavior[b.key]}
+                    disabled={saving}
+                    label={b.label}
+                    onChange={() =>
+                      void patch({
+                        behavior: { ...settings.behavior, [b.key]: !settings.behavior[b.key] },
+                      })
+                    }
+                  />
+                </div>
+              ))}
             </div>
           </div>
 

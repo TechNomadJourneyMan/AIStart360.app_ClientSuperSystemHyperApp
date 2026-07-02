@@ -10,8 +10,10 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import {
+  DEFAULT_MASCOT_BEHAVIOR,
   DEFAULT_MASCOT_SETTINGS,
   type HintFrequency,
+  type MascotBehaviorSettings,
   type MascotCorner,
   type MascotSettings,
 } from './types'
@@ -35,6 +37,23 @@ export function normalizeMascotSettings(raw: unknown): MascotSettings {
       ? (o.position as Record<string, unknown>).corner
       : null
 
+  const rawBehavior =
+    o.behavior && typeof o.behavior === 'object' && !Array.isArray(o.behavior)
+      ? (o.behavior as Record<string, unknown>)
+      : {}
+  const behavior: MascotBehaviorSettings = {
+    walking:
+      typeof rawBehavior.walking === 'boolean'
+        ? rawBehavior.walking
+        : DEFAULT_MASCOT_BEHAVIOR.walking,
+    sleep:
+      typeof rawBehavior.sleep === 'boolean' ? rawBehavior.sleep : DEFAULT_MASCOT_BEHAVIOR.sleep,
+    aiInsights:
+      typeof rawBehavior.aiInsights === 'boolean'
+        ? rawBehavior.aiInsights
+        : DEFAULT_MASCOT_BEHAVIOR.aiInsights,
+  }
+
   return {
     mascotEnabled: typeof o.mascotEnabled === 'boolean' ? o.mascotEnabled : d.mascotEnabled,
     hiddenUntil,
@@ -48,6 +67,7 @@ export function normalizeMascotSettings(raw: unknown): MascotSettings {
       ? o.dismissedHints.filter((x): x is string => typeof x === 'string').slice(0, 50)
       : [],
     greeted: o.greeted === true,
+    behavior,
   }
 }
 
@@ -66,6 +86,11 @@ export async function readMascotSettings(
   return normalizeMascotSettings(prefs.assistant)
 }
 
+/** A settings patch; `behavior` may itself be partial (merged per-key). */
+export type MascotSettingsPatch = Partial<Omit<MascotSettings, 'behavior'>> & {
+  behavior?: Partial<MascotBehaviorSettings>
+}
+
 /**
  * Merge `patch` into profiles.preferences.assistant and return the result.
  * Read-merge-write like /api/v1/settings/preferences: sibling preference
@@ -74,7 +99,7 @@ export async function readMascotSettings(
 export async function writeMascotSettings(
   sb: SupabaseClient,
   userId: string,
-  patch: Partial<MascotSettings>,
+  patch: MascotSettingsPatch,
 ): Promise<MascotSettings> {
   const { data } = await sb
     .from('profiles')
@@ -84,7 +109,13 @@ export async function writeMascotSettings(
 
   const prefs = (data?.preferences ?? {}) as Record<string, unknown>
   const current = normalizeMascotSettings(prefs.assistant)
-  const merged: MascotSettings = normalizeMascotSettings({ ...current, ...patch })
+  // behavior merges per-key (a {behavior:{walking:false}} patch must not reset
+  // the user's other behavior switches to defaults).
+  const merged: MascotSettings = normalizeMascotSettings({
+    ...current,
+    ...patch,
+    behavior: { ...current.behavior, ...(patch.behavior ?? {}) },
+  })
 
   const { error } = await sb
     .from('profiles')

@@ -16,7 +16,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
-import { AnimatePresence } from 'framer-motion'
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { AssistantChatPanel } from '@/components/assistant/AssistantChatPanel'
 import {
   localCandidate,
@@ -29,6 +29,7 @@ import {
 import { pickHint, RULES } from '@/lib/assistant/mascot/triggers'
 import { useMascotStore } from '@/lib/assistant/mascot/state'
 import { trackMascotEvent } from '@/lib/assistant/mascot/analytics'
+import { useMascotBehavior } from '@/lib/assistant/mascot/behavior'
 import { useSafeScreenPosition } from '@/lib/assistant/mascot/useSafeScreenPosition'
 import {
   isMascotHidden,
@@ -42,6 +43,18 @@ import { MascotControls } from './MascotControls'
 const CONTEXT_STALE_MS = 60_000
 const BUBBLE_AUTO_CLEAR_MS = 20_000
 const TICK_MS = 45_000
+const AUTO_INSIGHT_DELAY_MS = 75_000
+/** Screens where the once-per-session auto AI-insight makes sense. */
+const AUTO_INSIGHT_SCREENS = [
+  '/dashboard',
+  '/client/dashboard',
+  '/gri',
+  '/pulse',
+  '/client/point-a',
+  '/point-a',
+  '/client/point-b',
+  '/point-b',
+]
 
 // ─── DOM-level hard blocks (ТЗ §9) ───────────────────────────────────────────
 
@@ -124,11 +137,26 @@ export default function MascotAssistant() {
   const screenRef = useRef(screen)
   const scrollTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const shownOnceRef = useRef(false)
+  const insightBusyRef = useRef(false)
+  const autoInsightDoneRef = useRef(false)
 
   const hiddenNow = sessionHidden || isMascotHidden(settings, Date.now())
+  const reducedMotion = useReducedMotion()
 
   const baseBottom = isDesktop ? 24 : 80
   const { extraBottom, keyboardOpen } = useSafeScreenPosition(baseBottom)
+
+  // Idle-life engine: strolls/rubs (desktop, unless disabled) + sleep.
+  const behaviorBusy =
+    !!activeHint || chatOpen || controlsOpen || minimized || keyboardOpen || scrolling
+  const behavior = useMascotBehavior({
+    busy: behaviorBusy,
+    walkingEnabled: settings.behavior.walking && isDesktop && !reducedMotion,
+    sleepEnabled: settings.behavior.sleep,
+    paused: tabHidden,
+  })
+  const behaviorVisualRef = useRef(behavior.visual)
+  behaviorVisualRef.current = behavior.visual
 
   // ── Context polling (light, no LLM) ─────────────────────────────────────────
   const fetchContext = useCallback(async () => {
@@ -180,6 +208,10 @@ export default function MascotAssistant() {
       if (isTypingTarget(document.activeElement)) return
       if (foreignDialogOpen()) return
 
+      // Спит — будим только ради важного (ошибки/незавершённое/следующий шаг);
+      // мотивационные и обучающие пузыри сон не прерывают.
+      const sleeping = behaviorVisualRef.current === 'sleep'
+
       const candidates: ResolvedHint[] = [...extra]
 
       for (const c of s.context?.hints ?? []) {
@@ -217,10 +249,12 @@ export default function MascotAssistant() {
         s.setLastCompletedSections(done)
       }
 
+      const eligible = sleeping ? candidates.filter((c) => c.priority <= 2) : candidates
+
       const picked = pickHint({
         now: Date.now(),
         screen,
-        candidates,
+        candidates: eligible,
         cooldowns: s.cooldowns,
         settings: s.settings,
         sessionShownCount: s.sessionShownCount,
@@ -413,6 +447,85 @@ export default function MascotAssistant() {
     trackMascotEvent('mascot_restored', { screen })
   }, [setMinimized, screen])
 
+  /**
+   * AI-инсайт через OpenRouter (единственный LLM-вызов проактивного маскота).
+   * manual=true — явный запрос из меню «⋯»: кот «думает», пузырь показывается
+   * сразу; auto — раз за сессию, идёт через общий движок cooldown'ов.
+   */
+  const requestInsight = useCallback(
+    async (manual: boolean) => {
+      if (insightBusyRef.current) return
+      insightBusyRef.current = true
+      const s = useMascotStore.getState()
+      if (manual) {
+        if (s.activeHint) s.clearHint('action', Date.now())
+        s.setState('loading')
+      }
+      try {
+        const res = await fetch('/api/v1/assistant/insight', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ screen }),
+        })
+        const json = (await res.json().catch(() => null)) as
+          | { ok: boolean; insight?: string | null }
+          | null
+        const text = json?.ok ? (json.insight ?? null) : null
+
+        if (manual) {
+          const resolved = resolveHint({
+            id: 'ai_insight',
+            priority: 3,
+            params: {
+              text:
+                text ??
+                'Пока не хватает данных для инсайта — заполните ещё немного анкеты, и я вернусь с наблюдением 🐾',
+            },
+          })
+          if (resolved) {
+            useMascotStore.getState().showHint(resolved, screen, Date.now())
+            trackMascotEvent('hint_shown', { screen, refId: 'ai_insight' })
+          }
+        } else if (text) {
+          const resolved = resolveHint({ id: 'ai_insight', priority: 3, params: { text } })
+          if (resolved) evaluate([resolved])
+        }
+      } catch {
+        if (manual) {
+          const s2 = useMascotStore.getState()
+          s2.setState(s2.minimized ? 'minimized' : 'idle')
+        }
+      } finally {
+        insightBusyRef.current = false
+      }
+    },
+    [screen, evaluate],
+  )
+
+  // Авто-инсайт: один раз за сессию, на экранах с результатами, если включено.
+  useEffect(() => {
+    if (hiddenNow || autoInsightDoneRef.current) return
+    if (!AUTO_INSIGHT_SCREENS.includes(screen)) return
+    const t = setTimeout(() => {
+      const s = useMascotStore.getState()
+      if (
+        autoInsightDoneRef.current ||
+        !s.settings.behavior.aiInsights ||
+        !s.context?.results.hasDiagnostic
+      )
+        return
+      autoInsightDoneRef.current = true
+      void requestInsight(false)
+    }, AUTO_INSIGHT_DELAY_MS)
+    return () => clearTimeout(t)
+  }, [screen, hiddenNow, requestInsight])
+
+  const onInsightClick = useCallback(() => {
+    setControlsOpen(false)
+    void requestInsight(true)
+  }, [requestInsight])
+
   const onHide = useCallback(
     (period: HidePeriod) => {
       setControlsOpen(false)
@@ -456,9 +569,22 @@ export default function MascotAssistant() {
         transition: 'opacity 200ms ease, bottom 250ms ease',
       }}
     >
+      {/* Idle-life carrier: the whole stack (menu, bubble, cat) strolls together,
+          so the bubble tail always points at the cat wherever it stands. */}
+      <motion.div
+        className="flex flex-col items-end gap-2"
+        animate={{ x: behavior.x }}
+        transition={{ duration: behavior.moveDuration, ease: 'linear' }}
+        onAnimationComplete={behavior.onArrive}
+      >
       <AnimatePresence>
         {controlsOpen && !minimized && (
-          <MascotControls onMinimize={onMinimize} onHide={onHide} onClose={() => setControlsOpen(false)} />
+          <MascotControls
+            onMinimize={onMinimize}
+            onHide={onHide}
+            onInsight={settings.behavior.aiInsights ? onInsightClick : undefined}
+            onClose={() => setControlsOpen(false)}
+          />
         )}
       </AnimatePresence>
 
@@ -500,7 +626,19 @@ export default function MascotAssistant() {
             title="Гри — ваш ассистент"
             className="block rounded-full focus:outline-none focus:ring-2 focus:ring-primary/50 focus:ring-offset-2 focus:ring-offset-[#0A0B0F] hover:scale-[1.04] active:scale-[0.98] transition-transform"
           >
-            <MascotAvatar pose={avatarPose} size={isDesktop ? 84 : 56} paused={paused} />
+            {/* Mirror only the cat while it walks left; bubbles stay unflipped. */}
+            <motion.span
+              style={{ display: 'block' }}
+              animate={{ scaleX: behavior.facing === 'left' ? -1 : 1 }}
+              transition={{ duration: 0.25 }}
+            >
+              <MascotAvatar
+                pose={avatarPose}
+                behavior={behavior.visual}
+                size={isDesktop ? 84 : 56}
+                paused={paused}
+              />
+            </motion.span>
           </button>
           <button
             onClick={() => setControlsOpen((v) => !v)}
@@ -517,13 +655,13 @@ export default function MascotAssistant() {
           </button>
         </div>
       )}
-
+      </motion.div>
     </div>
 
     {/* Full chat — the existing panel (fixed-position, renders outside the
         corner stack so the flex gap never offsets the avatar). */}
     <div data-mascot-panel>
-      <AssistantChatPanel open={chatOpen} onClose={() => setChatOpen(false)} />
+      <AssistantChatPanel open={chatOpen} onClose={() => setChatOpen(false)} currentScreen={screen} />
     </div>
     </>
   )

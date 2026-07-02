@@ -16,6 +16,8 @@ import type { HidePeriod } from '@/lib/assistant/mascot/types'
 interface MascotControlsProps {
   onMinimize: () => void
   onHide: (period: HidePeriod) => void
+  /** Present only when AI insights are enabled in settings. */
+  onInsight?: () => void
   onClose: () => void
 }
 
@@ -26,7 +28,7 @@ const ITEMS: Array<{ period: HidePeriod; icon: string; label: string }> = [
   { period: 'forever', icon: 'block', label: 'Скрыть навсегда' },
 ]
 
-export function MascotControls({ onMinimize, onHide, onClose }: MascotControlsProps) {
+export function MascotControls({ onMinimize, onHide, onInsight, onClose }: MascotControlsProps) {
   const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -58,6 +60,12 @@ export function MascotControls({ onMinimize, onHide, onClose }: MascotControlsPr
       transition={{ duration: 0.14 }}
       className="w-56 rounded-2xl border border-white/[0.1] bg-[#12151c]/95 backdrop-blur-sm shadow-xl shadow-black/40 p-1.5"
     >
+      {onInsight && (
+        <button role="menuitem" className={item} onClick={onInsight}>
+          <span className="material-symbols-outlined text-base text-primary">tips_and_updates</span>
+          Инсайт от Гри
+        </button>
+      )}
       <button role="menuitem" className={item} onClick={onMinimize}>
         <span className="material-symbols-outlined text-base text-on-surface-variant">minimize</span>
         Свернуть
