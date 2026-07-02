@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { ActivityLogClient } from '@/components/activity/ActivityLogClient'
+import { BillingPanel } from '@/components/settings/BillingPanel'
 
 export interface SettingsInitial {
   firstName: string
@@ -69,10 +70,7 @@ export function SettingsClient({ initial, preferences }: { initial: SettingsInit
           <ComingSoon icon="group" title="Команда"
             points={['Участники компании', 'Приглашения по email', 'Роли и права', 'Лимиты тарифа']} />
         )}
-        {tab === 'billing' && (
-          <ComingSoon icon="credit_card" title="Биллинг"
-            points={['Текущий тариф и статус', 'Лимиты тарифа', 'История платежей', 'Управление оплатой (скоро)']} />
-        )}
+        {tab === 'billing' && <BillingPanel />}
       </div>
     </div>
   )

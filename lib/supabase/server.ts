@@ -13,9 +13,16 @@ export async function createClient() {
           return cookieStore.getAll()
         },
         setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) => {
-            cookieStore.set(name, value, options)
-          })
+          try {
+            cookiesToSet.forEach(({ name, value, options }) => {
+              cookieStore.set(name, value, options)
+            })
+          } catch {
+            // `setAll` was called from a Server Component, where cookies are
+            // read-only and .set() throws. Safe to ignore: middleware refreshes
+            // the session on every request. (Matches the sync factory in
+            // lib/supabase-server.ts and the official Supabase SSR pattern.)
+          }
         },
       },
     },
