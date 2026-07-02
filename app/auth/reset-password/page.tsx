@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { Suspense, useMemo, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -32,12 +32,40 @@ function ResetPasswordContent() {
   const [isLoading, setIsLoading] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [isDone, setIsDone] = useState(false)
+  // Link validity is decided by an actual recovery SESSION, not by the presence
+  // of ?code. Supabase recovery links arrive either as ?code (PKCE — must be
+  // exchanged) or as a #hash implicit token (auto-detected by the browser
+  // client). Gating on ?code alone rejected valid hash-flow links.
+  const [checking, setChecking] = useState(true)
+  const [canReset, setCanReset] = useState(false)
 
   const { register, handleSubmit, formState: { errors } } = useForm<Form>({
     resolver: zodResolver(schema),
   })
 
-  const isInvalidLink = useMemo(() => !code, [code])
+  useEffect(() => {
+    const supabase = createClient()
+    let active = true
+
+    const { data: sub } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'PASSWORD_RECOVERY' || event === 'SIGNED_IN') setCanReset(true)
+    })
+
+    ;(async () => {
+      // PKCE flow: exchange the ?code for a session.
+      if (code) {
+        try { await supabase.auth.exchangeCodeForSession(code) } catch { /* fall through to getSession */ }
+      }
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!active) return
+      if (session) setCanReset(true)
+      setChecking(false)
+    })()
+
+    return () => { active = false; sub.subscription.unsubscribe() }
+  }, [code])
+
+  const isInvalidLink = !checking && !canReset
 
   const onSubmit = async (data: Form) => {
     setErrorMessage(null)
@@ -59,6 +87,14 @@ function ResetPasswordContent() {
     setTimeout(() => {
       router.push('/login')
     }, 800)
+  }
+
+  if (checking) {
+    return (
+      <div className="glass-card rounded-2xl p-8 shadow-modal text-center">
+        <p className="text-sm text-on-surface-variant">Проверяем ссылку…</p>
+      </div>
+    )
   }
 
   if (isInvalidLink) {

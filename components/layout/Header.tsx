@@ -20,20 +20,9 @@ export function Header() {
   const [showUserMenu, setShowUserMenu] = useState(false)
   const [showQuickAction, setShowQuickAction] = useState(false)
   const [locale, setLocale] = useState<Locale>('ru')
-  const [time, setTime] = useState('')
   const [uploadStatus, setUploadStatus] = useState<'idle' | 'uploading' | 'done' | 'error'>('idle')
   const [uploadMessage, setUploadMessage] = useState<string>('')
   const fileInputRef = useRef<HTMLInputElement | null>(null)
-
-  useEffect(() => {
-    const update = () => {
-      const now = new Date()
-      setTime(now.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' }))
-    }
-    update()
-    const t = setInterval(update, 1000)
-    return () => clearInterval(t)
-  }, [])
 
   // Hydrate the toggle from the persisted cookie. The cookie isn't available
   // during SSR, so we read it after mount to keep server/client markup in sync.
@@ -306,11 +295,9 @@ export function Header() {
 
         <div className="w-px h-6 bg-outline-variant/20 hidden md:block" />
 
-        {/* Real-time clock */}
-        <div className="hidden md:flex items-center gap-1.5 font-mono text-xs text-on-surface-variant/70 select-none">
-          <span className="material-symbols-outlined text-sm">schedule</span>
-          <span className="tabular-nums w-[58px]">{time}</span>
-        </div>
+        {/* Real-time clock — isolated so its 1s tick doesn't re-render the
+            whole 380-line Header (menus, quick-actions, upload status). */}
+        <HeaderClock />
 
         {/* Language switcher — persisted RU↔EN, drives AI insights + module labels */}
         <button
@@ -381,5 +368,23 @@ export function Header() {
         </div>
       </div>
     </header>
+  )
+}
+
+// Isolated clock: only this tiny component re-renders on the 1s tick.
+function HeaderClock() {
+  const [time, setTime] = useState('')
+  useEffect(() => {
+    const update = () =>
+      setTime(new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' }))
+    update()
+    const t = setInterval(update, 1000)
+    return () => clearInterval(t)
+  }, [])
+  return (
+    <div className="hidden md:flex items-center gap-1.5 font-mono text-xs text-on-surface-variant/70 select-none">
+      <span className="material-symbols-outlined text-sm">schedule</span>
+      <span className="tabular-nums w-[58px]">{time}</span>
+    </div>
   )
 }

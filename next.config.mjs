@@ -50,14 +50,25 @@ const marketAppOrigin = (() => {
   }
 })()
 
+// 'unsafe-eval' is only needed by the dev/HMR runtime — drop it in production
+// to reduce XSS surface. 'unsafe-inline' stays (Next injects inline bootstrap
+// scripts without a nonce in 14.2.x).
+const isDev = process.env.NODE_ENV === 'development'
+const scriptSrc = isDev
+  ? "script-src 'self' 'unsafe-inline' 'unsafe-eval'"
+  : "script-src 'self' 'unsafe-inline'"
+
 const csp = [
   "default-src 'self'",
-  "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+  scriptSrc,
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "font-src 'self' https://fonts.gstatic.com https://fonts.googleapis.com",
   "img-src 'self' data: https://*.supabase.co https://lh3.googleusercontent.com",
   `connect-src 'self' https://*.supabase.co ${marketAppOrigin}`,
   `frame-src 'self' ${marketAppOrigin}`,
+  "frame-ancestors 'none'",
+  "base-uri 'self'",
+  "object-src 'none'",
 ].join('; ')
 
 const nextConfig = {

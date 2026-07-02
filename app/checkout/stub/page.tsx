@@ -39,7 +39,7 @@ export default function CheckoutStubPage({
   const successHref = `/checkout/success?plan=${encodeURIComponent(planKey)}`
 
   return (
-    <div className="min-h-screen bg-surface text-on-surface flex items-center justify-center px-6 py-16">
+    <div className="relative overflow-hidden min-h-screen bg-surface text-on-surface flex items-center justify-center px-6 py-16">
       {/* Glow */}
       <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[700px] h-[400px] bg-primary/5 rounded-full blur-3xl pointer-events-none" />
 
