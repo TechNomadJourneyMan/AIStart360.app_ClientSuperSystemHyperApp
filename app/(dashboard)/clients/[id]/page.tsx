@@ -6,7 +6,7 @@ import { createServerClient } from '@/lib/supabase-server'
 import { prisma } from '@/lib/db'
 import type { BlockScore, Risk, Insight, QuickWin } from '@/types/onboarding'
 
-export const metadata: Metadata = { title: 'Client Profile | Admin' }
+export const metadata: Metadata = { title: 'Профиль клиента | Админ' }
 
 async function fetchClientData(id: string) {
   // Use Prisma as the primary source for modern clients

@@ -5,7 +5,7 @@ import { EmptyState } from '@/components/common/EmptyState'
 import { getReportDocuments, uploadReportAction } from '@/app/actions/reports'
 
 
-export const metadata: Metadata = { title: 'Reports' }
+export const metadata: Metadata = { title: 'Отчёты' }
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`

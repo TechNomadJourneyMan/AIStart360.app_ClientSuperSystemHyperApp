@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { prisma } from '@/lib/db'
 import * as bitrix24 from '@/lib/crm/bitrix24'
@@ -23,35 +23,44 @@ const STAGE_RISK: Record<string, { risk: number; label: string }> = {
 type UserRole = 'super_admin' | 'admin' | 'owner' | 'expert' | 'manager' | 'client'
 
 /**
- * Read role & userId from httpOnly cookies set during login.
- * Falls back to Prisma user lookup when only user_id cookie is available.
+ * Resolve the caller from the Supabase session (NOT from the unsigned legacy
+ * `aistart360_role` cookie, which could be forged to `admin` to read every
+ * CRM deal). Returns null when there is no authenticated session → 401.
  */
-async function resolveCallerContext(req: NextRequest): Promise<{
+async function resolveCallerContext(
+  sb: ReturnType<typeof createServerClient>,
+): Promise<{
   role: UserRole
-  userId: string | null
+  userId: string
   userEmail: string | null
   orgName: string | null
-}> {
-  const role = (req.cookies.get('aistart360_role')?.value ?? 'expert') as UserRole
-  const userId = req.cookies.get('aistart360_user_id')?.value ?? null
+} | null> {
+  const {
+    data: { user },
+  } = await sb.auth.getUser()
+  if (!user?.id) return null
 
-  let userEmail: string | null = null
+  // Own-row read is RLS-safe (no cross-tenant recursion). Role comes from the DB.
+  const { data: profile } = await sb
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .maybeSingle()
+  const rawRole = typeof profile?.role === 'string' ? profile.role : 'client'
+  const role = (['super_admin', 'admin', 'owner', 'expert', 'manager', 'client'].includes(rawRole)
+    ? rawRole
+    : 'client') as UserRole
+
+  // Best-effort org name for the manager/expert deal fallback.
   let orgName: string | null = null
+  const { data: company } = await sb
+    .from('companies')
+    .select('name')
+    .eq('user_id', user.id)
+    .maybeSingle()
+  if (company && typeof company.name === 'string') orgName = company.name
 
-  if (userId) {
-    try {
-      const user = await prisma.user.findUnique({
-        where: { id: userId },
-        select: { email: true, org: { select: { name: true } } },
-      })
-      userEmail = user?.email ?? null
-      orgName = user?.org?.name ?? null
-    } catch {
-      // Non-fatal — continue with null values
-    }
-  }
-
-  return { role, userId, userEmail, orgName }
+  return { role, userId: user.id, userEmail: user.email ?? null, orgName }
 }
 
 /**
@@ -122,12 +131,16 @@ function filterPlatformClientsByRole(
   return clients
 }
 
-export async function GET(req: NextRequest) {
+export async function GET() {
   try {
     const sb = createServerClient()
 
-    // ── 0. Resolve caller context ──
-    const { role, userId, orgName } = await resolveCallerContext(req)
+    // ── 0. Resolve caller context (Supabase session required) ──
+    const ctx = await resolveCallerContext(sb)
+    if (!ctx) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+    const { role, userId, orgName } = ctx
 
     const crmClients: Array<Record<string, unknown>> = []
 

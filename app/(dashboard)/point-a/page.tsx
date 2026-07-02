@@ -1,7 +1,6 @@
 export const dynamic = "force-dynamic"
 
 import type { Metadata } from 'next'
-import { cookies } from 'next/headers'
 import { auth } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
 import { FileArea } from '@/components/point-a/FileArea'
@@ -25,15 +24,9 @@ export const metadata: Metadata = { title: 'Точка А — Текущее с�
 export default async function PointAPage() {
   const session = await auth()
 
-  // Resolve userId from ALL auth sources:
-  // 1. Staff httpOnly cookie (Prisma login)
-  // 2. Supabase Auth session (Google OAuth / email login)
-  // 3. NextAuth session
-  // 4. GigaAccessGuard role cookie fallback
-  const cookieStore = await cookies()
-  const staffUserId = cookieStore.get('aistart360_user_id')?.value ?? null
-  const staffRole = cookieStore.get('aistart360_role')?.value ?? null
-
+  // Identity comes from the Supabase session only. The old forgeable
+  // `aistart360_user_id` / `aistart360_role` cookies are NOT consulted — they
+  // let a signed-in user load another user's data (IDOR). Audit 2026-07-02.
   let supabaseUserId: string | null = null
   try {
     const supabase = await createClient()
@@ -43,7 +36,7 @@ export default async function PointAPage() {
     // Supabase auth not available
   }
 
-  let clientId = staffUserId ?? supabaseUserId ?? session?.user?.id ?? (staffRole ? `giga-${staffRole}` : null)
+  let clientId = supabaseUserId ?? session?.user?.id ?? null
 
   // Fetch data from Supabase REST API (bypasses RLS)
   let docsCount = 0

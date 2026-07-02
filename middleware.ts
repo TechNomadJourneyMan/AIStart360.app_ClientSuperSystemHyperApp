@@ -66,6 +66,12 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith('/_next') ||
     pathname.startsWith('/api') ||
     pathname.startsWith('/logo') ||
+    pathname.startsWith('/fonts') ||
+    // Static assets in public/ must skip the network auth (getUser + profiles):
+    // otherwise every font/audio/css/js request pays 2 round-trips and, for
+    // anonymous callers, gets 307→/login — which breaks SW precache and serves
+    // HTML for a .ttf. public/ has no private files.
+    /\.(svg|png|jpg|jpeg|gif|webp|ico|m4a|mp3|ttf|otf|woff|woff2|css|js|map|txt|xml)$/.test(pathname) ||
     pathname.endsWith('.svg') ||
     pathname.endsWith('.png') ||
     pathname.endsWith('.ico') ||

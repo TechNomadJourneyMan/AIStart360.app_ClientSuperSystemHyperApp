@@ -84,12 +84,22 @@ export interface AuthSession {
 }
 
 function mapProfileRoleToUserRole(role: string | null | undefined): UserRole {
-  if (role === 'super_admin' || role === 'owner') return 'SUPER_ADMIN'
+  if (role === 'super_admin') return 'SUPER_ADMIN'
   if (role === 'admin') return 'ADMIN'
   if (role === 'manager' || role === 'expert') return 'MANAGER'
   if (role === 'analyst') return 'ANALYST'
+  // 'owner' (команда AIStart360) is NOT a platform super-admin — it has its own
+  // /owner/* area and is excluded from /api/v1/admin by supabase-admin-guard.
+  // Previously owner→SUPER_ADMIN, which let a self-registered "Команда" account
+  // reach every /api/admin/* permission. It gets no admin permissions here.
   return 'CLIENT'
 }
+
+// Statuses that must NOT grant elevated (non-CLIENT) access. Self-registration
+// always starts 'pending_approval' — an admin must approve before any power.
+const NON_APPROVED_STATUSES = new Set([
+  'pending_approval', 'pending', 'blocked', 'rejected', 'suspended', 'banned',
+])
 
 // Wrapped in React `cache()` so multiple guards/components in the SAME request
 // (requireAuth → requirePermission, plus any RSC that needs the session) share
@@ -104,16 +114,24 @@ export const getAdminSession = cache(async (): Promise<AuthSession | null> => {
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('role, full_name')
+    .select('role, full_name, status')
     .eq('id', user.id)
     .maybeSingle()
+
+  const mappedRole = mapProfileRoleToUserRole(typeof profile?.role === 'string' ? profile.role : null)
+  const status = typeof profile?.status === 'string' ? profile.status : null
+
+  // Defense-in-depth: an un-approved account never carries elevated permissions,
+  // whatever its role claims. Closes self-register → instant admin escalation.
+  const role: UserRole =
+    mappedRole !== 'CLIENT' && status && NON_APPROVED_STATUSES.has(status) ? 'CLIENT' : mappedRole
 
   return {
     user: {
       id: user.id,
       email: user.email,
       name: typeof profile?.full_name === 'string' ? profile.full_name : null,
-      role: mapProfileRoleToUserRole(typeof profile?.role === 'string' ? profile.role : null),
+      role,
     },
   }
 })

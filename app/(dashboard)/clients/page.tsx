@@ -3,7 +3,7 @@ import { ClientsTable } from '@/components/clients/ClientsTable'
 import { ClientFilters } from '@/components/clients/ClientFilters'
 import { createServerClient } from '@/lib/supabase-server'
 
-export const metadata: Metadata = { title: 'Clients' }
+export const metadata: Metadata = { title: 'Клиенты' }
 
 async function getClientStats() {
   try {

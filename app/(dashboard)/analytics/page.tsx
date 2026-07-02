@@ -3,7 +3,7 @@ export const dynamic = "force-dynamic"
 import type { Metadata } from 'next'
 import { getAnalyticsData } from '@/lib/analytics-data'
 
-export const metadata: Metadata = { title: 'Analytics' }
+export const metadata: Metadata = { title: 'Аналитика' }
 
 const PERIOD_OPTIONS = ['7 дней', '30 дней', '90 дней', '12 месяцев']
 

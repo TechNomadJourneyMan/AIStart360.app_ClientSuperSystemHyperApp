@@ -1,7 +1,9 @@
 export const dynamic = 'force-dynamic'
 
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
+import { createServerClient } from '@/lib/supabase-server'
+import { isRateLimited } from '@/lib/rate-limit'
 import * as bitrix24 from '@/lib/crm/bitrix24'
 import * as amocrm from '@/lib/crm/amocrm'
 
@@ -10,12 +12,34 @@ const STAGE_RISK: Record<string, number> = {
   EXECUTING: 20, WON: 5, LOSE: 90, APOLOGY: 95,
 }
 
+// Staff roles that may see the platform CRM briefing (Pulse is not for clients).
+const PULSE_ROLES = new Set(['super_admin', 'admin', 'owner', 'expert', 'manager'])
+
 /**
  * POST /api/pulse/briefing — generate or refresh daily sales briefing
  * Caches in setting 'pulse_briefing' for 1 day
  */
-export async function POST() {
+export async function POST(req: NextRequest) {
   try {
+    // Auth: staff session required. Prevents anonymous callers from burning the
+    // OpenRouter budget and reading platform CRM data.
+    const sb = createServerClient()
+    const { data: { user } } = await sb.auth.getUser()
+    if (!user?.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+    const { data: profile } = await sb
+      .from('profiles').select('role').eq('id', user.id).maybeSingle()
+    const role = typeof profile?.role === 'string' ? profile.role : 'client'
+    if (!PULSE_ROLES.has(role)) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
+    // Throttle the paid AI call per caller.
+    if (await isRateLimited(req, 'pulse-briefing')) {
+      return NextResponse.json({ briefing: null, error: 'Слишком часто. Попробуйте позже.' }, { status: 429 })
+    }
+
     const openrouterKey = process.env.OPENROUTER_API_KEY
     if (!openrouterKey) {
       return NextResponse.json({ briefing: null, error: 'OpenRouter not configured' })

@@ -118,7 +118,15 @@ export default function WaitingRoomPage() {
               {userEmail}
             </span>
           )}
-          <button onClick={() => { document.cookie = 'aistart360_role=; path=/; max-age=0'; window.location.href = '/login' }}
+          <button onClick={async () => {
+              // Must end the Supabase session, not just the legacy cookie —
+              // otherwise middleware sees a live session and bounces the user
+              // straight back in (pending client could never sign out).
+              try { await createClient().auth.signOut() } catch {}
+              document.cookie = 'aistart360_role=; path=/; max-age=0'
+              document.cookie = 'aistart360_user_id=; path=/; max-age=0'
+              window.location.href = '/login'
+            }}
             className="text-xs text-red-400/70 hover:text-red-400 flex items-center gap-1 border border-red-500/10 px-2.5 py-1.5 rounded-lg transition-all">
             <span className="material-symbols-outlined text-sm">logout</span>
             Выход

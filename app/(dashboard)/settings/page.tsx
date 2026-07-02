@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import { createClient } from '@/lib/supabase/server'
 import { SettingsClient, type SettingsInitial, type Prefs } from '@/components/settings/SettingsClient'
 
-export const metadata: Metadata = { title: 'Settings' }
+export const metadata: Metadata = { title: 'Настройки' }
 export const dynamic = 'force-dynamic'
 
 export default async function SettingsPage() {

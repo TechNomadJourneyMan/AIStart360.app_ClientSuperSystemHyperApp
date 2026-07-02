@@ -19,7 +19,9 @@ export default function DashboardLayout({
       <DashboardShell>
         <Header />
         <main className="flex-1 pt-16">
-          <div className="px-4 md:px-6 lg:px-8 py-6 max-w-[1600px] mx-auto">
+          {/* pb reserves space for the floating assistant FAB (bottom-6) and the
+              mobile bottom nav so page action rows never sit under them. */}
+          <div className="px-4 md:px-6 lg:px-8 pt-6 pb-28 lg:pb-24 max-w-[1600px] mx-auto">
             {children}
           </div>
         </main>

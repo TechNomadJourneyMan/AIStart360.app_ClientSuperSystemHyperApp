@@ -9,8 +9,30 @@ const withPWA = withPWAInit({
   register: true,
   cacheOnFrontEndNav: true,
   reloadOnOnline: true,
+  // Never precache heavy/dead media (they must not ship in the SW manifest).
+  publicExcludes: ['!gri-pulse-audio/**', '!gri-pulse-assets/**', '!**/*.m4a'],
   workboxOptions: {
     disableDevLogs: true,
+    // Override the package default (which NetworkFirst-caches ALL GET /api/* for
+    // 24h). Authenticated API responses must NOT sit on disk — that leaked one
+    // user's data to the next on a shared device and served stale data on slow
+    // networks. Only cache Next static assets and same-origin images.
+    runtimeCaching: [
+      {
+        urlPattern: ({ url }) => url.pathname.startsWith('/api/'),
+        handler: 'NetworkOnly',
+      },
+      {
+        urlPattern: ({ request }) => request.destination === 'image',
+        handler: 'StaleWhileRevalidate',
+        options: { cacheName: 'images', expiration: { maxEntries: 64, maxAgeSeconds: 86400 } },
+      },
+      {
+        urlPattern: ({ url }) => url.pathname.startsWith('/_next/static/'),
+        handler: 'CacheFirst',
+        options: { cacheName: 'next-static', expiration: { maxEntries: 128, maxAgeSeconds: 2592000 } },
+      },
+    ],
   },
 })
 

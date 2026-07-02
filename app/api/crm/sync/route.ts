@@ -2,7 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { requireAuth } from '@/lib/api-utils'
+import { requireCrmOrg } from '@/lib/crm/auth'
 import * as bitrix24 from '@/lib/crm/bitrix24'
 import * as amocrm from '@/lib/crm/amocrm'
 
@@ -12,10 +12,8 @@ import * as amocrm from '@/lib/crm/amocrm'
  */
 export async function POST(req: NextRequest) {
   try {
-    const { session, error } = await requireAuth()
+    const { orgId, error } = await requireCrmOrg()
     if (error) return error
-
-    const orgId = (session!.user as any).orgId as string | undefined
     if (!orgId) {
       return NextResponse.json({ error: 'No organization' }, { status: 403 })
     }

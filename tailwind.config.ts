@@ -124,6 +124,15 @@ const config: Config = {
           from: { opacity: '0', transform: 'translateX(40px)' },
           to:   { opacity: '1', transform: 'translateX(0)' },
         },
+        // Brand preloader — concentric rings (mirrors aistart360.app landing)
+        'ring-spin': {
+          from: { transform: 'rotate(0deg)' },
+          to:   { transform: 'rotate(360deg)' },
+        },
+        'logo-pulse': {
+          '0%, 100%': { opacity: '0.55' },
+          '50%':      { opacity: '1' },
+        },
       },
 
       animation: {
@@ -133,6 +142,11 @@ const config: Config = {
         'bell-shake':     'bell-shake 0.5s ease-in-out',
         'count-up':       'count-up 0.6s ease-out',
         'slide-in-right': 'slide-in-right 0.3s ease-out',
+        // Preloader rings: different speeds + reversed middle ring
+        'ring-spin-slow': 'ring-spin 1.5s linear infinite',
+        'ring-spin-med':  'ring-spin 2s linear infinite reverse',
+        'ring-spin-fast': 'ring-spin 1s linear infinite',
+        'logo-pulse':     'logo-pulse 2s ease-in-out infinite',
       },
     },
   },

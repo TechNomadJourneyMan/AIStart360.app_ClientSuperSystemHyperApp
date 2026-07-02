@@ -4,7 +4,7 @@ import type { Metadata } from 'next'
 import { prisma } from '@/lib/db'
 import { EmptyState } from '@/components/common/EmptyState'
 
-export const metadata: Metadata = { title: 'Intelligence Hub' }
+export const metadata: Metadata = { title: 'Intelligence Hub — Аналитический центр' }
 
 export default async function IntelligencePage() {
   const [auditEvents, clientCount] = await Promise.all([

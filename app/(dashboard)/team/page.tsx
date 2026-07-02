@@ -4,7 +4,7 @@ import type { Metadata } from 'next'
 import { StatusBadge } from '@/components/common/StatusBadge'
 import { prisma } from '@/lib/db'
 
-export const metadata: Metadata = { title: 'Team' }
+export const metadata: Metadata = { title: 'Команда' }
 
 export default async function TeamPage() {
   const members = await prisma.user.findMany({

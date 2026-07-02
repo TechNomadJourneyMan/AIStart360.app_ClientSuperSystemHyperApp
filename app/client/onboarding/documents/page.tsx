@@ -489,7 +489,14 @@ export default function DocumentsPage() {
           </div>
           <div className="flex items-center gap-3">
             <span className="text-xs font-mono text-on-surface-variant">Загрузка документов</span>
-            <button onClick={() => { document.cookie = 'aistart360_role=; path=/; max-age=0'; window.location.href = '/login' }}
+            <button onClick={async () => {
+                // End the Supabase session too, or middleware bounces the user
+                // right back (couldn't sign out from the documents step).
+                try { await createClient().auth.signOut() } catch {}
+                document.cookie = 'aistart360_role=; path=/; max-age=0'
+                document.cookie = 'aistart360_user_id=; path=/; max-age=0'
+                window.location.href = '/login'
+              }}
               className="text-xs text-red-400/70 hover:text-red-400 flex items-center gap-1 border border-red-500/10 px-2 py-1 rounded-lg transition-all">
               <span className="material-symbols-outlined text-sm">logout</span>
               Выход

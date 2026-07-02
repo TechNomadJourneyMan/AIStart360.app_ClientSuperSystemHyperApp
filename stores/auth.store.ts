@@ -291,6 +291,19 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
       document.cookie = 'aistart360_user_id=; path=/; max-age=0'
     }
 
+    // Wipe local caches so the next user on a shared device can't see the
+    // previous user's data: react-query persist blob + the service-worker
+    // 'apis'/'images' caches. Audit 2026-07-02.
+    if (typeof window !== 'undefined') {
+      try { window.localStorage.removeItem('aistart360_rq_cache') } catch {}
+      if ('caches' in window) {
+        try {
+          const keys = await caches.keys()
+          await Promise.all(keys.map((k) => caches.delete(k)))
+        } catch {}
+      }
+    }
+
     set({ user: null, role: null, error: null })
     if (typeof window !== 'undefined') {
       window.location.href = '/login'
