@@ -570,11 +570,15 @@ export default function MascotAssistant() {
       }}
     >
       {/* Idle-life carrier: the whole stack (menu, bubble, cat) strolls together,
-          so the bubble tail always points at the cat wherever it stands. */}
+          so the bubble tail always points at the cat wherever it stands.
+          onUpdate feeds the live x back so interruptions keep a constant px/s. */}
       <motion.div
         className="flex flex-col items-end gap-2"
         animate={{ x: behavior.x }}
-        transition={{ duration: behavior.moveDuration, ease: 'linear' }}
+        transition={{ duration: behavior.moveDuration, ease: [0.45, 0.05, 0.55, 0.95] }}
+        onUpdate={(latest) => {
+          if (typeof latest.x === 'number') behavior.onMove(latest.x)
+        }}
         onAnimationComplete={behavior.onArrive}
       >
       <AnimatePresence>
@@ -615,7 +619,13 @@ export default function MascotAssistant() {
           )}
         </button>
       ) : (
-        <div className="relative group">
+        <div
+          className="relative group"
+          // Наведение = «стой, я к тебе»: кот мягко останавливается и ждёт,
+          // чтобы по нему можно было попасть кликом (ТЗ v1.1).
+          onPointerEnter={() => behavior.setHold(true)}
+          onPointerLeave={() => behavior.setHold(false)}
+        >
           <button
             onClick={() => openChat('avatar')}
             onContextMenu={(e) => {

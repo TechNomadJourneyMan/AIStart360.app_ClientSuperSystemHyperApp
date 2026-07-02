@@ -29,6 +29,14 @@ export interface MascotBehavior {
   facing: 'left' | 'right'
   /** Parent must call this when the x-animation completes. */
   onArrive: () => void
+  /**
+   * Feed the LIVE animated x back (framer onUpdate). Interruptions compute
+   * distance/speed from the real position — without this a mid-walk retarget
+   * would use the stale TARGET and the cat would crawl or teleport.
+   */
+  onMove: (latestX: number) => void
+  /** Hover freeze: true while the cursor is over the cat — it stops and waits. */
+  setHold: (hold: boolean) => void
 }
 
 const WALK_SPEED = 70 // px/s — a calm stroll
@@ -67,6 +75,9 @@ export function useMascotBehavior(opts: {
 
   const actTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastActivity = useRef(Date.now())
+  /** The real, currently RENDERED x (fed by framer onUpdate via onMove). */
+  const liveX = useRef(0)
+  const holdRef = useRef(false)
 
   const clearActTimer = () => {
     if (actTimer.current) {
@@ -76,7 +87,9 @@ export function useMascotBehavior(opts: {
   }
 
   const goHome = useCallback((fast: boolean) => {
-    const dist = Math.abs(xRef.current)
+    // Distance from the REAL rendered position — a mid-walk interruption must
+    // keep the px/s speed constant, not stretch it to the stale target.
+    const dist = Math.abs(liveX.current)
     if (dist < 1) {
       setPhase('home')
       setX(0)
@@ -92,8 +105,8 @@ export function useMascotBehavior(opts: {
     const vw = typeof window !== 'undefined' ? window.innerWidth : 1280
     const maxLeft = Math.max(140, Math.min(vw * 0.6, vw - 300))
     const target = -rand(140, maxLeft)
-    setFacing(target < xRef.current ? 'left' : 'right')
-    setMoveDuration(Math.abs(target - xRef.current) / WALK_SPEED)
+    setFacing(target < liveX.current ? 'left' : 'right')
+    setMoveDuration(Math.abs(target - liveX.current) / WALK_SPEED)
     setPhase('stroll')
     setX(target)
   }, [])
@@ -102,7 +115,7 @@ export function useMascotBehavior(opts: {
     clearActTimer()
     if (!walkingEnabled) return
     actTimer.current = setTimeout(() => {
-      if (busyRef.current || pausedRef.current || phaseRef.current !== 'home') {
+      if (busyRef.current || pausedRef.current || holdRef.current || phaseRef.current !== 'home') {
         scheduleNextAct()
         return
       }
@@ -121,11 +134,12 @@ export function useMascotBehavior(opts: {
 
   /** The x-animation finished — advance the walk phases. */
   const onArrive = useCallback(() => {
+    liveX.current = xRef.current
     const p = phaseRef.current
     if (p === 'stroll') {
       setPhase('pause')
       actTimer.current = setTimeout(() => {
-        if (busyRef.current || phaseRef.current !== 'pause') return
+        if (busyRef.current || holdRef.current || phaseRef.current !== 'pause') return
         if (Math.random() < 0.45) startStroll()
         else goHome(false)
       }, rand(2000, 5000))
@@ -135,6 +149,42 @@ export function useMascotBehavior(opts: {
       scheduleNextAct()
     }
   }, [startStroll, goHome, scheduleNextAct])
+
+  const onMove = useCallback((latestX: number) => {
+    liveX.current = latestX
+  }, [])
+
+  /**
+   * Hover freeze: the cat stops right where it is and waits while the cursor
+   * is over it (so it never walks away from a click); on leave it strolls
+   * home after a short beat.
+   */
+  const setHold = useCallback(
+    (hold: boolean) => {
+      if (holdRef.current === hold) return
+      holdRef.current = hold
+      if (hold) {
+        clearActTimer()
+        const p = phaseRef.current
+        if (p === 'stroll' || p === 'return') {
+          // Soft stop at the real current position, turn to face the user.
+          setMoveDuration(0.15)
+          setPhase('pause')
+          setX(Math.round(liveX.current))
+          setFacing('right')
+        } else if (p === 'rub') {
+          setPhase('home')
+        }
+      } else {
+        actTimer.current = setTimeout(() => {
+          if (busyRef.current || holdRef.current) return
+          if (phaseRef.current === 'pause') goHome(false)
+          else if (phaseRef.current === 'home') scheduleNextAct()
+        }, 800)
+      }
+    },
+    [goHome, scheduleNextAct],
+  )
 
   // Busy → hurry home / wake up; free again → resume idle scheduling.
   useEffect(() => {
@@ -169,13 +219,14 @@ export function useMascotBehavior(opts: {
     return () => events.forEach((e) => window.removeEventListener(e, onActivity))
   }, [scheduleNextAct])
 
-  // Sleep watcher.
+  // Sleep watcher (a hovered cat is being watched — it doesn't doze off).
   useEffect(() => {
     if (!sleepEnabled) return
     const id = setInterval(() => {
       if (
         !busyRef.current &&
         !pausedRef.current &&
+        !holdRef.current &&
         phaseRef.current === 'home' &&
         Date.now() - lastActivity.current > SLEEP_AFTER_MS
       ) {
@@ -198,5 +249,5 @@ export function useMascotBehavior(opts: {
           ? 'rub'
           : null
 
-  return { visual, x, moveDuration, facing, onArrive }
+  return { visual, x, moveDuration, facing, onArrive, onMove, setHold }
 }
