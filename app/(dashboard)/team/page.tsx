@@ -32,7 +32,7 @@ export default async function TeamPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="font-headline text-3xl font-extrabold text-on-surface">Team</h1>
+          <h1 className="font-headline text-3xl font-extrabold text-on-surface">Команда</h1>
           <p className="text-on-surface-variant text-sm mt-1">Аллокация и загрузка команды в реальном времени</p>
         </div>
         <button className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-br from-primary to-primary-container text-on-primary text-sm font-semibold rounded-xl shadow-primary-sm hover:scale-[0.98] transition-all">

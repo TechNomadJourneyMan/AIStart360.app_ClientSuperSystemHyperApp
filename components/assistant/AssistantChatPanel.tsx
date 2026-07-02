@@ -21,7 +21,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { toast, Toaster } from 'sonner'
+import { toast } from 'sonner'
 import { getSection } from '@/lib/assistant/sections'
 import { getClientLocale, type Locale } from '@/lib/i18n/locale'
 
@@ -561,10 +561,6 @@ export function AssistantChatPanel({ open, onClose }: { open: boolean; onClose: 
           </p>
         </footer>
       </aside>
-
-      {/* Local toaster so the expert-handoff confirmation renders even when no
-          global <Toaster/> is mounted in a layout. */}
-      <Toaster position="bottom-center" theme="dark" richColors />
     </>
   )
 }

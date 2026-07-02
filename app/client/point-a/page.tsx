@@ -10,7 +10,6 @@ import PointADashboardSectionsBoundary from '@/components/dashboard/PointADashbo
 import GrowthSnapshotHero from '@/components/dashboard/GrowthSnapshotHero'
 import MyDataSection from '@/components/client/MyDataSection'
 import AssistantHintWidget from '@/components/assistant/AssistantHintWidget'
-import { AssistantChatLauncher } from '@/components/assistant/AssistantChatPanel'
 import { ShareButton } from '@/components/share/ShareButton'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -629,9 +628,8 @@ export default function PointAClientPage() {
           </>
         )}
       </main>
-
-      {/* Floating assistant dock — opens the slide-over chat panel */}
-      <AssistantChatLauncher />
+      {/* Assistant dock is provided once by app/client/layout.tsx — do not mount
+          a second launcher here (it stacked two FABs + duplicate toasters). */}
     </div>
   )
 }

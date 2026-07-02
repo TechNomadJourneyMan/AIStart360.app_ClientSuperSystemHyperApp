@@ -29,6 +29,20 @@
     background-color: rgba(110, 255, 192, 0.25);
   }
 
+  /* Respect the OS "reduce motion" setting: neutralise infinite spinners,
+     pulses and long transitions (Tailwind animations + most framer-motion
+     transitions) for users with vestibular sensitivity. Audit 2026-07-02. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+
   /* Material Icons */
   .material-symbols-outlined {
     font-family: 'Material Symbols Outlined';

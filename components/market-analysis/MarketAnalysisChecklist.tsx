@@ -13,7 +13,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { toast, Toaster } from 'sonner'
+import { toast } from 'sonner'
 import dynamic from 'next/dynamic'
 import type { ConfirmedAnswer } from './MarketDataPanel'
 
@@ -295,8 +295,6 @@ export function MarketAnalysisChecklist() {
 
   return (
     <div className="relative">
-      <Toaster theme="dark" position="bottom-right" richColors />
-
       {/* Decorative glow */}
       <div
         className="pointer-events-none absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[400px] bg-primary/5 rounded-full blur-[120px]"

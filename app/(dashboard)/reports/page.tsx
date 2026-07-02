@@ -38,7 +38,7 @@ export default async function ReportsPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="font-headline text-3xl font-bold text-on-surface">Reports Hub</h1>
+          <h1 className="font-headline text-3xl font-bold text-on-surface">Отчёты</h1>
           <p className="text-on-surface-variant text-sm mt-1">{reports.length} документов</p>
 
         </div>

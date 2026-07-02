@@ -12,7 +12,7 @@ import {
   Tooltip,
   Legend,
 } from "recharts"
-import { toast, Toaster } from "sonner"
+import { toast } from "sonner"
 import {
   AlertTriangle,
   TrendingUp,
@@ -856,8 +856,6 @@ export default function GRICalculator() {
   return (
     <TooltipProvider>
       <div className="gri-calc flex flex-col rounded-2xl overflow-hidden border border-white/[0.06]" style={{ background: "#0a0a0a" }}>
-        <Toaster position="bottom-right" theme="dark" richColors />
-
         {/* ── Header ── */}
         <motion.header
           initial={{ opacity: 0, y: -10 }}

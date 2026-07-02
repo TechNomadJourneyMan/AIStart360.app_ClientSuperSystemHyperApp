@@ -7,7 +7,7 @@ import { useState } from 'react'
 import { useUIStore } from '@/stores/ui.store'
 import { useAuthStore } from '@/stores/auth.store'
 
-const PRIMARY_NAV = [
+export const OWNER_PRIMARY_NAV = [
   { label: 'Дэшборд',    href: '/owner/dashboard',  icon: 'dashboard'       },
   { label: 'GRI',        href: '/owner/gri',         icon: 'radar'           },
   { label: 'Рынок',      href: '/owner/market',      icon: 'public'          },
@@ -18,7 +18,7 @@ const PRIMARY_NAV = [
   { label: 'Метрики',    href: '/owner/metrics',     icon: 'monitoring'      },
 ]
 
-const SECONDARY_NAV = [
+export const OWNER_SECONDARY_NAV = [
   { label: 'Клиенты',     href: '/owner/clients',       icon: 'business_center'     },
   { label: 'Отчёты',      href: '/owner/reports',       icon: 'description'         },
   { label: 'Аналитика',   href: '/owner/analytics',     icon: 'bar_chart'           },
@@ -28,6 +28,13 @@ const SECONDARY_NAV = [
   { label: 'Пользователи',href: '/owner/users',         icon: 'manage_accounts'     },
   { label: 'Админ',       href: '/owner/admin',         icon: 'admin_panel_settings'},
 ]
+
+export function isOwnerNavActive(pathname: string, href: string) {
+  return href === '/owner/dashboard' ? pathname === href : pathname.startsWith(href)
+}
+
+const PRIMARY_NAV = OWNER_PRIMARY_NAV
+const SECONDARY_NAV = OWNER_SECONDARY_NAV
 
 export function OwnerSidebar() {
   const pathname = usePathname()

@@ -57,7 +57,7 @@ export default function ClientPointBPage() {
       {/* Header */}
       <section>
         <nav className="flex items-center gap-2 text-[10px] font-mono text-on-surface-variant uppercase tracking-widest mb-6">
-          <Link href="/clients" className="hover:text-primary transition-colors">Clients</Link>
+          <Link href="/clients" className="hover:text-primary transition-colors">Клиенты</Link>
           <span className="material-symbols-outlined text-xs">chevron_right</span>
           <Link href={`/clients/${params.id}`} className="hover:text-primary transition-colors">Client Profile</Link>
           <span className="material-symbols-outlined text-xs">chevron_right</span>

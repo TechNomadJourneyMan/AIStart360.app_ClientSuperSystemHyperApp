@@ -77,7 +77,7 @@ export default function AdminPage() {
       <section className="sticky top-0 z-20 bg-surface/80 backdrop-blur-xl -mx-4 px-4 py-4 border-b border-white/5">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
-            <h1 className="font-headline text-2xl font-black text-on-surface tracking-tight uppercase">Platform Command</h1>
+            <h1 className="font-headline text-2xl font-black text-on-surface tracking-tight uppercase">Панель управления</h1>
             <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-[0.2em] mt-1 opacity-60">
               {loading ? 'Загрузка данных…' : error ? 'Ошибка загрузки' : 'Status: Operational'}
             </p>

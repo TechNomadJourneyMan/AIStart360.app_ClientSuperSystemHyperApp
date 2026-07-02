@@ -22,7 +22,7 @@ export default async function AnalyticsPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="font-headline text-3xl font-bold text-on-surface">Analytics</h1>
+          <h1 className="font-headline text-3xl font-bold text-on-surface">Аналитика</h1>
           <p className="text-on-surface-variant text-sm mt-1">Метрики и производительность портфеля</p>
         </div>
         <div className="flex gap-1 bg-surface-container rounded-lg p-1">

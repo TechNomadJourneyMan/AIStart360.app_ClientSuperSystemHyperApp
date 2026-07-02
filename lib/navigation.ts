@@ -1,26 +1,32 @@
 import type { NavItem, UserRole } from '@/types'
 
 const ALL_ROLES: UserRole[] = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ANALYST', 'CLIENT']
+// Staff-only surfaces. These pages live in the (dashboard) group and middleware
+// keeps them in ADMIN_PATHS — a CLIENT hitting them is silently redirected to
+// /dashboard, so they must NOT appear in the client sidebar (dead links).
+const STAFF_ROLES: UserRole[] = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ANALYST']
+// What a CLIENT may actually open — mirrors middleware CLIENT_DASHBOARD_PATHS.
+const CLIENT_OK: UserRole[] = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ANALYST', 'CLIENT']
 
 // PRIMARY navigation — shown directly in the sidebar
 export const PRIMARY_NAV: NavItem[] = [
-  { label: 'Дэшборд',   href: '/dashboard', icon: 'dashboard',   roles: ALL_ROLES },
-  { label: 'GRI',       href: '/gri',        icon: 'radar',       roles: ALL_ROLES },
-  { label: 'GRI Pulse', href: '/pulse',      icon: 'cell_tower',  roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'CLIENT'] },
-  { label: 'Точка А',   href: '/point-a',    icon: 'my_location', roles: ALL_ROLES },
-  { label: 'Точка Б',   href: '/point-b',    icon: 'flag',        roles: ALL_ROLES },
-  { label: 'Метрики',   href: '/metrics',    icon: 'monitoring',  roles: ALL_ROLES },
+  { label: 'Дэшборд',   href: '/dashboard', icon: 'dashboard',   roles: CLIENT_OK },
+  { label: 'GRI',       href: '/gri',        icon: 'radar',       roles: CLIENT_OK },
+  { label: 'GRI Pulse', href: '/pulse',      icon: 'cell_tower',  roles: STAFF_ROLES },
+  { label: 'Точка А',   href: '/point-a',    icon: 'my_location', roles: CLIENT_OK },
+  { label: 'Точка Б',   href: '/point-b',    icon: 'flag',        roles: CLIENT_OK },
+  { label: 'Метрики',   href: '/metrics',    icon: 'monitoring',  roles: CLIENT_OK },
   {
     label: 'Рынок',
     href: '/market',
     icon: 'public',
-    roles: ALL_ROLES,
+    roles: CLIENT_OK,
     subItems: [
-      { label: 'Рынок',            href: '/market',             icon: 'public',         roles: ALL_ROLES },
-      { label: 'Конкуренты',       href: '/competitors',        icon: 'compare_arrows', roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'CLIENT'] },
-      { label: 'Инсайты',          href: '/insights',           icon: 'lightbulb',      roles: ALL_ROLES },
-      { label: 'Разведка',         href: '/intelligence',       icon: 'hub',            roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'CLIENT'] },
-      { label: 'Мониторинг рынка', href: '/market/monitoring',  icon: 'monitoring',     roles: ALL_ROLES },
+      // Only /market itself is client-reachable; the rest are ADMIN_PATHS.
+      { label: 'Рынок',      href: '/market',       icon: 'public',         roles: CLIENT_OK },
+      { label: 'Конкуренты', href: '/competitors',  icon: 'compare_arrows', roles: STAFF_ROLES },
+      { label: 'Инсайты',    href: '/insights',     icon: 'lightbulb',      roles: STAFF_ROLES },
+      { label: 'Разведка',   href: '/intelligence', icon: 'hub',            roles: STAFF_ROLES },
     ],
   },
 ]
@@ -28,10 +34,10 @@ export const PRIMARY_NAV: NavItem[] = [
 // SECONDARY navigation — hidden behind "Ещё"
 export const SECONDARY_NAV: NavItem[] = [
   { label: 'Клиенты',      href: '/clients',      icon: 'business_center',   roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER'] },
-  { label: 'Отчёты',       href: '/reports',      icon: 'description',       roles: ALL_ROLES },
-  { label: 'Аналитика',    href: '/analytics',    icon: 'bar_chart',         roles: ALL_ROLES },
+  { label: 'Отчёты',       href: '/reports',      icon: 'description',       roles: STAFF_ROLES },
+  { label: 'Аналитика',    href: '/analytics',    icon: 'bar_chart',         roles: STAFF_ROLES },
   { label: 'Команда',      href: '/team',         icon: 'group',             roles: ['SUPER_ADMIN', 'ADMIN'] },
-  { label: 'Уведомления',  href: '/notifications',icon: 'notifications',     roles: ALL_ROLES },
+  { label: 'Уведомления',  href: '/notifications',icon: 'notifications',     roles: CLIENT_OK },
   { label: 'Пользователи', href: '/users',        icon: 'manage_accounts',   roles: ['SUPER_ADMIN', 'ADMIN'] },
   { label: 'Админ',        href: '/admin',        icon: 'admin_panel_settings', roles: ['SUPER_ADMIN', 'ADMIN'] },
 ]

@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { useTheme } from 'next-themes'
 import { ActivityLogClient } from '@/components/activity/ActivityLogClient'
 
 export interface SettingsInitial {
@@ -63,7 +62,7 @@ export function SettingsClient({ initial, preferences }: { initial: SettingsInit
         {tab === 'profile' && <ProfilePanel initial={initial} />}
         {tab === 'security' && <SecurityPanel />}
         {tab === 'notifications' && <NotificationsPanel initial={preferences?.notifications} />}
-        {tab === 'appearance' && <AppearancePanel initialTheme={preferences?.appearance?.theme} />}
+        {tab === 'appearance' && <AppearancePanel />}
         {tab === 'integrations' && <IntegrationsPanel />}
         {tab === 'activity' && <ActivityLogClient />}
         {tab === 'team' && (
@@ -364,31 +363,38 @@ function NotificationsPanel({ initial }: { initial?: NotifPrefs }) {
 }
 
 // ── Внешний вид ───────────────────────────────────────────────────────────────
-function AppearancePanel({ initialTheme }: { initialTheme?: string }) {
-  const { theme, setTheme } = useTheme()
-  const [mounted, setMounted] = useState(false)
-  useEffect(() => setMounted(true), [])
-  const choose = (id: string) => {
-    setTheme(id)
-    fetch('/api/v1/settings/preferences', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ appearance: { theme: id } }) }).catch(() => {})
-  }
-  const options = [{ id: 'light', label: 'Светлая', icon: 'light_mode' }, { id: 'dark', label: 'Тёмная', icon: 'dark_mode' }, { id: 'system', label: 'Системная', icon: 'contrast' }]
-  const activeId = mounted ? theme : initialTheme
+// The portal ships a single dark theme (all colors are absolute dark tokens —
+// there are no `dark:` variants), so light/system are honestly marked "скоро"
+// rather than shown as working toggles that change nothing. Audit 2026-07-02.
+function AppearancePanel() {
+  const options = [
+    { id: 'dark', label: 'Тёмная', icon: 'dark_mode', available: true },
+    { id: 'light', label: 'Светлая', icon: 'light_mode', available: false },
+    { id: 'system', label: 'Системная', icon: 'contrast', available: false },
+  ]
   return (
-    <Card title="Тема оформления" subtitle="Применяется мгновенно, запоминается на устройстве и синхронизируется с аккаунтом.">
+    <Card title="Тема оформления" subtitle="Сейчас доступна тёмная тема — фирменный вид портала.">
       <div className="grid grid-cols-3 gap-3">
         {options.map((o) => {
-          const active = activeId === o.id
+          const active = o.id === 'dark'
           return (
-            <button key={o.id} type="button" onClick={() => choose(o.id)} aria-pressed={active}
-              className={`flex flex-col items-center gap-2 py-5 rounded-xl border transition-all ${active ? 'border-primary text-primary bg-primary/5' : 'border-outline-variant/30 text-on-surface-variant hover:text-on-surface hover:border-outline-variant/60'}`}>
+            <button key={o.id} type="button" disabled={!o.available} aria-pressed={active}
+              title={o.available ? undefined : 'Скоро'}
+              className={`relative flex flex-col items-center gap-2 py-5 rounded-xl border transition-all ${
+                active
+                  ? 'border-primary text-primary bg-primary/5'
+                  : 'border-outline-variant/30 text-on-surface-variant/50 cursor-not-allowed'
+              }`}>
               <span className="material-symbols-outlined text-2xl">{o.icon}</span>
               <span className="text-sm font-medium">{o.label}</span>
+              {!o.available && (
+                <span className="absolute top-2 right-2 text-[9px] font-mono uppercase tracking-wider text-on-surface-variant/40">скоро</span>
+              )}
             </button>
           )
         })}
       </div>
-      <p className="text-xs text-on-surface-variant/70 mt-4">Плотность интерфейса и размер шрифта — в разработке.</p>
+      <p className="text-xs text-on-surface-variant/70 mt-4">Светлая тема, плотность интерфейса и размер шрифта — в разработке.</p>
     </Card>
   )
 }

@@ -4,7 +4,7 @@ import type { Metadata } from 'next'
 import { prisma } from '@/lib/db'
 import { EmptyState } from '@/components/common/EmptyState'
 
-export const metadata: Metadata = { title: 'Intelligence Hub — Аналитический центр' }
+export const metadata: Metadata = { title: 'Аналитический центр' }
 
 export default async function IntelligencePage() {
   const [auditEvents, clientCount] = await Promise.all([
@@ -17,7 +17,7 @@ export default async function IntelligencePage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="font-headline text-3xl font-extrabold text-on-surface">Intelligence <span className="text-gradient">Hub</span></h1>
+          <h1 className="font-headline text-3xl font-extrabold text-on-surface">Аналитический <span className="text-gradient">центр</span></h1>
           <p className="text-on-surface-variant text-sm mt-1">Рыночные сигналы, риски и возможности вашей компании</p>
         </div>
       </div>

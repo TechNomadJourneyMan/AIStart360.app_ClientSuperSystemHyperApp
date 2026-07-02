@@ -87,7 +87,7 @@ export default async function ClientDetailPage({ params }: { params: { id: strin
       {/* Header & Nav */}
       <div className="space-y-6">
         <nav className="flex items-center gap-2 text-xs font-mono text-on-surface-variant uppercase tracking-widest">
-          <Link href="/clients" className="hover:text-primary transition-colors">Clients</Link>
+          <Link href="/clients" className="hover:text-primary transition-colors">Клиенты</Link>
           <span className="material-symbols-outlined text-xs">chevron_right</span>
           <span className="text-on-surface font-bold">{name}</span>
         </nav>

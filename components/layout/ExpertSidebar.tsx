@@ -5,7 +5,7 @@ import Image from 'next/image'
 import { usePathname, useRouter } from 'next/navigation'
 import { useAuthStore } from '@/stores/auth.store'
 
-const EXPERT_NAV = [
+export const EXPERT_NAV = [
   { label: 'Дэшборд',  href: '/expert/dashboard', icon: 'dashboard'       },
   { label: 'Клиенты',  href: '/expert/clients',   icon: 'business_center' },
   { label: 'Профиль',  href: '/expert/profile',   icon: 'account_circle'  },
@@ -14,13 +14,16 @@ const EXPERT_NAV = [
   { label: 'Инсайты', href: '/expert/insights',   icon: 'lightbulb'       },
 ]
 
+export function isExpertNavActive(pathname: string, href: string) {
+  return href === '/expert/dashboard' ? pathname === href : pathname.startsWith(href)
+}
+
 export function ExpertSidebar() {
   const pathname = usePathname()
   const router   = useRouter()
   const { user, logout } = useAuthStore()
 
-  const isActive = (href: string) =>
-    href === '/expert/dashboard' ? pathname === href : pathname.startsWith(href)
+  const isActive = (href: string) => isExpertNavActive(pathname, href)
 
   const handleLogout = () => {
     logout()
@@ -63,7 +66,7 @@ export function ExpertSidebar() {
               className={`relative flex items-center gap-3 rounded-xl px-3 py-2.5 transition-all duration-150
                 ${active
                   ? 'bg-primary/10 text-primary'
-                  : 'text-[#6b7280] hover:text-[#c9d1d9] hover:bg-white/[0.04]'
+                  : 'text-[#8a93a0] hover:text-[#e6f1ea] hover:bg-white/[0.04]'
                 }
               `}
             >
@@ -85,7 +88,7 @@ export function ExpertSidebar() {
           <span className="text-[10px] font-mono text-primary/70 tracking-wider">ЭКСПЕРТ ОНЛАЙН</span>
         </div>
         <button onClick={handleLogout}
-          className="w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-[#6b7280] hover:text-error hover:bg-error/5 transition-all">
+          className="w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-[#8a93a0] hover:text-error hover:bg-error/5 transition-all">
           <span className="material-symbols-outlined text-[20px]">logout</span>
           <span className="text-sm">Выйти</span>
         </button>
