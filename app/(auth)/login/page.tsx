@@ -208,7 +208,7 @@ function LoginContent() {
             <div className="mb-3 p-3 bg-error/10 border border-error/20 rounded-xl flex items-start gap-2">
               <span className="material-symbols-outlined text-error text-lg mt-0.5">error</span>
               <p className="text-[13px] text-error font-medium flex-1">{demoError}</p>
-              <button onClick={() => setDemoError(null)} className="text-error/60 hover:text-error">
+              <button onClick={() => setDemoError(null)} aria-label="Закрыть" className="text-error/60 hover:text-error">
                 <span className="material-symbols-outlined text-sm">close</span>
               </button>
             </div>
@@ -219,7 +219,7 @@ function LoginContent() {
             <div className="mb-4 p-3 bg-error/10 border border-error/20 rounded-xl flex items-start gap-2">
               <span className="material-symbols-outlined text-error text-lg mt-0.5">error</span>
               <p className="text-[13px] text-error font-medium flex-1">{error}</p>
-              <button onClick={clearError} className="text-error/60 hover:text-error">
+              <button onClick={clearError} aria-label="Закрыть" className="text-error/60 hover:text-error">
                 <span className="material-symbols-outlined text-sm">close</span>
               </button>
             </div>
@@ -232,6 +232,7 @@ function LoginContent() {
                 <span className="absolute left-4 top-1/2 -translate-y-1/2 material-symbols-outlined text-on-surface-variant/30 group-focus-within:text-primary transition-colors text-lg">mail</span>
                 <input
                   type="email" required value={email} onChange={(e) => setEmail(e.target.value)}
+                  aria-label="Email"
                   className="w-full h-12 bg-surface-container-high/60 border border-white/[0.06] rounded-xl pl-12 pr-4 text-on-surface focus:outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/10 transition-all placeholder:text-on-surface-variant/30"
                   placeholder="you@company.kz"
                 />
@@ -247,10 +248,12 @@ function LoginContent() {
                 <span className="absolute left-4 top-1/2 -translate-y-1/2 material-symbols-outlined text-on-surface-variant/30 group-focus-within:text-primary transition-colors text-lg">lock</span>
                 <input
                   type={showPassword ? 'text' : 'password'} required value={password} onChange={(e) => setPassword(e.target.value)}
+                  aria-label="Пароль"
                   className="w-full h-12 bg-surface-container-high/60 border border-white/[0.06] rounded-xl pl-12 pr-12 text-on-surface focus:outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/10 transition-all placeholder:text-on-surface-variant/30"
                   placeholder="••••••••"
                 />
                 <button type="button" onClick={() => setShowPassword(!showPassword)}
+                  aria-label={showPassword ? 'Скрыть пароль' : 'Показать пароль'}
                   className="absolute right-4 top-1/2 -translate-y-1/2 text-on-surface-variant/30 hover:text-on-surface-variant transition-colors">
                   <span className="material-symbols-outlined text-lg">{showPassword ? 'visibility_off' : 'visibility'}</span>
                 </button>

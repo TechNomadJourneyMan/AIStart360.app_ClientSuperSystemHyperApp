@@ -166,7 +166,7 @@ export default function RegisterPage() {
             <div className="mb-4 p-3 bg-error/10 border border-error/20 rounded-xl flex items-start gap-2">
               <span className="material-symbols-outlined text-error text-lg mt-0.5">error</span>
               <p className="text-[13px] text-error font-medium flex-1">{error}</p>
-              <button onClick={clearError} className="text-error/60 hover:text-error">
+              <button onClick={clearError} aria-label="Закрыть" className="text-error/60 hover:text-error">
                 <span className="material-symbols-outlined text-sm">close</span>
               </button>
             </div>
@@ -215,6 +215,7 @@ export default function RegisterPage() {
                   className="w-full h-11 bg-surface-container-high/60 border border-white/[0.06] rounded-xl pl-11 pr-11 text-sm text-on-surface focus:outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/10 transition-all placeholder:text-on-surface-variant/30"
                   placeholder="Минимум 8 символов" />
                 <button type="button" onClick={() => setShowPassword(!showPassword)}
+                  aria-label={showPassword ? 'Скрыть пароль' : 'Показать пароль'}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant/30 hover:text-on-surface-variant transition-colors">
                   <span className="material-symbols-outlined text-lg">{showPassword ? 'visibility_off' : 'visibility'}</span>
                 </button>
