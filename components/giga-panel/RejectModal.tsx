@@ -64,6 +64,7 @@ export function RejectModal({ isOpen, requestId, userName, onConfirm, onClose }:
               </div>
               <button
                 onClick={handleClose}
+                aria-label="Закрыть"
                 className="text-slate-600 hover:text-slate-300 transition-colors"
               >
                 <X size={18} />

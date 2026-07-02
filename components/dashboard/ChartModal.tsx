@@ -56,6 +56,7 @@ export function ChartModal({ metric, onClose }: ChartModalProps) {
               </div>
               <button
                 onClick={onClose}
+                aria-label="Закрыть"
                 className="w-8 h-8 flex items-center justify-center rounded-lg text-on-surface-variant/40 hover:text-on-surface hover:bg-white/[0.06] transition-all"
               >
                 <span className="material-symbols-outlined text-xl">close</span>

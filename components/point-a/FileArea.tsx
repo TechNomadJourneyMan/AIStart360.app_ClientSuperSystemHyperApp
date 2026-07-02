@@ -368,7 +368,7 @@ export function FileArea({ userId: userIdProp }: FileAreaProps) {
         <div className="flex items-center gap-2 bg-error/5 border border-error/20 rounded-xl px-4 py-2.5">
           <span className="material-symbols-outlined text-base text-error flex-shrink-0">error</span>
           <span className="text-xs text-error">{error}</span>
-          <button onClick={() => setError(null)} className="ml-auto text-error/60 hover:text-error">
+          <button onClick={() => setError(null)} aria-label="Закрыть" className="ml-auto text-error/60 hover:text-error">
             <span className="material-symbols-outlined text-sm">close</span>
           </button>
         </div>
