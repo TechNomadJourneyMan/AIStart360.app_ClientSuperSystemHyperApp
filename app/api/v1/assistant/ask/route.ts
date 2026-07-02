@@ -4,6 +4,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { createServerClient } from '@/lib/supabase-server'
+import { assistantRateLimit } from '@/lib/assistant/rate-limit'
 import { buildAssistantContext } from '@/lib/assistant/context'
 import { answerUserQuestion } from '@/lib/assistant/answer'
 import { createExpertCase } from '@/lib/assistant/escalation/adapter'
@@ -40,6 +41,10 @@ export async function POST(req: NextRequest) {
   if (!user) {
     return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
   }
+
+  // 10/мин per user (ТЗ §16.1) — this route spends OpenRouter tokens.
+  const limited = await assistantRateLimit(req, 'assistant-ask', user.id)
+  if (limited) return limited
 
   let raw: unknown
   try {

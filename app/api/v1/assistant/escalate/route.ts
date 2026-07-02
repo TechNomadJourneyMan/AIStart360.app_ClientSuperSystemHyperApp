@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
+import { assistantRateLimit } from '@/lib/assistant/rate-limit'
 import { buildAssistantContext } from '@/lib/assistant/context'
 import { runValidation } from '@/lib/assistant/validators'
 import { createExpertCase } from '@/lib/assistant/escalation/adapter'
@@ -37,6 +38,10 @@ export async function POST(req: NextRequest) {
   if (!user) {
     return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
   }
+
+  // 10/мин per user (ТЗ §16.1) — every call can open an expert_case.
+  const limited = await assistantRateLimit(req, 'assistant-escalate', user.id)
+  if (limited) return limited
 
   let body: { trigger_type?: string; userMessage?: string } = {}
   try {

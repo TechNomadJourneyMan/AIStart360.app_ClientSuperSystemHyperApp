@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
+import { assistantRateLimit } from '@/lib/assistant/rate-limit'
 import { buildAssistantContext } from '@/lib/assistant/context'
 import { computeCompletion, deriveStatus } from '@/lib/assistant/completion'
 import { runValidation } from '@/lib/assistant/validators'
@@ -20,12 +21,16 @@ import type { ValidationIssue } from '@/lib/assistant/types'
  * the costly Layer-3 pass. The computed is_current row is persisted to
  * assistant_runs via the service role (non-fatal, mirrors the point-b persist).
  */
-export async function GET(_req: NextRequest) {
+export async function GET(req: NextRequest) {
   const sb = createServerClient()
   const { data: { user } } = await sb.auth.getUser()
   if (!user) {
     return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
   }
+
+  // 30/мин per user (ТЗ §16.1) — the widget polls this snapshot.
+  const limited = await assistantRateLimit(req, 'assistant-status', user.id)
+  if (limited) return limited
 
   try {
     // 1. Curated snapshot (RLS-scoped reads inside buildAssistantContext).

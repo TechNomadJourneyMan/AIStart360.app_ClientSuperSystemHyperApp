@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
+import { assistantRateLimit } from '@/lib/assistant/rate-limit'
 import { buildAssistantContext } from '@/lib/assistant/context'
 import { runValidation } from '@/lib/assistant/validators'
 import type { AssistantContext } from '@/lib/assistant/types'
@@ -23,6 +24,11 @@ export async function POST(req: NextRequest) {
   if (!user) {
     return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
   }
+
+  // 30/мин per user (ТЗ §16.1) — fired on анкета step blur, so roomier than
+  // the LLM budget but still capped.
+  const limited = await assistantRateLimit(req, 'assistant-validate', user.id)
+  if (limited) return limited
 
   let body: { section?: string; draftAnswers?: Record<string, unknown> } = {}
   try {

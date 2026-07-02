@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
+import { assistantRateLimit } from '@/lib/assistant/rate-limit'
 import { CHAT_SCRIPTS } from '@/lib/assistant/chat-scripts'
 import { localeFromRequestCookie } from '@/lib/i18n/locale'
 
@@ -22,6 +23,10 @@ export async function GET(req: NextRequest) {
   if (!user) {
     return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
   }
+
+  // 30/мин per user (ТЗ §16.1) — light catalog GET.
+  const limited = await assistantRateLimit(req, 'assistant-scripts', user.id)
+  if (limited) return limited
 
   const locale = localeFromRequestCookie(req)
 

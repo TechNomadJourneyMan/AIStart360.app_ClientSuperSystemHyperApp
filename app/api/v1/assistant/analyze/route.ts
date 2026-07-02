@@ -3,6 +3,7 @@ export const maxDuration = 300
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
+import { assistantRateLimit } from '@/lib/assistant/rate-limit'
 import { buildAssistantContext } from '@/lib/assistant/context'
 import { analyzeWithLlm } from '@/lib/assistant/llm-analyzer'
 import { hasOpenRouterKey } from '@/lib/ai/structured'
@@ -31,6 +32,10 @@ export async function POST(req: NextRequest) {
   if (!user) {
     return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
   }
+
+  // 10/мин per user (ТЗ §16.1) — the costly Layer-3 LLM pass lives here.
+  const limited = await assistantRateLimit(req, 'assistant-analyze', user.id)
+  if (limited) return limited
 
   // Portal locale from the caller's cookie (no server-to-server fire here).
   const locale = localeFromRequestCookie(req)

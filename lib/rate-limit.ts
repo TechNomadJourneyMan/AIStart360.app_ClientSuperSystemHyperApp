@@ -60,22 +60,24 @@ function memoryLimited(key: string, max: number, windowMs: number): boolean {
 }
 
 /**
- * Enforce a rate limit for `bucket`, keyed by client IP. Returns true when the
- * request should be rejected (429). Falls back to an in-memory limiter when
- * Upstash is not configured, so the endpoint is never fully unprotected.
+ * Enforce a rate limit for `bucket`, keyed by `opts.key` when given (e.g. the
+ * authenticated userId, so the budget follows the account across IPs) and by
+ * client IP otherwise. Returns true when the request should be rejected (429).
+ * Falls back to an in-memory limiter when Upstash is not configured, so the
+ * endpoint is never fully unprotected.
  */
 export async function isRateLimited(
   req: Request,
   bucket: string,
-  opts: { max?: number; windowMs?: number } = {},
+  opts: { max?: number; windowMs?: number; key?: string } = {},
 ): Promise<boolean> {
-  const ip = clientIp(req)
+  const id = opts.key || clientIp(req)
   const max = opts.max ?? DEFAULT_MAX
   const windowMs = opts.windowMs ?? DEFAULT_WINDOW_MS
   const limiter = getUpstashLimiter(max, windowMs)
   if (limiter) {
-    const { success } = await limiter.limit(`${bucket}:${ip}`)
+    const { success } = await limiter.limit(`${bucket}:${id}`)
     return !success
   }
-  return memoryLimited(`${bucket}:${ip}`, max, windowMs)
+  return memoryLimited(`${bucket}:${id}`, max, windowMs)
 }
