@@ -14,6 +14,7 @@ import type { Locale } from '@/lib/i18n/locale'
 import type { AssistantContext } from '../types'
 import { mascotPersona } from './system-prompt'
 import { filterModelOutput } from './output-filter'
+import type { MascotCharacterId } from './characters'
 
 const insightSchema = z.object({
   insight: z
@@ -67,12 +68,13 @@ export async function buildScreenInsight(
   ctx: AssistantContext,
   screen: string,
   locale: Locale = 'ru',
+  character?: MascotCharacterId,
 ): Promise<ScreenInsight | null> {
   if (!hasOpenRouterKey()) return null
 
   const focus = SCREEN_FOCUS[screen] ?? 'самое важное наблюдение по данным диагностики'
 
-  const system = `${mascotPersona(locale)}
+  const system = `${mascotPersona(locale, character)}
 
 ЗАДАЧА: сгенерируй ОДИН короткий инсайт (максимум 160 символов) для экрана платформы.
 Фокус экрана: ${focus}.

@@ -11,6 +11,7 @@
 
 import Link from 'next/link'
 import MarketAnalysisFooter from './MarketAnalysisFooter'
+import { MarketGenerateButton } from './MarketGenerateButton'
 
 interface MarketSnapshotRow {
   data: Partial<MarketSnapshot> | null
@@ -152,15 +153,18 @@ export default async function MarketAnalysisCard({ userId }: { userId: string })
         </div>
 
         {isMock ? (
-          /* ── Honest empty state: no fabricated market numbers ─────────── */
+          /* ── Honest empty state + one-click generation ─────────────────── */
           <div className="bg-surface-container rounded-xl border border-white/[0.04] p-8 text-center mb-5">
             <span className="material-symbols-outlined text-3xl text-on-surface-variant/60">public_off</span>
             <p className="text-sm font-bold text-on-surface mt-3">Анализ рынка ещё не сформирован</p>
             <p className="text-xs text-on-surface-variant mt-1.5 max-w-md mx-auto leading-relaxed">
-              TAM/SAM/SOM, тренды и слабости конкурентов появятся здесь после
-              подключения источников рынка и обработки данных AI-агентами.
-              Заполните анкету (отрасль и конкуренты) — это ускорит анализ.
+              AI-агенты заполнят чек-лист из 50 параметров (TAM/SAM/SOM, тренды,
+              барьеры, конкуренты) по вашей анкете и данным рынка. Чем полнее
+              анкета (отрасль и конкуренты) — тем точнее анализ.
             </p>
+            <div className="flex justify-center">
+              <MarketGenerateButton />
+            </div>
           </div>
         ) : (
         <>

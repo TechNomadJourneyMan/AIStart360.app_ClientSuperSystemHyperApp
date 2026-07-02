@@ -36,9 +36,11 @@ import {
   type AssistantContextPayload,
   type HidePeriod,
 } from '@/lib/assistant/mascot/types'
+import { getCharacter } from '@/lib/assistant/mascot/characters'
 import { MascotAvatar } from './MascotAvatar'
 import { MascotBubble } from './MascotBubble'
 import { MascotControls } from './MascotControls'
+import { MascotTutorial } from './MascotTutorial'
 
 const CONTEXT_STALE_MS = 60_000
 const BUBBLE_AUTO_CLEAR_MS = 20_000
@@ -136,6 +138,8 @@ export default function MascotAssistant() {
   const [hoverWave, setHoverWave] = useState(false)
   const lastWaveRef = useRef(0)
   const waveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [tutorialOpen, setTutorialOpen] = useState(false)
+  const tutorialShownRef = useRef(false)
 
   const screenRef = useRef(screen)
   const scrollTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -149,9 +153,12 @@ export default function MascotAssistant() {
   const baseBottom = isDesktop ? 24 : 80
   const { extraBottom, keyboardOpen } = useSafeScreenPosition(baseBottom)
 
+  const character = settings.character
+  const characterName = getCharacter(character).name
+
   // Idle-life engine: strolls/rubs (desktop, unless disabled) + sleep.
   const behaviorBusy =
-    !!activeHint || chatOpen || controlsOpen || minimized || keyboardOpen || scrolling
+    !!activeHint || chatOpen || controlsOpen || minimized || keyboardOpen || scrolling || tutorialOpen
   const behavior = useMascotBehavior({
     busy: behaviorBusy,
     walkingEnabled: settings.behavior.walking && isDesktop && !reducedMotion,
@@ -219,7 +226,7 @@ export default function MascotAssistant() {
         !window.sessionStorage.getItem('aistart_gree_welcomed')
       ) {
         window.sessionStorage.setItem('aistart_gree_welcomed', '1')
-        const wb = localCandidate('welcome_back')
+        const wb = localCandidate('welcome_back', { name: getCharacter(s.settings.character).name })
         const r = wb ? resolveHint(wb) : null
         if (r) {
           s.showHint(r, screen, Date.now())
@@ -241,7 +248,7 @@ export default function MascotAssistant() {
 
       // Greeting — once ever, never next to the FirstRunWizard (scenario 1).
       if (!s.settings.greeted && !wizardOnScreen()) {
-        const g = localCandidate('greeting')
+        const g = localCandidate('greeting', { name: getCharacter(s.settings.character).name })
         const r = g ? resolveHint(g) : null
         if (r) candidates.push(r)
       }
@@ -546,6 +553,37 @@ export default function MascotAssistant() {
     void requestInsight(true)
   }, [requestInsight])
 
+  // ── Onboarding tutorial (first visit + replay from Settings) ───────────────
+  useEffect(() => {
+    if (hiddenNow || tutorialShownRef.current || !context) return
+    if (settings.tutorialDone) return
+    const t = setTimeout(() => {
+      tutorialShownRef.current = true
+      setTutorialOpen(true)
+    }, 1_500)
+    return () => clearTimeout(t)
+  }, [hiddenNow, context, settings.tutorialDone])
+
+  useEffect(() => {
+    const onReplay = () => setTutorialOpen(true)
+    window.addEventListener('aistart:tutorial:replay', onReplay)
+    return () => window.removeEventListener('aistart:tutorial:replay', onReplay)
+  }, [])
+
+  const closeTutorial = useCallback(
+    (_done: boolean) => {
+      setTutorialOpen(false)
+      applySettings({ tutorialDone: true })
+      void fetch('/api/v1/assistant/settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ tutorialDone: true }),
+      }).catch(() => undefined)
+    },
+    [applySettings],
+  )
+
   /** Наведение: стоп на месте + короткое махание лапой (не чаще раза в 30 с). */
   const onAvatarEnter = useCallback(() => {
     behavior.setHold(true)
@@ -611,7 +649,7 @@ export default function MascotAssistant() {
     <>
     <div
       role="complementary"
-      aria-label="Гри — ассистент"
+      aria-label={`${characterName} — ассистент`}
       className="fixed right-4 lg:right-6 z-30 flex flex-col items-end gap-2"
       style={{
         bottom: baseBottom + extraBottom,
@@ -635,6 +673,7 @@ export default function MascotAssistant() {
       <AnimatePresence>
         {controlsOpen && !minimized && (
           <MascotControls
+            characterName={characterName}
             onMinimize={onMinimize}
             onHide={onHide}
             onInsight={settings.behavior.aiInsights ? onInsightClick : undefined}
@@ -658,10 +697,10 @@ export default function MascotAssistant() {
       {minimized ? (
         <button
           onClick={onRestore}
-          aria-label="Развернуть ассистента Гри"
+          aria-label={`Развернуть ассистента ${characterName}`}
           className="relative w-10 h-10 rounded-full bg-[#12151c]/95 border border-white/[0.1] shadow-lg shadow-black/40 flex items-center justify-center hover:border-primary/40 transition-colors focus:outline-none focus:ring-2 focus:ring-primary/40"
         >
-          <MascotAvatar pose="minimized" size={30} headOnly paused />
+          <MascotAvatar pose="minimized" character={character} size={30} headOnly paused />
           {pendingBadge && (
             <span
               aria-hidden
@@ -683,11 +722,11 @@ export default function MascotAssistant() {
               e.preventDefault()
               setControlsOpen((v) => !v)
             }}
-            aria-label="Гри — открыть чат с ассистентом"
-            title="Гри — ваш ассистент"
+            aria-label={`${characterName} — открыть чат с ассистентом`}
+            title={`${characterName} — ваш ассистент`}
             className="block rounded-full focus:outline-none focus:ring-2 focus:ring-primary/50 focus:ring-offset-2 focus:ring-offset-[#0A0B0F] hover:scale-[1.04] active:scale-[0.98] transition-transform"
           >
-            {/* Mirror only the cat while it walks left; bubbles stay unflipped. */}
+            {/* Mirror only the mascot while it walks left; bubbles stay unflipped. */}
             <motion.span
               style={{ display: 'block' }}
               animate={{ scaleX: behavior.facing === 'left' ? -1 : 1 }}
@@ -695,6 +734,7 @@ export default function MascotAssistant() {
             >
               <MascotAvatar
                 pose={avatarPose}
+                character={character}
                 behavior={behavior.visual}
                 size={isDesktop ? 84 : 56}
                 paused={paused}
@@ -724,6 +764,9 @@ export default function MascotAssistant() {
     <div data-mascot-panel>
       <AssistantChatPanel open={chatOpen} onClose={() => setChatOpen(false)} currentScreen={screen} />
     </div>
+
+    {/* Onboarding tour — the mascot teaches the platform (first visit / replay). */}
+    <MascotTutorial open={tutorialOpen} character={character} onClose={closeTutorial} />
     </>
   )
 }

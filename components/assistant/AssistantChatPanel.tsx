@@ -23,6 +23,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { getSection } from '@/lib/assistant/sections'
 import { SCREEN_PANEL_SECTIONS, SCREEN_TIPS } from '@/lib/assistant/mascot/hints'
+import { getCharacter } from '@/lib/assistant/mascot/characters'
+import { useMascotStore } from '@/lib/assistant/mascot/state'
 import { MascotAvatar } from '@/components/assistant/mascot/MascotAvatar'
 import { getClientLocale, type Locale } from '@/lib/i18n/locale'
 
@@ -197,6 +199,11 @@ export function AssistantChatPanel({
   const [locale, setLocale] = useState<Locale>('ru')
   const t = T[locale]
 
+  // Selected skin: name drives the header/buttons, avatar drives the bubbles.
+  const character = useMascotStore((s) => s.settings.character)
+  const persona = getCharacter(character)
+  const name = persona.name
+
   useEffect(() => {
     setLocale(getClientLocale())
   }, [])
@@ -247,11 +254,12 @@ export function AssistantChatPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
 
-  // Гри greets once per mounted session when the thread is empty.
+  // The mascot greets once per mounted session when the thread is empty.
   useEffect(() => {
     if (open && !welcomedRef.current && messages.length === 0) {
       welcomedRef.current = true
-      setMessages([{ id: nextId(), role: 'gree', text: t.welcome, kind: 'free' }])
+      const p = getCharacter(useMascotStore.getState().settings.character)
+      setMessages([{ id: nextId(), role: 'gree', text: p.welcome, kind: 'free' }])
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
@@ -448,7 +456,7 @@ export function AssistantChatPanel({
       <aside
         role="dialog"
         aria-modal="true"
-        aria-label={t.title}
+        aria-label={name}
         className={`fixed top-0 right-0 z-50 h-full w-full max-w-md bg-[#0c0e14] border-l border-white/[0.08] shadow-2xl flex flex-col transition-transform duration-300 ${
           open ? 'translate-x-0' : 'translate-x-full'
         }`}
@@ -457,10 +465,10 @@ export function AssistantChatPanel({
         <header className="flex items-center justify-between px-5 py-4 border-b border-white/[0.06] flex-shrink-0">
           <div className="flex items-center gap-2.5">
             <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center overflow-hidden">
-              <MascotAvatar pose="idle" size={30} headOnly paused />
+              <MascotAvatar pose="idle" character={character} size={30} headOnly paused />
             </div>
             <div>
-              <h2 className="text-sm font-bold text-on-surface">{t.title}</h2>
+              <h2 className="text-sm font-bold text-on-surface">{name}</h2>
               <p className="text-[10px] text-on-surface-variant">
                 {pageMode ? t.onThisPage : t.subtitle}
               </p>
@@ -505,7 +513,7 @@ export function AssistantChatPanel({
               </span>
               <div className="min-w-0">
                 <p className="text-[10px] font-mono text-primary/70 uppercase tracking-widest mb-0.5">
-                  {t.pageTip}
+                  {locale === 'ru' ? `Совет ${name}` : `${name}’s tip`}
                 </p>
                 <p className="text-xs text-on-surface leading-snug">{pageTip}</p>
               </div>
@@ -622,13 +630,13 @@ export function AssistantChatPanel({
               ) : (
                 <div key={m.id} className="flex items-end gap-2">
                   <div className="w-7 h-7 rounded-full bg-surface-container-high flex-shrink-0 flex items-center justify-center overflow-hidden">
-                    <MascotAvatar pose="idle" size={22} headOnly paused />
+                    <MascotAvatar pose="idle" character={character} size={22} headOnly paused />
                   </div>
                   <div className="max-w-[85%] rounded-2xl rounded-bl-md border border-white/[0.08] bg-surface-container-low px-3.5 py-2.5">
                     {m.kind === 'insight' && (
                       <p className="flex items-center gap-1 text-[10px] font-mono text-primary/80 uppercase tracking-widest mb-1">
                         <span className="material-symbols-outlined text-xs">tips_and_updates</span>
-                        {t.insightLabel}
+                        {locale === 'ru' ? `Инсайт ${name}` : `${name}’s insight`}
                       </p>
                     )}
                     {m.insufficient && (
@@ -664,7 +672,7 @@ export function AssistantChatPanel({
             {busy && busy !== 'expert' && (
               <div className="flex items-end gap-2">
                 <div className="w-7 h-7 rounded-full bg-surface-container-high flex-shrink-0 flex items-center justify-center overflow-hidden">
-                  <MascotAvatar pose="loading" size={22} headOnly paused />
+                  <MascotAvatar pose="loading" character={character} size={22} headOnly paused />
                 </div>
                 <div className="rounded-2xl rounded-bl-md border border-white/[0.08] bg-surface-container-low px-3.5 py-2.5">
                   <span className="text-xs text-on-surface-variant inline-flex items-center gap-1.5">
@@ -701,8 +709,8 @@ export function AssistantChatPanel({
               rows={2}
               maxLength={1000}
               disabled={busy === 'ask'}
-              placeholder={t.askPlaceholder}
-              aria-label={t.askPlaceholder}
+              placeholder={locale === 'ru' ? `Спросите ${name} о ваших данных…` : `Ask ${name} about your data…`}
+              aria-label={locale === 'ru' ? `Спросите ${name} о ваших данных…` : `Ask ${name} about your data…`}
               className="w-full resize-none bg-transparent px-3.5 pt-3 pb-1.5 text-sm text-on-surface placeholder:text-on-surface-variant focus:outline-none disabled:opacity-60"
             />
           </div>
@@ -716,12 +724,12 @@ export function AssistantChatPanel({
               <span className={`material-symbols-outlined text-base ${busy === 'ask' ? 'animate-spin' : ''}`}>
                 {busy === 'ask' ? 'progress_activity' : 'send'}
               </span>
-              {busy === 'ask' ? t.asking : t.askButton}
+              {busy === 'ask' ? t.asking : locale === 'ru' ? `Спросить ${name}` : `Ask ${name}`}
             </button>
             <button
               onClick={() => void askInsight()}
               disabled={!!busy}
-              title={t.insightLabel}
+              title={locale === 'ru' ? `Инсайт ${name}` : `${name}’s insight`}
               className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl border border-primary/30 bg-primary/[0.06] text-primary font-semibold text-xs hover:bg-primary/[0.12] transition-colors disabled:opacity-50"
             >
               <span className={`material-symbols-outlined text-base ${busy === 'insight' ? 'animate-spin' : ''}`}>
@@ -742,7 +750,7 @@ export function AssistantChatPanel({
             </button>
           </div>
 
-          <p className="text-[10px] text-on-surface-variant/60 text-center">{t.disclaimer}</p>
+          <p className="text-[10px] text-on-surface-variant/60 text-center">{locale === 'ru' ? `${name} отвечает только по вашим данным — без догадок.` : `${name} answers only from your data — no guesswork.`}</p>
         </footer>
       </aside>
     </>

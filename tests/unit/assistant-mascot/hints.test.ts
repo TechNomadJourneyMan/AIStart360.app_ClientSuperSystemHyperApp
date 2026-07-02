@@ -119,6 +119,23 @@ describe('normalizeMascotSettings — behavior', () => {
     })
     expect(s.behavior).toEqual({ walking: false, sleep: true, aiInsights: false })
   })
+
+  it('character defaults to cat and rejects unknown skins; tutorialDone defaults false', () => {
+    expect(normalizeMascotSettings({}).character).toBe('cat')
+    expect(normalizeMascotSettings({ character: 'dragon' }).character).toBe('cat')
+    expect(normalizeMascotSettings({ character: 'owl' }).character).toBe('owl')
+    expect(normalizeMascotSettings({}).tutorialDone).toBe(false)
+    expect(normalizeMascotSettings({ tutorialDone: true }).tutorialDone).toBe(true)
+  })
+})
+
+describe('characters + greeting personalization', () => {
+  it('greeting uses the character name from params', () => {
+    const g = resolveHint({ id: 'greeting', priority: 0, params: { name: 'Капи' } })
+    expect(g?.text).toContain('Я Капи')
+    const fallback = resolveHint({ id: 'greeting', priority: 0 })
+    expect(fallback?.text).toContain('Я Гри')
+  })
 })
 
 // ─── computeServerHints ──────────────────────────────────────────────────────
@@ -213,5 +230,26 @@ describe('computeServerHints', () => {
       topLimit: null,
     })
     expect(hints).toEqual([])
+  })
+})
+
+// ─── Character catalog sanity ────────────────────────────────────────────────
+import { CHARACTERS, CHARACTER_IDS, getCharacter } from '@/lib/assistant/mascot/characters'
+
+describe('character catalog', () => {
+  it('has all four skins with names, personas and welcomes', () => {
+    expect(CHARACTER_IDS.sort()).toEqual(['capybara', 'cat', 'dog', 'owl'])
+    for (const id of CHARACTER_IDS) {
+      const c = CHARACTERS[id]
+      expect(c.name.length).toBeGreaterThan(1)
+      expect(c.persona.ru).toContain(c.name)
+      expect(c.welcome).toContain(c.name)
+    }
+  })
+
+  it('getCharacter falls back to the cat on junk', () => {
+    expect(getCharacter('unicorn').id).toBe('cat')
+    expect(getCharacter(undefined).id).toBe('cat')
+    expect(getCharacter('dog').name).toBe('Арчи')
   })
 })

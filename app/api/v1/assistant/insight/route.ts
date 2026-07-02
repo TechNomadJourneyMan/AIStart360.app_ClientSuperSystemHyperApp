@@ -51,7 +51,7 @@ export async function POST(req: NextRequest) {
     const locale = localeFromRequestCookie(req)
     const ctx = await buildAssistantContext(user.id, sb)
     const started = Date.now()
-    const insight = await buildScreenInsight(ctx, parsed.data.screen, locale)
+    const insight = await buildScreenInsight(ctx, parsed.data.screen, locale, settings.character)
 
     // Audit (non-fatal, no texts — Langfuse holds the trace).
     try {

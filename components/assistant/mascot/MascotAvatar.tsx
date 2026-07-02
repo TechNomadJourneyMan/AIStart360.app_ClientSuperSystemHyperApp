@@ -20,17 +20,42 @@
  */
 
 import { motion, useReducedMotion } from 'framer-motion'
+import type { MascotCharacterId } from '@/lib/assistant/mascot/characters'
 import type { MascotBehaviorVisual, MascotState } from '@/lib/assistant/mascot/types'
 
 const TEAL = '#6effc0'
 const TEAL_DIM = '#00e29e'
 const BODY = '#1a1e27'
+const BODY_LIGHT = '#232834'
 const BODY_DARK = '#12151c'
 const INK = '#0A0B0F'
 const BLUSH = '#ff9d8a'
 
+/** Per-skin geometry switches — everything else (poses, loops) is shared. */
+const CHAR_CFG: Record<
+  MascotCharacterId,
+  {
+    ears: 'cat' | 'dog' | 'capy' | 'tufts'
+    nose: 'heart' | 'dog' | 'capy' | 'beak'
+    tail: 'cat' | 'dog' | 'none' | 'feathers'
+    whiskers: 'long' | 'short' | 'none'
+    eyeRings: boolean
+    /** Baseline eyelid droop (capybara zen). */
+    lidScale: number
+    irisRx: number
+    irisRy: number
+  }
+> = {
+  cat: { ears: 'cat', nose: 'heart', tail: 'cat', whiskers: 'long', eyeRings: false, lidScale: 1, irisRx: 5.2, irisRy: 6.3 },
+  dog: { ears: 'dog', nose: 'dog', tail: 'dog', whiskers: 'none', eyeRings: false, lidScale: 1, irisRx: 5.2, irisRy: 6.3 },
+  capybara: { ears: 'capy', nose: 'capy', tail: 'none', whiskers: 'short', eyeRings: false, lidScale: 0.85, irisRx: 4.6, irisRy: 5.4 },
+  owl: { ears: 'tufts', nose: 'beak', tail: 'feathers', whiskers: 'none', eyeRings: true, lidScale: 1, irisRx: 6, irisRy: 6.4 },
+}
+
 interface MascotAvatarProps {
   pose: MascotState
+  /** Skin: cat Гри (default) / dog Арчи / capybara Капи / owl Ума. */
+  character?: MascotCharacterId
   /** Idle-life overlay; ignored while a busy pose is active. */
   behavior?: MascotBehaviorVisual
   /** Rendered box size in px. */
@@ -59,11 +84,13 @@ function headVariant(pose: MascotState, sleeping: boolean): string {
 
 export function MascotAvatar({
   pose,
+  character = 'cat',
   behavior = null,
   size = 84,
   paused = false,
   headOnly = false,
 }: MascotAvatarProps) {
+  const cfg = CHAR_CFG[character] ?? CHAR_CFG.cat
   const reduced = useReducedMotion()
   const animate = !reduced && !paused
 
@@ -107,33 +134,46 @@ export function MascotAvatar({
       >
         {!headOnly && (
           <>
-            {/* Tail — teal tip; sways gently, wags while walking, still in sleep. */}
-            <motion.g
-              style={svgOrigin}
-              animate={
-                walking
-                  ? { rotate: [-4, 9, -4] }
-                  : animate && !sleeping
-                    ? { rotate: [0, 3, 0, -2, 0] }
-                    : { rotate: sleeping ? -6 : 0 }
-              }
-              transition={
-                walking
-                  ? { duration: 1.1, repeat: Infinity, ease: 'easeInOut' }
-                  : animate && !sleeping
-                    ? { duration: 6, repeat: Infinity, ease: 'easeInOut' }
-                    : { duration: 0.4 }
-              }
-            >
-              <path
-                d="M87 95 Q110 89 106 66"
-                fill="none"
-                stroke={BODY}
-                strokeWidth="8.5"
-                strokeLinecap="round"
-              />
-              <circle cx="106" cy="64" r="5.6" fill={TEAL_DIM} opacity="0.95" />
-            </motion.g>
+            {/* Tail — per skin; sways gently, wags while walking, still in sleep. */}
+            {cfg.tail !== 'none' && (
+              <motion.g
+                style={svgOrigin}
+                animate={
+                  walking
+                    ? { rotate: cfg.tail === 'dog' ? [-8, 14, -8] : [-4, 9, -4] }
+                    : animate && !sleeping
+                      ? { rotate: cfg.tail === 'dog' ? [0, 6, 0, -4, 0] : [0, 3, 0, -2, 0] }
+                      : { rotate: sleeping ? -6 : 0 }
+                }
+                transition={
+                  walking
+                    ? { duration: cfg.tail === 'dog' ? 0.7 : 1.1, repeat: Infinity, ease: 'easeInOut' }
+                    : animate && !sleeping
+                      ? { duration: cfg.tail === 'dog' ? 2.6 : 6, repeat: Infinity, ease: 'easeInOut' }
+                      : { duration: 0.4 }
+                }
+              >
+                {cfg.tail === 'cat' && (
+                  <>
+                    <path d="M87 95 Q110 89 106 66" fill="none" stroke={BODY} strokeWidth="8.5" strokeLinecap="round" />
+                    <circle cx="106" cy="64" r="5.6" fill={TEAL_DIM} opacity="0.95" />
+                  </>
+                )}
+                {cfg.tail === 'dog' && (
+                  <>
+                    <path d="M87 94 Q103 88 102 74" fill="none" stroke={BODY} strokeWidth="10" strokeLinecap="round" />
+                    <circle cx="102" cy="72" r="5" fill={TEAL_DIM} opacity="0.95" />
+                  </>
+                )}
+                {cfg.tail === 'feathers' && (
+                  <g stroke={BODY_LIGHT} strokeWidth="6" strokeLinecap="round">
+                    <path d="M88 96 L101 88" />
+                    <path d="M88 99 L103 95" />
+                    <path d="M87 102 L101 102" stroke={TEAL_DIM} strokeWidth="5" opacity="0.7" />
+                  </g>
+                )}
+              </motion.g>
+            )}
 
             {/* Body — breathing (slow in sleep), bobbing while walking. */}
             <motion.g
@@ -197,27 +237,73 @@ export function MascotAvatar({
           animate={headVariant(pose, sleeping)}
           transition={{ type: 'spring', stiffness: 240, damping: 20 }}
         >
-          {/* Ears — rounder, with soft teal inner. */}
-          <motion.path
-            d="M40 39 Q33 20 36 15 Q49 17 53 29 Q46 35 40 39 Z"
-            fill="url(#gri-body)"
-            stroke="rgba(255,255,255,0.09)"
-            style={{ transformBox: 'fill-box', transformOrigin: 'bottom center' }}
-            variants={{ rest: { rotate: 0 }, perk: { rotate: -8 }, down: { rotate: -30 }, sleepy: { rotate: -14 } }}
-            animate={earVariant(pose, sleeping)}
-            transition={{ type: 'spring', stiffness: 300, damping: 18 }}
-          />
-          <motion.path
-            d="M80 39 Q87 20 84 15 Q71 17 67 29 Q74 35 80 39 Z"
-            fill="url(#gri-body)"
-            stroke="rgba(255,255,255,0.09)"
-            style={{ transformBox: 'fill-box', transformOrigin: 'bottom center' }}
-            variants={{ rest: { rotate: 0 }, perk: { rotate: 8 }, down: { rotate: 30 }, sleepy: { rotate: 14 } }}
-            animate={earVariant(pose, sleeping)}
-            transition={{ type: 'spring', stiffness: 300, damping: 18 }}
-          />
-          <path d="M41 34 Q38 23 39 20 Q46 23 49 30 Z" fill={TEAL} opacity="0.2" />
-          <path d="M79 34 Q82 23 81 20 Q74 23 71 30 Z" fill={TEAL} opacity="0.2" />
+          {/* Ears — per skin (cat triangles / dog lobes / capy buttons / owl tufts). */}
+          {(() => {
+            const EAR_D: Record<string, { left: string; right: string }> = {
+              cat: {
+                left: 'M40 39 Q33 20 36 15 Q49 17 53 29 Q46 35 40 39 Z',
+                right: 'M80 39 Q87 20 84 15 Q71 17 67 29 Q74 35 80 39 Z',
+              },
+              dog: {
+                left: 'M42 30 Q28 30 30 50 Q38 56 46 46 Q45 34 42 30 Z',
+                right: 'M78 30 Q92 30 90 50 Q82 56 74 46 Q75 34 78 30 Z',
+              },
+              capy: {
+                left: 'M42 28 Q40 19 47 20 Q52 22 50 29 Q46 31 42 28 Z',
+                right: 'M78 28 Q80 19 73 20 Q68 22 70 29 Q74 31 78 28 Z',
+              },
+              tufts: {
+                left: 'M42 32 L38 16 Q48 19 51 29 Z',
+                right: 'M78 32 L82 16 Q72 19 69 29 Z',
+              },
+            }
+            const d = EAR_D[cfg.ears]
+            const amp = cfg.ears === 'dog' ? 0.5 : 1
+            return (
+              <>
+                <motion.path
+                  d={d.left}
+                  fill="url(#gri-body)"
+                  stroke="rgba(255,255,255,0.09)"
+                  style={{ transformBox: 'fill-box', transformOrigin: 'bottom center' }}
+                  variants={{
+                    rest: { rotate: 0 },
+                    perk: { rotate: -8 * amp },
+                    down: { rotate: -30 * amp },
+                    sleepy: { rotate: -14 * amp },
+                  }}
+                  animate={earVariant(pose, sleeping)}
+                  transition={{ type: 'spring', stiffness: 300, damping: 18 }}
+                />
+                <motion.path
+                  d={d.right}
+                  fill="url(#gri-body)"
+                  stroke="rgba(255,255,255,0.09)"
+                  style={{ transformBox: 'fill-box', transformOrigin: 'bottom center' }}
+                  variants={{
+                    rest: { rotate: 0 },
+                    perk: { rotate: 8 * amp },
+                    down: { rotate: 30 * amp },
+                    sleepy: { rotate: 14 * amp },
+                  }}
+                  animate={earVariant(pose, sleeping)}
+                  transition={{ type: 'spring', stiffness: 300, damping: 18 }}
+                />
+                {cfg.ears === 'cat' && (
+                  <>
+                    <path d="M41 34 Q38 23 39 20 Q46 23 49 30 Z" fill={TEAL} opacity="0.2" />
+                    <path d="M79 34 Q82 23 81 20 Q74 23 71 30 Z" fill={TEAL} opacity="0.2" />
+                  </>
+                )}
+                {cfg.ears === 'tufts' && (
+                  <g stroke={TEAL} strokeWidth="1.2" opacity="0.45" strokeLinecap="round">
+                    <path d="M41 26 L39 19" />
+                    <path d="M79 26 L81 19" />
+                  </g>
+                )}
+              </>
+            )
+          })()}
 
           {/* Face */}
           <circle cx="60" cy="50" r="27.5" fill="url(#gri-body)" stroke="rgba(255,255,255,0.09)" />
@@ -236,19 +322,29 @@ export function MascotAvatar({
             <>
               <ellipse cx="50" cy="50" rx="9.5" ry="9.5" fill="url(#gri-glow)" />
               <ellipse cx="70" cy="50" rx="9.5" ry="9.5" fill="url(#gri-glow)" />
+              {cfg.eyeRings && (
+                <g fill="none" stroke="#eafff5" strokeWidth="1.4" opacity="0.35">
+                  <circle cx="50" cy="50" r="8.6" />
+                  <circle cx="70" cy="50" r="8.6" />
+                </g>
+              )}
               <motion.g
                 style={svgOrigin}
-                animate={blinkLoop ? { scaleY: [1, 1, 0.08, 1] } : eyesSquint}
+                animate={
+                  blinkLoop
+                    ? { scaleY: [cfg.lidScale, cfg.lidScale, 0.08, cfg.lidScale] }
+                    : { scaleY: eyesSquint.scaleY * cfg.lidScale }
+                }
                 transition={
                   blinkLoop
                     ? { duration: 0.5, times: [0, 0.9, 0.95, 1], repeat: Infinity, repeatDelay: 3.6 }
                     : { duration: 0.25 }
                 }
               >
-                <ellipse cx="50" cy="50" rx="5.2" ry="6.3" fill={TEAL} />
-                <ellipse cx="70" cy="50" rx="5.2" ry="6.3" fill={TEAL} />
-                <ellipse cx="50" cy="50.6" rx="1.9" ry="4" fill={INK} />
-                <ellipse cx="70" cy="50.6" rx="1.9" ry="4" fill={INK} />
+                <ellipse cx="50" cy="50" rx={cfg.irisRx} ry={cfg.irisRy} fill={TEAL} />
+                <ellipse cx="70" cy="50" rx={cfg.irisRx} ry={cfg.irisRy} fill={TEAL} />
+                <ellipse cx="50" cy="50.6" rx={cfg.eyeRings ? 2.6 : 1.9} ry={cfg.eyeRings ? 3.2 : 4} fill={INK} />
+                <ellipse cx="70" cy="50.6" rx={cfg.eyeRings ? 2.6 : 1.9} ry={cfg.eyeRings ? 3.2 : 4} fill={INK} />
                 <circle cx="51.8" cy="47.4" r="1.25" fill="#eafff5" opacity="0.95" />
                 <circle cx="71.8" cy="47.4" r="1.25" fill="#eafff5" opacity="0.95" />
                 <circle cx="48.6" cy="52.4" r="0.7" fill="#eafff5" opacity="0.6" />
@@ -257,25 +353,62 @@ export function MascotAvatar({
             </>
           )}
 
-          {/* Heart nose + smile + whiskers */}
-          <path
-            d="M60 59.4 C58.6 57.6 56.4 58.4 56.4 60 C56.4 61.4 58.4 62.6 60 63.6 C61.6 62.6 63.6 61.4 63.6 60 C63.6 58.4 61.4 57.6 60 59.4 Z"
-            fill={TEAL_DIM}
-            opacity="0.9"
-          />
-          <path
-            d={sleeping ? 'M56.5 66.5 Q60 68 63.5 66.5' : 'M55 65.5 Q57.5 68.3 60 66.3 Q62.5 68.3 65 65.5'}
-            fill="none"
-            stroke="rgba(255,255,255,0.32)"
-            strokeWidth="1.4"
-            strokeLinecap="round"
-          />
-          <g stroke="rgba(255,255,255,0.14)" strokeWidth="1.2" strokeLinecap="round" fill="none">
-            <path d="M28 51 Q36 52 42 53" />
-            <path d="M29 59 Q37 58 42 56.5" />
-            <path d="M92 51 Q84 52 78 53" />
-            <path d="M91 59 Q83 58 78 56.5" />
-          </g>
+          {/* Muzzle / nose / beak per skin + smile + whiskers */}
+          {cfg.nose === 'capy' && (
+            <>
+              <rect x="48" y="55" width="24" height="14" rx="7" fill={BODY_LIGHT} stroke="rgba(255,255,255,0.07)" />
+              <ellipse cx="55.5" cy="60" rx="1.6" ry="2.2" fill={INK} />
+              <ellipse cx="64.5" cy="60" rx="1.6" ry="2.2" fill={INK} />
+            </>
+          )}
+          {cfg.nose === 'heart' && (
+            <path
+              d="M60 59.4 C58.6 57.6 56.4 58.4 56.4 60 C56.4 61.4 58.4 62.6 60 63.6 C61.6 62.6 63.6 61.4 63.6 60 C63.6 58.4 61.4 57.6 60 59.4 Z"
+              fill={TEAL_DIM}
+              opacity="0.9"
+            />
+          )}
+          {cfg.nose === 'dog' && (
+            <>
+              <ellipse cx="60" cy="60.5" rx="4.6" ry="3.4" fill={INK} stroke="rgba(255,255,255,0.22)" />
+              <circle cx="58.6" cy="59.4" r="1" fill="#eafff5" opacity="0.5" />
+            </>
+          )}
+          {cfg.nose === 'beak' && (
+            <path d="M60 56 L65 60.5 L60 67 L55 60.5 Z" fill={TEAL_DIM} opacity="0.95" stroke="rgba(0,0,0,0.3)" />
+          )}
+          {cfg.nose !== 'beak' && (
+            <path
+              d={
+                sleeping
+                  ? 'M56.5 66.5 Q60 68 63.5 66.5'
+                  : cfg.nose === 'capy'
+                    ? 'M56 64.5 Q60 66.5 64 64.5'
+                    : 'M55 65.5 Q57.5 68.3 60 66.3 Q62.5 68.3 65 65.5'
+              }
+              fill="none"
+              stroke="rgba(255,255,255,0.32)"
+              strokeWidth="1.4"
+              strokeLinecap="round"
+            />
+          )}
+          {cfg.whiskers !== 'none' && (
+            <g stroke="rgba(255,255,255,0.14)" strokeWidth="1.2" strokeLinecap="round" fill="none">
+              {cfg.whiskers === 'long' ? (
+                <>
+                  <path d="M28 51 Q36 52 42 53" />
+                  <path d="M29 59 Q37 58 42 56.5" />
+                  <path d="M92 51 Q84 52 78 53" />
+                  <path d="M91 59 Q83 58 78 56.5" />
+                </>
+              ) : (
+                <>
+                  <path d="M34 55 Q40 55.5 45 56" />
+                  <path d="M86 55 Q80 55.5 75 56" />
+                </>
+              )}
+            </g>
+          )}
 
           {/* Insight sparkle near the right ear. */}
           <motion.path

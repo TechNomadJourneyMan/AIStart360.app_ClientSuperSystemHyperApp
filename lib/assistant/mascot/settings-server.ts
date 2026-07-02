@@ -54,6 +54,11 @@ export function normalizeMascotSettings(raw: unknown): MascotSettings {
         : DEFAULT_MASCOT_BEHAVIOR.aiInsights,
   }
 
+  const CHARACTERS = ['cat', 'dog', 'capybara', 'owl'] as const
+  const character = CHARACTERS.includes(o.character as (typeof CHARACTERS)[number])
+    ? (o.character as MascotSettings['character'])
+    : d.character
+
   return {
     mascotEnabled: typeof o.mascotEnabled === 'boolean' ? o.mascotEnabled : d.mascotEnabled,
     hiddenUntil,
@@ -68,6 +73,8 @@ export function normalizeMascotSettings(raw: unknown): MascotSettings {
       : [],
     greeted: o.greeted === true,
     behavior,
+    character,
+    tutorialDone: o.tutorialDone === true,
   }
 }
 

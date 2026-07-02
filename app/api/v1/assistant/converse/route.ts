@@ -6,6 +6,7 @@ import { z } from 'zod'
 import { createServerClient } from '@/lib/supabase-server'
 import { buildAssistantContext } from '@/lib/assistant/context'
 import { converseWithGree, HISTORY_LIMITS } from '@/lib/assistant/gree-chat'
+import { readMascotSettings } from '@/lib/assistant/mascot/settings-server'
 import { localeFromRequestCookie } from '@/lib/i18n/locale'
 import { isRateLimited } from '@/lib/rate-limit'
 
@@ -65,9 +66,12 @@ export async function POST(req: NextRequest) {
 
   try {
     const locale = localeFromRequestCookie(req)
-    const ctx = await buildAssistantContext(user.id, sb)
+    const [ctx, settings] = await Promise.all([
+      buildAssistantContext(user.id, sb),
+      readMascotSettings(sb, user.id),
+    ])
     const started = Date.now()
-    const turn = await converseWithGree(ctx, history, message, locale)
+    const turn = await converseWithGree(ctx, history, message, locale, settings.character)
 
     // Audit without texts (Langfuse holds the trace).
     try {

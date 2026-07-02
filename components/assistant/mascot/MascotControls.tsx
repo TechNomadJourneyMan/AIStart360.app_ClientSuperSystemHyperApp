@@ -14,6 +14,8 @@ import { motion } from 'framer-motion'
 import type { HidePeriod } from '@/lib/assistant/mascot/types'
 
 interface MascotControlsProps {
+  /** Имя выбранного персонажа для пункта «Инсайт от …». */
+  characterName?: string
   onMinimize: () => void
   onHide: (period: HidePeriod) => void
   /** Present only when AI insights are enabled in settings. */
@@ -28,7 +30,13 @@ const ITEMS: Array<{ period: HidePeriod; icon: string; label: string }> = [
   { period: 'forever', icon: 'block', label: 'Скрыть навсегда' },
 ]
 
-export function MascotControls({ onMinimize, onHide, onInsight, onClose }: MascotControlsProps) {
+export function MascotControls({
+  characterName = 'Гри',
+  onMinimize,
+  onHide,
+  onInsight,
+  onClose,
+}: MascotControlsProps) {
   const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -63,7 +71,7 @@ export function MascotControls({ onMinimize, onHide, onInsight, onClose }: Masco
       {onInsight && (
         <button role="menuitem" className={item} onClick={onInsight}>
           <span className="material-symbols-outlined text-base text-primary">tips_and_updates</span>
-          Инсайт от Гри
+          Инсайт от {characterName}
         </button>
       )}
       <button role="menuitem" className={item} onClick={onMinimize}>

@@ -33,6 +33,8 @@ const patchSchema = z
       })
       .strict()
       .optional(),
+    character: z.enum(['cat', 'dog', 'capybara', 'owl']).optional(),
+    tutorialDone: z.boolean().optional(),
   })
   .strict()
 

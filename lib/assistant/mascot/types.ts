@@ -52,6 +52,10 @@ export interface MascotSettings {
   /** One-time greeting shown (scenario 1) — never repeats once true. */
   greeted: boolean
   behavior: MascotBehaviorSettings
+  /** Assistant skin (cat Гри / dog Арчи / capybara Капи / owl Ума). */
+  character: 'cat' | 'dog' | 'capybara' | 'owl'
+  /** Onboarding tutorial completed/skipped (replayable from settings). */
+  tutorialDone: boolean
 }
 
 export const DEFAULT_MASCOT_BEHAVIOR: MascotBehaviorSettings = {
@@ -68,6 +72,8 @@ export const DEFAULT_MASCOT_SETTINGS: MascotSettings = {
   dismissedHints: [],
   greeted: false,
   behavior: DEFAULT_MASCOT_BEHAVIOR,
+  character: 'cat',
+  tutorialDone: false,
 }
 
 /** True when the mascot must not render at all (master switch or timed hide). */

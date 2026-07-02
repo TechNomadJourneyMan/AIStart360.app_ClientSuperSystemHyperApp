@@ -13,6 +13,7 @@
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { MascotAvatar } from '@/components/assistant/mascot/MascotAvatar'
+import { CHARACTERS, CHARACTER_IDS, getCharacter } from '@/lib/assistant/mascot/characters'
 import { useMascotStore } from '@/lib/assistant/mascot/state'
 import type {
   HintFrequency,
@@ -120,10 +121,12 @@ export function AssistantSettingsPanel() {
     <div className="bg-surface-container rounded-xl p-6 border border-outline-variant/30 space-y-6">
       <div className="flex items-start gap-4">
         <div className="shrink-0 rounded-2xl bg-surface-container-high p-2">
-          <MascotAvatar pose="idle" size={64} paused />
+          <MascotAvatar pose="idle" character={settings?.character ?? 'cat'} size={64} paused />
         </div>
         <div>
-          <h2 className="text-base font-bold text-on-surface">Гри — ваш ассистент</h2>
+          <h2 className="text-base font-bold text-on-surface">
+            {getCharacter(settings?.character).name} — ваш ассистент
+          </h2>
           <p className="text-sm text-on-surface-variant mt-1 leading-relaxed">
             Подсказывает следующий шаг, объясняет разделы и результаты диагностики.
             Отвечает только по вашим данным — без догадок.
@@ -196,6 +199,62 @@ export function AssistantSettingsPanel() {
                 )
               })}
             </div>
+          </div>
+
+          {/* Character skins */}
+          <div>
+            <p className="text-sm font-medium text-on-surface mb-1">Персонаж</p>
+            <p className="text-xs text-on-surface-variant mb-2">
+              Кастомизация ассистента: имя и характер меняются, правила безопасности — нет.
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              {CHARACTER_IDS.map((id) => {
+                const c = CHARACTERS[id]
+                const active = settings.character === id
+                return (
+                  <button
+                    key={id}
+                    disabled={saving}
+                    onClick={() => void patch({ character: id })}
+                    aria-pressed={active}
+                    className={`flex items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-all ${
+                      active
+                        ? 'border-primary/40 bg-primary/[0.07]'
+                        : 'border-outline-variant/20 hover:border-primary/20 hover:bg-white/[0.02]'
+                    }`}
+                  >
+                    <span className="shrink-0">
+                      <MascotAvatar pose="idle" character={id} size={44} paused />
+                    </span>
+                    <span className="min-w-0">
+                      <span className={`block text-sm font-semibold ${active ? 'text-primary' : 'text-on-surface'}`}>
+                        {c.name}
+                      </span>
+                      <span className="block text-[11px] text-on-surface-variant leading-snug">
+                        {c.species} · {c.tagline}
+                      </span>
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* Onboarding tutorial replay */}
+          <div className="flex items-center justify-between gap-4 py-1">
+            <div>
+              <p className="text-sm font-medium text-on-surface">Обучение по платформе</p>
+              <p className="text-xs text-on-surface-variant mt-0.5">
+                {getCharacter(settings.character).name} заново покажет, как устроен портал.
+              </p>
+            </div>
+            <button
+              onClick={() => window.dispatchEvent(new Event('aistart:tutorial:replay'))}
+              className="shrink-0 inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-primary/30 bg-primary/[0.06] text-primary font-semibold text-xs hover:bg-primary/[0.12] transition-colors"
+            >
+              <span className="material-symbols-outlined text-base">school</span>
+              Пройти заново
+            </button>
           </div>
 
           {/* Advanced behavior */}

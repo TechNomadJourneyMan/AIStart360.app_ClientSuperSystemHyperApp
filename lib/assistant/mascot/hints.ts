@@ -102,8 +102,8 @@ const DEFS: HintDef[] = [
     priority: 0,
     screens: [],
     mutable: false,
-    build: () => ({
-      text: 'Привет! Я Гри 🐾 Помогу пройти диагностику и подскажу, где у бизнеса точки роста.',
+    build: (p) => ({
+      text: `Привет! Я ${str(p.name) ?? 'Гри'} 🐾 Помогу пройти диагностику и подскажу, где у бизнеса точки роста.`,
       actions: [
         { label: 'Начать диагностику', kind: 'navigate', href: '/client/onboarding' },
         { label: 'Позже', kind: 'later' },
@@ -262,10 +262,10 @@ const DEFS: HintDef[] = [
     priority: 0,
     screens: [],
     mutable: false,
-    build: () => ({
+    build: (p) => ({
       text: 'С возвращением! 🐾 Я рядом — спрашивайте, если что-то понадобится.',
       actions: [
-        { label: 'Спросить Гри', kind: 'open_chat' },
+        { label: `Спросить ${str(p.name) ?? 'Гри'}`, kind: 'open_chat' },
         { label: 'Позже', kind: 'later' },
       ],
     }),

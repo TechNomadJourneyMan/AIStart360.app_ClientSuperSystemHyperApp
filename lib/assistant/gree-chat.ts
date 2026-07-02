@@ -20,6 +20,7 @@ import { serializeSnapshot } from './answer'
 import { mascotPersona } from './mascot/system-prompt'
 import { filterModelOutput } from './mascot/output-filter'
 import { maskPii } from './mascot/sanitize'
+import type { MascotCharacterId } from './mascot/characters'
 import type { AssistantContext } from './types'
 
 // ─── Dialogue history (client-provided, server-sanitized) ───────────────────
@@ -76,8 +77,8 @@ const turnSchema = z.object({
 
 export type GreeChatTurn = z.infer<typeof turnSchema>
 
-function buildSystem(locale: Locale): string {
-  const persona = mascotPersona(locale)
+function buildSystem(locale: Locale, character?: MascotCharacterId): string {
+  const persona = mascotPersona(locale, character)
   if (locale === 'en') {
     return `${persona}
 
@@ -147,6 +148,7 @@ export async function converseWithGree(
   history: ChatTurn[],
   message: string,
   locale: Locale = 'ru',
+  character?: MascotCharacterId,
 ): Promise<GreeChatTurn | null> {
   if (!hasOpenRouterKey()) {
     console.warn('[gree-chat] No OPENROUTER_API_KEY — routing to expert')
@@ -160,7 +162,7 @@ export async function converseWithGree(
       maxTokens: 700,
       temperature: 0.3,
       schema: turnSchema,
-      system: buildSystem(locale),
+      system: buildSystem(locale, character),
       user: buildUser(ctx, prepareHistory(history), message, locale),
     })
     if (!result) return null
