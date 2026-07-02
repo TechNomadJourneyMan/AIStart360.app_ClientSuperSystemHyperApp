@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { ActivityLogClient } from '@/components/activity/ActivityLogClient'
 import { BillingPanel } from '@/components/settings/BillingPanel'
+import { AssistantSettingsPanel } from '@/components/settings/AssistantSettingsPanel'
 
 export interface SettingsInitial {
   firstName: string
@@ -27,6 +28,7 @@ const TABS = [
   { id: 'security',      label: 'Безопасность',     icon: 'lock'          },
   { id: 'notifications', label: 'Уведомления',      icon: 'notifications' },
   { id: 'appearance',    label: 'Внешний вид',      icon: 'palette'       },
+  { id: 'assistant',     label: 'Ассистент',        icon: 'smart_toy'     },
   { id: 'integrations',  label: 'Интеграции',       icon: 'hub'           },
   { id: 'activity',      label: 'Журнал',           icon: 'history'       },
   { id: 'team',          label: 'Команда',          icon: 'group'         },
@@ -64,6 +66,7 @@ export function SettingsClient({ initial, preferences }: { initial: SettingsInit
         {tab === 'security' && <SecurityPanel />}
         {tab === 'notifications' && <NotificationsPanel initial={preferences?.notifications} />}
         {tab === 'appearance' && <AppearancePanel />}
+        {tab === 'assistant' && <AssistantSettingsPanel />}
         {tab === 'integrations' && <IntegrationsPanel />}
         {tab === 'activity' && <ActivityLogClient />}
         {tab === 'team' && (

@@ -2,7 +2,7 @@ import { Sidebar } from '@/components/layout/Sidebar'
 import { Header } from '@/components/layout/Header'
 import { MobileNav } from '@/components/layout/MobileNav'
 import { DashboardShell } from '@/components/layout/DashboardShell'
-import { AssistantChatLauncher } from '@/components/assistant/AssistantChatPanel'
+import { MascotLauncher } from '@/components/assistant/mascot/MascotLauncher'
 import { NotificationsBellSync } from '@/components/notifications/NotificationsBellSync'
 
 export default function DashboardLayout({
@@ -30,8 +30,9 @@ export default function DashboardLayout({
       {/* Mobile Bottom Navigation */}
       <MobileNav />
 
-      {/* Floating AI assistant — available on every dashboard page */}
-      <AssistantChatLauncher />
+      {/* Floating AI assistant — the mascot «Гри» (falls back to the static
+          launcher when NEXT_PUBLIC_FEATURE_MASCOT='0' or on a mascot crash) */}
+      <MascotLauncher />
 
       {/* Keeps the header bell's unread badge in sync with the real feed */}
       <NotificationsBellSync />

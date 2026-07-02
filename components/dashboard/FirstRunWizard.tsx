@@ -55,7 +55,13 @@ export function FirstRunWizard({
   const currentIdx = steps.findIndex((s) => !s.done)
 
   return (
-    <section className="bg-surface-container-low border border-primary/15 rounded-2xl p-6 lg:p-8">
+    // data-first-run-wizard: the mascot suppresses its greeting while the
+    // wizard owns onboarding; data-mascot-avoid keeps the cat off the CTA row.
+    <section
+      data-first-run-wizard
+      data-mascot-avoid
+      className="bg-surface-container-low border border-primary/15 rounded-2xl p-6 lg:p-8"
+    >
       <div className="flex items-start justify-between gap-4 flex-wrap mb-6">
         <div>
           <p className="text-[11px] font-mono text-primary/70 uppercase tracking-[0.2em] mb-2">

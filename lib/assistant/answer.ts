@@ -18,6 +18,9 @@
 import { z } from 'zod'
 import { generateObjectViaOpenRouter, hasOpenRouterKey } from '@/lib/ai/structured'
 import type { Locale } from '@/lib/i18n/locale'
+import { mascotPersona } from './mascot/system-prompt'
+import { filterModelOutput } from './mascot/output-filter'
+import { sanitizeQualitative } from './mascot/sanitize'
 import type { AssistantContext } from './types'
 
 // ─── Result schema ───────────────────────────────────────────────────────────
@@ -42,8 +45,14 @@ export type UserAnswer = z.infer<typeof answerSchema>
 // ─── Prompt building (FROM THE CURATED SNAPSHOT ONLY) ────────────────────────
 
 function buildSystem(locale: Locale): string {
+  // «Гри» persona + hard safety rules first (single source: mascot/system-prompt.ts),
+  // then the anti-hallucination rules and the JSON output contract below.
+  const persona = mascotPersona(locale)
+
   if (locale === 'en') {
-    return `You are the AIStart360 assistant (Kazakhstan). Answer the user's question about THEIR business, relying STRICTLY on the provided data snapshot (the context) — you have no other source.
+    return `${persona}
+
+DATA: answer the user's question about THEIR business relying STRICTLY on the provided data snapshot (the context) — you have no other source.
 
 STRICT HONESTY RULES (anti-hallucination):
 - Use ONLY the fields from the snapshot. NEVER invent numbers, percentages, revenue, benchmarks, or facts that are not in the data.
@@ -55,7 +64,9 @@ STRICT HONESTY RULES (anti-hallucination):
 Write strictly in English. Return ONE valid minified JSON object and nothing else.`
   }
 
-  return `Ты — ассистент платформы AIStart360 (Казахстан). Ответь на вопрос пользователя о ЕГО бизнесе, опираясь ТОЛЬКО на предоставленный снимок данных (контекст) — других источников у тебя нет.
+  return `${persona}
+
+ДАННЫЕ: отвечай на вопрос пользователя о ЕГО бизнесе, опираясь ТОЛЬКО на предоставленный снимок данных (контекст) — других источников у тебя нет.
 
 ЖЁСТКИЕ ПРАВИЛА ЧЕСТНОСТИ (анти-галлюцинация):
 - Используй ТОЛЬКО поля из снимка. НИКОГДА не выдумывай числа, проценты, выручку, бенчмарки или факты, которых нет в данных.
@@ -98,8 +109,10 @@ function qualitativeAnswers(answers: Record<string, unknown>, locale: Locale): s
       const v = answers?.[key]
       if (v == null) return null
       const s = Array.isArray(v) ? v.join(', ') : typeof v === 'object' ? '' : String(v)
-      const t = s.trim()
-      return t ? `- ${label}: ${t.slice(0, 280)}` : null
+      // Free text typed by the user — PII-mask (emails/phones/links) + cap
+      // before it enters the prompt (mascot/sanitize.ts).
+      const t = sanitizeQualitative(s)
+      return t ? `- ${label}: ${t}` : null
     })
     .filter((x): x is string => x !== null)
   if (lines.length) return lines.join('\n')
@@ -225,7 +238,15 @@ export async function answerUserQuestion(
       user: buildUserPrompt(ctx, question, locale),
     })
 
-    return result ?? null
+    if (!result) return null
+
+    // Last-line output filter: redact secret-shaped substrings / markup the
+    // model may have been tricked into echoing (mascot/output-filter.ts).
+    const filtered = filterModelOutput(result.answer)
+    if (filtered.redacted) {
+      console.warn('[assistant:answer] output filter redacted model answer content')
+    }
+    return { ...result, answer: filtered.text }
   } catch (error) {
     console.error('[assistant:answer] failed:', error)
     return null
