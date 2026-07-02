@@ -18,6 +18,7 @@ import { OnboardingStatusBadges } from '@/components/dashboard/OnboardingStatusB
 import PointAIntelligenceSection from '@/components/point-a/PointAIntelligenceSection'
 import PointADashboardSectionsBoundary from '@/components/dashboard/PointADashboardSections'
 import GrowthSnapshotHero from '@/components/dashboard/GrowthSnapshotHero'
+import { FirstRunWizard } from '@/components/dashboard/FirstRunWizard'
 import KeyMetricsHero from '@/components/point-a/v2/KeyMetricsHero'
 import MetricZonesGrid from '@/components/point-a/v2/MetricZonesGrid'
 import CompanyDataCard from '@/components/point-a/v2/CompanyDataCard'
@@ -279,17 +280,29 @@ export default async function DashboardPage() {
       let diag: Record<string, unknown> | null = null
       let orgName: string | undefined = undefined
       let companyId: string | null = null
+      // First-run wizard signals (ON-1): survey progress + document count.
+      let surveyStepsDone = 0
+      let docsCount = 0
       try {
         const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
         const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-        const [diagRes, companyRes] = await Promise.all([
+        const authHeaders = { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` }
+        const [diagRes, companyRes, surveyRes, docsRes] = await Promise.all([
           fetch(
             `${supabaseUrl}/rest/v1/diagnostics?user_id=eq.${user.id}&order=calculated_at.desc&limit=1`,
-            { headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` }, cache: 'no-store' }
+            { headers: authHeaders, cache: 'no-store' }
           ),
           fetch(
             `${supabaseUrl}/rest/v1/companies?user_id=eq.${user.id}&select=id,name&limit=1`,
-            { headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` }, cache: 'no-store' }
+            { headers: authHeaders, cache: 'no-store' }
+          ),
+          fetch(
+            `${supabaseUrl}/rest/v1/survey_answers?user_id=eq.${user.id}&select=step`,
+            { headers: authHeaders, cache: 'no-store' }
+          ),
+          fetch(
+            `${supabaseUrl}/rest/v1/documents?user_id=eq.${user.id}&select=id`,
+            { headers: authHeaders, cache: 'no-store' }
           ),
         ])
         if (diagRes.ok) {
@@ -300,6 +313,14 @@ export default async function DashboardPage() {
           const companyRows = await companyRes.json() as Array<{ id: string; name: string }>
           orgName = companyRows?.[0]?.name ?? undefined
           companyId = companyRows?.[0]?.id ? String(companyRows[0].id) : null
+        }
+        if (surveyRes.ok) {
+          const rows = await surveyRes.json() as Array<{ step: number }>
+          surveyStepsDone = new Set(rows.map((r) => r.step)).size
+        }
+        if (docsRes.ok) {
+          const rows = await docsRes.json() as Array<{ id: string }>
+          docsCount = Array.isArray(rows) ? rows.length : 0
         }
       } catch {
         // diagnostics not available yet
@@ -345,25 +366,13 @@ export default async function DashboardPage() {
                  unified AI / Эксперт / Клиент Q&A stream. */
               null
             ) : (
-              <div className="bg-surface-container-low border border-white/[0.04] rounded-2xl p-10 text-center">
-                <span className="material-symbols-outlined text-5xl text-primary/20 mb-4 block">assignment</span>
-                <p className="text-on-surface font-medium mb-2">Анкета ещё не заполнена</p>
-                <p className="text-sm text-on-surface-variant mb-6 max-w-md mx-auto">
-                  Заполните анкету и прикрепите финансовые документы — AI сформирует диагностику вашего бизнеса.
-                </p>
-                <div className="flex flex-wrap items-center justify-center gap-2.5">
-                  <Link href="/client/onboarding"
-                    className="inline-flex items-center gap-2 bg-primary/10 hover:bg-primary/20 border border-primary/30 hover:border-primary/50 text-primary text-sm px-5 py-2.5 rounded-xl transition-all">
-                    <span className="material-symbols-outlined text-base">edit_note</span>
-                    Заполнить анкету
-                  </Link>
-                  <Link href="/client/onboarding/documents"
-                    className="inline-flex items-center gap-2 bg-surface-container hover:bg-surface-container-high border border-white/[0.06] hover:border-primary/20 text-on-surface hover:text-primary text-sm px-5 py-2.5 rounded-xl transition-all">
-                    <span className="material-symbols-outlined text-base">upload_file</span>
-                    Прикрепить файлы
-                  </Link>
-                </div>
-              </div>
+              /* First-run wizard (ON-1): consolidated 3-step path to the GRI
+                 with real per-step completion, instead of a flat prompt. */
+              <FirstRunWizard
+                surveyStepsDone={surveyStepsDone}
+                docsCount={docsCount}
+                hasDiagnostic={false}
+              />
             )}
           </section>
 
