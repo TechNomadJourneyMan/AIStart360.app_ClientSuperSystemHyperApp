@@ -1,7 +1,8 @@
+import { dbTestsEnabled } from '../helpers/db-env'
 import { describe, expect, it } from 'vitest'
 import { withRollback } from '../helpers/db'
 
-describe('analytics data', () => {
+describe.skipIf(!dbTestsEnabled)('analytics data', () => {
   it('returns deterministic zero-state for organization without clients and reports', async () => {
     await withRollback(async (tx) => {
       const org = await tx.organization.create({

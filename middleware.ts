@@ -25,8 +25,14 @@ const CLIENT_DASHBOARD_PATHS = [
 ]
 const EXPERT_PATHS = ['/expert']
 const OWNER_PATHS = ['/owner']
-const CLIENT_PATHS = ['/client']
-const PORTAL_PATHS = ['/portal']
+
+// Whole-segment route matching: '/clients' must NOT match the '/client'
+// cabinet prefix (and vice versa) — plain startsWith leaks across routes.
+function matchesRoute(pathname: string, route: string): boolean {
+  return pathname === route || pathname.startsWith(route + '/')
+}
+const matchesAny = (pathname: string, routes: string[]) =>
+  routes.some((r) => matchesRoute(pathname, r))
 
 function normalizeRole(rawRole: string | null | undefined): ValidRole {
   if (rawRole === 'admin' || rawRole === 'expert' || rawRole === 'owner' || rawRole === 'client' || rawRole === 'super_admin') {
@@ -147,23 +153,23 @@ export async function middleware(request: NextRequest) {
   // ── Role-based route protection ──
   if (user) {
     // Expert trying to access admin-only pages
-    if (role === 'expert' && ADMIN_PATHS.some((p) => pathname.startsWith(p))) {
+    if (role === 'expert' && matchesAny(pathname, ADMIN_PATHS)) {
       return NextResponse.redirect(new URL('/expert/dashboard', request.url))
     }
 
     // Client trying to access admin/expert/owner pages
     if (
       role === 'client' &&
-      (ADMIN_PATHS.some((p) => pathname.startsWith(p)) ||
-       EXPERT_PATHS.some((p) => pathname.startsWith(p)) ||
-       OWNER_PATHS.some((p) => pathname.startsWith(p)))
+      (matchesAny(pathname, ADMIN_PATHS) ||
+       matchesAny(pathname, EXPERT_PATHS) ||
+       matchesAny(pathname, OWNER_PATHS))
     ) {
       // Allow clients through to the shared (dashboard) layout routes
-      if (CLIENT_DASHBOARD_PATHS.some((p) => pathname.startsWith(p))) {
+      if (matchesAny(pathname, CLIENT_DASHBOARD_PATHS)) {
         return response
       }
       // If it's not a client portal path, redirect to the cabinet (sidebar dashboard)
-      if (!pathname.startsWith('/client')) {
+      if (!matchesRoute(pathname, '/client')) {
         return NextResponse.redirect(new URL('/dashboard', request.url))
       }
     }
@@ -171,7 +177,7 @@ export async function middleware(request: NextRequest) {
     // Owner trying to access admin or expert pages
     if (
       role === 'owner' &&
-      (ADMIN_PATHS.some((p) => pathname.startsWith(p)) || EXPERT_PATHS.some((p) => pathname.startsWith(p)))
+      (matchesAny(pathname, ADMIN_PATHS) || matchesAny(pathname, EXPERT_PATHS))
     ) {
       return NextResponse.redirect(new URL('/owner/dashboard', request.url))
     }

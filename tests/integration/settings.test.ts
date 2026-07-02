@@ -1,3 +1,4 @@
+import { dbTestsEnabled } from '../helpers/db-env'
 import { describe, it, expect, vi } from 'vitest'
 import bcrypt from 'bcryptjs'
 import { withRollback } from '../helpers/db'
@@ -8,7 +9,7 @@ vi.mock('next/headers', () => ({
   cookies: cookiesMock,
 }))
 
-describe('settings data', () => {
+describe.skipIf(!dbTestsEnabled)('settings data', () => {
   it('reads real email for current user from database', async () => {
     await withRollback(async (tx) => {
       const org = await tx.organization.create({

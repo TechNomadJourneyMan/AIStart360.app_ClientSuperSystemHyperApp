@@ -69,12 +69,12 @@ describe('RBAC Middleware', () => {
     expect(new URL(res.headers.get('location')!).pathname).toBe('/login')
   })
 
-  // T021: /client routes only accessible to client role
-  it('redirects admin away from /client/* routes', async () => {
+  // Admins may open /client/* cabinet pages (preview of the client UX) —
+  // the 2026-07 middleware rework dropped the old admin→/dashboard redirect.
+  it('allows admin to pass through to /client/* routes', async () => {
     const req = createRequest('/client/waiting-room', 'admin')
     const res = await middleware(req)
-    expect(res.status).toBe(307)
-    expect(new URL(res.headers.get('location')!).pathname).toBe('/dashboard')
+    expect(res.status).toBe(200)
   })
 
   it('allows client role to access /client/waiting-room', async () => {
@@ -91,12 +91,28 @@ describe('RBAC Middleware', () => {
     expect(new URL(res.headers.get('location')!).pathname).toBe('/expert/dashboard')
   })
 
-  // Client cannot access admin paths
-  it('redirects client away from /dashboard to /client/waiting-room', async () => {
+  // Clients use the shared (dashboard) layout — /dashboard is allowed
+  // (CLIENT_DASHBOARD_PATHS), the old waiting-room redirect is gone.
+  it('allows client to access shared /dashboard', async () => {
     const req = createRequest('/dashboard', 'client')
     const res = await middleware(req)
+    expect(res.status).toBe(200)
+  })
+
+  // Regression: '/clients' (admin-only) must NOT leak through the '/client'
+  // cabinet prefix — startsWith matching allowed clients onto /clients.
+  it('redirects client away from admin-only /clients', async () => {
+    const req = createRequest('/clients', 'client')
+    const res = await middleware(req)
     expect(res.status).toBe(307)
-    expect(new URL(res.headers.get('location')!).pathname).toBe('/client/waiting-room')
+    expect(new URL(res.headers.get('location')!).pathname).toBe('/dashboard')
+  })
+
+  it('redirects client away from admin-only /users', async () => {
+    const req = createRequest('/users', 'client')
+    const res = await middleware(req)
+    expect(res.status).toBe(307)
+    expect(new URL(res.headers.get('location')!).pathname).toBe('/dashboard')
   })
 
   // Admin can access admin paths
@@ -121,10 +137,10 @@ describe('RBAC Middleware', () => {
     expect(new URL(res.headers.get('location')!).pathname).toBe('/dashboard')
   })
 
-  it('redirects authenticated client from /login to /client/waiting-room', async () => {
+  it('redirects authenticated client from /login to /dashboard', async () => {
     const req = createRequest('/login', 'client')
     const res = await middleware(req)
     expect(res.status).toBe(307)
-    expect(new URL(res.headers.get('location')!).pathname).toBe('/client/waiting-room')
+    expect(new URL(res.headers.get('location')!).pathname).toBe('/dashboard')
   })
 })

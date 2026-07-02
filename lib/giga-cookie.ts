@@ -38,7 +38,6 @@ export { GIGA_COOKIE_NAME, verifyGigaRoleEdge } from './giga-cookie-edge'
 // async *Edge functions use Web Crypto (globalThis.crypto.subtle) exclusively.
 type NodeCrypto = typeof import('node:crypto')
 function nodeCrypto(): NodeCrypto {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
   return require('node:crypto') as NodeCrypto
 }
 

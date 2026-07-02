@@ -1,7 +1,8 @@
+import { dbTestsEnabled } from '../helpers/db-env'
 import { describe, it, expect } from 'vitest'
 import { withRollback } from '../helpers/db'
 
-describe('dashboard KPI aggregation', () => {
+describe.skipIf(!dbTestsEnabled)('dashboard KPI aggregation', () => {
   it('returns zero KPI values for a new organization with no clients and no reports', async () => {
     await withRollback(async (tx) => {
       const org = await tx.organization.create({

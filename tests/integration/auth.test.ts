@@ -1,3 +1,4 @@
+import { dbTestsEnabled } from '../helpers/db-env'
 import { describe, it, expect, vi, afterAll } from 'vitest'
 import { prisma } from '../helpers/db'
 import bcrypt from 'bcryptjs'
@@ -30,7 +31,7 @@ afterAll(async () => {
   }
 })
 
-describe('loginAction', () => {
+describe.skipIf(!dbTestsEnabled)('loginAction', () => {
   it('returns success and sets role cookie for valid credentials', async () => {
     // Create a test org + user directly in DB
     const org = await prisma.organization.create({

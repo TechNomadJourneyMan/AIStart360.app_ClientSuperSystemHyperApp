@@ -1,3 +1,4 @@
+import { dbTestsEnabled } from '../helpers/db-env'
 import { describe, it, expect, vi } from 'vitest'
 import bcrypt from 'bcryptjs'
 import { withRollback } from '../helpers/db'
@@ -12,7 +13,7 @@ vi.mock('resend', () => ({
   },
 }))
 
-describe('password reset actions', () => {
+describe.skipIf(!dbTestsEnabled)('password reset actions', () => {
   it('resetPasswordRequestAction creates verification token', async () => {
     await withRollback(async (tx) => {
       process.env.RESEND_API_KEY = 'test_key'

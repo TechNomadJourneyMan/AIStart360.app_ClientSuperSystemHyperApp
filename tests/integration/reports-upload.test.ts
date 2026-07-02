@@ -1,7 +1,8 @@
+import { dbTestsEnabled } from '../helpers/db-env'
 import { describe, it, expect } from 'vitest'
 import { withRollback } from '../helpers/db'
 
-describe('reports upload metadata', () => {
+describe.skipIf(!dbTestsEnabled)('reports upload metadata', () => {
   it('creates report metadata row in database', async () => {
     await withRollback(async (tx) => {
       const { createReportMetadata } = await import('../../app/actions/reports')
