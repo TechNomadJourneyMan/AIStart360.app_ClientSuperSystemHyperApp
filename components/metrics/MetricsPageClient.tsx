@@ -3,11 +3,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import {
-  getGriDescription,
-  formatSource,
-  type MetricSource,
-} from '@/lib/metrics/descriptions'
+// formatSource + types come from the light ./format module; the heavy
+// descriptions catalog (getGriDescription) is imported dynamically on demand
+// (openGriBlockModal) to keep it out of the /metrics first-load bundle.
+import { formatSource, type MetricSource } from '@/lib/metrics/format'
 import MetricsLiveCatalog from '@/components/metrics/MetricsLiveCatalog'
 import { useRealtimeSync, type RealtimeSyncBinding } from '@/hooks/useRealtimeSync'
 import { GRI_SECTIONS, type SectionId } from '@/lib/gri-assessment/sections'
@@ -621,7 +620,9 @@ export default function MetricsPageClient({
     }
   }, [sectionRows])
 
-  function openGriBlockModal(label: string) {
+  async function openGriBlockModal(label: string) {
+    // Lazy-load the heavy descriptions catalog only when a block is opened.
+    const { getGriDescription } = await import('@/lib/metrics/descriptions')
     const desc = getGriDescription(label)
     setModal({
       open: true,

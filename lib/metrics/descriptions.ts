@@ -18,25 +18,12 @@
 //   - missing:  no source wired yet
 // ============================================================
 
-export type MetricSourceType =
-  | "survey"
-  | "document"
-  | "prisma"
-  | "external"
-  | "manual"
-  | "missing";
-
-export interface MetricSource {
-  type: MetricSourceType;
-  step?: number;
-  key?: string;
-  label?: string;
-  model?: string;
-  field?: string;
-  doc_type?: string;
-  system?: string;
-  note?: string;
-}
+// Source types + formatSource moved to the light ./format module so client
+// bundles can import them without the 171 KB catalog. Re-exported here for
+// back-compat with existing importers. 2026-07-02.
+export type { MetricSourceType, MetricSource } from "./format";
+export { formatSource } from "./format";
+import type { MetricSource } from "./format";
 
 export interface MetricDescription {
   label: string;
@@ -2022,21 +2009,4 @@ export function getGoalDescription(number: string): GoalDescriptions | undefined
  * Format a single source as human-readable Russian string.
  * Used by UI to render the "where data comes from" line.
  */
-export function formatSource(src: MetricSource): string {
-  switch (src.type) {
-    case "survey":
-      return `Анкета шаг ${src.step}: ${src.label ?? src.key}`;
-    case "document":
-      return `Документ (${src.doc_type}): поле ${src.field}`;
-    case "prisma":
-      return `БД: ${src.model}.${src.field}`;
-    case "external":
-      return `Внешний: ${src.system}${src.note ? ` — ${src.note}` : ""}`;
-    case "manual":
-      return `Ручной ввод${src.note ? `: ${src.note}` : ""}`;
-    case "missing":
-      return `⚠ Источник не подключён${src.note ? `: ${src.note}` : ""}`;
-    default:
-      return JSON.stringify(src);
-  }
-}
+// formatSource now lives in ./format (re-exported at the top of this file).

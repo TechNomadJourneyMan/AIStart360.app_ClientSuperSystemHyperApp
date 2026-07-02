@@ -10,7 +10,8 @@ import { SORT_OPTIONS, NAMESPACE_TABS, type SortMode, type Namespace } from './_
 import dynamic from 'next/dynamic'
 import MetricHealthCard from '@/components/dashboard/MetricHealthCard'
 import { useRealtimeMetrics } from '@/hooks/useRealtimeMetrics'
-import { getBizDescription, getKpiDescription, getGriDescription } from '@/lib/metrics/descriptions'
+// The 171 KB descriptions catalog is imported dynamically when a drill-down is
+// opened (see the effect below) — kept out of the /metrics first-load bundle.
 
 // recharts lives inside the drill-down modal — load it lazily, only when the
 // drill-down is opened, so it stays out of the metrics page first-load JS.
@@ -160,22 +161,31 @@ export default function MetricsLiveCatalog({ userId }: Props) {
     setDrillItem(item)
   }
 
-  // Pull description for drill modal
-  const drillDescription = useMemo(() => {
-    if (!drillItem) return undefined
-    if (drillItem.namespace === 'biz' && drillItem.department) {
-      const d = getBizDescription(drillItem.department, drillItem.label)
-      if (d) return { what: d.what, why: d.why, how: d.how, current_state: d.current_state }
-    }
-    if (drillItem.namespace === 'kpi') {
-      const d = getKpiDescription(drillItem.label)
-      if (d) return { what: d.what, why: d.why, how: d.how, current_state: d.current_state }
-    }
-    if (drillItem.namespace === 'gri') {
-      const d = getGriDescription(drillItem.label)
-      if (d) return { what: d.what, why: d.why, how: d.how, current_state: d.current_state }
-    }
-    return undefined
+  // Pull description for the drill modal. The descriptions catalog is heavy
+  // (171 KB), so load it dynamically only once a drill-down is opened.
+  const [drillDescription, setDrillDescription] = useState<
+    { what: string; why: string; how: string; current_state?: string } | undefined
+  >(undefined)
+  useEffect(() => {
+    if (!drillItem) { setDrillDescription(undefined); return }
+    let cancelled = false
+    void import('@/lib/metrics/descriptions').then(
+      ({ getBizDescription, getKpiDescription, getGriDescription }) => {
+        if (cancelled) return
+        let d: { what: string; why: string; how: string; current_state?: string } | undefined
+        if (drillItem.namespace === 'biz' && drillItem.department) {
+          d = getBizDescription(drillItem.department, drillItem.label)
+        } else if (drillItem.namespace === 'kpi') {
+          d = getKpiDescription(drillItem.label)
+        } else if (drillItem.namespace === 'gri') {
+          d = getGriDescription(drillItem.label)
+        }
+        setDrillDescription(
+          d ? { what: d.what, why: d.why, how: d.how, current_state: d.current_state } : undefined,
+        )
+      },
+    )
+    return () => { cancelled = true }
   }, [drillItem])
 
   // Build provenance for drill modal from the resolver's source array

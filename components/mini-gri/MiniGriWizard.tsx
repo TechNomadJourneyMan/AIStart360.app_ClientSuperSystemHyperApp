@@ -2,15 +2,14 @@
 
 import React, { useMemo, useState } from 'react'
 import Link from 'next/link'
+import dynamic from 'next/dynamic'
 import { AnimatePresence, motion } from 'framer-motion'
-import {
-  Radar,
-  RadarChart,
-  PolarGrid,
-  PolarAngleAxis,
-  PolarRadiusAxis,
-  ResponsiveContainer,
-} from 'recharts'
+// recharts is heavy — load the radar lazily so it stays out of the gri-free
+// first-load JS (it only renders on the result step).
+const MiniGriRadar = dynamic(() => import('./MiniGriRadar'), {
+  ssr: false,
+  loading: () => <div className="h-full w-full skeleton rounded-xl" />,
+})
 import {
   computeMiniGri,
   zoneForScore,
@@ -364,28 +363,7 @@ export function MiniGriWizard() {
           {/* Radar */}
           <div className="p-6 md:p-8 md:border-r border-white/[0.06]">
             <div className="h-[260px] w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <RadarChart data={radarData} outerRadius="72%">
-                  <PolarGrid stroke="rgba(255,255,255,0.08)" />
-                  <PolarAngleAxis
-                    dataKey="block"
-                    tick={{ fill: '#bacbbf', fontSize: 11 }}
-                  />
-                  <PolarRadiusAxis
-                    domain={[0, 100]}
-                    tick={false}
-                    axisLine={false}
-                  />
-                  <Radar
-                    name="GRI"
-                    dataKey="score"
-                    stroke="#6effc0"
-                    fill="#6effc0"
-                    fillOpacity={0.22}
-                    strokeWidth={2}
-                  />
-                </RadarChart>
-              </ResponsiveContainer>
+              <MiniGriRadar data={radarData} />
             </div>
           </div>
 
