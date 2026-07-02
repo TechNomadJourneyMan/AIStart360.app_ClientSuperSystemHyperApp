@@ -24,19 +24,18 @@ export interface SafePosition {
   keyboardOpen: boolean
 }
 
-/** The corner zone the mascot occupies (right-bottom), viewport-relative. */
-const ZONE_WIDTH = 140
-const ZONE_HEIGHT = 140
+/** Fallback corner-zone size (overridable per avatar size). */
+const DEFAULT_ZONE = 140
 const LIFT_MARGIN = 8
 const MAX_LIFT = 240
 
-function measureLift(baseBottom: number): number {
+function measureLift(baseBottom: number, zonePx: number): number {
   if (typeof document === 'undefined') return 0
   const vw = window.innerWidth
   const vh = window.innerHeight
   const zone = {
-    left: vw - ZONE_WIDTH,
-    top: vh - baseBottom - ZONE_HEIGHT,
+    left: vw - zonePx,
+    top: vh - baseBottom - zonePx,
     right: vw,
     bottom: vh - baseBottom,
   }
@@ -59,8 +58,10 @@ function measureLift(baseBottom: number): number {
 /**
  * @param baseBottomPx the widget's default CSS bottom offset for the current
  *        breakpoint (e.g. 80 on mobile — above the bottom nav, 24 on lg).
+ * @param zonePx the square corner zone the mascot occupies — scale it with
+ *        the avatar size so collision lifts stay accurate.
  */
-export function useSafeScreenPosition(baseBottomPx: number): SafePosition {
+export function useSafeScreenPosition(baseBottomPx: number, zonePx: number = DEFAULT_ZONE): SafePosition {
   const [extraBottom, setExtraBottom] = useState(0)
   const [keyboardOpen, setKeyboardOpen] = useState(false)
 
@@ -68,7 +69,7 @@ export function useSafeScreenPosition(baseBottomPx: number): SafePosition {
     let raf = 0
     const remeasure = () => {
       cancelAnimationFrame(raf)
-      raf = requestAnimationFrame(() => setExtraBottom(measureLift(baseBottomPx)))
+      raf = requestAnimationFrame(() => setExtraBottom(measureLift(baseBottomPx, zonePx)))
     }
 
     remeasure()
@@ -92,7 +93,7 @@ export function useSafeScreenPosition(baseBottomPx: number): SafePosition {
       observer.disconnect()
       vv?.removeEventListener('resize', onViewport)
     }
-  }, [baseBottomPx])
+  }, [baseBottomPx, zonePx])
 
   return { extraBottom, keyboardOpen }
 }

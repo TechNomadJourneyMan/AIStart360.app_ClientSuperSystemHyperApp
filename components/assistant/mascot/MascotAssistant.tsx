@@ -151,7 +151,8 @@ export default function MascotAssistant() {
   const reducedMotion = useReducedMotion()
 
   const baseBottom = isDesktop ? 24 : 80
-  const { extraBottom, keyboardOpen } = useSafeScreenPosition(baseBottom)
+  // Zone ≈ avatar size + bubble headroom (desktop cat is 168px since v1.3.1).
+  const { extraBottom, keyboardOpen } = useSafeScreenPosition(baseBottom, isDesktop ? 210 : 150)
 
   const character = settings.character
   const characterName = getCharacter(character).name
@@ -736,7 +737,7 @@ export default function MascotAssistant() {
                 pose={avatarPose}
                 character={character}
                 behavior={behavior.visual}
-                size={isDesktop ? 84 : 56}
+                size={isDesktop ? 168 : 64}
                 paused={paused}
               />
             </motion.span>
