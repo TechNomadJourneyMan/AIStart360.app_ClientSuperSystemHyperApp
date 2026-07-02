@@ -165,6 +165,26 @@
 
 ---
 
+## 11b. §14 «Рекомендации по развитию» — выполнено 2026-07-02
+
+**Сделано и проверено (type-check + tests + build + браузер), в main:**
+- ✅ **Загрузка на всех страницах** — брендовый `loading.tsx` для внешних поверхностей: `app/r/[token]` (скелет отчёта: шапка+гейдж+3 карточки) и `app/(public)` (gri-free/privacy/terms). Остальные группы уже покрыты.
+- ✅ **Perf — recharts lazy:** gri-free radar вынесен в `MiniGriRadar` под `next/dynamic` (recharts вне first-load gri-free).
+- ✅ **Perf — descriptions.ts из бандла:** лёгкий `formatSource`+типы → `lib/metrics/format.ts` (в render), тяжёлый каталog (171 КБ) грузится динамически при drill-down/модалке. **/metrics First-Load JS 291 → 267 КБ.**
+- ✅ **Чистка мёртвого кода:** удалено 7 недостижимых файлов (AIInsightsCarousel, GRIDashboard, GRIAssessmentBlock, RevenueTargetsCard, PointARadarWidget, 2× useAuth) + мёртвая `buildLiveInsights`. `langfuse.ts` НЕ удалён — typecheck поймал живого импортёра (`app/actions/diagnostics.ts`); grep его пропускал.
+- ✅ **Неиспользуемые зависимости:** удалено 6 (next-intl, @auth/prisma-adapter, @stepperize/react, @ai-sdk/anthropic, @anthropic-ai/sdk, ai). Оставлены @langchain/core (peer textsplitters), tesseract.js/langfuse (живые), sharp/mammoth/pdf-parse/pdfkit (runtime).
+- ✅ **Supabase async-фабрика:** `lib/supabase/server.ts` setAll обёрнут в try/catch (падал в Server Component) — целевой фикс без рискованного codemod.
+- ✅ **Функционал — billing:** Settings › Биллинг читает реальную подписку (`GET /api/v1/settings/billing`, self-scoped по сессии, service-role, tier/status/даты) + честный empty-state.
+
+**Отложено намеренно — крупные рефакторы, требующие отдельной итерации с живой проверкой всех ролей (нельзя безопасно верифицировать в песочнице; прецедент — регрессия GRI Pulse):**
+- ⏸ **Полный codemod Supabase-фабрик (2→1):** ~64 файла, каждый sync-вызов надо переводить на async + добавлять `await`; пропуск одного = runtime-ошибка роута. Целевой краш-фикс уже применён. Нужен codemod + прогон всех роутов.
+- ⏸ **Унификация 3 таксономий ролей:** высший риск (authz). Одна ошибка = локаут или privilege escalation; в песочнице невозможно прогнать все роли (super_admin/admin/manager/analyst/expert/owner/client). Только отдельный PR с полным auth-тестом.
+- ⏸ **Единый Dialog (radix focus-trap/Escape/scroll-lock) + 422 raw-кнопки → `components/ui/Button`:** массовая миграция с риском регрессии на каждой модалке/кнопке. Рекомендуется поэтапно: базовый примитив → миграция по разделам с визуальной проверкой.
+- ⏸ **Контраст вторичного текста до AA:** база `on-surface-variant` (#bacbbf) на тёмном фоне AA проходит; проблема в `/60·/40·/30` opacity-модификаторах на мелком тексте — нужна точечная ревизия этих мест, не глобальный сдвиг токена (иначе поедет вся вторичная типографика).
+- ⏸ **Отчёты с диска → Supabase Storage; CRM Supabase→org мост:** изменения бэкенда/модели данных, требуют бакета Storage и/или маппинга тенантов + интеграционных тестов.
+
+---
+
 ## 12. Принцип
 
 Не перегружать интерфейс. Каждое предложение проверяется вопросом: **«приближает ли это клиента к пониманию своего пути к $2M?»** Если нет — в бэклог. Портал должен ощущаться дороже обычного SaaS, потому что клиент за него уже заплатил.
