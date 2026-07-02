@@ -150,13 +150,16 @@ function ChartWidget() {
 }
 
 function QuickLinksWidget() {
+  // Client-reachable destinations only (mirror middleware CLIENT_DASHBOARD_PATHS).
+  // Dropped /clients, /insights, /ai-scanner — those redirect a client to
+  // /dashboard, so they'd be dead links here.
   const links = [
-    { label: 'Рынок',    icon: 'public',      href: '/market'    },
-    { label: 'Клиенты',  icon: 'group',       href: '/clients'   },
-    { label: 'Метрики',  icon: 'monitoring',  href: '/metrics'   },
     { label: 'GRI',      icon: 'radar',       href: '/gri'       },
-    { label: 'Инсайты',  icon: 'lightbulb',   href: '/insights'  },
-    { label: 'AI Скан',  icon: 'biotech',     href: '/ai-scanner'},
+    { label: 'Точка А',  icon: 'my_location', href: '/point-a'   },
+    { label: 'Точка Б',  icon: 'flag',        href: '/point-b'   },
+    { label: 'Метрики',  icon: 'monitoring',  href: '/metrics'   },
+    { label: 'Рынок',    icon: 'public',      href: '/market'    },
+    { label: 'Уведомления', icon: 'notifications', href: '/notifications' },
   ]
   return (
     <div>

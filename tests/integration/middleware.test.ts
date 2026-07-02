@@ -108,6 +108,21 @@ describe('RBAC Middleware', () => {
     expect(new URL(res.headers.get('location')!).pathname).toBe('/dashboard')
   })
 
+  // Staff-only surfaces added to ADMIN_PATHS — clients must be redirected.
+  it('redirects client away from staff-only /pulse', async () => {
+    const req = createRequest('/pulse', 'client')
+    const res = await middleware(req)
+    expect(res.status).toBe(307)
+    expect(new URL(res.headers.get('location')!).pathname).toBe('/dashboard')
+  })
+
+  it('redirects client away from legacy /ai-scanner', async () => {
+    const req = createRequest('/ai-scanner', 'client')
+    const res = await middleware(req)
+    expect(res.status).toBe(307)
+    expect(new URL(res.headers.get('location')!).pathname).toBe('/dashboard')
+  })
+
   it('redirects client away from admin-only /users', async () => {
     const req = createRequest('/users', 'client')
     const res = await middleware(req)

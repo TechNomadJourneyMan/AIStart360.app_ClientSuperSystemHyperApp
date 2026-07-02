@@ -16,6 +16,9 @@ const ADMIN_PATHS = [
   '/insights', '/competitors', '/metrics', '/settings',
   '/clients', '/reports', '/analytics', '/intelligence',
   '/team', '/notifications', '/profile', '/users', '/admin', '/activity',
+  // Staff-only surfaces: /pulse (CRM Pulse) and /ai-scanner (legacy GRI
+  // forecast tool). Previously absent → a client could URL-hack into them.
+  '/pulse', '/ai-scanner',
 ]
 
 // Paths inside the (dashboard) layout group that clients are allowed to access
