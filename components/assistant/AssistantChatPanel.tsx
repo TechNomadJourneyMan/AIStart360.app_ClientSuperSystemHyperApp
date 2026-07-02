@@ -201,6 +201,7 @@ export function AssistantChatPanel({
 
   // Selected skin: name drives the header/buttons, avatar drives the bubbles.
   const character = useMascotStore((s) => s.settings.character)
+  const mascotColor = useMascotStore((s) => s.settings.color)
   const persona = getCharacter(character)
   const name = persona.name
 
@@ -465,7 +466,7 @@ export function AssistantChatPanel({
         <header className="flex items-center justify-between px-5 py-4 border-b border-white/[0.06] flex-shrink-0">
           <div className="flex items-center gap-2.5">
             <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center overflow-hidden">
-              <MascotAvatar pose="idle" character={character} size={30} headOnly paused />
+              <MascotAvatar pose="idle" character={character} color={mascotColor} size={30} headOnly paused />
             </div>
             <div>
               <h2 className="text-sm font-bold text-on-surface">{name}</h2>
@@ -630,7 +631,7 @@ export function AssistantChatPanel({
               ) : (
                 <div key={m.id} className="flex items-end gap-2">
                   <div className="w-7 h-7 rounded-full bg-surface-container-high flex-shrink-0 flex items-center justify-center overflow-hidden">
-                    <MascotAvatar pose="idle" character={character} size={22} headOnly paused />
+                    <MascotAvatar pose="idle" character={character} color={mascotColor} size={22} headOnly paused />
                   </div>
                   <div className="max-w-[85%] rounded-2xl rounded-bl-md border border-white/[0.08] bg-surface-container-low px-3.5 py-2.5">
                     {m.kind === 'insight' && (
@@ -672,7 +673,7 @@ export function AssistantChatPanel({
             {busy && busy !== 'expert' && (
               <div className="flex items-end gap-2">
                 <div className="w-7 h-7 rounded-full bg-surface-container-high flex-shrink-0 flex items-center justify-center overflow-hidden">
-                  <MascotAvatar pose="loading" character={character} size={22} headOnly paused />
+                  <MascotAvatar pose="loading" character={character} color={mascotColor} size={22} headOnly paused />
                 </div>
                 <div className="rounded-2xl rounded-bl-md border border-white/[0.08] bg-surface-container-low px-3.5 py-2.5">
                   <span className="text-xs text-on-surface-variant inline-flex items-center gap-1.5">

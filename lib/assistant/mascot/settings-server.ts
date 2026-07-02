@@ -59,6 +59,11 @@ export function normalizeMascotSettings(raw: unknown): MascotSettings {
     ? (o.character as MascotSettings['character'])
     : d.character
 
+  const COLORS = ['ginger', 'graphite', 'snow', 'cocoa'] as const
+  const color = COLORS.includes(o.color as (typeof COLORS)[number])
+    ? (o.color as MascotSettings['color'])
+    : d.color
+
   return {
     mascotEnabled: typeof o.mascotEnabled === 'boolean' ? o.mascotEnabled : d.mascotEnabled,
     hiddenUntil,
@@ -74,7 +79,11 @@ export function normalizeMascotSettings(raw: unknown): MascotSettings {
     greeted: o.greeted === true,
     behavior,
     character,
+    color,
     tutorialDone: o.tutorialDone === true,
+    toursDone: Array.isArray(o.toursDone)
+      ? o.toursDone.filter((x): x is string => typeof x === 'string').slice(0, 50)
+      : [],
   }
 }
 

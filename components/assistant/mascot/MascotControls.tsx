@@ -20,6 +20,8 @@ interface MascotControlsProps {
   onHide: (period: HidePeriod) => void
   /** Present only when AI insights are enabled in settings. */
   onInsight?: () => void
+  /** Present only when the current screen has a coachmark tour. */
+  onPageTour?: () => void
   onClose: () => void
 }
 
@@ -35,6 +37,7 @@ export function MascotControls({
   onMinimize,
   onHide,
   onInsight,
+  onPageTour,
   onClose,
 }: MascotControlsProps) {
   const ref = useRef<HTMLDivElement>(null)
@@ -72,6 +75,12 @@ export function MascotControls({
         <button role="menuitem" className={item} onClick={onInsight}>
           <span className="material-symbols-outlined text-base text-primary">tips_and_updates</span>
           Инсайт от {characterName}
+        </button>
+      )}
+      {onPageTour && (
+        <button role="menuitem" className={item} onClick={onPageTour}>
+          <span className="material-symbols-outlined text-base text-on-surface-variant">school</span>
+          Подсказки по странице
         </button>
       )}
       <button role="menuitem" className={item} onClick={onMinimize}>

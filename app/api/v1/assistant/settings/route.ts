@@ -34,7 +34,9 @@ const patchSchema = z
       .strict()
       .optional(),
     character: z.enum(['cat', 'dog', 'capybara', 'owl']).optional(),
+    color: z.enum(['ginger', 'graphite', 'snow', 'cocoa']).optional(),
     tutorialDone: z.boolean().optional(),
+    toursDone: z.array(z.string().max(64)).max(50).optional(),
   })
   .strict()
 

@@ -25,11 +25,33 @@ import type { MascotBehaviorVisual, MascotState } from '@/lib/assistant/mascot/t
 
 const TEAL = '#6effc0'
 const TEAL_DIM = '#00e29e'
-const BODY = '#1a1e27'
-const BODY_LIGHT = '#232834'
-const BODY_DARK = '#12151c'
 const INK = '#0A0B0F'
 const BLUSH = '#ff9d8a'
+
+export type MascotColorId = 'ginger' | 'graphite' | 'snow' | 'cocoa'
+
+/** Fur/feather palettes. «Рыжий» is the product default. */
+export const MASCOT_PALETTES: Record<
+  MascotColorId,
+  { light: string; body: string; dark: string; stroke: string; detail: string; detailSoft: string }
+> = {
+  ginger: {
+    light: '#f5a95f', body: '#ec8a33', dark: '#cf6d1d',
+    stroke: 'rgba(0,0,0,0.22)', detail: 'rgba(60,30,5,0.55)', detailSoft: 'rgba(60,30,5,0.4)',
+  },
+  graphite: {
+    light: '#232834', body: '#1a1e27', dark: '#12151c',
+    stroke: 'rgba(255,255,255,0.09)', detail: 'rgba(255,255,255,0.32)', detailSoft: 'rgba(255,255,255,0.15)',
+  },
+  snow: {
+    light: '#f6f8fa', body: '#e2e7ee', dark: '#c6cfda',
+    stroke: 'rgba(0,0,0,0.14)', detail: 'rgba(30,40,55,0.5)', detailSoft: 'rgba(30,40,55,0.35)',
+  },
+  cocoa: {
+    light: '#8a5a3b', body: '#6f462c', dark: '#54331e',
+    stroke: 'rgba(0,0,0,0.2)', detail: 'rgba(255,235,220,0.4)', detailSoft: 'rgba(255,235,220,0.25)',
+  },
+}
 
 /** Per-skin geometry switches — everything else (poses, loops) is shared. */
 const CHAR_CFG: Record<
@@ -56,6 +78,8 @@ interface MascotAvatarProps {
   pose: MascotState
   /** Skin: cat Гри (default) / dog Арчи / capybara Капи / owl Ума. */
   character?: MascotCharacterId
+  /** Fur/feather color (settings.color); ginger is the default. */
+  color?: MascotColorId
   /** Idle-life overlay; ignored while a busy pose is active. */
   behavior?: MascotBehaviorVisual
   /** Rendered box size in px. */
@@ -85,12 +109,15 @@ function headVariant(pose: MascotState, sleeping: boolean): string {
 export function MascotAvatar({
   pose,
   character = 'cat',
+  color = 'ginger',
   behavior = null,
   size = 84,
   paused = false,
   headOnly = false,
 }: MascotAvatarProps) {
   const cfg = CHAR_CFG[character] ?? CHAR_CFG.cat
+  const pal = MASCOT_PALETTES[color] ?? MASCOT_PALETTES.ginger
+  const bodyFill = `url(#gri-body-${color})`
   const reduced = useReducedMotion()
   const animate = !reduced && !paused
 
@@ -116,9 +143,9 @@ export function MascotAvatar({
       style={{ display: 'block', overflow: 'visible' }}
     >
       <defs>
-        <linearGradient id="gri-body" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={BODY} />
-          <stop offset="100%" stopColor={BODY_DARK} />
+        <linearGradient id={`gri-body-${color}`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={pal.body} />
+          <stop offset="100%" stopColor={pal.dark} />
         </linearGradient>
         <radialGradient id="gri-glow" cx="50%" cy="50%" r="50%">
           <stop offset="0%" stopColor={TEAL} stopOpacity="0.5" />
@@ -155,18 +182,18 @@ export function MascotAvatar({
               >
                 {cfg.tail === 'cat' && (
                   <>
-                    <path d="M87 95 Q110 89 106 66" fill="none" stroke={BODY} strokeWidth="8.5" strokeLinecap="round" />
+                    <path d="M87 95 Q110 89 106 66" fill="none" stroke={pal.body} strokeWidth="8.5" strokeLinecap="round" />
                     <circle cx="106" cy="64" r="5.6" fill={TEAL_DIM} opacity="0.95" />
                   </>
                 )}
                 {cfg.tail === 'dog' && (
                   <>
-                    <path d="M87 94 Q103 88 102 74" fill="none" stroke={BODY} strokeWidth="10" strokeLinecap="round" />
+                    <path d="M87 94 Q103 88 102 74" fill="none" stroke={pal.body} strokeWidth="10" strokeLinecap="round" />
                     <circle cx="102" cy="72" r="5" fill={TEAL_DIM} opacity="0.95" />
                   </>
                 )}
                 {cfg.tail === 'feathers' && (
-                  <g stroke={BODY_LIGHT} strokeWidth="6" strokeLinecap="round">
+                  <g stroke={pal.light} strokeWidth="6" strokeLinecap="round">
                     <path d="M88 96 L101 88" />
                     <path d="M88 99 L103 95" />
                     <path d="M87 102 L101 102" stroke={TEAL_DIM} strokeWidth="5" opacity="0.7" />
@@ -193,7 +220,7 @@ export function MascotAvatar({
                     : { duration: 0.4 }
               }
             >
-              <ellipse cx="60" cy="88" rx="31" ry="25" fill="url(#gri-body)" stroke="rgba(255,255,255,0.09)" />
+              <ellipse cx="60" cy="88" rx="31" ry="25" fill={bodyFill} stroke={pal.stroke} />
               <ellipse cx="60" cy="95" rx="17" ry="11" fill="rgba(255,255,255,0.045)" />
             </motion.g>
 
@@ -202,9 +229,9 @@ export function MascotAvatar({
               animate={walking ? { y: [0, -3.5, 0], x: [0, 1.5, 0] } : { y: 0, x: 0, opacity: sleeping ? 0 : 1 }}
               transition={walking ? { duration: 0.42, repeat: Infinity, ease: 'easeInOut' } : { duration: 0.3 }}
             >
-              <ellipse cx="46" cy="110" rx="8.5" ry="5" fill={BODY_DARK} stroke="rgba(255,255,255,0.07)" />
+              <ellipse cx="46" cy="110" rx="8.5" ry="5" fill={pal.dark} stroke={pal.stroke} />
               {/* toe beans */}
-              <g stroke="rgba(255,255,255,0.14)" strokeWidth="1" strokeLinecap="round">
+              <g stroke={pal.detailSoft} strokeWidth="1" strokeLinecap="round">
                 <path d="M43 110 L43 112" />
                 <path d="M46.5 110.5 L46.5 112.5" />
                 <path d="M50 110 L50 112" />
@@ -214,8 +241,8 @@ export function MascotAvatar({
               animate={walking ? { y: [-3.5, 0, -3.5], x: [1.5, 0, 1.5] } : { y: 0, x: 0, opacity: sleeping ? 0 : 1 }}
               transition={walking ? { duration: 0.42, repeat: Infinity, ease: 'easeInOut' } : { duration: 0.3 }}
             >
-              <ellipse cx="74" cy="110" rx="8.5" ry="5" fill={BODY_DARK} stroke="rgba(255,255,255,0.07)" />
-              <g stroke="rgba(255,255,255,0.14)" strokeWidth="1" strokeLinecap="round">
+              <ellipse cx="74" cy="110" rx="8.5" ry="5" fill={pal.dark} stroke={pal.stroke} />
+              <g stroke={pal.detailSoft} strokeWidth="1" strokeLinecap="round">
                 <path d="M71 110 L71 112" />
                 <path d="M74.5 110.5 L74.5 112.5" />
                 <path d="M78 110 L78 112" />
@@ -263,8 +290,8 @@ export function MascotAvatar({
               <>
                 <motion.path
                   d={d.left}
-                  fill="url(#gri-body)"
-                  stroke="rgba(255,255,255,0.09)"
+                  fill={bodyFill}
+                  stroke={pal.stroke}
                   style={{ transformBox: 'fill-box', transformOrigin: 'bottom center' }}
                   variants={{
                     rest: { rotate: 0 },
@@ -277,8 +304,8 @@ export function MascotAvatar({
                 />
                 <motion.path
                   d={d.right}
-                  fill="url(#gri-body)"
-                  stroke="rgba(255,255,255,0.09)"
+                  fill={bodyFill}
+                  stroke={pal.stroke}
                   style={{ transformBox: 'fill-box', transformOrigin: 'bottom center' }}
                   variants={{
                     rest: { rotate: 0 },
@@ -306,7 +333,7 @@ export function MascotAvatar({
           })()}
 
           {/* Face */}
-          <circle cx="60" cy="50" r="27.5" fill="url(#gri-body)" stroke="rgba(255,255,255,0.09)" />
+          <circle cx="60" cy="50" r="27.5" fill={bodyFill} stroke={pal.stroke} />
 
           {/* Blush cheeks */}
           <ellipse cx="42" cy="58" rx="5" ry="3" fill={BLUSH} opacity="0.15" />
@@ -356,7 +383,7 @@ export function MascotAvatar({
           {/* Muzzle / nose / beak per skin + smile + whiskers */}
           {cfg.nose === 'capy' && (
             <>
-              <rect x="48" y="55" width="24" height="14" rx="7" fill={BODY_LIGHT} stroke="rgba(255,255,255,0.07)" />
+              <rect x="48" y="55" width="24" height="14" rx="7" fill={pal.light} stroke={pal.stroke} />
               <ellipse cx="55.5" cy="60" rx="1.6" ry="2.2" fill={INK} />
               <ellipse cx="64.5" cy="60" rx="1.6" ry="2.2" fill={INK} />
             </>
@@ -387,13 +414,13 @@ export function MascotAvatar({
                     : 'M55 65.5 Q57.5 68.3 60 66.3 Q62.5 68.3 65 65.5'
               }
               fill="none"
-              stroke="rgba(255,255,255,0.32)"
+              stroke={pal.detail}
               strokeWidth="1.4"
               strokeLinecap="round"
             />
           )}
           {cfg.whiskers !== 'none' && (
-            <g stroke="rgba(255,255,255,0.14)" strokeWidth="1.2" strokeLinecap="round" fill="none">
+            <g stroke={pal.detailSoft} strokeWidth="1.2" strokeLinecap="round" fill="none">
               {cfg.whiskers === 'long' ? (
                 <>
                   <path d="M28 51 Q36 52 42 53" />
@@ -443,9 +470,9 @@ export function MascotAvatar({
               }
               transition={pose === 'greeting' && animate ? { duration: 1.6, repeat: 2 } : { duration: 0.2 }}
             >
-              <ellipse cx="93" cy="72" rx="6.6" ry="11" fill={BODY} stroke="rgba(255,255,255,0.11)" />
-              <ellipse cx="93" cy="63.5" rx="5.2" ry="4.2" fill={BODY} />
-              <g stroke="rgba(255,255,255,0.16)" strokeWidth="1" strokeLinecap="round">
+              <ellipse cx="93" cy="72" rx="6.6" ry="11" fill={pal.body} stroke={pal.stroke} />
+              <ellipse cx="93" cy="63.5" rx="5.2" ry="4.2" fill={pal.body} />
+              <g stroke={pal.detailSoft} strokeWidth="1" strokeLinecap="round">
                 <path d="M90.6 61.5 L90.6 63.5" />
                 <path d="M93 61 L93 63" />
                 <path d="M95.4 61.5 L95.4 63.5" />
@@ -458,7 +485,7 @@ export function MascotAvatar({
               animate={pose === 'loading' ? { opacity: 1, y: 0 } : { opacity: 0, y: 4 }}
               transition={{ duration: 0.25 }}
             >
-              <ellipse cx="73" cy="67" rx="5.8" ry="7.6" fill={BODY} stroke="rgba(255,255,255,0.11)" />
+              <ellipse cx="73" cy="67" rx="5.8" ry="7.6" fill={pal.body} stroke={pal.stroke} />
             </motion.g>
 
             {/* Zzz while sleeping. */}

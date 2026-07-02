@@ -12,7 +12,7 @@
 
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { MascotAvatar } from '@/components/assistant/mascot/MascotAvatar'
+import { MascotAvatar, MASCOT_PALETTES, type MascotColorId } from '@/components/assistant/mascot/MascotAvatar'
 import { CHARACTERS, CHARACTER_IDS, getCharacter } from '@/lib/assistant/mascot/characters'
 import { useMascotStore } from '@/lib/assistant/mascot/state'
 import type {
@@ -31,6 +31,13 @@ const MUTABLE_TYPES: Array<{ key: string; label: string }> = [
   { key: 'education', label: 'Обучающие советы' },
   { key: 'motivation', label: 'Мотивационные сообщения' },
   { key: 'idle', label: 'Предложение помощи при бездействии' },
+]
+
+const COLOR_OPTIONS: Array<{ id: MascotColorId; label: string }> = [
+  { id: 'ginger', label: 'Рыжий' },
+  { id: 'graphite', label: 'Графит' },
+  { id: 'snow', label: 'Белый' },
+  { id: 'cocoa', label: 'Шоколад' },
 ]
 
 const BEHAVIOR_OPTIONS: Array<{
@@ -121,7 +128,13 @@ export function AssistantSettingsPanel() {
     <div className="bg-surface-container rounded-xl p-6 border border-outline-variant/30 space-y-6">
       <div className="flex items-start gap-4">
         <div className="shrink-0 rounded-2xl bg-surface-container-high p-2">
-          <MascotAvatar pose="idle" character={settings?.character ?? 'cat'} size={64} paused />
+          <MascotAvatar
+            pose="idle"
+            character={settings?.character ?? 'cat'}
+            color={settings?.color ?? 'ginger'}
+            size={64}
+            paused
+          />
         </div>
         <div>
           <h2 className="text-base font-bold text-on-surface">
@@ -224,7 +237,7 @@ export function AssistantSettingsPanel() {
                     }`}
                   >
                     <span className="shrink-0">
-                      <MascotAvatar pose="idle" character={id} size={44} paused />
+                      <MascotAvatar pose="idle" character={id} color={settings.color} size={44} paused />
                     </span>
                     <span className="min-w-0">
                       <span className={`block text-sm font-semibold ${active ? 'text-primary' : 'text-on-surface'}`}>
@@ -240,20 +253,57 @@ export function AssistantSettingsPanel() {
             </div>
           </div>
 
-          {/* Onboarding tutorial replay */}
+          {/* Fur color */}
+          <div>
+            <p className="text-sm font-medium text-on-surface mb-2">Цвет</p>
+            <div className="flex items-center gap-2 flex-wrap">
+              {COLOR_OPTIONS.map((c) => {
+                const p = MASCOT_PALETTES[c.id]
+                const active = settings.color === c.id
+                return (
+                  <button
+                    key={c.id}
+                    disabled={saving}
+                    onClick={() => void patch({ color: c.id })}
+                    aria-pressed={active}
+                    aria-label={`Цвет: ${c.label}`}
+                    className={`flex items-center gap-2 rounded-xl border px-2.5 py-1.5 transition-all ${
+                      active
+                        ? 'border-primary/40 bg-primary/[0.07]'
+                        : 'border-outline-variant/20 hover:border-primary/20'
+                    }`}
+                  >
+                    <span
+                      aria-hidden
+                      className="w-6 h-6 rounded-full border border-white/[0.15]"
+                      style={{ background: `linear-gradient(180deg, ${p.body}, ${p.dark})` }}
+                    />
+                    <span className={`text-xs font-medium ${active ? 'text-primary' : 'text-on-surface'}`}>
+                      {c.label}
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* Coachmark tours reset */}
           <div className="flex items-center justify-between gap-4 py-1">
             <div>
               <p className="text-sm font-medium text-on-surface">Обучение по платформе</p>
               <p className="text-xs text-on-surface-variant mt-0.5">
-                {getCharacter(settings.character).name} заново покажет, как устроен портал.
+                Подсказки-стрелочки от {getCharacter(settings.character).name} снова появятся на каждой странице.
               </p>
             </div>
             <button
-              onClick={() => window.dispatchEvent(new Event('aistart:tutorial:replay'))}
+              onClick={() => {
+                void patch({ toursDone: [] })
+                window.dispatchEvent(new Event('aistart:tutorial:replay'))
+              }}
               className="shrink-0 inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-primary/30 bg-primary/[0.06] text-primary font-semibold text-xs hover:bg-primary/[0.12] transition-colors"
             >
               <span className="material-symbols-outlined text-base">school</span>
-              Пройти заново
+              Сбросить обучение
             </button>
           </div>
 

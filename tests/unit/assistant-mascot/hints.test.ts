@@ -253,3 +253,42 @@ describe('character catalog', () => {
     expect(getCharacter('dog').name).toBe('Арчи')
   })
 })
+
+// ─── v1.4: color + coachmark tours ───────────────────────────────────────────
+import { TOURS, tourForScreen } from '@/lib/assistant/mascot/tours'
+
+describe('color + tours settings', () => {
+  it('color defaults to ginger and rejects junk', () => {
+    expect(normalizeMascotSettings({}).color).toBe('ginger')
+    expect(normalizeMascotSettings({ color: 'neon' }).color).toBe('ginger')
+    expect(normalizeMascotSettings({ color: 'snow' }).color).toBe('snow')
+  })
+
+  it('toursDone is a capped string list', () => {
+    expect(normalizeMascotSettings({}).toursDone).toEqual([])
+    expect(
+      normalizeMascotSettings({ toursDone: ['/dashboard', 42, '/gri'] }).toursDone,
+    ).toEqual(['/dashboard', '/gri'])
+  })
+})
+
+describe('coachmark tour catalog', () => {
+  it('every tour step has a selector, title and text; every tour ends on the mascot', () => {
+    for (const [screen, steps] of Object.entries(TOURS)) {
+      expect(steps.length, screen).toBeGreaterThanOrEqual(2)
+      for (const s of steps) {
+        expect(s.selector.length, `${screen}: selector`).toBeGreaterThanOrEqual(2)
+        expect(s.title.length, `${screen}: title`).toBeGreaterThan(2)
+        expect(s.text.length, `${screen}: text`).toBeGreaterThan(10)
+      }
+      expect(steps[steps.length - 1].selector).toContain('открыть чат')
+    }
+  })
+
+  it('tours exist for the key screens and unknown screens return null', () => {
+    for (const screen of ['/dashboard', '/gri', '/client/onboarding', '/market']) {
+      expect(tourForScreen(screen), screen).not.toBeNull()
+    }
+    expect(tourForScreen('/nope')).toBeNull()
+  })
+})

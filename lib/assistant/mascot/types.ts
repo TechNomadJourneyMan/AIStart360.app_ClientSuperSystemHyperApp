@@ -54,8 +54,12 @@ export interface MascotSettings {
   behavior: MascotBehaviorSettings
   /** Assistant skin (cat Гри / dog Арчи / capybara Капи / owl Ума). */
   character: 'cat' | 'dog' | 'capybara' | 'owl'
-  /** Onboarding tutorial completed/skipped (replayable from settings). */
+  /** Fur/feather color; «рыжий» is the product default. */
+  color: 'ginger' | 'graphite' | 'snow' | 'cocoa'
+  /** Legacy v1.3 modal-tutorial flag (kept for stored settings compat). */
   tutorialDone: boolean
+  /** Screens whose coachmark tour was completed/skipped. */
+  toursDone: string[]
 }
 
 export const DEFAULT_MASCOT_BEHAVIOR: MascotBehaviorSettings = {
@@ -73,7 +77,9 @@ export const DEFAULT_MASCOT_SETTINGS: MascotSettings = {
   greeted: false,
   behavior: DEFAULT_MASCOT_BEHAVIOR,
   character: 'cat',
+  color: 'ginger',
   tutorialDone: false,
+  toursDone: [],
 }
 
 /** True when the mascot must not render at all (master switch or timed hide). */

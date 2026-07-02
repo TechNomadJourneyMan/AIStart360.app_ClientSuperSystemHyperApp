@@ -37,10 +37,11 @@ import {
   type HidePeriod,
 } from '@/lib/assistant/mascot/types'
 import { getCharacter } from '@/lib/assistant/mascot/characters'
+import { tourForScreen, type TourStep } from '@/lib/assistant/mascot/tours'
 import { MascotAvatar } from './MascotAvatar'
 import { MascotBubble } from './MascotBubble'
+import { MascotCoachmarks } from './MascotCoachmarks'
 import { MascotControls } from './MascotControls'
-import { MascotTutorial } from './MascotTutorial'
 
 const CONTEXT_STALE_MS = 60_000
 const BUBBLE_AUTO_CLEAR_MS = 20_000
@@ -138,8 +139,8 @@ export default function MascotAssistant() {
   const [hoverWave, setHoverWave] = useState(false)
   const lastWaveRef = useRef(0)
   const waveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const [tutorialOpen, setTutorialOpen] = useState(false)
-  const tutorialShownRef = useRef(false)
+  const [tourSteps, setTourSteps] = useState<TourStep[] | null>(null)
+  const tourSessionRef = useRef<Set<string>>(new Set())
 
   const screenRef = useRef(screen)
   const scrollTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -156,10 +157,11 @@ export default function MascotAssistant() {
 
   const character = settings.character
   const characterName = getCharacter(character).name
+  const mascotColor = settings.color
 
   // Idle-life engine: strolls/rubs (desktop, unless disabled) + sleep.
   const behaviorBusy =
-    !!activeHint || chatOpen || controlsOpen || minimized || keyboardOpen || scrolling || tutorialOpen
+    !!activeHint || chatOpen || controlsOpen || minimized || keyboardOpen || scrolling || !!tourSteps
   const behavior = useMascotBehavior({
     busy: behaviorBusy,
     walkingEnabled: settings.behavior.walking && isDesktop && !reducedMotion,
@@ -554,35 +556,53 @@ export default function MascotAssistant() {
     void requestInsight(true)
   }, [requestInsight])
 
-  // ── Onboarding tutorial (first visit + replay from Settings) ───────────────
+  // ── Coachmark tours: once per screen on first visit + replay hooks ─────────
   useEffect(() => {
-    if (hiddenNow || tutorialShownRef.current || !context) return
-    if (settings.tutorialDone) return
+    if (hiddenNow || !context || tourSteps) return
+    const steps = tourForScreen(screen)
+    if (!steps) return
+    const s = useMascotStore.getState()
+    if (s.settings.toursDone.includes(screen) || tourSessionRef.current.has(screen)) return
     const t = setTimeout(() => {
-      tutorialShownRef.current = true
-      setTutorialOpen(true)
-    }, 1_500)
+      tourSessionRef.current.add(screen)
+      setTourSteps(steps)
+    }, 1_200)
     return () => clearTimeout(t)
-  }, [hiddenNow, context, settings.tutorialDone])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [screen, hiddenNow, context])
 
+  // Settings «Сбросить обучение»: clear the per-session guard so tours re-run.
   useEffect(() => {
-    const onReplay = () => setTutorialOpen(true)
+    const onReplay = () => {
+      tourSessionRef.current.clear()
+      const steps = tourForScreen(screen)
+      if (steps) setTourSteps(steps)
+    }
     window.addEventListener('aistart:tutorial:replay', onReplay)
     return () => window.removeEventListener('aistart:tutorial:replay', onReplay)
-  }, [])
+  }, [screen])
 
-  const closeTutorial = useCallback(
+  /** Menu «Подсказки по странице» — run the current screen's tour now. */
+  const onPageTour = useCallback(() => {
+    setControlsOpen(false)
+    const steps = tourForScreen(screen)
+    if (steps) setTourSteps(steps)
+  }, [screen])
+
+  const closeTour = useCallback(
     (_done: boolean) => {
-      setTutorialOpen(false)
-      applySettings({ tutorialDone: true })
+      setTourSteps(null)
+      const s = useMascotStore.getState()
+      const next = Array.from(new Set([...s.settings.toursDone, screen])).slice(0, 50)
+      applySettings({ toursDone: next })
       void fetch('/api/v1/assistant/settings', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ tutorialDone: true }),
+        body: JSON.stringify({ toursDone: next }),
       }).catch(() => undefined)
     },
-    [applySettings],
+    [applySettings, screen],
   )
 
   /** Наведение: стоп на месте + короткое махание лапой (не чаще раза в 30 с). */
@@ -678,6 +698,7 @@ export default function MascotAssistant() {
             onMinimize={onMinimize}
             onHide={onHide}
             onInsight={settings.behavior.aiInsights ? onInsightClick : undefined}
+            onPageTour={tourForScreen(screen) ? onPageTour : undefined}
             onClose={() => setControlsOpen(false)}
           />
         )}
@@ -701,7 +722,7 @@ export default function MascotAssistant() {
           aria-label={`Развернуть ассистента ${characterName}`}
           className="relative w-10 h-10 rounded-full bg-[#12151c]/95 border border-white/[0.1] shadow-lg shadow-black/40 flex items-center justify-center hover:border-primary/40 transition-colors focus:outline-none focus:ring-2 focus:ring-primary/40"
         >
-          <MascotAvatar pose="minimized" character={character} size={30} headOnly paused />
+          <MascotAvatar pose="minimized" character={character} color={mascotColor} size={30} headOnly paused />
           {pendingBadge && (
             <span
               aria-hidden
@@ -736,8 +757,9 @@ export default function MascotAssistant() {
               <MascotAvatar
                 pose={avatarPose}
                 character={character}
+                color={mascotColor}
                 behavior={behavior.visual}
-                size={isDesktop ? 168 : 64}
+                size={isDesktop ? 126 : 64}
                 paused={paused}
               />
             </motion.span>
@@ -766,8 +788,15 @@ export default function MascotAssistant() {
       <AssistantChatPanel open={chatOpen} onClose={() => setChatOpen(false)} currentScreen={screen} />
     </div>
 
-    {/* Onboarding tour — the mascot teaches the platform (first visit / replay). */}
-    <MascotTutorial open={tutorialOpen} character={character} onClose={closeTutorial} />
+    {/* Coachmark tour — the mascot points at real interface elements. */}
+    {tourSteps && (
+      <MascotCoachmarks
+        steps={tourSteps}
+        character={character}
+        color={mascotColor}
+        onClose={closeTour}
+      />
+    )}
     </>
   )
 }
