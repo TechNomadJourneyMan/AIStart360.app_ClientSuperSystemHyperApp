@@ -12,7 +12,10 @@ const CLIENT_OK: UserRole[] = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ANALYST', 'CL
 export const PRIMARY_NAV: NavItem[] = [
   { label: 'Дэшборд',   href: '/dashboard', icon: 'dashboard',   roles: CLIENT_OK },
   { label: 'GRI',       href: '/gri',        icon: 'radar',       roles: CLIENT_OK },
-  { label: 'GRI Pulse', href: '/pulse',      icon: 'cell_tower',  roles: STAFF_ROLES },
+  // GRI Pulse is client-facing: /api/pulse scopes data by role (a client sees
+  // only their own deals/metrics, staff see the portfolio). Restored to all
+  // roles after being over-gated to staff-only. 2026-07-02.
+  { label: 'GRI Pulse', href: '/pulse',      icon: 'cell_tower',  roles: CLIENT_OK },
   { label: 'Точка А',   href: '/point-a',    icon: 'my_location', roles: CLIENT_OK },
   { label: 'Точка Б',   href: '/point-b',    icon: 'flag',        roles: CLIENT_OK },
   { label: 'Метрики',   href: '/metrics',    icon: 'monitoring',  roles: CLIENT_OK },
