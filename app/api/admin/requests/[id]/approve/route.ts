@@ -52,9 +52,28 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   if (request.type === 'access' && request.userId) {
     const payload = (request.payload as Record<string, string> | null) ?? {}
     if (payload.targetRole) {
+      // SECURITY (audit 2026-07-02): the target role must be a real UserRole,
+      // and — mirroring the "only SUPER_ADMIN can change roles" control in
+      // users/[id]/route.ts — only a SUPER_ADMIN approver may grant an elevated
+      // (ADMIN / SUPER_ADMIN) role. Previously any ADMIN (who holds
+      // requests:approve) could self-approve an `access` request carrying
+      // targetRole='SUPER_ADMIN' and escalate. Now that path is closed and the
+      // value is validated against the enum before it is ever written.
+      const VALID_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ANALYST', 'CLIENT'] as const
+      const ELEVATED = new Set(['SUPER_ADMIN', 'ADMIN'])
+      const targetRole = payload.targetRole
+      if (!VALID_ROLES.includes(targetRole as (typeof VALID_ROLES)[number])) {
+        return NextResponse.json({ error: `Invalid target role: ${targetRole}` }, { status: 422 })
+      }
+      if (ELEVATED.has(targetRole) && session.user.role !== 'SUPER_ADMIN') {
+        return NextResponse.json(
+          { error: 'Only a SUPER_ADMIN may approve elevation to an admin role' },
+          { status: 403 },
+        )
+      }
       await prisma.user.update({
         where: { id: request.userId },
-        data: { role: payload.targetRole as never },
+        data: { role: targetRole as (typeof VALID_ROLES)[number] },
       })
     }
   }

@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { notifyAdmins } from '@/lib/notifications'
 import { inngest } from '@/lib/inngest'
+import { isSupabaseStorageUrl } from '@/lib/upload-url'
 
 // GET /api/v1/onboarding/documents — the caller's own documents (session user).
 // user_id is no longer trusted from the query. See technical-audit A5.
@@ -31,6 +32,13 @@ export async function POST(req: NextRequest) {
 
     if (!file_name || !file_url || !doc_type) {
       return NextResponse.json({ ok: false, error: 'Missing required fields' }, { status: 400 })
+    }
+
+    // SECURITY (audit 2026-07-02): `file_url` is later fetched server-side by the
+    // /process pipeline. Constrain it to our own Supabase Storage so it can't be
+    // pointed at internal services / cloud-metadata endpoints (SSRF).
+    if (!isSupabaseStorageUrl(file_url)) {
+      return NextResponse.json({ ok: false, error: 'file_url must be a Supabase Storage URL' }, { status: 400 })
     }
 
     const sb = createServerClient()

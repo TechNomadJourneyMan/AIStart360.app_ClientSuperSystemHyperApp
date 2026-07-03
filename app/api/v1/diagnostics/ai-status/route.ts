@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
+import { getSessionUser, getSessionRole, isStaffRole } from '@/lib/api-identity'
 
 /**
  * GET /api/v1/diagnostics/ai-status?diagnostic_id=xxx
@@ -15,14 +16,22 @@ export async function GET(req: NextRequest) {
   }
 
   const sb = createServerClient()
+  // SECURITY (audit 2026-07-02): require a session and scope the poll to the
+  // owner (was anonymous + leaked raw DB error strings).
+  const user = await getSessionUser(sb)
+  if (!user) return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 })
+
   const { data, error } = await sb
     .from('diagnostics')
-    .select('ai_status, ai_analysis')
+    .select('ai_status, ai_analysis, user_id')
     .eq('id', diagnosticId)
     .single()
 
-  if (error) {
-    return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
+  if (error || !data) {
+    return NextResponse.json({ ok: false, error: 'Not found' }, { status: 404 })
+  }
+  if (data.user_id !== user.id && !isStaffRole(await getSessionRole(sb, user.id))) {
+    return NextResponse.json({ ok: false, error: 'Not found' }, { status: 404 })
   }
 
   return NextResponse.json({

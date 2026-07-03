@@ -9,6 +9,9 @@ import {
   type ParsedDataPayload,
 } from '@/lib/documents/extract'
 import { parseDocument } from '@/lib/documents/parse'
+import { getSessionUser, getSessionRole, isStaffRole } from '@/lib/api-identity'
+import { isSupabaseStorageUrl } from '@/lib/upload-url'
+import { isRateLimitedKey } from '@/lib/rate-limit'
 
 // POST /api/v1/onboarding/documents/[id]/process
 // Inline document parsing. Fetches the document, parses it, runs LLM extraction,
@@ -20,17 +23,35 @@ export async function POST(
 ) {
   const sb = createServerClient()
 
+  // SECURITY (audit 2026-07-02): this endpoint fetches doc.file_url server-side
+  // and runs a paid LLM extraction. It had NO auth — an attacker could trigger
+  // processing (and, via the SSRF in the old insert path, exfiltrate fetched
+  // content). Require an authenticated owner (or staff) and throttle per user.
+  const user = await getSessionUser(sb)
+  if (!user) return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 })
+  if (await isRateLimitedKey(user.id, 'documents-process', { max: 20, windowMs: 60_000 })) {
+    return NextResponse.json({ ok: false, error: 'Слишком много запросов. Попробуйте позже.' }, { status: 429 })
+  }
+
   const { data: doc, error: fetchErr } = await sb
     .from('documents')
-    .select('id, file_url, file_name, mime_type, doc_type, parse_status')
+    .select('id, user_id, file_url, file_name, mime_type, doc_type, parse_status')
     .eq('id', params.id)
     .single()
 
   if (fetchErr || !doc) {
-    return NextResponse.json(
-      { ok: false, error: fetchErr?.message ?? 'Документ не найден' },
-      { status: 404 },
-    )
+    return NextResponse.json({ ok: false, error: 'Документ не найден' }, { status: 404 })
+  }
+
+  // Owner-or-staff: don't let one user process another user's document.
+  if (doc.user_id !== user.id && !isStaffRole(await getSessionRole(sb, user.id))) {
+    return NextResponse.json({ ok: false, error: 'Документ не найден' }, { status: 404 })
+  }
+
+  // Defense-in-depth: even though insert now validates file_url, re-check before
+  // the server-side fetch so a legacy/tampered row can't drive an SSRF.
+  if (!isSupabaseStorageUrl(doc.file_url)) {
+    return NextResponse.json({ ok: false, error: 'Некорректный источник файла' }, { status: 400 })
   }
 
   if (doc.parse_status === 'processing') {

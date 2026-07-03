@@ -198,31 +198,299 @@ function PasswordCard() {
   )
 }
 
+type TwoFAStatus = { enabled: boolean; pending: boolean; backup_codes_remaining: number; encryption_configured: boolean }
+
+function BackupCodesPanel({ codes, onDone }: { codes: string[]; onDone: () => void }) {
+  const copy = () => {
+    navigator.clipboard?.writeText(codes.join('\n')).then(
+      () => toast.success('Коды скопированы'),
+      () => toast.error('Не удалось скопировать'),
+    )
+  }
+  return (
+    <div className="mt-4 p-4 rounded-xl border border-primary/20 bg-primary/5">
+      <div className="flex items-start gap-2 mb-3">
+        <span className="material-symbols-outlined text-primary text-lg mt-0.5">key</span>
+        <div>
+          <p className="text-sm font-semibold text-on-surface">Сохраните резервные коды</p>
+          <p className="text-xs text-on-surface-variant">Показываются один раз. Каждый код работает однократно — на случай потери телефона.</p>
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-2 font-mono text-sm text-on-surface bg-surface-container rounded-lg p-3">
+        {codes.map((c) => <span key={c} className="tracking-wider">{c}</span>)}
+      </div>
+      <div className="flex gap-2 mt-3">
+        <button type="button" onClick={copy} className="text-xs px-3 py-1.5 rounded-lg bg-surface-container-high border border-white/[0.06] text-on-surface-variant hover:text-on-surface transition-colors">Скопировать</button>
+        <button type="button" onClick={onDone} className="text-xs px-3 py-1.5 rounded-lg bg-primary text-on-primary font-semibold hover:bg-primary/90 transition-colors">Я сохранил коды</button>
+      </div>
+    </div>
+  )
+}
+
 function TwoFactorCard() {
+  const [status, setStatus] = useState<TwoFAStatus | null>(null)
+  const [phase, setPhase] = useState<'idle' | 'enrolling'>('idle')
+  const [setup, setSetup] = useState<{ qr_svg: string; secret: string } | null>(null)
+  const [code, setCode] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+  const [backupCodes, setBackupCodes] = useState<string[] | null>(null)
+  const [disabling, setDisabling] = useState(false)
+  const [disableCode, setDisableCode] = useState('')
+
+  const loadStatus = useCallback(async () => {
+    try {
+      const res = await fetch('/api/v1/security/2fa/status', { credentials: 'include' })
+      const json = await res.json().catch(() => ({}))
+      if (json.ok) setStatus(json)
+    } catch { /* keep null */ }
+  }, [])
+  useEffect(() => { loadStatus() }, [loadStatus])
+
+  const beginSetup = async () => {
+    setBusy(true); setErr(null)
+    try {
+      const res = await fetch('/api/v1/security/2fa/setup', { method: 'POST', credentials: 'include' })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok || !json.ok) {
+        setErr(json.error === 'encryption_not_configured'
+          ? 'Шифрование не настроено на сервере (SECRETS_ENCRYPTION_KEY). Обратитесь к администратору.'
+          : 'Не удалось начать настройку.')
+        return
+      }
+      setSetup({ qr_svg: json.qr_svg, secret: json.secret }); setPhase('enrolling'); setCode('')
+    } catch { setErr('Ошибка сети.') } finally { setBusy(false) }
+  }
+
+  const confirmSetup = async () => {
+    setBusy(true); setErr(null)
+    try {
+      const res = await fetch('/api/v1/security/2fa/verify', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+        body: JSON.stringify({ code: code.trim() }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok || !json.ok) { setErr(json.error === 'invalid_code' ? 'Неверный код.' : 'Не удалось подтвердить.'); return }
+      setBackupCodes(json.backup_codes); setPhase('idle'); setSetup(null); setCode('')
+      toast.success('2FA включена')
+      loadStatus()
+    } catch { setErr('Ошибка сети.') } finally { setBusy(false) }
+  }
+
+  const disable = async () => {
+    setBusy(true); setErr(null)
+    try {
+      const res = await fetch('/api/v1/security/2fa/disable', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+        body: JSON.stringify({ code: disableCode.trim() }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok || !json.ok) { setErr(json.error === 'invalid_code' ? 'Неверный код.' : 'Не удалось отключить.'); return }
+      toast.success('2FA отключена'); setDisabling(false); setDisableCode(''); loadStatus()
+    } catch { setErr('Ошибка сети.') } finally { setBusy(false) }
+  }
+
+  const regenerate = async () => {
+    const c = window.prompt('Введите текущий код из приложения, чтобы перевыпустить резервные коды:')
+    if (!c) return
+    setBusy(true); setErr(null)
+    try {
+      const res = await fetch('/api/v1/security/backup-codes/regenerate', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+        body: JSON.stringify({ code: c.trim() }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok || !json.ok) { toast.error(json.error === 'invalid_code' ? 'Неверный код' : 'Не удалось'); return }
+      setBackupCodes(json.backup_codes); loadStatus()
+    } catch { toast.error('Ошибка сети') } finally { setBusy(false) }
+  }
+
   return (
     <Card title="Двухфакторная аутентификация (2FA)" subtitle="Дополнительный код при входе — защита от кражи пароля." icon="verified_user">
-      <div className="divide-y divide-outline-variant/10">
-        <SoonRow icon="smartphone" title="Приложение-аутентификатор" desc="Google Authenticator, 1Password, Authy — одноразовые коды (TOTP)" />
-        <SoonRow icon="sms" title="SMS-код" desc="Одноразовый код на номер телефона" />
-        <SoonRow icon="mail" title="Резервные коды" desc="Одноразовые коды на случай потери устройства" />
-      </div>
-      <div className="mt-4 flex items-center gap-2 text-xs text-on-surface-variant bg-surface-container-high rounded-lg px-3 py-2">
-        <span className="material-symbols-outlined text-base text-tertiary-container">info</span>
-        Настройка 2FA появится здесь. Рекомендуем включить сразу после запуска.
-      </div>
+      {status === null ? (
+        <div className="h-16 bg-surface-container-high rounded-lg animate-pulse" />
+      ) : status.enabled ? (
+        <>
+          <div className="flex items-center justify-between py-2">
+            <div className="flex items-center gap-3">
+              <span className="material-symbols-outlined text-xl text-primary">smartphone</span>
+              <div>
+                <p className="text-sm font-medium text-on-surface">Приложение-аутентификатор</p>
+                <p className="text-xs text-on-surface-variant">Резервных кодов осталось: {status.backup_codes_remaining}</p>
+              </div>
+            </div>
+            <span className="text-[10px] font-mono text-primary bg-primary/10 border border-primary/20 px-2 py-0.5 rounded-full">Включено</span>
+          </div>
+          {backupCodes && <BackupCodesPanel codes={backupCodes} onDone={() => setBackupCodes(null)} />}
+          {err && <p className="text-xs text-error font-mono mt-2">{err}</p>}
+          <div className="flex flex-wrap gap-2 mt-4">
+            <button type="button" onClick={regenerate} disabled={busy} className="text-xs px-3 py-1.5 rounded-lg border border-white/[0.06] text-on-surface-variant hover:text-on-surface transition-colors disabled:opacity-50">Перевыпустить резервные коды</button>
+            {!disabling ? (
+              <button type="button" onClick={() => { setDisabling(true); setErr(null) }} className="text-xs px-3 py-1.5 rounded-lg border border-error/30 text-error hover:bg-error/10 transition-colors">Отключить 2FA</button>
+            ) : (
+              <div className="flex items-center gap-2 w-full mt-1">
+                <input value={disableCode} onChange={(e) => setDisableCode(e.target.value)} placeholder="Код из приложения или резервный"
+                  className="flex-1 h-9 bg-surface-container-high border border-white/[0.06] rounded-lg px-3 text-sm font-mono text-on-surface focus:outline-none focus:border-error/40" />
+                <button type="button" onClick={disable} disabled={busy || disableCode.trim().length < 6} className="text-xs px-3 py-2 rounded-lg bg-error text-white font-semibold disabled:opacity-50">Подтвердить</button>
+                <button type="button" onClick={() => { setDisabling(false); setDisableCode('') }} className="text-xs px-3 py-2 rounded-lg text-on-surface-variant">Отмена</button>
+              </div>
+            )}
+          </div>
+        </>
+      ) : phase === 'enrolling' && setup ? (
+        <div className="space-y-4">
+          <p className="text-sm text-on-surface-variant">Отсканируйте QR‑код в Google Authenticator / 1Password / Authy, затем введите 6‑значный код.</p>
+          <div className="flex flex-col sm:flex-row gap-4 items-start">
+            {/* Own server-generated SVG (from the qrcode lib) — not user content. */}
+            <div className="bg-white rounded-xl p-3 shrink-0" dangerouslySetInnerHTML={{ __html: setup.qr_svg }} />
+            <div className="flex-1 min-w-0">
+              <p className="text-xs text-on-surface-variant mb-1">Или введите ключ вручную:</p>
+              <code className="block text-xs font-mono text-on-surface break-all bg-surface-container-high rounded-lg p-2 mb-3">{setup.secret}</code>
+              <input value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))} inputMode="numeric" placeholder="000000" aria-label="Код из приложения"
+                className="w-full h-11 bg-surface-container-high border border-white/[0.06] rounded-lg px-3 text-center text-lg font-mono tracking-[0.3em] text-on-surface focus:outline-none focus:border-primary/40" />
+            </div>
+          </div>
+          {err && <p className="text-xs text-error font-mono">{err}</p>}
+          <div className="flex gap-2">
+            <button type="button" onClick={confirmSetup} disabled={busy || code.length < 6} className="px-5 py-2 bg-gradient-to-br from-primary to-primary-container text-on-primary text-sm font-semibold rounded-lg disabled:opacity-50">{busy ? 'Проверка…' : 'Подтвердить и включить'}</button>
+            <button type="button" onClick={() => { setPhase('idle'); setSetup(null); setErr(null) }} className="px-4 py-2 text-sm text-on-surface-variant">Отмена</button>
+          </div>
+        </div>
+      ) : (
+        <>
+          <div className="flex items-start gap-3 py-2">
+            <span className="material-symbols-outlined text-xl text-on-surface-variant/60">smartphone</span>
+            <div>
+              <p className="text-sm font-medium text-on-surface">Приложение‑аутентификатор (TOTP)</p>
+              <p className="text-xs text-on-surface-variant">Google Authenticator, 1Password, Authy + резервные коды на случай потери устройства.</p>
+            </div>
+          </div>
+          {status.encryption_configured === false && (
+            <div className="mt-2 flex items-center gap-2 text-xs text-tertiary-container bg-surface-container-high rounded-lg px-3 py-2">
+              <span className="material-symbols-outlined text-base">warning</span>
+              Сервер не настроен для 2FA (нет ключа шифрования). Обратитесь к администратору.
+            </div>
+          )}
+          {backupCodes && <BackupCodesPanel codes={backupCodes} onDone={() => setBackupCodes(null)} />}
+          {err && <p className="text-xs text-error font-mono mt-2">{err}</p>}
+          <button type="button" onClick={beginSetup} disabled={busy || status.encryption_configured === false}
+            className="mt-4 px-5 py-2 bg-gradient-to-br from-primary to-primary-container text-on-primary text-sm font-semibold rounded-lg hover:scale-[0.98] transition-all disabled:opacity-50">
+            {busy ? 'Загрузка…' : 'Включить 2FA'}
+          </button>
+        </>
+      )}
+      <p className="text-[11px] text-on-surface-variant/60 mt-4">SMS‑коды — в следующем обновлении.</p>
     </Card>
   )
 }
 
+type PasskeyRow = { id: string; label: string | null; device_type: string | null; backed_up: boolean; created_at: string; last_used_at: string | null }
+
 function BiometricsCard() {
+  const [supported, setSupported] = useState<boolean | null>(null)
+  const [creds, setCreds] = useState<PasskeyRow[]>([])
+  const [loading, setLoading] = useState(true)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+  const [backupCodes, setBackupCodes] = useState<string[] | null>(null)
+
+  const load = useCallback(async () => {
+    try {
+      const res = await fetch('/api/v1/security/webauthn/credentials', { credentials: 'include' })
+      const json = await res.json().catch(() => ({}))
+      if (json.ok) setCreds(json.credentials)
+    } catch { /* keep empty */ } finally { setLoading(false) }
+  }, [])
+
+  useEffect(() => {
+    let mounted = true
+    import('@simplewebauthn/browser')
+      .then(({ browserSupportsWebAuthn }) => { if (mounted) setSupported(browserSupportsWebAuthn()) })
+      .catch(() => { if (mounted) setSupported(false) })
+    load()
+    return () => { mounted = false }
+  }, [load])
+
+  const addPasskey = async () => {
+    setBusy(true); setErr(null)
+    try {
+      const { startRegistration } = await import('@simplewebauthn/browser')
+      const optRes = await fetch('/api/v1/security/webauthn/register/options', { method: 'POST', credentials: 'include' })
+      const optJson = await optRes.json().catch(() => ({}))
+      if (!optRes.ok || !optJson.ok) { setErr('Не удалось начать регистрацию ключа.'); return }
+      let attResp
+      try {
+        attResp = await startRegistration(optJson.options)
+      } catch (e) {
+        setErr((e as { name?: string })?.name === 'NotAllowedError' ? 'Операция отменена или превышено время ожидания.' : 'Не удалось создать ключ на устройстве.')
+        return
+      }
+      const verRes = await fetch('/api/v1/security/webauthn/register/verify', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+        body: JSON.stringify({ response: attResp }),
+      })
+      const verJson = await verRes.json().catch(() => ({}))
+      if (!verRes.ok || !verJson.ok) { setErr('Ключ не подтверждён сервером.'); return }
+      if (Array.isArray(verJson.backup_codes)) setBackupCodes(verJson.backup_codes)
+      toast.success('Ключ доступа добавлен')
+      load()
+    } catch { setErr('Ошибка сети.') } finally { setBusy(false) }
+  }
+
+  const remove = async (id: string, label: string | null) => {
+    if (!confirm(`Удалить ключ «${label ?? 'passkey'}»? Если это последний фактор — вход снова будет только по паролю.`)) return
+    setBusy(true)
+    try {
+      const res = await fetch('/api/v1/security/webauthn/credentials', {
+        method: 'DELETE', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+        body: JSON.stringify({ id }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok || !json.ok) { toast.error('Не удалось удалить'); return }
+      toast.success('Ключ удалён'); load()
+    } catch { toast.error('Ошибка сети') } finally { setBusy(false) }
+  }
+
   return (
-    <Card title="Вход по биометрии" subtitle="Быстрый и безопасный вход на поддерживаемых устройствах." icon="fingerprint">
-      <div className="divide-y divide-outline-variant/10">
-        <SoonRow icon="face" title="Face ID" desc="Вход по распознаванию лица (iPhone, iPad, поддерживаемые ноутбуки)" />
-        <SoonRow icon="fingerprint" title="Touch ID" desc="Вход по отпечатку пальца (Mac, iPhone, Android)" />
-        <SoonRow icon="passkey" title="Passkey" desc="Беспарольный вход по стандарту WebAuthn/FIDO2" />
-      </div>
-      <p className="text-xs text-on-surface-variant/70 mt-4">Биометрия хранится только на вашем устройстве и не передаётся на сервер.</p>
+    <Card title="Вход по биометрии и ключам доступа" subtitle="Face ID, Touch ID или аппаратный ключ — как второй фактор при входе." icon="fingerprint">
+      {loading ? (
+        <div className="h-16 bg-surface-container-high rounded-lg animate-pulse" />
+      ) : supported === false ? (
+        <p className="text-sm text-on-surface-variant py-1">Этот браузер не поддерживает ключи доступа (WebAuthn). Откройте портал в Safari, Chrome или Edge на поддерживаемом устройстве.</p>
+      ) : (
+        <>
+          {creds.length === 0 ? (
+            <p className="text-sm text-on-surface-variant py-1">
+              Ключи доступа ещё не добавлены. Добавьте Face ID / Touch ID / аппаратный ключ — на входе он заменит ввод кода из приложения.
+            </p>
+          ) : (
+            <div className="divide-y divide-outline-variant/10">
+              {creds.map((c) => (
+                <div key={c.id} className="flex items-center justify-between py-3">
+                  <div className="flex items-center gap-3">
+                    <span className="material-symbols-outlined text-xl text-primary">passkey</span>
+                    <div>
+                      <p className="text-sm font-medium text-on-surface">{c.label ?? 'Ключ доступа'}</p>
+                      <p className="text-xs text-on-surface-variant">
+                        Добавлен {fmtDateShort(c.created_at)}{c.last_used_at ? ` · вход ${fmtDateShort(c.last_used_at)}` : ''}
+                      </p>
+                    </div>
+                  </div>
+                  <button type="button" onClick={() => remove(c.id, c.label)} disabled={busy}
+                    className="text-xs text-error border border-error/30 px-3 py-1.5 rounded-lg hover:bg-error/10 transition-colors disabled:opacity-50">Удалить</button>
+                </div>
+              ))}
+            </div>
+          )}
+          {backupCodes && <BackupCodesPanel codes={backupCodes} onDone={() => setBackupCodes(null)} />}
+          {err && <p className="text-xs text-error font-mono mt-2">{err}</p>}
+          <button type="button" onClick={addPasskey} disabled={busy}
+            className="mt-4 px-5 py-2 bg-gradient-to-br from-primary to-primary-container text-on-primary text-sm font-semibold rounded-lg hover:scale-[0.98] transition-all disabled:opacity-50 flex items-center gap-2">
+            <span className="material-symbols-outlined text-lg">add</span>{busy ? 'Подождите…' : 'Добавить ключ доступа'}
+          </button>
+        </>
+      )}
+      <p className="text-xs text-on-surface-variant/70 mt-4">Биометрия остаётся на устройстве и на сервер не передаётся — храним только публичный ключ.</p>
     </Card>
   )
 }
@@ -571,17 +839,6 @@ function Card({ title, subtitle, icon, children }: { title: string; subtitle?: s
   )
 }
 
-function SoonRow({ icon, title, desc }: { icon: string; title: string; desc: string }) {
-  return (
-    <div className="flex items-center justify-between py-3">
-      <div className="flex items-center gap-3 pr-4">
-        <span className="material-symbols-outlined text-xl text-on-surface-variant/60">{icon}</span>
-        <div><p className="text-sm font-medium text-on-surface">{title}</p><p className="text-xs text-on-surface-variant">{desc}</p></div>
-      </div>
-      <span className="text-[10px] font-mono text-on-surface-variant bg-surface-container-high border border-outline-variant/30 px-2 py-0.5 rounded-full shrink-0">Скоро</span>
-    </div>
-  )
-}
 
 function Badge({ status }: { status: string }) {
   const b = STATUS_BADGE[status] ?? STATUS_BADGE.coming

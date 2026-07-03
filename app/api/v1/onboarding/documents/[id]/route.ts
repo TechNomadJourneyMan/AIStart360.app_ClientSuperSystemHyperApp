@@ -2,21 +2,26 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
+import { getSessionUser } from '@/lib/api-identity'
 
 /**
- * DELETE /api/v1/onboarding/documents/[id]?user_id=xxx
+ * DELETE /api/v1/onboarding/documents/[id]
  * Deletes a document record and its file from Supabase storage.
+ *
+ * SECURITY (audit 2026-07-02): identity comes from the Supabase session, not a
+ * client-supplied `user_id` query param (was an IDOR — any caller could target
+ * another user's document id).
  */
 export async function DELETE(
-  req: NextRequest,
+  _req: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  const userId = req.nextUrl.searchParams.get('user_id')
-  if (!userId) {
-    return NextResponse.json({ ok: false, error: 'user_id required' }, { status: 400 })
-  }
-
   const sb = createServerClient()
+  const user = await getSessionUser(sb)
+  if (!user) {
+    return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 })
+  }
+  const userId = user.id
 
   // Fetch the document to get the storage path
   const { data: doc, error: fetchError } = await sb

@@ -8,6 +8,7 @@ import { analyzeWithLlm } from '@/lib/assistant/llm-analyzer'
 import { hasOpenRouterKey } from '@/lib/ai/structured'
 import type { LlmAnalysis } from '@/lib/assistant/types'
 import { localeFromRequestCookie } from '@/lib/i18n/locale'
+import { isRateLimitedKey } from '@/lib/rate-limit'
 
 /**
  * POST /api/v1/assistant/analyze
@@ -30,6 +31,11 @@ export async function POST(req: NextRequest) {
   const { data: { user } } = await sb.auth.getUser()
   if (!user) {
     return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
+  }
+
+  // Throttle this costly Layer-3 LLM analysis per user (audit 2026-07-02).
+  if (await isRateLimitedKey(user.id, 'assistant-analyze', { max: 6, windowMs: 60_000 })) {
+    return NextResponse.json({ ok: false, error: 'Слишком много запросов. Попробуйте позже.' }, { status: 429 })
   }
 
   // Portal locale from the caller's cookie (no server-to-server fire here).

@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { generatePointAInsights } from '@/lib/insights/ai-generator'
 import { hasOpenRouterKey } from '@/lib/ai/openrouter'
+import { isRateLimitedKey } from '@/lib/rate-limit'
 
 // ---------------------------------------------------------------------------
 // POST /api/v1/point-a/insights/ai-generate
@@ -40,6 +41,11 @@ export async function POST() {
     return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 })
   }
   const userId = userData.user.id
+
+  // Throttle this paid AI generation per user (audit 2026-07-02).
+  if (await isRateLimitedKey(userId, 'point-a-insights-ai', { max: 6, windowMs: 60_000 })) {
+    return NextResponse.json({ ok: false, error: 'Слишком много запросов. Попробуйте позже.' }, { status: 429 })
+  }
 
   const result = await generatePointAInsights(sb, userId)
   if (!result.ok) {

@@ -10,6 +10,9 @@ import { analyzePointBStrategy } from '@/lib/ai/point-b-analyzer'
 import { calculatePointBV2, type PointBOptions } from '@/lib/point-b/engine'
 import type { PointA, BlockScore } from '@/types/onboarding'
 import { localeFromRequestCookie, normalizeLocale } from '@/lib/i18n/locale'
+import { hasValidInternalToken } from '@/lib/internal-auth'
+import { getSessionUser, getSessionRole, isStaffRole } from '@/lib/api-identity'
+import { isRateLimitedKey } from '@/lib/rate-limit'
 
 /**
  * POST /api/v1/diagnostics/point-b/ai-generate
@@ -80,13 +83,28 @@ export async function POST(req: NextRequest) {
 
     const sb = createServerClient()
 
-    // Resolve user from session when not passed (manual UI invocation).
-    if (!userId) {
-      const { data: { user } } = await sb.auth.getUser()
-      if (!user) {
+    // SECURITY (audit 2026-07-02): this runs a paid Point B AI generation. When
+    // `user_id` is supplied it's a server-to-server fire from recalculate — trust
+    // only a signed internal token (or a session that owns it). When omitted it's
+    // a manual UI call — resolve from the session. Then throttle per user.
+    if (userId) {
+      if (!hasValidInternalToken(req)) {
+        const caller = await getSessionUser(sb)
+        if (!caller) return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
+        if (caller.id !== userId && !isStaffRole(await getSessionRole(sb, caller.id))) {
+          return NextResponse.json({ ok: false, error: 'forbidden' }, { status: 403 })
+        }
+      }
+    } else {
+      const caller = await getSessionUser(sb)
+      if (!caller) {
         return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
       }
-      userId = user.id
+      userId = caller.id
+    }
+
+    if (!hasValidInternalToken(req) && (await isRateLimitedKey(userId, 'diagnostics-point-b-ai', { max: 6, windowMs: 60_000 }))) {
+      return NextResponse.json({ ok: false, error: 'Слишком много запросов. Попробуйте позже.' }, { status: 429 })
     }
 
     // 1. Diagnostic (Point A). Resolve current one when not passed.

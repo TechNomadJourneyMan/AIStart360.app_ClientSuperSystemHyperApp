@@ -11,6 +11,9 @@ import type { GriExpertNotes } from '@/lib/ai/point-a-analyzer'
 import { calculatePointA } from '@/lib/point-a-engine'
 import type { Company } from '@/types/onboarding'
 import { localeFromRequestCookie, normalizeLocale } from '@/lib/i18n/locale'
+import { hasValidInternalToken } from '@/lib/internal-auth'
+import { getSessionUser, getSessionRole, isStaffRole } from '@/lib/api-identity'
+import { isRateLimitedKey } from '@/lib/rate-limit'
 
 /**
  * POST /api/v1/diagnostics/ai-analyze
@@ -26,14 +29,30 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: 'diagnostic_id and user_id required' }, { status: 400 })
     }
 
+    const sb = createServerClient()
+
+    // SECURITY (audit 2026-07-02): this internal endpoint runs 4 paid AI calls.
+    // It is normally fired server-to-server from recalculate/retry-ai, which
+    // carry a signed internal token (cookies aren't forwarded). Accept that
+    // token; otherwise require a session that owns `user_id` (or staff), and
+    // throttle that direct path. Anonymous callers can no longer burn credits.
+    if (!hasValidInternalToken(req)) {
+      const caller = await getSessionUser(sb)
+      if (!caller) return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 })
+      if (caller.id !== user_id && !isStaffRole(await getSessionRole(sb, caller.id))) {
+        return NextResponse.json({ ok: false, error: 'forbidden' }, { status: 403 })
+      }
+      if (await isRateLimitedKey(caller.id, 'diagnostics-ai-analyze', { max: 6, windowMs: 60_000 })) {
+        return NextResponse.json({ ok: false, error: 'Слишком много запросов. Попробуйте позже.' }, { status: 429 })
+      }
+    }
+
     // Server-to-server fires (recalculate → ai-analyze) do NOT forward cookies,
     // so the caller's locale arrives in the body. Fall back to this request's
     // cookie (direct invocation), then the portal default.
     const locale = bodyLocale != null
       ? normalizeLocale(String(bodyLocale))
       : localeFromRequestCookie(req)
-
-    const sb = createServerClient()
 
     // 1. Mark as processing
     await sb

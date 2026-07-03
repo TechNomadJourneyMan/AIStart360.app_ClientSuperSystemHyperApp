@@ -1,5 +1,18 @@
 import { Resend } from 'resend'
 
+// Escape user-controlled values before interpolating them into the notification
+// email HTML. `title`/`body`/`ctaLabel` can carry user-supplied content (e.g. an
+// uploaded file name flowing through notifyAdmins), so unescaped interpolation
+// was an HTML/link-injection (phishing) vector in the admin inbox.
+function escapeHtml(value: string): string {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
 export const sendNotificationEmail = async ({
   to,
   subject,
@@ -31,11 +44,11 @@ export const sendNotificationEmail = async ({
         <p style="color:#6effc0;font-size:11px;font-family:monospace;text-transform:uppercase;letter-spacing:0.2em;margin-bottom:16px">
           AIStart360 · Institutional Intelligence
         </p>
-        <h1 style="font-size:22px;font-weight:700;margin:0 0 12px">${title}</h1>
-        <p style="color:#bacbbf;line-height:1.6;margin:0 0 24px">${body}</p>
+        <h1 style="font-size:22px;font-weight:700;margin:0 0 12px">${escapeHtml(title)}</h1>
+        <p style="color:#bacbbf;line-height:1.6;margin:0 0 24px">${escapeHtml(body)}</p>
         ${ctaLabel && ctaUrl ? `
-        <a href="${ctaUrl}" style="display:inline-block;background:linear-gradient(135deg,#6effc0,#00e5a0);color:#003824;font-weight:700;padding:12px 24px;border-radius:8px;text-decoration:none">
-          ${ctaLabel}
+        <a href="${escapeHtml(ctaUrl)}" style="display:inline-block;background:linear-gradient(135deg,#6effc0,#00e5a0);color:#003824;font-weight:700;padding:12px 24px;border-radius:8px;text-decoration:none">
+          ${escapeHtml(ctaLabel)}
         </a>
         ` : ''}
         <hr style="border:none;border-top:1px solid rgba(255,255,255,0.1);margin:24px 0">

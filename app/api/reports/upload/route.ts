@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { requireAuth } from '@/lib/api-utils'
+import { requireAuth, isStaffRole } from '@/lib/api-utils'
 import { createClient } from '@supabase/supabase-js'
 
 const ALLOWED_TYPES = ['application/pdf', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'text/csv', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']
@@ -23,6 +23,20 @@ export async function POST(request: Request) {
   const file     = formData.get('file') as File
   const clientId = formData.get('clientId') as string
   const category = formData.get('category') as string
+
+  // SECURITY (audit 2026-07-02): `clientId` is client-supplied. Authorize it
+  // against the caller BEFORE writing anything — the caller must be staff whose
+  // organization owns the target client. Without this, any session could attach
+  // a file to another tenant's client (cross-tenant IDOR write → the target
+  // org's staff would then see/download it). 404 on missing/cross-tenant so
+  // client ids can't be probed by enumeration.
+  if (!clientId) return NextResponse.json({ error: 'clientId required' }, { status: 400 })
+  const role = (session!.user as { role?: string }).role
+  const orgId = (session!.user as { orgId?: string }).orgId
+  const target = await prisma.client.findUnique({ where: { id: clientId }, select: { orgId: true } })
+  if (!target || !isStaffRole(role) || !orgId || target.orgId !== orgId) {
+    return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  }
 
   // Валидация
   if (!file) return NextResponse.json({ error: 'No file provided' }, { status: 400 })

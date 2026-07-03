@@ -9,6 +9,7 @@ import {
 } from '@/lib/market-analysis/generator'
 import { getQuestion } from '@/lib/market-analysis/questions'
 import { loadAnswers, rebuildSnapshot } from '@/lib/market-analysis/persist'
+import { isRateLimitedKey } from '@/lib/rate-limit'
 
 const UPSTREAM_TIMEOUT_MS = 6000
 
@@ -24,6 +25,11 @@ export async function POST() {
     return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 })
   }
   const userId = userData.user.id
+
+  // Throttle this paid ~50-answer AI generation per user (audit 2026-07-02).
+  if (await isRateLimitedKey(userId, 'market-analysis-generate', { max: 5, windowMs: 60_000 })) {
+    return NextResponse.json({ ok: false, error: 'Слишком много запросов. Попробуйте позже.' }, { status: 429 })
+  }
 
   // Honest failure if the AI provider is not configured — no fabrication.
   if (!hasOpenRouterKey()) {

@@ -69,13 +69,27 @@ export async function isRateLimited(
   bucket: string,
   opts: { max?: number; windowMs?: number } = {},
 ): Promise<boolean> {
-  const ip = clientIp(req)
+  return isRateLimitedKey(clientIp(req), bucket, opts)
+}
+
+/**
+ * Like `isRateLimited` but keyed by an explicit identifier (e.g. the session
+ * user id) instead of the client IP. Preferred for authenticated, expensive
+ * endpoints (paid AI calls) where per-user throttling is more meaningful and
+ * can't be evaded by rotating IPs.
+ */
+export async function isRateLimitedKey(
+  identifier: string,
+  bucket: string,
+  opts: { max?: number; windowMs?: number } = {},
+): Promise<boolean> {
   const max = opts.max ?? DEFAULT_MAX
   const windowMs = opts.windowMs ?? DEFAULT_WINDOW_MS
+  const key = `${bucket}:${identifier}`
   const limiter = getUpstashLimiter(max, windowMs)
   if (limiter) {
-    const { success } = await limiter.limit(`${bucket}:${ip}`)
+    const { success } = await limiter.limit(key)
     return !success
   }
-  return memoryLimited(`${bucket}:${ip}`, max, windowMs)
+  return memoryLimited(key, max, windowMs)
 }

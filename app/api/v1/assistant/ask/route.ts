@@ -8,6 +8,7 @@ import { buildAssistantContext } from '@/lib/assistant/context'
 import { answerUserQuestion } from '@/lib/assistant/answer'
 import { createExpertCase } from '@/lib/assistant/escalation/adapter'
 import { localeFromRequestCookie } from '@/lib/i18n/locale'
+import { isRateLimitedKey } from '@/lib/rate-limit'
 
 /**
  * POST /api/v1/assistant/ask
@@ -39,6 +40,11 @@ export async function POST(req: NextRequest) {
   } = await sb.auth.getUser()
   if (!user) {
     return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
+  }
+
+  // Throttle this paid free-text Q&A per user (audit 2026-07-02).
+  if (await isRateLimitedKey(user.id, 'assistant-ask', { max: 15, windowMs: 60_000 })) {
+    return NextResponse.json({ ok: false, error: 'Слишком много запросов. Попробуйте позже.' }, { status: 429 })
   }
 
   let raw: unknown

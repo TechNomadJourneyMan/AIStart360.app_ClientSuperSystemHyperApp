@@ -2,12 +2,25 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
+import { getSessionUser, getSessionRole, isStaffRole } from '@/lib/api-identity'
 
 const GRI_BLOCKS = ['product', 'trust', 'bizmodel', 'cash', 'ops', 'team', 'founder'] as const
 type GriBlock = typeof GRI_BLOCKS[number]
 
 function isValidBlock(block: string): block is GriBlock {
   return GRI_BLOCKS.includes(block as GriBlock)
+}
+
+// SECURITY (audit 2026-07-02): expert notes are STAFF-authored content about a
+// client. This route had no auth and no role check — any caller could read or
+// write "expert notes" for an arbitrary user_id. Require an authenticated staff
+// (expert/admin) session before touching another user's notes.
+async function requireStaff(sb: ReturnType<typeof createServerClient>): Promise<NextResponse | null> {
+  const user = await getSessionUser(sb)
+  if (!user) return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 })
+  const role = await getSessionRole(sb, user.id)
+  if (!isStaffRole(role)) return NextResponse.json({ ok: false, error: 'forbidden' }, { status: 403 })
+  return null
 }
 
 // GET /api/v1/gri/expert-notes?user_id=xxx
@@ -19,6 +32,8 @@ export async function GET(req: NextRequest) {
   }
 
   const sb = createServerClient()
+  const denied = await requireStaff(sb)
+  if (denied) return denied
 
   const { data, error } = await sb
     .from('survey_answers')
@@ -29,7 +44,7 @@ export async function GET(req: NextRequest) {
     .order('answered_at', { ascending: true })
 
   if (error) {
-    return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
+    return NextResponse.json({ ok: false, error: 'Failed to load notes' }, { status: 500 })
   }
 
   // Transform to { block: note } map
@@ -69,6 +84,8 @@ export async function POST(req: NextRequest) {
     }
 
     const sb = createServerClient()
+    const denied = await requireStaff(sb)
+    if (denied) return denied
 
     const question_key = `gri_expert_${block}`
 
@@ -86,7 +103,7 @@ export async function POST(req: NextRequest) {
       )
 
     if (error) {
-      return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
+      return NextResponse.json({ ok: false, error: 'Failed to save note' }, { status: 500 })
     }
 
     return NextResponse.json({

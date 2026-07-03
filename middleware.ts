@@ -2,6 +2,9 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { updateSession } from '@/lib/supabase/middleware'
 import { GIGA_COOKIE_NAME, verifyGigaRoleEdge } from '@/lib/giga-cookie-edge'
+import { MFA_COOKIE_NAME, verifyStepUpEdge } from '@/lib/mfa/step-up-edge'
+
+const MFA_CHALLENGE_PATH = '/2fa'
 
 const PUBLIC_PATHS = ['/login', '/register', '/forgot-password', '/auth/callback', '/auth/reset-password']
 
@@ -157,6 +160,27 @@ export async function middleware(request: NextRequest) {
     const url = new URL('/login', request.url)
     url.searchParams.set('from', pathname)
     return NextResponse.redirect(url)
+  }
+
+  // ── MFA step-up gate ──
+  // A user who enabled TOTP must pass the second-factor challenge once per
+  // session before any protected page. The `mfa_totp` flag lives in the
+  // (server-verified) Supabase JWT; the proof is the signed step-up cookie.
+  // `/2fa` and public pages are exempt so there is no redirect loop.
+  const meta = user?.user_metadata as Record<string, unknown> | undefined
+  const mfaEnrolled = meta?.mfa_totp === true || meta?.mfa_webauthn === true
+  if (
+    user &&
+    !isPublic &&
+    pathname !== MFA_CHALLENGE_PATH &&
+    mfaEnrolled
+  ) {
+    const passed = await verifyStepUpEdge(request.cookies.get(MFA_COOKIE_NAME)?.value, user.id)
+    if (!passed) {
+      const url = new URL(MFA_CHALLENGE_PATH, request.url)
+      url.searchParams.set('from', pathname)
+      return NextResponse.redirect(url)
+    }
   }
 
   // ── Role-based route protection ──
