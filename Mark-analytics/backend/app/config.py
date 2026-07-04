@@ -37,6 +37,14 @@ class Settings(BaseSettings):
     DATABASE_URL: str
     DATABASE_URL_DIRECT: str | None = None
 
+    # ----- Deployment mode / schema isolation -----
+    # When embedded in the AIStart360 Supabase, backend tables live in a
+    # dedicated schema to avoid colliding with the portal's public.companies.
+    # None → default search_path (public), preserving standalone/local behavior.
+    DB_SCHEMA: str | None = None
+    # Serverless (Vercel Python Functions): use NullPool, no long-lived pool.
+    SERVERLESS: bool = False
+
     # ----- Redis -----
     REDIS_URL: str = "redis://localhost:6379/0"
 
