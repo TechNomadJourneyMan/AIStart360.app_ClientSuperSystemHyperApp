@@ -30,17 +30,28 @@ export async function POST(req: NextRequest) {
 
     const supabaseAdmin = createServerClient()
 
-    // 1. Ensure profile exists (trigger on auth.users INSERT may have created it)
+    // 1. Ensure profile exists (trigger on auth.users INSERT may have created
+    //    it). Do NOT set status here — the handle_new_user trigger / column
+    //    default own the initial value, and OPEN registration mode may have
+    //    already approved this user; forcing pending_approval would downgrade it.
     await supabaseAdmin.from('profiles').upsert(
       {
         id: userId,
         email,
         full_name: name || email,
         role: 'client',
-        status: 'pending_approval',
       },
       { onConflict: 'id' }
     )
+
+    // If the user is already approved (OPEN registration mode) there is no
+    // approval request to create.
+    const { data: prof } = await supabaseAdmin
+      .from('profiles')
+      .select('status')
+      .eq('id', userId)
+      .maybeSingle()
+    const alreadyApproved = prof?.status === 'approved'
 
     // 2. Create company record
     if (company) {
@@ -50,7 +61,11 @@ export async function POST(req: NextRequest) {
       })
     }
 
-    // 3. Create AdminRequest — try Prisma first, fallback to direct Supabase insert
+    // 3. Create AdminRequest — try Prisma first, fallback to direct Supabase
+    //    insert. Skipped entirely in OPEN mode (nothing to approve).
+    let requestId: string | null = null
+
+    if (!alreadyApproved) {
     const requestPayload = {
       userId,
       email,
@@ -59,8 +74,6 @@ export async function POST(req: NextRequest) {
       subject: `Регистрация: ${name || email}`,
       description: `Новая заявка на регистрацию от ${name || email}${company ? ` (${company})` : ''}`,
     }
-
-    let requestId: string | null = null
 
     try {
       const adminRequest = await prisma.adminRequest.create({
@@ -100,6 +113,7 @@ export async function POST(req: NextRequest) {
         requestId = fallbackId
       }
     }
+    } // end if (!alreadyApproved) — skip approval request in OPEN mode
 
     return NextResponse.json({ ok: true, requestId }, { status: 201 })
   } catch (error) {

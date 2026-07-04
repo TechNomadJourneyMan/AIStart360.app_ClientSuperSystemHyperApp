@@ -21,6 +21,7 @@ import { toast } from 'sonner'
 import { useGigaPanelStore, type RequestCategory, type GigaRequest } from '@/stores/gigaPanel.store'
 import { RejectModal } from './RejectModal'
 import { UserDetailPanel } from './UserDetailPanel'
+import { RegistrationModeControl } from './RegistrationModeControl'
 
 // ─── Tab config ───────────────────────────────────────────────────────────────
 
@@ -332,19 +333,22 @@ export function RequestsModule() {
             Все входящие запросы — регистрации, доступы и тикеты поддержки
           </p>
         </div>
-        <motion.button
-          onClick={fetchRequests}
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.95 }}
-          disabled={isLoadingRequests}
-          className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium
-            text-slate-400 bg-white/[0.05] border border-white/[0.08]
-            hover:text-slate-200 hover:bg-white/[0.08] transition-all
-            disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          <RefreshCw size={13} className={isLoadingRequests ? 'animate-spin' : ''} />
-          Обновить
-        </motion.button>
+        <div className="flex items-center gap-3">
+          <RegistrationModeControl />
+          <motion.button
+            onClick={fetchRequests}
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            disabled={isLoadingRequests}
+            className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium
+              text-slate-400 bg-white/[0.05] border border-white/[0.08]
+              hover:text-slate-200 hover:bg-white/[0.08] transition-all
+              disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <RefreshCw size={13} className={isLoadingRequests ? 'animate-spin' : ''} />
+            Обновить
+          </motion.button>
+        </div>
       </div>
 
       {/* Tabs */}

@@ -2,7 +2,7 @@ import { prisma } from '@/lib/db'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export type AuditEntityType = 'request' | 'user' | 'company'
+export type AuditEntityType = 'request' | 'user' | 'company' | 'system'
 
 export type AuditAction =
   | 'request.created'

@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { z } from 'zod'
 import { isRateLimited } from '@/lib/rate-limit'
+import { getRegistrationMode } from '@/lib/settings/system-settings'
+import { applyApprovalDecision } from '@/lib/users/approval'
 
 // Public self-registration. Only the two roles offered in the UI are allowed
 // ('client' = бизнес, 'owner' = команда AIStart360). admin/expert/super_admin
@@ -42,8 +44,18 @@ export async function POST(request: Request) {
     const { email, password, name, role, organization, position } = parsed.data
     const admin = getAdminClient()
 
-    // Every self-registration starts pending — an admin must approve before any
-    // elevated access. Never auto-approve based on the requested role. Audit A3.
+    // Admin-controlled registration mode (fail-safe 'approval').
+    const mode = await getRegistrationMode()
+    if (mode === 'invite') {
+      return NextResponse.json(
+        { error: 'Регистрация доступна только по приглашению. Обратитесь к администратору.' },
+        { status: 403 },
+      )
+    }
+
+    // Metadata status is always 'pending_approval'; the handle_new_user trigger
+    // forces clients to pending regardless. OPEN mode is applied as an explicit
+    // approve AFTER creation (below). Never auto-approve by requested role. A3.
     const status = 'pending_approval'
 
     // Create user via admin API — email_confirm: true skips verification entirely
@@ -65,7 +77,23 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'UNKNOWN' }, { status: 500 })
     }
 
-    return NextResponse.json({ ok: true, userId: data.user.id }, { status: 201 })
+    // OPEN mode: grant access immediately (the trigger created the client as
+    // pending_approval). Best-effort — never fail the registration on this.
+    let effectiveStatus: 'pending_approval' | 'approved' = 'pending_approval'
+    if (mode === 'open') {
+      try {
+        const { affected } = await applyApprovalDecision({
+          userId: data.user.id,
+          status: 'approved',
+          sendEmail: false,
+        })
+        if (affected > 0) effectiveStatus = 'approved'
+      } catch (e) {
+        console.error('[auth/register] open-mode auto-approve failed:', e)
+      }
+    }
+
+    return NextResponse.json({ ok: true, userId: data.user.id, status: effectiveStatus }, { status: 201 })
   } catch (err) {
     console.error('[auth/register] error:', err)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
