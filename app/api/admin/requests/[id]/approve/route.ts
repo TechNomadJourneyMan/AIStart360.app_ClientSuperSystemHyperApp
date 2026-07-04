@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requirePermission } from '@/lib/rbac'
 import { auditApprove } from '@/lib/audit'
+import { applyApprovalDecision } from '@/lib/users/approval'
 
 /**
  * POST /api/admin/requests/:id/approve
@@ -90,6 +91,18 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     where: { id: params.id },
     data: { status: 'approved' },
   })
+
+  // SINGLE SOURCE OF TRUTH: profiles.status is what the client login actually
+  // reads to grant access. The Prisma users/admin_requests tables use different
+  // ids, so resolve the Supabase profile by the request's email. approved_by is
+  // left unset (the Prisma session id is not a profiles UUID).
+  const approveEmail = request.user?.email ?? (request.payload as Record<string, string> | null)?.email
+  if (approveEmail) {
+    const { affected } = await applyApprovalDecision({ email: approveEmail, status: 'approved' })
+    if (affected === 0) {
+      console.warn(`[admin/requests/approve] no profiles row for ${approveEmail} — client access not granted`)
+    }
+  }
 
   await auditApprove(params.id, session.user.id, { status: request.status })
 

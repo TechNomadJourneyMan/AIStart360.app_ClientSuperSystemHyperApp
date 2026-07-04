@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requirePermission } from '@/lib/rbac'
 import { auditReject } from '@/lib/audit'
+import { applyApprovalDecision } from '@/lib/users/approval'
 
 /**
  * POST /api/admin/requests/:id/reject
@@ -38,6 +39,16 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     where: { id: params.id },
     data: { status: 'rejected', rejectionReason: reason.trim() },
   })
+
+  // SINGLE SOURCE OF TRUTH: mirror the rejection into profiles.status (what the
+  // client login reads), resolved by the request's email.
+  const rejectEmail = (request.payload as Record<string, string> | null)?.email
+  if (rejectEmail) {
+    const { affected } = await applyApprovalDecision({ email: rejectEmail, status: 'rejected', reason: reason.trim() })
+    if (affected === 0) {
+      console.warn(`[admin/requests/reject] no profiles row for ${rejectEmail}`)
+    }
+  }
 
   await auditReject(params.id, session.user.id, reason.trim(), { status: request.status })
 

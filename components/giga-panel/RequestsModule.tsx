@@ -17,6 +17,7 @@ import {
   RefreshCw,
   Loader2,
 } from 'lucide-react'
+import { toast } from 'sonner'
 import { useGigaPanelStore, type RequestCategory, type GigaRequest } from '@/stores/gigaPanel.store'
 import { RejectModal } from './RejectModal'
 import { UserDetailPanel } from './UserDetailPanel'
@@ -269,32 +270,46 @@ export function RequestsModule() {
 
   useEffect(() => { fetchRequests() }, [fetchRequests])
 
-  // API-backed actions
+  // API-backed actions.
+  // Every action optimistically updates the card, then RECONCILES with the DB in
+  // `finally`: on failure `fetchRequests()` re-reads the real status (reverting
+  // the optimistic flip) and a toast surfaces the error; on success it confirms
+  // the persisted status. This removes the "green but still pending" illusion.
+  const runAction = async (
+    id: string,
+    payload: { action: 'approve' | 'reject' | 'archive'; reason?: string },
+    successMsg: string,
+    failMsg: string,
+  ) => {
+    try {
+      const res = await fetch(`/api/giga-admin/requests/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || `${failMsg} (HTTP ${res.status})`)
+      toast.success(successMsg)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : failMsg)
+    } finally {
+      await fetchRequests() // reconcile with the DB — source of truth
+    }
+  }
+
   const handleApprove = async (id: string) => {
     approveRequest(id) // optimistic
-    await fetch(`/api/giga-admin/requests/${id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'approve' }),
-    })
+    await runAction(id, { action: 'approve' }, 'Пользователь принят — доступ открыт', 'Не удалось принять заявку')
   }
 
   const handleReject = async (id: string, reason: string) => {
     rejectRequest(id, reason) // optimistic
-    await fetch(`/api/giga-admin/requests/${id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'reject', reason }),
-    })
+    await runAction(id, { action: 'reject', reason }, 'Заявка отклонена', 'Не удалось отклонить заявку')
   }
 
   const handleArchive = async (id: string) => {
     archiveRequest(id) // optimistic
-    await fetch(`/api/giga-admin/requests/${id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'archive' }),
-    })
+    await runAction(id, { action: 'archive' }, 'Заявка отправлена в архив', 'Не удалось архивировать заявку')
   }
 
   const filtered = requests.filter((r) => r.category === activeRequestTab)

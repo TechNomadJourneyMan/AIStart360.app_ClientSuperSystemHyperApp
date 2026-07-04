@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, LayoutDashboard, CheckSquare, Square } from 'lucide-react'
+import { X, LayoutDashboard, CheckSquare, Square, ShieldOff, Loader2 } from 'lucide-react'
+import { toast } from 'sonner'
 import { ALL_WIDGETS, type GigaUser } from '@/stores/gigaPanel.store'
 
 interface UserSettingsModalProps {
@@ -14,6 +15,23 @@ interface UserSettingsModalProps {
 
 export function UserSettingsModal({ isOpen, user, onSave, onClose }: UserSettingsModalProps) {
   const [selectedWidgets, setSelectedWidgets] = useState<string[]>([])
+  const [resetting2fa, setResetting2fa] = useState(false)
+
+  const handleReset2FA = async () => {
+    if (!user || resetting2fa) return
+    if (!confirm(`Сбросить двухфакторную аутентификацию для ${user.name ?? user.email}? Пользователь сможет войти по паролю без кода. Действие логируется.`)) return
+    setResetting2fa(true)
+    try {
+      const res = await fetch(`/api/giga-admin/users/${user.id}/2fa-reset`, { method: 'POST' })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || `Ошибка (HTTP ${res.status})`)
+      toast.success('2FA сброшена — пользователь может войти по паролю')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Не удалось сбросить 2FA')
+    } finally {
+      setResetting2fa(false)
+    }
+  }
 
   useEffect(() => {
     if (user) {
@@ -133,6 +151,28 @@ export function UserSettingsModal({ isOpen, user, onSave, onClose }: UserSetting
                   </motion.button>
                 )
               })}
+            </div>
+
+            {/* Security / recovery */}
+            <div className="mb-5 p-3 rounded-xl bg-white/[0.02] border border-white/[0.06]">
+              <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-widest mb-2">
+                Безопасность
+              </p>
+              <button
+                onClick={handleReset2FA}
+                disabled={resetting2fa}
+                className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold
+                  bg-amber-500/10 border border-amber-500/25 text-amber-300
+                  hover:bg-amber-500/20 hover:border-amber-500/40 transition-all
+                  disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {resetting2fa ? <Loader2 size={13} className="animate-spin" /> : <ShieldOff size={13} />}
+                Сбросить 2FA
+              </button>
+              <p className="text-[10px] text-slate-600 mt-2 leading-snug">
+                Аварийное восстановление доступа, если пользователь потерял аутентификатор и резервные коды.
+                Отключает TOTP, passkeys и резервные коды — вход снова по паролю.
+              </p>
             </div>
 
             {/* Actions */}

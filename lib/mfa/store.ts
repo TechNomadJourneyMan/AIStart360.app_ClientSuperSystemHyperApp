@@ -43,3 +43,32 @@ export async function setMfaMetadataFlag(userId: string, enabled: boolean): Prom
 export async function setMfaWebauthnFlag(userId: string, enabled: boolean): Promise<void> {
   await admin().auth.admin.updateUserById(userId, { user_metadata: { mfa_webauthn: enabled } })
 }
+
+/**
+ * Emergency admin MFA reset for a LOCKED-OUT user (lost authenticator + no saved
+ * backup codes). Clears the TOTP secret & backup-code hashes, deletes every
+ * passkey, and clears BOTH middleware gate flags (user_metadata.mfa_totp /
+ * mfa_webauthn) so the user can sign in with just their password again.
+ *
+ * Service-role only. There is NO way for a user to do this themselves once
+ * locked out — this is the sole recovery path, so it is gated by admin
+ * authorization at the route layer, not by a user-supplied code.
+ */
+export async function adminResetUserMfa(userId: string): Promise<void> {
+  const sb = admin()
+  await sb.from('user_security').upsert(
+    {
+      user_id: userId,
+      totp_enabled: false,
+      totp_secret_enc: null,
+      totp_pending_enc: null,
+      backup_codes: [],
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: 'user_id' },
+  )
+  await sb.from('webauthn_credentials').delete().eq('user_id', userId)
+  await sb.auth.admin.updateUserById(userId, {
+    user_metadata: { mfa_totp: false, mfa_webauthn: false },
+  })
+}

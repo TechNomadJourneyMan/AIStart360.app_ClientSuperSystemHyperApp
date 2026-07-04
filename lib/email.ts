@@ -68,3 +68,43 @@ export const sendNotificationEmail = async ({
     html,
   })
 }
+
+/**
+ * Send a user-facing notification and REPORT the outcome (never throws).
+ *
+ * Centralizes CTA base-URL resolution and makes delivery failures VISIBLE: on a
+ * missing RESEND_API_KEY or a Resend error it logs and returns { ok:false,error }
+ * instead of silently swallowing it, so callers can surface "email not sent".
+ */
+export async function sendUserEmail(opts: {
+  to: string
+  subject: string
+  title: string
+  body: string
+  ctaLabel?: string
+  ctaPath?: string
+}): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const base = process.env.AUTH_URL || process.env.NEXT_PUBLIC_APP_URL
+    const res = await sendNotificationEmail({
+      to: opts.to,
+      subject: opts.subject,
+      title: opts.title,
+      body: opts.body,
+      ...(opts.ctaLabel && opts.ctaPath && base
+        ? { ctaLabel: opts.ctaLabel, ctaUrl: `${base}${opts.ctaPath}` }
+        : {}),
+    })
+    const error = (res as { error?: unknown } | null)?.error
+    if (error) {
+      const msg = typeof error === 'string' ? error : (error as { message?: string })?.message ?? JSON.stringify(error)
+      console.error(`[email] delivery failed → ${opts.to} "${opts.subject}": ${msg}`)
+      return { ok: false, error: msg }
+    }
+    return { ok: true }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    console.error(`[email] send threw → ${opts.to} "${opts.subject}": ${msg}`)
+    return { ok: false, error: msg }
+  }
+}
