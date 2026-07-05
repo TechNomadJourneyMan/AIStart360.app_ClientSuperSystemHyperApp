@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
-import { createServerClient } from '@/lib/supabase-server'
+import { createServiceClient } from '@/lib/supabase-service'
 import { GIGA_COOKIE_NAME, verifyGigaRole } from '@/lib/giga-cookie'
 
 // A2b: verify the HMAC-SIGNED giga cookie, not an unsigned static string.
@@ -19,7 +19,10 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const sb = createServerClient()
+    // Service-role: the giga HMAC cookie provides no Supabase auth session, so
+    // an anon/SSR client would hit profiles' RLS with auth.uid() = NULL and get
+    // an empty list. Authorization is enforced by isSuperAdmin() above.
+    const sb = createServiceClient()
 
     // Get approved client profiles
     const { data: profiles, error: pErr } = await sb

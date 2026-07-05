@@ -40,14 +40,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: 'unknown_credential' }, { status: 400 })
   }
 
-  const { rpID, origin } = getWebAuthnConfig(request)
+  const { rpID, expectedOrigins } = getWebAuthnConfig(request)
 
   let verification
   try {
     verification = await verifyAuthenticationResponse({
       response: body.response,
       expectedChallenge,
-      expectedOrigin: origin,
+      expectedOrigin: expectedOrigins,
       expectedRPID: rpID,
       authenticator: {
         credentialID: isoBase64URL.toBuffer(cred.id),

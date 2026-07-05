@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
-import { createServerClient } from '@/lib/supabase-server'
+import { createServiceClient } from '@/lib/supabase-service'
 import { GIGA_COOKIE_NAME, verifyGigaRole } from '@/lib/giga-cookie'
 
 // A2b: verify the HMAC-SIGNED giga cookie, not an unsigned static string.
@@ -19,7 +19,9 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const sb = createServerClient()
+    // Service-role: same reason as /api/giga-admin/clients — the giga cookie
+    // has no Supabase session, so profiles' RLS returns [] with the anon client.
+    const sb = createServiceClient()
     const { data: profiles, error } = await sb
       .from('profiles')
       .select('id, email, full_name, role, status, organization, avatar_url, created_at, widget_config')

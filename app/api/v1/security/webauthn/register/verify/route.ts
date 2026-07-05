@@ -35,14 +35,14 @@ export async function POST(request: Request) {
   const expectedChallenge = readChallenge(jar.get(WEBAUTHN_CHALLENGE_COOKIE)?.value, user.id, 'reg')
   if (!expectedChallenge) return NextResponse.json({ ok: false, error: 'challenge_expired' }, { status: 400 })
 
-  const { rpID, origin } = getWebAuthnConfig(request)
+  const { rpID, expectedOrigins } = getWebAuthnConfig(request)
 
   let verification
   try {
     verification = await verifyRegistrationResponse({
       response: body.response,
       expectedChallenge,
-      expectedOrigin: origin,
+      expectedOrigin: expectedOrigins,
       expectedRPID: rpID,
       requireUserVerification: false,
     })

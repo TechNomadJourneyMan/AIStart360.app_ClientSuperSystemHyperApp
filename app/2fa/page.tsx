@@ -33,14 +33,26 @@ function ChallengeContent() {
       const { startAuthentication } = await import('@simplewebauthn/browser')
       const optRes = await fetch('/api/v1/security/webauthn/authenticate/options', { method: 'POST', credentials: 'include' })
       const optJson = await optRes.json().catch(() => ({}))
-      if (!optRes.ok || !optJson.ok) { setError('Не удалось начать проверку ключа.'); return }
+      if (!optRes.ok || !optJson.ok) {
+        setError(optRes.status === 401
+          ? 'Сессия истекла. Войдите заново.'
+          : optJson.error === 'no_passkeys'
+            ? 'На аккаунте нет ключей доступа. Введите резервный код.'
+            : optRes.status === 429
+              ? 'Слишком много попыток. Подождите немного.'
+              : 'Не удалось начать проверку ключа.')
+        return
+      }
       let asseResp
       try {
         asseResp = await startAuthentication(optJson.options)
       } catch (e) {
-        setError((e as { name?: string })?.name === 'NotAllowedError'
-          ? 'Проверка отменена. Можно ввести резервный код ниже.'
-          : 'Ключ недоступен на этом устройстве.')
+        const name = (e as { name?: string })?.name
+        setError(name === 'NotAllowedError'
+          ? 'Проверка отменена или ключ не подходит для этого домена. Введите резервный код ниже.'
+          : name === 'SecurityError'
+            ? 'Небезопасное соединение. Откройте портал по HTTPS и повторите.'
+            : 'Ключ недоступен на этом устройстве.')
         return
       }
       const verRes = await fetch('/api/v1/security/webauthn/authenticate/verify', {
@@ -48,7 +60,14 @@ function ChallengeContent() {
         body: JSON.stringify({ response: asseResp }),
       })
       const verJson = await verRes.json().catch(() => ({}))
-      if (!verRes.ok || !verJson.ok) { setError('Не удалось подтвердить ключ.'); return }
+      if (!verRes.ok || !verJson.ok) {
+        setError(verJson.error === 'challenge_expired'
+          ? 'Проверка истекла. Нажмите кнопку ещё раз.'
+          : verJson.error === 'unknown_credential'
+            ? 'Этот ключ не привязан к аккаунту. Введите резервный код.'
+            : 'Не удалось подтвердить ключ.')
+        return
+      }
       router.replace(from)
     } catch {
       setError('Ошибка сети.')
@@ -73,7 +92,10 @@ function ChallengeContent() {
       if (!res.ok || !json.ok) {
         setError(
           json.error === 'invalid_code' ? 'Неверный код. Попробуйте ещё раз.'
+          : json.error === 'no_backup_codes' ? 'Резервных кодов нет. Войдите ключом Face ID / Touch ID или попросите админа сбросить 2FA.'
+          : json.error === 'not_enrolled' ? '2FA не настроена. Обратитесь к администратору.'
           : res.status === 429 ? 'Слишком много попыток. Подождите немного.'
+          : res.status === 401 ? 'Сессия истекла. Войдите заново.'
           : 'Не удалось подтвердить код.',
         )
         return

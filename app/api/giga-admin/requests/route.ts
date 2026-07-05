@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
-import { createServerClient } from '@/lib/supabase-server'
+import { createServiceClient } from '@/lib/supabase-service'
 import { GIGA_COOKIE_NAME, verifyGigaRole } from '@/lib/giga-cookie'
 
 // A2b: verify the HMAC-SIGNED giga cookie, not an unsigned static string.
@@ -26,7 +26,9 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const sb = createServerClient()
+    // Service-role: giga cookie has no Supabase session; anon client hits RLS
+    // and returns [] for both profiles and admin_requests. authz is on isSuperAdmin().
+    const sb = createServiceClient()
 
     // 1. Try admin_requests table first
     const { data: adminRows, error: arError } = await sb
@@ -112,7 +114,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json()
-    const sb = createServerClient()
+    const sb = createServiceClient()
     const id = crypto.randomUUID()
     const now = new Date().toISOString()
 

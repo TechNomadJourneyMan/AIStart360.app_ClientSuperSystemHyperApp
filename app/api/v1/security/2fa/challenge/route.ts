@@ -11,6 +11,7 @@ import { verifyTOTP } from '@/lib/mfa/totp'
 import { findBackupCodeIndex } from '@/lib/mfa/backup-codes'
 import { getUserSecurity, upsertUserSecurity } from '@/lib/mfa/store'
 import { MFA_COOKIE_NAME, MFA_COOKIE_OPTIONS, signStepUp } from '@/lib/mfa/step-up'
+import { countCredentials } from '@/lib/webauthn/store'
 import { logActivity } from '@/lib/activity/log'
 
 const SCHEMA = z.object({ code: z.string().trim().min(6).max(12) })
@@ -37,7 +38,15 @@ export async function POST(request: Request) {
   const hasTotp = !!row?.totp_enabled && !!row?.totp_secret_enc
   const hasBackup = (row?.backup_codes?.length ?? 0) > 0
   if (!row || (!hasTotp && !hasBackup)) {
-    return NextResponse.json({ ok: false, error: 'not_enrolled' }, { status: 400 })
+    // Distinguish "no factors at all" from "only passkey, no backup codes issued".
+    // The second case can happen for users who enrolled a passkey before
+    // auto-issue-backup-codes was added — they must use the passkey button, or
+    // an admin must reset MFA (/api/giga-admin/users/:id/2fa-reset).
+    const passkeys = await countCredentials(user.id)
+    return NextResponse.json({
+      ok: false,
+      error: passkeys > 0 ? 'no_backup_codes' : 'not_enrolled',
+    }, { status: 400 })
   }
 
   let ok = false
