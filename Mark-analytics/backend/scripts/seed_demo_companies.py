@@ -299,9 +299,15 @@ async def main():
     p = argparse.ArgumentParser()
     p.add_argument("--synthetic", type=int, default=1000,
                    help="Number of synthetic companies to add (default 1000)")
+    p.add_argument("--real-only", action="store_true",
+                   help="Insert ONLY the real companies from the xlsx (synthetic=0). "
+                        "Use for honest production seeding.")
     p.add_argument("--clear", action="store_true",
                    help="DELETE existing demo_seed companies first")
     args = p.parse_args()
+
+    if args.real_only:
+        args.synthetic = 0
 
     if args.clear:
         async with async_session_factory() as session:

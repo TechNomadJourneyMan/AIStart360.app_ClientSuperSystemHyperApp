@@ -1,0 +1,14 @@
+# Keep the deployment upload lean. The Python Function needs backend/app/** and
+# the root requirements.txt; everything below is build-time-only or worker-only.
+backend/tests
+backend/scripts
+backend/uv.lock
+backend/.venv
+backend/docs
+frontend/node_modules
+frontend/dist
+docs
+infra
+tools
+scripts
+.github
