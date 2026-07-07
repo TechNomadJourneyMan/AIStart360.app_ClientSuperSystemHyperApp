@@ -96,11 +96,20 @@ function scoreFinance(a: Record<string, unknown>): BlockScore {
   const rev23 = readRevenueYear(a, 2023)
   const rev24 = readRevenueYear(a, 2024)
   const rev25 = readRevenueYear(a, 2025)
-  const margin = Number(a['s2_gross_margin'] ?? 0)
+  // COR-01: the current 12-step finance form (Step9FinanceForm) writes s9n_*
+  // keys. Map them onto the metrics this block scores, preferring legacy s2_*
+  // when present:
+  //   - gross margin    ← s9n_net_margin (net is a conservative proxy for gross)
+  //   - knows breakeven ← a filled s9n_breakeven_point text answer
+  //   - debt load       ← s9n_debts_amount (>0 ⇒ 'moderate'; 0/absent ⇒ 'none')
+  // LTV/CAC have no s9n_* equivalent, so they stay missing (never fabricated).
+  const margin = readNumberAlias(a, ['s2_gross_margin', 's9n_net_margin'])
   const ltv = Number(a['s2_ltv'] ?? 0)
   const cac = Number(a['s2_cac'] ?? 1)
-  const knowsBE = Boolean(a['s2_knows_breakeven'])
-  const debt = String(a['s2_debt_load'] ?? 'none')
+  const knowsBE = Boolean(a['s2_knows_breakeven']) || readStringAlias(a, ['s9n_breakeven_point']) !== ''
+  const debt = a['s2_debt_load'] != null
+    ? String(a['s2_debt_load'])
+    : (readNumberAlias(a, ['s9n_debts_amount']) > 0 ? 'moderate' : 'none')
   // Current finance step captures YoY change as a string ("+15%", "±15%")
   // instead of a 2023 absolute. Use it as a growth fallback when needed.
   const changeVs2023 = parsePercentChange(a['s9n_change_vs_2023'])

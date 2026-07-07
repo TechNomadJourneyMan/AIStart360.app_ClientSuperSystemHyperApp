@@ -100,7 +100,19 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   if (approveEmail) {
     const { affected } = await applyApprovalDecision({ email: approveEmail, status: 'approved' })
     if (affected === 0) {
+      // BE-05: the authoritative profiles.status write matched no row, so the
+      // client was NOT actually granted access. Never report silent success —
+      // surface it so the operator can fix the email / re-invite.
       console.warn(`[admin/requests/approve] no profiles row for ${approveEmail} — client access not granted`)
+      await auditApprove(params.id, session.user.id, { status: request.status, profileUpdated: false })
+      return NextResponse.json(
+        {
+          error: 'profile_not_found',
+          message: `Заявка отмечена как одобренная, но профиль клиента (${approveEmail}) не найден — доступ не выдан. Проверьте email и повторите.`,
+          data: updated,
+        },
+        { status: 409 },
+      )
     }
   }
 

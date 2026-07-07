@@ -108,6 +108,19 @@
     user-select: text;
     -webkit-touch-callout: default;
   }
+
+  /* ── UX-01: kill iOS Safari focus-zoom on all form fields ──
+     iOS zooms the viewport whenever a focused control's font-size is < 16px.
+     Many fields use Tailwind `text-sm`/`text-xs` (14/12px). Force ≥16px on
+     phones only (desktop keeps its compact sizing). `!important` is required
+     because Tailwind utilities live in a later cascade layer than @layer base. */
+  @media (max-width: 767px) {
+    input:not([type="checkbox"]):not([type="radio"]):not([type="button"]):not([type="submit"]):not([type="reset"]):not([type="range"]):not([type="color"]),
+    textarea,
+    select {
+      font-size: 16px !important;
+    }
+  }
 }
 
 @layer components {

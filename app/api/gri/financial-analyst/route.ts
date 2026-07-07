@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { chatWithOpenRouter, extractJson } from '@/lib/ai/openrouter'
-import { isRateLimited } from '@/lib/rate-limit'
+import { createServerClient } from '@/lib/supabase-server'
+import { isRateLimitedKey } from '@/lib/rate-limit'
 
 /**
  * Financial Analyst for the GRI Calculator.
@@ -86,9 +87,16 @@ function buildStaticAnalysis(data: string, lang: 'ru' | 'en') {
 
 export async function POST(request: NextRequest) {
   try {
-    // Fires paid Claude Sonnet calls — cap per IP so an anonymous caller can't
-    // run up unbounded cost against the model budget.
-    if (await isRateLimited(request, 'gri-ai-financial', { max: 20 })) {
+    // BE-01: this fires paid Claude Sonnet calls. It is only ever invoked from
+    // the authenticated GRI Calculator (app/(dashboard)/gri), so require a
+    // Supabase session and throttle PER USER — never anonymous / IP-only, which
+    // an attacker can bypass by rotating IPs to run up the model budget.
+    const sb = createServerClient()
+    const { data: { user } } = await sb.auth.getUser()
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+    if (await isRateLimitedKey(user.id, 'gri-ai-financial', { max: 6, windowMs: 60_000 })) {
       return NextResponse.json({ error: 'Слишком много запросов. Попробуйте через минуту.' }, { status: 429 })
     }
 

@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db'
 import * as bitrix24 from '@/lib/crm/bitrix24'
 import * as amocrm from '@/lib/crm/amocrm'
 import type { CrmDeal } from '@/lib/crm/types'
+import { getSiteUrl } from '@/lib/site-url'
 
 export const dynamic = 'force-dynamic'
 
@@ -378,7 +379,7 @@ export async function GET() {
           headers: {
             'Authorization': `Bearer ${openrouterKey}`,
             'Content-Type': 'application/json',
-            'HTTP-Referer': 'https://aistart360.vercel.app',
+            'HTTP-Referer': getSiteUrl(),
           },
           body: JSON.stringify({
             model: 'google/gemini-2.0-flash-001',

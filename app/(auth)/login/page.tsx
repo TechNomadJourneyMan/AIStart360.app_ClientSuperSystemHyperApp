@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useAuthStore } from '@/stores/auth.store'
 import { Logo } from '@/components/ui/Logo'
+import { safeInternalPath } from '@/lib/safe-redirect'
 
 function LoginContent() {
   const [email, setEmail] = useState('')
@@ -15,7 +16,8 @@ function LoginContent() {
   const { login, loginWithGoogle, isLoading, error, clearError, user } = useAuthStore()
   const router = useRouter()
   const searchParams = useSearchParams()
-  const from = searchParams.get('from') || '/dashboard'
+  // Only honour internal `from` targets — never redirect off-origin.
+  const from = safeInternalPath(searchParams.get('from'), '/dashboard')
 
   useEffect(() => {
     if (user) {

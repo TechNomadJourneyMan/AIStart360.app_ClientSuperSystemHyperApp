@@ -53,7 +53,7 @@ function Cover() {
         <div className="mt-10 flex flex-wrap gap-3">
           <span className="px-4 py-2 rounded-xl bg-surface-container border border-white/[0.06] text-sm">122 метрики · 7 GRI · 11 целей · 12 KPI</span>
           <span className="px-4 py-2 rounded-xl bg-surface-container border border-white/[0.06] text-sm">Pilot 30 дней — бесплатно</span>
-          <span className="px-4 py-2 rounded-xl bg-primary/10 border border-primary/30 text-sm text-primary font-semibold">aistart360.vercel.app</span>
+          <span className="px-4 py-2 rounded-xl bg-primary/10 border border-primary/30 text-sm text-primary font-semibold">portal.aistart360.app</span>
         </div>
       </div>
     </div>
@@ -479,7 +479,7 @@ function Next() {
         </Link>
         <Link href="/" className="border border-white/[0.08] px-6 py-3.5 rounded-xl hover:border-primary/40 hover:text-primary transition-colors">На главную</Link>
       </div>
-      <p className="text-center text-xs text-on-surface-variant mt-4">hello@aistart360.app · aistart360.vercel.app · Almaty / Tashkent</p>
+      <p className="text-center text-xs text-on-surface-variant mt-4">hello@aistart360.app · portal.aistart360.app · Almaty / Tashkent</p>
     </SlideShell>
   )
 }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { chatWithOpenRouter } from '@/lib/ai/openrouter'
-import { isRateLimited } from '@/lib/rate-limit'
+import { createServerClient } from '@/lib/supabase-server'
+import { isRateLimitedKey } from '@/lib/rate-limit'
 
 /**
  * AI Growth Strategy generator for the GRI Calculator.
@@ -58,9 +59,16 @@ function buildStaticStrategy(scores: Record<string, number>, lang: 'ru' | 'en', 
 
 export async function POST(request: NextRequest) {
   try {
-    // This route fires paid Claude Sonnet calls; without a limiter an anonymous
-    // caller could run up unbounded cost / DoS the model budget. Cap per IP.
-    if (await isRateLimited(request, 'gri-ai-strategy', { max: 20 })) {
+    // BE-01: this fires paid Claude Sonnet calls and is only invoked from the
+    // authenticated GRI Calculator (app/(dashboard)/gri). Require a Supabase
+    // session and throttle PER USER — anonymous / IP-only is bypassable via IP
+    // rotation to run up the model budget.
+    const sb = createServerClient()
+    const { data: { user } } = await sb.auth.getUser()
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+    if (await isRateLimitedKey(user.id, 'gri-ai-strategy', { max: 6, windowMs: 60_000 })) {
       return NextResponse.json({ error: 'Слишком много запросов. Попробуйте через минуту.' }, { status: 429 })
     }
 

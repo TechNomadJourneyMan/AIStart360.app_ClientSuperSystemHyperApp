@@ -9,6 +9,7 @@
  */
 
 import type { ExpertCase } from '../types'
+import { getSiteUrl } from '@/lib/site-url'
 
 /** Truthy env values used by the explicit on-overrides (mirrors notifications). */
 const TRUTHY = new Set(['1', 'true', 'on', 'yes'])
@@ -54,8 +55,7 @@ export function resolveEnabled(overrideRaw: string | undefined, credsReady: bool
 
 /** The experts dashboard URL (AUTH_URL base + /expert/dashboard). */
 export function expertDashboardUrl(): string {
-  const base = process.env.AUTH_URL || 'https://aistart360.vercel.app'
-  return `${base.replace(/\/$/, '')}/expert/dashboard`
+  return getSiteUrl('/expert/dashboard')
 }
 
 /** Russian label for the case company (name from summary is already embedded). */

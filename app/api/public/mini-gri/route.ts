@@ -3,6 +3,7 @@ import { randomBytes } from 'crypto'
 import { z } from 'zod'
 import { authRateLimit } from '@/lib/rate-limit'
 import { sendNotificationEmail } from '@/lib/email'
+import { getSiteUrl } from '@/lib/site-url'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -159,7 +160,7 @@ export async function POST(req: NextRequest) {
       title: `Ваш GRI: ${overallScore}/100`,
       body: `Спасибо за прохождение мини-диагностики! Слабейший блок — «${weakest?.label ?? '—'}» (${weakest?.score ?? 0}/100). Зарегистрируйтесь, чтобы открыть полный GRI по 7 блокам и получить персональный план роста.`,
       ctaLabel: 'Получить полный GRI',
-      ctaUrl: 'https://aistart360.com/register',
+      ctaUrl: getSiteUrl('/register'),
     })
   } catch (err) {
     console.error('[mini-gri] capture email failed (non-blocking)', err)

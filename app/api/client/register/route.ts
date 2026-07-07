@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { createServerClient } from '@/lib/supabase-server'
+import { isRateLimitedKey } from '@/lib/rate-limit'
 
 /**
  * POST /api/client/register
@@ -29,6 +30,23 @@ export async function POST(req: NextRequest) {
     }
 
     const supabaseAdmin = createServerClient()
+
+    // SEC-04: this endpoint upserts a profile and enqueues an approval request
+    // (admin_requests). It previously trusted the body-supplied `userId` with no
+    // auth, so an anonymous caller could spam the approval queue / upsert
+    // arbitrary profiles. Require an authenticated session, only allow acting on
+    // the caller's OWN id, and rate-limit. The register page always calls this
+    // with a live session whose id === userId, so the legit flow is unaffected.
+    const { data: { user: authUser } } = await supabaseAdmin.auth.getUser()
+    if (!authUser) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+    if (authUser.id !== userId) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+    if (await isRateLimitedKey(authUser.id, 'client-register', { max: 5, windowMs: 60_000 })) {
+      return NextResponse.json({ error: 'Слишком много запросов. Попробуйте позже.' }, { status: 429 })
+    }
 
     // 1. Ensure profile exists (trigger on auth.users INSERT may have created
     //    it). Do NOT set status here — the handle_new_user trigger / column

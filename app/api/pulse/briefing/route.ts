@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { createServerClient } from '@/lib/supabase-server'
 import { isRateLimited } from '@/lib/rate-limit'
+import { getSiteUrl } from '@/lib/site-url'
 import * as bitrix24 from '@/lib/crm/bitrix24'
 import * as amocrm from '@/lib/crm/amocrm'
 
@@ -94,7 +95,7 @@ export async function POST(req: NextRequest) {
       headers: {
         'Authorization': `Bearer ${openrouterKey}`,
         'Content-Type': 'application/json',
-        'HTTP-Referer': 'https://aistart360.vercel.app',
+        'HTTP-Referer': getSiteUrl(),
       },
       body: JSON.stringify({
         model: 'google/gemini-2.0-flash-001',

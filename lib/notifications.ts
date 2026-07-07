@@ -8,6 +8,7 @@
 
 import { sendNotificationEmail } from '@/lib/email'
 import { createServerClient } from '@/lib/supabase-server'
+import { getSiteUrl } from '@/lib/site-url'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -199,7 +200,7 @@ function buildTelegramMessage(payload: NotificationPayload): string {
 }
 
 function buildCta(type: NotificationType): { label: string; url: string } {
-  const base = process.env.AUTH_URL || 'https://aistart360.vercel.app'
+  const base = getSiteUrl()
   if (type === 'expert_comment') {
     return { label: 'Открыть дашборд', url: `${base}/client/dashboard` }
   }

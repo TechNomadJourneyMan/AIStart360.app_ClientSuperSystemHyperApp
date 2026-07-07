@@ -11,6 +11,8 @@
  * Override via `model` param.
  */
 
+import { getSiteUrl } from '@/lib/site-url'
+
 export const OPENROUTER_MODELS = {
   sonnet: 'anthropic/claude-sonnet-4.5',
   haiku:  'anthropic/claude-haiku-4.5',
@@ -138,7 +140,7 @@ export async function chatWithOpenRouter(opts: ChatOptions): Promise<string | nu
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${apiKey}`,
-        'HTTP-Referer': process.env.AUTH_URL ?? 'https://aistart360.vercel.app',
+        'HTTP-Referer': getSiteUrl(),
         'X-Title': 'AIStart360',
       },
       body: JSON.stringify(body),
@@ -191,7 +193,7 @@ export async function embedWithOpenRouter(
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${apiKey}`,
-        'HTTP-Referer': process.env.AUTH_URL ?? 'https://aistart360.vercel.app',
+        'HTTP-Referer': getSiteUrl(),
         'X-Title': 'AIStart360',
       },
       body: JSON.stringify({ model, input: texts, dimensions }),

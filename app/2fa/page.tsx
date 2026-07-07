@@ -4,11 +4,13 @@ import React, { Suspense, useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Logo } from '@/components/ui/Logo'
+import { safeInternalPath } from '@/lib/safe-redirect'
 
 function ChallengeContent() {
   const router = useRouter()
   const params = useSearchParams()
-  const from = params.get('from') || '/dashboard'
+  // Only honour internal `from` targets — never redirect off-origin.
+  const from = safeInternalPath(params.get('from'), '/dashboard')
 
   const [useBackup, setUseBackup] = useState(false)
   const [code, setCode] = useState('')
