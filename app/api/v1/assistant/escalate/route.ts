@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
+import { isRateLimitedKey } from '@/lib/rate-limit'
 import { buildAssistantContext } from '@/lib/assistant/context'
 import { runValidation } from '@/lib/assistant/validators'
 import { createExpertCase } from '@/lib/assistant/escalation/adapter'
@@ -36,6 +37,11 @@ export async function POST(req: NextRequest) {
   const { data: { user } } = await sb.auth.getUser()
   if (!user) {
     return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
+  }
+  // GRI-10: cap expert-escalations per user (opens an ExpertCase + notifies
+  // admins — was unlimited, so a stuck client could spam the queue).
+  if (await isRateLimitedKey(user.id, 'assistant:escalate', { max: 5, windowMs: 60_000 })) {
+    return NextResponse.json({ ok: false, error: 'rate_limited' }, { status: 429 })
   }
 
   let body: { trigger_type?: string; userMessage?: string } = {}

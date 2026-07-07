@@ -8,7 +8,7 @@ import { buildAssistantContext } from '@/lib/assistant/context'
 import { converseWithGree, HISTORY_LIMITS } from '@/lib/assistant/gree-chat'
 import { readMascotSettings } from '@/lib/assistant/mascot/settings-server'
 import { localeFromRequestCookie } from '@/lib/i18n/locale'
-import { isRateLimited } from '@/lib/rate-limit'
+import { isRateLimitedKey } from '@/lib/rate-limit'
 
 /**
  * POST /api/v1/assistant/converse — a multi-turn chat turn with «Гри».
@@ -45,7 +45,9 @@ export async function POST(req: NextRequest) {
   if (!user) {
     return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
   }
-  if (await isRateLimited(req, 'assistant:converse', { max: 10, windowMs: 60_000 })) {
+  // GRI-03: throttle this paid multi-turn LLM route PER USER (was per-IP, which
+  // a shared office IP over-blocks and IP rotation bypasses).
+  if (await isRateLimitedKey(user.id, 'assistant:converse', { max: 10, windowMs: 60_000 })) {
     return NextResponse.json({ ok: false, error: 'rate_limited' }, { status: 429 })
   }
 

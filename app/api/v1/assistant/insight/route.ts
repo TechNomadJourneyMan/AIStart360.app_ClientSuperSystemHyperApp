@@ -8,7 +8,7 @@ import { buildAssistantContext } from '@/lib/assistant/context'
 import { buildScreenInsight } from '@/lib/assistant/mascot/insight'
 import { readMascotSettings } from '@/lib/assistant/mascot/settings-server'
 import { localeFromRequestCookie } from '@/lib/i18n/locale'
-import { isRateLimited } from '@/lib/rate-limit'
+import { isRateLimitedKey } from '@/lib/rate-limit'
 
 /**
  * POST /api/v1/assistant/insight — one AI insight for the current screen.
@@ -27,7 +27,8 @@ export async function POST(req: NextRequest) {
   if (!user) {
     return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
   }
-  if (await isRateLimited(req, 'assistant:insight', { max: 6, windowMs: 60 * 60_000 })) {
+  // GRI-03: throttle this paid screen-insight route PER USER (was per-IP).
+  if (await isRateLimitedKey(user.id, 'assistant:insight', { max: 6, windowMs: 60 * 60_000 })) {
     return NextResponse.json({ ok: false, error: 'rate_limited' }, { status: 429 })
   }
 
