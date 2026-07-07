@@ -170,8 +170,10 @@ export function Header() {
         left-0
       `}
     >
-      {/* Left: Search — role-aware destination */}
-      <div className={`relative transition-all duration-200 ${searchFocused ? 'w-56 lg:w-72' : 'w-32 lg:w-44'}`}>
+      {/* Left: Search — role-aware destination.
+          UX-11: keep a fixed width on mobile (no header reflow on focus); only
+          expand on >=lg where there is room. */}
+      <div className={`relative transition-all duration-200 w-32 ${searchFocused ? 'lg:w-72' : 'lg:w-44'}`}>
         <span className="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-on-surface-variant/50 text-[18px] pointer-events-none">
           search
         </span>

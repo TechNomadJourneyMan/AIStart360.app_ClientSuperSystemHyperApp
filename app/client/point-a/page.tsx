@@ -265,7 +265,9 @@ export default function PointAClientPage() {
       <header className="sticky top-0 z-20 bg-[#0A0B0F]/90 backdrop-blur border-b border-white/[0.06] px-6 py-4">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <Image src="/logo.svg" alt="AIStart360" width={120} height={22} />
-          <div className="flex items-center gap-2 flex-wrap">
+          {/* UX-03: single scrollable row on mobile instead of wrapping to
+              several rows; [&>*]:shrink-0 keeps every action at full size. */}
+          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar max-w-full [&>*]:shrink-0">
             {companyId && <ShareButton type="point_a" companyId={companyId} />}
             <Link href="/dashboard" className="text-xs font-mono text-on-surface-variant hover:text-primary border border-white/[0.08] hover:border-primary/30 rounded-lg px-3 py-1.5 transition-all flex items-center gap-1.5">
               <span className="material-symbols-outlined text-sm">dashboard</span>
