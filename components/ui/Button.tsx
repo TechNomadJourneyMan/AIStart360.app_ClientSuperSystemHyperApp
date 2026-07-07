@@ -17,7 +17,8 @@ const buttonVariants = cva(
         sm:   'px-3 py-1.5 text-xs',
         md:   'px-5 py-2.5',
         lg:   'px-6 py-3 text-base',
-        icon: 'p-2',
+        // UX-09: guarantee a >=40px touch target for icon-only buttons.
+        icon: 'p-2 min-w-10 min-h-10',
       },
     },
     defaultVariants: {

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useUIStore } from '@/stores/ui.store'
 
 export function ToastContainer() {
@@ -8,8 +8,10 @@ export function ToastContainer() {
 
   return (
     <div
-      className="fixed bottom-6 right-4 z-[100] flex flex-col gap-2 pointer-events-none"
-      aria-live="polite"
+      // UX-07: sit above the mobile bottom-nav (bottom-24) and drop to the
+      // corner on desktop. Per-toast role carries the live-region semantics,
+      // so the container itself is not an aria-live region (avoids double reads).
+      className="fixed bottom-24 right-4 lg:bottom-6 z-[100] flex flex-col gap-2 pointer-events-none"
     >
       {toasts.map((toast) => (
         <ToastItem key={toast.id} {...toast} onClose={() => removeToast(toast.id)} />
@@ -35,11 +37,19 @@ const toastConfig = {
 
 function ToastItem({ type, title, description, onClose }: ToastItemProps) {
   const cfg = toastConfig[type]
+  // UX-20: errors persist until dismissed; others auto-close after 5s but pause
+  // while hovered/focused so the reader has time to act.
+  const persist = type === 'error'
+  const [paused, setPaused] = useState(false)
 
   useEffect(() => {
+    if (persist || paused) return
     const timer = setTimeout(onClose, 5000)
     return () => clearTimeout(timer)
-  }, [onClose])
+  }, [onClose, persist, paused])
+
+  // Errors/warnings interrupt (assertive); success/info are polite.
+  const role = type === 'error' || type === 'warning' ? 'alert' : 'status'
 
   return (
     <div
@@ -50,7 +60,11 @@ function ToastItem({ type, title, description, onClose }: ToastItemProps) {
         min-w-[280px] max-w-sm
         animate-slide-in-right
       `}
-      role="alert"
+      role={role}
+      onMouseEnter={() => setPaused(true)}
+      onMouseLeave={() => setPaused(false)}
+      onFocus={() => setPaused(true)}
+      onBlur={() => setPaused(false)}
     >
       <span className={`material-symbols-outlined text-xl flex-shrink-0 mt-0.5 ${cfg.color}`}>
         {cfg.icon}
@@ -61,7 +75,7 @@ function ToastItem({ type, title, description, onClose }: ToastItemProps) {
       </div>
       <button
         onClick={onClose}
-        className="flex-shrink-0 text-on-surface-variant hover:text-on-surface transition-colors ml-1"
+        className="flex-shrink-0 grid place-items-center w-9 h-9 -my-1 -mr-1 text-on-surface-variant hover:text-on-surface transition-colors"
         aria-label="Закрыть"
       >
         <span className="material-symbols-outlined text-lg">close</span>

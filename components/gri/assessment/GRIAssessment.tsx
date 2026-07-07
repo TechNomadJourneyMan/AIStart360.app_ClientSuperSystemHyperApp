@@ -93,7 +93,9 @@ function AssessmentScale({
   onChange: (v: number) => void
 }) {
   return (
-    <div className="grid grid-cols-10 gap-1.5 sm:gap-2">
+    <div className="grid grid-cols-5 sm:grid-cols-10 gap-1.5 sm:gap-2">
+      {/* UX-04: 5 columns on mobile so each tap target is >=44px wide (10-wide
+          packs to ~29px on a phone); a single row of 10 on >=sm. */}
       {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => {
         const active = value === n
         const tone =

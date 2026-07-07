@@ -678,8 +678,8 @@ export default function MetricsPageClient({
       {/* Live catalog */}
       <MetricsLiveCatalog userId={userId ?? undefined} />
 
-      {/* Tab switcher */}
-      <div className="flex gap-1 bg-surface-container rounded-xl p-1 w-fit flex-wrap">
+      {/* Tab switcher — UX-12: scroll on mobile instead of wrapping to 2 rows */}
+      <div className="flex gap-1 bg-surface-container rounded-xl p-1 max-w-full overflow-x-auto no-scrollbar">
         {([
           { key: 'goals', label: 'Цели роста',         icon: 'track_changes' },
           { key: 'kpi',   label: 'KPI компании',       icon: 'monitoring'    },
@@ -687,7 +687,7 @@ export default function MetricsPageClient({
           { key: 'gri',   label: 'GRI диагностика',    icon: 'radar'         },
         ] as const).map(({ key, label, icon }) => (
           <button key={key} onClick={() => setActiveTab(key)}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-150 ${
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-150 shrink-0 whitespace-nowrap ${
               activeTab === key
                 ? 'bg-primary text-on-primary shadow'
                 : 'text-on-surface-variant hover:text-on-surface hover:bg-white/[0.04]'
