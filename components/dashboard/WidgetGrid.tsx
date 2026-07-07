@@ -1,14 +1,32 @@
 'use client'
 
-import React, { useState, useEffect, useCallback, forwardRef } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import * as Dialog from '@radix-ui/react-dialog'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion } from 'framer-motion'
 import Link from 'next/link'
 import dynamic from 'next/dynamic'
 import { AlertCard } from './AlertCard'
 import { ActivityFeed } from './ActivityFeed'
 import type { AlertCardProps } from './AlertCard'
 import type { ActivityItem } from '@/types'
+import { sanitizeWidgetLayout } from '@/lib/dashboard/layout'
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  KeyboardSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core'
+import {
+  SortableContext,
+  rectSortingStrategy,
+  useSortable,
+  sortableKeyboardCoordinates,
+  arrayMove,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 
 // recharts is heavy (~150–400 КБ gz). Load the chart only when the optional
 // 'chart' widget is actually rendered, so it never lands in the dashboard's
@@ -47,6 +65,8 @@ const CATALOG: Record<WidgetType, {
   'quick-links': { label: 'Быстрый доступ',       description: 'Ссылки на разделы платформы',   icon: 'grid_view',        span: 'third'      },
 }
 
+const CATALOG_TYPES = Object.keys(CATALOG) as WidgetType[]
+
 const SPAN_CLASS: Record<GridSpan, string> = {
   full:       'col-span-3',
   'two-thirds': 'col-span-3 lg:col-span-2',
@@ -58,8 +78,6 @@ const DEFAULT_WIDGETS: WidgetInstance[] = [
   { id: 'default-activity', type: 'activity' },
   { id: 'default-gri',      type: 'gri'      },
 ]
-
-const STORAGE_KEY = 'aistart360_dashboard_widgets_v2'
 
 // ─── Individual Widget Contents ──────────────────────────────────
 
@@ -151,8 +169,6 @@ function ChartWidget() {
 
 function QuickLinksWidget() {
   // Client-reachable destinations only (mirror middleware CLIENT_DASHBOARD_PATHS).
-  // Dropped /clients, /insights, /ai-scanner — those redirect a client to
-  // /dashboard, so they'd be dead links here.
   const links = [
     { label: 'GRI',      icon: 'radar',       href: '/gri'       },
     { label: 'Точка А',  icon: 'my_location', href: '/point-a'   },
@@ -189,7 +205,7 @@ function WidgetContent({ type, data }: { type: WidgetType; data: WidgetData }) {
   }
 }
 
-// ─── Widget Wrapper ───────────────────────────────────────────────
+// ─── Sortable Widget Card ─────────────────────────────────────────
 interface WidgetCardProps {
   widget: WidgetInstance
   editMode: boolean
@@ -201,48 +217,64 @@ interface WidgetCardProps {
   data: WidgetData
 }
 
-const WidgetCard = forwardRef(function WidgetCard(
-  { widget, editMode, onRemove, onMoveUp, onMoveDown, isFirst, isLast, data }: WidgetCardProps,
-  ref: React.ForwardedRef<HTMLDivElement>
-) {
+function SortableWidgetCard({
+  widget, editMode, onRemove, onMoveUp, onMoveDown, isFirst, isLast, data,
+}: WidgetCardProps) {
   const meta = CATALOG[widget.type]
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: widget.id,
+    disabled: !editMode,
+  })
+
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    zIndex: isDragging ? 20 : undefined,
+    opacity: isDragging ? 0.85 : undefined,
+  }
+
   return (
-    <motion.div
-      ref={ref}
-      layout
-      initial={{ opacity: 0, scale: 0.96 }}
-      animate={{ opacity: 1, scale: 1 }}
-      exit={{ opacity: 0, scale: 0.94 }}
-      transition={{ duration: 0.2 }}
-      className={`${SPAN_CLASS[meta.span]} relative`}
-    >
+    <div ref={setNodeRef} style={style} className={`${SPAN_CLASS[meta.span]} relative`}>
       <div className={`
         bg-surface-container-low rounded-2xl border border-white/[0.04] p-5 h-full
-        transition-all duration-200
+        transition-colors duration-200
         ${editMode ? 'border-primary/10 shadow-primary-sm ring-1 ring-primary/5' : ''}
       `}>
-        {/* Edit mode controls */}
+        {/* Edit-mode controls */}
         {editMode && (
           <div className="absolute -top-2.5 right-3 flex items-center gap-1 z-10">
+            {/* Drag handle (touch-friendly); move up/down are the a11y fallback */}
+            <button
+              type="button"
+              {...attributes}
+              {...listeners}
+              aria-label="Перетащить виджет"
+              className="w-8 h-8 rounded-lg bg-surface-container-highest border border-white/10 flex items-center justify-center text-on-surface-variant hover:text-on-surface cursor-grab active:cursor-grabbing touch-none"
+            >
+              <span className="material-symbols-outlined text-sm">drag_indicator</span>
+            </button>
             <button
               onClick={onMoveUp}
               disabled={isFirst}
-              className="w-6 h-6 rounded-lg bg-surface-container-highest border border-white/10 flex items-center justify-center text-on-surface-variant hover:text-on-surface disabled:opacity-30 transition-colors"
+              aria-label="Выше"
+              className="w-8 h-8 rounded-lg bg-surface-container-highest border border-white/10 flex items-center justify-center text-on-surface-variant hover:text-on-surface disabled:opacity-30 transition-colors"
             >
-              <span className="material-symbols-outlined text-xs">arrow_upward</span>
+              <span className="material-symbols-outlined text-sm">arrow_upward</span>
             </button>
             <button
               onClick={onMoveDown}
               disabled={isLast}
-              className="w-6 h-6 rounded-lg bg-surface-container-highest border border-white/10 flex items-center justify-center text-on-surface-variant hover:text-on-surface disabled:opacity-30 transition-colors"
+              aria-label="Ниже"
+              className="w-8 h-8 rounded-lg bg-surface-container-highest border border-white/10 flex items-center justify-center text-on-surface-variant hover:text-on-surface disabled:opacity-30 transition-colors"
             >
-              <span className="material-symbols-outlined text-xs">arrow_downward</span>
+              <span className="material-symbols-outlined text-sm">arrow_downward</span>
             </button>
             <button
               onClick={onRemove}
-              className="w-6 h-6 rounded-lg bg-error/15 border border-error/30 flex items-center justify-center text-error hover:bg-error/25 transition-colors"
+              aria-label="Удалить виджет"
+              className="w-8 h-8 rounded-lg bg-error/15 border border-error/30 flex items-center justify-center text-error hover:bg-error/25 transition-colors"
             >
-              <span className="material-symbols-outlined text-xs">close</span>
+              <span className="material-symbols-outlined text-sm">close</span>
             </button>
           </div>
         )}
@@ -258,9 +290,9 @@ const WidgetCard = forwardRef(function WidgetCard(
           <WidgetContent type={widget.type} data={data} />
         </div>
       </div>
-    </motion.div>
+    </div>
   )
-})
+}
 
 // ─── Add Widget Dialog ────────────────────────────────────────────
 function AddWidgetDialog({
@@ -276,7 +308,6 @@ function AddWidgetDialog({
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50" />
         <Dialog.Content className="fixed right-0 top-0 bottom-0 w-full max-w-sm bg-surface border-l border-white/[0.06] z-50 shadow-modal flex flex-col">
-          {/* Header */}
           <div className="flex items-center justify-between px-6 py-5 border-b border-white/[0.04]">
             <div>
               <Dialog.Title className="font-headline font-bold text-on-surface text-lg">Виджеты</Dialog.Title>
@@ -287,7 +318,6 @@ function AddWidgetDialog({
             </Dialog.Close>
           </div>
 
-          {/* Widget list */}
           <div className="flex-1 overflow-y-auto p-4 space-y-2">
             {(Object.entries(CATALOG) as [WidgetType, typeof CATALOG[WidgetType]][]).map(([type, meta]) => {
               const alreadyAdded = existingTypes.includes(type)
@@ -346,56 +376,77 @@ export interface WidgetGridProps {
   metrics: { name: string; value: string; up: boolean | null }[]
   criticalCount: number
   userId?: string
+  /** Which dashboard this layout belongs to (client / admin / medical…). */
+  surface?: string
 }
 
-export function WidgetGrid({ alerts, activity, gri, metrics, criticalCount, userId }: WidgetGridProps) {
-  const storageKey = userId ? `${STORAGE_KEY}_${userId}` : STORAGE_KEY
-
+export function WidgetGrid({ alerts, activity, gri, metrics, criticalCount, surface = 'client' }: WidgetGridProps) {
   const [widgets, setWidgets] = useState<WidgetInstance[]>(DEFAULT_WIDGETS)
   const [editMode, setEditMode] = useState(false)
   const [addOpen, setAddOpen] = useState(false)
-  const [mounted, setMounted] = useState(false)
+  const [loaded, setLoaded] = useState(false)
 
+  // DASH-01: load the saved layout from the DB (was localStorage-only, so it
+  // never followed the user across devices). Sanitize against the catalog.
   useEffect(() => {
-    setMounted(true)
-    try {
-      const saved = localStorage.getItem(storageKey)
-      if (saved) {
-        const parsed = JSON.parse(saved)
-        // Drop any stale/removed widget types (e.g. the retired fabricated
-        // 'clients-stats') so old saved layouts don't crash on CATALOG lookup.
-        const clean = Array.isArray(parsed)
-          ? parsed.filter((w) => w && typeof w.type === 'string' && w.type in CATALOG)
-          : []
-        if (clean.length > 0) setWidgets(clean)
-      }
-    } catch {}
-  }, [storageKey])
+    let cancelled = false
+    fetch(`/api/v1/dashboard/layout?surface=${encodeURIComponent(surface)}`, { credentials: 'include' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => {
+        if (cancelled) return
+        const clean = sanitizeWidgetLayout(j?.layout, CATALOG_TYPES, DEFAULT_WIDGETS)
+        setWidgets(clean as WidgetInstance[])
+      })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setLoaded(true) })
+    return () => { cancelled = true }
+  }, [surface])
 
+  // Persist (debounced) after the initial load has completed.
   useEffect(() => {
-    if (mounted) {
-      localStorage.setItem(storageKey, JSON.stringify(widgets))
-    }
-  }, [widgets, storageKey, mounted])
+    if (!loaded) return
+    const t = setTimeout(() => {
+      fetch('/api/v1/dashboard/layout', {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ surface, layout: widgets }),
+      }).catch(() => {})
+    }, 600)
+    return () => clearTimeout(t)
+  }, [widgets, surface, loaded])
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  )
+
+  const handleDragEnd = useCallback((e: DragEndEvent) => {
+    const { active, over } = e
+    if (!over || active.id === over.id) return
+    setWidgets((prev) => {
+      const from = prev.findIndex((w) => w.id === active.id)
+      const to = prev.findIndex((w) => w.id === over.id)
+      if (from < 0 || to < 0) return prev
+      return arrayMove(prev, from, to)
+    })
+  }, [])
 
   const addWidget = useCallback((type: WidgetType) => {
-    setWidgets(prev => [...prev, { id: `widget-${Date.now()}`, type }])
+    setWidgets((prev) => [...prev, { id: `${type}-${crypto.randomUUID().slice(0, 8)}`, type }])
     setAddOpen(false)
   }, [])
 
   const removeWidget = useCallback((id: string) => {
-    setWidgets(prev => prev.filter(w => w.id !== id))
+    setWidgets((prev) => prev.filter((w) => w.id !== id))
   }, [])
 
   const moveWidget = useCallback((id: string, dir: 'up' | 'down') => {
-    setWidgets(prev => {
-      const idx = prev.findIndex(w => w.id === id)
-      if (dir === 'up' && idx === 0) return prev
+    setWidgets((prev) => {
+      const idx = prev.findIndex((w) => w.id === id)
+      if (dir === 'up' && idx <= 0) return prev
       if (dir === 'down' && idx === prev.length - 1) return prev
-      const next = [...prev]
-      const swapIdx = dir === 'up' ? idx - 1 : idx + 1
-      ;[next[idx], next[swapIdx]] = [next[swapIdx], next[idx]]
-      return next
+      return arrayMove(prev, idx, dir === 'up' ? idx - 1 : idx + 1)
     })
   }, [])
 
@@ -403,7 +454,7 @@ export function WidgetGrid({ alerts, activity, gri, metrics, criticalCount, user
     setWidgets(DEFAULT_WIDGETS)
   }, [])
 
-  const existingTypes = widgets.map(w => w.type)
+  const existingTypes = widgets.map((w) => w.type)
   const data: WidgetData = { alerts, activity, gri, metrics, criticalCount }
 
   return (
@@ -435,7 +486,7 @@ export function WidgetGrid({ alerts, activity, gri, metrics, criticalCount, user
             </>
           )}
           <button
-            onClick={() => setEditMode(e => !e)}
+            onClick={() => setEditMode((e) => !e)}
             className={`flex items-center gap-1.5 text-xs font-mono px-3 py-1.5 rounded-xl border transition-all
               ${editMode
                 ? 'bg-primary text-on-primary border-primary'
@@ -448,43 +499,45 @@ export function WidgetGrid({ alerts, activity, gri, metrics, criticalCount, user
         </div>
       </div>
 
-      {/* Widget grid — 3-column CSS grid */}
-      <div className="grid grid-cols-3 gap-4 auto-rows-auto">
-        <AnimatePresence mode="popLayout">
-          {widgets.map((widget, idx) => (
-            <WidgetCard
-              key={widget.id}
-              widget={widget}
-              editMode={editMode}
-              onRemove={() => removeWidget(widget.id)}
-              onMoveUp={() => moveWidget(widget.id, 'up')}
-              onMoveDown={() => moveWidget(widget.id, 'down')}
-              isFirst={idx === 0}
-              isLast={idx === widgets.length - 1}
-              data={data}
-            />
-          ))}
-        </AnimatePresence>
+      {/* Widget grid — 3-column CSS grid, drag-sortable in edit mode */}
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <div className="grid grid-cols-3 gap-4 auto-rows-auto">
+          <SortableContext items={widgets.map((w) => w.id)} strategy={rectSortingStrategy}>
+            {widgets.map((widget, idx) => (
+              <SortableWidgetCard
+                key={widget.id}
+                widget={widget}
+                editMode={editMode}
+                onRemove={() => removeWidget(widget.id)}
+                onMoveUp={() => moveWidget(widget.id, 'up')}
+                onMoveDown={() => moveWidget(widget.id, 'down')}
+                isFirst={idx === 0}
+                isLast={idx === widgets.length - 1}
+                data={data}
+              />
+            ))}
+          </SortableContext>
 
-        {/* Empty state */}
-        {widgets.length === 0 && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="col-span-3 flex flex-col items-center justify-center py-16 bg-surface-container-low rounded-2xl border border-dashed border-white/10"
-          >
-            <span className="material-symbols-outlined text-4xl text-on-surface-variant/20 mb-3">dashboard_customize</span>
-            <p className="text-sm text-on-surface-variant mb-4">Дэшборд пуст. Добавьте виджеты.</p>
-            <button
-              onClick={() => setAddOpen(true)}
-              className="flex items-center gap-2 text-sm font-mono px-4 py-2 rounded-xl bg-primary/10 border border-primary/20 text-primary hover:bg-primary/15 transition-colors"
+          {/* Empty state */}
+          {widgets.length === 0 && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="col-span-3 flex flex-col items-center justify-center py-16 bg-surface-container-low rounded-2xl border border-dashed border-white/10"
             >
-              <span className="material-symbols-outlined text-sm">add</span>
-              Добавить виджет
-            </button>
-          </motion.div>
-        )}
-      </div>
+              <span className="material-symbols-outlined text-4xl text-on-surface-variant/20 mb-3">dashboard_customize</span>
+              <p className="text-sm text-on-surface-variant mb-4">Дэшборд пуст. Добавьте виджеты.</p>
+              <button
+                onClick={() => setAddOpen(true)}
+                className="flex items-center gap-2 text-sm font-mono px-4 py-2 rounded-xl bg-primary/10 border border-primary/20 text-primary hover:bg-primary/15 transition-colors"
+              >
+                <span className="material-symbols-outlined text-sm">add</span>
+                Добавить виджет
+              </button>
+            </motion.div>
+          )}
+        </div>
+      </DndContext>
 
       <AddWidgetDialog
         open={addOpen}
