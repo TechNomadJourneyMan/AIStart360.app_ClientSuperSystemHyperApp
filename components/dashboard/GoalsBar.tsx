@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useUIStore } from '@/stores/ui.store'
 import type { Goal } from '@/types'
-import { toast } from '@/stores/ui.store'
+import { toast } from 'sonner'
 
 const MAX_GOALS = 5
 
@@ -28,7 +28,7 @@ export function GoalsBar() {
 
   const handleAdd = (goal: Goal) => {
     if (pinnedGoals.length >= MAX_GOALS) {
-      toast.warning('Максимум 5 целей', 'Удалите одну цель, чтобы добавить новую')
+      toast.warning('Максимум 5 целей', { description: 'Удалите одну цель, чтобы добавить новую' })
       return
     }
     if (pinnedGoals.some((g) => g.id === goal.id)) return
@@ -38,7 +38,7 @@ export function GoalsBar() {
   const handleAddCustom = () => {
     if (!customLabel.trim()) return
     if (pinnedGoals.length >= MAX_GOALS) {
-      toast.warning('Максимум 5 целей', 'Удалите одну цель, чтобы добавить новую')
+      toast.warning('Максимум 5 целей', { description: 'Удалите одну цель, чтобы добавить новую' })
       return
     }
     addGoal({

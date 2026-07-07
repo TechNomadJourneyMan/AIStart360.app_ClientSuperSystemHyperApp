@@ -6,7 +6,7 @@ import { useMetricsCatalog } from '@/hooks/useMetrics'
 import { useMetricsStore } from '@/stores/metrics.store'
 import { MAX_METRICS } from '@/types/metrics'
 import type { MetricDefinition } from '@/types/metrics'
-import { toast } from '@/stores/ui.store'
+import { toast } from 'sonner'
 
 const CATEGORY_LABELS: Record<string, string> = {
   financial:   'Финансовые',
@@ -55,7 +55,7 @@ export function AddMetricModal({ open, onClose }: AddMetricModalProps) {
     const canAdd = MAX_METRICS - totalCount
     const toAdd = selected.slice(0, canAdd)
     if (selected.length > canAdd) {
-      toast.warning(`Добавлено ${canAdd} из ${selected.length}`, `Достигнут лимит ${MAX_METRICS} метрик`)
+      toast.warning(`Добавлено ${canAdd} из ${selected.length}`, { description: `Достигнут лимит ${MAX_METRICS} метрик` })
     }
     toAdd.forEach((id) => addMetric(id))
     setSelected([])

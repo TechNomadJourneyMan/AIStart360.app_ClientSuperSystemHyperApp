@@ -4,7 +4,6 @@ import { QueryClient } from '@tanstack/react-query'
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client'
 import { createSyncStoragePersister } from '@tanstack/query-sync-storage-persister'
 import { useEffect, useState } from 'react'
-import { ToastContainer } from '@/components/ui/Toast'
 import { OfflineIndicator } from '@/components/common/OfflineIndicator'
 import { useAuthStore } from '@/stores/auth.store'
 import { ThemeProvider } from 'next-themes'
@@ -54,7 +53,6 @@ export function Providers({ children }: { children: React.ReactNode }) {
         <AuthProvider>
           <OfflineIndicator />
           {children}
-          <ToastContainer />
         </AuthProvider>
       </ThemeProvider>
     </PersistQueryClientProvider>

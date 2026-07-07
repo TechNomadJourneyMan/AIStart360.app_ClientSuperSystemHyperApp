@@ -54,8 +54,9 @@ export default function RootLayout({
         {/* Top navigation progress bar — instant feedback on every click/route change */}
         <NextTopLoader color="#6effc0" height={2} showSpinner={false} shadow="0 0 8px #6effc0,0 0 4px #6effc0" />
         <Providers>{children}</Providers>
-        {/* Single global sonner Toaster — used by ShareButton et al. */}
-        <Toaster theme="dark" position="bottom-right" richColors />
+        {/* Single global sonner Toaster (PERF-09: the only toast system).
+            mobileOffset clears the mobile bottom-nav (UX-07). */}
+        <Toaster theme="dark" position="bottom-right" richColors mobileOffset={{ bottom: '88px' }} />
       </body>
     </html>
   )
