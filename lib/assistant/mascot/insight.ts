@@ -30,7 +30,8 @@ export interface ScreenInsight {
   text: string
 }
 
-const SCREEN_FOCUS: Record<string, string> = {
+// Exported so the chat (gree-chat) can inject the same screen focus (GRI-01).
+export const SCREEN_FOCUS: Record<string, string> = {
   '/dashboard': 'общая картина бизнеса и самый важный следующий шаг',
   '/client/dashboard': 'общая картина бизнеса и самый важный следующий шаг',
   '/gri': 'GRI-индекс, его главные ограничения и что даст самый быстрый прирост',

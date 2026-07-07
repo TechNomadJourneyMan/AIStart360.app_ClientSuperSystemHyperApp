@@ -17,6 +17,7 @@ import { z } from 'zod'
 import { generateObjectViaOpenRouter, hasOpenRouterKey } from '@/lib/ai/structured'
 import type { Locale } from '@/lib/i18n/locale'
 import { serializeSnapshot } from './answer'
+import { SCREEN_FOCUS } from './mascot/insight'
 import { mascotPersona } from './mascot/system-prompt'
 import { filterModelOutput } from './mascot/output-filter'
 import { maskPii } from './mascot/sanitize'
@@ -106,14 +107,32 @@ Reply in English, ≤120 words. Return ONE valid minified JSON object and nothin
 Отвечай по-русски, ≤120 слов. Верни ОДИН валидный минифицированный JSON-объект и ничего больше.`
 }
 
+/**
+ * GRI-01: tell «Гри» which screen the user is on so "что на этой странице?" /
+ * "объясни этот виджет" are answered about the current screen. Empty when the
+ * screen is unknown (the LLM then just uses the snapshot).
+ */
+export function formatScreenContext(screen: string | null | undefined, locale: Locale): string {
+  if (!screen) return ''
+  const focus = SCREEN_FOCUS[screen]
+  if (!focus) return ''
+  return locale === 'en'
+    ? `--- CURRENT SCREEN ---
+The user is on "${screen}" — this screen is about: ${focus}. If they ask about "this page / here / this widget", answer about THIS screen.`
+    : `--- ТЕКУЩИЙ ЭКРАН ---
+Пользователь на экране «${screen}» — этот экран про: ${focus}. Если вопрос про «эту страницу / здесь / этот виджет» — отвечай про ЭТОТ экран.`
+}
+
 function buildUser(
   ctx: AssistantContext,
   history: ChatTurn[],
   message: string,
   locale: Locale,
+  screen?: string,
 ): string {
   const en = locale === 'en'
   const snapshot = serializeSnapshot(ctx, locale)
+  const screenBlock = formatScreenContext(screen, locale)
 
   const historyBlock = history.length
     ? history
@@ -125,7 +144,7 @@ function buildUser(
 
   return `${snapshot}
 
---- ${en ? 'DIALOGUE HISTORY (context only, not a source of facts)' : 'ИСТОРИЯ ДИАЛОГА (только контекст, не источник фактов)'} ---
+${screenBlock ? `${screenBlock}\n\n` : ''}--- ${en ? 'DIALOGUE HISTORY (context only, not a source of facts)' : 'ИСТОРИЯ ДИАЛОГА (только контекст, не источник фактов)'} ---
 ${historyBlock}
 
 --- ${en ? 'NEW USER MESSAGE' : 'НОВОЕ СООБЩЕНИЕ ПОЛЬЗОВАТЕЛЯ'} ---
@@ -149,6 +168,7 @@ export async function converseWithGree(
   message: string,
   locale: Locale = 'ru',
   character?: MascotCharacterId,
+  screen?: string,
 ): Promise<GreeChatTurn | null> {
   if (!hasOpenRouterKey()) {
     console.warn('[gree-chat] No OPENROUTER_API_KEY — routing to expert')
@@ -163,7 +183,7 @@ export async function converseWithGree(
       temperature: 0.3,
       schema: turnSchema,
       system: buildSystem(locale, character),
-      user: buildUser(ctx, prepareHistory(history), message, locale),
+      user: buildUser(ctx, prepareHistory(history), message, locale, screen),
     })
     if (!result) return null
 

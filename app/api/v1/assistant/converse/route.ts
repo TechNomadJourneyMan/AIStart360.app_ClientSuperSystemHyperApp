@@ -73,7 +73,7 @@ export async function POST(req: NextRequest) {
       readMascotSettings(sb, user.id),
     ])
     const started = Date.now()
-    const turn = await converseWithGree(ctx, history, message, locale, settings.character)
+    const turn = await converseWithGree(ctx, history, message, locale, settings.character, screen)
 
     // Audit without texts (Langfuse holds the trace).
     try {
