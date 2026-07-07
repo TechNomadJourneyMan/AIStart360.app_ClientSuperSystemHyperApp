@@ -87,13 +87,14 @@ export function MobileNav() {
     return () => { cancelled = true }
   }, [])
 
-  const role = ((user?.role || 'client').toUpperCase()) as UserRole
+  // FE-01/02: canonical lowercase role, default 'client' when missing.
+  const role: UserRole = (user?.role as UserRole | undefined) ?? 'client'
   const allowedNav = getNavForRole(role).map(item => item.href)
 
   // Items locked behind a paid plan for CLIENT role
   const PREMIUM_LOCKED = ['/metrics', '/market', '/point-b']
   const isLocked = (href: string) =>
-    role === 'CLIENT' && PREMIUM_LOCKED.some((p) => href === p || href.startsWith(p + '/'))
+    role === 'client' && PREMIUM_LOCKED.some((p) => href === p || href.startsWith(p + '/'))
 
   const getLockedKey = (href: string) =>
     PREMIUM_LOCKED.find((p) => href === p || href.startsWith(p + '/')) ?? href

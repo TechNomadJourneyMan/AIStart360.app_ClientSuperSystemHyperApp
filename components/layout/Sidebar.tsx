@@ -34,15 +34,16 @@ export function Sidebar() {
     router.push('/login')
   }
 
-  // Security: fallback to 'ANALYST' if role is missing, ensure uppercase for constant lookup
-  const role = ((user?.role || 'CLIENT').toUpperCase() as UserRole) || 'ANALYST'
+  // FE-01/02: role is the canonical lowercase Supabase value; default the
+  // least-privileged 'client' when missing (no more toUpperCase bridge).
+  const role: UserRole = (user?.role as UserRole | undefined) ?? 'client'
   const primaryNav = getPrimaryNavForRole(role)
   const secondaryNav = getSecondaryNavForRole(role)
 
   // Items locked behind a paid plan for CLIENT role
   const PREMIUM_LOCKED = ['/metrics', '/market', '/point-b']
   const isLocked = (href: string) =>
-    role === 'CLIENT' &&
+    role === 'client' &&
     PREMIUM_LOCKED.some((p) => href === p || href.startsWith(p + '/')) &&
     !proUnlocked.has(PREMIUM_LOCKED.find((p) => href === p || href.startsWith(p + '/'))!)
 

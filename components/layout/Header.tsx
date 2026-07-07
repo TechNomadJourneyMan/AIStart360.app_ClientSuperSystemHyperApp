@@ -84,7 +84,9 @@ export function Header() {
     },
   ]
 
-  const userRole = ((user?.role || 'client').toUpperCase()) as UserRole
+  // FE-01/02: canonical lowercase role (matches ROLE_PERMISSIONS keys); the old
+  // toUpperCase() produced values that never matched the lowercase perms map.
+  const userRole: UserRole = (user?.role as UserRole | undefined) ?? 'client'
   const visibleGroups = QUICK_ACTION_GROUPS
     .map((g) => ({
       ...g,

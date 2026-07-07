@@ -3,6 +3,7 @@
 import { create } from 'zustand'
 import { createClient } from '@/lib/supabase/client'
 import { isSupabaseEmailNotConfirmedError } from '@/lib/supabase/auth-errors'
+import type { UserRole } from '@/types'
 
 /**
  * auth.store.ts
@@ -10,7 +11,9 @@ import { isSupabaseEmailNotConfirmedError } from '@/lib/supabase/auth-errors'
  * Session is managed by @supabase/ssr cookies; this store provides reactive UI state.
  */
 
-export type UserRole = 'admin' | 'expert' | 'owner' | 'client' | 'super_admin'
+// FE-01: single canonical UserRole lives in @/types; re-export for existing
+// consumers that import it from this store.
+export type { UserRole }
 export type UserStatus = 'pending_approval' | 'approved' | 'rejected'
 
 export interface PublicUser {

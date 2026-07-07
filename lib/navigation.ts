@@ -1,12 +1,13 @@
 import type { NavItem, UserRole } from '@/types'
 
-const ALL_ROLES: UserRole[] = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ANALYST', 'CLIENT']
 // Staff-only surfaces. These pages live in the (dashboard) group and middleware
 // keeps them in ADMIN_PATHS — a CLIENT hitting them is silently redirected to
 // /dashboard, so they must NOT appear in the client sidebar (dead links).
-const STAFF_ROLES: UserRole[] = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ANALYST']
+// (manager/analyst were legacy Prisma roles that never exist at runtime; expert
+// and owner navigate in their own route groups with their own sidebars.)
+const STAFF_ROLES: UserRole[] = ['super_admin', 'admin']
 // What a CLIENT may actually open — mirrors middleware CLIENT_DASHBOARD_PATHS.
-const CLIENT_OK: UserRole[] = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ANALYST', 'CLIENT']
+const CLIENT_OK: UserRole[] = ['super_admin', 'admin', 'client']
 
 // PRIMARY navigation — shown directly in the sidebar
 export const PRIMARY_NAV: NavItem[] = [
@@ -36,13 +37,13 @@ export const PRIMARY_NAV: NavItem[] = [
 
 // SECONDARY navigation — hidden behind "Ещё"
 export const SECONDARY_NAV: NavItem[] = [
-  { label: 'Клиенты',      href: '/clients',      icon: 'business_center',   roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER'] },
+  { label: 'Клиенты',      href: '/clients',      icon: 'business_center',   roles: STAFF_ROLES },
   { label: 'Отчёты',       href: '/reports',      icon: 'description',       roles: STAFF_ROLES },
   { label: 'Аналитика',    href: '/analytics',    icon: 'bar_chart',         roles: STAFF_ROLES },
-  { label: 'Команда',      href: '/team',         icon: 'group',             roles: ['SUPER_ADMIN', 'ADMIN'] },
+  { label: 'Команда',      href: '/team',         icon: 'group',             roles: STAFF_ROLES },
   { label: 'Уведомления',  href: '/notifications',icon: 'notifications',     roles: CLIENT_OK },
-  { label: 'Пользователи', href: '/users',        icon: 'manage_accounts',   roles: ['SUPER_ADMIN', 'ADMIN'] },
-  { label: 'Админ',        href: '/admin',        icon: 'admin_panel_settings', roles: ['SUPER_ADMIN', 'ADMIN'] },
+  { label: 'Пользователи', href: '/users',        icon: 'manage_accounts',   roles: STAFF_ROLES },
+  { label: 'Админ',        href: '/admin',        icon: 'admin_panel_settings', roles: STAFF_ROLES },
 ]
 
 // Legacy flat list (for backward compat)
@@ -60,26 +61,27 @@ export function getSecondaryNavForRole(role: UserRole): NavItem[] {
   return SECONDARY_NAV.filter((item) => item.roles.includes(role))
 }
 
-// Role display labels
+// Role display labels (Russian UI)
 export const ROLE_LABELS: Record<UserRole, string> = {
-  SUPER_ADMIN: 'Super Admin',
-  ADMIN:       'Administrator',
-  MANAGER:     'Manager',
-  ANALYST:     'Analyst',
-  CLIENT:      'Client',
+  client:      'Клиент',
+  expert:      'Эксперт',
+  owner:       'Владелец',
+  admin:       'Администратор',
+  super_admin: 'Супер-админ',
 }
 
-// Role permissions map
+// Role permissions map. owner is an elevated business role (≈ super_admin);
+// expert validates AI output and reads assigned clients.
 export const ROLE_PERMISSIONS: Record<UserRole, string[]> = {
-  SUPER_ADMIN: ['*'],
-  ADMIN:       ['clients.*', 'reports.*', 'analytics.*', 'team.*', 'settings.*', 'billing.*'],
-  MANAGER:     ['clients.read', 'clients.write', 'reports.*', 'analytics.read', 'intelligence.read'],
-  ANALYST:     ['clients.read', 'reports.read', 'analytics.read'],
-  CLIENT:      ['own.gri', 'own.reports', 'own.profile', 'support'],
+  super_admin: ['*'],
+  owner:       ['*'],
+  admin:       ['clients.*', 'reports.*', 'analytics.*', 'team.*', 'settings.*', 'billing.*'],
+  expert:      ['clients.read', 'reports.read', 'analytics.read', 'intelligence.read'],
+  client:      ['own.gri', 'own.reports', 'own.profile', 'support'],
 }
 
 export function hasPermission(role: UserRole, permission: string): boolean {
-  const perms = ROLE_PERMISSIONS[role]
+  const perms = ROLE_PERMISSIONS[role] ?? []
   return perms.includes('*') || perms.includes(permission) || perms.some((p) => {
     if (p.endsWith('.*')) {
       const base = p.slice(0, -2)

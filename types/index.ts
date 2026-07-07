@@ -2,7 +2,10 @@
 // Core Domain Types — AIStart360 Portal
 // ============================================================
 
-export type UserRole = 'SUPER_ADMIN' | 'ADMIN' | 'MANAGER' | 'ANALYST' | 'CLIENT'
+// Canonical role vocabulary — the lowercase values Supabase `profiles.role`
+// actually stores (FE-01). The legacy UPPERCASE Prisma enum (@prisma/client
+// UserRole) still exists on the dead NextAuth path and is intentionally separate.
+export type UserRole = 'client' | 'expert' | 'owner' | 'admin' | 'super_admin'
 export type ClientStatus = 'active' | 'at risk' | 'inactive' | 'onboarding'
 export type GrowthStage = 'Seed' | 'Early' | 'Growth' | 'Scale' | 'Mature'
 export type AlertSeverity = 'critical' | 'warning' | 'success' | 'info'
