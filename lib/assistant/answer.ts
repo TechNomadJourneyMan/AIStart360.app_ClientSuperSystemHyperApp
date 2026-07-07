@@ -21,7 +21,8 @@ import type { Locale } from '@/lib/i18n/locale'
 import { mascotPersona } from './mascot/system-prompt'
 import { filterModelOutput } from './mascot/output-filter'
 import { sanitizeQualitative } from './mascot/sanitize'
-import type { AssistantContext } from './types'
+import { computeCompletion } from './completion'
+import type { AssistantContext, CompletionReport } from './types'
 
 // ─── Result schema ───────────────────────────────────────────────────────────
 
@@ -124,6 +125,25 @@ function qualitativeAnswers(answers: Record<string, unknown>, locale: Locale): s
  * the multi-turn Гри chat (lib/assistant/gree-chat.ts) feeds the model the
  * exact same whitelisted view of the data as single-shot answers do.
  */
+/**
+ * GRI-02: render survey progress (completion %, sections done, next incomplete
+ * section) so the assistant answers "мой прогресс" from real data, not guesses.
+ */
+export function formatSurveyProgress(completion: CompletionReport, locale: Locale): string {
+  const en = locale === 'en'
+  const sorted = [...completion.sections].sort((s1, s2) => s1.step - s2.step)
+  const next = sorted.find((s) => s.pct < 100) ?? null
+  const done = completion.sections.filter((s) => s.pct === 100).length
+  const total = completion.sections.length
+  return en
+    ? `--- SURVEY PROGRESS ---
+Filled: ${completion.overall_pct}% (${done}/${total} sections; status: ${completion.status})
+Next incomplete section: ${next ? `${next.label} (step ${next.step}, ${next.pct}%)` : 'all sections complete'}`
+    : `--- ПРОГРЕСС АНКЕТЫ ---
+Заполнено: ${completion.overall_pct}% (${done}/${total} разделов; статус: ${completion.status})
+Следующий незавершённый раздел: ${next ? `${next.label} (шаг ${next.step}, ${next.pct}%)` : 'все разделы заполнены'}`
+}
+
 export function serializeSnapshot(ctx: AssistantContext, locale: Locale): string {
   const en = locale === 'en'
   const c = ctx.company
@@ -137,6 +157,7 @@ export function serializeSnapshot(ctx: AssistantContext, locale: Locale): string
     .join('\n')
 
   const weakest = a.weakest_blocks.map((bl) => `${bl.label} ${n(bl.score)}`).join(', ') || '—'
+  const progressBlock = formatSurveyProgress(computeCompletion(ctx), locale)
 
   return `${en ? 'COMPANY DATA SNAPSHOT (curated — no other source).' : 'СНИМОК ДАННЫХ КОМПАНИИ (курированный — другого источника нет).'}
 
@@ -173,6 +194,8 @@ ${en ? 'Top-5 GRI limits' : 'Топ-5 ограничений GRI'}: ${list(g.top
 
 --- ${en ? 'METRICS' : 'МЕТРИКИ'} ---
 ${en ? 'Canonical revenue (₸)' : 'Каноническая выручка (₸)'}: ${n(m.revenue)} (${en ? 'year' : 'год'}: ${n(m.revenue_year)})
+
+${progressBlock}
 
 --- ${en ? 'QUALITATIVE ANSWERS (from the survey)' : 'КАЧЕСТВЕННЫЕ ОТВЕТЫ (из анкеты)'} ---
 ${qualitativeAnswers(ctx.answers ?? {}, locale)}`
