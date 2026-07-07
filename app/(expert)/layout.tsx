@@ -1,5 +1,6 @@
 import { ExpertSidebar } from '@/components/layout/ExpertSidebar'
 import { ExpertHeader }  from '@/components/layout/ExpertHeader'
+import { MascotLauncher } from '@/components/assistant/mascot/MascotLauncher'
 
 export default function ExpertLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -13,6 +14,8 @@ export default function ExpertLayout({ children }: { children: React.ReactNode }
           </div>
         </main>
       </div>
+      {/* TUT-01: mascot / page tours for the expert role (was unmounted). */}
+      <MascotLauncher />
     </div>
   )
 }

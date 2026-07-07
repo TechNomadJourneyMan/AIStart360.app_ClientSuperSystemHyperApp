@@ -1,6 +1,7 @@
 import { OwnerSidebar } from '@/components/layout/OwnerSidebar'
 import { OwnerHeader }  from '@/components/layout/OwnerHeader'
 import { DashboardShell } from '@/components/layout/DashboardShell'
+import { MascotLauncher } from '@/components/assistant/mascot/MascotLauncher'
 
 export default function OwnerLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -14,6 +15,8 @@ export default function OwnerLayout({ children }: { children: React.ReactNode })
           </div>
         </main>
       </DashboardShell>
+      {/* TUT-01: mascot / page tours for the owner role (was unmounted). */}
+      <MascotLauncher />
     </div>
   )
 }

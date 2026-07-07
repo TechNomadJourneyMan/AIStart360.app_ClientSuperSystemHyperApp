@@ -172,6 +172,22 @@ function matchesQuery(item: ScriptItem, query: string): boolean {
   )
 }
 
+// GRI-04: quick-action command rail. These send screen/progress-aware preset
+// questions through the normal grounded askGree path (the snapshot now carries
+// the current screen + survey progress, so the answers are concrete).
+const QUICK_ACTIONS_RU = [
+  { label: 'Объясни страницу', message: 'Что на этой странице и на что смотреть в первую очередь?' },
+  { label: 'Что дальше?', message: 'Что мне делать дальше?' },
+  { label: 'Мой прогресс', message: 'Каков мой прогресс по анкете и какой раздел заполнить следующим?' },
+  { label: 'Следующий шаг', message: 'Порекомендуй один конкретный следующий шаг для роста.' },
+] as const
+const QUICK_ACTIONS_EN = [
+  { label: 'Explain page', message: 'What is on this screen and what should I look at first?' },
+  { label: "What's next?", message: 'What should I do next?' },
+  { label: 'My progress', message: 'What is my survey progress and which section should I fill next?' },
+  { label: 'Next step', message: 'Recommend one concrete next growth step.' },
+] as const
+
 export function AssistantChatPanel({
   open,
   onClose,
@@ -297,10 +313,10 @@ export function AssistantChatPanel({
 
   // ── Actions ─────────────────────────────────────────────────────────────────
 
-  const askGree = useCallback(async () => {
-    const q = input.trim()
+  const askGree = useCallback(async (preset?: string) => {
+    const q = (preset ?? input).trim()
     if (!q || busy) return
-    setInput('')
+    if (!preset) setInput('')
     const history = historyPayload()
     push({ role: 'user', text: q, kind: 'free' })
     setBusy('ask')
@@ -697,6 +713,20 @@ export function AssistantChatPanel({
 
         {/* Footer — the universal input + three actions. */}
         <footer className="px-5 py-4 border-t border-white/[0.06] flex-shrink-0 space-y-2.5">
+          {/* GRI-04: quick-action command rail (scrolls on mobile) */}
+          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+            {(locale === 'ru' ? QUICK_ACTIONS_RU : QUICK_ACTIONS_EN).map((a) => (
+              <button
+                key={a.label}
+                type="button"
+                onClick={() => void askGree(a.message)}
+                disabled={!!busy}
+                className="shrink-0 whitespace-nowrap text-[11px] font-medium px-2.5 py-1.5 rounded-full border border-white/[0.08] bg-surface-container-low text-on-surface-variant hover:text-on-surface hover:border-primary/25 transition-colors disabled:opacity-40"
+              >
+                {a.label}
+              </button>
+            ))}
+          </div>
           <div className="rounded-2xl border border-white/[0.08] bg-surface-container-low focus-within:border-primary/30 focus-within:ring-2 focus-within:ring-primary/20 transition-all">
             <textarea
               value={input}
