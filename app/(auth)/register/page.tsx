@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useAuthStore, UserRole } from '@/stores/auth.store'
+import { roleLandingPath } from '@/lib/role-landing'
 import { Logo } from '@/components/ui/Logo'
 
 export default function RegisterPage() {
@@ -20,17 +21,9 @@ export default function RegisterPage() {
 
   useEffect(() => {
     if (user) {
-      if (user.role === 'super_admin') {
-        router.push('/admin-giga-panel')
-      } else if (user.role === 'owner') {
-        router.push('/owner/dashboard')
-      } else if (user.role === 'expert') {
-        router.push('/expert/dashboard')
-      } else if (user.role === 'client') {
-        router.push('/client/waiting-room')
-      } else {
-        router.push('/owner/dashboard')
-      }
+      // FE-06: single source for role→home. A just-registered client is not yet
+      // approved, so roleLandingPath lands them in the waiting room.
+      router.push(roleLandingPath(user.role, user.status))
     }
   }, [user, router])
 

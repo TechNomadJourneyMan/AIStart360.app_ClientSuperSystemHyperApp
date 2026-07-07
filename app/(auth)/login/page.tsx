@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { useAuthStore } from '@/stores/auth.store'
 import { Logo } from '@/components/ui/Logo'
 import { safeInternalPath } from '@/lib/safe-redirect'
+import { roleLandingPath } from '@/lib/role-landing'
 
 function LoginContent() {
   const [email, setEmail] = useState('')
@@ -30,19 +31,9 @@ function LoginContent() {
         router.push('/client/welcome')
         return
       }
-      if (user.role === 'client' && user.status === 'pending_approval') {
-        router.push('/client/waiting-room')
-      } else if (user.role === 'client' && user.status === 'approved') {
-        router.push('/client/point-a')
-      } else if (user.role === 'super_admin') {
-        router.push('/admin-giga-panel')
-      } else if (user.role === 'owner') {
-        router.push('/owner/dashboard')
-      } else if (user.role === 'expert') {
-        router.push('/expert/dashboard')
-      } else {
-        router.push(from)
-      }
+      // FE-06: role→home via the single roleLandingPath; fall back to the
+      // (already same-origin-validated) return path only for an unknown role.
+      router.push(user.role ? roleLandingPath(user.role, user.status) : from)
     }
   }, [user, from, router])
 
