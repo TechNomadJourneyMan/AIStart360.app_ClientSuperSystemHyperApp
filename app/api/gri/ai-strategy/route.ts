@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { chatWithOpenRouter } from '@/lib/ai/openrouter'
 import { createServerClient } from '@/lib/supabase-server'
 import { isRateLimitedKey } from '@/lib/rate-limit'
+import { safeErrorMessage } from '@/lib/api-error'
 
 /**
  * AI Growth Strategy generator for the GRI Calculator.
@@ -100,8 +101,8 @@ Keep the response structured, professional, and actionable. Use markdown formatt
 
     const strategy = aiResponse ?? buildStaticStrategy(scores, lang, format)
     return NextResponse.json({ strategy })
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Failed to generate strategy'
-    return NextResponse.json({ error: message }, { status: 500 })
+  } catch (error) {
+    // BE-09: never return the raw error to the client in production.
+    return NextResponse.json({ error: safeErrorMessage(error, 'Не удалось сгенерировать стратегию') }, { status: 500 })
   }
 }

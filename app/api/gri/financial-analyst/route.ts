@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { chatWithOpenRouter, extractJson } from '@/lib/ai/openrouter'
 import { createServerClient } from '@/lib/supabase-server'
 import { isRateLimitedKey } from '@/lib/rate-limit'
+import { safeErrorMessage } from '@/lib/api-error'
 
 /**
  * Financial Analyst for the GRI Calculator.
@@ -159,8 +160,8 @@ ${scoresDescription}`
     }
 
     return NextResponse.json(buildStaticAnalysis(financialData, lang))
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Financial analysis failed'
-    return NextResponse.json({ error: message }, { status: 500 })
+  } catch (error) {
+    // BE-09: never return the raw error to the client in production.
+    return NextResponse.json({ error: safeErrorMessage(error, 'Не удалось выполнить финансовый анализ') }, { status: 500 })
   }
 }

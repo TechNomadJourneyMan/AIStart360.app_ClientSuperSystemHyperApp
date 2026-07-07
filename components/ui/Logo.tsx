@@ -1,5 +1,5 @@
-'use client'
-
+// FE-14: purely presentational (Image/Link/cn, no hooks or handlers) — render
+// as a Server Component so it isn't forced into the client bundle server-side.
 import Image from 'next/image'
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
