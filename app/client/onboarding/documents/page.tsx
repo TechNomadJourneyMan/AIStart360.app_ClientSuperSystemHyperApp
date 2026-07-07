@@ -389,12 +389,23 @@ export default function DocumentsPage() {
     }
   }, [fetchDocs])
 
+  // Initial load (and when the user id resolves).
   useEffect(() => {
     if (!userId) return
     fetchDocs()
+  }, [userId, fetchDocs])
+
+  // PERF-07: poll only while a document is still queued/processing; stop once
+  // every document has settled (parsed / error) so the tab isn't hitting the
+  // API every 10s forever.
+  const hasPendingDocs = uploaded.some(
+    (d) => d.parse_status === 'queued' || d.parse_status === 'processing',
+  )
+  useEffect(() => {
+    if (!userId || !hasPendingDocs) return
     const interval = setInterval(fetchDocs, 10_000)
     return () => clearInterval(interval)
-  }, [userId, fetchDocs])
+  }, [userId, hasPendingDocs, fetchDocs])
 
   const handleFile = (file: File) => {
     setUploadError(null)

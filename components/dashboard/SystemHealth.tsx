@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 
 interface ServiceResult {
   name: string
@@ -17,7 +17,8 @@ interface HealthData {
   timestamp: string
 }
 
-const POLL_INTERVAL_MS = 5_000
+// PERF-06: 30s (was 5s) — each poll runs a server-side DB ping + fetches.
+const POLL_INTERVAL_MS = 30_000
 
 function latencyColor(ms: number) {
   if (ms > 300) return 'text-error'
@@ -36,7 +37,13 @@ export function SystemHealth() {
   const [loading, setLoading] = useState(true)
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
 
+  const inFlight = useRef(false)
+
   const fetchHealth = useCallback(async () => {
+    // PERF-06: never overlap requests, and don't poll a hidden tab.
+    if (inFlight.current) return
+    if (typeof document !== 'undefined' && document.hidden) return
+    inFlight.current = true
     try {
       const res = await fetch('/api/health', { cache: 'no-store' })
       if (res.ok) {
@@ -45,13 +52,22 @@ export function SystemHealth() {
         setLastUpdated(new Date())
       }
     } catch {}
-    finally { setLoading(false) }
+    finally {
+      inFlight.current = false
+      setLoading(false)
+    }
   }, [])
 
   useEffect(() => {
     fetchHealth()
     const id = setInterval(fetchHealth, POLL_INTERVAL_MS)
-    return () => clearInterval(id)
+    // Refresh once when the tab becomes visible again (data may be stale).
+    const onVisibility = () => { if (!document.hidden) fetchHealth() }
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      clearInterval(id)
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
   }, [fetchHealth])
 
   const services = data?.services ?? []
