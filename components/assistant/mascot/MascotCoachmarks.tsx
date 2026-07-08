@@ -10,14 +10,13 @@
  * «Пропустить» ends the tour early — both mark the screen as toured.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import { MascotAvatar, type MascotColorId } from './MascotAvatar'
 import type { MascotCharacterId } from '@/lib/assistant/mascot/characters'
 import type { TourStep } from '@/lib/assistant/mascot/tours'
+import { computeCoachmarkLayout } from '@/lib/assistant/mascot/coachmark-layout'
 
-const CARD_W = 330
-const CARD_GAP = 14
 const PAD = 8
 
 interface Rect {
@@ -47,82 +46,105 @@ export function MascotCoachmarks({
   /** done=true — дошёл до конца; false — пропустил. Оба помечают экран. */
   onClose: (done: boolean) => void
 }) {
-  // Only steps whose targets exist right now — resilient to page changes.
-  const liveSteps = useMemo(() => steps.filter((s) => findTarget(s.selector)), [steps])
   const [idx, setIdx] = useState(0)
   const [rect, setRect] = useState<Rect | null>(null)
+  const [cardH, setCardH] = useState(200)
+  const [waiting, setWaiting] = useState(false)
+  const cardRef = useRef<HTMLDivElement | null>(null)
   const rafRef = useRef(0)
 
   const finish = useCallback((done: boolean) => onClose(done), [onClose])
 
-  // Nothing to anchor to → never render an empty tour.
   useEffect(() => {
-    if (liveSteps.length === 0) finish(false)
-  }, [liveSteps.length, finish])
+    if (steps.length === 0) finish(false)
+  }, [steps.length, finish])
 
-  const measure = useCallback(() => {
-    const step = liveSteps[idx]
+  const step = steps[idx]
+
+  // Wait for the current step's target: poll up to 3s, then auto-skip the step.
+  useEffect(() => {
     if (!step) return
-    const el = findTarget(step.selector)
-    if (!el) {
-      setRect(null)
-      return
+    let cancelled = false
+    let tries = 0
+    setWaiting(true)
+    setRect(null)
+    const tryFind = () => {
+      if (cancelled) return
+      const el = findTarget(step.selector)
+      if (el) {
+        setWaiting(false)
+        el.scrollIntoView({ block: 'center', behavior: 'smooth' })
+        setTimeout(() => {
+          if (cancelled) return
+          const r = el.getBoundingClientRect()
+          setRect({ top: r.top, left: r.left, width: r.width, height: r.height })
+        }, 420)
+        return
+      }
+      tries += 1
+      if (tries >= 12) {
+        // target never appeared — skip this step (last step → finish as done)
+        setWaiting(false)
+        if (idx < steps.length - 1) setIdx((v) => v + 1)
+        else finish(true)
+        return
+      }
+      setTimeout(tryFind, 250)
     }
-    const r = el.getBoundingClientRect()
-    setRect({ top: r.top, left: r.left, width: r.width, height: r.height })
-  }, [liveSteps, idx])
+    tryFind()
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [idx, step?.selector])
 
-  // Scroll the target into view, then track its rect on scroll/resize.
+  // Track the target rect on scroll/resize.
   useEffect(() => {
-    const step = liveSteps[idx]
     if (!step) return
-    const el = findTarget(step.selector)
-    el?.scrollIntoView({ block: 'center', behavior: 'smooth' })
-    const t = setTimeout(measure, 420)
-
     const onMove = () => {
       cancelAnimationFrame(rafRef.current)
-      rafRef.current = requestAnimationFrame(measure)
+      rafRef.current = requestAnimationFrame(() => {
+        const el = findTarget(step.selector)
+        if (!el) return
+        const r = el.getBoundingClientRect()
+        setRect({ top: r.top, left: r.left, width: r.width, height: r.height })
+      })
     }
     window.addEventListener('resize', onMove)
     window.addEventListener('scroll', onMove, { passive: true, capture: true })
     return () => {
-      clearTimeout(t)
       cancelAnimationFrame(rafRef.current)
       window.removeEventListener('resize', onMove)
       window.removeEventListener('scroll', onMove, { capture: true })
     }
-  }, [idx, liveSteps, measure])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [idx, step?.selector])
+
+  // Measure real card height (content varies per step).
+  useLayoutEffect(() => {
+    const h = cardRef.current?.offsetHeight
+    if (h && h > 0) setCardH(h)
+  }, [idx, rect])
 
   // Keyboard: Esc skips, arrows navigate.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') finish(false)
-      if (e.key === 'ArrowRight' && idx < liveSteps.length - 1) setIdx((v) => v + 1)
+      if (e.key === 'ArrowRight' && idx < steps.length - 1) setIdx((v) => v + 1)
       if (e.key === 'ArrowLeft' && idx > 0) setIdx((v) => v - 1)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [idx, liveSteps.length, finish])
+  }, [idx, steps.length, finish])
 
-  const step = liveSteps[idx]
-  if (!step || liveSteps.length === 0) return null
+  if (!step || waiting) {
+    // dim the page while waiting so the user sees the tour is in progress
+    return step ? (
+      <div className="fixed inset-0 z-[70] bg-black/50" aria-hidden />
+    ) : null
+  }
 
   const vw = typeof window !== 'undefined' ? window.innerWidth : 1280
   const vh = typeof window !== 'undefined' ? window.innerHeight : 800
-
-  // Card placement: below the target when it fits, otherwise above.
-  let cardTop = 0
-  let below = true
-  let cardLeft = 12
-  let arrowLeft = CARD_W / 2
-  if (rect) {
-    const cx = rect.left + rect.width / 2
-    below = rect.top + rect.height + 210 < vh || rect.top < 220
-    cardTop = below ? rect.top + rect.height + CARD_GAP : rect.top - CARD_GAP
-    cardLeft = Math.min(Math.max(12, cx - CARD_W / 2), Math.max(12, vw - CARD_W - 12))
-    arrowLeft = Math.min(Math.max(18, cx - cardLeft - 7), CARD_W - 18)
-  }
+  const layout = computeCoachmarkLayout(rect, vw, vh, cardH)
 
   return (
     <div className="fixed inset-0 z-[70]" role="dialog" aria-modal="true" aria-label={`Обучение: ${step.title}`}>
@@ -148,26 +170,26 @@ export function MascotCoachmarks({
       {/* The mascot's card with an arrow to the target. */}
       <motion.div
         key={idx}
-        initial={{ opacity: 0, y: below ? 8 : -8, scale: 0.97 }}
+        ref={cardRef}
+        initial={{ opacity: 0, y: layout.below ? 8 : -8, scale: 0.97 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         transition={{ duration: 0.2 }}
         className="absolute rounded-2xl border border-white/[0.12] bg-[#12151c] shadow-2xl shadow-black/60 p-4"
         style={{
-          width: CARD_W,
-          left: cardLeft,
-          top: cardTop,
-          transform: below ? undefined : 'translateY(-100%)',
+          width: layout.width,
+          left: layout.left,
+          top: layout.top,
         }}
       >
         {/* Arrow */}
         <div
           aria-hidden
           className={`absolute w-3.5 h-3.5 rotate-45 bg-[#12151c] ${
-            below
+            layout.below
               ? '-top-[8px] border-t border-l border-white/[0.12]'
               : '-bottom-[8px] border-b border-r border-white/[0.12]'
           }`}
-          style={{ left: arrowLeft }}
+          style={{ left: layout.arrowLeft }}
         />
 
         <div className="flex items-start gap-3">
@@ -188,7 +210,7 @@ export function MascotCoachmarks({
             Пропустить
           </button>
           <div className="flex items-center gap-1.5" aria-hidden>
-            {liveSteps.map((_, i) => (
+            {steps.map((_, i) => (
               <span
                 key={i}
                 className={`h-1 rounded-full transition-all ${i === idx ? 'w-5 bg-primary' : 'w-1 bg-white/[0.18]'}`}
@@ -205,10 +227,10 @@ export function MascotCoachmarks({
               </button>
             )}
             <button
-              onClick={() => (idx === liveSteps.length - 1 ? finish(true) : setIdx((v) => v + 1))}
+              onClick={() => (idx === steps.length - 1 ? finish(true) : setIdx((v) => v + 1))}
               className="px-3.5 py-1.5 rounded-lg bg-primary text-[#003824] font-semibold text-xs hover:bg-primary/90 transition-colors"
             >
-              {idx === liveSteps.length - 1 ? 'Готово 🐾' : 'Дальше'}
+              {idx === steps.length - 1 ? 'Готово 🐾' : 'Дальше'}
             </button>
           </div>
         </div>
