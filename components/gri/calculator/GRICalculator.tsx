@@ -180,6 +180,16 @@ export interface GRICalculatorProps {
   size: string
   onNicheChange: (v: string) => void
   onSizeChange: (v: string) => void
+  /**
+   * Seed the sliders from the saved GRI assessment on mount. The parent
+   * (GriPageShell) sets this false after the first seed so that switching tabs
+   * — which remounts the calculator — no longer re-pulls the server assessment
+   * and clobbers manual edits or AI-applied scores. Live assessment updates
+   * still flow through the 'gri:assessment-updated' event listener regardless.
+   */
+  seedFromAssessment?: boolean
+  /** Called once the initial assessment seed has run. */
+  onSeeded?: () => void
 }
 
 export default function GRICalculator({
@@ -189,6 +199,8 @@ export default function GRICalculator({
   size,
   onNicheChange,
   onSizeChange,
+  seedFromAssessment = true,
+  onSeeded,
 }: GRICalculatorProps) {
   const [lang, setLang] = useState<Language>("ru")
 
@@ -347,8 +359,13 @@ export default function GRICalculator({
       void syncFromServer()
     }
 
-    // Initial sync on mount
-    syncFromAssessment()
+    // Initial sync on mount — only when the parent hasn't seeded yet this
+    // session. On tab switches the calculator remounts; re-seeding here would
+    // overwrite manual slider edits and AI-applied scores held by the shell.
+    if (seedFromAssessment) {
+      syncFromAssessment()
+      onSeeded?.()
+    }
 
     // Listen for cross-tab updates via storage event
     const handleStorage = (e: StorageEvent) => {

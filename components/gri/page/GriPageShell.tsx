@@ -4,7 +4,7 @@
 // hero + вкладки Оценка / Результат / Динамика / AI-аналитик.
 // Владеет shared-стейтом оценок (scores/niche/size), чтобы вкладка
 // AI-аналитика работала с теми же данными, что и калькулятор.
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import GriHero from './GriHero'
@@ -48,6 +48,11 @@ export default function GriPageShell() {
   const [niche, setNiche] = useState('general')
   const [size, setSize] = useState('small')
   const [assessment, setAssessment] = useState<AssessmentCurrent | null>(null)
+  // Seed the calculator from the saved assessment once per page visit. The
+  // calculator remounts on every tab switch (panels are conditionally rendered
+  // so recharts always mounts visible and sizes correctly); this guard stops it
+  // re-pulling the assessment and clobbering manual/AI-applied scores.
+  const seededRef = useRef(false)
 
   const setTab = useCallback(
     (key: TabKey) => router.replace(`/gri?tab=${key}`, { scroll: false }),
@@ -69,7 +74,12 @@ export default function GriPageShell() {
 
   useEffect(() => {
     void loadAssessment()
-    const onUpdate = () => void loadAssessment()
+    // A completed/updated assessment should re-seed the calculator next time it
+    // mounts, so drop the seed guard when that event fires.
+    const onUpdate = () => {
+      seededRef.current = false
+      void loadAssessment()
+    }
     window.addEventListener('gri:assessment-updated', onUpdate)
     return () => window.removeEventListener('gri:assessment-updated', onUpdate)
   }, [loadAssessment])
@@ -109,24 +119,29 @@ export default function GriPageShell() {
         ))}
       </nav>
 
-      {/* Панель «Оценка» рендерится ВСЕГДА и скрывается через CSS (hidden),
-          чтобы GRICalculator/GRIAssessment не размонтировались при смене вкладки:
-          иначе mount-only sync-эффект калькулятора при возврате заново тянет
-          /api/v1/gri/assessment и перезатирает ручные правки и оценки,
-          применённые из AI-вкладки. */}
-      <div className={tab === 'assess' ? 'space-y-6' : 'hidden'} aria-hidden={tab !== 'assess'}>
-        <GRICalculator
-          scores={scores}
-          onScoresChange={setScores}
-          niche={niche}
-          size={size}
-          onNicheChange={setNiche}
-          onSizeChange={setSize}
-        />
-        <div id="gri-assessment">
-          <GRIAssessment />
+      {/* Панели рендерятся условно (recharts-радар в калькуляторе должен
+          монтироваться видимым, иначе ResponsiveContainer меряет 0×0). Чтобы
+          смена вкладки не сбрасывала оценки, калькулятор «посевается» из
+          диагностики только один раз за визит — через seededRef. */}
+      {tab === 'assess' && (
+        <div className="space-y-6">
+          <GRICalculator
+            scores={scores}
+            onScoresChange={setScores}
+            niche={niche}
+            size={size}
+            onNicheChange={setNiche}
+            onSizeChange={setSize}
+            seedFromAssessment={!seededRef.current}
+            onSeeded={() => {
+              seededRef.current = true
+            }}
+          />
+          <div id="gri-assessment">
+            <GRIAssessment />
+          </div>
         </div>
-      </div>
+      )}
       {tab === 'result' && <GriResultPanel assessment={assessment} onGoAssess={() => setTab('assess')} />}
       {tab === 'dynamics' && <GriDynamicsPanel />}
       {tab === 'ai' && (
