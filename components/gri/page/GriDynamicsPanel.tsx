@@ -130,7 +130,7 @@ export default function GriDynamicsPanel() {
   }
 
   return (
-    <div className="grid lg:grid-cols-[2fr,1fr] gap-4">
+    <div className="grid lg:grid-cols-[2fr_1fr] gap-4">
       <section className="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-5">
         <p className="text-xs font-mono uppercase tracking-widest text-on-surface-variant mb-4">
           Тренд GRI
