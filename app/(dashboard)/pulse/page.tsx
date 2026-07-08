@@ -331,7 +331,14 @@ function ClientCard({ client, onCall, onMessage, onMonitor, onHistory, isMonitor
             <RiskBadge level={client.churnLevel} prob={client.churnProb} />
           </div>
           <p className="text-sm text-on-surface-variant">
-            {client.sector} · {('revenue' in client) ? `Выручка: ${(client as any).revenue}` : ''} · {('employees' in client) ? `${(client as any).employees} сотр.` : ''} · Цикл {client.orderCycle} дней
+            {[
+              client.sector,
+              'revenue' in client ? `Выручка: ${(client as { revenue?: string }).revenue}` : null,
+              'employees' in client ? `${(client as { employees?: number }).employees} сотр.` : null,
+              `Цикл ${client.orderCycle} дней`,
+            ]
+              .filter(Boolean)
+              .join(' · ')}
           </p>
         </div>
         <ActionBtn action={client.action}
@@ -856,7 +863,10 @@ function CrmMonitorSection() {
     window.open(`tel:${c.phone ?? digits}`, '_self')
     logInteraction.mutate(
       { clientId: c.id, kind: 'call', comment: 'Звонок из очереди «Сегодня»' },
-      { onSuccess: () => toast.success(`Звонок ${c.name} зафиксирован`) },
+      {
+        onSuccess: () => toast.success(`Звонок ${c.name} зафиксирован`),
+        onError: () => toast.error('Не удалось записать касание'),
+      },
     )
   }, [logInteraction])
 
@@ -869,7 +879,10 @@ function CrmMonitorSection() {
     window.open(`https://wa.me/${digits}`, '_blank')
     logInteraction.mutate(
       { clientId: c.id, kind: 'message', comment: 'Сообщение в WhatsApp' },
-      { onSuccess: () => toast.success(`Сообщение ${c.name} зафиксировано`) },
+      {
+        onSuccess: () => toast.success(`Сообщение ${c.name} зафиксировано`),
+        onError: () => toast.error('Не удалось записать касание'),
+      },
     )
   }, [logInteraction])
 
@@ -910,14 +923,12 @@ function CrmMonitorSection() {
     }))
   }, [clientsData])
 
-  const [selectedClient, setSelectedClient] = useState<PulseClient | null>(null)
-
-  // Initialize selected client once data is loaded
-  useMemo(() => {
-    if (TODAY_CLIENTS.length > 0 && !selectedClient) {
-      setSelectedClient(TODAY_CLIENTS[0])
-    }
-  }, [TODAY_CLIENTS, selectedClient])
+  // Держим только ID выбранного клиента, а сам объект деривим из свежего
+  // TODAY_CLIENTS — иначе после рефетча (напр. логирования касания) карточка
+  // показывала бы устаревший снимок. Дефолт — первый в очереди.
+  const [selectedClientId, setSelectedClientId] = useState<string | null>(null)
+  const selectedClient =
+    TODAY_CLIENTS.find((c) => c.id === selectedClientId) ?? TODAY_CLIENTS[0] ?? null
 
   const filteredToday = TODAY_CLIENTS.filter(
     (c) => filterRisk === 'all' || c.churnLevel === filterRisk
@@ -1159,7 +1170,7 @@ function CrmMonitorSection() {
           <div className="md:hidden space-y-3">
             {filteredToday.map((c) => (
               <div key={c.id}
-                onClick={() => { setSelectedClient(c); setTab('card') }}
+                onClick={() => { setSelectedClientId(c.id); setTab('card') }}
                 className="bg-surface-container-low rounded-2xl border border-white/[0.04] hover:border-primary/20 p-4 cursor-pointer transition-colors">
                 {/* Top row: name + action */}
                 <div className="flex items-start justify-between gap-2 mb-3">
@@ -1246,7 +1257,7 @@ function CrmMonitorSection() {
                 <tbody>
                   {filteredToday.map((c) => (
                     <tr key={c.id}
-                      onClick={() => { setSelectedClient(c); setTab('card') }}
+                      onClick={() => { setSelectedClientId(c.id); setTab('card') }}
                       className="border-b border-white/[0.02] hover:bg-white/[0.02] transition-colors cursor-pointer group">
                       <td className="px-4 py-3.5">
                         <div className="flex items-center gap-2.5">
@@ -1341,7 +1352,7 @@ function CrmMonitorSection() {
         <div className="space-y-3">
           {filteredRisk.map((c, i) => (
             <div key={c.id}
-              onClick={() => { setSelectedClient(c); setTab('card') }}
+              onClick={() => { setSelectedClientId(c.id); setTab('card') }}
               className="bg-surface-container-low rounded-xl border border-white/[0.04] hover:border-primary/20 p-4 cursor-pointer transition-colors group">
               <div className="flex items-center gap-3 flex-wrap">
                 <span className={`text-[10px] font-mono text-on-surface-variant/50 w-5 flex-shrink-0`}>#{i + 1}</span>
@@ -1382,7 +1393,7 @@ function CrmMonitorSection() {
           <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
             {TODAY_CLIENTS.map((c) => (
               <button key={c.id}
-                onClick={() => setSelectedClient(c)}
+                onClick={() => setSelectedClientId(c.id)}
                 className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-xs transition-colors whitespace-nowrap flex-shrink-0 ${
                   selectedClient?.id === c.id
                     ? 'bg-primary/10 border-primary/30 text-primary'

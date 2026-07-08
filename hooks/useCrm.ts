@@ -108,6 +108,10 @@ async function fetchEnvelope<T>(url: string, init?: RequestInit): Promise<T> {
 export const crmKeys = {
   all: ['crm'] as const,
   today: () => ['crm', 'today'] as const,
+  // Prefix used for invalidation so ALL status-filtered client caches are
+  // refreshed (react-query does prefix-match); the parameterized `clients`
+  // key is for the queries themselves.
+  clientsRoot: () => ['crm', 'clients'] as const,
   clients: (status?: CrmClientStatus | 'all') => ['crm', 'clients', status ?? 'all'] as const,
   interactions: (clientId: string) => ['crm', 'interactions', clientId] as const,
   reminders: (clientId: string) => ['crm', 'reminders', clientId] as const,
@@ -263,7 +267,7 @@ export function useLogInteraction() {
       ),
     onSuccess: (_data, { clientId }) => {
       qc.invalidateQueries({ queryKey: crmKeys.today() })
-      qc.invalidateQueries({ queryKey: crmKeys.clients() })
+      qc.invalidateQueries({ queryKey: crmKeys.clientsRoot() })
       qc.invalidateQueries({ queryKey: crmKeys.interactions(clientId) })
     },
   })
@@ -313,7 +317,7 @@ export function useCompleteReminder() {
       qc.invalidateQueries({ queryKey: crmKeys.reminders(clientId) })
       qc.invalidateQueries({ queryKey: crmKeys.interactions(clientId) })
       qc.invalidateQueries({ queryKey: crmKeys.today() })
-      qc.invalidateQueries({ queryKey: crmKeys.clients() })
+      qc.invalidateQueries({ queryKey: crmKeys.clientsRoot() })
     },
   })
 }
