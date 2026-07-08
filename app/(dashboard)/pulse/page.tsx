@@ -5,6 +5,7 @@ import Link from 'next/link'
 import dynamic from 'next/dynamic'
 import { toast } from 'sonner'
 import { useCrmToday, useLogInteraction } from '@/hooks/useCrm'
+import { ClientsTable } from '@/components/crm/ClientsTable'
 import type { CrmProvider, CrmStatus } from '@/lib/crm/types'
 
 // recharts lives inside GriPulseWidget — load it lazily so it stays out of this
@@ -764,7 +765,7 @@ export default function PulsePage() {
 }
 
 function CrmMonitorSection() {
-  const [tab, setTab] = useState<'today' | 'risk' | 'card' | 'crm'>('today')
+  const [tab, setTab] = useState<'today' | 'base' | 'risk' | 'card' | 'crm'>('today')
   // Own CRM base (not the demo /api/pulse) — «Кому звонить сегодня» queue + KPI.
   const { data: clientsData, isLoading, error } = useCrmToday()
   const logInteraction = useLogInteraction()
@@ -1026,6 +1027,7 @@ function CrmMonitorSection() {
         <div className="flex gap-1 min-w-max">
           {([
             { key: 'today', label: 'Кому звонить', labelFull: 'Кому продавать сегодня', count: TODAY_CLIENTS.length, icon: null },
+            { key: 'base',  label: 'База',          labelFull: 'База клиентов',           count: DYNAMIC_STATS.totalClients, icon: 'contacts' },
             { key: 'risk',  label: 'В зоне риска', labelFull: 'Топ в зоне риска',       count: filteredRisk.length, icon: null },
             { key: 'card',  label: 'Карточка',     labelFull: 'Карточка клиента',        count: null, icon: null },
             { key: 'crm',   label: 'CRM',          labelFull: 'CRM-интеграции',          count: null, icon: 'sync' },
@@ -1049,8 +1051,8 @@ function CrmMonitorSection() {
         </div>
       </div>
 
-      {/* ── Risk filter ── */}
-      {tab !== 'card' && (
+      {/* ── Risk filter (only for the risk-scored queues) ── */}
+      {(tab === 'today' || tab === 'risk') && (
         <div className="flex gap-2 items-center overflow-x-auto no-scrollbar pb-0.5">
           <span className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest flex-shrink-0">Риск:</span>
           {(['all', 'high', 'medium', 'low'] as const).map((r) => {
@@ -1257,6 +1259,9 @@ function CrmMonitorSection() {
           </div>
         </div>
       )}
+
+      {/* ─── TAB: Client base ─── */}
+      {tab === 'base' && <ClientsTable />}
 
       {/* ─── TAB 2: At Risk ─── */}
       {tab === 'risk' && (
