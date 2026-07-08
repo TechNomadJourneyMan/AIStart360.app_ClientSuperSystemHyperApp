@@ -93,7 +93,8 @@ export default function GriResultPanel({
           </p>
           <ul className="mt-4 space-y-2.5">
             {GRI_SECTIONS.map((s) => {
-              const v = Number(avgs[s.id] ?? 0)
+              const raw = Number(avgs[s.id] ?? 0)
+              const v = Number.isFinite(raw) ? raw : 0
               const tone = v >= 8 ? 'bg-primary' : v >= 6 ? 'bg-amber-400' : 'bg-red-400'
               return (
                 <li key={s.id} className="flex items-center gap-3">
@@ -173,7 +174,7 @@ export default function GriResultPanel({
                         className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-3 space-y-1.5"
                       >
                         <span
-                          className={`inline-block px-2 py-0.5 rounded-full border text-[10px] font-medium ${PRIORITY_TONE[card.priority]}`}
+                          className={`inline-block px-2 py-0.5 rounded-full border text-[10px] font-medium ${PRIORITY_TONE[card.priority] ?? ''}`}
                         >
                           {card.priority}
                         </span>
