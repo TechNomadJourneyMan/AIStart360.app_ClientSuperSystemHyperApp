@@ -3,6 +3,8 @@ export const dynamic = 'force-dynamic'
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 export async function DELETE(
   _req: Request,
   { params }: { params: { id: string } },
@@ -11,6 +13,10 @@ export async function DELETE(
   const { data: userData, error: userErr } = await sb.auth.getUser()
   if (userErr || !userData?.user) {
     return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 })
+  }
+  // Guard so a non-UUID id returns 400, not a Postgres "invalid uuid" 500.
+  if (!UUID_RE.test(params.id)) {
+    return NextResponse.json({ ok: false, error: 'invalid id' }, { status: 400 })
   }
   const { data, error } = await sb
     .from('gri_calc_sessions')

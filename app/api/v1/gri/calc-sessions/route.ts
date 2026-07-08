@@ -4,6 +4,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { validateCalcSession } from '@/lib/gri-calculator/calc-session-validate'
 
+// Keep at most this many sessions per user; on insert, older rows beyond the
+// cap are pruned. The GET only reads 20, so a slightly larger cap keeps a
+// little history headroom while preventing unbounded growth.
+const MAX_SESSIONS_PER_USER = 30
+
 export async function GET() {
   const sb = createServerClient()
   const { data: userData, error: userErr } = await sb.auth.getUser()
@@ -40,5 +45,19 @@ export async function POST(request: NextRequest) {
     .select('*')
     .single()
   if (error || !data) return NextResponse.json({ ok: false, error: 'db_error' }, { status: 500 })
+
+  // Prune to the newest MAX_SESSIONS_PER_USER so a user (or a script) can't grow
+  // the table without bound. Best-effort: failure here doesn't fail the insert.
+  const { data: ids } = await sb
+    .from('gri_calc_sessions')
+    .select('id')
+    .eq('user_id', userData.user.id)
+    .order('created_at', { ascending: false })
+    .range(MAX_SESSIONS_PER_USER, MAX_SESSIONS_PER_USER + 200)
+  const stale = (ids ?? []).map((r) => r.id)
+  if (stale.length > 0) {
+    await sb.from('gri_calc_sessions').delete().in('id', stale).eq('user_id', userData.user.id)
+  }
+
   return NextResponse.json({ ok: true, data: { session: data } })
 }
