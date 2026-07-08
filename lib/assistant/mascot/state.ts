@@ -80,12 +80,21 @@ export const useMascotStore = create<MascotStore>()(
       lastCompletedSections: null,
 
       setContext: (payload) =>
-        set({
+        set((s) => ({
           context: payload,
           contextFetchedAt: Date.now(),
-          // The server copy of settings wins over the local mirror.
-          settings: payload.settings,
-        }),
+          // Server settings win, EXCEPT monotonically growing lists: a stale
+          // /context response must not clobber a tour completed a second ago.
+          settings: {
+            ...payload.settings,
+            toursDone: Array.from(
+              new Set([...payload.settings.toursDone, ...s.settings.toursDone]),
+            ).slice(0, 50),
+            dismissedHints: Array.from(
+              new Set([...payload.settings.dismissedHints, ...s.settings.dismissedHints]),
+            ).slice(0, 50),
+          },
+        })),
 
       showHint: (hint, screen, now) =>
         set((s) => ({
