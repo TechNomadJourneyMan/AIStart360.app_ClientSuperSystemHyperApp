@@ -3,6 +3,9 @@ import { chatWithOpenRouter, extractJson } from '@/lib/ai/openrouter'
 import { createServerClient } from '@/lib/supabase-server'
 import { isRateLimitedKey } from '@/lib/rate-limit'
 import { safeErrorMessage } from '@/lib/api-error'
+import { parseDocument } from '@/lib/documents/parse'
+
+const MAX_FILE_BYTES = 10 * 1024 * 1024
 
 /**
  * Financial Analyst for the GRI Calculator.
@@ -101,8 +104,42 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Слишком много запросов. Попробуйте через минуту.' }, { status: 429 })
     }
 
-    const body: FinancialAnalystRequest = await request.json()
-    const { financialData, scores, lang } = body
+    // Two intake paths: a real file upload (multipart) that we parse server-side
+    // into text, and the legacy JSON path (pasted data). Everything downstream
+    // works off the resulting financialData/scores/lang.
+    const contentType = request.headers.get('content-type') ?? ''
+    let financialData: string
+    let scores: Record<string, number> | undefined
+    let lang: 'ru' | 'en' | undefined
+
+    if (contentType.includes('multipart/form-data')) {
+      const form = await request.formData()
+      const file = form.get('file')
+      if (!(file instanceof File)) {
+        return NextResponse.json({ error: 'Файл не передан' }, { status: 400 })
+      }
+      if (file.size > MAX_FILE_BYTES) {
+        return NextResponse.json({ error: 'Файл больше 10 МБ' }, { status: 413 })
+      }
+      const buf = Buffer.from(await file.arrayBuffer())
+      const parsed = await parseDocument(buf, file.name, file.type || undefined)
+      financialData = parsed.text.slice(0, 30_000)
+      if (!financialData.trim()) {
+        return NextResponse.json({ error: 'Не удалось извлечь текст из файла' }, { status: 422 })
+      }
+      try {
+        scores = JSON.parse(String(form.get('scores') ?? 'null')) ?? undefined
+      } catch {
+        scores = undefined
+      }
+      const rawLang = String(form.get('lang') ?? 'ru')
+      lang = rawLang === 'en' ? 'en' : 'ru'
+    } else {
+      const body: FinancialAnalystRequest = await request.json()
+      financialData = body.financialData
+      scores = body.scores
+      lang = body.lang
+    }
 
     if (!financialData || typeof financialData !== 'string') {
       return NextResponse.json(
