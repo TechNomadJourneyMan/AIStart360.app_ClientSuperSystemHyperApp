@@ -13,10 +13,10 @@ const CLIENT_OK: UserRole[] = ['super_admin', 'admin', 'client']
 export const PRIMARY_NAV: NavItem[] = [
   { label: 'Дэшборд',   href: '/dashboard', icon: 'dashboard',   roles: CLIENT_OK },
   { label: 'GRI',       href: '/gri',        icon: 'radar',       roles: CLIENT_OK },
-  // GRI Pulse is client-facing: /api/pulse scopes data by role (a client sees
-  // only their own deals/metrics, staff see the portfolio). Restored to all
-  // roles after being over-gated to staff-only. 2026-07-02.
-  { label: 'GRI Pulse', href: '/pulse',      icon: 'cell_tower',  roles: CLIENT_OK },
+  // /pulse is now the lightweight CRM (own client base «Кому звонить сегодня»)
+  // with the weekly GRI Pulse survey collapsed at the bottom — so the menu item
+  // reads «Клиенты». Client-facing: middleware keeps /pulse in the client paths.
+  { label: 'Клиенты',   href: '/pulse',      icon: 'groups',      roles: CLIENT_OK },
   { label: 'Точка А',   href: '/point-a',    icon: 'my_location', roles: CLIENT_OK },
   { label: 'Точка Б',   href: '/point-b',    icon: 'flag',        roles: CLIENT_OK },
   { label: 'Метрики',   href: '/metrics',    icon: 'monitoring',  roles: CLIENT_OK },
@@ -37,7 +37,9 @@ export const PRIMARY_NAV: NavItem[] = [
 
 // SECONDARY navigation — hidden behind "Ещё"
 export const SECONDARY_NAV: NavItem[] = [
-  { label: 'Клиенты',      href: '/clients',      icon: 'business_center',   roles: STAFF_ROLES },
+  // Staff portfolio page — distinct from the client-facing CRM at /pulse; labelled
+  // «Портфель» so staff don't see two «Клиенты» entries.
+  { label: 'Портфель',     href: '/clients',      icon: 'business_center',   roles: STAFF_ROLES },
   { label: 'Отчёты',       href: '/reports',      icon: 'description',       roles: STAFF_ROLES },
   { label: 'Аналитика',    href: '/analytics',    icon: 'bar_chart',         roles: STAFF_ROLES },
   { label: 'Команда',      href: '/team',         icon: 'group',             roles: STAFF_ROLES },

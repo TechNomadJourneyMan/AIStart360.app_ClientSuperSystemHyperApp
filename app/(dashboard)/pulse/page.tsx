@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useMemo, useEffect, useCallback } from 'react'
-import Link from 'next/link'
 import dynamic from 'next/dynamic'
 import { toast } from 'sonner'
 import { useCrmToday, useLogInteraction, type CrmClient } from '@/hooks/useCrm'
@@ -800,22 +799,30 @@ function CrmIntegrationTab() {
 }
 
 // ─── Main component ───────────────────────────────────────────────────────────
-// Top-level page: GRI Pulse weekly survey (primary) + CRM deals monitor (below).
+// Top-level page: CRM client work (primary) + GRI Pulse weekly survey (collapsed,
+// at the bottom — PO's explicit request to move the pulse sliders down).
 export default function PulsePage() {
+  const [pulseOpen, setPulseOpen] = useState(false)
   return (
     <div className="space-y-10">
-      {/* ── Primary: GRI Pulse weekly survey ── */}
-      <GriPulseWidget />
+      {/* ── Primary: CRM client work ── */}
+      <CrmMonitorSection />
 
-      {/* ── Secondary: CRM deals monitor ── */}
-      <div className="space-y-6">
-        <div className="flex items-center gap-3 pt-2 border-t border-white/[0.04]">
-          <span className="material-symbols-outlined text-lg text-on-surface-variant">monitoring</span>
-          <p className="text-xs font-mono text-on-surface-variant uppercase tracking-[0.2em] pt-4">
-            Монитор сделок CRM
+      {/* ── Secondary: GRI Pulse weekly survey (collapsible, bottom) ── */}
+      <div className="space-y-4">
+        <button
+          onClick={() => setPulseOpen(v => !v)}
+          className="w-full flex items-center gap-3 pt-4 border-t border-white/[0.04] text-left group"
+        >
+          <span className="material-symbols-outlined text-lg text-on-surface-variant group-hover:text-primary transition-colors">cell_tower</span>
+          <p className="text-xs font-mono text-on-surface-variant uppercase tracking-[0.2em]">
+            Пульс недели
           </p>
-        </div>
-        <CrmMonitorSection />
+          <span className="material-symbols-outlined text-lg text-on-surface-variant ml-auto transition-transform">
+            {pulseOpen ? 'expand_less' : 'expand_more'}
+          </span>
+        </button>
+        {pulseOpen && <GriPulseWidget />}
       </div>
     </div>
   )
