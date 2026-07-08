@@ -1,8 +1,11 @@
-export const dynamic = 'force-dynamic'
-
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase-service'
 import { createNotification } from '@/lib/notifications/create'
+
+export const dynamic = 'force-dynamic'
+// Дайджест шлёт по одному уведомлению на пользователя; на большой базе даём
+// функции больше времени, чем дефолтные 15 c hobby-плана.
+export const maxDuration = 60
 
 /**
  * GET /api/cron/crm-digest — утренний CRM-дайджест.
@@ -19,9 +22,10 @@ import { createNotification } from '@/lib/notifications/create'
 
 const MAX_USERS = 5000
 const SLEEP_DAYS = 30
+const QUERY_LIMIT = 50000
 
-type ReminderRow = { user_id: string; client_id: string; note: string | null; due_at: string }
-type ClientRow = { user_id: string; name: string | null }
+type ReminderRow = { user_id: string }
+type ClientRow = { user_id: string }
 type PrefsRow = { id: string; preferences: unknown }
 
 export async function GET(req: NextRequest) {
@@ -50,20 +54,25 @@ export async function GET(req: NextRequest) {
     // 1) Все открытые просроченные / сегодняшние напоминания (один запрос).
     const { data: reminders, error: remErr } = await supabase
       .from('crm_reminders')
-      .select('user_id, client_id, note, due_at')
+      .select('user_id')
       .eq('status', 'open')
       .lte('due_at', endOfToday.toISOString())
-      .limit(50000)
+      .limit(QUERY_LIMIT)
     if (remErr) throw remErr
 
-    // 2) Все «спящие» клиенты (один запрос): контакт > 30 дней назад,
-    //    либо ни разу не контактировали, но заведены > 30 дней назад.
+    // 2) «Спящие» клиенты — фильтр на стороне БД: контакт раньше отсечки, либо
+    //    ни разу не контактировали, но заведены раньше отсечки.
     const { data: sleeping, error: sleepErr } = await supabase
       .from('crm_clients')
-      .select('user_id, name, last_contact_at, created_at')
+      .select('user_id')
       .in('status', ['customer', 'sleeping'])
-      .limit(50000)
+      .or(`last_contact_at.lt.${sleepCutoff},and(last_contact_at.is.null,created_at.lt.${sleepCutoff})`)
+      .limit(QUERY_LIMIT)
     if (sleepErr) throw sleepErr
+
+    if ((reminders?.length ?? 0) >= QUERY_LIMIT || (sleeping?.length ?? 0) >= QUERY_LIMIT) {
+      console.warn('[crm-digest] query limit hit — some rows may be truncated')
+    }
 
     // Группировка в JS.
     const overdueByUser = new Map<string, number>()
@@ -73,17 +82,17 @@ export async function GET(req: NextRequest) {
     }
 
     const sleepingByUser = new Map<string, number>()
-    for (const c of (sleeping ?? []) as (ClientRow & { last_contact_at: string | null; created_at: string | null })[]) {
+    for (const c of (sleeping ?? []) as ClientRow[]) {
       if (!c.user_id) continue
-      const reference = c.last_contact_at ?? c.created_at
-      if (!reference) continue
-      if (reference < sleepCutoff) {
-        sleepingByUser.set(c.user_id, (sleepingByUser.get(c.user_id) ?? 0) + 1)
-      }
+      sleepingByUser.set(c.user_id, (sleepingByUser.get(c.user_id) ?? 0) + 1)
     }
 
     // Объединяем множество затронутых пользователей.
-    const userIds = Array.from(new Set([...overdueByUser.keys(), ...sleepingByUser.keys()])).slice(0, MAX_USERS)
+    const allUserIds = Array.from(new Set([...overdueByUser.keys(), ...sleepingByUser.keys()]))
+    if (allUserIds.length > MAX_USERS) {
+      console.warn(`[crm-digest] ${allUserIds.length} users affected, capping at ${MAX_USERS}`)
+    }
+    const userIds = allUserIds.slice(0, MAX_USERS)
 
     if (userIds.length === 0) {
       return NextResponse.json({ ok: true, data: { usersNotified: 0, totalOverdue: 0, totalSleeping: 0 } })
@@ -107,39 +116,44 @@ export async function GET(req: NextRequest) {
     let totalOverdue = 0
     let totalSleeping = 0
 
-    for (const userId of userIds) {
-      try {
-        if (optedOut.has(userId)) continue
+    // Кому реально шлём (после opt-out и нулевых).
+    const targets = userIds.filter((userId) => {
+      if (optedOut.has(userId)) return false
+      return (overdueByUser.get(userId) ?? 0) > 0 || (sleepingByUser.get(userId) ?? 0) > 0
+    })
 
-        const overdue = overdueByUser.get(userId) ?? 0
-        const sleep = sleepingByUser.get(userId) ?? 0
-        if (overdue === 0 && sleep === 0) continue
+    // Рассылаем параллельно чанками — не по одному await, но и не 5000 разом.
+    const CONCURRENCY = 25
+    for (let i = 0; i < targets.length; i += CONCURRENCY) {
+      const chunk = targets.slice(i, i + CONCURRENCY)
+      await Promise.all(
+        chunk.map(async (userId) => {
+          const overdue = overdueByUser.get(userId) ?? 0
+          const sleep = sleepingByUser.get(userId) ?? 0
+          const total = overdue + sleep
+          const title = `📞 CRM: ${total} ${plural(total, 'клиент ждёт', 'клиента ждут', 'клиентов ждут')} внимания`
 
-        const total = overdue + sleep
-        const title = `📞 CRM: ${total} ${plural(total, 'клиент ждёт', 'клиента ждут', 'клиентов ждут')} внимания`
+          const parts: string[] = []
+          if (overdue > 0) parts.push(`Просроченных напоминаний: ${overdue}`)
+          if (sleep > 0) parts.push(`Спящих клиентов: ${sleep}`)
+          const body = `${parts.join(' · ')}. Откройте раздел «Клиенты».`
 
-        const parts: string[] = []
-        if (overdue > 0) parts.push(`Просроченных напоминаний: ${overdue}`)
-        if (sleep > 0) parts.push(`Спящих клиентов: ${sleep}`)
-        const body = `${parts.join(' · ')}. Откройте раздел «Клиенты».`
+          // createNotification — best-effort, не бросает; счётчики точны.
+          await createNotification({
+            userId,
+            title,
+            body,
+            category: 'crm',
+            priority: 'medium',
+            link: '/pulse',
+            metadata: { overdue, sleeping: sleep },
+          })
 
-        await createNotification({
-          userId,
-          title,
-          body,
-          category: 'crm',
-          priority: 'medium',
-          link: '/pulse',
-          metadata: { overdue, sleeping: sleep },
-        })
-
-        usersNotified += 1
-        totalOverdue += overdue
-        totalSleeping += sleep
-      } catch (err) {
-        // Один сбойный пользователь не должен рушить всю рассылку.
-        console.error('[crm-digest] user failed', userId, err)
-      }
+          usersNotified += 1
+          totalOverdue += overdue
+          totalSleeping += sleep
+        }),
+      )
     }
 
     return NextResponse.json({ ok: true, data: { usersNotified, totalOverdue, totalSleeping } })
