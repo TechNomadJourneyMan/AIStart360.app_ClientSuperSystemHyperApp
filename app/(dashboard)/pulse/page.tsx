@@ -3,7 +3,8 @@
 import { useState, useMemo, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import dynamic from 'next/dynamic'
-import { usePulse } from '@/hooks/usePulse'
+import { toast } from 'sonner'
+import { useCrmToday, useLogInteraction } from '@/hooks/useCrm'
 import type { CrmProvider, CrmStatus } from '@/lib/crm/types'
 
 // recharts lives inside GriPulseWidget — load it lazily so it stays out of this
@@ -235,6 +236,15 @@ type PulseClient = {
   action: 'call' | 'message' | 'monitor'
   history: number[]
   orderCycle: number
+  // Native CRM fields (from /api/v1/crm/today) — enable real tel:/wa.me actions,
+  // status editing and the client drawer. Optional so the pulse-shaped type is happy.
+  status?: string
+  phone?: string | null
+  email?: string | null
+  note?: string | null
+  nextContactAt?: string | null
+  lastContactAt?: string | null
+  queueBucket?: number
 }
 
 // ─── Client Card Tab ──────────────────────────────────────────────────────────
@@ -755,8 +765,10 @@ export default function PulsePage() {
 
 function CrmMonitorSection() {
   const [tab, setTab] = useState<'today' | 'risk' | 'card' | 'crm'>('today')
-  const { data: clientsData, isLoading, error } = usePulse()
-  
+  // Own CRM base (not the demo /api/pulse) — «Кому звонить сегодня» queue + KPI.
+  const { data: clientsData, isLoading, error } = useCrmToday()
+  const logInteraction = useLogInteraction()
+
   const [monitored, setMonitored]         = useState<Set<string>>(new Set())
   const [callClient, setCallClient]       = useState<ModalClient | null>(null)
   const [messageClient, setMessageClient] = useState<ModalClient | null>(null)
@@ -767,8 +779,42 @@ function CrmMonitorSection() {
   const toggleMonitor = (id: string) =>
     setMonitored(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s })
 
-  // Map backend data to frontend structure
-  const TODAY_CLIENTS = useMemo(() => {
+  // ── Real contact actions (tel:/wa.me) + interaction logging ──
+  const doCall = useCallback((c: PulseClient) => {
+    const digits = (c.phone ?? '').replace(/\D/g, '')
+    if (!digits) {
+      toast.error('У клиента не указан телефон', { description: 'Добавьте номер в карточке клиента' })
+      return
+    }
+    window.open(`tel:${c.phone ?? digits}`, '_self')
+    logInteraction.mutate(
+      { clientId: c.id, kind: 'call', comment: 'Звонок из очереди «Сегодня»' },
+      { onSuccess: () => toast.success(`Звонок ${c.name} зафиксирован`) },
+    )
+  }, [logInteraction])
+
+  const doMessage = useCallback((c: PulseClient) => {
+    const digits = (c.phone ?? '').replace(/\D/g, '')
+    if (!digits) {
+      toast.error('У клиента не указан телефон', { description: 'Добавьте номер в карточке клиента' })
+      return
+    }
+    window.open(`https://wa.me/${digits}`, '_blank')
+    logInteraction.mutate(
+      { clientId: c.id, kind: 'message', comment: 'Сообщение в WhatsApp' },
+      { onSuccess: () => toast.success(`Сообщение ${c.name} зафиксировано`) },
+    )
+  }, [logInteraction])
+
+  // Fire the right real action for a queue row (call → tel:, message → wa.me, monitor → toggle).
+  const runAction = useCallback((c: PulseClient) => {
+    if (c.action === 'call') doCall(c)
+    else if (c.action === 'message') doMessage(c)
+    else toggleMonitor(c.id)
+  }, [doCall, doMessage])
+
+  // Map backend data to frontend structure (carry native CRM fields through).
+  const TODAY_CLIENTS = useMemo<PulseClient[]>(() => {
     if (!clientsData?.todayClients) return []
     return (clientsData.todayClients as any[]).map(m => ({
       id: m.id,
@@ -786,6 +832,14 @@ function CrmMonitorSection() {
       action: m.action as 'call' | 'message' | 'monitor',
       history: m.history,
       orderCycle: m.orderCycle || 14,
+      // native CRM fields
+      status: m.status,
+      phone: m.phone,
+      email: m.email,
+      note: m.note,
+      nextContactAt: m.nextContactAt,
+      lastContactAt: m.lastContactAt,
+      queueBucket: m.queueBucket,
     }))
   }, [clientsData])
 
@@ -806,25 +860,23 @@ function CrmMonitorSection() {
     .filter((c) => filterRisk === 'all' || c.churnLevel === filterRisk)
     .sort((a, b) => b.riskScore - a.riskScore)
 
-  const highRiskRevenue = TODAY_CLIENTS
-    .filter((c) => c.churnLevel === 'high')
-    .reduce((s, c) => s + c.avgCheck, 0)
-
-  // Dynamic Stats
+  // KPI come from the API `stats` (portfolio-wide) — todayClients is only the
+  // queue subset, so recomputing from it would undercount. Fall back to the
+  // queue when a field is missing.
   const DYNAMIC_STATS = useMemo(() => {
-    const high = TODAY_CLIENTS.filter(c => c.churnLevel === 'high').length
-    const medium = TODAY_CLIENTS.filter(c => c.churnLevel === 'medium').length
-    const apiProcessedToday = typeof clientsData?.stats?.processedToday === 'number' ? clientsData.stats.processedToday : TODAY_CLIENTS.length
-    const apiDailyTarget = typeof clientsData?.stats?.dailyTarget === 'number' ? clientsData.stats.dailyTarget : Math.max(6, apiProcessedToday)
-    return {
-      revenueAtRisk: highRiskRevenue,
-      highRisk: high,
-      mediumRisk: medium,
-      totalClients: TODAY_CLIENTS.length,
-      processedToday: apiProcessedToday,
-      dailyTarget: apiDailyTarget,
-    }
-  }, [TODAY_CLIENTS, highRiskRevenue, clientsData])
+    const s = clientsData?.stats
+    const high = typeof s?.highRisk === 'number' ? s.highRisk : TODAY_CLIENTS.filter(c => c.churnLevel === 'high').length
+    const medium = typeof s?.mediumRisk === 'number' ? s.mediumRisk : TODAY_CLIENTS.filter(c => c.churnLevel === 'medium').length
+    const revenueAtRisk = typeof s?.revenueAtRisk === 'number'
+      ? s.revenueAtRisk
+      : TODAY_CLIENTS.filter(c => c.churnLevel === 'high').reduce((sum, c) => sum + c.avgCheck, 0)
+    const totalClients = typeof s?.totalClients === 'number' ? s.totalClients : TODAY_CLIENTS.length
+    const processedToday = typeof s?.processedToday === 'number' ? s.processedToday : 0
+    const dailyTarget = typeof s?.dailyTarget === 'number' ? s.dailyTarget : Math.max(6, processedToday)
+    return { revenueAtRisk, highRisk: high, mediumRisk: medium, totalClients, processedToday, dailyTarget }
+  }, [TODAY_CLIENTS, clientsData])
+
+  const highRiskRevenue = DYNAMIC_STATS.revenueAtRisk
 
   // Initialize briefing from API response (daily cached)
   useEffect(() => {
@@ -880,8 +932,8 @@ function CrmMonitorSection() {
           </p>
           <div className="flex flex-wrap items-center gap-3 mt-3">
             <div className="flex items-center gap-2">
-              <span className="material-symbols-outlined text-sm text-primary/50">integration_instructions</span>
-              <span className="text-xs font-mono text-on-surface-variant">Данные из CRM · Bitrix24</span>
+              <span className="material-symbols-outlined text-sm text-primary/50">database</span>
+              <span className="text-xs font-mono text-on-surface-variant">Данные из вашей базы клиентов</span>
             </div>
           </div>
         </div>
@@ -1058,7 +1110,7 @@ function CrmMonitorSection() {
                     </div>
                   </div>
                   <ActionBtn action={c.action} size="sm"
-                    onClick={() => c.action === 'call' ? setCallClient(c) : c.action === 'message' ? setMessageClient(c) : toggleMonitor(c.id)} />
+                    onClick={() => runAction(c)} />
                 </div>
                 {/* Stats row */}
                 <div className="grid grid-cols-3 gap-2 mb-3">
@@ -1176,7 +1228,7 @@ function CrmMonitorSection() {
                       </td>
                       <td className="px-4 py-3.5">
                         <ActionBtn action={c.action} size="sm"
-                    onClick={() => c.action === 'call' ? setCallClient(c) : c.action === 'message' ? setMessageClient(c) : toggleMonitor(c.id)} />
+                    onClick={() => runAction(c)} />
                       </td>
                     </tr>
                   ))}
@@ -1237,7 +1289,7 @@ function CrmMonitorSection() {
                   </div>
                   <RiskBadge level={c.churnLevel} prob={c.churnProb} />
                   <ActionBtn action={c.action} size="sm"
-                    onClick={() => c.action === 'call' ? setCallClient(c) : c.action === 'message' ? setMessageClient(c) : toggleMonitor(c.id)} />
+                    onClick={() => runAction(c)} />
                 </div>
               </div>
             </div>
