@@ -66,18 +66,21 @@ export function MascotCoachmarks({
     if (!step) return
     let cancelled = false
     let tries = 0
+    let timer: ReturnType<typeof setTimeout> | undefined
     setWaiting(true)
     setRect(null)
     const tryFind = () => {
       if (cancelled) return
       const el = findTarget(step.selector)
       if (el) {
-        setWaiting(false)
         el.scrollIntoView({ block: 'center', behavior: 'smooth' })
-        setTimeout(() => {
+        timer = setTimeout(() => {
           if (cancelled) return
           const r = el.getBoundingClientRect()
           setRect({ top: r.top, left: r.left, width: r.width, height: r.height })
+          // Снимаем оверлей только вместе с rect — иначе карточка на 420мс
+          // «мигает» в фолбэк-позиции (12,12) и прыгает к таргету.
+          setWaiting(false)
         }, 420)
         return
       }
@@ -89,10 +92,13 @@ export function MascotCoachmarks({
         else finish(true)
         return
       }
-      setTimeout(tryFind, 250)
+      timer = setTimeout(tryFind, 250)
     }
     tryFind()
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [idx, step?.selector])
 
@@ -138,7 +144,12 @@ export function MascotCoachmarks({
   if (!step || waiting) {
     // dim the page while waiting so the user sees the tour is in progress
     return step ? (
-      <div className="fixed inset-0 z-[70] bg-black/50" aria-hidden />
+      <div className="fixed inset-0 z-[70] bg-black/50 flex items-center justify-center" aria-hidden>
+        <div className="flex items-center gap-2 text-xs text-on-surface-variant">
+          <span className="animate-pulse">🐾</span>
+          <span>Ищу элемент… Esc — пропустить</span>
+        </div>
+      </div>
     ) : null
   }
 
