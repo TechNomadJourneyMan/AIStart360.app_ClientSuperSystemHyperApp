@@ -49,6 +49,17 @@ describe('validateClient (CRM client body validation)', () => {
     if (nul.ok) expect(nul.value.avg_check).toBeNull()
   })
 
+  it('rejects non-number/non-string avg_check (no boolean/array coercion)', () => {
+    expect(validateClient({ name: 'A', avg_check: true }).ok).toBe(false)
+    expect(validateClient({ name: 'A', avg_check: [42] }).ok).toBe(false)
+    expect(validateClient({ name: 'A', avg_check: {} }).ok).toBe(false)
+  })
+
+  it('rejects a non-string name (no object/number coercion)', () => {
+    expect(validateClient({ name: 123 }).ok).toBe(false)
+    expect(validateClient({ name: {} }).ok).toBe(false)
+  })
+
   it('caps and trims email/source/note, empty → null', () => {
     const r = validateClient({ name: 'A', email: '  a@b.co ', note: '', source: 'csv' })
     if (r.ok) {

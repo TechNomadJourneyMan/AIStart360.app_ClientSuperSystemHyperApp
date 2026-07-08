@@ -42,6 +42,9 @@ function capString(v: unknown, max: number): string | null {
 
 function parseAvgCheck(v: unknown): { ok: true; value: number | null } | { ok: false } {
   if (v == null || v === '') return { ok: true, value: null }
+  // Принимаем только число или числовую строку — не boolean/массив/объект
+  // (иначе Number(true)===1, Number([42])===42 просочились бы как «сумма»).
+  if (typeof v !== 'number' && typeof v !== 'string') return { ok: false }
   const n = typeof v === 'number' ? v : Number(v)
   if (!Number.isFinite(n) || n < 0) return { ok: false }
   return { ok: true, value: n }
@@ -70,6 +73,9 @@ export function validateClient(
   // name — обязателен в full-режиме
   const hasName = b.name != null
   if (hasName || !partial) {
+    if (b.name != null && typeof b.name !== 'string') {
+      return { ok: false, error: 'name must be a string' }
+    }
     const name = String(b.name ?? '').trim()
     if (!name) return { ok: false, error: 'name required' }
     if (name.length > NAME_MAX) return { ok: false, error: 'name too long' }
