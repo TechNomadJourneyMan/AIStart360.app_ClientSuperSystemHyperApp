@@ -133,11 +133,16 @@ export async function writeMascotSettings(
     behavior: { ...current.behavior, ...(patch.behavior ?? {}) },
   })
 
-  const { error } = await sb
+  const { data: updated, error } = await sb
     .from('profiles')
     .update({ preferences: { ...prefs, assistant: merged } })
     .eq('id', userId)
+    .select('id')
 
   if (error) throw error
+  if (!updated || updated.length === 0) {
+    // RLS silently dropped the UPDATE — surfacing it beats "tours forever".
+    throw new Error(`mascot settings update affected 0 rows for user ${userId}`)
+  }
   return merged
 }
