@@ -17,8 +17,6 @@ interface FinancialAnalystRequest {
   financialData: string
   scores: Record<string, number>
   lang: 'ru' | 'en'
-  fileContent?: string
-  fileName?: string
 }
 
 function buildStaticAnalysis(data: string, lang: 'ru' | 'en') {
@@ -122,7 +120,17 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Файл больше 10 МБ' }, { status: 413 })
       }
       const buf = Buffer.from(await file.arrayBuffer())
-      const parsed = await parseDocument(buf, file.name, file.type || undefined)
+      let parsed: Awaited<ReturnType<typeof parseDocument>>
+      try {
+        parsed = await parseDocument(buf, file.name, file.type || undefined)
+      } catch {
+        // parseDocument бросает на неизвестных/битых файлах — это ошибка ввода
+        // пользователя (422), а не сбой сервера (500).
+        return NextResponse.json(
+          { error: 'Не удалось прочитать файл. Поддерживаются PDF, XLSX, XLS, CSV.' },
+          { status: 422 },
+        )
+      }
       financialData = parsed.text.slice(0, 30_000)
       if (!financialData.trim()) {
         return NextResponse.json({ error: 'Не удалось извлечь текст из файла' }, { status: 422 })

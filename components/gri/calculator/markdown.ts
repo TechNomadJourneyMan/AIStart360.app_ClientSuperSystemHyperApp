@@ -14,7 +14,7 @@ export function renderMarkdown(text: string): string {
     .replace(/^## (.+)$/gm, "<h3>$1</h3>")
     .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
     .replace(/^- (.+)$/gm, '<li class="strategy-action-item">$1</li>')
-    .replace(/(<li>.*?<\/li>\n?)+/g, (match) => `<ul>${match}</ul>`)
+    .replace(/(<li[^>]*>.*?<\/li>\n?)+/g, (match) => `<ul>${match}</ul>`)
     .replace(/\n\n([\s\S]+?)(?=\n\n|\n|$)/g, "<p>$1</p>")
     .replace(/^(?!<[hulo])((?!<).+)$/gm, (match) => {
       if (match.startsWith("<")) return match

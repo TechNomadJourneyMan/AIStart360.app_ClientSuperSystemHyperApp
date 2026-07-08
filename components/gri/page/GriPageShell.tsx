@@ -109,21 +109,24 @@ export default function GriPageShell() {
         ))}
       </nav>
 
-      {tab === 'assess' && (
-        <div className="space-y-6">
-          <GRICalculator
-            scores={scores}
-            onScoresChange={setScores}
-            niche={niche}
-            size={size}
-            onNicheChange={setNiche}
-            onSizeChange={setSize}
-          />
-          <div id="gri-assessment">
-            <GRIAssessment />
-          </div>
+      {/* Панель «Оценка» рендерится ВСЕГДА и скрывается через CSS (hidden),
+          чтобы GRICalculator/GRIAssessment не размонтировались при смене вкладки:
+          иначе mount-only sync-эффект калькулятора при возврате заново тянет
+          /api/v1/gri/assessment и перезатирает ручные правки и оценки,
+          применённые из AI-вкладки. */}
+      <div className={tab === 'assess' ? 'space-y-6' : 'hidden'} aria-hidden={tab !== 'assess'}>
+        <GRICalculator
+          scores={scores}
+          onScoresChange={setScores}
+          niche={niche}
+          size={size}
+          onNicheChange={setNiche}
+          onSizeChange={setSize}
+        />
+        <div id="gri-assessment">
+          <GRIAssessment />
         </div>
-      )}
+      </div>
       {tab === 'result' && <GriResultPanel assessment={assessment} onGoAssess={() => setTab('assess')} />}
       {tab === 'dynamics' && <GriDynamicsPanel />}
       {tab === 'ai' && (
