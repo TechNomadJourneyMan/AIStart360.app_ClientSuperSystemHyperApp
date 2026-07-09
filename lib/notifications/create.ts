@@ -5,7 +5,7 @@ import { createClient } from '@supabase/supabase-js'
 // users — the feed is self-read + self-mark-read only).
 
 export type NotifCategory =
-  | 'system' | 'security' | 'profile' | 'settings' | 'team' | 'integration' | 'report' | 'billing' | 'crm'
+  | 'system' | 'security' | 'profile' | 'settings' | 'team' | 'integration' | 'report' | 'billing' | 'crm' | 'gri'
 export type NotifPriority = 'critical' | 'high' | 'medium' | 'low'
 
 function serviceClient() {

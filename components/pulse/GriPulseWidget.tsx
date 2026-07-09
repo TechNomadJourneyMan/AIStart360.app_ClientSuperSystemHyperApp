@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import { GRI_SECTIONS } from '@/lib/gri-assessment/sections'
+import { computePulseStreak } from '@/lib/gri/pulse-streak'
 import { MascotEmptyHint } from '@/components/assistant/mascot/MascotEmptyHint'
 
 // ─── Types (mirror the /api/v1/gri/pulse envelope) ──────────────────────────
@@ -59,6 +60,15 @@ function formatWeek(iso: string): string {
   // iso = YYYY-MM-DD (Monday). Render «дд.мм».
   const d = new Date(`${iso}T00:00:00Z`)
   return d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', timeZone: 'UTC' })
+}
+
+// «2 недели / 5 недель / 21 неделя» — русское склонение для стрик-бейджа.
+function weeksWord(n: number): string {
+  const mod10 = n % 10
+  const mod100 = n % 100
+  if (mod10 === 1 && mod100 !== 11) return 'неделя'
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return 'недели'
+  return 'недель'
 }
 
 // ─── Sub-components ──────────────────────────────────────────────────────────
@@ -194,6 +204,12 @@ export default function GriPulseWidget() {
     }))
   }, [data])
 
+  // Стрик: сколько недель подряд снимался пульс (Фаза 5, №11).
+  const streak = useMemo(
+    () => computePulseStreak((data?.history ?? []).map((row) => row.week_start), Date.now()),
+    [data],
+  )
+
   if (loading) {
     return (
       <section className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-6">
@@ -264,12 +280,19 @@ export default function GriPulseWidget() {
             <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest">
               {data?.week_start ? `Неделя с ${formatWeek(data.week_start)}` : 'Пульс недели'}
             </p>
-            {alreadySubmitted && (
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-primary/30 bg-primary/10 text-[10px] font-mono text-primary">
-                <span className="w-1.5 h-1.5 rounded-full bg-primary" />
-                Снят
-              </span>
-            )}
+            <div className="flex items-center gap-2">
+              {streak >= 2 && (
+                <span className="inline-flex items-center px-2.5 py-1 rounded-full border border-primary/30 bg-primary/10 text-[10px] font-mono text-primary">
+                  🔥 {streak} {weeksWord(streak)} подряд
+                </span>
+              )}
+              {alreadySubmitted && (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-primary/30 bg-primary/10 text-[10px] font-mono text-primary">
+                  <span className="w-1.5 h-1.5 rounded-full bg-primary" />
+                  Снят
+                </span>
+              )}
+            </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

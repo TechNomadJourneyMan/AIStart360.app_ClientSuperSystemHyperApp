@@ -44,6 +44,59 @@ type ProfileRow = {
   preferences?: unknown
 }
 
+/**
+ * Re-scan через 90 дней (Фаза 5, №10): владельцам, чья текущая GRI-диагностика
+ * была создана ровно 90 дней назад (окно в сутки: created_at ∈ [now−91d, now−90d)
+ * → при ежедневном cron напоминание сработает ровно один раз, стейт не нужен),
+ * шлём in-app напоминание пересчитать индекс. Best-effort: любая ошибка —
+ * console.warn, дайджест не роняем.
+ */
+async function sendGriRescanReminders(
+  supabase: ReturnType<typeof createServiceClient>,
+  now: Date,
+): Promise<number> {
+  let sent = 0
+  try {
+    const DAY_MS = 24 * 60 * 60 * 1000
+    const from = new Date(now.getTime() - 91 * DAY_MS).toISOString()
+    const to = new Date(now.getTime() - 90 * DAY_MS).toISOString()
+
+    const { data: rows, error } = await supabase
+      .from('gri_assessments')
+      .select('user_id')
+      .eq('is_current', true)
+      .gte('created_at', from)
+      .lt('created_at', to)
+      .limit(QUERY_LIMIT)
+    if (error) throw error
+
+    const users = Array.from(
+      new Set(((rows ?? []) as CountRow[]).map((r) => r.user_id).filter(Boolean)),
+    )
+
+    const CONCURRENCY = 25
+    for (let i = 0; i < users.length; i += CONCURRENCY) {
+      const chunk = users.slice(i, i + CONCURRENCY)
+      await Promise.all(
+        chunk.map((userId) =>
+          createNotification({
+            userId,
+            title: '⏳ Пора пересчитать GRI',
+            body: 'Вашей диагностике 90 дней — бизнес изменился. Пересчитайте индекс и сравните динамику.',
+            category: 'gri',
+            priority: 'low',
+            link: '/gri?tab=assess',
+          }),
+        ),
+      )
+      sent += chunk.length
+    }
+  } catch (e) {
+    console.warn('[crm-digest] GRI re-scan reminders skipped', e)
+  }
+  return sent
+}
+
 export async function GET(req: NextRequest) {
   const cronSecret = process.env.CRON_SECRET
   if (!cronSecret) {
@@ -107,9 +160,18 @@ export async function GET(req: NextRequest) {
     const targets = affected.slice(0, MAX_USERS)
 
     if (targets.length === 0) {
+      // Re-scan-напоминания должны уйти и в «тихий» день без CRM-дайджестов.
+      const rescanReminders = await sendGriRescanReminders(supabase, now)
       return NextResponse.json({
         ok: true,
-        data: { usersNotified: 0, emailsSent: 0, telegramSent: 0, totalOverdue: 0, totalSleeping: 0 },
+        data: {
+          usersNotified: 0,
+          emailsSent: 0,
+          telegramSent: 0,
+          totalOverdue: 0,
+          totalSleeping: 0,
+          rescanReminders,
+        },
       })
     }
 
@@ -230,9 +292,12 @@ export async function GET(req: NextRequest) {
       )
     }
 
+    // Re-scan через 90 дней (№10) — best-effort, после основного цикла.
+    const rescanReminders = await sendGriRescanReminders(supabase, now)
+
     return NextResponse.json({
       ok: true,
-      data: { usersNotified, emailsSent, telegramSent, totalOverdue, totalSleeping },
+      data: { usersNotified, emailsSent, telegramSent, totalOverdue, totalSleeping, rescanReminders },
     })
   } catch (err) {
     console.error('[crm-digest] sweep failed', err)
