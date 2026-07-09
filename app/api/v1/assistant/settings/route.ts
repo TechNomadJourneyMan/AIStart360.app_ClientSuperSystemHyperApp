@@ -37,6 +37,13 @@ const patchSchema = z
     color: z.enum(['ginger', 'graphite', 'snow', 'cocoa']).optional(),
     tutorialDone: z.boolean().optional(),
     toursDone: z.array(z.string().max(64)).max(50).optional(),
+    tourGuide: z
+      .object({
+        status: z.enum(['pending', 'active', 'done', 'dismissed']),
+        stepIdx: z.number().int().min(0).max(50),
+      })
+      .strict()
+      .optional(),
   })
   .strict()
 

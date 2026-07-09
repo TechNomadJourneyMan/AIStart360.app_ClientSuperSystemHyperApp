@@ -83,16 +83,24 @@ export const useMascotStore = create<MascotStore>()(
         set((s) => ({
           context: payload,
           contextFetchedAt: Date.now(),
-          // Server settings win, EXCEPT monotonically growing lists: a stale
-          // /context response must not clobber a tour completed a second ago.
+          // Server settings win, EXCEPT monotonically-progressing fields: a stale
+          // /context response (in-flight before an optimistic PATCH) must not
+          // clobber a tour completed a second ago, revert greeted, or pull the
+          // welcome/экскурсия back to 'pending' after the user already chose.
           settings: {
             ...payload.settings,
+            greeted: payload.settings.greeted || s.settings.greeted,
             toursDone: Array.from(
               new Set([...payload.settings.toursDone, ...s.settings.toursDone]),
             ).slice(0, 50),
             dismissedHints: Array.from(
               new Set([...payload.settings.dismissedHints, ...s.settings.dismissedHints]),
             ).slice(0, 50),
+            tourGuide:
+              payload.settings.tourGuide.status === 'pending' &&
+              s.settings.tourGuide.status !== 'pending'
+                ? s.settings.tourGuide
+                : payload.settings.tourGuide,
           },
         })),
 
