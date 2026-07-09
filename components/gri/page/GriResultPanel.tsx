@@ -6,10 +6,11 @@
 // данные приходят из GriPageShell через props (никаких запросов здесь).
 import Link from 'next/link'
 import { GRI_SECTIONS } from '@/lib/gri-assessment/sections'
-import type { ActionCard, ActionPlan90d, Top5Limit } from '@/lib/gri-calculator/top5-action-plan'
+import type { Top5Limit } from '@/lib/gri-calculator/top5-action-plan'
 import type { AssessmentCurrent } from './GriPageShell'
 import DecisiveBets from './DecisiveBets'
 import GriBenchmarks from './GriBenchmarks'
+import Plan90Checklist from './Plan90Checklist'
 
 // Русские подписи 7 блоков GRI (sections.ts хранит английские shortTitle).
 const BLOCK_RU: Record<string, string> = {
@@ -22,19 +23,7 @@ const BLOCK_RU: Record<string, string> = {
   'owner-readiness': 'Готовность собственника',
 }
 
-const PRIORITY_TONE: Record<ActionCard['priority'], string> = {
-  Критично: 'text-red-300 border-red-400/30 bg-red-400/10',
-  Высокий: 'text-amber-300 border-amber-400/30 bg-amber-400/10',
-  Средний: 'text-primary border-primary/30 bg-primary/10',
-}
-
-const HORIZONS: { key: keyof ActionPlan90d; label: string }[] = [
-  { key: 'days_1_30', label: '1–30 дней' },
-  { key: 'days_31_60', label: '31–60 дней' },
-  { key: 'days_61_90', label: '61–90 дней' },
-]
-
-// ── Defensive narrowers (top_5_limits / action_plan_90d приходят как unknown) ──
+// ── Defensive narrower (top_5_limits приходит как unknown) ────────────────────
 function asTop5Limits(v: unknown): Top5Limit[] {
   if (!Array.isArray(v)) return []
   return v.filter(
@@ -44,17 +33,6 @@ function asTop5Limits(v: unknown): Top5Limit[] {
       typeof (x as Top5Limit).criterionText === 'string' &&
       typeof (x as Top5Limit).score === 'number',
   )
-}
-
-function asActionPlan(v: unknown): ActionPlan90d {
-  const empty: ActionPlan90d = { days_1_30: [], days_31_60: [], days_61_90: [] }
-  if (!v || typeof v !== 'object') return empty
-  const p = v as Partial<ActionPlan90d>
-  return {
-    days_1_30: Array.isArray(p.days_1_30) ? p.days_1_30 : [],
-    days_31_60: Array.isArray(p.days_31_60) ? p.days_31_60 : [],
-    days_61_90: Array.isArray(p.days_61_90) ? p.days_61_90 : [],
-  }
 }
 
 export default function GriResultPanel({
@@ -84,7 +62,6 @@ export default function GriResultPanel({
 
   const avgs = assessment.section_avgs ?? {}
   const limits = asTop5Limits(assessment.top_5_limits)
-  const plan = asActionPlan(assessment.action_plan_90d)
 
   return (
     <div className="space-y-6">
@@ -152,46 +129,10 @@ export default function GriResultPanel({
         </div>
       </section>
 
-      {/* План на 90 дней */}
-      <section className="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-5">
-        <p className="text-xs font-mono uppercase tracking-widest text-on-surface-variant">
-          План на 90 дней
-        </p>
-        {plan.days_1_30.length + plan.days_31_60.length + plan.days_61_90.length === 0 ? (
-          <p className="mt-4 text-sm text-on-surface-variant">
-            План появится после полной диагностики всех блоков.
-          </p>
-        ) : (
-          <div className="mt-4 grid md:grid-cols-3 gap-4">
-            {HORIZONS.map(({ key, label }) => {
-              const cards = plan[key]
-              return (
-                <div key={key} className="space-y-2.5">
-                  <div className="text-xs font-semibold text-primary">{label}</div>
-                  {cards.length === 0 ? (
-                    <p className="text-xs text-on-surface-variant">—</p>
-                  ) : (
-                    cards.map((card, i) => (
-                      <div
-                        key={`${key}-${i}`}
-                        className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-3 space-y-1.5"
-                      >
-                        <span
-                          className={`inline-block px-2 py-0.5 rounded-full border text-[10px] font-medium ${PRIORITY_TONE[card.priority] ?? ''}`}
-                        >
-                          {card.priority}
-                        </span>
-                        <div className="text-sm text-on-surface leading-snug">{card.limitation}</div>
-                        <div className="text-xs text-on-surface-variant leading-snug">{card.focus}</div>
-                      </div>
-                    ))
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        )}
-      </section>
+      {/* План на 90 дней — интерактивный чек-лист (Фаза 5, идея №4). Заменил
+          прежний статический блок: тот же дизайн трёх горизонтов, но карточки
+          отмечаются галочками, прогресс хранится в gri_plan_progress. */}
+      <Plan90Checklist assessment={assessment} />
 
       {/* CTA — забронировать разбор */}
       <section className="rounded-2xl border border-primary/25 bg-gradient-to-r from-primary/[0.08] to-transparent p-6 text-center space-y-2">
