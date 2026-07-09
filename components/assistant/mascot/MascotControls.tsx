@@ -13,6 +13,15 @@ import Link from 'next/link'
 import { motion } from 'framer-motion'
 import type { HidePeriod } from '@/lib/assistant/mascot/types'
 
+/** Раздел «Обучение»: быстрый тур другого раздела (переход + запуск тура). */
+export interface SectionTour {
+  label: string
+  /** Нормализованный экран (ключ TOURS). */
+  screen: string
+  /** Куда вести router.push. */
+  href: string
+}
+
 interface MascotControlsProps {
   /** Имя выбранного персонажа для пункта «Инсайт от …». */
   characterName?: string
@@ -20,8 +29,13 @@ interface MascotControlsProps {
   onHide: (period: HidePeriod) => void
   /** Present only when AI insights are enabled in settings. */
   onInsight?: () => void
-  /** Present only when the current screen has a coachmark tour. */
+  /** «Тур по этой странице» — present only when the current screen has a tour. */
   onPageTour?: () => void
+  /** «Экскурсия по порталу» — (пере)запуск онбординг-экскурсии. */
+  onStartTourGuide?: () => void
+  /** Ключевые разделы текущей роли с турами (без текущего экрана). */
+  sectionTours?: SectionTour[]
+  onSectionTour?: (screen: string, href: string) => void
   onClose: () => void
 }
 
@@ -38,6 +52,9 @@ export function MascotControls({
   onHide,
   onInsight,
   onPageTour,
+  onStartTourGuide,
+  sectionTours,
+  onSectionTour,
   onClose,
 }: MascotControlsProps) {
   const ref = useRef<HTMLDivElement>(null)
@@ -60,6 +77,9 @@ export function MascotControls({
   const item =
     'w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-left text-xs text-on-surface hover:bg-white/[0.06] transition-colors'
 
+  const hasLearning =
+    !!onStartTourGuide || !!onPageTour || (!!sectionTours && sectionTours.length > 0)
+
   return (
     <motion.div
       ref={ref}
@@ -77,12 +97,42 @@ export function MascotControls({
           Инсайт от {characterName}
         </button>
       )}
-      {onPageTour && (
-        <button role="menuitem" className={item} onClick={onPageTour}>
-          <span className="material-symbols-outlined text-base text-on-surface-variant">school</span>
-          Подсказки по странице
-        </button>
+
+      {hasLearning && (
+        <>
+          {onInsight && <div className="my-1 border-t border-white/[0.06]" />}
+          <p className="px-3 pt-1 pb-1 text-[10px] font-mono uppercase tracking-[0.18em] text-on-surface-variant/60">
+            Обучение
+          </p>
+          {onStartTourGuide && (
+            <button role="menuitem" className={item} onClick={onStartTourGuide}>
+              <span className="material-symbols-outlined text-base text-primary">tour</span>
+              Экскурсия по порталу
+            </button>
+          )}
+          {onPageTour && (
+            <button role="menuitem" className={item} onClick={onPageTour}>
+              <span className="material-symbols-outlined text-base text-on-surface-variant">school</span>
+              Тур по этой странице
+            </button>
+          )}
+          {sectionTours?.map((t) => (
+            <button
+              key={t.screen}
+              role="menuitem"
+              className={item}
+              onClick={() => onSectionTour?.(t.screen, t.href)}
+            >
+              <span className="material-symbols-outlined text-base text-on-surface-variant/70">
+                chevron_right
+              </span>
+              {t.label}
+            </button>
+          ))}
+        </>
       )}
+
+      <div className="my-1 border-t border-white/[0.06]" />
       <button role="menuitem" className={item} onClick={onMinimize}>
         <span className="material-symbols-outlined text-base text-on-surface-variant">minimize</span>
         Свернуть

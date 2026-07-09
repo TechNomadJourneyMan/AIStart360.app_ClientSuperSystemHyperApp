@@ -61,6 +61,29 @@ const AUTO_INSIGHT_SCREENS = [
   '/point-b',
 ]
 
+/**
+ * Ключевые разделы для быстрого тура из меню «Обучение». Роль определяем по
+ * группе роутов: клиент в своей группе (/client/*) и общая (владелец/эксперт/
+ * клиент на общих экранах) — разные наборы. Ниже фильтруем по наличию тура в
+ * TOURS и исключаем текущий экран, поэтому мёртвых пунктов не будет.
+ */
+const CLIENT_SECTION_TOURS = [
+  { label: 'Дэшборд', screen: '/client/dashboard', href: '/client/dashboard' },
+  { label: 'GRI-диагностика', screen: '/gri', href: '/gri' },
+  { label: 'Клиенты', screen: '/pulse', href: '/pulse' },
+  { label: 'Точка А', screen: '/client/point-a', href: '/client/point-a' },
+  { label: 'Точка Б', screen: '/client/point-b', href: '/client/point-b' },
+]
+const GENERAL_SECTION_TOURS = [
+  { label: 'Дэшборд', screen: '/dashboard', href: '/dashboard' },
+  { label: 'GRI-диагностика', screen: '/gri', href: '/gri' },
+  { label: 'Клиенты', screen: '/pulse', href: '/pulse' },
+  { label: 'Точка А', screen: '/point-a', href: '/point-a' },
+  { label: 'Точка Б', screen: '/point-b', href: '/point-b' },
+  { label: 'Метрики', screen: '/metrics', href: '/metrics' },
+  { label: 'Рынок', screen: '/market', href: '/market' },
+]
+
 // ─── DOM-level hard blocks (ТЗ §9) ───────────────────────────────────────────
 
 function isTypingTarget(el: Element | null): boolean {
@@ -133,6 +156,8 @@ export default function MascotAssistant() {
     markIdleFired,
     applySettings,
     setLastCompletedSections,
+    requestedTourScreen,
+    setRequestedTourScreen,
   } = useMascotStore()
 
   const [controlsOpen, setControlsOpen] = useState(false)
@@ -653,6 +678,46 @@ export default function MascotAssistant() {
     persistSettings({ greeted: true, tourGuide: { status: 'dismissed', stepIdx: 0 } })
   }, [persistSettings])
 
+  // ── Меню «Обучение»: ручной запуск экскурсии и туров разделов ───────────────
+  /** Разделы текущей роли с турами, кроме текущего экрана (компактно, до 4). */
+  const sectionTours = useMemo(() => {
+    const base = screen.startsWith('/client') ? CLIENT_SECTION_TOURS : GENERAL_SECTION_TOURS
+    return base.filter((t) => t.screen !== screen && !!tourForScreen(t.screen)).slice(0, 4)
+  }, [screen])
+
+  /** «Экскурсия по порталу»: помечаем экскурсию активной + интерим-тур экрана. */
+  const onStartTourGuide = useCallback(() => {
+    setControlsOpen(false)
+    persistSettings({ tourGuide: { status: 'active', stepIdx: 0 } })
+    // Батч B: полноценная экскурсия. Интерим — тур текущего экрана.
+    const steps = tourForScreen(screen)
+    if (steps) setTourSteps(steps)
+  }, [persistSettings, screen])
+
+  /** Пункт раздела: тур на месте, либо переход + запрос тура на целевом экране. */
+  const onSectionTour = useCallback(
+    (targetScreen: string, href: string) => {
+      setControlsOpen(false)
+      if (targetScreen === screen) {
+        const steps = tourForScreen(screen)
+        if (steps) setTourSteps(steps)
+        return
+      }
+      setRequestedTourScreen(targetScreen)
+      router.push(href)
+    },
+    [screen, router, setRequestedTourScreen],
+  )
+
+  // После перехода из меню «Обучение»: как только экран совпал с запрошенным —
+  // запускаем его тур и сбрасываем запрос (коачмарки сами ждут поздние таргеты).
+  useEffect(() => {
+    if (!requestedTourScreen || screen !== requestedTourScreen) return
+    setRequestedTourScreen(null)
+    const steps = tourForScreen(screen)
+    if (steps) setTourSteps(steps)
+  }, [screen, requestedTourScreen, setRequestedTourScreen])
+
   const closeTour = useCallback(
     (_done: boolean) => {
       setTourSteps(null)
@@ -763,6 +828,9 @@ export default function MascotAssistant() {
             onHide={onHide}
             onInsight={settings.behavior.aiInsights ? onInsightClick : undefined}
             onPageTour={tourForScreen(screen) ? onPageTour : undefined}
+            onStartTourGuide={onStartTourGuide}
+            sectionTours={sectionTours}
+            onSectionTour={onSectionTour}
             onClose={() => setControlsOpen(false)}
           />
         )}

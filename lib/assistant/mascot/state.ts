@@ -40,6 +40,12 @@ interface MascotStore {
   idleFired: string[]
   /** «Скрыть до конца сессии» — never persisted. */
   sessionHidden: boolean
+  /**
+   * Нормализованный экран, тур которого просит меню «Обучение» после перехода
+   * на другую страницу; MascotAssistant при совпадении screen запускает тур и
+   * сбрасывает поле. Транзиентно — не персистится.
+   */
+  requestedTourScreen: string | null
 
   // ── Persisted ─────────────────────────────────────────────────────────────
   cooldowns: CooldownState
@@ -56,6 +62,7 @@ interface MascotStore {
   setChatOpen: (open: boolean) => void
   setMinimized: (minimized: boolean) => void
   setSessionHidden: (hidden: boolean) => void
+  setRequestedTourScreen: (screen: string | null) => void
   markIdleFired: (screen: string) => void
   applySettings: (patch: Partial<MascotSettings>) => void
   setLastCompletedSections: (n: number) => void
@@ -73,6 +80,7 @@ export const useMascotStore = create<MascotStore>()(
       sessionShownCount: 0,
       idleFired: [],
       sessionHidden: false,
+      requestedTourScreen: null,
 
       cooldowns: EMPTY_COOLDOWNS,
       minimized: false,
@@ -132,6 +140,8 @@ export const useMascotStore = create<MascotStore>()(
         })),
 
       setSessionHidden: (hidden) => set({ sessionHidden: hidden }),
+
+      setRequestedTourScreen: (screen) => set({ requestedTourScreen: screen }),
 
       markIdleFired: (screen) =>
         set((s) => (s.idleFired.includes(screen) ? s : { idleFired: [...s.idleFired, screen] })),
