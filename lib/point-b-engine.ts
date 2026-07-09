@@ -1,7 +1,35 @@
 import type { PointA, BlockScore, DiagnosticStage } from '@/types/onboarding'
 import type { PointB, TargetBlock, TargetKPI, RoadmapQuarter } from '@/types/point-b'
+import { coerceNumeric } from '@/lib/metrics/source-adapters'
 
 const BLOCK_KEYS = ['finance', 'sales', 'operations', 'marketing', 'strategy'] as const
+
+// ── Survey-key alias readers ─────────────────────────────────────────────────
+// The current 12-step finance form writes s9n_* keys; the goal step writes
+// s2n_goal_* keys. Mirror lib/point-a-engine.ts so a new-form client is scored
+// from real data instead of the legacy s2_* keys silently reading 0.
+
+/** First finite, non-zero number across `keys`; falls back to an explicit 0. */
+function readNumberAlias(a: Record<string, unknown>, keys: string[]): number {
+  let firstZero: number | null = null
+  for (const k of keys) {
+    const n = coerceNumeric(a[k])
+    if (n !== null && Number.isFinite(n)) {
+      if (n !== 0) return n
+      if (firstZero === null) firstZero = 0
+    }
+  }
+  return firstZero ?? 0
+}
+
+/** First non-empty string across `keys` (e.g. goal text). */
+function readStringAlias(a: Record<string, unknown>, keys: string[]): string {
+  for (const k of keys) {
+    const v = a[k]
+    if (typeof v === 'string' && v.trim() !== '') return v
+  }
+  return ''
+}
 const BLOCK_LABELS: Record<string, string> = {
   finance: 'Финансы', sales: 'Продажи', operations: 'Операции',
   marketing: 'Маркетинг', strategy: 'Стратегия',
@@ -109,11 +137,11 @@ export function calculatePointB(
 
   // 4. Target KPIs
   const mult = growthMultiplier(stage)
-  const revenue2025 = Number(answers.s2_revenue_2025) || Number(answers.s2_revenue_2024) || 0
-  const margin = Number(answers.s2_gross_margin) || 0
-  const ltv = Number(answers.s2_ltv) || 0
-  const cac = Number(answers.s2_cac) || 1
-  const newClients = Number(answers.s2_new_clients_2025) || Number(answers.s2_new_clients_2024) || 0
+  const revenue2025 = readNumberAlias(answers, ['s2_revenue_2025', 's2_revenue_2024', 's9n_revenue_2024'])
+  const margin = readNumberAlias(answers, ['s2_gross_margin', 's9n_net_margin'])
+  const ltv = readNumberAlias(answers, ['s2_ltv'])
+  const cac = readNumberAlias(answers, ['s2_cac']) || 1
+  const newClients = readNumberAlias(answers, ['s2_new_clients_2025', 's2_new_clients_2024'])
 
   const fmtMoney = (n: number) => n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M ₸` : n >= 1000 ? `${(n / 1000).toFixed(0)}K ₸` : `${n} ₸`
 
@@ -209,8 +237,8 @@ export function calculatePointB(
 
   // 6. User goals
   const userGoals = {
-    goal_12months: String(answers.s6_goal_12months ?? ''),
-    goal_3years: String(answers.s6_goal_3years ?? ''),
+    goal_12months: readStringAlias(answers, ['s6_goal_12months', 's2n_goal_12m_what', 's2n_goal_12m_metrics']),
+    goal_3years: readStringAlias(answers, ['s6_goal_3years', 's2n_goal_3y_what', 's2n_goal_3y_metrics']),
     main_pain: String(answers.s6_main_pain ?? ''),
     growth_blockers: Array.isArray(answers.s6_growth_blockers)
       ? (answers.s6_growth_blockers as string[])

@@ -485,7 +485,7 @@ function nextStage(current: string): string {
 // ─── Growth levers ─────────────────────────────────────────────────────────
 
 function buildLevers(answers: Record<string, unknown>, goals: PointBGoals): Lever[] {
-  const margin = posNum(answers.s2_gross_margin)
+  const margin = posNum(answers.s2_gross_margin) ?? posNum(answers.s9n_net_margin)
   const avgCheck = posNum(answers.s7_avg_check) ?? posNum(answers.s2_avg_check)
   const ltv = posNum(answers.s2_ltv)
   const cac = posNum(answers.s2_cac)
