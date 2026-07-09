@@ -1,20 +1,31 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase-service'
 import { createNotification } from '@/lib/notifications/create'
+import { sendUserEmail } from '@/lib/email'
+import { sendTelegramMessage } from '@/lib/telegram'
+import {
+  selectChannels,
+  pickWeakestBlock,
+  buildDigestTitle,
+  buildDigestBody,
+  buildTelegramDigest,
+  type DigestData,
+} from '@/lib/crm/digest'
 
 export const dynamic = 'force-dynamic'
-// Дайджест шлёт по одному уведомлению на пользователя; на большой базе даём
-// функции больше времени, чем дефолтные 15 c hobby-плана.
+// Дайджест шлёт до трёх каналов на пользователя; на большой базе даём функции
+// больше времени, чем дефолтные 15 c hobby-плана.
 export const maxDuration = 60
 
 /**
- * GET /api/cron/crm-digest — утренний CRM-дайджест.
+ * GET /api/cron/crm-digest — утренний CRM-дайджест (Фаза 2 + мультиканал Фазы 4A).
  *
  * Раз в сутки собирает по каждому владельцу CRM:
  *   • просроченные / сегодняшние открытые напоминания (crm_reminders);
- *   • «спящих» клиентов без контакта > 30 дней (crm_clients).
- * И кладёт ОДНО суммарное in-app уведомление в app_notifications
- * (колокольчик уже поллит эту таблицу). Внешние каналы — Фаза 4.
+ *   • «спящих» клиентов без контакта > 30 дней (crm_clients);
+ *   • слабый блок текущей GRI-диагностики (довесок №9).
+ * И доставляет по каналам из preferences.notifications.crm: in-app (колокольчик),
+ * email (Resend) и Telegram (если чат привязан). Каждый канал — best-effort.
  *
  * Auth: Vercel Cron присылает `Authorization: Bearer ${CRON_SECRET}`.
  * Для ручного теста также принимается `?secret=` с тем же значением.
@@ -24,9 +35,13 @@ const MAX_USERS = 5000
 const SLEEP_DAYS = 30
 const QUERY_LIMIT = 50000
 
-type ReminderRow = { user_id: string }
-type ClientRow = { user_id: string }
-type PrefsRow = { id: string; preferences: unknown }
+type CountRow = { user_id: string }
+type ProfileRow = {
+  id: string
+  email?: string | null
+  telegram_chat_id?: string | null
+  preferences?: unknown
+}
 
 export async function GET(req: NextRequest) {
   const cronSecret = process.env.CRON_SECRET
@@ -36,22 +51,21 @@ export async function GET(req: NextRequest) {
 
   const authHeader = req.headers.get('authorization')
   const querySecret = req.nextUrl.searchParams.get('secret')
-  const authorized =
-    authHeader === `Bearer ${cronSecret}` || querySecret === cronSecret
+  const authorized = authHeader === `Bearer ${cronSecret}` || querySecret === cronSecret
   if (!authorized) {
     return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
   }
 
   try {
     const supabase = createServiceClient()
+    const base = process.env.AUTH_URL || process.env.NEXT_PUBLIC_APP_URL || ''
 
     const now = new Date()
-    // Конец сегодняшнего дня (UTC) — просроченные + сегодняшние напоминания.
     const endOfToday = new Date(now)
     endOfToday.setUTCHours(23, 59, 59, 999)
     const sleepCutoff = new Date(now.getTime() - SLEEP_DAYS * 24 * 60 * 60 * 1000).toISOString()
 
-    // 1) Все открытые просроченные / сегодняшние напоминания (один запрос).
+    // 1) Открытые просроченные / сегодняшние напоминания.
     const { data: reminders, error: remErr } = await supabase
       .from('crm_reminders')
       .select('user_id')
@@ -60,8 +74,7 @@ export async function GET(req: NextRequest) {
       .limit(QUERY_LIMIT)
     if (remErr) throw remErr
 
-    // 2) «Спящие» клиенты — фильтр на стороне БД: контакт раньше отсечки, либо
-    //    ни разу не контактировали, но заведены раньше отсечки.
+    // 2) «Спящие» клиенты.
     const { data: sleeping, error: sleepErr } = await supabase
       .from('crm_clients')
       .select('user_id')
@@ -74,55 +87,67 @@ export async function GET(req: NextRequest) {
       console.warn('[crm-digest] query limit hit — some rows may be truncated')
     }
 
-    // Группировка в JS.
     const overdueByUser = new Map<string, number>()
-    for (const r of (reminders ?? []) as ReminderRow[]) {
-      if (!r.user_id) continue
-      overdueByUser.set(r.user_id, (overdueByUser.get(r.user_id) ?? 0) + 1)
+    for (const r of (reminders ?? []) as CountRow[]) {
+      if (r.user_id) overdueByUser.set(r.user_id, (overdueByUser.get(r.user_id) ?? 0) + 1)
     }
-
     const sleepingByUser = new Map<string, number>()
-    for (const c of (sleeping ?? []) as ClientRow[]) {
-      if (!c.user_id) continue
-      sleepingByUser.set(c.user_id, (sleepingByUser.get(c.user_id) ?? 0) + 1)
+    for (const c of (sleeping ?? []) as CountRow[]) {
+      if (c.user_id) sleepingByUser.set(c.user_id, (sleepingByUser.get(c.user_id) ?? 0) + 1)
     }
 
-    // Объединяем множество затронутых пользователей.
-    const allUserIds = Array.from(new Set([...overdueByUser.keys(), ...sleepingByUser.keys()]))
-    if (allUserIds.length > MAX_USERS) {
-      console.warn(`[crm-digest] ${allUserIds.length} users affected, capping at ${MAX_USERS}`)
+    // Пользователи с ненулевым дайджестом.
+    const affected = Array.from(new Set([...overdueByUser.keys(), ...sleepingByUser.keys()])).filter(
+      (u) => (overdueByUser.get(u) ?? 0) + (sleepingByUser.get(u) ?? 0) > 0,
+    )
+    if (affected.length > MAX_USERS) {
+      console.warn(`[crm-digest] ${affected.length} users affected, capping at ${MAX_USERS}`)
     }
-    const userIds = allUserIds.slice(0, MAX_USERS)
+    const targets = affected.slice(0, MAX_USERS)
 
-    if (userIds.length === 0) {
-      return NextResponse.json({ ok: true, data: { usersNotified: 0, totalOverdue: 0, totalSleeping: 0 } })
+    if (targets.length === 0) {
+      return NextResponse.json({
+        ok: true,
+        data: { usersNotified: 0, emailsSent: 0, telegramSent: 0, totalOverdue: 0, totalSleeping: 0 },
+      })
     }
 
-    // Батч-чтение предпочтений уведомлений для затронутых пользователей.
-    const optedOut = new Set<string>()
-    const { data: prefsRows, error: prefsErr } = await supabase
-      .from('profiles')
-      .select('id, preferences')
-      .in('id', userIds)
-    if (prefsErr) throw prefsErr
-    for (const p of (prefsRows ?? []) as PrefsRow[]) {
-      const prefs = p.preferences as { notifications?: { crm?: { in_app?: boolean } } } | null
-      if (prefs?.notifications?.crm?.in_app === false) {
-        optedOut.add(p.id)
+    // Профили (email/telegram/prefs) — устойчиво к неприменённой миграции 045:
+    // если колонки telegram_chat_id ещё нет, читаем без неё (Telegram выключен).
+    const profileById = new Map<string, ProfileRow>()
+    {
+      const primary = await supabase
+        .from('profiles')
+        .select('id, email, telegram_chat_id, preferences')
+        .in('id', targets)
+      const rows = primary.error
+        ? (await supabase.from('profiles').select('id, email, preferences').in('id', targets)).data
+        : primary.data
+      for (const p of (rows ?? []) as unknown as ProfileRow[]) profileById.set(p.id, p)
+    }
+
+    // Слабый блок текущей GRI-диагностики (довесок №9) — best-effort, батчем.
+    const weakByUser = new Map<string, { label: string; score: number }>()
+    try {
+      const { data: griRows } = await supabase
+        .from('gri_assessments')
+        .select('user_id, section_avgs')
+        .eq('is_current', true)
+        .in('user_id', targets)
+      for (const g of (griRows ?? []) as { user_id: string; section_avgs: unknown }[]) {
+        const weak = pickWeakestBlock(g.section_avgs)
+        if (weak) weakByUser.set(g.user_id, weak)
       }
+    } catch (e) {
+      console.warn('[crm-digest] GRI insight skipped', e)
     }
 
     let usersNotified = 0
+    let emailsSent = 0
+    let telegramSent = 0
     let totalOverdue = 0
     let totalSleeping = 0
 
-    // Кому реально шлём (после opt-out и нулевых).
-    const targets = userIds.filter((userId) => {
-      if (optedOut.has(userId)) return false
-      return (overdueByUser.get(userId) ?? 0) > 0 || (sleepingByUser.get(userId) ?? 0) > 0
-    })
-
-    // Рассылаем параллельно чанками — не по одному await, но и не 5000 разом.
     const CONCURRENCY = 25
     for (let i = 0; i < targets.length; i += CONCURRENCY) {
       const chunk = targets.slice(i, i + CONCURRENCY)
@@ -130,44 +155,75 @@ export async function GET(req: NextRequest) {
         chunk.map(async (userId) => {
           const overdue = overdueByUser.get(userId) ?? 0
           const sleep = sleepingByUser.get(userId) ?? 0
-          const total = overdue + sleep
-          const title = `📞 CRM: ${total} ${plural(total, 'клиент ждёт', 'клиента ждут', 'клиентов ждут')} внимания`
+          const profile = profileById.get(userId)
+          const email = profile?.email ?? null
+          const chatId = profile?.telegram_chat_id ?? null
 
-          const parts: string[] = []
-          if (overdue > 0) parts.push(`Просроченных напоминаний: ${overdue}`)
-          if (sleep > 0) parts.push(`Спящих клиентов: ${sleep}`)
-          const body = `${parts.join(' · ')}. Откройте раздел «Клиенты».`
-
-          // createNotification — best-effort, не бросает; счётчики точны.
-          await createNotification({
-            userId,
-            title,
-            body,
-            category: 'crm',
-            priority: 'medium',
-            link: '/pulse',
-            metadata: { overdue, sleeping: sleep },
+          const channels = selectChannels(profile?.preferences, {
+            hasEmail: Boolean(email),
+            hasTelegram: Boolean(chatId),
           })
+          if (!channels.inApp && !channels.email && !channels.telegram) return
 
-          usersNotified += 1
-          totalOverdue += overdue
-          totalSleeping += sleep
+          const data: DigestData = {
+            overdue,
+            sleeping: sleep,
+            weakBlock: weakByUser.get(userId) ?? null,
+          }
+          const title = buildDigestTitle(data)
+          let delivered = false
+
+          if (channels.inApp) {
+            await createNotification({
+              userId,
+              title,
+              body: buildDigestBody(data),
+              category: 'crm',
+              priority: 'medium',
+              link: '/pulse',
+              metadata: { overdue, sleeping: sleep },
+            })
+            delivered = true
+          }
+
+          if (channels.email && email) {
+            const res = await sendUserEmail({
+              to: email,
+              subject: 'Кому позвонить сегодня — CRM AIStart360',
+              title,
+              body: buildDigestBody(data),
+              ctaLabel: 'Открыть «Клиенты»',
+              ctaPath: '/pulse',
+            })
+            if (res.ok) {
+              emailsSent += 1
+              delivered = true
+            }
+          }
+
+          if (channels.telegram && chatId) {
+            const ok = await sendTelegramMessage(chatId, buildTelegramDigest(data, `${base}/pulse`))
+            if (ok) {
+              telegramSent += 1
+              delivered = true
+            }
+          }
+
+          if (delivered) {
+            usersNotified += 1
+            totalOverdue += overdue
+            totalSleeping += sleep
+          }
         }),
       )
     }
 
-    return NextResponse.json({ ok: true, data: { usersNotified, totalOverdue, totalSleeping } })
+    return NextResponse.json({
+      ok: true,
+      data: { usersNotified, emailsSent, telegramSent, totalOverdue, totalSleeping },
+    })
   } catch (err) {
     console.error('[crm-digest] sweep failed', err)
     return NextResponse.json({ ok: false, error: 'crm-digest sweep failed' }, { status: 500 })
   }
-}
-
-// Русская форма множественного числа (1 / 2-4 / 5+).
-function plural(n: number, one: string, few: string, many: string): string {
-  const mod10 = n % 10
-  const mod100 = n % 100
-  if (mod10 === 1 && mod100 !== 11) return one
-  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return few
-  return many
 }

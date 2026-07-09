@@ -15,7 +15,7 @@ export interface SettingsInitial {
   phone: string
 }
 
-type Channel = 'in_app' | 'email'
+type Channel = 'in_app' | 'email' | 'telegram'
 type NotifPrefs = Record<string, Partial<Record<Channel, boolean>>>
 export interface Prefs {
   appearance?: { theme?: string }
@@ -582,12 +582,14 @@ const NOTIF_CATEGORIES = [
   { key: 'reports',  label: 'Отчёты',             desc: 'Загрузка и готовность отчётов' },
   { key: 'security', label: 'Безопасность',       desc: 'Входы, смена пароля, устройства' },
   { key: 'team',     label: 'Команда',            desc: 'Изменения в команде' },
+  { key: 'crm',      label: 'CRM-дайджест',       desc: 'Утром: кому звонить + слабый блок GRI' },
   { key: 'digest',   label: 'Еженедельный дайджест', desc: 'Сводка по портфелю' },
 ] as const
 
 const NOTIF_DEFAULTS: NotifPrefs = {
   critical: { in_app: true, email: true }, gri: { in_app: true, email: false }, reports: { in_app: true, email: false },
-  security: { in_app: true, email: true }, team: { in_app: true, email: false }, digest: { in_app: false, email: true },
+  security: { in_app: true, email: true }, team: { in_app: true, email: false },
+  crm: { in_app: true, email: false, telegram: true }, digest: { in_app: false, email: true },
 }
 
 function NotificationsPanel({ initial }: { initial?: NotifPrefs }) {
@@ -626,8 +628,129 @@ function NotificationsPanel({ initial }: { initial?: NotifPrefs }) {
           </div>
         ))}
       </div>
-      <p className="text-xs text-on-surface-variant/70 mt-4">Telegram-уведомления, тихие часы и частота дайджеста — в разработке.</p>
+      <TelegramBinding
+        telegramOn={prefs.crm?.telegram !== false}
+        onToggleTelegram={() => toggle('crm', 'telegram')}
+      />
     </Card>
+  )
+}
+
+// ── Привязка Telegram (Фаза 4A) ──────────────────────────────────────────────
+function TelegramBinding({
+  telegramOn,
+  onToggleTelegram,
+}: {
+  telegramOn: boolean
+  onToggleTelegram: () => void
+}) {
+  const [linked, setLinked] = useState<boolean | null>(null)
+  const [configured, setConfigured] = useState(true)
+  const [busy, setBusy] = useState(false)
+
+  const refresh = useCallback(async () => {
+    try {
+      const res = await fetch('/api/v1/settings/telegram', { credentials: 'include' })
+      const json = await res.json().catch(() => ({}))
+      if (json?.ok) {
+        setLinked(Boolean(json.linked))
+        setConfigured(Boolean(json.configured))
+      }
+    } catch {
+      /* оставляем как есть */
+    }
+  }, [])
+
+  useEffect(() => {
+    void refresh()
+  }, [refresh])
+
+  const link = async () => {
+    setBusy(true)
+    try {
+      const res = await fetch('/api/v1/settings/telegram', { method: 'POST', credentials: 'include' })
+      const json = await res.json().catch(() => ({}))
+      if (res.ok && json?.ok && json.url) {
+        window.open(json.url, '_blank', 'noopener')
+        toast.success('Откройте бота и нажмите «Start» — затем вернитесь и обновите статус')
+      } else if (json?.error === 'telegram_not_configured') {
+        toast.error('Telegram-бот не настроен на сервере')
+      } else {
+        toast.error('Не удалось создать ссылку привязки')
+      }
+    } catch {
+      toast.error('Не удалось создать ссылку привязки')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const unlink = async () => {
+    setBusy(true)
+    try {
+      const res = await fetch('/api/v1/settings/telegram', { method: 'DELETE', credentials: 'include' })
+      if (res.ok) {
+        setLinked(false)
+        toast.success('Telegram отвязан')
+      } else {
+        toast.error('Не удалось отвязать')
+      }
+    } catch {
+      toast.error('Не удалось отвязать')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="mt-5 pt-4 border-t border-outline-variant/10">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="text-sm font-medium text-on-surface flex items-center gap-1.5">
+            <span className="material-symbols-outlined text-base text-primary">send</span>
+            Telegram
+          </p>
+          <p className="text-xs text-on-surface-variant mt-0.5">
+            {!configured
+              ? 'Бот не настроен на сервере — обратитесь к администратору.'
+              : linked
+                ? 'Привязан. CRM-дайджест и инсайты приходят в чат.'
+                : 'Привяжите чат, чтобы получать напоминания прямо в Telegram.'}
+          </p>
+        </div>
+        {configured && (
+          <div className="shrink-0">
+            {linked ? (
+              <button
+                onClick={unlink}
+                disabled={busy}
+                className="px-3 py-1.5 rounded-lg border border-white/[0.08] text-xs text-on-surface-variant hover:bg-white/[0.04] disabled:opacity-40 transition-colors"
+              >
+                Отвязать
+              </button>
+            ) : (
+              <button
+                onClick={link}
+                disabled={busy}
+                className="px-3 py-1.5 rounded-lg bg-primary/15 border border-primary/30 text-xs font-medium text-primary hover:bg-primary/25 disabled:opacity-40 transition-colors"
+              >
+                Привязать Telegram
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+      {configured && linked && (
+        <div className="flex items-center justify-between mt-3">
+          <span className="text-xs text-on-surface-variant">Присылать CRM-дайджест в Telegram</span>
+          <Toggle
+            checked={telegramOn}
+            onChange={onToggleTelegram}
+            label="CRM-дайджест в Telegram"
+          />
+        </div>
+      )}
+    </div>
   )
 }
 
