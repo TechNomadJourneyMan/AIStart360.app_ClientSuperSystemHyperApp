@@ -32,6 +32,7 @@ import { trackMascotEvent } from '@/lib/assistant/mascot/analytics'
 import { useMascotBehavior } from '@/lib/assistant/mascot/behavior'
 import { useSafeScreenPosition } from '@/lib/assistant/mascot/useSafeScreenPosition'
 import {
+  DEFAULT_TOUR_GUIDE,
   isMascotHidden,
   type AssistantContextPayload,
   type HidePeriod,
@@ -39,11 +40,19 @@ import {
 } from '@/lib/assistant/mascot/types'
 import { getCharacter } from '@/lib/assistant/mascot/characters'
 import { tourForScreen, type TourStep } from '@/lib/assistant/mascot/tours'
+import {
+  clampStepIdx,
+  isLastStep,
+  nextStepIdx,
+  visibleSteps,
+  TOUR_GUIDE_STEPS,
+} from '@/lib/assistant/mascot/tour-guide'
 import { MascotAvatar } from './MascotAvatar'
 import { MascotBubble } from './MascotBubble'
 import { MascotCoachmarks } from './MascotCoachmarks'
 import { MascotControls } from './MascotControls'
 import { MascotWelcome } from './MascotWelcome'
+import { TourChecklist } from './TourChecklist'
 
 const CONTEXT_STALE_MS = 60_000
 const BUBBLE_AUTO_CLEAR_MS = 20_000
@@ -158,6 +167,8 @@ export default function MascotAssistant() {
     setLastCompletedSections,
     requestedTourScreen,
     setRequestedTourScreen,
+    guideRunning,
+    setGuideRunning,
   } = useMascotStore()
 
   const [controlsOpen, setControlsOpen] = useState(false)
@@ -168,8 +179,17 @@ export default function MascotAssistant() {
   const waveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [tourSteps, setTourSteps] = useState<TourStep[] | null>(null)
   const [showWelcome, setShowWelcome] = useState(false)
+  /** Свёрнут ли чеклист экскурсии (пилюля vs карточка). На маунте во время
+   *  живого прогона — пилюля; на резюме (guideRunning=false) — карточка. */
+  const [checklistCollapsed, setChecklistCollapsed] = useState(
+    () => useMascotStore.getState().guideRunning,
+  )
   /** Экран, с которого меню «Обучение» запросило тур другого раздела (M3). */
   const tourRequestOriginRef = useRef<string | null>(null)
+  /** «Замок» запуска коачмарка экскурсии для текущего `${screen}#${idx}`. */
+  const guideLaunchedRef = useRef<string | null>(null)
+  /** Последний href, на который движок экскурсии дал router.push (антиспам). */
+  const guideNavRef = useRef<string | null>(null)
 
   const screenRef = useRef(screen)
   const scrollTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -185,6 +205,16 @@ export default function MascotAssistant() {
   const staffScreen = /^\/(owner|expert|admin)/.test(screen)
   // Защитное чтение: персист до миграции v2 мог не содержать tourGuide.
   const tourGuideStatus = settings.tourGuide?.status ?? 'pending'
+  const tourGuideStepIdx = settings.tourGuide?.stepIdx ?? 0
+  // Маршрут экскурсии — детерминированный (общий для роли; staff отсеян гейтом),
+  // фильтруется до экранов с турами. Не зависит от текущего экрана, поэтому
+  // одинаково пересобирается на каждом маунте и переживает ремоунт между
+  // layout-группами без хранения в сторе.
+  const guideSteps = useMemo(
+    () => visibleSteps(TOUR_GUIDE_STEPS, (s) => tourForScreen(s) !== null),
+    [],
+  )
+  const guideTotal = guideSteps.length
 
   const baseBottom = isDesktop ? 24 : 80
   // Zone ≈ avatar size + bubble headroom (desktop cat is 168px since v1.3.1).
@@ -255,6 +285,9 @@ export default function MascotAssistant() {
       if (document.visibilityState === 'hidden') return
       if (isTypingTarget(document.activeElement)) return
       if (foreignDialogOpen()) return
+      // Пока идёт живой прогон экскурсии — коачмарки владеют экраном; проактивные
+      // пузыри молчат, чтобы не мешать (поздравление в конце шлём напрямую).
+      if (s.guideRunning) return
 
       // Возвращение в портал: короткая волна-приветствие раз за браузер-сессию
       // (сессионный ритуал — уважает жёсткие блоки выше, минует cooldown-движок).
@@ -651,33 +684,83 @@ export default function MascotAssistant() {
     if (steps) setTourSteps(steps)
   }, [screen])
 
+  /** Сырой PATCH настроек (без локального применения) — сервер мержит per-key. */
+  const patchSettings = useCallback((patch: Partial<MascotSettings>) => {
+    void fetch('/api/v1/assistant/settings', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify(patch),
+    }).catch(() => undefined)
+  }, [])
+
   /**
-   * applySettings + ОДИН PATCH (лимит записи 10/мин — welcome/«Обучение»
-   * дёргают ровно один PATCH на действие пользователя). Локальное применение
-   * мгновенно, сервер — источник истины, /context пере-синхронит на след. фетче.
+   * applySettings + ОДИН PATCH (лимит записи 10/мин — welcome/«Обучение»/каждый
+   * шаг экскурсии дёргают ровно один PATCH). Локальное применение мгновенно,
+   * сервер — источник истины, /context пере-синхронит на след. фетче.
    */
   const persistSettings = useCallback(
     (patch: Partial<MascotSettings>) => {
       applySettings(patch)
-      void fetch('/api/v1/assistant/settings', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify(patch),
-      }).catch(() => undefined)
+      patchSettings(patch)
     },
-    [applySettings],
+    [applySettings, patchSettings],
+  )
+
+  // ── Движок экскурсии «Первые шаги» (Батч B) ─────────────────────────────────
+  /**
+   * Запуск/перезапуск экскурсии (welcome и меню «Обучение»). Маршрут
+   * детерминирован (guideSteps), поэтому переживает ремоунт без хранения в сторе.
+   * Ставим guideRunning=true СРАЗУ — тогда протухший /context не откатит
+   * оптимистичный статус (state.ts I3, mergeTourGuide). Один PATCH на старт;
+   * дальше ведёт driveGuide-эффект.
+   */
+  const startGuide = useCallback(
+    (extra: Partial<MascotSettings> = {}) => {
+      if (guideTotal === 0) return // staff / нет туров — предлагать нечего
+      guideLaunchedRef.current = null
+      guideNavRef.current = null
+      setTourSteps(null)
+      setChecklistCollapsed(true) // во время прогона чеклист — компактная пилюля
+      setGuideRunning(true)
+      persistSettings({ ...extra, tourGuide: { status: 'active', stepIdx: 0 } })
+    },
+    [guideTotal, setGuideRunning, persistSettings],
+  )
+
+  /**
+   * Продвижение экскурсии после закрытия коачмарк-тура шага (любой исход). Один
+   * PATCH на шаг: {toursDone + tourGuide.stepIdx}. Последний шаг → status 'done'
+   * (stepIdx = total-сентинел) + поздравительный пузырь; guideRunning=false,
+   * дальше сервер снова главный по tourGuide (кросс-девайс/резюм).
+   */
+  const advanceGuide = useCallback(
+    (idx: number, total: number, toursDone: string[]) => {
+      guideLaunchedRef.current = null
+      guideNavRef.current = null
+      if (isLastStep(idx, total)) {
+        persistSettings({ toursDone, tourGuide: { status: 'done', stepIdx: total } })
+        setGuideRunning(false)
+        const done = resolveHint({ id: 'guide_done', priority: 3 })
+        if (done) {
+          useMascotStore.getState().showHint(done, screen, Date.now())
+          trackMascotEvent('hint_shown', { screen, refId: 'guide_done' })
+        }
+      } else {
+        persistSettings({
+          toursDone,
+          tourGuide: { status: 'active', stepIdx: nextStepIdx(idx, total) },
+        })
+      }
+    },
+    [persistSettings, setGuideRunning, screen],
   )
 
   // ── Welcome-модалка: выбор пользователя (ровно один PATCH на действие) ──────
   const onWelcomeStartTour = useCallback(() => {
     setShowWelcome(false)
-    persistSettings({ greeted: true, tourGuide: { status: 'active', stepIdx: 0 } })
-    // Батч B: полноценная экскурсия. Пока — интерим: сразу запускаем тур текущего
-    // экрана, чтобы кнопка «Провести экскурсию» делала что-то видимое.
-    const steps = tourForScreen(screen)
-    if (steps) setTourSteps(steps)
-  }, [persistSettings, screen])
+    startGuide({ greeted: true })
+  }, [startGuide])
 
   const onWelcomeDismiss = useCallback(() => {
     setShowWelcome(false)
@@ -691,14 +774,11 @@ export default function MascotAssistant() {
     return base.filter((t) => t.screen !== screen && !!tourForScreen(t.screen)).slice(0, 4)
   }, [screen])
 
-  /** «Экскурсия по порталу»: помечаем экскурсию активной + интерим-тур экрана. */
+  /** «Экскурсия по порталу» — (пере)запуск полноценной экскурсии-чеклиста. */
   const onStartTourGuide = useCallback(() => {
     setControlsOpen(false)
-    persistSettings({ tourGuide: { status: 'active', stepIdx: 0 } })
-    // Батч B: полноценная экскурсия. Интерим — тур текущего экрана.
-    const steps = tourForScreen(screen)
-    if (steps) setTourSteps(steps)
-  }, [persistSettings, screen])
+    startGuide()
+  }, [startGuide])
 
   /** Пункт раздела: тур на месте, либо переход + запрос тура на целевом экране. */
   const onSectionTour = useCallback(
@@ -735,21 +815,101 @@ export default function MascotAssistant() {
     }
   }, [screen, requestedTourScreen, setRequestedTourScreen])
 
+  /**
+   * Закрытие коачмарк-тура: всегда помечаем экран в toursDone. Если это шаг
+   * активной экскурсии (guideRunning) — продвигаемся тем же ОДНИМ PATCH; иначе
+   * (ручной «Тур по этой странице»/replay/раздел) — только toursDone.
+   */
   const closeTour = useCallback(
     (_done: boolean) => {
       setTourSteps(null)
       const s = useMascotStore.getState()
-      const next = Array.from(new Set([...s.settings.toursDone, screen])).slice(0, 50)
-      applySettings({ toursDone: next })
-      void fetch('/api/v1/assistant/settings', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ toursDone: next }),
-      }).catch(() => undefined)
+      const toursDone = Array.from(new Set([...s.settings.toursDone, screen])).slice(0, 50)
+      const tg = s.settings.tourGuide ?? DEFAULT_TOUR_GUIDE
+      if (s.guideRunning && tg.status === 'active' && guideTotal > 0) {
+        advanceGuide(clampStepIdx(tg.stepIdx, guideTotal), guideTotal, toursDone)
+        return
+      }
+      applySettings({ toursDone })
+      patchSettings({ toursDone })
     },
-    [applySettings, screen],
+    [screen, guideTotal, advanceGuide, applySettings, patchSettings],
   )
+
+  // ── driveGuide: ведём пользователя по стопам, пока идёт живой прогон ─────────
+  // Активен только при guideRunning (in-memory прогон). На резюме после
+  // перезагрузки guideRunning=false — шаг НЕ автозапускается, пока пользователь
+  // не нажмёт «Продолжить» в чеклисте (Task 5). Переход между layout-группами
+  // ремоунтит MascotAssistant, но маршрут детерминирован (guideSteps), а
+  // guideRunning живёт в сторе-синглтоне — прогон продолжается с места.
+  useEffect(() => {
+    if (!guideRunning || tourGuideStatus !== 'active' || staffScreen || hiddenNow) return
+    if (guideTotal === 0) return
+    const idx = clampStepIdx(tourGuideStepIdx, guideTotal)
+    const stop = guideSteps[idx]
+    if (!stop) return
+    if (screen !== stop.screen) {
+      // Идём на экран текущего стопа (один push на href — от повторов бережёт ref).
+      if (guideNavRef.current !== stop.screen) {
+        guideNavRef.current = stop.screen
+        router.push(stop.screen)
+      }
+      return
+    }
+    // На нужном экране — запускаем его коачмарк-тур один раз для этого шага.
+    guideNavRef.current = null
+    const key = `${screen}#${idx}`
+    if (tourSteps || guideLaunchedRef.current === key) return
+    const steps = tourForScreen(screen)
+    guideLaunchedRef.current = key
+    if (steps) {
+      setChecklistCollapsed(true) // на время шага чеклист — пилюля (не спорит с оверлеем)
+      setTourSteps(steps)
+    } else {
+      // Маршрут отфильтрован по tourForScreen != null — сюда не попасть; на всякий
+      // случай не застреваем: помечаем экран и идём дальше.
+      const s = useMascotStore.getState()
+      const toursDone = Array.from(new Set([...s.settings.toursDone, screen])).slice(0, 50)
+      advanceGuide(idx, guideTotal, toursDone)
+    }
+  }, [
+    guideRunning,
+    tourGuideStatus,
+    tourGuideStepIdx,
+    screen,
+    guideSteps,
+    guideTotal,
+    staffScreen,
+    hiddenNow,
+    tourSteps,
+    router,
+    advanceGuide,
+  ])
+
+  // ── Чеклист экскурсии: управление ──────────────────────────────────────────
+  /** «Продолжить»/«К текущему шагу»: (пере)запустить прогон текущего шага. */
+  const onGuideContinue = useCallback(() => {
+    if (guideTotal === 0) return
+    setChecklistCollapsed(true)
+    guideLaunchedRef.current = null
+    guideNavRef.current = null
+    setGuideRunning(true)
+  }, [guideTotal, setGuideRunning])
+
+  const onGuideToggleCollapsed = useCallback(() => {
+    setChecklistCollapsed((v) => !v)
+  }, [])
+
+  /** «Пропустить экскурсию»: статус dismissed, прогон завершён. */
+  const onGuideSkip = useCallback(() => {
+    const s = useMascotStore.getState()
+    const idx = clampStepIdx(s.settings.tourGuide?.stepIdx ?? 0, guideTotal)
+    setGuideRunning(false)
+    setTourSteps(null)
+    guideLaunchedRef.current = null
+    guideNavRef.current = null
+    persistSettings({ tourGuide: { status: 'dismissed', stepIdx: idx } })
+  }, [guideTotal, setGuideRunning, persistSettings])
 
   /** Наведение: стоп на месте + короткое махание лапой (не чаще раза в 30 с). */
   const onAvatarEnter = useCallback(() => {
@@ -811,6 +971,17 @@ export default function MascotAssistant() {
   const pendingBadge = !!context && context.hints.length > 0
   const avatarPose = chatOpen ? 'idle' : hoverWave && state === 'idle' ? 'greeting' : state
   const paused = tabHidden || scrolling
+
+  // Чеклист экскурсии виден, пока статус active (Батч B). Во время активного
+  // коачмарк-шага держим его пилюлей, чтобы не спорить с оверлеем коачмарка.
+  const showChecklist =
+    !staffScreen &&
+    tourGuideStatus === 'active' &&
+    guideTotal > 0 &&
+    !chatOpen &&
+    !minimized &&
+    !showWelcome
+  const checklistRenderCollapsed = checklistCollapsed || !!tourSteps
 
   return (
     <>
@@ -957,6 +1128,24 @@ export default function MascotAssistant() {
           color={mascotColor}
           onStartTour={onWelcomeStartTour}
           onDismiss={onWelcomeDismiss}
+        />
+      )}
+    </AnimatePresence>
+
+    {/* Экскурсия-чеклист «Первые шаги» — виден, пока статус active; на резюме
+        показывается карточкой (не автозапускаем шаг до «Продолжить»). */}
+    <AnimatePresence>
+      {showChecklist && (
+        <TourChecklist
+          route={guideSteps}
+          stepIdx={tourGuideStepIdx}
+          collapsed={checklistRenderCollapsed}
+          running={guideRunning}
+          character={character}
+          color={mascotColor}
+          onContinue={onGuideContinue}
+          onToggleCollapsed={onGuideToggleCollapsed}
+          onSkip={onGuideSkip}
         />
       )}
     </AnimatePresence>
