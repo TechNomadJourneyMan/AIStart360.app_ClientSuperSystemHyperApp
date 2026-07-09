@@ -9,6 +9,7 @@ import { converseWithGree, HISTORY_LIMITS } from '@/lib/assistant/gree-chat'
 import { readMascotSettings } from '@/lib/assistant/mascot/settings-server'
 import { localeFromRequestCookie } from '@/lib/i18n/locale'
 import { isRateLimitedKey } from '@/lib/rate-limit'
+import { gateFeature } from '@/lib/access/gate'
 
 /**
  * POST /api/v1/assistant/converse — a multi-turn chat turn with «Гри».
@@ -50,6 +51,11 @@ export async function POST(req: NextRequest) {
   if (await isRateLimitedKey(user.id, 'assistant:converse', { max: 10, windowMs: 60_000 })) {
     return NextResponse.json({ ok: false, error: 'rate_limited' }, { status: 429 })
   }
+
+  // Фаза 6A: свободный AI-чат — платная фича (вариант А). Скриптовый /chat и
+  // туры Гри остаются free. Гейт активен только при тумблере access_gates.
+  const gated = await gateFeature(sb, user.id, 'ai_chat')
+  if (gated) return gated
 
   let raw: unknown
   try {

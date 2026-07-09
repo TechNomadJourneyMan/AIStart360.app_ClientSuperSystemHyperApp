@@ -4,6 +4,8 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import dynamic from 'next/dynamic'
 import { motion, useReducedMotion } from 'framer-motion'
 import { GRI_SECTIONS, type SectionId } from '@/lib/gri-assessment/sections'
+import { useEntitlements } from '@/hooks/useEntitlements'
+import { UpgradeGate } from '@/components/access/UpgradeGate'
 
 const GriRadar = dynamic(() => import('./GriRadar'), {
   ssr: false,
@@ -277,6 +279,9 @@ function LossAversionBar({ sectionAvg }: { sectionAvg: number }) {
 
 export default function GRIAssessment() {
   const [step, setStep] = useState<Step>({ kind: 'landing' })
+  // Фаза 6A: тарифный гейт повторного полного GRI (free = 1 демо-проход).
+  // Пока access/me грузится или гейты выключены — всё открыто; сервер энфорсит сам.
+  const { access } = useEntitlements()
   const [hydrated, setHydrated] = useState(false)
   const [state, setState] = useState<PersistedState>(DEFAULT_STATE)
   const [onboardingStep, setOnboardingStep] = useState(1)
@@ -494,16 +499,22 @@ export default function GRIAssessment() {
                     <span className="material-symbols-outlined text-[18px]" aria-hidden>insights</span>
                     Посмотреть результат
                   </button>
-                  <button
-                    onClick={() => {
-                      resetAll()
-                      setStep({ kind: 'onboarding' })
-                    }}
-                    className="inline-flex items-center gap-2 rounded-full border border-white/[0.12] px-6 py-3.5 text-base font-semibold text-on-surface transition-all hover:border-primary/40 hover:bg-white/[0.03]"
-                  >
-                    <span className="material-symbols-outlined text-[18px]" aria-hidden>restart_alt</span>
-                    Пройти заново
-                  </button>
+                  {access.canRunFullGri ? (
+                    <button
+                      onClick={() => {
+                        resetAll()
+                        setStep({ kind: 'onboarding' })
+                      }}
+                      className="inline-flex items-center gap-2 rounded-full border border-white/[0.12] px-6 py-3.5 text-base font-semibold text-on-surface transition-all hover:border-primary/40 hover:bg-white/[0.03]"
+                    >
+                      <span className="material-symbols-outlined text-[18px]" aria-hidden>restart_alt</span>
+                      Пройти заново
+                    </button>
+                  ) : (
+                    <div className="w-full max-w-md">
+                      <UpgradeGate feature="gri_full" compact />
+                    </div>
+                  )}
                 </>
               ) : hasPartial ? (
                 <>

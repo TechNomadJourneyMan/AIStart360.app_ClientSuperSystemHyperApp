@@ -3,6 +3,9 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { GRI_SECTIONS } from '@/lib/gri-assessment/sections'
+import { readEntitlements } from '@/lib/access/server'
+import { canRunFullGri } from '@/lib/access/entitlements'
+import { getAccessGatesEnabled } from '@/lib/settings/system-settings'
 import {
   computeTop5Limits,
   generate90DayPlan,
@@ -81,6 +84,34 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 })
     }
     const userId = userData.user.id
+
+    // Фаза 6A — тарифный гейт полного GRI (решение ПО, вариант А: free = 1
+    // демо-проход). Активен ТОЛЬКО при включённом системном тумблере
+    // access_gates (default OFF — существующих не ограничиваем молча).
+    if (await getAccessGatesEnabled()) {
+      const ent = await readEntitlements(sb, userId)
+      let runs = 0
+      try {
+        const { count } = await sb
+          .from('gri_assessments')
+          .select('id', { count: 'exact', head: true })
+          .eq('user_id', userId)
+        runs = count ?? 0
+      } catch {
+        runs = 0
+      }
+      if (!canRunFullGri(ent, runs)) {
+        return NextResponse.json(
+          {
+            ok: false,
+            error: 'upgrade_required',
+            feature: 'gri_full',
+            message: 'Бесплатный тариф включает один полный проход GRI. Повторные пересчёты — на тарифе Pro.',
+          },
+          { status: 402 },
+        )
+      }
+    }
 
     // Lookup company (best-effort — null is OK; field is nullable).
     const { data: companyRow } = await sb

@@ -9,6 +9,7 @@ import { answerUserQuestion } from '@/lib/assistant/answer'
 import { createExpertCase } from '@/lib/assistant/escalation/adapter'
 import { localeFromRequestCookie } from '@/lib/i18n/locale'
 import { isRateLimitedKey } from '@/lib/rate-limit'
+import { gateFeature } from '@/lib/access/gate'
 
 /**
  * POST /api/v1/assistant/ask
@@ -46,6 +47,11 @@ export async function POST(req: NextRequest) {
   if (await isRateLimitedKey(user.id, 'assistant-ask', { max: 15, windowMs: 60_000 })) {
     return NextResponse.json({ ok: false, error: 'Слишком много запросов. Попробуйте позже.' }, { status: 429 })
   }
+
+  // Фаза 6A: свободный AI-чат — платная фича (вариант А); гейт активен только
+  // при системном тумблере access_gates (default OFF).
+  const gated = await gateFeature(sb, user.id, 'ai_chat')
+  if (gated) return gated
 
   let raw: unknown
   try {

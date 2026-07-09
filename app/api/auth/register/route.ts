@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { z } from 'zod'
 import { isRateLimited } from '@/lib/rate-limit'
-import { getRegistrationMode } from '@/lib/settings/system-settings'
+import { getRegistrationMode, getAutoApproveClients } from '@/lib/settings/system-settings'
 import { applyApprovalDecision } from '@/lib/users/approval'
 
 // Public self-registration. Only the two roles offered in the UI are allowed
@@ -79,8 +79,14 @@ export async function POST(request: Request) {
 
     // OPEN mode: grant access immediately (the trigger created the client as
     // pending_approval). Best-effort — never fail the registration on this.
+    // Фаза 6B (№15): в режиме 'approval' self-serve роли (client/owner — других
+    // эта форма не предлагает; staff создаются админом, аудит A3) авто-одобряются,
+    // пока включён системный тумблер auto_approve_clients (default ON, решение ПО
+    // 2026-07-09 — ручная модерация была главным трением активации).
     let effectiveStatus: 'pending_approval' | 'approved' = 'pending_approval'
-    if (mode === 'open') {
+    const autoApprove =
+      mode === 'open' || (mode === 'approval' && (await getAutoApproveClients()))
+    if (autoApprove) {
       try {
         const { affected } = await applyApprovalDecision({
           userId: data.user.id,
