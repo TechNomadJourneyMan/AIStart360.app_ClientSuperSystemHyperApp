@@ -103,7 +103,7 @@ const BLOCK_RU: Record<SectionId, string> = {
 // shape, not a flat/real profile a client might mistake for their own score.
 const DEMO_SAMPLE_SCORES = [6.2, 4.1, 7.0, 3.4, 5.5, 4.8, 6.6]
 const DEMO_DATA = GRI_SECTIONS.map((s, i) => ({
-  subject: s.shortTitle,
+  subject: BLOCK_RU[s.id] ?? s.shortTitle,
   score: DEMO_SAMPLE_SCORES[i % DEMO_SAMPLE_SCORES.length],
   benchmark: 8,
 }))
@@ -1057,7 +1057,7 @@ export default function GRIAssessment() {
   // -------- Results --------
   if (step.kind === 'results') {
     const chartData = GRI_SECTIONS.map((s) => ({
-      subject: s.shortTitle,
+      subject: BLOCK_RU[s.id] ?? s.shortTitle,
       score: parseFloat(sectionAvg(s.id).toFixed(1)),
       benchmark: 8,
     }))
