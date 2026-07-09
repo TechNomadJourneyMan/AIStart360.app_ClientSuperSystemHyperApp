@@ -6,6 +6,11 @@ import { createServerClient } from '@/lib/supabase-server'
 import { isRateLimitedKey } from '@/lib/rate-limit'
 import { buildNbaSignals, type NbaSignalInput } from '@/lib/nba/signals'
 import { selectNextBestAction, type NbaHistory } from '@/lib/nba/select'
+import { calculatePointA } from '@/lib/point-a-engine'
+
+const POINT_A_LABELS: Record<string, string> = {
+  finance: 'Финансы', sales: 'Продажи', operations: 'Операции', marketing: 'Маркетинг', strategy: 'Стратегия',
+}
 
 /**
  * GET /api/v1/nba → { ok, action } — the single Next Best Action, or null.
@@ -88,6 +93,42 @@ export async function GET(_req: NextRequest) {
       .eq('user_id', user.id)
       .maybeSingle()
     input.hasPsychProfile = !!data
+  } catch { /* skip */ }
+
+  // Overdue CRM reminders (S1) — reads the GRI/CRM tables directly (no code dep).
+  try {
+    const nowIso = new Date().toISOString()
+    const { data, count } = await sb
+      .from('crm_reminders')
+      .select('client_id', { count: 'exact' })
+      .eq('user_id', user.id)
+      .is('done_at', null)
+      .lt('due_at', nowIso)
+    if ((count ?? 0) > 0) {
+      let sampleName: string | undefined
+      const firstClientId = (data ?? [])[0]?.client_id
+      if (firstClientId) {
+        const { data: c } = await sb.from('crm_clients').select('name').eq('id', firstClientId).maybeSingle()
+        sampleName = c?.name ?? undefined
+      }
+      input.crmOverdue = { count: count ?? 0, sampleName }
+    }
+  } catch { /* crm tables absent — skip */ }
+
+  // Point A red zones (S2) — compute over the user's survey answers.
+  try {
+    const { data: sa } = await sb.from('survey_answers').select('question_key, answer').eq('user_id', user.id)
+    if (sa && sa.length > 0) {
+      const answers: Record<string, unknown> = {}
+      for (const r of sa as Array<{ question_key: string; answer: unknown }>) {
+        answers[r.question_key] = (r.answer as { value?: unknown } | null)?.value ?? r.answer
+      }
+      const pa = calculatePointA(answers)
+      const reds = Object.entries(pa.blocks)
+        .filter(([, b]) => (b as { status?: string }).status === 'weak')
+        .map(([k, b]) => ({ key: k, label: POINT_A_LABELS[k] ?? k, score: (b as { score: number }).score }))
+      if (reds.length > 0) input.redBlocks = reds
+    }
   } catch { /* skip */ }
 
   // Cooldown history from the NBA log.
