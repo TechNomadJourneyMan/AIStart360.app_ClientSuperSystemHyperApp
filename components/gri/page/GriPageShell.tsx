@@ -21,8 +21,11 @@ const GriDynamicsPanel = dynamic(() => import('./GriDynamicsPanel'))
 const FinancialAnalyst = dynamic(() => import('@/components/gri/calculator/FinancialAnalyst'))
 const GrowthStrategy = dynamic(() => import('@/components/gri/calculator/GrowthStrategy'))
 
+// «Диагностика» (полный GRI-тест) — основная страница и вкладка по умолчанию.
+// Калькулятор вынесен в отдельный раздел «Калькулятор».
 const TABS = [
-  { key: 'assess', label: 'Оценка', icon: 'tune' },
+  { key: 'assess', label: 'Диагностика', icon: 'checklist' },
+  { key: 'calc', label: 'Калькулятор', icon: 'tune' },
   { key: 'result', label: 'Результат', icon: 'insights' },
   { key: 'dynamics', label: 'Динамика', icon: 'monitoring' },
   { key: 'ai', label: 'AI-аналитик', icon: 'auto_awesome' },
@@ -123,24 +126,26 @@ export default function GriPageShell() {
           монтироваться видимым, иначе ResponsiveContainer меряет 0×0). Чтобы
           смена вкладки не сбрасывала оценки, калькулятор «посевается» из
           диагностики только один раз за визит — через seededRef. */}
+      {/* «Диагностика» — основная страница: полный GRI-тест. */}
       {tab === 'assess' && (
-        <div className="space-y-6">
-          <GRICalculator
-            scores={scores}
-            onScoresChange={setScores}
-            niche={niche}
-            size={size}
-            onNicheChange={setNiche}
-            onSizeChange={setSize}
-            seedFromAssessment={!seededRef.current}
-            onSeeded={() => {
-              seededRef.current = true
-            }}
-          />
-          <div id="gri-assessment">
-            <GRIAssessment />
-          </div>
+        <div id="gri-assessment">
+          <GRIAssessment />
         </div>
+      )}
+      {/* «Калькулятор» — быстрая прикидка по 7 ползункам, отдельным разделом. */}
+      {tab === 'calc' && (
+        <GRICalculator
+          scores={scores}
+          onScoresChange={setScores}
+          niche={niche}
+          size={size}
+          onNicheChange={setNiche}
+          onSizeChange={setSize}
+          seedFromAssessment={!seededRef.current}
+          onSeeded={() => {
+            seededRef.current = true
+          }}
+        />
       )}
       {tab === 'result' && <GriResultPanel assessment={assessment} onGoAssess={() => setTab('assess')} />}
       {tab === 'dynamics' && <GriDynamicsPanel />}
