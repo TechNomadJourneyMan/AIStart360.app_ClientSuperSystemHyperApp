@@ -4,9 +4,12 @@
 // диагностики из gri_assessments — индекс, средние по 7 блокам, TOP-5
 // ограничений, план на 90 дней и CTA разбора. Чисто презентационный компонент:
 // данные приходят из GriPageShell через props (никаких запросов здесь).
+import Link from 'next/link'
 import { GRI_SECTIONS } from '@/lib/gri-assessment/sections'
 import type { ActionCard, ActionPlan90d, Top5Limit } from '@/lib/gri-calculator/top5-action-plan'
 import type { AssessmentCurrent } from './GriPageShell'
+import DecisiveBets from './DecisiveBets'
+import GriBenchmarks from './GriBenchmarks'
 
 // Русские подписи 7 блоков GRI (sections.ts хранит английские shortTitle).
 const BLOCK_RU: Record<string, string> = {
@@ -205,6 +208,28 @@ export default function GriResultPanel({
           📅 Забронировать разбор
         </a>
       </section>
+
+      {/* «5 решающих ставок» + бенчмарки отрасли — только когда есть данные блоков */}
+      {Object.keys(avgs).length > 0 && (
+        <>
+          <DecisiveBets
+            top5Limits={assessment.top_5_limits}
+            sectionAvgs={avgs}
+            actionPlan90d={assessment.action_plan_90d}
+          />
+          <GriBenchmarks sectionAvgs={avgs} />
+        </>
+      )}
+
+      {/* Методология — страница делает отдельный исполнитель */}
+      <div className="text-center">
+        <Link
+          href="/gri/methodology"
+          className="text-xs text-on-surface-variant hover:text-primary transition-colors"
+        >
+          Как считается GRI →
+        </Link>
+      </div>
     </div>
   )
 }
