@@ -22,11 +22,51 @@ import {
   type CooldownState,
 } from './triggers'
 import {
+  DEFAULT_MASCOT_BEHAVIOR,
   DEFAULT_MASCOT_SETTINGS,
+  DEFAULT_TOUR_GUIDE,
   type AssistantContextPayload,
   type MascotSettings,
   type MascotState,
 } from './types'
+
+/** The persisted slice shape (partialize output). */
+type MascotPersistedSlice = Pick<
+  MascotStore,
+  'cooldowns' | 'minimized' | 'settings' | 'lastCompletedSections'
+>
+
+/**
+ * Миграция персиста 'aistart_mascot_v1' (v2, Фаза 3): блобы, записанные до
+ * появления settings.tourGuide, не содержат этого поля — без бэкфила первый же
+ * setContext падал бы на `settings.tourGuide.status` и маскот умирал молча.
+ * Мержим ПО-ПОЛЬНО поверх дефолтов (toursDone/dismissedHints пользователя не
+ * теряем), behavior и tourGuide — глубоко. Экспортирована для юнит-тестов.
+ */
+export function migrateMascotPersist(persisted: unknown): MascotPersistedSlice {
+  const p = (persisted && typeof persisted === 'object' ? persisted : {}) as Record<
+    string,
+    unknown
+  > & { settings?: Partial<MascotSettings> }
+  const s = (p.settings && typeof p.settings === 'object' ? p.settings : {}) as Partial<
+    MascotSettings
+  >
+  return {
+    ...(p as Partial<MascotPersistedSlice>),
+    cooldowns: (p.cooldowns as CooldownState) ?? EMPTY_COOLDOWNS,
+    minimized: p.minimized === true,
+    lastCompletedSections:
+      typeof p.lastCompletedSections === 'number' ? p.lastCompletedSections : null,
+    settings: {
+      ...DEFAULT_MASCOT_SETTINGS,
+      ...s,
+      behavior: { ...DEFAULT_MASCOT_BEHAVIOR, ...(s.behavior ?? {}) },
+      tourGuide: { ...DEFAULT_TOUR_GUIDE, ...(s.tourGuide ?? {}) },
+      toursDone: Array.isArray(s.toursDone) ? s.toursDone : [],
+      dismissedHints: Array.isArray(s.dismissedHints) ? s.dismissedHints : [],
+    },
+  }
+}
 
 interface MascotStore {
   // ── Volatile (session) ────────────────────────────────────────────────────
@@ -88,29 +128,37 @@ export const useMascotStore = create<MascotStore>()(
       lastCompletedSections: null,
 
       setContext: (payload) =>
-        set((s) => ({
-          context: payload,
-          contextFetchedAt: Date.now(),
-          // Server settings win, EXCEPT monotonically-progressing fields: a stale
-          // /context response (in-flight before an optimistic PATCH) must not
-          // clobber a tour completed a second ago, revert greeted, or pull the
-          // welcome/экскурсия back to 'pending' after the user already chose.
-          settings: {
-            ...payload.settings,
-            greeted: payload.settings.greeted || s.settings.greeted,
-            toursDone: Array.from(
-              new Set([...payload.settings.toursDone, ...s.settings.toursDone]),
-            ).slice(0, 50),
-            dismissedHints: Array.from(
-              new Set([...payload.settings.dismissedHints, ...s.settings.dismissedHints]),
-            ).slice(0, 50),
-            tourGuide:
-              payload.settings.tourGuide.status === 'pending' &&
-              s.settings.tourGuide.status !== 'pending'
-                ? s.settings.tourGuide
-                : payload.settings.tourGuide,
-          },
-        })),
+        set((s) => {
+          // Защитные чтения: до миграции v2 в зеркале (или в старом серверном
+          // bag'е) tourGuide может отсутствовать — не падаем, берём дефолт.
+          const localTG = s.settings.tourGuide ?? DEFAULT_TOUR_GUIDE
+          const serverTG = payload.settings.tourGuide ?? DEFAULT_TOUR_GUIDE
+          return {
+            context: payload,
+            contextFetchedAt: Date.now(),
+            // Server settings win, EXCEPT monotonically-progressing fields: a stale
+            // /context response (in-flight before an optimistic PATCH) must not
+            // clobber a tour completed a second ago, revert greeted, or pull the
+            // welcome/экскурсия back to 'pending' after the user already chose.
+            settings: {
+              ...payload.settings,
+              greeted: payload.settings.greeted || s.settings.greeted,
+              toursDone: Array.from(
+                new Set([...(payload.settings.toursDone ?? []), ...(s.settings.toursDone ?? [])]),
+              ).slice(0, 50),
+              dismissedHints: Array.from(
+                new Set([
+                  ...(payload.settings.dismissedHints ?? []),
+                  ...(s.settings.dismissedHints ?? []),
+                ]),
+              ).slice(0, 50),
+              tourGuide:
+                serverTG.status === 'pending' && localTG.status !== 'pending'
+                  ? localTG
+                  : serverTG,
+            },
+          }
+        }),
 
       showHint: (hint, screen, now) =>
         set((s) => ({
@@ -154,6 +202,9 @@ export const useMascotStore = create<MascotStore>()(
     }),
     {
       name: 'aistart_mascot_v1',
+      // v2 (Фаза 3): settings.tourGuide появился — старые блобы бэкфилим.
+      version: 2,
+      migrate: (persisted) => migrateMascotPersist(persisted),
       partialize: (s) => ({
         cooldowns: s.cooldowns,
         minimized: s.minimized,

@@ -37,10 +37,12 @@ const patchSchema = z
     color: z.enum(['ginger', 'graphite', 'snow', 'cocoa']).optional(),
     tutorialDone: z.boolean().optional(),
     toursDone: z.array(z.string().max(64)).max(50).optional(),
+    // Частичный объект: {status} или {stepIdx} по отдельности — сервер мержит
+    // per-key поверх текущих значений (как behavior); Батч B шлёт {stepIdx}.
     tourGuide: z
       .object({
-        status: z.enum(['pending', 'active', 'done', 'dismissed']),
-        stepIdx: z.number().int().min(0).max(50),
+        status: z.enum(['pending', 'active', 'done', 'dismissed']).optional(),
+        stepIdx: z.number().int().min(0).max(50).optional(),
       })
       .strict()
       .optional(),

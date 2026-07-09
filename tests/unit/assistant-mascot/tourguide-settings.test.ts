@@ -118,4 +118,26 @@ describe('writeMascotSettings — tourGuide round-trip', () => {
     const res = await writeMascotSettings(sb as never, 'user-1', { toursDone: ['/gri'] })
     expect(res.tourGuide).toEqual(DEFAULT_TOUR_GUIDE)
   })
+
+  // M6: частичный tourGuide-патч мержится per-key (как behavior) — Батч B шлёт
+  // {stepIdx} на каждом шаге экскурсии, не теряя status (и наоборот).
+  it('merges a {stepIdx}-only patch over the stored status', async () => {
+    const sb = mockSb(
+      { data: [{ id: 'user-1' }], error: null },
+      { preferences: { assistant: { tourGuide: { status: 'active', stepIdx: 4 } } } },
+    )
+    const res = await writeMascotSettings(sb as never, 'user-1', { tourGuide: { stepIdx: 5 } })
+    expect(res.tourGuide).toEqual({ status: 'active', stepIdx: 5 })
+  })
+
+  it('merges a {status}-only patch keeping the stored stepIdx', async () => {
+    const sb = mockSb(
+      { data: [{ id: 'user-1' }], error: null },
+      { preferences: { assistant: { tourGuide: { status: 'active', stepIdx: 7 } } } },
+    )
+    const res = await writeMascotSettings(sb as never, 'user-1', {
+      tourGuide: { status: 'done' },
+    })
+    expect(res.tourGuide).toEqual({ status: 'done', stepIdx: 7 })
+  })
 })

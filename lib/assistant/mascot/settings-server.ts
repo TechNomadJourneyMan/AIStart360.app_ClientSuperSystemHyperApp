@@ -119,9 +119,10 @@ export async function readMascotSettings(
   return normalizeMascotSettings(prefs.assistant)
 }
 
-/** A settings patch; `behavior` may itself be partial (merged per-key). */
-export type MascotSettingsPatch = Partial<Omit<MascotSettings, 'behavior'>> & {
+/** A settings patch; `behavior` and `tourGuide` may be partial (merged per-key). */
+export type MascotSettingsPatch = Partial<Omit<MascotSettings, 'behavior' | 'tourGuide'>> & {
   behavior?: Partial<MascotBehaviorSettings>
+  tourGuide?: Partial<TourGuideState>
 }
 
 /**
@@ -142,12 +143,14 @@ export async function writeMascotSettings(
 
   const prefs = (data?.preferences ?? {}) as Record<string, unknown>
   const current = normalizeMascotSettings(prefs.assistant)
-  // behavior merges per-key (a {behavior:{walking:false}} patch must not reset
-  // the user's other behavior switches to defaults).
+  // behavior/tourGuide merge per-key (a {behavior:{walking:false}} or
+  // {tourGuide:{stepIdx:3}} patch must not reset the object's other keys) —
+  // Батч B шлёт {tourGuide:{stepIdx}} на каждом шаге экскурсии.
   const merged: MascotSettings = normalizeMascotSettings({
     ...current,
     ...patch,
     behavior: { ...current.behavior, ...(patch.behavior ?? {}) },
+    tourGuide: { ...current.tourGuide, ...(patch.tourGuide ?? {}) },
   })
 
   const { data: updated, error } = await sb

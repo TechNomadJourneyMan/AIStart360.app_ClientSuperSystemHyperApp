@@ -167,8 +167,9 @@ export default function MascotAssistant() {
   const lastWaveRef = useRef(0)
   const waveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [tourSteps, setTourSteps] = useState<TourStep[] | null>(null)
-  const tourSessionRef = useRef<Set<string>>(new Set())
   const [showWelcome, setShowWelcome] = useState(false)
+  /** Экран, с которого меню «Обучение» запросило тур другого раздела (M3). */
+  const tourRequestOriginRef = useRef<string | null>(null)
 
   const screenRef = useRef(screen)
   const scrollTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -178,6 +179,12 @@ export default function MascotAssistant() {
 
   const hiddenNow = sessionHidden || isMascotHidden(settings, Date.now())
   const reducedMotion = useReducedMotion()
+
+  // Staff-контексты (/owner, /expert, /admin*): туров в TOURS для них нет —
+  // welcome и раздел «Обучение» там не предлагаем (обещать нечего).
+  const staffScreen = /^\/(owner|expert|admin)/.test(screen)
+  // Защитное чтение: персист до миграции v2 мог не содержать tourGuide.
+  const tourGuideStatus = settings.tourGuide?.status ?? 'pending'
 
   const baseBottom = isDesktop ? 24 : 80
   // Zone ≈ avatar size + bubble headroom (desktop cat is 168px since v1.3.1).
@@ -283,7 +290,7 @@ export default function MascotAssistant() {
       // greeted=true); пузырь-приветствие остаётся лишь для легаси-пути.
       if (
         !s.settings.greeted &&
-        s.settings.tourGuide.status !== 'pending' &&
+        (s.settings.tourGuide?.status ?? 'pending') !== 'pending' &&
         !wizardOnScreen()
       ) {
         const g = localCandidate('greeting', { name: getCharacter(s.settings.character).name })
@@ -601,19 +608,19 @@ export default function MascotAssistant() {
   // greeted/статус пишутся ТОЛЬКО по выбору в модалке — само появление ничего не
   // помечает, поэтому показ строго одноразовый (см. onWelcome* + persistSettings).
   useEffect(() => {
-    if (hiddenNow) {
+    if (hiddenNow || staffScreen) {
       setShowWelcome(false)
       return
     }
     if (!context || showWelcome) return
-    if (settings.greeted || settings.tourGuide.status !== 'pending') return
+    if (settings.greeted || tourGuideStatus !== 'pending') return
 
     let timer: ReturnType<typeof setTimeout> | null = null
     let cancelled = false
     const tryShow = () => {
       if (cancelled) return
       const s = useMascotStore.getState()
-      if (s.settings.greeted || s.settings.tourGuide.status !== 'pending') return
+      if (s.settings.greeted || (s.settings.tourGuide?.status ?? 'pending') !== 'pending') return
       if (wizardOnScreen() || foreignDialogOpen() || s.chatOpen || s.minimized) {
         timer = setTimeout(tryShow, 800)
         return
@@ -625,12 +632,11 @@ export default function MascotAssistant() {
       cancelled = true
       if (timer) clearTimeout(timer)
     }
-  }, [context, hiddenNow, showWelcome, settings.greeted, settings.tourGuide.status])
+  }, [context, hiddenNow, staffScreen, showWelcome, settings.greeted, tourGuideStatus])
 
-  // Settings «Сбросить обучение»: clear the per-session guard so tours re-run.
+  // Settings «Сбросить обучение»: re-run the current screen's tour on demand.
   useEffect(() => {
     const onReplay = () => {
-      tourSessionRef.current.clear()
       const steps = tourForScreen(screen)
       if (steps) setTourSteps(steps)
     }
@@ -703,6 +709,7 @@ export default function MascotAssistant() {
         if (steps) setTourSteps(steps)
         return
       }
+      tourRequestOriginRef.current = screen
       setRequestedTourScreen(targetScreen)
       router.push(href)
     },
@@ -711,11 +718,21 @@ export default function MascotAssistant() {
 
   // После перехода из меню «Обучение»: как только экран совпал с запрошенным —
   // запускаем его тур и сбрасываем запрос (коачмарки сами ждут поздние таргеты).
+  // Если пользователь ушёл на ТРЕТИЙ экран (не исходный и не целевой) — запрос
+  // протух: сбрасываем, чтобы тур не выстрелил при позднем органическом визите.
   useEffect(() => {
-    if (!requestedTourScreen || screen !== requestedTourScreen) return
-    setRequestedTourScreen(null)
-    const steps = tourForScreen(screen)
-    if (steps) setTourSteps(steps)
+    if (!requestedTourScreen) return
+    if (screen === requestedTourScreen) {
+      setRequestedTourScreen(null)
+      tourRequestOriginRef.current = null
+      const steps = tourForScreen(screen)
+      if (steps) setTourSteps(steps)
+      return
+    }
+    if (screen !== tourRequestOriginRef.current) {
+      setRequestedTourScreen(null)
+      tourRequestOriginRef.current = null
+    }
   }, [screen, requestedTourScreen, setRequestedTourScreen])
 
   const closeTour = useCallback(
@@ -828,8 +845,8 @@ export default function MascotAssistant() {
             onHide={onHide}
             onInsight={settings.behavior.aiInsights ? onInsightClick : undefined}
             onPageTour={tourForScreen(screen) ? onPageTour : undefined}
-            onStartTourGuide={onStartTourGuide}
-            sectionTours={sectionTours}
+            onStartTourGuide={staffScreen ? undefined : onStartTourGuide}
+            sectionTours={staffScreen ? undefined : sectionTours}
             onSectionTour={onSectionTour}
             onClose={() => setControlsOpen(false)}
           />

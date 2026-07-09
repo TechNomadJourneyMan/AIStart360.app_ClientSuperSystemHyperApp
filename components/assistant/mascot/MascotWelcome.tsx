@@ -10,10 +10,12 @@
  * MascotAssistant; сам движок экскурсии — Батч B.
  *
  * a11y: role="dialog" aria-modal, Esc = «Разберусь сам», клик по подложке =
- * отказ. Анимации уважают prefers-reduced-motion.
+ * отказ, Tab зациклен внутри диалога (минимальный focus-trap), после закрытия
+ * фокус возвращается на кнопку-аватар маскота. Анимации уважают
+ * prefers-reduced-motion.
  */
 
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { motion, useReducedMotion } from 'framer-motion'
 import type { MascotCharacterId } from '@/lib/assistant/mascot/characters'
 import { MascotAvatar, type MascotColorId } from './MascotAvatar'
@@ -36,19 +38,55 @@ export function MascotWelcome({
   onDismiss,
 }: MascotWelcomeProps) {
   const reduced = useReducedMotion()
+  const dialogRef = useRef<HTMLDivElement>(null)
 
-  // Esc = «Разберусь сам». Захватываем на capture, чтобы отработать раньше
-  // прочих Esc-слушателей маскота (пузырь/меню сейчас всё равно закрыты).
+  // Esc = «Разберусь сам» + минимальный focus-trap: Tab/Shift+Tab зациклены на
+  // фокусируемых элементах диалога. Захватываем на capture, чтобы отработать
+  // раньше прочих слушателей маскота (пузырь/меню сейчас всё равно закрыты).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.stopPropagation()
         onDismiss()
+        return
+      }
+      if (e.key !== 'Tab') return
+      const root = dialogRef.current
+      if (!root) return
+      const focusables = Array.from(
+        root.querySelectorAll<HTMLElement>(
+          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+        ),
+      )
+      const first = focusables[0]
+      const last = focusables[focusables.length - 1]
+      if (!first || !last) return
+      const active = document.activeElement
+      const inside = active instanceof Node && root.contains(active)
+      if (e.shiftKey) {
+        if (!inside || active === first) {
+          e.preventDefault()
+          last.focus()
+        }
+      } else if (!inside || active === last) {
+        e.preventDefault()
+        first.focus()
       }
     }
     window.addEventListener('keydown', onKey, true)
     return () => window.removeEventListener('keydown', onKey, true)
   }, [onDismiss])
+
+  // После закрытия возвращаем фокус на кнопку-аватар маскота (постоянный якорь;
+  // элемент, с которого открылась модалка, к этому моменту может исчезнуть).
+  useEffect(
+    () => () => {
+      document
+        .querySelector<HTMLElement>('button[aria-label*="открыть чат с ассистентом"]')
+        ?.focus()
+    },
+    [],
+  )
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
@@ -62,6 +100,7 @@ export function MascotWelcome({
         transition={{ duration: 0.2 }}
       />
       <motion.div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="mascot-welcome-title"
