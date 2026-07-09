@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { headers } from 'next/headers'
 import CheckoutButton from '@/app/_components/CheckoutButton'
 import { getPlan } from '@/lib/payments'
 
@@ -6,9 +7,9 @@ import { getPlan } from '@/lib/payments'
 // Auth'd users всё равно увидят landing; кликают «Войти» → middleware вернёт их в их панель.
 
 // ── A/B POSITIONING VARIANTS ──────────────────────────────────────────────
-// Switchable via ?v=1|2|3|4. v1 is the baseline («Операционная система роста»).
-// Each variant swaps the hero badge, headline, subheadline and primary CTA;
-// the rest of the page is shared. Pick with searchParams.v.
+// Switchable via ?v=1|2|3|4. v2 «GRI Health Check» is the baseline
+// (решение ПО, Option 2). Each variant swaps the hero badge, headline,
+// subheadline and CTAs; the rest of the page is shared. Pick with searchParams.v.
 type HeroVariant = {
   badge: string
   headlineTop: string
@@ -16,14 +17,15 @@ type HeroVariant = {
   headlineBottom?: string
   subheadline: React.ReactNode
   primaryCta: { label: string; href: string }
+  secondaryCta: { label: string; href: string }
 }
 
 const VARIANTS: Record<'1' | '2' | '3' | '4', HeroVariant> = {
-  // v1 — Операционная система роста (baseline)
+  // v1 — Операционная система роста (legacy A/B)
   '1': {
     badge: 'Операционная система роста · v1.0',
     headlineTop: 'Управляйте ростом',
-    headlineAccent: 'по цифрам',
+    headlineAccent: 'по цифрам —',
     headlineBottom: 'от диагностики до маршрута',
     subheadline: (
       <>
@@ -35,22 +37,25 @@ const VARIANTS: Record<'1' | '2' | '3' | '4', HeroVariant> = {
       </>
     ),
     primaryCta: { label: 'Запустить диагностику бесплатно', href: '/register' },
+    secondaryCta: { label: 'Узнать GRI бесплатно за 5 минут', href: '/gri-free' },
   },
-  // v2 — GRI Health Check
+  // v2 — GRI Health Check (baseline, решение ПО)
   '2': {
-    badge: 'GRI Health Check · 7 блоков',
+    badge: 'GRI Health Check · индекс за 5 минут',
     headlineTop: 'Проверьте готовность',
     headlineAccent: 'бизнеса к росту',
     headlineBottom: 'за 5 минут',
     subheadline: (
       <>
-        GRI-диагностика по{' '}
-        <span className="text-primary font-semibold">7 блокам</span> с{' '}
-        <span className="text-primary font-semibold">бенчмарками</span> по отрасли.
-        Узнайте, где «бутылочное горлышко» и что чинить первым — без аудита и Excel.
+        Индекс готовности <span className="text-primary font-semibold">0–10</span> по{' '}
+        <span className="text-primary font-semibold">7 блокам</span> бизнеса, главные
+        ограничения и <span className="text-primary font-semibold">план на 90 дней</span>.
+        Самооценка за 5 минут, дальше — сверка с данными из ваших отчётов и экспертные
+        ориентиры вместо «магии».
       </>
     ),
-    primaryCta: { label: 'Узнать GRI бесплатно за 5 минут', href: '/gri-free' },
+    primaryCta: { label: 'Узнать свой индекс бесплатно', href: '/gri-free' },
+    secondaryCta: { label: 'Полная диагностика — регистрация', href: '/register' },
   },
   // v3 — AI-агентство роста
   '3': {
@@ -67,38 +72,76 @@ const VARIANTS: Record<'1' | '2' | '3' | '4', HeroVariant> = {
       </>
     ),
     primaryCta: { label: 'Собрать команду роста', href: '/register' },
+    secondaryCta: { label: 'Узнать GRI бесплатно за 5 минут', href: '/gri-free' },
   },
   // v4 — Точка А → Точка Б
   '4': {
     badge: 'Точка А → Точка Б · 90 дней',
     headlineTop: 'Где вы сейчас,',
-    headlineAccent: 'куда хотите',
+    headlineAccent: 'куда хотите —',
     headlineBottom: 'и как пройти путь за 90 дней',
     subheadline: (
       <>
         <span className="text-primary font-semibold">Точка А</span> — честная картина по
         цифрам. <span className="text-primary font-semibold">Точка Б</span> — 11 целей
         роста. Между ними — <span className="text-primary font-semibold">90-дневный
-        маршрут</span> с gap-анализом и бенчмарками.
+        маршрут</span> с gap-анализом и экспертными ориентирами.
       </>
     ),
     primaryCta: { label: 'Построить маршрут А → Б', href: '/register' },
+    secondaryCta: { label: 'Узнать GRI бесплатно за 5 минут', href: '/gri-free' },
   },
 }
 
 function pickVariant(v: string | string[] | undefined): HeroVariant {
   const raw = Array.isArray(v) ? v[0] : v
-  if (raw === '2' || raw === '3' || raw === '4') return VARIANTS[raw]
-  return VARIANTS['1']
+  if (raw === '1' || raw === '3' || raw === '4') return VARIANTS[raw]
+  return VARIANTS['2'] // default — «GRI Health Check» (Option 2, решение ПО)
 }
 
-// Human-readable amount from PLANS (minor units → major, $300 / $149).
-function planPrice(key: string): string {
+// ── ГЕО-ВАЛЮТА (№18) ──────────────────────────────────────────────────────
+// Каталог PLANS хранит цены в USD (minor units). Для витрины конвертируем в
+// валюту региона по заголовку `x-vercel-ip-country`: KZ → ₸, RU/BY → ₽,
+// остальные страны → $. Нет заголовка (локально/не-Vercel) → fallback ₸.
+// Курсы — статические витринные ориентиры (не биржевые), суммы для не-USD
+// показываются с «≈»; списание в USD по курсу на день оплаты (см. сноску).
+type GeoCurrency = { code: 'USD' | 'KZT' | 'RUB'; symbol: string; perUsd: number }
+
+const GEO_CURRENCIES: Record<GeoCurrency['code'], GeoCurrency> = {
+  USD: { code: 'USD', symbol: '$', perUsd: 1 },
+  KZT: { code: 'KZT', symbol: '₸', perUsd: 520 },
+  RUB: { code: 'RUB', symbol: '₽', perUsd: 95 },
+}
+
+function resolveGeoCurrency(): GeoCurrency {
+  let country: string | null = null
+  try {
+    country = headers().get('x-vercel-ip-country')
+  } catch {
+    country = null
+  }
+  if (!country) return GEO_CURRENCIES.KZT // fallback — ₸
+  const c = country.toUpperCase()
+  if (c === 'KZ') return GEO_CURRENCIES.KZT
+  if (c === 'RU' || c === 'BY') return GEO_CURRENCIES.RUB
+  return GEO_CURRENCIES.USD
+}
+
+// Human-readable amount from PLANS in the visitor's currency.
+// USD — точная цена ($300); KZT/RUB — округлённый ориентир с «≈».
+function planPrice(key: string, cur: GeoCurrency): string {
   const p = getPlan(key)
   if (!p) return ''
-  const major = p.amount / 100
-  const symbol = p.currency === 'USD' ? '$' : ''
-  return `${symbol}${major.toLocaleString('ru-RU')}`
+  const usd = p.amount / 100
+  if (cur.code === 'USD') return `$${usd.toLocaleString('ru-RU')}`
+  const raw = usd * cur.perUsd
+  const rounded =
+    cur.code === 'KZT' ? Math.round(raw / 1000) * 1000 : Math.round(raw / 500) * 500
+  return `≈${rounded.toLocaleString('ru-RU')} ${cur.symbol}`
+}
+
+function freePrice(cur: GeoCurrency): string {
+  return cur.code === 'USD' ? '$0' : `0 ${cur.symbol}`
 }
 
 const MODULES = [
@@ -160,8 +203,9 @@ export default function LandingPage({
   searchParams: { v?: string | string[] }
 }) {
   const variant = pickVariant(searchParams?.v)
-  const proMonthlyPrice = planPrice('pro_monthly')
-  const proOnetimePrice = planPrice('pro_onetime')
+  const currency = resolveGeoCurrency()
+  const proMonthlyPrice = planPrice('pro_monthly', currency)
+  const proOnetimePrice = planPrice('pro_onetime', currency)
 
   return (
     <div className="min-h-screen bg-surface text-on-surface">
@@ -177,8 +221,8 @@ export default function LandingPage({
           </Link>
           <div className="hidden md:flex items-center gap-8 text-sm text-on-surface-variant">
             <a href="#modules" className="hover:text-primary transition-colors">Модули</a>
-            <a href="#metrics" className="hover:text-primary transition-colors">Метрики</a>
-            <a href="#gri" className="hover:text-primary transition-colors">GRI Pulse</a>
+            <a href="#gri" className="hover:text-primary transition-colors">GRI Health Check</a>
+            <a href="#sample" className="hover:text-primary transition-colors">Пример отчёта</a>
             <a href="#pricing" className="hover:text-primary transition-colors">Тарифы</a>
           </div>
           <div className="flex items-center gap-3">
@@ -218,7 +262,7 @@ export default function LandingPage({
               <span className="text-gradient">{variant.headlineAccent}</span>
               {variant.headlineBottom && (
                 <>
-                  , <br />
+                  <br />
                   {variant.headlineBottom}
                 </>
               )}
@@ -237,21 +281,21 @@ export default function LandingPage({
                 <span className="material-symbols-outlined transition-transform group-hover:translate-x-1">arrow_forward</span>
               </Link>
               <Link
-                href="/gri-free"
+                href={variant.secondaryCta.href}
                 className="group border border-primary/30 text-primary px-6 py-3.5 rounded-xl flex items-center gap-2 hover:border-primary/60 hover:bg-primary/5 transition-colors"
               >
                 <span className="material-symbols-outlined">bolt</span>
-                Узнать GRI бесплатно за 5 минут
+                {variant.secondaryCta.label}
               </Link>
             </div>
 
             {/* Stats strip */}
             <div className="mt-16 grid grid-cols-2 lg:grid-cols-4 gap-px bg-white/[0.04] rounded-2xl overflow-hidden border border-white/[0.04]">
               {[
-                { v: '122', l: 'метрики бизнеса' },
-                { v: '7',   l: 'блоков GRI Pulse' },
-                { v: '11',  l: 'целей роста' },
-                { v: '90д', l: 'roadmap' },
+                { v: '0–10',  l: 'индекс готовности' },
+                { v: '7',     l: 'блоков бизнеса' },
+                { v: '5 мин', l: 'на самооценку' },
+                { v: '90 дн', l: 'план действий' },
               ].map((s, i) => (
                 <div key={i} className="bg-surface-container-low p-6">
                   <p className="font-mono text-3xl font-bold text-primary">{s.v}</p>
@@ -304,7 +348,7 @@ export default function LandingPage({
               4 модуля
             </p>
             <h2 className="font-headline text-4xl lg:text-5xl font-extrabold leading-tight">
-              От анкеты до <span className="text-gradient">$2M / год</span>
+              От самооценки до <span className="text-gradient">плана на 90 дней</span>
             </h2>
             <p className="mt-6 text-lg text-on-surface-variant">
               Диагностика → Метрики → План → Исполнение. Без бесконечных Excel,
@@ -382,21 +426,21 @@ export default function LandingPage({
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
             <div>
               <p className="text-xs font-mono text-primary uppercase tracking-[0.2em] mb-3">
-                GRI Pulse
+                GRI Health Check
               </p>
               <h2 className="font-headline text-4xl lg:text-5xl font-extrabold leading-tight">
-                Не аудит — <br />
-                <span className="text-gradient">маршрут роста</span>
+                Индекс готовности <br />
+                <span className="text-gradient">0–10 по 7 блокам</span>
               </h2>
               <p className="mt-6 text-lg text-on-surface-variant">
-                7 блоков готовности: бизнес-модель, основатель, доверие, касса, продукт,
-                команда, операции. Видно где «бутылочное горлышко» и куда инвестировать
-                рубль, чтобы получить пять.
+                Бизнес-модель, основатель, доверие, касса, продукт, команда, операции.
+                Одна цифра на блок — и сразу видно, где «бутылочное горлышко»
+                и что чинить первым.
               </p>
               <div className="mt-8 space-y-3">
                 {[
-                  { i: 'check_circle', t: 'Расчёт автоматический', d: 'Из ответов анкеты + парсинга документов' },
-                  { i: 'compass_calibration', t: 'Сравнение с бенчмарком', d: 'Целевой ≥7/10 по каждому блоку' },
+                  { i: 'check_circle', t: 'Самооценка + сверка с данными', d: 'Ответы анкеты сверяются с цифрами из ваших документов' },
+                  { i: 'compass_calibration', t: 'Экспертные ориентиры', d: 'Целевой уровень ≥7/10 по каждому блоку — не «средняя по больнице»' },
                   { i: 'priority_high', t: 'Топ-5 ограничений', d: 'Что чинить первым — конкретные действия' },
                 ].map((p) => (
                   <div key={p.t} className="flex items-start gap-3">
@@ -455,6 +499,127 @@ export default function LandingPage({
         </div>
       </section>
 
+      {/* ── SAMPLE REPORT (№13) ───────────────────────────── */}
+      <section id="sample" className="border-t border-white/[0.04]">
+        <div className="max-w-7xl mx-auto px-6 py-20">
+          <div className="max-w-2xl mb-12">
+            <p className="text-xs font-mono text-primary uppercase tracking-[0.2em] mb-3">
+              Пример отчёта
+            </p>
+            <h2 className="font-headline text-4xl lg:text-5xl font-extrabold leading-tight">
+              Что вы получите <br />
+              <span className="text-gradient">после диагностики</span>
+            </h2>
+            <p className="mt-6 text-lg text-on-surface-variant">
+              Четыре части отчёта GRI Health Check. Цифры ниже — условный пример,
+              ваш отчёт строится на ваших ответах и данных.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+            {/* 1 — Индекс */}
+            <div className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-6 flex flex-col">
+              <div className="w-12 h-12 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center mb-4">
+                <span className="material-symbols-outlined text-primary">speed</span>
+              </div>
+              <h3 className="font-headline text-lg font-bold mb-3">Индекс готовности</h3>
+              <div className="bg-surface-container rounded-xl border border-white/[0.04] p-4 mb-4">
+                <p className="font-mono text-3xl font-extrabold text-primary">
+                  6.2<span className="text-on-surface-variant/50 text-lg">/10</span>
+                </p>
+                <p className="text-[10px] font-mono text-on-surface-variant/60 uppercase tracking-wider mt-1">
+                  цель ≥ 7.0
+                </p>
+              </div>
+              <p className="text-sm text-on-surface-variant leading-relaxed mt-auto">
+                Одна цифра — насколько бизнес готов к росту. Взвешенная сумма 7 блоков.
+              </p>
+            </div>
+
+            {/* 2 — Радар 7 блоков */}
+            <div className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-6 flex flex-col">
+              <div className="w-12 h-12 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center mb-4">
+                <span className="material-symbols-outlined text-primary">radar</span>
+              </div>
+              <h3 className="font-headline text-lg font-bold mb-3">Радар 7 блоков</h3>
+              <div className="bg-surface-container rounded-xl border border-white/[0.04] p-4 mb-4 space-y-1.5">
+                {[
+                  { l: 'Бизнес-модель', ok: true },
+                  { l: 'Касса', ok: false },
+                  { l: 'Команда', ok: false },
+                  { l: '… ещё 4 блока', ok: true },
+                ].map((b) => (
+                  <div key={b.l} className="flex items-center gap-2">
+                    <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${b.ok ? 'bg-primary' : 'bg-error'}`} />
+                    <span className="text-xs text-on-surface-variant">{b.l}</span>
+                  </div>
+                ))}
+              </div>
+              <p className="text-sm text-on-surface-variant leading-relaxed mt-auto">
+                Профиль сильных и слабых блоков — видно, что тянет индекс вниз.
+              </p>
+            </div>
+
+            {/* 3 — Топ-5 ограничений */}
+            <div className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-6 flex flex-col">
+              <div className="w-12 h-12 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center mb-4">
+                <span className="material-symbols-outlined text-primary">priority_high</span>
+              </div>
+              <h3 className="font-headline text-lg font-bold mb-3">Топ-5 ограничений</h3>
+              <div className="bg-surface-container rounded-xl border border-white/[0.04] p-4 mb-4 space-y-1.5">
+                {[
+                  '1. Процессы держатся на основателе',
+                  '2. Нет управленческой отчётности',
+                  '3. Один канал даёт 80% выручки',
+                  '…',
+                ].map((line) => (
+                  <p key={line} className="text-xs text-on-surface-variant leading-snug">{line}</p>
+                ))}
+              </div>
+              <p className="text-sm text-on-surface-variant leading-relaxed mt-auto">
+                Главные «бутылочные горлышки» и почему именно они держат рост.
+              </p>
+            </div>
+
+            {/* 4 — План 90 дней */}
+            <div className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-6 flex flex-col">
+              <div className="w-12 h-12 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center mb-4">
+                <span className="material-symbols-outlined text-primary">route</span>
+              </div>
+              <h3 className="font-headline text-lg font-bold mb-3">План на 90 дней</h3>
+              <div className="bg-surface-container rounded-xl border border-white/[0.04] p-4 mb-4 space-y-1.5">
+                {[
+                  { p: 'Дни 1–30', t: 'навести учёт' },
+                  { p: 'Дни 31–60', t: 'разгрузить основателя' },
+                  { p: 'Дни 61–90', t: 'второй канал продаж' },
+                ].map((s) => (
+                  <div key={s.p} className="flex items-baseline gap-2">
+                    <span className="font-mono text-[10px] text-primary uppercase tracking-wider flex-shrink-0">{s.p}</span>
+                    <span className="text-xs text-on-surface-variant">{s.t}</span>
+                  </div>
+                ))}
+              </div>
+              <p className="text-sm text-on-surface-variant leading-relaxed mt-auto">
+                Последовательность шагов под ваши ограничения — с чего начать уже на этой неделе.
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-10 flex flex-col sm:flex-row items-center gap-4">
+            <Link
+              href="/gri-free"
+              className="group bg-primary text-on-primary font-semibold px-6 py-3.5 rounded-xl flex items-center gap-2 hover:shadow-xl hover:shadow-primary/30 transition-all focus:outline-none focus:ring-2 focus:ring-primary/40"
+            >
+              Попробовать бесплатный mini-GRI
+              <span className="material-symbols-outlined transition-transform group-hover:translate-x-1">arrow_forward</span>
+            </Link>
+            <p className="text-sm text-on-surface-variant">
+              5 минут · без карты · сокращённая версия отчёта сразу на экране
+            </p>
+          </div>
+        </div>
+      </section>
+
       {/* ── AI PARSER ─────────────────────────────────────── */}
       <section className="border-t border-white/[0.04]">
         <div className="max-w-7xl mx-auto px-6 py-20">
@@ -506,6 +671,82 @@ export default function LandingPage({
         </div>
       </section>
 
+      {/* ── VS CONSULTING (№14) ───────────────────────────── */}
+      <section id="vs-consulting" className="border-t border-white/[0.04]">
+        <div className="max-w-7xl mx-auto px-6 py-20">
+          <div className="max-w-2xl mb-12">
+            <p className="text-xs font-mono text-primary uppercase tracking-[0.2em] mb-3">
+              Честное сравнение
+            </p>
+            <h2 className="font-headline text-4xl lg:text-5xl font-extrabold leading-tight">
+              Тот же первый шаг — <br />
+              <span className="text-gradient">без консалтингового прайса</span>
+            </h2>
+            <p className="mt-6 text-lg text-on-surface-variant">
+              Мы не заменяем консультанта. Мы делаем первый честный срез —
+              до того, как вы решите за него платить.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+            {/* Консультант-диагност */}
+            <div className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-8">
+              <p className="text-xs font-mono text-on-surface-variant uppercase tracking-[0.2em] mb-3">
+                Консультант-диагност
+              </p>
+              <p className="font-headline text-3xl font-extrabold mb-1">$5 000–25 000</p>
+              <p className="font-mono text-sm text-on-surface-variant mb-6">4–6 недель на диагностику</p>
+              <ul className="space-y-2.5 text-sm">
+                {[
+                  'Интервью, воркшопы, погружение в контекст',
+                  'Глубокая отраслевая экспертиза — если повезёт с консультантом',
+                  'Отчёт и стратегическая сессия в конце',
+                  'Оправдан, когда нужен взгляд извне и сопровождение',
+                ].map((it) => (
+                  <li key={it} className="flex items-start gap-2 text-on-surface-variant">
+                    <span className="material-symbols-outlined text-on-surface-variant/50 text-base mt-0.5">remove</span>
+                    {it}
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            {/* AIStart360 */}
+            <div className="bg-primary/5 rounded-2xl border border-primary/30 p-8">
+              <p className="text-xs font-mono text-primary uppercase tracking-[0.2em] mb-3">
+                AIStart360 · GRI Health Check
+              </p>
+              <p className="font-headline text-3xl font-extrabold mb-1">Индекс + план за вечер</p>
+              <p className="font-mono text-sm text-on-surface-variant mb-6">старт — бесплатный mini-GRI</p>
+              <ul className="space-y-2.5 text-sm">
+                {[
+                  'Самооценка за 5 минут + сверка с данными из отчётов',
+                  'Экспертные ориентиры по 7 блокам — целевой ≥7/10',
+                  'Топ-5 ограничений и план на 90 дней',
+                  'Честно: глубину живого консультанта не заменяет',
+                ].map((it) => (
+                  <li key={it} className="flex items-start gap-2 text-on-surface">
+                    <span className="material-symbols-outlined text-primary text-base mt-0.5">check_circle</span>
+                    {it}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+
+          {/* Мини-ROI строка */}
+          <div className="mt-6 bg-surface-container-low rounded-2xl border border-white/[0.04] p-6 flex items-start gap-4">
+            <span className="material-symbols-outlined text-primary text-3xl">schedule</span>
+            <p className="text-sm text-on-surface leading-relaxed">
+              <span className="font-semibold">Простая арифметика:</span> один час «хаоса»
+              в неделю — это ~50 часов в год. Если диагностика поможет вернуть хотя бы
+              его — вечер на прохождение уже окупился. Результат мы не обещаем:
+              мы показываем узкие места, решения принимаете вы.
+            </p>
+          </div>
+        </div>
+      </section>
+
       {/* ── PRICING / CTA ─────────────────────────────────── */}
       <section id="pricing" className="border-t border-white/[0.04] bg-surface-container-low/30">
         <div className="max-w-7xl mx-auto px-6 py-20">
@@ -538,7 +779,7 @@ export default function LandingPage({
                 Pilot · бесплатно
               </p>
               <h3 className="font-headline text-3xl font-extrabold mb-1">30 дней бесплатно</h3>
-              <p className="font-mono text-sm text-on-surface-variant mb-4">$0 · без карты</p>
+              <p className="font-mono text-sm text-on-surface-variant mb-4">{freePrice(currency)} · без карты</p>
               <p className="text-on-surface-variant mb-6 flex-1">
                 Анкета + парсинг 2 кварталов отчётов. Получаете Точку А, GRI, 11 целей,
                 90-дневный план. Без обязательств.
@@ -606,6 +847,13 @@ export default function LandingPage({
                 <p className="text-[11px] text-on-surface-variant/60 text-center mt-1">
                   Оплата через Stripe · CloudPayments · Kaspi · Halyk · Мир
                 </p>
+                {currency.code !== 'USD' && (
+                  <p className="text-[11px] text-on-surface-variant/60 text-center">
+                    Суммы в {currency.symbol} — ориентир. Расчёт в USD
+                    (${(getPlan('pro_monthly')!.amount / 100)}/мес или $
+                    {getPlan('pro_onetime')!.amount / 100} разово) по курсу на день оплаты.
+                  </p>
+                )}
               </div>
             </div>
           </div>
@@ -616,26 +864,26 @@ export default function LandingPage({
       <section className="border-t border-white/[0.04]">
         <div className="max-w-7xl mx-auto px-6 py-24 text-center">
           <h2 className="font-headline text-4xl lg:text-6xl font-extrabold leading-tight max-w-3xl mx-auto">
-            Через 90 дней управляйте по цифрам, <br />
-            <span className="text-gradient">а не по ощущениям</span>
+            5 минут сегодня — <br />
+            <span className="text-gradient">и вы знаете, что чинить первым</span>
           </h2>
           <p className="mt-6 text-lg text-on-surface-variant max-w-xl mx-auto">
-            3 шага: демо 30 минут → бесплатный пилот → внедрение.
-            Сегодня + 5 рабочих дней — и у вас есть Точка А.
+            Бесплатный mini-GRI → полная диагностика с данными → план на 90 дней.
+            Без карты и без звонка менеджера.
           </p>
           <div className="mt-10 flex flex-wrap gap-4 justify-center">
             <Link
-              href="/register"
+              href="/gri-free"
               className="bg-primary text-on-primary font-semibold px-8 py-4 rounded-xl flex items-center gap-2 hover:shadow-xl hover:shadow-primary/30 transition-all"
             >
-              <span className="material-symbols-outlined">rocket_launch</span>
-              Запустить диагностику
+              <span className="material-symbols-outlined">bolt</span>
+              Проверить готовность к росту
             </Link>
             <Link
-              href="/login"
+              href="/register"
               className="border border-white/[0.08] text-on-surface px-8 py-4 rounded-xl flex items-center gap-2 hover:border-primary/40 hover:text-primary transition-colors"
             >
-              Войти в аккаунт
+              Полная диагностика
             </Link>
           </div>
         </div>
