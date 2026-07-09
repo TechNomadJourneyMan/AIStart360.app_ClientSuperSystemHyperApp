@@ -6,6 +6,7 @@ import {
   Users2,
   Building2,
   Lightbulb,
+  Sparkles,
   TrendingUp,
   CheckCircle,
   Clock,
@@ -16,6 +17,7 @@ import { useGigaPanelStore } from '@/stores/gigaPanel.store'
 import { RequestsModule } from '@/components/giga-panel/RequestsModule'
 import { CRMModule } from '@/components/giga-panel/CRMModule'
 import { ClientsModule } from '@/components/giga-panel/ClientsModule'
+import { LeadsModule } from '@/components/giga-panel/LeadsModule'
 import { MarketInsightsModule } from '@/components/giga-panel/MarketInsightsModule'
 
 // ─── KPI Card ────────────────────────────────────────────────────────────────
@@ -135,6 +137,19 @@ export default function GigaPanelPage() {
             )}
           </button>
           <button
+            onClick={() => setActiveModule('leads')}
+            className={`
+              flex items-center gap-1.5 md:gap-2 px-3 md:px-4 py-2 rounded-lg text-xs md:text-sm font-medium transition-all whitespace-nowrap
+              ${activeModule === 'leads'
+                ? 'bg-blue-500/20 text-blue-300 border border-blue-500/25'
+                : 'text-slate-500 hover:text-slate-300'
+              }
+            `}
+          >
+            <Sparkles size={15} />
+            Лиды
+          </button>
+          <button
             onClick={() => setActiveModule('market-insights')}
             className={`
               flex items-center gap-1.5 md:gap-2 px-3 md:px-4 py-2 rounded-lg text-xs md:text-sm font-medium transition-all whitespace-nowrap
@@ -199,6 +214,7 @@ export default function GigaPanelPage() {
           {activeModule === 'requests' && <RequestsModule />}
           {activeModule === 'crm' && <CRMModule />}
           {activeModule === 'clients' && <ClientsModule />}
+          {activeModule === 'leads' && <LeadsModule />}
           {activeModule === 'market-insights' && <MarketInsightsModule />}
         </motion.div>
       </AnimatePresence>
