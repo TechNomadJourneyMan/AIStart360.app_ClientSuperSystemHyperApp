@@ -541,7 +541,11 @@ model DocumentSummary {
   client      Client   @relation(fields: [clientId], references: [id])
   reportId    String?
   report      Report?  @relation(fields: [reportId], references: [id])
-  
+
+  // Direct owner (Supabase documents.user_id) so RAG retrieval can scope by
+  // user without the fragile clientId → clients.managerId chain (migration 046).
+  userId      String?  @map("user_id")
+
   // High-level parsed data from the document (e.g. key financial metrics, full text parsed)
   content     String   @db.Text
   metadata    Json?    @default("{}")
@@ -552,6 +556,7 @@ model DocumentSummary {
 
   @@index([clientId])
   @@index([reportId])
+  @@index([userId])
   @@map("document_summaries")
 }
 

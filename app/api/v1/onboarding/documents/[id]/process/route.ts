@@ -137,6 +137,13 @@ export async function POST(
           },
         })
 
+        // Record the direct owner for RAG scoping (migration 046). Done via raw
+        // SQL so it does not depend on the regenerated Prisma client field.
+        const ownerUserId = (doc as { user_id?: string }).user_id
+        if (ownerUserId) {
+          await prisma.$executeRaw`UPDATE document_summaries SET user_id = ${ownerUserId} WHERE id = ${summary.id}`
+        }
+
         const result = await embedAndStoreChunks(summary.id, parsed.text)
         if (result.error) {
           console.warn('[documents/process] embed result', result)
