@@ -11,6 +11,7 @@ import {
   buildTelegramDigest,
   type DigestData,
 } from '@/lib/crm/digest'
+import { EXTRA_DIGEST_CHANNELS } from '@/lib/crm/digest-channels'
 
 export const dynamic = 'force-dynamic'
 // Дайджест шлёт до трёх каналов на пользователя; на большой базе даём функции
@@ -207,6 +208,17 @@ export async function GET(req: NextRequest) {
               telegramSent += 1
               delivered = true
             }
+          }
+
+          // Доп-каналы за флагами (Фаза 4C): WhatsApp/SMS. Телефон владельца пока
+          // не хранится в profiles → phone:null, каналы выключены до источника
+          // телефона; isEnabled коротко замыкается на env-флагах (нулевая цена).
+          const recipient = { userId, phone: null }
+          const message = { title, body: buildDigestBody(data) }
+          for (const ch of EXTRA_DIGEST_CHANNELS) {
+            if (!ch.isEnabled(recipient)) continue
+            const ok = await ch.send(recipient, message)
+            if (ok) delivered = true
           }
 
           if (delivered) {
