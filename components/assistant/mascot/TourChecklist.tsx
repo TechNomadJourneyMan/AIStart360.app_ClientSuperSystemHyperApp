@@ -17,7 +17,7 @@
  * коачмарка (z-[80]), поэтому прогресс виден и во время шага. Тёмный стиль Гри.
  */
 
-import { motion } from 'framer-motion'
+import { motion, useReducedMotion } from 'framer-motion'
 import { MascotAvatar, type MascotColorId } from './MascotAvatar'
 import type { MascotCharacterId } from '@/lib/assistant/mascot/characters'
 import { clampStepIdx, type TourGuideStep } from '@/lib/assistant/mascot/tour-guide'
@@ -51,8 +51,16 @@ export function TourChecklist({
   onToggleCollapsed,
   onSkip,
 }: TourChecklistProps) {
+  const reduceMotion = useReducedMotion()
   if (route.length === 0) return null
   const total = route.length
+  // При prefers-reduced-motion — без движения (только мгновенное появление).
+  const pill = reduceMotion
+    ? { initial: { opacity: 0 }, animate: { opacity: 1 }, exit: { opacity: 0 }, transition: { duration: 0 } }
+    : { initial: { opacity: 0, y: -8 }, animate: { opacity: 1, y: 0 }, exit: { opacity: 0, y: -8 }, transition: { duration: 0.18 } }
+  const card = reduceMotion
+    ? { initial: { opacity: 0 }, animate: { opacity: 1 }, exit: { opacity: 0 }, transition: { duration: 0 } }
+    : { initial: { opacity: 0, y: -10, scale: 0.97 }, animate: { opacity: 1, y: 0, scale: 1 }, exit: { opacity: 0, y: -8, scale: 0.98 }, transition: { duration: 0.2 } }
   // clampStepIdx допускает total-сентинел «пройдено»; для подсветки прижимаем к
   // последнему видимому шагу. «Пройдено» = число шагов до текущего.
   const current = Math.min(clampStepIdx(stepIdx, total), total - 1)
@@ -64,10 +72,10 @@ export function TourChecklist({
         type="button"
         onClick={onToggleCollapsed}
         aria-label={`Экскурсия «Первые шаги»: пройдено ${doneCount} из ${total}. Развернуть`}
-        initial={{ opacity: 0, y: -8 }}
-        animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, y: -8 }}
-        transition={{ duration: 0.18 }}
+        initial={pill.initial}
+        animate={pill.animate}
+        exit={pill.exit}
+        transition={pill.transition}
         className="fixed left-1/2 top-4 z-[80] flex -translate-x-1/2 items-center gap-2 rounded-full border border-white/[0.12] bg-[#12151c]/95 py-1.5 pl-1.5 pr-3.5 shadow-xl shadow-black/40 backdrop-blur-sm transition-colors hover:border-primary/40 focus:outline-none focus:ring-2 focus:ring-primary/40 lg:left-auto lg:right-6 lg:translate-x-0"
       >
         <span className="flex h-7 w-7 items-center justify-center overflow-hidden rounded-full bg-surface-container-high">
@@ -85,10 +93,10 @@ export function TourChecklist({
     <motion.div
       role="dialog"
       aria-label="Экскурсия по порталу «Первые шаги»"
-      initial={{ opacity: 0, y: -10, scale: 0.97 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      exit={{ opacity: 0, y: -8, scale: 0.98 }}
-      transition={{ duration: 0.2 }}
+      initial={card.initial}
+      animate={card.animate}
+      exit={card.exit}
+      transition={card.transition}
       className="fixed left-1/2 top-4 z-[80] w-[calc(100vw-2rem)] max-w-xs -translate-x-1/2 rounded-2xl border border-white/[0.12] bg-[#12151c]/98 p-4 shadow-2xl shadow-black/50 backdrop-blur-sm lg:left-auto lg:right-6 lg:translate-x-0"
     >
       <div className="flex items-start gap-3">

@@ -52,8 +52,18 @@ export function MascotCoachmarks({
   const [waiting, setWaiting] = useState(false)
   const cardRef = useRef<HTMLDivElement | null>(null)
   const rafRef = useRef(0)
+  const doneRef = useRef(false)
 
-  const finish = useCallback((done: boolean) => onClose(done), [onClose])
+  // Идемпотентно: два дискретных события закрытия (двойной Esc, Esc+кнопка) до
+  // размонтирования не должны привести к двойному onClose/двойному advance.
+  const finish = useCallback(
+    (done: boolean) => {
+      if (doneRef.current) return
+      doneRef.current = true
+      onClose(done)
+    },
+    [onClose],
+  )
 
   useEffect(() => {
     if (steps.length === 0) finish(false)

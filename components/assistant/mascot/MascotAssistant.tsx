@@ -826,8 +826,14 @@ export default function MascotAssistant() {
       const s = useMascotStore.getState()
       const toursDone = Array.from(new Set([...s.settings.toursDone, screen])).slice(0, 50)
       const tg = s.settings.tourGuide ?? DEFAULT_TOUR_GUIDE
-      if (s.guideRunning && tg.status === 'active' && guideTotal > 0) {
-        advanceGuide(clampStepIdx(tg.stepIdx, guideTotal), guideTotal, toursDone)
+      const idx = clampStepIdx(tg.stepIdx, guideTotal)
+      // Продвигаем экскурсию только если закрылся ИМЕННО её тур: guideLaunchedRef
+      // ставит только driveGuide и указывает на текущий стоп. Иначе ручной тур из
+      // меню (onPageTour/replay/раздел), открытый в окне между шагами, мог бы
+      // «съесть» шаг экскурсии — тут он пойдёт в toursDone-only ветку.
+      const guideOwnsThisTour = guideLaunchedRef.current === `${screen}#${idx}`
+      if (s.guideRunning && tg.status === 'active' && guideTotal > 0 && guideOwnsThisTour) {
+        advanceGuide(idx, guideTotal, toursDone)
         return
       }
       applySettings({ toursDone })
