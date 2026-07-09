@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { toast } from 'sonner'
 import {
   Search,
   RefreshCw,
@@ -151,7 +152,7 @@ function LeadRow({
         {/* Actions */}
         <div className="flex items-center gap-1.5 flex-shrink-0">
           <a
-            href={`mailto:${lead.email}`}
+            href={`mailto:${encodeURIComponent(lead.email)}`}
             className="flex items-center gap-1.5 px-2.5 py-2 rounded-xl text-xs font-medium text-slate-400 bg-white/[0.05] border border-white/[0.08] hover:text-slate-200 hover:bg-white/[0.08] transition-all"
           >
             <Mail size={13} />
@@ -282,10 +283,11 @@ export function LeadsModule() {
         })
         if (!res.ok) throw new Error('patch failed')
       } catch {
-        // Revert on failure
+        // Revert on failure — and tell the operator, silent bounce-back confuses.
         setLeads((prev) =>
           prev.map((l) => (l.id === lead.id ? { ...l, converted: !next } : l)),
         )
+        toast.error('Не удалось обновить статус лида')
       } finally {
         setTogglingId(null)
       }
