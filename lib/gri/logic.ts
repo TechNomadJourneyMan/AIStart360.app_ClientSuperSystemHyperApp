@@ -36,7 +36,12 @@ export interface GriAnswers {
 export interface GriResult {
   score: number;
   productScore: number;
-  trustScore: number;
+  /**
+   * Доверие и позиционирование: входные поля GriAnswers его НЕ измеряют.
+   * Честно возвращаем null («нет данных») вместо прежней заглушки 50,
+   * которая тихо искажала общий score (Critical аудита 2026-07-07 / идея №6).
+   */
+  trustScore: number | null;
   businessModelScore: number;
   cashScore: number;
   operationsScore: number;
@@ -97,18 +102,20 @@ export function calculateGri(a: GriAnswers): GriResult {
     return Math.min(100, hoursWeight + deputyWeight);
   })();
 
-  // 7. Trust & Positioning (Placeholder for qualitative analysis)
-  const trustScore = 50;
+  // 7. Trust & Positioning — GriAnswers не содержит измеримых сигналов этого
+  // блока, поэтому честное «нет данных» (null). Общий score считаем по 6
+  // РЕАЛЬНО измеренным блокам — прежняя константа 50 тянула индекс к середине.
+  const trustScore: number | null = null;
 
-  const score = (
-    businessModelScore +
-    cashScore +
-    productScore +
-    operationsScore +
-    teamScore +
-    founderScore +
-    trustScore
-  ) / 7;
+  const measured = [
+    businessModelScore,
+    cashScore,
+    productScore,
+    operationsScore,
+    teamScore,
+    founderScore,
+  ];
+  const score = measured.reduce((s, v) => s + v, 0) / measured.length;
 
   return {
     score: Math.round(score),
@@ -118,6 +125,6 @@ export function calculateGri(a: GriAnswers): GriResult {
     operationsScore: Math.round(operationsScore),
     teamScore: Math.round(teamScore),
     founderScore: Math.round(founderScore),
-    trustScore: Math.round(trustScore),
+    trustScore,
   };
 }

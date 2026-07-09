@@ -431,10 +431,11 @@ export default function AiScannerPage() {
                   </div>
                 </div>
                 <div className="space-y-2">
-                  {([['Бизнес-модель', forecast.businessModelScore], ['Денежная стабильность', forecast.cashScore], ['Продукт и спрос', forecast.productScore], ['Операции', forecast.operationsScore], ['Команда', forecast.teamScore], ['Готовность собственника', forecast.founderScore], ['Доверие и позиционирование', forecast.trustScore]] as Array<[string, number]>).map(([label, val]) => (
+                  {([['Бизнес-модель', forecast.businessModelScore], ['Денежная стабильность', forecast.cashScore], ['Продукт и спрос', forecast.productScore], ['Операции', forecast.operationsScore], ['Команда', forecast.teamScore], ['Готовность собственника', forecast.founderScore], ['Доверие и позиционирование', forecast.trustScore]] as Array<[string, number | null]>).map(([label, val]) => (
                     <div key={label}>
-                      <div className="flex justify-between text-xs mb-1"><span className="text-gray-400">{label}</span><span className="text-gray-300">{to10(val).toFixed(1)}/10</span></div>
-                      <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden"><div className="h-full bg-blue-600 rounded-full" style={{ width: `${Math.min(100, val)}%` }} /></div>
+                      {/* Честный Trust (№6): блок без входных сигналов → «нет данных», не 5.0 */}
+                      <div className="flex justify-between text-xs mb-1"><span className="text-gray-400">{label}</span><span className="text-gray-300">{val === null ? 'нет данных' : `${to10(val).toFixed(1)}/10`}</span></div>
+                      <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden"><div className="h-full bg-blue-600 rounded-full" style={{ width: `${Math.min(100, val ?? 0)}%` }} /></div>
                     </div>
                   ))}
                 </div>
