@@ -25,6 +25,13 @@ export async function GET() {
     .eq('user_id', user.id)
     .order('created_at', { ascending: false })
   if (error) {
+    // Таблицы ещё нет (миграция 046 не применена) → честный пустой список,
+    // вкладка «CRM» остаётся рабочей; прочие ошибки — настоящий 500.
+    const e = error as { message?: string; code?: string }
+    const sig = `${e.code ?? ''} ${e.message ?? ''}`
+    if (/does not exist|PGRST205|42P01/i.test(sig)) {
+      return NextResponse.json({ ok: true, data: [], unavailable: true })
+    }
     console.error('[crm/connections GET]', error)
     return NextResponse.json({ ok: false, error: 'db_error' }, { status: 500 })
   }
