@@ -184,7 +184,7 @@ validation layer (J) — безопасным, симулятор (K) — «ва
 | Q8 | Бенчмарки: юридическая формулировка «кураторские оценки, не статистика» до живой базы | PO | B3 |
 | Q9 | Валюта биллинга USD vs отображение KZT (`FX_RATE_USD_KZT=450` хардкод) — при включении эквайринга источник курса? | PO | G1 |
 | Q10 | Лендинг-варианты вне репо (`in.aistart360.app`) — D1/D2 применять к `app/page.tsx` или к внешнему лендингу? Спека пишется для `app/page.tsx` | PO | D1, D2 |
-| Q11 | **Модель владения документами (блокер RAG).** `document_summaries` скоупится по `clientId`, а владелец хранится как `clients.managerId` (семантически — менеджер, не пользователь), и код сам помечает связь как ненадёжную (`process/route.ts:112-118`). До решения (добавить `user_id`/`company_id` в `document_summaries` и бэкфилл? или чинить linkage?) миграцию 046 и RAG-чтение писать нельзя — иначе retrieval либо пуст, либо выдаёт чужие документы. Найдено при реализации 2026-07-09 | PO+dev | A1 RAG (046), retrieval |
+| Q11 | ✅ **РЕШЕНО (2026-07-09).** Проверено на живой БД: у `document_summaries` нет `user_id` (скоуп по `clientId`→`clients.managerId`), и там 0 summaries/0 chunks/0 embeddings. Решение: миграция 046 добавила `document_summaries.user_id` (text), процесс-роут пишет его из `documents.user_id`, RPC `match_user_document_chunks` скоупит по `user_id`. Бэкфилл не нужен (0 строк). Применено и проверено на prod | — | закрыто |
 
 Продуктовые риски и mitigation — в 12-security.md (threat model) и в каждом разделе.
 
