@@ -29,6 +29,126 @@ function formatFileSize(bytes: number | null): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
+// ─── Доступ и тариф (Фаза 6C) ────────────────────────────────────────────────
+// Рабочие кнопки: PATCH /api/giga-admin/users/[id]/access (service-client +
+// проверка затронутых строк на сервере). Оптимистичный UI с откатом; сервер —
+// источник истины (state обновляется из ответа).
+const ACCESS_FEATURES = [
+  { key: 'gri_full', label: 'Полный GRI' },
+  { key: 'pdf_export', label: 'PDF' },
+  { key: 'ai_chat', label: 'AI-чат' },
+  { key: 'benchmarks', label: 'Бенчмарки' },
+] as const
+
+function AccessControls({ userId }: { userId: string }) {
+  const [tier, setTier] = useState<'free' | 'pro' | null>(null)
+  const [flags, setFlags] = useState<Record<string, boolean>>({})
+  const [unavailable, setUnavailable] = useState(false)
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    fetch(`/api/giga-admin/users/${userId}/access`)
+      .then((r) => (r.status === 503 ? { migration: true } : r.json()))
+      .then((d: { migration?: boolean; ok?: boolean; tier?: string; feature_flags?: Record<string, boolean> }) => {
+        if (cancelled) return
+        if (d?.migration || !d?.ok) {
+          setUnavailable(true)
+          return
+        }
+        setTier(d.tier === 'pro' ? 'pro' : 'free')
+        setFlags(d.feature_flags ?? {})
+      })
+      .catch(() => {
+        if (!cancelled) setUnavailable(true)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [userId])
+
+  const patch = async (body: Record<string, unknown>, rollback: () => void) => {
+    setSaving(true)
+    try {
+      const res = await fetch(`/api/giga-admin/users/${userId}/access`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      const d = await res.json().catch(() => ({}))
+      if (!res.ok || !d.ok) throw new Error(d.error || `HTTP ${res.status}`)
+      // Сервер — источник истины.
+      setTier(d.profile?.tier === 'pro' ? 'pro' : 'free')
+      setFlags((d.profile?.feature_flags as Record<string, boolean>) ?? {})
+    } catch {
+      rollback()
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (unavailable) {
+    return (
+      <p className="text-[11px] text-slate-500">
+        Доступ/тариф: недоступно — миграция 048 не применена.
+      </p>
+    )
+  }
+  if (tier === null) return null
+
+  return (
+    <div className="flex items-center gap-2 flex-wrap">
+      <span className="text-[10px] font-mono uppercase tracking-widest text-slate-500">Тариф</span>
+      <div className="flex items-center gap-1 p-1 rounded-lg bg-white/[0.04] border border-white/[0.07]">
+        {(['free', 'pro'] as const).map((t) => (
+          <button
+            key={t}
+            disabled={saving || t === tier}
+            onClick={() => {
+              const prev = tier
+              setTier(t)
+              void patch({ tier: t }, () => setTier(prev))
+            }}
+            className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-all disabled:cursor-default ${
+              t === tier
+                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/25'
+                : 'text-slate-500 hover:text-slate-300'
+            }`}
+          >
+            {t === 'free' ? 'Free' : 'Pro'}
+          </button>
+        ))}
+      </div>
+      <span className="text-[10px] font-mono uppercase tracking-widest text-slate-500 ml-2">Фичи</span>
+      <div className="flex items-center gap-1 p-1 rounded-lg bg-white/[0.04] border border-white/[0.07]">
+        {ACCESS_FEATURES.map((f) => {
+          const on = flags[f.key] === true
+          return (
+            <button
+              key={f.key}
+              disabled={saving}
+              title={`Персональный override: ${f.label} (поверх тира)`}
+              onClick={() => {
+                const prev = { ...flags }
+                const next = { ...flags, [f.key]: !on }
+                setFlags(next)
+                void patch({ feature_flags: next }, () => setFlags(prev))
+              }}
+              className={`px-2 py-1 rounded-md text-[11px] font-medium transition-all ${
+                on
+                  ? 'bg-blue-500/20 text-blue-300 border border-blue-500/25'
+                  : 'text-slate-500 hover:text-slate-300'
+              }`}
+            >
+              {f.label}
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 export function UserDetailPanel({ userId, readOnly = false }: Props) {
   const [data, setData] = useState<{
     answers: Record<string, unknown>
@@ -154,6 +274,9 @@ export function UserDetailPanel({ userId, readOnly = false }: Props) {
 
   return (
     <div className="px-4 py-4 space-y-4">
+      {/* Доступ и тариф (Фаза 6C) — только для полноправной админки */}
+      {!readOnly && <AccessControls userId={userId} />}
+
       {/* Action buttons — hidden in read-only mode */}
       {!readOnly && (
         <div className="flex items-center gap-2 flex-wrap">

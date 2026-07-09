@@ -12,6 +12,35 @@ function isSuperAdmin(req: NextRequest): boolean {
   return verifyGigaRole(req.cookies.get(GIGA_COOKIE_NAME)?.value) === 'super_admin'
 }
 
+/** GET — текущий tier + feature_flags пользователя (для админ-панели). */
+export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
+  if (!isSuperAdmin(req)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  if (!UUID_RE.test(params.id)) {
+    return NextResponse.json({ error: 'invalid id' }, { status: 400 })
+  }
+  try {
+    const svc = createServiceClient()
+    const { data, error } = await svc
+      .from('profiles')
+      .select('id, tier, feature_flags')
+      .eq('id', params.id)
+      .maybeSingle()
+    if (error) {
+      // Колонок нет → миграция 048 не применена; честный маркер для UI.
+      return NextResponse.json({ ok: false, error: 'migration_048_required' }, { status: 503 })
+    }
+    if (!data) return NextResponse.json({ error: 'not_found' }, { status: 404 })
+    return NextResponse.json({
+      ok: true,
+      tier: normalizeTier((data as { tier?: unknown }).tier),
+      feature_flags: normalizeOverrides((data as { feature_flags?: unknown }).feature_flags),
+    })
+  } catch (e) {
+    console.error('[giga-admin/users/access GET]', e)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  }
+}
+
 /**
  * PATCH /api/giga-admin/users/:id/access — тариф и per-user фича-флаги (Фаза 6C).
  * Body: { tier?: 'free'|'pro', feature_flags?: { gri_full?, pdf_export?, ai_chat?, benchmarks? } }
