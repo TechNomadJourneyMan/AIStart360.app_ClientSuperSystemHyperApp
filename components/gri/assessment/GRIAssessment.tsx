@@ -458,7 +458,12 @@ export default function GRIAssessment() {
 
   // -------- Landing --------
   if (step.kind === 'landing') {
-    const hasResult = griIndex > 0
+    // «Посмотреть результат» — только когда пройдены ВСЕ 7 блоков; частичный
+    // прогресс (griIndex > 0 при 2/7 блоках) ведёт на «Продолжить диагностику»,
+    // иначе незавершённый профиль выглядел бы как готовый результат.
+    const allComplete = GRI_SECTIONS.every((s) => state.completedSections[s.id])
+    const hasResult = allComplete && griIndex > 0
+    const hasPartial = !allComplete && griIndex > 0
     return (
       <Shell>
         <div className="grid items-center gap-8 lg:grid-cols-[1.05fr_0.95fr]">
@@ -498,6 +503,28 @@ export default function GRIAssessment() {
                   >
                     <span className="material-symbols-outlined text-[18px]" aria-hidden>restart_alt</span>
                     Пройти заново
+                  </button>
+                </>
+              ) : hasPartial ? (
+                <>
+                  <button
+                    onClick={() => setStep({ kind: 'overview' })}
+                    className="group inline-flex items-center justify-center gap-2 rounded-full bg-primary px-7 py-3.5 text-base font-bold text-[#003824] shadow-primary-md transition-all hover:bg-primary/90 active:scale-[0.98]"
+                  >
+                    Продолжить диагностику
+                    <span className="material-symbols-outlined text-[18px] transition-transform group-hover:translate-x-0.5" aria-hidden>
+                      arrow_forward
+                    </span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      resetAll()
+                      setStep({ kind: 'onboarding' })
+                    }}
+                    className="inline-flex items-center gap-2 rounded-full border border-white/[0.12] px-6 py-3.5 text-base font-semibold text-on-surface transition-all hover:border-primary/40 hover:bg-white/[0.03]"
+                  >
+                    <span className="material-symbols-outlined text-[18px]" aria-hidden>restart_alt</span>
+                    Начать заново
                   </button>
                 </>
               ) : (
