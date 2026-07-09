@@ -11,6 +11,7 @@ import GrowthSnapshotHero from '@/components/dashboard/GrowthSnapshotHero'
 import MyDataSection from '@/components/client/MyDataSection'
 import AssistantHintWidget from '@/components/assistant/AssistantHintWidget'
 import { ShareButton } from '@/components/share/ShareButton'
+import NextBestActionCard from '@/components/nba/NextBestActionCard'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function blockLabel(status: string | undefined): { text: string; color: string } {
@@ -301,6 +302,9 @@ export default function PointAClientPage() {
       </header>
 
       <main className="max-w-7xl mx-auto px-6 py-8 space-y-8">
+
+        {/* Next Best Action — the single most important step right now */}
+        <NextBestActionCard />
 
         {isLoading ? (
           <div className="flex items-center justify-center py-20">
