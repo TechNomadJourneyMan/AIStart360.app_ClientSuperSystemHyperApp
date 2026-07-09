@@ -818,6 +818,7 @@ export default function PulsePage() {
       {/* ── Secondary: GRI Pulse weekly survey (collapsible, bottom) ── */}
       <div className="space-y-4">
         <button
+          data-tour="pulse-week"
           onClick={() => setPulseOpen(v => !v)}
           className="w-full flex items-center gap-3 pt-4 border-t border-white/[0.04] text-left group"
         >
@@ -1051,7 +1052,7 @@ function CrmMonitorSection() {
       </section>
 
       {/* ── Stats bar ── */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+      <div data-tour="crm-kpi" className="grid grid-cols-2 md:grid-cols-5 gap-3">
         {[
           {
             label: 'Выручка под угрозой',
@@ -1102,7 +1103,7 @@ function CrmMonitorSection() {
       </div>
 
       {/* ── Tabs ── */}
-      <div className="border-b border-white/[0.04] w-full overflow-x-auto no-scrollbar">
+      <div data-tour="crm-tabs" className="border-b border-white/[0.04] w-full overflow-x-auto no-scrollbar">
         <div className="flex gap-1 min-w-max">
           {([
             { key: 'today', label: 'Кому звонить', labelFull: 'Кому продавать сегодня', count: TODAY_CLIENTS.length, icon: null },
@@ -1154,7 +1155,7 @@ function CrmMonitorSection() {
 
       {/* ─── TAB 1: Today ─── */}
       {tab === 'today' && (
-        <div className="space-y-4">
+        <div data-tour="crm-queue" className="space-y-4">
           {/* Alert banner */}
           {DYNAMIC_STATS.highRisk > 0 && (
             <div className="flex items-center gap-3 bg-error/10 border border-error/20 rounded-xl px-5 py-3.5">

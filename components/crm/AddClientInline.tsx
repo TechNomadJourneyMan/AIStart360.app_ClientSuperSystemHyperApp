@@ -67,7 +67,7 @@ export function AddClientInline({ onAdded }: { onAdded?: () => void }) {
   }
 
   return (
-    <div className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-4">
+    <div data-tour="crm-add" className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-4">
       <div className="flex items-center justify-between mb-3">
         <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest">Добавить клиента</p>
         <button

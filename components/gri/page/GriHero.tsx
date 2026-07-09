@@ -29,6 +29,7 @@ export default function GriHero({ griIndex, target = 8.5, assessedAt, onStartAss
   const status = heroStatus(griIndex)
   return (
     <motion.section
+      data-tour="gri-hero"
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       className="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-5 sm:p-6 flex flex-col sm:flex-row sm:items-center gap-4 sm:gap-8"

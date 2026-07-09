@@ -222,7 +222,7 @@ export default function MetricsLiveCatalog({ userId }: Props) {
   }, [namespace, total])
 
   return (
-    <section className="space-y-5">
+    <section data-tour="metrics-catalog" className="space-y-5">
       <div className="flex flex-wrap items-end justify-between gap-3 border-b border-outline-variant/10 pb-4">
         <div>
           <p className="text-xs font-mono text-primary/70 uppercase tracking-[0.2em] mb-1">

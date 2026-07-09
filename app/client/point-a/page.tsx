@@ -432,7 +432,7 @@ export default function PointAClientPage() {
             )}
 
             {/* 2. Block Scores */}
-            <section>
+            <section data-tour="pa-blocks">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="font-headline text-lg font-bold text-on-surface">Блоки оценки</h2>
                 <span className="text-xs text-on-surface-variant font-mono">5 направлений</span>

@@ -43,7 +43,7 @@ export function SettingsClient({ initial, preferences }: { initial: SettingsInit
   return (
     <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
       <div className="lg:col-span-1">
-        <nav role="tablist" aria-label="Разделы настроек" className="bg-surface-container rounded-xl overflow-hidden">
+        <nav data-tour="settings-tabs" role="tablist" aria-label="Разделы настроек" className="bg-surface-container rounded-xl overflow-hidden">
           {TABS.map((t, i) => {
             const active = t.id === tab
             return (

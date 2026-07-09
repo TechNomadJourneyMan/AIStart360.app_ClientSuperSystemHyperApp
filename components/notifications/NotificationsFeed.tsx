@@ -85,13 +85,13 @@ export function NotificationsFeed() {
           <h1 className="font-headline text-3xl font-bold text-on-surface">Уведомления</h1>
           <p className="text-on-surface-variant text-sm mt-1">{unread} непрочитанных</p>
         </div>
-        <button type="button" onClick={markAll} disabled={unread === 0}
+        <button type="button" data-tour="notif-markall" onClick={markAll} disabled={unread === 0}
           className="text-sm text-primary border border-primary/30 px-4 py-2 rounded-lg hover:bg-primary/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
           Прочитать все
         </button>
       </div>
 
-      <div className="flex gap-2">
+      <div data-tour="notif-filter" className="flex gap-2">
         {(['all', 'unread'] as const).map((f) => (
           <button key={f} type="button" onClick={() => setFilter(f)}
             className={`text-xs font-mono px-3 py-1.5 rounded-lg border transition-colors ${

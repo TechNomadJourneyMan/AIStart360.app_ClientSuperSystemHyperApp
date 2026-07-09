@@ -100,6 +100,7 @@ export default function GriPageShell() {
       />
 
       <nav
+        data-tour="gri-tabs"
         className="flex gap-1 overflow-x-auto rounded-xl border border-white/[0.08] bg-white/[0.02] p-1"
         role="tablist"
         aria-label="Разделы GRI"
