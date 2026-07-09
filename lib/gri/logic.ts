@@ -36,12 +36,34 @@ export interface GriAnswers {
 export interface GriResult {
   score: number;
   productScore: number;
-  trustScore: number;
+  /**
+   * Trust & Positioning block. `null` means "not enough data to score" — the
+   * `GriAnswers` shape carries no qualitative trust/positioning signals (brand,
+   * reviews, USP, differentiation), so this engine cannot honestly score it and
+   * refuses to fabricate a value. Consumers must render `null` as "нет данных".
+   */
+  trustScore: number | null;
   businessModelScore: number;
   cashScore: number;
   operationsScore: number;
   teamScore: number;
   founderScore: number;
+  /** How many blocks the overall `score` was averaged over (non-null blocks). */
+  blocksUsed: number;
+}
+
+/**
+ * Trust & Positioning block (0–100) or `null` when it cannot be honestly scored.
+ *
+ * The finance-oriented `GriAnswers` shape has no qualitative inputs that measure
+ * trust/positioning (brand recognition, reviews, expert positioning, USP), so
+ * there is nothing to score here — we return `null` rather than the old constant
+ * `50`, which silently dragged every overall score toward the midpoint. Real
+ * trust signals live in the survey (s5_* marketing) and the 62-criterion
+ * assessment; those feed the canonical engine, not this one.
+ */
+function computeTrustBlock(_a: GriAnswers): number | null {
+  return null;
 }
 
 /**
@@ -97,18 +119,21 @@ export function calculateGri(a: GriAnswers): GriResult {
     return Math.min(100, hoursWeight + deputyWeight);
   })();
 
-  // 7. Trust & Positioning (Placeholder for qualitative analysis)
-  const trustScore = 50;
+  // 7. Trust & Positioning — honestly null when there are no qualitative signals.
+  const trustScore = computeTrustBlock(a);
 
-  const score = (
-    businessModelScore +
-    cashScore +
-    productScore +
-    operationsScore +
-    teamScore +
-    founderScore +
-    trustScore
-  ) / 7;
+  // Overall score = mean of the blocks we could actually measure. Averaging over
+  // only the non-null blocks avoids diluting the result with a phantom value.
+  const measurable = [
+    businessModelScore,
+    cashScore,
+    productScore,
+    operationsScore,
+    teamScore,
+    founderScore,
+    trustScore,
+  ].filter((b): b is number => b !== null);
+  const score = measurable.reduce((sum, b) => sum + b, 0) / measurable.length;
 
   return {
     score: Math.round(score),
@@ -118,6 +143,7 @@ export function calculateGri(a: GriAnswers): GriResult {
     operationsScore: Math.round(operationsScore),
     teamScore: Math.round(teamScore),
     founderScore: Math.round(founderScore),
-    trustScore: Math.round(trustScore),
+    trustScore: trustScore === null ? null : Math.round(trustScore),
+    blocksUsed: measurable.length,
   };
 }
