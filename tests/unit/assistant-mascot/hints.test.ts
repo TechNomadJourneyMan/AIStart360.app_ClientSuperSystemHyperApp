@@ -88,6 +88,33 @@ describe('resolveHint / catalog', () => {
     expect(screenAllowed(edu, '/dashboard')).toBe(false)
     expect(screenAllowed(edu, '/client/onboarding')).toBe(true)
   })
+
+  it('problem hints (Батч D) carry type=problem with working CTAs and honest copy', () => {
+    const red = resolveHint({ id: 'red_zone', priority: 2, params: { block: 'Продажи' } })
+    expect(red?.type).toBe('problem')
+    expect(red?.text).toContain('«Продажи»')
+    expect(red?.actions.find((a) => a.kind === 'navigate')?.href).toBe('/gri?tab=result')
+    // Без блока — generic-текст, никакого "null".
+    const redGeneric = resolveHint({ id: 'red_zone', priority: 2, params: { block: null } })
+    expect(redGeneric?.text).not.toContain('null')
+
+    const one = resolveHint({ id: 'clients_at_risk', priority: 2, params: { count: 1 } })
+    expect(one?.text).toContain('1 клиент ')
+    const few = resolveHint({ id: 'clients_at_risk', priority: 2, params: { count: 3 } })
+    expect(few?.text).toContain('3 клиента')
+    expect(few?.actions.find((a) => a.kind === 'navigate')?.href).toBe('/pulse')
+
+    const pulse = resolveHint({ id: 'pulse_missed', priority: 3 })
+    expect(pulse?.type).toBe('problem')
+    expect(pulse?.actions.find((a) => a.kind === 'navigate')?.href).toBe('/pulse')
+
+    // empty_metrics живёт только на /metrics и открывает чат Гри.
+    const metrics = resolveHint({ id: 'empty_metrics', priority: 3 })!
+    expect(metrics.type).toBe('problem')
+    expect(metrics.actions.some((a) => a.kind === 'open_chat')).toBe(true)
+    expect(screenAllowed(metrics, '/metrics')).toBe(true)
+    expect(screenAllowed(metrics, '/dashboard')).toBe(false)
+  })
 })
 
 describe('panel page-context maps', () => {
@@ -230,6 +257,44 @@ describe('computeServerHints', () => {
       topLimit: null,
     })
     expect(hints).toEqual([])
+  })
+
+  it('emits problem candidates from the Батч D signals only when they are set', () => {
+    const base = {
+      completion: report({ status: 'completed' }),
+      errorCount: 0,
+      hasDiagnostic: true,
+      griIndex: 4.2,
+      topLimit: null,
+    }
+    const withProblems = computeServerHints({
+      ...base,
+      redZone: true,
+      redZoneBlock: 'Финансы',
+      clientsAtRisk: 2,
+      pulseMissed: true,
+      metricsEmpty: false,
+    })
+    expect(withProblems.find((h) => h.id === 'red_zone')?.params?.block).toBe('Финансы')
+    expect(withProblems.find((h) => h.id === 'clients_at_risk')?.params?.count).toBe(2)
+    expect(withProblems.some((h) => h.id === 'pulse_missed')).toBe(true)
+    expect(withProblems.some((h) => h.id === 'empty_metrics')).toBe(false)
+
+    // Без сигналов — ни одного проблемного кандидата (обратная совместимость).
+    const problemIds = ['red_zone', 'clients_at_risk', 'pulse_missed', 'empty_metrics']
+    expect(computeServerHints(base).some((h) => problemIds.includes(h.id))).toBe(false)
+  })
+
+  it('empty_metrics fires on its own signal even with no other candidates', () => {
+    const hints = computeServerHints({
+      completion: report({ status: 'not_started', sections: [section({ pct: 0 })] }),
+      errorCount: 0,
+      hasDiagnostic: false,
+      griIndex: null,
+      topLimit: null,
+      metricsEmpty: true,
+    })
+    expect(hints).toEqual([{ id: 'empty_metrics', priority: 3 }])
   })
 })
 

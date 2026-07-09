@@ -363,6 +363,7 @@ export default function MascotAssistant() {
         cooldowns: s.cooldowns,
         settings: s.settings,
         sessionShownCount: s.sessionShownCount,
+        problemShownCount: s.problemShownCount,
       })
       if (!picked) return
 

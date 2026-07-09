@@ -110,6 +110,9 @@ interface MascotStore {
   context: AssistantContextPayload | null
   contextFetchedAt: number
   sessionShownCount: number
+  /** Проблемные советы (type==='problem'), показанные в этой сессии (Батч D):
+   *  первые RULES.problemSessionBudget показов обходят лимит сессии. Волатильно. */
+  problemShownCount: number
   /** Screens where the idle nudge already fired this session. */
   idleFired: string[]
   /** «Скрыть до конца сессии» — never persisted. */
@@ -164,6 +167,7 @@ export const useMascotStore = create<MascotStore>()(
       context: null,
       contextFetchedAt: 0,
       sessionShownCount: 0,
+      problemShownCount: 0,
       idleFired: [],
       sessionHidden: false,
       requestedTourScreen: null,
@@ -216,6 +220,7 @@ export const useMascotStore = create<MascotStore>()(
           activeHint: hint,
           state: hint.state,
           sessionShownCount: s.sessionShownCount + 1,
+          problemShownCount: s.problemShownCount + (hint.type === 'problem' ? 1 : 0),
           cooldowns: registerShown(s.cooldowns, hint.id, screen, now),
         })),
 

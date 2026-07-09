@@ -6,8 +6,13 @@ import { buildAssistantContext } from '@/lib/assistant/context'
 import { computeCompletion, deriveStatus } from '@/lib/assistant/completion'
 import { runValidation } from '@/lib/assistant/validators'
 import { computeServerHints } from '@/lib/assistant/mascot/server-hints'
+import { readCrmProblemSignals, readPulseMissed } from '@/lib/assistant/mascot/problem-signals'
 import { readMascotSettings } from '@/lib/assistant/mascot/settings-server'
-import { isMascotHidden, type AssistantContextPayload } from '@/lib/assistant/mascot/types'
+import {
+  isMascotHidden,
+  type AssistantContextPayload,
+  type HintCandidate,
+} from '@/lib/assistant/mascot/types'
 import { isRateLimited } from '@/lib/rate-limit'
 
 /**
@@ -48,15 +53,34 @@ export async function GET(req: NextRequest) {
     const completedSections = sections.filter((s) => s.pct === 100).length
 
     const hidden = isMascotHidden(settings, Date.now())
-    const hints = hidden
-      ? []
-      : computeServerHints({
-          completion,
-          errorCount: issues.filter((i) => i.severity === 'error').length,
-          hasDiagnostic: ctx.pointA.has_diagnostic,
-          griIndex: ctx.gri.gri_index,
-          topLimit: ctx.gri.top_5_limits[0]?.title ?? null,
-        })
+    let hints: HintCandidate[] = []
+    if (!hidden) {
+      const nowMs = Date.now()
+      const hasDiagnostic = ctx.pointA.has_diagnostic
+      const griIndex = ctx.gri.gri_index
+      // Красная зона: critical-блок Point A или GRI < 5 (есть что показывать).
+      const criticalBlock = ctx.pointA.blocks.find((b) => b.status === 'critical') ?? null
+      const redZone = hasDiagnostic && (criticalBlock != null || (griIndex != null && griIndex < 5))
+      // На /metrics пусто, пока нет диагностики и посчитанной выручки.
+      const metricsEmpty = !hasDiagnostic && ctx.metrics.revenue == null
+      // CRM и пульс — дешёвые чтения ПОД СЕССИЕЙ (RLS), устойчивы к ошибкам.
+      const [crm, pulseMissed] = await Promise.all([
+        readCrmProblemSignals(sb, user.id, nowMs),
+        readPulseMissed(sb, user.id, nowMs, griIndex != null),
+      ])
+      hints = computeServerHints({
+        completion,
+        errorCount: issues.filter((i) => i.severity === 'error').length,
+        hasDiagnostic,
+        griIndex,
+        topLimit: ctx.gri.top_5_limits[0]?.title ?? null,
+        metricsEmpty,
+        redZone,
+        redZoneBlock: criticalBlock?.label ?? null,
+        clientsAtRisk: crm.clientsAtRisk,
+        pulseMissed,
+      })
+    }
 
     const payload: AssistantContextPayload = {
       ok: true,
