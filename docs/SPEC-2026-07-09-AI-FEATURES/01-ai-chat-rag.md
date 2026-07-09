@@ -73,16 +73,25 @@ CREATE INDEX IF NOT EXISTS document_chunks_embedding_hnsw
   ON document_chunks USING hnsw (embedding vector_cosine_ops);
 
 -- Скоупинг: чанк принадлежит пользователю через document_summaries.
--- ПРОВЕРИТЬ на живой схеме: если у document_summaries нет user_id/company_id —
--- добавить и бэкфиллить из связанного документа (ASSUMPTION: связь есть через documents).
+-- ВНИМАНИЕ (уточнено по коду 2026-07-09, исправляет прежнее ASSUMPTION):
+-- у document_summaries НЕТ user_id. Скоуп идёт по clientId:
+--   document_chunks.documentSummaryId → document_summaries.clientId → clients.id
+-- а привязка клиента к пользователю сейчас — clients.managerId = <auth user id>
+-- (см. app/api/v1/onboarding/documents/[id]/process/route.ts:112-118, где документ
+-- владельца находится через client.managerId = documents.user_id). Причём сам код
+-- помечает эту связь как НЕнадёжную: «doesn't map 1:1 to the Prisma Client model in
+-- every environment». Значит корректный RPC зависит от РЕШЕНИЯ по модели владения
+-- документами (см. Q11 в 00-executive-summary). Ниже — форма с текущей связью,
+-- но её нельзя применять до подтверждения модели владения.
 CREATE OR REPLACE FUNCTION match_user_document_chunks(
-  p_user_id uuid, p_query vector(1536), p_limit int DEFAULT 6, p_min_similarity float DEFAULT 0.25
-) RETURNS TABLE (chunk_id uuid, document_id uuid, document_name text, content text, similarity float)
+  p_user_id text, p_query vector(1536), p_limit int DEFAULT 6, p_min_similarity float DEFAULT 0.25
+) RETURNS TABLE (chunk_id text, summary_id text, content text, similarity float)
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
-  SELECT dc.id, ds.id, ds.file_name, dc.content, 1 - (dc.embedding <=> p_query)
+  SELECT dc.id, ds.id, dc.content, 1 - (dc.embedding <=> p_query)
   FROM document_chunks dc
-  JOIN document_summaries ds ON ds.id = dc.document_summary_id
-  WHERE ds.user_id = p_user_id
+  JOIN document_summaries ds ON ds.id = dc."documentSummaryId"
+  JOIN clients c ON c.id = ds."clientId"
+  WHERE c."managerId" = p_user_id          -- ⚠ зависит от модели владения (Q11)
     AND dc.embedding IS NOT NULL
     AND 1 - (dc.embedding <=> p_query) >= p_min_similarity
   ORDER BY dc.embedding <=> p_query
@@ -95,6 +104,15 @@ REVOKE ALL ON FUNCTION match_user_document_chunks FROM public, anon, authenticat
 Ключевое security-решение: функция **не** принимает user_id от клиента — сервер подставляет
 `user.id` из Supabase-сессии (тот же паттерн, что `buildAssistantContext`, который «never accepts
 a user_id param»). Тест 17: чужие документы недостижимы даже при подменах параметров.
+
+> **Блокер реализации (найдено при работе над кодом):** таблица `document_summaries`
+> скоупится по `clientId`, а владелец документа хранится как `clients.managerId` — поле,
+> которое семантически означает *менеджера* клиента, а не самого пользователя-владельца,
+> и по признанию кода связывается ненадёжно. Прежде чем строить RAG-чтение, нужно
+> решение по **модели владения документами** (Q11). Пока оно не принято, миграцию 046
+> писать преждевременно — иначе retrieval либо не найдёт документы пользователя, либо
+> (хуже) выдаст чужие. Это классический пример, где неверная схема ломает и корректность,
+> и безопасность.
 
 ### 4.2 `lib/ai/retrieval/index.ts`
 
