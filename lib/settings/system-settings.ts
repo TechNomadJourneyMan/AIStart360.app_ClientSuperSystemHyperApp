@@ -5,9 +5,11 @@ import { createServiceClient } from '@/lib/supabase-service'
  * Service-role only.
  */
 
-export type RegistrationMode = 'open' | 'approval' | 'invite'
+// 'auto' = self-serve activation (D3): risk-scored auto-approval, manual review
+// only for flagged candidates. See lib/registration/risk.ts.
+export type RegistrationMode = 'open' | 'approval' | 'invite' | 'auto'
 
-const VALID_MODES: RegistrationMode[] = ['open', 'approval', 'invite']
+const VALID_MODES: RegistrationMode[] = ['open', 'approval', 'invite', 'auto']
 /** The safe default — identical to the pre-toggle behaviour (admin approval). */
 const DEFAULT_MODE: RegistrationMode = 'approval'
 

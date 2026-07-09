@@ -28,7 +28,7 @@ export async function PUT(req: NextRequest) {
   const body = await req.json().catch(() => ({}))
   if (!isRegistrationMode(body.mode)) {
     return NextResponse.json(
-      { error: 'Некорректный режим (open | approval | invite)' },
+      { error: 'Некорректный режим (open | approval | invite | auto)' },
       { status: 400 },
     )
   }

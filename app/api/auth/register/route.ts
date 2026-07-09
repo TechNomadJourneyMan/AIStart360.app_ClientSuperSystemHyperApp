@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { isRateLimited } from '@/lib/rate-limit'
 import { getRegistrationMode } from '@/lib/settings/system-settings'
 import { applyApprovalDecision } from '@/lib/users/approval'
+import { computeRiskFlags } from '@/lib/registration/risk'
 
 // Public self-registration. Only the two roles offered in the UI are allowed
 // ('client' = бизнес, 'owner' = команда AIStart360). admin/expert/super_admin
@@ -79,8 +80,22 @@ export async function POST(request: Request) {
 
     // OPEN mode: grant access immediately (the trigger created the client as
     // pending_approval). Best-effort — never fail the registration on this.
+    // AUTO mode (D3): auto-approve only low-risk candidates; flagged ones stay
+    // pending for manual review. Email is already confirmed (email_confirm above).
     let effectiveStatus: 'pending_approval' | 'approved' = 'pending_approval'
-    if (mode === 'open') {
+    let riskFlags: string[] = []
+
+    const shouldAutoApprove = mode === 'open' || (mode === 'auto' && (() => {
+      const risk = computeRiskFlags({ email, name, organization, emailConfirmed: true })
+      riskFlags = risk.flags
+      if (risk.recommend === 'manual_review') {
+        console.warn('[auth/register] auto-mode → manual review', { userId: data.user.id, score: risk.score, flags: risk.flags })
+        return false
+      }
+      return true
+    })())
+
+    if (shouldAutoApprove) {
       try {
         const { affected } = await applyApprovalDecision({
           userId: data.user.id,
@@ -89,11 +104,11 @@ export async function POST(request: Request) {
         })
         if (affected > 0) effectiveStatus = 'approved'
       } catch (e) {
-        console.error('[auth/register] open-mode auto-approve failed:', e)
+        console.error(`[auth/register] ${mode}-mode auto-approve failed:`, e)
       }
     }
 
-    return NextResponse.json({ ok: true, userId: data.user.id, status: effectiveStatus }, { status: 201 })
+    return NextResponse.json({ ok: true, userId: data.user.id, status: effectiveStatus, riskFlags }, { status: 201 })
   } catch (err) {
     console.error('[auth/register] error:', err)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
