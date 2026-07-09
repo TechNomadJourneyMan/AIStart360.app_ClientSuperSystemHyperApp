@@ -543,7 +543,7 @@ model DocumentSummary {
   report      Report?  @relation(fields: [reportId], references: [id])
 
   // Direct owner (Supabase documents.user_id) so RAG retrieval can scope by
-  // user without the fragile clientId → clients.managerId chain (migration 046).
+  // user without the fragile clientId -> clients.managerId chain (migration 046).
   userId      String?  @map("user_id")
 
   // High-level parsed data from the document (e.g. key financial metrics, full text parsed)
