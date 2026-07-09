@@ -11,6 +11,7 @@ import type { AssessmentCurrent } from './GriPageShell'
 import DecisiveBets from './DecisiveBets'
 import GriBenchmarks from './GriBenchmarks'
 import Plan90Checklist from './Plan90Checklist'
+import RealityCheckPanel from './RealityCheckPanel'
 
 // Русские подписи 7 блоков GRI (sections.ts хранит английские shortTitle).
 const BLOCK_RU: Record<string, string> = {
@@ -128,6 +129,12 @@ export default function GriResultPanel({
           )}
         </div>
       </section>
+
+      {/* Reality Check (Фаза 5, идея №30, решение ПО): детерминированная сверка
+          самооценки GRI с фактами анкеты/Точки А — сам фетчит свой API и
+          скрывается, когда данных нет. Ставим ДО плана: сначала честность
+          оценки, потом действия. */}
+      <RealityCheckPanel />
 
       {/* План на 90 дней — интерактивный чек-лист (Фаза 5, идея №4). Заменил
           прежний статический блок: тот же дизайн трёх горизонтов, но карточки
