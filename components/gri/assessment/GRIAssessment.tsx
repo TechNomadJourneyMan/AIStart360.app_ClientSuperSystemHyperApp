@@ -2,6 +2,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import dynamic from 'next/dynamic'
+import { motion, useReducedMotion } from 'framer-motion'
 import { GRI_SECTIONS, type SectionId } from '@/lib/gri-assessment/sections'
 
 const GriRadar = dynamic(() => import('./GriRadar'), {
@@ -85,66 +86,16 @@ function saveState(state: PersistedState) {
   window.localStorage.setItem(LS_KEY, JSON.stringify(state))
 }
 
-function AssessmentScale({
-  value,
-  onChange,
-}: {
-  value: number | null | undefined
-  onChange: (v: number) => void
-}) {
-  return (
-    <div className="grid grid-cols-5 sm:grid-cols-10 gap-1.5 sm:gap-2">
-      {/* UX-04: 5 columns on mobile so each tap target is >=44px wide (10-wide
-          packs to ~29px on a phone); a single row of 10 on >=sm. */}
-      {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => {
-        const active = value === n
-        const tone =
-          n <= 3
-            ? 'red'
-            : n <= 6
-              ? 'yellow'
-              : 'green'
-        const activeClass =
-          tone === 'red'
-            ? 'bg-red-500 text-white border-red-400'
-            : tone === 'yellow'
-              ? 'bg-yellow-500 text-black border-yellow-400'
-              : 'bg-emerald-500 text-black border-emerald-400'
-        return (
-          <button
-            key={n}
-            type="button"
-            onClick={() => onChange(n)}
-            className={`h-10 sm:h-12 rounded-lg border text-sm font-bold transition-all ${
-              active
-                ? activeClass
-                : 'border-white/10 bg-white/5 text-white/70 hover:bg-white/10 hover:border-white/20'
-            }`}
-          >
-            {n}
-          </button>
-        )
-      })}
-    </div>
-  )
-}
-
-function LossAversionBar({ sectionAvg }: { sectionAvg: number }) {
-  const tone =
-    sectionAvg >= 7
-      ? { label: '✅ Сильная зона', text: 'text-emerald-300', bg: 'bg-emerald-500/10 border-emerald-500/30' }
-      : sectionAvg >= 4
-        ? { label: '⚠️ Зона риска', text: 'text-yellow-300', bg: 'bg-yellow-500/10 border-yellow-500/30' }
-        : { label: '🚨 Критическая зона', text: 'text-red-300', bg: 'bg-red-500/10 border-red-500/30' }
-  return (
-    <div className={`mt-4 rounded-xl border px-4 py-3 ${tone.bg}`}>
-      <div className={`text-xs font-bold uppercase tracking-wide ${tone.text}`}>{tone.label}</div>
-      <div className="text-xs text-white/70 mt-1">
-        Средний балл по разделу:{' '}
-        <span className="font-bold text-white">{sectionAvg.toFixed(1)}</span>
-      </div>
-    </div>
-  )
+// ── Russian labels for the 7 GRI blocks (sections.ts stores English shortTitle).
+// Mirrors GriResultPanel.BLOCK_RU so the whole /gri surface reads consistently.
+const BLOCK_RU: Record<SectionId, string> = {
+  'product-demand': 'Продукт и спрос',
+  'trust-positioning': 'Доверие и позиционирование',
+  'business-model': 'Бизнес-модель',
+  'cash-stability': 'Денежная стабильность',
+  operations: 'Операции',
+  team: 'Команда',
+  'owner-readiness': 'Готовность собственника',
 }
 
 // Illustrative-only radar for the pre-test landing (clearly labelled
@@ -157,6 +108,173 @@ const DEMO_DATA = GRI_SECTIONS.map((s, i) => ({
   benchmark: 8,
 }))
 
+const VALUE_PROPS = [
+  {
+    icon: 'radar',
+    title: 'Индекс по 7 блокам',
+    text: 'Готовность к росту от 0 до 10 в каждой зоне бизнеса',
+  },
+  {
+    icon: 'bolt',
+    title: 'Топ-ограничения',
+    text: '5 слабых точек, которые тормозят масштабирование',
+  },
+  {
+    icon: 'calendar_month',
+    title: 'План на 90 дней',
+    text: 'Шаги по горизонтам 1–30 / 31–60 / 61–90 дней',
+  },
+]
+
+const ONBOARDING_STEPS = ['Контакты', 'О бизнесе', 'Самооценка'] as const
+
+// Tone for a 0–10 section average — matches GriResultPanel (≥8 primary / ≥6 amber / else red).
+function avgBarTone(v: number) {
+  return v >= 8 ? 'bg-primary' : v >= 6 ? 'bg-amber-400' : 'bg-red-400'
+}
+
+// ── Presentational helpers ─────────────────────────────────────────────
+
+function Eyebrow({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="inline-flex items-center gap-2 rounded-full border border-primary/25 bg-primary/[0.06] px-3 py-1 font-mono text-[10px] font-semibold uppercase tracking-[0.22em] text-primary">
+      {children}
+    </span>
+  )
+}
+
+function Reveal({
+  children,
+  delay = 0,
+  className,
+}: {
+  children: React.ReactNode
+  delay?: number
+  className?: string
+}) {
+  const reduce = useReducedMotion()
+  if (reduce) return <div className={className}>{children}</div>
+  return (
+    <motion.div
+      className={className}
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5, delay, ease: [0.22, 1, 0.36, 1] }}
+    >
+      {children}
+    </motion.div>
+  )
+}
+
+// Circular GRI gauge for the results reward moment.
+function IndexGauge({ value, reduce }: { value: number; reduce: boolean }) {
+  const pct = Math.max(0, Math.min(100, (value / 10) * 100))
+  const r = 52
+  const circ = 2 * Math.PI * r
+  const offset = circ * (1 - pct / 100)
+  const color = value >= 8 ? '#6effc0' : value >= 5 ? '#ffbd60' : '#ffb4ab'
+  return (
+    <div className="relative mx-auto h-40 w-40 sm:h-44 sm:w-44">
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 rounded-full blur-2xl"
+        style={{ background: `radial-gradient(circle, ${color}22, transparent 70%)` }}
+      />
+      <svg viewBox="0 0 128 128" className="relative h-full w-full -rotate-90">
+        <circle cx="64" cy="64" r={r} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="9" />
+        <motion.circle
+          cx="64"
+          cy="64"
+          r={r}
+          fill="none"
+          stroke={color}
+          strokeWidth="9"
+          strokeLinecap="round"
+          strokeDasharray={circ}
+          initial={{ strokeDashoffset: reduce ? offset : circ }}
+          animate={{ strokeDashoffset: offset }}
+          transition={{ duration: reduce ? 0 : 1.1, ease: 'easeOut' }}
+        />
+      </svg>
+      <div className="absolute inset-0 flex flex-col items-center justify-center">
+        <span className="font-headline text-5xl font-black leading-none" style={{ color }}>
+          {value.toFixed(1)}
+        </span>
+        <span className="mt-1 font-mono text-[10px] uppercase tracking-[0.2em] text-on-surface-variant">
+          из 10
+        </span>
+      </div>
+    </div>
+  )
+}
+
+function AssessmentScale({
+  value,
+  onChange,
+}: {
+  value: number | null | undefined
+  onChange: (v: number) => void
+}) {
+  return (
+    <div>
+      {/* UX-04: 5 columns on mobile so each tap target is >=44px wide (10-wide
+          packs to ~29px on a phone); a single row of 10 on >=sm. */}
+      <div className="grid grid-cols-5 gap-1.5 sm:grid-cols-10 sm:gap-2">
+        {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => {
+          const active = value === n
+          const tone = n <= 3 ? 'red' : n <= 6 ? 'yellow' : 'green'
+          const activeClass =
+            tone === 'red'
+              ? 'bg-red-400 text-[#3a0000] border-red-300'
+              : tone === 'yellow'
+                ? 'bg-amber-400 text-[#3a2600] border-amber-300'
+                : 'bg-primary text-[#003824] border-primary'
+          return (
+            <button
+              key={n}
+              type="button"
+              aria-pressed={active}
+              onClick={() => onChange(n)}
+              className={`h-12 rounded-xl border text-sm font-bold transition-all active:scale-95 ${
+                active
+                  ? `${activeClass} shadow-lg`
+                  : 'border-white/10 bg-white/[0.03] text-on-surface-variant hover:border-white/25 hover:bg-white/[0.06] hover:text-on-surface'
+              }`}
+            >
+              {n}
+            </button>
+          )
+        })}
+      </div>
+      <div className="mt-2 flex justify-between font-mono text-[10px] uppercase tracking-wider text-on-surface-variant">
+        <span>1 — слабо</span>
+        <span>10 — сильно</span>
+      </div>
+    </div>
+  )
+}
+
+function LossAversionBar({ sectionAvg }: { sectionAvg: number }) {
+  const t =
+    sectionAvg >= 7
+      ? { label: 'Сильная зона', text: 'text-primary', bg: 'border-primary/25 bg-primary/[0.06]', dot: 'bg-primary' }
+      : sectionAvg >= 4
+        ? { label: 'Зона риска', text: 'text-amber-300', bg: 'border-amber-400/25 bg-amber-400/[0.06]', dot: 'bg-amber-400' }
+        : { label: 'Критическая зона', text: 'text-red-300', bg: 'border-red-400/25 bg-red-400/[0.06]', dot: 'bg-red-400' }
+  return (
+    <div className={`mt-4 flex items-center gap-3 rounded-xl border px-4 py-3 ${t.bg}`}>
+      <span className={`h-2 w-2 shrink-0 rounded-full ${t.dot}`} />
+      <div className="flex-1">
+        <div className={`text-xs font-semibold ${t.text}`}>{t.label}</div>
+        <div className="mt-0.5 text-xs text-on-surface-variant">
+          Средний балл по разделу:{' '}
+          <span className="font-semibold text-on-surface">{sectionAvg.toFixed(1)}</span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function GRIAssessment() {
   const [step, setStep] = useState<Step>({ kind: 'landing' })
   const [hydrated, setHydrated] = useState(false)
@@ -164,6 +282,7 @@ export default function GRIAssessment() {
   const [onboardingStep, setOnboardingStep] = useState(1)
   const [questionIndex, setQuestionIndex] = useState(0)
   const postedRef = useRef(false)
+  const prefersReduced = useReducedMotion() ?? false
 
   useEffect(() => {
     const local = loadState()
@@ -339,68 +458,131 @@ export default function GRIAssessment() {
 
   // -------- Landing --------
   if (step.kind === 'landing') {
+    const hasResult = griIndex > 0
     return (
       <Shell>
-        <div className="flex flex-col items-center justify-center text-center space-y-6 py-10">
-          <div className="space-y-3 max-w-2xl">
-            <div className="inline-block bg-teal-900/30 text-teal-300 text-[11px] font-bold px-3 py-1 rounded-full border border-teal-500/30">
-              GRI ASSESSMENT
-            </div>
-            <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-white">
-              Оцените готовность вашего бизнеса к масштабированию
+        <div className="grid items-center gap-8 lg:grid-cols-[1.05fr_0.95fr]">
+          {/* Left — hero copy */}
+          <Reveal className="space-y-6">
+            <Eyebrow>
+              <span className="material-symbols-outlined text-[13px]" aria-hidden>
+                verified
+              </span>
+              GRI · Growth Readiness Index
+            </Eyebrow>
+            <h2 className="font-headline text-3xl font-black leading-[1.1] tracking-tight text-on-surface sm:text-[2.7rem]">
+              Насколько ваш бизнес{' '}
+              <span className="text-primary">готов к масштабированию</span>
             </h2>
-            <p className="text-base text-white/60">
-              Пройдите профессиональный GRI-тест из 7 блоков и получите детальный план роста до $2M+.
+            <p className="max-w-xl text-base leading-relaxed text-on-surface-variant">
+              Пройдите точную диагностику из 7 блоков — и получите ваш индекс
+              готовности, главные ограничения и пошаговый план роста до $2M+.
             </p>
-          </div>
-          <button
-            onClick={() => setStep({ kind: 'onboarding' })}
-            className="group inline-flex items-center justify-center gap-2 px-7 py-3.5 text-base font-bold text-black bg-white rounded-full hover:bg-teal-50 hover:scale-105 transition-all"
-          >
-            Начать оценку
-            <svg className="w-4 h-4 transition-transform group-hover:translate-x-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
-            </svg>
-          </button>
-          <p className="text-xs text-white/40">Займёт около 15–20 минут</p>
+
+            <div className="flex flex-wrap items-center gap-3 pt-1">
+              {hasResult ? (
+                <>
+                  <button
+                    onClick={() => setStep({ kind: 'results' })}
+                    className="group inline-flex items-center justify-center gap-2 rounded-full bg-primary px-7 py-3.5 text-base font-bold text-[#003824] shadow-primary-md transition-all hover:bg-primary/90 active:scale-[0.98]"
+                  >
+                    <span className="material-symbols-outlined text-[18px]" aria-hidden>insights</span>
+                    Посмотреть результат
+                  </button>
+                  <button
+                    onClick={() => {
+                      resetAll()
+                      setStep({ kind: 'onboarding' })
+                    }}
+                    className="inline-flex items-center gap-2 rounded-full border border-white/[0.12] px-6 py-3.5 text-base font-semibold text-on-surface transition-all hover:border-primary/40 hover:bg-white/[0.03]"
+                  >
+                    <span className="material-symbols-outlined text-[18px]" aria-hidden>restart_alt</span>
+                    Пройти заново
+                  </button>
+                </>
+              ) : (
+                <button
+                  onClick={() => setStep({ kind: 'onboarding' })}
+                  className="group inline-flex items-center justify-center gap-2 rounded-full bg-primary px-7 py-3.5 text-base font-bold text-[#003824] shadow-primary-md transition-all hover:bg-primary/90 active:scale-[0.98]"
+                >
+                  Начать оценку
+                  <span className="material-symbols-outlined text-[18px] transition-transform group-hover:translate-x-0.5" aria-hidden>
+                    arrow_forward
+                  </span>
+                </button>
+              )}
+            </div>
+            <p className="flex items-center gap-1.5 font-mono text-xs text-on-surface-variant">
+              <span className="material-symbols-outlined text-[15px]" aria-hidden>
+                schedule
+              </span>
+              ~15–20 минут · сохраняется автоматически
+            </p>
+          </Reveal>
+
+          {/* Right — illustrative radar clearly marked as sample */}
+          <Reveal delay={0.12}>
+            <div className="relative overflow-hidden rounded-2xl border border-white/[0.08] bg-white/[0.02] p-4">
+              <div
+                aria-hidden
+                className="pointer-events-none absolute -right-16 -top-16 h-52 w-52 rounded-full bg-primary/10 blur-[80px]"
+              />
+              <div className="mb-1 flex items-center justify-between">
+                <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-on-surface-variant">
+                  Как выглядит профиль
+                </span>
+                <span className="rounded-full border border-white/[0.1] bg-white/[0.03] px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-on-surface-variant">
+                  пример
+                </span>
+              </div>
+              <GriRadar data={DEMO_DATA} height={300} />
+              <div className="mt-1 text-center font-mono text-[10px] text-on-surface-variant">
+                Иллюстрация · ваш реальный профиль появится после теста
+              </div>
+            </div>
+          </Reveal>
         </div>
 
-        <section className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start mt-4">
-          <div className="lg:col-span-1 space-y-5">
-            <h3 className="text-xl font-bold text-white">Ваш GRI Индекс</h3>
-            <p className="text-white/60 text-sm leading-relaxed">
-              Growth Readiness Index (GRI) — скоринг готовности к масштабированию (0–10). Большинство имеют сильный продукт, но слабые операции.
-            </p>
-            <div className="p-4 bg-yellow-500/10 border-l-4 border-yellow-500/70 rounded-r-lg">
-              <h4 className="font-bold text-yellow-200 text-sm">⚠️ Инсайт</h4>
-              <p className="text-xs text-yellow-100/80 mt-1">
-                Вы не можете масштабировать хаос. Сначала исправьте «красные зоны» (Operations).
-              </p>
-            </div>
-            <div className="flex gap-6 pt-2">
-              <div>
-                <div className="text-3xl font-black text-white">—</div>
-                <div className="text-[10px] text-white/40 uppercase font-bold">текущий GRI</div>
-              </div>
-              <div className="w-px bg-white/10 h-12" />
-              <div>
-                <div className="text-3xl font-black text-emerald-400">8.5+</div>
-                <div className="text-[10px] text-white/40 uppercase font-bold">цель GRI</div>
-              </div>
-            </div>
-            <p className="text-[11px] text-white/40 leading-relaxed">
-              Ваш индекс появится после прохождения теста — справа показан
-              иллюстративный профиль для примера.
-            </p>
+        {/* Value strip — что вы получите */}
+        <Reveal delay={0.18} className="mt-10">
+          <div className="mb-3 font-mono text-[11px] uppercase tracking-[0.22em] text-on-surface-variant">
+            Что вы получите
           </div>
-          <div className="lg:col-span-2 bg-white/[0.03] border border-white/10 rounded-2xl p-4 backdrop-blur-sm">
-            <GriRadar data={DEMO_DATA} height={320} />
-            <div className="text-center mt-1 text-[11px] text-white/40">
-              Пример профиля (иллюстрация) vs{' '}
-              <span className="text-emerald-300 font-bold">Эталон $2M</span>
-            </div>
+          <div className="grid gap-3 sm:grid-cols-3">
+            {VALUE_PROPS.map((v) => (
+              <div
+                key={v.title}
+                className="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-5 transition-colors hover:border-primary/25"
+              >
+                <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-primary/20 bg-primary/[0.08] text-primary">
+                  <span className="material-symbols-outlined text-[20px]" aria-hidden>
+                    {v.icon}
+                  </span>
+                </span>
+                <h3 className="mt-3 text-sm font-bold text-on-surface">{v.title}</h3>
+                <p className="mt-1 text-xs leading-relaxed text-on-surface-variant">{v.text}</p>
+              </div>
+            ))}
           </div>
-        </section>
+        </Reveal>
+
+        {/* Preview of the 7 blocks */}
+        <Reveal delay={0.24} className="mt-8">
+          <div className="mb-3 font-mono text-[11px] uppercase tracking-[0.22em] text-on-surface-variant">
+            7 блоков диагностики
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {GRI_SECTIONS.map((s, i) => (
+              <span
+                key={s.id}
+                className="inline-flex items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.02] px-3 py-1.5 text-xs text-on-surface"
+              >
+                <span className="font-mono text-[10px] font-bold text-primary">{i + 1}</span>
+                {BLOCK_RU[s.id]}
+              </span>
+            ))}
+          </div>
+        </Reveal>
       </Shell>
     )
   }
@@ -421,21 +603,42 @@ export default function GRIAssessment() {
     }
     return (
       <Shell>
-        <div className="max-w-2xl mx-auto">
+        <div className="mx-auto max-w-2xl">
+          {/* Step indicator */}
           <div className="mb-6">
-            <div className="text-xs text-white/40 mb-2">Шаг {onboardingStep} из 3</div>
-            <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-teal-500 transition-all duration-300"
-                style={{ width: `${(onboardingStep / 3) * 100}%` }}
-              />
+            <div className="mb-2 flex items-center justify-between">
+              <span className="font-mono text-[11px] uppercase tracking-[0.2em] text-on-surface-variant">
+                Шаг {onboardingStep} из 3
+              </span>
+              <span className="text-xs font-semibold text-primary">
+                {ONBOARDING_STEPS[onboardingStep - 1]}
+              </span>
+            </div>
+            <div className="flex gap-1.5">
+              {ONBOARDING_STEPS.map((_, i) => (
+                <div key={i} className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/[0.08]">
+                  <div
+                    className={`h-full rounded-full transition-all duration-500 ${
+                      i + 1 <= onboardingStep ? 'w-full bg-primary' : 'w-0'
+                    }`}
+                  />
+                </div>
+              ))}
             </div>
           </div>
 
-          <div className="bg-white/[0.03] border border-white/10 rounded-2xl p-6 sm:p-8 backdrop-blur-sm space-y-6">
+          <Reveal
+            key={onboardingStep}
+            className="space-y-6 rounded-2xl border border-white/[0.08] bg-white/[0.02] p-6 sm:p-8"
+          >
             {onboardingStep === 1 && (
               <>
-                <h3 className="text-2xl font-bold text-white">Давайте познакомимся</h3>
+                <div>
+                  <h3 className="font-headline text-2xl font-bold text-on-surface">Давайте познакомимся</h3>
+                  <p className="mt-1 text-sm text-on-surface-variant">
+                    Чтобы сохранить результат и прислать разбор.
+                  </p>
+                </div>
                 <Field label="Как вас зовут?">
                   <input
                     type="text"
@@ -468,8 +671,8 @@ export default function GRIAssessment() {
 
             {onboardingStep === 2 && (
               <>
-                <h3 className="text-2xl font-bold text-white">О вашем бизнесе</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                <h3 className="font-headline text-2xl font-bold text-on-surface">О вашем бизнесе</h3>
+                <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
                   <Field label="Отрасль">
                     <select
                       value={form.industry}
@@ -542,22 +745,22 @@ export default function GRIAssessment() {
             {onboardingStep === 3 && (
               <>
                 <div>
-                  <h3 className="text-2xl font-bold text-white">Самооценка готовности</h3>
-                  <p className="text-white/60 text-sm mt-1">Оцените готовность по 10-балльной шкале</p>
+                  <h3 className="font-headline text-2xl font-bold text-on-surface">Самооценка готовности</h3>
+                  <p className="mt-1 text-sm text-on-surface-variant">Оцените готовность по 10-балльной шкале</p>
                 </div>
                 <ScoreRow
                   label="Готовность процессов к $2M?"
                   value={form.scoreProcess}
                   onChange={(v) => setOnboarding({ scoreProcess: v })}
                 />
-                <div className="border-t border-white/10 pt-5">
+                <div className="border-t border-white/[0.08] pt-5">
                   <ScoreRow
                     label="Готовность управлять бизнесом с оборотом $2M?"
                     value={form.scoreManagement}
                     onChange={(v) => setOnboarding({ scoreManagement: v })}
                   />
                 </div>
-                <div className="border-t border-white/10 pt-5">
+                <div className="border-t border-white/[0.08] pt-5">
                   <ScoreRow
                     label="Готовность команды к $2M?"
                     value={form.scoreTeam}
@@ -567,21 +770,23 @@ export default function GRIAssessment() {
               </>
             )}
 
-            <div className="flex justify-between gap-3 pt-2">
+            <div className="flex items-center justify-between gap-3 pt-2">
               <button
                 onClick={back}
-                className="px-5 py-2.5 rounded-full border border-white/15 text-white/70 hover:bg-white/5 text-sm transition"
+                className="inline-flex items-center gap-1.5 rounded-full border border-white/[0.12] px-5 py-3 text-sm font-medium text-on-surface-variant transition hover:bg-white/[0.04] hover:text-on-surface"
               >
-                ← Назад
+                <span className="material-symbols-outlined text-[16px]" aria-hidden>arrow_back</span>
+                Назад
               </button>
               <button
                 onClick={next}
-                className="bg-white text-black font-bold py-3 px-7 rounded-full hover:bg-teal-50 transition-all"
+                className="inline-flex items-center gap-1.5 rounded-full bg-primary px-7 py-3 text-sm font-bold text-[#003824] transition-all hover:bg-primary/90 active:scale-[0.98]"
               >
-                {onboardingStep === 3 ? 'Перейти к оценке →' : 'Далее →'}
+                {onboardingStep === 3 ? 'Перейти к оценке' : 'Далее'}
+                <span className="material-symbols-outlined text-[16px]" aria-hidden>arrow_forward</span>
               </button>
             </div>
-          </div>
+          </Reveal>
         </div>
       </Shell>
     )
@@ -592,17 +797,26 @@ export default function GRIAssessment() {
     const completedCount = GRI_SECTIONS.filter((s) => state.completedSections[s.id]).length
     return (
       <Shell>
-        <div className="mb-8 text-center">
-          <h3 className="text-2xl sm:text-3xl font-bold mb-2 text-teal-300">Оценка GRI Index</h3>
-          <p className="text-white/60 max-w-xl mx-auto text-sm">
-            Пройдите 7 блоков GRI Index и получите оценку готовности к росту $2M/год.
+        <Reveal className="mb-6 text-center">
+          <Eyebrow>Оценка · 7 блоков</Eyebrow>
+          <h3 className="mt-3 font-headline text-2xl font-bold text-on-surface sm:text-3xl">
+            Пройдите блоки GRI Index
+          </h3>
+          <p className="mx-auto mt-2 max-w-xl text-sm text-on-surface-variant">
+            Оцените каждый блок — и получите индекс готовности к росту до $2M/год.
           </p>
-          {completedCount > 0 && (
-            <p className="text-xs text-white/40 mt-2">
-              Завершено блоков: {completedCount} из {GRI_SECTIONS.length}
-            </p>
-          )}
-        </div>
+          <div className="mx-auto mt-4 flex max-w-sm items-center gap-3">
+            <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/[0.08]">
+              <div
+                className="h-full rounded-full bg-primary transition-all duration-500"
+                style={{ width: `${(completedCount / GRI_SECTIONS.length) * 100}%` }}
+              />
+            </div>
+            <span className="font-mono text-xs text-on-surface-variant">
+              {completedCount}/{GRI_SECTIONS.length}
+            </span>
+          </div>
+        </Reveal>
         <div className="grid gap-3">
           {GRI_SECTIONS.map((section, index) => {
             const isDone = !!state.completedSections[section.id]
@@ -614,30 +828,33 @@ export default function GRIAssessment() {
                   setQuestionIndex(0)
                   setStep({ kind: 'section', sectionIndex: index })
                 }}
-                className="group bg-white/[0.03] border border-white/10 hover:border-teal-500/40 p-5 rounded-xl backdrop-blur-sm text-left transition-all"
+                className="group rounded-2xl border border-white/[0.08] bg-white/[0.02] p-5 text-left transition-all hover:border-primary/35 hover:bg-white/[0.04]"
               >
                 <div className="flex items-center justify-between gap-4">
-                  <div className="flex-1">
-                    <div className="text-[10px] font-bold mb-1 uppercase tracking-wide text-teal-300">
+                  <div className="min-w-0 flex-1">
+                    <div className="mb-1 flex items-center gap-2 font-mono text-[10px] font-bold uppercase tracking-wider text-primary">
                       Блок {index + 1}
-                      {isDone && <span className="ml-2 text-emerald-400">✓ завершён</span>}
+                      {isDone && (
+                        <span className="inline-flex items-center gap-1 text-primary">
+                          <span className="material-symbols-outlined text-[13px]" aria-hidden>check_circle</span>
+                          завершён
+                        </span>
+                      )}
                     </div>
-                    <h4 className="text-base sm:text-lg font-bold text-white group-hover:text-teal-200 transition-colors">
-                      {section.title}
+                    <h4 className="text-base font-bold text-on-surface transition-colors group-hover:text-primary sm:text-lg">
+                      {BLOCK_RU[section.id]}
                     </h4>
-                    <p className="text-white/50 text-xs mt-1">{section.description}</p>
+                    <p className="mt-1 text-xs text-on-surface-variant">{section.description}</p>
                   </div>
                   <div className="flex items-center gap-3">
                     {isDone && (
                       <div className="text-right">
-                        <div className="text-xl font-black text-white">{avg.toFixed(1)}</div>
-                        <div className="text-[10px] text-white/40 uppercase">балл</div>
+                        <div className="font-headline text-xl font-black text-on-surface">{avg.toFixed(1)}</div>
+                        <div className="font-mono text-[10px] uppercase text-on-surface-variant">балл</div>
                       </div>
                     )}
-                    <div className="h-9 w-9 flex items-center justify-center rounded-full bg-white/5 border border-white/10 group-hover:bg-teal-500 group-hover:text-black transition-all">
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                      </svg>
+                    <div className="flex h-9 w-9 items-center justify-center rounded-full border border-white/[0.1] bg-white/[0.03] text-on-surface transition-all group-hover:bg-primary group-hover:text-[#003824]">
+                      <span className="material-symbols-outlined text-[18px]" aria-hidden>chevron_right</span>
                     </div>
                   </div>
                 </div>
@@ -651,16 +868,18 @@ export default function GRIAssessment() {
               setQuestionIndex(0)
               setStep({ kind: 'section', sectionIndex: 0 })
             }}
-            className="inline-flex items-center gap-2 bg-teal-500 hover:bg-teal-400 text-black font-bold px-6 py-3 rounded-full shadow-lg hover:shadow-teal-500/40 transition-all"
+            className="inline-flex items-center gap-2 rounded-full bg-primary px-6 py-3 text-sm font-bold text-[#003824] shadow-primary-md transition-all hover:bg-primary/90 active:scale-[0.98]"
           >
-            {completedCount > 0 ? 'Продолжить' : 'Начать'} →
+            {completedCount > 0 ? 'Продолжить' : 'Начать'}
+            <span className="material-symbols-outlined text-[18px]" aria-hidden>arrow_forward</span>
           </button>
           {completedCount === GRI_SECTIONS.length && (
             <button
               onClick={() => setStep({ kind: 'results' })}
-              className="inline-flex items-center gap-2 bg-emerald-500 hover:bg-emerald-400 text-black font-bold px-6 py-3 rounded-full transition-all"
+              className="inline-flex items-center gap-2 rounded-full border border-primary/40 bg-primary/[0.08] px-6 py-3 text-sm font-bold text-primary transition-all hover:bg-primary/15"
             >
-              🎯 Получить результаты
+              <span className="material-symbols-outlined text-[18px]" aria-hidden>insights</span>
+              Получить результаты
             </button>
           )}
         </div>
@@ -704,92 +923,132 @@ export default function GRIAssessment() {
 
     return (
       <Shell>
-        <div className="mb-3 flex items-center justify-between gap-4 text-xs">
+        {/* Header row */}
+        <div className="mb-4 flex items-center justify-between gap-4">
           <button
             onClick={() => setStep({ kind: 'overview' })}
-            className="text-white/50 hover:text-white transition px-3 py-2 -mx-3 -my-2 min-h-[44px] inline-flex items-center"
+            className="-mx-3 -my-2 inline-flex min-h-[44px] items-center gap-1.5 px-3 py-2 text-sm text-on-surface-variant transition hover:text-on-surface"
           >
-            ← К списку
+            <span className="material-symbols-outlined text-[18px]" aria-hidden>arrow_back</span>
+            К списку
           </button>
-          <div className="font-bold text-teal-300 text-sm">
-            Блок {sectionIndex + 1}: {section.shortTitle}
+          <div className="text-right">
+            <div className="font-mono text-[11px] uppercase tracking-wider text-on-surface-variant">
+              Блок {sectionIndex + 1} из {GRI_SECTIONS.length}
+            </div>
+            <div className="text-sm font-bold text-primary">{BLOCK_RU[section.id]}</div>
           </div>
-          <div className="text-white/40">
-            {safeIndex + 1} / {total}
+        </div>
+
+        {/* Segmented 7-block progress */}
+        <div className="mb-5 flex items-center gap-1.5" aria-hidden>
+          {GRI_SECTIONS.map((s, i) => {
+            const done = !!state.completedSections[s.id]
+            const isCurrent = i === sectionIndex
+            return (
+              <div key={s.id} className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/[0.08]">
+                <div
+                  className={`h-full rounded-full transition-all duration-500 ${
+                    done
+                      ? 'w-full bg-primary'
+                      : isCurrent
+                        ? 'w-full bg-primary/40'
+                        : 'w-0'
+                  }`}
+                />
+              </div>
+            )
+          })}
+        </div>
+
+        {/* Within-block question progress */}
+        <div className="mb-3 flex items-center justify-between">
+          <span className="font-mono text-[11px] uppercase tracking-wider text-on-surface-variant">
+            Вопрос {safeIndex + 1} / {total}
+          </span>
+          <div className="flex gap-1.5">
+            {section.criteria.map((c, idx) => (
+              <button
+                key={c.id}
+                onClick={() => goToQuestion(idx)}
+                aria-label={`Вопрос ${idx + 1}`}
+                className="relative -m-2 inline-flex items-center justify-center p-2"
+              >
+                <span
+                  className={`block h-2 w-2 rounded-full transition-all ${
+                    idx === safeIndex
+                      ? 'scale-125 bg-primary'
+                      : typeof scoreMap[c.id] === 'number'
+                        ? 'bg-primary/50'
+                        : 'bg-white/15'
+                  }`}
+                />
+              </button>
+            ))}
           </div>
         </div>
 
-        <div className="h-1.5 bg-white/10 rounded-full mb-5 overflow-hidden">
-          <div
-            className="h-full bg-gradient-to-r from-teal-500 to-emerald-400 transition-all duration-300"
-            style={{ width: `${((safeIndex + 1) / total) * 100}%` }}
-          />
-        </div>
-
-        <div className="flex justify-center gap-1.5 mb-5">
-          {section.criteria.map((c, idx) => (
-            <button
-              key={c.id}
-              onClick={() => goToQuestion(idx)}
-              aria-label={`Вопрос ${idx + 1}`}
-              className="relative inline-flex items-center justify-center p-2.5 -m-2.5"
-            >
-              <span
-                className={`block w-2.5 h-2.5 rounded-full transition-all ${
-                  idx === safeIndex
-                    ? 'bg-teal-400 scale-125'
-                    : typeof scoreMap[c.id] === 'number'
-                      ? 'bg-teal-500/50'
-                      : 'bg-white/15'
-                }`}
-              />
-            </button>
-          ))}
-        </div>
-
-        <div className="bg-white/[0.03] border border-white/10 rounded-2xl p-6 sm:p-8 backdrop-blur-sm">
-          <h3 className="text-xl sm:text-2xl font-bold mb-2 text-white">{current.text}</h3>
-          <p className="text-white/60 mb-5 text-sm">{current.description}</p>
+        {/* Question card — animates on question change */}
+        <motion.div
+          key={current.id}
+          initial={prefersReduced ? false : { opacity: 0, x: 28 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: prefersReduced ? 0 : 0.32, ease: [0.22, 1, 0.36, 1] }}
+          className="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-6 sm:p-8"
+        >
+          <h3 className="mb-2 font-headline text-xl font-bold text-on-surface sm:text-2xl">{current.text}</h3>
+          <p className="mb-6 text-sm leading-relaxed text-on-surface-variant">{current.description}</p>
 
           <AssessmentScale value={currentScore} onChange={handleScore} />
 
-          <div className="flex justify-between mt-5 text-sm">
+          <div className="mt-6 flex justify-between text-sm">
             <button
               onClick={() => goToQuestion(safeIndex - 1)}
               disabled={safeIndex === 0}
-              className="text-white/60 hover:text-white disabled:opacity-30 transition px-3 py-2 -mx-3 -my-2 min-h-[44px] inline-flex items-center"
+              className="-mx-3 -my-2 inline-flex min-h-[44px] items-center gap-1.5 px-3 py-2 text-on-surface-variant transition hover:text-on-surface disabled:opacity-30"
             >
-              ← Предыдущий
+              <span className="material-symbols-outlined text-[16px]" aria-hidden>arrow_back</span>
+              Предыдущий
             </button>
             <button
               onClick={() => goToQuestion(safeIndex + 1)}
               disabled={safeIndex >= total - 1}
-              className="text-white/60 hover:text-white disabled:opacity-30 transition px-3 py-2 -mx-3 -my-2 min-h-[44px] inline-flex items-center"
+              className="-mx-3 -my-2 inline-flex min-h-[44px] items-center gap-1.5 px-3 py-2 text-on-surface-variant transition hover:text-on-surface disabled:opacity-30"
             >
-              Следующий →
+              Следующий
+              <span className="material-symbols-outlined text-[16px]" aria-hidden>arrow_forward</span>
             </button>
           </div>
-        </div>
+        </motion.div>
 
         {avg > 0 && <LossAversionBar sectionAvg={avg} />}
 
         {allAnswered && (
-          <div className="mt-6 space-y-4">
-            <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-5">
-              <h4 className="font-bold text-emerald-300">✅ Раздел завершён</h4>
-              <p className="text-white/70 text-sm mt-1">
-                Средний балл: <span className="text-white font-bold">{avg.toFixed(1)}</span>
+          <Reveal className="mt-6 space-y-4">
+            <div className="flex items-center gap-3 rounded-2xl border border-primary/25 bg-primary/[0.06] p-5">
+              <span className="material-symbols-outlined text-primary" aria-hidden>task_alt</span>
+              <p className="text-sm text-on-surface">
+                Раздел завершён · средний балл{' '}
+                <span className="font-bold text-on-surface">{avg.toFixed(1)}</span>
               </p>
             </div>
             <button
               onClick={handleNextSection}
-              className="w-full bg-emerald-500 text-black font-bold py-3.5 rounded-full hover:bg-emerald-400 transition shadow-lg shadow-emerald-500/30"
+              className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-primary py-3.5 text-sm font-bold text-[#003824] shadow-primary-md transition hover:bg-primary/90 active:scale-[0.99]"
             >
-              {sectionIndex === GRI_SECTIONS.length - 1
-                ? '🎯 Получить результаты'
-                : 'Следующий раздел →'}
+              {sectionIndex === GRI_SECTIONS.length - 1 ? (
+                <>
+                  <span className="material-symbols-outlined text-[18px]" aria-hidden>insights</span>
+                  Получить результаты
+                </>
+              ) : (
+                <>
+                  Следующий раздел
+                  <span className="material-symbols-outlined text-[18px]" aria-hidden>arrow_forward</span>
+                </>
+              )}
             </button>
-          </div>
+          </Reveal>
         )}
       </Shell>
     )
@@ -803,133 +1062,231 @@ export default function GRIAssessment() {
       benchmark: 8,
     }))
     const sectionResults = GRI_SECTIONS.map((s) => ({
+      id: s.id,
       shortTitle: s.shortTitle,
       title: s.title,
       avg: sectionAvg(s.id),
     }))
-    const allCriteriaScored: { sectionTitle: string; text: string; score: number }[] = []
+    const allCriteriaScored: {
+      sectionId: SectionId
+      block: string
+      text: string
+      score: number
+      improve: string
+    }[] = []
     GRI_SECTIONS.forEach((sec) => {
       const map = state.scores[sec.id] || {}
       sec.criteria.forEach((c) => {
         if (typeof map[c.id] === 'number') {
-          allCriteriaScored.push({ sectionTitle: sec.title, text: c.text, score: map[c.id]! })
+          allCriteriaScored.push({
+            sectionId: sec.id,
+            block: BLOCK_RU[sec.id],
+            text: c.text,
+            score: map[c.id]!,
+            improve: c.whatToImprove,
+          })
         }
       })
     })
-    const top5 = [...allCriteriaScored].sort((a, b) => a.score - b.score).slice(0, 5)
+    const weakest = [...allCriteriaScored].sort((a, b) => a.score - b.score)
+    const top5 = weakest.slice(0, 5)
+    // Derived 90-day plan: the weakest criteria mapped onto three horizons, each
+    // card carrying its concrete "что улучшить" action (from sections.ts). The
+    // expert booking below still offers the fully tailored plan.
+    const planHorizons = [
+      { label: '1–30 дней', items: weakest.slice(0, 2) },
+      { label: '31–60 дней', items: weakest.slice(2, 4) },
+      { label: '61–90 дней', items: weakest.slice(4, 6) },
+    ]
 
     const status =
       griIndex >= 8
-        ? { color: 'text-emerald-400', bg: 'bg-emerald-500/10 border-emerald-500/30', label: '✅ Отличная готовность', desc: 'Бизнес готов к агрессивному росту.' }
+        ? { text: 'text-primary', dot: 'bg-primary', chip: 'border-primary/25 bg-primary/[0.06]', label: 'Отличная готовность', desc: 'Бизнес готов к агрессивному росту — усиливайте лидирующие блоки.' }
         : griIndex >= 5
-          ? { color: 'text-yellow-400', bg: 'bg-yellow-500/10 border-yellow-500/30', label: '⚠️ Средняя готовность', desc: 'Есть риски. Исправьте красные зоны.' }
-          : { color: 'text-red-400', bg: 'bg-red-500/10 border-red-500/30', label: '🚨 Критическое состояние', desc: 'Масштабирование невозможно без изменений.' }
+          ? { text: 'text-amber-300', dot: 'bg-amber-400', chip: 'border-amber-400/25 bg-amber-400/[0.06]', label: 'Средняя готовность', desc: 'Есть риски. Закройте красные зоны, прежде чем ускоряться.' }
+          : { text: 'text-red-300', dot: 'bg-red-400', chip: 'border-red-400/25 bg-red-400/[0.06]', label: 'Критическое состояние', desc: 'Масштабирование невозможно без изменений в слабых блоках.' }
 
     return (
       <Shell>
-        <div className="mb-8">
-          <div className="inline-block bg-teal-900/30 text-teal-300 px-3 py-1 rounded-full text-[10px] font-bold mb-3 border border-teal-500/30">
-            РЕЗУЛЬТАТ ГОТОВ
-          </div>
-          <h3 className="text-3xl sm:text-4xl font-bold mb-1 text-white">Ваш GRI Индекс</h3>
-          <p className="text-white/60 text-sm max-w-xl">
-            Теперь вы знаете свои сильные стороны и зоны роста.
+        <Reveal className="mb-6">
+          <Eyebrow>
+            <span className="material-symbols-outlined text-[13px]" aria-hidden>celebration</span>
+            Результат готов
+          </Eyebrow>
+          <h3 className="mt-3 font-headline text-3xl font-black text-on-surface sm:text-4xl">
+            Ваш GRI-индекс
+          </h3>
+          <p className="mt-1 max-w-xl text-sm text-on-surface-variant">
+            Теперь вы видите сильные стороны, зоны роста и с чего начать.
           </p>
-        </div>
+        </Reveal>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-10">
-          <div className="space-y-5">
-            <div className="flex items-baseline gap-4">
-              <span className={`text-6xl font-black ${status.color}`}>{griIndex.toFixed(1)}</span>
-              <div className="text-xs text-white/40">
-                <span className="text-teal-300 text-xl font-bold block">8.5+</span>
-                ЦЕЛЬ
+        {/* Hero result card — gauge + status */}
+        <Reveal delay={0.05}>
+          <div className="relative mb-6 overflow-hidden rounded-3xl border border-white/[0.08] bg-white/[0.02] p-6 sm:p-8">
+            <div
+              aria-hidden
+              className="pointer-events-none absolute -right-24 -top-24 h-64 w-64 rounded-full bg-primary/10 blur-[90px]"
+            />
+            <div className="relative grid items-center gap-6 sm:grid-cols-[auto_1fr]">
+              <IndexGauge value={griIndex} reduce={prefersReduced} />
+              <div className="space-y-4 text-center sm:text-left">
+                <div className={`inline-flex items-center gap-2 rounded-xl border px-4 py-2 ${status.chip}`}>
+                  <span className={`h-2 w-2 rounded-full ${status.dot}`} />
+                  <span className={`text-sm font-bold ${status.text}`}>{status.label}</span>
+                </div>
+                <p className="max-w-md text-sm leading-relaxed text-on-surface-variant">{status.desc}</p>
+                <div className="flex items-center justify-center gap-6 sm:justify-start">
+                  <div>
+                    <div className="font-mono text-[10px] uppercase tracking-wider text-on-surface-variant">
+                      Ваш индекс
+                    </div>
+                    <div className={`font-headline text-2xl font-black ${status.text}`}>
+                      {griIndex.toFixed(1)}
+                    </div>
+                  </div>
+                  <div className="h-10 w-px bg-white/[0.1]" />
+                  <div>
+                    <div className="font-mono text-[10px] uppercase tracking-wider text-on-surface-variant">
+                      Цель
+                    </div>
+                    <div className="font-headline text-2xl font-black text-primary">8.5+</div>
+                  </div>
+                </div>
               </div>
             </div>
-            <div className={`p-4 rounded-xl border ${status.bg}`}>
-              <h4 className={`font-bold ${status.color}`}>{status.label}</h4>
-              <p className="text-white/70 text-sm mt-1">{status.desc}</p>
+          </div>
+        </Reveal>
+
+        {/* Radar + per-block averages */}
+        <div className="mb-6 grid gap-5 lg:grid-cols-2">
+          <Reveal delay={0.1} className="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-4">
+            <div className="mb-1 font-mono text-[11px] uppercase tracking-[0.2em] text-on-surface-variant">
+              Профиль по блокам
             </div>
-            <div className="space-y-1.5">
-              {sectionResults.map((sec, idx) => (
-                <div key={idx} className="flex items-center justify-between text-xs">
-                  <span className="text-white/70">{sec.shortTitle}</span>
-                  <div className="flex items-center gap-2">
-                    <div className="w-20 h-1.5 bg-white/10 rounded-full overflow-hidden">
-                      <div
-                        className={`h-full rounded-full ${
-                          sec.avg >= 7
-                            ? 'bg-emerald-500'
-                            : sec.avg >= 4
-                              ? 'bg-yellow-500'
-                              : 'bg-red-500'
-                        }`}
-                        style={{ width: `${(sec.avg / 10) * 100}%` }}
-                      />
-                    </div>
-                    <span className="font-bold w-6 text-white">{sec.avg.toFixed(1)}</span>
-                  </div>
-                </div>
+            <GriRadar data={chartData} height={320} />
+          </Reveal>
+          <Reveal delay={0.15} className="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-5">
+            <div className="mb-4 font-mono text-[11px] uppercase tracking-[0.2em] text-on-surface-variant">
+              Средние по блокам
+            </div>
+            <ul className="space-y-3">
+              {sectionResults.map((sec) => (
+                <li key={sec.id} className="flex items-center gap-3">
+                  <span className="flex-1 truncate text-sm text-on-surface">{BLOCK_RU[sec.id]}</span>
+                  <span className="h-1.5 w-24 overflow-hidden rounded-full bg-white/[0.08] sm:w-28">
+                    <span
+                      className={`block h-full rounded-full ${avgBarTone(sec.avg)}`}
+                      style={{ width: `${(sec.avg / 10) * 100}%` }}
+                    />
+                  </span>
+                  <span className="w-8 text-right font-mono text-sm tabular-nums text-on-surface">
+                    {sec.avg.toFixed(1)}
+                  </span>
+                </li>
               ))}
-            </div>
-          </div>
-          <div className="lg:col-span-2 bg-white/[0.03] border border-white/10 rounded-2xl p-4">
-            <GriRadar data={chartData} height={340} />
-          </div>
+            </ul>
+          </Reveal>
         </div>
 
+        {/* TOP-5 limitations */}
         {top5.length > 0 && (
-          <div className="mb-10">
-            <h4 className="text-lg font-bold mb-3 text-red-300">🔥 TOP-5 ограничений</h4>
-            <div className="space-y-2.5">
+          <Reveal delay={0.2} className="mb-6 rounded-2xl border border-white/[0.08] bg-white/[0.02] p-5">
+            <div className="mb-4 flex items-center gap-2">
+              <span className="material-symbols-outlined text-red-300" aria-hidden>priority_high</span>
+              <span className="font-mono text-[11px] uppercase tracking-[0.2em] text-on-surface-variant">
+                TOP-5 ограничений
+              </span>
+            </div>
+            <ol className="space-y-2.5">
               {top5.map((w, idx) => (
-                <div
-                  key={idx}
-                  className="bg-white/[0.03] border border-red-500/20 p-4 rounded-xl flex items-center gap-4"
+                <li
+                  key={`${w.sectionId}-${idx}`}
+                  className="flex items-center gap-3 rounded-xl border border-red-400/15 bg-white/[0.02] p-3"
                 >
-                  <div className="w-8 h-8 flex items-center justify-center bg-red-500/15 text-red-300 font-bold rounded-lg text-sm">
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-red-400/15 text-sm font-bold text-red-300">
                     {idx + 1}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate font-mono text-[10px] uppercase tracking-wide text-on-surface-variant">
+                      {w.block}
+                    </div>
+                    <div className="truncate text-sm text-on-surface">{w.text}</div>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-[10px] text-white/40 uppercase">{w.sectionTitle}</div>
-                    <div className="font-medium text-white text-sm truncate">{w.text}</div>
-                  </div>
-                  <div className="px-2.5 py-1 bg-red-500 text-white text-sm font-bold rounded">
+                  <span className="shrink-0 rounded bg-red-400/90 px-2 py-0.5 font-mono text-xs font-bold tabular-nums text-[#3a0000]">
                     {w.score}
-                  </div>
+                  </span>
+                </li>
+              ))}
+            </ol>
+          </Reveal>
+        )}
+
+        {/* 90-day plan */}
+        {weakest.length > 0 && (
+          <Reveal delay={0.25} className="mb-6 rounded-2xl border border-white/[0.08] bg-white/[0.02] p-5">
+            <div className="mb-4 flex items-center gap-2">
+              <span className="material-symbols-outlined text-primary" aria-hidden>calendar_month</span>
+              <span className="font-mono text-[11px] uppercase tracking-[0.2em] text-on-surface-variant">
+                План на 90 дней
+              </span>
+            </div>
+            <div className="grid gap-4 md:grid-cols-3">
+              {planHorizons.map((h) => (
+                <div key={h.label} className="space-y-2.5">
+                  <div className="text-xs font-semibold text-primary">{h.label}</div>
+                  {h.items.length === 0 ? (
+                    <p className="text-xs text-on-surface-variant">—</p>
+                  ) : (
+                    h.items.map((it, i) => (
+                      <div
+                        key={`${h.label}-${i}`}
+                        className="space-y-1.5 rounded-xl border border-white/[0.06] bg-white/[0.02] p-3"
+                      >
+                        <div className="text-sm leading-snug text-on-surface">{it.text}</div>
+                        <div className="text-xs leading-snug text-on-surface-variant">{it.improve}</div>
+                      </div>
+                    ))
+                  )}
                 </div>
               ))}
             </div>
-          </div>
+          </Reveal>
         )}
 
-        <div className="bg-gradient-to-br from-teal-900/40 to-black border border-teal-500/30 rounded-3xl p-7 text-center relative overflow-hidden">
-          <h4 className="text-2xl font-bold mb-2 text-white">Получите план действий на 90 дней</h4>
-          <p className="text-white/70 max-w-xl mx-auto mb-5 text-sm">
-            Забронируйте разбор с экспертом и получите пошаговый план роста.
+        {/* Booking CTA */}
+        <div className="rounded-3xl border border-primary/25 bg-gradient-to-r from-primary/[0.1] to-transparent p-7 text-center">
+          <h4 className="font-headline text-2xl font-bold text-on-surface">
+            Разложим план на 90 дней с экспертом
+          </h4>
+          <p className="mx-auto mb-5 mt-2 max-w-xl text-sm text-on-surface-variant">
+            Забронируйте разбор — расставим ограничения по шагам и приоритетам под ваш бизнес.
           </p>
           <a
             href="https://tidycal.com/istart/gtm"
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center px-7 py-3 text-base font-bold text-black bg-teal-400 rounded-full hover:bg-teal-300 transition"
+            className="inline-flex items-center gap-2 rounded-full bg-primary px-7 py-3 text-base font-bold text-[#003824] transition hover:bg-primary/90"
           >
-            📅 Забронировать разбор
+            <span className="material-symbols-outlined text-[18px]" aria-hidden>event</span>
+            Забронировать разбор
           </a>
         </div>
 
-        <div className="mt-6 flex flex-wrap justify-center gap-3 text-sm">
+        <div className="mt-6 flex flex-wrap items-center justify-center gap-3 text-sm">
           <button
             onClick={() => setStep({ kind: 'overview' })}
-            className="text-white/60 hover:text-white transition px-3 py-2 min-h-[44px] inline-flex items-center"
+            className="inline-flex min-h-[44px] items-center gap-1.5 px-3 py-2 text-on-surface-variant transition hover:text-on-surface"
           >
-            ← Вернуться к списку
+            <span className="material-symbols-outlined text-[16px]" aria-hidden>arrow_back</span>
+            Вернуться к списку
           </button>
-          <span className="text-white/20 self-center">•</span>
+          <span className="self-center text-on-surface-variant/40">•</span>
           <button
             onClick={resetAll}
-            className="text-white/60 hover:text-red-300 transition px-3 py-2 min-h-[44px] inline-flex items-center"
+            className="inline-flex min-h-[44px] items-center gap-1.5 px-3 py-2 text-on-surface-variant transition hover:text-red-300"
           >
+            <span className="material-symbols-outlined text-[16px]" aria-hidden>restart_alt</span>
             Пройти заново
           </button>
         </div>
@@ -941,12 +1298,12 @@ export default function GRIAssessment() {
 }
 
 const inputClass =
-  'w-full bg-black/40 border border-white/15 rounded-lg px-4 py-2.5 text-white text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none transition-all appearance-none'
+  'w-full appearance-none rounded-xl border border-white/[0.12] bg-black/40 px-4 py-2.5 text-sm text-on-surface outline-none transition-all placeholder:text-on-surface-variant/60 focus:border-transparent focus:ring-2 focus:ring-primary'
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
-      <label className="block text-xs font-medium text-white/60 mb-1.5 uppercase tracking-wide">
+      <label className="mb-1.5 block font-mono text-[11px] font-medium uppercase tracking-wide text-on-surface-variant">
         {label}
       </label>
       {children}
@@ -965,7 +1322,7 @@ function ScoreRow({
 }) {
   return (
     <div>
-      <label className="block text-sm font-medium text-white mb-3">{label}</label>
+      <label className="mb-3 block text-sm font-medium text-on-surface">{label}</label>
       <AssessmentScale value={value} onChange={onChange} />
     </div>
   )
@@ -973,13 +1330,9 @@ function ScoreRow({
 
 function Shell({ children }: { children: React.ReactNode }) {
   return (
-    <section className="mx-auto w-full max-w-5xl px-4 sm:px-6 lg:px-8 py-10">
-      <div className="mb-6 flex items-center gap-3">
-        <div className="h-px flex-1 bg-gradient-to-r from-transparent to-white/15" />
-        <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-white/40">
-          GRI Assessment
-        </div>
-        <div className="h-px flex-1 bg-gradient-to-l from-transparent to-white/15" />
+    <section className="relative mx-auto w-full max-w-5xl px-4 py-8 sm:px-6 sm:py-10 lg:px-8">
+      <div aria-hidden className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
+        <div className="absolute -top-20 left-1/2 h-64 w-[36rem] max-w-full -translate-x-1/2 rounded-full bg-primary/[0.07] blur-[100px]" />
       </div>
       {children}
     </section>
