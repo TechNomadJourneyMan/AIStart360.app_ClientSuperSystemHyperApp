@@ -16,6 +16,7 @@ import {
   Legend,
 } from 'recharts'
 import { GRI_SECTIONS } from '@/lib/gri-assessment/sections'
+import { MascotEmptyHint } from '@/components/assistant/mascot/MascotEmptyHint'
 
 interface HistoryRow {
   gri_index: number
@@ -120,12 +121,11 @@ export default function GriDynamicsPanel() {
 
   if (chartData.length === 0) {
     return (
-      <div className="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-10 text-center">
-        <p className="text-on-surface font-semibold">Пока нет замеров</p>
-        <p className="text-sm text-on-surface-variant mt-1.5 max-w-md mx-auto">
-          Пройдите диагностику или снимите «Пульс недели» — динамика появится здесь.
-        </p>
-      </div>
+      <MascotEmptyHint
+        title="Пока нет замеров"
+        text="Пройдите диагностику или снимите «Пульс недели» — и здесь появится ваша динамика GRI во времени."
+        cta={{ label: 'Пройти диагностику', href: '/gri?tab=assess' }}
+      />
     )
   }
 

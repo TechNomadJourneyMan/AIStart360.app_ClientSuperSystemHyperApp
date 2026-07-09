@@ -6,6 +6,7 @@ import { useCrmClients, useUpdateClient, type CrmClient } from '@/hooks/useCrm'
 import { CLIENT_STATUSES, type ClientStatus } from '@/lib/crm/client-validate'
 import { CLIENT_STATUS_META, FunnelBar, fmtTenge } from './FunnelBar'
 import { AddClientInline } from './AddClientInline'
+import { MascotEmptyHint } from '@/components/assistant/mascot/MascotEmptyHint'
 
 const DAY_MS = 86_400_000
 
@@ -104,12 +105,25 @@ export function ClientsTable({
           <p className="text-error text-sm font-medium">Не удалось загрузить базу клиентов</p>
         </div>
       ) : filtered.length === 0 ? (
-        <div className="p-10 text-center bg-surface-container-low rounded-2xl border border-white/[0.04]">
-          <span className="material-symbols-outlined text-3xl text-on-surface-variant/40 block mb-2">group_off</span>
-          <p className="text-sm text-on-surface-variant">
-            {clients.length === 0 ? 'База пуста — добавьте первого клиента выше' : 'Ничего не найдено по фильтру'}
-          </p>
-        </div>
+        clients.length === 0 ? (
+          <MascotEmptyHint
+            title="База пуста"
+            text="Добавьте первого клиента формой выше — или импортируйте всех разом из CSV. А я подскажу, кому звонить в первую очередь."
+            cta={{
+              label: 'Добавить клиента',
+              onClick: () => {
+                const el = document.querySelector<HTMLElement>('[data-tour="crm-add"]')
+                el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                el?.querySelector('input')?.focus()
+              },
+            }}
+          />
+        ) : (
+          <div className="p-10 text-center bg-surface-container-low rounded-2xl border border-white/[0.04]">
+            <span className="material-symbols-outlined text-3xl text-on-surface-variant/40 block mb-2">group_off</span>
+            <p className="text-sm text-on-surface-variant">Ничего не найдено по фильтру</p>
+          </div>
+        )
       ) : (
         <div className="bg-surface-container-low rounded-2xl border border-white/[0.04] overflow-hidden">
           <div className="overflow-x-auto">

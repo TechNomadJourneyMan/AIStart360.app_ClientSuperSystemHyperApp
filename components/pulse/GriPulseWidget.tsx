@@ -1,9 +1,9 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import Link from 'next/link'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import { GRI_SECTIONS } from '@/lib/gri-assessment/sections'
+import { MascotEmptyHint } from '@/components/assistant/mascot/MascotEmptyHint'
 
 // ─── Types (mirror the /api/v1/gri/pulse envelope) ──────────────────────────
 type PulseScores = Record<string, number>
@@ -250,26 +250,11 @@ export default function GriPulseWidget() {
 
       {/* ── No baseline CTA ── */}
       {!hasBaseline && (
-        <div className="flex flex-col sm:flex-row items-start gap-3 bg-gradient-to-r from-[#e87a35]/[0.08] to-transparent rounded-2xl border border-[#e87a35]/25 p-5">
-          <div className="w-9 h-9 rounded-xl bg-[#e87a35]/10 border border-[#e87a35]/20 flex items-center justify-center flex-shrink-0">
-            <span className="material-symbols-outlined text-lg text-[#e87a35]">flag</span>
-          </div>
-          <div className="flex-1">
-            <p className="text-sm text-on-surface font-medium">
-              Сначала пройдите полную GRI-диагностику — пульс отслеживает динамику относительно неё.
-            </p>
-            <p className="text-xs text-on-surface-variant mt-1">
-              Можно отметить пульс и сейчас, но дельты по блокам появятся после первой диагностики.
-            </p>
-            <Link
-              href="/gri"
-              className="inline-flex items-center gap-1.5 mt-3 px-4 py-2 rounded-xl bg-[#e87a35]/15 border border-[#e87a35]/30 text-[#e87a35] text-sm font-medium hover:bg-[#e87a35]/25 transition-colors"
-            >
-              <span className="material-symbols-outlined text-sm">arrow_forward</span>
-              Пройти GRI-диагностику
-            </Link>
-          </div>
-        </div>
+        <MascotEmptyHint
+          title="Сначала — полная GRI-диагностика"
+          text="Пульс отслеживает динамику относительно неё. Отметить пульс можно и сейчас, но дельты по блокам появятся после первой диагностики."
+          cta={{ label: 'Пройти GRI-диагностику', href: '/gri?tab=assess' }}
+        />
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
