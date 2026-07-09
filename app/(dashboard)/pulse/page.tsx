@@ -426,11 +426,28 @@ function CrmIntegrationTab() {
   const [connectError, setConnectError] = useState<string | null>(null)
   const [syncingId, setSyncingId] = useState<string | null>(null)
 
+  // Фаза 4B: живой бэкенд /api/v1/crm/connections (RLS own) вместо мёртвого
+  // /api/crm (requireCrmOrg=null → 403). Маплем snake_case строки в CrmStatus,
+  // чтобы не трогать разметку ниже.
   const fetchIntegrations = useCallback(async () => {
     try {
-      const res = await fetch('/api/crm')
-      const data = await res.json()
-      setIntegrations(data.integrations || [])
+      const res = await fetch('/api/v1/crm/connections', { credentials: 'include' })
+      const json = await res.json().catch(() => ({}))
+      const rows = (json?.data ?? []) as Array<Record<string, unknown>>
+      setIntegrations(
+        rows.map((r) => ({
+          id: String(r.id),
+          provider: r.provider as CrmProvider,
+          domain: String(r.base_url ?? ''),
+          isActive: Boolean(r.is_active),
+          lastSyncAt: (r.last_sync_at as string | null) ?? null,
+          lastSyncStatus: (r.last_sync_status as string | null) ?? null,
+          lastSyncError: (r.last_sync_error as string | null) ?? null,
+          syncedDeals: Number(r.synced_deals ?? 0),
+          syncedContacts: Number(r.synced_contacts ?? 0),
+          createdAt: String(r.created_at ?? ''),
+        })),
+      )
     } catch { /* empty */ }
     setLoading(false)
   }, [])
@@ -441,27 +458,28 @@ function CrmIntegrationTab() {
     setConnectLoading(true)
     setConnectError(null)
     try {
-      // For Bitrix24: extract domain from webhook URL, no separate token needed
+      // Bitrix24: домен извлекаем из webhook-URL, сам URL кладём как access_token
+      // (provider-client распознаёт полный URL как webhook-режим).
       const payload = connectProvider === 'bitrix24'
         ? {
             provider: 'bitrix24',
-            domain: connectWebhook.replace(/^https?:\/\//, '').split('/')[0],
-            accessToken: connectWebhook,
-            webhookUrl: connectWebhook,
+            base_url: connectWebhook.replace(/^https?:\/\//, '').split('/')[0],
+            access_token: connectWebhook,
           }
         : {
             provider: 'amocrm',
-            domain: connectDomain,
-            accessToken: connectToken,
+            base_url: connectDomain,
+            access_token: connectToken,
           }
 
-      const res = await fetch('/api/crm', {
+      const res = await fetch('/api/v1/crm/connections', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify(payload),
       })
-      const data = await res.json()
-      if (!res.ok) {
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || !data.ok) {
         setConnectError(data.error || 'Ошибка подключения')
         setConnectLoading(false)
         return
@@ -470,6 +488,7 @@ function CrmIntegrationTab() {
       setConnectDomain('')
       setConnectToken('')
       setConnectWebhook('')
+      toast.success('CRM подключена')
       fetchIntegrations()
     } catch {
       setConnectError('Ошибка сети')
@@ -480,24 +499,32 @@ function CrmIntegrationTab() {
   const handleSync = async (id: string) => {
     setSyncingId(id)
     try {
-      await fetch('/api/crm/sync', {
+      const res = await fetch(`/api/v1/crm/connections/${id}/sync`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id }),
+        credentials: 'include',
       })
+      const data = await res.json().catch(() => ({}))
+      if (res.ok && data.ok) {
+        const { inserted = 0, updated = 0, skipped = 0 } = data.data ?? {}
+        toast.success(`Синхронизировано: +${inserted}, обновлено ${updated}, пропущено ${skipped}`)
+      } else {
+        toast.error(data.error || 'Не удалось синхронизировать')
+      }
       await fetchIntegrations()
-    } catch { /* empty */ }
+    } catch {
+      toast.error('Ошибка сети при синхронизации')
+    }
     setSyncingId(null)
   }
 
   const handleDisconnect = async (id: string) => {
     if (!confirm('Отключить CRM-интеграцию?')) return
     try {
-      await fetch('/api/crm', {
+      const res = await fetch(`/api/v1/crm/connections/${id}`, {
         method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id }),
+        credentials: 'include',
       })
+      if (res.ok) toast.success('CRM отключена')
       await fetchIntegrations()
     } catch { /* empty */ }
   }
