@@ -35,6 +35,7 @@ import {
   isMascotHidden,
   type AssistantContextPayload,
   type HidePeriod,
+  type MascotSettings,
 } from '@/lib/assistant/mascot/types'
 import { getCharacter } from '@/lib/assistant/mascot/characters'
 import { tourForScreen, type TourStep } from '@/lib/assistant/mascot/tours'
@@ -42,6 +43,7 @@ import { MascotAvatar } from './MascotAvatar'
 import { MascotBubble } from './MascotBubble'
 import { MascotCoachmarks } from './MascotCoachmarks'
 import { MascotControls } from './MascotControls'
+import { MascotWelcome } from './MascotWelcome'
 
 const CONTEXT_STALE_MS = 60_000
 const BUBBLE_AUTO_CLEAR_MS = 20_000
@@ -141,6 +143,7 @@ export default function MascotAssistant() {
   const waveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [tourSteps, setTourSteps] = useState<TourStep[] | null>(null)
   const tourSessionRef = useRef<Set<string>>(new Set())
+  const [showWelcome, setShowWelcome] = useState(false)
 
   const screenRef = useRef(screen)
   const scrollTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -249,8 +252,15 @@ export default function MascotAssistant() {
         if (r) candidates.push(r)
       }
 
-      // Greeting — once ever, never next to the FirstRunWizard (scenario 1).
-      if (!s.settings.greeted && !wizardOnScreen()) {
+      // Greeting bubble — once ever, never next to the FirstRunWizard
+      // (scenario 1). Пропускаем, когда первым входом владеет welcome-модалка
+      // (tourGuide.status='pending' → MascotWelcome сам поприветствует и поставит
+      // greeted=true); пузырь-приветствие остаётся лишь для легаси-пути.
+      if (
+        !s.settings.greeted &&
+        s.settings.tourGuide.status !== 'pending' &&
+        !wizardOnScreen()
+      ) {
         const g = localCandidate('greeting', { name: getCharacter(s.settings.character).name })
         const r = g ? resolveHint(g) : null
         if (r) candidates.push(r)
@@ -556,20 +566,41 @@ export default function MascotAssistant() {
     void requestInsight(true)
   }, [requestInsight])
 
-  // ── Coachmark tours: once per screen on first visit + replay hooks ─────────
+  // ── Welcome первого входа (заменяет пер-страничный автозапуск туров) ────────
+  // Пер-страничный автозапуск ощущался как «туры постоянно», поэтому единственный
+  // авто-показ теперь — welcome от Гри при первом входе. Показываем один раз,
+  // когда контекст загружен и Гри ещё не поздоровался (greeted=false и
+  // tourGuide.status='pending'). Откладываем, пока онбордингом владеет
+  // FirstRunWizard (тот же DOM-маркер, что глушит пузырь-приветствие), открыт
+  // чужой диалог, чат или маскот свёрнут — чтобы welcome не наслаивался.
+  // greeted/статус пишутся ТОЛЬКО по выбору в модалке — само появление ничего не
+  // помечает, поэтому показ строго одноразовый (см. onWelcome* + persistSettings).
   useEffect(() => {
-    if (hiddenNow || !context || tourSteps) return
-    const steps = tourForScreen(screen)
-    if (!steps) return
-    const s = useMascotStore.getState()
-    if (s.settings.toursDone.includes(screen) || tourSessionRef.current.has(screen)) return
-    const t = setTimeout(() => {
-      tourSessionRef.current.add(screen)
-      setTourSteps(steps)
-    }, 1_200)
-    return () => clearTimeout(t)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [screen, hiddenNow, context])
+    if (hiddenNow) {
+      setShowWelcome(false)
+      return
+    }
+    if (!context || showWelcome) return
+    if (settings.greeted || settings.tourGuide.status !== 'pending') return
+
+    let timer: ReturnType<typeof setTimeout> | null = null
+    let cancelled = false
+    const tryShow = () => {
+      if (cancelled) return
+      const s = useMascotStore.getState()
+      if (s.settings.greeted || s.settings.tourGuide.status !== 'pending') return
+      if (wizardOnScreen() || foreignDialogOpen() || s.chatOpen || s.minimized) {
+        timer = setTimeout(tryShow, 800)
+        return
+      }
+      setShowWelcome(true)
+    }
+    timer = setTimeout(tryShow, 1_200)
+    return () => {
+      cancelled = true
+      if (timer) clearTimeout(timer)
+    }
+  }, [context, hiddenNow, showWelcome, settings.greeted, settings.tourGuide.status])
 
   // Settings «Сбросить обучение»: clear the per-session guard so tours re-run.
   useEffect(() => {
@@ -582,12 +613,45 @@ export default function MascotAssistant() {
     return () => window.removeEventListener('aistart:tutorial:replay', onReplay)
   }, [screen])
 
-  /** Menu «Подсказки по странице» — run the current screen's tour now. */
+  /** Menu «Тур по этой странице» — run the current screen's tour now. */
   const onPageTour = useCallback(() => {
     setControlsOpen(false)
     const steps = tourForScreen(screen)
     if (steps) setTourSteps(steps)
   }, [screen])
+
+  /**
+   * applySettings + ОДИН PATCH (лимит записи 10/мин — welcome/«Обучение»
+   * дёргают ровно один PATCH на действие пользователя). Локальное применение
+   * мгновенно, сервер — источник истины, /context пере-синхронит на след. фетче.
+   */
+  const persistSettings = useCallback(
+    (patch: Partial<MascotSettings>) => {
+      applySettings(patch)
+      void fetch('/api/v1/assistant/settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(patch),
+      }).catch(() => undefined)
+    },
+    [applySettings],
+  )
+
+  // ── Welcome-модалка: выбор пользователя (ровно один PATCH на действие) ──────
+  const onWelcomeStartTour = useCallback(() => {
+    setShowWelcome(false)
+    persistSettings({ greeted: true, tourGuide: { status: 'active', stepIdx: 0 } })
+    // Батч B: полноценная экскурсия. Пока — интерим: сразу запускаем тур текущего
+    // экрана, чтобы кнопка «Провести экскурсию» делала что-то видимое.
+    const steps = tourForScreen(screen)
+    if (steps) setTourSteps(steps)
+  }, [persistSettings, screen])
+
+  const onWelcomeDismiss = useCallback(() => {
+    setShowWelcome(false)
+    persistSettings({ greeted: true, tourGuide: { status: 'dismissed', stepIdx: 0 } })
+  }, [persistSettings])
 
   const closeTour = useCallback(
     (_done: boolean) => {
@@ -797,6 +861,20 @@ export default function MascotAssistant() {
         onClose={closeTour}
       />
     )}
+
+    {/* Welcome первого входа — единственный авто-показ; выбор ведёт в экскурсию
+        (Батч B) либо помечает её dismissed. Больше не повторяется (greeted). */}
+    <AnimatePresence>
+      {showWelcome && !chatOpen && !minimized && (
+        <MascotWelcome
+          characterName={characterName}
+          character={character}
+          color={mascotColor}
+          onStartTour={onWelcomeStartTour}
+          onDismiss={onWelcomeDismiss}
+        />
+      )}
+    </AnimatePresence>
     </>
   )
 }
