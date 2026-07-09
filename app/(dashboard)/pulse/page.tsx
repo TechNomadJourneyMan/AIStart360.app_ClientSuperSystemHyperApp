@@ -1,10 +1,32 @@
 'use client'
 
 import { useState, useMemo, useEffect, useCallback } from 'react'
-import Link from 'next/link'
 import dynamic from 'next/dynamic'
-import { usePulse } from '@/hooks/usePulse'
+import { toast } from 'sonner'
+import { useCrmToday, useLogInteraction, type CrmClient } from '@/hooks/useCrm'
+import { ClientsTable } from '@/components/crm/ClientsTable'
+import { ClientDrawer, type DrawerClient } from '@/components/crm/ClientDrawer'
+import { CsvImportDialog } from '@/components/crm/CsvImportDialog'
+import type { ClientStatus } from '@/lib/crm/client-validate'
 import type { CrmProvider, CrmStatus } from '@/lib/crm/types'
+
+// ─── Adapters → the drawer's minimal client seed ─────────────────────────────
+function crmToDrawer(c: CrmClient): DrawerClient {
+  return {
+    id: c.id, name: c.name, phone: c.phone, phone_raw: c.phone_raw,
+    email: c.email, status: c.status, avg_check: c.avg_check, note: c.note,
+    next_contact_at: c.next_contact_at, last_contact_at: c.last_contact_at,
+  }
+}
+function pulseToDrawer(c: PulseClient): DrawerClient {
+  return {
+    id: c.id, name: c.name, phone: c.phone ?? null, phone_raw: null,
+    email: c.email ?? null, status: (c.status as ClientStatus) ?? 'new',
+    avg_check: typeof c.avgCheck === 'number' ? c.avgCheck : null,
+    note: c.note ?? null, next_contact_at: c.nextContactAt ?? null,
+    last_contact_at: c.lastContactAt ?? null,
+  }
+}
 
 // recharts lives inside GriPulseWidget — load it lazily so it stays out of this
 // (already large) pulse page's first-load JS.
@@ -14,10 +36,26 @@ const GriPulseWidget = dynamic(() => import('@/components/pulse/GriPulseWidget')
 })
 
 // ─── Action Modals ─────────────────────────────────────────────────────────────
-function CallModal({ client, onClose }: { client: { name: string; sector: string } | null; onClose: () => void }) {
+type ModalClient = { id: string; name: string; sector: string; phone?: string | null }
+
+function CallModal({ client, onClose }: { client: ModalClient | null; onClose: () => void }) {
   const [status, setStatus] = useState<'idle' | 'calling' | 'done'>('idle')
   const [note, setNote] = useState('')
+  const logInteraction = useLogInteraction()
+  // Reset when a new client is opened.
+  useEffect(() => { setStatus('idle'); setNote('') }, [client?.id])
   if (!client) return null
+  const digits = (client.phone ?? '').replace(/\D/g, '')
+
+  const record = () => {
+    logInteraction.mutate(
+      { clientId: client.id, kind: 'call', comment: note.trim() || undefined },
+      {
+        onSuccess: () => { setStatus('done'); toast.success('Звонок зафиксирован') },
+        onError: (e: unknown) => toast.error(e instanceof Error ? e.message : 'Ошибка'),
+      },
+    )
+  }
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
@@ -41,19 +79,21 @@ function CallModal({ client, onClose }: { client: { name: string; sector: string
             <div className="text-center py-4">
               <span className="material-symbols-outlined text-4xl text-primary block mb-2">check_circle</span>
               <p className="text-sm font-medium text-on-surface">Звонок зафиксирован</p>
-              <p className="text-xs text-on-surface-variant mt-1">Действие записано в историю контактов</p>
+              <p className="text-xs text-on-surface-variant mt-1">Касание сохранено в истории клиента</p>
             </div>
           ) : (
             <>
-              <div className="flex gap-2">
-                {['+7 701 000 00 01', '+7 727 300 55 00'].map(num => (
-                  <a key={num} href={`tel:${num.replace(/\s/g,'')}`}
-                    className="flex-1 flex items-center gap-2 bg-error/10 hover:bg-error/20 border border-error/20 text-error text-xs font-mono px-3 py-2.5 rounded-xl transition-colors">
-                    <span className="material-symbols-outlined text-sm">phone_forwarded</span>
-                    {num}
-                  </a>
-                ))}
-              </div>
+              {digits ? (
+                <a href={`tel:${client.phone ?? digits}`}
+                  className="flex items-center justify-center gap-2 bg-error/10 hover:bg-error/20 border border-error/20 text-error text-sm font-mono px-3 py-2.5 rounded-xl transition-colors">
+                  <span className="material-symbols-outlined text-sm">phone_forwarded</span>
+                  {client.phone ?? digits}
+                </a>
+              ) : (
+                <p className="text-xs text-on-surface-variant text-center bg-surface-container rounded-xl px-3 py-2.5">
+                  Телефон не указан — добавьте его в карточке клиента
+                </p>
+              )}
               <textarea
                 value={note} onChange={e => setNote(e.target.value)}
                 placeholder="Заметка о звонке (результат, следующий шаг)..."
@@ -65,8 +105,9 @@ function CallModal({ client, onClose }: { client: { name: string; sector: string
                   Отмена
                 </button>
                 <button
-                  onClick={() => setStatus('done')}
-                  className="flex-1 px-4 py-2.5 rounded-xl bg-error/10 border border-error/20 text-sm text-error font-medium hover:bg-error/20 transition-colors">
+                  onClick={record}
+                  disabled={logInteraction.isPending}
+                  className="flex-1 px-4 py-2.5 rounded-xl bg-error/10 border border-error/20 text-sm text-error font-medium hover:bg-error/20 disabled:opacity-40 transition-colors">
                   <span className="material-symbols-outlined text-sm align-middle mr-1">check</span>
                   Зафиксировать
                 </button>
@@ -79,15 +120,32 @@ function CallModal({ client, onClose }: { client: { name: string; sector: string
   )
 }
 
-function MessageModal({ client, onClose }: { client: { name: string; sector: string } | null; onClose: () => void }) {
+function MessageModal({ client, onClose }: { client: ModalClient | null; onClose: () => void }) {
   const [text, setText] = useState('')
   const [sent, setSent] = useState(false)
+  const logInteraction = useLogInteraction()
+  useEffect(() => { setSent(false); setText('') }, [client?.id])
   if (!client) return null
+  const digits = (client.phone ?? '').replace(/\D/g, '')
   const templates = [
     `Здравствуйте! Хотели уточнить статус нашего сотрудничества и обсудить следующие шаги.`,
     `Добрый день! Заметили изменение в активности и хотели предложить встречу для обсуждения программы.`,
     `Привет! Подготовили для вас обновлённое предложение — когда удобно обсудить?`,
   ]
+
+  const send = () => {
+    // Open WhatsApp with the drafted text pre-filled where we have a number.
+    if (digits) {
+      window.open(`https://wa.me/${digits}?text=${encodeURIComponent(text)}`, '_blank')
+    }
+    logInteraction.mutate(
+      { clientId: client.id, kind: 'message', comment: text.trim() || undefined },
+      {
+        onSuccess: () => { setSent(true); toast.success('Сообщение зафиксировано') },
+        onError: (e: unknown) => toast.error(e instanceof Error ? e.message : 'Ошибка'),
+      },
+    )
+  }
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
@@ -110,8 +168,8 @@ function MessageModal({ client, onClose }: { client: { name: string; sector: str
           {sent ? (
             <div className="text-center py-4">
               <span className="material-symbols-outlined text-4xl text-primary block mb-2">mark_email_read</span>
-              <p className="text-sm font-medium text-on-surface">Сообщение отправлено</p>
-              <p className="text-xs text-on-surface-variant mt-1">Ответ придёт на корпоративную почту</p>
+              <p className="text-sm font-medium text-on-surface">Сообщение зафиксировано</p>
+              <p className="text-xs text-on-surface-variant mt-1">Касание сохранено в истории клиента</p>
             </div>
           ) : (
             <>
@@ -134,10 +192,10 @@ function MessageModal({ client, onClose }: { client: { name: string; sector: str
                 <button onClick={onClose} className="flex-1 px-4 py-2.5 rounded-xl border border-white/[0.08] text-sm text-on-surface-variant hover:bg-white/[0.04] transition-colors">
                   Отмена
                 </button>
-                <button onClick={() => setSent(true)} disabled={!text.trim()}
+                <button onClick={send} disabled={!text.trim() || logInteraction.isPending}
                   className="flex-1 px-4 py-2.5 rounded-xl bg-tertiary-container/10 border border-tertiary-container/20 text-sm text-tertiary-container font-medium hover:bg-tertiary-container/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
                   <span className="material-symbols-outlined text-sm align-middle mr-1">send</span>
-                  Отправить
+                  {digits ? 'Открыть WhatsApp' : 'Зафиксировать'}
                 </button>
               </div>
             </>
@@ -235,14 +293,24 @@ type PulseClient = {
   action: 'call' | 'message' | 'monitor'
   history: number[]
   orderCycle: number
+  // Native CRM fields (from /api/v1/crm/today) — enable real tel:/wa.me actions,
+  // status editing and the client drawer. Optional so the pulse-shaped type is happy.
+  status?: string
+  phone?: string | null
+  email?: string | null
+  note?: string | null
+  nextContactAt?: string | null
+  lastContactAt?: string | null
+  queueBucket?: number
 }
 
 // ─── Client Card Tab ──────────────────────────────────────────────────────────
-function ClientCard({ client, onCall, onMessage, onMonitor, isMonitored }: {
+function ClientCard({ client, onCall, onMessage, onMonitor, onHistory, isMonitored }: {
   client: PulseClient
   onCall?: () => void
   onMessage?: () => void
   onMonitor?: () => void
+  onHistory?: () => void
   isMonitored?: boolean
 }) {
   return (
@@ -263,7 +331,14 @@ function ClientCard({ client, onCall, onMessage, onMonitor, isMonitored }: {
             <RiskBadge level={client.churnLevel} prob={client.churnProb} />
           </div>
           <p className="text-sm text-on-surface-variant">
-            {client.sector} · {('revenue' in client) ? `Выручка: ${(client as any).revenue}` : ''} · {('employees' in client) ? `${(client as any).employees} сотр.` : ''} · Цикл {client.orderCycle} дней
+            {[
+              client.sector,
+              'revenue' in client ? `Выручка: ${(client as { revenue?: string }).revenue}` : null,
+              'employees' in client ? `${(client as { employees?: number }).employees} сотр.` : null,
+              `Цикл ${client.orderCycle} дней`,
+            ]
+              .filter(Boolean)
+              .join(' · ')}
           </p>
         </div>
         <ActionBtn action={client.action}
@@ -328,7 +403,8 @@ function ClientCard({ client, onCall, onMessage, onMonitor, isMonitored }: {
           <span className="material-symbols-outlined text-sm">{isMonitored ? 'visibility' : 'visibility_off'}</span>
           {isMonitored ? 'Мониторинг вкл.' : 'Мониторинг'}
         </button>
-        <button className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/[0.06] text-xs font-medium text-on-surface-variant hover:bg-white/[0.04] transition-colors">
+        <button onClick={onHistory}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/[0.06] text-xs font-medium text-on-surface-variant hover:bg-white/[0.04] transition-colors">
           <span className="material-symbols-outlined text-sm">history</span>
           История
         </button>
@@ -350,11 +426,28 @@ function CrmIntegrationTab() {
   const [connectError, setConnectError] = useState<string | null>(null)
   const [syncingId, setSyncingId] = useState<string | null>(null)
 
+  // Фаза 4B: живой бэкенд /api/v1/crm/connections (RLS own) вместо мёртвого
+  // /api/crm (requireCrmOrg=null → 403). Маплем snake_case строки в CrmStatus,
+  // чтобы не трогать разметку ниже.
   const fetchIntegrations = useCallback(async () => {
     try {
-      const res = await fetch('/api/crm')
-      const data = await res.json()
-      setIntegrations(data.integrations || [])
+      const res = await fetch('/api/v1/crm/connections', { credentials: 'include' })
+      const json = await res.json().catch(() => ({}))
+      const rows = (json?.data ?? []) as Array<Record<string, unknown>>
+      setIntegrations(
+        rows.map((r) => ({
+          id: String(r.id),
+          provider: r.provider as CrmProvider,
+          domain: String(r.base_url ?? ''),
+          isActive: Boolean(r.is_active),
+          lastSyncAt: (r.last_sync_at as string | null) ?? null,
+          lastSyncStatus: (r.last_sync_status as string | null) ?? null,
+          lastSyncError: (r.last_sync_error as string | null) ?? null,
+          syncedDeals: Number(r.synced_deals ?? 0),
+          syncedContacts: Number(r.synced_contacts ?? 0),
+          createdAt: String(r.created_at ?? ''),
+        })),
+      )
     } catch { /* empty */ }
     setLoading(false)
   }, [])
@@ -365,27 +458,28 @@ function CrmIntegrationTab() {
     setConnectLoading(true)
     setConnectError(null)
     try {
-      // For Bitrix24: extract domain from webhook URL, no separate token needed
+      // Bitrix24: домен извлекаем из webhook-URL, сам URL кладём как access_token
+      // (provider-client распознаёт полный URL как webhook-режим).
       const payload = connectProvider === 'bitrix24'
         ? {
             provider: 'bitrix24',
-            domain: connectWebhook.replace(/^https?:\/\//, '').split('/')[0],
-            accessToken: connectWebhook,
-            webhookUrl: connectWebhook,
+            base_url: connectWebhook.replace(/^https?:\/\//, '').split('/')[0],
+            access_token: connectWebhook,
           }
         : {
             provider: 'amocrm',
-            domain: connectDomain,
-            accessToken: connectToken,
+            base_url: connectDomain,
+            access_token: connectToken,
           }
 
-      const res = await fetch('/api/crm', {
+      const res = await fetch('/api/v1/crm/connections', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify(payload),
       })
-      const data = await res.json()
-      if (!res.ok) {
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || !data.ok) {
         setConnectError(data.error || 'Ошибка подключения')
         setConnectLoading(false)
         return
@@ -394,6 +488,7 @@ function CrmIntegrationTab() {
       setConnectDomain('')
       setConnectToken('')
       setConnectWebhook('')
+      toast.success('CRM подключена')
       fetchIntegrations()
     } catch {
       setConnectError('Ошибка сети')
@@ -404,24 +499,32 @@ function CrmIntegrationTab() {
   const handleSync = async (id: string) => {
     setSyncingId(id)
     try {
-      await fetch('/api/crm/sync', {
+      const res = await fetch(`/api/v1/crm/connections/${id}/sync`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id }),
+        credentials: 'include',
       })
+      const data = await res.json().catch(() => ({}))
+      if (res.ok && data.ok) {
+        const { inserted = 0, updated = 0, skipped = 0 } = data.data ?? {}
+        toast.success(`Синхронизировано: +${inserted}, обновлено ${updated}, пропущено ${skipped}`)
+      } else {
+        toast.error(data.error || 'Не удалось синхронизировать')
+      }
       await fetchIntegrations()
-    } catch { /* empty */ }
+    } catch {
+      toast.error('Ошибка сети при синхронизации')
+    }
     setSyncingId(null)
   }
 
   const handleDisconnect = async (id: string) => {
     if (!confirm('Отключить CRM-интеграцию?')) return
     try {
-      await fetch('/api/crm', {
+      const res = await fetch(`/api/v1/crm/connections/${id}`, {
         method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id }),
+        credentials: 'include',
       })
+      if (res.ok) toast.success('CRM отключена')
       await fetchIntegrations()
     } catch { /* empty */ }
   }
@@ -730,45 +833,96 @@ function CrmIntegrationTab() {
 }
 
 // ─── Main component ───────────────────────────────────────────────────────────
-type ModalClient = { name: string; sector: string }
-
-// Top-level page: GRI Pulse weekly survey (primary) + CRM deals monitor (below).
+// Top-level page: CRM client work (primary) + GRI Pulse weekly survey (collapsed,
+// at the bottom — PO's explicit request to move the pulse sliders down).
 export default function PulsePage() {
+  const [pulseOpen, setPulseOpen] = useState(false)
   return (
     <div className="space-y-10">
-      {/* ── Primary: GRI Pulse weekly survey ── */}
-      <GriPulseWidget />
+      {/* ── Primary: CRM client work ── */}
+      <CrmMonitorSection />
 
-      {/* ── Secondary: CRM deals monitor ── */}
-      <div className="space-y-6">
-        <div className="flex items-center gap-3 pt-2 border-t border-white/[0.04]">
-          <span className="material-symbols-outlined text-lg text-on-surface-variant">monitoring</span>
-          <p className="text-xs font-mono text-on-surface-variant uppercase tracking-[0.2em] pt-4">
-            Монитор сделок CRM
+      {/* ── Secondary: GRI Pulse weekly survey (collapsible, bottom) ── */}
+      <div className="space-y-4">
+        <button
+          data-tour="pulse-week"
+          onClick={() => setPulseOpen(v => !v)}
+          className="w-full flex items-center gap-3 pt-4 border-t border-white/[0.04] text-left group"
+        >
+          <span className="material-symbols-outlined text-lg text-on-surface-variant group-hover:text-primary transition-colors">cell_tower</span>
+          <p className="text-xs font-mono text-on-surface-variant uppercase tracking-[0.2em]">
+            Пульс недели
           </p>
-        </div>
-        <CrmMonitorSection />
+          <span className="material-symbols-outlined text-lg text-on-surface-variant ml-auto transition-transform">
+            {pulseOpen ? 'expand_less' : 'expand_more'}
+          </span>
+        </button>
+        {pulseOpen && <GriPulseWidget />}
       </div>
     </div>
   )
 }
 
 function CrmMonitorSection() {
-  const [tab, setTab] = useState<'today' | 'risk' | 'card' | 'crm'>('today')
-  const { data: clientsData, isLoading, error } = usePulse()
-  
+  const [tab, setTab] = useState<'today' | 'base' | 'risk' | 'card' | 'crm'>('today')
+  // Own CRM base (not the demo /api/pulse) — «Кому звонить сегодня» queue + KPI.
+  const { data: clientsData, isLoading, error } = useCrmToday()
+  const logInteraction = useLogInteraction()
+
   const [monitored, setMonitored]         = useState<Set<string>>(new Set())
   const [callClient, setCallClient]       = useState<ModalClient | null>(null)
   const [messageClient, setMessageClient] = useState<ModalClient | null>(null)
   const [filterRisk, setFilterRisk]       = useState<'all' | 'high' | 'medium' | 'low'>('all')
   const [briefing, setBriefing]           = useState<string | null>(null)
   const [briefingLoading, setBriefingLoading] = useState(false)
+  const [drawerClient, setDrawerClient]   = useState<DrawerClient | null>(null)
+  const [importOpen, setImportOpen]       = useState(false)
 
   const toggleMonitor = (id: string) =>
     setMonitored(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s })
 
-  // Map backend data to frontend structure
-  const TODAY_CLIENTS = useMemo(() => {
+  // ── Real contact actions (tel:/wa.me) + interaction logging ──
+  const doCall = useCallback((c: PulseClient) => {
+    const digits = (c.phone ?? '').replace(/\D/g, '')
+    if (!digits) {
+      toast.error('У клиента не указан телефон', { description: 'Добавьте номер в карточке клиента' })
+      return
+    }
+    window.open(`tel:${c.phone ?? digits}`, '_self')
+    logInteraction.mutate(
+      { clientId: c.id, kind: 'call', comment: 'Звонок из очереди «Сегодня»' },
+      {
+        onSuccess: () => toast.success(`Звонок ${c.name} зафиксирован`),
+        onError: () => toast.error('Не удалось записать касание'),
+      },
+    )
+  }, [logInteraction])
+
+  const doMessage = useCallback((c: PulseClient) => {
+    const digits = (c.phone ?? '').replace(/\D/g, '')
+    if (!digits) {
+      toast.error('У клиента не указан телефон', { description: 'Добавьте номер в карточке клиента' })
+      return
+    }
+    window.open(`https://wa.me/${digits}`, '_blank')
+    logInteraction.mutate(
+      { clientId: c.id, kind: 'message', comment: 'Сообщение в WhatsApp' },
+      {
+        onSuccess: () => toast.success(`Сообщение ${c.name} зафиксировано`),
+        onError: () => toast.error('Не удалось записать касание'),
+      },
+    )
+  }, [logInteraction])
+
+  // Fire the right real action for a queue row (call → tel:, message → wa.me, monitor → toggle).
+  const runAction = useCallback((c: PulseClient) => {
+    if (c.action === 'call') doCall(c)
+    else if (c.action === 'message') doMessage(c)
+    else toggleMonitor(c.id)
+  }, [doCall, doMessage])
+
+  // Map backend data to frontend structure (carry native CRM fields through).
+  const TODAY_CLIENTS = useMemo<PulseClient[]>(() => {
     if (!clientsData?.todayClients) return []
     return (clientsData.todayClients as any[]).map(m => ({
       id: m.id,
@@ -786,17 +940,23 @@ function CrmMonitorSection() {
       action: m.action as 'call' | 'message' | 'monitor',
       history: m.history,
       orderCycle: m.orderCycle || 14,
+      // native CRM fields
+      status: m.status,
+      phone: m.phone,
+      email: m.email,
+      note: m.note,
+      nextContactAt: m.nextContactAt,
+      lastContactAt: m.lastContactAt,
+      queueBucket: m.queueBucket,
     }))
   }, [clientsData])
 
-  const [selectedClient, setSelectedClient] = useState<PulseClient | null>(null)
-
-  // Initialize selected client once data is loaded
-  useMemo(() => {
-    if (TODAY_CLIENTS.length > 0 && !selectedClient) {
-      setSelectedClient(TODAY_CLIENTS[0])
-    }
-  }, [TODAY_CLIENTS, selectedClient])
+  // Держим только ID выбранного клиента, а сам объект деривим из свежего
+  // TODAY_CLIENTS — иначе после рефетча (напр. логирования касания) карточка
+  // показывала бы устаревший снимок. Дефолт — первый в очереди.
+  const [selectedClientId, setSelectedClientId] = useState<string | null>(null)
+  const selectedClient =
+    TODAY_CLIENTS.find((c) => c.id === selectedClientId) ?? TODAY_CLIENTS[0] ?? null
 
   const filteredToday = TODAY_CLIENTS.filter(
     (c) => filterRisk === 'all' || c.churnLevel === filterRisk
@@ -806,25 +966,23 @@ function CrmMonitorSection() {
     .filter((c) => filterRisk === 'all' || c.churnLevel === filterRisk)
     .sort((a, b) => b.riskScore - a.riskScore)
 
-  const highRiskRevenue = TODAY_CLIENTS
-    .filter((c) => c.churnLevel === 'high')
-    .reduce((s, c) => s + c.avgCheck, 0)
-
-  // Dynamic Stats
+  // KPI come from the API `stats` (portfolio-wide) — todayClients is only the
+  // queue subset, so recomputing from it would undercount. Fall back to the
+  // queue when a field is missing.
   const DYNAMIC_STATS = useMemo(() => {
-    const high = TODAY_CLIENTS.filter(c => c.churnLevel === 'high').length
-    const medium = TODAY_CLIENTS.filter(c => c.churnLevel === 'medium').length
-    const apiProcessedToday = typeof clientsData?.stats?.processedToday === 'number' ? clientsData.stats.processedToday : TODAY_CLIENTS.length
-    const apiDailyTarget = typeof clientsData?.stats?.dailyTarget === 'number' ? clientsData.stats.dailyTarget : Math.max(6, apiProcessedToday)
-    return {
-      revenueAtRisk: highRiskRevenue,
-      highRisk: high,
-      mediumRisk: medium,
-      totalClients: TODAY_CLIENTS.length,
-      processedToday: apiProcessedToday,
-      dailyTarget: apiDailyTarget,
-    }
-  }, [TODAY_CLIENTS, highRiskRevenue, clientsData])
+    const s = clientsData?.stats
+    const high = typeof s?.highRisk === 'number' ? s.highRisk : TODAY_CLIENTS.filter(c => c.churnLevel === 'high').length
+    const medium = typeof s?.mediumRisk === 'number' ? s.mediumRisk : TODAY_CLIENTS.filter(c => c.churnLevel === 'medium').length
+    const revenueAtRisk = typeof s?.revenueAtRisk === 'number'
+      ? s.revenueAtRisk
+      : TODAY_CLIENTS.filter(c => c.churnLevel === 'high').reduce((sum, c) => sum + c.avgCheck, 0)
+    const totalClients = typeof s?.totalClients === 'number' ? s.totalClients : TODAY_CLIENTS.length
+    const processedToday = typeof s?.processedToday === 'number' ? s.processedToday : 0
+    const dailyTarget = typeof s?.dailyTarget === 'number' ? s.dailyTarget : Math.max(6, processedToday)
+    return { revenueAtRisk, highRisk: high, mediumRisk: medium, totalClients, processedToday, dailyTarget }
+  }, [TODAY_CLIENTS, clientsData])
+
+  const highRiskRevenue = DYNAMIC_STATS.revenueAtRisk
 
   // Initialize briefing from API response (daily cached)
   useEffect(() => {
@@ -861,9 +1019,11 @@ function CrmMonitorSection() {
 
   return (
     <div className="space-y-6">
-      {/* ── Modals ── */}
+      {/* ── Modals & overlays ── */}
       <CallModal    client={callClient}    onClose={() => setCallClient(null)} />
       <MessageModal client={messageClient} onClose={() => setMessageClient(null)} />
+      <ClientDrawer client={drawerClient} onClose={() => setDrawerClient(null)} />
+      <CsvImportDialog open={importOpen} onClose={() => setImportOpen(false)} />
 
       {/* ── Header ── */}
       <section className="flex flex-col lg:flex-row justify-between items-start gap-4">
@@ -880,8 +1040,8 @@ function CrmMonitorSection() {
           </p>
           <div className="flex flex-wrap items-center gap-3 mt-3">
             <div className="flex items-center gap-2">
-              <span className="material-symbols-outlined text-sm text-primary/50">integration_instructions</span>
-              <span className="text-xs font-mono text-on-surface-variant">Данные из CRM · Bitrix24</span>
+              <span className="material-symbols-outlined text-sm text-primary/50">database</span>
+              <span className="text-xs font-mono text-on-surface-variant">Данные из вашей базы клиентов</span>
             </div>
           </div>
         </div>
@@ -919,7 +1079,7 @@ function CrmMonitorSection() {
       </section>
 
       {/* ── Stats bar ── */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+      <div data-tour="crm-kpi" className="grid grid-cols-2 md:grid-cols-5 gap-3">
         {[
           {
             label: 'Выручка под угрозой',
@@ -970,10 +1130,11 @@ function CrmMonitorSection() {
       </div>
 
       {/* ── Tabs ── */}
-      <div className="border-b border-white/[0.04] w-full overflow-x-auto no-scrollbar">
+      <div data-tour="crm-tabs" className="border-b border-white/[0.04] w-full overflow-x-auto no-scrollbar">
         <div className="flex gap-1 min-w-max">
           {([
             { key: 'today', label: 'Кому звонить', labelFull: 'Кому продавать сегодня', count: TODAY_CLIENTS.length, icon: null },
+            { key: 'base',  label: 'База',          labelFull: 'База клиентов',           count: DYNAMIC_STATS.totalClients, icon: 'contacts' },
             { key: 'risk',  label: 'В зоне риска', labelFull: 'Топ в зоне риска',       count: filteredRisk.length, icon: null },
             { key: 'card',  label: 'Карточка',     labelFull: 'Карточка клиента',        count: null, icon: null },
             { key: 'crm',   label: 'CRM',          labelFull: 'CRM-интеграции',          count: null, icon: 'sync' },
@@ -997,8 +1158,8 @@ function CrmMonitorSection() {
         </div>
       </div>
 
-      {/* ── Risk filter ── */}
-      {tab !== 'card' && (
+      {/* ── Risk filter (only for the risk-scored queues) ── */}
+      {(tab === 'today' || tab === 'risk') && (
         <div className="flex gap-2 items-center overflow-x-auto no-scrollbar pb-0.5">
           <span className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest flex-shrink-0">Риск:</span>
           {(['all', 'high', 'medium', 'low'] as const).map((r) => {
@@ -1021,7 +1182,7 @@ function CrmMonitorSection() {
 
       {/* ─── TAB 1: Today ─── */}
       {tab === 'today' && (
-        <div className="space-y-4">
+        <div data-tour="crm-queue" className="space-y-4">
           {/* Alert banner */}
           {DYNAMIC_STATS.highRisk > 0 && (
             <div className="flex items-center gap-3 bg-error/10 border border-error/20 rounded-xl px-5 py-3.5">
@@ -1037,7 +1198,7 @@ function CrmMonitorSection() {
           <div className="md:hidden space-y-3">
             {filteredToday.map((c) => (
               <div key={c.id}
-                onClick={() => { setSelectedClient(c); setTab('card') }}
+                onClick={() => { setSelectedClientId(c.id); setTab('card') }}
                 className="bg-surface-container-low rounded-2xl border border-white/[0.04] hover:border-primary/20 p-4 cursor-pointer transition-colors">
                 {/* Top row: name + action */}
                 <div className="flex items-start justify-between gap-2 mb-3">
@@ -1058,7 +1219,7 @@ function CrmMonitorSection() {
                     </div>
                   </div>
                   <ActionBtn action={c.action} size="sm"
-                    onClick={() => c.action === 'call' ? setCallClient(c) : c.action === 'message' ? setMessageClient(c) : toggleMonitor(c.id)} />
+                    onClick={() => runAction(c)} />
                 </div>
                 {/* Stats row */}
                 <div className="grid grid-cols-3 gap-2 mb-3">
@@ -1124,7 +1285,7 @@ function CrmMonitorSection() {
                 <tbody>
                   {filteredToday.map((c) => (
                     <tr key={c.id}
-                      onClick={() => { setSelectedClient(c); setTab('card') }}
+                      onClick={() => { setSelectedClientId(c.id); setTab('card') }}
                       className="border-b border-white/[0.02] hover:bg-white/[0.02] transition-colors cursor-pointer group">
                       <td className="px-4 py-3.5">
                         <div className="flex items-center gap-2.5">
@@ -1176,7 +1337,7 @@ function CrmMonitorSection() {
                       </td>
                       <td className="px-4 py-3.5">
                         <ActionBtn action={c.action} size="sm"
-                    onClick={() => c.action === 'call' ? setCallClient(c) : c.action === 'message' ? setMessageClient(c) : toggleMonitor(c.id)} />
+                    onClick={() => runAction(c)} />
                       </td>
                     </tr>
                   ))}
@@ -1206,12 +1367,20 @@ function CrmMonitorSection() {
         </div>
       )}
 
+      {/* ─── TAB: Client base ─── */}
+      {tab === 'base' && (
+        <ClientsTable
+          onOpenClient={(c) => setDrawerClient(crmToDrawer(c))}
+          onOpenImport={() => setImportOpen(true)}
+        />
+      )}
+
       {/* ─── TAB 2: At Risk ─── */}
       {tab === 'risk' && (
         <div className="space-y-3">
           {filteredRisk.map((c, i) => (
             <div key={c.id}
-              onClick={() => { setSelectedClient(c); setTab('card') }}
+              onClick={() => { setSelectedClientId(c.id); setTab('card') }}
               className="bg-surface-container-low rounded-xl border border-white/[0.04] hover:border-primary/20 p-4 cursor-pointer transition-colors group">
               <div className="flex items-center gap-3 flex-wrap">
                 <span className={`text-[10px] font-mono text-on-surface-variant/50 w-5 flex-shrink-0`}>#{i + 1}</span>
@@ -1237,7 +1406,7 @@ function CrmMonitorSection() {
                   </div>
                   <RiskBadge level={c.churnLevel} prob={c.churnProb} />
                   <ActionBtn action={c.action} size="sm"
-                    onClick={() => c.action === 'call' ? setCallClient(c) : c.action === 'message' ? setMessageClient(c) : toggleMonitor(c.id)} />
+                    onClick={() => runAction(c)} />
                 </div>
               </div>
             </div>
@@ -1252,7 +1421,7 @@ function CrmMonitorSection() {
           <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
             {TODAY_CLIENTS.map((c) => (
               <button key={c.id}
-                onClick={() => setSelectedClient(c)}
+                onClick={() => setSelectedClientId(c.id)}
                 className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-xs transition-colors whitespace-nowrap flex-shrink-0 ${
                   selectedClient?.id === c.id
                     ? 'bg-primary/10 border-primary/30 text-primary'
@@ -1273,6 +1442,7 @@ function CrmMonitorSection() {
                 onCall={() => setCallClient(selectedClient)}
                 onMessage={() => setMessageClient(selectedClient)}
                 onMonitor={() => toggleMonitor(selectedClient.id)}
+                onHistory={() => setDrawerClient(pulseToDrawer(selectedClient))}
                 isMonitored={monitored.has(selectedClient.id)}
               />
             )}

@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { Logo } from '@/components/ui/Logo'
+import { getSiteUrl } from '@/lib/site-url'
 import {
   getShareByToken,
   incrementShareViews,
@@ -23,8 +24,60 @@ import {
 } from '@/lib/survey-labels'
 
 // Read-only public viewer — keep it out of search indexes.
-export const metadata: Metadata = {
+const BASE_METADATA: Metadata = {
   robots: { index: false, follow: false },
+}
+
+// Canonical 7-block order for the OG image bars (matches GRI_SECTION_ORDER in
+// lib/share/report-data.ts and GRI_SECTIONS in lib/gri-assessment/sections.ts).
+const OG_BLOCK_ORDER = [
+  'product-demand',
+  'trust-positioning',
+  'business-model',
+  'cash-stability',
+  'operations',
+  'team',
+  'owner-readiness',
+]
+
+/**
+ * For GRI shares, attach a share-card image (`/api/og/gri`) built ONLY from the
+ * already-public numbers of the shared report (index + 7 block averages) — the
+ * same values the page body renders. Any failure degrades to BASE_METADATA so
+ * metadata can never break the public viewer. The underlying GETs are memoized
+ * per render pass, so the page body's own loads are not duplicated.
+ */
+export async function generateMetadata({
+  params,
+}: {
+  params: { token: string }
+}): Promise<Metadata> {
+  try {
+    const share = await getShareByToken(params.token)
+    if (!share || share.type !== 'gri') return BASE_METADATA
+
+    const subject = await loadSubject(share.companyId)
+    if (!subject) return BASE_METADATA
+
+    const gri = await loadGriView(subject)
+    if (!gri) return BASE_METADATA
+
+    // GriView scores are 0–100; the OG image works on the native 0–10 scale.
+    const byKey = new Map(gri.blocks.map((b) => [b.key, b.score / 10]))
+    const score = (Math.round(gri.overall) / 10).toFixed(1)
+    const s = OG_BLOCK_ORDER.map((k) =>
+      (Math.round((byKey.get(k) ?? 0) * 10) / 10).toFixed(1),
+    ).join(',')
+
+    const ogImage = getSiteUrl(`/api/og/gri?score=${score}&s=${s}`)
+    return {
+      ...BASE_METADATA,
+      openGraph: { images: [{ url: ogImage, width: 1200, height: 630 }] },
+      twitter: { card: 'summary_large_image', images: [ogImage] },
+    }
+  } catch {
+    return BASE_METADATA
+  }
 }
 
 // ─── Type metadata ─────────────────────────────────────────────────────────────

@@ -1,7 +1,6 @@
 export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@/lib/db'
 import { createServerClient } from '@/lib/supabase-server'
 import { isRateLimited } from '@/lib/rate-limit'
 import { getSiteUrl } from '@/lib/site-url'
@@ -46,11 +45,15 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ briefing: null, error: 'OpenRouter not configured' })
     }
 
-    // Fetch deals from CRM
-    const integration = await prisma.crmIntegration.findFirst({
-      where: { isActive: true },
-      select: { provider: true, domain: true, accessToken: true, webhookUrl: true },
-    })
+    // Фаза 4B — фикс МЕЖАРЕНДНОЙ УТЕЧКИ: было prisma.crmIntegration.findFirst({
+    // isActive: true }) БЕЗ скоупа → чужая CRM в брифинге. Legacy Prisma-стек
+    // мёртв; путь отключён (integration=null) — брифинг честно вернёт «No CRM».
+    const integration = null as {
+      provider: string
+      domain: string
+      accessToken: string
+      webhookUrl: string | null
+    } | null
 
     if (!integration) {
       return NextResponse.json({ briefing: null, error: 'No CRM connected' })

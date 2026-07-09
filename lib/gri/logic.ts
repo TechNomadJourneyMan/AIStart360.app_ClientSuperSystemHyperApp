@@ -37,10 +37,10 @@ export interface GriResult {
   score: number;
   productScore: number;
   /**
-   * Trust & Positioning block. `null` means "not enough data to score" — the
-   * `GriAnswers` shape carries no qualitative trust/positioning signals (brand,
-   * reviews, USP, differentiation), so this engine cannot honestly score it and
-   * refuses to fabricate a value. Consumers must render `null` as "нет данных".
+   * Доверие и позиционирование: входные поля GriAnswers его НЕ измеряют, поэтому
+   * честно возвращаем null («нет данных») вместо прежней заглушки 50, которая
+   * тихо искажала общий score (Critical аудита 2026-07-07 / идея №6).
+   * Consumers must render `null` as «нет данных».
    */
   trustScore: number | null;
   businessModelScore: number;
@@ -119,11 +119,11 @@ export function calculateGri(a: GriAnswers): GriResult {
     return Math.min(100, hoursWeight + deputyWeight);
   })();
 
-  // 7. Trust & Positioning — honestly null when there are no qualitative signals.
+  // 7. Trust & Positioning — честное «нет данных» (null), см. computeTrustBlock.
   const trustScore = computeTrustBlock(a);
 
-  // Overall score = mean of the blocks we could actually measure. Averaging over
-  // only the non-null blocks avoids diluting the result with a phantom value.
+  // Общий score = среднее по РЕАЛЬНО измеренным (non-null) блокам — прежняя
+  // константа 50 тянула индекс к середине.
   const measurable = [
     businessModelScore,
     cashScore,

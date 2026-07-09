@@ -154,6 +154,53 @@ describe('pickHint — eligibility', () => {
   })
 })
 
+describe('pickHint — problem class (Батч D)', () => {
+  const problem = (over: Partial<ResolvedHint> = {}): ResolvedHint =>
+    hint({ id: 'clients_at_risk', type: 'problem', priority: 2, ...over })
+
+  it('uses the short 30s global gap instead of the 90s one', () => {
+    const shown = registerShown(EMPTY_COOLDOWNS, 'other', '/gri', T0)
+    const now = T0 + RULES.problemGlobalGapMs + 1_000
+    // Sanity: still inside the normal 90s window a regular hint would be blocked by.
+    expect(now - T0).toBeLessThan(RULES.globalGapMs)
+    expect(pickHint(input({ candidates: [problem()], cooldowns: shown, now }))?.id).toBe(
+      'clients_at_risk',
+    )
+    // A regular hint at the same instant is still blocked by the 90s gap.
+    expect(pickHint(input({ candidates: [hint()], cooldowns: shown, now }))).toBeNull()
+    // Before even the 30s problem gap → blocked.
+    expect(
+      pickHint(
+        input({
+          candidates: [problem()],
+          cooldowns: shown,
+          now: T0 + RULES.problemGlobalGapMs - 1_000,
+        }),
+      ),
+    ).toBeNull()
+  })
+
+  it('bypasses the session cap for the first problemSessionBudget shows, then respects it', () => {
+    const atCap = { sessionShownCount: RULES.sessionMax }
+    expect(
+      pickHint(input({ candidates: [problem()], ...atCap, problemShownCount: 0 })),
+    ).not.toBeNull()
+    expect(
+      pickHint(
+        input({ candidates: [problem()], ...atCap, problemShownCount: RULES.problemSessionBudget - 1 }),
+      ),
+    ).not.toBeNull()
+    // Budget spent → the problem hint respects the session cap like any other.
+    expect(
+      pickHint(
+        input({ candidates: [problem()], ...atCap, problemShownCount: RULES.problemSessionBudget }),
+      ),
+    ).toBeNull()
+    // A non-problem hint never gets the exemption.
+    expect(pickHint(input({ candidates: [hint()], ...atCap }))).toBeNull()
+  })
+})
+
 describe('cooldown state transitions', () => {
   it('registerShown stamps global, per-hint and per-screen', () => {
     const c = registerShown(EMPTY_COOLDOWNS, 'h1', '/gri', T0)

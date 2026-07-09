@@ -29,6 +29,23 @@ export type HidePeriod = 'session' | '24h' | '7d' | 'forever'
  *  on top of the functional pose while the mascot has nothing to say. */
 export type MascotBehaviorVisual = 'walk' | 'sleep' | 'rub' | null
 
+/**
+ * Онбординг-экскурсия «Первые шаги» (Фаза 3): состояние гейта welcome-модалки
+ * и прогресс чеклиста (движок — Батч B).
+ *   pending   — новый пользователь ещё не выбрал (показать welcome);
+ *   active    — экскурсия идёт (чеклист виден, прогресс в stepIdx);
+ *   done      — экскурсия пройдена до конца;
+ *   dismissed — пользователь отказался («Разберусь сам»).
+ * greeted и статус двигаются вместе: любой выбор в welcome ставит greeted=true.
+ */
+export type TourGuideStatus = 'pending' | 'active' | 'done' | 'dismissed'
+
+export interface TourGuideState {
+  status: TourGuideStatus
+  /** Индекс текущего шага экскурсии (0..50, целое). */
+  stepIdx: number
+}
+
 /** Advanced behavior switches (Settings › Ассистент › Поведение). */
 export interface MascotBehaviorSettings {
   /** Occasional strolls along the bottom edge (desktop only). */
@@ -60,7 +77,11 @@ export interface MascotSettings {
   tutorialDone: boolean
   /** Screens whose coachmark tour was completed/skipped. */
   toursDone: string[]
+  /** Онбординг-экскурсия «Первые шаги» — статус welcome-гейта + прогресс. */
+  tourGuide: TourGuideState
 }
+
+export const DEFAULT_TOUR_GUIDE: TourGuideState = { status: 'pending', stepIdx: 0 }
 
 export const DEFAULT_MASCOT_BEHAVIOR: MascotBehaviorSettings = {
   walking: true,
@@ -80,6 +101,7 @@ export const DEFAULT_MASCOT_SETTINGS: MascotSettings = {
   color: 'ginger',
   tutorialDone: false,
   toursDone: [],
+  tourGuide: DEFAULT_TOUR_GUIDE,
 }
 
 /** True when the mascot must not render at all (master switch or timed hide). */

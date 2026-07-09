@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useMemo, useCallback, useEffect, useRef } from "react"
+import { useState, useMemo, useCallback, useEffect, useRef } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import {
   RadarChart,
@@ -25,23 +25,14 @@ import {
   X,
   ChevronDown,
   ChevronUp,
-  Loader2,
-  BarChart3,
   DollarSign,
-  TrendingDown,
   FileText,
-  ArrowLeftRight,
   Download,
   ExternalLink,
   Link2,
   History,
-  FileUp,
   Clock,
   AlertCircle,
-  ClipboardList,
-  Presentation,
-  Database,
-  Paperclip,
 } from "lucide-react"
 
 import { Card, CardContent } from "./ui/card"
@@ -64,7 +55,6 @@ import {
   TooltipTrigger,
   TooltipProvider,
 } from "./ui/tooltip"
-import { Textarea } from "./ui/textarea"
 import {
   Dialog,
   DialogContent,
@@ -77,7 +67,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu"
 import { Input } from "./ui/input"
@@ -164,29 +153,15 @@ function AnimatedGRI({ value }: { value: number }) {
   )
 }
 
-// ─────────────────────────────────────────────────────
-// Simple markdown renderer
-// ─────────────────────────────────────────────────────
-
-function renderMarkdown(text: string): string {
-  // Escape HTML entities FIRST so any markup in the (AI-generated) strategy text
-  // cannot inject active content when rendered via dangerouslySetInnerHTML. The
-  // markdown tags added below are the only HTML in the output (XSS hardening).
-  let html = text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/^### (.+)$/gm, "<h3>$1</h3>")
-    .replace(/^## (.+)$/gm, "<h3>$1</h3>")
-    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
-    .replace(/^- (.+)$/gm, '<li class="strategy-action-item">$1</li>')
-    .replace(/(<li>.*?<\/li>\n?)+/g, (match) => `<ul>${match}</ul>`)
-    .replace(/\n\n([\s\S]+?)(?=\n\n|\n|$)/g, "<p>$1</p>")
-    .replace(/^(?!<[hulo])((?!<).+)$/gm, (match) => {
-      if (match.startsWith("<")) return match
-      return `<p>${match}</p>`
-    })
-  return html
+interface CalcSessionRow {
+  id: string
+  name: string
+  scores: Record<string, number>
+  gri_index: number
+  niche: string
+  size: string
+  note: string | null
+  created_at: string
 }
 
 function computeGRI(scores: Record<string, number>): number {
@@ -198,9 +173,36 @@ function computeGRI(scores: Record<string, number>): number {
 // Main GRI Calculator Component
 // ─────────────────────────────────────────────────────
 
-export default function GRICalculator() {
+export interface GRICalculatorProps {
+  scores: Record<string, number>
+  onScoresChange: (next: Record<string, number>) => void
+  niche: string
+  size: string
+  onNicheChange: (v: string) => void
+  onSizeChange: (v: string) => void
+  /**
+   * Seed the sliders from the saved GRI assessment on mount. The parent
+   * (GriPageShell) sets this false after the first seed so that switching tabs
+   * — which remounts the calculator — no longer re-pulls the server assessment
+   * and clobbers manual edits or AI-applied scores. Live assessment updates
+   * still flow through the 'gri:assessment-updated' event listener regardless.
+   */
+  seedFromAssessment?: boolean
+  /** Called once the initial assessment seed has run. */
+  onSeeded?: () => void
+}
+
+export default function GRICalculator({
+  scores,
+  onScoresChange,
+  niche,
+  size,
+  onNicheChange,
+  onSizeChange,
+  seedFromAssessment = true,
+  onSeeded,
+}: GRICalculatorProps) {
   const [lang, setLang] = useState<Language>("ru")
-  const [scores, setScores] = useState<Record<string, number>>(DEFAULT_SCORES)
 
   // Planning mode
   const [planningMode, setPlanningMode] = useState(false)
@@ -218,69 +220,58 @@ export default function GRICalculator() {
   const [expandedCategory, setExpandedCategory] = useState<string | null>(null)
   const [accordionChecked, setAccordionChecked] = useState<Record<string, Record<string, boolean>>>({})
 
-  // AI Strategy
-  const [strategyText, setStrategyText] = useState<string>("")
-  const [strategyLoading, setStrategyLoading] = useState(false)
-
-  // Financial Analyst
-  const [financialData, setFinancialData] = useState<string>("")
-  const [financialAnalysis, setFinancialAnalysis] = useState<{
-    gri_updates: {
-      cash_stability: { score: number; justification: string }
-      business_model: { score: number; justification: string }
-    }
-    extracted_metrics: {
-      revenue_trend: string
-      gross_margin: string
-      net_profit_margin: string
-    }
-    mckinsey_insights: string[]
-  } | null>(null)
-  const [financialLoading, setFinancialLoading] = useState(false)
-
-  // Niche & Company Size
-  const [selectedNiche, setSelectedNiche] = useState("general")
-  const [selectedSize, setSelectedSize] = useState("small")
-
-  // Dynamic Insights toggle
-  const [dynamicInsights, setDynamicInsights] = useState(false)
-  const dynamicInsightsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
   // Dialogs
   const [saveDialogOpen, setSaveDialogOpen] = useState(false)
   const [sessionName, setSessionName] = useState("")
   const [publishDialogOpen, setPublishDialogOpen] = useState(false)
   const [historyDialogOpen, setHistoryDialogOpen] = useState(false)
-  const [griHistory, setGriHistory] = useState<GRIHistoryEntry[]>([])
 
-  // File upload
-  const fileInputRef = useRef<HTMLInputElement>(null)
-  const [fileParsing, setFileParsing] = useState(false)
+  // Calculator sessions — server-persisted; localStorage is the offline fallback.
+  const [sessions, setSessions] = useState<CalcSessionRow[]>([])
 
-  // Smart Dropzone
-  const [dropzoneDragging, setDropzoneDragging] = useState(false)
-  const [parsingStage, setParsingStage] = useState<number>(0)
-  const [showMetricChips, setShowMetricChips] = useState(false)
-  const [showPasteMode, setShowPasteMode] = useState(false)
-  const parsingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  const autoUpdatedSlidersRef = useRef<Set<string>>(new Set())
   const t = translations[lang]
 
-  // ── Load history on mount ──
+  // Live mirror of the controlled scores so the mount-only assessment-sync
+  // effect can merge onto the latest value without a stale closure.
+  const scoresRef = useRef(scores)
   useEffect(() => {
+    scoresRef.current = scores
+  }, [scores])
+
+  // ── Load calculator sessions (server; localStorage is the offline fallback) ──
+  const loadSessions = useCallback(async () => {
     try {
-      const stored = localStorage.getItem("gri_history")
-      if (stored) {
-        const history: GRIHistoryEntry[] = JSON.parse(stored)
-        if (history.length >= 2) {
-          setPreviousScores(history[history.length - 2].scores)
-        }
-      }
+      const res = await fetch("/api/v1/gri/calc-sessions", { credentials: "include" })
+      if (!res.ok) throw new Error(String(res.status))
+      const json = await res.json()
+      const rows: CalcSessionRow[] = Array.isArray(json?.data?.sessions) ? json.data.sessions : []
+      setSessions(rows)
+      if (rows.length > 0) setPreviousScores(rows[0].scores)
     } catch {
-      // ignore
+      try {
+        const stored = localStorage.getItem("gri_history")
+        const history: GRIHistoryEntry[] = stored ? JSON.parse(stored) : []
+        const rows: CalcSessionRow[] = history.map((h, i) => ({
+          id: `local-${i}`,
+          name: h.name || "",
+          scores: h.scores,
+          gri_index: computeGRI(h.scores),
+          niche: "general",
+          size: "small",
+          note: null,
+          created_at: h.date,
+        }))
+        setSessions(rows)
+        if (rows.length >= 2) setPreviousScores(rows[rows.length - 2].scores)
+      } catch {
+        // ignore
+      }
     }
   }, [])
+
+  useEffect(() => {
+    void loadSessions()
+  }, [loadSessions])
 
   // ── Auto-sync from GRI Assessment (aistart_gri_assessment_v1) ──
   useEffect(() => {
@@ -298,7 +289,7 @@ export default function GRICalculator() {
 
     const applyUpdates = (updates: Record<string, number>, griIndex?: number) => {
       if (Object.keys(updates).length > 0) {
-        setScores((prev) => ({ ...prev, ...updates }))
+        onScoresChange({ ...scoresRef.current, ...updates })
         setBaseScores((prev) => ({ ...prev, ...updates }))
         setPlannedScores((prev) => ({ ...prev, ...updates }))
       }
@@ -368,8 +359,13 @@ export default function GRICalculator() {
       void syncFromServer()
     }
 
-    // Initial sync on mount
-    syncFromAssessment()
+    // Initial sync on mount — only when the parent hasn't seeded yet this
+    // session. On tab switches the calculator remounts; re-seeding here would
+    // overwrite manual slider edits and AI-applied scores held by the shell.
+    if (seedFromAssessment) {
+      syncFromAssessment()
+      onSeeded?.()
+    }
 
     // Listen for cross-tab updates via storage event
     const handleStorage = (e: StorageEvent) => {
@@ -389,8 +385,8 @@ export default function GRICalculator() {
   }, [])
 
   const benchmarkScores = useMemo(
-    () => getBlendedBenchmark(selectedNiche, selectedSize),
-    [selectedNiche, selectedSize]
+    () => getBlendedBenchmark(niche, size),
+    [niche, size]
   )
 
   const activeScores = planningMode ? plannedScores : scores
@@ -402,6 +398,9 @@ export default function GRICalculator() {
     [planningMode, scores, baseScores]
   )
   const displayGri = assessmentGri != null && slidersMatchBase ? assessmentGri : griScore
+  // When the sliders have diverged from the exact server index, the big number
+  // is only the slider mean — flag it as approximate (the exact index is in the hero).
+  const showApproxCaption = !planningMode && assessmentGri != null && !slidersMatchBase
   const redZones = useMemo(() => CATEGORIES.filter((c) => activeScores[c] < 5), [activeScores])
   const hasRedZones = redZones.length > 0
 
@@ -447,10 +446,10 @@ export default function GRICalculator() {
       if (planningMode) {
         setPlannedScores((prev) => ({ ...prev, [category]: value[0] }))
       } else {
-        setScores((prev) => ({ ...prev, [category]: value[0] }))
+        onScoresChange({ ...scores, [category]: value[0] })
       }
     },
-    [planningMode]
+    [planningMode, scores, onScoresChange]
   )
 
   const toggleAccordion = useCallback(
@@ -474,22 +473,18 @@ export default function GRICalculator() {
 
   const handleAccordionCheck = useCallback(
     (category: string, factorId: string, checked: boolean) => {
-      setAccordionChecked((prev) => {
-        const catChecks = { ...(prev[category] || {}) }
-        catChecks[factorId] = checked
-        const newChecked = { ...prev, [category]: catChecks }
-        const factors = SUB_FACTORS[category] || []
-        const count = factors.filter((f) => catChecks[f.id]).length
-        const newScore = Math.max(1, Math.round((count / factors.length) * 10))
-        if (planningMode) {
-          setPlannedScores((p) => ({ ...p, [category]: newScore }))
-        } else {
-          setScores((p) => ({ ...p, [category]: newScore }))
-        }
-        return newChecked
-      })
+      const catChecks = { ...(accordionChecked[category] || {}), [factorId]: checked }
+      const factors = SUB_FACTORS[category] || []
+      const count = factors.filter((f) => catChecks[f.id]).length
+      const newScore = Math.max(1, Math.round((count / factors.length) * 10))
+      setAccordionChecked((prev) => ({ ...prev, [category]: catChecks }))
+      if (planningMode) {
+        setPlannedScores((p) => ({ ...p, [category]: newScore }))
+      } else {
+        onScoresChange({ ...scores, [category]: newScore })
+      }
     },
-    [planningMode]
+    [planningMode, accordionChecked, scores, onScoresChange]
   )
 
   const openSaveDialog = useCallback(() => {
@@ -499,305 +494,87 @@ export default function GRICalculator() {
     setSaveDialogOpen(true)
   }, [])
 
-  const saveSession = useCallback(() => {
+  const saveSession = useCallback(async () => {
+    const payload = {
+      name: sessionName.trim() || `Сессия ${new Date().toLocaleDateString("ru-RU")}`,
+      scores: activeScores,
+      niche,
+      size,
+    }
     try {
-      const stored = localStorage.getItem("gri_history")
-      const history: GRIHistoryEntry[] = stored ? JSON.parse(stored) : []
-      history.push({ date: new Date().toISOString(), name: sessionName || t.sessionName, scores: { ...activeScores } })
-      if (history.length > 10) history.splice(0, history.length - 10)
-      localStorage.setItem("gri_history", JSON.stringify(history))
+      const res = await fetch("/api/v1/gri/calc-sessions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(payload),
+      })
+      if (!res.ok) throw new Error(String(res.status))
       toast.success(t.sessionSaved)
       setSaveDialogOpen(false)
+      setSessionName("")
+      void loadSessions()
     } catch {
-      toast.error("Failed to save session")
+      // Server unavailable — keep the offline localStorage snapshot so work isn't lost.
+      try {
+        const stored = localStorage.getItem("gri_history")
+        const history: GRIHistoryEntry[] = stored ? JSON.parse(stored) : []
+        history.push({ date: new Date().toISOString(), name: payload.name, scores: { ...activeScores } })
+        if (history.length > 10) history.splice(0, history.length - 10)
+        localStorage.setItem("gri_history", JSON.stringify(history))
+      } catch {
+        // ignore
+      }
+      toast.error("Не удалось сохранить на сервере — сохранено локально")
+      setSaveDialogOpen(false)
+      setSessionName("")
     }
-  }, [activeScores, sessionName, t.sessionSaved, t.sessionName])
+  }, [activeScores, sessionName, niche, size, t.sessionSaved, loadSessions])
+
+  const deleteSession = useCallback(async (id: string) => {
+    if (id.startsWith("local-")) {
+      setSessions((prev) => prev.filter((s) => s.id !== id))
+      return
+    }
+    try {
+      const res = await fetch(`/api/v1/gri/calc-sessions/${id}`, {
+        method: "DELETE",
+        credentials: "include",
+      })
+      if (!res.ok) throw new Error(String(res.status))
+      setSessions((prev) => prev.filter((s) => s.id !== id))
+      toast.success("Сессия удалена")
+    } catch {
+      toast.error("Не удалось удалить сессию")
+    }
+  }, [])
 
   const toggleComparePrevious = useCallback(
     (checked: boolean) => {
       if (checked) {
-        try {
-          const stored = localStorage.getItem("gri_history")
-          if (stored) {
-            const history: GRIHistoryEntry[] = JSON.parse(stored)
-            if (history.length >= 2) {
-              setPreviousScores(history[history.length - 2].scores)
-            } else {
-              toast.info(t.noHistory)
-              return
-            }
-          } else {
-            toast.info(t.noHistory)
-            return
-          }
-        } catch {
+        if (sessions.length === 0) {
           toast.info(t.noHistory)
           return
         }
+        // Compare against the most recent saved session.
+        setPreviousScores(sessions[0].scores)
       }
       setComparePrevious(checked)
     },
-    [t.noHistory]
+    [sessions, t.noHistory]
   )
-
-  const generateStrategy = useCallback(async () => {
-    setStrategyLoading(true)
-    setStrategyText("")
-    try {
-      const res = await fetch("/api/gri/ai-strategy", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ scores: activeScores, lang }),
-      })
-      const data = await res.json()
-      if (data.error) toast.error(t.strategyError)
-      else setStrategyText(data.strategy)
-    } catch {
-      toast.error(t.strategyError)
-    } finally {
-      setStrategyLoading(false)
-    }
-  }, [activeScores, lang, t.strategyError])
-
-  useEffect(() => {
-    if (!dynamicInsights || strategyLoading) return
-    if (dynamicInsightsTimerRef.current) clearTimeout(dynamicInsightsTimerRef.current)
-    dynamicInsightsTimerRef.current = setTimeout(() => {
-      generateStrategy()
-    }, 500)
-    return () => {
-      if (dynamicInsightsTimerRef.current) clearTimeout(dynamicInsightsTimerRef.current)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeScores, dynamicInsights])
-
-  const analyzeFinances = useCallback(async () => {
-    if (!financialData.trim()) return
-    setFinancialLoading(true)
-    setFinancialAnalysis(null)
-    setShowMetricChips(false)
-    try {
-      const res = await fetch("/api/gri/financial-analyst", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ financialData: financialData.trim(), scores: activeScores, lang }),
-      })
-      const data = await res.json()
-      if (data.error) toast.error(t.analysisError)
-      else setFinancialAnalysis(data)
-    } catch {
-      toast.error(t.analysisError)
-    } finally {
-      setFinancialLoading(false)
-    }
-  }, [financialData, activeScores, lang, t.analysisError])
-
-  const autoUpdateScores = useCallback(
-    (data: typeof financialAnalysis) => {
-      if (!data) return
-      const csScore = Math.max(1, Math.min(10, data.gri_updates.cash_stability.score))
-      const bmScore = Math.max(1, Math.min(10, data.gri_updates.business_model.score))
-      autoUpdatedSlidersRef.current = new Set(["Cash Stability", "Business Model"])
-      if (planningMode) {
-        setPlannedScores((prev) => ({ ...prev, "Cash Stability": csScore, "Business Model": bmScore }))
-      } else {
-        setScores((prev) => ({ ...prev, "Cash Stability": csScore, "Business Model": bmScore }))
-      }
-    },
-    [planningMode]
-  )
-
-  const applyFinancialAnalysis = useCallback(() => {
-    if (!financialAnalysis) return
-    autoUpdateScores(financialAnalysis)
-    toast.success(t.applied)
-    setFinancialAnalysis(null)
-    setFinancialData("")
-    setShowMetricChips(false)
-  }, [financialAnalysis, autoUpdateScores, t.applied])
-
-  const runParsingStages = useCallback(() => {
-    setParsingStage(1)
-    if (parsingTimerRef.current) clearTimeout(parsingTimerRef.current)
-    setTimeout(() => setParsingStage(2), 700)
-    setTimeout(() => setParsingStage(3), 1400)
-    setTimeout(() => setParsingStage(4), 2100)
-  }, [])
-
-  const processFileUpload = useCallback(
-    async (file: File) => {
-      setFileParsing(true)
-      setShowMetricChips(false)
-      setShowPasteMode(false)
-      runParsingStages()
-      try {
-        if (file.type === "text/csv" || file.name.endsWith(".csv")) {
-          const text = await file.text()
-          await new Promise((r) => setTimeout(r, 2500))
-          setFinancialData(text)
-          setFileParsing(false)
-          setParsingStage(0)
-          toast.success(lang === "ru" ? "Файл загружен" : "File loaded")
-        } else {
-          const res = await fetch("/api/gri/financial-analyst", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              financialData: `[File: ${file.name}]`,
-              fileName: file.name,
-              scores: activeScores,
-              lang,
-            }),
-          })
-          const data = await res.json()
-          if (data.error) {
-            toast.error(t.parseError)
-          } else {
-            setFinancialAnalysis(data)
-            autoUpdateScores(data)
-            setShowMetricChips(true)
-            toast.success(lang === "ru" ? "Файл проанализирован" : "File analyzed")
-          }
-          setFileParsing(false)
-          setParsingStage(0)
-        }
-      } catch {
-        toast.error(t.parseError)
-        setFileParsing(false)
-        setParsingStage(0)
-      }
-      if (fileInputRef.current) fileInputRef.current.value = ""
-    },
-    [activeScores, lang, t.parseError, autoUpdateScores, runParsingStages]
-  )
-
-  const handleFileUpload = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0]
-      if (file) processFileUpload(file)
-    },
-    [processFileUpload]
-  )
-
-  const handleDrop = useCallback(
-    (e: React.DragEvent) => {
-      e.preventDefault()
-      setDropzoneDragging(false)
-      const file = e.dataTransfer.files?.[0]
-      if (
-        file &&
-        (file.name.endsWith(".pdf") ||
-          file.name.endsWith(".xlsx") ||
-          file.name.endsWith(".xls") ||
-          file.name.endsWith(".csv"))
-      ) {
-        processFileUpload(file)
-      }
-    },
-    [processFileUpload]
-  )
-
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault()
-    setDropzoneDragging(true)
-  }, [])
-  const handleDragLeave = useCallback((e: React.DragEvent) => {
-    e.preventDefault()
-    setDropzoneDragging(false)
-  }, [])
-
-  const confirmMetricChips = useCallback(() => {
-    if (financialAnalysis) {
-      autoUpdateScores(financialAnalysis)
-      toast.success(t.metricsConfirmed)
-      setShowMetricChips(false)
-      setFinancialAnalysis(null)
-      setFinancialData("")
-    }
-  }, [financialAnalysis, autoUpdateScores, t.metricsConfirmed])
-
-  const generateActionPlan = useCallback(async () => {
-    setStrategyLoading(true)
-    setStrategyText("")
-    try {
-      const res = await fetch("/api/gri/ai-strategy", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ scores: activeScores, lang, format: "action_plan" }),
-      })
-      const data = await res.json()
-      if (data.error) toast.error(t.strategyError)
-      else {
-        setStrategyText(data.strategy)
-        toast.success(t.actionPlanGenerated)
-      }
-    } catch {
-      toast.error(t.strategyError)
-    } finally {
-      setStrategyLoading(false)
-    }
-  }, [activeScores, lang, t.strategyError, t.actionPlanGenerated])
-
-  const handlePitchDeck = useCallback(() => {
-    const content = [
-      `AIStart360 — GRI Pitch Deck`,
-      `================================`,
-      ``,
-      `Date: ${new Date().toLocaleString(lang === "ru" ? "ru-RU" : "en-US")}`,
-      `Niche: ${t[`niche_${selectedNiche}`]} | Size: ${t[`size_${selectedSize}`]}`,
-      ``,
-      `GRI SCORE: ${griScore.toFixed(1)} / 10`,
-      `Target: ${TARGET_GRI} / 10`,
-      ``,
-      `CATEGORY BREAKDOWN:`,
-      `─────────────────────`,
-      ...CATEGORIES.map((cat) => {
-        const s = activeScores[cat]
-        const emoji = s < 5 ? "[!]" : s <= 7 ? "[~]" : "[OK]"
-        return `  ${emoji} ${categoryTranslations[cat][lang]}: ${s}/10 ${s < 5 ? "(RED ZONE)" : ""}`
-      }),
-      ``,
-      `RED ZONES: ${redZones.length > 0 ? redZones.map((z) => categoryTranslations[z][lang]).join(", ") : "None"}`,
-    ].join("\n")
-    const blob = new Blob([content], { type: "text/plain;charset=utf-8" })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement("a")
-    a.href = url
-    a.download = `GRI_PitchDeck_${new Date().toISOString().slice(0, 10)}.txt`
-    a.click()
-    URL.revokeObjectURL(url)
-    toast.success(t.pitchDeckGenerated)
-  }, [lang, selectedNiche, selectedSize, t, griScore, activeScores, redZones])
-
-  const handleSaveProfile = useCallback(() => openSaveDialog(), [openSaveDialog])
 
   const handleDownloadPDF = useCallback(() => {
-    const content = [
-      `AIStart360 — GRI Calculator Report`,
-      `Date: ${new Date().toLocaleString(lang === "ru" ? "ru-RU" : "en-US")}`,
-      ``,
-      `GRI Score: ${griScore.toFixed(1)} / 10`,
-      ``,
-      `Category Scores:`,
-      ...CATEGORIES.map((cat) => `  ${categoryTranslations[cat][lang]}: ${activeScores[cat]}/10`),
-    ].join("\n")
-    const blob = new Blob([content], { type: "text/plain;charset=utf-8" })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement("a")
-    a.href = url
-    a.download = `GRI_Report_${new Date().toISOString().slice(0, 10)}.txt`
-    a.click()
-    URL.revokeObjectURL(url)
-    toast.success(lang === "ru" ? "Отчет скачан" : "Report downloaded")
-  }, [lang, griScore, activeScores])
+    // Real server-rendered GRI PDF (lib/reports/pdf.ts) — not a txt blob.
+    window.open("/api/export/report?type=gri", "_blank", "noopener")
+  }, [])
 
   const handleDownloadJSON = useCallback(() => {
     const exportData = {
       scores: activeScores,
       date: new Date().toISOString(),
       griScore: griScore.toFixed(1),
-      niche: selectedNiche,
-      companySize: selectedSize,
+      niche,
+      companySize: size,
     }
     const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: "application/json;charset=utf-8" })
     const url = URL.createObjectURL(blob)
@@ -807,7 +584,7 @@ export default function GRICalculator() {
     a.click()
     URL.revokeObjectURL(url)
     toast.success(lang === "ru" ? "JSON экспортирован" : "JSON exported")
-  }, [activeScores, griScore, selectedNiche, selectedSize])
+  }, [activeScores, griScore, niche, size, lang])
 
   const handlePublish = useCallback(() => {
     // Copy the REAL page URL — there is no server-side snapshot backend for the
@@ -824,16 +601,9 @@ export default function GRICalculator() {
   }, [t.publishLink, lang])
 
   const openGRIHistory = useCallback(() => {
-    try {
-      const stored = localStorage.getItem("gri_history")
-      const history: GRIHistoryEntry[] = stored ? JSON.parse(stored) : []
-      setGriHistory(history)
-      setHistoryDialogOpen(true)
-    } catch {
-      setGriHistory([])
-      setHistoryDialogOpen(true)
-    }
-  }, [])
+    void loadSessions()
+    setHistoryDialogOpen(true)
+  }, [loadSessions])
 
   const toggleLanguage = useCallback(() => {
     setLang((prev) => (prev === "ru" ? "en" : "ru"))
@@ -847,8 +617,6 @@ export default function GRICalculator() {
     hidden: { opacity: 0, y: 20 },
     visible: { opacity: 1, y: 0, transition: { duration: 0.5, ease: "easeOut" as const } },
   }
-
-  const parsingSteps = [t.parsingStep1, t.parsingStep2, t.parsingStep3, t.parsingStep4]
 
   const renderBudget = (level: number) => {
     if (level <= 1) return "$"
@@ -922,7 +690,7 @@ export default function GRICalculator() {
                 <p className="text-xs text-white/50 mb-1">{t.currentGRI}</p>
                 <p className="text-2xl font-bold text-white/90 font-mono">{griScore.toFixed(1)}</p>
                 <p className="text-[0.65rem] text-white/40 mt-1">
-                  {t[`niche_${selectedNiche}`]} · {t[`size_${selectedSize}`]}
+                  {t[`niche_${niche}`]} · {t[`size_${size}`]}
                 </p>
               </div>
             </div>
@@ -976,24 +744,24 @@ export default function GRICalculator() {
               <DialogDescription>{t.griHistoryDesc}</DialogDescription>
             </DialogHeader>
             <div className="py-4 max-h-[360px] overflow-y-auto gri-slider-scroll">
-              {griHistory.length === 0 ? (
+              {sessions.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-8 text-white/30">
                   <History className="w-8 h-8 mb-2 opacity-50" />
                   <p className="text-sm">{t.noHistoryData}</p>
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {griHistory.map((entry, i) => {
-                    const entryGRI = computeGRI(entry.scores)
+                  {sessions.map((entry, i) => {
+                    const entryGRI = Number(entry.gri_index)
                     const barWidth = (entryGRI / 10) * 100
                     const barColor = entryGRI < 5 ? "#ef4444" : entryGRI <= 7 ? "#f59e0b" : "#10b981"
-                    const dateStr = new Date(entry.date).toLocaleDateString(lang === "ru" ? "ru-RU" : "en-US", {
+                    const dateStr = new Date(entry.created_at).toLocaleDateString(lang === "ru" ? "ru-RU" : "en-US", {
                       month: "short",
                       day: "numeric",
                       year: "numeric",
                     })
                     return (
-                      <div key={i} className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-white/[0.04]">
+                      <div key={entry.id} className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-white/[0.04]">
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center justify-between mb-1">
                             <p className="text-xs font-medium text-white/70 truncate">
@@ -1011,6 +779,15 @@ export default function GRICalculator() {
                             />
                           </div>
                         </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          aria-label="Удалить сессию"
+                          onClick={() => deleteSession(entry.id)}
+                          className="h-9 w-9 p-0 flex-shrink-0 text-white/40 hover:text-red-400"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </Button>
                       </div>
                     )
                   })}
@@ -1086,7 +863,7 @@ export default function GRICalculator() {
                     <p className="text-xs text-white/40 mt-0.5">{t.calculatorSubtitle}</p>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Select value={selectedNiche} onValueChange={setSelectedNiche}>
+                    <Select value={niche} onValueChange={onNicheChange}>
                       <SelectTrigger className="w-[160px] text-xs h-10">
                         <SelectValue />
                       </SelectTrigger>
@@ -1098,7 +875,7 @@ export default function GRICalculator() {
                         ))}
                       </SelectContent>
                     </Select>
-                    <Select value={selectedSize} onValueChange={setSelectedSize}>
+                    <Select value={size} onValueChange={onSizeChange}>
                       <SelectTrigger className="w-[120px] text-xs h-10">
                         <SelectValue />
                       </SelectTrigger>
@@ -1174,12 +951,6 @@ export default function GRICalculator() {
                       {t.comparePrevious}
                     </Label>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <Switch id="dynamic-insights" checked={dynamicInsights} onCheckedChange={setDynamicInsights} />
-                    <Label htmlFor="dynamic-insights" className="text-xs text-white/60 cursor-pointer">
-                      {t.dynamicInsights}
-                    </Label>
-                  </div>
                 </div>
 
                 <div className="flex-1 space-y-4 max-h-[520px] overflow-y-auto gri-slider-scroll pr-1">
@@ -1193,7 +964,6 @@ export default function GRICalculator() {
                     const catTips = CATEGORY_TIPS[category]
                     const tipLevel = score < 5 ? "low" : score <= 7 ? "mid" : "high"
                     const tip = catTips?.[tipLevel]
-                    const isAutoUpdating = autoUpdatedSlidersRef.current.has(category)
                     const isExpanded = expandedCategory === category
                     const isImpacted = crossImpactWarnings.has(category)
                     const effort = EFFORT_DATA[category]
@@ -1282,7 +1052,7 @@ export default function GRICalculator() {
                           step={1}
                           value={[score]}
                           onValueChange={(val) => handleSliderChange(category, val)}
-                          className={`gri-slider ${zoneClass} ${isAutoUpdating ? "slider-auto-updating" : ""}`}
+                          className={`gri-slider ${zoneClass}`}
                         />
 
                         <AnimatePresence>
@@ -1323,334 +1093,6 @@ export default function GRICalculator() {
             </Card>
           </motion.div>
 
-          {/* ── Smart Dropzone Financial Analyst ── */}
-          <motion.div variants={itemVariants}>
-            <Card className="glass-card financial-card-glow rounded-xl py-5">
-              <CardContent className="p-0 px-5 sm:px-6">
-                <div className="flex items-center gap-2 mb-1">
-                  <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-cyan-500/15">
-                    <BarChart3 className="w-4 h-4 text-cyan-400" />
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-semibold text-white/90">{t.financialAnalyst}</h3>
-                    <p className="text-[0.65rem] text-white/40">{t.financialAnalystDesc}</p>
-                  </div>
-                </div>
-
-                <div className="mt-4">
-                  {!showPasteMode && !showMetricChips && !fileParsing ? (
-                    <div
-                      className={`smart-dropzone p-6 flex flex-col items-center justify-center min-h-[140px] ${dropzoneDragging ? "dragging" : ""}`}
-                      onDrop={handleDrop}
-                      onDragOver={handleDragOver}
-                      onDragLeave={handleDragLeave}
-                    >
-                      <FileUp className="w-8 h-8 text-cyan-400/50 mb-3" />
-                      <p className="text-sm font-medium text-white/70 mb-1">{t.dropzoneTitle}</p>
-                      <p className="text-xs text-white/35 mb-3">{t.dropzoneSubtitle}</p>
-                      <div className="flex items-center gap-3 text-xs text-white/40">
-                        <span>{t.dropzoneOr}</span>
-                        <button
-                          onClick={() => fileInputRef.current?.click()}
-                          className="text-cyan-400 hover:text-cyan-300 font-medium underline underline-offset-2 transition-colors"
-                        >
-                          {t.dropzoneBrowse}
-                        </button>
-                        <span>{t.dropzoneOr}</span>
-                        <button
-                          onClick={() => setShowPasteMode(true)}
-                          className="text-cyan-400 hover:text-cyan-300 font-medium underline underline-offset-2 transition-colors"
-                        >
-                          {t.dropzoneOrPaste}
-                        </button>
-                      </div>
-                      <input ref={fileInputRef} type="file" accept=".pdf,.xlsx,.xls,.csv" className="hidden" onChange={handleFileUpload} />
-                    </div>
-                  ) : showPasteMode && !fileParsing ? (
-                    <div className="relative">
-                      <Textarea
-                        value={financialData}
-                        onChange={(e) => setFinancialData(e.target.value)}
-                        placeholder={t.pasteFinancialData}
-                        className="min-h-[120px] max-h-[240px] pr-20"
-                      />
-                      <div className="absolute top-2 right-2 flex items-center gap-1">
-                        <Button variant="ghost" size="sm" onClick={() => { setShowPasteMode(false); setFinancialData("") }} className="h-9 px-3 text-xs">
-                          <X className="w-3 h-3" />
-                        </Button>
-                        <Button variant="ghost" size="sm" onClick={() => fileInputRef.current?.click()} className="h-9 px-3 text-xs">
-                          <Paperclip className="w-3.5 h-3.5" />
-                        </Button>
-                      </div>
-                      <input ref={fileInputRef} type="file" accept=".pdf,.xlsx,.xls,.csv" className="hidden" onChange={handleFileUpload} />
-                    </div>
-                  ) : null}
-
-                  {fileParsing && (
-                    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="p-4 rounded-xl" style={{ background: "rgba(6, 182, 212, 0.06)", border: "1px solid rgba(6, 182, 212, 0.15)" }}>
-                      <div className="flex items-center gap-2 mb-3">
-                        <Loader2 className="w-4 h-4 animate-spin text-cyan-400" />
-                        <span className="text-xs font-semibold text-cyan-400">{t.parsingFile}</span>
-                      </div>
-                      <div className="space-y-2">
-                        {parsingSteps.map((step, i) => {
-                          const stepNum = i + 1
-                          const isActive = parsingStage === stepNum
-                          const isDone = parsingStage > stepNum
-                          return (
-                            <div key={i} className={`flex items-center gap-2 ${isActive ? "parsing-step-item" : ""}`} style={{ opacity: isDone ? 0.4 : isActive ? 1 : 0.2 }}>
-                              <div className={`w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 ${isDone ? "bg-emerald-500/20" : isActive ? "bg-cyan-500/20" : "bg-white/[0.05]"}`}>
-                                {isDone ? <CheckCircle2 className="w-3 h-3 text-emerald-400" /> : <Loader2 className={`w-3 h-3 ${isActive ? "animate-spin text-cyan-400" : "text-white/20"}`} />}
-                              </div>
-                              <span className={`text-xs ${isActive ? "text-white/80" : "text-white/40"}`}>{step}</span>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    </motion.div>
-                  )}
-
-                  <AnimatePresence>
-                    {showMetricChips && financialAnalysis && (
-                      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 10 }} className="mt-4">
-                        <p className="text-[0.65rem] font-semibold text-cyan-400/80 uppercase tracking-wider mb-3">{t.extractedMetricsTitle}</p>
-                        <div className="flex flex-wrap gap-2 mb-4">
-                          {financialAnalysis.extracted_metrics.revenue_trend && financialAnalysis.extracted_metrics.revenue_trend !== "Нет данных" && financialAnalysis.extracted_metrics.revenue_trend !== "No data" && (
-                            <span className="metric-chip metric-chip-positive">
-                              <TrendingUp className="w-3 h-3" />
-                              {t.revenue}: {financialAnalysis.extracted_metrics.revenue_trend}
-                            </span>
-                          )}
-                          {financialAnalysis.extracted_metrics.gross_margin && financialAnalysis.extracted_metrics.gross_margin !== "Нет данных" && financialAnalysis.extracted_metrics.gross_margin !== "No data" && (
-                            <span className="metric-chip metric-chip-neutral">
-                              <DollarSign className="w-3 h-3" />
-                              {t.margin}: {financialAnalysis.extracted_metrics.gross_margin}
-                            </span>
-                          )}
-                          {financialAnalysis.extracted_metrics.net_profit_margin && financialAnalysis.extracted_metrics.net_profit_margin !== "Нет данных" && financialAnalysis.extracted_metrics.net_profit_margin !== "No data" && (
-                            <span className="metric-chip metric-chip-positive">
-                              <TrendingUp className="w-3 h-3" />
-                              {t.netProfitMargin}: {financialAnalysis.extracted_metrics.net_profit_margin}
-                            </span>
-                          )}
-                          {financialAnalysis.mckinsey_insights.length > 0 && (
-                            <span className="metric-chip metric-chip-negative">
-                              <AlertTriangle className="w-3 h-3" />
-                              {t.weakSpot}: {financialAnalysis.mckinsey_insights[0]?.slice(0, 40)}...
-                            </span>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Button onClick={confirmMetricChips} className="confirm-metrics-btn gap-2 bg-gradient-to-r from-cyan-600 to-cyan-500 text-white text-xs rounded-lg px-4 py-2">
-                            <CheckCircle2 className="w-3.5 h-3.5" />
-                            {t.confirmMetrics}
-                          </Button>
-                          <Button variant="ghost" size="sm" onClick={() => { setShowMetricChips(false); setFinancialAnalysis(null) }} className="text-xs">
-                            <X className="w-3 h-3 mr-1" />
-                            {t.close}
-                          </Button>
-                        </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </div>
-
-                {showPasteMode && (
-                  <div className="flex items-center gap-3 mt-3">
-                    <Button onClick={analyzeFinances} disabled={financialLoading || !financialData.trim()} className="gap-2 bg-gradient-to-r from-cyan-600 to-cyan-500 text-white px-4 py-2 text-xs rounded-lg">
-                      {financialLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
-                      {financialLoading ? t.analyzingFinances : t.analyzeFinances}
-                    </Button>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </motion.div>
-
-          {/* Financial Analysis Results */}
-          <AnimatePresence>
-            {financialAnalysis && !showMetricChips && (
-              <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }} variants={itemVariants}>
-                <Card className="glass-card financial-results-glow rounded-xl py-5">
-                  <CardContent className="p-0 px-5 sm:px-6">
-                    <div className="flex items-center justify-between mb-5">
-                      <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-cyan-500/15">
-                          <DollarSign className="w-4 h-4 text-cyan-400" />
-                        </div>
-                        <div>
-                          <h3 className="text-sm font-semibold text-white/90">{t.analysisTitle}</h3>
-                          <p className="text-[0.65rem] text-white/40">{t.analysisDesc}</p>
-                        </div>
-                      </div>
-                      <Button variant="ghost" size="sm" aria-label="Очистить" onClick={() => { setFinancialAnalysis(null); setFinancialData(""); setShowPasteMode(false) }} className="h-10 w-10 p-0">
-                        <X className="w-3.5 h-3.5" />
-                      </Button>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                      <div className="space-y-4">
-                        <h4 className="text-xs font-semibold text-cyan-400/90 uppercase tracking-wider flex items-center gap-1.5">
-                          <ArrowLeftRight className="w-3 h-3" />
-                          {t.scoreUpdate}
-                        </h4>
-                        <div className="rounded-lg p-3" style={{ background: "rgba(6, 182, 212, 0.06)", border: "1px solid rgba(6, 182, 212, 0.12)" }}>
-                          <div className="flex items-center justify-between mb-2">
-                            <span className="text-xs font-medium text-white/70">{t.financialStability}</span>
-                            <span className="text-lg font-bold font-mono tabular-nums" style={{ color: getScoreColor(financialAnalysis.gri_updates.cash_stability.score) }}>
-                              {financialAnalysis.gri_updates.cash_stability.score}/10
-                            </span>
-                          </div>
-                          <p className="text-[0.7rem] text-white/50 leading-relaxed">{financialAnalysis.gri_updates.cash_stability.justification}</p>
-                        </div>
-                        <div className="rounded-lg p-3" style={{ background: "rgba(168, 85, 247, 0.06)", border: "1px solid rgba(168, 85, 247, 0.12)" }}>
-                          <div className="flex items-center justify-between mb-2">
-                            <span className="text-xs font-medium text-white/70">{t.businessModelScore}</span>
-                            <span className="text-lg font-bold font-mono tabular-nums" style={{ color: getScoreColor(financialAnalysis.gri_updates.business_model.score) }}>
-                              {financialAnalysis.gri_updates.business_model.score}/10
-                            </span>
-                          </div>
-                          <p className="text-[0.7rem] text-white/50 leading-relaxed">{financialAnalysis.gri_updates.business_model.justification}</p>
-                        </div>
-                      </div>
-                      <div className="space-y-4">
-                        <div>
-                          <h4 className="text-xs font-semibold text-cyan-400/90 uppercase tracking-wider flex items-center gap-1.5 mb-3">
-                            <TrendingUp className="w-3 h-3" />
-                            {t.extractedMetrics}
-                          </h4>
-                          <div className="grid grid-cols-3 gap-2">
-                            {[
-                              { label: t.revenueTrend, val: financialAnalysis.extracted_metrics.revenue_trend },
-                              { label: t.grossMargin, val: financialAnalysis.extracted_metrics.gross_margin },
-                              { label: t.netProfitMargin, val: financialAnalysis.extracted_metrics.net_profit_margin },
-                            ].map((m, i) => (
-                              <div key={i} className="rounded-lg p-2.5 text-center bg-white/[0.03] border border-white/[0.06]">
-                                <p className="text-[0.6rem] text-white/40 mb-1">{m.label}</p>
-                                <p className="text-sm font-semibold text-white/80 font-mono">
-                                  {m.val === "Нет данных" || m.val === "No data" ? t.noData : m.val}
-                                </p>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                        <div>
-                          <h4 className="text-xs font-semibold text-cyan-400/90 uppercase tracking-wider flex items-center gap-1.5 mb-3">
-                            <TrendingDown className="w-3 h-3" />
-                            {t.insights}
-                          </h4>
-                          <div className="space-y-2">
-                            {financialAnalysis.mckinsey_insights.map((insight, i) => (
-                              <div key={i} className="rounded-lg p-3 flex items-start gap-2.5" style={{ background: "rgba(245, 158, 11, 0.06)", border: "1px solid rgba(245, 158, 11, 0.12)" }}>
-                                <div className="flex-shrink-0 w-5 h-5 rounded-md flex items-center justify-center mt-0.5 bg-amber-500/15">
-                                  <span className="text-[0.6rem] font-bold text-amber-400">{i + 1}</span>
-                                </div>
-                                <p className="text-xs text-white/70 leading-relaxed">{insight}</p>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="mt-5 pt-4 border-t border-white/[0.06]">
-                      <Button onClick={applyFinancialAnalysis} className="gap-2 bg-gradient-to-r from-cyan-600 to-blue-600 text-white px-5 py-2.5 text-xs rounded-lg">
-                        <ArrowLeftRight className="w-3.5 h-3.5" />
-                        {t.applyToDashboard}
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          {/* Split Button — Strategy/Export */}
-          <motion.div variants={itemVariants}>
-            <AnimatePresence>
-              {!strategyText && !strategyLoading && (
-                <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex justify-center">
-                  <div className="flex">
-                    <Button onClick={generateStrategy} className="split-button-main gap-2 bg-gradient-to-r from-purple-600 to-purple-500 text-white px-6 py-5 text-sm font-medium">
-                      <Sparkles className="w-4 h-4" />
-                      {t.generateStrategy}
-                    </Button>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button className="split-button-caret bg-purple-600 text-white px-3 py-5">
-                          <ChevronDown className="w-4 h-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" sideOffset={8} className="w-[240px]">
-                        <DropdownMenuItem onClick={generateActionPlan} className="cursor-pointer gap-3 py-2.5">
-                          <ClipboardList className="w-4 h-4 text-purple-400" />
-                          <div>
-                            <p className="text-xs font-medium">{t.actionPlan}</p>
-                            <p className="text-[0.6rem] text-white/40">{t.actionPlanDesc}</p>
-                          </div>
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={handlePitchDeck} className="cursor-pointer gap-3 py-2.5">
-                          <Presentation className="w-4 h-4 text-cyan-400" />
-                          <div>
-                            <p className="text-xs font-medium">{t.pitchDeckPDF}</p>
-                            <p className="text-[0.6rem] text-white/40">{t.pitchDeckDesc}</p>
-                          </div>
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem onClick={handleSaveProfile} className="cursor-pointer gap-3 py-2.5">
-                          <Database className="w-4 h-4 text-blue-400" />
-                          <div>
-                            <p className="text-xs font-medium">{t.saveProfileSupabase}</p>
-                            <p className="text-[0.6rem] text-white/40">{t.saveProfileDesc}</p>
-                          </div>
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            <AnimatePresence>
-              {strategyLoading && (
-                <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex justify-center">
-                  <Button disabled className="gap-2 bg-purple-600/50 text-purple-200 px-6 py-5 text-sm rounded-xl">
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    {t.generatingStrategy}
-                  </Button>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </motion.div>
-
-          {/* Strategy Result */}
-          <AnimatePresence>
-            {strategyText && (
-              <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }} variants={itemVariants}>
-                <Card className="glass-card strategy-card-glow rounded-xl py-5">
-                  <CardContent className="p-0 px-5 sm:px-6">
-                    <div className="flex items-center justify-between mb-4">
-                      <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-purple-500/15">
-                          <Sparkles className="w-4 h-4 text-purple-400" />
-                        </div>
-                        <div>
-                          <h3 className="text-sm font-semibold text-white/90">{t.strategyTitle}</h3>
-                          <p className="text-[0.65rem] text-white/40">{t.strategyDesc}</p>
-                        </div>
-                      </div>
-                      <Button variant="ghost" size="sm" aria-label="Очистить" onClick={() => setStrategyText("")} className="h-10 w-10 p-0">
-                        <X className="w-3.5 h-3.5" />
-                      </Button>
-                    </div>
-                    <div
-                      className="strategy-content text-sm max-h-96 overflow-y-auto gri-slider-scroll pr-2"
-                      dangerouslySetInnerHTML={{ __html: renderMarkdown(strategyText) }}
-                    />
-                  </CardContent>
-                </Card>
-              </motion.div>
-            )}
-          </AnimatePresence>
-
           {/* KPI Metrics */}
           <motion.div variants={itemVariants} className={`grid gap-4 sm:gap-6 ${planningMode ? "grid-cols-1 sm:grid-cols-3" : "grid-cols-1 sm:grid-cols-2"}`}>
             <Card className="glass-card kpi-card-glow-blue rounded-xl py-5">
@@ -1669,6 +1111,9 @@ export default function GRICalculator() {
                   </span>
                   <span className="text-sm text-white/30 mb-1.5">/ 10</span>
                 </div>
+                {showApproxCaption && (
+                  <p className="text-[0.65rem] text-amber-300/70 mt-1">≈ по ползункам (точный индекс — в шапке)</p>
+                )}
                 <p className="text-xs text-white/35 mt-2">{t.griSubtitle}</p>
                 <div className="mt-3 h-1.5 rounded-full bg-white/[0.06] overflow-hidden">
                   <motion.div

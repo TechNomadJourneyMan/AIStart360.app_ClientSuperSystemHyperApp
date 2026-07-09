@@ -26,6 +26,11 @@ export const RULES = {
   closedGapMs: 7 * 24 * 60 * 60_000,
   /** Proactive bubbles per session. */
   sessionMax: 8,
+  /** Проблемные советы (type==='problem', Батч D): свой короткий global-кулдаун,
+   *  чтобы срочный сигнал не тонул 90с за любым другим пузырём. */
+  problemGlobalGapMs: 30_000,
+  /** Первые N проблемных показов НЕ считаются в лимит сессии (потом — считаются). */
+  problemSessionBudget: 2,
   /** hintFrequency==='rare': gaps ×3, session cap ↓. */
   rareGapMultiplier: 3,
   rareSessionMax: 3,
@@ -68,16 +73,21 @@ export interface PickInput {
   settings: Pick<MascotSettings, 'hintFrequency' | 'dismissedHints' | 'greeted'>
   /** Proactive bubbles already shown this session. */
   sessionShownCount: number
+  /** Проблемные советы (type==='problem') уже показанные в этой сессии (Батч D). */
+  problemShownCount?: number
 }
 
 /**
  * Choose the single hint allowed to show now, or null. Applies, in order:
  * frequency switch → per-candidate eligibility (screen, muted type, greeting
- * once-ever, 24h repeat, 7d closed) → session cap → per-screen gap → global
- * gap → priority sort (greeting 0 wins; ties keep candidate order).
+ * once-ever, 24h repeat, 7d closed) → priority sort → class-aware gates on the
+ * WINNER: session cap (problem hints get a budget-based exemption), global gap
+ * (shorter for problems), per-screen gap. Greeting (priority 0) wins ties;
+ * ties otherwise keep candidate order.
  */
 export function pickHint(input: PickInput): ResolvedHint | null {
   const { now, screen, candidates, cooldowns, settings, sessionShownCount } = input
+  const problemShownCount = input.problemShownCount ?? 0
 
   if (settings.hintFrequency === 'off') return null
 
@@ -85,11 +95,7 @@ export function pickHint(input: PickInput): ResolvedHint | null {
   const gapMul = rare ? RULES.rareGapMultiplier : 1
   const sessionMax = rare ? RULES.rareSessionMax : RULES.sessionMax
 
-  if (sessionShownCount >= sessionMax) return null
-  if (now - cooldowns.lastGlobalAt < RULES.globalGapMs * gapMul) return null
-  const lastOnScreen = cooldowns.perScreen[screen] ?? 0
-  if (now - lastOnScreen < RULES.perScreenGapMs * gapMul) return null
-
+  // Per-candidate eligibility first — the winner's CLASS decides the gates below.
   const eligible = candidates.filter((c) => {
     if (!screenAllowed(c, screen)) return false
     if (settings.dismissedHints.includes(c.type)) return false
@@ -100,10 +106,33 @@ export function pickHint(input: PickInput): ResolvedHint | null {
     if (now - shownAt < RULES.perHintGapMs) return false
     return true
   })
-
   if (eligible.length === 0) return null
+
   // Stable: sort copies, lower priority number first.
-  return [...eligible].sort((a, b) => a.priority - b.priority)[0] ?? null
+  const winner = [...eligible].sort((a, b) => a.priority - b.priority)[0]
+  if (!winner) return null
+  const isProblem = winner.type === 'problem'
+
+  // Session cap — problem hints are exempt for the first `problemSessionBudget`
+  // shows, so a fresh alert isn't swallowed by an otherwise chatty session; once
+  // the budget is spent they respect the cap like any other bubble.
+  if (isProblem) {
+    if (problemShownCount >= RULES.problemSessionBudget && sessionShownCount >= sessionMax) {
+      return null
+    }
+  } else if (sessionShownCount >= sessionMax) {
+    return null
+  }
+
+  // Global gap — shorter for time-sensitive problem hints.
+  const globalGap = (isProblem ? RULES.problemGlobalGapMs : RULES.globalGapMs) * gapMul
+  if (now - cooldowns.lastGlobalAt < globalGap) return null
+
+  // Per-screen gap — one bubble per screen per window, all classes.
+  const lastOnScreen = cooldowns.perScreen[screen] ?? 0
+  if (now - lastOnScreen < RULES.perScreenGapMs * gapMul) return null
+
+  return winner
 }
 
 // ─── State transitions ───────────────────────────────────────────────────────

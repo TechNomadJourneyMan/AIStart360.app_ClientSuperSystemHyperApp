@@ -275,6 +275,7 @@ export default function OnboardingPage() {
       <main className="max-w-3xl mx-auto px-4 py-6 md:py-10">
         {/* File upload — separate window, available from the very start */}
         <Link
+          data-tour="onb-docs"
           href="/client/onboarding/documents"
           className="group flex items-center gap-3 mb-5 rounded-xl border border-primary/20 bg-primary/[0.06] hover:bg-primary/[0.1] px-4 py-3 transition-colors"
         >
@@ -299,7 +300,7 @@ export default function OnboardingPage() {
 
         {/* Step tabs — sticky under the header; wraps so ALL 12 step buttons stay
             visible at once (no horizontal scrolling). */}
-        <div className="sticky top-[54px] z-20 -mx-4 px-4 py-3 mb-6 bg-[#0c0e14]/95 backdrop-blur-xl border-b border-white/[0.06] flex flex-wrap gap-1.5">
+        <div data-tour="onb-steps" className="sticky top-[54px] z-20 -mx-4 px-4 py-3 mb-6 bg-[#0c0e14]/95 backdrop-blur-xl border-b border-white/[0.06] flex flex-wrap gap-1.5">
           {STEPS.map((s, i) => {
             const stepN = i + 1
             const isActive = stepN === currentStep

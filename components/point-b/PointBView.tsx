@@ -345,7 +345,7 @@ function Hero({ pointB }: { pointB: PointBV2 }) {
         )}
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div data-tour="pb-goals" className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {/* Current */}
         <Card>
           <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest mb-3">
@@ -374,7 +374,7 @@ function Hero({ pointB }: { pointB: PointBV2 }) {
       </div>
 
       {/* Realism badge */}
-      <div className={`rounded-2xl border ${r.border} ${r.bg} px-4 py-3`}>
+      <div data-tour="pb-realism" className={`rounded-2xl border ${r.border} ${r.bg} px-4 py-3`}>
         <div className="flex flex-wrap items-center gap-3">
           <span className={`material-symbols-outlined text-xl ${r.text}`} aria-hidden>
             {r.icon}

@@ -17,6 +17,7 @@ import { OnboardingStatusBadges } from '@/components/dashboard/OnboardingStatusB
 import PointAIntelligenceSection from '@/components/point-a/PointAIntelligenceSection'
 import PointADashboardSectionsBoundary from '@/components/dashboard/PointADashboardSections'
 import GrowthSnapshotHero from '@/components/dashboard/GrowthSnapshotHero'
+import { NextBestActionCard } from '@/components/dashboard/NextBestActionCard'
 import { FirstRunWizard } from '@/components/dashboard/FirstRunWizard'
 import KeyMetricsHero from '@/components/point-a/v2/KeyMetricsHero'
 import MetricZonesGrid from '@/components/point-a/v2/MetricZonesGrid'
@@ -306,6 +307,9 @@ export default async function DashboardPage() {
         <div className="space-y-6 relative pb-24">
           {/* Sticky bottom pill bar — scroll-spy across the page sections */}
           <PointAQuickPills />
+
+          {/* «1 действие сейчас» (Фаза 5, №2) — единый приоритетный next-step. */}
+          <NextBestActionCard />
 
           <section>
             <div className="flex items-start justify-between mb-4">

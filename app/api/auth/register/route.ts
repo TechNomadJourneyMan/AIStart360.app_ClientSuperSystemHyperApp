@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { z } from 'zod'
 import { isRateLimited } from '@/lib/rate-limit'
-import { getRegistrationMode } from '@/lib/settings/system-settings'
+import { getRegistrationMode, getAutoApproveClients } from '@/lib/settings/system-settings'
 import { applyApprovalDecision } from '@/lib/users/approval'
 import { computeRiskFlags } from '@/lib/registration/risk'
 
@@ -80,22 +80,28 @@ export async function POST(request: Request) {
 
     // OPEN mode: grant access immediately (the trigger created the client as
     // pending_approval). Best-effort — never fail the registration on this.
-    // AUTO mode (D3): auto-approve only low-risk candidates; flagged ones stay
-    // pending for manual review. Email is already confirmed (email_confirm above).
+    // Фаза 6B (№15): в режиме 'approval' self-serve роли (client/owner — других
+    // эта форма не предлагает; staff создаются админом, аудит A3) авто-одобряются,
+    // пока включён системный тумблер auto_approve_clients (default ON, решение ПО
+    // 2026-07-09 — ручная модерация была главным трением активации).
+    // D3: тумблерное авто-одобрение дополнительно защищено risk-скорингом —
+    // флагованные кандидаты (одноразовый email, спам-термины и т.п.) остаются
+    // pending_approval на ручную модерацию. 'open' по-прежнему безусловен.
     let effectiveStatus: 'pending_approval' | 'approved' = 'pending_approval'
     let riskFlags: string[] = []
 
-    const shouldAutoApprove = mode === 'open' || (mode === 'auto' && (() => {
+    let autoApprove = mode === 'open'
+    if (!autoApprove && mode === 'approval' && (await getAutoApproveClients())) {
       const risk = computeRiskFlags({ email, name, organization, emailConfirmed: true })
       riskFlags = risk.flags
-      if (risk.recommend === 'manual_review') {
-        console.warn('[auth/register] auto-mode → manual review', { userId: data.user.id, score: risk.score, flags: risk.flags })
-        return false
+      if (risk.recommend === 'auto_approve') {
+        autoApprove = true
+      } else {
+        console.warn('[auth/register] auto-approve → manual review', { userId: data.user.id, score: risk.score, flags: risk.flags })
       }
-      return true
-    })())
+    }
 
-    if (shouldAutoApprove) {
+    if (autoApprove) {
       try {
         const { affected } = await applyApprovalDecision({
           userId: data.user.id,

@@ -23,6 +23,9 @@ const ORDER: Mode[] = ['open', 'approval', 'invite']
 export function RegistrationModeControl() {
   const [mode, setMode] = useState<Mode | null>(null)
   const [saving, setSaving] = useState(false)
+  // Фаза 6: системные тумблеры доступа (авто-одобрение self-serve + тарифные гейты).
+  const [access, setAccess] = useState<{ autoApproveClients: boolean; accessGates: boolean } | null>(null)
+  const [accessSaving, setAccessSaving] = useState(false)
 
   useEffect(() => {
     fetch('/api/giga-admin/settings/registration')
@@ -31,7 +34,42 @@ export function RegistrationModeControl() {
         if (d?.mode) setMode(d.mode as Mode)
       })
       .catch(() => {})
+    fetch('/api/giga-admin/settings/access')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (d?.ok) setAccess({ autoApproveClients: !!d.autoApproveClients, accessGates: !!d.accessGates })
+      })
+      .catch(() => {})
   }, [])
+
+  const toggleAccess = async (key: 'autoApproveClients' | 'accessGates') => {
+    if (!access || accessSaving) return
+    const prev = access
+    const next = { ...access, [key]: !access[key] }
+    setAccess(next)
+    setAccessSaving(true)
+    try {
+      const res = await fetch('/api/giga-admin/settings/access', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ [key]: next[key] }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || !data.ok) throw new Error(data.error || `Ошибка (HTTP ${res.status})`)
+      // Сервер — источник истины (вернул фактические значения).
+      setAccess({ autoApproveClients: !!data.autoApproveClients, accessGates: !!data.accessGates })
+      toast.success(
+        key === 'autoApproveClients'
+          ? `Авто-одобрение: ${data.autoApproveClients ? 'вкл' : 'выкл'}`
+          : `Тарифные гейты: ${data.accessGates ? 'вкл' : 'выкл'}`,
+      )
+    } catch (err) {
+      setAccess(prev)
+      toast.error(err instanceof Error ? err.message : 'Не удалось сохранить настройку')
+    } finally {
+      setAccessSaving(false)
+    }
+  }
 
   const change = async (next: Mode) => {
     if (saving || next === mode) return
@@ -79,6 +117,34 @@ export function RegistrationModeControl() {
           </button>
         ))}
       </div>
+      {access && (
+        <div className="flex items-center gap-1 p-1 rounded-xl bg-white/[0.04] border border-white/[0.07]">
+          <button
+            onClick={() => toggleAccess('autoApproveClients')}
+            disabled={accessSaving}
+            title="Авто-одобрение self-serve регистраций (режим «По подтверждению»)"
+            className={`px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all ${
+              access.autoApproveClients
+                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/25'
+                : 'text-slate-500 hover:text-slate-300'
+            }`}
+          >
+            Авто-одобрение
+          </button>
+          <button
+            onClick={() => toggleAccess('accessGates')}
+            disabled={accessSaving}
+            title="Тарифные гейты: полный GRI / AI-чат / PDF / бенчмарки по тарифу (нужна миграция 048)"
+            className={`px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all ${
+              access.accessGates
+                ? 'bg-amber-500/20 text-amber-300 border border-amber-500/25'
+                : 'text-slate-500 hover:text-slate-300'
+            }`}
+          >
+            Гейты тарифов
+          </button>
+        </div>
+      )}
     </div>
   )
 }

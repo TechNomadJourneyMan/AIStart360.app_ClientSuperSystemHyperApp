@@ -10,8 +10,8 @@ import type { UserRole } from '@/types'
 // ── Bottom bar — 4 primary tabs ─────────────────────────────────────────────
 const BOTTOM_TABS = [
   { label: 'Дэшборд',  href: '/dashboard', icon: 'dashboard'       },
-  { label: 'GRI Pulse',href: '/pulse',      icon: 'cell_tower'      },
-  { label: 'Клиенты',  href: '/clients',    icon: 'business_center' },
+  { label: 'Клиенты',  href: '/pulse',      icon: 'groups'         },
+  { label: 'Портфель', href: '/clients',    icon: 'business_center' },
   { label: 'Метрики',  href: '/metrics',    icon: 'monitoring'      },
 ]
 
@@ -22,7 +22,7 @@ const DRAWER_SECTIONS = [
     items: [
       { label: 'Дэшборд',    href: '/dashboard',  icon: 'dashboard'        },
       { label: 'GRI',        href: '/gri',         icon: 'radar'            },
-      { label: 'GRI Pulse',  href: '/pulse',       icon: 'cell_tower'       },
+      { label: 'Клиенты',    href: '/pulse',       icon: 'groups'           },
       { label: 'Метрики',    href: '/metrics',     icon: 'monitoring'       },
       { label: 'Инсайты',    href: '/insights',    icon: 'lightbulb'        },
     ],
@@ -40,7 +40,7 @@ const DRAWER_SECTIONS = [
   {
     title: 'Работа',
     items: [
-      { label: 'Клиенты',    href: '/clients',      icon: 'business_center' },
+      { label: 'Портфель',   href: '/clients',      icon: 'business_center' },
       { label: 'Отчёты',     href: '/reports',      icon: 'description'     },
       { label: 'Аналитика',  href: '/analytics',    icon: 'bar_chart'       },
       { label: 'Команда',    href: '/team',         icon: 'group'           },

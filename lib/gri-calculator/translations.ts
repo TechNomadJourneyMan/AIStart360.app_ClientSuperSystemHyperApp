@@ -174,12 +174,7 @@ export const translations: Record<Language, Record<string, string>> = {
     // Split Button / Export
     actionPlan: "Action Plan (Notion)",
     actionPlanDesc: "Сгенерировать план действий для Notion / задач",
-    pitchDeckPDF: "Pitch Deck (PDF)",
-    pitchDeckDesc: "Сформировать красивый отчет для инвесторов",
-    saveProfileSupabase: "Сохранить профиль",
-    saveProfileDesc: "Сохранить текущий профиль для отслеживания динамики",
     actionPlanGenerated: "Action Plan сгенерирован!",
-    pitchDeckGenerated: "Pitch Deck сохранен как PDF!",
     profileSaved: "Профиль сохранен!",
 
     // GRI History
@@ -347,12 +342,7 @@ export const translations: Record<Language, Record<string, string>> = {
     // Split Button / Export
     actionPlan: "Action Plan (Notion)",
     actionPlanDesc: "Generate action plan for Notion / task list",
-    pitchDeckPDF: "Pitch Deck (PDF)",
-    pitchDeckDesc: "Generate a beautiful report for investors",
-    saveProfileSupabase: "Save Profile",
-    saveProfileDesc: "Save current profile for tracking progress",
     actionPlanGenerated: "Action Plan generated!",
-    pitchDeckGenerated: "Pitch Deck saved as PDF!",
     profileSaved: "Profile saved!",
 
     // GRI History

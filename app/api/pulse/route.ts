@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
-import { prisma } from '@/lib/db'
 import * as bitrix24 from '@/lib/crm/bitrix24'
 import * as amocrm from '@/lib/crm/amocrm'
 import type { CrmDeal } from '@/lib/crm/types'
@@ -147,10 +146,18 @@ export async function GET() {
 
     // ── 1. Fetch CRM deals from connected integrations ──
     try {
-      const integration = await prisma.crmIntegration.findFirst({
-        where: { isActive: true },
-        select: { provider: true, domain: true, accessToken: true, webhookUrl: true },
-      })
+      // Фаза 4B — фикс МЕЖАРЕНДНОЙ УТЕЧКИ: было
+      // prisma.crmIntegration.findFirst({ where: { isActive: true } }) БЕЗ скоупа
+      // на владельца → первая подключённая CRM утекала всем. Legacy Prisma-стек
+      // мёртв (requireCrmOrg=null → /api/crm 403); реальные подключения теперь в
+      // crm_provider_connections (RLS own), а данные CRM — в crm_clients /
+      // /api/v1/crm/*. Путь отключён: integration всегда null.
+      const integration = null as {
+        provider: string
+        domain: string
+        accessToken: string
+        webhookUrl: string | null
+      } | null
 
       if (integration) {
         const config = {

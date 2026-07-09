@@ -679,7 +679,7 @@ export default function MetricsPageClient({
       <MetricsLiveCatalog userId={userId ?? undefined} />
 
       {/* Tab switcher — UX-12: scroll on mobile instead of wrapping to 2 rows */}
-      <div className="flex gap-1 bg-surface-container rounded-xl p-1 max-w-full overflow-x-auto no-scrollbar">
+      <div data-tour="metrics-tabs" className="flex gap-1 bg-surface-container rounded-xl p-1 max-w-full overflow-x-auto no-scrollbar">
         {([
           { key: 'goals', label: 'Цели роста',         icon: 'track_changes' },
           { key: 'kpi',   label: 'KPI компании',       icon: 'monitoring'    },

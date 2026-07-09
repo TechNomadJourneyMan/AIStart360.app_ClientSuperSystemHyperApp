@@ -12,14 +12,30 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import {
   DEFAULT_MASCOT_BEHAVIOR,
   DEFAULT_MASCOT_SETTINGS,
+  DEFAULT_TOUR_GUIDE,
   type HintFrequency,
   type MascotBehaviorSettings,
   type MascotCorner,
   type MascotSettings,
+  type TourGuideState,
+  type TourGuideStatus,
 } from './types'
 
 const FREQUENCIES: HintFrequency[] = ['normal', 'rare', 'off']
 const CORNERS: MascotCorner[] = ['br', 'bl', 'tr', 'tl']
+const TOUR_GUIDE_STATUSES: TourGuideStatus[] = ['pending', 'active', 'done', 'dismissed']
+
+/** Coerce an unknown value into a valid TourGuideState (stepIdx clamped 0..50 int). */
+function normalizeTourGuide(raw: unknown): TourGuideState {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { ...DEFAULT_TOUR_GUIDE }
+  const o = raw as Record<string, unknown>
+  const status = TOUR_GUIDE_STATUSES.includes(o.status as TourGuideStatus)
+    ? (o.status as TourGuideStatus)
+    : DEFAULT_TOUR_GUIDE.status
+  const rawIdx = typeof o.stepIdx === 'number' && Number.isFinite(o.stepIdx) ? o.stepIdx : 0
+  const stepIdx = Math.min(50, Math.max(0, Math.trunc(rawIdx)))
+  return { status, stepIdx }
+}
 
 /** Coerce an unknown preferences.assistant value into a valid MascotSettings. */
 export function normalizeMascotSettings(raw: unknown): MascotSettings {
@@ -84,6 +100,7 @@ export function normalizeMascotSettings(raw: unknown): MascotSettings {
     toursDone: Array.isArray(o.toursDone)
       ? o.toursDone.filter((x): x is string => typeof x === 'string').slice(0, 50)
       : [],
+    tourGuide: normalizeTourGuide(o.tourGuide),
   }
 }
 
@@ -102,9 +119,10 @@ export async function readMascotSettings(
   return normalizeMascotSettings(prefs.assistant)
 }
 
-/** A settings patch; `behavior` may itself be partial (merged per-key). */
-export type MascotSettingsPatch = Partial<Omit<MascotSettings, 'behavior'>> & {
+/** A settings patch; `behavior` and `tourGuide` may be partial (merged per-key). */
+export type MascotSettingsPatch = Partial<Omit<MascotSettings, 'behavior' | 'tourGuide'>> & {
   behavior?: Partial<MascotBehaviorSettings>
+  tourGuide?: Partial<TourGuideState>
 }
 
 /**
@@ -125,19 +143,26 @@ export async function writeMascotSettings(
 
   const prefs = (data?.preferences ?? {}) as Record<string, unknown>
   const current = normalizeMascotSettings(prefs.assistant)
-  // behavior merges per-key (a {behavior:{walking:false}} patch must not reset
-  // the user's other behavior switches to defaults).
+  // behavior/tourGuide merge per-key (a {behavior:{walking:false}} or
+  // {tourGuide:{stepIdx:3}} patch must not reset the object's other keys) —
+  // Батч B шлёт {tourGuide:{stepIdx}} на каждом шаге экскурсии.
   const merged: MascotSettings = normalizeMascotSettings({
     ...current,
     ...patch,
     behavior: { ...current.behavior, ...(patch.behavior ?? {}) },
+    tourGuide: { ...current.tourGuide, ...(patch.tourGuide ?? {}) },
   })
 
-  const { error } = await sb
+  const { data: updated, error } = await sb
     .from('profiles')
     .update({ preferences: { ...prefs, assistant: merged } })
     .eq('id', userId)
+    .select('id')
 
   if (error) throw error
+  if (!updated || updated.length === 0) {
+    // RLS silently dropped the UPDATE — surfacing it beats "tours forever".
+    throw new Error(`mascot settings update affected 0 rows for user ${userId}`)
+  }
   return merged
 }

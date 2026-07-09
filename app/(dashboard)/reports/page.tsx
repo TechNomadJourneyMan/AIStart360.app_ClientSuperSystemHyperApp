@@ -45,7 +45,7 @@ export default async function ReportsPage() {
       </div>
 
       {/* Category Filters */}
-      <div className="flex gap-2 flex-wrap">
+      <div data-tour="reports-filters" className="flex gap-2 flex-wrap">
         {['All', 'GRI', 'Financial', 'Growth', 'Market', 'Custom'].map((cat) => (
           <button
             key={cat}
@@ -61,7 +61,7 @@ export default async function ReportsPage() {
       </div>
 
       {/* Upload Form */}
-      <form action={uploadReportAction} className="bg-surface-container rounded-xl p-5 border border-outline-variant/20 grid grid-cols-1 md:grid-cols-5 gap-3">
+      <form data-tour="reports-upload" action={uploadReportAction} className="bg-surface-container rounded-xl p-5 border border-outline-variant/20 grid grid-cols-1 md:grid-cols-5 gap-3">
         <input
           name="name"
           placeholder="Название отчета"

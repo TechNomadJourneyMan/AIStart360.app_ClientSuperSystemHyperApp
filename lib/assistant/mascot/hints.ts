@@ -23,6 +23,9 @@ export type HintType =
   | 'education'
   | 'motivation'
   | 'idle'
+  /** Проблема в данных → кнопка на экран, где её чинят (Батч D). Особые правила
+   *  показа в triggers.ts (короткий global-кулдаун, частичный обход лимита). */
+  | 'problem'
 
 export interface HintAction {
   label: string
@@ -202,6 +205,79 @@ const DEFS: HintDef[] = [
       }
     },
   },
+  // ── Проблемные советы (Батч D) ─────────────────────────────────────────────
+  // Замечаем проблему в данных и ведём кнопкой на экран, где её чинят. Тип
+  // 'problem' — у него особые правила показа (короткий global-кулдаун 30с и
+  // частичный обход лимита сессии, см. triggers.ts). Пороговые числа считает
+  // сервер (server-hints); тексты — здесь, ничего не выдумываем.
+  {
+    id: 'red_zone',
+    type: 'problem',
+    state: 'hint',
+    priority: 2,
+    screens: [...HOME, '/point-a', '/client/point-a'],
+    mutable: true,
+    build: (p) => {
+      const block = str(p.block)
+      return {
+        text: block
+          ? `В диагностике красная зона — «${block}». С неё рост идёт быстрее всего.`
+          : 'В диагностике есть красная зона — с неё рост идёт быстрее всего.',
+        actions: [
+          { label: 'Смотреть результат', kind: 'navigate', href: '/gri?tab=result' },
+          { label: 'Позже', kind: 'later' },
+        ],
+      }
+    },
+  },
+  {
+    id: 'clients_at_risk',
+    type: 'problem',
+    state: 'question',
+    priority: 2,
+    screens: HOME,
+    mutable: true,
+    build: (p) => {
+      const c = num(p.count, 1)
+      return {
+        text: `${c} ${plural(c, 'клиент', 'клиента', 'клиентов')} в зоне риска — стоит связаться, пока не ушли.`,
+        actions: [
+          { label: 'Кому звонить', kind: 'navigate', href: '/pulse' },
+          { label: 'Позже', kind: 'later' },
+        ],
+      }
+    },
+  },
+  {
+    id: 'pulse_missed',
+    type: 'problem',
+    state: 'question',
+    priority: 3,
+    screens: HOME,
+    mutable: true,
+    build: () => ({
+      text: 'На этой неделе пульс ещё не снят. Пара минут — и динамика GRI останется правдивой.',
+      actions: [
+        { label: 'Снять пульс', kind: 'navigate', href: '/pulse' },
+        { label: 'Позже', kind: 'later' },
+      ],
+    }),
+  },
+  {
+    id: 'empty_metrics',
+    type: 'problem',
+    state: 'hint',
+    priority: 3,
+    screens: ['/metrics'],
+    mutable: true,
+    build: () => ({
+      text: 'Здесь пока пусто — метрики считаются из ваших данных. Показать, что заполнить?',
+      actions: [
+        { label: 'Показать', kind: 'open_chat' },
+        { label: 'Позже', kind: 'later' },
+      ],
+    }),
+  },
   {
     id: 'complex_section',
     type: 'education',
@@ -268,6 +344,20 @@ const DEFS: HintDef[] = [
         { label: `Спросить ${str(p.name) ?? 'Гри'}`, kind: 'open_chat' },
         { label: 'Позже', kind: 'later' },
       ],
+    }),
+  },
+  {
+    // Финал экскурсии «Первые шаги» (Батч B): поздравительный пузырь от Гри,
+    // когда пройден последний стоп. Показывается напрямую движком экскурсии.
+    id: 'guide_done',
+    type: 'motivation',
+    state: 'greeting',
+    priority: 3,
+    screens: [],
+    mutable: false,
+    build: () => ({
+      text: 'Готово — вы прошли экскурсию! 🐾 Я всегда рядом: кликните по мне для чата, а вернуться к турам можно из меню «⋯» → «Обучение».',
+      actions: [{ label: 'Спасибо', kind: 'later' }],
     }),
   },
   {

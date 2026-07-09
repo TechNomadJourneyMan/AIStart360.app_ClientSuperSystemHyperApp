@@ -262,7 +262,7 @@ export default function MarketAppEmbed() {
       </div>
 
       {/* Объединённая навигация: портальные табы поверх встроенной SPA */}
-      <div className="flex flex-wrap gap-2">
+      <div data-tour="market-tabs" className="flex flex-wrap gap-2">
         {TABS.map((t) => {
           const active = tab === t.id
           return (

@@ -21,6 +21,19 @@ export interface ServerHintInput {
   griIndex: number | null
   /** Title of the top GRI limit, when assessed. */
   topLimit: string | null
+  // ── Проблемные сигналы (Батч D) ──────────────────────────────────────────
+  // Все опциональны: старые вызовы и юнит-тесты продолжают работать без них.
+  // Пороги считает вызывающая сторона (route) под сессией пользователя.
+  /** На /metrics пусто (нет диагностики) — предложить заполнить данные. */
+  metricsEmpty?: boolean
+  /** В диагностике есть красная зона (critical-блок или GRI < 5). */
+  redZone?: boolean
+  /** Название красного блока для текста совета (RU-лейбл), если известно. */
+  redZoneBlock?: string | null
+  /** Клиентов CRM в зоне высокого риска (просроченные напоминания + churn=high). */
+  clientsAtRisk?: number
+  /** Чт–вс, недельный пульс ещё не снят (при наличии GRI-базлайна). */
+  pulseMissed?: boolean
 }
 
 export function computeServerHints(input: ServerHintInput): HintCandidate[] {
@@ -74,6 +87,21 @@ export function computeServerHints(input: ServerHintInput): HintCandidate[] {
       priority: 3,
       params: { gri: griIndex, topLimit },
     })
+  }
+
+  // 6. Проблемные советы (Батч D) — кнопка ведёт на экран, где чинят проблему.
+  //    Тип 'problem' (см. hints.ts) — особые правила показа в triggers.ts.
+  if (input.redZone) {
+    hints.push({ id: 'red_zone', priority: 2, params: { block: input.redZoneBlock ?? null } })
+  }
+  if (input.clientsAtRisk && input.clientsAtRisk > 0) {
+    hints.push({ id: 'clients_at_risk', priority: 2, params: { count: input.clientsAtRisk } })
+  }
+  if (input.pulseMissed) {
+    hints.push({ id: 'pulse_missed', priority: 3 })
+  }
+  if (input.metricsEmpty) {
+    hints.push({ id: 'empty_metrics', priority: 3 })
   }
 
   return hints

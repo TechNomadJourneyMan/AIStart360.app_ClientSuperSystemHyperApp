@@ -5,11 +5,11 @@ import { createServiceClient } from '@/lib/supabase-service'
  * Service-role only.
  */
 
-// 'auto' = self-serve activation (D3): risk-scored auto-approval, manual review
-// only for flagged candidates. See lib/registration/risk.ts.
-export type RegistrationMode = 'open' | 'approval' | 'invite' | 'auto'
+// Self-serve активация (D3/6B) живёт НЕ отдельным режимом, а тумблером
+// auto_approve_clients внутри 'approval' + risk-скорингом (lib/registration/risk.ts).
+export type RegistrationMode = 'open' | 'approval' | 'invite'
 
-const VALID_MODES: RegistrationMode[] = ['open', 'approval', 'invite', 'auto']
+const VALID_MODES: RegistrationMode[] = ['open', 'approval', 'invite']
 /** The safe default — identical to the pre-toggle behaviour (admin approval). */
 const DEFAULT_MODE: RegistrationMode = 'approval'
 
@@ -57,3 +57,55 @@ export async function setRegistrationMode(mode: RegistrationMode, updatedBy?: st
   )
   if (error) throw new Error(`Failed to set registration mode: ${error.message}`)
 }
+
+// ─── Boolean system switches (Фаза 6, Пакет VIII) ───────────────────────────
+// Общий fail-safe reader: любая проблема (нет таблицы/строки/ключа) → default.
+
+async function getBoolSetting(key: string, def: boolean): Promise<boolean> {
+  try {
+    const sb = createServiceClient()
+    const { data, error } = await sb
+      .from('system_settings')
+      .select('value')
+      .eq('key', key)
+      .maybeSingle()
+    if (error || !data) return def
+    const raw = data.value as unknown
+    const v = typeof raw === 'boolean' ? raw : (raw as { enabled?: unknown })?.enabled
+    return typeof v === 'boolean' ? v : def
+  } catch {
+    return def
+  }
+}
+
+async function setBoolSetting(key: string, enabled: boolean, updatedBy?: string | null): Promise<void> {
+  const sb = createServiceClient()
+  const { error } = await sb.from('system_settings').upsert(
+    {
+      key,
+      value: enabled as unknown as Record<string, unknown>,
+      updated_at: new Date().toISOString(),
+      updated_by: updatedBy ?? null,
+    },
+    { onConflict: 'key' },
+  )
+  if (error) throw new Error(`Failed to set ${key}: ${error.message}`)
+}
+
+/**
+ * №15/6B: авто-одобрение self-serve регистраций (client/owner) в режиме
+ * 'approval'. Default TRUE — решение ПО 2026-07-09 (главное трение активации);
+ * ручная модерация возвращается выключением этого тумблера в giga-admin.
+ */
+export const getAutoApproveClients = () => getBoolSetting('auto_approve_clients', true)
+export const setAutoApproveClients = (v: boolean, by?: string | null) =>
+  setBoolSetting('auto_approve_clients', v, by)
+
+/**
+ * 6A: тарифные гейты (полный GRI / AI-чат / PDF / бенчмарки). Default FALSE —
+ * fail-safe: пока админ явно не включит (и не применит миграцию 048),
+ * существующие пользователи ничего не теряют.
+ */
+export const getAccessGatesEnabled = () => getBoolSetting('access_gates', false)
+export const setAccessGatesEnabled = (v: boolean, by?: string | null) =>
+  setBoolSetting('access_gates', v, by)
