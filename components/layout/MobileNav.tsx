@@ -33,6 +33,7 @@ const DRAWER_SECTIONS = [
       { label: 'Рынок',      href: '/market',      icon: 'public'           },
       { label: 'Точка А',    href: '/point-a',     icon: 'my_location'      },
       { label: 'Точка Б',    href: '/point-b',     icon: 'flag'             },
+      { label: 'Симулятор',  href: '/simulator',   icon: 'query_stats'      },
       { label: 'Конкуренты', href: '/competitors', icon: 'compare_arrows'   },
       { label: 'Разведка',   href: '/intelligence',icon: 'hub'              },
     ],

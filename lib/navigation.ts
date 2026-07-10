@@ -19,6 +19,7 @@ export const PRIMARY_NAV: NavItem[] = [
   { label: 'Клиенты',   href: '/pulse',      icon: 'groups',      roles: CLIENT_OK },
   { label: 'Точка А',   href: '/point-a',    icon: 'my_location', roles: CLIENT_OK },
   { label: 'Точка Б',   href: '/point-b',    icon: 'flag',        roles: CLIENT_OK },
+  { label: 'Симулятор', href: '/simulator',  icon: 'query_stats', roles: CLIENT_OK },
   { label: 'Метрики',   href: '/metrics',    icon: 'monitoring',  roles: CLIENT_OK },
   {
     label: 'Рынок',
@@ -44,6 +45,7 @@ export const SECONDARY_NAV: NavItem[] = [
   { label: 'Аналитика',    href: '/analytics',    icon: 'bar_chart',         roles: STAFF_ROLES },
   { label: 'Команда',      href: '/team',         icon: 'group',             roles: STAFF_ROLES },
   { label: 'Уведомления',  href: '/notifications',icon: 'notifications',     roles: CLIENT_OK },
+  { label: 'Психопрофиль', href: '/profile/psych',icon: 'psychology',        roles: CLIENT_OK },
   { label: 'Пользователи', href: '/users',        icon: 'manage_accounts',   roles: STAFF_ROLES },
   { label: 'Админ',        href: '/admin',        icon: 'admin_panel_settings', roles: STAFF_ROLES },
 ]

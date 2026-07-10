@@ -5,6 +5,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { cn } from '@/lib/utils'
+import { DEFAULT_PERSONA_ID, listPersonas } from '@/lib/ai/personas/registry'
 
 interface Grounding {
   type: string
@@ -13,7 +14,8 @@ interface Grounding {
 }
 
 interface ChatMessage {
-  role: 'user' | 'assistant'
+  /** 'divider' — thin inline marker inserted when the persona mode changes mid-chat. */
+  role: 'user' | 'assistant' | 'divider'
   content: string
   grounding?: Grounding[]
   confidence?: string
@@ -33,6 +35,9 @@ const CONFIDENCE_LABEL: Record<string, string> = {
   medium: 'средняя',
   low: 'низкая',
 }
+
+// Registry is a pure module-level constant — safe to snapshot once.
+const PERSONA_LIST = listPersonas()
 
 function asGrounding(raw: unknown): Grounding[] | undefined {
   if (!Array.isArray(raw)) return undefined
@@ -64,7 +69,11 @@ export default function ReportChatPanel() {
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [loaded, setLoaded] = useState(false)
+  const [personaId, setPersonaId] = useState<string>(DEFAULT_PERSONA_ID)
+  const [pickerOpen, setPickerOpen] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
+
+  const activePersona = PERSONA_LIST.find((p) => p.id === personaId) ?? PERSONA_LIST[0]
 
   const scrollToBottom = useCallback(() => {
     requestAnimationFrame(() => {
@@ -124,7 +133,7 @@ export default function ReportChatPanel() {
           method: 'POST',
           credentials: 'same-origin',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message, surface: 'report' }),
+          body: JSON.stringify({ message, surface: 'report', personaId }),
         })
         const data = await res.json()
         if (data?.ok && typeof data.answer === 'string') {
@@ -151,7 +160,24 @@ export default function ReportChatPanel() {
         scrollToBottom()
       }
     },
-    [sending, scrollToBottom],
+    [sending, scrollToBottom, personaId],
+  )
+
+  // Switch the thinking mode. A mid-chat change leaves a subtle divider in the
+  // stream so it's clear from which point ГРИ answers in the new mode.
+  const selectPersona = useCallback(
+    (id: string) => {
+      setPickerOpen(false)
+      if (id === personaId) return
+      const next = PERSONA_LIST.find((p) => p.id === id)
+      if (!next) return
+      setPersonaId(id)
+      setMessages((prev) =>
+        prev.length > 0 ? [...prev, { role: 'divider', content: next.name }] : prev,
+      )
+      scrollToBottom()
+    },
+    [personaId, scrollToBottom],
   )
 
   return (
@@ -162,6 +188,67 @@ export default function ReportChatPanel() {
 
       <Modal open={open} onClose={() => setOpen(false)} title="ГРИ · вопросы по отчёту" size="lg">
         <div className="flex flex-col" style={{ height: 'min(70vh, 560px)' }}>
+          {/* Persona picker — the mode changes delivery, never the facts */}
+          <div className="relative flex items-center gap-2 pb-3 mb-1 border-b border-white/[0.06]">
+            <span className="text-[10px] font-mono text-on-surface-variant/60 uppercase tracking-[0.2em]">
+              Режим
+            </span>
+            <button
+              type="button"
+              onClick={() => setPickerOpen((v) => !v)}
+              aria-haspopup="listbox"
+              aria-expanded={pickerOpen}
+              aria-label={`Режим ГРИ: ${activePersona.name}. ${activePersona.shortDescription}`}
+              title={activePersona.shortDescription}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-white/[0.08] bg-surface-container hover:border-primary/30 px-2.5 py-1 text-xs text-on-surface transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+            >
+              <span aria-hidden>{activePersona.emoji}</span>
+              <span className="max-w-[200px] truncate">{activePersona.name}</span>
+              <span className="material-symbols-outlined text-[16px] text-on-surface-variant">
+                {pickerOpen ? 'expand_less' : 'expand_more'}
+              </span>
+            </button>
+
+            {pickerOpen && (
+              <>
+                {/* click-outside catcher */}
+                <div className="fixed inset-0 z-10" aria-hidden onClick={() => setPickerOpen(false)} />
+                <div
+                  role="listbox"
+                  aria-label="Выбор режима ГРИ"
+                  className="absolute left-0 top-full mt-2 z-20 w-full max-w-sm max-h-64 overflow-y-auto rounded-2xl border border-white/10 bg-surface-container-highest shadow-modal p-1.5"
+                >
+                  {PERSONA_LIST.map((p) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      role="option"
+                      aria-selected={p.id === personaId}
+                      onClick={() => selectPersona(p.id)}
+                      className={cn(
+                        'w-full text-left rounded-xl px-3 py-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
+                        p.id === personaId ? 'bg-primary/10' : 'hover:bg-white/[0.04]',
+                      )}
+                    >
+                      <span className="flex items-center gap-2 text-sm text-on-surface">
+                        <span aria-hidden>{p.emoji}</span>
+                        <span className="font-medium truncate">{p.name}</span>
+                        {p.id === personaId && (
+                          <span className="material-symbols-outlined text-[16px] text-primary ml-auto">
+                            check
+                          </span>
+                        )}
+                      </span>
+                      <span className="block text-[11px] text-on-surface-variant mt-0.5 leading-snug">
+                        {p.shortDescription}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+
           {/* Message stream */}
           <div ref={scrollRef} className="flex-1 overflow-y-auto -mx-2 px-2 space-y-4">
             {loadingHistory ? (
@@ -180,7 +267,21 @@ export default function ReportChatPanel() {
               </div>
             ) : (
               <AnimatePresence initial={false}>
-                {messages.map((m, i) => (
+                {messages.map((m, i) => m.role === 'divider' ? (
+                  <motion.div
+                    key={i}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ duration: 0.2 }}
+                    className="flex items-center gap-3 py-0.5"
+                  >
+                    <span className="flex-1 h-px bg-white/[0.06]" />
+                    <span className="text-[10px] font-mono text-on-surface-variant/60 uppercase tracking-wider whitespace-nowrap">
+                      Режим: {m.content}
+                    </span>
+                    <span className="flex-1 h-px bg-white/[0.06]" />
+                  </motion.div>
+                ) : (
                   <motion.div
                     key={i}
                     initial={{ opacity: 0, y: 6 }}
