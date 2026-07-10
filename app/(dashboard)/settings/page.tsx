@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { createClient } from '@/lib/supabase/server'
 import { SettingsClient, type SettingsInitial, type Prefs } from '@/components/settings/SettingsClient'
+import TelegramLinkPanel from '@/components/settings/TelegramLinkPanel'
 
 export const metadata: Metadata = { title: 'Настройки' }
 export const dynamic = 'force-dynamic'
@@ -30,6 +31,14 @@ export default async function SettingsPage() {
   const meta = (user.user_metadata ?? {}) as Record<string, unknown>
   const fullName = (profile?.full_name ?? meta.full_name ?? meta.name ?? user.email ?? 'Пользователь') as string
 
+  // Telegram personal-account link (userbot sync) — separate from the
+  // notification-bot toggle inside SettingsClient.
+  const telegramProfile = profile as
+    | { telegram_chat_id?: string | null; telegram_username?: string | null }
+    | null
+    | undefined
+  const telegramPersonalUsername = process.env.TELEGRAM_PERSONAL_USERNAME || null
+
   const initial: SettingsInitial = {
     firstName: fullName.split(' ')[0] ?? '',
     lastName: fullName.split(' ').slice(1).join(' '),
@@ -47,6 +56,16 @@ export default async function SettingsPage() {
       </div>
 
       <SettingsClient initial={initial} preferences={(profile?.preferences ?? {}) as Prefs} />
+
+      {/* Telegram personal account (userbot) — linked but managed separately */}
+      <div className="bg-surface-container rounded-xl p-6">
+        <h3 className="font-headline text-lg font-bold text-on-surface mb-5">Telegram · личный аккаунт</h3>
+        <TelegramLinkPanel
+          initialLinked={Boolean(telegramProfile?.telegram_chat_id)}
+          initialTelegramUsername={telegramProfile?.telegram_username ?? null}
+          personalUsername={telegramPersonalUsername}
+        />
+      </div>
     </div>
   )
 }

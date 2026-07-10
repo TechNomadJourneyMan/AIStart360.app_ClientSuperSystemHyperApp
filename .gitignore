@@ -39,3 +39,9 @@ public/workbox-*.js
 public/workbox-*.js.map
 public/swe-worker-*.js
 public/fallback-*.js
+
+# Generated media + local plugin DBs — never commit
+output/
+ruvector.db
+**/ruvector.db
+.codex/
