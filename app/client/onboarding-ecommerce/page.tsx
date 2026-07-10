@@ -214,6 +214,11 @@ export default function OnboardingEcommercePage() {
       const supabase = createClient()
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
+      // API contract: answers must be Record<string, { value: unknown }>
+      // (GET unwraps row.answer.value — flat values would break the read path)
+      const wrapped = Object.fromEntries(
+        Object.entries(answers).map(([k, v]) => [k, { value: v }]),
+      )
       await fetch('/api/v1/onboarding/survey', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -222,7 +227,7 @@ export default function OnboardingEcommercePage() {
           vertical: 'ecommerce',
           step: stepIdx + 1,
           completed: final,
-          answers,
+          answers: wrapped,
         }),
       })
     } catch {

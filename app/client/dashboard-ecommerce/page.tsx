@@ -4,12 +4,16 @@
 // Sections: hero · funnel sankey · channel mix · marketplaces · SKU health
 //   · RFM heatmap · cohort LTV · cart recovery · seasonality · 11 e-com goals
 //
-// First version renders against a typed mock data shape so the UI ships
-// today; wiring to real Supabase / GA4 / WB / Ozon / Kaspi happens behind
-// the same data interface (see lib/integrations/ecommerce/ for stubs).
+// Data layering:
+//   1. Survey answers (ec_* keys from /client/onboarding-ecommerce) overlay
+//      the hero, KPI row and funnel as soon as the user has filled them.
+//   2. Everything without a survey source renders demo data with a badge.
+//   3. Real integrations (GA4 / WB / Ozon / Kaspi) later replace both via
+//      the same EcommerceData contract (lib/integrations/ecommerce/).
 
 import Link from 'next/link'
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { createClient } from '@/lib/supabase/client'
 
 // ─── Mock data (shape mirrors what real integrations will produce) ──────
 
@@ -108,17 +112,113 @@ const statusColor = (s: string) =>
   s === 'warn' ? 'text-tertiary-container' :
   'text-on-surface-variant'
 
+// ─── Survey overlay ────────────────────────────────────────────────────────
+// Pulls ec_* answers saved by /client/onboarding-ecommerce and derives the
+// view model for hero / KPI row / funnel. Missing answers → demo fallback.
+
+interface KpiView { current: number; target: number; trend: number | null }
+
+interface SurveyView {
+  fromSurvey: boolean
+  company: { name: string; industry: string; platform: string }
+  revenue: KpiView
+  aov: KpiView
+  ordersMo: KpiView
+  ltvCac: KpiView
+  funnel: Array<{ stage: string; n: number; conv: number }>
+}
+
+function num(v: unknown): number | null {
+  const n = typeof v === 'string' ? Number(v) : typeof v === 'number' ? v : NaN
+  return Number.isFinite(n) && n > 0 ? n : null
+}
+
+function buildView(answers: Record<string, unknown> | null): SurveyView {
+  const base: SurveyView = {
+    fromSurvey: false,
+    company: { ...DATA.company },
+    revenue: { ...DATA.revenue },
+    aov: { ...DATA.aov },
+    ordersMo: { ...DATA.ordersMo },
+    ltvCac: { ...DATA.ltvCac },
+    funnel: DATA.funnel.map((f) => ({ ...f })),
+  }
+  if (!answers) return base
+
+  const revenue = num(answers.ec_revenue_2024)
+  const aov = num(answers.ec_aov)
+  const visitors = num(answers.ec_visitors_per_month)
+  const crVisitCart = num(answers.ec_cr_visit_to_cart)
+  const crCartPay = num(answers.ec_cr_cart_to_pay)
+  const roas = num(answers.ec_roas)
+  const platforms = Array.isArray(answers.ec_platforms)
+    ? (answers.ec_platforms as string[]).join(' + ')
+    : null
+
+  const anySurvey = Boolean(revenue || aov || visitors || platforms)
+  if (!anySurvey) return base
+
+  base.fromSurvey = true
+  if (platforms) base.company = { ...base.company, name: 'Мой магазин', platform: platforms }
+
+  // Trends are unknown from a one-shot survey → null renders as "—".
+  if (revenue) base.revenue = { current: revenue, target: Math.round(revenue * 1.3), trend: null }
+  if (aov)     base.aov     = { current: aov,     target: Math.round(aov * 1.25),     trend: null }
+  if (roas)    base.ltvCac  = { current: roas,    target: Math.max(3, roas),          trend: null }
+
+  if (visitors && crVisitCart && crCartPay) {
+    const cart = Math.round(visitors * (crVisitCart / 100))
+    const paid = Math.round(cart * (crCartPay / 100))
+    base.funnel = [
+      { stage: 'Visit', n: visitors, conv: 1 },
+      { stage: 'Cart',  n: cart,     conv: crVisitCart / 100 },
+      { stage: 'Paid',  n: paid,     conv: crCartPay / 100 },
+    ]
+    base.ordersMo = { current: paid, target: Math.round(paid * 1.45), trend: null }
+  }
+  return base
+}
+
+function useEcommerceSurveyView(): { view: SurveyView; loading: boolean } {
+  const [answers, setAnswers] = useState<Record<string, unknown> | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const sb = createClient()
+        const { data: { user } } = await sb.auth.getUser()
+        if (!user) return
+        const res = await fetch(`/api/v1/onboarding/survey?user_id=${user.id}`, { cache: 'no-store' })
+        if (!res.ok) return
+        const json = await res.json() as { ok: boolean; data?: { answers?: Record<string, unknown> } }
+        if (!cancelled && json.ok && json.data?.answers) setAnswers(json.data.answers)
+      } catch {
+        // demo fallback already in place
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [])
+
+  const view = useMemo(() => buildView(answers), [answers])
+  return { view, loading }
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────
 
 export default function DashboardEcommercePage() {
+  const { view } = useEcommerceSurveyView()
   return (
     <div className="min-h-screen bg-surface text-on-surface">
       <Topbar />
 
       <main className="max-w-7xl mx-auto px-6 py-10 space-y-10">
-        <Hero />
-        <KpiRow />
-        <FunnelSankey />
+        <Hero view={view} />
+        <KpiRow view={view} />
+        <FunnelSankey view={view} />
         <ChannelMix />
         <MarketplacesStrip />
         <SkuHealth />
@@ -177,13 +277,22 @@ function Topbar() {
   )
 }
 
-function Hero() {
-  const { company } = DATA
+function Hero({ view }: { view: SurveyView }) {
+  const { company, fromSurvey } = view
   return (
     <section className="bg-surface-container-low rounded-3xl border border-white/[0.06] p-8">
       <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">
         <div>
-          <p className="text-xs font-mono text-primary uppercase tracking-[0.2em] mb-3">КАБИНЕТ · E-COMMERCE</p>
+          <div className="flex items-center gap-3 mb-3">
+            <p className="text-xs font-mono text-primary uppercase tracking-[0.2em]">КАБИНЕТ · E-COMMERCE</p>
+            <span className={`text-[9px] font-mono uppercase px-2 py-0.5 rounded-full border ${
+              fromSurvey
+                ? 'bg-primary/10 border-primary/30 text-primary'
+                : 'bg-surface-container border-white/[0.08] text-on-surface-variant'
+            }`}>
+              {fromSurvey ? 'данные из анкеты' : 'демо-данные'}
+            </span>
+          </div>
           <h1 className="font-headline text-3xl lg:text-4xl font-extrabold">{company.name}</h1>
           <p className="text-on-surface-variant mt-1.5 text-sm">{company.industry} · {company.platform}</p>
         </div>
@@ -198,12 +307,13 @@ function Hero() {
   )
 }
 
-function KpiRow() {
+function KpiRow({ view }: { view: SurveyView }) {
+  const t = (v: number | null, suffix = '%') => (v == null ? '—' : `+${v}${suffix}`)
   const items = [
-    { label: 'Выручка',    cur: fmtMoney(DATA.revenue.current),  tgt: fmtMoney(DATA.revenue.target),  trend: `+${DATA.revenue.trend}%` },
-    { label: 'AOV (чек)',  cur: `₸${fmt(DATA.aov.current)}`,     tgt: `₸${fmt(DATA.aov.target)}`,     trend: `+${DATA.aov.trend}%` },
-    { label: 'Заказов/мес', cur: fmt(DATA.ordersMo.current),     tgt: fmt(DATA.ordersMo.target),      trend: `+${DATA.ordersMo.trend}%` },
-    { label: 'LTV/CAC',    cur: `${DATA.ltvCac.current}x`,       tgt: `${DATA.ltvCac.target}x`,       trend: `+${DATA.ltvCac.trend}x` },
+    { label: 'Выручка',    cur: fmtMoney(view.revenue.current),  tgt: fmtMoney(view.revenue.target),  trend: t(view.revenue.trend) },
+    { label: 'AOV (чек)',  cur: `₸${fmt(view.aov.current)}`,     tgt: `₸${fmt(view.aov.target)}`,     trend: t(view.aov.trend) },
+    { label: 'Заказов/мес', cur: fmt(view.ordersMo.current),     tgt: fmt(view.ordersMo.target),      trend: t(view.ordersMo.trend) },
+    { label: 'LTV/CAC',    cur: `${view.ltvCac.current}x`,       tgt: `${view.ltvCac.target}x`,       trend: t(view.ltvCac.trend, 'x') },
   ]
   return (
     <section className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -221,18 +331,19 @@ function KpiRow() {
   )
 }
 
-function FunnelSankey() {
-  const max = DATA.funnel[0].n
+function FunnelSankey({ view }: { view: SurveyView }) {
+  const funnel = view.funnel
+  const max = funnel[0].n
   return (
     <SectionCard
       eyebrow="ВОРОНКА"
-      title="Visit → Cart → Checkout → Paid"
+      title={funnel.map((f) => f.stage).join(' → ')}
       hint="Потери на каждом этапе. Цель: поднять Cart→Paid >50%."
     >
       <div className="space-y-3">
-        {DATA.funnel.map((stage, i) => {
+        {funnel.map((stage, i) => {
           const widthPct = (stage.n / max) * 100
-          const prevN = i === 0 ? null : DATA.funnel[i - 1].n
+          const prevN = i === 0 ? null : funnel[i - 1].n
           const drop = prevN ? ((1 - stage.n / prevN) * 100).toFixed(1) : null
           return (
             <div key={stage.stage} className="flex items-center gap-4">
