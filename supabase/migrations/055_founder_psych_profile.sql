@@ -1,4 +1,4 @@
--- 047_founder_psych_profile.sql
+-- 055_founder_psych_profile.sql
 -- Founder psychological profile (business/HR, NOT clinical) + a general consent
 -- ledger reused by several features (psych profile, digest, benchmarks, mini-GRI
 -- contact, personalization). Spec: 07-psych-profile.md, 12-security.md §2.

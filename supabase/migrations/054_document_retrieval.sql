@@ -1,4 +1,4 @@
--- 046_document_retrieval.sql
+-- 054_document_retrieval.sql
 -- Enable RAG retrieval (A1) and RESOLVE the document-ownership blocker (Q11).
 --
 -- Reality checked on the live DB: document_summaries scopes by clientId (→

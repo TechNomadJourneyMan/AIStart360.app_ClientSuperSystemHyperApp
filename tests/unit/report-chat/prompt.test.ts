@@ -63,4 +63,19 @@ describe('buildReportChatSystemPrompt', () => {
     expect(system).not.toContain('ФРАГМЕНТЫ ДОКУМЕНТОВ')
     expect(providedSources).toEqual(['point_a'])
   })
+
+  it('includes the personalization block before the DATA section when provided', () => {
+    const { system } = buildReportChatSystemPrompt({
+      ...base,
+      personalization: 'ПЕРСОНАЛИЗАЦИЯ: тон supportive; высокая операционная нагрузка — не давить сроками.',
+    })
+    expect(system).toContain('высокая операционная нагрузка')
+    // Personalization is instruction-side: it must appear BEFORE the data fence.
+    expect(system.indexOf('операционная нагрузка')).toBeLessThan(system.indexOf('=== ДАННЫЕ ==='))
+  })
+
+  it('omits the personalization block when absent or empty', () => {
+    const { system } = buildReportChatSystemPrompt({ ...base, personalization: '  ' })
+    expect(system).not.toContain('ПЕРСОНАЛИЗАЦИЯ')
+  })
 })

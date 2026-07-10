@@ -92,7 +92,34 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: parsed.error.issues[0]?.message ?? 'Invalid message' }, { status: 400 })
   }
   const { message, surface = 'report' } = parsed.data
-  const persona = getPersona(parsed.data.personaId)
+
+  // Personalization (files 06/07): psych-profile tags feed tone/warnings and the
+  // default persona — only with the explicit psych_profile consent, and never
+  // raw answers, only the confirmed derived tags.
+  let personalization: string | null = null
+  let profilePersonaId: string | null = null
+  try {
+    const { data: consent } = await sb
+      .from('user_consents').select('granted')
+      .eq('user_id', user.id).eq('kind', 'psych_profile').maybeSingle()
+    if (consent?.granted) {
+      const { data: prof } = await sb
+        .from('founder_psych_profiles').select('result')
+        .eq('user_id', user.id).maybeSingle()
+      const r = prof?.result as { tags?: string[]; tone?: string; warningsForAi?: string[]; recommendedAgent?: string } | null
+      if (r) {
+        profilePersonaId = r.recommendedAgent ?? null
+        const bits: string[] = []
+        if (r.tone) bits.push(`тон: ${r.tone}`)
+        if (r.tags?.length) bits.push(`теги: ${r.tags.join(', ')}`)
+        if (r.warningsForAi?.length) bits.push(r.warningsForAi.join(' '))
+        if (bits.length) personalization = `ПЕРСОНАЛИЗАЦИЯ (бизнес-профиль пользователя, не медицина): ${bits.join('; ')}. Персонализация меняет подачу, но не факты и не оценку рисков.`
+      }
+    }
+  } catch { /* профиль недоступен — без персонализации */ }
+
+  // Explicit choice wins; otherwise the profile's recommended persona; else base.
+  const persona = getPersona(parsed.data.personaId ?? profilePersonaId)
 
   if (!hasOpenRouterKey()) {
     return NextResponse.json(
@@ -116,6 +143,7 @@ export async function POST(req: NextRequest) {
       snapshotText,
       retrieved,
       availableRefs: AVAILABLE_REFS,
+      personalization,
     })
 
     // 3. Structured answer from the model.

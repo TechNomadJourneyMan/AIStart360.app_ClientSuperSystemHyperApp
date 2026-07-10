@@ -1,4 +1,4 @@
--- 048_next_best_action.sql
+-- 056_next_best_action.sql
 -- Next Best Action event log (A2). The action itself is computed on read from
 -- live signals; we only persist events so cooldowns (dismiss 72h / complete 7d)
 -- and activation metrics work. Spec: 02-next-best-action-plan.md §A2.

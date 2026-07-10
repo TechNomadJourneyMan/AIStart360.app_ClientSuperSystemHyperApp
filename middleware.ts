@@ -15,7 +15,7 @@ const GIGA_PANEL_PATH = '/admin-giga-panel'
 const GIGA_LOGIN_PATH = '/giga-login'
 
 const ADMIN_PATHS = [
-  '/dashboard', '/gri', '/market', '/point-a', '/point-b',
+  '/dashboard', '/gri', '/market', '/point-a', '/point-b', '/simulator',
   '/insights', '/competitors', '/metrics', '/settings',
   '/clients', '/reports', '/analytics', '/intelligence',
   '/team', '/notifications', '/profile', '/users', '/admin', '/activity',
@@ -26,7 +26,7 @@ const ADMIN_PATHS = [
 
 // Paths inside the (dashboard) layout group that clients are allowed to access
 const CLIENT_DASHBOARD_PATHS = [
-  '/dashboard', '/gri', '/pulse', '/point-a', '/point-b',
+  '/dashboard', '/gri', '/pulse', '/point-a', '/point-b', '/simulator',
   '/metrics', '/market', '/profile', '/notifications', '/settings', '/activity',
 ]
 const EXPERT_PATHS = ['/expert']

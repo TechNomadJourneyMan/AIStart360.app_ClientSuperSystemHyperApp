@@ -33,6 +33,12 @@ export interface ReportChatComposeInput {
   retrieved?: RetrievedChunk[]
   /** Structured refs available in context (gri_top5:0, action_plan, point_a…). */
   availableRefs?: string[]
+  /**
+   * Psych-profile personalization block (tone + AI warnings + tags), already
+   * rendered as one short paragraph. Instruction-side: goes BEFORE the data
+   * fence. Only ever built from confirmed profile tags — never raw answers.
+   */
+  personalization?: string | null
 }
 
 export interface ComposedReportChatPrompt {
@@ -62,9 +68,13 @@ export function buildReportChatSystemPrompt(input: ReportChatComposeInput): Comp
     input.personaSafety.trim(),
     input.personaMode.trim(),
     `ПРАВИЛА РЕЖИМА «ОБЪЯСНЕНИЕ ОТЧЁТА»\n${REPORT_CHAT_RULES}`,
-    '=== ДАННЫЕ ===',
-    input.snapshotText.trim(),
   ]
+
+  if (input.personalization && input.personalization.trim()) {
+    parts.push(input.personalization.trim())
+  }
+
+  parts.push('=== ДАННЫЕ ===', input.snapshotText.trim())
 
   if (input.reportSummary && input.reportSummary.trim()) {
     parts.push(`--- ОТЧЁТ ---\n${input.reportSummary.trim()}`)

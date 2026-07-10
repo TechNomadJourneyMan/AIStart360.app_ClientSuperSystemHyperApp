@@ -1,4 +1,4 @@
--- 049_action_plan_interactive.sql
+-- 057_action_plan_interactive.sql
 -- Make the 90-day plan interactive (A4). Extends public.action_items (030) with
 -- completion / snooze / replace / comment / week fields. The existing `status`
 -- column ('open'|'in_progress'|'done', no CHECK constraint) is reused and its

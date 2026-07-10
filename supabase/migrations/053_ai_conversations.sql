@@ -1,4 +1,4 @@
--- 045_ai_conversations.sql
+-- 053_ai_conversations.sql
 -- Persistent AI chat (chat поверх отчёта, A1). Stores conversations + messages
 -- so a user can reopen the last dialog; content is already post-filter/PII-mask
 -- when written by the server. Spec: docs/SPEC-2026-07-09-AI-FEATURES/01-ai-chat-rag.md §6.

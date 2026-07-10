@@ -1,4 +1,4 @@
--- 052_business_simulations.sql
+-- 058_business_simulations.sql
 -- Saved business simulations (K). Inputs + the deterministic result JSON; the
 -- core lives in lib/simulator. Self-only RLS. Spec 09 §6.
 
