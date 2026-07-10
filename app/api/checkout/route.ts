@@ -159,9 +159,14 @@ export async function POST(req: NextRequest) {
           amount: plan.amount,
           currency: plan.currency,
           planKey,
-          status: 'stub',
+          status: session.status === 'pending' ? 'pending' : 'stub',
           externalId: session.sessionId,
-          metadata: { kind: plan.kind, sessionId: session.sessionId },
+          metadata: {
+            kind: plan.kind,
+            sessionId: session.sessionId,
+            ...(session.orderId ? { orderId: session.orderId } : {}),
+            ...(typeof session.amountKzt === 'number' ? { amountKzt: session.amountKzt } : {}),
+          },
         },
       })
     } catch (err) {
@@ -171,6 +176,19 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ checkoutUrl: session.checkoutUrl })
   } catch (err) {
     console.error('[api/checkout] POST error:', err)
+    const msg = err instanceof Error ? err.message : ''
+    if (msg.startsWith('kaspi_kzt_only')) {
+      return NextResponse.json(
+        { error: 'Оплата через Kaspi доступна только в тенге — тариф ещё не сконфигурирован для KZT.' },
+        { status: 503 },
+      )
+    }
+    if (msg.startsWith('kaspi_api_error')) {
+      return NextResponse.json(
+        { error: 'Платёжный сервис Kaspi временно недоступен. Попробуйте позже.' },
+        { status: 502 },
+      )
+    }
     return NextResponse.json(
       { error: 'Не удалось создать оплату. Попробуйте позже.' },
       { status: 500 },
