@@ -485,7 +485,7 @@ model AuditLog {
   entityType  String   // "request" | "user" | "company"
   entityId    String
   action      String   // "approve" | "reject" | "block" | "assign" | "comment" | ...
-  // Actor identifier — intentionally NOT a FK (migration 059): giga break-glass
+  // Actor identifier - intentionally NOT a FK (migration 059): giga break-glass
   // writes 'giga:super_admin', personal admin sessions write a profiles UUID,
   // legacy /api/admin routes write a Prisma users.id. Readers join manually.
   performedBy String
