@@ -5,7 +5,7 @@ import { create } from 'zustand'
 export type RequestStatus = 'pending' | 'approved' | 'rejected' | 'archived'
 export type RequestCategory = 'registration' | 'access' | 'support'
 export type UserStatus = 'active' | 'blocked' | 'pending'
-export type ActiveModule = 'requests' | 'crm' | 'clients' | 'leads' | 'market-insights'
+export type ActiveModule = 'requests' | 'crm' | 'clients' | 'leads' | 'market-insights' | 'insight-moderation'
 
 export interface GriBlock {
   productScore: number

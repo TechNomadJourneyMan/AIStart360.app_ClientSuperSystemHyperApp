@@ -109,3 +109,14 @@ export const setAutoApproveClients = (v: boolean, by?: string | null) =>
 export const getAccessGatesEnabled = () => getBoolSetting('access_gates', false)
 export const setAccessGatesEnabled = (v: boolean, by?: string | null) =>
   setBoolSetting('access_gates', v, by)
+
+/**
+ * R2 (ТЗ §4.7): обязательная модерация клиентских AI-инсайтов. Default TRUE —
+ * ИИ по умолчанию помощник, а не автор: сгенерированные инсайты попадают в
+ * очередь проверки ГИГА-Панели (visible_to_user = false, миграция 060) и
+ * появляются у клиента только после публикации экспертом. Выключение тумблера
+ * = режим автопубликации (осознанное решение админа, действие аудируется).
+ */
+export const getInsightModerationEnabled = () => getBoolSetting('insight_moderation', true)
+export const setInsightModerationEnabled = (v: boolean, by?: string | null) =>
+  setBoolSetting('insight_moderation', v, by)

@@ -24,7 +24,7 @@ export function RegistrationModeControl() {
   const [mode, setMode] = useState<Mode | null>(null)
   const [saving, setSaving] = useState(false)
   // Фаза 6: системные тумблеры доступа (авто-одобрение self-serve + тарифные гейты).
-  const [access, setAccess] = useState<{ autoApproveClients: boolean; accessGates: boolean } | null>(null)
+  const [access, setAccess] = useState<{ autoApproveClients: boolean; accessGates: boolean; insightModeration: boolean } | null>(null)
   const [accessSaving, setAccessSaving] = useState(false)
 
   useEffect(() => {
@@ -37,12 +37,12 @@ export function RegistrationModeControl() {
     fetch('/api/giga-admin/settings/access')
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
-        if (d?.ok) setAccess({ autoApproveClients: !!d.autoApproveClients, accessGates: !!d.accessGates })
+        if (d?.ok) setAccess({ autoApproveClients: !!d.autoApproveClients, accessGates: !!d.accessGates, insightModeration: !!d.insightModeration })
       })
       .catch(() => {})
   }, [])
 
-  const toggleAccess = async (key: 'autoApproveClients' | 'accessGates') => {
+  const toggleAccess = async (key: 'autoApproveClients' | 'accessGates' | 'insightModeration') => {
     if (!access || accessSaving) return
     const prev = access
     const next = { ...access, [key]: !access[key] }
@@ -57,11 +57,17 @@ export function RegistrationModeControl() {
       const data = await res.json().catch(() => ({}))
       if (!res.ok || !data.ok) throw new Error(data.error || `Ошибка (HTTP ${res.status})`)
       // Сервер — источник истины (вернул фактические значения).
-      setAccess({ autoApproveClients: !!data.autoApproveClients, accessGates: !!data.accessGates })
+      setAccess({
+        autoApproveClients: !!data.autoApproveClients,
+        accessGates: !!data.accessGates,
+        insightModeration: !!data.insightModeration,
+      })
       toast.success(
         key === 'autoApproveClients'
           ? `Авто-одобрение: ${data.autoApproveClients ? 'вкл' : 'выкл'}`
-          : `Тарифные гейты: ${data.accessGates ? 'вкл' : 'выкл'}`,
+          : key === 'accessGates'
+            ? `Тарифные гейты: ${data.accessGates ? 'вкл' : 'выкл'}`
+            : `Модерация ИИ-инсайтов: ${data.insightModeration ? 'вкл' : 'выкл (автопубликация!)'}`,
       )
     } catch (err) {
       setAccess(prev)
@@ -142,6 +148,18 @@ export function RegistrationModeControl() {
             }`}
           >
             Гейты тарифов
+          </button>
+          <button
+            onClick={() => toggleAccess('insightModeration')}
+            disabled={accessSaving}
+            title="Обязательная проверка ИИ-инсайтов экспертом перед публикацией клиенту. Выключение = автопубликация (нужна миграция 060)"
+            className={`px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all ${
+              access.insightModeration
+                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/25'
+                : 'bg-red-500/10 text-red-300 border border-red-500/20'
+            }`}
+          >
+            Модерация ИИ
           </button>
         </div>
       )}

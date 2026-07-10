@@ -8,6 +8,8 @@ import {
   setAutoApproveClients,
   getAccessGatesEnabled,
   setAccessGatesEnabled,
+  getInsightModerationEnabled,
+  setInsightModerationEnabled,
 } from '@/lib/settings/system-settings'
 
 /**
@@ -17,11 +19,12 @@ import {
  */
 export async function GET(req: NextRequest) {
   if (!(await getGigaActor(req))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-  const [autoApproveClients, accessGates] = await Promise.all([
+  const [autoApproveClients, accessGates, insightModeration] = await Promise.all([
     getAutoApproveClients(),
     getAccessGatesEnabled(),
+    getInsightModerationEnabled(),
   ])
-  return NextResponse.json({ ok: true, autoApproveClients, accessGates })
+  return NextResponse.json({ ok: true, autoApproveClients, accessGates, insightModeration })
 }
 
 export async function PUT(req: NextRequest) {
@@ -31,9 +34,18 @@ export async function PUT(req: NextRequest) {
   const body = (await req.json().catch(() => null)) as {
     autoApproveClients?: unknown
     accessGates?: unknown
+    insightModeration?: unknown
   } | null
-  if (!body || (typeof body.autoApproveClients !== 'boolean' && typeof body.accessGates !== 'boolean')) {
-    return NextResponse.json({ error: 'boolean autoApproveClients or accessGates required' }, { status: 422 })
+  if (
+    !body ||
+    (typeof body.autoApproveClients !== 'boolean' &&
+      typeof body.accessGates !== 'boolean' &&
+      typeof body.insightModeration !== 'boolean')
+  ) {
+    return NextResponse.json(
+      { error: 'boolean autoApproveClients, accessGates or insightModeration required' },
+      { status: 422 },
+    )
   }
 
   try {
@@ -42,6 +54,11 @@ export async function PUT(req: NextRequest) {
     }
     if (typeof body.accessGates === 'boolean') {
       await setAccessGatesEnabled(body.accessGates, actor.id)
+    }
+    if (typeof body.insightModeration === 'boolean') {
+      // Выключение = автопубликация ИИ-инсайтов без проверки эксперта —
+      // осознанное критичное решение, фиксируется в аудите ниже.
+      await setInsightModerationEnabled(body.insightModeration, actor.id)
     }
 
     // These are access-affecting system toggles — audit them like
@@ -55,16 +72,18 @@ export async function PUT(req: NextRequest) {
         after: {
           ...(typeof body.autoApproveClients === 'boolean' ? { autoApproveClients: body.autoApproveClients } : {}),
           ...(typeof body.accessGates === 'boolean' ? { accessGates: body.accessGates } : {}),
+          ...(typeof body.insightModeration === 'boolean' ? { insightModeration: body.insightModeration } : {}),
         },
         actorKind: actor.kind,
       },
       ipAddress: req.headers.get('x-forwarded-for') ?? undefined,
     })
-    const [autoApproveClients, accessGates] = await Promise.all([
+    const [autoApproveClients, accessGates, insightModeration] = await Promise.all([
       getAutoApproveClients(),
       getAccessGatesEnabled(),
+      getInsightModerationEnabled(),
     ])
-    return NextResponse.json({ ok: true, autoApproveClients, accessGates })
+    return NextResponse.json({ ok: true, autoApproveClients, accessGates, insightModeration })
   } catch (e) {
     console.error('[giga-admin/settings/access]', e)
     return NextResponse.json({ error: 'save_failed' }, { status: 500 })
