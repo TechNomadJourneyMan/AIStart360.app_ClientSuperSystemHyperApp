@@ -49,17 +49,28 @@ export async function GET(req: NextRequest) {
     prisma.auditLog.count({ where }),
     prisma.auditLog.findMany({
       where,
-      include: {
-        performer: { select: { id: true, name: true, email: true, role: true } },
-      },
       orderBy: { timestamp: 'desc' },
       skip: (page - 1) * limit,
       take: limit,
     }),
   ])
 
+  // performedBy is a plain actor identifier (migration 059) — a Prisma users.id
+  // for legacy /api/admin actors, a profiles UUID for personal admin sessions,
+  // or 'giga:super_admin' for break-glass. Join to users manually where it
+  // matches so the response keeps the old `performer` shape (null otherwise).
+  const actorIds = Array.from(new Set(logs.map((l) => l.performedBy)))
+  const performers = actorIds.length
+    ? await prisma.user.findMany({
+        where: { id: { in: actorIds } },
+        select: { id: true, name: true, email: true, role: true },
+      })
+    : []
+  const byId = new Map(performers.map((u) => [u.id, u]))
+  const data = logs.map((l) => ({ ...l, performer: byId.get(l.performedBy) ?? null }))
+
   return NextResponse.json({
-    data: logs,
+    data,
     meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
   })
 }

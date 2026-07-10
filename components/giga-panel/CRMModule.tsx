@@ -472,10 +472,16 @@ export function CRMModule() {
   const handleBlock = async (user: GigaUser) => {
     setBlockConfirm(null)
     try {
-      await fetch(`/api/giga-admin/users/${user.id}/block`, { method: 'POST' })
+      const res = await fetch(`/api/giga-admin/users/${user.id}/block`, { method: 'POST' })
+      if (!res.ok) {
+        const data = (await res.json().catch(() => null)) as { error?: string } | null
+        throw new Error(data?.error || `HTTP ${res.status}`)
+      }
       blockUser(user.id)
-    } catch {
-      // handle silently for now
+    } catch (e) {
+      // Never fail silently: a "blocked" user who is not actually blocked is a
+      // security incident waiting to happen (see the approve-button lesson).
+      alert(`Не удалось заблокировать пользователя: ${e instanceof Error ? e.message : 'ошибка сети'}`)
     }
   }
 

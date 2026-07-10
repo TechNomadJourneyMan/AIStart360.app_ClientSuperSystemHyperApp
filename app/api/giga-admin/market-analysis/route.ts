@@ -2,7 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
-import { GIGA_COOKIE_NAME, verifyGigaRole } from '@/lib/giga-cookie'
+import { isGigaSuperAdmin } from '@/lib/admin/giga-actor'
 import {
   BLOCKS,
   isValidQuestionKey,
@@ -24,11 +24,6 @@ import {
 // ─────────────────────────────────────────────────────────────────────────────
 // Auth — verify the HMAC-signed giga super-admin cookie (Node runtime).
 // (Same gate as every other /api/giga-admin/* route, e.g. clients/route.ts.)
-// ─────────────────────────────────────────────────────────────────────────────
-function isSuperAdmin(req: NextRequest): boolean {
-  return verifyGigaRole(req.cookies.get(GIGA_COOKIE_NAME)?.value) === 'super_admin'
-}
-
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 /**
@@ -50,7 +45,7 @@ function serviceClient(): SupabaseClient | null {
 //   (no user_id)    → list of client-role profiles with answer counts
 // =============================================================================
 export async function GET(req: NextRequest) {
-  if (!isSuperAdmin(req)) {
+  if (!(await isGigaSuperAdmin(req))) {
     return NextResponse.json({ ok: false, error: 'forbidden' }, { status: 403 })
   }
 
@@ -165,7 +160,7 @@ export async function GET(req: NextRequest) {
 // Default status 'confirmed'. Rebuilds the user's snapshot afterwards.
 // =============================================================================
 export async function PATCH(req: NextRequest) {
-  if (!isSuperAdmin(req)) {
+  if (!(await isGigaSuperAdmin(req))) {
     return NextResponse.json({ ok: false, error: 'forbidden' }, { status: 403 })
   }
 
@@ -224,7 +219,7 @@ export async function PATCH(req: NextRequest) {
 // user_id + service-role client. Honest ai_not_configured when no key.
 // =============================================================================
 export async function POST(req: NextRequest) {
-  if (!isSuperAdmin(req)) {
+  if (!(await isGigaSuperAdmin(req))) {
     return NextResponse.json({ ok: false, error: 'forbidden' }, { status: 403 })
   }
 

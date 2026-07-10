@@ -2,12 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase-service'
-import { GIGA_COOKIE_NAME, verifyGigaRole } from '@/lib/giga-cookie'
-
-// A2b: verify the HMAC-SIGNED giga cookie, not an unsigned static string.
-function isSuperAdmin(req: NextRequest): boolean {
-  return verifyGigaRole(req.cookies.get(GIGA_COOKIE_NAME)?.value) === 'super_admin'
-}
+import { isGigaSuperAdmin } from '@/lib/admin/giga-actor'
 
 interface RawBlockScore {
   key?: string
@@ -21,13 +16,13 @@ interface RawBlockScore {
  *
  * `mini_gri_leads` is a Prisma-owned table with NO RLS, so it MUST be read via
  * the service-role client (same privileged path as the other giga-admin GET
- * routes: requests/clients). Authorization is enforced by isSuperAdmin() above.
+ * routes: requests/clients). Authorization is enforced by isGigaSuperAdmin() above.
  *
  * NOTE the mixed casing in the DDL (033_app_share_payments_leads.sql / Prisma
  * @map): overall_score / block_scores are snake_case, but createdAt is camelCase.
  */
 export async function GET(req: NextRequest) {
-  if (!isSuperAdmin(req)) {
+  if (!(await isGigaSuperAdmin(req))) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 

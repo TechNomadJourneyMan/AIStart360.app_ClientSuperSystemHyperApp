@@ -1,12 +1,8 @@
 export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
-import { GIGA_COOKIE_NAME, verifyGigaRole } from '@/lib/giga-cookie'
-
-// A2b: verify the HMAC-SIGNED giga cookie, not an unsigned static string.
-function isSuperAdmin(req: NextRequest): boolean {
-  return verifyGigaRole(req.cookies.get(GIGA_COOKIE_NAME)?.value) === 'super_admin'
-}
+import { getGigaActor } from '@/lib/admin/giga-actor'
+import { logAudit } from '@/lib/audit'
 
 /**
  * POST /api/giga-admin/users/:id/widgets
@@ -19,7 +15,8 @@ export async function POST(
   req: NextRequest,
   { params }: { params: { id: string } },
 ) {
-  if (!isSuperAdmin(req)) {
+  const actor = await getGigaActor(req)
+  if (!actor) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
@@ -56,6 +53,15 @@ export async function POST(
     console.error('[giga-admin/widgets] persist error', err)
     return NextResponse.json({ error: 'Failed to save' }, { status: 500 })
   }
+
+  await logAudit({
+    entityType: 'user',
+    entityId: id,
+    action: 'user.widgets_changed',
+    performedBy: actor.id,
+    diff: { after: { widgets }, actorKind: actor.kind },
+    ipAddress: req.headers.get('x-forwarded-for') ?? undefined,
+  })
 
   return NextResponse.json({ success: true, userId: id, widgets })
 }

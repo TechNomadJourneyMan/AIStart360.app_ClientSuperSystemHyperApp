@@ -2,19 +2,15 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase-service'
-import { GIGA_COOKIE_NAME, verifyGigaRole } from '@/lib/giga-cookie'
+import { getGigaActor } from '@/lib/admin/giga-actor'
 import { logAudit } from '@/lib/audit'
 import { normalizeOverrides, normalizeTier } from '@/lib/access/entitlements'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-function isSuperAdmin(req: NextRequest): boolean {
-  return verifyGigaRole(req.cookies.get(GIGA_COOKIE_NAME)?.value) === 'super_admin'
-}
-
 /** GET — текущий tier + feature_flags пользователя (для админ-панели). */
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
-  if (!isSuperAdmin(req)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  if (!(await getGigaActor(req))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   if (!UUID_RE.test(params.id)) {
     return NextResponse.json({ error: 'invalid id' }, { status: 400 })
   }
@@ -51,7 +47,8 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
  * уже была причиной инцидента.
  */
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
-  if (!isSuperAdmin(req)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  const actor = await getGigaActor(req)
+  if (!actor) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   if (!UUID_RE.test(params.id)) {
     return NextResponse.json({ error: 'invalid id' }, { status: 400 })
   }
@@ -100,8 +97,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       entityType: 'user',
       entityId: params.id,
       action: 'user.access_changed',
-      performedBy: 'giga:super_admin',
-      diff: patch,
+      performedBy: actor.id,
+      diff: { ...patch, actorKind: actor.kind },
       ipAddress: req.headers.get('x-forwarded-for') ?? undefined,
     })
 

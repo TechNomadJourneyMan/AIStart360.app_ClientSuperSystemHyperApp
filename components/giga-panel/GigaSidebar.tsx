@@ -152,7 +152,17 @@ export function GigaSidebar({ isOpen = false, onClose }: GigaSidebarProps) {
             <p className="text-[11px] font-semibold text-slate-300 truncate">SUPER_ADMIN</p>
             <p className="text-[10px] text-slate-600 truncate">Системный доступ</p>
           </div>
-          <button className="text-slate-600 hover:text-red-400 transition-colors">
+          <button
+            onClick={async () => {
+              try {
+                await fetch('/api/giga-admin/auth', { method: 'DELETE' })
+              } finally {
+                window.location.href = '/giga-login'
+              }
+            }}
+            title="Выйти из панели"
+            className="text-slate-600 hover:text-red-400 transition-colors"
+          >
             <LogOut size={14} />
           </button>
         </div>
