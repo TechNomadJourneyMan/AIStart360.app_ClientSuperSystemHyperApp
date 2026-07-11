@@ -155,7 +155,6 @@ model User {
   submittedRequests AdminRequest[] @relation("RequestSubmitter")
   assignedRequests  AdminRequest[] @relation("RequestAssignee")
   comments          Comment[]
-  auditLogs         AuditLog[]
 
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
@@ -486,8 +485,10 @@ model AuditLog {
   entityType  String   // "request" | "user" | "company"
   entityId    String
   action      String   // "approve" | "reject" | "block" | "assign" | "comment" | ...
+  // Actor identifier - intentionally NOT a FK (migration 059): giga break-glass
+  // writes 'giga:super_admin', personal admin sessions write a profiles UUID,
+  // legacy /api/admin routes write a Prisma users.id. Readers join manually.
   performedBy String
-  performer   User     @relation(fields: [performedBy], references: [id])
   timestamp   DateTime @default(now())
   diff        Json?    // { before: {...}, after: {...} }
   ipAddress   String?

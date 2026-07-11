@@ -5,6 +5,7 @@ import { createServerClient } from '@/lib/supabase-server'
 import { generatePointAInsights } from '@/lib/insights/ai-generator'
 import { hasOpenRouterKey } from '@/lib/ai/openrouter'
 import { isRateLimitedKey } from '@/lib/rate-limit'
+import { getInsightModerationEnabled } from '@/lib/settings/system-settings'
 
 // ---------------------------------------------------------------------------
 // POST /api/v1/point-a/insights/ai-generate
@@ -57,9 +58,18 @@ export async function POST() {
 
   const companyId = await resolveCompanyId(sb, userId)
 
+  // R2 (ТЗ §4.7): when the insight_moderation toggle is on (default), freshly
+  // generated AI insights are NOT shown to the client — they enter the giga
+  // panel review queue (visible_to_user = false) and appear in the feed only
+  // after an expert publishes them. RLS (migration 060) hides unpublished rows
+  // from the owner, so this flag is enforced at the database, not just here.
+  const moderationOn = await getInsightModerationEnabled()
+
   // Map each AI item into a row. We treat predicted_answer as the AI's draft
   // answer (status = pending_confirmation so the client can accept/reject).
-  const rows = result.items.map((item) => ({
+  // `visible_to_user` is kept separate so we can fall back to inserting WITHOUT
+  // it when migration 060 has not been applied yet (see below).
+  const baseRows = result.items.map((item) => ({
     user_id: userId,
     company_id: companyId,
     type: 'ai',
@@ -77,8 +87,71 @@ export async function POST() {
       confidence: item.confidence ?? null,
     },
   }))
+  const rows = baseRows.map((r) => ({ ...r, visible_to_user: !moderationOn }))
 
-  const { data: inserted, error: insertErr } = await sb
+  // A PostgREST error that names the not-yet-added column (PGRST204) means
+  // migration 060 is not applied on this environment. Fail-safe (matching the
+  // 040/048 pattern): fall back to the pre-060 insert so AI generation keeps
+  // working; moderation activates automatically once 060 is applied.
+  const isMissingColumn = (msg: string | undefined) =>
+    !!msg && /visible_to_user/.test(msg)
+
+  if (moderationOn) {
+    // Plain insert, no RETURNING: the owner's SELECT policy (migration 060)
+    // hides unpublished rows, so a returning select would come back empty and
+    // returning the drafts in the response would leak them past the gate.
+    const { error: insertErr } = await sb.from('point_a_insights').insert(rows)
+    if (insertErr) {
+      if (isMissingColumn(insertErr.message)) {
+        // 060 not applied: insert the legacy way. Rows are visible (old
+        // behaviour, no worse than production today); log so operators know
+        // moderation is inert until the migration lands.
+        console.warn('[insights/ai-generate] migration 060 not applied — moderation inactive, inserting visible insights')
+        const { data: inserted, error: legacyErr } = await sb
+          .from('point_a_insights')
+          .insert(baseRows)
+          .select(
+            'id, user_id, company_id, type, category, question_text, author_name, ' +
+              'answer_text, answer_author_name, answer_author_role, answered_at, ' +
+              'status, source_meta, created_at, updated_at'
+          )
+        if (legacyErr) {
+          return NextResponse.json(
+            { ok: false, error: 'Failed to persist generated insights' },
+            { status: 500 }
+          )
+        }
+        return NextResponse.json({
+          ok: true,
+          data: {
+            items: inserted ?? [],
+            meta: result.meta,
+            generated: inserted?.length ?? 0,
+            pending_moderation: 0,
+            moderation_inactive: true,
+          },
+        })
+      }
+      return NextResponse.json(
+        { ok: false, error: 'Failed to persist generated insights' },
+        { status: 500 }
+      )
+    }
+    return NextResponse.json({
+      ok: true,
+      data: {
+        items: [],
+        meta: result.meta,
+        generated: rows.length,
+        pending_moderation: rows.length,
+      },
+    })
+  }
+
+  // Moderation OFF (explicit autopublish). Try with the column, fall back to
+  // the pre-060 shape if it is not there yet.
+  let inserted: unknown[] | null = null
+  const withCol = await sb
     .from('point_a_insights')
     .insert(rows)
     .select(
@@ -86,12 +159,30 @@ export async function POST() {
         'answer_text, answer_author_name, answer_author_role, answered_at, ' +
         'status, source_meta, created_at, updated_at'
     )
-
-  if (insertErr) {
-    return NextResponse.json(
-      { ok: false, error: 'Failed to persist generated insights' },
-      { status: 500 }
-    )
+  if (withCol.error) {
+    if (!isMissingColumn(withCol.error.message)) {
+      return NextResponse.json(
+        { ok: false, error: 'Failed to persist generated insights' },
+        { status: 500 }
+      )
+    }
+    const legacy = await sb
+      .from('point_a_insights')
+      .insert(baseRows)
+      .select(
+        'id, user_id, company_id, type, category, question_text, author_name, ' +
+          'answer_text, answer_author_name, answer_author_role, answered_at, ' +
+          'status, source_meta, created_at, updated_at'
+      )
+    if (legacy.error) {
+      return NextResponse.json(
+        { ok: false, error: 'Failed to persist generated insights' },
+        { status: 500 }
+      )
+    }
+    inserted = legacy.data ?? []
+  } else {
+    inserted = withCol.data ?? []
   }
 
   return NextResponse.json({
@@ -100,6 +191,7 @@ export async function POST() {
       items: inserted ?? [],
       meta: result.meta,
       generated: inserted?.length ?? 0,
+      pending_moderation: 0,
     },
   })
 }

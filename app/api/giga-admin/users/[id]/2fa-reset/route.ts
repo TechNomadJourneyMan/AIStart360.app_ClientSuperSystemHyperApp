@@ -1,16 +1,11 @@
 export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
-import { GIGA_COOKIE_NAME, verifyGigaRole } from '@/lib/giga-cookie'
+import { getGigaActor } from '@/lib/admin/giga-actor'
 import { logAudit } from '@/lib/audit'
 import { adminResetUserMfa } from '@/lib/mfa/store'
 import { createServiceClient } from '@/lib/supabase-service'
 import { sendNotificationEmail } from '@/lib/email'
-
-// A2b: verify the HMAC-SIGNED giga cookie, not an unsigned static string.
-function isSuperAdmin(req: NextRequest): boolean {
-  return verifyGigaRole(req.cookies.get(GIGA_COOKIE_NAME)?.value) === 'super_admin'
-}
 
 /**
  * POST /api/giga-admin/users/:id/2fa-reset
@@ -25,7 +20,8 @@ function isSuperAdmin(req: NextRequest): boolean {
  * user is emailed a security notification.
  */
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
-  if (!isSuperAdmin(req)) {
+  const actor = await getGigaActor(req)
+  if (!actor) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
@@ -38,8 +34,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       entityType: 'user',
       entityId: id,
       action: 'user.2fa_reset',
-      performedBy: 'giga:super_admin',
-      diff: { effect: 'mfa_cleared', totp: true, webauthn: true, backup_codes: 'wiped' },
+      performedBy: actor.id,
+      diff: { effect: 'mfa_cleared', totp: true, webauthn: true, backup_codes: 'wiped', actorKind: actor.kind },
       ipAddress: req.headers.get('x-forwarded-for') ?? undefined,
     })
 

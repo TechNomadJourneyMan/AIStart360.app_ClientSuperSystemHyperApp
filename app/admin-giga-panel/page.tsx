@@ -12,6 +12,7 @@ import {
   Clock,
   XCircle,
   Shield,
+  ShieldCheck,
 } from 'lucide-react'
 import { useGigaPanelStore } from '@/stores/gigaPanel.store'
 import { RequestsModule } from '@/components/giga-panel/RequestsModule'
@@ -19,6 +20,7 @@ import { CRMModule } from '@/components/giga-panel/CRMModule'
 import { ClientsModule } from '@/components/giga-panel/ClientsModule'
 import { LeadsModule } from '@/components/giga-panel/LeadsModule'
 import { MarketInsightsModule } from '@/components/giga-panel/MarketInsightsModule'
+import { InsightModerationModule } from '@/components/giga-panel/InsightModerationModule'
 
 // ─── KPI Card ────────────────────────────────────────────────────────────────
 
@@ -162,6 +164,19 @@ export default function GigaPanelPage() {
             <Lightbulb size={15} />
             Инсайты рынка
           </button>
+          <button
+            onClick={() => setActiveModule('insight-moderation')}
+            className={`
+              flex items-center gap-1.5 md:gap-2 px-3 md:px-4 py-2 rounded-lg text-xs md:text-sm font-medium transition-all whitespace-nowrap
+              ${activeModule === 'insight-moderation'
+                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/25'
+                : 'text-slate-500 hover:text-slate-300'
+              }
+            `}
+          >
+            <ShieldCheck size={15} />
+            Модерация ИИ
+          </button>
         </div>
       </div>
 
@@ -216,6 +231,7 @@ export default function GigaPanelPage() {
           {activeModule === 'clients' && <ClientsModule />}
           {activeModule === 'leads' && <LeadsModule />}
           {activeModule === 'market-insights' && <MarketInsightsModule />}
+          {activeModule === 'insight-moderation' && <InsightModerationModule />}
         </motion.div>
       </AnimatePresence>
     </div>

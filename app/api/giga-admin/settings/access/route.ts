@@ -1,18 +1,16 @@
 export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
-import { GIGA_COOKIE_NAME, verifyGigaRole } from '@/lib/giga-cookie'
+import { getGigaActor } from '@/lib/admin/giga-actor'
+import { logAudit } from '@/lib/audit'
 import {
   getAutoApproveClients,
   setAutoApproveClients,
   getAccessGatesEnabled,
   setAccessGatesEnabled,
+  getInsightModerationEnabled,
+  setInsightModerationEnabled,
 } from '@/lib/settings/system-settings'
-
-// Только super_admin (HMAC-подписанная giga-cookie, паттерн settings/registration).
-function isSuperAdmin(req: NextRequest): boolean {
-  return verifyGigaRole(req.cookies.get(GIGA_COOKIE_NAME)?.value) === 'super_admin'
-}
 
 /**
  * GET/PUT /api/giga-admin/settings/access — системные тумблеры Фазы 6:
@@ -20,37 +18,72 @@ function isSuperAdmin(req: NextRequest): boolean {
  *   access_gates — включить тарифные гейты (полный GRI / AI-чат / PDF / бенчмарки).
  */
 export async function GET(req: NextRequest) {
-  if (!isSuperAdmin(req)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-  const [autoApproveClients, accessGates] = await Promise.all([
+  if (!(await getGigaActor(req))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  const [autoApproveClients, accessGates, insightModeration] = await Promise.all([
     getAutoApproveClients(),
     getAccessGatesEnabled(),
+    getInsightModerationEnabled(),
   ])
-  return NextResponse.json({ ok: true, autoApproveClients, accessGates })
+  return NextResponse.json({ ok: true, autoApproveClients, accessGates, insightModeration })
 }
 
 export async function PUT(req: NextRequest) {
-  if (!isSuperAdmin(req)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  const actor = await getGigaActor(req)
+  if (!actor) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const body = (await req.json().catch(() => null)) as {
     autoApproveClients?: unknown
     accessGates?: unknown
+    insightModeration?: unknown
   } | null
-  if (!body || (typeof body.autoApproveClients !== 'boolean' && typeof body.accessGates !== 'boolean')) {
-    return NextResponse.json({ error: 'boolean autoApproveClients or accessGates required' }, { status: 422 })
+  if (
+    !body ||
+    (typeof body.autoApproveClients !== 'boolean' &&
+      typeof body.accessGates !== 'boolean' &&
+      typeof body.insightModeration !== 'boolean')
+  ) {
+    return NextResponse.json(
+      { error: 'boolean autoApproveClients, accessGates or insightModeration required' },
+      { status: 422 },
+    )
   }
 
   try {
     if (typeof body.autoApproveClients === 'boolean') {
-      await setAutoApproveClients(body.autoApproveClients, 'giga:super_admin')
+      await setAutoApproveClients(body.autoApproveClients, actor.id)
     }
     if (typeof body.accessGates === 'boolean') {
-      await setAccessGatesEnabled(body.accessGates, 'giga:super_admin')
+      await setAccessGatesEnabled(body.accessGates, actor.id)
     }
-    const [autoApproveClients, accessGates] = await Promise.all([
+    if (typeof body.insightModeration === 'boolean') {
+      // Выключение = автопубликация ИИ-инсайтов без проверки эксперта —
+      // осознанное критичное решение, фиксируется в аудите ниже.
+      await setInsightModerationEnabled(body.insightModeration, actor.id)
+    }
+
+    // These are access-affecting system toggles — audit them like
+    // settings/registration (they previously left no audit trail at all).
+    await logAudit({
+      entityType: 'system',
+      entityId: 'access_settings',
+      action: 'settings.access_changed',
+      performedBy: actor.id,
+      diff: {
+        after: {
+          ...(typeof body.autoApproveClients === 'boolean' ? { autoApproveClients: body.autoApproveClients } : {}),
+          ...(typeof body.accessGates === 'boolean' ? { accessGates: body.accessGates } : {}),
+          ...(typeof body.insightModeration === 'boolean' ? { insightModeration: body.insightModeration } : {}),
+        },
+        actorKind: actor.kind,
+      },
+      ipAddress: req.headers.get('x-forwarded-for') ?? undefined,
+    })
+    const [autoApproveClients, accessGates, insightModeration] = await Promise.all([
       getAutoApproveClients(),
       getAccessGatesEnabled(),
+      getInsightModerationEnabled(),
     ])
-    return NextResponse.json({ ok: true, autoApproveClients, accessGates })
+    return NextResponse.json({ ok: true, autoApproveClients, accessGates, insightModeration })
   } catch (e) {
     console.error('[giga-admin/settings/access]', e)
     return NextResponse.json({ error: 'save_failed' }, { status: 500 })

@@ -9,9 +9,9 @@
  *   - halyk         -> Kazakhstan (Halyk Bank / ePay).
  *   - mir           -> Russia (Mir cards).
  *
- * All providers are currently STUBS — they return a synthetic checkout session
- * pointing at /checkout/stub. No real money moves until the SDKs + webhooks are
- * wired in each providers/*.ts file.
+ * kaspi is the first REAL provider (env-gated: without KASPI_* env vars it
+ * degrades to the demo stub session). The remaining providers are still stubs
+ * pointing at /checkout/stub — no real money moves through them.
  */
 
 import type {
@@ -35,8 +35,11 @@ const PROVIDERS: Record<AcquiringProviderName, ProviderFn> = {
   mir,
 }
 
-/** Recommended default provider for international/global cards. */
-export const DEFAULT_PROVIDER: AcquiringProviderName = 'stripe'
+/**
+ * Default provider — Kaspi.kz (решение ПО 2026-07-10: первый реальный
+ * эквайринг — Kaspi, остальные провайдеры подключаются позже).
+ */
+export const DEFAULT_PROVIDER: AcquiringProviderName = 'kaspi'
 
 /** Resolve a provider's checkout function. Throws on unknown provider names. */
 export function getProvider(name: AcquiringProviderName): ProviderFn {

@@ -12,6 +12,7 @@ import {
   LogOut,
   ChevronRight,
   X,
+  ShieldCheck,
 } from 'lucide-react'
 import { useGigaPanelStore, type ActiveModule } from '@/stores/gigaPanel.store'
 
@@ -51,6 +52,7 @@ export function GigaSidebar({ isOpen = false, onClose }: GigaSidebarProps) {
     { id: 'crm', label: 'CRM / Пользователи', icon: <Users2 size={18} /> },
     { id: 'clients', label: 'Клиенты платформы', icon: <Building2 size={18} />, badge: clients.length > 0 ? clients.length : undefined },
     { id: 'market-insights', label: 'Инсайты рынка', icon: <Lightbulb size={18} /> },
+    { id: 'insight-moderation', label: 'Модерация ИИ', icon: <ShieldCheck size={18} /> },
   ]
 
   const handleNav = (id: NavItem['id'], disabled?: boolean) => {
@@ -152,7 +154,17 @@ export function GigaSidebar({ isOpen = false, onClose }: GigaSidebarProps) {
             <p className="text-[11px] font-semibold text-slate-300 truncate">SUPER_ADMIN</p>
             <p className="text-[10px] text-slate-600 truncate">Системный доступ</p>
           </div>
-          <button className="text-slate-600 hover:text-red-400 transition-colors">
+          <button
+            onClick={async () => {
+              try {
+                await fetch('/api/giga-admin/auth', { method: 'DELETE' })
+              } finally {
+                window.location.href = '/giga-login'
+              }
+            }}
+            title="Выйти из панели"
+            className="text-slate-600 hover:text-red-400 transition-colors"
+          >
             <LogOut size={14} />
           </button>
         </div>

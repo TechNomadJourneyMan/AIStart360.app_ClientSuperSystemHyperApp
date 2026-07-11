@@ -27,5 +27,10 @@ export interface CheckoutSession {
   provider: AcquiringProviderName
   sessionId: string
   checkoutUrl: string
-  status: 'stub'
+  /** 'stub' = demo session (no real money); 'pending' = real acquiring payment awaiting completion. */
+  status: 'stub' | 'pending'
+  /** Our own order id sent to the provider (real sessions only). */
+  orderId?: string
+  /** Final charged amount in whole KZT (Kaspi sessions only). */
+  amountKzt?: number
 }

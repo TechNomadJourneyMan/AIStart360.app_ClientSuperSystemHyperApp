@@ -1,18 +1,13 @@
 export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
-import { GIGA_COOKIE_NAME, verifyGigaRole } from '@/lib/giga-cookie'
+import { getGigaActor } from '@/lib/admin/giga-actor'
 import { logAudit } from '@/lib/audit'
 import { getRegistrationMode, setRegistrationMode, isRegistrationMode } from '@/lib/settings/system-settings'
 
-// A2b: verify the HMAC-SIGNED giga cookie, not an unsigned static string.
-function isSuperAdmin(req: NextRequest): boolean {
-  return verifyGigaRole(req.cookies.get(GIGA_COOKIE_NAME)?.value) === 'super_admin'
-}
-
 // GET /api/giga-admin/settings/registration — current registration mode.
 export async function GET(req: NextRequest) {
-  if (!isSuperAdmin(req)) {
+  if (!(await getGigaActor(req))) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
   const mode = await getRegistrationMode()
@@ -21,7 +16,8 @@ export async function GET(req: NextRequest) {
 
 // PUT /api/giga-admin/settings/registration — set the mode (open|approval|invite).
 export async function PUT(req: NextRequest) {
-  if (!isSuperAdmin(req)) {
+  const actor = await getGigaActor(req)
+  if (!actor) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
@@ -40,8 +36,8 @@ export async function PUT(req: NextRequest) {
       entityType: 'system',
       entityId: 'registration_mode',
       action: 'settings.registration_mode_changed',
-      performedBy: 'giga:super_admin',
-      diff: { after: { mode: body.mode } },
+      performedBy: actor.id,
+      diff: { after: { mode: body.mode }, actorKind: actor.kind },
       ipAddress: req.headers.get('x-forwarded-for') ?? undefined,
     })
 

@@ -2,12 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase-service'
-import { GIGA_COOKIE_NAME, verifyGigaRole } from '@/lib/giga-cookie'
-
-// A2b: verify the HMAC-SIGNED giga cookie, not an unsigned static string.
-function isSuperAdmin(req: NextRequest): boolean {
-  return verifyGigaRole(req.cookies.get(GIGA_COOKIE_NAME)?.value) === 'super_admin'
-}
+import { isGigaSuperAdmin } from '@/lib/admin/giga-actor'
 
 /**
  * PATCH /api/giga-admin/leads/:id
@@ -15,7 +10,7 @@ function isSuperAdmin(req: NextRequest): boolean {
  * Body: { converted: boolean }. Service-role write (mini_gri_leads has no RLS).
  */
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
-  if (!isSuperAdmin(req)) {
+  if (!(await isGigaSuperAdmin(req))) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 

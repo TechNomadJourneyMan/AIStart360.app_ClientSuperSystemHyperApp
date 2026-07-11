@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { createServerClient } from '@/lib/supabase-server'
+import { getSessionRole, isStaffRole } from '@/lib/api-identity'
 
 const ALLOWED_STATUS = [
   'pending_ai',
@@ -64,6 +65,29 @@ export async function PATCH(
     )
   }
   const body = parsed.data
+
+  // SECURITY: `answer_author_role` is provenance shown to the client as "кто
+  // ответил". It must reflect the CALLER's real role, not whatever the request
+  // body claims — previously a client could label their own answer as
+  // 'expert'/'admin'. Privileged labels now require a staff profile role; a
+  // non-staff caller writing an answer is always attributed as 'client'.
+  if (
+    body.answer_author_role !== undefined &&
+    body.answer_author_role !== null &&
+    body.answer_author_role !== 'client'
+  ) {
+    const callerRole = await getSessionRole(sb, userData.user.id)
+    if (!isStaffRole(callerRole)) {
+      if (body.answer_text !== undefined) {
+        body.answer_author_role = 'client'
+      } else {
+        return NextResponse.json(
+          { ok: false, error: 'forbidden_author_role' },
+          { status: 403 }
+        )
+      }
+    }
+  }
 
   // Load existing row so we can decide whether to bump answered_at. RLS will
   // hide rows the caller can't see (returns null instead of error).

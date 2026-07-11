@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { authRateLimit } from '@/lib/rate-limit'
 import { signGigaRole, GIGA_COOKIE_NAME } from '@/lib/giga-cookie'
+import { logAudit } from '@/lib/audit'
 
 // Brute-force protection for the single shared super-admin password.
 // Uses Upstash when configured; otherwise a small in-memory fallback so the
@@ -51,8 +52,31 @@ export async function POST(req: NextRequest) {
   }
 
   if (!password || password !== adminPassword) {
+    // Failed break-glass attempts are security signal — audit them (R6: the
+    // panel's highest-privilege auth previously left no trail at all).
+    await logAudit({
+      entityType: 'system',
+      entityId: 'giga_panel',
+      action: 'admin.login_failed',
+      performedBy: 'giga:anonymous',
+      diff: { after: { method: 'break_glass_password' } },
+      ipAddress: ip,
+    })
     return NextResponse.json({ error: 'Invalid password' }, { status: 401 })
   }
+
+  // Successful shared-password entry = break-glass. Personal super_admin
+  // Supabase sessions are the preferred path (lib/admin/giga-actor.ts) and are
+  // attributable per action; this login is only attributable to the password
+  // holder pool, so the event itself must be on record.
+  await logAudit({
+    entityType: 'system',
+    entityId: 'giga_panel',
+    action: 'admin.login',
+    performedBy: 'giga:super_admin',
+    diff: { after: { method: 'break_glass_password' } },
+    ipAddress: ip,
+  })
 
   const response = NextResponse.json({ ok: true })
   // A2b: set an HMAC-SIGNED giga token in a DEDICATED cookie (aistart360_giga).
@@ -64,6 +88,24 @@ export async function POST(req: NextRequest) {
     sameSite: 'lax',
     httpOnly: true, // server-only — nothing reads this client-side
     secure: process.env.NODE_ENV === 'production',
+  })
+  return response
+}
+
+/**
+ * DELETE /api/giga-admin/auth — giga logout: clears the break-glass cookie.
+ * (Personal Supabase sessions sign out through the normal auth flow.)
+ */
+export async function DELETE(req: NextRequest) {
+  const response = NextResponse.json({ ok: true })
+  response.cookies.set(GIGA_COOKIE_NAME, '', { path: '/', maxAge: 0 })
+  await logAudit({
+    entityType: 'system',
+    entityId: 'giga_panel',
+    action: 'admin.logout',
+    performedBy: 'giga:super_admin',
+    diff: { after: { method: 'break_glass_cookie_cleared' } },
+    ipAddress: clientIp(req),
   })
   return response
 }

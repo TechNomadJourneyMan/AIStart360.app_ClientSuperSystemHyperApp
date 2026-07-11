@@ -2,13 +2,8 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
-import { GIGA_COOKIE_NAME, verifyGigaRole } from '@/lib/giga-cookie'
+import { getGigaActor } from '@/lib/admin/giga-actor'
 import { logAudit } from '@/lib/audit'
-
-// A2b: verify the HMAC-SIGNED giga cookie, not an unsigned static string.
-function isSuperAdmin(req: NextRequest): boolean {
-  return verifyGigaRole(req.cookies.get(GIGA_COOKIE_NAME)?.value) === 'super_admin'
-}
 
 function clientIp(req: NextRequest): string {
   return (
@@ -24,7 +19,8 @@ function clientIp(req: NextRequest): string {
  * Admin opens the link in a new tab to see the platform as the client.
  */
 export async function POST(req: NextRequest) {
-  if (!isSuperAdmin(req)) {
+  const actor = await getGigaActor(req)
+  if (!actor) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
@@ -68,19 +64,17 @@ export async function POST(req: NextRequest) {
     }
 
     // A8: audit the impersonation. Best-effort — must attempt, never block.
-    // The giga admin authenticates via the shared super-admin password and has
-    // no individual User row, so the actor is recorded as the giga super-admin
-    // and full actor/target details live in `diff` (performedBy carries the FK).
+    // performedBy is the ACTOR (the admin), never the target: audit records that
+    // point at the impersonated user made incidents unattributable (R6).
     try {
       await logAudit({
         entityType: 'user',
         entityId: userId,
-        action: 'impersonate',
-        performedBy: userId,
+        action: 'user.impersonated',
+        performedBy: actor.id,
         diff: {
-          actor: 'giga:super_admin',
+          actorKind: actor.kind,
           target: { id: userId, email: profile.email },
-          timestamp: new Date().toISOString(),
           redirectTo: redirectTo || '/client/dashboard',
         },
         ipAddress: clientIp(req),

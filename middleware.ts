@@ -50,18 +50,21 @@ function normalizeRole(rawRole: string | null | undefined): ValidRole {
   return 'client'
 }
 
-async function resolveRole(
+async function resolveRoleAndStatus(
   supabase: Awaited<ReturnType<typeof updateSession>>['supabase'],
   userId: string,
   fallbackRole: string | null,
-) {
+): Promise<{ role: ValidRole; status: string | null }> {
   const { data } = await supabase
     .from('profiles')
-    .select('role')
+    .select('role, status')
     .eq('id', userId)
     .maybeSingle()
 
-  return normalizeRole(typeof data?.role === 'string' ? data.role : fallbackRole)
+  return {
+    role: normalizeRole(typeof data?.role === 'string' ? data.role : fallbackRole),
+    status: typeof data?.status === 'string' ? data.status : null,
+  }
 }
 
 export async function middleware(request: NextRequest) {
@@ -110,8 +113,20 @@ export async function middleware(request: NextRequest) {
   const { supabase, response, user } = await updateSession(request)
 
   const metadataRole = user && typeof user.user_metadata?.role === 'string' ? user.user_metadata.role : null
-  const role = user ? await resolveRole(supabase, user.id, metadataRole) : null
-  
+  const resolved = user ? await resolveRoleAndStatus(supabase, user.id, metadataRole) : null
+  const role = resolved?.role ?? null
+
+  // R4: a persistently blocked/archived user gets no further than the login
+  // page, regardless of role or which route they hit. The GoTrue ban (set by
+  // the block route) kills token refresh; this check covers still-live access
+  // tokens for the remainder of their lifetime.
+  if (user && (resolved?.status === 'blocked' || resolved?.status === 'archived')) {
+    await supabase.auth.signOut()
+    const url = new URL('/login', request.url)
+    url.searchParams.set('blocked', '1')
+    return NextResponse.redirect(url)
+  }
+
   if (role) {
     response.headers.set('x-user-role', role)
   }

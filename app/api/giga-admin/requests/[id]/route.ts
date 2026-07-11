@@ -2,14 +2,9 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase-service'
-import { GIGA_COOKIE_NAME, verifyGigaRole } from '@/lib/giga-cookie'
+import { getGigaActor } from '@/lib/admin/giga-actor'
 import { logAudit } from '@/lib/audit'
 import { applyApprovalDecision } from '@/lib/users/approval'
-
-// A2b: verify the HMAC-SIGNED giga cookie, not an unsigned static string.
-function isSuperAdmin(req: NextRequest): boolean {
-  return verifyGigaRole(req.cookies.get(GIGA_COOKIE_NAME)?.value) === 'super_admin'
-}
 
 /**
  * PATCH /api/giga-admin/requests/:id
@@ -22,7 +17,8 @@ function isSuperAdmin(req: NextRequest): boolean {
  * success — otherwise the UI shows "approved" while the DB stays pending.
  */
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
-  if (!isSuperAdmin(req)) {
+  const actor = await getGigaActor(req)
+  if (!actor) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
@@ -91,6 +87,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
         userId,
         status: body.action === 'approve' ? 'approved' : 'rejected',
         reason: body.reason,
+        // Personal admin sessions carry a real profiles UUID → approved_by is
+        // attributable; break-glass has no profile row, so it stays unset.
+        approvedBy: actor.kind === 'session' ? actor.id : undefined,
       })
       if (affected === 0) {
         return NextResponse.json(
@@ -111,11 +110,12 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
             : body.action === 'reject'
               ? 'request.rejected'
               : 'request.status_changed',
-        performedBy: 'giga:super_admin',
+        performedBy: actor.id,
         diff: {
           action: body.action,
           status: requestStatus,
           userId,
+          actorKind: actor.kind,
           ...(body.reason ? { reason: body.reason } : {}),
         },
         ipAddress: req.headers.get('x-forwarded-for') ?? undefined,

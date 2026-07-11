@@ -2,12 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase-service'
-import { GIGA_COOKIE_NAME, verifyGigaRole } from '@/lib/giga-cookie'
-
-// A2b: verify the HMAC-SIGNED giga cookie, not an unsigned static string.
-function isSuperAdmin(req: NextRequest): boolean {
-  return verifyGigaRole(req.cookies.get(GIGA_COOKIE_NAME)?.value) === 'super_admin'
-}
+import { isGigaSuperAdmin } from '@/lib/admin/giga-actor'
 
 function mapStatus(s: string): 'pending' | 'approved' | 'rejected' | 'archived' {
   if (s === 'approved') return 'approved'
@@ -21,13 +16,13 @@ function mapStatus(s: string): 'pending' | 'approved' | 'rejected' | 'archived' 
  * Reads directly from Supabase: profiles (clients) + admin_requests fallback.
  */
 export async function GET(req: NextRequest) {
-  if (!isSuperAdmin(req)) {
+  if (!(await isGigaSuperAdmin(req))) {
     return NextResponse.json({ error: 'Forbidden: super_admin cookie missing' }, { status: 403 })
   }
 
   try {
     // Service-role: giga cookie has no Supabase session; anon client hits RLS
-    // and returns [] for both profiles and admin_requests. authz is on isSuperAdmin().
+    // and returns [] for both profiles and admin_requests. authz is on isGigaSuperAdmin().
     const sb = createServiceClient()
 
     // 1. Try admin_requests table first
@@ -108,7 +103,7 @@ export async function GET(req: NextRequest) {
  * Creates a new request via Supabase.
  */
 export async function POST(req: NextRequest) {
-  if (!isSuperAdmin(req)) {
+  if (!(await isGigaSuperAdmin(req))) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
