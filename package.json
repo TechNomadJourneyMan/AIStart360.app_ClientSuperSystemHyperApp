@@ -76,6 +76,7 @@
     "sharp": "^0.34.5",
     "sonner": "^2.0.7",
     "tailwind-merge": "^2.6.1",
+    "telegram": "^2.26.22",
     "tesseract.js": "^7.0.0",
     "xlsx": "^0.18.5",
     "zod": "^3.25.76",
