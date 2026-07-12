@@ -76,11 +76,11 @@ export function JourneyCanvas({ state }: Props) {
         style={{ transformOrigin: '50% 50%' }}
       >
 
-        {/* Column labels */}
-        <div className="absolute top-6 left-[10%] text-[10px] font-mono uppercase tracking-[0.25em] text-on-surface-variant/60">
+        {/* Column labels — top-16 clears the floating toolbar (z-30, ~52px tall) */}
+        <div className="absolute top-16 left-[10%] text-[10px] font-mono uppercase tracking-[0.25em] text-on-surface-variant/60">
           Точка А · сейчас
         </div>
-        <div className="absolute top-6 right-[10%] text-[10px] font-mono uppercase tracking-[0.25em] text-primary/70">
+        <div className="absolute top-16 right-[8%] text-[10px] font-mono uppercase tracking-[0.25em] text-primary/70">
           Точка Б · цель 12 мес
         </div>
 
@@ -97,12 +97,14 @@ export function JourneyCanvas({ state }: Props) {
               <stop offset="100%" stopColor="#6effc0" stopOpacity="1" />
             </linearGradient>
           </defs>
+          {/* non-scaling-stroke → width is in screen px, not viewBox units */}
           <motion.path
             d={pathD}
             fill="none"
             stroke="url(#pathGrad)"
-            strokeWidth="0.4"
+            strokeWidth="2.5"
             strokeLinecap="round"
+            strokeDasharray="0.1 1.6"
             initial={{ pathLength: 0 }}
             animate={{ pathLength: 1 }}
             transition={{ duration: 1.6, ease: 'easeInOut' }}
@@ -169,31 +171,35 @@ function Node({
 
   const bg = side === 'a' ? 'bg-surface-container/85' : 'bg-primary/8'
 
+  // Outer div owns positioning (left/top + centering translate); inner button
+  // owns the entry animation. Split on purpose: a transform-керframe on the
+  // same element would clobber the centering translate.
   return (
-    <motion.button
-      layout
-      initial={{ opacity: 0, scale: 0.75, y: 20 }}
-      animate={{ opacity: 1, scale: selected ? 1.05 : 1, y: 0 }}
-      transition={{ delay, type: 'spring', stiffness: 220, damping: 22 }}
-      onClick={onSelect}
-      className={`absolute -translate-x-1/2 -translate-y-1/2 rounded-2xl border ${accent} ${bg} backdrop-blur-sm px-4 py-3 text-left shadow-xl min-w-[170px] max-w-[240px] hover:z-20`}
+    <div
+      className="absolute -translate-x-1/2 -translate-y-1/2 hover:z-20"
       style={{ left: `${node.x}%`, top: `${node.y}%` }}
     >
-      <div className="flex items-center gap-1.5 mb-2">
-        <span className={`w-1.5 h-1.5 rounded-full ${side === 'a' ? 'bg-on-surface-variant' : 'bg-primary'}`} />
-        <p className="text-[10px] font-mono uppercase tracking-widest text-on-surface-variant">
-          {node.label}
-        </p>
-      </div>
-      <div className="space-y-1">
-        {node.facts.map((f) => (
-          <div key={f.k} className="flex justify-between gap-2 text-xs">
-            <span className="text-on-surface-variant/70 truncate">{f.k}</span>
-            <span className="font-mono font-semibold text-on-surface">{f.v}</span>
-          </div>
-        ))}
-      </div>
-    </motion.button>
+      <button
+        onClick={onSelect}
+        className={`journey-pop rounded-2xl border ${accent} ${bg} backdrop-blur-sm px-4 py-3 text-left shadow-xl min-w-[170px] max-w-[240px] transition-transform duration-200 ${selected ? 'scale-105' : ''}`}
+        style={{ animationDelay: `${delay}s` }}
+      >
+        <div className="flex items-center gap-1.5 mb-2">
+          <span className={`w-1.5 h-1.5 rounded-full ${side === 'a' ? 'bg-on-surface-variant' : 'bg-primary'}`} />
+          <p className="text-[10px] font-mono uppercase tracking-widest text-on-surface-variant">
+            {node.label}
+          </p>
+        </div>
+        <div className="space-y-1">
+          {node.facts.map((f) => (
+            <div key={f.k} className="flex justify-between gap-2 text-xs">
+              <span className="text-on-surface-variant/70 truncate">{f.k}</span>
+              <span className="font-mono font-semibold text-on-surface">{f.v}</span>
+            </div>
+          ))}
+        </div>
+      </button>
+    </div>
   )
 }
 
@@ -225,16 +231,14 @@ function MilestonesPath({ milestones }: { milestones: JourneyMilestone[] }) {
       {milestones.map((m, i) => {
         const p = anchor(m.t)
         return (
-          <motion.div
+          <div
             key={m.id}
-            initial={{ opacity: 0, scale: 0 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: 1.2 + i * 0.15, type: 'spring', stiffness: 300, damping: 20 }}
             className="absolute -translate-x-1/2 -translate-y-1/2 group"
             style={{ left: `${p.x}%`, top: `${p.y}%` }}
           >
             <button
-              className={`relative w-7 h-7 rounded-full border-2 flex items-center justify-center transition-all ${
+              style={{ animationDelay: `${0.8 + i * 0.15}s` }}
+              className={`journey-pop relative w-7 h-7 rounded-full border-2 flex items-center justify-center transition-all ${
                 m.active
                   ? 'bg-primary border-primary text-on-primary shadow-lg shadow-primary/40 animate-pulse'
                   : m.done
@@ -258,7 +262,7 @@ function MilestonesPath({ milestones }: { milestones: JourneyMilestone[] }) {
                 </p>
               )}
             </div>
-          </motion.div>
+          </div>
         )
       })}
     </>

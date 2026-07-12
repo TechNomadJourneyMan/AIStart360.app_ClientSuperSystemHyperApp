@@ -93,6 +93,7 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith('/fallback-') ||
     pathname === '/' ||
     pathname.startsWith('/presentation') ||
+    pathname.startsWith('/journey') ||
     pathname.startsWith('/gri-free') ||
     // Public legal pages — linked from the registration consent checkbox.
     pathname.startsWith('/terms') ||

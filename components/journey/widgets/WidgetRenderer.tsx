@@ -18,6 +18,7 @@ import type {
   BenchmarkStripWidget,
   RiskAlertWidget,
   QuickWinWidget,
+  CustomModuleWidget,
 } from '@/lib/journey/state'
 
 export function WidgetRenderer({ w }: { w: Widget }) {
@@ -34,6 +35,7 @@ export function WidgetRenderer({ w }: { w: Widget }) {
     case 'benchmark_strip': return <BenchmarkStrip w={w} />
     case 'risk_alert':      return <RiskAlert w={w} />
     case 'quick_win':       return <QuickWin w={w} />
+    case 'custom_module':   return <CustomModule w={w} />
   }
 }
 
@@ -302,6 +304,39 @@ function RiskAlert({ w }: { w: RiskAlertWidget }) {
       </div>
     </div>
   )
+}
+
+// ── custom_module ────────────────────────────────────────────────────
+// AI-composed free-form block. Body is plain text with light markdown
+// (**bold**, - bullets). We render minimally without a md library.
+
+function CustomModule({ w }: { w: CustomModuleWidget }) {
+  const lines = w.body.split('\n')
+  return (
+    <div className="space-y-1.5">
+      {lines.map((line, i) => {
+        const trimmed = line.trim()
+        if (!trimmed) return null
+        if (trimmed.startsWith('- ') || trimmed.startsWith('• ')) {
+          return (
+            <div key={i} className="flex items-start gap-2 text-xs text-on-surface-variant leading-relaxed">
+              <span className="w-1 h-1 rounded-full bg-primary mt-1.5 flex-shrink-0" />
+              <span>{stripBold(trimmed.slice(2))}</span>
+            </div>
+          )
+        }
+        return (
+          <p key={i} className="text-xs text-on-surface leading-relaxed">
+            {stripBold(trimmed)}
+          </p>
+        )
+      })}
+    </div>
+  )
+}
+
+function stripBold(s: string): string {
+  return s.replace(/\*\*(.+?)\*\*/g, '$1')
 }
 
 // ── quick_win ────────────────────────────────────────────────────────

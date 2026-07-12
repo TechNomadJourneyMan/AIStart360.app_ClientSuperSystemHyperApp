@@ -1,5 +1,8 @@
 'use client'
 
+// Controlled chat pane. Parent owns messages/typing and handles sending
+// (POST /api/journey/chat + envelope merge). This component is pure UI.
+
 import { motion, AnimatePresence } from 'framer-motion'
 import { useEffect, useRef, useState } from 'react'
 import type { ChatMessage } from '@/lib/journey/state'
@@ -8,44 +11,24 @@ interface Props {
   messages: ChatMessage[]
   companyName: string
   industry: string
+  typing: boolean
+  onSend: (text: string) => void
 }
 
-export function ChatPane({ messages, companyName, industry }: Props) {
+export function ChatPane({ messages, companyName, industry, typing, onSend }: Props) {
   const [draft, setDraft] = useState('')
-  const [local, setLocal] = useState(messages)
   const scrollRef = useRef<HTMLDivElement>(null)
 
-  // Auto-scroll on new message
+  // Auto-scroll on new message / typing indicator
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
-  }, [local.length])
+  }, [messages.length, typing])
 
   const send = () => {
     const text = draft.trim()
-    if (!text) return
-    setLocal((m) => [
-      ...m,
-      {
-        id: `u-${Date.now()}`,
-        role: 'user',
-        text,
-        createdAt: new Date().toISOString(),
-      },
-    ])
+    if (!text || typing) return
     setDraft('')
-    // Fake AI echo — real streaming lands in /api/journey/chat (todo)
-    setTimeout(() => {
-      setLocal((m) => [
-        ...m,
-        {
-          id: `a-${Date.now()}`,
-          role: 'assistant',
-          text:
-            'Принял. Пока это lab-версия — AI-стрим подключается следующим шагом. Виджеты справа обновятся после подключения /api/journey/chat.',
-          createdAt: new Date().toISOString(),
-        },
-      ])
-    }, 500)
+    onSend(text)
   }
 
   return (
@@ -62,7 +45,7 @@ export function ChatPane({ messages, companyName, industry }: Props) {
               {companyName || 'Новый диалог'}
             </p>
             <p className="text-[10px] text-on-surface-variant truncate">
-              {industry || 'AI ждёт первого сообщения'}
+              {industry || 'AI ждёт рассказа о бизнесе'}
             </p>
           </div>
         </div>
@@ -74,9 +57,10 @@ export function ChatPane({ messages, companyName, industry }: Props) {
       {/* Messages */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-5 py-6 space-y-5 scroll-smooth">
         <AnimatePresence initial={false}>
-          {local.map((m) => (
+          {messages.map((m) => (
             <MessageBubble key={m.id} m={m} />
           ))}
+          {typing && <TypingBubble key="typing" />}
         </AnimatePresence>
       </div>
 
@@ -85,7 +69,7 @@ export function ChatPane({ messages, companyName, industry }: Props) {
         <div className="flex items-end gap-2 rounded-xl bg-surface-container border border-white/[0.06] focus-within:border-primary/40 focus-within:ring-2 focus-within:ring-primary/10 transition-all p-2">
           <button
             className="p-2 rounded-lg text-on-surface-variant hover:text-primary hover:bg-primary/10 transition-colors flex-shrink-0"
-            title="Прикрепить файл"
+            title="Прикрепить файл (скоро)"
           >
             <span className="material-symbols-outlined text-lg">attach_file</span>
           </button>
@@ -99,12 +83,12 @@ export function ChatPane({ messages, companyName, industry }: Props) {
               }
             }}
             rows={1}
-            placeholder="Расскажи про бизнес или закинь отчёт…"
+            placeholder="Расскажи про бизнес или сформулируй цель…"
             className="flex-1 bg-transparent text-sm text-on-surface placeholder:text-on-surface-variant/40 outline-none resize-none py-2 max-h-32"
           />
           <button
             onClick={send}
-            disabled={!draft.trim()}
+            disabled={!draft.trim() || typing}
             className="p-2 rounded-lg bg-primary text-on-primary disabled:opacity-30 disabled:cursor-not-allowed hover:shadow-lg hover:shadow-primary/30 transition-all flex-shrink-0"
           >
             <span className="material-symbols-outlined text-lg">arrow_upward</span>
@@ -130,7 +114,7 @@ function MessageBubble({ m }: { m: ChatMessage }) {
     >
       <div className={`max-w-[85%] ${isUser ? 'order-2' : ''}`}>
         <div
-          className={`px-4 py-3 rounded-2xl text-sm leading-relaxed ${
+          className={`px-4 py-3 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap ${
             isUser
               ? 'bg-primary text-on-primary rounded-br-md'
               : 'bg-surface-container border border-white/[0.04] text-on-surface rounded-bl-md'
@@ -154,6 +138,28 @@ function MessageBubble({ m }: { m: ChatMessage }) {
             ))}
           </div>
         )}
+      </div>
+    </motion.div>
+  )
+}
+
+function TypingBubble() {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0 }}
+      className="flex justify-start"
+    >
+      <div className="px-4 py-3.5 rounded-2xl rounded-bl-md bg-surface-container border border-white/[0.04] flex items-center gap-1.5">
+        {[0, 1, 2].map((i) => (
+          <motion.span
+            key={i}
+            className="w-1.5 h-1.5 rounded-full bg-primary/70"
+            animate={{ opacity: [0.3, 1, 0.3] }}
+            transition={{ duration: 1.1, repeat: Infinity, delay: i * 0.22 }}
+          />
+        ))}
       </div>
     </motion.div>
   )

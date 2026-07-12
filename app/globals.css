@@ -548,3 +548,14 @@
   background: rgba(168, 85, 247, 0.04);
   color: rgba(168, 85, 247, 0.85);
 }
+
+/* ── Journey canvas node/milestone entry (CSS keyframes on purpose:
+      compositor-driven, keeps playing even when RAF is throttled,
+      unlike JS-spring animations) ── */
+@keyframes journey-pop {
+  from { opacity: 0; transform: scale(0.82); }
+  to   { opacity: 1; transform: scale(1); }
+}
+.journey-pop {
+  animation: journey-pop 0.45s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}

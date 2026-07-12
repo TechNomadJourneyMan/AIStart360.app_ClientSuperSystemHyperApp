@@ -218,7 +218,7 @@ const pointA: JourneyState['pointA'] = [
 const pointB: JourneyState['pointB'] = [
   {
     id: 'b-finance',   label: 'Финансы',  block: 'finance',   status: 'ok',
-    x: 88, y: 25,
+    x: 85, y: 25,
     facts: [
       { k: 'Выручка/год',    v: '₸140М' },
       { k: 'Валовая маржа',  v: '40%' },
@@ -227,7 +227,7 @@ const pointB: JourneyState['pointB'] = [
   },
   {
     id: 'b-sales',     label: 'Продажи',  block: 'sales',     status: 'ok',
-    x: 92, y: 50,
+    x: 88, y: 50,
     facts: [
       { k: 'Средний чек',    v: '₸210К' },
       { k: 'LTV/CAC',        v: '≥ 5x' },
@@ -236,7 +236,7 @@ const pointB: JourneyState['pointB'] = [
   },
   {
     id: 'b-clients',   label: 'Клиенты',  block: 'clients',   status: 'ok',
-    x: 86, y: 72,
+    x: 84, y: 72,
     facts: [
       { k: 'Retention 30d',  v: '≥ 60%' },
       { k: 'Churn',          v: '<3%' },

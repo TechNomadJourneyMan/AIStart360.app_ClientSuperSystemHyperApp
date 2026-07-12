@@ -55,6 +55,7 @@ export type WidgetKind =
   | 'benchmark_strip'
   | 'risk_alert'
   | 'quick_win'
+  | 'custom_module'
 
 export interface WidgetBase {
   id: string
@@ -163,6 +164,12 @@ export interface QuickWinWidget extends WidgetBase {
   steps: string[]
 }
 
+export interface CustomModuleWidget extends WidgetBase {
+  kind: 'custom_module'
+  /** Free markdown-ish body the AI composes when no primitive fits */
+  body: string
+}
+
 export type Widget =
   | QuestionWidget
   | UploadPromptWidget
@@ -176,6 +183,7 @@ export type Widget =
   | BenchmarkStripWidget
   | RiskAlertWidget
   | QuickWinWidget
+  | CustomModuleWidget
 
 /**
  * Command shape the AI streams back inside chat messages to spawn a widget.

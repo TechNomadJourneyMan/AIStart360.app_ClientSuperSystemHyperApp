@@ -140,6 +140,7 @@ function iconFor(kind: Widget['kind']): string {
     case 'benchmark_strip': return 'align_horizontal_center'
     case 'risk_alert':      return 'warning'
     case 'quick_win':       return 'bolt'
+    case 'custom_module':   return 'widgets'
     default:                return 'circle'
   }
 }
