@@ -17,7 +17,7 @@
 // Views: Диалог (chat + rail) | Карта роста (A→B canvas)
 
 import Link from 'next/link'
-import { Suspense, useCallback, useState } from 'react'
+import { Suspense, useCallback, useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { MOCK_JOURNEY_STATE } from '@/lib/journey/mock-state'
 import { emptyJourneyState, type ChatMessage, type JourneyState } from '@/lib/journey/state'
@@ -39,13 +39,44 @@ function freshState(): JourneyState {
   return { ...emptyJourneyState(), messages: [GREETING] }
 }
 
+const STORAGE_KEY = 'aistart360_journey_v1'
+
+function loadPersisted(): JourneyState | null {
+  if (typeof window === 'undefined') return null
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as JourneyState
+    // Sanity: envelope shape drift → start clean rather than crash render
+    if (!Array.isArray(parsed.messages) || !Array.isArray(parsed.widgets)) return null
+    return parsed
+  } catch {
+    return null
+  }
+}
+
 function JourneyInner() {
   const searchParams = useSearchParams()
   const demo = searchParams.get('demo') === '1'
+  const reset = searchParams.get('reset') === '1'
 
-  const [state, setState] = useState<JourneyState>(() => (demo ? MOCK_JOURNEY_STATE : freshState()))
+  const [state, setState] = useState<JourneyState>(() => {
+    if (demo) return MOCK_JOURNEY_STATE
+    if (reset) return freshState()
+    return loadPersisted() ?? freshState()
+  })
   const [view, setView] = useState<View>('chat')
   const [typing, setTyping] = useState(false)
+
+  // Persist every state change (demo mode excluded — it's a showcase).
+  useEffect(() => {
+    if (demo) return
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
+    } catch {
+      // quota/private-mode — non-fatal, session just won't survive refresh
+    }
+  }, [state, demo])
 
   const toggleWidget = useCallback((id: string) => {
     setState((s) => ({
@@ -143,6 +174,105 @@ function JourneyInner() {
     }
   }, [state])
 
+  // File upload → /api/journey/analyze → envelope merge (same as send,
+  // but multipart and with an attachment chip on the user message).
+  const sendFile = useCallback(async (file: File) => {
+    if (typing) return
+    const userMsg: ChatMessage = {
+      id: `u-${Date.now()}`,
+      role: 'user',
+      text: `Загрузил файл: ${file.name}`,
+      attachments: [{
+        id: `att-${Date.now()}`,
+        name: file.name,
+        mime: file.type || 'application/octet-stream',
+        sizeBytes: file.size,
+      }],
+      createdAt: new Date().toISOString(),
+    }
+    const next: JourneyState = { ...state, messages: [...state.messages, userMsg] }
+    const historySnapshot = next.messages
+      .filter((m) => m.role !== 'system')
+      .map((m) => ({ role: m.role as 'user' | 'assistant', text: m.text }))
+    setState(next)
+    setTyping(true)
+
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      fd.append('payload', JSON.stringify({
+        history: historySnapshot,
+        state: {
+          companyName: next.companyName,
+          industry: next.industry,
+          pointA: next.pointA,
+          pointB: next.pointB,
+          milestones: next.milestones,
+          widgets: next.widgets,
+        },
+      }))
+      const res = await fetch('/api/journey/analyze', { method: 'POST', body: fd })
+      const ct = res.headers.get('content-type') ?? ''
+      if (!ct.includes('application/json')) throw new Error(`HTTP ${res.status}`)
+      const json = await res.json() as { ok: boolean; data?: Parameters<typeof applyEnvelope>[1]; error?: string }
+
+      if (!json.ok || !json.data) {
+        const friendly =
+          json.error === 'file_too_large' ? 'Файл больше 10МБ — сожми или выгрузи меньший период.'
+          : json.error === 'parse_failed' ? 'Не смог разобрать файл. Поддерживаю PDF, XLSX, CSV, DOCX, TXT.'
+          : json.error === 'empty_document' ? 'Файл пустой или без текстового слоя (скан без OCR?).'
+          : `Анализ не прошёл (${json.error ?? 'unknown'}). Попробуй ещё раз.`
+        setState((s) => ({
+          ...s,
+          messages: [...s.messages, {
+            id: `err-${Date.now()}`,
+            role: 'assistant',
+            text: friendly,
+            createdAt: new Date().toISOString(),
+          }],
+        }))
+        return
+      }
+
+      const env = json.data
+      setState((s) => {
+        const merged = applyEnvelope(s, env)
+        return {
+          ...merged,
+          messages: [...s.messages, {
+            id: `a-${Date.now()}`,
+            role: 'assistant',
+            text: env.reply,
+            createdAt: new Date().toISOString(),
+          }],
+        }
+      })
+    } catch {
+      setState((s) => ({
+        ...s,
+        messages: [...s.messages, {
+          id: `err-${Date.now()}`,
+          role: 'assistant',
+          text: 'Загрузка сорвалась по сети. Попробуй файл ещё раз.',
+          createdAt: new Date().toISOString(),
+        }],
+      }))
+    } finally {
+      setTyping(false)
+    }
+  }, [state, typing])
+
+  // Canvas node drag → persist new position (percent coords).
+  const moveNode = useCallback((side: 'a' | 'b', id: string, x: number, y: number) => {
+    setState((s) => {
+      const key = side === 'a' ? 'pointA' : 'pointB'
+      return {
+        ...s,
+        [key]: s[key].map((n) => (n.id === id ? { ...n, x, y } : n)),
+      }
+    })
+  }, [])
+
   return (
     <div className="min-h-screen bg-[#0a0d13] text-on-surface flex flex-col">
 
@@ -201,6 +331,18 @@ function JourneyInner() {
               <span className={`w-1.5 h-1.5 rounded-full ${typing ? 'bg-tertiary-container animate-pulse' : 'bg-primary animate-pulse'}`} />
               {typing ? 'AI думает…' : 'AI онлайн'}
             </div>
+            <button
+              onClick={() => {
+                if (typeof window !== 'undefined') localStorage.removeItem(STORAGE_KEY)
+                setState(freshState())
+                setView('chat')
+              }}
+              className="text-xs text-on-surface-variant hover:text-error transition-colors flex items-center gap-1"
+              title="Стереть диалог и карту, начать заново"
+            >
+              <span className="material-symbols-outlined text-[14px]">restart_alt</span>
+              Новый диалог
+            </button>
             <Link
               href="/client/welcome"
               className="text-xs text-on-surface-variant hover:text-primary transition-colors"
@@ -221,16 +363,18 @@ function JourneyInner() {
               industry={state.industry}
               typing={typing}
               onSend={send}
+              onFile={sendFile}
             />
             <WidgetRail
               widgets={state.widgets}
               onToggle={toggleWidget}
               onDismiss={dismissWidget}
+              onAnswer={(text) => { if (!typing) void send(text) }}
             />
           </div>
         ) : (
           <div className="p-4 h-[calc(100vh-57px)]">
-            <JourneyCanvas state={state} />
+            <JourneyCanvas state={state} onNodeMove={moveNode} />
           </div>
         )}
       </main>

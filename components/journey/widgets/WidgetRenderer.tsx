@@ -21,9 +21,15 @@ import type {
   CustomModuleWidget,
 } from '@/lib/journey/state'
 
-export function WidgetRenderer({ w }: { w: Widget }) {
+export interface WidgetRendererProps {
+  w: Widget
+  /** Send an answer back to the chat (question options, crm picks, …) */
+  onAnswer?: (text: string) => void
+}
+
+export function WidgetRenderer({ w, onAnswer }: WidgetRendererProps) {
   switch (w.kind) {
-    case 'question':        return <Question w={w} />
+    case 'question':        return <Question w={w} onAnswer={onAnswer} />
     case 'upload_prompt':   return <UploadPrompt w={w} />
     case 'insight_card':    return <InsightCard w={w} />
     case 'crm_check':       return <CrmCheck w={w} />
@@ -41,7 +47,7 @@ export function WidgetRenderer({ w }: { w: Widget }) {
 
 // ── question ─────────────────────────────────────────────────────────
 
-function Question({ w }: { w: QuestionWidget }) {
+function Question({ w, onAnswer }: { w: QuestionWidget; onAnswer?: (text: string) => void }) {
   return (
     <div>
       <p className="text-sm text-on-surface leading-relaxed mb-3">{w.prompt}</p>
@@ -50,7 +56,8 @@ function Question({ w }: { w: QuestionWidget }) {
           {w.options.map((o) => (
             <button
               key={o}
-              className="text-[11px] px-2.5 py-1.5 rounded-lg bg-surface-container-low border border-white/[0.08] text-on-surface hover:border-primary/40 hover:text-primary transition-colors"
+              onClick={() => onAnswer?.(o)}
+              className="text-[11px] px-2.5 py-1.5 rounded-lg bg-surface-container-low border border-white/[0.08] text-on-surface hover:border-primary/40 hover:text-primary transition-colors active:scale-95"
             >
               {o}
             </button>

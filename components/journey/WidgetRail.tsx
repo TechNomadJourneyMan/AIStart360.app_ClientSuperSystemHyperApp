@@ -12,9 +12,11 @@ interface Props {
   widgets: Widget[]
   onToggle: (id: string) => void
   onDismiss: (id: string) => void
+  /** Question-option clicks etc. flow back to the chat as a user message */
+  onAnswer?: (text: string) => void
 }
 
-export function WidgetRail({ widgets, onToggle, onDismiss }: Props) {
+export function WidgetRail({ widgets, onToggle, onDismiss, onAnswer }: Props) {
   const expanded  = widgets.filter((w) => !w.collapsed).sort((a, b) => b.priority - a.priority)
   const collapsed = widgets.filter((w) =>  w.collapsed).sort((a, b) => b.priority - a.priority)
 
@@ -68,7 +70,7 @@ export function WidgetRail({ widgets, onToggle, onDismiss }: Props) {
               exit={{ opacity: 0, height: 0, marginBottom: 0 }}
               transition={{ duration: 0.2 }}
             >
-              <WidgetCard w={w} onToggle={onToggle} onDismiss={onDismiss} />
+              <WidgetCard w={w} onToggle={onToggle} onDismiss={onDismiss} onAnswer={onAnswer} />
             </motion.div>
           ))}
         </AnimatePresence>
@@ -88,10 +90,12 @@ function WidgetCard({
   w,
   onToggle,
   onDismiss,
+  onAnswer,
 }: {
   w: Widget
   onToggle: (id: string) => void
   onDismiss: (id: string) => void
+  onAnswer?: (text: string) => void
 }) {
   return (
     <div className="bg-surface-container border border-white/[0.06] rounded-xl overflow-hidden">
@@ -120,7 +124,7 @@ function WidgetCard({
         </div>
       </div>
       <div className="p-3.5">
-        <WidgetRenderer w={w} />
+        <WidgetRenderer w={w} onAnswer={onAnswer} />
       </div>
     </div>
   )

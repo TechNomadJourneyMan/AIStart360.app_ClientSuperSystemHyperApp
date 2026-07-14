@@ -13,11 +13,16 @@ interface Props {
   industry: string
   typing: boolean
   onSend: (text: string) => void
+  /** Attach-button handler: file goes to /api/journey/analyze */
+  onFile?: (file: File) => void
 }
 
-export function ChatPane({ messages, companyName, industry, typing, onSend }: Props) {
+const ACCEPT_TYPES = '.pdf,.docx,.xlsx,.xls,.csv,.txt'
+
+export function ChatPane({ messages, companyName, industry, typing, onSend, onFile }: Props) {
   const [draft, setDraft] = useState('')
   const scrollRef = useRef<HTMLDivElement>(null)
+  const fileRef = useRef<HTMLInputElement>(null)
 
   // Auto-scroll on new message / typing indicator
   useEffect(() => {
@@ -67,9 +72,22 @@ export function ChatPane({ messages, companyName, industry, typing, onSend }: Pr
       {/* Composer */}
       <div className="border-t border-white/[0.04] p-3">
         <div className="flex items-end gap-2 rounded-xl bg-surface-container border border-white/[0.06] focus-within:border-primary/40 focus-within:ring-2 focus-within:ring-primary/10 transition-all p-2">
+          <input
+            ref={fileRef}
+            type="file"
+            accept={ACCEPT_TYPES}
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0]
+              if (f && onFile) onFile(f)
+              e.target.value = '' // allow re-selecting the same file
+            }}
+          />
           <button
-            className="p-2 rounded-lg text-on-surface-variant hover:text-primary hover:bg-primary/10 transition-colors flex-shrink-0"
-            title="Прикрепить файл (скоро)"
+            onClick={() => fileRef.current?.click()}
+            disabled={typing}
+            className="p-2 rounded-lg text-on-surface-variant hover:text-primary hover:bg-primary/10 transition-colors flex-shrink-0 disabled:opacity-30"
+            title="Прикрепить отчёт: PDF / XLSX / CSV / DOCX / TXT"
           >
             <span className="material-symbols-outlined text-lg">attach_file</span>
           </button>

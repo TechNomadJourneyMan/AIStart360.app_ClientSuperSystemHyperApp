@@ -14,9 +14,11 @@ import type { JourneyMilestone, JourneyNode, JourneyState } from '@/lib/journey/
 
 interface Props {
   state: JourneyState
+  /** Drag-to-reposition callback; coords are % of the canvas plane */
+  onNodeMove?: (side: 'a' | 'b', id: string, x: number, y: number) => void
 }
 
-export function JourneyCanvas({ state }: Props) {
+export function JourneyCanvas({ state, onNodeMove }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [selected, setSelected] = useState<string | null>(null)
   const [zoom, setZoom]         = useState(1)
@@ -121,6 +123,9 @@ export function JourneyCanvas({ state }: Props) {
             onSelect={() => setSelected((s) => (s === n.id ? null : n.id))}
             delay={0.1 + i * 0.08}
             side="a"
+            containerRef={containerRef}
+            zoom={zoom}
+            onMove={onNodeMove}
           />
         ))}
 
@@ -133,6 +138,9 @@ export function JourneyCanvas({ state }: Props) {
             onSelect={() => setSelected((s) => (s === n.id ? null : n.id))}
             delay={0.6 + i * 0.08}
             side="b"
+            containerRef={containerRef}
+            zoom={zoom}
+            onMove={onNodeMove}
           />
         ))}
 
@@ -156,20 +164,57 @@ export function JourneyCanvas({ state }: Props) {
 // ─── Node ──────────────────────────────────────────────────────────────
 
 function Node({
-  node, selected, onSelect, delay, side,
+  node, selected, onSelect, delay, side, containerRef, zoom, onMove,
 }: {
   node: JourneyNode
   selected: boolean
   onSelect: () => void
   delay: number
   side: 'a' | 'b'
+  containerRef: React.RefObject<HTMLDivElement>
+  zoom: number
+  onMove?: (side: 'a' | 'b', id: string, x: number, y: number) => void
 }) {
+  const draggedRef = useRef(false)
+
   const accent =
     node.status === 'critical' ? 'border-error/50 shadow-error/10'
     : node.status === 'weak'   ? 'border-tertiary-container/40 shadow-tertiary-container/10'
                                : 'border-primary/40 shadow-primary/10'
 
   const bg = side === 'a' ? 'bg-surface-container/85' : 'bg-primary/8'
+
+  // Manual pointer-drag (no framer): survives RAF throttling and keeps the
+  // math simple — pixel delta ÷ (container size × zoom) → % delta.
+  const startDrag = (e: React.PointerEvent) => {
+    if (!onMove) return
+    const container = containerRef.current
+    if (!container) return
+    e.preventDefault()
+    const rect = container.getBoundingClientRect()
+    const startX = e.clientX
+    const startY = e.clientY
+    const origX = node.x
+    const origY = node.y
+    draggedRef.current = false
+
+    const onPointerMove = (ev: PointerEvent) => {
+      const dxPct = ((ev.clientX - startX) / (rect.width * zoom)) * 100
+      const dyPct = ((ev.clientY - startY) / (rect.height * zoom)) * 100
+      if (Math.abs(ev.clientX - startX) + Math.abs(ev.clientY - startY) > 4) {
+        draggedRef.current = true
+      }
+      const nx = Math.min(97, Math.max(3, origX + dxPct))
+      const ny = Math.min(92, Math.max(8, origY + dyPct))
+      onMove(side, node.id, nx, ny)
+    }
+    const onPointerUp = () => {
+      window.removeEventListener('pointermove', onPointerMove)
+      window.removeEventListener('pointerup', onPointerUp)
+    }
+    window.addEventListener('pointermove', onPointerMove)
+    window.addEventListener('pointerup', onPointerUp)
+  }
 
   // Outer div owns positioning (left/top + centering translate); inner button
   // owns the entry animation. Split on purpose: a transform-керframe on the
@@ -178,10 +223,11 @@ function Node({
     <div
       className="absolute -translate-x-1/2 -translate-y-1/2 hover:z-20"
       style={{ left: `${node.x}%`, top: `${node.y}%` }}
+      onPointerDown={startDrag}
     >
       <button
-        onClick={onSelect}
-        className={`journey-pop rounded-2xl border ${accent} ${bg} backdrop-blur-sm px-4 py-3 text-left shadow-xl min-w-[170px] max-w-[240px] transition-transform duration-200 ${selected ? 'scale-105' : ''}`}
+        onClick={() => { if (!draggedRef.current) onSelect() }}
+        className={`journey-pop rounded-2xl border ${accent} ${bg} backdrop-blur-sm px-4 py-3 text-left shadow-xl min-w-[170px] max-w-[240px] transition-transform duration-200 ${selected ? 'scale-105' : ''} ${onMove ? 'cursor-grab active:cursor-grabbing' : ''}`}
         style={{ animationDelay: `${delay}s` }}
       >
         <div className="flex items-center gap-1.5 mb-2">
