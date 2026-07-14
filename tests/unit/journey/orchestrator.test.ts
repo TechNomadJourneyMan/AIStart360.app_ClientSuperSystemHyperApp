@@ -8,7 +8,7 @@ import {
   JOURNEY_SYSTEM_PROMPT,
   wrapUntrustedDocument,
 } from '@/lib/journey/prompt'
-import { mergeJourneyUpdate } from '@/lib/journey/orchestrator'
+import { mergeJourneyUpdate, normalizeJourneyAiCandidate } from '@/lib/journey/orchestrator'
 import { enforceJourneyStatePolicy } from '@/lib/journey/policy'
 import { journeyStateSchema } from '@/lib/journey/schema'
 import { runLocalTurn } from '@/components/journey/demo-machine'
@@ -18,6 +18,62 @@ const BUSINESS_DESCRIPTION = 'У меня один магазин помидор
 const GOAL = 'Хочу открыть пять магазинов за 12 месяцев'
 
 describe('journey orchestration fallback', () => {
+  it('materializes canonical widget data from server-owned facts, goals and roadmap', () => {
+    const current = deterministicOrchestrator(
+      createEmptyJourneyState('journey-canonical-widgets'),
+      BUSINESS_DESCRIPTION,
+      'test fallback',
+    )
+    const normalized = normalizeJourneyAiCandidate({
+      facts: [],
+      goals: [],
+      roadmap: [],
+      widgets: [{
+        id: 'widget-passport',
+        kind: 'business_passport',
+        data: { facts: ['wrong model shape'] },
+      }],
+    }, current, BUSINESS_DESCRIPTION) as { widgets: Array<{ data: { facts: unknown[] } }> }
+
+    expect(normalized.widgets[0].data.facts).toEqual([])
+
+    const passport = current.widgets.find((widget) => widget.kind === 'business_passport')
+    if (!passport || passport.kind !== 'business_passport') throw new Error('Passport fixture missing')
+    const merged = mergeJourneyUpdate(current, 'Обнови паспорт', {
+      phase: 'partial',
+      assistantMessage: 'Паспорт обновлён из серверных фактов.',
+      facts: [],
+      goals: [],
+      roadmap: [],
+      widgets: [{ ...passport, data: { facts: [] } }],
+      widgetDecisions: [{
+        widgetId: passport.id,
+        kind: passport.kind,
+        action: 'update',
+        reason: 'Паспорт нужен для подтверждения исходной точки.',
+        evidenceFactIds: [],
+      }],
+      suggestions: [],
+    })
+    const mergedPassport = merged.widgets.find((widget) => widget.kind === 'business_passport')
+    expect(mergedPassport?.kind === 'business_passport' ? mergedPassport.data.facts : []).toEqual(current.facts)
+
+    const confirmed = journeyStateSchema.parse({
+      ...current,
+      facts: current.facts.map((fact) => ({ ...fact, status: 'confirmed' })),
+    })
+    const goalCandidate = normalizeJourneyAiCandidate({
+      phase: 'partial',
+      facts: [],
+      goals: [{ id: 'model-goal', title: GOAL, metric: 'Магазины', target: 5, deadline: '12 месяцев', status: 'draft' }],
+      roadmap: [],
+      widgets: [],
+    }, confirmed, GOAL) as { phase: string; goals: Array<{ target: string; status: string }>; roadmap: unknown[] }
+    expect(goalCandidate.phase).toBe('ready')
+    expect(goalCandidate.goals[0]).toMatchObject({ target: '5 магазинов', status: 'confirmed' })
+    expect(goalCandidate.roadmap.length).toBeGreaterThan(0)
+  })
+
   it('deterministically moves literal input through pending facts, confirmation, Point B and roadmap', () => {
     const empty = createEmptyJourneyState('journey-demo-workspace')
     const discovered = deterministicOrchestrator(empty, BUSINESS_DESCRIPTION, 'test fallback')

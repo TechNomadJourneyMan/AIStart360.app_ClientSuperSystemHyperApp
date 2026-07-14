@@ -78,6 +78,12 @@ interface ChatOptions {
   maxTokens?: number
   temperature?: number
   jsonMode?: boolean
+  /** Enforce an exact JSON Schema on providers that support structured output. */
+  jsonSchema?: {
+    name: string
+    strict?: boolean
+    schema: Record<string, unknown>
+  }
   /**
    * Abort the request after this many ms. Prevents a stalled OpenRouter/model
    * response from hanging the whole route indefinitely. Default 45s (covers a
@@ -130,7 +136,21 @@ export async function chatWithOpenRouter(opts: ChatOptions): Promise<string | nu
     max_tokens: opts.maxTokens ?? 2000,
     temperature: opts.temperature ?? 0.7,
   }
-  if (opts.jsonMode) body.response_format = { type: 'json_object' }
+  if (opts.jsonSchema) {
+    body.response_format = {
+      type: 'json_schema',
+      json_schema: {
+        name: opts.jsonSchema.name,
+        strict: opts.jsonSchema.strict ?? true,
+        schema: opts.jsonSchema.schema,
+      },
+    }
+    // Do not silently route a strict-schema request through a provider that
+    // ignores response_format and returns merely valid, but contract-wrong JSON.
+    body.provider = { require_parameters: true }
+  } else if (opts.jsonMode) {
+    body.response_format = { type: 'json_object' }
+  }
 
   const timeoutMs = opts.timeoutMs ?? 45_000
 

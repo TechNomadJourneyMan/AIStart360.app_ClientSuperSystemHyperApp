@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { generateObjectViaOpenRouter, hasOpenRouterKey } from '@/lib/ai/structured'
+import { OPENROUTER_MODELS } from '@/lib/ai/openrouter'
 import { deterministicOrchestrator } from './demo'
 import { buildJourneyUserPrompt, JOURNEY_SYSTEM_PROMPT } from './prompt'
 import { enforceJourneyStatePolicy } from './policy'
@@ -36,11 +37,17 @@ export async function orchestrateJourneyTurn(
     system: JOURNEY_SYSTEM_PROMPT,
     user: buildJourneyUserPrompt(current, message),
     schema: journeyAiUpdateSchema,
-    complexity: 'high',
+    model: OPENROUTER_MODELS.gpt4,
     maxTokens: 3_500,
     temperature: 0.2,
+    // The Journey registry is intentionally rich and exceeds Anthropic's
+    // native optional-field grammar cap. Keep the full schema in-band and
+    // retain Zod/policy validation instead of deleting legitimate fields.
+    strictJsonSchema: 'prompt',
+    normalizeOptionalNulls: { preserveKeys: ['score', 'hasCrm'] },
+    normalizeCandidate: (candidate) => normalizeJourneyAiCandidate(candidate, current, message),
     // Two validation attempts must still fit the route's 60s Function budget.
-    timeoutMs: 20_000,
+    timeoutMs: 27_000,
     label: 'journey-orchestrator',
   })
 
@@ -79,6 +86,68 @@ export async function orchestrateJourneyTurn(
   }
 }
 
+/**
+ * Canonical widgets mirror server-validated entities instead of trusting the
+ * model to duplicate those entities in a second shape. AI still selects the
+ * widget and explains why; the server owns the actual fact/goal/roadmap data.
+ */
+export function normalizeJourneyAiCandidate(
+  candidate: unknown,
+  current: JourneyState,
+  message: string,
+): unknown {
+  if (!isUnknownRecord(candidate)) return candidate
+  const proposedFacts = Array.isArray(candidate.facts) ? candidate.facts : []
+  const factsById = new Map<string, unknown>()
+  for (const fact of proposedFacts) {
+    if (!isUnknownRecord(fact) || typeof fact.id !== 'string' || fact.status === 'rejected') continue
+    factsById.set(fact.id, fact)
+  }
+  const deterministicScaffold = deterministicOrchestrator(current, message)
+  const hasMeasurablePointB = deterministicScaffold.phase === 'ready' &&
+    deterministicScaffold.goals.some((goal) =>
+      goal.status === 'confirmed' && goal.metric && goal.target && goal.deadline,
+    )
+  const proposedGoals = hasMeasurablePointB
+    ? deterministicScaffold.goals
+    : Array.isArray(candidate.goals) && candidate.goals.length
+      ? candidate.goals
+      : current.goals
+  const proposedRoadmap = hasMeasurablePointB
+    ? deterministicScaffold.roadmap
+    : Array.isArray(candidate.roadmap) && candidate.roadmap.length
+      ? candidate.roadmap
+      : current.roadmap
+
+  const widgets = Array.isArray(candidate.widgets)
+    ? candidate.widgets.map((widget) => {
+        if (!isUnknownRecord(widget) || typeof widget.kind !== 'string') return widget
+        if (widget.kind === 'business_passport') {
+          return { ...widget, data: { facts: [...factsById.values()].slice(0, 16) } }
+        }
+        if (widget.kind === 'point_b_goals') {
+          return { ...widget, data: { goals: proposedGoals.slice(0, 10) } }
+        }
+        if (widget.kind === 'roadmap_actions') {
+          return { ...widget, data: { items: proposedRoadmap.slice(0, 20) } }
+        }
+        return widget
+      })
+    : candidate.widgets
+
+  return {
+    ...candidate,
+    ...(hasMeasurablePointB ? { phase: 'ready' as const } : {}),
+    goals: proposedGoals,
+    roadmap: proposedRoadmap,
+    widgets,
+  }
+}
+
+function isUnknownRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
 export function mergeJourneyUpdate(
   currentInput: JourneyState,
   userMessage: string,
@@ -102,6 +171,10 @@ export function mergeJourneyUpdate(
   }
 
   const facts = [...existingFacts.values()].slice(0, 80)
+  const goals = mergeGoals(current.goals, update.goals, userMessage).slice(0, 20)
+  // A non-empty AI roadmap is a complete, schema-validated graph snapshot.
+  // Mixing two snapshots can create duplicate ids or dangling dependencies.
+  const roadmap = (update.roadmap.length ? update.roadmap : current.roadmap).slice(0, 30)
   assertDecisionEvidence(update.widgetDecisions, facts)
   const widgetMerge = mergeWidgets(
     current.widgets,
@@ -109,7 +182,12 @@ export function mergeJourneyUpdate(
     update.widgetDecisions,
     current.manualWidgetIds ?? [],
   )
-  const widgets = widgetMerge.widgets.slice(0, 24)
+  const widgets = materializeCanonicalWidgetData(
+    widgetMerge.widgets.slice(0, 24),
+    facts,
+    goals,
+    roadmap,
+  )
 
   return journeyStateSchema.parse({
     ...current,
@@ -122,10 +200,8 @@ export function mergeJourneyUpdate(
       { id: `message-${randomUUID()}`, role: 'assistant', text: update.assistantMessage, createdAt: now },
     ].slice(-80),
     facts,
-    goals: mergeGoals(current.goals, update.goals, userMessage).slice(0, 20),
-    // A non-empty AI roadmap is a complete, schema-validated graph snapshot.
-    // Mixing two snapshots can create duplicate ids or dangling dependencies.
-    roadmap: (update.roadmap.length ? update.roadmap : current.roadmap).slice(0, 30),
+    goals,
+    roadmap,
     widgets,
     widgetDecisions: mergeWidgetDecisions(
       current.widgetDecisions ?? [],
@@ -136,6 +212,26 @@ export function mergeJourneyUpdate(
     ),
     suggestions: update.suggestions,
     updatedAt: now,
+  })
+}
+
+function materializeCanonicalWidgetData(
+  widgets: JourneyWidget[],
+  facts: JourneyFact[],
+  goals: JourneyState['goals'],
+  roadmap: JourneyState['roadmap'],
+): JourneyWidget[] {
+  return widgets.map((widget) => {
+    if (widget.kind === 'business_passport') {
+      return { ...widget, data: { facts: facts.filter((fact) => fact.status !== 'rejected').slice(0, 16) } }
+    }
+    if (widget.kind === 'point_b_goals') {
+      return { ...widget, data: { goals: goals.slice(0, 10) } }
+    }
+    if (widget.kind === 'roadmap_actions') {
+      return { ...widget, data: { items: roadmap.slice(0, 20) } }
+    }
+    return widget
   })
 }
 
