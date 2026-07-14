@@ -14,6 +14,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
+    "test:e2e": "playwright test",
     "whatsapp-web:bridge": "node --env-file=.env services/whatsapp-web-bridge/server.mjs",
     "whatsapp-web:bridge:check": "npm --prefix services/whatsapp-web-bridge run check",
     "postinstall": "prisma generate"
@@ -87,6 +88,7 @@
   },
   "devDependencies": {
     "@modelcontextprotocol/inspector": "^0.21.1",
+    "@playwright/test": "1.61.1",
     "@tailwindcss/container-queries": "^0.1.1",
     "@tailwindcss/forms": "^0.5.7",
     "@types/node": "^20.12.0",
