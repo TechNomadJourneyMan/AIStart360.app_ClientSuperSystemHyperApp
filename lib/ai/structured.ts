@@ -26,6 +26,8 @@ interface GenerateObjectOptions<T> {
   complexity?: Complexity
   maxTokens?: number
   temperature?: number
+  /** Per-attempt network budget; callers with a hard Function deadline should set this. */
+  timeoutMs?: number
   /** Tag used in log lines so failures are traceable to a caller. */
   label?: string
 }
@@ -63,6 +65,7 @@ export async function generateObjectViaOpenRouter<T>(
       maxTokens: opts.maxTokens ?? 3000,
       temperature: opts.temperature ?? 0.4,
       jsonMode: true,
+      timeoutMs: opts.timeoutMs,
     })
     if (!raw) continue
 

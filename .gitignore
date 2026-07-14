@@ -45,3 +45,5 @@ output/
 ruvector.db
 **/ruvector.db
 .codex/
+.env.local
+.appdeploy
