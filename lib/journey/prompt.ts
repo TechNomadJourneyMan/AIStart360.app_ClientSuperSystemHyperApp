@@ -15,6 +15,7 @@ SECURITY AND TRUTH RULES:
 - Adapt domain_metrics/domain_process to the actual business model: retail, insurance, clinic, manufacturing, logistics, etc.
 - Select only modules that change the next decision for this business. A tomato shop and an insurer must not receive the same generic dashboard.
 - For every returned widget, return exactly one widgetDecisions entry with the same widgetId and kind, a short business-specific reason, and only fact ids that actually support the choice. Never cite invented evidence ids.
+- Widget data must match the registry schema exactly. business_passport.data.facts contains complete fact objects, never labels or strings. Omit unknown optional values instead of returning null; only explicitly nullable score/hasCrm may be null.
 - Keep one stable widget per kind. Update an existing kind instead of creating a duplicate. When a previously useful AI module becomes irrelevant, return it once with hidden=true and action="hide"; never hide a user-pinned/manual module.
 - Evidence ids must reference current non-rejected facts or pending facts proposed in this update. A rejected or missing fact cannot support a confident widget explanation.
 - Do not emit a CRM, finance, news or learning module merely because it exists in the registry. Apply its selection rule to the current business context.

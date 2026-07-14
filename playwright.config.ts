@@ -1,6 +1,8 @@
 import { defineConfig, devices } from '@playwright/test'
 
-const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? 'http://127.0.0.1:3000'
+const testPort = process.env.PLAYWRIGHT_PORT ?? '3100'
+const externalBaseURL = process.env.PLAYWRIGHT_BASE_URL
+const baseURL = externalBaseURL ?? `http://127.0.0.1:${testPort}`
 
 export default defineConfig({
   testDir: './tests/e2e',
@@ -11,6 +13,14 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
   workers: 1,
   reporter: [['list']],
+  webServer: externalBaseURL
+    ? undefined
+    : {
+        command: `JOURNEY_FORCE_DEMO=1 npm run dev -- --hostname 127.0.0.1 --port ${testPort}`,
+        url: baseURL,
+        reuseExistingServer: false,
+        timeout: 120_000,
+      },
   use: {
     baseURL,
     locale: 'ru-RU',
