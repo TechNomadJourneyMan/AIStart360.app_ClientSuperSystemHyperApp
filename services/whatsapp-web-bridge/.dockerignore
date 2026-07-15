@@ -1,0 +1,24 @@
+# Account-equivalent WhatsApp credentials must never enter the Docker context.
+.data/
+auth_info_baileys/
+auth/
+state/
+webhook-outbox/
+webhook-dead-letter/
+command-cache.json
+history-resync.applied
+
+# Local secrets and runtime output.
+.env
+.env.*
+!.env.example
+*.log
+*.pid
+
+# Dependencies are installed reproducibly inside the image.
+node_modules/
+npm-debug.log*
+
+# Editor/OS metadata and test output.
+.DS_Store
+coverage/

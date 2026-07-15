@@ -41,6 +41,7 @@ export async function generateObjectViaOpenRouter<T>(
   opts: GenerateObjectOptions<T>,
 ): Promise<T | null> {
   const label = opts.label ?? 'structured'
+  const privacySensitive = label.startsWith('omnichannel:')
   if (!hasOpenRouterKey()) {
     console.warn(`[${label}] No OPENROUTER_API_KEY — skipping AI generation`)
     return null
@@ -63,13 +64,16 @@ export async function generateObjectViaOpenRouter<T>(
       maxTokens: opts.maxTokens ?? 3000,
       temperature: opts.temperature ?? 0.4,
       jsonMode: true,
+      privacySensitive,
     })
     if (!raw) continue
 
     const parsed = extractJson(raw)
     if (parsed == null) {
       console.error(
-        `[${label}] attempt ${attempt + 1}: response was not valid JSON (len=${raw.length}); tail="${raw.slice(-160).replace(/\n/g, ' ')}"`,
+        privacySensitive
+          ? `[${label}] attempt ${attempt + 1}: response was not valid JSON (len=${raw.length})`
+          : `[${label}] attempt ${attempt + 1}: response was not valid JSON (len=${raw.length}); tail="${raw.slice(-160).replace(/\n/g, ' ')}"`,
       )
       continue
     }

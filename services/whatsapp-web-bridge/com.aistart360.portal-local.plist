@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.aistart360.portal-local</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/caffeinate</string>
+    <string>-i</string>
+    <string>/opt/homebrew/bin/node</string>
+    <string>--env-file=/Users/admin/Documents/Проекты /Вайбкодинг/AIStart360, через jules /AIStart360_HyperApp/.vercel/.env.production.local</string>
+    <string>scripts/run-aistart360-portal-local.js</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/Users/admin/Documents/Проекты /Вайбкодинг/AIStart360, через jules /AIStart360_HyperApp</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>NODE_ENV</key>
+    <string>production</string>
+    <key>OMNICHANNEL_PROCESSING_BACKEND</key>
+    <string>database</string>
+    <key>WHATSAPP_WEB_DELIVERY_MODE</key>
+    <string>pull</string>
+  </dict>
+  <key>StandardOutPath</key>
+  <string>/Users/admin/Library/Logs/AIStart360/portal-local.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/admin/Library/Logs/AIStart360/portal-local.log</string>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+  <key>ProcessType</key>
+  <string>Background</string>
+  <key>Umask</key>
+  <integer>63</integer>
+</dict>
+</plist>

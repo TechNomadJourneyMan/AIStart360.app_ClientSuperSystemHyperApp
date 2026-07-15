@@ -13,6 +13,7 @@ import {
   ChevronRight,
   X,
   ShieldCheck,
+  MessagesSquare,
 } from 'lucide-react'
 import { useGigaPanelStore, type ActiveModule } from '@/stores/gigaPanel.store'
 
@@ -49,6 +50,7 @@ export function GigaSidebar({ isOpen = false, onClose }: GigaSidebarProps) {
   const navItems: NavItem[] = [
     { id: 'overview', label: 'Обзор', icon: <LayoutDashboard size={18} />, disabled: true },
     { id: 'requests', label: 'Заявки', icon: <InboxIcon size={18} />, badge: pendingCount },
+    { id: 'omnichannel', label: 'Instagram / WhatsApp', icon: <MessagesSquare size={18} /> },
     { id: 'crm', label: 'CRM / Пользователи', icon: <Users2 size={18} /> },
     { id: 'clients', label: 'Клиенты платформы', icon: <Building2 size={18} />, badge: clients.length > 0 ? clients.length : undefined },
     { id: 'market-insights', label: 'Инсайты рынка', icon: <Lightbulb size={18} /> },

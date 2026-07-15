@@ -1,73 +1,176 @@
-// ─────────────────────────────────────────────────────────────────────────────
+// ───────────────────────────────────────────────────────────────────────────────
 // Edge-safe verifier for the signed giga super-admin cookie (audit A2b).
 //
-// This module is the ONLY giga-cookie module that `middleware.ts` (Edge runtime)
-// may import. It uses Web Crypto (`crypto.subtle`) exclusively and contains NO
-// reference to `node:crypto` — a `node:crypto` reference anywhere in a module
-// imported by middleware breaks the Edge webpack build ("Reading from node:crypto
-// is not handled"). The Node sync signing/verification lives in `lib/giga-cookie.ts`
-// and is imported only by Node-runtime API route handlers.
+// This is the only giga-cookie module that middleware imports. It deliberately
+// uses Web Crypto only: importing node:crypto here would break the Edge bundle.
+// The Node signer/verifier lives in `lib/giga-cookie.ts` and reuses the exact
+// parser below so claim validation cannot drift between runtimes.
 //
-// Token format (shared with the Node module): `<role>.<base64url-hmac-sha256>`.
-// ─────────────────────────────────────────────────────────────────────────────
+// Token format:
+//   v1.base64url(JSON({ role, iat, exp, jti })).base64url(HMAC-SHA256)
+//
+// The old `<role>.<signature>` format is intentionally rejected. It contained
+// no expiry and could therefore be replayed indefinitely after disclosure.
+// ────────────────────────────────────────────────────────────────────────────────
 
 export const GIGA_COOKIE_NAME = 'aistart360_giga'
+export const GIGA_TOKEN_VERSION = 'v1'
+export const GIGA_TOKEN_MAX_AGE_SECONDS = 7 * 24 * 60 * 60
+export const GIGA_TOKEN_FUTURE_SKEW_SECONDS = 60
 
-function base64UrlToBytes(value: string): Uint8Array {
-  const b64 = value.replace(/-/g, '+').replace(/_/g, '/')
-  const padded = b64 + '='.repeat((4 - (b64.length % 4)) % 4)
-  const bin = atob(padded)
-  const out = new Uint8Array(bin.length)
-  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i)
-  return out
+const GIGA_ROLE = 'super_admin'
+const HMAC_SHA256_BYTES = 32
+const JTI_BYTES = 16
+const JTI_BASE64URL_LENGTH = 22
+const MAX_TOKEN_LENGTH = 512
+const MAX_PAYLOAD_BASE64URL_LENGTH = 256
+const BASE64URL_RE = /^[A-Za-z0-9_-]+$/
+
+export interface GigaTokenClaims {
+  role: typeof GIGA_ROLE
+  iat: number
+  exp: number
+  jti: string
 }
 
-async function hmacSha256Edge(secret: string, message: string): Promise<Uint8Array> {
-  const enc = new TextEncoder()
-  const key = await crypto.subtle.importKey(
-    'raw',
-    enc.encode(secret),
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['sign'],
-  )
-  const sig = await crypto.subtle.sign('HMAC', key, enc.encode(message))
-  return new Uint8Array(sig)
+export interface ParsedGigaToken {
+  claims: GigaTokenClaims
+  signingInput: string
+  signature: Uint8Array
 }
 
-function constantTimeEqualBytesEdge(a: Uint8Array, b: Uint8Array): boolean {
-  if (a.length !== b.length) return false
-  let diff = 0
-  for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i]
-  return diff === 0
+function bytesToBase64Url(bytes: Uint8Array): string {
+  let binary = ''
+  for (let index = 0; index < bytes.length; index += 1) {
+    binary += String.fromCharCode(bytes[index])
+  }
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 }
 
-/**
- * Verify a signed giga token on the Edge runtime (middleware). Async because
- * Web Crypto's `subtle.sign` is promise-based. Returns the role or null.
- * Fails closed when the signing secret is absent.
- */
-export async function verifyGigaRoleEdge(
-  cookieValue: string | undefined | null,
-): Promise<string | null> {
-  if (!cookieValue) return null
-  const dot = cookieValue.lastIndexOf('.')
-  if (dot <= 0) return null
-  const role = cookieValue.slice(0, dot)
-  const providedSig = cookieValue.slice(dot + 1)
+/** Strict, canonical base64url decoder. Returns null instead of throwing. */
+function base64UrlToBytes(value: string, maxLength: number): Uint8Array | null {
+  if (
+    value.length === 0 ||
+    value.length > maxLength ||
+    value.length % 4 === 1 ||
+    !BASE64URL_RE.test(value)
+  ) {
+    return null
+  }
 
-  const secret =
-    process.env.GIGA_COOKIE_SECRET ||
-    process.env.AUTH_SECRET ||
-    process.env.NEXTAUTH_SECRET
-  if (!secret) return null
-
-  const expected = await hmacSha256Edge(secret, role)
-  let provided: Uint8Array
   try {
-    provided = base64UrlToBytes(providedSig)
+    const base64 = value.replace(/-/g, '+').replace(/_/g, '/')
+    const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4)
+    const binary = atob(padded)
+    const bytes = new Uint8Array(binary.length)
+    for (let index = 0; index < binary.length; index += 1) {
+      bytes[index] = binary.charCodeAt(index)
+    }
+
+    // Reject alternate/non-canonical encodings of the same byte sequence.
+    return bytesToBase64Url(bytes) === value ? bytes : null
   } catch {
     return null
   }
-  return constantTimeEqualBytesEdge(expected, provided) ? role : null
+}
+
+function isExactClaimsObject(value: unknown): value is Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  const keys = Object.keys(value).sort()
+  return keys.length === 4 && keys.join(',') === 'exp,iat,jti,role'
+}
+
+/**
+ * Parse and validate every non-cryptographic part of a token. Node and Edge
+ * verifiers both call this function, which guarantees claim-validation parity.
+ */
+export function parseGigaTokenForVerification(
+  cookieValue: string | undefined | null,
+  nowSeconds = Math.floor(Date.now() / 1000),
+): ParsedGigaToken | null {
+  if (!cookieValue || cookieValue.length > MAX_TOKEN_LENGTH) return null
+  if (!Number.isSafeInteger(nowSeconds) || nowSeconds < 0) return null
+
+  const parts = cookieValue.split('.')
+  if (parts.length !== 3) return null
+  const [version, encodedPayload, encodedSignature] = parts
+  if (version !== GIGA_TOKEN_VERSION) return null
+
+  const payloadBytes = base64UrlToBytes(encodedPayload, MAX_PAYLOAD_BASE64URL_LENGTH)
+  const signature = base64UrlToBytes(encodedSignature, 64)
+  if (!payloadBytes || !signature || signature.length !== HMAC_SHA256_BYTES) return null
+
+  let rawClaims: unknown
+  try {
+    const payload = new TextDecoder('utf-8', { fatal: true }).decode(payloadBytes)
+    rawClaims = JSON.parse(payload)
+  } catch {
+    return null
+  }
+
+  if (!isExactClaimsObject(rawClaims)) return null
+  const { role, iat, exp, jti } = rawClaims
+  if (role !== GIGA_ROLE) return null
+  if (typeof iat !== 'number' || typeof exp !== 'number') return null
+  if (!Number.isSafeInteger(iat) || !Number.isSafeInteger(exp)) return null
+  if (iat < 0 || exp <= iat) return null
+  if (exp - iat > GIGA_TOKEN_MAX_AGE_SECONDS) return null
+  if (iat > nowSeconds + GIGA_TOKEN_FUTURE_SKEW_SECONDS) return null
+  if (exp <= nowSeconds) return null
+  if (exp > nowSeconds + GIGA_TOKEN_MAX_AGE_SECONDS + GIGA_TOKEN_FUTURE_SKEW_SECONDS) return null
+  if (typeof jti !== 'string' || jti.length !== JTI_BASE64URL_LENGTH) return null
+  const jtiBytes = base64UrlToBytes(jti, JTI_BASE64URL_LENGTH)
+  if (!jtiBytes || jtiBytes.length !== JTI_BYTES) return null
+
+  return {
+    claims: { role, iat, exp, jti },
+    signingInput: `${version}.${encodedPayload}`,
+    signature,
+  }
+}
+
+async function verifyHmacSha256Edge(
+  secret: string,
+  message: string,
+  signature: Uint8Array,
+): Promise<boolean> {
+  const encoder = new TextEncoder()
+  const key = await globalThis.crypto.subtle.importKey(
+    'raw',
+    encoder.encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['verify'],
+  )
+  // Web Crypto performs HMAC verification inside the runtime's cryptographic
+  // implementation, avoiding a timing-sensitive JavaScript string comparison.
+  const signatureBuffer = new Uint8Array(signature.byteLength)
+  signatureBuffer.set(signature)
+  return globalThis.crypto.subtle.verify('HMAC', key, signatureBuffer.buffer, encoder.encode(message))
+}
+
+function getSecretEdge(): string | null {
+  return (
+    process.env.GIGA_COOKIE_SECRET ||
+    process.env.AUTH_SECRET ||
+    process.env.NEXTAUTH_SECRET ||
+    null
+  )
+}
+
+/** Verify a signed, unexpired giga token in the Edge runtime. Never throws. */
+export async function verifyGigaRoleEdge(
+  cookieValue: string | undefined | null,
+): Promise<string | null> {
+  try {
+    const parsed = parseGigaTokenForVerification(cookieValue)
+    const secret = getSecretEdge()
+    if (!parsed || !secret) return null
+
+    return await verifyHmacSha256Edge(secret, parsed.signingInput, parsed.signature)
+      ? parsed.claims.role
+      : null
+  } catch {
+    return null
+  }
 }

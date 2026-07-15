@@ -45,3 +45,7 @@ output/
 ruvector.db
 **/ruvector.db
 .codex/
+
+# WhatsApp Web companion credentials are equivalent to account private keys.
+/services/whatsapp-web-bridge/.data/
+/auth_info_baileys/
