@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { isConfirmedOutboundMessage } from './delayed-reply-policy'
 import type { OmnichannelMessage, JsonObject } from './types'
 
 export const EQUIPMENT_FLOW_CHOICE_IDS = [
@@ -581,7 +582,7 @@ function flowStateFromLatestOutbound(
   config: EquipmentSalesFlowConfig,
   referenceMs: number,
 ): RestoredFlowState {
-  const outbound = [...history].reverse().find((message) => message.direction === 'out')
+  const outbound = [...history].reverse().find(isConfirmedOutboundMessage)
   if (!outbound || !includesFlowMetadata(outbound)) {
     return { active: false, completed: false, choiceId: null, city: null, communitySent: false }
   }
@@ -641,6 +642,26 @@ function isLeadOpeningMessage(message: OmnichannelMessage): boolean {
   return /(?:^|\s)(?:клуб\p{L}*|club|экипиров\p{L}*|одежд\p{L}*|мотокуртк\p{L}*|мотошлем\p{L}*|шлем\p{L}*)(?=$|\s)/iu.test(normalized)
 }
 
+function confirmedManagerHandoff(
+  history: OmnichannelMessage[],
+  config: EquipmentSalesFlowConfig,
+): boolean {
+  const managerPhones = config.city_routes.map((route) => route.manager_phone)
+  return history.filter(isConfirmedOutboundMessage).some((message) =>
+    includesFlowMetadata(message, 'routed')
+    || managerPhones.some((phone) => message.text?.includes(`wa.me/${phone}`)),
+  )
+}
+
+/** Used by the final send gate so a previously delivered manager link hands off to a person. */
+export function hasConfirmedEquipmentManagerHandoff(input: {
+  history: OmnichannelMessage[]
+  automationConfig: JsonObject | null | undefined
+}): boolean {
+  const config = parseEquipmentSalesFlowConfig(input.automationConfig)
+  return config ? confirmedManagerHandoff(input.history, config) : false
+}
+
 export function planEquipmentSalesFlow(input: {
   currentMessage: OmnichannelMessage
   history: OmnichannelMessage[]
@@ -657,6 +678,11 @@ export function planEquipmentSalesFlow(input: {
   const history = input.history.some((message) => message.id === input.currentMessage.id)
     ? input.history
     : [...input.history, input.currentMessage]
+  const outbound = history.filter(isConfirmedOutboundMessage)
+  // Once a real provider send handed the lead to a manager, automation must not
+  // emit the same handoff/link again. Drafted or failed rows do not count.
+  if (confirmedManagerHandoff(history, config)) return null
+
   const referenceMs = parseTime(input.currentMessage.occurredAt) ?? Date.now()
   const stored = stateFromConversation(input.conversationMetadata, config, referenceMs)
   const historyState = flowStateFromLatestOutbound(history, config, referenceMs)
@@ -672,15 +698,53 @@ export function planEquipmentSalesFlow(input: {
   )
   const hasNewSignal = Boolean(newChoiceId || newCity)
   if (!active.active && !hasNewSignal && !isLeadOpeningMessage(input.currentMessage)) return null
-  if (active.active && !hasNewSignal) return null
-
-  const choiceId = newChoiceId ?? active.choiceId
-  const city = newCity ?? active.city
-  const outbound = history.filter((message) => message.direction === 'out')
+  const normalizedWelcome = normalizeText(config.messages.welcome)
+  const normalizedWelcomeOpening = normalizeText(config.messages.welcome.split(/\n+/u)[0] ?? '')
+  const hasConfirmedWelcome = outbound.some((message) =>
+    includesFlowMetadata(message)
+    || (
+      normalizedWelcome.length > 0
+      && normalizeText(message.text ?? '').includes(normalizedWelcome)
+    )
+    || (
+      normalizedWelcomeOpening.length >= 12
+      && normalizeText(message.text ?? '').includes(normalizedWelcomeOpening)
+    ),
+  )
   const hasCommunity = stored.communitySent || historyState.communitySent || outbound.some((message) =>
     message.text?.includes(config.community.url)
     || message.metadata.equipmentFlowCommunityIncluded === true,
   )
+  if (
+    !hasNewSignal
+    && hasConfirmedWelcome
+    && isLeadOpeningMessage(input.currentMessage)
+  ) {
+    const base = `${config.messages.ask_city}\n\n${choicesText(config)}`
+    const answer = withCommunity(base, config, hasCommunity)
+    return {
+      stage: 'welcome',
+      answer,
+      reason: 'deterministic_equipment_flow_resume_without_repeating_welcome',
+      summary: 'Повторный запрос по экипировке; ожидаются город и интерес.',
+      leadScore: 45,
+      presentation: { kind: 'choices', options: choiceOptions(config) },
+      cityRouteId: null,
+      cityLabel: null,
+      choiceId: null,
+      choiceLabel: null,
+      managerUrl: null,
+      handoffAfterSend: false,
+      communityIncluded: !hasCommunity,
+      outboundMetadata: buildMetadata({
+        stage: 'welcome', communityIncluded: !hasCommunity,
+      }),
+    }
+  }
+  if (active.active && !hasNewSignal) return null
+
+  const choiceId = newChoiceId ?? active.choiceId
+  const city = newCity ?? active.city
   const choice = choiceId ? config.choices.find((item) => item.id === choiceId) ?? null : null
 
   if (city && choice) {

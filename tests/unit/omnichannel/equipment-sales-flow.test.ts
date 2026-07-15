@@ -395,6 +395,53 @@ describe('equipment sales flow planning', () => {
     expect(result?.answer.match(/chat\.whatsapp\.com/g)).toBeNull()
   })
 
+  it('continues without repeating a welcome that provider history confirms was sent', () => {
+    const result = plan([
+      message({
+        id: 'out-welcome-history',
+        direction: 'out',
+        text: config.messages.welcome,
+        metadata: { catchUp: true, fromMe: true },
+      }),
+      message({ id: 'new-club-cta', text: 'Хочу в Клуб' }),
+    ])
+
+    expect(result).toMatchObject({
+      stage: 'welcome',
+      reason: 'deterministic_equipment_flow_resume_without_repeating_welcome',
+    })
+    expect(result?.answer).not.toContain(config.messages.welcome)
+    expect(result?.answer).toContain(config.messages.ask_city)
+  })
+
+  it('does not let a failed welcome suppress the real reply', () => {
+    const failedWelcome = message({
+      id: 'failed-welcome',
+      direction: 'out',
+      text: config.messages.welcome,
+    })
+    failedWelcome.status = 'failed'
+
+    expect(plan([
+      failedWelcome,
+      message({ id: 'new-club-cta', text: 'Хочу в Клуб' }),
+    ])).toMatchObject({ stage: 'welcome' })
+  })
+
+  it('does not repeat a manager link that provider history confirms was sent', () => {
+    const result = plan([
+      message({
+        id: 'out-manager-history',
+        direction: 'out',
+        text: 'Напишите менеджеру: https://wa.me/77054057775',
+        metadata: { catchUp: true, fromMe: true },
+      }),
+      message({ id: 'new-request', text: 'Астана, хочу каталог' }),
+    ])
+
+    expect(result).toBeNull()
+  })
+
   it('does not restart a completed flow', () => {
     const result = plan([
       message({

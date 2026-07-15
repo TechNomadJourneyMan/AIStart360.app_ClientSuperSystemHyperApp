@@ -5,9 +5,16 @@ import {
   type OmnichannelAiReply,
 } from "@/lib/omnichannel/ai";
 import {
+  hasConfirmedEquipmentManagerHandoff,
   planEquipmentSalesFlow,
   type EquipmentSalesFlowPlan,
 } from "@/lib/omnichannel/equipment-sales-flow";
+import {
+  assessDelayedReply,
+  isHistoricalCatchUpMessage,
+  prependDelayedReplyApology,
+  type DelayedReplyAssessment,
+} from "@/lib/omnichannel/delayed-reply-policy";
 import { OMNICHANNEL_MESSAGE_RECEIVED_EVENT } from "@/lib/omnichannel/events";
 import {
   decideReplyPolicy,
@@ -45,7 +52,7 @@ import {
   type OmnichannelQueuedDispatch,
 } from "@/lib/omnichannel/transport-dispatch";
 import type { OmnichannelMessageReceivedEventData } from "@/lib/omnichannel/events";
-import type { OmnichannelMessage } from "@/lib/omnichannel/types";
+import type { JsonObject, OmnichannelMessage } from "@/lib/omnichannel/types";
 
 function effectiveMode(input: {
   forceDraft: boolean;
@@ -150,13 +157,18 @@ async function handleOmnichannelMessage({ event, step }: any) {
   if (!data?.message_id || !data?.conversation_id) {
     return { skipped: true, reason: "invalid_event_data" };
   }
-  const forceDraft = data.force_draft === true;
+  const eventForceDraft = data.force_draft === true;
   const delayAlreadyApplied = data.delay_already_applied === true;
 
   let context = await step.run("load-message-context", () =>
     getMessageContext(data.message_id),
   );
   if (!context) return { skipped: true, reason: "message_not_found" };
+  // Never trust the queue hint as the only historical-send barrier. An
+  // imported/offline row remains draft-only even if a malformed or manually
+  // created job omitted force_draft.
+  const forceDraft =
+    eventForceDraft || isHistoricalCatchUpMessage(context.message);
   if (context.message.direction !== "in")
     return { skipped: true, reason: "not_inbound" };
   if (context.message.status === "sending") {
@@ -278,6 +290,12 @@ async function handleOmnichannelMessage({ event, step }: any) {
     markMessageProcessing(context!.message.id),
   );
 
+  let delayedReplyAssessment: DelayedReplyAssessment = assessDelayedReply({
+    currentMessage: context.message,
+    history: context.history,
+    forceDraft,
+  });
+
   let salesFlowPlan: EquipmentSalesFlowPlan | null =
     initialRisk.risk === "low" &&
     isAutoReplyContentType(context.message.messageType)
@@ -290,7 +308,7 @@ async function handleOmnichannelMessage({ event, step }: any) {
         })
       : null;
 
-  const aiReply: OmnichannelAiReply | null = salesFlowPlan
+  const proposedReply: OmnichannelAiReply | null = salesFlowPlan
     ? {
         answer: salesFlowPlan.answer,
         intent: "lead",
@@ -321,6 +339,16 @@ async function handleOmnichannelMessage({ event, step }: any) {
           })),
         }),
       );
+
+  const aiReply: OmnichannelAiReply | null = proposedReply
+    ? {
+        ...proposedReply,
+        answer: prependDelayedReplyApology(
+          proposedReply.answer,
+          delayedReplyAssessment,
+        ),
+      }
+    : null;
 
   if (!aiReply) {
     await step.run("escalate-ai-unavailable", () =>
@@ -396,6 +424,36 @@ async function handleOmnichannelMessage({ event, step }: any) {
     salesFlowPlan = refreshedPlan;
   }
 
+  const refreshedDelayedReplyAssessment = assessDelayedReply({
+    currentMessage: context.message,
+    history: context.history,
+    forceDraft,
+  });
+  const refreshedAnswer = prependDelayedReplyApology(
+    aiReply.answer,
+    refreshedDelayedReplyAssessment,
+  );
+  if (refreshedAnswer !== aiReply.answer) {
+    aiReply.answer = refreshedAnswer;
+    // This narrow second write is needed only when the delay threshold crossed
+    // during model generation. It keeps the Inbox draft identical to the text
+    // that is later authorized for delivery.
+    await step.run("persist-delayed-reply-apology", () =>
+      persistAiAnalysis({
+        messageId: context!.message.id,
+        conversationId: context!.conversation.id,
+        draft: aiReply.answer,
+        confidence: aiReply.confidence,
+        reason: aiReply.reason,
+        intent: aiReply.intent,
+        sentiment: aiReply.sentiment,
+        leadScore: aiReply.lead_score,
+        summary: aiReply.conversation_summary,
+      }),
+    );
+  }
+  delayedReplyAssessment = refreshedDelayedReplyAssessment;
+
   const deterministicRisk = detectRecentInboundRisk(
     context.history,
     context.message,
@@ -407,9 +465,12 @@ async function handleOmnichannelMessage({ event, step }: any) {
     newestMessageIdBeforePolicy === context.message.id;
   const providerTimestampTrusted =
     context.message.metadata.providerTimestampTrusted === true;
-  const contentRequiresHuman = !isAutoReplyContentType(
-    context.message.messageType,
-  );
+  const contentRequiresHuman =
+    !isAutoReplyContentType(context.message.messageType) ||
+    hasConfirmedEquipmentManagerHandoff({
+      history: context.history,
+      automationConfig: context.settings.automationConfig,
+    });
   const configuredMode = effectiveMode({
     forceDraft,
     configured:
@@ -429,7 +490,7 @@ async function handleOmnichannelMessage({ event, step }: any) {
     lastInboundAt: providerTimestampTrusted ? context.message.occurredAt : null,
     actor: "automated",
   });
-  const decision = decideReplyPolicy({
+  let decision = decideReplyPolicy({
     mode,
     conversationStatus: context.conversation.status,
     answer: aiReply.answer,
@@ -441,10 +502,30 @@ async function handleOmnichannelMessage({ event, step }: any) {
     isNewestInbound: isNewest,
     sendWindow,
   });
+  // The normal guardrails run first so opt-out/mute/risk decisions keep their
+  // stronger semantics. Timing can only make an otherwise-sendable answer more
+  // conservative; it can never promote a draft or escalation to auto-send.
+  if (decision.action === "send") {
+    if (delayedReplyAssessment.gate === "human") {
+      decision = {
+        action: "escalate",
+        reason: delayedReplyAssessment.reason,
+      };
+    } else if (delayedReplyAssessment.gate === "draft") {
+      decision = {
+        action: "draft",
+        reason: delayedReplyAssessment.reason,
+      };
+    }
+  }
   const outcome = {
     draft: aiReply.answer || null,
     confidence: aiReply.confidence,
-    reason: decision.reason,
+    reason:
+      decision.reason === "safe_auto_reply" &&
+      delayedReplyAssessment.prependApology
+        ? "safe_auto_reply_delayed_apology"
+        : decision.reason,
   };
 
   if (decision.action === "ignore") {
@@ -485,6 +566,15 @@ async function handleOmnichannelMessage({ event, step }: any) {
     outboundTransport === "whatsapp_web"
       ? humanTypingDelaySeconds(aiReply.answer, context.message.id)
       : 0;
+  const delayedReplyMetadata: JsonObject = delayedReplyAssessment.prependApology
+    ? {
+        delayedReplyApologyIncluded: true,
+        delayedReplyUnansweredAgeMinutes: Math.max(
+          0,
+          Math.floor((delayedReplyAssessment.unansweredAgeMs ?? 0) / 60_000),
+        ),
+      }
+    : {};
   if (outboundTransport === "whatsapp_web" && !pullWebDelivery) {
     const presenceTarget = {
       channel: context.conversation.channel,
@@ -556,6 +646,7 @@ async function handleOmnichannelMessage({ event, step }: any) {
         ...(salesFlowPlan
           ? salesFlowPlan.outboundMetadata
           : { source: "omnichannel_auto_reply" }),
+        ...delayedReplyMetadata,
         ...outboundTransportMetadata(
           context!.conversation.channel,
           context!.message.metadata,
@@ -673,6 +764,7 @@ async function handleOmnichannelMessage({ event, step }: any) {
         ...(salesFlowPlan
           ? salesFlowPlan.outboundMetadata
           : { source: "omnichannel_auto_reply" }),
+        ...delayedReplyMetadata,
         ...outboundTransportMetadata(
           context!.conversation.channel,
           context!.message.metadata,

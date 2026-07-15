@@ -376,6 +376,214 @@ describe("omnichannel message processor safety", () => {
     expect(meta.sendWhatsAppList).not.toHaveBeenCalled();
   });
 
+  it("derives draft-only safety from imported metadata even when force_draft is missing", async () => {
+    repository.getMessageContext.mockResolvedValue(
+      context({
+        message: {
+          channel: "whatsapp",
+          status: "imported",
+          metadata: {
+            providerTimestampTrusted: true,
+            transport: "whatsapp_web",
+            catchUp: true,
+            live: false,
+          },
+        },
+        conversation: {
+          channel: "whatsapp",
+          accountExternalId: "waweb:primary",
+          externalId: "77001234567@s.whatsapp.net",
+        },
+        contact: { channel: "whatsapp", externalId: "77001234567" },
+        settings: { channel: "whatsapp", enabled: true, mode: "auto" },
+      }),
+    );
+
+    await expect(invoke(false)).resolves.toMatchObject({ action: "draft" });
+    expect(repository.markMessageDrafted).toHaveBeenCalled();
+    expect(repository.claimMessageForAutoSend).not.toHaveBeenCalled();
+    expect(repository.claimEquipmentFlowForAutoSend).not.toHaveBeenCalled();
+    expect(web.sendText).not.toHaveBeenCalled();
+    expect(meta.sendWhatsApp).not.toHaveBeenCalled();
+  });
+
+  it("adds one natural apology to a fresh follow-up after an unanswered two-hour gap", async () => {
+    const current = context();
+    const earlier = {
+      ...current.message,
+      id: "message-earlier",
+      externalMessageId: "provider-earlier",
+      status: "imported",
+      text: "Здравствуйте",
+      metadata: {
+        providerTimestampTrusted: true,
+        catchUp: true,
+        live: false,
+      },
+      occurredAt: new Date(new Date(now).getTime() - 2 * 60 * 60 * 1_000).toISOString(),
+    };
+    repository.getMessageContext.mockResolvedValue({
+      ...current,
+      history: [earlier, current.message],
+    });
+
+    await expect(invoke()).resolves.toMatchObject({ action: "send" });
+    expect(meta.sendInstagram).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text: expect.stringMatching(/^Извините, что ответили не сразу\.\n\n/u),
+      }),
+    );
+    expect(repository.logOutboundMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          delayedReplyApologyIncluded: true,
+          delayedReplyUnansweredAgeMinutes: 120,
+        }),
+      }),
+    );
+    expect(repository.markMessageReplied).toHaveBeenCalledWith(
+      "message-1",
+      expect.objectContaining({ reason: "safe_auto_reply_delayed_apology" }),
+    );
+  });
+
+  it("does not repeat a confirmed delay apology on a later unanswered episode", async () => {
+    const current = context();
+    const apology = {
+      ...current.message,
+      id: "message-apology",
+      externalMessageId: "provider-apology",
+      direction: "out",
+      status: "sent",
+      text: "Извините, что ответили не сразу.\n\nЧем помочь?",
+      metadata: { delayedReplyApologyIncluded: true },
+      occurredAt: new Date(new Date(now).getTime() - 4 * 60 * 60 * 1_000).toISOString(),
+    };
+    const earlier = {
+      ...current.message,
+      id: "message-earlier",
+      externalMessageId: "provider-earlier",
+      status: "imported",
+      text: "Подскажите по экипировке",
+      metadata: {
+        providerTimestampTrusted: true,
+        catchUp: true,
+        live: false,
+      },
+      occurredAt: new Date(new Date(now).getTime() - 2 * 60 * 60 * 1_000).toISOString(),
+    };
+    repository.getMessageContext.mockResolvedValue({
+      ...current,
+      history: [apology, earlier, current.message],
+    });
+
+    await expect(invoke()).resolves.toMatchObject({ action: "send" });
+    expect(meta.sendInstagram).toHaveBeenCalledWith(
+      expect.objectContaining({ text: "Начните с mini-GRI в личном кабинете." }),
+    );
+    expect(repository.logOutboundMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.not.objectContaining({
+          delayedReplyApologyIncluded: true,
+        }),
+      }),
+    );
+  });
+
+  it("never auto-sends another manager link after a confirmed equipment handoff", async () => {
+    const current = context({
+      message: { text: "Позовите менеджера" },
+      settings: { automationConfig: equipmentAutomationConfig() },
+    });
+    const priorHandoff = {
+      ...current.message,
+      id: "message-prior-handoff",
+      externalMessageId: "provider-prior-handoff",
+      direction: "out",
+      status: "sent",
+      text: "Напишите менеджеру: https://wa.me/77054057775",
+      metadata: { catchUp: true, fromMe: true },
+      occurredAt: new Date(new Date(now).getTime() - 60 * 60 * 1_000).toISOString(),
+    };
+    repository.getMessageContext.mockResolvedValue({
+      ...current,
+      history: [priorHandoff, current.message],
+    });
+
+    await expect(invoke()).resolves.toMatchObject({ action: "escalate" });
+    expect(repository.markMessageNeedsHuman).toHaveBeenCalled();
+    expect(repository.claimMessageForAutoSend).not.toHaveBeenCalled();
+    expect(repository.claimEquipmentFlowForAutoSend).not.toHaveBeenCalled();
+    expect(meta.sendInstagram).not.toHaveBeenCalled();
+    expect(meta.sendInstagramQuickReplies).not.toHaveBeenCalled();
+  });
+
+  it("hands a fresh follow-up with 72-hour unanswered context to a person", async () => {
+    const current = context();
+    const earlier = {
+      ...current.message,
+      id: "message-earlier",
+      externalMessageId: "provider-earlier",
+      status: "imported",
+      text: "Здравствуйте",
+      metadata: {
+        providerTimestampTrusted: true,
+        catchUp: true,
+        live: false,
+      },
+      occurredAt: new Date(new Date(now).getTime() - 72 * 60 * 60 * 1_000).toISOString(),
+    };
+    repository.getMessageContext.mockResolvedValue({
+      ...current,
+      history: [earlier, current.message],
+    });
+
+    await expect(invoke()).resolves.toEqual({
+      action: "escalate",
+      reason: "very_stale_unanswered_context",
+    });
+    expect(repository.markMessageNeedsHuman).toHaveBeenCalledWith(
+      "message-1",
+      "conversation-1",
+      expect.objectContaining({
+        draft: expect.stringMatching(/^Извините, что ответили не сразу\./u),
+        reason: "very_stale_unanswered_context",
+      }),
+    );
+    expect(repository.claimMessageForAutoSend).not.toHaveBeenCalled();
+    expect(meta.sendInstagram).not.toHaveBeenCalled();
+  });
+
+  it("keeps a live WhatsApp message older than 24 hours as a draft", async () => {
+    repository.getMessageContext.mockResolvedValue(
+      context({
+        message: {
+          channel: "whatsapp",
+          occurredAt: new Date(Date.now() - 25 * 60 * 60 * 1_000).toISOString(),
+          metadata: {
+            providerTimestampTrusted: true,
+            transport: "whatsapp_web",
+            live: true,
+          },
+        },
+        conversation: {
+          channel: "whatsapp",
+          accountExternalId: "waweb:primary",
+          externalId: "77001234567@s.whatsapp.net",
+        },
+        contact: { channel: "whatsapp", externalId: "77001234567" },
+        settings: { channel: "whatsapp", enabled: true, mode: "auto" },
+      }),
+    );
+
+    await expect(invoke()).resolves.toEqual({
+      action: "draft",
+      reason: "whatsapp_template_required_outside_24h",
+    });
+    expect(repository.claimMessageForAutoSend).not.toHaveBeenCalled();
+    expect(web.sendText).not.toHaveBeenCalled();
+  });
+
   it("preserves the configured reply delay for legacy events", async () => {
     repository.getMessageContext.mockResolvedValue(
       context({
