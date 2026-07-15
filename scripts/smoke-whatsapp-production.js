@@ -15,9 +15,29 @@ const {
 } = require("node:crypto");
 const { Client } = require("pg");
 
-const DRAIN_URL =
-  "https://aistart360.vercel.app/api/webhooks/whatsapp-web/drain";
-const WEBHOOK_URL = "https://aistart360.vercel.app/api/webhooks/whatsapp-web";
+function portalOrigin() {
+  const raw =
+    process.env.AISTART360_SMOKE_PORTAL_ORIGIN?.trim() ||
+    "https://aistart360.vercel.app";
+  const url = new URL(raw);
+  const loopback = ["localhost", "127.0.0.1", "::1"].includes(url.hostname);
+  if (
+    url.username ||
+    url.password ||
+    url.search ||
+    url.hash ||
+    (url.pathname !== "/" && url.pathname !== "") ||
+    (url.protocol !== "https:" && !(url.protocol === "http:" && loopback))
+  ) {
+    throw new Error("smoke portal origin must be HTTPS or loopback HTTP");
+  }
+  return url.origin;
+}
+
+const PORTAL_ORIGIN = portalOrigin();
+const DRAIN_URL = `${PORTAL_ORIGIN}/api/webhooks/whatsapp-web/drain`;
+const WEBHOOK_URL = `${PORTAL_ORIGIN}/api/webhooks/whatsapp-web`;
+const HTTP_TIMEOUT_MS = 30_000;
 
 function fail(message) {
   throw new Error(message);
@@ -130,7 +150,7 @@ async function verifySignedWebhook(client, bridge, suffix) {
       headers: signed.headers,
       body: signed.body,
       redirect: "error",
-      signal: AbortSignal.timeout(10_000),
+      signal: AbortSignal.timeout(HTTP_TIMEOUT_MS),
     });
     await response.body?.cancel();
     if (response.status !== 200) fail("signed production webhook was rejected");
@@ -267,7 +287,7 @@ async function main() {
       headers: signed.headers,
       body: signed.body,
       redirect: "error",
-      signal: AbortSignal.timeout(10_000),
+      signal: AbortSignal.timeout(HTTP_TIMEOUT_MS),
     });
     await response.body?.cancel();
     if (response.status !== 202)
