@@ -344,9 +344,33 @@ describe('WhatsApp Web bridge reliability', () => {
   it('classifies only non-retryable 4xx responses as permanent', () => {
     expect(isPermanentWebhookStatus(400)).toBe(true)
     expect(isPermanentWebhookStatus(422)).toBe(true)
+    expect(isPermanentWebhookStatus(402)).toBe(false)
     expect(isPermanentWebhookStatus(408)).toBe(false)
     expect(isPermanentWebhookStatus(429)).toBe(false)
     expect(isPermanentWebhookStatus(500)).toBe(false)
+  })
+
+  it('retains a Vercel 402 failure in the durable outbox for retry', async () => {
+    const paths = await directories()
+    const eventId = 'a'.repeat(64)
+    const outbox = new WebhookOutbox({
+      ...paths,
+      maxEntries: 10,
+      validateEnvelope: validEnvelope,
+      deliver: async () => ({ kind: 'retryable_failure', status: 402 }),
+    })
+    await outbox.initialize()
+    await outbox.persist(envelope(eventId))
+
+    await outbox.triggerDrain()
+
+    expect(await readdir(paths.outboxDir)).toEqual([`${eventId}.json`])
+    expect(await readdir(paths.deadLetterDir)).toEqual([])
+    expect(outbox.snapshot()).toMatchObject({
+      ready: false,
+      outbox_depth: 1,
+      last_webhook_error: { kind: 'delivery_failed', status: 402 },
+    })
   })
 
   it('atomically persists outbox entries with owner-only permissions', async () => {

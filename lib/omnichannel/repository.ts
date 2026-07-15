@@ -290,6 +290,9 @@ export async function ingestNormalizedMessage(
       metadata: {
         ...message.metadata,
         providerTimestampTrusted: providerTime.trusted,
+        // Server-authored anchor for the durable conversation quiet window.
+        // It deliberately overwrites any provider-supplied field of this name.
+        ingestedAt: now,
       },
       occurred_at: occurredAt,
     })

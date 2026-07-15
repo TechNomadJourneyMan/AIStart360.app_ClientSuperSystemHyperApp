@@ -87,6 +87,29 @@ function parsedTime(value: string | null | undefined): number | null {
 }
 
 /**
+ * Inngest serializes a conversation, so a newer event may begin only after an
+ * older event has finished its own sleep. Anchor the wait to the server-side
+ * ingestion timestamp instead of sleeping the full duration again. The
+ * deadline itself is persisted through step.run and sleepUntil is always
+ * invoked with that fixed value, so an Inngest replay cannot change the step
+ * graph as wall-clock time advances. Database jobs pass delay_already_applied
+ * because their run_at is the durable anchor.
+ */
+function replyDelayDeadline(
+  configuredSeconds: number,
+  message: OmnichannelMessage,
+  fallbackNowMs = Date.now(),
+): string {
+  const bounded = Math.min(86_400, Math.max(0, Math.trunc(configuredSeconds)));
+  const ingestedAt = message.metadata.ingestedAt;
+  const ingestedAtMs =
+    typeof ingestedAt === "string" ? parsedTime(ingestedAt) : null;
+  return new Date(
+    (ingestedAtMs ?? fallbackNowMs) + bounded * 1_000,
+  ).toISOString();
+}
+
+/**
  * Risk belongs to the customer's current message burst, not just its last row.
  * This prevents a short follow-up such as "Астана" from hiding an immediately
  * preceding complaint or opt-out.
@@ -253,9 +276,15 @@ async function handleOmnichannelMessage({ event, step }: any) {
   const delaySeconds =
     forceDraft || delayAlreadyApplied
       ? 0
-      : Math.max(0, context.settings.replyDelaySeconds);
+      : Math.min(
+          86_400,
+          Math.max(0, Math.trunc(context.settings.replyDelaySeconds)),
+        );
   if (delaySeconds > 0) {
-    await step.sleep("configured-reply-delay", `${delaySeconds}s`);
+    const deadline = await step.run("resolve-reply-delay-deadline", () =>
+      replyDelayDeadline(delaySeconds, context!.message),
+    );
+    await step.sleepUntil("configured-reply-delay", deadline);
     context = await step.run("reload-message-context-after-delay", () =>
       getMessageContext(data.message_id),
     );
@@ -824,6 +853,16 @@ export async function processOmnichannelMessageDirect(
     sleep: async (_id: string, duration: string): Promise<void> => {
       const delayMs = inlineSleepDuration(duration);
       await new Promise((resolve) => setTimeout(resolve, delayMs));
+    },
+    sleepUntil: async (_id: string, deadline: string | Date): Promise<void> => {
+      const deadlineMs = new Date(deadline).getTime();
+      if (!Number.isFinite(deadlineMs)) {
+        throw new Error("unsupported_inline_sleep_deadline");
+      }
+      const delayMs = Math.max(0, deadlineMs - Date.now());
+      if (delayMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      }
     },
   };
 

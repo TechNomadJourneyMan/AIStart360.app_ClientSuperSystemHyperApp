@@ -181,6 +181,11 @@ describe("direct Postgres omnichannel ingestion", () => {
     expect(insert?.[0]).not.toContain("private customer text");
     expect(insert?.[1]).toContain("private customer text");
     expect(insert?.[1]?.[6]).toBe("imported");
+    expect(JSON.parse(String(insert?.[1]?.[8]))).toEqual(
+      expect.objectContaining({
+        ingestedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+      }),
+    );
   });
 
   it("never queues an offline retry even when the existing row is recoverable", async () => {

@@ -177,6 +177,7 @@ export async function ingestNormalizedMessage(
   pool: TransactionPool = defaultPool(),
 ): Promise<IngestNormalizedMessageResult> {
   assertDirectPostgresEnabled();
+  const ingestedAt = new Date().toISOString();
   const providerTime = normalizedProviderTime(message.occurredAt);
   const catchUp = isCatchUp(message);
   const persistedStatus = catchUp ? "imported" : message.status;
@@ -242,6 +243,8 @@ export async function ingestNormalizedMessage(
       const metadata = {
         ...message.metadata,
         providerTimestampTrusted: providerTime.trusted,
+        // Trusted server clock used by the Inngest quiet-window fallback.
+        ingestedAt,
       };
       const inserted = await client.query<{
         id: string;

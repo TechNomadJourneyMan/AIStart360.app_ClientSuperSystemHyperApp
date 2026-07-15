@@ -136,6 +136,7 @@ function fakeStep() {
   return {
     run: vi.fn(async (_name: string, callback: () => unknown) => callback()),
     sleep: vi.fn(async () => undefined),
+    sleepUntil: vi.fn(async () => undefined),
     sendEvent: vi.fn(async () => undefined),
   };
 }
@@ -585,18 +586,91 @@ describe("omnichannel message processor safety", () => {
   });
 
   it("preserves the configured reply delay for legacy events", async () => {
-    repository.getMessageContext.mockResolvedValue(
-      context({
-        settings: { replyDelaySeconds: 9 },
-      }),
-    );
+    vi.useFakeTimers();
+    vi.setSystemTime("2026-07-15T10:00:00.000Z");
+    try {
+      repository.getMessageContext.mockResolvedValue(
+        context({
+          message: { occurredAt: "2026-07-15T10:00:00.000Z" },
+          settings: { replyDelaySeconds: 9 },
+        }),
+      );
+      const step = fakeStep();
+
+      await expect(invokeWithStep(false, step)).resolves.toMatchObject({
+        action: "send",
+      });
+
+      expect(step.run).toHaveBeenCalledWith(
+        "resolve-reply-delay-deadline",
+        expect.any(Function),
+      );
+      expect(step.sleepUntil).toHaveBeenCalledWith(
+        "configured-reply-delay",
+        "2026-07-15T10:00:09.000Z",
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("waits only the remainder of the quiet window when an Inngest event starts late", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime("2026-07-15T10:00:20.000Z");
+    try {
+      repository.getMessageContext.mockResolvedValue(
+        context({
+          message: {
+            occurredAt: "2026-07-15T10:00:05.000Z",
+            metadata: {
+              providerTimestampTrusted: true,
+              ingestedAt: "2026-07-15T10:00:05.000Z",
+            },
+          },
+          settings: { replyDelaySeconds: 20 },
+        }),
+      );
+      const step = fakeStep();
+
+      await expect(invokeWithStep(false, step)).resolves.toMatchObject({
+        action: "send",
+      });
+
+      expect(step.sleepUntil).toHaveBeenCalledWith(
+        "configured-reply-delay",
+        "2026-07-15T10:00:25.000Z",
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("supersedes an older burst event after the quiet window and never calls AI", async () => {
+    const first = context({ settings: { replyDelaySeconds: 20 } });
+    const newerMessage = {
+      ...first.message,
+      id: "message-2",
+      externalMessageId: "provider-in-2",
+      text: "И ещё нужен размер 52",
+      occurredAt: new Date(Date.now() + 1_000).toISOString(),
+    };
+    repository.getMessageContext
+      .mockResolvedValueOnce(first)
+      .mockResolvedValueOnce({
+        ...first,
+        history: [first.message, newerMessage],
+        newestInboundMessageId: newerMessage.id,
+      });
     const step = fakeStep();
 
-    await expect(invokeWithStep(false, step)).resolves.toMatchObject({
-      action: "send",
+    await expect(invokeWithStep(false, step)).resolves.toEqual({
+      action: "ignore",
+      reason: "superseded_by_newer_message",
     });
 
-    expect(step.sleep).toHaveBeenCalledWith("configured-reply-delay", "9s");
+    expect(repository.markMessageSuperseded).toHaveBeenCalledWith("message-1");
+    expect(ai.generateOmnichannelReply).not.toHaveBeenCalled();
+    expect(repository.claimMessageForAutoSend).not.toHaveBeenCalled();
   });
 
   it("skips the configured reply delay after a durable queue run_at has applied it", async () => {
@@ -611,10 +685,7 @@ describe("omnichannel message processor safety", () => {
       invokeWithStep(false, step, { delay_already_applied: true }),
     ).resolves.toMatchObject({ action: "send" });
 
-    expect(step.sleep).not.toHaveBeenCalledWith(
-      "configured-reply-delay",
-      expect.any(String),
-    );
+    expect(step.sleepUntil).not.toHaveBeenCalled();
   });
 
   it("skips the configured reply delay for forced historical drafts", async () => {
@@ -630,10 +701,7 @@ describe("omnichannel message processor safety", () => {
       action: "draft",
     });
 
-    expect(step.sleep).not.toHaveBeenCalledWith(
-      "configured-reply-delay",
-      expect.any(String),
-    );
+    expect(step.sleepUntil).not.toHaveBeenCalled();
   });
 
   it("never automatically retries an ambiguous provider timeout", async () => {
@@ -784,10 +852,7 @@ describe("omnichannel message processor safety", () => {
       invokeWithStep(false, step, { delay_already_applied: true }),
     ).resolves.toMatchObject({ action: "send" });
 
-    expect(step.sleep).not.toHaveBeenCalledWith(
-      "configured-reply-delay",
-      expect.any(String),
-    );
+    expect(step.sleepUntil).not.toHaveBeenCalled();
     expect(web.sendPresence).toHaveBeenNthCalledWith(1, {
       recipientId: "77001234567@s.whatsapp.net",
       accountExternalId: "waweb:primary",

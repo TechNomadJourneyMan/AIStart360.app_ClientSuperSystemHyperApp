@@ -58,6 +58,10 @@ export function isPermanentWebhookStatus(status) {
     Number.isInteger(status) &&
     status >= 400 &&
     status < 500 &&
+    // Vercel returns 402 while a deployment is temporarily disabled (for
+    // example DEPLOYMENT_DISABLED / Payment Required). Keep those events in
+    // the durable outbox so delivery resumes after the deployment recovers.
+    status !== 402 &&
     status !== 408 &&
     status !== 429
   )
