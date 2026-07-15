@@ -1,0 +1,35 @@
+services:
+  whatsapp-web-bridge:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: aistart360-whatsapp-web-bridge:local
+    restart: unless-stopped
+    init: true
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m,mode=1777
+    env_file:
+      - ${BRIDGE_ENV_FILE:-.env}
+    environment:
+      NODE_ENV: production
+      BRIDGE_HOST: 0.0.0.0
+      BRIDGE_PORT: 8787
+      BRIDGE_AUTH_DIR: /data/auth
+      BRIDGE_STATE_DIR: /data/state
+      BRIDGE_AUTOSTART: "true"
+    ports:
+      # Safe local default. In production put a TLS reverse proxy/private
+      # network in front and do not publish this port on 0.0.0.0.
+      - "${BRIDGE_BIND_ADDRESS:-127.0.0.1}:${BRIDGE_PUBLISHED_PORT:-8787}:8787"
+    volumes:
+      - whatsapp_bridge_data:/data
+    stop_grace_period: 30s
+
+volumes:
+  whatsapp_bridge_data:
+    name: aistart360_whatsapp_bridge_data

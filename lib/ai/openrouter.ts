@@ -84,6 +84,8 @@ interface ChatOptions {
    * slow Sonnet/Opus generation); pass a smaller value on latency-critical paths.
    */
   timeoutMs?: number
+  /** Avoid logging provider bodies/errors that may echo customer content. */
+  privacySensitive?: boolean
 }
 
 /**
@@ -148,7 +150,11 @@ export async function chatWithOpenRouter(opts: ChatOptions): Promise<string | nu
       signal: AbortSignal.timeout(timeoutMs),
     })
     if (!res.ok) {
-      console.error('[openrouter]', res.status, await res.text().catch(() => ''))
+      if (opts.privacySensitive) {
+        console.error('[openrouter] privacy-sensitive request failed:', res.status)
+      } else {
+        console.error('[openrouter]', res.status, await res.text().catch(() => ''))
+      }
       return null
     }
     const json = await res.json()
@@ -156,6 +162,8 @@ export async function chatWithOpenRouter(opts: ChatOptions): Promise<string | nu
   } catch (err) {
     if (err instanceof Error && err.name === 'TimeoutError') {
       console.error(`[openrouter] request timed out after ${timeoutMs}ms`)
+    } else if (opts.privacySensitive) {
+      console.error('[openrouter] privacy-sensitive fetch failed')
     } else {
       console.error('[openrouter] fetch failed:', err)
     }

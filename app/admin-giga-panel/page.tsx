@@ -13,6 +13,7 @@ import {
   XCircle,
   Shield,
   ShieldCheck,
+  MessagesSquare,
 } from 'lucide-react'
 import { useGigaPanelStore } from '@/stores/gigaPanel.store'
 import { RequestsModule } from '@/components/giga-panel/RequestsModule'
@@ -21,6 +22,7 @@ import { ClientsModule } from '@/components/giga-panel/ClientsModule'
 import { LeadsModule } from '@/components/giga-panel/LeadsModule'
 import { MarketInsightsModule } from '@/components/giga-panel/MarketInsightsModule'
 import { InsightModerationModule } from '@/components/giga-panel/InsightModerationModule'
+import { OmnichannelModule } from '@/components/giga-panel/OmnichannelModule'
 
 // ─── KPI Card ────────────────────────────────────────────────────────────────
 
@@ -152,6 +154,19 @@ export default function GigaPanelPage() {
             Лиды
           </button>
           <button
+            onClick={() => setActiveModule('omnichannel')}
+            className={`
+              flex items-center gap-1.5 md:gap-2 px-3 md:px-4 py-2 rounded-lg text-xs md:text-sm font-medium transition-all whitespace-nowrap
+              ${activeModule === 'omnichannel'
+                ? 'bg-blue-500/20 text-blue-300 border border-blue-500/25'
+                : 'text-slate-500 hover:text-slate-300'
+              }
+            `}
+          >
+            <MessagesSquare size={15} />
+            Inbox
+          </button>
+          <button
             onClick={() => setActiveModule('market-insights')}
             className={`
               flex items-center gap-1.5 md:gap-2 px-3 md:px-4 py-2 rounded-lg text-xs md:text-sm font-medium transition-all whitespace-nowrap
@@ -230,6 +245,7 @@ export default function GigaPanelPage() {
           {activeModule === 'crm' && <CRMModule />}
           {activeModule === 'clients' && <ClientsModule />}
           {activeModule === 'leads' && <LeadsModule />}
+          {activeModule === 'omnichannel' && <OmnichannelModule />}
           {activeModule === 'market-insights' && <MarketInsightsModule />}
           {activeModule === 'insight-moderation' && <InsightModerationModule />}
         </motion.div>

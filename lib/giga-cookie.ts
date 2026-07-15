@@ -22,14 +22,27 @@
 //       in API route handlers (Node runtime).
 //     - verifyGigaRoleEdge             → async, Web Crypto (`crypto.subtle`),
 //       for use in middleware (Edge runtime).
-//   Both verify the SAME token format and use constant-time comparison.
+//   Both verify the SAME versioned, expiring token format and use constant-time
+//   signature comparison.
 // ─────────────────────────────────────────────────────────────────────────────
 
 // GIGA_COOKIE_NAME and the Edge (Web Crypto) verifier live in `giga-cookie-edge.ts`
 // — the single edge-safe module that middleware imports. We re-export them here so
 // Node-runtime API routes can keep importing everything from one place. This module
 // (with its node:crypto usage) must NEVER be imported by middleware.
-export { GIGA_COOKIE_NAME, verifyGigaRoleEdge } from './giga-cookie-edge'
+import {
+  GIGA_TOKEN_MAX_AGE_SECONDS,
+  GIGA_TOKEN_VERSION,
+  parseGigaTokenForVerification,
+} from './giga-cookie-edge'
+
+export {
+  GIGA_COOKIE_NAME,
+  GIGA_TOKEN_FUTURE_SKEW_SECONDS,
+  GIGA_TOKEN_MAX_AGE_SECONDS,
+  GIGA_TOKEN_VERSION,
+  verifyGigaRoleEdge,
+} from './giga-cookie-edge'
 
 // IMPORTANT (edge-compat): do NOT add a top-level `import ... from 'node:crypto'`.
 // This module is imported by middleware (Edge runtime), and a static node:crypto
@@ -60,22 +73,31 @@ function toBase64Url(bytes: Uint8Array): string {
   return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 }
 
-function base64UrlToBytes(value: string): Uint8Array {
-  const b64 = value.replace(/-/g, '+').replace(/_/g, '/')
-  const padded = b64 + '='.repeat((4 - (b64.length % 4)) % 4)
-  const bin = atob(padded)
-  const out = new Uint8Array(bin.length)
-  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i)
-  return out
-}
-
 /**
- * Produce a signed giga token of the form `<role>.<base64url-hmac-sha256>`.
+ * Produce a signed giga token with a seven-day maximum lifetime:
+ * `v1.<base64url-json-claims>.<base64url-hmac-sha256>`.
  * (Node runtime — use from API route handlers.)
  */
 export function signGigaRole(role: string): string {
-  const sig = nodeCrypto().createHmac('sha256', getSecret()).update(role).digest()
-  return `${role}.${toBase64Url(new Uint8Array(sig))}`
+  // The break-glass cookie is intentionally single-purpose. Keeping a generic
+  // string parameter preserves the existing API, while rejecting accidental
+  // use as a general role-minting primitive.
+  if (role !== 'super_admin') {
+    throw new Error('Only the super_admin giga role may be signed')
+  }
+
+  const crypto = nodeCrypto()
+  const issuedAt = Math.floor(Date.now() / 1000)
+  const claims = {
+    role,
+    iat: issuedAt,
+    exp: issuedAt + GIGA_TOKEN_MAX_AGE_SECONDS,
+    jti: toBase64Url(new Uint8Array(crypto.randomBytes(16))),
+  }
+  const encodedPayload = toBase64Url(new TextEncoder().encode(JSON.stringify(claims)))
+  const signingInput = `${GIGA_TOKEN_VERSION}.${encodedPayload}`
+  const signature = crypto.createHmac('sha256', getSecret()).update(signingInput).digest()
+  return `${signingInput}.${toBase64Url(new Uint8Array(signature))}`
 }
 
 function constantTimeEqualBytes(a: Uint8Array, b: Uint8Array): boolean {
@@ -92,25 +114,20 @@ function constantTimeEqualBytes(a: Uint8Array, b: Uint8Array): boolean {
  * signature is valid, otherwise null.
  */
 export function verifyGigaRole(cookieValue: string | undefined | null): string | null {
-  if (!cookieValue) return null
-  const dot = cookieValue.lastIndexOf('.')
-  if (dot <= 0) return null
-  const role = cookieValue.slice(0, dot)
-  const providedSig = cookieValue.slice(dot + 1)
-
-  let secret: string
   try {
-    secret = getSecret()
+    const parsed = parseGigaTokenForVerification(cookieValue)
+    if (!parsed) return null
+
+    const expected = new Uint8Array(
+      nodeCrypto()
+        .createHmac('sha256', getSecret())
+        .update(parsed.signingInput)
+        .digest(),
+    )
+    return constantTimeEqualBytes(expected, parsed.signature)
+      ? parsed.claims.role
+      : null
   } catch {
     return null
   }
-
-  const expected = new Uint8Array(nodeCrypto().createHmac('sha256', secret).update(role).digest())
-  let provided: Uint8Array
-  try {
-    provided = base64UrlToBytes(providedSig)
-  } catch {
-    return null
-  }
-  return constantTimeEqualBytes(expected, provided) ? role : null
 }
