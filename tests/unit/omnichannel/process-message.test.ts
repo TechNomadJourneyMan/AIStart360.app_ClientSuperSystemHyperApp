@@ -744,7 +744,7 @@ describe("omnichannel message processor safety", () => {
     expect(meta.sendInstagram).not.toHaveBeenCalled();
   });
 
-  it("uses the deterministic equipment script and Instagram quick replies before AI", async () => {
+  it("uses a concise deterministic Instagram welcome before showing choices", async () => {
     repository.getMessageContext.mockResolvedValue(
       context({
         message: { text: "Здравствуйте" },
@@ -754,20 +754,16 @@ describe("omnichannel message processor safety", () => {
 
     await expect(invoke()).resolves.toMatchObject({ action: "send" });
     expect(ai.generateOmnichannelReply).not.toHaveBeenCalled();
-    expect(meta.sendInstagramQuickReplies).toHaveBeenCalledWith(
+    expect(meta.sendInstagram).toHaveBeenCalledWith(
       expect.objectContaining({
         recipientId: "contact-1",
         text: expect.stringContaining("Вы из какого города?"),
-        options: expect.arrayContaining([
-          expect.objectContaining({ id: "equipment_v1:interest:summer" }),
-          expect.objectContaining({ id: "equipment_v1:interest:manager" }),
-        ]),
       }),
     );
-    expect(meta.sendInstagram).not.toHaveBeenCalled();
+    expect(meta.sendInstagramQuickReplies).not.toHaveBeenCalled();
     expect(repository.logOutboundMessage).toHaveBeenCalledWith(
       expect.objectContaining({
-        messageType: "button",
+        messageType: "text",
         metadata: expect.objectContaining({
           source: "omnichannel_equipment_sales_flow",
           equipmentFlowStage: "welcome",
@@ -779,12 +775,12 @@ describe("omnichannel message processor safety", () => {
     expect(repository.finalizeEquipmentFlowReply).toHaveBeenCalledWith(
       expect.objectContaining({
         stage: "welcome",
-        communityIncluded: true,
+        communityIncluded: false,
       }),
     );
   });
 
-  it("uses a WhatsApp list for the five equipment choices", async () => {
+  it("uses a concise WhatsApp text welcome before showing choices", async () => {
     repository.getMessageContext.mockResolvedValue(
       context({
         message: { channel: "whatsapp", text: "Здравствуйте" },
@@ -805,21 +801,17 @@ describe("omnichannel message processor safety", () => {
       channel: "whatsapp",
     });
     expect(ai.generateOmnichannelReply).not.toHaveBeenCalled();
-    expect(meta.sendWhatsAppList).toHaveBeenCalledWith(
+    expect(meta.sendWhatsApp).toHaveBeenCalledWith(
       expect.objectContaining({
         recipientId: "77001234567",
         text: expect.stringContaining("Вы из какого города?"),
-        buttonText: "Выбрать",
-        sectionTitle: "Экипировка",
-        options: expect.arrayContaining([
-          expect.objectContaining({ id: "equipment_v1:interest:catalog" }),
-        ]),
       }),
     );
+    expect(meta.sendWhatsAppList).not.toHaveBeenCalled();
     expect(repository.logOutboundMessage).toHaveBeenCalledWith(
       expect.objectContaining({
         channel: "whatsapp",
-        messageType: "interactive",
+        messageType: "text",
       }),
     );
     expect(web.sendPresence).not.toHaveBeenCalled();
@@ -1006,7 +998,7 @@ describe("omnichannel message processor safety", () => {
     expect(web.sendText).not.toHaveBeenCalled();
   });
 
-  it("sends Web equipment choices as idempotent plain text to the conversation JID", async () => {
+  it("sends the concise Web welcome as idempotent plain text to the conversation JID", async () => {
     repository.getMessageContext.mockResolvedValue(
       context({
         message: {
@@ -1043,7 +1035,7 @@ describe("omnichannel message processor safety", () => {
         accountExternalId: "waweb:primary",
         replyToExternalId: "raw-in-1",
         idempotencyKey: "omnichannel:auto:message-1",
-        text: expect.stringContaining("1. Да, на лето"),
+        text: "Добрый день! Вы из какого города?",
       }),
     );
     expect(meta.sendWhatsAppList).not.toHaveBeenCalled();

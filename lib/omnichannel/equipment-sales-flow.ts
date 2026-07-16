@@ -37,6 +37,13 @@ export const equipmentSalesFlowConfigSchema = z
       ask_interest: z.string().trim().min(1).max(500),
       options_prompt: z.string().trim().min(1).max(200),
       handoff: z.string().trim().min(1).max(500),
+      handoff_by_choice: z.object({
+        summer: z.string().trim().min(1).max(500),
+        autumn_winter: z.string().trim().min(1).max(500),
+        catalog: z.string().trim().min(1).max(500),
+        beginner: z.string().trim().min(1).max(500),
+        manager: z.string().trim().min(1).max(500),
+      }).optional(),
     }),
     choices: z
       .array(z.object({
@@ -91,18 +98,16 @@ export const equipmentSalesFlowConfigSchema = z
       .map((choice, index) => `${index + 1}. ${choice.label}`)
       .join('\n')}`
     const community = `${config.community.text}\n${config.community.url}`
-    const longestChoice = config.choices.reduce(
-      (longest, choice) => choice.label.length > longest.length ? choice.label : longest,
-      '',
-    )
-    // A free-form fallback city is intentionally capped at 80 characters and
-    // can be longer than every configured route label.
-    const longestCity = 'Г'.repeat(80)
+    const handoffs = config.messages.handoff_by_choice
+      ? Object.values(config.messages.handoff_by_choice)
+      : [config.messages.handoff]
     const renderedBodies = [
-      `${config.messages.welcome}\n\n${renderedChoices}\n\n${community}`,
-      `${config.messages.ask_interest}\n\n${renderedChoices}\n\n${community}`,
-      `${config.messages.ask_city}\n\n${community}`,
-      `${config.messages.handoff}\n\nВаш запрос: ${longestChoice}\nГород: ${longestCity}\nНапишите менеджеру: https://wa.me/000000000000000\n\n${community}`,
+      config.messages.welcome,
+      `${config.messages.ask_interest}\n\n${renderedChoices}`,
+      config.messages.ask_city,
+      ...handoffs.map((handoff) =>
+        `${handoff}\n\nНаписать менеджеру: https://wa.me/000000000000000\n\n${community}`,
+      ),
     ]
     if (renderedBodies.some((body) => body.length > 1_000)) {
       ctx.addIssue({
@@ -281,6 +286,19 @@ function choiceFromMessage(
   const numbered = text.match(/^(?:вариант\s*)?([1-5])$/u)?.[1]
   if (numbered) return config.choices[Number(numbered) - 1]?.id ?? null
 
+  // The previous live prompt invited replies in the form “city, number”. Keep
+  // those already-written replies compatible, but do not interpret arbitrary
+  // numbers in product questions as menu selections.
+  const inlineNumbers = [...new Set(
+    text.split(' ').filter((token) => /^[1-5]$/u.test(token)),
+  )]
+  if (
+    inlineNumbers.length === 1
+    && hasRecognizedCityMention(message.text ?? '', config)
+  ) {
+    return config.choices[Number(inlineNumbers[0]) - 1]?.id ?? null
+  }
+
   for (const choice of config.choices) {
     if (text === normalizeText(choice.label) || text === normalizeText(choice.button_label)) {
       return choice.id
@@ -326,6 +344,14 @@ function routeMatchesText(text: string, aliases: readonly string[]): boolean {
     }
     return false
   })
+}
+
+function hasRecognizedCityMention(
+  text: string,
+  config: EquipmentSalesFlowConfig,
+): boolean {
+  return config.city_routes.some((route) => routeMatchesText(text, route.aliases))
+    || KNOWN_OTHER_CITIES.some((city) => routeMatchesText(text, [city]))
 }
 
 function cleanCustomerCityLabel(value: string): string | null {
@@ -717,27 +743,27 @@ export function planEquipmentSalesFlow(input: {
   )
   if (
     !hasNewSignal
+    && !active.active
     && hasConfirmedWelcome
     && isLeadOpeningMessage(input.currentMessage)
   ) {
-    const base = `${config.messages.ask_city}\n\n${choicesText(config)}`
-    const answer = withCommunity(base, config, hasCommunity)
+    const answer = config.messages.ask_city
     return {
       stage: 'welcome',
       answer,
       reason: 'deterministic_equipment_flow_resume_without_repeating_welcome',
-      summary: 'Повторный запрос по экипировке; ожидаются город и интерес.',
+      summary: 'Повторный запрос по экипировке; ожидается город.',
       leadScore: 45,
-      presentation: { kind: 'choices', options: choiceOptions(config) },
+      presentation: { kind: 'text' },
       cityRouteId: null,
       cityLabel: null,
       choiceId: null,
       choiceLabel: null,
       managerUrl: null,
       handoffAfterSend: false,
-      communityIncluded: !hasCommunity,
+      communityIncluded: false,
       outboundMetadata: buildMetadata({
-        stage: 'welcome', communityIncluded: !hasCommunity,
+        stage: 'welcome', communityIncluded: false,
       }),
     }
   }
@@ -749,7 +775,9 @@ export function planEquipmentSalesFlow(input: {
 
   if (city && choice) {
     const managerUrl = `https://wa.me/${city.managerPhone}`
-    const base = `${config.messages.handoff}\n\nВаш запрос: ${choice.label}\nГород: ${city.customerLabel}\nНапишите менеджеру: ${managerUrl}`
+    const handoff = config.messages.handoff_by_choice?.[choice.id]
+      ?? config.messages.handoff
+    const base = `${handoff}\n\nНаписать менеджеру: ${managerUrl}`
     const answer = withCommunity(base, config, hasCommunity)
     return {
       stage: 'routed',
@@ -772,7 +800,7 @@ export function planEquipmentSalesFlow(input: {
   }
 
   if (choice && !city) {
-    const answer = withCommunity(config.messages.ask_city, config, hasCommunity)
+    const answer = config.messages.ask_city
     return {
       stage: 'awaiting_city',
       answer,
@@ -786,17 +814,17 @@ export function planEquipmentSalesFlow(input: {
       choiceLabel: choice.label,
       managerUrl: null,
       handoffAfterSend: false,
-      communityIncluded: !hasCommunity,
+      communityIncluded: false,
       outboundMetadata: buildMetadata({
-        stage: 'awaiting_city', choiceId, communityIncluded: !hasCommunity,
+        stage: 'awaiting_city', choiceId, communityIncluded: false,
       }),
     }
   }
 
   const base = city && !choice
     ? `${config.messages.ask_interest}\n\n${choicesText(config)}`
-    : `${config.messages.welcome}\n\n${choicesText(config)}`
-  const answer = withCommunity(base, config, hasCommunity)
+    : config.messages.welcome
+  const answer = base
   const stage = city ? 'awaiting_interest' as const : 'welcome' as const
   return {
     stage,
@@ -806,16 +834,18 @@ export function planEquipmentSalesFlow(input: {
       : 'deterministic_equipment_flow_welcome',
     summary: city
       ? `Клиент из города ${city.customerLabel}; ожидается выбор экипировки.`.slice(0, 500)
-      : 'Новый запрос по экипировке; ожидаются город и интерес.',
+      : 'Новый запрос по экипировке; ожидается город.',
     leadScore: city ? 60 : 40,
-    presentation: { kind: 'choices', options: choiceOptions(config) },
+    presentation: city
+      ? { kind: 'choices', options: choiceOptions(config) }
+      : { kind: 'text' },
     cityRouteId: city?.routeId ?? null,
     cityLabel: city?.customerLabel ?? null,
     choiceId: null,
     choiceLabel: null,
     managerUrl: null,
     handoffAfterSend: false,
-    communityIncluded: !hasCommunity,
-    outboundMetadata: buildMetadata({ stage, city, communityIncluded: !hasCommunity }),
+    communityIncluded: false,
+    outboundMetadata: buildMetadata({ stage, city, communityIncluded: false }),
   }
 }

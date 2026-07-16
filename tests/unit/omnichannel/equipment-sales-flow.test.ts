@@ -14,18 +14,25 @@ const config: EquipmentSalesFlowConfig = {
   opt_in_revision: 1,
   enabled: true,
   messages: {
-    welcome: 'Добрый день, Вы из какого города?\n\nПодбираете экипировку на лето/осень/зиму?\n\nПодключить к Вам менеджера и он поможет Вам подобрать одежду?🙋‍♂️',
-    ask_city: 'Подскажите, пожалуйста, из какого Вы города?',
-    ask_interest: 'Спасибо! Что Вас интересует?',
-    options_prompt: 'Выберите вариант:',
-    handoff: 'Подключаю к Вам менеджера — он поможет подобрать одежду 🙋‍♂️',
+    welcome: 'Здравствуйте! Спасибо за интерес к Honor Club 🙌\nПодскажите, пожалуйста, из какого вы города?',
+    ask_city: 'Подскажите, пожалуйста, из какого вы города?',
+    ask_interest: 'Отлично! Что вас интересует?',
+    options_prompt: 'Выберите вариант — можно ответить номером или своими словами 😊',
+    handoff: 'Отлично! Менеджер поможет вам с выбором 🙌',
+    handoff_by_choice: {
+      summer: 'Отлично! Менеджер поможет подобрать экипировку на лето 🙌',
+      autumn_winter: 'Отлично! Менеджер поможет подобрать экипировку на осень и зиму 🙌',
+      catalog: 'Отлично! Менеджер отправит актуальный каталог и поможет с выбором 🙌',
+      beginner: 'Конечно! Менеджер поможет подобрать экипировку с нуля 🙌',
+      manager: 'Хорошо! Передаю вас менеджеру 🙌',
+    },
   },
   choices: [
-    { id: 'summer', label: 'Да, на лето', button_label: 'Да, на лето' },
-    { id: 'autumn_winter', label: 'Да, осень-зима', button_label: 'Да, осень-зима' },
-    { id: 'catalog', label: 'Хочу ознакомиться с каталогом', button_label: 'Открыть каталог' },
-    { id: 'beginner', label: 'Я-новичок', button_label: 'Я-новичок' },
-    { id: 'manager', label: 'Позовите менеджера', button_label: 'Позовите менеджера' },
+    { id: 'summer', label: 'Экипировка на лето', button_label: 'На лето' },
+    { id: 'autumn_winter', label: 'Экипировка на осень–зиму', button_label: 'Осень–зима' },
+    { id: 'catalog', label: 'Посмотреть каталог', button_label: 'Каталог' },
+    { id: 'beginner', label: 'Я новичок, нужна помощь', button_label: 'Я новичок' },
+    { id: 'manager', label: 'Связаться с менеджером', button_label: 'Менеджер' },
   ],
   city_routes: [
     { id: 'astana', label: 'Астана', aliases: ['астана', 'астаны', 'астане', 'астану', 'нур-султан'], manager_phone: '77054057775' },
@@ -34,7 +41,7 @@ const config: EquipmentSalesFlowConfig = {
   ],
   fallback_route_id: 'other',
   community: {
-    text: 'Присоединяйтесь в чат, здесь будем публиковать все новинки и акции',
+    text: 'Новинки и акции — в нашем сообществе:',
     url: 'https://chat.whatsapp.com/JDaVNsnloFMF0RpOtLSDRW?mode=gi_t',
   },
 }
@@ -147,29 +154,35 @@ describe('equipment sales flow config', () => {
   })
 
   it.each([
-    ['welcome', {
-      messages: { ...config.messages, welcome: 'Д'.repeat(900) },
-    }],
     ['awaiting interest', {
-      messages: { ...config.messages, ask_interest: 'И'.repeat(500) },
+      messages: {
+        ...config.messages,
+        ask_interest: 'И'.repeat(500),
+        options_prompt: 'П'.repeat(200),
+      },
       choices: config.choices.map((choice, index) => ({
         ...choice,
         label: `${index + 1}${'В'.repeat(71)}`,
       })),
     }],
-    ['awaiting city', {
-      messages: { ...config.messages, ask_city: 'Г'.repeat(500) },
-      community: { ...config.community, text: 'Ч'.repeat(500) },
-    }],
     ['routed handoff', {
-      messages: { ...config.messages, handoff: 'М'.repeat(500) },
+      messages: {
+        ...config.messages,
+        handoff_by_choice: {
+          summer: 'М'.repeat(500),
+          autumn_winter: 'М'.repeat(500),
+          catalog: 'М'.repeat(500),
+          beginner: 'М'.repeat(500),
+          manager: 'М'.repeat(500),
+        },
+      },
       choices: config.choices.map((choice, index) =>
         index === 0 ? { ...choice, label: 'В'.repeat(72) } : choice,
       ),
       city_routes: config.city_routes.map((route, index) =>
         index === 0 ? { ...route, label: 'Г'.repeat(80) } : route,
       ),
-      community: { ...config.community, text: 'Ч'.repeat(300) },
+      community: { ...config.community, text: 'Ч'.repeat(500) },
     }],
   ] as const)('rejects an overlong rendered %s branch', (_branch, overrides) => {
     expect(equipmentSalesFlowConfigSchema.safeParse({
@@ -180,25 +193,19 @@ describe('equipment sales flow config', () => {
 })
 
 describe('equipment sales flow planning', () => {
-  it('starts with the requested script, a text fallback, five choices, and community link', () => {
+  it('starts with one concise city question and no premature links or choices', () => {
     const result = plan([message({ id: 'in-1', text: 'Здравствуйте' })])
 
     expect(result).toMatchObject({
       stage: 'welcome',
       choiceId: null,
       cityRouteId: null,
-      presentation: { kind: 'choices' },
+      presentation: { kind: 'text' },
+      communityIncluded: false,
     })
-    expect(result?.answer).toContain('Вы из какого города?')
-    expect(result?.answer).toContain('1. Да, на лето')
-    expect(result?.answer).toContain('5. Позовите менеджера')
-    expect(result?.answer).toContain(config.community.url)
-    expect(result?.presentation.kind === 'choices' ? result.presentation.options : []).toHaveLength(5)
-    expect(result?.presentation.kind === 'choices' ? result.presentation.options[2] : null).toEqual({
-      id: 'equipment_v1:interest:catalog',
-      title: 'Открыть каталог',
-      description: 'Хочу ознакомиться с каталогом',
-    })
+    expect(result?.answer).toBe(config.messages.welcome)
+    expect(result?.answer).not.toContain('1.')
+    expect(result?.answer).not.toContain(config.community.url)
   })
 
   it('asks for a city after an Instagram quick-reply choice', () => {
@@ -214,7 +221,7 @@ describe('equipment sales flow planning', () => {
       choiceId: 'summer',
       presentation: { kind: 'text' },
     })
-    expect(result?.answer).toContain('из какого Вы города')
+    expect(result?.answer).toContain('из какого вы города')
   })
 
   it.each([
@@ -284,6 +291,14 @@ describe('equipment sales flow planning', () => {
       cityLabel: 'Астана',
       presentation: { kind: 'choices' },
     })
+    expect(result?.answer).toContain('1. Экипировка на лето')
+    expect(result?.answer).toContain('5. Связаться с менеджером')
+    expect(result?.answer).not.toContain(config.community.url)
+    expect(result?.presentation.kind === 'choices' ? result.presentation.options[2] : null).toEqual({
+      id: 'equipment_v1:interest:catalog',
+      title: 'Каталог',
+      description: 'Посмотреть каталог',
+    })
   })
 
   it('understands a city in a natural Russian phrase without falling back', () => {
@@ -334,6 +349,22 @@ describe('equipment sales flow planning', () => {
   })
 
   it.each([
+    ['Алматы, 1', 'summer', 'other'],
+    ['Астана — вариант 3', 'catalog', 'astana'],
+    ['Өскемен 5', 'manager', 'ust_kamenogorsk'],
+  ] as const)('keeps legacy combined city and numeric choice replies: %s', (text, choiceId, routeId) => {
+    expect(plan([message({ id: `combined-${text}`, text })])).toMatchObject({
+      stage: 'routed',
+      cityRouteId: routeId,
+      choiceId,
+    })
+  })
+
+  it('does not treat an unrelated inline number as a menu choice', () => {
+    expect(plan([message({ id: 'product-count', text: 'Хочу 2 товара' })])).toBeNull()
+  })
+
+  it.each([
     'Я не из Астаны',
     'Не Астана',
     'Я не в Өскемене',
@@ -373,6 +404,19 @@ describe('equipment sales flow planning', () => {
       handoffAfterSend: true,
     })
     expect(result?.answer).toContain(managerUrl)
+    expect(result?.answer).toContain(config.community.url)
+  })
+
+  it('uses a choice-specific handoff instead of repeating form-like fields', () => {
+    const result = plan([
+      message({ id: 'in-city', text: 'Алматы' }),
+      message({ id: 'in-choice', text: '3' }),
+    ])
+
+    expect(result).toMatchObject({ stage: 'routed', choiceId: 'catalog' })
+    expect(result?.answer).toContain('Менеджер отправит актуальный каталог')
+    expect(result?.answer).not.toContain('Ваш запрос:')
+    expect(result?.answer).not.toContain('Город:')
   })
 
   it('does not repeat the community invite after it was logged outbound', () => {
@@ -412,6 +456,40 @@ describe('equipment sales flow planning', () => {
     })
     expect(result?.answer).not.toContain(config.messages.welcome)
     expect(result?.answer).toContain(config.messages.ask_city)
+  })
+
+  it('does not reset an active choice when the customer sends another greeting', () => {
+    const history = [
+      message({
+        id: 'out-awaiting-city',
+        direction: 'out',
+        text: config.messages.ask_city,
+        metadata: {
+          source: 'omnichannel_equipment_sales_flow',
+          equipmentFlowStage: 'awaiting_city',
+          equipmentFlowChoiceId: 'catalog',
+        },
+      }),
+      message({ id: 'repeat-greeting', text: 'Привет' }),
+    ]
+    const conversationMetadata = {
+      equipmentSalesFlow: {
+        version: 1,
+        stage: 'awaiting_city',
+        choiceId: 'catalog',
+        updatedAt: '2026-07-13T14:59:00.000Z',
+      },
+    }
+
+    expect(planWith({ history, conversationMetadata })).toBeNull()
+    expect(planWith({
+      history: [...history, message({ id: 'city-after-greeting', text: 'Астана' })],
+      conversationMetadata,
+    })).toMatchObject({
+      stage: 'routed',
+      cityRouteId: 'astana',
+      choiceId: 'catalog',
+    })
   })
 
   it('does not let a failed welcome suppress the real reply', () => {
