@@ -81,6 +81,7 @@
     "tailwind-merge": "^2.6.1",
     "telegram": "^2.26.22",
     "tesseract.js": "^7.0.0",
+    "workflow": "^4.6.0",
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
     "zod": "^3.25.76",
     "zustand": "^4.5.7"

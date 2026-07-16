@@ -118,7 +118,7 @@ function context(overrides: Record<string, unknown> = {}) {
       channel: "instagram",
       mode: "auto",
       enabled: true,
-      businessContext: null,
+      businessContext: "Honor Group: магазин проверенной экипировки для охоты, рыбалки и активного отдыха.",
       automationConfig: {},
       confidenceThreshold: 0.75,
       replyDelaySeconds: 0,
@@ -288,6 +288,58 @@ describe("omnichannel message processor safety", () => {
     expect(web.sendText).not.toHaveBeenCalled();
   });
 
+  it("leaves a send owned by a different durable run untouched", async () => {
+    repository.getMessageContext.mockResolvedValue(
+      context({
+        message: {
+          status: "sending",
+          metadata: {
+            providerTimestampTrusted: true,
+            sendClaimOwner: "workflow:wrun-first",
+          },
+        },
+      }),
+    );
+
+    await expect(invokeWithStep(false, fakeStep(), {
+      processing_owner: "workflow:wrun-duplicate",
+    })).resolves.toEqual({
+      skipped: true,
+      reason: "send_owned_by_other_worker",
+    });
+
+    expect(repository.markMessageNeedsHuman).not.toHaveBeenCalled();
+    expect(repository.markMessageDrafted).not.toHaveBeenCalled();
+    expect(meta.sendInstagram).not.toHaveBeenCalled();
+  });
+
+  it("reconciles the same database job after its lease token rotates", async () => {
+    const jobId = "00000000-0000-4000-8000-000000000099";
+    repository.getMessageContext.mockResolvedValue(
+      context({
+        message: {
+          status: "sending",
+          aiDraft: "Подготовленный ответ",
+          aiConfidence: 0.9,
+          metadata: {
+            providerTimestampTrusted: true,
+            sendClaimOwner: `database-job:${jobId}:expired-lease`,
+          },
+        },
+      }),
+    );
+
+    await expect(invokeWithStep(false, fakeStep(), {
+      processing_owner: `database-job:${jobId}`,
+    })).resolves.toEqual({
+      action: "escalate",
+      reason: "delivery_unknown_after_interrupted_send",
+    });
+
+    expect(repository.markMessageNeedsHuman).toHaveBeenCalled();
+    expect(meta.sendInstagram).not.toHaveBeenCalled();
+  });
+
   it("completes recovery when a durable pull delivery already owns the send", async () => {
     outbound.pull = true;
     repository.getMessageContext.mockResolvedValue(
@@ -330,6 +382,28 @@ describe("omnichannel message processor safety", () => {
     expect(repository.markMessageNeedsHuman).toHaveBeenCalled();
     expect(repository.claimMessageForAutoSend).not.toHaveBeenCalled();
     expect(meta.sendInstagram).not.toHaveBeenCalled();
+  });
+
+  it("fails closed instead of inventing another brand when business context is empty", async () => {
+    repository.getMessageContext.mockResolvedValue(
+      context({ settings: { businessContext: "" } }),
+    );
+
+    await expect(invoke()).resolves.toEqual({
+      action: "escalate",
+      reason: "business_context_missing",
+    });
+    expect(ai.generateOmnichannelReply).not.toHaveBeenCalled();
+    expect(meta.sendInstagram).not.toHaveBeenCalled();
+    expect(repository.markMessageNeedsHuman).toHaveBeenCalledWith(
+      "message-1",
+      "conversation-1",
+      {
+        draft: null,
+        confidence: null,
+        reason: "business_context_missing",
+      },
+    );
   });
 
   it("keeps a draft when the webhook account differs from the configured sender", async () => {
@@ -716,12 +790,36 @@ describe("omnichannel message processor safety", () => {
 
     await expect(invoke()).resolves.toMatchObject({ action: "escalate" });
     expect(meta.sendInstagram).toHaveBeenCalledTimes(1);
-    expect(repository.claimMessageForAutoSend).toHaveBeenCalledTimes(2);
+    expect(repository.claimMessageForAutoSend).toHaveBeenCalledTimes(1);
     expect(repository.markMessageNeedsHuman).toHaveBeenCalledWith(
       "message-1",
       "conversation-1",
       expect.objectContaining({
         reason: expect.stringContaining("ambiguous_"),
+      }),
+    );
+  });
+
+  it("never repeats a provider POST when the same execution already acquired the send claim", async () => {
+    repository.getMessageContext.mockResolvedValue(context());
+    repository.claimMessageForAutoSend.mockResolvedValueOnce({
+      claimed: false,
+      reason: "send_claim_already_acquired",
+    });
+
+    await expect(invokeWithStep(false, fakeStep(), {
+      processing_owner: "inngest:event-1",
+    })).resolves.toEqual({
+      action: "escalate",
+      reason: "delivery_unknown_after_interrupted_send",
+    });
+
+    expect(meta.sendInstagram).not.toHaveBeenCalled();
+    expect(repository.markMessageNeedsHuman).toHaveBeenCalledWith(
+      "message-1",
+      "conversation-1",
+      expect.objectContaining({
+        reason: "delivery_unknown_after_interrupted_send",
       }),
     );
   });
@@ -770,7 +868,7 @@ describe("omnichannel message processor safety", () => {
         }),
       }),
     );
-    expect(repository.claimEquipmentFlowForAutoSend).toHaveBeenCalledTimes(2);
+    expect(repository.claimEquipmentFlowForAutoSend).toHaveBeenCalledTimes(1);
     expect(repository.claimMessageForAutoSend).not.toHaveBeenCalled();
     expect(repository.finalizeEquipmentFlowReply).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -914,7 +1012,7 @@ describe("omnichannel message processor safety", () => {
     expect(repository.markMessageReplied).not.toHaveBeenCalled();
   });
 
-  it("rechecks the atomic claim after typing and cancels a stale Web reply", async () => {
+  it("claims atomically after typing and cancels a stale Web reply", async () => {
     repository.getMessageContext.mockResolvedValue(
       context({
         message: {
@@ -1172,26 +1270,24 @@ describe("omnichannel message processor safety", () => {
     expect(meta.sendInstagramQuickReplies).not.toHaveBeenCalled();
   });
 
-  it("cancels immediately when the final equipment-flow claim is denied", async () => {
+  it("keeps a draft when the final equipment-flow claim is denied", async () => {
     repository.getMessageContext.mockResolvedValue(
       context({
         message: { text: "Здравствуйте" },
         settings: { automationConfig: equipmentAutomationConfig() },
       }),
     );
-    repository.claimEquipmentFlowForAutoSend
-      .mockResolvedValueOnce({ claimed: true, reason: "claimed" })
-      .mockResolvedValueOnce({
-        claimed: false,
-        reason: "equipment_flow_configuration_changed",
-      });
+    repository.claimEquipmentFlowForAutoSend.mockResolvedValueOnce({
+      claimed: false,
+      reason: "equipment_flow_configuration_changed",
+    });
 
     await expect(invoke()).resolves.toMatchObject({
-      action: "ignore",
+      action: "draft",
       reason: expect.stringContaining("equipment_flow_configuration_changed"),
     });
     expect(meta.sendInstagramQuickReplies).not.toHaveBeenCalled();
-    expect(repository.markMessageSuperseded).toHaveBeenCalled();
+    expect(repository.markMessageDrafted).toHaveBeenCalled();
   });
 
   it("escalates when an earlier message in the active burst contains a complaint", async () => {

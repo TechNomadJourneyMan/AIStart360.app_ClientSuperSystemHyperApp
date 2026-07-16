@@ -144,6 +144,13 @@ describe('RBAC Middleware', () => {
     expect(res.status).toBe(200)
   })
 
+  it('allows unauthenticated Vercel Workflow step callbacks', async () => {
+    const req = createRequest('/.well-known/workflow/v1/step/run-1')
+    const res = await middleware(req)
+    expect(res.status).toBe(200)
+    expect(res.headers.get('location')).toBeNull()
+  })
+
   // Authenticated user on public page → redirect to their dashboard
   it('redirects authenticated admin from /login to /dashboard', async () => {
     const req = createRequest('/login', 'admin')

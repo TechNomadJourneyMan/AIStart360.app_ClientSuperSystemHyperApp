@@ -86,14 +86,41 @@ function parsedTime(value: string | null | undefined): number | null {
   return Number.isFinite(timestamp) ? timestamp : null;
 }
 
+function processingOwner(
+  data: OmnichannelMessageReceivedEventData,
+  eventId: unknown,
+): string {
+  const supplied = typeof data.processing_owner === "string"
+    ? data.processing_owner.trim()
+    : "";
+  const runtimeEventId = typeof eventId === "string" ? eventId.trim() : "";
+  // Workflow injects its unique run id; Inngest exposes a stable event id; the
+  // message fallback keeps older/database callers compatible. The database
+  // function bounds the token again and never exposes it to a provider.
+  return (supplied || runtimeEventId || `message:${data.message_id}`).slice(0, 200);
+}
+
+function databaseJobOwnerId(value: string): string | null {
+  const match = /^database-job:([^:]+)(?::[^:]+)?$/.exec(value);
+  return match?.[1] ?? null;
+}
+
+/** A database job keeps one send owner even when its short lease is rotated. */
+function sameSendOwner(storedOwner: string, currentOwner: string): boolean {
+  if (storedOwner === currentOwner) return true;
+  const storedJobId = databaseJobOwnerId(storedOwner);
+  const currentJobId = databaseJobOwnerId(currentOwner);
+  return Boolean(storedJobId && currentJobId && storedJobId === currentJobId);
+}
+
 /**
  * Inngest serializes a conversation, so a newer event may begin only after an
  * older event has finished its own sleep. Anchor the wait to the server-side
  * ingestion timestamp instead of sleeping the full duration again. The
  * deadline itself is persisted through step.run and sleepUntil is always
  * invoked with that fixed value, so an Inngest replay cannot change the step
- * graph as wall-clock time advances. Database jobs pass delay_already_applied
- * because their run_at is the durable anchor.
+ * graph as wall-clock time advances. Database jobs and Vercel Workflow pass
+ * delay_already_applied after their durable run_at/timer covers this window.
  */
 function replyDelayDeadline(
   configuredSeconds: number,
@@ -182,6 +209,7 @@ async function handleOmnichannelMessage({ event, step }: any) {
   }
   const eventForceDraft = data.force_draft === true;
   const delayAlreadyApplied = data.delay_already_applied === true;
+  const sendOwner = processingOwner(data, event.id);
 
   let context = await step.run("load-message-context", () =>
     getMessageContext(data.message_id),
@@ -195,6 +223,17 @@ async function handleOmnichannelMessage({ event, step }: any) {
   if (context.message.direction !== "in")
     return { skipped: true, reason: "not_inbound" };
   if (context.message.status === "sending") {
+    const storedOwner = context.message.metadata.sendClaimOwner;
+    if (
+      typeof storedOwner === "string" &&
+      storedOwner.length > 0 &&
+      !sameSendOwner(storedOwner, sendOwner)
+    ) {
+      // Another concrete run owns the provider boundary. It will either
+      // persist the send or surface its own ambiguous-delivery escalation;
+      // this duplicate must not overwrite either outcome.
+      return { skipped: true, reason: "send_owned_by_other_worker" };
+    }
     const durableDeliveryId = context.message.metadata.outboundDeliveryId;
     if (
       context.message.metadata.transport === "whatsapp_web" &&
@@ -336,6 +375,18 @@ async function handleOmnichannelMessage({ event, step }: any) {
           forceDraft,
         })
       : null;
+
+  if (!salesFlowPlan && !context.settings.businessContext?.trim()) {
+    const reason = "business_context_missing";
+    await step.run("escalate-missing-business-context", () =>
+      markMessageNeedsHuman(context!.message.id, context!.conversation.id, {
+        draft: null,
+        confidence: null,
+        reason,
+      }),
+    );
+    return { action: "escalate", reason };
+  }
 
   const proposedReply: OmnichannelAiReply | null = salesFlowPlan
     ? {
@@ -623,45 +674,29 @@ async function handleOmnichannelMessage({ event, step }: any) {
     );
   }
 
-  const claim = await step.run("claim-auto-send", () =>
-    salesFlowPlan
-      ? claimEquipmentFlowForAutoSend(
-          context!.message.id,
-          context!.settings.updatedAt,
-        )
-      : claimMessageForAutoSend(context!.message.id),
-  );
-  if (!claim.claimed) {
-    const reason = `auto_send_claim_denied:${claim.reason}`;
-    if (claim.reason === "superseded_by_newer_message") {
-      await step.run("mark-claim-superseded", () =>
-        markMessageSuperseded(context!.message.id, reason),
-      );
-      return { action: "ignore", reason };
-    }
-    await step.run("mark-claim-denied-draft", () =>
-      markMessageDrafted(context!.message.id, { ...outcome, reason }),
-    );
-    return { action: "draft", reason };
-  }
-
   let sendResult: OmnichannelDispatchResult;
   try {
     sendResult = await step.run("send-meta-auto-reply", async () => {
-      const finalClaim = salesFlowPlan
-        ? await claimEquipmentFlowForAutoSend(
-            context!.message.id,
-            context!.settings.updatedAt,
-          )
-        : await claimMessageForAutoSend(context!.message.id);
-      if (!finalClaim.claimed) {
-        return {
-          ok: false as const,
-          status: null,
-          code: "auto_send_cancelled",
-          message: finalClaim.reason,
-          retryable: false,
-        };
+      // Pull-mode WhatsApp Web is authorized later by the bridge's fenced
+      // delivery RPC. Every direct transport claims exactly once here, in the
+      // same step and immediately before the provider request.
+      if (!pullWebDelivery) {
+        const finalClaim = salesFlowPlan
+          ? await claimEquipmentFlowForAutoSend(
+              context!.message.id,
+              context!.settings.updatedAt,
+              sendOwner,
+            )
+          : await claimMessageForAutoSend(context!.message.id, sendOwner);
+        if (!finalClaim.claimed) {
+          return {
+            ok: false as const,
+            status: null,
+            code: "auto_send_claim_denied",
+            message: finalClaim.reason,
+            retryable: false,
+          };
+        }
       }
       const outboundMessageType =
         salesFlowPlan?.presentation.kind === "choices"
@@ -740,12 +775,33 @@ async function handleOmnichannelMessage({ event, step }: any) {
   }
 
   if (!sendResult.ok) {
-    if (sendResult.code === "auto_send_cancelled") {
-      const reason = `auto_send_cancelled:${sendResult.message}`;
-      await step.run("mark-late-cancel-superseded", () =>
-        markMessageSuperseded(context!.message.id, reason),
+    if (sendResult.code === "auto_send_claim_denied") {
+      const claimReason = sendResult.message;
+      const reason = `auto_send_claim_denied:${claimReason}`;
+      if (claimReason === "send_claim_owned_by_other_worker") {
+        return { skipped: true, reason: "send_owned_by_other_worker" };
+      }
+      if (claimReason === "send_claim_already_acquired") {
+        const ambiguousReason = "delivery_unknown_after_interrupted_send";
+        await step.run("escalate-replayed-send-claim", () =>
+          markMessageNeedsHuman(
+            context!.message.id,
+            context!.conversation.id,
+            { ...outcome, reason: ambiguousReason },
+          ),
+        );
+        return { action: "escalate", reason: ambiguousReason };
+      }
+      if (claimReason === "superseded_by_newer_message") {
+        await step.run("mark-late-claim-superseded", () =>
+          markMessageSuperseded(context!.message.id, reason),
+        );
+        return { action: "ignore", reason };
+      }
+      await step.run("mark-late-claim-denied-draft", () =>
+        markMessageDrafted(context!.message.id, { ...outcome, reason }),
       );
-      return { action: "ignore", reason };
+      return { action: "draft", reason };
     }
     // A timeout/network error is ambiguous: Meta may have accepted the POST.
     // Never retry it automatically and risk sending the customer twice.

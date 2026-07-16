@@ -74,6 +74,11 @@ export async function middleware(request: NextRequest) {
   if (
     pathname.startsWith('/_next') ||
     pathname.startsWith('/api') ||
+    // Vercel Workflow invokes its generated step endpoints without an
+    // application user session. Sending these internal calls through the
+    // dashboard auth gate would redirect them to /login and leave every Meta
+    // message workflow stuck after the webhook ACK.
+    pathname.startsWith('/.well-known/workflow/') ||
     pathname.startsWith('/logo') ||
     pathname.startsWith('/fonts') ||
     // Static assets in public/ must skip the network auth (getUser + profiles):
@@ -236,5 +241,7 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|.*\\.svg|.*\\.png).*)'],
+  matcher: [
+    '/((?!_next/static|_next/image|favicon.ico|\\.well-known/workflow/|.*\\.svg|.*\\.png).*)',
+  ],
 }

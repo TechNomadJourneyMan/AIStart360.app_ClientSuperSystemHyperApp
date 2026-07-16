@@ -8,8 +8,14 @@ export interface OmnichannelMessageReceivedEventData {
   conversation_id: string;
   /** Historical imports are always analysed as drafts and are never sent. */
   force_draft?: boolean;
-  /** Internal queue hint: run_at already covered the configured reply delay. */
+  /** Internal hint: a durable queue/timer already covered the reply delay. */
   delay_already_applied?: boolean;
+  /**
+   * Internal execution fence. Durable runtimes supply a value unique to the
+   * concrete run/lease so two recoveries of one provider message cannot both
+   * cross the final database send claim.
+   */
+  processing_owner?: string;
 }
 
 export interface OmnichannelBackfillRequestedEventData {

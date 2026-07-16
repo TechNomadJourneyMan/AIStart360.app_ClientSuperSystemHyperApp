@@ -351,7 +351,7 @@ describe('equipment sales flow planning', () => {
   it.each([
     ['Алматы, 1', 'summer', 'other'],
     ['Астана — вариант 3', 'catalog', 'astana'],
-    ['Өскемен 5', 'manager', 'ust_kamenogorsk'],
+    ['Өскемен, 5', 'manager', 'ust_kamenogorsk'],
   ] as const)('keeps legacy combined city and numeric choice replies: %s', (text, choiceId, routeId) => {
     expect(plan([message({ id: `combined-${text}`, text })])).toMatchObject({
       stage: 'routed',
@@ -362,6 +362,52 @@ describe('equipment sales flow planning', () => {
 
   it('does not treat an unrelated inline number as a menu choice', () => {
     expect(plan([message({ id: 'product-count', text: 'Хочу 2 товара' })])).toBeNull()
+    expect(plan([message({ id: 'shops-count', text: 'В Астане есть 2 магазина?' })])).toMatchObject({
+      stage: 'awaiting_interest',
+      cityRouteId: 'astana',
+      choiceId: null,
+    })
+    expect(plan([message({ id: 'size-number', text: 'Астана, размер: 5' })])).toMatchObject({
+      stage: 'awaiting_interest',
+      cityRouteId: 'astana',
+      choiceId: null,
+    })
+    expect(plan([message({ id: 'address-number', text: 'В Астане адрес: 3' })])).toMatchObject({
+      stage: 'awaiting_interest',
+      cityRouteId: 'astana',
+      choiceId: null,
+    })
+  })
+
+  it('prefers a written choice over an unrelated quantity', () => {
+    expect(plan([message({
+      id: 'catalog-for-two',
+      text: 'Астана, хочу каталог на 2 человека',
+    })])).toMatchObject({
+      stage: 'routed',
+      cityRouteId: 'astana',
+      choiceId: 'catalog',
+    })
+  })
+
+  it.each([
+    'Позовите 1 человека',
+    'Соедините с 1 человеком',
+    'Соедините меня с живым человеком',
+    'Позовите живого человека',
+    'Переведите на человека',
+  ])('keeps a direct request for a human: %s', (text) => {
+    expect(plan([message({ id: `human-request-${text}`, text })])).toMatchObject({
+      stage: 'awaiting_city',
+      choiceId: 'manager',
+    })
+  })
+
+  it('does not confuse a product quantity with a human handoff', () => {
+    expect(plan([message({ id: 'clothes-for-two', text: 'Дайте одежду на 2 человека' })])).toMatchObject({
+      stage: 'welcome',
+      choiceId: null,
+    })
   })
 
   it.each([
@@ -491,6 +537,81 @@ describe('equipment sales flow planning', () => {
       choiceId: 'catalog',
     })
   })
+
+  it('resumes an active welcome that has no saved city or choice', () => {
+    const result = planWith({
+      history: [
+        message({
+          id: 'out-active-welcome',
+          direction: 'out',
+          text: config.messages.welcome,
+          metadata: {
+            source: 'omnichannel_equipment_sales_flow',
+            equipmentFlowStage: 'welcome',
+          },
+        }),
+        message({ id: 'repeat-club-cta', text: 'Хочу в Клуб' }),
+      ],
+      conversationMetadata: {
+        equipmentSalesFlow: {
+          version: 1,
+          stage: 'welcome',
+          updatedAt: '2026-07-13T14:59:00.000Z',
+        },
+      },
+    })
+
+    expect(result).toMatchObject({
+      stage: 'welcome',
+      reason: 'deterministic_equipment_flow_resume_without_repeating_welcome',
+      choiceId: null,
+      cityRouteId: null,
+    })
+    expect(result?.answer).toBe(config.messages.ask_city)
+  })
+
+  it.each([
+    ['Конаев, 2', 'Конаев'],
+    ['Я из Караганды, 2', 'Караганды'],
+  ] as const)('keeps unknown cities in a legacy combined reply: %s', (text, cityLabel) => {
+    const result = planWith({
+      history: [message({ id: `legacy-unknown-${text}`, text })],
+      conversationMetadata: {
+        equipmentSalesFlow: {
+          version: 1,
+          stage: 'welcome',
+          updatedAt: '2026-07-13T14:59:00.000Z',
+        },
+      },
+    })
+
+    expect(result).toMatchObject({
+      stage: 'routed',
+      cityRouteId: 'other',
+      cityLabel,
+      choiceId: 'autumn_winter',
+    })
+  })
+
+  it.each(['Куртка, 2', 'Шлем, 2'])(
+    'does not replace a saved city with a product and quantity: %s',
+    (text) => {
+      const result = planWith({
+        history: [message({ id: `product-after-city-${text}`, text })],
+        conversationMetadata: {
+          equipmentSalesFlow: {
+            version: 1,
+            stage: 'awaiting_interest',
+            cityRouteId: 'astana',
+            cityLabel: 'Астана',
+            updatedAt: '2026-07-13T14:59:00.000Z',
+          },
+        },
+      })
+
+      expect(result).toBeNull()
+    },
+  )
 
   it('does not let a failed welcome suppress the real reply', () => {
     const failedWelcome = message({

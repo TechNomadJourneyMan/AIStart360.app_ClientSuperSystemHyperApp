@@ -13,7 +13,8 @@ WhatsApp Cloud API: приём подписанных webhook-событий, AI
 - Единый callback Meta: `GET/POST /api/webhooks/meta`.
 - Instagram и WhatsApp приводятся к общей модели контактов, диалогов и сообщений.
 - Повторные webhook-события дедуплицируются по hash/provider message id.
-- Обработка и импорт запускаются через Inngest, а не внутри долгого webhook-запроса.
+- Обработка запускается через Vercel Workflow, Inngest или Postgres-очередь,
+  а не блокирует Meta webhook до завершения AI-ответа.
 - AI определяет intent, sentiment, lead score, риск и создаёт ответ. Платежи,
   возвраты, жалобы, юридические/медицинские темы, угрозы, opt-out и prompt
   injection передаются человеку.
@@ -85,6 +86,10 @@ node scripts/apply-migration.js supabase/migrations/063_omnichannel_webhook_clai
 node scripts/apply-migration.js supabase/migrations/064_omnichannel_processing_jobs.sql
 node scripts/apply-migration.js supabase/migrations/065_omnichannel_runtime_role.sql
 node scripts/apply-migration.js supabase/migrations/066_omnichannel_outbound_deliveries.sql
+node scripts/apply-migration.js supabase/migrations/067_omnichannel_reply_quiet_window.sql
+node scripts/apply-migration.js supabase/migrations/068_omnichannel_manager_routing.sql
+node scripts/apply-migration.js supabase/migrations/069_omnichannel_conversation_ux.sql
+node scripts/apply-migration.js supabase/migrations/070_omnichannel_owned_send_claims.sql
 ```
 
 Миграция создаёт:
@@ -123,7 +128,7 @@ opt-in суперадмина для каждого канала.
 
 - Астана → `https://wa.me/77054057775`;
 - Усть-Каменогорск / Өскемен → `https://wa.me/77714057775`;
-- остальные города → `https://wa.me/77780457775`;
+- остальные города → `https://wa.me/77714057775`;
 - чат новинок и акций →
   `https://chat.whatsapp.com/JDaVNsnloFMF0RpOtLSDRW?mode=gi_t`.
 
@@ -168,6 +173,7 @@ Meta POST — это уменьшает риск частично доставл
 META_GRAPH_API_VERSION=v25.0
 META_GRAPH_TIMEOUT_MS=10000
 META_APP_SECRET=<meta-app-secret>
+INSTAGRAM_APP_SECRET=<optional-separate-instagram-app-secret>
 META_WEBHOOK_VERIFY_TOKEN=<independent-random-secret>
 
 INSTAGRAM_ACCESS_TOKEN=<instagram-user-access-token>
@@ -183,15 +189,23 @@ INNGEST_EVENT_KEY=<production-event-key>
 INNGEST_SIGNING_KEY=<production-signing-key>
 OPENROUTER_API_KEY=<server-side-key>
 
+# Instagram + WhatsApp Cloud API on Vercel (no always-on bridge required)
+OMNICHANNEL_PROCESSING_BACKEND=workflow
+
 # QR/WebSocket WhatsApp production worker
-OMNICHANNEL_PROCESSING_BACKEND=database
+# Use `database` instead of `workflow` when this bridge is enabled.
 OMNICHANNEL_PERSISTENCE=postgres
 OMNICHANNEL_DATABASE_URL=<dedicated-least-privilege-pooler-dsn>
 ```
 
-`META_APP_SECRET`, provider tokens, `SUPABASE_SERVICE_ROLE_KEY` и OpenRouter key
-никогда не должны попадать в git, browser bundle, URL query или логи.
+`META_APP_SECRET`, `INSTAGRAM_APP_SECRET`, provider tokens,
+`SUPABASE_SERVICE_ROLE_KEY` и OpenRouter key никогда не должны попадать
+в git, browser bundle, URL query или логи.
 `META_WEBHOOK_VERIFY_TOKEN` — выбранная вами случайная строка, а не App Secret.
+
+`INSTAGRAM_APP_SECRET` задавайте, если Instagram Login настроен в
+отдельном Meta app. Если оба канала находятся в одном app, оставьте
+переменную пустой: Instagram безопасно использует `META_APP_SECRET`.
 
 `OMNICHANNEL_DATABASE_URL` создаётся для отдельного LOGIN-пользователя, которому
 выдана только роль `aistart360_omnichannel_runtime`. Не подставляйте сюда owner
@@ -235,17 +249,26 @@ curl --get 'https://<ваш-домен>/api/webhooks/meta' \
 ```
 
 Ожидаемый body — `healthcheck`. POST принимается только с корректным
-`X-Hub-Signature-256`, вычисленным Meta по **исходному raw body** с помощью
-`META_APP_SECRET`. Не отключайте проверку подписи даже временно.
+`X-Hub-Signature-256`, вычисленным Meta по **исходному raw body**. WhatsApp
+проверяется только `META_APP_SECRET`; Instagram — `INSTAGRAM_APP_SECRET`, если
+он задан, иначе тот же `META_APP_SECRET`. Секреты каналов нельзя
+взаимозаменять. Не отключайте проверку подписи даже временно.
 
 Для локальной разработки используйте HTTPS tunnel, но не публикуйте `.env.local`
 и не вставляйте access token в URL. После смены tunnel URL обновите callback в
 Meta Dashboard.
 
-## 6. Inngest
+## 6. Асинхронная обработка
 
 Webhook должен быстро подтвердить валидное событие, а AI/Graph API выполняются
-асинхронно. В production:
+асинхронно. Для Vercel рекомендуется
+`OMNICHANNEL_PROCESSING_BACKEND=workflow`: Workflow SDK сохраняет тихое окно
+как durable sleep, затем запускает защищённый processing step и автоматически
+возобновляет операции после сбоев. Для
+Vercel отдельные Workflow credentials не требуются; в проекте должен быть
+включён Fluid Compute.
+
+Альтернатива — `OMNICHANNEL_PROCESSING_BACKEND=inngest`. В production:
 
 1. Задайте `INNGEST_EVENT_KEY` и `INNGEST_SIGNING_KEY` в Vercel.
 2. Убедитесь, что endpoint `https://<ваш-домен>/api/inngest` синхронизирован в
@@ -255,9 +278,11 @@ Webhook должен быстро подтвердить валидное соб
 4. После тестового DM проверьте успешный run и появление записи в
    `omnichannel_messages`.
 
-Обработка сериализуется по диалогу; повторная доставка webhook безопасна. Если
-постановка события в очередь не удалась, endpoint должен вернуть ошибку, чтобы
-Meta повторила доставку.
+Inngest сериализует обработку по диалогу. Vercel Workflow допускает параллельные
+запуски, поэтому актуальность сообщения и единственный владелец отправки
+проверяются атомарно в базе непосредственно перед Meta POST. Повторная доставка
+webhook безопасна. Если постановка события в очередь не удалась, endpoint
+возвращает ошибку, чтобы Meta повторила доставку.
 
 ## 7. Безопасный rollout
 
@@ -287,7 +312,7 @@ AI анализирует сообщения и создаёт черновик.
 override/`muted` и ручную эскалацию.
 
 Первые дни после включения контролируйте ошибочные ответы, opt-out, долю
-эскалаций, Graph API failures и задержку Inngest. При аномалии сразу верните
+эскалаций, Graph API failures и задержку Workflow/Inngest. При аномалии сразу верните
 канал в `draft` или `off`.
 
 ## 8. Окна отправки и ограничения Meta

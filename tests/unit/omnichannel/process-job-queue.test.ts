@@ -89,6 +89,7 @@ describe("durable omnichannel processing queue drain", () => {
       conversation_id: job.conversationId,
       force_draft: true,
       delay_already_applied: true,
+      processing_owner: `database-job:${job.id}`,
     });
     expect(jobs.complete).toHaveBeenCalledWith({
       jobId: job.id,
@@ -129,31 +130,34 @@ describe("durable omnichannel processing queue drain", () => {
     expect(JSON.stringify(result)).not.toContain(privateText);
   });
 
-  it("does not complete a non-terminal already_sending processor outcome", async () => {
-    const job = leasedJob();
-    jobs.claim.mockResolvedValueOnce(job).mockResolvedValueOnce(null);
-    processor.process.mockResolvedValue({
-      skipped: true,
-      reason: "already_sending",
-    });
+  it.each(["already_sending", "send_owned_by_other_worker"])(
+    "does not complete the non-terminal %s processor outcome",
+    async (reason) => {
+      const job = leasedJob();
+      jobs.claim.mockResolvedValueOnce(job).mockResolvedValueOnce(null);
+      processor.process.mockResolvedValue({
+        skipped: true,
+        reason,
+      });
 
-    const result = await drainOmnichannelProcessingJobs({ limit: 2 });
+      const result = await drainOmnichannelProcessingJobs({ limit: 2 });
 
-    expect(jobs.complete).not.toHaveBeenCalled();
-    expect(jobs.retry).toHaveBeenCalledWith({
-      jobId: job.id,
-      leaseToken: job.leaseToken,
-      errorCode: "worker.send_state_unresolved",
-      retryable: true,
-    });
-    expect(result).toMatchObject({
-      claimed: 1,
-      processingFailed: 1,
-      requeued: 1,
-      queueEmpty: true,
-      results: [{ jobId: job.id, outcome: "requeued" }],
-    });
-  });
+      expect(jobs.complete).not.toHaveBeenCalled();
+      expect(jobs.retry).toHaveBeenCalledWith({
+        jobId: job.id,
+        leaseToken: job.leaseToken,
+        errorCode: "worker.send_state_unresolved",
+        retryable: true,
+      });
+      expect(result).toMatchObject({
+        claimed: 1,
+        processingFailed: 1,
+        requeued: 1,
+        queueEmpty: true,
+        results: [{ jobId: job.id, outcome: "requeued" }],
+      });
+    },
+  );
 
   it("reports a dead job using only a fixed outcome", async () => {
     const job = leasedJob();

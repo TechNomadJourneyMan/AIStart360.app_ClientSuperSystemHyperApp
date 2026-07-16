@@ -228,7 +228,10 @@ function choiceFromFreeText(text: string): EquipmentFlowChoiceId | null {
     { id: 'autumn_winter', pattern: /(?:^|\s)(?:осен\p{L}*|зим\p{L}*)(?=$|\s)/giu },
     { id: 'catalog', pattern: /(?:^|\s)каталог\p{L}*(?=$|\s)/giu },
     { id: 'beginner', pattern: /(?:^|\s)нович\p{L}*(?=$|\s)/giu },
-    { id: 'manager', pattern: /(?:^|\s)(?:менеджер\p{L}*|оператор\p{L}*|человек\p{L}*)(?=$|\s)/giu },
+    {
+      id: 'manager',
+      pattern: /(?:^|\s)(?:менеджер\p{L}*|оператор\p{L}*|(?:(?:позовите|подключите|соедините|переведите|дайте)(?:\s+(?:меня|пожалуйста)){0,2}(?:\s+(?:с|на|к))?\s+(?:\d+\s+)?(?:(?:жив\p{L}*|реальн\p{L}*)\s+)?человек\p{L}*)|(?:(?:хочу|нужен|нужна|нужно)\s+(?:(?:жив\p{L}*|реальн\p{L}*)\s+)?человек\p{L}*))(?=$|\s)/giu,
+    },
   ]
   const mentions: Array<{
     id: EquipmentFlowChoiceId
@@ -275,6 +278,7 @@ function choiceFromFreeText(text: string): EquipmentFlowChoiceId | null {
 function choiceFromMessage(
   message: OmnichannelMessage,
   config: EquipmentSalesFlowConfig,
+  allowUnknownLegacyCity = false,
 ): EquipmentFlowChoiceId | null {
   for (const key of ['quickReplyPayload', 'postbackPayload', 'buttonPayload', 'interactiveId']) {
     const fromPayload = choiceFromPayload(metadataString(message, key))
@@ -286,33 +290,35 @@ function choiceFromMessage(
   const numbered = text.match(/^(?:вариант\s*)?([1-5])$/u)?.[1]
   if (numbered) return config.choices[Number(numbered) - 1]?.id ?? null
 
-  // The previous live prompt invited replies in the form “city, number”. Keep
-  // those already-written replies compatible, but do not interpret arbitrary
-  // numbers in product questions as menu selections.
-  const inlineNumbers = [...new Set(
-    text.split(' ').filter((token) => /^[1-5]$/u.test(token)),
-  )]
-  if (
-    inlineNumbers.length === 1
-    && hasRecognizedCityMention(message.text ?? '', config)
-  ) {
-    return config.choices[Number(inlineNumbers[0]) - 1]?.id ?? null
-  }
-
   for (const choice of config.choices) {
     if (text === normalizeText(choice.label) || text === normalizeText(choice.button_label)) {
       return choice.id
     }
   }
-  return choiceFromFreeText(text)
+  const fromFreeText = choiceFromFreeText(text)
+  if (fromFreeText) return fromFreeText
+
+  // The previous live prompt invited replies in the form “city, number”. Keep
+  // that exact format compatible without treating quantities in ordinary
+  // product questions as menu selections. A written choice always wins.
+  const legacyNumber = legacyCombinedChoiceNumber(
+    message.text?.trim() ?? '',
+    config,
+    allowUnknownLegacyCity,
+  )
+  if (legacyNumber) {
+    return config.choices[Number(legacyNumber) - 1]?.id ?? null
+  }
+  return null
 }
 
 function latestChoice(
   inbound: OmnichannelMessage[],
   config: EquipmentSalesFlowConfig,
+  allowUnknownLegacyCity = false,
 ): EquipmentFlowChoiceId | null {
   for (const message of [...inbound].reverse()) {
-    const choice = choiceFromMessage(message, config)
+    const choice = choiceFromMessage(message, config, allowUnknownLegacyCity)
     if (choice) return choice
   }
   return null
@@ -346,12 +352,38 @@ function routeMatchesText(text: string, aliases: readonly string[]): boolean {
   })
 }
 
-function hasRecognizedCityMention(
+function isRecognizedCityReply(
   text: string,
   config: EquipmentSalesFlowConfig,
+  allowUnknown: boolean,
 ): boolean {
-  return config.city_routes.some((route) => routeMatchesText(text, route.aliases))
-    || KNOWN_OTHER_CITIES.some((city) => routeMatchesText(text, [city]))
+  const normalized = normalizeText(text)
+    .replace(/^(?:(?:я\s+)?(?:из|в|город|г)|(?:я\s+)?(?:живу|нахожусь|проживаю)\s+в)\s+/iu, '')
+  if (!normalized) return false
+  const configured = config.city_routes.some((route) =>
+    route.aliases.some((alias) => normalizeText(alias) === normalized),
+  ) || KNOWN_OTHER_CITIES.some((city) => normalizeText(city) === normalized)
+  if (configured) return true
+  return allowUnknown && Boolean(
+    standaloneCityCandidate(text) || explicitCityLabelFromText(text),
+  )
+}
+
+function legacyCombinedChoiceNumber(
+  text: string,
+  config: EquipmentSalesFlowConfig,
+  allowUnknownCity: boolean,
+): string | null {
+  const parts = legacyCombinedReplyParts(text)
+  if (!parts || !isRecognizedCityReply(parts.cityText, config, allowUnknownCity)) return null
+  return parts.choiceNumber
+}
+
+function legacyCombinedReplyParts(
+  text: string,
+): { cityText: string; choiceNumber: string } | null {
+  const match = text.match(/^(.+)\s*[,;:—-]\s*(?:вариант\s*)?([1-5])\s*[.!?]?$/iu)
+  return match ? { cityText: match[1].trim(), choiceNumber: match[2] } : null
 }
 
 function cleanCustomerCityLabel(value: string): string | null {
@@ -386,10 +418,32 @@ function standaloneCityCandidate(text: string): string | null {
   return cleaned
 }
 
+function explicitCityLabelFromText(raw: string): string | null {
+  const normalized = normalizeText(raw)
+  const explicitPatterns = [
+    /(?:^|\s)(?:я\s+)?(?:живу|нахожусь|проживаю)\s+в[\s:,-]+([\p{L}-]+(?:\s+[\p{L}-]+){0,2})/iu,
+    /(?:^|\s)(?:я\s+)?из[\s:,-]+([\p{L}-]+(?:\s+[\p{L}-]+){0,2})/iu,
+    /^(?:я\s+)?в[\s:,-]+([\p{L}-]+(?:\s+[\p{L}-]+){0,2})/iu,
+    /(?:^|\s)(?:я\s+)?(?:город(?:а|е)?|г\.?)[\s:,-]+([\p{L}-]+(?:\s+[\p{L}-]+){0,2})/iu,
+  ]
+  const explicit = explicitPatterns
+    .map((pattern) => raw.match(pattern)?.[1] ?? null)
+    .find((value): value is string => Boolean(value)) ?? null
+  const label = explicit ? cleanExplicitCityLabel(explicit) : null
+  const normalizedLabel = label ? normalizeText(label) : ''
+  const index = normalizedLabel ? normalized.lastIndexOf(normalizedLabel) : -1
+  return label
+    && index >= 0
+    && !isNegatedCityMention(normalized, index, index + normalizedLabel.length)
+      ? label
+      : null
+}
+
 function cityFromMessage(
   message: OmnichannelMessage,
   config: EquipmentSalesFlowConfig,
   allowStandaloneOther: boolean,
+  allowUnknownLegacyCity: boolean,
 ): CityMatch | null {
   const raw = message.text?.trim() ?? ''
   if (!raw) return null
@@ -425,23 +479,29 @@ function cityFromMessage(
     }
   }
 
-  const explicitPatterns = [
-    /(?:^|\s)(?:я\s+)?(?:живу|нахожусь|проживаю)\s+в[\s:,-]+([\p{L}-]+(?:\s+[\p{L}-]+){0,2})/iu,
-    /(?:^|\s)(?:я\s+)?из[\s:,-]+([\p{L}-]+(?:\s+[\p{L}-]+){0,2})/iu,
-    /^(?:я\s+)?в[\s:,-]+([\p{L}-]+(?:\s+[\p{L}-]+){0,2})/iu,
-    /(?:^|\s)(?:я\s+)?(?:город(?:а|е)?|г\.?)[\s:,-]+([\p{L}-]+(?:\s+[\p{L}-]+){0,2})/iu,
-  ]
-  const explicit = explicitPatterns
-    .map((pattern) => raw.match(pattern)?.[1] ?? null)
-    .find((value): value is string => Boolean(value)) ?? null
-  const explicitLabel = explicit ? cleanExplicitCityLabel(explicit) : null
-  const normalizedExplicit = explicitLabel ? normalizeText(explicitLabel) : ''
-  const explicitIndex = normalizedExplicit ? normalized.lastIndexOf(normalizedExplicit) : -1
-  if (
-    explicitLabel
-    && explicitIndex >= 0
-    && !isNegatedCityMention(normalized, explicitIndex, explicitIndex + normalizedExplicit.length)
-  ) {
+  const combined = legacyCombinedReplyParts(raw)
+  if (allowUnknownLegacyCity) {
+    const combinedLabel = combined
+      ? standaloneCityCandidate(combined.cityText)
+        ?? explicitCityLabelFromText(combined.cityText)
+      : null
+    if (combinedLabel) {
+      return {
+        routeId: fallback.id,
+        routeLabel: fallback.label,
+        customerLabel: combinedLabel,
+        managerPhone: fallback.manager_phone,
+      }
+    }
+  }
+
+  // Unknown legacy replies ("city, number") are accepted only while the
+  // active flow has not persisted either half of the answer. Otherwise a
+  // product and quantity such as "Куртка, 2" would replace the city.
+  const explicitLabel = combined && !allowUnknownLegacyCity
+    ? null
+    : explicitCityLabelFromText(raw)
+  if (explicitLabel) {
     return {
       routeId: fallback.id,
       routeLabel: fallback.label,
@@ -472,9 +532,15 @@ function latestCity(
   inbound: OmnichannelMessage[],
   config: EquipmentSalesFlowConfig,
   allowStandaloneOther: boolean,
+  allowUnknownLegacyCity: boolean,
 ): CityMatch | null {
   for (const message of [...inbound].reverse()) {
-    const city = cityFromMessage(message, config, allowStandaloneOther)
+    const city = cityFromMessage(
+      message,
+      config,
+      allowStandaloneOther,
+      allowUnknownLegacyCity,
+    )
     if (city) return city
   }
   return null
@@ -716,11 +782,13 @@ export function planEquipmentSalesFlow(input: {
 
   const active = stored.active ? stored : historyState
   const inbound = recentInboundBurst(history, input.currentMessage)
-  const newChoiceId = latestChoice(inbound, config)
+  const allowUnknownLegacyCity = active.active && !active.city && !active.choiceId
+  const newChoiceId = latestChoice(inbound, config, allowUnknownLegacyCity)
   const newCity = latestCity(
     inbound,
     config,
     Boolean(newChoiceId || (active.choiceId && !active.city) || active.active),
+    allowUnknownLegacyCity,
   )
   const hasNewSignal = Boolean(newChoiceId || newCity)
   if (!active.active && !hasNewSignal && !isLeadOpeningMessage(input.currentMessage)) return null
@@ -743,7 +811,8 @@ export function planEquipmentSalesFlow(input: {
   )
   if (
     !hasNewSignal
-    && !active.active
+    && !active.choiceId
+    && !active.city
     && hasConfirmedWelcome
     && isLeadOpeningMessage(input.currentMessage)
   ) {

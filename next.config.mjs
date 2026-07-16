@@ -1,4 +1,5 @@
 import withPWAInit from '@ducanh2912/next-pwa'
+import { withWorkflow } from 'workflow/next'
 
 // PWA / service worker. Disabled in development so it never interferes with the
 // dev server / HMR; it only activates in the production build. Network-first for
@@ -135,4 +136,4 @@ const nextConfig = {
   },
 }
 
-export default withPWA(nextConfig)
+export default withWorkflow(withPWA(nextConfig))
