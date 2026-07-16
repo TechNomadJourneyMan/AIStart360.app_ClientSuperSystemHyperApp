@@ -1366,7 +1366,7 @@ function equipmentAutomationConfig() {
           id: "other",
           label: "Другой город",
           aliases: ["другой город"],
-          manager_phone: "77780457775",
+          manager_phone: "77714057775",
         },
       ],
       fallback_route_id: "other",
