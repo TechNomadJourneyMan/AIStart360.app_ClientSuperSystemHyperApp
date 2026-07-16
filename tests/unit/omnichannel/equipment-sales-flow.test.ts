@@ -30,7 +30,7 @@ const config: EquipmentSalesFlowConfig = {
   city_routes: [
     { id: 'astana', label: 'Астана', aliases: ['астана', 'астаны', 'астане', 'астану', 'нур-султан'], manager_phone: '77054057775' },
     { id: 'ust_kamenogorsk', label: 'Усть-Каменогорск', aliases: ['усть-каменогорск', 'усть-каменогорска', 'өскемен', 'өскеменде', 'оскемен', 'оскемена'], manager_phone: '77714057775' },
-    { id: 'other', label: 'Другой город', aliases: ['другой город'], manager_phone: '77780457775' },
+    { id: 'other', label: 'Другой город', aliases: ['другой город'], manager_phone: '77714057775' },
   ],
   fallback_route_id: 'other',
   community: {
@@ -304,7 +304,7 @@ describe('equipment sales flow planning', () => {
     ['Я из Усть-Каменогорска', 'ust_kamenogorsk', 'https://wa.me/77714057775'],
     ['Я в Өскеменде', 'ust_kamenogorsk', 'https://wa.me/77714057775'],
     ['Я из Оскемена', 'ust_kamenogorsk', 'https://wa.me/77714057775'],
-    ['Я живу в Караганде', 'other', 'https://wa.me/77780457775'],
+    ['Я живу в Караганде', 'other', 'https://wa.me/77714057775'],
   ] as const)('understands an inflected city phrase: %s', (cityText, routeId, managerUrl) => {
     const result = plan([
       message({ id: 'in-city', text: cityText }),
@@ -329,7 +329,7 @@ describe('equipment sales flow planning', () => {
       cityRouteId: 'other',
       cityLabel: 'Караганде',
       choiceId: 'catalog',
-      managerUrl: 'https://wa.me/77780457775',
+      managerUrl: 'https://wa.me/77714057775',
     })
   })
 
@@ -347,7 +347,7 @@ describe('equipment sales flow planning', () => {
   const routingMatrix = ([
     ['Астана', 'https://wa.me/77054057775', 'astana'],
     ['Өскемен', 'https://wa.me/77714057775', 'ust_kamenogorsk'],
-    ['Алматы', 'https://wa.me/77780457775', 'other'],
+    ['Алматы', 'https://wa.me/77714057775', 'other'],
   ] as const).flatMap(([city, managerUrl, routeId]) =>
     EQUIPMENT_FLOW_CHOICE_IDS.map((choiceId) =>
       [city, choiceId, managerUrl, routeId] as const,
@@ -479,7 +479,7 @@ describe('equipment sales flow planning', () => {
       stage: 'routed',
       cityRouteId: 'other',
       cityLabel: 'Конаев',
-      managerUrl: 'https://wa.me/77780457775',
+      managerUrl: 'https://wa.me/77714057775',
     })
   })
 
@@ -549,7 +549,7 @@ describe('equipment sales flow planning', () => {
       cityRouteId: 'other',
       cityLabel: 'Конаев',
       choiceId: 'catalog',
-      managerUrl: 'https://wa.me/77780457775',
+      managerUrl: 'https://wa.me/77714057775',
       communityIncluded: false,
     })
     expect(result?.answer).not.toContain(config.community.url)
