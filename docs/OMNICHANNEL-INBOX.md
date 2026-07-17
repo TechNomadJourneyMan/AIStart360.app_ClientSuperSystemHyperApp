@@ -91,6 +91,7 @@ node scripts/apply-migration.js supabase/migrations/068_omnichannel_manager_rout
 node scripts/apply-migration.js supabase/migrations/069_omnichannel_conversation_ux.sql
 node scripts/apply-migration.js supabase/migrations/070_omnichannel_owned_send_claims.sql
 node scripts/apply-migration.js supabase/migrations/071_omnichannel_honor_context.sql
+node scripts/apply-migration.js supabase/migrations/072_omnichannel_direct_catalog.sql
 ```
 
 Миграция создаёт:

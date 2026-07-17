@@ -26,6 +26,22 @@ const communityUrlSchema = z.string().max(500).url().refine((value) => {
   }
 }, 'community URL must use https://chat.whatsapp.com')
 
+const catalogUrlSchema = z.string().max(500).url().refine((value) => {
+  try {
+    const url = new URL(value)
+    return url.protocol === 'https:'
+      && (url.hostname === 'myhonor.shop' || url.hostname === 'www.myhonor.shop')
+      && /^\/catalog\/?$/u.test(url.pathname)
+      && !url.username
+      && !url.password
+      && !url.port
+      && !url.search
+      && !url.hash
+  } catch {
+    return false
+  }
+}, 'catalog URL must use the myhonor.shop catalog page')
+
 export const equipmentSalesFlowConfigSchema = z
   .object({
     version: z.literal(1),
@@ -66,6 +82,10 @@ export const equipmentSalesFlowConfigSchema = z
       text: z.string().trim().min(1).max(500),
       url: communityUrlSchema,
     }),
+    catalog: z.object({
+      text: z.string().trim().min(1).max(500),
+      url: catalogUrlSchema,
+    }).optional(),
   })
   .superRefine((config, ctx) => {
     const choiceIds = config.choices.map((choice) => choice.id)
@@ -105,6 +125,7 @@ export const equipmentSalesFlowConfigSchema = z
       config.messages.welcome,
       `${config.messages.ask_interest}\n\n${renderedChoices}`,
       config.messages.ask_city,
+      ...(config.catalog ? [`${config.catalog.text}\n${config.catalog.url}`] : []),
       ...handoffs.map((handoff) =>
         `${handoff}\n\nНаписать менеджеру: https://wa.me/000000000000000\n\n${community}`,
       ),
@@ -362,6 +383,126 @@ function latestChoice(
     if (choice) return choice
   }
   return null
+}
+
+function isCatalogRequestCancellation(message: OmnichannelMessage): boolean {
+  const normalized = normalizeText(message.text ?? '')
+  if (!normalized) return false
+  const rejectVerb = '(?:хочу|надо|нужно|нужен|нужна|присылайте|отправляйте|скидывайте|показывайте|открывайте|давайте)'
+  const catalog = 'каталог\\p{L}*'
+  const modifier = '(?:мне|этот|эта|эту|эти|тот|та|такой|такую|ваш|ваша|вашу|ваши|наш|наша|нашу|весь|пожалуйста|больше|совсем|вообще|уже|посмотреть|смотреть|открыть|открывать|ознакомиться|получить|ссылку|на|с)'
+  const between = `(?:\\s+${modifier}){0,5}`
+  const leading = '(?:(?:я|мне)\\s+)?(?:(?:больше|совсем|вообще|уже)\\s+)?'
+  return new RegExp(`(?:^|\\s)${leading}не\\s+${rejectVerb}${between}\\s+${catalog}(?=$|\\s)`, 'iu')
+    .test(normalized)
+    || new RegExp(`(?:^|\\s)(?:(?:я|мне)\\s+)?(?:(?:этот|эта|эту|эти|тот|та|такой|такую)\\s+)?${catalog}${between}\\s+не\\s+${rejectVerb}(?=$|\\s)`, 'iu')
+      .test(normalized)
+    || new RegExp(`(?:^|\\s)без(?:\\s+(?:этого|данного))?\\s+${catalog}(?=$|\\s)`, 'iu')
+      .test(normalized)
+    || new RegExp(`(?:^|\\s)не\\s+(?:могу\\s+)?(?:посмотр\\p{L}*|смотр\\p{L}*|откр\\p{L}*|ознаком\\p{L}*|получ\\p{L}*)(?:\\s+с)?\\s+${catalog}(?=$|\\s)`, 'iu')
+      .test(normalized)
+    || new RegExp(`(?:^|\\s)не\\s+(?:открывается|загружается|работает)\\s+${catalog}(?=$|\\s)`, 'iu')
+      .test(normalized)
+    || new RegExp(`(?:^|\\s)${catalog}(?:\\s+(?:у\\s+меня|сейчас|почему))?\\s+не\\s+(?:открывается|загружается|работает)(?=$|\\s)`, 'iu')
+      .test(normalized)
+    || /(?:^|\s)(?:уже\s+)?(?:посмотрел\p{L}*|открыл\p{L}*)\s+каталог\p{L}*(?=$|\s)/iu.test(normalized)
+    || /(?:^|\s)каталог\p{L}*\s+уже\s+(?:посмотрел\p{L}*|открыл\p{L}*)(?=$|\s)/iu.test(normalized)
+    || /(?:^|\s)(?:отмена|отмените)\s+каталог\p{L}*(?=$|\s)/iu.test(normalized)
+}
+
+function isCourtesyOnly(message: OmnichannelMessage): boolean {
+  const normalized = normalizeText(message.text ?? '')
+  return /^(?:спасибо|благодарю|пожалуйста|ок|хорошо|жду|thanks|thank you)$/iu.test(normalized)
+}
+
+function isCanonicalCatalogSelection(
+  message: OmnichannelMessage,
+  config: EquipmentSalesFlowConfig,
+): boolean {
+  for (const key of ['quickReplyPayload', 'postbackPayload', 'buttonPayload', 'interactiveId']) {
+    if (choiceFromPayload(metadataString(message, key)) === 'catalog') return true
+  }
+
+  const raw = message.text?.trim() ?? ''
+  const normalized = normalizeText(raw)
+  if (!normalized) return false
+  const numbered = normalized.match(/^(?:вариант\s*)?([1-5])$/u)?.[1]
+  if (numbered && config.choices[Number(numbered) - 1]?.id === 'catalog') return true
+
+  const catalogChoice = config.choices.find((choice) => choice.id === 'catalog')
+  if (
+    catalogChoice
+    && (
+      normalized === normalizeText(catalogChoice.label)
+      || normalized === normalizeText(catalogChoice.button_label)
+    )
+  ) {
+    return true
+  }
+
+  const legacyNumber = legacyCombinedChoiceNumber(raw, config, false)
+  return Boolean(
+    legacyNumber
+    && config.choices[Number(legacyNumber) - 1]?.id === 'catalog',
+  )
+}
+
+function isDirectCatalogRequest(
+  message: OmnichannelMessage,
+  config: EquipmentSalesFlowConfig,
+): boolean {
+  const raw = message.text?.trim() ?? ''
+  const normalized = normalizeText(raw)
+  if (!normalized || isSelectionCancellation(message) || isCatalogRequestCancellation(message)) {
+    return false
+  }
+  if (isCanonicalCatalogSelection(message, config)) return true
+  if (
+    /(?:^|\s)каталог\p{L}*(?=$|\s)/iu.test(normalized)
+    && /(?:^|\s)(?:и|или)\s+менеджер\p{L}*(?=$|\s)/iu.test(normalized)
+  ) {
+    return false
+  }
+
+  const catalogMention = /(?:^|\s)каталог\p{L}*(?=$|\s)/iu.test(normalized)
+  if (catalogMention) {
+    return /^(?:каталог\p{L}*)(?:\s+пожалуйста)?$/iu.test(normalized)
+      || /(?:^|\s)(?:хочу|хотел(?:а)?(?:\s+бы)?|нужен|нужна|нужно|можно|где|покажите|показать|посмотреть|посмотрю|ознакомиться|скиньте|пришлите|отправьте|дайте|откройте)(?:\s+(?:мне|пожалуйста|посмотреть|открыть|получить|ознакомиться|с|ваш|вашу|этот|эту|ссылку|на)){0,5}\s+каталог\p{L}*(?=$|\s)/iu.test(normalized)
+      || /(?:^|\s)ссылк\p{L}*(?:\s+на)?\s+каталог\p{L}*(?=$|\s)/iu.test(normalized)
+      || /(?:^|\s)(?:(?:а\s+)?есть(?:\s+ли)?(?:\s+у\s+вас)?|у\s+вас\s+есть)\s+каталог\p{L}*(?=$|\s)/iu.test(normalized)
+      || /(?:^|\s)(?:посмотр\p{L}*|ознаком\p{L}*|откр\p{L}*|получ\p{L}*)\s+каталог\p{L}*(?=$|\s)/iu.test(normalized)
+  }
+
+  const siteRequest = /(?:^|\s)(?:сайт|ссылк\p{L}*)(?=$|\s)/iu.test(normalized)
+    && (
+      /^(?:ваш\s+)?(?:сайт|ссылка)(?:\s+пожалуйста)?$/iu.test(normalized)
+      || /(?:^|\s)(?:дайте|скиньте|пришлите|отправьте|покажите|показать|откройте|где|хочу|можно)(?:\s+(?:мне|пожалуйста|ваш|вашу|этот|эту|ссылку|на)){0,5}\s+(?:сайт|ссылк\p{L}*)(?=$|\s)/iu.test(normalized)
+      || /(?:^|\s)(?:(?:а\s+)?есть(?:\s+ли)?(?:\s+у\s+вас)?|у\s+вас\s+есть)\s+(?:сайт|ссылка)(?=$|\s)/iu.test(normalized)
+    )
+  if (siteRequest) return true
+
+  const products = /(?:^|\s)(?:товар\p{L}*|ассортимент\p{L}*)(?=$|\s)/iu.test(normalized)
+  return products && (
+    /^(?:товар\p{L}*|ассортимент\p{L}*)(?:\s+пожалуйста)?$/iu.test(normalized)
+    || /(?:^|\s)(?:покажите|показать|посмотреть|ознакомиться|откройте|где|какие|хочу)(?:\s+(?:мне|пожалуйста|посмотреть|открыть|ознакомиться|с|ваши|ваш|эти|этот)){0,5}\s+(?:товар\p{L}*|ассортимент\p{L}*)(?=$|\s)/iu.test(normalized)
+  )
+}
+
+function hasDirectCatalogRequest(
+  inbound: OmnichannelMessage[],
+  config: EquipmentSalesFlowConfig,
+): boolean {
+  const reversed = [...inbound].reverse()
+  for (let index = 0; index < reversed.length; index += 1) {
+    const message = reversed[index]
+    if (isSelectionCancellation(message) || isCatalogRequestCancellation(message)) return false
+    if (isDirectCatalogRequest(message, config)) return true
+    // Preserve a substantive catalog request when the customer immediately
+    // follows it with short courtesies during the configured quiet window.
+    if (isCourtesyOnly(message)) continue
+    return false
+  }
+  return false
 }
 
 function isNegatedCityMention(text: string, start: number, end: number): boolean {
@@ -630,6 +771,7 @@ function buildMetadata(input: {
   choiceId?: EquipmentFlowChoiceId | null
   city?: CityMatch | null
   communityIncluded: boolean
+  catalogShared?: boolean
 }): JsonObject {
   return {
     source: 'omnichannel_equipment_sales_flow',
@@ -639,6 +781,7 @@ function buildMetadata(input: {
     equipmentFlowCityRouteId: input.city?.routeId ?? null,
     equipmentFlowCityLabel: input.city?.customerLabel ?? null,
     equipmentFlowCommunityIncluded: input.communityIncluded,
+    ...(input.catalogShared ? { equipmentFlowCatalogShared: true } : {}),
   }
 }
 
@@ -842,8 +985,16 @@ export function planEquipmentSalesFlow(input: {
   // A latest explicit cancellation exits the active menu instead of being
   // misclassified as an unknown city or reviving an earlier choice in burst.
   if (isSelectionCancellation(input.currentMessage)) return null
+  const directCatalogRequested = Boolean(
+    config.catalog && hasDirectCatalogRequest(inbound, config),
+  )
   const allowUnknownLegacyCity = active.active && !active.city && !active.choiceId
-  const newChoiceId = latestChoice(inbound, config, allowUnknownLegacyCity)
+  const detectedChoiceId = latestChoice(inbound, config, allowUnknownLegacyCity)
+  const newChoiceId = config.catalog
+    && detectedChoiceId === 'catalog'
+    && !directCatalogRequested
+      ? null
+      : detectedChoiceId
   const newCity = latestCity(
     inbound,
     config,
@@ -851,6 +1002,39 @@ export function planEquipmentSalesFlow(input: {
     allowUnknownLegacyCity,
     Boolean(newChoiceId),
   )
+  if (
+    config.catalog
+    && (
+      directCatalogRequested
+      || (active.choiceId === 'catalog' && Boolean(newCity))
+    )
+  ) {
+    const catalogCity = newCity ?? active.city
+    const stage = catalogCity ? 'awaiting_interest' as const : 'welcome' as const
+    return {
+      stage,
+      answer: `${config.catalog.text}\n${config.catalog.url}`,
+      reason: 'deterministic_equipment_flow_catalog_direct',
+      summary: catalogCity
+        ? `Клиенту из города ${catalogCity.customerLabel} отправлена прямая ссылка на каталог.`.slice(0, 500)
+        : 'Клиент запросил каталог; отправлена прямая ссылка на сайт.',
+      leadScore: 55,
+      presentation: { kind: 'text' },
+      cityRouteId: catalogCity?.routeId ?? null,
+      cityLabel: catalogCity?.customerLabel ?? null,
+      choiceId: null,
+      choiceLabel: null,
+      managerUrl: null,
+      handoffAfterSend: false,
+      communityIncluded: false,
+      outboundMetadata: buildMetadata({
+        stage,
+        city: catalogCity,
+        communityIncluded: false,
+        catalogShared: true,
+      }),
+    }
+  }
   const hasNewSignal = Boolean(newChoiceId || newCity)
   if (!active.active && !hasNewSignal && !isLeadOpeningMessage(input.currentMessage)) return null
   const normalizedWelcome = normalizeText(config.messages.welcome)

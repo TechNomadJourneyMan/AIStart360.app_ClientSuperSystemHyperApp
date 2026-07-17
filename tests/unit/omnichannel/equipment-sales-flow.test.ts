@@ -44,6 +44,10 @@ const config: EquipmentSalesFlowConfig = {
     text: 'Новинки и акции — в нашем сообществе:',
     url: 'https://chat.whatsapp.com/JDaVNsnloFMF0RpOtLSDRW?mode=gi_t',
   },
+  catalog: {
+    text: 'Конечно! Посмотреть каталог можно здесь:',
+    url: 'https://myhonor.shop/catalog',
+  },
 }
 
 const automationConfig = { equipment_sales_flow: config }
@@ -117,6 +121,20 @@ describe('equipment sales flow config', () => {
       ),
     })
     expect(parsed.success).toBe(false)
+  })
+
+  it.each([
+    'http://myhonor.shop/catalog',
+    'https://example.com/catalog',
+    'https://myhonor.shop/',
+    'https://myhonor.shop/catalogue',
+    'https://myhonor.shop:444/catalog',
+    'https://myhonor.shop/catalog?redirect=1',
+  ])('rejects an unsafe catalog URL: %s', (url) => {
+    expect(equipmentSalesFlowConfigSchema.safeParse({
+      ...config,
+      catalog: { ...config.catalog, url },
+    }).success).toBe(false)
   })
 
   it.each([
@@ -229,8 +247,6 @@ describe('equipment sales flow planning', () => {
     ['на лето', 'summer'],
     ['2', 'autumn_winter'],
     ['осень-зима', 'autumn_winter'],
-    ['3', 'catalog'],
-    ['хочу каталог', 'catalog'],
     ['4', 'beginner'],
     ['я новичок', 'beginner'],
     ['5', 'manager'],
@@ -240,6 +256,113 @@ describe('equipment sales flow planning', () => {
       stage: 'awaiting_city',
       choiceId,
     })
+  })
+
+  it.each([
+    '3',
+    'Каталог',
+    'хочу каталог',
+    'Хочу ознакомиться с каталогом',
+    'Есть каталог в Астане?',
+    'Хочу узнать, есть ли каталог в Астане?',
+    'Хочу спросить, где каталог?',
+    'Покажите товары',
+    'Где посмотреть ассортимент?',
+    'Дайте ссылку на сайт',
+  ])('sends the direct website link immediately for a catalog request: %s', (text) => {
+    const result = plan([message({ id: `catalog-direct-${text}`, text })])
+
+    expect(result).toMatchObject({
+      stage: 'welcome',
+      reason: 'deterministic_equipment_flow_catalog_direct',
+      choiceId: null,
+      cityRouteId: null,
+      managerUrl: null,
+      handoffAfterSend: false,
+      communityIncluded: false,
+      outboundMetadata: expect.objectContaining({
+        equipmentFlowCatalogShared: true,
+      }),
+    })
+    expect(result?.answer).toBe(
+      'Конечно! Посмотреть каталог можно здесь:\nhttps://myhonor.shop/catalog',
+    )
+    expect(result?.answer).not.toContain('wa.me')
+    expect(result?.answer).not.toContain('chat.whatsapp.com')
+  })
+
+  it('keeps the catalog request when a courtesy follows in the same quiet-window burst', () => {
+    const result = plan([
+      message({ id: 'catalog-before-thanks', text: 'Покажите каталог' }),
+      message({ id: 'thanks-after-catalog', text: 'Спасибо' }),
+    ])
+
+    expect(result).toMatchObject({
+      reason: 'deterministic_equipment_flow_catalog_direct',
+      managerUrl: null,
+    })
+    expect(result?.answer).toContain('https://myhonor.shop/catalog')
+  })
+
+  it('keeps the catalog request through several courtesy messages in one burst', () => {
+    const result = plan([
+      message({ id: 'catalog-before-courtesies', text: 'Покажите каталог' }),
+      message({ id: 'thanks-after-catalog', text: 'Спасибо' }),
+      message({ id: 'waiting-after-thanks', text: 'Жду' }),
+    ])
+
+    expect(result).toMatchObject({
+      reason: 'deterministic_equipment_flow_catalog_direct',
+      managerUrl: null,
+    })
+    expect(result?.answer).toContain('https://myhonor.shop/catalog')
+  })
+
+  it('does not ignore a newer substantive message after a catalog request', () => {
+    expect(plan([
+      message({ id: 'catalog-before-delivery', text: 'Покажите каталог' }),
+      message({ id: 'delivery-after-catalog', text: 'А доставка сколько стоит?' }),
+    ])).toBeNull()
+  })
+
+  it.each([
+    'Есть товар 2033?',
+    'Цена товара?',
+    'Товары пришли повреждёнными',
+    'Что за шлем?',
+    'Каталог уже посмотрел',
+    'Каталог плохой?',
+    'Сайт не открывается?',
+    'Каталог не работает',
+    'В каталоге неверная цена?',
+    'Почему в каталоге нет товара?',
+    'Мне не нужен этот каталог',
+    'Не присылайте каталог',
+    'Не отправляйте мне этот каталог',
+    'Не скидывайте каталог',
+    'Не показывайте каталог',
+    'Не давайте каталог',
+    'Каталог мне совсем не нужен',
+    'Не хочу больше каталог',
+    'Больше не хочу каталог',
+    'Есть ли в каталоге куртка?',
+    'В каталоге есть доставка?',
+    'Куртка, 3',
+    'Флиска, 3',
+    'Не хочу покупать через каталог',
+    'В каталоге хочу узнать цену',
+    'На сайте дайте цену',
+    'Товары плохие, где возврат?',
+    'Не хочу посмотреть каталог',
+    'Не хочу открывать каталог',
+    'Не хочу ознакомиться с каталогом',
+    'Не открывается каталог',
+    'Не могу открыть каталог',
+    'Каталог у меня не загружается',
+    'Не хочу посмотреть ваш каталог',
+    'Не хочу получить ссылку на каталог',
+  ])('does not replace a product-specific question or complaint with the catalog: %s', (text) => {
+    expect(plan([message({ id: `not-catalog-${text}`, text })])).toBeNull()
   })
 
   it.each([
@@ -375,17 +498,18 @@ describe('equipment sales flow planning', () => {
     })])
 
     expect(result).toMatchObject({
-      stage: 'routed',
+      stage: 'awaiting_interest',
+      reason: 'deterministic_equipment_flow_catalog_direct',
       cityRouteId: 'other',
       cityLabel: 'Караганде',
-      choiceId: 'catalog',
-      managerUrl: 'https://wa.me/77714057775',
+      choiceId: null,
+      managerUrl: null,
     })
+    expect(result?.answer).toContain('https://myhonor.shop/catalog')
   })
 
   it.each([
     ['Алматы, 1', 'summer', 'other'],
-    ['Астана — вариант 3', 'catalog', 'astana'],
     ['Өскемен, 5', 'manager', 'ust_kamenogorsk'],
   ] as const)('keeps legacy combined city and numeric choice replies: %s', (text, choiceId, routeId) => {
     expect(plan([message({ id: `combined-${text}`, text })])).toMatchObject({
@@ -393,6 +517,17 @@ describe('equipment sales flow planning', () => {
       cityRouteId: routeId,
       choiceId,
     })
+  })
+
+  it('answers a legacy combined catalog choice with the direct website link', () => {
+    expect(plan([message({ id: 'legacy-catalog-combined', text: 'Астана — вариант 3' })]))
+      .toMatchObject({
+        stage: 'awaiting_interest',
+        reason: 'deterministic_equipment_flow_catalog_direct',
+        cityRouteId: 'astana',
+        choiceId: null,
+        managerUrl: null,
+      })
   })
 
   it('does not treat an unrelated inline number as a menu choice', () => {
@@ -426,9 +561,10 @@ describe('equipment sales flow planning', () => {
       id: 'catalog-for-two',
       text: 'Астана, хочу каталог на 2 человека',
     })])).toMatchObject({
-      stage: 'routed',
+      stage: 'awaiting_interest',
+      reason: 'deterministic_equipment_flow_catalog_direct',
       cityRouteId: 'astana',
-      choiceId: 'catalog',
+      choiceId: null,
     })
   })
 
@@ -465,7 +601,7 @@ describe('equipment sales flow planning', () => {
     ['Өскемен', 'https://wa.me/77714057775', 'ust_kamenogorsk'],
     ['Алматы', 'https://wa.me/77714057775', 'other'],
   ] as const).flatMap(([city, managerUrl, routeId]) =>
-    EQUIPMENT_FLOW_CHOICE_IDS.map((choiceId) =>
+    EQUIPMENT_FLOW_CHOICE_IDS.filter((choiceId) => choiceId !== 'catalog').map((choiceId) =>
       [city, choiceId, managerUrl, routeId] as const,
     ),
   )
@@ -495,11 +631,11 @@ describe('equipment sales flow planning', () => {
   it('uses a choice-specific handoff instead of repeating form-like fields', () => {
     const result = plan([
       message({ id: 'in-city', text: 'Алматы' }),
-      message({ id: 'in-choice', text: '3' }),
+      message({ id: 'in-choice', text: '1' }),
     ])
 
-    expect(result).toMatchObject({ stage: 'routed', choiceId: 'catalog' })
-    expect(result?.answer).toContain('Менеджер отправит актуальный каталог')
+    expect(result).toMatchObject({ stage: 'routed', choiceId: 'summer' })
+    expect(result?.answer).toContain('Менеджер поможет подобрать экипировку на лето')
     expect(result?.answer).not.toContain('Ваш запрос:')
     expect(result?.answer).not.toContain('Город:')
   })
@@ -571,9 +707,11 @@ describe('equipment sales flow planning', () => {
       history: [...history, message({ id: 'city-after-greeting', text: 'Астана' })],
       conversationMetadata,
     })).toMatchObject({
-      stage: 'routed',
+      stage: 'awaiting_interest',
+      reason: 'deterministic_equipment_flow_catalog_direct',
       cityRouteId: 'astana',
-      choiceId: 'catalog',
+      choiceId: null,
+      managerUrl: null,
     })
   })
 
@@ -783,11 +921,12 @@ describe('equipment sales flow planning', () => {
     })
 
     expect(result).toMatchObject({
-      stage: 'routed',
+      stage: 'awaiting_interest',
+      reason: 'deterministic_equipment_flow_catalog_direct',
       cityRouteId: 'other',
       cityLabel: 'Конаев',
-      choiceId: 'catalog',
-      managerUrl: 'https://wa.me/77714057775',
+      choiceId: null,
+      managerUrl: null,
       communityIncluded: false,
     })
     expect(result?.answer).not.toContain(config.community.url)
@@ -813,11 +952,12 @@ describe('equipment sales flow planning', () => {
     })
 
     expect(result).toMatchObject({
-      stage: 'routed',
+      stage: 'awaiting_interest',
+      reason: 'deterministic_equipment_flow_catalog_direct',
       cityRouteId: 'ust_kamenogorsk',
       cityLabel: 'Өскемен',
-      choiceId: 'catalog',
-      managerUrl: 'https://wa.me/77714057775',
+      choiceId: null,
+      managerUrl: null,
     })
   })
 
@@ -852,8 +992,12 @@ describe('equipment sales flow planning', () => {
     'А есть каталог?',
     'Хочу узнать, есть ли каталог в Астане?',
     'Хочу спросить, где каталог?',
-  ])('does not turn an informational catalog question into a menu selection: %s', (text) => {
-    expect(plan([message({ id: `catalog-question-${text}`, text })])).toBeNull()
+  ])('answers an informational catalog question with the direct link: %s', (text) => {
+    expect(plan([message({ id: `catalog-question-${text}`, text })])).toMatchObject({
+      reason: 'deterministic_equipment_flow_catalog_direct',
+      choiceId: null,
+      managerUrl: null,
+    })
     expect(planWith({
       history: [message({ id: `active-catalog-question-${text}`, text })],
       conversationMetadata: {
@@ -865,7 +1009,11 @@ describe('equipment sales flow planning', () => {
           updatedAt: now,
         },
       },
-    })).toBeNull()
+    })).toMatchObject({
+      reason: 'deterministic_equipment_flow_catalog_direct',
+      choiceId: null,
+      managerUrl: null,
+    })
   })
 
   it('does not revive an earlier choice when a cancellation mentions a menu item and a courtesy follows', () => {
@@ -921,10 +1069,12 @@ describe('equipment sales flow planning', () => {
         },
       },
     })).toMatchObject({
-      stage: 'routed',
+      stage: 'awaiting_interest',
+      reason: 'deterministic_equipment_flow_catalog_direct',
       cityRouteId: 'other',
       cityLabel: 'Есик',
-      managerUrl: 'https://wa.me/77714057775',
+      choiceId: null,
+      managerUrl: null,
     })
   })
 

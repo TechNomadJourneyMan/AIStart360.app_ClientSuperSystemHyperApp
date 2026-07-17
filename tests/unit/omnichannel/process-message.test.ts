@@ -1080,6 +1080,58 @@ describe("omnichannel message processor safety", () => {
     expect(repository.markMessageReplied).not.toHaveBeenCalled();
   });
 
+  it("queues the direct catalog link for the persistent WhatsApp Web pull bridge", async () => {
+    outbound.pull = true;
+    vi.stubEnv("WHATSAPP_WEB_BRIDGE_ENABLED", "true");
+    vi.stubEnv("WHATSAPP_WEB_BRIDGE_SESSION_ID", "primary");
+    repository.getMessageContext.mockResolvedValue(
+      context({
+        message: {
+          channel: "whatsapp",
+          text: "Покажите каталог",
+          metadata: {
+            providerTimestampTrusted: true,
+            transport: "whatsapp_web",
+            bridgeSessionId: "primary",
+            bridgeMessageId: "raw-in-1",
+          },
+        },
+        conversation: {
+          channel: "whatsapp",
+          accountExternalId: "waweb:primary",
+          externalId: "77001234567@s.whatsapp.net",
+        },
+        contact: { channel: "whatsapp", externalId: "77001234567" },
+        settings: {
+          channel: "whatsapp",
+          automationConfig: equipmentAutomationConfig(),
+        },
+      }),
+    );
+
+    await expect(invoke()).resolves.toMatchObject({
+      action: "queued",
+      delivery_id: "00000000-0000-4000-8000-000000000003",
+    });
+    expect(outbound.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text: "Конечно! Посмотреть каталог можно здесь:\nhttps://myhonor.shop/catalog",
+        finalization: expect.objectContaining({
+          kind: "equipment",
+          stage: "welcome",
+          choiceId: null,
+          managerUrl: null,
+        }),
+        metadata: expect.objectContaining({
+          equipmentFlowCatalogShared: true,
+        }),
+      }),
+    );
+    expect(ai.generateOmnichannelReply).not.toHaveBeenCalled();
+    expect(web.sendPresence).not.toHaveBeenCalled();
+    expect(web.sendText).not.toHaveBeenCalled();
+  });
+
   it("claims atomically after typing and cancels a stale Web reply", async () => {
     repository.getMessageContext.mockResolvedValue(
       context({
@@ -1217,7 +1269,7 @@ describe("omnichannel message processor safety", () => {
     );
   });
 
-  it("sends the configured manager link through WhatsApp and completes handoff", async () => {
+  it("sends the direct catalog website through WhatsApp without a manager handoff", async () => {
     const current = context({
       message: {
         channel: "whatsapp",
@@ -1269,21 +1321,22 @@ describe("omnichannel message processor safety", () => {
     await expect(invoke()).resolves.toMatchObject({
       action: "send",
       channel: "whatsapp",
-      handoff: true,
     });
     expect(meta.sendWhatsApp).toHaveBeenCalledWith(
       expect.objectContaining({
         recipientId: "77001234567",
-        text: expect.stringContaining("https://wa.me/77714057775"),
+        text: "Конечно! Посмотреть каталог можно здесь:\nhttps://myhonor.shop/catalog",
         replyToExternalId: "provider-in-1",
       }),
     );
+    expect(meta.sendWhatsApp.mock.calls[0]?.[0]?.text).not.toContain("wa.me");
+    expect(ai.generateOmnichannelReply).not.toHaveBeenCalled();
     expect(repository.finalizeEquipmentFlowReply).toHaveBeenCalledWith(
       expect.objectContaining({
-        stage: "routed",
+        stage: "awaiting_interest",
         cityRouteId: "ust_kamenogorsk",
-        choiceId: "catalog",
-        managerUrl: "https://wa.me/77714057775",
+        choiceId: null,
+        managerUrl: null,
       }),
     );
   });
@@ -1529,6 +1582,10 @@ function equipmentAutomationConfig() {
       community: {
         text: "Присоединяйтесь в чат, здесь будем публиковать все новинки и акции",
         url: "https://chat.whatsapp.com/JDaVNsnloFMF0RpOtLSDRW?mode=gi_t",
+      },
+      catalog: {
+        text: "Конечно! Посмотреть каталог можно здесь:",
+        url: "https://myhonor.shop/catalog",
       },
     },
   };
