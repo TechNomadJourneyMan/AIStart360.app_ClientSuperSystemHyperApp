@@ -14,6 +14,7 @@
 import { getSiteUrl } from '@/lib/site-url'
 
 export const OPENROUTER_MODELS = {
+  sonnet5: 'anthropic/claude-sonnet-5',
   sonnet: 'anthropic/claude-sonnet-4.5',
   haiku:  'anthropic/claude-haiku-4.5',
   opus:   'anthropic/claude-opus-4.1',
@@ -76,7 +77,11 @@ interface ChatOptions {
   /** Quality/speed tier. When set (and `model` is not), selects the model. */
   complexity?: Complexity
   maxTokens?: number
-  temperature?: number
+  /**
+   * `null` deliberately omits temperature for models that do not expose that
+   * parameter (for example Claude Sonnet 5).
+   */
+  temperature?: number | null
   jsonMode?: boolean
   /**
    * Abort the request after this many ms. Prevents a stalled OpenRouter/model
@@ -130,7 +135,9 @@ export async function chatWithOpenRouter(opts: ChatOptions): Promise<string | nu
     }),
     messages,
     max_tokens: opts.maxTokens ?? 2000,
-    temperature: opts.temperature ?? 0.7,
+  }
+  if (opts.temperature !== null) {
+    body.temperature = opts.temperature ?? 0.7
   }
   if (opts.jsonMode) body.response_format = { type: 'json_object' }
 

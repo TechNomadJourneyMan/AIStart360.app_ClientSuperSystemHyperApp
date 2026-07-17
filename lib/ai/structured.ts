@@ -25,7 +25,8 @@ interface GenerateObjectOptions<T> {
   /** Quality/speed tier for automatic model selection (when `model` is unset). */
   complexity?: Complexity
   maxTokens?: number
-  temperature?: number
+  /** `null` omits temperature for models that do not support it. */
+  temperature?: number | null
   /** Tag used in log lines so failures are traceable to a caller. */
   label?: string
 }
@@ -62,7 +63,7 @@ export async function generateObjectViaOpenRouter<T>(
       model: opts.model,
       complexity: opts.complexity,
       maxTokens: opts.maxTokens ?? 3000,
-      temperature: opts.temperature ?? 0.4,
+      temperature: opts.temperature === undefined ? 0.4 : opts.temperature,
       jsonMode: true,
       privacySensitive,
     })

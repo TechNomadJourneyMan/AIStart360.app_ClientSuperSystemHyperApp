@@ -90,6 +90,7 @@ node scripts/apply-migration.js supabase/migrations/067_omnichannel_reply_quiet_
 node scripts/apply-migration.js supabase/migrations/068_omnichannel_manager_routing.sql
 node scripts/apply-migration.js supabase/migrations/069_omnichannel_conversation_ux.sql
 node scripts/apply-migration.js supabase/migrations/070_omnichannel_owned_send_claims.sql
+node scripts/apply-migration.js supabase/migrations/071_omnichannel_honor_context.sql
 ```
 
 Миграция создаёт:

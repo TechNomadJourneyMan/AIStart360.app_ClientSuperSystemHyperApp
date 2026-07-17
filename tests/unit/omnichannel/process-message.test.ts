@@ -406,6 +406,74 @@ describe("omnichannel message processor safety", () => {
     );
   });
 
+  it("passes the unanswered burst to AI without current or failed outbound duplicates", async () => {
+    const base = context({ message: { text: "Спасибо" } });
+    const oldInbound = {
+      ...base.message,
+      id: "message-old-inbound",
+      externalMessageId: "provider-old-inbound",
+      text: "Старый вопрос",
+    };
+    const confirmedOutbound = {
+      ...base.message,
+      id: "message-confirmed-outbound",
+      externalMessageId: "provider-confirmed-outbound",
+      direction: "out",
+      text: "На старый вопрос уже ответили",
+      status: "sent",
+      aiGenerated: false,
+    };
+    const substantiveInbound = {
+      ...base.message,
+      id: "message-substantive-inbound",
+      externalMessageId: "provider-substantive-inbound",
+      text: "Нужен полный комплект",
+    };
+    const failedOutbound = {
+      ...base.message,
+      id: "message-failed-outbound",
+      externalMessageId: "provider-failed-outbound",
+      direction: "out",
+      text: "Этот текст клиент не видел",
+      status: "failed",
+      aiGenerated: true,
+    };
+    repository.getMessageContext.mockResolvedValue({
+      ...base,
+      history: [
+        oldInbound,
+        confirmedOutbound,
+        substantiveInbound,
+        failedOutbound,
+        base.message,
+      ],
+    });
+
+    await expect(invoke()).resolves.toMatchObject({ action: "send" });
+    expect(ai.generateOmnichannelReply).toHaveBeenCalledWith({
+      channel: "instagram",
+      businessContext: base.settings.businessContext,
+      currentMessage: "Спасибо",
+      history: [
+        expect.objectContaining({
+          direction: "in",
+          text: "Старый вопрос",
+          actor: "customer",
+        }),
+        expect.objectContaining({
+          direction: "out",
+          text: "На старый вопрос уже ответили",
+          actor: "human",
+        }),
+        expect.objectContaining({
+          direction: "in",
+          text: "Нужен полный комплект",
+          actor: "customer",
+        }),
+      ],
+    });
+  });
+
   it("keeps a draft when the webhook account differs from the configured sender", async () => {
     repository.getMessageContext.mockResolvedValue(context());
     meta.isConfiguredMetaAccount.mockReturnValue(false);

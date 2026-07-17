@@ -11,6 +11,7 @@ import {
 } from "@/lib/omnichannel/equipment-sales-flow";
 import {
   assessDelayedReply,
+  isConfirmedOutboundMessage,
   isHistoricalCatchUpMessage,
   prependDelayedReplyApology,
   type DelayedReplyAssessment,
@@ -189,6 +190,25 @@ function sameEquipmentFlowPlan(
   second: EquipmentSalesFlowPlan,
 ): boolean {
   return JSON.stringify(first) === JSON.stringify(second);
+}
+
+function aiHistoryBeforeCurrent(
+  history: OmnichannelMessage[],
+  currentMessage: OmnichannelMessage,
+): OmnichannelMessage[] {
+  const currentIndex = history.findIndex(
+    (message) => message.id === currentMessage.id,
+  );
+  const beforeCurrent = currentIndex >= 0
+    ? history.slice(0, currentIndex)
+    : history.filter((message) => message.id !== currentMessage.id);
+
+  // A failed/drafted outbound is not a customer-visible answer and must not
+  // split the unanswered burst supplied to the model.
+  return beforeCurrent.filter(
+    (message) =>
+      message.direction === "in" || isConfirmedOutboundMessage(message),
+  );
 }
 
 async function bestEffortWhatsAppPresence(
@@ -400,13 +420,18 @@ async function handleOmnichannelMessage({ event, step }: any) {
         reason: salesFlowPlan.reason,
         lead_score: salesFlowPlan.leadScore,
         conversation_summary: salesFlowPlan.summary,
+        grounding: "business_context",
+        business_facts_used: [],
       }
     : await step.run("generate-safe-ai-reply", () =>
         generateOmnichannelReply({
           channel: context!.conversation.channel,
           businessContext: context!.settings.businessContext,
           currentMessage: context!.message.text!,
-          history: context!.history.map((message: OmnichannelMessage) => ({
+          history: aiHistoryBeforeCurrent(
+            context!.history,
+            context!.message,
+          ).map((message: OmnichannelMessage) => ({
             direction: message.direction,
             text: message.text,
             occurredAt: message.occurredAt,

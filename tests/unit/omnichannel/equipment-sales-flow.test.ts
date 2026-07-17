@@ -278,7 +278,42 @@ describe('equipment sales flow planning', () => {
         text: 'Не хочу летнюю экипировку',
         messageType: 'interactive',
         metadata: { interactiveId: invalidPayload },
-      })])).toMatchObject({ stage: 'welcome', choiceId: null })
+      })])).toBeNull()
+    }
+  })
+
+  it.each([
+    'Что за шлем?',
+    'Не хочу экипировку',
+    'Дайте одежду на 2 человека',
+  ])('keeps an ordinary product phrase outside the lead CTA flow: %s', (text) => {
+    expect(plan([message({ id: `ordinary-product-${text}`, text })])).toBeNull()
+  })
+
+  it.each([
+    'всё',
+    'вся экипировка',
+    'полный комплект',
+    'всего понемногу',
+    'всего по немножку',
+    'хочу всё сразу',
+  ])('routes a comprehensive-selection request to a manager: %s', (text) => {
+    expect(plan([message({ id: `full-selection-${text}`, text })])).toMatchObject({
+      stage: 'awaiting_city',
+      choiceId: 'manager',
+    })
+  })
+
+  it.each([
+    ['Что входит в полный комплект?', null],
+    ['Всё понятно, спасибо', null],
+    ['Не полный комплект, хочу на лето', 'summer'],
+  ] as const)('does not confuse a full-kit question or negation with selection: %s', (text, choiceId) => {
+    const result = plan([message({ id: `full-selection-edge-${text}`, text })])
+    if (choiceId === null) {
+      expect(result).toBeNull()
+    } else {
+      expect(result).toMatchObject({ stage: 'awaiting_city', choiceId })
     }
   })
 
@@ -362,21 +397,28 @@ describe('equipment sales flow planning', () => {
 
   it('does not treat an unrelated inline number as a menu choice', () => {
     expect(plan([message({ id: 'product-count', text: 'Хочу 2 товара' })])).toBeNull()
-    expect(plan([message({ id: 'shops-count', text: 'В Астане есть 2 магазина?' })])).toMatchObject({
-      stage: 'awaiting_interest',
-      cityRouteId: 'astana',
-      choiceId: null,
-    })
-    expect(plan([message({ id: 'size-number', text: 'Астана, размер: 5' })])).toMatchObject({
-      stage: 'awaiting_interest',
-      cityRouteId: 'astana',
-      choiceId: null,
-    })
-    expect(plan([message({ id: 'address-number', text: 'В Астане адрес: 3' })])).toMatchObject({
-      stage: 'awaiting_interest',
-      cityRouteId: 'astana',
-      choiceId: null,
-    })
+    expect(plan([message({ id: 'shops-count', text: 'В Астане есть 2 магазина?' })])).toBeNull()
+    expect(plan([message({ id: 'size-number', text: 'Астана, размер: 5' })])).toBeNull()
+    expect(plan([message({ id: 'address-number', text: 'В Астане адрес: 3' })])).toBeNull()
+  })
+
+  it.each([
+    'В Астане есть 2 магазина?',
+    'Астана, размер: 5',
+    'В Астане адрес: 3',
+    'Где магазин?',
+  ])('does not consume an ordinary city question while awaiting a city: %s', (text) => {
+    expect(planWith({
+      history: [message({ id: `active-city-question-${text}`, text })],
+      conversationMetadata: {
+        equipmentSalesFlow: {
+          version: 1,
+          stage: 'awaiting_city',
+          choiceId: 'summer',
+          updatedAt: now,
+        },
+      },
+    })).toBeNull()
   })
 
   it('prefers a written choice over an unrelated quantity', () => {
@@ -404,10 +446,7 @@ describe('equipment sales flow planning', () => {
   })
 
   it('does not confuse a product quantity with a human handoff', () => {
-    expect(plan([message({ id: 'clothes-for-two', text: 'Дайте одежду на 2 человека' })])).toMatchObject({
-      stage: 'welcome',
-      choiceId: null,
-    })
+    expect(plan([message({ id: 'clothes-for-two', text: 'Дайте одежду на 2 человека' })])).toBeNull()
   })
 
   it.each([
@@ -715,7 +754,7 @@ describe('equipment sales flow planning', () => {
     })
   })
 
-  it.each(['Хочу в Клуб', 'хочу в клуб', 'Клуб', 'I want to join the club']) (
+  it.each(['Хочу в Клуб', 'хочу в клуб', 'Клуб', 'Привет, хочу в клуб', 'I want to join the club']) (
     'starts the equipment welcome flow for the campaign CTA: %s',
     (text) => {
       const result = plan([message({ id: `club-${text}`, text })])
@@ -778,6 +817,113 @@ describe('equipment sales flow planning', () => {
       cityRouteId: 'ust_kamenogorsk',
       cityLabel: 'Өскемен',
       choiceId: 'catalog',
+      managerUrl: 'https://wa.me/77714057775',
+    })
+  })
+
+  it('keeps the substantive full-selection request when a courtesy follows in the same burst', () => {
+    const result = planWith({
+      history: [
+        message({ id: 'full-selection-before-thanks', text: 'Всего понемногу' }),
+        message({ id: 'courtesy-after-selection', text: 'Спасибо' }),
+      ],
+      conversationMetadata: {
+        equipmentSalesFlow: {
+          version: 1,
+          stage: 'awaiting_interest',
+          cityRouteId: 'astana',
+          cityLabel: 'Астана',
+          updatedAt: now,
+        },
+      },
+    })
+
+    expect(result).toMatchObject({
+      stage: 'routed',
+      cityRouteId: 'astana',
+      choiceId: 'manager',
+      managerUrl: 'https://wa.me/77054057775',
+    })
+    expect(result?.answer).not.toMatch(/шлем|куртк|перчат/iu)
+  })
+
+  it.each([
+    'Есть каталог в Астане?',
+    'А есть каталог?',
+    'Хочу узнать, есть ли каталог в Астане?',
+    'Хочу спросить, где каталог?',
+  ])('does not turn an informational catalog question into a menu selection: %s', (text) => {
+    expect(plan([message({ id: `catalog-question-${text}`, text })])).toBeNull()
+    expect(planWith({
+      history: [message({ id: `active-catalog-question-${text}`, text })],
+      conversationMetadata: {
+        equipmentSalesFlow: {
+          version: 1,
+          stage: 'awaiting_interest',
+          cityRouteId: 'astana',
+          cityLabel: 'Астана',
+          updatedAt: now,
+        },
+      },
+    })).toBeNull()
+  })
+
+  it('does not revive an earlier choice when a cancellation mentions a menu item and a courtesy follows', () => {
+    expect(planWith({
+      history: [
+        message({ id: 'selection-before-menu-cancel', text: 'Всего понемногу' }),
+        message({ id: 'menu-cancel', text: 'Отмена каталога' }),
+        message({ id: 'courtesy-after-menu-cancel', text: 'Спасибо' }),
+      ],
+      conversationMetadata: {
+        equipmentSalesFlow: {
+          version: 1,
+          stage: 'awaiting_interest',
+          cityRouteId: 'astana',
+          cityLabel: 'Астана',
+          updatedAt: now,
+        },
+      },
+    })).toBeNull()
+  })
+
+  it.each([
+    'Нет, уже не надо, спасибо',
+    'Передумал',
+    'Ничего не нужно',
+  ])('honors a cancellation after an earlier full-selection request: %s', (text) => {
+    expect(planWith({
+      history: [
+        message({ id: `selection-before-cancel-${text}`, text: 'Всего понемногу' }),
+        message({ id: `selection-cancel-${text}`, text }),
+      ],
+      conversationMetadata: {
+        equipmentSalesFlow: {
+          version: 1,
+          stage: 'awaiting_interest',
+          cityRouteId: 'astana',
+          cityLabel: 'Астана',
+          updatedAt: now,
+        },
+      },
+    })).toBeNull()
+  })
+
+  it('routes a typo-tolerant Esik location to the shared manager', () => {
+    expect(planWith({
+      history: [message({ id: 'esik-location', text: 'Алматинская область г.Есик' })],
+      conversationMetadata: {
+        equipmentSalesFlow: {
+          version: 1,
+          stage: 'awaiting_city',
+          choiceId: 'catalog',
+          updatedAt: now,
+        },
+      },
+    })).toMatchObject({
+      stage: 'routed',
+      cityRouteId: 'other',
+      cityLabel: 'Есик',
       managerUrl: 'https://wa.me/77714057775',
     })
   })

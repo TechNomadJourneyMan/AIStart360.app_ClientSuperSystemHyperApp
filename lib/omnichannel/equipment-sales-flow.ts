@@ -164,6 +164,7 @@ const KNOWN_OTHER_CITIES = [
   'талдықорған', 'туркестан', 'түркістан', 'кызылорда', 'қызылорда', 'атырау',
   'актау', 'ақтау', 'актобе', 'ақтөбе', 'уральск', 'орал', 'жезказган', 'жезқазған',
   'экибастуз', 'рудный', 'темиртау', 'балхаш', 'жанаозен', 'жаңаөзен',
+  'есик', 'иссык',
 ] as const
 
 const NON_CITY_REPLIES = new Set([
@@ -222,7 +223,42 @@ function isNegatedChoiceMention(text: string, start: number, end: number): boole
     || /^(?:\s+\p{L}+){0,2}\s*не\s+(?:хочу|надо|нуж\p{L}*|интерес\p{L}*)/iu.test(after)
 }
 
+function comprehensiveChoiceFromFreeText(text: string): EquipmentFlowChoiceId | null {
+  return /^(?:(?:мне|хочу|нужен|нужна|нужно|давайте|интересует)\s+)*(?:все|вся\s+(?:экипировк\p{L}*|одежд\p{L}*)|весь\s+комплект\p{L}*|полн\p{L}*\s+(?:комплект\p{L}*|экипировк\p{L}*)|всего\s+(?:(?:по\s*)?немно(?:г|ж)\p{L}*|по\s+чуть\s+чуть)|(?:(?:по\s*)?немно(?:г|ж)\p{L}*|по\s+чуть\s+чуть)\s+всего)(?:\s+(?:пожалуйста|сразу))?$/iu.test(text)
+    ? 'manager'
+    : null
+}
+
+function isInformationalChoiceQuestion(raw: string, normalized: string): boolean {
+  // Questions are not button selections, even when they include words such as
+  // “хочу” (“хочу узнать, есть ли каталог?”). Let the AI create a reviewed
+  // draft instead of auto-routing on a noun inside the question.
+  if (
+    /[?]/u.test(raw)
+    || /(?:^|\s)хочу\s+(?:узнать|спросить|уточнить)(?=$|\s)/iu.test(normalized)
+    || /(?:^|\s)(?:есть\s+ли|где|сколько|какие|какой|какая)(?=$|\s)/iu.test(normalized)
+  ) {
+    return true
+  }
+  const explicitSelection = /(?:^|\s)(?:хочу|выбираю|давайте|интересует|нужен|нужна|нужно|покажите|отправьте|откройте|позовите|подключите)(?=$|\s)/iu.test(normalized)
+  if (explicitSelection) return false
+  return /^(?:а\s+)?(?:есть(?:\s+ли)?|где|что|какие|какой|какая|сколько|продаете(?:\s+ли)?)(?=$|\s)/iu.test(normalized)
+    || /(?:^|\s)есть(?=$|\s)/iu.test(normalized)
+}
+
+function isSelectionCancellation(message: OmnichannelMessage): boolean {
+  const normalized = normalizeText(message.text ?? '')
+  if (!normalized) return false
+  return /(?:^|\s)(?:передумал\p{L}*|отмена|не\s+актуально)(?=$|\s)/iu.test(normalized)
+    || /^(?:(?:нет|спасибо)\s+)?(?:уже\s+)?не\s+(?:надо|нужно)(?:\s+(?:спасибо|благодарю))?$/iu.test(normalized)
+    || /^ничего\s+не\s+(?:надо|нужно)(?:\s+(?:спасибо|благодарю))?$/iu.test(normalized)
+    || /^не\s+нуж(?:ен|на|но|ны)(?:\s+.+)?$/iu.test(normalized)
+}
+
 function choiceFromFreeText(text: string): EquipmentFlowChoiceId | null {
+  const comprehensive = comprehensiveChoiceFromFreeText(text)
+  if (comprehensive) return comprehensive
+
   const definitions: Array<{ id: EquipmentFlowChoiceId; pattern: RegExp }> = [
     { id: 'summer', pattern: /(?:^|\s)(?:лето|летн\p{L}*)(?=$|\s)/giu },
     { id: 'autumn_winter', pattern: /(?:^|\s)(?:осен\p{L}*|зим\p{L}*)(?=$|\s)/giu },
@@ -295,6 +331,7 @@ function choiceFromMessage(
       return choice.id
     }
   }
+  if (isInformationalChoiceQuestion(message.text ?? '', text)) return null
   const fromFreeText = choiceFromFreeText(text)
   if (fromFreeText) return fromFreeText
 
@@ -318,6 +355,9 @@ function latestChoice(
   allowUnknownLegacyCity = false,
 ): EquipmentFlowChoiceId | null {
   for (const message of [...inbound].reverse()) {
+    // Cancellation wins over any menu word contained in the same message.
+    // This also prevents a later courtesy from reviving an older selection.
+    if (isSelectionCancellation(message)) return null
     const choice = choiceFromMessage(message, config, allowUnknownLegacyCity)
     if (choice) return choice
   }
@@ -423,8 +463,8 @@ function explicitCityLabelFromText(raw: string): string | null {
   const explicitPatterns = [
     /(?:^|\s)(?:я\s+)?(?:живу|нахожусь|проживаю)\s+в[\s:,-]+([\p{L}-]+(?:\s+[\p{L}-]+){0,2})/iu,
     /(?:^|\s)(?:я\s+)?из[\s:,-]+([\p{L}-]+(?:\s+[\p{L}-]+){0,2})/iu,
-    /^(?:я\s+)?в[\s:,-]+([\p{L}-]+(?:\s+[\p{L}-]+){0,2})/iu,
-    /(?:^|\s)(?:я\s+)?(?:город(?:а|е)?|г\.?)[\s:,-]+([\p{L}-]+(?:\s+[\p{L}-]+){0,2})/iu,
+    /^я\s+в[\s:,-]+([\p{L}-]+(?:\s+[\p{L}-]+){0,2})/iu,
+    /(?:^|\s)(?:я\s+)?(?:город(?:а|е)?[\s:,-]+|г(?:\.[\s:,-]*|[\s:,-]+))([\p{L}-]+(?:\s+[\p{L}-]+){0,2})/iu,
   ]
   const explicit = explicitPatterns
     .map((pattern) => raw.match(pattern)?.[1] ?? null)
@@ -444,6 +484,7 @@ function cityFromMessage(
   config: EquipmentSalesFlowConfig,
   allowStandaloneOther: boolean,
   allowUnknownLegacyCity: boolean,
+  allowContextualMention: boolean,
 ): CityMatch | null {
   const raw = message.text?.trim() ?? ''
   if (!raw) return null
@@ -455,6 +496,15 @@ function cityFromMessage(
     route.aliases.length > 0 && routeMatchesText(raw, route.aliases),
   )
   const knownOther = KNOWN_OTHER_CITIES.filter((city) => routeMatchesText(raw, [city]))
+  const directCityReply = isRecognizedCityReply(raw, config, false)
+    || Boolean(explicitCityLabelFromText(raw))
+  if (
+    !allowContextualMention
+    && !directCityReply
+    && (matchedRoutes.length > 0 || knownOther.length > 0)
+  ) {
+    return null
+  }
   const routeIds = new Set(matchedRoutes.map((route) => route.id))
   if (knownOther.length > 0) routeIds.add(fallback.id)
   if (routeIds.size > 1) return null
@@ -533,6 +583,7 @@ function latestCity(
   config: EquipmentSalesFlowConfig,
   allowStandaloneOther: boolean,
   allowUnknownLegacyCity: boolean,
+  allowContextualMention: boolean,
 ): CityMatch | null {
   for (const message of [...inbound].reverse()) {
     const city = cityFromMessage(
@@ -540,6 +591,7 @@ function latestCity(
       config,
       allowStandaloneOther,
       allowUnknownLegacyCity,
+      allowContextualMention,
     )
     if (city) return city
   }
@@ -709,7 +761,7 @@ function recentInboundBurst(
   const currentMs = parseTime(currentMessage.occurredAt) ?? Date.now()
   let lastOutboundIndex = -1
   history.forEach((message, index) => {
-    if (message.direction === 'out') lastOutboundIndex = index
+    if (isConfirmedOutboundMessage(message)) lastOutboundIndex = index
   })
   const tail = history.slice(lastOutboundIndex + 1)
   const withCurrent = tail.some((message) => message.id === currentMessage.id)
@@ -728,10 +780,15 @@ function isLeadOpeningMessage(message: OmnichannelMessage): boolean {
   const normalized = normalizeText(message.text ?? '')
   if (!normalized) return false
   if (isGreetingText(normalized)) return true
+  const withoutGreeting = normalized.replace(
+    /^(?:привет(?:ик|ствую)?|здравствуй(?:те)?|добрый\s+(?:день|вечер)|доброе\s+утро|салам|с[әа]лем|hello|hi|hey)\s+/iu,
+    '',
+  )
   // The active WhatsApp campaign uses “Хочу в Клуб” as its lead CTA. Treat
   // that provider text as the same deterministic opening as a greeting so it
   // can never fall through to an unrelated generic business context.
-  return /(?:^|\s)(?:клуб\p{L}*|club|экипиров\p{L}*|одежд\p{L}*|мотокуртк\p{L}*|мотошлем\p{L}*|шлем\p{L}*)(?=$|\s)/iu.test(normalized)
+  return /^(?:(?:я\s+)?хочу\s+(?:вступить\s+в\s+|присоединиться\s+к\s+|в\s+)?|(?:я\s+)?(?:хотел|хотела)\s+бы\s+(?:вступить\s+в\s+|присоединиться\s+к\s+|в\s+)?|)(?:honor\s+)?клуб$/iu.test(withoutGreeting)
+    || /^(?:i\s+(?:want|would\s+like)\s+to\s+join\s+(?:the\s+)?|)(?:honor\s+)?club$/iu.test(withoutGreeting)
 }
 
 function confirmedManagerHandoff(
@@ -782,6 +839,9 @@ export function planEquipmentSalesFlow(input: {
 
   const active = stored.active ? stored : historyState
   const inbound = recentInboundBurst(history, input.currentMessage)
+  // A latest explicit cancellation exits the active menu instead of being
+  // misclassified as an unknown city or reviving an earlier choice in burst.
+  if (isSelectionCancellation(input.currentMessage)) return null
   const allowUnknownLegacyCity = active.active && !active.city && !active.choiceId
   const newChoiceId = latestChoice(inbound, config, allowUnknownLegacyCity)
   const newCity = latestCity(
@@ -789,6 +849,7 @@ export function planEquipmentSalesFlow(input: {
     config,
     Boolean(newChoiceId || (active.choiceId && !active.city) || active.active),
     allowUnknownLegacyCity,
+    Boolean(newChoiceId),
   )
   const hasNewSignal = Boolean(newChoiceId || newCity)
   if (!active.active && !hasNewSignal && !isLeadOpeningMessage(input.currentMessage)) return null
