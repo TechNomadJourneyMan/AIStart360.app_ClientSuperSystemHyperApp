@@ -8,8 +8,10 @@ vi.mock('@/lib/ai/structured', () => ({
   generateObjectViaOpenRouter: structured.generateObjectViaOpenRouter,
 }))
 
-import { OPENROUTER_MODELS } from '@/lib/ai/openrouter'
-import { generateOmnichannelReply } from '@/lib/omnichannel/ai'
+import {
+  generateOmnichannelReply,
+  OMNICHANNEL_REPLY_MODEL,
+} from '@/lib/omnichannel/ai'
 
 const validReply = {
   answer: 'Подскажите, пожалуйста, можно фото, ссылку или артикул товара?',
@@ -32,7 +34,7 @@ describe('omnichannel AI generation', () => {
     structured.generateObjectViaOpenRouter.mockResolvedValue(validReply)
   })
 
-  it('uses Sonnet 5 only for free-form generation and keeps the system brand-neutral', async () => {
+  it('uses Claude Opus 4.8 only for free-form generation and keeps the system brand-neutral', async () => {
     await expect(generateOmnichannelReply({
       channel: 'whatsapp',
       businessContext: 'Honor Group — Outdoor · Hunt · Fish.',
@@ -50,7 +52,7 @@ describe('omnichannel AI generation', () => {
       temperature?: number | null
       system?: string
     }
-    expect(options.model).toBe(OPENROUTER_MODELS.sonnet5)
+    expect(options.model).toBe(OMNICHANNEL_REPLY_MODEL)
     expect(options.complexity).toBeUndefined()
     expect(options.temperature).toBeNull()
     expect(options.system).not.toContain('AIStart360')

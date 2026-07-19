@@ -17,6 +17,7 @@ export const OPENROUTER_MODELS = {
   sonnet5: 'anthropic/claude-sonnet-5',
   sonnet: 'anthropic/claude-sonnet-4.5',
   haiku:  'anthropic/claude-haiku-4.5',
+  opus48: 'anthropic/claude-opus-4.8',
   opus:   'anthropic/claude-opus-4.1',
   gpt4:   'openai/gpt-4o',
   gpt4mini: 'openai/gpt-4o-mini',

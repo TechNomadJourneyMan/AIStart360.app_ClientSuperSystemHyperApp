@@ -9,6 +9,8 @@ import {
   type OmnichannelRisk,
 } from './guardrails'
 
+export const OMNICHANNEL_REPLY_MODEL = OPENROUTER_MODELS.opus48
+
 const replySchema = z.object({
   answer: z.string().max(1600),
   intent: z.enum([
@@ -274,7 +276,7 @@ export async function generateOmnichannelReply(
 
   const result = await generateObjectViaOpenRouter({
     label: 'omnichannel:reply',
-    model: OPENROUTER_MODELS.sonnet5,
+    model: OMNICHANNEL_REPLY_MODEL,
     maxTokens: 700,
     temperature: null,
     schema: replySchema,
