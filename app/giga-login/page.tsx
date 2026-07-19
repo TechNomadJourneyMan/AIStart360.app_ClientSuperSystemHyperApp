@@ -1,7 +1,8 @@
 'use client'
 
+import Link from 'next/link'
 import { useState } from 'react'
-import { Shield, Eye, EyeOff, Lock } from 'lucide-react'
+import { Eye, EyeOff, Lock, UserRound } from 'lucide-react'
 
 export default function GigaPanelLoginPage() {
   const [password, setPassword] = useState('')
@@ -27,6 +28,8 @@ export default function GigaPanelLoginPage() {
         window.location.href = '/admin-giga-panel'
       } else if (res.status === 429) {
         setError('Слишком много попыток. Попробуйте позже.')
+      } else if (res.status >= 500) {
+        setError('Аварийный вход временно недоступен. Используйте личный аккаунт.')
       } else {
         setError('Неверный пароль')
       }
@@ -67,6 +70,31 @@ export default function GigaPanelLoginPage() {
             <p className="text-slate-500 text-sm text-center">
               Системный уровень доступа
             </p>
+          </div>
+
+          <Link
+            href="/login?from=/admin-giga-panel"
+            className="group mb-6 flex w-full items-center gap-3 rounded-xl border border-blue-500/30 bg-blue-500/20 px-4 py-3 text-left transition-all hover:border-blue-400/50 hover:bg-blue-500/30"
+          >
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-400/15 text-blue-300">
+              <UserRound size={18} />
+            </span>
+            <span className="min-w-0">
+              <span className="block text-sm font-medium text-blue-200">
+                Войти через личный аккаунт
+              </span>
+              <span className="block text-[11px] leading-relaxed text-slate-500 group-hover:text-slate-400">
+                Основной безопасный способ входа
+              </span>
+            </span>
+          </Link>
+
+          <div className="mb-5 flex items-center gap-3">
+            <span className="h-px flex-1 bg-white/[0.07]" />
+            <span className="text-[10px] uppercase tracking-[0.16em] text-slate-600">
+              Аварийный доступ
+            </span>
+            <span className="h-px flex-1 bg-white/[0.07]" />
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4" autoComplete="on">
@@ -126,8 +154,8 @@ export default function GigaPanelLoginPage() {
             </button>
 
             <p className="text-[10px] text-slate-600 text-center leading-relaxed">
-              Браузер также предложит сохранить пароль в свой менеджер — это
-              безопаснее, чем локальное хранение.
+              Общий пароль предназначен только для восстановления доступа.
+              Для постоянной работы используйте личный аккаунт.
             </p>
           </form>
         </div>
