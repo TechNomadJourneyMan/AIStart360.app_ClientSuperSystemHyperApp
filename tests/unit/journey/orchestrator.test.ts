@@ -215,6 +215,88 @@ describe('journey orchestration fallback', () => {
     expect(JSON.stringify(planned)).not.toMatch(/"value":"\d+(?:[.,]\d+)?%"/)
   })
 
+  it('discovers an e-commerce retail business without inventing commerce KPIs', () => {
+    const description = 'HONOR — интернет-магазин outdoor-одежды для охоты, рыбалки и outdoor в Казахстане'
+    const discovered = deterministicOrchestrator(
+      createEmptyJourneyState('journey-commerce-discovery'),
+      description,
+      'test fallback',
+    )
+
+    expect(discovered.facts).toEqual(expect.arrayContaining([
+      expect.objectContaining({ label: 'Описание бизнеса', value: description, status: 'pending' }),
+      expect.objectContaining({ label: 'Формат бизнеса', value: 'Розничная торговля', status: 'pending' }),
+      expect.objectContaining({ label: 'Канал продаж', value: 'Интернет-магазин', status: 'pending' }),
+    ]))
+    const metrics = discovered.widgets.find((widget) => widget.kind === 'domain_metrics')
+    expect(metrics?.kind).toBe('domain_metrics')
+    if (metrics?.kind === 'domain_metrics') {
+      expect(metrics.data.domain).toBe('Интернет-магазин и розничная торговля')
+      expect(metrics.data.metrics).toEqual(expect.arrayContaining([
+        expect.objectContaining({ label: 'Выручка', status: 'unknown' }),
+        expect.objectContaining({ label: 'Доля отсутствующих товаров', status: 'unknown' }),
+      ]))
+      expect(metrics.data.metrics.every((metric) => metric.value === undefined)).toBe(true)
+    }
+    expect(discovered.widgets).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'business_passport' }),
+    ]))
+    expect((discovered.widgetDecisions ?? []).every((decision) =>
+      decision.evidenceFactIds.every((id) => discovered.facts.some((fact) => fact.id === id)),
+    )).toBe(true)
+  })
+
+  it('builds a commerce roadmap from a confirmed measurable revenue goal', () => {
+    const discovered = deterministicOrchestrator(
+      createEmptyJourneyState('journey-commerce-roadmap'),
+      'HONOR — e-commerce магазин outdoor apparel в Казахстане',
+      'test fallback',
+    )
+    const confirmed = journeyStateSchema.parse({
+      ...discovered,
+      facts: discovered.facts.map((fact) => ({ ...fact, status: 'confirmed' })),
+    })
+
+    const goal = 'Хочу увеличить выручку до 50 млн ₸ за 6 месяцев'
+    const planned = deterministicOrchestrator(confirmed, goal, 'test fallback')
+
+    expect(planned.phase).toBe('ready')
+    expect(planned.goals[0]).toMatchObject({
+      title: goal,
+      metric: 'Выручка',
+      target: '50 млн ₸',
+      deadline: '6 месяцев',
+      status: 'confirmed',
+    })
+    expect(planned.roadmap.map((item) => item.title)).toEqual([
+      'Подтвердить базу продаж и маржи',
+      'Разобрать ассортимент и наличие',
+      'Проверить путь заказа до доставки',
+      'Запустить один проверяемый рычаг роста',
+      'Сверить фактический результат с Точкой B',
+    ])
+    expect(planned.widgets).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'domain_metrics' }),
+      expect.objectContaining({ kind: 'domain_process' }),
+      expect.objectContaining({ kind: 'point_b_goals' }),
+      expect.objectContaining({ kind: 'roadmap_actions' }),
+    ]))
+    const metrics = planned.widgets.find((widget) => widget.kind === 'domain_metrics')
+    if (metrics?.kind === 'domain_metrics') {
+      expect(metrics.data.metrics.every((metric) => metric.status === 'unknown' && metric.value === undefined)).toBe(true)
+    }
+    const process = planned.widgets.find((widget) => widget.kind === 'domain_process')
+    if (process?.kind === 'domain_process') {
+      expect(process.data.stages.map((stage) => stage.name)).toEqual([
+        'Заказ',
+        'Наличие и резерв',
+        'Сборка и отгрузка',
+        'Доставка и возврат',
+        'Повторная покупка',
+      ])
+    }
+  })
+
   it('keeps browser-local demo semantics aligned for the insurance scenario', () => {
     const description = 'Страховой бизнес продаёт полисы компаниям'
     const discovered = runLocalTurn(createEmptyWorkspace('journey-local-insurance'), description)

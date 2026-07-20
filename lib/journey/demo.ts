@@ -232,6 +232,11 @@ function extractLiteralFacts(text: string): JourneyFact[] {
     facts.push(literalFact('Формат бизнеса', 'Розничная торговля овощами', 'business'))
   } else if (/страхов|полис|андеррайт/i.test(clean)) {
     facts.push(literalFact('Формат бизнеса', 'Страхование', 'business'))
+  } else if (isCommerceRetailDescription(clean)) {
+    facts.push(literalFact('Формат бизнеса', 'Розничная торговля', 'business'))
+    if (/интернет[-\s]?магазин|онлайн[-\s]?магазин|e[-\s]?commerce|ecommerce/i.test(clean)) {
+      facts.push(literalFact('Канал продаж', 'Интернет-магазин', 'sales'))
+    }
   }
 
   const team = clean.match(/(?:команд[а-яё]*|штат[а-яё]*)\D{0,18}(\d{1,5})\s*(?:человек|сотрудник[а-яё]*)?/i)
@@ -264,11 +269,16 @@ function literalFact(
   }
 }
 
-type Domain = 'tomato-retail' | 'insurance' | 'generic'
+type Domain = 'tomato-retail' | 'commerce-retail' | 'insurance' | 'generic'
+
+function isCommerceRetailDescription(text: string): boolean {
+  return /интернет[-\s]?магазин|онлайн[-\s]?магазин|e[-\s]?commerce|ecommerce|розничн[а-яё]*\s+торговл|outdoor\s*[-/]?\s*(?:apparel|одежд)|(?:магазин|розниц[а-яё]*)[^.]{0,40}(?:одежд|обув|outdoor)/i.test(text)
+}
 
 function detectDomain(text: string): Domain {
   if (/помидор|овощ|овощн[а-яё]* магазин/i.test(text)) return 'tomato-retail'
   if (/страхов|полис|андеррайт|renewal\s*rate|дол[яю]\s+продлен|процент\s+продлен|страхов[а-яё]* случа/i.test(text)) return 'insurance'
+  if (isCommerceRetailDescription(text)) return 'commerce-retail'
   return 'generic'
 }
 
@@ -298,6 +308,28 @@ function buildDiscoveryWidgets(
           {
             title: 'Следующий вопрос',
             detail: 'Какая выручка, маржа и доля списаний у текущего магазина за обычный месяц?',
+            status: 'question',
+          },
+        ],
+      }),
+    )
+  } else if (domain === 'commerce-retail') {
+    result.push(
+      widget('domain_metrics', 'Продажи, ассортимент и наличие', 92, 420, 620, {
+        domain: 'Интернет-магазин и розничная торговля',
+        purpose: 'Собрать подтверждённую базу продаж, маржи и наличия до выбора рычага роста.',
+        metrics: [
+          { label: 'Выручка', status: 'unknown' },
+          { label: 'Валовая маржа', status: 'unknown' },
+          { label: 'Средний чек', status: 'unknown' },
+          { label: 'Конверсия заказа', status: 'unknown' },
+          { label: 'Доля отсутствующих товаров', status: 'unknown' },
+          { label: 'Оборачиваемость запасов', status: 'unknown' },
+        ],
+        guidance: [
+          {
+            title: 'Нужен исходный факт',
+            detail: 'Подтвердите выручку, заказы, валовую маржу и наличие товаров за один сопоставимый период.',
             status: 'question',
           },
         ],
@@ -371,6 +403,22 @@ function buildDomainTransformationWidgets(domain: Domain): JourneyWidget[] {
     ]
   }
 
+  if (domain === 'commerce-retail') {
+    return [
+      widget('domain_process', 'Путь заказа и повторной покупки', 91, 100, 880, {
+        domain: 'Интернет-магазин и розничная торговля',
+        purpose: 'Связать заказ с наличием, резервом, исполнением, доставкой и повторной покупкой.',
+        stages: [
+          { id: 'commerce-order', name: 'Заказ', status: 'unknown', nextAction: 'Подтвердить канал, статус заказа и источник учёта.' },
+          { id: 'commerce-stock', name: 'Наличие и резерв', status: 'unknown', nextAction: 'Проверить, как остаток и резерв подтверждаются до продажи.', dependsOn: ['commerce-order'] },
+          { id: 'commerce-fulfillment', name: 'Сборка и отгрузка', status: 'unknown', nextAction: 'Зафиксировать владельца, срок и статус исполнения.', dependsOn: ['commerce-stock'] },
+          { id: 'commerce-delivery', name: 'Доставка и возврат', status: 'unknown', nextAction: 'Собрать факты о сроках, отменах и возвратах.', dependsOn: ['commerce-fulfillment'] },
+          { id: 'commerce-repeat', name: 'Повторная покупка', status: 'unknown', nextAction: 'Уточнить, как измеряются повторные заказы и удержание.', dependsOn: ['commerce-delivery'] },
+        ],
+      }),
+    ]
+  }
+
   return []
 }
 
@@ -403,6 +451,20 @@ function buildRoadmap(domain: Domain, goal: JourneyGoal): JourneyRoadmapItem[] {
       roadmap(journey, 'Разобрать путь клиента до продления', 'Найти подтверждённые потери между уведомлением, предложением, оплатой и выпуском нового полиса.', '31–60 дней', 'planned', [baseline]),
       roadmap(experiment, 'Запустить один рычаг удержания', 'Выбрать сегмент, действие, владельца и контрольную группу, не подменяя факт прогнозом.', '61–90 дней', 'planned', [journey]),
       roadmap(makeId('roadmap'), 'Масштабировать подтверждённый сценарий', `Сравнить результат с целью «${goal.title}» и расширять только доказавший эффект процесс.`, 'После 90 дней', 'planned', [experiment]),
+    ]
+  }
+
+  if (domain === 'commerce-retail') {
+    const baseline = makeId('roadmap')
+    const assortment = makeId('roadmap')
+    const fulfillment = makeId('roadmap')
+    const experiment = makeId('roadmap')
+    return [
+      roadmap(baseline, 'Подтвердить базу продаж и маржи', 'Согласовать период, источник выручки, заказов, валовой маржи и наличия товаров.', '0–30 дней', 'next'),
+      roadmap(assortment, 'Разобрать ассортимент и наличие', 'Найти подтверждённые дефициты, излишки и позиции, влияющие на достижение цели.', '31–60 дней', 'planned', [baseline]),
+      roadmap(fulfillment, 'Проверить путь заказа до доставки', 'Сопоставить фактические статусы наличия, резерва, сборки, отгрузки, доставки и возврата.', '31–60 дней', 'planned', [baseline]),
+      roadmap(experiment, 'Запустить один проверяемый рычаг роста', 'Выбрать владельца, сегмент и измеримый сигнал; масштабировать только подтверждённый результат.', '61–90 дней', 'planned', [assortment, fulfillment]),
+      roadmap(makeId('roadmap'), 'Сверить фактический результат с Точкой B', `Сопоставить выручку и связанные операционные факты с целью «${goal.title}».`, 'После 90 дней', 'planned', [experiment]),
     ]
   }
 
@@ -442,6 +504,8 @@ function extractGoalTarget(text: string): { metric: string; target: string } | u
   }
   const renewal = text.match(/(?:renewal\s*rate|дол[яю]\s+продлен[а-яё]*|процент\s+продлен[а-яё]*)[^\d]{0,30}(\d+(?:[.,]\d+)?\s*%)/i)
   if (renewal?.[1]) return { metric: 'Renewal rate', target: renewal[1].replace(/\s+/g, '') }
+  const revenue = text.match(/выручк[а-яё]*[^.]{0,80}?(?:до|на)\s+([\d.,]+\s*(?:тыс(?:яч[аи])?|млн|миллион[а-яё]*|млрд|миллиард[а-яё]*)?(?:\s*(?:₸|тенге|тг|kzt))?)/i)
+  if (revenue?.[1]) return { metric: 'Выручка', target: revenue[1].trim() }
   const number = text.match(/(?:до|на)\s+([\d.,]+\s*(?:%|тыс(?:яч[аи])?|млн|миллион[а-яё]*|млрд)?(?:\s*(?:₸|тенге|тг|kzt))?)/i)
   return number ? { metric: 'Целевой показатель', target: number[1].trim() } : undefined
 }
@@ -530,6 +594,8 @@ function buildWidgetDecisions(
 function widgetDecisionReason(kind: JourneyWidget['kind'], domain: Domain): string {
   const business = domain === 'tomato-retail'
     ? 'магазину свежих продуктов'
+    : domain === 'commerce-retail'
+      ? 'интернет-магазину и розничному бизнесу'
     : domain === 'insurance'
       ? 'страховому бизнесу'
       : 'этому бизнесу'
@@ -551,11 +617,15 @@ function widgetDecisionReason(kind: JourneyWidget['kind'], domain: Domain): stri
     external_sources: 'Для следующего решения нужны данные, которые могут прийти только из подключённой системы.',
     domain_metrics: domain === 'tomato-retail'
       ? 'Для роста сети нужно сначала измерить маржу, списания, запасы и поток покупателей одной точки.'
+      : domain === 'commerce-retail'
+        ? 'Для роста торговли нужны подтверждённые продажи, маржа, конверсия, наличие и оборачиваемость; неизвестные значения не выдумываются.'
       : domain === 'insurance'
         ? 'Для страхового портфеля важны renewal rate, премия, частота случаев и loss ratio; неизвестные значения не выдумываются.'
         : 'Нужны отраслевые показатели, адаптированные к бизнес-модели, а не универсальная панель.',
     domain_process: domain === 'tomato-retail'
       ? 'Цель сети требует повторяемого процесса закупок, выбора локации и открытия каждой точки.'
+      : domain === 'commerce-retail'
+        ? 'Цель торговли зависит от связанного пути заказа, наличия, резерва, исполнения, доставки и повторной покупки.'
       : domain === 'insurance'
         ? 'Цель продления зависит от связанного процесса котировки, выпуска, сопровождения и renewal.'
         : 'Цель зависит от повторяемого отраслевого процесса с явными зависимостями.',
