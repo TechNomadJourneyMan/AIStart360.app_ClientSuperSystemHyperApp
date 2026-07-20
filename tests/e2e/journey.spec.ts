@@ -6,6 +6,10 @@ const BUSINESS_DESCRIPTION =
   'У меня один магазин помидоров в Алматы, продаём свежие овощи розничным клиентам'
 const MEASURABLE_GOAL =
   'Хочу открыть пять магазинов за 12 месяцев'
+const HONOR_COMMERCE_DESCRIPTION =
+  'HONOR — интернет-магазин outdoor-одежды для охоты, рыбалки и outdoor в Казахстане'
+const HONOR_COMMERCE_GOAL =
+  'Хочу увеличить выручку до 50 млн ₸ за 6 месяцев'
 
 async function sendChatMessage(page: Page, message: string) {
   const composer = page.getByRole('textbox', { name: 'Сообщение AI' })
@@ -118,6 +122,74 @@ async function waitForWidgetLayout(
 }
 
 test.describe('AI-first workspace journey', () => {
+  test('Honor commerce reaches a safe revenue journey without invented metrics', async ({
+    page,
+  }, testInfo) => {
+    const pageErrors: string[] = []
+    page.on('pageerror', (error) => pageErrors.push(error.message))
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+
+    await page.goto('/journey')
+    await page.evaluate(() => window.localStorage.clear())
+    await page.reload()
+
+    await selectMobileSurface(page, /диалог|чат/i)
+    await sendChatMessage(page, HONOR_COMMERCE_DESCRIPTION)
+    const pendingFacts = page.getByTestId('pending-fact')
+    await expect(pendingFacts.first()).toBeVisible()
+
+    const confirmAll = page.getByRole('button', { name: /подтвердить всё/i })
+    if (await confirmAll.isVisible()) {
+      await confirmAll.click()
+    } else {
+      const labels = await page
+        .getByRole('button', { name: /^Подтвердить факт:/ })
+        .evaluateAll((buttons) =>
+          buttons
+            .map((button) => button.getAttribute('aria-label'))
+            .filter((label): label is string => Boolean(label)),
+        )
+      for (const label of labels) {
+        await page.getByRole('button', { name: label, exact: true }).click()
+      }
+    }
+    await expect(pendingFacts).toHaveCount(0)
+
+    await selectMobileSurface(page, /диалог|чат/i)
+    await sendChatMessage(page, HONOR_COMMERCE_GOAL)
+    await selectMobileSurface(page, /доска|путь/i)
+    const pointB = page.getByTestId('point-b')
+    await expect(pointB).toBeVisible()
+    await expect(pointB).toContainText(/50\s*млн\s*₸/i)
+
+    await selectMobileSurface(page, /модули|виджеты/i)
+    const domainMetrics = page.locator(
+      '[data-testid="journey-widget"][data-widget-kind="domain_metrics"]',
+    )
+    const domainProcess = page.locator(
+      '[data-testid="journey-widget"][data-widget-kind="domain_process"]',
+    )
+    await expect(domainMetrics).toContainText(/продажи.*ассортимент.*наличие/i)
+    await expect(domainMetrics).toContainText('Нужно уточнить')
+    await expect(domainMetrics).not.toContainText(/50\s*млн/i)
+    if ((await domainProcess.count()) === 0) {
+      await (await openDesktopModuleDock(page))
+        .getByRole('button', { name: /Путь заказа и повторной покупки/i })
+        .click()
+    }
+    const expandProcess = domainProcess.getByRole('button', { name: /^Развернуть модуль:/ }).first()
+    if (await expandProcess.isVisible()) await expandProcess.click()
+    await expect(domainProcess).toContainText(/Заказ/i)
+    await expect(domainProcess).toContainText(/Наличие и резерв/i)
+    await expect(domainProcess).toContainText(/Сборка и отгрузка/i)
+    await expect(domainProcess).toContainText(/Доставка и возврат/i)
+    await expect(domainProcess).toContainText(/Повторная покупка/i)
+
+    await takeJourneyScreenshot(page, testInfo, 'honor-ready')
+    await expectNoHorizontalViewportOverflow(page)
+    expect(pageErrors).toEqual([])
+  })
+
   test('business input and CSV produce Point A, Point B, roadmap and persistent widget state', async ({
     page,
   }, testInfo) => {
