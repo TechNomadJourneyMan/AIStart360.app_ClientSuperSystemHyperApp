@@ -7,8 +7,6 @@ import { MFA_COOKIE_NAME, verifyStepUpEdge } from '@/lib/mfa/step-up-edge'
 const MFA_CHALLENGE_PATH = '/2fa'
 const IS_PUBLIC_JOURNEY_PREVIEW =
   process.env.NODE_ENV !== 'production' || process.env.VERCEL_ENV === 'preview'
-const IS_PUBLIC_JOURNEY_PREVIEW =
-  process.env.NODE_ENV !== 'production' || process.env.VERCEL_ENV === 'preview'
 
 const PUBLIC_PATHS = ['/login', '/register', '/forgot-password', '/auth/callback', '/auth/reset-password']
 

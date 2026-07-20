@@ -19,12 +19,14 @@
 
 Эти переменные должны быть прописаны в панели управления Vercel (**Settings > Environment Variables**).
 
+> Ранее раскрытые учётные данные необходимо немедленно отозвать и заменить новыми.
+
 | Ключ | Значение (Пример/Описание) |
 | :--- | :--- |
-| `AUTH_SECRET` | Генерируется командой `openssl rand -base64 32` |
+| `AUTH_SECRET` | Сгенерируйте новый случайный секрет и сохраните его только как sensitive Environment Variable в Vercel; не добавляйте значение в Git. |
 | `AUTH_URL` | `https://ai-start360-app-client-super-system-xi.vercel.app` |
 | `AUTH_GOOGLE_ID` | `252668319413-io2k9jmvq5pct1amkrs376cphk6ofj36.apps.googleusercontent.com` |
-| `AUTH_GOOGLE_SECRET` | `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` |
+| `AUTH_GOOGLE_SECRET` | Получите значение в Google Cloud Console и сохраните его только как sensitive Environment Variable в Vercel; не добавляйте значение в Git. |
 | `DATABASE_URL` | Ссылка на Supabase (Transaction Pooler, порт 6543) |
 | `DIRECT_URL` | Ссылка на Supabase (Direct Connection, порт 5432) |
 
