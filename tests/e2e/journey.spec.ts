@@ -20,10 +20,11 @@ async function sendChatMessage(page: Page, message: string) {
 }
 
 async function selectMobileSurface(page: Page, name: RegExp) {
+  const isMobile = await page.evaluate(() => window.matchMedia('(max-width: 767px)').matches)
+  if (!isMobile) return
   const tab = page.getByRole('tab', { name }).first()
-  if (await tab.isVisible()) {
-    await tab.click()
-  }
+  await expect(tab).toBeVisible()
+  await tab.click()
 }
 
 async function takeJourneyScreenshot(page: Page, testInfo: TestInfo, stage: string) {
