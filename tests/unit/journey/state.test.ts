@@ -14,6 +14,25 @@ function serialized(value: unknown): string {
 }
 
 describe('journey deterministic demo flow', () => {
+  it('keeps the journey partial when facts are confirmed but Point B is not measurable', () => {
+    const initial = createEmptyWorkspace('journey-draft-goal-test')
+    const described = runLocalTurn(initial, BUSINESS_DESCRIPTION)
+    const draftGoal = {
+      id: 'draft-goal',
+      title: 'Хочу расти',
+      status: 'draft' as const,
+    }
+
+    const confirmed = afterFactsConfirmed({
+      ...described,
+      goals: [draftGoal],
+      facts: described.facts.map((fact) => ({ ...fact, status: 'confirmed' as const })),
+    })
+
+    expect(confirmed.phase).toBe('partial')
+    expect(confirmed.messages.at(-1)?.text).toMatch(/показатель|значени|срок/i)
+  })
+
   it('builds confirmed Point A, a five-store Point B and a domain roadmap without invented data', () => {
     const initial = createEmptyWorkspace('journey-demo-test')
     const described = runLocalTurn(initial, BUSINESS_DESCRIPTION)

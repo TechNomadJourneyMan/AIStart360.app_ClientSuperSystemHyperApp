@@ -139,7 +139,7 @@ test.describe('AI-first workspace journey', () => {
     const pendingFacts = page.getByTestId('pending-fact')
     await expect(pendingFacts.first()).toBeVisible()
 
-    const confirmAll = page.getByRole('button', { name: /подтвердить всё/i })
+    const confirmAll = page.getByRole('button', { name: /всё верно|подтвердить всё/i })
     if (await confirmAll.isVisible()) {
       await confirmAll.click()
     } else {
@@ -205,6 +205,13 @@ test.describe('AI-first workspace journey', () => {
     await expect(page).toHaveURL(/\/journey\/?$/)
     await expect(page.getByTitle(/демо(?:[- ]режим|[- ]логика)/i).first()).toBeVisible()
     await expect(page.getByText(/расскаж|начните|пока нет данных/i).first()).toBeVisible()
+    const firstConversation = page.getByRole('region', { name: 'Путь первого разговора' })
+    await expect(firstConversation).toBeVisible()
+    await expect(firstConversation).toHaveAttribute('data-stage', 'describe')
+    await expect(firstConversation).toContainText(/Бизнес|Точка A|Точка B|Первый шаг/i)
+    if (await page.evaluate(() => window.matchMedia('(max-width: 767px)').matches)) {
+      await expect(page.getByRole('tab', { name: /диалог.*спросить AI/i })).toHaveAttribute('aria-selected', 'true')
+    }
     await takeJourneyScreenshot(page, testInfo, 'empty')
     await expectNoHorizontalViewportOverflow(page)
 
@@ -213,6 +220,7 @@ test.describe('AI-first workspace journey', () => {
 
     const pendingFacts = page.getByTestId('pending-fact')
     await expect(pendingFacts.first()).toBeVisible()
+    await expect(firstConversation).toHaveAttribute('data-stage', 'confirm')
 
     const fileInput = page.getByTestId('journey-file-input')
     await fileInput.setInputFiles({
@@ -234,7 +242,7 @@ test.describe('AI-first workspace journey', () => {
     await expect(fileStatus).toContainText(/готов|обработ|проанализ|локальн/i)
     await expect(fileStatus).not.toContainText(/ошиб/i)
 
-    const confirmAll = page.getByRole('button', { name: /подтвердить всё/i })
+    const confirmAll = page.getByRole('button', { name: /всё верно|подтвердить всё/i })
     if (await confirmAll.isVisible()) {
       await confirmAll.click()
     } else {
@@ -250,6 +258,7 @@ test.describe('AI-first workspace journey', () => {
       }
     }
     await expect(pendingFacts).toHaveCount(0)
+    await expect(firstConversation).toHaveAttribute('data-stage', 'goal')
 
     await selectMobileSurface(page, /диалог|чат/i)
     await sendChatMessage(page, MEASURABLE_GOAL)
@@ -312,10 +321,18 @@ test.describe('AI-first workspace journey', () => {
     let movedPosition: { x: number; y: number } | null = null
     if (testInfo.project.name.includes('mobile')) {
       const sortHandle = widgets.nth(0).getByTestId('widget-sort-handle')
-      await sortHandle.focus()
-      await page.keyboard.press('Space')
-      await page.keyboard.press('ArrowDown')
-      await page.keyboard.press('Space')
+      const nextHandle = widgets.nth(1).getByTestId('widget-sort-handle')
+      const sortable = sortHandle.locator('xpath=ancestor::div[@data-sorting][1]')
+      await sortHandle.scrollIntoViewIfNeeded()
+      const sourceBox = await sortHandle.boundingBox()
+      const targetBox = await nextHandle.boundingBox()
+      if (!sourceBox || !targetBox) throw new Error('Mobile widget sort handles must have bounding boxes')
+      await page.mouse.move(sourceBox.x + sourceBox.width / 2, sourceBox.y + sourceBox.height / 2)
+      await page.mouse.down()
+      await page.mouse.move(targetBox.x + targetBox.width / 2, targetBox.y + targetBox.height / 2, { steps: 8 })
+      await expect(sortable).toHaveAttribute('data-sorting', 'true')
+      await page.mouse.up()
+      await expect(sortable).toHaveAttribute('data-sorting', 'false')
       await expect(widgets.nth(0)).toHaveAttribute('data-widget-id', focusedId)
     } else {
       const movable = page.locator(
@@ -380,6 +397,20 @@ test.describe('AI-first workspace journey', () => {
 
     await page.reload()
     await selectMobileSurface(page, /модули|виджеты/i)
+
+    if (!testInfo.project.name.includes('mobile')) {
+      await page.setViewportSize({ width: 1440, height: 900 })
+      const chatDock = page.getByRole('region', { name: 'AI-диалог о бизнесе' })
+      const expandHistory = chatDock.getByRole('button', { name: 'Раскрыть историю диалога' })
+      if (await expandHistory.isVisible()) await expandHistory.click()
+      await expect(chatDock.getByRole('button', { name: 'Свернуть историю диалога' })).toBeVisible()
+      const dockBox = await chatDock.boundingBox()
+      expect(dockBox).not.toBeNull()
+      if (dockBox) {
+        expect(dockBox.y).toBeGreaterThanOrEqual(0)
+        expect(dockBox.y + dockBox.height).toBeLessThanOrEqual(901)
+      }
+    }
 
     const reloadedCollapsed = page.locator(
       `[data-testid="journey-widget"][data-widget-id="${collapsedId}"]`,

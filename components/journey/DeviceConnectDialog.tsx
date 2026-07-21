@@ -125,7 +125,7 @@ export function DeviceConnectDialog({
                 Подключить устройство
               </Dialog.Title>
               <Dialog.Description id="journey-device-connect-description" className="mt-1 text-xs leading-relaxed text-on-surface-variant">
-                Одноразовый код связывает устройства через сервер. Секрет устройства хранится только в защищённой HttpOnly cookie.
+                Войдите на втором устройстве в тот же аккаунт и используйте одноразовый код. После этого доска будет синхронизироваться через сервер.
               </Dialog.Description>
             </div>
           </div>
@@ -141,7 +141,7 @@ export function DeviceConnectDialog({
           </Dialog.Close>
 
           <p className="mt-4 rounded-xl bg-white/[0.035] px-3 py-2 text-[11px] leading-relaxed text-on-surface-variant">
-            В production сначала войдите в один и тот же аккаунт на обоих устройствах. Код связывает выбранный Journey, но не заменяет вход в аккаунт.
+            Сначала войдите в один и тот же аккаунт на обоих устройствах. Код связывает эту доску, но не заменяет вход в аккаунт.
           </p>
 
           <div className="mt-5 grid grid-cols-2 rounded-xl bg-white/[0.035] p-1" role="tablist" aria-label="Способ подключения">
@@ -159,7 +159,7 @@ export function DeviceConnectDialog({
                 <div className="rounded-2xl border border-tertiary-container/20 bg-tertiary-container/[0.06] p-4">
                   <p className="text-sm font-medium text-on-surface">Серверная синхронизация пока недоступна</p>
                   <p className="mt-1.5 text-xs leading-relaxed text-on-surface-variant">
-                    Сейчас: {persistenceLabel}. Код появится только после подключения базы и серверной миграции — локальную копию мы не выдаём за синхронизацию.
+                    Сейчас: {persistenceLabel}. Код появится после подключения серверного сохранения — локальная доска не может синхронизироваться между устройствами.
                   </p>
                 </div>
               ) : issued ? (
@@ -192,7 +192,7 @@ export function DeviceConnectDialog({
                 <div>
                   <div className="flex items-start gap-3 text-xs leading-relaxed text-on-surface-variant">
                     <ShieldCheck className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden />
-                    Код действует недолго, используется один раз и не раскрывает исходный ключ рабочего пространства.
+                    Код действует недолго, используется один раз и безопасно связывает устройство с этой доской.
                   </div>
                   <button
                     type="button"

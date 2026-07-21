@@ -41,11 +41,11 @@ export function FactReview({
           <div className="flex items-center gap-2">
             <ShieldCheck className="size-4 text-primary" aria-hidden />
             <h2 id="fact-review-title" className="text-sm font-semibold text-on-surface">
-              Проверьте извлечённые факты
+              Вот как AI понял ваш бизнес
             </h2>
           </div>
           <p className="mt-1 text-xs text-pretty text-on-surface-variant">
-            В Точку A попадут только подтверждённые вами данные.
+            Проверьте формулировки. В Точку A попадут только подтверждённые вами данные.
           </p>
         </div>
         {pending.length > 1 && (
@@ -54,7 +54,7 @@ export function FactReview({
             onClick={onConfirmAll}
             className="shrink-0 rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-on-primary hover:bg-primary-container"
           >
-            Подтвердить всё
+            Всё верно
           </button>
         )}
       </div>

@@ -30,6 +30,7 @@ import { reconcileAutosaveResult } from './autosave'
 import { ChatDock } from './ChatDock'
 import { DeviceConnectDialog } from './DeviceConnectDialog'
 import { afterFactsConfirmed, refreshKnowledgeWidget, runLocalTurn } from './demo-machine'
+import { getCurrentConfirmedJourneyGoal, isJourneyConversationFirst } from './JourneyExperience'
 import { JourneyCanvas, JourneyMobileBoard } from './JourneyCanvas'
 import {
   createEmptyWorkspace,
@@ -111,7 +112,7 @@ export function JourneyWorkspace() {
   const [hydrated, setHydrated] = useState(false)
   const [busy, setBusy] = useState(false)
   const [chatExpanded, setChatExpanded] = useState(true)
-  const [mobileView, setMobileView] = useState<MobileView>('board')
+  const [mobileView, setMobileView] = useState<MobileView>('chat')
   const [statusMessage, setStatusMessage] = useState('Подключаем рабочее пространство…')
   const [actionError, setActionError] = useState('')
   const [draftSeed, setDraftSeed] = useState('')
@@ -283,6 +284,8 @@ export function JourneyWorkspace() {
         const chosen = selectJourneyInitialState(local, result.state, allowLocalDemo)
         skipNextPatchRef.current = true
         commit(chosen)
+        setChatExpanded(chosen.phase !== 'ready')
+        setMobileView(chosen.phase === 'ready' ? 'board' : 'chat')
         setStatusMessage(
           chosen.provider.mode === 'live'
             ? 'AI подключён и готов к диалогу'
@@ -302,6 +305,8 @@ export function JourneyWorkspace() {
             ? 'Серверная проверка доступа временно недоступна.'
             : 'Не удалось безопасно подтвердить серверный доступ.'
           commit(createFailClosedWorkspace(nextIdentity.workspaceId, reason))
+          setChatExpanded(true)
+          setMobileView('chat')
           setActionError(`${reason} Ранее сохранённые данные скрыты.`)
           setStatusMessage('Серверный доступ не подтверждён · локальный fallback выключен')
           return
@@ -316,6 +321,8 @@ export function JourneyWorkspace() {
           },
         }
         commit(localOnly)
+        setChatExpanded(localOnly.phase !== 'ready')
+        setMobileView(localOnly.phase === 'ready' ? 'board' : 'chat')
         setStatusMessage('Локальный демо-режим · без внешней AI-модели')
       } finally {
         if (active) setHydrated(true)
@@ -353,6 +360,7 @@ export function JourneyWorkspace() {
     setBusy(true)
     setActionError('')
     setChatExpanded(true)
+    setMobileView('chat')
     await awaitAutosaveIdle()
     const currentIdentity = identityRef.current
     if (!currentIdentity || currentIdentity.workspaceId !== initialIdentity.workspaceId) {
@@ -690,12 +698,20 @@ export function JourneyWorkspace() {
     writeStoredState(result.state)
     setIdentity(linkedIdentity)
     commit(result.state)
+    setChatExpanded(result.state.phase !== 'ready')
     setActionError('')
     setStatusMessage('Устройство подключено · загружена актуальная доска')
     setMobileView('board')
   }
 
   if (!hydrated) return <WorkspaceSkeleton />
+
+  const conversationFirst = isJourneyConversationFirst(state)
+  const focusConversation = conversationFirst || state.phase === 'error'
+  const openBoard = () => {
+    setMobileView('board')
+    setChatExpanded(false)
+  }
 
   const sharedChatProps = {
     state,
@@ -715,6 +731,7 @@ export function JourneyWorkspace() {
     onSuggestionAccept: acceptSuggestion,
     onSuggestionReject: (id: string) => updateSuggestion(id, 'rejected'),
     onSuggestionHide: (id: string) => updateSuggestion(id, 'hidden'),
+    onOpenBoard: openBoard,
   }
 
   return (
@@ -725,7 +742,8 @@ export function JourneyWorkspace() {
         {publicDemo && (
           <div className="z-30 flex shrink-0 items-center justify-center gap-1.5 bg-warning/10 px-3 py-1.5 text-center text-[11px] leading-4 text-warning" role="status">
             <AlertCircle className="size-3.5 shrink-0" aria-hidden />
-            Публичное демо: данные остаются только в этом браузере. Не загружайте конфиденциальную информацию.
+            <span className="sm:hidden">Публичное демо · не вводите конфиденциальные данные</span>
+            <span className="hidden sm:inline">Публичное демо: данные остаются только в этом браузере. Не загружайте конфиденциальную информацию.</span>
           </div>
         )}
 
@@ -747,24 +765,33 @@ export function JourneyWorkspace() {
 
         <main className="relative min-h-0 flex-1">
           {isDesktop ? (
-            <>
-              <JourneyCanvas
-                state={state}
-                onWidgetToggle={toggleWidget}
-                onWidgetFocus={focusWidget}
-                onWidgetHide={hideWidget}
-                onWidgetRestore={restoreWidget}
-                onWidgetMove={moveWidget}
-                onWidgetResetLayout={resetWidgetLayout}
-                onWidgetDiscuss={discussWidget}
-                onSuggestionAccept={acceptSuggestion}
-                onSuggestionReject={(id) => updateSuggestion(id, 'rejected')}
-                onSuggestionHide={(id) => updateSuggestion(id, 'hidden')}
-              />
-              <div className="absolute bottom-4 left-1/2 z-40 -translate-x-1/2">
-                <ChatDock {...sharedChatProps} mode="desktop" />
-              </div>
-            </>
+            focusConversation ? (
+              <>
+                <DiscoveryBackdrop state={state} />
+                <div className="absolute inset-0 z-40 flex items-center justify-center px-4 py-5">
+                  <ChatDock {...sharedChatProps} mode="desktop" />
+                </div>
+              </>
+            ) : (
+              <>
+                <JourneyCanvas
+                  state={state}
+                  onWidgetToggle={toggleWidget}
+                  onWidgetFocus={focusWidget}
+                  onWidgetHide={hideWidget}
+                  onWidgetRestore={restoreWidget}
+                  onWidgetMove={moveWidget}
+                  onWidgetResetLayout={resetWidgetLayout}
+                  onWidgetDiscuss={discussWidget}
+                  onSuggestionAccept={acceptSuggestion}
+                  onSuggestionReject={(id) => updateSuggestion(id, 'rejected')}
+                  onSuggestionHide={(id) => updateSuggestion(id, 'hidden')}
+                />
+                <div className="absolute bottom-4 left-1/2 z-40 -translate-x-1/2">
+                  <ChatDock {...sharedChatProps} mode="desktop" />
+                </div>
+              </>
+            )
           ) : (
             <div className="size-full">
               {mobileView === 'board' && <JourneyMobileBoard state={state} />}
@@ -792,6 +819,57 @@ export function JourneyWorkspace() {
   )
 }
 
+function DiscoveryBackdrop({ state }: { state: JourneyWorkspaceView }) {
+  const confirmedFacts = state.facts.filter((fact) => fact.status === 'confirmed').length
+  const currentGoal = getCurrentConfirmedJourneyGoal(state)
+  const measurableGoal = currentGoal?.metric && currentGoal.target && currentGoal.deadline
+    ? currentGoal
+    : null
+
+  return (
+    <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden>
+      <div
+        className="absolute inset-0 opacity-45"
+        style={{
+          backgroundImage: 'radial-gradient(circle, rgba(255,255,255,0.11) 1px, transparent 1px)',
+          backgroundSize: '28px 28px',
+        }}
+      />
+      <div className="absolute inset-x-[8%] top-[9%] flex items-center justify-between gap-10 opacity-35 blur-[0.25px]">
+        <DiscoveryNode
+          eyebrow="Точка A"
+          title={confirmedFacts ? `${confirmedFacts} подтверждённых фактов` : 'Текущий бизнес'}
+        />
+        <div className="h-px min-w-24 flex-1 bg-gradient-to-r from-primary/15 via-primary/70 to-primary/15" />
+        <DiscoveryNode eyebrow="Путь" title={state.roadmap.length ? `${state.roadmap.length} этапа` : 'Приоритеты и действия'} />
+        <div className="h-px min-w-24 flex-1 bg-gradient-to-r from-primary/15 via-primary/70 to-primary/15" />
+        <DiscoveryNode eyebrow="Точка B" title={measurableGoal?.target ?? 'Измеримая цель'} accent />
+      </div>
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(11,14,17,0.05)_0%,rgba(11,14,17,0.5)_72%)]" />
+    </div>
+  )
+}
+
+function DiscoveryNode({
+  eyebrow,
+  title,
+  accent = false,
+}: {
+  eyebrow: string
+  title: string
+  accent?: boolean
+}) {
+  return (
+    <div className={cn(
+      'w-52 rounded-2xl border bg-surface-container-lowest/90 px-4 py-3 shadow-card',
+      accent ? 'border-primary/40' : 'border-white/10',
+    )}>
+      <p className="text-[10px] text-on-surface-variant">{eyebrow}</p>
+      <p className="mt-1 truncate text-sm font-semibold text-on-surface">{title}</p>
+    </div>
+  )
+}
+
 function WorkspaceHeader({
   state,
   onDeviceConnect,
@@ -815,7 +893,13 @@ function WorkspaceHeader({
       <div className="ml-auto flex min-w-0 items-center gap-1.5 sm:gap-2">
         <StatusBadge
           icon={state.provider.mode === 'live' ? Bot : Sparkles}
-          label={state.provider.label}
+          label={
+            state.provider.mode === 'live'
+              ? 'AI подключён'
+              : state.provider.mode === 'demo'
+                ? 'Демо-режим · локальная логика'
+                : 'AI недоступен'
+          }
           shortLabel={
             state.provider.mode === 'live'
               ? 'AI подключён'
@@ -886,9 +970,14 @@ function MobileNavigation({
   onChange: (value: MobileView) => void
   widgetCount: number
 }) {
-  const items = [
-    { id: 'board' as const, label: 'Доска', icon: MapIcon },
-    { id: 'chat' as const, label: 'Диалог', icon: MessageCircle },
+  const items: Array<{
+    id: MobileView
+    label: string
+    ariaLabel?: string
+    icon: typeof MapIcon
+  }> = [
+    { id: 'board' as const, label: 'Путь', icon: MapIcon },
+    { id: 'chat' as const, label: 'Спросить AI', ariaLabel: 'Диалог · спросить AI', icon: MessageCircle },
     { id: 'modules' as const, label: 'Модули', icon: Layers3 },
   ]
   return (
@@ -902,7 +991,7 @@ function MobileNavigation({
               key={item.id}
               type="button"
               role="tab"
-              aria-label={item.label}
+              aria-label={item.ariaLabel ?? item.label}
               aria-selected={selected}
               onClick={() => onChange(item.id)}
               className={cn(

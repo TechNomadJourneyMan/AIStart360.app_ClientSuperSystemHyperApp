@@ -141,14 +141,21 @@ function Goals({ data }: { data: UnknownRecord }) {
   if (!goals.length) return <EmptyHint>Опишите измеримый результат и срок в диалоге.</EmptyHint>
   return (
     <div className="space-y-3">
-      {goals.slice(0, 4).map((goal, index) => (
+      {[...goals].reverse().slice(0, 4).map((goal, index) => (
         <div key={string(goal.id) ?? index}>
           <p className="text-sm text-pretty text-on-surface">{string(goal.title) ?? 'Цель'}</p>
-          {(string(goal.metric) || string(goal.deadline)) && (
-            <p className="mt-1 text-xs text-primary">
-              {[string(goal.metric), string(goal.deadline)].filter(Boolean).join(' · ')}
-            </p>
-          )}
+          <dl className="mt-2 grid gap-2 text-[11px] sm:grid-cols-3 sm:gap-x-2">
+            {[
+              ['Показатель', scalar(goal.metric) ?? 'Не указан'],
+              ['Цель', scalar(goal.target) ?? 'Не указана'],
+              ['Срок', scalar(goal.deadline) ?? 'Не указан'],
+            ].map(([label, value]) => (
+              <div key={label} className="min-w-0">
+                <dt className="text-on-surface-variant">{label}</dt>
+                <dd className="mt-0.5 break-words font-medium text-primary">{value}</dd>
+              </div>
+            ))}
+          </dl>
         </div>
       ))}
     </div>
@@ -167,6 +174,11 @@ function Roadmap({ data }: { data: UnknownRecord }) {
           </span>
           <div className="min-w-0">
             <p className="truncate text-xs font-medium text-on-surface">{string(item.title) ?? 'Этап'}</p>
+            {string(item.description) && (
+              <p className="mt-0.5 line-clamp-2 text-[11px] text-pretty text-on-surface-variant">
+                {string(item.description)}
+              </p>
+            )}
             <p className="mt-0.5 text-[11px] text-on-surface-variant">
               {string(item.horizon) ?? string(item.period) ?? 'Срок уточняется'}
             </p>

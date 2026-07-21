@@ -16,6 +16,7 @@ import {
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { cn } from '@/lib/utils'
+import { getCurrentConfirmedJourneyGoal } from './JourneyExperience'
 import type {
   JourneyFactView,
   JourneySuggestionView,
@@ -268,6 +269,7 @@ export function JourneyCanvas(props: JourneyCanvasProps) {
 
 export function JourneyMobileBoard({ state }: { state: JourneyWorkspaceView }) {
   const confirmed = state.facts.filter((fact) => fact.status === 'confirmed')
+  const currentGoal = getCurrentConfirmedJourneyGoal(state)
   return (
     <div data-testid="journey-mobile-board" className="h-full space-y-3 overflow-y-auto px-3 pb-28 pt-3 md:hidden">
       <MobilePointCard testId="point-a" eyebrow="Точка A · сейчас" title={state.companyName || 'Ваш бизнес'}>
@@ -283,19 +285,15 @@ export function JourneyMobileBoard({ state }: { state: JourneyWorkspaceView }) {
         {state.roadmap.length ? <RoadmapList items={state.roadmap} /> : <EmptyCopy>Сначала нужна подтверждённая Точка A и измеримая цель.</EmptyCopy>}
       </MobilePointCard>
 
-      <MobilePointCard testId="point-b" eyebrow="Точка B · цель" title={state.goals[0]?.metric || 'Желаемый результат'} accent>
-        {state.goals.length ? (
-          <div className="space-y-2">
-            {state.goals.map((goal) => (
-              <div key={goal.id}>
-                <p className="text-sm font-medium text-on-surface">{goal.title}</p>
-                {(goal.metric || goal.target || goal.deadline) && (
-                  <p className="mt-1 text-xs text-primary tabular-nums">
-                    {[goal.metric, goal.target, goal.deadline].filter(Boolean).join(' · ')}
-                  </p>
-                )}
-              </div>
-            ))}
+      <MobilePointCard testId="point-b" eyebrow="Точка B · цель" title={currentGoal?.metric || 'Желаемый результат'} accent>
+        {currentGoal ? (
+          <div>
+            <p className="text-sm font-medium text-on-surface">{currentGoal.title}</p>
+            {(currentGoal.metric || currentGoal.target || currentGoal.deadline) && (
+              <p className="mt-1 text-xs text-primary tabular-nums">
+                {[currentGoal.metric, currentGoal.target, currentGoal.deadline].filter(Boolean).join(' · ')}
+              </p>
+            )}
           </div>
         ) : (
           <EmptyCopy>Назовите, что должно измениться, до какого значения и к какому сроку.</EmptyCopy>
@@ -346,25 +344,24 @@ function RoadmapSection({ state, onFocus }: { state: JourneyWorkspaceView; onFoc
 }
 
 function PointBSection({ state, onFocus }: { state: JourneyWorkspaceView; onFocus: () => void }) {
+  const currentGoal = getCurrentConfirmedJourneyGoal(state)
   return (
     <section
       data-testid="point-b"
       data-board-interactive
       className="absolute left-[1160px] top-56 w-[360px] rounded-3xl border border-primary/30 bg-surface-container-lowest p-5 shadow-card"
     >
-      <SectionHeader icon={Target} eyebrow="Точка B · цель" title={state.goals[0]?.metric || 'Измеримый результат'} onFocus={onFocus} accent />
+      <SectionHeader icon={Target} eyebrow="Точка B · цель" title={currentGoal?.metric || 'Измеримый результат'} onFocus={onFocus} accent />
       <div className="mt-4 space-y-3">
-        {state.goals.length ? (
-          state.goals.slice(0, 4).map((goal) => (
-            <div key={goal.id} className="border-b border-white/5 pb-3 last:border-0 last:pb-0">
-              <p className="text-sm text-pretty font-medium text-on-surface">{goal.title}</p>
-              {(goal.metric || goal.target || goal.deadline) && (
-                <p className="mt-1.5 text-xs text-primary tabular-nums">
-                  {[goal.metric, goal.target, goal.deadline].filter(Boolean).join(' · ')}
-                </p>
-              )}
-            </div>
-          ))
+        {currentGoal ? (
+          <div className="border-b border-white/5 pb-3 last:border-0 last:pb-0">
+            <p className="text-sm text-pretty font-medium text-on-surface">{currentGoal.title}</p>
+            {(currentGoal.metric || currentGoal.target || currentGoal.deadline) && (
+              <p className="mt-1.5 text-xs text-primary tabular-nums">
+                {[currentGoal.metric, currentGoal.target, currentGoal.deadline].filter(Boolean).join(' · ')}
+              </p>
+            )}
+          </div>
         ) : (
           <EmptyCopy>Опишите желаемый результат, значение метрики и срок.</EmptyCopy>
         )}

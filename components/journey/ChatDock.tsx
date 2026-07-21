@@ -16,6 +16,11 @@ import {
 import { useEffect, useRef, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { FactReview } from './FactReview'
+import {
+  getJourneyExperienceStage,
+  isJourneyConversationFirst,
+  JourneyExperience,
+} from './JourneyExperience'
 import type { JourneySuggestionView, JourneyWorkspaceView } from './model'
 import { SuggestionPills } from './SuggestionPills'
 
@@ -38,6 +43,7 @@ interface ChatDockProps {
   onSuggestionAccept: (suggestion: JourneySuggestionView) => void
   onSuggestionReject: (id: string) => void
   onSuggestionHide: (id: string) => void
+  onOpenBoard?: () => void
 }
 
 export function ChatDock({
@@ -59,6 +65,7 @@ export function ChatDock({
   onSuggestionAccept,
   onSuggestionReject,
   onSuggestionHide,
+  onOpenBoard,
 }: ChatDockProps) {
   const reduceMotion = useReducedMotion()
   const [draft, setDraft] = useState('')
@@ -93,39 +100,67 @@ export function ChatDock({
     onFiles(files)
   }
 
-  const showHistory = mode === 'mobile' || expanded
+  const experienceStage = getJourneyExperienceStage(state)
+  const conversationFirst = isJourneyConversationFirst(state)
+  const showHistory = mode === 'mobile' || expanded || conversationFirst
+  const placeholder = experienceStage === 'describe'
+    ? 'Например: у меня магазин в Алматы, продаём…'
+    : experienceStage === 'confirm'
+      ? 'Добавьте важный контекст или исправьте факты выше…'
+      : experienceStage === 'goal'
+        ? 'Например: хочу открыть 5 точек за 12 месяцев…'
+        : 'Спросите AI о следующем шаге…'
+  const compactPlaceholder = experienceStage === 'describe'
+    ? 'Опишите бизнес своими словами…'
+    : experienceStage === 'confirm'
+      ? 'Добавьте или исправьте контекст…'
+      : experienceStage === 'goal'
+        ? 'Опишите цель, значение и срок…'
+        : 'Спросите о следующем шаге…'
+  const providerLabel = state.provider.mode === 'live'
+    ? 'AI подключён'
+    : state.provider.mode === 'demo'
+      ? mode === 'mobile' ? 'Демо' : 'Демо-режим'
+      : mode === 'mobile' ? 'Недоступен' : 'AI недоступен'
 
   return (
     <section
       aria-label="AI-диалог о бизнесе"
+      data-conversation-first={conversationFirst ? 'true' : 'false'}
       className={cn(
         'flex min-h-0 flex-col overflow-hidden border border-white/10 bg-surface-container-lowest shadow-modal',
         mode === 'desktop'
-          ? 'w-[min(760px,calc(100vw-2rem))] rounded-2xl'
-          : 'size-full border-0 bg-background',
+          ? cn(
+              'w-[min(760px,calc(100vw-2rem))] rounded-2xl',
+              showHistory ? 'h-[min(780px,calc(100dvh-5rem))]' : 'max-h-[calc(100dvh-5rem)]',
+            )
+          : 'size-full border-0 bg-background pb-[calc(4.5rem+env(safe-area-inset-bottom))]',
       )}
     >
-      <header className="flex min-h-12 items-center gap-3 border-b border-white/5 px-3 sm:px-4">
+      <header className="flex min-h-12 shrink-0 items-center gap-3 border-b border-white/5 px-3 sm:px-4">
         <div className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
           <Bot className="size-4" aria-hidden />
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <h2 className="truncate text-xs font-semibold text-on-surface">AI-партнёр по развитию</h2>
-            <span className={cn(
-              'rounded-full px-2 py-0.5 text-[10px]',
-              state.provider.mode === 'live'
-                ? 'bg-primary/10 text-primary'
-                : state.provider.mode === 'demo'
-                  ? 'bg-tertiary-container/10 text-tertiary-container'
-                  : 'bg-error/10 text-error',
-            )}>
-              {state.provider.label}
+            <span
+              title={providerLabel}
+              className={cn(
+                'max-w-48 truncate rounded-full px-2 py-0.5 text-[10px]',
+                state.provider.mode === 'live'
+                  ? 'bg-primary/10 text-primary'
+                  : state.provider.mode === 'demo'
+                    ? 'bg-tertiary-container/10 text-tertiary-container'
+                    : 'bg-error/10 text-error',
+              )}
+            >
+              {providerLabel}
             </span>
           </div>
           <p className="truncate text-[10px] text-on-surface-variant">Один вопрос за раз · факты подтверждаете вы</p>
         </div>
-        {mode === 'desktop' && (
+        {mode === 'desktop' && !conversationFirst && (
           <button
             type="button"
             aria-label={expanded ? 'Свернуть историю диалога' : 'Раскрыть историю диалога'}
@@ -147,10 +182,18 @@ export function ChatDock({
             animate={{ opacity: 1, y: 0 }}
             exit={mode === 'desktop' && !reduceMotion ? { opacity: 0, y: 8 } : undefined}
             transition={{ duration: reduceMotion ? 0 : 0.16, ease: 'easeOut' }}
-            className={cn('min-h-0 flex-1', mode === 'desktop' ? 'h-[min(54vh,540px)]' : '')}
+            className="min-h-0 flex-1"
           >
             <div ref={historyRef} className="h-full overflow-y-auto px-3 py-4 sm:px-4" aria-label="История сообщений">
               <div className="space-y-4">
+                {state.phase !== 'error' && (
+                  <JourneyExperience
+                    state={state}
+                    onDraftRequest={setDraft}
+                    onOpenBoard={experienceStage === 'ready' ? onOpenBoard : undefined}
+                  />
+                )}
+
                 {state.messages.map((message) => (
                   <div key={message.id} className={cn('flex', message.role === 'user' ? 'justify-end' : 'justify-start')}>
                     <div className={cn(
@@ -177,7 +220,7 @@ export function ChatDock({
                   onRestore={onFactRestore}
                 />
 
-                {mode === 'mobile' && (
+                {(mode === 'mobile' || conversationFirst) && (
                   <SuggestionPills
                     suggestions={state.suggestions}
                     onAccept={onSuggestionAccept}
@@ -191,7 +234,7 @@ export function ChatDock({
         )}
       </AnimatePresence>
 
-      <div className="border-t border-white/5 p-2.5 sm:p-3">
+      <div className="shrink-0 border-t border-white/5 p-2.5 sm:p-3">
         <div className="flex items-end gap-1.5 rounded-xl border border-white/10 bg-surface-container px-1.5 py-1.5 focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/10">
           <input
             ref={fileInputRef}
@@ -223,7 +266,7 @@ export function ChatDock({
             }}
             rows={1}
             maxLength={4000}
-            placeholder="Расскажите о бизнесе или задайте цель…"
+            placeholder={mode === 'mobile' ? compactPlaceholder : placeholder}
             className="max-h-28 min-h-10 min-w-0 flex-1 resize-none border-0 bg-transparent px-1 py-2 text-sm text-on-surface placeholder:text-on-surface-variant/60 focus:ring-0"
           />
           <button
@@ -246,7 +289,9 @@ export function ChatDock({
         </div>
         <p className="mt-1.5 flex items-start gap-1.5 px-1 text-[10px] leading-relaxed text-on-surface-variant/80">
           <ShieldCheck className="mt-0.5 size-3 shrink-0 text-primary" aria-hidden />
-          Файл обрабатывается на сервере; AI увидит только факты после вашего подтверждения.
+          {state.persistence.mode === 'database'
+            ? 'Файл обрабатывается на сервере; в Точку A попадут только подтверждённые вами факты.'
+            : 'В демо файл анализируется только доступным обработчиком; неподтверждённые данные не попадут в Точку A.'}
         </p>
 
         {(actionError || fileError) && (

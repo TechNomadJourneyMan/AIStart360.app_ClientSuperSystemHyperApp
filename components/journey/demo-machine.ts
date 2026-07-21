@@ -237,13 +237,17 @@ export function runLocalTurn(
 export function afterFactsConfirmed(current: JourneyWorkspaceView): JourneyWorkspaceView {
   const now = new Date().toISOString()
   const confirmed = current.facts.filter((fact) => fact.status === 'confirmed')
+  const hasMeasurableGoal = current.goals.some((goal) => (
+    goal.status === 'confirmed' && goal.metric && goal.target && goal.deadline
+  ))
+  const ready = hasMeasurableGoal && current.roadmap.length > 0
   const passport = widget('business_passport', 'Паспорт бизнеса', 100, 170, 620, {
     facts: confirmed,
   })
   return {
     ...current,
-    phase: current.goals.length ? 'ready' : 'partial',
-    messages: current.goals.length
+    phase: ready ? 'ready' : 'partial',
+    messages: ready
       ? current.messages
       : [
           ...current.messages,
@@ -264,7 +268,7 @@ export function afterFactsConfirmed(current: JourneyWorkspaceView): JourneyWorks
         current.widgets,
       ),
     ),
-    suggestions: current.goals.length
+    suggestions: ready
       ? current.suggestions
       : [
           {
