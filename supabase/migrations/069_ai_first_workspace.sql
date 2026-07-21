@@ -1,4 +1,4 @@
--- 063_ai_first_workspace.sql
+-- 069_ai_first_workspace.sql
 -- Isolated AI-first A -> B workspace. Guest previews authenticate with a
 -- high-entropy token that is hashed server-side; only the service role can
 -- access these tables. No anon/authenticated RLS policy is intentionally added.

@@ -21,4 +21,4 @@
 
 Экспериментальная AI-first рабочая область доступна по `/journey` и
 `/client/journey`. Для устойчивого хранения и синхронизации устройств примените
-миграции `063_ai_first_workspace.sql` и `064_ai_journey_device_sync.sql`.
+миграции `069_ai_first_workspace.sql` и `070_ai_journey_device_sync.sql`.

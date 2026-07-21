@@ -416,7 +416,7 @@ test.describe('AI-first workspace journey', () => {
 test.describe('Journey real cross-device sync', () => {
   test.skip(
     process.env.JOURNEY_SYNC_E2E !== '1',
-    'Requires a test Supabase project with Journey migrations 063/064.',
+    'Requires a test Supabase project with Journey migrations 069/070.',
   )
 
   test('links two isolated browser contexts without sharing localStorage', async ({ browser }) => {

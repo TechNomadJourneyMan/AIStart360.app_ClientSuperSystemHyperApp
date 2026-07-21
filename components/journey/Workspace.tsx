@@ -47,6 +47,11 @@ import {
   type JourneyWorkspaceView,
 } from './model'
 import { ModulesPanel } from './ModulesPanel'
+import {
+  allowsJourneyLocalDemo,
+  isJourneyPublicDemo,
+  selectJourneyInitialState,
+} from './runtime'
 import { preserveUserWidgetState } from './widget-state'
 
 type MobileView = 'board' | 'chat' | 'modules'
@@ -97,6 +102,7 @@ export async function waitForSerializedAutosaveIdle(
 }
 
 export function JourneyWorkspace() {
+  const publicDemo = isJourneyPublicDemo()
   const [identity, setIdentity] = useState<JourneyIdentity | null>(null)
   const [state, setState] = useState<JourneyWorkspaceView>(() => ({
     ...createEmptyWorkspace('guest-loading'),
@@ -243,7 +249,7 @@ export function JourneyWorkspace() {
       writeStoredIdentity(nextIdentity)
 
       const local = readStoredState(nextIdentity.workspaceId) ?? createEmptyWorkspace(nextIdentity.workspaceId)
-      const allowLocalDemo = process.env.NODE_ENV !== 'production'
+      const allowLocalDemo = allowsJourneyLocalDemo()
       const safeEmpty: JourneyWorkspaceView = {
         ...createEmptyWorkspace(nextIdentity.workspaceId),
         phase: 'loading',
@@ -274,11 +280,7 @@ export function JourneyWorkspace() {
         accessVerifiedRef.current = result.state.persistence.mode === 'database'
         // With no DB configured the GET endpoint returns an honest empty/local
         // envelope. It must never outrank richer browser state on reload.
-        const chosen = allowLocalDemo && result.state.workspaceId === local.workspaceId
-          ? result.state.persistence.mode === 'local'
-            ? local
-            : newerState(local, result.state)
-          : result.state
+        const chosen = selectJourneyInitialState(local, result.state, allowLocalDemo)
         skipNextPatchRef.current = true
         commit(chosen)
         setStatusMessage(
@@ -720,6 +722,13 @@ export function JourneyWorkspace() {
       <div className="relative flex h-dvh min-h-[520px] flex-col overflow-hidden bg-background text-on-surface">
         <WorkspaceHeader state={state} onDeviceConnect={() => setDeviceDialogOpen(true)} />
 
+        {publicDemo && (
+          <div className="z-30 flex shrink-0 items-center justify-center gap-1.5 bg-warning/10 px-3 py-1.5 text-center text-[11px] leading-4 text-warning" role="status">
+            <AlertCircle className="size-3.5 shrink-0" aria-hidden />
+            Публичное демо: данные остаются только в этом браузере. Не загружайте конфиденциальную информацию.
+          </div>
+        )}
+
         <DeviceConnectDialog
           open={deviceDialogOpen}
           onOpenChange={setDeviceDialogOpen}
@@ -1046,15 +1055,6 @@ function isAuthorizationError(error: unknown): boolean {
 
 function isConflictError(error: unknown): boolean {
   return error instanceof JourneyRequestError && error.status === 409
-}
-
-function newerState(local: JourneyWorkspaceView, remote: JourneyWorkspaceView): JourneyWorkspaceView {
-  const localRevision = local.serverRevision ?? 0
-  const remoteRevision = remote.serverRevision ?? 0
-  if (remoteRevision !== localRevision) return remoteRevision > localRevision ? remote : local
-  const localTime = Date.parse(local.updatedAt)
-  const remoteTime = Date.parse(remote.updatedAt)
-  return Number.isFinite(localTime) && localTime > remoteTime ? local : remote
 }
 
 function patchWidget(

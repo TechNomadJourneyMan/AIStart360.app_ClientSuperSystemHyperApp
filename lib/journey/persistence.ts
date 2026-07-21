@@ -164,7 +164,7 @@ export async function loadJourneyState(
     console.warn('[journey:persistence] load failed; using client-local state', error)
     return {
       state: null,
-      persistence: localPersistence('Схема БД недоступна или миграции Journey 063/064 ещё не применены.'),
+      persistence: localPersistence('Схема БД недоступна или миграции Journey 069/070 ещё не применены.'),
     }
   }
 }
@@ -224,7 +224,7 @@ export async function saveJourneyState(
       error instanceof JourneyPersistenceUnavailableError
     ) throw error
     console.warn('[journey:persistence] save failed; using client-local state', error)
-    const persistence = localPersistence('База недоступна или миграции Journey 063/064 не применены; сохранено локально.')
+    const persistence = localPersistence('База недоступна или миграции Journey 069/070 не применены; сохранено локально.')
     return { state: withPersistence(state, persistence), persistence }
   }
 }

@@ -1,4 +1,5 @@
 .agents
 .claude
 tests
+artifacts
 *.md
