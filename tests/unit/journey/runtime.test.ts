@@ -4,6 +4,7 @@ import {
   allowsJourneyLocalDemo,
   selectJourneyInitialState,
 } from '@/components/journey/runtime'
+import { isJourneyPublicDemoEnabled } from '@/lib/journey/public-demo'
 
 describe('Journey runtime mode', () => {
   it('keeps canonical production fail-closed by default', () => {
@@ -12,6 +13,7 @@ describe('Journey runtime mode', () => {
 
   it('allows an explicitly configured public demo deployment', () => {
     expect(allowsJourneyLocalDemo('production', '1')).toBe(true)
+    expect(isJourneyPublicDemoEnabled('1')).toBe(true)
   })
 
   it('keeps local development fallback available', () => {

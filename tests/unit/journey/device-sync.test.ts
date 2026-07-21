@@ -223,6 +223,20 @@ describe('Journey cross-device sync', () => {
     })
   })
 
+  it('keeps anonymous production access behind the explicit public demo flag', () => {
+    const http = readFileSync(
+      new URL('../../../lib/journey/http.ts', import.meta.url),
+      'utf8',
+    )
+    const middleware = readFileSync(
+      new URL('../../../middleware.ts', import.meta.url),
+      'utf8',
+    )
+
+    expect(http).toContain('isJourneyPublicDemoEnabled()')
+    expect(middleware).toContain('isJourneyPublicDemoEnabled()')
+  })
+
   it('keeps production redeem behind login, same-account SQL, and a strict API-scoped cookie', () => {
     const redeemRoute = readFileSync(
       new URL('../../../app/api/v1/journey/connect/redeem/route.ts', import.meta.url),

@@ -1,4 +1,5 @@
 import type { JourneyWorkspaceView } from './model'
+import { isJourneyPublicDemoEnabled } from '@/lib/journey/public-demo'
 
 /**
  * Browser-local Journey state is intentionally disabled in production unless
@@ -9,13 +10,13 @@ export function allowsJourneyLocalDemo(
   nodeEnv = process.env.NODE_ENV,
   publicDemo = process.env.NEXT_PUBLIC_JOURNEY_PUBLIC_DEMO,
 ): boolean {
-  return nodeEnv !== 'production' || isJourneyPublicDemo(publicDemo)
+  return nodeEnv !== 'production' || isJourneyPublicDemoEnabled(publicDemo)
 }
 
 export function isJourneyPublicDemo(
   publicDemo = process.env.NEXT_PUBLIC_JOURNEY_PUBLIC_DEMO,
 ): boolean {
-  return publicDemo === '1'
+  return isJourneyPublicDemoEnabled(publicDemo)
 }
 
 /** Keep rich browser-local demo content while treating provider and

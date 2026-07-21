@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { ZodError } from 'zod'
 import { createClient } from '@/lib/supabase/server'
 import { journeyIdentitySchema, type JourneyIdentity } from './schema'
+import { isJourneyPublicDemoEnabled } from './public-demo'
 import {
   JourneyAccessError,
   JourneyConflictError,
@@ -29,7 +30,11 @@ export async function resolveJourneyActor(): Promise<string | null> {
     const { data: { user }, error } = await supabase.auth.getUser()
     if (!error && user) return user.id
   }
-  if (process.env.NODE_ENV !== 'production' || process.env.VERCEL_ENV === 'preview') return null
+  if (
+    process.env.NODE_ENV !== 'production' ||
+    process.env.VERCEL_ENV === 'preview' ||
+    isJourneyPublicDemoEnabled()
+  ) return null
   throw new JourneyAuthenticationError()
 }
 
