@@ -123,6 +123,93 @@ async function waitForWidgetLayout(
 }
 
 test.describe('AI-first workspace journey', () => {
+  test('direct HONOR demo link loads an isolated commerce journey without invented KPIs', async ({
+    page,
+  }) => {
+    const pageErrors: string[] = []
+    const journeyApiRequests: string[] = []
+    page.on('pageerror', (error) => pageErrors.push(error.message))
+    page.on('request', (request) => {
+      const url = new URL(request.url())
+      if (url.pathname.startsWith('/api/v1/journey')) journeyApiRequests.push(url.pathname)
+    })
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+
+    // Install this before the first Journey document so the direct link keeps
+    // its query string while starting from an empty browser store.
+    await page.addInitScript(() => window.localStorage.clear())
+    await page.goto('/journey?demo=honor')
+    await expect(page).toHaveURL(/\/journey\/?\?demo=honor$/)
+
+    const workspace = page.locator('[data-demo-scenario="honor"]')
+    await expect(workspace).toBeVisible()
+    await expect(page.getByTestId('demo-project-banner')).toBeVisible()
+    await expect(page.getByTestId('demo-project-banner')).toContainText(/HONOR/i)
+    await expect(page.getByRole('button', { name: 'Подключить другое устройство' })).toHaveCount(0)
+
+    const pointA = page.getByTestId('point-a')
+    const pointB = page.getByTestId('point-b')
+    const roadmap = page.getByTestId('journey-roadmap')
+    await expect(pointA).toBeVisible()
+    await expect(pointA).toContainText(/HONOR/i)
+    await expect(pointA).toContainText(/интернет-магазин|outdoor/i)
+    await expect(pointB).toBeVisible()
+    await expect(pointB).toContainText(/50\s*млн\s*₸/i)
+    await expect(pointB).toContainText(/6\s*месяц/i)
+    await expect(roadmap).toBeVisible()
+    await expect(roadmap).toContainText(/ассортимент|заказ|доставк|продаж/i)
+
+    await selectMobileSurface(page, /модули|виджеты/i)
+    const domainMetrics = page.locator(
+      '[data-testid="journey-widget"][data-widget-kind="domain_metrics"]',
+    )
+    const domainProcess = page.locator(
+      '[data-testid="journey-widget"][data-widget-kind="domain_process"]',
+    )
+    await expect(domainMetrics).toBeVisible()
+    await expect(domainMetrics).toContainText(/продажи.*ассортимент.*наличие/i)
+    await expect(domainMetrics).toContainText(/нужно уточнить/i)
+    await expect(domainMetrics).not.toContainText(/50\s*млн/i)
+    if ((await domainProcess.count()) === 0) {
+      await (await openDesktopModuleDock(page))
+        .getByRole('button', { name: /Путь заказа и повторной покупки/i })
+        .click()
+    }
+    const expandProcess = domainProcess.getByRole('button', { name: /^Развернуть модуль:/ }).first()
+    if (await expandProcess.isVisible()) await expandProcess.click()
+    await expect(domainProcess).toContainText(/Заказ/i)
+    await expect(domainProcess).toContainText(/Наличие и резерв/i)
+    await expect(domainProcess).toContainText(/Доставка и возврат/i)
+
+    const demoIdentity = await page.evaluate(() => {
+      const serialized = window.localStorage.getItem('aistart360:journey:demo:identity:v1:honor')
+      return serialized ? JSON.parse(serialized) as { workspaceId?: string; accessToken?: string } : null
+    })
+    expect(demoIdentity).toBeTruthy()
+    expect(demoIdentity?.workspaceId).toMatch(/^demo-honor-/)
+    expect(demoIdentity?.accessToken).toBeUndefined()
+    expect(journeyApiRequests).toEqual([])
+    await expectNoHorizontalViewportOverflow(page)
+    expect(pageErrors).toEqual([])
+
+    // A page-scoped init script above must not leak into a normal route visit.
+    // The standard Journey identity is deliberately distinct from the demo one.
+    const normalPage = await page.context().newPage()
+    try {
+      await normalPage.goto('/journey')
+      await expect(normalPage.locator('[data-demo-scenario="honor"]')).toHaveCount(0)
+      await expect(normalPage.getByTestId('demo-project-banner')).toHaveCount(0)
+      await expect(normalPage.getByRole('region', { name: 'Путь первого разговора' })).toBeVisible()
+      const normalIdentity = await normalPage.evaluate(() =>
+        window.localStorage.getItem('aistart360:journey:identity:v1'),
+      )
+      expect(normalIdentity).toBeTruthy()
+      expect(normalIdentity).not.toBe(JSON.stringify(demoIdentity))
+    } finally {
+      await normalPage.close()
+    }
+  })
+
   test('Honor commerce reaches a safe revenue journey without invented metrics', async ({
     page,
   }, testInfo) => {

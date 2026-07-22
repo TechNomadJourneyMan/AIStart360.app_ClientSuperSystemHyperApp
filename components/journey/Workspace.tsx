@@ -30,6 +30,11 @@ import { reconcileAutosaveResult } from './autosave'
 import { ChatDock } from './ChatDock'
 import { DeviceConnectDialog } from './DeviceConnectDialog'
 import { afterFactsConfirmed, refreshKnowledgeWidget, runLocalTurn } from './demo-machine'
+import {
+  createJourneyDemoScenarioState,
+  journeyDemoIdentityStorageKey,
+  type JourneyDemoScenario,
+} from './demo-scenarios'
 import { getCurrentConfirmedJourneyGoal, isJourneyConversationFirst } from './JourneyExperience'
 import { JourneyCanvas, JourneyMobileBoard } from './JourneyCanvas'
 import {
@@ -102,8 +107,17 @@ export async function waitForSerializedAutosaveIdle(
   }
 }
 
-export function JourneyWorkspace() {
+export function JourneyWorkspace({
+  initialDemoScenario,
+}: {
+  initialDemoScenario?: JourneyDemoScenario
+} = {}) {
   const publicDemo = isJourneyPublicDemo()
+  const demoScenario = allowsJourneyLocalDemo() ? initialDemoScenario : undefined
+  const scenarioLocalDemo = Boolean(demoScenario)
+  const identityStorageKey = demoScenario
+    ? journeyDemoIdentityStorageKey(demoScenario)
+    : LOCAL_IDENTITY_KEY
   const [identity, setIdentity] = useState<JourneyIdentity | null>(null)
   const [state, setState] = useState<JourneyWorkspaceView>(() => ({
     ...createEmptyWorkspace('guest-loading'),
@@ -134,7 +148,7 @@ export function JourneyWorkspace() {
 
   const invalidateJourneyAccess = useCallback((message = 'Доступ к рабочему пространству истёк или был отозван.') => {
     const current = identityRef.current
-    if (current) clearJourneyCache(current.workspaceId)
+    if (current) clearJourneyCache(current.workspaceId, identityStorageKey)
     pendingAutosaveRef.current = null
     identityRef.current = null
     serverAvailableRef.current = false
@@ -162,7 +176,7 @@ export function JourneyWorkspace() {
     commit(inaccessible)
     setActionError(message)
     setStatusMessage('Подключите устройство повторно · локальный fallback не включён')
-  }, [commit])
+  }, [commit, identityStorageKey])
 
   const reloadRemoteAfterConflict = useCallback(async (
     currentIdentity: JourneyIdentity,
@@ -243,14 +257,25 @@ export function JourneyWorkspace() {
     let active = true
 
     const initialize = async () => {
-      const storedIdentity = readStoredIdentity()
-      const nextIdentity = storedIdentity ?? createIdentity()
+      const storedIdentity = readStoredIdentity(identityStorageKey)
+      const generatedIdentity = createIdentity()
+      const nextIdentity: JourneyIdentity = demoScenario
+        ? {
+            workspaceId: storedIdentity?.workspaceId
+              ?? `demo-${demoScenario}-${generatedIdentity.workspaceId}`,
+          }
+        : storedIdentity ?? generatedIdentity
       identityRef.current = nextIdentity
       setIdentity(nextIdentity)
-      writeStoredIdentity(nextIdentity)
+      writeStoredIdentity(nextIdentity, identityStorageKey)
 
-      const local = readStoredState(nextIdentity.workspaceId) ?? createEmptyWorkspace(nextIdentity.workspaceId)
       const allowLocalDemo = allowsJourneyLocalDemo()
+      const storedState = readStoredState(nextIdentity.workspaceId)
+      const local = storedState ?? (
+        demoScenario
+          ? createJourneyDemoScenarioState(demoScenario, nextIdentity.workspaceId)
+          : createEmptyWorkspace(nextIdentity.workspaceId)
+      )
       const safeEmpty: JourneyWorkspaceView = {
         ...createEmptyWorkspace(nextIdentity.workspaceId),
         phase: 'loading',
@@ -262,6 +287,21 @@ export function JourneyWorkspace() {
           ? 'Локальное состояние восстановлено'
           : 'Проверяем серверный доступ к рабочему пространству…',
       )
+
+      // A shareable scenario is a deliberately browser-local presentation.
+      // Never resolve it against an authenticated canonical workspace: a
+      // signed-in visitor must not replace the demo with private account data,
+      // and the demo must not write into that account through autosave.
+      if (demoScenario) {
+        serverAvailableRef.current = false
+        accessVerifiedRef.current = false
+        commit(local)
+        setChatExpanded(false)
+        setMobileView('board')
+        setStatusMessage('Демо-проект HONOR загружен · неизвестные показатели нужно подтвердить')
+        setHydrated(true)
+        return
+      }
 
       try {
         const result = await getJourney(nextIdentity, allowLocalDemo ? local : safeEmpty)
@@ -275,7 +315,7 @@ export function JourneyWorkspace() {
         if (resolvedIdentity.workspaceId !== nextIdentity.workspaceId) {
           identityRef.current = resolvedIdentity
           setIdentity(resolvedIdentity)
-          writeStoredIdentity(resolvedIdentity)
+          writeStoredIdentity(resolvedIdentity, identityStorageKey)
         }
         serverAvailableRef.current = true
         accessVerifiedRef.current = result.state.persistence.mode === 'database'
@@ -287,7 +327,9 @@ export function JourneyWorkspace() {
         setChatExpanded(chosen.phase !== 'ready')
         setMobileView(chosen.phase === 'ready' ? 'board' : 'chat')
         setStatusMessage(
-          chosen.provider.mode === 'live'
+          demoScenario
+            ? 'Демо-проект HONOR загружен · неизвестные показатели нужно подтвердить'
+            : chosen.provider.mode === 'live'
             ? 'AI подключён и готов к диалогу'
             : 'Демо-режим: ответы помечаются явно',
         )
@@ -333,7 +375,7 @@ export function JourneyWorkspace() {
     return () => {
       active = false
     }
-  }, [commit, invalidateJourneyAccess])
+  }, [commit, demoScenario, identityStorageKey, invalidateJourneyAccess])
 
   useEffect(() => {
     if (!hydrated || !identity || busy) return
@@ -388,7 +430,7 @@ export function JourneyWorkspace() {
         invalidateJourneyAccess()
         return
       }
-      if (process.env.NODE_ENV === 'production' && !accessVerifiedRef.current) {
+      if (process.env.NODE_ENV === 'production' && !accessVerifiedRef.current && !scenarioLocalDemo) {
         setActionError('Серверный доступ не подтверждён. Демо-fallback не может открыть или изменить данные этого Journey.')
         setStatusMessage('Сначала восстановите безопасное серверное подключение')
         return
@@ -472,7 +514,7 @@ export function JourneyWorkspace() {
           invalidateJourneyAccess()
           break
         }
-        if (process.env.NODE_ENV === 'production' && !accessVerifiedRef.current) {
+        if (process.env.NODE_ENV === 'production' && !accessVerifiedRef.current && !scenarioLocalDemo) {
           setActionError('Серверный доступ не подтверждён. Файл не сохранён и не анализировался.')
           setStatusMessage('Сначала восстановите безопасное серверное подключение')
           break
@@ -670,6 +712,9 @@ export function JourneyWorkspace() {
   }
 
   const createDeviceCode = async () => {
+    if (demoScenario) {
+      throw new JourneyRequestError('Подключение устройств отключено в демонстрационном проекте.', 403)
+    }
     const currentIdentity = identityRef.current
     if (!currentIdentity) {
       throw new JourneyRequestError('Сначала восстановите доступ к рабочему пространству.', 401)
@@ -683,18 +728,21 @@ export function JourneyWorkspace() {
   }
 
   const redeemDeviceCode = async (code: string, deviceLabel: string) => {
+    if (demoScenario) {
+      throw new JourneyRequestError('Подключение устройств отключено в демонстрационном проекте.', 403)
+    }
     const previousWorkspaceId = identityRef.current?.workspaceId
     const result = await redeemJourneyConnectCode(code, deviceLabel, stateRef.current)
     const linkedIdentity: JourneyIdentity = { workspaceId: result.workspaceId }
     pendingAutosaveRef.current = null
     if (previousWorkspaceId && previousWorkspaceId !== result.workspaceId) {
-      clearJourneyCache(previousWorkspaceId)
+      clearJourneyCache(previousWorkspaceId, identityStorageKey)
     }
     identityRef.current = linkedIdentity
     serverAvailableRef.current = true
     accessVerifiedRef.current = true
     skipNextPatchRef.current = true
-    writeStoredIdentity(linkedIdentity)
+    writeStoredIdentity(linkedIdentity, identityStorageKey)
     writeStoredState(result.state)
     setIdentity(linkedIdentity)
     commit(result.state)
@@ -736,25 +784,46 @@ export function JourneyWorkspace() {
 
   return (
     <Tooltip.Provider>
-      <div className="relative flex h-dvh min-h-[520px] flex-col overflow-hidden bg-background text-on-surface">
-        <WorkspaceHeader state={state} onDeviceConnect={() => setDeviceDialogOpen(true)} />
+      <div
+        className="relative flex h-dvh min-h-[520px] flex-col overflow-hidden bg-background text-on-surface"
+        data-demo-scenario={demoScenario}
+      >
+        <WorkspaceHeader
+          state={state}
+          onDeviceConnect={demoScenario ? undefined : () => setDeviceDialogOpen(true)}
+        />
 
-        {publicDemo && (
-          <div className="z-30 flex shrink-0 items-center justify-center gap-1.5 bg-warning/10 px-3 py-1.5 text-center text-[11px] leading-4 text-warning" role="status">
+        {(publicDemo || demoScenario) && (
+          <div
+            className="z-30 flex shrink-0 items-center justify-center gap-1.5 bg-warning/10 px-3 py-1.5 text-center text-[11px] leading-4 text-warning"
+            data-testid={demoScenario ? 'demo-project-banner' : undefined}
+            role="status"
+          >
             <AlertCircle className="size-3.5 shrink-0" aria-hidden />
-            <span className="sm:hidden">Публичное демо · не вводите конфиденциальные данные</span>
-            <span className="hidden sm:inline">Публичное демо: данные остаются только в этом браузере. Не загружайте конфиденциальную информацию.</span>
+            {demoScenario ? (
+              <>
+                <span className="sm:hidden">HONOR · демо-проект, не реальные показатели</span>
+                <span className="hidden sm:inline">HONOR · демонстрационный проект интернет-магазина. Неизвестные показатели не выдуманы; данные остаются в этом браузере.</span>
+              </>
+            ) : (
+              <>
+                <span className="sm:hidden">Публичное демо · не вводите конфиденциальные данные</span>
+                <span className="hidden sm:inline">Публичное демо: данные остаются только в этом браузере. Не загружайте конфиденциальную информацию.</span>
+              </>
+            )}
           </div>
         )}
 
-        <DeviceConnectDialog
-          open={deviceDialogOpen}
-          onOpenChange={setDeviceDialogOpen}
-          canCreateCode={Boolean(identity && state.persistence.mode === 'database')}
-          persistenceLabel={state.persistence.label}
-          onCreateCode={createDeviceCode}
-          onRedeemCode={redeemDeviceCode}
-        />
+        {!demoScenario && (
+          <DeviceConnectDialog
+            open={deviceDialogOpen}
+            onOpenChange={setDeviceDialogOpen}
+            canCreateCode={Boolean(identity && state.persistence.mode === 'database')}
+            persistenceLabel={state.persistence.label}
+            onCreateCode={createDeviceCode}
+            onRedeemCode={redeemDeviceCode}
+          />
+        )}
 
         {actionError && (
           <div className="absolute left-1/2 top-16 z-40 hidden w-[min(620px,calc(100vw-2rem))] -translate-x-1/2 items-center gap-2 rounded-xl border border-error/20 bg-surface-container-lowest px-3 py-2 text-xs text-error shadow-card md:flex" role="alert">
@@ -875,7 +944,7 @@ function WorkspaceHeader({
   onDeviceConnect,
 }: {
   state: JourneyWorkspaceView
-  onDeviceConnect: () => void
+  onDeviceConnect?: () => void
 }) {
   const persisted = state.persistence.mode === 'database'
   return (
@@ -915,15 +984,17 @@ function WorkspaceHeader({
           tone={persisted ? 'ok' : 'neutral'}
           className="hidden sm:flex"
         />
-        <button
-          type="button"
-          onClick={onDeviceConnect}
-          aria-label="Подключить другое устройство"
-          className="flex min-h-9 shrink-0 items-center gap-1.5 rounded-lg px-2 text-xs text-on-surface-variant hover:bg-white/5 hover:text-primary sm:px-2.5"
-        >
-          <Smartphone className="size-3.5" aria-hidden />
-          <span className="hidden lg:inline">Устройства</span>
-        </button>
+        {onDeviceConnect && (
+          <button
+            type="button"
+            onClick={onDeviceConnect}
+            aria-label="Подключить другое устройство"
+            className="flex min-h-9 shrink-0 items-center gap-1.5 rounded-lg px-2 text-xs text-on-surface-variant hover:bg-white/5 hover:text-primary sm:px-2.5"
+          >
+            <Smartphone className="size-3.5" aria-hidden />
+            <span className="hidden lg:inline">Устройства</span>
+          </button>
+        )}
         <Link href="/client/welcome" className="ml-0.5 hidden rounded-lg px-2.5 py-2 text-xs text-on-surface-variant hover:bg-white/5 hover:text-on-surface sm:block">
           В кабинет
         </Link>
@@ -1045,9 +1116,9 @@ function WorkspaceSkeleton() {
   )
 }
 
-function readStoredIdentity(): JourneyIdentity | null {
+function readStoredIdentity(storageKey = LOCAL_IDENTITY_KEY): JourneyIdentity | null {
   try {
-    const parsed: unknown = JSON.parse(window.localStorage.getItem(LOCAL_IDENTITY_KEY) ?? 'null')
+    const parsed: unknown = JSON.parse(window.localStorage.getItem(storageKey) ?? 'null')
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null
     const workspaceId = (parsed as { workspaceId?: unknown }).workspaceId
     const accessToken = (parsed as { accessToken?: unknown }).accessToken
@@ -1062,8 +1133,8 @@ function readStoredIdentity(): JourneyIdentity | null {
   }
 }
 
-function writeStoredIdentity(identity: JourneyIdentity): void {
-  window.localStorage.setItem(LOCAL_IDENTITY_KEY, JSON.stringify({
+function writeStoredIdentity(identity: JourneyIdentity, storageKey = LOCAL_IDENTITY_KEY): void {
+  window.localStorage.setItem(storageKey, JSON.stringify({
     workspaceId: identity.workspaceId,
     ...(identity.accessToken ? { accessToken: identity.accessToken } : {}),
   }))
@@ -1104,8 +1175,8 @@ function writeStoredState(state: JourneyWorkspaceView): void {
   window.localStorage.removeItem(LOCAL_STATE_KEY)
 }
 
-function clearJourneyCache(workspaceId: string): void {
-  window.localStorage.removeItem(LOCAL_IDENTITY_KEY)
+function clearJourneyCache(workspaceId: string, identityStorageKey = LOCAL_IDENTITY_KEY): void {
+  window.localStorage.removeItem(identityStorageKey)
   clearJourneyStateCache(workspaceId)
 }
 

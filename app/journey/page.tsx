@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { JourneyWorkspace } from '@/components/journey/Workspace'
+import { parseJourneyDemoScenario } from '@/components/journey/demo-scenarios'
 
 export const metadata: Metadata = {
   title: 'AI-first Workspace · эксперимент',
@@ -7,6 +8,10 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 }
 
-export default function JourneyPage() {
-  return <JourneyWorkspace />
+interface JourneyPageProps {
+  searchParams?: { demo?: string | string[] }
+}
+
+export default function JourneyPage({ searchParams }: JourneyPageProps) {
+  return <JourneyWorkspace initialDemoScenario={parseJourneyDemoScenario(searchParams?.demo)} />
 }
