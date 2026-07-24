@@ -770,10 +770,10 @@ function withClubDestinations(
   const sections = [answer]
   const communityIncluded = !communityAlreadySent
   const catalogShared = Boolean(config.catalog && !catalogAlreadySent)
-  if (communityIncluded) {
+  if (communityIncluded && !answer.includes(config.community.url)) {
     sections.push(`${config.community.text}\n${config.community.url}`)
   }
-  if (config.catalog && catalogShared) {
+  if (config.catalog && catalogShared && !answer.includes(config.catalog.url)) {
     sections.push(`${config.catalog.text}\n${config.catalog.url}`)
   }
   return {

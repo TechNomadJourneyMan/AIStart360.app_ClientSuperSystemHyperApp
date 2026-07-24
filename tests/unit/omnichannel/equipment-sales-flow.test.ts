@@ -990,6 +990,31 @@ describe('equipment sales flow planning', () => {
     expect(result?.answer).not.toContain(config.catalog?.url)
   })
 
+  it('does not duplicate a catalog URL already present in the configured welcome', () => {
+    const catalogInWelcome = {
+      ...config,
+      messages: {
+        ...config.messages,
+        welcome: `${config.messages.welcome}\n\nИнтернет-магазин: ${config.catalog?.url}`,
+      },
+    }
+    const result = planWith({
+      history: [message({ id: 'club-with-catalog-in-welcome', text: 'Хочу в Клуб' })],
+      configOverride: catalogInWelcome,
+    })
+
+    expect(result).toMatchObject({
+      reason: 'deterministic_equipment_flow_club_invite',
+      communityIncluded: true,
+      outboundMetadata: expect.objectContaining({
+        equipmentFlowCommunityIncluded: true,
+        equipmentFlowCatalogShared: true,
+      }),
+    })
+    expect(result?.answer.match(/https:\/\/myhonor\.shop\/catalog/gu)).toHaveLength(1)
+    expect(result?.answer).toContain(config.community.url)
+  })
+
   it('restores a recent active choice from conversation metadata', () => {
     const result = planWith({
       history: [message({ id: 'new-city', text: 'Конаев' })],
