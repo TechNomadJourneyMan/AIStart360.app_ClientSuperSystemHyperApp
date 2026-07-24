@@ -123,6 +123,10 @@ export const equipmentSalesFlowConfigSchema = z
       : [config.messages.handoff]
     const renderedBodies = [
       config.messages.welcome,
+      `${config.messages.welcome}\n\n${community}`,
+      ...(config.catalog ? [
+        `${config.messages.welcome}\n\n${community}\n\n${config.catalog.text}\n${config.catalog.url}`,
+      ] : []),
       `${config.messages.ask_interest}\n\n${renderedChoices}`,
       config.messages.ask_city,
       ...(config.catalog ? [`${config.catalog.text}\n${config.catalog.url}`] : []),
@@ -753,6 +757,32 @@ function withCommunity(
   return `${answer}\n\n${config.community.text}\n${config.community.url}`
 }
 
+function withClubDestinations(
+  answer: string,
+  config: EquipmentSalesFlowConfig,
+  communityAlreadySent: boolean,
+  catalogAlreadySent: boolean,
+): {
+  answer: string
+  communityIncluded: boolean
+  catalogShared: boolean
+} {
+  const sections = [answer]
+  const communityIncluded = !communityAlreadySent
+  const catalogShared = Boolean(config.catalog && !catalogAlreadySent)
+  if (communityIncluded) {
+    sections.push(`${config.community.text}\n${config.community.url}`)
+  }
+  if (config.catalog && catalogShared) {
+    sections.push(`${config.catalog.text}\n${config.catalog.url}`)
+  }
+  return {
+    answer: sections.join('\n\n'),
+    communityIncluded,
+    catalogShared,
+  }
+}
+
 function choicesText(config: EquipmentSalesFlowConfig): string {
   const rows = config.choices.map((choice, index) => `${index + 1}. ${choice.label}`).join('\n')
   return `${config.messages.options_prompt}\n${rows}`
@@ -919,10 +949,9 @@ function recentInboundBurst(
   })
 }
 
-function isLeadOpeningMessage(message: OmnichannelMessage): boolean {
+function isClubOpeningMessage(message: OmnichannelMessage): boolean {
   const normalized = normalizeText(message.text ?? '')
   if (!normalized) return false
-  if (isGreetingText(normalized)) return true
   const withoutGreeting = normalized.replace(
     /^(?:привет(?:ик|ствую)?|здравствуй(?:те)?|добрый\s+(?:день|вечер)|доброе\s+утро|салам|с[әа]лем|hello|hi|hey)\s+/iu,
     '',
@@ -931,7 +960,16 @@ function isLeadOpeningMessage(message: OmnichannelMessage): boolean {
   // that provider text as the same deterministic opening as a greeting so it
   // can never fall through to an unrelated generic business context.
   return /^(?:(?:я\s+)?хочу\s+(?:вступить\s+в\s+|присоединиться\s+к\s+|в\s+)?|(?:я\s+)?(?:хотел|хотела)\s+бы\s+(?:вступить\s+в\s+|присоединиться\s+к\s+|в\s+)?|)(?:honor\s+)?клуб$/iu.test(withoutGreeting)
+    // The current click-to-WhatsApp campaign also arrives from the provider
+    // as this exact truncated lead text. Keep the match exact so ordinary
+    // words beginning with “хо” cannot start the sales flow accidentally.
+    || withoutGreeting === 'хо'
     || /^(?:i\s+(?:want|would\s+like)\s+to\s+join\s+(?:the\s+)?|)(?:honor\s+)?club$/iu.test(withoutGreeting)
+}
+
+function isLeadOpeningMessage(message: OmnichannelMessage): boolean {
+  const normalized = normalizeText(message.text ?? '')
+  return Boolean(normalized && (isGreetingText(normalized) || isClubOpeningMessage(message)))
 }
 
 function confirmedManagerHandoff(
@@ -1054,6 +1092,11 @@ export function planEquipmentSalesFlow(input: {
     message.text?.includes(config.community.url)
     || message.metadata.equipmentFlowCommunityIncluded === true,
   )
+  const hasCatalog = Boolean(config.catalog && outbound.some((message) =>
+    message.text?.includes(config.catalog!.url)
+    || message.metadata.equipmentFlowCatalogShared === true,
+  ))
+  const clubRequested = isClubOpeningMessage(input.currentMessage)
   if (
     !hasNewSignal
     && !active.choiceId
@@ -1061,7 +1104,10 @@ export function planEquipmentSalesFlow(input: {
     && hasConfirmedWelcome
     && isLeadOpeningMessage(input.currentMessage)
   ) {
-    const answer = config.messages.ask_city
+    const clubDestinations = clubRequested
+      ? withClubDestinations(config.messages.ask_city, config, hasCommunity, hasCatalog)
+      : null
+    const answer = clubDestinations?.answer ?? config.messages.ask_city
     return {
       stage: 'welcome',
       answer,
@@ -1075,9 +1121,11 @@ export function planEquipmentSalesFlow(input: {
       choiceLabel: null,
       managerUrl: null,
       handoffAfterSend: false,
-      communityIncluded: false,
+      communityIncluded: clubDestinations?.communityIncluded ?? false,
       outboundMetadata: buildMetadata({
-        stage: 'welcome', communityIncluded: false,
+        stage: 'welcome',
+        communityIncluded: clubDestinations?.communityIncluded ?? false,
+        catalogShared: clubDestinations?.catalogShared ?? false,
       }),
     }
   }
@@ -1138,17 +1186,24 @@ export function planEquipmentSalesFlow(input: {
   const base = city && !choice
     ? `${config.messages.ask_interest}\n\n${choicesText(config)}`
     : config.messages.welcome
-  const answer = base
+  const clubDestinations = !city && clubRequested
+    ? withClubDestinations(base, config, hasCommunity, hasCatalog)
+    : null
+  const answer = clubDestinations?.answer ?? base
   const stage = city ? 'awaiting_interest' as const : 'welcome' as const
   return {
     stage,
     answer,
     reason: city
       ? 'deterministic_equipment_flow_awaiting_interest'
-      : 'deterministic_equipment_flow_welcome',
+      : clubRequested
+        ? 'deterministic_equipment_flow_club_invite'
+        : 'deterministic_equipment_flow_welcome',
     summary: city
       ? `Клиент из города ${city.customerLabel}; ожидается выбор экипировки.`.slice(0, 500)
-      : 'Новый запрос по экипировке; ожидается город.',
+      : clubRequested
+        ? 'Клиенту отправлены ссылки на WhatsApp-сообщество и каталог; ожидается город.'
+        : 'Новый запрос по экипировке; ожидается город.',
     leadScore: city ? 60 : 40,
     presentation: city
       ? { kind: 'choices', options: choiceOptions(config) }
@@ -1159,7 +1214,12 @@ export function planEquipmentSalesFlow(input: {
     choiceLabel: null,
     managerUrl: null,
     handoffAfterSend: false,
-    communityIncluded: false,
-    outboundMetadata: buildMetadata({ stage, city, communityIncluded: false }),
+    communityIncluded: clubDestinations?.communityIncluded ?? false,
+    outboundMetadata: buildMetadata({
+      stage,
+      city,
+      communityIncluded: clubDestinations?.communityIncluded ?? false,
+      catalogShared: clubDestinations?.catalogShared ?? false,
+    }),
   }
 }

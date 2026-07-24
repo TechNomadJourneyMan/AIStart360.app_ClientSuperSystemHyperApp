@@ -172,6 +172,14 @@ describe('equipment sales flow config', () => {
   })
 
   it.each([
+    ['club invitation', {
+      messages: {
+        ...config.messages,
+        welcome: 'П'.repeat(900),
+      },
+      community: { ...config.community, text: 'Ч'.repeat(100) },
+      catalog: { ...config.catalog, text: 'К'.repeat(100) },
+    }],
     ['awaiting interest', {
       messages: {
         ...config.messages,
@@ -206,6 +214,21 @@ describe('equipment sales flow config', () => {
     expect(equipmentSalesFlowConfigSchema.safeParse({
       ...config,
       ...overrides,
+    }).success).toBe(false)
+  })
+
+  it('rejects an overlong club invitation when no catalog is configured', () => {
+    const { catalog: _catalog, ...configWithoutCatalog } = config
+    expect(equipmentSalesFlowConfigSchema.safeParse({
+      ...configWithoutCatalog,
+      messages: {
+        ...configWithoutCatalog.messages,
+        welcome: 'П'.repeat(900),
+      },
+      community: {
+        ...configWithoutCatalog.community,
+        text: 'Ч'.repeat(100),
+      },
     }).success).toBe(false)
   })
 })
@@ -660,7 +683,7 @@ describe('equipment sales flow planning', () => {
     expect(result?.answer.match(/chat\.whatsapp\.com/g)).toBeNull()
   })
 
-  it('continues without repeating a welcome that provider history confirms was sent', () => {
+  it('adds the club destinations without repeating a welcome that provider history confirms was sent', () => {
     const result = plan([
       message({
         id: 'out-welcome-history',
@@ -677,6 +700,15 @@ describe('equipment sales flow planning', () => {
     })
     expect(result?.answer).not.toContain(config.messages.welcome)
     expect(result?.answer).toContain(config.messages.ask_city)
+    expect(result?.answer).toContain(config.community.url)
+    expect(result?.answer).toContain(config.catalog?.url)
+    expect(result).toMatchObject({
+      communityIncluded: true,
+      outboundMetadata: expect.objectContaining({
+        equipmentFlowCommunityIncluded: true,
+        equipmentFlowCatalogShared: true,
+      }),
+    })
   })
 
   it('does not reset an active choice when the customer sends another greeting', () => {
@@ -715,7 +747,7 @@ describe('equipment sales flow planning', () => {
     })
   })
 
-  it('resumes an active welcome that has no saved city or choice', () => {
+  it('resumes an active welcome with missing club destinations', () => {
     const result = planWith({
       history: [
         message({
@@ -743,8 +775,15 @@ describe('equipment sales flow planning', () => {
       reason: 'deterministic_equipment_flow_resume_without_repeating_welcome',
       choiceId: null,
       cityRouteId: null,
+      communityIncluded: true,
+      outboundMetadata: expect.objectContaining({
+        equipmentFlowCommunityIncluded: true,
+        equipmentFlowCatalogShared: true,
+      }),
     })
-    expect(result?.answer).toBe(config.messages.ask_city)
+    expect(result?.answer).toContain(config.messages.ask_city)
+    expect(result?.answer).toContain(config.community.url)
+    expect(result?.answer).toContain(config.catalog?.url)
   })
 
   it.each([
@@ -892,19 +931,64 @@ describe('equipment sales flow planning', () => {
     })
   })
 
-  it.each(['Хочу в Клуб', 'хочу в клуб', 'Клуб', 'Привет, хочу в клуб', 'I want to join the club']) (
+  it.each([
+    'Хочу в Клуб',
+    'хочу в клуб',
+    'Клуб',
+    'Привет, хочу в клуб',
+    'Здравствуйте! Хо',
+    'I want to join the club',
+  ]) (
     'starts the equipment welcome flow for the campaign CTA: %s',
     (text) => {
       const result = plan([message({ id: `club-${text}`, text })])
       expect(result).toMatchObject({
         stage: 'welcome',
+        reason: 'deterministic_equipment_flow_club_invite',
         cityRouteId: null,
         choiceId: null,
         managerUrl: null,
+        communityIncluded: true,
+        outboundMetadata: expect.objectContaining({
+          equipmentFlowCommunityIncluded: true,
+          equipmentFlowCatalogShared: true,
+        }),
       })
       expect(result?.answer).toContain(config.messages.welcome)
+      expect(result?.answer).toContain(config.community.url)
+      expect(result?.answer).toContain(config.catalog?.url)
     },
   )
+
+  it('does not repeat confirmed club destinations on a repeated CTA', () => {
+    const result = plan([
+      message({
+        id: 'out-club-destinations',
+        direction: 'out',
+        text: [
+          config.messages.welcome,
+          config.community.url,
+          config.catalog?.url,
+        ].join('\n'),
+        metadata: {
+          source: 'omnichannel_equipment_sales_flow',
+          equipmentFlowStage: 'welcome',
+          equipmentFlowCommunityIncluded: true,
+          equipmentFlowCatalogShared: true,
+        },
+      }),
+      message({ id: 'repeat-club-with-destinations', text: 'Хочу в Клуб' }),
+    ])
+
+    expect(result).toMatchObject({
+      stage: 'welcome',
+      reason: 'deterministic_equipment_flow_resume_without_repeating_welcome',
+      communityIncluded: false,
+    })
+    expect(result?.answer).toBe(config.messages.ask_city)
+    expect(result?.answer).not.toContain(config.community.url)
+    expect(result?.answer).not.toContain(config.catalog?.url)
+  })
 
   it('restores a recent active choice from conversation metadata', () => {
     const result = planWith({
