@@ -1,7 +1,6 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import Image from 'next/image'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase-client'
 import type { Diagnostic, BlockScore, Risk, Insight, QuickWin, DiagnosticStage } from '@/types/onboarding'
@@ -185,29 +184,37 @@ export default function PointAClientPage() {
   ]
 
   return (
-    <div className="min-h-screen bg-[#0A0B0F]">
-      {/* Header */}
-      <header className="sticky top-0 z-20 bg-[#0A0B0F]/90 backdrop-blur border-b border-white/[0.06] px-6 py-4">
-        <div className="max-w-3xl mx-auto flex items-center justify-between">
-          <Image src="/logo.svg" alt="AIStart360" width={120} height={22} />
-          <div className="flex items-center gap-3">
-            <button
-              onClick={recalculate}
-              disabled={isRecalculating}
-              className="flex items-center gap-1.5 text-xs font-mono text-on-surface-variant hover:text-primary border border-white/[0.08] rounded-lg px-3 py-1.5 transition-all disabled:opacity-60"
-            >
-              <span className={`material-symbols-outlined text-sm ${isRecalculating ? 'animate-spin' : ''}`}>refresh</span>
-              Пересчитать
-            </button>
-            <Link href="/client/onboarding/documents" className="text-xs font-mono text-on-surface-variant hover:text-primary border border-white/[0.08] rounded-lg px-3 py-1.5 transition-all flex items-center gap-1.5">
-              <span className="material-symbols-outlined text-sm">upload_file</span>
-              Документы
-            </Link>
-          </div>
+    <div className="mx-auto max-w-4xl space-y-6">
+      <section className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+        <div>
+          <p className="mb-2 text-xs font-mono uppercase tracking-[0.2em] text-primary/70">
+            Диагностика бизнеса
+          </p>
+          <h1 className="font-headline text-3xl font-extrabold text-on-surface">Точка А</h1>
+          <p className="mt-2 text-sm text-on-surface-variant">
+            Текущее состояние компании, ключевые риски и быстрые улучшения.
+          </p>
         </div>
-      </header>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={recalculate}
+            disabled={isRecalculating}
+            className="flex items-center gap-1.5 rounded-lg border border-white/[0.08] px-3 py-2 text-xs font-mono text-on-surface-variant transition-all hover:text-primary disabled:opacity-60"
+          >
+            <span className={`material-symbols-outlined text-sm ${isRecalculating ? 'animate-spin' : ''}`}>refresh</span>
+            Пересчитать
+          </button>
+          <Link
+            href="/client/onboarding/documents"
+            className="flex items-center gap-1.5 rounded-lg border border-white/[0.08] px-3 py-2 text-xs font-mono text-on-surface-variant transition-all hover:text-primary"
+          >
+            <span className="material-symbols-outlined text-sm">upload_file</span>
+            Документы
+          </Link>
+        </div>
+      </section>
 
-      <main className="max-w-3xl mx-auto px-6 py-8 space-y-8">
+      <div className="space-y-8">
 
         {isLoading ? (
           <div className="flex items-center justify-center py-20">
@@ -382,7 +389,7 @@ export default function PointAClientPage() {
             </section>
           </>
         )}
-      </main>
+      </div>
     </div>
   )
 }

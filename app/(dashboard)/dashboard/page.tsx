@@ -116,7 +116,7 @@ async function getDashboardExtendedData(): Promise<DashboardData | null> {
         title: `${pendingRequests} заявок ожидают проверки`,
         description: 'Новые клиенты зарегистрировались и ждут подтверждения аккаунта.',
         time: 'сейчас',
-        action: { label: 'Просмотреть', href: '/admin/requests' },
+        action: { label: 'Просмотреть', href: '/admin?tab=clients' },
       })
     }
 
@@ -141,7 +141,7 @@ function buildKpi(data: DashboardData | null): KpiCardData[] {
     return [
       { label: 'Пользователи', value: '—',  trend: '—',    trendUp: true,  icon: 'groups',       sublabel: 'загрузка...', href: '/users'   },
       { label: 'Активных',  value: '—',  trend: '—',    trendUp: true,  icon: 'check_circle', sublabel: 'загрузка...', href: '/users'   },
-      { label: 'Заявки',    value: '—',  trend: '—',    trendUp: false, icon: 'hourglass_top',sublabel: 'загрузка...', href: '/admin/requests' },
+      { label: 'Заявки',    value: '—',  trend: '—',    trendUp: false, icon: 'hourglass_top',sublabel: 'загрузка...', href: '/admin?tab=clients' },
       { label: 'GRI анализов',value: '—', trend: '—',    trendUp: true,  icon: 'radar',        sublabel: 'загрузка...', href: '/gri'       },
     ]
   }
@@ -172,7 +172,7 @@ function buildKpi(data: DashboardData | null): KpiCardData[] {
       trendUp:  data.pending === 0,
       icon:     'hourglass_top',
       sublabel: 'на регистрацию',
-      href:     '/admin/requests',
+      href:     '/admin?tab=clients',
     },
     {
       label:    'GRI анализов',
@@ -228,17 +228,26 @@ export default async function DashboardPage() {
     <div className="space-y-6">
       {/* ─── Hero ─────────────────────────────────────────────── */}
       <section>
-        <div className="mb-4">
-          <p className="text-[11px] font-mono text-primary/60 uppercase tracking-[0.2em] mb-2">
-            Q1 2026 · Текущий период
-          </p>
-          <h1 className="font-headline text-3xl lg:text-4xl font-extrabold text-on-surface leading-tight">
-            Ускоряем рост бизнеса до{' '}
-            <span className="text-gradient">$2M в год</span>
-          </h1>
-          <p className="text-on-surface-variant mt-2 text-sm max-w-xl leading-relaxed">
-            Система выхода на стабильную скорость роста $2M/год на основе AI-трансформации и сопровождения топ-экспертов
-          </p>
+        <div className="mb-4 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+          <div>
+            <p className="text-[11px] font-mono text-primary/60 uppercase tracking-[0.2em] mb-2">
+              Q1 2026 · Текущий период
+            </p>
+            <h1 className="font-headline text-3xl lg:text-4xl font-extrabold text-on-surface leading-tight">
+              Ускоряем рост бизнеса до{' '}
+              <span className="text-gradient">$2M в год</span>
+            </h1>
+            <p className="text-on-surface-variant mt-2 text-sm max-w-xl leading-relaxed">
+              Система выхода на стабильную скорость роста $2M/год на основе AI-трансформации и сопровождения топ-экспертов
+            </p>
+          </div>
+          <Link
+            href="/sales-monitoring"
+            className="inline-flex items-center justify-center gap-2 rounded-xl border border-primary/20 bg-primary/10 px-4 py-2.5 text-sm font-semibold text-primary transition-colors hover:bg-primary/20"
+          >
+            <span className="material-symbols-outlined text-lg">point_of_sale</span>
+            Мониторинг продаж
+          </Link>
         </div>
 
         {/* Goals bar */}

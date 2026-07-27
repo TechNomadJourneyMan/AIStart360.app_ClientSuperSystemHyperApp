@@ -308,6 +308,8 @@ export default function OnboardingPage() {
     if (!userId) return
     setIsSaving(true)
     try {
+      let resolvedCompanyId = companyId
+
       // If step 1, also create/update company record
       if (step === 1) {
         const compRes = await fetch('/api/v1/onboarding/company', {
@@ -330,6 +332,7 @@ export default function OnboardingPage() {
         })
         const compData = await compRes.json()
         if (compData.ok && compData.data?.id) {
+          resolvedCompanyId = compData.data.id
           setCompanyId(compData.data.id)
           localStorage.setItem(STORAGE_KEY, JSON.stringify({
             ...JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}'),
@@ -346,7 +349,7 @@ export default function OnboardingPage() {
       await fetch('/api/v1/onboarding/survey', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_id: userId, company_id: companyId, step, answers: formatted }),
+        body: JSON.stringify({ user_id: userId, company_id: resolvedCompanyId, step, answers: formatted }),
       })
     } catch (e) {
       console.error('[onboarding] save error', e)
@@ -374,7 +377,7 @@ export default function OnboardingPage() {
         setIsSaving(false)
       }
       localStorage.removeItem(STORAGE_KEY)
-      router.push('/client/point-a')
+      router.replace('/client/dashboard?onboarding=complete')
     }
   }
 

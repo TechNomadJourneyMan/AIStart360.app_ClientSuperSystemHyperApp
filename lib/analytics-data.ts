@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/db'
+import type { Prisma, PrismaClient } from '@prisma/client'
 
 type AnalyticsClientRow = {
   id: string
@@ -13,16 +14,7 @@ type AnalyticsClientRow = {
   }>
 }
 
-type DbClient = {
-  client: {
-    count: (args?: unknown) => Promise<number>
-    findMany: (args: unknown) => Promise<AnalyticsClientRow[]>
-  }
-  griReport: {
-    aggregate: (args: unknown) => Promise<{ _avg: { score: number | null } }>
-    findMany: (args: unknown) => Promise<Array<{ score: number }>>
-  }
-}
+type DbClient = PrismaClient | Prisma.TransactionClient
 
 export type AnalyticsData = {
   kpis: {
@@ -59,7 +51,7 @@ function toStatus(score: number): 'Strong' | 'Active' | 'Developing' | 'Critical
   return 'Critical'
 }
 
-export async function getAnalyticsData(db: DbClient = prisma as unknown as DbClient, orgId?: string): Promise<AnalyticsData> {
+export async function getAnalyticsData(db: DbClient = prisma, orgId?: string): Promise<AnalyticsData> {
   const clientWhere = orgId ? { orgId } : undefined
   const reportsWhere = orgId ? { client: { orgId } } : undefined
 

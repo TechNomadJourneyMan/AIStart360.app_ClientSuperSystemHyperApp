@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
 import { SystemHealth } from '@/components/dashboard/SystemHealth'
 import { PendingClientsTable } from '@/components/dashboard/admin/PendingClientsTable'
 import { AdminClientsList } from '@/components/dashboard/admin/AdminClientsList'
@@ -10,6 +11,7 @@ const CONTENT_SECTIONS = [
   { label: 'GRI-диагностика',  href: '/gri',         icon: 'radar',                count: '34 отчёта',    color: 'primary',   desc: 'Воркшопы и анализ по 7 блокам'         },
   { label: 'Рынок',            href: '/market',       icon: 'public',               count: '12 анализов',  color: 'primary',   desc: 'Рыночные исследования и тренды'         },
   { label: 'Метрики',          href: '/metrics',      icon: 'monitoring',           count: '11 целей',     color: 'secondary', desc: 'KPI-система роста к $2M/год'            },
+  { label: 'Продажи',          href: '/sales-monitoring', icon: 'point_of_sale',     count: 'Live data',    color: 'primary',   desc: 'Продажи, расходы, планы и P&L'          },
   { label: 'Аналитика',        href: '/analytics',    icon: 'bar_chart',            count: 'Live data',    color: 'primary',   desc: 'Финансовая аналитика и тренды'          },
   { label: 'Точка А',          href: '/point-a',      icon: 'my_location',          count: '48 профилей',  color: 'primary',   desc: 'Диагностика текущего состояния'         },
   { label: 'Точка Б',          href: '/point-b',      icon: 'flag',                 count: '48 целей',     color: 'secondary', desc: 'Целевые показатели и дорожные карты'    },
@@ -36,7 +38,10 @@ const RECENT_ACTIVITY = [
 ]
 
 export default function AdminPage() {
-  const [activeTab, setActiveTab] = useState('overview')
+  const searchParams = useSearchParams()
+  const [activeTab, setActiveTab] = useState(
+    searchParams.get('tab') === 'clients' ? 'clients' : 'overview',
+  )
 
   return (
     <div className="space-y-8 min-h-screen pb-20">

@@ -5,6 +5,7 @@ const ALL_ROLES: UserRole[] = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ANALYST', 'CL
 // PRIMARY navigation — shown directly in the sidebar
 export const PRIMARY_NAV: NavItem[] = [
   { label: 'Дэшборд',   href: '/dashboard', icon: 'dashboard',   roles: ALL_ROLES },
+  { label: 'Продажи',   href: '/sales-monitoring', icon: 'point_of_sale', roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ANALYST'] },
   { label: 'GRI',       href: '/gri',        icon: 'radar',       roles: ALL_ROLES },
   { label: 'GRI Pulse', href: '/pulse',      icon: 'cell_tower',  roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'CLIENT'] },
   { label: 'Точка А',   href: '/point-a',    icon: 'my_location', roles: ALL_ROLES },

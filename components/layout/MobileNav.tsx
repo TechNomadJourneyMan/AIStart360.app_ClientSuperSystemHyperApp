@@ -10,7 +10,7 @@ import type { UserRole } from '@/types'
 // ── Bottom bar — 4 primary tabs ─────────────────────────────────────────────
 const BOTTOM_TABS = [
   { label: 'Дэшборд',  href: '/dashboard', icon: 'dashboard'       },
-  { label: 'GRI Pulse',href: '/pulse',      icon: 'cell_tower'      },
+  { label: 'Продажи',  href: '/sales-monitoring', icon: 'point_of_sale' },
   { label: 'Клиенты',  href: '/clients',    icon: 'business_center' },
   { label: 'Метрики',  href: '/metrics',    icon: 'monitoring'      },
 ]
@@ -40,6 +40,7 @@ const DRAWER_SECTIONS = [
   {
     title: 'Работа',
     items: [
+      { label: 'Продажи',   href: '/sales-monitoring', icon: 'point_of_sale'  },
       { label: 'Клиенты',    href: '/clients',      icon: 'business_center' },
       { label: 'Отчёты',     href: '/reports',      icon: 'description'     },
       { label: 'Аналитика',  href: '/analytics',    icon: 'bar_chart'       },

@@ -9,6 +9,7 @@ import { useAuthStore } from '@/stores/auth.store'
 
 const PRIMARY_NAV = [
   { label: 'Дэшборд',    href: '/owner/dashboard',  icon: 'dashboard'       },
+  { label: 'Продажи',    href: '/owner/sales-monitoring', icon: 'point_of_sale' },
   { label: 'GRI',        href: '/owner/gri',         icon: 'radar'           },
   { label: 'Рынок',      href: '/owner/market',      icon: 'public'          },
   { label: 'Точка А',    href: '/owner/point-a',     icon: 'my_location'     },

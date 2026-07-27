@@ -7,6 +7,7 @@ import { useAuthStore } from '@/stores/auth.store'
 
 const EXPERT_NAV = [
   { label: 'Дэшборд',  href: '/expert/dashboard', icon: 'dashboard'    },
+  { label: 'Продажи',  href: '/expert/sales-monitoring', icon: 'point_of_sale' },
   { label: 'Профиль',  href: '/expert/profile',   icon: 'account_circle' },
   { label: 'Отчёты',  href: '/expert/reports',   icon: 'description'  },
   { label: 'GRI',      href: '/expert/gri',        icon: 'radar'        },

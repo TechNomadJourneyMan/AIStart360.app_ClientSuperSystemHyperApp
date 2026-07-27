@@ -2,7 +2,7 @@ const pdf = require("pdf-parse");
 import mammoth from "mammoth";
 import * as XLSX from "xlsx";
 
-export type DocumentType = "pdf" | "docx" | "xlsx" | "txt" | "unknown";
+export type DocumentType = "pdf" | "docx" | "xlsx" | "csv" | "txt" | "unknown";
 
 export interface ParsedDocument {
   text: string;
@@ -36,6 +36,7 @@ export function detectDocumentType(
     ext === "xls"
   )
     return "xlsx";
+  if (mimeType === "text/csv" || ext === "csv") return "csv";
   if (mimeType === "text/plain" || ext === "txt") return "txt";
   return "unknown";
 }
@@ -82,7 +83,8 @@ export async function parseDocument(
       };
     }
 
-    case "xlsx": {
+    case "xlsx":
+    case "csv": {
       const workbook = XLSX.read(buffer, { type: "buffer" });
       const texts: string[] = [];
 

@@ -86,7 +86,7 @@ export default function WaitingRoomPage() {
 
         if (data.status === 'approved') {
           setIsRedirecting(true)
-          setTimeout(() => router.push('/client/onboarding'), 2000)
+          setTimeout(() => router.replace('/client/dashboard'), 800)
         }
       }
     } catch {}

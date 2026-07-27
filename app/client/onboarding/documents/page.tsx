@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useRef, useEffect, useCallback } from 'react'
-import Image from 'next/image'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 
@@ -71,11 +70,22 @@ export default function DocumentsPage() {
         } = await supabase.auth.getUser()
         setUserId(user?.id ?? null)
 
+        let storedCompanyId: string | null = null
         const onbRaw = localStorage.getItem('aistart360_onboarding')
         if (onbRaw) {
           const parsed = JSON.parse(onbRaw)
-          setCompanyId(parsed?.company_id ?? null)
+          storedCompanyId = parsed?.company_id ?? null
         }
+
+        if (!storedCompanyId && user?.id) {
+          const response = await fetch(`/api/v1/onboarding/company?user_id=${user.id}`)
+          const result = await response.json()
+          if (result.ok && result.data?.id) {
+            storedCompanyId = result.data.id
+          }
+        }
+
+        setCompanyId(storedCompanyId)
       } catch {
         setUserId(null)
       }
@@ -177,26 +187,21 @@ export default function DocumentsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0A0B0F]">
-      {/* Header */}
-      <header className="sticky top-0 z-20 bg-[#0A0B0F]/90 backdrop-blur border-b border-white/[0.06] px-6 py-4">
-        <div className="max-w-2xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Link href="/client/onboarding" className="text-on-surface-variant hover:text-on-surface transition-colors">
-              <span className="material-symbols-outlined text-xl">arrow_back</span>
-            </Link>
-            <Image src="/logo.svg" alt="AIStart360" width={120} height={22} />
-          </div>
-          <span className="text-xs font-mono text-on-surface-variant">Загрузка документов</span>
-        </div>
-      </header>
-
-      <main className="max-w-2xl mx-auto px-6 py-8 space-y-6">
+    <div className="mx-auto max-w-2xl space-y-6 py-2">
         {/* Title */}
-        <div>
+        <div className="flex items-start gap-3">
+          <Link
+            href="/client/dashboard"
+            aria-label="Вернуться в обзор"
+            className="mt-0.5 flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl border border-white/[0.08] text-on-surface-variant transition-colors hover:border-primary/30 hover:text-primary"
+          >
+            <span className="material-symbols-outlined text-xl">arrow_back</span>
+          </Link>
+          <div>
           <p className="text-xs font-mono text-primary/70 uppercase tracking-[0.2em] mb-2">Шаг 7 — Документы</p>
           <h1 className="font-headline text-2xl font-extrabold text-on-surface mb-1">Загрузите финансовые документы</h1>
           <p className="text-sm text-on-surface-variant">AI-система проанализирует ваши отчёты и дополнит диагностику реальными данными</p>
+          </div>
         </div>
 
         {/* Drop Zone */}
@@ -364,7 +369,6 @@ export default function DocumentsPage() {
             Перейти к диагностике →
           </Link>
         </div>
-      </main>
     </div>
   )
 }
