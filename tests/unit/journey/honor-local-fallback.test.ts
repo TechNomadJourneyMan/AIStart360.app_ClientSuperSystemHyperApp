@@ -8,7 +8,7 @@ import { createEmptyWorkspace } from '@/components/journey/model'
 
 describe('HONOR browser-local commerce fallback', () => {
   it('keeps commerce KPIs unknown and builds an order-to-repeat-purchase path for a revenue goal', () => {
-    const description = 'HONOR — интернет-магазин outdoor-одежды для охоты, рыбалки и outdoor в Казахстане'
+    const description = 'HONOR GROUP — интернет-магазин outdoor-экипировки с доставкой по Казахстану и 3 магазинами'
     const discovered = runLocalTurn(
       createEmptyWorkspace('honor-local-fallback'),
       description,
@@ -43,14 +43,14 @@ describe('HONOR browser-local commerce fallback', () => {
       ...discovered,
       facts: discovered.facts.map((fact) => ({ ...fact, status: 'confirmed' as const })),
     })
-    const goal = 'Хочу увеличить выручку до 50 млн ₸ за 6 месяцев'
+    const goal = 'Тестовая гипотеза: увеличить выручку на 20% за 6 месяцев'
     const planned = runLocalTurn(confirmed, goal)
 
     expect(planned.phase).toBe('ready')
     expect(planned.goals[0]).toMatchObject({
       title: goal,
       metric: 'Выручка',
-      target: '50 млн ₸',
+      target: '20%',
       deadline: '6 месяцев',
       status: 'confirmed',
     })
@@ -84,5 +84,16 @@ describe('HONOR browser-local commerce fallback', () => {
       'Повторная покупка',
     ])
     expect(process.data.stages.every((stage) => stage.status === 'unknown')).toBe(true)
+
+    const answered = runLocalTurn(
+      planned,
+      'Какие данные нужны для первого шага?',
+    )
+    expect(answered.facts).toEqual(planned.facts)
+    expect(answered.goals).toEqual(planned.goals)
+    expect(answered.widgets).toEqual(planned.widgets)
+    expect(answered.businessDescription).toBe(planned.businessDescription)
+    expect(answered.messages.at(-1)?.text).toContain('количество и статусы заказов')
+    expect(answered.messages.at(-1)?.text).not.toContain('Я выделил')
   })
 })

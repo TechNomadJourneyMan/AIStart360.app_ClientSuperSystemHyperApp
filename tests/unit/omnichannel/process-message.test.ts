@@ -118,7 +118,7 @@ function context(overrides: Record<string, unknown> = {}) {
       channel: "instagram",
       mode: "auto",
       enabled: true,
-      businessContext: null,
+      businessContext: "Honor Group: магазин проверенной экипировки для охоты, рыбалки и активного отдыха.",
       automationConfig: {},
       confidenceThreshold: 0.75,
       replyDelaySeconds: 0,
@@ -288,6 +288,58 @@ describe("omnichannel message processor safety", () => {
     expect(web.sendText).not.toHaveBeenCalled();
   });
 
+  it("leaves a send owned by a different durable run untouched", async () => {
+    repository.getMessageContext.mockResolvedValue(
+      context({
+        message: {
+          status: "sending",
+          metadata: {
+            providerTimestampTrusted: true,
+            sendClaimOwner: "workflow:wrun-first",
+          },
+        },
+      }),
+    );
+
+    await expect(invokeWithStep(false, fakeStep(), {
+      processing_owner: "workflow:wrun-duplicate",
+    })).resolves.toEqual({
+      skipped: true,
+      reason: "send_owned_by_other_worker",
+    });
+
+    expect(repository.markMessageNeedsHuman).not.toHaveBeenCalled();
+    expect(repository.markMessageDrafted).not.toHaveBeenCalled();
+    expect(meta.sendInstagram).not.toHaveBeenCalled();
+  });
+
+  it("reconciles the same database job after its lease token rotates", async () => {
+    const jobId = "00000000-0000-4000-8000-000000000099";
+    repository.getMessageContext.mockResolvedValue(
+      context({
+        message: {
+          status: "sending",
+          aiDraft: "Подготовленный ответ",
+          aiConfidence: 0.9,
+          metadata: {
+            providerTimestampTrusted: true,
+            sendClaimOwner: `database-job:${jobId}:expired-lease`,
+          },
+        },
+      }),
+    );
+
+    await expect(invokeWithStep(false, fakeStep(), {
+      processing_owner: `database-job:${jobId}`,
+    })).resolves.toEqual({
+      action: "escalate",
+      reason: "delivery_unknown_after_interrupted_send",
+    });
+
+    expect(repository.markMessageNeedsHuman).toHaveBeenCalled();
+    expect(meta.sendInstagram).not.toHaveBeenCalled();
+  });
+
   it("completes recovery when a durable pull delivery already owns the send", async () => {
     outbound.pull = true;
     repository.getMessageContext.mockResolvedValue(
@@ -330,6 +382,96 @@ describe("omnichannel message processor safety", () => {
     expect(repository.markMessageNeedsHuman).toHaveBeenCalled();
     expect(repository.claimMessageForAutoSend).not.toHaveBeenCalled();
     expect(meta.sendInstagram).not.toHaveBeenCalled();
+  });
+
+  it("fails closed instead of inventing another brand when business context is empty", async () => {
+    repository.getMessageContext.mockResolvedValue(
+      context({ settings: { businessContext: "" } }),
+    );
+
+    await expect(invoke()).resolves.toEqual({
+      action: "escalate",
+      reason: "business_context_missing",
+    });
+    expect(ai.generateOmnichannelReply).not.toHaveBeenCalled();
+    expect(meta.sendInstagram).not.toHaveBeenCalled();
+    expect(repository.markMessageNeedsHuman).toHaveBeenCalledWith(
+      "message-1",
+      "conversation-1",
+      {
+        draft: null,
+        confidence: null,
+        reason: "business_context_missing",
+      },
+    );
+  });
+
+  it("passes the unanswered burst to AI without current or failed outbound duplicates", async () => {
+    const base = context({ message: { text: "Спасибо" } });
+    const oldInbound = {
+      ...base.message,
+      id: "message-old-inbound",
+      externalMessageId: "provider-old-inbound",
+      text: "Старый вопрос",
+    };
+    const confirmedOutbound = {
+      ...base.message,
+      id: "message-confirmed-outbound",
+      externalMessageId: "provider-confirmed-outbound",
+      direction: "out",
+      text: "На старый вопрос уже ответили",
+      status: "sent",
+      aiGenerated: false,
+    };
+    const substantiveInbound = {
+      ...base.message,
+      id: "message-substantive-inbound",
+      externalMessageId: "provider-substantive-inbound",
+      text: "Нужен полный комплект",
+    };
+    const failedOutbound = {
+      ...base.message,
+      id: "message-failed-outbound",
+      externalMessageId: "provider-failed-outbound",
+      direction: "out",
+      text: "Этот текст клиент не видел",
+      status: "failed",
+      aiGenerated: true,
+    };
+    repository.getMessageContext.mockResolvedValue({
+      ...base,
+      history: [
+        oldInbound,
+        confirmedOutbound,
+        substantiveInbound,
+        failedOutbound,
+        base.message,
+      ],
+    });
+
+    await expect(invoke()).resolves.toMatchObject({ action: "send" });
+    expect(ai.generateOmnichannelReply).toHaveBeenCalledWith({
+      channel: "instagram",
+      businessContext: base.settings.businessContext,
+      currentMessage: "Спасибо",
+      history: [
+        expect.objectContaining({
+          direction: "in",
+          text: "Старый вопрос",
+          actor: "customer",
+        }),
+        expect.objectContaining({
+          direction: "out",
+          text: "На старый вопрос уже ответили",
+          actor: "human",
+        }),
+        expect.objectContaining({
+          direction: "in",
+          text: "Нужен полный комплект",
+          actor: "customer",
+        }),
+      ],
+    });
   });
 
   it("keeps a draft when the webhook account differs from the configured sender", async () => {
@@ -716,12 +858,36 @@ describe("omnichannel message processor safety", () => {
 
     await expect(invoke()).resolves.toMatchObject({ action: "escalate" });
     expect(meta.sendInstagram).toHaveBeenCalledTimes(1);
-    expect(repository.claimMessageForAutoSend).toHaveBeenCalledTimes(2);
+    expect(repository.claimMessageForAutoSend).toHaveBeenCalledTimes(1);
     expect(repository.markMessageNeedsHuman).toHaveBeenCalledWith(
       "message-1",
       "conversation-1",
       expect.objectContaining({
         reason: expect.stringContaining("ambiguous_"),
+      }),
+    );
+  });
+
+  it("never repeats a provider POST when the same execution already acquired the send claim", async () => {
+    repository.getMessageContext.mockResolvedValue(context());
+    repository.claimMessageForAutoSend.mockResolvedValueOnce({
+      claimed: false,
+      reason: "send_claim_already_acquired",
+    });
+
+    await expect(invokeWithStep(false, fakeStep(), {
+      processing_owner: "inngest:event-1",
+    })).resolves.toEqual({
+      action: "escalate",
+      reason: "delivery_unknown_after_interrupted_send",
+    });
+
+    expect(meta.sendInstagram).not.toHaveBeenCalled();
+    expect(repository.markMessageNeedsHuman).toHaveBeenCalledWith(
+      "message-1",
+      "conversation-1",
+      expect.objectContaining({
+        reason: "delivery_unknown_after_interrupted_send",
       }),
     );
   });
@@ -744,7 +910,7 @@ describe("omnichannel message processor safety", () => {
     expect(meta.sendInstagram).not.toHaveBeenCalled();
   });
 
-  it("uses the deterministic equipment script and Instagram quick replies before AI", async () => {
+  it("uses a concise deterministic Instagram welcome before showing choices", async () => {
     repository.getMessageContext.mockResolvedValue(
       context({
         message: { text: "Здравствуйте" },
@@ -754,37 +920,33 @@ describe("omnichannel message processor safety", () => {
 
     await expect(invoke()).resolves.toMatchObject({ action: "send" });
     expect(ai.generateOmnichannelReply).not.toHaveBeenCalled();
-    expect(meta.sendInstagramQuickReplies).toHaveBeenCalledWith(
+    expect(meta.sendInstagram).toHaveBeenCalledWith(
       expect.objectContaining({
         recipientId: "contact-1",
         text: expect.stringContaining("Вы из какого города?"),
-        options: expect.arrayContaining([
-          expect.objectContaining({ id: "equipment_v1:interest:summer" }),
-          expect.objectContaining({ id: "equipment_v1:interest:manager" }),
-        ]),
       }),
     );
-    expect(meta.sendInstagram).not.toHaveBeenCalled();
+    expect(meta.sendInstagramQuickReplies).not.toHaveBeenCalled();
     expect(repository.logOutboundMessage).toHaveBeenCalledWith(
       expect.objectContaining({
-        messageType: "button",
+        messageType: "text",
         metadata: expect.objectContaining({
           source: "omnichannel_equipment_sales_flow",
           equipmentFlowStage: "welcome",
         }),
       }),
     );
-    expect(repository.claimEquipmentFlowForAutoSend).toHaveBeenCalledTimes(2);
+    expect(repository.claimEquipmentFlowForAutoSend).toHaveBeenCalledTimes(1);
     expect(repository.claimMessageForAutoSend).not.toHaveBeenCalled();
     expect(repository.finalizeEquipmentFlowReply).toHaveBeenCalledWith(
       expect.objectContaining({
         stage: "welcome",
-        communityIncluded: true,
+        communityIncluded: false,
       }),
     );
   });
 
-  it("uses a WhatsApp list for the five equipment choices", async () => {
+  it("uses a concise WhatsApp text welcome before showing choices", async () => {
     repository.getMessageContext.mockResolvedValue(
       context({
         message: { channel: "whatsapp", text: "Здравствуйте" },
@@ -805,21 +967,17 @@ describe("omnichannel message processor safety", () => {
       channel: "whatsapp",
     });
     expect(ai.generateOmnichannelReply).not.toHaveBeenCalled();
-    expect(meta.sendWhatsAppList).toHaveBeenCalledWith(
+    expect(meta.sendWhatsApp).toHaveBeenCalledWith(
       expect.objectContaining({
         recipientId: "77001234567",
         text: expect.stringContaining("Вы из какого города?"),
-        buttonText: "Выбрать",
-        sectionTitle: "Экипировка",
-        options: expect.arrayContaining([
-          expect.objectContaining({ id: "equipment_v1:interest:catalog" }),
-        ]),
       }),
     );
+    expect(meta.sendWhatsAppList).not.toHaveBeenCalled();
     expect(repository.logOutboundMessage).toHaveBeenCalledWith(
       expect.objectContaining({
         channel: "whatsapp",
-        messageType: "interactive",
+        messageType: "text",
       }),
     );
     expect(web.sendPresence).not.toHaveBeenCalled();
@@ -922,7 +1080,59 @@ describe("omnichannel message processor safety", () => {
     expect(repository.markMessageReplied).not.toHaveBeenCalled();
   });
 
-  it("rechecks the atomic claim after typing and cancels a stale Web reply", async () => {
+  it("queues the direct catalog link for the persistent WhatsApp Web pull bridge", async () => {
+    outbound.pull = true;
+    vi.stubEnv("WHATSAPP_WEB_BRIDGE_ENABLED", "true");
+    vi.stubEnv("WHATSAPP_WEB_BRIDGE_SESSION_ID", "primary");
+    repository.getMessageContext.mockResolvedValue(
+      context({
+        message: {
+          channel: "whatsapp",
+          text: "Покажите каталог",
+          metadata: {
+            providerTimestampTrusted: true,
+            transport: "whatsapp_web",
+            bridgeSessionId: "primary",
+            bridgeMessageId: "raw-in-1",
+          },
+        },
+        conversation: {
+          channel: "whatsapp",
+          accountExternalId: "waweb:primary",
+          externalId: "77001234567@s.whatsapp.net",
+        },
+        contact: { channel: "whatsapp", externalId: "77001234567" },
+        settings: {
+          channel: "whatsapp",
+          automationConfig: equipmentAutomationConfig(),
+        },
+      }),
+    );
+
+    await expect(invoke()).resolves.toMatchObject({
+      action: "queued",
+      delivery_id: "00000000-0000-4000-8000-000000000003",
+    });
+    expect(outbound.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text: "Конечно! Посмотреть каталог можно здесь:\nhttps://myhonor.shop/catalog",
+        finalization: expect.objectContaining({
+          kind: "equipment",
+          stage: "welcome",
+          choiceId: null,
+          managerUrl: null,
+        }),
+        metadata: expect.objectContaining({
+          equipmentFlowCatalogShared: true,
+        }),
+      }),
+    );
+    expect(ai.generateOmnichannelReply).not.toHaveBeenCalled();
+    expect(web.sendPresence).not.toHaveBeenCalled();
+    expect(web.sendText).not.toHaveBeenCalled();
+  });
+
+  it("claims atomically after typing and cancels a stale Web reply", async () => {
     repository.getMessageContext.mockResolvedValue(
       context({
         message: {
@@ -1006,7 +1216,7 @@ describe("omnichannel message processor safety", () => {
     expect(web.sendText).not.toHaveBeenCalled();
   });
 
-  it("sends Web equipment choices as idempotent plain text to the conversation JID", async () => {
+  it("sends the concise Web welcome as idempotent plain text to the conversation JID", async () => {
     repository.getMessageContext.mockResolvedValue(
       context({
         message: {
@@ -1043,7 +1253,7 @@ describe("omnichannel message processor safety", () => {
         accountExternalId: "waweb:primary",
         replyToExternalId: "raw-in-1",
         idempotencyKey: "omnichannel:auto:message-1",
-        text: expect.stringContaining("1. Да, на лето"),
+        text: "Добрый день! Вы из какого города?",
       }),
     );
     expect(meta.sendWhatsAppList).not.toHaveBeenCalled();
@@ -1059,7 +1269,7 @@ describe("omnichannel message processor safety", () => {
     );
   });
 
-  it("sends the configured manager link through WhatsApp and completes handoff", async () => {
+  it("sends the direct catalog website through WhatsApp without a manager handoff", async () => {
     const current = context({
       message: {
         channel: "whatsapp",
@@ -1111,21 +1321,22 @@ describe("omnichannel message processor safety", () => {
     await expect(invoke()).resolves.toMatchObject({
       action: "send",
       channel: "whatsapp",
-      handoff: true,
     });
     expect(meta.sendWhatsApp).toHaveBeenCalledWith(
       expect.objectContaining({
         recipientId: "77001234567",
-        text: expect.stringContaining("https://wa.me/77714057775"),
+        text: "Конечно! Посмотреть каталог можно здесь:\nhttps://myhonor.shop/catalog",
         replyToExternalId: "provider-in-1",
       }),
     );
+    expect(meta.sendWhatsApp.mock.calls[0]?.[0]?.text).not.toContain("wa.me");
+    expect(ai.generateOmnichannelReply).not.toHaveBeenCalled();
     expect(repository.finalizeEquipmentFlowReply).toHaveBeenCalledWith(
       expect.objectContaining({
-        stage: "routed",
+        stage: "awaiting_interest",
         cityRouteId: "ust_kamenogorsk",
-        choiceId: "catalog",
-        managerUrl: "https://wa.me/77714057775",
+        choiceId: null,
+        managerUrl: null,
       }),
     );
   });
@@ -1180,26 +1391,24 @@ describe("omnichannel message processor safety", () => {
     expect(meta.sendInstagramQuickReplies).not.toHaveBeenCalled();
   });
 
-  it("cancels immediately when the final equipment-flow claim is denied", async () => {
+  it("keeps a draft when the final equipment-flow claim is denied", async () => {
     repository.getMessageContext.mockResolvedValue(
       context({
         message: { text: "Здравствуйте" },
         settings: { automationConfig: equipmentAutomationConfig() },
       }),
     );
-    repository.claimEquipmentFlowForAutoSend
-      .mockResolvedValueOnce({ claimed: true, reason: "claimed" })
-      .mockResolvedValueOnce({
-        claimed: false,
-        reason: "equipment_flow_configuration_changed",
-      });
+    repository.claimEquipmentFlowForAutoSend.mockResolvedValueOnce({
+      claimed: false,
+      reason: "equipment_flow_configuration_changed",
+    });
 
     await expect(invoke()).resolves.toMatchObject({
-      action: "ignore",
+      action: "draft",
       reason: expect.stringContaining("equipment_flow_configuration_changed"),
     });
     expect(meta.sendInstagramQuickReplies).not.toHaveBeenCalled();
-    expect(repository.markMessageSuperseded).toHaveBeenCalled();
+    expect(repository.markMessageDrafted).toHaveBeenCalled();
   });
 
   it("escalates when an earlier message in the active burst contains a complaint", async () => {
@@ -1373,6 +1582,10 @@ function equipmentAutomationConfig() {
       community: {
         text: "Присоединяйтесь в чат, здесь будем публиковать все новинки и акции",
         url: "https://chat.whatsapp.com/JDaVNsnloFMF0RpOtLSDRW?mode=gi_t",
+      },
+      catalog: {
+        text: "Конечно! Посмотреть каталог можно здесь:",
+        url: "https://myhonor.shop/catalog",
       },
     },
   };

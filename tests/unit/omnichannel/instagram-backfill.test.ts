@@ -120,6 +120,11 @@ describe('Instagram conversations backfill', () => {
       occurredAt: '2026-07-13T11:00:00.000Z',
       metadata: { providerConversationId: 'provider-thread-a' },
     })
+    expect(result.messages[1].metadata).not.toHaveProperty('historicalOutbound')
+    expect(result.messages[2].metadata).toMatchObject({
+      providerConversationId: 'provider-thread-a',
+      historicalOutbound: true,
+    })
 
     const conversationCalls = calls.filter((call) => call.url.pathname.endsWith('/conversations'))
     expect(conversationCalls).toHaveLength(2)
@@ -135,6 +140,65 @@ describe('Instagram conversations backfill', () => {
     ).toBe(true)
     expect(sleep).toHaveBeenCalledTimes(calls.length - 1)
     expect(sleep).toHaveBeenCalledWith(INSTAGRAM_BACKFILL_REQUEST_INTERVAL_MS)
+  })
+
+  it('follows nested conversation message pages and strips their echoed token', async () => {
+    const calls: URL[] = []
+    const fetchMock: MetaFetch = async (input) => {
+      const url = new URL(String(input))
+      calls.push(url)
+      if (url.pathname.endsWith('/conversations')) {
+        return jsonResponse({
+          data: [{
+            id: 'provider-thread-nested',
+            messages: {
+              data: [{ id: 'nested-new', created_time: '2026-07-13T12:00:00+0000' }],
+              paging: {
+                next: 'https://graph.instagram.com/v25.0/provider-thread-nested/messages?after=nested-page-2&access_token=history-secret',
+              },
+            },
+          }],
+        })
+      }
+      if (
+        url.pathname.endsWith('/provider-thread-nested/messages')
+        && url.searchParams.get('after') === 'nested-page-2'
+      ) {
+        return jsonResponse({
+          data: [{ id: 'nested-old', created_time: '2026-07-13T11:00:00+0000' }],
+        })
+      }
+
+      const id = url.pathname.split('/').at(-1)
+      return jsonResponse({
+        id,
+        created_time: id === 'nested-new'
+          ? '2026-07-13T12:00:00+0000'
+          : '2026-07-13T11:00:00+0000',
+        from: { id: 'contact-nested', username: 'nested-user' },
+        to: { data: [{ id: 'ig-business' }] },
+        message: id,
+      })
+    }
+    const sleep = vi.fn(async () => undefined)
+
+    const result = await backfillInstagramConversations({ env, fetch: fetchMock, sleep })
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) throw new Error(result.error)
+    expect(result.messages.map((message) => message.externalMessageId)).toEqual([
+      'nested-old',
+      'nested-new',
+    ])
+    expect(result).toMatchObject({
+      messagesFetched: 2,
+      truncated: false,
+      nextConversationPage: null,
+    })
+    const nestedCall = calls.find((url) => url.pathname.endsWith('/provider-thread-nested/messages'))
+    expect(nestedCall?.searchParams.get('after')).toBe('nested-page-2')
+    expect(nestedCall?.searchParams.has('access_token')).toBe(false)
+    expect(sleep).toHaveBeenCalledTimes(calls.length - 1)
   })
 
   it('globally caps detail calls at the newest 20 IDs and reports truncation', async () => {
@@ -192,6 +256,98 @@ describe('Instagram conversations backfill', () => {
     expect(detailIds.sort()).toEqual(['message-1', 'message-2', 'message-3'])
     expect(nextBatch.messagesFetched).toBe(3)
     expect(nextBatch.truncated).toBe(false)
+  })
+
+  it('drains the first 25 conversations before advancing the cursor to conversation 26', async () => {
+    const pageOne = Array.from({ length: 25 }, (_, index) => ({
+      id: `thread-${index + 1}`,
+      messages: {
+        data: [{
+          id: `cursor-message-${index + 1}`,
+          created_time: new Date(Date.UTC(2026, 6, 13, 10, index)).toISOString(),
+        }],
+      },
+    }))
+    const conversationCalls: URL[] = []
+    const fetchMock: MetaFetch = async (input) => {
+      const url = new URL(String(input))
+      if (url.pathname.endsWith('/conversations')) {
+        conversationCalls.push(url)
+        if (url.searchParams.get('after') === 'conversation-25') {
+          return jsonResponse({
+            data: [{
+              id: 'thread-26',
+              messages: {
+                data: [{
+                  id: 'cursor-message-26',
+                  created_time: '2026-07-13T11:00:00.000Z',
+                }],
+              },
+            }],
+          })
+        }
+        return jsonResponse({
+          data: pageOne,
+          paging: {
+            next: 'https://graph.instagram.com/v25.0/ig-business/conversations?platform=instagram&after=conversation-25&access_token=history-secret',
+          },
+        })
+      }
+
+      const id = url.pathname.split('/').at(-1) ?? ''
+      const sequence = Number(id.split('-').at(-1))
+      return jsonResponse({
+        id,
+        created_time: Number.isFinite(sequence)
+          ? new Date(Date.UTC(2026, 6, 13, 10, sequence)).toISOString()
+          : '2026-07-13T10:00:00.000Z',
+        from: { id: `contact-${sequence}`, username: `user-${sequence}` },
+        to: { data: [{ id: 'ig-business' }] },
+        message: id,
+      })
+    }
+    const sleep = async () => undefined
+
+    const first = await backfillInstagramConversations({ env, fetch: fetchMock, sleep })
+    expect(first.ok).toBe(true)
+    if (!first.ok) throw new Error(first.error)
+    expect(first.messages).toHaveLength(20)
+    expect(first.nextConversationPage).toBe(first.conversationPage)
+
+    const firstIds = first.messages.map((message) => message.externalMessageId)
+    const second = await backfillInstagramConversations({
+      env,
+      fetch: fetchMock,
+      sleep,
+      conversationPage: first.nextConversationPage ?? undefined,
+      excludeMessageIds: firstIds,
+    })
+    expect(second.ok).toBe(true)
+    if (!second.ok) throw new Error(second.error)
+    expect(second.messages).toHaveLength(5)
+    expect(second.nextConversationPage).toContain('after=conversation-25')
+    expect(second.nextConversationPage).not.toContain('access_token')
+
+    const firstPageIds = [...firstIds, ...second.messages.map((message) => message.externalMessageId)]
+    expect(new Set(firstPageIds).size).toBe(25)
+    const third = await backfillInstagramConversations({
+      env,
+      fetch: fetchMock,
+      sleep,
+      conversationPage: second.nextConversationPage ?? undefined,
+      excludeMessageIds: firstPageIds,
+    })
+    expect(third.ok).toBe(true)
+    if (!third.ok) throw new Error(third.error)
+    expect(third.messages.map((message) => message.externalMessageId)).toEqual([
+      'cursor-message-26',
+    ])
+    expect(third.conversationsScanned).toBe(1)
+    expect(third.nextConversationPage).toBeNull()
+    expect(third.truncated).toBe(false)
+    expect(conversationCalls).toHaveLength(3)
+    expect(conversationCalls.every((url) =>
+      url.pathname === '/v25.0/ig-business/conversations')).toBe(true)
   })
 
   it('keeps detail failures partial and never leaks a token from Meta error text', async () => {

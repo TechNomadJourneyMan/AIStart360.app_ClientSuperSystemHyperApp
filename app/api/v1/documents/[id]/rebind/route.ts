@@ -3,6 +3,7 @@ export const runtime = 'nodejs'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { bindFieldsToMetrics } from '@/lib/documents/bind-fields'
 import type { ParsedDataField } from '@/lib/documents/extract'
 
 // POST /api/v1/documents/[id]/rebind
@@ -19,9 +20,7 @@ import type { ParsedDataField } from '@/lib/documents/extract'
 //
 // Behavior:
 //   - Reads existing `parsed_data.fields[]`.
-//   - Dynamically imports `@/lib/documents/bind-fields` (which is being built in
-//     parallel). If the import fails, the route returns the existing fields
-//     unchanged with a `note` field — instead of erroring out.
+//   - Re-runs the deterministic field-to-metric binder.
 //   - Persists `parsed_data = { ...existing, fields: rebound, rebound_at }`.
 export async function POST(
   _req: NextRequest,
@@ -90,59 +89,11 @@ export async function POST(
     ? existing.fields
     : []
 
-  // 6. Dynamically import bind-fields. Module may not exist yet — degrade gracefully.
-  let rebound: ParsedDataField[] = existingFields
-  let bindModuleAvailable = true
-  let bindError: string | null = null
-
-  try {
-    // The bind-fields module is built in parallel and may not be present yet.
-    // We use an indirected specifier so `tsc` does not fail with TS2307 before
-    // the module lands on disk. At runtime, the alias resolves normally when
-    // the file exists; otherwise the dynamic import rejects and `.catch()`
-    // routes us into the degrade branch below.
-    const bindFieldsSpecifier = '@/lib/documents/bind-fields'
-    const mod = await import(/* @vite-ignore */ bindFieldsSpecifier).catch((err) => {
-      bindError = err instanceof Error ? err.message : 'import failed'
-      return null
-    })
-    if (!mod || typeof (mod as { bindFieldsToMetrics?: unknown }).bindFieldsToMetrics !== 'function') {
-      bindModuleAvailable = false
-    } else {
-      const fn = (mod as {
-        bindFieldsToMetrics: (
-          fields: ParsedDataField[],
-          docType: string,
-        ) =>
-          | Promise<ParsedDataField[] | { fields: ParsedDataField[] }>
-          | ParsedDataField[]
-          | { fields: ParsedDataField[] }
-      }).bindFieldsToMetrics
-      const out = await fn(existingFields, doc.doc_type)
-      // The binder may return either a bare array (legacy contract used by the
-      // earlier rebind-route test) or `{ fields, stats }` (current contract).
-      // Normalize so the persistence + diff logic below works uniformly.
-      if (Array.isArray(out)) {
-        rebound = out
-      } else if (out && Array.isArray((out as { fields?: unknown }).fields)) {
-        rebound = (out as { fields: ParsedDataField[] }).fields
-      } else {
-        rebound = existingFields
-      }
-    }
-  } catch (err) {
-    bindModuleAvailable = false
-    bindError = err instanceof Error ? err.message : 'bind error'
-  }
-
-  if (!bindModuleAvailable) {
-    return NextResponse.json({
-      ok: true,
-      data: { updated: 0, total: existingFields.length },
-      note: 'bind-fields module not available yet',
-      ...(bindError ? { detail: bindError } : {}),
-    })
-  }
+  // 6. Rebind against the canonical metric registry.
+  const { fields: rebound } = await bindFieldsToMetrics(
+    existingFields,
+    doc.doc_type,
+  )
 
   // 7. Compute how many fields had their metric_id changed
   let updatedCount = 0

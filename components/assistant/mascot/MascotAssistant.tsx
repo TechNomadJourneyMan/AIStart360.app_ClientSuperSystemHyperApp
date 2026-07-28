@@ -77,7 +77,7 @@ const AUTO_INSIGHT_SCREENS = [
  * TOURS и исключаем текущий экран, поэтому мёртвых пунктов не будет.
  */
 const CLIENT_SECTION_TOURS = [
-  { label: 'Дэшборд', screen: '/client/dashboard', href: '/client/dashboard' },
+  { label: 'Дэшборд', screen: '/dashboard', href: '/dashboard' },
   { label: 'GRI-диагностика', screen: '/gri', href: '/gri' },
   { label: 'Клиенты', screen: '/pulse', href: '/pulse' },
   { label: 'Точка А', screen: '/client/point-a', href: '/client/point-a' },

@@ -1,4 +1,5 @@
 import withPWAInit from '@ducanh2912/next-pwa'
+import { withWorkflow } from 'workflow/next'
 
 // PWA / service worker. Disabled in development so it never interferes with the
 // dev server / HMR; it only activates in the production build. Network-first for
@@ -135,4 +136,15 @@ const nextConfig = {
   },
 }
 
-export default withPWA(nextConfig)
+const withWorkflowConfig = withWorkflow(withPWA(nextConfig))
+
+// @workflow/next 4.x adds a top-level `turbopack` key even when this Next
+// 14.2.x application is built with webpack. Next 14 rejects that key, while
+// the webpack loader installed by withWorkflow is sufficient for our builds.
+// Remove only the unsupported Turbopack branch; revisit this when upgrading
+// the application to Next 15+.
+export default async function configuredForNext14(phase, context) {
+  const configured = await withWorkflowConfig(phase, context)
+  delete configured.turbopack
+  return configured
+}

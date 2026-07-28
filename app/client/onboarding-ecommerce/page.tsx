@@ -10,13 +10,15 @@
 //   7. Финансы           (выручка / сезонность / зависимость от 1 поставщика)
 //
 // Answers persist locally + POST to /api/v1/onboarding/survey on each step.
-// On finish → /client/dashboard-ecommerce.
+// On finish → canonical shared /dashboard. The vertical dashboard remains an
+// optional preview route, but is not the post-questionnaire destination.
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
+import { CLIENT_DASHBOARD_PATH } from '@/lib/role-landing'
 
 interface StepDef {
   key: string
@@ -250,7 +252,7 @@ export default function OnboardingEcommercePage() {
       setSubmitting(true)
       await persistRemote(true)
       sessionStorage.removeItem(STORAGE_KEY)
-      router.push('/client/dashboard-ecommerce')
+      router.replace(CLIENT_DASHBOARD_PATH)
     }
   }
 

@@ -4,6 +4,7 @@ export const maxDuration = 60
 
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
+import { start } from 'workflow/api'
 import { getGigaActor } from '@/lib/admin/giga-actor'
 import { OMNICHANNEL_BACKFILL_REQUESTED_EVENT } from '@/lib/omnichannel/events'
 import { inngest } from '@/lib/inngest'
@@ -16,6 +17,9 @@ import {
   enqueueOmnichannelProcessingJobsViaPostgres,
   type OmnichannelProcessingJobStatus,
 } from '@/lib/omnichannel/processing-jobs'
+import { backfillInstagramHistoryWorkflow } from '@/workflows/backfill-instagram-history'
+import { backfillWhatsAppHistoryWorkflow } from '@/workflows/backfill-whatsapp-history'
+import { getMetaConfigurationHealth } from '@/lib/omnichannel/meta-client'
 
 const schema = z.object({ channel: z.enum(['instagram', 'whatsapp']) })
 const WHATSAPP_HISTORY_ANALYSIS_LIMIT = 100
@@ -30,6 +34,10 @@ function countJobStatuses(statuses: OmnichannelProcessingJobStatus[]) {
   )
 }
 
+function shouldUseWorkflowBackend(): boolean {
+  return process.env.OMNICHANNEL_PROCESSING_BACKEND?.trim().toLowerCase() === 'workflow'
+}
+
 export async function POST(req: NextRequest) {
   const actor = await getGigaActor(req)
   if (!actor) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
@@ -41,6 +49,56 @@ export async function POST(req: NextRequest) {
   const { channel } = parsed.data
 
   try {
+    const requestedAt = new Date().toISOString()
+
+    if (shouldUseWorkflowBackend()) {
+      if (channel === 'instagram' && !getMetaConfigurationHealth().instagram.configured) {
+        return NextResponse.json({
+          error: 'Сначала подключите Instagram и проверьте токен аккаунта',
+          code: 'instagram_not_configured',
+        }, { status: 409 })
+      }
+      const workflowInput = { requestedBy: actor.id, requestedAt }
+      const run = channel === 'instagram'
+        ? await start(backfillInstagramHistoryWorkflow, [workflowInput])
+        : await start(backfillWhatsAppHistoryWorkflow, [workflowInput])
+      await logAudit({
+        entityType: 'system',
+        entityId: `omnichannel:${channel}`,
+        action: 'omnichannel.backfill_requested',
+        performedBy: actor.id,
+        diff: {
+          after: {
+            channel,
+            backend: 'workflow',
+            workflowRunId: run.runId,
+            forceDraft: true,
+            ...(channel === 'whatsapp'
+              ? {
+                  source: 'already_ingested_whatsapp_web_history',
+                  cloudApiHistoryFetched: false,
+                }
+              : {}),
+          },
+          actorKind: actor.kind,
+        },
+        ipAddress: req.headers.get('x-forwarded-for') ?? undefined,
+      }).catch(() => undefined)
+      return NextResponse.json({
+        queued: true,
+        channel,
+        backend: 'workflow',
+        workflow_run_id: run.runId,
+        force_draft: true,
+        ...(channel === 'whatsapp'
+          ? {
+              source: 'already_ingested_whatsapp_web_history',
+              cloud_api_history_fetched: false,
+            }
+          : {}),
+      }, { status: 202 })
+    }
+
     if (channel === 'whatsapp' && shouldUseOmnichannelPostgres()) {
       const candidates = await listImportedWhatsAppHistoryForDraft(
         WHATSAPP_HISTORY_ANALYSIS_LIMIT,
@@ -82,7 +140,7 @@ export async function POST(req: NextRequest) {
           actorKind: actor.kind,
         },
         ipAddress: req.headers.get('x-forwarded-for') ?? undefined,
-      })
+      }).catch(() => undefined)
       return NextResponse.json({
         queued: pending > 0,
         channel,
@@ -107,7 +165,7 @@ export async function POST(req: NextRequest) {
       data: {
         channel,
         requested_by: actor.id,
-        requested_at: new Date().toISOString(),
+        requested_at: requestedAt,
       },
     })
     await logAudit({
@@ -129,7 +187,7 @@ export async function POST(req: NextRequest) {
         actorKind: actor.kind,
       },
       ipAddress: req.headers.get('x-forwarded-for') ?? undefined,
-    })
+    }).catch(() => undefined)
     return NextResponse.json({
       queued: true,
       channel,

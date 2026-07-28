@@ -1,5 +1,13 @@
 import type { UserRole } from '@/types'
 
+/** Canonical business-client cabinet. Legacy /client/dashboard is only an alias. */
+export const CLIENT_DASHBOARD_PATH = '/dashboard'
+export const CLIENT_WAITING_ROOM_PATH = '/client/waiting-room'
+
+export function clientLandingPath(status?: string | null): string {
+  return status === 'approved' ? CLIENT_DASHBOARD_PATH : CLIENT_WAITING_ROOM_PATH
+}
+
 /**
  * FE-06: the single post-authentication landing path for a role.
  *
@@ -22,8 +30,8 @@ export function roleLandingPath(
     case 'admin':
       return '/dashboard'
     case 'client':
-      return status === 'approved' ? '/client/point-a' : '/client/waiting-room'
+      return clientLandingPath(status)
     default:
-      return '/dashboard'
+      return CLIENT_DASHBOARD_PATH
   }
 }

@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { getGigaActor } from '@/lib/admin/giga-actor'
 import { logAudit } from '@/lib/audit'
+import { CLIENT_DASHBOARD_PATH } from '@/lib/role-landing'
 
 function clientIp(req: NextRequest): string {
   return (
@@ -48,7 +49,7 @@ export async function POST(req: NextRequest) {
       type: 'magiclink',
       email: profile.email,
       options: {
-        redirectTo: `${req.nextUrl.origin}${redirectTo || '/client/dashboard'}`,
+        redirectTo: `${req.nextUrl.origin}${redirectTo || CLIENT_DASHBOARD_PATH}`,
       },
     })
 
@@ -75,7 +76,7 @@ export async function POST(req: NextRequest) {
         diff: {
           actorKind: actor.kind,
           target: { id: userId, email: profile.email },
-          redirectTo: redirectTo || '/client/dashboard',
+          redirectTo: redirectTo || CLIENT_DASHBOARD_PATH,
         },
         ipAddress: clientIp(req),
       })

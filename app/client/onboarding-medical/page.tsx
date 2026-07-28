@@ -11,6 +11,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { MEDICAL_INTAKE_FIELDS, type IntakeField } from '@/lib/intake-schemas'
 import type { DataQualityReport, DataQualityIssue } from '@/lib/data-quality'
+import { CLIENT_DASHBOARD_PATH } from '@/lib/role-landing'
 
 export default function OnboardingMedicalPage() {
   const router = useRouter()
@@ -111,7 +112,7 @@ export default function OnboardingMedicalPage() {
       // If there are critical quality issues — let user see them before redirect
       const hasCriticalIssues = body.qualityReport?.issues.some((i) => i.severity === 'critical')
       if (!hasCriticalIssues) {
-        setTimeout(() => router.replace('/client/dashboard-medical'), 3500)
+        setTimeout(() => router.replace(CLIENT_DASHBOARD_PATH), 3500)
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Не удалось отправить')

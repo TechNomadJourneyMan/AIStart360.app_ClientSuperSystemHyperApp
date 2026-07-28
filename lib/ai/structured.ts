@@ -26,7 +26,8 @@ interface GenerateObjectOptions<T> {
   /** Quality/speed tier for automatic model selection (when `model` is unset). */
   complexity?: Complexity
   maxTokens?: number
-  temperature?: number
+  /** `null` omits temperature for models that do not expose that parameter. */
+  temperature?: number | null
   /** Opt in to provider-enforced JSON Schema, in addition to local Zod validation. */
   strictJsonSchema?: boolean | 'prompt'
   /** Treat model-emitted nulls as omitted optional object fields. */
@@ -92,7 +93,7 @@ export async function generateObjectViaOpenRouter<T>(
       model: opts.model,
       complexity: opts.complexity,
       maxTokens: opts.maxTokens ?? 3000,
-      temperature: opts.temperature ?? 0.4,
+      temperature: opts.temperature === undefined ? 0.4 : opts.temperature,
       jsonMode: !useProviderSchema,
       jsonSchema: useProviderSchema ? strictSchema : undefined,
       privacySensitive,

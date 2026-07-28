@@ -79,6 +79,11 @@ export async function middleware(request: NextRequest) {
   if (
     pathname.startsWith('/_next') ||
     pathname.startsWith('/api') ||
+    // Vercel Workflow invokes its generated step endpoints without an
+    // application user session. Sending these internal calls through the
+    // dashboard auth gate would redirect them to /login and leave every Meta
+    // message workflow stuck after the webhook ACK.
+    pathname.startsWith('/.well-known/workflow/') ||
     pathname.startsWith('/logo') ||
     pathname.startsWith('/fonts') ||
     // Static assets in public/ must skip the network auth (getUser + profiles):
@@ -144,6 +149,8 @@ export async function middleware(request: NextRequest) {
   // Public auth pages (login, register, etc.)
   const isPublic = PUBLIC_PATHS.some((p) => pathname.startsWith(p))
   const isGigaLogin = pathname === GIGA_LOGIN_PATH
+  const hasApprovedPersonalGigaAccess =
+    Boolean(user) && role === 'super_admin' && resolved?.status === 'approved'
 
   // A2b: the giga gate is the HMAC-SIGNED `aistart360_giga` cookie, verified
   // here on the Edge runtime via Web Crypto. The unsigned `aistart360_role`
@@ -152,7 +159,7 @@ export async function middleware(request: NextRequest) {
     (await verifyGigaRoleEdge(request.cookies.get(GIGA_COOKIE_NAME)?.value)) === 'super_admin'
 
   if (isGigaLogin) {
-    if ((user && role === 'super_admin') || hasGigaAccess) {
+    if (hasApprovedPersonalGigaAccess || hasGigaAccess) {
       return NextResponse.redirect(new URL(GIGA_PANEL_PATH, request.url))
     }
     return response // allow access to login page
@@ -160,10 +167,12 @@ export async function middleware(request: NextRequest) {
 
   // ГИГА-Панель: строгая изоляция — только SUPER_ADMIN
   if (pathname.startsWith(GIGA_PANEL_PATH)) {
-    if (role !== 'super_admin' && !hasGigaAccess) {
+    if (!hasApprovedPersonalGigaAccess && !hasGigaAccess) {
       return NextResponse.redirect(new URL(GIGA_LOGIN_PATH, request.url))
     }
-    return response
+    // Break-glass has no personal session to step up with MFA. An approved
+    // personal super_admin continues below so the normal MFA gate applies.
+    if (!hasApprovedPersonalGigaAccess) return response
   }
 
   // Authenticated user visiting auth page → redirect to correct panel
@@ -245,5 +254,7 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|.*\\.svg|.*\\.png).*)'],
+  matcher: [
+    '/((?!_next/static|_next/image|favicon.ico|\\.well-known/workflow/|.*\\.svg|.*\\.png).*)',
+  ],
 }

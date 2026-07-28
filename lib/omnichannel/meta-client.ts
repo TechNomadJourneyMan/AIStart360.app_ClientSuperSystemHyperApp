@@ -67,6 +67,17 @@ export interface SendWhatsAppTextInput {
   replyToExternalId?: string | null
 }
 
+export interface SendWhatsAppTemplateInput {
+  /** E.164 digits without the leading plus, as required by Meta. */
+  recipientId: string
+  /** Approved Meta template name. The integration selects it server-side. */
+  templateName: string
+  languageCode: string
+  bodyParameters: string[]
+  /** Fail-closed routing check for the configured Cloud API sender. */
+  accountExternalId?: string
+}
+
 export interface MetaInteractiveOption {
   id: string
   title: string
@@ -570,6 +581,87 @@ export class MetaClient {
     return { ok: true, externalMessageId, rawStatus: result.status }
   }
 
+  async sendWhatsAppTemplate(
+    input: SendWhatsAppTemplateInput,
+  ): Promise<MetaSendResult> {
+    if (!this.whatsappPhoneNumberId || !this.whatsappToken) {
+      return localFailure(
+        'configuration_error',
+        'WhatsApp messaging is not configured (WHATSAPP_TOKEN and WHATSAPP_PHONE_NUMBER_ID are required)',
+      )
+    }
+    if (input.accountExternalId && input.accountExternalId !== this.whatsappPhoneNumberId) {
+      return localFailure(
+        'account_configuration_mismatch',
+        'WhatsApp template sender does not match the configured phone id',
+      )
+    }
+    if (
+      !/^[1-9][0-9]{7,14}$/.test(input.recipientId)
+      || !/^[a-z0-9_]{1,512}$/.test(input.templateName)
+      || !/^[a-z]{2,3}(?:_[A-Z]{2})?$/.test(input.languageCode)
+      || input.bodyParameters.length > 20
+      || input.bodyParameters.some((parameter) =>
+        parameter !== parameter.trim()
+        || parameter.length < 1
+        || parameter.length > 1_024,
+      )
+    ) {
+      return localFailure(
+        'invalid_input',
+        'WhatsApp template send input violates provider limits',
+      )
+    }
+
+    const body: Record<string, unknown> = {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: input.recipientId,
+      type: 'template',
+      template: {
+        name: input.templateName,
+        language: {
+          policy: 'deterministic',
+          code: input.languageCode,
+        },
+        ...(input.bodyParameters.length > 0
+          ? {
+              components: [{
+                type: 'body',
+                parameters: input.bodyParameters.map((parameter) => ({
+                  type: 'text',
+                  text: parameter,
+                })),
+              }],
+            }
+          : {}),
+      },
+    }
+
+    const result = await this.requestJson<Record<string, unknown>>({
+      origin: WHATSAPP_GRAPH_ORIGIN,
+      pathOrUrl: `${encodeURIComponent(this.whatsappPhoneNumberId)}/messages`,
+      token: this.whatsappToken,
+      method: 'POST',
+      body,
+    })
+    if (!result.ok) return result
+
+    const messages = Array.isArray(result.data.messages) ? result.data.messages : []
+    const firstMessage = asRecord(messages[0])
+    const externalMessageId = nonEmpty(firstMessage?.id)
+    if (!externalMessageId) {
+      return {
+        ok: false,
+        status: result.status,
+        code: 'invalid_response',
+        message: 'WhatsApp API response did not include messages[0].id',
+        retryable: false,
+      }
+    }
+    return { ok: true, externalMessageId, rawStatus: result.status }
+  }
+
   async sendWhatsAppList(input: SendWhatsAppListInput): Promise<MetaSendResult> {
     if (!this.whatsappPhoneNumberId || !this.whatsappToken) {
       return localFailure(
@@ -677,6 +769,13 @@ export async function sendWhatsAppText(
   return createMetaClient(options).sendWhatsAppText(input)
 }
 
+export async function sendWhatsAppTemplate(
+  input: SendWhatsAppTemplateInput,
+  options: MetaClientOptions = {},
+): Promise<MetaSendResult> {
+  return createMetaClient(options).sendWhatsAppTemplate(input)
+}
+
 export async function sendInstagramQuickReplies(
   input: SendInstagramQuickRepliesInput,
   options: MetaClientOptions = {},
@@ -694,3 +793,4 @@ export async function sendWhatsAppList(
 // Explicit aliases keep call sites readable without duplicating provider logic.
 export const sendInstagramTextMessage = sendInstagramText
 export const sendWhatsAppTextMessage = sendWhatsAppText
+export const sendWhatsAppTemplateMessage = sendWhatsAppTemplate

@@ -164,14 +164,19 @@ export async function listImportedWhatsAppHistoryForDraftViaPostgres(
 ): Promise<DevelopmentImportedHistoryCandidate[]> {
   const safeLimit = Math.min(Math.max(Math.trunc(limit), 1), 100);
   const result = await db.query(
-    `SELECT id, conversation_id
-       FROM public.omnichannel_messages
-      WHERE channel = 'whatsapp'
-        AND direction = 'in'
-        AND status = 'imported'
-        AND ai_draft IS NULL
-        AND metadata @> $1::jsonb
-      ORDER BY occurred_at DESC, created_at DESC
+    `SELECT latest.id, latest.conversation_id
+       FROM (
+         SELECT DISTINCT ON (conversation_id)
+           id, conversation_id, occurred_at, created_at
+         FROM public.omnichannel_messages
+         WHERE channel = 'whatsapp'
+           AND direction = 'in'
+           AND status = 'imported'
+           AND ai_draft IS NULL
+           AND metadata @> $1::jsonb
+         ORDER BY conversation_id, occurred_at DESC, created_at DESC, id DESC
+       ) AS latest
+      ORDER BY latest.occurred_at DESC, latest.created_at DESC, latest.id DESC
       LIMIT $2::integer`,
     [JSON.stringify({ transport: "whatsapp_web", catchUp: true }), safeLimit],
   );
@@ -295,12 +300,13 @@ function mapClaim(row: QueryResultRow | undefined): DevelopmentAutoSendClaim {
 
 export async function claimMessageForAutoSendViaPostgres(
   messageId: string,
+  ownerToken: string,
   db: Queryable = developmentPool(),
 ): Promise<DevelopmentAutoSendClaim> {
   const result = await db.query(
     `SELECT claimed, reason
-       FROM public.claim_omnichannel_auto_send($1::uuid)`,
-    [messageId],
+       FROM public.claim_omnichannel_auto_send_owned($1::uuid, $2::text)`,
+    [messageId, ownerToken],
   );
   return mapClaim(result.rows[0]);
 }
@@ -308,12 +314,15 @@ export async function claimMessageForAutoSendViaPostgres(
 export async function claimEquipmentFlowForAutoSendViaPostgres(
   messageId: string,
   expectedSettingsUpdatedAt: string,
+  ownerToken: string,
   db: Queryable = developmentPool(),
 ): Promise<DevelopmentAutoSendClaim> {
   const result = await db.query(
     `SELECT claimed, reason
-       FROM public.claim_omnichannel_equipment_flow_send($1::uuid, $2::timestamptz)`,
-    [messageId, expectedSettingsUpdatedAt],
+       FROM public.claim_omnichannel_equipment_flow_send_owned(
+         $1::uuid, $2::timestamptz, $3::text
+       )`,
+    [messageId, expectedSettingsUpdatedAt, ownerToken],
   );
   return mapClaim(result.rows[0]);
 }

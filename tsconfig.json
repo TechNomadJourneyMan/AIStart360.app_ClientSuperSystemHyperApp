@@ -14,7 +14,7 @@
     "types": ["node", "react", "react-dom"],
     "jsx": "preserve",
     "incremental": true,
-    "plugins": [{ "name": "next" }],
+    "plugins": [{ "name": "next" }, { "name": "workflow" }],
     "paths": {
       "@/*": ["./*"]
     }

@@ -8,6 +8,11 @@ import Link from 'next/link'
 import { TOTAL_STEPS, STEPS } from '@/components/onboarding/constants/step-config'
 import InlineValidationHints from '@/components/assistant/InlineValidationHints'
 import { getSectionByStep } from '@/lib/assistant/sections'
+import {
+  CLIENT_DASHBOARD_PATH,
+  CLIENT_WAITING_ROOM_PATH,
+  clientLandingPath,
+} from '@/lib/role-landing'
 
 // Step form components
 import Step1CompanyForm from '@/components/onboarding/steps/Step1CompanyForm'
@@ -210,8 +215,10 @@ export default function OnboardingPage() {
       try {
         const statusRes = await fetch(`/api/client/status?userId=${userId}`)
         const statusData = await statusRes.json()
-        router.push(statusData.status === 'approved' ? '/client/dashboard' : '/client/waiting-room')
-      } catch { router.push('/client/dashboard') }
+        router.replace(clientLandingPath(statusData.status))
+      } catch {
+        router.replace(CLIENT_WAITING_ROOM_PATH)
+      }
     }
   }
 
@@ -257,7 +264,7 @@ export default function OnboardingPage() {
       {/* Header */}
       <header className="sticky top-0 z-30 bg-[#0c0e14]/90 backdrop-blur-xl border-b border-white/[0.06]">
         <div className="max-w-3xl mx-auto px-4 py-3 flex items-center justify-between">
-          <Link href="/client/dashboard" className="flex items-center gap-2 group">
+          <Link href={CLIENT_DASHBOARD_PATH} className="flex items-center gap-2 group">
             <Image src="/logo-icon.svg" alt="AIStart360" width={28} height={28} className="opacity-80 group-hover:opacity-100 transition-opacity" />
             <span className="text-sm font-bold text-on-surface/70 hidden sm:block">AIStart360</span>
           </Link>

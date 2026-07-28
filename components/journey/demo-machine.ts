@@ -113,6 +113,50 @@ export function runLocalTurn(
     }
   }
 
+  if (shouldAnswerContextQuestion(current, text)) {
+    const nextStep = current.roadmap.find((item) => item.status === 'next')
+      ?? current.roadmap[0]
+    const domain = detectLocalDomain(current.businessDescription)
+    const asksForData = /данн|показател|метрик|цифр|перв(?:ого|ый)\s+шаг|следующ(?:его|ий)\s+шаг/i.test(text)
+    const assistantText = nextStep
+      ? asksForData && domain === 'commerce-retail'
+        ? `Для этапа «${nextStep.title}» возьмите один сопоставимый период и подтвердите источник выручки, количество и статусы заказов, валовую маржу, остатки и отсутствие товаров, возвраты и отмены. Сначала фиксируем базу без прогнозов; затем сравниваем изменения тем же способом.`
+        : `Следующий этап — «${nextStep.title}» (${nextStep.horizon}). ${nextStep.description} Начните с одного проверяемого источника и не подменяйте отсутствующие значения предположениями.`
+      : 'Точка A уже подтверждена. Сначала сформулируйте измеримую Точку B со значением и сроком — после этого я разложу первый проверяемый этап.'
+
+    return {
+      ...current,
+      messages: [
+        ...current.messages,
+        userMessage,
+        {
+          id: makeId('message'),
+          role: 'assistant',
+          text: assistantText,
+          createdAt: now,
+        },
+      ],
+      suggestions: nextStep
+        ? [
+            {
+              id: makeId('suggestion'),
+              label: 'Подготовить данные',
+              value: 'Помоги составить короткий чек-лист данных для первого этапа.',
+              target: 'roadmap',
+              status: 'active',
+            },
+          ]
+        : current.suggestions,
+      provider: { mode: 'demo', label: 'Демо-логика' },
+      persistence: {
+        mode: 'local',
+        label: 'Сохранение на устройстве',
+        reason: 'Ответ создан детерминированным локальным сценарием, не внешней AI-моделью.',
+      },
+      updatedAt: now,
+    }
+  }
+
   const extracted = extractFactsFromText(text)
   const existingKeys = new Set(current.facts.map((fact) => `${fact.label}:${fact.value}`.toLowerCase()))
   const facts = extracted.filter(
@@ -434,6 +478,18 @@ function shouldTreatAsGoal(state: JourneyWorkspaceView, text: string): boolean {
   return /(?:цель|увелич|сниз|достичь|вырасти|открыть|масштаб|до\s+[\d.,]+|за\s+\d+\s*(?:месяц|год|недел))/i.test(text)
 }
 
+function shouldAnswerContextQuestion(
+  state: JourneyWorkspaceView,
+  text: string,
+): boolean {
+  if (!state.facts.some((fact) => fact.status === 'confirmed')) return false
+  const clean = text.trim()
+  if (!clean) return false
+  return /[?？]\s*$/.test(clean)
+    || /^(?:какие?|как|что|почему|зачем|где|когда|сколько|расскажи|объясни|покажи)\b/i.test(clean)
+    || /(?:давай|хочу)\s+(?:обсуд|разбер)/i.test(clean)
+}
+
 function extractGoalTarget(text: string): { metric: string; target: string } | undefined {
   const stores = text.match(/(?:открыть|до)\s+(\d+|один|два|три|четыре|пять|шесть|семь|восемь|девять|десять)\s+(магазин[а-яё]*|точ[а-яё]*)/i)
   if (stores?.[1]) {
@@ -442,7 +498,7 @@ function extractGoalTarget(text: string): { metric: string; target: string } | u
   }
   const renewal = text.match(/(?:renewal\s*rate|дол[яю]\s+продлен[а-яё]*|процент\s+продлен[а-яё]*)[^\d]{0,30}(\d+(?:[.,]\d+)?\s*%)/i)
   if (renewal?.[1]) return { metric: 'Renewal rate', target: renewal[1].replace(/\s+/g, '') }
-  const revenue = text.match(/выручк[а-яё]*[^.]{0,80}?(?:до|на)\s+([\d.,]+\s*(?:тыс(?:яч[аи])?|млн|миллион[а-яё]*|млрд|миллиард[а-яё]*)?(?:\s*(?:₸|тенге|тг|kzt))?)/i)
+  const revenue = text.match(/выручк[а-яё]*[^.]{0,80}?(?:до|на)\s+([\d.,]+\s*(?:%|тыс(?:яч[аи])?|млн|миллион[а-яё]*|млрд|миллиард[а-яё]*)?(?:\s*(?:₸|тенге|тг|kzt))?)/i)
   if (revenue?.[1]) return { metric: 'Выручка', target: revenue[1].trim() }
   const match = text.match(/(?:до|на)\s+([\d.,]+\s*(?:%|тыс(?:яч[аи])?|млн|миллион[а-яё]*|млрд)?(?:\s*(?:₸|тенге|тг|kzt))?)/i)
   return match?.[1] ? { metric: 'Целевой показатель', target: match[1].trim() } : undefined

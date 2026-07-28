@@ -190,6 +190,41 @@ describe('delayed omnichannel reply policy', () => {
     expect(isConfirmedOutboundMessage(failedOutbound)).toBe(false)
   })
 
+  it('does not reopen history when fresh Instagram inbound follows an imported outbound', () => {
+    const earlierInbound = inboundAt('instagram-old-in', 2 * 60 * 60 * 1_000, {
+      channel: 'instagram',
+    })
+    const importedOutbound = message({
+      id: 'instagram-imported-out',
+      channel: 'instagram',
+      direction: 'out',
+      status: 'imported',
+      occurredAt: new Date(NOW_MS - 30 * 60 * 1_000).toISOString(),
+      metadata: {
+        provider: 'meta',
+        source: 'instagram_conversations_backfill',
+        providerConversationId: 'provider-thread-a',
+        historicalOutbound: true,
+      },
+    })
+    const freshInbound = message({
+      id: 'instagram-fresh-in',
+      channel: 'instagram',
+    })
+
+    expect(assessDelayedReply({
+      currentMessage: freshInbound,
+      history: [earlierInbound, importedOutbound, freshInbound],
+      nowMs: NOW_MS,
+    })).toEqual({
+      gate: 'normal',
+      reason: 'no_earlier_unanswered_inbound',
+      prependApology: false,
+      unansweredAgeMs: null,
+      unansweredMessageCount: 0,
+    })
+  })
+
   it('keeps the apology decorator idempotent', () => {
     const result = { prependApology: true }
     const once = prependDelayedReplyApology('Ответ', result)
