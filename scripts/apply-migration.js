@@ -41,11 +41,15 @@ async function main() {
     process.exit(1)
   }
 
-  const connectionString = process.env.DIRECT_URL || process.env.DATABASE_URL
-  if (!connectionString) {
+  const rawConnectionString = process.env.DIRECT_URL || process.env.DATABASE_URL
+  if (!rawConnectionString) {
     console.error('Neither DIRECT_URL nor DATABASE_URL is set.')
     process.exit(1)
   }
+  // Vercel may preserve a trailing escaped newline when a secret was added
+  // from stdin. Strip only that transport artifact before handing the URL to
+  // node-postgres; never log the unmasked value.
+  const connectionString = rawConnectionString.replace(/\\n$/g, '').trim()
 
   const client = new Client({ connectionString })
   await client.connect()

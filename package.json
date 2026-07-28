@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "engines": {
-    "node": ">=20"
+    "node": ">=20.9.0"
   },
   "scripts": {
     "dev": "next dev",
@@ -79,7 +79,7 @@
     "react-hook-form": "^7.72.0",
     "recharts": "^2.15.4",
     "resend": "6.12.3",
-    "sharp": "^0.34.5",
+    "sharp": "0.35.3",
     "sonner": "^2.0.7",
     "tailwind-merge": "^2.6.1",
     "telegram": "^2.26.22",

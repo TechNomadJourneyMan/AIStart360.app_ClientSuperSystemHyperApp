@@ -119,8 +119,8 @@ export async function POST(req: NextRequest) {
         priority: 'medium',
         source: 'client_portal',
         payload: requestPayload,
-        created_at: now,
-        updated_at: now,
+        createdAt: now,
+        updatedAt: now,
       })
 
       if (fbError) {

@@ -30,7 +30,7 @@ function loadEnv(file) {
 }
 
 function required(name) {
-  const value = process.env[name]?.trim()
+  const value = process.env[name]?.replace(/\\n$/g, '').trim()
   if (!value) throw new Error(`Missing ${name}`)
   return value
 }
