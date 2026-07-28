@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   InboxIcon,
@@ -13,7 +14,6 @@ import {
 } from 'lucide-react'
 import { useGigaPanelStore } from '@/stores/gigaPanel.store'
 import { RequestsModule } from '@/components/giga-panel/RequestsModule'
-import { CRMModule } from '@/components/giga-panel/CRMModule'
 import { ClientsModule } from '@/components/giga-panel/ClientsModule'
 
 // ─── KPI Card ────────────────────────────────────────────────────────────────
@@ -52,7 +52,14 @@ function KpiCard({
 // ─── Main page ───────────────────────────────────────────────────────────────
 
 export default function GigaPanelPage() {
-  const { activeModule, setActiveModule, requests, users, clients } = useGigaPanelStore()
+  const { activeModule, setActiveModule, requests, users, clients, setClients } = useGigaPanelStore()
+
+  useEffect(() => {
+    fetch('/api/giga-admin/clients')
+      .then(async (response) => response.ok ? response.json() : Promise.reject())
+      .then((data) => setClients(data.clients ?? []))
+      .catch(() => undefined)
+  }, [setClients])
 
   const totalPending = requests.filter((r) => r.status === 'pending').length
   const totalApproved = requests.filter((r) => r.status === 'approved').length
@@ -110,7 +117,7 @@ export default function GigaPanelPage() {
             `}
           >
             <Users2 size={15} />
-            CRM
+            Roadmap
           </button>
           <button
             onClick={() => setActiveModule('clients')}
@@ -181,7 +188,27 @@ export default function GigaPanelPage() {
           transition={{ duration: 0.2, ease: 'easeInOut' }}
         >
           {activeModule === 'requests' && <RequestsModule />}
-          {activeModule === 'crm' && <CRMModule />}
+          {activeModule === 'crm' && (
+            <section className="rounded-2xl border border-white/[0.07] bg-white/[0.03] p-6">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-violet-500/20 bg-violet-500/10">
+                  <Users2 size={18} className="text-violet-300" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-slate-100">CRM и управление пользователями</h2>
+                  <p className="mt-1 text-sm text-slate-500">Следующий релиз после стабилизации пилота диагностики.</p>
+                </div>
+              </div>
+              <div className="mt-5 grid gap-3 md:grid-cols-3">
+                {['Назначение менеджеров', 'Тарифы и лимиты', 'История взаимодействий'].map((item) => (
+                  <div key={item} className="rounded-xl border border-white/[0.06] bg-slate-950/30 p-4">
+                    <p className="text-sm font-medium text-slate-300">{item}</p>
+                    <p className="mt-1 text-xs text-slate-600">В roadmap · не включено в текущий пилот</p>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
           {activeModule === 'clients' && <ClientsModule />}
         </motion.div>
       </AnimatePresence>

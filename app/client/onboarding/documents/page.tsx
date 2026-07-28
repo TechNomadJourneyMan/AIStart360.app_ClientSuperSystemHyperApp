@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react'
 import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { onboardingDraftStorageKey } from '@/lib/onboarding-draft'
 
@@ -37,7 +38,7 @@ const DOC_TYPES: { value: DocType; label: string; icon: string; example: string 
 ]
 
 const STATUS_CONFIG: Record<ParseStatus, { label: string; color: string; icon: string }> = {
-  queued:     { label: 'В очереди',   color: 'text-on-surface-variant', icon: 'schedule' },
+  queued:     { label: 'Загружен',    color: 'text-on-surface-variant', icon: 'cloud_done' },
   processing: { label: 'Обработка',   color: 'text-amber-400',          icon: 'autorenew' },
   parsed:     { label: 'Обработан',   color: 'text-primary',            icon: 'check_circle' },
   error:      { label: 'Ошибка',      color: 'text-error',              icon: 'error' },
@@ -53,6 +54,8 @@ const ACCEPTED = '.pdf,.xlsx,.csv,.docx,.pptx'
 const MAX_SIZE = 50 * 1024 * 1024
 
 export default function DocumentsPage() {
+  const pathname = usePathname()
+  const portalBase = pathname.startsWith('/owner') ? '/owner' : '/client'
   const [userId, setUserId] = useState<string | null>(null)
   const [companyId, setCompanyId] = useState<string | null>(null)
   const [isBootstrapping, setIsBootstrapping] = useState(true)
@@ -266,7 +269,7 @@ export default function DocumentsPage() {
         {/* Title */}
         <div className="flex items-start gap-3">
           <Link
-            href="/client/dashboard"
+            href={`${portalBase}/dashboard`}
             aria-label="Вернуться в обзор"
             className="mt-0.5 flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl border border-white/[0.08] text-on-surface-variant transition-colors hover:border-primary/30 hover:text-primary"
           >
@@ -514,11 +517,11 @@ export default function DocumentsPage() {
 
         {/* Actions */}
         <div className="flex gap-3 pt-4 border-t border-white/[0.06]">
-          <Link href="/client/onboarding"
+          <Link href={`${portalBase}/onboarding`}
             className="flex-1 py-3 rounded-xl border border-white/[0.08] text-on-surface-variant hover:text-on-surface text-sm font-medium text-center transition-all">
             ← К анкете
           </Link>
-          <Link href="/client/point-a"
+          <Link href={`${portalBase}/point-a`}
             className="flex-1 py-3 rounded-xl bg-gradient-to-r from-primary to-[#00e29e] text-[#003824] font-bold text-sm text-center transition-all hover:scale-[0.99]">
             Перейти к диагностике →
           </Link>

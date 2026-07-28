@@ -334,19 +334,11 @@ function ClientDetailPanel({ client, onClose }: { client: GigaClient; onClose: (
         )}
       </div>
 
-      {/* Footer action */}
+      {/* Data source */}
       <div className="p-4 border-t border-white/[0.07]">
-        <a
-          href={`/clients/${client.id}`}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center justify-center gap-2 w-full px-4 py-2.5 rounded-xl
-            bg-blue-500/20 border border-blue-500/30 text-blue-300 text-sm font-semibold
-            hover:bg-blue-500/30 hover:border-blue-500/50 transition-all"
-        >
-          <ExternalLink size={14} />
-          Открыть в портале
-        </a>
+        <p className="text-center text-xs text-slate-600">
+          Профиль и Point A загружены из единого Supabase-контура
+        </p>
       </div>
     </motion.div>
   )
@@ -402,7 +394,7 @@ export function ClientsModule() {
         <div>
           <h1 className="text-xl font-bold text-slate-100 tracking-tight">Клиенты платформы</h1>
           <p className="text-sm text-slate-500 mt-1">
-            {clients.length} клиент{clients.length !== 1 ? 'ов' : ''} — полные данные с GRI и Pulse
+            {clients.length} клиент{clients.length !== 1 ? 'ов' : ''} — профили и текущая диагностика Point A
           </p>
         </div>
         <motion.button

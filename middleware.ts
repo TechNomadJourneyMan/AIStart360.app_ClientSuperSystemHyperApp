@@ -1,11 +1,14 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { updateSession } from '@/lib/supabase/middleware'
+import {
+  normalizePortalRole,
+  ownerRouteForLegacyClientPath,
+  portalHomeFor,
+  type PortalRole,
+} from '@/lib/portal-routing'
 
 const PUBLIC_PATHS = ['/login', '/register', '/forgot-password', '/auth/callback', '/auth/reset-password']
-
-const VALID_ROLES = ['admin', 'expert', 'owner', 'client', 'super_admin'] as const
-type ValidRole = typeof VALID_ROLES[number]
 
 const GIGA_PANEL_PATH = '/admin-giga-panel'
 const GIGA_LOGIN_PATH = '/giga-login'
@@ -20,29 +23,23 @@ const EXPERT_PATHS = ['/expert']
 const OWNER_PATHS = ['/owner']
 const CLIENT_PATHS = ['/client']
 const PORTAL_PATHS = ['/portal']
+const KNOWN_LEGACY_ROLES = new Set(['admin', 'expert', 'owner', 'client', 'super_admin', 'manager', 'analyst'])
 
-function normalizeRole(rawRole: string | null | undefined): ValidRole {
-  if (rawRole === 'admin' || rawRole === 'expert' || rawRole === 'owner' || rawRole === 'client' || rawRole === 'super_admin') {
-    return rawRole
-  }
-  if (rawRole === 'manager' || rawRole === 'analyst') {
-    return 'expert'
-  }
-  return 'client'
-}
-
-async function resolveRole(
+async function resolveProfile(
   supabase: Awaited<ReturnType<typeof updateSession>>['supabase'],
   userId: string,
   fallbackRole: string | null,
-) {
+): Promise<{ role: PortalRole; status: string | null }> {
   const { data } = await supabase
     .from('profiles')
-    .select('role')
+    .select('role,status')
     .eq('id', userId)
     .maybeSingle()
 
-  return normalizeRole(typeof data?.role === 'string' ? data.role : fallbackRole)
+  return {
+    role: normalizePortalRole(typeof data?.role === 'string' ? data.role : fallbackRole),
+    status: typeof data?.status === 'string' ? data.status : null,
+  }
 }
 
 export async function middleware(request: NextRequest) {
@@ -65,7 +62,8 @@ export async function middleware(request: NextRequest) {
   const { supabase, response, user } = await updateSession(request)
 
   const metadataRole = user && typeof user.user_metadata?.role === 'string' ? user.user_metadata.role : null
-  const role = user ? await resolveRole(supabase, user.id, metadataRole) : null
+  const profile = user ? await resolveProfile(supabase, user.id, metadataRole) : null
+  const role = profile?.role ?? null
   
   if (role) {
     response.headers.set('x-user-role', role)
@@ -94,12 +92,7 @@ export async function middleware(request: NextRequest) {
 
   // Authenticated user visiting auth page → redirect to correct panel
   if (isPublic && role) {
-    const dest =
-      role === 'super_admin' ? '/admin-giga-panel' :
-      role === 'admin' ? '/dashboard' :
-      role === 'owner' ? '/owner/dashboard' :
-      role === 'client' ? '/client/waiting-room' :
-      '/expert/dashboard'
+    const dest = portalHomeFor(role, profile?.status)
     return NextResponse.redirect(new URL(dest, request.url))
   }
 
@@ -107,7 +100,7 @@ export async function middleware(request: NextRequest) {
   if (!isPublic && !user) {
     // Check legacy cookie fallback
     const legacyRole = request.cookies.get('aistart360_role')?.value
-    if (!legacyRole) {
+    if (!legacyRole || !KNOWN_LEGACY_ROLES.has(legacyRole)) {
       const url = new URL('/login', request.url)
       url.searchParams.set('from', `${pathname}${request.nextUrl.search}`)
       return NextResponse.redirect(url)
@@ -118,6 +111,20 @@ export async function middleware(request: NextRequest) {
 
   // ── Role-based route protection ──
   if (user) {
+    if (
+      role !== 'client' &&
+      role !== 'owner' &&
+      CLIENT_PATHS.some((path) => pathname.startsWith(path))
+    ) {
+      return NextResponse.redirect(new URL(portalHomeFor(role, profile?.status), request.url))
+    }
+
+    const applicantPaths = ['/client/waiting-room', '/client/onboarding', '/client/point-a']
+    const isApplicantPath = applicantPaths.some((path) => pathname.startsWith(path))
+    if (role === 'client' && profile?.status !== 'approved' && !isApplicantPath) {
+      return NextResponse.redirect(new URL('/client/waiting-room', request.url))
+    }
+
     // Expert trying to access admin-only pages
     if (role === 'expert' && ADMIN_PATHS.some((p) => pathname.startsWith(p))) {
       return NextResponse.redirect(new URL('/expert/dashboard', request.url))
@@ -142,6 +149,10 @@ export async function middleware(request: NextRequest) {
       (ADMIN_PATHS.some((p) => pathname.startsWith(p)) || EXPERT_PATHS.some((p) => pathname.startsWith(p)))
     ) {
       return NextResponse.redirect(new URL('/owner/dashboard', request.url))
+    }
+
+    if (role === 'owner' && CLIENT_PATHS.some((p) => pathname.startsWith(p))) {
+      return NextResponse.redirect(new URL(ownerRouteForLegacyClientPath(pathname), request.url))
     }
   }
 

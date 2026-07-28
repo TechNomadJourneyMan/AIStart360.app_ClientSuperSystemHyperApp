@@ -205,7 +205,6 @@ export const useAuthStore = create<AuthState>()((set) => ({
           email: input.email,
           password: input.password,
           name: input.name,
-          role: input.role ?? 'client',
           organization: input.organization,
           position: input.position,
         }),

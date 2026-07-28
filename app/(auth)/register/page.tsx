@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { useAuthStore, type UserRole } from '@/stores/auth.store'
+import { useAuthStore } from '@/stores/auth.store'
 import { Logo } from '@/components/ui/Logo'
 import { ThemeSwitcher } from '@/components/ThemeSwitcher'
 
@@ -11,7 +11,6 @@ export default function RegisterPage() {
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [role, setRole] = useState<UserRole>('client')
   const [organization, setOrganization] = useState('')
   const { register, isLoading, error, clearError, user } = useAuthStore()
   const router = useRouter()
@@ -36,24 +35,7 @@ export default function RegisterPage() {
     e.preventDefault()
     try {
       // 1. Core Supabase Registration
-      await register({ name, email, password, role, organization })
-      
-      // 2. Fetch the created user from store (it was set inside register)
-      const currentUser = useAuthStore.getState().user
-      
-      // 3. If client, trigger the approval flow API
-      if (currentUser && role === 'client') {
-        await fetch('/api/client/register', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            userId: currentUser.id,
-            email: currentUser.email,
-            name: currentUser.name,
-            company: organization,
-          }),
-        })
-      }
+      await register({ name, email, password, role: 'client', organization })
     } catch (err) {
       // Error is handled by the store
     }
@@ -162,7 +144,7 @@ export default function RegisterPage() {
               </span>
               <input
                 type="text"
-                required={role === 'client'}
+                required
                 value={organization}
                 onChange={(e) => setOrganization(e.target.value)}
                 className="w-full h-12 bg-surface-container-high border border-white/[0.05] rounded-2xl pl-12 pr-4 text-on-surface focus:outline-none focus:border-primary/50 focus:ring-4 focus:ring-primary/10 transition-all"
@@ -171,38 +153,10 @@ export default function RegisterPage() {
             </div>
           </div>
 
-          <div className="space-y-2">
-            <label className="block text-xs font-mono text-on-surface-variant uppercase tracking-widest ml-1">
-              Ваша роль
-            </label>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => setRole('client')}
-                className={`h-11 rounded-2xl text-[13px] font-bold transition-all border ${
-                  role === 'client'
-                    ? 'bg-primary/10 border-primary text-primary shadow-sm shadow-primary/10'
-                    : 'bg-surface-container-high border-white/[0.05] text-on-surface-variant hover:border-white/[0.1] hover:text-on-surface'
-                }`}
-              >
-                Я Клиент
-              </button>
-              <button
-                type="button"
-                onClick={() => setRole('owner')}
-                className={`h-11 rounded-2xl text-[13px] font-bold transition-all border ${
-                  role === 'owner'
-                    ? 'bg-primary/10 border-primary text-primary shadow-sm shadow-primary/10'
-                    : 'bg-surface-container-high border-white/[0.05] text-on-surface-variant hover:border-white/[0.1] hover:text-on-surface'
-                }`}
-              >
-                Я Владелец
-              </button>
-            </div>
-            <p className="text-[10px] text-on-surface-variant/70 leading-relaxed mt-1 px-1">
-              {role === 'client' 
-                ? 'Для активации кабинета потребуется подтверждение администратором.' 
-                : 'Ваш кабинет будет активирован сразу после регистрации.'}
+          <div className="rounded-2xl border border-primary/15 bg-primary/5 px-4 py-3">
+            <p className="text-xs font-medium text-on-surface">Аккаунт предпринимателя</p>
+            <p className="mt-1 text-[11px] leading-relaxed text-on-surface-variant">
+              После регистрации заполните диагностику. Команда AIStart360 проверит заявку и откроет Owner-кабинет вашей компании.
             </p>
           </div>
 

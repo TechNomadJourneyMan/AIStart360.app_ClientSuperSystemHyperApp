@@ -7,14 +7,7 @@ import { useAuthStore } from '@/stores/auth.store'
 import { Logo } from '@/components/ui/Logo'
 import { ThemeSwitcher } from '@/components/ThemeSwitcher'
 import { safeInternalPath } from './return-path'
-
-function defaultPathForRole(role: string | null): string {
-  if (role === 'super_admin') return '/admin-giga-panel'
-  if (role === 'owner') return '/owner/dashboard'
-  if (role === 'expert') return '/expert/dashboard'
-  if (role === 'client') return '/client/dashboard'
-  return '/dashboard'
-}
+import { portalHomeFor } from '@/lib/portal-routing'
 
 function LoginContent() {
   const [email, setEmail] = useState('')
@@ -26,11 +19,9 @@ function LoginContent() {
 
   useEffect(() => {
     if (user) {
-      if (user.role === 'client' && user.status === 'pending_approval') {
-        router.replace('/client/waiting-room')
-      } else {
-        router.replace(from ?? defaultPathForRole(user.role))
-      }
+      const home = portalHomeFor(user.role, user.status)
+      const requestedPath = from && !from.startsWith('/client/waiting-room') ? from : null
+      router.replace(user.role === 'client' && user.status !== 'approved' ? home : requestedPath ?? home)
     }
   }, [user, from, router])
 

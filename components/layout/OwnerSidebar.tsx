@@ -8,26 +8,15 @@ import { useUIStore } from '@/stores/ui.store'
 import { useAuthStore } from '@/stores/auth.store'
 
 const PRIMARY_NAV = [
-  { label: 'Дэшборд',    href: '/owner/dashboard',  icon: 'dashboard'       },
-  { label: 'Продажи',    href: '/owner/sales-monitoring', icon: 'point_of_sale' },
-  { label: 'GRI',        href: '/owner/gri',         icon: 'radar'           },
-  { label: 'Рынок',      href: '/owner/market',      icon: 'public'          },
-  { label: 'Точка А',    href: '/owner/point-a',     icon: 'my_location'     },
-  { label: 'Точка Б',    href: '/owner/point-b',     icon: 'flag'            },
-  { label: 'Инсайты',    href: '/owner/insights',    icon: 'lightbulb'       },
-  { label: 'Конкуренты', href: '/owner/competitors', icon: 'compare_arrows'  },
-  { label: 'Метрики',    href: '/owner/metrics',     icon: 'monitoring'      },
+  { label: 'Дашборд',       href: '/owner/dashboard',       icon: 'dashboard'   },
+  { label: 'Анкета',        href: '/owner/onboarding',      icon: 'edit_note'   },
+  { label: 'Документы',     href: '/owner/documents',       icon: 'description' },
+  { label: 'Точка А',       href: '/owner/point-a',         icon: 'my_location' },
+  { label: 'Рекомендации',  href: '/owner/recommendations', icon: 'auto_awesome' },
 ]
 
 const SECONDARY_NAV = [
-  { label: 'Клиенты',     href: '/owner/clients',       icon: 'business_center'     },
-  { label: 'Отчёты',      href: '/owner/reports',       icon: 'description'         },
-  { label: 'Аналитика',   href: '/owner/analytics',     icon: 'bar_chart'           },
-  { label: 'Разведка',    href: '/owner/intelligence',  icon: 'hub'                 },
-  { label: 'Команда',     href: '/owner/team',          icon: 'group'               },
-  { label: 'Уведомления', href: '/owner/notifications', icon: 'notifications'       },
-  { label: 'Пользователи',href: '/owner/users',         icon: 'manage_accounts'     },
-  { label: 'Админ',       href: '/owner/admin',         icon: 'admin_panel_settings'},
+  { label: 'Карта развития', href: '/owner/roadmap', icon: 'route' },
 ]
 
 export function OwnerSidebar() {
@@ -191,16 +180,16 @@ export function OwnerSidebar() {
         </Link>
 
         <Link
-          href="/owner/settings"
-          title={sidebarCollapsed ? 'Настройки' : undefined}
+          href="/owner/roadmap?module=settings"
+          title={sidebarCollapsed ? 'Карта развития' : undefined}
           className={`
             group flex items-center rounded-xl transition-all duration-150
-            ${isActive('/owner/settings') ? 'bg-secondary/10 text-secondary' : 'text-[#6b7280] hover:text-[#c9d1d9] hover:bg-white/[0.04]'}
+            ${isActive('/owner/roadmap') ? 'bg-secondary/10 text-secondary' : 'text-[#6b7280] hover:text-[#c9d1d9] hover:bg-white/[0.04]'}
             ${sidebarCollapsed ? 'justify-center px-0 py-2.5' : 'gap-3 px-3 py-2.5'}
           `}
         >
           <span className="material-symbols-outlined text-[20px]">settings</span>
-          {!sidebarCollapsed && <span className="text-sm font-medium">Настройки</span>}
+          {!sidebarCollapsed && <span className="text-sm font-medium">Карта развития</span>}
         </Link>
 
         <button

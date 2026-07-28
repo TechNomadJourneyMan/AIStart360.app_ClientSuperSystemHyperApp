@@ -29,49 +29,27 @@ const NAV_CONFIG: Record<PortalRole, MobileNavConfig> = {
     homePath: '/owner/dashboard',
     portalLabel: 'Owner Portal',
     tabs: [
-      { label: 'Дэшборд', href: '/owner/dashboard', icon: 'dashboard' },
-      { label: 'Продажи', href: '/owner/sales-monitoring', icon: 'point_of_sale' },
-      { label: 'Клиенты', href: '/owner/clients', icon: 'business_center' },
-      { label: 'Метрики', href: '/owner/metrics', icon: 'monitoring' },
+      { label: 'Дашборд', href: '/owner/dashboard', icon: 'dashboard' },
+      { label: 'Точка А', href: '/owner/point-a', icon: 'my_location' },
+      { label: 'Советы', href: '/owner/recommendations', icon: 'auto_awesome' },
+      { label: 'Документы', href: '/owner/documents', icon: 'description' },
     ],
     sections: [
       {
-        title: 'Основное',
+        title: 'Рабочие разделы',
         items: [
-          { label: 'Дэшборд', href: '/owner/dashboard', icon: 'dashboard' },
-          { label: 'Продажи', href: '/owner/sales-monitoring', icon: 'point_of_sale' },
-          { label: 'GRI', href: '/owner/gri', icon: 'radar' },
-          { label: 'Метрики', href: '/owner/metrics', icon: 'monitoring' },
-          { label: 'Инсайты', href: '/owner/insights', icon: 'lightbulb' },
-        ],
-      },
-      {
-        title: 'Анализ',
-        items: [
-          { label: 'Рынок', href: '/owner/market', icon: 'public' },
+          { label: 'Дашборд', href: '/owner/dashboard', icon: 'dashboard' },
+          { label: 'Анкета', href: '/owner/onboarding', icon: 'edit_note' },
+          { label: 'Документы', href: '/owner/documents', icon: 'description' },
           { label: 'Точка А', href: '/owner/point-a', icon: 'my_location' },
-          { label: 'Точка Б', href: '/owner/point-b', icon: 'flag' },
-          { label: 'Конкуренты', href: '/owner/competitors', icon: 'compare_arrows' },
-          { label: 'Разведка', href: '/owner/intelligence', icon: 'hub' },
-        ],
-      },
-      {
-        title: 'Работа',
-        items: [
-          { label: 'Клиенты', href: '/owner/clients', icon: 'business_center' },
-          { label: 'Отчёты', href: '/owner/reports', icon: 'description' },
-          { label: 'Аналитика', href: '/owner/analytics', icon: 'bar_chart' },
-          { label: 'Команда', href: '/owner/team', icon: 'group' },
-        ],
-      },
-      {
-        title: 'Система',
-        items: [
-          { label: 'Уведомления', href: '/owner/notifications', icon: 'notifications' },
-          { label: 'Пользователи', href: '/owner/users', icon: 'manage_accounts' },
-          { label: 'Админ', href: '/owner/admin', icon: 'admin_panel_settings' },
+          { label: 'Рекомендации', href: '/owner/recommendations', icon: 'auto_awesome' },
           { label: 'Профиль', href: '/owner/profile', icon: 'account_circle' },
-          { label: 'Настройки', href: '/owner/settings', icon: 'settings' },
+        ],
+      },
+      {
+        title: 'Следующие релизы',
+        items: [
+          { label: 'Карта развития', href: '/owner/roadmap', icon: 'route' },
         ],
       },
     ],

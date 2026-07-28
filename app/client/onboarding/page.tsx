@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { useForm } from 'react-hook-form'
 import type { FieldValues, UseFormWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -174,15 +174,19 @@ function useDraftAutosave<T extends FieldValues>(
 ) {
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | undefined
+    let latestValues: Record<string, unknown> | null = null
     const subscription = watch((values) => {
+      latestValues = values as unknown as Record<string, unknown>
       if (timer) clearTimeout(timer)
       timer = setTimeout(() => {
-        onDraft(values as unknown as Record<string, unknown>)
+        onDraft(latestValues ?? {})
+        latestValues = null
       }, 300)
     })
 
     return () => {
       if (timer) clearTimeout(timer)
+      if (latestValues) onDraft(latestValues)
       subscription.unsubscribe()
     }
   }, [onDraft, watch])
@@ -314,6 +318,8 @@ const STEPS = [
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function OnboardingPage() {
   const router = useRouter()
+  const pathname = usePathname()
+  const portalBase = pathname.startsWith('/owner') ? '/owner' : '/client'
   const [currentStep, setCurrentStep] = useState(1)
   const [savedAnswers, setSavedAnswers] = useState<Record<string, unknown>>({})
   const [isBootstrapping, setIsBootstrapping] = useState(true)
@@ -418,6 +424,38 @@ export default function OnboardingPage() {
     persistLocal(currentStep, answers)
   }, [currentStep, persistLocal])
 
+  // A local copy protects against a tab crash; this debounced server copy makes
+  // the same step resumable on another device or after browser storage loss.
+  useEffect(() => {
+    if (isBootstrapping || !userId || Object.keys(savedAnswers).length === 0) return
+
+    const timer = window.setTimeout(async () => {
+      try {
+        const response = await fetch('/api/v1/onboarding/survey', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            user_id: userId,
+            company_id: companyId,
+            current_step: currentStep,
+            answers: savedAnswers,
+          }),
+          keepalive: true,
+        })
+        await requireApiSuccess(response)
+        setSyncError(null)
+      } catch (error) {
+        setSyncError(
+          `Черновик сохранён на этом устройстве, но серверная копия пока не обновилась. ${
+            error instanceof Error ? error.message : ''
+          }`,
+        )
+      }
+    }, 1000)
+
+    return () => window.clearTimeout(timer)
+  }, [companyId, currentStep, isBootstrapping, savedAnswers, userId])
+
   const saveToServer = async (
     step: number,
     answers: Record<string, unknown>,
@@ -515,7 +553,17 @@ export default function OnboardingPage() {
         await requireApiSuccess(diagnosticResponse)
         localStorage.removeItem(onboardingDraftStorageKey(userId))
         localStorage.removeItem(onboardingDraftStorageKey())
-        router.replace('/client/dashboard?onboarding=complete')
+        const supabase = createClient()
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('role,status')
+          .eq('id', userId)
+          .maybeSingle()
+        router.replace(
+          profile?.role === 'owner' && profile?.status === 'approved'
+            ? '/owner/dashboard?onboarding=complete'
+            : '/client/waiting-room?onboarding=complete',
+        )
       } catch (error) {
         setSyncError(
           `Анкета сохранена, но диагностика пока не рассчитана. Черновик оставлен — повторите запуск. ${
@@ -553,7 +601,7 @@ export default function OnboardingPage() {
       {/* Header */}
       <header className="sticky top-0 z-20 bg-[#0A0B0F]/90 backdrop-blur border-b border-white/[0.06] px-6 py-4">
         <div className="max-w-2xl mx-auto flex items-center justify-between">
-          <Link href="/client/dashboard" aria-label="Вернуться в обзор">
+          <Link href={`${portalBase}/dashboard`} aria-label="Вернуться в обзор">
             <Image src="/logo.svg" alt="AIStart360" width={120} height={22} />
           </Link>
           <div className="flex items-center gap-4">

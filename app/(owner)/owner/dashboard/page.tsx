@@ -200,11 +200,11 @@ export default function OwnerDashboardPage() {
           </p>
         </div>
         <Link
-          href="/owner/gri"
+          href="/owner/recommendations"
           className="flex items-center gap-2 rounded-xl border border-secondary/20 bg-secondary/10 px-4 py-2 text-sm font-medium text-secondary transition-colors hover:bg-secondary/20"
         >
           <span className="material-symbols-outlined text-lg">radar</span>
-          Открыть отчёт GRI
+          Открыть рекомендации
         </Link>
       </div>
 
@@ -392,10 +392,10 @@ export default function OwnerDashboardPage() {
         <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
           {[
             {
-              href: '/owner/gri',
-              icon: 'radar',
-              title: 'Отчёт GRI',
-              desc: diagnostic ? 'Изучить блоки, риски и действия текущего расчёта' : 'Проверить статус диагностики',
+              href: '/owner/recommendations',
+              icon: 'auto_awesome',
+              title: 'Рекомендации',
+              desc: diagnostic ? 'Получить объяснение рисков и план действий' : 'Сначала рассчитать диагностику',
               color: 'text-secondary',
               bg: 'bg-secondary/10',
             },
@@ -408,10 +408,10 @@ export default function OwnerDashboardPage() {
               bg: 'bg-primary/10',
             },
             {
-              href: '/owner/reports',
+              href: '/owner/documents',
               icon: 'description',
-              title: 'Отчёты',
-              desc: 'Перейти к доступным отчётам и документам',
+              title: 'Документы',
+              desc: 'Добавить исходные файлы компании',
               color: 'text-yellow-400',
               bg: 'bg-yellow-400/10',
             },

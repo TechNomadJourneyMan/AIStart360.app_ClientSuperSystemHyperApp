@@ -15,6 +15,9 @@ import {
   CalendarDays,
   ChevronDown,
   RefreshCw,
+  FileText,
+  ClipboardCheck,
+  Activity,
 } from 'lucide-react'
 import { useGigaPanelStore, type RequestCategory, type GigaRequest } from '@/stores/gigaPanel.store'
 import { RejectModal } from './RejectModal'
@@ -56,11 +59,13 @@ function RequestCard({
   onApprove,
   onReject,
   onArchive,
+  isActing,
 }: {
   request: GigaRequest
   onApprove: (id: string) => void
   onReject: (req: GigaRequest) => void
   onArchive: (id: string) => void
+  isActing: boolean
 }) {
   const [expanded, setExpanded] = useState(false)
   const isPending = request.status === 'pending'
@@ -165,6 +170,33 @@ function RequestCard({
                     <p className="text-xs text-red-300/70">{request.rejectionReason}</p>
                   </div>
                 )}
+                <div className="grid grid-cols-3 gap-2 mt-3">
+                  <div className="rounded-lg bg-slate-950/30 p-2">
+                    <div className="flex items-center gap-1 text-slate-500">
+                      <ClipboardCheck size={11} />
+                      <span className="text-[10px]">Анкета</span>
+                    </div>
+                    <p className="text-xs text-slate-200 mt-1">
+                      шаг {request.onboardingStep ?? 1}/6
+                    </p>
+                  </div>
+                  <div className="rounded-lg bg-slate-950/30 p-2">
+                    <div className="flex items-center gap-1 text-slate-500">
+                      <FileText size={11} />
+                      <span className="text-[10px]">Документы</span>
+                    </div>
+                    <p className="text-xs text-slate-200 mt-1">{request.documentsCount ?? 0}</p>
+                  </div>
+                  <div className="rounded-lg bg-slate-950/30 p-2">
+                    <div className="flex items-center gap-1 text-slate-500">
+                      <Activity size={11} />
+                      <span className="text-[10px]">Point A</span>
+                    </div>
+                    <p className="text-xs text-slate-200 mt-1">
+                      {request.diagnosticScore == null ? 'нет' : `${Math.round(request.diagnosticScore)}/100`}
+                    </p>
+                  </div>
+                </div>
               </div>
             </div>
           </motion.div>
@@ -176,11 +208,12 @@ function RequestCard({
         <div className="px-4 pb-4 flex items-center gap-2">
           <motion.button
             onClick={() => onApprove(request.id)}
+            disabled={isActing}
             whileHover={{ scale: 1.03 }}
             whileTap={{ scale: 0.97 }}
             className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold
               bg-emerald-500/15 border border-emerald-500/25 text-emerald-300
-              hover:bg-emerald-500/25 hover:border-emerald-500/40 transition-all"
+              hover:bg-emerald-500/25 hover:border-emerald-500/40 transition-all disabled:opacity-50"
           >
             <CheckCircle size={13} />
             Принять
@@ -188,11 +221,12 @@ function RequestCard({
 
           <motion.button
             onClick={() => onReject(request)}
+            disabled={isActing}
             whileHover={{ scale: 1.03 }}
             whileTap={{ scale: 0.97 }}
             className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold
               bg-red-500/15 border border-red-500/25 text-red-300
-              hover:bg-red-500/25 hover:border-red-500/40 transition-all"
+              hover:bg-red-500/25 hover:border-red-500/40 transition-all disabled:opacity-50"
           >
             <XCircle size={13} />
             Отклонить
@@ -200,11 +234,12 @@ function RequestCard({
 
           <motion.button
             onClick={() => onArchive(request.id)}
+            disabled={isActing}
             whileHover={{ scale: 1.03 }}
             whileTap={{ scale: 0.97 }}
             className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold
               bg-white/[0.05] border border-white/[0.08] text-slate-400
-              hover:bg-white/[0.08] hover:text-slate-300 transition-all ml-auto"
+              hover:bg-white/[0.08] hover:text-slate-300 transition-all ml-auto disabled:opacity-50"
           >
             <Archive size={13} />
             Архив
@@ -227,12 +262,10 @@ export function RequestsModule() {
     setRequests,
     setLoadingRequests,
     setRequestsError,
-    approveRequest,
-    rejectRequest,
-    archiveRequest,
   } = useGigaPanelStore()
 
   const [rejectTarget, setRejectTarget] = useState<GigaRequest | null>(null)
+  const [actingRequestId, setActingRequestId] = useState<string | null>(null)
 
   const fetchRequests = useCallback(async () => {
     setLoadingRequests(true)
@@ -251,33 +284,36 @@ export function RequestsModule() {
 
   useEffect(() => { fetchRequests() }, [fetchRequests])
 
-  // API-backed actions
-  const handleApprove = async (id: string) => {
-    approveRequest(id) // optimistic
-    await fetch(`/api/giga-admin/requests/${id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'approve' }),
-    })
+  const applyAction = async (
+    id: string,
+    action: 'approve' | 'reject' | 'archive',
+    reason?: string,
+  ) => {
+    setActingRequestId(id)
+    setRequestsError(null)
+    try {
+      const response = await fetch(`/api/giga-admin/requests/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, reason }),
+      })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(data.error ?? 'Не удалось обработать заявку')
+      await fetchRequests()
+    } catch (error) {
+      setRequestsError(error instanceof Error ? error.message : 'Не удалось обработать заявку')
+      await fetchRequests()
+    } finally {
+      setActingRequestId(null)
+    }
   }
 
+  const handleApprove = (id: string) => applyAction(id, 'approve')
   const handleReject = async (id: string, reason: string) => {
-    rejectRequest(id, reason) // optimistic
-    await fetch(`/api/giga-admin/requests/${id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'reject', reason }),
-    })
+    await applyAction(id, 'reject', reason)
+    setRejectTarget(null)
   }
-
-  const handleArchive = async (id: string) => {
-    archiveRequest(id) // optimistic
-    await fetch(`/api/giga-admin/requests/${id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'archive' }),
-    })
-  }
+  const handleArchive = (id: string) => applyAction(id, 'archive')
 
   const filtered = requests.filter((r) => r.category === activeRequestTab)
   const pendingFiltered = filtered.filter((r) => r.status === 'pending')
@@ -399,6 +435,7 @@ export function RequestsModule() {
                           onApprove={handleApprove}
                           onReject={setRejectTarget}
                           onArchive={handleArchive}
+                          isActing={actingRequestId === req.id}
                         />
                       ))}
                     </AnimatePresence>
@@ -424,6 +461,7 @@ export function RequestsModule() {
                         onApprove={handleApprove}
                         onReject={setRejectTarget}
                         onArchive={handleArchive}
+                        isActing={actingRequestId === req.id}
                       />
                     ))}
                   </div>

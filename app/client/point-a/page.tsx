@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 import { createClient } from '@/lib/supabase-client'
 import type { Diagnostic, BlockScore, Risk, Insight, QuickWin, DiagnosticStage } from '@/types/onboarding'
 
@@ -122,6 +123,8 @@ function BlockCard({ title, icon, score }: { title: string; icon: string; score:
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function PointAClientPage() {
+  const pathname = usePathname()
+  const portalBase = pathname.startsWith('/owner') ? '/owner' : '/client'
   const [diag, setDiag] = useState<Diagnostic | null>(null)
   const [company, setCompany] = useState<{ name: string; industry: string | null; employee_count: number | null } | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -250,7 +253,7 @@ export default function PointAClientPage() {
             Пересчитать
           </button>
           <Link
-            href="/client/onboarding/documents"
+            href={portalBase === '/owner' ? '/owner/documents' : '/client/onboarding/documents'}
             className="flex items-center gap-1.5 rounded-lg border border-white/[0.08] px-3 py-2 text-xs font-mono text-on-surface-variant transition-all hover:text-primary"
           >
             <span className="material-symbols-outlined text-sm">upload_file</span>
@@ -294,7 +297,7 @@ export default function PointAClientPage() {
             <h2 className="font-headline text-xl font-bold text-on-surface mb-2">Диагностика не рассчитана</h2>
             <p className="text-sm text-on-surface-variant mb-6">Заполните анкету и нажмите «Пересчитать»</p>
             <div className="flex gap-3 justify-center">
-              <Link href="/client/onboarding" className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-primary to-[#00e29e] text-[#003824] font-bold text-sm">
+              <Link href={`${portalBase}/onboarding`} className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-primary to-[#00e29e] text-[#003824] font-bold text-sm">
                 Заполнить анкету
               </Link>
               <button onClick={recalculate} disabled={isRecalculating || !userId}
@@ -434,14 +437,14 @@ export default function PointAClientPage() {
             <section className="bg-surface-container-low rounded-2xl border border-white/[0.06] p-6">
               <h2 className="text-sm font-medium text-on-surface mb-4">Улучшить диагностику</h2>
               <div className="grid grid-cols-2 gap-3">
-                <Link href="/client/onboarding/documents" className="flex items-center gap-2 bg-surface-container rounded-xl border border-white/[0.08] hover:border-primary/30 p-4 transition-all group">
+                <Link href={portalBase === '/owner' ? '/owner/documents' : '/client/onboarding/documents'} className="flex items-center gap-2 bg-surface-container rounded-xl border border-white/[0.08] hover:border-primary/30 p-4 transition-all group">
                   <span className="material-symbols-outlined text-xl text-primary">upload_file</span>
                   <div>
                     <p className="text-xs font-medium text-on-surface group-hover:text-primary transition-colors">Загрузить отчёт</p>
                     <p className="text-[10px] text-on-surface-variant">P&L, баланс, CRM</p>
                   </div>
                 </Link>
-                <Link href="/client/onboarding" className="flex items-center gap-2 bg-surface-container rounded-xl border border-white/[0.08] hover:border-primary/30 p-4 transition-all group">
+                <Link href={`${portalBase}/onboarding`} className="flex items-center gap-2 bg-surface-container rounded-xl border border-white/[0.08] hover:border-primary/30 p-4 transition-all group">
                   <span className="material-symbols-outlined text-xl text-primary">edit_note</span>
                   <div>
                     <p className="text-xs font-medium text-on-surface group-hover:text-primary transition-colors">Обновить анкету</p>

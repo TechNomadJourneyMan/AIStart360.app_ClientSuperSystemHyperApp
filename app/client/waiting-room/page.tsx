@@ -99,7 +99,7 @@ export default function WaitingRoomPage() {
 
       if (data.status === 'approved') {
         setIsRedirecting(true)
-        setTimeout(() => router.replace('/client/dashboard'), 800)
+        setTimeout(() => router.replace('/owner/dashboard'), 800)
       }
     } catch (error) {
       console.error('[client/waiting-room] status check failed', error)

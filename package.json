@@ -11,6 +11,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
+    "seed:pilot": "tsx scripts/seed-entrepreneur-pilot.ts",
     "postinstall": "prisma generate"
   },
   "dependencies": {

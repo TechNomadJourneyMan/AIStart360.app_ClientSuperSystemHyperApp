@@ -23,3 +23,13 @@ export async function POST(req: NextRequest) {
   })
   return response
 }
+
+export async function DELETE() {
+  const response = NextResponse.json({ ok: true })
+  response.cookies.set('aistart360_role', '', {
+    path: '/',
+    maxAge: 0,
+    sameSite: 'lax',
+  })
+  return response
+}

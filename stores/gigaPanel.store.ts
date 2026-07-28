@@ -48,7 +48,18 @@ export interface GigaRequest {
   description: string
   createdAt: string
   company?: string
+  companyIndustry?: string
+  companyStage?: string
   rejectionReason?: string
+  priority?: string
+  source?: string
+  onboardingStep?: number
+  completedSteps?: number[]
+  diagnosticScore?: number | null
+  diagnosticCalculatedAt?: string | null
+  documentsCount?: number
+  profileRole?: string
+  profileStatus?: string
 }
 
 export interface GigaUser {

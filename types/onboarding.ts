@@ -232,6 +232,30 @@ export interface Diagnostic {
   data_gaps: DataGap[] | null
   is_current: boolean
   calculated_at: string
+  ai_status?: 'not_requested' | 'pending' | 'completed' | 'fallback' | 'error'
+  ai_analysis?: DiagnosticAiAnalysis | null
+  ai_model?: string | null
+  ai_generated_at?: string | null
+  ai_error?: string | null
+}
+
+export interface DiagnosticAiAnalysis {
+  executive_summary: string
+  strengths: string[]
+  risks: Array<{
+    title: string
+    impact: string
+    evidence: string[]
+  }>
+  action_plan: Array<{
+    action: string
+    owner: string
+    timeline: string
+    expected_result: string
+    evidence: string[]
+  }>
+  questions: string[]
+  source: 'ai' | 'rules'
 }
 
 // ─── API Responses ────────────────────────────────────────────────────────────

@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
 import Link from 'next/link'
 import {
@@ -24,6 +25,7 @@ interface NavItem {
 }
 
 export function GigaSidebar() {
+  const router = useRouter()
   const { activeModule, setActiveModule, requests, clients } = useGigaPanelStore()
 
   // Re-pin the super_admin cookie on every render so Providers can't clear it.
@@ -43,7 +45,7 @@ export function GigaSidebar() {
     },
     {
       id: 'crm',
-      label: 'CRM / Пользователи',
+      label: 'Roadmap',
       icon: <Users2 size={18} />,
     },
     {
@@ -56,6 +58,13 @@ export function GigaSidebar() {
 
   const handleNav = (id: NavItem['id']) => {
     setActiveModule(id)
+  }
+
+  const handleLogout = async () => {
+    await fetch('/api/giga-admin/auth', { method: 'DELETE' }).catch(() => undefined)
+    document.cookie = 'aistart360_role=; path=/; max-age=0; SameSite=Lax'
+    router.replace('/giga-login')
+    router.refresh()
   }
 
   return (
@@ -184,7 +193,12 @@ export function GigaSidebar() {
             <p className="text-[11px] font-semibold text-slate-300 truncate">SUPER_ADMIN</p>
             <p className="text-[10px] text-slate-600 truncate">Системный доступ</p>
           </div>
-          <button className="text-slate-600 hover:text-red-400 transition-colors">
+          <button
+            type="button"
+            onClick={() => void handleLogout()}
+            aria-label="Выйти из Giga Panel"
+            className="text-slate-600 hover:text-red-400 transition-colors"
+          >
             <LogOut size={14} />
           </button>
         </div>
