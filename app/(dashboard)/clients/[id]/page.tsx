@@ -4,8 +4,6 @@ import { GriScoreDial } from '@/components/gri/GriScoreDial'
 import { StatusBadge } from '@/components/common/StatusBadge'
 import { createServerClient } from '@/lib/supabase-server'
 import { prisma } from '@/lib/db'
-import type { BlockScore, Risk, Insight, QuickWin } from '@/types/onboarding'
-import ChocoDashboard from '@/components/choco/dashboard'
 
 export const metadata: Metadata = { title: 'Client Profile | Admin' }
 
@@ -71,30 +69,6 @@ export default async function ClientDetailPage({ params }: { params: { id: strin
   const name = result.type === 'prisma' 
     ? (result.data as any).name 
     : (result.data as any).company?.name ?? (result.data as any).profile?.full_name ?? 'Клиент'
-  
-  const isChocoFamily = name.toLowerCase().includes('choco') || params.id === '7'
-
-  // Special view for ChocoFamily
-  if (isChocoFamily) {
-    return (
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <nav className="flex items-center gap-2 text-xs font-mono text-on-surface-variant uppercase tracking-widest">
-            <Link href="/clients" className="hover:text-primary transition-colors">Clients</Link>
-            <span className="material-symbols-outlined text-xs">chevron_right</span>
-            <span className="text-on-surface font-bold">{name}</span>
-          </nav>
-          <div className="flex items-center gap-2 bg-primary/10 px-3 py-1 rounded-full border border-primary/20">
-            <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
-            <span className="text-[10px] font-mono text-primary font-bold">Ecosystem Sync Active</span>
-          </div>
-        </div>
-        <div className="mt-4 rounded-3xl overflow-hidden shadow-2xl border border-white/5 bg-[#0a0a0a]">
-          <ChocoDashboard />
-        </div>
-      </div>
-    )
-  }
 
   // Common UI variables
   const data = result.data as any
@@ -134,13 +108,32 @@ export default async function ClientDetailPage({ params }: { params: { id: strin
               </div>
             </div>
           </div>
-          <div className="flex items-center gap-3">
-            <button className="px-5 py-2.5 bg-surface-container-low border border-white/[0.04] text-on-surface text-sm font-bold rounded-xl hover:bg-surface-container transition-colors">
-              Архив отчетов
-            </button>
-            <button className="px-5 py-2.5 bg-primary text-on-primary text-sm font-bold rounded-xl shadow-primary-sm hover:scale-[0.98] transition-all">
-              Запустить GRI
-            </button>
+          <div className="text-right">
+            <div className="flex items-center justify-end gap-3">
+              <button
+                type="button"
+                disabled
+                aria-label="Открыть архив отчётов: функция пока недоступна"
+                aria-describedby="client-diagnostics-actions-unavailable"
+                title="Архив отчётов пока недоступен"
+                className="cursor-not-allowed rounded-xl border border-white/[0.04] bg-surface-container-low px-5 py-2.5 text-sm font-bold text-on-surface-variant opacity-50"
+              >
+                Архив отчётов
+              </button>
+              <button
+                type="button"
+                disabled
+                aria-label="Запустить GRI: функция пока недоступна"
+                aria-describedby="client-diagnostics-actions-unavailable"
+                title="Запуск GRI пока недоступен"
+                className="cursor-not-allowed rounded-xl bg-surface-container-high px-5 py-2.5 text-sm font-bold text-on-surface-variant opacity-50"
+              >
+                Запустить GRI
+              </button>
+            </div>
+            <p id="client-diagnostics-actions-unavailable" className="mt-2 text-[10px] text-on-surface-variant">
+              Запуск и архив диагностики пока не подключены
+            </p>
           </div>
         </div>
       </div>
@@ -159,8 +152,8 @@ export default async function ClientDetailPage({ params }: { params: { id: strin
                    </span>
                  </div>
                  <div className="h-px bg-white/[0.04]" />
-                 <p className="text-xs text-on-surface-variant leading-relaxed italic">
-                   "Судя по последним данным, компания находится в фазе {stage ?? 'активного развития'}. Основной фокус — оптимизация операционных процессов."
+                 <p className="text-xs leading-relaxed text-on-surface-variant">
+                   Текстовое резюме диагностики пока не подключено. Ниже отображаются только сохранённые показатели.
                  </p>
                </div>
             </div>
@@ -173,9 +166,9 @@ export default async function ClientDetailPage({ params }: { params: { id: strin
                  { key: 'finance', val: griReport.cashScore ?? (griReport.finance_score?.score) },
                  { key: 'operations', val: griReport.operationsScore ?? (griReport.operations_score?.score) },
                  { key: 'team', val: griReport.teamScore ?? (griReport.strategy_score?.score) }, // Simple mapping
-                 { key: 'marketing', val: (griReport.marketing_score?.score) ?? 0 }
+                 { key: 'marketing', val: griReport.marketing_score?.score }
                ].map((block) => {
-                 const score = block.val ?? 0
+                 const score = typeof block.val === 'number' ? block.val : null
                  return (
                    <div key={block.key} className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-5 hover:border-primary/10 transition-colors">
                      <div className="flex items-center justify-between mb-4">
@@ -183,10 +176,14 @@ export default async function ClientDetailPage({ params }: { params: { id: strin
                            <span className="material-symbols-outlined text-primary text-lg">{blockIcon(block.key)}</span>
                            <h3 className="text-[10px] font-mono font-bold uppercase tracking-widest text-on-surface-variant">{blockLabel(block.key)}</h3>
                         </div>
-                        <span className={`text-2xl font-mono font-bold ${scoreColor(score)}`}>{score}</span>
+                        <span className={`text-2xl font-mono font-bold ${score === null ? 'text-on-surface-variant' : scoreColor(score)}`}>
+                          {score ?? '—'}
+                        </span>
                      </div>
                      <div className="h-1.5 bg-surface-container rounded-full overflow-hidden border border-white/[0.02]">
-                        <div className={`h-full rounded-full transition-all duration-1000 ${barColor(score)}`} style={{ width: `${score}%` }} />
+                        {score !== null && (
+                          <div className={`h-full rounded-full transition-all duration-1000 ${barColor(score)}`} style={{ width: `${score}%` }} />
+                        )}
                      </div>
                    </div>
                  )
@@ -204,7 +201,7 @@ export default async function ClientDetailPage({ params }: { params: { id: strin
                     {(griReport.risks as any).slice(0, 3).map((risk: any, i: number) => (
                       <div key={i} className="flex items-center justify-between p-3 bg-surface-container rounded-xl border border-white/[0.02]">
                         <span className="text-xs text-on-surface truncate pr-4">{risk.text || risk}</span>
-                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-error/10 text-error border border-error/20 uppercase font-bold">High</span>
+                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-error/10 text-error border border-error/20 uppercase font-bold">Риск</span>
                       </div>
                     ))}
                   </div>
@@ -219,7 +216,7 @@ export default async function ClientDetailPage({ params }: { params: { id: strin
           </div>
           <h2 className="font-headline text-2xl font-bold text-on-surface mb-2">Данные GRI отсутствуют</h2>
           <p className="text-sm text-on-surface-variant mb-8 max-w-sm mx-auto">
-            Для этого клиента еще не проводилась диагностика Точки А. Нажмите кнопку выше, чтобы запустить AI-анализ.
+            Для этого клиента ещё не проводилась диагностика Точки А. Запуск анализа пока не подключён.
           </p>
         </div>
       )}

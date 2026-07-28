@@ -1,143 +1,7 @@
 'use client'
 
-import { useState, useMemo } from 'react'
-import Link from 'next/link'
+import { useEffect, useMemo, useState } from 'react'
 import { usePulse } from '@/hooks/usePulse'
-
-// ─── Action Modals ─────────────────────────────────────────────────────────────
-function CallModal({ client, onClose }: { client: { name: string; sector: string } | null; onClose: () => void }) {
-  const [status, setStatus] = useState<'idle' | 'calling' | 'done'>('idle')
-  const [note, setNote] = useState('')
-  if (!client) return null
-  return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-[#13151c] border border-white/[0.08] rounded-2xl w-full max-w-md shadow-2xl z-10">
-        <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-white/[0.06]">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-error/10 flex items-center justify-center">
-              <span className="material-symbols-outlined text-lg text-error">call</span>
-            </div>
-            <div>
-              <p className="text-sm font-semibold text-on-surface">{client.name}</p>
-              <p className="text-[10px] text-on-surface-variant">{client.sector}</p>
-            </div>
-          </div>
-          <button onClick={onClose} className="text-on-surface-variant hover:text-on-surface transition-colors">
-            <span className="material-symbols-outlined text-lg">close</span>
-          </button>
-        </div>
-        <div className="px-5 py-4 space-y-4">
-          {status === 'done' ? (
-            <div className="text-center py-4">
-              <span className="material-symbols-outlined text-4xl text-primary block mb-2">check_circle</span>
-              <p className="text-sm font-medium text-on-surface">Звонок зафиксирован</p>
-              <p className="text-xs text-on-surface-variant mt-1">Действие записано в историю контактов</p>
-            </div>
-          ) : (
-            <>
-              <div className="flex gap-2">
-                {['+7 701 000 00 01', '+7 727 300 55 00'].map(num => (
-                  <a key={num} href={`tel:${num.replace(/\s/g,'')}`}
-                    className="flex-1 flex items-center gap-2 bg-error/10 hover:bg-error/20 border border-error/20 text-error text-xs font-mono px-3 py-2.5 rounded-xl transition-colors">
-                    <span className="material-symbols-outlined text-sm">phone_forwarded</span>
-                    {num}
-                  </a>
-                ))}
-              </div>
-              <textarea
-                value={note} onChange={e => setNote(e.target.value)}
-                placeholder="Заметка о звонке (результат, следующий шаг)..."
-                rows={3}
-                className="w-full bg-surface-container border border-white/[0.06] rounded-xl px-3 py-2.5 text-sm text-on-surface placeholder:text-on-surface-variant/40 focus:outline-none focus:border-primary/30 resize-none"
-              />
-              <div className="flex gap-2">
-                <button onClick={onClose} className="flex-1 px-4 py-2.5 rounded-xl border border-white/[0.08] text-sm text-on-surface-variant hover:bg-white/[0.04] transition-colors">
-                  Отмена
-                </button>
-                <button
-                  onClick={() => setStatus('done')}
-                  className="flex-1 px-4 py-2.5 rounded-xl bg-error/10 border border-error/20 text-sm text-error font-medium hover:bg-error/20 transition-colors">
-                  <span className="material-symbols-outlined text-sm align-middle mr-1">check</span>
-                  Зафиксировать
-                </button>
-              </div>
-            </>
-          )}
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function MessageModal({ client, onClose }: { client: { name: string; sector: string } | null; onClose: () => void }) {
-  const [text, setText] = useState('')
-  const [sent, setSent] = useState(false)
-  if (!client) return null
-  const templates = [
-    `Здравствуйте! Хотели уточнить статус нашего сотрудничества и обсудить следующие шаги.`,
-    `Добрый день! Заметили изменение в активности и хотели предложить встречу для обсуждения программы.`,
-    `Привет! Подготовили для вас обновлённое предложение — когда удобно обсудить?`,
-  ]
-  return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-[#13151c] border border-white/[0.08] rounded-2xl w-full max-w-md shadow-2xl z-10">
-        <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-white/[0.06]">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-tertiary-container/10 flex items-center justify-center">
-              <span className="material-symbols-outlined text-lg text-tertiary-container">chat</span>
-            </div>
-            <div>
-              <p className="text-sm font-semibold text-on-surface">{client.name}</p>
-              <p className="text-[10px] text-on-surface-variant">{client.sector}</p>
-            </div>
-          </div>
-          <button onClick={onClose} className="text-on-surface-variant hover:text-on-surface transition-colors">
-            <span className="material-symbols-outlined text-lg">close</span>
-          </button>
-        </div>
-        <div className="px-5 py-4 space-y-3">
-          {sent ? (
-            <div className="text-center py-4">
-              <span className="material-symbols-outlined text-4xl text-primary block mb-2">mark_email_read</span>
-              <p className="text-sm font-medium text-on-surface">Сообщение отправлено</p>
-              <p className="text-xs text-on-surface-variant mt-1">Ответ придёт на корпоративную почту</p>
-            </div>
-          ) : (
-            <>
-              <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest">Шаблоны</p>
-              <div className="space-y-2">
-                {templates.map((t, i) => (
-                  <button key={i} onClick={() => setText(t)}
-                    className="w-full text-left text-xs text-on-surface-variant bg-surface-container hover:bg-surface-container-high border border-white/[0.04] rounded-xl px-3 py-2 transition-colors line-clamp-2">
-                    {t}
-                  </button>
-                ))}
-              </div>
-              <textarea
-                value={text} onChange={e => setText(e.target.value)}
-                placeholder="Или напишите своё сообщение..."
-                rows={3}
-                className="w-full bg-surface-container border border-white/[0.06] rounded-xl px-3 py-2.5 text-sm text-on-surface placeholder:text-on-surface-variant/40 focus:outline-none focus:border-primary/30 resize-none"
-              />
-              <div className="flex gap-2">
-                <button onClick={onClose} className="flex-1 px-4 py-2.5 rounded-xl border border-white/[0.08] text-sm text-on-surface-variant hover:bg-white/[0.04] transition-colors">
-                  Отмена
-                </button>
-                <button onClick={() => setSent(true)} disabled={!text.trim()}
-                  className="flex-1 px-4 py-2.5 rounded-xl bg-tertiary-container/10 border border-tertiary-container/20 text-sm text-tertiary-container font-medium hover:bg-tertiary-container/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
-                  <span className="material-symbols-outlined text-sm align-middle mr-1">send</span>
-                  Отправить
-                </button>
-              </div>
-            </>
-          )}
-        </div>
-      </div>
-    </div>
-  )
-}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function fmt(n: number) {
@@ -161,19 +25,22 @@ function RiskBadge({ level, prob }: { level: 'high' | 'medium' | 'low'; prob: nu
   )
 }
 
-// ActionBtn is context-aware — clicks are handled by PulsePage via onCall/onMessage/onMonitor props
-// When used standalone (ClientCard actions row), it fires a window custom event
-function ActionBtn({ action, size = 'md', onClick }: { action: 'call' | 'message' | 'monitor'; size?: 'sm' | 'md'; onClick?: () => void }) {
+function ActionBtn({ action, size = 'md' }: { action: 'call' | 'message' | 'monitor'; size?: 'sm' | 'md' }) {
   const cfg = {
-    call:    { bg: 'bg-error/10 hover:bg-error/20 text-error border-error/20',             icon: 'call',          label: 'Позвонить'    },
-    message: { bg: 'bg-tertiary-container/10 hover:bg-tertiary-container/20 text-tertiary-container border-tertiary-container/20', icon: 'chat',          label: 'Написать'     },
-    monitor: { bg: 'bg-primary/10 hover:bg-primary/20 text-primary border-primary/20',     icon: 'visibility',    label: 'Мониторинг'   },
+    call:    { bg: 'bg-error/10 text-error border-error/20', icon: 'call', label: 'Позвонить' },
+    message: { bg: 'bg-tertiary-container/10 text-tertiary-container border-tertiary-container/20', icon: 'chat', label: 'Написать' },
+    monitor: { bg: 'bg-primary/10 text-primary border-primary/20', icon: 'visibility', label: 'Мониторинг' },
   }[action]
   const px = size === 'sm' ? 'px-2.5 py-1' : 'px-3 py-1.5'
   return (
     <button
-      onClick={(e) => { e.stopPropagation(); onClick?.() }}
-      className={`inline-flex items-center gap-1.5 ${px} rounded-lg border text-xs font-medium transition-colors ${cfg.bg}`}>
+      type="button"
+      disabled
+      aria-label={`${cfg.label}: действие пока недоступно`}
+      aria-describedby="pulse-actions-unavailable"
+      title="Контактные действия пока недоступны"
+      className={`inline-flex cursor-not-allowed items-center gap-1.5 ${px} rounded-lg border text-xs font-medium opacity-50 ${cfg.bg}`}
+    >
       <span className="material-symbols-outlined text-sm">{cfg.icon}</span>
       {cfg.label}
     </button>
@@ -181,6 +48,8 @@ function ActionBtn({ action, size = 'md', onClick }: { action: 'call' | 'message
 }
 
 function MiniSparkline({ values }: { values: number[] }) {
+  if (values.length < 2) return null
+
   const max = Math.max(...values)
   const min = Math.min(...values)
   const range = max - min || 1
@@ -225,17 +94,61 @@ type PulseClient = {
   comment: string
   action: 'call' | 'message' | 'monitor'
   history: number[]
-  orderCycle: number
+  orderCycle: number | null
+}
+
+function toPulseClient(value: unknown): PulseClient | null {
+  if (!value || typeof value !== 'object') return null
+
+  const item = value as Record<string, unknown>
+  const churnLevel = item.churnLevel
+  const action = item.action
+  const requiredNumbers = [
+    item.daysSince,
+    item.avgCheck,
+    item.volumeChange,
+    item.riskScore,
+    item.churnProb,
+  ]
+
+  if (
+    typeof item.id !== 'string' ||
+    typeof item.name !== 'string' ||
+    typeof item.sector !== 'string' ||
+    requiredNumbers.some((number) => typeof number !== 'number' || !Number.isFinite(number)) ||
+    (churnLevel !== 'high' && churnLevel !== 'medium' && churnLevel !== 'low') ||
+    (action !== 'call' && action !== 'message' && action !== 'monitor')
+  ) {
+    return null
+  }
+
+  const history = Array.isArray(item.history)
+    ? item.history.filter((entry): entry is number => typeof entry === 'number' && Number.isFinite(entry))
+    : []
+
+  return {
+    id: item.id,
+    name: item.name,
+    sector: item.sector,
+    forbes: typeof item.forbes === 'number' ? item.forbes : null,
+    lastOrder: typeof item.lastOrder === 'string' ? item.lastOrder : '—',
+    daysSince: item.daysSince as number,
+    avgCheck: item.avgCheck as number,
+    volumeChange: item.volumeChange as number,
+    riskScore: item.riskScore as number,
+    churnProb: item.churnProb as number,
+    churnLevel,
+    comment: typeof item.comment === 'string' ? item.comment : '',
+    action,
+    history,
+    orderCycle: typeof item.orderCycle === 'number' && Number.isFinite(item.orderCycle)
+      ? item.orderCycle
+      : null,
+  }
 }
 
 // ─── Client Card Tab ──────────────────────────────────────────────────────────
-function ClientCard({ client, onCall, onMessage, onMonitor, isMonitored }: {
-  client: PulseClient
-  onCall?: () => void
-  onMessage?: () => void
-  onMonitor?: () => void
-  isMonitored?: boolean
-}) {
+function ClientCard({ client }: { client: PulseClient }) {
   return (
     <div className="space-y-5">
       {/* Header */}
@@ -246,19 +159,18 @@ function ClientCard({ client, onCall, onMessage, onMonitor, isMonitored }: {
         <div className="flex-1">
           <div className="flex items-center gap-2 mb-1 flex-wrap">
             <h3 className="font-headline text-xl font-bold text-on-surface">{client.name}</h3>
-            {'forbes' in client && (
+            {client.forbes != null && (
               <span className="text-[10px] font-mono bg-tertiary-container/20 text-tertiary-container border border-tertiary-container/30 px-2 py-0.5 rounded-full">
-                🏆 Forbes KZ #{(client as any).forbes}
+                🏆 Forbes KZ #{client.forbes}
               </span>
             )}
             <RiskBadge level={client.churnLevel} prob={client.churnProb} />
           </div>
           <p className="text-sm text-on-surface-variant">
-            {client.sector} · {('revenue' in client) ? `Выручка: ${(client as any).revenue}` : ''} · {('employees' in client) ? `${(client as any).employees} сотр.` : ''} · Цикл {client.orderCycle} дней
+            {client.sector} · Цикл {client.orderCycle === null ? '—' : `${client.orderCycle} дней`}
           </p>
         </div>
-        <ActionBtn action={client.action}
-          onClick={client.action === 'call' ? onCall : client.action === 'message' ? onMessage : onMonitor} />
+        <ActionBtn action={client.action} />
       </div>
 
       {/* Metrics */}
@@ -267,7 +179,7 @@ function ClientCard({ client, onCall, onMessage, onMonitor, isMonitored }: {
           { label: 'Средний чек', value: fmt(client.avgCheck), icon: 'payments',   color: 'primary' },
           { label: 'Изм. объёма', value: `${client.volumeChange > 0 ? '+' : ''}${client.volumeChange}%`, icon: 'trending_down', color: client.volumeChange < 0 ? 'error' : 'primary' },
           { label: 'Риск-скор',   value: String(client.riskScore), icon: 'warning', color: client.riskScore >= 80 ? 'error' : 'tertiary-container' },
-          { label: 'Дней без заказа', value: String(client.daysSince), icon: 'schedule', color: client.daysSince > client.orderCycle ? 'error' : 'primary' },
+          { label: 'Дней без заказа', value: String(client.daysSince), icon: 'schedule', color: client.orderCycle !== null && client.daysSince > client.orderCycle ? 'error' : 'primary' },
         ].map((m) => (
           <div key={m.label} className="bg-surface-container rounded-xl p-3">
             <div className="flex items-center gap-1.5 mb-1">
@@ -282,22 +194,26 @@ function ClientCard({ client, onCall, onMessage, onMonitor, isMonitored }: {
       {/* Trend chart */}
       <div className="bg-surface-container rounded-xl p-4">
         <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest mb-3">История заказов (последние 5)</p>
-        <div className="flex items-end gap-2 h-16">
-          {client.history.map((val: number, i: number) => {
-            const max = Math.max(...client.history)
-            const pct = (val / max) * 100
-            const isLast = i === client.history.length - 1
-            return (
-              <div key={i} className="flex-1 flex flex-col items-center gap-1">
-                <div
-                  className={`w-full rounded-t-sm transition-all ${isLast ? 'bg-primary/60' : 'bg-surface-container-high'}`}
-                  style={{ height: `${pct}%`, minHeight: 4 }}
-                />
-                <p className="text-[8px] font-mono text-on-surface-variant">{(val / 1000).toFixed(0)}к</p>
-              </div>
-            )
-          })}
-        </div>
+        {client.history.length > 0 ? (
+          <div className="flex items-end gap-2 h-16">
+            {client.history.map((val: number, i: number) => {
+              const max = Math.max(...client.history, 1)
+              const pct = (val / max) * 100
+              const isLast = i === client.history.length - 1
+              return (
+                <div key={i} className="flex-1 flex flex-col items-center gap-1">
+                  <div
+                    className={`w-full rounded-t-sm transition-all ${isLast ? 'bg-primary/60' : 'bg-surface-container-high'}`}
+                    style={{ height: `${pct}%`, minHeight: 4 }}
+                  />
+                  <p className="text-[8px] font-mono text-on-surface-variant">{(val / 1000).toFixed(0)}к</p>
+                </div>
+              )
+            })}
+          </div>
+        ) : (
+          <p className="text-xs text-on-surface-variant">История заказов не загружена</p>
+        )}
       </div>
 
       {/* Comment */}
@@ -308,18 +224,27 @@ function ClientCard({ client, onCall, onMessage, onMonitor, isMonitored }: {
 
       {/* Actions */}
       <div className="flex gap-2 flex-wrap">
-        <ActionBtn action="call" onClick={onCall} />
-        <ActionBtn action="message" onClick={onMessage} />
-        <button onClick={onMonitor}
-          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors ${
-            isMonitored
-              ? 'bg-primary/10 border-primary/30 text-primary'
-              : 'border-white/[0.06] text-on-surface-variant hover:bg-white/[0.04]'
-          }`}>
-          <span className="material-symbols-outlined text-sm">{isMonitored ? 'visibility' : 'visibility_off'}</span>
-          {isMonitored ? 'Мониторинг вкл.' : 'Мониторинг'}
+        <ActionBtn action="call" />
+        <ActionBtn action="message" />
+        <button
+          type="button"
+          disabled
+          aria-label="Мониторинг: действие пока недоступно"
+          aria-describedby="pulse-actions-unavailable"
+          title="Мониторинг пока недоступен"
+          className="inline-flex cursor-not-allowed items-center gap-1.5 rounded-lg border border-white/[0.06] px-3 py-1.5 text-xs font-medium text-on-surface-variant opacity-50"
+        >
+          <span className="material-symbols-outlined text-sm">visibility</span>
+          Мониторинг
         </button>
-        <button className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/[0.06] text-xs font-medium text-on-surface-variant hover:bg-white/[0.04] transition-colors">
+        <button
+          type="button"
+          disabled
+          aria-label="История контактов: функция пока недоступна"
+          aria-describedby="pulse-actions-unavailable"
+          title="История контактов пока недоступна"
+          className="inline-flex cursor-not-allowed items-center gap-1.5 rounded-lg border border-white/[0.06] px-3 py-1.5 text-xs font-medium text-on-surface-variant opacity-50"
+        >
           <span className="material-symbols-outlined text-sm">history</span>
           История
         </button>
@@ -328,51 +253,32 @@ function ClientCard({ client, onCall, onMessage, onMonitor, isMonitored }: {
   )
 }
 
-// ─── Main component ───────────────────────────────────────────────────────────
-type ModalClient = { name: string; sector: string }
-
 export default function PulsePage() {
   const [tab, setTab] = useState<'today' | 'risk' | 'card'>('today')
-  const { data: clientsData, isLoading, error } = usePulse()
-  
-  const [monitored, setMonitored]         = useState<Set<string>>(new Set())
-  const [callClient, setCallClient]       = useState<ModalClient | null>(null)
-  const [messageClient, setMessageClient] = useState<ModalClient | null>(null)
+  const { data: clientsData, isLoading, error, refetch, isFetching } = usePulse()
   const [filterRisk, setFilterRisk]       = useState<'all' | 'high' | 'medium' | 'low'>('all')
-
-  const toggleMonitor = (id: string) =>
-    setMonitored(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s })
 
   // Map backend data to frontend structure
   const TODAY_CLIENTS = useMemo(() => {
     if (!clientsData?.todayClients) return []
-    return (clientsData.todayClients as any[]).map(m => ({
-      id: m.id,
-      name: m.name,
-      sector: m.sector,
-      forbes: m.forbes,
-      lastOrder: m.lastOrder,
-      daysSince: m.daysSince,
-      avgCheck: m.avgCheck,
-      volumeChange: m.volumeChange,
-      riskScore: m.riskScore,
-      churnProb: m.churnProb,
-      churnLevel: m.churnLevel as 'high' | 'medium' | 'low',
-      comment: m.comment,
-      action: m.action as 'call' | 'message' | 'monitor',
-      history: m.history,
-      orderCycle: m.orderCycle || 14,
-    }))
+    return (clientsData.todayClients as unknown[]).flatMap((value) => {
+      const client = toPulseClient(value)
+      return client ? [client] : []
+    })
   }, [clientsData])
 
   const [selectedClient, setSelectedClient] = useState<PulseClient | null>(null)
 
-  // Initialize selected client once data is loaded
-  useMemo(() => {
-    if (TODAY_CLIENTS.length > 0 && !selectedClient) {
-      setSelectedClient(TODAY_CLIENTS[0])
+  useEffect(() => {
+    if (TODAY_CLIENTS.length > 0) {
+      setSelectedClient((current) => {
+        if (!current) return TODAY_CLIENTS[0]
+        return TODAY_CLIENTS.find((client) => client.id === current.id) ?? TODAY_CLIENTS[0]
+      })
+    } else {
+      setSelectedClient(null)
     }
-  }, [TODAY_CLIENTS, selectedClient])
+  }, [TODAY_CLIENTS])
 
   const filteredToday = TODAY_CLIENTS.filter(
     (c) => filterRisk === 'all' || c.churnLevel === filterRisk
@@ -390,17 +296,15 @@ export default function PulsePage() {
   const DYNAMIC_STATS = useMemo(() => {
     const high = TODAY_CLIENTS.filter(c => c.churnLevel === 'high').length
     const medium = TODAY_CLIENTS.filter(c => c.churnLevel === 'medium').length
-    const apiProcessedToday = typeof clientsData?.stats?.processedToday === 'number' ? clientsData.stats.processedToday : TODAY_CLIENTS.length
-    const apiDailyTarget = typeof clientsData?.stats?.dailyTarget === 'number' ? clientsData.stats.dailyTarget : Math.max(6, apiProcessedToday)
+    const totalClients = typeof clientsData?.stats?.totalClients === 'number'
+      ? clientsData.stats.totalClients
+      : TODAY_CLIENTS.length
     return {
-      revenueAtRisk: highRiskRevenue,
       highRisk: high,
       mediumRisk: medium,
-      totalClients: TODAY_CLIENTS.length,
-      processedToday: apiProcessedToday,
-      dailyTarget: apiDailyTarget,
+      totalClients,
     }
-  }, [TODAY_CLIENTS, highRiskRevenue, clientsData])
+  }, [TODAY_CLIENTS, clientsData])
 
   if (isLoading) return (
     <div className="flex items-center justify-center min-h-[400px]">
@@ -412,6 +316,33 @@ export default function PulsePage() {
     <div className="p-8 text-center bg-error/10 rounded-2xl border border-error/20">
       <p className="text-error font-medium">Ошибка загрузки данных</p>
       <p className="text-xs text-on-surface-variant mt-2">База данных временно недоступна или не настроена</p>
+      <button
+        type="button"
+        disabled={isFetching}
+        onClick={() => void refetch()}
+        className="mt-4 inline-flex items-center gap-2 rounded-lg border border-error/20 px-4 py-2 text-sm font-medium text-error transition-colors hover:bg-error/10 disabled:cursor-wait disabled:opacity-50"
+      >
+        <span className="material-symbols-outlined text-base">refresh</span>
+        {isFetching ? 'Повторяем…' : 'Повторить'}
+      </button>
+    </div>
+  )
+
+  if (TODAY_CLIENTS.length === 0) return (
+    <div className="space-y-6">
+      <section>
+        <p className="mb-3 text-xs font-mono uppercase tracking-[0.2em] text-primary/70">
+          GRI Pulse · Монитор клиентской базы
+        </p>
+        <h1 className="font-headline text-3xl font-extrabold text-on-surface">Pulse</h1>
+      </section>
+      <div className="rounded-2xl border border-dashed border-outline-variant/30 bg-surface-container-low p-10 text-center">
+        <span className="material-symbols-outlined mb-3 block text-4xl text-on-surface-variant/30">group_off</span>
+        <p className="text-sm font-medium text-on-surface">Нет клиентов для текущей выборки</p>
+        <p className="mt-1 text-xs text-on-surface-variant">
+          Данные появятся после добавления клиентских Pulse-метрик.
+        </p>
+      </div>
     </div>
   )
 
@@ -419,10 +350,6 @@ export default function PulsePage() {
 
   return (
     <div className="space-y-6">
-      {/* ── Modals ── */}
-      <CallModal    client={callClient}    onClose={() => setCallClient(null)} />
-      <MessageModal client={messageClient} onClose={() => setMessageClient(null)} />
-
       {/* ── Header ── */}
       <section className="flex flex-col lg:flex-row justify-between items-start gap-4">
         <div className="flex-1">
@@ -450,29 +377,43 @@ export default function PulsePage() {
         </div>
       </section>
 
+      <div
+        id="pulse-actions-unavailable"
+        role="status"
+        className="flex items-start gap-3 rounded-xl border border-secondary/20 bg-secondary/5 px-4 py-3"
+      >
+        <span className="material-symbols-outlined mt-0.5 text-lg text-secondary">visibility</span>
+        <div>
+          <p className="text-sm font-medium text-on-surface">Клиентские показатели доступны только для просмотра</p>
+          <p className="mt-1 text-xs text-on-surface-variant">
+            Звонки, сообщения, мониторинг и история контактов пока не подключены и не сохраняются.
+          </p>
+        </div>
+      </div>
+
       {/* ── Stats bar ── */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
           {
-            label: 'Выручка под угрозой',
+            label: 'Сумма среднего чека',
             value: fmt(highRiskRevenue),
             icon: 'payments',
             color: 'error',
-            sub: `${DYNAMIC_STATS.highRisk} клиентов высокого риска`,
+            sub: `${DYNAMIC_STATS.highRisk} клиентов с высоким риском`,
           },
           {
             label: 'Высокий риск',
             value: String(DYNAMIC_STATS.highRisk),
             icon: 'crisis_alert',
             color: 'error',
-            sub: 'требуют звонка сегодня',
+            sub: 'по данным Pulse',
           },
           {
             label: 'Средний риск',
             value: String(DYNAMIC_STATS.mediumRisk),
             icon: 'warning',
             color: 'tertiary-container',
-            sub: 'написать до конца дня',
+            sub: 'по данным Pulse',
           },
           {
             label: 'Всего клиентов',
@@ -480,13 +421,6 @@ export default function PulsePage() {
             icon: 'group',
             color: 'on-surface-variant',
             sub: 'в активной базе',
-          },
-          {
-            label: 'Обработано сегодня',
-            value: `${DYNAMIC_STATS.processedToday} / ${DYNAMIC_STATS.dailyTarget}`,
-            icon: 'task_alt',
-            color: 'primary',
-            sub: `${Math.round((DYNAMIC_STATS.processedToday / DYNAMIC_STATS.dailyTarget) * 100)}% выполнено`,
           },
         ].map((stat) => (
           <div key={stat.label}
@@ -557,8 +491,8 @@ export default function PulsePage() {
             <div className="flex items-center gap-3 bg-error/10 border border-error/20 rounded-xl px-5 py-3.5">
               <span className="w-2.5 h-2.5 rounded-full bg-error animate-pulse flex-shrink-0" />
               <p className="text-sm text-error font-medium">
-                <strong>{DYNAMIC_STATS.highRisk} клиента</strong> просрочили цикл заказа более чем на 10 дней.
-                Возможна потеря <strong>{fmt(highRiskRevenue)}</strong> в этом месяце.
+                <strong>{DYNAMIC_STATS.highRisk} клиента</strong> отмечены системой как высокий риск.
+                Сумма их среднего чека: <strong>{fmt(highRiskRevenue)}</strong>.
               </p>
             </div>
           )}
@@ -578,17 +512,16 @@ export default function PulsePage() {
                     <div className="min-w-0">
                       <div className="flex items-center gap-1.5 flex-wrap">
                         <p className="text-sm font-semibold text-on-surface">{c.name}</p>
-                        {'forbes' in c && (
+                        {c.forbes != null && (
                           <span className="text-[9px] font-mono bg-tertiary-container/20 text-tertiary-container border border-tertiary-container/20 px-1.5 py-0.5 rounded-full">
-                            Forbes #{(c as any).forbes}
+                            Forbes #{c.forbes}
                           </span>
                         )}
                       </div>
                       <p className="text-[10px] text-on-surface-variant truncate">{c.sector}</p>
                     </div>
                   </div>
-                  <ActionBtn action={c.action} size="sm"
-                    onClick={() => c.action === 'call' ? setCallClient(c) : c.action === 'message' ? setMessageClient(c) : toggleMonitor(c.id)} />
+                  <ActionBtn action={c.action} size="sm" />
                 </div>
                 {/* Stats row */}
                 <div className="grid grid-cols-3 gap-2 mb-3">
@@ -607,7 +540,7 @@ export default function PulsePage() {
                   </div>
                   <div className="bg-surface-container rounded-lg p-2">
                     <p className="text-[9px] font-mono text-on-surface-variant uppercase mb-1">Заказ</p>
-                    <p className={`text-xs font-mono ${c.daysSince > c.orderCycle ? 'text-error' : 'text-on-surface'}`}>{c.daysSince}д. назад</p>
+                    <p className={`text-xs font-mono ${c.orderCycle !== null && c.daysSince > c.orderCycle ? 'text-error' : 'text-on-surface'}`}>{c.daysSince}д. назад</p>
                   </div>
                 </div>
                 {/* Risk row */}
@@ -645,9 +578,9 @@ export default function PulsePage() {
                           <div>
                             <div className="flex items-center gap-1.5">
                               <p className="text-sm font-semibold text-on-surface group-hover:text-primary transition-colors">{c.name}</p>
-                              {'forbes' in c && (
+                              {c.forbes != null && (
                                 <span className="text-[9px] font-mono bg-tertiary-container/20 text-tertiary-container border border-tertiary-container/20 px-1.5 py-0.5 rounded-full">
-                                  Forbes #{(c as any).forbes}
+                                  Forbes #{c.forbes}
                                 </span>
                               )}
                             </div>
@@ -657,7 +590,7 @@ export default function PulsePage() {
                       </td>
                       <td className="px-4 py-3.5">
                         <p className="text-sm text-on-surface">{c.lastOrder}</p>
-                        <p className={`text-[10px] font-mono ${c.daysSince > c.orderCycle ? 'text-error' : 'text-on-surface-variant'}`}>
+                        <p className={`text-[10px] font-mono ${c.orderCycle !== null && c.daysSince > c.orderCycle ? 'text-error' : 'text-on-surface-variant'}`}>
                           {c.daysSince} дн. назад
                         </p>
                       </td>
@@ -686,8 +619,7 @@ export default function PulsePage() {
                         <p className="text-xs text-on-surface-variant truncate">{c.comment}</p>
                       </td>
                       <td className="px-4 py-3.5">
-                        <ActionBtn action={c.action} size="sm"
-                    onClick={() => c.action === 'call' ? setCallClient(c) : c.action === 'message' ? setMessageClient(c) : toggleMonitor(c.id)} />
+                        <ActionBtn action={c.action} size="sm" />
                       </td>
                     </tr>
                   ))}
@@ -729,9 +661,9 @@ export default function PulsePage() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-0.5 flex-wrap">
                     <p className="text-sm font-semibold text-on-surface group-hover:text-primary transition-colors">{c.name}</p>
-                    {'forbes' in c && (
+                    {c.forbes != null && (
                       <span className="text-[9px] font-mono bg-tertiary-container/20 text-tertiary-container border border-tertiary-container/20 px-1.5 py-0.5 rounded-full">
-                        Forbes #{(c as any).forbes}
+                        Forbes #{c.forbes}
                       </span>
                     )}
                     <span className="text-[10px] text-on-surface-variant">{c.sector}</span>
@@ -747,8 +679,7 @@ export default function PulsePage() {
                     <RiskBar score={c.riskScore} />
                   </div>
                   <RiskBadge level={c.churnLevel} prob={c.churnProb} />
-                  <ActionBtn action={c.action} size="sm"
-                    onClick={() => c.action === 'call' ? setCallClient(c) : c.action === 'message' ? setMessageClient(c) : toggleMonitor(c.id)} />
+                  <ActionBtn action={c.action} size="sm" />
                 </div>
               </div>
             </div>
@@ -779,13 +710,7 @@ export default function PulsePage() {
 
           <div className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-4 md:p-6">
             {selectedClient && (
-              <ClientCard
-                client={selectedClient}
-                onCall={() => setCallClient(selectedClient)}
-                onMessage={() => setMessageClient(selectedClient)}
-                onMonitor={() => toggleMonitor(selectedClient.id)}
-                isMonitored={monitored.has(selectedClient.id)}
-              />
+              <ClientCard client={selectedClient} />
             )}
           </div>
         </div>

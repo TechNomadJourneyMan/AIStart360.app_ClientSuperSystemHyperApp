@@ -3,37 +3,50 @@ export const dynamic = "force-dynamic"
 import type { Metadata } from 'next'
 import { prisma } from '@/lib/db'
 import { auth } from '@/lib/auth'
-import { getDashboardData } from '@/lib/get-dashboard-data'
 import { DocumentUpload } from '@/components/diagnostics/DocumentUpload'
 
 export const metadata: Metadata = { title: 'Точка А — Текущее состояние' }
 
+async function getPointAData(email?: string | null) {
+  try {
+    const [clientsCount, avgScoreRes, latestReports] = await Promise.all([
+      prisma.client.count(),
+      prisma.griReport.aggregate({ _avg: { score: true } }),
+      prisma.griReport.findMany({
+        include: { client: { select: { name: true, id: true } } },
+        orderBy: { calculatedAt: 'desc' },
+        take: 5,
+      }),
+    ])
+    const client = email
+      ? await prisma.client.findFirst({ where: { manager: { email } } })
+      : null
+    return {
+      clientsCount,
+      avgScore: avgScoreRes._avg.score === null
+        ? null
+        : Number(avgScoreRes._avg.score),
+      latestReports,
+      client,
+      unavailable: false,
+    }
+  } catch (error) {
+    console.error('[point-a] live diagnostic data unavailable', error)
+    return {
+      clientsCount: null,
+      avgScore: null,
+      latestReports: [],
+      client: null,
+      unavailable: true,
+    }
+  }
+}
+
 export default async function PointAPage() {
   const session = await auth()
-  const data = getDashboardData(session?.user?.email)
+  const pointA = await getPointAData(session?.user?.email)
+  const { clientsCount, avgScore, latestReports, client } = pointA
 
-  // Fetch real data from database
-  const [clientsCount, avgScoreRes, latestReports] = await Promise.all([
-    prisma.client.count(),
-    prisma.griReport.aggregate({ _avg: { score: true } }),
-    prisma.griReport.findMany({
-      include: { client: { select: { name: true, id: true } } },
-      orderBy: { calculatedAt: 'desc' },
-      take: 5,
-    }),
-  ])
-
-  const avgScore = Number(avgScoreRes._avg.score ?? 0)
-  const client = await prisma.client.findFirst({
-    where: { 
-      OR: [
-        { manager: { email: session?.user?.email ?? '' } },
-        { name: session?.user?.email === 'portal@chocofamily.kz' ? 'ChocoFamily' : 'Mock Client' }
-      ]
-    }
-  })
-
-  // Domain scores from the very latest report or mock data as fallback
   const firstReport = latestReports[0]
   const domainScores = firstReport
     ? [
@@ -45,7 +58,8 @@ export default async function PointAPage() {
         { id: 'team', label: 'Team & Culture', score: firstReport.teamScore, max: 100, icon: 'groups' },
         { id: 'founder', label: 'Founder & Strategy', score: firstReport.founderScore, max: 100, icon: 'person' },
       ]
-    : data.GRI_DOMAINS.map(d => ({ ...d, label: d.label, max: 10 })) // Fallback to mocks scaled to 10
+    : []
+  const currentScore = firstReport?.score ?? avgScore
 
   return (
     <div className="space-y-8">
@@ -65,9 +79,24 @@ export default async function PointAPage() {
 
       {/* AI Diagnostic Upload */}
       <section className="animate-in fade-in slide-in-from-bottom-4 duration-500 delay-150">
-        <div className="bg-surface-container-low rounded-3xl border border-white/[0.04] p-1 overflow-hidden">
-          <DocumentUpload clientId={client?.id ?? 'default-client-id'} />
-        </div>
+        {pointA.unavailable || !client ? (
+          <div role="status" className="rounded-3xl border border-tertiary-container/25 bg-tertiary-container/5 p-6">
+            <p className="font-medium text-on-surface">
+              {pointA.unavailable
+                ? 'Загрузка диагностики временно недоступна'
+                : 'Для загрузки не найден связанный клиент'}
+            </p>
+            <p className="mt-2 text-sm text-on-surface-variant">
+              {pointA.unavailable
+                ? 'База данных не отвечает. Повторите попытку после восстановления сервиса.'
+                : 'Документы нельзя отправить без реального идентификатора клиента. Обратитесь к администратору, чтобы связать аккаунт.'}
+            </p>
+          </div>
+        ) : (
+          <div className="bg-surface-container-low rounded-3xl border border-white/[0.04] p-1 overflow-hidden">
+            <DocumentUpload clientId={client.id} />
+          </div>
+        )}
       </section>
 
       {/* Current State Overview */}
@@ -75,14 +104,24 @@ export default async function PointAPage() {
         {[
           { 
             label: 'Общий GRI', 
-            value: firstReport ? firstReport.score.toFixed(0) : avgScore.toFixed(0), 
+            value: currentScore === null ? '—' : currentScore.toFixed(0),
             icon: 'radar', 
-            good: (firstReport?.score ?? avgScore) >= 700, 
-            note: firstReport ? 'Последний расчёт' : 'Среднее по системе' 
+            good: currentScore !== null && currentScore >= 700,
+            note: firstReport
+              ? 'Последний расчёт'
+              : avgScore !== null
+                ? 'Среднее по системе'
+                : 'нет подтверждённых данных',
           },
-          { label: 'Клиенты', value: String(clientsCount), icon: 'groups', good: true, note: 'активных в базе' },
-          { label: 'GRI отчёты', value: String(latestReports.length), icon: 'description', good: true, note: 'хранится в архиве' },
-          { label: 'Health Score', value: 'High', icon: 'favorite', good: true, note: 'стабильный рост' },
+          { label: 'Клиенты', value: clientsCount === null ? '—' : String(clientsCount), icon: 'groups', good: clientsCount !== null, note: clientsCount === null ? 'данные недоступны' : 'активных в базе' },
+          {
+            label: 'Последние отчёты',
+            value: pointA.unavailable ? '—' : String(latestReports.length),
+            icon: 'description',
+            good: !pointA.unavailable,
+            note: pointA.unavailable ? 'архив недоступен' : 'в текущей выборке',
+          },
+          { label: 'Health Score', value: '—', icon: 'favorite', good: false, note: 'расчёт не подключён' },
         ].map((stat) => (
           <div key={stat.label} className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-5 hover:border-primary/10 transition-colors">
             <div className="flex items-start justify-between mb-3">
@@ -102,12 +141,24 @@ export default async function PointAPage() {
             <h2 className="font-headline text-lg font-bold text-on-surface">Диагностика доменов</h2>
             <p className="text-xs text-on-surface-variant mt-1">Текущий уровень готовности по каждому направлению GRI</p>
           </div>
-          <button className="text-xs font-mono text-primary font-bold hover:underline">Подробный отчет</button>
+          <div className="text-right">
+            <button
+              type="button"
+              disabled
+              aria-label="Открыть подробный отчёт: функция пока недоступна"
+              title="Подробный отчёт пока недоступен"
+              className="cursor-not-allowed text-xs font-mono font-bold text-on-surface-variant opacity-50"
+            >
+              Подробный отчёт
+            </button>
+            <p className="mt-1 text-[10px] text-on-surface-variant">Просмотр пока не подключён</p>
+          </div>
         </div>
         
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {domainScores.map((domain) => {
-            const max = (domain as any).max ?? 100
+        {domainScores.length > 0 ? (
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {domainScores.map((domain) => {
+            const max = domain.max
             const score = domain.score
             const pct = (score / max) * 100
             const isStrong = pct >= 70
@@ -142,13 +193,27 @@ export default async function PointAPage() {
                 </div>
               </div>
             )
-          })}
-        </div>
+            })}
+          </div>
+        ) : (
+          <div className="rounded-2xl border border-dashed border-outline-variant/20 bg-surface-container-low p-10 text-center">
+            <span className="material-symbols-outlined mb-3 block text-4xl text-on-surface-variant/25">radar</span>
+            <p className="text-sm font-medium text-on-surface">Нет данных диагностики доменов</p>
+            <p className="mt-1 text-xs text-on-surface-variant">
+              Доменный профиль появится после первого подтверждённого расчёта.
+            </p>
+          </div>
+        )}
       </section>
 
       {/* Feed of reports */}
       <section>
-        <h2 className="font-headline text-lg font-bold text-on-surface mb-5">Последние расчёты</h2>
+        <div className="mb-5">
+          <h2 className="font-headline text-lg font-bold text-on-surface">Последние расчёты</h2>
+          {latestReports.length > 0 && (
+            <p className="mt-1 text-xs text-on-surface-variant">Скачивание архивных отчётов пока не подключено.</p>
+          )}
+        </div>
         <div className="grid grid-cols-1 gap-3">
           {latestReports.map((report) => (
             <div key={report.id} className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:bg-surface-container transition-colors group">
@@ -164,11 +229,13 @@ export default async function PointAPage() {
                 </div>
               </div>
               <div className="flex items-center gap-4">
-                <div className="text-right hidden md:block">
-                  <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest">Growth Plan</p>
-                  <p className="text-xs text-primary font-bold">Generated by AI</p>
-                </div>
-                <button className="flex items-center justify-center w-8 h-8 rounded-full bg-surface-container group-hover:bg-primary group-hover:text-on-primary transition-all">
+                <button
+                  type="button"
+                  disabled
+                  aria-label={`Скачать отчёт ${report.client.name}: функция пока недоступна`}
+                  title="Скачивание отчёта пока недоступно"
+                  className="flex h-8 w-8 cursor-not-allowed items-center justify-center rounded-full bg-surface-container text-on-surface-variant opacity-45"
+                >
                   <span className="material-symbols-outlined text-base">download</span>
                 </button>
               </div>
@@ -178,8 +245,16 @@ export default async function PointAPage() {
           {latestReports.length === 0 && (
             <div className="bg-surface-container-low rounded-2xl border border-dashed border-white/10 p-12 text-center group hover:border-primary/30 transition-colors">
               <span className="material-symbols-outlined text-4xl text-on-surface-variant/20 mb-4 block group-hover:text-primary/20 transition-colors">insert_chart</span>
-              <p className="text-sm text-on-surface-variant font-medium">Нет загруженных отчетов</p>
-              <p className="text-xs text-on-surface-variant/60 mt-1">Используйте форму выше для загрузки документации</p>
+              <p className="text-sm text-on-surface-variant font-medium">
+                {pointA.unavailable ? 'Архив отчётов временно недоступен' : 'Нет загруженных отчетов'}
+              </p>
+              <p className="text-xs text-on-surface-variant/60 mt-1">
+                {pointA.unavailable
+                  ? 'Повторите после восстановления базы данных'
+                  : client
+                    ? 'Используйте форму выше для загрузки документации'
+                    : 'Сначала свяжите аккаунт с реальным клиентом'}
+              </p>
             </div>
           )}
         </div>

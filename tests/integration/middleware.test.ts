@@ -45,6 +45,16 @@ describe('RBAC Middleware', () => {
     expect(new URL(res.headers.get('location')!).pathname).toBe('/login')
   })
 
+  it('preserves pathname and search params in the login return path', async () => {
+    const req = createRequest('/clients?q=acme&page=2')
+    const res = await middleware(req)
+    const location = new URL(res.headers.get('location')!)
+
+    expect(res.status).toBe(307)
+    expect(location.pathname).toBe('/login')
+    expect(location.searchParams.get('from')).toBe('/clients?q=acme&page=2')
+  })
+
   // T018: /client/waiting-room without cookie → redirect to login
   it('redirects /client/waiting-room to /login when no cookie is set', async () => {
     const req = createRequest('/client/waiting-room')

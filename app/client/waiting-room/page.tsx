@@ -53,43 +53,60 @@ const STATUS_CONFIG: Record<ApprovalStatus, StatusConfig> = {
 
 export default function WaitingRoomPage() {
   const router = useRouter()
-  const [status, setStatus] = useState<ApprovalStatus>('pending_approval')
+  const [status, setStatus] = useState<ApprovalStatus | null>(null)
   const [userId, setUserId] = useState<string | null>(null)
   const [userEmail, setUserEmail] = useState<string>('')
-  const [lastChecked, setLastChecked] = useState<Date>(new Date())
+  const [lastChecked, setLastChecked] = useState<Date | null>(null)
   const [isRedirecting, setIsRedirecting] = useState(false)
+  const [isChecking, setIsChecking] = useState(true)
+  const [checkError, setCheckError] = useState<string | null>(null)
 
   // Get user from Supabase session only.
   useEffect(() => {
     const sb = createClient()
-    sb.auth.getSession().then(({ data }) => {
+    sb.auth.getSession().then(({ data, error }) => {
       const u = data.session?.user
       if (u?.id) {
         setUserId(u.id)
         setUserEmail(u.email ?? '')
+        return
       }
+
+      setIsChecking(false)
+      setCheckError(error?.message ?? 'Не удалось определить текущего пользователя.')
     })
   }, [])
 
   const checkStatus = useCallback(async () => {
     if (!userId) return
+    setIsChecking(true)
+
     try {
       const sb = createClient()
-      const { data } = await (sb.from('profiles') as any)
+      const { data, error } = await (sb.from('profiles') as any)
         .select('status')
         .eq('id', userId)
         .single()
 
-      if (data?.status) {
-        setStatus(data.status as ApprovalStatus)
-        setLastChecked(new Date())
-
-        if (data.status === 'approved') {
-          setIsRedirecting(true)
-          setTimeout(() => router.replace('/client/dashboard'), 800)
-        }
+      if (error) throw error
+      if (!data?.status || !(data.status in STATUS_CONFIG)) {
+        throw new Error('Сервис вернул неизвестный статус заявки.')
       }
-    } catch {}
+
+      setStatus(data.status as ApprovalStatus)
+      setLastChecked(new Date())
+      setCheckError(null)
+
+      if (data.status === 'approved') {
+        setIsRedirecting(true)
+        setTimeout(() => router.replace('/client/dashboard'), 800)
+      }
+    } catch (error) {
+      console.error('[client/waiting-room] status check failed', error)
+      setCheckError('Не удалось обновить статус заявки. Сохранён последний подтверждённый статус.')
+    } finally {
+      setIsChecking(false)
+    }
   }, [userId, router])
 
   useEffect(() => {
@@ -99,7 +116,7 @@ export default function WaitingRoomPage() {
     return () => clearInterval(interval)
   }, [userId, checkStatus])
 
-  const cfg = STATUS_CONFIG[status]
+  const cfg = status ? STATUS_CONFIG[status] : null
 
   const steps = [
     { label: 'Заявка получена', done: true },
@@ -122,9 +139,26 @@ export default function WaitingRoomPage() {
       {/* Main */}
       <main className="flex-1 flex items-center justify-center p-6">
         <div className="w-full max-w-lg space-y-6">
+          {checkError && (
+            <div
+              role="alert"
+              className="flex flex-col gap-3 rounded-xl border border-error/30 bg-error/10 px-4 py-3 text-sm text-error sm:flex-row sm:items-center sm:justify-between"
+            >
+              <span>{checkError}</span>
+              <button
+                type="button"
+                onClick={() => void checkStatus()}
+                disabled={isChecking || !userId}
+                className="self-start rounded-lg border border-error/30 px-3 py-1.5 text-xs font-semibold transition-colors hover:bg-error/10 disabled:opacity-50 sm:self-auto"
+              >
+                Повторить
+              </button>
+            </div>
+          )}
 
           {/* Status Card */}
-          <div className="bg-surface-container-low rounded-2xl border border-white/[0.06] p-8 text-center relative overflow-hidden">
+          {cfg ? (
+            <div className="bg-surface-container-low rounded-2xl border border-white/[0.06] p-8 text-center relative overflow-hidden">
             {/* Background glow */}
             <div className={`absolute inset-0 opacity-[0.03] ${cfg.bgColor} blur-3xl`} />
 
@@ -158,10 +192,22 @@ export default function WaitingRoomPage() {
                 <span className="text-sm text-primary">Переходим в личный кабинет...</span>
               </div>
             )}
-          </div>
+            </div>
+          ) : isChecking ? (
+            <div className="rounded-2xl border border-white/[0.06] bg-surface-container-low p-8 text-center">
+              <span className="mx-auto mb-4 block h-10 w-10 animate-spin rounded-full border-2 border-primary/30 border-t-primary" />
+              <p className="text-sm text-on-surface-variant">Проверяем статус заявки...</p>
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-white/[0.06] bg-surface-container-low p-8 text-center">
+              <span className="material-symbols-outlined mb-3 block text-4xl text-on-surface-variant/30">cloud_off</span>
+              <p className="text-sm text-on-surface-variant">Статус ещё не подтверждён.</p>
+            </div>
+          )}
 
           {/* Progress Steps */}
-          <div className="bg-surface-container-low rounded-2xl border border-white/[0.06] p-6">
+          {status && (
+            <div className="bg-surface-container-low rounded-2xl border border-white/[0.06] p-6">
             <h2 className="text-xs font-mono text-on-surface-variant uppercase tracking-widest mb-5">
               Статус заявки
             </h2>
@@ -193,10 +239,11 @@ export default function WaitingRoomPage() {
                 </div>
               ))}
             </div>
-          </div>
+            </div>
+          )}
 
           {/* CTAs */}
-          {status !== 'rejected' && (
+          {status && status !== 'rejected' && (
             <div className="grid grid-cols-2 gap-3">
               <Link href="/client/onboarding" className="flex flex-col items-center gap-2 bg-surface-container-low hover:bg-surface-container rounded-2xl border border-white/[0.06] hover:border-primary/20 p-5 transition-all group">
                 <span className="material-symbols-outlined text-2xl text-primary">assignment</span>
@@ -221,7 +268,11 @@ export default function WaitingRoomPage() {
               Написать администратору
             </a>
             <p className="text-[10px] text-on-surface-variant/50 font-mono">
-              Последняя проверка: {lastChecked.toLocaleTimeString('ru-RU')} · обновляется каждые 30 сек
+              {lastChecked
+                ? `Последняя успешная проверка: ${lastChecked.toLocaleTimeString('ru-RU')} · обновляется каждые 30 сек`
+                : isChecking
+                  ? 'Выполняется первая проверка...'
+                  : 'Успешных проверок в этой сессии ещё не было'}
             </p>
           </div>
 

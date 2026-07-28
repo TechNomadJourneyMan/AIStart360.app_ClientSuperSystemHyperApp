@@ -62,14 +62,20 @@ function AlertsWidget({ data }: { data: WidgetData }) {
       <div className="flex items-center justify-between mb-3">
         <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest">Требуют внимания</p>
         <span className="font-mono text-[10px] text-error bg-error/10 px-2.5 py-0.5 rounded-full border border-error/20">
-          {data.criticalCount} алерта
+          {data.criticalCount}
         </span>
       </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
-        {data.alerts.map((alert) => (
-          <AlertCard key={alert.id} {...alert} />
-        ))}
-      </div>
+      {data.alerts.length > 0 ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
+          {data.alerts.map((alert) => (
+            <AlertCard key={alert.id} {...alert} />
+          ))}
+        </div>
+      ) : (
+        <p className="rounded-xl border border-white/[0.04] bg-surface-container p-4 text-xs text-on-surface-variant">
+          Новых сигналов в подключённом источнике нет.
+        </p>
+      )}
     </div>
   )
 }
@@ -83,7 +89,13 @@ function ActivityWidget({ data }: { data: WidgetData }) {
           Все <span className="material-symbols-outlined text-sm">chevron_right</span>
         </Link>
       </div>
-      <ActivityFeed items={data.activity} />
+      {data.activity.length > 0 ? (
+        <ActivityFeed items={data.activity} />
+      ) : (
+        <p className="rounded-xl border border-white/[0.04] bg-surface-container p-4 text-xs text-on-surface-variant">
+          Журнал активности пока не подключён.
+        </p>
+      )}
     </div>
   )
 }
@@ -95,19 +107,25 @@ function GriWidget({ data }: { data: WidgetData }) {
         <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest">GRI Скоринг</p>
         <span className="material-symbols-outlined text-sm text-on-surface-variant/30 group-hover:text-primary/60 transition-colors">arrow_forward</span>
       </div>
-      <div className="space-y-3">
-        {data.gri.map((item) => (
-          <div key={item.label}>
-            <div className="flex justify-between text-xs mb-1.5">
-              <span className="text-on-surface-variant">{item.label}</span>
-              <span className="font-mono font-bold text-on-surface">{item.pct}/100</span>
+      {data.gri.length > 0 ? (
+        <div className="space-y-3">
+          {data.gri.map((item) => (
+            <div key={item.label}>
+              <div className="flex justify-between text-xs mb-1.5">
+                <span className="text-on-surface-variant">{item.label}</span>
+                <span className="font-mono font-bold text-on-surface">{item.pct}/100</span>
+              </div>
+              <div className="h-1.5 bg-surface-container-high rounded-full overflow-hidden">
+                <div className="h-full rounded-full" style={{ width: `${item.pct}%`, background: item.color }} />
+              </div>
             </div>
-            <div className="h-1.5 bg-surface-container-high rounded-full overflow-hidden">
-              <div className="h-full rounded-full" style={{ width: `${item.pct}%`, background: item.color }} />
-            </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      ) : (
+        <p className="rounded-xl border border-white/[0.04] bg-surface-container-high p-4 text-xs text-on-surface-variant">
+          Детализация GRI по факторам пока не подключена.
+        </p>
+      )}
     </Link>
   )
 }
@@ -119,16 +137,22 @@ function MetricsWidget({ data }: { data: WidgetData }) {
         <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest">Ключевые метрики</p>
         <span className="material-symbols-outlined text-sm text-on-surface-variant/30 group-hover:text-primary/60 transition-colors">arrow_forward</span>
       </div>
-      <div className="space-y-2">
-        {data.metrics.map((item) => (
-          <div key={item.name} className="flex justify-between items-center py-1 border-b border-white/[0.03] last:border-0">
-            <span className="text-xs text-on-surface-variant">{item.name}</span>
-            <span className={`font-mono text-sm font-bold ${
-              item.up === true ? 'text-primary' : item.up === false ? 'text-error' : 'text-on-surface'
-            }`}>{item.value}</span>
-          </div>
-        ))}
-      </div>
+      {data.metrics.length > 0 ? (
+        <div className="space-y-2">
+          {data.metrics.map((item) => (
+            <div key={item.name} className="flex justify-between items-center py-1 border-b border-white/[0.03] last:border-0">
+              <span className="text-xs text-on-surface-variant">{item.name}</span>
+              <span className={`font-mono text-sm font-bold ${
+                item.up === true ? 'text-primary' : item.up === false ? 'text-error' : 'text-on-surface'
+              }`}>{item.value}</span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="rounded-xl border border-white/[0.04] bg-surface-container-high p-4 text-xs text-on-surface-variant">
+          Набор ключевых метрик пока не подключён.
+        </p>
+      )}
     </Link>
   )
 }
@@ -167,12 +191,12 @@ function QuickLinksWidget() {
   )
 }
 
-function ClientsStatsWidget({ data }: { data: WidgetData }) {
+function ClientsStatsWidget() {
   const stats = [
-    { label: 'Всего клиентов', value: data.activity.length > 0 ? '48' : '0', icon: 'groups', color: 'text-primary' },
-    { label: 'Активных',       value: '38', icon: 'check_circle', color: 'text-primary' },
-    { label: 'Под риском',     value: '6',  icon: 'warning',      color: 'text-error'   },
-    { label: 'Ср. GRI',        value: '7.6',icon: 'radar',        color: 'text-secondary'},
+    { label: 'Всего клиентов', value: '—', icon: 'groups', color: 'text-on-surface-variant' },
+    { label: 'Активных',       value: '—', icon: 'check_circle', color: 'text-on-surface-variant' },
+    { label: 'Под риском',     value: '—', icon: 'warning', color: 'text-on-surface-variant' },
+    { label: 'Ср. GRI',        value: '—', icon: 'radar', color: 'text-on-surface-variant' },
   ]
   return (
     <Link href="/clients" className="block group">
@@ -189,6 +213,7 @@ function ClientsStatsWidget({ data }: { data: WidgetData }) {
           </div>
         ))}
       </div>
+      <p className="mt-3 text-[10px] text-on-surface-variant">Источник статистики не подключён.</p>
     </Link>
   )
 }
@@ -201,7 +226,7 @@ function WidgetContent({ type, data }: { type: WidgetType; data: WidgetData }) {
     case 'metrics':       return <MetricsWidget data={data} />
     case 'chart':         return <ChartWidget />
     case 'quick-links':   return <QuickLinksWidget />
-    case 'clients-stats': return <ClientsStatsWidget data={data} />
+    case 'clients-stats': return <ClientsStatsWidget />
     default:              return null
   }
 }

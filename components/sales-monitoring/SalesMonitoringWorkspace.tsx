@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/Button'
@@ -29,6 +29,23 @@ const tabs: Array<{ id: Tab; label: string; icon: string }> = [
   { id: 'assistant', label: 'AI-аналитик', icon: 'auto_awesome' },
 ]
 
+const tabIds = new Set<Tab>(tabs.map((item) => item.id))
+
+function urlValue(name: string): string {
+  if (typeof window === 'undefined') return ''
+  return new URLSearchParams(window.location.search).get(name) ?? ''
+}
+
+function initialTab(): Tab {
+  const value = urlValue('tab') as Tab
+  return tabIds.has(value) ? value : 'overview'
+}
+
+function initialDate(name: string, fallback: () => string): string {
+  const value = urlValue(name)
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : fallback()
+}
+
 function completion(actual: string, plan: string) {
   const target = Number(plan)
   return target > 0 ? Math.round((Number(actual) / target) * 100) : 0
@@ -36,13 +53,14 @@ function completion(actual: string, plan: string) {
 
 export function SalesMonitoringWorkspace() {
   const queryClient = useQueryClient()
-  const [tab, setTab] = useState<Tab>('overview')
-  const [organizationId, setOrganizationId] = useState('')
-  const [from, setFrom] = useState(monthStart)
-  const [to, setTo] = useState(today)
-  const [regionId, setRegionId] = useState('')
-  const [channelId, setChannelId] = useState('')
+  const [tab, setTab] = useState<Tab>(initialTab)
+  const [organizationId, setOrganizationId] = useState(() => urlValue('organizationId'))
+  const [from, setFrom] = useState(() => initialDate('from', monthStart))
+  const [to, setTo] = useState(() => initialDate('to', today))
+  const [regionId, setRegionId] = useState(() => urlValue('regionId'))
+  const [channelId, setChannelId] = useState(() => urlValue('channelId'))
   const [liveState, setLiveState] = useState<'connecting' | 'live' | 'fallback'>('connecting')
+  const previousOrganizationId = useRef(organizationId)
 
   const contextQuery = useQuery({
     queryKey: ['sales-monitoring-context'],
@@ -52,15 +70,29 @@ export function SalesMonitoringWorkspace() {
   const context = contextQuery.data
 
   useEffect(() => {
-    if (!organizationId && context?.organizations[0]) {
+    if (context?.organizations[0] && !context.organizations.some((item) => item.id === organizationId)) {
       setOrganizationId(context.organizations[0].id)
     }
   }, [context, organizationId])
 
   useEffect(() => {
-    setRegionId('')
-    setChannelId('')
+    if (previousOrganizationId.current && previousOrganizationId.current !== organizationId) {
+      setRegionId('')
+      setChannelId('')
+    }
+    previousOrganizationId.current = organizationId
   }, [organizationId])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const url = new URL(window.location.href)
+    const values = { tab, organizationId, from, to, regionId, channelId }
+    for (const [key, value] of Object.entries(values)) {
+      if (value) url.searchParams.set(key, value)
+      else url.searchParams.delete(key)
+    }
+    window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`)
+  }, [tab, organizationId, from, to, regionId, channelId])
 
   const querySuffix = useMemo(() => {
     const params = new URLSearchParams({ organizationId, from, to })
@@ -68,11 +100,12 @@ export function SalesMonitoringWorkspace() {
     if (channelId) params.set('channelId', channelId)
     return params.toString()
   }, [organizationId, from, to, regionId, channelId])
+  const dateRangeValid = Boolean(from && to && from <= to)
 
   const dashboardQuery = useQuery({
     queryKey: ['sales-dashboard', organizationId, from, to, regionId, channelId],
     queryFn: () => apiRequest<DashboardSnapshot>(`/api/v1/sales-analytics/dashboard?${querySuffix}`),
-    enabled: Boolean(organizationId),
+    enabled: Boolean(organizationId) && dateRangeValid,
     refetchInterval: liveState === 'live' ? false : 30_000,
   })
   const salesQuery = useQuery({
@@ -80,7 +113,7 @@ export function SalesMonitoringWorkspace() {
     queryFn: () => apiRequest<SaleListItem[]>(
       `/api/v1/sales?${new URLSearchParams({ organizationId, from, to, limit: '100' })}`,
     ),
-    enabled: Boolean(organizationId),
+    enabled: Boolean(organizationId) && dateRangeValid,
     refetchInterval: liveState === 'live' ? false : 30_000,
   })
 
@@ -119,6 +152,20 @@ export function SalesMonitoringWorkspace() {
   const regions = context?.regions.filter((item) => item.organization_id === organizationId) ?? []
   const channels = context?.channels.filter((item) => item.organization_id === organizationId) ?? []
   const kpis = dashboardQuery.data?.kpis
+  const visibleSales = useMemo(
+    () => (salesQuery.data ?? []).filter((sale) =>
+      (!regionId || sale.regionId === regionId) &&
+      (!channelId || sale.channelId === channelId),
+    ),
+    [salesQuery.data, regionId, channelId],
+  )
+  const activeQueryError = tab === 'sales'
+    ? salesQuery.error
+    : tab === 'overview'
+      ? dashboardQuery.error ?? salesQuery.error
+      : null
+  const dashboardUnavailable = Boolean(dashboardQuery.error && !dashboardQuery.data)
+  const salesUnavailable = Boolean(salesQuery.error && !salesQuery.data)
   const refresh = () => {
     void dashboardQuery.refetch()
     void salesQuery.refetch()
@@ -133,7 +180,7 @@ export function SalesMonitoringWorkspace() {
       <Card className="border border-error/20">
         <p className="font-semibold text-error">Модуль не удалось открыть</p>
         <p className="mt-2 text-sm text-on-surface-variant">
-          {contextQuery.error.message}. Проверьте применение миграции 003 и подключение базы.
+          Не удалось загрузить рабочий контекст. Проверьте соединение и повторите попытку.
         </p>
         <Button className="mt-4" variant="secondary" onClick={() => contextQuery.refetch()}>
           Повторить
@@ -221,6 +268,15 @@ export function SalesMonitoringWorkspace() {
         </span>
       </Card>
 
+      {!dateRangeValid && (
+        <Card className="border border-error/25 bg-error/5">
+          <p className="font-medium text-error">Некорректный период</p>
+          <p className="mt-1 text-sm text-on-surface-variant">
+            Дата «С» должна быть не позже даты «По». Данные не запрашиваются, пока период не исправлен.
+          </p>
+        </Card>
+      )}
+
       <div className="flex gap-1 overflow-x-auto rounded-xl bg-surface-container-low p-1">
         {tabs.map((item) => (
           <button
@@ -236,14 +292,31 @@ export function SalesMonitoringWorkspace() {
         ))}
       </div>
 
+      {activeQueryError && (
+        <Card className="border border-error/25 bg-error/5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="font-semibold text-error">Данные не удалось обновить</p>
+              <p className="mt-1 text-sm text-on-surface-variant">
+                {activeQueryError instanceof Error ? activeQueryError.message : 'Ошибка запроса'}
+                {(dashboardQuery.data || salesQuery.data) ? ' Показаны последние успешно загруженные данные.' : ''}
+              </p>
+            </div>
+            <Button variant="secondary" size="sm" leftIcon="refresh" onClick={refresh}>
+              Повторить
+            </Button>
+          </div>
+        </Card>
+      )}
+
       {tab === 'overview' && (
         <div className="space-y-5">
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             {[
-              ['Выручка', money(kpis?.revenue ?? 0, organization?.currency), 'payments'],
-              ['Валовая прибыль', money(kpis?.grossProfit ?? 0, organization?.currency), 'trending_up'],
-              ['Маржинальность', `${kpis?.grossMarginPct ?? '0.00'}%`, 'percent'],
-              ['Операционная прибыль', money(kpis?.operatingProfit ?? 0, organization?.currency), 'account_balance'],
+              ['Выручка', dashboardUnavailable ? '—' : money(kpis?.revenue ?? 0, organization?.currency), 'payments'],
+              ['Валовая прибыль', dashboardUnavailable ? '—' : money(kpis?.grossProfit ?? 0, organization?.currency), 'trending_up'],
+              ['Маржинальность', dashboardUnavailable ? '—' : `${kpis?.grossMarginPct ?? '0.00'}%`, 'percent'],
+              ['Операционная прибыль', dashboardUnavailable ? '—' : money(kpis?.operatingProfit ?? 0, organization?.currency), 'account_balance'],
             ].map(([label, value, icon]) => (
               <Card key={label} className="border border-white/[0.04]">
                 <div className="flex items-center justify-between">
@@ -257,7 +330,12 @@ export function SalesMonitoringWorkspace() {
           <div className="grid gap-5 xl:grid-cols-[1fr_1.5fr]">
             <Card>
               <h2 className="font-headline text-lg font-bold">План-факт</h2>
-              <div className="mt-5 space-y-5">
+              {dashboardUnavailable ? (
+                <div className="mt-5 rounded-xl border border-dashed border-white/[0.08] px-4 py-10 text-center text-sm text-on-surface-variant">
+                  План-факт временно недоступен
+                </div>
+              ) : (
+                <div className="mt-5 space-y-5">
                 {[
                   ['Выручка', kpis?.revenue ?? '0', kpis?.planRevenue ?? '0'],
                   ['Валовая прибыль', kpis?.grossProfit ?? '0', kpis?.planGrossProfit ?? '0'],
@@ -277,9 +355,14 @@ export function SalesMonitoringWorkspace() {
                     </div>
                   )
                 })}
-              </div>
+                </div>
+              )}
             </Card>
-            <RecentSales sales={salesQuery.data ?? []} currency={organization?.currency ?? 'KZT'} />
+            <RecentSales
+              sales={visibleSales}
+              currency={organization?.currency ?? 'KZT'}
+              unavailable={salesUnavailable}
+            />
           </div>
         </div>
       )}
@@ -289,8 +372,9 @@ export function SalesMonitoringWorkspace() {
           organization={organization!}
           regions={regions}
           channels={channels}
-          sales={salesQuery.data ?? []}
+          sales={visibleSales}
           loading={salesQuery.isLoading}
+          unavailable={salesUnavailable}
           onChanged={refresh}
         />
       )}
@@ -306,7 +390,15 @@ export function SalesMonitoringWorkspace() {
   )
 }
 
-function RecentSales({ sales, currency }: { sales: SaleListItem[]; currency: string }) {
+function RecentSales({
+  sales,
+  currency,
+  unavailable,
+}: {
+  sales: SaleListItem[]
+  currency: string
+  unavailable: boolean
+}) {
   return (
     <Card>
       <div className="flex items-center justify-between">
@@ -327,7 +419,13 @@ function RecentSales({ sales, currency }: { sales: SaleListItem[]; currency: str
                 <td className="text-right">{money(sale.revenueTotal, currency)}</td>
               </tr>
             ))}
-            {!sales.length && <tr><td colSpan={4} className="py-10 text-center text-on-surface-variant">Продаж за период нет</td></tr>}
+            {!sales.length && (
+              <tr>
+                <td colSpan={4} className="py-10 text-center text-on-surface-variant">
+                  {unavailable ? 'Список продаж временно недоступен' : 'Продаж за период нет'}
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>

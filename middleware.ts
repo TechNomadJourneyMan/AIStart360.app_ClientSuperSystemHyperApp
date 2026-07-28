@@ -109,7 +109,7 @@ export async function middleware(request: NextRequest) {
     const legacyRole = request.cookies.get('aistart360_role')?.value
     if (!legacyRole) {
       const url = new URL('/login', request.url)
-      url.searchParams.set('from', pathname)
+      url.searchParams.set('from', `${pathname}${request.nextUrl.search}`)
       return NextResponse.redirect(url)
     }
     // Legacy session present — allow through for now

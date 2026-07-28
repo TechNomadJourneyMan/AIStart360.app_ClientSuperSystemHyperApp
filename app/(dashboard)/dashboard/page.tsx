@@ -2,11 +2,8 @@ export const dynamic = "force-dynamic"
 
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import { KpiCardsGrid } from '@/components/dashboard/KpiCardsGrid'
-import { GriDiagramWidget } from '@/components/dashboard/GriDiagramWidget'
 import { GoalsBar } from '@/components/dashboard/GoalsBar'
 import { WidgetGrid } from '@/components/dashboard/WidgetGrid'
-import { createClient } from '@/lib/supabase/server'
 import { AlertCard } from '@/components/dashboard/AlertCard'
 import { ActivityFeed } from '@/components/dashboard/ActivityFeed'
 import type { Alert, ActivityItem } from '@/types'
@@ -21,6 +18,7 @@ interface KpiCardData {
   value:    string
   trend:    string
   trendUp:  boolean
+  available: boolean
   icon:     string
   sublabel: string
   href:     string
@@ -41,7 +39,6 @@ interface DashboardData {
   griDist:  GriDist
   activity: ActivityItem[]
   alerts:   Alert[]
-  companies: { id: string; name: string }[]
 }
 
 // ─── data fetching ────────────────────────────────────────────────────────────
@@ -86,26 +83,9 @@ async function getDashboardExtendedData(): Promise<DashboardData | null> {
       total:      scores.length,
     }
 
-    // Companies
-    const companiesRaw = await prisma.company.findMany({
-      take: 10,
-      select: {
-        id: true,
-        name: true
-      }
-    })
-    
-    // Activity - using most recent users as a proxy for now
-    const recentUsers = [...users].sort((a,b) => b.id.localeCompare(a.id)).slice(0, 6)
-    const activity: ActivityItem[] = recentUsers.map(u => ({
-      id: u.id,
-      actor: (u.name || u.email || 'Клиент'),
-      actorRole: u.role.toLowerCase(),
-      event: 'Активность в системе',
-      gri: 0,
-      status: u.status === 'active' ? 'active' : 'inactive',
-      time: 'недавно',
-    }))
+    // A real activity log is not connected to this dashboard yet. Recent users
+    // must not be presented as if they were verified activity events.
+    const activity: ActivityItem[] = []
 
     // Alerts
     const alerts: Alert[] = []
@@ -126,8 +106,7 @@ async function getDashboardExtendedData(): Promise<DashboardData | null> {
       pending: pendingRequests, 
       griDist, 
       activity, 
-      alerts, 
-      companies: (companiesRaw as any)
+      alerts,
     }
   } catch (e) {
     console.error('[Dashboard] data fetch error:', e)
@@ -139,10 +118,10 @@ async function getDashboardExtendedData(): Promise<DashboardData | null> {
 function buildKpi(data: DashboardData | null): KpiCardData[] {
   if (!data) {
     return [
-      { label: 'Пользователи', value: '—',  trend: '—',    trendUp: true,  icon: 'groups',       sublabel: 'загрузка...', href: '/users'   },
-      { label: 'Активных',  value: '—',  trend: '—',    trendUp: true,  icon: 'check_circle', sublabel: 'загрузка...', href: '/users'   },
-      { label: 'Заявки',    value: '—',  trend: '—',    trendUp: false, icon: 'hourglass_top',sublabel: 'загрузка...', href: '/admin?tab=clients' },
-      { label: 'GRI анализов',value: '—', trend: '—',    trendUp: true,  icon: 'radar',        sublabel: 'загрузка...', href: '/gri'       },
+      { label: 'Пользователи', value: '—', trend: 'недоступно', trendUp: false, available: false, icon: 'groups', sublabel: 'источник данных', href: '/users' },
+      { label: 'Активных', value: '—', trend: 'недоступно', trendUp: false, available: false, icon: 'check_circle', sublabel: 'источник данных', href: '/users' },
+      { label: 'Заявки', value: '—', trend: 'недоступно', trendUp: false, available: false, icon: 'hourglass_top', sublabel: 'источник данных', href: '/admin?tab=clients' },
+      { label: 'GRI анализов', value: '—', trend: 'недоступно', trendUp: false, available: false, icon: 'radar', sublabel: 'источник данных', href: '/gri' },
     ]
   }
   const activePct = data.total > 0 ? Math.round((data.active / data.total) * 100) : 0
@@ -152,6 +131,7 @@ function buildKpi(data: DashboardData | null): KpiCardData[] {
       value:    String(data.total),
       trend:    data.total > 0 ? `+${data.total}` : '0',
       trendUp:  true,
+      available: true,
       icon:     'groups',
       sublabel: 'в системе',
       href:     '/users',
@@ -161,6 +141,7 @@ function buildKpi(data: DashboardData | null): KpiCardData[] {
       value:    String(data.active),
       trend:    `${activePct}%`,
       trendUp:  data.active > 0,
+      available: true,
       icon:     'check_circle',
       sublabel: 'статус active',
       href:     '/users',
@@ -170,6 +151,7 @@ function buildKpi(data: DashboardData | null): KpiCardData[] {
       value:    String(data.pending),
       trend:    data.pending > 0 ? 'нужна проверка' : 'нет новых',
       trendUp:  data.pending === 0,
+      available: true,
       icon:     'hourglass_top',
       sublabel: 'на регистрацию',
       href:     '/admin?tab=clients',
@@ -179,6 +161,7 @@ function buildKpi(data: DashboardData | null): KpiCardData[] {
       value:    String(data.griDist.total),
       trend:    data.griDist.excellent > 0 ? `${data.griDist.excellent} excellent` : '—',
       trendUp:  data.griDist.excellent > 0,
+      available: true,
       icon:     'radar',
       sublabel: 'отчётов сформировано',
       href:     '/gri',
@@ -208,21 +191,11 @@ function buildGriDistRows(griDist: GriDist) {
 // ─── page ─────────────────────────────────────────────────────────────────────
 export default async function DashboardPage() {
   const data = await getDashboardExtendedData()
+  const unavailable = data === null
   const kpi = buildKpi(data)
   const alerts = data?.alerts ?? []
   const activity = data?.activity ?? []
-  const griDistRows = buildGriDistRows(data?.griDist ?? { excellent: 0, strong: 0, developing: 0, critical: 0, total: 0 })
-
-  const griDomains = [
-    { label: 'Продукт и спрос',           score: 4.7 },
-    { label: 'Доверие и позиционирование',score: 5.2 },
-    { label: 'Бизнес-модель',             score: 7.4 },
-    { label: 'Финансовая устойчивость',   score: 5.0 },
-    { label: 'Операции',                  score: 2.1 },
-    { label: 'Команда',                   score: 2.5 },
-    { label: 'Готовность основателя',     score: 6.7 },
-  ]
-  const griTotalScore = 4.8
+  const griDistRows = data ? buildGriDistRows(data.griDist) : []
 
   return (
     <div className="space-y-6">
@@ -231,14 +204,14 @@ export default async function DashboardPage() {
         <div className="mb-4 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
           <div>
             <p className="text-[11px] font-mono text-primary/60 uppercase tracking-[0.2em] mb-2">
-              Q1 2026 · Текущий период
+              Оперативный обзор
             </p>
             <h1 className="font-headline text-3xl lg:text-4xl font-extrabold text-on-surface leading-tight">
-              Ускоряем рост бизнеса до{' '}
-              <span className="text-gradient">$2M в год</span>
+              Состояние клиентского{' '}
+              <span className="text-gradient">портфеля</span>
             </h1>
             <p className="text-on-surface-variant mt-2 text-sm max-w-xl leading-relaxed">
-              Система выхода на стабильную скорость роста $2M/год на основе AI-трансформации и сопровождения топ-экспертов
+              Здесь отображаются только показатели, подтверждённые подключёнными источниками данных.
             </p>
           </div>
           <Link
@@ -249,6 +222,21 @@ export default async function DashboardPage() {
             Мониторинг продаж
           </Link>
         </div>
+
+        {unavailable && (
+          <div
+            role="status"
+            className="mb-5 flex items-start gap-3 rounded-2xl border border-tertiary-container/25 bg-tertiary-container/5 px-4 py-3"
+          >
+            <span className="material-symbols-outlined mt-0.5 text-lg text-tertiary-container">cloud_off</span>
+            <div>
+              <p className="text-sm font-medium text-on-surface">Оперативные данные дэшборда временно недоступны</p>
+              <p className="mt-1 text-xs text-on-surface-variant">
+                Источник данных не отвечает. Тире в показателях означают отсутствие актуальных данных, а не нулевые значения.
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* Goals bar */}
         <div className="mb-5">
@@ -268,10 +256,14 @@ export default async function DashboardPage() {
                          </div>
                          <h3 className="text-3xl font-mono font-bold text-on-surface mb-2">{card.value}</h3>
                          <div className="flex items-center gap-1.5 text-[10px] text-on-surface-variant">
-                             <span className={`material-symbols-outlined text-sm ${card.trendUp ? 'text-primary' : 'text-error'}`}>
-                                {card.trendUp ? 'trending_up' : 'trending_down'}
+                             <span className={`material-symbols-outlined text-sm ${
+                               card.available ? (card.trendUp ? 'text-primary' : 'text-error') : 'text-on-surface-variant'
+                             }`}>
+                                {card.available ? (card.trendUp ? 'trending_up' : 'trending_down') : 'cloud_off'}
                              </span>
-                             <span className={card.trendUp ? 'text-primary' : 'text-error'}>{card.trend}</span>
+                             <span className={
+                               card.available ? (card.trendUp ? 'text-primary' : 'text-error') : 'text-on-surface-variant'
+                             }>{card.trend}</span>
                              <span>{card.sublabel}</span>
                          </div>
                       </Link>
@@ -280,11 +272,51 @@ export default async function DashboardPage() {
 
              {/* Right: GRI Widget or Alerts */}
              <div className="xl:col-span-3">
-                 <GriDiagramWidget 
-                    domains={griDomains} 
-                    totalScore={griTotalScore} 
-                    orgName="Портфельный обзор"
-                 />
+                 {unavailable ? (
+                   <div className="flex min-h-[300px] items-center justify-center rounded-2xl border border-white/[0.04] bg-surface-container-low p-8 text-center">
+                     <div>
+                       <span className="material-symbols-outlined mb-3 block text-4xl text-on-surface-variant/30">radar</span>
+                       <p className="text-sm font-medium text-on-surface">GRI портфеля не загружен</p>
+                       <p className="mt-1 text-xs text-on-surface-variant">
+                         Диаграмма и итоговый балл появятся после восстановления источника данных.
+                       </p>
+                     </div>
+                   </div>
+                 ) : data.griDist.total === 0 ? (
+                   <div className="flex min-h-[300px] items-center justify-center rounded-2xl border border-white/[0.04] bg-surface-container-low p-8 text-center">
+                     <div>
+                       <span className="material-symbols-outlined mb-3 block text-4xl text-on-surface-variant/30">radar</span>
+                       <p className="text-sm font-medium text-on-surface">GRI-отчётов пока нет</p>
+                       <p className="mt-1 text-xs text-on-surface-variant">
+                         Распределение появится после первого сохранённого расчёта.
+                       </p>
+                     </div>
+                   </div>
+                 ) : (
+                   <div className="min-h-[300px] rounded-2xl border border-white/[0.04] bg-surface-container-low p-6">
+                     <div className="mb-6 flex items-start justify-between gap-4">
+                       <div>
+                         <p className="text-[10px] font-mono uppercase tracking-widest text-primary/60">GRI портфеля</p>
+                         <p className="mt-2 text-3xl font-mono font-bold text-on-surface">{data.griDist.total}</p>
+                         <p className="mt-1 text-xs text-on-surface-variant">подтверждённых отчётов</p>
+                       </div>
+                       <Link href="/gri" className="text-xs text-primary hover:underline">Подробнее</Link>
+                     </div>
+                     <div className="space-y-4">
+                       {griDistRows.map((row) => (
+                         <div key={row.label}>
+                           <div className="mb-1.5 flex justify-between text-[11px]">
+                             <span className="text-on-surface-variant">{row.label}</span>
+                             <span className="font-mono text-on-surface">{row.pct}%</span>
+                           </div>
+                           <div className="h-1.5 overflow-hidden rounded-full bg-surface-container">
+                             <div className={`h-full rounded-full ${row.color}`} style={{ width: `${row.pct}%` }} />
+                           </div>
+                         </div>
+                       ))}
+                     </div>
+                   </div>
+                 )}
              </div>
         </div>
       </section>
@@ -295,11 +327,23 @@ export default async function DashboardPage() {
               <section>
                 <div className="flex items-center justify-between mb-4">
                   <h2 className="font-headline text-lg font-bold text-on-surface">Критические сигналы</h2>
-                  <span className="px-2 py-0.5 rounded-full bg-error/10 border border-error/20 text-[10px] font-mono text-error">
-                    {alerts.filter(a => a.severity === 'critical').length} алерта
+                  <span className={`px-2 py-0.5 rounded-full border text-[10px] font-mono ${
+                    unavailable
+                      ? 'bg-surface-container border-outline-variant/20 text-on-surface-variant'
+                      : 'bg-error/10 border-error/20 text-error'
+                  }`}>
+                    {unavailable ? '— алертов' : `${alerts.filter(a => a.severity === 'critical').length} алерта`}
                   </span>
                 </div>
-                {alerts.length > 0 ? (
+                {unavailable ? (
+                  <div className="bg-surface-container-low border border-white/[0.04] rounded-2xl p-8 text-center">
+                    <span className="material-symbols-outlined text-4xl text-on-surface-variant/30 mb-2">warning</span>
+                    <p className="text-sm font-medium text-on-surface">Состояние сигналов не проверено</p>
+                    <p className="mt-1 text-xs text-on-surface-variant">
+                      Нельзя подтвердить отсутствие критических событий, пока источник данных недоступен.
+                    </p>
+                  </div>
+                ) : alerts.length > 0 ? (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {alerts.map(alert => (
                       <AlertCard key={alert.id} {...alert} />
@@ -307,40 +351,80 @@ export default async function DashboardPage() {
                   </div>
                 ) : (
                   <div className="bg-surface-container-low border border-white/[0.04] rounded-2xl p-8 text-center">
-                    <span className="material-symbols-outlined text-4xl text-primary/20 mb-2">check_circle</span>
-                    <p className="text-sm text-on-surface-variant">Все системы в норме</p>
+                    <span className="material-symbols-outlined text-4xl text-primary/20 mb-2">notifications_none</span>
+                    <p className="text-sm text-on-surface-variant">Новых регистрационных сигналов нет</p>
+                    <p className="mt-1 text-xs text-on-surface-variant/70">
+                      Этот блок не подтверждает состояние остальных систем.
+                    </p>
                   </div>
                 )}
               </section>
 
-              <WidgetGrid 
-                alerts={alerts as AlertCardProps[]}
-                activity={activity}
-                gri={[]}
-                metrics={[]}
-                criticalCount={alerts.filter(a => a.severity === 'critical').length}
-              />
+              {unavailable ? (
+                <div className="rounded-2xl border border-white/[0.04] bg-surface-container-low p-6">
+                  <p className="text-sm font-medium text-on-surface">Виджеты оперативных данных недоступны</p>
+                  <p className="mt-1 text-xs text-on-surface-variant">
+                    Активность, GRI и сигналы не отображаются без подтверждённых данных.
+                  </p>
+                </div>
+              ) : (
+                <WidgetGrid
+                  alerts={alerts as AlertCardProps[]}
+                  activity={activity}
+                  gri={[]}
+                  metrics={[]}
+                  criticalCount={alerts.filter(a => a.severity === 'critical').length}
+                />
+              )}
           </div>
 
           <aside className="space-y-6">
-              <ActivityFeed items={activity} />
+              {unavailable ? (
+                <div className="bg-surface-container rounded-2xl p-8 text-center border border-white/[0.04]">
+                  <span className="material-symbols-outlined text-4xl text-on-surface-variant/30 mb-3 block">history</span>
+                  <p className="text-sm font-medium text-on-surface">Активность не загружена</p>
+                  <p className="mt-1 text-xs text-on-surface-variant">Это не означает, что активности нет.</p>
+                </div>
+              ) : activity.length === 0 ? (
+                <div className="bg-surface-container rounded-2xl p-8 text-center border border-white/[0.04]">
+                  <span className="material-symbols-outlined text-4xl text-on-surface-variant/30 mb-3 block">history</span>
+                  <p className="text-sm font-medium text-on-surface">Журнал активности не подключён</p>
+                  <p className="mt-1 text-xs text-on-surface-variant">
+                    Последние пользователи не подменяются вымышленными событиями.
+                  </p>
+                </div>
+              ) : (
+                <ActivityFeed items={activity} />
+              )}
 
               {/* GRI Portfolio Health */}
               <div className="bg-surface-container-low border border-white/[0.04] rounded-2xl p-5">
                   <h3 className="text-sm font-bold text-on-surface mb-4 uppercase tracking-widest text-[10px]">Здоровье портфеля</h3>
-                  <div className="space-y-4">
-                      {griDistRows.map(row => (
-                           <div key={row.label}>
-                               <div className="flex justify-between text-[11px] mb-1.5">
-                                   <span className="text-on-surface-variant">{row.label}</span>
-                                   <span className="font-mono text-on-surface">{row.pct}%</span>
-                               </div>
-                               <div className="h-1 bg-surface-container rounded-full overflow-hidden">
-                                   <div className={`h-full ${row.color} rounded-full`} style={{ width: `${row.pct}%` }} />
-                               </div>
-                           </div>
-                      ))}
-                  </div>
+                  {unavailable ? (
+                    <div className="rounded-xl bg-surface-container p-5 text-center">
+                      <p className="text-sm font-mono text-on-surface">—</p>
+                      <p className="mt-1 text-xs text-on-surface-variant">Распределение GRI недоступно</p>
+                    </div>
+                  ) : data.griDist.total === 0 ? (
+                    <div className="rounded-xl bg-surface-container p-5 text-center">
+                      <p className="text-sm font-mono text-on-surface">0</p>
+                      <p className="mt-1 text-xs text-on-surface-variant">GRI-отчётов пока нет</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                        {griDistRows.map(row => (
+                             <div key={row.label}>
+                                 <div className="flex justify-between text-[11px] mb-1.5">
+                                     <span className="text-on-surface-variant">{row.label}</span>
+                                     <span className="font-mono text-on-surface">{row.pct}%</span>
+                                 </div>
+                                 <div className="h-1 bg-surface-container rounded-full overflow-hidden">
+                                     <div className={`h-full ${row.color} rounded-full`} style={{ width: `${row.pct}%` }} />
+                                 </div>
+                             </div>
+                        ))}
+                    </div>
+                  )}
               </div>
           </aside>
       </div>

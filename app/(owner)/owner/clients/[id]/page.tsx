@@ -3,17 +3,28 @@ import { GriScoreDial } from '@/components/gri/GriScoreDial'
 import { StatusBadge } from '@/components/common/StatusBadge'
 import { prisma } from '@/lib/db'
 
-export default async function OwnerClientDetailPage({ params }: { params: { id: string } }) {
-  const client = await prisma.client.findUnique({
-    where: { id: params.id },
-    include: {
-      manager: true,
-      griReports: {
-        orderBy: { calculatedAt: 'desc' },
-        take: 2,
+async function getOwnerClient(id: string) {
+  try {
+    const client = await prisma.client.findUnique({
+      where: { id },
+      include: {
+        manager: true,
+        griReports: {
+          orderBy: { calculatedAt: 'desc' },
+          take: 2,
+        },
       },
-    },
-  })
+    })
+
+    return { client, unavailable: false }
+  } catch (error) {
+    console.error('[owner/client-detail] data unavailable', error)
+    return { client: null, unavailable: true }
+  }
+}
+
+export default async function OwnerClientDetailPage({ params }: { params: { id: string } }) {
+  const { client, unavailable } = await getOwnerClient(params.id)
 
   if (!client) {
     return (
@@ -26,8 +37,14 @@ export default async function OwnerClientDetailPage({ params }: { params: { id: 
 
         <div className="bg-surface-container rounded-xl p-8 text-center">
           <span className="material-symbols-outlined text-4xl text-on-surface-variant mb-3 block">database_off</span>
-          <p className="text-on-surface font-medium mb-1">Клиент не найден</p>
-          <p className="text-sm text-on-surface-variant mb-4">В базе нет записи с таким идентификатором.</p>
+          <p className="text-on-surface font-medium mb-1">
+            {unavailable ? 'Данные клиента временно недоступны' : 'Клиент не найден'}
+          </p>
+          <p className="text-sm text-on-surface-variant mb-4">
+            {unavailable
+              ? 'Источник данных не отвечает. Это не означает, что запись удалена.'
+              : 'В базе нет записи с таким идентификатором.'}
+          </p>
           <Link href="/owner/clients" className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-outline-variant/30 text-sm hover:bg-surface-container-high transition-colors">
             <span className="material-symbols-outlined text-base">arrow_back</span>
             Вернуться к списку
@@ -77,11 +94,21 @@ export default async function OwnerClientDetailPage({ params }: { params: { id: 
           </div>
         </div>
         <div className="flex gap-2 flex-shrink-0">
-          <button className="inline-flex items-center gap-2 px-4 py-2 border border-outline-variant/30 rounded-lg text-sm text-on-surface hover:bg-surface-container transition-colors">
+          <button
+            type="button"
+            disabled
+            title="Редактирование профиля пока недоступно"
+            className="inline-flex cursor-not-allowed items-center gap-2 rounded-lg border border-outline-variant/30 px-4 py-2 text-sm text-on-surface-variant opacity-50"
+          >
             <span className="material-symbols-outlined text-lg">edit</span>
             Редактировать
           </button>
-          <button className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-br from-primary to-primary-container text-on-primary text-sm font-semibold rounded-lg hover:scale-[0.98] transition-all">
+          <button
+            type="button"
+            disabled
+            title="Запуск отчёта пока недоступен"
+            className="inline-flex cursor-not-allowed items-center gap-2 rounded-lg bg-surface-container-high px-4 py-2 text-sm font-semibold text-on-surface-variant opacity-50"
+          >
             <span className="material-symbols-outlined text-lg">description</span>
             Run Report
           </button>
@@ -93,10 +120,14 @@ export default async function OwnerClientDetailPage({ params }: { params: { id: 
         {['Overview', 'GRI Report', 'Growth Plan', 'Reports', 'Activity'].map((tab, i) => (
           <button
             key={tab}
+            type="button"
+            disabled={i !== 0}
+            aria-current={i === 0 ? 'page' : undefined}
+            title={i !== 0 ? 'Раздел пока недоступен' : undefined}
             className={`px-5 py-3 text-sm font-medium whitespace-nowrap transition-colors border-b-2 -mb-px ${
               i === 0
                 ? 'text-primary border-primary'
-                : 'text-on-surface-variant border-transparent hover:text-on-surface hover:border-outline-variant/50'
+                : 'text-on-surface-variant border-transparent opacity-50 cursor-not-allowed'
             }`}
           >
             {tab}

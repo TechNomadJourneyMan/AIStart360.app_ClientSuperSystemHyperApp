@@ -8,10 +8,20 @@ import { toast } from '@/stores/ui.store'
 import { Status } from './SalesMonitoringWorkspace'
 import {
   apiRequest,
+  browserStorage,
+  clearDurableOperation,
+  continueDurableOperation,
+  createDurableOperation,
   fieldClass,
+  formDraftStorageKey,
   idempotencyKey,
   labelClass,
   money,
+  readDurableOperation,
+  readStoredJson,
+  removeStoredValue,
+  writeDurableOperation,
+  writeStoredJson,
   type ContextItem,
   type SalesOrganization,
 } from './client'
@@ -21,6 +31,8 @@ export interface SaleListItem {
   number: string
   status: string
   soldAt: string
+  regionId?: string | null
+  channelId?: string | null
   revenueTotal: string
   costTotal: string
   grossProfitTotal: string
@@ -47,12 +59,40 @@ interface Line {
   discountAmount: string
 }
 
+interface SaleDraft {
+  version: 1
+  open: boolean
+  lines: Line[]
+  soldAt: string
+  regionId: string
+  channelId: string
+  negativeReason: string
+  negativeComment: string
+}
+
+interface SaleCreatePayload {
+  organizationId: string
+  soldAt: string
+  regionId?: string
+  channelId?: string
+  currency: string
+  negativeMarginReason?: string
+  negativeMarginComment?: string
+  items: Array<{
+    productVariantId: string
+    quantity: string
+    unitPrice: string
+    discountAmount: string
+  }>
+}
+
 export function SalePanel(props: {
   organization: SalesOrganization
   regions: ContextItem[]
   channels: ContextItem[]
   sales: SaleListItem[]
   loading: boolean
+  unavailable?: boolean
   onChanged: () => void
 }) {
   const [open, setOpen] = useState(false)
@@ -68,6 +108,10 @@ export function SalePanel(props: {
   const [unknownSku, setUnknownSku] = useState('')
   const searchRef = useRef<HTMLInputElement>(null)
   const formRef = useRef<HTMLFormElement>(null)
+  const submittingRef = useRef(false)
+  const suppressDraftSaveRef = useRef(false)
+  const draftKey = formDraftStorageKey(props.organization.id, 'sale')
+  const [hydratedDraftKey, setHydratedDraftKey] = useState<string | null>(null)
 
   const productsQuery = useQuery({
     queryKey: ['product-search', props.organization.id, queryText],
@@ -103,6 +147,62 @@ export function SalePanel(props: {
     return () => window.removeEventListener('keydown', handler)
   }, [open])
 
+  useEffect(() => {
+    const storage = browserStorage()
+    const saved = readStoredJson<SaleDraft>(storage, draftKey)
+    const pendingOperation = readDurableOperation(
+      storage,
+      props.organization.id,
+      'sale',
+    )
+    if (saved?.version === 1 && Array.isArray(saved.lines)) {
+      setOpen(saved.open || pendingOperation !== null)
+      setLines(saved.lines)
+      setSoldAt(saved.soldAt)
+      setRegionId(saved.regionId)
+      setChannelId(saved.channelId)
+      setNegativeReason(saved.negativeReason)
+      setNegativeComment(saved.negativeComment)
+    } else {
+      setOpen(pendingOperation !== null)
+      setLines([])
+      setSoldAt(defaultSoldAt())
+      setRegionId('')
+      setChannelId('')
+      setNegativeReason('')
+      setNegativeComment('')
+    }
+    setHydratedDraftKey(draftKey)
+  }, [draftKey, props.organization.id])
+
+  useEffect(() => {
+    if (hydratedDraftKey !== draftKey) return
+    if (suppressDraftSaveRef.current) {
+      suppressDraftSaveRef.current = false
+      return
+    }
+    writeStoredJson(browserStorage(), draftKey, {
+      version: 1,
+      open,
+      lines,
+      soldAt,
+      regionId,
+      channelId,
+      negativeReason,
+      negativeComment,
+    } satisfies SaleDraft)
+  }, [
+    channelId,
+    draftKey,
+    hydratedDraftKey,
+    lines,
+    negativeComment,
+    negativeReason,
+    open,
+    regionId,
+    soldAt,
+  ])
+
   const totals = lines.reduce(
     (total, line) => {
       const quantity = Number(line.quantity || 0)
@@ -131,16 +231,37 @@ export function SalePanel(props: {
 
   const submit = async (event: FormEvent) => {
     event.preventDefault()
-    if (!lines.length) return toast.warning('Добавьте хотя бы один товар')
-    if (grossProfit < 0 && (!negativeReason || negativeComment.trim().length < 3)) {
-      return toast.warning('Для убыточной продажи нужны причина и комментарий')
+    if (submittingRef.current) return
+
+    const storage = browserStorage()
+    let operation = readDurableOperation<SaleCreatePayload>(
+      storage,
+      props.organization.id,
+      'sale',
+    )
+    let durableRetryAvailable = operation !== null
+    if (!operation) {
+      if (!lines.length) return toast.warning('Добавьте хотя бы один товар')
+      if (grossProfit < 0 && (!negativeReason || negativeComment.trim().length < 3)) {
+        return toast.warning('Для убыточной продажи нужны причина и комментарий')
+      }
     }
+
+    submittingRef.current = true
     setSubmitting(true)
     try {
-      const created = await apiRequest<SaleListItem>('/api/v1/sales', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey('sale-create') },
-        body: JSON.stringify({
+      if (!operation) {
+        const draft: SaleDraft = {
+          version: 1,
+          open,
+          lines,
+          soldAt,
+          regionId,
+          channelId,
+          negativeReason,
+          negativeComment,
+        }
+        const payload: SaleCreatePayload = {
           organizationId: props.organization.id,
           soldAt: new Date(soldAt).toISOString(),
           regionId: regionId || undefined,
@@ -154,27 +275,70 @@ export function SalePanel(props: {
             unitPrice: normalizeMoney(line.unitPrice),
             discountAmount: normalizeMoney(line.discountAmount),
           })),
-        }),
-      })
-      const posted = await apiRequest<SaleListItem>(
-        `/api/v1/sales/${created.id}/post?organizationId=${encodeURIComponent(props.organization.id)}`,
-        {
+        }
+        operation = createDurableOperation(
+          props.organization.id,
+          'sale',
+          payload,
+        )
+        if (
+          !writeStoredJson(storage, draftKey, draft)
+          || !writeDurableOperation(storage, operation)
+        ) {
+          throw new Error('Не удалось надёжно сохранить операцию в браузере; отправка отменена')
+        }
+        durableRetryAvailable = true
+      } else {
+        toast.info(
+          'Безопасно повторяем продажу',
+          'Продолжаем сохранённую операцию с теми же ключами — новая продажа не создастся.',
+        )
+      }
+
+      const posted = await continueDurableOperation(
+        storage,
+        operation,
+        (payload, key) => apiRequest<SaleListItem>('/api/v1/sales', {
           method: 'POST',
-          headers: { 'Idempotency-Key': idempotencyKey('sale-post') },
-        },
+          headers: {
+            'Content-Type': 'application/json',
+            'Idempotency-Key': key,
+          },
+          body: JSON.stringify(payload),
+        }),
+        (saleId, key) => apiRequest<SaleListItem>(
+          `/api/v1/sales/${saleId}/post?organizationId=${encodeURIComponent(props.organization.id)}`,
+          {
+            method: 'POST',
+            headers: { 'Idempotency-Key': key },
+          },
+        ),
       )
+      clearDurableOperation(storage, props.organization.id, 'sale')
+      removeStoredValue(storage, draftKey)
+      suppressDraftSaveRef.current = true
       toast.success(
         posted.status === 'pending_approval' ? 'Продажа отправлена на согласование' : `Продажа ${posted.number} проведена`,
         `Выручка ${money(posted.revenueTotal, props.organization.currency)}, валовая прибыль ${money(posted.grossProfitTotal, props.organization.currency)}`,
       )
       setLines([])
+      setSoldAt(defaultSoldAt())
+      setRegionId('')
+      setChannelId('')
       setNegativeReason('')
       setNegativeComment('')
       setOpen(false)
       props.onChanged()
     } catch (error) {
-      toast.error('Продажу не удалось провести', error instanceof Error ? error.message : undefined)
+      const message = error instanceof Error ? error.message : 'Неизвестная ошибка'
+      toast.error(
+        'Продажу не удалось провести',
+        durableRetryAvailable
+          ? `${message}. Состояние сохранено: повторите отправку, чтобы безопасно продолжить без дубля.`
+          : `${message}. Запрос не был отправлен; проверьте доступ к хранилищу браузера и повторите.`,
+      )
     } finally {
+      submittingRef.current = false
       setSubmitting(false)
     }
   }
@@ -309,7 +473,13 @@ export function SalePanel(props: {
                   <td className="px-5 py-4 font-mono text-xs">{sale.number}</td><td>{new Date(sale.soldAt).toLocaleString('ru-KZ')}</td><td><Status status={sale.status} /></td><td className="text-right">{money(sale.revenueTotal, props.organization.currency)}</td><td className={`text-right ${Number(sale.grossProfitTotal) < 0 ? 'text-error' : ''}`}>{money(sale.grossProfitTotal, props.organization.currency)}</td><td className="px-5 text-right">{sale.status === 'posted' && props.organization.permissions.includes('sales:reverse') && <Button size="sm" variant="danger" onClick={() => reverse(sale)}>Сторно</Button>}</td>
                 </tr>
               ))}
-              {!props.loading && !props.sales.length && <tr><td colSpan={6} className="py-14 text-center text-on-surface-variant">Продаж пока нет</td></tr>}
+              {!props.loading && !props.sales.length && (
+                <tr>
+                  <td colSpan={6} className="py-14 text-center text-on-surface-variant">
+                    {props.unavailable ? 'Список продаж временно недоступен' : 'Продаж пока нет'}
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
@@ -321,4 +491,8 @@ export function SalePanel(props: {
 function normalizeMoney(value: string) {
   const amount = Number(String(value).replace(',', '.'))
   return Number.isFinite(amount) ? amount.toFixed(2) : '0.00'
+}
+
+function defaultSoldAt() {
+  return new Date().toISOString().slice(0, 16)
 }

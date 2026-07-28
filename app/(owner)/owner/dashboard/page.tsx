@@ -1,176 +1,437 @@
 'use client'
 
-import { useAuthStore } from '@/stores/auth.store'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
+import { useAuthStore } from '@/stores/auth.store'
+import type { BlockStatus, Diagnostic } from '@/types/onboarding'
 
-const GRI_BLOCKS = [
-  { label: 'Бизнес-модель',       score: 7.4,  color: 'text-primary',   bg: 'bg-primary/10',   status: 'Хорошо' },
-  { label: 'Готовность основателя', score: 6.7,  color: 'text-primary',   bg: 'bg-primary/10',   status: 'Хорошо' },
-  { label: 'Доверие и позиция',    score: 5.17, color: 'text-yellow-400', bg: 'bg-yellow-400/10', status: 'Слабое' },
-  { label: 'Стабильность кассы',   score: 5.0,  color: 'text-yellow-400', bg: 'bg-yellow-400/10', status: 'Слабое' },
-  { label: 'Продукт и спрос',      score: 4.7,  color: 'text-yellow-400', bg: 'bg-yellow-400/10', status: 'Слабое' },
-  { label: 'Команда',              score: 2.55, color: 'text-error',      bg: 'bg-error/10',      status: 'Критично' },
-  { label: 'Операции',             score: 2.14, color: 'text-error',      bg: 'bg-error/10',      status: 'Критично' },
-]
+type CompanySummary = {
+  name: string
+  industry: string | null
+}
 
-const TOP_LIMITS = [
-  { block: 'Операции',              issue: 'Повторяемость процесса',        score: 1 },
-  { block: 'Операции',              issue: 'Риски при масштабировании',     score: 1 },
-  { block: 'Операции',              issue: 'Метрики результата команды',    score: 1 },
-  { block: 'Операции',              issue: 'Предсказуемость результата',    score: 1 },
-  { block: 'Доверие и позиция',     issue: 'Доказательства результата',     score: 2 },
-]
+type ApiResponse<T> = {
+  ok: boolean
+  data?: T | null
+  error?: string
+}
+
+const DOMAIN_META = [
+  { key: 'finance_score', label: 'Финансы', icon: 'payments' },
+  { key: 'sales_score', label: 'Продажи', icon: 'trending_up' },
+  { key: 'operations_score', label: 'Операции', icon: 'settings' },
+  { key: 'marketing_score', label: 'Маркетинг', icon: 'campaign' },
+  { key: 'strategy_score', label: 'Стратегия', icon: 'flag' },
+] as const
+
+const STATUS_META: Record<BlockStatus, { label: string; text: string; bg: string; bar: string }> = {
+  critical: { label: 'Критично', text: 'text-error', bg: 'bg-error/10', bar: 'bg-error' },
+  weak: { label: 'Слабо', text: 'text-orange-400', bg: 'bg-orange-400/10', bar: 'bg-orange-400' },
+  average: { label: 'Средне', text: 'text-yellow-400', bg: 'bg-yellow-400/10', bar: 'bg-yellow-400' },
+  strong: { label: 'Сильно', text: 'text-primary', bg: 'bg-primary/10', bar: 'bg-primary' },
+  excellent: { label: 'Отлично', text: 'text-emerald-400', bg: 'bg-emerald-400/10', bar: 'bg-emerald-400' },
+}
+
+async function fetchData<T>(url: string, fallbackMessage: string): Promise<T | null> {
+  const response = await fetch(url, { cache: 'no-store' })
+  const payload = (await response.json().catch(() => null)) as ApiResponse<T> | null
+
+  if (!response.ok || payload?.ok !== true) {
+    throw new Error(payload?.error || fallbackMessage)
+  }
+
+  return payload.data ?? null
+}
+
+function normalizedScore(value: number | null | undefined) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null
+  return Math.min(100, Math.max(0, value))
+}
+
+function scoreLabel(score: number | null) {
+  if (score === null) return { label: 'Уровень не определён', text: 'text-on-surface-variant', bg: 'bg-white/[0.04]' }
+  if (score >= 70) return { label: 'Высокий уровень', text: 'text-primary', bg: 'bg-primary/10' }
+  if (score >= 45) return { label: 'Средний уровень', text: 'text-yellow-400', bg: 'bg-yellow-400/10' }
+  return { label: 'Требует внимания', text: 'text-error', bg: 'bg-error/10' }
+}
+
+function formatCalculatedAt(value: string | undefined) {
+  if (!value) return null
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return null
+  return new Intl.DateTimeFormat('ru-RU', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  }).format(date)
+}
 
 export default function OwnerDashboardPage() {
-  const { user } = useAuthStore()
-  const griScore = 4.59
+  const { user, isInitialized } = useAuthStore()
+  const [diagnostic, setDiagnostic] = useState<Diagnostic | null>(null)
+  const [company, setCompany] = useState<CompanySummary | null>(null)
+  const [diagnosticLoaded, setDiagnosticLoaded] = useState(false)
+  const [companyLoaded, setCompanyLoaded] = useState(false)
+  const [diagnosticError, setDiagnosticError] = useState<string | null>(null)
+  const [companyError, setCompanyError] = useState<string | null>(null)
+  const [isLoading, setIsLoading] = useState(false)
 
-  const scoreWidth = (score: number) => `${(score / 10) * 100}%`
+  const loadDashboard = useCallback(async () => {
+    if (!user?.id) return
+
+    setIsLoading(true)
+    setDiagnosticError(null)
+    setCompanyError(null)
+
+    const [diagnosticResult, companyResult] = await Promise.allSettled([
+      fetchData<Diagnostic>(
+        `/api/v1/diagnostics/current?user_id=${encodeURIComponent(user.id)}`,
+        'Не удалось загрузить диагностику.',
+      ),
+      fetchData<CompanySummary>(
+        `/api/v1/onboarding/company?user_id=${encodeURIComponent(user.id)}`,
+        'Не удалось загрузить данные компании.',
+      ),
+    ])
+
+    if (diagnosticResult.status === 'fulfilled') {
+      setDiagnostic(diagnosticResult.value)
+      setDiagnosticLoaded(true)
+    } else {
+      setDiagnosticError('Диагностика временно недоступна. Повторите попытку.')
+    }
+
+    if (companyResult.status === 'fulfilled') {
+      setCompany(companyResult.value)
+      setCompanyLoaded(true)
+    } else {
+      setCompanyError('Данные компании временно недоступны.')
+    }
+
+    setIsLoading(false)
+  }, [user?.id])
+
+  useEffect(() => {
+    if (isInitialized && user?.id) {
+      void loadDashboard()
+    }
+  }, [isInitialized, loadDashboard, user?.id])
+
+  const blocks = useMemo(
+    () =>
+      DOMAIN_META.map((domain) => ({
+        ...domain,
+        data: diagnostic?.[domain.key] ?? null,
+      })),
+    [diagnostic],
+  )
+
+  const limitations = useMemo(
+    () =>
+      blocks
+        .flatMap((block) =>
+          (block.data?.top_issues ?? []).map((issue) => ({
+            block: block.label,
+            issue,
+            score: normalizedScore(block.data?.score),
+          })),
+        )
+        .sort((left, right) => (left.score ?? 101) - (right.score ?? 101))
+        .slice(0, 5),
+    [blocks],
+  )
+
+  const overallScore = normalizedScore(diagnostic?.overall_score)
+  const overallMeta = scoreLabel(overallScore)
+  const calculatedAt = formatCalculatedAt(diagnostic?.calculated_at)
+  const evaluatedBlocks = blocks.filter((block) => normalizedScore(block.data?.score) !== null)
+  const strongCount = evaluatedBlocks.filter(
+    (block) => block.data?.status === 'strong' || block.data?.status === 'excellent',
+  ).length
+  const attentionCount = evaluatedBlocks.filter(
+    (block) => block.data?.status === 'weak' || block.data?.status === 'average',
+  ).length
+  const criticalCount = evaluatedBlocks.filter((block) => block.data?.status === 'critical').length
+  const firstName = user?.name?.trim().split(/\s+/)[0]
+  const companyName = company?.name || user?.organization
+  const showInitialLoading =
+    !isInitialized || (isLoading && !diagnosticLoaded && !companyLoaded && !diagnosticError && !companyError)
+
+  if (showInitialLoading) {
+    return (
+      <div className="flex min-h-[60vh] flex-col items-center justify-center gap-4" role="status">
+        <span className="h-10 w-10 animate-spin rounded-full border-2 border-primary/30 border-t-primary" />
+        <p className="text-sm text-on-surface-variant">Загружаем данные дашборда...</p>
+      </div>
+    )
+  }
+
+  if (isInitialized && !user) {
+    return (
+      <div className="rounded-2xl border border-error/25 bg-error/10 p-6" role="alert">
+        <h1 className="font-headline text-xl font-bold text-on-surface">Не удалось определить аккаунт</h1>
+        <p className="mt-2 text-sm text-on-surface-variant">Обновите страницу и повторите попытку.</p>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-start justify-between flex-wrap gap-4">
+      <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="font-headline text-2xl font-bold text-on-surface">
-            Добро пожаловать, {user?.name?.split(' ')[0] ?? 'Марина'}
+            {firstName ? `Добро пожаловать, ${firstName}` : 'Дашборд владельца'}
           </h1>
-          <p className="text-sm text-on-surface-variant mt-1">
-            {user?.organization ?? 'TechStart KZ'} · GRI Диагностика завершена
+          <p className="mt-1 text-sm text-on-surface-variant">
+            {companyName ||
+              (companyLoaded
+                ? 'Компания не указана'
+                : companyError
+                  ? 'Данные компании недоступны'
+                  : 'Данные компании загружаются')}
+            {' · '}
+            {diagnostic
+              ? calculatedAt
+                ? `диагностика от ${calculatedAt}`
+                : 'диагностика рассчитана'
+              : diagnosticLoaded
+                ? 'диагностика ещё не рассчитана'
+                : 'статус диагностики недоступен'}
           </p>
         </div>
-        <Link href="/owner/gri"
-          className="flex items-center gap-2 px-4 py-2 rounded-xl bg-secondary/10 border border-secondary/20 text-secondary text-sm font-medium hover:bg-secondary/20 transition-colors">
+        <Link
+          href="/owner/gri"
+          className="flex items-center gap-2 rounded-xl border border-secondary/20 bg-secondary/10 px-4 py-2 text-sm font-medium text-secondary transition-colors hover:bg-secondary/20"
+        >
           <span className="material-symbols-outlined text-lg">radar</span>
-          Полный отчёт GRI
+          Открыть отчёт GRI
         </Link>
       </div>
 
-      {/* GRI Score Hero */}
-      <div className="glass-card rounded-2xl p-6 border border-white/[0.06] relative overflow-hidden">
-        <div className="absolute inset-0 opacity-[0.03]"
-          style={{ backgroundImage: 'radial-gradient(circle at 70% 50%, #6effc0 0%, transparent 60%)' }} />
-        <div className="relative flex items-center gap-8 flex-wrap">
-          {/* Score circle */}
-          <div className="flex-shrink-0">
-            <div className="relative w-32 h-32">
-              <svg viewBox="0 0 120 120" className="w-full h-full -rotate-90">
-                <circle cx="60" cy="60" r="52" fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="8" />
-                <circle cx="60" cy="60" r="52" fill="none"
-                  stroke={griScore >= 7 ? '#6effc0' : griScore >= 5 ? '#facc15' : '#ef4444'}
-                  strokeWidth="8"
-                  strokeLinecap="round"
-                  strokeDasharray={`${(griScore / 10) * 327} 327`}
-                />
-              </svg>
-              <div className="absolute inset-0 flex flex-col items-center justify-center">
-                <span className="text-3xl font-mono font-bold text-on-surface">{griScore}</span>
-                <span className="text-[10px] font-mono text-on-surface-variant">/ 10</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest">GRI Score</span>
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-yellow-400/10 text-yellow-400 border border-yellow-400/20">
-                Средний уровень
-              </span>
-            </div>
-            <h2 className="text-xl font-bold text-on-surface mb-2">Индекс готовности к росту</h2>
-            <p className="text-sm text-on-surface-variant leading-relaxed max-w-lg">
-              Ваш бизнес имеет сильную бизнес-модель и высокую готовность основателя, но операционный блок является критическим ограничителем для масштабирования.
+      {(diagnosticError || companyError) && (
+        <div
+          role="alert"
+          className="flex flex-col gap-3 rounded-2xl border border-amber-400/25 bg-amber-400/10 p-4 sm:flex-row sm:items-center sm:justify-between"
+        >
+          <div>
+            <p className="text-sm font-medium text-on-surface">Не все данные удалось обновить</p>
+            <p className="mt-1 text-xs text-on-surface-variant">
+              {[diagnosticError, companyError].filter(Boolean).join(' ')}
+              {(diagnostic || company) && ' Ниже показаны последние успешно загруженные данные.'}
             </p>
-            <div className="flex items-center gap-4 mt-3 flex-wrap">
-              <div className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-primary" />
-                <span className="text-xs text-on-surface-variant">2 блока сильные</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => void loadDashboard()}
+            disabled={isLoading}
+            className="self-start rounded-lg border border-amber-400/30 px-3 py-2 text-xs font-semibold text-amber-300 transition-colors hover:bg-amber-400/10 disabled:opacity-50 sm:self-auto"
+          >
+            {isLoading ? 'Обновляем...' : 'Повторить'}
+          </button>
+        </div>
+      )}
+
+      {diagnostic ? (
+        <>
+          <section className="glass-card relative overflow-hidden rounded-2xl border border-white/[0.06] p-6">
+            <div
+              className="absolute inset-0 opacity-[0.03]"
+              style={{ backgroundImage: 'radial-gradient(circle at 70% 50%, #6effc0 0%, transparent 60%)' }}
+            />
+            <div className="relative flex flex-wrap items-center gap-6 sm:gap-8">
+              <div className="flex-shrink-0">
+                <div className="relative h-32 w-32">
+                  <svg viewBox="0 0 120 120" className="h-full w-full -rotate-90" aria-hidden="true">
+                    <circle cx="60" cy="60" r="52" fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="8" />
+                    {overallScore !== null && (
+                      <circle
+                        cx="60"
+                        cy="60"
+                        r="52"
+                        fill="none"
+                        stroke={overallScore >= 70 ? '#6effc0' : overallScore >= 45 ? '#facc15' : '#ef4444'}
+                        strokeWidth="8"
+                        strokeLinecap="round"
+                        strokeDasharray={`${(overallScore / 100) * 327} 327`}
+                      />
+                    )}
+                  </svg>
+                  <div className="absolute inset-0 flex flex-col items-center justify-center">
+                    <span className="font-mono text-3xl font-bold text-on-surface">
+                      {overallScore === null ? '—' : (overallScore / 10).toFixed(1)}
+                    </span>
+                    <span className="font-mono text-[10px] text-on-surface-variant">/ 10</span>
+                  </div>
+                </div>
               </div>
-              <div className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-yellow-400" />
-                <span className="text-xs text-on-surface-variant">3 блока слабые</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-error" />
-                <span className="text-xs text-on-surface-variant">2 блока критичных</span>
+
+              <div className="min-w-0 flex-1">
+                <div className="mb-1 flex flex-wrap items-center gap-2">
+                  <span className="font-mono text-[10px] uppercase tracking-widest text-on-surface-variant">
+                    GRI Score
+                  </span>
+                  <span className={`rounded-full px-2 py-0.5 font-mono text-[10px] ${overallMeta.bg} ${overallMeta.text}`}>
+                    {overallMeta.label}
+                  </span>
+                </div>
+                <h2 className="mb-2 text-xl font-bold text-on-surface">Индекс готовности к росту</h2>
+                <p className="max-w-2xl text-sm leading-relaxed text-on-surface-variant">
+                  {diagnostic.insights?.[0]?.text ||
+                    'Диагностика рассчитана. Подробности по направлениям и сформированные рекомендации доступны в полном отчёте.'}
+                </p>
+                {evaluatedBlocks.length > 0 && (
+                  <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+                    <span className="text-xs text-on-surface-variant">
+                      <span className="mr-1.5 inline-block h-2 w-2 rounded-full bg-primary" />
+                      {strongCount} сильных
+                    </span>
+                    <span className="text-xs text-on-surface-variant">
+                      <span className="mr-1.5 inline-block h-2 w-2 rounded-full bg-yellow-400" />
+                      {attentionCount} требуют внимания
+                    </span>
+                    <span className="text-xs text-on-surface-variant">
+                      <span className="mr-1.5 inline-block h-2 w-2 rounded-full bg-error" />
+                      {criticalCount} критичных
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
-          </div>
-        </div>
-      </div>
+          </section>
 
-      {/* Two columns */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Block scores */}
-        <div className="glass-card rounded-2xl p-5 border border-white/[0.06]">
-          <div className="flex items-center gap-2 mb-4">
-            <span className="material-symbols-outlined text-secondary text-xl">bar_chart</span>
-            <h3 className="text-sm font-semibold text-on-surface">Оценка по блокам</h3>
-          </div>
-          <div className="space-y-3">
-            {GRI_BLOCKS.map((b) => (
-              <div key={b.label}>
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-xs text-on-surface-variant">{b.label}</span>
-                  <span className={`text-xs font-mono font-bold ${b.color}`}>{b.score}</span>
-                </div>
-                <div className="h-1.5 bg-white/[0.05] rounded-full overflow-hidden">
-                  <div
-                    className={`h-full rounded-full transition-all ${b.score >= 7 ? 'bg-primary' : b.score >= 5 ? 'bg-yellow-400' : 'bg-error'}`}
-                    style={{ width: scoreWidth(b.score) }}
-                  />
-                </div>
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+            <section className="glass-card rounded-2xl border border-white/[0.06] p-5">
+              <div className="mb-4 flex items-center gap-2">
+                <span className="material-symbols-outlined text-xl text-secondary">bar_chart</span>
+                <h2 className="text-sm font-semibold text-on-surface">Оценка по направлениям</h2>
               </div>
-            ))}
-          </div>
-        </div>
+              <div className="space-y-3">
+                {blocks.map((block) => {
+                  const score = normalizedScore(block.data?.score)
+                  const status = block.data?.status ? STATUS_META[block.data.status] : null
 
-        {/* Top 5 limits */}
-        <div className="glass-card rounded-2xl p-5 border border-white/[0.06]">
-          <div className="flex items-center gap-2 mb-4">
-            <span className="material-symbols-outlined text-error text-xl">warning</span>
-            <h3 className="text-sm font-semibold text-on-surface">Топ-5 ограничений</h3>
-          </div>
-          <div className="space-y-2.5">
-            {TOP_LIMITS.map((item, i) => (
-              <div key={i} className="flex items-start gap-3 p-3 rounded-xl bg-white/[0.02] border border-white/[0.04]">
-                <div className="w-7 h-7 rounded-lg bg-error/10 border border-error/20 flex items-center justify-center flex-shrink-0">
-                  <span className="text-xs font-mono font-bold text-error">{item.score}</span>
-                </div>
-                <div className="min-w-0">
-                  <p className="text-xs font-medium text-on-surface">{item.issue}</p>
-                  <p className="text-[10px] text-on-surface-variant mt-0.5">{item.block}</p>
-                </div>
+                  return (
+                    <div key={block.key}>
+                      <div className="mb-1 flex items-center justify-between gap-3">
+                        <span className="text-xs text-on-surface-variant">{block.label}</span>
+                        <span className={`font-mono text-xs font-bold ${status?.text ?? 'text-on-surface-variant'}`}>
+                          {score === null ? '—' : (score / 10).toFixed(1)}
+                        </span>
+                      </div>
+                      <div className="h-1.5 overflow-hidden rounded-full bg-white/[0.05]">
+                        {score !== null && (
+                          <div
+                            className={`h-full rounded-full transition-all ${status?.bar ?? 'bg-on-surface-variant'}`}
+                            style={{ width: `${score}%` }}
+                          />
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
               </div>
-            ))}
-          </div>
-        </div>
-      </div>
+            </section>
 
-      {/* Next steps */}
-      <div className="glass-card rounded-2xl p-5 border border-white/[0.06]">
-        <div className="flex items-center gap-2 mb-4">
-          <span className="material-symbols-outlined text-primary text-xl">rocket_launch</span>
-          <h3 className="text-sm font-semibold text-on-surface">Следующие шаги</h3>
+            <section className="glass-card rounded-2xl border border-white/[0.06] p-5">
+              <div className="mb-4 flex items-center gap-2">
+                <span className="material-symbols-outlined text-xl text-error">warning</span>
+                <h2 className="text-sm font-semibold text-on-surface">Ограничения из диагностики</h2>
+              </div>
+              {limitations.length > 0 ? (
+                <div className="space-y-2.5">
+                  {limitations.map((item, index) => (
+                    <div
+                      key={`${item.block}-${item.issue}-${index}`}
+                      className="flex items-start gap-3 rounded-xl border border-white/[0.04] bg-white/[0.02] p-3"
+                    >
+                      <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg border border-error/20 bg-error/10">
+                        <span className="material-symbols-outlined text-sm text-error">priority_high</span>
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-xs font-medium text-on-surface">{item.issue}</p>
+                        <p className="mt-0.5 text-[10px] text-on-surface-variant">{item.block}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-xl border border-dashed border-white/10 p-6 text-center">
+                  <p className="text-sm font-medium text-on-surface">Список ограничений не сформирован</p>
+                  <p className="mt-1 text-xs text-on-surface-variant">
+                    Это не означает отсутствие рисков — в текущем расчёте нет детализации по проблемам.
+                  </p>
+                </div>
+              )}
+            </section>
+          </div>
+        </>
+      ) : diagnosticLoaded ? (
+        <section className="rounded-3xl border border-primary/20 bg-gradient-to-br from-primary/10 to-transparent p-6 md:p-8">
+          <div className="max-w-2xl">
+            <span className="material-symbols-outlined mb-4 text-4xl text-primary">radar</span>
+            <h2 className="font-headline text-2xl font-bold text-on-surface">Диагностика ещё не рассчитана</h2>
+            <p className="mt-2 text-sm leading-relaxed text-on-surface-variant">
+              На аккаунте нет текущего результата GRI. Откройте «Точку А», чтобы проверить доступный сценарий расчёта.
+            </p>
+            <Link
+              href="/owner/point-a"
+              className="mt-6 inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-3 text-sm font-bold text-on-primary"
+            >
+              Открыть «Точку А»
+              <span className="material-symbols-outlined text-lg">arrow_forward</span>
+            </Link>
+          </div>
+        </section>
+      ) : null}
+
+      <section className="glass-card rounded-2xl border border-white/[0.06] p-5">
+        <div className="mb-4 flex items-center gap-2">
+          <span className="material-symbols-outlined text-xl text-primary">rocket_launch</span>
+          <h2 className="text-sm font-semibold text-on-surface">Доступные действия</h2>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
           {[
-            { icon: 'event', title: 'Сессия с экспертом', desc: 'Запланируйте разбор операционного блока', color: 'text-secondary', bg: 'bg-secondary/10' },
-            { icon: 'description', title: 'Полный отчёт', desc: 'Скачайте детальный GRI отчёт с планом действий', color: 'text-primary', bg: 'bg-primary/10' },
-            { icon: 'track_changes', title: 'План на 90 дней', desc: 'Приоритетные действия для роста операций', color: 'text-yellow-400', bg: 'bg-yellow-400/10' },
+            {
+              href: '/owner/gri',
+              icon: 'radar',
+              title: 'Отчёт GRI',
+              desc: diagnostic ? 'Изучить блоки, риски и действия текущего расчёта' : 'Проверить статус диагностики',
+              color: 'text-secondary',
+              bg: 'bg-secondary/10',
+            },
+            {
+              href: '/owner/point-a',
+              icon: 'my_location',
+              title: 'Точка А',
+              desc: 'Открыть раздел диагностики и загрузки исходных данных',
+              color: 'text-primary',
+              bg: 'bg-primary/10',
+            },
+            {
+              href: '/owner/reports',
+              icon: 'description',
+              title: 'Отчёты',
+              desc: 'Перейти к доступным отчётам и документам',
+              color: 'text-yellow-400',
+              bg: 'bg-yellow-400/10',
+            },
           ].map((step) => (
-            <div key={step.title} className="flex items-start gap-3 p-3 rounded-xl bg-white/[0.02] border border-white/[0.04] hover:bg-white/[0.04] transition-colors cursor-pointer">
-              <div className={`w-8 h-8 rounded-xl ${step.bg} flex items-center justify-center flex-shrink-0`}>
+            <Link
+              key={step.href}
+              href={step.href}
+              className="flex items-start gap-3 rounded-xl border border-white/[0.04] bg-white/[0.02] p-3 transition-colors hover:bg-white/[0.04]"
+            >
+              <div className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-xl ${step.bg}`}>
                 <span className={`material-symbols-outlined text-lg ${step.color}`}>{step.icon}</span>
               </div>
               <div>
                 <p className="text-xs font-medium text-on-surface">{step.title}</p>
-                <p className="text-[10px] text-on-surface-variant mt-0.5 leading-relaxed">{step.desc}</p>
+                <p className="mt-0.5 text-[10px] leading-relaxed text-on-surface-variant">{step.desc}</p>
               </div>
-            </div>
+            </Link>
           ))}
         </div>
-      </div>
+      </section>
     </div>
   )
 }

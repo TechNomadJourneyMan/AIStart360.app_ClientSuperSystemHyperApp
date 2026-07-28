@@ -3,14 +3,46 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { useForm } from 'react-hook-form'
+import type { FieldValues, UseFormWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase/client'
+import {
+  ONBOARDING_STORAGE_VERSION,
+  normalizeOnboardingStep,
+  onboardingDraftStorageKey,
+  resolveOnboardingAnswers,
+  resolveOnboardingResumeStep,
+  type OnboardingDraft,
+} from '@/lib/onboarding-draft'
 import Image from 'next/image'
 import Link from 'next/link'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-const STORAGE_KEY = 'aistart360_onboarding'
+function readLocalDraft(userId?: string | null): OnboardingDraft {
+  try {
+    const scopedKey = onboardingDraftStorageKey(userId)
+    const raw = localStorage.getItem(scopedKey)
+      ?? (userId ? localStorage.getItem(onboardingDraftStorageKey()) : null)
+    return raw ? JSON.parse(raw) as OnboardingDraft : {}
+  } catch {
+    return {}
+  }
+}
+
+interface ApiEnvelope {
+  ok?: boolean
+  error?: string
+  data?: Record<string, unknown> | null
+}
+
+async function requireApiSuccess(response: Response): Promise<ApiEnvelope> {
+  const payload = await response.json().catch(() => ({})) as ApiEnvelope
+  if (!response.ok || payload.ok === false) {
+    throw new Error(payload.error || `Ошибка сервера (${response.status})`)
+  }
+  return payload
+}
 
 const INDUSTRIES = [
   'IT / Технологии', 'Ритейл / E-commerce', 'Производство', 'Строительство',
@@ -135,6 +167,26 @@ type Step3 = z.infer<typeof step3Schema>
 type Step4 = z.infer<typeof step4Schema>
 type Step5 = z.infer<typeof step5Schema>
 type Step6 = z.infer<typeof step6Schema>
+
+function useDraftAutosave<T extends FieldValues>(
+  watch: UseFormWatch<T>,
+  onDraft: (values: Record<string, unknown>) => void,
+) {
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const subscription = watch((values) => {
+      if (timer) clearTimeout(timer)
+      timer = setTimeout(() => {
+        onDraft(values as unknown as Record<string, unknown>)
+      }, 300)
+    })
+
+    return () => {
+      if (timer) clearTimeout(timer)
+      subscription.unsubscribe()
+    }
+  }, [onDraft, watch])
+}
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
@@ -264,49 +316,119 @@ export default function OnboardingPage() {
   const router = useRouter()
   const [currentStep, setCurrentStep] = useState(1)
   const [savedAnswers, setSavedAnswers] = useState<Record<string, unknown>>({})
+  const [isBootstrapping, setIsBootstrapping] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
   const [userId, setUserId] = useState<string | null>(null)
   const [companyId, setCompanyId] = useState<string | null>(null)
+  const [syncError, setSyncError] = useState<string | null>(null)
+  const [restoreNotice, setRestoreNotice] = useState<string | null>(null)
 
-  // Load persisted state from localStorage
+  // Load the server copy first, then overlay a newer local draft.
   useEffect(() => {
     const bootstrap = async () => {
-      try {
-        const raw = localStorage.getItem(STORAGE_KEY)
-        if (raw) {
-          const data = JSON.parse(raw)
-          setSavedAnswers(data.answers ?? {})
-          setCurrentStep(data.current_step ?? 1)
-          setCompanyId(data.company_id ?? null)
-        }
+      let localDraft = readLocalDraft()
+      let serverAnswers: Record<string, unknown> = {}
+      let serverStep = 1
+      let serverSavedAt: string | undefined
+      let serverCompanyId: string | null = null
 
+      try {
         const supabase = createClient()
         const {
           data: { user },
         } = await supabase.auth.getUser()
         setUserId(user?.id ?? null)
-      } catch {
-        setUserId(null)
+        localDraft = readLocalDraft(user?.id)
+
+        if (user?.id) {
+          const [surveyResponse, companyResponse] = await Promise.all([
+            fetch(`/api/v1/onboarding/survey?user_id=${encodeURIComponent(user.id)}`),
+            fetch(`/api/v1/onboarding/company?user_id=${encodeURIComponent(user.id)}`),
+          ])
+          const surveyPayload = await requireApiSuccess(surveyResponse)
+          const companyPayload = await requireApiSuccess(companyResponse)
+          const surveyData = surveyPayload.data
+          const companyData = companyPayload.data
+
+          if (surveyData?.answers && typeof surveyData.answers === 'object') {
+            serverAnswers = surveyData.answers as Record<string, unknown>
+          }
+          serverStep = Number(surveyData?.current_step ?? 1)
+          if (typeof surveyData?.saved_at === 'string') {
+            serverSavedAt = surveyData.saved_at
+          }
+          if (typeof companyData?.id === 'string') {
+            serverCompanyId = companyData.id
+          }
+        }
+      } catch (error) {
+        setSyncError(
+          `Не удалось загрузить сохранённые ответы с сервера. Локальный черновик доступен; повторите синхронизацию позже.${
+            error instanceof Error ? ` ${error.message}` : ''
+          }`,
+        )
+      } finally {
+        const resolution = resolveOnboardingAnswers(
+          localDraft,
+          serverAnswers,
+          serverSavedAt,
+        )
+        setSavedAnswers(resolution.answers)
+        setCurrentStep(
+          resolution.source === 'server'
+            ? normalizeOnboardingStep(serverStep)
+            : resolveOnboardingResumeStep(localDraft, serverStep),
+        )
+        setCompanyId(
+          resolution.source === 'server'
+            ? serverCompanyId
+            : localDraft.company_id ?? serverCompanyId,
+        )
+        if (resolution.conflict) {
+          setRestoreNotice(
+            resolution.source === 'server'
+              ? 'На сервере найдена более свежая версия анкеты. Открыта она; устаревший локальный черновик не применён.'
+              : 'Восстановлен более свежий локальный черновик. Он будет отправлен на сервер при сохранении текущего шага.',
+          )
+        }
+        setIsBootstrapping(false)
       }
     }
 
-    bootstrap()
+    void bootstrap()
   }, [])
 
   const persistLocal = useCallback((step: number, answers: Record<string, unknown>) => {
-    const merged = { ...savedAnswers, ...answers }
-    setSavedAnswers(merged)
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({
-      current_step: step,
-      answers: merged,
-      company_id: companyId,
-      saved_at: new Date().toISOString(),
-    }))
-  }, [savedAnswers, companyId])
+    setSavedAnswers((current) => {
+      const merged = { ...current, ...answers }
+      const existingDraft = readLocalDraft(userId)
+      localStorage.setItem(onboardingDraftStorageKey(userId), JSON.stringify({
+        version: ONBOARDING_STORAGE_VERSION,
+        current_step: step,
+        answers: merged,
+        company_id: companyId ?? existingDraft.company_id ?? null,
+        saved_at: new Date().toISOString(),
+      }))
+      if (userId) localStorage.removeItem(onboardingDraftStorageKey())
+      return merged
+    })
+  }, [companyId, userId])
 
-  const saveToServer = async (step: number, answers: Record<string, unknown>) => {
-    if (!userId) return
+  const persistCurrentDraft = useCallback((answers: Record<string, unknown>) => {
+    persistLocal(currentStep, answers)
+  }, [currentStep, persistLocal])
+
+  const saveToServer = async (
+    step: number,
+    answers: Record<string, unknown>,
+  ): Promise<boolean> => {
+    if (!userId) {
+      setSyncError('Сессия пользователя не загрузилась. Черновик сохранён локально; войдите снова и повторите.')
+      return false
+    }
+
     setIsSaving(true)
+    setSyncError(null)
     try {
       let resolvedCompanyId = companyId
 
@@ -330,15 +452,21 @@ export default function OnboardingPage() {
             contact_email: answers['s1_contact_email'],
           }),
         })
-        const compData = await compRes.json()
-        if (compData.ok && compData.data?.id) {
-          resolvedCompanyId = compData.data.id
-          setCompanyId(compData.data.id)
-          localStorage.setItem(STORAGE_KEY, JSON.stringify({
-            ...JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}'),
-            company_id: compData.data.id,
-          }))
+        const compData = await requireApiSuccess(compRes)
+        const createdCompanyId = compData.data?.id
+        if (typeof createdCompanyId !== 'string') {
+          throw new Error('Сервер не вернул идентификатор компании')
         }
+        resolvedCompanyId = createdCompanyId
+        setCompanyId(createdCompanyId)
+        const localDraft = readLocalDraft(userId)
+        localStorage.setItem(onboardingDraftStorageKey(userId), JSON.stringify({
+          ...localDraft,
+          version: ONBOARDING_STORAGE_VERSION,
+          company_id: createdCompanyId,
+          saved_at: new Date().toISOString(),
+        }))
+        localStorage.removeItem(onboardingDraftStorageKey())
       }
 
       // Save survey answers
@@ -346,51 +474,88 @@ export default function OnboardingPage() {
       for (const [k, v] of Object.entries(answers)) {
         formatted[k] = { value: v }
       }
-      await fetch('/api/v1/onboarding/survey', {
+      const surveyResponse = await fetch('/api/v1/onboarding/survey', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user_id: userId, company_id: resolvedCompanyId, step, answers: formatted }),
       })
-    } catch (e) {
-      console.error('[onboarding] save error', e)
+      await requireApiSuccess(surveyResponse)
+      return true
+    } catch (error) {
+      setSyncError(
+        `Ответы сохранены локально, но сервер их не подтвердил. Проверьте соединение и повторно нажмите текущую кнопку. ${
+          error instanceof Error ? error.message : ''
+        }`,
+      )
+      return false
     } finally {
       setIsSaving(false)
     }
   }
 
   const goNext = async (step: number, data: Record<string, unknown>) => {
+    if (isSaving) return
     persistLocal(step, data)
-    await saveToServer(step, data)
+    const saved = await saveToServer(step, data)
+    if (!saved) return
+
     if (step < 6) {
-      setCurrentStep(step + 1)
+      const nextStep = step + 1
+      persistLocal(nextStep, data)
+      setCurrentStep(nextStep)
     } else {
       // All done — trigger Point A calculation
-      if (userId) {
-        setIsSaving(true)
-        try {
-          await fetch('/api/v1/diagnostics/recalculate', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ user_id: userId }),
-          })
-        } catch {}
+      setIsSaving(true)
+      try {
+        const diagnosticResponse = await fetch('/api/v1/diagnostics/recalculate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ user_id: userId }),
+        })
+        await requireApiSuccess(diagnosticResponse)
+        localStorage.removeItem(onboardingDraftStorageKey(userId))
+        localStorage.removeItem(onboardingDraftStorageKey())
+        router.replace('/client/dashboard?onboarding=complete')
+      } catch (error) {
+        setSyncError(
+          `Анкета сохранена, но диагностика пока не рассчитана. Черновик оставлен — повторите запуск. ${
+            error instanceof Error ? error.message : ''
+          }`,
+        )
+      } finally {
         setIsSaving(false)
       }
-      localStorage.removeItem(STORAGE_KEY)
-      router.replace('/client/dashboard?onboarding=complete')
     }
   }
 
-  const goBack = () => setCurrentStep(s => Math.max(1, s - 1))
+  const goBack = () => {
+    if (isSaving) return
+    const previousStep = Math.max(1, currentStep - 1)
+    persistLocal(previousStep, {})
+    setCurrentStep(previousStep)
+  }
 
-  const progress = Math.round(((currentStep - 1) / 6) * 100)
+  const progress = Math.round((currentStep / 6) * 100)
+
+  if (isBootstrapping) {
+    return (
+      <div className="min-h-screen bg-[#0A0B0F] flex items-center justify-center">
+        <div className="flex items-center gap-3 text-sm text-on-surface-variant">
+          <span className="w-5 h-5 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
+          Восстанавливаем анкету...
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen bg-[#0A0B0F]">
       {/* Header */}
       <header className="sticky top-0 z-20 bg-[#0A0B0F]/90 backdrop-blur border-b border-white/[0.06] px-6 py-4">
         <div className="max-w-2xl mx-auto flex items-center justify-between">
-          <Image src="/logo.svg" alt="AIStart360" width={120} height={22} />
+          <Link href="/client/dashboard" aria-label="Вернуться в обзор">
+            <Image src="/logo.svg" alt="AIStart360" width={120} height={22} />
+          </Link>
           <div className="flex items-center gap-4">
             {isSaving && (
               <div className="flex items-center gap-1.5 text-xs text-on-surface-variant">
@@ -419,7 +584,11 @@ export default function OnboardingPage() {
           {STEPS.map(s => (
             <button
               key={s.n}
-              onClick={() => s.n < currentStep && setCurrentStep(s.n)}
+              onClick={() => {
+                if (isSaving || s.n >= currentStep) return
+                persistLocal(s.n, {})
+                setCurrentStep(s.n)
+              }}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono whitespace-nowrap transition-all ${
                 s.n === currentStep
                   ? 'bg-primary/20 text-primary border border-primary/30'
@@ -427,7 +596,7 @@ export default function OnboardingPage() {
                   ? 'text-primary/60 hover:text-primary cursor-pointer'
                   : 'text-on-surface-variant/40 cursor-not-allowed'
               }`}
-              disabled={s.n > currentStep}
+              disabled={isSaving || s.n > currentStep}
             >
               {s.n < currentStep ? (
                 <span className="material-symbols-outlined text-xs">check</span>
@@ -442,10 +611,52 @@ export default function OnboardingPage() {
 
       {/* Content */}
       <main className="max-w-2xl mx-auto px-6 py-8">
+        {syncError && (
+          <div
+            role="alert"
+            className="mb-6 flex items-start gap-3 rounded-2xl border border-error/25 bg-error/10 px-4 py-3"
+          >
+            <span className="material-symbols-outlined mt-0.5 text-lg text-error">cloud_off</span>
+            <div className="flex-1">
+              <p className="text-sm font-medium text-error">Синхронизация не завершена</p>
+              <p className="mt-1 text-xs leading-relaxed text-on-surface-variant">{syncError}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setSyncError(null)}
+              className="text-on-surface-variant transition-colors hover:text-on-surface"
+              aria-label="Закрыть сообщение"
+            >
+              <span className="material-symbols-outlined text-lg">close</span>
+            </button>
+          </div>
+        )}
+        {restoreNotice && (
+          <div
+            role="status"
+            className="mb-6 flex items-start gap-3 rounded-2xl border border-tertiary-container/25 bg-tertiary-container/10 px-4 py-3"
+          >
+            <span className="material-symbols-outlined mt-0.5 text-lg text-tertiary-container">history</span>
+            <div className="flex-1">
+              <p className="text-sm font-medium text-on-surface">Версия анкеты восстановлена</p>
+              <p className="mt-1 text-xs leading-relaxed text-on-surface-variant">{restoreNotice}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setRestoreNotice(null)}
+              className="text-on-surface-variant transition-colors hover:text-on-surface"
+              aria-label="Закрыть сообщение"
+            >
+              <span className="material-symbols-outlined text-lg">close</span>
+            </button>
+          </div>
+        )}
         {currentStep === 1 && (
           <Step1Form
             defaultValues={savedAnswers}
             onNext={(data) => goNext(1, data)}
+            onDraft={persistCurrentDraft}
+            isSaving={isSaving}
           />
         )}
         {currentStep === 2 && (
@@ -453,6 +664,8 @@ export default function OnboardingPage() {
             defaultValues={savedAnswers}
             onBack={goBack}
             onNext={(data) => goNext(2, data)}
+            onDraft={persistCurrentDraft}
+            isSaving={isSaving}
           />
         )}
         {currentStep === 3 && (
@@ -460,6 +673,8 @@ export default function OnboardingPage() {
             defaultValues={savedAnswers}
             onBack={goBack}
             onNext={(data) => goNext(3, data)}
+            onDraft={persistCurrentDraft}
+            isSaving={isSaving}
           />
         )}
         {currentStep === 4 && (
@@ -467,6 +682,8 @@ export default function OnboardingPage() {
             defaultValues={savedAnswers}
             onBack={goBack}
             onNext={(data) => goNext(4, data)}
+            onDraft={persistCurrentDraft}
+            isSaving={isSaving}
           />
         )}
         {currentStep === 5 && (
@@ -474,6 +691,8 @@ export default function OnboardingPage() {
             defaultValues={savedAnswers}
             onBack={goBack}
             onNext={(data) => goNext(5, data)}
+            onDraft={persistCurrentDraft}
+            isSaving={isSaving}
           />
         )}
         {currentStep === 6 && (
@@ -481,6 +700,7 @@ export default function OnboardingPage() {
             defaultValues={savedAnswers}
             onBack={goBack}
             onNext={(data) => goNext(6, data)}
+            onDraft={persistCurrentDraft}
             isSaving={isSaving}
           />
         )}
@@ -499,7 +719,8 @@ function NavButtons({ onBack, nextLabel = 'Далее', isLast = false, loading 
         <button
           type="button"
           onClick={onBack}
-          className="px-6 py-3 rounded-xl border border-white/[0.08] text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-all text-sm font-medium"
+          disabled={loading}
+          className="px-6 py-3 rounded-xl border border-white/[0.08] text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-all text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50"
         >
           ← Назад
         </button>
@@ -532,11 +753,17 @@ function StepHeader({ step, title, subtitle }: { step: number; title: string; su
 }
 
 // ─── STEP 1: Company ──────────────────────────────────────────────────────────
-function Step1Form({ defaultValues, onNext }: { defaultValues: Record<string, unknown>; onNext: (d: Record<string, unknown>) => void }) {
+function Step1Form({ defaultValues, onNext, onDraft, isSaving }: {
+  defaultValues: Record<string, unknown>
+  onNext: (d: Record<string, unknown>) => void
+  onDraft: (d: Record<string, unknown>) => void
+  isSaving: boolean
+}) {
   const { register, handleSubmit, setValue, watch, formState: { errors } } = useForm<Step1>({
     resolver: zodResolver(step1Schema),
     defaultValues: defaultValues as Partial<Step1>,
   })
+  useDraftAutosave(watch, onDraft)
   const regions = (watch('s1_regions') as string[]) ?? []
 
   return (
@@ -617,17 +844,24 @@ function Step1Form({ defaultValues, onNext }: { defaultValues: Record<string, un
         </div>
       </div>
 
-      <NavButtons nextLabel="Далее — Финансы" />
+      <NavButtons nextLabel="Далее — Финансы" loading={isSaving} />
     </form>
   )
 }
 
 // ─── STEP 2: Finance ──────────────────────────────────────────────────────────
-function Step2Form({ defaultValues, onBack, onNext }: { defaultValues: Record<string, unknown>; onBack: () => void; onNext: (d: Record<string, unknown>) => void }) {
+function Step2Form({ defaultValues, onBack, onNext, onDraft, isSaving }: {
+  defaultValues: Record<string, unknown>
+  onBack: () => void
+  onNext: (d: Record<string, unknown>) => void
+  onDraft: (d: Record<string, unknown>) => void
+  isSaving: boolean
+}) {
   const { register, handleSubmit, setValue, watch, formState: { errors } } = useForm<Step2>({
     resolver: zodResolver(step2Schema),
     defaultValues: defaultValues as Partial<Step2>,
   })
+  useDraftAutosave(watch, onDraft)
   const knowsBE = watch('s2_knows_breakeven') ?? false
   const debt = watch('s2_debt_load')
 
@@ -712,17 +946,24 @@ function Step2Form({ defaultValues, onBack, onNext }: { defaultValues: Record<st
         onChange={v => setValue('s2_knows_breakeven', v)}
       />
 
-      <NavButtons onBack={onBack} nextLabel="Далее — Продажи" />
+      <NavButtons onBack={onBack} nextLabel="Далее — Продажи" loading={isSaving} />
     </form>
   )
 }
 
 // ─── STEP 3: Sales & CRM ──────────────────────────────────────────────────────
-function Step3Form({ defaultValues, onBack, onNext }: { defaultValues: Record<string, unknown>; onBack: () => void; onNext: (d: Record<string, unknown>) => void }) {
+function Step3Form({ defaultValues, onBack, onNext, onDraft, isSaving }: {
+  defaultValues: Record<string, unknown>
+  onBack: () => void
+  onNext: (d: Record<string, unknown>) => void
+  onDraft: (d: Record<string, unknown>) => void
+  isSaving: boolean
+}) {
   const { register, handleSubmit, setValue, watch, formState: { errors } } = useForm<Step3>({
     resolver: zodResolver(step3Schema),
     defaultValues: defaultValues as Partial<Step3>,
   })
+  useDraftAutosave(watch, onDraft)
   const channels = (watch('s3_promo_channels') as string[]) ?? []
   const hasLoyalty = watch('s3_has_loyalty') ?? false
 
@@ -806,17 +1047,24 @@ function Step3Form({ defaultValues, onBack, onNext }: { defaultValues: Record<st
         onChange={v => setValue('s3_has_loyalty', v)}
       />
 
-      <NavButtons onBack={onBack} nextLabel="Далее — Операции" />
+      <NavButtons onBack={onBack} nextLabel="Далее — Операции" loading={isSaving} />
     </form>
   )
 }
 
 // ─── STEP 4: Operations ───────────────────────────────────────────────────────
-function Step4Form({ defaultValues, onBack, onNext }: { defaultValues: Record<string, unknown>; onBack: () => void; onNext: (d: Record<string, unknown>) => void }) {
+function Step4Form({ defaultValues, onBack, onNext, onDraft, isSaving }: {
+  defaultValues: Record<string, unknown>
+  onBack: () => void
+  onNext: (d: Record<string, unknown>) => void
+  onDraft: (d: Record<string, unknown>) => void
+  isSaving: boolean
+}) {
   const { register, handleSubmit, setValue, watch, formState: { errors } } = useForm<Step4>({
     resolver: zodResolver(step4Schema),
     defaultValues: defaultValues as Partial<Step4>,
   })
+  useDraftAutosave(watch, onDraft)
   const hasOrgChart = watch('s4_has_org_chart') ?? false
   const hasMeetings = watch('s4_has_regular_meetings') ?? false
   const hasDeptKPI = watch('s4_has_dept_kpi') ?? false
@@ -867,17 +1115,24 @@ function Step4Form({ defaultValues, onBack, onNext }: { defaultValues: Record<st
         ]} register={register} error={errors.s4_task_manager?.message} />
       </div>
 
-      <NavButtons onBack={onBack} nextLabel="Далее — Маркетинг" />
+      <NavButtons onBack={onBack} nextLabel="Далее — Маркетинг" loading={isSaving} />
     </form>
   )
 }
 
 // ─── STEP 5: Marketing ───────────────────────────────────────────────────────
-function Step5Form({ defaultValues, onBack, onNext }: { defaultValues: Record<string, unknown>; onBack: () => void; onNext: (d: Record<string, unknown>) => void }) {
+function Step5Form({ defaultValues, onBack, onNext, onDraft, isSaving }: {
+  defaultValues: Record<string, unknown>
+  onBack: () => void
+  onNext: (d: Record<string, unknown>) => void
+  onDraft: (d: Record<string, unknown>) => void
+  isSaving: boolean
+}) {
   const { register, handleSubmit, setValue, watch, formState: { errors } } = useForm<Step5>({
     resolver: zodResolver(step5Schema),
     defaultValues: defaultValues as Partial<Step5>,
   })
+  useDraftAutosave(watch, onDraft)
   const segments = (watch('s5_audience_segments') as string[]) ?? []
   const topRegions = (watch('s5_top_regions') as string[]) ?? []
   const mktChannels = (watch('s5_marketing_channels') as string[]) ?? []
@@ -954,20 +1209,23 @@ function Step5Form({ defaultValues, onBack, onNext }: { defaultValues: Record<st
         <FieldError msg={errors.s5_usp?.message} />
       </div>
 
-      <NavButtons onBack={onBack} nextLabel="Далее — Цели" />
+      <NavButtons onBack={onBack} nextLabel="Далее — Цели" loading={isSaving} />
     </form>
   )
 }
 
 // ─── STEP 6: Goals & Pain ─────────────────────────────────────────────────────
-function Step6Form({ defaultValues, onBack, onNext, isSaving }: {
+function Step6Form({ defaultValues, onBack, onNext, onDraft, isSaving }: {
   defaultValues: Record<string, unknown>; onBack: () => void;
-  onNext: (d: Record<string, unknown>) => void; isSaving: boolean
+  onNext: (d: Record<string, unknown>) => void
+  onDraft: (d: Record<string, unknown>) => void
+  isSaving: boolean
 }) {
   const { register, handleSubmit, setValue, watch, formState: { errors } } = useForm<Step6>({
     resolver: zodResolver(step6Schema),
     defaultValues: defaultValues as Partial<Step6>,
   })
+  useDraftAutosave(watch, onDraft)
   const blockers = (watch('s6_growth_blockers') as string[]) ?? []
 
   return (

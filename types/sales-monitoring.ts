@@ -56,6 +56,8 @@ export interface SaleResult {
   grossProfitTotal: Money
   discountTotal: Money
   bonusTotal: Money
+  regionId?: string | null
+  channelId?: string | null
   lines?: Array<SaleLineResult & {
     id: string
     productVariantId: string

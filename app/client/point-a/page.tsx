@@ -127,31 +127,54 @@ export default function PointAClientPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [isRecalculating, setIsRecalculating] = useState(false)
   const [userId, setUserId] = useState<string | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [recalculateError, setRecalculateError] = useState<string | null>(null)
 
   useEffect(() => {
     const sb = createClient()
-    sb.auth.getSession().then(({ data }) => {
+    sb.auth.getSession().then(({ data, error }) => {
       const u = data.session?.user
       if (u?.id) {
         setUserId(u.id)
+        return
       }
+
+      setIsLoading(false)
+      setLoadError(error?.message ?? 'Не удалось определить текущего пользователя.')
     })
   }, [])
 
-  const loadData = useCallback(async () => {
-    if (!userId) return
-    setIsLoading(true)
+  const loadData = useCallback(async (background = false) => {
+    if (!userId) return false
+    if (!background) setIsLoading(true)
+    setLoadError(null)
+
     try {
       const [diagRes, compRes] = await Promise.all([
         fetch(`/api/v1/diagnostics/current?user_id=${userId}`),
         fetch(`/api/v1/onboarding/company?user_id=${userId}`),
       ])
+
       const diagData = await diagRes.json()
       const compData = await compRes.json()
-      if (diagData.ok) setDiag(diagData.data)
-      if (compData.ok) setCompany(compData.data)
-    } catch {}
-    setIsLoading(false)
+
+      if (!diagRes.ok || diagData.ok !== true) {
+        throw new Error(diagData.error || 'Не удалось загрузить диагностику.')
+      }
+      if (!compRes.ok || compData.ok !== true) {
+        throw new Error(compData.error || 'Не удалось загрузить данные компании.')
+      }
+
+      setDiag(diagData.data ?? null)
+      setCompany(compData.data ?? null)
+      return true
+    } catch (error) {
+      console.error('[client/point-a] data load failed', error)
+      setLoadError('Не удалось обновить данные «Точки А». Проверьте соединение и повторите попытку.')
+      return false
+    } finally {
+      if (!background) setIsLoading(false)
+    }
   }, [userId])
 
   useEffect(() => {
@@ -161,15 +184,37 @@ export default function PointAClientPage() {
   const recalculate = async () => {
     if (!userId) return
     setIsRecalculating(true)
+    setRecalculateError(null)
+
     try {
-      await fetch('/api/v1/diagnostics/recalculate', {
+      const response = await fetch('/api/v1/diagnostics/recalculate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user_id: userId }),
       })
-      await loadData()
-    } catch {}
-    setIsRecalculating(false)
+      const result = await response.json()
+
+      if (!response.ok || result.ok !== true) {
+        if (response.status === 422) {
+          throw new Error('Сначала заполните анкету, затем повторите расчёт.')
+        }
+        throw new Error(result.error || 'Не удалось пересчитать диагностику.')
+      }
+
+      if (result.data?.diagnostic) {
+        setDiag(result.data.diagnostic)
+      }
+      await loadData(true)
+    } catch (error) {
+      console.error('[client/point-a] recalculation failed', error)
+      setRecalculateError(
+        error instanceof Error
+          ? error.message
+          : 'Не удалось пересчитать диагностику. Повторите попытку.',
+      )
+    } finally {
+      setIsRecalculating(false)
+    }
   }
 
   const score = diag?.overall_score ?? 0
@@ -198,7 +243,7 @@ export default function PointAClientPage() {
         <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={recalculate}
-            disabled={isRecalculating}
+            disabled={isLoading || isRecalculating || !userId}
             className="flex items-center gap-1.5 rounded-lg border border-white/[0.08] px-3 py-2 text-xs font-mono text-on-surface-variant transition-all hover:text-primary disabled:opacity-60"
           >
             <span className={`material-symbols-outlined text-sm ${isRecalculating ? 'animate-spin' : ''}`}>refresh</span>
@@ -215,6 +260,24 @@ export default function PointAClientPage() {
       </section>
 
       <div className="space-y-8">
+        {(loadError || recalculateError) && (
+          <div
+            role="alert"
+            className="flex flex-col gap-3 rounded-xl border border-error/30 bg-error/10 px-4 py-3 text-sm text-error sm:flex-row sm:items-center sm:justify-between"
+          >
+            <span>{recalculateError ?? loadError}</span>
+            {loadError && (
+              <button
+                type="button"
+                onClick={() => void loadData()}
+                disabled={isLoading || !userId}
+                className="self-start rounded-lg border border-error/30 px-3 py-1.5 text-xs font-semibold transition-colors hover:bg-error/10 disabled:opacity-50 sm:self-auto"
+              >
+                Повторить
+              </button>
+            )}
+          </div>
+        )}
 
         {isLoading ? (
           <div className="flex items-center justify-center py-20">
@@ -223,7 +286,7 @@ export default function PointAClientPage() {
               <p className="text-sm text-on-surface-variant">Загружаем диагностику...</p>
             </div>
           </div>
-        ) : !diag ? (
+        ) : !diag && !loadError ? (
           <div className="text-center py-20">
             <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-4">
               <span className="material-symbols-outlined text-3xl text-primary">analytics</span>
@@ -234,13 +297,13 @@ export default function PointAClientPage() {
               <Link href="/client/onboarding" className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-primary to-[#00e29e] text-[#003824] font-bold text-sm">
                 Заполнить анкету
               </Link>
-              <button onClick={recalculate} disabled={isRecalculating}
+              <button onClick={recalculate} disabled={isRecalculating || !userId}
                 className="px-5 py-2.5 rounded-xl border border-white/[0.08] text-on-surface-variant text-sm hover:text-on-surface transition-all">
                 Пересчитать
               </button>
             </div>
           </div>
-        ) : (
+        ) : diag ? (
           <>
             {/* 1. Hero Block */}
             <section className="bg-surface-container-low rounded-2xl border border-white/[0.06] p-6">
@@ -388,7 +451,7 @@ export default function PointAClientPage() {
               </div>
             </section>
           </>
-        )}
+        ) : null}
       </div>
     </div>
   )

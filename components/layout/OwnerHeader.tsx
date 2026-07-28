@@ -1,6 +1,7 @@
 'use client'
 
 import { useAuthStore } from '@/stores/auth.store'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 
 export function OwnerHeader() {
@@ -23,9 +24,13 @@ export function OwnerHeader() {
 
       {/* Right */}
       <div className="flex items-center gap-3">
-        <button className="relative w-9 h-9 rounded-xl bg-surface-container hover:bg-surface-container-high border border-white/[0.04] flex items-center justify-center transition-colors">
+        <Link
+          href="/owner/notifications"
+          aria-label="Открыть уведомления"
+          className="relative w-9 h-9 rounded-xl bg-surface-container hover:bg-surface-container-high border border-white/[0.04] flex items-center justify-center transition-colors"
+        >
           <span className="material-symbols-outlined text-xl text-on-surface-variant">notifications</span>
-        </button>
+        </Link>
 
         <div className="flex items-center gap-2 bg-surface-container border border-white/[0.04] rounded-xl px-3 py-1.5">
           <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-secondary/30 to-secondary/10 flex items-center justify-center text-[10px] font-bold text-secondary">

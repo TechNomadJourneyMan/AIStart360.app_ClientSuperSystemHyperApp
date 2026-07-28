@@ -1,20 +1,32 @@
 'use client'
 
 import { useAuthStore } from '@/stores/auth.store'
-import { useState } from 'react'
 
 export default function ExpertProfilePage() {
   const { user } = useAuthStore()
-  const [editing, setEditing] = useState(false)
-  const initials = user?.name?.split(' ').map(n => n[0]).join('').slice(0,2).toUpperCase() ?? 'EX'
+  const initials = user?.name?.split(' ').map(n => n[0]).join('').slice(0,2).toUpperCase() ?? '?'
 
   return (
     <div className="space-y-8 max-w-3xl">
       <section>
         <p className="text-xs font-mono text-primary/70 uppercase tracking-[0.2em] mb-3">Expert Portal</p>
         <h1 className="font-headline text-3xl font-extrabold text-on-surface">Мой профиль</h1>
-        <p className="text-on-surface-variant mt-2 text-sm">Управление личными данными и настройками</p>
+        <p className="text-on-surface-variant mt-2 text-sm">Данные профиля эксперта</p>
       </section>
+
+      <div
+        id="expert-profile-read-only"
+        role="status"
+        className="flex items-start gap-3 rounded-2xl border border-secondary/20 bg-secondary/5 px-4 py-3"
+      >
+        <span className="material-symbols-outlined mt-0.5 text-lg text-secondary">visibility</span>
+        <div>
+          <p className="text-sm font-medium text-on-surface">Профиль доступен только для просмотра</p>
+          <p className="mt-1 text-xs text-on-surface-variant">
+            Редактирование данных и управление безопасностью пока не подключены.
+          </p>
+        </div>
+      </div>
 
       {/* Profile Card */}
       <section className="bg-surface-container-low rounded-2xl border border-white/[0.04] overflow-hidden">
@@ -29,18 +41,24 @@ export default function ExpertProfilePage() {
           <div className="flex items-start justify-between mb-4">
             <div>
               <h2 className="font-headline text-xl font-bold text-on-surface">{user?.name ?? '—'}</h2>
-              <p className="text-sm text-on-surface-variant">{user?.position ?? 'Expert'} · {user?.organization ?? '—'}</p>
+              <p className="text-sm text-on-surface-variant">{user?.position ?? '—'} · {user?.organization ?? '—'}</p>
             </div>
-            <button onClick={() => setEditing(!editing)}
-              className="text-xs font-mono text-primary bg-primary/10 border border-primary/20 hover:bg-primary/20 px-4 py-2 rounded-xl transition-colors">
-              {editing ? 'Сохранить' : 'Редактировать'}
+            <button
+              type="button"
+              disabled
+              aria-label="Редактировать профиль: функция пока недоступна"
+              aria-describedby="expert-profile-read-only"
+              title="Редактирование профиля пока недоступно"
+              className="cursor-not-allowed rounded-xl border border-outline-variant/30 bg-surface-container px-4 py-2 text-xs font-mono text-on-surface-variant opacity-55"
+            >
+              Редактировать
             </button>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {[
               { label: 'Email',        value: user?.email,        icon: 'mail'     },
-              { label: 'Роль',         value: 'Эксперт',          icon: 'badge'    },
+              { label: 'Роль',         value: user?.role,         icon: 'badge'    },
               { label: 'Организация',  value: user?.organization, icon: 'business' },
               { label: 'Должность',    value: user?.position,     icon: 'work'     },
               { label: 'Дата регистрации', value: user?.createdAt ? new Date(user.createdAt).toLocaleDateString('ru-RU') : '—', icon: 'calendar_today' },
@@ -50,11 +68,7 @@ export default function ExpertProfilePage() {
                 <span className="material-symbols-outlined text-lg text-primary/50 flex-shrink-0">{field.icon}</span>
                 <div className="min-w-0">
                   <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest">{field.label}</p>
-                  {editing && !['Роль', 'Дата регистрации', 'Последний вход'].includes(field.label) ? (
-                    <input defaultValue={field.value ?? ''} className="text-sm text-on-surface bg-transparent border-b border-primary/40 focus:outline-none w-full mt-0.5 pb-0.5" />
-                  ) : (
-                    <p className="text-sm text-on-surface truncate mt-0.5">{field.value ?? '—'}</p>
-                  )}
+                  <p className="text-sm text-on-surface truncate mt-0.5">{field.value ?? '—'}</p>
                 </div>
               </div>
             ))}
@@ -70,20 +84,23 @@ export default function ExpertProfilePage() {
         </div>
         <div className="divide-y divide-white/[0.04]">
           {[
-            { label: '2FA', value: 'Не настроена', action: 'Включить', danger: false },
-            { label: 'Пароль', value: 'Изменить пароль', action: 'Изменить', danger: false },
-            { label: 'Сессии', value: '1 активная', action: 'Завершить все', danger: true },
+            { label: '2FA', action: 'Настроить' },
+            { label: 'Пароль', action: 'Изменить' },
+            { label: 'Сессии', action: 'Управлять' },
           ].map((item) => (
             <div key={item.label} className="flex items-center justify-between px-6 py-4">
               <div>
                 <p className="text-sm text-on-surface">{item.label}</p>
-                <p className="text-xs text-on-surface-variant">{item.value}</p>
+                <p className="text-xs text-on-surface-variant">Состояние не загружено</p>
               </div>
-              <button className={`text-xs font-mono px-4 py-2 rounded-xl border transition-colors ${
-                item.danger
-                  ? 'text-error border-error/20 hover:bg-error/10'
-                  : 'text-primary border-primary/20 hover:bg-primary/10'
-              }`}>
+              <button
+                type="button"
+                disabled
+                aria-label={`${item.action} ${item.label}: функция пока недоступна`}
+                aria-describedby="expert-profile-read-only"
+                title="Управление безопасностью пока недоступно"
+                className="cursor-not-allowed rounded-xl border border-outline-variant/30 px-4 py-2 text-xs font-mono text-on-surface-variant opacity-50"
+              >
                 {item.action}
               </button>
             </div>

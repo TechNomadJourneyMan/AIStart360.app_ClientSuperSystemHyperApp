@@ -53,6 +53,8 @@ function mapSale(row: SaleRow): SaleResult {
     grossProfitTotal: row.gross_profit_total,
     discountTotal: row.discount_total,
     bonusTotal: row.bonus_total,
+    regionId: row.region_id,
+    channelId: row.channel_id,
   }
 }
 

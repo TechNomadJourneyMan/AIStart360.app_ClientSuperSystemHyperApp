@@ -1,7 +1,6 @@
 export const dynamic = "force-dynamic"
 
 import type { Metadata } from 'next'
-import { prisma } from '@/lib/db'
 import { auth } from '@/lib/auth'
 import { getDashboardData } from '@/lib/get-dashboard-data'
 import { Card } from '@/components/ui/Card'
@@ -22,11 +21,6 @@ export default async function CompetitorsPage() {
   const session = await auth()
   const data = getDashboardData(session?.user?.email)
   
-  const [clientsCount, orgsCount] = await Promise.all([
-    prisma.client.count(),
-    prisma.organization.count(),
-  ])
-
   return (
     <div className="max-w-[1600px] mx-auto space-y-10 pb-20">
       {/* Hero Header */}
@@ -102,9 +96,15 @@ export default async function CompetitorsPage() {
             <h2 className="text-2xl font-headline font-bold text-on-surface mb-1">Основные игроки</h2>
             <p className="text-sm text-on-surface-variant">Сравнительный анализ по ключевым метрикам</p>
           </div>
-          <button className="h-10 px-4 bg-surface-container-high hover:bg-surface-container-highest border border-white/[0.05] rounded-xl text-xs font-bold text-on-surface transition-all flex items-center gap-2">
+          <button
+            type="button"
+            disabled
+            title="Настройка фильтров пока недоступна"
+            aria-label="Настройка фильтров пока недоступна"
+            className="h-10 px-4 bg-surface-container-high border border-white/[0.05] rounded-xl text-xs font-bold text-on-surface-variant opacity-60 cursor-not-allowed flex items-center gap-2"
+          >
             <span className="material-symbols-outlined text-sm">filter_list</span>
-            Настроить фильтры
+            Фильтры недоступны
           </button>
         </div>
 
@@ -199,9 +199,15 @@ export default async function CompetitorsPage() {
                     </div>
                     <span className="text-[10px] text-on-surface-variant font-mono">12 экспертов следят</span>
                   </div>
-                  <button className="text-xs font-bold text-primary hover:underline flex items-center gap-1 group/btn">
-                    Полный отчёт
-                    <span className="material-symbols-outlined text-sm group-hover/btn:translate-x-1 transition-transform">arrow_forward</span>
+                  <button
+                    type="button"
+                    disabled
+                    title="Полный отчёт пока не сформирован"
+                    aria-label={`Полный отчёт по ${comp.name} пока не сформирован`}
+                    className="flex cursor-not-allowed items-center gap-1 text-xs font-bold text-on-surface-variant opacity-60"
+                  >
+                    Отчёт недоступен
+                    <span className="material-symbols-outlined text-sm">description</span>
                   </button>
                 </div>
               </div>
@@ -222,9 +228,18 @@ export default async function CompetitorsPage() {
             Пожалуйста, подключите дополнительные источники данных для построения точной проекции.
           </p>
           <div className="pt-4">
-            <button className="px-8 h-14 bg-primary text-on-primary font-bold rounded-2xl shadow-xl shadow-primary/20 hover:scale-105 active:scale-95 transition-all">
-              Подключить Аналитику
+            <button
+              type="button"
+              disabled
+              title="Подключение источников пока недоступно"
+              aria-describedby="competitor-analytics-unavailable"
+              className="px-8 h-14 bg-surface-container-high text-on-surface-variant font-bold rounded-2xl border border-white/[0.05] opacity-60 cursor-not-allowed"
+            >
+              Подключение недоступно
             </button>
+            <p id="competitor-analytics-unavailable" className="mt-2 text-xs text-on-surface-variant/70">
+              Подключение дополнительных источников пока не реализовано в интерфейсе.
+            </p>
           </div>
         </div>
 

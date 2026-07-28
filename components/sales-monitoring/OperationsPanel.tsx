@@ -1,22 +1,79 @@
 'use client'
 
-import { FormEvent, useState } from 'react'
+import { FormEvent, useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { toast } from '@/stores/ui.store'
 import type { AssistantAnswer } from '@/types/sales-monitoring'
 import {
   apiRequest,
+  browserStorage,
+  clearDurableOperation,
+  continueDurableOperation,
+  createDurableOperation,
   fieldClass,
-  idempotencyKey,
+  formDraftStorageKey,
   labelClass,
   money,
+  readDurableOperation,
+  readStoredJson,
+  removeStoredValue,
   today,
+  writeDurableOperation,
+  writeStoredJson,
   type SalesMonitoringContext,
   type SalesOrganization,
 } from './client'
 
 type OperationsTab = 'expenses' | 'plans' | 'import' | 'assistant'
+
+interface ExpenseDraft {
+  version: 1
+  operationType: string
+  documentDate: string
+  paymentDate: string
+  categoryId: string
+  costCenterId: string
+  amount: string
+  supplier: string
+  comment: string
+}
+
+interface ExpenseCreatePayload {
+  organizationId: string
+  operationType: string
+  documentDate: string
+  paymentDate?: string
+  categoryId: string
+  costCenterId?: string
+  amount: string
+  currency: string
+  supplier?: string
+  comment?: string
+}
+
+interface PlanDraft {
+  version: 1
+  periodStart: string
+  periodEnd: string
+  regionId: string
+  revenue: string
+  grossProfit: string
+  quantity: string
+}
+
+interface PlanCreatePayload {
+  organizationId: string
+  periodStart: string
+  periodEnd: string
+  currency: string
+  lines: Array<{
+    regionId?: string
+    revenueTarget: string
+    grossProfitTarget: string
+    quantityTarget: string
+  }>
+}
 
 export function OperationsPanel(props: {
   tab: OperationsTab
@@ -42,16 +99,94 @@ function ExpensePanel({ organization, context, onChanged }: Omit<Parameters<type
   const [amount, setAmount] = useState('')
   const [supplier, setSupplier] = useState('')
   const [comment, setComment] = useState('')
+  const submittingRef = useRef(false)
+  const suppressDraftSaveRef = useRef(false)
+  const draftKey = formDraftStorageKey(organization.id, 'expense')
+  const [hydratedDraftKey, setHydratedDraftKey] = useState<string | null>(null)
+
+  useEffect(() => {
+    const saved = readStoredJson<ExpenseDraft>(browserStorage(), draftKey)
+    if (saved?.version === 1) {
+      setOperationType(saved.operationType)
+      setDocumentDate(saved.documentDate)
+      setPaymentDate(saved.paymentDate)
+      setCategoryId(saved.categoryId)
+      setCostCenterId(saved.costCenterId)
+      setAmount(saved.amount)
+      setSupplier(saved.supplier)
+      setComment(saved.comment)
+    } else {
+      setOperationType('operating_expense')
+      setDocumentDate(today())
+      setPaymentDate(today())
+      setCategoryId('')
+      setCostCenterId('')
+      setAmount('')
+      setSupplier('')
+      setComment('')
+    }
+    setHydratedDraftKey(draftKey)
+  }, [draftKey])
+
+  useEffect(() => {
+    if (hydratedDraftKey !== draftKey) return
+    if (suppressDraftSaveRef.current) {
+      suppressDraftSaveRef.current = false
+      return
+    }
+    writeStoredJson(browserStorage(), draftKey, {
+      version: 1,
+      operationType,
+      documentDate,
+      paymentDate,
+      categoryId,
+      costCenterId,
+      amount,
+      supplier,
+      comment,
+    } satisfies ExpenseDraft)
+  }, [
+    amount,
+    categoryId,
+    comment,
+    costCenterId,
+    documentDate,
+    draftKey,
+    hydratedDraftKey,
+    operationType,
+    paymentDate,
+    supplier,
+  ])
 
   const submit = async (event: FormEvent) => {
     event.preventDefault()
-    if (!categoryId) return toast.warning('Выберите статью расхода')
+    if (submittingRef.current) return
+
+    const storage = browserStorage()
+    let operation = readDurableOperation<ExpenseCreatePayload>(
+      storage,
+      organization.id,
+      'expense',
+    )
+    let durableRetryAvailable = operation !== null
+    if (!operation && !categoryId) return toast.warning('Выберите статью расхода')
+
+    submittingRef.current = true
     setLoading(true)
     try {
-      const expense = await apiRequest<{ id: string; amount: string }>('/api/v1/expenses', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey('expense-create') },
-        body: JSON.stringify({
+      if (!operation) {
+        const draft: ExpenseDraft = {
+          version: 1,
+          operationType,
+          documentDate,
+          paymentDate,
+          categoryId,
+          costCenterId,
+          amount,
+          supplier,
+          comment,
+        }
+        const payload: ExpenseCreatePayload = {
           organizationId: organization.id,
           operationType,
           documentDate,
@@ -62,20 +197,68 @@ function ExpensePanel({ organization, context, onChanged }: Omit<Parameters<type
           currency: organization.currency,
           supplier: supplier || undefined,
           comment: comment || undefined,
+        }
+        operation = createDurableOperation(
+          organization.id,
+          'expense',
+          payload,
+        )
+        if (
+          !writeStoredJson(storage, draftKey, draft)
+          || !writeDurableOperation(storage, operation)
+        ) {
+          throw new Error('Не удалось надёжно сохранить операцию в браузере; отправка отменена')
+        }
+        durableRetryAvailable = true
+      } else {
+        toast.info(
+          'Безопасно повторяем расход',
+          'Продолжаем сохранённую операцию с теми же ключами — новый расход не создастся.',
+        )
+      }
+
+      const posted = await continueDurableOperation(
+        storage,
+        operation,
+        (payload, key) => apiRequest<{ id: string }>('/api/v1/expenses', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Idempotency-Key': key,
+          },
+          body: JSON.stringify(payload),
         }),
-      })
-      await apiRequest(`/api/v1/expenses/${expense.id}/post?organizationId=${encodeURIComponent(organization.id)}`, {
-        method: 'POST',
-        headers: { 'Idempotency-Key': idempotencyKey('expense-post') },
-      })
-      toast.success('Расход проведён', money(expense.amount, organization.currency))
+        (expenseId, key) => apiRequest<{ id: string; amount: string }>(
+          `/api/v1/expenses/${expenseId}/post?organizationId=${encodeURIComponent(organization.id)}`,
+          {
+            method: 'POST',
+            headers: { 'Idempotency-Key': key },
+          },
+        ),
+      )
+      clearDurableOperation(storage, organization.id, 'expense')
+      removeStoredValue(storage, draftKey)
+      suppressDraftSaveRef.current = true
+      toast.success('Расход проведён', money(posted.amount, organization.currency))
+      setOperationType('operating_expense')
+      setDocumentDate(today())
+      setPaymentDate(today())
+      setCategoryId('')
+      setCostCenterId('')
       setAmount('')
       setSupplier('')
       setComment('')
       onChanged()
     } catch (error) {
-      toast.error('Расход не проведён', error instanceof Error ? error.message : undefined)
+      const message = error instanceof Error ? error.message : 'Неизвестная ошибка'
+      toast.error(
+        'Расход не проведён',
+        durableRetryAvailable
+          ? `${message}. Состояние сохранено: повторите отправку, чтобы безопасно продолжить без дубля.`
+          : `${message}. Запрос не был отправлен; проверьте доступ к хранилищу браузера и повторите.`,
+      )
     } finally {
+      submittingRef.current = false
       setLoading(false)
     }
   }
@@ -120,23 +303,88 @@ function PlanPanel({ organization, context, onChanged }: Omit<Parameters<typeof 
   const regions = context.regions.filter((item) => item.organization_id === organization.id)
   const [loading, setLoading] = useState(false)
   const [periodStart, setPeriodStart] = useState(() => `${today().slice(0, 7)}-01`)
-  const [periodEnd, setPeriodEnd] = useState(() => {
-    const now = new Date()
-    return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0)).toISOString().slice(0, 10)
-  })
+  const [periodEnd, setPeriodEnd] = useState(defaultPeriodEnd)
   const [regionId, setRegionId] = useState('')
   const [revenue, setRevenue] = useState('')
   const [grossProfit, setGrossProfit] = useState('')
   const [quantity, setQuantity] = useState('')
+  const submittingRef = useRef(false)
+  const suppressDraftSaveRef = useRef(false)
+  const draftKey = formDraftStorageKey(organization.id, 'plan')
+  const [hydratedDraftKey, setHydratedDraftKey] = useState<string | null>(null)
+
+  useEffect(() => {
+    const saved = readStoredJson<PlanDraft>(browserStorage(), draftKey)
+    if (saved?.version === 1) {
+      setPeriodStart(saved.periodStart)
+      setPeriodEnd(saved.periodEnd)
+      setRegionId(saved.regionId)
+      setRevenue(saved.revenue)
+      setGrossProfit(saved.grossProfit)
+      setQuantity(saved.quantity)
+    } else {
+      setPeriodStart(`${today().slice(0, 7)}-01`)
+      setPeriodEnd(defaultPeriodEnd())
+      setRegionId('')
+      setRevenue('')
+      setGrossProfit('')
+      setQuantity('')
+    }
+    setHydratedDraftKey(draftKey)
+  }, [draftKey])
+
+  useEffect(() => {
+    if (hydratedDraftKey !== draftKey) return
+    if (suppressDraftSaveRef.current) {
+      suppressDraftSaveRef.current = false
+      return
+    }
+    writeStoredJson(browserStorage(), draftKey, {
+      version: 1,
+      periodStart,
+      periodEnd,
+      regionId,
+      revenue,
+      grossProfit,
+      quantity,
+    } satisfies PlanDraft)
+  }, [
+    draftKey,
+    grossProfit,
+    hydratedDraftKey,
+    periodEnd,
+    periodStart,
+    quantity,
+    regionId,
+    revenue,
+  ])
 
   const submit = async (event: FormEvent) => {
     event.preventDefault()
+    if (submittingRef.current) return
+
+    const storage = browserStorage()
+    let operation = readDurableOperation<PlanCreatePayload>(
+      storage,
+      organization.id,
+      'plan',
+    )
+    let durableRetryAvailable = operation !== null
+
+    submittingRef.current = true
     setLoading(true)
     try {
-      const plan = await apiRequest<{ id: string; versionNumber: number }>('/api/v1/plans', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey('plan-create') },
-        body: JSON.stringify({
+      if (!operation) {
+        const draft: PlanDraft = {
+          version: 1,
+          periodStart,
+          periodEnd,
+          regionId,
+          revenue,
+          grossProfit,
+          quantity,
+        }
+        const payload: PlanCreatePayload = {
           organizationId: organization.id,
           periodStart,
           periodEnd,
@@ -147,17 +395,66 @@ function PlanPanel({ organization, context, onChanged }: Omit<Parameters<typeof 
             grossProfitTarget: normalizeMoney(grossProfit),
             quantityTarget: normalizeQuantity(quantity),
           }],
+        }
+        operation = createDurableOperation(
+          organization.id,
+          'plan',
+          payload,
+        )
+        if (
+          !writeStoredJson(storage, draftKey, draft)
+          || !writeDurableOperation(storage, operation)
+        ) {
+          throw new Error('Не удалось надёжно сохранить операцию в браузере; отправка отменена')
+        }
+        durableRetryAvailable = true
+      } else {
+        toast.info(
+          'Безопасно повторяем публикацию плана',
+          'Продолжаем сохранённую операцию с теми же ключами — новая версия плана не создастся.',
+        )
+      }
+
+      const published = await continueDurableOperation(
+        storage,
+        operation,
+        (payload, key) => apiRequest<{ id: string }>('/api/v1/plans', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Idempotency-Key': key,
+          },
+          body: JSON.stringify(payload),
         }),
-      })
-      await apiRequest(`/api/v1/plans/${plan.id}/publish?organizationId=${encodeURIComponent(organization.id)}`, {
-        method: 'POST',
-        headers: { 'Idempotency-Key': idempotencyKey('plan-publish') },
-      })
-      toast.success(`План v${plan.versionNumber} опубликован`)
+        (planId, key) => apiRequest<{ id: string; versionNumber: number }>(
+          `/api/v1/plans/${planId}/publish?organizationId=${encodeURIComponent(organization.id)}`,
+          {
+            method: 'POST',
+            headers: { 'Idempotency-Key': key },
+          },
+        ),
+      )
+      clearDurableOperation(storage, organization.id, 'plan')
+      removeStoredValue(storage, draftKey)
+      suppressDraftSaveRef.current = true
+      toast.success(`План v${published.versionNumber} опубликован`)
+      setPeriodStart(`${today().slice(0, 7)}-01`)
+      setPeriodEnd(defaultPeriodEnd())
+      setRegionId('')
+      setRevenue('')
+      setGrossProfit('')
+      setQuantity('')
       onChanged()
     } catch (error) {
-      toast.error('План не опубликован', error instanceof Error ? error.message : undefined)
+      const message = error instanceof Error ? error.message : 'Неизвестная ошибка'
+      toast.error(
+        'План не опубликован',
+        durableRetryAvailable
+          ? `${message}. Состояние сохранено: повторите отправку, чтобы безопасно продолжить без дубля.`
+          : `${message}. Запрос не был отправлен; проверьте доступ к хранилищу браузера и повторите.`,
+      )
     } finally {
+      submittingRef.current = false
       setLoading(false)
     }
   }
@@ -227,7 +524,10 @@ function ImportPanel({ organization, onChanged }: Omit<Parameters<typeof Operati
 
   const commit = async () => {
     if (!job) return
-    if (kind !== 'sales') return toast.info('Проведение через интерфейс сейчас доступно для продаж; остальные типы профилируются')
+    if (kind !== 'sales') {
+      toast.info('Проведение через интерфейс сейчас доступно для продаж; остальные типы профилируются')
+      return
+    }
     setLoading(true)
     try {
       const result = await apiRequest<{ imported: number; errors: number }>(`/api/v1/imports/${job.id}/commit`, {
@@ -435,4 +735,11 @@ function normalizeMoney(value: string) {
 function normalizeQuantity(value: string) {
   const amount = Number(String(value).replace(',', '.'))
   return Number.isFinite(amount) ? String(amount) : '0'
+}
+
+function defaultPeriodEnd() {
+  const now = new Date()
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0))
+    .toISOString()
+    .slice(0, 10)
 }

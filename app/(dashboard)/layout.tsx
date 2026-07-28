@@ -16,7 +16,7 @@ export default function DashboardLayout({
       {/* Основной контент — отступ динамически реагирует на collapse */}
       <DashboardShell>
         <Header />
-        <main className="flex-1 pt-16">
+        <main className="flex-1 pb-20 pt-16 lg:pb-0">
           <div className="px-4 md:px-6 lg:px-8 py-6 max-w-[1600px] mx-auto">
             {children}
           </div>

@@ -21,7 +21,6 @@ export const PRIMARY_NAV: NavItem[] = [
       { label: 'Конкуренты',       href: '/competitors',        icon: 'compare_arrows', roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'CLIENT'] },
       { label: 'Инсайты',          href: '/insights',           icon: 'lightbulb',      roles: ALL_ROLES },
       { label: 'Разведка',         href: '/intelligence',       icon: 'hub',            roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'CLIENT'] },
-      { label: 'Мониторинг рынка', href: '/market/monitoring',  icon: 'monitoring',     roles: ALL_ROLES },
     ],
   },
 ]

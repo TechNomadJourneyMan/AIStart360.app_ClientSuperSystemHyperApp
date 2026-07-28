@@ -6,6 +6,15 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { useAuthStore } from '@/stores/auth.store'
 import { Logo } from '@/components/ui/Logo'
 import { ThemeSwitcher } from '@/components/ThemeSwitcher'
+import { safeInternalPath } from './return-path'
+
+function defaultPathForRole(role: string | null): string {
+  if (role === 'super_admin') return '/admin-giga-panel'
+  if (role === 'owner') return '/owner/dashboard'
+  if (role === 'expert') return '/expert/dashboard'
+  if (role === 'client') return '/client/dashboard'
+  return '/dashboard'
+}
 
 function LoginContent() {
   const [email, setEmail] = useState('')
@@ -13,22 +22,14 @@ function LoginContent() {
   const { login, isLoading, error, clearError, user } = useAuthStore()
   const router = useRouter()
   const searchParams = useSearchParams()
-  const from = searchParams.get('from') || '/dashboard'
+  const from = safeInternalPath(searchParams.get('from'))
 
   useEffect(() => {
     if (user) {
       if (user.role === 'client' && user.status === 'pending_approval') {
-        router.push('/client/waiting-room')
-      } else if (user.role === 'client') {
-        router.push('/client/dashboard')
-      } else if (user.role === 'super_admin') {
-        router.push('/admin-giga-panel')
-      } else if (user.role === 'owner') {
-        router.push('/owner/dashboard')
-      } else if (user.role === 'expert') {
-        router.push('/expert/dashboard')
+        router.replace('/client/waiting-room')
       } else {
-        router.push(from)
+        router.replace(from ?? defaultPathForRole(user.role))
       }
     }
   }, [user, from, router])

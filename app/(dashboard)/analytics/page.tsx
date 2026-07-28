@@ -2,10 +2,22 @@ export const dynamic = "force-dynamic"
 
 import type { Metadata } from 'next'
 import { getAnalyticsData } from '@/lib/analytics-data'
+import type { AnalyticsData } from '@/lib/analytics-data'
 
 export const metadata: Metadata = { title: 'Analytics' }
 
 const PERIOD_OPTIONS = ['7 дней', '30 дней', '90 дней', '12 месяцев']
+const EMPTY_ANALYTICS: AnalyticsData = {
+  kpis: {
+    avgGriScore: 0,
+    portfolioGmv: 0,
+    activeClients: 0,
+    churnRate: 0,
+  },
+  trend: [],
+  industryBreakdown: [],
+  clientPerformance: [],
+}
 
 function formatMoney(value: number): string {
   if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(1)}M`
@@ -14,7 +26,16 @@ function formatMoney(value: number): string {
 }
 
 export default async function AnalyticsPage() {
-  const data = await getAnalyticsData()
+  let data = EMPTY_ANALYTICS
+  let dataAvailable = true
+
+  try {
+    data = await getAnalyticsData()
+  } catch (error) {
+    dataAvailable = false
+    console.error('[Analytics] data fetch error:', error)
+  }
+
   const totalIndustryValue = data.industryBreakdown.reduce((sum, item) => sum + item.value, 0)
 
   return (
@@ -29,10 +50,13 @@ export default async function AnalyticsPage() {
           {PERIOD_OPTIONS.map((period, i) => (
             <button
               key={period}
+              type="button"
+              disabled={i !== 1}
+              title={i !== 1 ? 'Выбор периода пока недоступен' : undefined}
               className={`px-4 py-1.5 rounded text-xs font-mono font-medium transition-colors ${
                 i === 1
                   ? 'bg-surface-container-high text-on-surface'
-                  : 'text-on-surface-variant hover:text-on-surface'
+                  : 'text-on-surface-variant opacity-50 cursor-not-allowed'
               }`}
             >
               {period}
@@ -41,20 +65,26 @@ export default async function AnalyticsPage() {
         </div>
       </div>
 
+      {!dataAvailable && (
+        <div role="alert" className="rounded-xl border border-error/30 bg-error/10 px-4 py-3 text-sm text-error">
+          Не удалось загрузить аналитику. Основная навигация доступна; обновите страницу, когда соединение восстановится.
+        </div>
+      )}
+
       {/* Top KPIs */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          { label: 'Avg GRI Score', value: String(data.kpis.avgGriScore), change: '', positive: true },
-          { label: 'Portfolio GMV', value: formatMoney(data.kpis.portfolioGmv), change: '', positive: true },
-          { label: 'Active Clients', value: String(data.kpis.activeClients), change: '', positive: true },
-          { label: 'Churn Rate', value: `${data.kpis.churnRate}%`, change: '', positive: data.kpis.churnRate <= 10 },
+          { label: 'Avg GRI Score', value: dataAvailable ? String(data.kpis.avgGriScore) : '—', change: '', positive: true },
+          { label: 'Portfolio GMV', value: dataAvailable ? formatMoney(data.kpis.portfolioGmv) : '—', change: '', positive: true },
+          { label: 'Active Clients', value: dataAvailable ? String(data.kpis.activeClients) : '—', change: '', positive: true },
+          { label: 'Churn Rate', value: dataAvailable ? `${data.kpis.churnRate}%` : '—', change: '', positive: data.kpis.churnRate <= 10 },
         ].map((kpi) => (
           <div key={kpi.label} className="bg-surface-container-low p-5 rounded-xl">
             <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest mb-2">{kpi.label}</p>
             <p className="text-3xl font-mono font-bold text-on-surface">{kpi.value}</p>
-            <p className={`text-xs font-mono mt-2 flex items-center gap-1 ${kpi.positive ? 'text-primary' : 'text-error'}`}>
+            <p className={`text-xs font-mono mt-2 flex items-center gap-1 ${!dataAvailable ? 'text-on-surface-variant' : kpi.positive ? 'text-primary' : 'text-error'}`}>
               <span className="material-symbols-outlined text-sm">{kpi.positive ? 'trending_up' : 'trending_down'}</span>
-              <span>{kpi.positive ? 'на основе реальных данных' : 'требует внимания'}</span>
+              <span>{!dataAvailable ? 'данные недоступны' : kpi.positive ? 'на основе реальных данных' : 'требует внимания'}</span>
             </p>
           </div>
         ))}
@@ -69,7 +99,7 @@ export default async function AnalyticsPage() {
           </div>
           {data.trend.length === 0 ? (
             <div className="h-48 flex items-center justify-center text-sm text-on-surface-variant border border-dashed border-white/[0.08] rounded-xl">
-              Нет данных GRI за выбранный период
+              {dataAvailable ? 'Нет данных GRI за выбранный период' : 'Тренд временно недоступен'}
             </div>
           ) : (
             <div className="h-48 flex items-end gap-1.5">
@@ -96,7 +126,7 @@ export default async function AnalyticsPage() {
           </div>
           {data.industryBreakdown.length === 0 ? (
             <div className="h-48 flex items-center justify-center text-sm text-on-surface-variant border border-dashed border-white/[0.08] rounded-xl">
-              Данные по отраслям пока отсутствуют
+              {dataAvailable ? 'Данные по отраслям пока отсутствуют' : 'Данные по отраслям временно недоступны'}
             </div>
           ) : (
             <div className="space-y-4">
@@ -124,7 +154,14 @@ export default async function AnalyticsPage() {
       <div className="bg-surface-container rounded-xl overflow-hidden">
         <div className="px-6 py-5 border-b border-outline-variant/10 flex justify-between items-center">
           <h3 className="font-headline text-lg font-bold text-on-surface">Client Performance</h3>
-          <button className="text-xs font-mono text-primary hover:underline uppercase tracking-wider">Export CSV</button>
+          <button
+            type="button"
+            disabled
+            title="Экспорт CSV пока недоступен"
+            className="text-xs font-mono text-on-surface-variant opacity-50 cursor-not-allowed uppercase tracking-wider"
+          >
+            Экспорт скоро
+          </button>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full">
@@ -141,7 +178,7 @@ export default async function AnalyticsPage() {
               {data.clientPerformance.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="px-5 py-8 text-center text-sm text-on-surface-variant">
-                    Нет клиентских метрик для отображения
+                    {dataAvailable ? 'Нет клиентских метрик для отображения' : 'Клиентские метрики временно недоступны'}
                   </td>
                 </tr>
               ) : data.clientPerformance.map((row) => (

@@ -14,14 +14,50 @@ const priorityConfig = {
   low:      { label: 'Низко', color: 'text-on-surface-variant border-outline-variant/30 bg-surface-container', dot: 'bg-outline' },
 }
 
-export default async function IntelligencePage() {
+const SIGNAL_FILTERS = [
+  { label: 'All', value: 'all' },
+  { label: 'Market', value: 'market' },
+  { label: 'Financial', value: 'financial' },
+  { label: 'Regulatory', value: 'regulatory' },
+  { label: 'Technology', value: 'technology' },
+  { label: 'Competitive', value: 'competitive' },
+] as const
+
+type SignalFilter = (typeof SIGNAL_FILTERS)[number]['value']
+
+function isSignalFilter(value: string | undefined): value is SignalFilter {
+  return SIGNAL_FILTERS.some((filter) => filter.value === value)
+}
+
+async function getIntelligenceStats() {
+  try {
+    const [auditEvents, clientCount] = await Promise.all([
+      prisma.auditLog.count(),
+      prisma.client.count(),
+    ])
+    return { auditEvents, clientCount, unavailable: false }
+  } catch (error) {
+    console.error('[intelligence] live stats unavailable', error)
+    return { auditEvents: null, clientCount: null, unavailable: true }
+  }
+}
+
+export default async function IntelligencePage({
+  searchParams,
+}: {
+  searchParams?: { type?: string | string[] }
+}) {
   const session = await auth()
   const data = getDashboardData(session?.user?.email)
-
-  const [auditEvents, clientCount] = await Promise.all([
-    prisma.auditLog.count(),
-    prisma.client.count(),
-  ])
+  const stats = await getIntelligenceStats()
+  const requestedFilter = Array.isArray(searchParams?.type)
+    ? searchParams.type[0]
+    : searchParams?.type
+  const activeFilter: SignalFilter = isSignalFilter(requestedFilter) ? requestedFilter : 'all'
+  const activeFilterLabel = SIGNAL_FILTERS.find((filter) => filter.value === activeFilter)?.label ?? 'All'
+  const visibleSignals = activeFilter === 'all'
+    ? data.SIGNALS
+    : data.SIGNALS.filter((signal) => signal.type === activeFilter)
 
   return (
     <div className="space-y-8">
@@ -37,11 +73,20 @@ export default async function IntelligencePage() {
         </div>
       </div>
 
+      {stats.unavailable && (
+        <div role="status" className="rounded-2xl border border-tertiary-container/25 bg-tertiary-container/5 px-4 py-3">
+          <p className="text-sm font-medium text-on-surface">Live-счётчики временно недоступны</p>
+          <p className="mt-1 text-xs text-on-surface-variant">
+            Лента сигналов продолжает работать на последнем доступном наборе данных.
+          </p>
+        </div>
+      )}
+
       {/* Signal Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          { label: 'События аудита', value: String(auditEvents), icon: 'hub', color: 'text-on-surface' },
-          { label: 'Клиенты', value: String(clientCount), icon: 'groups', color: 'text-primary' },
+          { label: 'События аудита', value: stats.auditEvents === null ? '—' : String(stats.auditEvents), icon: 'hub', color: 'text-on-surface' },
+          { label: 'Клиенты', value: stats.clientCount === null ? '—' : String(stats.clientCount), icon: 'groups', color: 'text-primary' },
           { label: 'AI Инсайты', value: '12', icon: 'auto_awesome', color: 'text-tertiary-container' },
           { label: 'Статус систем', value: 'Active', icon: 'cloud_done', color: 'text-success' },
         ].map((stat) => (
@@ -57,28 +102,33 @@ export default async function IntelligencePage() {
 
       {/* Filter Bar */}
       <div className="flex flex-wrap gap-2 pb-2">
-        {['All', 'Market', 'Financial', 'Regulatory', 'Technology', 'Competitive'].map((f) => (
-          <button
-            key={f}
-            className={`px-5 py-2 rounded-xl text-xs font-mono font-medium border transition-all hover:scale-[0.98] ${
-              f === 'All'
-                ? 'bg-primary/10 text-primary border-primary/30 shadow-primary-sm'
-                : 'bg-surface-container-low text-on-surface-variant border-white/[0.04] hover:bg-surface-container'
-            }`}
-          >
-            {f}
-          </button>
-        ))}
+        {SIGNAL_FILTERS.map((filter) => {
+          const active = filter.value === activeFilter
+          return (
+            <a
+              key={filter.value}
+              href={filter.value === 'all' ? '?' : `?type=${encodeURIComponent(filter.value)}`}
+              aria-current={active ? 'page' : undefined}
+              className={`px-5 py-2 rounded-xl text-xs font-mono font-medium border transition-all hover:scale-[0.98] ${
+                active
+                  ? 'bg-primary/10 text-primary border-primary/30 shadow-primary-sm'
+                  : 'bg-surface-container-low text-on-surface-variant border-white/[0.04] hover:bg-surface-container'
+              }`}
+            >
+              {filter.label}
+            </a>
+          )
+        })}
       </div>
 
       {/* Signal Feed */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {data.SIGNALS.map((signal) => {
+        {visibleSignals.map((signal) => {
           const cfg = priorityConfig[signal.priority as keyof typeof priorityConfig] ?? priorityConfig.low
           return (
             <div
               key={signal.id}
-              className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-6 hover:bg-surface-container transition-all cursor-pointer group hover:border-primary/10"
+              className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-6"
             >
               <div className="flex items-start justify-between mb-4">
                 <div className="flex items-center gap-2">
@@ -92,7 +142,7 @@ export default async function IntelligencePage() {
                 </span>
               </div>
 
-              <h3 className="font-headline font-bold text-on-surface text-lg mb-2 group-hover:text-primary transition-colors">
+              <h3 className="font-headline font-bold text-on-surface text-lg mb-2">
                 {signal.title}
               </h3>
               <p className="text-sm text-on-surface-variant leading-relaxed mb-5 line-clamp-3 italic">
@@ -117,6 +167,13 @@ export default async function IntelligencePage() {
             </div>
           )
         })}
+
+        {visibleSignals.length === 0 && (
+          <div className="lg:col-span-2 rounded-2xl border border-white/[0.04] bg-surface-container-low p-8 text-center">
+            <span className="material-symbols-outlined mb-3 block text-4xl text-on-surface-variant/30">filter_alt_off</span>
+            <p className="text-sm text-on-surface-variant">No signals in “{activeFilterLabel}”</p>
+          </div>
+        )}
       </div>
     </div>
   )

@@ -26,7 +26,10 @@ export function AddMetricModal({ open, onClose }: AddMetricModalProps) {
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState<string[]>([])
 
-  const allActiveIds = new Set([...visibleMetricIds, ...hiddenMetricIds])
+  const allActiveIds = useMemo(
+    () => new Set([...visibleMetricIds, ...hiddenMetricIds]),
+    [hiddenMetricIds, visibleMetricIds],
+  )
   const totalCount = allActiveIds.size
 
   const filtered = useMemo(() => {

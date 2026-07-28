@@ -21,6 +21,20 @@ const TYPE_ICONS: Record<string, string> = {
   competitive: 'compare_arrows',
 }
 
+const SIGNAL_FILTERS = [
+  { label: 'Все', value: 'all' },
+  { label: 'Рынок', value: 'market' },
+  { label: 'Финансы', value: 'financial' },
+  { label: 'Регуляторика', value: 'regulatory' },
+  { label: 'Конкуренты', value: 'competitive' },
+] as const
+
+type SignalFilter = (typeof SIGNAL_FILTERS)[number]['value']
+
+function isSignalFilter(value: string | undefined): value is SignalFilter {
+  return SIGNAL_FILTERS.some((filter) => filter.value === value)
+}
+
 const INSIGHT_CARDS = [
   { icon: 'lightbulb', title: 'FinTech-клиенты растут быстрее', desc: 'Средний GRI FinTech-сегмента — 876, что на 18% выше остальных отраслей.', tag: 'Паттерн', color: 'primary' },
   { icon: 'warning', title: 'Риск оттока: 3 клиента', desc: 'Vortex Labs, Calyx Digital, PulseCore показывают признаки снижения вовлечённости.', tag: 'Риск', color: 'error' },
@@ -28,16 +42,39 @@ const INSIGHT_CARDS = [
   { icon: 'psychology', title: 'AI-инструменты ускоряют рост', desc: 'Клиенты, использующие AI-диагностику, растут на 34% быстрее.', tag: 'Исследование', color: 'secondary' },
 ]
 
-export default async function InsightsPage() {
+async function getInsightStats() {
+  try {
+    const [reportCount, avgScoreRes] = await Promise.all([
+      prisma.griReport.count(),
+      prisma.griReport.aggregate({ _avg: { score: true } }),
+    ])
+    return {
+      reportCount,
+      avgScore: Number(avgScoreRes._avg.score ?? 0),
+      unavailable: false,
+    }
+  } catch (error) {
+    console.error('[insights] live stats unavailable', error)
+    return { reportCount: null, avgScore: null, unavailable: true }
+  }
+}
+
+export default async function InsightsPage({
+  searchParams,
+}: {
+  searchParams?: { type?: string | string[] }
+}) {
   const session = await auth()
   const data = getDashboardData(session?.user?.email)
-
-  const [reportCount, avgScoreRes] = await Promise.all([
-    prisma.griReport.count(),
-    prisma.griReport.aggregate({ _avg: { score: true } }),
-  ])
-
-  const avgScore = Number(avgScoreRes._avg.score ?? 0)
+  const stats = await getInsightStats()
+  const requestedFilter = Array.isArray(searchParams?.type)
+    ? searchParams.type[0]
+    : searchParams?.type
+  const activeFilter: SignalFilter = isSignalFilter(requestedFilter) ? requestedFilter : 'all'
+  const activeFilterLabel = SIGNAL_FILTERS.find((filter) => filter.value === activeFilter)?.label ?? 'Все'
+  const visibleSignals = activeFilter === 'all'
+    ? data.SIGNALS
+    : data.SIGNALS.filter((signal) => signal.type === activeFilter)
 
   return (
     <div className="space-y-8">
@@ -54,6 +91,15 @@ export default async function InsightsPage() {
         </p>
       </section>
 
+      {stats.unavailable && (
+        <div role="status" className="rounded-2xl border border-tertiary-container/25 bg-tertiary-container/5 px-4 py-3">
+          <p className="text-sm font-medium text-on-surface">Оперативная статистика временно недоступна</p>
+          <p className="mt-1 text-xs text-on-surface-variant">
+            Инсайты и рыночные сигналы доступны; счётчики GRI обновятся после восстановления базы.
+          </p>
+        </div>
+      )}
+
       {/* Stats Summary */}
       <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-6 hover:border-primary/20 transition-colors group">
@@ -61,7 +107,7 @@ export default async function InsightsPage() {
             <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest">GRI отчёты</p>
             <span className="material-symbols-outlined text-xl text-primary/40 group-hover:text-primary transition-colors">description</span>
           </div>
-          <p className="text-3xl font-mono font-bold text-on-surface">{reportCount}</p>
+          <p className="text-3xl font-mono font-bold text-on-surface">{stats.reportCount ?? '—'}</p>
           <p className="text-[10px] font-mono text-primary mt-2 uppercase tracking-tight">Общее количество расчётов</p>
         </div>
         <div className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-6 hover:border-primary/20 transition-colors group">
@@ -69,7 +115,9 @@ export default async function InsightsPage() {
             <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest">Средний GRI</p>
             <span className="material-symbols-outlined text-xl text-primary/40 group-hover:text-primary transition-colors">analytics</span>
           </div>
-          <p className="text-3xl font-mono font-bold text-on-surface">{(avgScore / 10).toFixed(1)}</p>
+          <p className="text-3xl font-mono font-bold text-on-surface">
+            {stats.avgScore === null ? '—' : (stats.avgScore / 10).toFixed(1)}
+          </p>
           <p className="text-[10px] font-mono text-primary mt-2 uppercase tracking-tight">Показатель по всей базе</p>
         </div>
       </section>
@@ -77,14 +125,14 @@ export default async function InsightsPage() {
       {/* Key Insight Cards */}
       <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {INSIGHT_CARDS.map((card) => (
-          <div key={card.title} className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-6 hover:bg-surface-container transition-colors cursor-pointer group">
+          <div key={card.title} className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-6">
             <div className="flex items-start gap-4">
               <div className={`w-10 h-10 rounded-xl bg-${card.color}/10 flex items-center justify-center border border-${card.color}/20 flex-shrink-0`}>
                 <span className={`material-symbols-outlined text-lg text-${card.color}`}>{card.icon}</span>
               </div>
               <div>
                 <div className="flex items-center gap-3 mb-1">
-                  <h3 className="text-sm font-bold text-on-surface group-hover:text-primary transition-colors">{card.title}</h3>
+                  <h3 className="text-sm font-bold text-on-surface">{card.title}</h3>
                   <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded border border-${card.color}/20 text-${card.color} bg-${card.color}/5 uppercase`}>
                     {card.tag}
                   </span>
@@ -100,35 +148,49 @@ export default async function InsightsPage() {
       <section>
         <div className="flex justify-between items-end border-b border-outline-variant/10 pb-4 mb-6">
           <div>
-            <h2 className="font-headline text-lg font-bold text-on-surface">Все сигналы</h2>
-            <p className="text-xs text-on-surface-variant mt-1">{data.SIGNALS.length} активных событий в Choco Ecosystem</p>
+            <h2 className="font-headline text-lg font-bold text-on-surface">
+              {activeFilter === 'all' ? 'Все сигналы' : `Сигналы: ${activeFilterLabel}`}
+            </h2>
+            <p className="text-xs text-on-surface-variant mt-1">{visibleSignals.length} активных событий в Choco Ecosystem</p>
           </div>
           <div className="hidden lg:flex gap-1.5">
-            {['Все', 'Рынок', 'Финансы', 'Регуляторика', 'Конкуренты'].map((f, i) => (
-              <button key={f} className={`text-[10px] font-mono px-3 py-1.5 rounded-full border transition-all ${i === 0 ? 'bg-primary text-on-primary border-primary shadow-primary-sm' : 'bg-surface-container-low text-on-surface-variant border-white/[0.04] hover:bg-surface-container'}`}>
-                {f}
-              </button>
-            ))}
+            {SIGNAL_FILTERS.map((filter) => {
+              const active = filter.value === activeFilter
+              return (
+                <a
+                  key={filter.value}
+                  href={filter.value === 'all' ? '?' : `?type=${encodeURIComponent(filter.value)}`}
+                  aria-current={active ? 'page' : undefined}
+                  className={`text-[10px] font-mono px-3 py-1.5 rounded-full border transition-all ${
+                    active
+                      ? 'bg-primary text-on-primary border-primary shadow-primary-sm'
+                      : 'bg-surface-container-low text-on-surface-variant border-white/[0.04] hover:bg-surface-container'
+                  }`}
+                >
+                  {filter.label}
+                </a>
+              )
+            })}
           </div>
         </div>
 
         <div className="grid grid-cols-1 gap-3">
-          {data.SIGNALS.map((signal) => {
+          {visibleSignals.map((signal) => {
             const colors = PRIORITY_COLORS[signal.priority as keyof typeof PRIORITY_COLORS] ?? PRIORITY_COLORS.low
             return (
               <div
                 key={signal.id}
-                className="bg-surface-container-low rounded-2xl border border-white/[0.04] hover:border-primary/10 p-5 transition-all hover:translate-x-1 cursor-pointer group"
+                className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-5"
               >
                 <div className="flex items-start gap-4">
-                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${colors.bg} border ${colors.border} group-hover:border-primary/20 transition-colors`}>
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${colors.bg} border ${colors.border}`}>
                     <span className={`material-symbols-outlined text-lg ${colors.text}`}>
                       {TYPE_ICONS[signal.type] ?? 'info'}
                     </span>
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-start justify-between gap-3 mb-1">
-                      <h3 className="text-sm font-bold text-on-surface leading-snug group-hover:text-primary transition-colors">{signal.title}</h3>
+                      <h3 className="text-sm font-bold text-on-surface leading-snug">{signal.title}</h3>
                       <span className={`text-[9px] font-mono uppercase px-2 py-0.5 rounded-full border flex-shrink-0 ${colors.bg} ${colors.text} ${colors.border}`}>
                         {signal.priority}
                       </span>
@@ -155,6 +217,13 @@ export default async function InsightsPage() {
               </div>
             )
           })}
+
+          {visibleSignals.length === 0 && (
+            <div className="rounded-2xl border border-white/[0.04] bg-surface-container-low p-8 text-center">
+              <span className="material-symbols-outlined mb-3 block text-4xl text-on-surface-variant/30">filter_alt_off</span>
+              <p className="text-sm text-on-surface-variant">В категории «{activeFilterLabel}» сигналов нет</p>
+            </div>
+          )}
         </div>
       </section>
     </div>

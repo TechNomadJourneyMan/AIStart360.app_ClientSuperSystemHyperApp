@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
+import { onboardingDraftStorageKey } from '@/lib/onboarding-draft'
 
 type DocType = 'pl_report' | 'balance_sheet' | 'marketing_report' | 'ops_report' | 'crm_export' | 'audit' | 'other'
 type ParseStatus = 'queued' | 'processing' | 'parsed' | 'error'
@@ -54,59 +55,104 @@ const MAX_SIZE = 50 * 1024 * 1024
 export default function DocumentsPage() {
   const [userId, setUserId] = useState<string | null>(null)
   const [companyId, setCompanyId] = useState<string | null>(null)
+  const [isBootstrapping, setIsBootstrapping] = useState(true)
+  const [bootstrapError, setBootstrapError] = useState<string | null>(null)
   const [isDragging, setIsDragging] = useState(false)
   const [pending, setPending] = useState<PendingFile | null>(null)
   const [uploaded, setUploaded] = useState<UploadedDoc[]>([])
+  const [isLoadingDocs, setIsLoadingDocs] = useState(false)
+  const [docsError, setDocsError] = useState<string | null>(null)
   const [isUploading, setIsUploading] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const currentYear = new Date().getFullYear()
+  const periodYears = Array.from({ length: 4 }, (_, index) => currentYear - 3 + index)
 
-  useEffect(() => {
-    const bootstrap = async () => {
-      try {
-        const supabase = createClient()
-        const {
-          data: { user },
-        } = await supabase.auth.getUser()
-        setUserId(user?.id ?? null)
+  const bootstrap = useCallback(async () => {
+    setIsBootstrapping(true)
+    setBootstrapError(null)
+    setDocsError(null)
 
-        let storedCompanyId: string | null = null
-        const onbRaw = localStorage.getItem('aistart360_onboarding')
-        if (onbRaw) {
-          const parsed = JSON.parse(onbRaw)
-          storedCompanyId = parsed?.company_id ?? null
-        }
+    try {
+      const supabase = createClient()
+      const {
+        data: { user },
+        error: authError,
+      } = await supabase.auth.getUser()
 
-        if (!storedCompanyId && user?.id) {
-          const response = await fetch(`/api/v1/onboarding/company?user_id=${user.id}`)
-          const result = await response.json()
-          if (result.ok && result.data?.id) {
-            storedCompanyId = result.data.id
-          }
-        }
-
-        setCompanyId(storedCompanyId)
-      } catch {
-        setUserId(null)
+      if (authError) {
+        throw new Error('Не удалось проверить пользователя. Попробуйте ещё раз.')
       }
-    }
+      if (!user) {
+        throw new Error('Не удалось определить пользователя. Обновите страницу или попробуйте ещё раз.')
+      }
 
-    bootstrap()
+      let storedCompanyId: string | null = null
+      const onbRaw =
+        localStorage.getItem(onboardingDraftStorageKey(user.id)) ??
+        localStorage.getItem(onboardingDraftStorageKey())
+      if (onbRaw) {
+        try {
+          const parsed = JSON.parse(onbRaw)
+          storedCompanyId = typeof parsed?.company_id === 'string' ? parsed.company_id : null
+        } catch {
+          storedCompanyId = null
+        }
+      }
+
+      if (!storedCompanyId) {
+        const response = await fetch(`/api/v1/onboarding/company?user_id=${user.id}`)
+        const result = await response.json().catch(() => null)
+        if (!response.ok || !result?.ok) {
+          throw new Error(result?.error || 'Не удалось загрузить данные компании.')
+        }
+        if (result.data?.id) {
+          storedCompanyId = result.data.id
+        }
+      }
+
+      setUserId(user.id)
+      setCompanyId(storedCompanyId)
+    } catch (error: unknown) {
+      setUserId(null)
+      setCompanyId(null)
+      setBootstrapError(error instanceof Error ? error.message : 'Не удалось подготовить загрузку документов.')
+    } finally {
+      setIsBootstrapping(false)
+    }
   }, [])
 
-  const fetchDocs = useCallback(async () => {
+  useEffect(() => {
+    void bootstrap()
+  }, [bootstrap])
+
+  const fetchDocs = useCallback(async (showLoading = false) => {
     if (!userId) return
+    if (showLoading) {
+      setIsLoadingDocs(true)
+      setDocsError(null)
+    }
+
     try {
       const res = await fetch(`/api/v1/onboarding/documents?user_id=${userId}`)
-      const data = await res.json()
-      if (data.ok) setUploaded(data.data)
-    } catch {}
+      const data = await res.json().catch(() => null)
+      if (!res.ok || !data?.ok) {
+        throw new Error(data?.error || 'Не удалось загрузить список документов.')
+      }
+
+      setUploaded(Array.isArray(data.data) ? data.data : [])
+      setDocsError(null)
+    } catch (error: unknown) {
+      setDocsError(error instanceof Error ? error.message : 'Не удалось загрузить список документов.')
+    } finally {
+      if (showLoading) setIsLoadingDocs(false)
+    }
   }, [userId])
 
   useEffect(() => {
     if (!userId) return
-    fetchDocs()
-    const interval = setInterval(fetchDocs, 10_000)
+    void fetchDocs(true)
+    const interval = setInterval(() => void fetchDocs(), 10_000)
     return () => clearInterval(interval)
   }, [userId, fetchDocs])
 
@@ -127,6 +173,7 @@ export default function DocumentsPage() {
   const onDrop = (e: React.DragEvent) => {
     e.preventDefault()
     setIsDragging(false)
+    if (isBootstrapping || bootstrapError || !userId) return
     const file = e.dataTransfer.files[0]
     if (file) handleFile(file)
   }
@@ -141,20 +188,24 @@ export default function DocumentsPage() {
     setIsUploading(true)
     setUploadError(null)
 
+    let storageClient: ReturnType<typeof createClient> | null = null
+    let storagePath: string | null = null
+    let isRegistered = false
+
     try {
-      const sb = createClient()
-      const ext = pending.file.name.split('.').pop()
+      storageClient = createClient()
       const path = `${userId}/${Date.now()}_${pending.file.name}`
 
       // Upload to Supabase Storage
-      const { data: storageData, error: storageErr } = await sb.storage
+      const { data: storageData, error: storageErr } = await storageClient.storage
         .from('client-documents')
         .upload(path, pending.file, { contentType: pending.file.type, upsert: false })
 
       if (storageErr) throw new Error(storageErr.message)
+      storagePath = storageData.path
 
       // Get public URL (private bucket → signed URL)
-      const { data: urlData } = await sb.storage
+      const { data: urlData } = await storageClient.storage
         .from('client-documents')
         .createSignedUrl(storageData.path, 60 * 60 * 24 * 365) // 1 year
 
@@ -174,17 +225,41 @@ export default function DocumentsPage() {
           period_year: pending.period_year ? parseInt(pending.period_year) : null,
         }),
       })
-      const result = await res.json()
-      if (!result.ok) throw new Error(result.error)
+      const result = await res.json().catch(() => null)
+      if (!res.ok || !result?.ok) {
+        throw new Error(result?.error || 'Не удалось зарегистрировать документ.')
+      }
+      isRegistered = true
 
       setPending(null)
+      if (fileInputRef.current) fileInputRef.current.value = ''
       await fetchDocs()
     } catch (e: unknown) {
-      setUploadError(e instanceof Error ? e.message : 'Ошибка загрузки')
+      let cleanupFailed = false
+
+      if (storageClient && storagePath && !isRegistered) {
+        try {
+          const { error: cleanupError } = await storageClient.storage
+            .from('client-documents')
+            .remove([storagePath])
+          cleanupFailed = Boolean(cleanupError)
+        } catch {
+          cleanupFailed = true
+        }
+      }
+
+      const message = e instanceof Error ? e.message : 'Ошибка загрузки'
+      setUploadError(
+        cleanupFailed
+          ? `${message} Не удалось автоматически удалить незавершённую загрузку.`
+          : message
+      )
     } finally {
       setIsUploading(false)
     }
   }
+
+  const canSelectFile = !isBootstrapping && !bootstrapError && Boolean(userId)
 
   return (
     <div className="mx-auto max-w-2xl space-y-6 py-2">
@@ -204,21 +279,69 @@ export default function DocumentsPage() {
           </div>
         </div>
 
+        {isBootstrapping && (
+          <div role="status" className="flex items-center gap-3 rounded-xl border border-white/[0.08] bg-surface-container-low px-4 py-3">
+            <span className="h-4 w-4 animate-spin rounded-full border-2 border-primary/30 border-t-primary" />
+            <p className="text-sm text-on-surface-variant">Подготавливаем загрузку документов...</p>
+          </div>
+        )}
+
+        {bootstrapError && (
+          <div role="alert" className="flex flex-wrap items-center gap-3 rounded-xl border border-error/20 bg-error/10 px-4 py-3">
+            <span className="material-symbols-outlined text-lg text-error">error</span>
+            <p className="min-w-0 flex-1 text-sm text-error">{bootstrapError}</p>
+            <button
+              type="button"
+              onClick={() => void bootstrap()}
+              className="rounded-lg border border-error/30 px-3 py-1.5 text-xs font-medium text-error transition-colors hover:bg-error/10"
+            >
+              Повторить
+            </button>
+          </div>
+        )}
+
         {/* Drop Zone */}
         {!pending && (
           <div
-            onDragEnter={e => { e.preventDefault(); setIsDragging(true) }}
-            onDragOver={e => { e.preventDefault(); setIsDragging(true) }}
+            role="button"
+            tabIndex={canSelectFile ? 0 : -1}
+            aria-label="Выбрать документ для загрузки"
+            aria-disabled={!canSelectFile}
+            onDragEnter={e => {
+              e.preventDefault()
+              if (canSelectFile) setIsDragging(true)
+            }}
+            onDragOver={e => {
+              e.preventDefault()
+              if (canSelectFile) setIsDragging(true)
+            }}
             onDragLeave={() => setIsDragging(false)}
             onDrop={onDrop}
-            onClick={() => fileInputRef.current?.click()}
-            className={`border-2 border-dashed rounded-2xl p-10 text-center cursor-pointer transition-all ${
+            onClick={() => {
+              if (canSelectFile) fileInputRef.current?.click()
+            }}
+            onKeyDown={e => {
+              if (canSelectFile && (e.key === 'Enter' || e.key === ' ')) {
+                e.preventDefault()
+                fileInputRef.current?.click()
+              }
+            }}
+            className={`border-2 border-dashed rounded-2xl p-10 text-center transition-all ${
+              canSelectFile ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'
+            } ${
               isDragging
                 ? 'border-primary/60 bg-primary/5'
                 : 'border-white/[0.12] hover:border-primary/30 hover:bg-surface-container/50'
             }`}
           >
-            <input ref={fileInputRef} type="file" accept={ACCEPTED} onChange={onFileChange} className="hidden" />
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept={ACCEPTED}
+              onChange={onFileChange}
+              disabled={!canSelectFile}
+              className="hidden"
+            />
             <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-4">
               <span className="material-symbols-outlined text-3xl text-primary">cloud_upload</span>
             </div>
@@ -231,7 +354,7 @@ export default function DocumentsPage() {
 
         {/* Error */}
         {uploadError && (
-          <div className="flex items-center gap-2 bg-error/10 border border-error/20 rounded-xl px-4 py-3">
+          <div role="alert" className="flex items-center gap-2 bg-error/10 border border-error/20 rounded-xl px-4 py-3">
             <span className="material-symbols-outlined text-error text-lg">error</span>
             <p className="text-error text-sm">{uploadError}</p>
           </div>
@@ -286,7 +409,7 @@ export default function DocumentsPage() {
                   onChange={e => setPending(p => p ? { ...p, period_year: e.target.value } : p)}
                   className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-on-surface focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 appearance-none"
                 >
-                  {[2023,2024,2025].map(y => <option key={y} value={y}>{y}</option>)}
+                  {periodYears.map(y => <option key={y} value={y}>{y}</option>)}
                 </select>
               </div>
             </div>
@@ -315,24 +438,55 @@ export default function DocumentsPage() {
 
         {/* Document type templates */}
         <div>
-          <h2 className="text-xs font-mono text-on-surface-variant uppercase tracking-widest mb-3">Примеры шаблонов</h2>
+          <h2 className="text-xs font-mono text-on-surface-variant uppercase tracking-widest mb-1">Примеры форматов</h2>
+          <p className="mb-3 text-xs text-on-surface-variant">
+            Файлы шаблонов пока недоступны — используйте названия как ориентир.
+          </p>
           <div className="grid grid-cols-2 gap-2">
             {DOC_TYPES.filter(d => d.example).map(d => (
               <div key={d.value} className="flex items-center gap-2 bg-surface-container-low rounded-xl border border-white/[0.06] p-3">
                 <span className={`material-symbols-outlined text-base text-primary`}>{d.icon}</span>
                 <span className="text-xs text-on-surface flex-1">{d.label}</span>
-                <span className="material-symbols-outlined text-xs text-on-surface-variant/40">download</span>
               </div>
             ))}
           </div>
         </div>
 
         {/* Uploaded documents */}
-        {uploaded.length > 0 && (
-          <div>
-            <h2 className="text-xs font-mono text-on-surface-variant uppercase tracking-widest mb-3">
-              Загружено ({uploaded.length})
-            </h2>
+        <div>
+          <h2 className="text-xs font-mono text-on-surface-variant uppercase tracking-widest mb-3">
+            Загружено ({uploaded.length})
+          </h2>
+
+          {isLoadingDocs && (
+            <div role="status" className="flex items-center gap-3 rounded-xl border border-white/[0.06] bg-surface-container-low px-4 py-3">
+              <span className="h-4 w-4 animate-spin rounded-full border-2 border-primary/30 border-t-primary" />
+              <p className="text-sm text-on-surface-variant">Загружаем список документов...</p>
+            </div>
+          )}
+
+          {docsError && (
+            <div role="alert" className="mb-3 flex flex-wrap items-center gap-3 rounded-xl border border-error/20 bg-error/10 px-4 py-3">
+              <span className="material-symbols-outlined text-lg text-error">error</span>
+              <p className="min-w-0 flex-1 text-sm text-error">{docsError}</p>
+              <button
+                type="button"
+                onClick={() => void fetchDocs(true)}
+                disabled={isLoadingDocs}
+                className="rounded-lg border border-error/30 px-3 py-1.5 text-xs font-medium text-error transition-colors hover:bg-error/10 disabled:opacity-60"
+              >
+                Повторить
+              </button>
+            </div>
+          )}
+
+          {!isLoadingDocs && !docsError && userId && uploaded.length === 0 && (
+            <div className="rounded-xl border border-white/[0.06] bg-surface-container-low px-4 py-5 text-center">
+              <p className="text-sm text-on-surface-variant">Документы пока не загружены.</p>
+            </div>
+          )}
+
+          {uploaded.length > 0 && (
             <div className="space-y-2">
               {uploaded.map(doc => {
                 const st = STATUS_CONFIG[doc.parse_status]
@@ -355,8 +509,8 @@ export default function DocumentsPage() {
                 )
               })}
             </div>
-          </div>
-        )}
+          )}
+        </div>
 
         {/* Actions */}
         <div className="flex gap-3 pt-4 border-t border-white/[0.06]">

@@ -40,49 +40,51 @@ export function ActivityFeed({ items }: ActivityFeedProps) {
   }
 
   return (
-    <div className="bg-surface-container rounded-2xl overflow-hidden border border-white/[0.04]">
-      {/* Table header */}
-      <div className="grid grid-cols-[minmax(140px,2fr)_minmax(120px,3fr)_80px_100px_80px] px-5 py-3 bg-surface-container-high border-b border-white/[0.04]">
+    <div className="overflow-x-auto rounded-2xl border border-white/[0.04] bg-surface-container">
+      <div className="min-w-[620px]">
+        {/* Table header */}
+        <div className="grid grid-cols-[minmax(140px,2fr)_minmax(120px,3fr)_80px_100px_80px] px-5 py-3 bg-surface-container-high border-b border-white/[0.04]">
         {['Пользователь', 'Событие', 'GRI', 'Статус', 'Время'].map(h => (
           <span key={h} className="text-[10px] font-mono uppercase tracking-widest text-on-surface-variant">{h}</span>
         ))}
-      </div>
-
-      {/* Rows */}
-      {items.map((item, i) => (
-        <div
-          key={item.id}
-          className={`
-            grid grid-cols-[minmax(140px,2fr)_minmax(120px,3fr)_80px_100px_80px]
-            items-center px-5 py-3.5
-            border-b border-white/[0.03] last:border-0
-            hover:bg-surface-container-high/50
-            transition-colors duration-150 group
-            ${i % 2 !== 0 ? 'bg-white/[0.01]' : ''}
-          `}
-        >
-          {/* Actor */}
-          <div className="flex items-center gap-2.5 min-w-0">
-            <Avatar name={item.actor} size="sm" />
-            <div className="min-w-0">
-              <p className="text-sm font-medium text-on-surface truncate">{item.actor}</p>
-              <p className="text-[10px] font-mono text-on-surface-variant/60 truncate">{item.actorRole}</p>
-            </div>
-          </div>
-
-          {/* Event */}
-          <p className="text-xs text-on-surface-variant truncate pr-4">{item.event}</p>
-
-          {/* GRI */}
-          <GriBadge value={item.gri} />
-
-          {/* Status */}
-          <StatusPill status={item.status} />
-
-          {/* Time */}
-          <span className="text-[11px] font-mono text-on-surface-variant/60 whitespace-nowrap">{item.time}</span>
         </div>
-      ))}
+
+        {/* Rows */}
+        {items.map((item, i) => (
+          <div
+            key={item.id}
+            className={`
+              grid grid-cols-[minmax(140px,2fr)_minmax(120px,3fr)_80px_100px_80px]
+              items-center px-5 py-3.5
+              border-b border-white/[0.03] last:border-0
+              hover:bg-surface-container-high/50
+              transition-colors duration-150 group
+              ${i % 2 !== 0 ? 'bg-white/[0.01]' : ''}
+            `}
+          >
+            {/* Actor */}
+            <div className="flex items-center gap-2.5 min-w-0">
+              <Avatar name={item.actor} size="sm" />
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-on-surface truncate">{item.actor}</p>
+                <p className="text-[10px] font-mono text-on-surface-variant/60 truncate">{item.actorRole}</p>
+              </div>
+            </div>
+
+            {/* Event */}
+            <p className="text-xs text-on-surface-variant truncate pr-4">{item.event}</p>
+
+            {/* GRI */}
+            <GriBadge value={item.gri} />
+
+            {/* Status */}
+            <StatusPill status={item.status} />
+
+            {/* Time */}
+            <span className="text-[11px] font-mono text-on-surface-variant/60 whitespace-nowrap">{item.time}</span>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }

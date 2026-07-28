@@ -20,9 +20,16 @@ export async function GET(req: NextRequest) {
   // Transform to { question_key: value } map
   const answers: Record<string, unknown> = {}
   const steps: Record<number, boolean> = {}
+  let savedAt: string | null = null
   for (const row of (data ?? [])) {
     answers[row.question_key] = (row.answer as { value: unknown }).value
     steps[row.step] = true
+    if (
+      typeof row.answered_at === 'string'
+      && (!savedAt || Date.parse(row.answered_at) > Date.parse(savedAt))
+    ) {
+      savedAt = row.answered_at
+    }
   }
 
   return NextResponse.json({
@@ -31,6 +38,7 @@ export async function GET(req: NextRequest) {
       answers,
       completed_steps: Object.keys(steps).map(Number),
       current_step: Math.max(0, ...Object.keys(steps).map(Number)) + 1,
+      saved_at: savedAt,
     }
   })
 }
@@ -48,12 +56,14 @@ export async function POST(req: NextRequest) {
 
     const sb = createServerClient()
 
+    const answeredAt = new Date().toISOString()
     const rows = Object.entries(answers).map(([question_key, answer]) => ({
       user_id,
       company_id: company_id ?? null,
       step,
       question_key,
       answer,
+      answered_at: answeredAt,
     }))
 
     // Upsert (insert or update on conflict user_id + question_key)
