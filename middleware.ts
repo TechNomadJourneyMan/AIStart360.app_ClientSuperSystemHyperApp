@@ -7,12 +7,24 @@ import { roleLandingPath, WAITING_ROOM_PATH } from '@/lib/role-landing'
 import { isJourneyPublicDemoEnabled } from '@/lib/journey/public-demo'
 
 const MFA_CHALLENGE_PATH = '/2fa'
-const IS_PUBLIC_JOURNEY_PREVIEW =
-  process.env.NODE_ENV !== 'production' ||
-  process.env.VERCEL_ENV === 'preview' ||
-  isJourneyPublicDemoEnabled()
+// Journey drives paid OpenRouter calls, so anonymous access is an explicit,
+// per-deployment opt-in and nothing else. NODE_ENV / VERCEL_ENV are NOT part of
+// the condition any more: a Vercel Preview URL is publicly reachable, so
+// `VERCEL_ENV === 'preview'` handed every preview deployment to anonymous
+// visitors. With the flag unset the route falls through to the normal Supabase
+// gate below (fail-closed). Local development and the Playwright suite set
+// NEXT_PUBLIC_JOURNEY_PUBLIC_DEMO=1 explicitly.
+const IS_PUBLIC_JOURNEY_DEMO = isJourneyPublicDemoEnabled()
 
 const PUBLIC_PATHS = ['/login', '/register', '/forgot-password', '/auth/callback', '/auth/reset-password']
+
+// Supabase credential-exchange endpoints. They are public (an anonymous visitor
+// arrives from an email link), but they must ALSO run for a visitor who already
+// has a session — email change, OAuth account linking and recovery-while-logged-in
+// all land here with a live session. Without this exemption the "authenticated
+// user on an auth page → landing" redirect and the approval gate fire first and
+// the ?code is dropped unspent.
+const AUTH_EXCHANGE_PATHS = ['/auth/callback', '/auth/reset-password']
 
 const VALID_ROLES = ['admin', 'expert', 'owner', 'client', 'super_admin'] as const
 type ValidRole = typeof VALID_ROLES[number]
@@ -95,10 +107,14 @@ async function resolveRoleAndStatus(
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
 
-  // Allow Next.js internals, static files, API routes
+  // Allow Next.js internals, static files, API routes.
+  // Whole-segment entries use matchesRoute — a bare startsWith would also open
+  // any route that merely shares the prefix ('/terms-of-employment', '/rXYZ').
+  // The remaining startsWith checks are deliberate FILENAME prefixes
+  // (workbox-*.js, swe-worker-*.js, fallback-*.js) or asset directories.
   if (
     pathname.startsWith('/_next') ||
-    pathname.startsWith('/api') ||
+    matchesRoute(pathname, '/api') ||
     // Vercel Workflow invokes its generated step endpoints without an
     // application user session. Sending these internal calls through the
     // dashboard auth gate would redirect them to /login and leave every Meta
@@ -122,24 +138,23 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith('/swe-worker-') ||
     pathname.startsWith('/fallback-') ||
     pathname === '/' ||
-    pathname.startsWith('/presentation') ||
-    // Isolated AI-first lab: anonymous access is limited to local development,
-    // Vercel Preview, or an explicitly configured public demo deployment.
-    // Canonical production keeps the normal Supabase gate because the flag is
-    // absent there.
-    (IS_PUBLIC_JOURNEY_PREVIEW && matchesRoute(pathname, '/journey')) ||
-    pathname.startsWith('/gri-free') ||
+    matchesRoute(pathname, '/presentation') ||
+    // Isolated AI-first lab. It burns paid AI credits, so anonymous access is
+    // granted ONLY by an explicit NEXT_PUBLIC_JOURNEY_PUBLIC_DEMO=1 on that
+    // deployment. Without the flag the route is not listed here at all and the
+    // normal Supabase gate below demands a session.
+    (IS_PUBLIC_JOURNEY_DEMO && matchesRoute(pathname, '/journey')) ||
+    matchesRoute(pathname, '/gri-free') ||
     // Public legal pages — linked from the registration consent checkbox.
-    pathname.startsWith('/terms') ||
-    pathname.startsWith('/privacy') ||
+    matchesRoute(pathname, '/terms') ||
+    matchesRoute(pathname, '/privacy') ||
     // Public read-only shared report links (/r/<token>) — no auth required.
-    pathname === '/r' ||
-    pathname.startsWith('/r/') ||
+    matchesRoute(pathname, '/r') ||
     // Demo acquiring + checkout outcome pages must render for anonymous visitors
     // (the stub is a public payment-flow demo; success/cancel may be hit pre-auth).
-    pathname.startsWith('/checkout/stub') ||
-    pathname.startsWith('/checkout/success') ||
-    pathname.startsWith('/checkout/cancel')
+    matchesRoute(pathname, '/checkout/stub') ||
+    matchesRoute(pathname, '/checkout/success') ||
+    matchesRoute(pathname, '/checkout/cancel')
   ) {
     return NextResponse.next()
   }
@@ -181,8 +196,21 @@ export async function middleware(request: NextRequest) {
     response.headers.set('x-user-role', role)
   }
 
-  // Public auth pages (login, register, etc.)
-  const isPublic = PUBLIC_PATHS.some((p) => pathname.startsWith(p))
+  // ── Supabase credential exchange ──
+  // '/auth/callback' swaps ?code for a session and '/auth/reset-password'
+  // completes a recovery link. Both must reach their handler regardless of the
+  // current session state — every redirect below would consume the request and
+  // leave the code unspent. Blocked/archived/rejected users were already signed
+  // out and redirected above, so this is not a way back in for them.
+  if (matchesAny(pathname, AUTH_EXCHANGE_PATHS)) {
+    return response
+  }
+
+  // Public auth pages (login, register, etc.).
+  // Whole-segment matching: plain startsWith treated '/registerX' and
+  // '/login-help' as public, i.e. any future route sharing an auth-page prefix
+  // silently lost its session gate.
+  const isPublic = matchesAny(pathname, PUBLIC_PATHS)
   const isGigaLogin = pathname === GIGA_LOGIN_PATH
   const hasApprovedPersonalGigaAccess =
     Boolean(user) && role === 'super_admin' && resolved?.status === 'approved'

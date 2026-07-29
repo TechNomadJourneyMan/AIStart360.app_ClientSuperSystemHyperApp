@@ -16,7 +16,10 @@ export default defineConfig({
   webServer: externalBaseURL
     ? undefined
     : {
-        command: `JOURNEY_FORCE_DEMO=1 npm run dev -- --hostname 127.0.0.1 --port ${testPort}`,
+        // NEXT_PUBLIC_JOURNEY_PUBLIC_DEMO=1: /journey is no longer public just
+        // because NODE_ENV is development — middleware.ts now opens it only for
+        // this explicit flag, so the anonymous e2e flows need it set here too.
+        command: `JOURNEY_FORCE_DEMO=1 NEXT_PUBLIC_JOURNEY_PUBLIC_DEMO=1 npm run dev -- --hostname 127.0.0.1 --port ${testPort}`,
         url: baseURL,
         reuseExistingServer: false,
         timeout: 120_000,

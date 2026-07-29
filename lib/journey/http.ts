@@ -18,9 +18,14 @@ export class JourneyAuthenticationError extends Error {
   }
 }
 
-/** Anonymous workspaces are limited to local development and an explicitly
- * shareable Vercel Preview. The production target always binds the token-gated
- * workspace to the authenticated Supabase user. */
+/** Anonymous workspaces are limited to local development and a deployment that
+ * explicitly opts in with NEXT_PUBLIC_JOURNEY_PUBLIC_DEMO=1. Any other build
+ * binds the token-gated workspace to the authenticated Supabase user.
+ *
+ * `VERCEL_ENV === 'preview'` used to be a third exemption. It is gone: a preview
+ * URL is publicly reachable, so every preview deployment let anonymous callers
+ * into the paid /api/v1/journey/chat and /documents routes. Preview builds that
+ * really want the open demo set the flag like any other deployment. */
 export async function resolveJourneyActor(): Promise<string | null> {
   const authConfigured = Boolean(
     process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
@@ -32,7 +37,6 @@ export async function resolveJourneyActor(): Promise<string | null> {
   }
   if (
     process.env.NODE_ENV !== 'production' ||
-    process.env.VERCEL_ENV === 'preview' ||
     isJourneyPublicDemoEnabled()
   ) return null
   throw new JourneyAuthenticationError()

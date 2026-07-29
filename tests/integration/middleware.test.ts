@@ -208,6 +208,75 @@ describe('RBAC Middleware', () => {
   })
 })
 
+// The public allowlist is whole-segment. `PUBLIC_PATHS.some(startsWith)` handed
+// a free pass to every route that merely SHARED a prefix with an auth page.
+describe('Whole-segment public paths', () => {
+  it.each([
+    '/registerX',
+    '/register-invite',
+    '/login-help',
+    '/forgot-password-admin',
+  ])('does not treat %s as a public auth page', async (pathname) => {
+    const req = createRequest(pathname)
+    const res = await middleware(req)
+    expect(res.status).toBe(307)
+    expect(locationOf(res).pathname).toBe('/login')
+  })
+
+  it('still lets an anonymous visitor onto /register and /forgot-password', async () => {
+    for (const pathname of ['/register', '/forgot-password']) {
+      const res = await middleware(createRequest(pathname))
+      expect(res.status).toBe(200)
+    }
+  })
+})
+
+// Both endpoints swap a Supabase credential for a session. They must reach
+// their handler even when the caller ALREADY has one (email change, OAuth
+// linking, recovery-while-logged-in) — otherwise the ?code is dropped unspent.
+describe('Supabase credential exchange', () => {
+  it('lets an anonymous visitor reach /auth/callback', async () => {
+    const res = await middleware(createRequest('/auth/callback'))
+    expect(res.status).toBe(200)
+  })
+
+  it('does not bounce an authenticated user off /auth/callback', async () => {
+    const res = await middleware(createRequest('/auth/callback', 'admin'))
+    expect(res.status).toBe(200)
+    expect(res.headers.get('location')).toBeNull()
+  })
+
+  it('does not send a pending client from /auth/reset-password to the waiting room', async () => {
+    const res = await middleware(createRequest('/auth/reset-password', 'client', 'pending_approval'))
+    expect(res.status).toBe(200)
+    expect(res.headers.get('location')).toBeNull()
+  })
+})
+
+// Journey drives paid OpenRouter calls. NEXT_PUBLIC_JOURNEY_PUBLIC_DEMO is unset
+// in the test env, which is exactly the production default: closed.
+describe('Journey public demo gate', () => {
+  it('requires a session for /journey when the demo flag is unset', async () => {
+    const res = await middleware(createRequest('/journey'))
+    expect(res.status).toBe(307)
+    const location = locationOf(res)
+    expect(location.pathname).toBe('/login')
+    expect(location.searchParams.get('from')).toBe('/journey')
+  })
+
+  // Whole-segment matching: startsWith('/journey') also opened '/journeyXXX'.
+  it.each(['/journey-admin', '/journeyXXX'])('does not open %s either', async (pathname) => {
+    const res = await middleware(createRequest(pathname))
+    expect(res.status).toBe(307)
+    expect(locationOf(res).pathname).toBe('/login')
+  })
+
+  it('still lets an authenticated user into /journey', async () => {
+    const res = await middleware(createRequest('/journey', 'admin'))
+    expect(res.status).toBe(200)
+  })
+})
+
 describe('Approval gate', () => {
   // A pending client must not roam the portal — only the waiting room, the
   // questionnaire and their own data are open until an admin decides.

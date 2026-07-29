@@ -31,6 +31,14 @@ const workflow = vi.hoisted(() => ({
   start: vi.fn(),
 }))
 
+// A WhatsApp `statuses` delivery is first offered to the transactional MyHonor
+// notification ledger and only falls through to the omnichannel repository when
+// it matches nothing. Without this mock the unit test opens a real Supabase
+// service client and the route answers 500 on the network error.
+const myhonor = vi.hoisted(() => ({
+  applyDeliveryStatus: vi.fn(),
+}))
+
 vi.mock('@/lib/omnichannel/repository', () => repository)
 vi.mock('@/lib/inngest', () => ({ inngest: queue }))
 vi.mock('@/lib/omnichannel/processing-jobs', () => ({
@@ -43,6 +51,9 @@ vi.mock('@vercel/functions', () => vercel)
 vi.mock('workflow/api', () => ({ start: workflow.start }))
 vi.mock('@/workflows/process-omnichannel-message', () => ({
   processOmnichannelMessageWorkflow: workflow.processor,
+}))
+vi.mock('@/lib/integrations/myhonor/order-notification-repository', () => ({
+  applyMyHonorOrderNotificationDeliveryStatus: myhonor.applyDeliveryStatus,
 }))
 
 import { GET, POST } from '@/app/api/webhooks/meta/route'
@@ -149,6 +160,11 @@ describe('/api/webhooks/meta', () => {
     repository.claimWebhookEventForProcessing.mockResolvedValue(true)
     repository.transitionWebhookEvent.mockResolvedValue(undefined)
     repository.applyWhatsAppDeliveryStatus.mockResolvedValue(true)
+    myhonor.applyDeliveryStatus.mockResolvedValue({
+      matched: false,
+      notificationId: null,
+      state: null,
+    })
     repository.ingestNormalizedMessage.mockResolvedValue({
       duplicate: false,
       messageId: 'message-1',
@@ -510,6 +526,48 @@ describe('/api/webhooks/meta', () => {
     }))
     expect(repository.ingestNormalizedMessage).not.toHaveBeenCalled()
     expect(queue.send).not.toHaveBeenCalled()
+  })
+
+  it('keeps a matched MyHonor delivery status out of the omnichannel ledger', async () => {
+    process.env.META_APP_SECRET = 'app-secret'
+    myhonor.applyDeliveryStatus.mockResolvedValue({
+      matched: true,
+      notificationId: '00000000-0000-4000-8000-000000000001',
+      state: 'delivered',
+    })
+    const payload = {
+      object: 'whatsapp_business_account',
+      entry: [
+        {
+          id: 'waba-1',
+          changes: [
+            {
+              field: 'messages',
+              value: {
+                metadata: { phone_number_id: 'phone-number-1' },
+                statuses: [
+                  {
+                    id: 'wamid.myhonor-1',
+                    recipient_id: '77001234567',
+                    status: 'delivered',
+                    timestamp: '1720000000',
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    }
+
+    const response = await POST(postRequest(JSON.stringify(payload), 'app-secret'))
+
+    expect(response.status).toBe(200)
+    expect(myhonor.applyDeliveryStatus).toHaveBeenCalledWith(expect.objectContaining({
+      providerMessageId: 'wamid.myhonor-1',
+      status: 'delivered',
+    }))
+    expect(repository.applyWhatsAppDeliveryStatus).not.toHaveBeenCalled()
   })
 
   it('marks the audit failed and asks Meta to retry when enqueueing fails', async () => {

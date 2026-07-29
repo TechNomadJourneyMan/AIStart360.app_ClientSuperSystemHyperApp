@@ -19,14 +19,32 @@
 
 Эти переменные должны быть прописаны в панели управления Vercel (**Settings > Environment Variables**).
 
-> Ранее раскрытые учётные данные необходимо немедленно отозвать и заменить новыми.
+> ## СКОМПРОМЕТИРОВАНО — ТРЕБУЕТСЯ ПЕРЕВЫПУСК
+>
+> Боевой **Google OAuth client secret** (`AUTH_GOOGLE_SECRET`) был закоммичен
+> в этот файл открытым текстом. Из рабочей копии значение удалено, **но оно
+> навсегда осталось в истории Git** и доступно любому, у кого есть клон или
+> доступ к remote. Считайте его публичным.
+>
+> Что сделать (в этом порядке):
+> 1. Google Cloud Console → **APIs & Services > Credentials** → ваш OAuth 2.0
+>    Client ID → **Reset secret**. Старое значение перестанет работать.
+> 2. Новое значение положить **только** в Vercel как sensitive Environment
+>    Variable (`AUTH_GOOGLE_SECRET`) и в локальный `.env.local` (в `.gitignore`).
+> 3. `AUTH_SECRET` перевыпустить тоже (`openssl rand -base64 32`) — он лежал
+>    рядом в том же публичном документе.
+> 4. Проверить в Google Cloud audit log, не было ли обращений с этим client
+>    secret из неизвестных источников.
+>
+> Никогда не вставляйте реальные значения ключей в этот файл — только описание,
+> где их взять.
 
 | Ключ | Значение (Пример/Описание) |
 | :--- | :--- |
-| `AUTH_SECRET` | Сгенерируйте новый случайный секрет и сохраните его только как sensitive Environment Variable в Vercel; не добавляйте значение в Git. |
+| `AUTH_SECRET` | Сгенерируйте новый случайный секрет (`openssl rand -base64 32`) и сохраните его только как sensitive Environment Variable в Vercel; не добавляйте значение в Git. |
 | `AUTH_URL` | `https://ai-start360-app-client-super-system-xi.vercel.app` |
-| `AUTH_GOOGLE_ID` | `252668319413-io2k9jmvq5pct1amkrs376cphk6ofj36.apps.googleusercontent.com` |
-| `AUTH_GOOGLE_SECRET` | Получите значение в Google Cloud Console и сохраните его только как sensitive Environment Variable в Vercel; не добавляйте значение в Git. |
+| `AUTH_GOOGLE_ID` | `252668319413-io2k9jmvq5pct1amkrs376cphk6ofj36.apps.googleusercontent.com` (client ID не является секретом, ротация не требуется) |
+| `AUTH_GOOGLE_SECRET` | `<REDACTED — СКОМПРОМЕТИРОВАН, ПЕРЕВЫПУСТИТЬ>` — прежнее значение утекло в историю Git (см. предупреждение выше). Получите новое в Google Cloud Console и сохраните только как sensitive Environment Variable в Vercel; не добавляйте значение в Git. |
 | `DATABASE_URL` | Ссылка на Supabase (Transaction Pooler, порт 6543) |
 | `DIRECT_URL` | Ссылка на Supabase (Direct Connection, порт 5432) |
 
