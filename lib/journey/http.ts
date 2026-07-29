@@ -10,6 +10,8 @@ import {
 } from './persistence'
 
 export const JOURNEY_DEVICE_COOKIE = 'aistart_journey_device'
+export const JOURNEY_DEVICE_COOKIE_MAX_AGE_SECONDS = 90 * 24 * 60 * 60
+export const JOURNEY_SERVER_DEADLINE_MS = 18_000
 
 export class JourneyAuthenticationError extends Error {
   constructor(message = 'В production рабочая область доступна только после входа.') {
@@ -27,7 +29,10 @@ export async function resolveJourneyActor(): Promise<string | null> {
   )
   if (authConfigured) {
     const supabase = await createClient()
-    const { data: { user }, error } = await supabase.auth.getUser()
+    const { data: { user }, error } = await withJourneyDeadline(
+      () => supabase.auth.getUser(),
+      10_000,
+    )
     if (!error && user) return user.id
   }
   if (
@@ -36,6 +41,27 @@ export async function resolveJourneyActor(): Promise<string | null> {
     isJourneyPublicDemoEnabled()
   ) return null
   throw new JourneyAuthenticationError()
+}
+
+export async function withJourneyDeadline<T>(
+  operation: () => Promise<T>,
+  timeoutMs = JOURNEY_SERVER_DEADLINE_MS,
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      operation(),
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => {
+          reject(new JourneyPersistenceUnavailableError(
+            'Journey не ответил вовремя. Повторите попытку.',
+          ))
+        }, timeoutMs)
+      }),
+    ])
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
 }
 
 export function identityFromRequest(

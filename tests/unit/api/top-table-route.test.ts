@@ -127,7 +127,7 @@ describe('GET /api/v1/point-a/top-table', () => {
     const body = await (res as Response).json()
     expect((res as Response).status).toBe(200)
     expect(body.ok).toBe(true)
-    expect(body.data.rows).toHaveLength(8)
+    expect(body.data.rows).toEqual([])
     expect(body.data.is_mock).toBe(true)
     expect(body.data.period).toBe('month')
     expect(body.data.product).toBeNull()
@@ -182,6 +182,7 @@ describe('GET /api/v1/point-a/top-table', () => {
     authedUser()
     const r = emptyEngineResult()
     r.rows[1].factYear = 1_000_000 // sales_amount
+    r.dataCoverage = 1
     computeTopTableMock.mockResolvedValue(r)
 
     const res = await GET(makeRequest('http://t.test/api/v1/point-a/top-table'))

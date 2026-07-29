@@ -313,6 +313,7 @@ export function JourneyWorkspace({
           ? nextIdentity
           : { workspaceId: result.state.workspaceId }
         if (resolvedIdentity.workspaceId !== nextIdentity.workspaceId) {
+          clearJourneyStateCache(nextIdentity.workspaceId)
           identityRef.current = resolvedIdentity
           setIdentity(resolvedIdentity)
           writeStoredIdentity(resolvedIdentity, identityStorageKey)

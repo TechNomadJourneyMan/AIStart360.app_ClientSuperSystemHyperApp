@@ -28,6 +28,12 @@ import {
   formatKztCompact,
   currentMonthLabel,
 } from '@/lib/format/kzt'
+import {
+  annualRevenueTargetToMonthly,
+  deriveGrowthSnapshotValues,
+  extractMonthlyRevenue,
+  patchDashboardResource,
+} from '@/lib/dashboard/growth-snapshot'
 import { GRIAssessmentRadarWidget } from './GRIAssessmentRadarWidget'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -53,11 +59,6 @@ interface GriAssessmentData {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-function pct(value: number, max: number): number {
-  if (!max || !Number.isFinite(max)) return 0
-  return Math.max(0, Math.min(100, Math.round((value / max) * 100)))
-}
-
 function progressColor(p: number): string {
   if (p >= 75) return 'bg-primary'
   if (p >= 40) return 'bg-[#e87a35]'
@@ -92,6 +93,7 @@ export default function GrowthSnapshotHero() {
   const [draft12mEdit, setDraft12mEdit] = useState('')
   const [draft3yEdit, setDraft3yEdit] = useState('')
   const [savingTile, setSavingTile] = useState(false)
+  const [tileSaveErr, setTileSaveErr] = useState<string | null>(null)
 
   const monthLabel = useMemo(() => currentMonthLabel(), [])
 
@@ -113,16 +115,7 @@ export default function GrowthSnapshotHero() {
       const griJ = await griRes.json().catch(() => ({}))
       const mJ = await mRes.json().catch(() => ({}))
 
-      // Live monthly revenue — first hit among the candidate metric keys.
-      const items: Array<{ id?: string; value?: number | null; unit?: string }> =
-        (mJ?.ok && Array.isArray(mJ.data?.items) ? mJ.data.items : []) ?? []
-      const revenueItem = items.find((it) => {
-        const v = typeof it.value === 'number' ? it.value : null
-        return v !== null && v > 0
-      })
-      if (revenueItem && typeof revenueItem.value === 'number') {
-        setLiveMonthlyRevenue(revenueItem.value)
-      }
+      setLiveMonthlyRevenue(extractMonthlyRevenue(mJ))
 
       if (tJ?.ok) setTargets(tJ.data)
       if (gJ?.ok) setPeriodGoals(gJ.data)
@@ -161,36 +154,19 @@ export default function GrowthSnapshotHero() {
   // ── Derived values ────────────────────────────────────────────────────────
   const target12m = targets?.target_revenue_12m_kzt ?? null
   const target3y = targets?.target_revenue_3y_kzt ?? null
-  const monthlyPlan12 = target12m ? Math.round(target12m / 12) : null
-  const monthlyPlan3y = target3y ? Math.round(target3y / 36) : null
+  const monthlyPlan12 = annualRevenueTargetToMonthly(target12m)
+  const monthlyPlan3y = annualRevenueTargetToMonthly(target3y)
 
-  // Prefer real revenue from the metrics resolver (documents/anketa);
-  // fall back to a 58%-of-plan heuristic only if the resolver hasn't
-  // produced a value yet. `isLiveRevenue` controls the "≈" prefix.
-  const isLiveRevenue = liveMonthlyRevenue !== null && liveMonthlyRevenue > 0
-  const currentMonthly: number | null = isLiveRevenue
-    ? Math.round(liveMonthlyRevenue!)
-    : monthlyPlan12
-      ? Math.round(monthlyPlan12 * 0.58)
-      : null
-  const runRate12 = currentMonthly ? currentMonthly * 12 : null
-
-  const progressToPlan = currentMonthly && monthlyPlan12
-    ? pct(currentMonthly, monthlyPlan12)
-    : 0
-  const progressTo12 = currentMonthly && monthlyPlan12
-    ? pct(currentMonthly, monthlyPlan12)
-    : 0
-  const progressTo3y = currentMonthly && monthlyPlan3y
-    ? pct(currentMonthly, monthlyPlan3y)
-    : 0
-
-  const gap12 = currentMonthly && monthlyPlan12
-    ? currentMonthly - monthlyPlan12
-    : null
-  const gap3y = currentMonthly && monthlyPlan3y
-    ? currentMonthly - monthlyPlan3y
-    : null
+  const {
+    currentMonthly,
+    runRate12,
+    progressToPlan,
+    progressTo12,
+    progressTo3y,
+    gap12,
+    gap3y,
+  } = deriveGrowthSnapshotValues(liveMonthlyRevenue, monthlyPlan12, monthlyPlan3y)
+  const isLiveRevenue = currentMonthly !== null
 
   const hasAnyTarget = Boolean(target12m || target3y)
   const hasAnyPeriodGoal = Boolean(periodGoals.goal_week || periodGoals.goal_month)
@@ -213,33 +189,18 @@ export default function GrowthSnapshotHero() {
         // Store as period-goals.goal_month (1-year monthly hand-typed value)
         // AND as target_revenue_12m_kzt (so dashboards see the annual plan).
         tasks.push(
-          fetch('/api/v1/companies/period-goals', {
-            method: 'PATCH',
-            credentials: 'include',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              goal_month: `${formatKzt(parsed1y)} / мес`,
-            }),
+          patchDashboardResource('/api/v1/companies/period-goals', {
+            goal_month: `${formatKzt(parsed1y)} / мес`,
           }),
-          fetch('/api/v1/companies/targets', {
-            method: 'PATCH',
-            credentials: 'include',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              target_revenue_12m_kzt: parsed1y * 12,
-            }),
+          patchDashboardResource('/api/v1/companies/targets', {
+            target_revenue_12m_kzt: parsed1y * 12,
           }),
         )
       }
       if (parsed3y !== null) {
         tasks.push(
-          fetch('/api/v1/companies/targets', {
-            method: 'PATCH',
-            credentials: 'include',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              target_revenue_3y_kzt: parsed3y * 12,
-            }),
+          patchDashboardResource('/api/v1/companies/targets', {
+            target_revenue_3y_kzt: parsed3y * 12,
           }),
         )
       }
@@ -254,17 +215,20 @@ export default function GrowthSnapshotHero() {
 
   // ── Tile edit popovers (left column) ──────────────────────────────────────
   const openEdit12 = () => {
+    setTileSaveErr(null)
     setDraft12mEdit(target12m ? formatKzt(target12m) : '')
     setEditing12(true)
     setEditing3y(false)
   }
   const openEdit3y = () => {
+    setTileSaveErr(null)
     setDraft3yEdit(target3y ? formatKzt(target3y) : '')
     setEditing3y(true)
     setEditing12(false)
   }
   const saveTile = async (which: '12' | '3y') => {
     setSavingTile(true)
+    setTileSaveErr(null)
     try {
       const value = which === '12'
         ? parseAmount(draft12mEdit)
@@ -272,26 +236,20 @@ export default function GrowthSnapshotHero() {
       const body = which === '12'
         ? { target_revenue_12m_kzt: value }
         : { target_revenue_3y_kzt: value }
-      const r = await fetch('/api/v1/companies/targets', {
-        method: 'PATCH',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      })
-      const j = await r.json()
-      if (j?.ok) {
-        setTargets((prev) => prev
-          ? {
-              ...prev,
-              ...(which === '12'
-                ? { target_revenue_12m_kzt: value }
-                : { target_revenue_3y_kzt: value }),
-            }
-          : { target_revenue_12m_kzt: which === '12' ? value : null, target_revenue_3y_kzt: which === '3y' ? value : null }
-        )
-        setEditing12(false)
-        setEditing3y(false)
-      }
+      await patchDashboardResource('/api/v1/companies/targets', body)
+      setTargets((prev) => prev
+        ? {
+            ...prev,
+            ...(which === '12'
+              ? { target_revenue_12m_kzt: value }
+              : { target_revenue_3y_kzt: value }),
+          }
+        : { target_revenue_12m_kzt: which === '12' ? value : null, target_revenue_3y_kzt: which === '3y' ? value : null }
+      )
+      setEditing12(false)
+      setEditing3y(false)
+    } catch (error) {
+      setTileSaveErr(error instanceof Error ? error.message : 'Не удалось сохранить цель')
     } finally {
       setSavingTile(false)
     }
@@ -369,15 +327,12 @@ export default function GrowthSnapshotHero() {
                       )}
                     </div>
                     <p className="font-mono text-5xl font-black text-on-surface leading-[0.95] tracking-tight">
-                      {currentMonthly
-                        ? `${isLiveRevenue ? '' : '≈'}${formatKztCompact(currentMonthly)}`
+                      {currentMonthly !== null
+                        ? formatKztCompact(currentMonthly)
                         : '—'}
                     </p>
                     <p className="text-[11px] text-on-surface-variant font-mono mt-2">
                       выручка / мес · {monthLabel}
-                      {!isLiveRevenue && currentMonthly && (
-                        <span className="text-amber-400/80"> · оценка</span>
-                      )}
                     </p>
                   </div>
                   <div className="flex-1 min-w-[180px]">
@@ -395,19 +350,21 @@ export default function GrowthSnapshotHero() {
                       </Link>
                     </div>
                     <p className="text-xs font-mono text-on-surface">
-                      ~{formatKztCompact(runRate12)}
+                      {runRate12 !== null ? `≈${formatKztCompact(runRate12)}` : '—'}
                       {target12m && (
                         <span className="text-on-surface-variant"> vs план {formatKztCompact(target12m)}</span>
                       )}
                     </p>
                     <div className="mt-2 h-1.5 bg-surface-container-high rounded-full overflow-hidden">
                       <div
-                        className={`h-full ${progressColor(progressToPlan)} rounded-full transition-all duration-700`}
-                        style={{ width: `${progressToPlan}%` }}
+                        className={`h-full ${progressColor(progressToPlan ?? 0)} rounded-full transition-all duration-700`}
+                        style={{ width: `${progressToPlan ?? 0}%` }}
                       />
                     </div>
                     <p className="text-[10px] font-mono text-on-surface-variant mt-1">
-                      {progressToPlan}% годового плана
+                      {progressToPlan !== null
+                        ? `${progressToPlan}% годового плана`
+                        : 'Нет фактических данных'}
                     </p>
                   </div>
                 </div>
@@ -455,12 +412,14 @@ export default function GrowthSnapshotHero() {
                       </p>
                       <div className="mt-2 h-1.5 bg-surface-container-high rounded-full overflow-hidden">
                         <div
-                          className={`h-full ${progressColor(progressTo12)} rounded-full transition-all duration-700`}
-                          style={{ width: `${progressTo12}%` }}
+                          className={`h-full ${progressColor(progressTo12 ?? 0)} rounded-full transition-all duration-700`}
+                          style={{ width: `${progressTo12 ?? 0}%` }}
                         />
                       </div>
                       <p className="text-[10px] font-mono text-on-surface-variant mt-1">
-                        {progressTo12}% к цели 1Y
+                        {progressTo12 !== null
+                          ? `${progressTo12}% к цели 1Y`
+                          : 'Нет фактических данных'}
                       </p>
                     </div>
                   </div>
@@ -495,6 +454,11 @@ export default function GrowthSnapshotHero() {
                       >
                         Отмена
                       </button>
+                      {tileSaveErr && (
+                        <p className="basis-full text-[10px] text-error font-mono">
+                          {tileSaveErr}
+                        </p>
+                      )}
                     </div>
                   )}
                 </div>
@@ -524,7 +488,7 @@ export default function GrowthSnapshotHero() {
                         {monthlyPlan3y ? formatKztCompact(monthlyPlan3y) : '—'}
                       </p>
                       <p className="text-[11px] text-on-surface-variant font-mono mt-1.5">
-                        /мес · {target3y ? formatKztCompact(Math.round(target3y / 3)) : '—'} / год
+                        /мес · {target3y ? formatKztCompact(target3y) : '—'} / год
                       </p>
                     </div>
                     <div className="flex-1 min-w-[180px]">
@@ -542,12 +506,14 @@ export default function GrowthSnapshotHero() {
                       </p>
                       <div className="mt-2 h-1.5 bg-surface-container-high rounded-full overflow-hidden">
                         <div
-                          className={`h-full ${progressColor(progressTo3y)} rounded-full transition-all duration-700`}
-                          style={{ width: `${progressTo3y}%` }}
+                          className={`h-full ${progressColor(progressTo3y ?? 0)} rounded-full transition-all duration-700`}
+                          style={{ width: `${progressTo3y ?? 0}%` }}
                         />
                       </div>
                       <p className="text-[10px] font-mono text-on-surface-variant mt-1">
-                        {progressTo3y}% к цели 3Y
+                        {progressTo3y !== null
+                          ? `${progressTo3y}% к цели 3Y`
+                          : 'Нет фактических данных'}
                       </p>
                     </div>
                   </div>
@@ -556,7 +522,7 @@ export default function GrowthSnapshotHero() {
                     <div className="mt-3 pt-3 border-t border-white/[0.06] flex flex-wrap items-end gap-2">
                       <div className="flex-1 min-w-[180px]">
                         <label className="block text-[9px] font-mono text-on-surface-variant uppercase tracking-widest mb-1">
-                          Новая цель (₸ / 3 года суммарно)
+                          Новая цель (₸ / год на горизонте 3 лет)
                         </label>
                         <input
                           type="text"
@@ -582,6 +548,11 @@ export default function GrowthSnapshotHero() {
                       >
                         Отмена
                       </button>
+                      {tileSaveErr && (
+                        <p className="basis-full text-[10px] text-error font-mono">
+                          {tileSaveErr}
+                        </p>
+                      )}
                     </div>
                   )}
                 </div>
@@ -666,8 +637,8 @@ export default function GrowthSnapshotHero() {
 
             <div className="flex items-center justify-between mt-3 pt-2.5 border-t border-white/[0.06] gap-2 flex-wrap">
               <p className="text-[10px] font-mono text-on-surface-variant leading-relaxed">
-                Текущая позиция: {currentMonthly ? `${isLiveRevenue ? '' : '≈'}${formatKztCompact(currentMonthly)}/мес` : '—'}
-                {' · '}Прогноз год: {runRate12 ? `~${formatKztCompact(runRate12)}` : '—'}
+                Текущая позиция: {currentMonthly !== null ? `${formatKztCompact(currentMonthly)}/мес` : '—'}
+                {' · '}Прогноз год: {runRate12 !== null ? `≈${formatKztCompact(runRate12)}` : '—'}
                 {' · '}Разрыв до 1Y: {gap12 !== null ? `${formatKztCompact(gap12)}/мес` : '—'}
               </p>
             </div>

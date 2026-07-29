@@ -42,11 +42,13 @@ export interface JourneyDeviceRedeemResult {
   state: JourneyWorkspaceView
 }
 
+export const JOURNEY_REQUEST_TIMEOUT_MS = 20_000
+
 export async function getJourney(
   identity: JourneyIdentity,
   fallback: JourneyWorkspaceView,
 ): Promise<JourneyApiResult> {
-  const response = await fetch('/api/v1/journey', {
+  const response = await journeyFetch('/api/v1/journey', {
     cache: 'no-store',
     credentials: 'same-origin',
     headers: journeyHeaders(identity),
@@ -59,7 +61,7 @@ export async function patchJourney(
   identity: JourneyIdentity,
   state: JourneyWorkspaceView,
 ): Promise<JourneyApiResult> {
-  const response = await fetch('/api/v1/journey', {
+  const response = await journeyFetch('/api/v1/journey', {
     method: 'PATCH',
     credentials: 'same-origin',
     headers: {
@@ -81,7 +83,7 @@ export async function postJourneyMessage(
   state: JourneyWorkspaceView,
   message: string,
 ): Promise<JourneyApiResult> {
-  const response = await fetch('/api/v1/journey/chat', {
+  const response = await journeyFetch('/api/v1/journey/chat', {
     method: 'POST',
     credentials: 'same-origin',
     headers: {
@@ -94,7 +96,7 @@ export async function postJourneyMessage(
       state,
       message,
     }),
-  })
+  }, 45_000)
   const payload = await readJson(response)
   return { state: normalizeJourneyEnvelope(payload, state), serverAvailable: true }
 }
@@ -110,12 +112,12 @@ export async function postJourneyDocument(
   body.set('state', JSON.stringify(state))
   body.set('file', file)
 
-  const response = await fetch('/api/v1/journey/documents', {
+  const response = await journeyFetch('/api/v1/journey/documents', {
     method: 'POST',
     credentials: 'same-origin',
     headers: journeyHeaders(identity),
     body,
-  })
+  }, 60_000)
   const payload = await readJson(response)
   return { state: normalizeJourneyEnvelope(payload, state), serverAvailable: true }
 }
@@ -123,7 +125,7 @@ export async function postJourneyDocument(
 export async function createJourneyConnectCode(
   identity: JourneyIdentity,
 ): Promise<JourneyConnectCodeResult> {
-  const response = await fetch('/api/v1/journey/connect/code', {
+  const response = await journeyFetch('/api/v1/journey/connect/code', {
     method: 'POST',
     credentials: 'same-origin',
     headers: {
@@ -155,7 +157,7 @@ export async function redeemJourneyConnectCode(
   deviceLabel: string,
   fallback: JourneyWorkspaceView,
 ): Promise<JourneyDeviceRedeemResult> {
-  const response = await fetch('/api/v1/journey/connect/redeem', {
+  const response = await journeyFetch('/api/v1/journey/connect/redeem', {
     method: 'POST',
     credentials: 'same-origin',
     headers: { 'content-type': 'application/json' },
@@ -173,6 +175,29 @@ export async function redeemJourneyConnectCode(
     throw new JourneyRequestError('Ответ синхронизации относится к другому пространству.')
   }
   return { workspaceId, state }
+}
+
+export async function journeyFetch(
+  input: RequestInfo | URL,
+  init: RequestInit = {},
+  timeoutMs = JOURNEY_REQUEST_TIMEOUT_MS,
+  fetchImpl: typeof fetch = fetch,
+): Promise<Response> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    return await fetchImpl(input, { ...init, signal: controller.signal })
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw new JourneyRequestError(
+        'Journey API не ответил вовремя. Повторите попытку.',
+        503,
+      )
+    }
+    throw error
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
 function journeyHeaders(identity: JourneyIdentity): Record<string, string> {

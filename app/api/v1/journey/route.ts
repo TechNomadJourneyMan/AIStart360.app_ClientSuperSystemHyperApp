@@ -3,10 +3,15 @@ import { hasOpenRouterKey } from '@/lib/ai/structured'
 import { createEmptyJourneyState } from '@/lib/journey/demo'
 import {
   identityFromRequest,
+  JOURNEY_DEVICE_COOKIE,
+  JOURNEY_DEVICE_COOKIE_MAX_AGE_SECONDS,
   journeyErrorResponse,
   resolveJourneyActor,
+  withJourneyDeadline,
   withJourneyRequestIdentity,
 } from '@/lib/journey/http'
+import { resolveAuthenticatedJourneyState } from '@/lib/journey/auth-bootstrap'
+import { loadJourneyStateFromOnboarding } from '@/lib/journey/onboarding-seed'
 import { loadJourneyState, saveJourneyState } from '@/lib/journey/persistence'
 import { enforceJourneyStatePolicy } from '@/lib/journey/policy'
 import { journeyPatchRequestSchema, journeyStateSchema } from '@/lib/journey/schema'
@@ -16,18 +21,57 @@ export const dynamic = 'force-dynamic'
 
 export async function GET(request: Request) {
   try {
-    const actorUserId = await resolveJourneyActor()
-    const identity = identityFromRequest(request)
-    const loaded = await loadJourneyState(identity, actorUserId)
-    const base = loaded.state ?? createEmptyJourneyState(identity.workspaceId)
+    const resolved = await withJourneyDeadline(async () => {
+      const actorUserId = await resolveJourneyActor()
+      const identity = identityFromRequest(request)
+      if (actorUserId) {
+        const authenticated = await resolveAuthenticatedJourneyState({
+          identity,
+          actorUserId,
+          buildInitialState: (workspaceId) => (
+            loadJourneyStateFromOnboarding(actorUserId, workspaceId)
+          ),
+        })
+        return {
+          identity,
+          state: authenticated.state,
+          persistence: authenticated.persistence,
+          deviceToken: authenticated.deviceToken,
+        }
+      }
+      const loaded = await loadJourneyState(identity, null)
+      return {
+        identity,
+        state: loaded.state,
+        persistence: loaded.persistence,
+        deviceToken: undefined,
+      }
+    })
+    const base = resolved.state ?? createEmptyJourneyState(resolved.identity.workspaceId)
     const state = journeyStateSchema.parse({
       ...base,
       provider: hasOpenRouterKey()
         ? { mode: 'live', label: 'AI готов · structured output' }
         : { mode: 'demo', label: 'Демо-режим · OPENROUTER_API_KEY не задан' },
-      persistence: loaded.persistence,
+      persistence: resolved.persistence,
     })
-    return NextResponse.json({ state, provider: state.provider, persistence: state.persistence })
+    const response = NextResponse.json({
+      state,
+      provider: state.provider,
+      persistence: state.persistence,
+      credentialMode: resolved.deviceToken ? 'cookie' : 'existing',
+    })
+    if (resolved.deviceToken) {
+      response.cookies.set(JOURNEY_DEVICE_COOKIE, resolved.deviceToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'strict',
+        path: '/api/v1/journey',
+        maxAge: JOURNEY_DEVICE_COOKIE_MAX_AGE_SECONDS,
+      })
+    }
+    response.headers.set('cache-control', 'no-store')
+    return response
   } catch (error) {
     return journeyErrorResponse(error)
   }
