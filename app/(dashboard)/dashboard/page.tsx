@@ -17,6 +17,7 @@ import { OnboardingStatusBadges } from '@/components/dashboard/OnboardingStatusB
 import PointAIntelligenceSection from '@/components/point-a/PointAIntelligenceSection'
 import PointADashboardSectionsBoundary from '@/components/dashboard/PointADashboardSections'
 import GrowthSnapshotHero from '@/components/dashboard/GrowthSnapshotHero'
+import MyHonorIntegrationStatus from '@/components/dashboard/MyHonorIntegrationStatus'
 import { NextBestActionCard } from '@/components/dashboard/NextBestActionCard'
 import { FirstRunWizard } from '@/components/dashboard/FirstRunWizard'
 import KeyMetricsHero from '@/components/point-a/v2/KeyMetricsHero'
@@ -336,6 +337,9 @@ export default async function DashboardPage() {
                 GRI CTA, consultation link, and onboarding-progress shortcuts.
                 Replaces the previous AI-insights carousel + CTA stack. */}
             <GrowthSnapshotHero />
+            <div className="mt-4">
+              <MyHonorIntegrationStatus />
+            </div>
 
             {pointA ? (
               /* Inline AIInsightsCarousel removed — InsightsFeed below owns the

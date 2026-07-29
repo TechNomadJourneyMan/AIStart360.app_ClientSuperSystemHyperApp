@@ -1,6 +1,29 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import type { MetricSummary } from '@/types/metrics'
+import {
+  buildOrderMetricSummaries,
+  loadEcommerceAnalytics,
+} from '@/lib/point-a/v3/ecommerce-orders-loader'
+import type { TopTablePeriod } from '@/lib/point-a/v3/top-table'
+
+const ALLOWED_PERIODS = new Set<TopTablePeriod>([
+  'day',
+  'week',
+  'month',
+  'quarter',
+  'year',
+])
+
+function response(
+  body: Record<string, unknown>,
+  status = 200,
+): NextResponse {
+  return NextResponse.json(body, {
+    status,
+    headers: { 'Cache-Control': 'private, no-store' },
+  })
+}
 
 // GET /api/v1/metrics — legacy KPI summary endpoint.
 //
@@ -18,27 +41,49 @@ import type { MetricSummary } from '@/types/metrics'
 // empty list rather than an unattributable snapshot. See docs/metrics-data-lineage.md.
 
 export async function GET(req: Request) {
-  // Echo the standard Point A filter triplet so the client cache key varies per filter.
   const { searchParams } = new URL(req.url)
-  void searchParams.get('period')
-  void searchParams.get('product')
-  void searchParams.get('manager')
+  const requestedPeriod = searchParams.get('period') as TopTablePeriod | null
+  const period =
+    requestedPeriod && ALLOWED_PERIODS.has(requestedPeriod)
+      ? requestedPeriod
+      : 'month'
+  const productId = searchParams.get('product')
+  const managerId = searchParams.get('manager')
 
   try {
     // Require an authenticated session — never serve metric data anonymously.
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) {
-      return NextResponse.json({ source: 'empty', data: [] as MetricSummary[] }, { status: 401 })
+      return response(
+        { source: 'empty', data: [] as MetricSummary[] },
+        401,
+      )
     }
 
-    // No safely-attributable per-user financial snapshot source exists yet, so
-    // return an honest empty list rather than the global, org-keyed legacy rows.
-    return NextResponse.json({ source: 'empty', data: [] as MetricSummary[] })
+    const ecommerce = await loadEcommerceAnalytics(supabase, user.id, {
+      productId,
+    })
+    const rows = managerId ? [] : ecommerce.selectedSalesRows
+    const data = buildOrderMetricSummaries(rows, period)
+    if (data.length === 0) {
+      return response({
+        source: 'empty',
+        data: [] as MetricSummary[],
+        connected: ecommerce.available,
+        synced_at: ecommerce.syncedAt,
+      })
+    }
+    return response({
+      source: 'external',
+      provider: 'myhonor',
+      data,
+      synced_at: ecommerce.syncedAt,
+    })
   } catch (err) {
     console.error('[api/v1/metrics]', err)
     // Return a real 5xx so the client (fetchMetrics throws on !res.ok) and
     // monitoring can distinguish a server failure from an honestly-empty list.
-    return NextResponse.json({ source: 'error', error: 'metrics_failed' }, { status: 500 })
+    return response({ source: 'error', error: 'metrics_failed' }, 500)
   }
 }

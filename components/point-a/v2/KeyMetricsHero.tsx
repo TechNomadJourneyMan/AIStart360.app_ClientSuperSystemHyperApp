@@ -87,29 +87,31 @@ function pct(n: number, digits = 0): string {
   return `${sign}${n.toFixed(digits)}%`
 }
 
+function comparison(m: MetricSummary): string {
+  return `${pct(m.trend ?? 0, 1)} ${m.trendLabel || 'к предыдущему периоду'}`
+}
+
 const HERO_METRICS: HeroSpec[] = [
   {
     apiId: 'revenue', // matches /api/v1/metrics summary
-    label: 'Выручка / мес',
+    label: 'Выручка за период',
     icon: 'payments',
     rule: (m) => {
       if (!m) return { zone: 'unknown', deltaLabel: '—' }
       const trend = m.trend ?? 0
-      // Heuristic: trend == "к плану" approximation
-      // red <90% of plan, yellow 90-100%, green >100%
-      const zone: Zone = trend < -10 ? 'red' : trend < 0 ? 'yellow' : 'green'
-      return { zone, deltaLabel: `${pct(trend, 1)} г/г` }
+      const zone: Zone = trend > 0 ? 'green' : trend < 0 ? 'red' : 'yellow'
+      return { zone, deltaLabel: comparison(m) }
     },
   },
   {
-    apiId: 'clients', // matches /api/v1/metrics summary (clients_base equivalent)
-    label: 'Клиентов в базе',
+    apiId: 'clients',
+    label: 'Покупатели за период',
     icon: 'groups',
     rule: (m) => {
       if (!m) return { zone: 'unknown', deltaLabel: '—' }
       const trend = m.trend ?? 0
       const zone: Zone = trend > 0 ? 'green' : 'yellow'
-      return { zone, deltaLabel: `${pct(trend, 1)} г/г` }
+      return { zone, deltaLabel: comparison(m) }
     },
   },
   {
@@ -119,8 +121,8 @@ const HERO_METRICS: HeroSpec[] = [
     rule: (m) => {
       if (!m) return { zone: 'unknown', deltaLabel: '—' }
       const trend = m.trend ?? 0
-      // Per spec: always yellow heuristic, show ±% к плану
-      return { zone: 'yellow', deltaLabel: `${pct(trend, 1)} к плану` }
+      const zone: Zone = trend > 0 ? 'green' : trend < 0 ? 'red' : 'yellow'
+      return { zone, deltaLabel: comparison(m) }
     },
   },
   {
@@ -135,7 +137,7 @@ const HERO_METRICS: HeroSpec[] = [
       if (!m) return { zone: 'unknown', deltaLabel: 'нет данных' }
       const v = m.rawValue ?? 0
       const zone: Zone = v > 15 ? 'red' : v >= 8 ? 'yellow' : 'green'
-      return { zone, deltaLabel: `${pct(m.trend ?? 0, 1)} к плану` }
+      return { zone, deltaLabel: comparison(m) }
     },
   },
   {
@@ -151,7 +153,7 @@ const HERO_METRICS: HeroSpec[] = [
       // Without ltv/cac ratio in scope here, fall back to trend heuristic.
       const trend = m.trend ?? 0
       const zone: Zone = trend > 0 ? 'green' : trend < -5 ? 'red' : 'yellow'
-      return { zone, deltaLabel: `${pct(trend, 1)} г/г` }
+      return { zone, deltaLabel: comparison(m) }
     },
   },
   {
@@ -167,7 +169,7 @@ const HERO_METRICS: HeroSpec[] = [
       const trend = m.trend ?? 0
       // For CAC, falling cost is good — flip the sign meaning.
       const zone: Zone = trend < 0 ? 'green' : trend < 5 ? 'yellow' : 'red'
-      return { zone, deltaLabel: `${pct(trend, 1)} к плану` }
+      return { zone, deltaLabel: comparison(m) }
     },
   },
 ]

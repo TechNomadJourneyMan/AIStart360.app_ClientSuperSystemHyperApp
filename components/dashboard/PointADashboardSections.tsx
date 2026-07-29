@@ -1,8 +1,6 @@
 'use client'
 
-import { Suspense, useState } from 'react'
-import { PointAFilterBar } from './PointAFilterBar'
-import { TopSalesTable } from './TopSalesTable'
+import { Suspense } from 'react'
 import { RetentionCurveWidget } from './RetentionCurveWidget'
 import { MetricBlockV3List } from './MetricBlockV3'
 import { RFMSegmentsGrid } from './RFMSegmentsGrid'
@@ -21,30 +19,8 @@ import { LossMapCard } from './LossMapCard'
  * <Suspense>, because each child relies on useSearchParams().
  */
 export function PointADashboardSections() {
-  const [filterOptions, setFilterOptions] = useState<{
-    products: string[]
-    managers: string[]
-  }>({ products: [], managers: [] })
-
   return (
     <div className="space-y-10">
-      {/* Filter bar — lifted into <PointAFilterSection /> at the top of
-          /point-a and /dashboard so the chips visually drive the new
-          KeyMetricsHero report. URL params remain the source of truth. */}
-      <div className="sr-only" aria-hidden="true">
-        <PointAFilterBar
-          products={filterOptions.products}
-          managers={filterOptions.managers}
-        />
-      </div>
-
-      {/* Top Sales Table — kept for the filter-options pipe; visually hidden
-          because /point-a now renders the spec-driven Key-Metrics Hero +
-          Zones grid in its place (see app/(dashboard)/point-a/page.tsx). */}
-      <div className="sr-only" aria-hidden="true">
-        <TopSalesTable onFilterOptions={setFilterOptions} />
-      </div>
-
       {/* Retention Curve */}
       <section>
         <div className="flex items-end justify-between mb-3">

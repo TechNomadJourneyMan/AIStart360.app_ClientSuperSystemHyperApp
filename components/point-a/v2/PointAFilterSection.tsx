@@ -27,8 +27,8 @@ const PERIOD_LABEL: Record<string, string> = {
  */
 export default function PointAFilterSection() {
   const params = useSearchParams()
-  const [products, setProducts] = useState<string[]>([])
-  const [managers, setManagers] = useState<string[]>([])
+  const [products, setProducts] = useState<FilterOption[]>([])
+  const [managers, setManagers] = useState<FilterOption[]>([])
 
   useEffect(() => {
     let cancelled = false
@@ -38,8 +38,8 @@ export default function PointAFilterSection() {
         if (cancelled || !j?.ok) return
         const ps = (j.data?.products ?? []) as FilterOption[]
         const ms = (j.data?.managers ?? []) as FilterOption[]
-        setProducts(ps.map((p) => p.id))
-        setManagers(ms.map((m) => m.id))
+        setProducts(ps)
+        setManagers(ms)
       })
       .catch(() => {
         /* silent — empty arrays are a fine fallback */
@@ -52,10 +52,12 @@ export default function PointAFilterSection() {
   const period = params.get('period') ?? 'month'
   const product = params.get('product') ?? ''
   const manager = params.get('manager') ?? ''
+  const productName = products.find((item) => item.id === product)?.name
+  const managerName = managers.find((item) => item.id === manager)?.name
   const activeChips = [
     PERIOD_LABEL[period] ?? 'Месяц',
-    product && `Продукт: ${product}`,
-    manager && `Менеджер: ${manager}`,
+    product && `Продукт: ${productName ?? product}`,
+    manager && `Менеджер: ${managerName ?? manager}`,
   ].filter(Boolean) as string[]
 
   return (
