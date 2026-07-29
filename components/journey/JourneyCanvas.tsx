@@ -1,316 +1,614 @@
 'use client'
 
-// Miro-style A → B growth map.
-//
-// Left cluster = Point A (facts extracted from chat + parsed documents).
-// Right cluster = Point B (targets stated by the user or proposed by AI).
-// Between them: a curved path with milestones. Nodes are draggable in a
-// future iteration; today they're positioned by the mock data. Everything
-// animates in with Framer Motion so the map feels alive as new facts land.
+import * as Tooltip from '@radix-ui/react-tooltip'
+import { motion, useReducedMotion } from 'framer-motion'
+import {
+  ArrowRight,
+  Check,
+  CircleDot,
+  Focus,
+  Minus,
+  Move,
+  Plus,
+  RotateCcw,
+  Route,
+  Target,
+} from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { cn } from '@/lib/utils'
+import { getCurrentConfirmedJourneyGoal } from './JourneyExperience'
+import type {
+  JourneyFactView,
+  JourneySuggestionView,
+  JourneyWidgetView,
+  JourneyWorkspaceView,
+} from './model'
+import { SuggestionPills } from './SuggestionPills'
+import { getWidgetDecisionReason, WidgetDock, WidgetModule } from './WidgetModule'
 
-import { motion } from 'framer-motion'
-import { useRef, useState } from 'react'
-import type { JourneyMilestone, JourneyNode, JourneyState } from '@/lib/journey/state'
+const PLANE_WIDTH = 1600
+const PLANE_HEIGHT = 1240
+// Include the priority widget row in the initial fit. The chat remains a
+// compact floating control without covering module content.
+const FIT_HEIGHT = 1120
+const MIN_ZOOM = 0.42
+const MAX_ZOOM = 1.45
+const DEFAULT_DOCK_SAFE_BOTTOM = 216
+const DOCK_GAP = 16
 
-interface Props {
-  state: JourneyState
-  /** Drag-to-reposition callback; coords are % of the canvas plane */
-  onNodeMove?: (side: 'a' | 'b', id: string, x: number, y: number) => void
+interface JourneyCanvasProps {
+  state: JourneyWorkspaceView
+  onWidgetToggle: (id: string) => void
+  onWidgetFocus: (id: string) => void
+  onWidgetHide: (id: string) => void
+  onWidgetRestore: (id: string) => void
+  onWidgetMove: (id: string, position: { x: number; y: number }) => void
+  onWidgetResetLayout: () => void
+  onWidgetDiscuss: (widget: JourneyWidgetView) => void
+  onSuggestionAccept: (suggestion: JourneySuggestionView) => void
+  onSuggestionReject: (id: string) => void
+  onSuggestionHide: (id: string) => void
 }
 
-export function JourneyCanvas({ state, onNodeMove }: Props) {
-  const containerRef = useRef<HTMLDivElement>(null)
-  const [selected, setSelected] = useState<string | null>(null)
-  const [zoom, setZoom]         = useState(1)
+interface Camera {
+  x: number
+  y: number
+  scale: number
+}
 
-  // Path from Point A anchor → Point B anchor. Slight bezier curve so it
-  // feels like a journey not a straight line.
-  const pathD = 'M 22 50 C 40 20, 60 80, 78 50'
+export function JourneyCanvas(props: JourneyCanvasProps) {
+  const {
+    state,
+    onWidgetToggle,
+    onWidgetFocus,
+    onWidgetHide,
+    onWidgetRestore,
+    onWidgetMove,
+    onWidgetResetLayout,
+    onWidgetDiscuss,
+    onSuggestionAccept,
+    onSuggestionReject,
+    onSuggestionHide,
+  } = props
+  const viewportRef = useRef<HTMLDivElement>(null)
+  const reduceMotion = useReducedMotion()
+  const [camera, setCamera] = useState<Camera>({ x: 24, y: 24, scale: 0.72 })
+  const [panning, setPanning] = useState(false)
+  const panRef = useRef<{ pointerId: number; x: number; y: number; camera: Camera } | null>(null)
+  const previousCounts = useRef({ facts: 0, goals: 0, roadmap: 0 })
+  const confirmedFacts = state.facts.filter((fact) => fact.status === 'confirmed')
+  const activeSuggestions = state.suggestions.filter((item) => item.status === 'active')
+  const visibleWidgets = state.widgets.filter((widget) => !widget.hidden)
+  const boardWidgets = visibleWidgets.filter((widget) => !widget.collapsed)
+  const focusedWidget = visibleWidgets.find((widget) => widget.focused)
+  const widgetDecisions = (state as JourneyWorkspaceView & { widgetDecisions?: unknown }).widgetDecisions
+
+  const focusPoint = useCallback((point: { x: number; y: number }, nextScale = 0.88) => {
+    const viewport = viewportRef.current
+    if (!viewport) return
+    const rect = viewport.getBoundingClientRect()
+    const availableHeight = getBoardAvailableHeight(rect)
+    const scale = clamp(nextScale, MIN_ZOOM, MAX_ZOOM)
+    setCamera({
+      x: rect.width / 2 - point.x * scale,
+      y: availableHeight / 2 - point.y * scale,
+      scale,
+    })
+  }, [])
+
+  const fitBoard = useCallback(() => {
+    const viewport = viewportRef.current
+    if (!viewport) return
+    const rect = viewport.getBoundingClientRect()
+    const availableHeight = getBoardAvailableHeight(rect)
+    const scale = clamp(Math.min((rect.width - 36) / PLANE_WIDTH, (availableHeight - 56) / FIT_HEIGHT), MIN_ZOOM, 0.92)
+    setCamera({
+      x: (rect.width - PLANE_WIDTH * scale) / 2,
+      y: Math.max(28, (availableHeight - FIT_HEIGHT * scale) / 2),
+      scale,
+    })
+  }, [])
+
+  useEffect(() => {
+    fitBoard()
+    const viewport = viewportRef.current
+    if (!viewport) return
+    const observer = new ResizeObserver(fitBoard)
+    observer.observe(viewport)
+    const chatDock = document.querySelector<HTMLElement>('section[aria-label="AI-диалог о бизнесе"]')
+    if (chatDock) observer.observe(chatDock)
+    return () => observer.disconnect()
+  }, [fitBoard])
+
+  useEffect(() => {
+    const previous = previousCounts.current
+    const next = {
+      facts: confirmedFacts.length,
+      goals: state.goals.length,
+      roadmap: state.roadmap.length,
+    }
+    if (previous.facts > 0 && next.facts > previous.facts) focusPoint({ x: 260, y: 360 }, 0.9)
+    if (previous.goals > 0 && next.goals > previous.goals) focusPoint({ x: 1310, y: 360 }, 0.9)
+    if (previous.roadmap > 0 && next.roadmap > previous.roadmap) focusPoint({ x: 800, y: 360 }, 0.82)
+    previousCounts.current = next
+  }, [confirmedFacts.length, focusPoint, state.goals.length, state.roadmap.length])
+
+  useEffect(() => {
+    if (!focusedWidget) return
+    focusPoint({ x: focusedWidget.position.x + 160, y: focusedWidget.position.y + 130 }, 0.95)
+  }, [focusPoint, focusedWidget])
+
+  const setZoom = (next: number) => {
+    const viewport = viewportRef.current
+    if (!viewport) return
+    const rect = viewport.getBoundingClientRect()
+    const center = { x: rect.width / 2, y: rect.height / 2 }
+    const scale = clamp(next, MIN_ZOOM, MAX_ZOOM)
+    const planeX = (center.x - camera.x) / camera.scale
+    const planeY = (center.y - camera.y) / camera.scale
+    setCamera({ x: center.x - planeX * scale, y: center.y - planeY * scale, scale })
+  }
+
+  const startPan = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return
+    const target = event.target as HTMLElement
+    if (target.closest('button, a, input, textarea, [data-board-interactive]')) return
+    event.currentTarget.setPointerCapture(event.pointerId)
+    panRef.current = {
+      pointerId: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+      camera,
+    }
+    setPanning(true)
+  }
+
+  const movePan = (event: React.PointerEvent<HTMLDivElement>) => {
+    const start = panRef.current
+    if (!start || start.pointerId !== event.pointerId) return
+    setCamera({
+      ...start.camera,
+      x: start.camera.x + event.clientX - start.x,
+      y: start.camera.y + event.clientY - start.y,
+    })
+  }
+
+  const stopPan = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (panRef.current?.pointerId !== event.pointerId) return
+    panRef.current = null
+    setPanning(false)
+  }
+
+  const onWheel = (event: React.WheelEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    const viewport = viewportRef.current
+    if (!viewport) return
+    const rect = viewport.getBoundingClientRect()
+    const cursor = { x: event.clientX - rect.left, y: event.clientY - rect.top }
+    const scale = clamp(camera.scale * Math.exp(-event.deltaY * 0.001), MIN_ZOOM, MAX_ZOOM)
+    const planeX = (cursor.x - camera.x) / camera.scale
+    const planeY = (cursor.y - camera.y) / camera.scale
+    setCamera({ x: cursor.x - planeX * scale, y: cursor.y - planeY * scale, scale })
+  }
 
   return (
-    <div
-      ref={containerRef}
-      className="relative w-full h-full rounded-2xl border border-white/[0.05] bg-[radial-gradient(circle_at_50%_50%,rgba(110,255,192,0.03)_0%,transparent_60%)] overflow-hidden"
-      style={{ background: 'radial-gradient(circle at 50% 50%, rgba(110,255,192,0.04) 0%, transparent 55%), #0a0d13' }}
-    >
-      {/* Grid dots */}
-      <svg className="absolute inset-0 w-full h-full pointer-events-none" aria-hidden>
-        <defs>
-          <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
-            <circle cx="1" cy="1" r="1" fill="rgba(255,255,255,0.035)" />
-          </pattern>
-        </defs>
-        <rect width="100%" height="100%" fill="url(#grid)" />
-      </svg>
-
-      {/* Top toolbar */}
-      <div className="absolute top-4 left-4 right-4 z-30 flex items-center justify-between pointer-events-none">
-        <div className="pointer-events-auto flex items-center gap-2 rounded-xl bg-surface-container/80 backdrop-blur border border-white/[0.06] px-3 py-2">
-          <span className="material-symbols-outlined text-primary text-sm">map</span>
-          <p className="text-xs font-semibold text-on-surface">Карта роста</p>
-          <span className="text-[10px] text-on-surface-variant/60 font-mono ml-2">
-            {state.companyName || 'без имени'} · {state.industry || '—'}
-          </span>
-        </div>
-
-        <div className="pointer-events-auto flex items-center gap-1 rounded-xl bg-surface-container/80 backdrop-blur border border-white/[0.06] p-1">
-          <button onClick={() => setZoom((z) => Math.max(0.5, z - 0.15))} className="w-7 h-7 rounded-lg hover:bg-white/[0.06] flex items-center justify-center text-on-surface-variant">
-            <span className="material-symbols-outlined text-sm">remove</span>
-          </button>
-          <span className="text-[10px] font-mono text-on-surface-variant w-10 text-center">
-            {Math.round(zoom * 100)}%
-          </span>
-          <button onClick={() => setZoom((z) => Math.min(1.5, z + 0.15))} className="w-7 h-7 rounded-lg hover:bg-white/[0.06] flex items-center justify-center text-on-surface-variant">
-            <span className="material-symbols-outlined text-sm">add</span>
-          </button>
-          <div className="w-px h-4 bg-white/[0.08] mx-1" />
-          <button onClick={() => setZoom(1)} className="w-7 h-7 rounded-lg hover:bg-white/[0.06] flex items-center justify-center text-on-surface-variant" title="Сброс">
-            <span className="material-symbols-outlined text-sm">recenter</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Zoomable content plane */}
-      <motion.div
-        className="absolute inset-0"
-        animate={{ scale: zoom }}
-        transition={{ type: 'spring', stiffness: 180, damping: 24 }}
-        style={{ transformOrigin: '50% 50%' }}
+    <Tooltip.Provider>
+      <section
+        ref={viewportRef}
+        aria-label="Доска трансформации бизнеса из Точки A в Точку B"
+        className={cn(
+          'relative hidden size-full overflow-hidden bg-background md:block',
+          panning ? 'cursor-grabbing' : 'cursor-grab',
+        )}
+        onPointerDown={startPan}
+        onPointerMove={movePan}
+        onPointerUp={stopPan}
+        onPointerCancel={stopPan}
+        onWheel={onWheel}
       >
+        <DotGrid />
 
-        {/* Column labels — top-16 clears the floating toolbar (z-30, ~52px tall) */}
-        <div className="absolute top-16 left-[10%] text-[10px] font-mono uppercase tracking-[0.25em] text-on-surface-variant/60">
-          Точка А · сейчас
-        </div>
-        <div className="absolute top-16 right-[8%] text-[10px] font-mono uppercase tracking-[0.25em] text-primary/70">
-          Точка Б · цель 12 мес
-        </div>
-
-        {/* Journey path */}
-        <svg
-          className="absolute inset-0 w-full h-full pointer-events-none"
-          viewBox="0 0 100 100"
-          preserveAspectRatio="none"
+        <motion.div
+          className="absolute left-0 top-0"
+          animate={{ x: camera.x, y: camera.y, scale: camera.scale }}
+          transition={{ duration: reduceMotion || panning ? 0 : 0.18, ease: 'easeOut' }}
+          style={{ width: PLANE_WIDTH, height: PLANE_HEIGHT, transformOrigin: '0 0' }}
         >
-          <defs>
-            <linearGradient id="pathGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-              <stop offset="0%"  stopColor="#94a3b8" stopOpacity="0.35" />
-              <stop offset="50%" stopColor="#6effc0" stopOpacity="0.9" />
-              <stop offset="100%" stopColor="#6effc0" stopOpacity="1" />
-            </linearGradient>
-          </defs>
-          {/* non-scaling-stroke → width is in screen px, not viewBox units */}
-          <motion.path
-            d={pathD}
-            fill="none"
-            stroke="url(#pathGrad)"
-            strokeWidth="2.5"
-            strokeLinecap="round"
-            strokeDasharray="0.1 1.6"
-            initial={{ pathLength: 0 }}
-            animate={{ pathLength: 1 }}
-            transition={{ duration: 1.6, ease: 'easeInOut' }}
-            vectorEffect="non-scaling-stroke"
+          <BoardConnections reduceMotion={Boolean(reduceMotion)} hasRoadmap={state.roadmap.length > 0} />
+
+          <PointASection facts={confirmedFacts} onFocus={() => focusPoint({ x: 260, y: 360 }, 0.92)} />
+          <RoadmapSection state={state} onFocus={() => focusPoint({ x: 800, y: 360 }, 0.84)} />
+          <PointBSection state={state} onFocus={() => focusPoint({ x: 1310, y: 360 }, 0.92)} />
+
+          <ContextSuggestions
+            suggestions={activeSuggestions}
+            onAccept={onSuggestionAccept}
+            onReject={onSuggestionReject}
+            onHide={onSuggestionHide}
           />
-        </svg>
 
-        {/* Point A nodes */}
-        {state.pointA.map((n, i) => (
-          <Node
-            key={n.id}
-            node={n}
-            selected={selected === n.id}
-            onSelect={() => setSelected((s) => (s === n.id ? null : n.id))}
-            delay={0.1 + i * 0.08}
-            side="a"
-            containerRef={containerRef}
-            zoom={zoom}
-            onMove={onNodeMove}
-          />
-        ))}
+          {boardWidgets.map((widget) => (
+            <WidgetModule
+              key={widget.id}
+              widget={widget}
+              decisionReason={getWidgetDecisionReason(widgetDecisions, widget)}
+              scale={camera.scale}
+              onToggle={onWidgetToggle}
+              onFocus={onWidgetFocus}
+              onHide={onWidgetHide}
+              onDiscuss={onWidgetDiscuss}
+              onMove={onWidgetMove}
+            />
+          ))}
+        </motion.div>
 
-        {/* Point B nodes */}
-        {state.pointB.map((n, i) => (
-          <Node
-            key={n.id}
-            node={n}
-            selected={selected === n.id}
-            onSelect={() => setSelected((s) => (s === n.id ? null : n.id))}
-            delay={0.6 + i * 0.08}
-            side="b"
-            containerRef={containerRef}
-            zoom={zoom}
-            onMove={onNodeMove}
-          />
-        ))}
+        <BoardToolbar
+          scale={camera.scale}
+          onZoomOut={() => setZoom(camera.scale - 0.12)}
+          onZoomIn={() => setZoom(camera.scale + 0.12)}
+          onFit={fitBoard}
+          onResetLayout={onWidgetResetLayout}
+        />
 
-        {/* Milestones along the path */}
-        <MilestonesPath milestones={state.milestones} />
-      </motion.div>
+        <WidgetDock
+          widgets={state.widgets}
+          onOpen={onWidgetToggle}
+          onFocus={onWidgetFocus}
+          onRestore={onWidgetRestore}
+          className="absolute right-4 top-20 z-30 max-h-[calc(100%-15rem)] overflow-y-auto"
+        />
 
-      {/* Legend footer */}
-      <div className="absolute bottom-3 left-4 right-4 z-30 flex items-center justify-between text-[10px] font-mono text-on-surface-variant/60">
-        <div className="flex items-center gap-3">
-          <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-primary" /> ok</span>
-          <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-tertiary-container" /> weak</span>
-          <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-error" /> critical</span>
+        <div className="pointer-events-none absolute bottom-5 left-5 z-20 flex items-center gap-2 rounded-full border border-white/10 bg-surface-container-lowest px-3 py-2 text-[11px] text-on-surface-variant shadow-card">
+          <Move className="size-3.5" aria-hidden />
+          Тяните фон · колесо меняет масштаб
         </div>
-        <span>{state.pointA.length} узлов А · {state.pointB.length} узлов Б · {state.milestones.length} вех</span>
+      </section>
+    </Tooltip.Provider>
+  )
+}
+
+export function JourneyMobileBoard({ state }: { state: JourneyWorkspaceView }) {
+  const confirmed = state.facts.filter((fact) => fact.status === 'confirmed')
+  const currentGoal = getCurrentConfirmedJourneyGoal(state)
+  return (
+    <div data-testid="journey-mobile-board" className="h-full space-y-3 overflow-y-auto px-3 pb-28 pt-3 md:hidden">
+      <MobilePointCard testId="point-a" eyebrow="Точка A · сейчас" title={state.companyName || 'Ваш бизнес'}>
+        {confirmed.length ? <FactList facts={confirmed} /> : <EmptyCopy>Расскажите о бизнесе и подтвердите первые факты.</EmptyCopy>}
+      </MobilePointCard>
+
+      <div className="flex items-center justify-center gap-2 py-1 text-xs text-on-surface-variant">
+        <ArrowRight className="size-4 text-primary" aria-hidden />
+        <span>{state.roadmap.length ? `${state.roadmap.length} этапа трансформации` : 'Путь формируется в диалоге'}</span>
       </div>
+
+      <MobilePointCard testId="journey-roadmap" eyebrow="Путь" title="Пробелы, приоритеты, действия">
+        {state.roadmap.length ? <RoadmapList items={state.roadmap} /> : <EmptyCopy>Сначала нужна подтверждённая Точка A и измеримая цель.</EmptyCopy>}
+      </MobilePointCard>
+
+      <MobilePointCard testId="point-b" eyebrow="Точка B · цель" title={currentGoal?.metric || 'Желаемый результат'} accent>
+        {currentGoal ? (
+          <div>
+            <p className="text-sm font-medium text-on-surface">{currentGoal.title}</p>
+            {(currentGoal.metric || currentGoal.target || currentGoal.deadline) && (
+              <p className="mt-1 text-xs text-primary tabular-nums">
+                {[currentGoal.metric, currentGoal.target, currentGoal.deadline].filter(Boolean).join(' · ')}
+              </p>
+            )}
+          </div>
+        ) : (
+          <EmptyCopy>Назовите, что должно измениться, до какого значения и к какому сроку.</EmptyCopy>
+        )}
+      </MobilePointCard>
     </div>
   )
 }
 
-// ─── Node ──────────────────────────────────────────────────────────────
-
-function Node({
-  node, selected, onSelect, delay, side, containerRef, zoom, onMove,
-}: {
-  node: JourneyNode
-  selected: boolean
-  onSelect: () => void
-  delay: number
-  side: 'a' | 'b'
-  containerRef: React.RefObject<HTMLDivElement>
-  zoom: number
-  onMove?: (side: 'a' | 'b', id: string, x: number, y: number) => void
-}) {
-  const draggedRef = useRef(false)
-
-  const accent =
-    node.status === 'critical' ? 'border-error/50 shadow-error/10'
-    : node.status === 'weak'   ? 'border-tertiary-container/40 shadow-tertiary-container/10'
-                               : 'border-primary/40 shadow-primary/10'
-
-  const bg = side === 'a' ? 'bg-surface-container/85' : 'bg-primary/8'
-
-  // Manual pointer-drag (no framer): survives RAF throttling and keeps the
-  // math simple — pixel delta ÷ (container size × zoom) → % delta.
-  const startDrag = (e: React.PointerEvent) => {
-    if (!onMove) return
-    const container = containerRef.current
-    if (!container) return
-    e.preventDefault()
-    const rect = container.getBoundingClientRect()
-    const startX = e.clientX
-    const startY = e.clientY
-    const origX = node.x
-    const origY = node.y
-    draggedRef.current = false
-
-    const onPointerMove = (ev: PointerEvent) => {
-      const dxPct = ((ev.clientX - startX) / (rect.width * zoom)) * 100
-      const dyPct = ((ev.clientY - startY) / (rect.height * zoom)) * 100
-      if (Math.abs(ev.clientX - startX) + Math.abs(ev.clientY - startY) > 4) {
-        draggedRef.current = true
-      }
-      const nx = Math.min(97, Math.max(3, origX + dxPct))
-      const ny = Math.min(92, Math.max(8, origY + dyPct))
-      onMove(side, node.id, nx, ny)
-    }
-    const onPointerUp = () => {
-      window.removeEventListener('pointermove', onPointerMove)
-      window.removeEventListener('pointerup', onPointerUp)
-    }
-    window.addEventListener('pointermove', onPointerMove)
-    window.addEventListener('pointerup', onPointerUp)
-  }
-
-  // Outer div owns positioning (left/top + centering translate); inner button
-  // owns the entry animation. Split on purpose: a transform-керframe on the
-  // same element would clobber the centering translate.
+function PointASection({ facts, onFocus }: { facts: JourneyFactView[]; onFocus: () => void }) {
   return (
-    <div
-      className="absolute -translate-x-1/2 -translate-y-1/2 hover:z-20"
-      style={{ left: `${node.x}%`, top: `${node.y}%` }}
-      onPointerDown={startDrag}
+    <section
+      data-testid="point-a"
+      data-board-interactive
+      className="absolute left-20 top-56 w-[360px] rounded-3xl border border-white/10 bg-surface-container-lowest p-5 shadow-card"
     >
-      <button
-        onClick={() => { if (!draggedRef.current) onSelect() }}
-        className={`journey-pop rounded-2xl border ${accent} ${bg} backdrop-blur-sm px-4 py-3 text-left shadow-xl min-w-[170px] max-w-[240px] transition-transform duration-200 ${selected ? 'scale-105' : ''} ${onMove ? 'cursor-grab active:cursor-grabbing' : ''}`}
-        style={{ animationDelay: `${delay}s` }}
-      >
-        <div className="flex items-center gap-1.5 mb-2">
-          <span className={`w-1.5 h-1.5 rounded-full ${side === 'a' ? 'bg-on-surface-variant' : 'bg-primary'}`} />
-          <p className="text-[10px] font-mono uppercase tracking-widest text-on-surface-variant">
-            {node.label}
-          </p>
+      <SectionHeader icon={CircleDot} eyebrow="Точка A · сейчас" title="Подтверждённая реальность" onFocus={onFocus} />
+      <div className="mt-4">
+        {facts.length ? <FactList facts={facts} /> : <EmptyCopy>Здесь появятся только факты, которые вы подтвердили.</EmptyCopy>}
+      </div>
+      <div className="mt-4 border-t border-white/5 pt-3 text-[11px] text-on-surface-variant">
+        {facts.length ? `${facts.length} подтверждённых фактов` : 'Начните с одного сообщения о компании'}
+      </div>
+    </section>
+  )
+}
+
+function RoadmapSection({ state, onFocus }: { state: JourneyWorkspaceView; onFocus: () => void }) {
+  const next = state.roadmap.find((item) => item.status === 'next')
+  return (
+    <section
+      data-testid="journey-roadmap"
+      data-board-interactive
+      className="absolute left-[535px] top-48 w-[530px] rounded-3xl border border-white/10 bg-surface-container-lowest p-5 shadow-card"
+    >
+      <SectionHeader icon={Route} eyebrow="Путь A → B" title="Пробелы, приоритеты, зависимости" onFocus={onFocus} />
+      <div className="mt-4">
+        {state.roadmap.length ? <RoadmapList items={state.roadmap} /> : <EmptyCopy>Путь появится после подтверждения Точки A и цели.</EmptyCopy>}
+      </div>
+      {next && (
+        <div className="mt-4 flex items-center gap-2 rounded-xl bg-primary/10 px-3 py-2 text-xs text-primary">
+          <Target className="size-3.5 shrink-0" aria-hidden />
+          Следующее: <span className="truncate font-medium">{next.title}</span>
         </div>
-        <div className="space-y-1">
-          {node.facts.map((f) => (
-            <div key={f.k} className="flex justify-between gap-2 text-xs">
-              <span className="text-on-surface-variant/70 truncate">{f.k}</span>
-              <span className="font-mono font-semibold text-on-surface">{f.v}</span>
+      )}
+    </section>
+  )
+}
+
+function PointBSection({ state, onFocus }: { state: JourneyWorkspaceView; onFocus: () => void }) {
+  const currentGoal = getCurrentConfirmedJourneyGoal(state)
+  return (
+    <section
+      data-testid="point-b"
+      data-board-interactive
+      className="absolute left-[1160px] top-56 w-[360px] rounded-3xl border border-primary/30 bg-surface-container-lowest p-5 shadow-card"
+    >
+      <SectionHeader icon={Target} eyebrow="Точка B · цель" title={currentGoal?.metric || 'Измеримый результат'} onFocus={onFocus} accent />
+      <div className="mt-4 space-y-3">
+        {currentGoal ? (
+          <div className="border-b border-white/5 pb-3 last:border-0 last:pb-0">
+            <p className="text-sm text-pretty font-medium text-on-surface">{currentGoal.title}</p>
+            {(currentGoal.metric || currentGoal.target || currentGoal.deadline) && (
+              <p className="mt-1.5 text-xs text-primary tabular-nums">
+                {[currentGoal.metric, currentGoal.target, currentGoal.deadline].filter(Boolean).join(' · ')}
+              </p>
+            )}
+          </div>
+        ) : (
+          <EmptyCopy>Опишите желаемый результат, значение метрики и срок.</EmptyCopy>
+        )}
+      </div>
+    </section>
+  )
+}
+
+function FactList({ facts }: { facts: JourneyFactView[] }) {
+  return (
+    <dl className="space-y-2.5">
+      {facts.slice(0, 7).map((fact) => (
+        <div key={fact.id} className="flex items-start justify-between gap-4">
+          <dt className="min-w-0 text-xs text-on-surface-variant">{fact.label}</dt>
+          <dd title={fact.value} className="max-w-[62%] text-right text-xs font-medium text-on-surface line-clamp-3">{fact.value}</dd>
+        </div>
+      ))}
+    </dl>
+  )
+}
+
+function RoadmapList({ items }: { items: JourneyWorkspaceView['roadmap'] }) {
+  const titles = new Map(items.map((item) => [item.id, item.title]))
+  return (
+    <ol className="space-y-3">
+      {items.slice(0, 5).map((item, index) => (
+        <li key={item.id} className="flex items-start gap-3">
+          <span className={cn(
+            'mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold tabular-nums',
+            item.status === 'done'
+              ? 'bg-primary text-on-primary'
+              : item.status === 'next'
+                ? 'border border-primary/40 bg-primary/10 text-primary'
+                : 'border border-white/10 bg-white/[0.025] text-on-surface-variant',
+          )}>
+            {item.status === 'done' ? <Check className="size-3.5" aria-hidden /> : index + 1}
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-start justify-between gap-3">
+              <p className="text-xs font-medium text-on-surface">{item.title}</p>
+              <span className="shrink-0 text-[10px] text-on-surface-variant">{item.horizon}</span>
             </div>
-          ))}
-        </div>
+            {item.description && <p title={item.description} className="mt-1 text-[11px] text-pretty text-on-surface-variant md:line-clamp-2">{item.description}</p>}
+            {!!item.dependsOn?.length && (
+              <p className="mt-1.5 text-[10px] leading-relaxed text-on-surface-variant">
+                После: {item.dependsOn.slice(0, 2).map((id) => titles.get(id) ?? id).join(', ')}
+              </p>
+            )}
+            <div className="mt-2 h-1 overflow-hidden rounded-full bg-white/5">
+              <div className="h-full rounded-full bg-primary" style={{ width: `${item.progress}%` }} />
+            </div>
+          </div>
+        </li>
+      ))}
+    </ol>
+  )
+}
+
+function SectionHeader({
+  icon: Icon,
+  eyebrow,
+  title,
+  onFocus,
+  accent = false,
+}: {
+  icon: typeof Target
+  eyebrow: string
+  title: string
+  onFocus: () => void
+  accent?: boolean
+}) {
+  return (
+    <div className="flex items-start gap-3">
+      <div className={cn('flex size-9 shrink-0 items-center justify-center rounded-xl', accent ? 'bg-primary text-on-primary' : 'bg-white/5 text-primary')}>
+        <Icon className="size-4" aria-hidden />
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="text-[10px] text-on-surface-variant">{eyebrow}</p>
+        <h2 className="mt-0.5 text-balance text-base font-semibold text-on-surface">{title}</h2>
+      </div>
+      <button
+        type="button"
+        aria-label={`Фокусировать область: ${eyebrow}`}
+        title="Фокусировать"
+        onClick={onFocus}
+        className="flex size-8 shrink-0 items-center justify-center rounded-lg text-on-surface-variant hover:bg-white/5 hover:text-on-surface"
+      >
+        <Focus className="size-3.5" aria-hidden />
       </button>
     </div>
   )
 }
 
-// ─── Milestones ────────────────────────────────────────────────────────
-
-function MilestonesPath({ milestones }: { milestones: JourneyMilestone[] }) {
-  // Coordinates along the same bezier used above. Simple approx by t.
-  const anchor = (t: number) => {
-    // Cubic bezier: M 22 50 C 40 20, 60 80, 78 50
-    const p0 = { x: 22, y: 50 }
-    const p1 = { x: 40, y: 20 }
-    const p2 = { x: 60, y: 80 }
-    const p3 = { x: 78, y: 50 }
-    const x =
-      Math.pow(1 - t, 3) * p0.x +
-      3 * Math.pow(1 - t, 2) * t * p1.x +
-      3 * (1 - t) * t * t * p2.x +
-      t * t * t * p3.x
-    const y =
-      Math.pow(1 - t, 3) * p0.y +
-      3 * Math.pow(1 - t, 2) * t * p1.y +
-      3 * (1 - t) * t * t * p2.y +
-      t * t * t * p3.y
-    return { x, y }
-  }
+function ContextSuggestions({
+  suggestions,
+  onAccept,
+  onReject,
+  onHide,
+}: {
+  suggestions: JourneySuggestionView[]
+  onAccept: (suggestion: JourneySuggestionView) => void
+  onReject: (id: string) => void
+  onHide: (id: string) => void
+}) {
+  const groups = useMemo(() => ({
+    pointA: suggestions.filter((item) => item.target === 'point-a' || item.target === 'chat'),
+    roadmap: suggestions.filter((item) => item.target === 'roadmap' || item.target === 'widget'),
+    pointB: suggestions.filter((item) => item.target === 'point-b'),
+  }), [suggestions])
 
   return (
     <>
-      {milestones.map((m, i) => {
-        const p = anchor(m.t)
-        return (
-          <div
-            key={m.id}
-            className="absolute -translate-x-1/2 -translate-y-1/2 group"
-            style={{ left: `${p.x}%`, top: `${p.y}%` }}
-          >
-            <button
-              style={{ animationDelay: `${0.8 + i * 0.15}s` }}
-              className={`journey-pop relative w-7 h-7 rounded-full border-2 flex items-center justify-center transition-all ${
-                m.active
-                  ? 'bg-primary border-primary text-on-primary shadow-lg shadow-primary/40 animate-pulse'
-                  : m.done
-                    ? 'bg-primary/20 border-primary/50 text-primary'
-                    : 'bg-surface-container border-white/[0.15] text-on-surface-variant hover:border-primary/40'
-              }`}
-              title={`${m.label} — ${m.description}`}
-            >
-              {m.done ? (
-                <span className="material-symbols-outlined text-sm">check</span>
-              ) : (
-                <span className="text-[10px] font-mono font-bold">{m.label.replace(/\D+/g, '') || i + 1}</span>
-              )}
-            </button>
-            <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-30 w-56 bg-surface-container/95 backdrop-blur border border-white/[0.08] rounded-xl p-3 shadow-2xl">
-              <p className="text-xs font-bold text-on-surface">{m.label}</p>
-              <p className="text-[11px] text-on-surface-variant leading-snug mt-1">{m.description}</p>
-              {m.metric && (
-                <p className="text-[10px] font-mono text-primary mt-2">
-                  {m.metric.name}: {m.metric.from} → {m.metric.to}
-                </p>
-              )}
-            </div>
-          </div>
-        )
-      })}
+      <SuggestionPills suggestions={groups.pointA} onAccept={onAccept} onReject={onReject} onHide={onHide} className="absolute left-24 top-40" />
+      <SuggestionPills suggestions={groups.roadmap} onAccept={onAccept} onReject={onReject} onHide={onHide} className="absolute left-[590px] top-32" />
+      <SuggestionPills suggestions={groups.pointB} onAccept={onAccept} onReject={onReject} onHide={onHide} className="absolute left-[1160px] top-40" />
     </>
   )
+}
+
+function BoardConnections({ reduceMotion, hasRoadmap }: { reduceMotion: boolean; hasRoadmap: boolean }) {
+  return (
+    <svg className="pointer-events-none absolute inset-0" width={PLANE_WIDTH} height={PLANE_HEIGHT} aria-hidden>
+      <defs>
+        <marker id="journey-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="#6effc0" opacity="0.7" />
+        </marker>
+      </defs>
+      <motion.path
+        d="M 440 380 C 485 380, 495 340, 535 340"
+        fill="none"
+        stroke="#6effc0"
+        strokeOpacity={hasRoadmap ? 0.55 : 0.18}
+        strokeWidth="2"
+        strokeDasharray={hasRoadmap ? undefined : '7 8'}
+        markerEnd="url(#journey-arrow)"
+        initial={reduceMotion ? false : { pathLength: 0, opacity: 0 }}
+        animate={{ pathLength: 1, opacity: 1 }}
+        transition={{ duration: reduceMotion ? 0 : 0.18, ease: 'easeOut' }}
+      />
+      <motion.path
+        d="M 1065 340 C 1100 340, 1115 380, 1160 380"
+        fill="none"
+        stroke="#6effc0"
+        strokeOpacity={hasRoadmap ? 0.55 : 0.18}
+        strokeWidth="2"
+        strokeDasharray={hasRoadmap ? undefined : '7 8'}
+        markerEnd="url(#journey-arrow)"
+        initial={reduceMotion ? false : { pathLength: 0, opacity: 0 }}
+        animate={{ pathLength: 1, opacity: 1 }}
+        transition={{ duration: reduceMotion ? 0 : 0.18, ease: 'easeOut', delay: reduceMotion ? 0 : 0.04 }}
+      />
+    </svg>
+  )
+}
+
+function BoardToolbar({
+  scale,
+  onZoomOut,
+  onZoomIn,
+  onFit,
+  onResetLayout,
+}: {
+  scale: number
+  onZoomOut: () => void
+  onZoomIn: () => void
+  onFit: () => void
+  onResetLayout: () => void
+}) {
+  return (
+    <div className="absolute left-4 top-20 z-30 flex items-center rounded-xl border border-white/10 bg-surface-container-lowest p-1 shadow-card">
+      <ToolbarButton label="Уменьшить" onClick={onZoomOut}><Minus className="size-4" aria-hidden /></ToolbarButton>
+      <span className="w-12 text-center text-[10px] text-on-surface-variant tabular-nums">{Math.round(scale * 100)}%</span>
+      <ToolbarButton label="Увеличить" onClick={onZoomIn}><Plus className="size-4" aria-hidden /></ToolbarButton>
+      <span className="mx-1 h-5 w-px bg-white/10" />
+      <ToolbarButton label="Показать всю доску" onClick={onFit}><Focus className="size-4" aria-hidden /></ToolbarButton>
+      <ToolbarButton label="Сбросить расположение модулей" onClick={onResetLayout}><RotateCcw className="size-4" aria-hidden /></ToolbarButton>
+    </div>
+  )
+}
+
+function ToolbarButton({ label, onClick, children }: { label: string; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <Tooltip.Root delayDuration={300}>
+      <Tooltip.Trigger asChild>
+        <button type="button" aria-label={label} onClick={onClick} className="flex size-9 items-center justify-center rounded-lg text-on-surface-variant hover:bg-white/5 hover:text-on-surface">
+          {children}
+        </button>
+      </Tooltip.Trigger>
+      <Tooltip.Portal>
+        <Tooltip.Content side="bottom" sideOffset={6} className="z-50 rounded-lg bg-surface-container-high px-2 py-1 text-[11px] text-on-surface shadow-card">
+          {label}
+          <Tooltip.Arrow className="fill-surface-container-high" />
+        </Tooltip.Content>
+      </Tooltip.Portal>
+    </Tooltip.Root>
+  )
+}
+
+function DotGrid() {
+  return (
+    <svg className="pointer-events-none absolute inset-0 size-full" aria-hidden>
+      <defs>
+        <pattern id="journey-dot-grid" width="28" height="28" patternUnits="userSpaceOnUse">
+          <circle cx="2" cy="2" r="1" fill="#84958a" opacity="0.16" />
+        </pattern>
+      </defs>
+      <rect width="100%" height="100%" fill="url(#journey-dot-grid)" />
+    </svg>
+  )
+}
+
+function EmptyCopy({ children }: { children: React.ReactNode }) {
+  return <p className="text-xs leading-relaxed text-pretty text-on-surface-variant">{children}</p>
+}
+
+function MobilePointCard({
+  testId,
+  eyebrow,
+  title,
+  accent = false,
+  children,
+}: {
+  testId: string
+  eyebrow: string
+  title: string
+  accent?: boolean
+  children: React.ReactNode
+}) {
+  return (
+    <section data-testid={testId} className={cn('rounded-2xl border bg-surface-container-lowest p-4', accent ? 'border-primary/30' : 'border-white/10')}>
+      <p className="text-[10px] text-on-surface-variant">{eyebrow}</p>
+      <h2 className="mt-1 text-balance text-base font-semibold text-on-surface">{title}</h2>
+      <div className="mt-4">{children}</div>
+    </section>
+  )
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value))
+}
+
+function getBoardAvailableHeight(viewportRect: DOMRect): number {
+  const chatDock = document.querySelector<HTMLElement>('section[aria-label="AI-диалог о бизнесе"]')
+  const dockRect = chatDock?.getBoundingClientRect()
+  const measuredInset = dockRect && dockRect.top < viewportRect.bottom
+    ? viewportRect.bottom - dockRect.top + DOCK_GAP
+    : 0
+  const bottomInset = Math.max(DEFAULT_DOCK_SAFE_BOTTOM, measuredInset)
+  return Math.max(280, viewportRect.height - bottomInset)
 }

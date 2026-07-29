@@ -57,19 +57,26 @@ export async function parseDocument(
 
   switch (docType) {
     case "pdf": {
-      // eslint-disable-next-line
-      const pdfModule = await import("pdf-parse") as any;
-      const pdf = pdfModule.default ?? pdfModule;
-      const data = await pdf(buffer);
-      return {
-        text: data.text.trim(),
-        metadata: {
-          type: "pdf",
-          pages: data.numpages,
-          wordCount: data.text.split(/\s+/).length,
-          fileName,
-        },
-      };
+      // pdf-parse v2 replaced the old default callable with a PDFParse class.
+      // Keep this local and always destroy the parser so worker resources do
+      // not leak across warm serverless invocations.
+      const pdfModule = await import("pdf-parse");
+      const parser = new pdfModule.PDFParse({ data: buffer });
+      try {
+        const data = await parser.getText();
+        const text = data.text.trim();
+        return {
+          text,
+          metadata: {
+            type: "pdf",
+            pages: data.total,
+            wordCount: text ? text.split(/\s+/).length : 0,
+            fileName,
+          },
+        };
+      } finally {
+        await parser.destroy();
+      }
     }
 
     case "docx": {

@@ -4,8 +4,13 @@ import { updateSession } from '@/lib/supabase/middleware'
 import { GIGA_COOKIE_NAME, verifyGigaRoleEdge } from '@/lib/giga-cookie-edge'
 import { MFA_COOKIE_NAME, verifyStepUpEdge } from '@/lib/mfa/step-up-edge'
 import { roleLandingPath, WAITING_ROOM_PATH } from '@/lib/role-landing'
+import { isJourneyPublicDemoEnabled } from '@/lib/journey/public-demo'
 
 const MFA_CHALLENGE_PATH = '/2fa'
+const IS_PUBLIC_JOURNEY_PREVIEW =
+  process.env.NODE_ENV !== 'production' ||
+  process.env.VERCEL_ENV === 'preview' ||
+  isJourneyPublicDemoEnabled()
 
 const PUBLIC_PATHS = ['/login', '/register', '/forgot-password', '/auth/callback', '/auth/reset-password']
 
@@ -118,7 +123,11 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith('/fallback-') ||
     pathname === '/' ||
     pathname.startsWith('/presentation') ||
-    pathname.startsWith('/journey') ||
+    // Isolated AI-first lab: anonymous access is limited to local development,
+    // Vercel Preview, or an explicitly configured public demo deployment.
+    // Canonical production keeps the normal Supabase gate because the flag is
+    // absent there.
+    (IS_PUBLIC_JOURNEY_PREVIEW && matchesRoute(pathname, '/journey')) ||
     pathname.startsWith('/gri-free') ||
     // Public legal pages — linked from the registration consent checkbox.
     pathname.startsWith('/terms') ||
