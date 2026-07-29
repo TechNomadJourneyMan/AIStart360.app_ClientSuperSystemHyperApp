@@ -30,29 +30,84 @@ interface GriCurrent {
   top_5_limits?: Top5Limit[]
 }
 
+// Точка А — 5 блоков анкеты по шкале 0–100. Это НЕ GRI (7 блоков, 0–10):
+// шкалы и блоки разные, смешивать их в одну цифру нельзя.
+type PointABlockKey = 'finance_score' | 'sales_score' | 'operations_score' | 'marketing_score' | 'strategy_score'
+
+interface PointABlock {
+  score?: number
+  status?: string
+}
+
+type DiagnosticsCurrent = Partial<Record<PointABlockKey, PointABlock | null>> & {
+  overall_score?: number | null
+  calculated_at?: string | null
+}
+
+const POINT_A_BLOCKS: { key: PointABlockKey; label: string; icon: string }[] = [
+  { key: 'finance_score', label: 'Финансы', icon: 'payments' },
+  { key: 'sales_score', label: 'Продажи', icon: 'trending_up' },
+  { key: 'operations_score', label: 'Операции', icon: 'settings' },
+  { key: 'marketing_score', label: 'Маркетинг', icon: 'campaign' },
+  { key: 'strategy_score', label: 'Стратегия', icon: 'flag' },
+]
+
+// Подписи статусов — те же, что на /client/point-a, чтобы цифры читались одинаково.
+const POINT_A_STATUS: Record<string, { text: string; color: string }> = {
+  critical: { text: 'Критично', color: 'text-error' },
+  weak: { text: 'Слабо', color: 'text-orange-400' },
+  average: { text: 'Средне', color: 'text-amber-400' },
+  strong: { text: 'Сильно', color: 'text-primary' },
+  excellent: { text: 'Отлично', color: 'text-emerald-400' },
+}
+
 function tierOf(score: number): { color: string; bg: string; status: string } {
   if (score >= 8) return { color: 'text-primary', bg: 'bg-primary/10', status: 'Хорошо' }
   if (score >= 4) return { color: 'text-yellow-400', bg: 'bg-yellow-400/10', status: 'Слабое' }
   return { color: 'text-error', bg: 'bg-error/10', status: 'Критично' }
 }
 
+// Точка А считается по шкале 0–100 (пороги те же, что на /client/point-a).
+const pointABar = (score: number) =>
+  score >= 70 ? 'bg-primary' : score >= 45 ? 'bg-amber-400' : 'bg-error'
+
 export default function OwnerDashboardPage() {
   const { user } = useAuthStore()
   const [current, setCurrent] = useState<GriCurrent | null>(null)
+  const [diag, setDiag] = useState<DiagnosticsCurrent | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     let active = true
     ;(async () => {
+      let gri: GriCurrent | null = null
       try {
         const res = await fetch('/api/v1/gri/assessment', { credentials: 'include' })
         const j = await res.json()
-        if (active) setCurrent(j?.data?.current ?? null)
+        gri = j?.data?.current ?? null
       } catch {
-        if (active) setCurrent(null)
-      } finally {
-        if (active) setLoading(false)
+        gri = null
       }
+      if (!active) return
+      setCurrent(gri)
+
+      // GRI нет — подтягиваем фактические данные Точки А, чтобы владелец,
+      // заполнивший анкету, видел свои посчитанные цифры, а не пустой экран.
+      const griReady =
+        !!gri &&
+        typeof gri.gri_index === 'number' &&
+        gri.gri_index > 0 &&
+        Object.keys(gri.section_avgs ?? {}).length > 0
+      if (!griReady) {
+        try {
+          const res = await fetch('/api/v1/diagnostics/current', { credentials: 'include' })
+          const j = await res.json()
+          if (active) setDiag(j?.ok ? (j.data ?? null) : null)
+        } catch {
+          if (active) setDiag(null)
+        }
+      }
+      if (active) setLoading(false)
     })()
     return () => {
       active = false
@@ -71,6 +126,16 @@ export default function OwnerDashboardPage() {
     ...b,
     score: typeof sectionAvgs[b.id] === 'number' ? sectionAvgs[b.id] : 0,
   })).filter((b) => b.score > 0)
+
+  // Фактические блоки Точки А: показываем только те, что реально посчитаны.
+  const pointABlocks = POINT_A_BLOCKS.flatMap((b) => {
+    const block = diag?.[b.key] ?? null
+    return typeof block?.score === 'number'
+      ? [{ ...b, score: block.score, status: block.status ?? '' }]
+      : []
+  })
+  const hasPointA = pointABlocks.some((b) => b.score > 0)
+  const pointAOverall = typeof diag?.overall_score === 'number' ? diag.overall_score : null
 
   const topLimits = current?.top_5_limits ?? []
   const strongCount = blocks.filter((b) => b.score >= 8).length
@@ -96,12 +161,16 @@ export default function OwnerDashboardPage() {
           </h1>
           <p className="text-sm text-on-surface-variant mt-1">
             {user?.organization ?? ''}
-            {hasAssessment ? ' · GRI Диагностика завершена' : ' · GRI-диагностика ещё не пройдена'}
+            {hasAssessment
+              ? ' · GRI Диагностика завершена'
+              : hasPointA
+                ? ' · Точка А посчитана · GRI-диагностика ещё не пройдена'
+                : ' · GRI-диагностика ещё не пройдена'}
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           {hasAssessment && <ShareButtonAuto type="gri" />}
-          <Link href="/owner/gri"
+          <Link href={hasAssessment ? '/owner/gri' : '/owner/gri/assess'}
             className="flex items-center gap-2 px-4 py-2 rounded-xl bg-secondary/10 border border-secondary/20 text-secondary text-sm font-medium hover:bg-secondary/20 transition-colors">
             <span className="material-symbols-outlined text-lg">radar</span>
             {hasAssessment ? 'Полный отчёт GRI' : 'Пройти GRI-диагностику'}
@@ -113,22 +182,98 @@ export default function OwnerDashboardPage() {
         <div className="glass-card rounded-2xl p-10 border border-white/[0.06] text-center">
           <p className="text-sm text-on-surface-variant">Загрузка данных GRI…</p>
         </div>
+      ) : !hasAssessment && hasPointA ? (
+        /* GRI нет, но анкета заполнена — показываем фактические данные Точки А.
+           Никаких пересчётов в шкалу GRI: подписываем, что именно на экране. */
+        <>
+          <div className="glass-card rounded-2xl p-4 border border-yellow-400/20 bg-yellow-400/[0.04] flex items-start justify-between gap-4 flex-wrap">
+            <div className="flex items-start gap-3">
+              <span className="material-symbols-outlined text-yellow-400 text-xl">info</span>
+              <div>
+                <p className="text-sm text-on-surface">
+                  Показаны фактические данные из анкеты. Самооценка GRI ещё не пройдена
+                </p>
+                <p className="text-xs text-on-surface-variant mt-1">
+                  Точка А — 5 блоков по шкале 0–100, посчитаны по вашим ответам.
+                  GRI — 7 блоков по шкале 0–10, это отдельная самооценка.
+                </p>
+              </div>
+            </div>
+            <Link href="/owner/gri/assess"
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-secondary/10 border border-secondary/20 text-secondary text-sm font-medium hover:bg-secondary/20 transition-colors">
+              <span className="material-symbols-outlined text-lg">play_arrow</span>
+              Пройти GRI-диагностику
+            </Link>
+          </div>
+
+          <div className="glass-card rounded-2xl p-5 border border-white/[0.06]">
+            <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-primary text-xl">my_location</span>
+                <h3 className="text-sm font-semibold text-on-surface">Точка А — фактические данные</h3>
+              </div>
+              {pointAOverall !== null && (
+                <div className="flex items-baseline gap-1.5">
+                  <span className="text-lg font-mono font-bold text-on-surface">{Math.round(pointAOverall)}</span>
+                  <span className="text-xs text-on-surface-variant">/ 100 общий балл</span>
+                </div>
+              )}
+            </div>
+            <div className="space-y-3">
+              {pointABlocks.map((b) => {
+                const label = POINT_A_STATUS[b.status]
+                return (
+                  <div key={b.key}>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="flex items-center gap-1.5 text-xs text-on-surface-variant">
+                        <span className="material-symbols-outlined text-sm">{b.icon}</span>
+                        {b.label}
+                      </span>
+                      <span className="flex items-center gap-2">
+                        {label && <span className={`text-[10px] font-mono ${label.color}`}>{label.text}</span>}
+                        <span className="text-xs font-mono font-bold text-on-surface">{Math.round(b.score)}</span>
+                      </span>
+                    </div>
+                    <div className="h-1.5 bg-white/[0.05] rounded-full overflow-hidden">
+                      <div className={`h-full rounded-full transition-all ${pointABar(b.score)}`}
+                        style={{ width: `${Math.min(100, Math.max(0, b.score))}%` }} />
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+            <p className="text-[10px] text-on-surface-variant mt-4 leading-relaxed">
+              Баллы посчитаны по анкете Точки А (шкала 0–100) и не являются GRI-оценкой:
+              у GRI другая шкала (0–10) и другие 7 блоков. Подробности — в разделе{' '}
+              <Link href="/owner/point-a" className="text-primary hover:underline">Точка А</Link>.
+            </p>
+          </div>
+        </>
       ) : !hasAssessment ? (
-        /* Empty state */
+        /* Ни GRI, ни анкеты — честное пустое состояние: объясняем, что заполнить. */
         <div className="glass-card rounded-2xl p-10 border border-white/[0.06] text-center">
           <div className="w-14 h-14 rounded-2xl bg-secondary/10 border border-secondary/20 flex items-center justify-center mx-auto mb-4">
             <span className="material-symbols-outlined text-2xl text-secondary">radar</span>
           </div>
-          <h2 className="text-lg font-bold text-on-surface mb-2">GRI-диагностика ещё не пройдена</h2>
+          <h2 className="text-lg font-bold text-on-surface mb-2">Данных пока нет</h2>
           <p className="text-sm text-on-surface-variant max-w-md mx-auto mb-5">
-            Пройдите диагностику Growth Readiness Index, чтобы увидеть оценку по 7 блокам,
-            топ-5 ограничений роста и персональный план на 90 дней.
+            Дашборд собирается из двух источников. Анкета Точки А даёт фактические баллы
+            по 5 блокам (финансы, продажи, операции, маркетинг, стратегия).
+            GRI-диагностика — самооценку по 7 блокам, топ-5 ограничений роста и план на 90 дней.
+            Пока не заполнено ни то, ни другое, показывать нечего.
           </p>
-          <Link href="/owner/gri"
-            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-secondary/10 border border-secondary/20 text-secondary text-sm font-medium hover:bg-secondary/20 transition-colors">
-            <span className="material-symbols-outlined text-lg">play_arrow</span>
-            Пройти GRI-диагностику
-          </Link>
+          <div className="flex items-center justify-center gap-2 flex-wrap">
+            <Link href="/owner/gri/assess"
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-secondary/10 border border-secondary/20 text-secondary text-sm font-medium hover:bg-secondary/20 transition-colors">
+              <span className="material-symbols-outlined text-lg">play_arrow</span>
+              Пройти GRI-диагностику
+            </Link>
+            <Link href="/owner/point-a"
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white/[0.03] border border-white/[0.08] text-on-surface-variant text-sm font-medium hover:text-on-surface hover:bg-white/[0.06] transition-colors">
+              <span className="material-symbols-outlined text-lg">my_location</span>
+              Заполнить анкету Точки А
+            </Link>
+          </div>
         </div>
       ) : (
         <>

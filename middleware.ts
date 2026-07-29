@@ -3,6 +3,7 @@ import type { NextRequest } from 'next/server'
 import { updateSession } from '@/lib/supabase/middleware'
 import { GIGA_COOKIE_NAME, verifyGigaRoleEdge } from '@/lib/giga-cookie-edge'
 import { MFA_COOKIE_NAME, verifyStepUpEdge } from '@/lib/mfa/step-up-edge'
+import { roleLandingPath, WAITING_ROOM_PATH } from '@/lib/role-landing'
 
 const MFA_CHALLENGE_PATH = '/2fa'
 
@@ -31,6 +32,25 @@ const CLIENT_DASHBOARD_PATHS = [
 ]
 const EXPERT_PATHS = ['/expert']
 const OWNER_PATHS = ['/owner']
+
+// Paths a client whose profile is not `approved` yet may still open: the
+// waiting room itself, the vertical picker, the onboarding questionnaire
+// (generic / medical / e-commerce, including its /documents step), the
+// read-back of their own answers and the MFA challenge. The '-medical' /
+// '-ecommerce' variants are separate entries because route matching is
+// whole-segment.
+// '/client/welcome' is the picker that routes into the medical / e-commerce
+// questionnaires — without it those two forms are unreachable through the UI
+// for exactly the users the open questionnaire is meant for.
+const CLIENT_PENDING_PATHS = [
+  WAITING_ROOM_PATH,
+  '/client/welcome',
+  '/client/onboarding',
+  '/client/onboarding-medical',
+  '/client/onboarding-ecommerce',
+  '/client/my-data',
+  MFA_CHALLENGE_PATH,
+]
 
 // Whole-segment route matching: '/clients' must NOT match the '/client'
 // cabinet prefix (and vice versa) — plain startsWith leaks across routes.
@@ -128,6 +148,21 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
+  // A rejected client is out of the funnel: end the session and drop them on
+  // the login page with a notice. Signing out is what breaks the bounce — a
+  // still-authenticated rejected user would be redirected from /login back
+  // into the cabinet on every request. Unlike blocked/archived users there is
+  // no GoTrue ban here, so the cleared auth cookies are carried over onto the
+  // redirect (signOut writes them to `response`, which we do not return).
+  if (user && role === 'client' && resolved?.status === 'rejected') {
+    await supabase.auth.signOut()
+    const url = new URL('/login', request.url)
+    url.searchParams.set('rejected', '1')
+    const rejectedResponse = NextResponse.redirect(url)
+    response.cookies.getAll().forEach((cookie) => rejectedResponse.cookies.set(cookie))
+    return rejectedResponse
+  }
+
   if (role) {
     response.headers.set('x-user-role', role)
   }
@@ -157,15 +192,12 @@ export async function middleware(request: NextRequest) {
     return response
   }
 
-  // Authenticated user visiting auth page → redirect to correct panel
+  // Authenticated user visiting auth page → redirect to correct panel.
+  // FE-06: the destination comes from roleLandingPath — the same helper the
+  // login and register pages use — so the three flows can no longer diverge.
+  // It also honours the approval status we already read from `profiles`.
   if (isPublic && role) {
-    const dest =
-      role === 'super_admin' ? '/admin-giga-panel' :
-      role === 'admin' ? '/dashboard' :
-      role === 'owner' ? '/owner/dashboard' :
-      role === 'client' ? '/dashboard' :
-      '/expert/dashboard'
-    return NextResponse.redirect(new URL(dest, request.url))
+    return NextResponse.redirect(new URL(roleLandingPath(role, resolved?.status), request.url))
   }
 
   // Not authenticated, accessing protected page → redirect to login.
@@ -199,10 +231,29 @@ export async function middleware(request: NextRequest) {
     }
   }
 
+  // ── Approval gate ──
+  // Until `profiles.status` says 'approved', a client sees the waiting room and
+  // the onboarding questionnaire only — pending_approval / requires_clarification
+  // used to walk the whole portal. The questionnaire routes stay open on purpose:
+  // filling it in is exactly what moves the request forward.
+  // (blocked/archived/rejected returned earlier; public pages never reach this
+  // point — an authenticated user is redirected off them above.)
+  if (
+    user &&
+    role === 'client' &&
+    resolved?.status !== 'approved' &&
+    !matchesAny(pathname, CLIENT_PENDING_PATHS)
+  ) {
+    return NextResponse.redirect(new URL(WAITING_ROOM_PATH, request.url))
+  }
+
   // ── Role-based route protection ──
   if (user) {
-    // Expert trying to access admin-only pages
-    if (role === 'expert' && matchesAny(pathname, ADMIN_PATHS)) {
+    // Expert trying to access admin- or owner-only pages
+    if (
+      role === 'expert' &&
+      (matchesAny(pathname, ADMIN_PATHS) || matchesAny(pathname, OWNER_PATHS))
+    ) {
       return NextResponse.redirect(new URL('/expert/dashboard', request.url))
     }
 
@@ -217,10 +268,11 @@ export async function middleware(request: NextRequest) {
       if (matchesAny(pathname, CLIENT_DASHBOARD_PATHS)) {
         return response
       }
-      // If it's not a client portal path, redirect to the cabinet (sidebar dashboard)
-      if (!matchesRoute(pathname, '/client')) {
-        return NextResponse.redirect(new URL('/dashboard', request.url))
-      }
+      // Staff-only page → back to the shared cabinet (sidebar dashboard).
+      // No '/client' exception is needed here: matchesRoute is whole-segment,
+      // so a /client/* cabinet path never enters this branch in the first place
+      // (only '/clients' does, and that one is admin-only).
+      return NextResponse.redirect(new URL('/dashboard', request.url))
     }
 
     // Owner trying to access admin or expert pages

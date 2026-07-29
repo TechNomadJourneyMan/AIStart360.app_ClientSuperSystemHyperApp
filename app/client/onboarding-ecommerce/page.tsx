@@ -10,7 +10,8 @@
 //   7. Финансы           (выручка / сезонность / зависимость от 1 поставщика)
 //
 // Answers persist locally + POST to /api/v1/onboarding/survey on each step.
-// On finish → /client/dashboard-ecommerce.
+// On finish → /client/dashboard-ecommerce for an approved client; otherwise the
+// completion screen with a link to it (same exit rule as /client/onboarding).
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
@@ -167,6 +168,10 @@ const STEPS: StepDef[] = [
 
 const STORAGE_KEY = 'aistart360_onboarding_ecommerce'
 
+// The result page of this vertical — the e-commerce cabinet reads the ec_*
+// answers this survey just saved.
+const RESULT_PATH = '/client/dashboard-ecommerce'
+
 type AnswerValue = string | number | string[]
 
 export default function OnboardingEcommercePage() {
@@ -175,6 +180,8 @@ export default function OnboardingEcommercePage() {
   const [answers, setAnswers] = useState<Record<string, AnswerValue>>({})
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Set when the survey is finished but the account is not approved yet.
+  const [pendingStatus, setPendingStatus] = useState<string | null>(null)
 
   // Restore draft
   useEffect(() => {
@@ -235,6 +242,16 @@ export default function OnboardingEcommercePage() {
     }
   }, [stepIdx, answers])
 
+  // Approval status of the current session, or null when the CHECK ITSELF failed.
+  const fetchApprovalStatus = async (): Promise<string | null> => {
+    try {
+      const res = await fetch('/api/client/status', { credentials: 'include' })
+      if (!res.ok) return null
+      const data = await res.json()
+      return typeof data?.status === 'string' ? data.status : null
+    } catch { return null }
+  }
+
   const next = async () => {
     if (!canAdvance) {
       setError('Заполните обязательные поля')
@@ -250,7 +267,16 @@ export default function OnboardingEcommercePage() {
       setSubmitting(true)
       await persistRemote(true)
       sessionStorage.removeItem(STORAGE_KEY)
-      router.push('/client/dashboard-ecommerce')
+      // A failed status check counts as approved: middleware re-checks the
+      // status server-side, so an optimistic navigation cannot leak access,
+      // while defaulting to "not approved" would hide a filled-in cabinet.
+      const status = await fetchApprovalStatus()
+      if (status === null || status === 'approved') {
+        router.replace(RESULT_PATH)
+      } else {
+        setPendingStatus(status)
+      }
+      setSubmitting(false)
     }
   }
 
@@ -258,6 +284,44 @@ export default function OnboardingEcommercePage() {
     if (stepIdx === 0) return
     setStepIdx((i) => i - 1)
     window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  // Survey done, account still on moderation. Middleware would bounce this user
+  // straight off the cabinet, so we keep the link in front of him instead.
+  if (pendingStatus) {
+    return (
+      <div className="min-h-screen bg-[#0c0e14] text-on-surface flex items-center justify-center px-4 py-10">
+        <div className="w-full max-w-md text-center">
+          <div className="w-14 h-14 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center mx-auto mb-5">
+            <span className="material-symbols-outlined text-2xl text-primary">storefront</span>
+          </div>
+          <h1 className="text-xl font-bold text-on-surface mb-2">Анкета отправлена</h1>
+          <p className="text-sm text-on-surface-variant leading-relaxed">
+            Данные магазина сохранены. Кабинет откроется, как только администратор
+            подтвердит доступ — обычно в течение 24 часов.
+          </p>
+
+          {/* Same order as /client/onboarding: the cabinet is behind the
+              approval gate, so the waiting room is the honest primary action. */}
+          <div className="mt-6 space-y-3">
+            <Link
+              href="/client/waiting-room"
+              className="flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-gradient-to-r from-primary to-[#00e29e] text-[#003824] font-bold text-sm hover:scale-[0.99] transition-all"
+            >
+              <span className="material-symbols-outlined text-base">schedule</span>
+              Статус заявки
+            </Link>
+            <Link
+              href={RESULT_PATH}
+              className="flex items-center justify-center gap-2 px-5 py-3 rounded-xl border border-white/[0.08] text-on-surface-variant text-sm hover:bg-white/[0.04] transition-colors"
+            >
+              <span className="material-symbols-outlined text-base">arrow_forward</span>
+              Открыть кабинет — после одобрения
+            </Link>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   return (

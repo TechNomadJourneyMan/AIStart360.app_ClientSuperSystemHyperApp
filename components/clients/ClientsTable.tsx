@@ -63,7 +63,10 @@ function ScoreBar({ score }: { score: number }) {
   )
 }
 
-export function ClientsTable() {
+// `basePath` prefixes the detail links with the portal segment ('/owner').
+// Without it the owner portal links to /clients/<id>, which middleware keeps in
+// ADMIN_PATHS and bounces back to /owner/dashboard.
+export function ClientsTable({ basePath = '' }: { basePath?: string }) {
   const [clients, setClients] = useState<ClientRow[]>([])
   const [isLoading, setIsLoading] = useState(true)
 
@@ -122,7 +125,7 @@ export function ClientsTable() {
             <tr key={client.id} className="border-b border-outline-variant/10 last:border-0 table-row-hover group">
               {/* Client */}
               <td className="px-5 py-4">
-                <Link href={`/clients/${client.id}`} className="flex items-center gap-3 hover:text-primary transition-colors">
+                <Link href={`${basePath}/clients/${client.id}`} className="flex items-center gap-3 hover:text-primary transition-colors">
                   <Avatar name={client.name} size="sm" />
                   <div>
                     <p className="text-sm font-medium text-on-surface group-hover:text-primary transition-colors">{client.name}</p>
@@ -148,7 +151,7 @@ export function ClientsTable() {
               <td className="px-5 py-4">
                 <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                   <Link
-                    href={`/clients/${client.id}`}
+                    href={`${basePath}/clients/${client.id}`}
                     className="p-1.5 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors"
                     aria-label="Открыть"
                   >

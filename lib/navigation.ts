@@ -50,11 +50,33 @@ export const SECONDARY_NAV: NavItem[] = [
   { label: 'Админ',        href: '/admin',        icon: 'admin_panel_settings', roles: STAFF_ROLES },
 ]
 
+// ACCOUNT navigation — the desktop sidebar renders these in its own footer, so
+// they are deliberately kept out of PRIMARY/SECONDARY (no duplicates in «Ещё»).
+// Mobile has no footer and needs them listed explicitly.
+export const ACCOUNT_NAV: NavItem[] = [
+  { label: 'Профиль',   href: '/profile',  icon: 'account_circle', roles: CLIENT_OK },
+  { label: 'Настройки', href: '/settings', icon: 'settings',       roles: CLIENT_OK },
+]
+
 // Legacy flat list (for backward compat)
 export const NAV_ITEMS: NavItem[] = [...PRIMARY_NAV, ...SECONDARY_NAV]
 
 export function getNavForRole(role: UserRole): NavItem[] {
   return NAV_ITEMS.filter((item) => item.roles.includes(role))
+}
+
+// Every href a role may actually open — parents, their subItems and the account
+// pages. Filtering by the flat NAV_ITEMS alone silently drops nested entries
+// (/competitors, /insights, /intelligence), which is what hid them on mobile.
+export function getAllowedHrefsForRole(role: UserRole): string[] {
+  const hrefs = new Set<string>()
+  for (const item of [...NAV_ITEMS, ...ACCOUNT_NAV]) {
+    if (item.roles.includes(role)) hrefs.add(item.href)
+    for (const sub of item.subItems ?? []) {
+      if (sub.roles.includes(role)) hrefs.add(sub.href)
+    }
+  }
+  return [...hrefs]
 }
 
 export function getPrimaryNavForRole(role: UserRole): NavItem[] {

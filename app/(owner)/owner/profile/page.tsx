@@ -1,9 +1,43 @@
 'use client'
 
+import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { useAuthStore } from '@/stores/auth.store'
+
+interface GriCurrent {
+  gri_index?: number
+  created_at?: string
+}
 
 export default function OwnerProfilePage() {
   const { user } = useAuthStore()
+  const [gri, setGri] = useState<GriCurrent | null>(null)
+  const [griLoading, setGriLoading] = useState(true)
+
+  // Same source as the owner dashboard — no hardcoded score here.
+  useEffect(() => {
+    let active = true
+    ;(async () => {
+      try {
+        const res = await fetch('/api/v1/gri/assessment', { credentials: 'include' })
+        const j = await res.json()
+        if (active) setGri(j?.data?.current ?? null)
+      } catch {
+        if (active) setGri(null)
+      } finally {
+        if (active) setGriLoading(false)
+      }
+    })()
+    return () => {
+      active = false
+    }
+  }, [])
+
+  const griScore = typeof gri?.gri_index === 'number' ? gri.gri_index : 0
+  const hasAssessment = griScore > 0
+  const griDate = gri?.created_at
+    ? new Date(gri.created_at).toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' })
+    : null
 
   const fields = [
     { label: 'Имя', value: user?.name ?? '—' },
@@ -59,12 +93,18 @@ export default function OwnerProfilePage() {
             <span className="material-symbols-outlined text-secondary text-xl">radar</span>
             <div>
               <p className="text-sm text-on-surface">GRI Диагностика</p>
-              <p className="text-xs text-on-surface-variant">Март 2026 · Итоговый балл: 4.59/10</p>
+              <p className="text-xs text-on-surface-variant">
+                {griLoading
+                  ? 'Загрузка…'
+                  : hasAssessment
+                    ? `${griDate ? griDate + ' · ' : ''}Итоговый балл: ${griScore}/10`
+                    : 'Диагностика ещё не пройдена'}
+              </p>
             </div>
           </div>
-          <a href="/owner/gri" className="text-xs font-medium text-secondary hover:underline">
-            Открыть →
-          </a>
+          <Link href="/owner/gri" className="text-xs font-medium text-secondary hover:underline">
+            {hasAssessment ? 'Открыть →' : 'Пройти →'}
+          </Link>
         </div>
       </div>
     </div>

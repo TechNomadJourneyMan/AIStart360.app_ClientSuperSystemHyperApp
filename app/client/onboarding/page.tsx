@@ -8,6 +8,7 @@ import Link from 'next/link'
 import { TOTAL_STEPS, STEPS } from '@/components/onboarding/constants/step-config'
 import InlineValidationHints from '@/components/assistant/InlineValidationHints'
 import { getSectionByStep } from '@/lib/assistant/sections'
+import { roleLandingPath } from '@/lib/role-landing'
 
 // Step form components
 import Step1CompanyForm from '@/components/onboarding/steps/Step1CompanyForm'
@@ -24,6 +25,11 @@ import { Step11InfluenceForm } from '@/components/onboarding/steps/Step11Influen
 import Step12ToolsForm from '@/components/onboarding/steps/Step12ToolsForm'
 
 const STORAGE_KEY = 'aistart360_onboarding'
+
+// Where a finished survey lands. Resolved through the single role→landing
+// source of truth (FE-06) instead of the old '/client/dashboard' hop — that
+// route is just a redirect stub pointing here.
+const RESULT_PATH = roleLandingPath('client', 'approved')
 
 // Map step number to component
 const STEP_FORMS: Record<number, React.ComponentType<{ data: Record<string, unknown>; onChange: (key: string, value: unknown) => void; userId?: string }>> = {
@@ -50,6 +56,9 @@ export default function OnboardingPage() {
   const [userId, setUserId] = useState<string | null>(null)
   const [companyId, setCompanyId] = useState<string | null>(null)
   const [hasDocs, setHasDocs] = useState(false)
+  // Set when the survey is finished but the account is not approved yet —
+  // switches the page to the completion screen instead of navigating away.
+  const [pendingStatus, setPendingStatus] = useState<string | null>(null)
 
   // Bootstrap: load from localStorage → server
   useEffect(() => {
@@ -187,6 +196,34 @@ export default function OnboardingPage() {
     setStepData(prev => ({ ...prev, [key]: value }))
   }
 
+  // Approval status of the current session, or null when the CHECK ITSELF
+  // failed. The user id comes from the session server-side, so no query param.
+  const fetchApprovalStatus = async (): Promise<string | null> => {
+    try {
+      const res = await fetch('/api/client/status', { credentials: 'include' })
+      if (!res.ok) return null
+      const data = await res.json()
+      return typeof data?.status === 'string' ? data.status : null
+    } catch { return null }
+  }
+
+  // The SINGLE exit rule for both endings of the survey — the 12th step and the
+  // early "Сформировать Точку А". Approved → straight to the result page.
+  // Not approved → the completion screen below, which keeps the link to the
+  // result instead of dumping the user into an empty waiting room.
+  // A failed status check counts as approved on purpose: middleware re-checks
+  // the status server-side, so an optimistic navigation cannot leak access,
+  // while defaulting to "not approved" would hide a result the user just spent
+  // 12 steps on.
+  const finishSurvey = async () => {
+    const status = await fetchApprovalStatus()
+    if (status === null || status === 'approved') {
+      router.replace(RESULT_PATH)
+      return
+    }
+    setPendingStatus(status)
+  }
+
   const goNext = async () => {
     persistLocal(currentStep, stepData)
     await saveToServer(currentStep, stepData)
@@ -195,8 +232,8 @@ export default function OnboardingPage() {
       setCurrentStep(currentStep + 1)
     } else {
       // All 12 steps done → trigger diagnostics
+      setIsSaving(true)
       if (userId) {
-        setIsSaving(true)
         try {
           await fetch('/api/v1/diagnostics/recalculate', {
             method: 'POST',
@@ -204,14 +241,10 @@ export default function OnboardingPage() {
             body: JSON.stringify({ user_id: userId }),
           })
         } catch {}
-        setIsSaving(false)
       }
       localStorage.removeItem(STORAGE_KEY)
-      try {
-        const statusRes = await fetch(`/api/client/status?userId=${userId}`)
-        const statusData = await statusRes.json()
-        router.push(statusData.status === 'approved' ? '/client/dashboard' : '/client/waiting-room')
-      } catch { router.push('/client/dashboard') }
+      await finishSurvey()
+      setIsSaving(false)
     }
   }
 
@@ -220,8 +253,8 @@ export default function OnboardingPage() {
   const finishEarly = async () => {
     persistLocal(currentStep, stepData)
     await saveToServer(currentStep, stepData)
+    setIsSaving(true)
     if (userId) {
-      setIsSaving(true)
       try {
         await fetch('/api/v1/diagnostics/recalculate', {
           method: 'POST',
@@ -229,9 +262,11 @@ export default function OnboardingPage() {
           body: JSON.stringify({ user_id: userId }),
         })
       } catch {}
-      setIsSaving(false)
     }
-    router.push('/client/point-a')
+    // Same rule as the full finish — the survey draft stays in place so the
+    // user can come back and complete it.
+    await finishSurvey()
+    setIsSaving(false)
   }
 
   const goBack = () => setCurrentStep(s => Math.max(1, s - 1))
@@ -252,12 +287,53 @@ export default function OnboardingPage() {
   )
   const canFinishEarly = !isLastStep && (planFilled || hasDocs)
 
+  // Survey done, account still on moderation. Middleware would bounce this user
+  // straight off the result page, so instead of a bare waiting room we tell him
+  // what happened and keep both links in front of him.
+  if (pendingStatus) {
+    return (
+      <div className="min-h-screen bg-[#0c0e14] text-on-surface flex items-center justify-center px-4 py-10">
+        <div className="w-full max-w-md text-center">
+          <div className="w-14 h-14 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center mx-auto mb-5">
+            <span className="material-symbols-outlined text-2xl text-primary">insights</span>
+          </div>
+          <h1 className="text-xl font-bold text-on-surface mb-2">Точка А сформирована</h1>
+          <p className="text-sm text-on-surface-variant leading-relaxed">
+            Анкета сохранена, ИИ-агент посчитал диагностику. Результат откроется,
+            как только администратор подтвердит доступ — обычно в течение 24 часов.
+          </p>
+
+          {/* The waiting room is the primary action on purpose: until approval
+              the result page is closed by the gate in middleware, so a click on
+              it lands here anyway. The link stays visible (and starts working
+              the moment the admin approves), but it is not sold as the way out. */}
+          <div className="mt-6 space-y-3">
+            <Link
+              href="/client/waiting-room"
+              className="flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-gradient-to-r from-primary to-[#00e29e] text-[#003824] font-bold text-sm hover:scale-[0.99] transition-all"
+            >
+              <span className="material-symbols-outlined text-base">schedule</span>
+              Статус заявки
+            </Link>
+            <Link
+              href={RESULT_PATH}
+              className="flex items-center justify-center gap-2 px-5 py-3 rounded-xl border border-white/[0.08] text-on-surface-variant text-sm hover:bg-white/[0.04] transition-colors"
+            >
+              <span className="material-symbols-outlined text-base">arrow_forward</span>
+              Открыть мою Точку А — после одобрения
+            </Link>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen bg-[#0c0e14] text-on-surface">
       {/* Header */}
       <header className="sticky top-0 z-30 bg-[#0c0e14]/90 backdrop-blur-xl border-b border-white/[0.06]">
         <div className="max-w-3xl mx-auto px-4 py-3 flex items-center justify-between">
-          <Link href="/client/dashboard" className="flex items-center gap-2 group">
+          <Link href={RESULT_PATH} className="flex items-center gap-2 group">
             <Image src="/logo-icon.svg" alt="AIStart360" width={28} height={28} className="opacity-80 group-hover:opacity-100 transition-opacity" />
             <span className="text-sm font-bold text-on-surface/70 hidden sm:block">AIStart360</span>
           </Link>

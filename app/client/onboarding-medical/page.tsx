@@ -12,6 +12,9 @@ import { createClient } from '@/lib/supabase/client'
 import { MEDICAL_INTAKE_FIELDS, type IntakeField } from '@/lib/intake-schemas'
 import type { DataQualityReport, DataQualityIssue } from '@/lib/data-quality'
 
+// The result page of this vertical — the clinic cabinet built from this intake.
+const RESULT_PATH = '/client/dashboard-medical'
+
 export default function OnboardingMedicalPage() {
   const router = useRouter()
   const [values, setValues] = useState<Record<string, string>>({})
@@ -21,6 +24,10 @@ export default function OnboardingMedicalPage() {
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
   const [qualityReport, setQualityReport] = useState<DataQualityReport | null>(null)
+  // Why the user stays on this page after a successful submit instead of being
+  // auto-forwarded: 'moderation' — account not approved yet, 'quality' — critical
+  // issues in the uploaded base he has to read first. null → redirect running.
+  const [holdReason, setHoldReason] = useState<'moderation' | 'quality' | null>(null)
 
   // Bootstrap user + pre-fill with their known email + hydrate saved answers
   useEffect(() => {
@@ -85,6 +92,16 @@ export default function OnboardingMedicalPage() {
     return null
   }
 
+  // Approval status of the current session, or null when the CHECK ITSELF failed.
+  const fetchApprovalStatus = async (): Promise<string | null> => {
+    try {
+      const res = await fetch('/api/client/status', { credentials: 'include' })
+      if (!res.ok) return null
+      const data = await res.json()
+      return typeof data?.status === 'string' ? data.status : null
+    } catch { return null }
+  }
+
   const submit = async () => {
     const err = validate()
     if (err) { setError(err); return }
@@ -110,8 +127,16 @@ export default function OnboardingMedicalPage() {
       setSuccess(true)
       // If there are critical quality issues — let user see them before redirect
       const hasCriticalIssues = body.qualityReport?.issues.some((i) => i.severity === 'critical')
-      if (!hasCriticalIssues) {
-        setTimeout(() => router.replace('/client/dashboard-medical'), 3500)
+      if (hasCriticalIssues) { setHoldReason('quality'); return }
+      // Same exit rule as the other surveys: gate on the approval status, and
+      // treat a FAILED check as approved — middleware re-checks the status
+      // server-side, so an optimistic redirect cannot leak access, while
+      // defaulting to "not approved" would hide the result.
+      const status = await fetchApprovalStatus()
+      if (status === null || status === 'approved') {
+        setTimeout(() => router.replace(RESULT_PATH), 3500)
+      } else {
+        setHoldReason('moderation')
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Не удалось отправить')
@@ -169,11 +194,51 @@ export default function OnboardingMedicalPage() {
           {success && (
             <div className="rounded-xl bg-primary/5 border border-primary/20 p-3 text-sm text-primary inline-flex items-center gap-2">
               <span className="material-symbols-outlined text-base">check_circle</span>
-              Анкета отправлена! {qualityReport ? 'Отчёт по качеству данных ниже.' : 'Переводим в кабинет…'}
+              Анкета отправлена!{' '}
+              {holdReason === null ? 'Переводим в кабинет…'
+                : qualityReport ? 'Отчёт по качеству данных ниже.'
+                : 'Что дальше — ниже.'}
             </div>
           )}
 
           {qualityReport && <QualityReportBlock report={qualityReport} />}
+
+          {/* No auto-redirect → never leave the user without a way back to his
+              result: the cabinet link stays visible in both hold cases. */}
+          {holdReason && (
+            <div className="rounded-xl bg-surface-container border border-white/[0.06] p-4 space-y-3">
+              <p className="text-sm text-on-surface-variant leading-relaxed">
+                {holdReason === 'moderation'
+                  ? 'Кабинет клиники откроется, как только администратор подтвердит доступ — обычно в течение 24 часов.'
+                  : 'Проверьте замечания по файлу выше: базу можно поправить и загрузить заново.'}
+              </p>
+              {/* On moderation the cabinet is closed by the gate in middleware,
+                  so the waiting room leads there; on a quality hold the account
+                  is fine and the cabinet link is the real way out. */}
+              <div className="flex flex-wrap gap-2">
+                {holdReason === 'moderation' && (
+                  <Link
+                    href="/client/waiting-room"
+                    className="inline-flex items-center gap-2 rounded-xl bg-primary text-on-primary text-sm font-medium px-4 py-2 hover:bg-primary/90 transition-all"
+                  >
+                    <span className="material-symbols-outlined text-base">schedule</span>
+                    Статус заявки
+                  </Link>
+                )}
+                <Link
+                  href={RESULT_PATH}
+                  className={holdReason === 'moderation'
+                    ? 'inline-flex items-center gap-2 rounded-xl border border-white/[0.08] text-on-surface-variant text-sm px-4 py-2 hover:bg-white/[0.04] transition-colors'
+                    : 'inline-flex items-center gap-2 rounded-xl bg-primary text-on-primary text-sm font-medium px-4 py-2 hover:bg-primary/90 transition-all'}
+                >
+                  <span className="material-symbols-outlined text-base">arrow_forward</span>
+                  {holdReason === 'moderation'
+                    ? 'Кабинет клиники — после одобрения'
+                    : 'Перейти в кабинет клиники'}
+                </Link>
+              </div>
+            </div>
+          )}
 
           <div className="pt-3 flex items-center justify-between gap-3">
             <p className="text-[11px] text-on-surface-variant/70">

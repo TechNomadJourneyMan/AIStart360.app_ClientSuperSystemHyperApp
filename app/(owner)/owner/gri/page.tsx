@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { ShareButtonAuto } from '@/components/share/ShareButtonAuto'
 
 // 7 GRI blocks (section ids ↔ Russian labels) in canonical order.
@@ -149,11 +150,12 @@ export default function OwnerGriPage() {
             Пройдите диагностику Growth Readiness Index, чтобы получить оценку по 7 блокам,
             топ-5 ограничений роста и план действий на 90 дней.
           </p>
-          <a href="/gri"
+          {/* /gri владельцу закрыт middleware'ом — опросник живёт внутри owner-портала. */}
+          <Link href="/owner/gri/assess"
             className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-secondary/10 border border-secondary/20 text-secondary text-sm font-medium hover:bg-secondary/20 transition-colors">
             <span className="material-symbols-outlined text-lg">play_arrow</span>
             Пройти GRI-диагностику
-          </a>
+          </Link>
         </div>
       </div>
     )
@@ -170,7 +172,14 @@ export default function OwnerGriPage() {
             {current?.created_at ? ` · ${new Date(current.created_at).toLocaleDateString('ru-RU')}` : ''}
           </p>
         </div>
-        <ShareButtonAuto type="gri" />
+        <div className="flex items-center gap-2 flex-wrap">
+          <Link href="/owner/gri/assess"
+            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-secondary/10 border border-secondary/20 text-secondary text-sm font-medium hover:bg-secondary/20 transition-colors">
+            <span className="material-symbols-outlined text-lg">refresh</span>
+            Пройти заново
+          </Link>
+          <ShareButtonAuto type="gri" />
+        </div>
       </div>
 
       {/* Score hero */}

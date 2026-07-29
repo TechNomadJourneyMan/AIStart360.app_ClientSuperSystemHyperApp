@@ -35,9 +35,14 @@ export async function GET(_req: NextRequest) {
       }
     )
 
+    // An internal failure must NOT be reported as 'pending_approval': callers
+    // (the questionnaires, the waiting room) cannot tell a made-up status from
+    // a real moderation verdict, and an approved user would be shown the
+    // "on moderation" screen instead of his result. 503 = "unknown", which the
+    // callers already handle as "check failed".
     if (!res.ok) {
       console.error('[client/status] REST API error:', res.status, await res.text())
-      return NextResponse.json({ status: 'pending_approval' })
+      return NextResponse.json({ error: 'status_unavailable' }, { status: 503 })
     }
 
     const rows = await res.json() as Array<{ status: string }>
@@ -45,6 +50,6 @@ export async function GET(_req: NextRequest) {
     return NextResponse.json({ status })
   } catch (error) {
     console.error('[client/status] error:', error)
-    return NextResponse.json({ status: 'pending_approval' })
+    return NextResponse.json({ error: 'status_unavailable' }, { status: 503 })
   }
 }

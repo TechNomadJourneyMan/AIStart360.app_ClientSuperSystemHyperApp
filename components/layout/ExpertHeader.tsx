@@ -32,13 +32,10 @@ export function ExpertHeader() {
       </div>
 
       {/* Right */}
+      {/* No notifications bell: /notifications is an ADMIN_PATH, so middleware
+          bounced the expert back to /expert/dashboard on every click, and the
+          (expert) group has no notifications page of its own yet. */}
       <div className="flex items-center gap-3">
-        <Link href="/notifications" aria-label="Уведомления"
-          className="relative w-9 h-9 rounded-xl bg-surface-container hover:bg-surface-container-high border border-white/[0.04] flex items-center justify-center transition-colors">
-          <span className="material-symbols-outlined text-xl text-on-surface-variant">notifications</span>
-          <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-primary" />
-        </Link>
-
         <div className="flex items-center gap-2 bg-surface-container border border-white/[0.04] rounded-xl px-3 py-1.5">
           <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-primary/30 to-primary/10 flex items-center justify-center text-[10px] font-bold text-primary">
             {user?.name?.split(' ').map(n => n[0]).join('').slice(0,2).toUpperCase() ?? 'EX'}
