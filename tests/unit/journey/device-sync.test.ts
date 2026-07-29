@@ -200,7 +200,7 @@ describe('Journey cross-device sync', () => {
 
   it('implements one-time claim and compare-and-swap under row locks in SQL', () => {
     const migration = readFileSync(
-      new URL('../../../supabase/migrations/070_ai_journey_device_sync.sql', import.meta.url),
+      new URL('../../../supabase/migrations/075_ai_journey_device_sync.sql', import.meta.url),
       'utf8',
     )
     expect(migration).toContain('for update')
@@ -247,7 +247,7 @@ describe('Journey cross-device sync', () => {
       'utf8',
     )
     const migration = readFileSync(
-      new URL('../../../supabase/migrations/070_ai_journey_device_sync.sql', import.meta.url),
+      new URL('../../../supabase/migrations/075_ai_journey_device_sync.sql', import.meta.url),
       'utf8',
     )
     expect(redeemRoute.indexOf('resolveJourneyActor()')).toBeLessThan(

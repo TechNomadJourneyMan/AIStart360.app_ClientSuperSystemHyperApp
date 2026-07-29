@@ -1,4 +1,4 @@
--- 070_ai_journey_device_sync.sql
+-- 075_ai_journey_device_sync.sql
 -- Durable, cookie-first device credentials for the AI Journey workspace.
 -- Raw credentials and connect codes never enter the database. Device tokens
 -- use SHA-256; short connect codes use a server-keyed HMAC-SHA-256 digest so a
