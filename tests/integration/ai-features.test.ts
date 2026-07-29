@@ -10,6 +10,11 @@
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import {
+  supabaseTestsEnabled,
+  TEST_SUPABASE_SERVICE_ROLE_KEY,
+  TEST_SUPABASE_URL,
+} from '../helpers/supabase-env'
 import { randomUUID } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -27,9 +32,11 @@ function loadEnvFile(file: string) {
 loadEnvFile(resolve(process.cwd(), '.env.local'))
 loadEnvFile(resolve(process.cwd(), '.env'))
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? ''
-const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? ''
-const SKIP = !SUPABASE_URL || !SERVICE_ROLE_KEY
+// Disposable project only — never the production Supabase from .env.
+// See tests/helpers/supabase-env.ts.
+const SUPABASE_URL = TEST_SUPABASE_URL
+const SERVICE_ROLE_KEY = TEST_SUPABASE_SERVICE_ROLE_KEY
+const SKIP = !supabaseTestsEnabled
 
 const describeOrSkip =
   typeof (describe as unknown as { skipIf?: unknown }).skipIf === 'function'

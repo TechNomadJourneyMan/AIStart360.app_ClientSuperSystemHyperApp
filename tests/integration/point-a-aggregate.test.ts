@@ -13,14 +13,20 @@
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import {
+  supabaseTestsEnabled,
+  TEST_SUPABASE_SERVICE_ROLE_KEY,
+  TEST_SUPABASE_URL,
+} from '../helpers/supabase-env'
 
 // ── Env / skip detection ─────────────────────────────────────────────────────
 
-const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
-const SUPA_URL =
-  process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
+// Disposable project only — never the production Supabase from .env.
+// See tests/helpers/supabase-env.ts.
+const SERVICE_KEY = TEST_SUPABASE_SERVICE_ROLE_KEY
+const SUPA_URL = TEST_SUPABASE_URL
 
-const SKIP = !SERVICE_KEY || !SUPA_URL
+const SKIP = !supabaseTestsEnabled
 
 // Vitest's `describe.skipIf` lands in 1.0+. Fall back to inline guard if
 // running on an older runner.
