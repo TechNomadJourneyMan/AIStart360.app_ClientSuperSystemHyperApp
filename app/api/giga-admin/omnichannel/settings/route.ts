@@ -11,6 +11,8 @@ import {
   updateDevelopmentAdminSetting,
 } from '@/lib/omnichannel/development-admin-postgres'
 import { getMetaConfigurationHealth } from '@/lib/omnichannel/meta-client'
+import { getWhatsAppWebBridgeConfigurationHealth } from '@/lib/omnichannel/whatsapp-web-client'
+import { getOmnichannelAutoReplyReadiness } from '@/lib/omnichannel/auto-reply-readiness'
 import { createServiceClient } from '@/lib/supabase-service'
 
 const updateSchema = z
@@ -93,8 +95,74 @@ export async function PATCH(req: NextRequest) {
 
   const { channel, equipment_flow_enabled: equipmentFlowEnabled, ...patch } = parsed.data
   let data: Record<string, unknown> | null = null
+  const developmentPostgres = shouldUseDevelopmentAdminPostgres()
+  const needsAutoReadinessCheck = equipmentFlowEnabled === undefined && (
+    patch.enabled !== undefined
+    || patch.mode !== undefined
+    || patch.business_context !== undefined
+  )
 
-  if (shouldUseDevelopmentAdminPostgres()) {
+  if (needsAutoReadinessCheck) {
+    let current: Record<string, unknown> | null = null
+    try {
+      if (developmentPostgres) {
+        current = (await listDevelopmentAdminSettings()).find(
+          (setting) => setting.channel === channel,
+        ) as Record<string, unknown> | undefined ?? null
+      } else {
+        const lookup = await createServiceClient()
+          .from('omnichannel_settings')
+          .select(settingColumns)
+          .eq('channel', channel)
+          .maybeSingle()
+        if (lookup.error) throw lookup.error
+        current = lookup.data as Record<string, unknown> | null
+      }
+    } catch {
+      return NextResponse.json(
+        { error: 'Не удалось проверить готовность канала' },
+        { status: 500 },
+      )
+    }
+    if (!current) {
+      return NextResponse.json({ error: 'Настройки канала не найдены' }, { status: 404 })
+    }
+
+    const nextEnabled = patch.enabled ?? (current.enabled === true)
+    const nextMode = (patch.mode ?? current.mode) as 'off' | 'draft' | 'auto'
+    const nextBusinessContext = patch.business_context !== undefined
+      ? patch.business_context
+      : typeof current.business_context === 'string'
+        ? current.business_context
+        : null
+    const meta = getMetaConfigurationHealth()
+    const readiness = getOmnichannelAutoReplyReadiness({
+      channel,
+      enabled: nextEnabled,
+      mode: nextMode,
+      businessContext: nextBusinessContext,
+      metaConfigured: meta[channel].configured,
+      whatsAppWebConfigured: channel === 'whatsapp'
+        ? getWhatsAppWebBridgeConfigurationHealth().configured
+        : false,
+    })
+    const activatesAuto = nextEnabled && nextMode === 'auto' && (
+      patch.mode === 'auto'
+      || patch.enabled === true
+      || patch.business_context !== undefined
+    )
+    if (activatesAuto && !readiness.ready) {
+      return NextResponse.json({
+        error: readiness.missing.includes('business_context')
+          ? 'Для автоответов сначала заполните проверенную базу ответов канала'
+          : 'Для автоответов сначала подключите и проверьте канал',
+        code: 'omnichannel_auto_not_ready',
+        missing: readiness.missing,
+      }, { status: 409 })
+    }
+  }
+
+  if (developmentPostgres) {
     try {
       data = equipmentFlowEnabled !== undefined
         ? await setDevelopmentEquipmentFlowEnabled(channel, equipmentFlowEnabled)

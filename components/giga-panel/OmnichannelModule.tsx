@@ -97,6 +97,18 @@ interface WhatsAppWebConnector {
   }
 }
 
+interface MetaChannelConfiguration {
+  configured: boolean
+  tokenConfigured: boolean
+  accountIdConfigured: boolean
+  missing: string[]
+}
+
+interface MetaConfiguration {
+  instagram: MetaChannelConfiguration
+  whatsapp: MetaChannelConfiguration
+}
+
 function formatTime(value: string | null): string {
   if (!value) return '—'
   const date = new Date(value)
@@ -154,8 +166,10 @@ export function OmnichannelModule() {
   const [reply, setReply] = useState('')
   const [sending, setSending] = useState(false)
   const [backfilling, setBackfilling] = useState<Channel | null>(null)
+  const [backfillMonitoring, setBackfillMonitoring] = useState<Channel | null>(null)
   const [savingSetting, setSavingSetting] = useState<Channel | null>(null)
   const [whatsAppWeb, setWhatsAppWeb] = useState<WhatsAppWebConnector | null>(null)
+  const [metaConfiguration, setMetaConfiguration] = useState<MetaConfiguration | null>(null)
   const [whatsAppWebLoading, setWhatsAppWebLoading] = useState(true)
   const [whatsAppWebAction, setWhatsAppWebAction] = useState<'connect' | 'logout' | null>(null)
   const settingMutationRef = useRef(false)
@@ -217,6 +231,22 @@ export function OmnichannelModule() {
     }
   }, [])
 
+  const loadSettings = useCallback(async () => {
+    try {
+      const res = await fetch('/api/giga-admin/omnichannel/settings', { cache: 'no-store' })
+      const json = (await res.json()) as {
+        settings?: ChannelSetting[]
+        configuration?: MetaConfiguration
+        error?: string
+      }
+      if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`)
+      if (!settingMutationRef.current) setSettings(json.settings ?? [])
+      if (json.configuration) setMetaConfiguration(json.configuration)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Не удалось проверить готовность каналов')
+    }
+  }, [])
+
   const loadWhatsAppWeb = useCallback(async (notifyOnError = false) => {
     try {
       const res = await fetch('/api/giga-admin/omnichannel/whatsapp-web', { cache: 'no-store' })
@@ -233,6 +263,7 @@ export function OmnichannelModule() {
   }, [])
 
   useEffect(() => { void loadConversations() }, [loadConversations])
+  useEffect(() => { void loadSettings() }, [loadSettings])
   useEffect(() => { void loadWhatsAppWeb() }, [loadWhatsAppWeb])
   useEffect(() => {
     if (!['connecting', 'qr'].includes(whatsAppWeb?.status?.state ?? '')) return
@@ -260,6 +291,19 @@ export function OmnichannelModule() {
   const whatsAppWebState: WhatsAppWebState = whatsAppWeb?.status?.state
     ?? (whatsAppWeb?.configuration.enabled ? 'idle' : 'disabled')
   const whatsAppWebBusy = whatsAppWebAction !== null || ['connecting', 'qr'].includes(whatsAppWebState)
+
+  function channelAutoReadiness(item: ChannelSetting) {
+    const businessContextReady = Boolean(item.business_context?.trim())
+    const metaReady = metaConfiguration?.[item.channel]?.configured === true
+    const providerReady = metaReady || (
+      item.channel === 'whatsapp' && whatsAppWeb?.configuration.configured === true
+    )
+    return {
+      ready: businessContextReady && providerReady,
+      businessContextReady,
+      providerReady,
+    }
+  }
 
   async function patchSetting(item: ChannelSetting, patch: ChannelSettingPatch) {
     if (settingMutationRef.current) return
@@ -299,6 +343,10 @@ export function OmnichannelModule() {
   }
 
   function changeChannelEnabled(item: ChannelSetting, enabled: boolean) {
+    if (enabled && item.mode === 'auto' && !channelAutoReadiness(item).ready) {
+      toast.error('Сначала подключите канал и заполните проверенную базу ответов')
+      return
+    }
     if (
       enabled
       && item.mode === 'auto'
@@ -308,6 +356,10 @@ export function OmnichannelModule() {
   }
 
   function changeMode(item: ChannelSetting, mode: Mode) {
+    if (mode === 'auto' && !channelAutoReadiness(item).ready) {
+      toast.error('Авто недоступно: подключите канал и заполните проверенную базу ответов')
+      return
+    }
     if (
       mode === 'auto'
       && item.mode !== 'auto'
@@ -365,13 +417,15 @@ export function OmnichannelModule() {
       const json = (await res.json()) as {
         error?: string
         queued?: boolean
+        backend?: string
+        workflow_run_id?: string
         candidates_found?: number
         completed?: number
         failed?: number
       }
       if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`)
       if (target === 'instagram') {
-        toast.success('Импорт Instagram поставлен в очередь')
+        toast.success('Импорт Instagram запущен — список будет обновляться автоматически')
       } else if (json.queued) {
         toast.success('AI-разбор загруженной истории WhatsApp поставлен в очередь')
       } else if ((json.candidates_found ?? 0) === 0) {
@@ -383,6 +437,16 @@ export function OmnichannelModule() {
       }
       await loadConversations()
       if (selectedIdRef.current) await loadDetail(selectedIdRef.current)
+      if (json.backend === 'workflow' && json.workflow_run_id) {
+        setBackfillMonitoring(target)
+        for (const [index, delay] of [5_000, 15_000, 30_000, 60_000].entries()) {
+          window.setTimeout(() => {
+            void loadConversations()
+            if (selectedIdRef.current) void loadDetail(selectedIdRef.current)
+            if (index === 3) setBackfillMonitoring(null)
+          }, delay)
+        }
+      }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Разбор не запущен')
     } finally {
@@ -428,9 +492,11 @@ export function OmnichannelModule() {
           <p className="text-xs text-slate-500 mt-1">Instagram + WhatsApp · AI-черновики, автоответы и передача человеку</p>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={() => void startBackfill(backfillTarget)} disabled={backfilling !== null} className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium bg-fuchsia-500/15 text-fuchsia-300 border border-fuchsia-500/20 disabled:opacity-50">
-            {backfilling ? <Loader2 size={14} className="animate-spin" /> : <ChannelIcon channel={backfillTarget} size={14} />}
-            {backfillTarget === 'whatsapp' ? 'Разобрать WhatsApp' : 'Импорт Instagram'}
+          <button onClick={() => void startBackfill(backfillTarget)} disabled={backfilling !== null || backfillMonitoring !== null} className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium bg-fuchsia-500/15 text-fuchsia-300 border border-fuchsia-500/20 disabled:opacity-50">
+            {backfilling || backfillMonitoring ? <Loader2 size={14} className="animate-spin" /> : <ChannelIcon channel={backfillTarget} size={14} />}
+            {backfillMonitoring
+              ? 'Разбор идёт в фоне…'
+              : backfillTarget === 'whatsapp' ? 'Разобрать WhatsApp' : 'Импорт Instagram'}
           </button>
           <button onClick={() => void loadConversations()} aria-label="Обновить" className="p-2 rounded-xl text-slate-400 bg-white/[0.04] border border-white/[0.08]">
             <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
@@ -463,7 +529,11 @@ export function OmnichannelModule() {
                   <input
                     type="checkbox"
                     checked={item.enabled}
-                    disabled={savingSetting !== null}
+                    disabled={savingSetting !== null || (
+                      !item.enabled
+                      && item.mode === 'auto'
+                      && !channelAutoReadiness(item).ready
+                    )}
                     onChange={(event) => changeChannelEnabled(item, event.target.checked)}
                     className="accent-blue-500 disabled:opacity-50"
                   /> активен
@@ -471,7 +541,17 @@ export function OmnichannelModule() {
               </div>
               <div className="grid grid-cols-3 gap-1 rounded-xl bg-white/[0.03] p-1">
                 {(['off', 'draft', 'auto'] as Mode[]).map((mode) => (
-                  <button key={mode} disabled={savingSetting !== null} onClick={() => changeMode(item, mode)} className={`px-2 py-2 rounded-lg text-[11px] font-medium disabled:opacity-50 ${item.mode === mode ? 'bg-blue-500/20 text-blue-300 border border-blue-500/20' : 'text-slate-500'}`}>
+                  <button
+                    key={mode}
+                    disabled={savingSetting !== null || (
+                      mode === 'auto' && !channelAutoReadiness(item).ready
+                    )}
+                    title={mode === 'auto' && !channelAutoReadiness(item).ready
+                      ? 'Сначала подключите канал и заполните базу ответов'
+                      : undefined}
+                    onClick={() => changeMode(item, mode)}
+                    className={`px-2 py-2 rounded-lg text-[11px] font-medium disabled:opacity-50 ${item.mode === mode ? 'bg-blue-500/20 text-blue-300 border border-blue-500/20' : 'text-slate-500'}`}
+                  >
                     {mode === 'off' ? 'Выкл.' : mode === 'draft' ? 'Черновик' : 'Авто'}
                   </button>
                 ))}
@@ -533,6 +613,18 @@ export function OmnichannelModule() {
                     className="mt-1 w-full rounded-lg bg-white/[0.04] border border-white/[0.08] px-2.5 py-2 text-xs text-slate-200 outline-none disabled:opacity-50"
                   />
                 </label>
+              </div>
+              <div className={`rounded-lg border px-2.5 py-2 text-[10px] ${
+                channelAutoReadiness(item).ready
+                  ? 'border-emerald-500/15 bg-emerald-500/[0.05] text-emerald-300'
+                  : 'border-amber-500/15 bg-amber-500/[0.05] text-amber-300'
+              }`}>
+                {channelAutoReadiness(item).ready
+                  ? 'Канал и база ответов готовы к режиму «Авто».'
+                  : `Авто заблокировано: ${[
+                      !channelAutoReadiness(item).providerReady ? 'канал не подключён' : null,
+                      !channelAutoReadiness(item).businessContextReady ? 'база ответов пуста' : null,
+                    ].filter(Boolean).join(', ')}.`}
               </div>
               <p className="text-[10px] text-slate-600">Auto: только низкий риск, уверенность ≥ {Math.round(item.confidence_threshold * 100)}% и окно 24 часа.</p>
             </div>

@@ -37,8 +37,13 @@ export async function getGigaActor(req: NextRequest): Promise<GigaActor | null> 
     } = await sb.auth.getUser()
     if (user) {
       // Self-read of one's own profile row is allowed by RLS.
-      const { data } = await sb.from('profiles').select('role').eq('id', user.id).maybeSingle()
-      if ((data as { role?: string } | null)?.role === 'super_admin') {
+      const { data } = await sb
+        .from('profiles')
+        .select('role, status')
+        .eq('id', user.id)
+        .maybeSingle()
+      const profile = data as { role?: string; status?: string } | null
+      if (profile?.role === 'super_admin' && profile.status === 'approved') {
         return { id: user.id, kind: 'session', email: user.email ?? undefined }
       }
     }

@@ -166,6 +166,7 @@ describe('Giga Inbox development PostgreSQL route fallback', () => {
     expect(development.updateSetting).toHaveBeenCalledWith('whatsapp', {
       reply_delay_seconds: 5,
     })
+    expect(development.listSettings).not.toHaveBeenCalled()
     expect(service.createServiceClient).not.toHaveBeenCalled()
   })
 

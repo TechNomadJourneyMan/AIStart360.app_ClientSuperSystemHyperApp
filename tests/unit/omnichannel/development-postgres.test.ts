@@ -43,10 +43,11 @@ describe('development omnichannel Postgres fallback', () => {
     const standard = databaseReturning([{ claimed: true, reason: 'claimed' }])
     await expect(claimMessageForAutoSendViaPostgres(
       '00000000-0000-0000-0000-000000000001',
+      'database-job:1:lease-1',
       standard as never,
     )).resolves.toEqual({ claimed: true, reason: 'claimed' })
     expect(standard.query.mock.calls[0][0]).toContain(
-      'FROM public.claim_omnichannel_auto_send($1::uuid)',
+      'FROM public.claim_omnichannel_auto_send_owned($1::uuid, $2::text)',
     )
 
     const equipment = databaseReturning([{
@@ -56,13 +57,14 @@ describe('development omnichannel Postgres fallback', () => {
     await expect(claimEquipmentFlowForAutoSendViaPostgres(
       '00000000-0000-0000-0000-000000000001',
       '2026-07-14T20:00:00.000Z',
+      'database-job:1:lease-1',
       equipment as never,
     )).resolves.toEqual({
       claimed: false,
       reason: 'equipment_flow_settings_changed',
     })
     expect(equipment.query.mock.calls[0][0]).toContain(
-      'FROM public.claim_omnichannel_equipment_flow_send($1::uuid, $2::timestamptz)',
+      'FROM public.claim_omnichannel_equipment_flow_send_owned',
     )
   })
 
@@ -158,6 +160,7 @@ describe('development omnichannel Postgres fallback', () => {
     expect(sql).toContain("status = 'imported'")
     expect(sql).toContain('ai_draft IS NULL')
     expect(sql).toContain('metadata @> $1::jsonb')
+    expect(sql).toContain('DISTINCT ON (conversation_id)')
     expect(params).toEqual([
       JSON.stringify({ transport: 'whatsapp_web', catchUp: true }),
       100,

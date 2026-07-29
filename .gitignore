@@ -50,3 +50,6 @@ ruvector.db
 /services/whatsapp-web-bridge/.data/
 /auth_info_baileys/
 .env*
+
+# SWC build cache
+/.swc

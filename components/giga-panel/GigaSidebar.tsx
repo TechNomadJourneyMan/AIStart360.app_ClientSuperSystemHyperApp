@@ -16,6 +16,7 @@ import {
   MessagesSquare,
 } from 'lucide-react'
 import { useGigaPanelStore, type ActiveModule } from '@/stores/gigaPanel.store'
+import { createClient } from '@/lib/supabase/client'
 
 interface NavItem {
   id: ActiveModule | 'overview'
@@ -159,7 +160,11 @@ export function GigaSidebar({ isOpen = false, onClose }: GigaSidebarProps) {
           <button
             onClick={async () => {
               try {
-                await fetch('/api/giga-admin/auth', { method: 'DELETE' })
+                const supabase = createClient()
+                await Promise.allSettled([
+                  fetch('/api/giga-admin/auth', { method: 'DELETE' }),
+                  supabase.auth.signOut(),
+                ])
               } finally {
                 window.location.href = '/giga-login'
               }
