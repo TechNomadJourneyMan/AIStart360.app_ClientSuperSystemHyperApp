@@ -1,11 +1,21 @@
 'use client'
 
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import dynamic from 'next/dynamic'
+import Link from 'next/link'
 import { motion, useReducedMotion } from 'framer-motion'
 import { GRI_SECTIONS, type SectionId } from '@/lib/gri-assessment/sections'
 import { useEntitlements } from '@/hooks/useEntitlements'
 import { UpgradeGate } from '@/components/access/UpgradeGate'
+import { Modal } from '@/components/ui/Modal'
+import GriBlockBreakdown from '../shared/GriBlockBreakdown'
+import {
+  avgBarTone,
+  BLOCK_RU,
+  buildBlockRows,
+  GRI_TARGET,
+  type GriScoresMap,
+} from '../shared/blocks'
 
 const GriRadar = dynamic(() => import('./GriRadar'), {
   ssr: false,
@@ -88,18 +98,6 @@ function saveState(state: PersistedState) {
   window.localStorage.setItem(LS_KEY, JSON.stringify(state))
 }
 
-// ── Russian labels for the 7 GRI blocks (sections.ts stores English shortTitle).
-// Mirrors GriResultPanel.BLOCK_RU so the whole /gri surface reads consistently.
-const BLOCK_RU: Record<SectionId, string> = {
-  'product-demand': 'Продукт и спрос',
-  'trust-positioning': 'Доверие и позиционирование',
-  'business-model': 'Бизнес-модель',
-  'cash-stability': 'Денежная стабильность',
-  operations: 'Операции',
-  team: 'Команда',
-  'owner-readiness': 'Готовность собственника',
-}
-
 // Illustrative-only radar for the pre-test landing (clearly labelled
 // "Пример профиля (иллюстрация)"). Varied per-section so it reads as a sample
 // shape, not a flat/real profile a client might mistake for their own score.
@@ -107,7 +105,7 @@ const DEMO_SAMPLE_SCORES = [6.2, 4.1, 7.0, 3.4, 5.5, 4.8, 6.6]
 const DEMO_DATA = GRI_SECTIONS.map((s, i) => ({
   subject: BLOCK_RU[s.id] ?? s.shortTitle,
   score: DEMO_SAMPLE_SCORES[i % DEMO_SAMPLE_SCORES.length],
-  benchmark: 8,
+  benchmark: GRI_TARGET,
 }))
 
 const VALUE_PROPS = [
@@ -130,10 +128,13 @@ const VALUE_PROPS = [
 
 const ONBOARDING_STEPS = ['Контакты', 'О бизнесе', 'Самооценка'] as const
 
-// Tone for a 0–10 section average — matches GriResultPanel (≥8 primary / ≥6 amber / else red).
-function avgBarTone(v: number) {
-  return v >= 8 ? 'bg-primary' : v >= 6 ? 'bg-amber-400' : 'bg-red-400'
-}
+// Подписи шкал самооценки из онбординга — те же три вопроса, что задаются на
+// шаге 3; в результатах они сверяются с расчётным индексом.
+const SELF_SCORE_LABELS = [
+  { key: 'scoreProcess', label: 'Процессы готовы к $2M' },
+  { key: 'scoreManagement', label: 'Вы готовы управлять бизнесом на $2M' },
+  { key: 'scoreTeam', label: 'Команда готова к $2M' },
+] as const
 
 // ── Presentational helpers ─────────────────────────────────────────────
 

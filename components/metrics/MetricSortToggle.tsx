@@ -51,24 +51,40 @@ export function MetricSortToggle({ value, onChange }: MetricSortToggleProps) {
         >
           {SORT_OPTIONS.map((option) => {
             const isActive = option.value === value
+            // Trend sorting has no data behind it — the option stays visible so
+            // the menu keeps its documented shape, but it cannot be chosen and
+            // says why. Silently sorting by value instead would be a lie.
+            const isDisabled = option.unavailable === true
             return (
               <DropdownMenuPrimitive.Item
                 key={option.value}
                 data-sort-option={option.value}
+                disabled={isDisabled}
                 onSelect={(event) => {
                   event.preventDefault()
+                  if (isDisabled) return
                   onChange(option.value)
                 }}
-                className="px-3 py-2 rounded-lg hover:bg-surface-container cursor-pointer flex items-center justify-between text-sm text-on-surface-variant data-[highlighted]:bg-surface-container data-[highlighted]:text-on-surface outline-none"
+                className={
+                  isDisabled
+                    ? 'px-3 py-2 rounded-lg flex items-center justify-between gap-3 text-sm text-on-surface-variant/40 cursor-not-allowed outline-none'
+                    : 'px-3 py-2 rounded-lg hover:bg-surface-container cursor-pointer flex items-center justify-between text-sm text-on-surface-variant data-[highlighted]:bg-surface-container data-[highlighted]:text-on-surface outline-none'
+                }
               >
                 <span>{option.label}</span>
-                {isActive && (
-                  <span
-                    aria-hidden="true"
-                    className="material-symbols-outlined text-base text-primary"
-                  >
-                    check
+                {isDisabled ? (
+                  <span className="text-[10px] font-mono uppercase tracking-wider whitespace-nowrap">
+                    {option.unavailableNote ?? 'скоро'}
                   </span>
+                ) : (
+                  isActive && (
+                    <span
+                      aria-hidden="true"
+                      className="material-symbols-outlined text-base text-primary"
+                    >
+                      check
+                    </span>
+                  )
                 )}
               </DropdownMenuPrimitive.Item>
             )

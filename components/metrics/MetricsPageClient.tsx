@@ -1,19 +1,32 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useCallback, useMemo, useRef, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 // formatSource + types come from the light ./format module; the heavy
 // descriptions catalog (getGriDescription) is imported dynamically on demand
-// (openGriBlockModal) to keep it out of the /metrics first-load bundle.
-import { formatSource, type MetricSource } from '@/lib/metrics/format'
+// to keep it out of the /metrics first-load bundle.
+import { type MetricSource } from '@/lib/metrics/format'
 import MetricsLiveCatalog from '@/components/metrics/MetricsLiveCatalog'
+import MetricsCoveragePanel from '@/components/metrics/MetricsCoveragePanel'
+import MetricBreakdownModal, {
+  type MetricBreakdownModalProps,
+} from '@/components/metrics/MetricBreakdownModal'
+import { useFullMetricCatalog } from '@/components/metrics/useFullMetricCatalog'
+import {
+  DEFAULT_CATALOG_FILTERS,
+  USABLE_SORT_MODES,
+  formatUpdatedRu,
+  type CatalogFilters,
+  type CatalogView,
+  type DataFilter,
+  type Namespace,
+  type SortMode,
+} from '@/components/metrics/_utils'
+import { formatRuMetricWithUnit } from '@/components/dashboard/_utils'
 import { useRealtimeSync, type RealtimeSyncBinding } from '@/hooks/useRealtimeSync'
 import { GRI_SECTIONS, type SectionId } from '@/lib/gri-assessment/sections'
-import type {
-  GriAssessmentRow,
-  CompanyRow,
-} from '@/lib/metrics/page-data'
+import type { GriAssessmentRow, CompanyRow } from '@/lib/metrics/page-data'
 
 // ─── Section meta (icon + ru label) ───────────────────────────────────────────
 const SECTION_META: Record<SectionId, { label: string; icon: string }> = {
@@ -26,8 +39,10 @@ const SECTION_META: Record<SectionId, { label: string; icon: string }> = {
   'owner-readiness':   { label: 'Готовность основателя', icon: 'person'          },
 }
 
+type GriStatus = 'critical' | 'weak' | 'ok'
+
 function griTone(score: number): {
-  status: 'critical' | 'weak' | 'ok'
+  status: GriStatus
   bar: string
   text: string
   badge: string
@@ -60,91 +75,116 @@ function griTone(score: number): {
   }
 }
 
+const GRI_STATUS_LABEL: Record<GriStatus, string> = {
+  ok: 'Достаточный уровень',
+  weak: 'Слабое место',
+  critical: 'КРИТИЧЕСКИЙ БЛОК',
+}
+
+interface CriterionRow {
+  id: string
+  text: string
+  description: string
+  whatToImprove: string
+  businessLoss: string
+  score: number | null
+}
+
 interface SectionRow {
   id: SectionId
   label: string
   icon: string
   score: number
+  /** How many criteria of the block actually carry a score. */
+  answered: number
+  criteriaTotal: number
+  criteria: CriterionRow[]
   tone: ReturnType<typeof griTone>
 }
 
 interface Top5Row {
-  label: string
+  sectionId: SectionId
   block: string
-  score: number
+  criterion: CriterionRow
+}
+
+function criterionScore(
+  assessment: GriAssessmentRow,
+  sectionId: SectionId,
+  criterionId: string,
+): number | null {
+  const raw = assessment.scores?.[sectionId]?.[criterionId]
+  const n = typeof raw === 'number' ? raw : Number(raw)
+  return Number.isFinite(n) && n > 0 ? n : null
 }
 
 function deriveSectionRows(assessment: GriAssessmentRow): SectionRow[] {
   const out: SectionRow[] = []
   for (const sec of GRI_SECTIONS) {
     const meta = SECTION_META[sec.id]
+    const criteria: CriterionRow[] = sec.criteria.map((c) => ({
+      id: c.id,
+      text: c.text,
+      description: c.description,
+      whatToImprove: c.whatToImprove,
+      businessLoss: c.businessLoss,
+      score: criterionScore(assessment, sec.id, c.id),
+    }))
+    const answered = criteria.filter((c) => c.score !== null)
     const fromAvgs = assessment.section_avgs?.[sec.id]
     let score = typeof fromAvgs === 'number' ? fromAvgs : 0
-    // Fallback: average raw scores if section_avgs is missing
-    if (!score && assessment.scores?.[sec.id]) {
-      const vals = Object.values(assessment.scores[sec.id]).filter(
-        (v): v is number => typeof v === 'number' && v > 0,
-      )
-      if (vals.length) score = vals.reduce((a, b) => a + b, 0) / vals.length
+    // Fallback mirrors computeSectionAvgs() in app/api/v1/gri/assessment/route.ts:
+    // mean of criteria with a score greater than zero.
+    if (!score && answered.length) {
+      score = answered.reduce((a, c) => a + (c.score ?? 0), 0) / answered.length
     }
     out.push({
       id: sec.id,
       label: meta.label,
       icon: meta.icon,
       score: Number(score.toFixed(2)),
+      answered: answered.length,
+      criteriaTotal: sec.criteria.length,
+      criteria,
       tone: griTone(score),
     })
   }
-  // Show worst sections first so the user sees the bottlenecks
-  return out.sort((a, b) => a.score - b.score)
+  return out
 }
 
-function deriveTop5(assessment: GriAssessmentRow): Top5Row[] {
-  const rows: Top5Row[] = []
-  for (const sec of GRI_SECTIONS) {
-    const meta = SECTION_META[sec.id]
-    const sectionScores = assessment.scores?.[sec.id]
-    if (!sectionScores) continue
-    for (const crit of sec.criteria) {
-      const raw = sectionScores[crit.id]
-      const v = typeof raw === 'number' ? raw : Number(raw)
-      if (!Number.isFinite(v) || v <= 0) continue
-      rows.push({ label: crit.text, block: meta.label, score: v })
+function deriveTop5(rows: SectionRow[]): Top5Row[] {
+  const flat: Top5Row[] = []
+  for (const row of rows) {
+    for (const crit of row.criteria) {
+      if (crit.score === null) continue
+      flat.push({ sectionId: row.id, block: row.label, criterion: crit })
     }
   }
-  return rows.sort((a, b) => a.score - b.score).slice(0, 5)
+  return flat
+    .sort((a, b) => (a.criterion.score ?? 0) - (b.criterion.score ?? 0))
+    .slice(0, 5)
 }
 
 interface Insight {
   severity: 'critical' | 'warning' | 'positive'
+  sectionId: SectionId | null
   section: string
   problem: string
   recommendation: string
   loss: string
 }
 
-function deriveInsights(assessment: GriAssessmentRow): Insight[] {
-  const sectionRows = GRI_SECTIONS.map((sec) => {
-    const fromAvgs = assessment.section_avgs?.[sec.id]
-    let avg = typeof fromAvgs === 'number' ? fromAvgs : 0
-    if (!avg && assessment.scores?.[sec.id]) {
-      const vals = Object.values(assessment.scores[sec.id]).filter(
-        (v): v is number => typeof v === 'number' && v > 0,
-      )
-      if (vals.length) avg = vals.reduce((a, b) => a + b, 0) / vals.length
-    }
-    return { sec, avg }
-  })
-
-  const weak = sectionRows
-    .filter((r) => r.avg > 0 && r.avg < 6)
-    .sort((a, b) => a.avg - b.avg)
+function deriveInsights(rows: SectionRow[]): Insight[] {
+  const weak = rows
+    .filter((r) => r.score > 0 && r.score < 6)
+    .sort((a, b) => a.score - b.score)
     .slice(0, 4)
 
   if (weak.length === 0) {
     return [
       {
         severity: 'positive',
+        sectionId: null,
         section: 'Все блоки',
         problem: 'Сильная база — фокус на масштабирование',
         recommendation:
@@ -155,85 +195,86 @@ function deriveInsights(assessment: GriAssessmentRow): Insight[] {
   }
 
   const insights: Insight[] = []
-  for (const { sec, avg } of weak) {
-    const map = assessment.scores?.[sec.id]
-    if (!map) continue
-    // Find lowest scored criterion in this section
-    let lowestId: string | null = null
-    let lowestScore = Number.POSITIVE_INFINITY
-    for (const c of sec.criteria) {
-      const v = map[c.id]
-      if (typeof v !== 'number' || v <= 0) continue
-      if (v < lowestScore) {
-        lowestScore = v
-        lowestId = c.id
-      }
+  for (const row of weak) {
+    let lowest: CriterionRow | null = null
+    for (const c of row.criteria) {
+      if (c.score === null) continue
+      if (!lowest || c.score < (lowest.score ?? Number.POSITIVE_INFINITY)) lowest = c
     }
-    const crit = lowestId ? sec.criteria.find((c) => c.id === lowestId) : null
-    if (!crit) continue
+    if (!lowest) continue
     insights.push({
-      severity: avg < 4 ? 'critical' : 'warning',
-      section: SECTION_META[sec.id].label,
-      problem: crit.text,
-      recommendation: crit.whatToImprove,
-      loss: crit.businessLoss,
+      severity: row.score < 4 ? 'critical' : 'warning',
+      sectionId: row.id,
+      section: row.label,
+      problem: lowest.text,
+      recommendation: lowest.whatToImprove,
+      loss: lowest.businessLoss,
     })
   }
   return insights
 }
 
-// ─── KPI: from survey answers ────────────────────────────────────────────────
+// ─── Money formatting ────────────────────────────────────────────────────────
+function fmtKzt(n: number): string {
+  if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(2)} млрд ₸`
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)} млн ₸`
+  if (n >= 1_000) return `${(n / 1_000).toFixed(0)} тыс ₸`
+  return `${Math.round(n)} ₸`
+}
+
+// ─── KPI cards ───────────────────────────────────────────────────────────────
 interface KpiCard {
+  id: string
   label: string
-  current: string
   target: string
   icon: string
   category: string
   method: string
   owner: string
+  /** Human-readable location of the answer this card is built from. */
+  sourceField: string
+  sources: MetricSource[]
+  /** Catalog label whose resolved value is the fact for this target, if any. */
+  factLabel?: string
 }
 
 /**
- * Build the KPI list from real survey answers. We only emit a card if the
- * underlying answer is present — no mock fallbacks.
- *
- * Survey keys come from `lib/survey-labels.ts` / the medical onboarding form.
- * Known revenue / kpi answers live under stable keys (s6_*, s5_*).
+ * KPI list from real survey answers / company targets. A card is emitted only
+ * when the underlying answer exists — there are no placeholder cards, and no
+ * placeholder "current" values: the fact side is resolved from the metric
+ * catalog at render time, or honestly reported as missing.
  */
 function deriveKpis(survey: Record<string, unknown>, company: CompanyRow | null): KpiCard[] {
   const cards: KpiCard[] = []
-  const fmtKzt = (n: number) => {
-    if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(2)} млрд ₸`
-    if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)} млн ₸`
-    if (n >= 1_000) return `${(n / 1_000).toFixed(0)} тыс ₸`
-    return `${Math.round(n)} ₸`
-  }
 
-  // 1. Revenue target (12m / 3y) from companies row → goals/financials
   if (company?.target_revenue_12m_kzt && company.target_revenue_12m_kzt > 0) {
     cards.push({
+      id: 'kpi-rev-12m',
       label: 'План выручки (12 мес)',
-      current: '—',
       target: fmtKzt(company.target_revenue_12m_kzt),
       icon: 'payments',
       category: 'Финансы',
       method: 'Из анкеты собственника',
       owner: 'Собственник',
+      sourceField: 'companies.target_revenue_12m_kzt',
+      sources: [{ type: 'prisma', model: 'companies', field: 'target_revenue_12m_kzt' }],
+      factLabel: 'Выручка (год)',
     })
   }
   if (company?.target_revenue_3y_kzt && company.target_revenue_3y_kzt > 0) {
     cards.push({
+      id: 'kpi-rev-3y',
       label: 'План выручки (3 года)',
-      current: '—',
       target: fmtKzt(company.target_revenue_3y_kzt),
       icon: 'rocket_launch',
       category: 'Финансы',
       method: 'Из анкеты собственника',
       owner: 'Собственник',
+      sourceField: 'companies.target_revenue_3y_kzt',
+      sources: [{ type: 'prisma', model: 'companies', field: 'target_revenue_3y_kzt' }],
     })
   }
 
-  // 2. Free-text survey goals (only if not numerically parsed yet)
   const g12 = survey['s6_goal_12months']
   if (
     typeof g12 === 'string' &&
@@ -241,13 +282,15 @@ function deriveKpis(survey: Record<string, unknown>, company: CompanyRow | null)
     !(company?.target_revenue_12m_kzt && company.target_revenue_12m_kzt > 0)
   ) {
     cards.push({
+      id: 'kpi-goal-12m',
       label: 'Цель на 12 месяцев',
-      current: '—',
-      target: g12.trim().slice(0, 60),
+      target: g12.trim(),
       icon: 'flag',
       category: 'Рост',
       method: 'Анкета: s6_goal_12months',
       owner: 'Собственник',
+      sourceField: 'анкета Точки А · s6_goal_12months',
+      sources: [{ type: 'survey', step: 6, key: 's6_goal_12months', label: 'Цель на 12 месяцев' }],
     })
   }
   const g3y = survey['s6_goal_3years']
@@ -257,37 +300,34 @@ function deriveKpis(survey: Record<string, unknown>, company: CompanyRow | null)
     !(company?.target_revenue_3y_kzt && company.target_revenue_3y_kzt > 0)
   ) {
     cards.push({
+      id: 'kpi-goal-3y',
       label: 'Цель на 3 года',
-      current: '—',
-      target: g3y.trim().slice(0, 60),
+      target: g3y.trim(),
       icon: 'rocket_launch',
       category: 'Рост',
       method: 'Анкета: s6_goal_3years',
       owner: 'Собственник',
+      sourceField: 'анкета Точки А · s6_goal_3years',
+      sources: [{ type: 'survey', step: 6, key: 's6_goal_3years', label: 'Цель на 3 года' }],
     })
   }
 
   return cards
 }
 
-// ─── Goals tab: company revenue plan, period-over-period from /api/v1/point-a
-// We render the same 12m + 3y plan + survey free-text goals here as a clean
-// list. If user has no targets and no survey, render empty state.
+// ─── Goals tab ───────────────────────────────────────────────────────────────
 interface GoalRow {
   id: string
   label: string
   icon: string
   value: string
-  description: string
+  sourceField: string
+  sources: MetricSource[]
+  what: string
 }
 
 function deriveGoals(survey: Record<string, unknown>, company: CompanyRow | null): GoalRow[] {
   const rows: GoalRow[] = []
-  const fmtKzt = (n: number) => {
-    if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(2)} млрд ₸`
-    if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)} млн ₸`
-    return `${Math.round(n)} ₸`
-  }
 
   if (company?.target_revenue_12m_kzt && company.target_revenue_12m_kzt > 0) {
     rows.push({
@@ -295,7 +335,9 @@ function deriveGoals(survey: Record<string, unknown>, company: CompanyRow | null
       label: 'План выручки на 12 месяцев',
       icon: 'payments',
       value: fmtKzt(company.target_revenue_12m_kzt),
-      description: 'Источник: anketa собственника · поле target_revenue_12m_kzt',
+      sourceField: 'companies.target_revenue_12m_kzt',
+      sources: [{ type: 'prisma', model: 'companies', field: 'target_revenue_12m_kzt' }],
+      what: 'Выручка, которую вы планируете получить за ближайшие 12 месяцев. Значение вы задали сами в анкете Точки А.',
     })
   }
   if (company?.target_revenue_3y_kzt && company.target_revenue_3y_kzt > 0) {
@@ -304,7 +346,9 @@ function deriveGoals(survey: Record<string, unknown>, company: CompanyRow | null
       label: 'План выручки на 3 года',
       icon: 'rocket_launch',
       value: fmtKzt(company.target_revenue_3y_kzt),
-      description: 'Источник: anketa собственника · поле target_revenue_3y_kzt',
+      sourceField: 'companies.target_revenue_3y_kzt',
+      sources: [{ type: 'prisma', model: 'companies', field: 'target_revenue_3y_kzt' }],
+      what: 'Выручка на горизонте трёх лет. Значение вы задали сами в анкете Точки А.',
     })
   }
   const g12 = survey['s6_goal_12months']
@@ -313,8 +357,10 @@ function deriveGoals(survey: Record<string, unknown>, company: CompanyRow | null
       id: 'goal-12m',
       label: 'Цель на 12 месяцев (текст)',
       icon: 'flag',
-      value: g12.trim().slice(0, 120),
-      description: 'Источник: анкета s6_goal_12months',
+      value: g12.trim(),
+      sourceField: 'анкета Точки А · s6_goal_12months',
+      sources: [{ type: 'survey', step: 6, key: 's6_goal_12months', label: 'Цель на 12 месяцев' }],
+      what: 'Ваша формулировка цели на год — как вы описали её в анкете. Это текст, а не число: по нему нельзя посчитать выполнение плана.',
     })
   }
   const g3y = survey['s6_goal_3years']
@@ -323,8 +369,10 @@ function deriveGoals(survey: Record<string, unknown>, company: CompanyRow | null
       id: 'goal-3y',
       label: 'Цель на 3 года (текст)',
       icon: 'flag',
-      value: g3y.trim().slice(0, 120),
-      description: 'Источник: анкета s6_goal_3years',
+      value: g3y.trim(),
+      sourceField: 'анкета Точки А · s6_goal_3years',
+      sources: [{ type: 'survey', step: 6, key: 's6_goal_3years', label: 'Цель на 3 года' }],
+      what: 'Ваша формулировка цели на три года — как вы описали её в анкете.',
     })
   }
   return rows
@@ -335,205 +383,81 @@ function EmptyState({
   icon,
   title,
   description,
+  missing,
   ctaLabel,
   ctaHref,
+  secondary,
 }: {
   icon: string
   title: string
   description: string
+  /** What exactly has to be filled in for this block to come alive. */
+  missing: string
   ctaLabel: string
   ctaHref: string
+  secondary?: { label: string; href: string }
 }) {
   return (
-    <div className="bg-surface-container-low rounded-2xl border border-dashed border-white/10 p-10 text-center">
-      <span className="material-symbols-outlined text-4xl text-on-surface-variant/30 mb-3 block">
+    <div className="rounded-2xl border border-dashed border-white/10 bg-surface-container-low p-10 text-center">
+      <span aria-hidden="true" className="mb-3 block text-4xl text-on-surface-variant/30 material-symbols-outlined">
         {icon}
       </span>
-      <p className="text-sm text-on-surface font-medium mb-1">{title}</p>
-      <p className="text-xs text-on-surface-variant/80 mb-5 max-w-md mx-auto leading-relaxed">
+      <p className="mb-1 text-sm font-medium text-on-surface">{title}</p>
+      <p className="mx-auto mb-3 max-w-md text-xs leading-relaxed text-on-surface-variant/80">
         {description}
       </p>
-      <Link
-        href={ctaHref}
-        className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary/10 hover:bg-primary/15 text-primary text-sm font-bold border border-primary/20 transition-colors"
-      >
-        <span className="material-symbols-outlined text-base">play_arrow</span>
-        {ctaLabel}
-      </Link>
-    </div>
-  )
-}
-
-// ─── Source icon (re-used from descriptions modal) ───────────────────────────
-function sourceIcon(type: MetricSource['type']): { icon: string; cls: string } {
-  switch (type) {
-    case 'survey':   return { icon: 'quiz',        cls: 'text-primary' }
-    case 'document': return { icon: 'description', cls: 'text-secondary' }
-    case 'prisma':   return { icon: 'database',    cls: 'text-tertiary-container' }
-    case 'external': return { icon: 'cloud',       cls: 'text-primary' }
-    case 'manual':   return { icon: 'edit',        cls: 'text-on-surface-variant' }
-    case 'missing':  return { icon: 'warning',     cls: 'text-error' }
-    default:         return { icon: 'help',        cls: 'text-on-surface-variant' }
-  }
-}
-
-// ─── Metric Detail Modal (kept from previous version) ────────────────────────
-interface ModalProps {
-  open: boolean
-  onClose: () => void
-  title: string
-  what: string
-  why: string
-  how: string
-  current_state?: string
-  formula?: string
-  benchmark?: string
-  owner?: string | null
-  method?: string | null
-  category?: string
-  sources: MetricSource[]
-}
-
-function MetricDetailModal({
-  open,
-  onClose,
-  title,
-  what,
-  why,
-  how,
-  current_state,
-  formula,
-  benchmark,
-  owner,
-  method,
-  category,
-  sources,
-}: ModalProps) {
-  useEffect(() => {
-    if (!open) return
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
-    }
-    document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
-  }, [open, onClose])
-
-  if (!open) return null
-
-  const hasChips = !!(owner || method || category)
-
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center px-4 bg-black/60 backdrop-blur-sm"
-      onClick={onClose}
-      role="dialog"
-      aria-modal="true"
-    >
-      <div
-        className="relative w-full max-w-2xl max-h-[80vh] overflow-y-auto bg-surface-container-low rounded-2xl border border-white/[0.04] shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="sticky top-0 bg-surface-container-low/95 backdrop-blur-sm flex items-center justify-between gap-4 px-6 py-4 border-b border-white/[0.04]">
-          <h3 className="font-headline text-lg font-bold text-on-surface flex-1 min-w-0 pr-2 truncate">{title}</h3>
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center hover:bg-white/[0.04] text-on-surface-variant hover:text-on-surface transition-colors"
-            aria-label="Закрыть"
+      <p className="mx-auto mb-5 max-w-md rounded-lg border border-white/[0.06] bg-surface-container px-3 py-2 text-left font-mono text-[11px] leading-relaxed text-on-surface-variant">
+        Не хватает: {missing}
+      </p>
+      <div className="flex flex-wrap items-center justify-center gap-2">
+        <Link
+          href={ctaHref}
+          className="inline-flex items-center gap-2 rounded-xl border border-primary/20 bg-primary/10 px-5 py-2.5 text-sm font-bold text-primary transition-colors hover:bg-primary/15 focus:outline-none focus:ring-2 focus:ring-primary/40"
+        >
+          <span aria-hidden="true" className="material-symbols-outlined text-base">play_arrow</span>
+          {ctaLabel}
+        </Link>
+        {secondary && (
+          <Link
+            href={secondary.href}
+            className="inline-flex items-center gap-2 rounded-xl border border-white/[0.06] px-4 py-2.5 font-mono text-xs text-on-surface-variant transition-colors hover:border-white/15 hover:text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40"
           >
-            <span className="material-symbols-outlined text-lg">close</span>
-          </button>
-        </div>
-        <div className="px-6 py-5 space-y-5">
-          {hasChips && (
-            <div className="flex flex-wrap gap-1.5">
-              {category && (
-                <span className="text-[10px] font-mono uppercase tracking-wider px-2.5 py-1 rounded-full bg-primary/10 border border-primary/20 text-primary">
-                  {category}
-                </span>
-              )}
-              {owner && (
-                <span className="text-[10px] font-mono uppercase tracking-wider px-2.5 py-1 rounded-full bg-surface-container border border-white/[0.06] text-on-surface-variant">
-                  Owner: {owner}
-                </span>
-              )}
-              {method && (
-                <span className="text-[10px] font-mono uppercase tracking-wider px-2.5 py-1 rounded-full bg-surface-container border border-white/[0.06] text-on-surface-variant">
-                  Метод: {method}
-                </span>
-              )}
-            </div>
-          )}
-          {what && (
-            <section>
-              <p className="text-[10px] font-mono text-primary/70 uppercase tracking-[0.2em] mb-2">Что это</p>
-              <p className="text-sm text-on-surface leading-relaxed">{what}</p>
-            </section>
-          )}
-          {why && (
-            <section>
-              <p className="text-[10px] font-mono text-primary/70 uppercase tracking-[0.2em] mb-2">Зачем</p>
-              <p className="text-sm text-on-surface-variant leading-relaxed">{why}</p>
-            </section>
-          )}
-          {how && (
-            <section>
-              <p className="text-[10px] font-mono text-primary/70 uppercase tracking-[0.2em] mb-2">Как считается</p>
-              <p className="text-sm text-on-surface-variant leading-relaxed">{how}</p>
-            </section>
-          )}
-          {formula && (
-            <section>
-              <p className="text-[10px] font-mono text-primary/70 uppercase tracking-[0.2em] mb-2">Формула</p>
-              <pre className="text-xs font-mono text-primary bg-primary/5 border border-primary/20 rounded-lg px-3 py-2 whitespace-pre-wrap break-words">
-                {formula}
-              </pre>
-            </section>
-          )}
-          {benchmark && (
-            <section>
-              <p className="text-[10px] font-mono text-primary/70 uppercase tracking-[0.2em] mb-2">Бенчмарк</p>
-              <span className="inline-block text-xs font-mono uppercase px-3 py-1 rounded-full bg-secondary/10 border border-secondary/20 text-secondary">
-                {benchmark}
-              </span>
-            </section>
-          )}
-          {current_state && (
-            <section className="bg-primary/5 border border-primary/20 rounded-xl px-4 py-3">
-              <p className="text-[10px] font-mono text-primary uppercase tracking-[0.2em] mb-1">Текущее состояние</p>
-              <p className="text-sm text-on-surface leading-relaxed">{current_state}</p>
-            </section>
-          )}
-          {sources && sources.length > 0 && (
-            <section>
-              <p className="text-[10px] font-mono text-primary/70 uppercase tracking-[0.2em] mb-2">Источники данных</p>
-              <ul className="space-y-1.5">
-                {sources.map((src, i) => {
-                  const ico = sourceIcon(src.type)
-                  return (
-                    <li
-                      key={i}
-                      className="flex items-start gap-2.5 bg-surface-container rounded-lg border border-white/[0.04] px-3 py-2"
-                    >
-                      <span className={`material-symbols-outlined text-sm flex-shrink-0 mt-0.5 ${ico.cls}`}>
-                        {ico.icon}
-                      </span>
-                      <span className="text-xs text-on-surface-variant leading-relaxed break-words">
-                        {formatSource(src)}
-                      </span>
-                    </li>
-                  )
-                })}
-              </ul>
-            </section>
-          )}
-          {(!sources || sources.length === 0) && !what && !why && !how && (
-            <p className="text-sm text-on-surface-variant italic">Описание скоро будет добавлено.</p>
-          )}
-        </div>
+            {secondary.label}
+          </Link>
+        )}
       </div>
     </div>
   )
+}
+
+// ─── Tabs ────────────────────────────────────────────────────────────────────
+type TabKey = 'goals' | 'kpi' | 'biz' | 'gri'
+
+const TABS: ReadonlyArray<{ key: TabKey; label: string; icon: string }> = [
+  { key: 'goals', label: 'Цели роста',      icon: 'track_changes' },
+  { key: 'kpi',   label: 'KPI компании',    icon: 'monitoring'    },
+  { key: 'biz',   label: 'Все метрики',     icon: 'bar_chart'     },
+  { key: 'gri',   label: 'GRI диагностика', icon: 'radar'         },
+]
+
+type GriSortMode = 'score_asc' | 'score_desc' | 'label_asc'
+
+const GRI_SORTS: ReadonlyArray<{ value: GriSortMode; label: string }> = [
+  { value: 'score_asc',  label: 'Сначала слабые' },
+  { value: 'score_desc', label: 'Сначала сильные' },
+  { value: 'label_asc',  label: 'По названию' },
+]
+
+// ─── URL state helpers ───────────────────────────────────────────────────────
+const TAB_KEYS: readonly TabKey[] = ['goals', 'kpi', 'biz', 'gri']
+const NS_KEYS: readonly Namespace[] = ['all', 'biz', 'kpi', 'gri', 'goal']
+const DATA_KEYS: readonly DataFilter[] = ['all', 'with_value', 'without_value', 'low_confidence']
+// Only the sort modes the catalog can honour — a `?sort=trend_up` in a shared
+// link must not restore a mode the picker refuses to offer.
+const SORT_KEYS: readonly SortMode[] = USABLE_SORT_MODES
+
+function pick<T extends string>(raw: string | null, allowed: readonly T[], fallback: T): T {
+  return raw && (allowed as readonly string[]).includes(raw) ? (raw as T) : fallback
 }
 
 // ─── Page-level client component ──────────────────────────────────────────────
@@ -544,6 +468,8 @@ export interface MetricsPageClientProps {
   surveyAnswers: Record<string, unknown>
 }
 
+type BreakdownPayload = Omit<MetricBreakdownModalProps, 'open' | 'onClose'>
+
 export default function MetricsPageClient({
   userId,
   griAssessment,
@@ -551,10 +477,82 @@ export default function MetricsPageClient({
   surveyAnswers,
 }: MetricsPageClientProps) {
   const router = useRouter()
-  const [activeTab, setActiveTab] = useState<'goals' | 'kpi' | 'gri' | 'biz'>('gri')
-  const [modal, setModal] = useState<ModalProps | null>(null)
+  const searchParams = useSearchParams()
 
-  // ── Realtime: invalidate (refresh) on changes to any of these tables ──
+  const [activeTab, setActiveTab] = useState<TabKey>(() =>
+    pick(searchParams.get('tab'), TAB_KEYS, 'gri'),
+  )
+  const [filters, setFilters] = useState<CatalogFilters>(() => ({
+    namespace: pick(searchParams.get('ns'), NS_KEYS, DEFAULT_CATALOG_FILTERS.namespace),
+    department: searchParams.get('dept'),
+    search: searchParams.get('q') ?? '',
+    data: pick(searchParams.get('data'), DATA_KEYS, DEFAULT_CATALOG_FILTERS.data),
+    sort: pick(searchParams.get('sort'), SORT_KEYS, DEFAULT_CATALOG_FILTERS.sort),
+    view: pick(searchParams.get('view'), ['grid', 'table'] as const, 'grid') as CatalogView,
+    page: Math.max(1, Number(searchParams.get('page') ?? '1') || 1),
+  }))
+  const [breakdown, setBreakdown] = useState<BreakdownPayload | null>(null)
+  const [griStatusFilter, setGriStatusFilter] = useState<GriStatus | 'all'>('all')
+  const [griSort, setGriSort] = useState<GriSortMode>('score_asc')
+
+  const tabRefs = useRef<Record<TabKey, HTMLButtonElement | null>>({
+    goals: null, kpi: null, biz: null, gri: null,
+  })
+
+  // Keep the URL in sync so a filtered view is shareable and survives F5.
+  // history.replaceState, not router.replace: this page is force-dynamic and a
+  // router navigation on every keystroke would round-trip to the server.
+  const syncUrl = useCallback((tab: TabKey, next: CatalogFilters) => {
+    if (typeof window === 'undefined') return
+    const params = new URLSearchParams()
+    if (tab !== 'gri') params.set('tab', tab)
+    if (next.namespace !== 'all') params.set('ns', next.namespace)
+    if (next.department) params.set('dept', next.department)
+    if (next.search) params.set('q', next.search)
+    if (next.data !== 'all') params.set('data', next.data)
+    if (next.sort !== 'label_asc') params.set('sort', next.sort)
+    if (next.view !== 'grid') params.set('view', next.view)
+    if (next.page > 1) params.set('page', String(next.page))
+    const qs = params.toString()
+    window.history.replaceState(null, '', qs ? `${window.location.pathname}?${qs}` : window.location.pathname)
+  }, [])
+
+  const updateFilters = useCallback(
+    (patch: Partial<CatalogFilters>) => {
+      setFilters((prev) => {
+        // Any filter change resets paging unless the page itself is being set.
+        const next = { ...prev, ...patch, page: patch.page ?? 1 }
+        syncUrl(activeTab, next)
+        return next
+      })
+    },
+    [activeTab, syncUrl],
+  )
+
+  const selectTab = useCallback(
+    (tab: TabKey) => {
+      setActiveTab(tab)
+      syncUrl(tab, filters)
+    },
+    [filters, syncUrl],
+  )
+
+  function handleTabKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
+    const index = TABS.findIndex((t) => t.key === activeTab)
+    if (index === -1) return
+    let nextIndex: number | null = null
+    if (event.key === 'ArrowRight') nextIndex = (index + 1) % TABS.length
+    else if (event.key === 'ArrowLeft') nextIndex = (index - 1 + TABS.length) % TABS.length
+    else if (event.key === 'Home') nextIndex = 0
+    else if (event.key === 'End') nextIndex = TABS.length - 1
+    if (nextIndex === null) return
+    event.preventDefault()
+    const nextTab = TABS[nextIndex]!.key
+    selectTab(nextTab)
+    tabRefs.current[nextTab]?.focus()
+  }
+
+  // ── Realtime ──────────────────────────────────────────────────────────────
   const bindings = useMemo<RealtimeSyncBinding[]>(() => {
     const list: RealtimeSyncBinding[] = []
     if (!userId) return list
@@ -577,122 +575,297 @@ export default function MetricsPageClient({
         invalidateKeys: [['metrics-page-data']],
         onChange: () => router.refresh(),
       })
-      list.push({
-        table: 'metrics',
-        filter: { column: 'company_id', value: company.id },
-        invalidateKeys: [['metrics-catalog'], ['metrics']],
-      })
     }
     return list
   }, [userId, company?.id, router])
 
   useRealtimeSync(bindings)
 
+  // ── Derived data ──────────────────────────────────────────────────────────
+  const { data: catalog } = useFullMetricCatalog()
+
   const sectionRows = useMemo<SectionRow[]>(
     () => (griAssessment ? deriveSectionRows(griAssessment) : []),
     [griAssessment],
   )
-  const top5 = useMemo<Top5Row[]>(
-    () => (griAssessment ? deriveTop5(griAssessment) : []),
-    [griAssessment],
-  )
-  const insights = useMemo<Insight[]>(
-    () => (griAssessment ? deriveInsights(griAssessment) : []),
-    [griAssessment],
-  )
-  const kpis = useMemo<KpiCard[]>(
-    () => deriveKpis(surveyAnswers, company),
-    [surveyAnswers, company],
-  )
-  const goals = useMemo<GoalRow[]>(
-    () => deriveGoals(surveyAnswers, company),
-    [surveyAnswers, company],
-  )
+  const top5 = useMemo<Top5Row[]>(() => deriveTop5(sectionRows), [sectionRows])
+  const insights = useMemo<Insight[]>(() => deriveInsights(sectionRows), [sectionRows])
+  const kpis = useMemo<KpiCard[]>(() => deriveKpis(surveyAnswers, company), [surveyAnswers, company])
+  const goals = useMemo<GoalRow[]>(() => deriveGoals(surveyAnswers, company), [surveyAnswers, company])
 
   const griIndex = griAssessment?.gri_index ?? null
+  const scoredSections = useMemo(() => sectionRows.filter((r) => r.score > 0), [sectionRows])
 
   const summary = useMemo(() => {
-    if (!sectionRows.length) return { strong: 0, weak: 0, critical: 0 }
     return {
-      strong: sectionRows.filter((s) => s.tone.status === 'ok').length,
-      weak: sectionRows.filter((s) => s.tone.status === 'weak').length,
-      critical: sectionRows.filter((s) => s.tone.status === 'critical').length,
+      ok: scoredSections.filter((s) => s.tone.status === 'ok').length,
+      weak: scoredSections.filter((s) => s.tone.status === 'weak').length,
+      critical: scoredSections.filter((s) => s.tone.status === 'critical').length,
     }
-  }, [sectionRows])
+  }, [scoredSections])
 
-  async function openGriBlockModal(label: string) {
-    // Lazy-load the heavy descriptions catalog only when a block is opened.
-    const { getGriDescription } = await import('@/lib/metrics/descriptions')
-    const desc = getGriDescription(label)
-    setModal({
-      open: true,
-      onClose: () => setModal(null),
-      title: label,
-      what: desc?.what ?? 'Описание скоро будет добавлено.',
-      why: desc?.why ?? '',
-      how: desc?.how ?? '',
-      current_state: desc?.current_state,
-      sources: desc?.sources ?? [],
+  const visibleSections = useMemo(() => {
+    const rows =
+      griStatusFilter === 'all'
+        ? sectionRows.slice()
+        : sectionRows.filter((r) => r.tone.status === griStatusFilter)
+    switch (griSort) {
+      case 'score_desc': return rows.sort((a, b) => b.score - a.score)
+      case 'label_asc':  return rows.sort((a, b) => a.label.localeCompare(b.label, 'ru'))
+      default:           return rows.sort((a, b) => a.score - b.score)
+    }
+  }, [sectionRows, griStatusFilter, griSort])
+
+  const assessmentDate = griAssessment
+    ? new Date(griAssessment.created_at).toLocaleDateString('ru-RU', {
+        day: 'numeric', month: 'long', year: 'numeric',
+      })
+    : null
+
+  // ── Breakdown builders ────────────────────────────────────────────────────
+  const griHistoryEmptyText = assessmentDate
+    ? `Пока есть только один замер — ${assessmentDate}. История появится после повторного прохождения GRI-диагностики: сравнить будет с чем.`
+    : 'Замеров ещё не было.'
+
+  function openGriIndexBreakdown() {
+    if (!griAssessment) return
+    setBreakdown({
+      title: 'GRI-индекс · готовность к росту',
+      value: `${griAssessment.gri_index.toFixed(2)} / 10`,
+      valueCaption: 'Итоговый индекс',
+      chips: [
+        { label: `Оценка от ${assessmentDate}`, tone: 'neutral' },
+        { label: `${scoredSections.length} из ${GRI_SECTIONS.length} блоков с оценкой`, tone: 'primary' },
+      ],
+      what: 'Сводная оценка готовности бизнеса к росту по семи блокам GRI: продукт и спрос, доверие, бизнес-модель, касса, операции, команда, готовность основателя.',
+      why: 'Индекс показывает, где рост упрётся раньше всего. Балл ниже 4 по блоку — это ограничение, которое сожжёт бюджет на масштабирование.',
+      how: 'Каждый критерий оценивается по шкале 1–10. Балл блока — среднее по критериям, на которые вы ответили. Индекс — среднее по блокам, у которых балл больше нуля. Неотвеченные критерии в расчёт не берутся и балл не занижают.',
+      formula: 'балл блока = среднее(оценки критериев блока > 0)\nGRI-индекс = среднее(баллы блоков > 0)',
+      lists: [
+        {
+          title: 'Из чего собран индекс',
+          rows: sectionRows.map((r) => ({
+            label: r.label,
+            value: r.score > 0 ? `${r.score.toFixed(2)} / 10` : 'нет оценки',
+          })),
+        },
+      ],
+      sources: [
+        { type: 'prisma', model: 'gri_assessments', field: 'gri_index' },
+        { type: 'prisma', model: 'gri_assessments', field: 'section_avgs' },
+        { type: 'prisma', model: 'gri_assessments', field: 'scores' },
+      ],
+      history: null,
+      historyEmptyText: griHistoryEmptyText,
+      links: [
+        { label: 'Методика GRI', href: '/gri/methodology', icon: 'menu_book' },
+        { label: 'Пройти заново', href: '/gri', icon: 'refresh' },
+      ],
     })
   }
 
+  function openSectionBreakdown(row: SectionRow) {
+    const scored = row.criteria.filter((c) => c.score !== null)
+    setBreakdown({
+      title: `GRI · ${row.label}`,
+      value: row.score > 0 ? `${row.score.toFixed(2)} / 10` : null,
+      valueCaption: 'Балл блока',
+      missingReason: 'Ни один критерий этого блока не оценён — пройдите блок в GRI-диагностике.',
+      chips: [
+        { label: GRI_STATUS_LABEL[row.tone.status], tone: row.tone.status === 'ok' ? 'primary' : row.tone.status === 'weak' ? 'warning' : 'error' },
+        { label: `Отвечено ${row.answered} из ${row.criteriaTotal}`, tone: 'neutral' },
+        ...(assessmentDate ? [{ label: `Оценка от ${assessmentDate}`, tone: 'neutral' as const }] : []),
+      ],
+      what: GRI_SECTIONS.find((s) => s.id === row.id)?.description,
+      how: 'Среднее арифметическое по критериям блока, на которые вы дали оценку. Критерии без ответа в расчёт не входят.',
+      formula: `балл блока = (${scored.map((c) => c.score).join(' + ') || '—'}) / ${scored.length || '—'}`,
+      lists: [
+        {
+          title: 'Критерии блока',
+          rows: row.criteria.map((c) => ({
+            label: c.text,
+            value: c.score !== null ? `${c.score} / 10` : 'нет оценки',
+          })),
+          emptyText: 'В этом блоке нет критериев.',
+        },
+      ],
+      sources: [
+        { type: 'prisma', model: 'gri_assessments', field: `section_avgs.${row.id}` },
+        { type: 'prisma', model: 'gri_assessments', field: `scores.${row.id}` },
+      ],
+      history: null,
+      historyEmptyText: griHistoryEmptyText,
+      links: [{ label: 'Открыть блок в GRI', href: '/gri', icon: 'radar' }],
+    })
+  }
+
+  function openCriterionBreakdown(sectionId: SectionId, block: string, crit: CriterionRow) {
+    setBreakdown({
+      title: crit.text,
+      value: crit.score !== null ? `${crit.score} / 10` : null,
+      valueCaption: 'Оценка критерия',
+      missingReason: 'Критерий ещё не оценён.',
+      chips: [
+        { label: block, tone: 'neutral' },
+        ...(assessmentDate ? [{ label: `Оценка от ${assessmentDate}`, tone: 'neutral' as const }] : []),
+      ],
+      what: crit.description,
+      how: 'Оценка выставлена вами при прохождении GRI-диагностики по шкале 1–10. Это самооценка, а не расчёт по данным.',
+      sections: [
+        { title: 'Что улучшить', body: crit.whatToImprove, tone: 'primary' },
+        { title: 'Что теряете', body: crit.businessLoss, tone: 'error' },
+      ],
+      sources: [{ type: 'prisma', model: 'gri_assessments', field: `scores.${sectionId}.${crit.id}` }],
+      history: null,
+      historyEmptyText: griHistoryEmptyText,
+      links: [{ label: 'Открыть блок в GRI', href: '/gri', icon: 'radar' }],
+    })
+  }
+
+  function openGoalBreakdown(goal: GoalRow) {
+    setBreakdown({
+      title: goal.label,
+      value: goal.value,
+      valueCaption: 'Значение из анкеты',
+      chips: [{ label: 'Цель', tone: 'primary' }, { label: goal.sourceField, tone: 'neutral' }],
+      what: goal.what,
+      how: 'Значение не рассчитывается: вы вводите его сами в анкете Точки А. Оно меняется только при редактировании анкеты.',
+      sources: goal.sources,
+      history: null,
+      historyEmptyText:
+        'Прошлые версии целей не сохраняются — в базе хранится только текущее значение поля. История появится, если понадобится вести версии плана.',
+      links: [{ label: 'Изменить в Точке А', href: '/point-a', icon: 'edit_note' }],
+    })
+  }
+
+  /** Fact value for a KPI target, matched by catalog label. */
+  const factByLabel = useCallback(
+    (label: string | undefined) => {
+      if (!label || !catalog) return null
+      const item = catalog.find((it) => it.label === label && it.value !== null && it.value !== '')
+      return item ?? null
+    },
+    [catalog],
+  )
+
+  function openKpiBreakdown(kpi: KpiCard) {
+    const fact = factByLabel(kpi.factLabel)
+    setBreakdown({
+      title: kpi.label,
+      value: kpi.target,
+      valueCaption: 'Целевое значение',
+      chips: [
+        { label: kpi.category, tone: 'primary' },
+        { label: `Owner: ${kpi.owner}`, tone: 'neutral' },
+        { label: `Метод: ${kpi.method}`, tone: 'neutral' },
+      ],
+      what: 'Целевой показатель, который вы задали сами. Это план, а не факт.',
+      how: `Значение читается напрямую из ${kpi.sourceField}. Никаких расчётов и коэффициентов над ним не выполняется.`,
+      sections: fact
+        ? [
+            {
+              title: `Факт для сравнения · ${fact.label}`,
+              body:
+                formatRuMetricWithUnit(fact.value, fact.unit) +
+                ` — рассчитано из каталога метрик${formatUpdatedRu(fact.computedAt) ? `, ${formatUpdatedRu(fact.computedAt)}` : ''}.`,
+              tone: 'primary' as const,
+            },
+          ]
+        : [
+            {
+              title: 'Факт для сравнения',
+              body: kpi.factLabel
+                ? `Показатель «${kpi.factLabel}» ещё не рассчитан, поэтому сравнить план с фактом нельзя. Внесите фактическую выручку в анкете Точки А или загрузите отчёт о прибылях и убытках.`
+                : 'Для этой цели нет числового факта: она задана текстом, сравнивать не с чем.',
+              tone: 'warning' as const,
+            },
+          ],
+      sources: kpi.sources,
+      history: null,
+      historyEmptyText:
+        'История изменений цели не ведётся — в базе хранится только текущее значение.',
+      links: [{ label: 'Изменить в Точке А', href: '/point-a', icon: 'edit_note' }],
+    })
+  }
+
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="space-y-8">
       {/* Header */}
-      <section className="flex flex-col lg:flex-row justify-between items-start gap-6">
+      <section className="flex flex-col items-start justify-between gap-6 lg:flex-row">
         <div>
-          <p className="text-xs font-mono text-primary/70 uppercase tracking-[0.2em] mb-3">
+          <p className="mb-3 font-mono text-xs uppercase tracking-[0.2em] text-primary/70">
             Система метрик · AIStart360
           </p>
-          <h1 className="font-headline text-3xl lg:text-4xl font-extrabold text-on-surface">
+          <h1 className="font-headline text-3xl font-extrabold text-on-surface lg:text-4xl">
             Метрики <span className="text-gradient">роста</span>
           </h1>
-          <p className="text-on-surface-variant mt-2 text-sm max-w-2xl">
+          <p className="mt-2 max-w-2xl text-sm text-on-surface-variant">
             Цели роста · KPI · 7 блоков GRI · полная бизнес-аналитика — в реальном времени
           </p>
         </div>
         <div className="flex flex-wrap gap-2 lg:flex-col lg:items-end">
-          {company?.target_revenue_12m_kzt && company.target_revenue_12m_kzt > 0 && (
-            <div className="flex items-center gap-2 bg-primary/10 border border-primary/20 rounded-xl px-3 py-2">
-              <span className="material-symbols-outlined text-sm text-primary">flag</span>
-              <span className="text-xs font-mono text-primary">
-                Цель:{' '}
-                {company.target_revenue_12m_kzt >= 1_000_000_000
-                  ? `${(company.target_revenue_12m_kzt / 1_000_000_000).toFixed(2)} млрд ₸`
-                  : `${(company.target_revenue_12m_kzt / 1_000_000).toFixed(1)} млн ₸`}
-                /год
+          {company?.target_revenue_12m_kzt && company.target_revenue_12m_kzt > 0 ? (
+            <Link
+              href="/point-a"
+              aria-label={`Цель по выручке ${fmtKzt(company.target_revenue_12m_kzt)} в год. Открыть Точку А`}
+              className="flex items-center gap-2 rounded-xl border border-primary/20 bg-primary/10 px-3 py-2 transition-colors hover:bg-primary/15 focus:outline-none focus:ring-2 focus:ring-primary/40"
+            >
+              <span aria-hidden="true" className="material-symbols-outlined text-sm text-primary">flag</span>
+              <span className="font-mono text-xs text-primary">
+                Цель: {fmtKzt(company.target_revenue_12m_kzt)}/год
               </span>
-            </div>
-          )}
+            </Link>
+          ) : null}
           {griIndex !== null && (
-            <div className="flex items-center gap-2 bg-surface-container border border-white/[0.06] rounded-xl px-3 py-2">
-              <span className="material-symbols-outlined text-sm text-secondary">radar</span>
-              <span className="text-xs font-mono text-secondary">
+            <button
+              type="button"
+              onClick={openGriIndexBreakdown}
+              aria-label={`GRI-индекс ${griIndex.toFixed(2)} из 10. Открыть разбор`}
+              className="flex items-center gap-2 rounded-xl border border-white/[0.06] bg-surface-container px-3 py-2 transition-colors hover:border-secondary/40 focus:outline-none focus:ring-2 focus:ring-primary/40"
+            >
+              <span aria-hidden="true" className="material-symbols-outlined text-sm text-secondary">radar</span>
+              <span className="font-mono text-xs text-secondary">
                 GRI Score: {griIndex.toFixed(2)} / 10
               </span>
-            </div>
+            </button>
           )}
         </div>
       </section>
 
       {/* Live catalog */}
-      <MetricsLiveCatalog userId={userId ?? undefined} />
+      <MetricsLiveCatalog
+        companyId={company?.id ?? null}
+        filters={filters}
+        onFiltersChange={updateFilters}
+      />
 
-      {/* Tab switcher — UX-12: scroll on mobile instead of wrapping to 2 rows */}
-      <div data-tour="metrics-tabs" className="flex gap-1 bg-surface-container rounded-xl p-1 max-w-full overflow-x-auto no-scrollbar">
-        {([
-          { key: 'goals', label: 'Цели роста',         icon: 'track_changes' },
-          { key: 'kpi',   label: 'KPI компании',       icon: 'monitoring'    },
-          { key: 'biz',   label: 'Все метрики',         icon: 'bar_chart'     },
-          { key: 'gri',   label: 'GRI диагностика',    icon: 'radar'         },
-        ] as const).map(({ key, label, icon }) => (
-          <button key={key} onClick={() => setActiveTab(key)}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-150 shrink-0 whitespace-nowrap ${
+      {/* Tabs */}
+      <div
+        data-tour="metrics-tabs"
+        role="tablist"
+        aria-label="Разделы метрик"
+        onKeyDown={handleTabKeyDown}
+        className="flex max-w-full gap-1 overflow-x-auto rounded-xl bg-surface-container p-1 no-scrollbar"
+      >
+        {TABS.map(({ key, label, icon }) => (
+          <button
+            key={key}
+            ref={(el) => { tabRefs.current[key] = el }}
+            type="button"
+            role="tab"
+            id={`metrics-tab-${key}`}
+            aria-selected={activeTab === key}
+            aria-controls={`metrics-panel-${key}`}
+            tabIndex={activeTab === key ? 0 : -1}
+            onClick={() => selectTab(key)}
+            className={`flex shrink-0 items-center gap-2 whitespace-nowrap rounded-lg px-4 py-2 text-sm font-medium transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-primary/40 ${
               activeTab === key
                 ? 'bg-primary text-on-primary shadow'
-                : 'text-on-surface-variant hover:text-on-surface hover:bg-white/[0.04]'
-            }`}>
-            <span className="material-symbols-outlined text-[16px]">{icon}</span>
+                : 'text-on-surface-variant hover:bg-white/[0.04] hover:text-on-surface'
+            }`}
+          >
+            <span aria-hidden="true" className="material-symbols-outlined text-[16px]">{icon}</span>
             {label}
           </button>
         ))}
@@ -700,37 +873,49 @@ export default function MetricsPageClient({
 
       {/* ══ TAB: GOALS ══ */}
       {activeTab === 'goals' && (
-        <div className="space-y-5">
+        <div id="metrics-panel-goals" role="tabpanel" aria-labelledby="metrics-tab-goals" className="space-y-5">
           {goals.length === 0 ? (
             <EmptyState
               icon="flag"
               title="Цели ещё не заданы"
-              description="Введите план выручки на 12 месяцев и 3 года в анкете — и они появятся здесь в реальном времени."
+              description="Здесь появятся ваши плановые цифры и текстовые цели, как только они будут в анкете."
+              missing="план выручки на 12 месяцев и на 3 года, либо текстовые цели (шаг 6 анкеты Точки А)"
               ctaLabel="Перейти к Точке А"
               ctaHref="/point-a"
             />
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               {goals.map((g) => (
-                <div
+                <button
                   key={g.id}
-                  className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-5 hover:border-primary/20 transition-colors"
+                  type="button"
+                  onClick={() => openGoalBreakdown(g)}
+                  aria-label={`${g.label}: ${g.value}. Открыть разбор цели`}
+                  className="group rounded-2xl border border-white/[0.04] bg-surface-container-low p-5 text-left transition-colors hover:border-primary/40 focus:outline-none focus:ring-2 focus:ring-primary/40"
                 >
-                  <div className="flex items-start gap-3 mb-3">
-                    <div className="w-10 h-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center flex-shrink-0">
-                      <span className="material-symbols-outlined text-base text-primary">{g.icon}</span>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-mono text-on-surface-variant mb-1 uppercase tracking-wider">
+                  <span className="mb-3 flex items-start gap-3">
+                    <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl border border-primary/20 bg-primary/10">
+                      <span aria-hidden="true" className="material-symbols-outlined text-base text-primary">{g.icon}</span>
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="mb-1 block font-mono text-xs uppercase tracking-wider text-on-surface-variant">
                         {g.label}
-                      </p>
-                      <p className="text-base font-mono font-bold text-on-surface break-words">
+                      </span>
+                      <span className="block break-words font-mono text-base font-bold text-on-surface">
                         {g.value}
-                      </p>
-                    </div>
-                  </div>
-                  <p className="text-[10px] font-mono text-on-surface-variant/60">{g.description}</p>
-                </div>
+                      </span>
+                    </span>
+                    <span
+                      aria-hidden="true"
+                      className="material-symbols-outlined text-base text-on-surface-variant/40 opacity-0 transition-opacity group-hover:opacity-100 group-focus:opacity-100"
+                    >
+                      chevron_right
+                    </span>
+                  </span>
+                  <span className="block font-mono text-[10px] text-on-surface-variant/60">
+                    Источник: {g.sourceField}
+                  </span>
+                </button>
               ))}
             </div>
           )}
@@ -739,99 +924,126 @@ export default function MetricsPageClient({
 
       {/* ══ TAB: KPI ══ */}
       {activeTab === 'kpi' && (
-        <div className="space-y-5">
+        <div id="metrics-panel-kpi" role="tabpanel" aria-labelledby="metrics-tab-kpi" className="space-y-5">
           <div>
             <h2 className="font-headline text-xl font-bold text-on-surface">KPI компании</h2>
-            <p className="text-xs text-on-surface-variant mt-1">
-              Показатели на основе анкеты и целей собственника · обновляются в реальном времени
+            <p className="mt-1 text-xs text-on-surface-variant">
+              Плановые показатели из анкеты собственника. Факт подтягивается из каталога метрик — если он там рассчитан.
             </p>
           </div>
           {kpis.length === 0 ? (
             <EmptyState
               icon="monitoring"
               title="KPI ещё не настроены"
-              description="Чтобы увидеть KPI компании, заполните анкету Точки А — данные подтянутся автоматически."
-              ctaLabel="Заполнить анкету"
-              ctaHref="/client/onboarding"
+              description="KPI строятся из целей собственника: плана выручки и текстовых целей."
+              missing="план выручки (12 мес / 3 года) или цели шага 6 в анкете Точки А"
+              ctaLabel="Заполнить Точку А"
+              ctaHref="/point-a"
             />
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {kpis.map((kpi, i) => (
-                <div
-                  key={`${kpi.label}-${i}`}
-                  className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-5 hover:border-secondary/20 transition-colors"
-                >
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="w-10 h-10 rounded-xl bg-secondary/10 border border-secondary/20 flex items-center justify-center">
-                      <span className="material-symbols-outlined text-base text-secondary">{kpi.icon}</span>
-                    </div>
-                    <span className="text-[9px] font-mono uppercase px-2 py-0.5 bg-surface-container border border-white/[0.06] rounded-full text-on-surface-variant">
-                      {kpi.category}
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {kpis.map((kpi) => {
+                const fact = factByLabel(kpi.factLabel)
+                return (
+                  <button
+                    key={kpi.id}
+                    type="button"
+                    onClick={() => openKpiBreakdown(kpi)}
+                    aria-label={`${kpi.label}, цель ${kpi.target}. Открыть разбор показателя`}
+                    className="group rounded-2xl border border-white/[0.04] bg-surface-container-low p-5 text-left transition-colors hover:border-secondary/40 focus:outline-none focus:ring-2 focus:ring-primary/40"
+                  >
+                    <span className="mb-4 flex items-start justify-between">
+                      <span className="flex h-10 w-10 items-center justify-center rounded-xl border border-secondary/20 bg-secondary/10">
+                        <span aria-hidden="true" className="material-symbols-outlined text-base text-secondary">{kpi.icon}</span>
+                      </span>
+                      <span className="rounded-full border border-white/[0.06] bg-surface-container px-2 py-0.5 font-mono text-[9px] uppercase text-on-surface-variant">
+                        {kpi.category}
+                      </span>
                     </span>
-                  </div>
-                  <p className="text-xs font-mono text-on-surface-variant mb-2 uppercase tracking-wider">{kpi.label}</p>
-                  <div className="flex items-end gap-2 mb-3">
-                    <div>
-                      <p className="text-[9px] text-on-surface-variant/60 mb-0.5">Текущее</p>
-                      <p className="text-base font-mono font-bold text-on-surface">{kpi.current}</p>
-                    </div>
-                    <span className="material-symbols-outlined text-primary mb-0.5 text-sm">arrow_forward</span>
-                    <div>
-                      <p className="text-[9px] text-primary/70 mb-0.5">Целевое</p>
-                      <p className="text-base font-mono font-bold text-primary break-words">{kpi.target}</p>
-                    </div>
-                  </div>
-                  <div className="pt-2.5 border-t border-white/[0.04] flex items-center justify-between">
-                    <p className="text-[9px] text-on-surface-variant/50">{kpi.method}</p>
-                    <p className="text-[9px] font-mono text-on-surface-variant/40">{kpi.owner}</p>
-                  </div>
-                </div>
-              ))}
+                    <span className="mb-2 block font-mono text-xs uppercase tracking-wider text-on-surface-variant">
+                      {kpi.label}
+                    </span>
+                    <span className="mb-3 block">
+                      <span className="mb-0.5 block text-[9px] text-primary/70">Целевое</span>
+                      <span className="block break-words font-mono text-base font-bold text-primary">
+                        {kpi.target}
+                      </span>
+                    </span>
+                    <span className="mb-3 block rounded-lg border border-white/[0.04] bg-surface-container px-3 py-2">
+                      <span className="mb-0.5 block text-[9px] text-on-surface-variant/60">Текущее</span>
+                      {fact ? (
+                        <span className="block font-mono text-sm text-on-surface">
+                          {formatRuMetricWithUnit(fact.value, fact.unit)}
+                          <span className="ml-1 font-mono text-[10px] text-on-surface-variant/60">
+                            · {fact.label}
+                          </span>
+                        </span>
+                      ) : (
+                        <span className="block text-[11px] leading-relaxed text-on-surface-variant">
+                          не рассчитано — нет исходных данных
+                        </span>
+                      )}
+                    </span>
+                    <span className="flex items-center justify-between border-t border-white/[0.04] pt-2.5">
+                      <span className="text-[9px] text-on-surface-variant/50">{kpi.method}</span>
+                      <span
+                        aria-hidden="true"
+                        className="material-symbols-outlined text-base text-on-surface-variant/40 opacity-0 transition-opacity group-hover:opacity-100 group-focus:opacity-100"
+                      >
+                        chevron_right
+                      </span>
+                    </span>
+                  </button>
+                )
+              })}
             </div>
           )}
         </div>
       )}
 
-      {/* ══ TAB: ALL BIZ METRICS ══ */}
+      {/* ══ TAB: COVERAGE ══ */}
       {activeTab === 'biz' && (
-        <div className="space-y-5">
+        <div id="metrics-panel-biz" role="tabpanel" aria-labelledby="metrics-tab-biz" className="space-y-5">
           <div>
             <h2 className="font-headline text-xl font-bold text-on-surface">Все метрики бизнеса</h2>
-            <p className="text-xs text-on-surface-variant mt-1">
-              Полный каталог Точки А · live-значения из таблицы metrics, обновляются в реальном времени
+            <p className="mt-1 text-xs text-on-surface-variant">
+              Где у Точки А данные есть, а где дыры. Кнопки настраивают фильтр каталога выше.
             </p>
           </div>
-          {/* The MetricsLiveCatalog above already renders the catalog with realtime
-              wiring. We render an info card here to confirm the catalog is the
-              authoritative source, and to point owners at it. */}
-          <div className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-5 flex items-start gap-3">
-            <span className="material-symbols-outlined text-primary text-base mt-0.5">info</span>
-            <p className="text-sm text-on-surface-variant leading-relaxed">
-              Все 122 показателя отображаются в каталоге выше (Точка А — Real-time). Используйте поиск, фильтр по
-              namespace и отделу — значения тянутся из таблицы <code className="font-mono text-primary">public.metrics</code>.
-            </p>
-          </div>
+          <MetricsCoveragePanel filters={filters} onFiltersChange={updateFilters} />
         </div>
       )}
 
       {/* ══ TAB: GRI ══ */}
       {activeTab === 'gri' && (
-        <div className="space-y-5">
+        <div id="metrics-panel-gri" role="tabpanel" aria-labelledby="metrics-tab-gri" className="space-y-5">
           {!griAssessment ? (
             <EmptyState
               icon="insights"
               title="Тест GRI ещё не пройден"
-              description="Пройдите GRI Assessment из 7 блоков — увидите свой Growth Readiness Index, слабые места и план на 90 дней."
+              description="GRI-диагностика из 7 блоков даёт индекс готовности к росту, слабые места и план на 90 дней."
+              missing="ответы на критерии семи блоков GRI"
               ctaLabel="Пройти GRI Assessment"
               ctaHref="/gri"
+              secondary={{ label: 'Как считается GRI', href: '/gri/methodology' }}
             />
           ) : (
             <>
               {/* Score header */}
-              <div className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-6">
-                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-6">
-                  <div className="relative w-24 h-24 flex-shrink-0">
-                    <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
+              <div className="rounded-2xl border border-white/[0.04] bg-surface-container-low p-6">
+                <div className="flex flex-col items-start gap-6 sm:flex-row sm:items-center">
+                  <button
+                    type="button"
+                    onClick={openGriIndexBreakdown}
+                    aria-label={`GRI-индекс ${griAssessment.gri_index.toFixed(2)} из 10. Открыть разбор: формула, блоки, источник`}
+                    className="group relative h-24 w-24 flex-shrink-0 rounded-full transition-transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-primary/40"
+                  >
+                    <svg
+                      viewBox="0 0 100 100"
+                      role="img"
+                      aria-label={`Шкала GRI: ${griAssessment.gri_index.toFixed(2)} из 10`}
+                      className="h-full w-full -rotate-90"
+                    >
                       <circle cx="50" cy="50" r="40" fill="none" stroke="rgba(255,255,255,0.04)" strokeWidth="10" />
                       <circle
                         cx="50"
@@ -845,129 +1057,190 @@ export default function MetricsPageClient({
                         strokeDasharray={`${(griAssessment.gri_index / 10) * 251.2} 251.2`}
                       />
                     </svg>
-                    <div className="absolute inset-0 flex flex-col items-center justify-center">
-                      <span className="text-2xl font-mono font-bold text-on-surface">
+                    <span className="absolute inset-0 flex flex-col items-center justify-center">
+                      <span className="font-mono text-2xl font-bold text-on-surface">
                         {griAssessment.gri_index.toFixed(2)}
                       </span>
                       <span className="text-[9px] text-on-surface-variant">/10</span>
-                    </div>
-                  </div>
+                    </span>
+                  </button>
                   <div className="flex-1">
-                    <p className="text-[10px] font-mono text-on-surface-variant/60 uppercase tracking-widest mb-1">
+                    <p className="mb-1 font-mono text-[10px] uppercase tracking-widest text-on-surface-variant/60">
                       GRI Score · Итоговый
                     </p>
-                    <h2 className="font-headline text-2xl font-bold text-on-surface mb-1">
+                    <h2 className="mb-1 font-headline text-2xl font-bold text-on-surface">
                       Индекс готовности к росту
                     </h2>
-                    <p className="text-sm text-on-surface-variant mb-3">
-                      Дата оценки:{' '}
-                      {new Date(griAssessment.created_at).toLocaleDateString('ru-RU', {
-                        day: 'numeric',
-                        month: 'long',
-                        year: 'numeric',
-                      })}
+                    <p className="mb-3 text-sm text-on-surface-variant">
+                      Дата оценки: {assessmentDate} · среднее по {scoredSections.length} из {GRI_SECTIONS.length} блоков
                     </p>
-                    <div className="flex flex-wrap gap-2">
-                      <span className="text-[10px] font-mono px-2.5 py-1 rounded-full bg-primary/10 border border-primary/20 text-primary">
-                        {summary.strong} сильных
-                      </span>
-                      <span className="text-[10px] font-mono px-2.5 py-1 rounded-full bg-tertiary-container/10 border border-tertiary-container/20 text-tertiary-container">
-                        {summary.weak} слабых
-                      </span>
-                      <span className="text-[10px] font-mono px-2.5 py-1 rounded-full bg-error/10 border border-error/20 text-error">
-                        {summary.critical} критических
-                      </span>
+                    <div role="group" aria-label="Фильтр блоков по состоянию" className="flex flex-wrap gap-2">
+                      {([
+                        { key: 'all' as const,      label: `Все ${sectionRows.length}`,     cls: 'bg-surface-container border-white/[0.06] text-on-surface-variant' },
+                        { key: 'ok' as const,       label: `${summary.ok} сильных`,         cls: 'bg-primary/10 border-primary/20 text-primary' },
+                        { key: 'weak' as const,     label: `${summary.weak} слабых`,        cls: 'bg-tertiary-container/10 border-tertiary-container/20 text-tertiary-container' },
+                        { key: 'critical' as const, label: `${summary.critical} критических`, cls: 'bg-error/10 border-error/20 text-error' },
+                      ]).map((chip) => (
+                        <button
+                          key={chip.key}
+                          type="button"
+                          aria-pressed={griStatusFilter === chip.key}
+                          aria-label={`Показать блоки: ${chip.label}`}
+                          onClick={() => setGriStatusFilter(chip.key)}
+                          className={`rounded-full border px-2.5 py-1 font-mono text-[10px] transition-all focus:outline-none focus:ring-2 focus:ring-primary/40 ${chip.cls} ${
+                            griStatusFilter === chip.key ? 'ring-1 ring-inset ring-current' : 'opacity-70 hover:opacity-100'
+                          }`}
+                        >
+                          {chip.label}
+                        </button>
+                      ))}
                     </div>
                   </div>
                 </div>
               </div>
 
-              {/* 7 blocks */}
-              <div className="space-y-2">
-                {sectionRows.map((row) => (
-                  <button
-                    key={row.id}
-                    type="button"
-                    onClick={() => openGriBlockModal(row.label)}
-                    className="group relative bg-surface-container-low rounded-xl border border-white/[0.04] p-4 flex items-center gap-4 w-full text-left hover:bg-white/[0.02] hover:border-white/[0.08] transition-colors cursor-pointer"
-                  >
-                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${row.tone.bg}`}>
-                      <span className={`material-symbols-outlined text-sm ${row.tone.text}`}>{row.icon}</span>
-                    </div>
-                    <p className="text-sm font-medium text-on-surface w-44 flex-shrink-0">{row.label}</p>
-                    <div className="flex-1 h-2 bg-surface-container rounded-full overflow-hidden">
-                      <div
-                        className={`h-full ${row.tone.bar} rounded-full`}
-                        style={{ width: `${(row.score / 10) * 100}%` }}
-                      />
-                    </div>
-                    <span className={`text-sm font-mono font-bold w-14 text-right flex-shrink-0 ${row.tone.text}`}>
-                      {row.score.toFixed(2)}/10
-                    </span>
-                    <span
-                      className={`hidden sm:inline text-[9px] font-mono px-2 py-0.5 rounded-full border ${row.tone.badge} flex-shrink-0 max-w-[180px] truncate`}
+              {/* Block sort */}
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <h3 className="font-headline text-base font-bold text-on-surface">
+                  7 блоков · показано {visibleSections.length}
+                </h3>
+                <div role="group" aria-label="Сортировка блоков" className="flex flex-wrap gap-1">
+                  {GRI_SORTS.map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      aria-pressed={griSort === opt.value}
+                      onClick={() => setGriSort(opt.value)}
+                      className={
+                        griSort === opt.value
+                          ? 'rounded-full border border-primary/40 bg-primary/15 px-3 py-1.5 font-mono text-[11px] text-primary focus:outline-none focus:ring-2 focus:ring-primary/40'
+                          : 'rounded-full border border-white/[0.04] bg-surface-container px-3 py-1.5 font-mono text-[11px] text-on-surface-variant hover:border-white/15 focus:outline-none focus:ring-2 focus:ring-primary/40'
+                      }
                     >
-                      {row.tone.status === 'critical'
-                        ? 'КРИТИЧЕСКИЙ БЛОК'
-                        : row.tone.status === 'weak'
-                          ? 'Слабое место'
-                          : 'Достаточный уровень'}
-                    </span>
-                  </button>
-                ))}
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
               </div>
+
+              {/* 7 blocks */}
+              {visibleSections.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-white/[0.08] p-8 text-center">
+                  <p className="text-sm text-on-surface-variant">Блоков с таким состоянием нет.</p>
+                  <button
+                    type="button"
+                    onClick={() => setGriStatusFilter('all')}
+                    className="mt-3 font-mono text-xs text-primary hover:text-primary/80 focus:outline-none focus:ring-2 focus:ring-primary/40"
+                  >
+                    Показать все блоки
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {visibleSections.map((row) => (
+                    <button
+                      key={row.id}
+                      type="button"
+                      onClick={() => openSectionBreakdown(row)}
+                      aria-label={`${row.label}: ${row.score > 0 ? `${row.score.toFixed(2)} из 10` : 'нет оценки'}. Открыть разбор блока`}
+                      className="group relative flex w-full items-center gap-4 rounded-xl border border-white/[0.04] bg-surface-container-low p-4 text-left transition-colors hover:border-white/[0.08] hover:bg-white/[0.02] focus:outline-none focus:ring-2 focus:ring-primary/40"
+                    >
+                      <span className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg ${row.tone.bg}`}>
+                        <span aria-hidden="true" className={`material-symbols-outlined text-sm ${row.tone.text}`}>{row.icon}</span>
+                      </span>
+                      <span className="w-44 flex-shrink-0">
+                        <span className="block text-sm font-medium text-on-surface">{row.label}</span>
+                        <span className="block font-mono text-[10px] text-on-surface-variant/60">
+                          {row.answered} из {row.criteriaTotal} критериев
+                        </span>
+                      </span>
+                      <span className="h-2 flex-1 overflow-hidden rounded-full bg-surface-container">
+                        <span
+                          className={`block h-full rounded-full ${row.tone.bar}`}
+                          style={{ width: `${(row.score / 10) * 100}%` }}
+                        />
+                      </span>
+                      <span className={`w-16 flex-shrink-0 text-right font-mono text-sm font-bold ${row.tone.text}`}>
+                        {row.score > 0 ? `${row.score.toFixed(2)}/10` : '—'}
+                      </span>
+                      <span
+                        className={`hidden max-w-[180px] flex-shrink-0 truncate rounded-full border px-2 py-0.5 font-mono text-[9px] sm:inline ${row.tone.badge}`}
+                      >
+                        {GRI_STATUS_LABEL[row.tone.status]}
+                      </span>
+                      <span
+                        aria-hidden="true"
+                        className="material-symbols-outlined flex-shrink-0 text-base text-on-surface-variant/40 opacity-0 transition-opacity group-hover:opacity-100 group-focus:opacity-100"
+                      >
+                        chevron_right
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
 
               {/* Insights */}
               {insights.length > 0 && (
-                <div className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-5">
-                  <div className="flex items-center gap-2 mb-4">
-                    <span className="material-symbols-outlined text-primary text-base">tips_and_updates</span>
+                <div className="rounded-2xl border border-white/[0.04] bg-surface-container-low p-5">
+                  <div className="mb-4 flex items-center gap-2">
+                    <span aria-hidden="true" className="material-symbols-outlined text-base text-primary">tips_and_updates</span>
                     <h3 className="font-headline text-base font-bold text-on-surface">Инсайты и советы</h3>
                   </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                     {insights.map((insight, idx) => {
                       const sev =
                         insight.severity === 'critical'
                           ? { label: 'Critical', text: 'text-error', border: 'border-error/20', bg: 'bg-error/5' }
                           : insight.severity === 'warning'
-                            ? {
-                                label: 'Warning',
-                                text: 'text-tertiary-container',
-                                border: 'border-tertiary-container/20',
-                                bg: 'bg-tertiary-container/5',
-                              }
-                            : {
-                                label: 'Strong',
-                                text: 'text-primary',
-                                border: 'border-primary/20',
-                                bg: 'bg-primary/5',
-                              }
+                            ? { label: 'Warning', text: 'text-tertiary-container', border: 'border-tertiary-container/20', bg: 'bg-tertiary-container/5' }
+                            : { label: 'Strong', text: 'text-primary', border: 'border-primary/20', bg: 'bg-primary/5' }
+                      const sectionRow = insight.sectionId
+                        ? sectionRows.find((r) => r.id === insight.sectionId)
+                        : undefined
                       return (
-                        <div key={idx} className={`bg-surface-container rounded-2xl border ${sev.border} p-5`}>
-                          <div className="flex items-center justify-between mb-3">
-                            <span
-                              className={`text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded-full border ${sev.text} ${sev.border} ${sev.bg}`}
-                            >
+                        <div key={idx} className={`rounded-2xl border bg-surface-container p-5 ${sev.border}`}>
+                          <div className="mb-3 flex items-center justify-between">
+                            <span className={`rounded-full border px-2 py-0.5 font-mono text-[10px] font-bold uppercase ${sev.text} ${sev.border} ${sev.bg}`}>
                               {sev.label}
                             </span>
-                            <span className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest">
+                            <span className="font-mono text-[10px] uppercase tracking-widest text-on-surface-variant">
                               {insight.section}
                             </span>
                           </div>
-                          <p className="text-sm font-bold text-on-surface mb-3">{insight.problem}</p>
-                          <div className="space-y-2 text-xs text-on-surface-variant leading-relaxed">
+                          <p className="mb-3 text-sm font-bold text-on-surface">{insight.problem}</p>
+                          <div className="space-y-2 text-xs leading-relaxed text-on-surface-variant">
                             <p>
-                              <span className="font-mono uppercase tracking-widest text-primary/70 text-[10px] mr-1">
+                              <span className="mr-1 font-mono text-[10px] uppercase tracking-widest text-primary/70">
                                 Что делать:
                               </span>
                               {insight.recommendation}
                             </p>
                             <p>
-                              <span className="font-mono uppercase tracking-widest text-error/70 text-[10px] mr-1">
+                              <span className="mr-1 font-mono text-[10px] uppercase tracking-widest text-error/70">
                                 Что теряете:
                               </span>
                               {insight.loss}
                             </p>
+                          </div>
+                          <div className="mt-4 flex flex-wrap gap-2">
+                            {sectionRow && (
+                              <button
+                                type="button"
+                                onClick={() => openSectionBreakdown(sectionRow)}
+                                aria-label={`Открыть разбор блока ${sectionRow.label}`}
+                                className="inline-flex items-center gap-1.5 rounded-xl border border-white/[0.06] px-3 py-1.5 font-mono text-[11px] text-on-surface-variant transition-colors hover:border-primary/40 hover:text-primary focus:outline-none focus:ring-2 focus:ring-primary/40"
+                              >
+                                <span aria-hidden="true" className="material-symbols-outlined text-sm">insights</span>
+                                Разбор блока
+                              </button>
+                            )}
+                            <Link
+                              href="/gri"
+                              className="inline-flex items-center gap-1.5 rounded-xl border border-primary/20 bg-primary/10 px-3 py-1.5 font-mono text-[11px] text-primary transition-colors hover:bg-primary/15 focus:outline-none focus:ring-2 focus:ring-primary/40"
+                            >
+                              <span aria-hidden="true" className="material-symbols-outlined text-sm">radar</span>
+                              Открыть в GRI
+                            </Link>
                           </div>
                         </div>
                       )
@@ -978,30 +1251,43 @@ export default function MetricsPageClient({
 
               {/* Top-5 lowest criteria */}
               {top5.length > 0 && (
-                <div className="bg-surface-container-low rounded-2xl border border-error/20 p-5">
-                  <div className="flex items-center gap-2 mb-4">
-                    <span className="material-symbols-outlined text-error text-sm">warning</span>
+                <div className="rounded-2xl border border-error/20 bg-surface-container-low p-5">
+                  <div className="mb-4 flex items-center gap-2">
+                    <span aria-hidden="true" className="material-symbols-outlined text-sm text-error">warning</span>
                     <h3 className="font-headline text-base font-bold text-on-surface">Топ-5 ограничений роста</h3>
                   </div>
-                  <div className="space-y-2">
-                    {top5.map((item, i) => (
-                      <div key={i} className="flex items-center gap-3 bg-surface-container rounded-xl px-4 py-2.5">
-                        <div className="w-6 h-6 rounded-lg bg-error/10 border border-error/20 flex items-center justify-center flex-shrink-0">
-                          <span className="text-[10px] font-mono font-bold text-error">{item.score}</span>
-                        </div>
-                        <div className="flex-1">
-                          <p className="text-sm font-medium text-on-surface">{item.label}</p>
-                          <p className="text-[10px] font-mono text-on-surface-variant">{item.block}</p>
-                        </div>
-                        <div className="w-20 h-1.5 bg-surface-container-high rounded-full overflow-hidden flex-shrink-0">
-                          <div
-                            className="h-full bg-error rounded-full"
-                            style={{ width: `${(item.score / 10) * 100}%` }}
-                          />
-                        </div>
-                      </div>
+                  <ul className="space-y-2">
+                    {top5.map((item) => (
+                      <li key={`${item.sectionId}-${item.criterion.id}`}>
+                        <button
+                          type="button"
+                          onClick={() => openCriterionBreakdown(item.sectionId, item.block, item.criterion)}
+                          aria-label={`${item.criterion.text}, оценка ${item.criterion.score} из 10, блок ${item.block}. Открыть разбор критерия`}
+                          className="group flex w-full items-center gap-3 rounded-xl bg-surface-container px-4 py-2.5 text-left transition-colors hover:bg-white/[0.04] focus:outline-none focus:ring-2 focus:ring-primary/40"
+                        >
+                          <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-lg border border-error/20 bg-error/10">
+                            <span className="font-mono text-[10px] font-bold text-error">{item.criterion.score}</span>
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block text-sm font-medium text-on-surface">{item.criterion.text}</span>
+                            <span className="block font-mono text-[10px] text-on-surface-variant">{item.block}</span>
+                          </span>
+                          <span className="h-1.5 w-20 flex-shrink-0 overflow-hidden rounded-full bg-surface-container-high">
+                            <span
+                              className="block h-full rounded-full bg-error"
+                              style={{ width: `${((item.criterion.score ?? 0) / 10) * 100}%` }}
+                            />
+                          </span>
+                          <span
+                            aria-hidden="true"
+                            className="material-symbols-outlined flex-shrink-0 text-base text-on-surface-variant/40 opacity-0 transition-opacity group-hover:opacity-100 group-focus:opacity-100"
+                          >
+                            chevron_right
+                          </span>
+                        </button>
+                      </li>
                     ))}
-                  </div>
+                  </ul>
                 </div>
               )}
             </>
@@ -1009,7 +1295,9 @@ export default function MetricsPageClient({
         </div>
       )}
 
-      {modal && <MetricDetailModal {...modal} />}
+      {breakdown && (
+        <MetricBreakdownModal open onClose={() => setBreakdown(null)} {...breakdown} />
+      )}
     </div>
   )
 }

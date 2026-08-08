@@ -1,10 +1,11 @@
 'use client'
 
+import Link from 'next/link'
 import { useMemo, useState } from 'react'
 import type { PointA, Risk, QuickWin } from '@/types/onboarding'
 import { usePointAAggregate, useRecalculatePointA } from '@/hooks/usePointAAggregate'
 import { useRealtimePointA } from '@/hooks/useRealtimePointA'
-import PointAInsightCard from '@/components/point-a/PointAInsightCard'
+import ActionPlanCard from '@/components/point-a/ActionPlanCard'
 
 interface Props {
   userId: string
@@ -18,10 +19,20 @@ export default function PointAIntelligenceSection({ userId, companyId }: Props) 
 
   const [departmentFilter, setDepartmentFilter] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<'strengths' | 'gaps' | 'departments' | 'actions'>('strengths')
+  const [showAllActions, setShowAllActions] = useState(false)
 
   const intelligence = data?.intelligence ?? null
   const risks: Risk[] = data?.risks ?? []
   const quickWins: QuickWin[] = data?.quick_wins ?? []
+  // The aggregate already ships the five block scores with their issues and
+  // recommendations — that's the material every action plan is built from.
+  const blocks = data?.blocks ?? null
+
+  const ACTION_PREVIEW = 4
+  const visibleRisks = showAllActions ? risks : risks.slice(0, ACTION_PREVIEW)
+  const visibleQuickWins = showAllActions ? quickWins : quickWins.slice(0, ACTION_PREVIEW)
+  const hiddenActions =
+    risks.length - visibleRisks.length + (quickWins.length - visibleQuickWins.length)
 
   const filteredDepartments = useMemo(() => {
     if (!intelligence?.by_department) return []
@@ -53,8 +64,9 @@ export default function PointAIntelligenceSection({ userId, companyId }: Props) 
               {error instanceof Error ? error.message : 'Неизвестная ошибка'}
             </p>
             <button
+              type="button"
               onClick={() => refetch()}
-              className="mt-3 text-xs font-mono text-primary hover:text-primary/80 inline-flex items-center gap-1"
+              className="mt-3 text-xs font-mono text-primary hover:text-primary/80 inline-flex items-center gap-1 rounded focus:outline-none focus:ring-2 focus:ring-primary/40"
             >
               <span className="material-symbols-outlined text-sm">refresh</span>
               Повторить
@@ -75,6 +87,31 @@ export default function PointAIntelligenceSection({ userId, companyId }: Props) 
         <p className="text-xs text-on-surface-variant/60 mt-1 font-mono">
           Заполните анкету и загрузите документы — система автоматически соберёт сильные стороны, пробелы и тренды.
         </p>
+        <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+          <button
+            type="button"
+            onClick={() => recalc.mutate()}
+            disabled={recalc.isPending}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-primary/40 bg-primary/10 px-3 py-1.5 text-[11px] font-mono uppercase tracking-[0.15em] text-primary transition-colors hover:bg-primary/15 disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-primary/40"
+          >
+            <span className={`material-symbols-outlined text-[14px] ${recalc.isPending ? 'animate-spin' : ''}`}>
+              {recalc.isPending ? 'progress_activity' : 'auto_awesome'}
+            </span>
+            {recalc.isPending ? 'Собираем…' : 'Собрать сейчас'}
+          </button>
+          <Link
+            href="/client/onboarding"
+            className="inline-flex items-center gap-1.5 rounded-xl border border-white/10 px-3 py-1.5 text-[11px] font-mono uppercase tracking-[0.15em] text-on-surface-variant transition-colors hover:text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40"
+          >
+            <span className="material-symbols-outlined text-[14px]">edit_note</span>
+            Заполнить анкету
+          </Link>
+        </div>
+        {recalc.isError && (
+          <p className="mt-3 text-[11px] font-mono text-error">
+            {recalc.error instanceof Error ? recalc.error.message : 'Не удалось собрать интеллект-слой'}
+          </p>
+        )}
       </section>
     )
   }
@@ -122,16 +159,24 @@ export default function PointAIntelligenceSection({ userId, companyId }: Props) 
             </span>
           </div>
           <button
+            type="button"
             onClick={() => recalc.mutate()}
             disabled={recalc.isPending}
-            className="inline-flex items-center gap-1 text-[11px] font-mono text-primary border border-primary/40 hover:bg-primary/10 disabled:opacity-50 rounded-lg px-2.5 py-1.5 transition-colors"
+            title="Пересобирает интеллект-слой Точки А (сильные стороны, пробелы, риски)"
+            className="inline-flex items-center gap-1 text-[11px] font-mono text-primary border border-primary/40 hover:bg-primary/10 disabled:opacity-50 rounded-lg px-2.5 py-1.5 transition-colors focus:outline-none focus:ring-2 focus:ring-primary/40"
           >
             <span className={`material-symbols-outlined text-[14px] ${recalc.isPending ? 'animate-spin' : ''}`}>
               {recalc.isPending ? 'progress_activity' : 'refresh'}
             </span>
-            {recalc.isPending ? 'Пересчёт…' : 'Пересчитать'}
+            {recalc.isPending ? 'Пересчёт…' : 'Пересчитать интеллект-слой'}
           </button>
         </div>
+
+        {recalc.isError && (
+          <p className="text-[11px] font-mono text-error">
+            {recalc.error instanceof Error ? recalc.error.message : 'Пересчёт не удался'}
+          </p>
+        )}
 
         {/* Compact live coverage bars */}
         <div className="grid grid-cols-5 gap-1.5">
@@ -268,6 +313,7 @@ export default function PointAIntelligenceSection({ userId, companyId }: Props) 
               <div className="space-y-2">
                 <div className="flex gap-1 overflow-x-auto scrollbar-thin">
                   <button
+                    type="button"
                     onClick={() => setDepartmentFilter(null)}
                     className={`text-[10px] font-mono rounded-md border px-2 py-0.5 whitespace-nowrap transition-colors ${
                       departmentFilter === null
@@ -280,6 +326,7 @@ export default function PointAIntelligenceSection({ userId, companyId }: Props) 
                   {departments.map((d) => (
                     <button
                       key={d}
+                      type="button"
                       onClick={() => setDepartmentFilter(d)}
                       className={`text-[10px] font-mono rounded-md border px-2 py-0.5 whitespace-nowrap transition-colors ${
                         departmentFilter === d
@@ -344,27 +391,26 @@ export default function PointAIntelligenceSection({ userId, companyId }: Props) 
             )}
 
             {activeTab === 'actions' && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                {risks.slice(0, 4).map((r, i) => (
-                  <PointAInsightCard
-                    key={`risk-${i}`}
-                    kind="risk"
-                    level={r.level}
-                    area={r.area}
-                    text={r.text}
-                    impact={r.impact}
-                  />
-                ))}
-                {quickWins.slice(0, 4).map((q, i) => (
-                  <PointAInsightCard
-                    key={`qw-${i}`}
-                    kind="quick_win"
-                    area={q.area}
-                    text={q.action}
-                    timeline={q.timeline}
-                  />
-                ))}
-              </div>
+              <>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  {visibleRisks.map((r, i) => (
+                    <ActionPlanCard key={`risk-${i}`} kind="risk" item={r} blocks={blocks} />
+                  ))}
+                  {visibleQuickWins.map((q, i) => (
+                    <ActionPlanCard key={`qw-${i}`} kind="quick_win" item={q} blocks={blocks} />
+                  ))}
+                </div>
+                {hiddenActions > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAllActions(true)}
+                    className="mt-2 inline-flex items-center gap-1 rounded-lg border border-white/10 px-2.5 py-1.5 text-[11px] font-mono text-on-surface-variant transition-colors hover:text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40"
+                  >
+                    <span className="material-symbols-outlined text-[14px]">expand_more</span>
+                    Показать ещё {hiddenActions}
+                  </button>
+                )}
+              </>
             )}
           </div>
         </div>

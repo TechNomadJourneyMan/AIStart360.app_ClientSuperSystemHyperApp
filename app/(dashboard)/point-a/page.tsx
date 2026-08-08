@@ -12,6 +12,8 @@ import { OnboardingStatusBadges } from '@/components/dashboard/OnboardingStatusB
 import GrowthSnapshotHero from '@/components/dashboard/GrowthSnapshotHero'
 import KeyMetricsHero from '@/components/point-a/v2/KeyMetricsHero'
 import MetricZonesGrid from '@/components/point-a/v2/MetricZonesGrid'
+import PointAMetricDrillDown from '@/components/point-a/v2/PointAMetricDrillDown'
+import BlockDiagnosticsGrid, { type DiagnosticBlock } from '@/components/point-a/BlockDiagnosticsGrid'
 import CompanyDataCard from '@/components/point-a/v2/CompanyDataCard'
 import MarketAnalysisCard from '@/components/point-a/v2/MarketAnalysisCard'
 import InsightsFeed from '@/components/point-a/v2/InsightsFeed'
@@ -41,7 +43,7 @@ export default async function PointAPage() {
   // Fetch data from Supabase REST API (bypasses RLS)
   let docsCount = 0
   let avgScore = 0
-  let domainScores: Array<{ id: string; label: string; score: number; max: number; icon: string }> = []
+  let domainScores: DiagnosticBlock[] = []
   let latestReports: Array<{ id: string; score: number; calculatedAt: string; clientName: string }> = []
   const surveyAnswers: Record<string, unknown> = {}
   const surveyCompletedSteps: number[] = []
@@ -78,20 +80,33 @@ export default async function PointAPage() {
         if (diag) {
           avgScore = diag.overall_score ?? 0
 
-          const blocks: Record<string, { label: string; icon: string }> = {
-            finance: { label: 'Финансы', icon: 'payments' },
-            sales: { label: 'Продажи', icon: 'trending_up' },
-            operations: { label: 'Операции', icon: 'settings' },
-            marketing: { label: 'Маркетинг', icon: 'campaign' },
-            strategy: { label: 'Стратегия', icon: 'flag' },
-          }
+          const blocks: Array<{ id: DiagnosticBlock['id']; label: string; icon: string }> = [
+            { id: 'finance', label: 'Финансы', icon: 'payments' },
+            { id: 'sales', label: 'Продажи', icon: 'trending_up' },
+            { id: 'operations', label: 'Операции', icon: 'settings' },
+            { id: 'marketing', label: 'Маркетинг', icon: 'campaign' },
+            { id: 'strategy', label: 'Стратегия', icon: 'flag' },
+          ]
 
-          domainScores = Object.entries(blocks).map(([key, meta]) => {
-            const blockData = diag[`${key}_score`]
-            const score = typeof blockData === 'object' && blockData !== null
-              ? (blockData as { score?: number }).score ?? 0
-              : 0
-            return { id: key, label: meta.label, score, max: 100, icon: meta.icon }
+          // A missing block is `score: null` («Нет расчёта»), NOT 0 — the old
+          // `?? 0` fallback drew "0 / 100 · Критично" for a diagnostic that was
+          // simply never computed.
+          domainScores = blocks.map((meta) => {
+            const raw = diag[`${meta.id}_score`]
+            const blockData =
+              typeof raw === 'object' && raw !== null
+                ? (raw as { score?: number; top_issues?: string[]; recommendations?: string[] })
+                : null
+            return {
+              id: meta.id,
+              label: meta.label,
+              icon: meta.icon,
+              score: typeof blockData?.score === 'number' ? blockData.score : null,
+              topIssues: Array.isArray(blockData?.top_issues) ? blockData!.top_issues! : [],
+              recommendations: Array.isArray(blockData?.recommendations)
+                ? blockData!.recommendations!
+                : [],
+            }
           })
 
           latestReports = [{
@@ -146,6 +161,10 @@ export default async function PointAPage() {
 
       {/* Sticky bottom pill bar — scroll-spy across the page sections */}
       <PointAQuickPills />
+
+      {/* Metric drill-down host — KeyMetricsHero tiles and MetricZonesGrid rows
+          open a metric through the metrics store; this is what renders it. */}
+      <PointAMetricDrillDown />
 
       {/* Header */}
       <section>
@@ -236,43 +255,18 @@ export default async function PointAPage() {
           <div className="flex justify-between items-end border-b border-outline-variant/10 pb-4 mb-6">
             <div>
               <h2 className="font-headline text-lg font-bold text-on-surface">Диагностика по блокам</h2>
-              <p className="text-xs text-on-surface-variant mt-1">Текущий уровень по каждому направлению</p>
+              <p className="text-xs text-on-surface-variant mt-1">
+                Нажмите на блок — покажем, какие вопросы анкеты в него вошли и сколько
+                баллов дал каждый ответ
+              </p>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {domainScores.map((domain) => {
-              const pct = (domain.score / domain.max) * 100
-              const isStrong = pct >= 70
-              const isCritical = pct < 50
-              return (
-                <div key={domain.id} className="bg-surface-container-low rounded-2xl border border-white/[0.04] hover:border-primary/10 p-5 transition-all group hover:scale-[1.01]">
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="w-10 h-10 rounded-xl bg-surface-container flex items-center justify-center border border-white/[0.04]">
-                      <span className="material-symbols-outlined text-lg text-primary">{domain.icon}</span>
-                    </div>
-                    <span className={`text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded-full border ${
-                      isCritical ? 'text-error border-error/20 bg-error/5' :
-                      isStrong ? 'text-primary border-primary/20 bg-primary/5' :
-                      'text-tertiary-container border-tertiary-container/20 bg-tertiary-container/5'
-                    }`}>
-                      {isCritical ? 'Критично' : isStrong ? 'Сильно' : 'Средне'}
-                    </span>
-                  </div>
-                  <h3 className="text-sm font-bold text-on-surface mb-3">{domain.label}</h3>
-                  <div className="flex items-end justify-between mb-2">
-                    <span className="text-3xl font-mono font-bold text-on-surface">{domain.score}</span>
-                    <span className="text-[10px] text-on-surface-variant font-mono uppercase tracking-widest">/ {domain.max}</span>
-                  </div>
-                  <div className="h-1.5 bg-surface-container rounded-full overflow-hidden border border-white/[0.02]">
-                    <div className={`h-full rounded-full transition-all duration-1000 ${
-                      isCritical ? 'bg-error' : isStrong ? 'bg-primary' : 'bg-tertiary-container'
-                    }`} style={{ width: `${pct}%` }} />
-                  </div>
-                </div>
-              )
-            })}
-          </div>
+          <BlockDiagnosticsGrid
+            blocks={domainScores}
+            answers={surveyAnswers}
+            hasAnswers={Object.keys(surveyAnswers).length > 0}
+          />
         </section>
       )}
 
@@ -316,7 +310,16 @@ export default async function PointAPage() {
             <div className="bg-surface-container-low rounded-2xl border border-dashed border-white/10 p-12 text-center">
               <span className="material-symbols-outlined text-4xl text-on-surface-variant/20 mb-4 block">insert_chart</span>
               <p className="text-sm text-on-surface-variant font-medium">Нет данных диагностики</p>
-              <p className="text-xs text-on-surface-variant/60 mt-1">Заполните анкету для расчёта Точки А</p>
+              <p className="text-xs text-on-surface-variant/60 mt-1">
+                Точка А считается по ответам анкеты — пока их нет, считать нечего
+              </p>
+              <a
+                href="/client/onboarding"
+                className="mt-4 inline-flex items-center gap-1.5 rounded-xl border border-primary/30 bg-primary/10 px-3 py-1.5 text-[11px] font-mono uppercase tracking-[0.15em] text-primary transition-colors hover:bg-primary/15 focus:outline-none focus:ring-2 focus:ring-primary/40"
+              >
+                <span className="material-symbols-outlined text-[14px]">edit_note</span>
+                Заполнить анкету
+              </a>
             </div>
           )}
         </div>

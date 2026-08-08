@@ -1,0 +1,73 @@
+{
+  "companyName": "HONOR GROUP",
+  "website": "https://myhonor.shop",
+  "verifiedAt": "2026-07-29",
+  "sourceUrls": [
+    "https://myhonor.shop/",
+    "https://myhonor.shop/catalog"
+  ],
+  "description": "HONOR GROUP — казахстанский бренд и интернет-магазин экипировки для охоты, рыбалки и outdoor: собственное производство с 2024 года, доставка по всему Казахстану, 88 товаров в публичном каталоге, 3 магазина в Алматы, Астане и Усть-Каменогорске, программа лояльности HONOR Club",
+  "testGoal": "Тестовая гипотеза для демонстрации: увеличить выручку на 20% за 6 месяцев",
+  "surveyAnswers": [
+    {
+      "step": 1,
+      "key": "s1_company_name",
+      "value": "HONOR GROUP"
+    },
+    {
+      "step": 1,
+      "key": "s1_industry",
+      "value": "Ритейл / E-commerce"
+    },
+    {
+      "step": 1,
+      "key": "s1_founded_at",
+      "value": "2024"
+    },
+    {
+      "step": 1,
+      "key": "s1_business_model",
+      "value": "Собственное производство + D2C интернет-магазин + офлайн-розница + B2B"
+    },
+    {
+      "step": 1,
+      "key": "s1_regions",
+      "value": [
+        "Алматы",
+        "Астана",
+        "Усть-Каменогорск",
+        "Доставка по Казахстану"
+      ]
+    },
+    {
+      "step": 1,
+      "key": "ec_website",
+      "value": "https://myhonor.shop"
+    },
+    {
+      "step": 3,
+      "key": "s3_has_loyalty",
+      "value": true
+    },
+    {
+      "step": 4,
+      "key": "ec_total_sku",
+      "value": 88
+    },
+    {
+      "step": 5,
+      "key": "s5_target_audience",
+      "value": "Покупатели экипировки для охоты, рыбалки, outdoor, гор и тактики в Казахстане"
+    },
+    {
+      "step": 5,
+      "key": "s5_usp",
+      "value": "Собственное производство в Казахстане, сезонные коллекции, подбор по температуре и программа лояльности HONOR Club"
+    },
+    {
+      "step": 6,
+      "key": "ec_geo_regions",
+      "value": "Все регионы Казахстана"
+    }
+  ]
+}

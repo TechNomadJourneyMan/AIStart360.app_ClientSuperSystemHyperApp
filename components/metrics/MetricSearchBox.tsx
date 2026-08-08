@@ -50,16 +50,17 @@ export function MetricSearchBox({
     }
   }, [debounced, onChange])
 
-  // Global Cmd/Ctrl+K focus shortcut.
+  // Global Cmd/Ctrl+K focus shortcut. Ignored while a modal is open — pulling
+  // focus out of a dialog would break its focus trap.
   useEffect(() => {
     function handleKey(event: KeyboardEvent) {
       const isShortcut =
         (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k'
-      if (isShortcut) {
-        event.preventDefault()
-        inputRef.current?.focus()
-        inputRef.current?.select()
-      }
+      if (!isShortcut) return
+      if (document.querySelector('[role="dialog"]')) return
+      event.preventDefault()
+      inputRef.current?.focus()
+      inputRef.current?.select()
     }
     document.addEventListener('keydown', handleKey)
     return () => document.removeEventListener('keydown', handleKey)
@@ -83,7 +84,6 @@ export function MetricSearchBox({
       <input
         ref={inputRef}
         type="search"
-        role="searchbox"
         aria-label="Поиск метрик"
         autoFocus={autoFocus}
         value={draft}
@@ -92,7 +92,10 @@ export function MetricSearchBox({
         className="bg-transparent text-on-surface placeholder:text-on-surface-variant flex-1 outline-none text-sm"
       />
       {typeof resultsCount === 'number' && (
-        <span className="ml-3 text-xs font-mono text-primary/70 bg-primary/10 rounded-md px-2 py-0.5 whitespace-nowrap">
+        <span
+          aria-live="polite"
+          className="ml-3 text-xs font-mono text-primary/70 bg-primary/10 rounded-md px-2 py-0.5 whitespace-nowrap"
+        >
           {resultsCount} найдено
         </span>
       )}

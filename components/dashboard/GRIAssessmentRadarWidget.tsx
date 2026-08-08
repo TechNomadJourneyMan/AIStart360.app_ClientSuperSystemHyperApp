@@ -1,12 +1,19 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useMemo, useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
+import { GRI_SECTIONS } from '@/lib/gri-assessment/sections'
 import { GRIDynamicsModal } from './GRIDynamicsModal'
+import MetricExplainModal, {
+  type ExplainRow,
+  type ExplainSection,
+} from './MetricExplainModal'
 
 interface GriAssessmentData {
   gri_index: number
   section_avgs: Record<string, number>
+  /** Raw answers behind each block: { [sectionId]: { [criterionId]: 1..10 } }. */
+  scores?: Record<string, Record<string, number>>
   created_at?: string
 }
 
@@ -100,10 +107,19 @@ function ttY(py: number) {
   return py < 40 ? py + 10 : py - TT_H - 8
 }
 
+/** Score tone used by the explain modal rows. */
+function scoreTone(s: number): 'bad' | 'warn' | 'good' {
+  if (s < 3) return 'bad'
+  if (s < 6) return 'warn'
+  return 'good'
+}
+
 export function GRIAssessmentRadarWidget({ data, orgName, stage }: Props) {
   const [hovered, setHovered] = useState<number | null>(null)
   const [dynamicsOpen, setDynamicsOpen] = useState(false)
   const [helpOpen, setHelpOpen] = useState(false)
+  /** Index into AXES of the block whose breakdown is open. */
+  const [openBlock, setOpenBlock] = useState<number | null>(null)
   const helpRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -137,6 +153,84 @@ export function GRIAssessmentRadarWidget({ data, orgName, stage }: Props) {
     scale: 'Scale',
     mature: 'Mature',
   }
+
+  // ── Block breakdown ───────────────────────────────────────────────────────
+  // Everything below is read straight off the stored assessment: the block
+  // average is the mean of the criteria the owner actually answered, and the
+  // «что улучшить» lines are the catalog texts for the weakest of them.
+  // Unanswered criteria are shown as «не отвечено», never as a zero.
+  const blockExplain = useMemo(() => {
+    if (openBlock === null) return null
+    const axis = AXES[openBlock]
+    const section = GRI_SECTIONS.find((s) => s.id === axis.id)
+    const answers = data.scores?.[axis.id] ?? {}
+    const criteria = section?.criteria ?? []
+
+    const answered = criteria
+      .map((c) => ({ criterion: c, score: Number(answers[c.id]) }))
+      .filter((r) => Number.isFinite(r.score) && r.score > 0)
+
+    const rows: ExplainRow[] = criteria.map((c) => {
+      const raw = Number(answers[c.id])
+      const has = Number.isFinite(raw) && raw > 0
+      return {
+        label: c.text,
+        value: has ? `${raw} / 10` : 'не отвечено',
+        tone: has ? scoreTone(raw) : 'muted',
+      }
+    })
+
+    const weakest = [...answered]
+      .sort((a, b) => a.score - b.score)
+      .slice(0, 3)
+
+    const sections: ExplainSection[] = []
+    if (weakest.length > 0) {
+      sections.push({
+        heading: 'Что тянет блок вниз',
+        rows: weakest.map((w) => ({
+          label: w.criterion.text,
+          value: `${w.score} / 10`,
+          note: `Что сделать: ${w.criterion.whatToImprove}. Цена бездействия: ${w.criterion.businessLoss}`,
+          tone: scoreTone(w.score),
+        })),
+        caption: 'Три самых низких критерия блока — с ними работать в первую очередь.',
+      })
+    }
+
+    const score = scores[openBlock]
+    return {
+      eyebrow: 'GRI · разбор блока',
+      title: axis.full,
+      value: answered.length > 0 ? `${score.toFixed(1)} / 10` : null,
+      valueHint:
+        answered.length > 0
+          ? `среднее по ${answered.length} отвеченным критериям из ${criteria.length} · ориентир ${benchmark.toFixed(1)}`
+          : 'Ни один критерий блока не оценён',
+      what: section?.description,
+      why:
+        'Балл блока — среднее ваших оценок по его критериям. Блок ниже 6 — узкое место: при росте нагрузки он сломается первым.',
+      formula: rows,
+      sections,
+      computedAt: data.created_at ?? null,
+      missing:
+        answered.length < criteria.length
+          ? [
+              `Не оценено критериев: ${criteria.length - answered.length} из ${criteria.length} — они не влияют на балл, но и не проверены`,
+            ]
+          : undefined,
+      actions: [
+        { label: 'Пройти GRI заново', href: '/gri', icon: 'restart_alt', primary: true },
+        { label: 'Методика GRI', href: '/gri/methodology', icon: 'menu_book' },
+        {
+          label: 'Разобрать с экспертом',
+          href: 'https://tidycal.com/istart/gtm',
+          icon: 'event_available',
+          external: true,
+        },
+      ],
+    }
+  }, [openBlock, data.scores, data.created_at, scores, benchmark])
 
   return (
     <div className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-4 relative">
@@ -286,6 +380,12 @@ export function GRIAssessmentRadarWidget({ data, orgName, stage }: Props) {
                   strokeWidth="1.5"
                   className="cursor-pointer"
                   style={{ transition: 'r 0.12s' }}
+                  /* `cursor-pointer` used to promise a click that did nothing.
+                     It now opens the same breakdown as the bar beside it; that
+                     bar is the keyboard path, so the dot stays out of the a11y
+                     tree instead of becoming a second, worse control. */
+                  aria-hidden="true"
+                  onClick={() => setOpenBlock(i)}
                   onMouseEnter={() => setHovered(i)}
                   onMouseLeave={() => setHovered(null)}
                 />
@@ -370,6 +470,7 @@ export function GRIAssessmentRadarWidget({ data, orgName, stage }: Props) {
           </div>
         </div>
 
+        {/* Block bars — each one opens the criteria breakdown behind the score */}
         <div className="flex-1 flex flex-col gap-1.5 pt-1 min-w-0">
           {AXES.map((axis, i) => {
             const score = scores[i]
@@ -377,11 +478,16 @@ export function GRIAssessmentRadarWidget({ data, orgName, stage }: Props) {
             const color = scoreColor(score)
             const isHov = hovered === i
             return (
-              <div
+              <button
                 key={axis.id}
+                type="button"
+                onClick={() => setOpenBlock(i)}
                 onMouseEnter={() => setHovered(i)}
                 onMouseLeave={() => setHovered(null)}
-                className="cursor-default"
+                onFocus={() => setHovered(i)}
+                onBlur={() => setHovered(null)}
+                aria-label={`Разбор блока «${axis.full}»: ${score.toFixed(1)} из 10`}
+                className="w-full text-left rounded-lg px-1.5 py-1 -mx-1.5 hover:bg-white/[0.03] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
               >
                 <div className="flex items-center justify-between mb-0.5 gap-2">
                   <span
@@ -390,17 +496,32 @@ export function GRIAssessmentRadarWidget({ data, orgName, stage }: Props) {
                   >
                     {axis.full}
                   </span>
-                  <span className="text-[11px] font-mono font-bold flex-shrink-0" style={{ color }}>
-                    {score.toFixed(1)}
+                  <span className="flex items-center gap-1 flex-shrink-0">
+                    <span className="text-[11px] font-mono font-bold" style={{ color }}>
+                      {score.toFixed(1)}
+                    </span>
+                    <span
+                      className="material-symbols-outlined text-[12px] text-on-surface-variant/40"
+                      aria-hidden="true"
+                    >
+                      chevron_right
+                    </span>
                   </span>
                 </div>
-                <div className="h-1 bg-surface-container rounded-full overflow-hidden">
+                <div
+                  className="h-1 bg-surface-container rounded-full overflow-hidden"
+                  role="progressbar"
+                  aria-valuenow={Math.round(score * 10) / 10}
+                  aria-valuemin={0}
+                  aria-valuemax={10}
+                  aria-label={`Балл блока «${axis.full}»`}
+                >
                   <div
                     className="h-full rounded-full transition-all duration-500"
                     style={{ width: `${pct}%`, background: color, opacity: isHov ? 1 : 0.75 }}
                   />
                 </div>
-              </div>
+              </button>
             )
           })}
         </div>
@@ -482,6 +603,15 @@ export function GRIAssessmentRadarWidget({ data, orgName, stage }: Props) {
       )}
 
       <GRIDynamicsModal open={dynamicsOpen} onClose={() => setDynamicsOpen(false)} />
+
+      {/* Block breakdown — «из каких ответов сложился этот балл» */}
+      {blockExplain && (
+        <MetricExplainModal
+          open={openBlock !== null}
+          onClose={() => setOpenBlock(null)}
+          {...blockExplain}
+        />
+      )}
     </div>
   )
 }

@@ -4,12 +4,13 @@
  * MetricZonesGrid — three-column overview ("Красная / Жёлтая / Зелёная зона")
  * that sits under the KeyMetricsHero on /point-a.
  *
- * Data sources:
- *  - GET /api/v1/metrics/catalog?includeValues=true → metric registry merged
- *    with the latest materialized value + confidence + freshness.
- *  - useMetricGoal(id) is invoked lazily inside the row when the user opens
- *    a metric via the existing MetricModal (we don't fetch goals per row up
- *    front — it would be 122 queries).
+ * Data source: GET /api/v1/metrics/catalog?includeValues=true → metric registry
+ * merged with the latest materialized value + confidence + freshness. The fetch
+ * lives in `./_metric-catalog` because `PointAMetricDrillDown` reads the same
+ * react-query entry to resolve whichever row the user opened.
+ *
+ * Clicking a row calls `setActiveMetric(id)`; the drill-down is rendered by
+ * `PointAMetricDrillDown`, mounted once on /point-a.
  *
  * Zone classification (in priority order):
  *  1. If the catalog item exposes a `status` field ("red" | "yellow" |
@@ -25,48 +26,13 @@
 
 import Link from 'next/link'
 import { useQuery } from '@tanstack/react-query'
-import { useMemo, useState } from 'react'
+import { useId, useMemo, useState } from 'react'
 import { useMetricsStore } from '@/stores/metrics.store'
-
-// ─── Types matching /api/v1/metrics/catalog response ────────────────────────
-
-interface CatalogItemSource {
-  type: string
-  key?: string
-  field?: string
-  doc_type?: string
-  system?: string
-}
-
-interface CatalogItem {
-  id: string
-  label: string
-  namespace: string
-  department: string | null
-  goalNumber: string | null
-  unit: string
-  formula: string | null
-  sources: CatalogItemSource[]
-  value: number | string | null
-  confidence: number | null
-  source: string | null
-  computedAt: string | null
-  fresh: boolean
-  // Optional fields the API may or may not include — read defensively.
-  status?: 'red' | 'yellow' | 'green' | string | null
-  target?: number | null
-}
-
-interface CatalogResponse {
-  ok: boolean
-  data?: {
-    total: number
-    page: number
-    pageSize: number
-    items: CatalogItem[]
-  }
-  error?: string
-}
+import {
+  POINT_A_CATALOG_KEY,
+  fetchPointACatalog,
+  type CatalogItem,
+} from './_metric-catalog'
 
 type Zone = 'red' | 'yellow' | 'green'
 
@@ -77,6 +43,8 @@ interface ZoneRow {
   unit: string
   deviation: number | null
   zone: Zone
+  /** Why the metric landed in this zone — shown next to the row. */
+  reason: string
 }
 
 // ─── Zone tokens ────────────────────────────────────────────────────────────
@@ -138,10 +106,10 @@ function asNumber(v: number | string | null | undefined): number | null {
   return Number.isFinite(n) ? n : null
 }
 
-function classify(item: CatalogItem): { zone: Zone; deviation: number | null } {
+function classify(item: CatalogItem): { zone: Zone; deviation: number | null; reason: string } {
   // 1. Trust the API-provided status if present and well-formed.
   if (item.status === 'red' || item.status === 'yellow' || item.status === 'green') {
-    return { zone: item.status, deviation: null }
+    return { zone: item.status, deviation: null, reason: 'Статус пришёл из расчёта метрики' }
   }
 
   const value = asNumber(item.value)
@@ -150,16 +118,20 @@ function classify(item: CatalogItem): { zone: Zone; deviation: number | null } {
   // 2. Compute deviation if both value and target are numeric.
   if (value !== null && target !== null && target !== 0) {
     const deviation = (value - target) / target
-    if (deviation <= -0.2) return { zone: 'red', deviation }
-    if (deviation <= -0.05) return { zone: 'yellow', deviation }
-    return { zone: 'green', deviation }
+    const pct = `${(deviation * 100).toFixed(0)}% от плана`
+    if (deviation <= -0.2) return { zone: 'red', deviation, reason: `Отклонение ${pct}` }
+    if (deviation <= -0.05) return { zone: 'yellow', deviation, reason: `Отклонение ${pct}` }
+    return { zone: 'green', deviation, reason: `Отклонение ${pct}` }
   }
 
-  // 3. Missing value → yellow (data gap).
-  if (value === null) return { zone: 'yellow', deviation: null }
+  // 3. Missing value → yellow (data gap). This is the most common case, and
+  // without the hint the owner sees «—» in the yellow zone and no explanation.
+  if (value === null) {
+    return { zone: 'yellow', deviation: null, reason: 'Значение не заполнено — метрика ждёт данных' }
+  }
 
   // 4. Default healthy.
-  return { zone: 'green', deviation: null }
+  return { zone: 'green', deviation: null, reason: 'Плана нет — сравнивать не с чем' }
 }
 
 function formatValue(v: number | string | null, unit: string): string {
@@ -178,21 +150,6 @@ function formatValue(v: number | string | null, unit: string): string {
   return String(v)
 }
 
-async function fetchCatalog(): Promise<CatalogItem[]> {
-  const res = await fetch(
-    '/api/v1/metrics/catalog?includeValues=true&pageSize=200&sort=label_asc',
-    { credentials: 'include' },
-  )
-  if (!res.ok) {
-    throw new Error(`Не удалось загрузить каталог метрик (${res.status})`)
-  }
-  const json = (await res.json()) as CatalogResponse
-  if (!json.ok || !json.data) {
-    throw new Error(json.error ?? 'Каталог метрик недоступен')
-  }
-  return json.data.items
-}
-
 // ─── Zone Card ──────────────────────────────────────────────────────────────
 
 function ZoneCard({
@@ -208,19 +165,23 @@ function ZoneCard({
   const visibleRows = rows.slice(0, ROW_LIMIT)
   const remainder = Math.max(0, totalCount - visibleRows.length)
   const setActiveMetric = useMetricsStore((s) => s.setActiveMetric)
+  const [rulesOpen, setRulesOpen] = useState(false)
+  const rulesId = useId()
 
   return (
     <div
       className={`group/card rounded-2xl border ${style.border} ${style.bg} bg-surface-container-low p-5 shadow-card flex flex-col`}
     >
       {/* Header */}
-      <div className="flex items-center gap-2 mb-4">
+      <div className="flex items-center gap-2 mb-2">
         <span className={`w-2 h-2 rounded-full ${style.dot} flex-shrink-0`} aria-hidden />
         <h3 className="font-headline text-base text-on-surface">{style.title}</h3>
         <button
           type="button"
-          title={style.threshold}
-          aria-label={`Правила зоны: ${style.threshold}`}
+          onClick={() => setRulesOpen((v) => !v)}
+          aria-expanded={rulesOpen}
+          aria-controls={rulesId}
+          aria-label={`Правила зоны «${style.title}»`}
           className="ml-1 inline-flex items-center justify-center w-4 h-4 rounded-full border border-white/15 text-[10px] text-on-surface-variant hover:text-on-surface hover:border-white/30 transition focus:outline-none focus:ring-2 focus:ring-primary/40"
         >
           ?
@@ -232,14 +193,29 @@ function ZoneCard({
         </span>
       </div>
 
+      <p
+        id={rulesId}
+        hidden={!rulesOpen}
+        className="text-[11px] leading-relaxed text-on-surface-variant bg-surface-container rounded-xl px-3 py-2 mb-3"
+      >
+        {style.threshold}
+      </p>
+
       {/* Body */}
       <ul
-        className="flex flex-col gap-1 [&:hover>li:not(:hover)]:opacity-40"
+        className="flex flex-col gap-1 [&:hover>li:not(:hover)]:opacity-40 [&:focus-within>li:not(:focus-within)]:opacity-40"
         role="list"
       >
         {visibleRows.length === 0 && (
-          <li className="text-xs text-on-surface-variant py-2 italic">
-            Нет метрик в этой зоне
+          <li className="py-2">
+            <p className="text-xs text-on-surface-variant">Нет метрик в этой зоне</p>
+            <Link
+              href="/client/onboarding"
+              className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-mono text-primary hover:underline focus:outline-none focus:ring-2 focus:ring-primary/40 rounded"
+            >
+              <span className="material-symbols-outlined text-[13px]">edit_note</span>
+              Заполнить анкету
+            </Link>
           </li>
         )}
         {visibleRows.map((row) => (
@@ -247,13 +223,17 @@ function ZoneCard({
             <button
               type="button"
               onClick={() => setActiveMetric(row.id)}
-              className="w-full flex items-center justify-between gap-3 px-3 py-2 rounded-xl hover:bg-white/[0.04] focus:outline-none focus:ring-2 focus:ring-primary/40 text-left transition"
+              aria-label={`${row.label}: ${formatValue(row.value, row.unit)}. ${row.reason}. Открыть разбор`}
+              className="w-full flex items-start justify-between gap-3 px-3 py-2 rounded-xl hover:bg-white/[0.04] focus:outline-none focus:ring-2 focus:ring-primary/40 text-left transition"
             >
-              <span className="text-sm text-on-surface truncate flex-1 min-w-0">
-                {row.label}
+              <span className="flex-1 min-w-0">
+                <span className="block text-sm text-on-surface truncate">{row.label}</span>
+                <span className="block text-[10px] font-mono text-on-surface-variant/70 truncate">
+                  {row.reason}
+                </span>
               </span>
               <span
-                className={`font-mono font-bold text-sm ${style.text} tabular-nums flex-shrink-0`}
+                className={`font-mono font-bold text-sm ${style.text} tabular-nums flex-shrink-0 mt-0.5`}
               >
                 {formatValue(row.value, row.unit)}
               </span>
@@ -320,8 +300,8 @@ function ZonesGridSkeleton() {
 
 export default function MetricZonesGrid() {
   const { data, isLoading, isError, error, refetch } = useQuery({
-    queryKey: ['metrics', 'catalog', 'zones'],
-    queryFn: fetchCatalog,
+    queryKey: POINT_A_CATALOG_KEY,
+    queryFn: fetchPointACatalog,
     staleTime: 60_000,
   })
 
@@ -331,7 +311,7 @@ export default function MetricZonesGrid() {
     const buckets: Record<Zone, ZoneRow[]> = { red: [], yellow: [], green: [] }
     if (!data) return buckets
     for (const item of data) {
-      const { zone, deviation } = classify(item)
+      const { zone, deviation, reason } = classify(item)
       buckets[zone].push({
         id: item.id,
         label: item.label,
@@ -339,6 +319,7 @@ export default function MetricZonesGrid() {
         unit: item.unit,
         deviation,
         zone,
+        reason,
       })
     }
     // Sort: worst deviation first inside red/yellow, freshest first inside green.
@@ -350,9 +331,6 @@ export default function MetricZonesGrid() {
     )
     return buckets
   }, [data])
-
-  const [, _force] = useState(0) // keep React lint happy if grouped changes shape
-  void _force
 
   if (isLoading) return <ZonesGridSkeleton />
 

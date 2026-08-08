@@ -12,8 +12,10 @@
  * endpoint starts returning an id matching the tile's `apiId`, the tile
  * hydrates automatically (see `byId.get(spec.apiId)` below).
  *
- * The <MetricModal/> is mounted globally on the page; this component opens
- * it by calling `setActiveMetric(id)` on the metrics Zustand store.
+ * Clicking a tile calls `setActiveMetric(id)` on the metrics Zustand store.
+ * The drill-down itself is rendered by `PointAMetricDrillDown`, mounted once
+ * on /point-a — without that host the click changes the store and opens
+ * nothing.
  */
 
 import Link from 'next/link'
@@ -87,6 +89,16 @@ function pct(n: number, digits = 0): string {
   return `${sign}${n.toFixed(digits)}%`
 }
 
+/**
+ * Period wording for the delta. The API is the only thing that knows which
+ * period the trend was computed against (`MetricSummary.trendLabel`), so it
+ * wins; the fallback stays neutral instead of claiming "г/г" or "к плану".
+ */
+function deltaText(m: MetricSummary, digits = 1): string {
+  const label = m.trendLabel?.trim()
+  return label ? `${pct(m.trend ?? 0, digits)} ${label}` : pct(m.trend ?? 0, digits)
+}
+
 const HERO_METRICS: HeroSpec[] = [
   {
     apiId: 'revenue', // matches /api/v1/metrics summary
@@ -95,10 +107,8 @@ const HERO_METRICS: HeroSpec[] = [
     rule: (m) => {
       if (!m) return { zone: 'unknown', deltaLabel: '—' }
       const trend = m.trend ?? 0
-      // Heuristic: trend == "к плану" approximation
-      // red <90% of plan, yellow 90-100%, green >100%
       const zone: Zone = trend < -10 ? 'red' : trend < 0 ? 'yellow' : 'green'
-      return { zone, deltaLabel: `${pct(trend, 1)} г/г` }
+      return { zone, deltaLabel: deltaText(m) }
     },
   },
   {
@@ -109,7 +119,7 @@ const HERO_METRICS: HeroSpec[] = [
       if (!m) return { zone: 'unknown', deltaLabel: '—' }
       const trend = m.trend ?? 0
       const zone: Zone = trend > 0 ? 'green' : 'yellow'
-      return { zone, deltaLabel: `${pct(trend, 1)} г/г` }
+      return { zone, deltaLabel: deltaText(m) }
     },
   },
   {
@@ -118,9 +128,12 @@ const HERO_METRICS: HeroSpec[] = [
     icon: 'receipt_long',
     rule: (m) => {
       if (!m) return { zone: 'unknown', deltaLabel: '—' }
+      // No target for the average cheque reaches this component, so the zone
+      // follows the trend — the same basis as the other tiles. (The previous
+      // rule pinned every answer to yellow regardless of the value.)
       const trend = m.trend ?? 0
-      // Per spec: always yellow heuristic, show ±% к плану
-      return { zone: 'yellow', deltaLabel: `${pct(trend, 1)} к плану` }
+      const zone: Zone = trend < -10 ? 'red' : trend < 0 ? 'yellow' : 'green'
+      return { zone, deltaLabel: deltaText(m) }
     },
   },
   {
@@ -135,7 +148,7 @@ const HERO_METRICS: HeroSpec[] = [
       if (!m) return { zone: 'unknown', deltaLabel: 'нет данных' }
       const v = m.rawValue ?? 0
       const zone: Zone = v > 15 ? 'red' : v >= 8 ? 'yellow' : 'green'
-      return { zone, deltaLabel: `${pct(m.trend ?? 0, 1)} к плану` }
+      return { zone, deltaLabel: deltaText(m) }
     },
   },
   {
@@ -151,7 +164,7 @@ const HERO_METRICS: HeroSpec[] = [
       // Without ltv/cac ratio in scope here, fall back to trend heuristic.
       const trend = m.trend ?? 0
       const zone: Zone = trend > 0 ? 'green' : trend < -5 ? 'red' : 'yellow'
-      return { zone, deltaLabel: `${pct(trend, 1)} г/г` }
+      return { zone, deltaLabel: deltaText(m) }
     },
   },
   {
@@ -167,10 +180,18 @@ const HERO_METRICS: HeroSpec[] = [
       const trend = m.trend ?? 0
       // For CAC, falling cost is good — flip the sign meaning.
       const zone: Zone = trend < 0 ? 'green' : trend < 5 ? 'yellow' : 'red'
-      return { zone, deltaLabel: `${pct(trend, 1)} к плану` }
+      return { zone, deltaLabel: deltaText(m) }
     },
   },
 ]
+
+/**
+ * Human labels for the six hero ids. `PointAMetricDrillDown` uses them so the
+ * "нет данных" panel can name the metric instead of echoing a raw id.
+ */
+export const HERO_METRIC_LABELS: Record<string, string> = Object.fromEntries(
+  HERO_METRICS.map((s) => [s.apiId, s.label]),
+)
 
 // ─── Tile ────────────────────────────────────────────────────────────────────
 
@@ -191,15 +212,16 @@ function MetricTile({ spec, metric, onOpen }: TileProps) {
   return (
     <motion.button
       type="button"
-      onClick={() => metric && onOpen(metric.id)}
-      whileHover={metric ? { scale: 1.015, y: -1 } : undefined}
-      whileTap={metric ? { scale: 0.99 } : undefined}
+      onClick={() => onOpen(metric?.id ?? spec.apiId)}
+      whileHover={{ scale: 1.015, y: -1 }}
+      whileTap={{ scale: 0.99 }}
       transition={{ duration: 0.15 }}
-      disabled={isEmpty}
-      aria-label={isEmpty ? `${spec.label}: нет данных` : `${spec.label}: ${value}, ${styles.label}`}
-      className={`group relative flex flex-col gap-3 rounded-2xl border ${styles.border} ${styles.bg} px-4 py-4 text-left transition-colors focus:outline-none focus:ring-2 focus:ring-primary/40 ${
-        metric ? 'hover:bg-white/[0.02] cursor-pointer' : 'cursor-default'
-      }`}
+      aria-label={
+        isEmpty
+          ? `${spec.label}: нет данных. Открыть разбор — каких данных не хватает`
+          : `${spec.label}: ${value}, ${styles.label}. Открыть разбор`
+      }
+      className={`group relative flex flex-col gap-3 rounded-2xl border ${styles.border} ${styles.bg} px-4 py-4 text-left transition-colors cursor-pointer hover:bg-white/[0.02] focus:outline-none focus:ring-2 focus:ring-primary/40`}
     >
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
@@ -220,7 +242,7 @@ function MetricTile({ spec, metric, onOpen }: TileProps) {
       {isEmpty ? (
         <div className="flex items-center gap-1 text-[11px] font-mono text-on-surface-variant/70">
           <span className="material-symbols-outlined text-[12px]">do_not_disturb_on</span>
-          <span className="truncate">нет данных</span>
+          <span className="truncate">нет данных · разбор</span>
         </div>
       ) : (
         <div className={`text-[11px] font-mono ${styles.text} flex items-center gap-1`}>
@@ -242,7 +264,9 @@ function ZoneBadge({ count, zone }: { count: number; zone: 'red' | 'yellow' | 'g
   return (
     <div
       className={`flex items-center gap-1.5 rounded-xl border ${styles.border} ${styles.bg} px-2.5 py-1`}
-      title="Количество метрик в зоне"
+      // The counter covers the six tiles below, not the whole catalog — the
+      // zones grid under this card counts all 122 metrics separately.
+      aria-label={`${count} из шести показателей в зоне «${word}»`}
     >
       <span className={`w-1.5 h-1.5 rounded-full ${styles.dot}`} aria-hidden="true" />
       <span className={`text-[11px] font-mono font-bold ${styles.text}`}>{count}</span>
@@ -291,6 +315,8 @@ export default function KeyMetricsHero() {
     }
     return { red, yellow, green }
   }, [resolved])
+
+  const missingCount = resolved.filter(({ metric }) => !metric).length
 
   return (
     <section className="relative bg-surface-container-low rounded-2xl border border-white/[0.04] p-5 sm:p-6 shadow-card">
@@ -361,6 +387,26 @@ export default function KeyMetricsHero() {
               <MetricTile key={spec.apiId} spec={spec} metric={metric} onOpen={setActiveMetric} />
             ))}
       </div>
+
+      {/* Honest summary of what is still missing — never a dead end */}
+      {!isLoading && missingCount > 0 && (
+        <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-2xl border border-white/[0.06] bg-surface-container px-4 py-3">
+          <span className="material-symbols-outlined text-[16px] text-on-surface-variant/70">
+            info
+          </span>
+          <p className="text-xs text-on-surface-variant leading-relaxed flex-1 min-w-[12rem]">
+            {missingCount} из {resolved.length} показателей пока без значения — ни анкета,
+            ни загруженные документы их не заполнили.
+          </p>
+          <Link
+            href="/client/onboarding"
+            className="inline-flex items-center gap-1.5 rounded-xl border border-primary/30 bg-primary/10 px-3 py-1.5 text-[11px] font-mono uppercase tracking-[0.15em] text-primary transition-colors hover:bg-primary/15 focus:outline-none focus:ring-2 focus:ring-primary/40"
+          >
+            <span className="material-symbols-outlined text-[14px]">edit_note</span>
+            Заполнить анкету
+          </Link>
+        </div>
+      )}
     </section>
   )
 }
