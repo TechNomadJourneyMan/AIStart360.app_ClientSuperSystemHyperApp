@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation'
 import { useState, useEffect } from 'react'
 import { useAuthStore } from '@/stores/auth.store'
 import { getAllowedHrefsForRole } from '@/lib/navigation'
+import { isPremiumLocked, premiumLockedRoot } from '@/lib/premium'
 import type { UserRole } from '@/types'
 
 // ── Bottom bar — 4 primary tabs ─────────────────────────────────────────────
@@ -94,13 +95,10 @@ export function MobileNav() {
   // account pages (/profile, /settings) — a flat NAV_ITEMS filter dropped them.
   const allowedNav = getAllowedHrefsForRole(role)
 
-  // Items locked behind a paid plan for CLIENT role
-  const PREMIUM_LOCKED = ['/metrics', '/market', '/point-b']
-  const isLocked = (href: string) =>
-    role === 'client' && PREMIUM_LOCKED.some((p) => href === p || href.startsWith(p + '/'))
+  // Items locked behind a paid plan — see lib/premium.ts
+  const isLocked = (href: string) => isPremiumLocked(role, href)
 
-  const getLockedKey = (href: string) =>
-    PREMIUM_LOCKED.find((p) => href === p || href.startsWith(p + '/')) ?? href
+  const getLockedKey = (href: string) => premiumLockedRoot(href) ?? href
 
   // Filter out sections
   const filteredDrawer = DRAWER_SECTIONS.map(sec => ({

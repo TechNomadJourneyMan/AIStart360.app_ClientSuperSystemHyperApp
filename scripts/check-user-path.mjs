@@ -114,6 +114,7 @@ const APIS = [
   '/api/v1/diagnostics/current',
   '/api/v1/gri/assessment',
   '/api/v1/onboarding/status',
+  '/api/v1/onboarding/survey',
 ]
 
 const session = await signIn()

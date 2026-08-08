@@ -7,6 +7,7 @@ import { useState, useEffect } from 'react'
 import { useUIStore } from '@/stores/ui.store'
 import { useAuthStore } from '@/stores/auth.store'
 import { getPrimaryNavForRole, getSecondaryNavForRole } from '@/lib/navigation'
+import { isPremiumLocked, premiumLockedRoot } from '@/lib/premium'
 import type { NavItem, UserRole } from '@/types'
 import { UploadFilesNavItem } from './UploadFilesNavItem'
 
@@ -17,17 +18,6 @@ export function Sidebar() {
   const { user, logout } = useAuthStore()
   const [moreOpen, setMoreOpen] = useState(false)
   const [openSubMenus, setOpenSubMenus] = useState<string[]>([])
-  const [premiumItem, setPremiumItem] = useState<string | null>(null)
-  const [proUnlocked, setProUnlocked] = useState<Set<string>>(new Set())
-  const [promoCode, setPromoCode] = useState('')
-  const [promoError, setPromoError] = useState('')
-  const [promoLoading, setPromoLoading] = useState(false)
-
-  const PREMIUM_FEATURE_LABELS: Record<string, string> = {
-    '/metrics': 'Метрики',
-    '/market':  'Рынок',
-    '/point-b': 'Точка Б',
-  }
 
   const handleLogout = () => {
     logout()
@@ -40,12 +30,8 @@ export function Sidebar() {
   const primaryNav = getPrimaryNavForRole(role)
   const secondaryNav = getSecondaryNavForRole(role)
 
-  // Items locked behind a paid plan for CLIENT role
-  const PREMIUM_LOCKED = ['/metrics', '/market', '/point-b']
-  const isLocked = (href: string) =>
-    role === 'client' &&
-    PREMIUM_LOCKED.some((p) => href === p || href.startsWith(p + '/')) &&
-    !proUnlocked.has(PREMIUM_LOCKED.find((p) => href === p || href.startsWith(p + '/'))!)
+  // Items locked behind a paid plan — see lib/premium.ts
+  const isLocked = (href: string) => isPremiumLocked(role, href)
 
   const isActive = (href: string) =>
     href === '/dashboard' ? pathname === href : pathname.startsWith(href)
@@ -62,42 +48,6 @@ export function Sidebar() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname])
 
-  async function handlePromoSubmit() {
-    if (!promoCode.trim() || promoLoading || !premiumItem) return
-    setPromoLoading(true)
-    setPromoError('')
-    try {
-      const res = await fetch('/api/giga-admin/auth', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password: promoCode }),
-      })
-      if (res.ok) {
-        setProUnlocked(prev => new Set(prev).add(premiumItem))
-        setPremiumItem(null)
-        setPromoCode('')
-        router.push(premiumItem)
-      } else {
-        setPromoError('Неверный промокод')
-      }
-    } catch {
-      setPromoError('Ошибка соединения')
-    } finally {
-      setPromoLoading(false)
-    }
-  }
-
-  function closePremiumModal() {
-    // If on a locked page, go back to dashboard
-    const current = premiumItem
-    setPremiumItem(null)
-    setPromoCode('')
-    setPromoError('')
-    if (current && PREMIUM_LOCKED.some(p => pathname === p || pathname.startsWith(p + '/'))) {
-      router.push('/dashboard')
-    }
-  }
-
   const toggleSubMenu = (href: string, e: React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
@@ -110,7 +60,6 @@ export function Sidebar() {
     isActive(item.href) || (item.subItems?.some((sub) => isActive(sub.href)) ?? false)
 
   return (
-    <>
     <aside
       className={`
         hidden lg:flex fixed left-0 top-0 h-screen z-50 flex-col
@@ -152,12 +101,12 @@ export function Sidebar() {
           const isSubOpen = openSubMenus.includes(item.href)
 
           if (hasSubItems && isLocked(item.href)) {
-            // Locked parent item — show as locked, navigate to page with promo modal
-            const lockedKey = PREMIUM_LOCKED.find((p) => item.href === p || item.href.startsWith(p + '/')) ?? item.href
+            // Locked parent item — badged as Pro, still navigates to the section root
+            const lockedKey = premiumLockedRoot(item.href) ?? item.href
             return (
               <button
                 key={item.href}
-                onClick={() => { router.push(lockedKey); setPremiumItem(lockedKey) }}
+                onClick={() => router.push(lockedKey)}
                 className={`
                   relative flex items-center rounded-xl cursor-pointer select-none w-full
                   hover:bg-amber-500/5 transition-colors duration-150
@@ -246,12 +195,12 @@ export function Sidebar() {
           // Regular item (no sub-items)
           const locked = isLocked(item.href)
           if (locked) {
-            const lockedKey = PREMIUM_LOCKED.find((p) => item.href === p || item.href.startsWith(p + '/')) ?? item.href
+            const lockedKey = premiumLockedRoot(item.href) ?? item.href
             return (
               <button
                 key={item.href}
                 title={sidebarCollapsed ? `${item.label} — Pro тариф` : undefined}
-                onClick={() => { router.push(lockedKey); setPremiumItem(lockedKey) }}
+                onClick={() => router.push(lockedKey)}
                 className={`
                   relative flex items-center rounded-xl cursor-pointer select-none w-full
                   hover:bg-amber-500/5 transition-colors duration-150
@@ -446,65 +395,5 @@ export function Sidebar() {
         </button>
       </div>
     </aside>
-
-    {/* ── Premium upgrade modal (portal-like fixed overlay) ── */}
-    {premiumItem && (
-      <>
-        <div
-          className="fixed inset-0 z-[100] bg-black/50 backdrop-blur-md"
-          onClick={closePremiumModal}
-        />
-        <div className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-[101] w-[340px] rounded-3xl bg-[#13151c] border border-amber-500/20 shadow-2xl overflow-hidden">
-          <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-amber-400/60 to-transparent" />
-          <div className="p-6">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center flex-shrink-0">
-                <span className="material-symbols-outlined text-2xl text-amber-400">lock</span>
-              </div>
-              <div>
-                <p className="text-[10px] font-mono text-amber-400/70 uppercase tracking-[0.15em] mb-0.5">Pro тариф</p>
-                <p className="text-base font-bold text-on-surface">
-                  {PREMIUM_FEATURE_LABELS[premiumItem] ?? premiumItem}
-                </p>
-              </div>
-            </div>
-            <p className="text-sm text-on-surface-variant leading-relaxed mb-4">
-              Введите промокод для получения доступа к разделу{' '}
-              <span className="text-amber-400 font-medium">Pro</span>.
-            </p>
-            <div className="mb-4 space-y-2">
-              <input
-                type="text"
-                value={promoCode}
-                onChange={(e) => { setPromoCode(e.target.value); setPromoError('') }}
-                onKeyDown={(e) => e.key === 'Enter' && handlePromoSubmit()}
-                placeholder="Промокод"
-                autoFocus
-                className="w-full bg-white/[0.05] border border-white/[0.08] rounded-xl px-4 py-2.5 text-sm text-on-surface placeholder:text-on-surface-variant/40 focus:outline-none focus:border-amber-500/50 transition-colors"
-              />
-              {promoError && (
-                <p className="text-xs text-error pl-1">{promoError}</p>
-              )}
-            </div>
-            <div className="flex gap-3">
-              <button
-                onClick={closePremiumModal}
-                className="flex-1 py-2.5 rounded-xl border border-white/[0.08] text-on-surface-variant text-sm transition-colors hover:bg-white/[0.04]"
-              >
-                Закрыть
-              </button>
-              <button
-                onClick={handlePromoSubmit}
-                disabled={promoLoading || !promoCode.trim()}
-                className="flex-1 py-2.5 rounded-xl bg-amber-500/90 hover:bg-amber-400 disabled:opacity-50 text-black font-semibold text-sm transition-colors"
-              >
-                {promoLoading ? 'Проверка...' : 'Применить →'}
-              </button>
-            </div>
-          </div>
-        </div>
-      </>
-    )}
-    </>
   )
 }
