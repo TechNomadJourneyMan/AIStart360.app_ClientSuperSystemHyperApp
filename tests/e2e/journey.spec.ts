@@ -7,9 +7,9 @@ const BUSINESS_DESCRIPTION =
 const MEASURABLE_GOAL =
   'Хочу открыть пять магазинов за 12 месяцев'
 const HONOR_COMMERCE_DESCRIPTION =
-  'HONOR — интернет-магазин outdoor-одежды для охоты, рыбалки и outdoor в Казахстане'
+  'HONOR GROUP — интернет-магазин outdoor-экипировки с доставкой по Казахстану и 3 магазинами'
 const HONOR_COMMERCE_GOAL =
-  'Хочу увеличить выручку до 50 млн ₸ за 6 месяцев'
+  'Тестовая гипотеза: увеличить выручку на 20% за 6 месяцев'
 
 async function sendChatMessage(page: Page, message: string) {
   const composer = page.getByRole('textbox', { name: 'Сообщение AI' })
@@ -154,7 +154,7 @@ test.describe('AI-first workspace journey', () => {
     await expect(pointA).toContainText(/HONOR/i)
     await expect(pointA).toContainText(/интернет-магазин|outdoor/i)
     await expect(pointB).toBeVisible()
-    await expect(pointB).toContainText(/50\s*млн\s*₸/i)
+    await expect(pointB).toContainText(/20\s*%/i)
     await expect(pointB).toContainText(/6\s*месяц/i)
     await expect(roadmap).toBeVisible()
     await expect(roadmap).toContainText(/ассортимент|заказ|доставк|продаж/i)
@@ -169,7 +169,7 @@ test.describe('AI-first workspace journey', () => {
     await expect(domainMetrics).toBeVisible()
     await expect(domainMetrics).toContainText(/продажи.*ассортимент.*наличие/i)
     await expect(domainMetrics).toContainText(/нужно уточнить/i)
-    await expect(domainMetrics).not.toContainText(/50\s*млн/i)
+    await expect(domainMetrics).not.toContainText(/20\s*%/i)
     if ((await domainProcess.count()) === 0) {
       await (await openDesktopModuleDock(page))
         .getByRole('button', { name: /Путь заказа и повторной покупки/i })
@@ -248,7 +248,7 @@ test.describe('AI-first workspace journey', () => {
     await selectMobileSurface(page, /доска|путь/i)
     const pointB = page.getByTestId('point-b')
     await expect(pointB).toBeVisible()
-    await expect(pointB).toContainText(/50\s*млн\s*₸/i)
+    await expect(pointB).toContainText(/20\s*%/i)
 
     await selectMobileSurface(page, /модули|виджеты/i)
     const domainMetrics = page.locator(
@@ -259,7 +259,7 @@ test.describe('AI-first workspace journey', () => {
     )
     await expect(domainMetrics).toContainText(/продажи.*ассортимент.*наличие/i)
     await expect(domainMetrics).toContainText('Нужно уточнить')
-    await expect(domainMetrics).not.toContainText(/50\s*млн/i)
+    await expect(domainMetrics).not.toContainText(/20\s*%/i)
     if ((await domainProcess.count()) === 0) {
       await (await openDesktopModuleDock(page))
         .getByRole('button', { name: /Путь заказа и повторной покупки/i })

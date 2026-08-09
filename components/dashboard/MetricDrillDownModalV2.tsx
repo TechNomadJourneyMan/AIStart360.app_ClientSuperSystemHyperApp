@@ -616,8 +616,10 @@ export function MetricDrillDownModalV2({
   const showAnomalies = activeLayers.includes('anomalies')
   const showFact = activeLayers.includes('fact')
 
-  const factPoints = useMemo(() => tsData?.data ?? [], [tsData])
-  const forecastPoints = useMemo(() => fData?.data ?? [], [fData])
+  // Narrow deps (codex): a new envelope object with identical `data` must not
+  // re-run every downstream memo, including the anomaly overlay below.
+  const factPoints = useMemo(() => tsData?.data ?? [], [tsData?.data])
+  const forecastPoints = useMemo(() => fData?.data ?? [], [fData?.data])
 
   const visibleAnomalies = useMemo(
     () => filterRecentAnomalies(anomalies, 90),

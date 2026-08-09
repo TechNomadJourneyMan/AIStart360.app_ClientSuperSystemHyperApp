@@ -538,4 +538,33 @@ describe('journey orchestration fallback', () => {
 
     expect(merged.goals[0]).toEqual(original)
   })
+
+  it('answers a follow-up question without turning it into a new Point A fact', () => {
+    const discovered = deterministicOrchestrator(
+      createEmptyJourneyState('journey-follow-up-question'),
+      'HONOR GROUP — интернет-магазин outdoor-экипировки с доставкой по Казахстану',
+      'test fallback',
+    )
+    const confirmed = journeyStateSchema.parse({
+      ...discovered,
+      facts: discovered.facts.map((fact) => ({ ...fact, status: 'confirmed' })),
+    })
+    const planned = deterministicOrchestrator(
+      confirmed,
+      'Увеличить выручку на 20% за 6 месяцев',
+      'test fallback',
+    )
+    const answered = deterministicOrchestrator(
+      planned,
+      'Какие данные нужны для первого шага?',
+      'test fallback',
+    )
+
+    expect(answered.facts).toEqual(planned.facts)
+    expect(answered.goals).toEqual(planned.goals)
+    expect(answered.widgets).toEqual(planned.widgets)
+    expect(answered.businessDescription).toBe(planned.businessDescription)
+    expect(answered.messages.at(-1)?.text).toContain('количество и статусы заказов')
+    expect(answered.messages.at(-1)?.text).not.toContain('Я выделил')
+  })
 })

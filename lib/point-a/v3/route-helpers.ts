@@ -17,6 +17,7 @@ import {
   extractClientBaseRows,
   type ClientBaseExtractResult,
 } from './client-base-loader'
+import { loadEcommerceAnalytics } from './ecommerce-orders-loader'
 
 export async function resolveCompanyId(
   supabase: SupabaseClient,
@@ -47,8 +48,16 @@ export async function loadV3Context(
   userId: string,
   companyId: string,
 ): Promise<V3RouteContext> {
-  const resolver = await gatherResolverContext(supabase, { userId, companyId })
-  const clientBase = extractClientBaseRows(resolver.documents)
+  const [resolver, ecommerce] = await Promise.all([
+    gatherResolverContext(supabase, { userId, companyId }),
+    loadEcommerceAnalytics(supabase, userId),
+  ])
+  const documentClientBase = extractClientBaseRows(resolver.documents)
+  // Durable order history is the authoritative client base. Uploaded
+  // spreadsheets remain a compatibility fallback until a live source exists.
+  const clientBase = ecommerce.clientBase.has_client_base
+    ? ecommerce.clientBase
+    : documentClientBase
   return { resolver, clientBase }
 }
 

@@ -34,6 +34,9 @@ import {
   formatKztCompact,
   currentMonthLabel,
 } from '@/lib/format/kzt'
+// Shared with tests/unit/dashboard/growth-snapshot.test.ts, which pins the rule
+// that both target columns hold ANNUAL revenue.
+import { annualRevenueTargetToMonthly } from '@/lib/dashboard/growth-snapshot'
 import { GRIAssessmentRadarWidget } from './GRIAssessmentRadarWidget'
 import MetricExplainModal, {
   type ExplainAction,
@@ -243,8 +246,8 @@ export default function GrowthSnapshotHero() {
   // both the write path (parsed monthly × 12) and every other reader.
   const target12m = targets?.target_revenue_12m_kzt ?? null
   const target3y = targets?.target_revenue_3y_kzt ?? null
-  const monthlyPlan12 = target12m ? Math.round(target12m / 12) : null
-  const monthlyPlan3y = target3y ? Math.round(target3y / 12) : null
+  const monthlyPlan12 = target12m ? annualRevenueTargetToMonthly(target12m) : null
+  const monthlyPlan3y = target3y ? annualRevenueTargetToMonthly(target3y) : null
 
   // Real annual revenue. No heuristic, no fallback.
   const annualRevenue = revenue?.value ?? null

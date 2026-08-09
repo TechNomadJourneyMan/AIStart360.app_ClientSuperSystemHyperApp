@@ -17,7 +17,7 @@ export default function ClientPointBPage() {
             <Link href="/client/point-a" className="text-xs font-mono text-on-surface-variant hover:text-primary border border-white/[0.08] rounded-lg px-3 py-1.5 transition-all flex items-center gap-1.5">
               <span className="material-symbols-outlined text-sm">arrow_back</span>Точка A
             </Link>
-            <Link href="/client/dashboard" className="text-xs font-mono text-on-surface-variant hover:text-primary border border-white/[0.08] rounded-lg px-3 py-1.5 transition-all flex items-center gap-1.5">
+            <Link href="/dashboard" className="text-xs font-mono text-on-surface-variant hover:text-primary border border-white/[0.08] rounded-lg px-3 py-1.5 transition-all flex items-center gap-1.5">
               <span className="material-symbols-outlined text-sm">dashboard</span>Дашборд
             </Link>
             <button

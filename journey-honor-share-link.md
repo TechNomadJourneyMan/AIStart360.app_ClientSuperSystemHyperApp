@@ -14,9 +14,11 @@ labelled HONOR internet-store demo project already populated.
    allowlisted scenario into `JourneyWorkspace`.
 3. Store scenario identity/state under a scenario-specific browser key so the
    demo neither overwrites nor reads the user's normal Journey workspace.
-4. Keep unknown commerce KPIs unknown and visibly label the project as demo;
-   no private HONOR figures or invented performance data.
-5. Add focused unit and Playwright coverage, then run typecheck/lint/tests/build
+4. Seed only public facts from `myhonor.shop` (catalog, positioning, delivery,
+   stores and loyalty) and keep unknown commerce KPIs unknown.
+5. Mark the 20% / 6-month Point B as a test hypothesis, never as a real HONOR
+   target or performance claim.
+6. Add focused unit and Playwright coverage, then run typecheck/lint/tests/build
    and verify the deployed desktop/mobile URL.
 
 ## Expected URL

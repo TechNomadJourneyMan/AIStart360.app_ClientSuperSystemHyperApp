@@ -1,16 +1,13 @@
 import { afterFactsConfirmed, runLocalTurn } from './demo-machine'
 import { createEmptyWorkspace, type JourneyWorkspaceView } from './model'
 import { journeyStateSchema } from '@/lib/journey/schema'
+import myhonorProfile from '@/lib/demo/myhonor-public-profile.json'
 
 /**
  * Public demo scenarios are an explicit allowlist. They are not a mechanism
  * for accepting arbitrary business data from a URL.
  */
 export type JourneyDemoScenario = 'honor'
-
-const HONOR_DESCRIPTION =
-  'HONOR — интернет-магазин outdoor-одежды для охоты, рыбалки и outdoor в Казахстане'
-const HONOR_GOAL = 'Хочу увеличить выручку до 50 млн ₸ за 6 месяцев'
 
 /**
  * Converts the value supplied by a route query to a safe, allowlisted demo
@@ -29,6 +26,8 @@ export function parseJourneyDemoScenario(
 
   switch (value.trim().toLowerCase()) {
     case 'honor':
+    case 'myhonor':
+    case 'myhonor.shop':
       return 'honor'
     default:
       return undefined
@@ -59,17 +58,17 @@ export function createJourneyDemoScenarioState(
 
   const discovered = runLocalTurn(
     createEmptyWorkspace(workspaceId),
-    HONOR_DESCRIPTION,
+    myhonorProfile.description,
   )
   const pointA = afterFactsConfirmed({
     ...discovered,
-    companyName: 'HONOR',
+    companyName: myhonorProfile.companyName,
     facts: discovered.facts.map((fact) => ({ ...fact, status: 'confirmed' as const })),
   })
-  const pointB = runLocalTurn(pointA, HONOR_GOAL)
+  const pointB = runLocalTurn(pointA, myhonorProfile.testGoal)
 
   return journeyStateSchema.parse({
     ...pointB,
-    companyName: 'HONOR',
+    companyName: myhonorProfile.companyName,
   })
 }

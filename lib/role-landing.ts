@@ -3,13 +3,36 @@ import type { UserRole } from '@/types'
 /** Approval holding page — shared by every role that is not approved yet. */
 export const WAITING_ROOM_PATH = '/client/waiting-room'
 
+/**
+ * Same holding page, under the name the myhonor integration introduced.
+ * Kept as an alias so both call styles resolve to one string — there must
+ * never be two "waiting rooms" that can drift apart.
+ */
+export const CLIENT_WAITING_ROOM_PATH = WAITING_ROOM_PATH
+
+/**
+ * Canonical business-client cabinet: the shared (dashboard) route with the
+ * full sidebar, Point A intelligence, the metric drill-down and the store
+ * integration panel. `/client/dashboard` and `/client/dashboard-ecommerce`
+ * are only redirect stubs pointing here — never send a user to those.
+ */
+export const CLIENT_DASHBOARD_PATH = '/dashboard'
+
 // Staff (owner/expert/admin) may self-register, and the profiles trigger only
 // auto-approves when no status was requested — so an explicit non-approved
 // status must hold them outside the internal portal. A MISSING status is not a
 // decision (the profile row could not be read); failing that read must not lock
 // staff out, hence null/undefined counts as approved here. Clients are stricter
-// by design — see the 'client' branch.
+// by design — see `clientLandingPath`.
 const isStaffApproved = (status?: string | null) => status == null || status === 'approved'
+
+/**
+ * The client half of the rule, exported on its own for the screens that
+ * already know the role is `client` (post-questionnaire exits, impersonation).
+ */
+export function clientLandingPath(status?: string | null): string {
+  return status === 'approved' ? CLIENT_DASHBOARD_PATH : WAITING_ROOM_PATH
+}
 
 /**
  * FE-06: the single post-authentication landing path for a role.
@@ -34,10 +57,10 @@ export function roleLandingPath(
     case 'expert':
       return isStaffApproved(status) ? '/expert/dashboard' : WAITING_ROOM_PATH
     case 'admin':
-      return isStaffApproved(status) ? '/dashboard' : WAITING_ROOM_PATH
+      return isStaffApproved(status) ? CLIENT_DASHBOARD_PATH : WAITING_ROOM_PATH
     case 'client':
-      return status === 'approved' ? '/client/point-a' : WAITING_ROOM_PATH
+      return clientLandingPath(status)
     default:
-      return '/dashboard'
+      return CLIENT_DASHBOARD_PATH
   }
 }

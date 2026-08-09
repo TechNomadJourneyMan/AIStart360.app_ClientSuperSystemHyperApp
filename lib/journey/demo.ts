@@ -85,6 +85,48 @@ export function deterministicOrchestrator(
     return buildGoalTurn(current, userMessage, text, reason)
   }
 
+  if (shouldAnswerContextQuestion(current, text)) {
+    const nextStep = current.roadmap.find((item) => item.status === 'next')
+      ?? current.roadmap[0]
+    const domain = detectDomain(current.businessDescription)
+    const asksForData = /данн|показател|метрик|цифр|перв(?:ого|ый)\s+шаг|следующ(?:его|ий)\s+шаг/i.test(text)
+    const assistantText = nextStep
+      ? asksForData && domain === 'commerce-retail'
+        ? `Для этапа «${nextStep.title}» возьмите один сопоставимый период и подтвердите источник выручки, количество и статусы заказов, валовую маржу, остатки и отсутствие товаров, возвраты и отмены. Сначала фиксируем базу без прогнозов; затем сравниваем изменения тем же способом.`
+        : `Следующий этап — «${nextStep.title}» (${nextStep.horizon}). ${nextStep.description} Начните с одного проверяемого источника и не подменяйте отсутствующие значения предположениями.`
+      : 'Точка A уже подтверждена. Сначала сформулируйте измеримую Точку B со значением и сроком — после этого я разложу первый проверяемый этап.'
+
+    return journeyStateSchema.parse({
+      ...current,
+      messages: [
+        ...current.messages,
+        userMessage,
+        {
+          id: makeId('message'),
+          role: 'assistant',
+          text: assistantText,
+          createdAt: now,
+        },
+      ].slice(-80),
+      suggestions: nextStep
+        ? [
+            suggestion(
+              'prepare-first-step-data',
+              'Подготовить данные',
+              'Помоги составить короткий чек-лист данных для первого этапа.',
+              'roadmap',
+            ),
+          ]
+        : current.suggestions,
+      provider: { mode: 'demo', label: 'Демо-режим · детерминированная логика' },
+      persistence: {
+        ...current.persistence,
+        reason,
+      },
+      updatedAt: now,
+    })
+  }
+
   const extracted = extractLiteralFacts(text)
   const known = new Set(current.facts.map((fact) => `${fact.label}:${fact.value}`.toLowerCase()))
   const newFacts = extracted.filter((fact) => !known.has(`${fact.label}:${fact.value}`.toLowerCase()))
@@ -493,6 +535,15 @@ function isGoalMessage(state: JourneyState, text: string): boolean {
   return /(?:цель|хочу|планир|открыть|увелич|сниз|достичь|вырасти).*(?:\d|один|два|три|четыре|пять|шесть|семь|восемь|девять|десять|месяц|год|%)/i.test(text)
 }
 
+function shouldAnswerContextQuestion(state: JourneyState, text: string): boolean {
+  if (!state.facts.some((fact) => fact.status === 'confirmed')) return false
+  const clean = text.trim()
+  if (!clean) return false
+  return /[?？]\s*$/.test(clean)
+    || /^(?:какие?|как|что|почему|зачем|где|когда|сколько|расскажи|объясни|покажи)\b/i.test(clean)
+    || /(?:давай|хочу)\s+(?:обсуд|разбер)/i.test(clean)
+}
+
 function extractGoalTarget(text: string): { metric: string; target: string } | undefined {
   const wordNumbers: Record<string, string> = {
     один: '1', два: '2', три: '3', четыре: '4', пять: '5', шесть: '6', семь: '7', восемь: '8', девять: '9', десять: '10',
@@ -504,7 +555,7 @@ function extractGoalTarget(text: string): { metric: string; target: string } | u
   }
   const renewal = text.match(/(?:renewal\s*rate|дол[яю]\s+продлен[а-яё]*|процент\s+продлен[а-яё]*)[^\d]{0,30}(\d+(?:[.,]\d+)?\s*%)/i)
   if (renewal?.[1]) return { metric: 'Renewal rate', target: renewal[1].replace(/\s+/g, '') }
-  const revenue = text.match(/выручк[а-яё]*[^.]{0,80}?(?:до|на)\s+([\d.,]+\s*(?:тыс(?:яч[аи])?|млн|миллион[а-яё]*|млрд|миллиард[а-яё]*)?(?:\s*(?:₸|тенге|тг|kzt))?)/i)
+  const revenue = text.match(/выручк[а-яё]*[^.]{0,80}?(?:до|на)\s+([\d.,]+\s*(?:%|тыс(?:яч[аи])?|млн|миллион[а-яё]*|млрд|миллиард[а-яё]*)?(?:\s*(?:₸|тенге|тг|kzt))?)/i)
   if (revenue?.[1]) return { metric: 'Выручка', target: revenue[1].trim() }
   const number = text.match(/(?:до|на)\s+([\d.,]+\s*(?:%|тыс(?:яч[аи])?|млн|миллион[а-яё]*|млрд)?(?:\s*(?:₸|тенге|тг|kzt))?)/i)
   return number ? { metric: 'Целевой показатель', target: number[1].trim() } : undefined

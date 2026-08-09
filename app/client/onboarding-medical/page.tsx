@@ -11,8 +11,10 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { MEDICAL_INTAKE_FIELDS, type IntakeField } from '@/lib/intake-schemas'
 import type { DataQualityReport, DataQualityIssue } from '@/lib/data-quality'
-
-// The result page of this vertical — the clinic cabinet built from this intake.
+// The result page of this vertical — the clinic cabinet built from this intake
+// (RFM segments, revenue-loss map, bundles). Unlike /client/dashboard-ecommerce
+// this one is a live, intake-backed page, not a redirect stub, so it stays the
+// destination instead of the generic CLIENT_DASHBOARD_PATH.
 const RESULT_PATH = '/client/dashboard-medical'
 
 export default function OnboardingMedicalPage() {

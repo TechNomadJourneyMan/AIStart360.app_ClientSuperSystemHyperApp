@@ -102,7 +102,7 @@ function deltaText(m: MetricSummary, digits = 1): string {
 const HERO_METRICS: HeroSpec[] = [
   {
     apiId: 'revenue', // matches /api/v1/metrics summary
-    label: 'Выручка / мес',
+    label: 'Выручка за период',
     icon: 'payments',
     rule: (m) => {
       if (!m) return { zone: 'unknown', deltaLabel: '—' }
@@ -112,8 +112,8 @@ const HERO_METRICS: HeroSpec[] = [
     },
   },
   {
-    apiId: 'clients', // matches /api/v1/metrics summary (clients_base equivalent)
-    label: 'Клиентов в базе',
+    apiId: 'clients',
+    label: 'Покупатели за период',
     icon: 'groups',
     rule: (m) => {
       if (!m) return { zone: 'unknown', deltaLabel: '—' }

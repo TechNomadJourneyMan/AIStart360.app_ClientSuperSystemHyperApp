@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import { roleLandingPath } from '@/lib/role-landing'
+import {
+  CLIENT_DASHBOARD_PATH,
+  CLIENT_WAITING_ROOM_PATH,
+  clientLandingPath,
+  roleLandingPath,
+} from '@/lib/role-landing'
 
 describe('roleLandingPath (FE-06)', () => {
   it('routes staff/owner roles to their home', () => {
@@ -9,11 +14,17 @@ describe('roleLandingPath (FE-06)', () => {
     expect(roleLandingPath('admin')).toBe('/dashboard')
   })
 
-  it('routes an approved client to Point A and everyone else to the waiting room', () => {
-    expect(roleLandingPath('client', 'approved')).toBe('/client/point-a')
-    expect(roleLandingPath('client', 'pending_approval')).toBe('/client/waiting-room')
-    expect(roleLandingPath('client', 'rejected')).toBe('/client/waiting-room')
-    expect(roleLandingPath('client')).toBe('/client/waiting-room')
+  it('routes an approved client to the canonical dashboard and everyone else to the waiting room', () => {
+    expect(roleLandingPath('client', 'approved')).toBe(CLIENT_DASHBOARD_PATH)
+    expect(roleLandingPath('client', 'pending_approval')).toBe(CLIENT_WAITING_ROOM_PATH)
+    expect(roleLandingPath('client', 'rejected')).toBe(CLIENT_WAITING_ROOM_PATH)
+    expect(roleLandingPath('client')).toBe(CLIENT_WAITING_ROOM_PATH)
+  })
+
+  it('uses the same client completion rule outside authentication screens', () => {
+    expect(clientLandingPath('approved')).toBe('/dashboard')
+    expect(clientLandingPath('pending_approval')).toBe('/client/waiting-room')
+    expect(clientLandingPath(null)).toBe('/client/waiting-room')
   })
 
   // A self-registered "employee" is created as pending_approval — the role in

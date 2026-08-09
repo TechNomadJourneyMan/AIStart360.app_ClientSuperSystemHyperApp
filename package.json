@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "engines": {
-    "node": ">=20"
+    "node": ">=20.9.0"
   },
   "scripts": {
     "dev": "next dev",
@@ -15,6 +15,8 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
+    "audit:routes": "node scripts/audit-static-routes.js",
+    "seed:myhonor": "node scripts/seed-myhonor-client.js",
     "whatsapp-web:bridge": "node --env-file=.env services/whatsapp-web-bridge/server.mjs",
     "whatsapp-web:bridge:check": "npm --prefix services/whatsapp-web-bridge run check",
     "postinstall": "prisma generate"
@@ -63,7 +65,7 @@
     "lucide-react": "^0.368.0",
     "mammoth": "^1.12.0",
     "next": "^14.2.0",
-    "next-auth": "^5.0.0-beta.30",
+    "next-auth": "^5.0.0-beta.32",
     "next-themes": "^0.3.0",
     "nextjs-toploader": "^3.9.17",
     "pdf-parse": "^2.4.5",
@@ -77,7 +79,7 @@
     "react-hook-form": "^7.72.0",
     "recharts": "^2.15.4",
     "resend": "6.12.3",
-    "sharp": "^0.34.5",
+    "sharp": "0.35.3",
     "sonner": "^2.0.7",
     "tailwind-merge": "^2.6.1",
     "telegram": "^2.26.22",

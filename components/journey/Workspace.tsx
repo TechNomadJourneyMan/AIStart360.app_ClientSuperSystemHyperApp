@@ -313,6 +313,7 @@ export function JourneyWorkspace({
           ? nextIdentity
           : { workspaceId: result.state.workspaceId }
         if (resolvedIdentity.workspaceId !== nextIdentity.workspaceId) {
+          clearJourneyStateCache(nextIdentity.workspaceId)
           identityRef.current = resolvedIdentity
           setIdentity(resolvedIdentity)
           writeStoredIdentity(resolvedIdentity, identityStorageKey)
@@ -802,8 +803,16 @@ export function JourneyWorkspace({
             <AlertCircle className="size-3.5 shrink-0" aria-hidden />
             {demoScenario ? (
               <>
-                <span className="sm:hidden">HONOR · демо-проект, не реальные показатели</span>
-                <span className="hidden sm:inline">HONOR · демонстрационный проект интернет-магазина. Неизвестные показатели не выдуманы; данные остаются в этом браузере.</span>
+                <span className="sm:hidden">HONOR GROUP · публичные факты + тестовая цель</span>
+                <span className="hidden sm:inline">HONOR GROUP · публичный профиль myhonor.shop и явно тестовая цель. Неизвестные показатели не выдуманы; данные остаются в этом браузере.</span>
+                <a
+                  href="https://myhonor.shop"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="shrink-0 font-semibold underline underline-offset-2"
+                >
+                  источник
+                </a>
               </>
             ) : (
               <>
@@ -995,7 +1004,11 @@ function WorkspaceHeader({
             <span className="hidden lg:inline">Устройства</span>
           </button>
         )}
-        <Link href="/client/welcome" className="ml-0.5 hidden rounded-lg px-2.5 py-2 text-xs text-on-surface-variant hover:bg-white/5 hover:text-on-surface sm:block">
+        <Link
+          href="/client/welcome"
+          prefetch={false}
+          className="ml-0.5 hidden rounded-lg px-2.5 py-2 text-xs text-on-surface-variant hover:bg-white/5 hover:text-on-surface sm:block"
+        >
           В кабинет
         </Link>
       </div>

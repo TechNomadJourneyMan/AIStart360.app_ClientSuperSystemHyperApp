@@ -10,6 +10,7 @@ import PointAIntelligenceSection from '@/components/point-a/PointAIntelligenceSe
 import PointADashboardSectionsBoundary from '@/components/dashboard/PointADashboardSections'
 import { OnboardingStatusBadges } from '@/components/dashboard/OnboardingStatusBadges'
 import GrowthSnapshotHero from '@/components/dashboard/GrowthSnapshotHero'
+import MyHonorIntegrationStatus from '@/components/dashboard/MyHonorIntegrationStatus'
 import KeyMetricsHero from '@/components/point-a/v2/KeyMetricsHero'
 import MetricZonesGrid from '@/components/point-a/v2/MetricZonesGrid'
 import PointAMetricDrillDown from '@/components/point-a/v2/PointAMetricDrillDown'
@@ -192,6 +193,8 @@ export default async function PointAPage() {
       <section id="growth-snapshot">
         <GrowthSnapshotHero />
       </section>
+
+      <MyHonorIntegrationStatus />
 
       {/* Filters — drive the KeyMetricsHero report below via URL params */}
       <PointAFilterSection />

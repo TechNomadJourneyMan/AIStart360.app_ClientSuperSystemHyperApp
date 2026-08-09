@@ -29,7 +29,7 @@ export async function GET(req: NextRequest) {
     const { data: adminRows, error: arError } = await sb
       .from('admin_requests')
       .select('*')
-      .order('created_at', { ascending: false })
+      .order('createdAt', { ascending: false })
 
     // 2. Always load client profiles as source of truth
     const { data: profiles } = await sb
@@ -55,9 +55,9 @@ export async function GET(req: NextRequest) {
           userEmail: payload.email ?? '—',
           subject: payload.subject ?? `Заявка #${r.id?.slice(-6) ?? ''}`,
           description: payload.description ?? '',
-          createdAt: r.created_at,
+          createdAt: r.createdAt,
           company: payload.company ?? undefined,
-          rejectionReason: r.rejection_reason ?? undefined,
+          rejectionReason: r.rejectionReason ?? undefined,
           priority: r.priority ?? 'medium',
           assignedAdmin: null,
           source: r.source ?? null,
@@ -120,8 +120,8 @@ export async function POST(req: NextRequest) {
       priority: body.priority ?? 'medium',
       source: body.source ?? 'manual',
       payload: body.payload ?? {},
-      created_at: now,
-      updated_at: now,
+      createdAt: now,
+      updatedAt: now,
     })
 
     if (error) {

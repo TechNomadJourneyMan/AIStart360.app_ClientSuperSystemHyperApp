@@ -16,16 +16,19 @@ async function measureDb(): Promise<ServiceResult> {
     const ms = Date.now() - t
     return {
       name: 'Data Pipeline',
-      status: ms < 150 ? 'online' : ms < 400 ? 'degraded' : 'offline',
+      // A completed query proves the database is reachable. Cold starts and
+      // cross-region pooler latency may be slow, but must not be reported as
+      // an outage; reserve "offline" for connection/query failures.
+      status: ms < 3000 ? 'online' : 'degraded',
       latencyMs: ms,
-      uptime: '99.8%',
+      uptime: 'live probe',
     }
   } catch {
-    return { name: 'Data Pipeline', status: 'offline', latencyMs: Date.now() - t, uptime: '0%' }
+    return { name: 'Data Pipeline', status: 'offline', latencyMs: Date.now() - t, uptime: 'probe failed' }
   }
 }
 
-async function measureEndpoint(name: string, url: string, uptime: string): Promise<ServiceResult> {
+async function measureEndpoint(name: string, url: string): Promise<ServiceResult> {
   const t = Date.now()
   try {
     const res = await fetch(url, {
@@ -36,12 +39,14 @@ async function measureEndpoint(name: string, url: string, uptime: string): Promi
     const ms = Date.now() - t
     return {
       name,
-      status: res.status < 500 ? (ms < 200 ? 'online' : 'degraded') : 'offline',
+      // These probes intentionally include authenticated endpoints. A 401/403
+      // still proves the service is up; only 5xx is an availability failure.
+      status: res.status < 500 ? 'online' : 'offline',
       latencyMs: ms,
-      uptime,
+      uptime: 'live probe',
     }
   } catch {
-    return { name, status: 'degraded', latencyMs: Date.now() - t, uptime }
+    return { name, status: 'degraded', latencyMs: Date.now() - t, uptime: 'probe failed' }
   }
 }
 
@@ -50,22 +55,24 @@ export async function GET(request: Request) {
 
   const [db, apiGw, notifications] = await Promise.all([
     measureDb(),
-    measureEndpoint('API Gateway', `${base}/api/auth/session`, '99.9%'),
-    measureEndpoint('Notifications', `${base}/api/notifications`, '100%'),
+    measureEndpoint('API Gateway', `${base}/api/auth/session`),
+    measureEndpoint('Notifications', `${base}/api/notifications`),
   ])
 
-  // GRI Engine and Report Service share the same DB connection — derive from db latency
+  // GRI Engine and Report Service share the same DB connection. Their
+  // availability therefore follows the real DB probe instead of a synthetic
+  // latency multiplier that could turn a successful cold query into "offline".
   const griEngine: ServiceResult = {
     name: 'GRI Engine',
     status: db.status,
-    latencyMs: Math.round(db.latencyMs * 1.6 + 12),
-    uptime: '99.7%',
+    latencyMs: db.latencyMs,
+    uptime: 'live probe',
   }
   const reportService: ServiceResult = {
     name: 'Report Service',
-    status: db.latencyMs > 250 ? 'degraded' : 'online',
-    latencyMs: Math.round(db.latencyMs * 2.1 + 18),
-    uptime: '98.2%',
+    status: db.status,
+    latencyMs: db.latencyMs,
+    uptime: 'live probe',
   }
 
   // Honest configuration check: report missing critical env (Supabase/DB keys)

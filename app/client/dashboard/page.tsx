@@ -1,12 +1,12 @@
-// Legacy /client/dashboard — its content (Point A radar, KPI cards, AI
-// analysis, risks, insights, etc.) fully duplicates /client/point-a. Keep
-// this route alive as a permanent redirect so existing links / bookmarks
-// don't break, but the canonical client landing page is now /client/point-a.
+// Legacy /client/dashboard stays alive for old links and bookmarks. The shared
+// /dashboard route is the canonical client cabinet with the complete sidebar,
+// Point A intelligence and the rest of the enabled modules.
 
 import { redirect } from 'next/navigation'
+import { CLIENT_DASHBOARD_PATH } from '@/lib/role-landing'
 
 export const dynamic = 'force-dynamic'
 
 export default function ClientDashboardRedirect() {
-  redirect('/client/point-a')
+  redirect(CLIENT_DASHBOARD_PATH)
 }

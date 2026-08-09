@@ -202,7 +202,7 @@ function buildTelegramMessage(payload: NotificationPayload): string {
 function buildCta(type: NotificationType): { label: string; url: string } {
   const base = getSiteUrl()
   if (type === 'expert_comment') {
-    return { label: 'Открыть дашборд', url: `${base}/client/dashboard` }
+    return { label: 'Открыть дашборд', url: `${base}/dashboard` }
   }
   if (type === 'expert_case_created' || type === 'expert_case_updated') {
     return { label: 'Открыть портал эксперта', url: `${base}/expert/dashboard` }

@@ -428,6 +428,10 @@ export default function GRIAssessment({ initialBlockId }: { initialBlockId?: str
       completedSections: { ...s.completedSections, [sectionId]: true },
     }))
 
+  // Codex memoised the old per-section average + `sectionAvgsMemo` map; both
+  // were superseded here by the single `blockRows` memo above (one pass, and it
+  // already feeds griIndex, the radar and the summary), so there is nothing
+  // left for that memo to serve.
   const sectionAvg = (sectionId: SectionId) =>
     blockRows.find((r) => r.id === sectionId)?.avg ?? 0
 

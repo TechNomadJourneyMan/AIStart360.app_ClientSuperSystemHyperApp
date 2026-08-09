@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { NextRequest, NextResponse } from 'next/server'
+import { CLIENT_DASHBOARD_PATH } from '@/lib/role-landing'
 
 const ALLOWED_ROLES = new Set(['admin', 'expert', 'owner', 'client', 'super_admin'])
 
@@ -184,13 +185,17 @@ describe('RBAC Middleware', () => {
     expect(new URL(res.headers.get('location')!).pathname).toBe('/dashboard')
   })
 
-  // FE-06: the landing destination now comes from the shared roleLandingPath —
-  // an approved client belongs in the /client cabinet, not on /dashboard.
-  it('redirects an approved client from /login to /client/point-a', async () => {
+  // FE-06: the landing destination comes from the shared roleLandingPath.
+  // It used to be /client/point-a; the myhonor merge made the shared
+  // (dashboard) route the canonical client cabinet — it is a superset of
+  // /client/point-a (same Point A intelligence and growth hero) plus the
+  // sidebar, the metric drill-down and the store-integration panel, and it is
+  // where every other client fallback in this middleware already points.
+  it('redirects an approved client from /login to the canonical cabinet', async () => {
     const req = createRequest('/login', 'client', 'approved')
     const res = await middleware(req)
     expect(res.status).toBe(307)
-    expect(locationOf(res).pathname).toBe('/client/point-a')
+    expect(locationOf(res).pathname).toBe(CLIENT_DASHBOARD_PATH)
   })
 
   it('redirects a pending client from /login to the waiting room', async () => {

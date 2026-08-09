@@ -46,6 +46,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { parseGoals } from './parse-goals'
+import { loadEcommerceAnalytics } from './ecommerce-orders-loader'
 
 // ─── Public types ────────────────────────────────────────────
 
@@ -126,6 +127,8 @@ export const TOP_TABLE_METRICS: TopTableMetricKey[] = [
 // ─── Raw row shape we accept from parsed_data ────────────────
 
 export interface SalesRow {
+  /** Stable sale/order identifier. Prevents collisions for same-time purchases. */
+  sale_id?: string
   /** Stable identifier for the buyer — used for new-vs-repeat detection. */
   client_id: string
   /** Optional CRM-style manager assignment. */
@@ -252,11 +255,11 @@ export function classifyNewVsRepeat(rows: SalesRow[]): Map<string, 'new' | 'repe
   const seen = new Set<string>()
   const classification = new Map<string, 'new' | 'repeat'>()
   for (const r of sorted) {
-    const rowKey = `${r.client_id}|${r.occurred_at}|${r.amount}`
+    const key = rowKey(r)
     if (seen.has(r.client_id)) {
-      classification.set(rowKey, 'repeat')
+      classification.set(key, 'repeat')
     } else {
-      classification.set(rowKey, 'new')
+      classification.set(key, 'new')
       seen.add(r.client_id)
     }
   }
@@ -264,7 +267,7 @@ export function classifyNewVsRepeat(rows: SalesRow[]): Map<string, 'new' | 'repe
 }
 
 function rowKey(r: SalesRow): string {
-  return `${r.client_id}|${r.occurred_at}|${r.amount}`
+  return r.sale_id ?? `${r.client_id}|${r.occurred_at}|${r.amount}`
 }
 
 /**
@@ -464,6 +467,10 @@ interface TopTableSeed {
   company: { target_revenue_12m_kzt: number | null; target_revenue_3y_kzt: number | null } | null
   surveyAnswers: Record<string, unknown>
   documents: DocumentLike[]
+  /** Normalized order history takes precedence over uploaded snapshots. */
+  salesRows?: SalesRow[]
+  /** Optional product-allocated subset; classification still uses salesRows. */
+  selectedSalesRows?: SalesRow[]
 }
 
 /**
@@ -479,11 +486,13 @@ export function computeTopTableFromSeed(
   const anchorYear = opts.year ?? now.getUTCFullYear()
   const anchor = new Date(Date.UTC(anchorYear, now.getUTCMonth(), now.getUTCDate()))
 
-  // 1. Gather all raw sales rows from all documents.
-  let rawRows: SalesRow[] = []
+  // 1. Prefer normalized ecommerce orders. Documents stay a fallback for
+  // clients that have not connected a live source yet.
+  let documentRows: SalesRow[] = []
   for (const doc of seed.documents) {
-    rawRows = rawRows.concat(extractRawRows(doc))
+    documentRows = documentRows.concat(extractRawRows(doc))
   }
+  const rawRows = seed.salesRows?.length ? seed.salesRows : documentRows
 
   // 2. Apply dimension filters BEFORE classification — a product filter
   //    shouldn't pretend a client is "new" just because their other-product
@@ -492,7 +501,13 @@ export function computeTopTableFromSeed(
   //    the "new" label reflects company-wide first contact.
   const newRepeat = classifyNewVsRepeat(rawRows)
 
-  const filtered = applyDimensions(rawRows, opts.productId ?? null, opts.managerId ?? null)
+  const normalizedSelection =
+    seed.salesRows?.length && seed.selectedSalesRows
+      ? seed.selectedSalesRows
+      : null
+  const filtered = normalizedSelection && !opts.managerId
+    ? normalizedSelection
+    : applyDimensions(rawRows, opts.productId ?? null, opts.managerId ?? null)
 
   // 3. Bucket and aggregate.
   const yearRows: SalesRow[] = []
@@ -550,8 +565,8 @@ export async function computeTopTable(
     .limit(1)
     .maybeSingle()
 
-  // Parallel fetch survey + documents.
-  const [{ data: surveyData }, { data: docsData }] = await Promise.all([
+  // Parallel fetch survey, documents and normalized ecommerce history.
+  const [{ data: surveyData }, { data: docsData }, ecommerce] = await Promise.all([
     supabase
       .from('survey_answers')
       .select('question_key, answer')
@@ -561,6 +576,9 @@ export async function computeTopTable(
       .select('id, doc_type, parsed_data, parse_status')
       .eq('user_id', userId)
       .in('parse_status', ['parsed', 'completed']),
+    loadEcommerceAnalytics(supabase, userId, {
+      productId: opts.productId ?? null,
+    }),
   ])
 
   const surveyAnswers: Record<string, unknown> = {}
@@ -601,7 +619,20 @@ export async function computeTopTable(
   }
 
   return computeTopTableFromSeed(
-    { company, surveyAnswers, documents },
+    {
+      company,
+      surveyAnswers,
+      documents,
+      // A manager dimension is not part of the MyHonor order contract. If a
+      // manager filter is explicitly requested, fall back to document rows
+      // which can carry manager_id rather than returning misleading matches.
+      ...(ecommerce.allSalesRows.length > 0 && !opts.managerId
+        ? {
+            salesRows: ecommerce.allSalesRows,
+            selectedSalesRows: ecommerce.selectedSalesRows,
+          }
+        : {}),
+    },
     { ...opts, now },
   )
 }
@@ -661,16 +692,33 @@ export async function discoverFilters(
   supabase: SupabaseClient,
   userId: string,
 ): Promise<TopTableFilters> {
-  const { data: docsData } = await supabase
-    .from('documents')
-    .select('doc_type, parsed_data, parse_status')
-    .eq('user_id', userId)
-    .in('parse_status', ['parsed', 'completed'])
+  const [{ data: docsData }, ecommerce] = await Promise.all([
+    supabase
+      .from('documents')
+      .select('doc_type, parsed_data, parse_status')
+      .eq('user_id', userId)
+      .in('parse_status', ['parsed', 'completed']),
+    loadEcommerceAnalytics(supabase, userId),
+  ])
 
   const documents: DocumentLike[] = (docsData ?? []).map((d) => ({
     doc_type: (d as { doc_type: string | null }).doc_type ?? null,
     parsed_data: (d as { parsed_data: unknown }).parsed_data ?? null,
   }))
 
-  return discoverFiltersFromSeed({ company: null, surveyAnswers: {}, documents })
+  const documentFilters = discoverFiltersFromSeed({
+    company: null,
+    surveyAnswers: {},
+    documents,
+  })
+  const products = new Map(
+    documentFilters.products.map((product) => [product.id, product.name]),
+  )
+  for (const product of ecommerce.products) {
+    products.set(product.id, product.name)
+  }
+  return {
+    products: Array.from(products.entries()).map(([id, name]) => ({ id, name })),
+    managers: documentFilters.managers,
+  }
 }

@@ -13,9 +13,8 @@ const PERIODS: readonly { value: PointAPeriod; label: string }[] = [
 ] as const
 
 export interface PointAFilterBarProps {
-  /** Available products for the select. First entry should be "Все" or similar. */
-  products?: string[]
-  managers?: string[]
+  products?: Array<{ id: string; name: string }>
+  managers?: Array<{ id: string; name: string }>
   /** Optional className for wrapping section. */
   className?: string
 }
@@ -114,11 +113,11 @@ export function PointAFilterBar({
           </option>
           {(products ?? []).map((p) => (
             <option
-              key={p}
-              value={p}
+              key={p.id}
+              value={p.id}
               className="bg-surface-container text-on-surface"
             >
-              {p}
+              {p.name}
             </option>
           ))}
         </select>
@@ -143,11 +142,11 @@ export function PointAFilterBar({
           </option>
           {(managers ?? []).map((m) => (
             <option
-              key={m}
-              value={m}
+              key={m.id}
+              value={m.id}
               className="bg-surface-container text-on-surface"
             >
-              {m}
+              {m.name}
             </option>
           ))}
         </select>

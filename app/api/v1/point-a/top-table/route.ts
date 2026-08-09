@@ -125,7 +125,9 @@ export async function GET(req: NextRequest) {
       discoverFilters(supabase, user.id),
     ])
 
-    const rows = engineResult.rows.map(toUiRow)
+    const hasRealData =
+      engineResult.dataCoverage > 0 || engineResult.planSource !== 'default'
+    const rows = hasRealData ? engineResult.rows.map(toUiRow) : []
 
     const body: TopTableResponse = {
       ok: true,
@@ -138,9 +140,9 @@ export async function GET(req: NextRequest) {
         available_products: ['Все', ...filters.products.map((p) => p.name)],
         available_managers: ['Все', ...filters.managers.map((m) => m.name)],
         computed_at: engineResult.asOf,
-        // Real data once we have any non-null factYear OR a non-default plan.
-        is_mock:
-          engineResult.dataCoverage === 0 && engineResult.planSource === 'default',
+        // Keep the compatibility flag for existing clients, but do not expose
+        // synthetic zero/default rows as business data.
+        is_mock: !hasRealData,
       },
     }
     return NextResponse.json(body)

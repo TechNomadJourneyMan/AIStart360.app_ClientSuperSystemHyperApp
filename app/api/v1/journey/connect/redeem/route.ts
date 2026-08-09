@@ -6,7 +6,12 @@ import {
   JourneyConnectCodeError,
   redeemJourneyConnectCode,
 } from '@/lib/journey/device-sync'
-import { JOURNEY_DEVICE_COOKIE, journeyErrorResponse, resolveJourneyActor } from '@/lib/journey/http'
+import {
+  JOURNEY_DEVICE_COOKIE,
+  JOURNEY_DEVICE_COOKIE_MAX_AGE_SECONDS,
+  journeyErrorResponse,
+  resolveJourneyActor,
+} from '@/lib/journey/http'
 import { isRateLimited, isRateLimitedKey } from '@/lib/rate-limit'
 
 export const runtime = 'nodejs'
@@ -18,8 +23,6 @@ const bodySchema = z
     deviceLabel: z.string().trim().min(1).max(80).optional(),
   })
   .strict()
-
-const DEVICE_COOKIE_MAX_AGE_SECONDS = 90 * 24 * 60 * 60
 
 export async function POST(request: Request) {
   try {
@@ -54,7 +57,7 @@ export async function POST(request: Request) {
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'strict',
       path: '/api/v1/journey',
-      maxAge: DEVICE_COOKIE_MAX_AGE_SECONDS,
+      maxAge: JOURNEY_DEVICE_COOKIE_MAX_AGE_SECONDS,
     })
     response.headers.set('cache-control', 'no-store')
     return response

@@ -10,14 +10,16 @@
 //   7. Финансы           (выручка / сезонность / зависимость от 1 поставщика)
 //
 // Answers persist locally + POST to /api/v1/onboarding/survey on each step.
-// On finish → /client/dashboard-ecommerce for an approved client; otherwise the
-// completion screen with a link to it (same exit rule as /client/onboarding).
+// On finish → the canonical shared /dashboard for an approved client; otherwise
+// the completion screen with a link to it (same exit rule as /client/onboarding).
+// The old destination /client/dashboard-ecommerce is now only a redirect stub.
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
+import { CLIENT_DASHBOARD_PATH } from '@/lib/role-landing'
 
 interface StepDef {
   key: string
@@ -168,9 +170,11 @@ const STEPS: StepDef[] = [
 
 const STORAGE_KEY = 'aistart360_onboarding_ecommerce'
 
-// The result page of this vertical — the e-commerce cabinet reads the ec_*
-// answers this survey just saved.
-const RESULT_PATH = '/client/dashboard-ecommerce'
+// Where a finished survey lands. The old vertical page
+// /client/dashboard-ecommerce is now a redirect stub (its KPIs were hard-coded),
+// so the canonical cabinet — which reads the ec_* answers this survey just
+// saved — is the real destination.
+const RESULT_PATH = CLIENT_DASHBOARD_PATH
 
 type AnswerValue = string | number | string[]
 

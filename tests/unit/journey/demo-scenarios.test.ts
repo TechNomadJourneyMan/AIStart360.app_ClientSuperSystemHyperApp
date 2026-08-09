@@ -11,6 +11,8 @@ import { journeyStateSchema } from '@/lib/journey/schema'
 describe('Journey public demo scenarios', () => {
   it('only accepts the explicit, normalized HONOR scenario', () => {
     expect(parseJourneyDemoScenario(' HONOR ')).toBe('honor')
+    expect(parseJourneyDemoScenario('myhonor')).toBe('honor')
+    expect(parseJourneyDemoScenario('myhonor.shop')).toBe('honor')
     expect(parseJourneyDemoScenario(['honor'])).toBe('honor')
     expect(parseJourneyDemoScenario('tomato-shop')).toBeUndefined()
     expect(parseJourneyDemoScenario(['honor', 'tomato-shop'])).toBeUndefined()
@@ -22,7 +24,7 @@ describe('Journey public demo scenarios', () => {
 
     expect(() => journeyStateSchema.parse(state)).not.toThrow()
     expect(state).toMatchObject({
-      companyName: 'HONOR',
+      companyName: 'HONOR GROUP',
       phase: 'ready',
       provider: { mode: 'demo', label: 'Демо-логика' },
       persistence: { mode: 'local', label: 'Сохранение на устройстве' },
@@ -30,9 +32,9 @@ describe('Journey public demo scenarios', () => {
     expect(state.facts).not.toHaveLength(0)
     expect(state.facts.every((fact) => fact.status === 'confirmed')).toBe(true)
     expect(state.goals.at(-1)).toMatchObject({
-      title: 'Хочу увеличить выручку до 50 млн ₸ за 6 месяцев',
+      title: 'Тестовая гипотеза для демонстрации: увеличить выручку на 20% за 6 месяцев',
       metric: 'Выручка',
-      target: '50 млн ₸',
+      target: '20%',
       deadline: '6 месяцев',
       status: 'confirmed',
     })
@@ -51,6 +53,8 @@ describe('Journey public demo scenarios', () => {
     const metrics = state.widgets.find((widget) => widget.kind === 'domain_metrics')
 
     expect(state.facts.some((fact) => fact.label === 'Выручка')).toBe(false)
+    expect(state.facts.some((fact) => fact.value.includes('88 товаров'))).toBe(true)
+    expect(state.facts.some((fact) => fact.value.includes('3 магазина'))).toBe(true)
     expect(metrics?.kind).toBe('domain_metrics')
     if (!metrics || metrics.kind !== 'domain_metrics') {
       throw new Error('Commerce metrics widget missing')

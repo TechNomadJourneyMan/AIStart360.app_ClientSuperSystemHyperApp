@@ -47,11 +47,10 @@ export interface TopSalesTableViewProps {
   isLoading?: boolean
   isError?: boolean
   isEmpty?: boolean
-  isMock?: boolean
 }
 
 export function TopSalesTableView(props: TopSalesTableViewProps) {
-  const { rows, isLoading, isError, isEmpty, isMock } = props
+  const { rows, isLoading, isError, isEmpty } = props
 
   if (isLoading) {
     return h(
@@ -267,16 +266,6 @@ export function TopSalesTableView(props: TopSalesTableViewProps) {
       { className: 'overflow-x-auto' },
       h('table', { className: 'min-w-full text-sm' }, desktopHeader, desktopBody),
     ),
-    isMock
-      ? h(
-          'div',
-          {
-            className:
-              'px-4 py-2 text-[10px] font-mono uppercase tracking-widest text-on-surface-variant/60 border-t border-white/[0.04] bg-surface-container',
-          },
-          'Демо-данные · ожидается аггрегатор v3',
-        )
-      : null,
   )
 
   // Mobile cards
@@ -403,7 +392,6 @@ export function TopSalesTable(props: TopSalesTableProps) {
   const [rows, setRows] = useState<TopTableRow[]>(initialData ?? [])
   const [isLoading, setIsLoading] = useState<boolean>(!initialData)
   const [isError, setIsError] = useState<boolean>(false)
-  const [isMock, setIsMock] = useState<boolean>(false)
 
   const qs = useMemo(() => {
     const q = new URLSearchParams()
@@ -423,7 +411,6 @@ export function TopSalesTable(props: TopSalesTableProps) {
         if (cancelled) return
         if (res.ok) {
           setRows(res.data.rows)
-          setIsMock(res.data.is_mock)
           if (onFilterOptions) {
             onFilterOptions({
               products: res.data.available_products,
@@ -449,7 +436,6 @@ export function TopSalesTable(props: TopSalesTableProps) {
     rows,
     isLoading,
     isError,
-    isMock,
   })
 }
 
