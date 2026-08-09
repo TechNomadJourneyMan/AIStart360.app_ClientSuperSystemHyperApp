@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { SettingsClient, type SettingsInitial, type Prefs } from '@/components/settings/SettingsClient'
 import TelegramLinkPanel from '@/components/settings/TelegramLinkPanel'
@@ -16,7 +17,14 @@ export default async function SettingsPage() {
         <h1 className="font-headline text-3xl font-bold text-on-surface">Настройки</h1>
         <div className="bg-surface-container rounded-xl p-6 border border-outline-variant/30">
           <p className="text-on-surface">Не удалось загрузить профиль пользователя.</p>
-          <p className="text-sm text-on-surface-variant mt-2">Войдите снова и попробуйте открыть страницу повторно.</p>
+          <p className="text-sm text-on-surface-variant mt-2">Сессия истекла или не найдена. Войдите снова.</p>
+          <Link
+            href="/login"
+            className="mt-4 inline-flex items-center gap-2 px-5 py-2 bg-gradient-to-br from-primary to-primary-container text-on-primary text-sm font-semibold rounded-lg shadow-primary-sm hover:scale-[0.98] transition-all"
+          >
+            <span className="material-symbols-outlined text-lg">login</span>
+            Войти
+          </Link>
         </div>
       </div>
     )
@@ -48,6 +56,11 @@ export default async function SettingsPage() {
     phone: (profile?.phone ?? meta.phone ?? '') as string,
   }
 
+  // Staff = the roles middleware lets into /team (ADMIN_PATHS). Anyone else
+  // would only get redirected, so the tab stays hidden for them.
+  const role = String(profile?.role ?? (meta.role as string) ?? 'client').toLowerCase()
+  const isStaff = role === 'admin' || role === 'super_admin'
+
   return (
     <div className="space-y-6">
       <div>
@@ -55,17 +68,21 @@ export default async function SettingsPage() {
         <p className="text-on-surface-variant text-sm mt-1">Управление аккаунтом и системой</p>
       </div>
 
-      <SettingsClient initial={initial} preferences={(profile?.preferences ?? {}) as Prefs} />
-
-      {/* Telegram personal account (userbot) — linked but managed separately */}
-      <div className="bg-surface-container rounded-xl p-6">
-        <h3 className="font-headline text-lg font-bold text-on-surface mb-5">Telegram · личный аккаунт</h3>
-        <TelegramLinkPanel
-          initialLinked={Boolean(telegramProfile?.telegram_chat_id)}
-          initialTelegramUsername={telegramProfile?.telegram_username ?? null}
-          personalUsername={telegramPersonalUsername}
-        />
-      </div>
+      {/* The personal Telegram panel used to render outside the tabs, so it hung
+          under «Биллинг» and «Журнал» too, next to a second, unrelated Telegram
+          block. It now lives inside the «Интеграции» tab. Audit 2026-08-09. */}
+      <SettingsClient
+        initial={initial}
+        preferences={(profile?.preferences ?? {}) as Prefs}
+        isStaff={isStaff}
+        telegramPersonalPanel={
+          <TelegramLinkPanel
+            initialLinked={Boolean(telegramProfile?.telegram_chat_id)}
+            initialTelegramUsername={telegramProfile?.telegram_username ?? null}
+            personalUsername={telegramPersonalUsername}
+          />
+        }
+      />
     </div>
   )
 }

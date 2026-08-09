@@ -1,8 +1,13 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import PointBView from './PointBView'
+import type { GoalPatch } from './GoalEditor'
 import type { PointBV2 } from '@/lib/point-b/engine'
+
+/** Poll AI status for at most ~2 minutes (40 × 3s), then give up honestly. */
+const AI_POLL_INTERVAL_MS = 3000
+const AI_POLL_MAX_TICKS = 40
 
 /**
  * Client container for Point B. Fetches the session-scoped, goal-driven plan
@@ -20,6 +25,7 @@ export default function PointBContainer() {
   const [reason, setReason] = useState<string | null>(null)
   const [expertNote, setExpertNote] = useState<{ expert_notes: string; author_name?: string | null; created_at?: string } | null>(null)
   const [aiStatus, setAiStatus] = useState<PointBV2['ai_status']>('none')
+  const [aiError, setAiError] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)

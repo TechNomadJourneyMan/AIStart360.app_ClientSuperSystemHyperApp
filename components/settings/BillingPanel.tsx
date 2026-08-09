@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 
 interface Subscription {
@@ -32,31 +32,37 @@ function formatDate(iso: string | null): string | null {
   return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })
 }
 
+// Raw API error codes are useless to the person reading them — translate the
+// ones the endpoint actually returns and keep a retry path. Audit 2026-08-09.
+const ERROR_TEXT: Record<string, string> = {
+  no_org: 'Ваш аккаунт ещё не привязан к организации — тариф оформляет администратор портала.',
+  unauthorized: 'Сессия истекла. Войдите заново и откройте вкладку снова.',
+}
+
 export function BillingPanel() {
   const [sub, setSub] = useState<Subscription | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
-    let cancelled = false
-    ;(async () => {
-      try {
-        const res = await fetch('/api/v1/settings/billing', { credentials: 'include' })
-        const json = await res.json()
-        if (cancelled) return
-        if (!res.ok || !json.ok) {
-          setError(json.error || `Ошибка ${res.status}`)
-        } else {
-          setSub(json.data ?? null)
-        }
-      } catch {
-        if (!cancelled) setError('Не удалось загрузить данные тарифа')
-      } finally {
-        if (!cancelled) setLoading(false)
+  const load = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await fetch('/api/v1/settings/billing', { credentials: 'include', cache: 'no-store' })
+      const json = await res.json()
+      if (!res.ok || !json.ok) {
+        setError(ERROR_TEXT[json.error as string] ?? 'Не удалось загрузить данные тарифа.')
+      } else {
+        setSub(json.data ?? null)
       }
-    })()
-    return () => { cancelled = true }
+    } catch {
+      setError('Не удалось загрузить данные тарифа — проверьте соединение.')
+    } finally {
+      setLoading(false)
+    }
   }, [])
+
+  useEffect(() => { void load() }, [load])
 
   if (loading) {
     return <div className="bg-surface-container rounded-xl p-6 h-48 skeleton" />
@@ -64,8 +70,21 @@ export function BillingPanel() {
 
   if (error) {
     return (
-      <div className="bg-surface-container rounded-xl p-6 text-sm text-error">
-        {error}
+      <div className="bg-surface-container rounded-xl p-6">
+        <div className="flex items-start gap-3">
+          <span className="material-symbols-outlined text-xl text-error mt-0.5">error</span>
+          <div>
+            <p className="text-sm text-on-surface">{error}</p>
+            <button
+              type="button"
+              onClick={() => void load()}
+              className="mt-4 inline-flex items-center gap-2 text-xs px-3 py-1.5 rounded-lg border border-outline-variant/30 text-on-surface-variant hover:text-on-surface hover:border-primary/30 transition-colors"
+            >
+              <span className="material-symbols-outlined text-base">refresh</span>
+              Повторить
+            </button>
+          </div>
+        </div>
       </div>
     )
   }

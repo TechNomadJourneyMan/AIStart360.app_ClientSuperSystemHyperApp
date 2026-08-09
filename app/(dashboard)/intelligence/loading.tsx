@@ -1,12 +1,18 @@
-﻿export default function Loading() {
+// Mirrors the real /intelligence layout: header plus the source-readiness rows.
+// The old skeleton drew a 2-column tile grid the page never rendered, so the
+// layout jumped on hydration.
+export default function Loading() {
   return (
-    <div className="p-6 space-y-4 animate-pulse">
-      <div className="h-8 w-56 bg-surface-container rounded" />
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="h-36 bg-surface-container rounded-xl" />
-        <div className="h-36 bg-surface-container rounded-xl" />
+    <div className="space-y-8 animate-pulse" aria-busy="true" aria-label="Загрузка разведки">
+      <div className="space-y-3">
+        <div className="h-9 w-52 rounded bg-surface-container" />
+        <div className="h-4 w-full max-w-xl rounded bg-surface-container" />
       </div>
-      <div className="h-64 bg-surface-container rounded-xl" />
+      <div className="space-y-3">
+        {Array.from({ length: 2 }).map((_, i) => (
+          <div key={i} className="h-28 rounded-2xl bg-surface-container" />
+        ))}
+      </div>
     </div>
   )
 }

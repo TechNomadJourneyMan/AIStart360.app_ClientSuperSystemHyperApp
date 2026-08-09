@@ -1,6 +1,6 @@
 'use client'
 
-import type { ReactNode } from 'react'
+import { useId, useState, type ReactNode } from 'react'
 
 // ─── Domain constants ────────────────────────────────────────────────────────
 
@@ -228,14 +228,166 @@ export function Pill({
   )
 }
 
-/** Empty-state block (used when an array is empty but section is rendered). */
-export function EmptyState({ icon = 'inbox', text }: { icon?: string; text: string }) {
+/**
+ * Empty-state block (used when an array is empty but section is rendered).
+ * `action` is the way out of the dead end — a link/button that leads to where
+ * the missing data is filled in. Optional, so existing call sites still work.
+ */
+export function EmptyState({
+  icon = 'inbox',
+  text,
+  hint,
+  action,
+}: {
+  icon?: string
+  text: string
+  /** What exactly is missing / where it comes from. */
+  hint?: string
+  action?: ReactNode
+}) {
   return (
     <div className="bg-surface-container-low border border-dashed border-white/[0.08] rounded-2xl p-8 text-center">
       <span className="material-symbols-outlined text-3xl text-on-surface-variant/40 mb-2 block" aria-hidden>
         {icon}
       </span>
       <p className="text-sm text-on-surface-variant">{text}</p>
+      {hint && <p className="text-xs text-on-surface-variant/70 mt-1.5 max-w-md mx-auto">{hint}</p>}
+      {action && <div className="mt-4 flex flex-wrap items-center justify-center gap-2">{action}</div>}
+    </div>
+  )
+}
+
+// ─── Interactive primitives ──────────────────────────────────────────────────
+
+/**
+ * Accessible expand/collapse: a real `<button aria-expanded aria-controls>` and
+ * a labelled region. Every "раскрыть разбор" on Точка Б goes through this so
+ * keyboard + screen-reader behaviour is identical everywhere.
+ *
+ * `summary` may be a render function receiving the open state (for chevrons).
+ * Can be used uncontrolled (`defaultOpen`) or controlled (`open`/`onOpenChange`).
+ */
+export function Expandable({
+  summary,
+  children,
+  ariaLabel,
+  defaultOpen = false,
+  open: openProp,
+  onOpenChange,
+  className = '',
+  triggerClassName = '',
+  panelClassName = '',
+}: {
+  summary: ReactNode | ((open: boolean) => ReactNode)
+  children: ReactNode
+  ariaLabel?: string
+  defaultOpen?: boolean
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
+  className?: string
+  triggerClassName?: string
+  panelClassName?: string
+}) {
+  const uid = useId()
+  const [internalOpen, setInternalOpen] = useState(defaultOpen)
+  const open = openProp ?? internalOpen
+
+  const toggle = () => {
+    const next = !open
+    if (openProp === undefined) setInternalOpen(next)
+    onOpenChange?.(next)
+  }
+
+  return (
+    <div className={className}>
+      <button
+        type="button"
+        id={`${uid}-trigger`}
+        aria-expanded={open}
+        aria-controls={`${uid}-panel`}
+        aria-label={ariaLabel}
+        onClick={toggle}
+        className={`w-full text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 rounded-xl ${triggerClassName}`}
+      >
+        {typeof summary === 'function' ? summary(open) : summary}
+      </button>
+      <div
+        id={`${uid}-panel`}
+        role="region"
+        aria-labelledby={`${uid}-trigger`}
+        hidden={!open}
+        className={panelClassName}
+      >
+        {open ? children : null}
+      </div>
+    </div>
+  )
+}
+
+/** Chevron that rotates with the disclosure state. */
+export function Chevron({ open, className = '' }: { open: boolean; className?: string }) {
+  return (
+    <span
+      className={`material-symbols-outlined text-base transition-transform ${open ? 'rotate-180' : ''} ${className}`}
+      aria-hidden
+    >
+      expand_more
+    </span>
+  )
+}
+
+/** Progress bar with real ARIA semantics (the bare <div> version was mute). */
+export function ProgressBar({
+  value,
+  max = 100,
+  label,
+  className = '',
+}: {
+  value: number
+  max?: number
+  label: string
+  className?: string
+}) {
+  const pct = Math.max(0, Math.min(100, (value / Math.max(max, 1)) * 100))
+  return (
+    <div
+      role="progressbar"
+      aria-valuenow={Math.round(value)}
+      aria-valuemin={0}
+      aria-valuemax={max}
+      aria-label={label}
+      className={`h-2 bg-surface-container-high rounded-full overflow-hidden ${className}`}
+    >
+      <div
+        className="h-full rounded-full bg-gradient-to-r from-primary to-primary-fixed-dim transition-all duration-700"
+        style={{ width: `${pct}%` }}
+      />
+    </div>
+  )
+}
+
+/** A single "формула → подстановка → результат" line inside a разбор panel. */
+export function FormulaLine({
+  title,
+  formula,
+  substitution,
+  result,
+}: {
+  title?: string
+  formula: string
+  substitution?: string
+  result?: string
+}) {
+  return (
+    <div className="rounded-xl bg-surface-container/60 border border-white/[0.06] px-3.5 py-3 space-y-1">
+      {title && (
+        <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest">{title}</p>
+      )}
+      <p className="text-xs font-mono text-on-surface break-words">{formula}</p>
+      {substitution && (
+        <p className="text-xs font-mono text-on-surface-variant break-words">= {substitution}</p>
+      )}
+      {result && <p className="text-sm font-mono font-bold text-primary break-words">= {result}</p>}
     </div>
   )
 }

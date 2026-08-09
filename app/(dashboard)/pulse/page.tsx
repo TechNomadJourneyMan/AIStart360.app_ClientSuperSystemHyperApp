@@ -1,14 +1,50 @@
 'use client'
 
-import { useState, useMemo, useEffect, useCallback } from 'react'
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react'
 import dynamic from 'next/dynamic'
 import { toast } from 'sonner'
 import { useCrmToday, useLogInteraction, type CrmClient } from '@/hooks/useCrm'
 import { ClientsTable } from '@/components/crm/ClientsTable'
 import { ClientDrawer, type DrawerClient } from '@/components/crm/ClientDrawer'
 import { CsvImportDialog } from '@/components/crm/CsvImportDialog'
+import { EmptyState } from '@/components/common/EmptyState'
+import { PulseModal } from './PulseModal'
 import type { ClientStatus } from '@/lib/crm/client-validate'
 import type { CrmProvider, CrmStatus } from '@/lib/crm/types'
+
+// Tailwind cannot see `text-${color}` in a template string — those classes were
+// only surviving because the same literals happened to exist in other files.
+// Explicit maps: one place, statically analysable.
+const TONE_TEXT = {
+  error: 'text-error',
+  tertiary: 'text-tertiary-container',
+  primary: 'text-primary',
+  muted: 'text-on-surface-variant',
+} as const
+const TONE_BG = {
+  error: 'bg-error/10',
+  tertiary: 'bg-tertiary-container/10',
+  primary: 'bg-primary/10',
+  muted: 'bg-surface-container',
+} as const
+const TONE_BORDER = {
+  error: 'border-error/20',
+  tertiary: 'border-tertiary-container/20',
+  primary: 'border-primary/20',
+  muted: 'border-white/[0.06]',
+} as const
+type Tone = keyof typeof TONE_TEXT
+
+// Message templates used to sit inline in the JSX — data in markup.
+const MESSAGE_TEMPLATES = [
+  'Здравствуйте! Хотели уточнить статус нашего сотрудничества и обсудить следующие шаги.',
+  'Добрый день! Заметили изменение в активности и хотели предложить встречу для обсуждения программы.',
+  'Привет! Подготовили для вас обновлённое предложение — когда удобно обсудить?',
+] as const
+
+// «Мониторинг» used to live in a bare useState<Set> — switching a tab wiped it.
+// It is a personal bookmark, so it is kept per browser and the UI says so.
+const MONITOR_KEY = 'pulse:monitored'
 
 // ─── Adapters → the drawer's minimal client seed ─────────────────────────────
 function crmToDrawer(c: CrmClient): DrawerClient {
@@ -36,7 +72,10 @@ const GriPulseWidget = dynamic(() => import('@/components/pulse/GriPulseWidget')
 })
 
 // ─── Action Modals ─────────────────────────────────────────────────────────────
-type ModalClient = { id: string; name: string; sector: string; phone?: string | null }
+// `statusLabel` used to be called `sector` and was rendered as the industry —
+// but /api/v1/crm/today puts STATUS_LABELS[c.status] in it, so the card showed
+// «Спящий» where the user expected an industry. Renamed to what it is.
+type ModalClient = { id: string; name: string; statusLabel: string; phone?: string | null }
 
 function CallModal({ client, onClose }: { client: ModalClient | null; onClose: () => void }) {
   const [status, setStatus] = useState<'idle' | 'calling' | 'done'>('idle')
@@ -57,25 +96,16 @@ function CallModal({ client, onClose }: { client: ModalClient | null; onClose: (
     )
   }
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-[#13151c] border border-white/[0.08] rounded-2xl w-full max-w-md shadow-2xl z-10">
-        <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-white/[0.06]">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-error/10 flex items-center justify-center">
-              <span className="material-symbols-outlined text-lg text-error">call</span>
-            </div>
-            <div>
-              <p className="text-sm font-semibold text-on-surface">{client.name}</p>
-              <p className="text-[10px] text-on-surface-variant">{client.sector}</p>
-            </div>
-          </div>
-          <button onClick={onClose} className="text-on-surface-variant hover:text-on-surface transition-colors">
-            <span className="material-symbols-outlined text-lg">close</span>
-          </button>
-        </div>
-        <div className="px-5 py-4 space-y-4">
-          {status === 'done' ? (
+    <PulseModal
+      open
+      onClose={onClose}
+      icon="call"
+      iconClass="bg-error/10 text-error"
+      title={client.name}
+      subtitle={client.statusLabel}
+    >
+      <div className="space-y-4">
+        {status === 'done' ? (
             <div className="text-center py-4">
               <span className="material-symbols-outlined text-4xl text-primary block mb-2">check_circle</span>
               <p className="text-sm font-medium text-on-surface">Звонок зафиксирован</p>
@@ -114,9 +144,8 @@ function CallModal({ client, onClose }: { client: ModalClient | null; onClose: (
               </div>
             </>
           )}
-        </div>
       </div>
-    </div>
+    </PulseModal>
   )
 }
 
@@ -127,11 +156,6 @@ function MessageModal({ client, onClose }: { client: ModalClient | null; onClose
   useEffect(() => { setSent(false); setText('') }, [client?.id])
   if (!client) return null
   const digits = (client.phone ?? '').replace(/\D/g, '')
-  const templates = [
-    `Здравствуйте! Хотели уточнить статус нашего сотрудничества и обсудить следующие шаги.`,
-    `Добрый день! Заметили изменение в активности и хотели предложить встречу для обсуждения программы.`,
-    `Привет! Подготовили для вас обновлённое предложение — когда удобно обсудить?`,
-  ]
 
   const send = () => {
     // Open WhatsApp with the drafted text pre-filled where we have a number.
@@ -147,62 +171,58 @@ function MessageModal({ client, onClose }: { client: ModalClient | null; onClose
     )
   }
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-[#13151c] border border-white/[0.08] rounded-2xl w-full max-w-md shadow-2xl z-10">
-        <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-white/[0.06]">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-tertiary-container/10 flex items-center justify-center">
-              <span className="material-symbols-outlined text-lg text-tertiary-container">chat</span>
-            </div>
-            <div>
-              <p className="text-sm font-semibold text-on-surface">{client.name}</p>
-              <p className="text-[10px] text-on-surface-variant">{client.sector}</p>
-            </div>
+    <PulseModal
+      open
+      onClose={onClose}
+      icon="chat"
+      iconClass="bg-tertiary-container/10 text-tertiary-container"
+      title={client.name}
+      subtitle={client.statusLabel}
+    >
+      <div className="space-y-3">
+        {sent ? (
+          <div className="text-center py-4">
+            <span className="material-symbols-outlined text-4xl text-primary block mb-2">mark_email_read</span>
+            <p className="text-sm font-medium text-on-surface">Сообщение зафиксировано</p>
+            <p className="text-xs text-on-surface-variant mt-1">Касание сохранено в истории клиента</p>
           </div>
-          <button onClick={onClose} className="text-on-surface-variant hover:text-on-surface transition-colors">
-            <span className="material-symbols-outlined text-lg">close</span>
-          </button>
-        </div>
-        <div className="px-5 py-4 space-y-3">
-          {sent ? (
-            <div className="text-center py-4">
-              <span className="material-symbols-outlined text-4xl text-primary block mb-2">mark_email_read</span>
-              <p className="text-sm font-medium text-on-surface">Сообщение зафиксировано</p>
-              <p className="text-xs text-on-surface-variant mt-1">Касание сохранено в истории клиента</p>
+        ) : (
+          <>
+            <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest">Шаблоны</p>
+            <div className="space-y-2">
+              {MESSAGE_TEMPLATES.map((t, i) => (
+                <button key={i} type="button" onClick={() => setText(t)}
+                  className="w-full text-left text-xs text-on-surface-variant bg-surface-container hover:bg-surface-container-high border border-white/[0.04] rounded-xl px-3 py-2 transition-colors line-clamp-2 focus:outline-none focus-visible:ring-1 focus-visible:ring-primary/40">
+                  {t}
+                </button>
+              ))}
             </div>
-          ) : (
-            <>
-              <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest">Шаблоны</p>
-              <div className="space-y-2">
-                {templates.map((t, i) => (
-                  <button key={i} onClick={() => setText(t)}
-                    className="w-full text-left text-xs text-on-surface-variant bg-surface-container hover:bg-surface-container-high border border-white/[0.04] rounded-xl px-3 py-2 transition-colors line-clamp-2">
-                    {t}
-                  </button>
-                ))}
-              </div>
-              <textarea
-                value={text} onChange={e => setText(e.target.value)}
-                placeholder="Или напишите своё сообщение..."
-                rows={3}
-                className="w-full bg-surface-container border border-white/[0.06] rounded-xl px-3 py-2.5 text-sm text-on-surface placeholder:text-on-surface-variant/40 focus:outline-none focus:border-primary/30 resize-none"
-              />
-              <div className="flex gap-2">
-                <button onClick={onClose} className="flex-1 px-4 py-2.5 rounded-xl border border-white/[0.08] text-sm text-on-surface-variant hover:bg-white/[0.04] transition-colors">
-                  Отмена
-                </button>
-                <button onClick={send} disabled={!text.trim() || logInteraction.isPending}
-                  className="flex-1 px-4 py-2.5 rounded-xl bg-tertiary-container/10 border border-tertiary-container/20 text-sm text-tertiary-container font-medium hover:bg-tertiary-container/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
-                  <span className="material-symbols-outlined text-sm align-middle mr-1">send</span>
-                  {digits ? 'Открыть WhatsApp' : 'Зафиксировать'}
-                </button>
-              </div>
-            </>
-          )}
-        </div>
+            <textarea
+              value={text} onChange={e => setText(e.target.value)}
+              aria-label="Текст сообщения"
+              placeholder="Или напишите своё сообщение..."
+              rows={3}
+              className="w-full bg-surface-container border border-white/[0.06] rounded-xl px-3 py-2.5 text-sm text-on-surface placeholder:text-on-surface-variant/40 focus:outline-none focus:border-primary/30 resize-none"
+            />
+            {!digits && (
+              <p className="text-[11px] text-on-surface-variant/70">
+                Телефона нет — WhatsApp не откроется, будет записано только касание.
+              </p>
+            )}
+            <div className="flex gap-2">
+              <button type="button" onClick={onClose} className="flex-1 px-4 py-2.5 rounded-xl border border-white/[0.08] text-sm text-on-surface-variant hover:bg-white/[0.04] transition-colors">
+                Отмена
+              </button>
+              <button type="button" onClick={send} disabled={!text.trim() || logInteraction.isPending}
+                className="flex-1 px-4 py-2.5 rounded-xl bg-tertiary-container/10 border border-tertiary-container/20 text-sm text-tertiary-container font-medium hover:bg-tertiary-container/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+                <span className="material-symbols-outlined text-sm align-middle mr-1">send</span>
+                {digits ? 'Открыть WhatsApp' : 'Зафиксировать'}
+              </button>
+            </div>
+          </>
+        )}
       </div>
-    </div>
+    </PulseModal>
   )
 }
 
@@ -228,9 +248,14 @@ function RiskBadge({ level, prob }: { level: 'high' | 'medium' | 'low'; prob: nu
   )
 }
 
-// ActionBtn is context-aware — clicks are handled by PulsePage via onCall/onMessage/onMonitor props
-// When used standalone (ClientCard actions row), it fires a window custom event
-function ActionBtn({ action, size = 'md', onClick }: { action: 'call' | 'message' | 'monitor'; size?: 'sm' | 'md'; onClick?: () => void }) {
+// ActionBtn — the real action for a queue row. `clientName` is required so a
+// screen reader hears «Позвонить HONOR GROUP» and not «Позвонить» × N.
+function ActionBtn({ action, clientName, size = 'md', onClick }: {
+  action: 'call' | 'message' | 'monitor'
+  clientName: string
+  size?: 'sm' | 'md'
+  onClick?: () => void
+}) {
   const cfg = {
     call:    { bg: 'bg-error/10 hover:bg-error/20 text-error border-error/20',             icon: 'call',          label: 'Позвонить'    },
     message: { bg: 'bg-tertiary-container/10 hover:bg-tertiary-container/20 text-tertiary-container border-tertiary-container/20', icon: 'chat',          label: 'Написать'     },
@@ -239,31 +264,20 @@ function ActionBtn({ action, size = 'md', onClick }: { action: 'call' | 'message
   const px = size === 'sm' ? 'px-2.5 py-1' : 'px-3 py-1.5'
   return (
     <button
+      type="button"
+      aria-label={`${cfg.label} — ${clientName}`}
       onClick={(e) => { e.stopPropagation(); onClick?.() }}
-      className={`inline-flex items-center gap-1.5 ${px} rounded-lg border text-xs font-medium transition-colors ${cfg.bg}`}>
-      <span className="material-symbols-outlined text-sm">{cfg.icon}</span>
+      className={`relative z-10 inline-flex items-center gap-1.5 ${px} rounded-lg border text-xs font-medium transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-primary/40 ${cfg.bg}`}>
+      <span className="material-symbols-outlined text-sm" aria-hidden="true">{cfg.icon}</span>
       {cfg.label}
     </button>
   )
 }
 
-function MiniSparkline({ values }: { values: number[] }) {
-  const max = Math.max(...values)
-  const min = Math.min(...values)
-  const range = max - min || 1
-  const w = 40, h = 20
-  const pts = values.map((v: number, i: number) => {
-    const x = (i / (values.length - 1)) * w
-    const y = h - ((v - min) / range) * h
-    return `${x},${y}`
-  }).join(' ')
-  const isUp = values[values.length - 1] >= values[0]
-  return (
-    <svg width={w} height={h} className="flex-shrink-0">
-      <polyline points={pts} fill="none" stroke={isUp ? '#4ade80' : '#f87171'} strokeWidth="1.5" strokeLinejoin="round" />
-    </svg>
-  )
-}
+// MiniSparkline is gone on purpose. It was fed `risk.history` — a synthetic
+// ramp [health*0.6 … health] derived from the CURRENT health (lib/crm/risk.ts),
+// so every client got the same always-green, always-rising line. There is no
+// stored order history to draw yet, so nothing is drawn.
 
 function RiskBar({ score }: { score: number }) {
   const color = score >= 80 ? 'bg-error' : score >= 50 ? 'bg-tertiary-container' : 'bg-primary'
@@ -280,18 +294,18 @@ function RiskBar({ score }: { score: number }) {
 type PulseClient = {
   id: string
   name: string
-  sector: string
-  forbes?: number | null
-  lastOrder: string
+  /** STATUS_LABELS[status] from /api/v1/crm/today — a status, never an industry. */
+  statusLabel: string
+  /** Formatted last_contact_at. `null` — клиента ещё ни разу не касались. */
+  lastContact: string | null
   daysSince: number
   avgCheck: number
   volumeChange: number
   riskScore: number
   churnProb: number
   churnLevel: 'high' | 'medium' | 'low'
-  comment: string
+  comment: string | null
   action: 'call' | 'message' | 'monitor'
-  history: number[]
   orderCycle: number
   // Native CRM fields (from /api/v1/crm/today) — enable real tel:/wa.me actions,
   // status editing and the client drawer. Optional so the pulse-shaped type is happy.
@@ -313,6 +327,20 @@ function ClientCard({ client, onCall, onMessage, onMonitor, onHistory, isMonitor
   onHistory?: () => void
   isMonitored?: boolean
 }) {
+  const metrics: ReadonlyArray<{ label: string; value: string; icon: string; tone: Tone; hint: string }> = [
+    { label: 'Средний чек', value: fmt(client.avgCheck), icon: 'payments', tone: 'primary',
+      hint: 'Поле «Сумма» сделки в CRM' },
+    { label: 'Изм. объёма', value: `${client.volumeChange > 0 ? '+' : ''}${client.volumeChange}%`, icon: 'trending_down',
+      tone: client.volumeChange < 0 ? 'error' : 'primary',
+      hint: 'Отклонение от среднего чека по портфелю' },
+    { label: 'Риск-скор', value: String(client.riskScore), icon: 'warning',
+      tone: client.riskScore >= 80 ? 'error' : 'tertiary',
+      hint: 'Дни без касания × 2.5 (макс 70) + отклонение чека + статус' },
+    { label: 'Дней без касания', value: String(client.daysSince), icon: 'schedule',
+      tone: client.daysSince > client.orderCycle ? 'error' : 'primary',
+      hint: `От last_contact_at. Ориентир цикла — ${client.orderCycle} дн.` },
+  ]
+
   return (
     <div className="space-y-5">
       {/* Header */}
@@ -323,91 +351,87 @@ function ClientCard({ client, onCall, onMessage, onMonitor, onHistory, isMonitor
         <div className="flex-1">
           <div className="flex items-center gap-2 mb-1 flex-wrap">
             <h3 className="font-headline text-xl font-bold text-on-surface">{client.name}</h3>
-            {client.forbes != null && (
-              <span className="text-[10px] font-mono bg-tertiary-container/20 text-tertiary-container border border-tertiary-container/30 px-2 py-0.5 rounded-full">
-                🏆 Forbes KZ #{(client as any).forbes}
-              </span>
-            )}
             <RiskBadge level={client.churnLevel} prob={client.churnProb} />
           </div>
           <p className="text-sm text-on-surface-variant">
-            {[
-              client.sector,
-              'revenue' in client ? `Выручка: ${(client as { revenue?: string }).revenue}` : null,
-              'employees' in client ? `${(client as { employees?: number }).employees} сотр.` : null,
-              `Цикл ${client.orderCycle} дней`,
-            ]
-              .filter(Boolean)
-              .join(' · ')}
+            Статус: {client.statusLabel} · Ориентир цикла {client.orderCycle} дней
           </p>
         </div>
-        <ActionBtn action={client.action}
+        <ActionBtn action={client.action} clientName={client.name}
           onClick={client.action === 'call' ? onCall : client.action === 'message' ? onMessage : onMonitor} />
       </div>
 
       {/* Metrics */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        {[
-          { label: 'Средний чек', value: fmt(client.avgCheck), icon: 'payments',   color: 'primary' },
-          { label: 'Изм. объёма', value: `${client.volumeChange > 0 ? '+' : ''}${client.volumeChange}%`, icon: 'trending_down', color: client.volumeChange < 0 ? 'error' : 'primary' },
-          { label: 'Риск-скор',   value: String(client.riskScore), icon: 'warning', color: client.riskScore >= 80 ? 'error' : 'tertiary-container' },
-          { label: 'Дней без заказа', value: String(client.daysSince), icon: 'schedule', color: client.daysSince > client.orderCycle ? 'error' : 'primary' },
-        ].map((m) => (
+        {metrics.map((m) => (
           <div key={m.label} className="bg-surface-container rounded-xl p-3">
             <div className="flex items-center gap-1.5 mb-1">
-              <span className={`material-symbols-outlined text-sm text-${m.color}`}>{m.icon}</span>
+              <span className={`material-symbols-outlined text-sm ${TONE_TEXT[m.tone]}`} aria-hidden="true">{m.icon}</span>
               <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest">{m.label}</p>
             </div>
-            <p className={`text-lg font-mono font-bold text-${m.color}`}>{m.value}</p>
+            <p className={`text-lg font-mono font-bold ${TONE_TEXT[m.tone]}`}>{m.value}</p>
+            <p className="text-[10px] text-on-surface-variant/60 mt-1 leading-snug">{m.hint}</p>
           </div>
         ))}
       </div>
 
-      {/* Trend chart */}
+      {/* Order history — honestly absent. The bar chart that used to live here
+          drew risk.history: a synthetic ramp off the current health, with every
+          bar labelled «0к» because health is 0..100 and the label divided by
+          1000. Fake data removed rather than relabelled. */}
       <div className="bg-surface-container rounded-xl p-4">
-        <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest mb-3">История заказов (последние 5)</p>
-        <div className="flex items-end gap-2 h-16">
-          {client.history.map((val: number, i: number) => {
-            const max = Math.max(...client.history)
-            const pct = (val / max) * 100
-            const isLast = i === client.history.length - 1
-            return (
-              <div key={i} className="flex-1 flex flex-col items-center gap-1">
-                <div
-                  className={`w-full rounded-t-sm transition-all ${isLast ? 'bg-primary/60' : 'bg-surface-container-high'}`}
-                  style={{ height: `${pct}%`, minHeight: 4 }}
-                />
-                <p className="text-[8px] font-mono text-on-surface-variant">{(val / 1000).toFixed(0)}к</p>
-              </div>
-            )
-          })}
-        </div>
+        <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest mb-2">История заказов</p>
+        <p className="text-sm text-on-surface-variant leading-relaxed">
+          Истории заказов пока нет: в базе хранятся только касания (звонки, сообщения, заметки).
+          График появится, когда подключённая CRM начнёт отдавать сделки.
+        </p>
+        <button
+          type="button"
+          onClick={onHistory}
+          className="mt-3 inline-flex items-center gap-1.5 text-xs font-mono text-primary hover:underline focus:outline-none focus-visible:ring-1 focus-visible:ring-primary/40 rounded"
+        >
+          <span className="material-symbols-outlined text-sm" aria-hidden="true">history</span>
+          Показать историю касаний
+        </button>
       </div>
 
       {/* Comment */}
-      <div className="bg-surface-container rounded-xl p-4 flex items-start gap-3">
-        <span className="material-symbols-outlined text-sm text-on-surface-variant flex-shrink-0 mt-0.5">comment</span>
-        <p className="text-sm text-on-surface-variant">{client.comment}</p>
-      </div>
+      {client.comment && (
+        <div className="bg-surface-container rounded-xl p-4 flex items-start gap-3">
+          <span className="material-symbols-outlined text-sm text-on-surface-variant flex-shrink-0 mt-0.5" aria-hidden="true">comment</span>
+          <p className="text-sm text-on-surface-variant">{client.comment}</p>
+        </div>
+      )}
 
       {/* Actions */}
-      <div className="flex gap-2 flex-wrap">
-        <ActionBtn action="call" onClick={onCall} />
-        <ActionBtn action="message" onClick={onMessage} />
-        <button onClick={onMonitor}
-          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors ${
+      <div className="flex gap-2 flex-wrap items-center">
+        <ActionBtn action="call" clientName={client.name} onClick={onCall} />
+        <ActionBtn action="message" clientName={client.name} onClick={onMessage} />
+        <button
+          type="button"
+          onClick={onMonitor}
+          aria-pressed={!!isMonitored}
+          aria-label={`Мониторинг — ${client.name}`}
+          title="Личная отметка: хранится в этом браузере"
+          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-primary/40 ${
             isMonitored
               ? 'bg-primary/10 border-primary/30 text-primary'
               : 'border-white/[0.06] text-on-surface-variant hover:bg-white/[0.04]'
           }`}>
-          <span className="material-symbols-outlined text-sm">{isMonitored ? 'visibility' : 'visibility_off'}</span>
+          <span className="material-symbols-outlined text-sm" aria-hidden="true">{isMonitored ? 'visibility' : 'visibility_off'}</span>
           {isMonitored ? 'Мониторинг вкл.' : 'Мониторинг'}
         </button>
-        <button onClick={onHistory}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/[0.06] text-xs font-medium text-on-surface-variant hover:bg-white/[0.04] transition-colors">
-          <span className="material-symbols-outlined text-sm">history</span>
+        <button
+          type="button"
+          onClick={onHistory}
+          aria-label={`История касаний — ${client.name}`}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/[0.06] text-xs font-medium text-on-surface-variant hover:bg-white/[0.04] transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-primary/40">
+          <span className="material-symbols-outlined text-sm" aria-hidden="true">history</span>
           История
         </button>
+        <span className="text-[10px] text-on-surface-variant/60">
+          Отметка «Мониторинг» видна только вам, в этом браузере
+        </span>
       </div>
     </div>
   )
@@ -425,14 +449,20 @@ function CrmIntegrationTab() {
   const [connectLoading, setConnectLoading] = useState(false)
   const [connectError, setConnectError] = useState<string | null>(null)
   const [syncingId, setSyncingId] = useState<string | null>(null)
+  // «Не удалось загрузить» used to be swallowed by an empty catch and rendered
+  // as «интеграций нет» — two different facts shown as one.
+  const [loadError, setLoadError] = useState(false)
+  const [disconnectId, setDisconnectId] = useState<string | null>(null)
 
   // Фаза 4B: живой бэкенд /api/v1/crm/connections (RLS own) вместо мёртвого
   // /api/crm (requireCrmOrg=null → 403). Маплем snake_case строки в CrmStatus,
   // чтобы не трогать разметку ниже.
   const fetchIntegrations = useCallback(async () => {
+    setLoadError(false)
     try {
       const res = await fetch('/api/v1/crm/connections', { credentials: 'include' })
       const json = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error('request failed')
       const rows = (json?.data ?? []) as Array<Record<string, unknown>>
       setIntegrations(
         rows.map((r) => ({
@@ -448,7 +478,10 @@ function CrmIntegrationTab() {
           createdAt: String(r.created_at ?? ''),
         })),
       )
-    } catch { /* empty */ }
+    } catch {
+      setIntegrations([])
+      setLoadError(true)
+    }
     setLoading(false)
   }, [])
 
@@ -878,8 +911,37 @@ function CrmMonitorSection() {
   const [drawerClient, setDrawerClient]   = useState<DrawerClient | null>(null)
   const [importOpen, setImportOpen]       = useState(false)
 
-  const toggleMonitor = (id: string) =>
-    setMonitored(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s })
+  // Read after mount only — there is no localStorage during SSR, and seeding the
+  // first render from it would hydrate a different tree than the server sent.
+  const monitorLoaded = useRef(false)
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(MONITOR_KEY)
+      const ids: unknown = raw ? JSON.parse(raw) : null
+      if (Array.isArray(ids)) {
+        setMonitored(new Set(ids.filter((v): v is string => typeof v === 'string')))
+      }
+    } catch { /* unreadable or corrupted storage — start with an empty set */ }
+    monitorLoaded.current = true
+  }, [])
+
+  useEffect(() => {
+    // Skip the pre-load render, otherwise the empty initial set overwrites what
+    // is already stored before the effect above gets a chance to read it.
+    if (!monitorLoaded.current) return
+    try {
+      window.localStorage.setItem(MONITOR_KEY, JSON.stringify([...monitored]))
+    } catch { /* quota exceeded or storage blocked — the flag stays session-only */ }
+  }, [monitored])
+
+  const toggleMonitor = useCallback((id: string) => {
+    setMonitored(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }, [])
 
   // ── Real contact actions (tel:/wa.me) + interaction logging ──
   const doCall = useCallback((c: PulseClient) => {
@@ -919,27 +981,30 @@ function CrmMonitorSection() {
     if (c.action === 'call') doCall(c)
     else if (c.action === 'message') doMessage(c)
     else toggleMonitor(c.id)
-  }, [doCall, doMessage])
+  }, [doCall, doMessage, toggleMonitor])
 
-  // Map backend data to frontend structure (carry native CRM fields through).
+  // Map the API row onto what this page actually renders. Two fields in the
+  // /api/v1/crm/today contract are misnamed and are renamed here instead of
+  // being mislabelled in the UI: `sector` holds STATUS_LABELS[status] and
+  // `lastOrder` holds the formatted last_contact_at. Two more are dropped:
+  // `forbes` is a hardcoded null and `history` a synthetic ramp off the current
+  // health — neither is data, so neither is drawn.
   const TODAY_CLIENTS = useMemo<PulseClient[]>(() => {
     if (!clientsData?.todayClients) return []
-    return (clientsData.todayClients as any[]).map(m => ({
+    return clientsData.todayClients.map((m): PulseClient => ({
       id: m.id,
       name: m.name,
-      sector: m.sector,
-      forbes: m.forbes,
-      lastOrder: m.lastOrder,
+      statusLabel: m.sector,
+      lastContact: m.lastOrder,
       daysSince: m.daysSince,
       avgCheck: m.avgCheck,
       volumeChange: m.volumeChange,
       riskScore: m.riskScore,
       churnProb: m.churnProb,
-      churnLevel: m.churnLevel as 'high' | 'medium' | 'low',
+      churnLevel: m.churnLevel,
       comment: m.comment,
-      action: m.action as 'call' | 'message' | 'monitor',
-      history: m.history,
-      orderCycle: m.orderCycle || 14,
+      action: m.action,
+      orderCycle: m.orderCycle,
       // native CRM fields
       status: m.status,
       phone: m.phone,
@@ -1080,50 +1145,50 @@ function CrmMonitorSection() {
 
       {/* ── Stats bar ── */}
       <div data-tour="crm-kpi" className="grid grid-cols-2 md:grid-cols-5 gap-3">
-        {[
+        {([
           {
             label: 'Выручка под угрозой',
             value: fmt(highRiskRevenue),
             icon: 'payments',
-            color: 'error',
+            tone: 'error',
             sub: `${DYNAMIC_STATS.highRisk} клиентов высокого риска`,
           },
           {
             label: 'Высокий риск',
             value: String(DYNAMIC_STATS.highRisk),
             icon: 'crisis_alert',
-            color: 'error',
+            tone: 'error',
             sub: 'требуют звонка сегодня',
           },
           {
             label: 'Средний риск',
             value: String(DYNAMIC_STATS.mediumRisk),
             icon: 'warning',
-            color: 'tertiary-container',
+            tone: 'tertiary',
             sub: 'написать до конца дня',
           },
           {
             label: 'Всего клиентов',
             value: String(DYNAMIC_STATS.totalClients),
             icon: 'group',
-            color: 'on-surface-variant',
+            tone: 'muted',
             sub: 'в активной базе',
           },
           {
             label: 'Обработано сегодня',
             value: `${DYNAMIC_STATS.processedToday} / ${DYNAMIC_STATS.dailyTarget}`,
             icon: 'task_alt',
-            color: 'primary',
+            tone: 'primary',
             sub: `${Math.round((DYNAMIC_STATS.processedToday / DYNAMIC_STATS.dailyTarget) * 100)}% выполнено`,
           },
-        ].map((stat) => (
+        ] as ReadonlyArray<{ label: string; value: string; icon: string; tone: Tone; sub: string }>).map((stat) => (
           <div key={stat.label}
             className="bg-surface-container-low rounded-xl border border-white/[0.04] p-4">
             <div className="flex items-center justify-between mb-2">
               <p className="text-[9px] font-mono text-on-surface-variant uppercase tracking-widest leading-tight">{stat.label}</p>
-              <span className={`material-symbols-outlined text-base text-${stat.color} opacity-60`}>{stat.icon}</span>
+              <span className={`material-symbols-outlined text-base ${TONE_TEXT[stat.tone]} opacity-60`} aria-hidden="true">{stat.icon}</span>
             </div>
-            <p className={`text-xl font-mono font-bold text-${stat.color} leading-none mb-1`}>{stat.value}</p>
+            <p className={`text-xl font-mono font-bold ${TONE_TEXT[stat.tone]} leading-none mb-1`}>{stat.value}</p>
             <p className="text-[10px] text-on-surface-variant/60">{stat.sub}</p>
           </div>
         ))}
@@ -1187,19 +1252,52 @@ function CrmMonitorSection() {
           {DYNAMIC_STATS.highRisk > 0 && (
             <div className="flex items-center gap-3 bg-error/10 border border-error/20 rounded-xl px-5 py-3.5">
               <span className="w-2.5 h-2.5 rounded-full bg-error animate-pulse flex-shrink-0" />
+              {/* Was: «просрочили цикл заказа более чем на 10 дней» и «возможна
+                  потеря N в этом месяце». Ни того, ни другого код не считает:
+                  highRisk — это churnLevel === 'high', а revenueAtRisk — сумма
+                  средних чеков этих клиентов. Пишем то, что есть. */}
               <p className="text-sm text-error font-medium">
-                <strong>{DYNAMIC_STATS.highRisk} клиента</strong> просрочили цикл заказа более чем на 10 дней.
-                Возможна потеря <strong>{fmt(highRiskRevenue)}</strong> в этом месяце.
+                Клиентов в высоком риске: <strong>{DYNAMIC_STATS.highRisk}</strong>.
+                Их суммарный средний чек — <strong>{fmt(highRiskRevenue)}</strong>.
               </p>
             </div>
           )}
 
+          {/* An empty queue used to render a bare table head and nothing else.
+              Two different empties, named separately. */}
+          {filteredToday.length === 0 && (
+            TODAY_CLIENTS.length === 0 ? (
+              <EmptyState
+                icon="inbox"
+                title="Очередь на сегодня пуста"
+                description="Ни у одного клиента нет просроченного напоминания, встречи на сегодня или долгого молчания. Очередь соберётся, как только в базе появятся клиенты."
+                action={{ label: 'Импортировать базу из CSV', onClick: () => setImportOpen(true) }}
+              />
+            ) : (
+              <EmptyState
+                icon="filter_alt_off"
+                title="Под фильтр никто не попал"
+                description={`В очереди ${TODAY_CLIENTS.length} — ни один не подходит под выбранный уровень риска.`}
+                action={{ label: 'Показать все', onClick: () => setFilterRisk('all') }}
+              />
+            )
+          )}
+
           {/* Mobile client cards (< md) */}
+          {filteredToday.length > 0 && (
           <div className="md:hidden space-y-3">
             {filteredToday.map((c) => (
               <div key={c.id}
-                onClick={() => { setSelectedClientId(c.id); setTab('card') }}
-                className="bg-surface-container-low rounded-2xl border border-white/[0.04] hover:border-primary/20 p-4 cursor-pointer transition-colors">
+                className="relative bg-surface-container-low rounded-2xl border border-white/[0.04] hover:border-primary/20 p-4 transition-colors">
+                {/* The card opens the client. A real button stretched across it —
+                    the old `onClick` on the div was invisible to the keyboard.
+                    ActionBtn sits above it (`relative z-10`) and stops the event. */}
+                <button
+                  type="button"
+                  aria-label={`Открыть карточку — ${c.name}`}
+                  onClick={() => { setSelectedClientId(c.id); setTab('card') }}
+                  className="absolute inset-0 rounded-2xl focus:outline-none focus-visible:ring-1 focus-visible:ring-primary/40"
+                />
                 {/* Top row: name + action */}
                 <div className="flex items-start justify-between gap-2 mb-3">
                   <div className="flex items-center gap-2 min-w-0">
@@ -1207,28 +1305,18 @@ function CrmMonitorSection() {
                       c.churnLevel === 'high' ? 'bg-error' : c.churnLevel === 'medium' ? 'bg-tertiary-container' : 'bg-primary'
                     }`} />
                     <div className="min-w-0">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <p className="text-sm font-semibold text-on-surface">{c.name}</p>
-                        {c.forbes != null && (
-                          <span className="text-[9px] font-mono bg-tertiary-container/20 text-tertiary-container border border-tertiary-container/20 px-1.5 py-0.5 rounded-full">
-                            Forbes #{(c as any).forbes}
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-[10px] text-on-surface-variant truncate">{c.sector}</p>
+                      <p className="text-sm font-semibold text-on-surface">{c.name}</p>
+                      <p className="text-[10px] text-on-surface-variant truncate">Статус: {c.statusLabel}</p>
                     </div>
                   </div>
-                  <ActionBtn action={c.action} size="sm"
+                  <ActionBtn action={c.action} clientName={c.name} size="sm"
                     onClick={() => runAction(c)} />
                 </div>
                 {/* Stats row */}
                 <div className="grid grid-cols-3 gap-2 mb-3">
                   <div className="bg-surface-container rounded-lg p-2">
                     <p className="text-[9px] font-mono text-on-surface-variant uppercase mb-1">Ср. чек</p>
-                    <div className="flex items-center gap-1">
-                      <p className="text-xs font-mono font-bold text-on-surface">{fmt(c.avgCheck)}</p>
-                      <MiniSparkline values={c.history} />
-                    </div>
+                    <p className="text-xs font-mono font-bold text-on-surface">{fmt(c.avgCheck)}</p>
                   </div>
                   <div className="bg-surface-container rounded-lg p-2">
                     <p className="text-[9px] font-mono text-on-surface-variant uppercase mb-1">Изм. объёма</p>
@@ -1237,8 +1325,12 @@ function CrmMonitorSection() {
                     }`}>{c.volumeChange > 0 ? '+' : ''}{c.volumeChange}%</span>
                   </div>
                   <div className="bg-surface-container rounded-lg p-2">
-                    <p className="text-[9px] font-mono text-on-surface-variant uppercase mb-1">Заказ</p>
-                    <p className={`text-xs font-mono ${c.daysSince > c.orderCycle ? 'text-error' : 'text-on-surface'}`}>{c.daysSince}д. назад</p>
+                    <p className="text-[9px] font-mono text-on-surface-variant uppercase mb-1">Касание</p>
+                    {c.lastContact ? (
+                      <p className={`text-xs font-mono ${c.daysSince > c.orderCycle ? 'text-error' : 'text-on-surface'}`}>{c.daysSince} д. назад</p>
+                    ) : (
+                      <p className="text-xs font-mono text-error">не было</p>
+                    )}
                   </div>
                 </div>
                 {/* Risk row */}
@@ -1247,26 +1339,33 @@ function CrmMonitorSection() {
                   <RiskBadge level={c.churnLevel} prob={c.churnProb} />
                 </div>
                 {/* Comment */}
-                <p className="text-[11px] text-on-surface-variant mt-2 line-clamp-2">{c.comment}</p>
+                {c.comment && (
+                  <p className="text-[11px] text-on-surface-variant mt-2 line-clamp-2">{c.comment}</p>
+                )}
               </div>
             ))}
           </div>
+          )}
 
           {/* Desktop table (≥ md) */}
+          {filteredToday.length > 0 && (
           <div className="hidden md:block bg-surface-container-low rounded-2xl border border-white/[0.04] overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
+                  {/* Tips describe what the code actually computes (lib/crm/risk.ts).
+                      The previous set talked about deal stages and Bitrix24 fields
+                      that this scoring never looks at. */}
                   <tr className="border-b border-white/[0.04]">
                     {([
-                      { label: 'Клиент', tip: 'Название сделки или компании из CRM' },
-                      { label: 'Последний заказ', tip: 'Дата последнего изменения сделки в CRM' },
-                      { label: 'Ср. чек', tip: 'Сумма сделки из CRM (поле «Сумма» в Bitrix24)' },
-                      { label: 'Изм. объёма', tip: 'Отклонение суммы сделки от среднего по портфелю: (сумма − средняя) ÷ средняя × 100%' },
-                      { label: 'Риск-скор', tip: 'Комплексная оценка 0–100: стадия сделки + дни без активности + возраст сделки + сумма vs средняя' },
-                      { label: 'Вер-сть оттока', tip: 'Вероятность потери клиента: на основе стадии (успех/провал/процесс), простоя и риск-скора' },
-                      { label: 'Комментарий', tip: 'Контекстная подсказка: крупная сделка, долгий цикл, нет активности N дней' },
-                      { label: 'Действие', tip: 'Рекомендация: Звонок (риск>60 или простой>7дн), Написать (риск>35), Мониторинг (низкий риск)' },
+                      { label: 'Клиент', tip: 'Имя из вашей базы клиентов и его текущий статус' },
+                      { label: 'Последнее касание', tip: 'Дата последнего звонка, сообщения или заметки (last_contact_at) и сколько дней прошло' },
+                      { label: 'Ср. чек', tip: 'Поле «Средний чек» в карточке клиента' },
+                      { label: 'Изм. объёма', tip: 'Отклонение среднего чека от среднего по портфелю: (чек − средний) ÷ средний × 100%' },
+                      { label: 'Риск-скор', tip: 'Оценка 0–100: дни без касания × 2.5 (максимум 70) + отклонение чека + поправка на статус' },
+                      { label: 'Вер-сть оттока', tip: 'Равна риск-скору: отдельной модели оттока пока нет, это та же оценка в процентах' },
+                      { label: 'Комментарий', tip: 'Подсказка по правилу: нет касаний, нет контакта N дней, крупный клиент' },
+                      { label: 'Действие', tip: 'Рекомендация: Звонок (простой > 7 дн или риск > 60), Написать (риск > 35), Мониторинг (низкий риск)' },
                     ] as const).map((h) => (
                       <th key={h.label} className="text-left text-[10px] font-mono text-on-surface-variant uppercase tracking-widest px-4 py-3 whitespace-nowrap">
                         <span className="inline-flex items-center gap-1">
@@ -1285,37 +1384,38 @@ function CrmMonitorSection() {
                 <tbody>
                   {filteredToday.map((c) => (
                     <tr key={c.id}
-                      onClick={() => { setSelectedClientId(c.id); setTab('card') }}
-                      className="border-b border-white/[0.02] hover:bg-white/[0.02] transition-colors cursor-pointer group">
+                      className="border-b border-white/[0.02] hover:bg-white/[0.02] transition-colors">
                       <td className="px-4 py-3.5">
-                        <div className="flex items-center gap-2.5">
+                        {/* A row can't be a button — the client name is one instead,
+                            so the queue is walkable with Tab. */}
+                        <button
+                          type="button"
+                          onClick={() => { setSelectedClientId(c.id); setTab('card') }}
+                          aria-label={`Открыть карточку — ${c.name}`}
+                          className="group flex items-center gap-2.5 text-left focus:outline-none focus-visible:ring-1 focus-visible:ring-primary/40 rounded-lg">
                           <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
                             c.churnLevel === 'high' ? 'bg-error' : c.churnLevel === 'medium' ? 'bg-tertiary-container' : 'bg-primary'
                           }`} />
-                          <div>
-                            <div className="flex items-center gap-1.5">
-                              <p className="text-sm font-semibold text-on-surface group-hover:text-primary transition-colors">{c.name}</p>
-                              {c.forbes != null && (
-                                <span className="text-[9px] font-mono bg-tertiary-container/20 text-tertiary-container border border-tertiary-container/20 px-1.5 py-0.5 rounded-full">
-                                  Forbes #{(c as any).forbes}
-                                </span>
-                              )}
-                            </div>
-                            <p className="text-[10px] text-on-surface-variant">{c.sector}</p>
-                          </div>
-                        </div>
+                          <span className="block">
+                            <span className="block text-sm font-semibold text-on-surface group-hover:text-primary transition-colors">{c.name}</span>
+                            <span className="block text-[10px] text-on-surface-variant">Статус: {c.statusLabel}</span>
+                          </span>
+                        </button>
                       </td>
                       <td className="px-4 py-3.5">
-                        <p className="text-sm text-on-surface">{c.lastOrder}</p>
-                        <p className={`text-[10px] font-mono ${c.daysSince > c.orderCycle ? 'text-error' : 'text-on-surface-variant'}`}>
-                          {c.daysSince} дн. назад
-                        </p>
+                        {c.lastContact ? (
+                          <>
+                            <p className="text-sm text-on-surface">{c.lastContact}</p>
+                            <p className={`text-[10px] font-mono ${c.daysSince > c.orderCycle ? 'text-error' : 'text-on-surface-variant'}`}>
+                              {c.daysSince} дн. назад
+                            </p>
+                          </>
+                        ) : (
+                          <p className="text-sm text-error">Касаний не было</p>
+                        )}
                       </td>
                       <td className="px-4 py-3.5">
-                        <div className="flex items-center gap-2">
-                          <p className="text-sm font-mono text-on-surface">{fmt(c.avgCheck)}</p>
-                          <MiniSparkline values={c.history} />
-                        </div>
+                        <p className="text-sm font-mono text-on-surface">{fmt(c.avgCheck)}</p>
                       </td>
                       <td className="px-4 py-3.5">
                         <span className={`text-sm font-mono font-bold px-2.5 py-1 rounded-lg ${
@@ -1333,11 +1433,13 @@ function CrmMonitorSection() {
                         <RiskBadge level={c.churnLevel} prob={c.churnProb} />
                       </td>
                       <td className="px-4 py-3.5 max-w-[200px]">
-                        <p className="text-xs text-on-surface-variant truncate">{c.comment}</p>
+                        {c.comment
+                          ? <p className="text-xs text-on-surface-variant truncate" title={c.comment}>{c.comment}</p>
+                          : <p className="text-xs text-on-surface-variant/40" aria-label="Комментария нет">—</p>}
                       </td>
                       <td className="px-4 py-3.5">
-                        <ActionBtn action={c.action} size="sm"
-                    onClick={() => runAction(c)} />
+                        <ActionBtn action={c.action} clientName={c.name} size="sm"
+                          onClick={() => runAction(c)} />
                       </td>
                     </tr>
                   ))}
@@ -1345,20 +1447,21 @@ function CrmMonitorSection() {
               </table>
             </div>
           </div>
+          )}
 
           {/* Progress summary */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            {[
-              { label: 'Приоритет 1 — Звонок', count: TODAY_CLIENTS.filter(c => c.action === 'call').length,    color: 'error',               icon: 'call'       },
-              { label: 'Приоритет 2 — Написать', count: TODAY_CLIENTS.filter(c => c.action === 'message').length, color: 'tertiary-container',  icon: 'chat'       },
-              { label: 'Мониторинг',             count: TODAY_CLIENTS.filter(c => c.action === 'monitor').length, color: 'primary',             icon: 'visibility' },
-            ].map((item) => (
-              <div key={item.label} className={`bg-surface-container-low rounded-xl border border-${item.color}/20 p-4 flex items-center gap-3`}>
-                <div className={`w-8 h-8 rounded-lg bg-${item.color}/10 flex items-center justify-center flex-shrink-0`}>
-                  <span className={`material-symbols-outlined text-sm text-${item.color}`}>{item.icon}</span>
+            {([
+              { label: 'Приоритет 1 — Звонок',   count: TODAY_CLIENTS.filter(c => c.action === 'call').length,    tone: 'error',    icon: 'call'       },
+              { label: 'Приоритет 2 — Написать', count: TODAY_CLIENTS.filter(c => c.action === 'message').length, tone: 'tertiary', icon: 'chat'       },
+              { label: 'Мониторинг',             count: TODAY_CLIENTS.filter(c => c.action === 'monitor').length, tone: 'primary',  icon: 'visibility' },
+            ] as ReadonlyArray<{ label: string; count: number; tone: Tone; icon: string }>).map((item) => (
+              <div key={item.label} className={`bg-surface-container-low rounded-xl border ${TONE_BORDER[item.tone]} p-4 flex items-center gap-3`}>
+                <div className={`w-8 h-8 rounded-lg ${TONE_BG[item.tone]} flex items-center justify-center flex-shrink-0`}>
+                  <span className={`material-symbols-outlined text-sm ${TONE_TEXT[item.tone]}`} aria-hidden="true">{item.icon}</span>
                 </div>
                 <div>
-                  <p className={`text-2xl font-mono font-bold text-${item.color}`}>{item.count}</p>
+                  <p className={`text-2xl font-mono font-bold ${TONE_TEXT[item.tone]}`}>{item.count}</p>
                   <p className="text-[10px] text-on-surface-variant">{item.label}</p>
                 </div>
               </div>
@@ -1378,23 +1481,43 @@ function CrmMonitorSection() {
       {/* ─── TAB 2: At Risk ─── */}
       {tab === 'risk' && (
         <div className="space-y-3">
+          {filteredRisk.length === 0 && (
+            <EmptyState
+              icon={TODAY_CLIENTS.length === 0 ? 'inbox' : 'shield'}
+              title={TODAY_CLIENTS.length === 0 ? 'Нечего оценивать' : 'В зоне риска никого нет'}
+              description={
+                TODAY_CLIENTS.length === 0
+                  ? 'Риск считается по клиентам из очереди «Кому звонить». Пока очередь пуста, считать нечего.'
+                  : 'Ни один клиент из очереди не набрал высокий или средний уровень риска по выбранному фильтру.'
+              }
+              action={
+                TODAY_CLIENTS.length === 0
+                  ? { label: 'Импортировать базу из CSV', onClick: () => setImportOpen(true) }
+                  : filterRisk === 'all'
+                    ? undefined
+                    : { label: 'Показать все', onClick: () => setFilterRisk('all') }
+              }
+            />
+          )}
           {filteredRisk.map((c, i) => (
             <div key={c.id}
-              onClick={() => { setSelectedClientId(c.id); setTab('card') }}
-              className="bg-surface-container-low rounded-xl border border-white/[0.04] hover:border-primary/20 p-4 cursor-pointer transition-colors group">
+              className="relative bg-surface-container-low rounded-xl border border-white/[0.04] hover:border-primary/20 p-4 transition-colors">
+              {/* Stretched button instead of `onClick` on the row wrapper — the
+                  ActionBtn on the right keeps `relative z-10` and stops the click. */}
+              <button
+                type="button"
+                aria-label={`Открыть карточку — ${c.name}`}
+                onClick={() => { setSelectedClientId(c.id); setTab('card') }}
+                className="absolute inset-0 rounded-xl focus:outline-none focus-visible:ring-1 focus-visible:ring-primary/40"
+              />
               <div className="flex items-center gap-3 flex-wrap">
-                <span className={`text-[10px] font-mono text-on-surface-variant/50 w-5 flex-shrink-0`}>#{i + 1}</span>
+                <span className="text-[10px] font-mono text-on-surface-variant/50 w-5 flex-shrink-0">#{i + 1}</span>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-0.5 flex-wrap">
-                    <p className="text-sm font-semibold text-on-surface group-hover:text-primary transition-colors">{c.name}</p>
-                    {c.forbes != null && (
-                      <span className="text-[9px] font-mono bg-tertiary-container/20 text-tertiary-container border border-tertiary-container/20 px-1.5 py-0.5 rounded-full">
-                        Forbes #{(c as any).forbes}
-                      </span>
-                    )}
-                    <span className="text-[10px] text-on-surface-variant">{c.sector}</span>
+                    <p className="text-sm font-semibold text-on-surface">{c.name}</p>
+                    <span className="text-[10px] text-on-surface-variant">Статус: {c.statusLabel}</span>
                   </div>
-                  <p className="text-xs text-on-surface-variant truncate">{c.comment}</p>
+                  {c.comment && <p className="text-xs text-on-surface-variant truncate">{c.comment}</p>}
                 </div>
                 <div className="flex items-center gap-3 flex-wrap flex-shrink-0">
                   <div className="text-right hidden sm:block">
@@ -1405,7 +1528,7 @@ function CrmMonitorSection() {
                     <RiskBar score={c.riskScore} />
                   </div>
                   <RiskBadge level={c.churnLevel} prob={c.churnProb} />
-                  <ActionBtn action={c.action} size="sm"
+                  <ActionBtn action={c.action} clientName={c.name} size="sm"
                     onClick={() => runAction(c)} />
                 </div>
               </div>
@@ -1436,7 +1559,7 @@ function CrmMonitorSection() {
           </div>
 
           <div className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-4 md:p-6">
-            {selectedClient && (
+            {selectedClient ? (
               <ClientCard
                 client={selectedClient}
                 onCall={() => setCallClient(selectedClient)}
@@ -1444,6 +1567,13 @@ function CrmMonitorSection() {
                 onMonitor={() => toggleMonitor(selectedClient.id)}
                 onHistory={() => setDrawerClient(pulseToDrawer(selectedClient))}
                 isMonitored={monitored.has(selectedClient.id)}
+              />
+            ) : (
+              <EmptyState
+                icon="person_search"
+                title="Карточку некому показать"
+                description="Карточка открывается из очереди «Кому звонить сегодня». Пока в очереди никого нет, выбирать не из чего."
+                action={{ label: 'Импортировать базу из CSV', onClick: () => setImportOpen(true) }}
               />
             )}
           </div>

@@ -67,9 +67,35 @@ export type AnalyticsDetail = {
     top: Array<{ id: string; name: string; value: number }>
     missingSample: Array<{ id: string; name: string }>
   }
+  /** How many clients sit in each industry — used to explain the industry bars. */
+  industryClientCounts: Array<{ industry: string; clients: number }>
 }
 
 const TREND_POINT_LIMIT = 60
+
+/**
+ * How many GRI reports each of these clients has.
+ *
+ * `lib/analytics-data.ts:111` falls back to `score ?? 0`, so "no report yet" and
+ * "scored zero" arrive at the table as the same number — and `toStatus(0)` then
+ * labels an unmeasured client «Критично». The row count is the only way to tell
+ * the two apart, and it also says whether the growth column has anything to
+ * compare (it needs two reports).
+ */
+export async function getGriReportCounts(clientIds: string[]): Promise<Record<string, number>> {
+  if (clientIds.length === 0) return {}
+
+  const groups = await prisma.griReport.groupBy({
+    by: ['clientId'],
+    where: { clientId: { in: clientIds } },
+    _count: { _all: true },
+  })
+
+  const counts: Record<string, number> = {}
+  for (const id of clientIds) counts[id] = 0
+  for (const group of groups) counts[String(group.clientId)] = group._count._all
+  return counts
+}
 
 export async function getAnalyticsDetail(periodId: AnalyticsPeriodId): Promise<AnalyticsDetail> {
   const period = getPeriod(periodId)
@@ -87,6 +113,7 @@ export async function getAnalyticsDetail(periodId: AnalyticsPeriodId): Promise<A
     filledAvgCheck,
     topAvgCheck,
     missingAvgCheckSample,
+    industryGroups,
   ] = await Promise.all([
     prisma.griReport.aggregate({
       where: { calculatedAt: { gte: from } },
@@ -124,6 +151,7 @@ export async function getAnalyticsDetail(periodId: AnalyticsPeriodId): Promise<A
       take: 8,
       select: { id: true, name: true },
     }),
+    prisma.client.groupBy({ by: ['industry'], _count: { _all: true } }),
   ])
 
   const avgRaw = currentAggregate._avg.score
@@ -177,5 +205,9 @@ export async function getAnalyticsDetail(periodId: AnalyticsPeriodId): Promise<A
       top: topAvgCheck.map((row) => ({ id: row.client.id, name: row.client.name, value: row.avgCheck })),
       missingSample: missingAvgCheckSample,
     },
+    industryClientCounts: industryGroups.map((group) => ({
+      industry: String(group.industry),
+      clients: group._count._all,
+    })),
   }
 }

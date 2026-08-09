@@ -16,6 +16,12 @@
 import { useId, useState } from 'react'
 import { avgBarTone, type GriBlockRow, type GriCriterionRow } from './blocks'
 
+function goLabel(row: GriBlockRow): string {
+  if (row.avgSource === 'criteria') return 'Обновить ответы блока'
+  if (row.avgSource === 'block') return 'Пройти блок заново'
+  return 'Пройти блок'
+}
+
 function critTone(score: number): string {
   return score >= 8
     ? 'bg-primary/15 text-primary'
@@ -24,7 +30,13 @@ function critTone(score: number): string {
       : 'bg-red-400/15 text-red-300'
 }
 
-function CriterionItem({ crit }: { crit: GriCriterionRow }) {
+function CriterionItem({
+  crit,
+  emptyText = 'Нет ответа на этот вопрос.',
+}: {
+  crit: GriCriterionRow
+  emptyText?: string
+}) {
   return (
     <li className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-3">
       <div className="flex items-start gap-3">
@@ -38,9 +50,7 @@ function CriterionItem({ crit }: { crit: GriCriterionRow }) {
         </span>
       </div>
       {crit.score == null ? (
-        <p className="mt-1.5 text-xs leading-snug text-on-surface-variant">
-          Нет ответа на этот вопрос.
-        </p>
+        <p className="mt-1.5 text-xs leading-snug text-on-surface-variant">{emptyText}</p>
       ) : (
         <>
           <p className="mt-1.5 text-xs leading-snug text-on-surface-variant">
@@ -70,7 +80,7 @@ function BlockRowItem({
 }) {
   const panelId = useId()
   const hasData = row.avg != null
-  const partial = hasData && row.answered < row.total
+  const partial = row.avgSource === 'criteria' && row.answered < row.total
 
   return (
     <li className="rounded-xl border border-white/[0.06] bg-white/[0.01]">
@@ -80,9 +90,11 @@ function BlockRowItem({
         aria-expanded={expanded}
         aria-controls={panelId}
         aria-label={
-          hasData
+          row.avgSource === 'criteria'
             ? `${row.label}: ${row.avg!.toFixed(1)} из 10, отвечено ${row.answered} из ${row.total}. Показать критерии блока`
-            : `${row.label}: нет данных. Показать критерии блока`
+            : row.avgSource === 'block'
+              ? `${row.label}: ${row.avg!.toFixed(1)} из 10, разбор по критериям недоступен. Подробнее`
+              : `${row.label}: нет данных. Показать критерии блока`
         }
         className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors hover:bg-white/[0.04] focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
       >
@@ -129,21 +141,37 @@ function BlockRowItem({
               потому что вы его не ставили.
             </p>
           )}
+          {row.avgSource === 'block' && (
+            <p className="rounded-lg border border-amber-400/20 bg-amber-400/[0.06] p-3 text-xs leading-snug text-amber-200/90">
+              По этой диагностике сохранён только средний балл блока — ответы по
+              отдельным критериям не записаны, поэтому разложить {row.avg!.toFixed(1)} не на что.
+              Пройдите блок заново — разбор появится.
+            </p>
+          )}
           <ul className="space-y-2">
             {row.criteria.map((c) => (
-              <CriterionItem key={c.id} crit={c} />
+              <CriterionItem
+                key={c.id}
+                crit={c}
+                emptyText={
+                  row.avgSource === 'block'
+                    ? 'Оценка по этому критерию не сохранилась.'
+                    : 'Нет ответа на этот вопрос.'
+                }
+              />
             ))}
           </ul>
           {onGoToBlock && (
             <button
               type="button"
               onClick={() => onGoToBlock(row.id)}
+              aria-label={`${goLabel(row)}: ${row.label}`}
               className="inline-flex items-center gap-1.5 rounded-xl border border-primary/30 bg-primary/[0.08] px-3 py-2 text-xs font-semibold text-primary transition-colors hover:bg-primary/[0.16] focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
             >
               <span className="material-symbols-outlined text-[16px]" aria-hidden>
                 edit
               </span>
-              {hasData ? 'Обновить ответы блока' : 'Пройти блок'}
+              {goLabel(row)}
             </button>
           )}
         </div>

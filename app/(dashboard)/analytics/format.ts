@@ -33,12 +33,27 @@ export function formatSignedPercent(value: number): string {
   return `${sign}${nf1.format(value)}%`
 }
 
+export function formatPercent(value: number): string {
+  return `${nf1.format(value)}%`
+}
+
 export function formatDateShort(iso: string): string {
   return new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'short' }).format(new Date(iso))
 }
 
 export function formatDateFull(iso: string): string {
   return new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: 'long', year: 'numeric' }).format(new Date(iso))
+}
+
+/** Server-rendered only — otherwise the timezone would differ between render passes. */
+export function formatDateTime(iso: string): string {
+  return new Intl.DateTimeFormat('ru-RU', {
+    day: '2-digit',
+    month: 'long',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(iso))
 }
 
 /** Russian plural: pluralRu(2, 'отчёт', 'отчёта', 'отчётов') → 'отчёта' */

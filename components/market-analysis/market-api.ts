@@ -5,38 +5,55 @@
  *
  * Всё, что рисует MarketDataPanel и CompetitorDetailModal, приходит ТОЛЬКО
  * отсюда — через authed-proxy /api/market/* (FastAPI Mark-analytics).
- * Никаких выдуманных чисел: 503/сеть → 'unavailable', пустой ответ → 'empty'.
+ * Никаких выдуманных чисел: 503 «не настроен» → 'not_configured',
+ * 503 «не отвечает» → 'unavailable', пустой ответ → 'empty'.
  *
  * Кэш живёт на уровне модуля, поэтому сворачивание/раскрытие блока чек-листа
  * (перемонтирование панели) больше не бьёт по сети. `reload()` кэш сбрасывает.
+ *
+ * Названия полей соответствуют реальной схеме Mark-analytics
+ * (Mark-analytics/frontend/src/types/api.ts): AnalyticsOverview,
+ * IndustryDistributionItem, CompanyListItem, CompanyDetail. Все денежные поля
+ * контракта названы `*_usd`, поэтому доллар в подписи — не догадка.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 // ── Result / state shapes ────────────────────────────────────────────────────
 
+/**
+ * 'not_configured' — внешний каталог не подключён к кабинету (повтор не поможет);
+ * 'unavailable'    — подключён, но не ответил (повтор имеет смысл);
+ * 'empty'          — ответил, но полезных строк нет.
+ */
+export type MarketFailureKind = 'not_configured' | 'unavailable' | 'empty'
+
 export type MarketFetchResult =
   | { ok: true; payload: unknown }
-  | { ok: false; kind: 'unavailable' | 'empty' }
+  | { ok: false; kind: MarketFailureKind }
 
 export type PanelState<T> =
   | { status: 'loading' }
+  | { status: 'not_configured' }
   | { status: 'unavailable' }
   | { status: 'empty' }
   | { status: 'ready'; data: T }
 
 // ── Low-level fetch ──────────────────────────────────────────────────────────
 
-/**
- * Fetch a proxied market endpoint. Returns:
- *   - { ok: true, payload }                normal 2xx
- *   - { ok: false, kind: 'unavailable' }   503 / network (service down or not configured)
- *   - { ok: false, kind: 'empty' }         other non-2xx / not-found
- */
 export async function fetchMarket(path: string): Promise<MarketFetchResult> {
   try {
     const res = await fetch(`/api/market/${path}`, { cache: 'no-store' })
-    if (res.status === 503) return { ok: false, kind: 'unavailable' }
+    if (res.status === 503) {
+      // The proxy distinguishes «не настроен» from «не отвечает» via the error
+      // code — keep that difference, the user-facing texts are not the same.
+      const body = (await res.json().catch(() => null)) as { error?: unknown } | null
+      const code = typeof body?.error === 'string' ? body.error : ''
+      return {
+        ok: false,
+        kind: code === 'market_api_not_configured' ? 'not_configured' : 'unavailable',
+      }
+    }
     if (!res.ok) return { ok: false, kind: 'empty' }
     const payload = (await res.json().catch(() => null)) as unknown
     return { ok: true, payload }
@@ -180,7 +197,9 @@ export function asArray(v: unknown): unknown[] {
 export function num(v: unknown): number | null {
   if (typeof v === 'number' && Number.isFinite(v)) return v
   if (typeof v === 'string') {
-    const n = Number(v.replace(/[^0-9.\-]/g, ''))
+    const cleaned = v.replace(/\s/g, '').replace(/[^0-9.\-]/g, '')
+    if (!cleaned || cleaned === '-' || cleaned === '.') return null
+    const n = Number(cleaned)
     return Number.isFinite(n) ? n : null
   }
   return null
@@ -208,9 +227,22 @@ export function industryLabel(item: unknown): string | null {
   return str(pick(ref, ['code'])) ?? str(pick(item, ['industry_code']))
 }
 
+/** «Алматы, Алматинская обл.» — из region_name / city_name, без выдумок. */
+export function placeLabel(item: unknown): string | null {
+  const city = str(pick(item, ['city_name']))
+  const region = str(pick(item, ['region_name']))
+  if (city && region && city !== region) return `${city}, ${region}`
+  return city ?? region
+}
+
 // ── Formatting ───────────────────────────────────────────────────────────────
 
-export function formatMoney(v: number): string {
+/**
+ * Все денежные поля контракта Mark-analytics названы `revenue_usd` /
+ * `revenue_total_usd` / `capitalization_usd`, то есть валюта задана источником.
+ * Функцию применяем ТОЛЬКО к ним — иначе подпись «$» была бы выдумкой.
+ */
+export function formatUsd(v: number): string {
   const abs = Math.abs(v)
   if (abs >= 1e9) return `$${(v / 1e9).toFixed(1)} млрд`
   if (abs >= 1e6) return `$${(v / 1e6).toFixed(1)} млн`
@@ -226,4 +258,17 @@ export function formatInt(v: number): string {
 export function formatClock(ts: number | null): string {
   if (ts == null) return ''
   return new Date(ts).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
+}
+
+/** ISO-дата из каталога → «12.03.2019»; мусор → null (не показываем). */
+export function formatDate(v: unknown): string | null {
+  const s = str(v)
+  if (!s) return null
+  const t = Date.parse(s)
+  if (!Number.isFinite(t)) return null
+  return new Date(t).toLocaleDateString('ru-RU', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  })
 }

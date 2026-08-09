@@ -56,6 +56,14 @@ export interface GriBlockRow {
   answered: number
   total: number
   criteria: GriCriterionRow[]
+  /**
+   * Откуда взялся avg:
+   *  'criteria' — посчитан по ответам, разбор до критериев настоящий;
+   *  'block'    — сохранён только средний по блоку (старая запись без scores),
+   *               критерии показать неоткуда — UI обязан сказать это прямо;
+   *  null       — данных нет вообще.
+   */
+  avgSource: 'criteria' | 'block' | null
 }
 
 function num(v: unknown): number | null {
@@ -67,8 +75,15 @@ function num(v: unknown): number | null {
  * Разворачивает posted-scores ({sectionId: {criterionId: 1..10}}) в строки по
  * блокам. Непройденный блок получает avg === null, а НЕ 0 — иначе он рисуется
  * как «критический» балл, которого пользователь не ставил.
+ *
+ * `fallbackAvgs` — серверные section_avgs. Используются ТОЛЬКО когда по блоку
+ * нет ни одного покритериального ответа: тогда балл честно помечается
+ * avgSource:'block', и UI не выдаёт отсутствующий разбор за настоящий.
  */
-export function buildBlockRows(scores: GriScoresMap | null | undefined): GriBlockRow[] {
+export function buildBlockRows(
+  scores: GriScoresMap | null | undefined,
+  fallbackAvgs?: Record<string, unknown> | null,
+): GriBlockRow[] {
   return GRI_SECTIONS.map((section) => {
     const map = (scores?.[section.id] ?? {}) as Record<string, unknown>
     const criteria: GriCriterionRow[] = section.criteria.map((c) => ({
@@ -82,17 +97,19 @@ export function buildBlockRows(scores: GriScoresMap | null | undefined): GriBloc
     const answeredScores = criteria
       .map((c) => c.score)
       .filter((v): v is number => v != null)
+    const blockOnly = num(fallbackAvgs?.[section.id])
+    const hasCriteria = answeredScores.length > 0
     return {
       id: section.id,
       label: BLOCK_RU[section.id] ?? section.shortTitle,
       description: section.description,
-      avg:
-        answeredScores.length === 0
-          ? null
-          : answeredScores.reduce((a, b) => a + b, 0) / answeredScores.length,
+      avg: hasCriteria
+        ? answeredScores.reduce((a, b) => a + b, 0) / answeredScores.length
+        : blockOnly,
       answered: answeredScores.length,
       total: criteria.length,
       criteria,
+      avgSource: hasCriteria ? 'criteria' : blockOnly != null ? 'block' : null,
     }
   })
 }
@@ -110,4 +127,61 @@ export function computeIndexFromRows(rows: GriBlockRow[]): number {
 /** Индекс блока в GRI_SECTIONS (для перехода «пройти блок»). */
 export function sectionIndexOf(id: string): number {
   return GRI_SECTIONS.findIndex((s) => s.id === id)
+}
+
+// ── Продолжение незавершённого опросника ──────────────────────────────────
+// Место остановки не хранится отдельным полем: его выводим из самих ответов.
+// Так оно переживает перезагрузку, смену вкладки и приход данных с сервера, и
+// не может разъехаться с реальным прогрессом.
+
+/** Все ли вопросы блока отвечены. */
+export function isSectionAnswered(
+  sectionId: string,
+  scores: GriScoresMap | null | undefined,
+): boolean {
+  const section = GRI_SECTIONS.find((s) => s.id === sectionId)
+  if (!section) return false
+  const map = (scores?.[sectionId] ?? {}) as Record<string, unknown>
+  return section.criteria.every((c) => num(map[c.id]) != null)
+}
+
+/** Первый неотвеченный вопрос блока; 0 — если блок пройден целиком. */
+export function firstUnansweredCriterionIndex(
+  sectionId: string,
+  scores: GriScoresMap | null | undefined,
+): number {
+  const section = GRI_SECTIONS.find((s) => s.id === sectionId)
+  if (!section) return 0
+  const map = (scores?.[sectionId] ?? {}) as Record<string, unknown>
+  const idx = section.criteria.findIndex((c) => num(map[c.id]) == null)
+  return idx === -1 ? 0 : idx
+}
+
+/**
+ * Блок считается пройденным, если он помечен завершённым ИЛИ отвечены все его
+ * вопросы. Второе условие — страховка: у ранних сохранений блок мог остаться
+ * непомеченным, хотя все ответы на месте.
+ */
+export function isSectionDone(
+  sectionId: string,
+  scores: GriScoresMap | null | undefined,
+  completed?: Record<string, boolean> | null,
+): boolean {
+  return !!completed?.[sectionId] || isSectionAnswered(sectionId, scores)
+}
+
+/** Первый незавершённый блок — место, с которого продолжаем. -1 — пройдены все. */
+export function firstUnfinishedSectionIndex(
+  scores: GriScoresMap | null | undefined,
+  completed?: Record<string, boolean> | null,
+): number {
+  return GRI_SECTIONS.findIndex((s) => !isSectionDone(s.id, scores, completed))
+}
+
+/** Сколько блоков пройдено. */
+export function doneSectionsCount(
+  scores: GriScoresMap | null | undefined,
+  completed?: Record<string, boolean> | null,
+): number {
+  return GRI_SECTIONS.filter((s) => isSectionDone(s.id, scores, completed)).length
 }

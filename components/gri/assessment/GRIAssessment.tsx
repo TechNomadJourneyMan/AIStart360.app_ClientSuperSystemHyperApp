@@ -10,10 +10,16 @@ import { UpgradeGate } from '@/components/access/UpgradeGate'
 import { Modal } from '@/components/ui/Modal'
 import GriBlockBreakdown from '../shared/GriBlockBreakdown'
 import {
-  avgBarTone,
   BLOCK_RU,
   buildBlockRows,
+  computeIndexFromRows,
+  doneSectionsCount,
+  firstUnansweredCriterionIndex,
+  firstUnfinishedSectionIndex,
   GRI_TARGET,
+  isSectionAnswered,
+  isSectionDone,
+  sectionIndexOf,
   type GriScoresMap,
 } from '../shared/blocks'
 
@@ -278,7 +284,7 @@ function LossAversionBar({ sectionAvg }: { sectionAvg: number }) {
   )
 }
 
-export default function GRIAssessment() {
+export default function GRIAssessment({ initialBlockId }: { initialBlockId?: string | null } = {}) {
   const [step, setStep] = useState<Step>({ kind: 'landing' })
   // Фаза 6A: тарифный гейт повторного полного GRI (free = 1 демо-проход).
   // Пока access/me грузится или гейты выключены — всё открыто; сервер энфорсит сам.
@@ -312,33 +318,56 @@ export default function GRIAssessment() {
         const sectionAvgs = current?.section_avgs as Record<string, number> | undefined
         if (!sectionAvgs) return
 
-        // Reconstruct minimal per-criterion scores so sectionAvgsMemo + griIndex
-        // resolve to the server values. Each section gets a single synthetic
-        // criterion holding the section average.
-        const synth: Record<string, Record<string, number>> = {}
+        // Покритериальные ответы лежат в той же строке (`scores`) — забираем их
+        // как есть. Раньше здесь строился синтетический критерий (средний по
+        // блоку записывался в первый критерий раздела), и дальше UI выдавал это
+        // за оценку конкретного критерия: в TOP-5 и в план 90 дней попадали
+        // критерии, которые пользователь не оценивал. Больше не выдумываем:
+        // нет покритериальных данных — показываем только блочный уровень.
+        const serverScores = (current?.scores ?? null) as GriScoresMap | null
+        const cleanScores: GriScoresMap = {}
+        if (serverScores && typeof serverScores === 'object') {
+          for (const sec of GRI_SECTIONS) {
+            const raw = serverScores[sec.id]
+            if (!raw || typeof raw !== 'object') continue
+            const kept: Record<string, number> = {}
+            for (const crit of sec.criteria) {
+              const v = Number(raw[crit.id])
+              if (Number.isFinite(v) && v > 0) kept[crit.id] = v
+            }
+            if (Object.keys(kept).length > 0) cleanScores[sec.id] = kept
+          }
+        }
+
+        const serverCompleted = (current?.completed_sections ?? null) as
+          | Record<string, boolean>
+          | null
         const completed: Record<string, boolean> = {}
         for (const sec of GRI_SECTIONS) {
-          const v = sectionAvgs[sec.id]
-          if (typeof v !== 'number' || v <= 0) continue
-          const firstCrit = sec.criteria[0]?.id ?? 'avg'
-          synth[sec.id] = { [firstCrit]: v }
-          completed[sec.id] = true
+          const avg = sectionAvgs[sec.id]
+          // Пришли покритериальные ответы — блок «пройден» только когда отвечены
+          // ВСЕ его вопросы. Иначе продолжение с места остановки перепрыгнуло бы
+          // наполовину заполненный блок. Серверная отметка используется лишь
+          // там, где покритериальных данных нет вовсе (старая запись).
+          const done = cleanScores[sec.id]
+            ? isSectionAnswered(sec.id, cleanScores)
+            : !!serverCompleted?.[sec.id] || (typeof avg === 'number' && avg > 0)
+          if (done) completed[sec.id] = true
         }
-        if (Object.keys(synth).length === 0) return
+        if (Object.keys(completed).length === 0 && Object.keys(cleanScores).length === 0) return
 
         setState((prev) => ({
           ...prev,
-          scores: { ...prev.scores, ...synth },
+          scores: { ...prev.scores, ...cleanScores },
           completedSections: { ...prev.completedSections, ...completed },
           sectionAvgs,
           griIndex: typeof current.gri_index === 'number' ? current.gri_index : prev.griIndex,
         }))
         // If the server has a complete assessment, jump straight to results so
-        // the chart matches what the dashboard widget displays.
-        const allCovered = GRI_SECTIONS.every(
-          (s) => typeof sectionAvgs[s.id] === 'number' && sectionAvgs[s.id] > 0,
-        )
-        if (allCovered) {
+        // the chart matches what the dashboard widget displays. Явный переход к
+        // блоку (из разбора на вкладке «Результат») важнее — его не перебиваем.
+        const allCovered = GRI_SECTIONS.every((s) => completed[s.id])
+        if (allCovered && !initialBlockId) {
           // Defer so the state update above commits first.
           setTimeout(() => setStep({ kind: 'results' }), 0)
         }
@@ -346,39 +375,52 @@ export default function GRIAssessment() {
         // server unreachable — local state is fine
       }
     })()
+    // initialBlockId читается один раз при монтировании — отдельный эффект ниже
+    // отрабатывает его изменения.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Единственный источник правды по блокам: ответы пользователя, а где их нет —
+  // серверный средний по блоку (помечается avgSource:'block', разбор по
+  // критериям для него честно не показывается).
+  const blockRows = useMemo(
+    () => buildBlockRows(state.scores, state.sectionAvgs),
+    [state.scores, state.sectionAvgs],
+  )
+
+  const griIndex = useMemo(() => computeIndexFromRows(blockRows), [blockRows])
 
   useEffect(() => {
     if (!hydrated) return
     const avgs: Record<string, number> = {}
-    GRI_SECTIONS.forEach((sec) => {
-      const map = state.scores[sec.id] || {}
-      const vals = sec.criteria
-        .map((c) => map[c.id])
-        .filter((v): v is number => typeof v === 'number')
-      avgs[sec.id] = vals.length === 0 ? 0 : vals.reduce((a, b) => a + b, 0) / vals.length
+    blockRows.forEach((row) => {
+      avgs[row.id] = row.avg ?? 0
     })
-    const positive = Object.values(avgs).filter((v) => v > 0)
-    const index = positive.length === 0
-      ? 0
-      : Math.round((positive.reduce((a, b) => a + b, 0) / positive.length) * 100) / 100
-    saveState({ ...state, sectionAvgs: avgs, griIndex: index })
+    saveState({ ...state, sectionAvgs: avgs, griIndex })
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('gri:assessment-updated'))
     }
-  }, [state, hydrated])
+  }, [state, hydrated, blockRows, griIndex])
 
   const setOnboarding = (patch: Partial<OnboardingForm>) =>
     setState((s) => ({ ...s, onboarding: { ...s.onboarding, ...patch } }))
 
+  // Ответ на вопрос сам закрывает блок, когда отвечены все его вопросы. Раньше
+  // блок засчитывался ТОЛЬКО кнопкой «Следующий раздел»: ответил на всё, ушёл
+  // «К списку» — и прогресс навсегда висел на 6/7, а балл блока не показывался.
   const setScore = (sectionId: SectionId, criterionId: string, score: number) =>
-    setState((s) => ({
-      ...s,
-      scores: {
-        ...s.scores,
-        [sectionId]: { ...(s.scores[sectionId] || {}), [criterionId]: score },
-      },
-    }))
+    setState((s) => {
+      const sectionScores = { ...(s.scores[sectionId] || {}), [criterionId]: score }
+      const section = GRI_SECTIONS.find((x) => x.id === sectionId)
+      const allAnswered = !!section && section.criteria.every((c) => typeof sectionScores[c.id] === 'number')
+      return {
+        ...s,
+        scores: { ...s.scores, [sectionId]: sectionScores },
+        completedSections: allAnswered
+          ? { ...s.completedSections, [sectionId]: true }
+          : s.completedSections,
+      }
+    })
 
   const markCompleted = (sectionId: SectionId) =>
     setState((s) => ({
@@ -386,30 +428,43 @@ export default function GRIAssessment() {
       completedSections: { ...s.completedSections, [sectionId]: true },
     }))
 
-  const sectionAvg = (sectionId: SectionId) => {
-    const section = GRI_SECTIONS.find((s) => s.id === sectionId)
-    if (!section) return 0
-    const scores = state.scores[sectionId] || {}
-    const vals = section.criteria
-      .map((c) => scores[c.id])
-      .filter((v): v is number => typeof v === 'number')
-    if (vals.length === 0) return 0
-    return vals.reduce((a, b) => a + b, 0) / vals.length
-  }
+  const sectionAvg = (sectionId: SectionId) =>
+    blockRows.find((r) => r.id === sectionId)?.avg ?? 0
 
-  const sectionAvgsMemo = useMemo(() => {
-    const out: Record<string, number> = {}
-    GRI_SECTIONS.forEach((sec) => {
-      out[sec.id] = sectionAvg(sec.id)
-    })
-    return out
-  }, [state.scores])
+  // ── Место остановки ──────────────────────────────────────────────────────
+  // Считается из самих ответов, а не хранится отдельным полем: переживает
+  // перезагрузку, смену вкладки и приход данных с сервера.
+  const doneCount = doneSectionsCount(state.scores, state.completedSections)
+  const resumeSectionIndex = firstUnfinishedSectionIndex(state.scores, state.completedSections)
+  const allSectionsDone = resumeSectionIndex === -1
 
-  const griIndex = useMemo(() => {
-    const positive = Object.values(sectionAvgsMemo).filter((v) => v > 0)
-    if (positive.length === 0) return 0
-    return Math.round((positive.reduce((a, b) => a + b, 0) / positive.length) * 100) / 100
-  }, [sectionAvgsMemo])
+  /** Открыть блок на первом неотвеченном вопросе (пройденный — на первом). */
+  const openSection = useCallback(
+    (sectionIndex: number) => {
+      const section = GRI_SECTIONS[sectionIndex]
+      if (!section) return
+      setQuestionIndex(firstUnansweredCriterionIndex(section.id, state.scores))
+      setStep({ kind: 'section', sectionIndex })
+    },
+    [state.scores],
+  )
+
+  /** Продолжить с места остановки; всё пройдено — сразу результаты. */
+  const resume = useCallback(() => {
+    if (resumeSectionIndex === -1) setStep({ kind: 'results' })
+    else openSection(resumeSectionIndex)
+  }, [resumeSectionIndex, openSection])
+
+  // Переход к конкретному блоку из разбора на вкладке «Результат».
+  const consumedBlockRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!hydrated || !initialBlockId) return
+    if (consumedBlockRef.current === initialBlockId) return
+    const idx = sectionIndexOf(initialBlockId)
+    if (idx === -1) return
+    consumedBlockRef.current = initialBlockId
+    openSection(idx)
+  }, [hydrated, initialBlockId, openSection])
 
   const resetAll = () => {
     setState(DEFAULT_STATE)
@@ -467,9 +522,12 @@ export default function GRIAssessment() {
     // «Посмотреть результат» — только когда пройдены ВСЕ 7 блоков; частичный
     // прогресс (griIndex > 0 при 2/7 блоках) ведёт на «Продолжить диагностику»,
     // иначе незавершённый профиль выглядел бы как готовый результат.
-    const allComplete = GRI_SECTIONS.every((s) => state.completedSections[s.id])
-    const hasResult = allComplete && griIndex > 0
-    const hasPartial = !allComplete && griIndex > 0
+    const hasResult = allSectionsDone && griIndex > 0
+    const hasPartial = !allSectionsDone && (griIndex > 0 || doneCount > 0)
+    const resumeSection = resumeSectionIndex >= 0 ? GRI_SECTIONS[resumeSectionIndex] : null
+    const resumeQuestion = resumeSection
+      ? firstUnansweredCriterionIndex(resumeSection.id, state.scores) + 1
+      : 1
     return (
       <Shell>
         <div className="grid items-center gap-8 lg:grid-cols-[1.05fr_0.95fr]">
@@ -519,8 +577,15 @@ export default function GRIAssessment() {
                 </>
               ) : hasPartial ? (
                 <>
+                  {/* Продолжение — ровно с той точки, где остановились: блок и
+                      вопрос выводятся из ответов, а не с нуля. */}
                   <button
-                    onClick={() => setStep({ kind: 'overview' })}
+                    onClick={resume}
+                    aria-label={
+                      resumeSection
+                        ? `Продолжить диагностику: блок ${resumeSectionIndex + 1} «${BLOCK_RU[resumeSection.id]}», вопрос ${resumeQuestion}`
+                        : 'Продолжить диагностику'
+                    }
                     className="group inline-flex items-center justify-center gap-2 rounded-full bg-primary px-7 py-3.5 text-base font-bold text-[#003824] shadow-primary-md transition-all hover:bg-primary/90 active:scale-[0.98]"
                   >
                     Продолжить диагностику
@@ -529,11 +594,18 @@ export default function GRIAssessment() {
                     </span>
                   </button>
                   <button
+                    onClick={() => setStep({ kind: 'overview' })}
+                    className="inline-flex items-center gap-2 rounded-full border border-white/[0.12] px-6 py-3.5 text-base font-semibold text-on-surface transition-all hover:border-primary/40 hover:bg-white/[0.03]"
+                  >
+                    <span className="material-symbols-outlined text-[18px]" aria-hidden>list</span>
+                    Список блоков
+                  </button>
+                  <button
                     onClick={() => {
                       resetAll()
                       setStep({ kind: 'onboarding' })
                     }}
-                    className="inline-flex items-center gap-2 rounded-full border border-white/[0.12] px-6 py-3.5 text-base font-semibold text-on-surface transition-all hover:border-primary/40 hover:bg-white/[0.03]"
+                    className="inline-flex items-center gap-2 rounded-full px-4 py-3.5 text-sm font-semibold text-on-surface-variant transition-colors hover:text-red-300"
                   >
                     <span className="material-symbols-outlined text-[18px]" aria-hidden>restart_alt</span>
                     Начать заново
@@ -551,12 +623,22 @@ export default function GRIAssessment() {
                 </button>
               )}
             </div>
-            <p className="flex items-center gap-1.5 font-mono text-xs text-on-surface-variant">
-              <span className="material-symbols-outlined text-[15px]" aria-hidden>
-                schedule
-              </span>
-              ~15–20 минут · сохраняется автоматически
-            </p>
+            {hasPartial && resumeSection ? (
+              <p className="flex items-center gap-1.5 font-mono text-xs text-primary/90">
+                <span className="material-symbols-outlined text-[15px]" aria-hidden>
+                  bookmark
+                </span>
+                Пройдено {doneCount} из {GRI_SECTIONS.length} блоков · продолжим с блока{' '}
+                {resumeSectionIndex + 1} «{BLOCK_RU[resumeSection.id]}», вопрос {resumeQuestion}
+              </p>
+            ) : (
+              <p className="flex items-center gap-1.5 font-mono text-xs text-on-surface-variant">
+                <span className="material-symbols-outlined text-[15px]" aria-hidden>
+                  schedule
+                </span>
+                ~15–20 минут · сохраняется автоматически
+              </p>
+            )}
           </Reveal>
 
           {/* Right — illustrative radar clearly marked as sample */}
@@ -833,7 +915,8 @@ export default function GRIAssessment() {
 
   // -------- Overview --------
   if (step.kind === 'overview') {
-    const completedCount = GRI_SECTIONS.filter((s) => state.completedSections[s.id]).length
+    const completedCount = doneCount
+    const resumeSection = resumeSectionIndex >= 0 ? GRI_SECTIONS[resumeSectionIndex] : null
     return (
       <Shell>
         <Reveal className="mb-6 text-center">
@@ -844,7 +927,14 @@ export default function GRIAssessment() {
           <p className="mx-auto mt-2 max-w-xl text-sm text-on-surface-variant">
             Оцените каждый блок — и получите индекс готовности к росту до $2M/год.
           </p>
-          <div className="mx-auto mt-4 flex max-w-sm items-center gap-3">
+          <div
+            className="mx-auto mt-4 flex max-w-sm items-center gap-3"
+            role="progressbar"
+            aria-valuemin={0}
+            aria-valuemax={GRI_SECTIONS.length}
+            aria-valuenow={completedCount}
+            aria-valuetext={`Пройдено ${completedCount} из ${GRI_SECTIONS.length} блоков`}
+          >
             <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/[0.08]">
               <div
                 className="h-full rounded-full bg-primary transition-all duration-500"
@@ -858,27 +948,40 @@ export default function GRIAssessment() {
         </Reveal>
         <div className="grid gap-3">
           {GRI_SECTIONS.map((section, index) => {
-            const isDone = !!state.completedSections[section.id]
-            const avg = sectionAvg(section.id)
+            const row = blockRows[index]
+            const isDone = isSectionDone(section.id, state.scores, state.completedSections)
+            // Начатый, но не законченный блок раньше выглядел как нетронутый:
+            // балл показывался только у завершённых. Теперь видно «отвечено 3/8».
+            const started = !isDone && row.answered > 0
+            const stateLabel = isDone
+              ? 'завершён'
+              : started
+                ? `начат, отвечено ${row.answered} из ${row.total}`
+                : 'не начат'
             return (
               <button
                 key={section.id}
-                onClick={() => {
-                  setQuestionIndex(0)
-                  setStep({ kind: 'section', sectionIndex: index })
-                }}
-                className="group rounded-2xl border border-white/[0.08] bg-white/[0.02] p-5 text-left transition-all hover:border-primary/35 hover:bg-white/[0.04]"
+                onClick={() => openSection(index)}
+                aria-label={`Блок ${index + 1}: ${BLOCK_RU[section.id]}, ${stateLabel}${
+                  row.avg != null ? `, средний балл ${row.avg.toFixed(1)} из 10` : ''
+                }`}
+                className="group rounded-2xl border border-white/[0.08] bg-white/[0.02] p-5 text-left transition-all hover:border-primary/35 hover:bg-white/[0.04] focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
               >
                 <div className="flex items-center justify-between gap-4">
                   <div className="min-w-0 flex-1">
                     <div className="mb-1 flex items-center gap-2 font-mono text-[10px] font-bold uppercase tracking-wider text-primary">
-                      Блок {index + 1}
-                      {isDone && (
-                        <span className="inline-flex items-center gap-1 text-primary">
+                      <span aria-hidden>Блок {index + 1}</span>
+                      {isDone ? (
+                        <span className="inline-flex items-center gap-1 text-primary" aria-hidden>
                           <span className="material-symbols-outlined text-[13px]" aria-hidden>check_circle</span>
                           завершён
                         </span>
-                      )}
+                      ) : started ? (
+                        <span className="inline-flex items-center gap-1 text-amber-300" aria-hidden>
+                          <span className="material-symbols-outlined text-[13px]" aria-hidden>pending</span>
+                          отвечено {row.answered}/{row.total}
+                        </span>
+                      ) : null}
                     </div>
                     <h4 className="text-base font-bold text-on-surface transition-colors group-hover:text-primary sm:text-lg">
                       {BLOCK_RU[section.id]}
@@ -886,10 +989,14 @@ export default function GRIAssessment() {
                     <p className="mt-1 text-xs text-on-surface-variant">{section.description}</p>
                   </div>
                   <div className="flex items-center gap-3">
-                    {isDone && (
-                      <div className="text-right">
-                        <div className="font-headline text-xl font-black text-on-surface">{avg.toFixed(1)}</div>
-                        <div className="font-mono text-[10px] uppercase text-on-surface-variant">балл</div>
+                    {row.avg != null && (
+                      <div className="text-right" aria-hidden>
+                        <div className="font-headline text-xl font-black text-on-surface">
+                          {row.avg.toFixed(1)}
+                        </div>
+                        <div className="font-mono text-[10px] uppercase text-on-surface-variant">
+                          {isDone ? 'балл' : 'пока'}
+                        </div>
                       </div>
                     )}
                     <div className="flex h-9 w-9 items-center justify-center rounded-full border border-white/[0.1] bg-white/[0.03] text-on-surface transition-all group-hover:bg-primary group-hover:text-[#003824]">
@@ -902,20 +1009,23 @@ export default function GRIAssessment() {
           })}
         </div>
         <div className="mt-8 flex flex-wrap justify-center gap-3">
-          <button
-            onClick={() => {
-              setQuestionIndex(0)
-              setStep({ kind: 'section', sectionIndex: 0 })
-            }}
-            className="inline-flex items-center gap-2 rounded-full bg-primary px-6 py-3 text-sm font-bold text-[#003824] shadow-primary-md transition-all hover:bg-primary/90 active:scale-[0.98]"
-          >
-            {completedCount > 0 ? 'Продолжить' : 'Начать'}
-            <span className="material-symbols-outlined text-[18px]" aria-hidden>arrow_forward</span>
-          </button>
-          {completedCount === GRI_SECTIONS.length && (
+          {/* «Продолжить» вело на первый блок независимо от прогресса — теперь
+              открывает первый незавершённый блок на первом неотвеченном вопросе. */}
+          {resumeSection ? (
+            <button
+              onClick={resume}
+              aria-label={`Продолжить с блока ${resumeSectionIndex + 1} «${BLOCK_RU[resumeSection.id]}», вопрос ${
+                firstUnansweredCriterionIndex(resumeSection.id, state.scores) + 1
+              }`}
+              className="inline-flex items-center gap-2 rounded-full bg-primary px-6 py-3 text-sm font-bold text-[#003824] shadow-primary-md transition-all hover:bg-primary/90 active:scale-[0.98]"
+            >
+              {completedCount > 0 ? 'Продолжить' : 'Начать'}
+              <span className="material-symbols-outlined text-[18px]" aria-hidden>arrow_forward</span>
+            </button>
+          ) : (
             <button
               onClick={() => setStep({ kind: 'results' })}
-              className="inline-flex items-center gap-2 rounded-full border border-primary/40 bg-primary/[0.08] px-6 py-3 text-sm font-bold text-primary transition-all hover:bg-primary/15"
+              className="inline-flex items-center gap-2 rounded-full bg-primary px-6 py-3 text-sm font-bold text-[#003824] shadow-primary-md transition-all hover:bg-primary/90 active:scale-[0.98]"
             >
               <span className="material-symbols-outlined text-[18px]" aria-hidden>insights</span>
               Получить результаты
@@ -979,26 +1089,59 @@ export default function GRIAssessment() {
           </div>
         </div>
 
-        {/* Segmented 7-block progress */}
-        <div className="mb-5 flex items-center gap-1.5" aria-hidden>
-          {GRI_SECTIONS.map((s, i) => {
-            const done = !!state.completedSections[s.id]
-            const isCurrent = i === sectionIndex
-            return (
-              <div key={s.id} className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/[0.08]">
-                <div
-                  className={`h-full rounded-full transition-all duration-500 ${
-                    done
-                      ? 'w-full bg-primary'
-                      : isCurrent
-                        ? 'w-full bg-primary/40'
-                        : 'w-0'
-                  }`}
-                />
-              </div>
-            )
-          })}
-        </div>
+        {/* Прогресс по 7 блокам — навигация, а не картинка. Раньше это был
+            набор <div> внутри aria-hidden-контейнера: вернуться в пройденный
+            блок можно было только через «К списку», а скринридер прогресса
+            вообще не видел. Теперь каждый сегмент — кнопка с состоянием. */}
+        <nav
+          aria-label={`Прогресс по блокам: пройдено ${doneCount} из ${GRI_SECTIONS.length}`}
+          className="mb-5"
+        >
+          <ul className="flex items-center gap-1.5">
+            {GRI_SECTIONS.map((s, i) => {
+              const row = blockRows[i]
+              const done = isSectionDone(s.id, state.scores, state.completedSections)
+              const isCurrent = i === sectionIndex
+              const stateLabel = done
+                ? `завершён, средний балл ${row.avg != null ? row.avg.toFixed(1) : '—'} из 10`
+                : row.answered > 0
+                  ? `отвечено ${row.answered} из ${row.total}`
+                  : 'не начат'
+              return (
+                <li key={s.id} className="flex-1">
+                  <button
+                    type="button"
+                    onClick={() => openSection(i)}
+                    aria-current={isCurrent ? 'step' : undefined}
+                    aria-label={`Блок ${i + 1}: ${BLOCK_RU[s.id]}, ${stateLabel}${
+                      isCurrent ? ' — вы здесь' : ''
+                    }`}
+                    className="group -my-2 flex w-full items-center py-2 focus:outline-none"
+                  >
+                    <span className="h-1.5 w-full overflow-hidden rounded-full bg-white/[0.08] transition-colors group-hover:bg-white/[0.16] group-focus-visible:ring-2 group-focus-visible:ring-primary/60">
+                      <span
+                        className={`block h-full rounded-full transition-all duration-500 ${
+                          done
+                            ? 'w-full bg-primary'
+                            : isCurrent
+                              ? 'w-full bg-primary/40'
+                              : row.answered > 0
+                                ? 'bg-amber-400/50'
+                                : 'w-0'
+                        }`}
+                        style={
+                          !done && !isCurrent && row.answered > 0
+                            ? { width: `${(row.answered / row.total) * 100}%` }
+                            : undefined
+                        }
+                      />
+                    </span>
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
+        </nav>
 
         {/* Within-block question progress */}
         <div className="mb-3 flex items-center justify-between">
@@ -1006,24 +1149,32 @@ export default function GRIAssessment() {
             Вопрос {safeIndex + 1} / {total}
           </span>
           <div className="flex gap-1.5">
-            {section.criteria.map((c, idx) => (
-              <button
-                key={c.id}
-                onClick={() => goToQuestion(idx)}
-                aria-label={`Вопрос ${idx + 1}`}
-                className="relative -m-2 inline-flex items-center justify-center p-2"
-              >
-                <span
-                  className={`block h-2 w-2 rounded-full transition-all ${
-                    idx === safeIndex
-                      ? 'scale-125 bg-primary'
-                      : typeof scoreMap[c.id] === 'number'
-                        ? 'bg-primary/50'
-                        : 'bg-white/15'
-                  }`}
-                />
-              </button>
-            ))}
+            {section.criteria.map((c, idx) => {
+              const answer = scoreMap[c.id]
+              const answered = typeof answer === 'number'
+              return (
+                <button
+                  key={c.id}
+                  type="button"
+                  onClick={() => goToQuestion(idx)}
+                  aria-current={idx === safeIndex ? 'step' : undefined}
+                  aria-label={`Вопрос ${idx + 1} из ${total}: ${
+                    answered ? `ответ ${answer} из 10` : 'без ответа'
+                  }${idx === safeIndex ? ' — вы здесь' : ''}`}
+                  className="relative -m-2 inline-flex items-center justify-center rounded-full p-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
+                >
+                  <span
+                    className={`block h-2 w-2 rounded-full transition-all ${
+                      idx === safeIndex
+                        ? 'scale-125 bg-primary'
+                        : answered
+                          ? 'bg-primary/50'
+                          : 'bg-white/15'
+                    }`}
+                  />
+                </button>
+              )
+            })}
           </div>
         </div>
 
@@ -1095,16 +1246,14 @@ export default function GRIAssessment() {
 
   // -------- Results --------
   if (step.kind === 'results') {
-    const chartData = GRI_SECTIONS.map((s) => ({
-      subject: BLOCK_RU[s.id] ?? s.shortTitle,
-      score: parseFloat(sectionAvg(s.id).toFixed(1)),
-      benchmark: 8,
-    }))
-    const sectionResults = GRI_SECTIONS.map((s) => ({
-      id: s.id,
-      shortTitle: s.shortTitle,
-      title: s.title,
-      avg: sectionAvg(s.id),
+    // На радар попадают только блоки с ответами. Раньше непройденный блок
+    // рисовался как честный 0 — выдуманный «критический» балл, которого
+    // пользователь не ставил. Эталон — единая цель GRI, а не литерал 8.
+    const scoredRows = blockRows.filter((r) => r.avg != null)
+    const chartData = scoredRows.map((r) => ({
+      subject: r.label,
+      score: parseFloat(r.avg!.toFixed(1)),
+      benchmark: GRI_TARGET,
     }))
     const allCriteriaScored: {
       sectionId: SectionId
@@ -1189,7 +1338,7 @@ export default function GRIAssessment() {
                     <div className="font-mono text-[10px] uppercase tracking-wider text-on-surface-variant">
                       Цель
                     </div>
-                    <div className="font-headline text-2xl font-black text-primary">8.5+</div>
+                    <div className="font-headline text-2xl font-black text-primary">{GRI_TARGET}+</div>
                   </div>
                 </div>
               </div>
@@ -1203,28 +1352,42 @@ export default function GRIAssessment() {
             <div className="mb-1 font-mono text-[11px] uppercase tracking-[0.2em] text-on-surface-variant">
               Профиль по блокам
             </div>
-            <GriRadar data={chartData} height={320} />
+            {chartData.length >= 3 ? (
+              <>
+                <GriRadar data={chartData} height={320} />
+                {scoredRows.length < GRI_SECTIONS.length && (
+                  <p className="mt-1 text-center font-mono text-[10px] text-amber-300/90">
+                    На графике {scoredRows.length} из {GRI_SECTIONS.length} блоков — остальные ещё не пройдены
+                  </p>
+                )}
+              </>
+            ) : (
+              <div className="flex h-[320px] flex-col items-center justify-center gap-3 text-center">
+                <span className="material-symbols-outlined text-[32px] text-on-surface-variant" aria-hidden>
+                  radar
+                </span>
+                <p className="max-w-xs text-sm text-on-surface-variant">
+                  Профиль строится минимум по трём блокам. Пройдено {scoredRows.length} из{' '}
+                  {GRI_SECTIONS.length} — незаполненные блоки не рисуем нулями.
+                </p>
+                {resumeSectionIndex >= 0 && (
+                  <button
+                    type="button"
+                    onClick={resume}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/[0.08] px-4 py-2 text-xs font-semibold text-primary transition-colors hover:bg-primary/15"
+                  >
+                    Продолжить диагностику
+                  </button>
+                )}
+              </div>
+            )}
           </Reveal>
+          {/* Полосы блоков раскрываются в критерии, из которых сложился балл. */}
           <Reveal delay={0.15} className="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-5">
-            <div className="mb-4 font-mono text-[11px] uppercase tracking-[0.2em] text-on-surface-variant">
-              Средние по блокам
-            </div>
-            <ul className="space-y-3">
-              {sectionResults.map((sec) => (
-                <li key={sec.id} className="flex items-center gap-3">
-                  <span className="flex-1 truncate text-sm text-on-surface">{BLOCK_RU[sec.id]}</span>
-                  <span className="h-1.5 w-24 overflow-hidden rounded-full bg-white/[0.08] sm:w-28">
-                    <span
-                      className={`block h-full rounded-full ${avgBarTone(sec.avg)}`}
-                      style={{ width: `${(sec.avg / 10) * 100}%` }}
-                    />
-                  </span>
-                  <span className="w-8 text-right font-mono text-sm tabular-nums text-on-surface">
-                    {sec.avg.toFixed(1)}
-                  </span>
-                </li>
-              ))}
-            </ul>
+            <GriBlockBreakdown
+              rows={blockRows}
+              onGoToBlock={(id) => openSection(sectionIndexOf(id))}
+            />
           </Reveal>
         </div>
 

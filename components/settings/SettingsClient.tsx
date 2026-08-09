@@ -1,6 +1,8 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import Link from 'next/link'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
 import { ActivityLogClient } from '@/components/activity/ActivityLogClient'
 import { BillingPanel } from '@/components/settings/BillingPanel'
@@ -18,9 +20,7 @@ export interface SettingsInitial {
 type Channel = 'in_app' | 'email' | 'telegram'
 type NotifPrefs = Record<string, Partial<Record<Channel, boolean>>>
 export interface Prefs {
-  appearance?: { theme?: string }
   notifications?: NotifPrefs
-  socials?: Record<string, string>
 }
 
 const TABS = [
@@ -37,22 +37,65 @@ const TABS = [
 
 type TabId = (typeof TABS)[number]['id']
 
-export function SettingsClient({ initial, preferences }: { initial: SettingsInitial; preferences: Prefs }) {
-  const [tab, setTab] = useState<TabId>('profile')
+// «Команда» is only a link to the real /team page, which middleware keeps
+// staff-only — so a client would land on a redirect. Hide it instead of
+// showing a dead-end stub. Audit 2026-08-09.
+const STAFF_ONLY_TABS: readonly TabId[] = ['team']
+
+export function SettingsClient({
+  initial,
+  preferences,
+  isStaff = false,
+  telegramPersonalPanel,
+}: {
+  initial: SettingsInitial
+  preferences: Prefs
+  isStaff?: boolean
+  telegramPersonalPanel?: React.ReactNode
+}) {
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const tabRefs = useRef<Array<HTMLButtonElement | null>>([])
+
+  const visibleTabs = TABS.filter((t) => !STAFF_ONLY_TABS.includes(t.id) || isStaff)
+  // Tab lives in the URL: /settings?tab=billing must open «Биллинг»
+  // (UpgradeGate links there) and back/forward must work.
+  const requested = searchParams.get('tab')
+  const tab: TabId = visibleTabs.some((t) => t.id === requested) ? (requested as TabId) : 'profile'
+
+  const selectTab = (id: TabId) => router.replace(`/settings?tab=${id}`, { scroll: false })
+
+  const onTabKeyDown = (e: React.KeyboardEvent, index: number) => {
+    const last = visibleTabs.length - 1
+    let next = -1
+    if (e.key === 'ArrowDown' || e.key === 'ArrowRight') next = index === last ? 0 : index + 1
+    else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') next = index === 0 ? last : index - 1
+    else if (e.key === 'Home') next = 0
+    else if (e.key === 'End') next = last
+    if (next < 0) return
+    e.preventDefault()
+    selectTab(visibleTabs[next].id)
+    tabRefs.current[next]?.focus()
+  }
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
       <div className="lg:col-span-1">
         <nav data-tour="settings-tabs" role="tablist" aria-label="Разделы настроек" className="bg-surface-container rounded-xl overflow-hidden">
-          {TABS.map((t, i) => {
+          {visibleTabs.map((t, i) => {
             const active = t.id === tab
             return (
-              <button key={t.id} role="tab" aria-selected={active} onClick={() => setTab(t.id)}
+              <button key={t.id} type="button" role="tab" id={`settings-tab-${t.id}`}
+                aria-selected={active} aria-controls={`settings-panel-${t.id}`}
+                tabIndex={active ? 0 : -1}
+                ref={(el) => { tabRefs.current[i] = el }}
+                onKeyDown={(e) => onTabKeyDown(e, i)}
+                onClick={() => selectTab(t.id)}
                 className={`w-full flex items-center gap-3 px-4 py-3 text-sm transition-colors text-left ${
                   active
                     ? 'bg-surface-container-high text-primary border-l-2 border-primary'
                     : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high border-l-2 border-transparent'
-                } ${i < TABS.length - 1 ? 'border-b border-outline-variant/10' : ''}`}>
+                } ${i < visibleTabs.length - 1 ? 'border-b border-outline-variant/10' : ''}`}>
                 <span className="material-symbols-outlined text-lg">{t.icon}</span>
                 <span className="font-medium">{t.label}</span>
               </button>
@@ -61,21 +104,41 @@ export function SettingsClient({ initial, preferences }: { initial: SettingsInit
         </nav>
       </div>
 
-      <div className="lg:col-span-3 space-y-6" role="tabpanel">
+      <div className="lg:col-span-3 space-y-6" role="tabpanel" id={`settings-panel-${tab}`} aria-labelledby={`settings-tab-${tab}`}>
         {tab === 'profile' && <ProfilePanel initial={initial} />}
         {tab === 'security' && <SecurityPanel />}
         {tab === 'notifications' && <NotificationsPanel initial={preferences?.notifications} />}
         {tab === 'appearance' && <AppearancePanel />}
         {tab === 'assistant' && <AssistantSettingsPanel />}
-        {tab === 'integrations' && <IntegrationsPanel />}
-        {tab === 'activity' && <ActivityLogClient />}
-        {tab === 'team' && (
-          <ComingSoon icon="group" title="Команда"
-            points={['Участники компании', 'Приглашения по email', 'Роли и права', 'Лимиты тарифа']} />
+        {tab === 'integrations' && (
+          <IntegrationsPanel
+            telegramPersonalPanel={telegramPersonalPanel}
+            onOpenNotifications={() => selectTab('notifications')}
+          />
         )}
+        {tab === 'activity' && <ActivityLogClient />}
+        {tab === 'team' && <TeamTabCard />}
         {tab === 'billing' && <BillingPanel />}
       </div>
     </div>
+  )
+}
+
+// The real team page already exists (/team, staff-only). The settings tab just
+// points at it instead of pretending the section is unbuilt.
+function TeamTabCard() {
+  return (
+    <Card title="Команда" subtitle="Сотрудники и закреплённые за ними клиенты." icon="group">
+      <p className="text-sm text-on-surface-variant">
+        Список сотрудников и их клиентов живёт на отдельной странице. Приглашения по email и роли на уровне
+        организации пока не реализованы — новых сотрудников заводит администратор портала.
+      </p>
+      <Link href="/team"
+        className="mt-4 inline-flex items-center gap-2 px-5 py-2 bg-gradient-to-br from-primary to-primary-container text-on-primary text-sm font-semibold rounded-lg shadow-primary-sm hover:scale-[0.98] transition-all">
+        <span className="material-symbols-outlined text-lg">group</span>
+        Открыть страницу «Команда»
+      </Link>
+    </Card>
   )
 }
 
@@ -104,16 +167,17 @@ function ProfilePanel({ initial }: { initial: SettingsInitial }) {
 
   return (
     <>
-      <Card title="Фото профиля">
+      {/* Avatar upload has no endpoint (`/api/v1/settings/profile` does not accept
+          avatar_url), so there is no button here — only the initials that are
+          actually used across the portal. Audit 2026-08-09. */}
+      <Card title="Аватар">
         <div className="flex items-center gap-5">
           <div className="w-16 h-16 rounded-full bg-surface-container-high flex items-center justify-center text-xl font-headline font-bold text-primary">
             {initials(form.firstName, form.lastName, form.email)}
           </div>
-          <div>
-            <button type="button" disabled title="Загрузка аватара — в разработке"
-              className="text-sm text-on-surface-variant border border-outline-variant/30 px-4 py-2 rounded-lg opacity-50 cursor-not-allowed">Загрузить фото</button>
-            <p className="text-xs text-on-surface-variant mt-2">JPG, PNG до 2MB · скоро</p>
-          </div>
+          <p className="text-xs text-on-surface-variant">
+            Портал показывает инициалы из имени и фамилии. Загрузка своего изображения пока не поддерживается.
+          </p>
         </div>
       </Card>
 
@@ -121,7 +185,7 @@ function ProfilePanel({ initial }: { initial: SettingsInitial }) {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Field label="Имя" value={form.firstName} onChange={set('firstName')} placeholder="Иван" />
           <Field label="Фамилия" value={form.lastName} onChange={set('lastName')} placeholder="Иванов" />
-          <Field label="Email" value={form.email} onChange={() => {}} type="email" readOnly hint="Смена email — в разделе Безопасность (скоро)" />
+          <Field label="Email" value={form.email} onChange={() => {}} type="email" readOnly hint="Email привязан к учётной записи — сменить его из портала нельзя." />
           <Field label="Телефон" value={form.phone} onChange={set('phone')} placeholder="+7 700 000 00 00" type="tel" />
           <Field label="Должность" value={form.position} onChange={set('position')} placeholder="Manager" />
           <Field label="Организация" value={form.organization} onChange={set('organization')} placeholder="Компания" />
@@ -237,6 +301,8 @@ function TwoFactorCard() {
   const [backupCodes, setBackupCodes] = useState<string[] | null>(null)
   const [disabling, setDisabling] = useState(false)
   const [disableCode, setDisableCode] = useState('')
+  const [regenerating, setRegenerating] = useState(false)
+  const [regenCode, setRegenCode] = useState('')
 
   const loadStatus = useCallback(async () => {
     try {
@@ -291,18 +357,17 @@ function TwoFactorCard() {
   }
 
   const regenerate = async () => {
-    const c = window.prompt('Введите текущий код из приложения, чтобы перевыпустить резервные коды:')
-    if (!c) return
     setBusy(true); setErr(null)
     try {
       const res = await fetch('/api/v1/security/backup-codes/regenerate', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-        body: JSON.stringify({ code: c.trim() }),
+        body: JSON.stringify({ code: regenCode.trim() }),
       })
       const json = await res.json().catch(() => ({}))
-      if (!res.ok || !json.ok) { toast.error(json.error === 'invalid_code' ? 'Неверный код' : 'Не удалось'); return }
-      setBackupCodes(json.backup_codes); loadStatus()
-    } catch { toast.error('Ошибка сети') } finally { setBusy(false) }
+      if (!res.ok || !json.ok) { setErr(json.error === 'invalid_code' ? 'Неверный код.' : 'Не удалось перевыпустить коды.'); return }
+      setBackupCodes(json.backup_codes); setRegenerating(false); setRegenCode(''); loadStatus()
+      toast.success('Резервные коды перевыпущены')
+    } catch { setErr('Ошибка сети.') } finally { setBusy(false) }
   }
 
   return (
@@ -324,8 +389,17 @@ function TwoFactorCard() {
           {backupCodes && <BackupCodesPanel codes={backupCodes} onDone={() => setBackupCodes(null)} />}
           {err && <p className="text-xs text-error font-mono mt-2">{err}</p>}
           <div className="flex flex-wrap gap-2 mt-4">
-            <button type="button" onClick={regenerate} disabled={busy} className="text-xs px-3 py-1.5 rounded-lg border border-white/[0.06] text-on-surface-variant hover:text-on-surface transition-colors disabled:opacity-50">Перевыпустить резервные коды</button>
-            {!disabling ? (
+            {!regenerating ? (
+              <button type="button" onClick={() => { setRegenerating(true); setDisabling(false); setErr(null) }} className="text-xs px-3 py-1.5 rounded-lg border border-white/[0.06] text-on-surface-variant hover:text-on-surface transition-colors disabled:opacity-50">Перевыпустить резервные коды</button>
+            ) : (
+              <div className="flex items-center gap-2 w-full mt-1">
+                <input value={regenCode} onChange={(e) => setRegenCode(e.target.value)} placeholder="Код из приложения" inputMode="numeric" aria-label="Код из приложения для перевыпуска резервных кодов"
+                  className="flex-1 h-9 bg-surface-container-high border border-white/[0.06] rounded-lg px-3 text-sm font-mono text-on-surface focus:outline-none focus:border-primary/40" />
+                <button type="button" onClick={regenerate} disabled={busy || regenCode.trim().length < 6} className="text-xs px-3 py-2 rounded-lg bg-primary text-on-primary font-semibold disabled:opacity-50">Перевыпустить</button>
+                <button type="button" onClick={() => { setRegenerating(false); setRegenCode('') }} className="text-xs px-3 py-2 rounded-lg text-on-surface-variant">Отмена</button>
+              </div>
+            )}
+            {regenerating ? null : !disabling ? (
               <button type="button" onClick={() => { setDisabling(true); setErr(null) }} className="text-xs px-3 py-1.5 rounded-lg border border-error/30 text-error hover:bg-error/10 transition-colors">Отключить 2FA</button>
             ) : (
               <div className="flex items-center gap-2 w-full mt-1">
@@ -518,21 +592,25 @@ function SessionsCard() {
     } catch { toast.error('Не удалось завершить сессии'); setBusy(false) }
   }
 
+  // The card used to be titled «Активные сессии» and showed one row — but that
+  // row is not a server session, it is `navigator.userAgent` of the browser you
+  // are reading this in. A list of one guess is not a list. Renamed to what it
+  // actually is; the revoke-all button below is real. Audit 2026-08-09.
   return (
-    <Card title="Активные сессии" subtitle="Устройства, на которых выполнен вход в аккаунт." icon="devices">
+    <Card title="Текущее устройство" subtitle="Портал пока не ведёт список сессий — здесь только этот браузер." icon="devices">
       <div className="flex items-center justify-between py-3 border-b border-outline-variant/10">
         <div className="flex items-center gap-3">
           <span className="material-symbols-outlined text-xl text-primary">computer</span>
           <div>
             <p className="text-sm font-medium text-on-surface">{device}</p>
-            <p className="text-xs text-on-surface-variant flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" /> Активна сейчас · этот браузер
-            </p>
+            <p className="text-xs text-on-surface-variant">Определено по этому браузеру, а не по данным сервера</p>
           </div>
         </div>
-        <span className="text-[10px] font-mono text-primary bg-primary/10 px-2 py-0.5 rounded-full">текущая</span>
       </div>
-      <p className="text-xs text-on-surface-variant/70 mt-3 mb-4">Полный список устройств с гео и временем последнего входа — в разработке.</p>
+      <p className="text-xs text-on-surface-variant/70 mt-3 mb-4">
+        Список остальных устройств с временем и местом входа сервер пока не отдаёт. Кнопка ниже завершает сессии
+        везде — включая это устройство.
+      </p>
       <button type="button" onClick={revokeAll} disabled={busy} aria-busy={busy}
         className="text-sm text-error border border-error/30 px-4 py-2 rounded-lg hover:bg-error/10 transition-colors disabled:opacity-50">
         {busy ? 'Завершаем…' : 'Завершить все сессии'}
@@ -647,23 +725,46 @@ function TelegramBinding({
   const [linked, setLinked] = useState<boolean | null>(null)
   const [configured, setConfigured] = useState(true)
   const [busy, setBusy] = useState(false)
+  const [checking, setChecking] = useState(false)
+  // The «откройте бота и вернитесь» toast used to lead nowhere: there was no way
+  // to re-read the status short of F5. Shown after a link attempt.
+  const [awaitingStart, setAwaitingStart] = useState(false)
 
   const refresh = useCallback(async () => {
     try {
-      const res = await fetch('/api/v1/settings/telegram', { credentials: 'include' })
+      const res = await fetch('/api/v1/settings/telegram', { credentials: 'include', cache: 'no-store' })
       const json = await res.json().catch(() => ({}))
       if (json?.ok) {
         setLinked(Boolean(json.linked))
         setConfigured(Boolean(json.configured))
+        return Boolean(json.linked)
       }
     } catch {
       /* оставляем как есть */
     }
+    return null
   }, [])
 
   useEffect(() => {
     void refresh()
   }, [refresh])
+
+  const checkNow = async () => {
+    setChecking(true)
+    try {
+      const now = await refresh()
+      if (now === true) {
+        setAwaitingStart(false)
+        toast.success('Telegram привязан')
+      } else if (now === false) {
+        toast.error('Привязка ещё не подтверждена — нажмите «Start» в боте и проверьте снова')
+      } else {
+        toast.error('Не удалось проверить статус')
+      }
+    } finally {
+      setChecking(false)
+    }
+  }
 
   const link = async () => {
     setBusy(true)
@@ -672,7 +773,8 @@ function TelegramBinding({
       const json = await res.json().catch(() => ({}))
       if (res.ok && json?.ok && json.url) {
         window.open(json.url, '_blank', 'noopener')
-        toast.success('Откройте бота и нажмите «Start» — затем вернитесь и обновите статус')
+        setAwaitingStart(true)
+        toast.success('Откройте бота и нажмите «Start», затем вернитесь и нажмите «Проверить подключение»')
       } else if (json?.error === 'telegram_not_configured') {
         toast.error('Telegram-бот не настроен на сервере')
       } else {
@@ -713,29 +815,49 @@ function TelegramBinding({
           <p className="text-xs text-on-surface-variant mt-0.5">
             {!configured
               ? 'Бот не настроен на сервере — обратитесь к администратору.'
-              : linked
-                ? 'Привязан. CRM-дайджест и инсайты приходят в чат.'
-                : 'Привяжите чат, чтобы получать напоминания прямо в Telegram.'}
+              : linked === null
+                ? 'Проверяем статус привязки…'
+                : linked
+                  ? 'Привязан. CRM-дайджест и инсайты приходят в чат.'
+                  : 'Привяжите чат, чтобы получать напоминания прямо в Telegram.'}
           </p>
         </div>
-        {configured && (
-          <div className="shrink-0">
+        {configured && linked !== null && (
+          <div className="shrink-0 flex flex-wrap gap-2 justify-end">
             {linked ? (
               <button
+                type="button"
                 onClick={unlink}
                 disabled={busy}
+                aria-label="Отвязать Telegram-бота"
                 className="px-3 py-1.5 rounded-lg border border-white/[0.08] text-xs text-on-surface-variant hover:bg-white/[0.04] disabled:opacity-40 transition-colors"
               >
                 Отвязать
               </button>
             ) : (
-              <button
-                onClick={link}
-                disabled={busy}
-                className="px-3 py-1.5 rounded-lg bg-primary/15 border border-primary/30 text-xs font-medium text-primary hover:bg-primary/25 disabled:opacity-40 transition-colors"
-              >
-                Привязать Telegram
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={link}
+                  disabled={busy}
+                  aria-label="Привязать Telegram-бота"
+                  className="px-3 py-1.5 rounded-lg bg-primary/15 border border-primary/30 text-xs font-medium text-primary hover:bg-primary/25 disabled:opacity-40 transition-colors"
+                >
+                  Привязать Telegram
+                </button>
+                {awaitingStart && (
+                  <button
+                    type="button"
+                    onClick={checkNow}
+                    disabled={checking}
+                    aria-busy={checking}
+                    aria-label="Проверить подключение Telegram"
+                    className="px-3 py-1.5 rounded-lg border border-white/[0.08] text-xs text-on-surface-variant hover:bg-white/[0.04] disabled:opacity-40 transition-colors"
+                  >
+                    {checking ? 'Проверяем…' : 'Проверить подключение'}
+                  </button>
+                )}
+              </>
             )}
           </div>
         )}
@@ -756,37 +878,24 @@ function TelegramBinding({
 
 // ── Внешний вид ───────────────────────────────────────────────────────────────
 // The portal ships a single dark theme (all colors are absolute dark tokens —
-// there are no `dark:` variants), so light/system are honestly marked "скоро"
-// rather than shown as working toggles that change nothing. Audit 2026-07-02.
+// there are no `dark:` variants) and nothing here is persisted anywhere. The
+// three-button chooser was pure decoration: two options were permanently
+// disabled and the «active» one had no handler. Replaced with a plain honest
+// statement — no imitation of a choice that does not exist. Audit 2026-08-09.
 function AppearancePanel() {
-  const options = [
-    { id: 'dark', label: 'Тёмная', icon: 'dark_mode', available: true },
-    { id: 'light', label: 'Светлая', icon: 'light_mode', available: false },
-    { id: 'system', label: 'Системная', icon: 'contrast', available: false },
-  ]
   return (
-    <Card title="Тема оформления" subtitle="Сейчас доступна тёмная тема — фирменный вид портала.">
-      <div className="grid grid-cols-3 gap-3">
-        {options.map((o) => {
-          const active = o.id === 'dark'
-          return (
-            <button key={o.id} type="button" disabled={!o.available} aria-pressed={active}
-              title={o.available ? undefined : 'Скоро'}
-              className={`relative flex flex-col items-center gap-2 py-5 rounded-xl border transition-all ${
-                active
-                  ? 'border-primary text-primary bg-primary/5'
-                  : 'border-outline-variant/30 text-on-surface-variant/50 cursor-not-allowed'
-              }`}>
-              <span className="material-symbols-outlined text-2xl">{o.icon}</span>
-              <span className="text-sm font-medium">{o.label}</span>
-              {!o.available && (
-                <span className="absolute top-2 right-2 text-[9px] font-mono uppercase tracking-wider text-on-surface-variant/40">скоро</span>
-              )}
-            </button>
-          )
-        })}
+    <Card title="Тема оформления" icon="palette" subtitle="Портал выпускается в одной теме.">
+      <div className="flex items-center gap-3 rounded-xl border border-primary/25 bg-primary/[0.05] px-4 py-3">
+        <span className="material-symbols-outlined text-2xl text-primary">dark_mode</span>
+        <div>
+          <p className="text-sm font-medium text-on-surface">Тёмная тема</p>
+          <p className="text-xs text-on-surface-variant mt-0.5">Единственная доступная — выбирать пока не из чего.</p>
+        </div>
       </div>
-      <p className="text-xs text-on-surface-variant/70 mt-4">Светлая тема, плотность интерфейса и размер шрифта — в разработке.</p>
+      <p className="text-xs text-on-surface-variant/70 mt-4">
+        Светлая и системная темы, плотность интерфейса и размер шрифта — в разработке. Когда появятся, здесь
+        появится и переключатель.
+      </p>
     </Card>
   )
 }
@@ -794,25 +903,36 @@ function AppearancePanel() {
 // ── Интеграции ────────────────────────────────────────────────────────────────
 interface CrmRow { id: string; provider: string; domain: string; isActive: boolean; lastSyncStatus: string | null; syncedDeals: number; syncedContacts: number }
 
-const STUB_INTEGRATIONS = [
-  { id: 'telegram', name: 'Telegram', icon: 'send', status: 'coming', desc: 'Уведомления и алерты в Telegram' },
-  { id: 'whatsapp', name: 'WhatsApp', icon: 'chat', status: 'coming', desc: 'Уведомления в WhatsApp' },
-  { id: 'sheets',   name: 'Google Sheets', icon: 'table_view', status: 'available', desc: 'Экспорт метрик и базы клиентов' },
-  { id: 'notion',   name: 'Notion', icon: 'description', status: 'coming', desc: 'Синхронизация заметок и отчётов' },
-  { id: 'slack',    name: 'Slack', icon: 'tag', status: 'coming', desc: 'Алерты в рабочий канал' },
-  { id: 'webhooks', name: 'Webhooks', icon: 'webhook', status: 'needs_setup', desc: 'Исходящие вебхуки на события' },
-  { id: 'apikeys',  name: 'API-ключи', icon: 'key', status: 'available', desc: 'Программный доступ к API портала' },
+// Roadmap, not controls. None of these has an endpoint: `app/api/webhooks/*`
+// holds only INBOUND provider webhooks (Meta/Kaspi/WhatsApp) and there is no
+// user-facing API-key store at all. Previously Google Sheets and API-ключи wore
+// a «Доступно» badge above a permanently disabled button — the badge lied.
+// Telegram was listed as «Скоро» while it actually works twice on this same
+// page, so it moved out of the list into its own live cards below.
+// Audit 2026-08-09.
+const PLANNED_INTEGRATIONS = [
+  { id: 'whatsapp', name: 'WhatsApp', icon: 'chat', desc: 'Уведомления в WhatsApp' },
+  { id: 'sheets',   name: 'Google Sheets', icon: 'table_view', desc: 'Экспорт метрик и базы клиентов' },
+  { id: 'notion',   name: 'Notion', icon: 'description', desc: 'Синхронизация заметок и отчётов' },
+  { id: 'slack',    name: 'Slack', icon: 'tag', desc: 'Алерты в рабочий канал' },
+  { id: 'webhooks', name: 'Webhooks', icon: 'webhook', desc: 'Исходящие вебхуки на события' },
+  { id: 'apikeys',  name: 'API-ключи', icon: 'key', desc: 'Программный доступ к API портала' },
 ] as const
 
 const STATUS_BADGE: Record<string, { label: string; cls: string }> = {
   connected:   { label: 'Подключено',         cls: 'text-primary bg-primary/10 border-primary/20' },
   available:   { label: 'Доступно',           cls: 'text-secondary bg-secondary/10 border-secondary/20' },
   coming:      { label: 'Скоро',              cls: 'text-on-surface-variant bg-surface-container-high border-outline-variant/30' },
-  needs_setup: { label: 'Требуется настройка', cls: 'text-tertiary-container bg-tertiary-container/10 border-tertiary-container/20' },
   error:       { label: 'Ошибка',             cls: 'text-error bg-error/10 border-error/20' },
 }
 
-function IntegrationsPanel() {
+function IntegrationsPanel({
+  telegramPersonalPanel,
+  onOpenNotifications,
+}: {
+  telegramPersonalPanel?: React.ReactNode
+  onOpenNotifications?: () => void
+}) {
   const [crm, setCrm] = useState<CrmRow[]>([])
   const [noOrg, setNoOrg] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -923,24 +1043,46 @@ function IntegrationsPanel() {
         )}
       </Card>
 
-      <Card title="Каналы и сервисы" subtitle="Уведомления, экспорт, вебхуки и API.">
+      {/* Telegram lives in two places on purpose — a notification bot and a
+          personal account. Both are shown here, side by side and named apart,
+          instead of the personal panel hanging under every single tab. */}
+      <Card title="Telegram · бот уведомлений" icon="send" subtitle="CRM-дайджест и алерты приходят от бота портала.">
+        <p className="text-sm text-on-surface-variant">
+          Привязка чата с ботом и выбор, что именно он присылает, живут во вкладке «Уведомления» — там же, где
+          остальные каналы.
+        </p>
+        <button type="button" onClick={() => onOpenNotifications?.()}
+          className="mt-4 inline-flex items-center gap-2 text-xs px-3 py-1.5 rounded-lg border border-primary/30 bg-primary/[0.06] text-primary font-medium hover:bg-primary/[0.12] transition-colors">
+          <span className="material-symbols-outlined text-base">notifications</span>
+          Открыть «Уведомления»
+        </button>
+      </Card>
+
+      {telegramPersonalPanel && (
+        <Card title="Telegram · личный аккаунт" icon="account_circle"
+          subtitle="Ассистент отвечает вам в личных сообщениях — это не бот уведомлений.">
+          {telegramPersonalPanel}
+        </Card>
+      )}
+
+      <Card title="Каналы и сервисы" subtitle="Чего здесь пока нет — честный список, а не набор кнопок.">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {STUB_INTEGRATIONS.map((s) => (
+          {PLANNED_INTEGRATIONS.map((s) => (
             <div key={s.id} className="bg-surface-container-high rounded-xl p-4 border border-white/[0.04]">
-              <div className="flex items-start justify-between mb-2">
-                <div className="flex items-center gap-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-3 min-w-0">
                   <span className="material-symbols-outlined text-2xl text-on-surface-variant/60">{s.icon}</span>
-                  <div><p className="text-sm font-semibold text-on-surface">{s.name}</p><p className="text-xs text-on-surface-variant">{s.desc}</p></div>
+                  <div className="min-w-0"><p className="text-sm font-semibold text-on-surface">{s.name}</p><p className="text-xs text-on-surface-variant">{s.desc}</p></div>
                 </div>
-                <Badge status={s.status} />
+                <Badge status="coming" />
               </div>
-              <button type="button" disabled title="В разработке"
-                className="mt-2 text-xs px-3 py-1.5 rounded-lg border border-outline-variant/30 text-on-surface-variant opacity-50 cursor-not-allowed">
-                {s.status === 'available' ? 'Подключить' : s.status === 'needs_setup' ? 'Настроить' : 'Скоро'}
-              </button>
             </div>
           ))}
         </div>
+        <p className="text-xs text-on-surface-variant/70 mt-4">
+          Ни одна из этих интеграций ещё не подключается из портала — кнопок нет специально. Работают сейчас
+          только CRM выше и оба Telegram-канала.
+        </p>
       </Card>
     </>
   )
@@ -966,23 +1108,6 @@ function Card({ title, subtitle, icon, children }: { title: string; subtitle?: s
 function Badge({ status }: { status: string }) {
   const b = STATUS_BADGE[status] ?? STATUS_BADGE.coming
   return <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full border shrink-0 ${b.cls}`}>{b.label}</span>
-}
-
-function ComingSoon({ icon, title, points }: { icon: string; title: string; points: string[] }) {
-  return (
-    <div className="bg-surface-container rounded-xl p-8 text-center">
-      <span className="material-symbols-outlined text-4xl text-primary/40 mb-3 block">{icon}</span>
-      <h3 className="font-headline text-lg font-bold text-on-surface">{title}</h3>
-      <p className="text-sm text-on-surface-variant mt-1 mb-5">Раздел в разработке. Здесь появится:</p>
-      <ul className="inline-flex flex-col gap-2 text-left">
-        {points.map((p) => (
-          <li key={p} className="flex items-center gap-2 text-sm text-on-surface-variant">
-            <span className="material-symbols-outlined text-base text-primary/50">check_circle</span>{p}
-          </li>
-        ))}
-      </ul>
-    </div>
-  )
 }
 
 function Toggle({ checked, onChange, label }: { checked?: boolean; onChange: () => void; label?: string }) {

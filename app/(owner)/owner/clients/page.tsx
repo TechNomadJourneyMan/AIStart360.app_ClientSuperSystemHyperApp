@@ -1,62 +1,13 @@
 import type { Metadata } from 'next'
-import { ClientsTable } from '@/components/clients/ClientsTable'
-import { ClientFilters } from '@/components/clients/ClientFilters'
-import { createServerClient } from '@/lib/supabase-server'
+import { ClientsPanel } from '@/components/clients/ClientsPanel'
 
 // Mirrors app/(dashboard)/clients/page.tsx. It can no longer be re-exported:
 // the owner portal needs basePath='/owner' on the table links, otherwise they
 // point at /clients/<id> — an ADMIN_PATH middleware bounces the owner off.
+// No /admin link here: that route is middleware-gated to role 'admin'.
 export const metadata: Metadata = { title: 'Клиенты' }
 
-async function getClientStats() {
-  try {
-    const sb = createServerClient()
-    const { data } = await sb
-      .from('profiles')
-      .select('id, status')
-      .not('status', 'eq', 'rejected')
-
-    if (!data) return null
-
-    const total = data.length
-    const active = data.filter((p) => p.status === 'approved').length
-    const pending = data.filter((p) => p.status === 'pending_approval').length
-
-    // Average Point A score from diagnostics
-    const userIds = data.map((p) => p.id)
-    if (userIds.length === 0) return { total, active, pending, avgScore: null }
-
-    const { data: diags } = await sb
-      .from('diagnostics')
-      .select('overall_score')
-      .in('user_id', userIds)
-      .eq('is_current', true)
-      .not('overall_score', 'is', null)
-
-    const scores = (diags ?? []).map((d) => d.overall_score as number)
-    const avgScore = scores.length > 0
-      ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length * 10)
-      : null
-
-    return { total, active, pending, avgScore }
-  } catch {
-    return null
-  }
-}
-
-export default async function OwnerClientsPage() {
-  const stats = await getClientStats()
-
-  // No mock fallback here — when the query fails the row is simply hidden.
-  const statCards = stats
-    ? [
-        { label: 'Всего клиентов', value: String(stats.total), icon: 'business_center', color: 'text-primary' },
-        { label: 'Активных', value: String(stats.active), icon: 'check_circle', color: 'text-primary' },
-        { label: 'Ожидают', value: String(stats.pending), icon: 'hourglass_top', color: 'text-tertiary-container' },
-        { label: 'Avg Point A', value: stats.avgScore !== null ? String(stats.avgScore) : '—', icon: 'radar', color: 'text-secondary' },
-      ]
-    : []
-
+export default function OwnerClientsPage() {
   return (
     <div className="space-y-6">
       {/* Page Header */}
@@ -67,26 +18,7 @@ export default async function OwnerClientsPage() {
         </div>
       </div>
 
-      {/* Stats Row */}
-      {statCards.length > 0 && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          {statCards.map((stat) => (
-            <div key={stat.label} className="bg-surface-container-low rounded-xl p-4 flex items-center gap-3">
-              <span className={`material-symbols-outlined text-2xl ${stat.color}`}>{stat.icon}</span>
-              <div>
-                <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest">{stat.label}</p>
-                <p className={`text-xl font-mono font-bold ${stat.color}`}>{stat.value}</p>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Filters + Table */}
-      <div className="bg-surface-container rounded-xl overflow-hidden">
-        <ClientFilters />
-        <ClientsTable basePath="/owner" />
-      </div>
+      <ClientsPanel basePath="/owner" />
     </div>
   )
 }
