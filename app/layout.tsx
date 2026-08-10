@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next'
 import { Toaster } from 'sonner'
 import NextTopLoader from 'nextjs-toploader'
 import { Providers } from './providers'
+import NativeShell from '@/components/native/NativeShell'
 import './globals.css'
 
 export const metadata: Metadata = {
@@ -54,6 +55,9 @@ export default function RootLayout({
         {/* Top navigation progress bar — instant feedback on every click/route change */}
         <NextTopLoader color="#6effc0" height={2} showSpinner={false} shadow="0 0 8px #6effc0,0 0 4px #6effc0" />
         <Providers>{children}</Providers>
+        {/* Android/iOS shell wiring: back button, splash, status bar, deep
+            links. No-ops in a browser — see components/native/NativeShell. */}
+        <NativeShell />
         {/* Single global sonner Toaster (PERF-09: the only toast system).
             mobileOffset clears the mobile bottom-nav (UX-07). */}
         <Toaster theme="dark" position="bottom-right" richColors mobileOffset={{ bottom: '88px' }} />

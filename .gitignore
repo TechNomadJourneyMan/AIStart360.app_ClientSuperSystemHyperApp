@@ -54,3 +54,12 @@ ruvector.db
 
 # SWC build cache
 /.swc
+
+# Capacitor native builds
+/android/.gradle
+/android/app/build
+/android/build
+/android/local.properties
+/ios/App/Pods
+/ios/App/build
+/ios/App/DerivedData
