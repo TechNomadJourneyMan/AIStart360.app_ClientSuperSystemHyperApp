@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useState, useEffect } from 'react'
 import { useAuthStore } from '@/stores/auth.store'
-import { getAllowedHrefsForRole } from '@/lib/navigation'
+import { getAllowedHrefsForRole, isActiveNavPath } from '@/lib/navigation'
 import { isPremiumLocked, premiumLockedRoot } from '@/lib/premium'
 import type { UserRole } from '@/types'
 
@@ -22,6 +22,7 @@ const DRAWER_SECTIONS = [
     title: 'Основное',
     items: [
       { label: 'Дэшборд',    href: '/dashboard',  icon: 'dashboard'        },
+      { label: 'Магазин',    href: '/store',      icon: 'storefront'       },
       { label: 'GRI',        href: '/gri',         icon: 'radar'            },
       { label: 'Клиенты',    href: '/pulse',       icon: 'groups'           },
       { label: 'Метрики',    href: '/metrics',     icon: 'monitoring'       },
@@ -117,8 +118,7 @@ export function MobileNav() {
     return () => { document.body.style.overflow = '' }
   }, [drawerOpen, premiumItem])
 
-  const isActive = (href: string) =>
-    href === '/dashboard' ? pathname === href : pathname.startsWith(href)
+  const isActive = (href: string) => isActiveNavPath(pathname, href)
 
   const isAnyDrawerActive = filteredDrawer.flatMap(s => s.items).some(i => isActive(i.href))
 

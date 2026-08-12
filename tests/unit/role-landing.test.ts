@@ -3,6 +3,7 @@ import {
   CLIENT_DASHBOARD_PATH,
   CLIENT_WAITING_ROOM_PATH,
   clientLandingPath,
+  postLoginPath,
   roleLandingPath,
 } from '@/lib/role-landing'
 
@@ -57,5 +58,37 @@ describe('roleLandingPath (FE-06)', () => {
   it('defaults to /dashboard for an unknown/missing role', () => {
     expect(roleLandingPath(null)).toBe('/dashboard')
     expect(roleLandingPath(undefined)).toBe('/dashboard')
+  })
+})
+
+describe('postLoginPath', () => {
+  it.each(['client', 'admin', 'super_admin'] as const)(
+    'returns an approved %s to the requested Store',
+    (role) => {
+      expect(postLoginPath(role, 'approved', '/store')).toBe('/store')
+    },
+  )
+
+  it('keeps owner and expert on their canonical portals', () => {
+    expect(postLoginPath('owner', 'approved', '/store')).toBe('/owner/dashboard')
+    expect(postLoginPath('expert', 'approved', '/store')).toBe('/expert/dashboard')
+  })
+
+  it.each(['client', 'admin', 'owner', 'expert'] as const)(
+    'does not send a pending %s to Store',
+    (role) => {
+      expect(postLoginPath(role, 'pending_approval', '/store')).toBe('/client/waiting-room')
+    },
+  )
+
+  it('keeps a pending super admin on its existing role landing', () => {
+    expect(postLoginPath('super_admin', 'pending_approval', '/store')).toBe('/admin-giga-panel')
+  })
+
+  it('does not let other or unsafe return targets override role landing', () => {
+    expect(postLoginPath('client', 'approved', '/settings')).toBe('/dashboard')
+    expect(postLoginPath('client', 'approved', 'https://evil.example/store')).toBe('/dashboard')
+    expect(postLoginPath('client', 'approved', '//evil.example/store')).toBe('/dashboard')
+    expect(postLoginPath(null, 'approved', '/store')).toBe('/dashboard')
   })
 })

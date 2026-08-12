@@ -1,4 +1,5 @@
 import type { UserRole } from '@/types'
+import { safeInternalPath } from '@/lib/safe-redirect'
 
 /** Approval holding page — shared by every role that is not approved yet. */
 export const WAITING_ROOM_PATH = '/client/waiting-room'
@@ -63,4 +64,25 @@ export function roleLandingPath(
     default:
       return CLIENT_DASHBOARD_PATH
   }
+}
+
+/**
+ * Honour the Store return target only for roles that may open the shared
+ * cabinet and only after an explicit approval. Every other role/status keeps
+ * its canonical landing path, and attacker-controlled `from` values are never
+ * returned before passing the internal-path guard.
+ */
+export function postLoginPath(
+  role: UserRole | null | undefined,
+  status: string | null | undefined,
+  requestedFrom: string | null | undefined,
+): string {
+  const safeFrom = safeInternalPath(requestedFrom, CLIENT_DASHBOARD_PATH)
+  const mayOpenStore =
+    status === 'approved'
+    && (role === 'client' || role === 'admin' || role === 'super_admin')
+
+  return safeFrom === '/store' && mayOpenStore
+    ? safeFrom
+    : roleLandingPath(role, status)
 }

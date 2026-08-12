@@ -2,8 +2,10 @@ import { describe, it, expect } from 'vitest'
 import type { UserRole } from '@/types'
 import {
   getNavForRole,
+  getAllowedHrefsForRole,
   getPrimaryNavForRole,
   hasPermission,
+  isActiveNavPath,
   ROLE_LABELS,
   ROLE_PERMISSIONS,
 } from '@/lib/navigation'
@@ -42,6 +44,23 @@ describe('navigation (FE-01/02 canonical lowercase roles)', () => {
     const hrefs = getPrimaryNavForRole('client').map((i) => i.href)
     expect(hrefs).toContain('/point-a')
     expect(hrefs).toContain('/metrics')
+    expect(hrefs).toContain('/store')
+  })
+
+  it('shows the Store only to shared-cabinet roles, including mobile navigation', () => {
+    for (const role of ['client', 'admin', 'super_admin'] as UserRole[]) {
+      expect(getPrimaryNavForRole(role).map((item) => item.href)).toContain('/store')
+      expect(getAllowedHrefsForRole(role)).toContain('/store')
+    }
+    for (const role of ['expert', 'owner'] as UserRole[]) {
+      expect(getPrimaryNavForRole(role).map((item) => item.href)).not.toContain('/store')
+    }
+  })
+
+  it('matches active navigation by whole path segment', () => {
+    expect(isActiveNavPath('/store', '/store')).toBe(true)
+    expect(isActiveNavPath('/store/inventory', '/store')).toBe(true)
+    expect(isActiveNavPath('/storefront', '/store')).toBe(false)
   })
 
   it('permissions: wildcards, scoping and denials work per role', () => {

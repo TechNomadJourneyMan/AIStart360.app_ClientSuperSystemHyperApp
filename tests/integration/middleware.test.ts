@@ -125,6 +125,32 @@ describe('RBAC Middleware', () => {
     expect(res.status).toBe(200)
   })
 
+  it('protects Store and keeps nested Store routes available to an approved client', async () => {
+    const anonymous = await middleware(createRequest('/store'))
+    expect(anonymous.status).toBe(307)
+    expect(locationOf(anonymous).pathname).toBe('/login')
+    expect(locationOf(anonymous).searchParams.get('from')).toBe('/store')
+
+    for (const pathname of ['/store', '/store/inventory']) {
+      const response = await middleware(createRequest(pathname, 'client', 'approved'))
+      expect(response.status).toBe(200)
+    }
+  })
+
+  it('enforces the shared-cabinet role matrix for Store', async () => {
+    expect((await middleware(createRequest('/store', 'admin'))).status).toBe(200)
+    expect((await middleware(createRequest('/store', 'super_admin'))).status).toBe(200)
+
+    const expert = await middleware(createRequest('/store', 'expert'))
+    expect(locationOf(expert).pathname).toBe('/expert/dashboard')
+
+    const owner = await middleware(createRequest('/store', 'owner'))
+    expect(locationOf(owner).pathname).toBe('/owner/dashboard')
+
+    const pending = await middleware(createRequest('/store', 'client', 'pending_approval'))
+    expect(locationOf(pending).pathname).toBe('/client/waiting-room')
+  })
+
   // Regression: '/clients' (admin-only) must NOT leak through the '/client'
   // cabinet prefix — startsWith matching allowed clients onto /clients.
   it('redirects client away from admin-only /clients', async () => {

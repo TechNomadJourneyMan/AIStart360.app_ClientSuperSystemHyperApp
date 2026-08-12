@@ -6,7 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { useAuthStore } from '@/stores/auth.store'
 import { Logo } from '@/components/ui/Logo'
 import { safeInternalPath } from '@/lib/safe-redirect'
-import { roleLandingPath } from '@/lib/role-landing'
+import { postLoginPath } from '@/lib/role-landing'
 
 function LoginContent() {
   const [email, setEmail] = useState('')
@@ -31,9 +31,9 @@ function LoginContent() {
         router.push('/client/welcome')
         return
       }
-      // FE-06: role→home via the single roleLandingPath; fall back to the
-      // (already same-origin-validated) return path only for an unknown role.
-      router.push(user.role ? roleLandingPath(user.role, user.status) : from)
+      // The Store return target is honoured only for approved shared-cabinet
+      // roles; every other role/status keeps its canonical landing path.
+      router.push(postLoginPath(user.role, user.status, from))
     }
   }, [user, from, router])
 

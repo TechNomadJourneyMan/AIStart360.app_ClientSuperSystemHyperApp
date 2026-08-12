@@ -16,6 +16,8 @@
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
     "audit:routes": "node scripts/audit-static-routes.js",
+    "release:store-schema": "node scripts/apply-store-control-release.js",
+    "provision:store-account": "node scripts/provision-store-account.js",
     "seed:myhonor": "node scripts/seed-myhonor-client.js",
     "whatsapp-web:bridge": "node --env-file=.env services/whatsapp-web-bridge/server.mjs",
     "whatsapp-web:bridge:check": "npm --prefix services/whatsapp-web-bridge run check",

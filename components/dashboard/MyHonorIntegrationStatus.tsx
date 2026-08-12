@@ -241,6 +241,13 @@ export default function MyHonorIntegrationStatus() {
         </dl>
 
         <div className="flex shrink-0 flex-wrap items-center gap-2">
+          <Link
+            href="/store"
+            className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-3 py-2 text-xs font-bold text-on-primary transition-transform hover:scale-[0.99]"
+          >
+            Управление магазином
+            <span className="material-symbols-outlined text-sm">arrow_forward</span>
+          </Link>
           <button
             type="button"
             onClick={() => void syncCatalog()}
@@ -262,15 +269,15 @@ export default function MyHonorIntegrationStatus() {
             rel="noopener noreferrer"
             className="inline-flex items-center gap-1.5 rounded-xl border border-white/10 px-3 py-2 text-xs font-mono text-on-surface-variant transition-colors hover:border-primary/30 hover:text-primary"
           >
-            Магазин
+            Витрина MyHonor
             <span className="material-symbols-outlined text-sm">open_in_new</span>
           </a>
           <Link
             href="/journey"
-            className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-3 py-2 text-xs font-bold text-on-primary transition-transform hover:scale-[0.99]"
+            className="inline-flex items-center gap-1.5 rounded-xl border border-white/10 px-3 py-2 text-xs font-mono text-on-surface-variant transition-colors hover:border-primary/30 hover:text-primary"
           >
-            Открыть Journey
-            <span className="material-symbols-outlined text-sm">arrow_forward</span>
+            Journey
+            <span className="material-symbols-outlined text-sm">route</span>
           </Link>
           <button
             type="button"

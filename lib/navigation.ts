@@ -12,6 +12,7 @@ const CLIENT_OK: UserRole[] = ['super_admin', 'admin', 'client']
 // PRIMARY navigation — shown directly in the sidebar
 export const PRIMARY_NAV: NavItem[] = [
   { label: 'Дэшборд',   href: '/dashboard', icon: 'dashboard',   roles: CLIENT_OK },
+  { label: 'Магазин',   href: '/store',     icon: 'storefront',  roles: CLIENT_OK },
   { label: 'GRI',       href: '/gri',        icon: 'radar',       roles: CLIENT_OK },
   // /pulse is now the lightweight CRM (own client base «Кому звонить сегодня»)
   // with the weekly GRI Pulse survey collapsed at the bottom — so the menu item
@@ -77,6 +78,12 @@ export function getAllowedHrefsForRole(role: UserRole): string[] {
     }
   }
   return [...hrefs]
+}
+
+// Whole-segment matching prevents a navigation item such as /store from being
+// highlighted on an unrelated path such as /storefront.
+export function isActiveNavPath(pathname: string, href: string): boolean {
+  return pathname === href || pathname.startsWith(`${href}/`)
 }
 
 export function getPrimaryNavForRole(role: UserRole): NavItem[] {

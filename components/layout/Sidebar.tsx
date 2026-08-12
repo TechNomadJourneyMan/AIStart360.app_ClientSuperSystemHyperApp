@@ -6,7 +6,7 @@ import { usePathname, useRouter } from 'next/navigation'
 import { useState, useEffect } from 'react'
 import { useUIStore } from '@/stores/ui.store'
 import { useAuthStore } from '@/stores/auth.store'
-import { getPrimaryNavForRole, getSecondaryNavForRole } from '@/lib/navigation'
+import { getPrimaryNavForRole, getSecondaryNavForRole, isActiveNavPath } from '@/lib/navigation'
 import { isPremiumLocked, premiumLockedRoot } from '@/lib/premium'
 import type { NavItem, UserRole } from '@/types'
 import { UploadFilesNavItem } from './UploadFilesNavItem'
@@ -33,8 +33,7 @@ export function Sidebar() {
   // Items locked behind a paid plan — see lib/premium.ts
   const isLocked = (href: string) => isPremiumLocked(role, href)
 
-  const isActive = (href: string) =>
-    href === '/dashboard' ? pathname === href : pathname.startsWith(href)
+  const isActive = (href: string) => isActiveNavPath(pathname, href)
 
   const isAnySecondaryActive = secondaryNav.some((item) => isActive(item.href))
 
