@@ -1,9 +1,10 @@
 # Store Control Center Progress
 
-## Status: Phase 1 — Complete; Phase 2 Secure Inline Publication — Complete in Branch
+## Status: Phase 1 + Phase 2 — Released
 
-Release status: production display identity отдельного Store tenant уже применён;
-миграции 084/085 и код `/store` ещё не задеплоены. Inline publication покрывает
+Release status: production display identity, миграции 084/085 и код `/store`
+задеплоены 2026-08-13 из commit `3b7f017c`. Рабочий адрес:
+`https://aistart360-store.vercel.app/store`. Inline publication покрывает
 XLS/XLSX/CSV до 4 МБ; direct private upload больших файлов остаётся следующим
 срезом.
 
@@ -142,6 +143,17 @@ XLS/XLSX/CSV до 4 МБ; direct private upload больших файлов ос
   `Интернет-магазин HONOR / MyHonor` без смены IDs/пароля и потери данных.
 - Добавлены безопасный provisioning, hardened admin creation и прямой
   `/login?from=/store` landing в рабочую ветку.
+- Commit `3b7f017c` отправлен в `origin/codex/latest-git-release`.
+- `store-control-center-v1` атомарно применён к production PostgreSQL: 7/7
+  таблиц, RLS, закрытый DML, service-only RPC и company cleanup trigger.
+- Vercel deployment `dpl_BNoZkqHfXwSdyh98nnbaJk8zbGau` получил Ready и alias
+  `https://aistart360-store.vercel.app`.
+- Production smoke: `/store` → protected login, overview API → 401 anonymous,
+  login → 200; rollback-only RPC опубликовал одну тестовую price row и оставил
+  0 строк после rollback.
+- Старый `portal.aistart360.app` не перепривязан: Vercel сообщил отсутствие
+  доступа к domain owner. Для магазина используется проверенный выделенный
+  Store alias.
 
 ## Files Changed
 

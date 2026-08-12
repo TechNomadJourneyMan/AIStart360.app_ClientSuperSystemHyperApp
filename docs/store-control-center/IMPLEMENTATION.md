@@ -164,7 +164,7 @@
 - [ ] E2E smoke на desktop/mobile.
 - [ ] Проверка производительности на 100 000 строк продаж.
 - [x] Статический privacy/security review границы публикации, API, SQL/RLS и UI.
-- [ ] Release migration/deploy и production smoke.
+- [x] Release migration/deploy и production smoke на выделенном Store alias.
 
 ## Notes
 
@@ -175,3 +175,15 @@ release-путь — `npm run release:store-schema` из commit, содержа�
 084/085: runner фиксирует commit и оба SHA-256, применяет файлы под одним
 transaction/advisory lock, проверяет RLS/grants/RPC/cleanup trigger и отказывается
 повторять 084 поверх установленной 085.
+
+## Production Release 2026-08-13
+
+- Source commit: `3b7f017c4a923e8a72bd0bfd4dd3d6e502ca59f6`.
+- Schema release: `store-control-center-v1`, атомарно применены 084/085; 7/7
+  таблиц с RLS, RPC/grants/cleanup trigger проверены runner-ом.
+- Vercel deployment: `dpl_BNoZkqHfXwSdyh98nnbaJk8zbGau`, Ready.
+- Выделенный адрес: `https://aistart360-store.vercel.app/store`.
+- Smoke: anonymous Store redirect, Store API 401, login 200, rollback-only RPC
+  publication 1 row и 0 persisted runs после rollback.
+- `portal.aistart360.app` остаётся на старом deployment: домен принадлежит
+  другому Vercel owner/scope и не доступен текущей release-учётке для alias set.
