@@ -41,10 +41,25 @@
 ## Production
 
 Предыдущий deployment `dpl_9zpqDPXPfiLHQuceC3tt9rS8H5tk` (`b8c71627`) имел
-неверный отдельный dashboard-интерфейс и должен быть заменён.
+неверный отдельный dashboard-интерфейс и заменён.
 
-Новый deployment ещё не объявлен готовым. После `READY` здесь фиксируются commit,
-deployment id, production alias и фактически выполненные smoke-проверки.
+Исправленный canonical Journey релиз:
+
+- commit: `599e0535`;
+- deployment: `dpl_SZuuuHv4rkqG8xEKMLzt7bVNe7fu`;
+- status: `READY`;
+- immutable URL:
+  `https://confident-brahmagupta-adxl4ibsf-viproman101-8397s-projects.vercel.app`;
+- production alias: `https://aistart360-store.vercel.app`;
+- Journey route: `https://aistart360-store.vercel.app/client/journey/store`.
+
+Production anonymous smoke 2026-08-13:
+
+- `/client/journey/store` → `307`
+  `/login?from=%2Fclient%2Fjourney%2Fstore`;
+- login route → `200`;
+- `/api/v1/journey/store` без сессии → `401 JOURNEY_AUTH_REQUIRED` и
+  `Cache-Control: private, no-store`.
 
 ## Не заявлять как выполненное без доказательства
 

@@ -93,7 +93,8 @@ profile, company или Store database не создаются.
 
 ## Проверки релиза
 
-Перед production обязательно пройти targeted/full Vitest, TypeScript, ESLint,
-route audit, production build, desktop/mobile visual smoke и повторный anonymous
-redirect smoke. Authenticated production E2E отмечается отдельно: его нельзя
-заявлять без реальной браузерной сессии аккаунта магазина.
+Релиз `599e0535` прошёл full Vitest, TypeScript, ESLint, route audit, production
+build, desktop/mobile visual smoke и production anonymous redirect/API smoke.
+Deployment `dpl_SZuuuHv4rkqG8xEKMLzt7bVNe7fu` имеет статус `READY` и привязан к
+`aistart360-store.vercel.app`. Authenticated production E2E отмечается отдельно:
+его нельзя заявлять без реальной браузерной сессии аккаунта магазина.
