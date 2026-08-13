@@ -118,6 +118,13 @@ export function StoreOverviewView({ data }: { data: StoreOverview }) {
 
           <div className="flex flex-col gap-2 sm:flex-row xl:justify-end">
             <Link
+              href="/client/journey/store"
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-primary/25 bg-primary/[0.06] px-4 py-2.5 text-sm font-bold text-primary transition-colors hover:bg-primary/[0.10]"
+            >
+              <span className="material-symbols-outlined text-lg">route</span>
+              Открыть в Journey
+            </Link>
+            <Link
               href="/store/imports"
               className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-bold text-on-primary transition-transform hover:scale-[0.99]"
             >

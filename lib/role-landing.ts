@@ -67,8 +67,8 @@ export function roleLandingPath(
 }
 
 /**
- * Honour the Store return target only for roles that may open the shared
- * cabinet and only after an explicit approval. Every other role/status keeps
+ * Honour Store and its read-only Journey return targets only for roles that
+ * may open the shared cabinet and only after an explicit approval. Every other role/status keeps
  * its canonical landing path, and attacker-controlled `from` values are never
  * returned before passing the internal-path guard.
  */
@@ -81,8 +81,9 @@ export function postLoginPath(
   const mayOpenStore =
     status === 'approved'
     && (role === 'client' || role === 'admin' || role === 'super_admin')
+  const isStoreTarget = safeFrom === '/store' || safeFrom === '/client/journey/store'
 
-  return safeFrom === '/store' && mayOpenStore
+  return isStoreTarget && mayOpenStore
     ? safeFrom
     : roleLandingPath(role, status)
 }

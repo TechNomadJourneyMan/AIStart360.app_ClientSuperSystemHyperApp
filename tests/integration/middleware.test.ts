@@ -151,6 +151,20 @@ describe('RBAC Middleware', () => {
     expect(locationOf(pending).pathname).toBe('/client/waiting-room')
   })
 
+  it('applies the Store tenant role matrix to its Journey projection', async () => {
+    const pathname = '/client/journey/store'
+    const anonymous = await middleware(createRequest(pathname))
+    expect(locationOf(anonymous).pathname).toBe('/login')
+    expect(locationOf(anonymous).searchParams.get('from')).toBe(pathname)
+
+    expect((await middleware(createRequest(pathname, 'client', 'approved'))).status).toBe(200)
+    expect((await middleware(createRequest(pathname, 'admin'))).status).toBe(200)
+    expect((await middleware(createRequest(pathname, 'super_admin'))).status).toBe(200)
+    expect(locationOf(await middleware(createRequest(pathname, 'expert'))).pathname).toBe('/expert/dashboard')
+    expect(locationOf(await middleware(createRequest(pathname, 'owner'))).pathname).toBe('/owner/dashboard')
+    expect(locationOf(await middleware(createRequest(pathname, 'client', 'pending_approval'))).pathname).toBe('/client/waiting-room')
+  })
+
   // Regression: '/clients' (admin-only) must NOT leak through the '/client'
   // cabinet prefix — startsWith matching allowed clients onto /clients.
   it('redirects client away from admin-only /clients', async () => {
