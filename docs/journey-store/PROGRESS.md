@@ -25,6 +25,15 @@
 
 ## Не выполнялось
 
-- Production deploy.
 - Authenticated browser E2E на production.
 - Записывающий AI-диалог и сохранение целей.
+
+## Production release
+
+- Дата: 2026-08-13.
+- Код релиза: `b8c71627`.
+- Vercel deployment: `dpl_9zpqDPXPfiLHQuceC3tt9rS8H5tk`, status `READY`.
+- Production alias: `https://aistart360-store.vercel.app`.
+- Anonymous `/client/journey/store`: `307` на `/login?from=/client/journey/store`.
+- Anonymous `/store`: `307` на `/login?from=/store`.
+- Login: `200`.
