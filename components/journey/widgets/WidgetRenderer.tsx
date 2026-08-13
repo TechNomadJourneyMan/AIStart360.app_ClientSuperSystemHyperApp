@@ -398,6 +398,12 @@ function ExternalSources({ data }: { data: UnknownRecord }) {
 function DomainMetrics({ data }: { data: UnknownRecord }) {
   const metrics = records(data.metrics)
   if (!metrics.length) return <EmptyHint>AI ещё не выбрал отраслевые метрики для этого бизнеса.</EmptyHint>
+  const sourceLabels = metrics
+    .map((metric) => string(metric.sourceLabel))
+    .filter((source): source is string => Boolean(source))
+  const commonSource = sourceLabels.length === metrics.length && new Set(sourceLabels).size === 1
+    ? sourceLabels[0]
+    : undefined
   return (
     <dl className="space-y-2.5">
       {metrics.slice(0, 6).map((metric, index) => {
@@ -411,7 +417,7 @@ function DomainMetrics({ data }: { data: UnknownRecord }) {
                 {status === 'known' && value ? value : status === 'assumption' && value ? `${value} · гипотеза` : 'Нужно уточнить'}
               </dd>
             </div>
-            {(string(metric.sourceLabel) || string(metric.question)) && (
+            {(!commonSource && (string(metric.sourceLabel) || string(metric.question))) && (
               <p className="mt-1 text-[10px] text-pretty text-on-surface-variant">
                 {string(metric.sourceLabel) ?? string(metric.question)}
               </p>
@@ -419,6 +425,11 @@ function DomainMetrics({ data }: { data: UnknownRecord }) {
           </div>
         )
       })}
+      {commonSource && (
+        <div className="pt-0.5 text-[10px] text-pretty text-on-surface-variant">
+          Источник: {commonSource}
+        </div>
+      )}
       {records(data.guidance).slice(0, 2).map((note, index) => (
         <div key={`guidance-${index}`} className="flex gap-2 pt-1 text-xs text-on-surface-variant">
           <CircleHelp className="mt-0.5 size-3.5 shrink-0 text-tertiary-container" aria-hidden />

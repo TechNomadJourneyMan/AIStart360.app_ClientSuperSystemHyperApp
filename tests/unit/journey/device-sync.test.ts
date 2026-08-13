@@ -13,7 +13,11 @@ import {
   type JourneyDeviceSyncRepository,
 } from '@/lib/journey/device-sync'
 import { journeyErrorResponse } from '@/lib/journey/http'
-import { hashJourneyCredential, JourneyConflictError } from '@/lib/journey/persistence'
+import {
+  hashJourneyCredential,
+  JourneyAccessError,
+  JourneyConflictError,
+} from '@/lib/journey/persistence'
 import type { JourneyIdentity } from '@/lib/journey/schema'
 
 const NOW = new Date('2026-07-14T10:00:00.000Z')
@@ -32,6 +36,7 @@ class MemoryRepository implements JourneyDeviceSyncRepository {
     revision: 4,
   }
   canonicalUserId: string | null = null
+  canonicalWorkspaceId = 'journey-canonical-workspace'
   sourceUserId: string | null = null
 
   async authorizeSource(identity: JourneyIdentity) {
@@ -48,9 +53,9 @@ class MemoryRepository implements JourneyDeviceSyncRepository {
   async findCanonicalWorkspace(actorUserId: string) {
     if (this.canonicalUserId !== actorUserId) return null
     return {
-      workspaceId: 'journey-canonical-workspace',
+      workspaceId: this.canonicalWorkspaceId,
       userId: actorUserId,
-      state: createEmptyJourneyState('journey-canonical-workspace'),
+      state: createEmptyJourneyState(this.canonicalWorkspaceId),
       revision: 8,
       deviceCredentialId: null,
     }
@@ -126,6 +131,37 @@ describe('Journey cross-device sync', () => {
     expect(result.workspaceId).toBe('journey-canonical-workspace')
   })
 
+  it('rejects a signed-in empty create when latest-owned discovery returns the reserved Store workspace', async () => {
+    const repository = new MemoryRepository()
+    const actorUserId = '5cd75337-ff7a-49df-80ef-7cb63d7fe8c4'
+    repository.canonicalUserId = actorUserId
+    repository.canonicalWorkspaceId = `journey-store-user-${actorUserId}`
+
+    await expect(createJourneyConnectCode(
+      { actorUserId },
+      deps(repository),
+    )).rejects.toBeInstanceOf(JourneyAccessError)
+    expect(repository.inserted).toHaveLength(0)
+  })
+
+  it('rejects an explicitly supplied reserved Store workspace', async () => {
+    const repository = new MemoryRepository()
+    const actorUserId = '5cd75337-ff7a-49df-80ef-7cb63d7fe8c4'
+    repository.sourceUserId = actorUserId
+
+    await expect(createJourneyConnectCode(
+      {
+        identity: {
+          workspaceId: `journey-store-user-${actorUserId}`,
+          accessToken: IDENTITY.accessToken,
+        },
+        actorUserId,
+      },
+      deps(repository),
+    )).rejects.toBeInstanceOf(JourneyAccessError)
+    expect(repository.inserted).toHaveLength(0)
+  })
+
   it('rejects an active identity that is not owned by the signed-in account', async () => {
     const repository = new MemoryRepository()
     repository.canonicalUserId = '5cd75337-ff7a-49df-80ef-7cb63d7fe8c4'
@@ -157,6 +193,24 @@ describe('Journey cross-device sync', () => {
     })
     expect(JSON.stringify(repository.claims[0])).not.toContain(rawDeviceToken)
     expect(JSON.stringify(repository.claims[0])).not.toContain(IDENTITY.accessToken)
+  })
+
+  it('rejects a claimed reserved Store workspace before returning its state or device token', async () => {
+    const repository = new MemoryRepository()
+    const actorUserId = '5cd75337-ff7a-49df-80ef-7cb63d7fe8c4'
+    const storeWorkspaceId = `journey-store-user-${actorUserId}`
+    repository.claimResult = {
+      status: 'claimed',
+      workspaceId: storeWorkspaceId,
+      state: createEmptyJourneyState(storeWorkspaceId),
+      revision: 9,
+    }
+
+    await expect(redeemJourneyConnectCode(
+      { code: 'ABCD-2345', deviceLabel: 'Телефон', actorUserId },
+      deps(repository),
+    )).rejects.toBeInstanceOf(JourneyAccessError)
+    expect(repository.claims).toHaveLength(1)
   })
 
   it('does not disclose a same-user ownership failure', async () => {

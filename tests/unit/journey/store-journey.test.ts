@@ -1,7 +1,11 @@
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { StoreJourneyView } from '@/components/journey/StoreJourneyView'
+import {
+  JourneyExperience,
+  getJourneyExperienceStage,
+  isJourneyConversationFirst,
+} from '@/components/journey/JourneyExperience'
 import { buildStoreJourneyState } from '@/lib/journey/store-seed'
 import { journeyStateSchema } from '@/lib/journey/schema'
 import type { StoreOverview } from '@/lib/store/types'
@@ -144,23 +148,42 @@ describe('Store → Journey live projection', () => {
     expect(risks.data.risks).toEqual([{ title: 'Остатки ещё не подключены', detail: 'Система пока не может показать дефицит.', status: 'risk' }])
   })
 
-  it('renders complete and empty states with safe navigation and escaping', () => {
+  it('enters the canonical goal conversation with a grounded Store summary', () => {
     const overview = completeOverview({ companyName: '<script>alert(1)</script>' })
     const state = buildStoreJourneyState(overview, {
       workspaceId: 'store-journey-render-owner',
       now: NOW,
     })
-    const html = renderToStaticMarkup(createElement(StoreJourneyView, { state, overview }))
+    const html = renderToStaticMarkup(createElement(JourneyExperience, {
+      state,
+      context: 'store',
+      onDraftRequest: () => undefined,
+    }))
+
+    expect(getJourneyExperienceStage(state)).toBe('goal')
+    expect(isJourneyConversationFirst(state)).toBe(true)
+    expect(html).toContain('data-stage="goal"')
+    expect(html).toContain('Бизнес')
     expect(html).toContain('Точка A')
-    expect(html).toContain('Цель ещё не задана')
-    expect(html).toContain('Вернуться в Магазин')
-    expect(html).not.toContain('Live Store · без копии в Journey')
-    expect(html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;')
+    expect(html).toContain('Точка B')
+    expect(html).toContain('Первый шаг')
+    expect(html).toContain('28 053 253 ₸')
+    expect(html).toContain('Скидки забирают более 30%')
+    expect(html).toContain('Уточните измеримую цель')
+    expect(html).toContain('Продолжить с AI')
+    expect(html).toContain('Подтверждённые показатели Store')
+    expect(html).toContain('Точка A · Store live')
+    expect(html).toContain('read-only')
+    expect(html).toContain('10 913 278,54 ₸')
+    expect(html).toContain('62 039 ед.')
+    expect(html).not.toContain('&lt;script&gt;alert(1)&lt;/script&gt;')
     expect(html).not.toContain('<script>alert(1)</script>')
+    expect(html).not.toContain('Store · live read-only')
 
     const empty = completeOverview({
       source: 'empty',
       confidence: 'empty',
+      companyName: null,
       period: null,
       asOf: null,
       versionLabel: null,
@@ -185,8 +208,15 @@ describe('Store → Journey live projection', () => {
       workspaceId: 'store-journey-empty-owner',
       now: NOW,
     })
-    const emptyHtml = renderToStaticMarkup(createElement(StoreJourneyView, { state: emptyState, overview: empty }))
-    expect(emptyHtml).toContain('Подключить данные')
-    expect(emptyHtml).toContain('Journey не подставляет демонстрационные показатели')
+    const emptyHtml = renderToStaticMarkup(createElement(JourneyExperience, {
+      state: emptyState,
+      context: 'store',
+      onDraftRequest: () => undefined,
+    }))
+    expect(getJourneyExperienceStage(emptyState)).toBe('describe')
+    expect(emptyHtml).toContain('data-stage="describe"')
+    expect(emptyHtml).toContain('Пока нет подтверждённых фактов')
+    expect(emptyHtml).toContain('В Store пока нет опубликованных фактов')
+    expect(emptyHtml).toContain('Продолжить с AI')
   })
 })

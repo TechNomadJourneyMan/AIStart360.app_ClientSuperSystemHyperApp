@@ -56,7 +56,7 @@ export function buildStoreJourneyState(
       {
         id: 'message:store:point-b',
         role: 'assistant',
-        text: 'Точка B намеренно не задана. Владелец должен выбрать измеримую цель, целевое значение и срок.',
+        text: 'Точка B намеренно не задана. Какой показатель магазина вы хотите изменить, до какого значения и к какому сроку?',
         createdAt: now,
       },
     ],
@@ -124,11 +124,17 @@ function buildFacts(overview: StoreOverview, source: string): JourneyFact[] {
 
   push('fact:store:company', 'Компания', overview.companyName, 'business')
   push('fact:store:period', 'Фактический период', overview.period ? formatPeriod(overview.period) : null, 'sales')
+  push('fact:store:as-of', 'Актуально на', overview.asOf ? formatDate(overview.asOf) : null, 'operations')
   push('fact:store:revenue', 'Выручка', money(overview.metrics.revenue), 'finance')
+  push('fact:store:cost', 'Себестоимость', money(overview.metrics.cost), 'finance')
   push('fact:store:gross-profit', 'Валовая прибыль', money(overview.metrics.grossProfit), 'finance')
   push('fact:store:gross-margin', 'Валовая маржа', nullablePercent(overview.metrics.grossMarginPct), 'finance')
+  push('fact:store:discount', 'Скидки', money(overview.metrics.discount), 'finance')
+  push('fact:store:discount-rate', 'Доля скидок', nullablePercent(overview.metrics.discountRatePct), 'finance')
   push('fact:store:units', 'Продано единиц', nullableNumber(overview.metrics.units), 'sales')
+  push('fact:store:returns', 'Возвраты', nullableNumber(overview.metrics.returns), 'sales')
   push('fact:store:inventory', 'Доступный остаток', nullableUnits(overview.inventory.availableUnits), 'operations')
+  push('fact:store:reserved', 'Зарезервировано', nullableUnits(overview.inventory.reservedUnits), 'operations')
   push(
     'fact:store:catalog',
     'Товаров в контуре',
@@ -136,6 +142,14 @@ function buildFacts(overview: StoreOverview, source: string): JourneyFact[] {
       ? formatNumber(overview.catalog.products)
       : null,
     'product',
+  )
+  push(
+    'fact:store:warehouses',
+    'Складов',
+    overview.inventory.warehouses.length > 0
+      ? formatNumber(overview.inventory.warehouses.length)
+      : null,
+    'operations',
   )
   return facts
 }
@@ -149,7 +163,7 @@ function buildWidgets(overview: StoreOverview, source: string): JourneyWidget[] 
     collapsed: false,
     hidden: false,
     focused: false,
-    position: { x: 100, y: 620 },
+    position: { x: 100, y: 500 },
     data: {
       metrics: [
         metric('Выручка', money(overview.metrics.revenue), source),
@@ -174,7 +188,7 @@ function buildWidgets(overview: StoreOverview, source: string): JourneyWidget[] 
     collapsed: false,
     hidden: false,
     focused: false,
-    position: { x: 430, y: 620 },
+    position: { x: 430, y: 500 },
     data: {
       domain: 'Интернет-магазин и розничная торговля',
       purpose: 'Показывать только подтверждённый операционный масштаб без вычисления будущих значений.',
@@ -202,7 +216,7 @@ function buildWidgets(overview: StoreOverview, source: string): JourneyWidget[] 
     collapsed: false,
     hidden: false,
     focused: false,
-    position: { x: 760, y: 620 },
+    position: { x: 760, y: 500 },
     data: {
       domain: 'Store Control Center',
       purpose: 'Отделять опубликованные факты от отсутствующих источников.',
@@ -223,7 +237,7 @@ function buildWidgets(overview: StoreOverview, source: string): JourneyWidget[] 
     collapsed: false,
     hidden: false,
     focused: false,
-    position: { x: 1090, y: 620 },
+    position: { x: 1090, y: 500 },
     data: signals,
   })
 

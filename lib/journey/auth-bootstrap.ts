@@ -23,6 +23,10 @@ export interface JourneyAuthBootstrapRepository {
   ): Promise<AuthorizedJourneyWorkspace | null>
   findMapped(actorUserId: string): Promise<AuthorizedJourneyWorkspace | null>
   findLatestOwned(actorUserId: string): Promise<AuthorizedJourneyWorkspace | null>
+  findOwned(
+    workspaceId: string,
+    actorUserId: string,
+  ): Promise<AuthorizedJourneyWorkspace | null>
   bindCanonical(actorUserId: string, workspaceId: string): Promise<string>
   ensureWorkspace(input: {
     workspaceId: string
@@ -63,6 +67,14 @@ interface ResolveAuthenticatedJourneyInput {
   buildInitialState: (workspaceId: string) => Promise<JourneyState>
 }
 
+interface ResolveNamedOwnedJourneyInput {
+  workspaceId: string
+  identity: JourneyIdentity
+  actorUserId: string
+  buildInitialState: (workspaceId: string) => Promise<JourneyState>
+  deviceLabel?: string
+}
+
 const DATABASE_PERSISTENCE: JourneyPersistenceResult = {
   mode: 'database',
   label: 'Сохранено в AIStart360',
@@ -79,11 +91,14 @@ export async function resolveAuthenticatedJourneyState(
   let canonical = await repository.findMapped(input.actorUserId)
 
   if (!canonical) {
-    if (requested?.userId === input.actorUserId) {
+    if (
+      requested?.userId === input.actorUserId &&
+      !isReservedJourneyWorkspaceId(requested.workspaceId)
+    ) {
       await repository.bindCanonical(input.actorUserId, requested.workspaceId)
     } else {
       const latest = await repository.findLatestOwned(input.actorUserId)
-      if (latest) {
+      if (latest && !isReservedJourneyWorkspaceId(latest.workspaceId)) {
         await repository.bindCanonical(input.actorUserId, latest.workspaceId)
       } else {
         const workspaceId = canonicalWorkspaceId(input.actorUserId)
@@ -105,6 +120,9 @@ export async function resolveAuthenticatedJourneyState(
     throw new JourneyPersistenceUnavailableError(
       'Каноническое рабочее пространство Journey недоступно.',
     )
+  }
+  if (isReservedJourneyWorkspaceId(canonical.workspaceId)) {
+    throw new JourneyAccessError('Зарезервированное рабочее пространство нельзя сделать основным Journey.')
   }
 
   let credentialHash: string
@@ -157,6 +175,71 @@ export async function resolveAuthenticatedJourneyState(
 
 export function canonicalWorkspaceId(actorUserId: string): string {
   return `journey-user-${actorUserId}`
+}
+
+/** Store Journey intentionally does not participate in the one-workspace
+ * canonical mapping used by ordinary Journey. Its deterministic owned
+ * workspace can therefore coexist without replacing onboarding Journey. */
+export function storeJourneyWorkspaceId(actorUserId: string): string {
+  return `journey-store-user-${actorUserId}`
+}
+
+export function isReservedJourneyWorkspaceId(workspaceId: string): boolean {
+  return workspaceId.startsWith('journey-store-user-')
+}
+
+/** Bootstrap a deterministic, user-owned workspace without reading or writing
+ * ai_journey_user_workspaces. A valid device credential is reused; a new
+ * HttpOnly credential is issued only for a first visit or stale cookie. */
+export async function resolveNamedOwnedJourneyState(
+  input: ResolveNamedOwnedJourneyInput,
+  dependencies: JourneyAuthBootstrapDependencies = defaultDependencies(),
+): Promise<AuthenticatedJourneyResult> {
+  const expected = journeyIdentitySchema.parse({ workspaceId: input.workspaceId })
+  const identity = journeyIdentitySchema.parse(input.identity)
+  if (identity.workspaceId !== expected.workspaceId) {
+    throw new JourneyAccessError('Workspace ID не совпадает с серверным контекстом Journey.')
+  }
+
+  const { repository } = dependencies
+  const requested = identity.accessToken
+    ? await repository.authorize(identity, input.actorUserId)
+    : null
+  let owned = await repository.findOwned(expected.workspaceId, input.actorUserId)
+
+  if (!owned) {
+    const initialState = await input.buildInitialState(expected.workspaceId)
+    owned = await repository.ensureWorkspace({
+      workspaceId: expected.workspaceId,
+      actorUserId: input.actorUserId,
+      credentialHash: hashJourneyCredential(dependencies.randomDeviceToken()),
+      state: initialState,
+    })
+  }
+  if (owned.userId !== input.actorUserId || owned.workspaceId !== expected.workspaceId) {
+    throw new JourneyAccessError('Серверное рабочее пространство Journey недоступно.')
+  }
+
+  let deviceToken: string | undefined
+  const canReuseCredential = requested?.workspaceId === owned.workspaceId &&
+    requested.userId === input.actorUserId &&
+    Boolean(identity.accessToken)
+  if (!canReuseCredential) {
+    deviceToken = dependencies.randomDeviceToken()
+    await repository.registerDevice({
+      workspaceId: owned.workspaceId,
+      actorUserId: input.actorUserId,
+      tokenHash: hashJourneyCredential(deviceToken),
+      deviceLabel: input.deviceLabel ?? 'Браузер после входа',
+    })
+  }
+
+  return {
+    state: parseAuthorizedState(owned),
+    persistence: DATABASE_PERSISTENCE,
+    ...(deviceToken ? { deviceToken } : {}),
+    switchedWorkspace: identity.workspaceId !== owned.workspaceId,
+  }
 }
 
 export function isPristineJourneyState(state: JourneyState): boolean {
@@ -218,6 +301,7 @@ class SupabaseJourneyAuthBootstrapRepository implements JourneyAuthBootstrapRepo
       .from('ai_journey_workspaces')
       .select('workspace_key,user_id,state,revision')
       .eq('user_id', actorUserId)
+      .not('workspace_key', 'like', 'journey-store-user-%')
       .order('updated_at', { ascending: false })
       .limit(1)
       .maybeSingle()
@@ -227,6 +311,13 @@ class SupabaseJourneyAuthBootstrapRepository implements JourneyAuthBootstrapRepo
       )
     }
     return data ? authorizedFromRow(data) : null
+  }
+
+  async findOwned(
+    workspaceId: string,
+    actorUserId: string,
+  ): Promise<AuthorizedJourneyWorkspace | null> {
+    return this.findOwnedByKey(workspaceId, actorUserId)
   }
 
   async bindCanonical(actorUserId: string, workspaceId: string): Promise<string> {

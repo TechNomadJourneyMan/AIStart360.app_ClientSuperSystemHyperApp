@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import {
   canonicalWorkspaceId,
   resolveAuthenticatedJourneyState,
+  resolveNamedOwnedJourneyState,
+  storeJourneyWorkspaceId,
   type JourneyAuthBootstrapDependencies,
   type JourneyAuthBootstrapRepository,
 } from '@/lib/journey/auth-bootstrap'
@@ -38,6 +40,11 @@ class MemoryBootstrapRepository implements JourneyAuthBootstrapRepository {
 
   async findLatestOwned(actorUserId: string) {
     return [...this.workspaces.values()].find((workspace) => workspace.userId === actorUserId) ?? null
+  }
+
+  async findOwned(workspaceId: string, actorUserId: string) {
+    const workspace = this.workspaces.get(workspaceId)
+    return workspace?.userId === actorUserId ? workspace : null
   }
 
   async bindCanonical(actorUserId: string, workspaceId: string) {
@@ -221,5 +228,92 @@ describe('authenticated Journey bootstrap', () => {
 
     expect(result.state.workspaceId).toBe(canonicalWorkspaceId(ACTOR))
     expect(repository.canonical.get(FOREIGN_ACTOR)).toBeUndefined()
+  })
+
+  it('never promotes the reserved Store workspace into canonical Journey', async () => {
+    const repository = new MemoryBootstrapRepository()
+    const storeId = storeJourneyWorkspaceId(ACTOR)
+    repository.workspaces.set(storeId, {
+      workspaceId: storeId,
+      userId: ACTOR,
+      state: createEmptyJourneyState(storeId),
+      revision: 1,
+      deviceCredentialId: null,
+    })
+    repository.canonical.set(ACTOR, storeId)
+
+    await expect(resolveAuthenticatedJourneyState({
+      identity: {
+        workspaceId: storeId,
+        accessToken: 'store-device-token-with-enough-entropy',
+      },
+      actorUserId: ACTOR,
+      buildInitialState: buildSeed,
+    }, dependencies(repository))).rejects.toThrow('Зарезервированное рабочее пространство')
+  })
+
+  it('ignores a reserved Store workspace when selecting the latest owned Journey', async () => {
+    const repository = new MemoryBootstrapRepository()
+    const storeId = storeJourneyWorkspaceId(ACTOR)
+    repository.workspaces.set(storeId, {
+      workspaceId: storeId,
+      userId: ACTOR,
+      state: createEmptyJourneyState(storeId),
+      revision: 1,
+      deviceCredentialId: null,
+    })
+
+    const result = await resolveAuthenticatedJourneyState({
+      identity: {
+        workspaceId: storeId,
+        accessToken: 'store-device-token-with-enough-entropy',
+      },
+      actorUserId: ACTOR,
+      buildInitialState: buildSeed,
+    }, dependencies(repository))
+
+    expect(result.state.workspaceId).toBe(canonicalWorkspaceId(ACTOR))
+    expect(repository.canonical.get(ACTOR)).toBe(canonicalWorkspaceId(ACTOR))
+    expect(repository.workspaces.has(storeId)).toBe(true)
+  })
+})
+
+describe('named owned Journey bootstrap', () => {
+  it('creates Store separately from canonical mapping and reuses its device credential', async () => {
+    const repository = new MemoryBootstrapRepository()
+    const workspaceId = storeJourneyWorkspaceId(ACTOR)
+    const first = await resolveNamedOwnedJourneyState({
+      workspaceId,
+      identity: { workspaceId },
+      actorUserId: ACTOR,
+      buildInitialState: buildSeed,
+      deviceLabel: 'Store Journey браузер',
+    }, dependencies(repository))
+
+    expect(first.state.workspaceId).toBe(workspaceId)
+    expect(first.deviceToken).toBe(DEVICE_TOKEN)
+    expect(repository.canonical.has(ACTOR)).toBe(false)
+    expect(repository.registrations).toHaveLength(1)
+
+    const second = await resolveNamedOwnedJourneyState({
+      workspaceId,
+      identity: { workspaceId, accessToken: DEVICE_TOKEN },
+      actorUserId: ACTOR,
+      buildInitialState: buildSeed,
+    }, dependencies(repository))
+
+    expect(second.deviceToken).toBeUndefined()
+    expect(repository.registrations).toHaveLength(1)
+  })
+
+  it('rejects a browser-selected workspace before repository access', async () => {
+    const repository = new MemoryBootstrapRepository()
+    await expect(resolveNamedOwnedJourneyState({
+      workspaceId: storeJourneyWorkspaceId(ACTOR),
+      identity: { workspaceId: canonicalWorkspaceId(ACTOR) },
+      actorUserId: ACTOR,
+      buildInitialState: buildSeed,
+    }, dependencies(repository))).rejects.toThrow('Workspace ID не совпадает')
+    expect(repository.workspaces.size).toBe(0)
   })
 })

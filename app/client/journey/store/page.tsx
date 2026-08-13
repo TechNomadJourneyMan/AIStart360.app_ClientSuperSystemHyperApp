@@ -2,7 +2,8 @@ import type { Metadata } from 'next'
 import { unstable_noStore as noStore } from 'next/cache'
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
-import { StoreJourneyView } from '@/components/journey/StoreJourneyView'
+import { JourneyWorkspace } from '@/components/journey/Workspace'
+import { storeJourneyWorkspaceId } from '@/lib/journey/auth-bootstrap'
 import { buildStoreJourneyState } from '@/lib/journey/store-seed'
 import { MFA_COOKIE_NAME } from '@/lib/mfa/step-up'
 import { createClient } from '@/lib/supabase/server'
@@ -41,8 +42,8 @@ export default async function StoreJourneyPage() {
 
   const overview = await loadStoreOverview(supabase, user.id)
   const state = buildStoreJourneyState(overview, {
-    workspaceId: `store-journey-${user.id}`,
+    workspaceId: storeJourneyWorkspaceId(user.id),
   })
 
-  return <StoreJourneyView state={state} overview={overview} />
+  return <JourneyWorkspace context="store" initialState={state} />
 }

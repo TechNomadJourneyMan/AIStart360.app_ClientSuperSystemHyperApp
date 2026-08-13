@@ -2,38 +2,52 @@
 
 Обновлено: 2026-08-13.
 
-## Phase 1 — реализовано
+## Каноническая коррекция — реализовано в коде
 
-- [x] Мастер-промпт и архитектурные инварианты.
-- [x] Pure StoreOverview → JourneyState adapter.
-- [x] Точные финансовые значения и явные unknown states.
-- [x] Защищённая server-first `/client/journey/store`.
-- [x] Store role/status и MFA boundary.
-- [x] Desktop/mobile responsive Journey view.
-- [x] CTA из `/store` и обратный переход.
-- [x] Zero/partial/complete состояния.
-- [x] Unit, page-boundary и middleware regression tests.
+- [x] Мастер-промпт v2 с явным запретом отдельного Store dashboard.
+- [x] `/client/journey/store` переведён на `JourneyWorkspace context="store"`.
+- [x] Удалён legacy `StoreJourneyView`.
+- [x] Сохранён conversation-first stage `goal` до измеримой Точки B.
+- [x] Store-показатели ясно расположены в компактной read-only сетке Точки A.
+- [x] После цели используется реальный JourneyCanvas A → B и его WidgetModule.
+- [x] Первая измеримая Точка B остаётся draft; roadmap создаётся только после
+  отдельного подтверждения владельца.
+- [x] Сохранены mobile modes `Путь / Спросить AI / Модули`.
+- [x] Store client использует выделенные `/api/v1/journey/store/*` endpoints.
+- [x] Browser localStorage и demo fallback для Store отключены.
+- [x] GET/PATCH/chat/documents защищены session + MFA + Store role/status.
+- [x] Выделенный owned Store workspace и отдельная HttpOnly cookie изолированы
+  от ordinary Journey bootstrap/device flow.
+- [x] Generic Journey routes отклоняют любой reserved Store workspace.
+- [x] Live Point A заново строится на сервере и не доверяет browser payload.
+- [x] Store financial facts редактируются перед Journey DB persistence.
+- [x] Goals/messages/roadmap/layout сохраняются в выделенном Store overlay workspace.
+- [x] Document mutation для Store Journey закрыта до multipart parsing.
+- [x] Store PATCH сохраняет только layout и не принимает browser-smuggled цели/roadmap.
+- [x] Desktop 1440×900 и mobile 390×844 проверены без горизонтального overflow;
+  четыре Store-модуля не перекрываются ChatDock.
 
-## Проверено
+## Текущая верификация
 
-- Targeted Vitest: 4 файла, 81 тест пройден.
-- Полный Vitest: 225 файлов / 2 029 тестов пройдено; 10 файлов / 28 тестов штатно пропущено по environment gates.
+- Journey unit Vitest: `29` файлов / `129` тестов — пройдено.
 - TypeScript type-check: пройден.
-- Targeted ESLint: 0 ошибок и предупреждений.
-- Static route audit: 95 маршрутов, все literal transitions разрешены.
-- Next.js production build: пройден; `/client/journey/store` собран как dynamic server route.
+- ESLint: пройден с одним существующим unrelated warning в `SimulatorClient`.
+- Full Vitest: `234` файлов / `2 066` тестов — пройдено; `10` файлов /
+  `28` environment-gated тестов пропущены штатно.
+- Static route audit: `95` маршрутов, все literal transitions resolved.
+- Next.js production build: пройден.
+- Desktop/mobile visual smoke: пройден локально на `1440×900` и `390×844`.
 
-## Не выполнялось
+## Production
 
-- Authenticated browser E2E на production.
-- Записывающий AI-диалог и сохранение целей.
+Предыдущий deployment `dpl_9zpqDPXPfiLHQuceC3tt9rS8H5tk` (`b8c71627`) имел
+неверный отдельный dashboard-интерфейс и должен быть заменён.
 
-## Production release
+Новый deployment ещё не объявлен готовым. После `READY` здесь фиксируются commit,
+deployment id, production alias и фактически выполненные smoke-проверки.
 
-- Дата: 2026-08-13.
-- Код релиза: `b8c71627`.
-- Vercel deployment: `dpl_9zpqDPXPfiLHQuceC3tt9rS8H5tk`, status `READY`.
-- Production alias: `https://aistart360-store.vercel.app`.
-- Anonymous `/client/journey/store`: `307` на `/login?from=/client/journey/store`.
-- Anonymous `/store`: `307` на `/login?from=/store`.
-- Login: `200`.
+## Не заявлять как выполненное без доказательства
+
+- authenticated production E2E аккаунта магазина;
+- visual verification реальных данных после login;
+- изоляцию от чужого tenant через браузер без disposable/live test session.

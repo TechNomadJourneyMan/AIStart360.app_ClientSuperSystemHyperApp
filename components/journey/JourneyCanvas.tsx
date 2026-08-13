@@ -17,6 +17,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { getCurrentConfirmedJourneyGoal } from './JourneyExperience'
+import type { JourneyContext } from './api'
 import type {
   JourneyFactView,
   JourneySuggestionView,
@@ -31,13 +32,16 @@ const PLANE_HEIGHT = 1240
 // Include the priority widget row in the initial fit. The chat remains a
 // compact floating control without covering module content.
 const FIT_HEIGHT = 1120
+const STORE_FIT_HEIGHT = 800
 const MIN_ZOOM = 0.42
 const MAX_ZOOM = 1.45
 const DEFAULT_DOCK_SAFE_BOTTOM = 216
+const STORE_DOCK_SAFE_BOTTOM = 176
 const DOCK_GAP = 16
 
 interface JourneyCanvasProps {
   state: JourneyWorkspaceView
+  context?: JourneyContext
   onWidgetToggle: (id: string) => void
   onWidgetFocus: (id: string) => void
   onWidgetHide: (id: string) => void
@@ -59,6 +63,7 @@ interface Camera {
 export function JourneyCanvas(props: JourneyCanvasProps) {
   const {
     state,
+    context = 'default',
     onWidgetToggle,
     onWidgetFocus,
     onWidgetHide,
@@ -70,6 +75,7 @@ export function JourneyCanvas(props: JourneyCanvasProps) {
     onSuggestionReject,
     onSuggestionHide,
   } = props
+  const storeContext = context === 'store'
   const viewportRef = useRef<HTMLDivElement>(null)
   const reduceMotion = useReducedMotion()
   const [camera, setCamera] = useState<Camera>({ x: 24, y: 24, scale: 0.72 })
@@ -87,27 +93,29 @@ export function JourneyCanvas(props: JourneyCanvasProps) {
     const viewport = viewportRef.current
     if (!viewport) return
     const rect = viewport.getBoundingClientRect()
-    const availableHeight = getBoardAvailableHeight(rect)
+    const availableHeight = getBoardAvailableHeight(rect, storeContext)
     const scale = clamp(nextScale, MIN_ZOOM, MAX_ZOOM)
     setCamera({
       x: rect.width / 2 - point.x * scale,
       y: availableHeight / 2 - point.y * scale,
       scale,
     })
-  }, [])
+  }, [storeContext])
 
   const fitBoard = useCallback(() => {
     const viewport = viewportRef.current
     if (!viewport) return
     const rect = viewport.getBoundingClientRect()
-    const availableHeight = getBoardAvailableHeight(rect)
-    const scale = clamp(Math.min((rect.width - 36) / PLANE_WIDTH, (availableHeight - 56) / FIT_HEIGHT), MIN_ZOOM, 0.92)
+    const availableHeight = getBoardAvailableHeight(rect, storeContext)
+    const fitHeight = storeContext ? STORE_FIT_HEIGHT : FIT_HEIGHT
+    const verticalPadding = storeContext ? 40 : 56
+    const scale = clamp(Math.min((rect.width - 36) / PLANE_WIDTH, (availableHeight - verticalPadding) / fitHeight), MIN_ZOOM, 0.92)
     setCamera({
       x: (rect.width - PLANE_WIDTH * scale) / 2,
-      y: Math.max(28, (availableHeight - FIT_HEIGHT * scale) / 2),
+      y: Math.max(storeContext ? 20 : 28, (availableHeight - fitHeight * scale) / 2),
       scale,
     })
-  }, [])
+  }, [storeContext])
 
   useEffect(() => {
     fitBoard()
@@ -195,6 +203,7 @@ export function JourneyCanvas(props: JourneyCanvasProps) {
     <Tooltip.Provider>
       <section
         ref={viewportRef}
+        data-testid="journey-canvas"
         aria-label="Доска трансформации бизнеса из Точки A в Точку B"
         className={cn(
           'relative hidden size-full overflow-hidden bg-background md:block',
@@ -209,6 +218,7 @@ export function JourneyCanvas(props: JourneyCanvasProps) {
         <DotGrid />
 
         <motion.div
+          data-testid="journey-canvas-plane"
           className="absolute left-0 top-0"
           animate={{ x: camera.x, y: camera.y, scale: camera.scale }}
           transition={{ duration: reduceMotion || panning ? 0 : 0.18, ease: 'easeOut' }}
@@ -216,9 +226,9 @@ export function JourneyCanvas(props: JourneyCanvasProps) {
         >
           <BoardConnections reduceMotion={Boolean(reduceMotion)} hasRoadmap={state.roadmap.length > 0} />
 
-          <PointASection facts={confirmedFacts} onFocus={() => focusPoint({ x: 260, y: 360 }, 0.92)} />
-          <RoadmapSection state={state} onFocus={() => focusPoint({ x: 800, y: 360 }, 0.84)} />
-          <PointBSection state={state} onFocus={() => focusPoint({ x: 1310, y: 360 }, 0.92)} />
+          <PointASection facts={confirmedFacts} compact={storeContext} onFocus={() => focusPoint({ x: 260, y: 360 }, 0.92)} />
+          <RoadmapSection state={state} compact={storeContext} onFocus={() => focusPoint({ x: 800, y: 360 }, 0.84)} />
+          <PointBSection state={state} compact={storeContext} onFocus={() => focusPoint({ x: 1310, y: 360 }, 0.92)} />
 
           <ContextSuggestions
             suggestions={activeSuggestions}
@@ -231,7 +241,7 @@ export function JourneyCanvas(props: JourneyCanvasProps) {
             <WidgetModule
               key={widget.id}
               widget={widget}
-              decisionReason={getWidgetDecisionReason(widgetDecisions, widget)}
+              decisionReason={storeContext ? undefined : getWidgetDecisionReason(widgetDecisions, widget)}
               scale={camera.scale}
               onToggle={onWidgetToggle}
               onFocus={onWidgetFocus}
@@ -303,16 +313,30 @@ export function JourneyMobileBoard({ state }: { state: JourneyWorkspaceView }) {
   )
 }
 
-function PointASection({ facts, onFocus }: { facts: JourneyFactView[]; onFocus: () => void }) {
+function PointASection({
+  facts,
+  compact = false,
+  onFocus,
+}: {
+  facts: JourneyFactView[]
+  compact?: boolean
+  onFocus: () => void
+}) {
+  const visibleFacts = compact
+    ? selectStoreCanvasFacts(facts)
+    : facts
   return (
     <section
       data-testid="point-a"
       data-board-interactive
-      className="absolute left-20 top-56 w-[360px] rounded-3xl border border-white/10 bg-surface-container-lowest p-5 shadow-card"
+      className={cn(
+        'absolute left-20 w-[360px] rounded-3xl border border-white/10 bg-surface-container-lowest p-5 shadow-card',
+        compact ? 'top-44' : 'top-56',
+      )}
     >
       <SectionHeader icon={CircleDot} eyebrow="Точка A · сейчас" title="Подтверждённая реальность" onFocus={onFocus} />
       <div className="mt-4">
-        {facts.length ? <FactList facts={facts} /> : <EmptyCopy>Здесь появятся только факты, которые вы подтвердили.</EmptyCopy>}
+        {visibleFacts.length ? <FactList facts={visibleFacts} limit={compact ? 6 : 7} compact={compact} /> : <EmptyCopy>Здесь появятся только факты, которые вы подтвердили.</EmptyCopy>}
       </div>
       <div className="mt-4 border-t border-white/5 pt-3 text-[11px] text-on-surface-variant">
         {facts.length ? `${facts.length} подтверждённых фактов` : 'Начните с одного сообщения о компании'}
@@ -321,17 +345,28 @@ function PointASection({ facts, onFocus }: { facts: JourneyFactView[]; onFocus: 
   )
 }
 
-function RoadmapSection({ state, onFocus }: { state: JourneyWorkspaceView; onFocus: () => void }) {
+function RoadmapSection({
+  state,
+  compact = false,
+  onFocus,
+}: {
+  state: JourneyWorkspaceView
+  compact?: boolean
+  onFocus: () => void
+}) {
   const next = state.roadmap.find((item) => item.status === 'next')
   return (
     <section
       data-testid="journey-roadmap"
       data-board-interactive
-      className="absolute left-[535px] top-48 w-[530px] rounded-3xl border border-white/10 bg-surface-container-lowest p-5 shadow-card"
+      className={cn(
+        'absolute left-[535px] w-[530px] rounded-3xl border border-white/10 bg-surface-container-lowest p-5 shadow-card',
+        compact ? 'top-36' : 'top-48',
+      )}
     >
       <SectionHeader icon={Route} eyebrow="Путь A → B" title="Пробелы, приоритеты, зависимости" onFocus={onFocus} />
       <div className="mt-4">
-        {state.roadmap.length ? <RoadmapList items={state.roadmap} /> : <EmptyCopy>Путь появится после подтверждения Точки A и цели.</EmptyCopy>}
+        {state.roadmap.length ? <RoadmapList items={state.roadmap} limit={compact ? 3 : 5} compact={compact} /> : <EmptyCopy>Путь появится после подтверждения Точки A и цели.</EmptyCopy>}
       </div>
       {next && (
         <div className="mt-4 flex items-center gap-2 rounded-xl bg-primary/10 px-3 py-2 text-xs text-primary">
@@ -343,13 +378,16 @@ function RoadmapSection({ state, onFocus }: { state: JourneyWorkspaceView; onFoc
   )
 }
 
-function PointBSection({ state, onFocus }: { state: JourneyWorkspaceView; onFocus: () => void }) {
+function PointBSection({ state, compact = false, onFocus }: { state: JourneyWorkspaceView; compact?: boolean; onFocus: () => void }) {
   const currentGoal = getCurrentConfirmedJourneyGoal(state)
   return (
     <section
       data-testid="point-b"
       data-board-interactive
-      className="absolute left-[1160px] top-56 w-[360px] rounded-3xl border border-primary/30 bg-surface-container-lowest p-5 shadow-card"
+      className={cn(
+        'absolute left-[1160px] w-[360px] rounded-3xl border border-primary/30 bg-surface-container-lowest p-5 shadow-card',
+        compact ? 'top-44' : 'top-56',
+      )}
     >
       <SectionHeader icon={Target} eyebrow="Точка B · цель" title={currentGoal?.metric || 'Измеримый результат'} onFocus={onFocus} accent />
       <div className="mt-4 space-y-3">
@@ -370,10 +408,10 @@ function PointBSection({ state, onFocus }: { state: JourneyWorkspaceView; onFocu
   )
 }
 
-function FactList({ facts }: { facts: JourneyFactView[] }) {
+function FactList({ facts, limit = 7, compact = false }: { facts: JourneyFactView[]; limit?: number; compact?: boolean }) {
   return (
-    <dl className="space-y-2.5">
-      {facts.slice(0, 7).map((fact) => (
+    <dl className={compact ? 'space-y-1.5' : 'space-y-2.5'}>
+      {facts.slice(0, limit).map((fact) => (
         <div key={fact.id} className="flex items-start justify-between gap-4">
           <dt className="min-w-0 text-xs text-on-surface-variant">{fact.label}</dt>
           <dd title={fact.value} className="max-w-[62%] text-right text-xs font-medium text-on-surface line-clamp-3">{fact.value}</dd>
@@ -383,11 +421,11 @@ function FactList({ facts }: { facts: JourneyFactView[] }) {
   )
 }
 
-function RoadmapList({ items }: { items: JourneyWorkspaceView['roadmap'] }) {
+function RoadmapList({ items, limit = 5, compact = false }: { items: JourneyWorkspaceView['roadmap']; limit?: number; compact?: boolean }) {
   const titles = new Map(items.map((item) => [item.id, item.title]))
   return (
     <ol className="space-y-3">
-      {items.slice(0, 5).map((item, index) => (
+      {items.slice(0, limit).map((item, index) => (
         <li key={item.id} className="flex items-start gap-3">
           <span className={cn(
             'mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold tabular-nums',
@@ -404,7 +442,7 @@ function RoadmapList({ items }: { items: JourneyWorkspaceView['roadmap'] }) {
               <p className="text-xs font-medium text-on-surface">{item.title}</p>
               <span className="shrink-0 text-[10px] text-on-surface-variant">{item.horizon}</span>
             </div>
-            {item.description && <p title={item.description} className="mt-1 text-[11px] text-pretty text-on-surface-variant md:line-clamp-2">{item.description}</p>}
+            {item.description && <p title={item.description} className={cn('mt-1 text-[11px] text-pretty text-on-surface-variant', compact ? 'line-clamp-1' : 'md:line-clamp-2')}>{item.description}</p>}
             {!!item.dependsOn?.length && (
               <p className="mt-1.5 text-[10px] leading-relaxed text-on-surface-variant">
                 После: {item.dependsOn.slice(0, 2).map((id) => titles.get(id) ?? id).join(', ')}
@@ -577,6 +615,22 @@ function EmptyCopy({ children }: { children: React.ReactNode }) {
   return <p className="text-xs leading-relaxed text-pretty text-on-surface-variant">{children}</p>
 }
 
+const STORE_CANVAS_FACT_ORDER = [
+  'fact:store:revenue',
+  'fact:store:gross-profit',
+  'fact:store:gross-margin',
+  'fact:store:discount-rate',
+  'fact:store:units',
+  'fact:store:inventory',
+]
+
+function selectStoreCanvasFacts(facts: JourneyFactView[]): JourneyFactView[] {
+  const byId = new Map(facts.map((fact) => [fact.id, fact]))
+  return STORE_CANVAS_FACT_ORDER
+    .map((id) => byId.get(id))
+    .filter((fact): fact is JourneyFactView => Boolean(fact))
+}
+
 function MobilePointCard({
   testId,
   eyebrow,
@@ -603,12 +657,15 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value))
 }
 
-function getBoardAvailableHeight(viewportRect: DOMRect): number {
+function getBoardAvailableHeight(viewportRect: DOMRect, storeContext = false): number {
   const chatDock = document.querySelector<HTMLElement>('section[aria-label="AI-диалог о бизнесе"]')
   const dockRect = chatDock?.getBoundingClientRect()
   const measuredInset = dockRect && dockRect.top < viewportRect.bottom
     ? viewportRect.bottom - dockRect.top + DOCK_GAP
     : 0
-  const bottomInset = Math.max(DEFAULT_DOCK_SAFE_BOTTOM, measuredInset)
+  const bottomInset = Math.max(
+    storeContext ? STORE_DOCK_SAFE_BOTTOM : DEFAULT_DOCK_SAFE_BOTTOM,
+    measuredInset,
+  )
   return Math.max(280, viewportRect.height - bottomInset)
 }

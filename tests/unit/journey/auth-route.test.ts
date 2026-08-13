@@ -20,9 +20,12 @@ vi.mock('@/lib/journey/http', async () => {
   }
 })
 
-vi.mock('@/lib/journey/auth-bootstrap', () => ({
-  resolveAuthenticatedJourneyState: mocks.resolveAuthenticated,
-}))
+vi.mock('@/lib/journey/auth-bootstrap', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/journey/auth-bootstrap')>(
+    '@/lib/journey/auth-bootstrap',
+  )
+  return { ...actual, resolveAuthenticatedJourneyState: mocks.resolveAuthenticated }
+})
 
 vi.mock('@/lib/journey/onboarding-seed', () => ({
   loadJourneyStateFromOnboarding: vi.fn(),

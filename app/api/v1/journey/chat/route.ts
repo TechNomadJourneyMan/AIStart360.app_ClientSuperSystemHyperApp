@@ -14,6 +14,7 @@ import {
   saveJourneyState,
 } from '@/lib/journey/persistence'
 import { journeyChatRequestSchema } from '@/lib/journey/schema'
+import { assertNotStoreJourneyWorkspace } from '@/lib/journey/store-context'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -26,6 +27,7 @@ export async function POST(request: Request) {
       withJourneyRequestIdentity(request, await request.json()),
     )
     const identity = identityFromRequest(request, payload)
+    assertNotStoreJourneyWorkspace(identity.workspaceId, actorUserId)
     if (
       await isRateLimited(request, 'journey-chat-ip', { max: 30, windowMs: 60 * 60_000 }) ||
       await isRateLimitedKey(identity.workspaceId, 'journey-chat', { max: 12, windowMs: 60_000 })

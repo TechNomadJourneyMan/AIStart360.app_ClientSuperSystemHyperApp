@@ -20,6 +20,7 @@ import { journeyWidgetSchema } from '@/lib/journey/schema'
 import {
   createJourneyConnectCode,
   getJourney,
+  type JourneyContext,
   JourneyRequestError,
   patchJourney,
   postJourneyDocument,
@@ -74,6 +75,12 @@ interface AutosaveQueueController {
   drain: () => Promise<void>
 }
 
+/** Store aggregates are sensitive server-owned facts and never enter the
+ * browser persistence used by the public/local Journey experiment. */
+export function usesJourneyBrowserState(context: JourneyContext): boolean {
+  return context !== 'store'
+}
+
 /**
  * Starts at most one autosave worker and closes the small settlement window
  * where a new job can be queued after the worker drained but before its
@@ -109,9 +116,14 @@ export async function waitForSerializedAutosaveIdle(
 
 export function JourneyWorkspace({
   initialDemoScenario,
+  initialState,
+  context = 'default',
 }: {
   initialDemoScenario?: JourneyDemoScenario
+  initialState?: JourneyWorkspaceView
+  context?: JourneyContext
 } = {}) {
+  const storeContext = context === 'store'
   const publicDemo = isJourneyPublicDemo()
   const demoScenario = allowsJourneyLocalDemo() ? initialDemoScenario : undefined
   const scenarioLocalDemo = Boolean(demoScenario)
@@ -119,10 +131,12 @@ export function JourneyWorkspace({
     ? journeyDemoIdentityStorageKey(demoScenario)
     : LOCAL_IDENTITY_KEY
   const [identity, setIdentity] = useState<JourneyIdentity | null>(null)
-  const [state, setState] = useState<JourneyWorkspaceView>(() => ({
-    ...createEmptyWorkspace('guest-loading'),
-    phase: 'loading',
-  }))
+  const [state, setState] = useState<JourneyWorkspaceView>(() => (
+    initialState ?? {
+      ...createEmptyWorkspace('guest-loading'),
+      phase: 'loading',
+    }
+  ))
   const [hydrated, setHydrated] = useState(false)
   const [busy, setBusy] = useState(false)
   const [chatExpanded, setChatExpanded] = useState(true)
@@ -139,14 +153,42 @@ export function JourneyWorkspace({
   const skipNextPatchRef = useRef(false)
   const pendingAutosaveRef = useRef<PendingAutosave | null>(null)
   const autosavePromiseRef = useRef<Promise<void> | null>(null)
+  const browserStateEnabled = usesJourneyBrowserState(context)
 
   const commit = useCallback((next: JourneyWorkspaceView) => {
-    const arranged = resolveWidgetCollisions(limitExpandedWidgets(next))
+    const arranged = resolveWidgetCollisions(limitExpandedWidgets(next), storeContext)
     stateRef.current = arranged
     setState(arranged)
-  }, [])
+  }, [storeContext])
+
+  const hideStoreWorkspace = useCallback((
+    message = 'Не удалось повторно подтвердить доступ к Store Journey.',
+    dropIdentity = false,
+  ) => {
+    const current = identityRef.current
+    pendingAutosaveRef.current = null
+    serverAvailableRef.current = false
+    accessVerifiedRef.current = false
+    skipNextPatchRef.current = false
+    if (dropIdentity) {
+      identityRef.current = null
+      setIdentity(null)
+    }
+    commit(createFailClosedWorkspace(
+      current?.workspaceId ?? stateRef.current.workspaceId ?? 'store-access-unavailable',
+      message,
+    ))
+    setChatExpanded(true)
+    setMobileView('chat')
+    setActionError(`${message} Ранее показанные финансовые данные Store скрыты.`)
+    setStatusMessage('Store-доступ не подтверждён · данные скрыты')
+  }, [commit])
 
   const invalidateJourneyAccess = useCallback((message = 'Доступ к рабочему пространству истёк или был отозван.') => {
+    if (storeContext) {
+      hideStoreWorkspace(message, true)
+      return
+    }
     const current = identityRef.current
     if (current) clearJourneyCache(current.workspaceId, identityStorageKey)
     pendingAutosaveRef.current = null
@@ -176,14 +218,15 @@ export function JourneyWorkspace({
     commit(inaccessible)
     setActionError(message)
     setStatusMessage('Подключите устройство повторно · локальный fallback не включён')
-  }, [commit, identityStorageKey])
+  }, [commit, hideStoreWorkspace, identityStorageKey, storeContext])
 
   const reloadRemoteAfterConflict = useCallback(async (
     currentIdentity: JourneyIdentity,
     message = 'На другом устройстве появилась новая версия. Загружено актуальное состояние — повторите действие.',
   ) => {
     try {
-      const result = await getJourney(currentIdentity, stateRef.current)
+      const result = await getJourney(currentIdentity, stateRef.current, context)
+      requireVerifiedStoreResponse(context, result.state)
       serverAvailableRef.current = true
       accessVerifiedRef.current = result.state.persistence.mode === 'database'
       skipNextPatchRef.current = true
@@ -195,10 +238,14 @@ export function JourneyWorkspace({
         invalidateJourneyAccess()
         return
       }
+      if (storeContext) {
+        hideStoreWorkspace('Не удалось повторно подтвердить актуальное состояние Store Journey.')
+        return
+      }
       setActionError('Не удалось загрузить свежую серверную версию. Локальные изменения не отправлены.')
       setStatusMessage('Конфликт синхронизации требует повторной загрузки')
     }
-  }, [commit, invalidateJourneyAccess])
+  }, [commit, context, hideStoreWorkspace, invalidateJourneyAccess, storeContext])
 
   const drainAutosaveQueue = useCallback(async () => {
     while (pendingAutosaveRef.current) {
@@ -208,7 +255,8 @@ export function JourneyWorkspace({
       if (!activeIdentity || activeIdentity.workspaceId !== job.identity.workspaceId) continue
 
       try {
-        const result = await patchJourney(job.identity, job.state)
+        const result = await patchJourney(job.identity, job.state, context)
+        requireVerifiedStoreResponse(context, result.state)
         if (identityRef.current?.workspaceId !== job.identity.workspaceId) continue
 
         const reconciled = reconcileAutosaveResult(job.state, stateRef.current, result.state)
@@ -231,11 +279,17 @@ export function JourneyWorkspace({
           invalidateJourneyAccess()
           break
         }
-        setStatusMessage('Изменения сохранены локально; синхронизация с базой не удалась')
+        if (shouldFailClosedJourneyRequest(context, cause)) {
+          hideStoreWorkspace('Не удалось подтвердить Store-доступ при сохранении изменений.')
+          break
+        }
+        setStatusMessage(
+          'Изменения сохранены локально; синхронизация с базой не удалась',
+        )
         break
       }
     }
-  }, [commit, invalidateJourneyAccess, reloadRemoteAfterConflict])
+  }, [commit, context, hideStoreWorkspace, invalidateJourneyAccess, reloadRemoteAfterConflict])
 
   const startAutosaveQueue = useCallback(() => {
     return startSerializedAutosaveQueue({
@@ -257,21 +311,27 @@ export function JourneyWorkspace({
     let active = true
 
     const initialize = async () => {
-      const storedIdentity = readStoredIdentity(identityStorageKey)
+      const storedIdentity = browserStateEnabled
+        ? readStoredIdentity(identityStorageKey)
+        : null
       const generatedIdentity = createIdentity()
       const nextIdentity: JourneyIdentity = demoScenario
         ? {
             workspaceId: storedIdentity?.workspaceId
               ?? `demo-${demoScenario}-${generatedIdentity.workspaceId}`,
           }
-        : storedIdentity ?? generatedIdentity
+        : storeContext && initialState
+          ? { workspaceId: initialState.workspaceId }
+          : storedIdentity ?? generatedIdentity
       identityRef.current = nextIdentity
       setIdentity(nextIdentity)
-      writeStoredIdentity(nextIdentity, identityStorageKey)
+      if (browserStateEnabled) writeStoredIdentity(nextIdentity, identityStorageKey)
 
-      const allowLocalDemo = allowsJourneyLocalDemo()
-      const storedState = readStoredState(nextIdentity.workspaceId)
-      const local = storedState ?? (
+      const allowLocalDemo = !storeContext && allowsJourneyLocalDemo()
+      const storedState = browserStateEnabled
+        ? readStoredState(nextIdentity.workspaceId)
+        : null
+      const local = initialState ?? storedState ?? (
         demoScenario
           ? createJourneyDemoScenarioState(demoScenario, nextIdentity.workspaceId)
           : createEmptyWorkspace(nextIdentity.workspaceId)
@@ -281,7 +341,7 @@ export function JourneyWorkspace({
         phase: 'loading',
       }
       if (!active) return
-      commit(allowLocalDemo ? local : safeEmpty)
+      commit(storeContext ? local : allowLocalDemo ? local : safeEmpty)
       setStatusMessage(
         allowLocalDemo && local.messages.length > 1
           ? 'Локальное состояние восстановлено'
@@ -304,7 +364,12 @@ export function JourneyWorkspace({
       }
 
       try {
-        const result = await getJourney(nextIdentity, allowLocalDemo ? local : safeEmpty)
+        const result = await getJourney(
+          nextIdentity,
+          storeContext ? local : allowLocalDemo ? local : safeEmpty,
+          context,
+        )
+        requireVerifiedStoreResponse(context, result.state)
         if (!active) return
         if (!allowLocalDemo && result.state.persistence.mode !== 'database') {
           throw new JourneyRequestError('Серверная авторизация Journey временно недоступна.', 503)
@@ -313,16 +378,18 @@ export function JourneyWorkspace({
           ? nextIdentity
           : { workspaceId: result.state.workspaceId }
         if (resolvedIdentity.workspaceId !== nextIdentity.workspaceId) {
-          clearJourneyStateCache(nextIdentity.workspaceId)
+          if (browserStateEnabled) clearJourneyStateCache(nextIdentity.workspaceId)
           identityRef.current = resolvedIdentity
           setIdentity(resolvedIdentity)
-          writeStoredIdentity(resolvedIdentity, identityStorageKey)
+          if (browserStateEnabled) writeStoredIdentity(resolvedIdentity, identityStorageKey)
         }
         serverAvailableRef.current = true
         accessVerifiedRef.current = result.state.persistence.mode === 'database'
         // With no DB configured the GET endpoint returns an honest empty/local
         // envelope. It must never outrank richer browser state on reload.
-        const chosen = selectJourneyInitialState(local, result.state, allowLocalDemo)
+        const chosen = storeContext
+          ? result.state
+          : selectJourneyInitialState(local, result.state, allowLocalDemo)
         skipNextPatchRef.current = true
         commit(chosen)
         setChatExpanded(chosen.phase !== 'ready')
@@ -340,10 +407,18 @@ export function JourneyWorkspace({
           invalidateJourneyAccess()
           return
         }
+        if (shouldFailClosedJourneyRequest(context, cause)) {
+          hideStoreWorkspace(
+            cause instanceof JourneyRequestError && cause.status === 503
+              ? 'Серверная проверка Store-доступа временно недоступна.'
+              : 'Не удалось безопасно подтвердить Store-доступ.',
+          )
+          return
+        }
         serverAvailableRef.current = false
         accessVerifiedRef.current = false
         if (!allowLocalDemo) {
-          clearJourneyStateCache(nextIdentity.workspaceId)
+          if (browserStateEnabled) clearJourneyStateCache(nextIdentity.workspaceId)
           const reason = cause instanceof JourneyRequestError && cause.status === 503
             ? 'Серверная проверка доступа временно недоступна.'
             : 'Не удалось безопасно подтвердить серверный доступ.'
@@ -376,11 +451,21 @@ export function JourneyWorkspace({
     return () => {
       active = false
     }
-  }, [commit, demoScenario, identityStorageKey, invalidateJourneyAccess])
+  }, [
+    browserStateEnabled,
+    commit,
+    context,
+    demoScenario,
+    identityStorageKey,
+    initialState,
+    hideStoreWorkspace,
+    invalidateJourneyAccess,
+    storeContext,
+  ])
 
   useEffect(() => {
     if (!hydrated || !identity || busy) return
-    writeStoredState(state)
+    if (browserStateEnabled) writeStoredState(state)
 
     if (skipNextPatchRef.current) {
       skipNextPatchRef.current = false
@@ -394,7 +479,7 @@ export function JourneyWorkspace({
     }, 700)
 
     return () => window.clearTimeout(timeout)
-  }, [busy, hydrated, identity, startAutosaveQueue, state])
+  }, [browserStateEnabled, busy, hydrated, identity, startAutosaveQueue, state])
 
   const sendMessage = async (text: string) => {
     const initialIdentity = identityRef.current
@@ -416,7 +501,8 @@ export function JourneyWorkspace({
 
     try {
       if (!serverAvailableRef.current) throw new Error('Journey API unavailable')
-      const result = await postJourneyMessage(currentIdentity, base, text)
+      const result = await postJourneyMessage(currentIdentity, base, text, context)
+      requireVerifiedStoreResponse(context, result.state)
       skipNextPatchRef.current = true
       const rebased = preserveUserWidgetState(result.state, stateRef.current)
       commit(rebased)
@@ -429,6 +515,10 @@ export function JourneyWorkspace({
       }
       if (isAuthorizationError(cause)) {
         invalidateJourneyAccess()
+        return
+      }
+      if (shouldFailClosedJourneyRequest(context, cause)) {
+        hideStoreWorkspace('Серверный Store Journey временно недоступен после отправки сообщения.')
         return
       }
       if (process.env.NODE_ENV === 'production' && !accessVerifiedRef.current && !scenarioLocalDemo) {
@@ -449,6 +539,11 @@ export function JourneyWorkspace({
     const initialIdentity = identityRef.current
     if (!initialIdentity || busy) return
     setActionError('')
+
+    if (storeContext) {
+      setActionError('В Store Journey загрузка документов отключена. Публикуйте XLS/XLSX/CSV через раздел «Магазин → Импорт данных».')
+      return
+    }
 
     const invalid = files.find((file) => {
       const extension = file.name.split('.').pop()?.toLowerCase() ?? ''
@@ -502,7 +597,7 @@ export function JourneyWorkspace({
           ),
         }
         commit(refreshKnowledgeWidget(analyzing))
-        const result = await postJourneyDocument(currentIdentity, analyzing, file)
+        const result = await postJourneyDocument(currentIdentity, analyzing, file, context)
         skipNextPatchRef.current = true
         commit(preserveUserWidgetState(result.state, stateRef.current))
         setStatusMessage(`Анализ «${file.name}» завершён`)
@@ -743,8 +838,10 @@ export function JourneyWorkspace({
     serverAvailableRef.current = true
     accessVerifiedRef.current = true
     skipNextPatchRef.current = true
-    writeStoredIdentity(linkedIdentity, identityStorageKey)
-    writeStoredState(result.state)
+    if (browserStateEnabled) {
+      writeStoredIdentity(linkedIdentity, identityStorageKey)
+      writeStoredState(result.state)
+    }
     setIdentity(linkedIdentity)
     commit(result.state)
     setChatExpanded(result.state.phase !== 'ready')
@@ -781,6 +878,8 @@ export function JourneyWorkspace({
     onSuggestionReject: (id: string) => updateSuggestion(id, 'rejected'),
     onSuggestionHide: (id: string) => updateSuggestion(id, 'hidden'),
     onOpenBoard: openBoard,
+    filesEnabled: !storeContext,
+    context,
   }
 
   return (
@@ -788,13 +887,15 @@ export function JourneyWorkspace({
       <div
         className="relative flex h-dvh min-h-[520px] flex-col overflow-hidden bg-background text-on-surface"
         data-demo-scenario={demoScenario}
+        data-journey-context={context}
       >
         <WorkspaceHeader
           state={state}
-          onDeviceConnect={demoScenario ? undefined : () => setDeviceDialogOpen(true)}
+          context={context}
+          onDeviceConnect={demoScenario || storeContext ? undefined : () => setDeviceDialogOpen(true)}
         />
 
-        {(publicDemo || demoScenario) && (
+        {((publicDemo && !storeContext) || demoScenario) && (
           <div
             className="z-30 flex shrink-0 items-center justify-center gap-1.5 bg-warning/10 px-3 py-1.5 text-center text-[11px] leading-4 text-warning"
             data-testid={demoScenario ? 'demo-project-banner' : undefined}
@@ -823,7 +924,7 @@ export function JourneyWorkspace({
           </div>
         )}
 
-        {!demoScenario && (
+        {!demoScenario && !storeContext && (
           <DeviceConnectDialog
             open={deviceDialogOpen}
             onOpenChange={setDeviceDialogOpen}
@@ -854,6 +955,7 @@ export function JourneyWorkspace({
               <>
                 <JourneyCanvas
                   state={state}
+                  context={context}
                   onWidgetToggle={toggleWidget}
                   onWidgetFocus={focusWidget}
                   onWidgetHide={hideWidget}
@@ -950,25 +1052,61 @@ function DiscoveryNode({
 
 function WorkspaceHeader({
   state,
+  context,
   onDeviceConnect,
 }: {
   state: JourneyWorkspaceView
+  context: JourneyContext
   onDeviceConnect?: () => void
 }) {
   const persisted = state.persistence.mode === 'database'
+  const storeContext = context === 'store'
+  const storeSource = storeContext
+    ? state.facts.find((fact) => fact.id === 'fact:store:revenue')?.sourceLabel
+      ?? state.facts[0]?.sourceLabel
+    : undefined
+  const storeVersion = storeSource?.replace(/^Store Control Center\s*·\s*/u, '')
+  const storeAsOf = storeContext
+    ? state.facts.find((fact) => fact.id === 'fact:store:as-of')?.value
+    : undefined
   return (
     <header className="relative z-30 flex min-h-14 shrink-0 items-center gap-3 border-b border-white/5 bg-surface-container-lowest px-3 pt-[env(safe-area-inset-top)] sm:px-5">
-      <Link href="/" aria-label="AIStart360" className="flex min-w-0 items-center gap-2">
+      <Link
+        href={storeContext ? '/client/journey/store' : '/'}
+        aria-label={storeContext ? 'AIStart360 Journey · Магазин' : 'AIStart360'}
+        className="flex min-w-0 items-center gap-2"
+      >
         <div className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-primary text-on-primary">
           <Sparkles className="size-4" aria-hidden />
         </div>
         <div className="min-w-0">
-          <p className="truncate text-sm font-bold text-on-surface">AIStart<span className="text-primary">360</span></p>
-          <p className="hidden text-[10px] text-on-surface-variant sm:block">AI-first workspace · эксперимент</p>
+          <p className="truncate text-sm font-bold text-on-surface">
+            AIStart<span className="text-primary">360</span>{storeContext ? ' Journey' : ''}
+          </p>
+          <p className="hidden max-w-64 truncate text-[10px] text-on-surface-variant sm:block">
+            {storeContext ? state.companyName || 'Интернет-магазин' : 'AI-first workspace · эксперимент'}
+          </p>
         </div>
       </Link>
 
       <div className="ml-auto flex min-w-0 items-center gap-1.5 sm:gap-2">
+        {storeContext && (
+          <StatusBadge
+            icon={Database}
+            label={storeVersion ? `Store · live · ${storeVersion}` : 'Store · live read-only'}
+            shortLabel="Store · live"
+            tone="ok"
+          />
+        )}
+        {storeAsOf && (
+          <StatusBadge
+            icon={Database}
+            label={`Актуально: ${storeAsOf}`}
+            shortLabel={storeAsOf}
+            tone="neutral"
+            className="hidden lg:flex"
+          />
+        )}
         <StatusBadge
           icon={state.provider.mode === 'live' ? Bot : Sparkles}
           label={
@@ -1005,11 +1143,11 @@ function WorkspaceHeader({
           </button>
         )}
         <Link
-          href="/client/welcome"
+          href={storeContext ? '/store' : '/client/welcome'}
           prefetch={false}
-          className="ml-0.5 hidden rounded-lg px-2.5 py-2 text-xs text-on-surface-variant hover:bg-white/5 hover:text-on-surface sm:block"
+          className="ml-0.5 rounded-lg px-2.5 py-2 text-xs text-on-surface-variant hover:bg-white/5 hover:text-on-surface"
         >
-          В кабинет
+          {storeContext ? 'В Магазин' : 'В кабинет'}
         </Link>
       </div>
     </header>
@@ -1198,7 +1336,7 @@ function clearJourneyStateCache(workspaceId: string): void {
   window.localStorage.removeItem(LOCAL_STATE_KEY)
 }
 
-function createFailClosedWorkspace(workspaceId: string, reason: string): JourneyWorkspaceView {
+export function createFailClosedWorkspace(workspaceId: string, reason: string): JourneyWorkspaceView {
   const now = new Date().toISOString()
   return {
     ...createEmptyWorkspace(workspaceId),
@@ -1219,6 +1357,22 @@ function createFailClosedWorkspace(workspaceId: string, reason: string): Journey
       reason,
     },
     updatedAt: now,
+  }
+}
+
+export function shouldFailClosedJourneyRequest(
+  context: JourneyContext,
+  _error: unknown,
+): boolean {
+  return context === 'store'
+}
+
+export function requireVerifiedStoreResponse(
+  context: JourneyContext,
+  state: JourneyWorkspaceView,
+): void {
+  if (context === 'store' && state.persistence.mode !== 'database') {
+    throw new JourneyRequestError('Store Journey не подтвердил серверное состояние.', 503)
   }
 }
 
@@ -1263,9 +1417,19 @@ function limitExpandedWidgetList(
 
 function resolveWidgetCollisions(
   state: JourneyWorkspaceView,
+  storeContext = false,
 ): JourneyWorkspaceView {
   const manualIds = new Set(state.manualWidgetIds ?? [])
-  const expandedSlots = [
+  const expandedSlots = storeContext ? [
+    { x: 100, y: 480 },
+    { x: 430, y: 480 },
+    { x: 760, y: 480 },
+    { x: 1090, y: 480 },
+    { x: 100, y: 820 },
+    { x: 430, y: 820 },
+    { x: 760, y: 820 },
+    { x: 1090, y: 820 },
+  ] : [
     { x: 100, y: 650 },
     { x: 470, y: 650 },
     { x: 840, y: 650 },
@@ -1285,6 +1449,7 @@ function resolveWidgetCollisions(
       return b.priority - a.priority
     })
   const positions = new Map<string, { x: number; y: number }>()
+  const horizontalCollisionDistance = storeContext ? 320 : 340
   const occupied = visible
     .filter((widget) => !widget.collapsed && manualIds.has(widget.id))
     .map((widget) => widget.position)
@@ -1295,7 +1460,8 @@ function resolveWidgetCollisions(
       continue
     }
     const slot = expandedSlots.find((candidate) => !occupied.some((position) => (
-      Math.abs(candidate.x - position.x) < 340 && Math.abs(candidate.y - position.y) < 300
+      Math.abs(candidate.x - position.x) < horizontalCollisionDistance
+        && Math.abs(candidate.y - position.y) < 300
     )))
     const position = slot ?? widget.position
     positions.set(widget.id, position)

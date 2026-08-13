@@ -163,6 +163,7 @@ export function deterministicOrchestrator(
     widgetDecisions: upsertWidgetDecisions(
       current.widgetDecisions ?? [],
       widgetDecisions,
+      widgets,
     ),
     suggestions: newFacts.length
       ? [suggestion('confirm-facts', 'Подтвердить факты', 'Покажи факты для подтверждения.', 'point-a')]
@@ -174,6 +175,125 @@ export function deterministicOrchestrator(
     },
     updatedAt: now,
   })
+}
+
+/**
+ * Materializes the canonical A → B plan for a goal the user already reviewed.
+ *
+ * The regular Journey flow intentionally keeps its existing one-turn behavior.
+ * Store Journey calls this helper only after a separate, explicit confirmation
+ * request, so the confirmed entity keeps the same id as the visible draft.
+ */
+export function confirmDraftJourneyGoal(
+  currentInput: JourneyState,
+  goalId: string,
+  confirmationMessage: string,
+  reason = 'Точка B подтверждена пользователем отдельным действием.',
+): JourneyState {
+  const current = journeyStateSchema.parse(currentInput)
+  const draft = current.goals.find((goal) => goal.id === goalId && goal.status === 'draft')
+  if (!draft) throw new Error('Черновик Точки B не найден.')
+  if (!draft.metric?.trim() || !draft.target?.trim() || !draft.deadline?.trim()) {
+    throw new Error('Точка B ещё не содержит показатель, целевое значение и срок.')
+  }
+
+  const now = new Date().toISOString()
+  // Build the same canonical plan against a neutral temporary id. Restoring
+  // the reviewed draft below avoids parsing the caller-owned id as generated
+  // model state and preserves the exact visible candidate.
+  const scaffold = journeyStateSchema.parse({
+    ...current,
+    goals: current.goals.filter((goal) => goal.id !== draft.id),
+  })
+  const planned = buildGoalTurn(
+    scaffold,
+    {
+      id: makeId('message'),
+      role: 'user',
+      text: confirmationMessage.trim(),
+      createdAt: now,
+    },
+    draft.title,
+    reason,
+  )
+  const goals = current.goals.map((goal) => (
+    goal.id === draft.id ? { ...goal, status: 'confirmed' as const } : goal
+  ))
+  const roadmap = normalizeJourneyEntityIds(planned.roadmap, 'roadmap')
+  const widgets = planned.widgets.map((item) => (
+    item.kind === 'point_b_goals'
+      ? journeyWidgetSchema.parse({ ...item, data: { goals: goals.slice(0, 10) } })
+      : item.kind === 'roadmap_actions'
+        ? journeyWidgetSchema.parse({ ...item, data: { items: [] } })
+      : item
+  ))
+  const normalizedWidgets = widgets.map((item) => {
+    if (item.kind === 'tasks_reminders') {
+      return journeyWidgetSchema.parse({
+        ...item,
+        data: {
+          items: item.data.items.map((task) => ({
+            ...task,
+            id: newJourneyEntityId('task'),
+          })),
+        },
+      })
+    }
+    return item
+  })
+  // Goal planning may apply the generic four-expanded-widget cap while adding
+  // Point B/roadmap helper modules. Preserve the owner's existing layout for
+  // every pre-existing module; Store later keeps the duplicate transformation
+  // helpers collapsed so its four live control modules stay readable.
+  const widgetsWithPreservedLayout = normalizedWidgets.map((item) => {
+    const previous = current.widgets.find((candidate) => (
+      candidate.id === item.id && candidate.kind === item.kind
+    ))
+    if (!previous) return item
+    return journeyWidgetSchema.parse({
+      ...item,
+      collapsed: previous.collapsed,
+      hidden: previous.hidden,
+      focused: previous.focused,
+      position: previous.position,
+    })
+  })
+
+  return journeyStateSchema.parse({
+    ...planned,
+    phase: 'ready',
+    goals,
+    roadmap,
+    widgets: widgetsWithPreservedLayout,
+    provider: current.provider,
+    persistence: current.persistence,
+  })
+}
+
+/** Generate schema-safe ids while keeping this module's UUID source private. */
+export function newJourneyEntityId(prefix: string): string {
+  return makeId(prefix.replace(/[^a-zA-Z0-9:_-]/g, '-').slice(0, 40) || 'journey')
+}
+
+function normalizeJourneyEntityIds(
+  items: JourneyRoadmapItem[],
+  prefix: string,
+): JourneyRoadmapItem[] {
+  // Preserve object identity here: duplicate source ids would otherwise share
+  // one generated id and fail Journey's unique-id policy. Dependency targets
+  // still resolve to the first matching source item deterministically.
+  const normalized = items.map((item) => ({ sourceId: item.id, id: newJourneyEntityId(prefix) }))
+  const firstIdBySource = new Map<string, string>()
+  normalized.forEach(({ sourceId, id }) => {
+    if (!firstIdBySource.has(sourceId)) firstIdBySource.set(sourceId, id)
+  })
+  return items.map((item) => ({
+    ...item,
+    id: normalized.shift()!.id,
+    ...(item.dependsOn
+      ? { dependsOn: item.dependsOn.map((id) => firstIdBySource.get(id) ?? newJourneyEntityId(prefix)) }
+      : {}),
+  }))
 }
 
 function buildGoalTurn(
@@ -241,6 +361,7 @@ function buildGoalTurn(
     widgetDecisions: upsertWidgetDecisions(
       current.widgetDecisions ?? [],
       widgetDecisions,
+      widgets,
     ),
     suggestions: [
       suggestion('discuss-next', 'Обсудить первый этап', 'Давай подробно разберём первый этап.', 'roadmap'),
@@ -687,10 +808,14 @@ function widgetDecisionReason(kind: JourneyWidget['kind'], domain: Domain): stri
 function upsertWidgetDecisions(
   current: JourneyWidgetDecision[],
   incoming: JourneyWidgetDecision[],
+  widgets: JourneyWidget[],
 ): JourneyWidgetDecision[] {
   const next = new Map(current.map((decision) => [decision.widgetId, decision]))
   for (const decision of incoming) next.set(decision.widgetId, decision)
-  return [...next.values()].slice(0, 24)
+  const widgetKinds = new Map(widgets.map((item) => [item.id, item.kind]))
+  return [...next.values()]
+    .filter((decision) => widgetKinds.get(decision.widgetId) === decision.kind)
+    .slice(0, 24)
 }
 
 function mergeBusinessDescription(current: string, message: string): string {

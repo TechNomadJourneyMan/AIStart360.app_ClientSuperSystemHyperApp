@@ -15,6 +15,8 @@ import {
 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { cn } from '@/lib/utils'
+import { STORE_POINT_B_CONFIRMATION_MESSAGE } from '@/lib/journey/store-goal-contract'
+import type { JourneyContext } from './api'
 import { FactReview } from './FactReview'
 import {
   getJourneyExperienceStage,
@@ -44,6 +46,8 @@ interface ChatDockProps {
   onSuggestionReject: (id: string) => void
   onSuggestionHide: (id: string) => void
   onOpenBoard?: () => void
+  filesEnabled?: boolean
+  context?: JourneyContext
 }
 
 export function ChatDock({
@@ -66,6 +70,8 @@ export function ChatDock({
   onSuggestionReject,
   onSuggestionHide,
   onOpenBoard,
+  filesEnabled = true,
+  context = 'default',
 }: ChatDockProps) {
   const reduceMotion = useReducedMotion()
   const [draft, setDraft] = useState('')
@@ -132,9 +138,13 @@ export function ChatDock({
         mode === 'desktop'
           ? cn(
               'w-[min(760px,calc(100vw-2rem))] rounded-2xl',
-              showHistory ? 'h-[min(780px,calc(100dvh-5rem))]' : 'max-h-[calc(100dvh-5rem)]',
+              showHistory
+                ? context === 'store'
+                  ? 'h-[min(720px,calc(100dvh-6.5rem))]'
+                  : 'h-[min(780px,calc(100dvh-5rem))]'
+                : 'max-h-[calc(100dvh-5rem)]',
             )
-          : 'size-full border-0 bg-background pb-[calc(4.5rem+env(safe-area-inset-bottom))]',
+          : 'size-full border-0 bg-background pb-[calc(4.75rem+env(safe-area-inset-bottom))]',
       )}
     >
       <header className="flex min-h-12 shrink-0 items-center gap-3 border-b border-white/5 px-3 sm:px-4">
@@ -158,7 +168,11 @@ export function ChatDock({
               {providerLabel}
             </span>
           </div>
-          <p className="truncate text-[10px] text-on-surface-variant">Один вопрос за раз · факты подтверждаете вы</p>
+          <p className="truncate text-[10px] text-on-surface-variant">
+            {context === 'store'
+              ? 'Опубликованные факты защищены · цели задаёте вы'
+              : 'Один вопрос за раз · факты подтверждаете вы'}
+          </p>
         </div>
         {mode === 'desktop' && !conversationFirst && (
           <button
@@ -189,8 +203,13 @@ export function ChatDock({
                 {state.phase !== 'error' && (
                   <JourneyExperience
                     state={state}
+                    context={context}
                     onDraftRequest={setDraft}
                     onOpenBoard={experienceStage === 'ready' ? onOpenBoard : undefined}
+                    onConfirmGoal={context === 'store'
+                      ? () => onSend(STORE_POINT_B_CONFIRMATION_MESSAGE)
+                      : undefined}
+                    confirmationDisabled={busy}
                   />
                 )}
 
@@ -236,24 +255,28 @@ export function ChatDock({
 
       <div className="shrink-0 border-t border-white/5 p-2.5 sm:p-3">
         <div className="flex items-end gap-1.5 rounded-xl border border-white/10 bg-surface-container px-1.5 py-1.5 focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/10">
-          <input
-            ref={fileInputRef}
-            data-testid="journey-file-input"
-            type="file"
-            multiple
-            accept=".pdf,.docx,.csv,.txt"
-            onChange={selectFiles}
-            className="sr-only"
-          />
-          <button
-            type="button"
-            aria-label="Прикрепить файл"
-            title="PDF · DOCX · CSV · TXT до 4 МБ. Excel временно отключён проверкой безопасности."
-            onClick={() => fileInputRef.current?.click()}
-            className="flex size-10 shrink-0 items-center justify-center rounded-lg text-on-surface-variant hover:bg-white/5 hover:text-primary"
-          >
-            <Paperclip className="size-4" aria-hidden />
-          </button>
+          {filesEnabled && (
+            <>
+              <input
+                ref={fileInputRef}
+                data-testid="journey-file-input"
+                type="file"
+                multiple
+                accept=".pdf,.docx,.csv,.txt"
+                onChange={selectFiles}
+                className="sr-only"
+              />
+              <button
+                type="button"
+                aria-label="Прикрепить файл"
+                title="PDF · DOCX · CSV · TXT до 4 МБ. Excel временно отключён проверкой безопасности."
+                onClick={() => fileInputRef.current?.click()}
+                className="flex size-10 shrink-0 items-center justify-center rounded-lg text-on-surface-variant hover:bg-white/5 hover:text-primary"
+              >
+                <Paperclip className="size-4" aria-hidden />
+              </button>
+            </>
+          )}
           <textarea
             aria-label="Сообщение AI"
             value={draft}
@@ -289,7 +312,9 @@ export function ChatDock({
         </div>
         <p className="mt-1.5 flex items-start gap-1.5 px-1 text-[10px] leading-relaxed text-on-surface-variant/80">
           <ShieldCheck className="mt-0.5 size-3 shrink-0 text-primary" aria-hidden />
-          {state.persistence.mode === 'database'
+          {!filesEnabled
+            ? 'Факты Store обновляются только из опубликованных серверных данных и недоступны для ручного изменения.'
+            : state.persistence.mode === 'database'
             ? 'Файл обрабатывается на сервере; в Точку A попадут только подтверждённые вами факты.'
             : 'В демо файл анализируется только доступным обработчиком; неподтверждённые данные не попадут в Точку A.'}
         </p>

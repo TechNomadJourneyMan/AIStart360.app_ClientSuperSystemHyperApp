@@ -10,6 +10,7 @@ import {
 } from './persistence'
 
 export const JOURNEY_DEVICE_COOKIE = 'aistart_journey_device'
+export const STORE_JOURNEY_DEVICE_COOKIE = 'aistart_journey_store_device'
 export const JOURNEY_DEVICE_COOKIE_MAX_AGE_SECONDS = 90 * 24 * 60 * 60
 export const JOURNEY_SERVER_DEADLINE_MS = 18_000
 
@@ -112,29 +113,43 @@ export function withJourneyRequestIdentity(
 }
 
 export function journeyDeviceCredentialFromRequest(request: Request): string | undefined {
+  return credentialCookieFromRequest(request, JOURNEY_DEVICE_COOKIE)
+}
+
+export function storeJourneyDeviceCredentialFromRequest(request: Request): string | undefined {
+  return credentialCookieFromRequest(request, STORE_JOURNEY_DEVICE_COOKIE)
+}
+
+function credentialCookieFromRequest(
+  request: Request,
+  cookieName: string,
+): string | undefined {
   const cookieHeader = request.headers.get('cookie')
   if (!cookieHeader) return undefined
   for (const part of cookieHeader.split(';')) {
     const separator = part.indexOf('=')
     if (separator < 0) continue
-    if (part.slice(0, separator).trim() !== JOURNEY_DEVICE_COOKIE) continue
+    if (part.slice(0, separator).trim() !== cookieName) continue
     const value = part.slice(separator + 1).trim()
     if (/^[A-Za-z0-9_-]{32,240}$/.test(value)) return value
   }
   return undefined
 }
 
-export function journeyErrorResponse(error: unknown): NextResponse {
+export function journeyErrorResponse(
+  error: unknown,
+  headers?: HeadersInit,
+): NextResponse {
   if (error instanceof JourneyAuthenticationError) {
     return NextResponse.json(
       { error: { code: 'JOURNEY_AUTH_REQUIRED', message: error.message } },
-      { status: 401 },
+      { status: 401, headers },
     )
   }
   if (error instanceof JourneyAccessError) {
     return NextResponse.json(
       { error: { code: 'JOURNEY_FORBIDDEN', message: error.message } },
-      { status: 403 },
+      { status: 403, headers },
     )
   }
   if (error instanceof JourneyConflictError) {
@@ -146,13 +161,13 @@ export function journeyErrorResponse(error: unknown): NextResponse {
           currentRevision: error.currentRevision,
         },
       },
-      { status: 409 },
+      { status: 409, headers },
     )
   }
   if (error instanceof JourneyPersistenceUnavailableError) {
     return NextResponse.json(
       { error: { code: 'JOURNEY_SYNC_UNAVAILABLE', message: error.message } },
-      { status: 503 },
+      { status: 503, headers },
     )
   }
   if (error instanceof ZodError) {
@@ -164,12 +179,12 @@ export function journeyErrorResponse(error: unknown): NextResponse {
           issues: error.issues.slice(0, 8).map((issue) => ({ path: issue.path.join('.'), message: issue.message })),
         },
       },
-      { status: 400 },
+      { status: 400, headers },
     )
   }
   console.error('[journey] unexpected route error', error)
   return NextResponse.json(
     { error: { code: 'JOURNEY_INTERNAL', message: 'Не удалось обработать запрос. Повторите позже.' } },
-    { status: 500 },
+    { status: 500, headers },
   )
 }

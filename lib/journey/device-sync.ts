@@ -1,6 +1,7 @@
 import { createHash, createHmac, randomBytes } from 'node:crypto'
 import { z } from 'zod'
 import { createServiceClient } from '@/lib/supabase-service'
+import { isReservedJourneyWorkspaceId } from './auth-bootstrap'
 import {
   authorizeJourneyAccess,
   hashJourneyCredential,
@@ -112,6 +113,10 @@ export async function createJourneyConnectCode(
   const identity = input.identity ? journeyIdentitySchema.parse(input.identity) : undefined
   let source: JourneyConnectSource | null = null
 
+  if (identity && isReservedJourneyWorkspaceId(identity.workspaceId)) {
+    throw reservedWorkspaceAccessError()
+  }
+
   // An explicitly supplied active workspace must win, otherwise a client that
   // ignores workspaceId in this response could silently link the wrong board.
   // A signed-in canonical fallback is allowed only when there is no identity.
@@ -134,6 +139,9 @@ export async function createJourneyConnectCode(
       )
     }
     throw new JourneyAccessError()
+  }
+  if (isReservedJourneyWorkspaceId(source.workspaceId)) {
+    throw reservedWorkspaceAccessError()
   }
   if (source.userId && source.userId !== input.actorUserId) throw new JourneyAccessError()
 
@@ -176,6 +184,9 @@ export async function redeemJourneyConnectCode(
 
   if (claim.status !== 'claimed' || !claim.workspaceId || !claim.state) {
     throw claimError(claim.status)
+  }
+  if (isReservedJourneyWorkspaceId(claim.workspaceId)) {
+    throw reservedWorkspaceAccessError()
   }
   const state = journeyStateSchema.parse({
     ...(claim.state as Record<string, unknown>),
@@ -253,6 +264,12 @@ function claimError(status: JourneyConnectClaimStatus): JourneyConnectCodeError 
   return new JourneyConnectCodeError('JOURNEY_CONNECT_CODE_INVALID', 'Код недействителен или введён неверно.')
 }
 
+function reservedWorkspaceAccessError(): JourneyAccessError {
+  return new JourneyAccessError(
+    'Зарезервированное рабочее пространство Store нельзя подключить через общий Journey.',
+  )
+}
+
 function defaultDependencies(): JourneyDeviceSyncDependencies {
   if (!isJourneyDatabaseConfigured()) throw new JourneyPersistenceUnavailableError()
   return {
@@ -284,6 +301,7 @@ class SupabaseJourneyDeviceSyncRepository implements JourneyDeviceSyncRepository
       .from('ai_journey_workspaces')
       .select('workspace_key,user_id,state,revision')
       .eq('user_id', actorUserId)
+      .not('workspace_key', 'like', 'journey-store-user-%')
       .order('updated_at', { ascending: false })
       .limit(1)
       .maybeSingle()

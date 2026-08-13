@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   mfa: vi.fn(),
   load: vi.fn(),
   build: vi.fn(),
+  workspace: vi.fn(),
 }))
 
 vi.mock('next/cache', () => ({ unstable_noStore: vi.fn() }))
@@ -24,7 +25,9 @@ vi.mock('@/lib/store/access', () => ({
 }))
 vi.mock('@/lib/store/loader', () => ({ loadStoreOverview: mocks.load }))
 vi.mock('@/lib/journey/store-seed', () => ({ buildStoreJourneyState: mocks.build }))
-
+vi.mock('@/components/journey/Workspace', () => ({
+  JourneyWorkspace: mocks.workspace,
+}))
 import StoreJourneyPage from '@/app/client/journey/store/page'
 
 describe('/client/journey/store server boundary', () => {
@@ -34,7 +37,7 @@ describe('/client/journey/store server boundary', () => {
     mocks.mfa.mockReturnValue(true)
     mocks.access.mockResolvedValue('allowed')
     mocks.load.mockResolvedValue({ companyName: 'Store owner' })
-    mocks.build.mockReturnValue({ workspaceId: 'store-journey-user-1' })
+    mocks.build.mockReturnValue({ workspaceId: 'journey-store-user-user-1' })
   })
 
   it('redirects an anonymous request before Store data is loaded', async () => {
@@ -60,10 +63,10 @@ describe('/client/journey/store server boundary', () => {
     expect(mocks.load).not.toHaveBeenCalled()
   })
 
-  it('derives owner scope only from the verified session user', async () => {
+  it('derives owner scope only from the verified session user and enters canonical Journey in Store context', async () => {
     const user = { id: 'user-1', user_metadata: {} }
     const overview = { companyName: 'Store owner' }
-    const state = { workspaceId: 'store-journey-user-1' }
+    const state = { workspaceId: 'journey-store-user-user-1' }
     mocks.getUser.mockResolvedValue({ data: { user }, error: null })
     mocks.load.mockResolvedValue(overview)
     mocks.build.mockReturnValue(state)
@@ -72,8 +75,12 @@ describe('/client/journey/store server boundary', () => {
     expect(mocks.access).toHaveBeenCalledWith(expect.anything(), 'user-1')
     expect(mocks.load).toHaveBeenCalledWith(expect.anything(), 'user-1')
     expect(mocks.build).toHaveBeenCalledWith(overview, {
-      workspaceId: 'store-journey-user-1',
+      workspaceId: 'journey-store-user-user-1',
     })
-    expect(element.props).toEqual({ state, overview })
+    expect(element.type).toBe(mocks.workspace)
+    expect(element.props).toEqual({
+      context: 'store',
+      initialState: state,
+    })
   })
 })

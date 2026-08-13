@@ -42,16 +42,19 @@ export interface JourneyDeviceRedeemResult {
   state: JourneyWorkspaceView
 }
 
+export type JourneyContext = 'default' | 'store'
+
 export const JOURNEY_REQUEST_TIMEOUT_MS = 20_000
 
 export async function getJourney(
   identity: JourneyIdentity,
   fallback: JourneyWorkspaceView,
+  context: JourneyContext = 'default',
 ): Promise<JourneyApiResult> {
-  const response = await journeyFetch('/api/v1/journey', {
+  const response = await journeyFetch(journeyEndpoint(context), {
     cache: 'no-store',
     credentials: 'same-origin',
-    headers: journeyHeaders(identity),
+    headers: journeyHeaders(identity, context),
   })
   const payload = await readJson(response)
   return { state: normalizeJourneyEnvelope(payload, fallback), serverAvailable: true }
@@ -60,12 +63,13 @@ export async function getJourney(
 export async function patchJourney(
   identity: JourneyIdentity,
   state: JourneyWorkspaceView,
+  context: JourneyContext = 'default',
 ): Promise<JourneyApiResult> {
-  const response = await journeyFetch('/api/v1/journey', {
+  const response = await journeyFetch(journeyEndpoint(context), {
     method: 'PATCH',
     credentials: 'same-origin',
     headers: {
-      ...journeyHeaders(identity),
+      ...journeyHeaders(identity, context),
       'content-type': 'application/json',
     },
     body: JSON.stringify({
@@ -82,12 +86,13 @@ export async function postJourneyMessage(
   identity: JourneyIdentity,
   state: JourneyWorkspaceView,
   message: string,
+  context: JourneyContext = 'default',
 ): Promise<JourneyApiResult> {
-  const response = await journeyFetch('/api/v1/journey/chat', {
+  const response = await journeyFetch(journeyEndpoint(context, '/chat'), {
     method: 'POST',
     credentials: 'same-origin',
     headers: {
-      ...journeyHeaders(identity),
+      ...journeyHeaders(identity, context),
       'content-type': 'application/json',
     },
     body: JSON.stringify({
@@ -105,6 +110,7 @@ export async function postJourneyDocument(
   identity: JourneyIdentity,
   state: JourneyWorkspaceView,
   file: File,
+  context: JourneyContext = 'default',
 ): Promise<JourneyApiResult> {
   const body = new FormData()
   body.set('workspaceId', identity.workspaceId)
@@ -112,10 +118,10 @@ export async function postJourneyDocument(
   body.set('state', JSON.stringify(state))
   body.set('file', file)
 
-  const response = await journeyFetch('/api/v1/journey/documents', {
+  const response = await journeyFetch(journeyEndpoint(context, '/documents'), {
     method: 'POST',
     credentials: 'same-origin',
-    headers: journeyHeaders(identity),
+    headers: journeyHeaders(identity, context),
     body,
   }, 60_000)
   const payload = await readJson(response)
@@ -200,11 +206,21 @@ export async function journeyFetch(
   }
 }
 
-function journeyHeaders(identity: JourneyIdentity): Record<string, string> {
+function journeyHeaders(
+  identity: JourneyIdentity,
+  context: JourneyContext = 'default',
+): Record<string, string> {
   return {
     'x-journey-workspace-id': identity.workspaceId,
     ...(identity.accessToken ? { 'x-journey-access-token': identity.accessToken } : {}),
+    ...(context === 'store' ? { 'x-journey-context': 'store' } : {}),
   }
+}
+
+function journeyEndpoint(context: JourneyContext, suffix = ''): string {
+  return context === 'store'
+    ? `/api/v1/journey/store${suffix}`
+    : `/api/v1/journey${suffix}`
 }
 
 async function readJson(response: Response): Promise<unknown> {

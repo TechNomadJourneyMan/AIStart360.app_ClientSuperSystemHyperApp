@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
+import { isReservedJourneyWorkspaceId } from '@/lib/journey/auth-bootstrap'
 import { createJourneyConnectCode, JourneyConnectCodeError } from '@/lib/journey/device-sync'
 import {
   identityFromRequest,
@@ -7,6 +8,7 @@ import {
   resolveJourneyActor,
   withJourneyRequestIdentity,
 } from '@/lib/journey/http'
+import { JourneyAccessError } from '@/lib/journey/persistence'
 import { isRateLimited, isRateLimitedKey } from '@/lib/rate-limit'
 
 export const runtime = 'nodejs'
@@ -27,6 +29,11 @@ export async function POST(request: Request) {
     const actorUserId = await resolveJourneyActor()
     const raw = await request.json().catch(() => ({}))
     const payload = bodySchema.parse(withJourneyRequestIdentity(request, raw))
+    if (payload.workspaceId && isReservedJourneyWorkspaceId(payload.workspaceId)) {
+      throw new JourneyAccessError(
+        'Зарезервированное рабочее пространство Store нельзя подключить через общий Journey.',
+      )
+    }
     const identity = payload.workspaceId && payload.accessToken
       ? identityFromRequest(request, payload)
       : undefined

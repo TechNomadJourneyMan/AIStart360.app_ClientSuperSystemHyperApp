@@ -15,6 +15,7 @@ import { loadJourneyStateFromOnboarding } from '@/lib/journey/onboarding-seed'
 import { loadJourneyState, saveJourneyState } from '@/lib/journey/persistence'
 import { enforceJourneyStatePolicy } from '@/lib/journey/policy'
 import { journeyPatchRequestSchema, journeyStateSchema } from '@/lib/journey/schema'
+import { assertNotStoreJourneyWorkspace } from '@/lib/journey/store-context'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -24,6 +25,7 @@ export async function GET(request: Request) {
     const resolved = await withJourneyDeadline(async () => {
       const actorUserId = await resolveJourneyActor()
       const identity = identityFromRequest(request)
+      assertNotStoreJourneyWorkspace(identity.workspaceId, actorUserId)
       if (actorUserId) {
         const authenticated = await resolveAuthenticatedJourneyState({
           identity,
@@ -32,6 +34,7 @@ export async function GET(request: Request) {
             loadJourneyStateFromOnboarding(actorUserId, workspaceId)
           ),
         })
+        assertNotStoreJourneyWorkspace(authenticated.state.workspaceId, actorUserId)
         return {
           identity,
           state: authenticated.state,
@@ -84,6 +87,7 @@ export async function PATCH(request: Request) {
       withJourneyRequestIdentity(request, await request.json()),
     )
     const identity = identityFromRequest(request, payload)
+    assertNotStoreJourneyWorkspace(identity.workspaceId, actorUserId)
     const normalized = enforceJourneyStatePolicy(limitExpandedWidgets(payload.state))
     const saved = await saveJourneyState(identity, normalized, actorUserId)
     return NextResponse.json({

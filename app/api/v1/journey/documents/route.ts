@@ -6,6 +6,7 @@ import { identityFromRequest, journeyErrorResponse, resolveJourneyActor } from '
 import { assertSafeJourneyFile, UnsafeJourneyFileError } from '@/lib/journey/file-safety'
 import { isRateLimited, isRateLimitedKey } from '@/lib/rate-limit'
 import { enforceJourneyStatePolicy } from '@/lib/journey/policy'
+import { assertNotStoreJourneyWorkspace } from '@/lib/journey/store-context'
 import {
   appendJourneyMessages,
   loadJourneyState,
@@ -40,8 +41,13 @@ const MIME_BY_EXTENSION: Record<string, string[]> = {
 export async function POST(request: Request) {
   try {
     const actorUserId = await resolveJourneyActor()
+    const headerWorkspaceId = request.headers.get('x-journey-workspace-id')
+    if (headerWorkspaceId) {
+      assertNotStoreJourneyWorkspace(headerWorkspaceId, actorUserId)
+    }
     const form = await request.formData()
     const workspaceId = z.string().min(8).max(120).parse(form.get('workspaceId'))
+    assertNotStoreJourneyWorkspace(workspaceId, actorUserId)
     const rawAccessToken = form.get('accessToken')
     const accessToken = rawAccessToken == null || rawAccessToken === ''
       ? undefined

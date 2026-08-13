@@ -4,8 +4,10 @@ import {
   Check,
   ChevronRight,
   Circle,
+  Database,
   Map,
   MessageCircle,
+  ShieldCheck,
   Target,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -17,15 +19,20 @@ export type JourneyExperienceStage = 'describe' | 'confirm' | 'goal' | 'ready'
 export interface JourneyExperienceSummary {
   facts: JourneyWorkspaceView['facts']
   goal: JourneyWorkspaceView['goals'][number] | null
+  draftGoal: JourneyWorkspaceView['goals'][number] | null
   nextRoadmapItem: JourneyWorkspaceView['roadmap'][number] | null
 }
 
 export interface JourneyExperienceProps {
   state: JourneyWorkspaceView
+  context?: 'default' | 'store'
   /** Sends a short, editable prompt into the existing chat composer. */
   onDraftRequest?: (text: string) => void
   /** Opens or focuses the existing A → B board. */
   onOpenBoard?: () => void
+  /** Confirms the visible Store Point B draft as a separate user action. */
+  onConfirmGoal?: () => void
+  confirmationDisabled?: boolean
   className?: string
 }
 
@@ -93,19 +100,33 @@ export function getCurrentConfirmedJourneyGoal(
   return null
 }
 
+export function getCurrentDraftJourneyGoal(
+  state: JourneyWorkspaceView,
+): JourneyWorkspaceView['goals'][number] | null {
+  for (let index = state.goals.length - 1; index >= 0; index -= 1) {
+    const goal = state.goals[index]
+    if (goal?.status === 'draft') return goal
+  }
+  return null
+}
+
 /** Returns only facts and plans already stored in the Journey state. */
 export function getJourneyExperienceSummary(state: JourneyWorkspaceView): JourneyExperienceSummary {
   const facts = state.facts.filter((fact) => fact.status === 'confirmed')
   const goal = getCurrentConfirmedJourneyGoal(state)
+  const draftGoal = getCurrentDraftJourneyGoal(state)
   const nextRoadmapItem = state.roadmap.find((item) => item.status === 'next') ?? state.roadmap[0] ?? null
 
-  return { facts, goal, nextRoadmapItem }
+  return { facts, goal, draftGoal, nextRoadmapItem }
 }
 
 export function JourneyExperience({
   state,
+  context = 'default',
   onDraftRequest,
   onOpenBoard,
+  onConfirmGoal,
+  confirmationDisabled = false,
   className,
 }: JourneyExperienceProps) {
   const stage = getJourneyExperienceStage(state)
@@ -160,7 +181,22 @@ export function JourneyExperience({
         })}
       </ol>
 
-      <JourneyGroundedSummary summary={summary} />
+      {context === 'store' && <StorePointASummary facts={summary.facts} />}
+
+      <JourneyGroundedSummary
+        summary={summary}
+        compactPointA={context === 'store'}
+        showDraftGoal={context === 'store'}
+      />
+
+      {context === 'store' && summary.draftGoal && !summary.goal && (
+        <StorePointBDraft
+          goal={summary.draftGoal}
+          onConfirm={onConfirmGoal}
+          onRevise={onDraftRequest}
+          disabled={confirmationDisabled}
+        />
+      )}
 
       <div className="flex flex-wrap gap-2 pt-0.5">
         {onDraftRequest && (
@@ -189,8 +225,122 @@ export function JourneyExperience({
   )
 }
 
-function JourneyGroundedSummary({ summary }: { summary: JourneyExperienceSummary }) {
-  const goalDetails = [summary.goal?.metric, summary.goal?.target, summary.goal?.deadline]
+function StorePointBDraft({
+  goal,
+  onConfirm,
+  onRevise,
+  disabled,
+}: {
+  goal: JourneyWorkspaceView['goals'][number]
+  onConfirm?: () => void
+  onRevise?: (text: string) => void
+  disabled: boolean
+}) {
+  const complete = Boolean(goal.metric?.trim() && goal.target?.trim() && goal.deadline?.trim())
+  return (
+    <section
+      aria-label="Черновик Точки B"
+      className="rounded-xl border border-warning/25 bg-warning/[0.055] p-3"
+    >
+      <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-warning">Точка B · черновик</p>
+      <p className="mt-1.5 text-sm font-semibold text-on-surface">{goal.title}</p>
+      <dl className="mt-2 grid gap-1.5 text-xs sm:grid-cols-3">
+        <DraftGoalField label="Показатель" value={goal.metric} />
+        <DraftGoalField label="Цель" value={goal.target} />
+        <DraftGoalField label="Срок" value={goal.deadline} />
+      </dl>
+      <p className="mt-2 text-[11px] leading-relaxed text-on-surface-variant">
+        {complete
+          ? 'Проверьте три поля. Путь A→B и модули действий появятся только после отдельного подтверждения.'
+          : 'Добавьте недостающие поля: без них Точку B нельзя подтвердить.'}
+      </p>
+      <div className="mt-3 flex flex-wrap gap-2">
+        {complete && onConfirm && (
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={disabled}
+            className="inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-primary px-3 text-xs font-semibold text-on-primary transition-colors hover:bg-primary-container disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Check className="size-3.5" aria-hidden />
+            Подтвердить Точку B
+          </button>
+        )}
+        {onRevise && (
+          <button
+            type="button"
+            onClick={() => onRevise(`Хочу изменить черновик Точки B: «${goal.title}».`)}
+            disabled={disabled}
+            className="inline-flex min-h-9 items-center rounded-lg px-2.5 text-xs font-medium text-on-surface-variant hover:bg-white/5 hover:text-on-surface disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Изменить формулировку
+          </button>
+        )}
+      </div>
+    </section>
+  )
+}
+
+function DraftGoalField({ label, value }: { label: string; value?: string }) {
+  return (
+    <div className="rounded-lg bg-surface-container-highest/55 px-2.5 py-2">
+      <dt className="text-[9px] uppercase tracking-wide text-on-surface-variant">{label}</dt>
+      <dd className="mt-1 font-medium text-on-surface">{value || 'Нужно уточнить'}</dd>
+    </div>
+  )
+}
+
+function StorePointASummary({ facts }: { facts: JourneyWorkspaceView['facts'] }) {
+  if (!facts.length) {
+    return (
+      <div className="rounded-xl border border-dashed border-white/10 bg-surface-container-highest/30 px-3 py-3 text-xs text-on-surface-variant">
+        В Store пока нет опубликованных фактов. Импортируйте данные в Магазине — Journey не подставит демо-значения.
+      </div>
+    )
+  }
+
+  return (
+    <section aria-label="Подтверждённые показатели Store" className="rounded-xl border border-primary/15 bg-primary/[0.035] p-2.5">
+      <div className="mb-2 flex items-center justify-between gap-3 px-0.5">
+        <p className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-primary">
+          <Database className="size-3" aria-hidden />
+          Точка A · Store live
+        </p>
+        <span className="flex items-center gap-1 text-[10px] text-on-surface-variant">
+          <ShieldCheck className="size-3 text-primary" aria-hidden />
+          read-only
+        </span>
+      </div>
+      <dl className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+        {facts
+          .filter((fact) => !['fact:store:company', 'fact:store:period', 'fact:store:as-of'].includes(fact.id))
+          .slice(0, 12)
+          .map((fact) => (
+          <div
+            key={fact.id}
+            title={`Источник: ${fact.sourceLabel}`}
+            className="min-w-0 rounded-lg bg-surface-container-highest/55 px-2.5 py-2"
+          >
+            <dt className="truncate text-[9px] uppercase tracking-wide text-on-surface-variant">{fact.label}</dt>
+            <dd className="mt-1 truncate text-xs font-semibold tabular-nums text-on-surface sm:text-[13px]">{fact.value}</dd>
+          </div>
+        ))}
+      </dl>
+    </section>
+  )
+}
+
+function JourneyGroundedSummary({
+  summary,
+  compactPointA = false,
+  showDraftGoal = false,
+}: {
+  summary: JourneyExperienceSummary
+  compactPointA?: boolean
+  showDraftGoal?: boolean
+}) {
+  const displayGoal = summary.goal ?? (showDraftGoal ? summary.draftGoal : null)
+  const goalDetails = [displayGoal?.metric, displayGoal?.target, displayGoal?.deadline]
     .filter((value): value is string => Boolean(value?.trim()))
     .join(' · ')
 
@@ -199,13 +349,17 @@ function JourneyGroundedSummary({ summary }: { summary: JourneyExperienceSummary
       <SummaryItem
         icon={Circle}
         title="Точка A"
-        value={summary.facts.length ? summary.facts.map((fact) => `${fact.label}: ${fact.value}`).join(' · ') : 'Пока нет подтверждённых фактов'}
+        value={summary.facts.length
+          ? compactPointA
+            ? `${summary.facts.length} опубликованных фактов Store`
+            : summary.facts.map((fact) => `${fact.label}: ${fact.value}`).join(' · ')
+          : 'Пока нет подтверждённых фактов'}
       />
       <SummaryItem
         icon={Target}
-        title="Точка B"
-        value={summary.goal ? goalDetails || summary.goal.title : 'Уточните измеримую цель'}
-        detail={summary.goal && goalDetails ? summary.goal.title : undefined}
+        title={summary.goal ? 'Точка B' : summary.draftGoal ? 'Точка B · черновик' : 'Точка B'}
+        value={displayGoal ? goalDetails || displayGoal.title : 'Уточните измеримую цель'}
+        detail={displayGoal && goalDetails ? displayGoal.title : undefined}
       />
       <SummaryItem
         icon={ChevronRight}
