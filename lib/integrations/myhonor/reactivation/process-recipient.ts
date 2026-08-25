@@ -16,6 +16,12 @@ import {
   getMyHonorReactivationConfiguration,
   type MyHonorReactivationConfiguration,
 } from './types'
+import {
+  expectedMyHonorTemplateContractHash,
+  verifyMyHonorReactivationTemplate,
+  type MyHonorTemplatePreflightResult,
+  type VerifyMyHonorTemplateInput,
+} from './template-preflight'
 
 export interface ProcessMyHonorReactivationRecipientInput {
   recipientId: string
@@ -35,6 +41,9 @@ interface ProcessDependencies {
   authorize?: typeof authorizeMyHonorReactivationRecipient
   finish?: typeof finishMyHonorReactivationRecipient
   sendTemplate?: (input: SendWhatsAppTemplateInput) => Promise<MetaSendResult>
+  verifyTemplate?: (
+    input: VerifyMyHonorTemplateInput,
+  ) => Promise<MyHonorTemplatePreflightResult>
 }
 
 const RETRY_DELAYS_SECONDS = [15, 60, 180, 600, 1_800] as const
@@ -89,6 +98,15 @@ function templateInput(
     || claimed.templateLanguage !== configuration.templateLanguage
     || claimed.locale !== configuration.templateLanguage
   ) return null
+  const expectedContractHash = expectedMyHonorTemplateContractHash({
+    segment: claimed.segment,
+    templateName: claimed.templateName,
+    languageCode: claimed.templateLanguage,
+  })
+  if (
+    !expectedContractHash
+    || claimed.templateContractHash !== expectedContractHash
+  ) return null
 
   const phone = normalizeE164(
     decryptContactValue(claimed.phoneCiphertext, configuration.masterKey),
@@ -120,6 +138,8 @@ export async function processMyHonorReactivationRecipientDirect(
   const sendTemplate = dependencies.sendTemplate
     ?? ((message: SendWhatsAppTemplateInput) =>
       createMetaClient().sendWhatsAppTemplate(message))
+  const verifyTemplate = dependencies.verifyTemplate
+    ?? verifyMyHonorReactivationTemplate
   const ownerToken = input.ownerToken ?? newMyHonorReactivationOwnerToken()
 
   const claimed = await claim({
@@ -160,6 +180,40 @@ export async function processMyHonorReactivationRecipientDirect(
     return outcome.accepted
       ? { action: 'failed', reason: 'invalid_recipient_snapshot' }
       : { action: 'skipped', reason: 'recipient_lease_lost' }
+  }
+
+  // Meta can edit, pause or revoke a template after campaign launch. Verify
+  // the exact provider-owned BODY/status/category for every recipient before
+  // crossing the atomic provider-authorization fence. A failed GET is known
+  // to have sent no WhatsApp message and is therefore safe to retry narrowly.
+  const preflight = await verifyTemplate({
+    segment: claimed.segment,
+    templateName: claimed.templateName,
+    languageCode: claimed.templateLanguage,
+  })
+  if (!preflight.ok || preflight.contractHash !== claimed.templateContractHash) {
+    const errorCode = !preflight.ok
+      ? machineCode(preflight.code, 'template_preflight_failed')
+      : 'template_contract_hash_mismatch'
+    const retryable = !preflight.ok
+      && preflight.retryable
+      && claimed.attempts < claimed.maxAttempts
+    const outcome = await finish({
+      recipientId: claimed.id,
+      leaseToken: claimed.leaseToken,
+      ownerToken,
+      outcome: 'failed',
+      errorCode,
+      retryable,
+      retryAfterSeconds: retryDelaySeconds(claimed.attempts),
+    })
+    if (!outcome.accepted) {
+      return { action: 'skipped', reason: 'recipient_lease_lost' }
+    }
+    if (retryable && outcome.state === 'queued' && outcome.runAt) {
+      return { action: 'retry', runAt: outcome.runAt, reason: errorCode }
+    }
+    return { action: 'failed', reason: errorCode }
   }
 
   const authorization = await authorize({

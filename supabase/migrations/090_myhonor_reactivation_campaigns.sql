@@ -1893,6 +1893,7 @@ DECLARE
   v_variant_id UUID;
   v_live BOOLEAN;
   v_latest_price_run_id UUID;
+  v_latest_price_published_at TIMESTAMPTZ;
   v_latest_inventory_run_id UUID;
   v_latest_inventory_published_at TIMESTAMPTZ;
 BEGIN
@@ -1924,7 +1925,8 @@ BEGIN
     RETURN FALSE;
   END IF;
 
-  SELECT run.id INTO v_latest_price_run_id
+  SELECT run.id, run.published_at
+    INTO v_latest_price_run_id, v_latest_price_published_at
     FROM public.store_import_runs AS run
    WHERE run.user_id = p_user_id
      AND run.company_id = btrim(p_company_id)
@@ -1933,6 +1935,14 @@ BEGIN
      AND run.published_at IS NOT NULL
    ORDER BY run.published_at DESC NULLS LAST, run.created_at DESC, run.id DESC
    LIMIT 1;
+  -- An old variant override must never outlive the canonical product price.
+  -- When the newest complete price run is stale or future-dated, ignore all
+  -- overrides and fall back only to the freshness-checked catalog price.
+  IF v_latest_price_published_at IS NULL
+     OR v_latest_price_published_at < now() - interval '48 hours'
+     OR v_latest_price_published_at > now() + interval '5 minutes' THEN
+    v_latest_price_run_id := NULL;
+  END IF;
   SELECT run.id, run.published_at
     INTO v_latest_inventory_run_id, v_latest_inventory_published_at
     FROM public.store_import_runs AS run
@@ -1945,7 +1955,8 @@ BEGIN
    LIMIT 1;
   IF v_latest_inventory_run_id IS NULL
      OR v_latest_inventory_published_at IS NULL
-     OR v_latest_inventory_published_at < now() - interval '48 hours' THEN
+     OR v_latest_inventory_published_at < now() - interval '48 hours'
+     OR v_latest_inventory_published_at > now() + interval '5 minutes' THEN
     RETURN FALSE;
   END IF;
 
@@ -3281,6 +3292,7 @@ RETURNS TABLE (
   segment TEXT,
   template_name TEXT,
   template_language TEXT,
+  template_contract_hash TEXT,
   template_parameters_ciphertext TEXT,
   template_parameters_hash TEXT,
   recommendation_snapshot JSONB,
@@ -3407,6 +3419,7 @@ BEGIN
     v_campaign.segment,
     v_campaign.template_name,
     v_campaign.template_language,
+    v_campaign.template_contract_hash,
     v_recipient.template_parameters_ciphertext,
     v_recipient.template_parameters_hash,
     v_recipient.recommendation_snapshot,

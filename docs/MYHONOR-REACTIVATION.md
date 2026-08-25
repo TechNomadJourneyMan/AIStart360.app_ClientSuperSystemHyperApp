@@ -167,6 +167,11 @@ The implemented placeholder contract deliberately omits the customer's name:
 Exact wording and parameter order must match the templates approved in the
 configured WhatsApp Business account.
 
+This rollout has an exact Russian (`ru`) copy contract only. A contact whose
+stored locale is `kk` is visible as excluded in preview and cannot be sent the
+Russian template. Kazakh delivery requires a separately reviewed body contract
+and an approved Meta template before it can be enabled.
+
 ## Eligibility and cadence
 
 Before every provider call the worker atomically rechecks:
@@ -175,8 +180,10 @@ Before every provider call the worker atomically rechecks:
 2. no global suppression, complaint, return, payment uncertainty, identity
    conflict, incomplete source state, or manual-review hold;
 3. campaign remains approved/running and the recipient is not holdout;
-4. lifecycle/contact source refreshed within the last 24 hours and a fresh
-   product/price/availability snapshot;
+4. lifecycle/contact source refreshed within the last 24 hours, inventory and
+   variant-price imports no older than 48 hours, and a catalog product snapshot
+   no older than 168 hours; a stale variant-price override is ignored rather
+   than presented as current;
 5. no duplicate and frequency gap of at least 7–14 days;
 6. no more than three marketing messages in 30 days;
 7. local send window (`Asia/Almaty`): weekdays 10:00–20:00, weekends
@@ -192,6 +199,11 @@ component fails the launch preflight. Preview stores this complete canonical
 template-contract hash inside the approval snapshot; approval and launch both
 require the same hash. A later Meta copy or environment-template change forces
 a new campaign preview instead of silently changing an approved message.
+The same exact provider-owned template verification runs again for every
+recipient immediately before the atomic send authorization. If Meta changes,
+pauses, removes or temporarily cannot prove the template contract, no WhatsApp
+POST is attempted; a transient verification outage is retried before the
+provider boundary, while a contract change fails closed.
 
 The first rollout is internal numbers, then at most ten verified opted-in
 customers, then 10%, 25%, and only then the full eligible audience. One
@@ -202,7 +214,7 @@ retry.
 ## Administration and measurement
 
 The Giga admin API supports draft creation, preview, approval, launch, pause,
-resume, and an overview. Preview exposes every recipient as a masked identity,
+and an overview. Preview exposes every recipient as a masked identity,
 the fully rendered exact message, its parameter and template-contract hashes,
 consent evidence, recommendation snapshot and exclusion reason. The operator
 must load all pages and explicitly confirm the review before approval.

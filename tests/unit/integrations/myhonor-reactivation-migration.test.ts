@@ -405,11 +405,14 @@ describe('090 myhonor reactivation campaign migration', () => {
     expect(live).toContain("run.import_kind = 'prices'")
     expect(live).toContain("run.import_kind = 'inventory'")
     expect(live.match(/run\.published_at IS NOT NULL/g)).toHaveLength(2)
+    expect(live).toContain("v_latest_price_published_at < now() - interval '48 hours'")
+    expect(live).toContain("v_latest_price_published_at > now() + interval '5 minutes'")
     expect(live).toContain("v_latest_inventory_published_at < now() - interval '48 hours'")
+    expect(live).toContain("v_latest_inventory_published_at > now() + interval '5 minutes'")
     expect(live).toContain('price.import_run_id = v_latest_price_run_id')
     expect(live).toContain('inventory.import_run_id = v_latest_inventory_run_id')
     expect(live).toMatch(
-      /SELECT run\.id INTO v_latest_price_run_id[\s\S]*?run\.import_kind = 'prices'[\s\S]*?ORDER BY run\.published_at DESC NULLS LAST, run\.created_at DESC, run\.id DESC[\s\S]*?LIMIT 1/,
+      /SELECT run\.id, run\.published_at[\s\S]*?INTO v_latest_price_run_id, v_latest_price_published_at[\s\S]*?run\.import_kind = 'prices'[\s\S]*?ORDER BY run\.published_at DESC NULLS LAST, run\.created_at DESC, run\.id DESC[\s\S]*?LIMIT 1/,
     )
     expect(live).toContain('inventory.quantity_available - inventory.quantity_reserved')
     expect(live).toMatch(
@@ -443,6 +446,12 @@ describe('090 myhonor reactivation campaign migration', () => {
       /p_outcome = 'delivery_unknown'[\s\S]*?SET state = 'delivery_unknown'/,
     )
     expect(finish).toContain("COALESCE(p_error_code, '') ~ '(^|[.:])131049$'")
+  })
+
+  it('returns the approved template contract hash with every recipient claim', () => {
+    const claim = rpc('claim_myhonor_reactivation_recipient')
+    expect(claim).toContain('template_contract_hash TEXT')
+    expect(claim).toContain('v_campaign.template_contract_hash')
   })
 
   it('atomically applies inbound replies and STOP by scoped phone hash', () => {

@@ -35,6 +35,9 @@ const EXCLUSION_REASONS = [
   'invalid_recommendation',
   'application_ineligible',
   'identity_changed',
+  'source_snapshot_stale',
+  'source_snapshot_changed',
+  'manual_hold',
   'provider_cooldown',
   'campaign_completed',
 ] as const

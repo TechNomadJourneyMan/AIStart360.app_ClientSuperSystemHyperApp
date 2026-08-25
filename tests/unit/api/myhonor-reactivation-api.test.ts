@@ -683,6 +683,9 @@ describe('GET /api/giga-admin/myhonor/reactivation/overview', () => {
         missing_consent: 2,
         global_suppression: 1,
         application_ineligible: 1,
+        source_snapshot_stale: 3,
+        source_snapshot_changed: 4,
+        manual_hold: 5,
         'customer:+77051234567': 99,
       },
       contact_rows: [{ first_name: 'Алия', phone_e164: '+77051234567' }],
@@ -719,6 +722,9 @@ describe('GET /api/giga-admin/myhonor/reactivation/overview', () => {
         missing_consent: 2,
         global_suppression: 1,
         application_ineligible: 1,
+        source_snapshot_stale: 3,
+        source_snapshot_changed: 4,
+        manual_hold: 5,
       },
     })
     const serialized = JSON.stringify(payload)

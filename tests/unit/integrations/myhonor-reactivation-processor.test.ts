@@ -2,6 +2,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { encryptContactValue } from '@/lib/integrations/myhonor/reactivation/identity'
 import { processMyHonorReactivationRecipientDirect } from '@/lib/integrations/myhonor/reactivation/process-recipient'
 import { myHonorSnapshotHash } from '@/lib/integrations/myhonor/reactivation/repository'
+import {
+  expectedMyHonorTemplateContractHash,
+} from '@/lib/integrations/myhonor/reactivation/template-preflight'
 import { getMyHonorReactivationConfiguration } from '@/lib/integrations/myhonor/reactivation/types'
 
 const MASTER_KEY = Buffer.alloc(32, 11).toString('base64')
@@ -40,6 +43,11 @@ function claimed() {
     segment: 'old_lead' as const,
     templateName: 'myhonor_old_lead_v1',
     templateLanguage: 'ru',
+    templateContractHash: expectedMyHonorTemplateContractHash({
+      segment: 'old_lead',
+      templateName: 'myhonor_old_lead_v1',
+      languageCode: 'ru',
+    }) as string,
     templateParametersHash: myHonorSnapshotHash(templateParameters),
     templateParametersCiphertext: encryptContactValue(
       JSON.stringify(templateParameters),
@@ -59,6 +67,7 @@ describe('MyHonor reactivation recipient processor', () => {
   const authorize = vi.fn()
   const finish = vi.fn()
   const sendTemplate = vi.fn()
+  const verifyTemplate = vi.fn()
 
   beforeEach(() => {
     vi.clearAllMocks()
@@ -71,6 +80,16 @@ describe('MyHonor reactivation recipient processor', () => {
     })
     finish.mockResolvedValue({ accepted: true, state: 'accepted', runAt: null })
     sendTemplate.mockResolvedValue({ ok: true, externalMessageId: 'wamid-1' })
+    verifyTemplate.mockResolvedValue({
+      ok: true,
+      templateId: '987654321',
+      templateName: 'myhonor_old_lead_v1',
+      languageCode: 'ru',
+      status: 'APPROVED',
+      category: 'MARKETING',
+      bodyParameterCount: 3,
+      contractHash: claimed().templateContractHash,
+    })
   })
 
   it('decrypts only after claim, reauthorizes, and sends the approved template', async () => {
@@ -83,10 +102,18 @@ describe('MyHonor reactivation recipient processor', () => {
       authorize,
       finish,
       sendTemplate,
+      verifyTemplate,
     })
 
     expect(result).toEqual({ action: 'accepted', providerMessageId: 'wamid-1' })
+    expect(verifyTemplate).toHaveBeenCalledWith({
+      segment: 'old_lead',
+      templateName: 'myhonor_old_lead_v1',
+      languageCode: 'ru',
+    })
     expect(authorize).toHaveBeenCalledOnce()
+    expect(verifyTemplate.mock.invocationCallOrder[0])
+      .toBeLessThan(authorize.mock.invocationCallOrder[0] as number)
     expect(sendTemplate).toHaveBeenCalledWith({
       recipientId: '77051234567',
       templateName: 'myhonor_old_lead_v1',
@@ -100,7 +127,9 @@ describe('MyHonor reactivation recipient processor', () => {
     const result = await processMyHonorReactivationRecipientDirect({
       recipientId: claimed().id,
       ownerToken: 'workflow:run-2',
-    }, { configuration: configuration(false), claim, authorize, finish, sendTemplate })
+    }, {
+      configuration: configuration(false), claim, authorize, finish, sendTemplate, verifyTemplate,
+    })
 
     expect(result).toEqual({ action: 'failed', reason: 'provider_not_ready' })
     expect(authorize).not.toHaveBeenCalled()
@@ -117,7 +146,7 @@ describe('MyHonor reactivation recipient processor', () => {
     const result = await processMyHonorReactivationRecipientDirect({
       recipientId: claimed().id,
       ownerToken: 'workflow:run-3',
-    }, { configuration: configuration(), claim, authorize, finish, sendTemplate })
+    }, { configuration: configuration(), claim, authorize, finish, sendTemplate, verifyTemplate })
 
     expect(result).toEqual({ action: 'skipped', reason: 'consent_revoked' })
     expect(sendTemplate).not.toHaveBeenCalled()
@@ -136,7 +165,7 @@ describe('MyHonor reactivation recipient processor', () => {
     const result = await processMyHonorReactivationRecipientDirect({
       recipientId: claimed().id,
       ownerToken: 'workflow:run-quiet-hours',
-    }, { configuration: configuration(), claim, authorize, finish, sendTemplate })
+    }, { configuration: configuration(), claim, authorize, finish, sendTemplate, verifyTemplate })
 
     expect(result).toEqual({ action: 'retry', runAt, reason: 'quiet_hours' })
     expect(sendTemplate).not.toHaveBeenCalled()
@@ -152,7 +181,7 @@ describe('MyHonor reactivation recipient processor', () => {
     const result = await processMyHonorReactivationRecipientDirect({
       recipientId: claimed().id,
       ownerToken: 'workflow:run-template-substitution',
-    }, { configuration: configuration(), claim, authorize, finish, sendTemplate })
+    }, { configuration: configuration(), claim, authorize, finish, sendTemplate, verifyTemplate })
 
     expect(result).toEqual({ action: 'failed', reason: 'invalid_recipient_snapshot' })
     expect(authorize).not.toHaveBeenCalled()
@@ -171,9 +200,63 @@ describe('MyHonor reactivation recipient processor', () => {
     const result = await processMyHonorReactivationRecipientDirect({
       recipientId: claimed().id,
       ownerToken: 'workflow:run-template-parameters-tampered',
-    }, { configuration: configuration(), claim, authorize, finish, sendTemplate })
+    }, { configuration: configuration(), claim, authorize, finish, sendTemplate, verifyTemplate })
 
     expect(result).toEqual({ action: 'failed', reason: 'invalid_recipient_snapshot' })
+    expect(authorize).not.toHaveBeenCalled()
+    expect(sendTemplate).not.toHaveBeenCalled()
+  })
+
+  it('does not authorize or POST when Meta changed the template after launch', async () => {
+    verifyTemplate.mockResolvedValue({
+      ok: false,
+      code: 'template_copy_mismatch',
+      message: 'provider body changed',
+      retryable: false,
+      status: 200,
+    })
+    finish.mockResolvedValue({ accepted: true, state: 'failed', runAt: null })
+
+    const result = await processMyHonorReactivationRecipientDirect({
+      recipientId: claimed().id,
+      ownerToken: 'workflow:run-template-changed-after-launch',
+    }, { configuration: configuration(), claim, authorize, finish, sendTemplate, verifyTemplate })
+
+    expect(result).toEqual({ action: 'failed', reason: 'template_copy_mismatch' })
+    expect(verifyTemplate).toHaveBeenCalledOnce()
+    expect(authorize).not.toHaveBeenCalled()
+    expect(sendTemplate).not.toHaveBeenCalled()
+    expect(finish).toHaveBeenCalledWith(expect.objectContaining({
+      outcome: 'failed',
+      errorCode: 'template_copy_mismatch',
+      retryable: false,
+    }))
+  })
+
+  it('retries without a POST when per-recipient template verification is unavailable', async () => {
+    verifyTemplate.mockResolvedValue({
+      ok: false,
+      code: 'provider_unavailable',
+      message: 'verification timeout',
+      retryable: true,
+      status: null,
+    })
+    finish.mockResolvedValue({
+      accepted: true,
+      state: 'queued',
+      runAt: '2026-08-25T10:01:00Z',
+    })
+
+    const result = await processMyHonorReactivationRecipientDirect({
+      recipientId: claimed().id,
+      ownerToken: 'workflow:run-template-preflight-timeout',
+    }, { configuration: configuration(), claim, authorize, finish, sendTemplate, verifyTemplate })
+
+    expect(result).toEqual({
+      action: 'retry',
+      runAt: '2026-08-25T10:01:00Z',
+      reason: 'provider_unavailable',
+    })
     expect(authorize).not.toHaveBeenCalled()
     expect(sendTemplate).not.toHaveBeenCalled()
   })
@@ -190,7 +273,7 @@ describe('MyHonor reactivation recipient processor', () => {
     const result = await processMyHonorReactivationRecipientDirect({
       recipientId: claimed().id,
       ownerToken: 'workflow:run-4',
-    }, { configuration: configuration(), claim, authorize, finish, sendTemplate })
+    }, { configuration: configuration(), claim, authorize, finish, sendTemplate, verifyTemplate })
 
     expect(result).toEqual({ action: 'failed', reason: '131049' })
     expect(finish).toHaveBeenCalledWith(expect.objectContaining({
@@ -215,7 +298,7 @@ describe('MyHonor reactivation recipient processor', () => {
     const result = await processMyHonorReactivationRecipientDirect({
       recipientId: claimed().id,
       ownerToken: 'workflow:run-5',
-    }, { configuration: configuration(), claim, authorize, finish, sendTemplate })
+    }, { configuration: configuration(), claim, authorize, finish, sendTemplate, verifyTemplate })
 
     expect(result).toEqual({
       action: 'retry',
@@ -234,7 +317,7 @@ describe('MyHonor reactivation recipient processor', () => {
     const result = await processMyHonorReactivationRecipientDirect({
       recipientId: claimed().id,
       ownerToken: 'workflow:run-6',
-    }, { configuration: configuration(), claim, authorize, finish, sendTemplate })
+    }, { configuration: configuration(), claim, authorize, finish, sendTemplate, verifyTemplate })
 
     expect(result).toEqual({
       action: 'delivery_unknown',
@@ -260,7 +343,7 @@ describe('MyHonor reactivation recipient processor', () => {
     const result = await processMyHonorReactivationRecipientDirect({
       recipientId: claimed().id,
       ownerToken: 'workflow:run-provider-ack-missing-id',
-    }, { configuration: configuration(), claim, authorize, finish, sendTemplate })
+    }, { configuration: configuration(), claim, authorize, finish, sendTemplate, verifyTemplate })
 
     expect(result).toEqual({
       action: 'delivery_unknown',
@@ -291,7 +374,7 @@ describe('MyHonor reactivation recipient processor', () => {
     const result = await processMyHonorReactivationRecipientDirect({
       recipientId: claimed().id,
       ownerToken: 'workflow:run-provider-network-unknown',
-    }, { configuration: configuration(), claim, authorize, finish, sendTemplate })
+    }, { configuration: configuration(), claim, authorize, finish, sendTemplate, verifyTemplate })
 
     expect(result).toEqual({
       action: 'delivery_unknown',

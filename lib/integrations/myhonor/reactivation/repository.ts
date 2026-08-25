@@ -123,6 +123,7 @@ export interface ClaimedMyHonorReactivationRecipient {
   segment: MyHonorReactivationSegment
   templateName: string
   templateLanguage: string
+  templateContractHash: string
   templateParametersHash: string
   templateParametersCiphertext: string
   recommendationSnapshot: Record<string, unknown>
@@ -936,7 +937,7 @@ export async function previewMyHonorReactivationCampaign(
     throw new Error('approved template contract is invalid')
   }
   const products = campaignPurpose === 'product_recommendations'
-    ? await loadVerifiedMyHonorProducts({ configuration }, client)
+    ? await loadVerifiedMyHonorProducts({ configuration, now }, client)
     : []
   const candidates: MyHonorMaterializationCandidate[] = []
 
@@ -1173,14 +1174,23 @@ export async function listMyHonorReactivationRecipientPreviews(
     }
     const eligibility = record(row.eligibility_snapshot, 'eligibility_snapshot')
     const state = recipientState(row.recipient_state)
-    const messagePreview = renderMyHonorTemplateBody(
-      reactivationSegment(eligibility.segment),
-      locale,
-      templateParameters,
-    )
+    // Excluded recipients never receive a message, so the operator view must
+    // not try to render copy in an unsupported contact locale. In particular,
+    // a `kk` contact is excluded while only the exact RU Meta contract exists.
+    const messagePreview = state === 'excluded'
+      ? null
+      : renderMyHonorTemplateBody(
+          reactivationSegment(eligibility.segment),
+          locale,
+          templateParameters,
+        )
     const intentionallyEmptyExcludedPreview = templateParameters.length === 0
       && (state === 'excluded' || state === 'holdout')
-    if (!messagePreview && !intentionallyEmptyExcludedPreview) {
+    if (
+      !messagePreview
+      && state !== 'excluded'
+      && !intentionallyEmptyExcludedPreview
+    ) {
       throw new Error('MyHonor recipient preview message contract is invalid')
     }
     return {
@@ -1350,6 +1360,10 @@ export async function claimMyHonorReactivationRecipient(
     segment: reactivationSegment(row.segment),
     templateName: requiredString(row.template_name, 'template_name'),
     templateLanguage: requiredString(row.template_language, 'template_language'),
+    templateContractHash: requiredHash(
+      row.template_contract_hash,
+      'template_contract_hash',
+    ),
     templateParametersHash: requiredHash(
       row.template_parameters_hash,
       'template_parameters_hash',

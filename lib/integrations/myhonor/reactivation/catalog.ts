@@ -87,10 +87,18 @@ function requireBinding(configuration: MyHonorReactivationConfiguration): {
  * price, URL and stock are copied only from server-owned snapshots.
  */
 export async function loadVerifiedMyHonorProducts(
-  input: { configuration: MyHonorReactivationConfiguration; limit?: number },
+  input: {
+    configuration: MyHonorReactivationConfiguration
+    limit?: number
+    now?: Date
+  },
   client: SupabaseClient = createServiceClient(),
 ): Promise<MyHonorVerifiedProduct[]> {
   const binding = requireBinding(input.configuration)
+  const now = input.now ?? new Date()
+  if (!Number.isFinite(now.getTime())) {
+    throw new Error('load MyHonor verified catalog: invalid current time')
+  }
   const limit = Math.min(500, Math.max(1, input.limit ?? 300))
   const [productResult, variantResult, runResult, warehouseResult] = await Promise.all([
     client.from('ecommerce_products')
@@ -128,10 +136,22 @@ export async function loadVerifiedMyHonorProducts(
   }
 
   const runs = (runResult.data ?? []).map(row)
-  const priceRunId = runs
+  const priceRun = runs
     .filter((item) => item.import_kind === 'prices')
-    .map((item) => text(item.id))
-    .find((value): value is string => Boolean(value)) ?? null
+    .find((item) => Boolean(text(item.id))) ?? null
+  const priceRunPublishedAt = text(priceRun?.published_at)
+  const priceRunPublishedMs = priceRunPublishedAt
+    ? Date.parse(priceRunPublishedAt)
+    : Number.NaN
+  // Variant price overrides are usable only from a recent complete price run.
+  // Otherwise the recommender falls back to the separately freshness-checked
+  // canonical product price instead of reviving an old override.
+  const priceRunId = priceRun
+    && Number.isFinite(priceRunPublishedMs)
+    && priceRunPublishedMs <= now.getTime() + 5 * 60_000
+    && priceRunPublishedMs >= now.getTime() - 48 * 60 * 60_000
+    ? text(priceRun.id)
+    : null
   const inventoryRunId = runs
     .filter((item) => item.import_kind === 'inventory')
     .map((item) => text(item.id))

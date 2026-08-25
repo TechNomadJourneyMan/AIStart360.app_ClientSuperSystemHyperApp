@@ -41,6 +41,7 @@ describe('MyHonor reactivation verified catalog loader', () => {
     const productId = 'myhonor:' + 'a'.repeat(64)
     const products = await loadVerifiedMyHonorProducts({
       configuration: configuration(),
+      now: new Date('2026-08-25T10:00:00Z'),
     }, fakeClient({
       ecommerce_products: [{
         id: 'product-db-1',
@@ -103,6 +104,7 @@ describe('MyHonor reactivation verified catalog loader', () => {
   it('fails closed when no published inventory run exists', async () => {
     const products = await loadVerifiedMyHonorProducts({
       configuration: configuration(),
+      now: new Date('2026-08-25T10:00:00Z'),
     }, fakeClient({
       ecommerce_products: [],
       store_product_variants: [],
@@ -120,6 +122,7 @@ describe('MyHonor reactivation verified catalog loader', () => {
     }> = []
     await loadVerifiedMyHonorProducts({
       configuration: configuration(),
+      now: new Date('2026-08-25T10:00:00Z'),
     }, fakeClient({
       ecommerce_products: [],
       store_product_variants: [],
@@ -150,6 +153,7 @@ describe('MyHonor reactivation verified catalog loader', () => {
     const productId = 'myhonor:' + 'b'.repeat(64)
     const products = await loadVerifiedMyHonorProducts({
       configuration: configuration(),
+      now: new Date('2026-08-25T10:00:00Z'),
     }, fakeClient({
       ecommerce_products: [{
         id: 'product-db-2',
@@ -190,5 +194,65 @@ describe('MyHonor reactivation verified catalog loader', () => {
     }))
 
     expect(products).toEqual([])
+  })
+
+  it('ignores a stale variant price run instead of reviving its override', async () => {
+    const productId = 'myhonor:' + 'c'.repeat(64)
+    const observedInFilters: Array<{
+      table: string
+      column: string
+      values: unknown[]
+    }> = []
+    const products = await loadVerifiedMyHonorProducts({
+      configuration: configuration(),
+      now: new Date('2026-08-25T10:00:00Z'),
+    }, fakeClient({
+      ecommerce_products: [{
+        id: 'product-db-3',
+        external_id: productId,
+        name: 'Куртка Honor',
+        url: 'https://myhonor.shop/product/kurtka-honor',
+        description: 'Outdoor',
+        price: 42_000,
+        currency: 'KZT',
+        availability: 'in_stock',
+        catalog_active: true,
+        catalog_synced_at: '2026-08-25T05:00:00Z',
+      }],
+      store_product_variants: [{
+        id: 'variant-3',
+        ecommerce_product_id: 'product-db-3',
+        name: 'Куртка Honor L',
+        category: 'Куртки',
+        size: 'L',
+        color: 'зелёный',
+        is_active: true,
+      }],
+      store_import_runs: [
+        { id: 'inventory-run-3', import_kind: 'inventory', published_at: '2026-08-25T06:00:00Z' },
+        { id: 'stale-price-run', import_kind: 'prices', published_at: '2026-08-22T06:00:00Z' },
+      ],
+      store_warehouses: [{
+        id: 'warehouse-3', code: 'ALM-1', city: 'Алматы', is_active: true,
+      }],
+      store_price_snapshots: [{
+        variant_id: 'variant-3', import_run_id: 'stale-price-run', retail_price: 1,
+      }],
+      store_inventory_snapshots: [{
+        variant_id: 'variant-3',
+        warehouse_id: 'warehouse-3',
+        import_run_id: 'inventory-run-3',
+        quantity_available: 1,
+        quantity_reserved: 0,
+      }],
+    }, observedInFilters))
+
+    expect(observedInFilters).not.toContainEqual({
+      table: 'store_price_snapshots',
+      column: 'import_run_id',
+      values: ['stale-price-run'],
+    })
+    expect(products[0]?.variants[0]?.priceKzt).toBeNull()
+    expect(products[0]?.priceKzt).toBe(42_000)
   })
 })

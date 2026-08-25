@@ -308,6 +308,47 @@ describe('MyHonor reactivation recipient preview parsing', () => {
       configuration,
     }, client as never)).rejects.toThrow('message contract is invalid')
   })
+
+  it('does not render an unsupported-locale message for an excluded recipient', async () => {
+    const configuration = getMyHonorReactivationConfiguration(completeEnvironment())
+    const templateParameters = [
+      'Куртка HONOR',
+      '42 000 ₸',
+      'https://myhonor.shop/product/kurtka-honor',
+    ]
+    const client = {
+      rpc: async () => ({
+        data: [{
+          recipient_id: '00000000-0000-4000-8000-000000000003',
+          preview_snapshot_hash: 'b'.repeat(64),
+          phone_masked: '+77••••••4567',
+          locale: 'kk',
+          recipient_state: 'excluded',
+          exclusion_reason: 'application_ineligible',
+          is_holdout: false,
+          consent_snapshot: {},
+          eligibility_snapshot: {
+            segment: 'old_lead',
+            exclusions: ['template_locale_mismatch'],
+          },
+          recommendation_snapshot: {},
+          template_parameters_ciphertext: encryptContactValue(
+            JSON.stringify(templateParameters),
+            MASTER_KEY,
+          ),
+          template_parameters_hash: myHonorSnapshotHash(templateParameters),
+          run_at: '2026-08-25T10:00:00.000Z',
+        }],
+        error: null,
+      }),
+    }
+
+    const rows = await listMyHonorReactivationRecipientPreviews({
+      campaignId: '00000000-0000-4000-8000-000000000004',
+      configuration,
+    }, client as never)
+    expect(rows[0]?.messagePreview).toBeNull()
+  })
 })
 
 describe('MyHonor marketing policy', () => {
