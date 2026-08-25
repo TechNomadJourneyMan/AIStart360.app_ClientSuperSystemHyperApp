@@ -225,16 +225,40 @@ function MetricRows({ data, empty }: { data: UnknownRecord; empty: string }) {
   const metrics = records(data.metrics)
   if (!metrics.length) return <EmptyHint>{empty}</EmptyHint>
   return (
-    <dl className="grid grid-cols-2 gap-x-5 gap-y-3">
-      {metrics.slice(0, 6).map((metric, index) => (
-        <div key={string(metric.id) ?? index} className="min-w-0">
-          <dt className="truncate text-[11px] text-on-surface-variant">{string(metric.label) ?? 'Метрика'}</dt>
-          <dd className="mt-0.5 truncate text-sm font-semibold tabular-nums text-on-surface">
-            {scalar(metric.value) ?? '—'}
-          </dd>
-        </div>
-      ))}
-    </dl>
+    <div>
+      <dl className="grid grid-cols-2 gap-x-5 gap-y-3">
+        {metrics.slice(0, 6).map((metric, index) => (
+          <div
+            key={string(metric.id) ?? index}
+            title={string(metric.sourceLabel) ? `Источник: ${string(metric.sourceLabel)}` : undefined}
+            className="min-w-0"
+          >
+            <dt className="truncate text-[11px] text-on-surface-variant">{string(metric.label) ?? 'Метрика'}</dt>
+            <dd className="mt-0.5 truncate text-sm font-semibold tabular-nums text-on-surface">
+              {scalar(metric.value) ?? '—'}
+            </dd>
+          </div>
+        ))}
+      </dl>
+      <MetricSources metrics={metrics.slice(0, 6)} />
+    </div>
+  )
+}
+
+function MetricSources({ metrics }: { metrics: UnknownRecord[] }) {
+  const sourced = metrics.filter((metric) => string(metric.sourceLabel))
+  if (!sourced.length) return null
+  return (
+    <details className="mt-3 border-t border-white/5 pt-2 text-[10px] text-on-surface-variant">
+      <summary className="cursor-pointer select-none font-medium text-primary">Источники метрик</summary>
+      <ul className="mt-2 space-y-1.5">
+        {sourced.map((metric, index) => (
+          <li key={`${string(metric.id) ?? string(metric.label) ?? 'metric'}:${index}`} className="break-words">
+            <span className="font-medium text-on-surface">{string(metric.label) ?? 'Метрика'}:</span> {string(metric.sourceLabel)}
+          </li>
+        ))}
+      </ul>
+    </details>
   )
 }
 

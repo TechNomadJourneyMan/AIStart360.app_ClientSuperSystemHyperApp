@@ -26,7 +26,7 @@ describe('store sales metrics', () => {
       {
         ...baseFact,
         id: 'gross-sales',
-        quantity: 1_329,
+        quantity: 1_333,
         listAmount: 42_200_000,
         netRevenue: 28_130_000,
         costAmount: 17_190_000,
@@ -35,24 +35,24 @@ describe('store sales metrics', () => {
       {
         ...baseFact,
         id: 'returns',
-        quantity: -5,
+        quantity: -9,
         listAmount: -117_380,
         netRevenue: -76_747,
-        costAmount: -50_026,
+        costAmount: -50_025.54,
         discountAmount: -40_633,
       },
     ]
 
     expect(calculateSalesMetrics(rows)).toEqual({
       revenue: 28_053_253,
-      cost: 17_139_974,
-      grossProfit: 10_913_279,
+      cost: 17_139_974.46,
+      grossProfit: 10_913_278.54,
       grossMarginPct: 38.9,
       listRevenue: 42_082_620,
       discount: 14_029_367,
       discountRatePct: 33.34,
       units: 1_324,
-      returns: 5,
+      returns: 9,
     })
   })
 

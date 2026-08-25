@@ -5,6 +5,12 @@ import {
   summarizeChannels,
   summarizeWarehouses,
 } from './metrics'
+import {
+  buildStoreAnalytics,
+  calendarDateInAlmaty,
+  statusForPointInTime,
+  type StoreFinancialAnalyticsPeriod,
+} from './analytics'
 import type {
   StoreCatalogFact,
   StoreInventoryFact,
@@ -53,6 +59,7 @@ interface WarehouseRow {
 
 interface SalesRow {
   id: string
+  import_run_id: string
   external_line_id: string
   variant_id: string | null
   warehouse_id: string | null
@@ -77,6 +84,7 @@ interface InventoryRow {
 
 interface PriceRow {
   variant_id: string
+  snapshot_date: string
   purchase_price: number | string | null
   retail_price: number | string | null
 }
@@ -115,9 +123,35 @@ interface EcommerceOrderItemRow {
   line_total: number | string
 }
 
+interface FinancialPeriodRow {
+  period_month: string
+  revenue: number | string | null
+  cost_amount: number | string | null
+  reported_gross_profit: number | string | null
+  period_expenses: number | string | null
+  bonuses: number | string | null
+  write_offs: number | string | null
+  ebitda: number | string | null
+  completeness: string | null
+  note: string | null
+  scope_key: string
+  source_sheet: string | null
+  import_id: string
+  superseded_at: string | null
+}
+
+interface FinancialImportRow {
+  id: string
+  status: string
+  published_at: string
+  source_sha256: string
+}
+
+
 type QueryResult<T> = { rows: T[]; error: string | null; truncated: boolean }
 
 function number(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') return null
   const parsed = typeof value === 'number' ? value : Number(value)
   return Number.isFinite(parsed) ? parsed : null
 }
@@ -210,7 +244,73 @@ async function pagedSelect<T>(
   return { rows, error: null, truncated: true }
 }
 
+
+async function loadOptionalFinancialPeriods(
+  supabase: SupabaseClient,
+  userId: string,
+  companyId: string,
+): Promise<{ available: boolean; periods: StoreFinancialAnalyticsPeriod[] }> {
+  const periodResult = await pagedSelect<FinancialPeriodRow>((from, to) => supabase
+    .from('store_financial_periods')
+    .select('period_month,revenue,cost_amount,reported_gross_profit,period_expenses,bonuses,write_offs,ebitda,completeness,note,scope_key,source_sheet,import_id,superseded_at')
+    .eq('user_id', userId)
+    .eq('company_id', companyId)
+    .order('period_month', { ascending: true })
+    .range(from, to), MAX_REFERENCE_ROWS)
+  if (periodResult.error) return { available: false, periods: [] }
+  const importIds = Array.from(new Set(periodResult.rows.map((row) => row.import_id).filter(Boolean)))
+  if (importIds.length === 0) return { available: true, periods: [] }
+
+  const importResult = await pagedSelect<FinancialImportRow>((from, to) => supabase
+    .from('store_financial_imports')
+    .select('id,status,published_at,source_sha256')
+    .eq('user_id', userId)
+    .eq('company_id', companyId)
+    .eq('status', 'published')
+    .in('id', importIds)
+    .order('published_at', { ascending: true })
+    .range(from, to), MAX_REFERENCE_ROWS)
+  if (importResult.error) return { available: false, periods: [] }
+  const publishedImports = new Map(importResult.rows.map((row) => [row.id, row]))
+
+  return {
+    available: true,
+    periods: periodResult.rows.flatMap((row) => {
+      const publishedImport = publishedImports.get(row.import_id)
+      const month = typeof row.period_month === 'string' ? row.period_month.slice(0, 7) : ''
+      if (row.superseded_at || !publishedImport || !/^\d{4}-\d{2}$/.test(month)) return []
+      return [{
+        month,
+        revenue: number(row.revenue),
+        costAmount: number(row.cost_amount),
+        reportedGrossProfit: number(row.reported_gross_profit),
+        periodExpenses: number(row.period_expenses),
+        bonuses: number(row.bonuses),
+        writeOffs: number(row.write_offs),
+        ebitda: number(row.ebitda),
+        completeness: row.completeness === 'complete'
+          ? 'complete'
+          : row.completeness === 'provisional'
+            ? 'provisional'
+            : 'partial',
+        note: typeof row.note === 'string' && row.note.trim() ? row.note.trim() : null,
+        scopeKey: typeof row.scope_key === 'string' && row.scope_key ? row.scope_key : `month:${month}`,
+        sourceSheet: typeof row.source_sheet === 'string' && row.source_sheet.trim()
+          ? row.source_sheet.trim()
+          : null,
+        publishedAt: publishedImport.published_at,
+      }]
+    }),
+  }
+}
+
 function emptyOverview(companyName: string | null): StoreOverview {
+  const analytics = buildStoreAnalytics({
+    operationalPeriods: [],
+    myHonorFacts: [],
+    myHonorSyncedAt: null,
+    financialSchemaAvailable: false,
+  })
   return {
     source: 'empty',
     confidence: 'empty',
@@ -237,6 +337,7 @@ function emptyOverview(companyName: string | null): StoreOverview {
       hasPublishedPrices: false,
     }),
     limitations: ['Нет опубликованных данных магазина. Загрузите прайс, остатки или продажи.'],
+    analytics,
   }
 }
 
@@ -406,11 +507,12 @@ export async function loadStoreOverview(
     : []
   const currentRuns = latestPublishedRunsByScope(runs)
   const inventoryRuns = currentRuns.filter((run) => run.import_kind === 'inventory')
+  const salesRuns = currentRuns.filter((run) =>
+    run.import_kind === 'sales' && /^month:\d{4}-\d{2}$/.test(run.scope_key),
+  )
   // Monthly sales scopes are independent. Show the latest factual month even
   // when an older month was corrected more recently.
-  const salesRun = latestSalesPeriodRun(
-    currentRuns.filter((run) => run.import_kind === 'sales'),
-  )
+  const salesRun = latestSalesPeriodRun(salesRuns)
   // Price publication owns one global scope; ignore any malformed/non-global
   // legacy scope instead of blending incompatible price versions.
   const priceRun = newestRun(currentRuns.filter(
@@ -428,6 +530,13 @@ export async function loadStoreOverview(
   let warehouses: WarehouseRow[] = []
   let operationalQueryFailed = false
   let operationalTruncated = false
+  let salesQueryFailed = false
+  let salesTruncated = false
+  let inventoryQueryFailed = false
+  let inventoryTruncated = false
+  let priceQueryFailed = false
+  let priceTruncated = false
+  let catalogQueryFailed = false
 
   if (operationalCompanyId) {
     const [variantResult, warehouseResult, salesResult, inventoryResult, priceResult] = await Promise.all([
@@ -445,12 +554,12 @@ export async function loadStoreOverview(
         .eq('company_id', operationalCompanyId)
         .order('name', { ascending: true })
         .range(from, to), MAX_REFERENCE_ROWS),
-      salesRun
+      salesRuns.length > 0
         ? pagedSelect<SalesRow>((from, to) => supabase
             .from('store_sales_lines')
-            .select('id,external_line_id,variant_id,warehouse_id,sku_snapshot,name_snapshot,channel,occurred_on,quantity,list_amount,net_revenue,cost_amount,discount_amount')
+            .select('id,import_run_id,external_line_id,variant_id,warehouse_id,sku_snapshot,name_snapshot,channel,occurred_on,quantity,list_amount,net_revenue,cost_amount,discount_amount')
             .eq('user_id', userId)
-            .eq('import_run_id', salesRun.id)
+            .in('import_run_id', salesRuns.map((run) => run.id))
             .order('occurred_on', { ascending: true })
             .order('id', { ascending: true })
             .range(from, to), MAX_FACT_ROWS)
@@ -467,7 +576,7 @@ export async function loadStoreOverview(
       priceRun
         ? pagedSelect<PriceRow>((from, to) => supabase
             .from('store_price_snapshots')
-            .select('variant_id,purchase_price,retail_price')
+            .select('variant_id,snapshot_date,purchase_price,retail_price')
             .eq('user_id', userId)
             .eq('import_run_id', priceRun.id)
             .order('id', { ascending: true })
@@ -478,14 +587,23 @@ export async function loadStoreOverview(
       .some((result) => Boolean(result.error))
     operationalTruncated = [variantResult, warehouseResult, salesResult, inventoryResult, priceResult]
       .some((result) => result.truncated)
-    if (!operationalQueryFailed) {
-      variants = variantResult.rows
-      warehouses = warehouseResult.rows
-      salesRows = salesResult.rows
-      inventoryRows = inventoryResult.rows
-      priceRows = priceResult.rows
-    }
+    salesQueryFailed = Boolean(salesResult.error)
+    salesTruncated = salesResult.truncated
+    inventoryQueryFailed = Boolean(inventoryResult.error)
+    inventoryTruncated = inventoryResult.truncated
+    priceQueryFailed = Boolean(priceResult.error)
+    priceTruncated = priceResult.truncated
+    catalogQueryFailed = Boolean(variantResult.error)
+    variants = variantResult.error ? [] : variantResult.rows
+    warehouses = warehouseResult.error ? [] : warehouseResult.rows
+    salesRows = salesResult.error ? [] : salesResult.rows
+    inventoryRows = inventoryResult.error ? [] : inventoryResult.rows
+    priceRows = priceResult.error ? [] : priceResult.rows
   }
+
+  const financialResult = companyId
+    ? await loadOptionalFinancialPeriods(supabase, userId, companyId)
+    : { available: false, periods: [] }
 
   const warehouseMap = new Map(warehouses.map((row) => [row.id, row]))
   const variantMap = new Map(variants.map((row) => [row.id, row]))
@@ -493,11 +611,14 @@ export async function loadStoreOverview(
   // A published operational period is authoritative even when it contains no
   // transactions. Falling back to overlapping MyHonor orders would double
   // count or contradict an intentionally empty report.
-  const hasOperationalSales = Boolean(salesRun && !operationalQueryFailed)
+  const hasOperationalSales = Boolean(salesRun && !salesQueryFailed && !salesTruncated)
   const operationalSales = hasOperationalSales
-    ? operationalSalesFacts(salesRows, warehouseMap)
+    ? operationalSalesFacts(
+        salesRows.filter((row) => row.import_run_id === salesRun?.id),
+        warehouseMap,
+      )
     : []
-  const myHonorFacts = !hasOperationalSales && !ecommerceOrders.error && !ecommerceItems.error
+  const myHonorFacts = !ecommerceOrders.error && !ecommerceItems.error
     ? buildMyHonorSalesFacts(ecommerceOrders.rows, ecommerceItems.rows)
     : []
   const selectedSales = hasOperationalSales ? operationalSales : myHonorFacts
@@ -545,20 +666,88 @@ export async function loadStoreOverview(
   }))
   const catalog = operationalCatalog.length > 0 ? operationalCatalog : myHonorCatalog
 
-  const hasSales = hasOperationalSales || selectedSales.length > 0
+  const analyticsNow = new Date()
+  const analyticsCurrentDate = calendarDateInAlmaty(analyticsNow) ?? analyticsNow.toISOString().slice(0, 10)
+  const myHonorSyncedAt = latest(ecommerceOrders.rows.map((row) => row.synced_at))
+  const inventoryLastFactAt = latest(inventoryRows.map((row) => row.snapshot_date))
+  const priceLastFactAt = latest(priceRows.map((row) => row.snapshot_date))
+  const myHonorCatalogSyncedAt = latest(ecommerceProducts.rows.map((row) => row.catalog_synced_at))
+  const catalogLastFactAt = operationalCatalog.length > 0
+    ? latest([priceLastFactAt, inventoryLastFactAt])
+    : myHonorCatalogSyncedAt
+  const catalogPublishedAt = operationalCatalog.length > 0
+    ? latest([
+        priceRun?.published_at,
+        ...inventoryRuns.map((run) => run.published_at),
+      ])
+    : null
+  const analytics = buildStoreAnalytics({
+    now: analyticsNow,
+    operationalPeriods: salesRuns.map((run) => ({
+      scopeKey: run.scope_key,
+      periodStart: run.period_start,
+      periodEnd: run.period_end,
+      publishedAt: run.published_at,
+      facts: operationalSalesFacts(
+        salesRows.filter((row) => row.import_run_id === run.id),
+        warehouseMap,
+      ),
+    })),
+    myHonorFacts,
+    myHonorSyncedAt,
+    financialPeriods: financialResult.periods,
+    financialSchemaAvailable: financialResult.available,
+    operationalUnavailable: salesQueryFailed,
+    operationalTruncated: salesTruncated,
+    freshness: {
+      inventory: {
+        coverage: inventoryQueryFailed || inventoryTruncated
+          ? 'unavailable'
+          : statusForPointInTime(inventoryLastFactAt, analyticsCurrentDate),
+        lastFactAt: inventoryLastFactAt,
+        publishedAt: latest(inventoryRuns.map((run) => run.published_at)),
+        syncedAt: null,
+      },
+      prices: {
+        coverage: priceQueryFailed || priceTruncated
+          ? 'unavailable'
+          : statusForPointInTime(priceLastFactAt, analyticsCurrentDate),
+        lastFactAt: priceLastFactAt,
+        publishedAt: priceRun?.published_at ?? null,
+        syncedAt: null,
+      },
+      catalog: {
+        coverage: (catalog.length === 0 && (catalogQueryFailed || Boolean(ecommerceProducts.error)))
+          || ecommerceProducts.truncated
+          ? 'unavailable'
+          : statusForPointInTime(catalogLastFactAt, analyticsCurrentDate),
+        lastFactAt: catalogLastFactAt,
+        publishedAt: catalogPublishedAt,
+        syncedAt: operationalCatalog.length > 0 ? null : myHonorCatalogSyncedAt,
+      },
+    },
+  })
+
+  const hasFinancialSales = financialResult.periods.some((period) => period.revenue !== null)
+  const hasSales = hasOperationalSales || selectedSales.length > 0 || hasFinancialSales
   const hasInventory = inventoryRuns.length > 0 && inventoryFacts.length > 0
   const hasPrices = Boolean(priceRun && priceRows.length > 0)
-  const hasAnyData = hasSales || hasInventory || hasPrices || catalog.length > 0
+  const hasAnyData = hasSales || hasInventory || hasPrices || catalog.length > 0 || analytics.history.length > 0
   if (!hasAnyData) return fallback
 
-  const source = hasOperationalSales || hasInventory || hasPrices ? 'operational' : 'myhonor'
+  const source = hasOperationalSales || hasFinancialSales || hasInventory || hasPrices ? 'operational' : 'myhonor'
   const confidence = hasOperationalSales && hasInventory && hasPrices ? 'complete' : 'partial'
   const periodDates = selectedSales.map((row) => row.occurredOn).sort()
   const period = salesRun?.period_start && salesRun.period_end
     ? { from: salesRun.period_start, to: salesRun.period_end }
     : periodDates.length > 0
       ? { from: periodDates[0].slice(0, 10), to: periodDates.at(-1)!.slice(0, 10) }
-      : null
+      : hasFinancialSales ? analytics.windows.latestPublished.period : null
+  const legacyMetrics = selectedSales.length > 0 || hasOperationalSales
+    ? calculateSalesMetrics(selectedSales)
+    : hasFinancialSales
+      ? analytics.windows.latestPublished.metrics
+      : calculateSalesMetrics([])
   const inventoryCostValues = warehouseSummaries.map((row) => row.inventoryCost)
   const inventoryRetailValues = warehouseSummaries.map((row) => row.inventoryRetail)
   const inventoryCost = hasInventory && inventoryCostValues.every((value) => value !== null)
@@ -573,6 +762,7 @@ export async function loadStoreOverview(
     priceRun?.published_at,
     ...ecommerceProducts.rows.map((row) => row.catalog_synced_at),
     ...ecommerceOrders.rows.map((row) => row.synced_at),
+    ...financialResult.periods.map((row) => row.publishedAt),
   ])
   const limitations: string[] = []
   if (!hasOperationalSales && myHonorFacts.length > 0) {
@@ -591,6 +781,8 @@ export async function loadStoreOverview(
   ) {
     limitations.push('Объём данных превысил безопасный лимит обзора; итог требует пакетной агрегации.')
   }
+  limitations.push(...analytics.limitations)
+  const uniqueLimitations = Array.from(new Set(limitations))
 
   return {
     source,
@@ -600,9 +792,11 @@ export async function loadStoreOverview(
     asOf,
     versionLabel: hasOperationalSales && salesRun
       ? `Продажи · ${new Date(salesRun.published_at).toLocaleDateString('ru-RU')}`
-      : myHonorFacts.length > 0 ? 'MyHonor · live' : null,
+      : hasFinancialSales
+        ? 'Управленческий отчёт · опубликован'
+        : myHonorFacts.length > 0 ? 'MyHonor · наблюдаемые заказы' : null,
     availability: { sales: hasSales, inventory: hasInventory, prices: hasPrices },
-    metrics: calculateSalesMetrics(selectedSales),
+    metrics: legacyMetrics,
     catalog: {
       products: catalog.length,
       activeProducts: catalog.filter((product) => product.active).length,
@@ -627,6 +821,7 @@ export async function loadStoreOverview(
       hasPublishedInventory: hasInventory,
       hasPublishedPrices: hasPrices,
     }),
-    limitations,
+    limitations: uniqueLimitations,
+    analytics,
   }
 }

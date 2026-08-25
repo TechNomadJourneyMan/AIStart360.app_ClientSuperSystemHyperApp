@@ -279,11 +279,16 @@ export function JourneyCanvas(props: JourneyCanvasProps) {
 
 export function JourneyMobileBoard({ state }: { state: JourneyWorkspaceView }) {
   const confirmed = state.facts.filter((fact) => fact.status === 'confirmed')
+  const storeFacts = confirmed.some((fact) => fact.id.startsWith('fact:store:'))
+    ? selectStoreCanvasFacts(confirmed)
+    : confirmed
   const currentGoal = getCurrentConfirmedJourneyGoal(state)
   return (
     <div data-testid="journey-mobile-board" className="h-full space-y-3 overflow-y-auto px-3 pb-28 pt-3 md:hidden">
       <MobilePointCard testId="point-a" eyebrow="Точка A · сейчас" title={state.companyName || 'Ваш бизнес'}>
-        {confirmed.length ? <FactList facts={confirmed} /> : <EmptyCopy>Расскажите о бизнесе и подтвердите первые факты.</EmptyCopy>}
+        {storeFacts.length
+          ? <FactList facts={storeFacts} limit={6} compact={storeFacts !== confirmed} />
+          : <EmptyCopy>Расскажите о бизнесе и подтвердите первые факты.</EmptyCopy>}
       </MobilePointCard>
 
       <div className="flex items-center justify-center gap-2 py-1 text-xs text-on-surface-variant">
@@ -409,15 +414,36 @@ function PointBSection({ state, compact = false, onFocus }: { state: JourneyWork
 }
 
 function FactList({ facts, limit = 7, compact = false }: { facts: JourneyFactView[]; limit?: number; compact?: boolean }) {
+  const visibleFacts = facts.slice(0, limit)
+  const storeFacts = visibleFacts.filter((fact) => fact.id.startsWith('fact:store:'))
   return (
-    <dl className={compact ? 'space-y-1.5' : 'space-y-2.5'}>
-      {facts.slice(0, limit).map((fact) => (
-        <div key={fact.id} className="flex items-start justify-between gap-4">
-          <dt className="min-w-0 text-xs text-on-surface-variant">{fact.label}</dt>
-          <dd title={fact.value} className="max-w-[62%] text-right text-xs font-medium text-on-surface line-clamp-3">{fact.value}</dd>
-        </div>
-      ))}
-    </dl>
+    <div>
+      <dl className={compact ? 'space-y-1.5' : 'space-y-2.5'}>
+        {visibleFacts.map((fact) => (
+          <div key={fact.id} className="flex items-start justify-between gap-4">
+            <dt className="min-w-0 text-xs text-on-surface-variant">{fact.label}</dt>
+            <dd
+              title={`${fact.value} · Источник: ${fact.sourceLabel}`}
+              className="max-w-[62%] text-right text-xs font-medium text-on-surface line-clamp-3"
+            >
+              {fact.value}
+            </dd>
+          </div>
+        ))}
+      </dl>
+      {storeFacts.length > 0 && (
+        <details data-board-interactive className="mt-3 border-t border-white/5 pt-2 text-[10px] text-on-surface-variant">
+          <summary className="cursor-pointer select-none font-medium text-primary">Источники фактов</summary>
+          <ul className="mt-2 space-y-1.5">
+            {storeFacts.map((fact) => (
+              <li key={`source:${fact.id}`} className="break-words">
+                <span className="font-medium text-on-surface">{fact.label}:</span> {fact.sourceLabel}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+    </div>
   )
 }
 
@@ -615,7 +641,16 @@ function EmptyCopy({ children }: { children: React.ReactNode }) {
   return <p className="text-xs leading-relaxed text-pretty text-on-surface-variant">{children}</p>
 }
 
-const STORE_CANVAS_FACT_ORDER = [
+const STORE_ANALYTICS_CANVAS_FACT_ORDER = [
+  'fact:store:period',
+  'fact:store:revenue',
+  'fact:store:gross-profit',
+  'fact:store:gross-margin',
+  'fact:store:inventory',
+  'fact:store:freshness',
+]
+
+const STORE_LEGACY_CANVAS_FACT_ORDER = [
   'fact:store:revenue',
   'fact:store:gross-profit',
   'fact:store:gross-margin',
@@ -624,9 +659,12 @@ const STORE_CANVAS_FACT_ORDER = [
   'fact:store:inventory',
 ]
 
-function selectStoreCanvasFacts(facts: JourneyFactView[]): JourneyFactView[] {
+export function selectStoreCanvasFacts(facts: JourneyFactView[]): JourneyFactView[] {
   const byId = new Map(facts.map((fact) => [fact.id, fact]))
-  return STORE_CANVAS_FACT_ORDER
+  const order = byId.has('fact:store:freshness')
+    ? STORE_ANALYTICS_CANVAS_FACT_ORDER
+    : STORE_LEGACY_CANVAS_FACT_ORDER
+  return order
     .map((id) => byId.get(id))
     .filter((fact): fact is JourneyFactView => Boolean(fact))
 }

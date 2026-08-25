@@ -9,6 +9,7 @@ import {
   STORE_IMPORT_MAX_ROWS,
   StoreImportError,
 } from '@/lib/store/import/parser'
+import managementControl from '../../fixtures/store-imports/honor-management-period-control.json'
 
 function workbookBuffer(
   sheets: Array<{ name: string; sheet: XLSX.WorkSheet }>,
@@ -18,6 +19,172 @@ function workbookBuffer(
   for (const { name, sheet } of sheets) XLSX.utils.book_append_sheet(workbook, sheet, name)
   return XLSX.write(workbook, { type: 'buffer', bookType }) as Buffer
 }
+
+const MANAGEMENT_BASE_ROWS: unknown[][] = [
+  [2025, 'Январь', 23_632_877, 13_999_526, null],
+  [2025, 'Февраль', 10_988_705, 5_342_278, null],
+  [2025, 'Март', 15_397_078, 7_579_166, null],
+  [2025, 'Апрель', 17_387_198, 8_722_163, null],
+  [2025, 'Май', 7_406_078, 3_691_530, null],
+  [2025, 'Июнь', 14_583_499, 8_235_577, null],
+  [2025, 'Июль', 27_659_924, 17_278_217, null],
+  [2025, 'Август', 17_258_004, 7_949_103, null],
+  [2025, 'Сентябрь', 3_880_840, 1_890_218, 'лист заполнен частично'],
+  [2025, 'Октябрь', 4_283_220, 2_290_880, 'лист заполнен частично'],
+  [2025, 'Ноябрь', 49_964_999, 26_437_002, null],
+  [2025, 'Декабрь', 38_227_746, 17_988_152, null],
+  [2026, 'Январь', 33_371_046, 15_058_996, null],
+  [2026, 'Февраль', 20_281_666, 10_291_714, null],
+  [2026, 'Март', 77_095_966, 52_945_481, 'оптовая волна'],
+  [2026, 'Апрель', 23_709_501, 15_935_292, 'опт, маржа ниже'],
+  [2026, 'Май', 9_440_240, 4_185_398, 'управленческий отчет'],
+  [2026, 'Июнь', 10_173_402, 3_945_902, 'управленческий отчет'],
+  [2026, 'Июль', 28_053_253, 17_139_974, 'управленческий отчет'],
+]
+
+function makeManagementWorkbook(options: {
+  formulaRevenueRow?: number
+  formulaPnlExpenseRow?: number
+} = {}): Buffer {
+  const base = XLSX.utils.aoa_to_sheet([
+    ['HONOR · ДИНАМИКА ПРОДАЖ ПО МЕСЯЦАМ · 2025–2026'],
+    ['Синие ячейки — данные; чёрные — формулы'],
+    [],
+    ['Год', 'Месяц', 'Выручка', 'Закуп (себест.)', 'Вал. прибыль', 'Маржа', 'Δ м/м', 'Примечание'],
+    ...MANAGEMENT_BASE_ROWS.map(([year, month, revenue, cost, note]) => [
+      year, month, revenue, cost, null, null, null, note,
+    ]),
+    [null, 'ИТОГО 2025'],
+    [null, 'ИТОГО 2026 (7 мес)'],
+  ])
+  for (let row = 5; row <= 23; row += 1) {
+    base[`E${row}`] = { t: 'n', f: `C${row}-D${row}`, v: 987_654_321 }
+    base[`F${row}`] = { t: 'n', f: `E${row}/C${row}`, v: 999 }
+    base[`G${row}`] = { t: 'n', f: `C${row}/C${row - 1}-1`, v: 999 }
+  }
+  if (options.formulaRevenueRow) {
+    const address = `C${options.formulaRevenueRow}`
+    base[address] = { t: 'n', f: 'UNTRUSTED()', v: Number(base[address]?.v ?? 0) }
+  }
+
+  const pnl = XLSX.utils.aoa_to_sheet([
+    ['HONOR · ПОЛНЫЙ P&L · МАЙ–ИЮЛЬ 2026'],
+    [],
+    ['Месяц', 'Выручка', 'Вал. прибыль', 'Расходы периода', 'в т.ч. бонусы', 'в т.ч. списание', 'EBITDA', 'EBITDA %'],
+    ['Май', 9_440_240, 5_254_842, 10_394_024.2, 980_808.2, 1_184_845],
+    ['Июнь', 10_173_402, 6_227_499.71, 8_467_124.69, 872_035.44, 1_578_282.33],
+    ['Июль', 28_053_253, 10_913_278.54, 14_594_824.45, 2_324_862.25, 579_056.5],
+    ['ИТОГО'],
+  ])
+  for (let row = 4; row <= 6; row += 1) {
+    pnl[`G${row}`] = { t: 'n', f: `C${row}-D${row}`, v: 123_456_789 }
+    pnl[`H${row}`] = { t: 'n', f: `G${row}/B${row}`, v: 999 }
+  }
+  if (options.formulaPnlExpenseRow) {
+    const address = `D${options.formulaPnlExpenseRow}`
+    pnl[address] = { t: 'n', f: 'UNTRUSTED()', v: Number(pnl[address]?.v ?? 0) }
+  }
+
+  const byYear = XLSX.utils.aoa_to_sheet([
+    ['HONOR · СРАВНЕНИЕ ПО ГОДАМ'],
+    [],
+    ['Месяц', 'Выручка 2025', 'Выручка 2026'],
+    ['Январь', null, null],
+  ])
+  byYear.B4 = { t: 'n', f: "'Динамика по месяцам'!C5", v: 999_999_999 }
+  byYear.C4 = { t: 'n', f: "'Динамика по месяцам'!C17", v: 999_999_999 }
+  return workbookBuffer([
+    { name: 'Динамика по месяцам', sheet: base },
+    { name: 'По годам', sheet: byYear },
+    { name: 'P&L 2026 (май–июль)', sheet: pnl },
+  ])
+}
+
+describe('parseStoreImport — HONOR management periods', () => {
+  it('keeps 19 monthly facts, exact base controls and independently reported P&L controls', () => {
+    const preview = parseStoreImport(makeManagementWorkbook(), 'HONOR динамика 2025-2026.xlsx')
+    const rows2025 = preview.data.management_period.filter((row) => row.periodStart.startsWith('2025-'))
+    const rows2026 = preview.data.management_period.filter((row) => row.periodStart.startsWith('2026-'))
+    const pnlRows = rows2026.filter((row) => row.reportedGrossProfit !== null)
+    const sum = (rows: typeof rows2025, field: keyof (typeof rows2025)[number]) =>
+      Math.round(rows.reduce((total, row) => total + Number(row[field] ?? 0), 0) * 100) / 100
+
+    expect(preview.detectedKinds).toEqual(['management_period'])
+    expect(preview.data.sales).toEqual([])
+    expect(preview.data.management_period).toHaveLength(managementControl.coverage.uniqueMonths)
+    expect(sum(rows2025, 'revenue')).toBe(managementControl.baseControls['2025'].revenue)
+    expect(sum(rows2025, 'costOfGoods')).toBe(managementControl.baseControls['2025'].costOfGoods)
+    expect(sum(rows2025, 'grossProfit')).toBe(managementControl.baseControls['2025'].derivedGrossProfit)
+    expect(sum(rows2026, 'revenue')).toBe(managementControl.baseControls['2026-01..07'].revenue)
+    expect(sum(rows2026, 'costOfGoods')).toBe(managementControl.baseControls['2026-01..07'].costOfGoods)
+    expect(sum(rows2026, 'grossProfit')).toBe(managementControl.baseControls['2026-01..07'].derivedGrossProfit)
+    expect(sum(pnlRows, 'reportedGrossProfit')).toBe(managementControl.pnlControls['2026-05..07'].reportedGrossProfit)
+    expect(sum(pnlRows, 'periodExpenses')).toBe(managementControl.pnlControls['2026-05..07'].periodExpenses)
+    expect(sum(pnlRows, 'bonusExpense')).toBe(managementControl.pnlControls['2026-05..07'].bonuses)
+    expect(sum(pnlRows, 'writeOffExpense')).toBe(managementControl.pnlControls['2026-05..07'].writeOffs)
+    expect(sum(pnlRows, 'ebitda')).toBe(managementControl.pnlControls['2026-05..07'].ebitda)
+    expect(sum(pnlRows, 'grossProfitReconciliationDelta')).toBe(-0.75)
+  })
+
+  it('derives GP and EBITDA instead of trusting cached formula results', () => {
+    const preview = parseStoreImport(makeManagementWorkbook(), 'HONOR динамика 2025-2026.xlsx')
+    const may = preview.data.management_period.find((row) => row.periodStart === '2026-05-01')
+
+    expect(may).toMatchObject({
+      revenue: 9_440_240,
+      costOfGoods: 4_185_398,
+      grossProfit: 5_254_842,
+      reportedGrossProfit: 5_254_842,
+      grossProfitReconciliationDelta: 0,
+      periodExpenses: 10_394_024.2,
+      ebitda: -5_139_182.2,
+    })
+    expect(may?.grossProfit).not.toBe(987_654_321)
+    expect(may?.ebitda).not.toBe(123_456_789)
+    expect(preview.issues).toContainEqual(expect.objectContaining({
+      code: 'derived_formula_sheet_skipped',
+      sheetName: 'По годам',
+    }))
+  })
+
+  it('marks the two source-declared partial months and requires warning acknowledgement downstream', () => {
+    const preview = parseStoreImport(makeManagementWorkbook(), 'HONOR динамика 2025-2026.xlsx')
+    const partial = preview.data.management_period
+      .filter((row) => row.completeness === 'partial')
+      .map((row) => row.periodStart)
+
+    expect(partial).toEqual(managementControl.coverage.partialMonths)
+    expect(preview.issues.filter((issue) => issue.code === 'management_period_partial')).toHaveLength(2)
+  })
+
+  it('quarantines a formula in canonical revenue even when it has a cached number', () => {
+    const preview = parseStoreImport(
+      makeManagementWorkbook({ formulaRevenueRow: 5 }),
+      'HONOR динамика 2025-2026.xlsx',
+    )
+    expect(preview.data.management_period).toHaveLength(18)
+    expect(preview.quarantine).toContainEqual(expect.objectContaining({
+      sheetName: 'Динамика по месяцам',
+      rowNumber: 5,
+      reasonCodes: expect.arrayContaining(['formula_cell']),
+      fields: expect.arrayContaining(['revenue']),
+    }))
+  })
+
+  it('ignores an unsafe P&L enrichment row without discarding its canonical base month', () => {
+    const preview = parseStoreImport(
+      makeManagementWorkbook({ formulaPnlExpenseRow: 4 }),
+      'HONOR динамика 2025-2026.xlsx',
+    )
+    const may = preview.data.management_period.find((row) => row.periodStart === '2026-05-01')
+    expect(preview.data.management_period).toHaveLength(19)
+    expect(may).toMatchObject({ grossProfit: 5_254_842, reportedGrossProfit: null, ebitda: null })
+    expect(preview.issues).toContainEqual(expect.objectContaining({
+      code: 'management_period_pnl_ignored',
+      rowNumber: 4,
+    }))
+  })
+})
 
 function makeHonorPriceSheet(): XLSX.WorkSheet {
   const rows: unknown[][] = [

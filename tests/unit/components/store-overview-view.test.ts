@@ -2,6 +2,7 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { StoreOverviewView } from '@/components/store/StoreOverviewView'
+import { buildStoreAnalytics } from '@/lib/store/analytics'
 import type { StoreOverview } from '@/lib/store/types'
 
 const empty: StoreOverview = {
@@ -82,5 +83,122 @@ describe('StoreOverviewView', () => {
     expect(html).toContain('10,9 млн ₸')
     expect(html).toContain('38,9%')
     expect(html).toContain('14 млн ₸')
+  })
+
+  it('renders the period selector, provenance, history table and honest P&L warning', () => {
+    const analytics = buildStoreAnalytics({
+      now: new Date('2026-08-25T06:00:00.000Z'),
+      operationalPeriods: [],
+      myHonorFacts: [],
+      myHonorSyncedAt: '2026-07-29T10:00:00.000Z',
+      financialSchemaAvailable: true,
+      financialPeriods: [
+        {
+          month: '2026-05',
+          revenue: 10_000_000,
+          costAmount: 6_000_000,
+          reportedGrossProfit: 4_000_000,
+          periodExpenses: 5_000_000,
+          bonuses: 900_000,
+          writeOffs: 700_000,
+          ebitda: -1_000_000,
+          completeness: 'complete',
+          note: 'Валовая прибыль отчёта отличается от расчётной на 0,75 ₸.',
+          scopeKey: 'month:2026-05',
+          sourceSheet: 'P&L',
+          publishedAt: '2026-08-24T10:00:00.000Z',
+        },
+        {
+          month: '2026-06',
+          revenue: 12_000_000,
+          costAmount: 7_000_000,
+          reportedGrossProfit: 5_000_000,
+          periodExpenses: 7_000_000,
+          bonuses: 1_200_000,
+          writeOffs: 800_000,
+          ebitda: -2_000_000,
+          completeness: 'complete',
+          note: null,
+          scopeKey: 'month:2026-06',
+          sourceSheet: 'P&L',
+          publishedAt: '2026-08-24T10:00:00.000Z',
+        },
+        {
+          month: '2026-07',
+          revenue: 28_053_253,
+          costAmount: 17_139_974.46,
+          reportedGrossProfit: 10_913_279.29,
+          periodExpenses: 18_973_632.38,
+          bonuses: 3_000_000,
+          writeOffs: 2_000_000,
+          ebitda: -8_060_353.09,
+          completeness: 'complete',
+          note: null,
+          scopeKey: 'month:2026-07',
+          sourceSheet: 'P&L',
+          publishedAt: '2026-08-24T10:00:00.000Z',
+        },
+      ],
+    })
+    const html = renderToStaticMarkup(createElement(StoreOverviewView, {
+      data: {
+        ...empty,
+        source: 'operational',
+        availability: { sales: true, inventory: false, prices: false },
+        analytics,
+        alerts: [],
+      },
+    }))
+
+    expect(html).toContain('Сегодня')
+    expect(html).toContain('Этот месяц')
+    expect(html).toContain('Последний опубликованный')
+    expect(html).toContain('2026 YTD')
+    expect(html).toContain('Выручка по месяцам')
+    expect(html).toContain('P&amp;L · май 2026 г. — июль 2026 г.')
+    expect(html).toContain('Отрицательная EBITDA')
+    expect(html).toContain('не вычитаются из EBITDA повторно')
+    expect(html).toContain('Источник / сверка')
+    expect(html).toContain('month:2026-05')
+    expect(html).toContain('Сверка: Валовая прибыль отчёта отличается от расчётной на 0,75 ₸.')
+    expect(html).not.toContain('MyHonor · live')
+  })
+
+  it('shows negative history below the zero baseline and explains an inactive catalog', () => {
+    const analytics = buildStoreAnalytics({
+      now: new Date('2026-08-25T06:00:00.000Z'),
+      operationalPeriods: [],
+      myHonorFacts: [],
+      myHonorSyncedAt: null,
+      financialSchemaAvailable: true,
+      financialPeriods: [{
+        month: '2026-07',
+        revenue: 10_000,
+        costAmount: 12_000,
+        reportedGrossProfit: -2_000,
+        periodExpenses: 1_000,
+        bonuses: 0,
+        writeOffs: 0,
+        ebitda: -3_000,
+        completeness: 'complete',
+        note: null,
+        scopeKey: 'month:2026-07',
+        sourceSheet: 'P&L',
+        publishedAt: '2026-08-24T10:00:00.000Z',
+      }],
+    })
+    const html = renderToStaticMarkup(createElement(StoreOverviewView, {
+      data: {
+        ...empty,
+        source: 'operational',
+        catalog: { products: 12, activeProducts: 0, latest: [] },
+        analytics,
+      },
+    }))
+
+    expect(html).toContain('Отрицательное значение')
+    expect(html).toContain('top:50%')
+    expect(html).toContain('Нет активных товаров')
+    expect(html).toContain('ни один не отмечен активным')
   })
 })

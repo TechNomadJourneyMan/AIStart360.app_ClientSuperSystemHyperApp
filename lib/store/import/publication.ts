@@ -3,6 +3,7 @@ import type {
   StoreImportKind,
   StoreImportPreview,
   StoreInventoryImportRow,
+  StoreManagementPeriodImportRow,
   StorePriceImportRow,
   StoreSalesImportRow,
 } from './types'
@@ -56,10 +57,35 @@ export interface StorePublishSalesRow extends StorePublishVariantFields {
   discountAmount: number
 }
 
+export interface StorePublishManagementPeriodRow {
+  scopeKey: string
+  periodStart: string
+  periodEnd: string
+  granularity: 'month'
+  currency: 'KZT'
+  revenueBasis: 'net_after_discounts_returns'
+  revenue: number
+  costAmount: number
+  grossProfit: number
+  grossMarginPct: number | null
+  reportedGrossProfit: number | null
+  grossProfitReconciliationDelta: number | null
+  periodExpenses: number | null
+  bonuses: number | null
+  writeOffs: number | null
+  ebitda: number | null
+  ebitdaMarginPct: number | null
+  completeness: StoreManagementPeriodImportRow['completeness']
+  note: string | null
+  sourceSheet: string
+  sourceRange: string
+}
+
 export type StorePublishRow =
   | StorePublishPriceRow
   | StorePublishInventoryRow
   | StorePublishSalesRow
+  | StorePublishManagementPeriodRow
 
 export interface StorePublishPayload {
   importKind: StoreImportKind
@@ -89,6 +115,9 @@ export type StorePublishValidationCode =
   | 'inventory_scope_ambiguous'
   | 'sales_period_ambiguous'
   | 'variant_identity_invalid'
+  | 'management_period_invalid'
+  | 'management_period_duplicate'
+  | 'management_period_inconsistent'
 
 export class StorePublishValidationError extends Error {
   constructor(
@@ -274,6 +303,159 @@ function salesPeriod(rows: StoreSalesImportRow[]): { start: string; end: string 
   return { start: dates[0], end: dates.at(-1)! }
 }
 
+function roundScale(value: number, scale: number): number {
+  const factor = 10 ** scale
+  const absolute = Math.abs(value) * factor
+  const rounded = Math.floor(absolute + 0.5 + Number.EPSILON)
+  return Math.sign(value) * rounded / factor
+}
+
+function validScaledNumber(value: number, scale: number, allowNegative = true): boolean {
+  if (!Number.isFinite(value) || Math.abs(value) > 9_999_999_999_999_999.99) return false
+  if (!allowNegative && value < 0) return false
+  const scaled = value * (10 ** scale)
+  return Number.isSafeInteger(Math.round(scaled))
+    && Math.abs(scaled - Math.round(scaled)) < 1e-6
+}
+
+function expectedMonthEnd(periodStart: string): string | null {
+  if (!isIsoDate(periodStart) || !periodStart.endsWith('-01')) return null
+  const [year, month] = periodStart.split('-').map(Number)
+  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate()
+  return `${periodStart.slice(0, 7)}-${String(lastDay).padStart(2, '0')}`
+}
+
+function nullableValuesAreAllNull(values: unknown[]): boolean {
+  return values.every((value) => value === null)
+}
+
+function managementPeriodRow(row: StoreManagementPeriodImportRow): StorePublishManagementPeriodRow {
+  const expectedEnd = expectedMonthEnd(row.periodStart)
+  if (
+    !expectedEnd
+    || row.periodEnd !== expectedEnd
+    || row.granularity !== 'month'
+    || row.currency !== 'KZT'
+    || row.revenueBasis !== 'net_after_discounts_returns'
+    || !validScaledNumber(row.revenue, 2, false)
+    || !validScaledNumber(row.costOfGoods, 2, false)
+    || !validScaledNumber(row.grossProfit, 2)
+    || !['complete', 'partial', 'provisional'].includes(row.completeness)
+    || (row.qualityNote !== null && (row.qualityNote.length < 1 || row.qualityNote.length > 500))
+    || row.sourceSheet.length < 1
+    || row.sourceSheet.length > 200
+    || row.sourceRange.length < 1
+    || row.sourceRange.length > 500
+  ) {
+    throw new StorePublishValidationError(
+      'management_period_invalid',
+      `Период ${row.periodStart} имеет недопустимую форму или точность`,
+    )
+  }
+
+  const derivedGrossProfit = roundScale(row.revenue - row.costOfGoods, 2)
+  const derivedGrossMargin = row.revenue === 0
+    ? null
+    : roundScale((derivedGrossProfit / row.revenue) * 100, 4)
+  if (
+    row.grossProfit !== derivedGrossProfit
+    || row.grossMarginPct !== derivedGrossMargin
+    || (row.grossMarginPct !== null && !validScaledNumber(row.grossMarginPct, 4))
+  ) {
+    throw new StorePublishValidationError(
+      'management_period_inconsistent',
+      `Валовая прибыль периода ${row.periodStart} не равна выручке минус себестоимость`,
+    )
+  }
+
+  const pnlValues = [
+    row.reportedGrossProfit,
+    row.grossProfitReconciliationDelta,
+    row.periodExpenses,
+    row.bonusExpense,
+    row.writeOffExpense,
+    row.ebitda,
+    row.ebitdaMarginPct,
+  ]
+  if (!nullableValuesAreAllNull(pnlValues)) {
+    if (
+      pnlValues.some((value) => value === null)
+      || !validScaledNumber(row.reportedGrossProfit!, 2)
+      || !validScaledNumber(row.grossProfitReconciliationDelta!, 2)
+      || !validScaledNumber(row.periodExpenses!, 2, false)
+      || !validScaledNumber(row.bonusExpense!, 2, false)
+      || !validScaledNumber(row.writeOffExpense!, 2, false)
+      || !validScaledNumber(row.ebitda!, 2)
+      || !validScaledNumber(row.ebitdaMarginPct!, 4)
+    ) {
+      throw new StorePublishValidationError(
+        'management_period_invalid',
+        `P&L периода ${row.periodStart} должен быть полным и иметь допустимую точность`,
+      )
+    }
+    const expectedDelta = roundScale(row.reportedGrossProfit! - row.grossProfit, 2)
+    const expectedEbitda = roundScale(row.reportedGrossProfit! - row.periodExpenses!, 2)
+    const expectedEbitdaMargin = row.revenue === 0
+      ? null
+      : roundScale((expectedEbitda / row.revenue) * 100, 4)
+    if (
+      row.grossProfitReconciliationDelta !== expectedDelta
+      || Math.abs(expectedDelta) > 1
+      || row.ebitda !== expectedEbitda
+      || row.ebitdaMarginPct !== expectedEbitdaMargin
+      || row.bonusExpense! > row.periodExpenses!
+      || row.writeOffExpense! > row.periodExpenses!
+    ) {
+      throw new StorePublishValidationError(
+        'management_period_inconsistent',
+        `P&L периода ${row.periodStart} не прошёл сверку прибыли и EBITDA`,
+      )
+    }
+  }
+
+  return {
+    scopeKey: `month:${row.periodStart.slice(0, 7)}`,
+    periodStart: row.periodStart,
+    periodEnd: row.periodEnd,
+    granularity: row.granularity,
+    currency: row.currency,
+    revenueBasis: row.revenueBasis,
+    revenue: row.revenue,
+    costAmount: row.costOfGoods,
+    grossProfit: row.grossProfit,
+    grossMarginPct: row.grossMarginPct,
+    reportedGrossProfit: row.reportedGrossProfit,
+    grossProfitReconciliationDelta: row.grossProfitReconciliationDelta,
+    periodExpenses: row.periodExpenses,
+    bonuses: row.bonusExpense,
+    writeOffs: row.writeOffExpense,
+    ebitda: row.ebitda,
+    ebitdaMarginPct: row.ebitdaMarginPct,
+    completeness: row.completeness,
+    note: row.qualityNote,
+    sourceSheet: row.sourceSheet,
+    sourceRange: row.sourceRange,
+  }
+}
+
+function managementPeriodPayloadRows(
+  rows: StoreManagementPeriodImportRow[],
+): StorePublishManagementPeriodRow[] {
+  const normalized = rows.map(managementPeriodRow)
+  const sorted = [...normalized].sort((left, right) => left.periodStart.localeCompare(right.periodStart))
+  const periods = new Set<string>()
+  for (const row of sorted) {
+    if (periods.has(row.periodStart)) {
+      throw new StorePublishValidationError(
+        'management_period_duplicate',
+        `Период ${row.periodStart} повторяется в публикации`,
+      )
+    }
+    periods.add(row.periodStart)
+  }
+  return sorted
+}
+
 export function buildStorePublishPayload(
   preview: StoreImportPreview,
   effectiveDate?: string | null,
@@ -339,6 +521,29 @@ export function buildStorePublishPayload(
       warningCount,
       quarantinedCount,
       rows: preview.data.inventory.map((row) => inventoryRow(row, date)),
+    }
+  }
+
+  if (importKind === 'management_period') {
+    const rows = managementPeriodPayloadRows(preview.data.management_period)
+    if (rows.length === 0) {
+      throw new StorePublishValidationError(
+        'preview_not_ready',
+        'В предпросмотре нет управленческих периодов',
+      )
+    }
+    const first = rows[0]
+    const last = rows.at(-1)!
+    return {
+      importKind,
+      scopeKey: `management_period:${first.periodStart.slice(0, 7)}:${last.periodStart.slice(0, 7)}`,
+      effectiveDate: null,
+      periodStart: first.periodStart,
+      periodEnd: last.periodEnd,
+      rowCount: rows.length,
+      warningCount,
+      quarantinedCount,
+      rows,
     }
   }
 

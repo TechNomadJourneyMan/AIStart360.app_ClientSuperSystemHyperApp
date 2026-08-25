@@ -279,7 +279,7 @@ function withStoredLayout(live: JourneyWidget, stored?: JourneyWidget): JourneyW
 function redactStoreWidget(widget: JourneyWidget): JourneyWidget {
   const base = {
     ...widget,
-    title: 'Store · live data',
+    title: 'Store · опубликованные данные',
   }
   switch (widget.kind) {
     case 'finance_cashflow':
@@ -296,7 +296,7 @@ function redactStoreWidget(widget: JourneyWidget): JourneyWidget {
         ...base,
         data: {
           domain: 'Store Control Center',
-          purpose: 'Live-данные загружаются с сервера.',
+          purpose: 'Опубликованные данные загружаются с сервера.',
           metrics: [{
             label: 'Опубликованные данные',
             status: 'unknown',
@@ -310,7 +310,7 @@ function redactStoreWidget(widget: JourneyWidget): JourneyWidget {
         ...base,
         data: {
           domain: 'Store Control Center',
-          purpose: 'Live-данные загружаются с сервера.',
+          purpose: 'Опубликованные данные загружаются с сервера.',
           stages: [{
             id: 'store:redacted',
             name: 'Опубликованные источники',
@@ -409,12 +409,12 @@ function scrubSensitiveWidgetPayload(
       if (/^\d{1,2}$/.test(sensitive)) {
         scrubbed = scrubbed.replace(
           new RegExp(`(?<!\\d)${sensitive}(?!\\d)`, 'g'),
-          '[Store live]',
+          '[Store published]',
         )
       } else {
         scrubbed = sensitive.length < 3
-          ? scrubbed === sensitive ? '[Store live]' : scrubbed
-          : scrubbed.split(sensitive).join('[Store live]')
+          ? scrubbed === sensitive ? '[Store published]' : scrubbed
+          : scrubbed.split(sensitive).join('[Store published]')
       }
     }
     return scrubbed
@@ -434,7 +434,7 @@ function scrubSensitiveWidgetPayload(
   if (source.status === 'known' && typeof source.value === 'string') {
     delete scrubbed.value
     scrubbed.status = 'unknown'
-    scrubbed.sourceLabel = 'Store live · загружается с сервера'
+    scrubbed.sourceLabel = 'Store · опубликовано · загружается с сервера'
   }
   return scrubbed
 }

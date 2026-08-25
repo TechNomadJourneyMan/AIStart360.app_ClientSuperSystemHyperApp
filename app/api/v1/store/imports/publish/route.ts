@@ -177,7 +177,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   if (
     !SHA256_PATTERN.test(expectedSha256)
     || !SHA256_PATTERN.test(expectedNormalizedSha256)
-    || !['prices', 'inventory', 'sales'].includes(expectedKind)
+    || !['prices', 'inventory', 'sales', 'management_period'].includes(expectedKind)
     || expectedAcceptedRows === null
     || expectedQuarantinedRows === null
     || expectedSchemaVersion !== STORE_IMPORT_SCHEMA_VERSION
@@ -204,7 +204,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     if (hasWarnings && formText(form, 'confirmWarnings') !== 'true') {
       return error(422, 'warnings_confirmation_required', 'Подтвердите исключение предупреждений и карантина')
     }
-    if (formText(form, 'confirmVariants') !== 'true') {
+    if (expectedKind !== 'management_period' && formText(form, 'confirmVariants') !== 'true') {
       return error(422, 'variants_confirmation_required', 'Подтвердите точное сопоставление вариантов по полному названию')
     }
 

@@ -36,7 +36,12 @@ import {
   journeyDemoIdentityStorageKey,
   type JourneyDemoScenario,
 } from './demo-scenarios'
-import { getCurrentConfirmedJourneyGoal, isJourneyConversationFirst } from './JourneyExperience'
+import {
+  getCurrentConfirmedJourneyGoal,
+  getJourneyExperienceStage,
+  isJourneyConversationFirst,
+  type JourneyExperienceStage,
+} from './JourneyExperience'
 import { JourneyCanvas, JourneyMobileBoard } from './JourneyCanvas'
 import {
   createEmptyWorkspace,
@@ -114,6 +119,50 @@ export async function waitForSerializedAutosaveIdle(
   }
 }
 
+/**
+ * Conversation remains the default until Point B is confirmed. The only
+ * pre-ready escape hatch is an explicit board preview in the authenticated
+ * Store context while the user is working on the goal stage.
+ */
+export function shouldFocusJourneyConversation({
+  context,
+  conversationFirst,
+  experienceStage,
+  phase,
+  storeBoardPreviewOpen,
+}: {
+  context: JourneyContext
+  conversationFirst: boolean
+  experienceStage: JourneyExperienceStage
+  phase: JourneyWorkspaceView['phase']
+  storeBoardPreviewOpen: boolean
+}): boolean {
+  if (phase === 'error') return true
+  const explicitStoreGoalPreview = context === 'store'
+    && experienceStage === 'goal'
+    && storeBoardPreviewOpen
+  return conversationFirst && !explicitStoreGoalPreview
+}
+
+/** Resolves the complete UI transition behind the visible "Open board" action. */
+export function resolveOpenJourneyBoardView({
+  context,
+  experienceStage,
+}: {
+  context: JourneyContext
+  experienceStage: JourneyExperienceStage
+}): {
+  chatExpanded: false
+  mobileView: 'board'
+  storeBoardPreviewOpen: boolean
+} {
+  return {
+    chatExpanded: false,
+    mobileView: 'board',
+    storeBoardPreviewOpen: context === 'store' && experienceStage === 'goal',
+  }
+}
+
 export function JourneyWorkspace({
   initialDemoScenario,
   initialState,
@@ -140,6 +189,7 @@ export function JourneyWorkspace({
   const [hydrated, setHydrated] = useState(false)
   const [busy, setBusy] = useState(false)
   const [chatExpanded, setChatExpanded] = useState(true)
+  const [storeBoardPreviewOpen, setStoreBoardPreviewOpen] = useState(false)
   const [mobileView, setMobileView] = useState<MobileView>('chat')
   const [statusMessage, setStatusMessage] = useState('Подключаем рабочее пространство…')
   const [actionError, setActionError] = useState('')
@@ -178,6 +228,7 @@ export function JourneyWorkspace({
       current?.workspaceId ?? stateRef.current.workspaceId ?? 'store-access-unavailable',
       message,
     ))
+    setStoreBoardPreviewOpen(false)
     setChatExpanded(true)
     setMobileView('chat')
     setActionError(`${message} Ранее показанные финансовые данные Store скрыты.`)
@@ -487,6 +538,7 @@ export function JourneyWorkspace({
 
     setBusy(true)
     setActionError('')
+    setStoreBoardPreviewOpen(false)
     setChatExpanded(true)
     setMobileView('chat')
     await awaitAutosaveIdle()
@@ -786,6 +838,7 @@ export function JourneyWorkspace({
 
   const discussWidget = (widget: JourneyWidgetView) => {
     setDraftSeed(`Обсудим модуль «${widget.title}». Что здесь важнее всего уточнить следующим?`)
+    setStoreBoardPreviewOpen(false)
     setChatExpanded(true)
     setMobileView('chat')
     setStatusMessage(`Готов обсудить модуль «${widget.title}»`)
@@ -803,6 +856,7 @@ export function JourneyWorkspace({
   const acceptSuggestion = (suggestion: JourneySuggestionView) => {
     updateSuggestion(suggestion.id, 'hidden')
     setDraftSeed(suggestion.value)
+    setStoreBoardPreviewOpen(false)
     setChatExpanded(true)
     setMobileView('chat')
   }
@@ -852,11 +906,32 @@ export function JourneyWorkspace({
 
   if (!hydrated) return <WorkspaceSkeleton />
 
+  const experienceStage = getJourneyExperienceStage(state)
   const conversationFirst = isJourneyConversationFirst(state)
-  const focusConversation = conversationFirst || state.phase === 'error'
+  const storeBoardPreviewActive = storeContext
+    && experienceStage === 'goal'
+    && storeBoardPreviewOpen
+  const focusConversation = shouldFocusJourneyConversation({
+    context,
+    conversationFirst,
+    experienceStage,
+    phase: state.phase,
+    storeBoardPreviewOpen,
+  })
   const openBoard = () => {
-    setMobileView('board')
-    setChatExpanded(false)
+    const nextView = resolveOpenJourneyBoardView({ context, experienceStage })
+    setStoreBoardPreviewOpen(nextView.storeBoardPreviewOpen)
+    setMobileView(nextView.mobileView)
+    setChatExpanded(nextView.chatExpanded)
+  }
+  const returnToConversation = () => {
+    setStoreBoardPreviewOpen(false)
+    setMobileView('chat')
+    setChatExpanded(true)
+  }
+  const changeMobileView = (view: MobileView) => {
+    setMobileView(view)
+    if (view === 'chat') setStoreBoardPreviewOpen(false)
   }
 
   const sharedChatProps = {
@@ -968,7 +1043,12 @@ export function JourneyWorkspace({
                   onSuggestionHide={(id) => updateSuggestion(id, 'hidden')}
                 />
                 <div className="absolute bottom-4 left-1/2 z-40 -translate-x-1/2">
-                  <ChatDock {...sharedChatProps} mode="desktop" />
+                  <ChatDock
+                    {...sharedChatProps}
+                    mode="desktop"
+                    boardPreview={storeBoardPreviewActive}
+                    onReturnToConversation={returnToConversation}
+                  />
                 </div>
               </>
             )
@@ -993,7 +1073,7 @@ export function JourneyWorkspace({
           )}
         </main>
 
-        {!isDesktop && <MobileNavigation value={mobileView} onChange={setMobileView} widgetCount={state.widgets.filter((widget) => !widget.hidden).length} />}
+        {!isDesktop && <MobileNavigation value={mobileView} onChange={changeMobileView} widgetCount={state.widgets.filter((widget) => !widget.hidden).length} />}
       </div>
     </Tooltip.Provider>
   )
@@ -1065,7 +1145,26 @@ function WorkspaceHeader({
     ? state.facts.find((fact) => fact.id === 'fact:store:revenue')?.sourceLabel
       ?? state.facts[0]?.sourceLabel
     : undefined
-  const storeVersion = storeSource?.replace(/^Store Control Center\s*·\s*/u, '')
+  const storeCoverage = storeSource?.match(/(?:^|;\s*)coverage=([^;]+)/u)?.[1]
+  const storeStatus = storeCoverage === 'complete'
+    ? 'опубликовано'
+    : storeCoverage === 'partial'
+      ? 'частично'
+      : storeCoverage === 'stale'
+        ? 'устарело'
+        : storeCoverage === 'unavailable'
+          ? 'недоступно'
+          : 'без покрытия'
+  const storeTone = storeCoverage === 'complete'
+    ? 'ok'
+    : storeCoverage === 'partial'
+      ? 'warn'
+      : storeCoverage === 'unavailable'
+        ? 'error'
+        : 'neutral'
+  const storePeriod = storeContext
+    ? state.facts.find((fact) => fact.id === 'fact:store:period')?.value
+    : undefined
   const storeAsOf = storeContext
     ? state.facts.find((fact) => fact.id === 'fact:store:as-of')?.value
     : undefined
@@ -1093,9 +1192,9 @@ function WorkspaceHeader({
         {storeContext && (
           <StatusBadge
             icon={Database}
-            label={storeVersion ? `Store · live · ${storeVersion}` : 'Store · live read-only'}
-            shortLabel="Store · live"
-            tone="ok"
+            label={`Store · ${storeStatus}${storePeriod ? ` · ${storePeriod}` : ''}`}
+            shortLabel={`Store · ${storeStatus}`}
+            tone={storeTone}
           />
         )}
         {storeAsOf && (
@@ -1198,8 +1297,8 @@ function MobileNavigation({
     ariaLabel?: string
     icon: typeof MapIcon
   }> = [
-    { id: 'board' as const, label: 'Путь', icon: MapIcon },
-    { id: 'chat' as const, label: 'Спросить AI', ariaLabel: 'Диалог · спросить AI', icon: MessageCircle },
+    { id: 'board' as const, label: 'Доска', ariaLabel: 'Доска Journey · путь A → B', icon: MapIcon },
+    { id: 'chat' as const, label: 'Чат', ariaLabel: 'Чат · спросить AI', icon: MessageCircle },
     { id: 'modules' as const, label: 'Модули', icon: Layers3 },
   ]
   return (

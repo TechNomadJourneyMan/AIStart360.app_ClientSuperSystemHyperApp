@@ -106,7 +106,12 @@ const parsedPreview = {
     sha256: 'a'.repeat(64),
   },
   detectedKinds: ['inventory'],
-  data: { prices: [], inventory: [{ sku: 'A', name: 'A L' }], sales: [] },
+  data: {
+    prices: [],
+    inventory: [{ sku: 'A', name: 'A L' }],
+    sales: [],
+    management_period: [],
+  },
   quarantine: [],
   issues: [],
   sheets: [],
@@ -232,6 +237,69 @@ describe('POST /api/v1/store/imports/publish', () => {
     const variantResponse = await POST(publishRequest({ confirmVariants: false }))
     expect(variantResponse.status).toBe(422)
     expect((await variantResponse.json()).error.code).toBe('variants_confirmation_required')
+    expect(dependencies.publish).not.toHaveBeenCalled()
+  })
+
+  it('accepts management_period without an effective date or variant acknowledgement', async () => {
+    const management = {
+      ...parsedPreview,
+      detectedKinds: ['management_period'],
+      data: {
+        prices: [],
+        inventory: [],
+        sales: [],
+        management_period: [{ periodStart: '2026-06-01' }],
+      },
+    }
+    dependencies.parse.mockReturnValue(management)
+    dependencies.buildPayload.mockReturnValue({
+      importKind: 'management_period',
+      scopeKey: 'management_period:2026-06:2026-06',
+      effectiveDate: null,
+      periodStart: '2026-06-01',
+      periodEnd: '2026-06-30',
+      rowCount: 1,
+      warningCount: 0,
+      quarantinedCount: 0,
+      rows: [{ scopeKey: 'month:2026-06' }],
+    })
+    dependencies.publish.mockResolvedValue({
+      outcome: 'published',
+      importRunId: 'financial-run-1',
+      importKind: 'management_period',
+      scopeKey: 'management_period:2026-06:2026-06',
+      rowCount: 1,
+      publishedAt: '2026-08-25T12:00:00Z',
+      supersededRunId: null,
+    })
+
+    const response = await POST(publishRequest({
+      kind: 'management_period',
+      confirmVariants: false,
+    }))
+    expect(response.status).toBe(201)
+    expect(dependencies.buildPayload).toHaveBeenCalledWith(management, null)
+    expect(dependencies.publish).toHaveBeenCalledOnce()
+  })
+
+  it('still requires explicit confirmation for partial management periods', async () => {
+    dependencies.parse.mockReturnValue({
+      ...parsedPreview,
+      detectedKinds: ['management_period'],
+      data: { prices: [], inventory: [], sales: [], management_period: [{}] },
+      issues: [{
+        code: 'management_period_partial',
+        severity: 'warning',
+        message: 'Период частичный',
+      }],
+    })
+    const response = await POST(publishRequest({
+      kind: 'management_period',
+      confirmVariants: false,
+      confirmWarnings: false,
+    }))
+    expect(response.status).toBe(422)
+    expect((await response.json()).error.code).toBe('warnings_confirmation_required')
     expect(dependencies.publish).not.toHaveBeenCalled()
   })
 

@@ -29,6 +29,7 @@ function preview(overrides: Partial<StoreImportPreview> = {}): StoreImportPrevie
         snapshotDate: null,
       }],
       sales: [],
+      management_period: [],
     },
     quarantine: [],
     issues: [],
@@ -36,6 +37,45 @@ function preview(overrides: Partial<StoreImportPreview> = {}): StoreImportPrevie
     summary: { acceptedRows: 1, quarantinedRows: 0, skippedRows: 0 },
     ...overrides,
   }
+}
+
+function managementPreview(): StoreImportPreview {
+  return preview({
+    file: {
+      fileName: 'HONOR dynamics.xlsx',
+      format: 'xlsx',
+      sizeBytes: 22_717,
+      sha256: 'b'.repeat(64),
+    },
+    detectedKinds: ['management_period'],
+    data: {
+      prices: [],
+      inventory: [],
+      sales: [],
+      management_period: [{
+        periodStart: '2026-06-01',
+        periodEnd: '2026-06-30',
+        granularity: 'month',
+        currency: 'KZT',
+        revenueBasis: 'net_after_discounts_returns',
+        revenue: 10_173_402,
+        costOfGoods: 3_945_902,
+        grossProfit: 6_227_500,
+        grossMarginPct: 61.2135,
+        reportedGrossProfit: 6_227_499.71,
+        grossProfitReconciliationDelta: -0.29,
+        periodExpenses: 8_467_124.69,
+        bonusExpense: 872_035.44,
+        writeOffExpense: 1_578_282.33,
+        ebitda: -2_239_624.98,
+        ebitdaMarginPct: -22.0145,
+        completeness: 'complete',
+        qualityNote: 'управленческий отчет; округление между management sheets',
+        sourceSheet: 'Динамика по месяцам',
+        sourceRange: 'A22:H22; P&L 2026 (май–июль)!A5:F5',
+      }],
+    },
+  })
 }
 
 describe('Store import publication contract', () => {
@@ -79,6 +119,7 @@ describe('Store import publication contract', () => {
           snapshotDate: '2026-07-30',
         }],
         sales: [],
+        management_period: [],
       },
     })
     expect(() => buildStorePublishPayload(dated, '2026-07-31')).toThrowError(
@@ -93,6 +134,7 @@ describe('Store import publication contract', () => {
           { ...preview().data.inventory[0], warehouseCode: 'UKA', warehouseName: 'Усть-Каменогорск' },
         ],
         sales: [],
+        management_period: [],
       },
       summary: { acceptedRows: 2, quarantinedRows: 0, skippedRows: 0 },
     })
@@ -121,6 +163,7 @@ describe('Store import publication contract', () => {
           costAmount: -5_000,
           discountAmount: -2_000,
         }],
+        management_period: [],
       },
     })
     const payload = buildStorePublishPayload(salesPreview)
@@ -134,6 +177,67 @@ describe('Store import publication contract', () => {
       netRevenue: -8_000,
       warehouseKind: 'marketplace',
     })
+  })
+
+  it('publishes management periods without a synthetic sale, date or variant mapping', () => {
+    const payload = buildStorePublishPayload(managementPreview())
+    expect(payload).toMatchObject({
+      importKind: 'management_period',
+      scopeKey: 'management_period:2026-06:2026-06',
+      effectiveDate: null,
+      periodStart: '2026-06-01',
+      periodEnd: '2026-06-30',
+      rowCount: 1,
+    })
+    expect(payload.rows).toEqual([expect.objectContaining({
+      scopeKey: 'month:2026-06',
+      revenue: 10_173_402,
+      costAmount: 3_945_902,
+      grossProfit: 6_227_500,
+      reportedGrossProfit: 6_227_499.71,
+      grossProfitReconciliationDelta: -0.29,
+      periodExpenses: 8_467_124.69,
+      bonuses: 872_035.44,
+      writeOffs: 1_578_282.33,
+      ebitda: -2_239_624.98,
+    })])
+  })
+
+  it('rejects malformed month boundaries and inconsistent management calculations', () => {
+    const source = managementPreview()
+    const row = source.data.management_period[0]
+    for (const changed of [
+      { ...row, periodStart: '2026-06-02' },
+      { ...row, grossProfit: row.grossProfit + 1 },
+      {
+        ...row,
+        reportedGrossProfit: row.reportedGrossProfit! + 2,
+        grossProfitReconciliationDelta: 2,
+      },
+      { ...row, ebitda: row.ebitda! + 1 },
+    ]) {
+      expect(() => buildStorePublishPayload({
+        ...source,
+        data: { ...source.data, management_period: [changed] },
+      })).toThrowError(expect.objectContaining({
+        code: expect.stringMatching(/^management_period_/),
+      }))
+    }
+  })
+
+  it('rejects duplicate management months before building the manifest', () => {
+    const source = managementPreview()
+    expect(() => buildStorePublishPayload({
+      ...source,
+      data: {
+        ...source.data,
+        management_period: [
+          source.data.management_period[0],
+          { ...source.data.management_period[0] },
+        ],
+      },
+      summary: { ...source.summary, acceptedRows: 2 },
+    })).toThrowError(expect.objectContaining({ code: 'management_period_duplicate' }))
   })
 
   it('rejects sales that span more than one calendar month', () => {
@@ -156,6 +260,7 @@ describe('Store import publication contract', () => {
             netRevenue: 10, costAmount: 5, discountAmount: 0,
           },
         ],
+        management_period: [],
       },
       summary: { acceptedRows: 2, quarantinedRows: 0, skippedRows: 0 },
     })

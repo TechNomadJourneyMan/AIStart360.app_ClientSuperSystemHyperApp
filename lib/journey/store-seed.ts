@@ -7,7 +7,15 @@ import {
   type JourneyWidget,
 } from '@/lib/journey/schema'
 import { formatDate, formatNumber, formatPercent, formatPeriod } from '@/lib/store/format'
-import type { StoreAlert, StoreOverview } from '@/lib/store/types'
+import type {
+  StoreAlert,
+  StoreAnalytics,
+  StoreAnalyticsCoverage,
+  StoreAnalyticsPeriod,
+  StoreAnalyticsSlice,
+  StoreAnalyticsSource,
+  StoreOverview,
+} from '@/lib/store/types'
 
 interface StoreJourneyStateOptions {
   workspaceId: string
@@ -31,10 +39,13 @@ export function buildStoreJourneyState(
   options: StoreJourneyStateOptions,
 ): JourneyState {
   const now = options.now ?? new Date().toISOString()
+  const analytics = overview.source === 'empty' ? undefined : overview.analytics
   const source = storeSourceLabel(overview)
-  const facts = buildFacts(overview, source)
-  const widgets = buildWidgets(overview, source)
-  const nextAction = buildNextAction(overview)
+  const facts = analytics
+    ? buildAnalyticsFacts(overview, analytics)
+    : buildLegacyFacts(overview, source)
+  const widgets = buildWidgets(overview, source, analytics)
+  const nextAction = buildNextAction(overview, analytics)
   const base = createEmptyJourneyState(options.workspaceId)
 
   return journeyStateSchema.parse({
@@ -50,7 +61,7 @@ export function buildStoreJourneyState(
         role: 'assistant',
         text: overview.source === 'empty'
           ? 'Опубликованные данные магазина пока не найдены. Я не буду подставлять демонстрационные показатели или нули.'
-          : `Точка A собрана из ${source}. Показатели не скопированы в Journey: это live read-only представление текущей публикации.`,
+          : `Точка A собрана из ${source}. Показатели не скопированы в Journey: это server read-only представление текущей публикации.`,
         createdAt: now,
       },
       {
@@ -95,14 +106,120 @@ export function buildStoreJourneyState(
     },
     persistence: {
       mode: 'database',
-      label: 'Live Store · без копии в Journey',
+      label: 'Store · без копии в Journey',
     },
     serverRevision: 0,
     updatedAt: now,
   })
 }
 
-function buildFacts(overview: StoreOverview, source: string): JourneyFact[] {
+function buildAnalyticsFacts(
+  overview: StoreOverview,
+  analytics: StoreAnalytics,
+): JourneyFact[] {
+  const latest = analytics.windows.latestPublished
+  const salesFreshness = analytics.freshness.sales
+  const inventoryFreshness = analytics.freshness.inventory
+  const latestSource = analyticsSliceSourceLabel(latest)
+  const inventoryDate = datePart(inventoryFreshness.lastFactAt ?? overview.asOf)
+    ?? latest.period.to
+  const inventorySource = analyticsSourceLabel({
+    source: overview.source === 'myhonor' ? 'myhonor' : 'operational',
+    scopes: ['inventory'],
+    period: { from: inventoryDate, to: inventoryDate },
+    coverage: inventoryFreshness.coverage,
+  })
+  const freshnessSource = analyticsSliceSourceLabel(latest, salesFreshness.coverage)
+  const confidence = latest.coverage === 'complete' ? 1 : 0.8
+  const hasPublishedSalesWindow = latest.source !== 'none'
+    && latest.coverage !== 'not_covered'
+    && latest.coverage !== 'unavailable'
+  const facts: JourneyFact[] = []
+  const push = (
+    id: string,
+    label: string,
+    value: string | null,
+    category: JourneyFact['category'],
+    sourceLabel: string,
+    factConfidence: number,
+  ) => {
+    if (value === null) return
+    facts.push(analyticsFact(id, label, value, category, sourceLabel, factConfidence))
+  }
+
+  if (hasPublishedSalesWindow) {
+    push(
+      'fact:store:period',
+      'Фактический период',
+      formatPeriod(latest.period),
+      'sales',
+      latestSource,
+      confidence,
+    )
+    push(
+      'fact:store:revenue',
+      'Выручка',
+      money(latest.metrics.revenue),
+      'finance',
+      latestSource,
+      confidence,
+    )
+    push(
+      'fact:store:gross-profit',
+      'Валовая прибыль',
+      money(latest.metrics.grossProfit),
+      'finance',
+      latestSource,
+      confidence,
+    )
+    push(
+      'fact:store:gross-margin',
+      'Валовая маржа',
+      nullablePercent(latest.metrics.grossMarginPct),
+      'finance',
+      latestSource,
+      confidence,
+    )
+  }
+  push(
+    'fact:store:inventory',
+    'Доступный остаток',
+    nullableUnits(overview.inventory.availableUnits),
+    'operations',
+    inventorySource,
+    inventoryFreshness.coverage === 'complete' ? 1 : 0.8,
+  )
+  push(
+    'fact:store:freshness',
+    'Свежесть данных',
+    freshnessValue(salesFreshness),
+    'operations',
+    freshnessSource,
+    salesFreshness.coverage === 'complete' ? 1 : 0.8,
+  )
+  return facts
+}
+
+function analyticsFact(
+  id: string,
+  label: string,
+  value: string,
+  category: JourneyFact['category'],
+  sourceLabel: string,
+  confidence: number,
+): JourneyFact {
+  return {
+    id,
+    label,
+    value,
+    category,
+    sourceLabel,
+    confidence,
+    status: 'confirmed',
+  }
+}
+
+function buildLegacyFacts(overview: StoreOverview, source: string): JourneyFact[] {
   const facts: JourneyFact[] = []
   const push = (
     id: string,
@@ -154,7 +271,37 @@ function buildFacts(overview: StoreOverview, source: string): JourneyFact[] {
   return facts
 }
 
-function buildWidgets(overview: StoreOverview, source: string): JourneyWidget[] {
+function buildWidgets(
+  overview: StoreOverview,
+  source: string,
+  analytics?: StoreAnalytics,
+): JourneyWidget[] {
+  const salesSource = analytics
+    ? analyticsSliceSourceLabel(analytics.windows.latestPublished)
+    : source
+  const inventorySource = analytics
+    ? analyticsDomainSourceLabel(analytics, 'inventory', 'operational', analytics.windows.latestPublished.period.to)
+    : source
+  const catalogSource = analytics
+    ? analyticsDomainSourceLabel(
+        analytics,
+        'catalog',
+        analytics.freshness.catalog.syncedAt && !analytics.freshness.catalog.publishedAt
+          ? 'myhonor'
+          : 'operational',
+        analytics.windows.latestPublished.period.to,
+      )
+    : source
+  const financeMetrics = analytics
+    ? buildAnalyticsFinanceMetrics(analytics)
+    : [
+        metric('Выручка', money(overview.metrics.revenue), source),
+        metric('Себестоимость', money(overview.metrics.cost), source),
+        metric('Валовая прибыль', money(overview.metrics.grossProfit), source),
+        metric('Валовая маржа', nullablePercent(overview.metrics.grossMarginPct), source),
+        metric('Скидки', money(overview.metrics.discount), source),
+        metric('Доля скидок', nullablePercent(overview.metrics.discountRatePct), source),
+      ]
   const financial = journeyWidgetSchema.parse({
     id: 'widget:store:finance',
     kind: 'finance_cashflow',
@@ -165,16 +312,15 @@ function buildWidgets(overview: StoreOverview, source: string): JourneyWidget[] 
     focused: false,
     position: { x: 100, y: 500 },
     data: {
-      metrics: [
-        metric('Выручка', money(overview.metrics.revenue), source),
-        metric('Себестоимость', money(overview.metrics.cost), source),
-        metric('Валовая прибыль', money(overview.metrics.grossProfit), source),
-        metric('Валовая маржа', nullablePercent(overview.metrics.grossMarginPct), source),
-        metric('Скидки', money(overview.metrics.discount), source),
-        metric('Доля скидок', nullablePercent(overview.metrics.discountRatePct), source),
-      ],
-      sourceStatus: overview.availability.sales ? 'connected' : 'missing',
-      nextQuestion: overview.availability.sales
+      metrics: financeMetrics,
+      sourceStatus: analytics
+        ? ['complete', 'partial'].includes(analytics.windows.latestPublished.coverage)
+          ? 'connected'
+          : 'missing'
+        : overview.availability.sales ? 'connected' : 'missing',
+      nextQuestion: analytics && currentPeriodNeedsRecovery(analytics)
+        ? currentPeriodRecoveryTitle(analytics)
+        : overview.availability.sales
         ? 'Какую измеримую Точку B владелец выбирает для следующего сопоставимого периода?'
         : 'Опубликуйте продажи, чтобы рассчитать экономику периода.',
     },
@@ -193,12 +339,12 @@ function buildWidgets(overview: StoreOverview, source: string): JourneyWidget[] 
       domain: 'Интернет-магазин и розничная торговля',
       purpose: 'Показывать только подтверждённый операционный масштаб без вычисления будущих значений.',
       metrics: [
-        metric('Продано единиц', nullableNumber(overview.metrics.units), source),
-        metric('Возвраты', nullableNumber(overview.metrics.returns), source),
-        metric('Доступно на складах', nullableUnits(overview.inventory.availableUnits), source),
-        metric('Зарезервировано', nullableUnits(overview.inventory.reservedUnits), source),
-        metric('Товаров в контуре', overview.catalog.products > 0 ? formatNumber(overview.catalog.products) : null, source),
-        metric('Складов', overview.inventory.warehouses.length > 0 ? formatNumber(overview.inventory.warehouses.length) : null, source),
+        metric('Продано единиц', nullableNumber(overview.metrics.units), salesSource),
+        metric('Возвраты', nullableNumber(overview.metrics.returns), salesSource),
+        metric('Доступно на складах', nullableUnits(overview.inventory.availableUnits), inventorySource),
+        metric('Зарезервировано', nullableUnits(overview.inventory.reservedUnits), inventorySource),
+        metric('Товаров в контуре', overview.catalog.products > 0 ? formatNumber(overview.catalog.products) : null, catalogSource),
+        metric('Складов', overview.inventory.warehouses.length > 0 ? formatNumber(overview.inventory.warehouses.length) : null, inventorySource),
       ],
       guidance: overview.limitations.slice(0, 2).map((detail) => ({
         title: 'Ограничение данных',
@@ -228,7 +374,7 @@ function buildWidgets(overview: StoreOverview, source: string): JourneyWidget[] 
     },
   })
 
-  const signals = splitSignals(overview)
+  const signals = splitSignals(overview, analytics)
   const risks = journeyWidgetSchema.parse({
     id: 'widget:store:risks',
     kind: 'risks_opportunities',
@@ -244,6 +390,112 @@ function buildWidgets(overview: StoreOverview, source: string): JourneyWidget[] 
   return [financial, operations, process, risks]
 }
 
+function buildAnalyticsFinanceMetrics(analytics: StoreAnalytics): Metric[] {
+  const latest = analytics.windows.latestPublished
+  const latestMonth = monthLabel(latest.period.to.slice(0, 7))
+  const latestSource = analyticsSliceSourceLabel(latest)
+  const ytd = confirmedYtd(analytics)
+  const ytdYear = latest.period.to.slice(0, 4)
+  const ytdSource = ytd?.sourceLabel
+    ?? analyticsSliceSourceLabel(analytics.windows.yearToDate)
+  const ebitda = confirmedMayJulyEbitda(analytics, ytdYear)
+
+  return [
+    analyticsMetric(`Выручка · ${latestMonth}`, money(latest.metrics.revenue), latestSource),
+    analyticsMetric(`Валовая прибыль · ${latestMonth}`, money(latest.metrics.grossProfit), latestSource),
+    analyticsMetric(`Валовая маржа · ${latestMonth}`, nullablePercent(latest.metrics.grossMarginPct), latestSource),
+    analyticsMetric(`Выручка YTD ${ytdYear}`, money(ytd?.revenue ?? null), ytdSource),
+    analyticsMetric(`Валовая прибыль YTD ${ytdYear}`, money(ytd?.grossProfit ?? null), ytdSource),
+    analyticsMetric(`EBITDA · май–июль ${ytdYear}`, money(ebitda.value), ebitda.sourceLabel),
+  ]
+}
+
+function confirmedYtd(analytics: StoreAnalytics): {
+  revenue: number
+  grossProfit: number
+  sourceLabel: string
+} | null {
+  const latest = analytics.windows.latestPublished
+  const year = latest.period.to.slice(0, 4)
+  const direct = analytics.windows.yearToDate
+  if (
+    direct.coverage === 'complete'
+    && direct.period.from.startsWith(year)
+    && direct.metrics.revenue !== null
+    && direct.metrics.grossProfit !== null
+  ) {
+    return {
+      revenue: direct.metrics.revenue,
+      grossProfit: direct.metrics.grossProfit,
+      sourceLabel: analyticsSliceSourceLabel(direct),
+    }
+  }
+
+  const endMonth = latest.period.to.slice(0, 7)
+  const expectedMonths = monthsThrough(year, endMonth)
+  if (!expectedMonths.length) return null
+  const historyByMonth = new Map(analytics.history.map((period) => [period.month, period]))
+  const confirmed = expectedMonths.map((month) => historyByMonth.get(month))
+  if (confirmed.some((period) => (
+    !period
+    || period.coverage !== 'complete'
+    || period.metrics.revenue === null
+    || period.metrics.grossProfit === null
+  ))) return null
+
+  const periods = confirmed.filter((period): period is NonNullable<typeof period> => Boolean(period))
+  const sources = new Set(periods.map((period) => period.source))
+  const source: StoreAnalyticsSource = sources.size === 1
+    ? periods[0]?.source ?? 'none'
+    : 'mixed'
+  const scopes = periods.flatMap((period) => period.scopeKeys.length
+    ? period.scopeKeys
+    : period.scopeKey ? [period.scopeKey] : [])
+  return {
+    revenue: periods.reduce((sum, period) => sum + (period.metrics.revenue ?? 0), 0),
+    grossProfit: periods.reduce((sum, period) => sum + (period.metrics.grossProfit ?? 0), 0),
+    sourceLabel: analyticsSourceLabel({
+      source,
+      scopes,
+      period: { from: `${year}-01-01`, to: latest.period.to },
+      coverage: 'complete',
+    }),
+  }
+}
+
+function confirmedMayJulyEbitda(
+  analytics: StoreAnalytics,
+  year: string,
+): { value: number | null; sourceLabel: string } {
+  const months = [`${year}-05`, `${year}-06`, `${year}-07`]
+  const byMonth = new Map(analytics.pnl.periods.map((period) => [period.month, period]))
+  const periods = months.map((month) => byMonth.get(month))
+  const complete = periods.every((period) => (
+    period?.coverage === 'complete'
+    && period.ebitda !== null
+  ))
+  const knownPeriods = periods.filter((period): period is NonNullable<typeof period> => Boolean(period))
+  const sources = new Set(knownPeriods.map((period) => period.source))
+  const source = sources.size === 1 ? knownPeriods[0]?.source ?? 'none' : 'mixed'
+  const scopes = knownPeriods.flatMap((period) => period.scopeKey ? [period.scopeKey] : [])
+  const sourceLabel = analyticsSourceLabel({
+    source,
+    scopes,
+    period: { from: `${year}-05-01`, to: `${year}-07-31` },
+    coverage: complete ? 'complete' : analytics.pnl.coverage,
+  })
+
+  // EBITDA is already a published direct P&L value. Summing it is deliberate:
+  // recomputing GP - expenses - bonuses - write-offs here would subtract
+  // bonuses/write-offs a second time for reports where expenses include them.
+  return {
+    value: complete
+      ? knownPeriods.reduce((sum, period) => sum + (period.ebitda ?? 0), 0)
+      : null,
+    sourceLabel,
+  }
+}
+
 function sourceStage(id: string, name: string, ready: boolean, metricValue?: string) {
   return {
     id,
@@ -254,11 +506,42 @@ function sourceStage(id: string, name: string, ready: boolean, metricValue?: str
   }
 }
 
-function splitSignals(overview: StoreOverview) {
-  const risks = overview.alerts
+function splitSignals(overview: StoreOverview, analytics?: StoreAnalytics) {
+  const risks: Array<{ title: string; detail: string; status: 'risk' }> = []
+  if (analytics && currentPeriodNeedsRecovery(analytics)) {
+    const today = analytics.windows.today
+    const monthToDate = analytics.windows.monthToDate
+    risks.push({
+      title: 'Текущий период не покрыт',
+      detail: `Сегодня: ${today.coverage}; MTD: ${monthToDate.coverage}. Пустой период не считается нулевой выручкой.`,
+      status: 'risk',
+    })
+  }
+  if (analytics?.pnl.hasNegativeEbitda) {
+    const negative = analytics.pnl.periods
+      .filter((period) => period.ebitda !== null && period.ebitda < 0)
+      .map((period) => `${monthLabel(period.month)}: ${money(period.ebitda)}`)
+      .join(' · ')
+    risks.push({
+      title: 'Отрицательная EBITDA',
+      detail: negative || 'В опубликованном P&L есть период с отрицательной EBITDA.',
+      status: 'risk',
+    })
+  }
+  for (const limitation of analytics?.limitations ?? []) {
+    if (risks.length >= 8) break
+    risks.push({
+      title: 'Ограничение аналитики',
+      detail: limitation,
+      status: 'risk',
+    })
+  }
+  for (const alert of overview.alerts
     .filter((alert) => alert.level !== 'info')
-    .slice(0, 8)
-    .map(alertNote)
+  ) {
+    if (risks.length >= 8) break
+    risks.push(alertNote(alert))
+  }
   for (const limitation of overview.limitations.slice(0, Math.max(0, 8 - risks.length))) {
     risks.push({
       title: 'Ограничение данных',
@@ -275,7 +558,11 @@ function splitSignals(overview: StoreOverview) {
       status: 'opportunity' as const,
     }))
 
-  if (overview.confidence === 'complete' && opportunities.length === 0) {
+  if (
+    overview.confidence === 'complete'
+    && opportunities.length === 0
+    && (!analytics || !currentPeriodNeedsRecovery(analytics))
+  ) {
     opportunities.push({
       title: 'Полный фактический контур',
       detail: 'Продажи, остатки и прайс опубликованы и готовы для постановки измеримой Точки B.',
@@ -293,7 +580,17 @@ function alertNote(alert: StoreAlert) {
   }
 }
 
-function buildNextAction(overview: StoreOverview) {
+function buildNextAction(overview: StoreOverview, analytics?: StoreAnalytics) {
+  if (analytics && currentPeriodNeedsRecovery(analytics)) {
+    return {
+      id: 'roadmap:store:restore-current-period',
+      title: currentPeriodRecoveryTitle(analytics),
+      description: `Сегодня (${analytics.windows.today.coverage}) и MTD (${analytics.windows.monthToDate.coverage}) не имеют полного подтверждённого покрытия. Пустые окна не заменяются нулём.`,
+      horizon: 'Следующий безопасный шаг',
+      progress: 0,
+      status: 'next' as const,
+    }
+  }
   const missing = [
     !overview.availability.sales ? 'продажи' : null,
     !overview.availability.inventory ? 'остатки' : null,
@@ -337,6 +634,12 @@ function metric(label: string, value: string | null, sourceLabel: string): Metri
     : { label, value, status: 'known', sourceLabel }
 }
 
+function analyticsMetric(label: string, value: string | null, sourceLabel: string): Metric {
+  return value === null
+    ? { label, status: 'unknown', sourceLabel }
+    : { label, value, status: 'known', sourceLabel }
+}
+
 function money(value: number | null): string | null {
   if (value === null || !Number.isFinite(value)) return null
   return `${value.toLocaleString('ru-RU', {
@@ -358,13 +661,125 @@ function nullablePercent(value: number | null): string | null {
   return value === null || !Number.isFinite(value) ? null : formatPercent(value)
 }
 
+function freshnessValue(freshness: StoreAnalytics['freshness']['sales']): string | null {
+  if (!freshness.lastFactAt) return null
+  const lastFact = `Последний факт: ${formatDate(freshness.lastFactAt)}`
+  const published = freshness.publishedAt
+    ? `опубликовано ${formatDate(freshness.publishedAt)}`
+    : null
+  return [lastFact, published, `покрытие: ${freshness.coverage}`]
+    .filter((value): value is string => Boolean(value))
+    .join(' · ')
+}
+
+function analyticsSliceSourceLabel(
+  slice: StoreAnalyticsSlice,
+  coverage = slice.coverage,
+): string {
+  return analyticsSourceLabel({
+    source: slice.source,
+    scopes: slice.scopeKeys.length
+      ? slice.scopeKeys
+      : slice.scopeKey ? [slice.scopeKey] : [],
+    period: slice.period,
+    coverage,
+  })
+}
+
+function analyticsDomainSourceLabel(
+  analytics: StoreAnalytics,
+  domain: keyof StoreAnalytics['freshness'],
+  source: StoreAnalyticsSource,
+  fallbackDate: string,
+): string {
+  const freshness = analytics.freshness[domain]
+  const factDate = datePart(freshness.lastFactAt ?? freshness.syncedAt) ?? fallbackDate
+  return analyticsSourceLabel({
+    source,
+    scopes: [domain],
+    period: { from: factDate, to: factDate },
+    coverage: freshness.coverage,
+  })
+}
+
+function analyticsSourceLabel({
+  source,
+  scopes,
+  period,
+  coverage,
+}: {
+  source: string
+  scopes: string[]
+  period: StoreAnalyticsPeriod
+  coverage: StoreAnalyticsCoverage
+}): string {
+  const uniqueScopes = [...new Set(scopes)]
+  const scope = formatAnalyticsScopes(uniqueScopes)
+  return `source=${source}; scope=${scope}; period=${period.from}..${period.to}; coverage=${coverage}`
+}
+
+function formatAnalyticsScopes(scopes: string[]): string {
+  if (!scopes.length) return 'none'
+  const sorted = [...scopes].sort()
+  const monthScopes = sorted.filter((scope) => /^month:\d{4}-\d{2}$/.test(scope))
+  if (monthScopes.length === sorted.length && monthScopes.length > 1) {
+    const first = monthScopes[0]
+    const last = monthScopes.at(-1)
+    const expected = first && last
+      ? monthsThrough(first.slice(6, 10), last.slice(6)).map((month) => `month:${month}`)
+      : []
+    if (expected.length === monthScopes.length && expected.every((scope, index) => scope === monthScopes[index])) {
+      return `${first}..${last}`
+    }
+  }
+  return sorted.join(',')
+}
+
+function currentPeriodNeedsRecovery(analytics: StoreAnalytics): boolean {
+  return analytics.windows.today.coverage !== 'complete'
+    || analytics.windows.monthToDate.coverage !== 'complete'
+}
+
+function currentPeriodRecoveryTitle(analytics: StoreAnalytics): string {
+  return `Загрузить ${monthLabel(analytics.currentDate.slice(0, 7))} или обновить подключение`
+}
+
+function monthLabel(month: string): string {
+  if (!/^\d{4}-\d{2}$/.test(month)) return month
+  const parsed = new Date(`${month}-01T00:00:00.000Z`)
+  if (Number.isNaN(parsed.getTime())) return month
+  return parsed.toLocaleDateString('ru-RU', {
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'UTC',
+  }).replace(/\s+г\.$/, '')
+}
+
+function monthsThrough(year: string, endMonth: string): string[] {
+  if (!/^\d{4}$/.test(year) || !new RegExp(`^${year}-\\d{2}$`).test(endMonth)) return []
+  const end = Number(endMonth.slice(5, 7))
+  if (end < 1 || end > 12) return []
+  return Array.from({ length: end }, (_, index) => `${year}-${String(index + 1).padStart(2, '0')}`)
+}
+
+function datePart(value: string | null | undefined): string | null {
+  if (!value) return null
+  const matched = value.match(/^\d{4}-\d{2}-\d{2}/)?.[0]
+  return matched ?? null
+}
+
 function storeSourceLabel(overview: StoreOverview): string {
+  if (overview.analytics && overview.source !== 'empty') {
+    return analyticsSliceSourceLabel(overview.analytics.windows.latestPublished)
+  }
   if (overview.source === 'operational') {
     return overview.versionLabel
       ? `Store Control Center · ${overview.versionLabel}`
       : 'Store Control Center · опубликованные отчёты'
   }
-  if (overview.source === 'myhonor') return 'Store Control Center · MyHonor live'
+  if (overview.source === 'myhonor') {
+    return 'Store Control Center · MyHonor · наблюдаемые заказы'
+  }
   return 'Store Control Center · источник не подключён'
 }
 

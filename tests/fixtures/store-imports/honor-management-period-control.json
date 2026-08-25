@@ -1,0 +1,47 @@
+{
+  "fixtureVersion": 1,
+  "source": {
+    "logicalName": "HONOR dynamics 2025-2026",
+    "sha256": "5bd0ebc23f04eca040663fa907adf2cea78c45039544366eefe0759de4ea0e16",
+    "rawWorkbookCommitted": false,
+    "baseSheet": "Динамика по месяцам",
+    "baseDataRange": "A5:H23",
+    "pnlSheet": "P&L 2026 (май–июль)",
+    "pnlDataRange": "A4:F6"
+  },
+  "coverage": {
+    "uniqueMonths": 19,
+    "firstMonth": "2025-01-01",
+    "lastMonth": "2026-07-01",
+    "partialMonths": ["2025-09-01", "2025-10-01"],
+    "pnlMonths": ["2026-05-01", "2026-06-01", "2026-07-01"]
+  },
+  "baseControls": {
+    "2025": {
+      "revenue": 230670168,
+      "costOfGoods": 121403812,
+      "derivedGrossProfit": 109266356
+    },
+    "2026-01..07": {
+      "revenue": 202125074,
+      "costOfGoods": 119502757,
+      "derivedGrossProfit": 82622317
+    }
+  },
+  "pnlControls": {
+    "2026-05..07": {
+      "revenue": 47666895,
+      "reportedGrossProfit": 22395620.25,
+      "periodExpenses": 33455973.34,
+      "bonuses": 4177705.89,
+      "writeOffs": 3342183.83,
+      "ebitda": -11060353.09
+    }
+  },
+  "trustPolicy": {
+    "baseIndependentColumns": ["C", "D"],
+    "pnlIndependentColumns": ["B", "C", "D", "E", "F"],
+    "ignoredFormulaColumns": ["Динамика по месяцам!E:G", "P&L 2026 (май–июль)!G:H", "По годам!B:E"],
+    "grossProfitReconciliationToleranceKzt": 1
+  }
+}

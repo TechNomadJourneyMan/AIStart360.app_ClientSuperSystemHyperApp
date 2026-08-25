@@ -82,7 +82,7 @@ describe('Journey server Store context', () => {
     expect(funnel.data.metrics[0]).toEqual({
       label: 'Выручка',
       status: 'unknown',
-      sourceLabel: 'Store live · загружается с сервера',
+      sourceLabel: 'Store · опубликовано · загружается с сервера',
     })
     const news = redacted.widgets.find((widget) => widget.id === 'widget:user:news-9')
     expect(news?.kind).toBe('news_digest')

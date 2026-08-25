@@ -172,13 +172,13 @@ describe('Store → Journey live projection', () => {
     expect(html).toContain('Уточните измеримую цель')
     expect(html).toContain('Продолжить с AI')
     expect(html).toContain('Подтверждённые показатели Store')
-    expect(html).toContain('Точка A · Store live')
+    expect(html).toContain('Точка A · опубликованные Store-факты')
     expect(html).toContain('read-only')
     expect(html).toContain('10 913 278,54 ₸')
     expect(html).toContain('62 039 ед.')
     expect(html).not.toContain('&lt;script&gt;alert(1)&lt;/script&gt;')
     expect(html).not.toContain('<script>alert(1)</script>')
-    expect(html).not.toContain('Store · live read-only')
+    expect(html).not.toContain('Store · live')
 
     const empty = completeOverview({
       source: 'empty',

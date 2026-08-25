@@ -304,7 +304,7 @@ function StorePointASummary({ facts }: { facts: JourneyWorkspaceView['facts'] })
       <div className="mb-2 flex items-center justify-between gap-3 px-0.5">
         <p className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-primary">
           <Database className="size-3" aria-hidden />
-          Точка A · Store live
+          Точка A · опубликованные Store-факты
         </p>
         <span className="flex items-center gap-1 text-[10px] text-on-surface-variant">
           <ShieldCheck className="size-3 text-primary" aria-hidden />
@@ -326,6 +326,19 @@ function StorePointASummary({ facts }: { facts: JourneyWorkspaceView['facts'] })
           </div>
         ))}
       </dl>
+      <details className="mt-2 rounded-lg border border-white/5 bg-black/10 px-2.5 py-2 text-[10px] text-on-surface-variant">
+        <summary className="cursor-pointer select-none font-medium text-primary">Источники показателей</summary>
+        <ul className="mt-2 space-y-1.5">
+          {facts
+            .filter((fact) => !['fact:store:company', 'fact:store:as-of'].includes(fact.id))
+            .slice(0, 12)
+            .map((fact) => (
+              <li key={`source:${fact.id}`} className="break-words">
+                <span className="font-medium text-on-surface">{fact.label}:</span> {fact.sourceLabel}
+              </li>
+            ))}
+        </ul>
+      </details>
     </section>
   )
 }

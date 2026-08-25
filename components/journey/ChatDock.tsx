@@ -8,6 +8,7 @@ import {
   ChevronUp,
   FileText,
   LoaderCircle,
+  MessageCircle,
   Paperclip,
   Send,
   ShieldCheck,
@@ -46,6 +47,8 @@ interface ChatDockProps {
   onSuggestionReject: (id: string) => void
   onSuggestionHide: (id: string) => void
   onOpenBoard?: () => void
+  boardPreview?: boolean
+  onReturnToConversation?: () => void
   filesEnabled?: boolean
   context?: JourneyContext
 }
@@ -70,6 +73,8 @@ export function ChatDock({
   onSuggestionReject,
   onSuggestionHide,
   onOpenBoard,
+  boardPreview = false,
+  onReturnToConversation,
   filesEnabled = true,
   context = 'default',
 }: ChatDockProps) {
@@ -108,7 +113,11 @@ export function ChatDock({
 
   const experienceStage = getJourneyExperienceStage(state)
   const conversationFirst = isJourneyConversationFirst(state)
-  const showHistory = mode === 'mobile' || expanded || conversationFirst
+  const desktopBoardPreview = mode === 'desktop' && context === 'store' && boardPreview
+  const showHistory = mode === 'mobile'
+    || (!desktopBoardPreview && (expanded || conversationFirst))
+  const canOpenBoard = experienceStage === 'ready'
+    || (context === 'store' && experienceStage === 'goal')
   const placeholder = experienceStage === 'describe'
     ? 'Например: у меня магазин в Алматы, продаём…'
     : experienceStage === 'confirm'
@@ -133,6 +142,7 @@ export function ChatDock({
     <section
       aria-label="AI-диалог о бизнесе"
       data-conversation-first={conversationFirst ? 'true' : 'false'}
+      data-board-preview={desktopBoardPreview ? 'true' : 'false'}
       className={cn(
         'flex min-h-0 flex-col overflow-hidden border border-white/10 bg-surface-container-lowest shadow-modal',
         mode === 'desktop'
@@ -174,7 +184,17 @@ export function ChatDock({
               : 'Один вопрос за раз · факты подтверждаете вы'}
           </p>
         </div>
-        {mode === 'desktop' && !conversationFirst && (
+        {desktopBoardPreview && onReturnToConversation ? (
+          <button
+            type="button"
+            aria-label="Вернуться к диалогу"
+            onClick={onReturnToConversation}
+            className="flex min-h-9 items-center gap-2 rounded-lg px-2.5 text-xs text-on-surface-variant hover:bg-white/5 hover:text-on-surface"
+          >
+            <MessageCircle className="size-3.5" aria-hidden />
+            К диалогу
+          </button>
+        ) : mode === 'desktop' && !conversationFirst && (
           <button
             type="button"
             aria-label={expanded ? 'Свернуть историю диалога' : 'Раскрыть историю диалога'}
@@ -205,7 +225,7 @@ export function ChatDock({
                     state={state}
                     context={context}
                     onDraftRequest={setDraft}
-                    onOpenBoard={experienceStage === 'ready' ? onOpenBoard : undefined}
+                    onOpenBoard={canOpenBoard ? onOpenBoard : undefined}
                     onConfirmGoal={context === 'store'
                       ? () => onSend(STORE_POINT_B_CONFIRMATION_MESSAGE)
                       : undefined}

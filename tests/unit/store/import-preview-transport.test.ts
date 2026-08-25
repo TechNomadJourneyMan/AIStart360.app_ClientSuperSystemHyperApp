@@ -44,6 +44,7 @@ function fixture(): StoreImportPreview {
           discountAmount: -100,
         },
       ],
+      management_period: [],
     },
     quarantine: [{
       sheetName: 'Продажи',
@@ -111,5 +112,56 @@ describe('Store import preview transport', () => {
     expect(result.previewRows).toHaveLength(12)
     expect(result.warnings).toHaveLength(20)
     expect(result.warnings).toEqual(Array.from({ length: 20 }, (_, index) => `issue ${index}`))
+  })
+
+  it('shows separate canonical and reported financial controls', () => {
+    const input = fixture()
+    input.detectedKinds = ['management_period']
+    input.data.sales = []
+    input.data.management_period = [{
+      periodStart: '2026-06-01',
+      periodEnd: '2026-06-30',
+      granularity: 'month',
+      currency: 'KZT',
+      revenueBasis: 'net_after_discounts_returns',
+      revenue: 10_173_402,
+      costOfGoods: 3_945_902,
+      grossProfit: 6_227_500,
+      grossMarginPct: 61.2135,
+      reportedGrossProfit: 6_227_499.71,
+      grossProfitReconciliationDelta: -0.29,
+      periodExpenses: 8_467_124.69,
+      bonusExpense: 872_035.44,
+      writeOffExpense: 1_578_282.33,
+      ebitda: -2_239_624.98,
+      ebitdaMarginPct: -22.0145,
+      completeness: 'complete',
+      qualityNote: 'округление между management sheets',
+      sourceSheet: 'Динамика по месяцам',
+      sourceRange: 'A22:H22; P&L 2026 (май–июль)!A5:F5',
+    }]
+    input.quarantine = []
+    input.issues = []
+    input.summary = { acceptedRows: 1, quarantinedRows: 0, skippedRows: 0 }
+    input.sheets = [{
+      sheetName: 'Динамика по месяцам',
+      detectedKind: 'management_period',
+      headerRows: [4],
+      columnCount: 8,
+      candidateRows: 1,
+      acceptedRows: 1,
+      quarantinedRows: 0,
+      skippedRows: 0,
+    }]
+
+    expect(toStoreImportPreviewTransport(input).totals).toMatchObject({
+      'Периодов': 1,
+      'Выручка периодов, KZT': 10_173_402,
+      'Себестоимость периодов, KZT': 3_945_902,
+      'Валовая прибыль (расчёт), KZT': 6_227_500,
+      'P&L валовая прибыль, KZT': 6_227_499.71,
+      'Расходы периода, KZT': 8_467_124.69,
+      'EBITDA, KZT': -2_239_624.98,
+    })
   })
 })

@@ -1,6 +1,6 @@
 export type StoreImportFormat = 'xls' | 'xlsx' | 'csv'
 
-export type StoreImportKind = 'prices' | 'inventory' | 'sales'
+export type StoreImportKind = 'prices' | 'inventory' | 'sales' | 'management_period'
 
 export type StoreImportChannel =
   | 'retail_store'
@@ -43,6 +43,36 @@ export interface StoreSalesImportRow {
   discountAmount: number
 }
 
+export type StoreManagementPeriodCompleteness = 'complete' | 'partial' | 'provisional'
+
+/**
+ * A monthly management-accounting fact. It deliberately remains separate from
+ * operational sales: the workbook contains period aggregates, not order lines.
+ */
+export interface StoreManagementPeriodImportRow {
+  periodStart: string
+  periodEnd: string
+  granularity: 'month'
+  currency: 'KZT'
+  revenueBasis: 'net_after_discounts_returns'
+  revenue: number
+  costOfGoods: number
+  grossProfit: number
+  grossMarginPct: number | null
+  /** Independently reported P&L value; null outside the P&L-covered months. */
+  reportedGrossProfit: number | null
+  grossProfitReconciliationDelta: number | null
+  periodExpenses: number | null
+  bonusExpense: number | null
+  writeOffExpense: number | null
+  ebitda: number | null
+  ebitdaMarginPct: number | null
+  completeness: StoreManagementPeriodCompleteness
+  qualityNote: string | null
+  sourceSheet: string
+  sourceRange: string
+}
+
 export type StoreImportQuarantineReason =
   | 'formula_cell'
   | 'error_cell'
@@ -71,6 +101,10 @@ export interface StoreImportIssue {
     | 'sheet_not_recognized'
     | 'derived_formula_sheet_skipped'
     | 'synthetic_sku_generated'
+    | 'management_period_partial'
+    | 'management_period_provisional'
+    | 'management_period_pnl_ignored'
+    | 'management_period_pnl_mismatch'
     | 'row_quarantined'
     | 'no_importable_rows'
   severity: 'warning' | 'error'
@@ -104,6 +138,7 @@ export interface StoreImportPreview {
     prices: StorePriceImportRow[]
     inventory: StoreInventoryImportRow[]
     sales: StoreSalesImportRow[]
+    management_period: StoreManagementPeriodImportRow[]
   }
   quarantine: StoreImportQuarantineItem[]
   issues: StoreImportIssue[]

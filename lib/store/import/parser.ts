@@ -11,6 +11,8 @@ import type {
   StoreImportQuarantineReason,
   StoreImportSheetPreview,
   StoreInventoryImportRow,
+  StoreManagementPeriodCompleteness,
+  StoreManagementPeriodImportRow,
   StorePriceImportRow,
   StoreSalesImportRow,
 } from './types'
@@ -101,6 +103,18 @@ interface ParsedSheet<T> {
   preview: StoreImportSheetPreview
 }
 
+interface ParsedManagementWorkbook {
+  rows: StoreManagementPeriodImportRow[]
+  quarantine: StoreImportQuarantineItem[]
+  issues: StoreImportIssue[]
+  sheets: StoreImportSheetPreview[]
+}
+
+interface ManagementHeader {
+  row: number
+  kind: 'base' | 'pnl'
+}
+
 interface CandidateBudget {
   rows: number
 }
@@ -144,6 +158,39 @@ export function parseStoreImport(buffer: Buffer, fileName: string): StoreImportP
   const sha256 = createHash('sha256').update(buffer).digest('hex')
   const workbook = readWorkbook(buffer, format)
   const budget: CandidateBudget = { rows: 0 }
+
+  const managementPeriod = parseManagementPeriodWorkbook(workbook, budget)
+  if (managementPeriod) {
+    const acceptedRows = managementPeriod.rows.length
+    const quarantinedRows = managementPeriod.quarantine.length
+    const skippedRows = managementPeriod.sheets.reduce(
+      (sum, sheet) => sum + sheet.skippedRows,
+      0,
+    )
+    const issues = [...managementPeriod.issues]
+    if (acceptedRows === 0) {
+      issues.push({
+        code: 'no_importable_rows',
+        severity: 'error',
+        message: 'В файле не найдено ни одного безопасного управленческого периода',
+      })
+    }
+    return {
+      file: { fileName, format, sizeBytes: buffer.length, sha256 },
+      detectedKinds: ['management_period'],
+      data: {
+        prices: [],
+        inventory: [],
+        sales: [],
+        management_period: managementPeriod.rows,
+      },
+      quarantine: managementPeriod.quarantine,
+      issues,
+      sheets: managementPeriod.sheets,
+      summary: { acceptedRows, quarantinedRows, skippedRows },
+    }
+  }
+
   const keys: ImportKeys = {
     prices: new Set<string>(),
     inventory: new Set<string>(),
@@ -155,6 +202,7 @@ export function parseStoreImport(buffer: Buffer, fileName: string): StoreImportP
   const prices: StorePriceImportRow[] = []
   const inventory: StoreInventoryImportRow[] = []
   const sales: StoreSalesImportRow[] = []
+  const managementPeriodRows: StoreManagementPeriodImportRow[] = []
   const detectedKinds = new Set<StoreImportKind>()
 
   workbook.SheetNames.forEach((sheetName, sheetIndex) => {
@@ -252,7 +300,7 @@ export function parseStoreImport(buffer: Buffer, fileName: string): StoreImportP
       sha256,
     },
     detectedKinds: Array.from(detectedKinds),
-    data: { prices, inventory, sales },
+    data: { prices, inventory, sales, management_period: managementPeriodRows },
     quarantine,
     issues,
     sheets,
@@ -392,6 +440,406 @@ function emptySheetPreview(sheetName: string, columnCount: number): StoreImportS
     quarantinedRows: 0,
     skippedRows: 0,
   }
+}
+
+const MANAGEMENT_MONTHS = new Map<string, number>([
+  ['январь', 1],
+  ['февраль', 2],
+  ['март', 3],
+  ['апрель', 4],
+  ['май', 5],
+  ['июнь', 6],
+  ['июль', 7],
+  ['август', 8],
+  ['сентябрь', 9],
+  ['октябрь', 10],
+  ['ноябрь', 11],
+  ['декабрь', 12],
+])
+
+function findManagementHeader(
+  sheet: XLSX.WorkSheet,
+  range: XLSX.Range,
+): ManagementHeader | null {
+  const lastRow = Math.min(range.e.r, range.s.r + 20)
+  for (let row = range.s.r; row <= lastRow; row += 1) {
+    const values = Array.from({ length: 8 }, (_, column) =>
+      normalizeText(cellText(resolveMergedCell(sheet, row, column))),
+    )
+    if (
+      values[0] === 'год'
+      && values[1] === 'месяц'
+      && /выручк/.test(values[2])
+      && /(?:себест|закуп)/.test(values[3])
+    ) return { row, kind: 'base' }
+
+    if (
+      values[0] === 'месяц'
+      && /выручк/.test(values[1])
+      && /(?:вал прибыль|gross profit)/.test(values[2])
+      && /расходы периода/.test(values[3])
+      && /бонус/.test(values[4])
+      && /списан/.test(values[5])
+    ) return { row, kind: 'pnl' }
+  }
+  return null
+}
+
+function managementPeriodBounds(year: number, month: number): { start: string; end: string } {
+  const prefix = `${year}-${String(month).padStart(2, '0')}`
+  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate()
+  return { start: `${prefix}-01`, end: `${prefix}-${String(lastDay).padStart(2, '0')}` }
+}
+
+function managementCompleteness(note: string): StoreManagementPeriodCompleteness {
+  const normalized = normalizeText(note)
+  if (/частич/.test(normalized)) return 'partial'
+  if (/предвар|чернов|provisional/.test(normalized)) return 'provisional'
+  return 'complete'
+}
+
+function managementPercent(numerator: number, denominator: number): number | null {
+  if (denominator === 0) return null
+  return quantizeNumeric((numerator / denominator) * 100, 4, 999_999.9999)
+}
+
+function managementIssue(
+  code: Extract<StoreImportIssue['code'],
+    | 'management_period_partial'
+    | 'management_period_provisional'
+    | 'management_period_pnl_ignored'
+    | 'management_period_pnl_mismatch'>,
+  message: string,
+  sheetName: string,
+  rowNumber: number,
+): StoreImportIssue {
+  return { code, severity: 'warning', message, sheetName, rowNumber }
+}
+
+/**
+ * Parses the HONOR management workbook as period aggregates. It is purposely
+ * exclusive: no monthly aggregate is ever converted into a synthetic sale.
+ * Base revenue/cost remain canonical; P&L gross profit is retained separately
+ * as an independently reported reconciliation value.
+ */
+function parseManagementPeriodWorkbook(
+  workbook: XLSX.WorkBook,
+  budget: CandidateBudget,
+): ParsedManagementWorkbook | null {
+  let baseSheetName: string | null = null
+  let baseHeader: ManagementHeader | null = null
+
+  for (const sheetName of workbook.SheetNames) {
+    const sheet = workbook.Sheets[sheetName]
+    const range = getUsedRange(sheet)
+    if (!range) continue
+    const header = findManagementHeader(sheet, range)
+    if (header?.kind === 'base') {
+      baseSheetName = sheetName
+      baseHeader = header
+      break
+    }
+  }
+  if (!baseSheetName || !baseHeader) return null
+
+  const rows: StoreManagementPeriodImportRow[] = []
+  const quarantine: StoreImportQuarantineItem[] = []
+  const issues: StoreImportIssue[] = []
+  const sheets: StoreImportSheetPreview[] = []
+  const byPeriod = new Map<string, StoreManagementPeriodImportRow>()
+  const baseSheet = workbook.Sheets[baseSheetName]
+  const baseRange = getUsedRange(baseSheet)!
+  const baseColumnCount = baseRange.e.c - baseRange.s.c + 1
+  if (baseColumnCount > STORE_IMPORT_MAX_COLUMNS) {
+    throw new StoreImportError(
+      'column_limit_exceeded',
+      `Лист «${baseSheetName}» содержит ${baseColumnCount} колонок; лимит — ${STORE_IMPORT_MAX_COLUMNS}`,
+    )
+  }
+  assertSheetRowLimit(baseSheetName, baseRange.e.r - baseHeader.row)
+
+  let baseSkipped = 0
+  for (let row = baseHeader.row + 1; row <= baseRange.e.r; row += 1) {
+    if (!hasAnyCellValue(baseSheet, row, [0, 1, 2, 3, 7])) {
+      baseSkipped += 1
+      continue
+    }
+
+    const monthText = cleanText(inspectCell(baseSheet, row, 1).value)
+    if (isTotalText(monthText)) {
+      baseSkipped += 1
+      continue
+    }
+    const month = MANAGEMENT_MONTHS.get(normalizeText(monthText))
+    const hasFinancialCells = hasAnyCellValue(baseSheet, row, [2, 3])
+    if (!month && !hasFinancialCells) {
+      baseSkipped += 1
+      continue
+    }
+
+    assertCandidateBudget(budget)
+    const failures = new RowFailures()
+    const yearCell = inspectCell(baseSheet, row, 0)
+    const monthCell = inspectCell(baseSheet, row, 1)
+    const revenueCell = inspectCell(baseSheet, row, 2)
+    const costCell = inspectCell(baseSheet, row, 3)
+    const noteCell = inspectCell(baseSheet, row, 7)
+    failures.addUnsafe('year', yearCell)
+    failures.addUnsafe('month', monthCell)
+    failures.addUnsafe('revenue', revenueCell)
+    failures.addUnsafe('costOfGoods', costCell)
+    failures.addUnsafe('qualityNote', noteCell)
+
+    const parsedYear = parseNumber(yearCell.value)
+    const year = parsedYear !== null && Number.isInteger(parsedYear) ? parsedYear : null
+    if (year === null || year < 2000 || year > 2100) failures.add('invalid_date', 'year')
+    if (!month) failures.add('invalid_date', 'month')
+
+    const rawRevenue = revenueCell.unsafeReason ? null : parseNumber(revenueCell.value)
+    const rawCost = costCell.unsafeReason ? null : parseNumber(costCell.value)
+    const revenue = rawRevenue === null ? null : quantizeMoney(rawRevenue)
+    const costOfGoods = rawCost === null ? null : quantizeMoney(rawCost)
+    if (rawRevenue === null || rawRevenue < 0 || revenue === null) {
+      failures.add('invalid_number', 'revenue')
+    }
+    if (rawCost === null || rawCost < 0 || costOfGoods === null) {
+      failures.add('invalid_number', 'costOfGoods')
+    }
+
+    const qualityNote = cleanText(noteCell.value) || null
+    if (qualityNote && qualityNote.length > 500) failures.add('value_too_long', 'qualityNote')
+
+    const periodKey = year !== null && month
+      ? `${year}-${String(month).padStart(2, '0')}`
+      : ''
+    if (periodKey && byPeriod.has(periodKey)) failures.add('duplicate_key', 'periodStart')
+
+    if (failures.any || year === null || !month || revenue === null || costOfGoods === null) {
+      quarantine.push(failures.toQuarantine(baseSheetName, row, 'management_period'))
+      continue
+    }
+
+    const bounds = managementPeriodBounds(year, month)
+    const grossProfit = quantizeMoney(revenue - costOfGoods)!
+    const completeness = managementCompleteness(qualityNote ?? '')
+    const parsedRow: StoreManagementPeriodImportRow = {
+      periodStart: bounds.start,
+      periodEnd: bounds.end,
+      granularity: 'month',
+      currency: 'KZT',
+      revenueBasis: 'net_after_discounts_returns',
+      revenue,
+      costOfGoods,
+      grossProfit,
+      grossMarginPct: managementPercent(grossProfit, revenue),
+      reportedGrossProfit: null,
+      grossProfitReconciliationDelta: null,
+      periodExpenses: null,
+      bonusExpense: null,
+      writeOffExpense: null,
+      ebitda: null,
+      ebitdaMarginPct: null,
+      completeness,
+      qualityNote,
+      sourceSheet: baseSheetName,
+      sourceRange: `A${row + 1}:H${row + 1}`,
+    }
+    rows.push(parsedRow)
+    byPeriod.set(periodKey, parsedRow)
+
+    if (completeness === 'partial') {
+      issues.push(managementIssue(
+        'management_period_partial',
+        `Период ${periodKey} помечен источником как частичный`,
+        baseSheetName,
+        row + 1,
+      ))
+    } else if (completeness === 'provisional') {
+      issues.push(managementIssue(
+        'management_period_provisional',
+        `Период ${periodKey} помечен источником как предварительный`,
+        baseSheetName,
+        row + 1,
+      ))
+    }
+  }
+
+  sheets.push({
+    sheetName: baseSheetName,
+    detectedKind: 'management_period',
+    headerRows: [baseHeader.row + 1],
+    columnCount: baseColumnCount,
+    candidateRows: rows.length + quarantine.length,
+    acceptedRows: rows.length,
+    quarantinedRows: quarantine.length,
+    skippedRows: baseSkipped,
+  })
+
+  for (const sheetName of workbook.SheetNames) {
+    if (sheetName === baseSheetName) continue
+    const sheet = workbook.Sheets[sheetName]
+    const range = getUsedRange(sheet)
+    const columnCount = range ? range.e.c - range.s.c + 1 : 0
+    if (columnCount > STORE_IMPORT_MAX_COLUMNS) {
+      throw new StoreImportError(
+        'column_limit_exceeded',
+        `Лист «${sheetName}» содержит ${columnCount} колонок; лимит — ${STORE_IMPORT_MAX_COLUMNS}`,
+      )
+    }
+    if (!range) {
+      sheets.push(emptySheetPreview(sheetName, columnCount))
+      continue
+    }
+
+    const header = findManagementHeader(sheet, range)
+    if (header?.kind !== 'pnl') {
+      const derived = /(?:по годам|сравнение по годам)/.test(normalizeText(sheetName))
+      issues.push({
+        code: derived ? 'derived_formula_sheet_skipped' : 'sheet_not_recognized',
+        severity: 'warning',
+        message: derived
+          ? `Расчётный лист «${sheetName}» пропущен: формулы и их кэш не являются источником фактов`
+          : `Лист «${sheetName}» не относится к управленческим периодам и был пропущен`,
+        sheetName,
+      })
+      sheets.push(emptySheetPreview(sheetName, columnCount))
+      continue
+    }
+
+    assertSheetRowLimit(sheetName, range.e.r - header.row)
+    const pnlYear = inferYear(sheetName)
+    let pnlAccepted = 0
+    let pnlQuarantined = 0
+    let pnlSkipped = 0
+    for (let row = header.row + 1; row <= range.e.r; row += 1) {
+      if (!hasAnyCellValue(sheet, row, [0, 1, 2, 3, 4, 5])) {
+        pnlSkipped += 1
+        continue
+      }
+      const monthCell = inspectCell(sheet, row, 0)
+      const monthText = cleanText(monthCell.value)
+      if (isTotalText(monthText)) {
+        pnlSkipped += 1
+        continue
+      }
+      const month = MANAGEMENT_MONTHS.get(normalizeText(monthText))
+      if (!month && !hasAnyCellValue(sheet, row, [1, 2, 3, 4, 5])) {
+        pnlSkipped += 1
+        continue
+      }
+
+      assertCandidateBudget(budget)
+      const failures = new RowFailures()
+      failures.addUnsafe('month', monthCell)
+      const fields = [
+        ['revenue', 1],
+        ['reportedGrossProfit', 2],
+        ['periodExpenses', 3],
+        ['bonusExpense', 4],
+        ['writeOffExpense', 5],
+      ] as const
+      const values = new Map<(typeof fields)[number][0], number>()
+      for (const [field, column] of fields) {
+        const cell = inspectCell(sheet, row, column)
+        failures.addUnsafe(field, cell)
+        const raw = cell.unsafeReason ? null : parseNumber(cell.value)
+        const value = raw === null ? null : quantizeMoney(raw)
+        if (raw === null || value === null || (field !== 'reportedGrossProfit' && raw < 0)) {
+          failures.add('invalid_number', field)
+        } else {
+          values.set(field, value)
+        }
+      }
+      if (!pnlYear || !month) failures.add('invalid_date', 'month')
+
+      const periodKey = pnlYear && month
+        ? `${pnlYear}-${String(month).padStart(2, '0')}`
+        : ''
+      const target = periodKey ? byPeriod.get(periodKey) : undefined
+      if (!target) failures.add('missing_required_value', 'periodStart')
+
+      if (failures.any || !target) {
+        quarantine.push(failures.toQuarantine(sheetName, row, 'management_period'))
+        pnlQuarantined += 1
+        issues.push(managementIssue(
+          'management_period_pnl_ignored',
+          `Строка P&L ${row + 1} не использована: независимые B–F должны быть безопасными числами`,
+          sheetName,
+          row + 1,
+        ))
+        continue
+      }
+
+      const pnlRevenue = values.get('revenue')!
+      const reportedGrossProfit = values.get('reportedGrossProfit')!
+      const reconciliationDelta = quantizeMoney(reportedGrossProfit - target.grossProfit)!
+      if (
+        !amountsAreConsistent(pnlRevenue, target.revenue)
+        || Math.abs(reconciliationDelta) > 1
+      ) {
+        const mismatch = new RowFailures()
+        mismatch.add('amount_inconsistent',
+          !amountsAreConsistent(pnlRevenue, target.revenue) ? 'revenue' : 'reportedGrossProfit')
+        quarantine.push(mismatch.toQuarantine(sheetName, row, 'management_period'))
+        pnlQuarantined += 1
+        issues.push(managementIssue(
+          'management_period_pnl_mismatch',
+          `Строка P&L ${periodKey} расходится с базовым управленческим периодом более чем на допустимое округление`,
+          sheetName,
+          row + 1,
+        ))
+        continue
+      }
+
+      const periodExpenses = values.get('periodExpenses')!
+      const bonusExpense = values.get('bonusExpense')!
+      const writeOffExpense = values.get('writeOffExpense')!
+      if (bonusExpense > periodExpenses || writeOffExpense > periodExpenses) {
+        const inconsistent = new RowFailures()
+        inconsistent.add('amount_inconsistent', 'periodExpenses')
+        quarantine.push(inconsistent.toQuarantine(sheetName, row, 'management_period'))
+        pnlQuarantined += 1
+        issues.push(managementIssue(
+          'management_period_pnl_mismatch',
+          `Строка P&L ${periodKey} содержит компонент расходов больше расходов периода`,
+          sheetName,
+          row + 1,
+        ))
+        continue
+      }
+
+      const ebitda = quantizeMoney(reportedGrossProfit - periodExpenses)!
+      target.reportedGrossProfit = reportedGrossProfit
+      target.grossProfitReconciliationDelta = reconciliationDelta
+      target.periodExpenses = periodExpenses
+      target.bonusExpense = bonusExpense
+      target.writeOffExpense = writeOffExpense
+      target.ebitda = ebitda
+      target.ebitdaMarginPct = managementPercent(ebitda, target.revenue)
+      target.sourceRange = `${target.sourceRange}; ${sheetName}!A${row + 1}:F${row + 1}`
+      if (reconciliationDelta !== 0) {
+        target.qualityNote = [
+          target.qualityNote,
+          'округление между management sheets',
+        ].filter(Boolean).join('; ')
+      }
+      pnlAccepted += 1
+    }
+
+    sheets.push({
+      sheetName,
+      detectedKind: 'management_period',
+      headerRows: [header.row + 1],
+      columnCount,
+      candidateRows: pnlAccepted + pnlQuarantined,
+      acceptedRows: pnlAccepted,
+      quarantinedRows: pnlQuarantined,
+      skippedRows: pnlSkipped,
+    })
+  }
+
+  rows.sort((left, right) => left.periodStart.localeCompare(right.periodStart))
+  return { rows, quarantine, issues, sheets }
 }
 
 function findPriceHeader(

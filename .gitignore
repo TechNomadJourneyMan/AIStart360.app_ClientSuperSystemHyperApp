@@ -16,6 +16,7 @@ node_modules
 # Misc
 .DS_Store
 *.pem
+!config/certs/supabase-root-2021-ca.pem
 
 # Debug
 npm-debug.log*

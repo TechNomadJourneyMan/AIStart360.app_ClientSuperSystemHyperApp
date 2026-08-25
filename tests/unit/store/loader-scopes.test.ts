@@ -72,6 +72,21 @@ class FakeQuery {
   }
 }
 
+class ErrorQuery {
+  select(): this { return this }
+  eq(): this { return this }
+  order(): this { return this }
+  range(): this { return this }
+
+  then<TResult1 = { data: null; error: { message: string } }, TResult2 = never>(
+    onFulfilled?: ((value: { data: null; error: { message: string } }) => TResult1 | PromiseLike<TResult1>) | null,
+    onRejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null,
+  ): Promise<TResult1 | TResult2> {
+    return Promise.resolve({ data: null, error: { message: 'relation does not exist' } })
+      .then(onFulfilled, onRejected)
+  }
+}
+
 function fakeSupabase(tables: Record<string, Row[]>): {
   client: SupabaseClient
   calls: QueryCall[]
@@ -206,6 +221,7 @@ describe('Store loader publication scopes', () => {
           import_run_id: 'prices-global',
           user_id: 'user-1',
           variant_id: variant.id,
+          snapshot_date: '2026-08-07',
           purchase_price: 10,
           retail_price: 20,
         })),
@@ -213,6 +229,7 @@ describe('Store loader publication scopes', () => {
           import_run_id: 'prices-non-global',
           user_id: 'user-1',
           variant_id: 'variant-1',
+          snapshot_date: '2026-08-09',
           purchase_price: 1_000,
           retail_price: 2_000,
         },
@@ -279,12 +296,20 @@ describe('Store loader publication scopes', () => {
       'inventory-uka',
       'inventory-main',
     ]))
-    expect(calls).toContainEqual({
-      table: 'store_sales_lines',
-      operation: 'eq',
-      column: 'import_run_id',
-      value: 'sales-current',
-    })
+    const salesRunFilter = calls.find((call) =>
+      call.table === 'store_sales_lines'
+      && call.operation === 'in'
+      && call.column === 'import_run_id',
+    )
+    expect(new Set(salesRunFilter?.value as string[])).toEqual(new Set([
+      'sales-current',
+      'sales-corrected-june',
+    ]))
+    expect(overview.analytics?.history.map((period) => period.month)).toEqual([
+      '2026-06',
+      '2026-07',
+    ])
+    expect(overview.analytics?.windows.latestPublished.metrics.revenue).toBe(100)
     expect(calls).toContainEqual({
       table: 'store_price_snapshots',
       operation: 'eq',
@@ -297,5 +322,99 @@ describe('Store loader publication scopes', () => {
       column: 'status',
       value: 'published',
     })
+  })
+
+  it('falls back without failing when the optional financial schema is absent', async () => {
+    const { client: baseClient } = fakeSupabase({
+      companies: [{ id: 'company-1', user_id: 'user-1', name: 'HONOR Kazakhstan' }],
+      store_import_runs: [],
+      ecommerce_products: [{
+        id: 'product-1',
+        user_id: 'user-1',
+        source: 'myhonor.shop',
+        sku: 'HONOR-1',
+        name: 'HONOR',
+        price: 10_000,
+        availability: 'in_stock',
+        image_url: null,
+        catalog_active: true,
+        catalog_synced_at: '2026-08-10T10:00:00.000Z',
+      }],
+      ecommerce_orders: [],
+      ecommerce_order_items: [],
+    })
+    const client = {
+      from(table: string) {
+        if (table === 'store_financial_periods') return new ErrorQuery()
+        return baseClient.from(table)
+      },
+    } as unknown as SupabaseClient
+
+    const overview = await loadStoreOverview(client, 'user-1')
+
+    expect(overview.catalog.products).toBe(1)
+    expect(overview.analytics?.schemaVersion).toBe(2)
+    expect(overview.analytics?.pnl.coverage).toBe('unavailable')
+    expect(overview.limitations).toContain(
+      'Расширенный финансовый импорт ещё не опубликован; P&L собран только из доступных продаж.',
+    )
+  })
+
+  it('joins only published owner-scoped financial periods into the main DTO', async () => {
+    const { client } = fakeSupabase({
+      companies: [{ id: 'company-1', user_id: 'user-1', name: 'HONOR Kazakhstan' }],
+      store_import_runs: [],
+      ecommerce_products: [],
+      ecommerce_orders: [],
+      ecommerce_order_items: [],
+      store_financial_imports: [{
+        id: 'financial-1',
+        user_id: 'user-1',
+        company_id: 'company-1',
+        status: 'published',
+        published_at: '2026-08-24T10:00:00.000Z',
+        source_sha256: 'a'.repeat(64),
+      }],
+      store_financial_periods: [{
+        import_id: 'financial-1',
+        user_id: 'user-1',
+        company_id: 'company-1',
+        period_month: '2026-07-01',
+        revenue: 28_053_253,
+        cost_amount: 17_139_974.46,
+        reported_gross_profit: 10_913_279.29,
+        period_expenses: 18_973_632.38,
+        bonuses: 3_000_000,
+        write_offs: 2_000_000,
+        ebitda: -8_060_353.09,
+        completeness: 'complete',
+        note: 'Округление P&L 0,75 ₸',
+        scope_key: 'month:2026-07',
+        source_sheet: 'P&L',
+        superseded_at: null,
+      }],
+    })
+
+    const overview = await loadStoreOverview(client, 'user-1')
+
+    expect(overview.availability.sales).toBe(true)
+    expect(overview.period).toEqual({ from: '2026-07-01', to: '2026-07-31' })
+    expect(overview.metrics).toMatchObject({
+      revenue: 28_053_253,
+      cost: 17_139_974.46,
+      grossProfit: 10_913_278.54,
+    })
+    expect(overview.analytics?.windows.latestPublished).toMatchObject({
+      source: 'financial_report',
+      coverage: 'complete',
+      scopeKey: 'month:2026-07',
+    })
+    expect(overview.analytics?.pnl.periods).toEqual([
+      expect.objectContaining({
+        month: '2026-07',
+        grossProfit: 10_913_279.29,
+        ebitda: -8_060_353.09,
+      }),
+    ])
   })
 })

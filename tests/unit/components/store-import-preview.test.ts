@@ -106,6 +106,33 @@ describe('StoreImportPreviewView', () => {
     expect(continueButton).not.toContain('disabled=""')
   })
 
+  it('places management periods without date or variant controls and gates partial data on warnings', () => {
+    const management = {
+      ...preview,
+      kind: 'management_period',
+      warnings: ['Период 2025-09 помечен источником как частичный'],
+      quarantinedRows: 0,
+    }
+    const blocked = render({
+      phase: 'success',
+      selectedFileName: management.fileName,
+      data: management,
+    })
+    expect(blocked).toContain('Управленческие периоды')
+    expect(blocked).not.toContain('Дата снимка остатков')
+    expect(blocked).not.toContain('Точное сопоставление вариантов')
+    expect(blocked).toContain('Предупреждения проверены')
+
+    const configured = render({
+      phase: 'success',
+      selectedFileName: management.fileName,
+      data: management,
+      confirmWarnings: true,
+    })
+    const continueButton = configured.slice(configured.indexOf('Перейти к подтверждению') - 500)
+    expect(continueButton).not.toContain('disabled=""')
+  })
+
   it('renders an accessible confirmation and atomic publication progress', () => {
     const confirmation = render({
       phase: 'success',

@@ -67,6 +67,11 @@ describe('GET /api/v1/store/overview', () => {
   })
 
   it('binds the overview to the session user and disables caching', async () => {
+    dependencies.load.mockResolvedValueOnce({
+      source: 'empty',
+      confidence: 'empty',
+      analytics: { schemaVersion: 2, timezone: 'Asia/Almaty' },
+    })
     const response = await GET(request())
     expect(response.status).toBe(200)
     expect(response.headers.get('cache-control')).toBe('private, no-store')
@@ -77,7 +82,11 @@ describe('GET /api/v1/store/overview', () => {
     )
     expect(await response.json()).toEqual({
       ok: true,
-      data: { source: 'empty', confidence: 'empty' },
+      data: {
+        source: 'empty',
+        confidence: 'empty',
+        analytics: { schemaVersion: 2, timezone: 'Asia/Almaty' },
+      },
     })
   })
 

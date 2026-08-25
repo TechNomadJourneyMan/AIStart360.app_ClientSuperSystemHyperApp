@@ -90,6 +90,48 @@ function previewTotals(preview: StoreImportPreview): Record<string, number> {
       0,
     ))
   }
+  // Keep the preview endpoint tolerant during rolling deploys: previews
+  // produced by the pre-financial schema do not contain this collection.
+  const managementPeriods = preview.data.management_period ?? []
+  if (managementPeriods.length > 0) {
+    const rows = managementPeriods
+    const pnlRows = rows.filter((row) => row.reportedGrossProfit !== null)
+    totals['Периодов'] = rows.length
+    totals['Выручка периодов, KZT'] = roundMoney(rows.reduce(
+      (sum, row) => sum + row.revenue,
+      0,
+    ))
+    totals['Себестоимость периодов, KZT'] = roundMoney(rows.reduce(
+      (sum, row) => sum + row.costOfGoods,
+      0,
+    ))
+    totals['Валовая прибыль (расчёт), KZT'] = roundMoney(rows.reduce(
+      (sum, row) => sum + row.grossProfit,
+      0,
+    ))
+    if (pnlRows.length > 0) {
+      totals['P&L валовая прибыль, KZT'] = roundMoney(pnlRows.reduce(
+        (sum, row) => sum + (row.reportedGrossProfit ?? 0),
+        0,
+      ))
+      totals['Расходы периода, KZT'] = roundMoney(pnlRows.reduce(
+        (sum, row) => sum + (row.periodExpenses ?? 0),
+        0,
+      ))
+      totals['Бонусы, KZT'] = roundMoney(pnlRows.reduce(
+        (sum, row) => sum + (row.bonusExpense ?? 0),
+        0,
+      ))
+      totals['Списания, KZT'] = roundMoney(pnlRows.reduce(
+        (sum, row) => sum + (row.writeOffExpense ?? 0),
+        0,
+      ))
+      totals['EBITDA, KZT'] = roundMoney(pnlRows.reduce(
+        (sum, row) => sum + (row.ebitda ?? 0),
+        0,
+      ))
+    }
+  }
   return totals
 }
 

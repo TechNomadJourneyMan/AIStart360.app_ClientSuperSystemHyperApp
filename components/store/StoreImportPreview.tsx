@@ -46,7 +46,7 @@ export type StoreImportPublishPhase =
 export interface StoreImportPublishResult {
   outcome: 'published' | 'duplicate'
   importRunId: string
-  importKind: 'prices' | 'inventory' | 'sales'
+  importKind: 'prices' | 'inventory' | 'sales' | 'management_period'
   scopeKey: string
   rowCount: number
   publishedAt: string
@@ -116,6 +116,7 @@ function isPreviewData(value: unknown): value is StoreImportPreviewData {
 function canonicalImportKind(value: string): StoreImportPublishResult['importKind'] | null {
   const kind = value.trim().toLowerCase()
   if (kind === 'prices' || kind === 'price' || kind === 'price_list') return 'prices'
+  if (kind === 'management_period') return 'management_period'
   if (kind === 'inventory' || kind === 'sales') return kind
   return null
 }
@@ -150,12 +151,13 @@ function publicationCanProceed(
 ): boolean {
   const kind = canonicalImportKind(data.kind)
   const dateRequired = kind === 'inventory' || kind === 'prices'
+  const variantsRequired = kind !== 'management_period'
   const warningsRequired = data.quarantinedRows > 0 || data.warnings.length > 0
   return data.ready
     && data.errors.length === 0
     && kind !== null
     && (!dateRequired || validDateInput(effectiveDate))
-    && confirmVariants
+    && (!variantsRequired || confirmVariants)
     && (!warningsRequired || confirmWarnings)
 }
 
@@ -268,6 +270,7 @@ function kindLabel(kind: string): string {
     price: 'Прайс',
     prices: 'Прайс',
     price_list: 'Прайс',
+    management_period: 'Управленческие периоды',
     unknown: 'Не определён',
   }
   return labels[kind.toLowerCase()] ?? kind
@@ -493,22 +496,24 @@ function PublicationPanel({
             </div>
           )}
 
-          <label htmlFor={variantsId} className="flex cursor-pointer items-start gap-3 rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
-            <input
-              id={variantsId}
-              type="checkbox"
-              checked={confirmVariants}
-              readOnly={!onConfirmVariantsChange}
-              onChange={onConfirmVariantsChange}
-              className="mt-0.5 h-5 w-5 shrink-0 accent-primary"
-            />
-            <span>
-              <span className="block text-sm font-bold text-on-surface">Точное сопоставление вариантов</span>
-              <span className="mt-1 block text-xs leading-relaxed text-on-surface-variant">
-                Подтверждаю сопоставление по полному нормализованному названию. Артикул поставщика сохраняется как атрибут, а отсутствующие варианты создаются отдельно.
+          {kind !== 'management_period' && (
+            <label htmlFor={variantsId} className="flex cursor-pointer items-start gap-3 rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
+              <input
+                id={variantsId}
+                type="checkbox"
+                checked={confirmVariants}
+                readOnly={!onConfirmVariantsChange}
+                onChange={onConfirmVariantsChange}
+                className="mt-0.5 h-5 w-5 shrink-0 accent-primary"
+              />
+              <span>
+                <span className="block text-sm font-bold text-on-surface">Точное сопоставление вариантов</span>
+                <span className="mt-1 block text-xs leading-relaxed text-on-surface-variant">
+                  Подтверждаю сопоставление по полному нормализованному названию. Артикул поставщика сохраняется как атрибут, а отсутствующие варианты создаются отдельно.
+                </span>
               </span>
-            </span>
-          </label>
+            </label>
+          )}
 
           {warningsConfirmationRequired && (
             <label htmlFor={warningsId} className="flex cursor-pointer items-start gap-3 rounded-xl border border-tertiary-container/20 bg-tertiary-container/[0.05] p-4">

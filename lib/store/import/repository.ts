@@ -61,7 +61,12 @@ function parseResult(value: unknown): PublishStoreImportResult | null {
   if (
     (outcome !== 'published' && outcome !== 'duplicate')
     || !importRunId
-    || (importKind !== 'prices' && importKind !== 'inventory' && importKind !== 'sales')
+    || (
+      importKind !== 'prices'
+      && importKind !== 'inventory'
+      && importKind !== 'sales'
+      && importKind !== 'management_period'
+    )
     || !scopeKey
     || rowCount === null
     || !publishedAt
@@ -86,7 +91,7 @@ export async function publishStoreImport(
     sourceSizeBytes: input.sourceSizeBytes,
     payload: input.payload,
   })
-  const { data, error } = await client.rpc('publish_store_import', {
+  const commonArguments = {
     p_user_id: input.userId,
     p_company_id: input.companyId,
     p_source_sha256: input.sourceSha256,
@@ -95,15 +100,20 @@ export async function publishStoreImport(
     p_schema_version: STORE_IMPORT_SCHEMA_VERSION,
     p_idempotency_key: input.idempotencyKey,
     p_manifest_sha256: manifestSha256,
-    p_import_kind: input.payload.importKind,
     p_scope_key: input.payload.scopeKey,
-    p_effective_date: input.payload.effectiveDate,
     p_period_start: input.payload.periodStart,
     p_period_end: input.payload.periodEnd,
     p_warning_count: input.payload.warningCount,
     p_quarantined_count: input.payload.quarantinedCount,
     p_rows: input.payload.rows,
-  })
+  }
+  const { data, error } = input.payload.importKind === 'management_period'
+    ? await client.rpc('publish_store_financial_import', commonArguments)
+    : await client.rpc('publish_store_import', {
+        ...commonArguments,
+        p_import_kind: input.payload.importKind,
+        p_effective_date: input.payload.effectiveDate,
+      })
 
   if (error) {
     const code = typeof error.code === 'string' ? error.code : ''

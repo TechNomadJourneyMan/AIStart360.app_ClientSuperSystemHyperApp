@@ -28,6 +28,40 @@ const payload = {
   }],
 }
 
+const financialPayload = {
+  importKind: 'management_period' as const,
+  scopeKey: 'management_period:2026-06:2026-06',
+  effectiveDate: null,
+  periodStart: '2026-06-01',
+  periodEnd: '2026-06-30',
+  rowCount: 1,
+  warningCount: 0,
+  quarantinedCount: 0,
+  rows: [{
+    scopeKey: 'month:2026-06',
+    periodStart: '2026-06-01',
+    periodEnd: '2026-06-30',
+    granularity: 'month' as const,
+    currency: 'KZT' as const,
+    revenueBasis: 'net_after_discounts_returns' as const,
+    revenue: 10_173_402,
+    costAmount: 3_945_902,
+    grossProfit: 6_227_500,
+    grossMarginPct: 61.2135,
+    reportedGrossProfit: 6_227_499.71,
+    grossProfitReconciliationDelta: -0.29,
+    periodExpenses: 8_467_124.69,
+    bonuses: 872_035.44,
+    writeOffs: 1_578_282.33,
+    ebitda: -2_239_624.98,
+    ebitdaMarginPct: -22.0145,
+    completeness: 'complete' as const,
+    note: 'округление между management sheets',
+    sourceSheet: 'Динамика по месяцам',
+    sourceRange: 'A22:H22; P&L 2026 (май–июль)!A5:F5',
+  }],
+}
+
 function input() {
   return {
     userId: 'user-1',
@@ -86,6 +120,40 @@ describe('Store import publication repository', () => {
         code: expected,
       }))
     }
+  })
+
+  it('routes management periods only to the isolated financial RPC', async () => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: [{
+        outcome: 'published',
+        import_run_id: 'financial-run-1',
+        import_kind: 'management_period',
+        scope_key: financialPayload.scopeKey,
+        row_count: 1,
+        published_at: '2026-08-25T12:00:00Z',
+        superseded_run_id: null,
+      }],
+      error: null,
+    })
+    const result = await publishStoreImport(
+      { rpc } as unknown as SupabaseClient,
+      { ...input(), sourceFileName: 'store-import-aaaaaaaaaaaa.xlsx', payload: financialPayload },
+    )
+
+    expect(result).toMatchObject({
+      importKind: 'management_period',
+      importRunId: 'financial-run-1',
+    })
+    expect(rpc).toHaveBeenCalledOnce()
+    const [name, args] = rpc.mock.calls[0]
+    expect(name).toBe('publish_store_financial_import')
+    expect(args).toMatchObject({
+      p_scope_key: financialPayload.scopeKey,
+      p_period_start: '2026-06-01',
+      p_rows: financialPayload.rows,
+    })
+    expect(args).not.toHaveProperty('p_import_kind')
+    expect(args).not.toHaveProperty('p_effective_date')
   })
 
   it('fails closed on an incomplete RPC response', async () => {
