@@ -39,6 +39,12 @@ const myhonor = vi.hoisted(() => ({
   applyDeliveryStatus: vi.fn(),
 }))
 
+const reactivation = vi.hoisted(() => ({
+  applyDeliveryStatus: vi.fn(),
+  applyInboundSignal: vi.fn(),
+  restoreInboundContext: vi.fn(),
+}))
+
 vi.mock('@/lib/omnichannel/repository', () => repository)
 vi.mock('@/lib/inngest', () => ({ inngest: queue }))
 vi.mock('@/lib/omnichannel/processing-jobs', () => ({
@@ -54,6 +60,13 @@ vi.mock('@/workflows/process-omnichannel-message', () => ({
 }))
 vi.mock('@/lib/integrations/myhonor/order-notification-repository', () => ({
   applyMyHonorOrderNotificationDeliveryStatus: myhonor.applyDeliveryStatus,
+}))
+vi.mock('@/lib/integrations/myhonor/reactivation/webhook-signals', () => ({
+  applyMyHonorReactivationDeliveryStatus: reactivation.applyDeliveryStatus,
+  applyMyHonorReactivationInboundSignal: reactivation.applyInboundSignal,
+}))
+vi.mock('@/lib/integrations/myhonor/reactivation/outbound-context', () => ({
+  recordMyHonorReactivationInboundContext: reactivation.restoreInboundContext,
 }))
 
 import { GET, POST } from '@/app/api/webhooks/meta/route'
@@ -165,6 +178,19 @@ describe('/api/webhooks/meta', () => {
       notificationId: null,
       state: null,
     })
+    reactivation.applyDeliveryStatus.mockResolvedValue({
+      matched: false,
+      recipientId: null,
+      state: null,
+    })
+    reactivation.applyInboundSignal.mockResolvedValue({
+      applied: true,
+      reason: null,
+      matchedContact: false,
+      attributedRecipientId: null,
+      suppressed: false,
+    })
+    reactivation.restoreInboundContext.mockResolvedValue(true)
     repository.ingestNormalizedMessage.mockResolvedValue({
       duplicate: false,
       messageId: 'message-1',
@@ -354,6 +380,16 @@ describe('/api/webhooks/meta', () => {
         text: 'Хочу в Клуб',
       }),
     )
+    expect(reactivation.applyInboundSignal).toHaveBeenCalledWith(
+      expect.objectContaining({
+        channel: 'whatsapp',
+        externalMessageId: 'wamid.inbound-1',
+        direction: 'in',
+      }),
+    )
+    expect(
+      repository.ingestNormalizedMessage.mock.invocationCallOrder[0],
+    ).toBeLessThan(reactivation.applyInboundSignal.mock.invocationCallOrder[0])
     expect(processingJobs.enqueue).toHaveBeenCalledWith({
       messageId: 'message-1',
       forceDraft: false,
@@ -363,6 +399,50 @@ describe('/api/webhooks/meta', () => {
       'audit-1',
       'processed',
     )
+  })
+
+  it('restores campaign context after attribution and before queuing the AI reply', async () => {
+    process.env.META_APP_SECRET = 'app-secret'
+    reactivation.applyInboundSignal.mockResolvedValue({
+      applied: true,
+      reason: null,
+      matchedContact: true,
+      attributedRecipientId: '00000000-0000-4000-8000-000000000042',
+      suppressed: false,
+    })
+
+    const response = await POST(postRequest(
+      JSON.stringify(whatsAppInboundPayload()),
+      'app-secret',
+    ))
+
+    expect(response.status).toBe(200)
+    expect(reactivation.restoreInboundContext).toHaveBeenCalledWith({
+      event: expect.objectContaining({ externalMessageId: 'wamid.inbound-1' }),
+      recipientId: '00000000-0000-4000-8000-000000000042',
+    })
+    expect(
+      reactivation.restoreInboundContext.mock.invocationCallOrder[0],
+    ).toBeLessThan(queue.send.mock.invocationCallOrder[0])
+  })
+
+  it('does not restore a sales offer into an opt-out conversation', async () => {
+    process.env.META_APP_SECRET = 'app-secret'
+    reactivation.applyInboundSignal.mockResolvedValue({
+      applied: true,
+      reason: null,
+      matchedContact: true,
+      attributedRecipientId: '00000000-0000-4000-8000-000000000042',
+      suppressed: true,
+    })
+
+    const response = await POST(postRequest(
+      JSON.stringify(whatsAppInboundPayload()),
+      'app-secret',
+    ))
+
+    expect(response.status).toBe(200)
+    expect(reactivation.restoreInboundContext).not.toHaveBeenCalled()
   })
 
   it('starts a durable workflow for Meta messages without Inngest or database jobs', async () => {
@@ -518,6 +598,8 @@ describe('/api/webhooks/meta', () => {
     const response = await POST(postRequest(JSON.stringify(payload), 'app-secret'))
 
     expect(response.status).toBe(200)
+    expect(myhonor.applyDeliveryStatus).toHaveBeenCalledOnce()
+    expect(reactivation.applyDeliveryStatus).toHaveBeenCalledOnce()
     expect(repository.applyWhatsAppDeliveryStatus).toHaveBeenCalledWith(expect.objectContaining({
       eventType: 'status',
       channel: 'whatsapp',
@@ -526,6 +608,12 @@ describe('/api/webhooks/meta', () => {
     }))
     expect(repository.ingestNormalizedMessage).not.toHaveBeenCalled()
     expect(queue.send).not.toHaveBeenCalled()
+    expect(
+      myhonor.applyDeliveryStatus.mock.invocationCallOrder[0],
+    ).toBeLessThan(reactivation.applyDeliveryStatus.mock.invocationCallOrder[0])
+    expect(
+      reactivation.applyDeliveryStatus.mock.invocationCallOrder[0],
+    ).toBeLessThan(repository.applyWhatsAppDeliveryStatus.mock.invocationCallOrder[0])
   })
 
   it('keeps a matched MyHonor delivery status out of the omnichannel ledger', async () => {
@@ -568,6 +656,65 @@ describe('/api/webhooks/meta', () => {
       status: 'delivered',
     }))
     expect(repository.applyWhatsAppDeliveryStatus).not.toHaveBeenCalled()
+    expect(reactivation.applyDeliveryStatus).not.toHaveBeenCalled()
+  })
+
+  it('keeps a matched MyHonor reactivation status out of the omnichannel ledger', async () => {
+    process.env.META_APP_SECRET = 'app-secret'
+    reactivation.applyDeliveryStatus.mockResolvedValue({
+      matched: true,
+      recipientId: '00000000-0000-4000-8000-000000000002',
+      state: 'read',
+    })
+    const payload = {
+      object: 'whatsapp_business_account',
+      entry: [{
+        id: 'waba-1',
+        changes: [{
+          field: 'messages',
+          value: {
+            metadata: { phone_number_id: 'phone-number-1' },
+            statuses: [{
+              id: 'wamid.reactivation-1',
+              recipient_id: '77001234567',
+              status: 'read',
+              timestamp: '1720000000',
+            }],
+          },
+        }],
+      }],
+    }
+
+    const response = await POST(postRequest(JSON.stringify(payload), 'app-secret'))
+
+    expect(response.status).toBe(200)
+    expect(myhonor.applyDeliveryStatus).toHaveBeenCalledOnce()
+    expect(reactivation.applyDeliveryStatus).toHaveBeenCalledWith(
+      expect.objectContaining({
+        externalMessageId: 'wamid.reactivation-1',
+        status: 'read',
+      }),
+    )
+    expect(repository.applyWhatsAppDeliveryStatus).not.toHaveBeenCalled()
+  })
+
+  it('asks Meta to retry when inbound reactivation attribution fails after idempotent ingest', async () => {
+    process.env.META_APP_SECRET = 'app-secret'
+    reactivation.applyInboundSignal.mockRejectedValue(
+      new Error('database details and customer content must not leak'),
+    )
+
+    const response = await POST(postRequest(
+      JSON.stringify(whatsAppInboundPayload()),
+      'app-secret',
+    ))
+
+    expect(response.status).toBe(500)
+    expect(repository.ingestNormalizedMessage).toHaveBeenCalledOnce()
+    expect(reactivation.applyInboundSignal).toHaveBeenCalledOnce()
+    expect(repository.claimWebhookEventForProcessing).not.toHaveBeenCalled()
+    expect(queue.send).not.toHaveBeenCalled()
+    expect(await response.text()).not.toContain('customer content')
   })
 
   it('marks the audit failed and asks Meta to retry when enqueueing fails', async () => {

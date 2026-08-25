@@ -208,6 +208,89 @@ describe('MetaClient WhatsApp text sends', () => {
     })
   })
 
+  it('marks a 2xx WhatsApp response without a message id as delivery unknown', async () => {
+    const fetchMock = vi.fn<MetaFetch>(async () => jsonResponse({ messages: [{}] }, 200))
+    const client = createMetaClient({ env, fetchImpl: fetchMock })
+
+    await expect(client.sendWhatsAppTemplate({
+      recipientId: '77001234567',
+      templateName: 'myhonor_order_confirmed_v1',
+      languageCode: 'ru',
+      bodyParameters: ['Марина', 'MH-0084'],
+      accountExternalId: 'wa-phone-456',
+    })).resolves.toEqual({
+      ok: false,
+      deliveryUnknown: true,
+      status: 200,
+      code: 'provider_ack_missing_message_id',
+      message: 'WhatsApp API returned 2xx without messages[0].id; delivery is unknown',
+      retryable: false,
+    })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('also treats an empty 2xx template acknowledgement as delivery unknown', async () => {
+    const fetchMock = vi.fn<MetaFetch>(async () => new Response(null, { status: 202 }))
+    const client = createMetaClient({ env, fetchImpl: fetchMock })
+
+    await expect(client.sendWhatsAppTemplate({
+      recipientId: '77001234567',
+      templateName: 'myhonor_order_confirmed_v1',
+      languageCode: 'ru',
+      bodyParameters: ['Марина', 'MH-0084'],
+      accountExternalId: 'wa-phone-456',
+    })).resolves.toMatchObject({
+      ok: false,
+      deliveryUnknown: true,
+      status: 202,
+      code: 'provider_ack_missing_message_id',
+      retryable: false,
+    })
+  })
+
+  it('never retries a template POST whose network outcome is unknown', async () => {
+    const fetchMock = vi.fn<MetaFetch>(async () => {
+      throw new Error('socket closed after write')
+    })
+    const client = createMetaClient({ env, fetchImpl: fetchMock })
+
+    await expect(client.sendWhatsAppTemplate({
+      recipientId: '77001234567',
+      templateName: 'myhonor_order_confirmed_v1',
+      languageCode: 'ru',
+      bodyParameters: ['Марина', 'MH-0084'],
+      accountExternalId: 'wa-phone-456',
+    })).resolves.toMatchObject({
+      ok: false,
+      deliveryUnknown: true,
+      status: null,
+      code: 'provider_request_outcome_unknown',
+      retryable: false,
+    })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('never retries an ambiguous 5xx response to a template POST', async () => {
+    const fetchMock = vi.fn<MetaFetch>(async () => jsonResponse({
+      error: { code: 2, message: 'service unavailable', is_transient: true },
+    }, 503))
+    const client = createMetaClient({ env, fetchImpl: fetchMock })
+
+    await expect(client.sendWhatsAppTemplate({
+      recipientId: '77001234567',
+      templateName: 'myhonor_order_confirmed_v1',
+      languageCode: 'ru',
+      bodyParameters: ['Марина', 'MH-0084'],
+      accountExternalId: 'wa-phone-456',
+    })).resolves.toMatchObject({
+      ok: false,
+      deliveryUnknown: true,
+      status: 503,
+      code: 'provider_request_outcome_unknown',
+      retryable: false,
+    })
+  })
+
   it('rejects arbitrary template names and malformed recipient numbers before fetch', async () => {
     const fetchMock = vi.fn<MetaFetch>()
     const client = createMetaClient({ env, fetchImpl: fetchMock })

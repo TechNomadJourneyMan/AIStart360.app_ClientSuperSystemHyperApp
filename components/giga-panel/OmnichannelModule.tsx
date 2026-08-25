@@ -15,6 +15,7 @@ import {
   Settings2,
   UserRound,
 } from 'lucide-react'
+import { MyHonorReactivationPanel } from './MyHonorReactivationPanel'
 
 type Channel = 'instagram' | 'whatsapp'
 type Mode = 'off' | 'draft' | 'auto'
@@ -745,6 +746,8 @@ export function OmnichannelModule() {
           </div>
         </div>
       </details>
+
+      <MyHonorReactivationPanel />
 
       <div className="flex items-center gap-1 p-1 rounded-xl bg-white/[0.03] border border-white/[0.07] w-fit">
         {(['all', 'instagram', 'whatsapp'] as const).map((value) => (

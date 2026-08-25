@@ -10,6 +10,11 @@ import { waitUntil } from '@vercel/functions'
 import { NextResponse, type NextRequest } from 'next/server'
 import { start } from 'workflow/api'
 import { applyMyHonorOrderNotificationDeliveryStatus } from '@/lib/integrations/myhonor/order-notification-repository'
+import {
+  applyMyHonorReactivationDeliveryStatus,
+  applyMyHonorReactivationInboundSignal,
+} from '@/lib/integrations/myhonor/reactivation/webhook-signals'
+import { recordMyHonorReactivationInboundContext } from '@/lib/integrations/myhonor/reactivation/outbound-context'
 import { inngest } from '@/lib/inngest'
 import { OMNICHANNEL_MESSAGE_RECEIVED_EVENT } from '@/lib/omnichannel/events'
 import {
@@ -239,11 +244,28 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
           errorCode: event.status === 'failed' ? 'meta.delivery_failed' : null,
         })
         if (transactional.matched) continue
+        const reactivation = await applyMyHonorReactivationDeliveryStatus(event)
+        if (reactivation.matched) continue
         await applyWhatsAppDeliveryStatus(event)
         continue
       }
 
       const result = await ingestNormalizedMessage(event)
+      if (event.channel === 'whatsapp' && event.direction === 'in') {
+        // Ingest is deliberately first: if the attribution/suppression RPC
+        // fails, Meta retries this delivery while the message upsert remains
+        // idempotent. The helper persists only HMAC/digest identifiers.
+        const signal = await applyMyHonorReactivationInboundSignal(event)
+        if (signal.attributedRecipientId && !signal.suppressed) {
+          // Restore the accepted offer only after this inbound has established
+          // the legacy inbox identity. Proactive-only contacts remain confined
+          // to the encrypted reactivation ledger.
+          await recordMyHonorReactivationInboundContext({
+            event,
+            recipientId: signal.attributedRecipientId,
+          })
+        }
+      }
       if (event.direction === 'in' && result.shouldQueue) {
         queuedMessages.set(result.messageId, {
           messageId: result.messageId,

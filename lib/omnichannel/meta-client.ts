@@ -41,13 +41,33 @@ export interface MetaSendSuccess {
 
 export interface MetaSendFailure {
   ok: false
+  /** Explicitly false/absent for a provider rejection that is safe to retry by policy. */
+  deliveryUnknown?: false
   status: number | null
   code: string | null
   message: string
   retryable: boolean
 }
 
-export type MetaSendResult = MetaSendSuccess | MetaSendFailure
+/**
+ * Meta may have accepted the POST, but the caller cannot prove its provider
+ * message id because either the 2xx acknowledgement was incomplete or the
+ * connection failed after write. This outcome must never be retried
+ * automatically.
+ */
+export interface MetaSendDeliveryUnknown {
+  ok: false
+  deliveryUnknown: true
+  status: number | null
+  code: 'provider_ack_missing_message_id' | 'provider_request_outcome_unknown'
+  message: string
+  retryable: false
+}
+
+export type MetaSendResult =
+  | MetaSendSuccess
+  | MetaSendFailure
+  | MetaSendDeliveryUnknown
 
 export interface SendInstagramTextInput {
   recipientId: string
@@ -254,6 +274,30 @@ function localFailure(
   retryable = false,
 ): MetaSendFailure {
   return { ok: false, status: null, code, message, retryable }
+}
+
+function missingWhatsAppMessageId(status: number): MetaSendDeliveryUnknown {
+  return {
+    ok: false,
+    deliveryUnknown: true,
+    status,
+    code: 'provider_ack_missing_message_id',
+    message: 'WhatsApp API returned 2xx without messages[0].id; delivery is unknown',
+    retryable: false,
+  }
+}
+
+function unknownWhatsAppRequestOutcome(
+  failure: MetaSendFailure,
+): MetaSendDeliveryUnknown {
+  return {
+    ok: false,
+    deliveryUnknown: true,
+    status: failure.status,
+    code: 'provider_request_outcome_unknown',
+    message: `WhatsApp API request outcome is unknown: ${failure.message}`,
+    retryable: false,
+  }
 }
 
 function uniqueNonEmptyOptionIds(options: MetaInteractiveOption[]): boolean {
@@ -645,19 +689,22 @@ export class MetaClient {
       method: 'POST',
       body,
     })
-    if (!result.ok) return result
+    if (!result.ok) {
+      if (
+        result.status === null
+        || result.status === 408
+        || result.status >= 500
+      ) return unknownWhatsAppRequestOutcome(result)
+      return result.status !== null && result.status >= 200 && result.status < 300
+        ? missingWhatsAppMessageId(result.status)
+        : result
+    }
 
     const messages = Array.isArray(result.data.messages) ? result.data.messages : []
     const firstMessage = asRecord(messages[0])
     const externalMessageId = nonEmpty(firstMessage?.id)
     if (!externalMessageId) {
-      return {
-        ok: false,
-        status: result.status,
-        code: 'invalid_response',
-        message: 'WhatsApp API response did not include messages[0].id',
-        retryable: false,
-      }
+      return missingWhatsAppMessageId(result.status)
     }
     return { ok: true, externalMessageId, rawStatus: result.status }
   }
