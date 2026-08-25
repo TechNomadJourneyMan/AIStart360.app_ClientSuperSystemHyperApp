@@ -1,4 +1,7 @@
-import type { MyHonorReactivationInterest } from './types'
+import type {
+  MyHonorReactivationInterest,
+  MyHonorReactivationSegment,
+} from './types'
 
 export const MYHONOR_PRODUCT_SEASONS = [
   'spring',
@@ -83,6 +86,31 @@ export interface MyHonorProductRecommendation {
   matchedInterests: MyHonorReactivationInterest[]
   matchedSeasons: MyHonorProductSeason[]
   stockScope: 'requested_city' | 'other_city' | 'unspecified_city'
+}
+
+const INTEREST_AFFINITY_REQUIRED_SEGMENTS = new Set<MyHonorReactivationSegment>([
+  'old_lead',
+  'registered_no_order',
+  'dormant_customer',
+  'post_purchase',
+])
+
+/**
+ * Prevents a broad lifecycle campaign from selecting a generic cheap product
+ * when the Store has no category/activity affinity for the contact. Cart and
+ * restock campaigns are product-specific; seasonal campaigns have an explicit
+ * season. The remaining broad segments require a campaign or contact interest
+ * until a source-owned prior-purchase category mapping exists.
+ */
+export function myHonorRecommendationAffinityExclusion(input: {
+  segment: MyHonorReactivationSegment
+  campaignInterest: MyHonorReactivationInterest | null
+  contactInterests: readonly MyHonorReactivationInterest[]
+}): 'insufficient_personalization' | null {
+  if (!INTEREST_AFFINITY_REQUIRED_SEGMENTS.has(input.segment)) return null
+  return input.campaignInterest || input.contactInterests.length > 0
+    ? null
+    : 'insufficient_personalization'
 }
 
 interface SelectedVariant {

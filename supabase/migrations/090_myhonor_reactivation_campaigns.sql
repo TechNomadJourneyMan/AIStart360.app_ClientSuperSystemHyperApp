@@ -458,7 +458,7 @@ CREATE TABLE IF NOT EXISTS public.myhonor_reactivation_recipients (
       'frequency_cap', 'monthly_frequency_cap', 'inactive_product',
       'invalid_recommendation', 'application_ineligible', 'identity_changed',
       'provider_cooldown', 'campaign_completed', 'source_snapshot_changed',
-      'source_snapshot_stale', 'manual_hold'
+      'source_snapshot_stale', 'manual_hold', 'insufficient_personalization'
     )
   ),
   run_at TIMESTAMPTZ NOT NULL CHECK (isfinite(run_at)),
@@ -2314,7 +2314,12 @@ BEGIN
        OR jsonb_array_length(
          v_candidate->'eligibility_snapshot'->'exclusions'
        ) > 0 THEN
-      v_exclusion := 'application_ineligible';
+      v_exclusion := CASE
+        WHEN v_candidate->'eligibility_snapshot'->'exclusions'
+          ? 'insufficient_personalization'
+        THEN 'insufficient_personalization'
+        ELSE 'application_ineligible'
+      END;
     ELSIF v_profile.provider_cooldown_until > v_now THEN
       v_exclusion := 'provider_cooldown';
     END IF;

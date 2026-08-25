@@ -280,6 +280,7 @@ function exclusionReasonLabel(reason: string): string {
     manual_hold: 'нужна ручная проверка',
     provider_cooldown: 'лимит WhatsApp',
     invalid_recommendation: 'подборка не проверена',
+    insufficient_personalization: 'недостаточно данных для точной подборки',
     inactive_product: 'товар недоступен',
     frequency_cap: 'частотный лимит',
     monthly_frequency_cap: 'месячный лимит',

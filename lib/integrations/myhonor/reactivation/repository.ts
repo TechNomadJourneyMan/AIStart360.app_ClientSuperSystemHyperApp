@@ -12,7 +12,10 @@ import {
 import { evaluateMyHonorReactivationEligibility } from './eligibility'
 import { loadVerifiedMyHonorProducts } from './catalog'
 import { nextMyHonorMarketingSendTime } from './policy'
-import { recommendVerifiedMyHonorProducts } from './recommendations'
+import {
+  myHonorRecommendationAffinityExclusion,
+  recommendVerifiedMyHonorProducts,
+} from './recommendations'
 import { classifyMyHonorReactivationSegments } from './segmentation'
 import {
   buildMyHonorApprovedTemplate,
@@ -972,11 +975,20 @@ export async function previewMyHonorReactivationCampaign(
     const abandonedCartProductIds = context.lifecycle.abandoned_cart?.active
       ? context.lifecycle.abandoned_cart.product_ids
       : []
+    const recommendationInterests = draft.interest
+      ? [draft.interest]
+      : context.interests
+    const personalizationExclusion = myHonorRecommendationAffinityExclusion({
+      segment: draft.segment,
+      campaignInterest: draft.interest ?? null,
+      contactInterests: context.interests,
+    })
     const recommendations = campaignPurpose === 'product_recommendations'
+      && !personalizationExclusion
       ? recommendVerifiedMyHonorProducts({
           products,
           profile: {
-            interests: draft.interest ? [draft.interest] : context.interests,
+            interests: recommendationInterests,
             seasons: draft.season ? [draft.season] : [],
             size,
             budgetKzt: context.budgetKzt,
@@ -1012,7 +1024,15 @@ export async function previewMyHonorReactivationCampaign(
     if (context.locale !== templateLanguage) {
       exclusions.push('template_locale_mismatch')
     }
-    if (campaignPurpose === 'product_recommendations' && recommendations.length === 0) {
+    if (
+      campaignPurpose === 'product_recommendations'
+      && personalizationExclusion
+    ) {
+      exclusions.push(personalizationExclusion)
+    } else if (
+      campaignPurpose === 'product_recommendations'
+      && recommendations.length === 0
+    ) {
       exclusions.push('no_verified_recommendation')
     }
     if (!template) exclusions.push('approved_template_unavailable')

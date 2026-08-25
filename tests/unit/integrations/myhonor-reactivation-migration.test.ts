@@ -423,6 +423,13 @@ describe('090 myhonor reactivation campaign migration', () => {
     expect(live).toMatch(/COALESCE\(\([\s\S]*?price\.retail_price[\s\S]*?\), product\.price\)\s*=\s*\(v_item->>'priceKzt'\)::NUMERIC/)
   })
 
+  it('preserves insufficient-personalization as an operator-visible exclusion', () => {
+    expect(migration).toContain("'insufficient_personalization'")
+    const materialize = rpc('materialize_myhonor_reactivation_campaign')
+    expect(materialize).toContain("? 'insufficient_personalization'")
+    expect(materialize).toContain("THEN 'insufficient_personalization'")
+  })
+
   it('allows abandoned-cart campaigns only for products still present in an active cart', () => {
     expect(migration).toContain("'back_in_stock', 'abandoned_cart'")
     for (const name of [

@@ -4,6 +4,7 @@ import {
   type MyHonorReactivationEligibilityInput,
 } from '@/lib/integrations/myhonor/reactivation/eligibility'
 import {
+  myHonorRecommendationAffinityExclusion,
   recommendVerifiedMyHonorProducts,
   type MyHonorProductRecommendation,
   type MyHonorVerifiedProduct,
@@ -335,6 +336,44 @@ describe('MyHonor reactivation eligibility', () => {
 })
 
 describe('verified MyHonor product recommendations', () => {
+  it('requires proven interest affinity for broad lifecycle segments', () => {
+    for (const segment of [
+      'old_lead',
+      'registered_no_order',
+      'dormant_customer',
+      'post_purchase',
+    ] as const) {
+      expect(myHonorRecommendationAffinityExclusion({
+        segment,
+        campaignInterest: null,
+        contactInterests: [],
+      })).toBe('insufficient_personalization')
+      expect(myHonorRecommendationAffinityExclusion({
+        segment,
+        campaignInterest: 'fishing',
+        contactInterests: [],
+      })).toBeNull()
+      expect(myHonorRecommendationAffinityExclusion({
+        segment,
+        campaignInterest: null,
+        contactInterests: ['hunting'],
+      })).toBeNull()
+    }
+
+    for (const segment of [
+      'abandoned_cart',
+      'back_in_stock',
+      'seasonal',
+      'club_interest',
+    ] as const) {
+      expect(myHonorRecommendationAffinityExclusion({
+        segment,
+        campaignInterest: null,
+        contactInterests: [],
+      })).toBeNull()
+    }
+  })
+
   it('uses only fresh verified active products, exact size, budget and sellable stock', () => {
     const valid = product('a')
     const products = [

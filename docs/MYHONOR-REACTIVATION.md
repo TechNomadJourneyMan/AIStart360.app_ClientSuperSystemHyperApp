@@ -119,6 +119,12 @@ used before ranking. Margin is only a final tie-breaker.
 
 If data is insufficient, ask at most two questions in one message, in this
 order: activity, season/temperature, city, size or height/weight, budget.
+Broad proactive product campaigns (`old_lead`, `registered_no_order`,
+`dormant_customer`, `post_purchase`) require a source-owned contact interest or
+a human-selected campaign interest. Without one, the recipient is excluded as
+`insufficient_personalization`; the engine never substitutes the cheapest or
+first generic product. Qualification can then happen through an inbound reply
+or a separately reviewed qualification template.
 
 Useful destinations:
 

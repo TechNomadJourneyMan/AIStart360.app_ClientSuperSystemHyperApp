@@ -34,6 +34,7 @@ const EXCLUSION_REASONS = [
   'inactive_product',
   'invalid_recommendation',
   'application_ineligible',
+  'insufficient_personalization',
   'identity_changed',
   'source_snapshot_stale',
   'source_snapshot_changed',
