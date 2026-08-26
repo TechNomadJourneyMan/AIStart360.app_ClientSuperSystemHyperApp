@@ -3,7 +3,8 @@ import type { StoreImportHistoryEntry } from '@/lib/store/import/history'
 function kindLabel(kind: StoreImportHistoryEntry['kind']): string {
   if (kind === 'prices') return 'Прайс'
   if (kind === 'inventory') return 'Остатки'
-  return 'Продажи'
+  if (kind === 'sales') return 'Продажи'
+  return 'Управленческий P&L'
 }
 
 function period(entry: StoreImportHistoryEntry): string {
@@ -62,9 +63,19 @@ export function StoreImportHistory({ entries }: { entries: StoreImportHistoryEnt
                     <dt className="text-on-surface-variant">Публикация</dt>
                     <dd className="text-on-surface">{publishedAt(entry.publishedAt)}</dd>
                   </div>
-                  {(entry.warningCount > 0 || entry.errorCount > 0) && (
+                  {entry.warningCount > 0 && (
                     <div className="col-span-2 text-tertiary-container">
                       Предупреждений: {entry.warningCount.toLocaleString('ru-RU')}
+                    </div>
+                  )}
+                  {entry.quarantinedCount > 0 && (
+                    <div className="col-span-2 text-error">
+                      В карантине: {entry.quarantinedCount.toLocaleString('ru-RU')}
+                    </div>
+                  )}
+                  {entry.errorCount > 0 && (
+                    <div className="col-span-2 text-error">
+                      Ошибок: {entry.errorCount.toLocaleString('ru-RU')}
                     </div>
                   )}
                 </dl>

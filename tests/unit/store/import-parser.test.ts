@@ -11,6 +11,8 @@ import {
 } from '@/lib/store/import/parser'
 import managementControl from '../../fixtures/store-imports/honor-management-period-control.json'
 
+const AFTER_MANAGEMENT_PERIOD = { now: new Date('2026-08-01T00:00:00+05:00') }
+
 function workbookBuffer(
   sheets: Array<{ name: string; sheet: XLSX.WorkSheet }>,
   bookType: 'xlsx' | 'biff8' = 'xlsx',
@@ -102,7 +104,7 @@ function makeManagementWorkbook(options: {
 
 describe('parseStoreImport — HONOR management periods', () => {
   it('keeps 19 monthly facts, exact base controls and independently reported P&L controls', () => {
-    const preview = parseStoreImport(makeManagementWorkbook(), 'HONOR динамика 2025-2026.xlsx')
+    const preview = parseStoreImport(makeManagementWorkbook(), 'HONOR динамика 2025-2026.xlsx', AFTER_MANAGEMENT_PERIOD)
     const rows2025 = preview.data.management_period.filter((row) => row.periodStart.startsWith('2025-'))
     const rows2026 = preview.data.management_period.filter((row) => row.periodStart.startsWith('2026-'))
     const pnlRows = rows2026.filter((row) => row.reportedGrossProfit !== null)
@@ -127,7 +129,7 @@ describe('parseStoreImport — HONOR management periods', () => {
   })
 
   it('derives GP and EBITDA instead of trusting cached formula results', () => {
-    const preview = parseStoreImport(makeManagementWorkbook(), 'HONOR динамика 2025-2026.xlsx')
+    const preview = parseStoreImport(makeManagementWorkbook(), 'HONOR динамика 2025-2026.xlsx', AFTER_MANAGEMENT_PERIOD)
     const may = preview.data.management_period.find((row) => row.periodStart === '2026-05-01')
 
     expect(may).toMatchObject({
@@ -148,7 +150,7 @@ describe('parseStoreImport — HONOR management periods', () => {
   })
 
   it('marks the two source-declared partial months and requires warning acknowledgement downstream', () => {
-    const preview = parseStoreImport(makeManagementWorkbook(), 'HONOR динамика 2025-2026.xlsx')
+    const preview = parseStoreImport(makeManagementWorkbook(), 'HONOR динамика 2025-2026.xlsx', AFTER_MANAGEMENT_PERIOD)
     const partial = preview.data.management_period
       .filter((row) => row.completeness === 'partial')
       .map((row) => row.periodStart)
@@ -161,6 +163,7 @@ describe('parseStoreImport — HONOR management periods', () => {
     const preview = parseStoreImport(
       makeManagementWorkbook({ formulaRevenueRow: 5 }),
       'HONOR динамика 2025-2026.xlsx',
+      AFTER_MANAGEMENT_PERIOD,
     )
     expect(preview.data.management_period).toHaveLength(18)
     expect(preview.quarantine).toContainEqual(expect.objectContaining({
@@ -175,6 +178,7 @@ describe('parseStoreImport — HONOR management periods', () => {
     const preview = parseStoreImport(
       makeManagementWorkbook({ formulaPnlExpenseRow: 4 }),
       'HONOR динамика 2025-2026.xlsx',
+      AFTER_MANAGEMENT_PERIOD,
     )
     const may = preview.data.management_period.find((row) => row.periodStart === '2026-05-01')
     expect(preview.data.management_period).toHaveLength(19)

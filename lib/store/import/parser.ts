@@ -145,7 +145,30 @@ const AMOUNT_CONSISTENCY_TOLERANCE_MINOR_UNITS = 1
  * SheetJS is used only as a file decoder. Formula cells are never evaluated or
  * trusted: a formula in a canonical source field quarantines that row.
  */
-export function parseStoreImport(buffer: Buffer, fileName: string): StoreImportPreview {
+export interface StoreImportParseOptions {
+  /** Injectable clock keeps current-period completeness deterministic in tests. */
+  now?: Date
+}
+
+function calendarDateInAlmaty(value: Date): string {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Almaty',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(value)
+  const year = parts.find((part) => part.type === 'year')?.value
+  const month = parts.find((part) => part.type === 'month')?.value
+  const day = parts.find((part) => part.type === 'day')?.value
+  if (!year || !month || !day) throw new StoreImportError('unreadable_file', 'Не удалось определить дату импорта')
+  return `${year}-${month}-${day}`
+}
+
+export function parseStoreImport(
+  buffer: Buffer,
+  fileName: string,
+  options: StoreImportParseOptions = {},
+): StoreImportPreview {
   const format = getFormat(fileName)
 
   if (buffer.length > STORE_IMPORT_MAX_FILE_BYTES) {
@@ -159,7 +182,11 @@ export function parseStoreImport(buffer: Buffer, fileName: string): StoreImportP
   const workbook = readWorkbook(buffer, format)
   const budget: CandidateBudget = { rows: 0 }
 
-  const managementPeriod = parseManagementPeriodWorkbook(workbook, budget)
+  const managementPeriod = parseManagementPeriodWorkbook(
+    workbook,
+    budget,
+    calendarDateInAlmaty(options.now ?? new Date()),
+  )
   if (managementPeriod) {
     const acceptedRows = managementPeriod.rows.length
     const quarantinedRows = managementPeriod.quarantine.length
@@ -525,6 +552,7 @@ function managementIssue(
 function parseManagementPeriodWorkbook(
   workbook: XLSX.WorkBook,
   budget: CandidateBudget,
+  currentDate: string,
 ): ParsedManagementWorkbook | null {
   let baseSheetName: string | null = null
   let baseHeader: ManagementHeader | null = null
@@ -621,7 +649,13 @@ function parseManagementPeriodWorkbook(
 
     const bounds = managementPeriodBounds(year, month)
     const grossProfit = quantizeMoney(revenue - costOfGoods)!
-    const completeness = managementCompleteness(qualityNote ?? '')
+    const declaredCompleteness = managementCompleteness(qualityNote ?? '')
+    // A calendar month is not closed until the following local day. Even if
+    // the source omitted a note (or called it complete), an in-progress month
+    // must remain provisional so dashboards never present MTD as a full month.
+    const completeness = declaredCompleteness === 'complete' && bounds.end >= currentDate
+      ? 'provisional'
+      : declaredCompleteness
     const parsedRow: StoreManagementPeriodImportRow = {
       periodStart: bounds.start,
       periodEnd: bounds.end,
@@ -657,7 +691,9 @@ function parseManagementPeriodWorkbook(
     } else if (completeness === 'provisional') {
       issues.push(managementIssue(
         'management_period_provisional',
-        `Период ${periodKey} помечен источником как предварительный`,
+        declaredCompleteness === 'complete'
+          ? `Период ${periodKey} ещё не закрыт на ${currentDate} (Asia/Almaty) и опубликован как предварительный`
+          : `Период ${periodKey} помечен источником как предварительный`,
         baseSheetName,
         row + 1,
       ))

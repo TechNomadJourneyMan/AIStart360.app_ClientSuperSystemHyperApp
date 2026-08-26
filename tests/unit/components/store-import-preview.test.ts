@@ -171,7 +171,9 @@ describe('StoreImportPreviewView', () => {
     })
     expect(published).toContain('data-testid="store-import-published"')
     expect(published).toContain('Данные опубликованы')
-    expect(published).toContain('Открыть Магазин')
+    expect(published).toContain('Дашборды, месячная история и P&amp;L уже используют новые данные')
+    expect(published).toContain('Проверить обновлённую статистику')
+    expect(published).toContain('href="/store"')
 
     const duplicate = render({
       phase: 'success',

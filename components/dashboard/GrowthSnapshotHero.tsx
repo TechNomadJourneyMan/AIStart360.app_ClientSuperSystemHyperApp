@@ -5,7 +5,7 @@
  * /client/dashboard, /client/point-a.
  *
  * Two columns on lg+:
- *   Left  → "Точка А · Снимок · {month}" card with 3 stacked tiles
+ *   Left  → "Точка А · Снимок · {source period}" card with 3 stacked tiles
  *           (current position, 12-month goal, 3-year goal)
  *   Right → AI Карта роста (goal-capture CTA) + GRI диагностика CTA
  *
@@ -32,11 +32,15 @@ import {
   parseAmount,
   formatKzt,
   formatKztCompact,
-  currentMonthLabel,
 } from '@/lib/format/kzt'
 // Shared with tests/unit/dashboard/growth-snapshot.test.ts, which pins the rule
 // that both target columns hold ANNUAL revenue.
 import { annualRevenueTargetToMonthly } from '@/lib/dashboard/growth-snapshot'
+import {
+  parseLatestStorePendingPeriod,
+  selectGrowthRevenue,
+  type StoreMonthlyRevenueFact,
+} from '@/lib/dashboard/growth-snapshot-source'
 import { GRIAssessmentRadarWidget } from './GRIAssessmentRadarWidget'
 import MetricExplainModal, {
   type ExplainAction,
@@ -80,11 +84,13 @@ type ExplainKey = 'revenue' | 'goal12' | 'goal3y' | 'survey' | null
 // ─── Constants ────────────────────────────────────────────────────────────────
 const SURVEY_HREF = '/client/onboarding'
 const DOCUMENTS_HREF = '/client/onboarding/documents'
+const STORE_IMPORT_HREF = '/store/imports'
 
 /** Actions offered whenever revenue is missing — an empty state must lead out. */
 const REVENUE_ACTIONS: ExplainAction[] = [
-  { label: 'Заполнить анкету', href: SURVEY_HREF, icon: 'edit_note', primary: true },
-  { label: 'Загрузить P&L', href: DOCUMENTS_HREF, icon: 'cloud_upload' },
+  { label: 'Загрузить отчёт магазина', href: STORE_IMPORT_HREF, icon: 'storefront', primary: true },
+  { label: 'Заполнить анкету', href: SURVEY_HREF, icon: 'edit_note' },
+  { label: 'Годовой P&L Точки А', href: DOCUMENTS_HREF, icon: 'cloud_upload' },
 ]
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -119,6 +125,9 @@ export default function GrowthSnapshotHero() {
   // Resolver-backed annual revenue (₸ / год) with full provenance. Null when
   // no source produced a number — there is no fallback value by design.
   const [revenue, setRevenue] = useState<MetricValuePayload | null>(null)
+  // Raw owner-scoped Store overview. It is parsed through a strict complete-
+  // month guard before any value is allowed onto the hero.
+  const [storeOverview, setStoreOverview] = useState<unknown>(null)
 
   // Inline goal-capture inputs (Card A)
   const [draft1y, setDraft1y] = useState('')
@@ -137,8 +146,6 @@ export default function GrowthSnapshotHero() {
   // Drill-down
   const [explain, setExplain] = useState<ExplainKey>(null)
 
-  const monthLabel = useMemo(() => currentMonthLabel(), [])
-
   /**
    * «Укажите цели справа» is a lie on mobile — the goal card wraps below.
    * Scroll to the input and put the caret in it instead of pointing at a
@@ -154,18 +161,23 @@ export default function GrowthSnapshotHero() {
   const load = useCallback(async () => {
     setLoadErr(null)
     try {
-      const [tRes, gRes, oRes, griRes, revRes] = await Promise.all([
+      const [tRes, gRes, oRes, griRes, revRes, storeRes] = await Promise.all([
         fetch('/api/v1/companies/targets', { credentials: 'include' }),
         fetch('/api/v1/companies/period-goals', { credentials: 'include' }),
         fetch('/api/v1/onboarding/status', { credentials: 'include' }),
         fetch('/api/v1/gri/assessment', { credentials: 'include' }),
         fetch(`/api/v1/metrics/${REVENUE_YEAR_METRIC_ID}/value`, {
           credentials: 'include',
+          cache: 'no-store',
+        }),
+        fetch('/api/v1/store/overview', {
+          credentials: 'include',
+          cache: 'no-store',
         }),
       ])
 
       // An expired session must not masquerade as "нет данных".
-      if ([tRes, gRes, oRes, griRes].some((r) => r.status === 401)) {
+      if ([tRes, gRes, oRes, griRes, revRes, storeRes].some((r) => r.status === 401)) {
         setLoadState('error')
         setLoadErr('Сессия истекла. Обновите страницу или войдите заново.')
         return
@@ -176,6 +188,7 @@ export default function GrowthSnapshotHero() {
       const oJ = await oRes.json().catch(() => ({}))
       const griJ = await griRes.json().catch(() => ({}))
       const revJ = await revRes.json().catch(() => ({}))
+      const storeJ = await storeRes.json().catch(() => null)
 
       if (tJ?.ok) setTargets(tJ.data)
       if (gJ?.ok) setPeriodGoals(gJ.data)
@@ -184,6 +197,9 @@ export default function GrowthSnapshotHero() {
       // Revenue: `null` value is a legitimate answer («нет данных»); a broken
       // envelope is not — keep `revenue` null and let the tile say so.
       setRevenue(parseMetricValue(revJ, (n) => formatKzt(n)))
+      // 403 (no Store access / missing MFA) and unavailable Store analytics are
+      // normal fallbacks for non-Store accounts; they must not break Point A.
+      setStoreOverview(storeRes.ok ? storeJ : null)
 
       if (griJ?.ok && griJ.data?.current) {
         setHasGri(true)
@@ -249,10 +265,27 @@ export default function GrowthSnapshotHero() {
   const monthlyPlan12 = target12m ? annualRevenueTargetToMonthly(target12m) : null
   const monthlyPlan3y = target3y ? annualRevenueTargetToMonthly(target3y) : null
 
-  // Real annual revenue. No heuristic, no fallback.
+  // Store's latest complete published month is the canonical monthly fact. If
+  // the account has no accessible Store contour, fall back to an explicitly
+  // labelled annual average from the Point A resolver.
   const annualRevenue = revenue?.value ?? null
-  const hasRevenue = annualRevenue !== null && annualRevenue > 0
-  const currentMonthly = hasRevenue ? Math.round(annualRevenue / 12) : null
+  const growthRevenue = useMemo(
+    () => selectGrowthRevenue(storeOverview, annualRevenue),
+    [storeOverview, annualRevenue],
+  )
+  const storeRevenue: StoreMonthlyRevenueFact | null =
+    growthRevenue?.kind === 'store_monthly' ? growthRevenue : null
+  const storePendingPeriod = useMemo(
+    () => parseLatestStorePendingPeriod(storeOverview),
+    [storeOverview],
+  )
+  const hasNewerPendingStorePeriod = Boolean(
+    storePendingPeriod
+    && (!storeRevenue || storePendingPeriod.period.from > storeRevenue.period.from),
+  )
+  const hasRevenue = growthRevenue !== null
+  const currentMonthly = growthRevenue?.monthlyRevenue ?? null
+  const annualReference = storeRevenue?.annualRunRate ?? annualRevenue
 
   // Year comes from the source that actually won (its own label), or from the
   // payload's period — never from the current date.
@@ -260,6 +293,11 @@ export default function GrowthSnapshotHero() {
   const revenuePeriodLabel = revenueYear
     ? `за ${revenueYear} год`
     : 'за отчётный год'
+  const snapshotPeriodLabel = storeRevenue
+    ? `${storeRevenue.periodLabel} · факт за месяц`
+    : revenueYear
+      ? `данные за ${revenueYear}${revenue?.periodQuarter ? ` · ${revenue.periodQuarter}` : ''}`
+      : 'актуальные данные'
 
   const progressToPlan =
     currentMonthly !== null && monthlyPlan12 !== null
@@ -432,6 +470,45 @@ export default function GrowthSnapshotHero() {
       })
 
       if (explain === 'revenue') {
+        if (storeRevenue) {
+          return {
+            eyebrow: 'Магазин · подтверждённый факт',
+            title: `Выручка · ${storeRevenue.periodLabel}`,
+            value: `${formatKzt(storeRevenue.monthlyRevenue)} / мес`,
+            valueHint: `${storeRevenue.period.from} — ${storeRevenue.period.to} · без деления и экстраполяции`,
+            what:
+              'Фактическая выручка за последний полностью опубликованный месяц Store Control Center. Значение берётся напрямую из подтверждённого управленческого периода и не делится на 12.',
+            why:
+              'Это текущий проверяемый факт магазина. Он используется для сравнения с месячной целью; годовой run-rate показывается отдельно и явно помечен как темп, а не как годовой факт.',
+            formula: [
+              {
+                label: `Опубликованный месяц · ${storeRevenue.periodLabel}`,
+                value: formatKzt(storeRevenue.monthlyRevenue),
+                tone: 'good' as const,
+              },
+              {
+                label: 'Преобразование месячного факта',
+                value: 'не применяется',
+                tone: 'muted' as const,
+              },
+            ],
+            sources: [
+              {
+                type: 'external' as const,
+                label: 'Store Control Center',
+                detail: `${storeRevenue.scopeKey} · ${storeRevenue.source}`,
+                status: 'hit' as const,
+                picked: true,
+                value: formatKzt(storeRevenue.monthlyRevenue),
+              },
+            ],
+            computedAt: storeRevenue.publishedAt,
+            actions: [
+              { label: 'Загрузить новый отчёт', href: STORE_IMPORT_HREF, icon: 'upload_file', primary: true },
+              { label: 'Открыть статистику', href: '/store', icon: 'monitoring' },
+            ],
+          }
+        }
         return {
           eyebrow: 'Точка А · факт',
           title: 'Выручка',
@@ -490,7 +567,9 @@ export default function GrowthSnapshotHero() {
             planRow('Цель на год', target12m),
             planRow('В среднем в месяц', monthlyPlan12),
             {
-              label: 'Факт сейчас (в среднем в месяц)',
+              label: storeRevenue
+                ? `Факт · ${storeRevenue.periodLabel}`
+                : 'Факт сейчас (в среднем в месяц)',
               value: currentMonthly !== null ? formatKzt(currentMonthly) : '—',
               tone: (currentMonthly !== null ? 'good' : 'muted') as 'good' | 'muted',
             },
@@ -547,7 +626,9 @@ export default function GrowthSnapshotHero() {
             planRow('Цель на 3-й год (годовая выручка)', target3y),
             planRow('В среднем в месяц', monthlyPlan3y),
             {
-              label: 'Факт сейчас (в среднем в месяц)',
+              label: storeRevenue
+                ? `Факт · ${storeRevenue.periodLabel}`
+                : 'Факт сейчас (в среднем в месяц)',
               value: currentMonthly !== null ? formatKzt(currentMonthly) : '—',
               tone: (currentMonthly !== null ? 'good' : 'muted') as 'good' | 'muted',
             },
@@ -614,6 +695,7 @@ export default function GrowthSnapshotHero() {
       currentMonthly,
       revenue,
       revenuePeriodLabel,
+      storeRevenue,
       target12m,
       target3y,
       monthlyPlan12,
@@ -649,7 +731,7 @@ export default function GrowthSnapshotHero() {
         <div className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-4">
           <div className="flex items-center justify-between mb-3">
             <p className="text-[10px] font-mono text-primary/70 uppercase tracking-[0.2em]">
-              Точка А · Снимок · {monthLabel}
+              Точка А · Снимок · {snapshotPeriodLabel}
             </p>
             <span
               className="material-symbols-outlined text-base text-primary/40"
@@ -658,6 +740,25 @@ export default function GrowthSnapshotHero() {
               insights
             </span>
           </div>
+
+          {loadState === 'ready' && hasNewerPendingStorePeriod && storePendingPeriod && (
+            <div
+              role="status"
+              className="mb-3 flex items-start gap-2 rounded-xl border border-tertiary-container/25 bg-tertiary-container/[0.07] px-3 py-2.5 text-xs leading-relaxed text-on-surface-variant"
+            >
+              <span className="material-symbols-outlined mt-0.5 text-base text-tertiary-container" aria-hidden="true">
+                pending_actions
+              </span>
+              <p className="min-w-0 flex-1">
+                <span className="font-semibold text-on-surface">{storePendingPeriod.periodLabel} загружен как предварительный.</span>{' '}
+                Он уже виден в статистике Магазина, но не выдаётся за закрытый месяц.
+                {storeRevenue ? ` Для текущей позиции пока используется ${storeRevenue.periodLabel}.` : ''}
+              </p>
+              <Link href="/store" className="shrink-0 font-semibold text-tertiary-container hover:underline">
+                Статистика
+              </Link>
+            </div>
+          )}
 
           {loadState === 'loading' ? (
             <div className="space-y-2.5" aria-busy="true" aria-live="polite">
@@ -706,14 +807,23 @@ export default function GrowthSnapshotHero() {
                 Снимок Точки А ещё не построен
               </p>
               <p className="text-xs text-on-surface-variant max-w-sm mx-auto leading-relaxed mb-4">
-                Не хватает двух вещей: фактической выручки (из анкеты или
-                загруженного P&amp;L) и целей на 1 и 3 года. Как только появится
-                хотя бы одно — здесь будет разрыв до цели.
+                Не хватает двух вещей: фактической выручки (месячный отчёт
+                магазина, анкета или годовой P&amp;L) и целей на 1 и 3 года. Как
+                только появится хотя бы одно — здесь будет разрыв до цели.
               </p>
               <div className="flex flex-wrap gap-2 justify-center">
                 <Link
-                  href={SURVEY_HREF}
+                  href={STORE_IMPORT_HREF}
                   className="inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-[12px] font-mono font-bold bg-primary text-on-primary hover:bg-primary/90 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
+                >
+                  <span className="material-symbols-outlined text-[14px]" aria-hidden="true">
+                    storefront
+                  </span>
+                  Отчёт магазина
+                </Link>
+                <Link
+                  href={SURVEY_HREF}
+                  className="inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-[12px] font-mono border border-white/10 text-on-surface-variant hover:text-on-surface hover:border-primary/40 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
                 >
                   <span className="material-symbols-outlined text-[14px]" aria-hidden="true">
                     edit_note
@@ -727,7 +837,7 @@ export default function GrowthSnapshotHero() {
                   <span className="material-symbols-outlined text-[14px]" aria-hidden="true">
                     cloud_upload
                   </span>
-                  Загрузить P&amp;L
+                  Годовой P&amp;L
                 </Link>
                 <button
                   type="button"
@@ -784,15 +894,17 @@ export default function GrowthSnapshotHero() {
                           {formatKztCompact(currentMonthly)}
                         </p>
                         <p className="text-[11px] text-on-surface-variant font-mono mt-2">
-                          в среднем в месяц · {formatKztCompact(annualRevenue)} {revenuePeriodLabel}
+                          {storeRevenue
+                            ? `факт за месяц · ${storeRevenue.periodLabel}`
+                            : `в среднем в месяц · ${formatKztCompact(annualRevenue)} ${revenuePeriodLabel}`}
                         </p>
                       </div>
                       <div className="flex-1 min-w-[180px]">
                         <span className="text-[9px] font-mono text-on-surface-variant uppercase tracking-widest block mb-1">
-                          Годовая выручка
+                          {storeRevenue ? 'Run-rate 12 месяцев' : 'Годовая выручка'}
                         </span>
                         <p className="text-xs font-mono text-on-surface">
-                          {formatKztCompact(annualRevenue)}
+                          {formatKztCompact(annualReference)}
                           {target12m && (
                             <span className="text-on-surface-variant">
                               {' '}vs план {formatKztCompact(target12m)}
@@ -807,7 +919,7 @@ export default function GrowthSnapshotHero() {
                               aria-valuenow={progressToPlan}
                               aria-valuemin={0}
                               aria-valuemax={100}
-                              aria-label="Выполнение годового плана по выручке"
+                              aria-label="Выполнение цели по выручке"
                             >
                               <div
                                 className={`h-full ${progressColor(progressToPlan)} rounded-full transition-all duration-700`}
@@ -815,7 +927,7 @@ export default function GrowthSnapshotHero() {
                               />
                             </div>
                             <p className="text-[10px] font-mono text-on-surface-variant mt-1">
-                              {progressToPlan}% годового плана
+                              {progressToPlan}% к цели 1Y
                             </p>
                           </>
                         )}
@@ -841,8 +953,17 @@ export default function GrowthSnapshotHero() {
                     </p>
                     <div className="flex flex-wrap gap-2 mt-3">
                       <Link
-                        href={SURVEY_HREF}
+                        href={STORE_IMPORT_HREF}
                         className="inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-[12px] font-mono font-bold bg-primary text-on-primary hover:bg-primary/90 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
+                      >
+                        <span className="material-symbols-outlined text-[14px]" aria-hidden="true">
+                          storefront
+                        </span>
+                        Отчёт магазина
+                      </Link>
+                      <Link
+                        href={SURVEY_HREF}
+                        className="inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-[12px] font-mono border border-white/10 text-on-surface-variant hover:text-on-surface hover:border-primary/40 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
                       >
                         <span className="material-symbols-outlined text-[14px]" aria-hidden="true">
                           edit_note
@@ -856,7 +977,7 @@ export default function GrowthSnapshotHero() {
                         <span className="material-symbols-outlined text-[14px]" aria-hidden="true">
                           cloud_upload
                         </span>
-                        Загрузить P&amp;L
+                        Годовой P&amp;L
                       </Link>
                       <button
                         type="button"
@@ -1286,7 +1407,8 @@ export default function GrowthSnapshotHero() {
                   className="text-left text-[10px] font-mono text-on-surface-variant leading-relaxed hover:text-on-surface transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 rounded"
                 >
                   Текущая позиция: {formatKztCompact(currentMonthly)}/мес
-                  {' · '}Год: {formatKztCompact(annualRevenue)}
+                  {' · '}{storeRevenue ? 'Run-rate 12 месяцев' : 'Годовая выручка'}:{' '}
+                  {formatKztCompact(annualReference)}
                   {' · '}Разрыв до 1Y:{' '}
                   {gap12 !== null ? `${formatKztCompact(gap12)}/мес` : 'нет цели'}
                   {' · '}
@@ -1398,8 +1520,8 @@ export default function GrowthSnapshotHero() {
         </div>
       </div>
 
-      {/* ── Footer ─ 2 small action cards ─────────────────────────────── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      {/* ── Footer ─ canonical data-entry routes ─────────────────────── */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div className="relative bg-surface-container-low rounded-2xl border border-white/[0.04] p-4">
           <button
             type="button"
@@ -1453,6 +1575,28 @@ export default function GrowthSnapshotHero() {
         </div>
 
         <Link
+          href={STORE_IMPORT_HREF}
+          className="group bg-surface-container-low rounded-2xl border border-primary/15 hover:border-primary/40 p-4 transition-all flex items-center gap-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
+        >
+          <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0 group-hover:bg-primary/20 transition-colors">
+            <span className="material-symbols-outlined text-lg text-primary" aria-hidden="true">
+              storefront
+            </span>
+          </div>
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-on-surface group-hover:text-primary transition-colors">
+              Отчёт магазина
+            </p>
+            <p className="text-[10px] text-on-surface-variant font-mono mt-0.5">
+              Месяцы, продажи, P&amp;L → статистика
+            </p>
+          </div>
+          <span className="material-symbols-outlined text-base text-on-surface-variant group-hover:text-primary group-hover:translate-x-0.5 transition-all ml-auto flex-shrink-0" aria-hidden="true">
+            arrow_forward
+          </span>
+        </Link>
+
+        <Link
           href={DOCUMENTS_HREF}
           className="group bg-surface-container-low rounded-2xl border border-white/[0.04] hover:border-primary/30 p-4 transition-all flex items-center gap-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
         >
@@ -1466,10 +1610,10 @@ export default function GrowthSnapshotHero() {
           </div>
           <div className="min-w-0">
             <p className="text-sm font-medium text-on-surface group-hover:text-primary transition-colors">
-              Для загрузки файлов
+              Документы Точки А
             </p>
             <p className="text-[10px] text-on-surface-variant font-mono mt-0.5">
-              Отчёты, P&amp;L, база клиентов · xlsx, csv, pdf
+              Годовой P&amp;L, аудит, база клиентов
               {onboarding?.documents?.count
                 ? ` · загружено ${onboarding.documents.count}`
                 : ''}

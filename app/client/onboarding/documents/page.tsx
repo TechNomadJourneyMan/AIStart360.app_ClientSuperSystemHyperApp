@@ -52,7 +52,7 @@ interface PendingFile {
 }
 
 const DOC_TYPES: { value: DocType; label: string; icon: string; example: string }[] = [
-  { value: 'pl_report',        label: 'P&L (Отчёт о прибыли)',  icon: 'receipt_long',  example: 'Шаблон P&L' },
+  { value: 'pl_report',        label: 'P&L (годовой · Точка А)', icon: 'receipt_long',  example: 'Шаблон P&L' },
   { value: 'balance_sheet',    label: 'Баланс',                  icon: 'account_balance',example: 'Шаблон баланса' },
   { value: 'marketing_report', label: 'Маркетинговый отчёт',     icon: 'campaign',      example: 'Шаблон маркетинга' },
   { value: 'ops_report',       label: 'Операционный отчёт',      icon: 'settings',      example: 'Шаблон операций' },
@@ -60,6 +60,12 @@ const DOC_TYPES: { value: DocType; label: string; icon: string; example: string 
   { value: 'audit',            label: 'Аудит',                   icon: 'fact_check',    example: 'Шаблон аудита' },
   { value: 'other',            label: 'Другое',                  icon: 'folder',        example: '' },
 ]
+
+const CURRENT_REPORT_YEAR = new Date().getFullYear()
+const REPORT_YEARS = Array.from(
+  { length: Math.max(1, CURRENT_REPORT_YEAR - 2019) },
+  (_, index) => CURRENT_REPORT_YEAR - index,
+)
 
 const STATUS_CONFIG: Record<ParseStatus, { label: string; color: string; icon: string; hint: string }> = {
   queued: {
@@ -524,6 +530,22 @@ export default function DocumentsPage() {
           <p className="text-sm text-on-surface-variant">AI-система проанализирует ваши отчёты и дополнит диагностику реальными данными</p>
         </div>
 
+        <div className="flex flex-col gap-3 rounded-2xl border border-primary/20 bg-primary/[0.06] p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-sm font-semibold text-on-surface">Отчёт магазина за месяц?</p>
+            <p className="mt-1 text-xs leading-relaxed text-on-surface-variant">
+              Продажи и P&amp;L за август, сентябрь и другие месяцы публикуются через Store — там сохраняется точный месяц и сразу обновляется статистика.
+            </p>
+          </div>
+          <Link
+            href="/store/imports"
+            className="inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2 text-xs font-bold text-on-primary"
+          >
+            <span className="material-symbols-outlined text-base">storefront</span>
+            Импорт в Магазин
+          </Link>
+        </div>
+
         {/* Drop Zone */}
         {!pending && (
           <div
@@ -579,7 +601,11 @@ export default function DocumentsPage() {
               <label className="block text-xs font-mono text-on-surface-variant uppercase tracking-wider mb-2">Тип документа *</label>
               <select
                 value={pending.doc_type}
-                onChange={e => setPending(p => p ? { ...p, doc_type: e.target.value as DocType } : p)}
+                onChange={e => setPending(p => p ? {
+                  ...p,
+                  doc_type: e.target.value as DocType,
+                  period_quarter: e.target.value === 'pl_report' ? '' : p.period_quarter,
+                } : p)}
                 className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-on-surface focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 appearance-none"
               >
                 <option value="">— Выберите тип —</option>
@@ -589,13 +615,16 @@ export default function DocumentsPage() {
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-mono text-on-surface-variant uppercase tracking-wider mb-2">Квартал</label>
+                <label className="block text-xs font-mono text-on-surface-variant uppercase tracking-wider mb-2">
+                  {pending.doc_type === 'pl_report' ? 'Период' : 'Квартал'}
+                </label>
                 <select
                   value={pending.period_quarter}
                   onChange={e => setPending(p => p ? { ...p, period_quarter: e.target.value } : p)}
-                  className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-on-surface focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 appearance-none"
+                  disabled={pending.doc_type === 'pl_report'}
+                  className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-on-surface focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 appearance-none disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  <option value="">Все кварталы</option>
+                  <option value="">{pending.doc_type === 'pl_report' ? 'Годовой отчёт' : 'Все кварталы'}</option>
                   {['Q1','Q2','Q3','Q4'].map(q => <option key={q} value={q}>{q}</option>)}
                 </select>
               </div>
@@ -606,7 +635,7 @@ export default function DocumentsPage() {
                   onChange={e => setPending(p => p ? { ...p, period_year: e.target.value } : p)}
                   className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-on-surface focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 appearance-none"
                 >
-                  {[2023,2024,2025].map(y => <option key={y} value={y}>{y}</option>)}
+                  {REPORT_YEARS.map(y => <option key={y} value={y}>{y}</option>)}
                 </select>
               </div>
             </div>

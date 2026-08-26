@@ -1,74 +1,27 @@
 'use client'
 
-import { useRef, useState, useCallback } from 'react'
+import { useState, useCallback } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase-client'
 
 /**
  * PointAQuickToolbar — sticky multifunction action bar at the top of Точка А.
  *
  * Quick actions (left → right, horizontally scrollable on mobile):
- *   • Загрузить файл  — opens file picker, uploads to Supabase Storage,
- *                       registers via /api/v1/onboarding/documents, triggers parse.
+ *   • Отчёт магазина — opens the verified Store preview → publish flow. Monthly
+ *                      Store data must never be sent through the annual Point A
+ *                      document resolver: doing so destroys the month grain.
  *   • Заполнить анкету — link to onboarding wizard
  *   • Документы       — link to documents page
  *   • Точка Б         — link to target state
  *   • Метрики         — link to metrics catalog
- *   • Пересчитать     — POST /api/v1/diagnostics/recalculate then router.refresh()
+ *   • Диагностику     — POST /api/v1/diagnostics/recalculate then router.refresh()
  *
  * Premium glassmorphism aesthetic — matches existing dashboard tokens.
  */
 export default function PointAQuickToolbar({ userId }: { userId: string | null }) {
   const router = useRouter()
-  const fileInputRef = useRef<HTMLInputElement | null>(null)
-  const [uploadState, setUploadState] = useState<'idle' | 'uploading' | 'success' | 'error'>('idle')
-  const [uploadName, setUploadName] = useState<string | null>(null)
   const [recalcState, setRecalcState] = useState<'idle' | 'pending' | 'success' | 'error'>('idle')
-
-  // ─── File upload — same flow as components/point-a/FileArea.tsx ─────────
-  const handleFile = useCallback(async (file: File) => {
-    if (!userId) {
-      setUploadState('error')
-      return
-    }
-    setUploadState('uploading')
-    setUploadName(file.name)
-    try {
-      const sb = createClient()
-      const ext = file.name.split('.').pop() || 'bin'
-      const storagePath = `${userId}/${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`
-      const { error: upErr } = await sb.storage
-        .from('user-documents')
-        .upload(storagePath, file, { cacheControl: '3600', upsert: false })
-      if (upErr) throw new Error(upErr.message)
-      const { data: pub } = sb.storage.from('user-documents').getPublicUrl(storagePath)
-      const res = await fetch('/api/v1/onboarding/documents', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          user_id: userId,
-          file_name: file.name,
-          file_url: pub.publicUrl,
-          file_size: file.size,
-          mime_type: file.type,
-          storage_path: storagePath,
-        }),
-      })
-      if (!res.ok) throw new Error(await res.text())
-      setUploadState('success')
-      // Refresh server data so the new document appears
-      router.refresh()
-      setTimeout(() => setUploadState('idle'), 2500)
-    } catch (e) {
-      console.error('[quick-toolbar] upload failed', e)
-      setUploadState('error')
-      setTimeout(() => setUploadState('idle'), 3500)
-    }
-  }, [userId, router])
-
-  const openPicker = () => fileInputRef.current?.click()
 
   // ─── Recalculate ────────────────────────────────────────────────────────
   const recalculate = useCallback(async () => {
@@ -91,72 +44,34 @@ export default function PointAQuickToolbar({ userId }: { userId: string | null }
   }, [router])
 
   // ─── Render ─────────────────────────────────────────────────────────────
-  const uploadLabel =
-    uploadState === 'uploading' ? 'Загружаем…' :
-    uploadState === 'success' ? 'Загружено' :
-    uploadState === 'error' ? 'Ошибка' :
-    'Загрузить файл'
-
   const recalcLabel =
     recalcState === 'pending' ? 'Считаем…' :
     recalcState === 'success' ? 'Готово' :
     recalcState === 'error' ? 'Ошибка' :
-    'Пересчитать'
+    'Диагностику'
 
   return (
     <div className="sticky top-0 z-30 -mx-4 md:-mx-6 lg:-mx-8 px-4 md:px-6 lg:px-8 py-3 mb-2 bg-surface/80 backdrop-blur-xl border-b border-white/[0.04]">
       <div className="flex items-center gap-2 overflow-x-auto pb-1 -mb-1 scrollbar-thin scrollbar-thumb-white/10"
            role="toolbar" aria-label="Быстрые действия">
 
-        {/* Primary CTA — file upload */}
-        <button
-          type="button"
-          onClick={openPicker}
-          disabled={uploadState === 'uploading' || !userId}
-          aria-label={uploadLabel}
-          className={`group flex-shrink-0 inline-flex items-center gap-2 px-4 py-2.5 rounded-xl font-mono text-xs font-bold uppercase tracking-wide transition-all border ${
-            uploadState === 'success'
-              ? 'bg-primary/20 border-primary/50 text-primary'
-              : uploadState === 'error'
-              ? 'bg-error/15 border-error/40 text-error'
-              : 'bg-gradient-to-r from-primary to-[#00e29e] border-primary/40 text-[#003824] hover:shadow-[0_0_20px_rgba(110,255,192,0.35)] disabled:opacity-60'
-          }`}
+        {/* Monthly Store reports use their own period-aware, atomic importer. */}
+        <Link
+          href="/store/imports"
+          aria-label="Загрузить отчёт магазина и обновить статистику"
+          className="group flex-shrink-0 inline-flex items-center gap-2 rounded-xl border border-primary/40 bg-gradient-to-r from-primary to-[#00e29e] px-4 py-2.5 font-mono text-xs font-bold uppercase tracking-wide text-[#003824] transition-all hover:shadow-[0_0_20px_rgba(110,255,192,0.35)]"
         >
-          <span className="material-symbols-outlined text-base">
-            {uploadState === 'uploading'
-              ? 'progress_activity'
-              : uploadState === 'success'
-              ? 'check_circle'
-              : uploadState === 'error'
-              ? 'error'
-              : 'upload_file'}
-          </span>
-          <span className="whitespace-nowrap">{uploadLabel}</span>
-          {uploadState !== 'idle' && uploadName && (
-            <span className="hidden sm:inline text-[10px] font-normal text-current/70 truncate max-w-[160px]">
-              · {uploadName}
-            </span>
-          )}
-        </button>
-
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".pdf,.xlsx,.xls,.csv,.docx,.doc"
-          className="hidden"
-          onChange={(e) => {
-            const f = e.target.files?.[0]
-            if (f) handleFile(f)
-            e.target.value = ''
-          }}
-        />
+          <span className="material-symbols-outlined text-base">upload_file</span>
+          <span className="whitespace-nowrap">Отчёт магазина</span>
+        </Link>
 
         {/* Divider */}
         <div className="flex-shrink-0 h-6 w-px bg-white/[0.08] mx-1" />
 
         {/* Quick links */}
         <ToolbarLink href="/client/onboarding" icon="edit_note" label="Анкета" />
-        <ToolbarLink href="/client/onboarding/documents" icon="folder_open" label="Документы" />
+        <ToolbarLink href="/client/onboarding/documents" icon="folder_open" label="P&L / документы" />
+        <ToolbarLink href="/store" icon="monitoring" label="Статистика магазина" />
         <ToolbarLink href="/point-b" icon="flag" label="Точка Б" />
         <ToolbarLink href="/metrics" icon="bar_chart" label="Метрики" />
 

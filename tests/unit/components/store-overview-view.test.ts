@@ -201,4 +201,73 @@ describe('StoreOverviewView', () => {
     expect(html).toContain('Нет активных товаров')
     expect(html).toContain('ни один не отмечен активным')
   })
+
+  it('rolls the P&L panel forward when a newly published August period arrives', () => {
+    const financialPeriods = ['05', '06', '07', '08'].map((month, index) => ({
+      month: `2026-${month}`,
+      revenue: 10_000_000 + index * 1_000_000,
+      costAmount: 6_000_000,
+      reportedGrossProfit: 4_000_000 + index * 1_000_000,
+      periodExpenses: index === 0 ? 6_000_000 : 3_000_000,
+      bonuses: 100_000,
+      writeOffs: 50_000,
+      ebitda: index === 0 ? -2_000_000 : index * 1_000_000,
+      completeness: index === 0 ? 'partial' as const : 'complete' as const,
+      note: null,
+      scopeKey: `month:2026-${month}`,
+      sourceSheet: `P&L 2026-${month}`,
+      publishedAt: `2026-08-${String(20 + index).padStart(2, '0')}T10:00:00.000Z`,
+    }))
+    const analytics = buildStoreAnalytics({
+      now: new Date('2026-09-01T06:00:00.000Z'),
+      operationalPeriods: [],
+      myHonorFacts: [],
+      myHonorSyncedAt: null,
+      financialSchemaAvailable: true,
+      financialPeriods,
+    })
+    const html = renderToStaticMarkup(createElement(StoreOverviewView, {
+      data: { ...empty, source: 'operational', analytics, alerts: [] },
+    }))
+
+    expect(html).toContain('P&amp;L · июнь 2026 г. — авг. 2026 г.')
+    expect(html).toContain('month:2026-08')
+    expect(html).not.toContain('P&amp;L · май 2026 г. — июль 2026 г.')
+    expect(html).not.toContain('Отрицательная EBITDA')
+    const visiblePnl = html.slice(html.indexOf('P&amp;L · июнь 2026 г. — авг. 2026 г.'))
+    expect(visiblePnl.slice(0, 700)).toContain('Полные данные')
+  })
+
+  it('marks a newly uploaded provisional August P&L in both the panel and its row', () => {
+    const analytics = buildStoreAnalytics({
+      now: new Date('2026-08-26T07:00:00.000Z'),
+      operationalPeriods: [],
+      myHonorFacts: [],
+      myHonorSyncedAt: null,
+      financialSchemaAvailable: true,
+      financialPeriods: [{
+        month: '2026-08',
+        revenue: 31_000_000,
+        costAmount: 18_000_000,
+        reportedGrossProfit: 13_000_000,
+        periodExpenses: 9_500_000,
+        bonuses: 1_000_000,
+        writeOffs: 500_000,
+        ebitda: 3_500_000,
+        completeness: 'provisional',
+        note: null,
+        scopeKey: 'month:2026-08',
+        sourceSheet: 'P&L 2026 (август)',
+        publishedAt: '2026-08-26T06:00:00.000Z',
+      }],
+    })
+    const html = renderToStaticMarkup(createElement(StoreOverviewView, {
+      data: { ...empty, source: 'operational', analytics, alerts: [] },
+    }))
+
+    const pnlSection = html.slice(html.indexOf('P&amp;L · авг. 2026 г.'))
+    expect(pnlSection).toContain('Частичное покрытие')
+    expect((pnlSection.match(/Частичное покрытие/g) ?? [])).toHaveLength(2)
+    expect(pnlSection).toContain('month:2026-08')
+  })
 })

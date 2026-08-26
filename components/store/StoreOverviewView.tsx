@@ -161,15 +161,15 @@ export function StoreOverviewView({ data }: { data: StoreOverview }) {
   const historyHasNegative = analytics?.history.some((period) => (
     (period.metrics.revenue ?? 0) < 0 || (period.metrics.grossProfit ?? 0) < 0
   )) ?? false
-  const currentPnlRange = analytics
-    ? analytics.pnl.periods.filter((period) => (
-        period.month >= `${analytics.comparableYtd.currentYear}-05`
-        && period.month <= `${analytics.comparableYtd.currentYear}-07`
-      ))
-    : []
-  const visiblePnlPeriods = currentPnlRange.length > 0
-    ? currentPnlRange
-    : analytics?.pnl.periods.slice(-3) ?? []
+  // Always show the newest published P&L periods. The former May–July range
+  // silently hid August (and every later upload) even though analytics already
+  // contained it.
+  const visiblePnlPeriods = analytics?.pnl.periods.slice(-3) ?? []
+  const visiblePnlCoverage: StoreAnalyticsCoverage = visiblePnlPeriods.length === 0
+    ? analytics?.pnl.coverage ?? 'not_covered'
+    : visiblePnlPeriods.every((period) => period.coverage === 'complete')
+      ? 'complete'
+      : 'partial'
   const visiblePnlEbitda = visiblePnlPeriods.length > 0
     && visiblePnlPeriods.every((period) => period.ebitda !== null)
     ? Math.round((visiblePnlPeriods.reduce((sum, period) => sum + (period.ebitda ?? 0), 0) + Number.EPSILON) * 100) / 100
@@ -455,19 +455,19 @@ export function StoreOverviewView({ data }: { data: StoreOverview }) {
                 <p className="text-[10px] font-mono uppercase tracking-[0.18em] text-primary">P&amp;L · {visiblePnlLabel}</p>
                 <h2 className="mt-1 font-headline text-lg font-bold text-on-surface">Прибыль и расходы периода</h2>
               </div>
-              <span className={`self-start rounded-full border px-2.5 py-1 text-[10px] ${coverageTone(analytics.pnl.coverage)}`}>{coverageLabel(analytics.pnl.coverage)}</span>
+              <span className={`self-start rounded-full border px-2.5 py-1 text-[10px] ${coverageTone(visiblePnlCoverage)}`}>{coverageLabel(visiblePnlCoverage)}</span>
             </div>
-            {analytics.pnl.hasNegativeEbitda && (
+            {visiblePnlEbitda !== null && visiblePnlEbitda < 0 && (
               <div role="alert" className="mt-4 flex items-start gap-2 rounded-xl border border-error/25 bg-error/[0.07] p-3 text-error">
                 <span className="material-symbols-outlined text-lg">warning</span>
-                <p className="text-xs leading-relaxed">Отрицательная EBITDA{visiblePnlEbitda !== null ? `: ${formatPnlKzt(visiblePnlEbitda)}` : ''}. Расходы периода выше валовой прибыли.</p>
+                <p className="text-xs leading-relaxed">Отрицательная EBITDA: {formatPnlKzt(visiblePnlEbitda)}. Расходы видимого периода выше валовой прибыли.</p>
               </div>
             )}
             {visiblePnlPeriods.length === 0 ? (
               <div className="mt-4"><EmptySection icon="account_balance" title="P&amp;L ещё не опубликован" text={analytics.pnl.message ?? 'Загрузите управленческий отчёт.'} /></div>
             ) : (
               <div className="mt-4 max-w-full overflow-x-auto rounded-xl border border-white/[0.05]">
-                <table className="w-full min-w-[1120px] text-left text-xs">
+                <table className="w-full min-w-[1220px] text-left text-xs">
                   <thead className="border-b border-white/[0.06] text-[10px] font-mono uppercase tracking-wider text-on-surface-variant">
                     <tr>
                       <th className="px-3 py-3 font-medium">Месяц</th>
@@ -478,6 +478,7 @@ export function StoreOverviewView({ data }: { data: StoreOverview }) {
                       <th className="px-3 py-3 text-right font-medium">Бонусы*</th>
                       <th className="px-3 py-3 text-right font-medium">Списания*</th>
                       <th className="px-3 py-3 text-right font-medium">EBITDA</th>
+                      <th className="px-3 py-3 font-medium">Покрытие</th>
                       <th className="px-3 py-3 font-medium">Источник / сверка</th>
                     </tr>
                   </thead>
@@ -492,6 +493,11 @@ export function StoreOverviewView({ data }: { data: StoreOverview }) {
                         <td className="whitespace-nowrap px-3 py-3 text-right font-mono tabular-nums text-on-surface-variant">{formatPnlKzt(period.bonuses)}</td>
                         <td className="whitespace-nowrap px-3 py-3 text-right font-mono tabular-nums text-on-surface-variant">{formatPnlKzt(period.writeOffs)}</td>
                         <td className={`whitespace-nowrap px-3 py-3 text-right font-mono font-bold tabular-nums ${period.ebitda !== null && period.ebitda < 0 ? 'text-error' : 'text-primary'}`}>{formatPnlKzt(period.ebitda)}</td>
+                        <td className="whitespace-nowrap px-3 py-3">
+                          <span className={`rounded-full border px-2 py-1 text-[9px] ${coverageTone(period.coverage)}`}>
+                            {coverageLabel(period.coverage)}
+                          </span>
+                        </td>
                         <td className="min-w-64 px-3 py-3 text-[10px] leading-relaxed text-on-surface-variant">
                           <p className="text-on-surface">{period.sourceSheet ?? (period.source === 'financial_report' ? 'Управленческий отчёт' : 'Продажи без полного P&L')}</p>
                           <p className="break-words">{period.scopeKey ?? 'scope не указан'}{period.publishedAt ? ` · опубликовано ${formatDate(period.publishedAt)}` : ''}</p>
@@ -504,7 +510,9 @@ export function StoreOverviewView({ data }: { data: StoreOverview }) {
               </div>
             )}
             <p className="mt-3 text-[10px] leading-relaxed text-on-surface-variant">* Бонусы и списания — детализация внутри «Расходов периода» и не вычитаются из EBITDA повторно.</p>
-            {analytics.pnl.message && <p className="mt-2 text-xs leading-relaxed text-on-surface-variant">{analytics.pnl.message}</p>}
+            {visiblePnlCoverage !== 'complete' && analytics.pnl.message && (
+              <p className="mt-2 text-xs leading-relaxed text-on-surface-variant">{analytics.pnl.message}</p>
+            )}
           </article>
         </section>
       )}

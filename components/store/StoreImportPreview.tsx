@@ -9,6 +9,7 @@ import {
   type FormEvent,
   type RefObject,
 } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 
 const MAX_FILE_BYTES = 4 * 1024 * 1024
@@ -344,7 +345,7 @@ function PublicationPanel({
             <p className="mt-1 text-sm leading-relaxed text-on-surface-variant">
               {duplicate
                 ? 'Повторная загрузка распознана. Данные магазина не изменены и строки не продублированы.'
-                : `${result.rowCount.toLocaleString('ru-RU')} строк теперь доступны в Store Control Center.`}
+                : `${result.rowCount.toLocaleString('ru-RU')} строк опубликованы. Дашборды, месячная история и P&L уже используют новые данные.`}
             </p>
             <dl className="mt-4 grid gap-2 text-xs sm:grid-cols-3">
               <div className="rounded-xl border border-white/[0.06] bg-black/10 px-3 py-2">
@@ -360,10 +361,10 @@ function PublicationPanel({
                 <dd className="mt-1 truncate font-mono text-on-surface" title={result.importRunId}>{result.importRunId}</dd>
               </div>
             </dl>
-            <a href="/store" className="mt-4 inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-bold text-on-primary">
-              Открыть Магазин
+            <Link href="/store" className="mt-4 inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-bold text-on-primary">
+              Проверить обновлённую статистику
               <span className="material-symbols-outlined text-lg" aria-hidden="true">arrow_forward</span>
-            </a>
+            </Link>
           </div>
         </div>
       </section>
@@ -1123,6 +1124,7 @@ export default function StoreImportPreview() {
       setPublishResult(body.data)
       setPublishPhase(body.data.outcome)
       router.refresh()
+      router.prefetch('/store')
     } catch (publishError) {
       if (publishError instanceof DOMException && publishError.name === 'AbortError') return
       setPublishErrorMessage('Нет соединения с сервером. Повтор сохранит тот же безопасный ключ и не создаст дубли.')

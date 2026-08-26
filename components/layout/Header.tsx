@@ -1,13 +1,12 @@
 'use client'
 
 import Link from 'next/link'
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useUIStore } from '@/stores/ui.store'
 import { useNotificationsStore } from '@/stores/notifications.store'
 import { useAuthStore } from '@/stores/auth.store'
 import { hasPermission } from '@/lib/navigation'
-import { createClient } from '@/lib/supabase/client'
 import type { UserRole } from '@/types'
 import { getClientLocale, setClientLocale, type Locale } from '@/lib/i18n/locale'
 
@@ -20,9 +19,6 @@ export function Header() {
   const [showUserMenu, setShowUserMenu] = useState(false)
   const [showQuickAction, setShowQuickAction] = useState(false)
   const [locale, setLocale] = useState<Locale>('ru')
-  const [uploadStatus, setUploadStatus] = useState<'idle' | 'uploading' | 'done' | 'error'>('idle')
-  const [uploadMessage, setUploadMessage] = useState<string>('')
-  const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   // Hydrate the toggle from the persisted cookie. The cookie isn't available
   // during SSR, so we read it after mount to keep server/client markup in sync.
@@ -49,8 +45,9 @@ export function Header() {
     {
       title: 'Файлы',
       items: [
-        { label: 'Загрузить файл', icon: 'upload_file', href: '#upload' },
-        { label: 'Мои документы',  icon: 'folder_open', href: '/point-a#files' },
+        { label: 'Отчёт магазина → статистика', icon: 'upload_file', href: '/store/imports' },
+        { label: 'P&L / документы Точки А', icon: 'folder_open', href: '/client/onboarding/documents' },
+        { label: 'Мои документы', icon: 'description', href: '/point-a#files' },
       ],
     },
     {
@@ -93,65 +90,6 @@ export function Header() {
       items: g.items.filter((a) => !a.reqPermission || hasPermission(userRole, a.reqPermission)),
     }))
     .filter((g) => g.items.length > 0)
-
-  const triggerFilePicker = () => {
-    setShowQuickAction(false)
-    setUploadStatus('idle')
-    setUploadMessage('')
-    fileInputRef.current?.click()
-  }
-
-  const handleFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    e.target.value = ''
-    if (!file) return
-    if (!user?.id) {
-      setUploadStatus('error')
-      setUploadMessage('Нужно войти в аккаунт')
-      return
-    }
-    try {
-      setUploadStatus('uploading')
-      setUploadMessage(`Загрузка ${file.name}…`)
-      const sb = createClient()
-      const storagePath = `${user.id}/${Date.now()}_${file.name}`
-      const { error: uploadError } = await sb.storage
-        .from('documents')
-        .upload(storagePath, file, {
-          contentType: file.type || 'application/octet-stream',
-          upsert: false,
-        })
-      if (uploadError) throw new Error(uploadError.message)
-      const { data: { publicUrl } } = sb.storage.from('documents').getPublicUrl(storagePath)
-      const res = await fetch('/api/v1/onboarding/documents', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          user_id: user.id,
-          file_name: file.name,
-          file_url: publicUrl,
-          file_size: file.size,
-          mime_type: file.type,
-          doc_type: 'financial_report',
-        }),
-      })
-      const result = await res.json()
-      if (!result.ok) throw new Error(result.error ?? 'Ошибка загрузки')
-      setUploadStatus('done')
-      setUploadMessage(`✅ ${file.name} загружен`)
-      window.setTimeout(() => {
-        setUploadStatus('idle')
-        setUploadMessage('')
-      }, 3500)
-    } catch (err) {
-      setUploadStatus('error')
-      setUploadMessage(err instanceof Error ? err.message : 'Ошибка загрузки')
-      window.setTimeout(() => {
-        setUploadStatus('idle')
-        setUploadMessage('')
-      }, 5000)
-    }
-  }
 
   const handleLogout = () => {
     logout()
@@ -234,60 +172,20 @@ export function Header() {
                     <div className="px-4 py-1.5 text-[10px] font-mono uppercase tracking-[0.16em] text-on-surface-variant/50">
                       {group.title}
                     </div>
-                    {group.items.map((action) => {
-                      if (action.href === '#upload') {
-                        return (
-                          <button
-                            key={action.label}
-                            type="button"
-                            onClick={triggerFilePicker}
-                            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-on-surface-variant hover:text-on-surface hover:bg-white/[0.04] transition-colors text-left min-h-[40px]"
-                          >
-                            <span className="material-symbols-outlined text-base text-primary/60">{action.icon}</span>
-                            {action.label}
-                          </button>
-                        )
-                      }
-                      return (
+                    {group.items.map((action) => (
                         <Link key={action.href} href={action.href}
                           onClick={() => setShowQuickAction(false)}
                           className="flex items-center gap-3 px-4 py-2.5 text-sm text-on-surface-variant hover:text-on-surface hover:bg-white/[0.04] transition-colors min-h-[40px]">
                           <span className="material-symbols-outlined text-base text-primary/60">{action.icon}</span>
                           {action.label}
                         </Link>
-                      )
-                    })}
+                    ))}
                   </div>
                 ))}
               </div>
             </>
           )}
         </div>
-
-        <input
-          ref={fileInputRef}
-          type="file"
-          className="hidden"
-          accept=".pdf,.xlsx,.xls,.csv,.doc,.docx,.txt,.png,.jpg,.jpeg"
-          onChange={handleFileSelected}
-        />
-
-        {uploadMessage && (
-          <div
-            className={`hidden md:flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-mono border ${
-              uploadStatus === 'uploading'
-                ? 'bg-primary/5 border-primary/20 text-primary'
-                : uploadStatus === 'done'
-                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
-                  : 'bg-error/10 border-error/30 text-error'
-            }`}
-          >
-            {uploadStatus === 'uploading' && (
-              <span className="material-symbols-outlined text-sm animate-pulse">cloud_upload</span>
-            )}
-            <span className="truncate max-w-[220px]">{uploadMessage}</span>
-          </div>
-        )}
 
         {/* Отчёты — открывает клиентский отчёт (Точка А + цели + данные анкеты) */}
         <Link href="/client/point-a"

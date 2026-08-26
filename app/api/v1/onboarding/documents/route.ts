@@ -5,6 +5,7 @@ import { createServerClient } from '@/lib/supabase-server'
 import { notifyAdmins } from '@/lib/notifications'
 import { inngest } from '@/lib/inngest'
 import { isSupabaseStorageUrl } from '@/lib/upload-url'
+import { validateDocumentPeriodMetadata } from '@/lib/documents/period-metadata'
 
 // GET /api/v1/onboarding/documents — the caller's own documents (session user).
 // user_id is no longer trusted from the query. See technical-audit A5.
@@ -33,6 +34,14 @@ export async function POST(req: NextRequest) {
     if (!file_name || !file_url || !doc_type) {
       return NextResponse.json({ ok: false, error: 'Missing required fields' }, { status: 400 })
     }
+    const periodMetadata = validateDocumentPeriodMetadata(doc_type, period_year, period_quarter)
+    if (!periodMetadata.ok) {
+      return NextResponse.json({
+        ok: false,
+        error: periodMetadata.message,
+        code: periodMetadata.code,
+      }, { status: 400 })
+    }
 
     // SECURITY (audit 2026-07-02): `file_url` is later fetched server-side by the
     // /process pipeline. Constrain it to our own Supabase Storage so it can't be
@@ -55,9 +64,9 @@ export async function POST(req: NextRequest) {
         file_url,
         file_size: file_size ?? null,
         mime_type: mime_type ?? null,
-        doc_type,
-        period_quarter: period_quarter ?? null,
-        period_year: period_year ?? null,
+        doc_type: periodMetadata.value.docType,
+        period_quarter: periodMetadata.value.periodQuarter,
+        period_year: periodMetadata.value.periodYear,
         parse_status: 'queued',
       })
       .select()
@@ -68,7 +77,7 @@ export async function POST(req: NextRequest) {
     // Notify admins about file upload (fire-and-forget)
     notifyAdmins('file_uploaded', {
       fileName: file_name,
-      docType: doc_type,
+      docType: periodMetadata.value.docType,
       fileSize: file_size,
       mimeType: mime_type,
     }, user_id)
@@ -85,7 +94,7 @@ export async function POST(req: NextRequest) {
             file_url,
             file_name,
             mime_type: mime_type ?? null,
-            doc_type,
+            doc_type: periodMetadata.value.docType,
           },
         })
       } catch (err) {

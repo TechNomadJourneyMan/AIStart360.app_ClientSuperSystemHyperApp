@@ -18,13 +18,19 @@ describe('StoreImportHistory', () => {
           id: 'run-1', kind: 'inventory', scopeKey: 'warehouse:astana',
           sourceSha256: 'a'.repeat(64), status: 'published',
           periodStart: '2026-07-31', periodEnd: '2026-07-31', rowCount: 685,
-          warningCount: 2, errorCount: 0, publishedAt: '2026-08-12T12:00:00Z',
+          warningCount: 2, errorCount: 0, quarantinedCount: 0, publishedAt: '2026-08-12T12:00:00Z',
         },
         {
           id: 'run-0', kind: 'inventory', scopeKey: 'warehouse:astana',
           sourceSha256: 'b'.repeat(64), status: 'superseded',
           periodStart: '2026-07-01', periodEnd: '2026-07-01', rowCount: 680,
-          warningCount: 0, errorCount: 0, publishedAt: '2026-08-01T12:00:00Z',
+          warningCount: 0, errorCount: 0, quarantinedCount: 0, publishedAt: '2026-08-01T12:00:00Z',
+        },
+        {
+          id: 'financial-1', kind: 'management_period', scopeKey: 'management_period:2026-08:2026-08',
+          sourceSha256: 'c'.repeat(64), status: 'published',
+          periodStart: '2026-08-01', periodEnd: '2026-08-31', rowCount: 1,
+          warningCount: 1, errorCount: 0, quarantinedCount: 2, publishedAt: '2026-08-26T12:00:00Z',
         },
       ],
     }))
@@ -32,6 +38,8 @@ describe('StoreImportHistory', () => {
     expect(html).toContain('Заменено')
     expect(html).toContain('685')
     expect(html).toContain('aaaaaaaaaaaa…')
+    expect(html).toContain('Управленческий P&amp;L')
+    expect(html).toContain('В карантине: 2')
     expect(html).not.toContain('raw_payload')
   })
 })
