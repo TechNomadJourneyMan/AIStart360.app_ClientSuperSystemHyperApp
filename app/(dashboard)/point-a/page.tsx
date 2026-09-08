@@ -18,6 +18,7 @@ import InsightsFeed from '@/components/point-a/v2/InsightsFeed'
 import PointAQuickPills from '@/components/point-a/v2/PointAQuickPills'
 import PointAFilterSection from '@/components/point-a/v2/PointAFilterSection'
 import { ShareButton } from '@/components/share/ShareButton'
+import { stepForQuestionKey } from '@/lib/survey/steps'
 
 export const metadata: Metadata = { title: 'Точка А — Текущее состояние' }
 
@@ -127,7 +128,7 @@ export default async function PointAPage() {
         if (Array.isArray(rows)) {
           for (const row of rows) {
             surveyAnswers[row.question_key] = row.answer?.value ?? row.answer
-            const step = parseInt(row.step, 10)
+            const step = stepForQuestionKey(String(row.question_key), parseInt(row.step, 10) || null)
             if (step && !surveyCompletedSteps.includes(step)) {
               surveyCompletedSteps.push(step)
             }

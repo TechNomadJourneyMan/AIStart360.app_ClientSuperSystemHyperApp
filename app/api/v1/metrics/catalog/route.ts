@@ -17,6 +17,7 @@ import { createClient } from '@/lib/supabase/server'
 import { getMetricRegistry } from '@/lib/metrics/registry'
 import type { MetricEntry } from '@/lib/metrics/types'
 import type { MetricSource } from '@/lib/metrics/descriptions'
+import { applyGriSectionScores, countByNamespace } from '@/lib/metrics/catalog-helpers'
 
 const FRESH_WINDOW_MS = 24 * 60 * 60 * 1000
 
@@ -279,6 +280,31 @@ function mergeLatestRows(
   })
 }
 
+/**
+ * Latest GRI assessment for the user → fills the 7 `gri.*` catalog items.
+ * Newest row wins. Any DB error leaves the items as they are (never fails
+ * the catalog).
+ */
+async function overlayGriSectionScores(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  items: CatalogItem[],
+  now: Date,
+): Promise<CatalogItem[]> {
+  try {
+    const { data } = await supabase
+      .from('gri_assessments')
+      .select('section_avgs, created_at')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+    const row = (data?.[0] ?? null) as { section_avgs: Record<string, unknown> | null; created_at: string | null } | null
+    return applyGriSectionScores(items, row, FRESH_WINDOW_MS, now)
+  } catch {
+    return items
+  }
+}
+
 // ── Route handler ────────────────────────────────────────────
 
 export async function GET(req: NextRequest) {
@@ -369,7 +395,19 @@ export async function GET(req: NextRequest) {
           items = mergeLatestRows(items, (rows ?? []) as MetricRow[], now)
         }
       }
+
+      // 3b. GRI overlay — the 7 GRI block metrics are scored by the GRI
+      // assessment (gri_assessments.section_avgs), not by survey/document
+      // resolution, so without this they always read «Нет данных» even when
+      // /gri shows 7.4–9.0 (E2E bug #7).
+      if (items.some((i) => i.namespace === 'gri' && i.value === null)) {
+        items = await overlayGriSectionScores(supabase, user.id, items, now)
+      }
     }
+
+    // 3c. Per-namespace totals for the tab bar (search-aware, namespace-agnostic)
+    // — the client used to zero the inactive tabs (E2E bug #8).
+    const counts = countByNamespace(filterRegistry(registry, { namespace: 'all', search: q.search }))
 
     // 4. Sort + paginate
     const sorted = sortItems(items, q.sort)
@@ -382,6 +420,7 @@ export async function GET(req: NextRequest) {
       ok: true,
       data: {
         total,
+        counts,
         page: q.page,
         pageSize: q.pageSize,
         items: slice,

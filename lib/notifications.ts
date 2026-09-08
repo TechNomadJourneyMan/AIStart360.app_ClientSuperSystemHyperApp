@@ -85,11 +85,25 @@ function buildEmailBody(payload: NotificationPayload): { title: string; body: st
         title: 'Новая регистрация',
         body: `Новый пользователь зарегистрирован: ${data.name || 'N/A'} (${data.email || 'N/A'}), роль: ${data.role || 'N/A'}, организация: ${data.organization || 'N/A'}.`,
       }
-    case 'survey_completed':
-      return {
-        title: 'Анкета завершена',
-        body: `Пользователь ${data.userName || data.userEmail || userId || 'N/A'} завершил прохождение анкеты (шаг ${data.step || 'финал'}).`,
+    case 'survey_completed': {
+      const who = data.userName || data.userEmail || userId || 'N/A'
+      const lines: string[] = [
+        `Пользователь ${who} завершил прохождение анкеты (${data.completedSteps ?? 12}/${data.totalSteps ?? 12} шагов).`,
+      ]
+      const field = (label: string, v: unknown) => {
+        if (typeof v === 'string' && v.trim()) lines.push(`${label}: ${v.trim()}`)
+        else if (typeof v === 'number' && Number.isFinite(v)) lines.push(`${label}: ${v}`)
       }
+      field('Компания', data.company)
+      field('Отрасль', data.industry)
+      field('Контакт', data.contact)
+      field('Телефон', data.phone)
+      field('Email', data.contactEmail)
+      field('Выручка (год)', data.revenue)
+      field('Цель 12 мес', data.goal12m)
+      if (typeof data.sheetUrl === 'string' && data.sheetUrl) lines.push(`Таблица ответов: ${data.sheetUrl}`)
+      return { title: 'Анкета завершена', body: lines.join('\n') }
+    }
     case 'expert_comment': {
       const expert = data.expertName || 'Эксперт'
       const title = data.expertTitle ? ` (${data.expertTitle})` : ''

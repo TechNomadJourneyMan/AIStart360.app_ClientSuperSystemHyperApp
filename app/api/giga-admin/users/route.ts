@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase-service'
 import { isGigaSuperAdmin } from '@/lib/admin/giga-actor'
+import { stepForQuestionKey } from '@/lib/survey/steps'
 
 /**
  * GET /api/giga-admin/users
@@ -40,12 +41,13 @@ export async function GET(req: NextRequest) {
     // Get survey completion status
     const { data: surveyStats } = await sb
       .from('survey_answers')
-      .select('user_id, step')
+      .select('user_id, step, question_key, answer')
 
     const surveyMap = new Map<string, Set<number>>()
     for (const s of surveyStats ?? []) {
       if (!surveyMap.has(s.user_id)) surveyMap.set(s.user_id, new Set())
-      surveyMap.get(s.user_id)!.add(s.step)
+      const step = stepForQuestionKey(String(s.question_key), typeof s.step === 'number' && s.step >= 1 ? s.step : null)
+      if (step) surveyMap.get(s.user_id)!.add(step)
     }
 
     const users = (profiles ?? []).map((p) => {
