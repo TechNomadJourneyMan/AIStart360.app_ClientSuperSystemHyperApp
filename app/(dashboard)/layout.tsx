@@ -4,16 +4,23 @@ import { MobileNav } from '@/components/layout/MobileNav'
 import { DashboardShell } from '@/components/layout/DashboardShell'
 import { MascotLauncher } from '@/components/assistant/mascot/MascotLauncher'
 import { NotificationsBellSync } from '@/components/notifications/NotificationsBellSync'
+import { getCurrentOrgVertical } from '@/lib/vertical'
 
-export default function DashboardLayout({
+export default async function DashboardLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
+  // Resolve from the authenticated profile on the server. This makes the first
+  // HTML frame correct and avoids a client-side Store → Clinic navigation flash.
+  const verticalContext = await getCurrentOrgVertical()
+  const vertical = verticalContext?.vertical ?? 'generic'
+  const serverRole = verticalContext?.role ?? 'client'
+
   return (
     <div className="min-h-screen bg-background flex">
       {/* Sidebar — скрыт на мобильных */}
-      <Sidebar />
+      <Sidebar vertical={vertical} serverRole={serverRole} />
 
       {/* Основной контент — отступ динамически реагирует на collapse */}
       <DashboardShell>
@@ -28,7 +35,7 @@ export default function DashboardLayout({
       </DashboardShell>
 
       {/* Mobile Bottom Navigation */}
-      <MobileNav />
+      <MobileNav vertical={vertical} serverRole={serverRole} />
 
       {/* Floating AI assistant — the mascot «Гри» (falls back to the static
           launcher when NEXT_PUBLIC_FEATURE_MASCOT='0' or on a mascot crash) */}

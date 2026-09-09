@@ -3,12 +3,17 @@ import type { UserRole } from '@/types'
 import {
   getNavForRole,
   getAllowedHrefsForRole,
+  getMobileDrawerSectionsForRole,
+  getMobileBottomTabsForRole,
   getPrimaryNavForRole,
+  getVerticalNavItem,
   hasPermission,
   isActiveNavPath,
+  isMobileMoreRouteActive,
   ROLE_LABELS,
   ROLE_PERMISSIONS,
 } from '@/lib/navigation'
+import type { VerticalId } from '@/lib/verticals'
 
 const ALL_ROLES: UserRole[] = ['client', 'expert', 'owner', 'admin', 'super_admin']
 
@@ -44,23 +49,107 @@ describe('navigation (FE-01/02 canonical lowercase roles)', () => {
     const hrefs = getPrimaryNavForRole('client').map((i) => i.href)
     expect(hrefs).toContain('/point-a')
     expect(hrefs).toContain('/metrics')
-    expect(hrefs).toContain('/store')
+    expect(hrefs).not.toContain('/store')
   })
 
-  it('shows the Store only to shared-cabinet roles, including mobile navigation', () => {
+  it('maps every business vertical to the correct specialized slot', () => {
+    const matrix: Array<{
+      vertical: VerticalId
+      expected: { label: string; href: string; icon: string } | null
+    }> = [
+      { vertical: 'generic', expected: null },
+      {
+        vertical: 'medical',
+        expected: {
+          label: 'Клиника',
+          href: '/clinic',
+          icon: 'medical_services',
+        },
+      },
+      {
+        vertical: 'ecommerce',
+        expected: { label: 'Магазин', href: '/store', icon: 'storefront' },
+      },
+    ]
+
+    for (const { vertical, expected } of matrix) {
+      const item = getVerticalNavItem(vertical)
+      if (!expected) {
+        expect(item).toBeNull()
+      } else {
+        expect(item).toMatchObject(expected)
+      }
+    }
+  })
+
+  it('keeps desktop and mobile specialized navigation exactly in sync', () => {
+    for (const vertical of ['medical', 'ecommerce'] as VerticalId[]) {
+      const desktopItem = getVerticalNavItem(vertical)
+      expect(desktopItem).not.toBeNull()
+
+      const desktop = getPrimaryNavForRole('client', vertical)
+      const mobile = getMobileDrawerSectionsForRole('client', vertical)
+        .flatMap((section) => section.items)
+      const href = desktopItem!.href
+
+      expect(desktop.filter((item) => item.href === href)).toHaveLength(1)
+      expect(mobile.filter((item) => item.href === href)).toHaveLength(1)
+      expect(mobile.find((item) => item.href === href)).toMatchObject({
+        label: desktopItem!.label,
+        href,
+        icon: desktopItem!.icon,
+      })
+    }
+  })
+
+  it('shows no duplicate business slot for generic companies', () => {
+    const desktop = getPrimaryNavForRole('client', 'generic')
+    const mobile = getMobileDrawerSectionsForRole('client', 'generic')
+      .flatMap((section) => section.items)
+
+    expect(desktop.filter((item) => item.href === '/dashboard')).toHaveLength(1)
+    expect(mobile.filter((item) => item.href === '/dashboard')).toHaveLength(1)
+    expect(desktop.map((item) => item.href)).not.toContain('/store')
+    expect(desktop.map((item) => item.href)).not.toContain('/clinic')
+  })
+
+  it('shows a specialized slot only to shared-cabinet roles', () => {
     for (const role of ['client', 'admin', 'super_admin'] as UserRole[]) {
-      expect(getPrimaryNavForRole(role).map((item) => item.href)).toContain('/store')
-      expect(getAllowedHrefsForRole(role)).toContain('/store')
+      expect(getPrimaryNavForRole(role, 'ecommerce').map((item) => item.href)).toContain('/store')
+      expect(getAllowedHrefsForRole(role, 'ecommerce')).toContain('/store')
+      expect(getAllowedHrefsForRole(role, 'medical')).toContain('/clinic')
     }
     for (const role of ['expert', 'owner'] as UserRole[]) {
-      expect(getPrimaryNavForRole(role).map((item) => item.href)).not.toContain('/store')
+      expect(getPrimaryNavForRole(role, 'ecommerce').map((item) => item.href)).not.toContain('/store')
+      expect(getPrimaryNavForRole(role, 'medical').map((item) => item.href))
+        .not.toContain('/clinic')
     }
+  })
+
+  it('never leaks a different vertical into allowed navigation', () => {
+    expect(getAllowedHrefsForRole('client', 'generic')).not.toContain('/store')
+    expect(getAllowedHrefsForRole('client', 'generic')).not.toContain('/clinic')
+    expect(getAllowedHrefsForRole('client', 'medical')).not.toContain('/store')
+    expect(getAllowedHrefsForRole('client', 'ecommerce')).not.toContain('/clinic')
+  })
+
+  it('marks «Ещё» active only for drawer-only destinations', () => {
+    const tabs = getMobileBottomTabsForRole('client', 'ecommerce')
+    const sections = getMobileDrawerSectionsForRole('client', 'ecommerce')
+
+    expect(isMobileMoreRouteActive('/dashboard', tabs, sections)).toBe(false)
+    expect(isMobileMoreRouteActive('/pulse', tabs, sections)).toBe(false)
+    expect(isMobileMoreRouteActive('/metrics', tabs, sections)).toBe(false)
+    expect(isMobileMoreRouteActive('/store', tabs, sections)).toBe(true)
+    expect(isMobileMoreRouteActive('/store/imports', tabs, sections)).toBe(true)
   })
 
   it('matches active navigation by whole path segment', () => {
     expect(isActiveNavPath('/store', '/store')).toBe(true)
     expect(isActiveNavPath('/store/inventory', '/store')).toBe(true)
     expect(isActiveNavPath('/storefront', '/store')).toBe(false)
+    expect(isActiveNavPath('/clinic/patients', '/clinic')).toBe(true)
+    expect(isActiveNavPath('/clinical', '/clinic')).toBe(false)
   })
 
   it('permissions: wildcards, scoping and denials work per role', () => {

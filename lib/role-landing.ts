@@ -67,10 +67,10 @@ export function roleLandingPath(
 }
 
 /**
- * Honour Store and its read-only Journey return targets only for roles that
- * may open the shared cabinet and only after an explicit approval. Every other role/status keeps
- * its canonical landing path, and attacker-controlled `from` values are never
- * returned before passing the internal-path guard.
+ * Specialized business-cabinet return targets only for roles that may open
+ * the shared shell and only after explicit approval. Every other role/status
+ * keeps its canonical landing path, and attacker-controlled `from` values are
+ * never returned before passing the internal-path guard.
  */
 export function postLoginPath(
   role: UserRole | null | undefined,
@@ -78,12 +78,15 @@ export function postLoginPath(
   requestedFrom: string | null | undefined,
 ): string {
   const safeFrom = safeInternalPath(requestedFrom, CLIENT_DASHBOARD_PATH)
-  const mayOpenStore =
+  const mayOpenBusinessCabinet =
     status === 'approved'
     && (role === 'client' || role === 'admin' || role === 'super_admin')
-  const isStoreTarget = safeFrom === '/store' || safeFrom === '/client/journey/store'
+  const isBusinessTarget =
+    safeFrom === '/store'
+    || safeFrom === '/clinic'
+    || safeFrom === '/client/journey/store'
 
-  return isStoreTarget && mayOpenStore
+  return isBusinessTarget && mayOpenBusinessCabinet
     ? safeFrom
     : roleLandingPath(role, status)
 }

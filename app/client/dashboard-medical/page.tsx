@@ -109,7 +109,6 @@ export default function MedicalDashboardPage() {
     () => (data?.bundles ?? []).reduce((s, b) => s + b.estimated_revenue_kzt, 0),
     [data],
   )
-
   return (
     <div className="min-h-screen bg-surface">
       <header className="sticky top-0 z-10 bg-surface/80 backdrop-blur-md border-b border-white/[0.06]">
@@ -118,7 +117,7 @@ export default function MedicalDashboardPage() {
             <p className="text-xs font-mono text-primary/70 uppercase tracking-[0.2em]">
               AI-усиление для клиник
             </p>
-            <h1 className="text-xl font-headline font-bold text-on-surface mt-0.5">
+            <h1 id="clinic-dashboard-title" className="text-xl font-headline font-bold text-on-surface mt-0.5">
               Кабинет клиники
             </h1>
           </div>
@@ -143,7 +142,9 @@ export default function MedicalDashboardPage() {
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto px-6 py-8 space-y-8">
+      {/* /clinic already sits inside the shared dashboard <main>. A labelled
+          section remains valid both there and on the legacy standalone route. */}
+      <section aria-labelledby="clinic-dashboard-title" className="max-w-6xl mx-auto px-6 py-8 space-y-8">
         {loading && !data && <LoadingSkeleton />}
 
         {!loading && !data && <EmptyState error={error} />}
@@ -158,7 +159,7 @@ export default function MedicalDashboardPage() {
             <ExpertCommentsSection />
           </>
         )}
-      </main>
+      </section>
     </div>
   )
 }

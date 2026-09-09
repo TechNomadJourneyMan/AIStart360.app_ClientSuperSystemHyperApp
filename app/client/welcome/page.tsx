@@ -4,22 +4,18 @@
 // pick which vertical their business is ("general B2B" or "clinic") so the
 // rest of the onboarding / cabinet is tailored. Default: generic.
 //
-// Skip logic:
-// 1. URL param ?vertical=<id> → auto-apply + go straight to onboarding
-// 2. Profile already has vertical != 'generic' → skip
-// (Both handled in useEffect below.)
+// Bootstrap logic:
+// 1. URL param ?vertical=<id> → auto-apply + open the path picker
+// 2. Profile already has a specialized vertical → open the path picker
+// 3. Missing/generic vertical → show the business-type picker
+// A company row is deliberately not an onboarding-completion signal: normal
+// client registration creates one before the user has selected a vertical.
 
 import { useCallback, useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { VERTICALS, isValidVerticalId, type VerticalId } from '@/lib/verticals'
-
-// Route each vertical sends the user to after selection (anketa path)
-const ANKETA_ROUTE: Record<VerticalId, string> = {
-  generic:   '/client/onboarding',
-  medical:   '/client/onboarding-medical',
-  ecommerce: '/client/onboarding-ecommerce',
-}
+import { getVerticalUi, VERTICALS, isValidVerticalId, type VerticalId } from '@/lib/verticals'
+import { persistSelectedVertical } from '@/lib/vertical-client'
 
 type Step = 'vertical' | 'path'
 
@@ -38,15 +34,7 @@ export default function WelcomePage() {
       setApplying(vertical)
       setError(null)
       try {
-        const res = await fetch('/api/v1/organizations/set-vertical', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ vertical }),
-        })
-        if (!res.ok) {
-          const body = (await res.json().catch(() => ({}))) as { error?: string }
-          throw new Error(body.error ?? `HTTP ${res.status}`)
-        }
+        await persistSelectedVertical(vertical)
         setChosenVertical(vertical)
         if (advance) {
           setStep('path')
@@ -75,26 +63,21 @@ export default function WelcomePage() {
           return
         }
 
-        // 2. Read current vertical from profiles + check onboarding completion
+        // 2. Read the canonical business type from the authenticated profile.
         const supabase = createClient()
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) {
           router.replace('/login')
           return
         }
-        const [profileRes, companyRes] = await Promise.all([
-          supabase.from('profiles').select('vertical').eq('id', user.id).maybeSingle(),
-          supabase.from('companies').select('id').eq('user_id', user.id).limit(1),
-        ])
+        const profileRes = await supabase
+          .from('profiles')
+          .select('vertical')
+          .eq('id', user.id)
+          .maybeSingle()
         if (cancelled) return
 
-        // 2a. Onboarding already done → straight to dashboard (existing users)
-        if (companyRes.data && companyRes.data.length > 0) {
-          router.replace('/dashboard')
-          return
-        }
-
-        // 2b. Non-default vertical already set → jump directly to path picker
+        // 2a. Non-default vertical already set → jump directly to path picker.
         const v = profileRes.data?.vertical
         if (v && isValidVerticalId(v) && v !== 'generic') {
           setChosenVertical(v)
@@ -103,7 +86,7 @@ export default function WelcomePage() {
           return
         }
 
-        // 2c. Fresh user with default vertical → show vertical picker
+        // 2b. Fresh/default account → show the vertical picker.
         setLoading(false)
       } catch (e) {
         if (!cancelled) {
@@ -128,7 +111,9 @@ export default function WelcomePage() {
 
   // ── Step 2: path picker (anketa / files / dashboard) ──
   if (step === 'path') {
-    const anketaHref = chosenVertical ? ANKETA_ROUTE[chosenVertical] : '/client/onboarding'
+    const verticalUi = getVerticalUi(chosenVertical)
+    const anketaHref = verticalUi.onboarding
+    const resultHref = verticalUi.result
     const verticalLabel = chosenVertical
       ? VERTICALS.find((v) => v.id === chosenVertical)?.label ?? ''
       : ''
@@ -151,7 +136,7 @@ export default function WelcomePage() {
               Как начнём?
             </h1>
             <p className="text-on-surface-variant mt-3 max-w-lg mx-auto text-sm">
-              Выберите путь — все три ведут к одному дашборду. Можно потом сделать остальные.
+              Выберите путь — все три ведут в единый кабинет выбранного бизнеса. Остальное можно сделать позже.
             </p>
           </div>
 
@@ -159,7 +144,7 @@ export default function WelcomePage() {
             {/* Path 1: anketa */}
             <button
               type="button"
-              onClick={() => router.replace(anketaHref)}
+              onClick={() => window.location.replace(anketaHref)}
               className="group text-left bg-surface-container-low rounded-2xl border border-white/[0.06] hover:border-primary/40 hover:bg-primary/5 transition-all p-5"
             >
               <div className="w-11 h-11 rounded-xl bg-primary/15 border border-primary/25 flex items-center justify-center mb-3 group-hover:bg-primary/25 transition-colors">
@@ -178,7 +163,7 @@ export default function WelcomePage() {
             {/* Path 2: files */}
             <button
               type="button"
-              onClick={() => router.replace('/client/onboarding/documents')}
+              onClick={() => window.location.replace('/client/onboarding/documents')}
               className="group text-left bg-surface-container-low rounded-2xl border border-white/[0.06] hover:border-blue-500/40 hover:bg-blue-500/5 transition-all p-5 relative overflow-hidden"
             >
               <span className="absolute top-2 right-2 inline-flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 rounded-full bg-blue-500/15 text-blue-300 border border-blue-500/30">
@@ -200,7 +185,7 @@ export default function WelcomePage() {
             {/* Path 3: dashboard — full sidebar cabinet (shared (dashboard) layout) */}
             <button
               type="button"
-              onClick={() => router.replace('/dashboard')}
+              onClick={() => window.location.replace(resultHref)}
               className="group text-left bg-surface-container-low rounded-2xl border border-white/[0.06] hover:border-purple-500/40 hover:bg-purple-500/5 transition-all p-5"
             >
               <div className="w-11 h-11 rounded-xl bg-purple-500/15 border border-purple-500/25 flex items-center justify-center mb-3 group-hover:bg-purple-500/25 transition-colors">
@@ -208,10 +193,10 @@ export default function WelcomePage() {
               </div>
               <h3 className="font-headline text-base font-bold text-on-surface mb-1">Просто посмотрю</h3>
               <p className="text-xs text-on-surface-variant mb-3 leading-relaxed">
-                Открыть пустой дашборд. Заполнить данные в любой момент позже из меню.
+                Открыть кабинет без анкеты. Данные можно добавить позже из меню.
               </p>
               <span className="inline-flex items-center gap-1 text-xs text-purple-300 font-medium">
-                Открыть дашборд
+                Открыть кабинет
                 <span className="material-symbols-outlined text-[14px] group-hover:translate-x-1 transition-transform">arrow_forward</span>
               </span>
             </button>

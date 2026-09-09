@@ -4,62 +4,15 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useState, useEffect } from 'react'
 import { useAuthStore } from '@/stores/auth.store'
-import { getAllowedHrefsForRole, isActiveNavPath } from '@/lib/navigation'
+import {
+  getMobileBottomTabsForRole,
+  getMobileDrawerSectionsForRole,
+  isMobileMoreRouteActive,
+  isActiveNavPath,
+} from '@/lib/navigation'
 import { isPremiumLocked, premiumLockedRoot } from '@/lib/premium'
 import type { UserRole } from '@/types'
-
-// ── Bottom bar — 4 primary tabs ─────────────────────────────────────────────
-const BOTTOM_TABS = [
-  { label: 'Дэшборд',  href: '/dashboard', icon: 'dashboard'       },
-  { label: 'Клиенты',  href: '/pulse',      icon: 'groups'         },
-  { label: 'Портфель', href: '/clients',    icon: 'business_center' },
-  { label: 'Метрики',  href: '/metrics',    icon: 'monitoring'      },
-]
-
-// ── All sections shown in the "More" drawer ──────────────────────────────────
-const DRAWER_SECTIONS = [
-  {
-    title: 'Основное',
-    items: [
-      { label: 'Дэшборд',    href: '/dashboard',  icon: 'dashboard'        },
-      { label: 'Магазин',    href: '/store',      icon: 'storefront'       },
-      { label: 'GRI',        href: '/gri',         icon: 'radar'            },
-      { label: 'Клиенты',    href: '/pulse',       icon: 'groups'           },
-      { label: 'Метрики',    href: '/metrics',     icon: 'monitoring'       },
-      { label: 'Инсайты',    href: '/insights',    icon: 'lightbulb'        },
-    ],
-  },
-  {
-    title: 'Анализ',
-    items: [
-      { label: 'Рынок',      href: '/market',      icon: 'public'           },
-      { label: 'Точка А',    href: '/point-a',     icon: 'my_location'      },
-      { label: 'Точка Б',    href: '/point-b',     icon: 'flag'             },
-      { label: 'Симулятор',  href: '/simulator',   icon: 'query_stats'      },
-      { label: 'Конкуренты', href: '/competitors', icon: 'compare_arrows'   },
-      { label: 'Разведка',   href: '/intelligence',icon: 'hub'              },
-    ],
-  },
-  {
-    title: 'Работа',
-    items: [
-      { label: 'Портфель',   href: '/clients',      icon: 'business_center' },
-      { label: 'Отчёты',     href: '/reports',      icon: 'description'     },
-      { label: 'Аналитика',  href: '/analytics',    icon: 'bar_chart'       },
-      { label: 'Команда',    href: '/team',         icon: 'group'           },
-    ],
-  },
-  {
-    title: 'Система',
-    items: [
-      { label: 'Уведомления',href: '/notifications',icon: 'notifications'   },
-      { label: 'Пользователи',href: '/users',       icon: 'manage_accounts' },
-      { label: 'Профиль',    href: '/profile',      icon: 'account_circle'  },
-      { label: 'Настройки',  href: '/settings',     icon: 'settings'        },
-      { label: 'Админ',      href: '/admin',        icon: 'admin_panel_settings'},
-    ],
-  },
-]
+import type { VerticalId } from '@/lib/verticals'
 
 const PREMIUM_FEATURE_LABELS: Record<string, string> = {
   '/metrics':  'Метрики',
@@ -67,7 +20,13 @@ const PREMIUM_FEATURE_LABELS: Record<string, string> = {
   '/point-b':  'Точка Б',
 }
 
-export function MobileNav() {
+export function MobileNav({
+  vertical = 'generic',
+  serverRole = 'client',
+}: {
+  vertical?: VerticalId
+  serverRole?: UserRole
+}) {
   const pathname = usePathname()
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [premiumItem, setPremiumItem] = useState<string | null>(null)
@@ -91,23 +50,16 @@ export function MobileNav() {
   }, [])
 
   // FE-01/02: canonical lowercase role, default 'client' when missing.
-  const role: UserRole = (user?.role as UserRole | undefined) ?? 'client'
-  // Includes nested subItems (/insights, /competitors, /intelligence) and the
-  // account pages (/profile, /settings) — a flat NAV_ITEMS filter dropped them.
-  const allowedNav = getAllowedHrefsForRole(role)
-
+  const role: UserRole = (user?.role as UserRole | undefined) ?? serverRole
   // Items locked behind a paid plan — see lib/premium.ts
   const isLocked = (href: string) => isPremiumLocked(role, href)
 
   const getLockedKey = (href: string) => premiumLockedRoot(href) ?? href
 
-  // Filter out sections
-  const filteredDrawer = DRAWER_SECTIONS.map(sec => ({
-    ...sec,
-    items: sec.items.filter(item => allowedNav.includes(item.href))
-  })).filter(sec => sec.items.length > 0)
-
-  const filteredTabs = BOTTOM_TABS.filter(item => allowedNav.includes(item.href))
+  // Desktop and mobile resolve from the same vertical-aware catalog, so the
+  // specialized slot cannot drift in label, route or icon.
+  const filteredDrawer = getMobileDrawerSectionsForRole(role, vertical)
+  const filteredTabs = getMobileBottomTabsForRole(role, vertical)
 
   // Close drawer on route change
   useEffect(() => { setDrawerOpen(false) }, [pathname])
@@ -120,7 +72,12 @@ export function MobileNav() {
 
   const isActive = (href: string) => isActiveNavPath(pathname, href)
 
-  const isAnyDrawerActive = filteredDrawer.flatMap(s => s.items).some(i => isActive(i.href))
+  const isAnyDrawerActive = isMobileMoreRouteActive(pathname, filteredTabs, filteredDrawer)
+  const activeDrawerLabel = isAnyDrawerActive
+    ? filteredDrawer
+        .flatMap((section) => section.items)
+        .find((item) => isActive(item.href))?.label ?? null
+    : null
 
   async function handleUpgradeRequest() {
     if (!user?.id || !premiumItem || upgradeLoading) return
@@ -151,9 +108,10 @@ export function MobileNav() {
                 <button
                   key={item.href}
                   onClick={() => setPremiumItem(getLockedKey(item.href))}
+                  aria-label={`${item.label} — Pro тариф`}
                   className="flex-1 flex flex-col items-center justify-center py-3 gap-1 text-[10px] font-medium cursor-pointer select-none relative"
                 >
-                  <span className="material-symbols-outlined text-2xl text-[#8B95A3] opacity-40 blur-[1px]">
+                  <span aria-hidden="true" className="material-symbols-outlined text-2xl text-[#8B95A3] opacity-40 blur-[1px]">
                     {item.icon}
                   </span>
                   <span className="text-[#8B95A3] opacity-40 blur-[1px]">{item.label}</span>
@@ -167,11 +125,13 @@ export function MobileNav() {
               <Link
                 key={item.href}
                 href={item.href}
+                aria-current={active ? 'page' : undefined}
                 className={`flex-1 flex flex-col items-center justify-center py-3 gap-1 text-[10px] font-medium transition-colors ${
                   active ? 'text-primary' : 'text-[#8B95A3]'
                 }`}
               >
                 <span
+                  aria-hidden="true"
                   className="material-symbols-outlined text-2xl"
                   style={active ? { fontVariationSettings: "'FILL' 1" } : undefined}
                 >
@@ -185,11 +145,16 @@ export function MobileNav() {
           {/* More button */}
           <button
             onClick={() => setDrawerOpen(v => !v)}
+            aria-expanded={drawerOpen}
+            aria-controls="mobile-navigation-drawer"
+            aria-current={isAnyDrawerActive ? 'page' : undefined}
+            aria-label={activeDrawerLabel ? `Ещё — текущий раздел: ${activeDrawerLabel}` : 'Ещё'}
             className={`flex-1 flex flex-col items-center justify-center py-3 gap-1 text-[10px] font-medium transition-colors ${
               drawerOpen || isAnyDrawerActive ? 'text-primary' : 'text-[#8B95A3]'
             }`}
           >
             <span
+              aria-hidden="true"
               className="material-symbols-outlined text-2xl transition-transform duration-200"
               style={drawerOpen || isAnyDrawerActive ? { fontVariationSettings: "'FILL' 1" } : undefined}
             >
@@ -211,6 +176,9 @@ export function MobileNav() {
 
       {/* Sheet */}
       <div
+        id="mobile-navigation-drawer"
+        aria-hidden={!drawerOpen}
+        hidden={!drawerOpen}
         className={`lg:hidden fixed left-0 right-0 bottom-[64px] z-40 transition-transform duration-300 ease-out ${
           drawerOpen ? 'translate-y-0' : 'translate-y-full'
         }`}
@@ -232,7 +200,7 @@ export function MobileNav() {
               aria-label="Закрыть"
               className="w-11 h-11 flex items-center justify-center rounded-full bg-surface-container hover:bg-surface-container-high transition-colors"
             >
-              <span className="material-symbols-outlined text-base text-on-surface-variant">close</span>
+              <span aria-hidden="true" className="material-symbols-outlined text-base text-on-surface-variant">close</span>
             </button>
           </div>
 
@@ -251,7 +219,7 @@ export function MobileNav() {
               <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${
                 docsHasFiles === false ? 'bg-primary/15' : 'bg-white/[0.04]'
               }`}>
-                <span className={`material-symbols-outlined text-[22px] ${
+                <span aria-hidden="true" className={`material-symbols-outlined text-[22px] ${
                   docsHasFiles === false ? 'text-primary' : 'text-on-surface-variant'
                 }`}>
                   cloud_upload
@@ -291,9 +259,10 @@ export function MobileNav() {
                         <button
                           key={item.href}
                           onClick={() => { setPremiumItem(getLockedKey(item.href)); setDrawerOpen(false) }}
+                          aria-label={`${item.label} — Pro тариф`}
                           className="relative flex flex-col items-center gap-2 rounded-2xl p-3 bg-surface-container border border-amber-500/10 cursor-pointer select-none overflow-hidden w-full active:scale-95 transition-transform"
                         >
-                          <span className="material-symbols-outlined text-2xl text-on-surface-variant opacity-30 blur-[1.5px]">
+                          <span aria-hidden="true" className="material-symbols-outlined text-2xl text-on-surface-variant opacity-30 blur-[1.5px]">
                             {item.icon}
                           </span>
                           <span className="text-[10px] font-medium text-center leading-tight text-on-surface-variant opacity-30 blur-[1.5px]">
@@ -313,6 +282,7 @@ export function MobileNav() {
                         key={item.href}
                         href={item.href}
                         onClick={() => setDrawerOpen(false)}
+                        aria-current={active ? 'page' : undefined}
                         className={`flex flex-col items-center gap-2 rounded-2xl p-3 transition-all duration-150 ${
                           active
                             ? 'bg-primary/10 border border-primary/20'
@@ -320,6 +290,7 @@ export function MobileNav() {
                         }`}
                       >
                         <span
+                          aria-hidden="true"
                           className={`material-symbols-outlined text-2xl ${active ? 'text-primary' : 'text-on-surface-variant'}`}
                           style={active ? { fontVariationSettings: "'FILL' 0.8" } : undefined}
                         >
@@ -329,7 +300,7 @@ export function MobileNav() {
                           {item.label}
                         </span>
                         {active && (
-                          <span className="w-1 h-1 rounded-full bg-primary" />
+                          <span aria-hidden="true" className="w-1 h-1 rounded-full bg-primary" />
                         )}
                       </Link>
                     )

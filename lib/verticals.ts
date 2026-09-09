@@ -2,7 +2,10 @@
 // Welcome-screen renders one card per entry; migration 008 keeps the DB in sync
 // via CHECK constraint — if adding a new id, update the migration too.
 
-export type VerticalId = 'generic' | 'medical' | 'ecommerce'
+export const VERTICAL_IDS = ['generic', 'medical', 'ecommerce'] as const
+export type VerticalId = (typeof VERTICAL_IDS)[number]
+
+const VERTICAL_ID_SET = new Set<string>(VERTICAL_IDS)
 
 export interface Vertical {
   id: VerticalId
@@ -16,6 +19,17 @@ export interface Vertical {
   description: string
   /** Default product name (branding.product_name fallback) */
   productName: string
+}
+
+export interface VerticalUiConfig {
+  onboarding: `/${string}`
+  result: `/${string}`
+  verticalNav: {
+    label: string
+    href: `/${string}`
+    icon: string
+  } | null
+  specializedJourney: `/${string}` | null
 }
 
 export const VERTICALS: Vertical[] = [
@@ -72,14 +86,57 @@ export const VERTICALS_BY_ID: Record<VerticalId, Vertical> = Object.fromEntries(
   VERTICALS.map((v) => [v.id, v]),
 ) as Record<VerticalId, Vertical>
 
+// Product routes and the optional specialized navigation slot for each
+// vertical. Generic businesses already have the shared /dashboard item, so a
+// second link to the same destination would be misleading and is omitted.
+export const VERTICAL_UI = {
+  generic: {
+    onboarding: '/client/onboarding',
+    result: '/dashboard',
+    verticalNav: null,
+    specializedJourney: null,
+  },
+  medical: {
+    onboarding: '/client/onboarding-medical',
+    result: '/clinic',
+    verticalNav: {
+      label: 'Клиника',
+      href: '/clinic',
+      icon: 'medical_services',
+    },
+    specializedJourney: null,
+  },
+  ecommerce: {
+    onboarding: '/client/onboarding-ecommerce',
+    result: '/dashboard',
+    verticalNav: {
+      label: 'Магазин',
+      href: '/store',
+      icon: 'storefront',
+    },
+    specializedJourney: '/client/journey/store',
+  },
+} as const satisfies Record<VerticalId, VerticalUiConfig>
+
+/** Parse only exact, own vertical ids. Never accept inherited object keys. */
+export function parseVerticalId(value: unknown): VerticalId | null {
+  return typeof value === 'string' && VERTICAL_ID_SET.has(value)
+    ? (value as VerticalId)
+    : null
+}
+
 /** Resolve a vertical by id, falling back to 'generic' for unknown ids */
 export function getVertical(id: string | null | undefined): Vertical {
-  if (id && id in VERTICALS_BY_ID) return VERTICALS_BY_ID[id as VerticalId]
-  return VERTICALS_BY_ID.generic
+  return VERTICALS_BY_ID[parseVerticalId(id) ?? 'generic']
 }
 
 export function isValidVerticalId(v: unknown): v is VerticalId {
-  return typeof v === 'string' && v in VERTICALS_BY_ID
+  return parseVerticalId(v) !== null
+}
+
+/** Resolve product UI config with the same fail-closed generic fallback. */
+export function getVerticalUi(id: unknown): VerticalUiConfig {
+  return VERTICAL_UI[parseVerticalId(id) ?? 'generic']
 }
 
 // ── Branding ────────────────────────────────────────────────────────────────

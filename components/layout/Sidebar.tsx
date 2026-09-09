@@ -9,9 +9,16 @@ import { useAuthStore } from '@/stores/auth.store'
 import { getPrimaryNavForRole, getSecondaryNavForRole, isActiveNavPath } from '@/lib/navigation'
 import { isPremiumLocked, premiumLockedRoot } from '@/lib/premium'
 import type { NavItem, UserRole } from '@/types'
+import type { VerticalId } from '@/lib/verticals'
 import { UploadFilesNavItem } from './UploadFilesNavItem'
 
-export function Sidebar() {
+export function Sidebar({
+  vertical = 'generic',
+  serverRole = 'client',
+}: {
+  vertical?: VerticalId
+  serverRole?: UserRole
+}) {
   const pathname = usePathname()
   const router = useRouter()
   const { sidebarCollapsed, toggleSidebar } = useUIStore()
@@ -26,8 +33,8 @@ export function Sidebar() {
 
   // FE-01/02: role is the canonical lowercase Supabase value; default the
   // least-privileged 'client' when missing (no more toUpperCase bridge).
-  const role: UserRole = (user?.role as UserRole | undefined) ?? 'client'
-  const primaryNav = getPrimaryNavForRole(role)
+  const role: UserRole = (user?.role as UserRole | undefined) ?? serverRole
+  const primaryNav = getPrimaryNavForRole(role, vertical)
   const secondaryNav = getSecondaryNavForRole(role)
 
   // Items locked behind a paid plan — see lib/premium.ts
@@ -106,16 +113,17 @@ export function Sidebar() {
               <button
                 key={item.href}
                 onClick={() => router.push(lockedKey)}
+                aria-label={`${item.label} — Pro тариф`}
                 className={`
                   relative flex items-center rounded-xl cursor-pointer select-none w-full
                   hover:bg-amber-500/5 transition-colors duration-150
                   gap-3 px-3 py-2.5
                 `}
               >
-                <span className="material-symbols-outlined text-[20px] flex-shrink-0 text-[#6b7280] opacity-55">
+                <span aria-hidden="true" className="material-symbols-outlined text-[20px] flex-shrink-0 text-[#8B95A3] opacity-55">
                   {item.icon}
                 </span>
-                <span className="text-sm truncate font-medium text-[#6b7280] opacity-55 flex-1">
+                <span className="text-sm truncate font-medium text-[#8B95A3] opacity-55 flex-1">
                   {item.label}
                 </span>
                 <span className="flex items-center px-1.5 py-0.5 rounded-md bg-amber-500/10 border border-amber-500/20 text-amber-400 text-[9px] font-mono tracking-wide flex-shrink-0">
@@ -131,6 +139,7 @@ export function Sidebar() {
                 {/* Parent row: toggle-only (no navigation — navigate via sub-items) */}
                 <button
                   onClick={(e) => toggleSubMenu(item.href, e)}
+                  aria-expanded={isSubOpen}
                   className={`
                     group flex items-center rounded-xl transition-all duration-150 relative w-full
                     ${active ? 'bg-primary/10' : 'hover:bg-white/[0.04]'}
@@ -141,17 +150,18 @@ export function Sidebar() {
                   )}
                   <span className="flex items-center gap-3 px-3 py-2.5 flex-1 min-w-0">
                     <span
-                      className={`material-symbols-outlined text-[20px] flex-shrink-0 transition-all duration-150 ${active ? 'text-primary' : 'text-[#6b7280] group-hover:text-[#c9d1d9]'}`}
+                      aria-hidden="true"
+                      className={`material-symbols-outlined text-[20px] flex-shrink-0 transition-all duration-150 ${active ? 'text-primary' : 'text-[#8B95A3] group-hover:text-[#c9d1d9]'}`}
                       style={active ? { fontVariationSettings: "'FILL' 0.7, 'wght' 400" } : undefined}
                     >
                       {item.icon}
                     </span>
-                    <span className={`text-sm truncate font-medium ${active ? 'text-primary' : 'text-[#6b7280] group-hover:text-[#c9d1d9]'}`}>
+                    <span className={`text-sm truncate font-medium ${active ? 'text-primary' : 'text-[#8B95A3] group-hover:text-[#c9d1d9]'}`}>
                       {item.label}
                     </span>
                   </span>
-                  <span className={`pr-2.5 flex-shrink-0 transition-colors ${active ? 'text-primary/60' : 'text-[#6b7280]/60 group-hover:text-[#c9d1d9]'}`}>
-                    <span className={`material-symbols-outlined text-[16px] transition-transform duration-200 ${isSubOpen ? 'rotate-180' : ''}`}>
+                  <span className={`pr-2.5 flex-shrink-0 transition-colors ${active ? 'text-primary/60' : 'text-[#8B95A3]/60 group-hover:text-[#c9d1d9]'}`}>
+                    <span aria-hidden="true" className={`material-symbols-outlined text-[16px] transition-transform duration-200 ${isSubOpen ? 'rotate-180' : ''}`}>
                       expand_more
                     </span>
                   </span>
@@ -166,18 +176,19 @@ export function Sidebar() {
                       <Link
                         key={sub.href}
                         href={sub.href}
+                        aria-current={subActive ? 'page' : undefined}
                         className={`
                           group flex items-center gap-2.5 rounded-xl transition-all duration-150 relative
                           pl-9 pr-3 py-2.5 mt-0.5 min-h-[40px]
                           ${subActive
                             ? 'bg-primary/10 text-primary'
-                            : 'text-[#6b7280] hover:text-[#c9d1d9] hover:bg-white/[0.04]'}
+                            : 'text-[#8B95A3] hover:text-[#c9d1d9] hover:bg-white/[0.04]'}
                         `}
                       >
                         {subActive && (
-                          <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-4 bg-primary rounded-r-full" />
+                          <span aria-hidden="true" className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-4 bg-primary rounded-r-full" />
                         )}
-                        <span className={`material-symbols-outlined text-[16px] flex-shrink-0 ${subActive ? 'text-primary' : 'text-[#6b7280] group-hover:text-[#c9d1d9]'}`}>
+                        <span aria-hidden="true" className={`material-symbols-outlined text-[16px] flex-shrink-0 ${subActive ? 'text-primary' : 'text-[#8B95A3] group-hover:text-[#c9d1d9]'}`}>
                           {sub.icon}
                         </span>
                         <span className={`text-xs truncate ${subActive ? 'font-medium' : ''}`}>
@@ -200,17 +211,18 @@ export function Sidebar() {
                 key={item.href}
                 title={sidebarCollapsed ? `${item.label} — Pro тариф` : undefined}
                 onClick={() => router.push(lockedKey)}
+                aria-label={sidebarCollapsed ? `${item.label} — Pro тариф` : undefined}
                 className={`
                   relative flex items-center rounded-xl cursor-pointer select-none w-full
                   hover:bg-amber-500/5 transition-colors duration-150
                   ${sidebarCollapsed ? 'justify-center px-0 py-3' : 'gap-3 px-3 py-2.5'}
                 `}
               >
-                <span className="material-symbols-outlined text-[20px] flex-shrink-0 text-[#6b7280] opacity-55">
+                <span aria-hidden="true" className="material-symbols-outlined text-[20px] flex-shrink-0 text-[#8B95A3] opacity-55">
                   {item.icon}
                 </span>
                 {!sidebarCollapsed && (
-                  <span className="text-sm truncate font-medium text-[#6b7280] opacity-55 flex-1">
+                  <span className="text-sm truncate font-medium text-[#8B95A3] opacity-55 flex-1">
                     {item.label}
                   </span>
                 )}
@@ -233,21 +245,24 @@ export function Sidebar() {
               key={item.href}
               href={item.href}
               title={sidebarCollapsed ? item.label : undefined}
+              aria-label={item.label}
+              aria-current={active ? 'page' : undefined}
               className={`
                 group flex items-center rounded-xl transition-all duration-150 relative
                 ${sidebarCollapsed ? 'justify-center px-0 py-3' : 'gap-3 px-3 py-2.5'}
                 ${active
                   ? 'bg-primary/10 text-primary'
-                  : 'text-[#6b7280] hover:text-[#c9d1d9] hover:bg-white/[0.04]'
+                  : 'text-[#8B95A3] hover:text-[#c9d1d9] hover:bg-white/[0.04]'
                 }
               `}
             >
               {active && (
-                <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 bg-primary rounded-r-full" />
+                <span aria-hidden="true" className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 bg-primary rounded-r-full" />
               )}
               <span
+                aria-hidden="true"
                 className={`material-symbols-outlined text-[20px] flex-shrink-0 transition-all duration-150
-                  ${active ? 'text-primary' : 'text-[#6b7280] group-hover:text-[#c9d1d9]'}
+                  ${active ? 'text-primary' : 'text-[#8B95A3] group-hover:text-[#c9d1d9]'}
                 `}
                 style={active ? { fontVariationSettings: "'FILL' 0.7, 'wght' 400" } : undefined}
               >
@@ -272,13 +287,15 @@ export function Sidebar() {
         <button
           onClick={() => setMoreOpen((v) => !v)}
           title={sidebarCollapsed ? 'Ещё' : undefined}
+          aria-label={sidebarCollapsed ? 'Ещё' : undefined}
+          aria-expanded={moreOpen}
           className={`
             group flex items-center rounded-xl transition-all duration-150 w-full
             ${sidebarCollapsed ? 'justify-center px-0 py-3' : 'gap-3 px-3 py-2.5'}
-            ${isAnySecondaryActive ? 'text-primary' : 'text-[#6b7280] hover:text-[#c9d1d9] hover:bg-white/[0.04]'}
+            ${isAnySecondaryActive ? 'text-primary' : 'text-[#8B95A3] hover:text-[#c9d1d9] hover:bg-white/[0.04]'}
           `}
         >
-          <span className={`material-symbols-outlined text-[20px] flex-shrink-0 transition-all duration-200
+          <span aria-hidden="true" className={`material-symbols-outlined text-[20px] flex-shrink-0 transition-all duration-200
             ${moreOpen ? 'rotate-180' : ''}
           `}>
             {isAnySecondaryActive ? 'more_horiz' : 'more_horiz'}
@@ -287,7 +304,7 @@ export function Sidebar() {
             <span className="text-sm font-medium flex-1 text-left">Ещё</span>
           )}
           {!sidebarCollapsed && (
-            <span className={`material-symbols-outlined text-[16px] transition-transform duration-200 ${moreOpen ? 'rotate-180' : ''}`}>
+            <span aria-hidden="true" className={`material-symbols-outlined text-[16px] transition-transform duration-200 ${moreOpen ? 'rotate-180' : ''}`}>
               expand_more
             </span>
           )}
@@ -301,20 +318,23 @@ export function Sidebar() {
               key={item.href}
               href={item.href}
               title={sidebarCollapsed ? item.label : undefined}
+              aria-label={sidebarCollapsed ? item.label : undefined}
+              aria-current={active ? 'page' : undefined}
               className={`
                 group flex items-center rounded-xl transition-all duration-150 relative min-h-[40px]
                 ${sidebarCollapsed ? 'justify-center px-0 py-2.5' : 'gap-3 px-3 py-2.5 pl-9'}
                 ${active
                   ? 'bg-primary/10 text-primary'
-                  : 'text-[#6b7280] hover:text-[#c9d1d9] hover:bg-white/[0.04]'
+                  : 'text-[#8B95A3] hover:text-[#c9d1d9] hover:bg-white/[0.04]'
                 }
               `}
             >
               {active && (
-                <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-4 bg-primary rounded-r-full" />
+                <span aria-hidden="true" className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-4 bg-primary rounded-r-full" />
               )}
               <span
-                className={`material-symbols-outlined text-[18px] flex-shrink-0 ${active ? 'text-primary' : 'text-[#6b7280] group-hover:text-[#c9d1d9]'}`}
+                aria-hidden="true"
+                className={`material-symbols-outlined text-[18px] flex-shrink-0 ${active ? 'text-primary' : 'text-[#8B95A3] group-hover:text-[#c9d1d9]'}`}
                 style={active ? { fontVariationSettings: "'FILL' 0.5" } : undefined}
               >
                 {item.icon}
@@ -342,26 +362,30 @@ export function Sidebar() {
         <Link
           href="/profile"
           title={sidebarCollapsed ? 'Профиль' : undefined}
+          aria-label={sidebarCollapsed ? 'Профиль' : undefined}
+          aria-current={isActive('/profile') ? 'page' : undefined}
           className={`
             group flex items-center rounded-xl transition-all duration-150
-            ${isActive('/profile') ? 'bg-primary/10 text-primary' : 'text-[#6b7280] hover:text-[#c9d1d9] hover:bg-white/[0.04]'}
+            ${isActive('/profile') ? 'bg-primary/10 text-primary' : 'text-[#8B95A3] hover:text-[#c9d1d9] hover:bg-white/[0.04]'}
             ${sidebarCollapsed ? 'justify-center px-0 py-2.5' : 'gap-3 px-3 py-2.5'}
           `}
         >
-          <span className="material-symbols-outlined text-[20px]">account_circle</span>
+          <span aria-hidden="true" className="material-symbols-outlined text-[20px]">account_circle</span>
           {!sidebarCollapsed && <span className="text-sm font-medium">Профиль</span>}
         </Link>
 
         <Link
           href="/settings"
           title={sidebarCollapsed ? 'Настройки' : undefined}
+          aria-label={sidebarCollapsed ? 'Настройки' : undefined}
+          aria-current={isActive('/settings') ? 'page' : undefined}
           className={`
             group flex items-center rounded-xl transition-all duration-150
-            ${isActive('/settings') ? 'bg-primary/10 text-primary' : 'text-[#6b7280] hover:text-[#c9d1d9] hover:bg-white/[0.04]'}
+            ${isActive('/settings') ? 'bg-primary/10 text-primary' : 'text-[#8B95A3] hover:text-[#c9d1d9] hover:bg-white/[0.04]'}
             ${sidebarCollapsed ? 'justify-center px-0 py-2.5' : 'gap-3 px-3 py-2.5'}
           `}
         >
-          <span className="material-symbols-outlined text-[20px]">settings</span>
+          <span aria-hidden="true" className="material-symbols-outlined text-[20px]">settings</span>
           {!sidebarCollapsed && <span className="text-sm font-medium">Настройки</span>}
         </Link>
 
@@ -369,12 +393,13 @@ export function Sidebar() {
         <button
           onClick={handleLogout}
           title={sidebarCollapsed ? 'Выйти' : undefined}
+          aria-label={sidebarCollapsed ? 'Выйти' : undefined}
           className={`
-            w-full flex items-center rounded-xl transition-all duration-150 text-[#6b7280] hover:text-error hover:bg-error/5
+            w-full flex items-center rounded-xl transition-all duration-150 text-[#8B95A3] hover:text-error hover:bg-error/5
             ${sidebarCollapsed ? 'justify-center px-0 py-2.5' : 'gap-3 px-3 py-2.5'}
           `}
         >
-          <span className="material-symbols-outlined text-[20px]">logout</span>
+          <span aria-hidden="true" className="material-symbols-outlined text-[20px]">logout</span>
           {!sidebarCollapsed && <span className="text-sm">Выйти</span>}
         </button>
 
@@ -382,12 +407,12 @@ export function Sidebar() {
         <button
           onClick={toggleSidebar}
           className={`
-            w-full flex items-center rounded-xl transition-all duration-150 text-[#6b7280] hover:text-[#c9d1d9] hover:bg-white/[0.04]
+            w-full flex items-center rounded-xl transition-all duration-150 text-[#8B95A3] hover:text-[#c9d1d9] hover:bg-white/[0.04]
             ${sidebarCollapsed ? 'justify-center px-0 py-2.5' : 'gap-3 px-3 py-2.5'}
           `}
           aria-label={sidebarCollapsed ? 'Развернуть' : 'Свернуть'}
         >
-          <span className="material-symbols-outlined text-[20px]">
+          <span aria-hidden="true" className="material-symbols-outlined text-[20px]">
             {sidebarCollapsed ? 'chevron_right' : 'chevron_left'}
           </span>
           {!sidebarCollapsed && <span className="text-sm">Свернуть</span>}

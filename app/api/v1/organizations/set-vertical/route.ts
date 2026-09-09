@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic'
 
-// POST /api/v1/organizations/set-vertical  body: { vertical: 'generic' | 'medical' }
+// POST /api/v1/organizations/set-vertical
+// body: { vertical: 'generic' | 'medical' | 'ecommerce' }
 // Writes the authenticated user's own profiles.vertical. Used by the Welcome
 // screen and by /settings/business-type. Admin override via Гига-Панель is a
 // separate endpoint (/api/giga-admin/...) — don't reuse this one for that.
@@ -24,14 +25,16 @@ export async function POST(req: NextRequest) {
   } = await sb.auth.getUser()
   if (!user) return NextResponse.json({ error: 'unauthenticated' }, { status: 401 })
 
-  let body: { vertical?: string }
+  let body: unknown
   try {
     body = await req.json()
   } catch {
     return NextResponse.json({ error: 'invalid body' }, { status: 400 })
   }
 
-  const vertical = body.vertical
+  const vertical = body !== null && typeof body === 'object' && !Array.isArray(body)
+    ? (body as Record<string, unknown>).vertical
+    : undefined
   if (!isValidVerticalId(vertical)) {
     return NextResponse.json(
       { error: `unknown vertical: ${String(vertical)}` },
@@ -57,6 +60,19 @@ export async function POST(req: NextRequest) {
     if (!res.ok) {
       const txt = await res.text().catch(() => '')
       console.error('[set-vertical] patch failed', res.status, txt)
+      return NextResponse.json({ error: 'failed to update' }, { status: 500 })
+    }
+    const updated = (await res.json().catch(() => null)) as Array<{
+      id?: unknown
+      vertical?: unknown
+    }> | null
+    if (
+      !Array.isArray(updated)
+      || updated.length !== 1
+      || updated[0]?.id !== user.id
+      || updated[0]?.vertical !== vertical
+    ) {
+      console.error('[set-vertical] profile row was not updated')
       return NextResponse.json({ error: 'failed to update' }, { status: 500 })
     }
     return NextResponse.json({ ok: true, vertical })

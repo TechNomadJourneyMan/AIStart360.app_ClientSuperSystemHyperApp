@@ -151,6 +151,20 @@ describe('RBAC Middleware', () => {
     expect(locationOf(pending).pathname).toBe('/client/waiting-room')
   })
 
+  it('keeps the Clinic cabinet inside the protected shared shell', async () => {
+    const anonymous = await middleware(createRequest('/clinic'))
+    expect(locationOf(anonymous).pathname).toBe('/login')
+    expect(locationOf(anonymous).searchParams.get('from')).toBe('/clinic')
+
+    expect((await middleware(createRequest('/clinic', 'client', 'approved'))).status).toBe(200)
+    expect((await middleware(createRequest('/clinic', 'admin'))).status).toBe(200)
+    expect((await middleware(createRequest('/clinic', 'super_admin'))).status).toBe(200)
+    expect(locationOf(await middleware(createRequest('/clinic', 'expert'))).pathname).toBe('/expert/dashboard')
+    expect(locationOf(await middleware(createRequest('/clinic', 'owner'))).pathname).toBe('/owner/dashboard')
+    expect(locationOf(await middleware(createRequest('/clinic', 'client', 'pending_approval'))).pathname)
+      .toBe('/client/waiting-room')
+  })
+
   it('applies the Store tenant role matrix to its Journey projection', async () => {
     const pathname = '/client/journey/store'
     const anonymous = await middleware(createRequest(pathname))

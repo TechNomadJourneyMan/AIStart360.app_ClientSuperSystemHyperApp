@@ -76,11 +76,20 @@ describe('postLoginPath', () => {
     },
   )
 
+  it.each(['client', 'admin', 'super_admin'] as const)(
+    'returns an approved %s to the requested Clinic cabinet',
+    (role) => {
+      expect(postLoginPath(role, 'approved', '/clinic')).toBe('/clinic')
+    },
+  )
+
   it('keeps owner and expert on their canonical portals', () => {
     expect(postLoginPath('owner', 'approved', '/store')).toBe('/owner/dashboard')
     expect(postLoginPath('expert', 'approved', '/store')).toBe('/expert/dashboard')
     expect(postLoginPath('owner', 'approved', '/client/journey/store')).toBe('/owner/dashboard')
     expect(postLoginPath('expert', 'approved', '/client/journey/store')).toBe('/expert/dashboard')
+    expect(postLoginPath('owner', 'approved', '/clinic')).toBe('/owner/dashboard')
+    expect(postLoginPath('expert', 'approved', '/clinic')).toBe('/expert/dashboard')
   })
 
   it.each(['client', 'admin', 'owner', 'expert'] as const)(

@@ -11,11 +11,13 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { MEDICAL_INTAKE_FIELDS, type IntakeField } from '@/lib/intake-schemas'
 import type { DataQualityReport, DataQualityIssue } from '@/lib/data-quality'
+import { VERTICAL_UI } from '@/lib/verticals'
+import { persistSelectedVertical } from '@/lib/vertical-client'
 // The result page of this vertical — the clinic cabinet built from this intake
 // (RFM segments, revenue-loss map, bundles). Unlike /client/dashboard-ecommerce
 // this one is a live, intake-backed page, not a redirect stub, so it stays the
 // destination instead of the generic CLIENT_DASHBOARD_PATH.
-const RESULT_PATH = '/client/dashboard-medical'
+const RESULT_PATH = VERTICAL_UI.medical.result
 
 export default function OnboardingMedicalPage() {
   const router = useRouter()
@@ -124,6 +126,10 @@ export default function OnboardingMedicalPage() {
         const body = (await res.json().catch(() => ({}))) as { error?: string }
         throw new Error(body.error ?? `HTTP ${res.status}`)
       }
+      // A direct visit to this specialized questionnaire must update the same
+      // trusted profile field as the Welcome picker; otherwise the new
+      // navigation would remain generic after a successful submission.
+      await persistSelectedVertical('medical')
       const body = (await res.json()) as { qualityReport?: DataQualityReport | null }
       setQualityReport(body.qualityReport ?? null)
       setSuccess(true)
@@ -136,7 +142,9 @@ export default function OnboardingMedicalPage() {
       // defaulting to "not approved" would hide the result.
       const status = await fetchApprovalStatus()
       if (status === null || status === 'approved') {
-        setTimeout(() => router.replace(RESULT_PATH), 3500)
+        // Force a fresh server layout so navigation immediately reflects
+        // the business type that was just persisted.
+        setTimeout(() => window.location.replace(RESULT_PATH), 3500)
       } else {
         setHoldReason('moderation')
       }
@@ -227,7 +235,7 @@ export default function OnboardingMedicalPage() {
                     Статус заявки
                   </Link>
                 )}
-                <Link
+                <a
                   href={RESULT_PATH}
                   className={holdReason === 'moderation'
                     ? 'inline-flex items-center gap-2 rounded-xl border border-white/[0.08] text-on-surface-variant text-sm px-4 py-2 hover:bg-white/[0.04] transition-colors'
@@ -237,7 +245,7 @@ export default function OnboardingMedicalPage() {
                   {holdReason === 'moderation'
                     ? 'Кабинет клиники — после одобрения'
                     : 'Перейти в кабинет клиники'}
-                </Link>
+                </a>
               </div>
             </div>
           )}

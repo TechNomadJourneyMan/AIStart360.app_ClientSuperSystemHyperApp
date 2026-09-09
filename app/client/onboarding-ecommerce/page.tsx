@@ -15,11 +15,11 @@
 // The old destination /client/dashboard-ecommerce is now only a redirect stub.
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
-import { CLIENT_DASHBOARD_PATH } from '@/lib/role-landing'
+import { VERTICAL_UI } from '@/lib/verticals'
+import { persistSelectedVertical } from '@/lib/vertical-client'
 
 interface StepDef {
   key: string
@@ -174,12 +174,11 @@ const STORAGE_KEY = 'aistart360_onboarding_ecommerce'
 // /client/dashboard-ecommerce is now a redirect stub (its KPIs were hard-coded),
 // so the canonical cabinet — which reads the ec_* answers this survey just
 // saved — is the real destination.
-const RESULT_PATH = CLIENT_DASHBOARD_PATH
+const RESULT_PATH = VERTICAL_UI.ecommerce.result
 
 type AnswerValue = string | number | string[]
 
 export default function OnboardingEcommercePage() {
-  const router = useRouter()
   const [stepIdx, setStepIdx] = useState(0)
   const [answers, setAnswers] = useState<Record<string, AnswerValue>>({})
   const [submitting, setSubmitting] = useState(false)
@@ -224,13 +223,13 @@ export default function OnboardingEcommercePage() {
     try {
       const supabase = createClient()
       const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
+      if (!user) throw new Error('Сессия не найдена, войдите снова')
       // API contract: answers must be Record<string, { value: unknown }>
       // (GET unwraps row.answer.value — flat values would break the read path)
       const wrapped = Object.fromEntries(
         Object.entries(answers).map(([k, v]) => [k, { value: v }]),
       )
-      await fetch('/api/v1/onboarding/survey', {
+      const response = await fetch('/api/v1/onboarding/survey', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -241,8 +240,14 @@ export default function OnboardingEcommercePage() {
           answers: wrapped,
         }),
       })
-    } catch {
-      // best-effort — local draft already saved
+      if (!response.ok) {
+        const body = (await response.json().catch(() => ({}))) as { error?: string }
+        throw new Error(body.error ?? `Не удалось сохранить анкету (${response.status})`)
+      }
+    } catch (error) {
+      // Intermediate autosaves stay best-effort because the local draft is
+      // intact. Final submission must fail visibly and must not clear it.
+      if (final) throw error
     }
   }, [stepIdx, answers])
 
@@ -269,18 +274,28 @@ export default function OnboardingEcommercePage() {
     } else {
       // finish
       setSubmitting(true)
-      await persistRemote(true)
-      sessionStorage.removeItem(STORAGE_KEY)
-      // A failed status check counts as approved: middleware re-checks the
-      // status server-side, so an optimistic navigation cannot leak access,
-      // while defaulting to "not approved" would hide a filled-in cabinet.
-      const status = await fetchApprovalStatus()
-      if (status === null || status === 'approved') {
-        router.replace(RESULT_PATH)
-      } else {
-        setPendingStatus(status)
+      try {
+        await persistRemote(true)
+        // Also covers users who opened the e-commerce questionnaire directly
+        // instead of first selecting the type on /client/welcome.
+        await persistSelectedVertical('ecommerce')
+        sessionStorage.removeItem(STORAGE_KEY)
+        // A failed status check counts as approved: middleware re-checks the
+        // status server-side, so an optimistic navigation cannot leak access,
+        // while defaulting to "not approved" would hide a filled-in cabinet.
+        const status = await fetchApprovalStatus()
+        if (status === null || status === 'approved') {
+          // Force a fresh server layout so navigation immediately reflects
+          // the business type that was just persisted.
+          window.location.replace(RESULT_PATH)
+        } else {
+          setPendingStatus(status)
+        }
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Не удалось сохранить тип бизнеса')
+      } finally {
+        setSubmitting(false)
       }
-      setSubmitting(false)
     }
   }
 
@@ -315,13 +330,13 @@ export default function OnboardingEcommercePage() {
               <span className="material-symbols-outlined text-base">schedule</span>
               Статус заявки
             </Link>
-            <Link
+            <a
               href={RESULT_PATH}
               className="flex items-center justify-center gap-2 px-5 py-3 rounded-xl border border-white/[0.08] text-on-surface-variant text-sm hover:bg-white/[0.04] transition-colors"
             >
               <span className="material-symbols-outlined text-base">arrow_forward</span>
               Открыть кабинет — после одобрения
-            </Link>
+            </a>
           </div>
         </div>
       </div>
