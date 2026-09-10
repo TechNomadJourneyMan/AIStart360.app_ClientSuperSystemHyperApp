@@ -27,6 +27,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { MarketAnalysisChecklist } from '@/components/market-analysis/MarketAnalysisChecklist'
 import MarketNewsTab from '@/components/market/MarketNewsTab'
+import { marketAppMisconfiguration } from '@/lib/market/app-config'
 
 const APP_URL = process.env.NEXT_PUBLIC_MARKET_APP_URL || 'http://localhost:5173'
 
@@ -93,8 +94,16 @@ export default function MarketAppEmbed() {
 
   const isIframeTab = tab === 'map' || tab === 'niche'
 
+  const [misconfig, setMisconfig] = useState<string | null>(null)
+
   const probe = useCallback(async () => {
     setStatus('checking')
+    const problem = marketAppMisconfiguration(APP_URL, window.location.origin)
+    setMisconfig(problem)
+    if (problem) {
+      setStatus('down')
+      return
+    }
     try {
       // no-cors: resolve (opaque) = сервер отвечает; network error = недоступен.
       await fetch(APP_URL, { mode: 'no-cors', signal: AbortSignal.timeout(4000) })
@@ -302,13 +311,23 @@ export default function MarketAppEmbed() {
               <span className="material-symbols-outlined text-3xl text-on-surface-variant/60 block mb-3">
                 cloud_off
               </span>
-              <p className="text-sm font-bold text-on-surface">Продукт «Рынок» сейчас недоступен</p>
-              <p className="text-xs text-on-surface-variant mt-2 max-w-md mx-auto leading-relaxed">
-                Приложение Mark-analytics не отвечает по адресу{' '}
-                <span className="font-mono text-on-surface">{APP_URL}</span>. Запустите его
-                (frontend: 5173, backend: 8000) или задайте переменную
-                NEXT_PUBLIC_MARKET_APP_URL.
+              <p className="text-sm font-bold text-on-surface">
+                {misconfig ? 'Раздел «Рынок» не настроен' : 'Продукт «Рынок» сейчас недоступен'}
               </p>
+              {misconfig ? (
+                <p className="text-xs text-on-surface-variant mt-2 max-w-md mx-auto leading-relaxed">
+                  {misconfig} Текущее значение:{' '}
+                  <span className="font-mono text-on-surface break-all">{APP_URL}</span>. Вкладки
+                  «Чек-лист 50» и «Новости» работают без внешнего приложения.
+                </p>
+              ) : (
+                <p className="text-xs text-on-surface-variant mt-2 max-w-md mx-auto leading-relaxed">
+                  Приложение Mark-analytics не отвечает по адресу{' '}
+                  <span className="font-mono text-on-surface">{APP_URL}</span>. Запустите его
+                  (frontend: 5173, backend: 8000) или задайте переменную
+                  NEXT_PUBLIC_MARKET_APP_URL.
+                </p>
+              )}
               <button
                 onClick={() => void probe()}
                 className="mt-4 text-xs font-mono uppercase tracking-widest text-primary hover:brightness-110 transition-colors"

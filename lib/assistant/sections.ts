@@ -172,12 +172,27 @@ export const SECTION_FIELD_MAP: AssistantSection[] = [
     ],
   },
 
-  // ── Step 7 — Финансы (примечание: финансовые поля живут в s9n_*) ──────────
-  // The form's "Финансы" step writes the s9n_* family (see survey-labels.ts).
+  // ── Step 7 — Маркетинг (Step7MarketingForm writes s5_* / s7_* / s7n_*) ─────
+  {
+    id: 'marketing',
+    label: 'Маркетинг',
+    step: 7,
+    required: [],
+    recommended: [
+      { key: 's5_marketing_channels', format: 'list' },
+      { key: 's5_marketing_budget_pct', format: 'percent' },
+      { key: 's7n_content_strategy', format: 'text', minLen: 5 },
+      { key: 's5_competitor_1', format: 'text', minLen: 2 },
+    ],
+  },
+
+  // ── Step 9 — Финансы (Step9FinanceForm writes the s9n_* family) ───────────
+  // Was attached to step 7 (the marketing form): the inline hints on the
+  // marketing step nagged about «Выручка 2024», which lives on step 9.
   {
     id: 'finance',
     label: 'Финансы',
-    step: 7,
+    step: 9,
     required: [
       { key: 's9n_revenue_2024', aliases: ['s2_revenue_2024'], format: 'money' },
     ],
@@ -211,11 +226,13 @@ export const SECTION_FIELD_MAP: AssistantSection[] = [
     ],
   },
 
-  // ── Step 9 — Сегментация ──────────────────────────────────────────────────
+  // ── Step 5 — сегментация базы (s5n_* live in Step5ClientBaseForm) ─────────
+  // Listed after the main step-5 section so getSectionByStep(5) keeps
+  // returning «Работа с базой» for the wizard's inline hints.
   {
     id: 'segmentation',
-    label: 'Сегментация',
-    step: 9,
+    label: 'Сегментация базы',
+    step: 5,
     required: [],
     recommended: [
       { key: 's5n_rfm_analysis', format: 'text' },
@@ -225,10 +242,10 @@ export const SECTION_FIELD_MAP: AssistantSection[] = [
     ],
   },
 
-  // ── Step 10 — Диагностика потерь / Личные вопросы ─────────────────────────
+  // ── Step 10 — Личные вопросы ──────────────────────────────────────────────
   {
     id: 'personal',
-    label: 'Диагностика потерь',
+    label: 'Личные вопросы',
     step: 10,
     required: [],
     recommended: [
@@ -239,10 +256,10 @@ export const SECTION_FIELD_MAP: AssistantSection[] = [
     ],
   },
 
-  // ── Step 11 — Стратегия / Карта влияния ───────────────────────────────────
+  // ── Step 11 — Карта влияния ───────────────────────────────────────────────
   {
     id: 'strategy',
-    label: 'Стратегия',
+    label: 'Карта влияния',
     step: 11,
     required: [],
     recommended: [

@@ -5,6 +5,9 @@ import type { PointA, Risk, QuickWin } from '@/types/onboarding'
 import { usePointAAggregate, useRecalculatePointA } from '@/hooks/usePointAAggregate'
 import { useRealtimePointA } from '@/hooks/useRealtimePointA'
 import PointAInsightCard from '@/components/point-a/PointAInsightCard'
+// Shared ru formatter: '₸', '%', 'days' → «дн.», 'count' → bare number. Rendering
+// the raw unit showed «28count» and «LTV/CAC 31₸» on the post-survey screen.
+import { formatRuMetricWithUnit } from '@/components/dashboard/_utils'
 
 interface Props {
   userId: string
@@ -239,8 +242,7 @@ export default function PointAIntelligenceSection({ userId, companyId }: Props) 
                       {s.label}
                     </p>
                     <p className="text-sm font-mono font-bold text-primary tabular-nums">
-                      {s.value !== null && s.value !== undefined ? String(s.value) : '—'}
-                      {s.unit ? <span className="text-[9px] text-on-surface-variant ml-0.5">{s.unit}</span> : null}
+                      {s.value !== null && s.value !== undefined ? formatRuMetricWithUnit(s.value, s.unit) : '—'}
                     </p>
                   </div>
                 ))}
@@ -319,8 +321,7 @@ export default function PointAIntelligenceSection({ userId, companyId }: Props) 
                                   {m.label}
                                 </span>
                                 <span className="font-mono text-primary tabular-nums whitespace-nowrap">
-                                  {m.value !== null && m.value !== undefined ? String(m.value) : '—'}
-                                  {m.unit ? <span className="text-on-surface-variant/60 ml-0.5">{m.unit}</span> : null}
+                                  {m.value !== null && m.value !== undefined ? formatRuMetricWithUnit(m.value, m.unit) : '—'}
                                 </span>
                               </li>
                             ))}

@@ -13,6 +13,7 @@
 
 import Link from 'next/link'
 import { SURVEY_STEP_LABELS } from '@/lib/survey-labels'
+import { completedStepsFromRows } from '@/lib/survey/steps'
 import CompanyDataFooter from './CompanyDataFooter'
 
 interface SurveyAnswerRow {
@@ -101,10 +102,9 @@ export default async function CompanyDataCard({ userId }: { userId: string }) {
   }
 
   // ── Survey progress ─────────────────────────────────────────────────────
-  const completedSteps = new Set<number>()
-  for (const r of surveyRows) {
-    if (typeof r.step === 'number' && r.step >= 1) completedSteps.add(r.step)
-  }
+  // Step ownership comes from the question key, not the stored `step` column
+  // (see lib/survey/steps.ts — the column was corrupted by re-saves).
+  const completedSteps = new Set<number>(completedStepsFromRows(surveyRows))
   const pct = Math.round((completedSteps.size / TOTAL_STEPS) * 100)
   const badge = completionBadge(pct)
 
@@ -272,7 +272,7 @@ export default async function CompanyDataCard({ userId }: { userId: string }) {
               {formatKzt(target3y)}
             </p>
             <p className="text-[11px] text-on-surface-variant mt-1 font-mono">
-              ~{monthlyFromTotal(target3y, 36)}/мес
+              ~{monthlyFromTotal(target3y, 12)}/мес
             </p>
           </Link>
         </div>

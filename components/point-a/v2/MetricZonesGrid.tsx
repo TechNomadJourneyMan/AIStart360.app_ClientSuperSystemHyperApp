@@ -221,9 +221,10 @@ function ZoneCard({
           type="button"
           title={style.threshold}
           aria-label={`Правила зоны: ${style.threshold}`}
-          className="ml-1 inline-flex items-center justify-center w-4 h-4 rounded-full border border-white/15 text-[10px] text-on-surface-variant hover:text-on-surface hover:border-white/30 transition focus:outline-none focus:ring-2 focus:ring-primary/40"
+          className="ml-1 mr-2 inline-flex items-center justify-center w-5 h-5 rounded-full text-on-surface-variant hover:text-on-surface transition focus:outline-none focus:ring-2 focus:ring-primary/40"
         >
-          ?
+          {/* Icon instead of a bare "?" — next to the count chip it used to read as "?121". */}
+          <span className="material-symbols-outlined text-[15px]" aria-hidden>info</span>
         </button>
         <span
           className={`ml-auto rounded-xl px-2 py-0.5 text-[10px] font-mono uppercase tracking-[0.15em] ${style.chipBg}`}

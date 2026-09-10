@@ -3,6 +3,7 @@
 import { create } from 'zustand'
 import { createClient } from '@/lib/supabase/client'
 import { isSupabaseEmailNotConfirmedError } from '@/lib/supabase/auth-errors'
+import { clearAllDrafts } from '@/lib/survey/draft'
 import type { UserRole } from '@/types'
 
 /**
@@ -299,6 +300,8 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
     // 'apis'/'images' caches. Audit 2026-07-02.
     if (typeof window !== 'undefined') {
       try { window.localStorage.removeItem('aistart360_rq_cache') } catch {}
+      // Survey drafts (per-user unsaved answers) must not outlive the session.
+      clearAllDrafts(window.localStorage)
       if ('caches' in window) {
         try {
           const keys = await caches.keys()

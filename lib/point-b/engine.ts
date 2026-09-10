@@ -358,22 +358,35 @@ export function assessRealism(
   pointA: PointA,
   gap3y: GapMetrics,
   extraWeakBlocks: string[] = [],
+  gap12m?: GapMetrics,
 ): Realism {
   const weakFromScores = BLOCK_KEYS.filter((k) => (pointA.blocks[k]?.score ?? 0) < 50)
   const weak_blocks = Array.from(new Set([...weakFromScores, ...extraWeakBlocks]))
 
-  if (!gap3y.data_complete || gap3y.required_cagr == null) {
+  // Prefer the 3-year horizon; fall back to the 12-month goal when the owner
+  // only set a 1-year target (E2E bug: the page showed «сейчас 4 млн, цель
+  // 24 млн/12 мес» and, right below, «Недостаточно данных — укажите текущую
+  // выручку и цель» because only the 3y gap was consulted).
+  const use3y = gap3y.data_complete && gap3y.required_cagr != null
+  const use12m = !use3y && !!gap12m && gap12m.data_complete && gap12m.required_cagr != null
+  const gap = use3y ? gap3y : use12m ? (gap12m as GapMetrics) : null
+
+  if (!gap || gap.required_cagr == null) {
+    const missing = gap12m || gap3y
+      ? 'нет цели на 12 месяцев или 3 года либо текущей выручки'
+      : 'нет текущей выручки или цели'
     return {
       score: 0,
       level: 'unknown',
-      headline: 'Недостаточно данных для оценки — укажите текущую выручку и цель.',
-      rationale: ['Недостаточно данных для оценки реалистичности: нет текущей выручки или цели.'],
+      headline: 'Недостаточно данных для оценки — укажите текущую выручку и цель на 12 месяцев или на 3 года.',
+      rationale: [`Недостаточно данных для оценки реалистичности: ${missing}.`],
       risk_factors: [],
       weak_blocks,
     }
   }
 
-  const cagr = gap3y.required_cagr
+  const horizonNote = use12m ? ' Оценка по цели на 12 месяцев — цель на 3 года не указана.' : ''
+  const cagr = gap.required_cagr
   let level: RealLevel =
     cagr <= 20 ? 'realistic' : cagr <= 50 ? 'ambitious' : cagr <= 100 ? 'aggressive' : 'unrealistic'
 
@@ -404,13 +417,13 @@ export function assessRealism(
   const LEVEL_WORD: Record<RealLevel, string> = {
     realistic: 'Реалистично', ambitious: 'Амбициозно', aggressive: 'Агрессивно', unrealistic: 'Нереалистично',
   }
-  const mult = gap3y.multiplier != null && gap3y.multiplier > 0
-    ? `рост ×${gap3y.multiplier.toFixed(1)} за ${gap3y.months} мес (CAGR ~${cagr.toFixed(0)}%)`
+  const mult = gap.multiplier != null && gap.multiplier > 0
+    ? `рост ×${gap.multiplier.toFixed(1)} за ${gap.months} мес (CAGR ~${cagr.toFixed(0)}%)`
     : `среднегодовой рост ~${cagr.toFixed(0)}%`
   const weakestLabel = weak_blocks.length > 0 ? (BLOCK_LABELS[weak_blocks[0]] ?? weak_blocks[0]) : null
-  const headline = weakestLabel
+  const headline = (weakestLabel
     ? `${LEVEL_WORD[level]}: ${mult}, а блок «${weakestLabel}» пока слабый — сначала укрепите его.`
-    : `${LEVEL_WORD[level]}: ${mult}.`
+    : `${LEVEL_WORD[level]}: ${mult}.`) + horizonNote
 
   const score = Math.max(0, Math.min(100, LEVEL_SCORE[level] - 5 * weak_blocks.length))
   return { score, level, headline, rationale, risk_factors, weak_blocks }
@@ -723,7 +736,8 @@ export function calculatePointBV2(
     ...(options.griWeakBlocks ?? []),
   ]))
 
-  const realism = assessRealism(pointA, gap3y, options.griWeakBlocks ?? [])
+  const gap12m = gap.find((g) => g.horizon === '12m')
+  const realism = assessRealism(pointA, gap3y, options.griWeakBlocks ?? [], gap12m)
   void weakBlocks
 
   return {

@@ -24,6 +24,7 @@ import MetricZonesGrid from '@/components/point-a/v2/MetricZonesGrid'
 import CompanyDataCard from '@/components/point-a/v2/CompanyDataCard'
 import MarketAnalysisCard from '@/components/point-a/v2/MarketAnalysisCard'
 import InsightsFeed from '@/components/point-a/v2/InsightsFeed'
+import { completedStepsFromRows } from '@/lib/survey/steps'
 import PointAQuickPills from '@/components/point-a/v2/PointAQuickPills'
 import PointAFilterSection from '@/components/point-a/v2/PointAFilterSection'
 import type { PointA, BlockScore } from '@/types/onboarding'
@@ -270,7 +271,7 @@ export default async function DashboardPage() {
             { headers: authHeaders, cache: 'no-store' }
           ),
           fetch(
-            `${supabaseUrl}/rest/v1/survey_answers?user_id=eq.${user.id}&select=step`,
+            `${supabaseUrl}/rest/v1/survey_answers?user_id=eq.${user.id}&select=step,question_key,answer`,
             { headers: authHeaders, cache: 'no-store' }
           ),
           fetch(
@@ -288,8 +289,8 @@ export default async function DashboardPage() {
           companyId = companyRows?.[0]?.id ? String(companyRows[0].id) : null
         }
         if (surveyRes.ok) {
-          const rows = await surveyRes.json() as Array<{ step: number }>
-          surveyStepsDone = new Set(rows.map((r) => r.step)).size
+          const rows = await surveyRes.json() as Array<{ step: number; question_key: string; answer: unknown }>
+          surveyStepsDone = completedStepsFromRows(rows).length
         }
         if (docsRes.ok) {
           const rows = await docsRes.json() as Array<{ id: string }>

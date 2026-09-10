@@ -473,24 +473,76 @@ function detectDataGaps(answers: Record<string, unknown>): DataGap[] {
     gaps.push({ field: 's6_goal_12months', step: 2, impact: 'Цель на 12 месяцев — основа стратегического блока' })
   }
 
-  const critical: Array<[string, number, string]> = [
-    ['s2_gross_margin', 2, 'Маржинальность — ключевой показатель здоровья'],
-    ['s2_cac', 2, 'CAC — для расчёта эффективности маркетинга'],
-    ['s2_ltv', 2, 'LTV — для расчёта LTV/CAC'],
-    ['s3_has_crm', 3, 'Наличие CRM влияет на оценку продаж'],
+  // [primary key, aliases that satisfy it, wizard step where it is asked, impact]
+  const critical: Array<[string, string[], number, string]> = [
+    ['s2_gross_margin', ['s9n_net_margin'], 9, 'Маржинальность — ключевой показатель здоровья'],
+    ['s2_cac', [], 8, 'CAC — для расчёта эффективности маркетинга'],
+    ['s2_ltv', [], 8, 'LTV — для расчёта LTV/CAC'],
+    ['s3_has_crm', ['s12_crm_tool'], 12, 'Наличие CRM влияет на оценку продаж'],
   ]
-  for (const [key, step, impact] of critical) {
-    const val = answers[key]
-    if (val === undefined || val === null || val === '' || val === 0) {
-      gaps.push({ field: key, step, impact })
-    }
+  for (const [key, aliases, step, impact] of critical) {
+    const answered = [key, ...aliases].some((k) => {
+      const val = answers[k]
+      return !(val === undefined || val === null || val === '' || val === 0)
+    })
+    if (!answered) gaps.push({ field: key, step, impact })
   }
   return gaps
 }
 
+// ─── Current-form aliases ─────────────────────────────────────────────────────
+
+const NO_ANSWER_RE = /^(нет|no|none|-|—|отсутствует|не\s*используем|не\s*используется)$/i
+
+function present(v: unknown): boolean {
+  if (v === undefined || v === null) return false
+  if (typeof v === 'string') return v.trim().length > 0
+  return true
+}
+
+/**
+ * The scoring below was written against the first-generation survey keys
+ * (s4_reporting_tool, s4_management_method, s2_knows_breakeven …). The current
+ * 12-step form writes different keys, so for every current client:
+ *  - Operations never scored above 25 and always carried «Ручное управление»,
+ *  - «Точка безубыточности неизвестна» appeared although s9n_breakeven_point was filled,
+ *  - free-text «нет» in the CRM field scored as HAVING a CRM.
+ * Legacy keys are filled from their current equivalents only when absent, so
+ * owners who answered the old form keep their exact scores.
+ */
+export function withCurrentAliases(input: Record<string, unknown>): Record<string, unknown> {
+  const a: Record<string, unknown> = { ...input }
+
+  // CRM: the structured step-12 choice wins; free text meaning «no» is 'none'.
+  if (present(a.s12_crm_tool)) a.s3_has_crm = a.s12_crm_tool
+  else if (typeof a.s3_has_crm === 'string' && NO_ANSWER_RE.test(a.s3_has_crm.trim())) a.s3_has_crm = 'none'
+
+  // Reporting tool (same value set: excel / bi / crm / none).
+  if (!present(a.s4_reporting_tool) && present(a.s4m_report_automated)) a.s4_reporting_tool = a.s4m_report_automated
+
+  // Task manager ← step-12 project management tool.
+  if (!present(a.s4_task_manager) && present(a.s12_project_mgmt)) a.s4_task_manager = a.s12_project_mgmt
+
+  // Management method ← step-4 «Метод контроля» (reports / tasks / kpi / fire_fighting).
+  if (!present(a.s4_management_method) && present(a.s4m_control_method)) {
+    const c = String(a.s4m_control_method)
+    a.s4_management_method = c === 'kpi' ? 'kpi' : c === 'fire_fighting' ? 'manual' : 'hybrid'
+  }
+  // KPI per department ← control by KPI.
+  if (!present(a.s4_has_dept_kpi) && present(a.s4m_control_method)) a.s4_has_dept_kpi = a.s4m_control_method === 'kpi'
+
+  // Break-even known ← the break-even amount was filled on step 9.
+  if (!present(a.s2_knows_breakeven) && present(a.s9n_breakeven_point)) {
+    const be = Number(a.s9n_breakeven_point)
+    a.s2_knows_breakeven = Number.isFinite(be) ? be > 0 : String(a.s9n_breakeven_point).trim() !== ''
+  }
+  return a
+}
+
 // ─── Main Export ──────────────────────────────────────────────────────────────
 
-export function calculatePointA(answers: Record<string, unknown>): PointA {
+export function calculatePointA(rawAnswers: Record<string, unknown>): PointA {
+  const answers = withCurrentAliases(rawAnswers)
   const finance    = scoreFinance(answers)
   const sales      = scoreSales(answers)
   const operations = scoreOperations(answers)
