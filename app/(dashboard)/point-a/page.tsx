@@ -18,7 +18,7 @@ import InsightsFeed from '@/components/point-a/v2/InsightsFeed'
 import PointAQuickPills from '@/components/point-a/v2/PointAQuickPills'
 import PointAFilterSection from '@/components/point-a/v2/PointAFilterSection'
 import { ShareButton } from '@/components/share/ShareButton'
-import { stepForQuestionKey } from '@/lib/survey/steps'
+import { completedStepsFromRows } from '@/lib/survey/steps'
 
 export const metadata: Metadata = { title: 'Точка А — Текущее состояние' }
 
@@ -65,12 +65,13 @@ export default async function PointAPage() {
       }
     }
 
-    // Get user's latest diagnostic
-    const user = session?.user
-    if (user?.id) {
-      if (!clientId) clientId = user.id
+    // Get user's latest diagnostic. Keyed by the SUPABASE user (clientId):
+    // it used to require a NextAuth session, which Supabase-authenticated
+    // clients never have, so «Диагностика по блокам» stayed hidden and the
+    // page said «Нет данных диагностики» even after a recalculation.
+    if (clientId) {
       const diagRes = await fetch(
-        `${supabaseUrl}/rest/v1/diagnostics?user_id=eq.${user.id}&order=calculated_at.desc&limit=1`,
+        `${supabaseUrl}/rest/v1/diagnostics?user_id=eq.${clientId}&order=calculated_at.desc&limit=1`,
         { headers, cache: 'no-store' }
       )
       if (diagRes.ok) {
@@ -99,7 +100,7 @@ export default async function PointAPage() {
             id: diag.id,
             score: diag.overall_score ?? 0,
             calculatedAt: diag.calculated_at ?? diag.created_at,
-            clientName: user.email ?? 'Клиент',
+            clientName: session?.user?.email ?? 'Клиент',
           }]
         }
       }
@@ -128,11 +129,10 @@ export default async function PointAPage() {
         if (Array.isArray(rows)) {
           for (const row of rows) {
             surveyAnswers[row.question_key] = row.answer?.value ?? row.answer
-            const step = stepForQuestionKey(String(row.question_key), parseInt(row.step, 10) || null)
-            if (step && !surveyCompletedSteps.includes(step)) {
-              surveyCompletedSteps.push(step)
-            }
           }
+          // Same rule as every other page: key-derived step, empty answers and
+          // staff/widget rows don't count (this page used to count both).
+          surveyCompletedSteps.push(...completedStepsFromRows(rows))
         }
       }
     }

@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useCallback } from 'react'
+import React, { useCallback, useEffect, useState } from 'react'
 
 /* ─── Types ────────────────────────────────────────────────────────────────── */
 interface Step8MetricsFormProps {
@@ -55,6 +55,42 @@ function parseNum(raw: string): number {
 const emptyRow = (): MetricRow => ({
   metric_name: '', y2023: 0, y2024: 0, y2025: 0, plan_2026: 0, fact_2026: 0, completion_pct: 0,
 })
+
+/**
+ * Numeric cell that keeps the RAW text while the user types. Re-rendering the
+ * parsed number on every keystroke swallowed «3.» / «3,» / «-» — decimals such
+ * as LTV:CAC 3.5 and negative values could only be pasted, never typed.
+ */
+function NumericCellInput({
+  value,
+  onCommit,
+  onPaste,
+  className,
+}: {
+  value: number
+  onCommit: (n: number) => void
+  onPaste?: React.ClipboardEventHandler<HTMLInputElement>
+  className?: string
+}) {
+  const canonical = value ? String(value) : ''
+  const [text, setText] = useState(canonical)
+  const [focused, setFocused] = useState(false)
+  useEffect(() => {
+    if (!focused) setText(canonical)
+  }, [canonical, focused])
+  return (
+    <input
+      type="text"
+      inputMode="decimal"
+      value={text}
+      onFocus={() => setFocused(true)}
+      onBlur={() => { setFocused(false); setText(canonical) }}
+      onChange={(e) => { setText(e.target.value); onCommit(parseNum(e.target.value)) }}
+      onPaste={onPaste}
+      className={className}
+    />
+  )
+}
 
 /* ─── Component ────────────────────────────────────────────────────────────── */
 export default function Step8MetricsForm({ data, onChange }: Step8MetricsFormProps) {
@@ -152,11 +188,9 @@ export default function Step8MetricsForm({ data, onChange }: Step8MetricsFormPro
                   </td>
                   {VALUE_COLUMNS.map((col, colIdx) => (
                     <td key={col.key} className="py-1.5 px-1">
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        value={(row as Record<string, unknown>)[col.key] as number || ''}
-                        onChange={(e) => updateCell(rowIdx, col.key, parseNum(e.target.value))}
+                      <NumericCellInput
+                        value={Number((row as Record<string, unknown>)[col.key]) || 0}
+                        onCommit={(num) => updateCell(rowIdx, col.key, num)}
                         onPaste={(e) => handlePaste(e, rowIdx, colIdx)}
                         className="w-full bg-surface-container border border-white/[0.08] rounded-lg px-2.5 py-2 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all"
                       />
@@ -205,14 +239,12 @@ export default function Step8MetricsForm({ data, onChange }: Step8MetricsFormPro
                     <span className="block text-[9px] font-mono text-on-surface-variant/70 uppercase tracking-wider mb-1">
                       {col.label}
                     </span>
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      value={(row as Record<string, unknown>)[col.key] as number || ''}
-                      onChange={(e) => updateCell(rowIdx, col.key, parseNum(e.target.value))}
-                      onPaste={(e) => handlePaste(e, rowIdx, colIdx)}
-                      className="w-full bg-surface-container border border-white/[0.08] rounded-lg px-2.5 py-2 text-sm text-on-surface focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all"
-                    />
+                    <NumericCellInput
+                        value={Number((row as Record<string, unknown>)[col.key]) || 0}
+                        onCommit={(num) => updateCell(rowIdx, col.key, num)}
+                        onPaste={(e) => handlePaste(e, rowIdx, colIdx)}
+                        className="w-full bg-surface-container border border-white/[0.08] rounded-lg px-2.5 py-2 text-sm text-on-surface focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all"
+                      />
                   </label>
                 ))}
               </div>

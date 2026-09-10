@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { surveyProgressFromRows } from '@/lib/survey/steps'
+import { positiveNumber } from '@/lib/survey/targets'
 
 // GET /api/v1/onboarding/status
 // Returns { survey: { completed_steps, total_steps, percent, current_goal_12m, current_goal_3y },
@@ -33,9 +34,11 @@ export async function GET() {
   const GOAL_3Y_KEYS = ['s6_goal_3years', 's2n_goal_3y_what', 's2n_goal_3y_metrics']
   const goal12mByKey: Record<string, string> = {}
   const goal3yByKey: Record<string, string> = {}
+  const flat: Record<string, unknown> = {}
 
   for (const r of survey ?? []) {
     const v = (r.answer as { value: unknown })?.value
+    flat[r.question_key] = v
     if (typeof v === 'string' && v.trim()) {
       if (GOAL_12M_KEYS.includes(r.question_key)) goal12mByKey[r.question_key] = v
       if (GOAL_3Y_KEYS.includes(r.question_key)) goal3yByKey[r.question_key] = v
@@ -51,6 +54,12 @@ export async function GET() {
   // portal report "1/12" while the wizard itself was complete.
   const progress = surveyProgressFromRows(survey ?? [])
 
+  // Current monthly revenue from survey step 1 (month field, else year / 12) —
+  // the dashboard hero used to invent «58 % of plan» when no metric existed.
+  const monthRev = positiveNumber(flat.s1_current_revenue_month)
+  const yearRev = positiveNumber(flat.s1_current_revenue_year)
+  const currentRevenueMonth = monthRev ?? (yearRev ? Math.round(yearRev / 12) : null)
+
   return NextResponse.json({
     ok: true,
     data: {
@@ -61,6 +70,7 @@ export async function GET() {
         is_complete: progress.is_complete,
         current_goal_12m: goal12m,
         current_goal_3y: goal3y,
+        current_revenue_month: currentRevenueMonth,
       },
       documents: {
         count: docCount ?? 0,

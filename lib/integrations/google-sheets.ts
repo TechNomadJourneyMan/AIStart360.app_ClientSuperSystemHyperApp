@@ -18,7 +18,9 @@
  * Delivery is best-effort: every public function resolves, never throws.
  */
 
-const TIMEOUT_MS = 10_000
+// Runs in the background (runInBackground) — a cold Apps Script deploy with a
+// 170-column row regularly needs 10–20 s; 10 s was timing out in the QA run.
+const TIMEOUT_MS = 25_000
 
 export interface SheetsConfig {
   webhookUrl: string

@@ -19,7 +19,11 @@ function keysFromForms(): Record<string, number> {
     if (!m || !file.endsWith('.tsx')) continue
     const step = Number(m[1])
     const src = readFileSync(path.join(STEPS_DIR, file), 'utf8')
-    for (const hit of src.matchAll(/'(s\d+n?_[a-z0-9_]+)'/g)) out[hit[1]] = step
+    // Any quote style and any one-letter generation suffix (s2n_, s4m_ …) —
+    // the narrower /'(s\d+n?_…)'/ silently missed 18 keys (s4m_*, nameKey="…").
+    for (const hit of src.matchAll(/["'`](s\d+[a-z]?_[a-z0-9_]+)["'`]/g)) {
+      if (!(hit[1] in out)) out[hit[1]] = step
+    }
   }
   return out
 }
@@ -40,6 +44,9 @@ describe('SURVEY_KEY_STEP', () => {
     expect(stepForQuestionKey('s3_deals_2024')).toBe(5)
     expect(stepForQuestionKey('s5_marketing_budget_pct')).toBe(7)
     expect(stepForQuestionKey('s11_influence_map')).toBe(11)
+    expect(stepForQuestionKey('s4m_control_method')).toBe(4)
+    expect(stepForQuestionKey('s5_competitor_1')).toBe(7)
+    expect(stepForQuestionKey('s7n_competitor_2_analysis')).toBe(7)
   })
 
   it('falls back for keys outside the wizard', () => {
@@ -60,13 +67,26 @@ describe('completedStepsFromRows', () => {
     expect(completedStepsFromRows(rows)).toEqual([1, 2, 9, 11])
   })
 
-  it('uses the stored step only for unknown keys and never counts step 0', () => {
+  it('uses the stored step only for older-generation survey keys and never counts step 0', () => {
     const rows = [
-      { question_key: 'ec_gross_margin', step: 3, answer: { value: 34 } },
+      { question_key: 's2_revenue_2024', step: 3, answer: { value: 34 } }, // legacy survey key → stored step
+      { question_key: 'ec_gross_margin', step: 5, answer: { value: 34 } }, // other intake → not wizard progress
+      { question_key: 'gri_expert_finance', step: 7, answer: { value: 'note' } }, // re-stamped staff note → ignored
       { question_key: 'goal_week', step: 0, answer: { value: 'x' } },
       { question_key: 'unknown_key', step: null, answer: { value: 'x' } },
     ]
     expect(completedStepsFromRows(rows)).toEqual([3])
+  })
+
+  it('isWritableSurveyKey rejects staff notes and widget data', async () => {
+    const { isWritableSurveyKey, isWizardVisibleKey } = await import('@/lib/survey/steps')
+    expect(isWritableSurveyKey('s4m_control_method')).toBe(true)
+    expect(isWritableSurveyKey('s2_revenue_2024')).toBe(true)
+    expect(isWritableSurveyKey('ec_gross_margin')).toBe(true)
+    expect(isWritableSurveyKey('gri_expert_finance')).toBe(false)
+    expect(isWritableSurveyKey('goal_week_v2')).toBe(false)
+    expect(isWizardVisibleKey('ec_gross_margin')).toBe(false)
+    expect(isWizardVisibleKey('gri_expert_finance')).toBe(false)
   })
 
   it('skips empty answers', () => {
@@ -86,5 +106,13 @@ describe('completedStepsFromRows', () => {
     expect(p.completed).toBe(SURVEY_TOTAL_STEPS)
     expect(p.percent).toBe(100)
     expect(p.is_complete).toBe(true)
+  })
+})
+
+describe('step tabs match the survey vocabulary', () => {
+  it('STEPS titles equal SURVEY_STEP_LABELS (tab «Финансы» used to open marketing)', async () => {
+    const { STEPS } = await import('@/components/onboarding/constants/step-config')
+    const { SURVEY_STEP_LABELS } = await import('@/lib/survey-labels')
+    for (const s of STEPS) expect(s.title, `step ${s.n}`).toBe(SURVEY_STEP_LABELS[s.n])
   })
 })

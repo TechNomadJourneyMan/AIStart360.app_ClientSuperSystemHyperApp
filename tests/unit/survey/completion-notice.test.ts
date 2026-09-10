@@ -7,33 +7,32 @@ import {
 } from '@/lib/survey/completion-notice'
 
 describe('shouldAnnounceCompletion', () => {
-  const base = { totalSteps: 12, isCompleteNow: false, wasCompleteBefore: false }
+  const base = { finalSubmitted: false, isCompleteNow: false, wasCompleteBefore: false }
 
-  it('срабатывает на отправку финального шага, даже если он пустой', () => {
-    // QA-кейс: 11/12 заполнено, шаг 12 проехали без ответов.
-    expect(shouldAnnounceCompletion({ ...base, submittedStep: 12 })).toBe(true)
+  it('срабатывает на явную отправку анкеты, даже если шаг 12 пустой', () => {
+    // QA-кейс: 11/12 заполнено, шаг 12 проехали без ответов и нажали «Получить диагностику».
+    expect(shouldAnnounceCompletion({ ...base, finalSubmitted: true })).toBe(true)
   })
 
   it('срабатывает, когда анкета впервые стала полной на промежуточном шаге', () => {
-    expect(shouldAnnounceCompletion({ ...base, submittedStep: 7, isCompleteNow: true })).toBe(true)
+    expect(shouldAnnounceCompletion({ ...base, isCompleteNow: true })).toBe(true)
   })
 
-  it('молчит на обычных промежуточных сохранениях', () => {
-    expect(shouldAnnounceCompletion({ ...base, submittedStep: 3 })).toBe(false)
+  it('молчит на обычных сохранениях, включая уход с шага 12 по вкладке', () => {
+    // Раньше step=12 из вкладки считался «финалом» и слал «анкета пройдена (1/12)».
+    expect(shouldAnnounceCompletion(base)).toBe(false)
   })
 
-  it('молчит при повторном сохранении уже полной анкеты не с финального шага', () => {
-    expect(
-      shouldAnnounceCompletion({ ...base, submittedStep: 5, isCompleteNow: true, wasCompleteBefore: true }),
-    ).toBe(false)
+  it('молчит при повторном сохранении уже полной анкеты без явной отправки', () => {
+    expect(shouldAnnounceCompletion({ ...base, isCompleteNow: true, wasCompleteBefore: true })).toBe(false)
   })
 })
 
 describe('buildClientNotice', () => {
   it('разный текст для полной и частичной анкеты', () => {
-    expect(buildClientNotice({ completedSteps: 12, totalSteps: 12, company: 'X', sheetUrl: null }).title)
+    expect(buildClientNotice({ completedSteps: 12, totalSteps: 12, company: 'X' }).title)
       .toBe('Анкета заполнена полностью')
-    const partial = buildClientNotice({ completedSteps: 11, totalSteps: 12, company: 'X', sheetUrl: null })
+    const partial = buildClientNotice({ completedSteps: 11, totalSteps: 12, company: 'X' })
     expect(partial.title).toBe('Анкета отправлена')
     expect(partial.body).toContain('11 из 12')
   })
@@ -41,7 +40,7 @@ describe('buildClientNotice', () => {
 
 // ─── claimCompletionNotice ───────────────────────────────────────────────────
 
-function fakeService(existing: Array<{ id: string }>, opts: { selectError?: string; insertError?: string } = {}) {
+function fakeService(existing: Array<{ id: string }>, opts: { selectError?: string; insertError?: string; insertCode?: string } = {}) {
   const inserts: Record<string, unknown>[] = []
   const client = {
     from() {
@@ -52,7 +51,7 @@ function fakeService(existing: Array<{ id: string }>, opts: { selectError?: stri
         limit: () => Promise.resolve({ data: existing, error: opts.selectError ? { message: opts.selectError } : null }),
         insert: (row: Record<string, unknown>) => {
           inserts.push(row)
-          return Promise.resolve({ error: opts.insertError ? { message: opts.insertError } : null })
+          return Promise.resolve({ error: opts.insertError ? { message: opts.insertError, code: opts.insertCode } : null })
         },
       })
       return chain
@@ -61,7 +60,7 @@ function fakeService(existing: Array<{ id: string }>, opts: { selectError?: stri
   return { client: client as never, inserts }
 }
 
-const input = { completedSteps: 11, totalSteps: 12, company: 'ТОО kOtaq-Telecom', sheetUrl: 'https://docs.google.com/x' }
+const input = { completedSteps: 11, totalSteps: 12, company: 'ТОО kOtaq-Telecom' }
 
 describe('claimCompletionNotice', () => {
   it('первый вызов ставит маркер и разрешает рассылку', async () => {
@@ -70,6 +69,8 @@ describe('claimCompletionNotice', () => {
     expect(inserts).toHaveLength(1)
     expect(inserts[0]).toMatchObject({ user_id: 'u-1', category: 'survey', link: '/client/point-a' })
     expect((inserts[0].metadata as Record<string, unknown>).event).toBe(SURVEY_COMPLETED_EVENT)
+    // клиент читает свои уведомления через RLS — ссылки на админскую таблицу там быть не должно
+    expect(JSON.stringify(inserts[0])).not.toContain('docs.google.com')
   })
 
   it('повторный вызов не шлёт второе уведомление', async () => {
@@ -85,5 +86,10 @@ describe('claimCompletionNotice', () => {
     const b = fakeService([], { insertError: 'boom' })
     await expect(claimCompletionNotice(b.client, 'u-1', input)).resolves.toBe(true)
     vi.restoreAllMocks()
+  })
+
+  it('параллельный дубль, пойманный уникальным индексом (23505), не шлёт второе уведомление', async () => {
+    const { client } = fakeService([], { insertError: 'duplicate key', insertCode: '23505' })
+    await expect(claimCompletionNotice(client, 'u-1', input)).resolves.toBe(false)
   })
 })

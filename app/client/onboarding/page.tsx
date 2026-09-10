@@ -1,13 +1,14 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
+import { Suspense, useState, useEffect, useCallback, useRef } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import Image from 'next/image'
 import Link from 'next/link'
 import { TOTAL_STEPS, STEPS } from '@/components/onboarding/constants/step-config'
 import InlineValidationHints from '@/components/assistant/InlineValidationHints'
 import { getSectionByStep } from '@/lib/assistant/sections'
+import { clearDraft, mergeServerAndDraft, parseStepParam, readDraft, writeDraft } from '@/lib/survey/draft'
 
 // Step form components
 import Step1CompanyForm from '@/components/onboarding/steps/Step1CompanyForm'
@@ -23,7 +24,11 @@ import Step10PersonalForm from '@/components/onboarding/steps/Step10PersonalForm
 import { Step11InfluenceForm } from '@/components/onboarding/steps/Step11InfluenceForm'
 import Step12ToolsForm from '@/components/onboarding/steps/Step12ToolsForm'
 
-const STORAGE_KEY = 'aistart360_onboarding'
+// Step-1 fields mirrored into the `companies` row.
+const COMPANY_FIELD_KEYS = new Set([
+  's1_company_name', 's1_industry', 's1_employee_count', 's1_founded_at', 's1_business_model',
+  's1_regions', 's1_contact_name', 's1_contact_position', 's1_contact_phone', 's1_contact_email',
+])
 
 // Map step number to component
 const STEP_FORMS: Record<number, React.ComponentType<{ data: Record<string, unknown>; onChange: (key: string, value: unknown) => void; userId?: string }>> = {
@@ -41,196 +46,232 @@ const STEP_FORMS: Record<number, React.ComponentType<{ data: Record<string, unkn
   12: Step12ToolsForm,
 }
 
-export default function OnboardingPage() {
+function OnboardingPageInner() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [currentStep, setCurrentStep] = useState(1)
-  const [savedAnswers, setSavedAnswers] = useState<Record<string, unknown>>({})
+  // Full view of the answers: server copy + unsaved local edits on top.
   const [stepData, setStepData] = useState<Record<string, unknown>>({})
   const [isSaving, setIsSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const [loaded, setLoaded] = useState(false)
   const [userId, setUserId] = useState<string | null>(null)
   const [companyId, setCompanyId] = useState<string | null>(null)
   const [hasDocs, setHasDocs] = useState(false)
 
-  // Bootstrap: load from localStorage → server
-  useEffect(() => {
-    const bootstrap = async () => {
-      try {
-        const supabase = createClient()
-        const { data: { user } } = await supabase.auth.getUser()
-        setUserId(user?.id ?? null)
+  // Refs mirror state for async save logic (no stale closures).
+  const stepDataRef = useRef<Record<string, unknown>>({})
+  const dirtyRef = useRef<Set<string>>(new Set())
+  const saveChainRef = useRef<Promise<boolean>>(Promise.resolve(true))
+  const userIdRef = useRef<string | null>(null)
+  const companyIdRef = useRef<string | null>(null)
+  const currentStepRef = useRef(1)
+  useEffect(() => { stepDataRef.current = stepData }, [stepData])
+  useEffect(() => { companyIdRef.current = companyId }, [companyId])
+  useEffect(() => { currentStepRef.current = currentStep }, [currentStep])
 
-        // Note: medical-vertical users are NOT force-redirected to the short
-        // clinic intake anymore — the full 12-step survey is available to
-        // everyone, and the clinic form stays reachable as an optional link.
-
-        // Check whether any documents are already uploaded (controls the
-        // "Сформировать Точку А" early-exit button).
-        if (user?.id) {
-          fetch('/api/v1/onboarding/status', { credentials: 'include' })
-            .then((r) => r.json())
-            .then((j) => { if (j?.ok && j.data?.documents?.has_files) setHasDocs(true) })
-            .catch(() => {})
-        }
-
-        // 1. Try localStorage
-        const raw = localStorage.getItem(STORAGE_KEY)
-        if (raw) {
-          const data = JSON.parse(raw)
-          const answers = data.answers ?? {}
-          setSavedAnswers(answers)
-          setStepData(answers)
-          setCurrentStep(data.current_step ?? 1)
-          setCompanyId(data.company_id ?? null)
-          return
-        }
-
-        // 2. Load from server
-        if (user?.id) {
-          const [surveyRes, companyRes] = await Promise.all([
-            fetch(`/api/v1/onboarding/survey?user_id=${user.id}`),
-            fetch(`/api/v1/onboarding/company?user_id=${user.id}`),
-          ])
-
-          if (surveyRes.ok) {
-            const surveyData = await surveyRes.json()
-            if (surveyData.ok && surveyData.data) {
-              const { answers: serverAnswers } = surveyData.data
-              if (Object.keys(serverAnswers ?? {}).length > 0) {
-                setSavedAnswers(serverAnswers)
-                setStepData(serverAnswers)
-                // Do NOT auto-jump to the last unfilled step — start at step 1 and
-                // let the user move freely via the (now fully visible) step tabs.
-                setCurrentStep(1)
-              }
-            }
-          }
-          if (companyRes.ok) {
-            const companyData = await companyRes.json()
-            if (companyData.ok && companyData.data?.id) setCompanyId(companyData.data.id)
-          }
-        }
-      } catch { setUserId(null) }
-    }
-    bootstrap()
+  const persistDraft = useCallback(() => {
+    const uid = userIdRef.current
+    if (!uid || typeof window === 'undefined') return
+    const dirty: Record<string, unknown> = {}
+    for (const k of dirtyRef.current) dirty[k] = stepDataRef.current[k]
+    if (Object.keys(dirty).length === 0) clearDraft(window.localStorage, uid)
+    else writeDraft(window.localStorage, uid, currentStepRef.current, dirty)
   }, [])
 
-  // Continuous autosave — persist the in-progress step to localStorage on every
-  // change (debounced). Guarantees no data loss on step switch / refresh / loss of
-  // connection. Writes localStorage directly (no setState) to avoid render loops.
+  // Bootstrap: the SERVER is the source of truth; this user's unsaved local
+  // edits (draft) are laid on top. `?step=N` opens a specific step.
   useEffect(() => {
-    if (!Object.keys(stepData).length) return
-    const id = setTimeout(() => {
+    let cancelled = false
+    const bootstrap = async () => {
+      const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser().catch(() => ({ data: { user: null } }))
+      if (cancelled) return
+      const uid = user?.id ?? null
+      userIdRef.current = uid
+      setUserId(uid)
+      if (!uid) {
+        setSaveError('Сессия не найдена — войдите заново, иначе ответы не сохранятся.')
+        setLoaded(true)
+        return
+      }
+
+      fetch('/api/v1/onboarding/status', { credentials: 'include' })
+        .then((r) => r.json())
+        .then((j) => { if (!cancelled && j?.ok && j.data?.documents?.has_files) setHasDocs(true) })
+        .catch(() => {})
+
+      let server: Record<string, unknown> = {}
       try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify({
-          current_step: currentStep,
-          answers: { ...savedAnswers, ...stepData },
-          company_id: companyId,
-          saved_at: new Date().toISOString(),
-        }))
-      } catch { /* storage full / unavailable — ignore */ }
-    }, 600)
-    return () => clearTimeout(id)
+        const [surveyRes, companyRes] = await Promise.all([
+          fetch('/api/v1/onboarding/survey', { credentials: 'include' }),
+          fetch('/api/v1/onboarding/company', { credentials: 'include' }),
+        ])
+        const surveyJson = await surveyRes.json().catch(() => null)
+        if (surveyRes.ok && surveyJson?.ok) server = surveyJson.data?.answers ?? {}
+        else setSaveError('Не удалось загрузить сохранённые ответы. Обновите страницу, прежде чем продолжать.')
+        const companyJson = await companyRes.json().catch(() => null)
+        if (companyRes.ok && companyJson?.ok && companyJson.data?.id) setCompanyId(String(companyJson.data.id))
+      } catch {
+        setSaveError('Нет связи с сервером. Ответы сохраняются локально и отправятся при следующем «Далее».')
+      }
+      if (cancelled) return
+
+      const draft = readDraft(window.localStorage, uid)
+      const { answers, dirtyKeys } = mergeServerAndDraft(server, draft)
+      dirtyRef.current = new Set(dirtyKeys)
+      stepDataRef.current = answers
+      setStepData(answers)
+      const fromUrl = parseStepParam(searchParams.get('step'), TOTAL_STEPS)
+      setCurrentStep(fromUrl ?? draft?.current_step ?? 1)
+      setLoaded(true)
+    }
+    bootstrap()
+    return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stepData, currentStep])
+  }, [])
 
-  const persistLocal = useCallback((step: number, answers: Record<string, unknown>) => {
-    const merged = { ...savedAnswers, ...answers }
-    setSavedAnswers(merged)
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({
-      current_step: step, answers: merged, company_id: companyId, saved_at: new Date().toISOString(),
-    }))
-  }, [savedAnswers, companyId])
+  // Continuous local autosave of unsaved edits (debounced), flushed on unmount
+  // and when the tab is hidden — nothing typed is lost on refresh / navigation.
+  useEffect(() => {
+    if (!loaded) return
+    const id = setTimeout(persistDraft, 400)
+    return () => clearTimeout(id)
+  }, [stepData, currentStep, loaded, persistDraft])
+  useEffect(() => {
+    const flush = () => persistDraft()
+    window.addEventListener('pagehide', flush)
+    return () => { window.removeEventListener('pagehide', flush); flush() }
+  }, [persistDraft])
 
-  const saveToServer = async (step: number, answers: Record<string, unknown>) => {
-    if (!userId) return
-    setIsSaving(true)
-    try {
-      // Step 1: also create/update company record
-      if (step === 1) {
-        const compRes = await fetch('/api/v1/onboarding/company', {
+  /**
+   * Save unsaved edits. Resolves true only when the server confirmed.
+   * Saves are serialized (a tab click during a save waits its turn) and send
+   * ONLY changed keys, so values edited elsewhere are never overwritten.
+   */
+  const saveToServer = useCallback((step: number, opts: { final?: boolean } = {}): Promise<boolean> => {
+    const run = async (): Promise<boolean> => {
+      const uid = userIdRef.current
+      if (!uid) {
+        setSaveError('Сессия истекла — войдите заново. Ответы сохранены на этом устройстве.')
+        return false
+      }
+      const keys = Array.from(dirtyRef.current)
+      if (keys.length === 0 && !opts.final) return true // nothing changed → no network round-trip
+      const snapshot: Record<string, unknown> = {}
+      for (const k of keys) snapshot[k] = stepDataRef.current[k]
+
+      setIsSaving(true)
+      try {
+        // Step-1 company fields also live in `companies`.
+        if (keys.some((k) => COMPANY_FIELD_KEYS.has(k))) {
+          const a = stepDataRef.current
+          const compRes = await fetch('/api/v1/onboarding/company', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              name: a['s1_company_name'], industry: a['s1_industry'],
+              employee_count: a['s1_employee_count'],
+              founded_at: a['s1_founded_at'], business_model: a['s1_business_model'],
+              regions: a['s1_regions'], contact_name: a['s1_contact_name'],
+              contact_position: a['s1_contact_position'], contact_phone: a['s1_contact_phone'],
+              contact_email: a['s1_contact_email'],
+            }),
+          })
+          const compData = await compRes.json().catch(() => null)
+          if (!compRes.ok || !compData?.ok) throw new Error(compData?.error || `HTTP ${compRes.status}`)
+          if (compData.data?.id) {
+            companyIdRef.current = String(compData.data.id)
+            setCompanyId(String(compData.data.id))
+          }
+        }
+
+        const formatted: Record<string, { value: unknown }> = {}
+        for (const k of keys) formatted[k] = { value: snapshot[k] }
+        const res = await fetch('/api/v1/onboarding/survey', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            user_id: userId, name: answers['s1_company_name'], industry: answers['s1_industry'],
-            employee_count: answers['s1_employee_count'],
-            founded_at: answers['s1_founded_at'], business_model: answers['s1_business_model'],
-            regions: answers['s1_regions'], contact_name: answers['s1_contact_name'],
-            contact_position: answers['s1_contact_position'], contact_phone: answers['s1_contact_phone'],
-            contact_email: answers['s1_contact_email'],
-          }),
+          body: JSON.stringify({ company_id: companyIdRef.current, step, answers: formatted, final: opts.final === true }),
         })
-        const compData = await compRes.json()
-        if (compData.ok && compData.data?.id) {
-          setCompanyId(compData.data.id)
-          localStorage.setItem(STORAGE_KEY, JSON.stringify({
-            ...JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}'), company_id: compData.data.id,
-          }))
-        }
-      }
+        const json = await res.json().catch(() => null)
+        if (res.status === 401) throw new Error('Сессия истекла — войдите заново. Ответы сохранены на этом устройстве.')
+        if (!res.ok || !json?.ok) throw new Error(json?.error || `HTTP ${res.status}`)
 
-      // Save survey answers
-      const formatted: Record<string, { value: unknown }> = {}
-      for (const [k, v] of Object.entries(answers)) {
-        formatted[k] = { value: v }
+        // Clear only the keys that did not change again while the request was in flight.
+        for (const k of keys) {
+          if (Object.is(stepDataRef.current[k], snapshot[k])) dirtyRef.current.delete(k)
+        }
+        persistDraft()
+        setSaveError(null)
+        return true
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e)
+        setSaveError(msg.startsWith('Сессия') ? msg : `Не удалось сохранить ответы (${msg}). Проверьте соединение и нажмите ещё раз — введённое сохранено на этом устройстве.`)
+        persistDraft()
+        return false
+      } finally {
+        setIsSaving(false)
       }
-      await fetch('/api/v1/onboarding/survey', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_id: userId, company_id: companyId, step, answers: formatted }),
-      })
-    } catch (e) {
-      console.error('[onboarding] save error', e)
-    } finally { setIsSaving(false) }
-  }
+    }
+    const next = saveChainRef.current.then(run, run)
+    saveChainRef.current = next
+    return next
+  }, [persistDraft])
 
   const handleFieldChange = (key: string, value: unknown) => {
+    dirtyRef.current.add(key)
     setStepData(prev => ({ ...prev, [key]: value }))
   }
 
+  const goToStep = async (target: number) => {
+    if (isSaving || target === currentStep) return
+    const ok = await saveToServer(currentStep)
+    if (!ok) return
+    setCurrentStep(target)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
   const goNext = async () => {
-    persistLocal(currentStep, stepData)
-    await saveToServer(currentStep, stepData)
+    if (isSaving) return
+    const ok = await saveToServer(currentStep, { final: currentStep === TOTAL_STEPS })
+    if (!ok) return // stay on the step; the error banner explains why
 
     if (currentStep < TOTAL_STEPS) {
       setCurrentStep(currentStep + 1)
-    } else {
-      // All 12 steps done → trigger diagnostics
-      if (userId) {
-        setIsSaving(true)
-        try {
-          await fetch('/api/v1/diagnostics/recalculate', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ user_id: userId }),
-          })
-        } catch {}
-        setIsSaving(false)
-      }
-      localStorage.removeItem(STORAGE_KEY)
-      try {
-        const statusRes = await fetch(`/api/client/status?userId=${userId}`)
-        const statusData = await statusRes.json()
-        router.push(statusData.status === 'approved' ? '/client/dashboard' : '/client/waiting-room')
-      } catch { router.push('/client/dashboard') }
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+      return
     }
+    // All 12 steps sent → trigger diagnostics
+    setIsSaving(true)
+    try {
+      await fetch('/api/v1/diagnostics/recalculate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: userIdRef.current }),
+      })
+    } catch {}
+    // Everything is confirmed on the server — the local draft is no longer needed.
+    if (userIdRef.current) clearDraft(window.localStorage, userIdRef.current)
+    try {
+      const statusRes = await fetch(`/api/client/status?userId=${userIdRef.current}`)
+      const statusData = await statusRes.json()
+      router.push(statusData.status === 'approved' ? '/client/point-a' : '/client/waiting-room')
+    } catch { router.push('/client/point-a') }
   }
 
-  // Early exit: form Точка А now and finish the survey later. Survey progress
-  // stays in localStorage + server, so the user can come back any time.
+  // Early exit: form Точка А now and finish the survey later.
   const finishEarly = async () => {
-    persistLocal(currentStep, stepData)
-    await saveToServer(currentStep, stepData)
-    if (userId) {
-      setIsSaving(true)
-      try {
-        await fetch('/api/v1/diagnostics/recalculate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ user_id: userId }),
-        })
-      } catch {}
-      setIsSaving(false)
-    }
+    if (isSaving) return
+    const ok = await saveToServer(currentStep)
+    if (!ok) return
+    setIsSaving(true)
+    try {
+      await fetch('/api/v1/diagnostics/recalculate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: userIdRef.current }),
+      })
+    } catch {}
     router.push('/client/point-a')
   }
 
@@ -246,9 +287,7 @@ export default function OnboardingPage() {
   // Точка А from: either a filled plan (goals on step 2) or uploaded files.
   const planFilled = Boolean(
     (typeof stepData['s2n_goal_12m_what'] === 'string' && (stepData['s2n_goal_12m_what'] as string).trim()) ||
-    (typeof stepData['s2n_goal_3y_what'] === 'string' && (stepData['s2n_goal_3y_what'] as string).trim()) ||
-    (typeof savedAnswers['s2n_goal_12m_what'] === 'string' && (savedAnswers['s2n_goal_12m_what'] as string).trim()) ||
-    (typeof savedAnswers['s2n_goal_3y_what'] === 'string' && (savedAnswers['s2n_goal_3y_what'] as string).trim())
+    (typeof stepData['s2n_goal_3y_what'] === 'string' && (stepData['s2n_goal_3y_what'] as string).trim())
   )
   const canFinishEarly = !isLastStep && (planFilled || hasDocs)
 
@@ -308,12 +347,9 @@ export default function OnboardingPage() {
             return (
               <button
                 key={stepN}
-                onClick={() => {
-                  // Save current step before switching
-                  persistLocal(currentStep, stepData)
-                  saveToServer(currentStep, stepData)
-                  setCurrentStep(stepN)
-                }}
+                onClick={() => { void goToStep(stepN) }}
+                disabled={isSaving || !loaded}
+                aria-current={isActive ? 'step' : undefined}
                 className={`
                   flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-mono whitespace-nowrap transition-all flex-shrink-0 cursor-pointer
                   ${isActive ? 'bg-primary/15 text-primary border border-primary/20' :
@@ -349,9 +385,22 @@ export default function OnboardingPage() {
           )}
         </div>
 
+        {saveError && (
+          <div role="alert" className="mb-5 flex items-start gap-2 rounded-xl border border-error/30 bg-error/10 px-4 py-3">
+            <span className="material-symbols-outlined text-base text-error mt-0.5 flex-shrink-0">error</span>
+            <p className="text-xs text-on-surface leading-snug">{saveError}</p>
+          </div>
+        )}
+
         {/* Step form */}
         <div className="mb-8">
-          {StepForm && <StepForm data={stepData} onChange={handleFieldChange} userId={userId ?? undefined} />}
+          {!loaded ? (
+            <div className="rounded-2xl border border-white/[0.06] p-10 flex items-center justify-center">
+              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary" />
+            </div>
+          ) : (
+            StepForm && <StepForm data={stepData} onChange={handleFieldChange} userId={userId ?? undefined} />
+          )}
 
           {/* Inline validation hints — non-blocking, warns but never prevents navigation */}
           {sectionId && (
@@ -370,7 +419,7 @@ export default function OnboardingPage() {
               Назад
             </button>
           )}
-          <button onClick={goNext} disabled={isSaving}
+          <button onClick={goNext} disabled={isSaving || !loaded}
             className="flex-1 flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-gradient-to-r from-primary to-[#00e29e] text-[#003824] font-bold text-sm hover:scale-[0.99] transition-all disabled:opacity-50">
             {isSaving ? (
               <><span className="material-symbols-outlined text-base animate-spin">progress_activity</span> Сохранение...</>
@@ -414,5 +463,14 @@ export default function OnboardingPage() {
         </p>
       </main>
     </div>
+  )
+}
+
+// useSearchParams (for the `?step=N` deep link) needs a Suspense boundary.
+export default function OnboardingPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-[#0c0e14]" />}>
+      <OnboardingPageInner />
+    </Suspense>
   )
 }

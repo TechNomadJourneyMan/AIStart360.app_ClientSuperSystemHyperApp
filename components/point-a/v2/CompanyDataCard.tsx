@@ -272,7 +272,7 @@ export default async function CompanyDataCard({ userId }: { userId: string }) {
               {formatKzt(target3y)}
             </p>
             <p className="text-[11px] text-on-surface-variant mt-1 font-mono">
-              ~{monthlyFromTotal(target3y, 36)}/мес
+              ~{monthlyFromTotal(target3y, 12)}/мес
             </p>
           </Link>
         </div>

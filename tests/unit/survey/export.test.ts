@@ -24,7 +24,7 @@ describe('survey export → sheet row', () => {
     expect(headers.length).toBe(row.length)
     expect(headers.length).toBe(8 + SURVEY_EXPORT_KEYS.length)
     expect(row.slice(0, 8)).toEqual([
-      'u-1', '2026-09-08 10:00:00', 'qa@example.com', 'ТОО kOtaq-Telecom', 'QA_TEST_Иван', '+7 700 000 00 00', 'Телеком', '2/12',
+      'u-1', '2026-09-08 10:00:00', 'qa@example.com', 'ТОО kOtaq-Telecom', 'QA_TEST_Иван', "'+7 700 000 00 00", 'Телеком', '2/12',
     ])
   })
 
@@ -48,6 +48,18 @@ describe('survey export → sheet row', () => {
   it('summary picks company/contact/revenue for the Telegram message', () => {
     const s = buildSurveySummary(rows, { email: 'fallback@example.com' })
     expect(s).toMatchObject({ company: 'ТОО kOtaq-Telecom', contact: 'QA_TEST_Иван', revenue: '4000000', email: 'fallback@example.com', completedSteps: 2 })
+  })
+})
+
+describe('asSheetText — no formula injection in the staff sheet', () => {
+  it('prefixes formula-like values with an apostrophe and leaves others alone', async () => {
+    const { asSheetText } = await import('@/lib/survey/export')
+    expect(asSheetText('=IMPORTXML("https://evil","//a")')).toBe(`'=IMPORTXML("https://evil","//a")`)
+    expect(asSheetText('+7 701 123 45 67')).toBe("'+7 701 123 45 67")
+    expect(asSheetText('-5%')).toBe("'-5%")
+    expect(asSheetText('@user')).toBe("'@user")
+    expect(asSheetText('ТОО Альфа')).toBe('ТОО Альфа')
+    expect(asSheetText('')).toBe('')
   })
 })
 

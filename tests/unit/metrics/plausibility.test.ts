@@ -58,3 +58,14 @@ describe('unit plausibility gate (E2E #6 «Валовая маржа = 119.1 м�
     expect(labels).toContain('Доля рынка')
   })
 })
+
+describe('registry unit inference (E2E 2026-09-10: «LTV/CAC 31₸», «28count»)', () => {
+  it('ratios are unitless, conversions are %', () => {
+    const reg = getMetricRegistry()
+    const byLabel = (l: string) => reg.find((e) => e.label === l)
+    expect(byLabel('LTV/CAC')?.unit).toBe('')
+    expect(byLabel('Себестоимость (индекс)')?.unit).toBe('')
+    expect(byLabel('Конверсия лид→клиент')?.unit).toBe('%')
+    expect(byLabel('CAC')?.unit).toBe('₸')
+  })
+})

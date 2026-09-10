@@ -78,6 +78,16 @@ export function buildSurveySummary(rows: ReadonlyArray<SurveyStepRow>, meta: Pic
   }
 }
 
+/**
+ * Force a cell to be stored as literal text. Apps Script `setValues` parses
+ * strings like a user typing: «=IMPORTXML(…)» in a company name would run as a
+ * live formula in the staff sheet, and «+7 701 …» became a number / #ERROR!.
+ * A leading apostrophe is hidden by Sheets and keeps the value verbatim.
+ */
+export function asSheetText(value: string): string {
+  return /^[=+\-@]/.test(value) ? `'${value}` : value
+}
+
 /** Sheet header (row 1) — identity columns + «Шаг N · Вопрос» for every wizard key. */
 export function buildSurveySheetHeaders(): string[] {
   return [
@@ -109,7 +119,7 @@ export function buildSurveySheetRow(rows: ReadonlyArray<SurveyStepRow>, meta: Su
     const v = formatSurveyValue(k, answers[k])
     return v === '—' ? '' : v
   })
-  return [...identity, ...cells]
+  return [...identity, ...cells].map(asSheetText)
 }
 
 export interface SurveySheetSyncResult {

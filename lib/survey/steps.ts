@@ -111,10 +111,25 @@ export const SURVEY_KEY_STEP: Readonly<Record<string, number>> = {
   s4_dept_count: 4,
   s4_has_org_chart: 4,
   s4_has_regular_meetings: 4,
+  s4m_communication: 4,
+  s4m_control_method: 4,
+  s4m_delegation_readiness: 4,
+  s4m_dept_sync: 4,
+  s4m_hours_on_ops: 4,
+  s4m_meeting_efficiency: 4,
+  s4m_meeting_structure: 4,
+  s4m_planning_team_or_solo: 4,
+  s4m_report_automated: 4,
+  s4m_report_frequency: 4,
+  s4m_report_types: 4,
+  s4m_strategic_planning: 4,
   s4n_multi_roles: 4,
   s4n_open_vacancies: 4,
   s4n_staffing_table: 4,
   s4n_structure_matches: 4,
+  s5_competitor_1: 7,
+  s5_competitor_2: 7,
+  s5_competitor_3: 7,
   s5_has_competitor_analysis: 7,
   s5_marketing_budget_pct: 7,
   s5_marketing_channels: 7,
@@ -157,6 +172,9 @@ export const SURVEY_KEY_STEP: Readonly<Record<string, number>> = {
   s7_nps_score: 7,
   s7_repeat_freq_days: 7,
   s7n_channels_table: 7,
+  s7n_competitor_1_analysis: 7,
+  s7n_competitor_2_analysis: 7,
+  s7n_competitor_3_analysis: 7,
   s7n_content_strategy: 7,
   s8n_metrics_table: 8,
   s9n_accounting_method: 9,
@@ -194,6 +212,26 @@ export function stepForQuestionKey(key: string, fallback: number | null = null):
   return typeof s === 'number' ? s : fallback
 }
 
+/** Survey-family key: current wizard (`s2n_`, `s4m_` …) or an older generation (`s2_` …). */
+const WIZARD_FAMILY_RE = /^s\d+[a-z]?_[a-z0-9_]+$/
+/** Other intakes that legitimately write through the survey route. */
+const INTAKE_PREFIX_RE = /^(ec|medical)_[a-z0-9_]+$/
+
+/**
+ * Keys a CLIENT may write via POST /api/v1/onboarding/survey. Everything else
+ * that lives in survey_answers (staff-only `gri_expert_*` notes, dashboard
+ * period goals `goal_*_v2`, …) has its own route and must never be written —
+ * or re-stamped with a wizard step — through the survey form.
+ */
+export function isWritableSurveyKey(key: string): boolean {
+  return key in SURVEY_KEY_STEP || WIZARD_FAMILY_RE.test(key) || INTAKE_PREFIX_RE.test(key)
+}
+
+/** Keys the wizard UI should load and round-trip (never staff notes / other widgets' data). */
+export function isWizardVisibleKey(key: string): boolean {
+  return key in SURVEY_KEY_STEP || WIZARD_FAMILY_RE.test(key)
+}
+
 export interface SurveyStepRow {
   question_key: string
   step?: number | string | null
@@ -224,7 +262,13 @@ export function completedStepsFromRows(rows: ReadonlyArray<SurveyStepRow>): numb
     if (!r || typeof r.question_key !== 'string') continue
     if (r.answer !== undefined && !rowHasValue(r.answer)) continue
     const stored = r.step === null || r.step === undefined ? null : Number(r.step)
-    const fallback = stored !== null && Number.isFinite(stored) && stored >= 1 && stored <= SURVEY_TOTAL_STEPS ? stored : null
+    // The stored step is trusted only for older-generation survey keys. Staff
+    // notes / widget data (gri_expert_*, goal_*_v2, ec_*) never count toward
+    // wizard progress, even if an old save re-stamped them with a step.
+    const fallback =
+      WIZARD_FAMILY_RE.test(r.question_key) && stored !== null && Number.isFinite(stored) && stored >= 1 && stored <= SURVEY_TOTAL_STEPS
+        ? stored
+        : null
     const step = stepForQuestionKey(r.question_key, fallback)
     if (step !== null) steps.add(step)
   }

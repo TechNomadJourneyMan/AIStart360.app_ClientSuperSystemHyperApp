@@ -3,7 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase-service'
 import { isGigaSuperAdmin } from '@/lib/admin/giga-actor'
-import { stepForQuestionKey } from '@/lib/survey/steps'
+import { completedStepsFromRows, type SurveyStepRow } from '@/lib/survey/steps'
 
 /**
  * GET /api/giga-admin/users
@@ -38,17 +38,30 @@ export async function GET(req: NextRequest) {
       if (!diagMap.has(d.user_id)) diagMap.set(d.user_id, d)
     }
 
-    // Get survey completion status
-    const { data: surveyStats } = await sb
-      .from('survey_answers')
-      .select('user_id, step, question_key, answer')
-
-    const surveyMap = new Map<string, Set<number>>()
-    for (const s of surveyStats ?? []) {
-      if (!surveyMap.has(s.user_id)) surveyMap.set(s.user_id, new Set())
-      const step = stepForQuestionKey(String(s.question_key), typeof s.step === 'number' && s.step >= 1 ? s.step : null)
-      if (step) surveyMap.get(s.user_id)!.add(step)
+    // Get survey completion status. PostgREST caps a response at 1000 rows and
+    // survey_answers already holds ~1.5k, so an unpaginated read silently
+    // showed 0/12 for most clients. Page through everything.
+    const PAGE = 1000
+    const surveyStats: SurveyStepRow[] & Array<{ user_id: string }> = []
+    for (let from = 0; from < 200_000; from += PAGE) {
+      const { data: page, error: pageErr } = await sb
+        .from('survey_answers')
+        .select('user_id, step, question_key, answer')
+        .order('id', { ascending: true })
+        .range(from, from + PAGE - 1)
+      if (pageErr || !page) break
+      surveyStats.push(...(page as Array<SurveyStepRow & { user_id: string }>))
+      if (page.length < PAGE) break
     }
+
+    const rowsByUser = new Map<string, SurveyStepRow[]>()
+    for (const s of surveyStats) {
+      const list = rowsByUser.get(s.user_id) ?? []
+      list.push(s)
+      rowsByUser.set(s.user_id, list)
+    }
+    const surveyMap = new Map<string, Set<number>>()
+    for (const [uid, list] of rowsByUser) surveyMap.set(uid, new Set(completedStepsFromRows(list)))
 
     const users = (profiles ?? []).map((p) => {
       const diag = diagMap.get(p.id) as Record<string, unknown> | undefined
@@ -67,7 +80,7 @@ export async function GET(req: NextRequest) {
           ? ((p as { widget_config?: string[] }).widget_config as string[])
           : []),
         surveyCompleted: steps ? steps.size >= 12 : false,
-        surveySteps: steps ? Array.from(steps).sort() : [],
+        surveySteps: steps ? Array.from(steps).sort((x, y) => x - y) : [],
         diagnostics: diag ? {
           overallScore: diag.overall_score,
           healthIndex: diag.health_index,

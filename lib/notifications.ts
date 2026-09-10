@@ -33,7 +33,7 @@ export type NotificationType =
   | 'expert_case_created'
   | 'expert_case_updated'
 
-interface NotificationPayload {
+export interface NotificationPayload {
   type: NotificationType
   userId?: string
   data: Record<string, unknown>
@@ -208,9 +208,19 @@ function buildEmailBody(payload: NotificationPayload): { title: string; body: st
   }
 }
 
-function buildTelegramMessage(payload: NotificationPayload): string {
+/**
+ * Escape user-supplied text for Telegram `parse_mode: 'HTML'`. Without it a
+ * company called «ТОО <Альфа>» made Telegram reject the whole message
+ * ("can't parse entities") and `<a href=…>` in an answer rendered as a live
+ * link in the admin chat.
+ */
+export function escapeTelegramHtml(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
+export function buildTelegramMessage(payload: NotificationPayload): string {
   const { title, body } = buildEmailBody(payload)
-  return `<b>${title}</b>\n\n${body}`
+  return `<b>${escapeTelegramHtml(title)}</b>\n\n${escapeTelegramHtml(body)}`
 }
 
 function buildCta(type: NotificationType): { label: string; url: string } {
@@ -255,7 +265,7 @@ async function sendTelegram(payload: NotificationPayload, chatId: string | null 
   const message = buildTelegramMessage(payload)
 
   try {
-    await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+    const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -263,8 +273,13 @@ async function sendTelegram(payload: NotificationPayload, chatId: string | null 
         text: message,
         parse_mode: 'HTML',
       }),
-      signal: AbortSignal.timeout(5000),
+      signal: AbortSignal.timeout(8000),
     })
+    if (!res.ok) {
+      // Telegram answers 400 on bad markup / unknown chat — surface it instead of silently dropping.
+      const detail = await res.text().catch(() => '')
+      console.error(`[notifications] Telegram ${payload.type} → chat ${chatId}: HTTP ${res.status} ${detail.slice(0, 200)}`)
+    }
   } catch (err) {
     console.error('[notifications] Telegram send failed:', err)
   }
@@ -403,7 +418,10 @@ export async function notifyAdmins(
   const tasks: Array<Promise<unknown>> = [sendEmail(payload, adminEmail)]
   for (const cid of adminChatIds) tasks.push(sendTelegram(payload, cid))
 
-  Promise.allSettled(tasks).catch(() => {})
+  // Resolve only after the sends finish, so callers that run this inside
+  // runInBackground()/waitUntil keep the function alive until delivery.
+  // Callers that don't await still get fire-and-forget behaviour.
+  await Promise.allSettled(tasks)
 }
 
 /**

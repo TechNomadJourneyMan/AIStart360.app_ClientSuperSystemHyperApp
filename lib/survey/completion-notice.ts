@@ -24,19 +24,23 @@ export interface SurveyNoticeInput {
   completedSteps: number
   totalSteps: number
   company: string
-  sheetUrl: string | null
 }
 
-/** Решение о рассылке: финальный шаг отправлен ИЛИ анкета только что стала полной. */
+/**
+ * Решение о рассылке: клиент ЯВНО отправил анкету (кнопка «Получить
+ * диагностику» → `final: true`) ИЛИ анкета только что стала полной.
+ *
+ * Раньше триггером был «сохранён шаг ≥ 12»: переключение вкладки с шага 12
+ * тоже шлёт сохранение с step=12, и админам уходило «анкета пройдена (1/12)»,
+ * а одноразовый маркер потом глушил настоящее уведомление.
+ */
 export function shouldAnnounceCompletion(opts: {
-  submittedStep: number
-  totalSteps: number
+  finalSubmitted: boolean
   isCompleteNow: boolean
   wasCompleteBefore: boolean
 }): boolean {
-  const finalStepSubmitted = opts.submittedStep >= opts.totalSteps
   const justCompleted = opts.isCompleteNow && !opts.wasCompleteBefore
-  return finalStepSubmitted || justCompleted
+  return opts.finalSubmitted || justCompleted
 }
 
 /** Текст записи в клиентской ленте уведомлений. */
@@ -85,14 +89,19 @@ export async function claimCompletionNotice(
       title: notice.title,
       body: notice.body,
       link: notice.link,
+      // NB: the client can read its own app_notifications rows through RLS
+      // (app_notifications_select_own), so nothing staff-only goes here —
+      // in particular NOT the link to the admin spreadsheet.
       metadata: {
         event: SURVEY_COMPLETED_EVENT,
         completed_steps: input.completedSteps,
         total_steps: input.totalSteps,
-        sheet_url: input.sheetUrl,
       },
     })
     if (insErr) {
+      // 23505 = the partial unique index (migration 071) caught a parallel
+      // save that already claimed the notice → not the first one.
+      if ((insErr as { code?: string }).code === '23505') return false
       console.error('[survey/completion-notice] marker insert failed', insErr.message)
       return true
     }

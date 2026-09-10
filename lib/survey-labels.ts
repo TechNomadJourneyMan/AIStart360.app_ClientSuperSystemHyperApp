@@ -250,6 +250,20 @@ export const SURVEY_LABELS: Record<string, string> = {
   // ── Step 11 — Карта влияния ────────────────────────────────────────────
   s11_influence_map: 'Карта влияния',
 
+  // ── Keys that used to render as raw ids in «Мои данные» (E2E 2026-09-10) ──
+  s1_current_revenue_month: 'Текущая выручка / месяц',
+  s1_current_revenue_year: 'Текущая выручка / год',
+  s1_goal_12m_revenue_month: 'Цель через 12 мес — выручка / месяц',
+  s1_goal_12m_revenue_year: 'Цель через 12 мес — выручка / год',
+  s1_goal_3y_revenue_month: 'Цель через 3 года — выручка / месяц',
+  s1_goal_3y_revenue_year: 'Цель через 3 года — выручка / год',
+  s1_uploaded_files: 'Загруженные файлы',
+  s5n_funnel_meeting_to_proposal: 'Конверсия встреча → КП',
+  s5n_funnel_proposal_to_negotiation: 'Конверсия КП → переговоры',
+  s5n_funnel_negotiation_to_contract: 'Конверсия переговоры → договор',
+  s5n_funnel_contract_to_payment: 'Конверсия договор → оплата',
+  s5n_funnel_payment_to_delivery: 'Конверсия оплата → поставка',
+
   // ── Step 12 — Системы и инструменты ────────────────────────────────────
   s12_crm_tool: 'CRM-система',
   s12_edm: 'EDM (электронный документооборот)',
@@ -315,6 +329,13 @@ export function formatSurveyValue(key: string, value: unknown): string {
   if (typeof value === 'boolean') return value ? 'Да' : 'Нет'
   if (Array.isArray(value)) {
     if (value.length === 0) return '—'
+    // Step-1 uploads: show file names, not storage paths / byte sizes.
+    if (key === 's1_uploaded_files') {
+      const names = value
+        .map((f) => (f && typeof f === 'object' ? (f as { name?: unknown }).name : null))
+        .filter((n): n is string => typeof n === 'string' && n.trim().length > 0)
+      return names.length ? names.join(', ') : '—'
+    }
     // Table answers (DynamicTable rows) → one line per filled row.
     if (value.every((v) => v !== null && typeof v === 'object' && !Array.isArray(v) && !('value' in (v as object)))) {
       return formatSurveyTableRows(value as Record<string, unknown>[])
