@@ -64,3 +64,6 @@ ruvector.db
 /ios/App/Pods
 /ios/App/build
 /ios/App/DerivedData
+
+# Local operational evidence; may contain private aggregate business data.
+/artifacts/honor-ai-20260916/

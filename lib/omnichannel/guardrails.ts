@@ -203,6 +203,7 @@ export function decideReplyPolicy(input: {
 
   if (
     input.mode === 'draft' ||
+    input.mode === 'assistant' ||
     input.risk === 'medium' ||
     input.confidence < input.threshold
   ) {

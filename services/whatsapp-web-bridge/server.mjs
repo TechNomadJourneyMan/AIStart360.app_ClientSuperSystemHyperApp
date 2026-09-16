@@ -822,7 +822,7 @@ async function postPortalEvent(envelope) {
 
 function buildInboundPortalEnvelope(candidate, { live, nowMs }) {
   const key = candidate?.key
-  if (!key || key.fromMe !== false || !inboundIndividualJid(key.remoteJid))
+  if (!key || typeof key.fromMe !== "boolean" || (key.fromMe && !live) || !inboundIndividualJid(key.remoteJid))
     return null
   if (!providerMessageId(key.id)) return null
 
@@ -859,7 +859,7 @@ function buildInboundPortalEnvelope(candidate, { live, nowMs }) {
       text: extracted.text,
       message_type: extracted.messageType,
       live,
-      from_me: false,
+      from_me: key.fromMe,
       ...(remoteJidAlt ? { remote_jid_alt: remoteJidAlt } : {}),
       ...(pushName ? { push_name: pushName } : {}),
     },

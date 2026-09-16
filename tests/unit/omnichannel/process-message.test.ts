@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { HONOR_SCENARIOS } from '@/lib/omnichannel/honor-policy';
+const honorMocks = vi.hoisted(() => ({ build: vi.fn(), proof: vi.fn() }));
+vi.mock('@/lib/omnichannel/honor-catalog', () => ({ buildHonorReply: honorMocks.build }));
+vi.mock('@/lib/omnichannel/honor-repository', () => ({ recordHonorCatalogVerification: honorMocks.proof }));
 const repository = vi.hoisted(() => ({
   claimEquipmentFlowForAutoSend: vi.fn(),
   claimMessageForAutoSend: vi.fn(),
@@ -232,6 +236,29 @@ describe("omnichannel message processor safety", () => {
       idempotencyKey: "omnichannel:auto:message-1",
       created: true,
     });
+  });
+
+  it('keeps assistant mode on demand without generating or sending', async () => {
+    repository.getMessageContext.mockResolvedValue(context({settings:{mode:'assistant'}}));
+    await expect(invoke()).resolves.toMatchObject({action:'ignore',reason:'manager_assistant_on_demand'});
+    expect(ai.generateOmnichannelReply).not.toHaveBeenCalled();
+    expect(meta.sendInstagram).not.toHaveBeenCalled();
+  });
+
+  it('cannot promote a channel draft using the conversation override', async () => {
+    repository.getMessageContext.mockResolvedValue(context({settings:{mode:'draft'},conversation:{autoReplyOverride:true}}));
+    await expect(invoke()).resolves.toMatchObject({action:'draft'});
+    expect(meta.sendInstagram).not.toHaveBeenCalled();
+  });
+
+  it('records live catalog proof and keeps the reviewed Honor reply in draft', async () => {
+    const config={enabled:true,account_id:'ig-account-1',user_id:'11111111-1111-4111-8111-111111111111',company_id:'22222222-2222-4222-8222-222222222222',scenarios:HONOR_SCENARIOS};
+    repository.getMessageContext.mockResolvedValue(context({settings:{mode:'draft',businessContext:null,automationConfig:{honor_ai:config}}}));
+    honorMocks.build.mockResolvedValue({catalogVerifiedAt:now,answer:'Проверенные карточки HONOR',intent:'pricing',sentiment:'neutral',confidence:0.95,risk:'low',needs_human:false,reason:'verified',lead_score:50,conversation_summary:'Подбор HONOR'});
+    await expect(invoke()).resolves.toMatchObject({action:'draft'});
+    expect(honorMocks.proof).toHaveBeenCalledWith('message-1',config,now);
+    expect(ai.generateOmnichannelReply).not.toHaveBeenCalled();
+    expect(meta.sendInstagram).not.toHaveBeenCalled();
   });
 
   it("persists opt-out even when the channel is disabled and never calls AI", async () => {

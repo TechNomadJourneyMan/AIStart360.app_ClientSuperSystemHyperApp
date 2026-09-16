@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
+import { HonorControlPanel } from './HonorControlPanel'
+import { messageActor } from '@/lib/omnichannel/honor-policy'
 import {
   AlertTriangle,
   Bot,
@@ -17,7 +19,7 @@ import {
 } from 'lucide-react'
 
 type Channel = 'instagram' | 'whatsapp'
-type Mode = 'off' | 'draft' | 'auto'
+type Mode = 'off' | 'assistant' | 'draft' | 'auto'
 type ConversationStatus = 'open' | 'needs_human' | 'resolved' | 'muted'
 type WhatsAppWebState = 'disabled' | 'idle' | 'connecting' | 'qr' | 'connected' | 'logged_out' | 'error'
 
@@ -48,6 +50,7 @@ interface InboxMessage {
   ai_confidence: number | null
   ai_reason: string | null
   ai_generated: boolean
+  metadata?: Record<string, unknown>
   occurred_at: string
 }
 
@@ -293,13 +296,15 @@ export function OmnichannelModule() {
   const whatsAppWebBusy = whatsAppWebAction !== null || ['connecting', 'qr'].includes(whatsAppWebState)
 
   function channelAutoReadiness(item: ChannelSetting) {
-    const businessContextReady = Boolean(item.business_context?.trim())
+    const honor = item.automation_config.honor_ai as {enabled?: boolean;account_id?: string} | undefined
+    const honorReady = !honor?.enabled || item.automation_config.honor_verified_account === honor.account_id
+    const businessContextReady = Boolean(item.business_context?.trim()) || honor?.enabled === true
     const metaReady = metaConfiguration?.[item.channel]?.configured === true
     const providerReady = metaReady || (
       item.channel === 'whatsapp' && whatsAppWeb?.configuration.configured === true
     )
     return {
-      ready: businessContextReady && providerReady,
+      ready: businessContextReady && providerReady && honorReady,
       businessContextReady,
       providerReady,
     }
@@ -355,6 +360,12 @@ export function OmnichannelModule() {
     void patchSetting(item, { enabled })
   }
 
+  useEffect(() => {
+    const refresh = () => { void loadSettings() }
+    window.addEventListener('honor-settings-changed', refresh)
+    return () => window.removeEventListener('honor-settings-changed', refresh)
+  }, [loadSettings])
+
   function changeMode(item: ChannelSetting, mode: Mode) {
     if (mode === 'auto' && !channelAutoReadiness(item).ready) {
       toast.error('Авто недоступно: подключите канал и заполните проверенную базу ответов')
@@ -366,6 +377,19 @@ export function OmnichannelModule() {
       && !window.confirm('Включить автоответы? Если канал активен, новые безопасные ответы будут отправляться без подтверждения оператора.')
     ) return
     void patchSetting(item, { mode })
+  }
+
+  async function verifyHonorCanary(messageId: string) {
+    try {
+      const response = await fetch('/api/giga-admin/omnichannel/honor', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'verify', message_id: messageId }),
+      })
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error)
+      toast.success('Тест перехвата подтверждён. Автоответ включается отдельно.')
+      await loadSettings()
+    } catch (error) { toast.error(error instanceof Error ? error.message : 'Проверка не пройдена') }
   }
 
   async function patchConversation(patch: {
@@ -521,6 +545,7 @@ export function OmnichannelModule() {
       <details open className="rounded-2xl bg-white/[0.03] border border-white/[0.07] overflow-hidden">
         <summary className="flex items-center gap-2 px-4 py-3 text-xs font-semibold text-slate-300 cursor-pointer"><Settings2 size={14} /> WhatsApp QR, режимы AI и база ответов</summary>
         <div className="grid lg:grid-cols-2 gap-4 p-4 border-t border-white/[0.06]">
+          <HonorControlPanel />
           {settings.map((item) => (
             <div key={item.channel} className="rounded-xl bg-black/10 border border-white/[0.06] p-4 space-y-3">
               <div className="flex items-center justify-between gap-3">
@@ -539,23 +564,24 @@ export function OmnichannelModule() {
                   /> активен
                 </label>
               </div>
-              <div className="grid grid-cols-3 gap-1 rounded-xl bg-white/[0.03] p-1">
-                {(['off', 'draft', 'auto'] as Mode[]).map((mode) => (
+              <div className="grid grid-cols-2 gap-1 rounded-xl bg-white/[0.03] p-1">
+                {(['off', 'assistant', 'draft', 'auto'] as Mode[]).map((mode) => (
                   <button
                     key={mode}
                     disabled={savingSetting !== null || (
                       mode === 'auto' && !channelAutoReadiness(item).ready
                     )}
                     title={mode === 'auto' && !channelAutoReadiness(item).ready
-                      ? 'Сначала подключите канал и заполните базу ответов'
+                      ? 'Сначала подключите канал, проверьте каталог и тестовый ответ менеджера'
                       : undefined}
                     onClick={() => changeMode(item, mode)}
                     className={`px-2 py-2 rounded-lg text-[11px] font-medium disabled:opacity-50 ${item.mode === mode ? 'bg-blue-500/20 text-blue-300 border border-blue-500/20' : 'text-slate-500'}`}
                   >
-                    {mode === 'off' ? 'Выкл.' : mode === 'draft' ? 'Черновик' : 'Авто'}
+                    {mode === 'off' ? 'Выключено' : mode === 'assistant' ? 'Помощник менеджера' : mode === 'draft' ? 'AI-черновик' : 'Автоответ на входящие'}
                   </button>
                 ))}
               </div>
+              <p className="text-[10px] text-slate-400">Помощник менеджера работает по запросу через проверку HONOR. AI-черновик готовит ответ на входящее автоматически, без отправки.</p>
               <textarea disabled={savingSetting !== null} defaultValue={item.business_context ?? ''} rows={4} placeholder="Товары, цены, график, адреса, FAQ — только проверенные факты" onBlur={(event) => {
                 if (event.target.value !== (item.business_context ?? '')) void patchSetting(item, { business_context: event.target.value })
               }} className="w-full rounded-xl bg-white/[0.04] border border-white/[0.08] p-3 text-xs text-slate-200 placeholder:text-slate-700 outline-none resize-y disabled:opacity-50" />
@@ -785,13 +811,13 @@ export function OmnichannelModule() {
               <div className="flex gap-1 flex-wrap"><button onClick={() => void patchConversation({ status: 'open' })} className="px-2 py-1.5 rounded-lg text-[10px] text-blue-300 bg-blue-500/10 border border-blue-500/15">В работу</button><button onClick={() => void patchConversation({ status: 'resolved' })} className="px-2 py-1.5 rounded-lg text-[10px] text-emerald-300 bg-emerald-500/10 border border-emerald-500/15">Закрыть</button><button onClick={() => void patchConversation({ status: 'muted' })} className="px-2 py-1.5 rounded-lg text-[10px] text-slate-400 bg-white/[0.04] border border-white/[0.07]">AI выкл.</button>{detail.conversation.auto_reply_override === false && <button onClick={() => void patchConversation({ auto_reply_override: null, status: 'open' })} className="px-2 py-1.5 rounded-lg text-[10px] text-violet-300 bg-violet-500/10 border border-violet-500/15">Вернуть AI</button>}</div>
             </div>
             <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-[320px]">
-              {detail.messages.map((message) => <div key={message.id} className={`flex ${message.direction === 'out' ? 'justify-end' : 'justify-start'}`}><div className={`max-w-[82%] rounded-2xl px-3.5 py-2.5 ${message.direction === 'out' ? 'bg-blue-500/15 border border-blue-500/20' : 'bg-white/[0.05] border border-white/[0.07]'}`}><div className="flex items-center gap-1.5 mb-1">{message.direction === 'out' ? message.ai_generated ? <Bot size={11} className="text-blue-300" /> : <UserRound size={11} className="text-blue-300" /> : <UserRound size={11} className="text-slate-500" />}<span className="text-[9px] text-slate-600">{message.direction === 'out' ? message.ai_generated ? 'AI' : 'Оператор' : 'Клиент'} · {formatTime(message.occurred_at)}</span></div><p className="text-xs text-slate-200 whitespace-pre-wrap break-words">{message.text || `[тип: ${message.message_type}]`}</p><p className="text-[9px] text-slate-600 mt-1">{message.status}</p></div></div>)}
+              {detail.messages.map((message) => <div key={message.id} className={`flex ${message.direction === 'out' ? 'justify-end' : 'justify-start'}`}><div className={`max-w-[82%] rounded-2xl px-3.5 py-2.5 ${message.direction === 'out' ? 'bg-blue-500/15 border border-blue-500/20' : 'bg-white/[0.05] border border-white/[0.07]'}`}><div className="flex items-center gap-1.5 mb-1">{message.direction === 'out' ? message.ai_generated ? <Bot size={11} className="text-blue-300" /> : <UserRound size={11} className="text-blue-300" /> : <UserRound size={11} className="text-slate-500" />}<span className="text-[9px] text-slate-600">{message.direction === 'out' ? message.ai_generated ? 'AI' : messageActor(message).type === 'manager' ? 'Менеджер' : messageActor(message).type === 'system' ? 'Система' : 'Автор неизвестен' : 'Клиент'} · {formatTime(message.occurred_at)}</span></div><p className="text-xs text-slate-200 whitespace-pre-wrap break-words">{message.text || `[тип: ${message.message_type}]`}</p><p className="text-[9px] text-slate-600 mt-1">{message.status}</p>{message.direction === 'in' && message.ai_draft && <button type="button" onClick={() => void verifyHonorCanary(message.id)} className="mt-2 text-[10px] text-blue-300 underline">Подтвердить тест перехвата</button>}</div></div>)}
             </div>
             {detail.messages.some((message) => message.ai_draft) && <div className="mx-4 mb-3 rounded-xl bg-blue-500/[0.07] border border-blue-500/15 p-3"><div className="flex items-center gap-2 text-[10px] font-semibold text-blue-300 uppercase tracking-wider"><Bot size={13} /> AI-черновик — проверьте</div><p className="text-[10px] text-slate-500 mt-1">Старые диалоги не рассылаются автоматически; Meta может запретить ответ вне окна.</p></div>}
             <div className="p-4 border-t border-white/[0.07]">
               {detail.conversation.send_suppressed && <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 rounded-xl bg-red-500/[0.08] border border-red-500/20 p-3 mb-3"><div className="flex items-center gap-2 text-[10px] text-red-300"><AlertTriangle size={13} /> Клиент отказался от сообщений — отправка заблокирована.</div><button onClick={() => { if (window.confirm('Подтверждено новое явное согласие клиента на сообщения?')) void patchConversation({ send_suppressed: false, status: 'open', auto_reply_override: null }) }} className="px-2.5 py-1.5 rounded-lg text-[10px] text-red-200 border border-red-500/25 bg-red-500/10">Re-opt-in подтверждён</button></div>}
               {detail.conversation.status === 'needs_human' && <div className="flex items-center gap-2 text-[10px] text-amber-300 mb-2"><AlertTriangle size={12} /> AI передал этот диалог человеку.</div>}
-              <div className="flex gap-2 items-end"><textarea value={reply} onChange={(event) => setReply(event.target.value)} disabled={detail.conversation.send_suppressed} rows={3} maxLength={1000} placeholder="Ответить от имени AIStart360…" className="flex-1 rounded-xl bg-white/[0.04] border border-white/[0.08] p-3 text-xs text-slate-200 placeholder:text-slate-700 outline-none resize-none disabled:opacity-40" /><button onClick={() => void sendReply()} disabled={detail.conversation.send_suppressed || detail.conversation.id !== selectedId || !reply.trim() || sending} className="h-10 px-4 rounded-xl flex items-center gap-2 text-xs font-semibold bg-blue-500 text-white disabled:opacity-40">{sending ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}Отправить</button></div>
+              <div className="flex gap-2 items-end"><textarea value={reply} onChange={(event) => setReply(event.target.value)} disabled={detail.conversation.send_suppressed} rows={3} maxLength={1600} placeholder="Ответить от имени AIStart360…" className="flex-1 rounded-xl bg-white/[0.04] border border-white/[0.08] p-3 text-xs text-slate-200 placeholder:text-slate-700 outline-none resize-none disabled:opacity-40" /><button onClick={() => void sendReply()} disabled={detail.conversation.send_suppressed || detail.conversation.id !== selectedId || !reply.trim() || sending} className="h-10 px-4 rounded-xl flex items-center gap-2 text-xs font-semibold bg-blue-500 text-white disabled:opacity-40">{sending ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}Отправить</button></div>
             </div>
           </> : null}
         </div>

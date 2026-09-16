@@ -551,7 +551,7 @@ export class MetaClient {
       recipient_type: 'individual',
       to: input.recipientId,
       type: 'text',
-      text: { body: input.text, preview_url: false },
+      text: { body: input.text, preview_url: /https:\/\/myhonor\.shop\/product\//.test(input.text) },
     }
     if (nonEmpty(input.replyToExternalId)) {
       body.context = { message_id: input.replyToExternalId }

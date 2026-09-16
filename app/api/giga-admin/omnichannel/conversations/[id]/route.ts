@@ -60,7 +60,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     sb
       .from('omnichannel_messages')
       .select(
-        'id, direction, text, status, message_type, ai_draft, ai_confidence, ai_reason, ai_generated, occurred_at',
+        'id, direction, text, status, message_type, ai_draft, ai_confidence, ai_reason, ai_generated, metadata, occurred_at',
       )
       .eq('conversation_id', params.id)
       .order('occurred_at', { ascending: false })
