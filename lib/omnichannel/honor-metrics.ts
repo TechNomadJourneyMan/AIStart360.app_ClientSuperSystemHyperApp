@@ -173,12 +173,12 @@ export function honorMetrics(
           events.some((e) => e.event_type === "order") && b.conversations.size
             ? b.orderConversations.size / b.conversations.size
             : null,
-        confirmedRevenue: events.some((e) => e.event_type === "paid")
+        confirmedRevenue: events.some((e) => e.event_type === "paid" && e.confirmed_revenue !== null)
           ? b.confirmedRevenue
           : null,
       })),
     coverage: {
-      partial: input.partial === true || unknown > 0,
+      partial: input.partial === true || unknown > 0 || events.some((e) => e.event_type === "paid" && e.confirmed_revenue === null),
       unattributedOutbound: unknown,
       commerceConnected: events.length > 0,
       notes: [

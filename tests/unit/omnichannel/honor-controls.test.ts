@@ -112,6 +112,12 @@ describe("honest attribution and response metrics", () => {
     });
     expect(result.missed).toBe(1);
   });
+  it("does not report missing payment proof as zero confirmed revenue", () => {
+    const result = honorMetrics([row("a", "in", "10:00:00"), row("b", "out", "10:01:00", {ai_generated:true})], [conversation], [{source_event_id:"unknown-paid",message_id:"b",event_type:"paid",confirmed_revenue:null}], {from,to});
+    expect(result.rows[0].confirmedRevenue).toBeNull();
+    expect(result.coverage.partial).toBe(true);
+  });
+
   it("ignores failed sends and unrelated conversations, deduplicates signed events", () => {
     const messages = [
       row("1", "in", "10:00:00"),
