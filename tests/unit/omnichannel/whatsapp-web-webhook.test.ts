@@ -70,9 +70,13 @@ describe('WhatsApp Web bridge webhook parser', () => {
     })
   })
 
-  it('fails closed for groups, self messages and future timestamps', () => {
+  it('records live human outbound without queuing an inbound AI reply', () => {
+    expect(parseWhatsAppWebBridgeEvent(event({ from_me: true }), now)?.message).toMatchObject({direction:'out',status:'sent',metadata:{humanOutbound:true,isEcho:true}})
+  })
+
+  it('fails closed for groups, historical outbound and future timestamps', () => {
     expect(parseWhatsAppWebBridgeEvent(event({ remote_jid: '123@g.us' }), now)).toBeNull()
-    expect(parseWhatsAppWebBridgeEvent(event({ from_me: true }), now)).toBeNull()
+    expect(parseWhatsAppWebBridgeEvent(event({ from_me: true, live: false }), now)).toBeNull()
     expect(parseWhatsAppWebBridgeEvent(event({ timestamp_ms: now + 5 * 60_000 + 1 }), now)).toBeNull()
   })
 })

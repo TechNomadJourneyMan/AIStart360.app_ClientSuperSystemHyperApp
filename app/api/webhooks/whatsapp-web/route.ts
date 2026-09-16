@@ -256,7 +256,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     if (!claimed) return response(503);
     auditClaimed = true;
 
-    if (ingested.shouldQueue) {
+    if (ingested.shouldQueue && parsed.message.direction === "in") {
       const eventData = {
         message_id: ingested.messageId,
         conversation_id: ingested.conversationId,

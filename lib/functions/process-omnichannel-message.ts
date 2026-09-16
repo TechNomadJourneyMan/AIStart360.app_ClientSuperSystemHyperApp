@@ -1,3 +1,6 @@
+import { recordHonorCatalogVerification } from "@/lib/omnichannel/honor-repository";
+import { effectiveReplyMode, honorConfig } from "@/lib/omnichannel/honor-policy";
+import { buildHonorReply } from "@/lib/omnichannel/honor-catalog";
 import { inngest } from "@/lib/inngest";
 import { humanTypingDelaySeconds } from "@/lib/omnichannel/human-reply-timing";
 import {
@@ -55,16 +58,7 @@ import {
 import type { OmnichannelMessageReceivedEventData } from "@/lib/omnichannel/events";
 import type { JsonObject, OmnichannelMessage } from "@/lib/omnichannel/types";
 
-function effectiveMode(input: {
-  forceDraft: boolean;
-  configured: OmnichannelReplyMode;
-  override: boolean | null;
-}): OmnichannelReplyMode {
-  if (input.forceDraft) return "draft";
-  if (input.override === true) return "auto";
-  if (input.override === false) return "off";
-  return input.configured;
-}
+const effectiveMode = effectiveReplyMode;
 
 function safeFailureReason(
   result: Extract<MetaSendResult, { ok: false }>,
@@ -325,6 +319,11 @@ async function handleOmnichannelMessage({ event, step }: any) {
     );
     return { action: "ignore", reason: "channel_disabled_or_off" };
   }
+  if (context.settings.mode === "assistant") {
+    await step.run("mark-manager-assistant-on-demand", () => markMessageIgnored(context!.message.id, "manager_assistant_on_demand"));
+    return { action: "ignore", reason: "manager_assistant_on_demand" };
+  }
+
   if (!forceDraft && context.conversation.autoReplyOverride === false) {
     await step.run("mark-human-takeover-message-ignored", () =>
       markMessageIgnored(context!.message.id, "conversation_manual_takeover"),
@@ -384,7 +383,14 @@ async function handleOmnichannelMessage({ event, step }: any) {
     forceDraft,
   });
 
+  const honor = honorConfig(context.settings.automationConfig.honor_ai);
+  const honorApplies = honor?.enabled === true && honor.account_id === context.conversation.accountExternalId;
+  const honorReply = honorApplies && initialRisk.risk === "low"
+    ? await step.run("verify-honor-catalog", () => buildHonorReply(context!.message.text ?? "", honor!, context!.conversation.channel, aiHistoryBeforeCurrent(context!.history, context!.message).map(m => ({ direction: m.direction, text: m.text }))))
+    : null;
+
   let salesFlowPlan: EquipmentSalesFlowPlan | null =
+    !honorApplies &&
     initialRisk.risk === "low" &&
     isAutoReplyContentType(context.message.messageType)
       ? planEquipmentSalesFlow({
@@ -396,7 +402,7 @@ async function handleOmnichannelMessage({ event, step }: any) {
         })
       : null;
 
-  if (!salesFlowPlan && !context.settings.businessContext?.trim()) {
+  if (!honorReply && !salesFlowPlan && !context.settings.businessContext?.trim()) {
     const reason = "business_context_missing";
     await step.run("escalate-missing-business-context", () =>
       markMessageNeedsHuman(context!.message.id, context!.conversation.id, {
@@ -408,7 +414,7 @@ async function handleOmnichannelMessage({ event, step }: any) {
     return { action: "escalate", reason };
   }
 
-  const proposedReply: OmnichannelAiReply | null = salesFlowPlan
+  const proposedReply: OmnichannelAiReply | null = honorReply ?? (salesFlowPlan
     ? {
         answer: salesFlowPlan.answer,
         intent: "lead",
@@ -443,7 +449,8 @@ async function handleOmnichannelMessage({ event, step }: any) {
                   : "human",
           })),
         }),
-      );
+      )
+  );
 
   const aiReply: OmnichannelAiReply | null = proposedReply
     ? {
@@ -464,6 +471,10 @@ async function handleOmnichannelMessage({ event, step }: any) {
       }),
     );
     return { action: "escalate", reason: "ai_generation_unavailable" };
+  }
+
+  if (honor && honorReply && honorReply.risk === "low" && honorReply.confidence >= context.settings.confidenceThreshold) {
+    await step.run("record-honor-catalog-proof", () => recordHonorCatalogVerification(context!.message.id, honor));
   }
 
   await step.run("persist-ai-analysis", () =>

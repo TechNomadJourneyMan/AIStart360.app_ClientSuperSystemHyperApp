@@ -19,7 +19,7 @@ const updateSchema = z
   .object({
     channel: z.enum(['instagram', 'whatsapp']),
     enabled: z.boolean().optional(),
-    mode: z.enum(['off', 'draft', 'auto']).optional(),
+    mode: z.enum(['off', 'assistant', 'draft', 'auto']).optional(),
     business_context: z.string().trim().max(8_000).nullable().optional(),
     equipment_flow_enabled: z.boolean().optional(),
     confidence_threshold: z.number().min(0.5).max(1).optional(),

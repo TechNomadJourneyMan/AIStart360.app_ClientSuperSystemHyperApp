@@ -457,8 +457,15 @@ describe("/api/webhooks/whatsapp-web", () => {
     expect(queue.send).not.toHaveBeenCalled();
   });
 
-  it("rejects self/group payloads instead of triggering AI", async () => {
-    for (const override of [{ from_me: true }, { remote_jid: "123@g.us" }]) {
+  it("persists human outbound but never queues AI even if persistence suggests queueing", async () => {
+    const response = await POST(request(payload({ from_me: true })));
+    expect(response.status).toBe(200);
+    expect(queue.send).not.toHaveBeenCalled();
+    expect(directProcessor.process).not.toHaveBeenCalled();
+  });
+
+  it("rejects historical outbound/group payloads instead of triggering AI", async () => {
+    for (const override of [{ from_me: true, live: false }, { remote_jid: "123@g.us" }]) {
       expect((await POST(request(payload(override)))).status).toBe(400);
     }
     expect(repository.ingestNormalizedMessage).not.toHaveBeenCalled();

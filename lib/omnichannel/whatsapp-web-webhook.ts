@@ -47,7 +47,7 @@ const bridgeEventSchema = z
         text: z.string().max(8_000).nullable().optional(),
         message_type: bridgeMessageTypeSchema,
         live: z.boolean(),
-        from_me: z.literal(false),
+        from_me: z.boolean(),
       })
       .strict(),
   })
@@ -94,6 +94,7 @@ export function parseWhatsAppWebBridgeEvent(
   const parsed = bridgeEventSchema.safeParse(payload)
   if (!parsed.success) return null
   const event = parsed.data
+  if (event.message.from_me && !event.message.live) return null
   // A provider timestamp may be old after an outage, but cannot be from the
   // future. Reject rather than opening an artificial 24-hour send window.
   if (event.message.timestamp_ms > nowMs + 5 * 60_000) return null
@@ -116,14 +117,16 @@ export function parseWhatsAppWebBridgeEvent(
       contactName: event.message.push_name?.trim() || null,
       contactPhone: verifiedPhone(event),
       externalMessageId: `waweb:${event.session_id}:${event.message.id}`,
-      direction: 'in',
+      direction: event.message.from_me ? 'out' : 'in',
       messageType,
       text: cleanText(event.message.text),
-      status: 'received',
+      status: event.message.from_me ? 'sent' : 'received',
       replyToExternalId: null,
       occurredAt: new Date(event.message.timestamp_ms).toISOString(),
       metadata: {
         transport: 'whatsapp_web',
+        humanOutbound: event.message.from_me,
+        isEcho: event.message.from_me,
         bridgeSessionId: event.session_id,
         bridgeEventId: event.event_id,
         bridgeMessageId: event.message.id,

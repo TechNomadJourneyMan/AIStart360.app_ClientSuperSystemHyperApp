@@ -1,7 +1,7 @@
 export const OMNICHANNEL_CHANNELS = ['instagram', 'whatsapp'] as const
 export type OmnichannelChannel = (typeof OMNICHANNEL_CHANNELS)[number]
 
-export const OMNICHANNEL_MODES = ['off', 'draft', 'auto'] as const
+export const OMNICHANNEL_MODES = ['off', 'assistant', 'draft', 'auto'] as const
 export type OmnichannelMode = (typeof OMNICHANNEL_MODES)[number]
 
 export const OMNICHANNEL_CONVERSATION_STATUSES = ['open', 'needs_human', 'resolved', 'muted'] as const

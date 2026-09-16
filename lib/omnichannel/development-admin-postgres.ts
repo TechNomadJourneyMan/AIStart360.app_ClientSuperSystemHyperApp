@@ -83,7 +83,7 @@ const conversationColumns = `
 
 const detailMessageColumns = `
   id, direction, text, status, message_type, ai_draft, ai_confidence,
-  ai_reason, ai_generated, occurred_at
+  ai_reason, ai_generated, metadata, occurred_at
 `;
 
 export interface DevelopmentAdminInboxResult {

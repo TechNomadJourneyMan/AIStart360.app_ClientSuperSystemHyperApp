@@ -32,7 +32,7 @@ import type { JsonObject } from '@/lib/omnichannel/types'
 import { createServiceClient } from '@/lib/supabase-service'
 
 const idSchema = z.string().uuid()
-const bodySchema = z.object({ text: z.string().trim().min(1).max(1_000) })
+const bodySchema = z.object({ text: z.string().trim().min(1).max(1_600) })
 
 function envFlag(value: string | undefined): boolean {
   return /^(?:1|true|yes|on)$/i.test(value?.trim() ?? '')
@@ -53,7 +53,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
   const parsed = bodySchema.safeParse(await req.json().catch(() => null))
   if (!parsed.success) {
-    return NextResponse.json({ error: 'Ответ должен содержать от 1 до 1000 символов' }, { status: 400 })
+    return NextResponse.json({ error: 'Ответ должен содержать от 1 до 1600 символов' }, { status: 400 })
   }
 
   const useDevelopmentPostgres = shouldUseDevelopmentAdminPostgres()
