@@ -473,8 +473,8 @@ async function handleOmnichannelMessage({ event, step }: any) {
     return { action: "escalate", reason: "ai_generation_unavailable" };
   }
 
-  if (honor && honorReply && honorReply.risk === "low" && honorReply.confidence >= context.settings.confidenceThreshold) {
-    await step.run("record-honor-catalog-proof", () => recordHonorCatalogVerification(context!.message.id, honor));
+  if (honor && honorReply?.catalogVerifiedAt && honorReply.risk === "low" && honorReply.confidence >= context.settings.confidenceThreshold) {
+    await step.run("record-honor-catalog-proof", () => recordHonorCatalogVerification(context!.message.id, honor, honorReply.catalogVerifiedAt!));
   }
 
   await step.run("persist-ai-analysis", () =>

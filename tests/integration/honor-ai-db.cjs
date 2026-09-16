@@ -123,7 +123,7 @@ const assert = require("assert/strict");
   assert.equal(rejected, true);
   n++;
   await db.query(
-    `select honor_mark_catalog_verified('33333333-3333-4333-8333-333333333333',$1::jsonb)`,
+    `select honor_mark_catalog_verified('33333333-3333-4333-8333-333333333333',$1::jsonb,now())`,
     [JSON.stringify(config)],
   );
   await db.exec(
@@ -197,6 +197,13 @@ const assert = require("assert/strict");
   }
   assert.equal(rejected, true);
   n++;
+  rejected=false;
+  try { await db.query("select honor_mark_catalog_verified($1::uuid,$2::jsonb,now()-interval '10 minutes')", ['33333333-3333-4333-8333-333333333333',JSON.stringify(config)]); } catch { rejected=true; }
+  assert.equal(rejected,true); n++;
+  await db.exec('UPDATE ecommerce_orders SET net_paid_amount=29000');
+  assert.equal(Number((await one('select confirmed_revenue from honor_commerce_metrics')).confirmed_revenue),29000); n++;
+  await db.exec('UPDATE ecommerce_orders SET paid_at=NULL');
+  assert.equal((await one('select confirmed_revenue from honor_commerce_metrics')).confirmed_revenue,null); n++;
   console.log(
     JSON.stringify({
       passed: n,

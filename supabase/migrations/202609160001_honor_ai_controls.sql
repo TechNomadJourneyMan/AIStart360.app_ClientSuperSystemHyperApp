@@ -204,21 +204,22 @@ END;
 $$;
 REVOKE ALL ON FUNCTION public.honor_verify_live_canary(uuid,uuid) FROM PUBLIC,anon,authenticated;
 GRANT EXECUTE ON FUNCTION public.honor_verify_live_canary(uuid,uuid) TO service_role;
-CREATE OR REPLACE FUNCTION public.honor_mark_catalog_verified(p_message_id uuid,p_config jsonb) RETURNS void
+CREATE OR REPLACE FUNCTION public.honor_mark_catalog_verified(p_message_id uuid,p_config jsonb,p_verified_at timestamptz) RETURNS void
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $$
 BEGIN
- UPDATE public.omnichannel_messages m SET metadata=m.metadata||jsonb_build_object('honorCatalogVerifiedAt',now(),'honorConfigHash',md5(p_config::text))
+ UPDATE public.omnichannel_messages m SET metadata=m.metadata||jsonb_build_object('honorCatalogVerifiedAt',p_verified_at,'honorConfigHash',md5(p_config::text))
  FROM public.omnichannel_conversations c,public.omnichannel_settings s
  WHERE m.id=p_message_id AND m.direction='in' AND c.id=m.conversation_id AND s.channel=c.channel
+ AND p_verified_at BETWEEN now()-interval '2 minutes' AND now()+interval '5 seconds'
  AND s.automation_config->'honor_ai'=p_config AND c.account_external_id=p_config->>'account_id';
  IF NOT FOUND THEN RAISE EXCEPTION 'honor_configuration_changed'; END IF;
 END;
 $$;
-REVOKE ALL ON FUNCTION public.honor_mark_catalog_verified(uuid,jsonb) FROM PUBLIC,anon,authenticated;
-GRANT EXECUTE ON FUNCTION public.honor_mark_catalog_verified(uuid,jsonb) TO service_role;
+REVOKE ALL ON FUNCTION public.honor_mark_catalog_verified(uuid,jsonb,timestamptz) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.honor_mark_catalog_verified(uuid,jsonb,timestamptz) TO service_role;
 DO $$ BEGIN
  IF EXISTS(SELECT 1 FROM pg_roles WHERE rolname='aistart360_omnichannel_runtime') THEN
-  GRANT EXECUTE ON FUNCTION public.honor_mark_catalog_verified(uuid,jsonb) TO aistart360_omnichannel_runtime;
+  GRANT EXECUTE ON FUNCTION public.honor_mark_catalog_verified(uuid,jsonb,timestamptz) TO aistart360_omnichannel_runtime;
  END IF;
 END $$;
 -- Reconcile paid revenue against current order truth, including later refunds.

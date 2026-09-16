@@ -175,12 +175,14 @@ export async function buildHonorReply(
   channel: "whatsapp" | "instagram" = "whatsapp",
   history: OmnichannelHistoryMessage[] = [],
   verifiedSelection?: HonorSelection,
-): Promise<OmnichannelAiReply> {
+): Promise<OmnichannelAiReply & {catalogVerifiedAt: string | null}> {
   const risk = detectDeterministicRisk(text);
   const selection =
     risk.risk === "low"
       ? (verifiedSelection ?? (await selectHonorProducts(text, config)))
       : { cards: [], complete: false, reason: "human_review_required" };
+  const timestamps = selection.cards.map(p=>Date.parse(p.checkedAt));
+  const catalogVerifiedAt = timestamps.length && timestamps.every(Number.isFinite) ? new Date(Math.min(...timestamps)).toISOString() : null;
   const scenarioKey = /достав|привез/iu.test(text)
     ? "delivery"
     : /скид|акци/iu.test(text)
@@ -218,9 +220,10 @@ export async function buildHonorReply(
       selection.cards.filter((p) => proposal.answer.includes(p.url)).length >=
         Math.min(2, selection.cards.length)
     )
-      return proposal;
+      return {...proposal,catalogVerifiedAt};
   }
   return {
+    catalogVerifiedAt,
     answer: renderHonorSelection(selection),
     intent: "pricing",
     sentiment: "neutral",
