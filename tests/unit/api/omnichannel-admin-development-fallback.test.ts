@@ -31,7 +31,10 @@ const repository = vi.hoisted(() => ({
   logOutbound: vi.fn(),
 }))
 
-vi.mock('@/lib/admin/giga-actor', () => auth)
+vi.mock('@/lib/admin/giga-actor', async () => {
+  const { makeRequireGiga } = await import('../_giga-guard')
+  return { ...auth, requireGiga: makeRequireGiga(() => auth.getGigaActor(), () => auth.isGigaSuperAdmin()) }
+})
 vi.mock('@/lib/audit', () => audit)
 vi.mock('@/lib/supabase-service', () => service)
 vi.mock('@/lib/omnichannel/development-admin-postgres', () => ({

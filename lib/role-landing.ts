@@ -22,7 +22,8 @@ export function roleLandingPath(
     case 'admin':
       return '/dashboard'
     case 'client':
-      return status === 'approved' ? '/client/point-a' : '/client/waiting-room'
+      // /client/home = User Assessment Dashboard (survey profile + GRI); Точка А is one click away.
+      return status === 'approved' ? '/client/home' : '/client/waiting-room'
     default:
       return '/dashboard'
   }

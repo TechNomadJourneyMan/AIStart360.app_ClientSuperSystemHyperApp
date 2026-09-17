@@ -72,6 +72,15 @@ const fakeServiceClient = {
   from: (t: string) => {
     const chain: Record<string, unknown> = {}
     const ret = () => chain
+    // Product analytics (user_events) is not under test here.
+    if (t === 'user_events') {
+      Object.assign(chain, {
+        insert: () => Promise.resolve({ error: null }),
+        select: ret, eq: ret,
+        limit: () => Promise.resolve({ data: [], error: null }),
+      })
+      return chain
+    }
     if (t === 'survey_answers') {
       Object.assign(chain, {
         select: ret,

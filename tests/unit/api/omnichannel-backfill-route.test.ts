@@ -8,7 +8,10 @@ const repository = vi.hoisted(() => ({ listHistory: vi.fn() }))
 const postgres = vi.hoisted(() => ({ enabled: vi.fn() }))
 const processingJobs = vi.hoisted(() => ({ enqueueBatch: vi.fn() }))
 
-vi.mock('@/lib/admin/giga-actor', () => ({ getGigaActor: actor.get }))
+vi.mock('@/lib/admin/giga-actor', async () => {
+  const { makeRequireGiga } = await import('../_giga-guard')
+  return { getGigaActor: actor.get, requireGiga: makeRequireGiga(() => actor.get()) }
+})
 vi.mock('@/lib/inngest', () => ({ inngest: queue }))
 vi.mock('@/lib/audit', () => ({ logAudit: audit.log }))
 vi.mock('@/lib/omnichannel/repository', () => ({

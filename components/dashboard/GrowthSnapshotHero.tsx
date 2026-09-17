@@ -29,6 +29,7 @@ import {
   currentMonthLabel,
 } from '@/lib/format/kzt'
 import { GRIAssessmentRadarWidget } from './GRIAssessmentRadarWidget'
+import { GRI_CRITERIA_COUNT } from '@/lib/gri-assessment/sections'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface TargetsData {
@@ -703,7 +704,7 @@ export default function GrowthSnapshotHero() {
             </h2>
             <p className="text-xs text-on-surface-variant leading-relaxed mb-4">
               Growth Readiness Index покажет, где именно бизнес ломается при
-              ускорении до $2M/год. 7 блоков × 62 критерия. TOP 5 ограничений
+              ускорении до $2M/год. 7 блоков × {GRI_CRITERIA_COUNT} критериев. TOP 5 ограничений
               с ценой недоработки. Автоматический Action Plan на 90 дней.
             </p>
             <Link
@@ -746,7 +747,7 @@ export default function GrowthSnapshotHero() {
             </div>
 
             <p className="text-[10px] font-mono text-on-surface-variant mt-3 text-center">
-              ~ 45 минут · 62 вопроса
+              ~ 45 минут · {GRI_CRITERIA_COUNT} вопросов
               {hasGri && griData?.created_at &&
                 ` · последняя оценка ${new Date(griData.created_at).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })}`}
             </p>

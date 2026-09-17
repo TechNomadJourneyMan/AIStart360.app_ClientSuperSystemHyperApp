@@ -9,6 +9,8 @@ import { useAuthStore } from '@/stores/auth.store'
 import { getPrimaryNavForRole, getSecondaryNavForRole } from '@/lib/navigation'
 import type { NavItem, UserRole } from '@/types'
 import { UploadFilesNavItem } from './UploadFilesNavItem'
+import { useEntitlements } from '@/hooks/useEntitlements'
+import { useHiddenSectionPaths, isHiddenByPlatform } from '@/hooks/usePlatformSections'
 
 export function Sidebar() {
   const pathname = usePathname()
@@ -18,10 +20,9 @@ export function Sidebar() {
   const [moreOpen, setMoreOpen] = useState(false)
   const [openSubMenus, setOpenSubMenus] = useState<string[]>([])
   const [premiumItem, setPremiumItem] = useState<string | null>(null)
-  const [proUnlocked, setProUnlocked] = useState<Set<string>>(new Set())
-  const [promoCode, setPromoCode] = useState('')
-  const [promoError, setPromoError] = useState('')
-  const [promoLoading, setPromoLoading] = useState(false)
+  const [requestState, setRequestState] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle')
+  const { access } = useEntitlements()
+  const hiddenPaths = useHiddenSectionPaths()
 
   const PREMIUM_FEATURE_LABELS: Record<string, string> = {
     '/metrics': 'Метрики',
@@ -37,15 +38,19 @@ export function Sidebar() {
   // FE-01/02: role is the canonical lowercase Supabase value; default the
   // least-privileged 'client' when missing (no more toUpperCase bridge).
   const role: UserRole = (user?.role as UserRole | undefined) ?? 'client'
-  const primaryNav = getPrimaryNavForRole(role)
-  const secondaryNav = getSecondaryNavForRole(role)
+  // Sections switched off / hidden for this user in GIGA-CRM disappear from the menu.
+  const primaryNav = getPrimaryNavForRole(role).filter((i) => !isHiddenByPlatform(i.href, hiddenPaths))
+  const secondaryNav = getSecondaryNavForRole(role).filter((i) => !isHiddenByPlatform(i.href, hiddenPaths))
 
   // Items locked behind a paid plan for CLIENT role
   const PREMIUM_LOCKED = ['/metrics', '/market', '/point-b']
+  // Pro access comes from the account tier (managed in GIGA-CRM), never from a
+  // client-entered code. The old «promo code» was sent to the break-glass admin
+  // login and, on a match, handed the client a SUPER-ADMIN cookie.
   const isLocked = (href: string) =>
     role === 'client' &&
-    PREMIUM_LOCKED.some((p) => href === p || href.startsWith(p + '/')) &&
-    !proUnlocked.has(PREMIUM_LOCKED.find((p) => href === p || href.startsWith(p + '/'))!)
+    access.tier !== 'pro' &&
+    PREMIUM_LOCKED.some((p) => href === p || href.startsWith(p + '/'))
 
   const isActive = (href: string) =>
     href === '/dashboard' ? pathname === href : pathname.startsWith(href)
@@ -62,28 +67,18 @@ export function Sidebar() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname])
 
-  async function handlePromoSubmit() {
-    if (!promoCode.trim() || promoLoading || !premiumItem) return
-    setPromoLoading(true)
-    setPromoError('')
+  async function requestUpgrade() {
+    if (!premiumItem || requestState === 'sending') return
+    setRequestState('sending')
     try {
-      const res = await fetch('/api/giga-admin/auth', {
+      const res = await fetch('/api/v1/upgrade-request', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password: promoCode }),
+        body: JSON.stringify({ featureKey: premiumItem }),
       })
-      if (res.ok) {
-        setProUnlocked(prev => new Set(prev).add(premiumItem))
-        setPremiumItem(null)
-        setPromoCode('')
-        router.push(premiumItem)
-      } else {
-        setPromoError('Неверный промокод')
-      }
+      setRequestState(res.ok ? 'sent' : 'error')
     } catch {
-      setPromoError('Ошибка соединения')
-    } finally {
-      setPromoLoading(false)
+      setRequestState('error')
     }
   }
 
@@ -91,8 +86,7 @@ export function Sidebar() {
     // If on a locked page, go back to dashboard
     const current = premiumItem
     setPremiumItem(null)
-    setPromoCode('')
-    setPromoError('')
+    setRequestState('idle')
     if (current && PREMIUM_LOCKED.some(p => pathname === p || pathname.startsWith(p + '/'))) {
       router.push('/dashboard')
     }
@@ -469,23 +463,14 @@ export function Sidebar() {
               </div>
             </div>
             <p className="text-sm text-on-surface-variant leading-relaxed mb-4">
-              Введите промокод для получения доступа к разделу{' '}
-              <span className="text-amber-400 font-medium">Pro</span>.
+              Раздел входит в тариф <span className="text-amber-400 font-medium">Pro</span>. Оставьте заявку — менеджер свяжется с вами и откроет доступ.
             </p>
-            <div className="mb-4 space-y-2">
-              <input
-                type="text"
-                value={promoCode}
-                onChange={(e) => { setPromoCode(e.target.value); setPromoError('') }}
-                onKeyDown={(e) => e.key === 'Enter' && handlePromoSubmit()}
-                placeholder="Промокод"
-                autoFocus
-                className="w-full bg-white/[0.05] border border-white/[0.08] rounded-xl px-4 py-2.5 text-sm text-on-surface placeholder:text-on-surface-variant/40 focus:outline-none focus:border-amber-500/50 transition-colors"
-              />
-              {promoError && (
-                <p className="text-xs text-error pl-1">{promoError}</p>
-              )}
-            </div>
+            {requestState === 'sent' && (
+              <p className="mb-4 rounded-xl border border-primary/25 bg-primary/10 px-3 py-2 text-xs text-primary">Заявка отправлена. Мы скоро свяжемся с вами.</p>
+            )}
+            {requestState === 'error' && (
+              <p className="mb-4 text-xs text-error">Не удалось отправить заявку. Попробуйте ещё раз.</p>
+            )}
             <div className="flex gap-3">
               <button
                 onClick={closePremiumModal}
@@ -494,11 +479,12 @@ export function Sidebar() {
                 Закрыть
               </button>
               <button
-                onClick={handlePromoSubmit}
-                disabled={promoLoading || !promoCode.trim()}
+                onClick={requestUpgrade}
+                disabled={requestState === 'sending' || requestState === 'sent'}
+                data-track="pro-upgrade-request"
                 className="flex-1 py-2.5 rounded-xl bg-amber-500/90 hover:bg-amber-400 disabled:opacity-50 text-black font-semibold text-sm transition-colors"
               >
-                {promoLoading ? 'Проверка...' : 'Применить →'}
+                {requestState === 'sending' ? 'Отправляем…' : requestState === 'sent' ? 'Отправлено' : 'Оставить заявку'}
               </button>
             </div>
           </div>

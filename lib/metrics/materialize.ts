@@ -136,6 +136,12 @@ export interface MaterializeResult {
  * The unique index on `(company_id, metric_key, period_year,
  * period_quarter, source)` is honored via on_conflict.
  */
+// Must match the live unique index metrics_unique_idx (NULLS NOT DISTINCT):
+// (company_id, metric_key, period_year, period_quarter, period_month, scenario, source).
+// The resolver never sets period_month / scenario, so they stay NULL and still
+// collide on re-materialization.
+const METRICS_CONFLICT_TARGET = 'company_id,metric_key,period_year,period_quarter,period_month,scenario,source'
+
 export async function materializeAll(
   supabase: SupabaseClient,
   ctx: ResolverContext,
@@ -164,7 +170,7 @@ export async function materializeAll(
   const { error } = await supabase
     .from('metrics')
     .upsert(rows, {
-      onConflict: 'company_id,metric_key,period_year,period_quarter,source',
+      onConflict: METRICS_CONFLICT_TARGET,
       ignoreDuplicates: false,
     })
 
@@ -197,7 +203,7 @@ export async function materializeMetric(
   const { error } = await supabase
     .from('metrics')
     .upsert([row], {
-      onConflict: 'company_id,metric_key,period_year,period_quarter,source',
+      onConflict: METRICS_CONFLICT_TARGET,
       ignoreDuplicates: false,
     })
 

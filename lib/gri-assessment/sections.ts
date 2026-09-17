@@ -551,3 +551,6 @@ export const GRI_SECTIONS: GriSection[] = [
     ]
   }
 ];
+
+/** Total number of criteria across all blocks — use this instead of a hardcoded number in copy. */
+export const GRI_CRITERIA_COUNT = GRI_SECTIONS.reduce((n, sec) => n + sec.criteria.length, 0)

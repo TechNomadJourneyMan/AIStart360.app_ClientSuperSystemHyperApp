@@ -14,20 +14,28 @@ import {
   normalizeTier,
   type Entitlements,
 } from './entitlements'
+import { getSetting } from '@/lib/settings/store'
+
+async function freeGriLimit(): Promise<number | undefined> {
+  try {
+    return await getSetting('gri_free_runs')
+  } catch {
+    return undefined
+  }
+}
 
 export async function readEntitlements(
   sb: SupabaseClient,
   userId: string,
 ): Promise<Entitlements> {
   try {
-    const { data, error } = await sb
-      .from('profiles')
-      .select('tier, feature_flags')
-      .eq('id', userId)
-      .maybeSingle()
-    if (error) return entitlementsFor('free')
+    const [{ data, error }, limit] = await Promise.all([
+      sb.from('profiles').select('tier, feature_flags').eq('id', userId).maybeSingle(),
+      freeGriLimit(),
+    ])
+    if (error) return entitlementsFor('free', undefined, limit)
     const row = data as { tier?: unknown; feature_flags?: unknown } | null
-    return entitlementsFor(normalizeTier(row?.tier), normalizeOverrides(row?.feature_flags))
+    return entitlementsFor(normalizeTier(row?.tier), normalizeOverrides(row?.feature_flags), limit)
   } catch {
     return entitlementsFor('free')
   }

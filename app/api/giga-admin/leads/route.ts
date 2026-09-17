@@ -2,7 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase-service'
-import { isGigaSuperAdmin } from '@/lib/admin/giga-actor'
+import { requireGiga } from '@/lib/admin/giga-actor'
 
 interface RawBlockScore {
   key?: string
@@ -22,9 +22,8 @@ interface RawBlockScore {
  * @map): overall_score / block_scores are snake_case, but createdAt is camelCase.
  */
 export async function GET(req: NextRequest) {
-  if (!(await isGigaSuperAdmin(req))) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-  }
+  const guard = await requireGiga(req, 'leads.view')
+  if (guard.response) return guard.response
 
   try {
     const sb = createServiceClient()

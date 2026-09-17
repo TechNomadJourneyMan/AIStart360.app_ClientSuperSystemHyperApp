@@ -18,6 +18,12 @@ import { annualGoalFromAnswers } from '@/lib/survey/targets'
 import { claimCompletionNotice, shouldAnnounceCompletion } from '@/lib/survey/completion-notice'
 import { createServiceClient } from '@/lib/supabase-service'
 import { runInBackground } from '@/lib/background'
+import { parseSurveySaveBody } from '@/lib/survey/schema'
+import { trackEvent, trackEventOnce } from '@/lib/events/track'
+import { activeImpersonation } from '@/lib/impersonation/server'
+import { adminEditSurvey, SurveyEditError } from '@/lib/admin/survey-admin'
+import { isStaffRole } from '@/lib/admin/rbac'
+import { isRateLimitedKey } from '@/lib/rate-limit'
 
 // GET /api/v1/onboarding/survey — the caller's own survey answers (session user).
 // SECURITY (audit 2026-07-02): identity is derived from the Supabase session,
@@ -63,33 +69,22 @@ export async function GET(req: NextRequest) {
 }
 
 // POST /api/v1/onboarding/survey
-// Body: { user_id?, company_id?, step, answers: Record<string, { value: unknown }>, final?: boolean }
+// Body: see lib/survey/schema.ts — { user_id?, step, answers: Record<string, { value }>, autosave?, final? }
 //
 // Latency budget: the response returns right after the upsert + target sync.
 // The Google Sheets mirror and the «анкета пройдена» alert run in the
 // background — in the QA run they made every «Далее» take 6–19 s.
 export async function POST(req: NextRequest) {
-  let body: Record<string, unknown>
+  let raw: unknown
   try {
-    body = await req.json()
+    raw = await req.json()
   } catch {
     return NextResponse.json({ ok: false, error: 'Invalid request body' }, { status: 400 })
   }
-  const { user_id, company_id, step, answers } = body as {
-    user_id?: string | null
-    company_id?: string | null
-    step?: unknown
-    answers?: unknown
-  }
-  const finalSubmitted = body.final === true
-
-  const bodyStep = Number(step)
-  if (!Number.isInteger(bodyStep) || bodyStep < 1 || bodyStep > 12) {
-    return NextResponse.json({ ok: false, error: 'step must be an integer 1..12' }, { status: 400 })
-  }
-  if (!answers || typeof answers !== 'object' || Array.isArray(answers)) {
-    return NextResponse.json({ ok: false, error: 'answers must be an object' }, { status: 400 })
-  }
+  const parsed = parseSurveySaveBody(raw)
+  if (!parsed.ok) return NextResponse.json({ ok: false, error: parsed.error }, { status: 400 })
+  const { user_id, step: bodyStep, answers, autosave } = parsed.data
+  const finalSubmitted = parsed.data.final
 
   const sb = createServerClient()
   // SECURITY (audit 2026-07-02): write to the session user's own answers, not a
@@ -99,6 +94,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: resolved.error }, { status: resolved.error === 'unauthorized' ? 401 : 403 })
   }
   const targetUserId = resolved.userId
+
+  // Autosave fires every few seconds while typing; this cap only stops abuse.
+  if (await isRateLimitedKey(targetUserId, 'survey-save', { max: 120, windowMs: 60_000 })) {
+    return NextResponse.json({ ok: false, error: 'Слишком много запросов. Попробуйте через минуту.' }, { status: 429 })
+  }
+
+  // SECURITY: the company is resolved from the target user, never taken from
+  // the body — a client could otherwise attach another tenant's company id.
+  const { data: ownCompany } = await sb.from('companies').select('id').eq('user_id', targetUserId).maybeSingle()
+  const company_id = ownCompany?.id != null ? String(ownCompany.id) : null
 
   const { data: beforeData, error: beforeErr } = await sb
     .from('survey_answers')
@@ -112,8 +117,8 @@ export async function POST(req: NextRequest) {
   // Only survey keys may be written here (never gri_expert_* / goal_*_v2 …).
   // Wizard keys get the step that OWNS them; other intake keys keep the step
   // they already have and fall back to the body step only when new.
-  const accepted = Object.entries(answers as Record<string, unknown>).filter(([k]) => isWritableSurveyKey(k))
-  const ignored = Object.keys(answers as Record<string, unknown>).length - accepted.length
+  const accepted = Object.entries(answers).filter(([k]) => isWritableSurveyKey(k))
+  const ignored = Object.keys(answers).length - accepted.length
   const rows = accepted.map(([question_key, answer]) => ({
     user_id: targetUserId,
     company_id: company_id ?? null,
@@ -123,11 +128,31 @@ export async function POST(req: NextRequest) {
     answered_at: new Date().toISOString(),
   }))
 
+  // An admin working in the user's cabinet (edit mode): the write is stamped
+  // with the admin so history and audit show who really changed the answers.
+  const { data: { user: sessionUser } } = await sb.auth.getUser()
+  const imp = sessionUser?.id === targetUserId ? await activeImpersonation(sessionUser.id) : null
+
   if (rows.length) {
-    const { error } = await sb
-      .from('survey_answers')
-      .upsert(rows, { onConflict: 'user_id,question_key' })
-    if (error) return NextResponse.json({ ok: false, error: 'Failed to save answers' }, { status: 500 })
+    if (imp) {
+      try {
+        await adminEditSurvey(
+          { id: imp.aid, kind: imp.aid.startsWith('giga:') ? 'break_glass' : 'session', email: imp.alabel, role: isStaffRole(imp.arole) ? imp.arole : undefined },
+          targetUserId,
+          Object.fromEntries(accepted.map(([k, v]) => [k, (v as { value: unknown }).value])),
+          req,
+          { source: 'impersonation', impersonationSessionId: imp.sid },
+        )
+      } catch (e) {
+        const status = e instanceof SurveyEditError ? e.status : 500
+        return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : 'Failed to save answers' }, { status })
+      }
+    } else {
+      const { error } = await sb
+        .from('survey_answers')
+        .upsert(rows, { onConflict: 'user_id,question_key' })
+      if (error) return NextResponse.json({ ok: false, error: 'Failed to save answers' }, { status: 500 })
+    }
   }
 
   // State after the write, computed in memory (saves a round-trip).
@@ -148,7 +173,20 @@ export async function POST(req: NextRequest) {
     wasCompleteBefore: wasComplete,
   })
 
-  runInBackground('survey-mirror', () => mirrorAndAnnounce(targetUserId, announce, Number(step)))
+  // Product events: first answer, explicit step saves, final submit.
+  if (rows.length && !beforeRows.some((r) => isWizardVisibleKey(r.question_key))) {
+    void trackEventOnce({ userId: targetUserId, name: 'QUESTIONNAIRE_STARTED', entityType: 'survey', entityId: targetUserId })
+  }
+  if (!autosave && rows.length) {
+    void trackEvent({ userId: targetUserId, name: 'QUESTIONNAIRE_STEP_COMPLETED', entityType: 'survey', entityId: targetUserId, metadata: { step: bodyStep, keys: rows.length, progress: progress.percent }, source: imp ? 'impersonation' : 'server', impersonationSessionId: imp?.sid ?? null })
+  }
+  if (finalSubmitted) {
+    void trackEvent({ userId: targetUserId, name: 'QUESTIONNAIRE_COMPLETED', entityType: 'survey', entityId: targetUserId, metadata: { completed_steps: progress.completed, is_complete: progress.is_complete }, source: imp ? 'impersonation' : 'server', impersonationSessionId: imp?.sid ?? null })
+  }
+
+  // Autosaves skip the Sheets mirror: one mirror per explicit save is enough,
+  // and a half-typed value should not flicker through the staff spreadsheet.
+  if (!autosave) runInBackground('survey-mirror', () => mirrorAndAnnounce(targetUserId, announce, bodyStep))
 
   return NextResponse.json({
     ok: true,

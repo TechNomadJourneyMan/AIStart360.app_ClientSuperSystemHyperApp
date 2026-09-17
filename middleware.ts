@@ -1,8 +1,58 @@
 import { NextResponse } from 'next/server'
-import type { NextRequest } from 'next/server'
+import type { NextFetchEvent, NextRequest } from 'next/server'
 import { updateSession } from '@/lib/supabase/middleware'
 import { GIGA_COOKIE_NAME, verifyGigaRoleEdge } from '@/lib/giga-cookie-edge'
 import { MFA_COOKIE_NAME, verifyStepUpEdge } from '@/lib/mfa/step-up-edge'
+import { IMP_COOKIE_NAME, READ_ONLY_POST_API, isViewModeAllowed, readImpersonation } from '@/lib/impersonation/token'
+import { auditImpersonatedRequestEdge, endImpersonationEdge, isImpersonationActiveEdge } from '@/lib/impersonation/edge'
+import { verifyToken } from '@/lib/security/signed-token'
+import { blockedSectionFor } from '@/lib/platform/sections-edge'
+import { edgeSettings } from '@/lib/settings/edge'
+
+const STAFF_COOKIE_NAME = 'aistart360_giga_staff'
+const IMP_ENDED_PATH = '/admin-giga-panel/impersonation'
+const MUTATING = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
+
+/** Redirect that keeps cookie changes (e.g. a sign-out) made on `from`. */
+function redirectKeepingCookies(from: NextResponse, url: URL): NextResponse {
+  const res = NextResponse.redirect(url)
+  for (const c of from.cookies.getAll()) res.cookies.set(c)
+  return res
+}
+
+/**
+ * Impersonation on API calls: view mode is read-only (mutations → 403), an
+ * expired/closed session cannot mutate (→ 401), and every mutation in edit
+ * mode leaves an audit row. Staff API (/api/giga-admin) is not affected.
+ */
+async function guardImpersonatedApi(request: NextRequest, later: (p: Promise<unknown>) => void): Promise<NextResponse | null> {
+  const token = request.cookies.get(IMP_COOKIE_NAME)?.value
+  const method = request.method.toUpperCase()
+  const { pathname } = request.nextUrl
+  if (!token || !MUTATING.has(method) || pathname.startsWith('/api/giga-admin/')) return null
+  if (pathname === '/api/v1/impersonation/exit') return null
+  const v = await readImpersonation(token)
+  if (!v.ok || !(await isImpersonationActiveEdge(v.claims.sid))) {
+    return NextResponse.json({ ok: false, error: 'Сессия просмотра от имени пользователя завершена' }, { status: 401 })
+  }
+  if (v.claims.mode === 'view' && !isViewModeAllowed(pathname)) {
+    return NextResponse.json({ ok: false, error: 'Режим просмотра: изменения запрещены' }, { status: 403 })
+  }
+  if (pathname !== '/api/v1/events' && !READ_ONLY_POST_API.includes(pathname)) {
+    later(auditImpersonatedRequestEdge({
+      sid: v.claims.sid,
+      adminId: v.claims.aid,
+      adminLabel: v.claims.alabel,
+      adminRole: typeof v.claims.arole === 'string' ? v.claims.arole : null,
+      targetUserId: v.claims.uid,
+      method,
+      path: pathname,
+      ip: request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || null,
+      ua: request.headers.get('user-agent')?.slice(0, 300) || null,
+    }))
+  }
+  return null
+}
 
 const MFA_CHALLENGE_PATH = '/2fa'
 
@@ -67,8 +117,15 @@ async function resolveRoleAndStatus(
   }
 }
 
-export async function middleware(request: NextRequest) {
+export async function middleware(request: NextRequest, event?: NextFetchEvent) {
+  // Background work that must outlive the response (audit writes).
+  const later = (p: Promise<unknown>) => { if (event) event.waitUntil(p); else void p }
   const { pathname } = request.nextUrl
+
+  if (pathname.startsWith('/api')) {
+    const blocked = await guardImpersonatedApi(request, later)
+    if (blocked) return blocked
+  }
 
   // Allow Next.js internals, static files, API routes
   if (
@@ -98,6 +155,7 @@ export async function middleware(request: NextRequest) {
     // Public legal pages — linked from the registration consent checkbox.
     pathname.startsWith('/terms') ||
     pathname.startsWith('/privacy') ||
+    pathname === '/maintenance' ||
     // Public read-only shared report links (/r/<token>) — no auth required.
     pathname === '/r' ||
     pathname.startsWith('/r/') ||
@@ -116,6 +174,35 @@ export async function middleware(request: NextRequest) {
   const metadataRole = user && typeof user.user_metadata?.role === 'string' ? user.user_metadata.role : null
   const resolved = user ? await resolveRoleAndStatus(supabase, user.id, metadataRole) : null
   const role = resolved?.role ?? null
+
+  // ── Impersonation («кабинет от имени пользователя») ──
+  // The browser holds the target's session; the signed cookie says an admin is
+  // driving it. Anything stale ends the session and returns to the panel.
+  let impersonating = false
+  const impToken = request.cookies.get(IMP_COOKIE_NAME)?.value
+  if (impToken) {
+    const imp = await readImpersonation(impToken)
+    const claims = imp.claims
+    const failReason = imp.ok ? 'closed' : imp.reason
+    const ownsSession = !!claims && !!user && user.id === claims.uid
+    if (imp.ok && ownsSession && (await isImpersonationActiveEdge(imp.claims.sid))) {
+      impersonating = true
+      response.headers.set('x-impersonation', imp.claims.mode)
+    } else if (claims && ownsSession) {
+      // Authentic but expired / closed from the panel: drop the user session.
+      if (failReason === 'expired') later(endImpersonationEdge(claims.sid, 'expired'))
+      await supabase.auth.signOut()
+      response.cookies.delete(IMP_COOKIE_NAME)
+      const url = new URL(IMP_ENDED_PATH, request.url)
+      url.searchParams.set('ended', failReason === 'expired' ? 'expired' : 'closed')
+      const out = redirectKeepingCookies(response, url)
+      out.cookies.delete(IMP_COOKIE_NAME)
+      return out
+    } else {
+      // Forged, or left over after the admin session changed hands.
+      response.cookies.delete(IMP_COOKIE_NAME)
+    }
+  }
 
   // R4: a persistently blocked/archived user gets no further than the login
   // page, regardless of role or which route they hit. The GoTrue ban (set by
@@ -139,8 +226,10 @@ export async function middleware(request: NextRequest) {
   // A2b: the giga gate is the HMAC-SIGNED `aistart360_giga` cookie, verified
   // here on the Edge runtime via Web Crypto. The unsigned `aistart360_role`
   // string is NO LONGER accepted for giga access.
+  // The shared-password entry can be switched off in platform settings.
   const hasGigaAccess =
-    (await verifyGigaRoleEdge(request.cookies.get(GIGA_COOKIE_NAME)?.value)) === 'super_admin'
+    (await verifyGigaRoleEdge(request.cookies.get(GIGA_COOKIE_NAME)?.value)) === 'super_admin' &&
+    (await edgeSettings()).break_glass_enabled
 
   if (isGigaLogin) {
     if ((user && role === 'super_admin') || hasGigaAccess) {
@@ -149,10 +238,41 @@ export async function middleware(request: NextRequest) {
     return response // allow access to login page
   }
 
-  // ГИГА-Панель: строгая изоляция — только SUPER_ADMIN
+  // ГИГА-Панель: только персонал (super_admin, роль из staff_roles, личный
+  // staff-cookie во время impersonation или break-glass). Права по разделам
+  // проверяет каждый API-маршрут (lib/admin/rbac.ts).
   if (pathname.startsWith(GIGA_PANEL_PATH)) {
-    if (role !== 'super_admin' && !hasGigaAccess) {
+    let isStaff = role === 'super_admin' || hasGigaAccess
+    if (!isStaff) {
+      const staffToken = request.cookies.get(STAFF_COOKIE_NAME)?.value
+      if (staffToken && (await verifyToken('staff', staffToken)).ok) isStaff = true
+    }
+    if (!isStaff && user && !impersonating) {
+      const { data: staffRow } = await supabase.from('staff_roles').select('role').eq('user_id', user.id).maybeSingle()
+      isStaff = !!staffRow
+    }
+    if (!isStaff) {
       return NextResponse.redirect(new URL(GIGA_LOGIN_PATH, request.url))
+    }
+    // A personal super_admin session that enrolled in 2FA must pass the step-up
+    // here too — this branch returns early, so the general MFA gate below was
+    // never reached and the most privileged surface was the one skipping 2FA.
+    // (Break-glass entry has no Supabase user and is unaffected.)
+    if (user && !impersonating && !hasGigaAccess) {
+      const gigaMeta = user.user_metadata as Record<string, unknown> | undefined
+      const enrolled = gigaMeta?.mfa_totp === true || gigaMeta?.mfa_webauthn === true
+      if (enrolled && !(await verifyStepUpEdge(request.cookies.get(MFA_COOKIE_NAME)?.value, user.id))) {
+        const url = new URL(MFA_CHALLENGE_PATH, request.url)
+        url.searchParams.set('from', pathname)
+        return NextResponse.redirect(url)
+      }
+      // Platform setting: staff without 2FA must enrol before using the panel.
+      if (!enrolled && (await edgeSettings()).staff_require_mfa) {
+        const url = new URL('/settings', request.url)
+        url.searchParams.set('tab', 'security')
+        url.searchParams.set('mfa', 'required')
+        return NextResponse.redirect(url)
+      }
     }
     return response
   }
@@ -189,12 +309,34 @@ export async function middleware(request: NextRequest) {
     user &&
     !isPublic &&
     pathname !== MFA_CHALLENGE_PATH &&
-    mfaEnrolled
+    mfaEnrolled &&
+    // The admin cannot (and must not) answer the user's second factor; the
+    // session was minted server-side after the admin's own authorization.
+    !impersonating
   ) {
     const passed = await verifyStepUpEdge(request.cookies.get(MFA_COOKIE_NAME)?.value, user.id)
     if (!passed) {
       const url = new URL(MFA_CHALLENGE_PATH, request.url)
       url.searchParams.set('from', pathname)
+      return NextResponse.redirect(url)
+    }
+  }
+
+  // ── Maintenance mode (platform settings): client cabinets are closed ──
+  // Staff, experts and an admin driving a cabinet keep working.
+  if (user && (role === 'client' || role === 'owner') && !impersonating && !isPublic && pathname !== MFA_CHALLENGE_PATH) {
+    if ((await edgeSettings()).maintenance.enabled) {
+      return redirectKeepingCookies(response, new URL('/maintenance', request.url))
+    }
+  }
+
+  // ── Platform sections managed in GIGA-CRM (enabled flag + audience) ──
+  // Applies to client accounts (and to an admin driving a client's cabinet).
+  if (user && role === 'client' && !pathname.startsWith('/client/home')) {
+    const blockedKey = await blockedSectionFor(pathname, user.id)
+    if (blockedKey) {
+      const url = new URL('/client/home', request.url)
+      url.searchParams.set('unavailable', blockedKey)
       return NextResponse.redirect(url)
     }
   }

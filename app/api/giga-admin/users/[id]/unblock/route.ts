@@ -2,7 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase-service'
-import { getGigaActor } from '@/lib/admin/giga-actor'
+import { forbidTarget, requireGiga } from '@/lib/admin/giga-actor'
 import { logAudit } from '@/lib/audit'
 
 /**
@@ -15,10 +15,11 @@ export async function POST(
   req: NextRequest,
   { params }: { params: { id: string } },
 ) {
-  const actor = await getGigaActor(req)
-  if (!actor) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-  }
+  const guard = await requireGiga(req, 'users.manage')
+  if (guard.response) return guard.response
+  const actor = guard.actor
+  const denied = await forbidTarget(guard.actor, params.id)
+  if (denied) return denied
 
   const { id } = params
 

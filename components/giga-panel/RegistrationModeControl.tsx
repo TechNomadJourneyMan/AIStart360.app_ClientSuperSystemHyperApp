@@ -55,7 +55,7 @@ export function RegistrationModeControl() {
         body: JSON.stringify({ [key]: next[key] }),
       })
       const data = await res.json().catch(() => ({}))
-      if (!res.ok || !data.ok) throw new Error(data.error || `Ошибка (HTTP ${res.status})`)
+      if (!res.ok || !data.ok) throw new Error(res.status === 403 ? 'Менять системные настройки может только Super Admin' : data.error || `Ошибка (HTTP ${res.status})`)
       // Сервер — источник истины (вернул фактические значения).
       setAccess({
         autoApproveClients: !!data.autoApproveClients,
@@ -89,7 +89,7 @@ export function RegistrationModeControl() {
         body: JSON.stringify({ mode: next }),
       })
       const data = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(data.error || `Ошибка (HTTP ${res.status})`)
+      if (!res.ok) throw new Error(res.status === 403 ? 'Менять системные настройки может только Super Admin' : data.error || `Ошибка (HTTP ${res.status})`)
       toast.success(`Режим регистрации: ${LABELS[next]}`)
     } catch (err) {
       setMode(prev)

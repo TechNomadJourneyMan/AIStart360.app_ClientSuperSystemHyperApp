@@ -9,6 +9,8 @@
 import { sendNotificationEmail } from '@/lib/email'
 import { createServerClient } from '@/lib/supabase-server'
 import { getSiteUrl } from '@/lib/site-url'
+import { isAdminNotificationType } from '@/lib/settings/registry'
+import { getSetting } from '@/lib/settings/store'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -397,6 +399,16 @@ export async function notifyAdmins(
   data: Record<string, unknown>,
   userId?: string,
 ): Promise<void> {
+  // Per-type switch from platform settings (unknown types always go out).
+  if (isAdminNotificationType(type)) {
+    try {
+      const enabled = await getSetting('admin_notifications')
+      if (enabled[type] === false) return
+    } catch {
+      /* settings unavailable — keep notifying */
+    }
+  }
+
   // Rate-limit duplicate notifications within 60s
   if (isRateLimited(rateLimitKey(type, userId, data))) return
 

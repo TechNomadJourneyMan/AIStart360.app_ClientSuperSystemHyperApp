@@ -10,52 +10,12 @@ import {
   computeTop5Limits,
   generate90DayPlan,
 } from '@/lib/gri-calculator/top5-action-plan'
+import { trackEvent } from '@/lib/events/track'
+import { computeGriIndex, computeSectionAvgs, scoresFingerprint, type GriScores } from '@/lib/gri-assessment/score'
 
-// Section IDs from lib/gri-assessment/sections.ts. We don't import to keep
-// this route resilient to widget edits — the resolver-style approach is to
-// compute over whatever sectionIds the client posted.
-//
-// Scores shape: { [sectionId: string]: { [criterionId: string]: number 1..10 } }
-type Scores = Record<string, Record<string, number>>
-
-function roundTo2(n: number): number {
-  return Math.round(n * 100) / 100
-}
-
-/**
- * Per-section mean across numeric criterion scores. Non-numeric / zero values
- * are skipped so an unanswered criterion doesn't pull the average down.
- */
-function computeSectionAvgs(scores: Scores): Record<string, number> {
-  const out: Record<string, number> = {}
-  if (!scores || typeof scores !== 'object') return out
-
-  for (const [sectionId, criteria] of Object.entries(scores)) {
-    if (!criteria || typeof criteria !== 'object') {
-      out[sectionId] = 0
-      continue
-    }
-    const values: number[] = []
-    for (const v of Object.values(criteria)) {
-      const n = typeof v === 'number' ? v : Number(v)
-      if (Number.isFinite(n) && n > 0) values.push(n)
-    }
-    out[sectionId] = values.length === 0
-      ? 0
-      : roundTo2(values.reduce((a, b) => a + b, 0) / values.length)
-  }
-  return out
-}
-
-/**
- * Overall index = mean of section averages that have any data (> 0).
- * 0..10, rounded to 2 decimals.
- */
-function computeGriIndex(sectionAvgs: Record<string, number>): number {
-  const positive = Object.values(sectionAvgs).filter((v) => Number.isFinite(v) && v > 0)
-  if (positive.length === 0) return 0
-  return roundTo2(positive.reduce((a, b) => a + b, 0) / positive.length)
-}
+// Scores shape: { [sectionId]: { [criterionId]: number 1..10 } }. The math lives in
+// lib/gri-assessment/score.ts and is shared with the widget.
+type Scores = GriScores
 
 // =============================================================================
 // POST /api/v1/gri/assessment
@@ -85,6 +45,24 @@ export async function POST(req: NextRequest) {
     }
     const userId = userData.user.id
 
+    // Idempotency: re-opening the results screen (or a double click) re-sends the
+    // same answers. Storing them again would duplicate the row and burn a run of
+    // the free-tier quota, so an identical submission returns the current row.
+    const { data: currentRow } = await sb
+      .from('gri_assessments')
+      .select('id, gri_index, section_avgs, created_at, scores, top_5_limits, action_plan_90d')
+      .eq('user_id', userId)
+      .eq('is_current', true)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    if (currentRow && scoresFingerprint(currentRow.scores as Scores) === scoresFingerprint(scores as Scores)) {
+      const { scores: _same, ...rest } = currentRow
+      void _same
+      await sb.from('gri_assessment_drafts').delete().eq('user_id', userId)
+      return NextResponse.json({ ok: true, data: { ...rest, duplicate: true } })
+    }
+
     // Фаза 6A — тарифный гейт полного GRI (решение ПО, вариант А: free = 1
     // демо-проход). Активен ТОЛЬКО при включённом системном тумблере
     // access_gates (default OFF — существующих не ограничиваем молча).
@@ -106,7 +84,9 @@ export async function POST(req: NextRequest) {
             ok: false,
             error: 'upgrade_required',
             feature: 'gri_full',
-            message: 'Бесплатный тариф включает один полный проход GRI. Повторные пересчёты — на тарифе Pro.',
+            message: ent.gri_full_limit === 0
+              ? 'Полный GRI доступен на тарифе Pro.'
+              : `Бесплатный тариф включает полных проходов GRI: ${ent.gri_full_limit}. Повторные пересчёты — на тарифе Pro.`,
           },
           { status: 402 },
         )
@@ -167,6 +147,10 @@ export async function POST(req: NextRequest) {
     if (insertErr) {
       return NextResponse.json({ ok: false, error: insertErr.message }, { status: 500 })
     }
+
+    void trackEvent({ userId, name: 'GRI_COMPLETED', entityType: 'gri_assessment', entityId: inserted?.id ?? null, metadata: { gri_index } })
+    // The finished test supersedes its draft (best-effort: table may predate 072).
+    await sb.from('gri_assessment_drafts').delete().eq('user_id', userId)
 
     return NextResponse.json({
       ok: true,

@@ -3,7 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { createServiceClient } from '@/lib/supabase-service'
-import { getGigaActor } from '@/lib/admin/giga-actor'
+import { requireGiga } from '@/lib/admin/giga-actor'
 import { logAudit } from '@/lib/audit'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -33,10 +33,9 @@ const patchSchema = z
  * diff of the touched fields.
  */
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
-  const actor = await getGigaActor(req)
-  if (!actor) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-  }
+  const guard = await requireGiga(req, 'insights.moderate')
+  if (guard.response) return guard.response
+  const actor = guard.actor
   if (!UUID_RE.test(params.id)) {
     return NextResponse.json({ error: 'invalid id' }, { status: 400 })
   }

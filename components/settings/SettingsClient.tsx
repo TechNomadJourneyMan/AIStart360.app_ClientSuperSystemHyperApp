@@ -39,6 +39,15 @@ type TabId = (typeof TABS)[number]['id']
 
 export function SettingsClient({ initial, preferences }: { initial: SettingsInitial; preferences: Prefs }) {
   const [tab, setTab] = useState<TabId>('profile')
+  const [mfaRequired, setMfaRequired] = useState(false)
+
+  // Deep link from the panel gate: /settings?tab=security&mfa=required
+  useEffect(() => {
+    const sp = new URLSearchParams(window.location.search)
+    const wanted = sp.get('tab')
+    if (wanted && TABS.some((t) => t.id === wanted)) setTab(wanted as TabId)
+    if (sp.get('mfa') === 'required') setMfaRequired(true)
+  }, [])
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
@@ -62,6 +71,11 @@ export function SettingsClient({ initial, preferences }: { initial: SettingsInit
       </div>
 
       <div className="lg:col-span-3 space-y-6" role="tabpanel">
+        {mfaRequired && tab === 'security' && (
+          <div role="alert" className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+            Для входа в панель управления нужна двухфакторная защита. Включите 2FA ниже и снова откройте панель.
+          </div>
+        )}
         {tab === 'profile' && <ProfilePanel initial={initial} />}
         {tab === 'security' && <SecurityPanel />}
         {tab === 'notifications' && <NotificationsPanel initial={preferences?.notifications} />}

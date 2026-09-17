@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
-import { getGigaActor } from '@/lib/admin/giga-actor'
+import { requireGiga } from '@/lib/admin/giga-actor'
 import { logAudit } from '@/lib/audit'
 import {
   getAutoApproveClients,
@@ -18,7 +18,8 @@ import {
  *   access_gates — включить тарифные гейты (полный GRI / AI-чат / PDF / бенчмарки).
  */
 export async function GET(req: NextRequest) {
-  if (!(await getGigaActor(req))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  const guard = await requireGiga(req, 'users.manage')
+  if (guard.response) return guard.response
   const [autoApproveClients, accessGates, insightModeration] = await Promise.all([
     getAutoApproveClients(),
     getAccessGatesEnabled(),
@@ -28,8 +29,9 @@ export async function GET(req: NextRequest) {
 }
 
 export async function PUT(req: NextRequest) {
-  const actor = await getGigaActor(req)
-  if (!actor) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  const guard = await requireGiga(req, 'settings.manage')
+  if (guard.response) return guard.response
+  const actor = guard.actor
 
   const body = (await req.json().catch(() => null)) as {
     autoApproveClients?: unknown
@@ -49,6 +51,11 @@ export async function PUT(req: NextRequest) {
   }
 
   try {
+    const [beforeAuto, beforeGates, beforeModeration] = await Promise.all([
+      getAutoApproveClients(),
+      getAccessGatesEnabled(),
+      getInsightModerationEnabled(),
+    ])
     if (typeof body.autoApproveClients === 'boolean') {
       await setAutoApproveClients(body.autoApproveClients, actor.id)
     }
@@ -69,6 +76,11 @@ export async function PUT(req: NextRequest) {
       action: 'settings.access_changed',
       performedBy: actor.id,
       diff: {
+        before: {
+          ...(typeof body.autoApproveClients === 'boolean' ? { autoApproveClients: beforeAuto } : {}),
+          ...(typeof body.accessGates === 'boolean' ? { accessGates: beforeGates } : {}),
+          ...(typeof body.insightModeration === 'boolean' ? { insightModeration: beforeModeration } : {}),
+        },
         after: {
           ...(typeof body.autoApproveClients === 'boolean' ? { autoApproveClients: body.autoApproveClients } : {}),
           ...(typeof body.accessGates === 'boolean' ? { accessGates: body.accessGates } : {}),
@@ -86,6 +98,6 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({ ok: true, autoApproveClients, accessGates, insightModeration })
   } catch (e) {
     console.error('[giga-admin/settings/access]', e)
-    return NextResponse.json({ error: 'save_failed' }, { status: 500 })
+    return NextResponse.json({ error: 'Не удалось сохранить настройку. Попробуйте ещё раз; если ошибка повторяется — проверьте журнал сервера.' }, { status: 500 })
   }
 }

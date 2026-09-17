@@ -40,6 +40,7 @@ function makeSbStub({
   profiles = [] as any[],
   companies = [] as any[],
   diagnostics = [] as any[],
+  gri = [] as any[],
   profilesError = null as any,
 }) {
   return {
@@ -64,6 +65,13 @@ function makeSbStub({
         return {
           select: () => ({
             order: () => Promise.resolve({ data: diagnostics, error: null }),
+          }),
+        }
+      }
+      if (table === 'gri_assessments') {
+        return {
+          select: () => ({
+            eq: () => Promise.resolve({ data: gri, error: null }),
           }),
         }
       }
@@ -126,6 +134,19 @@ describe('GET /api/giga-admin/clients — RLS bypass regression', () => {
     expect(clients[0].pulseMetrics.churnLevel).toBe('low')
     expect(clients[0].pulseMetrics.churnProb).toBe(35)
     expect(clients[0].pulseMetrics.riskScore).toBe(20)
+  })
+
+  it('attaches the current GRI assessment (0..10) mapped onto the 7 blocks', async () => {
+    state.stub = makeSbStub({
+      profiles: [
+        { id: 'u1', email: 'a@x.io', full_name: 'Anna', organization: 'Acme', status: 'approved', created_at: '2026-01-01' },
+        { id: 'u2', email: 'b@x.io', full_name: 'Boris', organization: 'Beta', status: 'approved', created_at: '2026-01-02' },
+      ],
+      gri: [{ user_id: 'u1', gri_index: '6.40', section_avgs: { team: 5.5, 'owner-readiness': 8 }, created_at: '2026-03-03' }],
+    })
+    const { clients } = await (await GET(makeReq())).json()
+    expect(clients[0].latestGri).toMatchObject({ score: 6.4, teamScore: 5.5, founderScore: 8, productScore: 0, calculatedAt: '2026-03-03' })
+    expect(clients[1].latestGri).toBeNull()
   })
 
   it('returns [] (not error) when there are truly no approved profiles', async () => {

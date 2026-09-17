@@ -3,6 +3,7 @@ import { createServerClient } from '@supabase/ssr'
 import type { NextRequest } from 'next/server'
 import { createServerClient as createSupabaseAdmin } from '@/lib/supabase-server'
 import { prisma } from '@/lib/db'
+import { trackEvent } from '@/lib/events/track'
 import { safeInternalPath } from '@/lib/safe-redirect'
 
 export async function GET(request: NextRequest) {
@@ -33,6 +34,7 @@ export async function GET(request: NextRequest) {
 
     const { data: sessionData } = await supabase.auth.exchangeCodeForSession(code)
     const user = sessionData?.user
+    if (user) void trackEvent({ userId: user.id, name: 'LOGIN', metadata: { method: 'oauth' } })
 
     if (user) {
       // Check if profile already exists

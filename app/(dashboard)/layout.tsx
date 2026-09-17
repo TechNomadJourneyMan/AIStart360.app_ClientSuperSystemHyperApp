@@ -1,9 +1,12 @@
+import ActivityTracker from '@/components/analytics/ActivityTracker'
+import ImpersonationBanner from '@/components/impersonation/ImpersonationBanner'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { Header } from '@/components/layout/Header'
 import { MobileNav } from '@/components/layout/MobileNav'
 import { DashboardShell } from '@/components/layout/DashboardShell'
 import { MascotLauncher } from '@/components/assistant/mascot/MascotLauncher'
 import { NotificationsBellSync } from '@/components/notifications/NotificationsBellSync'
+import AnnouncementBar from '@/components/platform/AnnouncementBar'
 
 export default function DashboardLayout({
   children,
@@ -12,6 +15,8 @@ export default function DashboardLayout({
 }) {
   return (
     <div className="min-h-screen bg-background flex">
+      <ActivityTracker />
+      <ImpersonationBanner />
       {/* Sidebar — скрыт на мобильных */}
       <Sidebar />
 
@@ -22,6 +27,7 @@ export default function DashboardLayout({
           {/* pb reserves space for the floating assistant FAB (bottom-6) and the
               mobile bottom nav so page action rows never sit under them. */}
           <div className="px-4 md:px-6 lg:px-8 pt-6 pb-28 lg:pb-24 max-w-[1600px] mx-auto">
+            <AnnouncementBar className="mb-4" />
             {children}
           </div>
         </main>

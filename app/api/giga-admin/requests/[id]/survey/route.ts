@@ -3,16 +3,11 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { prisma } from '@/lib/db'
-import { isPrivilegedViewer } from '@/lib/expert-auth'
-import { GIGA_COOKIE_NAME, verifyGigaRole } from '@/lib/giga-cookie'
-import { getGigaActor } from '@/lib/admin/giga-actor'
+import { authorizeUserDataRead, resolveRequestUserId } from '@/lib/admin/user-data-access'
+import { requireGiga, staffRoleOfUser } from '@/lib/admin/giga-actor'
+import { canManageTarget } from '@/lib/admin/rbac'
+import { adminEditSurvey, SurveyEditError } from '@/lib/admin/survey-admin'
 import { createServiceClient } from '@/lib/supabase-service'
-import { logAudit } from '@/lib/audit'
-
-// A2b: giga access is granted only by the HMAC-SIGNED `aistart360_giga` cookie.
-function gigaRole(req: NextRequest): string | null {
-  return verifyGigaRole(req.cookies.get(GIGA_COOKIE_NAME)?.value)
-}
 
 /**
  * GET /api/giga-admin/requests/[id]/survey
@@ -23,46 +18,21 @@ export async function GET(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  // Read access: signed super_admin giga cookie OR Supabase session with expert/admin role
-  const cookieRole = gigaRole(req)
-  if (!(await isPrivilegedViewer(cookieRole))) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-  }
-
-  const supabase = createServerClient()
-  let userId: string | null = null
-
-  // 1. Try Prisma
-  try {
-    const adminRequest = await prisma.adminRequest.findUnique({
-      where: { id: params.id },
-    })
-    if (adminRequest) {
-      const payload = (adminRequest.payload ?? {}) as Record<string, string>
-      userId = payload.userId ?? null
+  const access = await authorizeUserDataRead(req, ['survey.view', 'users.sensitive'], async (sb) => {
+    // Prisma admin_requests first (legacy), then the Supabase table / profile id.
+    try {
+      const adminRequest = await prisma.adminRequest.findUnique({ where: { id: params.id } })
+      const fromPrisma = ((adminRequest?.payload ?? {}) as Record<string, string>).userId
+      if (fromPrisma) return fromPrisma
+    } catch {
+      // Prisma unavailable — fall through to Supabase
     }
-  } catch {
-    // Prisma unavailable — fall through to Supabase
-  }
-
-  // 2. Supabase admin_requests fallback
-  if (!userId) {
-    const { data: sbRow } = await supabase
-      .from('admin_requests')
-      .select('payload')
-      .eq('id', params.id)
-      .maybeSingle()
-
-    if (sbRow) {
-      const payload = (sbRow.payload ?? {}) as Record<string, string>
-      userId = payload.userId ?? null
-    }
-  }
-
-  // 3. Last resort: params.id is itself the user UUID (orphaned profile shown as request)
-  if (!userId) {
-    userId = params.id
-  }
+    return resolveRequestUserId(sb, params.id)
+  })
+  if ('response' in access) return access.response
+  const supabase = access.sb
+  const userId = access.userId
+  if (!userId) return NextResponse.json({ ok: true, data: { answers: {}, company: null, completedSteps: [] } })
 
   try {
     // Fetch survey answers
@@ -115,10 +85,9 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  const actor = await getGigaActor(req)
-  if (!actor) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-  }
+  const guard = await requireGiga(req, 'survey.edit')
+  if (guard.response) return guard.response
+  const actor = guard.actor
 
   try {
     // SERVICE client: the giga panel has no Supabase session (auth.uid() is
@@ -131,57 +100,21 @@ export async function PATCH(
       return NextResponse.json({ error: 'answers required' }, { status: 400 })
     }
 
-    // Resolve userId
-    let userId: string | null = null
-    const { data: arRow } = await sb
-      .from('admin_requests')
-      .select('payload')
-      .eq('id', params.id)
-      .maybeSingle()
-
-    if (arRow) {
-      userId = (arRow.payload as Record<string, string>)?.userId ?? null
-    } else {
-      userId = params.id
-    }
-
+    const userId = await resolveRequestUserId(sb, params.id)
     if (!userId) {
       return NextResponse.json({ error: 'Cannot resolve userId' }, { status: 400 })
     }
-
-    // Upsert each answer
-    const rows = Object.entries(body.answers).map(([question_key, value]) => {
-      const stepMatch = question_key.match(/^s(\d)_/)
-      const step = stepMatch ? Number(stepMatch[1]) : 1
-      return {
-        user_id: userId!,
-        question_key,
-        step,
-        answer: { value },
-      }
-    })
-
-    const { error } = await sb
-      .from('survey_answers')
-      .upsert(rows, { onConflict: 'user_id,question_key' })
-
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
+    const target = await staffRoleOfUser(userId)
+    if (!canManageTarget(actor.role, target.staffRole)) {
+      return NextResponse.json({ error: 'Недостаточно прав для этого пользователя' }, { status: 403 })
     }
 
-    // Admin edited a USER's questionnaire — always audited with a diff of the
-    // touched keys (ТЗ §5.3: правка анкеты админом обязана оставлять след).
-    await logAudit({
-      entityType: 'user',
-      entityId: userId,
-      action: 'user.survey_edited',
-      performedBy: actor.id,
-      diff: { after: { keys: Object.keys(body.answers) }, request: params.id, actorKind: actor.kind },
-      ipAddress: req.headers.get('x-forwarded-for') ?? undefined,
-    })
-
-    return NextResponse.json({ ok: true, updated: rows.length })
+    // Old → new diff, history attribution and the mandatory audit entry live in
+    // adminEditSurvey (shared with GIGA-CRM User 360).
+    const result = await adminEditSurvey(actor, userId, body.answers as Record<string, unknown>, req)
+    return NextResponse.json({ ok: true, updated: result.updated, deleted: result.deleted, ignored: result.ignored })
   } catch (error) {
+    if (error instanceof SurveyEditError) return NextResponse.json({ error: error.message }, { status: error.status })
     console.error('[giga-admin/requests/[id]/survey] PATCH error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }

@@ -1,5 +1,6 @@
 'use client'
 
+import { flushEvents, track } from '@/lib/events/client'
 import { create } from 'zustand'
 import { createClient } from '@/lib/supabase/client'
 import { isSupabaseEmailNotConfirmedError } from '@/lib/supabase/auth-errors'
@@ -185,6 +186,8 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
       if (!data.user) throw new Error('USER_NOT_FOUND')
 
       const appUser = await buildUserFromSession(data.user)
+      track('LOGIN', { metadata: { method: 'password' } })
+      flushEvents()
       set({ user: appUser, role: appUser.role, isLoading: false, error: null })
     } catch (err: unknown) {
       const code = err instanceof Error ? err.message : 'UNKNOWN'
@@ -287,6 +290,11 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
       }
     }
 
+    // Record the logout while the session still exists.
+    try {
+      track('LOGOUT')
+      flushEvents()
+    } catch {}
     await supabase.auth.signOut()
 
     // Clear legacy cookies

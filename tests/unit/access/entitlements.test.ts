@@ -54,3 +54,13 @@ describe('entitlements', () => {
     expect(normalizeOverrides(null)).toEqual({})
   })
 })
+
+describe('free GRI allowance from platform settings', () => {
+  it('overrides the free limit, never pro', () => {
+    expect(entitlementsFor('free', undefined, 3).gri_full_limit).toBe(3)
+    expect(entitlementsFor('free', undefined, 0).gri_full_limit).toBe(0)
+    expect(entitlementsFor('pro', undefined, 0).gri_full_limit).toBe(Number.POSITIVE_INFINITY)
+    expect(entitlementsFor('free', undefined, -1).gri_full_limit).toBe(1)
+    expect(entitlementsFor('free', undefined, Number.NaN).gri_full_limit).toBe(1)
+  })
+})

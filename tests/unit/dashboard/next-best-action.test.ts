@@ -59,3 +59,11 @@ describe('pickNextBestAction — priority chain', () => {
     expect(a.href).toBe('/pulse')
   })
 })
+
+describe('pickNextBestAction — empty survey', () => {
+  it('asks to start, not to finish, when nothing is answered', () => {
+    const a = pickNextBestAction({ completionPct: 0, nextSectionLabel: 'О компании', hasDiagnostic: false, overdueClients: 0, criticalBlockLabel: null, griTopLimit: null })
+    expect(a.title).toBe('Заполните анкету')
+    expect(a.ctaLabel).toBe('Начать анкету')
+  })
+})

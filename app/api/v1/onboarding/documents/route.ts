@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { notifyAdmins } from '@/lib/notifications'
 import { inngest } from '@/lib/inngest'
+import { trackEvent } from '@/lib/events/track'
 import { isSupabaseStorageUrl } from '@/lib/upload-url'
 
 // GET /api/v1/onboarding/documents — the caller's own documents (session user).
@@ -64,6 +65,8 @@ export async function POST(req: NextRequest) {
       .single()
 
     if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
+
+    void trackEvent({ userId: user_id, name: 'DOCUMENT_UPLOADED', entityType: 'document', entityId: doc?.id ?? null, metadata: { doc_type, mime_type: mime_type ?? null } })
 
     // Notify admins about file upload (fire-and-forget)
     notifyAdmins('file_uploaded', {

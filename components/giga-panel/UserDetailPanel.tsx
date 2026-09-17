@@ -6,6 +6,9 @@ import {
   Paperclip, File, FileBarChart, FileSpreadsheet,
 } from 'lucide-react'
 import { SURVEY_LABELS, SURVEY_STEP_LABELS, formatSurveyValue, getStepFromKey } from '@/lib/survey-labels'
+import { UserInsightsBlock } from './UserInsightsBlock'
+import { ImpersonateDialog } from './user360/ImpersonateDialog'
+import { useStaff } from './StaffContext'
 
 // ─── Shared user detail panel (survey + diagnostics + documents + actions) ────
 // Used in: RequestsModule, CRMModule, ClientsModule
@@ -40,7 +43,7 @@ const ACCESS_FEATURES = [
   { key: 'benchmarks', label: 'Бенчмарки' },
 ] as const
 
-function AccessControls({ userId }: { userId: string }) {
+export function AccessControls({ userId }: { userId: string }) {
   const [tier, setTier] = useState<'free' | 'pro' | null>(null)
   const [flags, setFlags] = useState<Record<string, boolean>>({})
   const [unavailable, setUnavailable] = useState(false)
@@ -164,7 +167,8 @@ export function UserDetailPanel({ userId, readOnly = false }: Props) {
   const [editing, setEditing] = useState(false)
   const [editValues, setEditValues] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState(false)
-  const [impersonating, setImpersonating] = useState(false)
+  const [impersonateOpen, setImpersonateOpen] = useState(false)
+  const { can } = useStaff()
 
   useEffect(() => {
     let cancelled = false
@@ -235,31 +239,6 @@ export function UserDetailPanel({ userId, readOnly = false }: Props) {
     setSaving(false)
   }
 
-  const getImpersonateUrl = async (redirectTo?: string): Promise<string | null> => {
-    try {
-      const res = await fetch('/api/giga-admin/impersonate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId, redirectTo }),
-      })
-      const d = await res.json()
-      return d.url ?? null
-    } catch { return null }
-  }
-
-  const openAsUser = async () => {
-    setImpersonating(true)
-    const url = await getImpersonateUrl()
-    if (url) window.open(url, '_blank')
-    setImpersonating(false)
-  }
-
-  const openOnboarding = async () => {
-    setImpersonating(true)
-    const url = await getImpersonateUrl('/client/onboarding')
-    if (url) window.open(url, '_blank')
-    setImpersonating(false)
-  }
 
   if (loading) {
     return (
@@ -277,19 +256,22 @@ export function UserDetailPanel({ userId, readOnly = false }: Props) {
       {/* Доступ и тариф (Фаза 6C) — только для полноправной админки */}
       {!readOnly && <AccessControls userId={userId} />}
 
+      {/* GIGA-CRM: заполненность анкеты, GRI и журналы (API только для giga-админа) */}
+      {!readOnly && <UserInsightsBlock userId={userId} />}
+
       {/* Action buttons — hidden in read-only mode */}
       {!readOnly && (
         <div className="flex items-center gap-2 flex-wrap">
-          <button onClick={openAsUser} disabled={impersonating}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium bg-blue-500/10 border border-blue-500/20 text-blue-300 hover:bg-blue-500/20 transition-all disabled:opacity-50">
-            {impersonating ? <Loader2 size={12} className="animate-spin" /> : <ExternalLink size={12} />}
-            Открыть портал
+          <button onClick={() => setImpersonateOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium bg-amber-500/10 border border-amber-500/20 text-amber-300 hover:bg-amber-500/20 transition-all">
+            <ExternalLink size={12} />
+            Открыть кабинет от имени
           </button>
-          <button onClick={openOnboarding} disabled={impersonating}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium bg-violet-500/10 border border-violet-500/20 text-violet-300 hover:bg-violet-500/20 transition-all disabled:opacity-50">
-            {impersonating ? <Loader2 size={12} className="animate-spin" /> : <FileText size={12} />}
-            Заполнить анкету от лица
-          </button>
+          <a href={`/admin-giga-panel/users/${userId}`}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium bg-blue-500/10 border border-blue-500/20 text-blue-300 hover:bg-blue-500/20 transition-all">
+            <FileText size={12} />
+            User 360
+          </a>
           {!editing && (
             <button onClick={startEditing}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium bg-amber-500/10 border border-amber-500/20 text-amber-300 hover:bg-amber-500/20 transition-all">
@@ -312,6 +294,10 @@ export function UserDetailPanel({ userId, readOnly = false }: Props) {
             </>
           )}
         </div>
+      )}
+
+      {!readOnly && (
+        <ImpersonateDialog open={impersonateOpen} onClose={() => setImpersonateOpen(false)} userId={userId} userLabel={String(data?.company?.name ?? userId)} allowEdit={can('impersonate.edit')} />
       )}
 
       {/* Diagnostics */}

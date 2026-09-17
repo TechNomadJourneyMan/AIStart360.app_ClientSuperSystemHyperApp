@@ -58,13 +58,18 @@ export function normalizeOverrides(raw: unknown): Partial<Record<Feature, boolea
 export function entitlementsFor(
   tier: Tier,
   overrides?: Partial<Record<Feature, boolean>>,
+  /** Free-tier full-GRI allowance from platform settings (default 1). */
+  freeGriLimit?: number,
 ): Entitlements {
   const base = TIER_BASE[tier]
   const o = overrides ?? {}
   return {
     tier,
     gri_full: o.gri_full ?? base.gri_full,
-    gri_full_limit: base.gri_full_limit,
+    gri_full_limit:
+      tier === 'free' && typeof freeGriLimit === 'number' && Number.isFinite(freeGriLimit) && freeGriLimit >= 0
+        ? Math.floor(freeGriLimit)
+        : base.gri_full_limit,
     pdf_export: o.pdf_export ?? base.pdf_export,
     ai_chat: o.ai_chat ?? base.ai_chat,
     benchmarks: o.benchmarks ?? base.benchmarks,

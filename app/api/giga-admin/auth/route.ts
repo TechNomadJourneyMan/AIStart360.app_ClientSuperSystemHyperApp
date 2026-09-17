@@ -10,6 +10,7 @@ import {
   GIGA_TOKEN_MAX_AGE_SECONDS,
 } from '@/lib/giga-cookie'
 import { logAudit } from '@/lib/audit'
+import { getSetting } from '@/lib/settings/store'
 
 // Brute-force protection for the single shared super-admin password.
 // Uses Upstash when configured; otherwise a small in-memory fallback so the
@@ -148,6 +149,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: body.error }, { status: body.status })
   }
 
+  if (!(await getSetting('break_glass_enabled'))) {
+    return NextResponse.json({ error: 'Вход по общему паролю выключен. Войдите через личный аккаунт.' }, { status: 403 })
+  }
+
   const adminPassword = process.env.GIGA_ADMIN_PASSWORD
   if (
     !adminPassword ||
@@ -205,6 +210,8 @@ export async function POST(req: NextRequest) {
 export async function DELETE(req: NextRequest) {
   const response = NextResponse.json({ ok: true })
   response.cookies.set(GIGA_COOKIE_NAME, '', { path: '/', maxAge: 0 })
+  // Personal staff cookie issued during impersonation goes too.
+  response.cookies.set('aistart360_giga_staff', '', { path: '/', maxAge: 0 })
   await logAudit({
     entityType: 'system',
     entityId: 'giga_panel',

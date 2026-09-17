@@ -10,7 +10,7 @@ describe('roleLandingPath (FE-06)', () => {
   })
 
   it('routes an approved client to Point A and everyone else to the waiting room', () => {
-    expect(roleLandingPath('client', 'approved')).toBe('/client/point-a')
+    expect(roleLandingPath('client', 'approved')).toBe('/client/home')
     expect(roleLandingPath('client', 'pending_approval')).toBe('/client/waiting-room')
     expect(roleLandingPath('client', 'rejected')).toBe('/client/waiting-room')
     expect(roleLandingPath('client')).toBe('/client/waiting-room')

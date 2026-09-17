@@ -22,6 +22,8 @@ vi.mock('@/lib/audit', () => ({ logAudit: (...a: unknown[]) => audit.fn(...a) })
 vi.mock('@/lib/supabase-service', () => ({
   createServiceClient: () => ({
     from: () => ({
+      // Target-rank check (forbidTarget): the user is not staff.
+      select: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: null, error: null }) }) }),
       update: (patch: Record<string, unknown>) => {
         db.lastPatch = patch
         return {
