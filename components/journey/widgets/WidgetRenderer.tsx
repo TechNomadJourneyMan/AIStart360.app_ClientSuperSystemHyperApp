@@ -1,366 +1,522 @@
 'use client'
 
-// Dispatches each widget kind to its own presenter. Keeping presenters
-// small and colocated makes it cheap to add a new widget kind — the AI
-// just returns a new `kind` string, we add the case here, done.
+import type { LucideIcon } from 'lucide-react'
+import {
+  Activity,
+  BadgeCheck,
+  BookOpen,
+  BriefcaseBusiness,
+  CircleDollarSign,
+  CircleHelp,
+  Database,
+  ExternalLink,
+  FileText,
+  Goal,
+  Landmark,
+  Megaphone,
+  Newspaper,
+  PlugZap,
+  Route,
+  ShieldAlert,
+  SquareCheckBig,
+  UsersRound,
+} from 'lucide-react'
+import { cn } from '@/lib/utils'
+import type { JourneyWidgetKind, JourneyWidgetView } from '../model'
 
-import type {
-  Widget,
-  QuestionWidget,
-  UploadPromptWidget,
-  InsightCardWidget,
-  CrmCheckWidget,
-  StackAuditWidget,
-  VideoRecWidget,
-  NewsDigestWidget,
-  RemindersRailWidget,
-  MetricPeekWidget,
-  BenchmarkStripWidget,
-  RiskAlertWidget,
-  QuickWinWidget,
-  CustomModuleWidget,
-} from '@/lib/journey/state'
+type UnknownRecord = Record<string, unknown>
 
-export interface WidgetRendererProps {
-  w: Widget
-  /** Send an answer back to the chat (question options, crm picks, …) */
-  onAnswer?: (text: string) => void
+export const WIDGET_META: Record<
+  JourneyWidgetKind,
+  { icon: LucideIcon; shortLabel: string }
+> = {
+  business_passport: { icon: BriefcaseBusiness, shortLabel: 'Паспорт' },
+  business_health: { icon: Activity, shortLabel: 'Здоровье' },
+  point_b_goals: { icon: Goal, shortLabel: 'Цели' },
+  roadmap_actions: { icon: Route, shortLabel: 'Путь' },
+  crm_readiness: { icon: Database, shortLabel: 'CRM' },
+  sales_funnel: { icon: Landmark, shortLabel: 'Продажи' },
+  marketing_growth: { icon: Megaphone, shortLabel: 'Маркетинг' },
+  finance_cashflow: { icon: CircleDollarSign, shortLabel: 'Финансы' },
+  operations_team: { icon: UsersRound, shortLabel: 'Операции' },
+  risks_opportunities: { icon: ShieldAlert, shortLabel: 'Риски' },
+  news_digest: { icon: Newspaper, shortLabel: 'Новости' },
+  tasks_reminders: { icon: SquareCheckBig, shortLabel: 'Задачи' },
+  learning_resources: { icon: BookOpen, shortLabel: 'Материалы' },
+  knowledge_base: { icon: FileText, shortLabel: 'Знания' },
+  external_sources: { icon: PlugZap, shortLabel: 'Источники' },
+  domain_metrics: { icon: Activity, shortLabel: 'Метрики' },
+  domain_process: { icon: Route, shortLabel: 'Процесс' },
 }
 
-export function WidgetRenderer({ w, onAnswer }: WidgetRendererProps) {
-  switch (w.kind) {
-    case 'question':        return <Question w={w} onAnswer={onAnswer} />
-    case 'upload_prompt':   return <UploadPrompt w={w} />
-    case 'insight_card':    return <InsightCard w={w} />
-    case 'crm_check':       return <CrmCheck w={w} />
-    case 'stack_audit':     return <StackAudit w={w} />
-    case 'video_rec':       return <VideoRec w={w} />
-    case 'news_digest':     return <NewsDigest w={w} />
-    case 'reminders_rail':  return <RemindersRail w={w} />
-    case 'metric_peek':     return <MetricPeek w={w} />
-    case 'benchmark_strip': return <BenchmarkStrip w={w} />
-    case 'risk_alert':      return <RiskAlert w={w} />
-    case 'quick_win':       return <QuickWin w={w} />
-    case 'custom_module':   return <CustomModule w={w} />
+export function WidgetRenderer({ widget }: { widget: JourneyWidgetView }) {
+  switch (widget.kind) {
+    case 'business_passport':
+      return <BusinessPassport data={widget.data} />
+    case 'business_health':
+      return <BusinessHealth data={widget.data} />
+    case 'point_b_goals':
+      return <Goals data={widget.data} />
+    case 'roadmap_actions':
+      return <Roadmap data={widget.data} />
+    case 'crm_readiness':
+      return <CrmReadiness data={widget.data} />
+    case 'sales_funnel':
+      return <MetricRows data={widget.data} empty="Добавьте этапы и KPI воронки." />
+    case 'marketing_growth':
+      return <Marketing data={widget.data} />
+    case 'finance_cashflow':
+      return <MetricsAndQuestions data={widget.data} empty="Загрузите финансовый отчёт или назовите ключевые цифры." />
+    case 'operations_team':
+      return <Operations data={widget.data} />
+    case 'risks_opportunities':
+      return <Risks data={widget.data} />
+    case 'news_digest':
+      return <VerifiedLinks data={widget.data} kind="news" />
+    case 'tasks_reminders':
+      return <Tasks data={widget.data} />
+    case 'learning_resources':
+      return <VerifiedLinks data={widget.data} kind="learning" />
+    case 'knowledge_base':
+      return <KnowledgeBase data={widget.data} />
+    case 'external_sources':
+      return <ExternalSources data={widget.data} />
+    case 'domain_metrics':
+      return <DomainMetrics data={widget.data} />
+    case 'domain_process':
+      return <DomainProcess data={widget.data} />
   }
 }
 
-// ── question ─────────────────────────────────────────────────────────
+function BusinessPassport({ data }: { data: UnknownRecord }) {
+  const facts = records(data.facts).filter((fact) => fact.status !== 'rejected')
+  if (!facts.length) return <EmptyHint>Подтверждённые факты появятся после разговора.</EmptyHint>
 
-function Question({ w, onAnswer }: { w: QuestionWidget; onAnswer?: (text: string) => void }) {
   return (
-    <div>
-      <p className="text-sm text-on-surface leading-relaxed mb-3">{w.prompt}</p>
-      {w.options && (
-        <div className="flex flex-wrap gap-1.5">
-          {w.options.map((o) => (
-            <button
-              key={o}
-              onClick={() => onAnswer?.(o)}
-              className="text-[11px] px-2.5 py-1.5 rounded-lg bg-surface-container-low border border-white/[0.08] text-on-surface hover:border-primary/40 hover:text-primary transition-colors active:scale-95"
-            >
-              {o}
-            </button>
-          ))}
+    <dl className="space-y-2">
+      {facts.slice(0, 5).map((fact, index) => (
+        <div key={string(fact.id) ?? index} className="flex items-start justify-between gap-4 border-b border-white/5 pb-2 last:border-0 last:pb-0">
+          <dt className="min-w-0 text-xs text-on-surface-variant">
+            {string(fact.label) ?? string(fact.key) ?? 'Факт'}
+          </dt>
+          <dd className="max-w-[58%] text-right text-xs font-medium text-on-surface line-clamp-2">
+            {scalar(fact.value) ?? '—'}
+          </dd>
         </div>
-      )}
-    </div>
+      ))}
+    </dl>
   )
 }
 
-// ── upload_prompt ────────────────────────────────────────────────────
+function BusinessHealth({ data }: { data: UnknownRecord }) {
+  const dimensions = records(data.dimensions)
+  if (!dimensions.length) {
+    return <EmptyHint>Недостаточно данных для честной оценки. AI запросит недостающие метрики.</EmptyHint>
+  }
 
-function UploadPrompt({ w }: { w: UploadPromptWidget }) {
-  return (
-    <div>
-      <p className="text-sm text-on-surface mb-3">{w.reason}</p>
-      <label className="block cursor-pointer">
-        <input type="file" className="hidden" multiple />
-        <div className="border border-dashed border-white/[0.12] rounded-lg p-4 text-center text-xs text-on-surface-variant hover:border-primary/40 hover:text-primary hover:bg-primary/5 transition-all">
-          <span className="material-symbols-outlined text-2xl block mb-1 text-primary">upload_file</span>
-          Перетащи файл или клик
-        </div>
-      </label>
-      {w.suggestions && w.suggestions.length > 0 && (
-        <p className="text-[10px] text-on-surface-variant/60 mt-2">
-          Годится: {w.suggestions.join(', ')}
-        </p>
-      )}
-    </div>
-  )
-}
-
-// ── insight_card ─────────────────────────────────────────────────────
-
-function InsightCard({ w }: { w: InsightCardWidget }) {
-  const bar =
-    w.severity === 'critical' ? 'bg-error'
-    : w.severity === 'warn'   ? 'bg-tertiary-container'
-    : w.severity === 'ok'     ? 'bg-primary'
-                              : 'bg-on-surface-variant/40'
-  return (
-    <div>
-      <div className={`h-0.5 w-8 rounded-full ${bar} mb-2.5`} />
-      <p className="text-sm font-semibold text-on-surface leading-snug">{w.headline}</p>
-      <p className="text-xs text-on-surface-variant mt-2 leading-relaxed">{w.body}</p>
-      {w.quote && (
-        <div className="mt-3 p-2.5 rounded-lg bg-surface-container-low border border-white/[0.04]">
-          <p className="text-[11px] italic text-on-surface leading-relaxed">
-            «{w.quote.text}»
-          </p>
-          <p className="text-[10px] text-on-surface-variant/60 mt-1.5 font-mono">
-            — {w.quote.source}
-          </p>
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ── crm_check ────────────────────────────────────────────────────────
-
-function CrmCheck({ w }: { w: CrmCheckWidget }) {
-  return (
-    <div>
-      <p className="text-sm text-on-surface mb-3">
-        {w.hasCrm === null ? 'В чём сейчас ведёшь сделки?' : w.currentTool || '—'}
-      </p>
-      {w.hasCrm !== false && (
-        <div className="space-y-2">
-          {w.suggestions.map((s) => (
-            <div key={s.name} className="rounded-lg bg-surface-container-low border border-white/[0.04] p-2.5">
-              <p className="text-xs font-semibold text-on-surface">{s.name}</p>
-              <p className="text-[10px] text-on-surface-variant/70 mt-0.5">{s.whyFit}</p>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ── stack_audit ──────────────────────────────────────────────────────
-
-function StackAudit({ w }: { w: StackAuditWidget }) {
   return (
     <div className="space-y-3">
-      {w.categories.map((c) => (
-        <div key={c.label}>
-          <p className="text-[10px] font-mono uppercase tracking-wider text-on-surface-variant mb-1.5">
-            {c.label}
-          </p>
-          <div className="flex flex-wrap gap-1.5">
-            {c.all.map((tool) => {
-              const active = c.picked.includes(tool)
-              return (
-                <span
-                  key={tool}
-                  className={`text-[10px] px-2 py-1 rounded-md border ${
-                    active
-                      ? 'bg-primary/15 text-primary border-primary/30'
-                      : 'bg-surface-container-low text-on-surface-variant border-white/[0.06]'
-                  }`}
-                >
-                  {tool}
-                </span>
-              )
-            })}
-          </div>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-// ── video_rec ────────────────────────────────────────────────────────
-
-function VideoRec({ w }: { w: VideoRecWidget }) {
-  return (
-    <div className="space-y-2">
-      {w.videos.map((v) => (
-        <a
-          key={v.title}
-          href={v.url}
-          target="_blank"
-          rel="noreferrer"
-          className="flex gap-3 p-2 rounded-lg bg-surface-container-low border border-white/[0.04] hover:border-primary/30 transition-colors"
-        >
-          <div className="w-16 h-11 rounded bg-primary/10 border border-primary/20 flex items-center justify-center flex-shrink-0">
-            <span className="material-symbols-outlined text-primary text-lg">play_circle</span>
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="text-xs font-semibold text-on-surface leading-snug truncate">{v.title}</p>
-            <p className="text-[10px] text-on-surface-variant/70 mt-0.5">{v.durationMin} мин · {v.whyRelevant}</p>
-          </div>
-        </a>
-      ))}
-    </div>
-  )
-}
-
-// ── news_digest ──────────────────────────────────────────────────────
-
-function NewsDigest({ w }: { w: NewsDigestWidget }) {
-  return (
-    <div className="space-y-1.5">
-      {w.items.map((it) => (
-        <a
-          key={it.title}
-          href={it.url}
-          target="_blank"
-          rel="noreferrer"
-          className="block p-2 rounded-lg hover:bg-white/[0.03] transition-colors"
-        >
-          <p className="text-xs font-medium text-on-surface leading-snug line-clamp-2">{it.title}</p>
-          <p className="text-[10px] text-on-surface-variant/60 mt-1 font-mono">
-            {it.source} · {it.ago}
-          </p>
-        </a>
-      ))}
-    </div>
-  )
-}
-
-// ── reminders_rail ───────────────────────────────────────────────────
-
-function RemindersRail({ w }: { w: RemindersRailWidget }) {
-  return (
-    <ul className="space-y-2">
-      {w.items.map((it) => (
-        <li key={it.id} className="flex items-start gap-2.5">
-          <input
-            type="checkbox"
-            defaultChecked={it.done}
-            className="mt-0.5 w-3.5 h-3.5 accent-primary flex-shrink-0"
-          />
-          <div className="flex-1 min-w-0">
-            <p className={`text-xs leading-snug ${it.done ? 'line-through text-on-surface-variant/50' : 'text-on-surface'}`}>
-              {it.text}
-            </p>
-            <p className="text-[10px] text-on-surface-variant/60 mt-0.5">{it.due}</p>
-          </div>
-        </li>
-      ))}
-    </ul>
-  )
-}
-
-// ── metric_peek ──────────────────────────────────────────────────────
-
-function MetricPeek({ w }: { w: MetricPeekWidget }) {
-  const max = Math.max(...w.trend)
-  const min = Math.min(...w.trend)
-  const range = max - min || 1
-  const pts = w.trend
-    .map((y, i) => `${(i / (w.trend.length - 1)) * 100},${100 - ((y - min) / range) * 100}`)
-    .join(' ')
-  return (
-    <div>
-      <div className="flex items-baseline gap-2 mb-2">
-        <p className="font-mono text-2xl font-extrabold text-on-surface">{w.value}</p>
-        {w.delta && <p className="text-xs font-mono text-primary">{w.delta}</p>}
-      </div>
-      <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="w-full h-14">
-        <polyline points={pts} fill="none" stroke="currentColor" strokeWidth="2.5" className="text-primary" />
-      </svg>
-      <p className="text-[10px] text-on-surface-variant/60 mt-1 font-mono">{w.label}</p>
-    </div>
-  )
-}
-
-// ── benchmark_strip ──────────────────────────────────────────────────
-
-function BenchmarkStrip({ w }: { w: BenchmarkStripWidget }) {
-  const yourPct   = (w.your   / w.top) * 100
-  const medianPct = (w.median / w.top) * 100
-  return (
-    <div>
-      <div className="flex items-baseline justify-between mb-2">
-        <p className="text-xs text-on-surface-variant">{w.metric}</p>
-        <p className="font-mono text-lg font-bold text-on-surface">
-          {w.your}{w.unit}
-        </p>
-      </div>
-      <div className="relative h-2 rounded-full bg-surface-container-low overflow-visible">
-        <div className="absolute top-0 left-0 h-full bg-primary rounded-full" style={{ width: `${yourPct}%` }} />
-        <div className="absolute top-1/2 -translate-y-1/2 h-3 w-0.5 bg-on-surface" style={{ left: `${medianPct}%` }} title={`медиана ${w.median}${w.unit}`} />
-      </div>
-      <div className="flex justify-between text-[9px] font-mono text-on-surface-variant/60 mt-1.5">
-        <span>ты · {w.your}{w.unit}</span>
-        <span>медиана · {w.median}{w.unit}</span>
-        <span>топ · {w.top}{w.unit}</span>
-      </div>
-    </div>
-  )
-}
-
-// ── risk_alert ───────────────────────────────────────────────────────
-
-function RiskAlert({ w }: { w: RiskAlertWidget }) {
-  return (
-    <div className="rounded-lg border border-error/25 bg-error/5 p-3 -m-0.5">
-      <div className="flex items-start gap-2">
-        <span className="material-symbols-outlined text-error text-base mt-0.5">warning</span>
-        <div>
-          <p className="text-xs font-semibold text-error">Риск</p>
-          <p className="text-xs text-on-surface mt-1 leading-relaxed">{w.reason}</p>
-          <p className="text-xs text-on-surface-variant mt-2 leading-relaxed">
-            <span className="font-semibold text-on-surface">Что делать:</span> {w.suggestion}
-          </p>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ── custom_module ────────────────────────────────────────────────────
-// AI-composed free-form block. Body is plain text with light markdown
-// (**bold**, - bullets). We render minimally without a md library.
-
-function CustomModule({ w }: { w: CustomModuleWidget }) {
-  const lines = w.body.split('\n')
-  return (
-    <div className="space-y-1.5">
-      {lines.map((line, i) => {
-        const trimmed = line.trim()
-        if (!trimmed) return null
-        if (trimmed.startsWith('- ') || trimmed.startsWith('• ')) {
-          return (
-            <div key={i} className="flex items-start gap-2 text-xs text-on-surface-variant leading-relaxed">
-              <span className="w-1 h-1 rounded-full bg-primary mt-1.5 flex-shrink-0" />
-              <span>{stripBold(trimmed.slice(2))}</span>
-            </div>
-          )
-        }
+      {dimensions.slice(0, 5).map((dimension, index) => {
+        const score = number(dimension.score)
+        const value = Math.max(0, Math.min(100, score ?? 0))
         return (
-          <p key={i} className="text-xs text-on-surface leading-relaxed">
-            {stripBold(trimmed)}
-          </p>
+          <div key={string(dimension.id) ?? index} className="space-y-1">
+            <div className="flex justify-between text-xs">
+              <span className="truncate text-on-surface-variant">{string(dimension.label) ?? 'Область'}</span>
+              <span className="tabular-nums text-on-surface">{score === undefined ? 'Нет данных' : `${Math.round(value)}%`}</span>
+            </div>
+            <div className="h-1.5 overflow-hidden rounded-full bg-white/5">
+              {score !== undefined && <div className="h-full rounded-full bg-primary" style={{ width: `${value}%` }} />}
+            </div>
+            {string(dimension.basis) && <p className="text-[10px] text-pretty text-on-surface-variant">{string(dimension.basis)}</p>}
+          </div>
         )
       })}
     </div>
   )
 }
 
-function stripBold(s: string): string {
-  return s.replace(/\*\*(.+?)\*\*/g, '$1')
-}
-
-// ── quick_win ────────────────────────────────────────────────────────
-
-function QuickWin({ w }: { w: QuickWinWidget }) {
-  const effortLabel = w.effort === 'S' ? 'быстро' : w.effort === 'M' ? 'средне' : 'долго'
+function Goals({ data }: { data: UnknownRecord }) {
+  const goals = records(data.goals)
+  if (!goals.length) return <EmptyHint>Опишите измеримый результат и срок в диалоге.</EmptyHint>
   return (
-    <div className="rounded-lg border border-primary/25 bg-primary/5 p-3 -m-0.5">
-      <div className="flex items-center gap-2 mb-2">
-        <span className="material-symbols-outlined text-primary text-base">bolt</span>
-        <p className="text-xs font-semibold text-primary uppercase tracking-wider">Quick Win</p>
-        <span className="text-[10px] font-mono text-on-surface-variant ml-auto">{effortLabel}</span>
-      </div>
-      <p className="text-sm font-semibold text-on-surface leading-snug">{w.expectedImpact}</p>
-      <ol className="mt-3 space-y-1.5 list-decimal list-inside text-xs text-on-surface-variant leading-relaxed marker:text-primary">
-        {w.steps.map((s) => <li key={s}>{s}</li>)}
-      </ol>
+    <div className="space-y-3">
+      {[...goals].reverse().slice(0, 4).map((goal, index) => (
+        <div key={string(goal.id) ?? index}>
+          <p className="text-sm text-pretty text-on-surface">{string(goal.title) ?? 'Цель'}</p>
+          <dl className="mt-2 grid gap-2 text-[11px] sm:grid-cols-3 sm:gap-x-2">
+            {[
+              ['Показатель', scalar(goal.metric) ?? 'Не указан'],
+              ['Цель', scalar(goal.target) ?? 'Не указана'],
+              ['Срок', scalar(goal.deadline) ?? 'Не указан'],
+            ].map(([label, value]) => (
+              <div key={label} className="min-w-0">
+                <dt className="text-on-surface-variant">{label}</dt>
+                <dd className="mt-0.5 break-words font-medium text-primary">{value}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+      ))}
     </div>
   )
+}
+
+function Roadmap({ data }: { data: UnknownRecord }) {
+  const items = records(data.items)
+  if (!items.length) return <EmptyHint>Путь появится после подтверждения Точки A и цели.</EmptyHint>
+  return (
+    <ol className="space-y-3">
+      {items.slice(0, 4).map((item, index) => (
+        <li key={string(item.id) ?? index} className="flex gap-3">
+          <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[11px] font-semibold text-primary tabular-nums">
+            {index + 1}
+          </span>
+          <div className="min-w-0">
+            <p className="truncate text-xs font-medium text-on-surface">{string(item.title) ?? 'Этап'}</p>
+            {string(item.description) && (
+              <p className="mt-0.5 line-clamp-2 text-[11px] text-pretty text-on-surface-variant">
+                {string(item.description)}
+              </p>
+            )}
+            <p className="mt-0.5 text-[11px] text-on-surface-variant">
+              {string(item.horizon) ?? string(item.period) ?? 'Срок уточняется'}
+            </p>
+          </div>
+        </li>
+      ))}
+    </ol>
+  )
+}
+
+function CrmReadiness({ data }: { data: UnknownRecord }) {
+  const status = string(data.connectionStatus) ?? 'unknown'
+  const currentTool = string(data.currentTool)
+  const hasCrm = typeof data.hasCrm === 'boolean' ? data.hasCrm : null
+  const connected = status === 'connected'
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2 text-sm">
+        {connected ? (
+          <BadgeCheck className="size-4 text-primary" aria-hidden />
+        ) : (
+          <CircleHelp className="size-4 text-tertiary-container" aria-hidden />
+        )}
+        <span>
+          {connected
+            ? `CRM указана${currentTool ? `: ${currentTool}` : ''}`
+            : hasCrm === false
+              ? 'CRM пока нет'
+              : hasCrm === true
+                ? `CRM есть${currentTool ? `: ${currentTool}` : ''}, но источник не подключён`
+                : 'Есть ли у вас CRM?'}
+        </span>
+      </div>
+      {!connected && (
+        <p className="text-xs text-pretty text-on-surface-variant">
+          {string(data.nextStep) ?? 'После ответа AI сможет предложить корректный следующий шаг. Подключение не выполняется автоматически.'}
+        </p>
+      )}
+    </div>
+  )
+}
+
+function MetricRows({ data, empty }: { data: UnknownRecord; empty: string }) {
+  const metrics = records(data.metrics)
+  if (!metrics.length) return <EmptyHint>{empty}</EmptyHint>
+  return (
+    <dl className="grid grid-cols-2 gap-x-5 gap-y-3">
+      {metrics.slice(0, 6).map((metric, index) => (
+        <div key={string(metric.id) ?? index} className="min-w-0">
+          <dt className="truncate text-[11px] text-on-surface-variant">{string(metric.label) ?? 'Метрика'}</dt>
+          <dd className="mt-0.5 truncate text-sm font-semibold tabular-nums text-on-surface">
+            {scalar(metric.value) ?? '—'}
+          </dd>
+        </div>
+      ))}
+    </dl>
+  )
+}
+
+function MetricsAndQuestions({ data, empty }: { data: UnknownRecord; empty: string }) {
+  const metrics = records(data.metrics)
+  const questions = strings(data.questions)
+  if (metrics.length) return <MetricRows data={data} empty={empty} />
+  if (!questions.length) return <EmptyHint>{empty}</EmptyHint>
+  return <QuestionList items={questions} />
+}
+
+function Marketing({ data }: { data: UnknownRecord }) {
+  const channels = records(data.channels)
+  const opportunities = records(data.opportunities)
+  if (!channels.length && !opportunities.length) {
+    return <EmptyHint>Назовите активные каналы и их результат — AI найдёт пробелы.</EmptyHint>
+  }
+  return (
+    <div className="space-y-3">
+      {!!channels.length && (
+        <div className="flex flex-wrap gap-1.5">
+          {channels.slice(0, 6).map((channel, index) => (
+            <span key={string(channel.id) ?? index} className="rounded-full bg-white/5 px-2 py-1 text-[11px] text-on-surface-variant">
+              {string(channel.label) ?? string(channel.name) ?? 'Канал'}
+            </span>
+          ))}
+        </div>
+      )}
+      {opportunities[0] && (
+        <p className="text-xs text-pretty text-on-surface-variant">
+          {string(opportunities[0].title)}{string(opportunities[0].detail) ? `: ${string(opportunities[0].detail)}` : ''}
+        </p>
+      )}
+    </div>
+  )
+}
+
+function Operations({ data }: { data: UnknownRecord }) {
+  const signals = records(data.signals)
+  const nextQuestion = string(data.nextQuestion)
+  if (!signals.length && !nextQuestion) {
+    return <EmptyHint>Опишите команду и процесс, который чаще всего задерживает работу.</EmptyHint>
+  }
+  return (
+    <div className="space-y-2">
+      {signals.slice(0, 4).map((item, index) => (
+        <p key={index} className="flex gap-2 text-xs text-on-surface-variant">
+          <span className={cn('mt-1 size-1.5 shrink-0 rounded-full', item.status === 'known' ? 'bg-primary' : 'bg-tertiary-container')} />
+          <span>{string(item.title)}{string(item.detail) ? `: ${string(item.detail)}` : ''}</span>
+        </p>
+      ))}
+      {nextQuestion && <QuestionList items={[nextQuestion]} />}
+    </div>
+  )
+}
+
+function Risks({ data }: { data: UnknownRecord }) {
+  const risks = records(data.risks)
+  const opportunities = records(data.opportunities)
+  if (!risks.length && !opportunities.length) {
+    return <EmptyHint>Пока нет подтверждённых сигналов для вывода.</EmptyHint>
+  }
+  return (
+    <div className="space-y-3">
+      {risks.slice(0, 2).map((item, index) => (
+        <p key={`risk-${index}`} className="text-xs text-pretty text-error">Риск: {string(item.title)}{string(item.detail) ? ` — ${string(item.detail)}` : ''}</p>
+      ))}
+      {opportunities.slice(0, 2).map((item, index) => (
+        <p key={`opportunity-${index}`} className="text-xs text-pretty text-primary">Возможность: {string(item.title)}{string(item.detail) ? ` — ${string(item.detail)}` : ''}</p>
+      ))}
+    </div>
+  )
+}
+
+function VerifiedLinks({ data, kind }: { data: UnknownRecord; kind: 'news' | 'learning' }) {
+  const connected = data.connected === true
+  const items = connected ? records(data.items).filter((item) => safeUrl(item.url)) : []
+  if (!connected || !items.length) {
+    return (
+      <EmptyHint>
+        {kind === 'news'
+          ? 'Новостной источник не подключён. AI не будет придумывать новости.'
+          : 'Проверенные материалы пока не найдены. Ссылки без источника не показываются.'}
+      </EmptyHint>
+    )
+  }
+  return (
+    <div className="space-y-3">
+      {items.slice(0, 4).map((item, index) => (
+        <a
+          key={string(item.id) ?? index}
+          href={string(item.url)}
+          target="_blank"
+          rel="noreferrer"
+          className="flex items-start justify-between gap-3 text-xs text-on-surface hover:text-primary"
+        >
+          <span className="line-clamp-2">{string(item.title) ?? 'Материал'}</span>
+          <ExternalLink className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+        </a>
+      ))}
+    </div>
+  )
+}
+
+function Tasks({ data }: { data: UnknownRecord }) {
+  const items = records(data.items)
+  if (!items.length) return <EmptyHint>Задачи появятся из согласованной дорожной карты.</EmptyHint>
+  return (
+    <ul className="space-y-2.5">
+      {items.slice(0, 5).map((item, index) => (
+        <li key={string(item.id) ?? index} className="flex items-start gap-2 text-xs">
+          <SquareCheckBig className={cn('mt-0.5 size-3.5 shrink-0', item.done ? 'text-primary' : 'text-on-surface-variant')} aria-hidden />
+          <span className={cn('text-pretty', item.done ? 'text-on-surface-variant line-through' : 'text-on-surface')}>
+            {string(item.title) ?? string(item.text) ?? 'Задача'}
+          </span>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+function KnowledgeBase({ data }: { data: UnknownRecord }) {
+  const files = records(data.files)
+  if (!files.length) {
+    return <EmptyHint>Поддерживаются PDF, DOCX, CSV и TXT до 4 МБ. Excel временно отключён проверкой безопасности.</EmptyHint>
+  }
+  return (
+    <ul className="space-y-2">
+      {files.slice(0, 5).map((file, index) => (
+        <li key={string(file.id) ?? index} className="flex items-center gap-2 text-xs">
+          <FileText className="size-3.5 shrink-0 text-primary" aria-hidden />
+          <span className="min-w-0 flex-1 truncate text-on-surface">{string(file.name) ?? 'Документ'}</span>
+          <span className="shrink-0 text-[10px] text-on-surface-variant">
+            {string(file.statusLabel) ?? statusLabel(string(file.status))}
+          </span>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+function ExternalSources({ data }: { data: UnknownRecord }) {
+  const sources = records(data.sources)
+  if (!sources.length) {
+    return <EmptyHint>Внешние источники не подключены. Данные остаются в диалоге и загруженных файлах.</EmptyHint>
+  }
+  return (
+    <ul className="space-y-2.5">
+      {sources.slice(0, 6).map((source, index) => (
+        <li key={string(source.id) ?? index} className="flex items-center justify-between gap-3 text-xs">
+          <span className="truncate text-on-surface">{string(source.label) ?? string(source.name) ?? 'Источник'}</span>
+          <span className={source.status === 'connected' ? 'text-primary' : 'text-on-surface-variant'}>
+            {source.status === 'connected' ? 'Подключён' : source.status === 'unsupported' ? 'Не поддерживается' : 'Не подключён'}
+          </span>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+function DomainMetrics({ data }: { data: UnknownRecord }) {
+  const metrics = records(data.metrics)
+  if (!metrics.length) return <EmptyHint>AI ещё не выбрал отраслевые метрики для этого бизнеса.</EmptyHint>
+  return (
+    <dl className="space-y-2.5">
+      {metrics.slice(0, 6).map((metric, index) => {
+        const status = string(metric.status) ?? 'unknown'
+        const value = scalar(metric.value)
+        return (
+          <div key={string(metric.id) ?? index} className="border-b border-white/5 pb-2 last:border-0 last:pb-0">
+            <div className="flex items-start justify-between gap-3 text-xs">
+              <dt className="text-on-surface">{string(metric.label) ?? 'Метрика'}</dt>
+              <dd className={cn('shrink-0 text-right tabular-nums', status === 'known' ? 'font-semibold text-primary' : 'text-tertiary-container')}>
+                {status === 'known' && value ? value : status === 'assumption' && value ? `${value} · гипотеза` : 'Нужно уточнить'}
+              </dd>
+            </div>
+            {(string(metric.sourceLabel) || string(metric.question)) && (
+              <p className="mt-1 text-[10px] text-pretty text-on-surface-variant">
+                {string(metric.sourceLabel) ?? string(metric.question)}
+              </p>
+            )}
+          </div>
+        )
+      })}
+      {records(data.guidance).slice(0, 2).map((note, index) => (
+        <div key={`guidance-${index}`} className="flex gap-2 pt-1 text-xs text-on-surface-variant">
+          <CircleHelp className="mt-0.5 size-3.5 shrink-0 text-tertiary-container" aria-hidden />
+          <p className="text-pretty">{string(note.title)}{string(note.detail) ? `: ${string(note.detail)}` : ''}</p>
+        </div>
+      ))}
+    </dl>
+  )
+}
+
+function DomainProcess({ data }: { data: UnknownRecord }) {
+  const stages = records(data.stages)
+  if (!stages.length) return <EmptyHint>Опишите ключевой процесс — AI разложит его на проверяемые этапы.</EmptyHint>
+  return (
+    <ol className="space-y-2.5">
+      {stages.slice(0, 7).map((stage, index) => {
+        const status = string(stage.status) ?? 'unknown'
+        return (
+          <li key={string(stage.id) ?? index} className="flex items-start gap-2.5">
+            <span className={cn(
+              'mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full text-[10px] tabular-nums',
+              status === 'done' || status === 'active' ? 'bg-primary/15 text-primary' : 'bg-tertiary-container/10 text-tertiary-container',
+            )}>
+              {index + 1}
+            </span>
+            <div className="min-w-0">
+              <p className="text-xs text-on-surface">{string(stage.name) ?? 'Этап'}</p>
+              <p className="mt-0.5 text-[10px] text-pretty text-on-surface-variant">
+                {status === 'done'
+                  ? 'Готово'
+                  : status === 'active'
+                    ? string(stage.nextAction) ?? 'В работе'
+                    : status === 'blocked'
+                      ? string(stage.nextAction) ?? 'Есть блокер'
+                      : string(stage.nextAction) ?? 'Нужно описать текущий процесс'}
+              </p>
+            </div>
+          </li>
+        )
+      })}
+    </ol>
+  )
+}
+
+function EmptyHint({ children }: { children: React.ReactNode }) {
+  return <p className="text-xs leading-relaxed text-pretty text-on-surface-variant">{children}</p>
+}
+
+function QuestionList({ items }: { items: string[] }) {
+  return (
+    <ul className="space-y-2">
+      {items.slice(0, 4).map((item, index) => (
+        <li key={index} className="flex gap-2 text-xs text-on-surface-variant">
+          <CircleHelp className="mt-0.5 size-3.5 shrink-0 text-tertiary-container" aria-hidden />
+          <span className="text-pretty">{item}</span>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+function records(value: unknown): UnknownRecord[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is UnknownRecord => Boolean(item) && typeof item === 'object' && !Array.isArray(item))
+    : []
+}
+
+function strings(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string' && !!item.trim()) : []
+}
+
+function string(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined
+}
+
+function scalar(value: unknown): string | undefined {
+  return typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean'
+    ? String(value)
+    : undefined
+}
+
+function number(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+}
+
+function safeUrl(value: unknown): value is string {
+  if (typeof value !== 'string') return false
+  try {
+    const url = new URL(value)
+    return url.protocol === 'https:' || url.protocol === 'http:'
+  } catch {
+    return false
+  }
+}
+
+function statusLabel(status?: string): string {
+  if (status === 'ready') return 'Готов'
+  if (status === 'error') return 'Ошибка'
+  if (status === 'local-only') return 'Без анализа'
+  return 'В обработке'
 }
