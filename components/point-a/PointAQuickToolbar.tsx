@@ -4,6 +4,7 @@ import { useRef, useState, useCallback } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase-client'
+import { useHrefVisible } from '@/hooks/usePlatformSections'
 
 /**
  * PointAQuickToolbar — sticky multifunction action bar at the top of Точка А.
@@ -20,6 +21,9 @@ import { createClient } from '@/lib/supabase-client'
  * Premium glassmorphism aesthetic — matches existing dashboard tokens.
  */
 export default function PointAQuickToolbar({ userId }: { userId: string | null }) {
+  const documentsOn = useHrefVisible('/client/onboarding/documents')
+  const pointBOn = useHrefVisible('/point-b')
+  const metricsOn = useHrefVisible('/metrics')
   const router = useRouter()
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const [uploadState, setUploadState] = useState<'idle' | 'uploading' | 'success' | 'error'>('idle')
@@ -154,11 +158,11 @@ export default function PointAQuickToolbar({ userId }: { userId: string | null }
         {/* Divider */}
         <div className="flex-shrink-0 h-6 w-px bg-white/[0.08] mx-1" />
 
-        {/* Quick links */}
+        {/* Quick links — only sections switched on in GIGA-CRM */}
         <ToolbarLink href="/client/onboarding" icon="edit_note" label="Анкета" />
-        <ToolbarLink href="/client/onboarding/documents" icon="folder_open" label="Документы" />
-        <ToolbarLink href="/point-b" icon="flag" label="Точка Б" />
-        <ToolbarLink href="/metrics" icon="bar_chart" label="Метрики" />
+        {documentsOn && <ToolbarLink href="/client/onboarding/documents" icon="folder_open" label="Документы" />}
+        {pointBOn && <ToolbarLink href="/point-b" icon="flag" label="Точка Б" />}
+        {metricsOn && <ToolbarLink href="/metrics" icon="bar_chart" label="Метрики" />}
 
         {/* Divider */}
         <div className="flex-shrink-0 h-6 w-px bg-white/[0.08] mx-1" />

@@ -19,6 +19,7 @@ import PointAQuickPills from '@/components/point-a/v2/PointAQuickPills'
 import PointAFilterSection from '@/components/point-a/v2/PointAFilterSection'
 import { ShareButton } from '@/components/share/ShareButton'
 import { completedStepsFromRows } from '@/lib/survey/steps'
+import { visibleSectionKeysFor } from '@/lib/platform/sections'
 
 export const metadata: Metadata = { title: 'Точка А — Текущее состояние' }
 
@@ -140,13 +141,16 @@ export default async function PointAPage() {
     console.error('[point-a] Data fetch error:', err)
   }
 
+  // Sections switched off in GIGA-CRM must not render their blocks here either.
+  const visibleKeys = Array.from(await visibleSectionKeysFor(clientId))
+
   return (
     <div className="space-y-8 relative pb-24">
       {/* Sticky quick-action toolbar — file upload, survey, documents, recalc */}
       <PointAQuickToolbar userId={clientId} />
 
       {/* Sticky bottom pill bar — scroll-spy across the page sections */}
-      <PointAQuickPills />
+      <PointAQuickPills visibleSections={visibleKeys} />
 
       {/* Header */}
       <section>
@@ -172,7 +176,7 @@ export default async function PointAPage() {
 
       {/* Growth Snapshot Hero — Точка А snapshot + AI carta rosta + GRI CTA */}
       <section id="growth-snapshot">
-        <GrowthSnapshotHero />
+        <GrowthSnapshotHero visibleSections={visibleKeys} />
       </section>
 
       {/* Filters — drive the KeyMetricsHero report below via URL params */}

@@ -11,7 +11,9 @@
  * 7 thematic groups; we use SURVEY_STEP_LABELS keys 1..12.
  */
 
+import type { ReactNode } from 'react'
 import Link from 'next/link'
+import { visibleSectionKeysFor } from '@/lib/platform/sections'
 import { SURVEY_STEP_LABELS } from '@/lib/survey-labels'
 import { completedStepsFromRows } from '@/lib/survey/steps'
 import CompanyDataFooter from './CompanyDataFooter'
@@ -77,6 +79,8 @@ export default async function CompanyDataCard({ userId }: { userId: string }) {
   if (!supabaseUrl || !serviceKey) return null
 
   const headers = { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` }
+  // «Цель 12 мес / 3 года» link into Точка Б — only while that section is on.
+  const pointBOn = (await visibleSectionKeysFor(userId)).has('point_b')
 
   let surveyRows: SurveyAnswerRow[] = []
   let company: CompanyRow | null = null
@@ -231,8 +235,8 @@ export default async function CompanyDataCard({ userId }: { userId: string }) {
           </div>
 
           {/* Цель 12 мес */}
-          <Link
-            href="/point-b"
+          <GoalTile
+            linked={pointBOn}
             className="bg-surface-container rounded-xl border border-white/[0.04] p-3.5 hover:border-primary/30 hover:bg-surface-container-high transition-all focus:outline-none focus:ring-2 focus:ring-primary/40 group"
             title="Перейти к Точке Б — целям роста"
           >
@@ -251,11 +255,11 @@ export default async function CompanyDataCard({ userId }: { userId: string }) {
             <p className="text-[11px] text-on-surface-variant mt-1 font-mono">
               ~{monthlyFromTotal(target12m, 12)}/мес
             </p>
-          </Link>
+          </GoalTile>
 
           {/* Цель 3 года */}
-          <Link
-            href="/point-b"
+          <GoalTile
+            linked={pointBOn}
             className="bg-surface-container rounded-xl border border-white/[0.04] p-3.5 hover:border-primary/30 hover:bg-surface-container-high transition-all focus:outline-none focus:ring-2 focus:ring-primary/40 group"
             title="Перейти к Точке Б — целям роста"
           >
@@ -274,7 +278,7 @@ export default async function CompanyDataCard({ userId }: { userId: string }) {
             <p className="text-[11px] text-on-surface-variant mt-1 font-mono">
               ~{monthlyFromTotal(target3y, 12)}/мес
             </p>
-          </Link>
+          </GoalTile>
         </div>
 
         {/* ── Collapsible footer ────────────────────────────────────────── */}
@@ -290,4 +294,15 @@ export default async function CompanyDataCard({ userId }: { userId: string }) {
       </div>
     </section>
   )
+}
+
+/**
+ * Goal tile: links to Точка Б while that section is switched on in GIGA-CRM,
+ * and stays a plain card (same numbers, no dead link) when it is hidden.
+ */
+function GoalTile({ linked, className, title, children }: {
+  linked: boolean; className?: string; title?: string; children: ReactNode
+}) {
+  if (!linked) return <div className={className}>{children}</div>
+  return <Link href="/point-b" className={className} title={title}>{children}</Link>
 }

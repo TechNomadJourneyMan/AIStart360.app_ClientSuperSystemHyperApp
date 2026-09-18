@@ -7,13 +7,23 @@ import { DashboardShell } from '@/components/layout/DashboardShell'
 import { MascotLauncher } from '@/components/assistant/mascot/MascotLauncher'
 import { NotificationsBellSync } from '@/components/notifications/NotificationsBellSync'
 import AnnouncementBar from '@/components/platform/AnnouncementBar'
+import { PlatformSectionsProvider } from '@/hooks/usePlatformSections'
+import { createServerClient } from '@/lib/supabase-server'
+import { visibleSectionsFor } from '@/lib/platform/sections'
 
-export default function DashboardLayout({
+export default async function DashboardLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
+  // Sections switched off in GIGA-CRM are filtered out of the menu on the
+  // server, so nothing flashes in before the client fetch returns.
+  const { data: auth } = await createServerClient().auth.getUser()
+  const { sections, hiddenPaths } = await visibleSectionsFor(auth?.user?.id ?? null)
+  const initial = { sections: sections.map((s) => ({ key: s.key, title: s.title, description: s.description, icon: s.icon, href: s.nav_href })), hiddenPaths }
+
   return (
+    <PlatformSectionsProvider initial={initial}>
     <div className="min-h-screen bg-background flex">
       <ActivityTracker />
       <ImpersonationBanner />
@@ -43,5 +53,6 @@ export default function DashboardLayout({
       {/* Keeps the header bell's unread badge in sync with the real feed */}
       <NotificationsBellSync />
     </div>
+    </PlatformSectionsProvider>
   )
 }

@@ -30,6 +30,7 @@ import {
 } from '@/lib/format/kzt'
 import { GRIAssessmentRadarWidget } from './GRIAssessmentRadarWidget'
 import { GRI_CRITERIA_COUNT } from '@/lib/gri-assessment/sections'
+import { usePlatformSections } from '@/hooks/usePlatformSections'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface TargetsData {
@@ -72,7 +73,17 @@ function progressColor(p: number): string {
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
-export default function GrowthSnapshotHero() {
+export default function GrowthSnapshotHero({ visibleSections }: { visibleSections?: string[] } = {}) {
+  // Cabinet sections switched off in GIGA-CRM hide their CTAs here too.
+  // The server page passes the list so nothing flashes before the fetch.
+  const fetchedSections = usePlatformSections().sections
+  const sectionOn = (key: string) => {
+    if (visibleSections) return visibleSections.includes(key)
+    return !fetchedSections || fetchedSections.some((s) => s.key === key)
+  }
+  const griOn = sectionOn('gri')
+  const pointBOn = sectionOn('point_b')
+  const documentsOn = sectionOn('documents')
   const router = useRouter()
 
   const [targets, setTargets] = useState<TargetsData | null>(null)
@@ -398,14 +409,16 @@ export default function GrowthSnapshotHero() {
                       <span className="text-[9px] font-mono text-on-surface-variant uppercase tracking-widest">
                         Run-rate
                       </span>
-                      <Link
-                        href="/point-b"
-                        className="inline-flex items-center gap-1 text-[10px] font-mono text-primary/80 hover:text-primary"
-                        title="План vs Факт"
-                      >
-                        <span className="material-symbols-outlined text-[12px]">trending_up</span>
-                        План vs Факт
-                      </Link>
+                      {pointBOn && (
+                        <Link
+                          href="/point-b"
+                          className="inline-flex items-center gap-1 text-[10px] font-mono text-primary/80 hover:text-primary"
+                          title="План vs Факт"
+                        >
+                          <span className="material-symbols-outlined text-[12px]">trending_up</span>
+                          План vs Факт
+                        </Link>
+                      )}
                     </div>
                     <p className="text-xs font-mono text-on-surface">
                       ~{formatKztCompact(runRate12)}
@@ -686,9 +699,11 @@ export default function GrowthSnapshotHero() {
             </div>
           </div>
 
-          {/* Card B — GRI диагностика (always visible; «Открыть GRI» enabled
-              after the user has completed the test). One brand-orange CTA;
-              secondary actions live as plain ghost links below. */}
+          {/* Card B — GRI диагностика («Открыть GRI» enabled after the user has
+              completed the test). Hidden entirely when the GRI section is
+              switched off in GIGA-CRM. One brand-orange CTA; secondary actions
+              live as plain ghost links below. */}
+          {griOn && (
           <div
             className="relative rounded-2xl border bg-surface-container-low p-4"
             style={{ borderColor: 'rgba(232,122,53,0.35)' }}
@@ -752,6 +767,7 @@ export default function GrowthSnapshotHero() {
                 ` · последняя оценка ${new Date(griData.created_at).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })}`}
             </p>
           </div>
+          )}
         </div>
       </div>
 
@@ -783,6 +799,7 @@ export default function GrowthSnapshotHero() {
           </p>
         </Link>
 
+        {documentsOn && (
         <Link
           href="/client/onboarding/documents"
           className="group bg-surface-container-low rounded-2xl border border-white/[0.04] hover:border-primary/30 p-4 transition-all flex items-center gap-3"
@@ -805,6 +822,7 @@ export default function GrowthSnapshotHero() {
             arrow_forward
           </span>
         </Link>
+        )}
       </div>
 
       {/* GRI popup — radar widget shown via "Открыть GRI" */}

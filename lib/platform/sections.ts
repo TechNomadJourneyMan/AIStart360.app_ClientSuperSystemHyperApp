@@ -37,3 +37,15 @@ export async function visibleSectionsFor(userId: string | null | undefined): Pro
 export function pathIsHidden(pathname: string, hiddenPaths: readonly string[]): boolean {
   return hiddenPaths.some((p) => pathname === p || pathname.startsWith(`${p}/`))
 }
+
+/** Keys of the sections a user may open — for server-rendered page blocks. */
+export async function visibleSectionKeysFor(userId: string | null | undefined): Promise<Set<string>> {
+  const { sections } = await visibleSectionsFor(userId)
+  return new Set(sections.map((s) => s.key))
+}
+
+/** Section key that owns a cabinet path, or null when the path is not gated. */
+export async function sectionKeyForPath(pathname: string): Promise<string | null> {
+  const all = await loadSections()
+  return all.find((s) => s.paths.some((p) => pathname === p || pathname.startsWith(`${p}/`)))?.key ?? null
+}

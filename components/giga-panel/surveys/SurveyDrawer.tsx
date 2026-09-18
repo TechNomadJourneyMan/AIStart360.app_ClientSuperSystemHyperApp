@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { toast } from 'sonner'
-import { ArrowUpRight, ExternalLink, Trash2 } from 'lucide-react'
+import { ArrowUpRight, ExternalLink, LayoutDashboard, Trash2 } from 'lucide-react'
 import { Badge, Button, ConfirmDialog, Drawer, Field, GigaApiError, gigaFetch, inputClass } from '../kit'
 import { SurveyTab } from '../user360/SurveyTab'
 import { ImpersonateDialog } from '../user360/ImpersonateDialog'
@@ -21,7 +21,8 @@ export function SurveyDrawer({ user, onClose, onChanged }: {
   onChanged: () => void
 }) {
   const { can } = useStaff()
-  const [openCabinet, setOpenCabinet] = useState(false)
+  // Which client page the impersonation session should land on.
+  const [openTarget, setOpenTarget] = useState<null | 'survey' | 'cabinet'>(null)
   const [confirmWipe, setConfirmWipe] = useState(false)
   const [reason, setReason] = useState('')
   const [busy, setBusy] = useState(false)
@@ -66,7 +67,10 @@ export function SurveyDrawer({ user, onClose, onChanged }: {
           <ArrowUpRight size={13} /> User 360
         </Link>
         {can('impersonate.view') && !isStaffAccount && (
-          <Button variant="warning" icon={<ExternalLink size={13} />} onClick={() => setOpenCabinet(true)}>Открыть анкету в кабинете</Button>
+          <>
+            <Button variant="warning" icon={<ExternalLink size={13} />} onClick={() => setOpenTarget('survey')}>Открыть анкету</Button>
+            <Button variant="warning" icon={<LayoutDashboard size={13} />} onClick={() => setOpenTarget('cabinet')}>Посмотреть кабинет</Button>
+          </>
         )}
         {can('survey.delete') && (
           <Button variant="danger" icon={<Trash2 size={13} />} onClick={() => setConfirmWipe(true)}>Удалить всю анкету</Button>
@@ -77,14 +81,14 @@ export function SurveyDrawer({ user, onClose, onChanged }: {
       <SurveyTab key={version} userId={user.id} canEdit={can('survey.edit')} onChanged={() => { invalidateSurveyPreview(user.id); onChanged() }} />
 
       <ImpersonateDialog
-        open={openCabinet}
-        onClose={() => setOpenCabinet(false)}
+        open={!!openTarget}
+        onClose={() => setOpenTarget(null)}
         userId={user.id}
         userLabel={title}
         allowEdit={can('impersonate.edit')}
-        redirect="/client/onboarding"
-        defaultMode={can('impersonate.edit') ? 'edit' : 'view'}
-        defaultReason="Работа с анкетой пользователя"
+        redirect={openTarget === 'cabinet' ? '/client/home' : '/client/onboarding'}
+        defaultMode={openTarget === 'cabinet' ? 'view' : can('impersonate.edit') ? 'edit' : 'view'}
+        defaultReason={openTarget === 'cabinet' ? 'Проверка кабинета пользователя' : 'Работа с анкетой пользователя'}
       />
       <ConfirmDialog
         open={confirmWipe}

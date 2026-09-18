@@ -1,8 +1,8 @@
 'use client'
 
-import { Suspense, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
-import { Eye, RefreshCw } from 'lucide-react'
+import { ClipboardList, Eye, RefreshCw } from 'lucide-react'
 import { RequirePermission, useStaff } from '@/components/giga-panel/StaffContext'
 import { Badge, Button, ErrorState, PageHeader, Skeleton, StatTile, Tabs, fmtAgo, useGigaQuery } from '@/components/giga-panel/kit'
 import { PROFILE_STATUS } from '@/lib/admin/labels'
@@ -16,6 +16,7 @@ import { JourneyTab } from '@/components/giga-panel/user360/JourneyTab'
 import { DocumentsTab } from '@/components/giga-panel/user360/DocumentsTab'
 import { HistoryTab } from '@/components/giga-panel/user360/HistoryTab'
 import { ImpersonateDialog } from '@/components/giga-panel/user360/ImpersonateDialog'
+import { rememberUser } from '@/components/giga-panel/CommandPalette'
 
 type TabKey = 'profile' | 'survey' | 'gri' | 'activity' | 'cjm' | 'documents' | 'history'
 
@@ -27,10 +28,16 @@ function User360Inner({ id }: { id: string }) {
   const tab = (sp.get('tab') as TabKey) || 'profile'
   const setTab = (t: TabKey) => router.replace(`${pathname}?tab=${t}`, { scroll: false })
   const { data, error, loading, reload } = useGigaQuery<{ data: User360Profile }>(`/api/giga-admin/users/${id}/profile`)
-  const [impOpen, setImpOpen] = useState(false)
+  const [impTarget, setImpTarget] = useState<null | 'cabinet' | 'survey'>(null)
   const u = data?.data
 
   const title = u ? (u.company?.name || u.profile.organization || u.profile.full_name || u.profile.email || 'Пользователь') : 'Пользователь'
+
+  // Feeds «недавние» in the panel-wide quick search (⌘K).
+  useEffect(() => {
+    if (!u) return
+    rememberUser({ id, label: title, hint: [u.profile.full_name, u.profile.email].filter(Boolean).join(' · ') || null })
+  }, [u, id, title])
 
   return (
     <div>
@@ -45,7 +52,12 @@ function User360Inner({ id }: { id: string }) {
         actions={
           <>
             <Button variant="ghost" icon={<RefreshCw size={13} />} onClick={reload} loading={loading && !!u}>Обновить</Button>
-            {u?.can.impersonate && <Button variant="warning" icon={<Eye size={13} />} onClick={() => setImpOpen(true)}>Кабинет от имени</Button>}
+            {u?.can.impersonate && (
+              <>
+                <Button variant="warning" icon={<Eye size={13} />} onClick={() => setImpTarget('cabinet')}>Посмотреть кабинет</Button>
+                {u.can.viewSurvey && <Button variant="warning" icon={<ClipboardList size={13} />} onClick={() => setImpTarget('survey')}>Открыть анкету</Button>}
+              </>
+            )}
           </>
         }
       />
@@ -80,7 +92,16 @@ function User360Inner({ id }: { id: string }) {
           {tab === 'cjm' && <JourneyTab userId={id} journey={u.journey} canActivity={u.can.activity} />}
           {tab === 'documents' && u.can.sensitive && <DocumentsTab userId={id} />}
           {tab === 'history' && u.can.audit && <HistoryTab userId={id} />}
-          <ImpersonateDialog open={impOpen} onClose={() => setImpOpen(false)} userId={id} userLabel={title} allowEdit={u.can.impersonateEdit} />
+          <ImpersonateDialog
+            open={!!impTarget}
+            onClose={() => setImpTarget(null)}
+            userId={id}
+            userLabel={title}
+            allowEdit={u.can.impersonateEdit}
+            redirect={impTarget === 'survey' ? '/client/onboarding' : '/client/home'}
+            defaultMode={impTarget === 'survey' && u.can.impersonateEdit ? 'edit' : 'view'}
+            defaultReason={impTarget === 'survey' ? 'Работа с анкетой пользователя' : 'Проверка кабинета пользователя'}
+          />
         </>
       )}
     </div>

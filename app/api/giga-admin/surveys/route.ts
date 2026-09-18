@@ -30,9 +30,12 @@ export async function GET(req: NextRequest) {
   const history = sensitive ? historyRes.data ?? [] : []
   const ids = Array.from(new Set(history.flatMap((h) => [h.user_id, h.changed_by]).filter((v): v is string => !!v && /^[0-9a-f-]{36}$/i.test(v))))
   const { data: people } = ids.length
-    ? await sb.from('profiles').select('id, email, full_name').in('id', ids)
-    : { data: [] as Array<{ id: string; email: string; full_name: string | null }> }
-  const byId = new Map((people ?? []).map((p) => [p.id, p.full_name || p.email]))
+    ? await sb.from('profiles').select('id, email, full_name, organization').in('id', ids)
+    : { data: [] as Array<{ id: string; email: string; full_name: string | null; organization: string | null }> }
+  const byId = new Map((people ?? []).map((p) => [p.id, p.full_name || p.organization || p.email]))
+  // A profile can be gone (deleted account, test fixture): show a short
+  // readable marker instead of a raw UUID.
+  const label = (id: string | null | undefined) => (id ? byId.get(id) ?? `Пользователь ${id.slice(0, 8)}` : null)
 
   return NextResponse.json({
     ok: true,
@@ -43,7 +46,7 @@ export async function GET(req: NextRequest) {
       avgSteps: perUser.length ? Math.round((perUser.reduce((a, u) => a + u.steps, 0) / perUser.length) * 10) / 10 : 0,
       distribution,
       perStep,
-      recentEdits: history.map((h) => ({ ...h, user_label: byId.get(h.user_id) ?? h.user_id, actor_label: h.changed_by ? byId.get(h.changed_by) ?? h.changed_by : null })),
+      recentEdits: history.map((h) => ({ ...h, user_label: label(h.user_id), actor_label: label(h.changed_by) })),
     },
   })
 }

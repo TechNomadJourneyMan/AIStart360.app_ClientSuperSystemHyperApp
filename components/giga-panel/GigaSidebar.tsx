@@ -13,6 +13,7 @@ import { GIGA_NAV, isNavActive } from '@/lib/admin/nav'
 import { createClient } from '@/lib/supabase/client'
 import { useStaff } from './StaffContext'
 import { cx } from './kit'
+import { CommandPalette } from './CommandPalette'
 
 const ICONS: Record<string, LucideIcon> = {
   dashboard: LayoutDashboard, users: Users2, inbox: InboxIcon, building: Building2, sparkles: Sparkles,
@@ -58,6 +59,10 @@ export function GigaSidebar({ isOpen = false, onClose }: GigaSidebarProps) {
         <button onClick={onClose} aria-label="Закрыть меню" className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-white/[0.05] hover:text-slate-300 md:hidden">
           <X size={18} />
         </button>
+      </div>
+
+      <div className="px-3 pb-3">
+        <CommandPalette />
       </div>
 
       <nav aria-label="Разделы GIGA-CRM" className="flex-1 space-y-4 overflow-y-auto px-3 pb-4">

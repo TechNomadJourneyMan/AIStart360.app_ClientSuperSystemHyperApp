@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { createContext, createElement, useContext, useEffect, useState, type ReactNode } from 'react'
 
 export interface VisibleSection { key: string; title: string; description: string | null; icon: string | null; href: string }
 
@@ -22,12 +22,24 @@ function readStore(): { at: number; data: Payload } | null {
 
 let cached: { at: number; data: Payload } | null = null
 
+/**
+ * Server-rendered pages pass the list down, so hidden sections never appear
+ * for a moment before the fetch resolves.
+ */
+const SectionsContext = createContext<Payload | null>(null)
+
+export function PlatformSectionsProvider({ initial, children }: { initial: Payload; children: ReactNode }) {
+  return createElement(SectionsContext.Provider, { value: initial }, children)
+}
+
 /** Sections of the cabinet visible to the current user (managed in GIGA-CRM). */
 export function usePlatformSections(): { sections: VisibleSection[] | null; hiddenPaths: string[] } {
   // Same first render on server and client (no hydration mismatch); the tab
   // cache is applied right after mount.
+  const fromServer = useContext(SectionsContext)
   const [data, setData] = useState<Payload | null>(null)
   useEffect(() => {
+    if (fromServer) return
     if (!cached) cached = readStore()
     if (cached) setData(cached.data)
     if (cached && Date.now() - cached.at < TTL_MS) return
@@ -42,8 +54,9 @@ export function usePlatformSections(): { sections: VisibleSection[] | null; hidd
       })
       .catch(() => {})
     return () => { alive = false }
-  }, [])
-  return { sections: data?.sections ?? null, hiddenPaths: data?.hiddenPaths ?? [] }
+  }, [fromServer])
+  const effective = fromServer ?? data
+  return { sections: effective?.sections ?? null, hiddenPaths: effective?.hiddenPaths ?? [] }
 }
 
 export function useHiddenSectionPaths(): string[] {
@@ -52,4 +65,22 @@ export function useHiddenSectionPaths(): string[] {
 
 export function isHiddenByPlatform(href: string, hiddenPaths: readonly string[]): boolean {
   return hiddenPaths.some((p) => href === p || href.startsWith(`${p}/`))
+}
+
+/**
+ * Is a cabinet section switched on for this user? Fails open (true) until the
+ * list is known, so enabled blocks never flash away; the server still blocks
+ * the routes themselves.
+ */
+export function useSectionVisible(key: string): boolean {
+  const { sections } = usePlatformSections()
+  if (!sections) return true
+  return sections.some((s) => s.key === key)
+}
+
+/** Same check for a link target (menu href or in-page CTA). */
+export function useHrefVisible(href: string): boolean {
+  const { sections, hiddenPaths } = usePlatformSections()
+  if (!sections) return true
+  return !isHiddenByPlatform(href, hiddenPaths)
 }

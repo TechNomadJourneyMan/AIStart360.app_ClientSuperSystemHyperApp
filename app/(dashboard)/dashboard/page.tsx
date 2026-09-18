@@ -25,6 +25,7 @@ import CompanyDataCard from '@/components/point-a/v2/CompanyDataCard'
 import MarketAnalysisCard from '@/components/point-a/v2/MarketAnalysisCard'
 import InsightsFeed from '@/components/point-a/v2/InsightsFeed'
 import { completedStepsFromRows } from '@/lib/survey/steps'
+import { visibleSectionKeysFor } from '@/lib/platform/sections'
 import PointAQuickPills from '@/components/point-a/v2/PointAQuickPills'
 import PointAFilterSection from '@/components/point-a/v2/PointAFilterSection'
 import type { PointA, BlockScore } from '@/types/onboarding'
@@ -304,10 +305,20 @@ export default async function DashboardPage() {
       const totalScore = pointA?.overall_score ?? 0
       const healthIndex = pointA?.health_index ?? 0
 
+      // Sections switched off in GIGA-CRM disappear from the cabinet entirely:
+      // their blocks and shortcuts are not rendered, not just unreachable.
+      const visibleKeys = await visibleSectionKeysFor(user.id)
+      const shortcuts = [
+        { href: '/point-a', section: 'point_a', icon: 'analytics', label: 'Точка А', sub: 'AI-диагностика' },
+        { href: '/client/onboarding', section: null, icon: 'edit_note', label: 'Обновить анкету', sub: 'Изменить ответы' },
+        { href: '/metrics', section: 'metrics', icon: 'bar_chart', label: 'Метрики', sub: 'Финансовые показатели' },
+        { href: '/client/onboarding/documents', section: 'documents', icon: 'upload_file', label: 'Документы', sub: 'P&L, баланс, отчёты' },
+      ].filter((i) => !i.section || visibleKeys.has(i.section))
+
       return (
         <div className="space-y-6 relative pb-24">
           {/* Sticky bottom pill bar — scroll-spy across the page sections */}
-          <PointAQuickPills />
+          <PointAQuickPills visibleSections={Array.from(visibleKeys)} />
 
           {/* «1 действие сейчас» (Фаза 5, №2) — единый приоритетный next-step. */}
           <NextBestActionCard />
@@ -336,7 +347,7 @@ export default async function DashboardPage() {
             {/* New Growth Snapshot Hero — owns goal capture, plan/fact gap,
                 GRI CTA, consultation link, and onboarding-progress shortcuts.
                 Replaces the previous AI-insights carousel + CTA stack. */}
-            <GrowthSnapshotHero />
+            <GrowthSnapshotHero visibleSections={Array.from(visibleKeys)} />
 
             {pointA ? (
               /* Inline AIInsightsCarousel removed — InsightsFeed below owns the
@@ -394,18 +405,24 @@ export default async function DashboardPage() {
             </>
           )}
 
-          {/* Filters drive the new KeyMetricsHero report below via URL params */}
-          <PointAFilterSection />
+          {/* Metrics blocks belong to the «Метрики» section: hidden there —
+              hidden here, together with the filters that drive them. */}
+          {visibleKeys.has('metrics') && (
+            <>
+              {/* Filters drive the KeyMetricsHero report below via URL params */}
+              <PointAFilterSection />
 
-          {/* Key metrics hero — 6 главных KPI + бейджи зон */}
-          <section id="key-metrics" aria-label="Ключевые метрики">
-            <KeyMetricsHero />
-          </section>
+              {/* Key metrics hero — 6 главных KPI + бейджи зон */}
+              <section id="key-metrics" aria-label="Ключевые метрики">
+                <KeyMetricsHero />
+              </section>
 
-          {/* 3-column zones grid */}
-          <section id="metric-zones" aria-label="Метрики по зонам">
-            <MetricZonesGrid />
-          </section>
+              {/* 3-column zones grid */}
+              <section id="metric-zones" aria-label="Метрики по зонам">
+                <MetricZonesGrid />
+              </section>
+            </>
+          )}
 
           {/* Company anketa — full-width row, all 7 blocks expanded inline */}
           <section id="company-data" aria-label="Данные компании">
@@ -413,9 +430,11 @@ export default async function DashboardPage() {
           </section>
 
           {/* Market analysis — full-width row, big tiles + Гига Рынок CTA */}
-          <section id="market-analysis" aria-label="Анализ рынка">
-            <MarketAnalysisCard userId={user.id} />
-          </section>
+          {visibleKeys.has('market') && (
+            <section id="market-analysis" aria-label="Анализ рынка">
+              <MarketAnalysisCard userId={user.id} />
+            </section>
+          )}
 
           {/* Spec-compliant sections: Retention curve · RFM · Loss map (TopSales sr-only) */}
           <section id="loss-map">
@@ -430,16 +449,12 @@ export default async function DashboardPage() {
           {/* Phase 6 final — Real-time Intelligence layer */}
           <PointAIntelligenceSection userId={user.id} companyId={companyId} />
 
-          {/* Quick nav */}
+          {/* Quick nav — only the sections that are switched on */}
+          {shortcuts.length > 0 && (
           <section>
             <h2 className="font-headline text-lg font-bold text-on-surface mb-4">Быстрый доступ</h2>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              {[
-                { href: '/point-a', icon: 'analytics', label: 'Точка А', sub: 'AI-диагностика' },
-                { href: '/client/onboarding', icon: 'edit_note', label: 'Обновить анкету', sub: 'Изменить ответы' },
-                { href: '/metrics', icon: 'bar_chart', label: 'Метрики', sub: 'Финансовые показатели' },
-                { href: '/client/onboarding/documents', icon: 'upload_file', label: 'Документы', sub: 'P&L, баланс, отчёты' },
-              ].map(item => (
+              {shortcuts.map(item => (
                 <Link key={item.href} href={item.href}
                   className="flex flex-col items-center gap-2 bg-surface-container-low hover:bg-surface-container rounded-2xl border border-white/[0.04] hover:border-primary/20 p-5 transition-all group">
                   <span className="material-symbols-outlined text-2xl text-primary/60 group-hover:text-primary transition-colors">{item.icon}</span>
@@ -449,6 +464,7 @@ export default async function DashboardPage() {
               ))}
             </div>
           </section>
+          )}
         </div>
       )
     }

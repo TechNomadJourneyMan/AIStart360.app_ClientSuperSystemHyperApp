@@ -26,6 +26,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
+import { usePlatformSections } from '@/hooks/usePlatformSections'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -89,7 +90,7 @@ function variantClasses(variant: PillVariant, isActive: boolean): string {
 
 // ─── Component ──────────────────────────────────────────────────────────────
 
-export default function PointAQuickPills() {
+export default function PointAQuickPills({ visibleSections }: { visibleSections?: string[] } = {}) {
   const [surveyPercent, setSurveyPercent] = useState<number>(0)
   const [lossCount, setLossCount] = useState<number>(5) // sane default per brief
   const [hasGri, setHasGri] = useState<boolean>(false)
@@ -141,11 +142,21 @@ export default function PointAQuickPills() {
   }, [])
 
   // ─── Pill definitions ─────────────────────────────────────────────────────
+  // Sections switched off in GIGA-CRM: their pills are not rendered at all.
+  // `visibleSections` comes from the server page (no flash); without it we fall
+  // back to the cached client list.
+  const fetched = usePlatformSections().sections
+  const enabled = useMemo(() => {
+    if (visibleSections) return new Set(visibleSections)
+    return fetched ? new Set(fetched.map((s) => s.key)) : null
+  }, [visibleSections, fetched])
+  const sectionOn = useCallback((key: string) => !enabled || enabled.has(key), [enabled])
+
   const pills: PillSpec[] = useMemo(() => {
     const dataVariant: PillVariant = surveyPercent >= 80 ? 'primary' : 'warning'
     const lossVariant: PillVariant = lossCount >= 3 ? 'danger' : 'warning'
 
-    return [
+    const all: PillSpec[] = [
       {
         id: 'company-data',
         anchorId: 'company-data',
@@ -200,7 +211,8 @@ export default function PointAQuickPills() {
         variant: 'primary',
       },
     ]
-  }, [surveyPercent, lossCount, hasGri])
+    return all.filter((p) => (p.id === 'gri' ? sectionOn('gri') : p.id === 'growth-map' ? sectionOn('point_b') : true))
+  }, [surveyPercent, lossCount, hasGri, sectionOn])
 
   // ─── Scroll-spy via IntersectionObserver ──────────────────────────────────
   useEffect(() => {
