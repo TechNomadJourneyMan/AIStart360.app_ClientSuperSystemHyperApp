@@ -2,7 +2,25 @@ import type { Metadata, Viewport } from 'next'
 import { Toaster } from 'sonner'
 import NextTopLoader from 'nextjs-toploader'
 import { Providers } from './providers'
+import { getSiteUrl } from '@/lib/site-url'
 import './globals.css'
+
+/**
+ * Базовый адрес для абсолютных ссылок в метаданных.
+ *
+ * Считается на этапе сборки, поэтому обязан быть устойчивым: `AUTH_URL ?? …`
+ * не спасал, когда переменная задана ПУСТОЙ строкой (`??` подставляет запасное
+ * значение только для undefined/null) — сборка падала на `/_not-found`
+ * с «TypeError: Invalid URL, input: ''». getSiteUrl отбрасывает пустые
+ * значения, а try/catch защищает и от некорректно заданного адреса.
+ */
+function resolveMetadataBase(): URL {
+  try {
+    return new URL(getSiteUrl())
+  } catch {
+    return new URL('https://portal.aistart360.app')
+  }
+}
 
 export const metadata: Metadata = {
   title: {
@@ -12,7 +30,7 @@ export const metadata: Metadata = {
   description: 'B2B клиентский портал для управления ростом компаний. GRI диагностика, аналитика, отчёты.',
   keywords: ['AIStart360', 'GRI', 'Growth Readiness', 'B2B Portal', 'Business Intelligence'],
   authors: [{ name: 'AIStart360' }],
-  metadataBase: new URL(process.env.AUTH_URL ?? 'http://localhost:3000'),
+  metadataBase: resolveMetadataBase(),
   manifest: '/manifest.webmanifest',
   appleWebApp: { capable: true, title: 'AIStart360', statusBarStyle: 'black-translucent' },
   openGraph: {
