@@ -14,6 +14,10 @@ const queue = vi.hoisted(() => ({
   send: vi.fn(),
 }))
 
+const myhonor = vi.hoisted(() => ({
+  applyDeliveryStatus: vi.fn(async () => ({ matched: false })),
+}))
+
 const processingJobs = vi.hoisted(() => ({
   enqueue: vi.fn(),
 }))
@@ -32,6 +36,11 @@ const workflow = vi.hoisted(() => ({
 }))
 
 vi.mock('@/lib/omnichannel/repository', () => repository)
+// Уведомления MyHonor подключились к ветке доставки позже: по умолчанию
+// статус к заказу не относится, и обработка идёт обычным путём.
+vi.mock('@/lib/integrations/myhonor/order-notification-repository', () => ({
+  applyMyHonorOrderNotificationDeliveryStatus: myhonor.applyDeliveryStatus,
+}))
 vi.mock('@/lib/inngest', () => ({ inngest: queue }))
 vi.mock('@/lib/omnichannel/processing-jobs', () => ({
   enqueueOmnichannelProcessingJob: processingJobs.enqueue,
