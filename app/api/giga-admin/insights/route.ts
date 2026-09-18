@@ -2,7 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase-service'
-import { getGigaActor } from '@/lib/admin/giga-actor'
+import { requireGiga } from '@/lib/admin/giga-actor'
 
 /**
  * GET /api/giga-admin/insights?scope=pending|all&limit=200
@@ -13,9 +13,8 @@ import { getGigaActor } from '@/lib/admin/giga-actor'
  * reviewer sees whose feed the insight belongs to.
  */
 export async function GET(req: NextRequest) {
-  if (!(await getGigaActor(req))) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-  }
+  const guard = await requireGiga(req, 'insights.moderate')
+  if (guard.response) return guard.response
 
   const scope = req.nextUrl.searchParams.get('scope') === 'all' ? 'all' : 'pending'
   const limitRaw = Number(req.nextUrl.searchParams.get('limit') ?? '200')

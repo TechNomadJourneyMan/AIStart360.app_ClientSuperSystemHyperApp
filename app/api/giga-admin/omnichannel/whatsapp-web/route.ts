@@ -6,7 +6,7 @@ import { randomUUID } from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import QRCode from 'qrcode'
 import { z } from 'zod'
-import { getGigaActor } from '@/lib/admin/giga-actor'
+import { requireGiga } from '@/lib/admin/giga-actor'
 import { logAudit } from '@/lib/audit'
 import { isRateLimitedKey } from '@/lib/rate-limit'
 import {
@@ -93,8 +93,9 @@ async function publicStatus(
 }
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
-  const actor = await getGigaActor(req)
-  if (!actor) return noStore({ error: 'Forbidden' }, 403)
+  const guard = await requireGiga(req, 'inbox.view')
+  if (guard.response) return guard.response
+  const actor = guard.actor
 
   const configuration = getWhatsAppWebBridgeConfigurationHealth()
   if (!configuration.enabled) {
@@ -127,8 +128,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
-  const actor = await getGigaActor(req)
-  if (!actor) return noStore({ error: 'Forbidden' }, 403)
+  const guard = await requireGiga(req, 'inbox.manage')
+  if (guard.response) return guard.response
+  const actor = guard.actor
   if (
     actor.kind === 'break_glass'
     && !envFlag(process.env.WHATSAPP_WEB_BRIDGE_ALLOW_BREAK_GLASS_PAIRING)

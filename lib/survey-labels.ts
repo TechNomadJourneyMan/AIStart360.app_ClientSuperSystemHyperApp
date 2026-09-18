@@ -3,6 +3,8 @@
  * Used in Giga Panel (admin view) and client "My Data" page.
  */
 
+import { stepForQuestionKey } from '@/lib/survey/steps'
+
 export const SURVEY_STEP_LABELS: Record<number, string> = {
   1: 'О компании',
   2: 'Цели',
@@ -248,6 +250,20 @@ export const SURVEY_LABELS: Record<string, string> = {
   // ── Step 11 — Карта влияния ────────────────────────────────────────────
   s11_influence_map: 'Карта влияния',
 
+  // ── Keys that used to render as raw ids in «Мои данные» (E2E 2026-09-10) ──
+  s1_current_revenue_month: 'Текущая выручка / месяц',
+  s1_current_revenue_year: 'Текущая выручка / год',
+  s1_goal_12m_revenue_month: 'Цель через 12 мес — выручка / месяц',
+  s1_goal_12m_revenue_year: 'Цель через 12 мес — выручка / год',
+  s1_goal_3y_revenue_month: 'Цель через 3 года — выручка / месяц',
+  s1_goal_3y_revenue_year: 'Цель через 3 года — выручка / год',
+  s1_uploaded_files: 'Загруженные файлы',
+  s5n_funnel_meeting_to_proposal: 'Конверсия встреча → КП',
+  s5n_funnel_proposal_to_negotiation: 'Конверсия КП → переговоры',
+  s5n_funnel_negotiation_to_contract: 'Конверсия переговоры → договор',
+  s5n_funnel_contract_to_payment: 'Конверсия договор → оплата',
+  s5n_funnel_payment_to_delivery: 'Конверсия оплата → поставка',
+
   // ── Step 12 — Системы и инструменты ────────────────────────────────────
   s12_crm_tool: 'CRM-система',
   s12_edm: 'EDM (электронный документооборот)',
@@ -261,10 +277,42 @@ export const SURVEY_LABELS: Record<string, string> = {
   s12_it_support: 'IT-поддержка',
 }
 
-/** Get the step number from a question key (e.g. "s2_revenue_2023" → 2) */
+/**
+ * Get the wizard step for a question key (e.g. "s2n_goal_12m_what" → 2).
+ * Uses the generated key→step table (lib/survey/steps.ts): the prefix is NOT
+ * reliable (step 5 writes `s3_*`, step 7 writes `s5_*`, and `s2n_`-style keys
+ * never matched the old `^s(\d+)_` regex, so «Мои данные» silently dropped
+ * whole sections). Falls back to the prefix for keys outside the table.
+ */
 export function getStepFromKey(key: string): number {
-  const match = key.match(/^s(\d+)_/)
+  const mapped = stepForQuestionKey(key)
+  if (mapped !== null) return mapped
+  const match = key.match(/^s(\d+)n?_/)
   return match ? parseInt(match[1], 10) : 0
+}
+
+/**
+ * Render a table-style answer (array of row objects, e.g. «Карта влияния» /
+ * «Каналы») as readable text instead of "[object Object], [object Object]".
+ * Rows that only carry a pre-filled label (no user input) are skipped.
+ */
+export function formatSurveyTableRows(rows: ReadonlyArray<Record<string, unknown>>): string {
+  const MAX_ROWS = 20
+  const lines: string[] = []
+  for (const row of rows) {
+    if (!row || typeof row !== 'object') continue
+    const keys = Object.keys(row)
+    const cells = keys
+      .map((k) => row[k])
+      .filter((v) => v !== null && v !== undefined && !(typeof v === 'string' && v.trim() === ''))
+      .map((v) => (typeof v === 'object' ? JSON.stringify(v) : String(v).trim()))
+    if (cells.length === 0) continue
+    // A prefilled template row (only the first column, e.g. the category) is not an answer.
+    if (keys.length >= 2 && cells.length === 1) continue
+    lines.push(cells.join(' — '))
+    if (lines.length >= MAX_ROWS) break
+  }
+  return lines.length ? lines.join('; ') : '—'
 }
 
 /** Format a survey value for display */
@@ -279,7 +327,21 @@ export function formatSurveyValue(key: string, value: unknown): string {
     try { return JSON.stringify(value) } catch { return '—' }
   }
   if (typeof value === 'boolean') return value ? 'Да' : 'Нет'
-  if (Array.isArray(value)) return value.map(v => typeof v === 'object' && v !== null && 'value' in v ? (v as any).value : v).join(', ')
+  if (Array.isArray(value)) {
+    if (value.length === 0) return '—'
+    // Step-1 uploads: show file names, not storage paths / byte sizes.
+    if (key === 's1_uploaded_files') {
+      const names = value
+        .map((f) => (f && typeof f === 'object' ? (f as { name?: unknown }).name : null))
+        .filter((n): n is string => typeof n === 'string' && n.trim().length > 0)
+      return names.length ? names.join(', ') : '—'
+    }
+    // Table answers (DynamicTable rows) → one line per filled row.
+    if (value.every((v) => v !== null && typeof v === 'object' && !Array.isArray(v) && !('value' in (v as object)))) {
+      return formatSurveyTableRows(value as Record<string, unknown>[])
+    }
+    return value.map(v => typeof v === 'object' && v !== null && 'value' in v ? (v as any).value : v).join(', ')
+  }
   if (typeof value === 'number') {
     if (key.includes('revenue') || key.includes('avg_check') || key.includes('cac') || key.includes('ltv')
         || key.includes('net_profit') || key.includes('debts_amount') || key.includes('breakeven_point')) {

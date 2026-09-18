@@ -2,7 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase-service'
-import { getGigaActor } from '@/lib/admin/giga-actor'
+import { forbidTarget, requireGiga } from '@/lib/admin/giga-actor'
 import { logAudit } from '@/lib/audit'
 import { normalizeOverrides, normalizeTier } from '@/lib/access/entitlements'
 
@@ -10,7 +10,8 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 /** GET — текущий tier + feature_flags пользователя (для админ-панели). */
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
-  if (!(await getGigaActor(req))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  const guard = await requireGiga(req, 'users.view')
+  if (guard.response) return guard.response
   if (!UUID_RE.test(params.id)) {
     return NextResponse.json({ error: 'invalid id' }, { status: 400 })
   }
@@ -47,8 +48,11 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
  * уже была причиной инцидента.
  */
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
-  const actor = await getGigaActor(req)
-  if (!actor) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  const guard = await requireGiga(req, 'users.manage')
+  if (guard.response) return guard.response
+  const actor = guard.actor
+  const denied = await forbidTarget(guard.actor, params.id)
+  if (denied) return denied
   if (!UUID_RE.test(params.id)) {
     return NextResponse.json({ error: 'invalid id' }, { status: 400 })
   }
@@ -75,6 +79,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
   try {
     const svc = createServiceClient()
+    const { data: before } = await svc.from('profiles').select('tier, feature_flags').eq('id', params.id).maybeSingle()
     const { data, error } = await svc
       .from('profiles')
       .update(patch)
@@ -98,7 +103,11 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       entityId: params.id,
       action: 'user.access_changed',
       performedBy: actor.id,
-      diff: { ...patch, actorKind: actor.kind },
+      diff: {
+        before: before ? Object.fromEntries(Object.keys(patch).map((k) => [k, (before as Record<string, unknown>)[k] ?? null])) : null,
+        after: patch,
+        actorKind: actor.kind,
+      },
       ipAddress: req.headers.get('x-forwarded-for') ?? undefined,
     })
 

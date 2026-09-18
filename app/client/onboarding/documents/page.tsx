@@ -346,10 +346,13 @@ export default function DocumentsPage() {
         } = await supabase.auth.getUser()
         setUserId(user?.id ?? null)
 
-        const onbRaw = localStorage.getItem('aistart360_onboarding')
-        if (onbRaw) {
-          const parsed = JSON.parse(onbRaw)
-          setCompanyId(parsed?.company_id ?? null)
+        // company_id comes from the server for THIS session — the survey
+        // draft in localStorage is per-user and no longer carries it (the old
+        // shared key could hand another user's company to these uploads).
+        if (user?.id) {
+          const compRes = await fetch('/api/v1/onboarding/company', { credentials: 'include' })
+          const compJson = await compRes.json().catch(() => null)
+          if (compRes.ok && compJson?.ok && compJson.data?.id) setCompanyId(String(compJson.data.id))
         }
       } catch {
         setUserId(null)

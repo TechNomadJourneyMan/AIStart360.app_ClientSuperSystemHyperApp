@@ -48,6 +48,7 @@ export async function GET() {
         benchmarks: ent.benchmarks,
       },
       griRunsUsed,
+      griRunsLimit: Number.isFinite(ent.gri_full_limit) ? ent.gri_full_limit : null,
       canRunFullGri: !gatesEnabled || canRunFullGri(ent, griRunsUsed),
     })
   } catch (error) {

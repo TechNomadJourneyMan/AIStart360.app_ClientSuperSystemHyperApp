@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
-import { isGigaSuperAdmin } from '@/lib/admin/giga-actor'
+import { requireGiga } from '@/lib/admin/giga-actor'
 import {
   listDevelopmentAdminInbox,
   shouldUseDevelopmentAdminPostgres,
@@ -10,9 +10,8 @@ import { createServiceClient } from '@/lib/supabase-service'
 
 const channels = new Set(['instagram', 'whatsapp'])
 export async function GET(req: NextRequest) {
-  if (!(await isGigaSuperAdmin(req))) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-  }
+  const guard = await requireGiga(req, 'inbox.view')
+  if (guard.response) return guard.response
 
   const channel = req.nextUrl.searchParams.get('channel')
   if (channel && !channels.has(channel)) {

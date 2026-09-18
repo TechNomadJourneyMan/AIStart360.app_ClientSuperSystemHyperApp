@@ -37,7 +37,13 @@ interface CatalogItem {
 
 interface CatalogResponse {
   ok: boolean
-  data?: { total: number; page: number; pageSize: number; items: CatalogItem[] }
+  data?: {
+    total: number
+    counts?: Partial<Record<Namespace, number>>
+    page: number
+    pageSize: number
+    items: CatalogItem[]
+  }
   error?: string
 }
 
@@ -214,12 +220,24 @@ export default function MetricsLiveCatalog({ userId }: Props) {
     }
   }, [drillItem])
 
+  // Server-side per-namespace totals (search-aware). Kept across tab switches
+  // so «Все» never collapses to 0 while another tab is loading (E2E bug #8).
+  const lastCountsRef = useRef<Record<Namespace, number> | null>(null)
   const counts: Record<Namespace, number> = useMemo(() => {
-    // We only have current-page counts; show 0 for non-active namespaces until backend exposes total per ns
-    const base: Record<Namespace, number> = { all: 0, biz: 0, kpi: 0, gri: 0, goal: 0 }
-    base[namespace] = total
+    const base: Record<Namespace, number> = lastCountsRef.current
+      ? { ...lastCountsRef.current }
+      : { all: 0, biz: 0, kpi: 0, gri: 0, goal: 0 }
+    const server = data?.counts
+    if (server) {
+      for (const k of Object.keys(base) as Namespace[]) {
+        if (typeof server[k] === 'number') base[k] = server[k] as number
+      }
+    } else if (data) {
+      base[namespace] = total
+    }
+    lastCountsRef.current = base
     return base
-  }, [namespace, total])
+  }, [data, namespace, total])
 
   return (
     <section data-tour="metrics-catalog" className="space-y-5">

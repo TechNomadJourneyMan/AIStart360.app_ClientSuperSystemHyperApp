@@ -1,255 +1,156 @@
 'use client'
 
-import { motion, AnimatePresence } from 'framer-motion'
+import { useState } from 'react'
+import Link from 'next/link'
+import { Activity, Eye, Radar, ShieldAlert, UserCheck, UserPlus, Users2 } from 'lucide-react'
 import {
-  InboxIcon,
-  Users2,
-  Building2,
-  Lightbulb,
-  Sparkles,
-  TrendingUp,
-  CheckCircle,
-  Clock,
-  XCircle,
-  Shield,
-  ShieldCheck,
-  MessagesSquare,
-} from 'lucide-react'
-import { useGigaPanelStore } from '@/stores/gigaPanel.store'
-import { RequestsModule } from '@/components/giga-panel/RequestsModule'
-import { CRMModule } from '@/components/giga-panel/CRMModule'
-import { ClientsModule } from '@/components/giga-panel/ClientsModule'
-import { LeadsModule } from '@/components/giga-panel/LeadsModule'
-import { MarketInsightsModule } from '@/components/giga-panel/MarketInsightsModule'
-import { InsightModerationModule } from '@/components/giga-panel/InsightModerationModule'
-import { OmnichannelModule } from '@/components/giga-panel/OmnichannelModule'
+  BarList, Badge, ColumnChart, ErrorState, Funnel, PageHeader, Panel, Select, Skeleton, StatTile, fmtAgo, useGigaQuery,
+} from '@/components/giga-panel/kit'
+import { useStaff } from '@/components/giga-panel/StaffContext'
+import { JOURNEY_LABEL } from '@/lib/admin/journey'
+import { eventLabel } from '@/lib/events/registry'
+import { EVENT_SOURCE, auditLabel } from '@/lib/admin/labels'
 
-// ─── KPI Card ────────────────────────────────────────────────────────────────
-
-function KpiCard({
-  label,
-  value,
-  icon,
-  accent,
-  sub,
-}: {
-  label: string
-  value: number | string
-  icon: React.ReactNode
-  accent: string
-  sub?: string
-}) {
-  return (
-    <div className={`
-      relative overflow-hidden rounded-2xl p-4
-      bg-white/[0.04] border border-white/[0.07] backdrop-blur-sm
-      hover:border-white/[0.12] transition-all duration-200
-    `}>
-      <div className="flex items-start justify-between mb-3">
-        <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${accent}`}>
-          {icon}
-        </div>
-      </div>
-      <p className="text-xl md:text-2xl font-bold text-slate-100 tabular-nums">{value}</p>
-      <p className="text-[10px] md:text-xs text-slate-500 mt-1">{label}</p>
-      {sub && <p className="text-[10px] text-slate-700 mt-0.5">{sub}</p>}
-    </div>
-  )
+interface Overview {
+  days: number
+  generated_at: string
+  users: Record<'total' | 'clients' | 'staff' | 'new_7d' | 'new_period' | 'active_1d' | 'active_7d' | 'active_30d' | 'pending_approval' | 'blocked', number>
+  funnel: Array<{ key: string; count: number }> | null
+  signups_by_day: Array<{ day: string; count: number }>
+  events_by_day: Array<{ day: string; count: number; users: number }>
+  top_pages: Array<{ page: string; views: number; users: number }>
+  recent_events: Array<{ id: number; user_id: string; event_name: string; source: string; created_at: string; email: string | null; full_name: string | null }>
+  recent_admin_actions: Array<{ id: number; actor_id: string; actor_email: string | null; actor_role: string | null; action: string; target_user_id: string | null; target_email: string | null; created_at: string }>
+  gri: { assessments: number; avg_index: number | null; drafts: number } | null
+  impersonation_active: number
 }
 
-// ─── Main page ───────────────────────────────────────────────────────────────
+const DAYS = [
+  { value: '7', label: '7 дней' },
+  { value: '30', label: '30 дней' },
+  { value: '90', label: '90 дней' },
+] as const
 
-export default function GigaPanelPage() {
-  const { activeModule, setActiveModule, requests, users, clients } = useGigaPanelStore()
+const dayLabel = (d: string) => new Date(d).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })
 
-  const totalPending = requests.filter((r) => r.status === 'pending').length
-  const totalApproved = requests.filter((r) => r.status === 'approved').length
-  const totalRejected = requests.filter((r) => r.status === 'rejected').length
-  const totalBlocked = users.filter((u) => u.status === 'blocked').length
+export default function OverviewPage() {
+  const [days, setDays] = useState<'7' | '30' | '90'>('30')
+  const { can, me } = useStaff()
+  const { data, error, loading, reload } = useGigaQuery<{ data: Overview }>(`/api/giga-admin/overview?days=${days}`)
+  const o = data?.data
+  const u = o?.users
 
   return (
-    <div className="max-w-6xl mx-auto">
-      {/* Top bar */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6 md:mb-8">
-        <div>
-          <div className="hidden md:flex items-center gap-2 mb-1">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/logo-icon-blue.svg" alt="AIStart360" className="w-4 h-4" />
-            <span className="text-xs font-semibold text-blue-400 tracking-[0.15em] uppercase">
-              ГИГА-Панель
-            </span>
-          </div>
-          <h1 className="text-lg md:text-2xl font-bold text-slate-100 tracking-tight">
-            Командный центр
-          </h1>
-          <p className="text-xs md:text-sm text-slate-500 mt-0.5">
-            Системный уровень доступа
-          </p>
-        </div>
+    <div>
+      <PageHeader
+        title="Центр управления"
+        description={me ? `${me.roleLabel}${me.email ? ` · ${me.email}` : ''}${o ? ` · обновлено ${fmtAgo(o.generated_at)}` : ''}` : undefined}
+        actions={<Select label="Период" value={days} onChange={setDays} options={DAYS} />}
+      />
+      <ErrorState error={error} onRetry={reload} />
 
-        {/* Module switcher */}
-        <div className="flex items-center gap-1 p-1 rounded-xl bg-white/[0.04] border border-white/[0.07] overflow-x-auto">
-          <button
-            onClick={() => setActiveModule('requests')}
-            className={`
-              flex items-center gap-1.5 md:gap-2 px-3 md:px-4 py-2 rounded-lg text-xs md:text-sm font-medium transition-all whitespace-nowrap
-              ${activeModule === 'requests'
-                ? 'bg-blue-500/20 text-blue-300 border border-blue-500/25'
-                : 'text-slate-500 hover:text-slate-300'
-              }
-            `}
-          >
-            <InboxIcon size={15} />
-            Заявки
-            {totalPending > 0 && (
-              <span className="flex items-center justify-center h-4 min-w-4 px-1 rounded-full
-                bg-blue-500 text-white text-[9px] font-bold">
-                {totalPending}
-              </span>
-            )}
-          </button>
-          <button
-            onClick={() => setActiveModule('crm')}
-            className={`
-              flex items-center gap-1.5 md:gap-2 px-3 md:px-4 py-2 rounded-lg text-xs md:text-sm font-medium transition-all whitespace-nowrap
-              ${activeModule === 'crm'
-                ? 'bg-blue-500/20 text-blue-300 border border-blue-500/25'
-                : 'text-slate-500 hover:text-slate-300'
-              }
-            `}
-          >
-            <Users2 size={15} />
-            CRM
-          </button>
-          <button
-            onClick={() => setActiveModule('clients')}
-            className={`
-              flex items-center gap-1.5 md:gap-2 px-3 md:px-4 py-2 rounded-lg text-xs md:text-sm font-medium transition-all whitespace-nowrap
-              ${activeModule === 'clients'
-                ? 'bg-blue-500/20 text-blue-300 border border-blue-500/25'
-                : 'text-slate-500 hover:text-slate-300'
-              }
-            `}
-          >
-            <Building2 size={15} />
-            Клиенты
-            {clients.length > 0 && (
-              <span className="flex items-center justify-center h-4 min-w-4 px-1 rounded-full
-                bg-blue-500/30 text-blue-300 text-[9px] font-bold">
-                {clients.length}
-              </span>
-            )}
-          </button>
-          <button
-            onClick={() => setActiveModule('leads')}
-            className={`
-              flex items-center gap-1.5 md:gap-2 px-3 md:px-4 py-2 rounded-lg text-xs md:text-sm font-medium transition-all whitespace-nowrap
-              ${activeModule === 'leads'
-                ? 'bg-blue-500/20 text-blue-300 border border-blue-500/25'
-                : 'text-slate-500 hover:text-slate-300'
-              }
-            `}
-          >
-            <Sparkles size={15} />
-            Лиды
-          </button>
-          <button
-            onClick={() => setActiveModule('omnichannel')}
-            className={`
-              flex items-center gap-1.5 md:gap-2 px-3 md:px-4 py-2 rounded-lg text-xs md:text-sm font-medium transition-all whitespace-nowrap
-              ${activeModule === 'omnichannel'
-                ? 'bg-blue-500/20 text-blue-300 border border-blue-500/25'
-                : 'text-slate-500 hover:text-slate-300'
-              }
-            `}
-          >
-            <MessagesSquare size={15} />
-            Inbox
-          </button>
-          <button
-            onClick={() => setActiveModule('market-insights')}
-            className={`
-              flex items-center gap-1.5 md:gap-2 px-3 md:px-4 py-2 rounded-lg text-xs md:text-sm font-medium transition-all whitespace-nowrap
-              ${activeModule === 'market-insights'
-                ? 'bg-blue-500/20 text-blue-300 border border-blue-500/25'
-                : 'text-slate-500 hover:text-slate-300'
-              }
-            `}
-          >
-            <Lightbulb size={15} />
-            Инсайты рынка
-          </button>
-          <button
-            onClick={() => setActiveModule('insight-moderation')}
-            className={`
-              flex items-center gap-1.5 md:gap-2 px-3 md:px-4 py-2 rounded-lg text-xs md:text-sm font-medium transition-all whitespace-nowrap
-              ${activeModule === 'insight-moderation'
-                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/25'
-                : 'text-slate-500 hover:text-slate-300'
-              }
-            `}
-          >
-            <ShieldCheck size={15} />
-            Модерация ИИ
-          </button>
-        </div>
+      <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {loading && !o ? [0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-[104px]" />) : u && (
+          <>
+            <StatTile label="Всего пользователей" value={u.total} hint={`клиентов ${u.clients} · персонал ${u.staff}`} icon={<Users2 size={14} />} href={can('users.view') ? '/admin-giga-panel/users' : undefined} />
+            <StatTile label={`Новые за ${o!.days} дн`} value={u.new_period} hint={`за 7 дней: ${u.new_7d}`} icon={<UserPlus size={14} />} tone="green" href={can('users.view') ? '/admin-giga-panel/users?segment=new_7d' : undefined} />
+            <StatTile label="Активные за 7 дней" value={u.active_7d} hint={`сегодня ${u.active_1d} · 30 дн ${u.active_30d}`} icon={<Activity size={14} />} tone="violet" href={can('activity.view') ? '/admin-giga-panel/activity' : undefined} />
+            <StatTile label="Ожидают одобрения" value={u.pending_approval} hint={u.blocked ? `заблокировано / в архиве: ${u.blocked}` : 'заявки на доступ'} icon={<UserCheck size={14} />} tone="amber" href={can('users.view') ? '/admin-giga-panel/requests' : undefined} />
+          </>
+        )}
       </div>
 
-      {/* KPI row */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 md:gap-4 mb-6 md:mb-8">
-        <KpiCard
-          label="Ожидают решения"
-          value={totalPending}
-          icon={<Clock size={16} className="text-amber-400" />}
-          accent="bg-amber-500/15 border border-amber-500/20"
-          sub="Требуют внимания"
-        />
-        <KpiCard
-          label="Одобрено"
-          value={totalApproved}
-          icon={<CheckCircle size={16} className="text-emerald-400" />}
-          accent="bg-emerald-500/15 border border-emerald-500/20"
-        />
-        <KpiCard
-          label="Отклонено"
-          value={totalRejected}
-          icon={<XCircle size={16} className="text-red-400" />}
-          accent="bg-red-500/15 border border-red-500/20"
-        />
-        <KpiCard
-          label="Заблокировано"
-          value={totalBlocked}
-          icon={<TrendingUp size={16} className="text-slate-400" />}
-          accent="bg-slate-500/15 border border-slate-500/20"
-          sub={`из ${users.length} пользователей`}
-        />
-        <KpiCard
-          label="Клиентов платформы"
-          value={clients.length}
-          icon={<Building2 size={16} className="text-blue-400" />}
-          accent="bg-blue-500/15 border border-blue-500/20"
-          sub="В базе данных"
-        />
-      </div>
-
-      {/* Active module */}
-      <AnimatePresence mode="wait">
-        <motion.div
-          key={activeModule}
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -10 }}
-          transition={{ duration: 0.2, ease: 'easeInOut' }}
+      <div className="grid gap-4 lg:grid-cols-3">
+        {can('cjm.view') && <Panel
+          className="lg:col-span-2"
+          title="Путь клиентов (CJM)"
+          description="Сколько клиентов дошло до этапа · доля от всех · отсев от предыдущего"
+          actions={can('cjm.view') ? <Link href="/admin-giga-panel/cjm" className="text-[11px] text-blue-300 hover:underline">Подробнее</Link> : undefined}
         >
-          {activeModule === 'requests' && <RequestsModule />}
-          {activeModule === 'crm' && <CRMModule />}
-          {activeModule === 'clients' && <ClientsModule />}
-          {activeModule === 'leads' && <LeadsModule />}
-          {activeModule === 'omnichannel' && <OmnichannelModule />}
-          {activeModule === 'market-insights' && <MarketInsightsModule />}
-          {activeModule === 'insight-moderation' && <InsightModerationModule />}
-        </motion.div>
-      </AnimatePresence>
+          {o?.funnel ? (
+            <Funnel steps={o.funnel.map((f) => ({ key: f.key, label: JOURNEY_LABEL[f.key] ?? f.key, count: f.count, href: can('cjm.view') ? `/admin-giga-panel/cjm?stage=${f.key}` : undefined }))} />
+          ) : <Skeleton className="h-64" />}
+        </Panel>}
+
+        <div className="space-y-4">
+          {can('gri.view') && <Panel title="GRI">
+            {o?.gri ? (
+              <div className="grid grid-cols-3 gap-2 text-center">
+                <div><p className="text-xl font-bold text-slate-100">{o.gri.assessments}</p><p className="text-[10px] text-slate-500">прохождений</p></div>
+                <div><p className="text-xl font-bold text-slate-100">{o.gri.avg_index ?? '—'}</p><p className="text-[10px] text-slate-500">средний индекс</p></div>
+                <div><p className="text-xl font-bold text-slate-100">{o.gri.drafts}</p><p className="text-[10px] text-slate-500">в процессе</p></div>
+              </div>
+            ) : <Skeleton className="h-16" />}
+            <Link href="/admin-giga-panel/gri" className="mt-3 flex items-center gap-1 text-[11px] text-blue-300 hover:underline"><Radar size={12} /> Все результаты GRI</Link>
+          </Panel>}
+          <Panel title="Безопасность">
+            <ul className="space-y-2 text-xs">
+              <li className="flex items-center justify-between">
+                <span className="flex items-center gap-2 text-slate-400"><Eye size={13} /> Открытые сессии «от имени»</span>
+                <Badge tone={o?.impersonation_active ? 'amber' : 'neutral'}>{o?.impersonation_active ?? '—'}</Badge>
+              </li>
+              <li className="flex items-center justify-between">
+                <span className="flex items-center gap-2 text-slate-400"><ShieldAlert size={13} /> Заблокировано / архив</span>
+                <Badge tone={u?.blocked ? 'red' : 'neutral'}>{u?.blocked ?? '—'}</Badge>
+              </li>
+            </ul>
+          </Panel>
+        </div>
+
+        <Panel title="Регистрации по дням">
+          {o ? <ColumnChart label="Регистрации по дням" points={o.signups_by_day.map((p) => ({ label: dayLabel(p.day), value: p.count }))} /> : <Skeleton className="h-32" />}
+        </Panel>
+
+        {can('analytics.view') && (
+          <Panel title="Активность по дням" description="события пользователей">
+            {o ? <ColumnChart label="События по дням" points={o.events_by_day.map((p) => ({ label: dayLabel(p.day), value: p.count }))} /> : <Skeleton className="h-32" />}
+          </Panel>
+        )}
+
+        {can('analytics.view') && (
+          <Panel title="Популярные разделы">
+            {o ? <BarList items={o.top_pages.map((p) => ({ key: p.page, label: <span className="font-mono">{p.page}</span>, value: p.views, hint: `· ${p.users} чел` }))} emptyText="Просмотров ещё нет — трекинг начал собирать данные" /> : <Skeleton className="h-32" />}
+          </Panel>
+        )}
+
+        {can('users.view') && (
+          <Panel className="lg:col-span-2" title="Последние события" actions={can('activity.view') ? <Link href="/admin-giga-panel/activity" className="text-[11px] text-blue-300 hover:underline">Все</Link> : undefined}>
+            {o ? (
+              o.recent_events.length ? (
+                <ul className="divide-y divide-white/[0.05]">
+                  {o.recent_events.map((e) => (
+                    <li key={e.id} className="flex items-center gap-3 py-2 text-xs">
+                      <span className="w-24 shrink-0 text-[10px] text-slate-600">{fmtAgo(e.created_at)}</span>
+                      <span className="min-w-0 flex-1 truncate text-slate-200">{eventLabel(e.event_name)}</span>
+                      <Link href={`/admin-giga-panel/users/${e.user_id}`} className="max-w-[40%] truncate text-slate-400 hover:text-blue-300">{e.full_name || e.email}</Link>
+                      <Badge tone={EVENT_SOURCE[e.source]?.tone}>{EVENT_SOURCE[e.source]?.label ?? e.source}</Badge>
+                    </li>
+                  ))}
+                </ul>
+              ) : <p className="py-6 text-center text-xs text-slate-600">Событий пока нет</p>
+            ) : <Skeleton className="h-40" />}
+          </Panel>
+        )}
+
+        {can('audit.view') && (
+          <Panel title="Действия персонала" actions={<Link href="/admin-giga-panel/audit" className="text-[11px] text-blue-300 hover:underline">Журнал</Link>}>
+            {o ? (
+              o.recent_admin_actions.length ? (
+                <ul className="space-y-2">
+                  {o.recent_admin_actions.map((a) => (
+                    <li key={a.id} className="text-xs">
+                      <p className="text-slate-200">{auditLabel(a.action)}</p>
+                      <p className="truncate text-[10px] text-slate-500">
+                        {a.actor_email || a.actor_id}{a.target_email ? ` → ${a.target_email}` : ''} · {fmtAgo(a.created_at)}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              ) : <p className="py-6 text-center text-xs text-slate-600">Действий пока нет</p>
+            ) : <Skeleton className="h-40" />}
+          </Panel>
+        )}
+      </div>
     </div>
   )
 }

@@ -94,15 +94,10 @@ function splitValueCaption(text: string): { value: string; caption: string } {
     return { value, caption: clamp(rest, MAX_CAPTION_LEN) }
   }
 
-  // No figure — use the first clause as the value, the remainder as caption.
-  const parts = t.split(/[—\-:.,;]\s+/)
-  if (parts.length > 1) {
-    return {
-      value: clamp(parts[0], MAX_VALUE_LEN),
-      caption: clamp(parts.slice(1).join(' '), MAX_CAPTION_LEN),
-    }
-  }
-  return { value: clamp(t, MAX_VALUE_LEN), caption: '' }
+  // No figure at all — the tile is a NUMBER slot. Never promote free text
+  // ("Fjkdlpdpd", "не знаю") into the headline; show a dash and keep the
+  // answer as the caption so the user still sees what was entered.
+  return { value: '—', caption: clamp(t, MAX_CAPTION_LEN) }
 }
 
 /** First trend phrase from a comma/number-list answer (for mainTrend). */

@@ -63,9 +63,13 @@ const csp = [
   scriptSrc,
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "font-src 'self' https://fonts.gstatic.com https://fonts.googleapis.com",
-  "img-src 'self' data: https://*.supabase.co https://lh3.googleusercontent.com",
+  // Content pages (GIGA-CRM CMS) may show images from any https host.
+  "img-src 'self' data: https:",
+  // Video files uploaded to the cms-media bucket.
+  "media-src 'self' https://*.supabase.co",
   `connect-src 'self' https://*.supabase.co ${marketAppOrigin}`,
-  `frame-src 'self' ${marketAppOrigin}`,
+  // YouTube (privacy-enhanced) and Vimeo embeds in content pages.
+  `frame-src 'self' ${marketAppOrigin} https://www.youtube-nocookie.com https://player.vimeo.com`,
   "frame-ancestors 'none'",
   "base-uri 'self'",
   "object-src 'none'",

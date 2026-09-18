@@ -2,7 +2,8 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
-import { isGigaSuperAdmin } from '@/lib/admin/giga-actor'
+import { requireGiga } from '@/lib/admin/giga-actor'
+import { createServiceClient } from '@/lib/supabase-service'
 import {
   BLOCKS,
   isValidQuestionKey,
@@ -33,10 +34,12 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
  * app/api/reports/upload/route.ts).
  */
 function serviceClient(): SupabaseClient | null {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-  if (!url || !key) return null
-  return createClient(url, key, { auth: { persistSession: false } })
+  // Fail closed: never fall back to the anon key (RLS would drop the writes).
+  try {
+    return createServiceClient()
+  } catch {
+    return null
+  }
 }
 
 // =============================================================================
@@ -45,9 +48,8 @@ function serviceClient(): SupabaseClient | null {
 //   (no user_id)    → list of client-role profiles with answer counts
 // =============================================================================
 export async function GET(req: NextRequest) {
-  if (!(await isGigaSuperAdmin(req))) {
-    return NextResponse.json({ ok: false, error: 'forbidden' }, { status: 403 })
-  }
+  const guard = await requireGiga(req, 'market.manage')
+  if (guard.response) return guard.response
 
   const sb = serviceClient()
   if (!sb) {
@@ -160,9 +162,8 @@ export async function GET(req: NextRequest) {
 // Default status 'confirmed'. Rebuilds the user's snapshot afterwards.
 // =============================================================================
 export async function PATCH(req: NextRequest) {
-  if (!(await isGigaSuperAdmin(req))) {
-    return NextResponse.json({ ok: false, error: 'forbidden' }, { status: 403 })
-  }
+  const guard = await requireGiga(req, 'market.manage')
+  if (guard.response) return guard.response
 
   const body = await req.json().catch(() => null)
   if (!body || typeof body !== 'object') {
@@ -219,9 +220,8 @@ export async function PATCH(req: NextRequest) {
 // user_id + service-role client. Honest ai_not_configured when no key.
 // =============================================================================
 export async function POST(req: NextRequest) {
-  if (!(await isGigaSuperAdmin(req))) {
-    return NextResponse.json({ ok: false, error: 'forbidden' }, { status: 403 })
-  }
+  const guard = await requireGiga(req, 'market.manage')
+  if (guard.response) return guard.response
 
   const body = await req.json().catch(() => null)
   if (!body || typeof body !== 'object') {

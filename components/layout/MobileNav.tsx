@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation'
 import { useState, useEffect } from 'react'
 import { useAuthStore } from '@/stores/auth.store'
 import { getNavForRole } from '@/lib/navigation'
+import { useHiddenSectionPaths, isHiddenByPlatform } from '@/hooks/usePlatformSections'
 import type { UserRole } from '@/types'
 
 // ── Bottom bar — 4 primary tabs ─────────────────────────────────────────────
@@ -90,7 +91,8 @@ export function MobileNav() {
 
   // FE-01/02: canonical lowercase role, default 'client' when missing.
   const role: UserRole = (user?.role as UserRole | undefined) ?? 'client'
-  const allowedNav = getNavForRole(role).map(item => item.href)
+  const hiddenPaths = useHiddenSectionPaths()
+  const allowedNav = getNavForRole(role).map(item => item.href).filter((h) => !isHiddenByPlatform(h, hiddenPaths))
 
   // Items locked behind a paid plan for CLIENT role
   const PREMIUM_LOCKED = ['/metrics', '/market', '/point-b']

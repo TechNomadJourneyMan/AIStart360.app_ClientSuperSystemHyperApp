@@ -547,7 +547,7 @@ export const METRIC_SYNONYMS: Record<string, string[]> = {
     'доля рынка',
     'market share',
     'рыночная доля',
-    'доля рынка конфет',
+    'доля рынка сегмента',
   ],
   export_share: [
     'доля экспорта',

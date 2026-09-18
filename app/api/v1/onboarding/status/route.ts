@@ -2,9 +2,8 @@ export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
-
-// Total wizard steps in the onboarding survey (1..12).
-const TOTAL_STEPS = 12
+import { surveyProgressFromRows } from '@/lib/survey/steps'
+import { positiveNumber } from '@/lib/survey/targets'
 
 // GET /api/v1/onboarding/status
 // Returns { survey: { completed_steps, total_steps, percent, current_goal_12m, current_goal_3y },
@@ -35,16 +34,11 @@ export async function GET() {
   const GOAL_3Y_KEYS = ['s6_goal_3years', 's2n_goal_3y_what', 's2n_goal_3y_metrics']
   const goal12mByKey: Record<string, string> = {}
   const goal3yByKey: Record<string, string> = {}
+  const flat: Record<string, unknown> = {}
 
-  const steps = new Set<number>()
   for (const r of survey ?? []) {
-    // Onboarding wizard steps are 1..12; step 0 is reserved for synthetic
-    // metadata (period goals) and is not a real questionnaire step, so it
-    // never counts toward progress. If a medical/alternate path ever needs
-    // step 0 counted, add it explicitly here.
-    if (typeof r.step === 'number' && r.step >= 1) steps.add(r.step)
-
     const v = (r.answer as { value: unknown })?.value
+    flat[r.question_key] = v
     if (typeof v === 'string' && v.trim()) {
       if (GOAL_12M_KEYS.includes(r.question_key)) goal12mByKey[r.question_key] = v
       if (GOAL_3Y_KEYS.includes(r.question_key)) goal3yByKey[r.question_key] = v
@@ -54,21 +48,29 @@ export async function GET() {
   const goal12m = GOAL_12M_KEYS.map((k) => goal12mByKey[k]).find(Boolean) ?? null
   const goal3y = GOAL_3Y_KEYS.map((k) => goal3yByKey[k]).find(Boolean) ?? null
 
-  // Completion % = distinct answered wizard steps (1..12) / TOTAL_STEPS.
-  // Steps are deduped via the Set so multiple answers in one step count once.
-  const completed = steps.size
-  const percent = Math.round((completed / TOTAL_STEPS) * 100)
+  // Completion = distinct answered wizard steps (1..12). The step is derived
+  // from the question key (lib/survey/steps.ts), NOT from the stored `step`
+  // column — that column was overwritten on every save and made the whole
+  // portal report "1/12" while the wizard itself was complete.
+  const progress = surveyProgressFromRows(survey ?? [])
+
+  // Current monthly revenue from survey step 1 (month field, else year / 12) —
+  // the dashboard hero used to invent «58 % of plan» when no metric existed.
+  const monthRev = positiveNumber(flat.s1_current_revenue_month)
+  const yearRev = positiveNumber(flat.s1_current_revenue_year)
+  const currentRevenueMonth = monthRev ?? (yearRev ? Math.round(yearRev / 12) : null)
 
   return NextResponse.json({
     ok: true,
     data: {
       survey: {
-        completed_steps: completed,
-        total_steps: TOTAL_STEPS,
-        percent,
-        is_complete: completed >= TOTAL_STEPS,
+        completed_steps: progress.completed,
+        total_steps: progress.total_steps,
+        percent: progress.percent,
+        is_complete: progress.is_complete,
         current_goal_12m: goal12m,
         current_goal_3y: goal3y,
+        current_revenue_month: currentRevenueMonth,
       },
       documents: {
         count: docCount ?? 0,

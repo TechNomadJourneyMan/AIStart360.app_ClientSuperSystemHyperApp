@@ -41,6 +41,15 @@ export interface NextBestAction {
 export function pickNextBestAction(i: NbaInput): NextBestAction {
   // 1. Фундамент: анкета не заполнена — без неё всё остальное неточно.
   if (i.completionPct < 100 && i.nextSectionLabel) {
+    if (i.completionPct <= 0) {
+      return {
+        kind: 'finish_survey',
+        title: 'Заполните анкету',
+        detail: `Начните с раздела «${i.nextSectionLabel}» — без анкеты диагностика невозможна.`,
+        ctaLabel: 'Начать анкету',
+        href: '/client/onboarding',
+      }
+    }
     return {
       kind: 'finish_survey',
       title: 'Доделайте анкету',

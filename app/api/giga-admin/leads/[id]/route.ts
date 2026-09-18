@@ -2,7 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase-service'
-import { isGigaSuperAdmin } from '@/lib/admin/giga-actor'
+import { requireGiga } from '@/lib/admin/giga-actor'
 
 /**
  * PATCH /api/giga-admin/leads/:id
@@ -10,9 +10,8 @@ import { isGigaSuperAdmin } from '@/lib/admin/giga-actor'
  * Body: { converted: boolean }. Service-role write (mini_gri_leads has no RLS).
  */
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
-  if (!(await isGigaSuperAdmin(req))) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-  }
+  const guard = await requireGiga(req, 'leads.manage')
+  if (guard.response) return guard.response
 
   let body: unknown
   try {

@@ -27,6 +27,9 @@ export default function GigaPanelLoginPage() {
         window.location.href = '/admin-giga-panel'
       } else if (res.status === 429) {
         setError('Слишком много попыток. Попробуйте позже.')
+      } else if (res.status === 403) {
+        const d = await res.json().catch(() => null)
+        setError(d?.error || 'Вход по общему паролю выключен')
       } else {
         setError('Неверный пароль')
       }

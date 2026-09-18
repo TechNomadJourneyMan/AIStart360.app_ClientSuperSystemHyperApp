@@ -7,6 +7,7 @@ import { notifyAdmins } from '@/lib/notifications'
 import { localeFromRequestCookie } from '@/lib/i18n/locale'
 import { resolveTargetUserId } from '@/lib/api-identity'
 import { isRateLimitedKey } from '@/lib/rate-limit'
+import { trackEvent } from '@/lib/events/track'
 import { internalFetchHeaders } from '@/lib/internal-auth'
 
 // POST /api/v1/diagnostics/recalculate
@@ -97,6 +98,7 @@ export async function POST(req: NextRequest) {
       .single()
 
     if (diagErr) return NextResponse.json({ ok: false, error: 'Failed to store diagnostic' }, { status: 500 })
+    void trackEvent({ userId: user_id, name: 'POINT_A_CALCULATED', entityType: 'diagnostic', entityId: diag?.id ?? null, metadata: { overall_score: Number(result.overall_score) } })
 
     // Fire async AI analysis (non-blocking)
     if (process.env.OPENROUTER_API_KEY && diag?.id) {

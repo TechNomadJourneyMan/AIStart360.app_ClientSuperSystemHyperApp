@@ -4,7 +4,7 @@ export const maxDuration = 60
 
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { getGigaActor } from '@/lib/admin/giga-actor'
+import { requireGiga } from '@/lib/admin/giga-actor'
 import { OMNICHANNEL_BACKFILL_REQUESTED_EVENT } from '@/lib/omnichannel/events'
 import { inngest } from '@/lib/inngest'
 import { logAudit } from '@/lib/audit'
@@ -31,8 +31,9 @@ function countJobStatuses(statuses: OmnichannelProcessingJobStatus[]) {
 }
 
 export async function POST(req: NextRequest) {
-  const actor = await getGigaActor(req)
-  if (!actor) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  const guard = await requireGiga(req, 'inbox.manage')
+  if (guard.response) return guard.response
+  const actor = guard.actor
 
   const parsed = schema.safeParse(await req.json().catch(() => null))
   if (!parsed.success) {

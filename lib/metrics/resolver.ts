@@ -31,6 +31,18 @@ const SOURCE_PRIORITY: Record<MetricSourceType, number> = {
   missing:  0,
 }
 
+/**
+ * Sanity bound per unit. Percent-type metrics (margins, shares, rates) can
+ * never legitimately be in the millions — such a hit means a money field was
+ * wired into a «%» metric's source list.
+ */
+export function isPlausibleForUnit(unit: string, numeric: number | null): boolean {
+  if (numeric === null || !Number.isFinite(numeric)) return true // non-numeric text answers pass through
+  if (unit === '%') return Math.abs(numeric) <= 10_000
+  if (unit === 'days') return Math.abs(numeric) <= 3_650
+  return true
+}
+
 function priority(src: MetricSource): number {
   return SOURCE_PRIORITY[src.type] ?? 0
 }
@@ -79,9 +91,21 @@ export function resolveMetric(
   // Try every source, sorted by priority. We try them all so
   // the provenance log shows the full picture, not just first-hit.
   const sortedSources = [...entry.sources].sort((a, b) => priority(b) - priority(a))
-  const attempts: SourceAttempt[] = sortedSources.map((src) =>
+  const rawAttempts: SourceAttempt[] = sortedSources.map((src) =>
     tryResolveSource(src, ctx, metricId),
   )
+
+  // Unit plausibility gate: a «%» metric must not be fed an absolute money
+  // figure (E2E bug: «Валовая маржа = 119.1 млн%» because a ₸ survey key was
+  // listed among its sources and won). Implausible hits are downgraded to
+  // misses so the provenance log still shows them.
+  const attempts: SourceAttempt[] = rawAttempts.map((a) => {
+    if (a.status !== 'hit') return a
+    const n = a.numeric ?? coerceNumeric(a.value as MetricValue['value'])
+    if (isPlausibleForUnit(entry.unit, n)) return a
+    const reason = `value ${n} is implausible for unit "${entry.unit}"`
+    return { ...a, status: 'miss' as const, reason }
+  })
 
   const hits = attempts.filter((a) => a.status === 'hit')
   if (!hits.length) {

@@ -12,7 +12,10 @@ const bridge = vi.hoisted(() => ({
 }))
 const qr = vi.hoisted(() => ({ toDataURL: vi.fn() }))
 
-vi.mock('@/lib/admin/giga-actor', () => actor)
+vi.mock('@/lib/admin/giga-actor', async () => {
+  const { makeRequireGiga } = await import('../_giga-guard')
+  return { ...actor, requireGiga: makeRequireGiga(() => actor.getGigaActor()) }
+})
 vi.mock('@/lib/audit', () => audit)
 vi.mock('@/lib/rate-limit', () => limiter)
 vi.mock('@/lib/omnichannel/whatsapp-web-client', () => ({

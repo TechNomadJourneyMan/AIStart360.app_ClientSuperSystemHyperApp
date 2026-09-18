@@ -2,16 +2,15 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase-service'
-import { isGigaSuperAdmin } from '@/lib/admin/giga-actor'
+import { requireGiga } from '@/lib/admin/giga-actor'
 
 /**
  * GET /api/giga-admin/clients
  * Returns approved clients from Supabase profiles + companies.
  */
 export async function GET(req: NextRequest) {
-  if (!(await isGigaSuperAdmin(req))) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-  }
+  const guard = await requireGiga(req, 'users.view')
+  if (guard.response) return guard.response
 
   try {
     // Service-role: the giga HMAC cookie provides no Supabase auth session, so
@@ -54,9 +53,20 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    // Current GRI assessment per client (0..10 scale, same as the ScoreRing).
+    // The store's GriBlock names map 1:1 onto the 7 canonical sections.
+    const { data: griRows } = await sb
+      .from('gri_assessments')
+      .select('user_id, gri_index, section_avgs, created_at')
+      .eq('is_current', true)
+    const griMap = new Map<string, { gri_index: number; section_avgs: Record<string, number> | null; created_at: string }>()
+    for (const g of griRows ?? []) griMap.set(g.user_id, g)
+
     const clients = (profiles ?? []).map((p) => {
       const comp = companyMap.get(p.id)
       const diag = diagMap.get(p.id)
+      const gri = griMap.get(p.id)
+      const avg = (id: string) => Number(gri?.section_avgs?.[id] ?? 0)
       return {
         id: p.id,
         name: comp?.name ?? p.organization ?? p.full_name ?? p.email,
@@ -66,7 +76,17 @@ export async function GET(req: NextRequest) {
         website: null,
         createdAt: p.created_at,
         manager: null,
-        latestGri: null,
+        latestGri: gri ? {
+          score: Number(gri.gri_index),
+          calculatedAt: gri.created_at,
+          productScore: avg('product-demand'),
+          trustScore: avg('trust-positioning'),
+          businessModelScore: avg('business-model'),
+          cashScore: avg('cash-stability'),
+          operationsScore: avg('operations'),
+          teamScore: avg('team'),
+          founderScore: avg('owner-readiness'),
+        } : null,
         pulseMetrics: diag ? {
           riskScore: diag.health < 40 ? 80 : diag.health < 60 ? 50 : 20,
           churnLevel: diag.health < 40 ? 'high' : diag.health < 60 ? 'medium' : 'low',

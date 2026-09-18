@@ -38,7 +38,10 @@ export function slugifyLabel(label: string): string {
 
 function inferUnit(label: string, formula?: string): string {
   const probe = `${label} ${formula ?? ''}`.toLowerCase()
-  if (/%|маржа|loss\s*rate|win\s*rate|conversion|churn|nps|csat|share|доля|процент|retention|rate\b/.test(probe)) return '%'
+  // Ratios / indices have no unit — checked first, otherwise «LTV/CAC» matched
+  // the money pattern (ltv|cac) and rendered as «31 ₸».
+  if (/ltv\s*\/\s*cac|\bratio\b|коэффициент|\(индекс\)|\bmultiple\b|мультипликатор/.test(probe)) return ''
+  if (/%|маржа|конверси|loss\s*rate|win\s*rate|conversion|churn|nps|csat|share|доля|процент|retention|rate\b/.test(probe)) return '%'
   if (/дн(ей|я)|days|cycle|срок|период оборот/.test(probe)) return 'days'
   if (/₸|kzt|выручк|прибыль|cac|ltv|чек|стоимость|cost|budget|доход|расход|cash|кредит/.test(probe)) return '₸'
   if (/команд|сотруд|штат|employ|staff|клиент|deal|lead|количество|шт\b|count/.test(probe)) return 'count'

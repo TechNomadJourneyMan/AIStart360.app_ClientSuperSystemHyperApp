@@ -2,7 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { getGigaActor, isGigaSuperAdmin } from '@/lib/admin/giga-actor'
+import { requireGiga } from '@/lib/admin/giga-actor'
 import { logAudit } from '@/lib/audit'
 import {
   getDevelopmentAdminConversation,
@@ -24,9 +24,8 @@ const conversationColumns =
   'id, channel, account_external_id, external_id, contact_id, status, auto_reply_override, send_suppressed, suppression_reason, suppressed_at, intent, sentiment, lead_score, summary, last_message_at, last_inbound_at, last_outbound_at'
 
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
-  if (!(await isGigaSuperAdmin(req))) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-  }
+  const guard = await requireGiga(req, 'inbox.view')
+  if (guard.response) return guard.response
   if (!idSchema.safeParse(params.id).success) {
     return NextResponse.json({ error: 'Некорректный id диалога' }, { status: 400 })
   }
@@ -88,10 +87,9 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 }
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
-  const actor = await getGigaActor(req)
-  if (!actor) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-  }
+  const guard = await requireGiga(req, 'inbox.manage')
+  if (guard.response) return guard.response
+  const actor = guard.actor
   if (!idSchema.safeParse(params.id).success) {
     return NextResponse.json({ error: 'Некорректный id диалога' }, { status: 400 })
   }

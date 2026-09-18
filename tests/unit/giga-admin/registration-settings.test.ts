@@ -49,7 +49,7 @@ describe('/api/giga-admin/settings/registration', () => {
   it('PUT sets a valid mode', async () => {
     const res = await PUT(makeReq('PUT', { mode: 'open' }))
     expect(res.status).toBe(200)
-    expect(setMock.fn).toHaveBeenCalledWith('open')
+    expect(setMock.fn).toHaveBeenCalledWith('open', 'giga:super_admin')
   })
 
   it('PUT rejects an invalid mode and does not write', async () => {

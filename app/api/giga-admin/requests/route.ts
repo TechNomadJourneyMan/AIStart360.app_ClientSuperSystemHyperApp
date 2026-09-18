@@ -2,7 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase-service'
-import { isGigaSuperAdmin } from '@/lib/admin/giga-actor'
+import { requireGiga } from '@/lib/admin/giga-actor'
 
 function mapStatus(s: string): 'pending' | 'approved' | 'rejected' | 'archived' {
   if (s === 'approved') return 'approved'
@@ -16,9 +16,8 @@ function mapStatus(s: string): 'pending' | 'approved' | 'rejected' | 'archived' 
  * Reads directly from Supabase: profiles (clients) + admin_requests fallback.
  */
 export async function GET(req: NextRequest) {
-  if (!(await isGigaSuperAdmin(req))) {
-    return NextResponse.json({ error: 'Forbidden: super_admin cookie missing' }, { status: 403 })
-  }
+  const guard = await requireGiga(req, 'users.view')
+  if (guard.response) return guard.response
 
   try {
     // Service-role: giga cookie has no Supabase session; anon client hits RLS
@@ -103,9 +102,8 @@ export async function GET(req: NextRequest) {
  * Creates a new request via Supabase.
  */
 export async function POST(req: NextRequest) {
-  if (!(await isGigaSuperAdmin(req))) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-  }
+  const guard = await requireGiga(req, 'users.manage')
+  if (guard.response) return guard.response
 
   try {
     const body = await req.json()

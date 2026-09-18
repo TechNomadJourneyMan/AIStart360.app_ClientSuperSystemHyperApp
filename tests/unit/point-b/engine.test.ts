@@ -198,6 +198,30 @@ describe('assessRealism', () => {
     const r = assessRealism(strong, gap3y, [])
     expect(r.level).toBe('realistic')
   })
+
+  it('falls back to the 12-month goal when only a 1-year target is set (E2E #10)', () => {
+    // «сейчас 4 млн ₸, цель 24 млн ₸ / 12 мес», no 3y goal.
+    const gap3y = computeGap(4_000_000, null, 36)
+    const gap12m = computeGap(4_000_000, 24_000_000, 12)
+    const r = assessRealism(makePointA(), gap3y, [], gap12m)
+    expect(r.level).not.toBe('unknown')
+    expect(r.score).toBeGreaterThan(0)
+    expect(r.headline).not.toContain('Недостаточно данных')
+    expect(r.headline).toContain('12 месяцев')
+  })
+
+  it('names what is missing when neither horizon is complete', () => {
+    const r = assessRealism(makePointA(), computeGap(null, null, 36), [], computeGap(null, 24_000_000, 12))
+    expect(r.level).toBe('unknown')
+    expect(r.headline).toContain('12 месяцев или на 3 года')
+  })
+
+  it('calculatePointBV2 yields a verdict from the 12m goal alone', () => {
+    const answers = { s1_current_revenue_year: 4_000_000, s1_goal_12m_revenue_year: 24_000_000 }
+    const pb = calculatePointBV2(makePointA(), answers, {})
+    expect(pb.goals.goal_3y_revenue_year).toBeNull()
+    expect(pb.realism.level).not.toBe('unknown')
+  })
 })
 
 // ─── dataSufficiency ─────────────────────────────────────────────────────────

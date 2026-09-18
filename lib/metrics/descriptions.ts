@@ -93,7 +93,9 @@ export const BIZ_METRIC_DESCRIPTIONS: Record<string, Record<string, MetricDescri
       sources: [
         { type: "survey", step: 2, key: "s2_gross_margin", label: "Маржинальность (%)" },
         { type: "survey", step: 9, key: "s9n_net_margin", label: "Чистая маржа" },
-        { type: "survey", step: 9, key: "s9n_expense_cogs", label: "Расходы: себестоимость" },
+        // NOTE: s9n_expense_cogs (₸, absolute) is an INPUT to the formula, not a
+        // value for this % metric — it used to win the resolution and render
+        // «119.1 млн%». Keep only percent-typed sources here.
         { type: "document", doc_type: "pl_report", field: "gross_margin" },
       ],
     },
@@ -584,9 +586,9 @@ export const BIZ_METRIC_DESCRIPTIONS: Record<string, Record<string, MetricDescri
     },
   },
   "Продукт": {
-    "Доля рынка конфет": {
-      label: "Доля рынка конфет",
-      what: "Удельный вес продаж компании в общем объёме рынка кондитерских изделий Казахстана в денежном выражении.",
+    "Доля рынка": {
+      label: "Доля рынка",
+      what: "Удельный вес продаж компании в общем объёме её рынка (сегмента) в денежном выражении.",
       why: "Показывает позицию против ключевых конкурентов и потолок роста на домашнем рынке; рост доли = усиление переговорной силы с дистрибуцией.",
       how: "Выручка компании по сегменту / общий объём рынка сегмента × 100%.",
       current_state: "37% — крепкое лидерство, до цели 40–42% остаётся 3–5 п.п. при динамике +2% — гэп закрываемый за 1–2 года.",
@@ -899,17 +901,17 @@ export const KPI_DESCRIPTIONS: Record<string, KpiDescription> = {
       { type: "external", system: "KASE", note: "Финансовая отчётность эмитентов (kase.kz)" },
     ],
   },
-  "Доля рынка конфет (KPI)": {
-    label: "Доля рынка конфет",
+  "Доля рынка (KPI)": {
+    label: "Доля рынка",
     category: "Рынок",
     owner: "Market Res.",
-    method: "Statista, BMI Research",
-    what: "Доля компании в общем объёме продаж сегмента кондитерских изделий на целевом рынке РК.",
+    method: "Отраслевые отчёты, Statista, BMI Research",
+    what: "Доля компании в общем объёме продаж её сегмента на целевом рынке РК.",
     why: "Доля рынка определяет лидерство в категории и ценовую власть. Удержание лидерства защищает от давления конкурентов и ритейла.",
     how: "Выручка компании в сегменте ÷ объём рынка сегмента × 100%.",
     current_state: "Ответственный: Market Res. Лидер сегмента (35–40%), цель — нарастить 2–5 п.п. за счёт инноваций и каналов.",
     sources: [
-      { type: "external", system: "Statista", note: "Confectionery Market Kazakhstan" },
+      { type: "external", system: "Statista", note: "Отчёт по рынку отрасли клиента (Казахстан)" },
       { type: "external", system: "BMI Research / Fitch Solutions", note: "Food & Drink Report" },
       { type: "survey", step: 1, key: "s1_competitors_list", label: "Основные конкуренты" },
       { type: "manual", note: "Внутренние данные отдела маркетинговых исследований" },

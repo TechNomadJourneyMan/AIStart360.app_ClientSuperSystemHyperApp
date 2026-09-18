@@ -2,7 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase-service'
-import { getGigaActor } from '@/lib/admin/giga-actor'
+import { requireGiga } from '@/lib/admin/giga-actor'
 import { logAudit } from '@/lib/audit'
 import { applyApprovalDecision } from '@/lib/users/approval'
 
@@ -17,10 +17,9 @@ import { applyApprovalDecision } from '@/lib/users/approval'
  * success — otherwise the UI shows "approved" while the DB stays pending.
  */
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
-  const actor = await getGigaActor(req)
-  if (!actor) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-  }
+  const guard = await requireGiga(req, 'users.manage')
+  if (guard.response) return guard.response
+  const actor = guard.actor
 
   const body = (await req.json()) as { action: 'approve' | 'reject' | 'archive'; reason?: string }
   if (!['approve', 'reject', 'archive'].includes(body.action)) {

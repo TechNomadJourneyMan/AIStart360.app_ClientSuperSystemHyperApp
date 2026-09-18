@@ -353,7 +353,7 @@ node scripts/apply-migration.js supabase/migrations/017_documents_parsed_data.sq
 node scripts/verify-migration-016.js
 
 # Тестовые аккаунты
-node scripts/create-test-account.js                            # default: test@aistart360.local / TestPass2026! / admin
+node scripts/create-test-account.js                            # qa-survey@aistart360.local, role=client, random password printed to the terminal
 node scripts/create-test-account.js client@aistart360.local ClientPass2026! client
 node scripts/seed-test-diagnostic.js client@aistart360.local   # засеять диагностику
 

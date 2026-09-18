@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/db'
+import { recordAdminAction } from '@/lib/admin/audit'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -37,6 +38,24 @@ interface LogAuditOptions {
  * not propagated, so audit failures never block business operations.
  */
 export async function logAudit(opts: LogAuditOptions, throwOnError = false): Promise<void> {
+  // Primary journal: admin_audit_log (migration 073) — what GIGA-CRM shows.
+  const diff = (opts.diff ?? {}) as Record<string, unknown>
+  const kind = typeof diff.actorKind === 'string' ? (diff.actorKind as 'session' | 'break_glass' | 'staff_cookie') : (opts.performedBy.startsWith('giga:') ? 'break_glass' : 'session')
+  const written = await recordAdminAction(
+    { id: opts.performedBy, kind },
+    {
+      action: opts.action,
+      entityType: opts.entityType,
+      entityId: opts.entityId,
+      targetUserId: opts.entityType === 'user' ? opts.entityId : null,
+      oldValue: 'before' in diff ? diff.before : undefined,
+      newValue: 'after' in diff ? diff.after : undefined,
+      metadata: diff,
+    },
+    null,
+  )
+
+  // Legacy journal (Prisma audit_logs) kept for the old /api/admin/audit reader.
   try {
     await prisma.auditLog.create({
       data: {
@@ -49,9 +68,10 @@ export async function logAudit(opts: LogAuditOptions, throwOnError = false): Pro
       },
     })
   } catch (err) {
-    console.error('[audit] Failed to write audit log:', err)
-    if (throwOnError) throw err
+    console.error('[audit] Failed to write legacy audit log:', err)
+    if (throwOnError && !written) throw err
   }
+  if (throwOnError && !written) throw new Error('Audit log unavailable')
 }
 
 /**

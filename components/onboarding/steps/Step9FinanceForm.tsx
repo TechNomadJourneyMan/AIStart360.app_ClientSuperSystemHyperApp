@@ -4,7 +4,18 @@ interface Props { data: Record<string, unknown>; onChange: (key: string, value: 
 
 export function Step9FinanceForm({ data, onChange, userId }: Props) {
   const v = (key: string) => (data[key] as string) ?? ''
-  const n = (key: string) => (data[key] as number) ?? 0
+  // Empty stays EMPTY. It used to render 0: the field looked answered, users
+  // skipped it, nothing was saved («Выручка 2024» missing in the QA run), and a
+  // loss («−») or clearing the field snapped back to 0.
+  const n = (key: string) => {
+    const x = data[key]
+    return typeof x === 'number' && Number.isFinite(x) ? x : ''
+  }
+  const toNumberOrNull = (raw: string): number | null => {
+    if (raw.trim() === '') return null
+    const x = Number(raw.replace(',', '.'))
+    return Number.isFinite(x) ? x : null
+  }
 
   const field = (key: string, label: string, type: 'text' | 'number' | 'textarea' = 'text', placeholder?: string) => (
     <div>
@@ -14,7 +25,7 @@ export function Step9FinanceForm({ data, onChange, userId }: Props) {
           rows={3} className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-2.5 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:border-primary/50 focus:ring-1 focus:ring-primary/20 focus:outline-none transition-all resize-none" />
       ) : (
         <input type={type} value={type === 'number' ? n(key) : v(key)}
-          onChange={e => onChange(key, type === 'number' ? Number(e.target.value) || 0 : e.target.value)}
+          onChange={e => onChange(key, type === 'number' ? toNumberOrNull(e.target.value) : e.target.value)}
           placeholder={placeholder}
           className="w-full bg-surface-container border border-white/[0.08] rounded-xl px-4 py-2.5 text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:border-primary/50 focus:ring-1 focus:ring-primary/20 focus:outline-none transition-all" />
       )}

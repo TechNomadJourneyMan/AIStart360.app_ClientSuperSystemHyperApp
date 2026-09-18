@@ -5,7 +5,7 @@ export const maxDuration = 30
 import { createHash } from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { getGigaActor } from '@/lib/admin/giga-actor'
+import { requireGiga } from '@/lib/admin/giga-actor'
 import { logAudit } from '@/lib/audit'
 import {
   getDevelopmentManualReplyContext,
@@ -45,8 +45,9 @@ function isQueuedDispatch(
 }
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
-  const actor = await getGigaActor(req)
-  if (!actor) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  const guard = await requireGiga(req, 'inbox.manage')
+  if (guard.response) return guard.response
+  const actor = guard.actor
   if (!idSchema.safeParse(params.id).success) {
     return NextResponse.json({ error: 'Некорректный id диалога' }, { status: 400 })
   }

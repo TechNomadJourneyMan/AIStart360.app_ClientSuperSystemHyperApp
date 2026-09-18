@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import type { Metadata } from 'next'
 import { createClient } from '@/lib/supabase/server'
+import { completedStepsFromRows } from '@/lib/survey/steps'
 
 export const metadata: Metadata = { title: 'Профиль' }
 
@@ -27,14 +28,14 @@ export default async function ProfilePage() {
         fetch(`${supabaseUrl}/rest/v1/profiles?id=eq.${sbUser.id}&select=*&limit=1`, { headers, cache: 'no-store' }),
         fetch(`${supabaseUrl}/rest/v1/companies?user_id=eq.${sbUser.id}&select=*&limit=1`, { headers, cache: 'no-store' }),
         fetch(`${supabaseUrl}/rest/v1/diagnostics?user_id=eq.${sbUser.id}&select=id`, { headers, cache: 'no-store' }),
-        fetch(`${supabaseUrl}/rest/v1/survey_answers?user_id=eq.${sbUser.id}&select=step`, { headers, cache: 'no-store' }),
+        fetch(`${supabaseUrl}/rest/v1/survey_answers?user_id=eq.${sbUser.id}&select=step,question_key,answer`, { headers, cache: 'no-store' }),
       ])
       if (profileRes.ok) { const rows = await profileRes.json(); sbProfile = rows[0] ?? null }
       if (companyRes.ok) { const rows = await companyRes.json(); sbCompany = rows[0] ?? null }
       if (diagRes.ok) { const rows = await diagRes.json(); diagCount = rows.length }
       if (surveyRes.ok) {
-        const rows = await surveyRes.json() as Array<{ step: number }>
-        surveySteps = new Set(rows.map(r => r.step)).size
+        const rows = await surveyRes.json() as Array<{ step: number; question_key: string; answer: unknown }>
+        surveySteps = completedStepsFromRows(rows).length
       }
     } catch {}
   }

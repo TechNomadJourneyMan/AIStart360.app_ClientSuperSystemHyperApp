@@ -2,7 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { getGigaActor, isGigaSuperAdmin } from '@/lib/admin/giga-actor'
+import { requireGiga } from '@/lib/admin/giga-actor'
 import { logAudit } from '@/lib/audit'
 import {
   listDevelopmentAdminSettings,
@@ -46,9 +46,8 @@ const settingColumns =
   'channel, enabled, mode, business_context, automation_config, confidence_threshold, reply_delay_seconds, updated_at'
 
 export async function GET(req: NextRequest) {
-  if (!(await isGigaSuperAdmin(req))) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-  }
+  const guard = await requireGiga(req, 'inbox.view')
+  if (guard.response) return guard.response
 
   if (shouldUseDevelopmentAdminPostgres()) {
     try {
@@ -78,10 +77,9 @@ export async function GET(req: NextRequest) {
 }
 
 export async function PATCH(req: NextRequest) {
-  const actor = await getGigaActor(req)
-  if (!actor) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-  }
+  const guard = await requireGiga(req, 'inbox.manage')
+  if (guard.response) return guard.response
+  const actor = guard.actor
 
   const parsed = updateSchema.safeParse(await req.json().catch(() => null))
   if (!parsed.success) {

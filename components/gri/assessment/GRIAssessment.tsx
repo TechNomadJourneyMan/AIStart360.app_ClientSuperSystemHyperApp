@@ -1,11 +1,13 @@
 'use client'
 
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import dynamic from 'next/dynamic'
 import { motion, useReducedMotion } from 'framer-motion'
 import { GRI_SECTIONS, type SectionId } from '@/lib/gri-assessment/sections'
 import { useEntitlements } from '@/hooks/useEntitlements'
 import { UpgradeGate } from '@/components/access/UpgradeGate'
+import { createClient } from '@/lib/supabase/client'
+import { computeGriIndex, computeSectionAvgs, scoresFingerprint } from '@/lib/gri-assessment/score'
 
 const GriRadar = dynamic(() => import('./GriRadar'), {
   ssr: false,
@@ -41,9 +43,16 @@ interface PersistedState {
   completedSections: Record<string, boolean>
   sectionAvgs?: Record<string, number>
   griIndex?: number
+  /** Fingerprint of the scores the server already has — never re-sent. */
+  postedFingerprint?: string
 }
 
-const LS_KEY = 'aistart_gri_assessment_v1'
+// The draft holds contact details and answers, so it is stored PER USER. The
+// old global key cannot be attributed to anyone (shared PC, admin opening a
+// client) and is dropped on sight — same rule as the survey draft.
+const LS_PREFIX = 'aistart_gri_assessment_v1'
+const lsKey = (userId: string | null) => `${LS_PREFIX}:${userId ?? 'anon'}`
+const SERVER_DRAFT_DELAY_MS = 3000
 
 const DEFAULT_ONBOARDING: OnboardingForm = {
   name: '',
@@ -65,28 +74,46 @@ const DEFAULT_STATE: PersistedState = {
   completedSections: {},
 }
 
-function loadState(): PersistedState {
+function normalizeState(parsed: Partial<PersistedState> | null | undefined): PersistedState {
+  return {
+    onboarding: { ...DEFAULT_ONBOARDING, ...(parsed?.onboarding || {}) },
+    scores: parsed?.scores || {},
+    completedSections: parsed?.completedSections || {},
+    sectionAvgs: parsed?.sectionAvgs,
+    griIndex: parsed?.griIndex,
+    postedFingerprint: parsed?.postedFingerprint,
+  }
+}
+
+function loadState(userId: string | null): PersistedState {
   if (typeof window === 'undefined') return DEFAULT_STATE
   try {
-    const raw = window.localStorage.getItem(LS_KEY)
+    window.localStorage.removeItem(LS_PREFIX)
+    const raw = window.localStorage.getItem(lsKey(userId))
     if (!raw) return DEFAULT_STATE
-    const parsed = JSON.parse(raw) as Partial<PersistedState>
-    return {
-      onboarding: { ...DEFAULT_ONBOARDING, ...(parsed.onboarding || {}) },
-      scores: parsed.scores || {},
-      completedSections: parsed.completedSections || {},
-      sectionAvgs: parsed.sectionAvgs,
-      griIndex: parsed.griIndex,
-    }
+    return normalizeState(JSON.parse(raw) as Partial<PersistedState>)
   } catch {
     return DEFAULT_STATE
   }
 }
 
-function saveState(state: PersistedState) {
+function saveState(userId: string | null, state: PersistedState) {
   if (typeof window === 'undefined') return
-  window.localStorage.setItem(LS_KEY, JSON.stringify(state))
+  try {
+    window.localStorage.setItem(lsKey(userId), JSON.stringify(state))
+  } catch {
+    // storage full / unavailable — the server draft still has the answers
+  }
 }
+
+const hasAnyScore = (scores: PersistedState['scores']) =>
+  Object.values(scores).some((s) => s && Object.values(s).some((v) => typeof v === 'number' && v > 0))
+
+/** Contact / company fields the host page already knows (e.g. from the survey). */
+export type GriPrefill = Partial<Pick<OnboardingForm, 'name' | 'phone' | 'email' | 'industry' | 'employees' | 'revenue' | 'yearsOnMarket'>>
+
+// `embedded` drops the full-page chrome so the test can live inside a dashboard card.
+const EmbeddedContext = createContext(false)
 
 // ── Russian labels for the 7 GRI blocks (sections.ts stores English shortTitle).
 // Mirrors GriResultPanel.BLOCK_RU so the whole /gri surface reads consistently.
@@ -277,7 +304,15 @@ function LossAversionBar({ sectionAvg }: { sectionAvg: number }) {
   )
 }
 
-export default function GRIAssessment() {
+export default function GRIAssessment({ embedded = false, prefill }: { embedded?: boolean; prefill?: GriPrefill } = {}) {
+  return (
+    <EmbeddedContext.Provider value={embedded}>
+      <GRIAssessmentInner prefill={prefill} />
+    </EmbeddedContext.Provider>
+  )
+}
+
+function GRIAssessmentInner({ prefill }: { prefill?: GriPrefill }) {
   const [step, setStep] = useState<Step>({ kind: 'landing' })
   // Фаза 6A: тарифный гейт повторного полного GRI (free = 1 демо-проход).
   // Пока access/me грузится или гейты выключены — всё открыто; сервер энфорсит сам.
@@ -286,86 +321,98 @@ export default function GRIAssessment() {
   const [state, setState] = useState<PersistedState>(DEFAULT_STATE)
   const [onboardingStep, setOnboardingStep] = useState(1)
   const [questionIndex, setQuestionIndex] = useState(0)
-  const postedRef = useRef(false)
+  const [saveFailed, setSaveFailed] = useState(false)
+  const [retryTick, setRetryTick] = useState(0)
+  const postingRef = useRef(false)
+  const userIdRef = useRef<string | null>(null)
   const prefersReduced = useReducedMotion() ?? false
 
+  // Hydrate: this user's local work wins; otherwise the server draft (another
+  // device / cleared browser); otherwise the last completed assessment with its
+  // REAL per-criterion scores (it used to be rebuilt as one fabricated criterion
+  // per block, which a later re-submit stored as a genuine answer).
   useEffect(() => {
-    const local = loadState()
-    setState(local)
-    setHydrated(true)
-
-    // Sync from server (authoritative GRI assessment) so the results view
-    // matches the dashboard widget. Only seeds when the user has nothing
-    // locally — never overwrites work-in-progress.
-    const hasLocalScores =
-      Object.values(local.scores).some(
-        (s) => s && Object.values(s).some((v) => typeof v === 'number' && v > 0),
-      )
-    if (hasLocalScores) return
-
+    let cancelled = false
     ;(async () => {
+      let uid: string | null = null
       try {
-        const res = await fetch('/api/v1/gri/assessment', { credentials: 'include' })
-        const j = await res.json()
-        const current = j?.data?.current
-        const sectionAvgs = current?.section_avgs as Record<string, number> | undefined
-        if (!sectionAvgs) return
+        const { data } = await createClient().auth.getUser()
+        uid = data.user?.id ?? null
+      } catch {
+        uid = null
+      }
+      if (cancelled) return
+      userIdRef.current = uid
 
-        // Reconstruct minimal per-criterion scores so sectionAvgsMemo + griIndex
-        // resolve to the server values. Each section gets a single synthetic
-        // criterion holding the section average.
-        const synth: Record<string, Record<string, number>> = {}
-        const completed: Record<string, boolean> = {}
-        for (const sec of GRI_SECTIONS) {
-          const v = sectionAvgs[sec.id]
-          if (typeof v !== 'number' || v <= 0) continue
-          const firstCrit = sec.criteria[0]?.id ?? 'avg'
-          synth[sec.id] = { [firstCrit]: v }
-          completed[sec.id] = true
+      const local = loadState(uid)
+      const withPrefill = (st: PersistedState): PersistedState => {
+        if (!prefill) return st
+        const onboarding = { ...st.onboarding }
+        for (const [k, v] of Object.entries(prefill)) {
+          const key = k as keyof GriPrefill
+          if (typeof v === 'string' && v.trim() && !String(onboarding[key] ?? '').trim()) onboarding[key] = v
         }
-        if (Object.keys(synth).length === 0) return
+        return { ...st, onboarding }
+      }
+      if (hasAnyScore(local.scores) || !uid) {
+        setState(withPrefill(local))
+        setHydrated(true)
+        return
+      }
 
-        setState((prev) => ({
-          ...prev,
-          scores: { ...prev.scores, ...synth },
-          completedSections: { ...prev.completedSections, ...completed },
-          sectionAvgs,
-          griIndex: typeof current.gri_index === 'number' ? current.gri_index : prev.griIndex,
-        }))
-        // If the server has a complete assessment, jump straight to results so
-        // the chart matches what the dashboard widget displays.
-        const allCovered = GRI_SECTIONS.every(
-          (s) => typeof sectionAvgs[s.id] === 'number' && sectionAvgs[s.id] > 0,
-        )
-        if (allCovered) {
-          // Defer so the state update above commits first.
-          setTimeout(() => setStep({ kind: 'results' }), 0)
+      let next: PersistedState = local
+      let completed = false
+      try {
+        const [draftRes, currentRes] = await Promise.all([
+          fetch('/api/v1/gri/draft', { credentials: 'include' }).then((r) => r.json()).catch(() => null),
+          fetch('/api/v1/gri/assessment', { credentials: 'include' }).then((r) => r.json()).catch(() => null),
+        ])
+        const draft = draftRes?.data?.draft?.state as Partial<PersistedState> | undefined
+        const current = currentRes?.data?.current as
+          | { scores?: PersistedState['scores']; onboarding?: Partial<OnboardingForm>; completed_sections?: Record<string, boolean> }
+          | undefined
+        if (draft && hasAnyScore(draft.scores ?? {})) {
+          next = normalizeState(draft)
+        } else if (current?.scores && hasAnyScore(current.scores)) {
+          next = normalizeState({
+            onboarding: current.onboarding as OnboardingForm,
+            scores: current.scores,
+            completedSections: current.completed_sections ?? {},
+            postedFingerprint: scoresFingerprint(current.scores),
+          })
+          completed = GRI_SECTIONS.every((sec) => next.completedSections[sec.id])
         }
       } catch {
-        // server unreachable — local state is fine
+        // server unreachable — start from the local state
       }
+      if (cancelled) return
+      setState(withPrefill(next))
+      setHydrated(true)
+      if (completed) setStep({ kind: 'results' })
     })()
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {
     if (!hydrated) return
-    const avgs: Record<string, number> = {}
-    GRI_SECTIONS.forEach((sec) => {
-      const map = state.scores[sec.id] || {}
-      const vals = sec.criteria
-        .map((c) => map[c.id])
-        .filter((v): v is number => typeof v === 'number')
-      avgs[sec.id] = vals.length === 0 ? 0 : vals.reduce((a, b) => a + b, 0) / vals.length
-    })
-    const positive = Object.values(avgs).filter((v) => v > 0)
-    const index = positive.length === 0
-      ? 0
-      : Math.round((positive.reduce((a, b) => a + b, 0) / positive.length) * 100) / 100
-    saveState({ ...state, sectionAvgs: avgs, griIndex: index })
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('gri:assessment-updated'))
-    }
+    const avgs = computeSectionAvgs(state.scores)
+    saveState(userIdRef.current, { ...state, sectionAvgs: avgs, griIndex: computeGriIndex(avgs) })
   }, [state, hydrated])
+
+  // Server draft: unfinished work survives a cleared browser or another device.
+  useEffect(() => {
+    if (!hydrated || !userIdRef.current || !hasAnyScore(state.scores)) return
+    if (state.postedFingerprint === scoresFingerprint(state.scores)) return // already stored as a result
+    const id = setTimeout(() => {
+      void fetch('/api/v1/gri/draft', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ onboarding: state.onboarding, scores: state.scores, completedSections: state.completedSections }),
+      }).catch(() => {})
+    }, SERVER_DRAFT_DELAY_MS)
+    return () => clearTimeout(id)
+  }, [state.scores, state.onboarding, state.completedSections, state.postedFingerprint, hydrated])
 
   const setOnboarding = (patch: Partial<OnboardingForm>) =>
     setState((s) => ({ ...s, onboarding: { ...s.onboarding, ...patch } }))
@@ -385,47 +432,41 @@ export default function GRIAssessment() {
       completedSections: { ...s.completedSections, [sectionId]: true },
     }))
 
-  const sectionAvg = (sectionId: SectionId) => {
-    const section = GRI_SECTIONS.find((s) => s.id === sectionId)
-    if (!section) return 0
-    const scores = state.scores[sectionId] || {}
-    const vals = section.criteria
-      .map((c) => scores[c.id])
-      .filter((v): v is number => typeof v === 'number')
-    if (vals.length === 0) return 0
-    return vals.reduce((a, b) => a + b, 0) / vals.length
-  }
-
   const sectionAvgsMemo = useMemo(() => {
+    const computed = computeSectionAvgs(state.scores)
     const out: Record<string, number> = {}
     GRI_SECTIONS.forEach((sec) => {
-      out[sec.id] = sectionAvg(sec.id)
+      out[sec.id] = computed[sec.id] ?? 0
     })
     return out
   }, [state.scores])
 
-  const griIndex = useMemo(() => {
-    const positive = Object.values(sectionAvgsMemo).filter((v) => v > 0)
-    if (positive.length === 0) return 0
-    return Math.round((positive.reduce((a, b) => a + b, 0) / positive.length) * 100) / 100
-  }, [sectionAvgsMemo])
+  const sectionAvg = (sectionId: SectionId) => sectionAvgsMemo[sectionId] ?? 0
+
+  const griIndex = useMemo(() => computeGriIndex(sectionAvgsMemo), [sectionAvgsMemo])
 
   const resetAll = () => {
     setState(DEFAULT_STATE)
     setOnboardingStep(1)
     setQuestionIndex(0)
     setStep({ kind: 'landing' })
-    postedRef.current = false
+    setSaveFailed(false)
+    if (userIdRef.current) void fetch('/api/v1/gri/draft', { method: 'DELETE' }).catch(() => {})
   }
 
-  // ── Persist on completion (one-shot) ──
+  // ── Persist on completion ──
+  // Sent once per distinct set of answers: the fingerprint of what the server
+  // already has is kept in the persisted state, so re-opening the results screen
+  // does not store a duplicate row (the server rejects duplicates too).
   useEffect(() => {
-    if (step.kind !== 'results') return
-    if (postedRef.current) return
+    if (step.kind !== 'results' || !hydrated) return
+    if (postingRef.current) return
     if (!(griIndex > 0)) return
     const allDone = GRI_SECTIONS.every((s) => state.completedSections[s.id])
     if (!allDone) return
-    postedRef.current = true
+    const fingerprint = scoresFingerprint(state.scores)
+    if (state.postedFingerprint === fingerprint) return
+    postingRef.current = true
 
     const body = {
       onboarding: state.onboarding,
@@ -439,16 +480,16 @@ export default function GRIAssessment() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body),
         })
-        if (res.status === 401) {
-          // anonymous user — silently skip
-          return
-        }
         if (!res.ok) {
           // eslint-disable-next-line no-console
           console.error('[gri-assessment] POST failed', res.status, await res.text().catch(() => ''))
+          // 402 = tariff gate (its own UI explains it); everything else is a lost save.
+          if (res.status !== 402) setSaveFailed(true)
           return
         }
-        // Notify other listeners in the same tab (Calculator auto-sync)
+        setSaveFailed(false)
+        setState((prev) => ({ ...prev, postedFingerprint: fingerprint }))
+        // Notify other listeners in the same tab (hero, calculator auto-sync)
         try {
           window.dispatchEvent(new CustomEvent('gri:assessment-updated'))
         } catch {
@@ -457,9 +498,12 @@ export default function GRIAssessment() {
       } catch (err) {
         // eslint-disable-next-line no-console
         console.error('[gri-assessment] POST error', err)
+        setSaveFailed(true)
+      } finally {
+        postingRef.current = false
       }
     })()
-  }, [step, griIndex, state.completedSections, state.scores, state.onboarding])
+  }, [step, hydrated, griIndex, state.completedSections, state.scores, state.onboarding, state.postedFingerprint, retryTick])
 
   // -------- Landing --------
   if (step.kind === 'landing') {
@@ -1159,6 +1203,22 @@ export default function GRIAssessment() {
           </p>
         </Reveal>
 
+        {saveFailed && (
+          <div role="alert" className="mb-5 flex flex-wrap items-center gap-3 rounded-xl border border-red-400/30 bg-red-400/10 px-4 py-3">
+            <span className="material-symbols-outlined text-base text-red-400" aria-hidden>cloud_off</span>
+            <p className="min-w-0 flex-1 text-xs text-on-surface">
+              Результат не сохранился на сервере. Ответы целы на этом устройстве — проверьте соединение и повторите.
+            </p>
+            <button
+              type="button"
+              onClick={() => { setSaveFailed(false); setRetryTick((n) => n + 1) }}
+              className="rounded-lg border border-white/10 px-3 py-1.5 text-xs font-semibold text-on-surface hover:bg-white/[0.06]"
+            >
+              Повторить
+            </button>
+          </div>
+        )}
+
         {/* Hero result card — gauge + status */}
         <Reveal delay={0.05}>
           <div className="relative mb-6 overflow-hidden rounded-3xl border border-white/[0.08] bg-white/[0.02] p-6 sm:p-8">
@@ -1367,6 +1427,8 @@ function ScoreRow({
 }
 
 function Shell({ children }: { children: React.ReactNode }) {
+  const embedded = useContext(EmbeddedContext)
+  if (embedded) return <section className="relative w-full">{children}</section>
   return (
     <section className="relative mx-auto w-full max-w-5xl px-4 py-8 sm:px-6 sm:py-10 lg:px-8">
       <div aria-hidden className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">

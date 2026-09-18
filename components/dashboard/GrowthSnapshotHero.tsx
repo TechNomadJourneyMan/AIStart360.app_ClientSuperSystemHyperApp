@@ -29,6 +29,8 @@ import {
   currentMonthLabel,
 } from '@/lib/format/kzt'
 import { GRIAssessmentRadarWidget } from './GRIAssessmentRadarWidget'
+import { GRI_CRITERIA_COUNT } from '@/lib/gri-assessment/sections'
+import { usePlatformSections } from '@/hooks/usePlatformSections'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface TargetsData {
@@ -42,7 +44,13 @@ interface PeriodGoals {
 }
 
 interface OnboardingStatus {
-  survey: { percent: number; completed_steps: number; total_steps: number }
+  survey: {
+    percent: number
+    completed_steps: number
+    total_steps: number
+    /** Current monthly revenue typed on survey step 1 (₸), null when unknown. */
+    current_revenue_month?: number | null
+  }
   documents: { count: number; has_files: boolean }
 }
 
@@ -65,7 +73,17 @@ function progressColor(p: number): string {
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
-export default function GrowthSnapshotHero() {
+export default function GrowthSnapshotHero({ visibleSections }: { visibleSections?: string[] } = {}) {
+  // Cabinet sections switched off in GIGA-CRM hide their CTAs here too.
+  // The server page passes the list so nothing flashes before the fetch.
+  const fetchedSections = usePlatformSections().sections
+  const sectionOn = (key: string) => {
+    if (visibleSections) return visibleSections.includes(key)
+    return !fetchedSections || fetchedSections.some((s) => s.key === key)
+  }
+  const griOn = sectionOn('gri')
+  const pointBOn = sectionOn('point_b')
+  const documentsOn = sectionOn('documents')
   const router = useRouter()
 
   const [targets, setTargets] = useState<TargetsData | null>(null)
@@ -162,16 +180,21 @@ export default function GrowthSnapshotHero() {
   const target12m = targets?.target_revenue_12m_kzt ?? null
   const target3y = targets?.target_revenue_3y_kzt ?? null
   const monthlyPlan12 = target12m ? Math.round(target12m / 12) : null
-  const monthlyPlan3y = target3y ? Math.round(target3y / 36) : null
+  // target_revenue_3y_kzt is the ANNUAL revenue goal for year 3 — every writer
+  // (survey step 1 sync, this component's own editor, Point B) stores
+  // month × 12. Dividing by 36 showed a 15 М/мес goal as 5 М/мес.
+  const monthlyPlan3y = target3y ? Math.round(target3y / 12) : null
 
-  // Prefer real revenue from the metrics resolver (documents/anketa);
-  // fall back to a 58%-of-plan heuristic only if the resolver hasn't
-  // produced a value yet. `isLiveRevenue` controls the "≈" prefix.
+  // Current revenue: live metric (documents) → the owner's own answer on
+  // survey step 1 → unknown. The old fallback «58 % of plan · оценка» showed a
+  // made-up number next to the real one the owner had typed.
   const isLiveRevenue = liveMonthlyRevenue !== null && liveMonthlyRevenue > 0
+  const surveyMonthly = onboarding?.survey?.current_revenue_month ?? null
+  const isSurveyRevenue = !isLiveRevenue && surveyMonthly !== null && surveyMonthly > 0
   const currentMonthly: number | null = isLiveRevenue
     ? Math.round(liveMonthlyRevenue!)
-    : monthlyPlan12
-      ? Math.round(monthlyPlan12 * 0.58)
+    : isSurveyRevenue
+      ? Math.round(surveyMonthly!)
       : null
   const runRate12 = currentMonthly ? currentMonthly * 12 : null
 
@@ -369,14 +392,15 @@ export default function GrowthSnapshotHero() {
                       )}
                     </div>
                     <p className="font-mono text-5xl font-black text-on-surface leading-[0.95] tracking-tight">
-                      {currentMonthly
-                        ? `${isLiveRevenue ? '' : '≈'}${formatKztCompact(currentMonthly)}`
-                        : '—'}
+                      {currentMonthly ? formatKztCompact(currentMonthly) : '—'}
                     </p>
                     <p className="text-[11px] text-on-surface-variant font-mono mt-2">
                       выручка / мес · {monthLabel}
-                      {!isLiveRevenue && currentMonthly && (
-                        <span className="text-amber-400/80"> · оценка</span>
+                      {isSurveyRevenue && (
+                        <span className="text-on-surface-variant/70"> · из анкеты</span>
+                      )}
+                      {!currentMonthly && (
+                        <span className="text-amber-400/80"> · укажите в анкете, шаг 1</span>
                       )}
                     </p>
                   </div>
@@ -385,14 +409,16 @@ export default function GrowthSnapshotHero() {
                       <span className="text-[9px] font-mono text-on-surface-variant uppercase tracking-widest">
                         Run-rate
                       </span>
-                      <Link
-                        href="/point-b"
-                        className="inline-flex items-center gap-1 text-[10px] font-mono text-primary/80 hover:text-primary"
-                        title="План vs Факт"
-                      >
-                        <span className="material-symbols-outlined text-[12px]">trending_up</span>
-                        План vs Факт
-                      </Link>
+                      {pointBOn && (
+                        <Link
+                          href="/point-b"
+                          className="inline-flex items-center gap-1 text-[10px] font-mono text-primary/80 hover:text-primary"
+                          title="План vs Факт"
+                        >
+                          <span className="material-symbols-outlined text-[12px]">trending_up</span>
+                          План vs Факт
+                        </Link>
+                      )}
                     </div>
                     <p className="text-xs font-mono text-on-surface">
                       ~{formatKztCompact(runRate12)}
@@ -524,7 +550,7 @@ export default function GrowthSnapshotHero() {
                         {monthlyPlan3y ? formatKztCompact(monthlyPlan3y) : '—'}
                       </p>
                       <p className="text-[11px] text-on-surface-variant font-mono mt-1.5">
-                        /мес · {target3y ? formatKztCompact(Math.round(target3y / 3)) : '—'} / год
+                        /мес · {target3y ? formatKztCompact(target3y) : '—'} / год
                       </p>
                     </div>
                     <div className="flex-1 min-w-[180px]">
@@ -666,16 +692,18 @@ export default function GrowthSnapshotHero() {
 
             <div className="flex items-center justify-between mt-3 pt-2.5 border-t border-white/[0.06] gap-2 flex-wrap">
               <p className="text-[10px] font-mono text-on-surface-variant leading-relaxed">
-                Текущая позиция: {currentMonthly ? `${isLiveRevenue ? '' : '≈'}${formatKztCompact(currentMonthly)}/мес` : '—'}
+                Текущая позиция: {currentMonthly ? `${formatKztCompact(currentMonthly)}/мес` : '—'}
                 {' · '}Прогноз год: {runRate12 ? `~${formatKztCompact(runRate12)}` : '—'}
                 {' · '}Разрыв до 1Y: {gap12 !== null ? `${formatKztCompact(gap12)}/мес` : '—'}
               </p>
             </div>
           </div>
 
-          {/* Card B — GRI диагностика (always visible; «Открыть GRI» enabled
-              after the user has completed the test). One brand-orange CTA;
-              secondary actions live as plain ghost links below. */}
+          {/* Card B — GRI диагностика («Открыть GRI» enabled after the user has
+              completed the test). Hidden entirely when the GRI section is
+              switched off in GIGA-CRM. One brand-orange CTA; secondary actions
+              live as plain ghost links below. */}
+          {griOn && (
           <div
             className="relative rounded-2xl border bg-surface-container-low p-4"
             style={{ borderColor: 'rgba(232,122,53,0.35)' }}
@@ -691,7 +719,7 @@ export default function GrowthSnapshotHero() {
             </h2>
             <p className="text-xs text-on-surface-variant leading-relaxed mb-4">
               Growth Readiness Index покажет, где именно бизнес ломается при
-              ускорении до $2M/год. 7 блоков × 62 критерия. TOP 5 ограничений
+              ускорении до $2M/год. 7 блоков × {GRI_CRITERIA_COUNT} критериев. TOP 5 ограничений
               с ценой недоработки. Автоматический Action Plan на 90 дней.
             </p>
             <Link
@@ -734,11 +762,12 @@ export default function GrowthSnapshotHero() {
             </div>
 
             <p className="text-[10px] font-mono text-on-surface-variant mt-3 text-center">
-              ~ 45 минут · 62 вопроса
+              ~ 45 минут · {GRI_CRITERIA_COUNT} вопросов
               {hasGri && griData?.created_at &&
                 ` · последняя оценка ${new Date(griData.created_at).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })}`}
             </p>
           </div>
+          )}
         </div>
       </div>
 
@@ -770,6 +799,7 @@ export default function GrowthSnapshotHero() {
           </p>
         </Link>
 
+        {documentsOn && (
         <Link
           href="/client/onboarding/documents"
           className="group bg-surface-container-low rounded-2xl border border-white/[0.04] hover:border-primary/30 p-4 transition-all flex items-center gap-3"
@@ -792,6 +822,7 @@ export default function GrowthSnapshotHero() {
             arrow_forward
           </span>
         </Link>
+        )}
       </div>
 
       {/* GRI popup — radar widget shown via "Открыть GRI" */}

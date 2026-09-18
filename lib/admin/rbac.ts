@@ -1,0 +1,124 @@
+/**
+ * lib/admin/rbac.ts — roles and permissions of GIGA-CRM staff.
+ *
+ * Staff roles live in `staff_roles` (migration 073), separate from
+ * `profiles.role`, which keeps routing people to their cabinets. The matrix is
+ * code, not data: a permission change is reviewed like any other change, and
+ * the server checks it on every request (the UI only hides what is not allowed).
+ */
+
+export const STAFF_ROLES = ['super_admin', 'admin', 'crm_manager', 'content_manager', 'analyst', 'support'] as const
+export type StaffRole = (typeof STAFF_ROLES)[number]
+
+export const STAFF_ROLE_LABELS: Record<StaffRole, string> = {
+  super_admin: 'Super Admin',
+  admin: 'Администратор',
+  crm_manager: 'CRM-менеджер',
+  content_manager: 'Контент-менеджер',
+  analyst: 'Аналитик',
+  support: 'Поддержка',
+}
+
+export const PERMISSIONS = {
+  'dashboard.view': 'Главный экран CRM',
+  'users.view': 'Список пользователей и User 360',
+  'users.sensitive': 'Контакты, документы, ответы анкеты',
+  'users.manage': 'Заявки, блокировка, тариф, 2FA, виджеты',
+  'users.archive': 'Архивация (удаление) пользователей',
+  'survey.view': 'Просмотр анкет',
+  'survey.edit': 'Изменение анкет',
+  'survey.delete': 'Полное удаление анкеты',
+  'gri.view': 'Просмотр GRI',
+  'gri.edit': 'Изменение GRI',
+  'gri.delete': 'Удаление результатов GRI',
+  'activity.view': 'Активность пользователей',
+  'cjm.view': 'Путь клиента (CJM)',
+  'analytics.view': 'Аналитика платформы',
+  'audit.view': 'Журнал действий персонала',
+  'content.view': 'Просмотр контента',
+  'content.edit': 'Создание и правка контента',
+  'content.publish': 'Публикация и удаление контента',
+  'platform.sections': 'Разделы платформы и видимость',
+  'settings.manage': 'Системные настройки',
+  'roles.manage': 'Управление ролями персонала',
+  'impersonate.view': 'Кабинет от имени пользователя (просмотр)',
+  'impersonate.edit': 'Кабинет от имени пользователя (правка)',
+  'inbox.view': 'Inbox: просмотр',
+  'inbox.manage': 'Inbox: ответы и настройки',
+  'leads.view': 'Лиды: просмотр',
+  'leads.manage': 'Лиды: изменение',
+  'market.manage': 'Инсайты рынка',
+  'insights.moderate': 'Модерация ИИ-инсайтов',
+} as const
+
+export type Permission = keyof typeof PERMISSIONS
+export const ALL_PERMISSIONS = Object.keys(PERMISSIONS) as Permission[]
+
+const CRM_MANAGER: Permission[] = [
+  'dashboard.view', 'users.view', 'users.sensitive', 'users.manage',
+  'survey.view', 'survey.edit', 'gri.view', 'gri.edit',
+  'activity.view', 'cjm.view', 'analytics.view',
+  'impersonate.view', 'impersonate.edit',
+  'inbox.view', 'inbox.manage', 'leads.view', 'leads.manage', 'market.manage', 'insights.moderate',
+]
+
+export const ROLE_PERMISSIONS: Record<StaffRole, ReadonlySet<Permission>> = {
+  super_admin: new Set(ALL_PERMISSIONS),
+  // Everything except managing staff roles and global system settings.
+  admin: new Set(ALL_PERMISSIONS.filter((p) => p !== 'roles.manage' && p !== 'settings.manage')),
+  crm_manager: new Set(CRM_MANAGER),
+  content_manager: new Set<Permission>([
+    'dashboard.view', 'content.view', 'content.edit', 'content.publish', 'platform.sections', 'insights.moderate',
+  ]),
+  // Aggregates and journeys, but no personal contacts, answers or documents.
+  analyst: new Set<Permission>([
+    'dashboard.view', 'users.view', 'survey.view', 'gri.view', 'activity.view', 'cjm.view', 'analytics.view',
+  ]),
+  support: new Set<Permission>([
+    'dashboard.view', 'users.view', 'users.sensitive', 'survey.view', 'gri.view', 'activity.view', 'cjm.view',
+    'impersonate.view', 'inbox.view', 'leads.view',
+  ]),
+}
+
+export function isStaffRole(v: unknown): v is StaffRole {
+  return typeof v === 'string' && (STAFF_ROLES as readonly string[]).includes(v)
+}
+
+export function hasPermission(role: StaffRole | null | undefined, permission: Permission): boolean {
+  return !!role && ROLE_PERMISSIONS[role].has(permission)
+}
+
+export function permissionsFor(role: StaffRole): Permission[] {
+  return ALL_PERMISSIONS.filter((p) => ROLE_PERMISSIONS[role].has(p))
+}
+
+/** Higher number = more power. Used to stop staff acting on peers above them. */
+const RANK: Record<StaffRole, number> = {
+  super_admin: 100, admin: 80, crm_manager: 50, content_manager: 40, analyst: 30, support: 20,
+}
+
+/**
+ * May `actor` manage (block, edit, impersonate, change role of) a user whose
+ * staff role is `target`? Non-staff targets are always manageable. Staff can only
+ * manage staff strictly below them; super_admins are managed by super_admins only
+ * (and never impersonated — see canImpersonate).
+ */
+export function canManageTarget(actor: StaffRole, target: StaffRole | null | undefined): boolean {
+  if (!target) return true
+  if (actor === 'super_admin') return true
+  return RANK[actor] > RANK[target]
+}
+
+/** Staff accounts are never impersonated: their cabinet is the admin panel. */
+export function canImpersonate(actor: StaffRole, target: { staffRole: StaffRole | null; profileRole: string | null }): boolean {
+  if (!hasPermission(actor, 'impersonate.view')) return false
+  if (target.staffRole) return false
+  if (target.profileRole === 'super_admin' || target.profileRole === 'admin') return false
+  return true
+}
+
+/** Which roles may `actor` grant? Only roles strictly below its own (super_admin: any). */
+export function grantableRoles(actor: StaffRole): StaffRole[] {
+  if (!hasPermission(actor, 'roles.manage')) return []
+  return STAFF_ROLES.filter((r) => actor === 'super_admin' || RANK[r] < RANK[actor])
+}

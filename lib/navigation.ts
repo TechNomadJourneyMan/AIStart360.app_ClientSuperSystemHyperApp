@@ -11,6 +11,9 @@ const CLIENT_OK: UserRole[] = ['super_admin', 'admin', 'client']
 
 // PRIMARY navigation — shown directly in the sidebar
 export const PRIMARY_NAV: NavItem[] = [
+  // The client's landing page (survey profile + GRI status). Lives outside the
+  // (dashboard) group, so this entry is the way back to it from the portal.
+  { label: 'Мой профиль', href: '/client/home', icon: 'badge', roles: ['client'] },
   { label: 'Дэшборд',   href: '/dashboard', icon: 'dashboard',   roles: CLIENT_OK },
   { label: 'GRI',       href: '/gri',        icon: 'radar',       roles: CLIENT_OK },
   // /pulse is now the lightweight CRM (own client base «Кому звонить сегодня»)

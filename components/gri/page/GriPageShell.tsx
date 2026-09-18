@@ -9,6 +9,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import GriHero from './GriHero'
 import { DEFAULT_SCORES } from '@/lib/gri-calculator/gri-data'
+import type { AssessmentCurrent } from '@/lib/gri-assessment/types'
 
 const GRICalculator = dynamic(() => import('@/components/gri/calculator/GRICalculator'), {
   loading: () => <div className="animate-pulse h-[400px] bg-white/[0.03] rounded-2xl" />,
@@ -33,13 +34,7 @@ const TABS = [
 
 type TabKey = (typeof TABS)[number]['key']
 
-export interface AssessmentCurrent {
-  gri_index: number
-  section_avgs: Record<string, number>
-  top_5_limits: unknown
-  action_plan_90d: unknown
-  created_at: string
-}
+export type { AssessmentCurrent } from '@/lib/gri-assessment/types'
 
 export default function GriPageShell() {
   const router = useRouter()
