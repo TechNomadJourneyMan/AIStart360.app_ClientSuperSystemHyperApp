@@ -29,13 +29,22 @@ export default function ForgotPasswordPage() {
   const onSubmit = async (data: Form) => {
     setRequestError(null)
     setIsLoading(true)
-    const supabase = createClient()
-    const { error } = await supabase.auth.resetPasswordForEmail(data.email, {
-      redirectTo: `${window.location.origin}/auth/reset-password`,
-    })
+    // Письмо отправляем сами: Supabase подменяет адрес возврата своим Site URL,
+    // если он не в списке разрешённых, и ссылка уводит на чужой домен.
+    let failed = false
+    try {
+      const res = await fetch('/api/v1/auth/email-link', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: data.email, purpose: 'recovery' }),
+      })
+      failed = !res.ok
+    } catch {
+      failed = true
+    }
     setIsLoading(false)
 
-    if (error) {
+    if (failed) {
       setRequestError('Не удалось отправить письмо. Попробуйте снова.')
       return
     }

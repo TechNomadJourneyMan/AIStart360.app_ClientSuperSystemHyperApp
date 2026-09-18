@@ -14,6 +14,9 @@ function LoginContent() {
   const [showPassword, setShowPassword] = useState(false)
   const [demoLoading, setDemoLoading] = useState(false)
   const [demoError, setDemoError] = useState<string | null>(null)
+  // Вход по ссылке на почту — работает без переадресации через Supabase.
+  const [linkState, setLinkState] = useState<'idle' | 'sending' | 'sent'>('idle')
+  const [linkError, setLinkError] = useState<string | null>(null)
   const { login, loginWithGoogle, isLoading, error, clearError, user } = useAuthStore()
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -91,6 +94,28 @@ function LoginContent() {
       setDemoError(e instanceof Error ? e.message : 'Демо-доступ недоступен')
     } finally {
       setDemoLoading(false)
+    }
+  }
+
+  const sendLoginLink = async () => {
+    setLinkError(null)
+    if (!email.trim()) {
+      setLinkError('Введите email — на него придёт ссылка для входа')
+      return
+    }
+    setLinkState('sending')
+    try {
+      const res = await fetch('/api/v1/auth/email-link', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.trim(), purpose: 'login', next: from }),
+      })
+      const data = await res.json().catch(() => null)
+      if (!res.ok) throw new Error(data?.error || 'Не удалось отправить письмо')
+      setLinkState('sent')
+    } catch (err) {
+      setLinkState('idle')
+      setLinkError(err instanceof Error ? err.message : 'Не удалось отправить письмо')
     }
   }
 
@@ -267,6 +292,23 @@ function LoginContent() {
               )}
             </button>
           </form>
+
+          {/* Вход по ссылке на почту */}
+          <div className="mt-3 text-center">
+            {linkState === 'sent' ? (
+              <p className="text-xs text-primary">Письмо отправлено. Откройте ссылку из него — вход завершится здесь же.</p>
+            ) : (
+              <button
+                type="button"
+                onClick={sendLoginLink}
+                disabled={linkState === 'sending' || isLoading}
+                className="text-[11px] text-primary/70 hover:text-primary transition-colors disabled:opacity-50"
+              >
+                {linkState === 'sending' ? 'Отправляем письмо…' : 'Войти по ссылке на почту'}
+              </button>
+            )}
+            {linkError && <p className="mt-1 text-[11px] text-error">{linkError}</p>}
+          </div>
 
           {/* Divider */}
           <div className="relative my-6">
