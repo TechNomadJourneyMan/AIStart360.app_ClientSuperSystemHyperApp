@@ -110,3 +110,23 @@ describe('break-glass switch', () => {
     expect(loc(r)).toContain('/giga-login')
   })
 })
+
+describe('OAuth-код, прилетевший не на свой адрес', () => {
+  it('переклеивает ?code= с корня и страниц входа на /auth/callback', async () => {
+    s.user = null
+    for (const path of ['/', '/login', '/register']) {
+      const r = await get(`${path}?code=fcb2630e-6fa8-4abb-a93f-3f180e40b510`)
+      expect(r.status, path).toBe(307)
+      expect(loc(r), path).toContain('/auth/callback?code=fcb2630e-6fa8-4abb-a93f-3f180e40b510')
+    }
+  })
+
+  it('сохраняет next и не трогает короткие или чужие code', async () => {
+    s.user = null
+    expect(loc(await get('/login?code=fcb2630e-6fa8-4abb-a93f-3f180e40b510&next=%2Fgri'))).toContain('next=%2Fgri')
+    // Слишком короткое значение — это не OAuth-код (например, промокод).
+    expect(loc(await get('/login?code=SALE10'))).not.toContain('/auth/callback')
+    // На других страницах параметр не перехватываем.
+    expect(loc(await get('/client/home?code=fcb2630e-6fa8-4abb-a93f-3f180e40b510'))).not.toContain('/auth/callback')
+  })
+})

@@ -122,10 +122,35 @@ async function resolveRoleAndStatus(
   }
 }
 
+/**
+ * OAuth-код, прилетевший не на свой адрес.
+ *
+ * Supabase возвращает браузер на Site URL, если запрошенный redirect_to не
+ * в списке разрешённых, — и тогда `?code=…` оказывается на корне сайта или на
+ * /login вместо /auth/callback, а вход молча не завершается. Переклеиваем такой
+ * запрос на обработчик — он обменяет код на сессию и уведёт по роли.
+ */
+const CODE_LANDING_PATHS = new Set(['/', '/login', '/register'])
+
+function oauthCodeLanded(request: NextRequest): NextResponse | null {
+  const { pathname, searchParams } = request.nextUrl
+  if (!CODE_LANDING_PATHS.has(pathname)) return null
+  const code = searchParams.get('code')
+  if (!code || code.length < 20) return null
+  const url = new URL('/auth/callback', request.url)
+  url.searchParams.set('code', code)
+  const next = searchParams.get('next')
+  if (next) url.searchParams.set('next', next)
+  return NextResponse.redirect(url)
+}
+
 export async function middleware(request: NextRequest, event?: NextFetchEvent) {
   // Background work that must outlive the response (audit writes).
   const later = (p: Promise<unknown>) => { if (event) event.waitUntil(p); else void p }
   const { pathname } = request.nextUrl
+
+  const strayCode = oauthCodeLanded(request)
+  if (strayCode) return strayCode
 
   if (pathname.startsWith('/api')) {
     const blocked = await guardImpersonatedApi(request, later)
