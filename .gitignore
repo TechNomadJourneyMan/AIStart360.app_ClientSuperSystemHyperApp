@@ -22,9 +22,11 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# Local env files
-.env*.local
-.env
+# Local env files — НИКОГДА не коммитить: репозиторий публичный.
+# Ловим все варианты (.env.production, .env.staging и т.п.), кроме примеров.
+.env*
+!.env.example
+!*/.env.example
 
 # Vercel
 .vercel
