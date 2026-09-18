@@ -195,6 +195,9 @@ export async function middleware(request: NextRequest, event?: NextFetchEvent) {
     pathname.startsWith('/terms') ||
     pathname.startsWith('/privacy') ||
     pathname === '/maintenance' ||
+    // Ссылка из нашего письма: токен обменивается на сессию в самом маршруте,
+    // поэтому пропускаем его до всех проверок — и для гостя, и для вошедшего.
+    pathname === '/auth/verify' ||
     // Public read-only shared report links (/r/<token>) — no auth required.
     pathname === '/r' ||
     pathname.startsWith('/r/') ||

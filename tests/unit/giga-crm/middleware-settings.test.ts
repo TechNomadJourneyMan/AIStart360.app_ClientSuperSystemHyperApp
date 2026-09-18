@@ -130,3 +130,18 @@ describe('OAuth-код, прилетевший не на свой адрес', (
     expect(loc(await get('/client/home?code=fcb2630e-6fa8-4abb-a93f-3f180e40b510'))).not.toContain('/auth/callback')
   })
 })
+
+describe('ссылка из письма', () => {
+  it('/auth/verify доходит до маршрута и не уводится на /login', async () => {
+    s.user = null
+    const r = await get('/auth/verify?token_hash=abc&type=magiclink')
+    expect(r.status).toBe(200)
+    expect(loc(r)).not.toContain('/login')
+  })
+
+  it('работает и когда в браузере уже есть сессия', async () => {
+    s.role = 'client'
+    const r = await get('/auth/verify?token_hash=abc&type=recovery')
+    expect(r.status).toBe(200)
+  })
+})
