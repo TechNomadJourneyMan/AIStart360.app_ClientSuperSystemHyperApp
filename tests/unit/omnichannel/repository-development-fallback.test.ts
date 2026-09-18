@@ -50,7 +50,7 @@ describe("omnichannel repository development fallback routing", () => {
     postgres.enabled.mockReturnValue(true);
     postgres.claim.mockResolvedValue({ claimed: true, reason: "claimed" });
 
-    await expect(claimMessageForAutoSend("message-1")).resolves.toEqual({
+    await expect(claimMessageForAutoSend("message-1", "worker-1")).resolves.toEqual({
       claimed: true,
       reason: "claimed",
     });
@@ -60,7 +60,7 @@ describe("omnichannel repository development fallback routing", () => {
       reason: "safe_auto_reply",
     });
 
-    expect(postgres.claim).toHaveBeenCalledWith("message-1");
+    expect(postgres.claim).toHaveBeenCalledWith("message-1", "worker-1");
     expect(postgres.markOutcome).toHaveBeenCalledWith("message-1", "replied", {
       draft: "Ответ",
       confidence: 0.95,
@@ -89,20 +89,13 @@ describe("omnichannel repository development fallback routing", () => {
     expect(service.create).not.toHaveBeenCalled();
   });
 
-  it("applies the same imported QR-only filters on the production repository path", async () => {
+  it("uses the one-latest-message-per-chat RPC on the production repository path", async () => {
     postgres.enabled.mockReturnValue(false);
-    const chain: Record<string, ReturnType<typeof vi.fn>> = {};
-    chain.select = vi.fn(() => chain);
-    chain.eq = vi.fn(() => chain);
-    chain.is = vi.fn(() => chain);
-    chain.contains = vi.fn(() => chain);
-    chain.order = vi.fn(() => chain);
-    chain.limit = vi.fn(async () => ({
-      data: [{ id: "history-1", conversation_id: "conversation-1" }],
+    const rpc = vi.fn(async () => ({
+      data: [{ message_id: "history-1", conversation_id: "conversation-1" }],
       error: null,
     }));
-    const from = vi.fn(() => chain);
-    service.create.mockReturnValue({ from });
+    service.create.mockReturnValue({ rpc });
 
     await expect(listImportedWhatsAppHistoryForDraft(200)).resolves.toEqual([
       {
@@ -111,16 +104,10 @@ describe("omnichannel repository development fallback routing", () => {
       },
     ]);
 
-    expect(from).toHaveBeenCalledWith("omnichannel_messages");
-    expect(chain.eq).toHaveBeenNthCalledWith(1, "channel", "whatsapp");
-    expect(chain.eq).toHaveBeenNthCalledWith(2, "direction", "in");
-    expect(chain.eq).toHaveBeenNthCalledWith(3, "status", "imported");
-    expect(chain.is).toHaveBeenCalledWith("ai_draft", null);
-    expect(chain.contains).toHaveBeenCalledWith("metadata", {
-      transport: "whatsapp_web",
-      catchUp: true,
-    });
-    expect(chain.limit).toHaveBeenCalledWith(100);
+    expect(rpc).toHaveBeenCalledWith(
+      "list_omnichannel_whatsapp_history_for_draft",
+      { p_limit: 100 },
+    );
     expect(postgres.listImportedHistory).not.toHaveBeenCalled();
   });
 
@@ -133,13 +120,14 @@ describe("omnichannel repository development fallback routing", () => {
     const rpc = vi.fn().mockReturnValue({ maybeSingle });
     service.create.mockReturnValue({ rpc });
 
-    await expect(claimMessageForAutoSend("message-2")).resolves.toEqual({
+    await expect(claimMessageForAutoSend("message-2", "worker-2")).resolves.toEqual({
       claimed: true,
       reason: "claimed",
     });
 
-    expect(rpc).toHaveBeenCalledWith("claim_omnichannel_auto_send", {
+    expect(rpc).toHaveBeenCalledWith("claim_omnichannel_auto_send_owned", {
       p_message_id: "message-2",
+      p_owner_token: "worker-2",
     });
     expect(postgres.claim).not.toHaveBeenCalled();
   });
@@ -189,7 +177,7 @@ describe("omnichannel repository development fallback routing", () => {
       throw new Error("SUPABASE_SERVICE_ROLE_KEY is not configured");
     });
 
-    await expect(claimMessageForAutoSend("message-3")).rejects.toThrow(
+    await expect(claimMessageForAutoSend("message-3", "worker-3")).rejects.toThrow(
       "SUPABASE_SERVICE_ROLE_KEY is not configured",
     );
     expect(postgres.claim).not.toHaveBeenCalled();

@@ -1,21 +1,34 @@
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
-export const maxDuration = 30
+// The database fast path may wait for the configured human-like reply delay
+// and then run two bounded model attempts. Its durable job remains recoverable
+// if the serverless invocation still ends before completion.
+export const maxDuration = 300
 
 import { createHash, timingSafeEqual } from 'crypto'
+import { waitUntil } from '@vercel/functions'
 import { NextResponse, type NextRequest } from 'next/server'
+import { start } from 'workflow/api'
 import { inngest } from '@/lib/inngest'
 import { OMNICHANNEL_MESSAGE_RECEIVED_EVENT } from '@/lib/omnichannel/events'
 import {
   parseMetaWebhook,
   verifyMetaWebhookSignature,
 } from '@/lib/omnichannel/meta-webhook'
+import { getConfiguredMetaAccountId } from '@/lib/omnichannel/meta-client'
 import {
   applyWhatsAppDeliveryStatus,
+  claimWebhookEventForProcessing,
   ingestNormalizedMessage,
   recordWebhookEvent,
   transitionWebhookEvent,
 } from '@/lib/omnichannel/repository'
+import type { RecordedWebhookEvent } from '@/lib/omnichannel/repository'
+import { enqueueOmnichannelProcessingJob } from '@/lib/omnichannel/processing-jobs'
+import { drainOmnichannelProcessingJobs } from '@/lib/omnichannel/process-job-queue'
+import { processOmnichannelMessageWorkflow } from '@/workflows/process-omnichannel-message'
+
+const MAX_FAST_PATH_DELAY_MS = 30_000
 
 function constantTimeEqual(left: string, right: string): boolean {
   const leftBytes = Buffer.from(left, 'utf8')
@@ -27,6 +40,21 @@ function genericResponse(status = 200): NextResponse {
   return NextResponse.json({ ok: status >= 200 && status < 300 }, { status })
 }
 
+function configuredSecret(value: string | undefined): string | null {
+  const secret = value?.trim()
+  return secret ? secret : null
+}
+
+function payloadObject(value: unknown): string | null {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return null
+  const object = (value as { object?: unknown }).object
+  return typeof object === 'string' ? object : null
+}
+
+function isOwnedDuplicate(audit: RecordedWebhookEvent): boolean {
+  return audit.duplicate && ['queued', 'processed', 'ignored'].includes(audit.status)
+}
+
 async function markAuditFailed(eventId: string, errorCode: string): Promise<void> {
   try {
     // Store a stable internal code only. Provider errors and request data may
@@ -35,6 +63,42 @@ async function markAuditFailed(eventId: string, errorCode: string): Promise<void
   } catch {
     // Meta will retry because the route returns 500. Avoid logging request or
     // credential-adjacent data if even the best-effort audit update fails.
+  }
+}
+
+type ProcessingBackend = 'database' | 'workflow' | 'inngest'
+
+function processingBackend(): ProcessingBackend {
+  const configured = process.env.OMNICHANNEL_PROCESSING_BACKEND?.trim().toLowerCase()
+  if (configured === 'database' || configured === 'workflow') return configured
+  return 'inngest'
+}
+
+function sleep(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds))
+}
+
+/**
+ * Best-effort low-latency serverless path. Enqueueing is the durability
+ * boundary; a later invocation can recover the job if this work is stopped.
+ */
+function scheduleDatabaseQueueFastPath(runAt: string): void {
+  if (process.env.VERCEL !== '1') return
+  const runAtMs = new Date(runAt).getTime()
+  if (!Number.isFinite(runAtMs)) return
+  const delayMs = Math.max(0, runAtMs - Date.now())
+  if (delayMs > MAX_FAST_PATH_DELAY_MS) return
+
+  const work = (async () => {
+    if (delayMs > 0) await sleep(delayMs)
+    await drainOmnichannelProcessingJobs({ limit: 1 })
+  })().catch(() => {
+    // The durable job remains queued for recovery by a later invocation.
+  })
+  try {
+    waitUntil(work)
+  } catch {
+    // The promise has already started in a local/non-Vercel runtime.
   }
 }
 
@@ -66,14 +130,19 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 /**
  * Receive signed Meta webhook deliveries.
  *
- * Signature verification happens against the exact bytes before JSON parsing
- * and before any database or queue side effect. The raw payload is never
- * logged or persisted; the audit table receives only its SHA-256 digest and
- * small non-sensitive counters.
+ * Signature verification happens against the exact bytes and before any
+ * database or queue side effect. If Instagram uses a separate Meta app, its
+ * dedicated secret is tried first and then enforced after a bounded JSON parse;
+ * a WhatsApp payload can never authenticate with only the Instagram secret.
+ * The raw payload is never logged or persisted; the audit table receives only
+ * its SHA-256 digest and small non-sensitive counters.
  */
 export async function POST(req: NextRequest): Promise<NextResponse> {
-  const appSecret = process.env.META_APP_SECRET
-  if (!appSecret) return genericResponse(503)
+  const metaAppSecret = configuredSecret(process.env.META_APP_SECRET)
+  const instagramAppSecret = configuredSecret(process.env.INSTAGRAM_APP_SECRET)
+    ?? metaAppSecret
+  if (!metaAppSecret && !instagramAppSecret) return genericResponse(503)
+  const backend = processingBackend()
 
   const maxBodyBytes = 1_000_000
   const declaredLength = Number(req.headers.get('content-length'))
@@ -89,11 +158,16 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
   if (rawBody.byteLength > maxBodyBytes) return genericResponse(413)
 
-  if (!verifyMetaWebhookSignature(
-    rawBody,
-    req.headers.get('x-hub-signature-256'),
-    appSecret,
-  )) {
+  const signature = req.headers.get('x-hub-signature-256')
+  const matchesMetaSecret = Boolean(
+    metaAppSecret
+    && verifyMetaWebhookSignature(rawBody, signature, metaAppSecret),
+  )
+  const matchesInstagramSecret = Boolean(
+    instagramAppSecret
+    && verifyMetaWebhookSignature(rawBody, signature, instagramAppSecret),
+  )
+  if (!matchesMetaSecret && !matchesInstagramSecret) {
     return genericResponse(401)
   }
 
@@ -104,16 +178,40 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return genericResponse(400)
   }
 
-  const events = parseMetaWebhook(payload)
+  const object = payloadObject(payload)
+  if (object === 'instagram') {
+    if (!instagramAppSecret) return genericResponse(503)
+    if (!matchesInstagramSecret) return genericResponse(401)
+  } else {
+    // WhatsApp and unsupported Meta objects use META_APP_SECRET. This avoids
+    // cross-authentication when Instagram Login belongs to a separate app.
+    if (!metaAppSecret) return genericResponse(503)
+    if (!matchesMetaSecret) return genericResponse(401)
+  }
+
+  let events = parseMetaWebhook(payload)
   // Meta may send subscribed fields that this service intentionally does not
   // handle. A valid signed delivery must still be acknowledged to stop retries.
   if (events.length === 0) return genericResponse()
 
   const channel = events[0].channel
+  const configuredAccountId = getConfiguredMetaAccountId(channel)
+  if (!configuredAccountId) return genericResponse(503)
+
+  // A Meta app can be subscribed to more than one business account. Accept
+  // only the explicitly configured sender so an unrelated account's customer
+  // content is never persisted in this tenant. Valid signed foreign deliveries
+  // are acknowledged (not retried) without database side effects.
+  events = events.filter(
+    (event) => event.accountExternalId === configuredAccountId,
+  )
+  if (events.length === 0) return genericResponse()
+
   const eventTypes = [...new Set(events.map((event) => event.eventType))]
   const accountIds = [...new Set(events.map((event) => event.accountExternalId))]
   const eventHash = createHash('sha256').update(rawBody).digest('hex')
   let auditId: string | null = null
+  let auditClaimed = false
 
   try {
     const audit = await recordWebhookEvent({
@@ -124,8 +222,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       metadata: { eventCount: events.length },
     })
     auditId = audit.id
+    if (isOwnedDuplicate(audit)) return genericResponse()
 
-    const queuedMessages: Array<{ messageId: string; conversationId: string }> = []
+    const queuedMessages = new Map<
+      string,
+      { messageId: string; conversationId: string }
+    >()
 
     for (const event of events) {
       if (event.eventType === 'status') {
@@ -135,39 +237,65 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
       const result = await ingestNormalizedMessage(event)
       if (event.direction === 'in' && result.shouldQueue) {
-        queuedMessages.push({
+        queuedMessages.set(result.messageId, {
           messageId: result.messageId,
           conversationId: result.conversationId,
         })
       }
     }
 
-    for (const message of queuedMessages) {
+    // The audit lease serializes concurrent retries of the same signed Meta
+    // delivery. Message upserts remain the cross-delivery idempotency guard.
+    const claimed = await claimWebhookEventForProcessing(audit.id)
+    if (!claimed) return genericResponse(503)
+    auditClaimed = true
+
+    for (const message of queuedMessages.values()) {
       try {
-        await inngest.send({
-          // A deterministic event id makes a lost HTTP response safe: Meta's
-          // retry can recover a `received` row without double-running the AI.
-          id: `omnichannel-message-${message.messageId}`,
-          name: OMNICHANNEL_MESSAGE_RECEIVED_EVENT,
-          data: {
-            message_id: message.messageId,
-            conversation_id: message.conversationId,
-            force_draft: false,
-          },
-        })
+        const eventData = {
+          message_id: message.messageId,
+          conversation_id: message.conversationId,
+          force_draft: false,
+        }
+        if (backend === 'database') {
+          const job = await enqueueOmnichannelProcessingJob({
+            messageId: message.messageId,
+            forceDraft: false,
+          })
+          scheduleDatabaseQueueFastPath(job.runAt)
+        } else if (backend === 'workflow') {
+          await start(processOmnichannelMessageWorkflow, [eventData])
+        } else {
+          await inngest.send({
+            // A deterministic event id makes a lost HTTP response safe: Meta's
+            // retry can recover a `received` row without double-running the AI.
+            id: `omnichannel-message-${message.messageId}`,
+            name: OMNICHANNEL_MESSAGE_RECEIVED_EVENT,
+            data: eventData,
+          })
+        }
       } catch {
-        await markAuditFailed(audit.id, 'inngest_enqueue_failed')
+        await markAuditFailed(
+          audit.id,
+          backend === 'database'
+            ? 'database_queue_enqueue_failed'
+            : backend === 'workflow'
+              ? 'workflow_start_failed'
+              : 'inngest_enqueue_failed',
+        )
         return genericResponse(500)
       }
     }
 
     // "processed" here means the webhook delivery was durably ingested and
-    // any asynchronous work was accepted by Inngest; it does not claim that
-    // the later AI run has already completed.
+    // asynchronous work was accepted by the configured queue; it does not
+    // claim that the later AI run has already completed.
     await transitionWebhookEvent(audit.id, 'processed')
     return genericResponse()
   } catch {
-    if (auditId) await markAuditFailed(auditId, 'webhook_processing_failed')
+    if (auditId && auditClaimed) {
+      await markAuditFailed(auditId, 'webhook_processing_failed')
+    }
     return genericResponse(500)
   }
 }

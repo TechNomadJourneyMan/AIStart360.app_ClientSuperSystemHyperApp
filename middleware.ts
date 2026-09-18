@@ -136,6 +136,11 @@ export async function middleware(request: NextRequest, event?: NextFetchEvent) {
   if (
     pathname.startsWith('/_next') ||
     pathname.startsWith('/api') ||
+    // Vercel Workflow invokes its generated step endpoints without an
+    // application user session. Sending these internal calls through the
+    // dashboard auth gate would redirect them to /login and leave every Meta
+    // message workflow stuck after the webhook ACK.
+    pathname.startsWith('/.well-known/workflow/') ||
     pathname.startsWith('/logo') ||
     pathname.startsWith('/fonts') ||
     // Static assets in public/ must skip the network auth (getUser + profiles):
@@ -231,6 +236,8 @@ export async function middleware(request: NextRequest, event?: NextFetchEvent) {
   // Public auth pages (login, register, etc.)
   const isPublic = PUBLIC_PATHS.some((p) => pathname.startsWith(p))
   const isGigaLogin = pathname === GIGA_LOGIN_PATH
+  const hasApprovedPersonalGigaAccess =
+    Boolean(user) && role === 'super_admin' && resolved?.status === 'approved'
 
   // A2b: the giga gate is the HMAC-SIGNED `aistart360_giga` cookie, verified
   // here on the Edge runtime via Web Crypto. The unsigned `aistart360_role`
@@ -241,7 +248,7 @@ export async function middleware(request: NextRequest, event?: NextFetchEvent) {
     (await edgeSettings()).break_glass_enabled
 
   if (isGigaLogin) {
-    if ((user && role === 'super_admin') || hasGigaAccess) {
+    if (hasApprovedPersonalGigaAccess || hasGigaAccess) {
       return NextResponse.redirect(new URL(GIGA_PANEL_PATH, request.url))
     }
     return response // allow access to login page
@@ -387,5 +394,7 @@ export async function middleware(request: NextRequest, event?: NextFetchEvent) {
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|.*\\.svg|.*\\.png).*)'],
+  matcher: [
+    '/((?!_next/static|_next/image|favicon.ico|\\.well-known/workflow/|.*\\.svg|.*\\.png).*)',
+  ],
 }

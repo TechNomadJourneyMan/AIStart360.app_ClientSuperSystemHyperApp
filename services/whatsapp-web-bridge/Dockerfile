@@ -13,7 +13,10 @@ ENV NODE_ENV=production \
     BRIDGE_AUTH_DIR=/data/auth \
     BRIDGE_STATE_DIR=/data/state
 
-RUN groupadd --system --gid 10001 bridge \
+RUN apt-get update \
+  && apt-get install --yes --no-install-recommends gosu \
+  && rm -rf /var/lib/apt/lists/* \
+  && groupadd --system --gid 10001 bridge \
   && useradd --system --uid 10001 --gid bridge --home-dir /service bridge \
   && mkdir -p /service /data/auth /data/state \
   && chown -R bridge:bridge /service /data
@@ -28,13 +31,14 @@ COPY --chown=bridge:bridge \
   bridge-reliability.mjs \
   portal-job-drain-kicker.mjs \
   portal-outbound-puller.mjs \
+  docker-entrypoint.sh \
   ./
 
-USER bridge
 VOLUME ["/data"]
 EXPOSE 8787
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD ["node", "-e", "fetch('http://127.0.0.1:8787/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
 
+ENTRYPOINT ["./docker-entrypoint.sh"]
 CMD ["node", "server.mjs"]

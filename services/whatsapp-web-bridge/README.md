@@ -346,3 +346,42 @@ connected and both auth persistence and the durable webhook outbox are healthy.
 Monitor `last_webhook_error` and the owner-only `webhook-dead-letter` directory
 as separate alerts: a quarantined permanent rejection no longer blocks the
 active outbox, so readiness can recover while operator review is still needed.
+
+## Railway deployment
+
+Use a paid always-on Railway service (Hobby or higher) with the service root
+set to this directory. Railway Free/Trial does not support the `ALWAYS` restart
+policy required for this bridge. Attach exactly one persistent volume at
+`/data`, keep one replica, and leave Serverless mode disabled. `railway.json`
+requires that mount, disables application sleep, and uses `/health` for deploy
+health because `/ready` intentionally remains unavailable until WhatsApp is
+paired and connected.
+
+The image starts as root only long enough to create the volume directories,
+then `docker-entrypoint.sh` drops to UID/GID `10001`. Do not set
+`RAILWAY_RUN_UID`; the application itself must not remain root. The
+`.dockerignore` file excludes local auth/state and dotenv files from the remote
+build context.
+
+Required Railway-specific values in addition to the environment above:
+
+```dotenv
+PORT=8787
+BRIDGE_PORT=8787
+BRIDGE_HOST=0.0.0.0
+BRIDGE_AUTH_DIR=/data/auth
+BRIDGE_STATE_DIR=/data/state
+BRIDGE_AUTOSTART=true
+WHATSAPP_WEB_DELIVERY_MODE=pull
+PORTAL_WEBHOOK_URL=https://aistart360.vercel.app/api/webhooks/whatsapp-web
+```
+
+Generate a Railway domain for port `8787`. Configure that HTTPS origin as
+`WHATSAPP_WEB_BRIDGE_URL` in Vercel, and use the same session ID, API secret,
+and webhook secret on both sides. The two secrets must still differ from one
+another.
+
+For a safe cutover, deploy an empty cloud volume first, stop the local bridge,
+pair the cloud bridge once through the signed QR flow, wait for `/ready`, then
+switch the Vercel producer to `WHATSAPP_WEB_DELIVERY_MODE=pull`. Never run the
+local and cloud bridge against the same WhatsApp number at the same time.

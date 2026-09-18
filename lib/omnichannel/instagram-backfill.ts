@@ -1,6 +1,7 @@
 import type { NormalizedOmnichannelMessage } from './types'
 import {
   createMetaClient,
+  INSTAGRAM_GRAPH_ORIGIN,
   type MetaClientOptions,
   type MetaEnvironment,
   type MetaFetch,
@@ -8,6 +9,7 @@ import {
 
 export const DEFAULT_INSTAGRAM_BACKFILL_CONVERSATION_LIMIT = 25
 export const MAX_INSTAGRAM_BACKFILL_MESSAGE_DETAILS = 20
+export const MAX_INSTAGRAM_BACKFILL_NESTED_MESSAGE_PAGES = 25
 export const INSTAGRAM_BACKFILL_REQUEST_INTERVAL_MS = 500
 
 export type BackfillSleep = (milliseconds: number) => Promise<void>
@@ -23,6 +25,8 @@ export interface InstagramBackfillOptions {
   maxConversations?: number
   /** Provider message ids already persisted by earlier batches. */
   excludeMessageIds?: Iterable<string>
+  /** Sanitized top-level conversations page returned by an earlier batch. */
+  conversationPage?: string
 }
 
 export interface InstagramBackfillSuccess {
@@ -32,6 +36,10 @@ export interface InstagramBackfillSuccess {
   messages: NormalizedOmnichannelMessage[]
   partialErrors: string[]
   truncated: boolean
+  /** Page actually scanned by this batch, used for cross-batch loop guards. */
+  conversationPage: string
+  /** Current page again while it has work, otherwise the next provider page. */
+  nextConversationPage: string | null
 }
 
 export interface InstagramBackfillFailure {
@@ -95,9 +103,26 @@ function conversationLimit(options: InstagramBackfillOptions, env: MetaEnvironme
   return positiveInteger(configured, DEFAULT_INSTAGRAM_BACKFILL_CONVERSATION_LIMIT, 100)
 }
 
+function sanitizedPagingTarget(value: unknown): string | null {
+  const next = asNonEmptyString(value)
+  if (!next) return null
+  try {
+    const isAbsolute = /^https?:\/\//iu.test(next)
+    const url = new URL(next, INSTAGRAM_GRAPH_ORIGIN)
+    // Provider paging URLs sometimes echo the token. Authentication is added
+    // by MetaClient, so continuation state must never persist that query value.
+    url.searchParams.delete('access_token')
+    return isAbsolute
+      ? url.toString()
+      : `${url.pathname}${url.search}${url.hash}`
+  } catch {
+    // Malformed provider paths are still rejected by MetaClient when fetched.
+    return next
+  }
+}
+
 function pagingNext(value: unknown): string | null {
-  const paging = asRecord(value)
-  return asNonEmptyString(paging?.next)
+  return sanitizedPagingTarget(asRecord(value)?.next)
 }
 
 function messageRefs(value: unknown): unknown[] {
@@ -178,6 +203,7 @@ function normalizeDetail(input: {
     provider: 'meta',
     source: 'instagram_conversations_backfill',
     providerConversationId: input.conversationProviderId,
+    ...(direction === 'out' ? { historicalOutbound: true } : {}),
   }
 
   return {
@@ -261,11 +287,33 @@ export async function backfillInstagramConversations(
   const maxConversations = conversationLimit(options, env)
   const partialErrors: string[] = []
   const candidates: MessageCandidate[] = []
+  const excluded = new Set(options.excludeMessageIds ?? [])
+  const availableCandidateIds = new Set<string>()
+  const nestedPages: Array<{ conversationProviderId: string; page: string }> = []
   const seenPageUrls = new Set<string>()
   let requestCount = 0
   let conversationsScanned = 0
   let discoveryOrder = 0
   let truncated = false
+
+  const addMessageRefs = (value: unknown, conversationProviderId: string) => {
+    for (const rawRef of messageRefs(value)) {
+      const ref = asRecord(rawRef)
+      const id = asNonEmptyString(ref?.id)
+      if (!id) {
+        partialErrors.push(`Conversation ${conversationProviderId} contained a message without id`)
+        continue
+      }
+      candidates.push({
+        id,
+        conversationProviderId,
+        createdTimeHint: asNonEmptyString(ref?.created_time),
+        discoveryOrder,
+      })
+      discoveryOrder += 1
+      if (!excluded.has(id)) availableCandidateIds.add(id)
+    }
+  }
 
   const throttledGet = async <T>(pathOrUrl: string) => {
     if (requestCount > 0) {
@@ -280,7 +328,11 @@ export async function backfillInstagramConversations(
     fields: 'messages',
     limit: String(Math.min(maxConversations, 25)),
   })
-  let nextPage: string | null = `${encodeURIComponent(accountId)}/conversations?${initialParams}`
+  const defaultConversationPage = `${encodeURIComponent(accountId)}/conversations?${initialParams}`
+  const conversationPage = sanitizedPagingTarget(options.conversationPage)
+    ?? defaultConversationPage
+  let nextPage: string | null = conversationPage
+  let nextTopLevelPage: string | null = null
 
   while (nextPage && conversationsScanned < maxConversations) {
     if (seenPageUrls.has(nextPage)) {
@@ -297,6 +349,7 @@ export async function backfillInstagramConversations(
       }
       partialErrors.push(`Instagram conversations pagination failed: ${pageResult.message}`)
       truncated = true
+      nextTopLevelPage = nextPage
       break
     }
 
@@ -315,36 +368,77 @@ export async function backfillInstagramConversations(
       }
 
       conversationsScanned += 1
-      for (const rawRef of messageRefs(conversation?.messages)) {
-        const ref = asRecord(rawRef)
-        const id = asNonEmptyString(ref?.id)
-        if (!id) {
-          partialErrors.push(`Conversation ${conversationProviderId} contained a message without id`)
-          continue
-        }
-        candidates.push({
-          id,
-          conversationProviderId,
-          createdTimeHint: asNonEmptyString(ref?.created_time),
-          discoveryOrder,
-        })
-        discoveryOrder += 1
+      const embeddedMessages = asRecord(conversation?.messages)
+      addMessageRefs(embeddedMessages, conversationProviderId)
+      const nestedNext = pagingNext(embeddedMessages?.paging)
+      if (nestedNext) {
+        nestedPages.push({ conversationProviderId, page: nestedNext })
       }
     }
 
     const providerNext = pagingNext(page?.paging)
     if (conversationsScanned >= maxConversations && providerNext) {
       truncated = true
+      nextTopLevelPage = providerNext
       break
     }
     nextPage = providerNext
   }
 
-  const excluded = new Set(options.excludeMessageIds ?? [])
+  const seenNestedPageUrls = new Set<string>()
+  let nestedPageRequests = 0
+  let nestedPaginationIncomplete = false
+  while (
+    nestedPages.length > 0
+    && availableCandidateIds.size < MAX_INSTAGRAM_BACKFILL_MESSAGE_DETAILS
+    && nestedPageRequests < MAX_INSTAGRAM_BACKFILL_NESTED_MESSAGE_PAGES
+  ) {
+    const nested = nestedPages.shift()!
+    if (seenNestedPageUrls.has(nested.page)) {
+      partialErrors.push(
+        `Instagram messages pagination repeated a page URL for conversation ${nested.conversationProviderId}`,
+      )
+      nestedPaginationIncomplete = true
+      continue
+    }
+    seenNestedPageUrls.add(nested.page)
+    nestedPageRequests += 1
+
+    const nestedResult = await throttledGet<ConversationPage>(nested.page)
+    if (!nestedResult.ok) {
+      partialErrors.push(
+        `Instagram messages pagination failed for conversation ${nested.conversationProviderId}: ${nestedResult.message}`,
+      )
+      nestedPaginationIncomplete = true
+      continue
+    }
+
+    const nestedPage = asRecord(nestedResult.data)
+    addMessageRefs(nestedPage, nested.conversationProviderId)
+    const nestedNext = pagingNext(nestedPage?.paging)
+    if (nestedNext) {
+      nestedPages.push({
+        conversationProviderId: nested.conversationProviderId,
+        page: nestedNext,
+      })
+    }
+  }
+
+  if (
+    nestedPages.length > 0
+    && nestedPageRequests >= MAX_INSTAGRAM_BACKFILL_NESTED_MESSAGE_PAGES
+  ) {
+    partialErrors.push(
+      `Instagram nested message pagination was capped at ${MAX_INSTAGRAM_BACKFILL_NESTED_MESSAGE_PAGES} pages for this batch`,
+    )
+  }
+  const nestedHistoryRemaining = nestedPages.length > 0 || nestedPaginationIncomplete
+
   const remainingCandidates = newestCandidates(candidates)
     .filter((candidate) => !excluded.has(candidate.id))
   const detailCandidates = remainingCandidates.slice(0, MAX_INSTAGRAM_BACKFILL_MESSAGE_DETAILS)
-  if (remainingCandidates.length > detailCandidates.length) {
+  const detailCandidatesRemain = remainingCandidates.length > detailCandidates.length
+  if (detailCandidatesRemain) {
     truncated = true
     partialErrors.push(
       `Instagram message detail import was capped at ${MAX_INSTAGRAM_BACKFILL_MESSAGE_DETAILS} new IDs; ${remainingCandidates.length - detailCandidates.length} accessible IDs remain for the next batch`,
@@ -380,6 +474,14 @@ export async function backfillInstagramConversations(
     if (normalized.error) partialErrors.push(normalized.error)
   }
 
+  // Finish all accessible work from the current conversation page before
+  // advancing. The workflow excludes persisted IDs on the next pass, so this
+  // safely drains >20 messages without skipping the provider's next page.
+  const nextConversationPage = detailCandidatesRemain || nestedHistoryRemaining
+    ? conversationPage
+    : nextTopLevelPage
+  if (nextConversationPage) truncated = true
+
   return {
     ok: true,
     conversationsScanned,
@@ -387,6 +489,8 @@ export async function backfillInstagramConversations(
     messages: chronological(messages),
     partialErrors,
     truncated,
+    conversationPage,
+    nextConversationPage,
   }
 }
 

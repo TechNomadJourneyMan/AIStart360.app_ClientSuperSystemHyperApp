@@ -50,8 +50,10 @@ async function staffRoleOf(
     client.from('staff_roles').select('role').eq('user_id', userId).maybeSingle(),
   ])
   const p = profile as { role?: string; status?: string } | null
-  if (p?.status === 'blocked' || p?.status === 'archived') return null
-  if (p?.role === 'super_admin') return 'super_admin'
+  // Only an approved account works in the panel: pending, rejected, blocked
+  // and archived profiles get no staff access, whatever their role says.
+  if (p?.status !== 'approved') return null
+  if (p.role === 'super_admin') return 'super_admin'
   const r = (staff as { role?: string } | null)?.role
   return isStaffRole(r) ? r : null
 }

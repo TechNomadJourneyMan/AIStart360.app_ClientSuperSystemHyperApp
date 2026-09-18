@@ -80,7 +80,10 @@ function isUnresolvedSendState(value: unknown): boolean {
     return false;
   }
   const outcome = value as { skipped?: unknown; reason?: unknown };
-  return outcome.skipped === true && outcome.reason === "already_sending";
+  return outcome.skipped === true && (
+    outcome.reason === "already_sending" ||
+    outcome.reason === "send_owned_by_other_worker"
+  );
 }
 
 /**
@@ -140,6 +143,9 @@ export async function drainOmnichannelProcessingJobs(
         conversation_id: job.conversationId,
         force_draft: job.forceDraft,
         delay_already_applied: true,
+        // The lease changes after a crash, but the durable job remains the
+        // same send owner. A reclaimed job must reconcile, never send again.
+        processing_owner: `database-job:${job.id}`,
       });
       if (isUnresolvedSendState(processorOutcome)) {
         // A rolling/older processor can surface this as a normal-looking skip.

@@ -51,19 +51,15 @@ export async function listImportedWhatsAppHistoryForDraft(
   }
   client ??= createOmnichannelAdminClient();
   const { data, error } = await client
-    .from("omnichannel_messages")
-    .select("id, conversation_id")
-    .eq("channel", "whatsapp")
-    .eq("direction", "in")
-    .eq("status", "imported")
-    .is("ai_draft", null)
-    .contains("metadata", { transport: "whatsapp_web", catchUp: true })
-    .order("occurred_at", { ascending: false })
-    .order("created_at", { ascending: false })
-    .limit(safeLimit);
+    .rpc("list_omnichannel_whatsapp_history_for_draft", {
+      p_limit: safeLimit,
+    });
   if (error) throw dbError("list imported WhatsApp history", error);
-  return (data ?? []).map((row) => ({
-    messageId: String(row.id),
+  return (data ?? []).map((row: {
+    message_id: unknown;
+    conversation_id: unknown;
+  }) => ({
+    messageId: String(row.message_id),
     conversationId: String(row.conversation_id),
   }));
 }
@@ -613,14 +609,18 @@ export interface AutoSendClaim {
 
 export async function claimMessageForAutoSend(
   messageId: string,
+  ownerToken: string,
   client?: SupabaseClient,
 ): Promise<AutoSendClaim> {
   if (!client && shouldUseDevelopmentPostgres()) {
-    return claimMessageForAutoSendViaPostgres(messageId);
+    return claimMessageForAutoSendViaPostgres(messageId, ownerToken);
   }
   client ??= createOmnichannelAdminClient();
   const { data, error } = await client
-    .rpc("claim_omnichannel_auto_send", { p_message_id: messageId })
+    .rpc("claim_omnichannel_auto_send_owned", {
+      p_message_id: messageId,
+      p_owner_token: ownerToken,
+    })
     .maybeSingle();
   if (error || !data) throw dbError("claim omnichannel auto send", error);
   const row = data as { claimed?: boolean; reason?: string };
@@ -633,19 +633,22 @@ export async function claimMessageForAutoSend(
 export async function claimEquipmentFlowForAutoSend(
   messageId: string,
   expectedSettingsUpdatedAt: string,
+  ownerToken: string,
   client?: SupabaseClient,
 ): Promise<AutoSendClaim> {
   if (!client && shouldUseDevelopmentPostgres()) {
     return claimEquipmentFlowForAutoSendViaPostgres(
       messageId,
       expectedSettingsUpdatedAt,
+      ownerToken,
     );
   }
   client ??= createOmnichannelAdminClient();
   const { data, error } = await client
-    .rpc("claim_omnichannel_equipment_flow_send", {
+    .rpc("claim_omnichannel_equipment_flow_send_owned", {
       p_message_id: messageId,
       p_expected_settings_updated_at: expectedSettingsUpdatedAt,
+      p_owner_token: ownerToken,
     })
     .maybeSingle();
   if (error || !data) throw dbError("claim equipment flow auto send", error);

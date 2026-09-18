@@ -5,6 +5,7 @@ import { create } from 'zustand'
 import { createClient } from '@/lib/supabase/client'
 import { isSupabaseEmailNotConfirmedError } from '@/lib/supabase/auth-errors'
 import { clearAllDrafts } from '@/lib/survey/draft'
+import { safeInternalPath } from '@/lib/safe-redirect'
 import type { UserRole } from '@/types'
 
 /**
@@ -48,7 +49,7 @@ interface AuthState {
     organization?: string
     position?: string
   }) => Promise<void>
-  loginWithGoogle: () => Promise<void>
+  loginWithGoogle: (redirectPath?: string) => Promise<void>
   logout: () => Promise<void>
   init: () => Promise<void>
   clearError: () => void
@@ -199,14 +200,17 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
     }
   },
 
-  loginWithGoogle: async () => {
+  loginWithGoogle: async (redirectPath) => {
     set({ isLoading: true, error: null })
     try {
       const supabase = createClient()
+      const next = safeInternalPath(redirectPath, '/dashboard')
+      const callbackUrl = new URL('/auth/callback', window.location.origin)
+      callbackUrl.searchParams.set('next', next)
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${window.location.origin}/auth/callback`,
+          redirectTo: callbackUrl.toString(),
         },
       })
       if (error) throw new Error(error.message)

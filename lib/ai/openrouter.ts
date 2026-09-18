@@ -14,8 +14,10 @@
 import { getSiteUrl } from '@/lib/site-url'
 
 export const OPENROUTER_MODELS = {
+  sonnet5: 'anthropic/claude-sonnet-5',
   sonnet: 'anthropic/claude-sonnet-4.5',
   haiku:  'anthropic/claude-haiku-4.5',
+  opus48: 'anthropic/claude-opus-4.8',
   opus:   'anthropic/claude-opus-4.1',
   gpt4:   'openai/gpt-4o',
   gpt4mini: 'openai/gpt-4o-mini',
@@ -76,7 +78,11 @@ interface ChatOptions {
   /** Quality/speed tier. When set (and `model` is not), selects the model. */
   complexity?: Complexity
   maxTokens?: number
-  temperature?: number
+  /**
+   * `null` deliberately omits temperature for models that do not expose that
+   * parameter (for example Claude Sonnet 5).
+   */
+  temperature?: number | null
   jsonMode?: boolean
   /** Enforce an exact JSON Schema on providers that support structured output. */
   jsonSchema?: {
@@ -136,7 +142,9 @@ export async function chatWithOpenRouter(opts: ChatOptions): Promise<string | nu
     }),
     messages,
     max_tokens: opts.maxTokens ?? 2000,
-    temperature: opts.temperature ?? 0.7,
+  }
+  if (opts.temperature !== null) {
+    body.temperature = opts.temperature ?? 0.7
   }
   if (opts.jsonSchema) {
     body.response_format = {
