@@ -170,6 +170,60 @@ describe('MetaClient WhatsApp text sends', () => {
     })
   })
 
+  it('sends an approved WhatsApp utility template with deterministic parameters', async () => {
+    const fetchMock = vi.fn<MetaFetch>(async () =>
+      jsonResponse({ messages: [{ id: 'wamid.template-1' }] }),
+    )
+    const client = createMetaClient({ env, fetchImpl: fetchMock })
+
+    const result = await client.sendWhatsAppTemplate({
+      recipientId: '77001234567',
+      templateName: 'myhonor_order_confirmed_v1',
+      languageCode: 'ru',
+      bodyParameters: ['Марина', 'MH-0084'],
+      accountExternalId: 'wa-phone-456',
+    })
+
+    expect(result).toEqual({
+      ok: true,
+      externalMessageId: 'wamid.template-1',
+      rawStatus: 200,
+    })
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toEqual({
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: '77001234567',
+      type: 'template',
+      template: {
+        name: 'myhonor_order_confirmed_v1',
+        language: { policy: 'deterministic', code: 'ru' },
+        components: [{
+          type: 'body',
+          parameters: [
+            { type: 'text', text: 'Марина' },
+            { type: 'text', text: 'MH-0084' },
+          ],
+        }],
+      },
+    })
+  })
+
+  it('rejects arbitrary template names and malformed recipient numbers before fetch', async () => {
+    const fetchMock = vi.fn<MetaFetch>()
+    const client = createMetaClient({ env, fetchImpl: fetchMock })
+
+    await expect(client.sendWhatsAppTemplate({
+      recipientId: '+77001234567',
+      templateName: 'Order Confirmed',
+      languageCode: 'ru',
+      bodyParameters: [],
+    })).resolves.toMatchObject({
+      ok: false,
+      code: 'invalid_input',
+    })
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
   it('uses a WhatsApp interactive list for five equipment choices', async () => {
     const fetchMock = vi.fn<MetaFetch>(async () =>
       jsonResponse({ messages: [{ id: 'wamid.list-1' }] }),

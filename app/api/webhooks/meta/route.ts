@@ -9,6 +9,7 @@ import { createHash, timingSafeEqual } from 'crypto'
 import { waitUntil } from '@vercel/functions'
 import { NextResponse, type NextRequest } from 'next/server'
 import { start } from 'workflow/api'
+import { applyMyHonorOrderNotificationDeliveryStatus } from '@/lib/integrations/myhonor/order-notification-repository'
 import { inngest } from '@/lib/inngest'
 import { OMNICHANNEL_MESSAGE_RECEIVED_EVENT } from '@/lib/omnichannel/events'
 import {
@@ -231,6 +232,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     for (const event of events) {
       if (event.eventType === 'status') {
+        const transactional = await applyMyHonorOrderNotificationDeliveryStatus({
+          providerMessageId: event.externalMessageId,
+          status: event.status,
+          occurredAt: event.occurredAt,
+          errorCode: event.status === 'failed' ? 'meta.delivery_failed' : null,
+        })
+        if (transactional.matched) continue
         await applyWhatsAppDeliveryStatus(event)
         continue
       }
