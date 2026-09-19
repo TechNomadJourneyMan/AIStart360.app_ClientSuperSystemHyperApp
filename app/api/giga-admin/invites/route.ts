@@ -7,7 +7,8 @@ import { recordAdminAction } from '@/lib/admin/audit'
 import { createServiceClient } from '@/lib/supabase-service'
 import { isRateLimitedKey } from '@/lib/rate-limit'
 import { safeInternalPath } from '@/lib/safe-redirect'
-import { normalizeEmail, sendPlatformInvite, type InviteResult } from '@/lib/admin/invites'
+import { sendPlatformInvite } from '@/lib/admin/invites'
+import { normalizeEmail, type InviteResult } from '@/lib/admin/invite-shared'
 
 /**
  * GET  /api/giga-admin/invites — отправленные приглашения и что с ними стало.

@@ -41,7 +41,7 @@ vi.mock('@/lib/supabase-service', () => ({
 }))
 
 const { POST } = await import('@/app/api/giga-admin/invites/route')
-const { parseEmailList } = await import('@/lib/admin/invites')
+const { parseEmailList } = await import('@/lib/admin/invite-shared')
 
 const post = (body: unknown) => POST(new NextRequest('http://localhost/api/giga-admin/invites', {
   method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),

@@ -1,6 +1,10 @@
 import { createServiceClient } from '@/lib/supabase-service'
 import { sendNotificationEmail } from '@/lib/email'
 import { getSiteUrl } from '@/lib/site-url'
+import { normalizeEmail, type InviteResult } from './invite-shared'
+
+export type { InviteOutcome, InviteResult } from './invite-shared'
+export { normalizeEmail, parseEmailList } from './invite-shared'
 
 /**
  * lib/admin/invites.ts — приглашение на платформу письмом с нашего домена.
@@ -12,43 +16,14 @@ import { getSiteUrl } from '@/lib/site-url'
  * приглашение всегда приземляется в нашем кабинете.
  */
 
-export type InviteOutcome = 'invited' | 'relinked' | 'failed'
-
-export interface InviteResult {
-  email: string
-  outcome: InviteOutcome
-  /** Что показать в панели рядом с адресом. */
-  message: string
-}
-
 export interface InviteInput {
   email: string
-  /** Куда отправить после установки пароля/входа. */
+  /** Куда отправить после установки пароля или входа. */
   next?: string
   /** Личная строка от пригласившего — попадёт в письмо. */
   note?: string | null
   /** Подпись отправителя в письме (email сотрудника). */
   invitedByLabel?: string | null
-}
-
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/
-
-export function normalizeEmail(raw: string): string | null {
-  const email = raw.trim().toLowerCase()
-  return EMAIL_RE.test(email) && email.length <= 200 ? email : null
-}
-
-/** Разбирает список адресов из textarea: запятые, точки с запятой, переводы строк. */
-export function parseEmailList(raw: string): { emails: string[]; invalid: string[] } {
-  const parts = raw.split(/[\s,;]+/).map((s) => s.trim()).filter(Boolean)
-  const emails: string[] = []
-  const invalid: string[] = []
-  for (const part of parts) {
-    const email = normalizeEmail(part)
-    if (!email) invalid.push(part)
-    else if (!emails.includes(email)) emails.push(email)
-  }
-  return { emails, invalid }
 }
 
 /** Уже заходил ли человек на платформу (тогда шлём ссылку для входа, а не приглашение). */

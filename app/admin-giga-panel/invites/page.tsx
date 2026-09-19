@@ -9,7 +9,7 @@ import {
   Badge, Button, DataTable, EmptyState, ErrorState, Field, PageHeader, Panel, cx, fmtAgo, fmtDateTime,
   gigaFetch, inputClass, useGigaQuery, type Column,
 } from '@/components/giga-panel/kit'
-import { parseEmailList, type InviteResult } from '@/lib/admin/invites'
+import { parseEmailList, type InviteResult } from '@/lib/admin/invite-shared'
 
 interface InviteRow {
   id: number
