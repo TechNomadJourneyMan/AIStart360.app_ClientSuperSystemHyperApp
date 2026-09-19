@@ -13,6 +13,7 @@ export const GIGA_NAV: GigaNavGroup[] = [
   { label: 'Пользователи', items: [
     { href: `${GIGA_BASE}/users`, label: 'Пользователи', icon: 'users', permission: 'users.view' },
     { href: `${GIGA_BASE}/requests`, label: 'Заявки', icon: 'inbox', permission: 'users.view' },
+    { href: `${GIGA_BASE}/invites`, label: 'Приглашения', icon: 'mail', permission: 'users.view' },
     { href: `${GIGA_BASE}/clients`, label: 'Клиенты', icon: 'building', permission: 'users.view' },
     { href: `${GIGA_BASE}/leads`, label: 'Лиды', icon: 'sparkles', permission: 'leads.view' },
   ] },

@@ -59,6 +59,7 @@ export const AUDIT_ACTION: Record<string, string> = {
   'platform.section_updated': 'Раздел платформы изменён',
   'settings.registration_mode_changed': 'Режим регистрации изменён',
   'settings.access_changed': 'Настройки доступа изменены',
+  'user.invited': 'Приглашение отправлено',
   'settings.changed': 'Настройки платформы изменены',
   'system.events_purged': 'Старые события удалены',
   'insight.published': 'Инсайт опубликован',

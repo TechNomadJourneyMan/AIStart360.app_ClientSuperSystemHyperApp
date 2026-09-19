@@ -6,7 +6,7 @@ import { usePathname } from 'next/navigation'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
   Activity, Building2, ClipboardList, Eye, FileText, InboxIcon, KeyRound, LayoutDashboard, LayoutGrid,
-  Lightbulb, LogOut, MessagesSquare, Radar, Route, ScrollText, Settings, Shield, ShieldCheck, Sparkles, Users2, X,
+  Lightbulb, LogOut, Mail, MessagesSquare, Radar, Route, ScrollText, Settings, Shield, ShieldCheck, Sparkles, Users2, X,
   type LucideIcon,
 } from 'lucide-react'
 import { GIGA_NAV, isNavActive } from '@/lib/admin/nav'
@@ -19,7 +19,7 @@ const ICONS: Record<string, LucideIcon> = {
   dashboard: LayoutDashboard, users: Users2, inbox: InboxIcon, building: Building2, sparkles: Sparkles,
   clipboard: ClipboardList, radar: Radar, activity: Activity, route: Route, messages: MessagesSquare,
   lightbulb: Lightbulb, shieldcheck: ShieldCheck, file: FileText, layout: LayoutGrid, settings: Settings,
-  key: KeyRound, eye: Eye, scroll: ScrollText,
+  key: KeyRound, eye: Eye, scroll: ScrollText, mail: Mail,
 }
 
 interface GigaSidebarProps { isOpen?: boolean; onClose?: () => void }
