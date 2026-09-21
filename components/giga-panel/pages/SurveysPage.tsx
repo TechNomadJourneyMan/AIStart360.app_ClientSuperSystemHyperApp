@@ -1,6 +1,7 @@
 'use client'
 
 import { useWorkspace } from '@/components/giga-panel/WorkspaceContext'
+import { AnswerSearch } from '@/components/giga-panel/surveys/AnswerSearch'
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
@@ -129,6 +130,8 @@ function SurveysInner() {
         title="Анкеты"
         description="Все пользователи и их анкеты. Наведите на пользователя — краткая сводка; нажмите — ответы, правка, удаление, добавление данных и история."
       />
+
+      <AnswerSearch />
 
       <Panel
         className="mb-4"

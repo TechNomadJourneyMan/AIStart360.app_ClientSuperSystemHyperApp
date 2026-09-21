@@ -22,10 +22,12 @@ import { DataEntryModal } from '@/components/giga-panel/user360/DataEntryModal'
 import { NotesTab } from '@/components/giga-panel/user360/NotesTab'
 import { EmailsTab } from '@/components/giga-panel/user360/EmailsTab'
 import { QualityTab } from '@/components/giga-panel/user360/QualityTab'
+import { TasksTab } from '@/components/giga-panel/user360/TasksTab'
+import { GriDynamicsPanel } from '@/components/giga-panel/user360/GriDynamicsPanel'
 import { SurveyReminderDialog } from '@/components/giga-panel/user360/SurveyReminderDialog'
 import { rememberUser } from '@/components/giga-panel/CommandPalette'
 
-type TabKey = 'profile' | 'survey' | 'gri' | 'activity' | 'cjm' | 'documents' | 'notes' | 'emails' | 'quality' | 'history'
+type TabKey = 'profile' | 'survey' | 'gri' | 'activity' | 'cjm' | 'documents' | 'notes' | 'tasks' | 'emails' | 'quality' | 'history'
 
 function User360Inner({ id }: { id: string }) {
   const { base, label } = useWorkspace()
@@ -99,6 +101,7 @@ function User360Inner({ id }: { id: string }) {
               { key: 'cjm', label: 'CJM' },
               { key: 'documents', label: 'Документы', count: u.counters.documents, hidden: !u.can.sensitive },
               { key: 'notes', label: 'Заметки', hidden: !u.can.sensitive },
+              { key: 'tasks', label: 'Задачи', hidden: !u.can.sensitive },
               { key: 'emails', label: 'Письма', hidden: !u.can.sensitive },
               { key: 'quality', label: 'Качество данных', hidden: !u.can.viewSurvey },
               { key: 'history', label: 'История', hidden: !u.can.audit },
@@ -106,11 +109,17 @@ function User360Inner({ id }: { id: string }) {
           />
           {tab === 'profile' && <ProfileTab data={u} onChanged={reload} />}
           {tab === 'survey' && u.can.viewSurvey && <SurveyTab userId={id} canEdit={u.can.editSurvey} />}
-          {tab === 'gri' && <GriTab userId={id} canEdit={u.can.editGri} canDelete={u.can.deleteGri} />}
+          {tab === 'gri' && (
+            <>
+              <GriDynamicsPanel userId={id} industry={u.company?.industry ?? null} />
+              <GriTab userId={id} canEdit={u.can.editGri} canDelete={u.can.deleteGri} />
+            </>
+          )}
           {tab === 'activity' && u.can.activity && <ActivityTab userId={id} />}
           {tab === 'cjm' && <JourneyTab userId={id} journey={u.journey} canActivity={u.can.activity} />}
           {tab === 'documents' && u.can.sensitive && <DocumentsTab userId={id} />}
           {tab === 'notes' && u.can.sensitive && <NotesTab userId={id} />}
+          {tab === 'tasks' && u.can.sensitive && <TasksTab userId={id} />}
           {tab === 'emails' && u.can.sensitive && <EmailsTab userId={id} />}
           {tab === 'quality' && u.can.viewSurvey && <QualityTab userId={id} />}
           {tab === 'history' && u.can.audit && <HistoryTab userId={id} />}

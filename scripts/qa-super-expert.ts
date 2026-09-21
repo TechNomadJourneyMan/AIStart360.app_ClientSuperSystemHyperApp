@@ -175,6 +175,9 @@ async function main(): Promise<void> {
     ['приглашения (список)', '/api/giga-admin/invites'],
     ['аккаунты и компании', '/api/giga-admin/clients?page=1'],
     ['дубликаты', '/api/giga-admin/duplicates'],
+    ['справочник сотрудников', '/api/giga-admin/staff/list'],
+    ['бенчмарк GRI по отраслям', '/api/giga-admin/gri/benchmark'],
+    ['поиск по ответам анкеты', '/api/giga-admin/surveys/search?q=%D0%BD%D0%B0%D0%B9%D0%BC'],
   ] as const) {
     const r = await get(p)
     check('разрешено', name, '200', String(r.status))
@@ -189,6 +192,8 @@ async function main(): Promise<void> {
       ['заметки о клиенте', `/api/giga-admin/users/${firstId}/notes`],
       ['письма клиенту', `/api/giga-admin/users/${firstId}/emails`],
       ['качество данных', `/api/giga-admin/users/${firstId}/quality`],
+      ['ответственный за клиента', `/api/giga-admin/users/${firstId}/assignment`],
+      ['задачи по клиенту', `/api/giga-admin/users/${firstId}/tasks`],
     ] as const) {
       const r = await get(p)
       check('разрешено', name, '200', String(r.status))
@@ -267,6 +272,26 @@ async function main(): Promise<void> {
     method: 'POST', body: JSON.stringify({ body: `Автопроверка кабинета ${new Date().toISOString()}` }),
   })
   check('запись', 'заметка сохраняется', '200', String(note.status))
+
+  const task = await get(`/api/giga-admin/users/${uid}/tasks`, {
+    method: 'POST', body: JSON.stringify({ title: 'Автопроверка кабинета' }),
+  })
+  check('запись', 'задача создаётся', '200', String(task.status))
+  const created = await task.json().catch(() => null)
+  if (created?.data?.id) {
+    const closed = await get(`/api/giga-admin/tasks/${created.data.id}`, { method: 'PATCH', body: JSON.stringify({ status: 'done' }) })
+    check('запись', 'задача закрывается', 'done', String((await closed.json().catch(() => null))?.data?.status))
+  }
+
+  // Ответственным можно назначить только сотрудника.
+  const badAssign = await get(`/api/giga-admin/users/${clientId}/assignment`, {
+    method: 'PUT', body: JSON.stringify({ assigneeId: clientId }),
+  })
+  check('запись', 'клиента нельзя сделать ответственным', '400', String(badAssign.status))
+  const goodAssign = await get(`/api/giga-admin/users/${clientId}/assignment`, {
+    method: 'PUT', body: JSON.stringify({ assigneeId: uid }),
+  })
+  check('запись', 'сотрудника можно назначить ответственным', '200', String(goodAssign.status))
 
   // ── 7. Убираем за собой ────────────────────────────────────────────────
   if (!KEEP) {
