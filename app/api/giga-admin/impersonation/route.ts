@@ -86,6 +86,12 @@ export async function POST(req: NextRequest) {
   if (guard.response) return guard.response
   const actor = guard.actor
 
+  // Тумблер платформы: открывать кабинет клиента роли SuperExpert можно
+  // запретить, не трогая остальные её права и не переписывая матрицу.
+  if (actor.role === 'super_expert' && !(await getSetting('super_expert_impersonation'))) {
+    return NextResponse.json({ ok: false, error: 'Вход в кабинет клиента для роли SuperExpert выключен в настройках платформы' }, { status: 403 })
+  }
+
   if (await isRateLimitedKey(actor.id, 'impersonation-start', { max: 10, windowMs: 10 * 60_000 })) {
     return NextResponse.json({ ok: false, error: 'Слишком много запусков. Попробуйте позже.' }, { status: 429 })
   }

@@ -7,11 +7,13 @@ import { ArrowUpRight, Loader2 } from 'lucide-react'
 import { GRI_SECTIONS } from '@/lib/gri-assessment/sections'
 import { GRI_BLOCK_RU } from '@/lib/gri-assessment/labels'
 import { useGigaQuery } from './kit'
+import { useWorkspace } from './WorkspaceContext'
 import type { User360Profile } from './user360/types'
 
 const tone = (v: number) => (v >= 7 ? '#6effc0' : v >= 4 ? '#fbbf24' : '#ef4444')
 
 export function UserInsightsBlock({ userId }: { userId: string }) {
+  const { base } = useWorkspace()
   const { data, error, loading } = useGigaQuery<{ data: User360Profile }>(`/api/giga-admin/users/${userId}/profile`)
   const d = data?.data
 
@@ -19,7 +21,7 @@ export function UserInsightsBlock({ userId }: { userId: string }) {
     <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-3">
       <div className="mb-2 flex items-center justify-between">
         <span className="text-[11px] font-semibold uppercase tracking-wider text-blue-300">User 360</span>
-        <Link href={`/admin-giga-panel/users/${userId}`} className="flex items-center gap-1 text-[11px] text-blue-300 hover:underline">
+        <Link href={`${base}/users/${userId}`} className="flex items-center gap-1 text-[11px] text-blue-300 hover:underline">
           Открыть полностью <ArrowUpRight size={12} />
         </Link>
       </div>

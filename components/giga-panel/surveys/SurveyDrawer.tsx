@@ -7,6 +7,7 @@ import { ArrowUpRight, ExternalLink, LayoutDashboard, Trash2 } from 'lucide-reac
 import { Badge, Button, ConfirmDialog, Drawer, Field, GigaApiError, gigaFetch, inputClass } from '../kit'
 import { SurveyTab } from '../user360/SurveyTab'
 import { ImpersonateDialog } from '../user360/ImpersonateDialog'
+import { useWorkspace } from '../WorkspaceContext'
 import { useStaff } from '../StaffContext'
 import { invalidateSurveyPreview, type SurveyPreview } from './SurveyPreviewCard'
 
@@ -21,6 +22,7 @@ export function SurveyDrawer({ user, onClose, onChanged }: {
   onChanged: () => void
 }) {
   const { can } = useStaff()
+  const { base } = useWorkspace()
   // Which client page the impersonation session should land on.
   const [openTarget, setOpenTarget] = useState<null | 'survey' | 'cabinet'>(null)
   const [confirmWipe, setConfirmWipe] = useState(false)
@@ -63,7 +65,7 @@ export function SurveyDrawer({ user, onClose, onChanged }: {
     <Drawer open onClose={onClose} width="max-w-5xl" title={<span className="flex items-center gap-2">Анкета · {title}</span>}>
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <span className="min-w-0 flex-1 truncate text-xs text-slate-500">{[name, email].filter(Boolean).join(' · ')}</span>
-        <Link href={`/admin-giga-panel/users/${user.id}`} className="inline-flex items-center gap-1 rounded-xl border border-white/[0.1] px-3 py-2 text-xs text-slate-200 hover:bg-white/[0.06]">
+        <Link href={`${base}/users/${user.id}`} className="inline-flex items-center gap-1 rounded-xl border border-white/[0.1] px-3 py-2 text-xs text-slate-200 hover:bg-white/[0.06]">
           <ArrowUpRight size={13} /> User 360
         </Link>
         {can('impersonate.view') && !isStaffAccount && (

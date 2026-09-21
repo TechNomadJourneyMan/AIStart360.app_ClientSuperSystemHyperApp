@@ -28,6 +28,11 @@ vi.mock('@/lib/email', () => ({
     emailMock.fn(...args)
     return Promise.resolve({ ok: true })
   },
+  // «Доступ открыт» ушло на фирменный шаблон (lib/email/templates.ts).
+  sendPortalAccessGrantedEmail: (...args: any[]) => {
+    emailMock.fn(...args)
+    return Promise.resolve({ ok: true })
+  },
 }))
 
 import { applyApprovalDecision } from '@/lib/users/approval'

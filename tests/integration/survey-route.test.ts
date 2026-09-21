@@ -102,6 +102,7 @@ const fakeServiceClient = {
 }
 
 const notifyAdmins = vi.fn()
+const clientEmail = vi.fn()
 const upsertRowByKey = vi.fn(async (_headers: string[], _values: string[]) => ({ ok: true, url: 'https://docs.google.com/spreadsheets/d/test/edit' }))
 const pending: Promise<unknown>[] = []
 
@@ -109,6 +110,10 @@ vi.mock('@/lib/supabase-server', () => ({ createServerClient: () => fakeServerCl
 vi.mock('@/lib/supabase-service', () => ({ createServiceClient: () => fakeServiceClient }))
 vi.mock('@/lib/api-identity', () => ({ resolveTargetUserId: () => Promise.resolve({ userId: USER }) }))
 vi.mock('@/lib/notifications', () => ({ notifyAdmins: (...a: unknown[]) => notifyAdmins(...a) }))
+// Письмо клиенту «анкета пройдена» — мок, чтобы тест не зависел от почты.
+vi.mock('@/lib/email', () => ({
+  sendQuestionnaireCompletedEmail: (...a: unknown[]) => { clientEmail(...a); return Promise.resolve({ ok: true }) },
+}))
 // Never hit the real staff spreadsheet from tests.
 vi.mock('@/lib/integrations/google-sheets', () => ({
   googleSheetsConfigured: () => true,
@@ -156,6 +161,7 @@ beforeEach(() => {
   db.companies = [{ id: 'co-1', user_id: USER, target_revenue_12m_kzt: null, target_revenue_3y_kzt: null }]
   db.notifications = []
   notifyAdmins.mockClear()
+  clientEmail.mockClear()
   upsertRowByKey.mockClear()
   pending.splice(0)
 })
@@ -208,6 +214,9 @@ describe('POST /api/v1/onboarding/survey', () => {
     await post(12, {}, { final: true })
     await drain()
     expect(notifyAdmins).toHaveBeenCalledTimes(1)
+    // Клиент тоже получает письмо — ровно один раз, вместе с уведомлением админам.
+    expect(clientEmail).toHaveBeenCalledTimes(1)
+    expect(clientEmail.mock.calls[0][1]).toMatchObject({ completedSteps: 11, totalSteps: 12 })
     const [type, payload] = notifyAdmins.mock.calls[0]
     expect(type).toBe('survey_completed')
     expect(payload).toMatchObject({ completedSteps: 11, totalSteps: 12, sheetUrl: 'https://docs.google.com/spreadsheets/d/test/edit' })

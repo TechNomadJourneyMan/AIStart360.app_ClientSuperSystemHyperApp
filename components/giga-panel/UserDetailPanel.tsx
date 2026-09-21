@@ -8,6 +8,7 @@ import {
 import { SURVEY_LABELS, SURVEY_STEP_LABELS, formatSurveyValue, getStepFromKey } from '@/lib/survey-labels'
 import { UserInsightsBlock } from './UserInsightsBlock'
 import { ImpersonateDialog } from './user360/ImpersonateDialog'
+import { useWorkspace } from './WorkspaceContext'
 import { useStaff } from './StaffContext'
 
 // ─── Shared user detail panel (survey + diagnostics + documents + actions) ────
@@ -153,6 +154,7 @@ export function AccessControls({ userId }: { userId: string }) {
 }
 
 export function UserDetailPanel({ userId, readOnly = false }: Props) {
+  const { base } = useWorkspace()
   const [data, setData] = useState<{
     answers: Record<string, unknown>
     company: Record<string, unknown> | null
@@ -267,7 +269,7 @@ export function UserDetailPanel({ userId, readOnly = false }: Props) {
             <ExternalLink size={12} />
             Открыть кабинет от имени
           </button>
-          <a href={`/admin-giga-panel/users/${userId}`}
+          <a href={`${base}/users/${userId}`}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium bg-blue-500/10 border border-blue-500/20 text-blue-300 hover:bg-blue-500/20 transition-all">
             <FileText size={12} />
             User 360

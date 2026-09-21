@@ -9,6 +9,7 @@ import { auditImpersonatedRequestEdge, endImpersonationEdge, isImpersonationActi
 import { verifyToken } from '@/lib/security/signed-token'
 import { blockedSectionFor } from '@/lib/platform/sections-edge'
 import { edgeSettings } from '@/lib/settings/edge'
+import { isStaffRole } from '@/lib/admin/rbac'
 
 const STAFF_COOKIE_NAME = 'aistart360_giga_staff'
 const IMP_ENDED_PATH = '/admin-giga-panel/impersonation'
@@ -68,6 +69,10 @@ type ValidRole = typeof VALID_ROLES[number]
 
 const GIGA_PANEL_PATH = '/admin-giga-panel'
 const GIGA_LOGIN_PATH = '/giga-login'
+const SUPER_EXPERT_PATH = '/super-expert'
+const SUPER_EXPERT_LOGIN_PATH = '/super-expert/login'
+/** Роли персонала, которым открыт кабинет SuperExpert (см. lib/admin/rbac.ts). */
+const SUPER_EXPERT_ROLES = new Set(['super_admin', 'admin', 'super_expert', 'crm_manager'])
 
 const ADMIN_PATHS = [
   '/dashboard', '/gri', '/market', '/point-a', '/point-b', '/simulator',
@@ -282,6 +287,47 @@ export async function middleware(request: NextRequest, event?: NextFetchEvent) {
     return response // allow access to login page
   }
 
+  // ── Кабинет SuperExpert ──
+  // Свой вход и свой рабочий кабинет, но та же аутентификация. Пускаем только
+  // сотрудника, чья роль в `staff_roles` даёт работу с пользователями; каждый
+  // API-маршрут дополнительно проверяет право на сервере.
+  if (pathname === SUPER_EXPERT_LOGIN_PATH) {
+    return response
+  }
+  if (matchesRoute(pathname, SUPER_EXPERT_PATH)) {
+    if (!user) {
+      const url = new URL(SUPER_EXPERT_LOGIN_PATH, request.url)
+      url.searchParams.set('from', pathname)
+      return NextResponse.redirect(url)
+    }
+    let allowed = role === 'super_admin' && resolved?.status === 'approved'
+    if (!allowed) {
+      const { data: staffRow } = await supabase.from('staff_roles').select('role').eq('user_id', user.id).maybeSingle()
+      const staffRole = isStaffRole(staffRow?.role) ? staffRow.role : null
+      allowed = !!staffRole && SUPER_EXPERT_ROLES.has(staffRole) && resolved?.status === 'approved'
+    }
+    if (!allowed) {
+      return NextResponse.redirect(new URL(`${SUPER_EXPERT_LOGIN_PATH}?denied=1`, request.url))
+    }
+    // Тот же порядок с 2FA, что и в ГИГА-Панели: включил второй фактор —
+    // проходи его и здесь, иначе самый чувствительный экран оказался бы
+    // единственным без step-up.
+    const seMeta = user.user_metadata as Record<string, unknown> | undefined
+    const seEnrolled = seMeta?.mfa_totp === true || seMeta?.mfa_webauthn === true
+    if (seEnrolled && !(await verifyStepUpEdge(request.cookies.get(MFA_COOKIE_NAME)?.value, user.id))) {
+      const url = new URL(MFA_CHALLENGE_PATH, request.url)
+      url.searchParams.set('from', pathname)
+      return NextResponse.redirect(url)
+    }
+    if (!seEnrolled && (await edgeSettings()).staff_require_mfa) {
+      const url = new URL('/settings', request.url)
+      url.searchParams.set('tab', 'security')
+      url.searchParams.set('mfa', 'required')
+      return NextResponse.redirect(url)
+    }
+    return response
+  }
+
   // ГИГА-Панель: только персонал (super_admin, роль из staff_roles, личный
   // staff-cookie во время impersonation или break-glass). Права по разделам
   // проверяет каждый API-маршрут (lib/admin/rbac.ts).
@@ -323,6 +369,14 @@ export async function middleware(request: NextRequest, event?: NextFetchEvent) {
 
   // Authenticated user visiting auth page → redirect to correct panel
   if (isPublic && role) {
+    // Сотрудник приземляется в СВОЁМ кабинете: profiles.role у SuperExpert —
+    // обычный 'client', поэтому без этой проверки его уводило бы в клиентский
+    // дашборд, а не в рабочий кабинет.
+    if (user && role !== 'super_admin') {
+      const { data: staffRow } = await supabase.from('staff_roles').select('role').eq('user_id', user.id).maybeSingle()
+      const staffRole = isStaffRole(staffRow?.role) ? staffRow.role : null
+      if (staffRole === 'super_expert') return NextResponse.redirect(new URL(SUPER_EXPERT_PATH, request.url))
+    }
     const dest =
       role === 'super_admin' ? '/admin-giga-panel' :
       role === 'admin' ? '/dashboard' :

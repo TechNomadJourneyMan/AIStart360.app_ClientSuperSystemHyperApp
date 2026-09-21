@@ -17,7 +17,9 @@ import { applyApprovalDecision } from '@/lib/users/approval'
  * success — otherwise the UI shows "approved" while the DB stays pending.
  */
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
-  const guard = await requireGiga(req, 'users.manage')
+  // Решение по заявке на доступ — отдельное право (см. lib/admin/rbac.ts):
+  // им владеют Super Admin, Admin, CRM-менеджер и SuperExpert.
+  const guard = await requireGiga(req, 'users.approve')
   if (guard.response) return guard.response
   const actor = guard.actor
 
