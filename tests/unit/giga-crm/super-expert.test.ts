@@ -11,7 +11,7 @@ import {
   grantableRoles, hasPermission, type StaffRole,
 } from '@/lib/admin/rbac'
 
-const state = vi.hoisted(() => ({ role: 'super_expert' as string, touched: 0 }))
+const state = vi.hoisted(() => ({ role: 'super_expert' as string, touched: 0, impersonationEnabled: true }))
 
 vi.mock('@/lib/admin/giga-actor', async () => {
   const { makeRequireGiga } = await import('../_giga-guard')
@@ -28,7 +28,7 @@ vi.mock('@/lib/supabase-service', () => ({
 }))
 vi.mock('@/lib/admin/audit', () => ({ recordAdminAction: async () => true }))
 vi.mock('@/lib/rate-limit', () => ({ isRateLimitedKey: async () => false }))
-vi.mock('@/lib/settings/store', () => ({ getSetting: async () => false }))
+vi.mock('@/lib/settings/store', () => ({ getSetting: async () => state.impersonationEnabled }))
 
 const UID = '11111111-2222-3333-4444-555555555555'
 const AID = '99999999-8888-4777-8666-555555555555'
@@ -50,7 +50,7 @@ const purge = await import('@/app/api/giga-admin/system/purge-events/route')
 const audit = await import('@/app/api/giga-admin/audit/route')
 const content = await import('@/app/api/giga-admin/content/pages/route')
 
-beforeEach(() => { state.role = 'super_expert'; state.touched = 0 })
+beforeEach(() => { state.role = 'super_expert'; state.touched = 0; state.impersonationEnabled = true })
 
 describe('матрица прав SuperExpert', () => {
   it('роль существует и подписана', () => {
@@ -65,15 +65,16 @@ describe('матрица прав SuperExpert', () => {
   })
 
   it('выполняет разрешённые операционные действия', () => {
-    expect(hasPermission('super_expert', 'users.invite')).toBe(true)
-    expect(hasPermission('super_expert', 'users.approve')).toBe(true)
+    for (const p of ['users.invite', 'users.approve', 'company.edit', 'survey.edit', 'impersonate.view', 'impersonate.edit'] as const) {
+      expect(hasPermission('super_expert', p), p).toBe(true)
+    }
   })
 
   it('не получает системных и опасных прав', () => {
     for (const p of [
       'settings.manage', 'roles.manage', 'platform.sections', 'users.manage', 'users.archive',
-      'survey.edit', 'survey.delete', 'gri.edit', 'gri.delete', 'audit.view',
-      'impersonate.view', 'impersonate.edit', 'content.edit', 'content.publish',
+      'survey.delete', 'gri.edit', 'gri.delete', 'audit.view',
+      'content.edit', 'content.publish',
     ] as const) {
       expect(hasPermission('super_expert', p), p).toBe(false)
     }
@@ -94,8 +95,10 @@ describe('матрица прав SuperExpert', () => {
     expect(canManageTarget('crm_manager', 'super_expert')).toBe(false)
   })
 
-  it('не входит в кабинет от имени пользователя', () => {
-    expect(canImpersonate('super_expert', { staffRole: null, profileRole: 'client' })).toBe(false)
+  it('открывает кабинет клиента, но не кабинет сотрудника', () => {
+    expect(canImpersonate('super_expert', { staffRole: null, profileRole: 'client' })).toBe(true)
+    expect(canImpersonate('super_expert', { staffRole: 'support', profileRole: 'client' })).toBe(false)
+    expect(canImpersonate('super_expert', { staffRole: null, profileRole: 'admin' })).toBe(false)
   })
 
   it('это не скрытый Super Admin: набор прав строго меньше', () => {
@@ -113,13 +116,22 @@ describe('запрет живёт на сервере, а не в интерфе
     { name: 'выдача ролей', call: () => staffRole.PUT(req(`/api/giga-admin/users/${UID}/staff-role`, 'PUT', { role: 'super_expert', reason: 'проверка' }), { params: { id: UID } }) },
     { name: 'разделы платформы', call: () => sections.PUT(req('/api/giga-admin/sections', 'PUT', { sections: [] })) },
     { name: 'архивация пользователя', call: () => archive.POST(req(`/api/giga-admin/users/${UID}/archive`, 'POST', { action: 'archive', reason: 'x' }), { params: { id: UID } }) },
-    { name: 'вход от имени', call: () => imp.POST(req('/api/giga-admin/impersonation', 'POST', { userId: UID, mode: 'view', reason: 'проверка прав' })) },
     { name: 'блокировка пользователя', call: () => block.POST(req(`/api/giga-admin/users/${UID}/block`, 'POST', { reason: 'x' }), { params: { id: UID } }) },
     { name: 'удаление результата GRI', call: () => gri.DELETE(req(`/api/giga-admin/users/${UID}/gri/${AID}`, 'DELETE', { reason: 'x' }), { params: { id: UID, assessmentId: AID } }) },
     { name: 'очистка событий', call: () => purge.POST(req('/api/giga-admin/system/purge-events', 'POST', { days: 1 })) },
     { name: 'журнал аудита', call: () => audit.GET(req('/api/giga-admin/audit')) },
     { name: 'создание страницы контента', call: () => content.POST(req('/api/giga-admin/content/pages', 'POST', { title: 'x', slug: 'x' })) },
   ]
+
+  it('тумблер платформы выключает вход в кабинет клиента', async () => {
+    // При включённом тумблере роль проходит дальше проверки прав (до базы,
+    // которая в тесте бросает) — значит, отказ даёт именно тумблер, а не RBAC.
+    state.impersonationEnabled = false
+    const res = await imp.POST(req('/api/giga-admin/impersonation', 'POST', { userId: UID, mode: 'view', reason: 'проверка прав' }))
+    expect(res.status).toBe(403)
+    expect((await res.json()).error).toContain('выключен в настройках')
+    expect(state.touched).toBe(0)
+  })
 
   for (const c of forbidden) {
     it(`SuperExpert получает 403: ${c.name}`, async () => {

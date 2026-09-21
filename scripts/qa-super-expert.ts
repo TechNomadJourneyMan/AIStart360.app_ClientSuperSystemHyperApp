@@ -35,8 +35,15 @@ const arg = (n: string, d = ''): string => {
   return hit ? hit.slice(n.length + 3) : d
 }
 const BASE = arg('base', 'http://localhost:3000').replace(/\/+$/, '')
-const KEEP = process.argv.includes('--keep')
+const KEEP = process.argv.includes('--keep') || process.argv.includes('--link-only')
 const QA_EMAIL = arg('email', 'qa.superexpert@support.aistart360.app')
+/**
+ * Второй фикстур — обычный клиент. Писать проверочные данные в строку самого
+ * SuperExpert нельзя: он сотрудник, а правка данных сотрудников роли запрещена
+ * (canManageTarget). Поэтому запись проверяем на заведомо «клиентском»
+ * аккаунте и не трогаем данные настоящих клиентов.
+ */
+const QA_CLIENT_EMAIL = arg('client-email', 'qa.client@support.aistart360.app')
 
 /** Минимальная «банка печенья»: fetch в Node сам куки не хранит. */
 class Jar {
@@ -93,11 +100,36 @@ async function main(): Promise<void> {
   }, { onConflict: 'user_id' })
   console.log('роль super_expert выдана\n')
 
+  // Клиентский фикстур — цель для проверок записи.
+  let client = list?.users?.find((u) => u.email?.toLowerCase() === QA_CLIENT_EMAIL.toLowerCase()) ?? null
+  if (!client) {
+    const { data, error } = await sb.auth.admin.createUser({
+      email: QA_CLIENT_EMAIL, email_confirm: true,
+      user_metadata: { full_name: 'QA Клиент', qa_fixture: true },
+    })
+    if (error) throw new Error(`не удалось создать клиентский фикстур: ${error.message}`)
+    client = data.user
+  }
+  const clientId = client!.id
+  await sb.from('profiles').upsert({
+    id: clientId, email: QA_CLIENT_EMAIL, full_name: 'QA Клиент',
+    role: 'client', status: 'approved', updated_at: new Date().toISOString(),
+  }, { onConflict: 'id' })
+  console.log('клиентский фикстур готов:', QA_CLIENT_EMAIL, '\n')
+
   // ── 2. Настоящая сессия по одноразовой ссылке (без пароля) ─────────────
   const { data: link, error: linkErr } = await sb.auth.admin.generateLink({ type: 'magiclink', email: QA_EMAIL })
   if (linkErr || !link?.properties?.hashed_token) throw new Error(`Supabase не дал ссылку: ${linkErr?.message}`)
 
   const verify = `${BASE}/auth/verify?token_hash=${link.properties.hashed_token}&type=magiclink&next=%2Fsuper-expert`
+
+  // --link-only: выдать ссылку и выйти, чтобы открыть кабинет глазами.
+  // Подразумевает --keep: без роли открывать нечего.
+  if (process.argv.includes('--link-only')) {
+    console.log('\nОдноразовая ссылка в кабинет (действует час):')
+    console.log(verify)
+    return
+  }
   const vres = await fetch(verify, { redirect: 'manual' })
   jar.absorb(vres)
   const gotSession = vres.status === 307 && jar.size > 0
@@ -167,7 +199,6 @@ async function main(): Promise<void> {
     ['разделы платформы', '/api/giga-admin/sections', { method: 'PUT', body: JSON.stringify({ sections: [] }) }],
     ['очистка событий', '/api/giga-admin/system/purge-events', { method: 'POST', body: JSON.stringify({ days: 1 }) }],
     ['страницы контента', '/api/giga-admin/content/pages', { method: 'POST', body: JSON.stringify({ title: 'qa', slug: 'qa' }) }],
-    ['вход от имени пользователя', '/api/giga-admin/impersonation', { method: 'POST', body: JSON.stringify({ userId: firstId ?? uid, mode: 'view', reason: 'проверка прав' }) }],
   ]
   if (firstId) {
     forbidden.push(
@@ -176,13 +207,47 @@ async function main(): Promise<void> {
       ['архивация пользователя', `/api/giga-admin/users/${firstId}/archive`, { method: 'POST', body: JSON.stringify({ action: 'archive', reason: 'проверка прав' }) }],
       ['смена тарифа', `/api/giga-admin/users/${firstId}/access`, { method: 'PATCH', body: JSON.stringify({ tier: 'pro' }) }],
       ['сброс 2FA', `/api/giga-admin/users/${firstId}/2fa-reset`, { method: 'POST', body: JSON.stringify({ reason: 'проверка прав' }) }],
-      ['правка анкеты', `/api/giga-admin/users/${firstId}/survey`, { method: 'PATCH', body: JSON.stringify({ answers: {}, reason: 'проверка прав' }) }],
     )
   }
   for (const [name, p, init] of forbidden) {
     const r = await get(p, init)
     check('запрещено', name, '403', String(r.status))
   }
+
+  // ── 6b. Правка данных: право есть, но проверяем без изменения боевых данных ──
+  // Пустой запрос обязан отбиться валидацией (400), а не правом (403):
+  // так видно, что маршрут доступен роли, и при этом ничего не записано.
+  if (firstId) {
+    const company = await get(`/api/giga-admin/users/${firstId}/company`, { method: 'PATCH', body: JSON.stringify({}) })
+    check('разрешено', 'данные компании: маршрут открыт роли', '400', String(company.status))
+    const survey = await get(`/api/giga-admin/users/${firstId}/survey`, { method: 'PATCH', body: JSON.stringify({}) })
+    check('разрешено', 'правка анкеты: маршрут открыт роли', '400', String(survey.status))
+  }
+
+  // ── 6c. Настоящая запись — только в СВОЮ строку, данные клиентов не трогаем ──
+  const stamp = `QA компания ${new Date().toISOString().slice(11, 19)}`
+  const write = await get(`/api/giga-admin/users/${clientId}/company`, {
+    method: 'PATCH',
+    body: JSON.stringify({ company: { name: stamp, industry: 'QA', employee_count: 7 }, reason: 'автопроверка кабинета' }),
+  })
+  check('запись', 'данные компании сохраняются', '200', String(write.status))
+  const saved = await write.json().catch(() => null)
+  check('запись', 'ответ содержит сохранённое название', stamp, String(saved?.data?.company?.name))
+  const { data: auditRow } = await sb
+    .from('admin_audit_log')
+    .select('action, target_user_id')
+    .eq('action', 'user.company_edited')
+    .eq('target_user_id', clientId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  check('запись', 'правка подписана в журнале', 'user.company_edited', String((auditRow as { action?: string } | null)?.action))
+
+  // Данные сотрудника роли править нельзя — проверяем на себе же.
+  const staffWrite = await get(`/api/giga-admin/users/${uid}/company`, {
+    method: 'PATCH', body: JSON.stringify({ company: { name: 'не должно сохраниться' } }),
+  })
+  check('запись', 'данные сотрудника править нельзя', '403', String(staffWrite.status))
 
   // ── 7. Убираем за собой ────────────────────────────────────────────────
   if (!KEEP) {

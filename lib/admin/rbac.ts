@@ -28,6 +28,7 @@ export const PERMISSIONS = {
   'users.invite': 'Приглашения на платформу',
   'users.approve': 'Решение по заявке на доступ (одобрить / отклонить)',
   'users.archive': 'Архивация (удаление) пользователей',
+  'company.edit': 'Данные компании клиента',
   'survey.view': 'Просмотр анкет',
   'survey.edit': 'Изменение анкет',
   'survey.delete': 'Полное удаление анкеты',
@@ -59,7 +60,7 @@ export const ALL_PERMISSIONS = Object.keys(PERMISSIONS) as Permission[]
 
 const CRM_MANAGER: Permission[] = [
   'dashboard.view', 'users.view', 'users.sensitive', 'users.manage', 'users.invite', 'users.approve',
-  'survey.view', 'survey.edit', 'gri.view', 'gri.edit',
+  'company.edit', 'survey.view', 'survey.edit', 'gri.view', 'gri.edit',
   'activity.view', 'cjm.view', 'analytics.view',
   'impersonate.view', 'impersonate.edit',
   'inbox.view', 'inbox.manage', 'leads.view', 'leads.manage', 'market.manage', 'insights.moderate',
@@ -73,14 +74,20 @@ export const ROLE_PERMISSIONS: Record<StaffRole, ReadonlySet<Permission>> = {
    * SuperExpert — работа С ЛЮДЬМИ, но не с системой.
    *
    * Видит пользователей целиком (профиль, контакты, анкета, GRI, активность,
-   * CJM) и выполняет операционные действия: пригласить, решить по заявке на
-   * доступ. НЕ получает системные настройки, роли, тарифы, блокировки, 2FA,
-   * архивацию, правку/удаление данных, вход от имени и журнал аудита —
-   * это остаётся у Admin / Super Admin.
+   * CJM), дополняет их данные (компания, анкета) и может открыть кабинет
+   * клиента, чтобы разобраться на месте. Каждый такой вход ограничен по
+   * времени и пишется в журнал (см. lib/impersonation), а тумблер
+   * `super_expert_impersonation` в настройках платформы выключает его целиком.
+   *
+   * НЕ получает: системные настройки, роли, тарифы, блокировки, 2FA,
+   * архивацию, удаление данных, правку GRI и журнал аудита — это остаётся
+   * у Admin / Super Admin.
    */
   super_expert: new Set<Permission>([
     'dashboard.view', 'users.view', 'users.sensitive', 'users.invite', 'users.approve',
-    'survey.view', 'gri.view', 'activity.view', 'cjm.view', 'analytics.view',
+    'company.edit', 'survey.view', 'survey.edit', 'gri.view',
+    'activity.view', 'cjm.view', 'analytics.view',
+    'impersonate.view', 'impersonate.edit',
     'inbox.view', 'leads.view',
   ]),
   crm_manager: new Set(CRM_MANAGER),

@@ -91,6 +91,11 @@ export const SETTINGS = {
     help: 'Сотрудник без настроенной двухфакторной защиты не попадёт в панель, пока не включит её в настройках профиля.',
     schema: z.boolean(), default: false, critical: true,
   },
+  super_expert_impersonation: {
+    group: 'security', label: 'SuperExpert может открывать кабинет клиента',
+    help: 'Выключите, если роль SuperExpert должна только смотреть данные. Каждый вход от имени и так ограничен по времени и пишется в журнал.',
+    schema: z.boolean(), default: true, critical: true,
+  },
   break_glass_enabled: {
     group: 'security', label: 'Аварийный вход по общему паролю',
     help: 'Выключите, когда у всех администраторов есть личные аккаунты. Выключить можно только из личного аккаунта Super Admin.',
