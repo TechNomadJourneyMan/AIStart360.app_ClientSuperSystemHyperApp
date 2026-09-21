@@ -15,6 +15,7 @@ export const GIGA_NAV: GigaNavGroup[] = [
     { href: `${GIGA_BASE}/requests`, label: 'Заявки', icon: 'inbox', permission: 'users.view' },
     { href: `${GIGA_BASE}/invites`, label: 'Приглашения', icon: 'mail', permission: 'users.view' },
     { href: `${GIGA_BASE}/clients`, label: 'Клиенты', icon: 'building', permission: 'users.view' },
+    { href: `${GIGA_BASE}/duplicates`, label: 'Дубликаты', icon: 'copy', permission: 'users.sensitive' },
     { href: `${GIGA_BASE}/leads`, label: 'Лиды', icon: 'sparkles', permission: 'leads.view' },
   ] },
   { label: 'Данные', items: [
@@ -58,6 +59,7 @@ export const SUPER_EXPERT_NAV: GigaNavGroup[] = [
     { href: `${SUPER_EXPERT_BASE}/users`, label: 'Пользователи', icon: 'users', permission: 'users.view' },
     { href: `${SUPER_EXPERT_BASE}/requests`, label: 'Заявки на доступ', icon: 'inbox', permission: 'users.approve' },
     { href: `${SUPER_EXPERT_BASE}/accounts`, label: 'Аккаунты и компании', icon: 'building', permission: 'users.view' },
+    { href: `${SUPER_EXPERT_BASE}/duplicates`, label: 'Дубликаты', icon: 'copy', permission: 'users.sensitive' },
   ] },
   { label: 'Данные', items: [
     { href: `${SUPER_EXPERT_BASE}/surveys`, label: 'Анкеты', icon: 'clipboard', permission: 'survey.view' },

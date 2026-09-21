@@ -154,7 +154,7 @@ async function main(): Promise<void> {
   check('личность', 'права выданы по матрице', 'да', perms.length ? 'да' : 'нет')
 
   // ── 4. Страницы кабинета отдаются ──────────────────────────────────────
-  for (const p of ['/super-expert', '/super-expert/users', '/super-expert/surveys', '/super-expert/gri', '/super-expert/activity', '/super-expert/invites', '/super-expert/requests', '/super-expert/accounts']) {
+  for (const p of ['/super-expert', '/super-expert/users', '/super-expert/duplicates', '/super-expert/surveys', '/super-expert/gri', '/super-expert/activity', '/super-expert/invites', '/super-expert/requests', '/super-expert/accounts']) {
     const r = await get(p)
     check('страницы', p, '200', String(r.status))
   }
@@ -174,6 +174,7 @@ async function main(): Promise<void> {
     ['заявки на доступ', '/api/giga-admin/requests'],
     ['приглашения (список)', '/api/giga-admin/invites'],
     ['аккаунты и компании', '/api/giga-admin/clients?page=1'],
+    ['дубликаты', '/api/giga-admin/duplicates'],
   ] as const) {
     const r = await get(p)
     check('разрешено', name, '200', String(r.status))
@@ -251,6 +252,15 @@ async function main(): Promise<void> {
     method: 'PATCH', body: JSON.stringify({ company: { name: 'не должно сохраниться' } }),
   })
   check('запись', 'данные сотрудника править нельзя', '403', String(staffWrite.status))
+
+  // Выгрузка: файл, а не JSON.
+  const csv = await get('/api/giga-admin/users/export?segment=survey_not_started')
+  check('разрешено', 'выгрузка отдаёт CSV', 'text/csv', (csv.headers.get('content-type') ?? '').split(';')[0])
+  // BOM проверяем по БАЙТАМ: res.text() декодирует UTF-8 и метку срезает,
+  // поэтому строковая проверка всегда врала бы «нет».
+  const csvBytes = new Uint8Array(await csv.arrayBuffer())
+  const hasBom = csvBytes[0] === 0xef && csvBytes[1] === 0xbb && csvBytes[2] === 0xbf
+  check('разрешено', 'выгрузка открывается в Excel (BOM)', 'да', hasBom ? 'да' : 'нет')
 
   // Заметка — настоящая запись, но в СВОЮ строку: данные клиентов не трогаем.
   const note = await get(`/api/giga-admin/users/${uid}/notes`, {
