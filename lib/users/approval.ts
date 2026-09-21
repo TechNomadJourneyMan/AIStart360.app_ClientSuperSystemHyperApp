@@ -1,5 +1,5 @@
 import { createServiceClient } from '@/lib/supabase-service'
-import { sendUserEmail } from '@/lib/email'
+import { sendPortalAccessGrantedEmail, sendUserEmail } from '@/lib/email'
 
 /**
  * SINGLE SOURCE OF TRUTH for user access status.
@@ -85,14 +85,9 @@ async function sendDecisionEmail(
   const name = fullName ? `${fullName}, ` : ''
 
   if (status === 'approved') {
-    return sendUserEmail({
-      to: email,
-      subject: 'Доступ к AIStart360 открыт',
-      title: 'Заявка одобрена',
-      body: `${name}ваш доступ к порталу AIStart360 подтверждён. Теперь вы можете войти.`,
-      ctaLabel: 'Войти',
-      ctaPath: '/login',
-    })
+    // Фирменное письмо «доступ открыт» (единый макет, дата/время, CTA).
+    const res = await sendPortalAccessGrantedEmail(email, { name: fullName, grantedAt: new Date() })
+    return { ok: res.ok, ...(res.error ? { error: res.error } : {}) }
   }
 
   if (status === 'requires_clarification') {

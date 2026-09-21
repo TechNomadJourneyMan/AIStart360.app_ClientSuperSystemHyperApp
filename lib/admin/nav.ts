@@ -40,7 +40,36 @@ export const GIGA_NAV: GigaNavGroup[] = [
   ] },
 ]
 
-const TITLES: Array<[RegExp, string]> = GIGA_NAV.flatMap((g) => g.items).map((i) => [
+export const SUPER_EXPERT_BASE = '/super-expert'
+
+/**
+ * Навигация кабинета SuperExpert.
+ *
+ * Тот же CRM-подход (список → карточка → данные → действия), но без разделов
+ * платформы, контента, ролей, настроек и входа от имени: их нет ни в меню, ни
+ * в правах роли (см. lib/admin/rbac.ts) — то есть и напрямую по URL туда не
+ * попасть, проверку делает сервер.
+ */
+export const SUPER_EXPERT_NAV: GigaNavGroup[] = [
+  { label: 'Обзор', items: [
+    { href: SUPER_EXPERT_BASE, label: 'Главная', icon: 'dashboard', permission: 'dashboard.view', exact: true },
+  ] },
+  { label: 'Пользователи', items: [
+    { href: `${SUPER_EXPERT_BASE}/users`, label: 'Пользователи', icon: 'users', permission: 'users.view' },
+    { href: `${SUPER_EXPERT_BASE}/requests`, label: 'Заявки на доступ', icon: 'inbox', permission: 'users.approve' },
+    { href: `${SUPER_EXPERT_BASE}/accounts`, label: 'Аккаунты и компании', icon: 'building', permission: 'users.view' },
+  ] },
+  { label: 'Данные', items: [
+    { href: `${SUPER_EXPERT_BASE}/surveys`, label: 'Анкеты', icon: 'clipboard', permission: 'survey.view' },
+    { href: `${SUPER_EXPERT_BASE}/gri`, label: 'GRI', icon: 'radar', permission: 'gri.view' },
+    { href: `${SUPER_EXPERT_BASE}/activity`, label: 'Активность', icon: 'activity', permission: 'activity.view' },
+  ] },
+  { label: 'Взаимодействие', items: [
+    { href: `${SUPER_EXPERT_BASE}/invites`, label: 'Приглашения', icon: 'mail', permission: 'users.invite' },
+  ] },
+]
+
+const TITLES: Array<[RegExp, string]> = [...GIGA_NAV, ...SUPER_EXPERT_NAV].flatMap((g) => g.items).map((i) => [
   new RegExp(`^${i.href.replace(/[/-]/g, (c) => `\\${c}`)}${i.exact ? '$' : '(/|$)'}`),
   i.label,
 ])

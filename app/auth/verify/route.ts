@@ -3,6 +3,7 @@ import { createServerClient } from '@supabase/ssr'
 import type { NextRequest } from 'next/server'
 import { trackEvent } from '@/lib/events/track'
 import { safeInternalPath } from '@/lib/safe-redirect'
+import { acceptInvitation } from '@/lib/admin/invites'
 
 /**
  * GET /auth/verify — приземление ссылки, отправленной нами (см.
@@ -40,6 +41,11 @@ export async function GET(request: NextRequest) {
   if (error || !data.user) {
     return NextResponse.redirect(new URL('/login?error=link_expired', origin))
   }
+
+  // Приглашение принято: закрываем запись и, если в ней была роль персонала,
+  // выдаём её. Никогда не бросает — вход важнее побочного учёта. Куда идти
+  // дальше, решает общая маршрутизация по роли (middleware + /login).
+  await acceptInvitation(data.user.email, data.user.id)
 
   void trackEvent({
     userId: data.user.id,

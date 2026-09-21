@@ -4,8 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { AnimatePresence, motion } from 'framer-motion'
 import { ClipboardList, Clock, CornerDownLeft, Loader2, Search, User, X } from 'lucide-react'
-import { GIGA_NAV } from '@/lib/admin/nav'
 import { useStaff } from './StaffContext'
+import { useWorkspace } from './WorkspaceContext'
 import { cx, gigaFetch, useDebounced } from './kit'
 
 /**
@@ -49,6 +49,7 @@ type Item =
 export function CommandPalette() {
   const router = useRouter()
   const { can, me } = useStaff()
+  const { base, nav: workspaceNav } = useWorkspace()
   const [open, setOpen] = useState(false)
   const [q, setQ] = useState('')
   const dq = useDebounced(q.trim(), 250)
@@ -96,7 +97,7 @@ export function CommandPalette() {
 
   const items = useMemo<Item[]>(() => {
     const needle = dq.toLowerCase()
-    const nav = GIGA_NAV.flatMap((g) => g.items.filter((i) => can(i.permission)).map((i) => ({ group: g.label, ...i })))
+    const nav = workspaceNav.flatMap((g) => g.items.filter((i) => can(i.permission)).map((i) => ({ group: g.label, ...i })))
       .filter((i) => !needle || i.label.toLowerCase().includes(needle) || i.group.toLowerCase().includes(needle))
       .map((i) => ({ kind: 'nav' as const, key: `nav:${i.href}`, label: i.label, hint: i.group, href: i.href }))
 
@@ -113,7 +114,7 @@ export function CommandPalette() {
       : []
 
     return [...recents, ...users, ...nav]
-  }, [dq, hits, recent, can])
+  }, [dq, hits, recent, can, workspaceNav])
 
   useEffect(() => { setCursor((c) => Math.min(c, Math.max(items.length - 1, 0))) }, [items.length])
 
@@ -122,8 +123,8 @@ export function CommandPalette() {
     setQ('')
     if (item.kind === 'nav') { router.push(item.href); return }
     rememberUser({ id: item.id, label: item.label, hint: item.hint })
-    router.push(target === 'survey' ? `/admin-giga-panel/surveys?user=${item.id}` : `/admin-giga-panel/users/${item.id}`)
-  }, [router])
+    router.push(target === 'survey' ? `${base}/surveys?user=${item.id}` : `${base}/users/${item.id}`)
+  }, [router, base])
 
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'ArrowDown') { e.preventDefault(); setCursor((c) => (items.length ? (c + 1) % items.length : 0)) }

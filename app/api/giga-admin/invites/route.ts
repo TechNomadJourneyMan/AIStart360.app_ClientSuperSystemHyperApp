@@ -9,6 +9,7 @@ import { isRateLimitedKey } from '@/lib/rate-limit'
 import { safeInternalPath } from '@/lib/safe-redirect'
 import { sendPlatformInvite } from '@/lib/admin/invites'
 import { normalizeEmail, type InviteResult } from '@/lib/admin/invite-shared'
+import { grantableRoles, hasPermission, STAFF_ROLES, STAFF_ROLE_LABELS } from '@/lib/admin/rbac'
 
 /**
  * GET  /api/giga-admin/invites — отправленные приглашения и что с ними стало.
@@ -24,6 +25,9 @@ const bodySchema = z.object({
   emails: z.array(z.string().max(200)).min(1).max(MAX_EMAILS),
   note: z.string().trim().max(300).optional(),
   next: z.string().max(200).optional(),
+  company: z.string().trim().max(160).optional(),
+  /** Роль персонала, которую приглашённый получит, приняв приглашение. */
+  staffRole: z.enum(STAFF_ROLES).nullish(),
 })
 
 interface AuditRow {
@@ -73,6 +77,10 @@ export async function GET(req: NextRequest) {
         sentBy: r.actor_email || r.actor_id,
         outcome: (r.metadata?.outcome as string) ?? 'invited',
         note: (r.metadata?.note as string) ?? null,
+        staffRole: (r.metadata?.staffRole as string) ?? null,
+        staffRoleLabel: r.metadata?.staffRole && typeof r.metadata.staffRole === 'string'
+          ? STAFF_ROLE_LABELS[r.metadata.staffRole as keyof typeof STAFF_ROLE_LABELS] ?? null
+          : null,
         // «Принято» = человек уже заходил после приглашения.
         acceptedAt: profile?.last_seen_at ?? null,
         userId: profile?.id ?? null,
@@ -83,7 +91,10 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const guard = await requireGiga(req, 'users.manage')
+  // Приглашение — операционное действие с людьми, а не системная настройка:
+  // отдельное право, чтобы его можно было дать SuperExpert, не открывая ему
+  // тарифы, блокировки и чтение системных настроек (они за 'users.manage').
+  const guard = await requireGiga(req, 'users.invite')
   if (guard.response) return guard.response
   const actor = guard.actor
 
@@ -93,6 +104,17 @@ export async function POST(req: NextRequest) {
   }
   const next = parsed.data.next ? safeInternalPath(parsed.data.next, '/auth/reset-password') : undefined
   const note = parsed.data.note || null
+  const company = parsed.data.company || null
+
+  // Приглашение С РОЛЬЮ — это выдача прав. Его делает только тот, кто вправе
+  // управлять ролями, и только ролью не выше собственной. Иначе приглашение
+  // стало бы обходным путём повышения привилегий.
+  const staffRole = parsed.data.staffRole ?? null
+  if (staffRole) {
+    if (!hasPermission(actor.role, 'roles.manage') || !grantableRoles(actor.role).includes(staffRole)) {
+      return NextResponse.json({ ok: false, error: 'Эту роль выдать нельзя' }, { status: 403 })
+    }
+  }
 
   const unique = Array.from(new Set(parsed.data.emails.map((e) => normalizeEmail(e) ?? e.trim().toLowerCase())))
   if (await isRateLimitedKey(actor.id, 'giga-invites', { max: 100, windowMs: 60 * 60_000 })) {
@@ -105,6 +127,9 @@ export async function POST(req: NextRequest) {
       email,
       next,
       note,
+      company,
+      staffRole,
+      invitedById: actor.id,
       invitedByLabel: actor.email ?? null,
     })
     results.push(result)
@@ -114,7 +139,7 @@ export async function POST(req: NextRequest) {
         action: 'user.invited',
         entityType: 'invite',
         entityId: result.email,
-        metadata: { outcome: result.outcome, note },
+        metadata: { outcome: result.outcome, note, company, staffRole },
       }, req)
     }
   }

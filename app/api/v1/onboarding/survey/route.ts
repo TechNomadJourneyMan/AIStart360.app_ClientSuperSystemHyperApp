@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { notifyAdmins } from '@/lib/notifications'
+import { sendQuestionnaireCompletedEmail } from '@/lib/email'
 import { resolveTargetUserId } from '@/lib/api-identity'
 import {
   completedStepsFromRows,
@@ -208,16 +209,17 @@ async function mirrorAndAnnounce(userId: string, announce: boolean, step: number
   // Re-read the latest answers so a slow background run never mirrors a stale snapshot.
   const [{ data: rowsData }, { data: profile }] = await Promise.all([
     service.from('survey_answers').select('question_key, step, answer').eq('user_id', userId),
-    service.from('profiles').select('email').eq('id', userId).maybeSingle(),
+    service.from('profiles').select('email, full_name').eq('id', userId).maybeSingle(),
   ])
   const rows = ((rowsData ?? []) as SurveyStepRow[]).filter((r) => isWizardVisibleKey(r.question_key))
   const progress = surveyProgressFromRows(rows)
 
   // Sheet email = the CLIENT's email (profile), never the session user's —
   // staff saving on behalf of a client used to put their own email there.
+  const person = profile as { email?: string | null; full_name?: string | null } | null
   const sheet = await syncSurveyToGoogleSheet(rows, {
     userId,
-    email: (profile as { email?: string | null } | null)?.email ?? null,
+    email: person?.email ?? null,
   })
   if (!sheet.ok && !sheet.skipped) console.error('[onboarding/survey] sheet mirror failed:', sheet.error)
 
@@ -229,6 +231,20 @@ async function mirrorAndAnnounce(userId: string, announce: boolean, step: number
     company: summary.company,
   })
   if (!first) return
+
+  // Письмо самому клиенту: «анкета пройдена». Идемпотентность — в lib/email
+  // (ключ questionnaire_completed:<userId>), поэтому повтор ничего не пришлёт.
+  if (person?.email) {
+    await sendQuestionnaireCompletedEmail(person.email, {
+      userId,
+      name: person.full_name ?? null,
+      company: summary.company || null,
+      completedSteps: progress.completed,
+      totalSteps: progress.total_steps,
+      completedAt: new Date(),
+    })
+  }
+
   await notifyAdmins('survey_completed', {
     step,
     completedSteps: progress.completed,

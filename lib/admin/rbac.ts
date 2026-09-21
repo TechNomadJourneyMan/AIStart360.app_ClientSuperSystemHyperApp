@@ -7,12 +7,13 @@
  * the server checks it on every request (the UI only hides what is not allowed).
  */
 
-export const STAFF_ROLES = ['super_admin', 'admin', 'crm_manager', 'content_manager', 'analyst', 'support'] as const
+export const STAFF_ROLES = ['super_admin', 'admin', 'super_expert', 'crm_manager', 'content_manager', 'analyst', 'support'] as const
 export type StaffRole = (typeof STAFF_ROLES)[number]
 
 export const STAFF_ROLE_LABELS: Record<StaffRole, string> = {
   super_admin: 'Super Admin',
   admin: 'Администратор',
+  super_expert: 'SuperExpert',
   crm_manager: 'CRM-менеджер',
   content_manager: 'Контент-менеджер',
   analyst: 'Аналитик',
@@ -23,7 +24,9 @@ export const PERMISSIONS = {
   'dashboard.view': 'Главный экран CRM',
   'users.view': 'Список пользователей и User 360',
   'users.sensitive': 'Контакты, документы, ответы анкеты',
-  'users.manage': 'Заявки, блокировка, тариф, 2FA, виджеты',
+  'users.manage': 'Блокировка, тариф, 2FA, виджеты, системные настройки (чтение)',
+  'users.invite': 'Приглашения на платформу',
+  'users.approve': 'Решение по заявке на доступ (одобрить / отклонить)',
   'users.archive': 'Архивация (удаление) пользователей',
   'survey.view': 'Просмотр анкет',
   'survey.edit': 'Изменение анкет',
@@ -55,7 +58,7 @@ export type Permission = keyof typeof PERMISSIONS
 export const ALL_PERMISSIONS = Object.keys(PERMISSIONS) as Permission[]
 
 const CRM_MANAGER: Permission[] = [
-  'dashboard.view', 'users.view', 'users.sensitive', 'users.manage',
+  'dashboard.view', 'users.view', 'users.sensitive', 'users.manage', 'users.invite', 'users.approve',
   'survey.view', 'survey.edit', 'gri.view', 'gri.edit',
   'activity.view', 'cjm.view', 'analytics.view',
   'impersonate.view', 'impersonate.edit',
@@ -66,6 +69,20 @@ export const ROLE_PERMISSIONS: Record<StaffRole, ReadonlySet<Permission>> = {
   super_admin: new Set(ALL_PERMISSIONS),
   // Everything except managing staff roles and global system settings.
   admin: new Set(ALL_PERMISSIONS.filter((p) => p !== 'roles.manage' && p !== 'settings.manage')),
+  /**
+   * SuperExpert — работа С ЛЮДЬМИ, но не с системой.
+   *
+   * Видит пользователей целиком (профиль, контакты, анкета, GRI, активность,
+   * CJM) и выполняет операционные действия: пригласить, решить по заявке на
+   * доступ. НЕ получает системные настройки, роли, тарифы, блокировки, 2FA,
+   * архивацию, правку/удаление данных, вход от имени и журнал аудита —
+   * это остаётся у Admin / Super Admin.
+   */
+  super_expert: new Set<Permission>([
+    'dashboard.view', 'users.view', 'users.sensitive', 'users.invite', 'users.approve',
+    'survey.view', 'gri.view', 'activity.view', 'cjm.view', 'analytics.view',
+    'inbox.view', 'leads.view',
+  ]),
   crm_manager: new Set(CRM_MANAGER),
   content_manager: new Set<Permission>([
     'dashboard.view', 'content.view', 'content.edit', 'content.publish', 'platform.sections', 'insights.moderate',
@@ -94,7 +111,7 @@ export function permissionsFor(role: StaffRole): Permission[] {
 
 /** Higher number = more power. Used to stop staff acting on peers above them. */
 const RANK: Record<StaffRole, number> = {
-  super_admin: 100, admin: 80, crm_manager: 50, content_manager: 40, analyst: 30, support: 20,
+  super_admin: 100, admin: 80, super_expert: 60, crm_manager: 50, content_manager: 40, analyst: 30, support: 20,
 }
 
 /**
