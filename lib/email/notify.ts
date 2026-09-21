@@ -16,6 +16,7 @@ import { getSiteUrl } from '@/lib/site-url'
 import { sendTransactionalEmail, type TransactionalEmailResult } from './send'
 import {
   buildAccessGrantedEmail,
+  buildSurveyReminderEmail,
   buildGriCompletedEmail,
   buildInvitationEmail,
   buildQuestionnaireCompletedEmail,
@@ -23,6 +24,7 @@ import {
   type GriEmailInput,
   type InvitationEmailInput,
   type QuestionnaireEmailInput,
+  type SurveyReminderEmailInput,
 } from './templates'
 
 /** Абсолютная ссылка на страницу портала из относительного пути. */
@@ -69,6 +71,27 @@ export async function sendQuestionnaireCompletedEmail(
     userId: input.userId ?? null,
     // Одно письмо на пользователя: повторные сохранения анкеты его не поднимут.
     dedupeKey: input.userId ? `questionnaire_completed:${input.userId}` : null,
+    metadata: { completedSteps: input.completedSteps, totalSteps: input.totalSteps },
+  })
+}
+
+export async function sendSurveyReminderEmail(
+  to: string,
+  input: Omit<SurveyReminderEmailInput, 'url'> & { url?: string; userId?: string | null },
+): Promise<TransactionalEmailResult> {
+  const { subject, content } = buildSurveyReminderEmail({
+    ...input,
+    url: input.url ?? portalUrl('/client/onboarding'),
+  })
+  return sendTransactionalEmail({
+    kind: 'survey_reminder',
+    to,
+    subject,
+    content,
+    userId: input.userId ?? null,
+    // Напоминание — осознанное действие сотрудника, повтор допустим;
+    // от спама защищает лимит на маршруте, а не идемпотентность.
+    dedupeKey: null,
     metadata: { completedSteps: input.completedSteps, totalSteps: input.totalSteps },
   })
 }

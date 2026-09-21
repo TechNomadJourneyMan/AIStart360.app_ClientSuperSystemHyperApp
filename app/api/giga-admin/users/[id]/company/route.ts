@@ -10,6 +10,11 @@ import { createServiceClient } from '@/lib/supabase-service'
 /**
  * PATCH /api/giga-admin/users/:id/company — данные компании и контакта.
  *
+ * «Стадия бизнеса» (companies.stage) здесь НЕ редактируется и не показывается:
+ * поле дублировало отрасль и размер, а решения по нему никто не принимал.
+ * Колонка в базе осталась — её читают старые расчёты Точки А (профили весов и
+ * бенчмарки), и они корректно работают с пустым значением.
+ *
  * Зачем отдельный маршрут: сотрудник часто знает о клиенте больше, чем тот
  * успел внести сам (отрасль, размер, контакты). Раньше дополнить это можно
  * было только войдя в кабинет клиента — то есть от его имени. Теперь есть
@@ -27,7 +32,6 @@ const bodySchema = z.object({
   company: z.object({
     name: z.string().trim().min(1).max(200).optional(),
     industry: nullableText(120),
-    stage: z.enum(['Startup', 'Growth', 'Scale', 'Mature']).nullable().optional(),
     business_model: z.enum(['B2B', 'B2C', 'B2B2C', 'Mixed']).nullable().optional(),
     employee_count: z.number().int().min(0).max(1_000_000).nullable().optional(),
     regions: z.array(z.string().trim().min(1).max(80)).max(30).optional(),
@@ -77,7 +81,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   }
 
   const sb = createServiceClient()
-  const COMPANY_COLS = 'id, name, industry, stage, business_model, employee_count, regions, contact_name, contact_position, contact_phone, contact_email'
+  const COMPANY_COLS = 'id, name, industry, business_model, employee_count, regions, contact_name, contact_position, contact_phone, contact_email'
   const PROFILE_COLS = 'full_name, organization, position, phone'
 
   const [{ data: beforeCompany }, { data: beforeProfile }] = await Promise.all([

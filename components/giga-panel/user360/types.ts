@@ -8,7 +8,7 @@ export interface User360Profile {
     vertical: string | null; widget_config: unknown; created_at: string; approved_at: string | null; last_seen_at: string | null; avatar_url: string | null
   }
   staffRole: StaffRole | null
-  company: { id: string; name: string; industry: string | null; business_model: string | null; employee_count: number | null; regions: string[] | null; stage: string | null } | null
+  company: { id: string; name: string; industry: string | null; business_model: string | null; employee_count: number | null; regions: string[] | null } | null
   survey: {
     percent: number; startedSteps: number; totalSteps: number; missingSteps: number[]; startedAt: string | null; updatedAt: string | null
     hero: Record<string, string>

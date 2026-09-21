@@ -22,6 +22,7 @@ import { renderEmail, type EmailContent } from './layout'
 export type EmailKind =
   | 'portal_invitation'
   | 'questionnaire_completed'
+  | 'survey_reminder'
   | 'gri_completed'
   | 'portal_access_granted'
   | 'notification'

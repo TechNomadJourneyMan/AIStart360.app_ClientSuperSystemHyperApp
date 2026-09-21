@@ -185,6 +185,9 @@ async function main(): Promise<void> {
       ['анкета пользователя', `/api/giga-admin/users/${firstId}/survey`],
       ['GRI пользователя', `/api/giga-admin/users/${firstId}/gri`],
       ['события пользователя', `/api/giga-admin/users/${firstId}/events`],
+      ['заметки о клиенте', `/api/giga-admin/users/${firstId}/notes`],
+      ['письма клиенту', `/api/giga-admin/users/${firstId}/emails`],
+      ['качество данных', `/api/giga-admin/users/${firstId}/quality`],
     ] as const) {
       const r = await get(p)
       check('разрешено', name, '200', String(r.status))
@@ -248,6 +251,12 @@ async function main(): Promise<void> {
     method: 'PATCH', body: JSON.stringify({ company: { name: 'не должно сохраниться' } }),
   })
   check('запись', 'данные сотрудника править нельзя', '403', String(staffWrite.status))
+
+  // Заметка — настоящая запись, но в СВОЮ строку: данные клиентов не трогаем.
+  const note = await get(`/api/giga-admin/users/${uid}/notes`, {
+    method: 'POST', body: JSON.stringify({ body: `Автопроверка кабинета ${new Date().toISOString()}` }),
+  })
+  check('запись', 'заметка сохраняется', '200', String(note.status))
 
   // ── 7. Убираем за собой ────────────────────────────────────────────────
   if (!KEEP) {

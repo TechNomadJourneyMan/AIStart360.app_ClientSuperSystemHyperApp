@@ -21,14 +21,6 @@ import type { User360Profile } from './types'
 
 type TabKey = 'company' | 'survey'
 
-const STAGES = [
-  { value: '', label: 'Не указана' },
-  { value: 'Startup', label: 'Startup — запуск' },
-  { value: 'Growth', label: 'Growth — рост' },
-  { value: 'Scale', label: 'Scale — масштабирование' },
-  { value: 'Mature', label: 'Mature — зрелость' },
-] as const
-
 const MODELS = [
   { value: '', label: 'Не указана' },
   { value: 'B2B', label: 'B2B' },
@@ -51,7 +43,6 @@ export function DataEntryModal({ open, onClose, data, canEditSurvey, onChanged }
 
   const [name, setName] = useState(c?.name ?? p.organization ?? '')
   const [industry, setIndustry] = useState(c?.industry ?? '')
-  const [stage, setStage] = useState<string>(c?.stage ?? '')
   const [model, setModel] = useState<string>(c?.business_model ?? '')
   const [employees, setEmployees] = useState(c?.employee_count != null ? String(c.employee_count) : '')
   const [regions, setRegions] = useState((c?.regions ?? []).join(', '))
@@ -76,7 +67,6 @@ export function DataEntryModal({ open, onClose, data, canEditSurvey, onChanged }
           company: {
             name: name.trim(),
             industry: industry.trim() || null,
-            stage: stage || null,
             business_model: model || null,
             employee_count: employees.trim() ? Number(employees.trim()) : null,
             regions: regions.split(',').map((r) => r.trim()).filter(Boolean),
@@ -132,11 +122,6 @@ export function DataEntryModal({ open, onClose, data, canEditSurvey, onChanged }
           </Field>
           <Field label="Отрасль">
             <input value={industry} onChange={(e) => setIndustry(e.target.value)} maxLength={120} className={inputClass} placeholder="Телеком, ритейл, услуги…" />
-          </Field>
-          <Field label="Стадия бизнеса">
-            <select value={stage} onChange={(e) => setStage(e.target.value)} className={inputClass}>
-              {STAGES.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
           </Field>
           <Field label="Модель">
             <select value={model} onChange={(e) => setModel(e.target.value)} className={inputClass}>

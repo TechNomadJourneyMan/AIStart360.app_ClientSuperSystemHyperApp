@@ -144,6 +144,57 @@ export function buildQuestionnaireCompletedEmail(input: QuestionnaireEmailInput)
   }
 }
 
+// ─── 2b. Напоминание про анкету ──────────────────────────────────────────────
+
+export interface SurveyReminderEmailInput {
+  name?: string | null
+  company?: string | null
+  completedSteps: number
+  totalSteps: number
+  /** Названия незаполненных разделов — человеку понятнее номеров шагов. */
+  missingSections?: string[]
+  /** Кто напомнил (email сотрудника) — письмо не должно выглядеть роботом. */
+  fromLabel?: string | null
+  note?: string | null
+  url: string
+}
+
+export function buildSurveyReminderEmail(input: SurveyReminderEmailInput): BuiltEmail {
+  const started = input.completedSteps > 0
+  const missing = (input.missingSections ?? []).filter(Boolean)
+  const facts: EmailFact[] = [
+    { label: 'Прогресс', value: `${input.completedSteps} из ${input.totalSteps} шагов` },
+    { label: 'Осталось заполнить', value: missing.length ? missing.slice(0, 6).join(', ') : null },
+    { label: 'Компания', value: nameOrNull(input.company) },
+  ]
+
+  return {
+    subject: started ? 'Анкета AIStart360 не дозаполнена' : 'Анкета AIStart360 ещё не начата',
+    content: {
+      preheader: started
+        ? `Осталось ${input.totalSteps - input.completedSteps} шагов до диагностики.`
+        : 'Диагностика начинается с анкеты — это 15 минут.',
+      eyebrow: 'Анкета',
+      title: started ? 'Осталось немного' : 'Начните с анкеты',
+      greeting: greeting(input.name),
+      paragraphs: [
+        started
+          ? `Вы заполнили ${input.completedSteps} из ${input.totalSteps} шагов. Пока анкета не закончена, «Точка А» считается по неполным данным, а GRI-оценку запустить нельзя.`
+          : 'Чтобы платформа показала, где ваш бизнес теряет деньги, ей нужны исходные данные. Анкета — 12 коротких шагов, примерно 15 минут; можно заполнять частями, прогресс сохраняется.',
+        missing.length
+          ? `Незаполненными остались разделы: ${missing.join(', ')}.`
+          : 'Ответы сохраняются автоматически — можно вернуться в любой момент.',
+      ],
+      facts,
+      quote: nameOrNull(input.note)
+        ? { label: input.fromLabel ? `Сообщение от ${input.fromLabel}` : 'Сообщение', text: (input.note as string).trim() }
+        : null,
+      cta: { label: started ? 'Продолжить анкету' : 'Заполнить анкету', url: input.url },
+      footnote: input.fromLabel ? `Напоминание отправил ${input.fromLabel}.` : 'Письмо отправлено автоматически по вашему аккаунту AIStart360.',
+    },
+  }
+}
+
 // ─── 3. GRI пройден ──────────────────────────────────────────────────────────
 
 export interface GriEmailInput {

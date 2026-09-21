@@ -26,7 +26,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   const sb = createServiceClient()
   const [profileRes, companyRes, answersRes, diagRes, griRes, draftRes, docsRes, contentRes, eventsCountRes, impRes, target] = await Promise.all([
     sb.from('profiles').select('id, email, full_name, role, status, organization, position, phone, tier, feature_flags, vertical, widget_config, created_at, approved_at, last_seen_at, avatar_url').eq('id', userId).maybeSingle(),
-    sb.from('companies').select('id, name, industry, business_model, employee_count, regions, stage').eq('user_id', userId).maybeSingle(),
+    sb.from('companies').select('id, name, industry, business_model, employee_count, regions').eq('user_id', userId).maybeSingle(),
     sb.from('survey_answers').select('question_key, answer, answered_at').eq('user_id', userId),
     sb.from('diagnostics').select('id, overall_score, health_index, stage, calculated_at, is_current').eq('user_id', userId).order('calculated_at', { ascending: true }),
     sb.from('gri_assessments').select('id, gri_index, section_avgs, is_current, created_at').eq('user_id', userId).order('created_at', { ascending: false }).limit(20),
