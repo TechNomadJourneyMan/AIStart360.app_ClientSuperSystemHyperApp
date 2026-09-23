@@ -39,9 +39,9 @@ export function GigaSidebar({ isOpen = false, onClose }: GigaSidebarProps) {
   const logout = async () => {
     try {
       await fetch('/api/giga-admin/auth', { method: 'DELETE' })
-      if (me?.kind === 'session') await createClient().auth.signOut()
+      await createClient().auth.signOut()
     } finally {
-      window.location.href = me?.kind === 'break_glass' ? '/giga-login' : loginPath
+      window.location.href = loginPath
     }
   }
 

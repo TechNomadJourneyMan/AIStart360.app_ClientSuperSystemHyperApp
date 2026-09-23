@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server'
 import type { NextFetchEvent, NextRequest } from 'next/server'
 import { updateSession } from '@/lib/supabase/middleware'
-import { GIGA_COOKIE_NAME, verifyGigaRoleEdge } from '@/lib/giga-cookie-edge'
 import { MFA_COOKIE_NAME, verifyStepUpEdge } from '@/lib/mfa/step-up-edge'
 import { isJourneyPublicDemoEnabled } from '@/lib/journey/public-demo'
 import { IMP_COOKIE_NAME, READ_ONLY_POST_API, isViewModeAllowed, readImpersonation } from '@/lib/impersonation/token'
@@ -272,16 +271,8 @@ export async function middleware(request: NextRequest, event?: NextFetchEvent) {
   const hasApprovedPersonalGigaAccess =
     Boolean(user) && role === 'super_admin' && resolved?.status === 'approved'
 
-  // A2b: the giga gate is the HMAC-SIGNED `aistart360_giga` cookie, verified
-  // here on the Edge runtime via Web Crypto. The unsigned `aistart360_role`
-  // string is NO LONGER accepted for giga access.
-  // The shared-password entry can be switched off in platform settings.
-  const hasGigaAccess =
-    (await verifyGigaRoleEdge(request.cookies.get(GIGA_COOKIE_NAME)?.value)) === 'super_admin' &&
-    (await edgeSettings()).break_glass_enabled
-
   if (isGigaLogin) {
-    if (hasApprovedPersonalGigaAccess || hasGigaAccess) {
+    if (hasApprovedPersonalGigaAccess) {
       return NextResponse.redirect(new URL(GIGA_PANEL_PATH, request.url))
     }
     return response // allow access to login page
@@ -329,10 +320,10 @@ export async function middleware(request: NextRequest, event?: NextFetchEvent) {
   }
 
   // ГИГА-Панель: только персонал (super_admin, роль из staff_roles, личный
-  // staff-cookie во время impersonation или break-glass). Права по разделам
+  // staff-cookie во время impersonation). Аварийного входа больше нет. Права по разделам
   // проверяет каждый API-маршрут (lib/admin/rbac.ts).
   if (pathname.startsWith(GIGA_PANEL_PATH)) {
-    let isStaff = role === 'super_admin' || hasGigaAccess
+    let isStaff = role === 'super_admin' && resolved?.status === 'approved'
     if (!isStaff) {
       const staffToken = request.cookies.get(STAFF_COOKIE_NAME)?.value
       if (staffToken && (await verifyToken('staff', staffToken)).ok) isStaff = true
@@ -347,8 +338,7 @@ export async function middleware(request: NextRequest, event?: NextFetchEvent) {
     // A personal super_admin session that enrolled in 2FA must pass the step-up
     // here too — this branch returns early, so the general MFA gate below was
     // never reached and the most privileged surface was the one skipping 2FA.
-    // (Break-glass entry has no Supabase user and is unaffected.)
-    if (user && !impersonating && !hasGigaAccess) {
+    if (user && !impersonating) {
       const gigaMeta = user.user_metadata as Record<string, unknown> | undefined
       const enrolled = gigaMeta?.mfa_totp === true || gigaMeta?.mfa_webauthn === true
       if (enrolled && !(await verifyStepUpEdge(request.cookies.get(MFA_COOKIE_NAME)?.value, user.id))) {

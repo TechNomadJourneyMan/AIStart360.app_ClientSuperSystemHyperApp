@@ -71,7 +71,10 @@ export function UserSettingsModal({ isOpen, user, onSave, onClose }: UserSetting
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 8 }}
             transition={{ type: 'spring', duration: 0.3, bounce: 0.2 }}
-            className="fixed left-1/2 top-1/2 z-50 w-full max-w-lg -translate-x-1/2 -translate-y-1/2
+            // No translate-centering: Framer Motion owns `transform` and would
+            // override it, pushing the modal off-screen. Height is capped and
+            // the body scrolls so the lower sections stay reachable.
+            className="fixed inset-x-0 top-[5vh] z-50 mx-auto w-[calc(100%-2rem)] max-w-lg max-h-[90vh] overflow-y-auto overscroll-contain
               bg-slate-900 border border-white/[0.1] rounded-2xl shadow-2xl shadow-black/50 p-6"
           >
             {/* Header */}

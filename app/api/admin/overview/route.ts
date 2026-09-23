@@ -2,23 +2,21 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
-import { GIGA_COOKIE_NAME, verifyGigaRole } from '@/lib/giga-cookie'
 import { srGet } from '@/lib/expert-auth'
 
 /**
  * GET /api/admin/overview
  *
  * Real aggregates for the admin overview tab — replaces the former hardcoded
- * mock. Auth is checked via the session (own profile role, RLS-safe) or the
- * signed super-admin giga cookie. Aggregate DATA is read via service-role
+ * mock. Auth is checked via the session (own profile role, RLS-safe); the
+ * break-glass giga cookie is no longer accepted anywhere. Aggregate DATA is read via service-role
  * (srGet) so RLS doesn't limit counts to the caller's own rows — see
  * lib/supabase-server.ts note. Absent data → 0 / empty, never fabricated.
  */
 
 type SB = ReturnType<typeof createServerClient>
 
-async function isAdmin(req: NextRequest, sb: SB): Promise<boolean> {
-  if (verifyGigaRole(req.cookies.get(GIGA_COOKIE_NAME)?.value) === 'super_admin') return true
+async function isAdmin(sb: SB): Promise<boolean> {
   const { data: { user } } = await sb.auth.getUser()
   if (!user) return false
   const { data: prof } = await sb.from('profiles').select('role').eq('id', user.id).maybeSingle()
@@ -38,7 +36,7 @@ const len = (rows: unknown): number => (Array.isArray(rows) ? rows.length : 0)
 
 export async function GET(req: NextRequest) {
   const sb = createServerClient()
-  if (!(await isAdmin(req, sb))) {
+  if (!(await isAdmin(sb))) {
     return NextResponse.json({ ok: false, error: 'Forbidden' }, { status: 403 })
   }
 

@@ -32,9 +32,6 @@ const CONFIRM: Partial<Record<SettingKey, (next: boolean) => string>> = {
   staff_require_mfa: (on) => on
     ? 'Сотрудники без 2FA не смогут открыть панель, пока не включат её в своём профиле. Убедитесь, что у вас 2FA уже включена.'
     : 'Сотрудники смогут входить в панель без второго фактора.',
-  break_glass_enabled: (on) => on
-    ? 'Вход в панель по общему паролю снова станет доступен.'
-    : 'Вход по общему паролю перестанет работать сразу, включая уже открытые сессии. Входить можно будет только через личные аккаунты.',
 }
 
 export default function SettingsPage() {
@@ -79,11 +76,6 @@ export default function SettingsPage() {
       {!canEdit && q.data && (
         <p className="mb-4 rounded-xl border border-amber-500/20 bg-amber-500/[0.06] px-4 py-2.5 text-xs text-amber-200">
           У вас доступ только на просмотр: изменения сохранит только Super Admin.
-        </p>
-      )}
-      {q.data?.actor.kind === 'break_glass' && (
-        <p className="mb-4 rounded-xl border border-blue-500/20 bg-blue-500/[0.06] px-4 py-2.5 text-xs text-blue-200">
-          Вы вошли по общему паролю. Изменения будут записаны на «giga:super_admin». Для персональной ответственности входите через личный аккаунт.
         </p>
       )}
 
@@ -150,11 +142,8 @@ export default function SettingsPage() {
                 onSave={(n) => save({ impersonation_ttl_minutes: n }, 'Длительность сессии')}
               />
             </SettingRow>
-            <SettingRow k="staff_require_mfa" meta={meta} note={q.data?.actor.kind === 'break_glass' ? 'Включается из личного аккаунта.' : undefined}>
-              <Toggle checked={v.staff_require_mfa} disabled={!canEdit || !!saving || (q.data?.actor.kind === 'break_glass' && !v.staff_require_mfa)} onChange={(n) => toggle('staff_require_mfa', n)} label={SETTINGS.staff_require_mfa.label} />
-            </SettingRow>
-            <SettingRow k="break_glass_enabled" meta={meta} note={q.data?.actor.kind !== 'session' && v.break_glass_enabled ? 'Выключается только из личного аккаунта Super Admin.' : undefined}>
-              <Toggle checked={v.break_glass_enabled} disabled={!canEdit || !!saving || (q.data?.actor.kind !== 'session' && v.break_glass_enabled)} onChange={(n) => toggle('break_glass_enabled', n)} label={SETTINGS.break_glass_enabled.label} />
+            <SettingRow k="staff_require_mfa" meta={meta} >
+              <Toggle checked={v.staff_require_mfa} disabled={!canEdit || !!saving} onChange={(n) => toggle('staff_require_mfa', n)} label={SETTINGS.staff_require_mfa.label} />
             </SettingRow>
             <Links items={[
               { href: '/admin-giga-panel/staff', label: 'Сотрудники и роли' },
@@ -174,7 +163,7 @@ export default function SettingsPage() {
       <ConfirmDialog
         open={!!confirm}
         onClose={() => setConfirm(null)}
-        tone={confirm && (confirm.key === 'break_glass_enabled' || confirm.key === 'staff_require_mfa') && confirm.next !== (confirm.key === 'break_glass_enabled') ? 'danger' : 'warning'}
+        tone={confirm && confirm.key === 'staff_require_mfa' && confirm.next ? 'danger' : 'warning'}
         title={confirm ? `${SETTINGS[confirm.key].label}: ${confirm.next ? 'включить' : 'выключить'}?` : ''}
         text={confirm ? CONFIRM[confirm.key]?.(confirm.next) : null}
         confirmLabel={confirm?.next ? 'Включить' : 'Выключить'}

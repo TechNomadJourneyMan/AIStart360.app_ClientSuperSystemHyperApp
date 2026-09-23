@@ -14,10 +14,19 @@ const db = vi.hoisted(() => ({
 }))
 const audit = vi.hoisted(() => ({ fn: vi.fn() }))
 
-vi.mock('@/lib/giga-cookie', () => ({
-  GIGA_COOKIE_NAME: 'giga',
-  verifyGigaRole: () => giga.role,
-}))
+// Staff come in only through a personal session now (break-glass removed):
+// giga.role === 'super_admin' ⇒ a super_admin session actor, anything else ⇒ none.
+vi.mock('@/lib/admin/giga-actor', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/admin/giga-actor')>('@/lib/admin/giga-actor')
+  const { makeRequireGiga } = await import('../_giga-guard')
+  const current = () => (giga.role === 'super_admin' ? { id: 'staff-test', kind: 'session' as const, role: 'super_admin' as const } : null)
+  return {
+    ...actual,
+    requireGiga: makeRequireGiga(current),
+    getGigaActor: async () => { const a = current(); return a ? { ...a, permissions: [] } : null },
+    isGigaSuperAdmin: async () => current() !== null,
+  }
+})
 vi.mock('@/lib/audit', () => ({ logAudit: (...a: unknown[]) => audit.fn(...a) }))
 vi.mock('@/lib/supabase-service', () => ({
   createServiceClient: () => ({

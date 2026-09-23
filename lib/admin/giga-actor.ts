@@ -1,9 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server'
-import { GIGA_COOKIE_NAME, verifyGigaRole } from '@/lib/giga-cookie'
 import { createServerClient } from '@/lib/supabase-server'
 import { createServiceClient } from '@/lib/supabase-service'
 import { verifyToken } from '@/lib/security/signed-token'
-import { getSetting } from '@/lib/settings/store'
 import { canManageTarget, hasPermission, isStaffRole, permissionsFor, type Permission, type StaffRole } from '@/lib/admin/rbac'
 
 /**
@@ -17,8 +15,9 @@ import { canManageTarget, hasPermission, isStaffRole, permissionsFor, type Permi
  *     session with the user's, so the panel keeps working through this cookie).
  *     The role is re-read from `staff_roles` on every request: revoking a role
  *     takes effect immediately.
- *  3. BREAK-GLASS — the shared-password HMAC cookie. Always super_admin,
- *     attributed to 'giga:super_admin' with kind 'break_glass'.
+ *  The shared-password break-glass entry was removed: the owner signs in with
+ *  email + a password whose hash lives only in the environment
+ *  (app/api/giga-admin/auth), which yields an ordinary personal session.
  *
  * Routes authorize with `requireGiga(req, permission)` — never with a bare
  * non-null check: different staff roles see different parts of the panel.
@@ -84,11 +83,6 @@ export async function getGigaActor(req: NextRequest): Promise<GigaActor | null> 
         /* fall through */
       }
     }
-  }
-
-  // 3) Break-glass signed cookie — unless switched off in platform settings.
-  if (verifyGigaRole(req.cookies.get(GIGA_COOKIE_NAME)?.value) === 'super_admin' && (await getSetting('break_glass_enabled'))) {
-    return actor('giga:super_admin', 'break_glass', 'super_admin')
   }
 
   return null

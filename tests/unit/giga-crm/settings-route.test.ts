@@ -93,13 +93,7 @@ describe('settings API', () => {
     expect(state.order).toEqual(['audit'])
   })
 
-  it('break-glass cannot disable itself or enable mandatory staff 2FA', async () => {
-    state.kind = 'break_glass'
+  it('the removed break-glass switch is no longer a setting', async () => {
     expect((await put({ break_glass_enabled: false })).status).toBe(422)
-    expect((await put({ staff_require_mfa: true })).status).toBe(422)
-    state.kind = 'staff_cookie'
-    expect((await put({ break_glass_enabled: false })).status).toBe(422)
-    state.kind = 'session'
-    expect((await put({ break_glass_enabled: false })).status).toBe(200)
   })
 })

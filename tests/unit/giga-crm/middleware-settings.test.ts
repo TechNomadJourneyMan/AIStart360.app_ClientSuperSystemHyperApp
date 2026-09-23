@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { NextRequest, NextResponse } from 'next/server'
 
 const s = vi.hoisted(() => ({
-  settings: { maintenance: { enabled: false, message: '', until: '' }, break_glass_enabled: true, staff_require_mfa: false },
+  settings: { maintenance: { enabled: false, message: '', until: '' }, staff_require_mfa: false },
   user: null as null | { id: string; user_metadata: Record<string, unknown> },
   role: 'client',
   staffRow: null as null | { role: string },
@@ -45,7 +45,7 @@ const get = (path: string, cookie = '') => middleware(new NextRequest(`http://lo
 const loc = (r: Response) => r.headers.get('location') ?? ''
 
 beforeEach(() => {
-  s.settings = { maintenance: { enabled: false, message: '', until: '' }, break_glass_enabled: true, staff_require_mfa: false }
+  s.settings = { maintenance: { enabled: false, message: '', until: '' }, staff_require_mfa: false }
   s.user = { id: 'u1', user_metadata: {} }
   s.role = 'client'
   s.staffRow = null
@@ -99,12 +99,10 @@ describe('mandatory staff 2FA', () => {
   })
 })
 
-describe('break-glass switch', () => {
-  it('shared-password cookie opens the panel only while enabled', async () => {
+describe('break-glass removed', () => {
+  it('the old shared-password cookie no longer opens the panel', async () => {
     s.user = null
     s.gigaCookie = true
-    expect((await get('/admin-giga-panel', 'aistart360_giga=x')).status).toBe(200)
-    s.settings.break_glass_enabled = false
     const r = await get('/admin-giga-panel', 'aistart360_giga=x')
     expect(r.status).toBe(307)
     expect(loc(r)).toContain('/giga-login')
