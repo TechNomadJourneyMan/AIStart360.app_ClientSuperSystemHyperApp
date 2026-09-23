@@ -107,7 +107,7 @@ function User360Inner({ id }: { id: string }) {
               { key: 'history', label: 'История', hidden: !u.can.audit },
             ]}
           />
-          {tab === 'profile' && <ProfileTab data={u} onChanged={reload} />}
+          {tab === 'profile' && <ProfileTab data={u} onChanged={reload} onPurged={() => router.replace(`${base}/users`)} />}
           {tab === 'survey' && u.can.viewSurvey && <SurveyTab userId={id} canEdit={u.can.editSurvey} />}
           {tab === 'gri' && (
             <>

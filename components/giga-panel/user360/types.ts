@@ -20,7 +20,7 @@ export interface User360Profile {
   counters: { documents: number; events: number; legacyAudit: number }
   impersonationActive: boolean
   can: {
-    manage: boolean; archive: boolean; editSurvey: boolean; viewSurvey: boolean; editGri: boolean; deleteGri: boolean
+    manage: boolean; archive: boolean; purge: boolean; editSurvey: boolean; viewSurvey: boolean; editGri: boolean; deleteGri: boolean
     impersonate: boolean; impersonateEdit: boolean; activity: boolean; audit: boolean; roles: boolean; sensitive: boolean
   }
 }

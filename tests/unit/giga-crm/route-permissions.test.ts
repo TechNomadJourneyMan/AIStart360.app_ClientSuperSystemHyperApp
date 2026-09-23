@@ -30,6 +30,7 @@ const req = (url: string, method: string, body: unknown) =>
   new NextRequest(`http://localhost${url}`, { method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
 
 const archive = await import('@/app/api/giga-admin/users/[id]/archive/route')
+const purge = await import('@/app/api/giga-admin/users/[id]/purge/route')
 const gri = await import('@/app/api/giga-admin/users/[id]/gri/[assessmentId]/route')
 const staffRole = await import('@/app/api/giga-admin/users/[id]/staff-role/route')
 const content = await import('@/app/api/giga-admin/content/pages/[id]/route')
@@ -40,6 +41,8 @@ beforeEach(() => { state.touched = 0; state.audits = 0 })
 
 const cases: Array<{ name: string; roles: StaffRole[]; call: () => Promise<Response> }> = [
   { name: 'archive user', roles: ['crm_manager', 'content_manager', 'analyst', 'support'], call: () => archive.POST(req(`/api/giga-admin/users/${UID}/archive`, 'POST', { action: 'archive', reason: 'test' }), { params: { id: UID } }) },
+  { name: 'purge user', roles: ['admin', 'super_expert', 'crm_manager', 'content_manager', 'analyst', 'support'], call: () => purge.POST(req(`/api/giga-admin/users/${UID}/purge`, 'POST', { confirmEmail: 'c@x.io', reason: 'test' }), { params: { id: UID } }) },
+  { name: 'purge preview', roles: ['admin', 'super_expert', 'crm_manager', 'content_manager', 'analyst', 'support'], call: () => purge.GET(req(`/api/giga-admin/users/${UID}/purge`, 'GET', undefined), { params: { id: UID } }) },
   { name: 'delete GRI result', roles: ['crm_manager', 'content_manager', 'analyst', 'support'], call: () => gri.DELETE(req(`/api/giga-admin/users/${UID}/gri/${AID}`, 'DELETE', { reason: 'test' }), { params: { id: UID, assessmentId: AID } }) },
   { name: 'edit GRI answers', roles: ['content_manager', 'analyst', 'support'], call: () => gri.PATCH(req(`/api/giga-admin/users/${UID}/gri/${AID}`, 'PATCH', { makeCurrent: true, reason: 'test' }), { params: { id: UID, assessmentId: AID } }) },
   { name: 'grant staff role', roles: ['admin', 'crm_manager', 'content_manager', 'analyst', 'support'], call: () => staffRole.PUT(req(`/api/giga-admin/users/${UID}/staff-role`, 'PUT', { role: 'support', reason: 'test' }), { params: { id: UID } }) },

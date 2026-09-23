@@ -28,6 +28,7 @@ export const PERMISSIONS = {
   'users.invite': 'Приглашения на платформу',
   'users.approve': 'Решение по заявке на доступ (одобрить / отклонить)',
   'users.archive': 'Архивация (удаление) пользователей',
+  'users.delete': 'Полное удаление пользователя из платформы и БД (необратимо)',
   'company.edit': 'Данные компании клиента',
   'survey.view': 'Просмотр анкет',
   'survey.edit': 'Изменение анкет',
@@ -68,8 +69,9 @@ const CRM_MANAGER: Permission[] = [
 
 export const ROLE_PERMISSIONS: Record<StaffRole, ReadonlySet<Permission>> = {
   super_admin: new Set(ALL_PERMISSIONS),
-  // Everything except managing staff roles and global system settings.
-  admin: new Set(ALL_PERMISSIONS.filter((p) => p !== 'roles.manage' && p !== 'settings.manage')),
+  // Everything except managing staff roles, global system settings and the
+  // irreversible purge of a user — those stay with Super Admin.
+  admin: new Set(ALL_PERMISSIONS.filter((p) => p !== 'roles.manage' && p !== 'settings.manage' && p !== 'users.delete')),
   /**
    * SuperExpert — работа С ЛЮДЬМИ, но не с системой.
    *

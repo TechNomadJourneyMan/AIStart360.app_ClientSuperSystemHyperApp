@@ -115,6 +115,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       can: {
         manage: hasPermission(role, 'users.manage') && canManageTarget(role, target.staffRole),
         archive: hasPermission(role, 'users.archive') && canManageTarget(role, target.staffRole),
+        purge: hasPermission(role, 'users.delete') && userId !== guard.actor.id && target.profileRole !== 'super_admin' && target.staffRole !== 'super_admin',
         editSurvey: hasPermission(role, 'survey.edit') && canManageTarget(role, target.staffRole),
         viewSurvey: hasPermission(role, 'survey.view') && sensitive,
         editGri: hasPermission(role, 'gri.edit') && canManageTarget(role, target.staffRole),
