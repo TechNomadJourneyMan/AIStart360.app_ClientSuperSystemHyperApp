@@ -27,6 +27,7 @@ export const AI_FEATURES = {
   point_a_narrative: 'Точка А: сводка',
   point_a_insights: 'Точка А: инсайты',
   point_b_strategy: 'Точка Б: стратегия',
+  expert_review_draft: 'Черновик разбора эксперта',
   market_analysis: 'Анализ рынка',
   journey: 'AI Journey',
   gri_financial_analyst: 'GRI: финансовый аналитик',

@@ -100,6 +100,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
   const model = OPENROUTER_MODELS.sonnet
   const raw = await chatWithOpenRouter({
+    feature: 'expert_review_draft',
     system: REVIEW_AI_SYSTEM,
     user: buildReviewAiUser(ctx),
     model,

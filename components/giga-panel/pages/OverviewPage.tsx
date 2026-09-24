@@ -13,6 +13,7 @@ import { JOURNEY_LABEL } from '@/lib/admin/journey'
 import { eventLabel } from '@/lib/events/registry'
 import { EVENT_SOURCE, auditLabel } from '@/lib/admin/labels'
 import { ConversionTiles } from '@/components/giga-panel/analytics/ConversionTiles'
+import { AiCostTile } from '@/components/giga-panel/AiCostTile'
 
 interface Overview {
   days: number
@@ -102,6 +103,7 @@ export function OverviewPage() {
             ) : <Skeleton className="h-16" />}
             <Link href={`${base}/gri`} className="mt-3 flex items-center gap-1 text-[11px] text-blue-300 hover:underline"><Radar size={12} /> Все результаты GRI</Link>
           </Panel>}
+          {can('analytics.view') && <AiCostTile />}
           <Panel title="Безопасность">
             <ul className="space-y-2 text-xs">
               <li className="flex items-center justify-between">
