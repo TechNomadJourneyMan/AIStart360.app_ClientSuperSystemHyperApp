@@ -5,6 +5,7 @@ import { createServiceClient } from '@/lib/supabase-service'
 import { forbidTarget, requireGiga } from '@/lib/admin/giga-actor'
 import { logAudit } from '@/lib/audit'
 import { normalizeOverrides, normalizeTier } from '@/lib/access/entitlements'
+import { trackEvent } from '@/lib/events/track'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -110,6 +111,19 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       },
       ipAddress: req.headers.get('x-forwarded-for') ?? undefined,
     })
+
+    // Product event: subject = the user, actor = staff (source 'admin' → not the user's own activity).
+    const fromTier = normalizeTier((before as { tier?: unknown } | null)?.tier)
+    if (patch.tier !== undefined && patch.tier !== fromTier) {
+      void trackEvent({
+        userId: params.id,
+        name: 'TIER_CHANGED',
+        entityType: 'user',
+        entityId: params.id,
+        metadata: { from: fromTier, to: String(patch.tier), by: 'staff', actor_role: actor.role ?? null },
+        source: 'admin',
+      })
+    }
 
     return NextResponse.json({ ok: true, profile: data[0] })
   } catch (e) {

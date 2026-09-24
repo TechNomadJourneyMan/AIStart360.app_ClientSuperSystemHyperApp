@@ -9,6 +9,7 @@ import { buildUserProfileSummary } from '@/lib/user-dashboard/summary'
 import { buildJourney } from '@/lib/admin/journey'
 import { canImpersonate, canManageTarget, hasPermission } from '@/lib/admin/rbac'
 import { maskEmail, maskPhone } from '@/lib/admin/mask'
+import { isSurveyCompleted, loadSurveyCompletionMarkers, surveyCompletedAt } from '@/lib/survey/completion'
 
 // GET /api/giga-admin/users/:id/profile — User 360 header data: identity,
 // status, survey summary, Точка А, GRI, journey (CJM), counters, and what the
@@ -51,6 +52,8 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     if (at && (!surveyLast || at > surveyLast)) surveyLast = at
   }
   const summary = buildUserProfileSummary(answers)
+  const surveyMarkers = await loadSurveyCompletionMarkers(sb, userId)
+  const surveyFacts = { ...surveyMarkers, filledSteps: summary.startedSteps, lastAnswerAt: surveyLast }
 
   const diags = diagRes.data ?? []
   const diagIds = diags.map((d) => d.id)
@@ -68,7 +71,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     registered: profile.created_at,
     approved: profile.status === 'approved' ? profile.approved_at ?? profile.created_at : null,
     survey_started: surveyFirst,
-    survey_completed: summary.startedSteps >= summary.totalSteps ? surveyLast : null,
+    survey_completed: isSurveyCompleted(surveyFacts) ? surveyCompletedAt(surveyFacts) ?? surveyLast : null,
     point_a: diags[0]?.calculated_at ?? null,
     gri_started: griStarted,
     gri_completed: griFirst,

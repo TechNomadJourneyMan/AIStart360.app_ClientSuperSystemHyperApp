@@ -72,3 +72,17 @@ export function track(
   if (queue.length >= MAX_BATCH) flushEvents()
   else if (!timer) timer = setTimeout(() => flushEvents(), FLUSH_MS)
 }
+
+/**
+ * Record LOGOUT and send it right away, BEFORE auth.signOut(): the request is
+ * dispatched with the still-valid session cookie (keepalive), so it survives
+ * the redirect that usually follows. Never throws.
+ */
+export function trackLogout(): void {
+  try {
+    track('LOGOUT')
+    flushEvents()
+  } catch {
+    /* analytics must never block logout */
+  }
+}

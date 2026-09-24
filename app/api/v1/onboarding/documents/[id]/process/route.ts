@@ -12,6 +12,7 @@ import { parseDocument } from '@/lib/documents/parse'
 import { getSessionUser, getSessionRole, isStaffRole } from '@/lib/api-identity'
 import { isSupabaseStorageUrl } from '@/lib/upload-url'
 import { isRateLimitedKey } from '@/lib/rate-limit'
+import { trackEvent } from '@/lib/events/track'
 
 // POST /api/v1/onboarding/documents/[id]/process
 // Inline document parsing. Fetches the document, parses it, runs LLM extraction,
@@ -99,6 +100,17 @@ export async function POST(
       .eq('id', doc.id)
 
     if (updateErr) throw new Error(updateErr.message)
+
+    // Owner of the document is the subject; a staff-triggered parse is not the client's activity.
+    const ownerId = (doc as { user_id?: string | null }).user_id ?? null
+    void trackEvent({
+      userId: ownerId,
+      name: 'DOCUMENT_PARSED',
+      entityType: 'document',
+      entityId: doc.id,
+      metadata: { doc_type: doc.doc_type ?? null, fields: payload.fields.length, has_rows: !!(rawRows && rawRows.length) },
+      source: ownerId === user.id ? 'server' : 'admin',
+    })
 
     // Fire-and-forget: chunk + embed the parsed text into pgvector storage so
     // it becomes available to RAG. Gated behind ENABLE_DOCUMENT_EMBEDDINGS so

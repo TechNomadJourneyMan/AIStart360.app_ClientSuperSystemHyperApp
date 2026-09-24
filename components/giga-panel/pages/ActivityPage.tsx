@@ -4,7 +4,8 @@ import { useWorkspace } from '@/components/giga-panel/WorkspaceContext'
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { RequirePermission } from '@/components/giga-panel/StaffContext'
+import { RequirePermission, useStaff } from '@/components/giga-panel/StaffContext'
+import { ProductAnalyticsPanels } from '@/components/giga-panel/analytics/ProductAnalyticsPanels'
 import {
   BarList, Badge, ColumnChart, DataTable, ErrorState, PageHeader, Pagination, Panel, Select, Skeleton, StatTile, fmtDateTime, useGigaQuery, type Column,
 } from '@/components/giga-panel/kit'
@@ -23,6 +24,7 @@ const DAYS = [{ value: '1', label: 'Сутки' }, { value: '7', label: '7 дн�
 
 export function ActivityPage() {
   const { base, label } = useWorkspace()
+  const { can } = useStaff()
   const [days, setDays] = useState<(typeof DAYS)[number]['value']>('14')
   const [event, setEvent] = useState('')
   const [source, setSource] = useState('')
@@ -59,6 +61,7 @@ export function ActivityPage() {
             <StatTile label="Сессий" value={s.sessions} tone="violet" />
             <StatTile label="Вернулись повторно" value={s.returning_users} hint="активны больше одного дня" tone="amber" />
           </div>
+          {can('analytics.view') && <ProductAnalyticsPanels />}
           <div className="grid gap-4 lg:grid-cols-3">
             <Panel title="События по типу">
               <BarList items={s.by_name.map((b) => ({ key: b.event_name, label: eventLabel(b.event_name), value: b.count, hint: `· ${b.users} чел` }))} emptyText="Событий за период нет" />

@@ -7,6 +7,8 @@ import { isRateLimitedKey } from '@/lib/rate-limit'
 import { buildNbaSignals, type NbaSignalInput } from '@/lib/nba/signals'
 import { selectNextBestAction, type NbaHistory } from '@/lib/nba/select'
 import { calculatePointA } from '@/lib/point-a-engine'
+import { trackUserAction } from '@/lib/events/server'
+import { nbaEventMetadata } from '@/lib/nba/events'
 
 const POINT_A_LABELS: Record<string, string> = {
   finance: 'Финансы', sales: 'Продажи', operations: 'Операции', marketing: 'Маркетинг', strategy: 'Стратегия',
@@ -161,6 +163,7 @@ export async function GET(_req: NextRequest) {
         payload: { score: action.score, key: action.key, title: action.title },
       })
     } catch { /* ignore */ }
+    void trackUserAction({ userId: user.id, name: 'NBA_SHOWN', entityType: 'nba', entityId: action.actionKey, metadata: nbaEventMetadata(action.actionKey, { score: action.score }) })
   }
 
   return NextResponse.json({ ok: true, action })

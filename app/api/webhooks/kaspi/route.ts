@@ -6,6 +6,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { createServiceClient } from '@/lib/supabase-service'
 import { logAudit } from '@/lib/audit'
+import { trackEvent } from '@/lib/events/track'
 
 /**
  * POST /api/webhooks/kaspi — платёжный callback Kaspi-эквайринга.
@@ -158,7 +159,12 @@ export async function POST(req: NextRequest) {
     if (userId) {
       try {
         const svc = createServiceClient()
+        const { data: prev } = await svc.from('profiles').select('tier').eq('id', userId).maybeSingle()
         await svc.from('profiles').update({ tier: 'pro' }).eq('id', userId)
+        const fromTier = String((prev as { tier?: string | null } | null)?.tier ?? 'free')
+        if (fromTier !== 'pro') {
+          void trackEvent({ userId, name: 'TIER_CHANGED', entityType: 'user', entityId: userId, metadata: { from: fromTier, to: 'pro', by: 'payment' }, source: 'server' })
+        }
       } catch (e) {
         console.error('[webhooks/kaspi] profiles.tier update failed:', e)
       }

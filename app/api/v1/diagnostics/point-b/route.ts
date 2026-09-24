@@ -5,6 +5,7 @@ import { createServerClient } from '@/lib/supabase-server'
 import { calculatePointBV2, type PointBOptions, type PointBV2 } from '@/lib/point-b/engine'
 import type { PointA, BlockScore } from '@/types/onboarding'
 import { expertDisplayName } from '@/lib/expert-review/blocks'
+import { trackUserAction } from '@/lib/events/server'
 
 /**
  * GET /api/v1/diagnostics/point-b
@@ -228,7 +229,9 @@ export async function GET(_req: NextRequest) {
     // Old rows stored the expert's email as author_name — never show it to the client.
     const ev = evRow ? { ...evRow, author_name: expertDisplayName(evRow.author_name as string | null) } : null
 
-    return NextResponse.json({ ok: true, data: pointB, expert_version: ev })
+    // PointBContainer is the only caller of this route → a fetch = a view of Point B.
+    void trackUserAction({ userId: user.id, name: 'POINT_B_VIEWED', entityType: 'diagnostic', entityId: diag.id as string, metadata: { expert_version: !!ev } })
+    return NextResponse.json({ ok: true, data: pointB, expert_version: ev ?? null })
   } catch (error) {
     console.error('[point-b] error:', error)
     return NextResponse.json({ ok: false, error: 'Internal server error' }, { status: 500 })

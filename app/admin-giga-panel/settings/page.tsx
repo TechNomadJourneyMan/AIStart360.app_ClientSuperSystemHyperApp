@@ -152,7 +152,7 @@ export default function SettingsPage() {
             ]} />
           </Panel>
 
-          <AnalyticsCard values={v} meta={meta} disabled={!canEdit} saving={saving} onToggle={(n) => toggle('analytics_enabled', n)} onSaveRetention={(n) => save({ events_retention_days: n }, 'Срок хранения')} />
+          <AnalyticsCard values={v} meta={meta} disabled={!canEdit} saving={saving} onToggle={(n) => toggle('analytics_enabled', n)} onSaveRetention={(n) => save({ events_retention_days: n }, 'Срок хранения')} onSave={save} />
 
           <NotificationsCard value={v.admin_notifications} meta={meta} disabled={!canEdit} saving={saving === 'admin_notifications'} onSave={(n) => save({ admin_notifications: n }, 'Уведомления')} />
 
@@ -429,9 +429,16 @@ function MaintenanceCard({ value, meta, disabled, saving, onSave }: {
 
 // ─── Analytics ───────────────────────────────────────────────────────────────
 
-function AnalyticsCard({ values, meta, disabled, saving, onToggle, onSaveRetention }: {
+const ACTIVATION_EVENTS: Array<{ value: Values['activation_event']; label: string }> = [
+  { value: 'GRI_COMPLETED', label: 'GRI пройден' },
+  { value: 'QUESTIONNAIRE_COMPLETED', label: 'Анкета заполнена' },
+  { value: 'POINT_A_CALCULATED', label: 'Точка А рассчитана' },
+]
+
+function AnalyticsCard({ values, meta, disabled, saving, onToggle, onSaveRetention, onSave }: {
   values: Values; meta: SettingsResponse['meta']; disabled: boolean; saving: string | null
   onToggle: (n: boolean) => void; onSaveRetention: (n: number) => Promise<boolean>
+  onSave: (patch: Partial<Values>, label: string) => Promise<boolean>
 }) {
   const stats = useGigaQuery<{ days: number; old: number; total: number; before: string }>(disabled ? null : '/api/giga-admin/system/purge-events')
   const [ask, setAsk] = useState(false)
@@ -466,6 +473,21 @@ function AnalyticsCard({ values, meta, disabled, saving, onToggle, onSaveRetenti
             if (ok) void reload()
             return ok
           }}
+        />
+      </SettingRow>
+      <SettingRow k="activation_event" meta={meta} stacked>
+        <Segmented
+          value={values.activation_event}
+          options={ACTIVATION_EVENTS}
+          disabled={disabled || !!saving}
+          onChange={(v) => void onSave({ activation_event: v }, SETTINGS.activation_event.label)}
+        />
+      </SettingRow>
+      <SettingRow k="activation_window_days" meta={meta}>
+        <NumberSetting
+          value={values.activation_window_days} min={1} max={90} suffix="дн."
+          disabled={disabled} saving={saving === 'activation_window_days'}
+          onSave={(n) => onSave({ activation_window_days: n }, SETTINGS.activation_window_days.label)}
         />
       </SettingRow>
       {!disabled && (
