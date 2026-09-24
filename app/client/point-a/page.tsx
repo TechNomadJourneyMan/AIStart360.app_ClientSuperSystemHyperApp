@@ -12,6 +12,7 @@ import MyDataSection from '@/components/client/MyDataSection'
 import AssistantHintWidget from '@/components/assistant/AssistantHintWidget'
 import { ShareButton } from '@/components/share/ShareButton'
 import NextBestActionCard from '@/components/nba/NextBestActionCard'
+import { trackLogout } from '@/lib/events/client'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function blockLabel(status: string | undefined): { text: string; color: string } {
@@ -289,6 +290,7 @@ export default function PointAClientPage() {
             <button
               onClick={async () => {
                 const sb = createClient()
+                trackLogout()
                 await sb.auth.signOut()
                 window.location.href = '/login'
               }}

@@ -3,6 +3,7 @@
  * Pure and shared by server routes, middleware and the admin editor preview.
  */
 import { z } from 'zod'
+import { isSurveyCompleted } from '@/lib/survey/completion'
 
 export const SEGMENTS = {
   new_users: 'Новые (до 14 дней)',
@@ -41,6 +42,8 @@ export interface UserFacts {
   vertical: string
   created_at: string | null
   survey_steps: number
+  /** Анкета заполнена по единому определению (lib/survey/completion.ts). */
+  survey_completed?: boolean
   gri_runs: number
   is_staff: boolean
 }
@@ -52,7 +55,10 @@ export function userSegments(f: UserFacts, now = Date.now()): Set<Segment> {
   const created = f.created_at ? new Date(f.created_at).getTime() : NaN
   if (Number.isFinite(created) && now - created <= NEW_USER_DAYS * 86_400_000) s.add('new_users')
   s.add(f.status === 'approved' ? 'approved' : 'pending')
-  s.add(f.survey_steps >= 12 ? 'survey_completed' : 'survey_not_completed')
+  const surveyDone = typeof f.survey_completed === 'boolean'
+    ? f.survey_completed || isSurveyCompleted({ filledSteps: f.survey_steps })
+    : isSurveyCompleted({ filledSteps: f.survey_steps })
+  s.add(surveyDone ? 'survey_completed' : 'survey_not_completed')
   s.add(f.gri_runs > 0 ? 'gri_completed' : 'gri_not_completed')
   s.add(f.tier === 'pro' ? 'tier_pro' : 'tier_free')
   const v = f.vertical === 'medical' || f.vertical === 'ecommerce' ? f.vertical : 'generic'

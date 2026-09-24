@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import type { UserProfileSummary } from '@/lib/user-dashboard/summary'
 import ProfileSections from './ProfileSections'
 import GriSection from './GriSection'
+import { trackLogout } from '@/lib/events/client'
 
 export interface UserHomeData {
   fullName: string
@@ -57,6 +58,7 @@ export default function UserHome({ data }: { data: UserHomeData }) {
   const surveyDone = summary.missingSteps.length === 0
 
   const logout = async () => {
+    trackLogout()
     await createClient().auth.signOut()
     router.push('/login')
   }

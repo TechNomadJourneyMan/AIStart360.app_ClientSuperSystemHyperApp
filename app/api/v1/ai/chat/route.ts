@@ -18,6 +18,7 @@ import { renderTemplate } from '@/lib/ai/validation/templates'
 import { retrieveUserChunks } from '@/lib/ai/retrieval'
 import { generateObjectViaOpenRouter } from '@/lib/ai/structured'
 import { hasOpenRouterKey } from '@/lib/ai/openrouter'
+import { trackUserAction } from '@/lib/events/server'
 
 /**
  * POST /api/v1/ai/chat  { message, personaId?, surface?, conversationId? }
@@ -129,6 +130,8 @@ export async function POST(req: NextRequest) {
   }
 
   const locale = localeFromRequestCookie(req)
+  // Analytics: only lengths/ids, never the question text (PII).
+  void trackUserAction({ userId: user.id, name: 'AI_CHAT_ASKED', entityType: 'ai_chat', metadata: { surface, persona: persona.id, chars: message.length } })
 
   try {
     // 1. Curated context (the only source of facts) + document retrieval.
@@ -164,6 +167,7 @@ export async function POST(req: NextRequest) {
       await persist(sb, user.id, surface, persona.id, parsed.data.conversationId, message, {
         content: fallback, grounding: [], validation: { status: 'needs_revision', risk_level: 'low' },
       })
+      void trackUserAction({ userId: user.id, name: 'AI_CHAT_ANSWERED', entityType: 'ai_chat', metadata: { surface, status: 'needs_revision', answered: false, sources: 0 } })
       return NextResponse.json({ ok: true, answer: fallback, status: 'needs_revision', needs_expert: true, used_sources: [] })
     }
     const sanitized = sanitizeUsedSources(parsedAnswer, providedSources)
@@ -180,6 +184,21 @@ export async function POST(req: NextRequest) {
       content: validation.finalAnswer,
       grounding: sanitized.used_sources,
       validation: { status: validation.status, risk_level: validation.riskLevel, template: validation.templateId },
+    })
+    void trackUserAction({
+      userId: user.id,
+      name: 'AI_CHAT_ANSWERED',
+      entityType: 'ai_conversation',
+      entityId: conversationId ?? null,
+      metadata: {
+        surface,
+        status: validation.status,
+        risk: validation.riskLevel ?? null,
+        template: validation.templateId ?? null,
+        answered: true,
+        sources: sanitized.used_sources.length,
+        needs_expert: !!sanitized.needs_expert,
+      },
     })
 
     return NextResponse.json({

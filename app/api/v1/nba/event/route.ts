@@ -6,6 +6,8 @@ import { z } from 'zod'
 import { createServerClient } from '@/lib/supabase-server'
 import { isRateLimitedKey } from '@/lib/rate-limit'
 import { safeErrorMessage } from '@/lib/api-error'
+import { trackUserAction } from '@/lib/events/server'
+import { NBA_EVENT_NAMES, nbaEventMetadata } from '@/lib/nba/events'
 
 /**
  * POST /api/v1/nba/event  { key, event } → { ok }
@@ -44,6 +46,10 @@ export async function POST(req: NextRequest) {
 
   const { error } = await sb.from('nba_log').insert({ user_id: user.id, action_key: key, event })
   if (error) return NextResponse.json({ ok: false, error: safeErrorMessage(error) }, { status: 500 })
+
+  // 'shown' is emitted by GET /api/v1/nba itself; done/dismissed go to the product stream.
+  const productEvent = event === 'shown' ? null : NBA_EVENT_NAMES[event]
+  if (productEvent) void trackUserAction({ userId: user.id, name: productEvent, entityType: 'nba', entityId: key, metadata: nbaEventMetadata(key) })
 
   // Completing a plan-task NBA closes the linked plan item too.
   if (event === 'done' && key.startsWith('plan_task:')) {

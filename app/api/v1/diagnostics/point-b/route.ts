@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { calculatePointBV2, type PointBOptions, type PointBV2 } from '@/lib/point-b/engine'
 import type { PointA, BlockScore } from '@/types/onboarding'
+import { trackUserAction } from '@/lib/events/server'
 
 /**
  * GET /api/v1/diagnostics/point-b
@@ -223,6 +224,8 @@ export async function GET(_req: NextRequest) {
       .limit(1)
       .maybeSingle()
 
+    // PointBContainer is the only caller of this route → a fetch = a view of Point B.
+    void trackUserAction({ userId: user.id, name: 'POINT_B_VIEWED', entityType: 'diagnostic', entityId: diag.id as string, metadata: { expert_version: !!ev } })
     return NextResponse.json({ ok: true, data: pointB, expert_version: ev ?? null })
   } catch (error) {
     console.error('[point-b] error:', error)

@@ -12,12 +12,15 @@ import { useStaff } from '@/components/giga-panel/StaffContext'
 import { JOURNEY_LABEL } from '@/lib/admin/journey'
 import { eventLabel } from '@/lib/events/registry'
 import { EVENT_SOURCE, auditLabel } from '@/lib/admin/labels'
+import { ConversionTiles } from '@/components/giga-panel/analytics/ConversionTiles'
 
 interface Overview {
   days: number
   generated_at: string
   users: Record<'total' | 'clients' | 'staff' | 'new_7d' | 'new_period' | 'active_1d' | 'active_7d' | 'active_30d' | 'pending_approval' | 'blocked', number>
   funnel: Array<{ key: string; count: number }> | null
+  /** 'daily_activity' (migration 090) or the older 'last_seen_at' snapshot. */
+  active_source?: 'daily_activity' | 'last_seen_at'
   signups_by_day: Array<{ day: string; count: number }>
   events_by_day: Array<{ day: string; count: number; users: number }>
   top_pages: Array<{ page: string; views: number; users: number }>
@@ -57,18 +60,31 @@ export function OverviewPage() {
           <>
             <StatTile label="Всего пользователей" value={u.total} hint={`клиентов ${u.clients} · персонал ${u.staff}`} icon={<Users2 size={14} />} href={can('users.view') ? `${base}/users` : undefined} />
             <StatTile label={`Новые за ${o!.days} дн`} value={u.new_period} hint={`за 7 дней: ${u.new_7d}`} icon={<UserPlus size={14} />} tone="green" href={can('users.view') ? `${base}/users?segment=new_7d` : undefined} />
-            <StatTile label="Активные за 7 дней" value={u.active_7d} hint={`сегодня ${u.active_1d} · 30 дн ${u.active_30d}`} icon={<Activity size={14} />} tone="violet" href={can('activity.view') ? `${base}/activity` : undefined} />
+            <div className="h-full" title={o!.active_source === 'daily_activity'
+              ? 'Уникальные клиенты с событиями (без персонала и действий «от имени»): по ежедневной свёртке + сегодняшние события.'
+              : 'По времени последнего визита (profiles.last_seen_at) — ежедневная свёртка ещё не наполнена.'}>
+              <StatTile label="Активные за 7 дней" value={u.active_7d} hint={`сегодня ${u.active_1d} · 30 дн ${u.active_30d}`} icon={<Activity size={14} />} tone="violet" href={can('activity.view') ? `${base}/activity` : undefined} />
+            </div>
             <StatTile label="Ожидают одобрения" value={u.pending_approval} hint={u.blocked ? `заблокировано / в архиве: ${u.blocked}` : 'заявки на доступ'} icon={<UserCheck size={14} />} tone="amber" href={can('users.view') ? `${base}/requests` : undefined} />
           </>
         )}
       </div>
+
+      {can('analytics.view') && (
+        <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <ConversionTiles days={days} />
+        </div>
+      )}
 
       <div className="grid gap-4 lg:grid-cols-3">
         {can('cjm.view') && <Panel
           className="lg:col-span-2"
           title="Путь клиентов (CJM)"
           description="Сколько клиентов дошло до этапа · доля от всех · отсев от предыдущего"
-          actions={can('cjm.view') ? <Link href={`${base}/cjm`} className="text-[11px] text-blue-300 hover:underline">Подробнее</Link> : undefined}
+          actions={<>
+            {can('analytics.view') && <a href={`/api/giga-admin/analytics/export?report=funnel&days=${days}`} download className="text-[11px] text-slate-400 hover:text-slate-200">CSV</a>}
+            <Link href={`${base}/cjm`} className="text-[11px] text-blue-300 hover:underline">Подробнее</Link>
+          </>}
         >
           {o?.funnel ? (
             <Funnel steps={o.funnel.map((f) => ({ key: f.key, label: JOURNEY_LABEL[f.key] ?? f.key, count: f.count, href: can('cjm.view') ? `${base}/cjm?stage=${f.key}` : undefined }))} />

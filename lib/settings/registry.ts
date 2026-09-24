@@ -106,6 +106,16 @@ export const SETTINGS = {
     help: 'Кнопка «Очистить старые события» удаляет всё, что старше этого срока.',
     schema: z.number().int().min(30).max(1825), default: 365, critical: false,
   },
+  activation_event: {
+    group: 'analytics', label: 'Событие активации',
+    help: 'Что считается «пользователь получил ценность». Доля активации = зарегистрированные за период, совершившие это событие в течение окна активации.',
+    schema: z.enum(['GRI_COMPLETED', 'QUESTIONNAIRE_COMPLETED', 'POINT_A_CALCULATED']), default: 'GRI_COMPLETED' as const, critical: false,
+  },
+  activation_window_days: {
+    group: 'analytics', label: 'Окно активации, дней',
+    help: 'Сколько дней после регистрации даётся на событие активации.',
+    schema: z.number().int().min(1).max(90), default: 7, critical: false,
+  },
   admin_notifications: {
     group: 'notifications', label: 'Уведомления администраторам',
     help: 'Какие события отправляются в Telegram и на почту администраторов.',
