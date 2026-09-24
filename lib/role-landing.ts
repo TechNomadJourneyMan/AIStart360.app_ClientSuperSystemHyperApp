@@ -18,7 +18,9 @@ export function roleLandingPath(
     case 'owner':
       return '/owner/dashboard'
     case 'expert':
-      return '/expert/dashboard'
+      // Старый портал эксперта выведен из работы: эксперт работает в кабинете
+      // SuperExpert. Без роли в staff_roles middleware покажет там отказ.
+      return '/super-expert'
     case 'admin':
       return '/dashboard'
     case 'client':

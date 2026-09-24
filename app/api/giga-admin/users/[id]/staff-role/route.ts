@@ -6,6 +6,7 @@ import { requireGiga, staffRoleOfUser } from '@/lib/admin/giga-actor'
 import { createServiceClient } from '@/lib/supabase-service'
 import { grantableRoles, STAFF_ROLES } from '@/lib/admin/rbac'
 import { recordAdminAction } from '@/lib/admin/audit'
+import { guardClientAccess } from '@/lib/admin/client-scope'
 
 // PUT /api/giga-admin/users/:id/staff-role { role: StaffRole | null, reason }
 // Grants / changes / revokes a GIGA-CRM staff role. Super Admin only.
@@ -18,6 +19,8 @@ const bodySchema = z.object({
 export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
   const guard = await requireGiga(req, 'roles.manage')
   if (guard.response) return guard.response
+  const scopeDenied = await guardClientAccess(guard.actor, params.id)
+  if (scopeDenied) return scopeDenied
   if (!UUID_RE.test(params.id)) return NextResponse.json({ ok: false, error: 'invalid id' }, { status: 400 })
   const parsed = bodySchema.safeParse(await req.json().catch(() => null))
   if (!parsed.success) return NextResponse.json({ ok: false, error: parsed.error.issues[0]?.message ?? 'Неверный запрос' }, { status: 400 })

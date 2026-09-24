@@ -83,12 +83,20 @@ describe('RBAC Middleware', () => {
     expect(res.status).toBe(200)
   })
 
-  // Expert cannot access admin paths
-  it('redirects expert away from /dashboard', async () => {
+  // Портал /expert закрыт: эксперт без роли персонала видит отказ на входе SuperExpert.
+  it('sends a legacy expert without a staff role to the SuperExpert login with denied=1', async () => {
     const req = createRequest('/dashboard', 'expert')
     const res = await middleware(req)
     expect(res.status).toBe(307)
-    expect(new URL(res.headers.get('location')!).pathname).toBe('/expert/dashboard')
+    const loc = new URL(res.headers.get('location')!)
+    expect(loc.pathname).toBe('/super-expert/login')
+    expect(loc.searchParams.get('denied')).toBe('1')
+  })
+
+  it('does not keep a legacy expert inside the retired /expert portal', async () => {
+    const res = await middleware(createRequest('/expert/dashboard', 'expert'))
+    expect(res.status).toBe(307)
+    expect(new URL(res.headers.get('location')!).pathname).toBe('/super-expert/login')
   })
 
   // Clients use the shared (dashboard) layout — /dashboard is allowed

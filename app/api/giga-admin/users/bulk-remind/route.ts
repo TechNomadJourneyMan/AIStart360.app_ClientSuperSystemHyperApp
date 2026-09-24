@@ -9,6 +9,7 @@ import { isRateLimitedKey } from '@/lib/rate-limit'
 import { sendSurveyReminderEmail } from '@/lib/email'
 import { buildUserProfileSummary } from '@/lib/user-dashboard/summary'
 import { isWizardVisibleKey } from '@/lib/survey/steps'
+import { scopedClientIds } from '@/lib/admin/client-scope'
 
 /**
  * POST /api/giga-admin/users/bulk-remind { userIds[], note? }
@@ -45,7 +46,11 @@ export async function POST(req: NextRequest) {
   }
 
   const sb = createServiceClient()
-  const ids = Array.from(new Set(parsed.data.userIds))
+  const requested = Array.from(new Set(parsed.data.userIds))
+  // Эксперт со scope 'assigned' напоминает только своим клиентам.
+  const allowed = await scopedClientIds(guard.actor)
+  const ids = allowed ? requested.filter((id) => allowed.includes(id)) : requested
+  const outOfScope = requested.filter((id) => !ids.includes(id))
   const [{ data: profiles }, { data: companies }, { data: answers }] = await Promise.all([
     sb.from('profiles').select('id, email, full_name').in('id', ids),
     sb.from('companies').select('user_id, name').in('user_id', ids),
@@ -95,14 +100,15 @@ export async function POST(req: NextRequest) {
 
   const missing = ids.filter((id) => !results.some((r) => r.userId === id))
   for (const id of missing) results.push({ userId: id, outcome: 'skipped', message: 'пользователь не найден' })
+  for (const id of outOfScope) results.push({ userId: id, outcome: 'skipped', message: 'клиент вам не назначен' })
 
   const sent = results.filter((r) => r.outcome === 'sent').length
   await recordAdminAction(guard.actor, {
     action: 'user.survey_reminded_bulk',
     entityType: 'user',
-    entityId: `batch:${ids.length}`,
-    metadata: { requested: ids.length, sent, note: parsed.data.note ?? null },
+    entityId: `batch:${requested.length}`,
+    metadata: { requested: requested.length, sent, note: parsed.data.note ?? null },
   }, req)
 
-  return NextResponse.json({ ok: true, sent, total: ids.length, results })
+  return NextResponse.json({ ok: true, sent, total: requested.length, results })
 }

@@ -116,7 +116,6 @@ export async function uploadReport(formData: FormData) {
 
     revalidatePath('/reports')
     revalidatePath('/owner/reports')
-    revalidatePath('/expert/reports')
 
     return { success: true }
   } catch (error) {

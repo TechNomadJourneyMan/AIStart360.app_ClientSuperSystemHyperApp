@@ -196,7 +196,7 @@ export function ExpertCommentsSection() {
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch('/api/expert/comments?clientId=self')
+      const res = await fetch('/api/v1/expert-comments', { cache: 'no-store' })
       if (!res.ok) throw new Error('Не удалось загрузить комментарии')
       const json = (await res.json()) as { data?: ExpertComment[] }
       setComments(json.data ?? [])

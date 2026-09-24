@@ -5,7 +5,7 @@ describe('roleLandingPath (FE-06)', () => {
   it('routes staff/owner roles to their home', () => {
     expect(roleLandingPath('super_admin')).toBe('/admin-giga-panel')
     expect(roleLandingPath('owner')).toBe('/owner/dashboard')
-    expect(roleLandingPath('expert')).toBe('/expert/dashboard')
+    expect(roleLandingPath('expert')).toBe('/super-expert')
     expect(roleLandingPath('admin')).toBe('/dashboard')
   })
 

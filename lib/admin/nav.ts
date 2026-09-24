@@ -9,6 +9,7 @@ export const GIGA_BASE = '/admin-giga-panel'
 export const GIGA_NAV: GigaNavGroup[] = [
   { label: 'Обзор', items: [
     { href: GIGA_BASE, label: 'Главная', icon: 'dashboard', permission: 'dashboard.view', exact: true },
+    { href: `${GIGA_BASE}/today`, label: 'Мой день', icon: 'sun', permission: 'users.sensitive' },
   ] },
   { label: 'Пользователи', items: [
     { href: `${GIGA_BASE}/users`, label: 'Пользователи', icon: 'users', permission: 'users.view' },
@@ -53,6 +54,7 @@ export const SUPER_EXPERT_BASE = '/super-expert'
  */
 export const SUPER_EXPERT_NAV: GigaNavGroup[] = [
   { label: 'Обзор', items: [
+    { href: `${SUPER_EXPERT_BASE}/today`, label: 'Мой день', icon: 'sun', permission: 'users.sensitive' },
     { href: SUPER_EXPERT_BASE, label: 'Главная', icon: 'dashboard', permission: 'dashboard.view', exact: true },
   ] },
   { label: 'Пользователи', items: [

@@ -9,15 +9,30 @@ import { buildUserProfileSummary } from '@/lib/user-dashboard/summary'
 import { buildJourney } from '@/lib/admin/journey'
 import { canImpersonate, canManageTarget, hasPermission } from '@/lib/admin/rbac'
 import { maskEmail, maskPhone } from '@/lib/admin/mask'
+import { guardClientAccess } from '@/lib/admin/client-scope'
 
 // GET /api/giga-admin/users/:id/profile — User 360 header data: identity,
 // status, survey summary, Точка А, GRI, journey (CJM), counters, and what the
 // current staff member may do with this person.
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
+async function markClientViewed(sb: ReturnType<typeof createServiceClient>, staffId: string, userId: string): Promise<void> {
+  if (!UUID_RE.test(staffId) || staffId === userId) return
+  try {
+    const { error } = await sb
+      .from('staff_client_views')
+      .upsert({ staff_id: staffId, user_id: userId, last_viewed_at: new Date().toISOString() }, { onConflict: 'staff_id,user_id' })
+    if (error) console.warn('[giga-admin/users/profile] staff_client_views:', error.message)
+  } catch (e) {
+    console.warn('[giga-admin/users/profile] staff_client_views failed', e)
+  }
+}
+
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
   const guard = await requireGiga(req, 'users.view')
   if (guard.response) return guard.response
+  const scopeDenied = await guardClientAccess(guard.actor, params.id)
+  if (scopeDenied) return scopeDenied
   const userId = params.id
   if (!UUID_RE.test(userId)) return NextResponse.json({ ok: false, error: 'invalid id' }, { status: 400 })
   const role = guard.actor.role
@@ -76,6 +91,10 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     content: contentRes.data?.[0]?.created_at ?? null,
   })
 
+  // «Мой день» сравнивает изменения у клиента с моментом, когда сотрудник
+  // последний раз открывал его карточку. Сбой записи карточку не ломает.
+  await markClientViewed(sb, guard.actor.id, userId)
+
   let legacyAuditCount = 0
   try {
     legacyAuditCount = await prisma.auditLog.count({ where: { entityId: userId } })
@@ -125,6 +144,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
         activity: hasPermission(role, 'activity.view'),
         audit: hasPermission(role, 'audit.view'),
         roles: hasPermission(role, 'roles.manage'),
+        review: hasPermission(role, 'clients.review') && profile.role === 'client' && !target.staffRole,
         sensitive,
       },
     },

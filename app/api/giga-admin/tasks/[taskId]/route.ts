@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requireGiga } from '@/lib/admin/giga-actor'
 import { createServiceClient } from '@/lib/supabase-service'
+import { NOT_ASSIGNED_ERROR, canAccessClient } from '@/lib/admin/client-scope'
 
 /**
  * PATCH /api/giga-admin/tasks/:taskId { status?, title?, dueAt?, assigneeId? }
@@ -28,6 +29,17 @@ export async function PATCH(req: NextRequest, { params }: { params: { taskId: st
   const parsed = patchSchema.safeParse(await req.json().catch(() => null))
   if (!parsed.success || !Object.keys(parsed.data).length) {
     return NextResponse.json({ ok: false, error: 'Нечего изменять' }, { status: 400 })
+  }
+
+  // Эксперт со scope 'assigned' правит задачи своих клиентов и задачи,
+  // назначенные ему самому.
+  if (guard.actor.clientScope === 'assigned') {
+    const { data: task } = await createServiceClient().from('staff_tasks').select('user_id, assignee_id').eq('id', params.taskId).maybeSingle()
+    const t = task as { user_id: string | null; assignee_id: string | null } | null
+    if (!t) return NextResponse.json({ ok: false, error: 'Задача не найдена' }, { status: 404 })
+    if (t.assignee_id !== guard.actor.id && !(t.user_id && (await canAccessClient(guard.actor, t.user_id)))) {
+      return NextResponse.json({ ok: false, error: NOT_ASSIGNED_ERROR }, { status: 403 })
+    }
   }
 
   const now = new Date().toISOString()

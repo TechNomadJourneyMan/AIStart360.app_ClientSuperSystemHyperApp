@@ -6,6 +6,7 @@ import { createServiceClient } from '@/lib/supabase-service'
 import { buildJourney, JOURNEY_STAGES, type JourneyStageKey } from '@/lib/admin/journey'
 import { hasPermission } from '@/lib/admin/rbac'
 import { maskEmail } from '@/lib/admin/mask'
+import { filterByScope, scopedClientIds } from '@/lib/admin/client-scope'
 
 // GET /api/giga-admin/cjm?stage=&page=&stalledDays=14
 // Funnel with conversions, where people stop, and who is stuck at a stage.
@@ -28,7 +29,9 @@ export async function GET(req: NextRequest) {
   const sb = createServiceClient()
   const { data, error } = await sb.rpc('admin_journey_stages')
   if (error) return NextResponse.json({ ok: false, error: 'Не удалось построить CJM' }, { status: 500 })
-  const rows = (data ?? []) as Row[]
+  // Эксперт со scope 'assigned' видит воронку и «застрявших» только по своим клиентам.
+  const allowed = await scopedClientIds(guard.actor)
+  const rows = filterByScope((data ?? []) as Row[], allowed, (r) => r.user_id)
 
   const now = Date.now()
   const journeys = rows.map((r) => ({

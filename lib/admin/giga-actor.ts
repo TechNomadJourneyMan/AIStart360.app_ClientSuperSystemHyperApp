@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { createServiceClient } from '@/lib/supabase-service'
 import { verifyToken } from '@/lib/security/signed-token'
-import { canManageTarget, hasPermission, isStaffRole, permissionsFor, type Permission, type StaffRole } from '@/lib/admin/rbac'
+import { canManageTarget, effectiveClientScope, hasPermission, isStaffRole, permissionsFor, type ClientScope, type Permission, type StaffRole } from '@/lib/admin/rbac'
 
 /**
  * Actor resolution for /api/giga-admin/* routes (GIGA-CRM).
@@ -33,28 +33,39 @@ export interface GigaActor {
   role: StaffRole
   email?: string
   permissions: Permission[]
+  /**
+   * Каких клиентов видит сотрудник: всех или только назначенных ему
+   * (`staff_roles.client_scope`, миграция 086). Проверяется в
+   * lib/admin/client-scope.ts на каждом маршруте с данными клиента.
+   */
+  clientScope: ClientScope
 }
 
-function actor(id: string, kind: GigaActor['kind'], role: StaffRole, email?: string): GigaActor {
-  return { id, kind, role, email, permissions: permissionsFor(role) }
+interface StaffIdentity { role: StaffRole; clientScope: ClientScope }
+
+function actor(id: string, kind: GigaActor['kind'], who: StaffIdentity, email?: string): GigaActor {
+  return { id, kind, role: who.role, email, permissions: permissionsFor(who.role), clientScope: who.clientScope }
 }
 
 /** Staff role of a person: super_admin profile, else their `staff_roles` row. */
 async function staffRoleOf(
   client: { from: ReturnType<typeof createServiceClient>['from'] },
   userId: string,
-): Promise<StaffRole | null> {
+): Promise<StaffIdentity | null> {
   const [{ data: profile }, { data: staff }] = await Promise.all([
     client.from('profiles').select('role, status').eq('id', userId).maybeSingle(),
-    client.from('staff_roles').select('role').eq('user_id', userId).maybeSingle(),
+    // '*' а не список колонок: client_scope появляется миграцией 086, и до её
+    // применения явный select упал бы и лишил доступа весь персонал.
+    client.from('staff_roles').select('*').eq('user_id', userId).maybeSingle(),
   ])
   const p = profile as { role?: string; status?: string } | null
   // Only an approved account works in the panel: pending, rejected, blocked
   // and archived profiles get no staff access, whatever their role says.
   if (p?.status !== 'approved') return null
-  if (p.role === 'super_admin') return 'super_admin'
-  const r = (staff as { role?: string } | null)?.role
-  return isStaffRole(r) ? r : null
+  const row = staff as { role?: string; client_scope?: string } | null
+  if (p.role === 'super_admin') return { role: 'super_admin', clientScope: 'all' }
+  const r = row?.role
+  return isStaffRole(r) ? { role: r, clientScope: effectiveClientScope(r, row?.client_scope) } : null
 }
 
 export async function getGigaActor(req: NextRequest): Promise<GigaActor | null> {
