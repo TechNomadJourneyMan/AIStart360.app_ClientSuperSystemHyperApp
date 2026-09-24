@@ -22,6 +22,8 @@ import { useGigaPanelStore, type RequestCategory, type GigaRequest } from '@/sto
 import { RejectModal } from './RejectModal'
 import { UserDetailPanel } from './UserDetailPanel'
 import { RegistrationModeControl } from './RegistrationModeControl'
+import { useStaff } from './StaffContext'
+import { Button, ConfirmDialog, Field, GigaApiError, cx, gigaFetch, inputClass } from './kit'
 
 // ─── Tab config ───────────────────────────────────────────────────────────────
 
@@ -61,11 +63,15 @@ function RequestCard({
   onApprove,
   onReject,
   onArchive,
+  selected,
+  onToggleSelect,
 }: {
   request: GigaRequest
   onApprove: (id: string) => void
   onReject: (req: GigaRequest) => void
   onArchive: (id: string) => void
+  selected?: boolean
+  onToggleSelect?: (id: string) => void
 }) {
   const [expanded, setExpanded] = useState(false)
   const isPending = request.status === 'pending'
@@ -96,6 +102,15 @@ function RequestCard({
       {/* Card header */}
       <div className="p-4">
         <div className="flex items-start gap-3">
+          {onToggleSelect && isPending && (
+            <input
+              type="checkbox"
+              checked={!!selected}
+              onChange={() => onToggleSelect(request.id)}
+              aria-label={`Выбрать заявку: ${request.userName}`}
+              className="mt-2.5 h-3.5 w-3.5 flex-shrink-0 cursor-pointer accent-blue-500"
+            />
+          )}
           {/* Avatar */}
           <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500/30 to-violet-500/30
             border border-white/[0.1] flex items-center justify-center flex-shrink-0
@@ -250,6 +265,17 @@ export function RequestsModule() {
   } = useGigaPanelStore()
 
   const [rejectTarget, setRejectTarget] = useState<GigaRequest | null>(null)
+  const { can } = useStaff()
+  const canDecide = can('users.approve')
+  const [picked, setPicked] = useState<Set<string>>(new Set())
+  const [bulk, setBulk] = useState<null | 'approve' | 'reject'>(null)
+  const [bulkReason, setBulkReason] = useState('')
+  const [bulkBusy, setBulkBusy] = useState(false)
+  const togglePick = (id: string) => setPicked((prev) => {
+    const next = new Set(prev)
+    if (next.has(id)) next.delete(id); else next.add(id)
+    return next
+  })
 
   const fetchRequests = useCallback(async () => {
     setLoadingRequests(true)
@@ -315,6 +341,40 @@ export function RequestsModule() {
 
   const filtered = requests.filter((r) => r.category === activeRequestTab)
   const pendingFiltered = filtered.filter((r) => r.status === 'pending')
+  const pickedHere = pendingFiltered.filter((r) => picked.has(r.id))
+  const allPicked = pendingFiltered.length > 0 && pendingFiltered.every((r) => picked.has(r.id))
+
+  // Массовое решение: каждая заявка решается тем же кодом, что и одиночная,
+  // отчёт — по каждой. После — сверка с базой, как и у одиночных действий.
+  const runBulk = async () => {
+    if (!bulk || !pickedHere.length) return
+    setBulkBusy(true)
+    try {
+      const r = await gigaFetch<{ results: Array<{ id: string; ok: boolean; error: string | null }>; done: number }>('/api/giga-admin/requests/bulk', {
+        method: 'POST',
+        json: { action: bulk, ids: pickedHere.map((x) => x.id), ...(bulkReason.trim() ? { reason: bulkReason.trim() } : {}) },
+      })
+      const failed = r.results.filter((x) => !x.ok)
+      const nameOf = new Map(pickedHere.map((x) => [x.id, x.userName]))
+      const verb = bulk === 'approve' ? 'Принято' : 'Отклонено'
+      if (failed.length) {
+        toast.warning(`${verb}: ${r.done} из ${r.results.length}`, {
+          description: failed.slice(0, 5).map((f) => `${nameOf.get(f.id) ?? f.id}: ${f.error ?? 'ошибка'}`).join('\n'),
+          duration: 12_000,
+        })
+      } else {
+        toast.success(`${verb} заявок: ${r.done}`)
+      }
+      setPicked(new Set())
+      setBulk(null)
+      setBulkReason('')
+    } catch (e) {
+      toast.error(e instanceof GigaApiError ? e.message : 'Массовое действие не выполнено')
+    } finally {
+      setBulkBusy(false)
+      await fetchRequests()
+    }
+  }
   const doneFiltered = filtered.filter((r) => r.status !== 'pending')
 
   const tabCounts = {
@@ -421,12 +481,31 @@ export function RequestsModule() {
               {pendingFiltered.length > 0 && (
                 <div>
                   <div className="flex items-center gap-2 mb-3">
+                    {canDecide && (
+                      <input
+                        type="checkbox"
+                        checked={allPicked}
+                        onChange={() => setPicked(allPicked ? new Set() : new Set(pendingFiltered.map((r) => r.id)))}
+                        aria-label="Выбрать все ожидающие заявки"
+                        className="h-3.5 w-3.5 cursor-pointer accent-blue-500"
+                      />
+                    )}
                     <span className="text-xs font-semibold text-amber-400 uppercase tracking-widest">
                       Ожидают обработки
                     </span>
                     <div className="flex-1 h-px bg-amber-500/15" />
                     <span className="text-xs text-slate-600">{pendingFiltered.length}</span>
                   </div>
+                  {pickedHere.length > 0 && (
+                    <div className="sticky top-2 z-20 mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-blue-500/25 bg-slate-950/95 px-3 py-2 backdrop-blur" role="region" aria-label="Массовые действия с заявками">
+                      <span className="text-xs font-semibold text-slate-100">Выбрано {pickedHere.length}</span>
+                      <div className="ml-auto flex flex-wrap gap-1.5">
+                        <Button size="sm" variant="primary" icon={<CheckCircle size={12} />} onClick={() => setBulk('approve')}>Принять все</Button>
+                        <Button size="sm" variant="danger" icon={<XCircle size={12} />} onClick={() => setBulk('reject')}>Отклонить все</Button>
+                        <Button size="sm" variant="ghost" onClick={() => setPicked(new Set())}>Снять</Button>
+                      </div>
+                    </div>
+                  )}
                   <div className="grid gap-3">
                     <AnimatePresence>
                       {pendingFiltered.map((req) => (
@@ -436,6 +515,8 @@ export function RequestsModule() {
                           onApprove={handleApprove}
                           onReject={setRejectTarget}
                           onArchive={handleArchive}
+                          selected={picked.has(req.id)}
+                          onToggleSelect={canDecide ? togglePick : undefined}
                         />
                       ))}
                     </AnimatePresence>
@@ -470,6 +551,33 @@ export function RequestsModule() {
           )}
         </motion.div>
       </AnimatePresence>
+
+      <ConfirmDialog
+        open={!!bulk}
+        onClose={() => { setBulk(null); setBulkReason('') }}
+        onConfirm={() => void runBulk()}
+        loading={bulkBusy}
+        tone={bulk === 'reject' ? 'danger' : 'primary'}
+        title={bulk === 'approve' ? `Принять заявки: ${pickedHere.length}` : `Отклонить заявки: ${pickedHere.length}`}
+        confirmLabel={bulk === 'approve' ? `Принять (${pickedHere.length})` : `Отклонить (${pickedHere.length})`}
+        text={
+          <div className="space-y-2">
+            <p>{bulk === 'approve'
+              ? 'Каждый получит доступ к порталу и письмо «доступ открыт».'
+              : 'Каждый получит письмо об отклонении с причиной, если она указана.'}</p>
+            <ul className="max-h-40 space-y-0.5 overflow-y-auto text-[11px] text-slate-300">
+              {pickedHere.slice(0, 30).map((r) => <li key={r.id} className="truncate">· {r.userName} — {r.userEmail}</li>)}
+              {pickedHere.length > 30 && <li className="text-slate-500">…и ещё {pickedHere.length - 30}</li>}
+            </ul>
+          </div>
+        }
+      >
+        {bulk === 'reject' && (
+          <Field label="Причина (попадёт в письмо)">
+            <textarea value={bulkReason} onChange={(e) => setBulkReason(e.target.value)} maxLength={500} rows={2} className={cx(inputClass, 'resize-none')} />
+          </Field>
+        )}
+      </ConfirmDialog>
 
       {/* Reject modal */}
       <RejectModal

@@ -106,6 +106,18 @@ export const SETTINGS = {
     help: 'Кнопка «Очистить старые события» удаляет всё, что старше этого срока.',
     schema: z.number().int().min(30).max(1825), default: 365, critical: false,
   },
+  escalation_sla_hours: {
+    group: 'notifications', label: 'SLA эскалаций, часов',
+    help: 'Сколько часов есть у ответственного, чтобы взять обращение клиента в работу, — по приоритету. После срока кейс в очереди «Эскалации» помечается как просроченный.',
+    schema: z.object({
+      critical: z.number().int().min(1).max(720),
+      high: z.number().int().min(1).max(720),
+      medium: z.number().int().min(1).max(720),
+      low: z.number().int().min(1).max(720),
+    }),
+    default: { critical: 2, high: 4, medium: 24, low: 72 },
+    critical: false,
+  },
   admin_notifications: {
     group: 'notifications', label: 'Уведомления администраторам',
     help: 'Какие события отправляются в Telegram и на почту администраторов.',

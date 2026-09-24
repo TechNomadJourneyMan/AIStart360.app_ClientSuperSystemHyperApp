@@ -1,7 +1,11 @@
 import type { Permission } from './rbac'
 
 /** GIGA-CRM navigation. Items the actor lacks permission for are hidden. */
-export interface GigaNavItem { href: string; label: string; icon: string; permission: Permission; exact?: boolean }
+export interface GigaNavItem {
+  href: string; label: string; icon: string; permission: Permission; exact?: boolean
+  /** Счётчик рядом с пунктом: 'cases' — открытые/просроченные эскалации. */
+  badge?: 'cases'
+}
 export interface GigaNavGroup { label: string; items: GigaNavItem[] }
 
 export const GIGA_BASE = '/admin-giga-panel'
@@ -13,6 +17,9 @@ export const GIGA_NAV: GigaNavGroup[] = [
   { label: 'Пользователи', items: [
     { href: `${GIGA_BASE}/users`, label: 'Пользователи', icon: 'users', permission: 'users.view' },
     { href: `${GIGA_BASE}/requests`, label: 'Заявки', icon: 'inbox', permission: 'users.view' },
+    { href: `${GIGA_BASE}/tasks`, label: 'Мои задачи', icon: 'checklist', permission: 'users.sensitive' },
+    { href: `${GIGA_BASE}/cases`, label: 'Эскалации', icon: 'siren', permission: 'users.view', badge: 'cases' },
+    { href: `${GIGA_BASE}/experts`, label: 'Эксперты', icon: 'experts', permission: 'experts.manage' },
     { href: `${GIGA_BASE}/invites`, label: 'Приглашения', icon: 'mail', permission: 'users.view' },
     { href: `${GIGA_BASE}/clients`, label: 'Клиенты', icon: 'building', permission: 'users.view' },
     { href: `${GIGA_BASE}/duplicates`, label: 'Дубликаты', icon: 'copy', permission: 'users.sensitive' },
@@ -58,6 +65,8 @@ export const SUPER_EXPERT_NAV: GigaNavGroup[] = [
   { label: 'Пользователи', items: [
     { href: `${SUPER_EXPERT_BASE}/users`, label: 'Пользователи', icon: 'users', permission: 'users.view' },
     { href: `${SUPER_EXPERT_BASE}/requests`, label: 'Заявки на доступ', icon: 'inbox', permission: 'users.approve' },
+    { href: `${SUPER_EXPERT_BASE}/tasks`, label: 'Мои задачи', icon: 'checklist', permission: 'users.sensitive' },
+    { href: `${SUPER_EXPERT_BASE}/cases`, label: 'Эскалации', icon: 'siren', permission: 'users.view', badge: 'cases' },
     { href: `${SUPER_EXPERT_BASE}/accounts`, label: 'Аккаунты и компании', icon: 'building', permission: 'users.view' },
     { href: `${SUPER_EXPERT_BASE}/duplicates`, label: 'Дубликаты', icon: 'copy', permission: 'users.sensitive' },
   ] },

@@ -23,11 +23,12 @@ import { NotesTab } from '@/components/giga-panel/user360/NotesTab'
 import { EmailsTab } from '@/components/giga-panel/user360/EmailsTab'
 import { QualityTab } from '@/components/giga-panel/user360/QualityTab'
 import { TasksTab } from '@/components/giga-panel/user360/TasksTab'
+import { TimelineTab } from '@/components/giga-panel/user360/TimelineTab'
 import { GriDynamicsPanel } from '@/components/giga-panel/user360/GriDynamicsPanel'
 import { SurveyReminderDialog } from '@/components/giga-panel/user360/SurveyReminderDialog'
 import { rememberUser } from '@/components/giga-panel/CommandPalette'
 
-type TabKey = 'profile' | 'survey' | 'gri' | 'activity' | 'cjm' | 'documents' | 'notes' | 'tasks' | 'emails' | 'quality' | 'history'
+type TabKey = 'profile' | 'timeline' | 'survey' | 'gri' | 'activity' | 'cjm' | 'documents' | 'notes' | 'tasks' | 'emails' | 'quality' | 'history'
 
 function User360Inner({ id }: { id: string }) {
   const { base, label } = useWorkspace()
@@ -95,6 +96,7 @@ function User360Inner({ id }: { id: string }) {
             onChange={setTab}
             tabs={[
               { key: 'profile', label: 'Профиль' },
+              { key: 'timeline', label: 'Лента' },
               { key: 'survey', label: 'Анкета', hidden: !u.can.viewSurvey },
               { key: 'gri', label: 'GRI', count: u.gri.runs, hidden: !(can('gri.view') && u.can.sensitive) },
               { key: 'activity', label: 'Активность', count: u.counters.events, hidden: !u.can.activity },
@@ -108,6 +110,7 @@ function User360Inner({ id }: { id: string }) {
             ]}
           />
           {tab === 'profile' && <ProfileTab data={u} onChanged={reload} onPurged={() => router.replace(`${base}/users`)} />}
+          {tab === 'timeline' && <TimelineTab userId={id} />}
           {tab === 'survey' && u.can.viewSurvey && <SurveyTab userId={id} canEdit={u.can.editSurvey} />}
           {tab === 'gri' && (
             <>
