@@ -276,3 +276,56 @@ export function buildAccessGrantedEmail(input: AccessGrantedEmailInput): BuiltEm
     },
   }
 }
+
+// ─── 5. Эксперт подготовил разбор ────────────────────────────────────────────
+
+export interface ExpertReviewEmailInput {
+  name?: string | null
+  /** Имя эксперта для клиента (никогда не email). */
+  expertName?: string | null
+  /** Сколько комментариев вошло в разбор. */
+  commentsCount: number
+  title?: string | null
+  publishedAt?: Date | string | null
+  url: string
+}
+
+/** «1 комментарий», «3 комментария», «5 комментариев». */
+export function pluralComments(n: number): string {
+  const mod10 = n % 10
+  const mod100 = n % 100
+  const word =
+    mod10 === 1 && mod100 !== 11
+      ? 'комментарий'
+      : mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)
+        ? 'комментария'
+        : 'комментариев'
+  return `${n} ${word}`
+}
+
+export function buildExpertReviewPublishedEmail(input: ExpertReviewEmailInput): BuiltEmail {
+  const count = Math.max(0, Math.floor(input.commentsCount))
+  const facts: EmailFact[] = [
+    { label: 'Разбор', value: nameOrNull(input.title) },
+    { label: 'Эксперт', value: nameOrNull(input.expertName) },
+    { label: 'В разборе', value: pluralComments(count) },
+    ...momentFacts(input.publishedAt ?? new Date(), 'Опубликован'),
+  ]
+
+  return {
+    subject: 'Эксперт подготовил разбор',
+    content: {
+      preheader: `Разбор вашего бизнеса готов: ${pluralComments(count)} по блокам.`,
+      eyebrow: 'Разбор эксперта',
+      title: 'Эксперт подготовил разбор',
+      greeting: greeting(input.name),
+      paragraphs: [
+        `Эксперт AIStart360 изучил ваши данные и оставил ${pluralComments(count)} по блокам вашего бизнеса.`,
+        'Все комментарии собраны в одном месте кабинета — по блокам и с датами.',
+      ],
+      facts,
+      cta: { label: 'Открыть разбор', url: input.url },
+      footnote: 'Письмо отправлено автоматически по вашему аккаунту AIStart360.',
+    },
+  }
+}

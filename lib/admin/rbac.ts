@@ -36,6 +36,7 @@ export const PERMISSIONS = {
   'gri.view': 'Просмотр GRI',
   'gri.edit': 'Изменение GRI',
   'gri.delete': 'Удаление результатов GRI',
+  'clients.review': 'Экспертный разбор клиента: комментарии, Точка Б, шаблоны',
   'activity.view': 'Активность пользователей',
   'cjm.view': 'Путь клиента (CJM)',
   'analytics.view': 'Аналитика платформы',
@@ -91,6 +92,7 @@ export const ROLE_PERMISSIONS: Record<StaffRole, ReadonlySet<Permission>> = {
     'activity.view', 'cjm.view', 'analytics.view',
     'impersonate.view', 'impersonate.edit',
     'inbox.view', 'leads.view',
+    'clients.review',
   ]),
   crm_manager: new Set(CRM_MANAGER),
   content_manager: new Set<Permission>([

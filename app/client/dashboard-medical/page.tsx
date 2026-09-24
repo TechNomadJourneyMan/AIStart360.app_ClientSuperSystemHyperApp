@@ -8,7 +8,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase-client'
-import { ExpertCommentsSection } from '@/components/client/ExpertCommentsSection'
+import ExpertMessages from '@/components/client/ExpertMessages'
 import { SEGMENT_LABELS, type PatientSegmentId } from '@/lib/rfm-segmentation'
 import type { BundleKey } from '@/lib/clinic-bundles'
 import type { LossKey, LossSeverity } from '@/lib/revenue-audit'
@@ -155,7 +155,7 @@ export default function MedicalDashboardPage() {
             <SegmentsBlock segments={data.segments} />
             <LossesBlock losses={data.audit.losses} total={data.audit.total_loss_kzt} narrative={data.audit.narrative} />
             <BundlesBlock bundles={data.bundles} total={bundleTotal} />
-            <ExpertCommentsSection />
+            <ExpertMessages />
           </>
         )}
       </main>
