@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import type { UserProfileSummary } from '@/lib/user-dashboard/summary'
 import ProfileSections from './ProfileSections'
 import GriSection from './GriSection'
+import ExpertMessages from '@/components/client/ExpertMessages'
 
 export interface UserHomeData {
   fullName: string
@@ -168,6 +169,8 @@ export default function UserHome({ data }: { data: UserHomeData }) {
         <ProfileSections summary={summary} />
 
         <GriSection />
+
+        <ExpertMessages />
 
         {data.materials.length > 0 && (
           <section aria-labelledby="materials-title">

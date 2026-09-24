@@ -25,6 +25,7 @@ export type EmailKind =
   | 'survey_reminder'
   | 'gri_completed'
   | 'portal_access_granted'
+  | 'expert_review_published'
   | 'notification'
 
 export interface TransactionalEmailInput {
