@@ -17,7 +17,7 @@ export interface User360Profile {
   diagnostics: { id: string; overall_score: number | null; health_index: number | null; stage: string | null; calculated_at: string; runs: number } | null
   gri: { current: { id: string; index: number; sectionAvgs: Record<string, number>; assessedAt: string } | null; runs: number; draftUpdatedAt: string | null }
   journey: Journey
-  counters: { documents: number; events: number; legacyAudit: number }
+  counters: { documents: number; events: number }
   impersonationActive: boolean
   can: {
     manage: boolean; archive: boolean; purge: boolean; editSurvey: boolean; viewSurvey: boolean; editGri: boolean; deleteGri: boolean

@@ -3,7 +3,6 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { requireGiga, staffRoleOfUser } from '@/lib/admin/giga-actor'
 import { createServiceClient } from '@/lib/supabase-service'
-import { prisma } from '@/lib/db'
 import { isWizardVisibleKey } from '@/lib/survey/steps'
 import { buildUserProfileSummary } from '@/lib/user-dashboard/summary'
 import { buildJourney } from '@/lib/admin/journey'
@@ -98,13 +97,6 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   // последний раз открывал его карточку. Сбой записи карточку не ломает.
   await markClientViewed(sb, guard.actor.id, userId)
 
-  let legacyAuditCount = 0
-  try {
-    legacyAuditCount = await prisma.auditLog.count({ where: { entityId: userId } })
-  } catch {
-    legacyAuditCount = 0
-  }
-
   return NextResponse.json({
     ok: true,
     data: {
@@ -132,7 +124,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
         draftUpdatedAt: draftRes.data?.updated_at ?? null,
       },
       journey,
-      counters: { documents: docsRes.count ?? 0, events: eventsCountRes.count ?? 0, legacyAudit: legacyAuditCount },
+      counters: { documents: docsRes.count ?? 0, events: eventsCountRes.count ?? 0 },
       impersonationActive: (impRes.data ?? []).length > 0,
       can: {
         manage: hasPermission(role, 'users.manage') && canManageTarget(role, target.staffRole),
