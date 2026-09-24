@@ -53,6 +53,21 @@ export const SETTINGS = {
     help: 'ИИ-инсайты попадают клиенту только после проверки в «Модерации ИИ». Выключение = автопубликация.',
     schema: z.boolean(), default: true, critical: true,
   },
+  ai_daily_budget_usd_free: {
+    group: 'content', label: 'Дневной лимит ИИ на пользователя Free, $',
+    help: 'Сколько долларов ИИ-запросов (чат, ассистент, анализы) может потратить один пользователь бесплатного тарифа за сутки. Дальше ИИ отвечает «лимит исчерпан» до завтра.',
+    schema: z.number().min(0).max(1000), default: 0.5, critical: false,
+  },
+  ai_daily_budget_usd_pro: {
+    group: 'content', label: 'Дневной лимит ИИ на пользователя Pro, $',
+    help: 'То же для тарифа Pro.',
+    schema: z.number().min(0).max(1000), default: 5, critical: false,
+  },
+  ai_daily_budget_usd_staff: {
+    group: 'content', label: 'Дневной лимит ИИ на сотрудника, $',
+    help: 'То же для персонала платформы (эксперты, администраторы).',
+    schema: z.number().min(0).max(1000), default: 20, critical: false,
+  },
   announcement: {
     group: 'cabinet', label: 'Объявление в кабинете',
     help: 'Полоса над кабинетом клиента: новости, акции, плановые работы.',

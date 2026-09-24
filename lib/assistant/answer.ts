@@ -262,6 +262,7 @@ export async function answerUserQuestion(
 
   try {
     const result = await generateObjectViaOpenRouter({
+      feature: 'assistant_ask',
       label: 'assistant:answer',
       complexity: 'high', // reasoning over the snapshot to decide can_answer/needs_expert.
       maxTokens: 700, // bounded: a short answer + the verdict flags.

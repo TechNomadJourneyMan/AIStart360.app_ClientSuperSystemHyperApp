@@ -10,6 +10,7 @@ import {
 import { getQuestion } from '@/lib/market-analysis/questions'
 import { loadAnswers, rebuildSnapshot } from '@/lib/market-analysis/persist'
 import { isRateLimitedKey } from '@/lib/rate-limit'
+import { guardAiBudget } from '@/lib/ai/budget'
 
 const UPSTREAM_TIMEOUT_MS = 6000
 
@@ -30,6 +31,8 @@ export async function POST() {
   if (await isRateLimitedKey(userId, 'market-analysis-generate', { max: 5, windowMs: 60_000 })) {
     return NextResponse.json({ ok: false, error: 'Слишком много запросов. Попробуйте позже.' }, { status: 429 })
   }
+  const overBudget = await guardAiBudget(userId, 'market_analysis')
+  if (overBudget) return overBudget
 
   // Honest failure if the AI provider is not configured — no fabrication.
   if (!hasOpenRouterKey()) {

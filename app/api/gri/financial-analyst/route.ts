@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { chatWithOpenRouter, extractJson } from '@/lib/ai/openrouter'
 import { createServerClient } from '@/lib/supabase-server'
 import { isRateLimitedKey } from '@/lib/rate-limit'
+import { guardAiBudget } from '@/lib/ai/budget'
 import { safeErrorMessage } from '@/lib/api-error'
 import { parseDocument } from '@/lib/documents/parse'
 
@@ -101,6 +102,8 @@ export async function POST(request: NextRequest) {
     if (await isRateLimitedKey(user.id, 'gri-ai-financial', { max: 6, windowMs: 60_000 })) {
       return NextResponse.json({ error: 'Слишком много запросов. Попробуйте через минуту.' }, { status: 429 })
     }
+    const overBudget = await guardAiBudget(user.id, 'gri_financial_analyst')
+    if (overBudget) return overBudget
 
     // Two intake paths: a real file upload (multipart) that we parse server-side
     // into text, and the legacy JSON path (pasted data). Everything downstream
@@ -193,6 +196,7 @@ CURRENT GRI SCORES:
 ${scoresDescription}`
 
     const aiResponse = await chatWithOpenRouter({
+      feature: 'gri_financial_analyst',
       system: systemPrompt,
       user: userPrompt,
       maxTokens: 2000,

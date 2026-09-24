@@ -10,6 +10,8 @@ import { readMascotSettings } from '@/lib/assistant/mascot/settings-server'
 import { localeFromRequestCookie } from '@/lib/i18n/locale'
 import { isRateLimitedKey } from '@/lib/rate-limit'
 import { gateFeature } from '@/lib/access/gate'
+import { guardAiBudget } from '@/lib/ai/budget'
+import { validateAiText } from '@/lib/ai/validation/apply'
 
 /**
  * POST /api/v1/assistant/converse — a multi-turn chat turn with «Гри».
@@ -56,6 +58,8 @@ export async function POST(req: NextRequest) {
   // туры Гри остаются free. Гейт активен только при тумблере access_gates.
   const gated = await gateFeature(sb, user.id, 'ai_chat')
   if (gated) return gated
+  const overBudget = await guardAiBudget(user.id, 'assistant_converse')
+  if (overBudget) return overBudget
 
   let raw: unknown
   try {
@@ -80,6 +84,8 @@ export async function POST(req: NextRequest) {
     ])
     const started = Date.now()
     const turn = await converseWithGree(ctx, history, message, locale, settings.character, screen)
+    // F-072: validate the model text before it reaches the user.
+    const checked = turn ? await validateAiText(turn.answer) : null
 
     // Audit without texts (Langfuse holds the trace).
     try {
@@ -93,6 +99,7 @@ export async function POST(req: NextRequest) {
           insufficient: !turn,
           escalated: turn?.needs_expert ?? true,
           mode: 'free',
+          validation: checked?.meta.status ?? null,
         },
       })
     } catch (logErr) {
@@ -104,9 +111,10 @@ export async function POST(req: NextRequest) {
     }
     return NextResponse.json({
       ok: true,
-      answer: turn.answer,
-      needs_expert: turn.needs_expert,
+      answer: checked?.text ?? turn.answer,
+      needs_expert: turn.needs_expert || checked?.meta.status === 'blocked',
       on_topic: turn.on_topic,
+      validation: checked?.meta ?? null,
     })
   } catch (error) {
     console.error('[assistant/converse] error:', error)

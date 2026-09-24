@@ -541,6 +541,7 @@ Cap at 1000 rows.`
 
   try {
     const raw = await chatWithOpenRouter({
+      feature: 'doc_extract',
       model: OPENROUTER_MODELS.sonnet,
       system: systemPrompt,
       user: userPrompt,
@@ -580,6 +581,7 @@ Cap at 2000 rows.`
 
   try {
     const raw = await chatWithOpenRouter({
+      feature: 'doc_extract',
       model: OPENROUTER_MODELS.sonnet,
       system: systemPrompt,
       user: userPrompt,

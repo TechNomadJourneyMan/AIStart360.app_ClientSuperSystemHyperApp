@@ -1,9 +1,9 @@
 export const dynamic = 'force-dynamic'
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
-import { isRateLimited } from '@/lib/rate-limit'
-import { getSiteUrl } from '@/lib/site-url'
+import { hasOpenRouterKey } from '@/lib/ai/openrouter'
+import { getDailyBriefing } from '@/lib/pulse/briefing'
 import * as bitrix24 from '@/lib/crm/bitrix24'
 import * as amocrm from '@/lib/crm/amocrm'
 
@@ -16,10 +16,11 @@ const STAGE_RISK: Record<string, number> = {
 const PULSE_ROLES = new Set(['super_admin', 'admin', 'expert', 'manager'])
 
 /**
- * POST /api/pulse/briefing — generate or refresh daily sales briefing
- * Caches in setting 'pulse_briefing' for 1 day
+ * POST /api/pulse/briefing — daily sales briefing from the connected CRM.
+ * Generation goes through lib/pulse/briefing.ts: shared OpenRouter client,
+ * validator, per-user day cache (ai_briefing_cache) and 10/hour limit.
  */
-export async function POST(req: NextRequest) {
+export async function POST() {
   try {
     // Auth: staff session required. Prevents anonymous callers from burning the
     // OpenRouter budget and reading platform CRM data.
@@ -35,13 +36,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
-    // Throttle the paid AI call per caller.
-    if (await isRateLimited(req, 'pulse-briefing')) {
-      return NextResponse.json({ briefing: null, error: 'Слишком часто. Попробуйте позже.' }, { status: 429 })
-    }
-
-    const openrouterKey = process.env.OPENROUTER_API_KEY
-    if (!openrouterKey) {
+    if (!hasOpenRouterKey()) {
       return NextResponse.json({ briefing: null, error: 'OpenRouter not configured' })
     }
 
@@ -92,19 +87,7 @@ export async function POST(req: NextRequest) {
     const highRisk = ranked.filter(d => d.risk >= 60).length
     const lostRevenue = ranked.filter(d => d.risk >= 60).reduce((s, d) => s + d.amount, 0)
 
-    // Call OpenRouter
-    const aiRes = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${openrouterKey}`,
-        'Content-Type': 'application/json',
-        'HTTP-Referer': getSiteUrl(),
-      },
-      body: JSON.stringify({
-        model: 'google/gemini-2.0-flash-001',
-        messages: [{
-          role: 'user',
-          content: `Ты бизнес-ассистент в системе AIStart360. Дай краткий утренний брифинг для менеджера по продажам на русском языке (3-4 предложения).
+    const prompt = `Ты бизнес-ассистент в системе AIStart360. Дай краткий утренний брифинг для менеджера по продажам на русском языке (3-4 предложения).
 
 Портфель на сегодня:
 - Всего сделок: ${deals.length}
@@ -115,23 +98,15 @@ export async function POST(req: NextRequest) {
 ТОП-5 приоритетных:
 ${top5}
 
-Скажи конкретно: с кем поговорить в первую очередь и почему. Назови названия сделок. Формат: 3-4 предложения, без заголовков и списков.`
-        }],
-        max_tokens: 250,
-        temperature: 0.7,
-      }),
-      signal: AbortSignal.timeout(10000),
-    })
+Скажи конкретно: с кем поговорить в первую очередь и почему. Назови названия сделок. Опирайся только на эти данные. Формат: 3-4 предложения, без заголовков и списков.`
 
-    if (!aiRes.ok) {
-      const errText = await aiRes.text()
-      return NextResponse.json({ briefing: null, error: `OpenRouter ${aiRes.status}: ${errText.slice(0, 100)}` })
+    const result = await getDailyBriefing(user.id, prompt)
+    if (result.limited) {
+      return NextResponse.json({ briefing: null, error: 'Слишком часто. Попробуйте позже.' }, { status: 429 })
     }
+    const briefing = result.text
 
-    const aiData = await aiRes.json()
-    const briefing = aiData.choices?.[0]?.message?.content?.trim() || null
-
-    return NextResponse.json({ briefing })
+    return NextResponse.json({ briefing, cached: result.cached, validation: result.validation })
   } catch (error) {
     console.error('[pulse/briefing] Error:', error)
     return NextResponse.json({ briefing: null, error: 'Failed to generate briefing' })

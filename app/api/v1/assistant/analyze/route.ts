@@ -9,6 +9,7 @@ import { hasOpenRouterKey } from '@/lib/ai/structured'
 import type { LlmAnalysis } from '@/lib/assistant/types'
 import { localeFromRequestCookie } from '@/lib/i18n/locale'
 import { isRateLimitedKey } from '@/lib/rate-limit'
+import { guardAiBudget } from '@/lib/ai/budget'
 
 /**
  * POST /api/v1/assistant/analyze
@@ -37,6 +38,8 @@ export async function POST(req: NextRequest) {
   if (await isRateLimitedKey(user.id, 'assistant-analyze', { max: 6, windowMs: 60_000 })) {
     return NextResponse.json({ ok: false, error: 'Слишком много запросов. Попробуйте позже.' }, { status: 429 })
   }
+  const overBudget = await guardAiBudget(user.id, 'assistant_analyze')
+  if (overBudget) return overBudget
 
   // Portal locale from the caller's cookie (no server-to-server fire here).
   const locale = localeFromRequestCookie(req)

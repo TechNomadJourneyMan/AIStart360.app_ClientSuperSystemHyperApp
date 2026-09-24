@@ -275,6 +275,7 @@ export async function generateOmnichannelReply(
   const conversation = renderConversationSections(input.history, current)
 
   const result = await generateObjectViaOpenRouter({
+    feature: 'omnichannel',
     label: 'omnichannel:reply',
     model: OMNICHANNEL_REPLY_MODEL,
     maxTokens: 700,

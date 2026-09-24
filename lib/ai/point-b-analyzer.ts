@@ -223,6 +223,7 @@ ${task}`
 
   // The strategic narrative is quality-sensitive → route to Sonnet ('high').
   return generateObjectViaOpenRouter<PointBStrategy>({
+    feature: 'point_b_strategy',
     label: 'point-b:strategy',
     complexity: 'high',
     maxTokens: 2200,

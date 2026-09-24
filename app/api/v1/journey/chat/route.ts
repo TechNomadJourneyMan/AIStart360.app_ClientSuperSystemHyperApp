@@ -14,6 +14,7 @@ import {
   saveJourneyState,
 } from '@/lib/journey/persistence'
 import { journeyChatRequestSchema } from '@/lib/journey/schema'
+import { AI_BUDGET_MESSAGE, assertAiBudget, isAiBudgetError } from '@/lib/ai/budget'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -34,6 +35,16 @@ export async function POST(request: Request) {
         { error: { code: 'JOURNEY_RATE_LIMIT', message: 'Слишком много сообщений. Попробуйте через минуту.' } },
         { status: 429 },
       )
+    }
+    try {
+      await assertAiBudget({ userId: actorUserId ?? null, actorId: `journey:${identity.workspaceId}` }, 'journey')
+    } catch (budgetErr) {
+      if (isAiBudgetError(budgetErr)) {
+        return NextResponse.json(
+          { error: { code: 'AI_BUDGET_EXCEEDED', message: AI_BUDGET_MESSAGE } },
+          { status: 429 },
+        )
+      }
     }
     await loadJourneyState(identity, actorUserId)
     const state = payload.state

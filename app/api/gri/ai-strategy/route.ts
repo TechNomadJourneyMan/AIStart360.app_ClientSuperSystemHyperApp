@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { chatWithOpenRouter } from '@/lib/ai/openrouter'
 import { createServerClient } from '@/lib/supabase-server'
 import { isRateLimitedKey } from '@/lib/rate-limit'
+import { guardAiBudget } from '@/lib/ai/budget'
 import { safeErrorMessage } from '@/lib/api-error'
 
 /**
@@ -72,6 +73,8 @@ export async function POST(request: NextRequest) {
     if (await isRateLimitedKey(user.id, 'gri-ai-strategy', { max: 6, windowMs: 60_000 })) {
       return NextResponse.json({ error: 'Слишком много запросов. Попробуйте через минуту.' }, { status: 429 })
     }
+    const overBudget = await guardAiBudget(user.id, 'gri_ai_strategy')
+    if (overBudget) return overBudget
 
     const body: StrategyRequest = await request.json()
     const { scores, lang = 'ru', format = 'default' } = body
@@ -94,6 +97,7 @@ For each category with a score below 7, provide:
 Keep the response structured, professional, and actionable. Use markdown formatting.`
 
     const aiResponse = await chatWithOpenRouter({
+      feature: 'gri_ai_strategy',
       system: systemPrompt,
       user: `Analyze these GRI scores and generate a growth strategy:\n\n${scoresDescription}`,
       maxTokens: 2000,

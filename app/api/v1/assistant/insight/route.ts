@@ -9,6 +9,8 @@ import { buildScreenInsight } from '@/lib/assistant/mascot/insight'
 import { readMascotSettings } from '@/lib/assistant/mascot/settings-server'
 import { localeFromRequestCookie } from '@/lib/i18n/locale'
 import { isRateLimitedKey } from '@/lib/rate-limit'
+import { guardAiBudget } from '@/lib/ai/budget'
+import { validateAiText } from '@/lib/ai/validation/apply'
 
 /**
  * POST /api/v1/assistant/insight — one AI insight for the current screen.
@@ -31,6 +33,8 @@ export async function POST(req: NextRequest) {
   if (await isRateLimitedKey(user.id, 'assistant:insight', { max: 6, windowMs: 60 * 60_000 })) {
     return NextResponse.json({ ok: false, error: 'rate_limited' }, { status: 429 })
   }
+  const overBudget = await guardAiBudget(user.id, 'assistant_insight')
+  if (overBudget) return overBudget
 
   let raw: unknown
   try {
@@ -53,6 +57,9 @@ export async function POST(req: NextRequest) {
     const ctx = await buildAssistantContext(user.id, sb)
     const started = Date.now()
     const insight = await buildScreenInsight(ctx, parsed.data.screen, locale, settings.character)
+    // F-072: a proactive insight is optional — when the validator rejects it we
+    // show nothing rather than a generic safe template in the mascot bubble.
+    const checked = insight ? await validateAiText(insight.text) : null
 
     // Audit (non-fatal, no texts — Langfuse holds the trace).
     try {
@@ -61,16 +68,19 @@ export async function POST(req: NextRequest) {
         type: 'answer_received',
         screen: parsed.data.screen,
         ref_id: 'ai_insight',
-        meta: { latency_ms: Date.now() - started, insufficient: !insight, mode: 'free' },
+        meta: { latency_ms: Date.now() - started, insufficient: !insight, mode: 'free', validation: checked?.meta.status ?? null },
       })
     } catch (logErr) {
       console.error('[assistant/insight] event insert failed (non-fatal):', logErr)
     }
 
-    if (!insight) {
+    if (!insight || !checked) {
       return NextResponse.json({ ok: true, insight: null })
     }
-    return NextResponse.json({ ok: true, insight: insight.text })
+    if (!checked.approved) {
+      return NextResponse.json({ ok: true, insight: null, validation: checked.meta })
+    }
+    return NextResponse.json({ ok: true, insight: checked.text, validation: checked.meta })
   } catch (error) {
     console.error('[assistant/insight] error:', error)
     return NextResponse.json({ ok: false, error: 'ai_unavailable' }, { status: 502 })
