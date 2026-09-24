@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requireGiga } from '@/lib/admin/giga-actor'
+import { recordAdminAction } from '@/lib/admin/audit'
 import { createServiceClient } from '@/lib/supabase-service'
 import { NOT_ASSIGNED_ERROR, canAccessClient } from '@/lib/admin/client-scope'
 
@@ -52,7 +53,14 @@ export async function PATCH(req: NextRequest, { params }: { params: { taskId: st
   if (parsed.data.dueAt !== undefined) patch.due_at = parsed.data.dueAt
   if (parsed.data.assigneeId !== undefined) patch.assignee_id = parsed.data.assigneeId
 
-  const { data, error } = await createServiceClient()
+  const sb = createServiceClient()
+  const { data: before } = await sb
+    .from('staff_tasks')
+    .select('user_id, title, due_at, status, assignee_id')
+    .eq('id', params.taskId)
+    .maybeSingle()
+
+  const { data, error } = await sb
     .from('staff_tasks')
     .update(patch)
     .eq('id', params.taskId)
@@ -60,5 +68,18 @@ export async function PATCH(req: NextRequest, { params }: { params: { taskId: st
     .maybeSingle()
   if (error) return NextResponse.json({ ok: false, error: 'Не удалось изменить задачу' }, { status: 500 })
   if (!data) return NextResponse.json({ ok: false, error: 'Задача не найдена' }, { status: 404 })
+
+  const row = data as { user_id: string | null }
+  const prev = (before ?? {}) as Record<string, unknown>
+  const changed = Object.keys(patch).filter((k) => k !== 'updated_at' && k !== 'done_at')
+  await recordAdminAction(guard.actor, {
+    action: parsed.data.status === 'done' ? 'user.task_done' : 'user.task_updated',
+    entityType: 'task',
+    entityId: params.taskId,
+    targetUserId: row.user_id,
+    oldValue: Object.fromEntries(changed.map((k) => [k, prev[k] ?? null])),
+    newValue: Object.fromEntries(changed.map((k) => [k, patch[k] ?? null])),
+  }, req)
+
   return NextResponse.json({ ok: true, data })
 }

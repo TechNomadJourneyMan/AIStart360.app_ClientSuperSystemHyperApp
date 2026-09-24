@@ -23,6 +23,7 @@
 import type { ExpertCase } from '../types'
 import type { EscalationAdapter } from './adapter'
 import { notifyAdmins } from '@/lib/notifications'
+import { computeSlaDueAt, getSlaHours, notifyCaseAssignee, responsibleStaffFor } from '@/lib/admin/escalations'
 
 // ─── Service-role REST (mirrors lib/expert-auth.ts srBase/srGet) ────────────
 
@@ -104,8 +105,38 @@ export class InternalEscalationAdapter implements EscalationAdapter {
       expert_action_recommended: c.expertActionRecommended ?? null,
     }
 
-    const inserted = await srPost<InsertedRow[]>('expert_cases', row)
+    // 1a. SLA и ответственный (миграция 088). Срок реакции считается от
+    //     момента создания по настройке escalation_sla_hours; кейс сразу
+    //     попадает к тому, кто ведёт клиента (user_assignments), чтобы
+    //     «Позвать эксперта» не терялось в общей очереди.
+    const [slaHours, assigneeId] = await Promise.all([getSlaHours(), responsibleStaffFor(c.userId)])
+    row.sla_due_at = computeSlaDueAt(new Date(), c.priority, slaHours)
+    if (assigneeId) {
+      row.assignee_id = assigneeId
+      row.assigned_to = assigneeId
+    }
+
+    let inserted = await srPost<InsertedRow[]>('expert_cases', row)
+    if (!inserted && ('sla_due_at' in row || 'assignee_id' in row)) {
+      // Миграция 088 ещё не применена — сохраняем кейс без новых колонок,
+      // чтобы обращение клиента не потерялось.
+      const { sla_due_at: _s, assignee_id: _a, ...legacy } = row
+      inserted = await srPost<InsertedRow[]>('expert_cases', legacy)
+    }
     const caseId = Array.isArray(inserted) ? inserted[0]?.id : undefined
+    if (assigneeId) {
+      await notifyCaseAssignee({
+        assigneeId,
+        caseId: caseId ?? null,
+        clientId: c.userId,
+        title: c.title,
+        priority: c.priority,
+        triggerType: c.triggerType,
+        userMessage: c.userMessage ?? null,
+        reason: 'created',
+      })
+    }
+
 
     // Reflect the canonical id back onto the in-memory case so the dispatcher's
     // caller (createExpertCase) returns the persisted UUID when available.

@@ -1,11 +1,11 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
-  Activity, Building2, ClipboardList, CopyCheck, Eye, FileText, InboxIcon, KeyRound, LayoutDashboard, LayoutGrid,
+  Activity, Building2, ClipboardList, CopyCheck, ListChecks, Siren, UserCheck, Eye, FileText, InboxIcon, KeyRound, LayoutDashboard, LayoutGrid,
   Lightbulb, LogOut, Mail, MessagesSquare, Radar, Route, ScrollText, Settings, Shield, ShieldCheck, Sparkles, Users2, X,
   Sun, type LucideIcon,
 } from 'lucide-react'
@@ -21,6 +21,24 @@ const ICONS: Record<string, LucideIcon> = {
   clipboard: ClipboardList, radar: Radar, activity: Activity, route: Route, messages: MessagesSquare,
   lightbulb: Lightbulb, shieldcheck: ShieldCheck, file: FileText, layout: LayoutGrid, settings: Settings,
   key: KeyRound, eye: Eye, scroll: ScrollText, mail: Mail, copy: CopyCheck, sun: Sun,
+  checklist: ListChecks, siren: Siren, experts: UserCheck,
+}
+
+/** Бейдж «Эскалации»: открытые кейсы, красный — если есть просроченные. */
+function useCasesBadge(enabled: boolean): { open: number; overdue: number } | null {
+  const [v, setV] = useState<{ open: number; overdue: number } | null>(null)
+  useEffect(() => {
+    if (!enabled) return
+    let alive = true
+    const load = () => fetch('/api/giga-admin/cases/summary', { credentials: 'include' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (alive && d?.ok) setV({ open: Number(d.open) || 0, overdue: Number(d.overdue) || 0 }) })
+      .catch(() => {})
+    void load()
+    const id = setInterval(load, 120_000)
+    return () => { alive = false; clearInterval(id) }
+  }, [enabled])
+  return v
 }
 
 interface GigaSidebarProps { isOpen?: boolean; onClose?: () => void }
@@ -29,6 +47,7 @@ export function GigaSidebar({ isOpen = false, onClose }: GigaSidebarProps) {
   const pathname = usePathname() ?? ''
   const { me, can, loading } = useStaff()
   const { base, label, sublabel, nav, loginPath } = useWorkspace()
+  const casesBadge = useCasesBadge(!loading && nav.some((g) => g.items.some((i) => i.badge === 'cases' && can(i.permission))))
 
   useEffect(() => {
     const handleEsc = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose?.() }
@@ -92,6 +111,17 @@ export function GigaSidebar({ isOpen = false, onClose }: GigaSidebarProps) {
                       >
                         <Icon size={16} />
                         <span className="truncate">{item.label}</span>
+                        {item.badge === 'cases' && casesBadge && casesBadge.open > 0 && (
+                          <span
+                            title={casesBadge.overdue ? `Просрочено: ${casesBadge.overdue}` : 'Открытые эскалации'}
+                            className={cx(
+                              'ml-auto rounded-full px-1.5 text-[10px] font-semibold tabular-nums',
+                              casesBadge.overdue ? 'bg-red-500/80 text-white' : 'bg-white/[0.08] text-slate-300',
+                            )}
+                          >
+                            {casesBadge.overdue || casesBadge.open}
+                          </span>
+                        )}
                       </Link>
                     </li>
                   )

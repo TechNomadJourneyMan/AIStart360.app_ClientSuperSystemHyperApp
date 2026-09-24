@@ -23,6 +23,7 @@ import { NotesTab } from '@/components/giga-panel/user360/NotesTab'
 import { EmailsTab } from '@/components/giga-panel/user360/EmailsTab'
 import { QualityTab } from '@/components/giga-panel/user360/QualityTab'
 import { TasksTab } from '@/components/giga-panel/user360/TasksTab'
+import { TimelineTab } from '@/components/giga-panel/user360/TimelineTab'
 import { GriDynamicsPanel } from '@/components/giga-panel/user360/GriDynamicsPanel'
 import { SurveyReminderDialog } from '@/components/giga-panel/user360/SurveyReminderDialog'
 import { rememberUser } from '@/components/giga-panel/CommandPalette'
@@ -33,7 +34,7 @@ import { CasesTab } from '@/components/giga-panel/user360/CasesTab'
 import { CommentsTab } from '@/components/giga-panel/user360/CommentsTab'
 import { ReviewTab } from '@/components/giga-panel/user360/review/ReviewTab'
 
-type TabKey = 'profile' | 'survey' | 'point-a' | 'point-b' | 'gri' | 'pulse' | 'cases' | 'comments' | 'review' | 'activity' | 'cjm' | 'documents' | 'notes' | 'tasks' | 'emails' | 'quality' | 'history'
+type TabKey = 'profile' | 'timeline' | 'survey' | 'point-a' | 'point-b' | 'gri' | 'pulse' | 'cases' | 'comments' | 'review' | 'activity' | 'cjm' | 'documents' | 'notes' | 'tasks' | 'emails' | 'quality' | 'history'
 
 function User360Inner({ id }: { id: string }) {
   const { base, label } = useWorkspace()
@@ -105,6 +106,7 @@ function User360Inner({ id }: { id: string }) {
             onChange={setTab}
             tabs={[
               { key: 'profile', label: 'Профиль' },
+              { key: 'timeline', label: 'Лента' },
               { key: 'survey', label: 'Анкета', hidden: !u.can.viewSurvey },
               { key: 'point-a', label: 'Точка А', hidden: !expertTabs },
               { key: 'point-b', label: 'Точка Б', hidden: !expertTabs },
@@ -124,6 +126,7 @@ function User360Inner({ id }: { id: string }) {
             ]}
           />
           {tab === 'profile' && <ProfileTab data={u} onChanged={reload} onPurged={() => router.replace(`${base}/users`)} />}
+          {tab === 'timeline' && <TimelineTab userId={id} />}
           {tab === 'survey' && u.can.viewSurvey && <SurveyTab userId={id} canEdit={u.can.editSurvey} />}
           {tab === 'gri' && (
             <>

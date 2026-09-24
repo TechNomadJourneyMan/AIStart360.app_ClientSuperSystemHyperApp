@@ -66,6 +66,21 @@ export const AUDIT_ACTION: Record<string, string> = {
   'insight.published': 'Инсайт опубликован',
   'insight.rejected': 'Инсайт отклонён',
   'insight.edited': 'Инсайт отредактирован',
+  'user.approved': 'Заявка одобрена',
+  'user.rejected': 'Заявка отклонена',
+  'user.assigned': 'Назначен ответственный',
+  'user.unassigned': 'Ответственный снят',
+  'user.note_added': 'Добавлена заметка',
+  'user.task_created': 'Создана задача',
+  'user.task_updated': 'Задача изменена',
+  'user.task_done': 'Задача выполнена',
+  'user.survey_reminded': 'Напоминание про анкету',
+  'user.survey_reminded_bulk': 'Напоминание про анкету (группе)',
+  'user.bulk_action': 'Массовое действие',
+  'request.bulk_decision': 'Массовое решение по заявкам',
+  'staff.scope_changed': 'Изменена видимость клиентов',
+  'case.updated': 'Эскалация изменена',
+  'case.assigned': 'Эскалация назначена',
 }
 
 export function auditLabel(action: string): string {

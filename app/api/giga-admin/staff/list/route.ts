@@ -18,7 +18,10 @@ export async function GET(req: NextRequest) {
   if (guard.response) return guard.response
 
   const sb = createServiceClient()
-  const { data: roles, error } = await sb.from('staff_roles').select('user_id, role')
+  // client_scope (миграция 086) — чтобы в выборе ответственного было видно,
+  // кто работает только со своими клиентами. Без миграции — прежний набор полей.
+  let { data: roles, error } = await sb.from('staff_roles').select('user_id, role, client_scope')
+  if (error) ({ data: roles, error } = await sb.from('staff_roles').select('user_id, role'))
   if (error) return NextResponse.json({ ok: false, error: 'Не удалось загрузить сотрудников' }, { status: 500 })
 
   const ids = (roles ?? []).map((r) => r.user_id as string)
@@ -38,6 +41,7 @@ export async function GET(req: NextRequest) {
         email: person.email,
         role,
         roleLabel: STAFF_ROLE_LABELS[role],
+        clientScope: (r as { client_scope?: string | null }).client_scope === 'assigned' ? 'assigned' as const : 'all' as const,
       }
     })
     .filter((x): x is NonNullable<typeof x> => !!x)

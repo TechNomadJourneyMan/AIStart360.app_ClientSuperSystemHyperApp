@@ -16,6 +16,17 @@ const STATUSES = new Set(['', 'pending_approval', 'approved', 'rejected', 'requi
 const ROLES = new Set(['', 'client', 'expert', 'admin', 'super_admin', 'manager', 'analyst'])
 
 type ListRow = AdminListRow
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+/** Значение p_assignee для «без ответственного» (миграция 088). */
+const NO_ASSIGNEE = '00000000-0000-0000-0000-000000000000'
+
+/** ?assignee= me | none | <uuid> → p_assignee; '' → без фильтра; undefined → неверное значение. */
+function assigneeParam(raw: string | null, actorId: string): string | null | undefined {
+  if (!raw) return null
+  if (raw === 'me') return UUID_RE.test(actorId) ? actorId : undefined
+  if (raw === 'none') return NO_ASSIGNEE
+  return UUID_RE.test(raw) ? raw : undefined
+}
 
 export async function GET(req: NextRequest) {
   const guard = await requireGiga(req, 'users.view')
@@ -32,8 +43,11 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: false, error: 'Неверный фильтр' }, { status: 400 })
   }
   const search = (sp.get('q') ?? '').trim().slice(0, 100)
+  const assignee = assigneeParam(sp.get('assignee'), guard.actor.id)
+  if (assignee === undefined) return NextResponse.json({ ok: false, error: 'Неверный фильтр' }, { status: 400 })
 
   const args = {
+    ...(assignee ? { p_assignee: assignee } : {}),
     p_search: search || null,
     p_status: status || null,
     p_role: role || null,

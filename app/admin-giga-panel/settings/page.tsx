@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { toast } from 'sonner'
 import {
   Activity, AlertTriangle, Bell, CheckCircle2, Database, ExternalLink, Eraser, KeyRound, LayoutGrid,
-  Megaphone, RefreshCw, ScrollText, Send, ShieldCheck, Sparkles, UserPlus, Users2, Wrench, XCircle,
+  Megaphone, RefreshCw, ScrollText, Send, ShieldCheck, Siren, Sparkles, UserPlus, Users2, Wrench, XCircle,
 } from 'lucide-react'
 import { RequirePermission, useStaff } from '@/components/giga-panel/StaffContext'
 import {
@@ -153,6 +153,25 @@ export default function SettingsPage() {
           </Panel>
 
           <AnalyticsCard values={v} meta={meta} disabled={!canEdit} saving={saving} onToggle={(n) => toggle('analytics_enabled', n)} onSaveRetention={(n) => save({ events_retention_days: n }, 'Срок хранения')} onSave={save} />
+
+          <Panel title={<Title icon={<Siren size={14} />}>Эскалации</Title>} description={SETTINGS.escalation_sla_hours.help}>
+            {([
+              ['critical', 'Критичный приоритет'],
+              ['high', 'Высокий приоритет'],
+              ['medium', 'Средний приоритет'],
+              ['low', 'Низкий приоритет'],
+            ] as const).map(([p, title]) => (
+              <div key={p} className="flex flex-wrap items-center justify-between gap-2 border-b border-white/[0.05] py-2.5 last:border-0">
+                <span className="text-xs text-slate-300">{title}</span>
+                <NumberSetting
+                  value={v.escalation_sla_hours[p]} min={1} max={720} suffix="ч"
+                  disabled={!canEdit} saving={saving === 'escalation_sla_hours'}
+                  onSave={(n) => save({ escalation_sla_hours: { ...v.escalation_sla_hours, [p]: n } }, 'SLA эскалаций')}
+                />
+              </div>
+            ))}
+            <Links items={[{ href: '/admin-giga-panel/cases', label: 'Очередь эскалаций' }, { href: '/admin-giga-panel/experts', label: 'Эксперты' }]} />
+          </Panel>
 
           <NotificationsCard value={v.admin_notifications} meta={meta} disabled={!canEdit} saving={saving === 'admin_notifications'} onSave={(n) => save({ admin_notifications: n }, 'Уведомления')} />
 
