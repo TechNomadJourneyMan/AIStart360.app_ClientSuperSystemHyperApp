@@ -255,6 +255,7 @@ export async function analyzeWithLlm(
 
   try {
     const result = await generateObjectViaOpenRouter({
+      feature: 'assistant_analyze',
       label: 'assistant:llm-analysis',
       complexity: 'high', // Sonnet — situational reasoning quality matters.
       maxTokens: 1600, // bounded for speed (short arrays + one-sentence strings).
@@ -330,6 +331,7 @@ export async function llmSemanticChecks(
 
   try {
     const result = await generateObjectViaOpenRouter({
+      feature: 'assistant_analyze',
       label: 'assistant:llm-semantic',
       complexity: 'medium', // Haiku — cheaper/faster; pattern-spotting over a small snapshot.
       maxTokens: 1000,

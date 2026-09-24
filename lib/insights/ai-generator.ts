@@ -233,6 +233,7 @@ export async function generatePointAInsights(
   const userPrompt = buildUserPrompt(snapshot)
 
   const raw = await chatWithOpenRouter({
+    feature: 'point_a_insights',
     system: SYSTEM_PROMPT,
     user: userPrompt,
     model: INSIGHTS_MODEL,

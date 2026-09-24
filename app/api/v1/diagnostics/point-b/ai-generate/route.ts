@@ -13,6 +13,7 @@ import { localeFromRequestCookie, normalizeLocale } from '@/lib/i18n/locale'
 import { hasValidInternalToken } from '@/lib/internal-auth'
 import { getSessionUser, getSessionRole, isStaffRole } from '@/lib/api-identity'
 import { isRateLimitedKey } from '@/lib/rate-limit'
+import { guardAiBudget } from '@/lib/ai/budget'
 
 /**
  * POST /api/v1/diagnostics/point-b/ai-generate
@@ -106,6 +107,8 @@ export async function POST(req: NextRequest) {
     if (!hasValidInternalToken(req) && (await isRateLimitedKey(userId, 'diagnostics-point-b-ai', { max: 6, windowMs: 60_000 }))) {
       return NextResponse.json({ ok: false, error: 'Слишком много запросов. Попробуйте позже.' }, { status: 429 })
     }
+    const overBudget = await guardAiBudget(userId, 'point_b_strategy')
+    if (overBudget) return overBudget
 
     // 1. Diagnostic (Point A). Resolve current one when not passed.
     const diagQuery = sb.from('diagnostics').select('*').eq('user_id', userId)

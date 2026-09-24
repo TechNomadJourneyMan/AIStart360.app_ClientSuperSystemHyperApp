@@ -538,8 +538,10 @@ model DiagnosticRun {
 
 model DocumentSummary {
   id          String   @id @default(cuid())
-  clientId    String
-  client      Client   @relation(fields: [clientId], references: [id])
+  // Nullable since migration 091: documents of ordinary clients (no Prisma
+  // `clients` row) are indexed too; ownership lives in `userId`.
+  clientId    String?
+  client      Client?  @relation(fields: [clientId], references: [id])
   reportId    String?
   report      Report?  @relation(fields: [reportId], references: [id])
 

@@ -48,6 +48,7 @@ export async function runPointADiagnostic(formData: FormData) {
 
         // Step 2: AI Analysis (via OpenRouter — single OPENROUTER_API_KEY)
         const analysis = await generateObjectViaOpenRouter({
+          feature: 'gri_document_diagnostic',
           label: 'gri-document-diagnostic',
           model: OPENROUTER_MODELS.sonnet,
           maxTokens: 2000,

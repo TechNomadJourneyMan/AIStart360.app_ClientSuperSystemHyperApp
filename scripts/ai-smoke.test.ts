@@ -76,6 +76,7 @@ if (!HAS_KEY) {
 run('OpenRouter live integration', () => {
   it('chat completion returns text', async () => {
     const out = await chatWithOpenRouter({
+      feature: 'ai_chat',
       system: 'Ты лаконичный ассистент. Отвечай одним словом.',
       user: 'Назови столицу Казахстана.',
       maxTokens: 20,
@@ -87,7 +88,7 @@ run('OpenRouter live integration', () => {
   }, 60_000)
 
   it('embeddings return a 1536-dim vector', async () => {
-    const vecs = await embedWithOpenRouter(['рост выручки кофейни'])
+    const vecs = await embedWithOpenRouter(['рост выручки кофейни'], { feature: 'doc_embed' })
     console.log('[embed] → vectors:', vecs?.length, 'dim:', vecs?.[0]?.length)
     expect(vecs).not.toBeNull()
     expect(vecs!.length).toBe(1)

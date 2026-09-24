@@ -12,6 +12,7 @@ import { clearDraft, mergeServerAndDraft, parseStepParam, readDraft, writeDraft 
 import { overallFill, stepFillFromAnswers } from '@/lib/survey/progress'
 import SurveyReview from '@/components/onboarding/SurveyReview'
 import SaveStatusChip, { type SaveState } from '@/components/onboarding/SaveStatusChip'
+import DocumentSuggestions from '@/components/onboarding/DocumentSuggestions'
 
 // Step form components
 import Step1CompanyForm from '@/components/onboarding/steps/Step1CompanyForm'
@@ -486,7 +487,11 @@ function OnboardingPageInner() {
               <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary" />
             </div>
           ) : (
-            StepForm && <StepForm data={stepData} onChange={handleFieldChange} userId={userId ?? undefined} />
+            <>
+              {/* F-076: answers found in the user's documents — accept = normal field change + autosave */}
+              {hasDocs && <DocumentSuggestions step={currentStep} answers={stepData} onApply={handleFieldChange} />}
+              {StepForm && <StepForm data={stepData} onChange={handleFieldChange} userId={userId ?? undefined} />}
+            </>
           )}
 
           {/* Inline validation hints — non-blocking, warns but never prevents navigation */}

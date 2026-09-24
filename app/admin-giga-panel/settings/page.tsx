@@ -121,6 +121,15 @@ export default function SettingsPage() {
             <SettingRow k="insight_moderation" meta={meta}>
               <Toggle checked={v.insight_moderation} disabled={!canEdit || !!saving} onChange={(n) => toggle('insight_moderation', n)} label={SETTINGS.insight_moderation.label} />
             </SettingRow>
+            {(['ai_daily_budget_usd_free', 'ai_daily_budget_usd_pro', 'ai_daily_budget_usd_staff'] as const).map((k) => (
+              <SettingRow key={k} k={k} meta={meta}>
+                <NumberSetting
+                  value={v[k]} min={0} max={1000} step={0.5} integer={false} suffix="$ в сутки"
+                  disabled={!canEdit} saving={saving === k}
+                  onSave={(n) => save({ [k]: n }, 'Дневной лимит ИИ')}
+                />
+              </SettingRow>
+            ))}
             <Links items={[
               { href: '/admin-giga-panel/moderation', label: 'Очередь модерации' },
               { href: '/admin-giga-panel/sections', label: 'Разделы кабинета' },
@@ -251,20 +260,20 @@ function Segmented<T extends string>({ value, options, onChange, disabled }: {
   )
 }
 
-function NumberSetting({ value, min, max, step = 1, suffix, disabled, saving, onSave }: {
-  value: number; min: number; max: number; step?: number; suffix: string; disabled?: boolean; saving?: boolean
+function NumberSetting({ value, min, max, step = 1, integer = true, suffix, disabled, saving, onSave }: {
+  value: number; min: number; max: number; step?: number; integer?: boolean; suffix: string; disabled?: boolean; saving?: boolean
   onSave: (n: number) => Promise<boolean>
 }) {
   const [draft, setDraft] = useState(String(value))
   useEffect(() => setDraft(String(value)), [value])
-  const n = Number(draft)
-  const valid = draft.trim() !== '' && Number.isInteger(n) && n >= min && n <= max
+  const n = Number(draft.replace(',', '.'))
+  const valid = draft.trim() !== '' && Number.isFinite(n) && (!integer || Number.isInteger(n)) && n >= min && n <= max
   const dirty = valid && n !== value
   return (
     <div className="flex items-center gap-2">
       <input
         type="number"
-        inputMode="numeric"
+        inputMode={integer ? 'numeric' : 'decimal'}
         min={min}
         max={max}
         step={step}

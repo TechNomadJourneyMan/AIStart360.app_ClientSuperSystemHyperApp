@@ -12,6 +12,8 @@ import { parseDocument } from '@/lib/documents/parse'
 import { getSessionUser, getSessionRole, isStaffRole } from '@/lib/api-identity'
 import { isSupabaseStorageUrl } from '@/lib/upload-url'
 import { isRateLimitedKey } from '@/lib/rate-limit'
+import { setAiActor } from '@/lib/ai/usage'
+import { runInBackground } from '@/lib/background'
 
 // POST /api/v1/onboarding/documents/[id]/process
 // Inline document parsing. Fetches the document, parses it, runs LLM extraction,
@@ -53,6 +55,9 @@ export async function POST(
   if (!isSupabaseStorageUrl(doc.file_url)) {
     return NextResponse.json({ ok: false, error: 'Некорректный источник файла' }, { status: 400 })
   }
+
+  // Attribute the extraction / binding / embedding cost to the document owner.
+  setAiActor({ userId: String(doc.user_id), actorId: doc.user_id === user.id ? null : user.id })
 
   if (doc.parse_status === 'processing') {
     return NextResponse.json({ ok: true, note: 'already_processing' })
@@ -100,62 +105,49 @@ export async function POST(
 
     if (updateErr) throw new Error(updateErr.message)
 
-    // Fire-and-forget: chunk + embed the parsed text into pgvector storage so
-    // it becomes available to RAG. Gated behind ENABLE_DOCUMENT_EMBEDDINGS so
-    // production traffic doesn't burn embedding credits until we're ready.
-    void (async () => {
-      if (process.env.ENABLE_DOCUMENT_EMBEDDINGS !== 'true') return
-      try {
-        const { prisma } = await import('@/lib/db')
-        const { embedAndStoreChunks } = await import('@/lib/documents/embed')
+    const ownerUserId = String((doc as { user_id?: string }).user_id ?? '')
 
-        // Best-effort owner → Client lookup. The Supabase `documents.user_id`
-        // → `profiles.id` chain doesn't map 1:1 to the Prisma `Client` model
-        // in every environment, so we skip silently if no client is found.
-        const ownerClient = await prisma.client.findFirst({
-          where: { managerId: (doc as { user_id?: string }).user_id ?? '__none__' },
-          select: { id: true },
-        }).catch(() => null)
-        if (!ownerClient) return
+    // F-076: suggest survey answers from the extracted metrics (never
+    // overwrites a typed answer; the user accepts each one in the wizard).
+    let suggestions = 0
+    try {
+      const { storeDocumentSuggestions } = await import('@/lib/documents/survey-suggestions')
+      const { createServiceClient } = await import('@/lib/supabase-service')
+      const r = await storeDocumentSuggestions(createServiceClient(), {
+        userId: ownerUserId,
+        documentId: doc.id,
+        fields: payload.fields,
+      })
+      suggestions = r.stored
+    } catch (e) {
+      console.warn('[documents/process] suggestions failed (non-fatal)', e instanceof Error ? e.message : e)
+    }
 
-        // Re-parse to obtain full text (extract.ts only retains a preview).
-        const reFile = await fetch(doc.file_url).catch(() => null)
-        if (!reFile || !reFile.ok) return
-        const reBuffer = Buffer.from(await reFile.arrayBuffer())
-        const parsed = await parseDocument(
-          reBuffer,
-          doc.file_name,
-          doc.mime_type ?? undefined,
-        )
-        if (!parsed.text?.trim()) return
-
-        const summary = await prisma.documentSummary.create({
-          data: {
-            clientId: ownerClient.id,
-            content: parsed.text,
-            metadata: { source_document_id: doc.id },
-          },
-        })
-
-        // Record the direct owner for RAG scoping (migration 046). Done via raw
-        // SQL so it does not depend on the regenerated Prisma client field.
-        const ownerUserId = (doc as { user_id?: string }).user_id
-        if (ownerUserId) {
-          await prisma.$executeRaw`UPDATE document_summaries SET user_id = ${ownerUserId} WHERE id = ${summary.id}`
+    // F-073: chunk + embed the full text for chat retrieval. Gated behind
+    // ENABLE_DOCUMENT_EMBEDDINGS; no longer requires a Prisma `clients` row
+    // (that silently skipped every ordinary client). Runs in the background.
+    if (process.env.ENABLE_DOCUMENT_EMBEDDINGS === 'true' && ownerUserId) {
+      void runInBackground('document-embed', async () => {
+        try {
+          const { indexDocumentForRetrieval } = await import('@/lib/documents/embed')
+          // Re-parse to obtain full text (extract.ts only retains a preview).
+          const reFile = await fetch(doc.file_url).catch(() => null)
+          if (!reFile || !reFile.ok) return
+          const reBuffer = Buffer.from(await reFile.arrayBuffer())
+          const parsed = await parseDocument(reBuffer, doc.file_name, doc.mime_type ?? undefined)
+          if (!parsed.text?.trim()) return
+          const result = await indexDocumentForRetrieval({ documentId: doc.id, userId: ownerUserId, text: parsed.text })
+          if (result.error) console.warn('[documents/process] embed result', result)
+        } catch (e) {
+          console.warn('[documents/process] embed failed', e)
         }
-
-        const result = await embedAndStoreChunks(summary.id, parsed.text)
-        if (result.error) {
-          console.warn('[documents/process] embed result', result)
-        }
-      } catch (e) {
-        console.warn('[documents/process] embed failed', e)
-      }
-    })()
+      })
+    }
 
     return NextResponse.json({
       ok: true,
       fields_count: payload.fields.length,
+      suggestions,
     })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Неизвестная ошибка'

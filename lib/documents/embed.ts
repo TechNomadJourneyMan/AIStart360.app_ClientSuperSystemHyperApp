@@ -14,9 +14,10 @@
  *   - Idempotent: safe to call multiple times for the same summary id.
  *   - Best-effort: callers fire-and-forget from the API route.
  *
- * Designed to be invoked from
- * `app/api/v1/onboarding/documents/[id]/process/route.ts` post-extraction, behind
- * the `ENABLE_DOCUMENT_EMBEDDINGS` env flag.
+ * Invoked through `indexDocumentForRetrieval` from
+ * `app/api/v1/onboarding/documents/[id]/process/route.ts` post-extraction
+ * (behind the `ENABLE_DOCUMENT_EMBEDDINGS` env flag) and from
+ * `scripts/backfill-embeddings.ts`. Usage is recorded as feature `doc_embed`.
  */
 
 import { prisma } from '@/lib/db'
@@ -61,7 +62,7 @@ function toVectorLiteral(vec: number[]): string {
 export async function embedAndStoreChunks(
   documentSummaryId: string,
   fullText: string,
-  opts?: { batchSize?: number; model?: string }
+  opts?: { batchSize?: number; model?: string; userId?: string | null }
 ): Promise<EmbedAndStoreResult> {
   const failure = (error: string): EmbedAndStoreResult => ({
     chunks: 0,
@@ -88,6 +89,8 @@ export async function embedAndStoreChunks(
       const slice = chunks.slice(i, i + batchSize)
       const inputs = slice.map((c) => c.content)
       const embeddings = await embedWithOpenRouter(inputs, {
+        feature: 'doc_embed',
+        userId: opts?.userId ?? null,
         model,
         dimensions: EXPECTED_DIM,
       })
@@ -156,4 +159,74 @@ export async function embedAndStoreChunks(
     console.warn('[documents/embed] embedAndStoreChunks failed:', msg)
     return failure(msg)
   }
+}
+
+// ─── Document-level indexing (F-073) ─────────────────────────────────────────
+
+export interface IndexDocumentInput {
+  /** `documents.id` (Supabase, UUID) — stored in summary metadata for citations. */
+  documentId: string
+  /** Owner (`documents.user_id`) — scopes RAG retrieval (migration 054). */
+  userId: string
+  /** Full parsed document text. */
+  text: string
+}
+
+export interface IndexDocumentResult extends EmbedAndStoreResult {
+  summaryId: string | null
+}
+
+/**
+ * Index one uploaded document for chat retrieval: (re)create its
+ * `document_summaries` row owned by `userId` and embed its chunks.
+ *
+ * Unlike the old inline pipeline this does NOT require a Prisma `clients` row
+ * (migration 091 made `clientId` nullable) — that requirement silently skipped
+ * every ordinary client, which is why document search stayed empty. Idempotent:
+ * a previous summary of the same document (and its chunks, by cascade) is
+ * replaced. Never throws.
+ */
+export async function indexDocumentForRetrieval(input: IndexDocumentInput): Promise<IndexDocumentResult> {
+  const fail = (error: string): IndexDocumentResult => ({ summaryId: null, chunks: 0, stored: 0, embeddedAt: null, error })
+  try {
+    if (!input.documentId || !input.userId) return fail('missing_ids')
+    if (!input.text?.trim()) return fail('empty_text')
+    if (!hasOpenRouterKey()) return fail('missing_openrouter_key')
+
+    // Best-effort legacy linkage; NULL is fine since migration 091.
+    const client = await prisma.client
+      .findFirst({ where: { managerId: input.userId }, select: { id: true } })
+      .catch(() => null)
+    const metadataJson = JSON.stringify({ source_document_id: input.documentId })
+
+    await prisma.$executeRaw`
+      DELETE FROM "document_summaries" WHERE "metadata"->>'source_document_id' = ${input.documentId}
+    `
+    const rows = await prisma.$queryRaw<Array<{ id: string }>>`
+      INSERT INTO "document_summaries" ("id", "clientId", "user_id", "content", "metadata", "createdAt")
+      VALUES (gen_random_uuid()::text, ${client?.id ?? null}, ${input.userId}, ${input.text}, ${metadataJson}::jsonb, now())
+      RETURNING "id"
+    `
+    const summaryId = rows?.[0]?.id ?? null
+    if (!summaryId) return fail('summary_insert_failed')
+
+    const result = await embedAndStoreChunks(summaryId, input.text, { userId: input.userId })
+    return { ...result, summaryId }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'unknown_error'
+    console.warn('[documents/embed] indexDocumentForRetrieval failed:', msg)
+    return fail(msg)
+  }
+}
+
+/**
+ * Rough embedding cost for `chars` of document text with
+ * openai/text-embedding-3-small ($0.02 / 1M tokens):
+ *   tokens ≈ chars × 1.25 (chunk overlap 200/1000 → ~25% re-embedded) / 2.5
+ *            (Cyrillic averages ~2.5 chars per token)
+ *   cost   ≈ tokens × 0.02 / 1_000_000
+ */
+export function estimateEmbeddingCost(chars: number): { tokens: number; costUsd: number } {
+  const tokens = Math.ceil((Math.max(0, chars) * 1.25) / 2.5)
+  return { tokens, costUsd: Math.round(((tokens * 0.02) / 1_000_000) * 1e6) / 1e6 }
 }

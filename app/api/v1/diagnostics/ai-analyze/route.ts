@@ -14,6 +14,9 @@ import { localeFromRequestCookie, normalizeLocale } from '@/lib/i18n/locale'
 import { hasValidInternalToken } from '@/lib/internal-auth'
 import { getSessionUser, getSessionRole, isStaffRole } from '@/lib/api-identity'
 import { isRateLimitedKey } from '@/lib/rate-limit'
+import { assertAiBudget, isAiBudgetError, aiBudgetExceededResponse } from '@/lib/ai/budget'
+import { recordAiCacheHit, setAiActor } from '@/lib/ai/usage'
+import { analyzeWithInputCache, pointAAnalysisInputHash } from '@/lib/point-a/analysis-cache'
 
 /**
  * POST /api/v1/diagnostics/ai-analyze
@@ -30,6 +33,8 @@ export async function POST(req: NextRequest) {
     }
 
     const sb = createServerClient()
+    // Every AI call below is made for (and billed to) the diagnostic's owner.
+    setAiActor({ userId: String(user_id) })
 
     // SECURITY (audit 2026-07-02): this internal endpoint runs 4 paid AI calls.
     // It is normally fired server-to-server from recalculate/retry-ai, which
@@ -98,17 +103,60 @@ export async function POST(req: NextRequest) {
     // 5. Run rule-based engine to get PointA structure
     const pointA = calculatePointA(answers)
 
-    // 6. Run AI analysis (with expert notes)
-    const aiResult = await analyzePointA(answers, pointA, company as Company | null, expertNotes, locale)
+    // 6. Run AI analysis (with expert notes) — or reuse a previous analysis of
+    // EXACTLY the same input (4 LLM calls saved per unchanged recalculation).
+    const inputHash = pointAAnalysisInputHash({
+      answers,
+      pointA,
+      company: (company ?? null) as Record<string, unknown> | null,
+      expertNotes: expertNotes as Record<string, unknown>,
+      locale,
+    })
+    let outcome: { result: Awaited<ReturnType<typeof analyzePointA>>; cached: boolean }
+    try {
+      outcome = await analyzeWithInputCache(inputHash, {
+        findCached: async (hash) => {
+          const { data, error } = await sb
+            .from('diagnostics')
+            .select('ai_analysis')
+            .eq('user_id', user_id)
+            .eq('narrative_input_hash', hash)
+            .eq('ai_status', 'completed')
+            .not('ai_analysis', 'is', null)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle()
+          if (error || !data?.ai_analysis) return null // e.g. migration 091 not applied yet
+          return data.ai_analysis as Awaited<ReturnType<typeof analyzePointA>>
+        },
+        onCacheHit: () => recordAiCacheHit('point_a_analysis', { userId: String(user_id) }),
+        analyze: async () => {
+          await assertAiBudget(String(user_id), 'point_a_analysis')
+          return analyzePointA(answers, pointA, company as Company | null, expertNotes, locale)
+        },
+      })
+    } catch (err) {
+      if (!isAiBudgetError(err)) throw err
+      await sb.from('diagnostics').update({ ai_status: 'failed' }).eq('id', diagnostic_id)
+      return aiBudgetExceededResponse({ ai_status: 'failed' })
+    }
+    const aiResult = outcome.result
 
     if (aiResult) {
-      // 7. Store result
-      await sb
+      // 7. Store result (+ the input hash for the next recalculation). Falls
+      // back to a hash-less write when migration 091 is not applied yet.
+      const { error: storeErr } = await sb
         .from('diagnostics')
-        .update({ ai_analysis: aiResult, ai_status: 'completed' })
+        .update({ ai_analysis: aiResult, ai_status: 'completed', narrative_input_hash: inputHash })
         .eq('id', diagnostic_id)
+      if (storeErr) {
+        await sb
+          .from('diagnostics')
+          .update({ ai_analysis: aiResult, ai_status: 'completed' })
+          .eq('id', diagnostic_id)
+      }
 
-      return NextResponse.json({ ok: true, ai_status: 'completed' })
+      return NextResponse.json({ ok: true, ai_status: 'completed', cached: outcome.cached })
     } else {
       await sb
         .from('diagnostics')

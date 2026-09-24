@@ -37,6 +37,7 @@ describe('provider-enforced structured output', () => {
     }))
 
     const result = await generateObjectViaOpenRouter({
+      feature: 'journey',
       system: 'system',
       user: 'user',
       schema,
@@ -69,6 +70,7 @@ describe('provider-enforced structured output', () => {
       .mockResolvedValueOnce(JSON.stringify({ phase: 'partial' }))
 
     await expect(generateObjectViaOpenRouter({
+      feature: 'journey',
       system: 'system',
       user: 'user',
       schema,
@@ -88,6 +90,7 @@ describe('provider-enforced structured output', () => {
     openRouter.chat.mockResolvedValueOnce(JSON.stringify({ phase: 'partial' }))
 
     await generateObjectViaOpenRouter({
+      feature: 'journey',
       system: 'system',
       user: 'user',
       schema,
@@ -112,6 +115,7 @@ describe('provider-enforced structured output', () => {
       .mockResolvedValueOnce(JSON.stringify({ label: 'Исправлено', optionalValue: null, score: null }))
 
     await expect(generateObjectViaOpenRouter({
+      feature: 'journey',
       system: 'system',
       user: 'user',
       schema,
@@ -127,6 +131,7 @@ describe('provider-enforced structured output', () => {
     openRouter.chat.mockResolvedValueOnce(JSON.stringify({ value: 7 }))
 
     await expect(generateObjectViaOpenRouter({
+      feature: 'journey',
       system: 'system',
       user: 'user',
       schema,
