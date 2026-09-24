@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase-service'
 import { createNotification } from '@/lib/notifications/create'
+import { notifyClient } from '@/lib/notifications/notify'
 import { sendUserEmail } from '@/lib/email'
 import { sendTelegramMessage } from '@/lib/telegram'
 import {
@@ -12,6 +13,7 @@ import {
   type DigestData,
 } from '@/lib/crm/digest'
 import { EXTRA_DIGEST_CHANNELS } from '@/lib/crm/digest-channels'
+import { isBearerAuthorized } from '@/lib/security/cron-auth'
 
 export const dynamic = 'force-dynamic'
 // Дайджест шлёт до трёх каналов на пользователя; на большой базе даём функции
@@ -29,7 +31,7 @@ export const maxDuration = 60
  * email (Resend) и Telegram (если чат привязан). Каждый канал — best-effort.
  *
  * Auth: Vercel Cron присылает `Authorization: Bearer ${CRON_SECRET}`.
- * Для ручного теста также принимается `?secret=` с тем же значением.
+ * Секрет принимается только в заголовке (не в `?secret=` — он попадает в логи).
  */
 
 const MAX_USERS = 5000
@@ -46,10 +48,12 @@ type ProfileRow = {
 
 /**
  * Re-scan через 90 дней (Фаза 5, №10): владельцам, чья текущая GRI-диагностика
- * была создана ровно 90 дней назад (окно в сутки: created_at ∈ [now−91d, now−90d)
- * → при ежедневном cron напоминание сработает ровно один раз, стейт не нужен),
- * шлём in-app напоминание пересчитать индекс. Best-effort: любая ошибка —
- * console.warn, дайджест не роняем.
+ * создана 90–96 дней назад, — «пора пересчитать GRI» через notifyClient
+ * (категория «gri»: лента + письмо по настройкам клиента). Это автоматическое
+ * касание: действует выключатель auto_reminders_enabled и недельный потолок.
+ * Окно в неделю + ключ gri_rescan:<user>:<дата оценки> — напоминание уйдёт
+ * один раз, даже если в день «90» клиент упёрся в потолок. Best-effort: любая
+ * ошибка — console.warn, дайджест не роняем.
  */
 async function sendGriRescanReminders(
   supabase: ReturnType<typeof createServiceClient>,
@@ -58,38 +62,48 @@ async function sendGriRescanReminders(
   let sent = 0
   try {
     const DAY_MS = 24 * 60 * 60 * 1000
-    const from = new Date(now.getTime() - 91 * DAY_MS).toISOString()
+    const from = new Date(now.getTime() - 97 * DAY_MS).toISOString()
     const to = new Date(now.getTime() - 90 * DAY_MS).toISOString()
 
     const { data: rows, error } = await supabase
       .from('gri_assessments')
-      .select('user_id')
+      .select('user_id, created_at')
       .eq('is_current', true)
       .gte('created_at', from)
       .lt('created_at', to)
       .limit(QUERY_LIMIT)
     if (error) throw error
 
-    const users = Array.from(
-      new Set(((rows ?? []) as CountRow[]).map((r) => r.user_id).filter(Boolean)),
-    )
+    const byUser = new Map<string, string>()
+    for (const r of (rows ?? []) as Array<{ user_id: string; created_at: string }>) {
+      if (r.user_id && !byUser.has(r.user_id)) byUser.set(r.user_id, String(r.created_at).slice(0, 10))
+    }
+    const users = Array.from(byUser.entries())
 
-    const CONCURRENCY = 25
+    const CONCURRENCY = 10
     for (let i = 0; i < users.length; i += CONCURRENCY) {
       const chunk = users.slice(i, i + CONCURRENCY)
-      await Promise.all(
-        chunk.map((userId) =>
-          createNotification({
-            userId,
-            title: '⏳ Пора пересчитать GRI',
-            body: 'Вашей диагностике 90 дней — бизнес изменился. Пересчитайте индекс и сравните динамику.',
-            category: 'gri',
-            priority: 'low',
-            link: '/gri?tab=assess',
-          }),
+      const results = await Promise.all(
+        chunk.map(([userId, assessedOn]) =>
+          notifyClient(
+            {
+              userId,
+              category: 'gri',
+              event: 'gri_rescan',
+              title: '⏳ Пора пересчитать GRI',
+              body: 'Вашей диагностике 90 дней — бизнес изменился. Пересчитайте индекс и сравните динамику.',
+              ctaUrl: '/gri?tab=assess',
+              ctaLabel: 'Пересчитать GRI',
+              priority: 'low',
+              eyebrow: 'GRI',
+              dedupeKey: `gri_rescan:${userId}:${assessedOn}`,
+              automated: { kind: 'gri_rescan' },
+            },
+            now,
+          ),
         ),
       )
-      sent += chunk.length
+      sent += results.filter((r) => r.ok && !r.skipped).length
     }
   } catch (e) {
     console.warn('[crm-digest] GRI re-scan reminders skipped', e)
@@ -103,10 +117,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: false, error: 'CRON_SECRET not configured' }, { status: 500 })
   }
 
-  const authHeader = req.headers.get('authorization')
-  const querySecret = req.nextUrl.searchParams.get('secret')
-  const authorized = authHeader === `Bearer ${cronSecret}` || querySecret === cronSecret
-  if (!authorized) {
+  // Header only (no ?secret= — it leaks into logs), constant-time compare.
+  if (!isBearerAuthorized(req, [cronSecret])) {
     return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
   }
 

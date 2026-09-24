@@ -7,6 +7,8 @@ import { createClient } from '@/lib/supabase/server'
 import { generateNarrative, type NarrativeInput, type PointANarrative } from '@/lib/point-a/narrative'
 import type { Company, Diagnostic, PointA } from '@/types/onboarding'
 import { isRateLimitedKey } from '@/lib/rate-limit'
+import { guardAiBudget } from '@/lib/ai/budget'
+import { recordAiCacheHit } from '@/lib/ai/usage'
 
 /**
  * POST /api/v1/point-a/narrative
@@ -67,12 +69,16 @@ export async function POST(req: NextRequest) {
 
   // 3. Return cached narrative if completed and no regenerate flag
   if (!regenerate && diagnostic.ai_status === 'completed' && diagnostic.ai_analysis) {
+    void recordAiCacheHit('point_a_narrative', { userId: user.id })
     return NextResponse.json({
       ok: true,
       data: diagnostic.ai_analysis as unknown as PointANarrative,
       cached: true,
     })
   }
+
+  const overBudget = await guardAiBudget(user.id, 'point_a_narrative')
+  if (overBudget) return overBudget
 
   // 4. Fetch company
   const { data: companyRow } = await sb

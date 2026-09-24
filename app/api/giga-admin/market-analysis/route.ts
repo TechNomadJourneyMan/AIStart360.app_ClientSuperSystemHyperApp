@@ -17,6 +17,7 @@ import {
   type AnswerRecord,
 } from '@/lib/market-analysis/persist'
 import { hasOpenRouterKey } from '@/lib/ai/openrouter'
+import { setAiActor } from '@/lib/ai/usage'
 import {
   generateMarketAnswers,
   type MarketGenContext,
@@ -244,6 +245,10 @@ export async function POST(req: NextRequest) {
   if (!sb) {
     return NextResponse.json({ ok: false, error: 'supabase_not_configured' }, { status: 500 })
   }
+
+  // Staff-initiated generation: attribute the cost to the client, record the
+  // staff actor; not limited by the client's daily AI budget.
+  setAiActor({ userId: user_id, actorId: guard.actor.id })
 
   // 1. Gather REAL context from the user's survey answers (upstream optional).
   const ctx = await buildContext(sb, user_id)

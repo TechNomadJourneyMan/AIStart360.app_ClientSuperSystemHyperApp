@@ -1,127 +1,115 @@
+/**
+ * POST /api/giga-admin/auth — вход владельца в ГИГА-Панель: email владельца +
+ * пароль, чей хеш живёт только в окружении. Общего аварийного пароля больше нет.
+ */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { NextRequest } from 'next/server'
+import { hashOwnerPassword, verifyOwnerPassword } from '@/lib/admin/owner-password'
 
-const rateLimit = vi.hoisted(() => ({ limit: vi.fn() }))
-const audit = vi.hoisted(() => ({ log: vi.fn() }))
-
-vi.mock('@/lib/rate-limit', () => ({
-  authRateLimit: { limit: rateLimit.limit },
+const s = vi.hoisted(() => ({
+  limited: false,
+  profile: { id: 'owner-id', role: 'super_admin', status: 'approved' } as null | { id: string; role: string; status: string },
+  verifiedUserId: 'owner-id' as string | null,
+  generateLink: 0,
+  audits: [] as string[],
 }))
-vi.mock('@/lib/audit', () => ({ logAudit: audit.log }))
 
-import { GIGA_COOKIE_NAME, GIGA_TOKEN_MAX_AGE_SECONDS, verifyGigaRole } from '@/lib/giga-cookie'
-import { POST } from '@/app/api/giga-admin/auth/route'
-
-const ORIGINAL_ADMIN_PASSWORD = process.env.GIGA_ADMIN_PASSWORD
-const ORIGINAL_COOKIE_SECRET = process.env.GIGA_COOKIE_SECRET
-const ADMIN_PASSWORD = 'correct horse battery staple'
-
-function request(
-  body: BodyInit | null,
-  contentType = 'application/json',
-  headers: Record<string, string> = {},
-): NextRequest {
-  return new NextRequest('http://localhost/api/giga-admin/auth', {
-    method: 'POST',
-    headers: {
-      'content-type': contentType,
-      'x-forwarded-for': '203.0.113.10',
-      ...headers,
+vi.mock('@/lib/rate-limit', () => ({ isRateLimitedKey: async () => s.limited }))
+vi.mock('@/lib/audit', () => ({ logAudit: async (e: { action: string }) => { s.audits.push(e.action) } }))
+vi.mock('@/lib/supabase-service', () => ({
+  createServiceClient: () => ({
+    from: () => ({ select: () => ({ ilike: () => ({ maybeSingle: async () => ({ data: s.profile }) }) }) }),
+    auth: { admin: { generateLink: async () => { s.generateLink++; return { data: { properties: { hashed_token: 'th' } }, error: null } } } },
+  }),
+}))
+vi.mock('@/lib/supabase-server', () => ({
+  createServerClient: () => ({
+    auth: {
+      verifyOtp: async () => (s.verifiedUserId ? { data: { user: { id: s.verifiedUserId } }, error: null } : { data: { user: null }, error: { message: 'x' } }),
+      getUser: async () => ({ data: { user: null } }),
+      signOut: async () => ({}),
     },
-    body,
+  }),
+}))
+
+const { POST } = await import('@/app/api/giga-admin/auth/route')
+
+const PASSWORD = 'correct horse battery staple'
+const HASH = hashOwnerPassword(PASSWORD, 1024)
+const ORIGINAL = { hash: process.env.GIGA_OWNER_PASSWORD_HASH, email: process.env.GIGA_OWNER_EMAIL }
+
+const login = (body: unknown) =>
+  POST(new NextRequest('http://localhost/api/giga-admin/auth', {
+    method: 'POST', headers: { 'content-type': 'application/json', 'x-forwarded-for': '203.0.113.10' }, body: JSON.stringify(body),
+  }))
+
+beforeEach(() => {
+  s.limited = false
+  s.profile = { id: 'owner-id', role: 'super_admin', status: 'approved' }
+  s.verifiedUserId = 'owner-id'
+  s.generateLink = 0
+  s.audits = []
+  process.env.GIGA_OWNER_PASSWORD_HASH = HASH
+  delete process.env.GIGA_OWNER_EMAIL
+})
+afterEach(() => {
+  if (ORIGINAL.hash === undefined) delete process.env.GIGA_OWNER_PASSWORD_HASH
+  else process.env.GIGA_OWNER_PASSWORD_HASH = ORIGINAL.hash
+  if (ORIGINAL.email === undefined) delete process.env.GIGA_OWNER_EMAIL
+  else process.env.GIGA_OWNER_EMAIL = ORIGINAL.email
+})
+
+describe('owner password hash', () => {
+  it('verifies only the right password; malformed hashes fail closed', () => {
+    expect(verifyOwnerPassword(PASSWORD, HASH)).toBe(true)
+    expect(verifyOwnerPassword(PASSWORD + '!', HASH)).toBe(false)
+    expect(verifyOwnerPassword(PASSWORD, 'plain-text')).toBe(false)
+    expect(verifyOwnerPassword(PASSWORD, undefined)).toBe(false)
+    expect(HASH).not.toContain(PASSWORD)
+    expect(HASH).not.toContain('$')
   })
-}
+})
 
-function jsonRequest(value: unknown): NextRequest {
-  return request(JSON.stringify(value))
-}
-
-describe('POST /api/giga-admin/auth hardening', () => {
-  beforeEach(() => {
-    vi.resetAllMocks()
-    rateLimit.limit.mockResolvedValue({ success: true })
-    audit.log.mockResolvedValue(undefined)
-    process.env.GIGA_ADMIN_PASSWORD = ADMIN_PASSWORD
-    process.env.GIGA_COOKIE_SECRET = 'route-test-cookie-secret-with-sufficient-entropy'
-  })
-
-  afterEach(() => {
-    if (ORIGINAL_ADMIN_PASSWORD === undefined) delete process.env.GIGA_ADMIN_PASSWORD
-    else process.env.GIGA_ADMIN_PASSWORD = ORIGINAL_ADMIN_PASSWORD
-    if (ORIGINAL_COOKIE_SECRET === undefined) delete process.env.GIGA_COOKIE_SECRET
-    else process.env.GIGA_COOKIE_SECRET = ORIGINAL_COOKIE_SECRET
-  })
-
-  it('sets the versioned, expiring HttpOnly cookie after a valid password', async () => {
-    const response = await POST(jsonRequest({ password: ADMIN_PASSWORD }))
-
-    expect(response.status).toBe(200)
-    const cookie = response.cookies.get(GIGA_COOKIE_NAME)
-    expect(cookie?.value.startsWith('v1.')).toBe(true)
-    expect(verifyGigaRole(cookie?.value)).toBe('super_admin')
-    expect(cookie?.httpOnly).toBe(true)
-    expect(cookie?.sameSite).toBe('lax')
-    expect(cookie?.maxAge).toBe(GIGA_TOKEN_MAX_AGE_SECONDS)
-    expect(audit.log).toHaveBeenCalledWith(expect.objectContaining({
-      action: 'admin.login',
-      performedBy: 'giga:super_admin',
-    }))
-  })
-
-  it('rejects wrong passwords of both equal and unequal lengths', async () => {
-    const sameLengthWrong = `${ADMIN_PASSWORD.slice(0, -1)}x`
-
-    const first = await POST(jsonRequest({ password: sameLengthWrong }))
-    const second = await POST(jsonRequest({ password: 'wrong' }))
-
-    expect(first.status).toBe(401)
-    expect(second.status).toBe(401)
-    expect(audit.log).toHaveBeenCalledTimes(2)
-    expect(audit.log).toHaveBeenNthCalledWith(1, expect.objectContaining({
-      action: 'admin.login_failed',
-    }))
+describe('POST /api/giga-admin/auth', () => {
+  it('owner email + right password → personal Supabase session, no break-glass cookie', async () => {
+    const res = await login({ email: 'TechNomadJourneyMan@gmail.com', password: PASSWORD })
+    expect(res.status).toBe(200)
+    expect(s.generateLink).toBe(1)
+    expect(res.cookies.get('aistart360_giga')?.value).toBe('')
+    expect(s.audits).toEqual(['admin.login'])
   })
 
-  it('enforces JSON media type and a strict one-field object schema', async () => {
-    const wrongMediaType = await POST(request(JSON.stringify({ password: ADMIN_PASSWORD }), 'text/plain'))
-    const malformed = await POST(request('{"password":'))
-    const array = await POST(jsonRequest([ADMIN_PASSWORD]))
-    const extraField = await POST(jsonRequest({ password: ADMIN_PASSWORD, role: 'super_admin' }))
-    const empty = await POST(jsonRequest({ password: '' }))
-
-    expect(wrongMediaType.status).toBe(415)
-    expect(malformed.status).toBe(400)
-    expect(array.status).toBe(400)
-    expect(extraField.status).toBe(400)
-    expect(empty.status).toBe(400)
-    expect(audit.log).not.toHaveBeenCalled()
+  it('wrong password or another email → 401, no session minted', async () => {
+    expect((await login({ email: 'technomadjourneyman@gmail.com', password: 'nope' })).status).toBe(401)
+    expect((await login({ email: 'someone@else.io', password: PASSWORD })).status).toBe(401)
+    expect(s.generateLink).toBe(0)
+    expect(s.audits).toEqual(['admin.login_failed', 'admin.login_failed'])
   })
 
-  it('bounds the streamed body and password in characters and UTF-8 bytes', async () => {
-    const oversizedBody = await POST(request('x'.repeat(2_049)))
-    const tooManyCharacters = await POST(jsonRequest({ password: 'a'.repeat(513) }))
-    const tooManyUtf8Bytes = await POST(jsonRequest({ password: '界'.repeat(342) }))
-
-    expect(oversizedBody.status).toBe(413)
-    expect(tooManyCharacters.status).toBe(400)
-    expect(tooManyUtf8Bytes.status).toBe(400)
-    expect(audit.log).not.toHaveBeenCalled()
+  it('password alone (old break-glass form) is rejected', async () => {
+    expect((await login({ password: PASSWORD })).status).toBe(400)
   })
 
-  it('fails closed when the configured password itself violates the bound', async () => {
-    process.env.GIGA_ADMIN_PASSWORD = 'a'.repeat(513)
-    const response = await POST(jsonRequest({ password: 'a'.repeat(512) }))
-
-    expect(response.status).toBe(500)
-    expect(await response.json()).toEqual({ error: 'Not configured' })
-    expect(audit.log).not.toHaveBeenCalled()
+  it('fails closed without a configured hash', async () => {
+    delete process.env.GIGA_OWNER_PASSWORD_HASH
+    expect((await login({ email: 'technomadjourneyman@gmail.com', password: PASSWORD })).status).toBe(503)
+    expect(s.generateLink).toBe(0)
   })
 
-  it('applies the rate limit before reading or comparing the password', async () => {
-    rateLimit.limit.mockResolvedValueOnce({ success: false })
-    const response = await POST(request(null, 'text/plain'))
+  it('account must still be an approved super_admin', async () => {
+    s.profile = { id: 'owner-id', role: 'client', status: 'approved' }
+    expect((await login({ email: 'technomadjourneyman@gmail.com', password: PASSWORD })).status).toBe(403)
+    expect(s.generateLink).toBe(0)
+  })
 
-    expect(response.status).toBe(429)
-    expect(audit.log).not.toHaveBeenCalled()
+  it('rate limit applies before any check', async () => {
+    s.limited = true
+    expect((await login({ email: 'technomadjourneyman@gmail.com', password: PASSWORD })).status).toBe(429)
+    expect(s.audits).toEqual([])
+  })
+
+  it('session for another user id is refused', async () => {
+    s.verifiedUserId = 'someone-else'
+    expect((await login({ email: 'technomadjourneyman@gmail.com', password: PASSWORD })).status).toBe(500)
   })
 })

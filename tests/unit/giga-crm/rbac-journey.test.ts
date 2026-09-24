@@ -9,7 +9,7 @@ describe('RBAC matrix', () => {
   it('super_admin has everything; admin lacks only roles and system settings', () => {
     expect(ROLE_PERMISSIONS.super_admin.size).toBe(ALL_PERMISSIONS.length)
     const missing = ALL_PERMISSIONS.filter((p) => !hasPermission('admin', p))
-    expect(missing.sort()).toEqual(['roles.manage', 'settings.manage'])
+    expect(missing.sort()).toEqual(['roles.manage', 'settings.manage', 'users.delete'])
   })
 
   it('restricts destructive and sensitive operations', () => {

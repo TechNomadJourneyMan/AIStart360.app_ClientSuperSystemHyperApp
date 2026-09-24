@@ -77,6 +77,16 @@ const csp = [
 ].join('; ')
 
 const nextConfig = {
+  // E-commerce vertical removed (2026-09-24): old links land on the client home.
+  async redirects() {
+    return [
+      { source: '/client/onboarding-ecommerce', destination: '/client/home', permanent: false },
+      { source: '/client/dashboard-ecommerce', destination: '/client/home', permanent: false },
+      // Роль «owner» убрана из продукта (2026-09-24) — старый кабинет ведёт в клиентский.
+      { source: '/owner', destination: '/client/home', permanent: false },
+      { source: '/owner/:path*', destination: '/client/home', permanent: false },
+    ]
+  },
   async headers() {
     return [
       {

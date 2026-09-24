@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server'
 import type { NextFetchEvent, NextRequest } from 'next/server'
 import { updateSession } from '@/lib/supabase/middleware'
-import { GIGA_COOKIE_NAME, verifyGigaRoleEdge } from '@/lib/giga-cookie-edge'
 import { MFA_COOKIE_NAME, verifyStepUpEdge } from '@/lib/mfa/step-up-edge'
 import { isJourneyPublicDemoEnabled } from '@/lib/journey/public-demo'
 import { IMP_COOKIE_NAME, READ_ONLY_POST_API, isViewModeAllowed, readImpersonation } from '@/lib/impersonation/token'
@@ -64,7 +63,7 @@ const IS_PUBLIC_JOURNEY_PREVIEW =
 
 const PUBLIC_PATHS = ['/login', '/register', '/forgot-password', '/auth/callback', '/auth/reset-password']
 
-const VALID_ROLES = ['admin', 'expert', 'owner', 'client', 'super_admin'] as const
+const VALID_ROLES = ['admin', 'expert', 'client', 'super_admin'] as const
 type ValidRole = typeof VALID_ROLES[number]
 
 const GIGA_PANEL_PATH = '/admin-giga-panel'
@@ -89,8 +88,9 @@ const CLIENT_DASHBOARD_PATHS = [
   '/dashboard', '/gri', '/pulse', '/point-a', '/point-b', '/simulator',
   '/metrics', '/market', '/profile', '/notifications', '/settings', '/activity',
 ]
+// Бывший портал эксперта: страниц там больше нет, только редирект в
+// /super-expert. Клиентов и владельцев по-прежнему уводим отсюда в свой кабинет.
 const EXPERT_PATHS = ['/expert']
-const OWNER_PATHS = ['/owner']
 
 // Whole-segment route matching: '/clients' must NOT match the '/client'
 // cabinet prefix (and vice versa) — plain startsWith leaks across routes.
@@ -100,8 +100,15 @@ function matchesRoute(pathname: string, route: string): boolean {
 const matchesAny = (pathname: string, routes: string[]) =>
   routes.some((r) => matchesRoute(pathname, r))
 
+/**
+ * profiles.role → роль маршрутизации. 'expert' (а также устаревшие 'manager' /
+ * 'analyst') — это «эксперт старого портала». Самого портала больше нет:
+ * такой человек работает в кабинете SuperExpert, если у него есть роль в
+ * staff_roles, иначе видит отказ (см. legacyExpertDestination).
+ */
 function normalizeRole(rawRole: string | null | undefined): ValidRole {
-  if (rawRole === 'admin' || rawRole === 'expert' || rawRole === 'owner' || rawRole === 'client' || rawRole === 'super_admin') {
+  // 'owner' removed from the product (2026-09-24): any leftover row is a client.
+  if (rawRole === 'admin' || rawRole === 'expert' || rawRole === 'client' || rawRole === 'super_admin') {
     return rawRole
   }
   if (rawRole === 'manager' || rawRole === 'analyst') {
@@ -125,6 +132,22 @@ async function resolveRoleAndStatus(
     role: normalizeRole(typeof data?.role === 'string' ? data.role : fallbackRole),
     status: typeof data?.status === 'string' ? data.status : null,
   }
+}
+
+/**
+ * Куда отправить «эксперта старого портала» (profiles.role = expert / manager /
+ * analyst). Рабочее место эксперта — кабинет SuperExpert, и пускает туда только
+ * роль в staff_roles: без неё — страница входа с отказом, а не пустой портал.
+ */
+async function legacyExpertDestination(
+  supabase: Awaited<ReturnType<typeof updateSession>>['supabase'],
+  userId: string,
+  status: string | null | undefined,
+): Promise<string> {
+  const { data: staffRow } = await supabase.from('staff_roles').select('role').eq('user_id', userId).maybeSingle()
+  const staffRole = isStaffRole(staffRow?.role) ? staffRow.role : null
+  if (!staffRole || status !== 'approved') return `${SUPER_EXPERT_LOGIN_PATH}?denied=1`
+  return SUPER_EXPERT_ROLES.has(staffRole) ? SUPER_EXPERT_PATH : GIGA_PANEL_PATH
 }
 
 /**
@@ -218,8 +241,9 @@ export async function middleware(request: NextRequest, event?: NextFetchEvent) {
   // Refresh Supabase session cookies and get current user
   const { supabase, response, user } = await updateSession(request)
 
-  const metadataRole = user && typeof user.user_metadata?.role === 'string' ? user.user_metadata.role : null
-  const resolved = user ? await resolveRoleAndStatus(supabase, user.id, metadataRole) : null
+  // Role comes from profiles only: user_metadata is editable by the user
+  // (auth.updateUser) and must never grant a role (F-001).
+  const resolved = user ? await resolveRoleAndStatus(supabase, user.id, null) : null
   const role = resolved?.role ?? null
 
   // ── Impersonation («кабинет от имени пользователя») ──
@@ -272,16 +296,8 @@ export async function middleware(request: NextRequest, event?: NextFetchEvent) {
   const hasApprovedPersonalGigaAccess =
     Boolean(user) && role === 'super_admin' && resolved?.status === 'approved'
 
-  // A2b: the giga gate is the HMAC-SIGNED `aistart360_giga` cookie, verified
-  // here on the Edge runtime via Web Crypto. The unsigned `aistart360_role`
-  // string is NO LONGER accepted for giga access.
-  // The shared-password entry can be switched off in platform settings.
-  const hasGigaAccess =
-    (await verifyGigaRoleEdge(request.cookies.get(GIGA_COOKIE_NAME)?.value)) === 'super_admin' &&
-    (await edgeSettings()).break_glass_enabled
-
   if (isGigaLogin) {
-    if (hasApprovedPersonalGigaAccess || hasGigaAccess) {
+    if (hasApprovedPersonalGigaAccess) {
       return NextResponse.redirect(new URL(GIGA_PANEL_PATH, request.url))
     }
     return response // allow access to login page
@@ -329,10 +345,10 @@ export async function middleware(request: NextRequest, event?: NextFetchEvent) {
   }
 
   // ГИГА-Панель: только персонал (super_admin, роль из staff_roles, личный
-  // staff-cookie во время impersonation или break-glass). Права по разделам
+  // staff-cookie во время impersonation). Аварийного входа больше нет. Права по разделам
   // проверяет каждый API-маршрут (lib/admin/rbac.ts).
   if (pathname.startsWith(GIGA_PANEL_PATH)) {
-    let isStaff = role === 'super_admin' || hasGigaAccess
+    let isStaff = role === 'super_admin' && resolved?.status === 'approved'
     if (!isStaff) {
       const staffToken = request.cookies.get(STAFF_COOKIE_NAME)?.value
       if (staffToken && (await verifyToken('staff', staffToken)).ok) isStaff = true
@@ -347,8 +363,7 @@ export async function middleware(request: NextRequest, event?: NextFetchEvent) {
     // A personal super_admin session that enrolled in 2FA must pass the step-up
     // here too — this branch returns early, so the general MFA gate below was
     // never reached and the most privileged surface was the one skipping 2FA.
-    // (Break-glass entry has no Supabase user and is unaffected.)
-    if (user && !impersonating && !hasGigaAccess) {
+    if (user && !impersonating) {
       const gigaMeta = user.user_metadata as Record<string, unknown> | undefined
       const enrolled = gigaMeta?.mfa_totp === true || gigaMeta?.mfa_webauthn === true
       if (enrolled && !(await verifyStepUpEdge(request.cookies.get(MFA_COOKIE_NAME)?.value, user.id))) {
@@ -380,9 +395,8 @@ export async function middleware(request: NextRequest, event?: NextFetchEvent) {
     const dest =
       role === 'super_admin' ? '/admin-giga-panel' :
       role === 'admin' ? '/dashboard' :
-      role === 'owner' ? '/owner/dashboard' :
       role === 'client' ? '/dashboard' :
-      '/expert/dashboard'
+      user ? await legacyExpertDestination(supabase, user.id, resolved?.status) : SUPER_EXPERT_LOGIN_PATH
     return NextResponse.redirect(new URL(dest, request.url))
   }
 
@@ -422,7 +436,7 @@ export async function middleware(request: NextRequest, event?: NextFetchEvent) {
 
   // ── Maintenance mode (platform settings): client cabinets are closed ──
   // Staff, experts and an admin driving a cabinet keep working.
-  if (user && (role === 'client' || role === 'owner') && !impersonating && !isPublic && pathname !== MFA_CHALLENGE_PATH) {
+  if (user && role === 'client' && !impersonating && !isPublic && pathname !== MFA_CHALLENGE_PATH) {
     if ((await edgeSettings()).maintenance.enabled) {
       return redirectKeepingCookies(response, new URL('/maintenance', request.url))
     }
@@ -441,17 +455,18 @@ export async function middleware(request: NextRequest, event?: NextFetchEvent) {
 
   // ── Role-based route protection ──
   if (user) {
-    // Expert trying to access admin-only pages
-    if (role === 'expert' && matchesAny(pathname, ADMIN_PATHS)) {
-      return NextResponse.redirect(new URL('/expert/dashboard', request.url))
+    // «Эксперт старого портала»: своих страниц у него больше нет. С ролью в
+    // staff_roles — в рабочий кабинет (настройки оставляем: там включают 2FA,
+    // которую требует кабинет), без роли — отказ на странице входа SuperExpert.
+    if (role === 'expert' && pathname !== MFA_CHALLENGE_PATH && !matchesRoute(pathname, '/settings')) {
+      return NextResponse.redirect(new URL(await legacyExpertDestination(supabase, user.id, resolved?.status), request.url))
     }
 
-    // Client trying to access admin/expert/owner pages
+    // Client trying to access admin/expert pages
     if (
       role === 'client' &&
       (matchesAny(pathname, ADMIN_PATHS) ||
-       matchesAny(pathname, EXPERT_PATHS) ||
-       matchesAny(pathname, OWNER_PATHS))
+       matchesAny(pathname, EXPERT_PATHS))
     ) {
       // Allow clients through to the shared (dashboard) layout routes
       if (matchesAny(pathname, CLIENT_DASHBOARD_PATHS)) {
@@ -461,14 +476,6 @@ export async function middleware(request: NextRequest, event?: NextFetchEvent) {
       if (!matchesRoute(pathname, '/client')) {
         return NextResponse.redirect(new URL('/dashboard', request.url))
       }
-    }
-
-    // Owner trying to access admin or expert pages
-    if (
-      role === 'owner' &&
-      (matchesAny(pathname, ADMIN_PATHS) || matchesAny(pathname, EXPERT_PATHS))
-    ) {
-      return NextResponse.redirect(new URL('/owner/dashboard', request.url))
     }
   }
 

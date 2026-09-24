@@ -28,6 +28,8 @@ export const PERMISSIONS = {
   'users.invite': 'Приглашения на платформу',
   'users.approve': 'Решение по заявке на доступ (одобрить / отклонить)',
   'users.archive': 'Архивация (удаление) пользователей',
+  'users.delete': 'Полное удаление пользователя из платформы и БД (необратимо)',
+  'experts.manage': 'Модуль «Эксперты»: нагрузка, видимость клиентов, назначение клиентов',
   'company.edit': 'Данные компании клиента',
   'survey.view': 'Просмотр анкет',
   'survey.edit': 'Изменение анкет',
@@ -35,6 +37,7 @@ export const PERMISSIONS = {
   'gri.view': 'Просмотр GRI',
   'gri.edit': 'Изменение GRI',
   'gri.delete': 'Удаление результатов GRI',
+  'clients.review': 'Экспертный разбор клиента: комментарии, Точка Б, шаблоны',
   'activity.view': 'Активность пользователей',
   'cjm.view': 'Путь клиента (CJM)',
   'analytics.view': 'Аналитика платформы',
@@ -68,8 +71,9 @@ const CRM_MANAGER: Permission[] = [
 
 export const ROLE_PERMISSIONS: Record<StaffRole, ReadonlySet<Permission>> = {
   super_admin: new Set(ALL_PERMISSIONS),
-  // Everything except managing staff roles and global system settings.
-  admin: new Set(ALL_PERMISSIONS.filter((p) => p !== 'roles.manage' && p !== 'settings.manage')),
+  // Everything except managing staff roles, global system settings and the
+  // irreversible purge of a user — those stay with Super Admin.
+  admin: new Set(ALL_PERMISSIONS.filter((p) => p !== 'roles.manage' && p !== 'settings.manage' && p !== 'users.delete')),
   /**
    * SuperExpert — работа С ЛЮДЬМИ, но не с системой.
    *
@@ -89,6 +93,7 @@ export const ROLE_PERMISSIONS: Record<StaffRole, ReadonlySet<Permission>> = {
     'activity.view', 'cjm.view', 'analytics.view',
     'impersonate.view', 'impersonate.edit',
     'inbox.view', 'leads.view',
+    'clients.review',
   ]),
   crm_manager: new Set(CRM_MANAGER),
   content_manager: new Set<Permission>([
@@ -102,6 +107,26 @@ export const ROLE_PERMISSIONS: Record<StaffRole, ReadonlySet<Permission>> = {
     'dashboard.view', 'users.view', 'users.sensitive', 'survey.view', 'gri.view', 'activity.view', 'cjm.view',
     'impersonate.view', 'inbox.view', 'leads.view',
   ]),
+}
+
+/**
+ * Какие клиенты видны сотруднику.
+ *
+ * 'all'      — все клиенты платформы (по умолчанию);
+ * 'assigned' — только те, где он ответственный (`user_assignments.assignee_id`).
+ *
+ * Хранится в `staff_roles.client_scope` (миграция 086) и переключается
+ * администратором для конкретного эксперта. Руководящие роли и CRM-менеджер
+ * всегда видят всех: им нужно распределять клиентов, а не только вести своих.
+ */
+export const CLIENT_SCOPES = ['all', 'assigned'] as const
+export type ClientScope = (typeof CLIENT_SCOPES)[number]
+const ALWAYS_ALL_SCOPE: ReadonlySet<StaffRole> = new Set<StaffRole>(['super_admin', 'admin', 'crm_manager'])
+
+/** Итоговая область видимости для роли и значения из `staff_roles.client_scope`. */
+export function effectiveClientScope(role: StaffRole, raw: unknown): ClientScope {
+  if (ALWAYS_ALL_SCOPE.has(role)) return 'all'
+  return raw === 'assigned' ? 'assigned' : 'all'
 }
 
 export function isStaffRole(v: unknown): v is StaffRole {

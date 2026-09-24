@@ -7,6 +7,8 @@ import { hasPermission } from '@/lib/admin/rbac'
 import { maskEmail, maskPhone } from '@/lib/admin/mask'
 import { csvFilename, csvResponse, toCsv } from '@/lib/admin/csv'
 import { SURVEY_TOTAL_STEPS } from '@/lib/survey/steps'
+import { scopedClientIds } from '@/lib/admin/client-scope'
+import { scanAdminListUsers } from '@/lib/admin/list-users'
 
 /**
  * GET /api/giga-admin/users/export?<те же фильтры, что и в списке>
@@ -21,7 +23,7 @@ import { SURVEY_TOTAL_STEPS } from '@/lib/survey/steps'
 const SORTS = new Set(['created_at', 'last_seen_at', 'name', 'survey', 'survey_updated', 'gri'])
 const SEGMENTS = new Set(['', 'new_7d', 'active_7d', 'inactive_30d', 'survey_not_started', 'survey_in_progress', 'survey_completed', 'gri_not_started', 'gri_in_progress', 'gri_completed', 'staff'])
 const STATUSES = new Set(['', 'pending_approval', 'approved', 'rejected', 'requires_clarification', 'blocked', 'archived'])
-const ROLES = new Set(['', 'client', 'expert', 'owner', 'admin', 'super_admin', 'manager', 'analyst'])
+const ROLES = new Set(['', 'client', 'expert', 'admin', 'super_admin', 'manager', 'analyst'])
 const MAX_ROWS = 5000
 
 const fmt = (v: unknown) => (v ? new Date(String(v)).toLocaleString('ru-RU') : '')
@@ -38,20 +40,20 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: false, error: 'Неверный фильтр' }, { status: 400 })
   }
 
-  const { data, error } = await createServiceClient().rpc('admin_list_users', {
+  // Выгрузка честно проходит все страницы: admin_list_users отдаёт не больше
+  // 200 строк за вызов. Эксперт со scope 'assigned' выгружает только своих.
+  const data = await scanAdminListUsers(createServiceClient(), {
     p_search: (sp.get('q') ?? '').trim().slice(0, 100) || null,
     p_status: status || null,
     p_role: role || null,
     p_segment: segment || null,
     p_sort: sort,
     p_dir: sp.get('dir') === 'asc' ? 'asc' : 'desc',
-    p_limit: MAX_ROWS,
-    p_offset: 0,
-  })
-  if (error) return NextResponse.json({ ok: false, error: 'Не удалось выгрузить' }, { status: 500 })
+  }, { allowed: await scopedClientIds(guard.actor), maxRows: MAX_ROWS })
+  if (!data) return NextResponse.json({ ok: false, error: 'Не удалось выгрузить' }, { status: 500 })
 
   const sensitive = hasPermission(guard.actor.role, 'users.sensitive')
-  const rows = (data ?? []) as Array<Record<string, unknown>>
+  const rows = data as Array<Record<string, unknown>>
 
   const headers = [
     'Компания', 'Имя', 'Email', 'Телефон', 'Статус', 'Роль', 'Роль персонала', 'Тариф',

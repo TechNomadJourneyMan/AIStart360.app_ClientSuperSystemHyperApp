@@ -124,6 +124,13 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
     oldValue: current, newValue: null,
   }, req, { required: true })
   const { error } = await createServiceClient().from('cms_pages').delete().eq('id', params.id)
-  if (error) return NextResponse.json({ ok: false, error: 'Не удалось удалить страницу' }, { status: 500 })
+  if (error) {
+    // Журнал неизменяемый и уже говорит «удалена» — фиксируем, что удаления не было.
+    await recordAdminAction(guard.actor, {
+      action: 'content.page_delete_failed', entityType: 'cms_page', entityId: params.id,
+      metadata: { error: error.message.slice(0, 300) },
+    }, req).catch(() => false)
+    return NextResponse.json({ ok: false, error: 'Не удалось удалить страницу' }, { status: 500 })
+  }
   return NextResponse.json({ ok: true })
 }

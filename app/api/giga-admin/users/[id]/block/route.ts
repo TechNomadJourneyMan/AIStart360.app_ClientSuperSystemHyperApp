@@ -1,29 +1,38 @@
 export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@/lib/db'
+import { z } from 'zod'
 import { createServiceClient } from '@/lib/supabase-service'
 import { forbidTarget, requireGiga } from '@/lib/admin/giga-actor'
-import { logAudit } from '@/lib/audit'
+import { recordAdminAction } from '@/lib/admin/audit'
+import { STATUS_UPDATE_FAILED } from '@/lib/admin/status-messages'
+import { guardClientAccess } from '@/lib/admin/client-scope'
 
 /**
- * POST /api/giga-admin/users/:id/block
+ * POST /api/giga-admin/users/:id/block { reason }
  *
- * PERSISTENT block (R4). Previously this route only deleted (dead) NextAuth
- * sessions — nothing stopped the user from simply logging in again. Now it:
- *   1. sets profiles.status = 'blocked' (migration 059) — the login flow,
- *      middleware and rbac demotion all key off this;
- *   2. bans the GoTrue user (ban_duration) so existing refresh tokens die and
- *      new sign-ins are rejected at the auth layer;
- *   3. keeps the legacy Prisma-session cleanup (harmless, best-effort);
- *   4. writes an audit entry attributed to the real actor.
+ * PERSISTENT block (R4):
+ *   1. writes a REQUIRED audit entry (actor role + email, reason) — no journal,
+ *      no block;
+ *   2. sets profiles.status = 'blocked' (migration 059) — the login flow,
+ *      middleware and rbac demotion all key off this; if the update fails a
+ *      compensating `user.block_failed` entry is written (the journal is
+ *      append-only);
+ *   3. bans the GoTrue user (ban_duration) so existing refresh tokens die and
+ *      new sign-ins are rejected at the auth layer.
  */
+const bodySchema = z.object({
+  reason: z.string().trim().min(3, 'Укажите причину блокировки').max(300),
+})
+
 export async function POST(
   req: NextRequest,
   { params }: { params: { id: string } },
 ) {
   const guard = await requireGiga(req, 'users.manage')
   if (guard.response) return guard.response
+  const scopeDenied = await guardClientAccess(guard.actor, params.id)
+  if (scopeDenied) return scopeDenied
   const actor = guard.actor
   const denied = await forbidTarget(guard.actor, params.id)
   if (denied) return denied
@@ -34,6 +43,12 @@ export async function POST(
   if (actor.kind === 'session' && actor.id === id) {
     return NextResponse.json({ error: 'Нельзя заблокировать собственный аккаунт' }, { status: 422 })
   }
+
+  const parsed = bodySchema.safeParse(await req.json().catch(() => null))
+  if (!parsed.success) {
+    return NextResponse.json({ error: parsed.error.issues[0]?.message ?? 'Укажите причину блокировки' }, { status: 400 })
+  }
+  const { reason } = parsed.data
 
   try {
     const svc = createServiceClient()
@@ -50,6 +65,19 @@ export async function POST(
     if ((target as { role?: string }).role === 'super_admin') {
       return NextResponse.json({ error: 'Нельзя заблокировать super_admin' }, { status: 403 })
     }
+    const before = (target as { status?: string }).status ?? null
+
+    // Journal BEFORE the action: if it cannot be written, nothing happens.
+    try {
+      await recordAdminAction(actor, {
+        action: 'user.blocked',
+        entityType: 'user', entityId: id, targetUserId: id,
+        oldValue: { status: before }, newValue: { status: 'blocked', authBanned: true },
+        metadata: { reason },
+      }, req, { required: true })
+    } catch {
+      return NextResponse.json({ error: 'Журнал действий недоступен — блокировка не выполнена' }, { status: 503 })
+    }
 
     // 1. Persistent status — verify the row actually changed (RLS-null lesson).
     const { data: updated, error: updErr } = await svc
@@ -59,10 +87,13 @@ export async function POST(
       .select('id')
     if (updErr || !updated || updated.length === 0) {
       console.error('[giga-admin/block] profiles.status update failed:', updErr?.message)
-      return NextResponse.json(
-        { error: 'Статус не обновлён (применена ли миграция 059?)' },
-        { status: 409 },
-      )
+      await recordAdminAction(actor, {
+        action: 'user.block_failed',
+        entityType: 'user', entityId: id, targetUserId: id,
+        oldValue: { status: before }, newValue: { status: before },
+        metadata: { reason, error: (updErr?.message ?? 'profile row not updated').slice(0, 300) },
+      }, req).catch(() => false)
+      return NextResponse.json({ error: STATUS_UPDATE_FAILED }, { status: 409 })
     }
 
     // 2. Kill auth: ban the GoTrue user (revokes refresh, rejects new logins).
@@ -72,27 +103,7 @@ export async function POST(
       console.error('[giga-admin/block] GoTrue ban failed (status still blocked):', e)
     }
 
-    // 3. Legacy NextAuth sessions (best-effort).
-    try {
-      await prisma.session.deleteMany({ where: { userId: id } })
-    } catch {
-      // Prisma table may be empty/absent in this environment — non-fatal.
-    }
-
-    await logAudit({
-      entityType: 'user',
-      entityId: id,
-      action: 'user.blocked',
-      performedBy: actor.id,
-      diff: {
-        before: { status: (target as { status?: string }).status },
-        after: { status: 'blocked', authBanned: true },
-        actorKind: actor.kind,
-      },
-      ipAddress: req.headers.get('x-forwarded-for') ?? undefined,
-    })
-
-    return NextResponse.json({ success: true, message: `Пользователь ${id} заблокирован` })
+    return NextResponse.json({ success: true, message: 'Пользователь заблокирован' })
   } catch (error) {
     console.error('[giga-admin/block] Error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

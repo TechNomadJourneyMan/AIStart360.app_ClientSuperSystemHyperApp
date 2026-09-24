@@ -6,6 +6,7 @@ import { createServiceClient } from '@/lib/supabase-service'
 import { GRI_SECTIONS } from '@/lib/gri-assessment/sections'
 import { hasPermission } from '@/lib/admin/rbac'
 import { maskEmail } from '@/lib/admin/mask'
+import { NO_ID, scopedClientIds } from '@/lib/admin/client-scope'
 
 // GET /api/giga-admin/gri?page=&current=1&min=&max= — all assessments across
 // users + platform-level GRI statistics.
@@ -27,13 +28,19 @@ export async function GET(req: NextRequest) {
     .order('created_at', { ascending: false })
     .range((page - 1) * PAGE, page * PAGE - 1)
   if (onlyCurrent) q = q.eq('is_current', true)
+  // Эксперт со scope 'assigned': список замеров и черновиков — только свои клиенты.
+  const allowed = await scopedClientIds(guard.actor)
+  const scopeIds = allowed ? (allowed.length ? allowed : [NO_ID]) : null
+  if (scopeIds) q = q.in('user_id', scopeIds)
+  let draftsQ = sb.from('gri_assessment_drafts').select('user_id, updated_at').order('updated_at', { ascending: false }).limit(20)
+  if (scopeIds) draftsQ = draftsQ.in('user_id', scopeIds)
   if (Number.isFinite(min) && sp.get('min')) q = q.gte('gri_index', min)
   if (Number.isFinite(max) && sp.get('max')) q = q.lte('gri_index', max)
 
   const [list, all, drafts] = await Promise.all([
     q,
     sb.from('gri_assessments').select('gri_index, section_avgs').eq('is_current', true),
-    sb.from('gri_assessment_drafts').select('user_id, updated_at').order('updated_at', { ascending: false }).limit(20),
+    draftsQ,
   ])
   if (list.error || all.error) return NextResponse.json({ ok: false, error: 'Не удалось загрузить GRI' }, { status: 500 })
 

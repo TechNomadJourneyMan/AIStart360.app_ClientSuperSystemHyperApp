@@ -1,7 +1,7 @@
 'use client'
 
 import { createContext, useContext, type ReactNode } from 'react'
-import type { Permission, StaffRole } from '@/lib/admin/rbac'
+import type { ClientScope, Permission, StaffRole } from '@/lib/admin/rbac'
 import { useGigaQuery } from './kit'
 
 export interface StaffMe {
@@ -11,6 +11,8 @@ export interface StaffMe {
   role: StaffRole
   roleLabel: string
   permissions: Permission[]
+  /** 'assigned' — сотрудник видит только назначенных ему клиентов. */
+  clientScope?: ClientScope
 }
 
 interface Ctx { me: StaffMe | null; loading: boolean; error: string | null; can: (p: Permission) => boolean }

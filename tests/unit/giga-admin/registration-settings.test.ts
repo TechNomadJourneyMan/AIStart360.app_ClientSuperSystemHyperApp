@@ -3,10 +3,19 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 const state = vi.hoisted(() => ({ role: 'super_admin' as string | null }))
 const setMock = vi.hoisted(() => ({ fn: vi.fn() as any }))
 
-vi.mock('@/lib/giga-cookie', () => ({
-  GIGA_COOKIE_NAME: 'aistart360_giga',
-  verifyGigaRole: () => state.role,
-}))
+// Staff come in only through a personal session now (break-glass removed):
+// state.role === 'super_admin' ⇒ a super_admin session actor, anything else ⇒ none.
+vi.mock('@/lib/admin/giga-actor', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/admin/giga-actor')>('@/lib/admin/giga-actor')
+  const { makeRequireGiga } = await import('../_giga-guard')
+  const current = () => (state.role === 'super_admin' ? { id: 'staff-test', kind: 'session' as const, role: 'super_admin' as const } : null)
+  return {
+    ...actual,
+    requireGiga: makeRequireGiga(current),
+    getGigaActor: async () => { const a = current(); return a ? { ...a, permissions: [] } : null },
+    isGigaSuperAdmin: async () => current() !== null,
+  }
+})
 
 vi.mock('@/lib/settings/system-settings', () => ({
   getRegistrationMode: () => Promise.resolve('approval'),
@@ -49,7 +58,7 @@ describe('/api/giga-admin/settings/registration', () => {
   it('PUT sets a valid mode', async () => {
     const res = await PUT(makeReq('PUT', { mode: 'open' }))
     expect(res.status).toBe(200)
-    expect(setMock.fn).toHaveBeenCalledWith('open', 'giga:super_admin')
+    expect(setMock.fn).toHaveBeenCalledWith('open', 'staff-test')
   })
 
   it('PUT rejects an invalid mode and does not write', async () => {

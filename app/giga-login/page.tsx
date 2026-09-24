@@ -1,10 +1,10 @@
 'use client'
 
-import Link from 'next/link'
 import { useState } from 'react'
-import { Eye, EyeOff, Lock, UserRound } from 'lucide-react'
+import { Eye, EyeOff, Lock, Mail } from 'lucide-react'
 
 export default function GigaPanelLoginPage() {
+  const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
@@ -19,22 +19,16 @@ export default function GigaPanelLoginPage() {
       const res = await fetch('/api/giga-admin/auth', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password }),
+        body: JSON.stringify({ email, password }),
       })
 
       if (res.ok) {
-        // The password is never persisted client-side. The browser's own
-        // password manager (hidden username field below) handles "remember".
         window.location.href = '/admin-giga-panel'
       } else if (res.status === 429) {
         setError('Слишком много попыток. Попробуйте позже.')
-      } else if (res.status === 403) {
-        const d = await res.json().catch(() => null)
-        setError(d?.error || 'Вход по общему паролю выключен')
-      } else if (res.status >= 500) {
-        setError('Аварийный вход временно недоступен. Используйте личный аккаунт.')
       } else {
-        setError('Неверный пароль')
+        const d = await res.json().catch(() => null)
+        setError(d?.error || 'Неверный email или пароль')
       }
     } catch {
       setError('Ошибка соединения')
@@ -75,42 +69,26 @@ export default function GigaPanelLoginPage() {
             </p>
           </div>
 
-          <Link
-            href="/login?from=/admin-giga-panel"
-            className="group mb-6 flex w-full items-center gap-3 rounded-xl border border-blue-500/30 bg-blue-500/20 px-4 py-3 text-left transition-all hover:border-blue-400/50 hover:bg-blue-500/30"
-          >
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-400/15 text-blue-300">
-              <UserRound size={18} />
-            </span>
-            <span className="min-w-0">
-              <span className="block text-sm font-medium text-blue-200">
-                Войти через личный аккаунт
-              </span>
-              <span className="block text-[11px] leading-relaxed text-slate-500 group-hover:text-slate-400">
-                Основной безопасный способ входа
-              </span>
-            </span>
-          </Link>
-
-          <div className="mb-5 flex items-center gap-3">
-            <span className="h-px flex-1 bg-white/[0.07]" />
-            <span className="text-[10px] uppercase tracking-[0.16em] text-slate-600">
-              Аварийный доступ
-            </span>
-            <span className="h-px flex-1 bg-white/[0.07]" />
-          </div>
-
           <form onSubmit={handleSubmit} className="space-y-4" autoComplete="on">
-            {/* Hidden username field helps the browser password manager
-                associate the saved credential with this form */}
-            <input
-              type="text"
-              name="username"
-              value="giga-admin"
-              readOnly
-              hidden
-              autoComplete="username"
-            />
+            <div className="relative">
+              <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">
+                <Mail size={15} />
+              </div>
+              <input
+                id="giga-email"
+                type="email"
+                name="username"
+                autoComplete="username"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="Email"
+                className="w-full bg-white/[0.05] border border-white/[0.08] rounded-xl
+                  pl-9 pr-3 py-3 text-sm text-slate-200 placeholder:text-slate-600
+                  focus:outline-none focus:border-blue-500/50 focus:bg-white/[0.07]
+                  transition-all"
+                autoFocus
+              />
+            </div>
 
             <div className="relative">
               <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">
@@ -123,12 +101,11 @@ export default function GigaPanelLoginPage() {
                 autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="Пароль администратора"
+                placeholder="Пароль"
                 className="w-full bg-white/[0.05] border border-white/[0.08] rounded-xl
                   pl-9 pr-10 py-3 text-sm text-slate-200 placeholder:text-slate-600
                   focus:outline-none focus:border-blue-500/50 focus:bg-white/[0.07]
                   transition-all"
-                autoFocus
               />
               <button
                 type="button"
@@ -146,7 +123,7 @@ export default function GigaPanelLoginPage() {
 
             <button
               type="submit"
-              disabled={loading || !password}
+              disabled={loading || !email || !password}
               className="w-full py-3 rounded-xl bg-blue-500/20 border border-blue-500/30
                 text-blue-300 text-sm font-medium
                 hover:bg-blue-500/30 hover:border-blue-500/50
@@ -155,11 +132,6 @@ export default function GigaPanelLoginPage() {
             >
               {loading ? 'Проверка...' : 'Войти'}
             </button>
-
-            <p className="text-[10px] text-slate-600 text-center leading-relaxed">
-              Общий пароль предназначен только для восстановления доступа.
-              Для постоянной работы используйте личный аккаунт.
-            </p>
           </form>
         </div>
       </div>

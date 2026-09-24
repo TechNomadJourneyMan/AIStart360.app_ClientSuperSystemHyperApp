@@ -200,9 +200,9 @@ export default function MascotAssistant() {
   const hiddenNow = sessionHidden || isMascotHidden(settings, Date.now())
   const reducedMotion = useReducedMotion()
 
-  // Staff-контексты (/owner, /expert, /admin*): туров в TOURS для них нет —
+  // Staff-контексты (/expert, /admin*): туров в TOURS для них нет —
   // welcome и раздел «Обучение» там не предлагаем (обещать нечего).
-  const staffScreen = /^\/(owner|expert|admin)/.test(screen)
+  const staffScreen = /^\/(expert|admin)/.test(screen)
   // Защитное чтение: персист до миграции v2 мог не содержать tourGuide.
   const tourGuideStatus = settings.tourGuide?.status ?? 'pending'
   const tourGuideStepIdx = settings.tourGuide?.stepIdx ?? 0

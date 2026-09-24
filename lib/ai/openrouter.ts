@@ -12,6 +12,9 @@
  */
 
 import { getSiteUrl } from '@/lib/site-url'
+import { recordAiUsage, type AiFeature } from './usage'
+
+export type { AiFeature } from './usage'
 
 export const OPENROUTER_MODELS = {
   sonnet5: 'anthropic/claude-sonnet-5',
@@ -71,6 +74,10 @@ export function autoComplexity(opts: { user: string; system?: string; maxTokens?
 }
 
 interface ChatOptions {
+  /** Cost-accounting tag (ai_usage.feature). Required on every call site. */
+  feature: AiFeature
+  /** Who the call is for; defaults to the request actor set by `assertAiBudget`. */
+  userId?: string | null
   system?: string
   user: string
   /** Explicit model id. Wins over `complexity`. */
@@ -120,6 +127,12 @@ export function hasOpenRouterKey(): boolean {
   return Boolean(process.env.OPENROUTER_API_KEY)
 }
 
+interface OpenRouterResponseJson {
+  model?: string
+  choices?: Array<{ message?: { content?: string | null } }>
+  usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number; cost?: number }
+}
+
 /**
  * Sends a chat completion via OpenRouter. Returns the assistant message text,
  * or null if the request fails. Never throws.
@@ -132,16 +145,19 @@ export async function chatWithOpenRouter(opts: ChatOptions): Promise<string | nu
   if (opts.system) messages.push({ role: 'system', content: opts.system })
   messages.push({ role: 'user', content: opts.user })
 
+  const model = resolveModel({
+    model: opts.model,
+    complexity: opts.complexity,
+    user: opts.user,
+    system: opts.system,
+    maxTokens: opts.maxTokens,
+  })
   const body: Record<string, unknown> = {
-    model: resolveModel({
-      model: opts.model,
-      complexity: opts.complexity,
-      user: opts.user,
-      system: opts.system,
-      maxTokens: opts.maxTokens,
-    }),
+    model,
     messages,
     max_tokens: opts.maxTokens ?? 2000,
+    // Ask OpenRouter to return the exact `usage.cost` for ai_usage accounting.
+    usage: { include: true },
   }
   if (opts.temperature !== null) {
     body.temperature = opts.temperature ?? 0.7
@@ -163,6 +179,18 @@ export async function chatWithOpenRouter(opts: ChatOptions): Promise<string | nu
   }
 
   const timeoutMs = opts.timeoutMs ?? 45_000
+  const started = Date.now()
+  const record = (ok: boolean, json?: OpenRouterResponseJson | null) =>
+    recordAiUsage({
+      feature: opts.feature,
+      model,
+      promptTokens: json?.usage?.prompt_tokens,
+      completionTokens: json?.usage?.completion_tokens,
+      providerCostUsd: typeof json?.usage?.cost === 'number' ? json.usage.cost : null,
+      latencyMs: Date.now() - started,
+      ok,
+      userId: opts.userId,
+    })
 
   try {
     const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
@@ -183,11 +211,15 @@ export async function chatWithOpenRouter(opts: ChatOptions): Promise<string | nu
       } else {
         console.error('[openrouter]', res.status, await res.text().catch(() => ''))
       }
+      await record(false)
       return null
     }
-    const json = await res.json()
-    return json.choices?.[0]?.message?.content ?? null
+    const json = (await res.json()) as OpenRouterResponseJson
+    const content = json.choices?.[0]?.message?.content ?? null
+    await record(content != null, json)
+    return content
   } catch (err) {
+    await record(false)
     if (err instanceof Error && err.name === 'TimeoutError') {
       console.error(`[openrouter] request timed out after ${timeoutMs}ms`)
     } else if (opts.privacySensitive) {
@@ -214,14 +246,26 @@ export async function chatWithOpenRouter(opts: ChatOptions): Promise<string | nu
  */
 export async function embedWithOpenRouter(
   texts: string[],
-  opts?: { model?: string; dimensions?: number }
+  opts: { feature: AiFeature; model?: string; dimensions?: number; userId?: string | null }
 ): Promise<number[][] | null> {
   const apiKey = process.env.OPENROUTER_API_KEY
   if (!apiKey) return null
   if (!Array.isArray(texts) || texts.length === 0) return []
 
-  const model = opts?.model ?? 'openai/text-embedding-3-small'
-  const dimensions = opts?.dimensions ?? 1536
+  const model = opts.model ?? 'openai/text-embedding-3-small'
+  const dimensions = opts.dimensions ?? 1536
+  const started = Date.now()
+  const record = (ok: boolean, usage?: { prompt_tokens?: number; total_tokens?: number; cost?: number } | null) =>
+    recordAiUsage({
+      feature: opts.feature,
+      model,
+      promptTokens: usage?.prompt_tokens ?? usage?.total_tokens,
+      completionTokens: 0,
+      providerCostUsd: typeof usage?.cost === 'number' ? usage.cost : null,
+      latencyMs: Date.now() - started,
+      ok,
+      userId: opts.userId,
+    })
 
   try {
     const res = await fetch('https://openrouter.ai/api/v1/embeddings', {
@@ -238,11 +282,14 @@ export async function embedWithOpenRouter(
     })
     if (!res.ok) {
       console.error('[openrouter:embed]', res.status, await res.text().catch(() => ''))
+      await record(false)
       return null
     }
     const json = (await res.json()) as {
       data?: Array<{ embedding?: number[] }>
+      usage?: { prompt_tokens?: number; total_tokens?: number; cost?: number }
     }
+    await record(true, json.usage)
     const data = json.data ?? []
     if (data.length !== texts.length) {
       console.warn(
@@ -256,6 +303,7 @@ export async function embedWithOpenRouter(
     }
     return vectors
   } catch (err) {
+    await record(false)
     if (err instanceof Error && err.name === 'TimeoutError') {
       console.error('[openrouter:embed] request timed out after 20000ms')
     } else {

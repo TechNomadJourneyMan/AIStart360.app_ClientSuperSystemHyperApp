@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import type { NextRequest } from 'next/server'
-import { createServerClient as createSupabaseAdmin } from '@/lib/supabase-server'
+import { createServiceClient } from '@/lib/supabase-service'
 import { prisma } from '@/lib/db'
 import { trackEvent } from '@/lib/events/track'
 import { safeInternalPath } from '@/lib/safe-redirect'
@@ -37,25 +37,37 @@ export async function GET(request: NextRequest) {
     if (user) void trackEvent({ userId: user.id, name: 'LOGIN', metadata: { method: 'oauth' } })
 
     if (user) {
-      // Check if profile already exists
-      const supabaseAdmin = createSupabaseAdmin()
+      // Check if profile already exists. Service role: the request cookies do
+      // not carry the fresh session yet, so an anon/SSR read would always miss
+      // the row under RLS.
+      const supabaseAdmin = createServiceClient()
       const { data: existingProfile } = await supabaseAdmin
         .from('profiles')
         .select('id, status')
         .eq('id', user.id)
         .single()
 
-      if (!existingProfile) {
+      // The trigger creates the row inside the same auth.users INSERT, so a
+      // first-time OAuth user already HAS a (pending) profile here. Treat a
+      // freshly created pending account as a new signup too.
+      const createdMs = user.created_at ? Date.parse(user.created_at) : NaN
+      const justSignedUp =
+        !existingProfile ||
+        (existingProfile.status === 'pending_approval' && Number.isFinite(createdMs) && Date.now() - createdMs < 10 * 60_000)
+
+      if (justSignedUp) {
         // First time Google OAuth user — create profile with pending_approval
         const fullName = user.user_metadata?.full_name || user.user_metadata?.name || user.email?.split('@')[0] || 'User'
 
+        // Normally handle_new_user already created the row (always client +
+        // pending_approval, migration 084). Only fill the gap, never overwrite.
         await supabaseAdmin.from('profiles').upsert({
           id: user.id,
           email: user.email,
           full_name: fullName,
           role: 'client',
           status: 'pending_approval',
-        }, { onConflict: 'id' })
+        }, { onConflict: 'id', ignoreDuplicates: true })
 
         // Create AdminRequest for GIGA panel
         try {
@@ -85,7 +97,7 @@ export async function GET(request: NextRequest) {
       }
 
       // Existing user — check status
-      if (existingProfile.status === 'pending_approval') {
+      if (existingProfile?.status === 'pending_approval') {
         return NextResponse.redirect(new URL('/client/waiting-room', origin), {
           headers: response.headers,
         })

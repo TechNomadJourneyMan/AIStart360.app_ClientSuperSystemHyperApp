@@ -7,7 +7,6 @@ import { usersService, type PublicUser } from '@/shared/api/users.service'
 const ROLE_STYLES: Record<string, { text: string; bg: string; border: string; label: string }> = {
   admin:  { text: 'text-primary',   bg: 'bg-primary/10',   border: 'border-primary/20',   label: 'Администратор' },
   expert: { text: 'text-secondary', bg: 'bg-secondary/10', border: 'border-secondary/20', label: 'Эксперт'       },
-  owner:  { text: 'text-tertiary-container', bg: 'bg-tertiary-container/10', border: 'border-tertiary-container/20', label: 'Владелец' },
 }
 
 const ROLE_FALLBACK = { text: 'text-on-surface-variant', bg: 'bg-surface-container', border: 'border-outline-variant/20', label: 'Пользователь' }
@@ -37,7 +36,7 @@ export default function UsersPage() {
   const [deleting, setDeleting] = useState<string | null>(null)
   const [selected, setSelected] = useState<PublicUser | null>(null)
   const [showAddModal, setShowAddModal] = useState(false)
-  const [addForm, setAddForm] = useState({ name: '', email: '', role: 'expert' as 'admin'|'expert'|'owner', organization: '' })
+  const [addForm, setAddForm] = useState({ name: '', email: '', role: 'expert' as 'admin'|'expert', organization: '' })
   const [addSaving, setAddSaving] = useState(false)
   const [addDone, setAddDone] = useState(false)
 
@@ -395,7 +394,7 @@ export default function UsersPage() {
                   <div>
                     <label className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest block mb-1">Роль</label>
                     <div className="flex gap-2">
-                      {(['admin', 'expert', 'owner'] as const).map(r => (
+                      {(['admin', 'expert'] as const).map(r => (
                         <button key={r} onClick={() => setAddForm(f => ({ ...f, role: r }))}
                           className={`flex-1 py-2 rounded-xl border text-xs font-mono transition-colors ${
                             addForm.role === r ? 'bg-primary/10 border-primary/30 text-primary' : 'border-white/[0.06] text-on-surface-variant hover:border-white/[0.12]'

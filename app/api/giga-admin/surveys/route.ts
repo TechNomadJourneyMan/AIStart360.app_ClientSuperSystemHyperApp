@@ -5,6 +5,7 @@ import { requireGiga } from '@/lib/admin/giga-actor'
 import { createServiceClient } from '@/lib/supabase-service'
 import { SURVEY_TOTAL_STEPS } from '@/lib/survey/steps'
 import { hasPermission } from '@/lib/admin/rbac'
+import { NO_ID, scopedClientIds } from '@/lib/admin/client-scope'
 
 // GET /api/giga-admin/surveys — questionnaire analytics: completion
 // distribution, which steps are filled least, recent edits (who/when).
@@ -12,10 +13,15 @@ export async function GET(req: NextRequest) {
   const guard = await requireGiga(req, 'survey.view')
   if (guard.response) return guard.response
   const sb = createServiceClient()
+  // Эксперт со scope 'assigned' видит в ленте правок только своих клиентов;
+  // агрегаты (распределение по шагам) обезличены и остаются платформенными.
+  const allowed = await scopedClientIds(guard.actor)
+  let historyQ = sb.from('survey_answer_history').select('id, user_id, question_key, source, changed_by, updated_at').order('updated_at', { ascending: false }).limit(20)
+  if (allowed) historyQ = historyQ.in('user_id', allowed.length ? allowed : [NO_ID])
   const [stepsRes, rowsRes, historyRes] = await Promise.all([
     sb.rpc('admin_survey_steps'),
     sb.rpc('admin_survey_step_users'),
-    sb.from('survey_answer_history').select('id, user_id, question_key, source, changed_by, updated_at').order('updated_at', { ascending: false }).limit(20),
+    historyQ,
   ])
   if (stepsRes.error) return NextResponse.json({ ok: false, error: 'Не удалось загрузить анкеты' }, { status: 500 })
 

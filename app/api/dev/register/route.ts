@@ -6,13 +6,13 @@ type RegisterPayload = {
   password: string
   metadata: {
     full_name: string
-    role: 'admin' | 'expert' | 'owner' | 'client' | 'super_admin'
+    role: 'admin' | 'expert' | 'client' | 'super_admin'
     organization?: string
     position?: string
   }
 }
 
-const ALLOWED_ROLES = new Set(['admin', 'expert', 'owner', 'client', 'super_admin'])
+const ALLOWED_ROLES = new Set(['admin', 'expert', 'client', 'super_admin'])
 
 // Dev-only backdoor: can mint accounts of ANY role (incl. admin/super_admin),
 // so it must be impossible to reach in production. Requires BOTH a non-prod

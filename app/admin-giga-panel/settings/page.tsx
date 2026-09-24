@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { toast } from 'sonner'
 import {
   Activity, AlertTriangle, Bell, CheckCircle2, Database, ExternalLink, Eraser, KeyRound, LayoutGrid,
-  Megaphone, RefreshCw, ScrollText, ShieldCheck, Sparkles, UserPlus, Users2, Wrench, XCircle,
+  Megaphone, RefreshCw, ScrollText, Send, ShieldCheck, Siren, Sparkles, UserPlus, Users2, Wrench, XCircle,
 } from 'lucide-react'
 import { RequirePermission, useStaff } from '@/components/giga-panel/StaffContext'
 import {
@@ -32,9 +32,6 @@ const CONFIRM: Partial<Record<SettingKey, (next: boolean) => string>> = {
   staff_require_mfa: (on) => on
     ? 'Сотрудники без 2FA не смогут открыть панель, пока не включат её в своём профиле. Убедитесь, что у вас 2FA уже включена.'
     : 'Сотрудники смогут входить в панель без второго фактора.',
-  break_glass_enabled: (on) => on
-    ? 'Вход в панель по общему паролю снова станет доступен.'
-    : 'Вход по общему паролю перестанет работать сразу, включая уже открытые сессии. Входить можно будет только через личные аккаунты.',
 }
 
 export default function SettingsPage() {
@@ -81,11 +78,6 @@ export default function SettingsPage() {
           У вас доступ только на просмотр: изменения сохранит только Super Admin.
         </p>
       )}
-      {q.data?.actor.kind === 'break_glass' && (
-        <p className="mb-4 rounded-xl border border-blue-500/20 bg-blue-500/[0.06] px-4 py-2.5 text-xs text-blue-200">
-          Вы вошли по общему паролю. Изменения будут записаны на «giga:super_admin». Для персональной ответственности входите через личный аккаунт.
-        </p>
-      )}
 
       {q.error && <ErrorState error={q.error} onRetry={() => void q.reload()} />}
       {q.loading && !v && (
@@ -129,6 +121,15 @@ export default function SettingsPage() {
             <SettingRow k="insight_moderation" meta={meta}>
               <Toggle checked={v.insight_moderation} disabled={!canEdit || !!saving} onChange={(n) => toggle('insight_moderation', n)} label={SETTINGS.insight_moderation.label} />
             </SettingRow>
+            {(['ai_daily_budget_usd_free', 'ai_daily_budget_usd_pro', 'ai_daily_budget_usd_staff'] as const).map((k) => (
+              <SettingRow key={k} k={k} meta={meta}>
+                <NumberSetting
+                  value={v[k]} min={0} max={1000} step={0.5} integer={false} suffix="$ в сутки"
+                  disabled={!canEdit} saving={saving === k}
+                  onSave={(n) => save({ [k]: n }, 'Дневной лимит ИИ')}
+                />
+              </SettingRow>
+            ))}
             <Links items={[
               { href: '/admin-giga-panel/moderation', label: 'Очередь модерации' },
               { href: '/admin-giga-panel/sections', label: 'Разделы кабинета' },
@@ -150,11 +151,8 @@ export default function SettingsPage() {
                 onSave={(n) => save({ impersonation_ttl_minutes: n }, 'Длительность сессии')}
               />
             </SettingRow>
-            <SettingRow k="staff_require_mfa" meta={meta} note={q.data?.actor.kind === 'break_glass' ? 'Включается из личного аккаунта.' : undefined}>
-              <Toggle checked={v.staff_require_mfa} disabled={!canEdit || !!saving || (q.data?.actor.kind === 'break_glass' && !v.staff_require_mfa)} onChange={(n) => toggle('staff_require_mfa', n)} label={SETTINGS.staff_require_mfa.label} />
-            </SettingRow>
-            <SettingRow k="break_glass_enabled" meta={meta} note={q.data?.actor.kind !== 'session' && v.break_glass_enabled ? 'Выключается только из личного аккаунта Super Admin.' : undefined}>
-              <Toggle checked={v.break_glass_enabled} disabled={!canEdit || !!saving || (q.data?.actor.kind !== 'session' && v.break_glass_enabled)} onChange={(n) => toggle('break_glass_enabled', n)} label={SETTINGS.break_glass_enabled.label} />
+            <SettingRow k="staff_require_mfa" meta={meta} >
+              <Toggle checked={v.staff_require_mfa} disabled={!canEdit || !!saving} onChange={(n) => toggle('staff_require_mfa', n)} label={SETTINGS.staff_require_mfa.label} />
             </SettingRow>
             <Links items={[
               { href: '/admin-giga-panel/staff', label: 'Сотрудники и роли' },
@@ -163,9 +161,52 @@ export default function SettingsPage() {
             ]} />
           </Panel>
 
-          <AnalyticsCard values={v} meta={meta} disabled={!canEdit} saving={saving} onToggle={(n) => toggle('analytics_enabled', n)} onSaveRetention={(n) => save({ events_retention_days: n }, 'Срок хранения')} />
+          <AnalyticsCard values={v} meta={meta} disabled={!canEdit} saving={saving} onToggle={(n) => toggle('analytics_enabled', n)} onSaveRetention={(n) => save({ events_retention_days: n }, 'Срок хранения')} onSave={save} />
+
+          <Panel title={<Title icon={<Siren size={14} />}>Эскалации</Title>} description={SETTINGS.escalation_sla_hours.help}>
+            {([
+              ['critical', 'Критичный приоритет'],
+              ['high', 'Высокий приоритет'],
+              ['medium', 'Средний приоритет'],
+              ['low', 'Низкий приоритет'],
+            ] as const).map(([p, title]) => (
+              <div key={p} className="flex flex-wrap items-center justify-between gap-2 border-b border-white/[0.05] py-2.5 last:border-0">
+                <span className="text-xs text-slate-300">{title}</span>
+                <NumberSetting
+                  value={v.escalation_sla_hours[p]} min={1} max={720} suffix="ч"
+                  disabled={!canEdit} saving={saving === 'escalation_sla_hours'}
+                  onSave={(n) => save({ escalation_sla_hours: { ...v.escalation_sla_hours, [p]: n } }, 'SLA эскалаций')}
+                />
+              </div>
+            ))}
+            <Links items={[{ href: '/admin-giga-panel/cases', label: 'Очередь эскалаций' }, { href: '/admin-giga-panel/experts', label: 'Эксперты' }]} />
+          </Panel>
 
           <NotificationsCard value={v.admin_notifications} meta={meta} disabled={!canEdit} saving={saving === 'admin_notifications'} onSave={(n) => save({ admin_notifications: n }, 'Уведомления')} />
+
+          <Panel title={<Title icon={<Send size={14} />}>Автоматические касания</Title>}>
+            <SettingRow k="auto_reminders_enabled" meta={meta}>
+              <Toggle checked={v.auto_reminders_enabled} disabled={!canEdit || !!saving} onChange={(n) => toggle('auto_reminders_enabled', n)} label={SETTINGS.auto_reminders_enabled.label} />
+            </SettingRow>
+            <SettingRow k="auto_touch_weekly_cap" meta={meta} note={!v.auto_reminders_enabled ? 'Напоминания выключены — лимит сейчас не действует.' : undefined}>
+              <NumberSetting
+                value={v.auto_touch_weekly_cap} min={0} max={14} suffix="в неделю"
+                disabled={!canEdit} saving={saving === 'auto_touch_weekly_cap'}
+                onSave={(n) => save({ auto_touch_weekly_cap: n }, 'Лимит касаний')}
+              />
+            </SettingRow>
+            <SettingRow k="client_digest_enabled" meta={meta}>
+              <Toggle checked={v.client_digest_enabled} disabled={!canEdit || !!saving} onChange={(n) => toggle('client_digest_enabled', n)} label={SETTINGS.client_digest_enabled.label} />
+            </SettingRow>
+            <SettingRow k="request_sla_hours" meta={meta}>
+              <NumberSetting
+                value={v.request_sla_hours} min={1} max={168} suffix="ч"
+                disabled={!canEdit} saving={saving === 'request_sla_hours'}
+                onSave={(n) => save({ request_sla_hours: n }, 'Срок ответа на заявку')}
+              />
+            </SettingRow>
+            <Links items={[{ href: '/admin-giga-panel/requests', label: 'Заявки на доступ' }]} />
+          </Panel>
 
           {canEdit && <HealthCard />}
         </div>
@@ -174,7 +215,7 @@ export default function SettingsPage() {
       <ConfirmDialog
         open={!!confirm}
         onClose={() => setConfirm(null)}
-        tone={confirm && (confirm.key === 'break_glass_enabled' || confirm.key === 'staff_require_mfa') && confirm.next !== (confirm.key === 'break_glass_enabled') ? 'danger' : 'warning'}
+        tone={confirm && confirm.key === 'staff_require_mfa' && confirm.next ? 'danger' : 'warning'}
         title={confirm ? `${SETTINGS[confirm.key].label}: ${confirm.next ? 'включить' : 'выключить'}?` : ''}
         text={confirm ? CONFIRM[confirm.key]?.(confirm.next) : null}
         confirmLabel={confirm?.next ? 'Включить' : 'Выключить'}
@@ -262,20 +303,20 @@ function Segmented<T extends string>({ value, options, onChange, disabled }: {
   )
 }
 
-function NumberSetting({ value, min, max, step = 1, suffix, disabled, saving, onSave }: {
-  value: number; min: number; max: number; step?: number; suffix: string; disabled?: boolean; saving?: boolean
+function NumberSetting({ value, min, max, step = 1, integer = true, suffix, disabled, saving, onSave }: {
+  value: number; min: number; max: number; step?: number; integer?: boolean; suffix: string; disabled?: boolean; saving?: boolean
   onSave: (n: number) => Promise<boolean>
 }) {
   const [draft, setDraft] = useState(String(value))
   useEffect(() => setDraft(String(value)), [value])
-  const n = Number(draft)
-  const valid = draft.trim() !== '' && Number.isInteger(n) && n >= min && n <= max
+  const n = Number(draft.replace(',', '.'))
+  const valid = draft.trim() !== '' && Number.isFinite(n) && (!integer || Number.isInteger(n)) && n >= min && n <= max
   const dirty = valid && n !== value
   return (
     <div className="flex items-center gap-2">
       <input
         type="number"
-        inputMode="numeric"
+        inputMode={integer ? 'numeric' : 'decimal'}
         min={min}
         max={max}
         step={step}
@@ -440,9 +481,16 @@ function MaintenanceCard({ value, meta, disabled, saving, onSave }: {
 
 // ─── Analytics ───────────────────────────────────────────────────────────────
 
-function AnalyticsCard({ values, meta, disabled, saving, onToggle, onSaveRetention }: {
+const ACTIVATION_EVENTS: Array<{ value: Values['activation_event']; label: string }> = [
+  { value: 'GRI_COMPLETED', label: 'GRI пройден' },
+  { value: 'QUESTIONNAIRE_COMPLETED', label: 'Анкета заполнена' },
+  { value: 'POINT_A_CALCULATED', label: 'Точка А рассчитана' },
+]
+
+function AnalyticsCard({ values, meta, disabled, saving, onToggle, onSaveRetention, onSave }: {
   values: Values; meta: SettingsResponse['meta']; disabled: boolean; saving: string | null
   onToggle: (n: boolean) => void; onSaveRetention: (n: number) => Promise<boolean>
+  onSave: (patch: Partial<Values>, label: string) => Promise<boolean>
 }) {
   const stats = useGigaQuery<{ days: number; old: number; total: number; before: string }>(disabled ? null : '/api/giga-admin/system/purge-events')
   const [ask, setAsk] = useState(false)
@@ -477,6 +525,21 @@ function AnalyticsCard({ values, meta, disabled, saving, onToggle, onSaveRetenti
             if (ok) void reload()
             return ok
           }}
+        />
+      </SettingRow>
+      <SettingRow k="activation_event" meta={meta} stacked>
+        <Segmented
+          value={values.activation_event}
+          options={ACTIVATION_EVENTS}
+          disabled={disabled || !!saving}
+          onChange={(v) => void onSave({ activation_event: v }, SETTINGS.activation_event.label)}
+        />
+      </SettingRow>
+      <SettingRow k="activation_window_days" meta={meta}>
+        <NumberSetting
+          value={values.activation_window_days} min={1} max={90} suffix="дн."
+          disabled={disabled} saving={saving === 'activation_window_days'}
+          onSave={(n) => onSave({ activation_window_days: n }, SETTINGS.activation_window_days.label)}
         />
       </SettingRow>
       {!disabled && (

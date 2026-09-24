@@ -22,10 +22,6 @@ vi.mock('@/lib/supabase-server', () => ({
   createServerClient: () => ({ auth: { getUser: db.getUser }, from: table }),
 }))
 vi.mock('@/lib/supabase-service', () => ({ createServiceClient: () => ({ from: table }) }))
-vi.mock('@/lib/giga-cookie', () => ({
-  GIGA_COOKIE_NAME: 'aistart360_giga',
-  verifyGigaRole: gigaCookie.verify,
-}))
 vi.mock('@/lib/settings/store', () => ({ getSetting: async () => true }))
 
 import { getGigaActor } from '@/lib/admin/giga-actor'
@@ -89,12 +85,10 @@ describe('getGigaActor', () => {
     await expect(getGigaActor(request())).resolves.toBeNull()
   })
 
-  it('keeps the signed break-glass cookie as a recovery fallback', async () => {
+  it('ignores the old break-glass cookie: no personal session — no access', async () => {
     db.getUser.mockResolvedValue({ data: { user: null } })
     gigaCookie.verify.mockReturnValue('super_admin')
 
-    const actor = await getGigaActor(request('signed-token'))
-    expect(actor).toMatchObject({ id: 'giga:super_admin', kind: 'break_glass', role: 'super_admin' })
-    expect(gigaCookie.verify).toHaveBeenCalledWith('signed-token')
+    await expect(getGigaActor(request('signed-token'))).resolves.toBeNull()
   })
 })

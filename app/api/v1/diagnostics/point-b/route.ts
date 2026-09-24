@@ -4,6 +4,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { calculatePointBV2, type PointBOptions, type PointBV2 } from '@/lib/point-b/engine'
 import type { PointA, BlockScore } from '@/types/onboarding'
+import { expertDisplayName } from '@/lib/expert-review/blocks'
+import { trackUserAction } from '@/lib/events/server'
 
 /**
  * GET /api/v1/diagnostics/point-b
@@ -213,8 +215,10 @@ export async function GET(_req: NextRequest) {
     pointB.ai_strategy = aiStrategy
     pointB.ai_status = aiStatus
 
-    // 7. Latest approved expert correction (so the client sees the expert version).
-    const { data: ev } = await sb
+    // 7. Latest APPROVED expert correction (so the client sees the expert version).
+    //    Unapproved versions (saved by an expert, awaiting Admin review — migration
+    //    087) are never shown: filtered here and by the owner RLS policy.
+    const { data: evRow } = await sb
       .from('point_b_versions')
       .select('expert_notes, author_name, created_at')
       .eq('diagnostic_id', diag.id as string)
@@ -222,7 +226,11 @@ export async function GET(_req: NextRequest) {
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle()
+    // Old rows stored the expert's email as author_name — never show it to the client.
+    const ev = evRow ? { ...evRow, author_name: expertDisplayName(evRow.author_name as string | null) } : null
 
+    // PointBContainer is the only caller of this route → a fetch = a view of Point B.
+    void trackUserAction({ userId: user.id, name: 'POINT_B_VIEWED', entityType: 'diagnostic', entityId: diag.id as string, metadata: { expert_version: !!ev } })
     return NextResponse.json({ ok: true, data: pointB, expert_version: ev ?? null })
   } catch (error) {
     console.error('[point-b] error:', error)

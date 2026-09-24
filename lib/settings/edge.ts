@@ -4,13 +4,11 @@
  */
 interface EdgeSettings {
   maintenance: { enabled: boolean; message: string; until: string }
-  break_glass_enabled: boolean
   staff_require_mfa: boolean
 }
 
 const DEFAULTS: EdgeSettings = {
   maintenance: { enabled: false, message: '', until: '' },
-  break_glass_enabled: true,
   staff_require_mfa: false,
 }
 
@@ -23,7 +21,7 @@ export async function edgeSettings(): Promise<EdgeSettings> {
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
   if (!url || !key) return DEFAULTS
   try {
-    const res = await fetch(`${url}/rest/v1/system_settings?select=key,value&key=in.(maintenance,break_glass_enabled,staff_require_mfa)`, {
+    const res = await fetch(`${url}/rest/v1/system_settings?select=key,value&key=in.(maintenance,staff_require_mfa)`, {
       headers: { apikey: key, Authorization: `Bearer ${key}` },
       cache: 'no-store',
     })
@@ -37,7 +35,6 @@ export async function edgeSettings(): Promise<EdgeSettings> {
         message: typeof m?.message === 'string' ? m.message : '',
         until: typeof m?.until === 'string' ? m.until : '',
       },
-      break_glass_enabled: get('break_glass_enabled') !== false,
       staff_require_mfa: get('staff_require_mfa') === true,
     }
     cache = { at: Date.now(), value }

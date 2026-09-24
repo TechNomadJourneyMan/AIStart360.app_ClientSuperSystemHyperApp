@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase-service'
 import { requireGiga } from '@/lib/admin/giga-actor'
+import { filterByScope, scopedClientIds } from '@/lib/admin/client-scope'
 
 /**
  * GET /api/giga-admin/clients
@@ -62,7 +63,9 @@ export async function GET(req: NextRequest) {
     const griMap = new Map<string, { gri_index: number; section_avgs: Record<string, number> | null; created_at: string }>()
     for (const g of griRows ?? []) griMap.set(g.user_id, g)
 
-    const clients = (profiles ?? []).map((p) => {
+    // Эксперт со scope 'assigned' видит только назначенных ему клиентов.
+    const allowed = await scopedClientIds(guard.actor)
+    const clients = filterByScope(profiles ?? [], allowed, (p) => p.id).map((p) => {
       const comp = companyMap.get(p.id)
       const diag = diagMap.get(p.id)
       const gri = griMap.get(p.id)

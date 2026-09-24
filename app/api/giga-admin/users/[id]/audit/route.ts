@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { requireGiga } from '@/lib/admin/giga-actor'
 import { createServiceClient } from '@/lib/supabase-service'
+import { guardClientAccess } from '@/lib/admin/client-scope'
 
 // GET /api/giga-admin/users/:id/audit?page= — staff actions on this user
 // (+ the admin sessions opened in their cabinet).
@@ -12,6 +13,8 @@ const PAGE = 30
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
   const guard = await requireGiga(req, 'audit.view')
   if (guard.response) return guard.response
+  const scopeDenied = await guardClientAccess(guard.actor, params.id)
+  if (scopeDenied) return scopeDenied
   if (!UUID_RE.test(params.id)) return NextResponse.json({ ok: false, error: 'invalid id' }, { status: 400 })
   const page = Math.max(1, Number(req.nextUrl.searchParams.get('page')) || 1)
   const sb = createServiceClient()

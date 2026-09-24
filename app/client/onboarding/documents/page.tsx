@@ -5,6 +5,7 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { SURVEY_LABELS, SURVEY_STEP_LABELS } from '@/lib/survey-labels'
+import { trackLogout } from '@/lib/events/client'
 
 type DocType = 'pl_report' | 'balance_sheet' | 'marketing_report' | 'ops_report' | 'crm_export' | 'audit' | 'other'
 type ParseStatus = 'queued' | 'processing' | 'parsed' | 'error'
@@ -506,6 +507,7 @@ export default function DocumentsPage() {
             <button onClick={async () => {
                 // End the Supabase session too, or middleware bounces the user
                 // right back (couldn't sign out from the documents step).
+                trackLogout()
                 try { await createClient().auth.signOut() } catch {}
                 document.cookie = 'aistart360_role=; path=/; max-age=0'
                 document.cookie = 'aistart360_user_id=; path=/; max-age=0'

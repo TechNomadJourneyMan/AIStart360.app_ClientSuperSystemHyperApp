@@ -73,9 +73,10 @@ export default function AiScannerPage() {
   // Load REAL clients (Supabase) so the forecast is anchored to the same data
   // as the GRI test (user_id-keyed), not the disconnected Prisma client list.
   useEffect(() => {
-    fetch('/api/expert/clients', { cache: 'no-store' })
+    // Список клиентов персонала (GIGA-CRM; учитывает область видимости эксперта).
+    fetch('/api/giga-admin/clients', { cache: 'no-store' })
       .then(r => r.json())
-      .then(j => setClients((j.data ?? []).map((c: any) => ({ id: c.id, name: c.companyName || c.fullName || c.email || 'Клиент', industry: c.industry || '—' }))))
+      .then(j => setClients((j.clients ?? []).map((c: any) => ({ id: c.id, name: c.name || 'Клиент', industry: c.industry || '—' }))))
       .catch(() => setClients([]))
   }, [])
 

@@ -13,7 +13,7 @@ import {
 import { trackEvent } from '@/lib/events/track'
 import { computeGriIndex, computeSectionAvgs, scoresFingerprint, type GriScores } from '@/lib/gri-assessment/score'
 import { runInBackground } from '@/lib/background'
-import { sendGriCompletedEmail } from '@/lib/email'
+import { notifyGriCompleted } from '@/lib/notifications/product'
 
 // Scores shape: { [sectionId]: { [criterionId]: number 1..10 } }. The math lives in
 // lib/gri-assessment/score.ts and is shared with the widget.
@@ -152,17 +152,16 @@ export async function POST(req: NextRequest) {
 
     void trackEvent({ userId, name: 'GRI_COMPLETED', entityType: 'gri_assessment', entityId: inserted?.id ?? null, metadata: { gri_index } })
 
-    // Письмо клиенту «GRI пройден». В фоне — расчёт уже сохранён, и почта не
-    // должна задерживать ответ. Ключ идемпотентности — id прохождения, так что
-    // повторная обработка того же результата письмо не продублирует.
-    runInBackground('gri-completed-email', async () => {
-      const { data: me } = await sb.from('profiles').select('email, full_name').eq('id', userId).maybeSingle()
-      const person = me as { email?: string | null; full_name?: string | null } | null
-      if (!person?.email) return
-      await sendGriCompletedEmail(person.email, {
-        userId,
+    // «GRI пройден»: запись в ленте + письмо по настройкам категории «gri»
+    // (notifyClient). В фоне — расчёт уже сохранён, и почта не должна задерживать
+    // ответ. Ключ идемпотентности — id прохождения, так что повторная обработка
+    // того же результата уведомление не продублирует.
+    runInBackground('gri-completed-notify', async () => {
+      const { data: me } = await sb.from('profiles').select('full_name').eq('id', userId).maybeSingle()
+      const person = me as { full_name?: string | null } | null
+      await notifyGriCompleted(userId, {
         assessmentId: inserted?.id ?? null,
-        name: person.full_name ?? null,
+        name: person?.full_name ?? null,
         company: (companyRow as { name?: string | null } | null)?.name ?? null,
         griIndex: gri_index,
         completedAt: inserted?.created_at ?? new Date(),

@@ -23,11 +23,18 @@ import { NotesTab } from '@/components/giga-panel/user360/NotesTab'
 import { EmailsTab } from '@/components/giga-panel/user360/EmailsTab'
 import { QualityTab } from '@/components/giga-panel/user360/QualityTab'
 import { TasksTab } from '@/components/giga-panel/user360/TasksTab'
+import { TimelineTab } from '@/components/giga-panel/user360/TimelineTab'
 import { GriDynamicsPanel } from '@/components/giga-panel/user360/GriDynamicsPanel'
 import { SurveyReminderDialog } from '@/components/giga-panel/user360/SurveyReminderDialog'
 import { rememberUser } from '@/components/giga-panel/CommandPalette'
+import { PointATab } from '@/components/giga-panel/user360/PointATab'
+import { PointBTab } from '@/components/giga-panel/user360/PointBTab'
+import { PulseTab } from '@/components/giga-panel/user360/PulseTab'
+import { CasesTab } from '@/components/giga-panel/user360/CasesTab'
+import { CommentsTab } from '@/components/giga-panel/user360/CommentsTab'
+import { ReviewTab } from '@/components/giga-panel/user360/review/ReviewTab'
 
-type TabKey = 'profile' | 'survey' | 'gri' | 'activity' | 'cjm' | 'documents' | 'notes' | 'tasks' | 'emails' | 'quality' | 'history'
+type TabKey = 'profile' | 'timeline' | 'survey' | 'point-a' | 'point-b' | 'gri' | 'pulse' | 'cases' | 'comments' | 'review' | 'activity' | 'cjm' | 'documents' | 'notes' | 'tasks' | 'emails' | 'quality' | 'history'
 
 function User360Inner({ id }: { id: string }) {
   const { base, label } = useWorkspace()
@@ -42,6 +49,10 @@ function User360Inner({ id }: { id: string }) {
   const [dataOpen, setDataOpen] = useState(false)
   const [remindOpen, setRemindOpen] = useState(false)
   const u = data?.data
+  // Экспертные вкладки (перенесены из старого портала эксперта): читать может
+  // каждый, кто видит пользователя и его данные; править — только clients.review.
+  const expertTabs = !!u && can('users.view') && u.can.sensitive
+  const canReview = !!u?.can.review
 
   const title = u ? (u.company?.name || u.profile.organization || u.profile.full_name || u.profile.email || 'Пользователь') : 'Пользователь'
 
@@ -95,8 +106,15 @@ function User360Inner({ id }: { id: string }) {
             onChange={setTab}
             tabs={[
               { key: 'profile', label: 'Профиль' },
+              { key: 'timeline', label: 'Лента' },
               { key: 'survey', label: 'Анкета', hidden: !u.can.viewSurvey },
+              { key: 'point-a', label: 'Точка А', hidden: !expertTabs },
+              { key: 'point-b', label: 'Точка Б', hidden: !expertTabs },
               { key: 'gri', label: 'GRI', count: u.gri.runs, hidden: !(can('gri.view') && u.can.sensitive) },
+              { key: 'pulse', label: 'Пульс', hidden: !expertTabs },
+              { key: 'cases', label: 'Кейсы', hidden: !expertTabs },
+              { key: 'comments', label: 'Комментарии', hidden: !expertTabs },
+              { key: 'review', label: 'Разбор', hidden: !canReview },
               { key: 'activity', label: 'Активность', count: u.counters.events, hidden: !u.can.activity },
               { key: 'cjm', label: 'CJM' },
               { key: 'documents', label: 'Документы', count: u.counters.documents, hidden: !u.can.sensitive },
@@ -107,7 +125,8 @@ function User360Inner({ id }: { id: string }) {
               { key: 'history', label: 'История', hidden: !u.can.audit },
             ]}
           />
-          {tab === 'profile' && <ProfileTab data={u} onChanged={reload} />}
+          {tab === 'profile' && <ProfileTab data={u} onChanged={reload} onPurged={() => router.replace(`${base}/users`)} />}
+          {tab === 'timeline' && <TimelineTab userId={id} />}
           {tab === 'survey' && u.can.viewSurvey && <SurveyTab userId={id} canEdit={u.can.editSurvey} />}
           {tab === 'gri' && (
             <>
@@ -115,6 +134,12 @@ function User360Inner({ id }: { id: string }) {
               <GriTab userId={id} canEdit={u.can.editGri} canDelete={u.can.deleteGri} />
             </>
           )}
+          {tab === 'point-a' && expertTabs && <PointATab userId={id} />}
+          {tab === 'point-b' && expertTabs && <PointBTab userId={id} canReview={canReview} />}
+          {tab === 'pulse' && expertTabs && <PulseTab userId={id} />}
+          {tab === 'cases' && expertTabs && <CasesTab userId={id} canReview={canReview} />}
+          {tab === 'comments' && expertTabs && <CommentsTab userId={id} canReview={canReview} />}
+          {tab === 'review' && canReview && <ReviewTab userId={id} />}
           {tab === 'activity' && u.can.activity && <ActivityTab userId={id} />}
           {tab === 'cjm' && <JourneyTab userId={id} journey={u.journey} canActivity={u.can.activity} />}
           {tab === 'documents' && u.can.sensitive && <DocumentsTab userId={id} />}

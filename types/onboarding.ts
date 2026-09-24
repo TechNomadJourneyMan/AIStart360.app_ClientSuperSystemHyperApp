@@ -5,7 +5,7 @@ export interface Profile {
   id: string
   email: string
   full_name: string | null
-  role: 'super_admin' | 'admin' | 'manager' | 'analyst' | 'client' | 'expert' | 'owner'
+  role: 'super_admin' | 'admin' | 'manager' | 'analyst' | 'client' | 'expert'
   status: ApprovalStatus
   approved_at: string | null
   approved_by: string | null

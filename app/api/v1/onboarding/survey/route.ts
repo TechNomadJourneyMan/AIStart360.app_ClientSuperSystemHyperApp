@@ -3,7 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { notifyAdmins } from '@/lib/notifications'
-import { sendQuestionnaireCompletedEmail } from '@/lib/email'
+import { notifyQuestionnaireCompleted } from '@/lib/notifications/product'
 import { resolveTargetUserId } from '@/lib/api-identity'
 import {
   completedStepsFromRows,
@@ -232,11 +232,10 @@ async function mirrorAndAnnounce(userId: string, announce: boolean, step: number
   })
   if (!first) return
 
-  // Письмо самому клиенту: «анкета пройдена». Идемпотентность — в lib/email
-  // (ключ questionnaire_completed:<userId>), поэтому повтор ничего не пришлёт.
+  // Письмо самому клиенту: «анкета пройдена» — через notifyClient, с учётом
+  // настроек категории «gri». Идемпотентность — ключ questionnaire_completed:<userId>.
   if (person?.email) {
-    await sendQuestionnaireCompletedEmail(person.email, {
-      userId,
+    await notifyQuestionnaireCompleted(userId, {
       name: person.full_name ?? null,
       company: summary.company || null,
       completedSteps: progress.completed,

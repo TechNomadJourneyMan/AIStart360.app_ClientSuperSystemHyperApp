@@ -428,6 +428,7 @@ export async function analyzePointA(
 
     const [summary, priorities, blocksA, blocksB] = await Promise.all([
       generateObjectViaOpenRouter({
+        feature: 'point_a_analysis',
         label: 'point-a:summary',
         complexity: 'high',
         maxTokens: 1200,
@@ -436,6 +437,7 @@ export async function analyzePointA(
         user: context + SUMMARY_FORMAT,
       }),
       generateObjectViaOpenRouter({
+        feature: 'point_a_analysis',
         label: 'point-a:priorities',
         complexity: 'high',
         maxTokens: 1500,
@@ -444,6 +446,7 @@ export async function analyzePointA(
         user: context + PRIORITIES_FORMAT,
       }),
       generateObjectViaOpenRouter({
+        feature: 'point_a_analysis',
         label: 'point-a:blocksA',
         complexity: 'medium',
         maxTokens: 2000,
@@ -452,6 +455,7 @@ export async function analyzePointA(
         user: context + BLOCKS_A_FORMAT,
       }),
       generateObjectViaOpenRouter({
+        feature: 'point_a_analysis',
         label: 'point-a:blocksB',
         complexity: 'medium',
         maxTokens: 2000,

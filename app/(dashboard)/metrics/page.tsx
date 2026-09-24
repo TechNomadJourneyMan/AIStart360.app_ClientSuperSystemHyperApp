@@ -1,7 +1,6 @@
 export const dynamic = 'force-dynamic'
 
 import type { Metadata } from 'next'
-import { auth } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
 import MetricsPageClient from '@/components/metrics/MetricsPageClient'
 import { loadMetricsPageData } from '@/lib/metrics/page-data'
@@ -25,7 +24,6 @@ export const metadata: Metadata = { title: 'Метрики — AIStart360' }
 export default async function MetricsPage() {
   // Identity from the Supabase session only (forgeable staff cookie removed —
   // it enabled cross-user data reads / IDOR). Audit 2026-07-02.
-  const session = await auth()
   let supabaseUserId: string | null = null
   try {
     const supabase = await createClient()
@@ -35,7 +33,7 @@ export default async function MetricsPage() {
     // Supabase auth not available — fall back
   }
 
-  const userId = supabaseUserId ?? (session?.user?.id ?? null)
+  const userId = supabaseUserId
 
   const pageData = await loadMetricsPageData(userId)
 
