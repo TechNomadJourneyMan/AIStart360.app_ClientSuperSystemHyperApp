@@ -38,8 +38,10 @@ vi.mock('@/lib/supabase-service', () => ({
 import { NextRequest } from 'next/server'
 import { POST } from '@/app/api/giga-admin/users/[id]/2fa-reset/route'
 
+const UID = '11111111-2222-3333-4444-555555555555'
+
 function makeReq() {
-  return new NextRequest('http://localhost/api/giga-admin/users/u1/2fa-reset', {
+  return new NextRequest(`http://localhost/api/giga-admin/users/${UID}/2fa-reset`, {
     method: 'POST',
     headers: { cookie: 'aistart360_giga=x' },
   })
@@ -53,23 +55,23 @@ describe('POST /api/giga-admin/users/[id]/2fa-reset — emergency MFA recovery',
   })
 
   it('clears the target user MFA and returns ok for super_admin', async () => {
-    const res = await POST(makeReq(), { params: { id: 'u1' } })
+    const res = await POST(makeReq(), { params: { id: UID } })
     expect(res.status).toBe(200)
     const json = await res.json()
     expect(json.ok).toBe(true)
-    expect(resetMock.fn).toHaveBeenCalledWith('u1')
+    expect(resetMock.fn).toHaveBeenCalledWith(UID)
   })
 
   it('returns 403 and does NOT touch MFA without a super_admin cookie', async () => {
     state.role = null
-    const res = await POST(makeReq(), { params: { id: 'u1' } })
+    const res = await POST(makeReq(), { params: { id: UID } })
     expect(res.status).toBe(403)
     expect(resetMock.fn).not.toHaveBeenCalled()
   })
 
   it('returns 500 when the reset itself fails (does not falsely report success)', async () => {
     resetMock.fn.mockRejectedValue(new Error('db down'))
-    const res = await POST(makeReq(), { params: { id: 'u1' } })
+    const res = await POST(makeReq(), { params: { id: UID } })
     expect(res.status).toBe(500)
     const json = await res.json()
     expect(json.ok).toBeUndefined()

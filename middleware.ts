@@ -88,6 +88,8 @@ const CLIENT_DASHBOARD_PATHS = [
   '/dashboard', '/gri', '/pulse', '/point-a', '/point-b', '/simulator',
   '/metrics', '/market', '/profile', '/notifications', '/settings', '/activity',
 ]
+// Бывший портал эксперта: страниц там больше нет, только редирект в
+// /super-expert. Клиентов и владельцев по-прежнему уводим отсюда в свой кабинет.
 const EXPERT_PATHS = ['/expert']
 
 // Whole-segment route matching: '/clients' must NOT match the '/client'
@@ -98,6 +100,12 @@ function matchesRoute(pathname: string, route: string): boolean {
 const matchesAny = (pathname: string, routes: string[]) =>
   routes.some((r) => matchesRoute(pathname, r))
 
+/**
+ * profiles.role → роль маршрутизации. 'expert' (а также устаревшие 'manager' /
+ * 'analyst') — это «эксперт старого портала». Самого портала больше нет:
+ * такой человек работает в кабинете SuperExpert, если у него есть роль в
+ * staff_roles, иначе видит отказ (см. legacyExpertDestination).
+ */
 function normalizeRole(rawRole: string | null | undefined): ValidRole {
   // 'owner' removed from the product (2026-09-24): any leftover row is a client.
   if (rawRole === 'admin' || rawRole === 'expert' || rawRole === 'client' || rawRole === 'super_admin') {
@@ -124,6 +132,22 @@ async function resolveRoleAndStatus(
     role: normalizeRole(typeof data?.role === 'string' ? data.role : fallbackRole),
     status: typeof data?.status === 'string' ? data.status : null,
   }
+}
+
+/**
+ * Куда отправить «эксперта старого портала» (profiles.role = expert / manager /
+ * analyst). Рабочее место эксперта — кабинет SuperExpert, и пускает туда только
+ * роль в staff_roles: без неё — страница входа с отказом, а не пустой портал.
+ */
+async function legacyExpertDestination(
+  supabase: Awaited<ReturnType<typeof updateSession>>['supabase'],
+  userId: string,
+  status: string | null | undefined,
+): Promise<string> {
+  const { data: staffRow } = await supabase.from('staff_roles').select('role').eq('user_id', userId).maybeSingle()
+  const staffRole = isStaffRole(staffRow?.role) ? staffRow.role : null
+  if (!staffRole || status !== 'approved') return `${SUPER_EXPERT_LOGIN_PATH}?denied=1`
+  return SUPER_EXPERT_ROLES.has(staffRole) ? SUPER_EXPERT_PATH : GIGA_PANEL_PATH
 }
 
 /**
@@ -372,7 +396,7 @@ export async function middleware(request: NextRequest, event?: NextFetchEvent) {
       role === 'super_admin' ? '/admin-giga-panel' :
       role === 'admin' ? '/dashboard' :
       role === 'client' ? '/dashboard' :
-      '/expert/dashboard'
+      user ? await legacyExpertDestination(supabase, user.id, resolved?.status) : SUPER_EXPERT_LOGIN_PATH
     return NextResponse.redirect(new URL(dest, request.url))
   }
 
@@ -431,9 +455,11 @@ export async function middleware(request: NextRequest, event?: NextFetchEvent) {
 
   // ── Role-based route protection ──
   if (user) {
-    // Expert trying to access admin-only pages
-    if (role === 'expert' && matchesAny(pathname, ADMIN_PATHS)) {
-      return NextResponse.redirect(new URL('/expert/dashboard', request.url))
+    // «Эксперт старого портала»: своих страниц у него больше нет. С ролью в
+    // staff_roles — в рабочий кабинет (настройки оставляем: там включают 2FA,
+    // которую требует кабинет), без роли — отказ на странице входа SuperExpert.
+    if (role === 'expert' && pathname !== MFA_CHALLENGE_PATH && !matchesRoute(pathname, '/settings')) {
+      return NextResponse.redirect(new URL(await legacyExpertDestination(supabase, user.id, resolved?.status), request.url))
     }
 
     // Client trying to access admin/expert pages

@@ -6,6 +6,7 @@ import { createServiceClient } from '@/lib/supabase-service'
 import { EVENT_TYPES, isEventName } from '@/lib/events/registry'
 import { hasPermission } from '@/lib/admin/rbac'
 import { maskEmail } from '@/lib/admin/mask'
+import { NO_ID, scopedClientIds } from '@/lib/admin/client-scope'
 
 // GET /api/giga-admin/activity?days=&page=&event=&type=&source=&pageviews=0
 // Aggregates (SQL admin_activity_stats) + a filtered event stream.
@@ -33,6 +34,9 @@ export async function GET(req: NextRequest) {
   if (['web', 'server', 'admin', 'impersonation', 'backfill'].includes(source)) q = q.eq('source', source)
   else q = q.neq('source', 'backfill')
   if (sp.get('pageviews') === '0') q = q.neq('event_name', 'PAGE_VIEWED')
+  // Эксперт со scope 'assigned' видит ленту событий только своих клиентов.
+  const allowed = await scopedClientIds(guard.actor)
+  if (allowed) q = q.in('user_id', allowed.length ? allowed : [NO_ID])
 
   const [stats, stream] = await Promise.all([sb.rpc('admin_activity_stats', { p_days: days }), q])
   if (stats.error || stream.error) return NextResponse.json({ ok: false, error: 'Не удалось загрузить активность' }, { status: 500 })

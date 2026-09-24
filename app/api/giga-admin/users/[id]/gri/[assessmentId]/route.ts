@@ -9,6 +9,7 @@ import { recordAdminAction } from '@/lib/admin/audit'
 import { computeGriIndex, computeSectionAvgs, type GriScores } from '@/lib/gri-assessment/score'
 import { GRI_SECTIONS } from '@/lib/gri-assessment/sections'
 import { computeTop5Limits, generate90DayPlan } from '@/lib/gri-calculator/top5-action-plan'
+import { guardClientAccess } from '@/lib/admin/client-scope'
 
 // PATCH  /api/giga-admin/users/:id/gri/:assessmentId { scores?, makeCurrent?, reason }
 //        — correct answers (index, blocks, TOP-5 and plan are recomputed with the
@@ -36,6 +37,8 @@ type Loaded =
 async function load(req: NextRequest, params: { id: string; assessmentId: string }, permission: 'gri.edit' | 'gri.delete'): Promise<Loaded> {
   const guard = await requireGiga(req, [permission, 'users.sensitive'])
   if (guard.response) return { response: guard.response }
+  const scopeDenied = await guardClientAccess(guard.actor, params.id)
+  if (scopeDenied) return { response: scopeDenied }
   if (!UUID_RE.test(params.id) || !UUID_RE.test(params.assessmentId)) {
     return { response: NextResponse.json({ ok: false, error: 'invalid id' }, { status: 400 }) }
   }

@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { requireGiga } from '@/lib/admin/giga-actor'
 import { createServiceClient } from '@/lib/supabase-service'
+import { scopedClientIds } from '@/lib/admin/client-scope'
 
 /**
  * GET /api/giga-admin/duplicates — похоже, это один и тот же клиент.
@@ -76,6 +77,14 @@ export async function GET(req: NextRequest) {
     put('company', normCompany(r.company_name ?? r.organization), r.company_name ?? r.organization ?? '', r)
     put('phone', normPhone(r.phone), r.phone ?? '', r)
     put('email', normEmail(r.email), r.email ?? '', r)
+  }
+
+  // Эксперт со scope 'assigned' видит дубликаты только среди своих клиентов:
+  // чужие аккаунты в группе раскрыли бы клиентов, которые ему не назначены.
+  const allowed = await scopedClientIds(guard.actor)
+  if (allowed) {
+    const set = new Set(allowed)
+    for (const b of buckets.values()) b.members = b.members.filter((m) => set.has(m.id))
   }
 
   const groups = [...buckets.entries()]

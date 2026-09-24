@@ -22,5 +22,7 @@ export interface User360Profile {
   can: {
     manage: boolean; archive: boolean; purge: boolean; editSurvey: boolean; viewSurvey: boolean; editGri: boolean; deleteGri: boolean
     impersonate: boolean; impersonateEdit: boolean; activity: boolean; audit: boolean; roles: boolean; sensitive: boolean
+    /** Экспертная работа: корректировка Точки Б, комментарии клиенту, кейсы (право clients.review, только для клиентов). */
+    review?: boolean
   }
 }

@@ -6,6 +6,7 @@ import { requireGiga, staffRoleOfUser } from '@/lib/admin/giga-actor'
 import { createServiceClient } from '@/lib/supabase-service'
 import { recordAdminAction } from '@/lib/admin/audit'
 import { isRateLimitedKey } from '@/lib/rate-limit'
+import { guardClientAccess } from '@/lib/admin/client-scope'
 
 /**
  * Полное удаление пользователя из платформы и БД — Super Admin only.
@@ -46,6 +47,8 @@ async function guardTarget(id: string, actorId: string): Promise<Guarded> {
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
   const guard = await requireGiga(req, 'users.delete')
   if (guard.response) return guard.response
+  const scopeDenied = await guardClientAccess(guard.actor, params.id)
+  if (scopeDenied) return scopeDenied
   const g = await guardTarget(params.id, guard.actor.id)
   if (g.response) return g.response
 
@@ -61,6 +64,8 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const guard = await requireGiga(req, 'users.delete')
   if (guard.response) return guard.response
+  const scopeDenied = await guardClientAccess(guard.actor, params.id)
+  if (scopeDenied) return scopeDenied
   const parsed = bodySchema.safeParse(await req.json().catch(() => null))
   if (!parsed.success) return NextResponse.json({ ok: false, error: parsed.error.issues[0]?.message ?? 'Неверный запрос' }, { status: 400 })
   const g = await guardTarget(params.id, guard.actor.id)

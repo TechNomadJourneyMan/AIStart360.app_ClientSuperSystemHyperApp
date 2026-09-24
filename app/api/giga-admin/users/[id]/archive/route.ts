@@ -8,6 +8,7 @@ import { canManageTarget } from '@/lib/admin/rbac'
 import { recordAdminAction } from '@/lib/admin/audit'
 import { STATUS_UPDATE_FAILED } from '@/lib/admin/status-messages'
 import { isRateLimitedKey } from '@/lib/rate-limit'
+import { guardClientAccess } from '@/lib/admin/client-scope'
 
 // POST /api/giga-admin/users/:id/archive { action: 'archive' | 'restore', reason }
 // «Удаление» пользователя = архивация: вход закрыт (статус + бан GoTrue), данные
@@ -18,6 +19,8 @@ const bodySchema = z.object({ action: z.enum(['archive', 'restore']), reason: z.
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const guard = await requireGiga(req, 'users.archive')
   if (guard.response) return guard.response
+  const scopeDenied = await guardClientAccess(guard.actor, params.id)
+  if (scopeDenied) return scopeDenied
   if (!UUID_RE.test(params.id)) return NextResponse.json({ ok: false, error: 'invalid id' }, { status: 400 })
   const parsed = bodySchema.safeParse(await req.json().catch(() => null))
   if (!parsed.success) return NextResponse.json({ ok: false, error: parsed.error.issues[0]?.message ?? 'Неверный запрос' }, { status: 400 })

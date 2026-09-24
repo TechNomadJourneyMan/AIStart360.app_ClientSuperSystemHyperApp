@@ -230,8 +230,14 @@ function buildCta(type: NotificationType): { label: string; url: string } {
   if (type === 'expert_comment') {
     return { label: 'Открыть дашборд', url: `${base}/client/dashboard` }
   }
-  if (type === 'expert_case_created' || type === 'expert_case_updated') {
-    return { label: 'Открыть портал эксперта', url: `${base}/expert/dashboard` }
+  // Обновление обращения уходит КЛИЕНТУ — ему нужен свой кабинет, а не
+  // рабочее место эксперта.
+  if (type === 'expert_case_updated') {
+    return { label: 'Открыть кабинет', url: `${base}/client/home` }
+  }
+  // Новое обращение видит персонал: очередь дня в кабинете SuperExpert.
+  if (type === 'expert_case_created') {
+    return { label: 'Открыть кабинет эксперта', url: `${base}/super-expert/today` }
   }
   return { label: 'Open Giga Panel', url: `${base}/admin-giga-panel` }
 }

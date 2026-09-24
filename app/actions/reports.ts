@@ -115,7 +115,7 @@ export async function uploadReport(formData: FormData) {
     })
 
     revalidatePath('/reports')
-    revalidatePath('/expert/reports')
+    revalidatePath('/admin-giga-panel/users')
 
     return { success: true }
   } catch (error) {

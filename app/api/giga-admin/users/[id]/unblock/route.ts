@@ -5,6 +5,7 @@ import { createServiceClient } from '@/lib/supabase-service'
 import { forbidTarget, requireGiga } from '@/lib/admin/giga-actor'
 import { recordAdminAction } from '@/lib/admin/audit'
 import { STATUS_UPDATE_FAILED } from '@/lib/admin/status-messages'
+import { guardClientAccess } from '@/lib/admin/client-scope'
 
 /**
  * POST /api/giga-admin/users/:id/unblock { reason? }
@@ -19,6 +20,8 @@ export async function POST(
 ) {
   const guard = await requireGiga(req, 'users.manage')
   if (guard.response) return guard.response
+  const scopeDenied = await guardClientAccess(guard.actor, params.id)
+  if (scopeDenied) return scopeDenied
   const actor = guard.actor
   const denied = await forbidTarget(guard.actor, params.id)
   if (denied) return denied

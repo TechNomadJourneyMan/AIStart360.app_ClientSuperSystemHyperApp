@@ -5,6 +5,7 @@ import { requireGiga, staffRoleOfUser } from '@/lib/admin/giga-actor'
 import { createServiceClient } from '@/lib/supabase-service'
 import { canManageTarget } from '@/lib/admin/rbac'
 import { recordAdminAction } from '@/lib/admin/audit'
+import { guardClientAccess } from '@/lib/admin/client-scope'
 
 // DELETE /api/giga-admin/users/:id/gri/draft { reason } — reset an unfinished test.
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -12,6 +13,8 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
   const guard = await requireGiga(req, ['gri.edit', 'users.sensitive'])
   if (guard.response) return guard.response
+  const scopeDenied = await guardClientAccess(guard.actor, params.id)
+  if (scopeDenied) return scopeDenied
   if (!UUID_RE.test(params.id)) return NextResponse.json({ ok: false, error: 'invalid id' }, { status: 400 })
   const reason = String(((await req.json().catch(() => null)) as { reason?: string } | null)?.reason ?? '').trim()
   if (reason.length < 3) return NextResponse.json({ ok: false, error: 'Укажите причину' }, { status: 400 })
