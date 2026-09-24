@@ -55,7 +55,6 @@ export const PERMISSIONS = {
   'leads.manage': 'Лиды: изменение',
   'market.manage': 'Инсайты рынка',
   'insights.moderate': 'Модерация ИИ-инсайтов',
-  'clients.review': 'Экспертная работа с клиентом: корректировка Точки Б, комментарии клиенту, кейсы',
 } as const
 
 export type Permission = keyof typeof PERMISSIONS
