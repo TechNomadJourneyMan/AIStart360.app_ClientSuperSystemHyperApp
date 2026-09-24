@@ -13,6 +13,8 @@ import { getSessionUser, getSessionRole, isStaffRole } from '@/lib/api-identity'
 import { isSupabaseStorageUrl } from '@/lib/upload-url'
 import { isRateLimitedKey } from '@/lib/rate-limit'
 import { trackEvent } from '@/lib/events/track'
+import { notifyDocumentParsed } from '@/lib/notifications/product'
+import { runInBackground } from '@/lib/background'
 
 // POST /api/v1/onboarding/documents/[id]/process
 // Inline document parsing. Fetches the document, parses it, runs LLM extraction,
@@ -111,6 +113,12 @@ export async function POST(
       metadata: { doc_type: doc.doc_type ?? null, fields: payload.fields.length, has_rows: !!(rawRows && rawRows.length) },
       source: ownerId === user.id ? 'server' : 'admin',
     })
+    // Владельцу документа: «документ разобран, найдено N показателей».
+    if (ownerId) {
+      runInBackground('document-parsed-notify', () =>
+        notifyDocumentParsed(ownerId, { documentId: doc.id, fileName: doc.file_name, fieldsCount: payload.fields.length }),
+      )
+    }
 
     // Fire-and-forget: chunk + embed the parsed text into pgvector storage so
     // it becomes available to RAG. Gated behind ENABLE_DOCUMENT_EMBEDDINGS so

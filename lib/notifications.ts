@@ -11,6 +11,7 @@ import { createServerClient } from '@/lib/supabase-server'
 import { getSiteUrl } from '@/lib/site-url'
 import { isAdminNotificationType } from '@/lib/settings/registry'
 import { getSetting } from '@/lib/settings/store'
+import { notifyClient, type NotifyCategory } from '@/lib/notifications/notify'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -34,6 +35,7 @@ export type NotificationType =
   | 'admin_action'
   | 'expert_case_created'
   | 'expert_case_updated'
+  | 'staff_digest'
 
 export interface NotificationPayload {
   type: NotificationType
@@ -41,10 +43,6 @@ export interface NotificationPayload {
   data: Record<string, unknown>
 }
 
-interface Recipient {
-  email?: string | null
-  telegramChatId?: string | null
-}
 
 // ─── Message builders ───────────────────────────────────────────────────────
 
@@ -69,6 +67,7 @@ function buildSubject(type: NotificationType): string {
     case 'admin_action':            return 'AIStart360: Действие администратора'
     case 'expert_case_created':     return 'AIStart360: Новое обращение к эксперту'
     case 'expert_case_updated':     return 'AIStart360: Обращение к эксперту обновлено'
+    case 'staff_digest':            return 'AIStart360: утренняя сводка'
     default:                         return 'AIStart360: Уведомление'
   }
 }
@@ -202,6 +201,11 @@ function buildEmailBody(payload: NotificationPayload): { title: string; body: st
         body: `Обращение «${data.title || 'N/A'}» (клиент ${data.userName || data.userEmail || userId || 'N/A'}) обновлено. Статус: ${status}, приоритет: ${data.priority ?? 'N/A'}.`,
       }
     }
+    case 'staff_digest':
+      return {
+        title: String(data.title ?? 'Утренняя сводка'),
+        body: Array.isArray(data.lines) ? (data.lines as unknown[]).map(String).join('\n') : String(data.body ?? ''),
+      }
     default:
       return {
         title: 'Уведомление',
@@ -227,19 +231,47 @@ export function buildTelegramMessage(payload: NotificationPayload): string {
 
 function buildCta(type: NotificationType): { label: string; url: string } {
   const base = getSiteUrl()
-  if (type === 'expert_comment') {
-    return { label: 'Открыть дашборд', url: `${base}/client/dashboard` }
-  }
-  // Обновление обращения уходит КЛИЕНТУ — ему нужен свой кабинет, а не
-  // рабочее место эксперта.
-  if (type === 'expert_case_updated') {
-    return { label: 'Открыть кабинет', url: `${base}/client/home` }
-  }
-  // Новое обращение видит персонал: очередь дня в кабинете SuperExpert.
+  // Админские алерты ведут в панель; клиентские ссылки — в clientCta ниже.
   if (type === 'expert_case_created') {
     return { label: 'Открыть кабинет эксперта', url: `${base}/super-expert/today` }
   }
   return { label: 'Open Giga Panel', url: `${base}/admin-giga-panel` }
+}
+
+/**
+ * Куда вести КЛИЕНТА из уведомления. Раньше комментарий эксперта вёл на
+ * /client/dashboard (редирект на /client/home без комментариев), а обновление
+ * обращения — в портал эксперта, куда клиенту вход закрыт.
+ */
+function clientCta(type: NotificationType): { label: string; path: string } {
+  switch (type) {
+    case 'expert_comment':
+    case 'expert_comment_edited':
+      return { label: 'Открыть комментарий', path: '/client/home#expert' }
+    case 'expert_case_created':
+    case 'expert_case_updated':
+      return { label: 'Открыть кабинет', path: '/client/home' }
+    case 'document_approved':
+    case 'document_rejected':
+    case 'file_uploaded':
+      return { label: 'Открыть документы', path: '/client/onboarding/documents' }
+    case 'diagnostic_calculated':
+    case 'diagnostic_recalculated':
+      return { label: 'Открыть «Точку А»', path: '/client/point-a' }
+    case 'gri_strategy_generated':
+    case 'gri_report_saved':
+      return { label: 'Открыть GRI', path: '/gri' }
+    default:
+      return { label: 'Открыть кабинет', path: '/client/home' }
+  }
+}
+
+/** Категория настроек клиента для события. */
+function clientCategory(type: NotificationType): NotifyCategory {
+  if (type.startsWith('expert_')) return 'expert'
+  if (type.startsWith('gri_') || type === 'survey_completed') return 'gri'
+  if (type === 'profile_updated' || type === 'admin_action' || type === 'user_login') return 'security'
+  return 'reports'
 }
 
 // ─── Senders ────────────────────────────────────────────────────────────────
@@ -290,25 +322,6 @@ async function sendTelegram(payload: NotificationPayload, chatId: string | null 
     }
   } catch (err) {
     console.error('[notifications] Telegram send failed:', err)
-  }
-}
-
-/** Look up a user's notification channels from their profile. */
-async function getRecipient(userId: string): Promise<Recipient> {
-  try {
-    const sb = createServerClient()
-    const { data } = await sb
-      .from('profiles')
-      .select('email, telegram_chat_id')
-      .eq('id', userId)
-      .maybeSingle()
-    return {
-      email: (data as { email?: string | null } | null)?.email ?? null,
-      telegramChatId:
-        (data as { telegram_chat_id?: string | null } | null)?.telegram_chat_id ?? null,
-    }
-  } catch {
-    return {}
   }
 }
 
@@ -443,10 +456,11 @@ export async function notifyAdmins(
 }
 
 /**
- * Notify a specific user (by their Supabase user id). Uses the email +
- * telegram_chat_id stored on their profile row. Non-blocking.
+ * Уведомить конкретного клиента (по profiles.id).
  *
- * Falls back to admin channels if the user has neither.
+ * Делегирует в notifyClient (lib/notifications/notify.ts): запись в ленте +
+ * email/Telegram по настройкам категории пользователя. Категория и ссылка
+ * выводятся из типа события (clientCategory / clientCta). Никогда не бросает.
  */
 export async function notifyUser(
   userId: string,
@@ -454,18 +468,16 @@ export async function notifyUser(
   data: Record<string, unknown>,
 ): Promise<void> {
   await enrichUserDisplay(data, userId)
-  const payload: NotificationPayload = { type, userId, data }
-  const recipient = await getRecipient(userId)
-
-  const hasAnyChannel = recipient.email || recipient.telegramChatId
-  if (!hasAnyChannel) {
-    // User has no channels — still notify admins so the message is not lost
-    notifyAdmins(type, { ...data, note: 'user has no email/telegram' }, userId)
-    return
-  }
-
-  Promise.allSettled([
-    sendEmail(payload, recipient.email),
-    sendTelegram(payload, recipient.telegramChatId),
-  ]).catch(() => {})
+  const { title, body } = buildEmailBody({ type, userId, data })
+  const cta = clientCta(type)
+  await notifyClient({
+    userId,
+    category: clientCategory(type),
+    event: type,
+    title,
+    body,
+    ctaUrl: cta.path,
+    ctaLabel: cta.label,
+    metadata: typeof data.caseId === 'string' ? { caseId: data.caseId } : undefined,
+  })
 }

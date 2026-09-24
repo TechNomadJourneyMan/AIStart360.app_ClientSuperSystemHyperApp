@@ -5,6 +5,12 @@ import { toast } from 'sonner'
 import { ActivityLogClient } from '@/components/activity/ActivityLogClient'
 import { BillingPanel } from '@/components/settings/BillingPanel'
 import { AssistantSettingsPanel } from '@/components/settings/AssistantSettingsPanel'
+import {
+  categoryPrefs,
+  LOCKED_CATEGORIES,
+  NOTIFY_CATEGORY_UI,
+  type NotifyCategory,
+} from '@/lib/notifications/preferences'
 
 export interface SettingsInitial {
   firstName: string
@@ -590,79 +596,20 @@ function SecurityEventsCard() {
 }
 
 // ── Уведомления (настройки каналов) ──────────────────────────────────────────
-const NOTIF_CATEGORIES = [
-  { key: 'critical', label: 'Критические алерты', desc: 'Немедленные уведомления о критических событиях' },
-  { key: 'gri',      label: 'Обновления GRI',     desc: 'При пересчёте GRI-диагностики' },
-  { key: 'reports',  label: 'Отчёты',             desc: 'Загрузка и готовность отчётов' },
-  { key: 'security', label: 'Безопасность',       desc: 'Входы, смена пароля, устройства' },
-  { key: 'team',     label: 'Команда',            desc: 'Изменения в команде' },
-  { key: 'crm',      label: 'CRM-дайджест',       desc: 'Утром: кому звонить + слабый блок GRI' },
-  { key: 'digest',   label: 'Еженедельный дайджест', desc: 'Сводка по портфелю' },
-] as const
-
-const NOTIF_DEFAULTS: NotifPrefs = {
-  critical: { in_app: true, email: true }, gri: { in_app: true, email: false }, reports: { in_app: true, email: false },
-  security: { in_app: true, email: true }, team: { in_app: true, email: false },
-  crm: { in_app: true, email: false, telegram: true }, digest: { in_app: false, email: true },
-}
-
+// Каждый переключатель здесь на что-то влияет: категории, значения по умолчанию
+// и то, какие события в них входят, заданы в lib/notifications/preferences.ts
+// и описаны в шапке lib/notifications/notify.ts (notifyClient читает те же
+// ключи). «Аккаунт и безопасность» выключить нельзя — переключатели заблокированы.
 function NotificationsPanel({ initial }: { initial?: NotifPrefs }) {
   const [prefs, setPrefs] = useState<NotifPrefs>(() => {
     const out: NotifPrefs = {}
-    for (const c of NOTIF_CATEGORIES) out[c.key] = { ...NOTIF_DEFAULTS[c.key], ...(initial?.[c.key] ?? {}) }
+    for (const c of NOTIFY_CATEGORY_UI) out[c.key] = categoryPrefs({ notifications: initial ?? {} }, c.key)
     return out
   })
-  const toggle = async (cat: string, channel: Channel) => {
-    const prev = prefs
-    const value = !prefs[cat]?.[channel]
-    setPrefs((p) => ({ ...p, [cat]: { ...p[cat], [channel]: value } }))
-    try {
-      const res = await fetch('/api/v1/settings/preferences', {
-        method: 'PATCH', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-        body: JSON.stringify({ notifications: { [cat]: { [channel]: value } } }),
-      })
-      const json = await res.json().catch(() => ({}))
-      if (!res.ok || !json.ok) throw new Error()
-    } catch { setPrefs(prev); toast.error('Не удалось сохранить настройку') }
-  }
-  return (
-    <Card title="Настройки уведомлений" subtitle="Выберите, о чём и куда получать уведомления. Изменения сохраняются сразу.">
-      <div className="flex items-center justify-end gap-6 pr-1 pb-2 mb-1 border-b border-outline-variant/10">
-        <span className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest w-11 text-center">In-app</span>
-        <span className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest w-11 text-center">Email</span>
-      </div>
-      <div className="divide-y divide-outline-variant/10">
-        {NOTIF_CATEGORIES.map((c) => (
-          <div key={c.key} className="flex items-center justify-between py-3">
-            <div className="pr-4"><p className="text-sm font-medium text-on-surface">{c.label}</p><p className="text-xs text-on-surface-variant">{c.desc}</p></div>
-            <div className="flex items-center gap-6 shrink-0">
-              <Toggle checked={prefs[c.key]?.in_app} onChange={() => toggle(c.key, 'in_app')} label={`${c.label}: in-app`} />
-              <Toggle checked={prefs[c.key]?.email} onChange={() => toggle(c.key, 'email')} label={`${c.label}: email`} />
-            </div>
-          </div>
-        ))}
-      </div>
-      <TelegramBinding
-        telegramOn={prefs.crm?.telegram !== false}
-        onToggleTelegram={() => toggle('crm', 'telegram')}
-      />
-    </Card>
-  )
-}
-
-// ── Привязка Telegram (Фаза 4A) ──────────────────────────────────────────────
-function TelegramBinding({
-  telegramOn,
-  onToggleTelegram,
-}: {
-  telegramOn: boolean
-  onToggleTelegram: () => void
-}) {
   const [linked, setLinked] = useState<boolean | null>(null)
   const [configured, setConfigured] = useState(true)
-  const [busy, setBusy] = useState(false)
 
-  const refresh = useCallback(async () => {
+  const refreshTelegram = useCallback(async () => {
     try {
       const res = await fetch('/api/v1/settings/telegram', { credentials: 'include' })
       const json = await res.json().catch(() => ({}))
@@ -676,8 +623,64 @@ function TelegramBinding({
   }, [])
 
   useEffect(() => {
-    void refresh()
-  }, [refresh])
+    void refreshTelegram()
+  }, [refreshTelegram])
+
+  const toggle = async (cat: NotifyCategory, channel: Channel) => {
+    if (LOCKED_CATEGORIES.has(cat)) return
+    const prev = prefs
+    const value = !prefs[cat]?.[channel]
+    setPrefs((p) => ({ ...p, [cat]: { ...p[cat], [channel]: value } }))
+    try {
+      const res = await fetch('/api/v1/settings/preferences', {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+        body: JSON.stringify({ notifications: { [cat]: { [channel]: value } } }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok || !json.ok) throw new Error()
+    } catch { setPrefs(prev); toast.error('Не удалось сохранить настройку') }
+  }
+  const showTelegram = configured && linked === true
+  return (
+    <Card title="Настройки уведомлений" subtitle="Выберите, о чём и куда получать уведомления. Изменения сохраняются сразу.">
+      <div className="flex items-center justify-end gap-6 pr-1 pb-2 mb-1 border-b border-outline-variant/10">
+        <span className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest w-11 text-center">In-app</span>
+        <span className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest w-11 text-center">Email</span>
+        {showTelegram && <span className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest w-11 text-center">TG</span>}
+      </div>
+      <div className="divide-y divide-outline-variant/10">
+        {NOTIFY_CATEGORY_UI.map((c) => {
+          const locked = LOCKED_CATEGORIES.has(c.key)
+          return (
+            <div key={c.key} className="flex items-center justify-between py-3">
+              <div className="pr-4"><p className="text-sm font-medium text-on-surface">{c.label}</p><p className="text-xs text-on-surface-variant">{c.desc}</p></div>
+              <div className="flex items-center gap-6 shrink-0">
+                <Toggle checked={prefs[c.key]?.in_app} disabled={locked} onChange={() => toggle(c.key, 'in_app')} label={`${c.label}: in-app`} />
+                <Toggle checked={prefs[c.key]?.email} disabled={locked} onChange={() => toggle(c.key, 'email')} label={`${c.label}: email`} />
+                {showTelegram && (
+                  <Toggle checked={prefs[c.key]?.telegram} disabled={locked} onChange={() => toggle(c.key, 'telegram')} label={`${c.label}: Telegram`} />
+                )}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+      <TelegramBinding linked={linked} configured={configured} onChanged={refreshTelegram} />
+    </Card>
+  )
+}
+
+// ── Привязка Telegram (Фаза 4A) ──────────────────────────────────────────────
+function TelegramBinding({
+  linked,
+  configured,
+  onChanged,
+}: {
+  linked: boolean | null
+  configured: boolean
+  onChanged: () => Promise<void>
+}) {
+  const [busy, setBusy] = useState(false)
 
   const link = async () => {
     setBusy(true)
@@ -704,7 +707,7 @@ function TelegramBinding({
     try {
       const res = await fetch('/api/v1/settings/telegram', { method: 'DELETE', credentials: 'include' })
       if (res.ok) {
-        setLinked(false)
+        await onChanged()
         toast.success('Telegram отвязан')
       } else {
         toast.error('Не удалось отвязать')
@@ -728,12 +731,21 @@ function TelegramBinding({
             {!configured
               ? 'Бот не настроен на сервере — обратитесь к администратору.'
               : linked
-                ? 'Привязан. CRM-дайджест и инсайты приходят в чат.'
-                : 'Привяжите чат, чтобы получать напоминания прямо в Telegram.'}
+                ? 'Привязан. Что присылать в чат, выберите в колонке «TG» выше.'
+                : 'Привяжите чат, чтобы получать уведомления прямо в Telegram.'}
           </p>
         </div>
         {configured && (
-          <div className="shrink-0">
+          <div className="shrink-0 flex items-center gap-2">
+            {!linked && (
+              <button
+                onClick={() => void onChanged()}
+                disabled={busy}
+                className="px-3 py-1.5 rounded-lg border border-white/[0.08] text-xs text-on-surface-variant hover:bg-white/[0.04] disabled:opacity-40 transition-colors"
+              >
+                Обновить статус
+              </button>
+            )}
             {linked ? (
               <button
                 onClick={unlink}
@@ -754,16 +766,6 @@ function TelegramBinding({
           </div>
         )}
       </div>
-      {configured && linked && (
-        <div className="flex items-center justify-between mt-3">
-          <span className="text-xs text-on-surface-variant">Присылать CRM-дайджест в Telegram</span>
-          <Toggle
-            checked={telegramOn}
-            onChange={onToggleTelegram}
-            label="CRM-дайджест в Telegram"
-          />
-        </div>
-      )}
     </div>
   )
 }
@@ -999,10 +1001,11 @@ function ComingSoon({ icon, title, points }: { icon: string; title: string; poin
   )
 }
 
-function Toggle({ checked, onChange, label }: { checked?: boolean; onChange: () => void; label?: string }) {
+function Toggle({ checked, onChange, label, disabled = false }: { checked?: boolean; onChange: () => void; label?: string; disabled?: boolean }) {
   return (
-    <button type="button" role="switch" aria-checked={!!checked} aria-label={label} onClick={onChange}
-      className={`w-11 h-6 rounded-full transition-colors relative shrink-0 ${checked ? 'bg-primary' : 'bg-surface-container-high'}`}>
+    <button type="button" role="switch" aria-checked={!!checked} aria-label={label} onClick={onChange} disabled={disabled}
+      title={disabled ? 'Эти уведомления отключить нельзя' : undefined}
+      className={`w-11 h-6 rounded-full transition-colors relative shrink-0 disabled:opacity-50 disabled:cursor-not-allowed ${checked ? 'bg-primary' : 'bg-surface-container-high'}`}>
       <span className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-transform ${checked ? 'translate-x-6' : 'translate-x-1'}`} />
     </button>
   )
