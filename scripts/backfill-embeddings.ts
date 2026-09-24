@@ -76,7 +76,7 @@ async function main(): Promise<void> {
     .from('documents')
     .select('id, user_id, file_name, file_url, mime_type')
     .eq('parse_status', 'parsed')
-    .order('created_at', { ascending: true })
+    .order('uploaded_at', { ascending: true })
     .limit(limit)
   if (onlyUser) q = q.eq('user_id', onlyUser)
   const { data: docs, error } = await q
