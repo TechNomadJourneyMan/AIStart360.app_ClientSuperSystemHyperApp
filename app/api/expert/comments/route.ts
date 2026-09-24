@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { notifyUser } from '@/lib/notifications'
+import { runInBackground } from '@/lib/background'
 import { logAudit } from '@/lib/audit'
 
 const EXPERT_ROLES = new Set(['expert', 'admin', 'super_admin'])
@@ -235,13 +236,17 @@ export async function POST(req: NextRequest) {
     ipAddress: req.headers.get('x-forwarded-for') ?? undefined,
   })
 
-  // Fire-and-forget notify the client
-  notifyUser(clientId, 'expert_comment', {
-    expertName: mapped.authorName ?? 'Эксперт',
-    expertTitle: mapped.authorTitle,
-    blockKey: mapped.blockKey,
-    preview: mapped.text,
-  })
+  // Клиенту: лента + email/Telegram по настройкам категории «expert».
+  // В фоне через waitUntil — иначе на Vercel отправка обрывается после ответа.
+  runInBackground('expert-comment-notify', () =>
+    notifyUser(clientId, 'expert_comment', {
+      expertName: mapped.authorName ?? 'Эксперт',
+      expertTitle: mapped.authorTitle,
+      blockKey: mapped.blockKey,
+      preview: mapped.text,
+      commentId: mapped.id,
+    }),
+  )
 
   return NextResponse.json({ data: mapped })
 }

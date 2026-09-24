@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { toast } from 'sonner'
 import {
   Activity, AlertTriangle, Bell, CheckCircle2, Database, ExternalLink, Eraser, KeyRound, LayoutGrid,
-  Megaphone, RefreshCw, ScrollText, ShieldCheck, Sparkles, UserPlus, Users2, Wrench, XCircle,
+  Megaphone, RefreshCw, ScrollText, Send, ShieldCheck, Sparkles, UserPlus, Users2, Wrench, XCircle,
 } from 'lucide-react'
 import { RequirePermission, useStaff } from '@/components/giga-panel/StaffContext'
 import {
@@ -155,6 +155,30 @@ export default function SettingsPage() {
           <AnalyticsCard values={v} meta={meta} disabled={!canEdit} saving={saving} onToggle={(n) => toggle('analytics_enabled', n)} onSaveRetention={(n) => save({ events_retention_days: n }, 'Срок хранения')} />
 
           <NotificationsCard value={v.admin_notifications} meta={meta} disabled={!canEdit} saving={saving === 'admin_notifications'} onSave={(n) => save({ admin_notifications: n }, 'Уведомления')} />
+
+          <Panel title={<Title icon={<Send size={14} />}>Автоматические касания</Title>}>
+            <SettingRow k="auto_reminders_enabled" meta={meta}>
+              <Toggle checked={v.auto_reminders_enabled} disabled={!canEdit || !!saving} onChange={(n) => toggle('auto_reminders_enabled', n)} label={SETTINGS.auto_reminders_enabled.label} />
+            </SettingRow>
+            <SettingRow k="auto_touch_weekly_cap" meta={meta} note={!v.auto_reminders_enabled ? 'Напоминания выключены — лимит сейчас не действует.' : undefined}>
+              <NumberSetting
+                value={v.auto_touch_weekly_cap} min={0} max={14} suffix="в неделю"
+                disabled={!canEdit} saving={saving === 'auto_touch_weekly_cap'}
+                onSave={(n) => save({ auto_touch_weekly_cap: n }, 'Лимит касаний')}
+              />
+            </SettingRow>
+            <SettingRow k="client_digest_enabled" meta={meta}>
+              <Toggle checked={v.client_digest_enabled} disabled={!canEdit || !!saving} onChange={(n) => toggle('client_digest_enabled', n)} label={SETTINGS.client_digest_enabled.label} />
+            </SettingRow>
+            <SettingRow k="request_sla_hours" meta={meta}>
+              <NumberSetting
+                value={v.request_sla_hours} min={1} max={168} suffix="ч"
+                disabled={!canEdit} saving={saving === 'request_sla_hours'}
+                onSave={(n) => save({ request_sla_hours: n }, 'Срок ответа на заявку')}
+              />
+            </SettingRow>
+            <Links items={[{ href: '/admin-giga-panel/requests', label: 'Заявки на доступ' }]} />
+          </Panel>
 
           {canEdit && <HealthCard />}
         </div>

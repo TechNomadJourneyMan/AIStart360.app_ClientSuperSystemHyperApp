@@ -111,8 +111,9 @@ vi.mock('@/lib/supabase-service', () => ({ createServiceClient: () => fakeServic
 vi.mock('@/lib/api-identity', () => ({ resolveTargetUserId: () => Promise.resolve({ userId: USER }) }))
 vi.mock('@/lib/notifications', () => ({ notifyAdmins: (...a: unknown[]) => notifyAdmins(...a) }))
 // Письмо клиенту «анкета пройдена» — мок, чтобы тест не зависел от почты.
-vi.mock('@/lib/email', () => ({
-  sendQuestionnaireCompletedEmail: (...a: unknown[]) => { clientEmail(...a); return Promise.resolve({ ok: true }) },
+// Письмо клиенту уходит через notifyClient (lib/notifications/product.ts).
+vi.mock('@/lib/notifications/product', () => ({
+  notifyQuestionnaireCompleted: (...a: unknown[]) => { clientEmail(...a); return Promise.resolve({ ok: true, delivered: {} }) },
 }))
 // Never hit the real staff spreadsheet from tests.
 vi.mock('@/lib/integrations/google-sheets', () => ({

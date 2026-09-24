@@ -26,6 +26,16 @@ export type EmailKind =
   | 'gri_completed'
   | 'portal_access_granted'
   | 'notification'
+  /** Уведомление клиенту через notifyClient (lib/notifications/notify.ts). */
+  | 'client_notification'
+  /** Автоматическое напоминание (cron reminders). */
+  | 'reminder'
+  /** Приветственная серия D1/D3/D7. */
+  | 'welcome'
+  /** Еженедельный дайджест клиента. */
+  | 'client_digest'
+  /** Утренний список задач сотрудника. */
+  | 'staff_tasks'
 
 export interface TransactionalEmailInput {
   kind: EmailKind

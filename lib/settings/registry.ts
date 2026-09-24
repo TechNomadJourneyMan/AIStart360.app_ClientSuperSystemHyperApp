@@ -17,6 +17,7 @@ export const NOTIFICATION_TYPES = {
   expert_case_updated: 'Кейс эксперта обновлён',
   expert_comment_edited: 'Комментарий эксперта изменён',
   expert_comment_deleted: 'Комментарий эксперта удалён',
+  staff_digest: 'Утренняя сводка (08:00): заявки, регистрации, анкеты, GRI',
 } as const
 export type AdminNotificationType = keyof typeof NOTIFICATION_TYPES
 
@@ -113,6 +114,27 @@ export const SETTINGS = {
     default: Object.fromEntries((Object.keys(NOTIFICATION_TYPES) as AdminNotificationType[]).map((k) => [k, true])) as Record<AdminNotificationType, boolean>,
     critical: false,
   },
+  // ── Автоматические касания (пакет 4, cron-ы reminders / client-digest / staff-digest) ──
+  auto_reminders_enabled: {
+    group: 'automation', label: 'Автоматические напоминания клиентам',
+    help: 'Письма и уведомления без участия сотрудника: брошенная анкета (через 3, 7 и 14 дней), «пройдите GRI» после Точки А, незаконченный GRI, пятничный пульс и приветственная серия D1/D3/D7. Клиент может выключить их у себя в настройках («Напоминания»).',
+    schema: z.boolean(), default: true, critical: false,
+  },
+  auto_touch_weekly_cap: {
+    group: 'automation', label: 'Не больше касаний в неделю на клиента',
+    help: 'Сколько автоматических напоминаний один клиент может получить за 7 дней. Касание — одно событие, даже если оно ушло сразу в кабинет и на почту. Еженедельный дайджест в этот лимит не входит. 0 — напоминания не отправляются.',
+    schema: z.number().int().min(0).max(14), default: 2, critical: false,
+  },
+  client_digest_enabled: {
+    group: 'automation', label: 'Еженедельный дайджест клиентам',
+    help: 'По понедельникам в 09:00 (Алматы): динамика GRI, задачи плана на неделю, новые материалы и главный следующий шаг. Получают одобренные клиенты, у которых включена категория «Еженедельный дайджест».',
+    schema: z.boolean(), default: true, critical: false,
+  },
+  request_sla_hours: {
+    group: 'automation', label: 'Срок ответа на заявку, часов',
+    help: 'Заявки на доступ, которые ждут дольше этого срока, попадают в утреннюю сводку администраторам (08:00 Алматы) с числом и возрастом самой старой.',
+    schema: z.number().int().min(1).max(168), default: 4, critical: false,
+  },
 } as const
 
 export type SettingKey = keyof typeof SETTINGS
@@ -126,6 +148,7 @@ export const SETTING_GROUPS = {
   security: { label: 'Безопасность', icon: 'shield' },
   analytics: { label: 'Аналитика', icon: 'activity' },
   notifications: { label: 'Уведомления', icon: 'bell' },
+  automation: { label: 'Автоматические касания', icon: 'send' },
 } as const
 
 export function isAdminNotificationType(v: string): v is AdminNotificationType {

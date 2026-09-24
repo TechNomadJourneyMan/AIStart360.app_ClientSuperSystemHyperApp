@@ -1,5 +1,6 @@
 import { createServiceClient } from '@/lib/supabase-service'
 import { sendPortalAccessGrantedEmail, sendUserEmail } from '@/lib/email'
+import { notifyAccessGranted } from '@/lib/notifications/product'
 
 /**
  * SINGLE SOURCE OF TRUTH for user access status.
@@ -71,6 +72,10 @@ export async function applyApprovalDecision(input: ApplyApprovalInput): Promise<
   const notify = input.sendEmail !== false && input.status !== 'pending_approval'
   if (profile?.email && notify) {
     emailSent = (await sendDecisionEmail(profile.email, profile.full_name, input.status, input.reason)).ok
+  }
+  // Запись «Доступ открыт» в ленте клиента (письмо ушло выше). Best-effort.
+  if (profile && notify && input.status === 'approved') {
+    await notifyAccessGranted(profile.id).catch(() => undefined)
   }
 
   return { affected: updated?.length ?? 0, profile, emailSent }

@@ -4,6 +4,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { calculatePointA } from '@/lib/point-a-engine'
 import { notifyAdmins } from '@/lib/notifications'
+import { notifyPointARecalculated } from '@/lib/notifications/product'
+import { runInBackground } from '@/lib/background'
 import { localeFromRequestCookie } from '@/lib/i18n/locale'
 import { resolveTargetUserId } from '@/lib/api-identity'
 import { isRateLimitedKey } from '@/lib/rate-limit'
@@ -119,6 +121,11 @@ export async function POST(req: NextRequest) {
         body: JSON.stringify({ diagnostic_id: diag.id, user_id, locale }),
       }).catch(err => console.error('[recalculate] Failed to fire Point B AI generate:', err))
     }
+
+    // Клиенту: «Точка А пересчитана» (лента; email — по настройке «reports»).
+    runInBackground('point-a-notify', () =>
+      notifyPointARecalculated(user_id, { diagnosticId: diag?.id ?? null, overallScore: Number(result.overall_score) }),
+    )
 
     // Notify admins about diagnostic recalculation
     notifyAdmins('diagnostic_recalculated', {

@@ -276,3 +276,44 @@ export function buildAccessGrantedEmail(input: AccessGrantedEmailInput): BuiltEm
     },
   }
 }
+
+// ─── 5. Уведомление клиенту (notifyClient) ───────────────────────────────────
+
+export interface ClientNotificationEmailInput {
+  /** Тема письма; по умолчанию — заголовок. */
+  subject?: string | null
+  /** Надпись над заголовком: «GRI», «Напоминание», «Дайджест». */
+  eyebrow?: string | null
+  title: string
+  name?: string | null
+  /** Абзацы; переносы строк внутри абзаца сохраняются. */
+  paragraphs: string[]
+  facts?: EmailFact[]
+  ctaLabel?: string | null
+  /** Абсолютная ссылка. */
+  url?: string | null
+  note?: string | null
+  /** Приписка в подвале: почему пришло письмо и где его выключить. */
+  footnote?: string | null
+}
+
+/** Универсальное фирменное письмо для notifyClient и cron-касаний. */
+export function buildClientNotificationEmail(input: ClientNotificationEmailInput): BuiltEmail {
+  const paragraphs = input.paragraphs.filter((p) => typeof p === 'string' && p.trim() !== '')
+  return {
+    subject: nameOrNull(input.subject) ?? `${input.title} — AIStart360`,
+    content: {
+      preheader: (paragraphs[0] ?? input.title).slice(0, 140),
+      eyebrow: nameOrNull(input.eyebrow),
+      title: input.title,
+      greeting: greeting(input.name),
+      paragraphs,
+      facts: input.facts ?? [],
+      cta: input.url ? { label: nameOrNull(input.ctaLabel) ?? 'Открыть кабинет', url: input.url } : null,
+      note: nameOrNull(input.note),
+      footnote:
+        nameOrNull(input.footnote) ??
+        'Письмо отправлено автоматически по вашему аккаунту AIStart360. Какие уведомления получать, можно выбрать в «Настройки → Уведомления».',
+    },
+  }
+}
