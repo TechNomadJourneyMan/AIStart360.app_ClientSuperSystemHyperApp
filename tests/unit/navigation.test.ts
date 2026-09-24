@@ -8,7 +8,7 @@ import {
   ROLE_PERMISSIONS,
 } from '@/lib/navigation'
 
-const ALL_ROLES: UserRole[] = ['client', 'expert', 'owner', 'admin', 'super_admin']
+const ALL_ROLES: UserRole[] = ['client', 'expert', 'admin', 'super_admin']
 
 describe('navigation (FE-01/02 canonical lowercase roles)', () => {
   it('every canonical role has a label and a permission entry (no crash on lookup)', () => {
@@ -46,7 +46,6 @@ describe('navigation (FE-01/02 canonical lowercase roles)', () => {
 
   it('permissions: wildcards, scoping and denials work per role', () => {
     expect(hasPermission('super_admin', 'anything.at.all')).toBe(true)
-    expect(hasPermission('owner', 'anything.at.all')).toBe(true)
     expect(hasPermission('admin', 'clients.read')).toBe(true)   // clients.* wildcard
     expect(hasPermission('admin', 'billing.write')).toBe(true)  // billing.* wildcard
     expect(hasPermission('expert', 'clients.read')).toBe(true)

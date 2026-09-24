@@ -43,7 +43,7 @@ const SEGMENTS = [
   { value: 'staff', label: 'Персонал' },
 ] as const
 const STATUSES = [{ value: '', label: 'Любой статус' }, ...Object.entries(PROFILE_STATUS).map(([value, v]) => ({ value, label: v.label }))]
-const ROLES = [{ value: '', label: 'Любая роль' }, ...['client', 'expert', 'owner', 'admin', 'super_admin'].map((value) => ({ value, label: PROFILE_ROLE[value] }))]
+const ROLES = [{ value: '', label: 'Любая роль' }, ...['client', 'expert', 'admin', 'super_admin'].map((value) => ({ value, label: PROFILE_ROLE[value] }))]
 
 function UsersInner() {
   const { base, label } = useWorkspace()

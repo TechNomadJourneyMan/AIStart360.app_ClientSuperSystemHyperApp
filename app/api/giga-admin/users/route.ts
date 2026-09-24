@@ -11,7 +11,7 @@ import { maskEmail, maskPhone } from '@/lib/admin/mask'
 const SORTS = new Set(['created_at', 'last_seen_at', 'name', 'survey', 'survey_updated', 'gri'])
 const SEGMENTS = new Set(['', 'new_7d', 'active_7d', 'inactive_30d', 'survey_not_started', 'survey_in_progress', 'survey_completed', 'gri_not_started', 'gri_in_progress', 'gri_completed', 'staff'])
 const STATUSES = new Set(['', 'pending_approval', 'approved', 'rejected', 'requires_clarification', 'blocked', 'archived'])
-const ROLES = new Set(['', 'client', 'expert', 'owner', 'admin', 'super_admin', 'manager', 'analyst'])
+const ROLES = new Set(['', 'client', 'expert', 'admin', 'super_admin', 'manager', 'analyst'])
 
 export async function GET(req: NextRequest) {
   const guard = await requireGiga(req, 'users.view')

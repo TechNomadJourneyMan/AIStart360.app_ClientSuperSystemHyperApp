@@ -69,10 +69,13 @@ export async function GET(_req: NextRequest) {
 
   // CRM integration connected?
   try {
+    // Real per-user CRM connections (046, RLS own). The legacy Prisma
+    // `crm_integrations` table has no user_id and is closed to the API (084).
     const { count } = await sb
-      .from('crm_integrations')
+      .from('crm_provider_connections')
       .select('id', { count: 'exact', head: true })
       .eq('user_id', user.id)
+      .eq('is_active', true)
     signals.hasCrm = (count ?? 0) > 0
   } catch { /* skip */ }
 

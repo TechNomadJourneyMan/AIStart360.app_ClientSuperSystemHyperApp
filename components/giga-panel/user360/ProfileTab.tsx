@@ -135,11 +135,13 @@ export function ProfileTab({ data, onChanged, onPurged }: { data: User360Profile
         open={pending === 'block'}
         onClose={() => setPending(null)}
         title="Заблокировать пользователя?"
-        text="Вход будет закрыт немедленно: статус «заблокирован» и бан сессий. Данные сохраняются."
+        text="Вход будет закрыт немедленно: статус «заблокирован» и бан сессий. Данные сохраняются. Причина попадёт в журнал действий."
         confirmLabel="Заблокировать"
         loading={busy}
-        onConfirm={() => run(() => gigaFetch(`/api/giga-admin/users/${p.id}/block`, { method: 'POST', json: {} }), 'Пользователь заблокирован')}
-      />
+        onConfirm={() => run(() => gigaFetch(`/api/giga-admin/users/${p.id}/block`, { method: 'POST', json: { reason } }), 'Пользователь заблокирован')}
+      >
+        <Field label="Причина"><input value={reason} onChange={(e) => setReason(e.target.value)} className={inputClass} maxLength={300} placeholder="Например: спам, нарушение правил" /></Field>
+      </ConfirmDialog>
       <ConfirmDialog
         open={pending === 'unblock'}
         onClose={() => setPending(null)}
@@ -147,8 +149,10 @@ export function ProfileTab({ data, onChanged, onPurged }: { data: User360Profile
         title="Разблокировать пользователя?"
         confirmLabel="Разблокировать"
         loading={busy}
-        onConfirm={() => run(() => gigaFetch(`/api/giga-admin/users/${p.id}/unblock`, { method: 'POST', json: {} }), 'Пользователь разблокирован')}
-      />
+        onConfirm={() => run(() => gigaFetch(`/api/giga-admin/users/${p.id}/unblock`, { method: 'POST', json: { reason } }), 'Пользователь разблокирован')}
+      >
+        <Field label="Причина (необязательно)"><input value={reason} onChange={(e) => setReason(e.target.value)} className={inputClass} maxLength={300} /></Field>
+      </ConfirmDialog>
       <ConfirmDialog
         open={pending === '2fa'}
         onClose={() => setPending(null)}

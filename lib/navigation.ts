@@ -4,7 +4,7 @@ import type { NavItem, UserRole } from '@/types'
 // keeps them in ADMIN_PATHS — a CLIENT hitting them is silently redirected to
 // /dashboard, so they must NOT appear in the client sidebar (dead links).
 // (manager/analyst were legacy Prisma roles that never exist at runtime; expert
-// and owner navigate in their own route groups with their own sidebars.)
+// navigates in its own route group with its own sidebar.)
 const STAFF_ROLES: UserRole[] = ['super_admin', 'admin']
 // What a CLIENT may actually open — mirrors middleware CLIENT_DASHBOARD_PATHS.
 const CLIENT_OK: UserRole[] = ['super_admin', 'admin', 'client']
@@ -72,16 +72,14 @@ export function getSecondaryNavForRole(role: UserRole): NavItem[] {
 export const ROLE_LABELS: Record<UserRole, string> = {
   client:      'Клиент',
   expert:      'Эксперт',
-  owner:       'Владелец',
   admin:       'Администратор',
   super_admin: 'Супер-админ',
 }
 
-// Role permissions map. owner is an elevated business role (≈ super_admin);
-// expert validates AI output and reads assigned clients.
+// Role permissions map. expert validates AI output and reads assigned clients.
+// ('owner' was removed from the product on 2026-09-24.)
 export const ROLE_PERMISSIONS: Record<UserRole, string[]> = {
   super_admin: ['*'],
-  owner:       ['*'],
   admin:       ['clients.*', 'reports.*', 'analytics.*', 'team.*', 'settings.*', 'billing.*'],
   expert:      ['clients.read', 'reports.read', 'analytics.read', 'intelligence.read'],
   client:      ['own.gri', 'own.reports', 'own.profile', 'support'],

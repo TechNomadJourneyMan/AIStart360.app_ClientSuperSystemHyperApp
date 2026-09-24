@@ -7,7 +7,8 @@ import { sendPortalAccessGrantedEmail, sendUserEmail } from '@/lib/email'
  * `profiles.status` is the ONLY field the login flow and waiting-room read to
  * grant portal access (middleware gates on role; the status redirect lives in
  * the login page + `/api/client/status`). So EVERY approve / reject / clarify
- * path — giga panel, /api/v1/admin/*, and the Prisma /api/admin/* routes —
+ * path (giga panel, self-registration auto-approve; the legacy /api/v1/admin/*
+ * and Prisma /api/admin/* routes were removed 2026-09-24) —
  * funnels the authoritative write through here, instead of each writing its own
  * field (the old bug: three backends wrote three different fields/tables and the
  * giga one wrote nothing that stuck).

@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { useAuthStore, UserRole } from '@/stores/auth.store'
+import { useAuthStore } from '@/stores/auth.store'
 import { roleLandingPath } from '@/lib/role-landing'
 import { Logo } from '@/components/ui/Logo'
 
@@ -14,7 +14,6 @@ export default function RegisterPage() {
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
-  const [role, setRole] = useState<UserRole>('client')
   const [agreeTerms, setAgreeTerms] = useState(false)
   const { register, loginWithGoogle, isLoading, error, clearError, user } = useAuthStore()
   const router = useRouter()
@@ -42,9 +41,9 @@ export default function RegisterPage() {
       return
     }
     try {
-      await register({ name, email, password, role, organization })
+      await register({ name, email, password, role: 'client', organization })
       const currentUser = useAuthStore.getState().user
-      if (currentUser && role === 'client') {
+      if (currentUser) {
         try {
           const res = await fetch('/api/client/register', {
             method: 'POST',
@@ -130,29 +129,9 @@ export default function RegisterPage() {
             <Logo className="h-8" />
           </div>
 
-          {/* Role tabs */}
-          <div className="grid grid-cols-2 gap-1 bg-surface-container/40 p-1 rounded-xl mb-6">
-            <button onClick={() => setRole('client')}
-              className={`h-10 rounded-lg text-sm font-medium flex items-center justify-center gap-2 transition-all ${
-                role === 'client' ? 'bg-surface-container-high text-on-surface shadow-sm' : 'text-on-surface-variant/60 hover:text-on-surface-variant'
-              }`}>
-              <span className="material-symbols-outlined text-base">business_center</span>
-              Клиент / Бизнес
-            </button>
-            <button onClick={() => setRole('owner')}
-              className={`h-10 rounded-lg text-sm font-medium flex items-center justify-center gap-2 transition-all ${
-                role === 'owner' ? 'bg-surface-container-high text-on-surface shadow-sm' : 'text-on-surface-variant/60 hover:text-on-surface-variant'
-              }`}>
-              <span className="material-symbols-outlined text-base">groups</span>
-              Команда
-            </button>
-          </div>
-
           <h1 className="text-2xl font-headline font-extrabold text-on-surface mb-1">Подать заявку</h1>
           <p className="text-sm text-on-surface-variant/50 mb-6">
-            {role === 'client'
-              ? 'Зарегистрируйтесь как клиент для AI-диагностики бизнеса.'
-              : 'Присоединяйтесь к команде AIStart360.'}
+            Зарегистрируйтесь как клиент для AI-диагностики бизнеса.
           </p>
 
           {error && (
@@ -193,7 +172,7 @@ export default function RegisterPage() {
               <label className="block text-[10px] font-mono text-on-surface-variant/60 uppercase tracking-widest ml-1">Название компании</label>
               <div className="relative group">
                 <span className="absolute left-3.5 top-1/2 -translate-y-1/2 material-symbols-outlined text-on-surface-variant/30 group-focus-within:text-primary transition-colors text-lg">business</span>
-                <input type="text" required={role === 'client'} value={organization} onChange={(e) => setOrganization(e.target.value)}
+                <input type="text" required value={organization} onChange={(e) => setOrganization(e.target.value)}
                   className="w-full h-11 bg-surface-container-high/60 border border-white/[0.06] rounded-xl pl-11 pr-4 text-sm text-on-surface focus:outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/10 transition-all placeholder:text-on-surface-variant/30"
                   placeholder="ООО TechStart KZ" />
               </div>

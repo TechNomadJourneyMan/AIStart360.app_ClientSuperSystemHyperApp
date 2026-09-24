@@ -31,7 +31,8 @@ export async function POST(req: NextRequest) {
 
     const featureLabel = FEATURE_LABELS[featureKey] ?? featureKey
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-    const serviceKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY)!
+    // Service role only: admin_requests is closed to anon/authenticated (084).
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? ''
 
     // Fetch user profile info
     const profileRes = await fetch(

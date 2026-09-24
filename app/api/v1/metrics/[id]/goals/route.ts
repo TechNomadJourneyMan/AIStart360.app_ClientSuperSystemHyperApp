@@ -46,22 +46,12 @@ export async function GET(
   const targetKzt = Number(target)
   const targetMln = targetKzt / 1_000_000
 
-  // Real progress against the latest financial snapshot, if one exists.
-  let progress = 0
-  let trajectory: GoalTrajectory = 'behind'
-  const { data: snaps } = await supabase
-    .from('financial_snapshots')
-    .select('*')
-    .order('recordedAt', { ascending: false })
-    .limit(1)
-  const snap = snaps?.[0] as Record<string, any> | undefined
-  if (snap) {
-    const revenueMln = Number(snap.revenueKzt ?? snap.revenue_kzt ?? 0)
-    if (targetMln > 0) {
-      progress = Math.max(0, Math.min(100, Math.round((revenueMln / targetMln) * 100)))
-      trajectory = progress >= 80 ? 'on_track' : progress >= 50 ? 'at_risk' : 'behind'
-    }
-  }
+  // Progress needs a real per-user revenue fact. The old read of the Prisma
+  // `financial_snapshots` table had no owner filter (it took the newest row of
+  // ANY client) and the table is now closed to the API (migration 084), so no
+  // fabricated progress is shown until a per-user source exists.
+  const progress = 0
+  const trajectory: GoalTrajectory = 'behind'
 
   const goal: MetricGoal = {
     goalId: `company-${company!.id}-revenue-12m`,

@@ -10,7 +10,7 @@ export const PROFILE_STATUS: Record<string, { label: string; tone: Tone }> = {
 }
 
 export const PROFILE_ROLE: Record<string, string> = {
-  client: 'Клиент', expert: 'Эксперт', owner: 'Владелец', admin: 'Админ', super_admin: 'Super Admin', manager: 'Менеджер', analyst: 'Аналитик',
+  client: 'Клиент', expert: 'Эксперт', admin: 'Админ', super_admin: 'Super Admin', manager: 'Менеджер', analyst: 'Аналитик',
 }
 
 export const EVENT_SOURCE: Record<string, { label: string; tone: Tone }> = {

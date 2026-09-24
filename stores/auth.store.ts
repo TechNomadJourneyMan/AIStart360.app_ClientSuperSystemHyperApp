@@ -80,7 +80,8 @@ async function confirmEmailForDev(email: string): Promise<void> {
 }
 
 function normalizeRole(role: string | null | undefined): UserRole {
-  if (role === 'super_admin' || role === 'admin' || role === 'expert' || role === 'owner' || role === 'client') {
+  // 'owner' removed from the product (2026-09-24) → treated as client.
+  if (role === 'super_admin' || role === 'admin' || role === 'expert' || role === 'client') {
     return role
   }
   if (role === 'manager' || role === 'analyst') {
@@ -235,7 +236,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
           email: input.email,
           password: input.password,
           name: input.name,
-          role: input.role ?? 'client',
+          role: 'client', // self-registration creates clients only
           organization: input.organization,
           position: input.position,
         }),
