@@ -22,10 +22,6 @@ vi.mock('@/lib/supabase-server', () => ({
   createServerClient: () => ({ auth: { getUser: db.getUser }, from: table }),
 }))
 vi.mock('@/lib/supabase-service', () => ({ createServiceClient: () => ({ from: table }) }))
-vi.mock('@/lib/giga-cookie', () => ({
-  GIGA_COOKIE_NAME: 'aistart360_giga',
-  verifyGigaRole: gigaCookie.verify,
-}))
 vi.mock('@/lib/settings/store', () => ({ getSetting: async () => true }))
 
 import { getGigaActor } from '@/lib/admin/giga-actor'

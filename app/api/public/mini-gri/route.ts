@@ -27,10 +27,8 @@ async function persistMiniGriLead(lead: {
   blockScores: unknown
 }): Promise<boolean> {
   const url = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? '').replace(/\/$/, '')
-  const key =
-    process.env.SUPABASE_SERVICE_ROLE_KEY ||
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-    ''
+  // Service role only: mini_gri_leads is closed to anon/authenticated (084).
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || ''
   if (!url || !key) {
     console.warn('[mini-gri] missing Supabase env — skipping lead persist')
     return false

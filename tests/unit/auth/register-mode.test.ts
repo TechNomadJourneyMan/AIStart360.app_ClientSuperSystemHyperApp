@@ -2,10 +2,19 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 const cfg = vi.hoisted(() => ({ mode: 'approval' as string, autoApprove: true }))
 const createUserMock = vi.hoisted(() => ({ fn: vi.fn() as any }))
+const profileUpdates = vi.hoisted(() => ({ calls: [] as unknown[] }))
 const approveMock = vi.hoisted(() => ({ fn: vi.fn() as any }))
 
-vi.mock('@supabase/supabase-js', () => ({
-  createClient: () => ({ auth: { admin: { createUser: (...a: any[]) => createUserMock.fn(...a) } } }),
+vi.mock('@/lib/supabase-service', () => ({
+  createServiceClient: () => ({
+    auth: { admin: { createUser: (...a: any[]) => createUserMock.fn(...a) } },
+    from: () => ({
+      update: (patch: unknown) => {
+        profileUpdates.calls.push(patch)
+        return { eq: () => ({ select: async () => ({ data: [{ id: 'new-user' }], error: null }) }) }
+      },
+    }),
+  }),
 }))
 vi.mock('@/lib/rate-limit', () => ({ isRateLimited: () => Promise.resolve(false) }))
 vi.mock('@/lib/settings/system-settings', () => ({
@@ -16,11 +25,11 @@ vi.mock('@/lib/users/approval', () => ({ applyApprovalDecision: (...a: any[]) =>
 
 import { POST } from '@/app/api/auth/register/route'
 
-function makeReq() {
+function makeReq(extra: Record<string, unknown> = {}) {
   return new Request('http://localhost/api/auth/register', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ email: 'new@user.io', password: 'secret123', name: 'New User', role: 'client' }),
+    body: JSON.stringify({ email: 'new@user.io', password: 'secret123', name: 'New User', role: 'client', ...extra }),
   })
 }
 
@@ -32,6 +41,7 @@ describe('/api/auth/register — registration mode enforcement', () => {
     createUserMock.fn.mockResolvedValue({ data: { user: { id: 'new-user' } }, error: null })
     approveMock.fn.mockReset()
     approveMock.fn.mockResolvedValue({ affected: 1, profile: null, emailSent: false })
+    profileUpdates.calls = []
   })
 
   it('invite mode blocks registration (no user created)', async () => {
@@ -73,4 +83,23 @@ describe('/api/auth/register — registration mode enforcement', () => {
     )
     expect((await res.json()).status).toBe('approved')
   })
+
+  it('never sends role/status as user metadata and never touches profiles.role (F-001)', async () => {
+    const res = await POST(makeReq())
+    expect(res.status).toBe(201)
+    const meta = createUserMock.fn.mock.calls[0][0].user_metadata
+    expect(meta).not.toHaveProperty('role')
+    expect(meta).not.toHaveProperty('status')
+    expect(profileUpdates.calls).toEqual([])
+  })
+
+  it.each(['owner', 'super_admin', 'admin', 'expert', 'manager', 'analyst'])(
+    'rejects self-registration with role=%s (no user created)',
+    async (role) => {
+      const res = await POST(makeReq({ role }))
+      expect(res.status).toBe(400)
+      expect(createUserMock.fn).not.toHaveBeenCalled()
+      expect(approveMock.fn).not.toHaveBeenCalled()
+    },
+  )
 })

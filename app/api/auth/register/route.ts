@@ -1,30 +1,23 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
 import { z } from 'zod'
+import { createServiceClient } from '@/lib/supabase-service'
 import { isRateLimited } from '@/lib/rate-limit'
 import { getRegistrationMode, getAutoApproveClients } from '@/lib/settings/system-settings'
 import { applyApprovalDecision } from '@/lib/users/approval'
 import { computeRiskFlags } from '@/lib/registration/risk'
 
-// Public self-registration. Only the two roles offered in the UI are allowed
-// ('client' = бизнес, 'owner' = команда AIStart360). admin/expert/super_admin
-// can NEVER be self-assigned — staff are created by an admin. See audit A3.
+// Public self-registration creates ONLY clients. The legacy 'owner' role was
+// removed from the product (2026-09-24); admin/expert/super_admin can NEVER be
+// self-assigned — staff are invited by an admin. See audit A3 / F-001.
+// `role` is still accepted for old clients of this API but must be 'client'.
 const schema = z.object({
   email:        z.string().email(),
   password:     z.string().min(6),
   name:         z.string().min(2),
-  role:         z.enum(['client', 'owner']).optional().default('client'),
+  role:         z.literal('client').optional().default('client'),
   organization: z.string().optional(),
   position:     z.string().optional(),
 })
-
-function getAdminClient() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    { auth: { autoRefreshToken: false, persistSession: false } }
-  )
-}
 
 export async function POST(request: Request) {
   try {
@@ -42,8 +35,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Validation failed' }, { status: 400 })
     }
 
-    const { email, password, name, role, organization, position } = parsed.data
-    const admin = getAdminClient()
+    const { email, password, name, organization, position } = parsed.data
+    const admin = createServiceClient()
 
     // Admin-controlled registration mode (fail-safe 'approval').
     const mode = await getRegistrationMode()
@@ -54,17 +47,17 @@ export async function POST(request: Request) {
       )
     }
 
-    // Metadata status is always 'pending_approval'; the handle_new_user trigger
-    // forces clients to pending regardless. OPEN mode is applied as an explicit
-    // approve AFTER creation (below). Never auto-approve by requested role. A3.
-    const status = 'pending_approval'
-
+    // F-001 (migration 084): handle_new_user IGNORES metadata role/status and
+    // always creates client + pending_approval. Role and status are therefore
+    // NOT sent as metadata (user_metadata is user-editable and must never be
+    // trusted). OPEN mode / auto-approve is applied as an explicit, service-role
+    // approve AFTER creation. Never auto-approve by requested role. A3.
     // Create user via admin API — email_confirm: true skips verification entirely
     const { data, error } = await admin.auth.admin.createUser({
       email,
       password,
       email_confirm: true,
-      user_metadata: { full_name: name, role, organization, position, status },
+      user_metadata: { full_name: name, organization, position },
     })
 
     if (error) {
@@ -80,8 +73,8 @@ export async function POST(request: Request) {
 
     // OPEN mode: grant access immediately (the trigger created the client as
     // pending_approval). Best-effort — never fail the registration on this.
-    // Фаза 6B (№15): в режиме 'approval' self-serve роли (client/owner — других
-    // эта форма не предлагает; staff создаются админом, аудит A3) авто-одобряются,
+    // Фаза 6B (№15): в режиме 'approval' self-serve клиенты (других ролей
+    // эта форма не создаёт; staff создаются админом, аудит A3) авто-одобряются,
     // пока включён системный тумблер auto_approve_clients (default ON, решение ПО
     // 2026-07-09 — ручная модерация была главным трением активации).
     // D3: тумблерное авто-одобрение дополнительно защищено risk-скорингом —

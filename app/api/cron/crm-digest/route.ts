@@ -12,6 +12,7 @@ import {
   type DigestData,
 } from '@/lib/crm/digest'
 import { EXTRA_DIGEST_CHANNELS } from '@/lib/crm/digest-channels'
+import { isBearerAuthorized } from '@/lib/security/cron-auth'
 
 export const dynamic = 'force-dynamic'
 // Дайджест шлёт до трёх каналов на пользователя; на большой базе даём функции
@@ -29,7 +30,7 @@ export const maxDuration = 60
  * email (Resend) и Telegram (если чат привязан). Каждый канал — best-effort.
  *
  * Auth: Vercel Cron присылает `Authorization: Bearer ${CRON_SECRET}`.
- * Для ручного теста также принимается `?secret=` с тем же значением.
+ * Секрет принимается только в заголовке (не в `?secret=` — он попадает в логи).
  */
 
 const MAX_USERS = 5000
@@ -103,10 +104,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: false, error: 'CRON_SECRET not configured' }, { status: 500 })
   }
 
-  const authHeader = req.headers.get('authorization')
-  const querySecret = req.nextUrl.searchParams.get('secret')
-  const authorized = authHeader === `Bearer ${cronSecret}` || querySecret === cronSecret
-  if (!authorized) {
+  // Header only (no ?secret= — it leaks into logs), constant-time compare.
+  if (!isBearerAuthorized(req, [cronSecret])) {
     return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
   }
 

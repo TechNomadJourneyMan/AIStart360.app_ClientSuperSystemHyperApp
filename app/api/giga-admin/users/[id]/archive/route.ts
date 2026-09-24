@@ -6,6 +6,7 @@ import { requireGiga, staffRoleOfUser } from '@/lib/admin/giga-actor'
 import { createServiceClient } from '@/lib/supabase-service'
 import { canManageTarget } from '@/lib/admin/rbac'
 import { recordAdminAction } from '@/lib/admin/audit'
+import { STATUS_UPDATE_FAILED } from '@/lib/admin/status-messages'
 import { isRateLimitedKey } from '@/lib/rate-limit'
 
 // POST /api/giga-admin/users/:id/archive { action: 'archive' | 'restore', reason }
@@ -44,7 +45,18 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
   const sb = createServiceClient()
   const { data: updated, error } = await sb.from('profiles').update({ status: nextStatus, updated_at: new Date().toISOString() }).eq('id', params.id).select('id')
-  if (error || !updated?.length) return NextResponse.json({ ok: false, error: 'Не удалось изменить статус' }, { status: 500 })
+  if (error || !updated?.length) {
+    console.error('[archive] status update failed:', error?.message ?? 'no rows')
+    // Журнал неизменяемый и уже говорит «архивирован/восстановлен» — фиксируем,
+    // что изменения не было (тот же приём, что user.purge_failed).
+    await recordAdminAction(guard.actor, {
+      action: action === 'archive' ? 'user.archive_failed' : 'user.restore_failed',
+      entityType: 'user', entityId: params.id, targetUserId: params.id,
+      oldValue: { status: target.status }, newValue: { status: target.status },
+      metadata: { reason, error: (error?.message ?? 'profile row not updated').slice(0, 300) },
+    }, req).catch(() => false)
+    return NextResponse.json({ ok: false, error: STATUS_UPDATE_FAILED }, { status: 500 })
+  }
   const ban = await sb.auth.admin.updateUserById(params.id, { ban_duration: action === 'archive' ? '87600h' : 'none' })
   if (ban.error) console.error('[archive] ban update failed:', ban.error.message)
   if (action === 'archive') {

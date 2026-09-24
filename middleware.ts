@@ -63,7 +63,7 @@ const IS_PUBLIC_JOURNEY_PREVIEW =
 
 const PUBLIC_PATHS = ['/login', '/register', '/forgot-password', '/auth/callback', '/auth/reset-password']
 
-const VALID_ROLES = ['admin', 'expert', 'owner', 'client', 'super_admin'] as const
+const VALID_ROLES = ['admin', 'expert', 'client', 'super_admin'] as const
 type ValidRole = typeof VALID_ROLES[number]
 
 const GIGA_PANEL_PATH = '/admin-giga-panel'
@@ -89,7 +89,6 @@ const CLIENT_DASHBOARD_PATHS = [
   '/metrics', '/market', '/profile', '/notifications', '/settings', '/activity',
 ]
 const EXPERT_PATHS = ['/expert']
-const OWNER_PATHS = ['/owner']
 
 // Whole-segment route matching: '/clients' must NOT match the '/client'
 // cabinet prefix (and vice versa) — plain startsWith leaks across routes.
@@ -100,7 +99,8 @@ const matchesAny = (pathname: string, routes: string[]) =>
   routes.some((r) => matchesRoute(pathname, r))
 
 function normalizeRole(rawRole: string | null | undefined): ValidRole {
-  if (rawRole === 'admin' || rawRole === 'expert' || rawRole === 'owner' || rawRole === 'client' || rawRole === 'super_admin') {
+  // 'owner' removed from the product (2026-09-24): any leftover row is a client.
+  if (rawRole === 'admin' || rawRole === 'expert' || rawRole === 'client' || rawRole === 'super_admin') {
     return rawRole
   }
   if (rawRole === 'manager' || rawRole === 'analyst') {
@@ -217,8 +217,9 @@ export async function middleware(request: NextRequest, event?: NextFetchEvent) {
   // Refresh Supabase session cookies and get current user
   const { supabase, response, user } = await updateSession(request)
 
-  const metadataRole = user && typeof user.user_metadata?.role === 'string' ? user.user_metadata.role : null
-  const resolved = user ? await resolveRoleAndStatus(supabase, user.id, metadataRole) : null
+  // Role comes from profiles only: user_metadata is editable by the user
+  // (auth.updateUser) and must never grant a role (F-001).
+  const resolved = user ? await resolveRoleAndStatus(supabase, user.id, null) : null
   const role = resolved?.role ?? null
 
   // ── Impersonation («кабинет от имени пользователя») ──
@@ -370,7 +371,6 @@ export async function middleware(request: NextRequest, event?: NextFetchEvent) {
     const dest =
       role === 'super_admin' ? '/admin-giga-panel' :
       role === 'admin' ? '/dashboard' :
-      role === 'owner' ? '/owner/dashboard' :
       role === 'client' ? '/dashboard' :
       '/expert/dashboard'
     return NextResponse.redirect(new URL(dest, request.url))
@@ -412,7 +412,7 @@ export async function middleware(request: NextRequest, event?: NextFetchEvent) {
 
   // ── Maintenance mode (platform settings): client cabinets are closed ──
   // Staff, experts and an admin driving a cabinet keep working.
-  if (user && (role === 'client' || role === 'owner') && !impersonating && !isPublic && pathname !== MFA_CHALLENGE_PATH) {
+  if (user && role === 'client' && !impersonating && !isPublic && pathname !== MFA_CHALLENGE_PATH) {
     if ((await edgeSettings()).maintenance.enabled) {
       return redirectKeepingCookies(response, new URL('/maintenance', request.url))
     }
@@ -436,12 +436,11 @@ export async function middleware(request: NextRequest, event?: NextFetchEvent) {
       return NextResponse.redirect(new URL('/expert/dashboard', request.url))
     }
 
-    // Client trying to access admin/expert/owner pages
+    // Client trying to access admin/expert pages
     if (
       role === 'client' &&
       (matchesAny(pathname, ADMIN_PATHS) ||
-       matchesAny(pathname, EXPERT_PATHS) ||
-       matchesAny(pathname, OWNER_PATHS))
+       matchesAny(pathname, EXPERT_PATHS))
     ) {
       // Allow clients through to the shared (dashboard) layout routes
       if (matchesAny(pathname, CLIENT_DASHBOARD_PATHS)) {
@@ -451,14 +450,6 @@ export async function middleware(request: NextRequest, event?: NextFetchEvent) {
       if (!matchesRoute(pathname, '/client')) {
         return NextResponse.redirect(new URL('/dashboard', request.url))
       }
-    }
-
-    // Owner trying to access admin or expert pages
-    if (
-      role === 'owner' &&
-      (matchesAny(pathname, ADMIN_PATHS) || matchesAny(pathname, EXPERT_PATHS))
-    ) {
-      return NextResponse.redirect(new URL('/owner/dashboard', request.url))
     }
   }
 

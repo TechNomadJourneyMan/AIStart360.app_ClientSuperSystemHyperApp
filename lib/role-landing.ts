@@ -15,8 +15,6 @@ export function roleLandingPath(
   switch (role) {
     case 'super_admin':
       return '/admin-giga-panel'
-    case 'owner':
-      return '/owner/dashboard'
     case 'expert':
       return '/expert/dashboard'
     case 'admin':

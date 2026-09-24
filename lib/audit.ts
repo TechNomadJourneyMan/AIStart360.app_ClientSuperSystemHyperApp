@@ -1,4 +1,3 @@
-import { prisma } from '@/lib/db'
 import { recordAdminAction } from '@/lib/admin/audit'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -33,9 +32,14 @@ interface LogAuditOptions {
 }
 
 /**
- * Append an immutable audit log entry.
+ * Append an immutable audit log entry to `admin_audit_log`.
  * Fire-and-forget by default — errors are caught and logged to console,
  * not propagated, so audit failures never block business operations.
+ *
+ * Legacy wrapper: new code should call `recordAdminAction` directly with the
+ * GigaActor so actor_role / actor_email are recorded. The old Prisma
+ * `audit_logs` copy was dropped together with its only reader
+ * (/api/admin/audit, removed 2026-09-24).
  */
 export async function logAudit(opts: LogAuditOptions, throwOnError = false): Promise<void> {
   // Primary journal: admin_audit_log (migration 073) — what GIGA-CRM shows.
@@ -50,27 +54,11 @@ export async function logAudit(opts: LogAuditOptions, throwOnError = false): Pro
       targetUserId: opts.entityType === 'user' ? opts.entityId : null,
       oldValue: 'before' in diff ? diff.before : undefined,
       newValue: 'after' in diff ? diff.after : undefined,
-      metadata: diff,
+      metadata: opts.ipAddress ? { ...diff, ipAddress: opts.ipAddress } : diff,
     },
     null,
   )
 
-  // Legacy journal (Prisma audit_logs) kept for the old /api/admin/audit reader.
-  try {
-    await prisma.auditLog.create({
-      data: {
-        entityType: opts.entityType,
-        entityId: opts.entityId,
-        action: opts.action,
-        performedBy: opts.performedBy,
-        diff: (opts.diff as object) ?? {},
-        ipAddress: opts.ipAddress ?? null,
-      },
-    })
-  } catch (err) {
-    console.error('[audit] Failed to write legacy audit log:', err)
-    if (throwOnError && !written) throw err
-  }
   if (throwOnError && !written) throw new Error('Audit log unavailable')
 }
 

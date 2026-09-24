@@ -20,7 +20,8 @@ import type { SharedReport, SharedReportType } from '@prisma/client'
 function srBase() {
   return {
     url: (process.env.NEXT_PUBLIC_SUPABASE_URL ?? '').replace(/\/$/, ''),
-    key: process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '',
+    // Service role only: shared_reports is closed to anon/authenticated (084).
+    key: process.env.SUPABASE_SERVICE_ROLE_KEY || '',
   }
 }
 

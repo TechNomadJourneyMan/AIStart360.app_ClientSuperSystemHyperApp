@@ -11,7 +11,7 @@ import type { PointBV2 } from '@/lib/point-b/engine'
  * loading/empty/error/insufficient/valid state.
  *
  * Mounted on all client-facing Point B surfaces so behaviour is identical no
- * matter which route the owner reaches (/client/point-b, /point-b, /owner/point-b).
+ * matter which route the owner reaches (/client/point-b, /point-b).
  */
 export default function PointBContainer() {
   const [pointB, setPointB] = useState<PointBV2 | null>(null)

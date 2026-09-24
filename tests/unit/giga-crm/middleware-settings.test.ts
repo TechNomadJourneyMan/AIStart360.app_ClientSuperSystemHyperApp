@@ -14,10 +14,6 @@ const s = vi.hoisted(() => ({
 }))
 
 vi.mock('@/lib/settings/edge', () => ({ edgeSettings: async () => s.settings }))
-vi.mock('@/lib/giga-cookie-edge', () => ({
-  GIGA_COOKIE_NAME: 'aistart360_giga',
-  verifyGigaRoleEdge: async (v?: string) => (v && s.gigaCookie ? 'super_admin' : null),
-}))
 vi.mock('@/lib/mfa/step-up-edge', () => ({ MFA_COOKIE_NAME: 'mfa', verifyStepUpEdge: async () => false }))
 vi.mock('@/lib/platform/sections-edge', () => ({ blockedSectionFor: async () => null }))
 vi.mock('@/lib/impersonation/edge', () => ({

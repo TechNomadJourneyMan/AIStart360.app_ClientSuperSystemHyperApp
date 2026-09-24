@@ -3,13 +3,15 @@ export const runtime = 'nodejs'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { GIGA_COOKIE_NAME } from '@/lib/giga-cookie'
 import { STAFF_COOKIE_NAME } from '@/lib/admin/giga-actor'
 import { createServerClient } from '@/lib/supabase-server'
 import { createServiceClient } from '@/lib/supabase-service'
 import { isRateLimitedKey } from '@/lib/rate-limit'
 import { logAudit } from '@/lib/audit'
 import { MAX_PASSWORD_LENGTH, ownerEmail, verifyOwnerPassword } from '@/lib/admin/owner-password'
+
+/** Cookie старого аварийного входа (удалён) — только стираем у тех, у кого он остался. */
+const LEGACY_GIGA_COOKIE_NAME = 'aistart360_giga'
 
 /**
  * POST /api/giga-admin/auth { email, password } — вход владельца в ГИГА-Панель.
@@ -78,7 +80,7 @@ export async function POST(req: NextRequest) {
     performedBy: p.id, diff: { after: { method: 'owner_password' } }, ipAddress: ip,
   })
   const res = NextResponse.json({ ok: true })
-  res.cookies.set(GIGA_COOKIE_NAME, '', { path: '/', maxAge: 0 }) // старый break-glass cookie
+  res.cookies.set(LEGACY_GIGA_COOKIE_NAME, '', { path: '/', maxAge: 0 }) // старый break-glass cookie
   return res
 }
 
@@ -88,7 +90,7 @@ export async function DELETE(req: NextRequest) {
   const { data: { user } } = await client.auth.getUser().catch(() => ({ data: { user: null } }))
   await client.auth.signOut().catch(() => undefined)
   const res = NextResponse.json({ ok: true })
-  res.cookies.set(GIGA_COOKIE_NAME, '', { path: '/', maxAge: 0 })
+  res.cookies.set(LEGACY_GIGA_COOKIE_NAME, '', { path: '/', maxAge: 0 })
   res.cookies.set(STAFF_COOKIE_NAME, '', { path: '/', maxAge: 0 })
   await logAudit({
     entityType: 'system', entityId: 'giga_panel', action: 'admin.logout',

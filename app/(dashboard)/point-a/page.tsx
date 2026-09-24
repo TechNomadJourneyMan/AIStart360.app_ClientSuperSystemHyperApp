@@ -1,7 +1,6 @@
 export const dynamic = "force-dynamic"
 
 import type { Metadata } from 'next'
-import { auth } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
 import { FileArea } from '@/components/point-a/FileArea'
 import PointAQuickToolbar from '@/components/point-a/PointAQuickToolbar'
@@ -24,21 +23,21 @@ import { visibleSectionKeysFor } from '@/lib/platform/sections'
 export const metadata: Metadata = { title: 'Точка А — Текущее состояние' }
 
 export default async function PointAPage() {
-  const session = await auth()
-
   // Identity comes from the Supabase session only. The old forgeable
   // `aistart360_user_id` / `aistart360_role` cookies are NOT consulted — they
   // let a signed-in user load another user's data (IDOR). Audit 2026-07-02.
   let supabaseUserId: string | null = null
+  let supabaseEmail: string | null = null
   try {
     const supabase = await createClient()
     const { data: { user: sbUser } } = await supabase.auth.getUser()
     supabaseUserId = sbUser?.id ?? null
+    supabaseEmail = sbUser?.email ?? null
   } catch {
     // Supabase auth not available
   }
 
-  let clientId = supabaseUserId ?? session?.user?.id ?? null
+  let clientId = supabaseUserId
 
   // Fetch data from Supabase REST API (bypasses RLS)
   let docsCount = 0
@@ -101,7 +100,7 @@ export default async function PointAPage() {
             id: diag.id,
             score: diag.overall_score ?? 0,
             calculatedAt: diag.calculated_at ?? diag.created_at,
-            clientName: session?.user?.email ?? 'Клиент',
+            clientName: supabaseEmail ?? 'Клиент',
           }]
         }
       }
