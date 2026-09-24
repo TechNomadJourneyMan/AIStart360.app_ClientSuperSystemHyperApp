@@ -26,7 +26,8 @@ SET search_path = public, pg_temp
 AS $$
 DECLARE
   v_uid          TEXT := p_user_id::text;
-  v_company_ids  UUID[];
+  -- companies.id is TEXT and not always a UUID (e.g. 'myhonor-…', 'test-co-…'),
+  -- so company ids are kept as text and compared as text everywhere.
   v_company_txt  TEXT[];
   v_storage      JSONB;
   v_counts       JSONB;
@@ -36,8 +37,7 @@ BEGIN
     RETURN jsonb_build_object('found', false);
   END IF;
 
-  SELECT coalesce(array_agg(id), '{}') INTO v_company_ids FROM public.companies WHERE user_id = p_user_id;
-  v_company_txt := ARRAY(SELECT unnest(v_company_ids)::text);
+  SELECT coalesce(array_agg(id::text), '{}') INTO v_company_txt FROM public.companies WHERE user_id = p_user_id;
 
   SELECT coalesce(jsonb_agg(jsonb_build_object('bucket', bucket_id, 'name', name)), '[]'::jsonb)
     INTO v_storage
@@ -45,8 +45,8 @@ BEGIN
    WHERE owner = p_user_id OR owner_id = v_uid OR name LIKE v_uid || '/%';
 
   v_counts := jsonb_build_object(
-    'companies',       coalesce(array_length(v_company_ids, 1), 0),
-    'documents',       (SELECT count(*) FROM public.documents WHERE user_id = v_uid OR company_id = ANY (v_company_ids)),
+    'companies',       coalesce(array_length(v_company_txt, 1), 0),
+    'documents',       (SELECT count(*) FROM public.documents WHERE user_id = v_uid OR company_id::text = ANY (v_company_txt)),
     'survey_answers',  (SELECT count(*) FROM public.survey_answers WHERE user_id = p_user_id),
     'gri_assessments', (SELECT count(*) FROM public.gri_assessments WHERE user_id = p_user_id),
     'diagnostics',     (SELECT count(*) FROM public.diagnostics WHERE user_id = p_user_id),
@@ -59,7 +59,7 @@ BEGIN
   END IF;
 
   -- 1. Данные пользователя без внешнего ключа на него (text/uuid-колонки).
-  DELETE FROM public.documents               WHERE user_id = v_uid OR company_id = ANY (v_company_ids);
+  DELETE FROM public.documents               WHERE user_id = v_uid OR company_id::text = ANY (v_company_txt);
   DELETE FROM public.document_summaries      WHERE user_id = v_uid;
   DELETE FROM public.assistant_conversations WHERE user_id = v_uid;
   DELETE FROM public.point_a_resolutions     WHERE user_id = v_uid;
