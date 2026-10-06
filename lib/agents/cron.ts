@@ -57,3 +57,17 @@ export function cronMatches(expr: string, date: Date): boolean {
   const dayOk = domRestricted && dowRestricted ? domOk || dowOk : domOk && dowOk
   return minute.has(date.getUTCMinutes()) && hour.has(date.getUTCHours()) && month.has(date.getUTCMonth() + 1) && dayOk
 }
+
+/** Next minute (UTC) at or after `from` that matches, searching up to `horizonDays`. */
+export function nextCronRun(expr: string, from: Date, horizonDays = 8): Date | null {
+  if (!isValidCron(expr)) return null
+  const t = new Date(from)
+  t.setUTCSeconds(0, 0)
+  if (t.getTime() < from.getTime()) t.setUTCMinutes(t.getUTCMinutes() + 1)
+  const limit = horizonDays * 24 * 60
+  for (let i = 0; i < limit; i++) {
+    if (cronMatches(expr, t)) return t
+    t.setUTCMinutes(t.getUTCMinutes() + 1)
+  }
+  return null
+}
