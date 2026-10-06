@@ -21,6 +21,7 @@ import { createServiceClient } from '@/lib/supabase-service'
 import { runInBackground } from '@/lib/background'
 import { parseSurveySaveBody } from '@/lib/survey/schema'
 import { trackEvent, trackEventOnce } from '@/lib/events/track'
+import { emitPlatformEventSafely } from '@/lib/events/platform'
 import { activeImpersonation } from '@/lib/impersonation/server'
 import { adminEditSurvey, SurveyEditError } from '@/lib/admin/survey-admin'
 import { isStaffRole } from '@/lib/admin/rbac'
@@ -183,6 +184,15 @@ export async function POST(req: NextRequest) {
   }
   if (finalSubmitted) {
     void trackEvent({ userId: targetUserId, name: 'QUESTIONNAIRE_COMPLETED', entityType: 'survey', entityId: targetUserId, metadata: { completed_steps: progress.completed, is_complete: progress.is_complete }, source: imp ? 'impersonation' : 'server', impersonationSessionId: imp?.sid ?? null })
+  }
+
+  // Platform events drive the diagnostic pipeline (diagnostic_orchestrator):
+  // the first completion once per company, later explicit submits as updates.
+  if (company_id && (announce || finalSubmitted)) {
+    const payload = { completed_steps: progress.completed, total_steps: progress.total_steps, is_complete: progress.is_complete }
+    emitPlatformEventSafely(announce
+      ? { name: 'ONBOARDING_COMPLETED', companyId: company_id, subjectType: 'survey', subjectId: targetUserId, actor: `user:${targetUserId}`, payload, dedupeKey: `onboarding_completed:${company_id}` }
+      : { name: 'QUESTIONNAIRE_COMPLETED', companyId: company_id, subjectType: 'survey', subjectId: targetUserId, actor: `user:${targetUserId}`, payload, dedupeKey: `questionnaire_completed:${company_id}:${new Date().toISOString().slice(0, 16)}` })
   }
 
   // Autosaves skip the Sheets mirror: one mirror per explicit save is enough,

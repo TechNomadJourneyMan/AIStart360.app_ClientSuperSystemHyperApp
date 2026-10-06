@@ -10,6 +10,7 @@ import { resolveTargetUserId } from '@/lib/api-identity'
 import { isRateLimitedKey } from '@/lib/rate-limit'
 import { trackEvent } from '@/lib/events/track'
 import { internalFetchHeaders } from '@/lib/internal-auth'
+import { runInBackground } from '@/lib/background'
 
 // POST /api/v1/diagnostics/recalculate
 // Body: { user_id? } — the target user; defaults to the session user.
@@ -120,6 +121,30 @@ export async function POST(req: NextRequest) {
         headers: internalFetchHeaders(),
         body: JSON.stringify({ diagnostic_id: diag.id, user_id, locale }),
       }).catch(err => console.error('[recalculate] Failed to fire Point B AI generate:', err))
+    }
+
+    // The diagnostic pipeline (metrics → data quality → benchmarks → hypotheses
+    // → recommendations) runs as agents; it reuses this calculation when the
+    // inputs are unchanged. Never blocks or fails the response.
+    if (company?.id && diag?.id) {
+      const companyId = String(company.id)
+      const diagnosticId = String(diag.id)
+      void runInBackground('diagnostic-orchestrator', async () => {
+        try {
+          const { enqueueAgentTask } = await import('@/lib/agents/queue')
+          await enqueueAgentTask({
+            agentKey: 'diagnostic_orchestrator',
+            companyId,
+            trigger: 'manual',
+            triggerRef: 'recalculate',
+            requestedBy: `user:${user_id}`,
+            input: { action: 'start', trigger: 'manual', reason: 'пересчёт по запросу' },
+            idempotencyKey: `recalc:${diagnosticId}`,
+          })
+        } catch (err) {
+          console.error('[recalculate] diagnostic pipeline not started:', err instanceof Error ? err.message : err)
+        }
+      })
     }
 
     // Notify admins about diagnostic recalculation

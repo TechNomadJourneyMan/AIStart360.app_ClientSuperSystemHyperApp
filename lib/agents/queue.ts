@@ -12,8 +12,9 @@
  */
 import { runInBackground } from '@/lib/background'
 import { inngest } from '@/lib/inngest'
-import { getAgent } from './registry'
+import { getAgent, listAgents } from './registry'
 import { runClaimedTask, type RunReport } from './runner'
+import type { AgentTaskRow } from './types'
 import * as store from './store'
 
 export const AGENT_TASK_REQUESTED_EVENT = 'agents/task.requested'
@@ -63,10 +64,18 @@ export async function executeTaskById(taskId: string): Promise<RunReport | null>
   }
   const claimed = await store.claimTask(taskId, def.limits.leaseSeconds)
   if (!claimed) return null
-  return afterRun(await runClaimedTask(claimed, def), claimed.agent_key, claimed.company_id)
+  return afterRun(await runClaimedTask(claimed, def), claimed)
 }
 
-async function afterRun(report: RunReport, agentKey: string, companyId: string | null): Promise<RunReport> {
+async function afterRun(report: RunReport, task: Pick<AgentTaskRow, 'agent_key' | 'company_id' | 'session_id'>): Promise<RunReport> {
+  const agentKey = task.agent_key
+  const companyId = task.company_id
+  if (report.finalStatus === 'dead' && task.session_id) {
+    // A pipeline stage that gave up ends its diagnostic session: nothing after it can run.
+    const { endSession } = await import('@/lib/diagnostics/sessions')
+    await endSession(task.session_id, 'failed', `Этап «${agentKey}» не выполнен: ${report.errorCode ?? 'ошибка'}`)
+      .catch((err) => console.error('[agents] session fail failed', err instanceof Error ? err.message : err))
+  }
   if (report.finalStatus === 'dead') {
     // Lazy import: platform events import this module for subscriptions.
     const { emitPlatformEvent } = await import('@/lib/events/platform')
@@ -86,6 +95,8 @@ async function afterRun(report: RunReport, agentKey: string, companyId: string |
 export interface DrainResult {
   reaped: number
   approvalsExpired: number
+  /** Diagnostic sessions failed because their pipeline cannot continue. */
+  sessionsFailed: number
   executed: RunReport[]
 }
 
@@ -101,8 +112,11 @@ export async function drainQueue(opts: { limit?: number; budgetMs?: number } = {
   const approvalsExpired = await store.expireApprovals()
   const executed: RunReport[] = []
 
+  // Only agents this deployment knows: during a rolling deploy an older
+  // instance must not pick up (and fail) tasks of an agent added later.
+  const known = listAgents().map((a) => a.key)
   while (executed.length < limit && Date.now() - started < budgetMs) {
-    const [task] = await store.claimDueTasks(1, 300)
+    const [task] = await store.claimDueTasks(1, 300, known)
     if (!task) break
     const def = getAgent(task.agent_key)
     if (!def) {
@@ -112,7 +126,9 @@ export async function drainQueue(opts: { limit?: number; budgetMs?: number } = {
       })
       continue
     }
-    executed.push(await afterRun(await runClaimedTask(task, def), task.agent_key, task.company_id))
+    executed.push(await afterRun(await runClaimedTask(task, def), task))
   }
-  return { reaped, approvalsExpired, executed }
+  const { failStalledSessions } = await import('@/lib/diagnostics/sessions')
+  const sessionsFailed = (await failStalledSessions()).length
+  return { reaped, approvalsExpired, sessionsFailed, executed }
 }

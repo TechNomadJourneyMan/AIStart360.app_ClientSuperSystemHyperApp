@@ -28,6 +28,7 @@ export async function GET(req: NextRequest) {
       redispatched,
       reaped: drained.reaped,
       approvalsExpired: drained.approvalsExpired,
+      sessionsFailed: drained.sessionsFailed,
       executed: drained.executed.map((r) => ({ taskId: r.taskId, status: r.finalStatus, errorCode: r.errorCode })),
     })
   } catch (err) {

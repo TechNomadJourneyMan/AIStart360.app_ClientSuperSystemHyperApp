@@ -100,9 +100,10 @@ export async function claimTask(taskId: string, leaseSeconds: number): Promise<A
   return rows[0] ?? null
 }
 
-export async function claimDueTasks(limit: number, leaseSeconds: number): Promise<AgentTaskRow[]> {
+/** Claim due tasks, only of `agentKeys` when given (the agents this deployment can run). */
+export async function claimDueTasks(limit: number, leaseSeconds: number, agentKeys: string[] | null = null): Promise<AgentTaskRow[]> {
   return prisma.$queryRaw<AgentTaskRow[]>`
-    SELECT ${TASK_COLUMNS} FROM public.agent_claim_tasks(${limit}::int, ${leaseSeconds}::int, NULL::text[])`
+    SELECT ${TASK_COLUMNS} FROM public.agent_claim_tasks(${limit}::int, ${leaseSeconds}::int, ${agentKeys}::text[])`
 }
 
 export type FinishOutcome = 'succeeded' | 'failed' | 'awaiting_approval' | 'cancelled'

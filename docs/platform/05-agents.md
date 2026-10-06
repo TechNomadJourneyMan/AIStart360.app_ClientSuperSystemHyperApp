@@ -3,7 +3,7 @@
 Назначение: полное описание агентного слоя по решению D3 (+ D4, D7): агенты, права, жизненный цикл, события, безопасность, наблюдаемость, стоимость.
 Обновлено: 2026-10-06
 
-Статус: ⬜ план (миграция 086, Phase 7 и 9). Сейчас агентов нет; tool calling не используется нигде (аудит 03 §4).
+Статус: 🟡 частично реализовано. Рантайм (086), уведомления и одобрения (087) работают. Работают агенты `monitoring`, `document_intelligence`, `document_reaper` и пайплайн диагностики (090): `diagnostic_orchestrator` → `data_collection` → `metrics` → `data_quality` → `benchmark` → `diagnostic` → `recommendation`. Не сделаны `report` (фаза 6) и `admin_assistant` (позже). Код: `lib/agents/**`, `lib/diagnostics/**`.
 Связанные: [03-database.md](03-database.md) (раздел 086), [07-admin-control-center.md](07-admin-control-center.md), [09-security.md](09-security.md).
 
 ## 1. Принципы
@@ -36,6 +36,19 @@
 | `monitoring` | Зависшие/мёртвые задачи, расход бюджета, сбои интеграций и вебхуков, зависшие документы | cron `*/15`, `AGENT_FAILED`, `INTEGRATION_FAILED` | `health.read`, `notify.staff` | READ_CLIENT_DATA (агрегаты), SEND_TELEGRAM (только персоналу) | — | $0 | `notification_events` WARNING/CRITICAL |
 | `admin_assistant` (позже) | Q&A по статистике платформы для персонала, только чтение | ручной (GIGA) | `stats.read` | READ_CLIENT_DATA (агрегаты), CALL_LLM | light | $0.05 | ответ |
 
+### 2.1 Пайплайн диагностики — как реализовано (миграция 090)
+
+| Шаг | Что происходит | Где |
+|---|---|---|
+| Запуск | `ONBOARDING_COMPLETED` (первое завершение анкеты), `QUESTIONNAIRE_COMPLETED` (повторная отправка), `FILE_PROCESSED` (если документ дал данные), ручной пересчёт (`POST /api/v1/diagnostics/recalculate`), запуск из GIGA. Оркестратор открывает сессию: не более одной активной на компанию. Повторный триггер ставит `rerun_requested`; после завершения новый проход запускается, только если данные менялись после начала сессии | `session.open`, `lib/diagnostics/sessions.ts` |
+| Этапы | Каждый этап — отдельный агент со своими правами, бюджетом и историей запусков. Этап отмечает себя в `diagnostic_sessions.stages` и ставит следующий (`pipeline.advance`, идемпотентно `diag:<session>:<stage>`). Отключённый админом агент записывается как `skipped` | `lib/agents/definitions/diagnostics.ts` |
+| Индекс | Те же правила, что у ручного пересчёта. Если результат совпал с текущим расчётом, используется текущая строка `diagnostics` (сохраняются её ИИ-анализ и история версий) | `lib/diagnostics/scoring.ts` |
+| Выводы | `data_quality`: расхождение источников > 30 %, невозможные и устаревшие значения, необработанные документы. `benchmark`: отклонение ≥ 15 п. от ориентира отрасли с пометкой «экспертная оценка, не статистика рынка», confidence 0.5. У каждого вывода есть evidence. Повторный запуск заменяет набор вывода агента: прежние становятся `superseded`, неизменённые сохраняют ревью | `lib/diagnostics/quality.ts`, `benchmark.ts`, `findings-store.ts` |
+| Модель | `diagnostic` и `recommendation` видят только список доказательств с id: баллы блоков, риски правил, метрики с источником, выводы. Контактных данных и сырых документов в нём нет, весь список изолирован как untrusted. Принимается только JSON, каждая гипотеза ссылается на существующие id: ссылка на неизвестный id отбрасывается, без ссылок отбрасывается вся гипотеза. Уверенность ≤ 0.7, `AI_HYPOTHESIS` скрыта от клиента до ревью | `lib/diagnostics/ai.ts` |
+| Стоимость | Модель вызывается, только если задан ключ, укладывается бюджет (запуск / агент / компания / платформа) и данные изменились: хеш входа сравнивается с прошлой завершённой сессией. Иначе этап завершается без модели, а в записи этапа указано `llm: unavailable / budget / cached / failed` | `modelCall`, `diagnostics.ai_cache` |
+| Сбои | Этап в dead-letter переводит сессию в `failed`. Сессия без живых задач дольше 15 мин переводится в `failed` при обслуживании очереди | `queue.ts afterRun`, `failStalledSessions` |
+| Итог | Снимок Executive Overview в `diagnostic_sessions.overview`, `DIAGNOSTIC_COMPLETED` (индекс, критические выводы, файлы, метрики). Критические риски правил — одно уведомление команде на набор рисков. Критическая гипотеза ИИ — WARNING «нужна проверка» | `diagnostics.finalize`, `event-router.ts` |
+
 Форма определения (код): `key`, `name`, `description`, `tier`, `tools[]`, `defaultPermissions{}`, `prompt` + `promptVersion`, `triggers` (события / cron), `limits` (`maxTokens`, `maxToolCalls`, `timeoutMs`, `maxAttempts`), `children[]` (кого может ставить в очередь).
 
 ## 3. Права
@@ -54,7 +67,7 @@ effective(agent, perm) = strictest( CEILING[perm],  grant(agent, perm) ?? defini
 | Право | Потолок (код) | Ограничение области |
 |---|---|---|
 | READ_CLIENT_DATA | ALLOW | Только `company_id` задачи |
-| WRITE_CLIENT_DATA | ALLOW | Служебные поля (сессия, статусы). Ответы анкеты клиента не меняются |
+| WRITE_CLIENT_DATA | REQUIRE_APPROVAL | Данные, которые ввёл клиент (анкета, профиль компании). Агентам v1 не выдаётся. Служебные записи пайплайна (сессия, этапы) идут через EXECUTE_WORKFLOW, индекс Точки А — через UPDATE_METRICS |
 | READ_FILES | ALLOW | Файлы компании задачи |
 | PROCESS_FILES | ALLOW | Только `parsed_data`, `processing_stage`, `security_*` |
 | CALL_LLM | ALLOW | Только через gateway, под бюджетом |
@@ -64,7 +77,7 @@ effective(agent, perm) = strictest( CEILING[perm],  grant(agent, perm) ?? defini
 | RUN_INTEGRATION | ALLOW (чтение) | Запись во внешнюю систему → REQUIRE_APPROVAL |
 | SEND_TELEGRAM | ALLOW только `audience=staff` | Клиенту → REQUIRE_APPROVAL |
 | SEND_EMAIL | REQUIRE_APPROVAL | «EXTERNAL_COMMUNICATION» из D3 |
-| EXECUTE_WORKFLOW | ALLOW | Только агенты из `children[]` определения |
+| EXECUTE_WORKFLOW | ALLOW | Постановка следующего этапа пайплайна (порядок задан в коде, `lib/diagnostics/pipeline.ts`) и учёт сессии/этапов |
 | MODIFY_SYSTEM | REQUIRE_APPROVAL | Настройки, конфиги агентов, роли — никогда ALLOW |
 | DELETE_DATA | REQUIRE_APPROVAL | Никогда ALLOW; агентам v1 не выдаётся |
 

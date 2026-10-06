@@ -5,8 +5,10 @@
 import { registerAgent } from '../registry'
 import { documentIntelligenceAgent } from './document-intelligence'
 import { documentReaperAgent } from './document-reaper'
+import { DIAGNOSTIC_AGENTS } from './diagnostics'
 import { monitoringAgent } from './monitoring'
 
 registerAgent(monitoringAgent)
 registerAgent(documentIntelligenceAgent)
 registerAgent(documentReaperAgent)
+for (const agent of DIAGNOSTIC_AGENTS) registerAgent(agent)

@@ -49,6 +49,7 @@ export const agentsMaintenance = inngest.createFunction(
       redispatched,
       reaped: drained.reaped,
       approvalsExpired: drained.approvalsExpired,
+      sessionsFailed: drained.sessionsFailed,
       executed: drained.executed.length,
     }
   },

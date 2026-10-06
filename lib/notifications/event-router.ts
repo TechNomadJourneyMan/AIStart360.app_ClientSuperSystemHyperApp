@@ -36,12 +36,18 @@ export async function notificationForEvent(e: PlatformEventRow): Promise<StaffNo
       ].filter((l): l is string => Boolean(l))
       return { ...base, level: 'SUCCESS', type: 'diagnostic.completed', title: 'Диагностика завершена', lines, agentKey: str(p.agent_key) }
     }
-    case 'CRITICAL_RISK_FOUND':
+    case 'CRITICAL_RISK_FOUND': {
+      // A model hypothesis is not a finding until a person checks it.
+      const hypothesis = p.provenance === 'AI_HYPOTHESIS' || p.needs_review === true
       return {
-        ...base, level: 'CRITICAL', type: 'diagnostic.critical_risk', title: 'Найден критический риск',
+        ...base,
+        level: hypothesis ? 'WARNING' : 'CRITICAL',
+        type: hypothesis ? 'diagnostic.critical_hypothesis' : 'diagnostic.critical_risk',
+        title: hypothesis ? 'ИИ предполагает критический риск — нужна проверка' : 'Найден критический риск',
         lines: [clientLine, str(p.title), str(p.area) ? `Область: ${str(p.area)}` : null].filter((l): l is string => Boolean(l)),
         agentKey: str(p.agent_key),
       }
+    }
     case 'AGENT_FAILED':
       return {
         ...base, level: 'WARNING', type: 'agent.failed', title: 'Агент не справился с задачей',
