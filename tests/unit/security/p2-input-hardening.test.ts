@@ -1,7 +1,6 @@
 /**
  * Security P2-1 / P2-15 — small endpoint hardenings:
- *  - POST /api/notifications/send is retired (any NextAuth session could mail
- *    and Telegram every admin with caller-supplied data);
+ *  - (POST /api/notifications/send — retired, then removed with NextAuth);
  *  - POST /api/medical/audit/run refuses a non-UUID documentId before it is
  *    interpolated into a PostgREST filter;
  *  - GET /api/v1/point-a/benchmarks ignores ?user_id= (always the caller's own
@@ -13,16 +12,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { NextRequest } from 'next/server'
 
 const s = vi.hoisted(() => ({
-  notifyAdmins: vi.fn(),
   user: { id: 'me' } as null | { id: string },
   diagFilters: [] as Array<[string, unknown]>,
   diagError: null as null | { code: string; message: string },
 }))
 
-vi.mock('@/lib/api-utils', () => ({
-  requireAuth: async () => ({ session: { user: { id: 'google-user' } } }),
-}))
-vi.mock('@/lib/notifications', () => ({ notifyAdmins: s.notifyAdmins }))
 vi.mock('@/lib/supabase-server', () => ({
   createServerClient: () => ({
     auth: { getUser: async () => ({ data: { user: s.user } }) },
@@ -49,7 +43,6 @@ vi.mock('@/lib/supabase-service', () => ({ requireServiceRoleKey: () => 'service
 const fetchMock = vi.fn(async () => new Response('[]', { status: 200 }))
 
 beforeEach(() => {
-  s.notifyAdmins.mockReset()
   s.user = { id: 'me' }
   s.diagFilters = []
   s.diagError = null
@@ -59,19 +52,6 @@ beforeEach(() => {
   process.env.MARKET_API_URL = 'https://market.example/api/v1'
 })
 afterEach(() => vi.unstubAllGlobals())
-
-describe('POST /api/notifications/send (retired)', () => {
-  it('refuses and never notifies admins, even with a session', async () => {
-    const { POST } = await import('@/app/api/notifications/send/route')
-    const req = new NextRequest('http://localhost/api/notifications/send', {
-      method: 'POST',
-      body: JSON.stringify({ type: 'user_registered', data: { name: 'spam' } }),
-    })
-    const res = await (POST as (r: NextRequest) => Promise<Response>)(req)
-    expect(res.status).toBe(410)
-    expect(s.notifyAdmins).not.toHaveBeenCalled()
-  })
-})
 
 describe('POST /api/medical/audit/run — documentId', () => {
   const run = async (documentId: unknown) => {

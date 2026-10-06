@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase-service'
 import { sendTelegramMessage } from '@/lib/telegram'
 import { recordAdminAction } from '@/lib/admin/audit'
+import { isRateLimitedKey } from '@/lib/rate-limit'
 import { firstSeenUpdate, forgetUpdate, handleApprovalCallback, handleStaffStart, type TgCallbackQuery, type TgUser } from '@/lib/telegram/staff-updates'
 import { answerCallback } from '@/lib/telegram/bot-api'
 import type { StaffRole } from '@/lib/admin/rbac'
@@ -94,6 +95,8 @@ async function handleUpdate(req: NextRequest, update: Record<string, unknown>, s
   const chatId = typeof rawChatId === 'number' || typeof rawChatId === 'string' ? String(rawChatId) : null
   const text = typeof msg?.text === 'string' ? msg.text : ''
   if (!chatId) return NextResponse.json({ ok: true })
+  // Link codes are guessable only by brute force: 10 /start per chat per 10 min.
+  if (/^\/start\b/.test(text.trim()) && (await isRateLimitedKey(chatId, 'telegram-link', { max: 10, windowMs: 10 * 60_000 }))) return NextResponse.json({ ok: true })
 
   // ── Привязка сотрудника ──
   if (staffFeaturesEnabled && (await handleStaffStart(text, msg?.from, chatId))) {

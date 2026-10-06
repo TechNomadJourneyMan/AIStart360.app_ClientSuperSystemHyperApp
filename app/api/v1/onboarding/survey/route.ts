@@ -139,7 +139,7 @@ export async function POST(req: NextRequest) {
     if (imp) {
       try {
         await adminEditSurvey(
-          { id: imp.aid, kind: imp.aid.startsWith('giga:') ? 'break_glass' : 'session', email: imp.alabel, role: isStaffRole(imp.arole) ? imp.arole : undefined },
+          { id: imp.aid, kind: 'session', email: imp.alabel, role: isStaffRole(imp.arole) ? imp.arole : undefined },
           targetUserId,
           Object.fromEntries(accepted.map(([k, v]) => [k, (v as { value: unknown }).value])),
           req,

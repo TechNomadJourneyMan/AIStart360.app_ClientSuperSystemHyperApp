@@ -1,5 +1,11 @@
 import { defineConfig, devices } from '@playwright/test'
 
+// GIGA panel specs (tests/e2e/giga-*.spec.ts) sign in through the test-only
+// E2E auth seam (lib/admin/e2e-auth-seam-edge.ts): they seed a super_admin in
+// E2E_DATABASE_URL and send a cookie signed with E2E_AUTH_SEAM_SECRET (≥32
+// chars). The dev server started below inherits both from this environment;
+// the seam is inert in production builds. See the header of each spec.
+
 const testPort = process.env.PLAYWRIGHT_PORT ?? '3100'
 const externalBaseURL = process.env.PLAYWRIGHT_BASE_URL
 const baseURL = externalBaseURL ?? `http://127.0.0.1:${testPort}`

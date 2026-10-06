@@ -30,6 +30,7 @@ import {
 } from '@/lib/ai/openrouter'
 import type { ParsedDataField } from '@/lib/documents/extract'
 import { getMetricRegistry } from '@/lib/metrics/registry'
+import { docTypeMatches } from '@/lib/documents/doc-types'
 import type { MetricEntry } from '@/lib/metrics/types'
 import { fenceUntrusted, UNTRUSTED_DATA_RULES } from '@/lib/ai/gateway'
 
@@ -135,7 +136,7 @@ export function rankCandidates(
         (src) =>
           src.type === 'document' &&
           typeof src.doc_type === 'string' &&
-          src.doc_type.toLowerCase().includes(docTypeNorm)
+          docTypeMatches(src.doc_type.toLowerCase(), docTypeNorm)
       )
       if (hasDocSource) distance += 0.15
     }
@@ -219,7 +220,7 @@ function buildUserPrompt(
       (s) =>
         s.type === 'document' &&
         typeof s.doc_type === 'string' &&
-        (docType ? s.doc_type.toLowerCase().includes(docType.toLowerCase()) : true)
+        (docType ? docTypeMatches(s.doc_type.toLowerCase(), docType.toLowerCase()) : true)
     )
     const srcSummary = docSrc
       ? `[document:${docSrc.doc_type}${docSrc.field ? `/${docSrc.field}` : ''}]`

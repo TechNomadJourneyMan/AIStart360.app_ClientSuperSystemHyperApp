@@ -3,7 +3,7 @@
  * одобренный аккаунт) сохранено и распространено на роли персонала из
  * staff_roles, которые появились вместе с RBAC.
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { NextRequest } from 'next/server'
 
 const db = vi.hoisted(() => ({
@@ -14,9 +14,9 @@ const db = vi.hoisted(() => ({
   securityError: null as null | { message: string },
   profileError: null as null | { message: string },
   passkeys: 0,
-  settings: { break_glass_enabled: true, staff_require_mfa: false } as Record<string, boolean>,
+  settings: { staff_require_mfa: false } as Record<string, boolean>,
 }))
-const gigaCookie = vi.hoisted(() => ({ verify: vi.fn() }))
+const prismaMock = vi.hoisted(() => ({ $queryRaw: vi.fn() }))
 
 function table(name: string) {
   if (name === 'webauthn_credentials') {
@@ -31,15 +31,13 @@ vi.mock('@/lib/supabase-server', () => ({
   createServerClient: () => ({ auth: { getUser: db.getUser }, from: table }),
 }))
 vi.mock('@/lib/supabase-service', () => ({ createServiceClient: () => ({ from: table }) }))
-vi.mock('@/lib/giga-cookie', () => ({
-  GIGA_COOKIE_NAME: 'aistart360_giga',
-  verifyGigaRole: gigaCookie.verify,
-}))
+vi.mock('@/lib/db', () => ({ prisma: prismaMock }))
 vi.mock('@/lib/settings/store', () => ({ getSetting: async (key: string) => db.settings[key] ?? false }))
 
 import { getGigaActor, requireGiga, signStaffCookie, type GigaActor } from '@/lib/admin/giga-actor'
 import { verifyToken } from '@/lib/security/signed-token'
 import { MFA_COOKIE_NAME, signStepUp } from '@/lib/mfa/step-up'
+import { E2E_SEAM_COOKIE_NAME, signE2eSeamCookie } from '@/lib/admin/e2e-auth-seam-edge'
 
 process.env.AUTH_SECRET = 'test-auth-secret-for-step-up'
 
@@ -59,8 +57,7 @@ describe('getGigaActor', () => {
     db.securityError = null
     db.profileError = null
     db.passkeys = 0
-    db.settings = { break_glass_enabled: true, staff_require_mfa: false }
-    gigaCookie.verify.mockReturnValue(null)
+    db.settings = { staff_require_mfa: false }
   })
 
   it('accepts an approved personal super_admin session', async () => {
@@ -108,13 +105,82 @@ describe('getGigaActor', () => {
     await expect(getGigaActor(request())).resolves.toBeNull()
   })
 
-  it('keeps the signed break-glass cookie as a recovery fallback', async () => {
+  it('the retired break-glass cookie grants nothing (the shared-password entry was removed)', async () => {
     db.getUser.mockResolvedValue({ data: { user: null } })
-    gigaCookie.verify.mockReturnValue('super_admin')
+    await expect(getGigaActor(request('v1.anything.at-all'))).resolves.toBeNull()
+    const guard = await requireGiga(request('v1.anything.at-all'), 'users.view')
+    expect(guard.response?.status).toBe(403)
+  })
+})
 
-    const actor = await getGigaActor(request('signed-token'))
-    expect(actor).toMatchObject({ id: 'giga:super_admin', kind: 'break_glass', role: 'super_admin' })
-    expect(gigaCookie.verify).toHaveBeenCalledWith('signed-token')
+describe('E2E auth seam (test-only)', () => {
+  const SECRET = 'e2e-seam-secret-0123456789abcdef-xyz'
+  const USER = '0b6d6a1e-8f7a-4c3e-9d2b-5a4f3e2d1c0b'
+
+  beforeEach(() => {
+    vi.resetAllMocks()
+    vi.unstubAllEnvs()
+    db.profile = null
+    db.staff = null
+    db.settings = { staff_require_mfa: false }
+    db.getUser.mockResolvedValue({ data: { user: null } })
+  })
+
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
+  async function seamRequest() {
+    vi.stubEnv('E2E_AUTH_SEAM_SECRET', SECRET)
+    const cookie = await signE2eSeamCookie(USER)
+    return request(undefined, [`${E2E_SEAM_COOKIE_NAME}=${cookie}`])
+  }
+
+  it('resolves the seeded user with their REAL staff role from the database', async () => {
+    const req = await seamRequest()
+    prismaMock.$queryRaw.mockResolvedValue([{ role: 'client', status: 'approved', email: 'e2e@x.kz', staff_role: 'analyst' }])
+    const actor = await getGigaActor(req)
+    expect(actor).toMatchObject({ id: USER, kind: 'session', role: 'analyst', email: 'e2e@x.kz' })
+    expect(actor?.permissions).not.toContain('settings.manage')
+
+    prismaMock.$queryRaw.mockResolvedValue([{ role: 'super_admin', status: 'approved', email: null, staff_role: null }])
+    expect(await getGigaActor(req)).toMatchObject({ id: USER, role: 'super_admin' })
+  })
+
+  it('admits nobody whose profile is not approved or who has no staff role', async () => {
+    const req = await seamRequest()
+    prismaMock.$queryRaw.mockResolvedValue([{ role: 'super_admin', status: 'pending_approval', email: null, staff_role: 'super_admin' }])
+    expect(await getGigaActor(req)).toBeNull()
+    prismaMock.$queryRaw.mockResolvedValue([{ role: 'client', status: 'approved', email: null, staff_role: null }])
+    expect(await getGigaActor(req)).toBeNull()
+    prismaMock.$queryRaw.mockResolvedValue([])
+    expect(await getGigaActor(req)).toBeNull()
+  })
+
+  it('is inert in production even with the secret and an authentic cookie', async () => {
+    const req = await seamRequest()
+    prismaMock.$queryRaw.mockResolvedValue([{ role: 'super_admin', status: 'approved', email: null, staff_role: 'super_admin' }])
+    vi.stubEnv('NODE_ENV', 'production')
+    expect(await getGigaActor(req)).toBeNull()
+    expect(prismaMock.$queryRaw).not.toHaveBeenCalled()
+  })
+
+  it('is inert without the secret (or with a short one)', async () => {
+    const req = await seamRequest()
+    prismaMock.$queryRaw.mockResolvedValue([{ role: 'super_admin', status: 'approved', email: null, staff_role: 'super_admin' }])
+    vi.stubEnv('E2E_AUTH_SEAM_SECRET', '')
+    expect(await getGigaActor(req)).toBeNull()
+    vi.stubEnv('E2E_AUTH_SEAM_SECRET', 'short-secret')
+    expect(await getGigaActor(req)).toBeNull()
+    expect(prismaMock.$queryRaw).not.toHaveBeenCalled()
+  })
+
+  it('rejects a cookie signed with another secret', async () => {
+    const req = await seamRequest()
+    vi.stubEnv('E2E_AUTH_SEAM_SECRET', SECRET.replace('e2e', 'xxx'))
+    prismaMock.$queryRaw.mockResolvedValue([{ role: 'super_admin', status: 'approved', email: null, staff_role: 'super_admin' }])
+    expect(await getGigaActor(req)).toBeNull()
+    expect(prismaMock.$queryRaw).not.toHaveBeenCalled()
   })
 })
 
@@ -127,8 +193,7 @@ describe('second factor on the GIGA API (middleware does not gate /api/*)', () =
     db.securityError = null
     db.profileError = null
     db.passkeys = 0
-    db.settings = { break_glass_enabled: true, staff_require_mfa: false }
-    gigaCookie.verify.mockReturnValue(null)
+    db.settings = { staff_require_mfa: false }
   })
 
   const session = (meta: { app?: Record<string, unknown>; user?: Record<string, unknown> } = {}) =>
@@ -203,8 +268,7 @@ describe('signStaffCookie (impersonation keeps the admin in the panel)', () => {
     expect(v.ok && v.claims.sub).toBe('admin-1')
   })
 
-  it('is NOT re-minted for a staff-cookie actor (no indefinite extension without a second factor) or break-glass', async () => {
+  it('is NOT re-minted for a staff-cookie actor (no indefinite extension without a second factor)', async () => {
     expect(await signStaffCookie({ ...base, id: 'admin-1', kind: 'staff_cookie' } as GigaActor)).toBeNull()
-    expect(await signStaffCookie({ ...base, id: 'giga:super_admin', kind: 'break_glass' } as GigaActor)).toBeNull()
   })
 })

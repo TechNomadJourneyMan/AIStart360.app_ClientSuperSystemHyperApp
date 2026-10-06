@@ -151,9 +151,9 @@ function buildGriCard(gri: GriLoad, dist: GriIndexDistribution | null): KpiCardD
 function buildKpi(data: DashboardData | null, griCard: KpiCardData): KpiCardData[] {
   if (!data) {
     return [
-      { label: 'Пользователи', value: '—',  trend: '—',    trendUp: true,  icon: 'groups',       sublabel: 'не удалось загрузить', href: '/users'   },
-      { label: 'Активных',  value: '—',  trend: '—',    trendUp: true,  icon: 'check_circle', sublabel: 'не удалось загрузить', href: '/users'   },
-      { label: 'Заявки',    value: '—',  trend: '—',    trendUp: false, icon: 'hourglass_top',sublabel: 'не удалось загрузить', href: '/admin/requests' },
+      { label: 'Пользователи', value: '—',  trend: '—',    trendUp: true,  icon: 'groups',       sublabel: 'не удалось загрузить', href: '/admin-giga-panel/users'   },
+      { label: 'Активных',  value: '—',  trend: '—',    trendUp: true,  icon: 'check_circle', sublabel: 'не удалось загрузить', href: '/admin-giga-panel/users'   },
+      { label: 'Заявки',    value: '—',  trend: '—',    trendUp: false, icon: 'hourglass_top',sublabel: 'не удалось загрузить', href: '/admin-giga-panel/requests' },
       griCard,
     ]
   }
@@ -166,7 +166,7 @@ function buildKpi(data: DashboardData | null, griCard: KpiCardData): KpiCardData
       trendUp:  data.new30 > 0,
       icon:     'groups',
       sublabel: 'в системе',
-      href:     '/users',
+      href:     '/admin-giga-panel/users',
     },
     {
       label:    'Активных',
@@ -175,7 +175,7 @@ function buildKpi(data: DashboardData | null, griCard: KpiCardData): KpiCardData
       trendUp:  data.active > 0,
       icon:     'check_circle',
       sublabel: 'статус active',
-      href:     '/users',
+      href:     '/admin-giga-panel/users',
     },
     {
       label:    'Заявки',
@@ -184,13 +184,13 @@ function buildKpi(data: DashboardData | null, griCard: KpiCardData): KpiCardData
       trendUp:  data.pending === 0,
       icon:     'hourglass_top',
       sublabel: 'на регистрацию',
-      href:     '/admin/requests',
+      href:     '/admin-giga-panel/requests',
     },
     griCard,
   ]
 }
 
-/** gri_index bands of the current assessments (same bands as /api/admin/overview). */
+/** gri_index bands of the current assessments (GIGA panel bands). */
 function buildGriDistRows(dist: GriIndexDistribution) {
   const { excellent, strong, developing, critical, total } = dist
   const p = (n: number) => (total > 0 ? Math.round((n / total) * 100) : 0)
@@ -654,7 +654,7 @@ export default async function DashboardPage() {
                 <div className="bg-surface-container-low border border-error/20 rounded-2xl p-5" role="alert">
                   <p className="text-sm font-medium text-on-surface">Активность CRM</p>
                   <p className="mt-1 text-xs text-error">Не удалось загрузить заявки и клиентов CRM — список и число ожидающих заявок неизвестны. Обновите страницу.</p>
-                  <Link href="/admin/requests" className="mt-2 inline-block text-[11px] font-mono text-primary hover:underline">Открыть заявки</Link>
+                  <Link href="/admin-giga-panel/requests" className="mt-2 inline-block text-[11px] font-mono text-primary hover:underline">Открыть заявки</Link>
                 </div>
               )}
               {showCrmWidgets && !crmFailed && (

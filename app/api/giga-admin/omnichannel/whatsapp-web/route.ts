@@ -27,9 +27,6 @@ type PublicState =
   | 'logged_out'
   | 'error'
 
-function envFlag(value: string | undefined): boolean {
-  return /^(?:1|true|yes|on)$/i.test(value?.trim() ?? '')
-}
 function noStore<T>(body: T, status = 200): NextResponse {
   return NextResponse.json(body, {
     status,
@@ -131,15 +128,6 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const guard = await requireGiga(req, 'inbox.manage')
   if (guard.response) return guard.response
   const actor = guard.actor
-  if (
-    actor.kind === 'break_glass'
-    && !envFlag(process.env.WHATSAPP_WEB_BRIDGE_ALLOW_BREAK_GLASS_PAIRING)
-  ) {
-    return noStore({
-      error: 'Для привязки WhatsApp войдите под личной учётной записью super_admin',
-      code: 'personal_super_admin_required',
-    }, 403)
-  }
 
   const parsed = actionSchema.safeParse(await req.json().catch(() => null))
   if (!parsed.success) return noStore({ error: 'Некорректное действие' }, 400)

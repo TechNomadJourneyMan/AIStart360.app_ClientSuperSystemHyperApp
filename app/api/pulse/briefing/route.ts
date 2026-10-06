@@ -13,8 +13,9 @@ const STAGE_RISK: Record<string, number> = {
   EXECUTING: 20, WON: 5, LOSE: 90, APOLOGY: 95,
 }
 
-// Staff roles that may see the platform CRM briefing (Pulse is not for clients).
-const PULSE_ROLES = new Set(['super_admin', 'admin', 'owner', 'expert', 'manager'])
+// Staff roles that may see the platform CRM briefing (Pulse is not for clients;
+// legacy 'owner' accounts are clients).
+const PULSE_ROLES = new Set(['super_admin', 'admin', 'expert', 'manager'])
 
 /**
  * POST /api/pulse/briefing — generate or refresh daily sales briefing

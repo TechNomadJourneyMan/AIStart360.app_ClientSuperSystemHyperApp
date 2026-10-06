@@ -1,7 +1,6 @@
 export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@/lib/db'
 import { createServiceClient } from '@/lib/supabase-service'
 import { forbidTarget, requireGiga } from '@/lib/admin/giga-actor'
 import { logAudit } from '@/lib/audit'
@@ -15,8 +14,8 @@ import { logAudit } from '@/lib/audit'
  *      middleware and rbac demotion all key off this;
  *   2. bans the GoTrue user (ban_duration) so existing refresh tokens die and
  *      new sign-ins are rejected at the auth layer;
- *   3. keeps the legacy Prisma-session cleanup (harmless, best-effort);
- *   4. writes an audit entry attributed to the real actor.
+ *   3. writes an audit entry attributed to the real actor.
+ * (The legacy NextAuth `sessions` cleanup went away with NextAuth itself.)
  */
 export async function POST(
   req: NextRequest,
@@ -70,13 +69,6 @@ export async function POST(
       await svc.auth.admin.updateUserById(id, { ban_duration: '87600h' })
     } catch (e) {
       console.error('[giga-admin/block] GoTrue ban failed (status still blocked):', e)
-    }
-
-    // 3. Legacy NextAuth sessions (best-effort).
-    try {
-      await prisma.session.deleteMany({ where: { userId: id } })
-    } catch {
-      // Prisma table may be empty/absent in this environment — non-fatal.
     }
 
     await logAudit({

@@ -176,7 +176,7 @@ export async function POST(req: NextRequest) {
   const jar = cookies()
   // Only a personal Supabase session earns a staff cookie: a staff_cookie actor
   // must not re-mint its own cookie (that would extend access past the
-  // step-up proof indefinitely), and break-glass never gets one.
+  // step-up proof indefinitely).
   const staffToken = await signStaffCookie(actor)
   if (staffToken) {
     jar.set(STAFF_COOKIE_NAME, staffToken, {
@@ -201,7 +201,7 @@ export async function POST(req: NextRequest) {
     uid: userId,
     mode,
     aid: actor.id,
-    alabel: actor.email ?? (actor.kind === 'break_glass' ? 'break-glass' : actor.id),
+    alabel: actor.email ?? actor.id,
     arole: actor.role,
     tlabel: target.email,
   }, ttlSeconds), IMP_COOKIE_OPTIONS)

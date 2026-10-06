@@ -126,11 +126,11 @@
 ```
  GIGA-CRM  /admin-giga-panel + /api/giga-admin (71)   ← КАНОНИЧЕСКАЯ (requireGiga, RBAC 7×32, аудит)
    └ SuperExpert /super-expert  — урезанное представление тех же компонентов
- Legacy: /admin, /admin/requests (+ /api/admin 16, /api/v1/admin 5)  — Prisma-эпоха, другие guard-ы
-         /owner/** (15 из 19 — реэкспорты), /owner/admin сломан по дизайну
-         (dashboard)/users — мок на localStorage; /team — Prisma
- Expert:  /expert/** + /api/expert/* (глобальный доступ эксперта ко всем клиентам)
- /giga-login — break-glass общий пароль (выключается break_glass_enabled)
+ Legacy: /api/v1/admin 5 (используется /clients); /team — Prisma
+         (W1 удалил /admin, /admin/requests, /api/admin 16, /owner/**, (dashboard)/users;
+          middleware ведёт старые адреса в GIGA / кабинет; роль owner = клиент)
+ Expert:  /expert/** + /api/expert/* (эксперты — сотрудники, видят всех клиентов)
+ /giga-login — только ссылка на личный /login?from=/admin-giga-panel (break-glass удалён в W1)
 ```
 
 ### A8. Уведомления

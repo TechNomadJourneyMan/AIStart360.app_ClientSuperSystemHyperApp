@@ -31,6 +31,14 @@ export interface CatalogItemSource {
   step?: number
   /** Survey answer → number rule (lib/metrics/format.ts SurveyCoercion), when exposed. */
   coerce?: { kind: string; row?: string; column?: string }
+  /** «нужен источник: …» / formula text / where the value is read. */
+  note?: string
+  /** A key only the older questionnaire wrote. */
+  legacy?: boolean
+  /** type 'formula': formula id (lib/metrics/formulas.ts). */
+  formula?: string
+  /** type 'assessment': GRI section id. */
+  section?: string
 }
 
 export interface CatalogItemBase {

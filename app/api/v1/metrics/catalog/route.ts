@@ -41,6 +41,7 @@ import { METRIC_CATEGORIES, classifyMetric, countByCategory } from '@/lib/metric
 import { resolveTenantWith, tenantErrorMessage } from '@/lib/tenancy'
 import { apiError, safeErrorMessage } from '@/lib/api-error'
 import { isLowerBetter } from '@/components/metrics/catalog-model'
+import { currentMetricRows } from '@/lib/metrics/company-metrics'
 
 const FRESH_WINDOW_MS = 24 * 60 * 60 * 1000
 /** History rows read per request (newest first) — enough for the previous value of every metric. */
@@ -118,6 +119,10 @@ interface CatalogItemSource {
   label?: string
   step?: number
   coerce?: MetricSource['coerce']
+  note?: string
+  legacy?: boolean
+  formula?: string
+  section?: string
 }
 
 interface CatalogItemBase {
@@ -163,6 +168,10 @@ function projectSource(s: MetricSource): CatalogItemSource {
   if (s.label !== undefined) out.label = s.label
   if (s.step !== undefined) out.step = s.step
   if (s.coerce !== undefined) out.coerce = s.coerce
+  if (s.note !== undefined) out.note = s.note
+  if (s.legacy) out.legacy = true
+  if (s.formula !== undefined) out.formula = s.formula
+  if (s.section !== undefined) out.section = s.section
   return out
 }
 
@@ -278,11 +287,9 @@ function filterRegistry(
   return out
 }
 
-/** Latest row per metric_key (rows ordered by metric_key, computed_at DESC NULLS LAST). */
+/** Current row per metric_key — the same rule as every surface (lib/metrics/company-metrics.ts). */
 function latestRows(rows: MetricRow[]): Map<string, MetricRow> {
-  const latest = new Map<string, MetricRow>()
-  for (const row of rows) if (!latest.has(row.metric_key)) latest.set(row.metric_key, row)
-  return latest
+  return currentMetricRows(rows)
 }
 
 function mergeRow(item: CatalogItemBase, row: MetricRow | undefined, now: Date): CatalogItemBase {

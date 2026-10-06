@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { randomBytes } from 'crypto'
 import { z } from 'zod'
-import { authRateLimit } from '@/lib/rate-limit'
+import { checkRateLimitForRequest, rateLimitResponse } from '@/lib/rate-limit'
 import { sendNotificationEmail } from '@/lib/email'
 import { getSiteUrl } from '@/lib/site-url'
 
@@ -70,31 +70,6 @@ async function persistMiniGriLead(lead: {
   }
 }
 
-// In-memory fallback so the public endpoint is never fully unprotected when
-// Upstash is not configured (mirrors app/api/giga-admin/auth/route.ts).
-const WINDOW_MS = 60_000
-const MAX_ATTEMPTS = 6
-const memHits = new Map<string, { count: number; resetAt: number }>()
-
-function memoryLimited(ip: string): boolean {
-  const now = Date.now()
-  const cur = memHits.get(ip)
-  if (!cur || cur.resetAt < now) {
-    memHits.set(ip, { count: 1, resetAt: now + WINDOW_MS })
-    return false
-  }
-  cur.count += 1
-  return cur.count > MAX_ATTEMPTS
-}
-
-function clientIp(req: NextRequest): string {
-  return (
-    req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
-    req.headers.get('x-real-ip') ||
-    'unknown'
-  )
-}
-
 const blockScoreSchema = z.object({
   key: z.string(),
   label: z.string(),
@@ -110,17 +85,9 @@ const bodySchema = z.object({
 })
 
 export async function POST(req: NextRequest) {
-  const ip = clientIp(req)
-
-  // Rate limit before doing any work.
-  if (authRateLimit) {
-    const { success } = await authRateLimit.limit(`mini-gri:${ip}`)
-    if (!success) {
-      return NextResponse.json({ error: 'Too many requests' }, { status: 429 })
-    }
-  } else if (memoryLimited(ip)) {
-    return NextResponse.json({ error: 'Too many requests' }, { status: 429 })
-  }
+  // Rate limit before doing any work (shared store, per IP; sends an email).
+  const limit = await checkRateLimitForRequest(req, 'mini-gri', { max: 6, windowMs: 60_000 })
+  if (limit.limited) return rateLimitResponse(limit, 'Too many requests')
 
   let json: unknown
   try {

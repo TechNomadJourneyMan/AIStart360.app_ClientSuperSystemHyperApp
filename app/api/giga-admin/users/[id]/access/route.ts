@@ -5,6 +5,8 @@ import { createServiceClient } from '@/lib/supabase-service'
 import { forbidTarget, requireGiga } from '@/lib/admin/giga-actor'
 import { logAudit } from '@/lib/audit'
 import { normalizeOverrides, normalizeTier } from '@/lib/access/entitlements'
+import { setPlan } from '@/lib/payments/billing'
+import { billingErrorResponse } from '@/lib/payments/billing-http'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -42,6 +44,11 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
  * PATCH /api/giga-admin/users/:id/access — тариф и per-user фича-флаги (Фаза 6C).
  * Body: { tier?: 'free'|'pro', feature_flags?: { gri_full?, pdf_export?, ai_chat?, benchmarks? } }
  *
+ * tier больше не пишется в profiles напрямую: смену тарифа делает billing-сервис
+ * (lib/payments/billing.ts, миграция 106) — subscriptions + profiles.tier одной
+ * транзакцией, с записью в журнал до изменения. Полный редактор тарифа (пилот,
+ * enterprise, срок, продление) — PATCH /api/giga-admin/users/:id/billing.
+ *
  * ⚠ Урок аудита 2026-07-04: пишем service-клиентом (giga-сессия не даёт
  * auth.uid() → RLS молча дропает UPDATE profiles) и ОБЯЗАТЕЛЬНО проверяем число
  * затронутых строк — «кнопка, которая выглядит рабочей, но молча не работает»
@@ -64,21 +71,36 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (!body || (body.tier === undefined && body.feature_flags === undefined)) {
     return NextResponse.json({ error: 'tier or feature_flags required' }, { status: 422 })
   }
-
-  const patch: Record<string, unknown> = {}
-  if (body.tier !== undefined) {
-    if (body.tier !== 'free' && body.tier !== 'pro') {
-      return NextResponse.json({ error: 'tier must be free|pro' }, { status: 422 })
-    }
-    patch.tier = normalizeTier(body.tier)
+  if (body.tier !== undefined && body.tier !== 'free' && body.tier !== 'pro') {
+    return NextResponse.json({ error: 'tier must be free|pro' }, { status: 422 })
   }
-  if (body.feature_flags !== undefined) {
-    // Только известные boolean-фичи; мусор отбрасывается.
-    patch.feature_flags = normalizeOverrides(body.feature_flags)
+
+  // Тариф — только через billing-сервис (единственный писатель).
+  if (body.tier !== undefined) {
+    try {
+      await setPlan({
+        userId: params.id,
+        tier: normalizeTier(body.tier),
+        periodEnd: null,
+        source: 'admin',
+        actor,
+        req,
+        meta: { via: 'access' },
+      })
+    } catch (e) {
+      return billingErrorResponse(e, 'giga-admin/users/access')
+    }
   }
 
   try {
     const svc = createServiceClient()
+    if (body.feature_flags === undefined) {
+      const { data } = await svc.from('profiles').select('id, tier, feature_flags').eq('id', params.id).maybeSingle()
+      return NextResponse.json({ ok: true, profile: data })
+    }
+
+    // Только известные boolean-фичи; мусор отбрасывается.
+    const patch = { feature_flags: normalizeOverrides(body.feature_flags) }
     const { data: before } = await svc.from('profiles').select('tier, feature_flags').eq('id', params.id).maybeSingle()
     const { data, error } = await svc
       .from('profiles')
@@ -104,7 +126,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       action: 'user.access_changed',
       performedBy: actor.id,
       diff: {
-        before: before ? Object.fromEntries(Object.keys(patch).map((k) => [k, (before as Record<string, unknown>)[k] ?? null])) : null,
+        before: before ? { feature_flags: (before as Record<string, unknown>).feature_flags ?? null } : null,
         after: patch,
         actorKind: actor.kind,
       },

@@ -36,7 +36,7 @@ export default function CheckoutStubPage({
   const planKey = searchParams.plan ?? ''
   const plan = getPlan(planKey)
 
-  const successHref = `/checkout/success?plan=${encodeURIComponent(planKey)}`
+  const successHref = `/checkout/success?plan=${encodeURIComponent(planKey)}&demo=1`
 
   return (
     <div className="relative overflow-hidden min-h-screen bg-surface text-on-surface flex items-center justify-center px-6 py-16">
@@ -63,8 +63,12 @@ export default function CheckoutStubPage({
           </div>
           <p className="text-sm text-on-surface-variant leading-relaxed">
             Это <span className="text-on-surface font-semibold">заглушка</span> платёжного шлюза.
-            Реальная оплата не списывается — деньги не двигаются. Платёжные провайдеры
-            будут подключены позже.
+            Оплата не принимается и не списывается — деньги не двигаются, тариф от этой
+            страницы не меняется. Платёжные провайдеры будут подключены позже.
+          </p>
+          <p className="mt-3 text-sm text-on-surface leading-relaxed bg-primary/5 border border-primary/20 rounded-lg px-3 py-2">
+            Сейчас тариф подключает <span className="font-semibold">администратор платформы</span>:
+            напишите нам — мы назначим тариф вручную, и он появится в разделе «Настройки › Биллинг».
           </p>
 
           {/* Chosen plan + provider */}
@@ -104,7 +108,7 @@ export default function CheckoutStubPage({
             className="mt-6 w-full bg-primary text-on-primary text-center font-semibold px-6 py-3.5 rounded-xl flex items-center justify-center gap-2 hover:shadow-xl hover:shadow-primary/30 transition-all focus:outline-none focus:ring-2 focus:ring-primary/40"
           >
             <span className="material-symbols-outlined">check_circle</span>
-            Симулировать успешную оплату
+            Завершить демонстрацию (без оплаты)
           </Link>
           <Link
             href="/checkout/cancel"

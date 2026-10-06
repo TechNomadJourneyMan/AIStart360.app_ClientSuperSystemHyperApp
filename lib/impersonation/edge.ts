@@ -76,7 +76,7 @@ export async function auditImpersonatedRequestEdge(entry: {
       headers: { apikey: r.key, Authorization: `Bearer ${r.key}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
       body: JSON.stringify({
         actor_id: entry.adminId,
-        actor_kind: entry.adminId.startsWith('giga:') ? 'break_glass' : 'session',
+        actor_kind: 'session',
         actor_email: entry.adminLabel,
         actor_role: entry.adminRole ?? null,
         target_user_id: entry.targetUserId,

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { NextRequest } from 'next/server'
 
 const actor = vi.hoisted(() => ({ getGigaActor: vi.fn() }))
@@ -30,8 +30,6 @@ vi.mock('qrcode', () => ({ default: { toDataURL: qr.toDataURL } }))
 
 import { GET, POST } from '@/app/api/giga-admin/omnichannel/whatsapp-web/route'
 
-const originalBreakGlass = process.env.WHATSAPP_WEB_BRIDGE_ALLOW_BREAK_GLASS_PAIRING
-
 function request(method: 'GET' | 'POST', body?: unknown): NextRequest {
   return new Request('http://localhost/api/giga-admin/omnichannel/whatsapp-web', {
     method,
@@ -51,7 +49,6 @@ const configured = {
 describe('/api/giga-admin/omnichannel/whatsapp-web', () => {
   beforeEach(() => {
     vi.resetAllMocks()
-    delete process.env.WHATSAPP_WEB_BRIDGE_ALLOW_BREAK_GLASS_PAIRING
     actor.getGigaActor.mockResolvedValue({ id: 'admin-1', kind: 'session' })
     bridge.getWhatsAppWebBridgeConfigurationHealth.mockReturnValue(configured)
     bridge.getStatus.mockResolvedValue({
@@ -90,14 +87,6 @@ describe('/api/giga-admin/omnichannel/whatsapp-web', () => {
     limiter.isRateLimitedKey.mockResolvedValue(false)
     audit.logAudit.mockResolvedValue(undefined)
     qr.toDataURL.mockResolvedValue('data:image/png;base64,qr')
-  })
-
-  afterEach(() => {
-    if (originalBreakGlass === undefined) {
-      delete process.env.WHATSAPP_WEB_BRIDGE_ALLOW_BREAK_GLASS_PAIRING
-    } else {
-      process.env.WHATSAPP_WEB_BRIDGE_ALLOW_BREAK_GLASS_PAIRING = originalBreakGlass
-    }
   })
 
   it('requires a super-admin actor', async () => {
@@ -143,8 +132,8 @@ describe('/api/giga-admin/omnichannel/whatsapp-web', () => {
     })
   })
 
-  it('blocks break-glass pairing unless explicitly enabled', async () => {
-    actor.getGigaActor.mockResolvedValue({ id: 'giga:super_admin', kind: 'break_glass' })
+  it('a staff role without inbox.manage cannot pair', async () => {
+    actor.getGigaActor.mockResolvedValue({ id: 'analyst-1', kind: 'session', role: 'analyst' })
     const response = await POST(request('POST', { action: 'connect' }))
     expect(response.status).toBe(403)
     expect(bridge.connect).not.toHaveBeenCalled()

@@ -665,6 +665,11 @@ model Subscription {
   provider         AcquiringProvider?
   trialEndsAt      DateTime?
   currentPeriodEnd DateTime?
+  // Who set the current plan (migration 106): admin | trial | kaspi | stub |
+  // system. Written only by billing_set_plan() via lib/payments/billing.ts.
+  source           String?
+  note             String?
+  assignedBy       String?
   createdAt        DateTime           @default(now())
   updatedAt        DateTime           @updatedAt
 

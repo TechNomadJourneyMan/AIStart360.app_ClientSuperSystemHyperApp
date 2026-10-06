@@ -6,14 +6,15 @@ import { getRegistrationMode, getAutoApproveClients } from '@/lib/settings/syste
 import { applyApprovalDecision } from '@/lib/users/approval'
 import { computeRiskFlags } from '@/lib/registration/risk'
 
-// Public self-registration. Only the two roles offered in the UI are allowed
-// ('client' = бизнес, 'owner' = команда AIStart360). admin/expert/super_admin
-// can NEVER be self-assigned — staff are created by an admin. See audit A3.
+// Public self-registration creates CLIENTS only. admin/expert/super_admin (and
+// the legacy 'owner', formerly the «Команда AIStart360» tab) can NEVER be
+// self-assigned — staff get their role from a Super Admin in the GIGA panel.
+// See audit A3.
 const schema = z.object({
   email:        z.string().email(),
   password:     z.string().min(6),
   name:         z.string().min(2),
-  role:         z.enum(['client', 'owner']).optional().default('client'),
+  role:         z.literal('client').optional().default('client'),
   organization: z.string().optional(),
   position:     z.string().optional(),
 })
@@ -81,7 +82,7 @@ export async function POST(request: Request) {
 
     // OPEN mode: grant access immediately (the trigger created the client as
     // pending_approval). Best-effort — never fail the registration on this.
-    // Фаза 6B (№15): в режиме 'approval' self-serve роли (client/owner — других
+    // Фаза 6B (№15): в режиме 'approval' self-serve роль (только client — других
     // эта форма не предлагает; staff создаются админом, аудит A3) авто-одобряются,
     // пока включён системный тумблер auto_approve_clients (default ON, решение ПО
     // 2026-07-09 — ручная модерация была главным трением активации).

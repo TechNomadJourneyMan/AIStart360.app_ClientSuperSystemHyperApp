@@ -56,7 +56,7 @@ import { segmentAt, type StructuredText } from './text'
 export const EXTRACTION_PROMPT_VERSION = 'doc-fields@2026-10-06.2'
 export const BINDING_PROMPT_VERSION = 'doc-bind@2026-10-06'
 export const ROWS_PROMPT_VERSION = 'doc-rows@2026-10-06.2'
-export const PIPELINE_VERSION = 'docint/1.1'
+export const PIPELINE_VERSION = 'docint/1.2'
 /** Stored in documents.extraction_version — bump on any prompt or pipeline change. */
 export const EXTRACTION_VERSION = `${PIPELINE_VERSION}+${EXTRACTION_PROMPT_VERSION}`
 
@@ -328,7 +328,32 @@ export interface TableExtraction {
   matchedRows: number
 }
 
-/** «Показатель ; Значение» rows of sheets / CSV whose label is a known metric. */
+/**
+ * Period columns of a header row: «Показатель ; 2024 ; 2025» or «Q1 2025 ;
+ * Q2 2025» (the label cell first, every other non-empty cell a year /
+ * quarter / month). Returns column index → period label, or null.
+ */
+function periodHeader(cells: string[]): Map<number, string> | null {
+  const out = new Map<number, string>()
+  let labels = 0
+  for (let i = 0; i < cells.length; i++) {
+    const c = cells[i].trim()
+    if (!c) continue
+    if (/^(19|20)\d{2}(\s*(г\.?|год))?$/i.test(c) || /^(q[1-4]|[1-4]\s*кв\.?|i{1,3}v?\s*кв\.?)\s*(19|20)\d{2}$/i.test(c) || /^(19|20)\d{2}\s*[-–]?\s*q[1-4]$/i.test(c)) {
+      out.set(i, c.replace(/\s*(г\.?|год)$/i, ''))
+    } else {
+      labels += 1
+    }
+  }
+  return out.size >= 2 && labels <= 1 ? out : null
+}
+
+/**
+ * «Показатель ; Значение» rows of sheets / CSV whose label is a known metric.
+ * A table with period columns («Показатель ; 2024 ; 2025») yields one field per
+ * period (period = the column header), so the resolver can pick the latest
+ * period instead of skipping the row; a «Итого» column still wins.
+ */
 export function tableFields(st: StructuredText, documentId: string): TableExtraction {
   const fields: ParsedDataField[] = []
   const seen = new Map<string, ParsedDataField>()
@@ -351,6 +376,7 @@ export function tableFields(st: StructuredText, documentId: string): TableExtrac
     let pos = seg.start
     let delim: string | null = null
     let totalColumn = -1
+    let periodColumns: Map<number, string> | null = null
     for (const line of lines) {
       const lineStart = pos
       pos += line.length + 1
@@ -359,6 +385,13 @@ export function tableFields(st: StructuredText, documentId: string): TableExtrac
       delim ??= detectDelimiter(trimmed)
       const cells = parseCsvLine(trimmed, delim).map((c) => c.trim())
       if (cells.length < 2) continue
+      if (!periodColumns && totalColumn < 0) {
+        const header = periodHeader(cells)
+        if (header) {
+          periodColumns = header
+          continue
+        }
+      }
       const labelIdx = cells.findIndex((c) => /[a-zа-яё]/i.test(c) && !numericValue(c))
       if (labelIdx < 0) continue
       if (totalColumn < 0) {
@@ -371,43 +404,53 @@ export function tableFields(st: StructuredText, documentId: string): TableExtrac
       const numbers = cells
         .map((c, i) => ({ i, n: i === labelIdx ? null : numericValue(c) }))
         .filter((x): x is { i: number; n: { value: number; unit: string | null } } => x.n !== null)
-      const meaningful = numbers.length > 1 ? numbers.filter((x) => !YEARISH(x.n.value)) : numbers
+      const meaningful = numbers.length > 1 && !periodColumns ? numbers.filter((x) => !YEARISH(x.n.value)) : numbers
       if (!meaningful.length) continue
       candidateRows += 1
 
       const label = cells[labelIdx]
       const canon = synonymOf(label)
       if (!canon) continue
-      const pick = meaningful.length === 1 ? meaningful[0] : meaningful.find((x) => x.i === totalColumn) ?? null
-      if (!pick) continue
+      // One value per row: the only number, the «Итого» column, or — under a
+      // period header — one value per period column.
+      const total = meaningful.length === 1 ? meaningful[0] : meaningful.find((x) => x.i === totalColumn) ?? null
+      const picks: Array<{ pick: { i: number; n: { value: number; unit: string | null } }; period: string | null }> = total
+        ? [{ pick: total, period: meaningful.length > 1 ? 'итого' : periodColumns?.get(total.i) ?? null }]
+        : periodColumns
+          ? meaningful.filter((x) => periodColumns?.has(x.i)).map((x) => ({ pick: x, period: periodColumns?.get(x.i) ?? null }))
+          : []
+      if (!picks.length) continue
       matchedRows += 1
-      const unit = PERCENT.test(label) || PERCENT.test(cells[pick.i]) ? '%' : pick.n.unit
-      const target = inferTarget(canon, 'Ключевые метрики', label)
-      const field: ParsedDataField = {
-        key: canon,
-        label: label.slice(0, 120),
-        value: pick.n.value,
-        unit,
-        period: meaningful.length > 1 ? 'итого' : null,
-        target_tab: target.target_tab,
-        target_parameter: target.target_parameter,
-        source: clipQuote(trimmed) ?? undefined,
-        confidence: meaningful.length > 1 ? 0.75 : 0.85,
-        provenance: provenanceAt(st, {
-          document_id: documentId, method: 'table', quote: clipQuote(trimmed), model: null, prompt_version: null,
-        }, lineStart + Math.max(0, line.indexOf(trimmed.slice(0, 1)))),
-      }
-      const prev = seen.get(canon)
-      if (prev) {
-        if (prev.value !== field.value && prev.provenance) {
-          prev.provenance.alternatives = [...(prev.provenance.alternatives ?? []), {
-            value: field.value, quote: field.provenance?.quote ?? null, page: field.provenance?.page ?? null,
-          }].slice(0, 3)
+      for (const { pick, period } of picks) {
+        const unit = PERCENT.test(label) || PERCENT.test(cells[pick.i]) ? '%' : pick.n.unit
+        const target = inferTarget(canon, 'Ключевые метрики', label)
+        const field: ParsedDataField = {
+          key: canon,
+          label: label.slice(0, 120),
+          value: pick.n.value,
+          unit,
+          period,
+          target_tab: target.target_tab,
+          target_parameter: target.target_parameter,
+          source: clipQuote(trimmed) ?? undefined,
+          confidence: meaningful.length > 1 && period === 'итого' ? 0.75 : 0.85,
+          provenance: provenanceAt(st, {
+            document_id: documentId, method: 'table', quote: clipQuote(trimmed), model: null, prompt_version: null,
+          }, lineStart + Math.max(0, line.indexOf(trimmed.slice(0, 1)))),
         }
-        continue
+        const seenKey = `${canon}|${period ?? ''}`
+        const prev = seen.get(seenKey)
+        if (prev) {
+          if (prev.value !== field.value && prev.provenance) {
+            prev.provenance.alternatives = [...(prev.provenance.alternatives ?? []), {
+              value: field.value, quote: field.provenance?.quote ?? null, page: field.provenance?.page ?? null,
+            }].slice(0, 3)
+          }
+          continue
+        }
+        seen.set(seenKey, field)
+        fields.push(field)
       }
-      seen.set(canon, field)
-      fields.push(field)
     }
   }
   return { fields, candidateRows, matchedRows }

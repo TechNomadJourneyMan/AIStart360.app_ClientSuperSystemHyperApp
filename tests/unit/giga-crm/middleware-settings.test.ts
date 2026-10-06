@@ -1,23 +1,19 @@
 /**
- * Platform settings enforced in middleware: maintenance mode, mandatory
- * staff 2FA and the break-glass switch.
+ * Platform settings enforced in middleware: maintenance mode and mandatory
+ * staff 2FA; the panel has no shared-password entry any more, only the
+ * test-only E2E seam outside production.
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { NextRequest, NextResponse } from 'next/server'
 
 const s = vi.hoisted(() => ({
-  settings: { maintenance: { enabled: false, message: '', until: '' }, break_glass_enabled: true, staff_require_mfa: false },
+  settings: { maintenance: { enabled: false, message: '', until: '' }, staff_require_mfa: false },
   user: null as null | { id: string; user_metadata: Record<string, unknown> },
   role: 'client',
   staffRow: null as null | { role: string },
-  gigaCookie: false,
 }))
 
 vi.mock('@/lib/settings/edge', () => ({ edgeSettings: async () => s.settings }))
-vi.mock('@/lib/giga-cookie-edge', () => ({
-  GIGA_COOKIE_NAME: 'aistart360_giga',
-  verifyGigaRoleEdge: async (v?: string) => (v && s.gigaCookie ? 'super_admin' : null),
-}))
 vi.mock('@/lib/mfa/step-up-edge', () => ({ MFA_COOKIE_NAME: 'mfa', verifyStepUpEdge: async () => false }))
 vi.mock('@/lib/platform/sections-edge', () => ({ blockedSectionFor: async () => null }))
 vi.mock('@/lib/impersonation/edge', () => ({
@@ -41,19 +37,22 @@ vi.mock('@/lib/supabase/middleware', () => ({
 }))
 
 const { middleware } = await import('@/middleware')
+const { E2E_SEAM_COOKIE_NAME, signE2eSeamCookie } = await import('@/lib/admin/e2e-auth-seam-edge')
 const get = (path: string, cookie = '') => middleware(new NextRequest(`http://localhost${path}`, { headers: cookie ? { cookie } : {} }))
 const loc = (r: Response) => r.headers.get('location') ?? ''
 
 beforeEach(() => {
-  s.settings = { maintenance: { enabled: false, message: '', until: '' }, break_glass_enabled: true, staff_require_mfa: false }
+  s.settings = { maintenance: { enabled: false, message: '', until: '' }, staff_require_mfa: false }
   s.user = { id: 'u1', user_metadata: {} }
   s.role = 'client'
   s.staffRow = null
-  s.gigaCookie = false
+})
+afterEach(() => {
+  vi.unstubAllEnvs()
 })
 
 describe('maintenance mode', () => {
-  it('sends clients and owners to /maintenance', async () => {
+  it('sends clients and (legacy) owners to /maintenance', async () => {
     s.settings.maintenance.enabled = true
     const r = await get('/client/home')
     expect(r.status).toBe(307)
@@ -99,15 +98,44 @@ describe('mandatory staff 2FA', () => {
   })
 })
 
-describe('break-glass switch', () => {
-  it('shared-password cookie opens the panel only while enabled', async () => {
+describe('no shared-password entry', () => {
+  it('the retired break-glass cookie does not open the panel', async () => {
     s.user = null
-    s.gigaCookie = true
-    expect((await get('/admin-giga-panel', 'aistart360_giga=x')).status).toBe(200)
-    s.settings.break_glass_enabled = false
-    const r = await get('/admin-giga-panel', 'aistart360_giga=x')
+    const r = await get('/admin-giga-panel', 'aistart360_giga=v1.forged.token')
     expect(r.status).toBe(307)
     expect(loc(r)).toContain('/giga-login')
+  })
+
+  it('a signed-in non-staff user is sent to /giga-login (which only links to the personal /login)', async () => {
+    s.role = 'client'
+    expect(loc(await get('/admin-giga-panel'))).toContain('/giga-login')
+    s.role = 'super_admin'
+    expect(loc(await get('/giga-login'))).toMatch(/\/admin-giga-panel$/)
+  })
+})
+
+describe('E2E auth seam (test-only)', () => {
+  const SECRET = 'middleware-seam-secret-0123456789abcd'
+  const USER = '6a0b5c3d-2e1f-4a7b-9c8d-1e2f3a4b5c6d'
+
+  it('an authentic seam cookie renders the panel shell outside production', async () => {
+    s.user = null
+    vi.stubEnv('E2E_AUTH_SEAM_SECRET', SECRET)
+    const cookie = `${E2E_SEAM_COOKIE_NAME}=${await signE2eSeamCookie(USER)}`
+    expect((await get('/admin-giga-panel/agents', cookie)).status).toBe(200)
+    expect(loc(await get('/giga-login', cookie))).toMatch(/\/admin-giga-panel$/)
+  })
+
+  it('is ignored in production, without the secret and when forged', async () => {
+    s.user = null
+    vi.stubEnv('E2E_AUTH_SEAM_SECRET', SECRET)
+    const cookie = `${E2E_SEAM_COOKIE_NAME}=${await signE2eSeamCookie(USER)}`
+    expect(loc(await get('/admin-giga-panel', `${E2E_SEAM_COOKIE_NAME}=${USER}.${'A'.repeat(43)}`))).toContain('/giga-login')
+    vi.stubEnv('NODE_ENV', 'production')
+    expect(loc(await get('/admin-giga-panel', cookie))).toContain('/giga-login')
+    vi.stubEnv('NODE_ENV', 'test')
+    vi.stubEnv('E2E_AUTH_SEAM_SECRET', '')
+    expect(loc(await get('/admin-giga-panel', cookie))).toContain('/giga-login')
   })
 })
 

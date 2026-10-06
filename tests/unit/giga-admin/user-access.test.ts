@@ -13,11 +13,20 @@ const db = vi.hoisted(() => ({
   lastPatch: null as Record<string, unknown> | null,
 }))
 const audit = vi.hoisted(() => ({ fn: vi.fn() }))
+// W8: tier changes go through the billing service (subscriptions + profiles.tier).
+const billing = vi.hoisted(() => ({ setPlan: vi.fn(async () => ({ applied: true })) }))
+vi.mock('@/lib/payments/billing', () => ({ setPlan: billing.setPlan }))
 
-vi.mock('@/lib/giga-cookie', () => ({
-  GIGA_COOKIE_NAME: 'giga',
-  verifyGigaRole: () => giga.role,
-}))
+// Panel access comes from a personal staff session (the shared-password
+// break-glass cookie was removed); the REAL RBAC matrix decides permissions.
+vi.mock('@/lib/admin/giga-actor', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/admin/giga-actor')>()
+  const { makeRequireGiga } = await import('../_giga-guard')
+  return {
+    ...actual,
+    requireGiga: makeRequireGiga(() => (giga.role === 'super_admin' ? { id: '00000000-0000-4000-8000-0000000000aa', kind: 'session', role: 'super_admin' as const } : null)),
+  }
+})
 vi.mock('@/lib/audit', () => ({ logAudit: (...a: unknown[]) => audit.fn(...a) }))
 vi.mock('@/lib/supabase-service', () => ({
   createServiceClient: () => ({
@@ -55,6 +64,7 @@ describe('giga-admin user access PATCH', () => {
     db.error = null
     db.lastPatch = null
     audit.fn.mockReset()
+    billing.setPlan.mockClear()
   })
 
   it('403 for non-super_admin', async () => {
@@ -63,10 +73,16 @@ describe('giga-admin user access PATCH', () => {
     expect(res.status).toBe(403)
   })
 
-  it('updates tier and audits', async () => {
+  it('changes tier only through the billing service (never a bare profiles update)', async () => {
     const res = await PATCH(req({ tier: 'pro' }), { params: { id: UID } })
     expect(res.status).toBe(200)
-    expect(db.lastPatch).toEqual({ tier: 'pro' })
+    expect(billing.setPlan).toHaveBeenCalledWith(expect.objectContaining({ userId: UID, tier: 'pro', source: 'admin' }))
+    expect(db.lastPatch).toBeNull()
+  })
+
+  it('updates feature_flags and audits', async () => {
+    const res = await PATCH(req({ feature_flags: { ai_chat: true } }), { params: { id: UID } })
+    expect(res.status).toBe(200)
     expect(audit.fn).toHaveBeenCalled()
   })
 
@@ -79,7 +95,7 @@ describe('giga-admin user access PATCH', () => {
 
   it('409 when 0 rows updated (profile missing or migration 048 not applied)', async () => {
     db.updated = []
-    const res = await PATCH(req({ tier: 'free' }), { params: { id: UID } })
+    const res = await PATCH(req({ feature_flags: { pdf_export: false } }), { params: { id: UID } })
     expect(res.status).toBe(409)
     expect(audit.fn).not.toHaveBeenCalled()
   })
@@ -88,5 +104,6 @@ describe('giga-admin user access PATCH', () => {
     expect((await PATCH(req({ tier: 'gold' }), { params: { id: UID } })).status).toBe(422)
     expect((await PATCH(req({}), { params: { id: UID } })).status).toBe(422)
     expect((await PATCH(req({ tier: 'pro' }), { params: { id: 'nope' } })).status).toBe(400)
+    expect(billing.setPlan).not.toHaveBeenCalled()
   })
 })

@@ -14,10 +14,16 @@ vi.mock('@/lib/supabase-service', () => ({
   },
 }))
 
-vi.mock('@/lib/giga-cookie', () => ({
-  GIGA_COOKIE_NAME: 'aistart360_giga',
-  verifyGigaRole: () => state.role,
-}))
+// Panel access comes from a personal staff session (the shared-password
+// break-glass cookie was removed); the REAL RBAC matrix decides permissions.
+vi.mock('@/lib/admin/giga-actor', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/admin/giga-actor')>()
+  const { makeRequireGiga } = await import('../_giga-guard')
+  return {
+    ...actual,
+    requireGiga: makeRequireGiga(() => (state.role === 'super_admin' ? { id: '00000000-0000-4000-8000-0000000000aa', kind: 'session', role: 'super_admin' as const } : null)),
+  }
+})
 
 vi.mock('@/lib/audit', () => ({
   logAudit: vi.fn().mockResolvedValue(undefined),
@@ -59,7 +65,7 @@ function makeSbStub({
 function makeReq(id: string, body: unknown) {
   return new NextRequest(`http://localhost/api/giga-admin/requests/${id}`, {
     method: 'PATCH',
-    headers: { 'content-type': 'application/json', cookie: 'aistart360_giga=x' },
+    headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
   })
 }

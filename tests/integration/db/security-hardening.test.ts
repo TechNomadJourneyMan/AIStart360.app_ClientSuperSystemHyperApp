@@ -17,11 +17,11 @@ describe.skipIf(!dbTestsEnabled)('083 security hardening', () => {
         expect(rows[0]).toEqual({ role: 'client', status: 'pending_approval' })
       }))
 
-    it('allows the owner role from user metadata, still pending', () =>
+    it('turns a self-claimed owner role into a pending client (099 removed owner sign-up)', () =>
       inRollback(async (db) => {
         const id = await seedUser(db, { userMeta: { role: 'owner' } })
         const { rows } = await db.query('SELECT role, status FROM public.profiles WHERE id = $1', [id])
-        expect(rows[0]).toEqual({ role: 'owner', status: 'pending_approval' })
+        expect(rows[0]).toEqual({ role: 'client', status: 'pending_approval' })
       }))
 
     it('trusts role and status from app metadata (service-role only)', () =>

@@ -52,10 +52,10 @@ const DRAWER_SECTIONS = [
     title: 'Система',
     items: [
       { label: 'Уведомления',href: '/notifications',icon: 'notifications'   },
-      { label: 'Пользователи',href: '/users',       icon: 'manage_accounts' },
+      { label: 'Пользователи',href: '/admin-giga-panel/users', icon: 'manage_accounts' },
       { label: 'Профиль',    href: '/profile',      icon: 'account_circle'  },
       { label: 'Настройки',  href: '/settings',     icon: 'settings'        },
-      { label: 'Админ',      href: '/admin',        icon: 'admin_panel_settings'},
+      { label: 'Заявки',     href: '/admin-giga-panel/requests', icon: 'admin_panel_settings'},
     ],
   },
 ]

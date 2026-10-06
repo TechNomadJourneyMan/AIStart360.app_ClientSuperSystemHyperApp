@@ -18,8 +18,9 @@ import type { Permission } from '@/lib/admin/rbac'
  *    resolveExpert) may read CLIENT accounts only — never staff, owners or
  *    other experts.
  *
- * Reads then go through the service client: break-glass admins have no
- * Supabase session, so an RLS-scoped client silently returned nothing.
+ * Reads then go through the service client: a staff_cookie actor (during
+ * impersonation) has no own Supabase session, so an RLS-scoped client would
+ * silently return nothing.
  */
 export async function authorizeUserDataRead(
   req: NextRequest,

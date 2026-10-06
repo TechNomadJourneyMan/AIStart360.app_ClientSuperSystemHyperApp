@@ -65,12 +65,21 @@ describe('buildMetricSummaries', () => {
     expect(out[1]).toMatchObject({ trend: -25, trendAbs: -5000, trendDirection: 'down', trendLabel: 'к прошлому значению', isDefault: false })
   })
 
-  it('picks the most recent row per metric and names a net-margin proxy honestly', () => {
+  it('picks the most recent row per metric (the single «current value» rule)', () => {
     const out = buildMetricSummaries(['biz.finansy.valovaya_marzha'], [
       row('biz.finansy.valovaya_marzha', 30, { computed_at: '2026-09-01T00:00:00Z', source: 'document' }),
-      row('biz.finansy.valovaya_marzha', 18, { provenance: { picked: { type: 'survey', key: 's9n_net_margin' } } }),
+      row('biz.finansy.valovaya_marzha', 18, { source: 'calculated', provenance: { picked: { type: 'formula', formula: 'gross_margin' } } }),
     ], [])
-    expect(out[0]).toMatchObject({ rawValue: 18, label: 'Чистая маржа', displayValue: '18%' })
+    // Gross margin is never the step-9 net margin any more (W4) — the label is the metric's own.
+    expect(out[0]).toMatchObject({ rawValue: 18, label: 'Валовая маржа', displayValue: '18%' })
+  })
+
+  it('on equal computation time the stronger source wins', () => {
+    const out = buildMetricSummaries(['biz.finansy.vyruchka_god'], [
+      row('biz.finansy.vyruchka_god', 40_000_000, { source: 'survey' }),
+      row('biz.finansy.vyruchka_god', 52_000_000, { source: 'document' }),
+    ], [])
+    expect(out[0].rawValue).toBe(52_000_000)
   })
 })
 

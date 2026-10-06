@@ -194,17 +194,19 @@ export default function GrowthSnapshotHero({ visibleSections }: { visibleSection
   // month × 12. Dividing by 36 showed a 15 М/мес goal as 5 М/мес.
   const monthlyPlan3y = target3y ? Math.round(target3y / 12) : null
 
-  // Current revenue: the owner's own current-month answer (survey step 1) →
-  // the annual-revenue metric averaged per month (anketa step 9 / P&L) →
-  // unknown. The monthly answer wins because the annual metric may describe a
-  // past year. The old fallback «58 % of plan · оценка» showed a made-up number.
+  // Current revenue: the annual-revenue metric of the single metrics source
+  // (lib/metrics/company-metrics.ts — the same value as the Metrics page,
+  // Точка А and Точка Б; it already reads the step-1 «текущая выручка» before
+  // older yearly answers, and a P&L before both) averaged per month → the
+  // step-1 monthly answer while metrics are not materialised yet → unknown.
+  // The old fallback «58 % of plan · оценка» showed a made-up number.
   const surveyMonthly = onboarding?.survey?.current_revenue_month ?? null
-  const isSurveyRevenue = surveyMonthly !== null && surveyMonthly > 0
-  const isLiveRevenue = !isSurveyRevenue && liveMonthlyRevenue !== null && liveMonthlyRevenue > 0
-  const currentMonthly: number | null = isSurveyRevenue
-    ? Math.round(surveyMonthly!)
-    : isLiveRevenue
-      ? Math.round(liveMonthlyRevenue!)
+  const isLiveRevenue = liveMonthlyRevenue !== null && liveMonthlyRevenue > 0
+  const isSurveyRevenue = !isLiveRevenue && surveyMonthly !== null && surveyMonthly > 0
+  const currentMonthly: number | null = isLiveRevenue && liveMonthlyRevenue !== null
+    ? Math.round(liveMonthlyRevenue)
+    : isSurveyRevenue && surveyMonthly !== null
+      ? Math.round(surveyMonthly)
       : null
   const runRate12 = currentMonthly ? currentMonthly * 12 : null
 

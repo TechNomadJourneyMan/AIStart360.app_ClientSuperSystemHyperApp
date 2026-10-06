@@ -171,7 +171,7 @@ function auditActor(actor: ProviderActor) {
   }
   return {
     id: actor.id,
-    kind: actor.id.startsWith('giga:') ? ('break_glass' as const) : ('session' as const),
+    kind: 'session' as const,
     email: actor.label,
     role,
   }

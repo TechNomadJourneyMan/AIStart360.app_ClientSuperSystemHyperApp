@@ -6,6 +6,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { createServiceClient } from '@/lib/supabase-service'
 import { logAudit } from '@/lib/audit'
+import { BillingError, KASPI_WEBHOOK_ACTOR, addMonths, getEffectivePlan, setPlan } from '@/lib/payments/billing'
 
 /**
  * POST /api/webhooks/kaspi — платёжный callback Kaspi-эквайринга.
@@ -18,13 +19,16 @@ import { logAudit } from '@/lib/audit'
  * Kaspi и при необходимости поправить SIGNATURE_HEADER.
  *
  * Обработка идемпотентна: повторный callback по уже завершённой транзакции
- * отвечает 200 без побочных эффектов.
+ * отвечает 200 без побочных эффектов. Статус транзакции и тариф меняются
+ * одной SQL-транзакцией (billing_set_plan с p_payment_tx), поэтому повтор
+ * после потерянного ответа или дубль доставки не продлевает период дважды.
  *
  * Успешный платёж:
- *   1. payment_transactions.status → succeeded (по externalId = paymentId);
- *   2. upsert подписки (tier pro, status active, период для monthly-планов);
- *   3. profiles.tier → 'pro' (немедленные entitlements, миграция 048);
- *   4. запись в журнал аудита (актор 'kaspi:webhook').
+ *   1. billing-сервис (lib/payments/billing.ts): подписка pro/active (период
+ *      для monthly-планов) и profiles.tier = 'pro' одной транзакцией;
+ *   2. payment_transactions.status → succeeded (по externalId = paymentId) —
+ *      в той же транзакции, что и шаг 1;
+ *   3. запись в журнал аудита (актор 'kaspi:webhook').
  */
 
 const SIGNATURE_HEADER = 'x-kaspi-signature'
@@ -127,41 +131,40 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'amount_mismatch' }, { status: 409 })
     }
 
-    await prisma.paymentTransaction.update({
-      where: { id: tx.id },
-      data: { status: 'succeeded' },
-    })
-
-    // Подписка: monthly-план получает период, one-time — бессрочный доступ Pro.
-    const isMonthly = (tx.planKey ?? '').includes('monthly')
-    const currentPeriodEnd = isMonthly
-      ? new Date(Date.now() + 31 * 24 * 60 * 60 * 1000)
-      : null
+    // Тариф: monthly-план получает период (продление от конца текущего
+    // оплаченного периода, если он ещё идёт), one-time — бессрочный Pro.
+    // Единственный писатель — billing-сервис: subscriptions + profiles.tier
+    // в одной транзакции (миграция 106) вместе со статусом платежа: при сбое
+    // отвечаем 500, ничего не записано, транзакция остаётся pending и
+    // повторный callback Kaspi доведёт дело до конца; уже зачтённый платёж
+    // повторно не применяется.
+    const userId = await resolveUserId(tx.orgId)
+    let planResult: Awaited<ReturnType<typeof setPlan>>
     try {
-      await prisma.subscription.upsert({
-        where: { orgId: tx.orgId },
-        create: {
-          orgId: tx.orgId,
-          tier: 'pro',
-          status: 'active',
-          provider: 'kaspi',
-          currentPeriodEnd,
-        },
-        update: { tier: 'pro', status: 'active', provider: 'kaspi', currentPeriodEnd },
+      const current = await getEffectivePlan({ orgId: tx.orgId, userId })
+      const live = current.status === 'active' || current.status === 'past_due'
+      const isMonthly = (tx.planKey ?? '').includes('monthly')
+      const now = new Date()
+      const base = live && current.periodEnd && new Date(current.periodEnd) > now ? new Date(current.periodEnd) : now
+      planResult = await setPlan({
+        orgId: tx.orgId,
+        userId,
+        tier: live && current.tier === 'enterprise' ? 'enterprise' : 'pro',
+        periodEnd: isMonthly ? addMonths(base, 1) : null,
+        source: 'kaspi',
+        provider: 'kaspi',
+        actor: KASPI_WEBHOOK_ACTOR,
+        paymentTransactionId: tx.id,
+        meta: { transaction_id: tx.id, payment_id: paymentId, plan_key: tx.planKey },
       })
     } catch (e) {
-      console.error('[webhooks/kaspi] subscription upsert failed:', e)
+      console.error('[webhooks/kaspi] plan update failed:', e instanceof BillingError ? e.code : e)
+      return NextResponse.json({ error: 'plan_update_failed' }, { status: 500 })
     }
 
-    // Немедленные entitlements: profiles.tier = 'pro' (миграция 048).
-    const userId = await resolveUserId(tx.orgId)
-    if (userId) {
-      try {
-        const svc = createServiceClient()
-        await svc.from('profiles').update({ tier: 'pro' }).eq('id', userId)
-      } catch (e) {
-        console.error('[webhooks/kaspi] profiles.tier update failed:', e)
-      }
+    if (!planResult.applied) {
+      // A concurrent duplicate got here first: the payment is already final.
+      return NextResponse.json({ ok: true, note: 'already_finalized' })
     }
 
     await logAudit({
@@ -176,7 +179,7 @@ export async function POST(req: NextRequest) {
           planKey: tx.planKey,
           amount: tx.amount,
           currency: tx.currency,
-          tier: 'pro',
+          tier: planResult.after?.tier ?? 'pro',
         },
       },
     })

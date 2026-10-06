@@ -40,7 +40,9 @@ interface LogAuditOptions {
 export async function logAudit(opts: LogAuditOptions, throwOnError = false): Promise<void> {
   // Primary journal: admin_audit_log (migration 073) — what GIGA-CRM shows.
   const diff = (opts.diff ?? {}) as Record<string, unknown>
-  const kind = typeof diff.actorKind === 'string' ? (diff.actorKind as 'session' | 'break_glass' | 'staff_cookie') : (opts.performedBy.startsWith('giga:') ? 'break_glass' : 'session')
+  // ('break_glass' is no longer written: the shared-password entry was removed.)
+  const kind: 'session' | 'staff_cookie' | 'telegram' =
+    diff.actorKind === 'staff_cookie' || diff.actorKind === 'telegram' ? diff.actorKind : 'session'
   const written = await recordAdminAction(
     { id: opts.performedBy, kind },
     {

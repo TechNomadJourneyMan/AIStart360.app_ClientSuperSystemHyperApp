@@ -1,7 +1,6 @@
 export const dynamic = "force-dynamic"
 
 import type { Metadata } from 'next'
-import { auth } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
 import { FileArea } from '@/components/point-a/FileArea'
 import PointAQuickToolbar from '@/components/point-a/PointAQuickToolbar'
@@ -27,8 +26,6 @@ import { requireServiceRoleKey } from '@/lib/supabase-service'
 export const metadata: Metadata = { title: 'Точка А — Текущее состояние' }
 
 export default async function PointAPage() {
-  const session = await auth()
-
   // Identity comes from the Supabase session only. The old forgeable
   // `aistart360_user_id` / `aistart360_role` cookies are NOT consulted — they
   // let a signed-in user load another user's data (IDOR). Audit 2026-07-02.
@@ -41,7 +38,7 @@ export default async function PointAPage() {
     // Supabase auth not available
   }
 
-  let clientId = supabaseUserId ?? session?.user?.id ?? null
+  const clientId = supabaseUserId
 
   // Fetch data from Supabase REST API (bypasses RLS). The overall score, its
   // date and the documents count live in <ExecutiveOverview/> (level 1) —

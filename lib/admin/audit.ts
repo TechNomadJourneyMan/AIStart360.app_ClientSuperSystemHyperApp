@@ -21,8 +21,11 @@ export interface AuditEntry {
   impersonationSessionId?: string | null
 }
 
-/** 'telegram' — a linked staff member acting through the admin bot (lib/telegram/bots/admin). */
-type AuditActor = { id: string; kind: GigaActor['kind'] | 'telegram' } & Partial<Pick<GigaActor, 'role' | 'email'>>
+/**
+ * 'telegram' — a linked staff member acting through the admin bot (lib/telegram/bots/admin).
+ * 'system'   — no person: a scheduled job or a provider webhook (lib/payments/billing).
+ */
+export type AuditActor = { id: string; kind: GigaActor['kind'] | 'telegram' | 'system' } & Partial<Pick<GigaActor, 'role' | 'email'>>
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const MAX_JSON = 64 * 1024

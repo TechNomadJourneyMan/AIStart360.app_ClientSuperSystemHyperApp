@@ -4,16 +4,17 @@ import type { NavItem, UserRole } from '@/types'
 // keeps them in ADMIN_PATHS — a CLIENT hitting them is silently redirected to
 // /dashboard, so they must NOT appear in the client sidebar (dead links).
 // (manager/analyst were legacy Prisma roles that never exist at runtime; expert
-// and owner navigate in their own route groups with their own sidebars.)
+// navigates in its own route group. 'owner' is a legacy role treated as a
+// client — the separate owner cabinet was removed.)
 const STAFF_ROLES: UserRole[] = ['super_admin', 'admin']
 // What a CLIENT may actually open — mirrors middleware CLIENT_DASHBOARD_PATHS.
-const CLIENT_OK: UserRole[] = ['super_admin', 'admin', 'client']
+const CLIENT_OK: UserRole[] = ['super_admin', 'admin', 'client', 'owner']
 
 // PRIMARY navigation — shown directly in the sidebar
 export const PRIMARY_NAV: NavItem[] = [
   // The client's landing page (survey profile + GRI status). Lives outside the
   // (dashboard) group, so this entry is the way back to it from the portal.
-  { label: 'Мой профиль', href: '/client/home', icon: 'badge', roles: ['client'] },
+  { label: 'Мой профиль', href: '/client/home', icon: 'badge', roles: ['client', 'owner'] },
   { label: 'Дэшборд',   href: '/dashboard', icon: 'dashboard',   roles: CLIENT_OK },
   { label: 'GRI',       href: '/gri',        icon: 'radar',       roles: CLIENT_OK },
   // /pulse is now the lightweight CRM (own client base «Кому звонить сегодня»)
@@ -49,8 +50,10 @@ export const SECONDARY_NAV: NavItem[] = [
   { label: 'Команда',      href: '/team',         icon: 'group',             roles: STAFF_ROLES },
   { label: 'Уведомления',  href: '/notifications',icon: 'notifications',     roles: CLIENT_OK },
   { label: 'Психопрофиль', href: '/profile/psych',icon: 'psychology',        roles: CLIENT_OK },
-  { label: 'Пользователи', href: '/users',        icon: 'manage_accounts',   roles: STAFF_ROLES },
-  { label: 'Админ',        href: '/admin',        icon: 'admin_panel_settings', roles: STAFF_ROLES },
+  // User management and registration requests live in the GIGA panel (the old
+  // /users and /admin screens were removed).
+  { label: 'Пользователи', href: '/admin-giga-panel/users',    icon: 'manage_accounts',      roles: STAFF_ROLES },
+  { label: 'Заявки',       href: '/admin-giga-panel/requests', icon: 'admin_panel_settings', roles: STAFF_ROLES },
 ]
 
 // Legacy flat list (for backward compat)
@@ -77,14 +80,15 @@ export const ROLE_LABELS: Record<UserRole, string> = {
   super_admin: 'Супер-админ',
 }
 
-// Role permissions map. owner is an elevated business role (≈ super_admin);
-// expert validates AI output and reads assigned clients.
+// Role permissions map. expert validates AI output and reads client data.
+// 'owner' is a legacy role that now behaves exactly like a client.
+const CLIENT_PERMISSIONS = ['own.gri', 'own.reports', 'own.profile', 'support']
 export const ROLE_PERMISSIONS: Record<UserRole, string[]> = {
   super_admin: ['*'],
-  owner:       ['*'],
+  owner:       CLIENT_PERMISSIONS,
   admin:       ['clients.*', 'reports.*', 'analytics.*', 'team.*', 'settings.*', 'billing.*'],
   expert:      ['clients.read', 'reports.read', 'analytics.read', 'intelligence.read'],
-  client:      ['own.gri', 'own.reports', 'own.profile', 'support'],
+  client:      CLIENT_PERMISSIONS,
 }
 
 export function hasPermission(role: UserRole, permission: string): boolean {

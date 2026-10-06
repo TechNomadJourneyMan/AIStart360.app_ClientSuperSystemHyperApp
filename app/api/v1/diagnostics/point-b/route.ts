@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { calculatePointBV2, type PointBOptions, type PointBV2 } from '@/lib/point-b/engine'
 import type { PointA, BlockScore } from '@/types/onboarding'
-import { REVENUE_METRIC_IDS } from '@/lib/metrics/catalog-helpers'
+import { loadPointBMetricOptions } from '@/lib/point-b/metrics'
 
 /**
  * GET /api/v1/diagnostics/point-b
@@ -105,22 +105,11 @@ export async function GET(_req: NextRequest) {
 
     const griTop5 = mapGriTop5(gri?.top_5_limits)
 
-    // 4. Current revenue from the metrics layer (the newer s1_* survey captures
-    //    only goals, not current revenue). Best-effort: needs a linked company.
-    let currentRevenueYear: number | null = null
+    // 4. Current revenue + lever values from the single metrics source
+    //    (lib/metrics/company-metrics.ts — what the Metrics page, the dashboard
+    //    and Точка А show). Needs a linked company.
     const companyId = (diag.company_id as string | null) ?? null
-    if (companyId) {
-      const { data: revRows } = await sb
-        .from('metrics')
-        .select('metric_value, period_year')
-        .eq('company_id', companyId)
-        .in('metric_key', [...REVENUE_METRIC_IDS])
-        .gt('metric_value', 0)
-        .order('period_year', { ascending: false })
-        .limit(1)
-      const v = revRows?.[0]?.metric_value
-      if (v != null && Number.isFinite(Number(v))) currentRevenueYear = Number(v)
-    }
+    const metricOptions = await loadPointBMetricOptions(sb, companyId)
 
     // 4b. Goals from the Point A goal widget (companies.target_revenue_12m/3y_kzt,
     //     annual KZT). Canonical source — keeps Точка Б in sync with Точка А.
@@ -143,7 +132,7 @@ export async function GET(_req: NextRequest) {
     const pointB = calculatePointBV2(pointA, answers, {
       diagnosticId: diag.id as string,
       griTop5,
-      currentRevenueYear,
+      ...metricOptions,
       goal12mYear,
       goal3yYear,
     })

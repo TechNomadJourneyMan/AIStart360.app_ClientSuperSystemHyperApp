@@ -9,6 +9,7 @@
 // survey + document inputs before calling.
 // ============================================================
 
+import { resolveAllMetrics } from '@/lib/metrics/resolver'
 import type {
   AiCommsBlock,
   ClientBlock,
@@ -158,6 +159,14 @@ export interface AggregatorDocumentContext {
 export interface AggregatorV3Input {
   /** Survey answers keyed by question_key (s1..s12). */
   surveyAnswers?: Record<string, unknown>
+  /**
+   * Current metric values of the company keyed by registry id — the single
+   * source (lib/metrics/company-metrics.ts) the Metrics page, dashboard,
+   * Точка А and Точка Б read. Used after the document roll-ups and before the
+   * older-form survey keys. When absent and `surveyAnswers` are given, they
+   * are resolved from the answers with the same resolver (survey + formulas).
+   */
+  metrics?: Readonly<Record<string, number | null | undefined>>
   /** Roll-up of parsed_data from uploaded documents. */
   documents?: AggregatorDocumentContext
   /** Optional company row (industry, stage, business_model). */
@@ -245,9 +254,9 @@ function buildSales(input: AggregatorV3Input): SalesBlock {
   const s2avgCheck = num(ans.s2_avg_check)
 
   const N = firstNonNull(calcN(docs.sales_count ?? null), s3deals2025)
-  const Rev = firstNonNull(calcRev(docs.revenue_total ?? null), s2rev2025)
-  const AOV = firstNonNull(calcAOV(Rev, N), s2avgCheck)
-  const NewCount = firstNonNull(calcNew(docs.new_clients_count ?? null), s2newClients2025)
+  const Rev = firstNonNull(calcRev(docs.revenue_total ?? null), metricOf(input, V3_METRIC.revenue), s2rev2025)
+  const AOV = firstNonNull(calcAOV(Rev, N), metricOf(input, V3_METRIC.avgCheck), s2avgCheck)
+  const NewCount = firstNonNull(calcNew(docs.new_clients_count ?? null), metricOf(input, V3_METRIC.newClients), s2newClients2025)
   const RevNew = calcRevNew(docs.revenue_from_new ?? null)
   const AOVnew = calcAOVnew(RevNew, NewCount)
   const Ret = firstNonNull(
@@ -367,11 +376,11 @@ function buildClient(input: AggregatorV3Input, sales: SalesBlock): ClientBlock {
 
   // LTV: prefer survey-declared; otherwise compute from avg_check × avg_purchases (doc).
   const computedLTV = calcLTV(s2avgCheck, docs.avg_purchases_per_client ?? null)
-  const LTV = firstNonNull(s2ltv, computedLTV)
+  const LTV = firstNonNull(metricOf(input, V3_METRIC.ltv), s2ltv, computedLTV)
 
-  // CAC: budget / New. Fall back to survey-declared CAC.
+  // CAC: budget / New. Fall back to the metric (single source), then survey-declared CAC.
   const computedCAC = calcCAC(docs.marketing_budget ?? null, newCount)
-  const CAC = firstNonNull(computedCAC, s2cac)
+  const CAC = firstNonNull(computedCAC, metricOf(input, V3_METRIC.cac), s2cac)
 
   const CPL = calcCPL(docs.marketing_budget ?? null, docs.leads_count ?? null)
   const LTVtoCAC = calcLTVtoCAC(LTV, CAC)
@@ -618,6 +627,7 @@ function buildFinance(input: AggregatorV3Input, sales: SalesBlock): FinanceBlock
   const surveyGrossMargin = num(ans.s2_gross_margin) // percent
   const GrossMargin = firstNonNull(
     calcGrossMargin(GrossProfit, Rev),
+    metricOf(input, V3_METRIC.grossMargin),
     surveyGrossMargin,
   )
 
@@ -987,6 +997,33 @@ function buildAiComms(input: AggregatorV3Input): AiCommsBlock {
   }
 }
 
+// ─── Single metrics source ──────────────────────────────────
+
+const V3_METRIC = {
+  revenue: 'biz.finansy.vyruchka_god',
+  avgCheck: 'biz.prodazhi.sredniy_chek',
+  newClients: 'goal.01.kolichestvo_novykh_klientov',
+  ltv: 'goal.04.ltv',
+  cac: 'biz.marketing.cac',
+  grossMargin: 'biz.finansy.valovaya_marzha',
+} as const
+
+function metricOf(input: AggregatorV3Input, id: string): number | null {
+  const v = input.metrics?.[id]
+  return typeof v === 'number' && Number.isFinite(v) ? v : null
+}
+
+/** The resolver's values for the answers (survey keys of every wizard version + formulas). */
+function metricsFromAnswers(input: AggregatorV3Input): Record<string, number | null> {
+  if (!input.surveyAnswers || Object.keys(input.surveyAnswers).length === 0) return {}
+  const values = resolveAllMetrics({
+    companyId: '', userId: '', surveyAnswers: input.surveyAnswers, documents: [], now: input.now ?? new Date(),
+  })
+  const out: Record<string, number | null> = {}
+  for (const id of Object.values(V3_METRIC)) out[id] = values.find((v) => v.metricId === id)?.numeric ?? null
+  return out
+}
+
 // ─── Public entrypoint ──────────────────────────────────────
 
 /**
@@ -994,7 +1031,8 @@ function buildAiComms(input: AggregatorV3Input): AiCommsBlock {
  * Pure / synchronous so it can be called from any layer (API,
  * tests, server actions). No I/O.
  */
-export function aggregatePointAV3(input: AggregatorV3Input = {}): PointAV3 {
+export function aggregatePointAV3(rawInput: AggregatorV3Input = {}): PointAV3 {
+  const input: AggregatorV3Input = { ...rawInput, metrics: rawInput.metrics ?? metricsFromAnswers(rawInput) }
   const sales = buildSales(input)
   const client = buildClient(input, sales)
   const retention = buildRetention(input, sales)

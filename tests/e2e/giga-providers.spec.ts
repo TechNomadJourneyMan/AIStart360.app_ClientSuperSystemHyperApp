@@ -4,25 +4,35 @@
  * `openrouter` and `alem` with the model `alemllm`). Read paths only —
  * mutations need the Supabase audit journal, which is not reachable here.
  *
- * Runs only when E2E_DATABASE_URL is set; the dev server must use the same
- * database and a cookie secret:
+ * Runs only when E2E_DATABASE_URL and E2E_AUTH_SEAM_SECRET are set; the dev
+ * server must use the same database and the same seam secret (≥32 chars):
  *
  *   node scripts/test-db/setup.mjs --db aistart360_e2e
  *   export E2E_DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/aistart360_e2e
+ *   export E2E_AUTH_SEAM_SECRET=$(openssl rand -hex 32)
  *   DATABASE_URL=$E2E_DATABASE_URL DIRECT_URL=$E2E_DATABASE_URL GIGA_COOKIE_SECRET=e2e-secret-0123456789 \
  *     NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:9 NEXT_PUBLIC_SUPABASE_ANON_KEY=e2e SUPABASE_SERVICE_ROLE_KEY=e2e \
  *     npx playwright test tests/e2e/giga-providers.spec.ts --project=desktop-chromium
  *
- * Access is the break-glass cookie (super_admin; Supabase is not reachable).
+ * Access: a seeded super_admin + the test-only E2E auth seam cookie
+ * (tests/e2e/giga-seam.ts; Supabase is not reachable here).
  */
 import { expect, test } from '@playwright/test'
-import { signGigaRole } from '@/lib/giga-cookie'
+import { seedSeamSuperAdmin, type SeamStaff } from './giga-seam'
 
 const DB = process.env.E2E_DATABASE_URL
-test.skip(!DB, 'E2E_DATABASE_URL is not set')
+test.skip(!DB || !process.env.E2E_AUTH_SEAM_SECRET, 'E2E_DATABASE_URL / E2E_AUTH_SEAM_SECRET is not set')
+
+let staff: SeamStaff
+test.beforeAll(async () => {
+  staff = await seedSeamSuperAdmin(DB!)
+})
+test.afterAll(async () => {
+  await staff?.cleanup()
+})
 
 test.beforeEach(async ({ context, baseURL }) => {
-  await context.addCookies([{ name: 'aistart360_giga', value: signGigaRole('super_admin'), url: baseURL! }])
+  await staff.login(context, baseURL!)
 })
 
 test('the page lists the seeded providers alem and openrouter with their models', async ({ page }) => {

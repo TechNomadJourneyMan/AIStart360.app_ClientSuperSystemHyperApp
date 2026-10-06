@@ -6,10 +6,12 @@ export const dynamic = 'force-dynamic'
 export default function CheckoutSuccessPage({
   searchParams,
 }: {
-  searchParams: { plan?: string }
+  searchParams: { plan?: string; demo?: string }
 }) {
   const planKey = searchParams.plan ?? ''
   const plan = getPlan(planKey)
+  // demo=1: arrived from the stub gateway — nothing was paid, nothing changed.
+  const demo = searchParams.demo === '1'
 
   return (
     <div className="relative overflow-hidden min-h-screen bg-surface text-on-surface flex items-center justify-center px-6 py-16">
@@ -21,25 +23,32 @@ export default function CheckoutSuccessPage({
         </div>
 
         <h1 className="font-headline text-3xl font-extrabold leading-tight">
-          Оплата прошла успешно
+          {demo ? 'Демонстрация завершена' : 'Платёж отправлен'}
         </h1>
         <p className="mt-4 text-on-surface-variant leading-relaxed">
-          {plan ? (
+          {demo ? (
             <>
-              Тариф <span className="text-primary font-semibold">{plan.label}</span> активирован.
+              Оплата не проводилась, тариф{plan ? <> <span className="text-primary font-semibold">{plan.label}</span></> : null} не
+              подключён. Пока онлайн-оплата не работает, тариф назначает администратор платформы —
+              напишите нам, и мы подключим его вручную.
             </>
           ) : (
-            <>Доступ активирован.</>
-          )}{' '}
-          Это демонстрационная оплата — реальное списание не производилось.
+            <>
+              Тариф{plan ? <> <span className="text-primary font-semibold">{plan.label}</span></> : null} включится
+              автоматически, как только платёжный сервис подтвердит оплату. Текущий статус — в разделе
+              «Настройки › Биллинг».
+            </>
+          )}
         </p>
 
-        <div className="mt-8 inline-flex items-center gap-2 bg-tertiary-container/15 border border-tertiary-container/30 px-3 py-1.5 rounded-full">
-          <span className="material-symbols-outlined text-tertiary-container text-sm">science</span>
-          <span className="text-xs font-mono text-tertiary-container uppercase tracking-[0.2em]">
-            Заглушка эквайринга
-          </span>
-        </div>
+        {demo && (
+          <div className="mt-8 inline-flex items-center gap-2 bg-tertiary-container/15 border border-tertiary-container/30 px-3 py-1.5 rounded-full">
+            <span className="material-symbols-outlined text-tertiary-container text-sm">science</span>
+            <span className="text-xs font-mono text-tertiary-container uppercase tracking-[0.2em]">
+              Заглушка эквайринга
+            </span>
+          </div>
+        )}
 
         <div className="mt-10 flex flex-col gap-3">
           <Link

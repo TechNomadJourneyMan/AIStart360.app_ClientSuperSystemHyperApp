@@ -79,7 +79,7 @@ export function GigaSidebar({ isOpen = false, onClose }: GigaSidebarProps) {
       await fetch('/api/giga-admin/auth', { method: 'DELETE' })
       if (me?.kind === 'session') await createClient().auth.signOut()
     } finally {
-      window.location.href = me?.kind === 'break_glass' ? '/giga-login' : loginPath
+      window.location.href = loginPath
     }
   }
 
@@ -149,13 +149,13 @@ export function GigaSidebar({ isOpen = false, onClose }: GigaSidebarProps) {
 
       <div className="px-3 pb-5">
         <div className="flex items-center gap-3 rounded-xl border border-white/[0.05] bg-white/[0.03] px-3 py-2.5">
-          <div className={cx('flex h-7 w-7 items-center justify-center rounded-lg', me?.kind === 'break_glass' ? 'bg-red-500/20 text-red-400' : 'bg-blue-500/20 text-blue-300')}>
+          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-500/20 text-blue-300">
             <Shield size={13} />
           </div>
           <div className="min-w-0 flex-1">
             <p className="truncate text-[11px] font-semibold text-slate-300">{me?.roleLabel ?? '…'}</p>
             <p className="truncate text-[10px] text-slate-600" title={me?.email ?? undefined}>
-              {me?.kind === 'break_glass' ? 'Аварийный вход (общий пароль)' : me?.email ?? ''}
+              {me?.email ?? ''}
             </p>
           </div>
           <button onClick={logout} title="Выйти из панели" aria-label="Выйти из панели" className="text-slate-600 transition-colors hover:text-red-400">

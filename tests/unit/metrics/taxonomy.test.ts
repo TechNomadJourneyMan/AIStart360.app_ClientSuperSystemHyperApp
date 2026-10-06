@@ -81,8 +81,11 @@ describe('metric taxonomy', () => {
     const maturity = registry.filter((e) => ['automation', 'digital', 'management'].includes(categoryForMetric(e)))
     expect(maturity.length).toBeGreaterThanOrEqual(15)
     for (const e of maturity) {
-      const surveyKeys = e.sources.flatMap((s) => (s.type === 'survey' ? [...(s.keys ?? []), ...(s.key ? [s.key] : [])] : []))
-      expect(surveyKeys.length, e.id).toBeGreaterThan(0)
+      const surveyKeys = e.sources.flatMap((s) => (s.type === 'survey' && !s.legacy ? [...(s.keys ?? []), ...(s.key ? [s.key] : [])] : []))
+      // A metric the questionnaire cannot answer honestly (online-sales share,
+      // site visits) reads a document field instead — never an unrelated key.
+      const hasDocument = e.sources.some((s) => s.type === 'document')
+      expect(surveyKeys.length > 0 || hasDocument, e.id).toBe(true)
       for (const k of surveyKeys) expect(SURVEY_KEY_STEP[k], `${e.id} → ${k}`).toBeDefined()
     }
   })

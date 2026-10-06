@@ -15,7 +15,16 @@ import {
   KPI_DESCRIPTIONS,
   METRIC_GOAL_DESCRIPTIONS,
 } from './descriptions'
+import type { MetricDescription, GoalMetricDescription } from './descriptions'
 import type { MetricEntry, MetricNamespace } from './types'
+
+/** period / range of a description, when declared. */
+function shape(desc: Pick<MetricDescription | GoalMetricDescription, 'period' | 'range'>): Pick<MetricEntry, 'period' | 'range'> {
+  return {
+    ...(desc.period ? { period: desc.period } : {}),
+    ...(desc.range ? { range: desc.range } : {}),
+  }
+}
 
 // ─── Slug helper ─────────────────────────────────────────────
 
@@ -68,6 +77,7 @@ export function getMetricRegistry(): MetricEntry[] {
         label,
         unit: desc.unit ?? inferUnit(label),
         ...(desc.valueKind ? { valueKind: desc.valueKind } : {}),
+        ...shape(desc),
         sources: desc.sources,
       })
     }
@@ -79,7 +89,8 @@ export function getMetricRegistry(): MetricEntry[] {
       id: `kpi.${slugifyLabel(label)}`,
       namespace: 'kpi',
       label,
-      unit: inferUnit(label),
+      unit: desc.unit ?? inferUnit(label),
+      ...shape(desc),
       sources: desc.sources,
     })
   }
@@ -90,7 +101,8 @@ export function getMetricRegistry(): MetricEntry[] {
       id: `gri.${slugifyLabel(label)}`,
       namespace: 'gri',
       label,
-      unit: '',
+      unit: desc.unit ?? '',
+      ...shape(desc),
       sources: desc.sources,
     })
   }
@@ -104,6 +116,7 @@ export function getMetricRegistry(): MetricEntry[] {
         goalNumber: goal.number,
         label: item.label,
         unit: item.unit ?? inferUnit(item.label, item.formula),
+        ...shape(item),
         formula: item.formula,
         sources: item.sources,
       })

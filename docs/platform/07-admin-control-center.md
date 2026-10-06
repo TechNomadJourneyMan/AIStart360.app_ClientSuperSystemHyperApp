@@ -27,20 +27,24 @@
 
 `/super-expert/**` — тот же код (`components/giga-panel/pages/*`) с урезанной навигацией (`lib/admin/nav.ts:54-72`); не отдельная реализация.
 
-Слабые места GIGA сегодня: MFA step-up проверяется только для страниц, не для API (`verifyStepUp` без вызовов); break-glass-действия не атрибутируются человеку (`giga:super_admin`); мёртвый `components/giga-panel/GigaAccessGuard.tsx`.
+Слабые места GIGA сегодня: MFA step-up проверяется только для страниц, не для API (`verifyStepUp` без вызовов); ~~break-glass-действия не атрибутируются человеку (`giga:super_admin`)~~ — вход по общему паролю удалён (W1); мёртвый `GigaAccessGuard.tsx` — удаляется в W1.
+
+**Вход в панель (с W1, миграция 099).** Только личный аккаунт сотрудника: `/login` (email+пароль, ссылка на почту или Google в Supabase Auth) → второй фактор `/2fa` → `/admin-giga-panel`. Страница `/giga-login` лишь ведёт на `/login?from=/admin-giga-panel`; `/login` теперь соблюдает безопасный `?from=` и для известной роли (`lib/role-landing.ts` `postLoginPath`). Сотрудник, у которого роль только в `staff_roles` (profiles.role = 'client'), приземляется в своей панели (SuperExpert — в `/super-expert`), а не в клиентском кабинете. Миграция **099** делает `technomadjourneyman@gmail.com` super_admin (profiles + `staff_roles`), перечисляет прочих super_admin без понижения и перечисляет одобренные профили с legacy-ролью `admin` без `staff_roles` — доступа они **не** получают (решение владельца: пока в панель входит только он; выдать — GIGA → «Сотрудники»). Выход — `DELETE /api/giga-admin/auth` (чистит staff-cookie) + `signOut`. Для E2E — тестовый шов `lib/admin/e2e-auth-seam-edge.ts` (сид super_admin + cookie с HMAC под `E2E_AUTH_SEAM_SECRET`; в production-сборке код-путь мёртв).
+
+**Роль `owner`** (бывшая вкладка «Команда AIStart360» на регистрации) — legacy: приложение обращается с ней как с клиентом (middleware, навигация, лендинг, `/api/pulse` больше не отдаёт все сделки и всех клиентов). Регистрация создаёт только клиентов; триггер `handle_new_user` (099) больше не выдаёт `owner`. Сколько таких профилей осталось — NOTICE миграции 099 или `SELECT count(*) FROM public.profiles WHERE role = 'owner';`.
 
 ## 2. Legacy-поверхности (вывести)
 
 | Поверхность | Маршруты | Почему | Замена | Фаза |
 |---|---|---|---|---|
-| Legacy «/admin» | `/admin`, `/admin/requests` | Prisma-эпоха; другие guard-ы; дублирует GIGA | Редирект в GIGA | 13 |
-| `/api/admin/*` (16) | overview, requests, audit, users… | `lib/rbac.ts` (expert→MANAGER открывает API экспертам); `overview` принимает break-glass без `break_glass_enabled` | `/api/giga-admin/*` | 13 |
+| Legacy «/admin» | `/admin`, `/admin/requests` | Prisma-эпоха; другие guard-ы; дублирует GIGA | ✅ W1: удалено, middleware ведёт `/admin*` → GIGA (персонал) | — |
+| `/api/admin/*` (16) | overview, requests, audit, users… | `lib/rbac.ts` (expert→MANAGER открывает API экспертам); `overview` принимал break-glass | ✅ W1: удалено → `/api/giga-admin/*` | — |
 | `/api/v1/admin/*` (5) | approve-user, users/[id]/approve\|reject, pending-users, clients | Нет проверки статуса/ранга/MFA: admin блокирует super_admin; `clients` вызывает `auth.admin.createUser` на anon-клиенте (всегда падает) | GIGA `requests` (`users.approve` + `forbidTarget`) | 2 (закрыть), 13 (удалить) |
-| `/owner/**` | 19 страниц, 15 — реэкспорты | `/owner/admin` сломан по дизайну (owner → CLIENT) | Клиентский кабинет + GIGA | 13 |
-| `(dashboard)/users`, `/team` | — | localStorage-мок; Prisma `user` | GIGA `/users`, `/staff` | 13 |
+| `/owner/**` | 19 страниц, 15 — реэкспорты | `/owner/admin` сломан по дизайну (owner → CLIENT) | ✅ W1: удалено вместе с `OwnerSidebar/OwnerHeader`; owner = клиент | — |
+| `(dashboard)/users`, `/team` | — | localStorage-мок; Prisma `user` | ✅ W1: `/users` удалено (+ `shared/api/{users,auth}.service.ts`) → GIGA `/admin-giga-panel/users`; `/team` — позже | 13 |
 | `(dashboard)/intelligence`, `/reports`, `/analytics` | — | Константы, заглушки, фильтры без обработчиков | GIGA «ИИ-агенты» / отчёты | 13 |
-| `/api/notifications*` + Prisma `notifications` | — | NextAuth-only, недостижимо; `send` — латентный спам-вектор | `notification_events` | 7, 13 |
-| `app/actions/auth.ts`, `app/actions/reports.ts` | — | Нет вызовов; запись на диск Vercel, cookie-атрибуция | — | 13 |
+| `/api/notifications*` + Prisma `notifications` | — | NextAuth-only, недостижимо; `send` — латентный спам-вектор | ✅ W1: маршруты удалены (таблица остаётся) | — |
+| `app/actions/auth.ts`, `app/actions/reports.ts` | — | Нет вызовов; запись на диск Vercel, cookie-атрибуция | ✅ W1: `auth.ts` и `diagnostics.ts` удалены; `reports.ts` остаётся | 13 |
 
 ## 3. Новый раздел «ИИ-агенты»
 

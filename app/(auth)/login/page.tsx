@@ -6,7 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { useAuthStore } from '@/stores/auth.store'
 import { Logo } from '@/components/ui/Logo'
 import { safeInternalPath } from '@/lib/safe-redirect'
-import { roleLandingPath } from '@/lib/role-landing'
+import { postLoginPath } from '@/lib/role-landing'
 
 function LoginContent() {
   const [email, setEmail] = useState('')
@@ -21,7 +21,8 @@ function LoginContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   // Only honour internal `from` targets — never redirect off-origin.
-  const from = safeInternalPath(searchParams.get('from'), '/dashboard')
+  const rawFrom = searchParams.get('from')
+  const from = safeInternalPath(rawFrom, '/dashboard')
 
   useEffect(() => {
     if (user) {
@@ -34,11 +35,12 @@ function LoginContent() {
         router.push('/client/welcome')
         return
       }
-      // FE-06: role→home via the single roleLandingPath; fall back to the
-      // (already same-origin-validated) return path only for an unknown role.
-      router.push(user.role ? roleLandingPath(user.role, user.status) : from)
+      // FE-06: an explicit same-origin `?from=` wins (e.g. the GIGA panel
+      // sends staff to /login?from=/admin-giga-panel); otherwise the single
+      // role landing, which also routes staff_roles-only staff to their panel.
+      router.push(postLoginPath({ role: user.role, status: user.status, staffRole: user.staffRole, from: rawFrom }))
     }
-  }, [user, from, router])
+  }, [user, rawFrom, router])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()

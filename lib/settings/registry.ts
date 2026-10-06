@@ -96,11 +96,6 @@ export const SETTINGS = {
     help: 'Выключите, если роль SuperExpert должна только смотреть данные. Каждый вход от имени и так ограничен по времени и пишется в журнал.',
     schema: z.boolean(), default: true, critical: true,
   },
-  break_glass_enabled: {
-    group: 'security', label: 'Аварийный вход по общему паролю',
-    help: 'Выключите, когда у всех администраторов есть личные аккаунты. Выключить можно только из личного аккаунта Super Admin.',
-    schema: z.boolean(), default: true, critical: true,
-  },
   analytics_enabled: {
     group: 'analytics', label: 'Сбор поведенческой аналитики',
     help: 'Просмотры страниц, клики и время в разделах. Ключевые события (регистрация, анкета, GRI) пишутся всегда — на них строятся CJM и воронка.',

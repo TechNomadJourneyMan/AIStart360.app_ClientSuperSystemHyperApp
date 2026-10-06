@@ -9,7 +9,6 @@ export const ENV_CHECKS: EnvCheck[] = [
   { key: 'NEXT_PUBLIC_SUPABASE_URL', label: 'Supabase URL', required: true },
   { key: 'NEXT_PUBLIC_SUPABASE_ANON_KEY', label: 'Supabase anon key', required: true },
   { key: 'SUPABASE_SERVICE_ROLE_KEY', label: 'Supabase service key', required: true },
-  { key: 'GIGA_ADMIN_PASSWORD', label: 'Пароль аварийного входа', required: false },
   { key: 'GIGA_COOKIE_SECRET', label: 'Секрет подписи cookie и сессий «от имени»', required: true, anyOf: ['GIGA_COOKIE_SECRET', 'AUTH_SECRET', 'NEXTAUTH_SECRET'] },
   { key: 'OPENROUTER_API_KEY', label: 'OpenRouter (ИИ)', required: true },
   { key: 'RESEND_API_KEY', label: 'Resend (почта)', required: false },

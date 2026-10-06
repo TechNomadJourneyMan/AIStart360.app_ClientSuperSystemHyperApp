@@ -2,21 +2,27 @@ import { describe, it, expect, vi } from 'vitest'
 import { NextRequest, NextResponse } from 'next/server'
 
 const ALLOWED_ROLES = new Set(['admin', 'expert', 'owner', 'client', 'super_admin'])
+// Optional staff_roles row of the signed-in user (cookie `test_staff_role`).
 
 vi.mock('@/lib/supabase/middleware', () => ({
   updateSession: async (request: NextRequest) => {
     const roleCookie = request.cookies.get('aistart360_role')?.value
     const hasValidRole = Boolean(roleCookie && ALLOWED_ROLES.has(roleCookie))
     const role = roleCookie ?? null
+    const staffRole = request.cookies.get('test_staff_role')?.value ?? null
 
     return {
       response: NextResponse.next({ request }),
       user: hasValidRole ? { id: `user-${role}` } : null,
       supabase: {
-        from: () => ({
+        from: (table: string) => ({
           select: () => ({
             eq: () => ({
-              maybeSingle: async () => ({ data: hasValidRole ? { role } : null }),
+              maybeSingle: async () => ({
+                data: !hasValidRole ? null
+                  : table === 'staff_roles' ? (staffRole ? { role: staffRole } : null)
+                  : { role, status: 'approved' },
+              }),
             }),
           }),
         }),
@@ -27,14 +33,17 @@ vi.mock('@/lib/supabase/middleware', () => ({
 
 import { middleware } from '../../middleware'
 
-function createRequest(pathname: string, roleCookie?: string): NextRequest {
+function createRequest(pathname: string, roleCookie?: string, staffRole?: string): NextRequest {
   const url = new URL(pathname, 'http://localhost:3000')
   const req = new NextRequest(url)
   if (roleCookie) {
     req.cookies.set('aistart360_role', roleCookie)
   }
+  if (staffRole) req.cookies.set('test_staff_role', staffRole)
   return req
 }
+
+const location = (res: Response) => new URL(res.headers.get('location')!).pathname
 
 describe('RBAC Middleware', () => {
   // T017: /dashboard without cookie → redirect to login
@@ -123,11 +132,20 @@ describe('RBAC Middleware', () => {
     expect(new URL(res.headers.get('location')!).pathname).toBe('/dashboard')
   })
 
-  it('redirects client away from admin-only /users', async () => {
-    const req = createRequest('/users', 'client')
-    const res = await middleware(req)
-    expect(res.status).toBe(307)
-    expect(new URL(res.headers.get('location')!).pathname).toBe('/dashboard')
+  it('the removed /users and /admin screens send staff to the GIGA panel, others to their home', async () => {
+    for (const path of ['/users', '/admin', '/admin/requests']) {
+      expect(location(await middleware(createRequest(path, 'client')))).toBe('/dashboard')
+      expect(location(await middleware(createRequest(path, 'admin')))).toBe('/admin-giga-panel')
+      expect(location(await middleware(createRequest(path, 'expert')))).toBe('/expert/dashboard')
+    }
+  })
+
+  it('the legacy owner role is a client: no owner cabinet, no staff pages', async () => {
+    expect(location(await middleware(createRequest('/owner/dashboard', 'owner')))).toBe('/dashboard')
+    expect(location(await middleware(createRequest('/clients', 'owner')))).toBe('/dashboard')
+    expect(location(await middleware(createRequest('/login', 'owner')))).toBe('/dashboard')
+    expect((await middleware(createRequest('/point-a', 'owner'))).status).toBe(200)
+    expect((await middleware(createRequest('/owner/dashboard', 'owner'))).headers.get('location')).not.toContain('/owner/')
   })
 
   // Admin can access admin paths
@@ -157,6 +175,13 @@ describe('RBAC Middleware', () => {
     const res = await middleware(req)
     expect(res.status).toBe(307)
     expect(new URL(res.headers.get('location')!).pathname).toBe('/dashboard')
+  })
+
+  it('a staff member whose profile is a client lands in their panel, not the client cabinet', async () => {
+    expect(location(await middleware(createRequest('/login', 'client', 'super_admin')))).toBe('/admin-giga-panel')
+    expect(location(await middleware(createRequest('/login', 'client', 'support')))).toBe('/admin-giga-panel')
+    expect(location(await middleware(createRequest('/login', 'client', 'super_expert')))).toBe('/super-expert')
+    expect(location(await middleware(createRequest('/login', 'admin', 'admin')))).toBe('/admin-giga-panel')
   })
 
   it('redirects authenticated client from /login to /dashboard', async () => {

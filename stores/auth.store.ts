@@ -25,6 +25,8 @@ export interface PublicUser {
   email:         string
   role:          UserRole | null
   status?:       UserStatus
+  /** `staff_roles.role` when the user is AIStart360 staff (GIGA panel / SuperExpert). */
+  staffRole?:    string | null
   organization?: string
   position?:     string
   avatar?:       string
@@ -80,9 +82,12 @@ async function confirmEmailForDev(email: string): Promise<void> {
 }
 
 function normalizeRole(role: string | null | undefined): UserRole {
-  if (role === 'super_admin' || role === 'admin' || role === 'expert' || role === 'owner' || role === 'client') {
+  if (role === 'super_admin' || role === 'admin' || role === 'expert' || role === 'client') {
     return role
   }
+  // Legacy 'owner' accounts are clients (same as middleware): client UI,
+  // client plan limits, client landing.
+  if (role === 'owner') return 'client'
   if (role === 'manager' || role === 'analyst') {
     return 'expert'
   }
@@ -96,11 +101,20 @@ async function buildUserFromSession(user: {
   user_metadata?: Record<string, unknown>
 }) {
   const supabase = createClient()
-  const profileRes = await supabase
-    .from('profiles')
-    .select('full_name, role, organization, position, status')
-    .eq('id', user.id)
-    .maybeSingle()
+  // The own staff_roles row is readable under RLS; it decides the landing of
+  // staff whose profiles.role is 'client' (lib/role-landing.ts).
+  const [profileRes, staffRes] = await Promise.all([
+    supabase
+      .from('profiles')
+      .select('full_name, role, organization, position, status')
+      .eq('id', user.id)
+      .maybeSingle(),
+    supabase
+      .from('staff_roles')
+      .select('role')
+      .eq('user_id', user.id)
+      .maybeSingle(),
+  ])
 
   const fullName =
     typeof profileRes.data?.full_name === 'string'
@@ -127,6 +141,7 @@ async function buildUserFromSession(user: {
     name: fullName,
     role,
     status,
+    staffRole: typeof staffRes.data?.role === 'string' ? staffRes.data.role : null,
     createdAt: user.created_at ?? new Date().toISOString(),
     organization: typeof profileRes.data?.organization === 'string' ? profileRes.data.organization : (user.user_metadata?.organization as string),
     position: typeof profileRes.data?.position === 'string' ? profileRes.data.position : (user.user_metadata?.position as string),

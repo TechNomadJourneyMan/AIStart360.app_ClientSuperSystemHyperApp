@@ -1,14 +1,23 @@
 /**
  * lib/point-a/resolved-inputs.ts — metric values that feed the Point A rule
- * engine BEFORE survey answers (calculatePointA's second argument).
+ * engine BEFORE its own survey reading (calculatePointA's second argument).
  *
- * Only values that did NOT come from the questionnaire are used (documents,
- * manual entries, CRM / external systems): the engine already reads the
- * survey itself, with its own aliases.
+ * Since the metrics overhaul (W4) these are the company's CURRENT metric
+ * values from the single source (lib/metrics/company-metrics.ts) — survey,
+ * documents (incl. OCR), formulas — exactly what the Metrics catalog, the
+ * dashboard and Point B show. The engine falls back to its own survey reading
+ * only for inputs no metric holds.
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { PointAResolvedInputs } from '@/lib/point-a-engine'
 import type { MetricValue } from '@/lib/metrics/types'
+import {
+  companyMetricsFromRows,
+  companyMetricsFromValues,
+  loadCompanyMetrics,
+  type CompanyMetrics,
+  type MetricRowLike,
+} from '@/lib/metrics/company-metrics'
 
 /** Registry ids per engine input, most specific first. */
 export const RESOLVED_INPUT_METRICS = {
@@ -16,25 +25,36 @@ export const RESOLVED_INPUT_METRICS = {
   cac: ['biz.marketing.cac', 'goal.09.cac', 'goal.01.stoimost_privlecheniya_cac'],
   ltvCacRatio: ['biz.marketing.ltv_cac', 'goal.09.ltv_cac'],
   grossMargin: ['biz.finansy.valovaya_marzha'],
+  dealCycleDays: ['biz.prodazhi.tsikl_zakrytiya_sdelki', 'goal.08.sredniy_tsikl_zakrytiya'],
+  repeatSharePct: ['goal.02.repeat_purchase_rate', 'goal.04.repeat_purchase_rate'],
+  refusalPct: ['goal.06.loss_rate', 'goal.11.loss_rate'],
 } as const
 
 type InputKey = keyof typeof RESOLVED_INPUT_METRICS
 
-const NON_SURVEY_SOURCES = new Set(['document', 'manual', 'external', 'prisma'])
-
 /**
  * Inputs that may legitimately be zero or negative. A P&L with a negative gross
- * margin must win over the survey margin (the engine has rules for it); LTV,
- * CAC and LTV/CAC are only meaningful above zero.
+ * margin must win over the survey margin (the engine has rules for it); a 0 %
+ * repeat share or refusal rate is a real answer. LTV, CAC, LTV/CAC and the deal
+ * cycle are only meaningful above zero.
  */
 const SIGNED_INPUTS: ReadonlySet<InputKey> = new Set<InputKey>(['grossMargin'])
+const NON_NEGATIVE_INPUTS: ReadonlySet<InputKey> = new Set<InputKey>(['repeatSharePct', 'refusalPct'])
 
-function build(lookup: (metricId: string) => number | null): PointAResolvedInputs {
+function accepts(key: InputKey, v: number): boolean {
+  if (!Number.isFinite(v)) return false
+  if (SIGNED_INPUTS.has(key)) return true
+  if (NON_NEGATIVE_INPUTS.has(key)) return v >= 0
+  return v > 0
+}
+
+/** Engine inputs from the company's current metrics. */
+export function resolvedInputsFromMetrics(metrics: CompanyMetrics): PointAResolvedInputs {
   const out: PointAResolvedInputs = {}
   for (const key of Object.keys(RESOLVED_INPUT_METRICS) as InputKey[]) {
     for (const id of RESOLVED_INPUT_METRICS[key]) {
-      const v = lookup(id)
-      if (v !== null && Number.isFinite(v) && (v > 0 || SIGNED_INPUTS.has(key))) {
+      const v = metrics.get(id)?.value
+      if (v !== undefined && accepts(key, v)) {
         out[key] = v
         break
       }
@@ -45,49 +65,28 @@ function build(lookup: (metricId: string) => number | null): PointAResolvedInput
 
 /** From live resolver output (aggregator). */
 export function resolvedInputsFromValues(values: ReadonlyArray<MetricValue>): PointAResolvedInputs {
-  const byId = new Map(values.map((v) => [v.metricId, v]))
-  return build((id) => {
-    const v = byId.get(id)
-    return v && v.picked && NON_SURVEY_SOURCES.has(v.picked.type) ? v.numeric : null
-  })
+  return resolvedInputsFromMetrics(companyMetricsFromValues(values))
 }
 
-export interface ResolvedMetricRow {
-  metric_key: string
-  metric_value: number | string | null
-  source: string | null
-  computed_at?: string | null
-}
+export type ResolvedMetricRow = MetricRowLike
 
-/** From materialised public.metrics rows (recalculation). Newest non-survey row per key wins. */
+/** From materialised public.metrics rows (recalculation): the current row per key. */
 export function resolvedInputsFromMetricRows(rows: ReadonlyArray<ResolvedMetricRow>): PointAResolvedInputs {
-  const best = new Map<string, ResolvedMetricRow>()
-  for (const r of rows) {
-    if (!r.source || !NON_SURVEY_SOURCES.has(r.source) || r.metric_value === null) continue
-    const prev = best.get(r.metric_key)
-    if (!prev || Date.parse(r.computed_at ?? '') > Date.parse(prev.computed_at ?? '')) best.set(r.metric_key, r)
-  }
-  return build((id) => {
-    const r = best.get(id)
-    if (!r) return null
-    const n = Number(r.metric_value)
-    return Number.isFinite(n) ? n : null
-  })
+  return resolvedInputsFromMetrics(companyMetricsFromRows(rows))
 }
 
 /**
- * Read the materialised non-survey inputs of a company. A failed read throws:
- * «no document values» must never stand in for «could not read them» — the
- * caller would score from the survey alone and present it as the result.
+ * Read the materialised inputs of a company. A failed read throws: «no
+ * values» must never stand in for «could not read them» — the caller would
+ * score from the survey alone and present it as the result.
  */
 export async function loadResolvedInputs(client: SupabaseClient, companyId: string | null): Promise<PointAResolvedInputs> {
   if (!companyId) return {}
   const ids = Object.values(RESOLVED_INPUT_METRICS).flat()
-  const { data, error } = await client
-    .from('metrics')
-    .select('metric_key, metric_value, source, computed_at')
-    .eq('company_id', companyId)
-    .in('metric_key', ids)
-  if (error) throw new Error(`resolved inputs: metrics read failed (${error.code ?? 'unknown'})`)
-  return resolvedInputsFromMetricRows((data ?? []) as ResolvedMetricRow[])
+  try {
+    return resolvedInputsFromMetrics(await loadCompanyMetrics(client, companyId, ids))
+  } catch (err) {
+    const code = err instanceof Error ? err.message.match(/\(([^)]+)\)$/)?.[1] : undefined
+    throw new Error(`resolved inputs: metrics read failed (${code ?? 'unknown'})`)
+  }
 }

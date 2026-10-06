@@ -3,6 +3,7 @@ import { isAuthorizedCron } from '@/lib/cron-auth'
 import { drainQueue } from '@/lib/agents/queue'
 import { enqueueScheduledAgents } from '@/lib/functions/agents'
 import { redispatchPending } from '@/lib/events/platform'
+import { pruneRateLimits } from '@/lib/rate-limit'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -22,6 +23,7 @@ export async function GET(req: NextRequest) {
     const scheduled = await enqueueScheduledAgents(new Date())
     const redispatched = await redispatchPending()
     const drained = await drainQueue({ budgetMs: 240_000 })
+    const rateLimitsPruned = await pruneRateLimits() // expired rate_limit_hits rows (migration 100); never throws
     return NextResponse.json({
       ok: true,
       scheduled,
@@ -29,6 +31,7 @@ export async function GET(req: NextRequest) {
       reaped: drained.reaped,
       approvalsExpired: drained.approvalsExpired,
       sessionsFailed: drained.sessionsFailed,
+      rateLimitsPruned,
       executed: drained.executed.map((r) => ({ taskId: r.taskId, status: r.finalStatus, errorCode: r.errorCode })),
     })
   } catch (err) {

@@ -9,6 +9,7 @@ import {
   DEFAULT_PROVIDER,
   type AcquiringProviderName,
 } from '@/lib/payments'
+import { BillingError, getEffectivePlan, setPlan } from '@/lib/payments/billing'
 
 const VALID_PROVIDERS: AcquiringProviderName[] = [
   'stripe',
@@ -52,12 +53,15 @@ async function resolveOrgId(
  *
  * - Authenticates the user via the Supabase session.
  * - Resolves the billing org id.
- * - Trial plan → upserts a trialing subscription and returns { checkoutUrl: '/dashboard' }.
+ * - Trial plan → the billing service sets pilot/trialing in subscriptions and
+ *   Pro access in profiles.tier (once per person; never over a live plan) and
+ *   returns { checkoutUrl: '/dashboard' }.
  * - Paid plan → creates an acquiring checkout (stub), records a payment
  *   transaction, and returns the provider's checkoutUrl.
  *
- * All DB writes are wrapped so a not-yet-migrated table degrades gracefully
- * (the checkout still resolves to a usable URL) instead of returning a 500.
+ * The payment-transaction insert degrades gracefully when its table is
+ * missing; a trial that could not be written answers 503 instead of a
+ * dashboard link that grants nothing.
  */
 export async function POST(req: NextRequest) {
   // Resolve the session. A missing/misconfigured Supabase client (e.g. env vars
@@ -110,30 +114,37 @@ export async function POST(req: NextRequest) {
     const orgId = await resolveOrgId(sb, user.id)
     const customerEmail = user.email ?? undefined
 
-    // ── Trial: no payment, just provision a trialing subscription ──────────
+    // ── Trial: no payment. The billing service writes the trialing
+    // subscription AND profiles.tier in one transaction (migration 106). ────
     if (plan.kind === 'trial') {
       const trialDays = plan.trialDays ?? 30
-      const trialEndsAt = new Date(Date.now() + trialDays * 24 * 60 * 60 * 1000)
       try {
-        const { prisma } = await import('@/lib/db')
-        await prisma.subscription.upsert({
-          where: { orgId },
-          create: {
-            orgId,
-            tier: 'pilot',
-            status: 'trialing',
-            trialEndsAt,
-          },
-          update: {
-            tier: 'pilot',
-            status: 'trialing',
-            trialEndsAt,
-          },
+        const current = await getEffectivePlan({ userId: user.id })
+        if (current.status === 'active' || current.status === 'trialing' || current.status === 'past_due') {
+          // Already on a plan: a trial must never replace (downgrade) it.
+          return NextResponse.json({ checkoutUrl: '/dashboard' })
+        }
+        if (current.status !== 'free') {
+          return NextResponse.json(
+            { error: 'Пробный период уже был использован. Чтобы продлить доступ, обратитесь к администратору.' },
+            { status: 409 },
+          )
+        }
+        await setPlan({
+          userId: user.id,
+          tier: 'pilot',
+          periodEnd: new Date(Date.now() + trialDays * 24 * 60 * 60 * 1000),
+          source: 'trial',
+          actor: { id: user.id, kind: 'session', email: user.email ?? undefined },
+          req,
+          meta: { plan_key: planKey },
         })
       } catch (err) {
-        // Subscription table not yet migrated — still let the user into the
-        // pilot. The trial is a stub today; the dashboard renders regardless.
-        console.warn('[api/checkout] subscription upsert skipped:', err)
+        console.error('[api/checkout] trial not started:', err instanceof BillingError ? err.code : err)
+        return NextResponse.json(
+          { error: 'Не удалось включить пробный период. Попробуйте позже.' },
+          { status: 503 },
+        )
       }
       return NextResponse.json({ checkoutUrl: '/dashboard' })
     }

@@ -9,7 +9,11 @@
  *   - gri_assessments  → header chip + GRI tab
  *   - companies        → Goals tab (target_revenue_*_kzt)
  *   - metrics          → Biz tab + MetricsLiveCatalog
- *   - diagnostics      → KPI tab (survey-derived)
+ *   - diagnostics      → page refresh (Point A score)
+ *
+ * The KPI and Goals tabs read their values from GET /api/v1/metrics/catalog
+ * (components/metrics/NamespaceMetricsTab.tsx) — the same public.metrics rows
+ * as the catalog, the dashboard, Точка А and Точка Б — not from survey answers.
  */
 
 export interface GriAssessmentRow {

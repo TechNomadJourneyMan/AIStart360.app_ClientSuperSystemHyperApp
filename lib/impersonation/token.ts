@@ -22,7 +22,7 @@ export interface ImpersonationClaims extends Record<string, unknown> {
   /** target user id */
   uid: string
   mode: ImpersonationMode
-  /** admin id (profiles UUID or 'giga:super_admin') and a display label */
+  /** admin id (profiles UUID) and a display label */
   aid: string
   alabel: string
   /** admin staff role at start (for the audit trail) */

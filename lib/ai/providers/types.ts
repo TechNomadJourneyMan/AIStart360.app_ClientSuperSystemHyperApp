@@ -25,7 +25,7 @@ export type CostSource = 'provider' | 'model_price' | 'estimate'
  */
 export interface ProviderActor {
   kind: 'staff' | 'telegram'
-  /** Staff: profiles UUID (or 'giga:super_admin'); Telegram: the Telegram user id. */
+  /** Staff: profiles UUID; Telegram: the Telegram user id. */
   id: string
   /** Human-readable label for the audit log (email, @username). */
   label?: string

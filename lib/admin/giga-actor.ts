@@ -1,12 +1,12 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import type { User } from '@supabase/supabase-js'
-import { GIGA_COOKIE_NAME, verifyGigaRole } from '@/lib/giga-cookie'
 import { createServerClient } from '@/lib/supabase-server'
 import { createServiceClient } from '@/lib/supabase-service'
 import { signToken, verifyToken } from '@/lib/security/signed-token'
 import { getSetting } from '@/lib/settings/store'
 import { MFA_COOKIE_NAME, verifyStepUp } from '@/lib/mfa/step-up'
 import { mfaFlagsEnrolled } from '@/lib/mfa/flags'
+import { e2eSeamEnabled } from '@/lib/admin/e2e-auth-seam-edge'
 import { canManageTarget, hasPermission, isStaffRole, permissionsFor, type Permission, type StaffRole } from '@/lib/admin/rbac'
 
 /**
@@ -20,8 +20,14 @@ import { canManageTarget, hasPermission, isStaffRole, permissionsFor, type Permi
  *     session with the user's, so the panel keeps working through this cookie).
  *     The role is re-read from `staff_roles` on every request: revoking a role
  *     takes effect immediately.
- *  3. BREAK-GLASS — the shared-password HMAC cookie. Always super_admin,
- *     attributed to 'giga:super_admin' with kind 'break_glass'.
+ *
+ * The shared-password «break-glass» entry was removed (owner decision,
+ * 2026-10): there is no way into the panel without a personal account.
+ * 'break_glass' survives only as a label on historical audit rows.
+ *
+ * Test-only: the E2E auth seam (lib/admin/e2e-auth-seam-edge.ts) resolves a
+ * seeded user's real staff role from the database. It is compiled out of
+ * production builds and needs E2E_AUTH_SEAM_SECRET (≥32 chars) otherwise.
  *
  * Routes authorize with `requireGiga(req, permission)` — never with a bare
  * non-null check: different staff roles see different parts of the panel.
@@ -31,9 +37,9 @@ export const STAFF_COOKIE_NAME = 'aistart360_giga_staff'
 export const STAFF_COOKIE_TTL_SECONDS = 2 * 60 * 60
 
 export interface GigaActor {
-  /** profiles UUID for people; the literal 'giga:super_admin' for break-glass. */
+  /** profiles UUID of the staff member. */
   id: string
-  kind: 'session' | 'staff_cookie' | 'break_glass'
+  kind: 'session' | 'staff_cookie'
   role: StaffRole
   email?: string
   permissions: Permission[]
@@ -106,6 +112,14 @@ interface GigaResolution {
 }
 
 async function resolveGigaActor(req: NextRequest): Promise<GigaResolution> {
+  // 0) Test-only E2E seam: `false` in production builds, so this branch and
+  //    its module are never loaded there.
+  if (e2eSeamEnabled()) {
+    const { resolveE2eSeamIdentity } = await import('@/lib/admin/e2e-auth-seam')
+    const seam = await resolveE2eSeamIdentity(req.cookies)
+    if (seam) return { actor: actor(seam.userId, 'session', seam.role, seam.email), staff: true }
+  }
+
   let mfa: GigaMfaBlock | undefined
   let staffSession = false
   let unavailable = false
@@ -151,11 +165,6 @@ async function resolveGigaActor(req: NextRequest): Promise<GigaResolution> {
     }
   }
 
-  // 3) Break-glass signed cookie — unless switched off in platform settings.
-  if (verifyGigaRole(req.cookies.get(GIGA_COOKIE_NAME)?.value) === 'super_admin' && (await getSetting('break_glass_enabled'))) {
-    return { actor: actor('giga:super_admin', 'break_glass', 'super_admin'), staff: true }
-  }
-
   return { actor: null, mfa, staff: staffSession || unavailable, ...(unavailable ? { unavailable } : {}) }
 }
 
@@ -168,7 +177,7 @@ export async function getGigaActor(req: NextRequest): Promise<GigaActor | null> 
  * the browser's Supabase session. Minted ONLY for a personal session actor who
  * passed the second-factor gate in this request: a 'staff_cookie' actor must not
  * re-mint it (that would extend panel access indefinitely without a fresh
- * second factor), and break-glass has no person to attribute it to.
+ * second factor).
  */
 export async function signStaffCookie(a: GigaActor): Promise<string | null> {
   if (a.kind !== 'session') return null

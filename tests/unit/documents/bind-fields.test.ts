@@ -136,16 +136,16 @@ describe('resolveMetricIdForField — deterministic path', () => {
   })
 
   it('falls back to literal field-key scan when synonyms miss', () => {
-    // `unit_cost` is not in synonyms.ts but exists as a doc-source field on
-    // a biz metric — the literal-scan branch must catch it.
+    // A field whose key is literally a doc-source field (`sla_compliance`)
+    // binds even when its label says nothing a synonym knows.
     const id = resolveMetricIdForField(
-      field({ key: 'unit_cost', label: 'Unit Cost', value: 1234 }),
+      field({ key: 'sla_compliance', label: 'Колонка 7', value: 97 }),
       'ops_report'
     )
     expect(id).toBeTruthy()
     expect(
       getMetricById(id!)?.sources.some(
-        (s) => s.type === 'document' && s.field === 'unit_cost'
+        (s) => s.type === 'document' && s.field === 'sla_compliance'
       )
     ).toBe(true)
   })

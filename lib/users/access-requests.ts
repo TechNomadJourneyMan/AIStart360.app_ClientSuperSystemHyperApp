@@ -66,7 +66,7 @@ export async function decideAccessRequest(
       userId,
       status: args.action === 'approve' ? 'approved' : 'rejected',
       reason: args.reason,
-      // A person (session / Telegram) has a profiles UUID; break-glass does not.
+      // A person (session / Telegram) has a profiles UUID.
       approvedBy: args.actor.kind === 'session' || args.actor.kind === 'telegram' ? args.actor.id : undefined,
     })
     if (affected === 0) return { ok: false, reason: 'profile_not_found', userId }

@@ -6,6 +6,7 @@ import { z } from 'zod'
 import { createServerClient } from '@/lib/supabase-server'
 import { getSessionUser } from '@/lib/api-identity'
 import { isRateLimitedKey } from '@/lib/rate-limit'
+import { MFA_OTP_DAILY } from '@/lib/rate-limit/policies'
 import { decryptSecret } from '@/lib/crypto/secrets'
 import { verifyTOTP } from '@/lib/mfa/totp'
 import { findBackupCodeIndex } from '@/lib/mfa/backup-codes'
@@ -25,7 +26,7 @@ export async function POST(request: Request) {
   const user = await getSessionUser(sb)
   if (!user) return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 })
 
-  if (await isRateLimitedKey(user.id, 'mfa-challenge', { max: 10, windowMs: 5 * 60_000 })) {
+  if (await isRateLimitedKey(user.id, 'mfa-challenge', { max: 10, windowMs: 5 * 60_000 }) || await isRateLimitedKey(user.id, 'mfa-otp-day', MFA_OTP_DAILY)) {
     return NextResponse.json({ ok: false, error: 'Слишком много попыток. Попробуйте позже.' }, { status: 429 })
   }
 

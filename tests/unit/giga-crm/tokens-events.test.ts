@@ -40,7 +40,7 @@ describe('signed tokens', () => {
   })
 
   it('impersonation token carries mode and target', async () => {
-    const t = await signImpersonation({ sid: 'a', uid: 'b', mode: 'view', aid: 'giga:super_admin', alabel: 'x', tlabel: 'y' })
+    const t = await signImpersonation({ sid: 'a', uid: 'b', mode: 'view', aid: '00000000-0000-4000-8000-0000000000aa', alabel: 'x', tlabel: 'y' })
     const r = await readImpersonation(t)
     expect(r.ok && r.claims.mode).toBe('view')
   })

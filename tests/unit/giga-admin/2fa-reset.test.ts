@@ -3,10 +3,16 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 const state = vi.hoisted(() => ({ role: 'super_admin' as string | null }))
 const resetMock = vi.hoisted(() => ({ fn: vi.fn() as any }))
 
-vi.mock('@/lib/giga-cookie', () => ({
-  GIGA_COOKIE_NAME: 'aistart360_giga',
-  verifyGigaRole: () => state.role,
-}))
+// Panel access comes from a personal staff session (the shared-password
+// break-glass cookie was removed); the REAL RBAC matrix decides permissions.
+vi.mock('@/lib/admin/giga-actor', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/admin/giga-actor')>()
+  const { makeRequireGiga } = await import('../_giga-guard')
+  return {
+    ...actual,
+    requireGiga: makeRequireGiga(() => (state.role === 'super_admin' ? { id: '00000000-0000-4000-8000-0000000000aa', kind: 'session', role: 'super_admin' as const } : null)),
+  }
+})
 
 vi.mock('@/lib/mfa/store', () => ({
   adminResetUserMfa: (...args: any[]) => resetMock.fn(...args),
@@ -32,7 +38,7 @@ import { POST } from '@/app/api/giga-admin/users/[id]/2fa-reset/route'
 function makeReq() {
   return new NextRequest('http://localhost/api/giga-admin/users/u1/2fa-reset', {
     method: 'POST',
-    headers: { cookie: 'aistart360_giga=x' },
+    headers: {},
   })
 }
 

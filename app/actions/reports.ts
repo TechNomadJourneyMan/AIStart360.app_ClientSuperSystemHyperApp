@@ -140,7 +140,6 @@ export async function uploadReport(formData: FormData) {
     }, prisma)
 
     revalidatePath('/reports')
-    revalidatePath('/owner/reports')
     revalidatePath('/expert/reports')
 
     return { success: true }

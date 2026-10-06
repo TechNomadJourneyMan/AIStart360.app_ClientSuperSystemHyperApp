@@ -8,6 +8,7 @@ import Link from 'next/link'
 // (openGriBlockModal) to keep it out of the /metrics first-load bundle.
 import { formatSource, type MetricSource } from '@/lib/metrics/format'
 import MetricsLiveCatalog from '@/components/metrics/MetricsLiveCatalog'
+import NamespaceMetricsTab from '@/components/metrics/NamespaceMetricsTab'
 import { useRealtimeSync, type RealtimeSyncBinding } from '@/hooks/useRealtimeSync'
 import { GRI_SECTIONS, type SectionId } from '@/lib/gri-assessment/sections'
 import type {
@@ -182,97 +183,9 @@ function deriveInsights(assessment: GriAssessmentRow): Insight[] {
   return insights
 }
 
-// ─── KPI: from survey answers ────────────────────────────────────────────────
-interface KpiCard {
-  label: string
-  current: string
-  target: string
-  icon: string
-  category: string
-  method: string
-  owner: string
-}
-
-/**
- * Build the KPI list from real survey answers. We only emit a card if the
- * underlying answer is present — no mock fallbacks.
- *
- * Survey keys come from `lib/survey-labels.ts` / the medical onboarding form.
- * Known revenue / kpi answers live under stable keys (s6_*, s5_*).
- */
-function deriveKpis(survey: Record<string, unknown>, company: CompanyRow | null): KpiCard[] {
-  const cards: KpiCard[] = []
-  const fmtKzt = (n: number) => {
-    if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(2)} млрд ₸`
-    if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)} млн ₸`
-    if (n >= 1_000) return `${(n / 1_000).toFixed(0)} тыс ₸`
-    return `${Math.round(n)} ₸`
-  }
-
-  // 1. Revenue target (12m / 3y) from companies row → goals/financials
-  if (company?.target_revenue_12m_kzt && company.target_revenue_12m_kzt > 0) {
-    cards.push({
-      label: 'План выручки (12 мес)',
-      current: '—',
-      target: fmtKzt(company.target_revenue_12m_kzt),
-      icon: 'payments',
-      category: 'Финансы',
-      method: 'Из анкеты собственника',
-      owner: 'Собственник',
-    })
-  }
-  if (company?.target_revenue_3y_kzt && company.target_revenue_3y_kzt > 0) {
-    cards.push({
-      label: 'План выручки (3 года)',
-      current: '—',
-      target: fmtKzt(company.target_revenue_3y_kzt),
-      icon: 'rocket_launch',
-      category: 'Финансы',
-      method: 'Из анкеты собственника',
-      owner: 'Собственник',
-    })
-  }
-
-  // 2. Free-text survey goals (only if not numerically parsed yet)
-  const g12 = survey['s6_goal_12months']
-  if (
-    typeof g12 === 'string' &&
-    g12.trim().length > 0 &&
-    !(company?.target_revenue_12m_kzt && company.target_revenue_12m_kzt > 0)
-  ) {
-    cards.push({
-      label: 'Цель на 12 месяцев',
-      current: '—',
-      target: g12.trim().slice(0, 60),
-      icon: 'flag',
-      category: 'Рост',
-      method: 'Анкета: s6_goal_12months',
-      owner: 'Собственник',
-    })
-  }
-  const g3y = survey['s6_goal_3years']
-  if (
-    typeof g3y === 'string' &&
-    g3y.trim().length > 0 &&
-    !(company?.target_revenue_3y_kzt && company.target_revenue_3y_kzt > 0)
-  ) {
-    cards.push({
-      label: 'Цель на 3 года',
-      current: '—',
-      target: g3y.trim().slice(0, 60),
-      icon: 'rocket_launch',
-      category: 'Рост',
-      method: 'Анкета: s6_goal_3years',
-      owner: 'Собственник',
-    })
-  }
-
-  return cards
-}
-
-// ─── Goals tab: company revenue plan, period-over-period from /api/v1/point-a
-// We render the same 12m + 3y plan + survey free-text goals here as a clean
-// list. If user has no targets and no survey, render empty state.
+// ─── Goals tab: the owner's goals (revenue plan + goal texts of step 2) ─────
+// The goal METRICS (11 growth goals) render below from the single metrics
+// source (NamespaceMetricsTab); this block shows only what the owner set.
 interface GoalRow {
   id: string
   label: string
@@ -307,24 +220,32 @@ function deriveGoals(survey: Record<string, unknown>, company: CompanyRow | null
       description: 'Источник: anketa собственника · поле target_revenue_3y_kzt',
     })
   }
-  const g12 = survey['s6_goal_12months']
-  if (typeof g12 === 'string' && g12.trim().length > 0) {
+  // Current wizard (step 2) first; the older form's s6_goal_* only when absent.
+  const text = (keys: string[]): { key: string; value: string } | null => {
+    for (const k of keys) {
+      const v = survey[k]
+      if (typeof v === 'string' && v.trim().length > 0) return { key: k, value: v.trim() }
+    }
+    return null
+  }
+  const g12 = text(['s2n_goal_12m_what', 's6_goal_12months'])
+  if (g12) {
     rows.push({
       id: 'goal-12m',
       label: 'Цель на 12 месяцев (текст)',
       icon: 'flag',
-      value: g12.trim().slice(0, 120),
-      description: 'Источник: анкета s6_goal_12months',
+      value: g12.value.slice(0, 120),
+      description: `Источник: анкета, шаг 2 (${g12.key})`,
     })
   }
-  const g3y = survey['s6_goal_3years']
-  if (typeof g3y === 'string' && g3y.trim().length > 0) {
+  const g3y = text(['s2n_goal_3y_what', 's6_goal_3years'])
+  if (g3y) {
     rows.push({
       id: 'goal-3y',
       label: 'Цель на 3 года (текст)',
       icon: 'flag',
-      value: g3y.trim().slice(0, 120),
-      description: 'Источник: анкета s6_goal_3years',
+      value: g3y.value.slice(0, 120),
+      description: `Источник: анкета, шаг 2 (${g3y.key})`,
     })
   }
   return rows
@@ -638,10 +559,6 @@ export default function MetricsPageClient({
     () => (griAssessment ? deriveInsights(griAssessment) : []),
     [griAssessment],
   )
-  const kpis = useMemo<KpiCard[]>(
-    () => deriveKpis(surveyAnswers, company),
-    [surveyAnswers, company],
-  )
   const goals = useMemo<GoalRow[]>(
     () => deriveGoals(surveyAnswers, company),
     [surveyAnswers, company],
@@ -788,6 +705,13 @@ export default function MetricsPageClient({
               ))}
             </div>
           )}
+          <div className="pt-2">
+            <h2 className="font-headline text-xl font-bold text-on-surface">Метрики 11 целей роста</h2>
+            <p className="text-xs text-on-surface-variant mt-1 mb-4">
+              Значения из анкеты, документов и расчётов — те же, что в каталоге, на дашборде, в Точке А и Точке Б
+            </p>
+            <NamespaceMetricsTab namespace="goal" />
+          </div>
         </div>
       )}
 
@@ -797,52 +721,10 @@ export default function MetricsPageClient({
           <div>
             <h2 className="font-headline text-xl font-bold text-on-surface">KPI компании</h2>
             <p className="text-xs text-on-surface-variant mt-1">
-              Показатели на основе анкеты и целей собственника · обновляются в реальном времени
+              12 KPI из анкеты, документов и расчётов · обновляются в реальном времени
             </p>
           </div>
-          {kpis.length === 0 ? (
-            <EmptyState
-              icon="monitoring"
-              title="KPI ещё не настроены"
-              description="Чтобы увидеть KPI компании, заполните анкету Точки А — данные подтянутся автоматически."
-              ctaLabel="Заполнить анкету"
-              ctaHref="/client/onboarding"
-            />
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {kpis.map((kpi, i) => (
-                <div
-                  key={`${kpi.label}-${i}`}
-                  className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-5 hover:border-secondary/20 transition-colors"
-                >
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="w-10 h-10 rounded-xl bg-secondary/10 border border-secondary/20 flex items-center justify-center">
-                      <span className="material-symbols-outlined text-base text-secondary">{kpi.icon}</span>
-                    </div>
-                    <span className="text-[9px] font-mono uppercase px-2 py-0.5 bg-surface-container border border-white/[0.06] rounded-full text-on-surface-variant">
-                      {kpi.category}
-                    </span>
-                  </div>
-                  <p className="text-xs font-mono text-on-surface-variant mb-2 uppercase tracking-wider">{kpi.label}</p>
-                  <div className="flex items-end gap-2 mb-3">
-                    <div>
-                      <p className="text-[9px] text-on-surface-variant/60 mb-0.5">Текущее</p>
-                      <p className="text-base font-mono font-bold text-on-surface">{kpi.current}</p>
-                    </div>
-                    <span className="material-symbols-outlined text-primary mb-0.5 text-sm">arrow_forward</span>
-                    <div>
-                      <p className="text-[9px] text-primary/70 mb-0.5">Целевое</p>
-                      <p className="text-base font-mono font-bold text-primary break-words">{kpi.target}</p>
-                    </div>
-                  </div>
-                  <div className="pt-2.5 border-t border-white/[0.04] flex items-center justify-between">
-                    <p className="text-[9px] text-on-surface-variant/50">{kpi.method}</p>
-                    <p className="text-[9px] font-mono text-on-surface-variant/40">{kpi.owner}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+          <NamespaceMetricsTab namespace="kpi" />
         </div>
       )}
 

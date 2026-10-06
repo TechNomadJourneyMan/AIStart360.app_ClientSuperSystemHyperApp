@@ -6,7 +6,7 @@ import { useGigaQuery } from './kit'
 
 export interface StaffMe {
   id: string
-  kind: 'session' | 'staff_cookie' | 'break_glass'
+  kind: 'session' | 'staff_cookie'
   email: string | null
   role: StaffRole
   roleLabel: string

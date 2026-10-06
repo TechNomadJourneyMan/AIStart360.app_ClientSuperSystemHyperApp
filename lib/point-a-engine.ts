@@ -41,6 +41,12 @@ export interface PointAResolvedInputs {
   /** Margin in percent. */
   grossMargin?: number | null
   revenue?: Partial<Record<2023 | 2024 | 2025, number | null>>
+  /** Deal cycle in days (biz.prodazhi.tsikl_zakrytiya_sdelki). */
+  dealCycleDays?: number | null
+  /** Share of repeat sales / clients in percent (goal.02.repeat_purchase_rate). */
+  repeatSharePct?: number | null
+  /** Refusals ÷ (deals + refusals) in percent (goal.06.loss_rate). */
+  refusalPct?: number | null
 }
 
 /** Engine identity, recorded with findings derived from this output. */
@@ -373,7 +379,9 @@ function scoreSales(inp: Inputs): BlockScore {
   else checks.push({ id: 'crm', max: 20, earned: 0, missing: 'Не указано, есть ли CRM' })
 
   // Deal cycle (the form writes 0 for an empty field → 0 = not answered).
-  const cycleDays = numAnswer(a, 's3_deal_cycle_days')
+  // The resolved metric (CRM export / questionnaire) is the same value every surface shows.
+  const resolvedCycle = finite(inp.resolved.dealCycleDays) && inp.resolved.dealCycleDays > 0 ? inp.resolved.dealCycleDays : null
+  const cycleDays = resolvedCycle ?? numAnswer(a, 's3_deal_cycle_days')
   if (cycleDays === null || cycleDays <= 0) checks.push({ id: 'deal_cycle', max: 15, earned: 0, missing: 'Цикл сделки не указан' })
   else if (cycleDays < 30) checks.push({ id: 'deal_cycle', max: 15, earned: 15 })
   else if (cycleDays <= 60) checks.push({ id: 'deal_cycle', max: 15, earned: 8 })
@@ -381,9 +389,11 @@ function scoreSales(inp: Inputs): BlockScore {
 
   // Repeat share — legacy client counts, else step-8 «Кол-во новых / повторных продаж».
   const nr = newVsRepeat(inp)
-  if (!nr) checks.push({ id: 'repeat_share', max: 15, earned: 0, missing: 'Нет данных о повторных продажах' })
+  const resolvedRepeat = finite(inp.resolved.repeatSharePct) && inp.resolved.repeatSharePct >= 0 ? inp.resolved.repeatSharePct : null
+  const repeatShare = resolvedRepeat ?? (nr ? (nr.repeatCount / (nr.newCount + nr.repeatCount)) * 100 : null)
+  if (repeatShare === null) checks.push({ id: 'repeat_share', max: 15, earned: 0, missing: 'Нет данных о повторных продажах' })
   else {
-    const repeatPct = (nr.repeatCount / (nr.newCount + nr.repeatCount)) * 100
+    const repeatPct = repeatShare
     checks.push(repeatPct >= 30
       ? { id: 'repeat_share', max: 15, earned: 15 }
       : { id: 'repeat_share', max: 15, earned: 0, issue: `Повторных клиентов ${repeatPct.toFixed(0)}% (норма ≥30%)`, rec: 'Запустить программу лояльности' })
@@ -397,10 +407,13 @@ function scoreSales(inp: Inputs): BlockScore {
   else checks.push({ id: 'pipeline', max: 10, earned: 0, issue: 'Маленькая воронка продаж' })
 
   const rejections = numAnswer(a, 's3_rejections_2024')
-  if (!deals || deals <= 0 || rejections === null || rejections < 0) {
+  const resolvedRefusal = finite(inp.resolved.refusalPct) && inp.resolved.refusalPct >= 0 ? inp.resolved.refusalPct : null
+  const surveyRefusal = deals && deals > 0 && rejections !== null && rejections >= 0 ? (rejections / (deals + rejections)) * 100 : null
+  const refusal = resolvedRefusal ?? surveyRefusal
+  if (refusal === null) {
     checks.push({ id: 'refusals', max: 10, earned: 0, missing: 'Количество отказов не указано' })
   } else {
-    const refusalPct = (rejections / (deals + rejections)) * 100
+    const refusalPct = refusal
     checks.push(refusalPct < 20
       ? { id: 'refusals', max: 10, earned: 10 }
       : { id: 'refusals', max: 10, earned: 0, issue: `Высокий процент отказов: ${refusalPct.toFixed(0)}%`, rec: 'Провести анализ причин отказов, переработать pitch' })

@@ -90,9 +90,30 @@ export const METRIC_SYNONYMS: Record<string, string[]> = {
     'cogs',
     'cost of goods sold',
     'расходы: себестоимость',
+  ],
+  cogs_index: [
     'себестоимость (индекс)',
+    'индекс себестоимости',
+    'cogs index',
+    'cost index',
   ],
   cost_of_sales: ['cost of sales', 'себестоимость продаж', 'затраты на продажи'],
+  total_assets: [
+    // never a bare «активы»: «нематериальные активы» would match it
+    'итого активы',
+    'активы всего',
+    'всего активов',
+    'итого актив',
+    'валюта баланса',
+    'total assets',
+    'баланс (актив)',
+  ],
+  export_revenue: [
+    'выручка от экспорта',
+    'экспортная выручка',
+    'export revenue',
+    'export sales',
+  ],
   roa: ['roa', 'return on assets', 'рентабельность активов', 'доходность активов'],
   roi: ['roi', 'return on investment', 'рентабельность инвестиций', 'окупаемость'],
   roe: ['roe', 'return on equity', 'рентабельность капитала'],
@@ -208,8 +229,14 @@ export const METRIC_SYNONYMS: Record<string, string[]> = {
     'avg check',
     'aov',
     'average order value',
+  ],
+  avg_order_value: [
     'средний чек ecommerce',
     'ecommerce средний чек',
+    'средний чек заказа',
+    'средняя стоимость заказа',
+    'средняя сумма заказа',
+    'avg order value',
   ],
   basket_size: [
     'размер корзины',
@@ -438,6 +465,11 @@ export const METRIC_SYNONYMS: Record<string, string[]> = {
   // ─── Engagement / digital ──────────────────────────────────────────────
   website_visits: [
     'посещений сайта',
+    'посещения сайта',
+    'визиты на сайт',
+    'визитов на сайт',
+    'сеансы',
+    'sessions',
     'посещений сайта/мес',
     'website visits',
     'site traffic',
@@ -616,6 +648,41 @@ export const METRIC_SYNONYMS: Record<string, string[]> = {
     'кросс-продажи %',
   ],
   crosssell_amount: ['сумма кросселлов', 'crosssell amount', 'cross-sell revenue'],
+
+  // ─── Funnel stages (current wizard step 5 + CRM exports) ──────────────
+  funnel_call_to_meeting: [
+    'звонок -> встреча',
+    'звонок → встреча',
+    'конверсия звонок встреча',
+    'диалог → встреча',
+    'call to meeting',
+  ],
+  funnel_meeting_to_proposal: [
+    'встреча -> кп',
+    'встреча → кп',
+    'конверсия встреча кп',
+    'meeting to proposal',
+  ],
+  funnel_proposal_to_sale: [
+    'кп -> сделка',
+    'кп → сделка',
+    'кп → продажа',
+    'конверсия кп в сделку',
+    'конверсия кп сделка',
+    'proposal to deal',
+    'proposal to sale',
+  ],
+  lead_to_dialog_days: ['лид → диалог (дни)', 'дней от лида до диалога', 'lead to dialog days'],
+  dialog_to_meeting_days: ['диалог → встреча (дни)', 'дней от диалога до встречи', 'dialog to meeting days'],
+  meeting_to_proposal_days: ['встреча → кп (дни)', 'дней от встречи до кп', 'meeting to proposal days'],
+  proposal_to_deal_days: ['кп → сделка (дни)', 'дней от кп до сделки', 'proposal to deal days'],
+  revenue_by_channel: ['выручка по каналам', 'продажи по каналам', 'сумма продаж с канала', 'revenue by channel', 'sales by channel'],
+  referral_customers: ['клиенты по рекомендации', 'клиентов по рекомендации', 'реферальные клиенты', 'referral customers', 'referred customers'],
+  referral_leads_share: ['лиды по рекомендации', 'доля лидов по рекомендации', 'лидов по рекомендации %', 'referral leads share'],
+  content_to_dialog_rate: ['конверсия контент → диалог', 'cr контент → диалог', 'контент в диалог', 'content to dialog'],
+  warm_leads_share: ['прогретые лиды', 'доля прогретых лидов', 'прогретых лидов', 'warm leads'],
+  competitive_win_rate: ['выбравших вас', 'выигрыш у конкурентов', 'победы над конкурентами', 'competitive win rate'],
+  competitive_loss_rate: ['выбравших конкурента', 'проигрыш конкурентам', 'ушли к конкуренту', 'competitive loss rate'],
 
   // ─── Time-related funnel ──────────────────────────────────────────────
   time_between_purchases: [

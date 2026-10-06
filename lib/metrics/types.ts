@@ -6,7 +6,7 @@
 // (catalog) to avoid circular imports.
 // ============================================================
 
-import type { MetricSource } from './descriptions'
+import type { MetricPeriod, MetricSource } from './format'
 
 export type MetricNamespace = 'biz' | 'kpi' | 'gri' | 'goal'
 
@@ -31,6 +31,14 @@ export interface MetricEntry {
   unit: string
   /** 'flag' = the value is 1/0 (есть / нет); absent = an ordinary number. */
   valueKind?: 'number' | 'flag'
+  /**
+   * Period of a flow metric («Выручка (год)» = 'year', «Лидов в мес» =
+   * 'month'). Source values of another period are rescaled to it. Absent =
+   * point-in-time value, ratio or average (never rescaled).
+   */
+  period?: MetricPeriod
+  /** Plausible range [min, max] of a value (NPS −100..100, a share 0..100, a score 0..10). */
+  range?: readonly [number, number]
   /** Optional formula text for goal metrics. */
   formula?: string
   /** Declared sources from descriptions.ts. */
@@ -61,6 +69,14 @@ export interface ResolverContext {
   /** Manual user overrides keyed by metric id. */
   manualOverrides?: Record<string, unknown>
 
+  /**
+   * Section averages (0..10) of the company's current GRI assessment
+   * (gri_assessments.section_avgs), keyed by section id ('cash-stability' …).
+   */
+  griSections?: Record<string, unknown> | null
+  /** created_at of that assessment. */
+  griAssessedAt?: string | null
+
   /** Period filter — if set, prefer values for this period. */
   preferPeriodYear?: number
   preferPeriodQuarter?: PeriodQuarter
@@ -76,10 +92,28 @@ export interface ResolverDocument {
   periodYear: number | null
   periodQuarter: PeriodQuarter | null
   uploadedAt: string
+  /** Original file name — a period hint («P&L 2025 Q1.xlsx»). */
+  fileName?: string | null
+}
+
+/** Field-level provenance written by the document pipeline (lib/documents/extract.ts FieldProvenance). */
+export interface ParsedFieldProvenance {
+  document_id?: string
+  method?: string
+  quote?: string | null
+  quote_verified?: boolean
+  page?: number | null
+  sheet?: string | null
+  slide?: number | null
+  ocr?: boolean
+  ocr_engine?: string | null
+  ocr_page_confidence?: number | null
+  binding?: string | null
 }
 
 export interface ParsedDataShape {
   summary?: string
+  raw_text_preview?: string
   fields?: Array<{
     key: string
     label?: string
@@ -90,7 +124,14 @@ export interface ParsedDataShape {
     metric_id?: string | null
     confidence?: number
     source?: string
+    /** Unit as stated in the document (₸, %, $ …). */
+    unit?: string | null
+    /** Period as stated («2025», «2025-Q1», «март 2025», «итого»). */
+    period?: string | null
+    provenance?: ParsedFieldProvenance
   }>
+  /** Client registry rows (client_base / ecommerce_customers). */
+  client_rows?: unknown[]
 }
 
 export type SourceAttemptStatus = 'hit' | 'miss' | 'error'
@@ -106,6 +147,57 @@ export interface SourceAttempt {
   confidence?: number
   /** Why miss/error — for debugging. */
   reason?: string
+  /** Period handling of the value: what it referred to and how it was rescaled. */
+  period?: AttemptPeriod
+  /** type 'document': where the value was read (OCR engine, page, quote …). */
+  document?: AttemptDocument
+  /** type 'formula': the inputs the value was calculated from. */
+  inputs?: FormulaInput[]
+  /** Survey key that was read (legacy keys are flagged). */
+  legacy?: boolean
+}
+
+export interface AttemptPeriod {
+  /** Period the source value referred to ('year' / 'quarter' / 'month' / 'months:9'). */
+  source: string | null
+  /** The metric's period (null = point-in-time / ratio, never rescaled). */
+  target: string | null
+  /** Multiplier applied (12 for a month value of a yearly metric). */
+  factor: number
+  year?: number | null
+  quarter?: string | null
+  month?: number | null
+  /** Where the period came from: field label, document metadata, document text, survey answer. */
+  basis?: 'field' | 'document' | 'text' | 'answer' | 'source' | null
+}
+
+export interface AttemptDocument {
+  document_id: string
+  doc_type: string
+  field_key: string
+  field_label?: string | null
+  unit?: string | null
+  /** e.g. «доля 0.34 → 34%». */
+  unit_conversion?: string | null
+  method?: string | null
+  quote?: string | null
+  page?: number | null
+  sheet?: string | null
+  ocr?: boolean
+  ocr_engine?: string | null
+  ocr_page_confidence?: number | null
+  uploaded_at?: string | null
+}
+
+export interface FormulaInput {
+  metricId: string
+  label: string
+  value: number
+  unit: string
+  /** Source type of the input value ('survey', 'document', 'formula' …). */
+  source: string
+  /** Survey key / document field the input came from. */
+  sourceKey?: string | null
 }
 
 /**
@@ -132,6 +224,8 @@ export interface MetricValue {
   computedAt: string
   /** Optional resolver-level note (e.g. "fell back to heuristic"). */
   notes?: string
+  /** Unresolved: what the owner can provide to get the value («нужно: …»). */
+  needs?: string[]
 }
 
 /**

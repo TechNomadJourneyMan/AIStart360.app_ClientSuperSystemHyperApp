@@ -70,7 +70,7 @@ export function CrmActivity({ requests, clients, pendingCount }: CrmActivityProp
       {/* Header */}
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-bold text-on-surface">CRM — Активность</h3>
-        <Link href="/admin/requests"
+        <Link href="/admin-giga-panel/requests"
           className="text-[10px] font-mono text-primary hover:text-primary/80 transition-colors">
           Все заявки →
         </Link>
@@ -83,7 +83,7 @@ export function CrmActivity({ requests, clients, pendingCount }: CrmActivityProp
           <span className="text-xs text-amber-400">
             <span className="font-bold">{pendingCount}</span> заявок ожидают проверки
           </span>
-          <Link href="/admin/requests?status=new" className="ml-auto text-[10px] font-mono text-amber-400/70 hover:text-amber-400 transition-colors">
+          <Link href="/admin-giga-panel/requests" className="ml-auto text-[10px] font-mono text-amber-400/70 hover:text-amber-400 transition-colors">
             Открыть →
           </Link>
         </div>

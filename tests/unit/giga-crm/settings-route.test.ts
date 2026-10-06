@@ -8,7 +8,7 @@ import type { StaffRole } from '@/lib/admin/rbac'
 
 const state = vi.hoisted(() => ({
   role: 'super_admin' as string,
-  kind: 'session' as 'session' | 'staff_cookie' | 'break_glass',
+  kind: 'session' as 'session' | 'staff_cookie',
   stored: {} as Record<string, unknown>,
   order: [] as string[],
   auditFails: false,
@@ -93,13 +93,14 @@ describe('settings API', () => {
     expect(state.order).toEqual(['audit'])
   })
 
-  it('break-glass cannot disable itself or enable mandatory staff 2FA', async () => {
-    state.kind = 'break_glass'
-    expect((await put({ break_glass_enabled: false })).status).toBe(422)
-    expect((await put({ staff_require_mfa: true })).status).toBe(422)
+  it('the retired break_glass_enabled setting is rejected as unknown', async () => {
+    const res = await put({ break_glass_enabled: true })
+    expect(res.status).toBe(422)
+    expect(state.order).toEqual([])
+  })
+
+  it('mandatory staff 2FA is a normal setting for a personal staff actor', async () => {
     state.kind = 'staff_cookie'
-    expect((await put({ break_glass_enabled: false })).status).toBe(422)
-    state.kind = 'session'
-    expect((await put({ break_glass_enabled: false })).status).toBe(200)
+    expect((await put({ staff_require_mfa: true })).status).toBe(200)
   })
 })

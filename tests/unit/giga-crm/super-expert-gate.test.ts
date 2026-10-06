@@ -31,7 +31,7 @@ vi.mock('@/lib/supabase/middleware', () => ({
   },
 }))
 vi.mock('@/lib/settings/edge', () => ({
-  edgeSettings: async () => ({ break_glass_enabled: true, staff_require_mfa: false, maintenance: { enabled: false } }),
+  edgeSettings: async () => ({ staff_require_mfa: false, maintenance: { enabled: false } }),
 }))
 
 const { middleware } = await import('../../../middleware')

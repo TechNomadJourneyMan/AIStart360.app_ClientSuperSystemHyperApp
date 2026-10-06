@@ -42,21 +42,6 @@ export async function PUT(req: NextRequest) {
     next[key] = v.value
   }
 
-  // The shared-password login may only be switched off from a personal
-  // account — otherwise the actor would lock themselves out mid-session.
-  if (next.break_glass_enabled === false && actor.kind !== 'session') {
-    return NextResponse.json({
-      ok: false,
-      error: 'Аварийный вход можно выключить только из личного аккаунта Super Admin (не через общий пароль).',
-    }, { status: 422 })
-  }
-  if (next.staff_require_mfa === true && actor.kind === 'break_glass') {
-    return NextResponse.json({
-      ok: false,
-      error: 'Обязательную 2FA включайте из личного аккаунта: так вы сразу проверите, что ваш вход с 2FA работает.',
-    }, { status: 422 })
-  }
-
   try {
     const { values: before } = await getAllSettings({ fresh: true })
     const changed = (Object.keys(next) as SettingKey[]).filter(

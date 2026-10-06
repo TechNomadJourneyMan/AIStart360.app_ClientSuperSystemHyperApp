@@ -165,11 +165,19 @@ export interface PointBOptions {
   griWeakBlocks?: string[]
   griTop5?: { rank?: number; title: string; block?: string; severity?: string }[]
   /**
-   * Current annual revenue from the metrics layer (public.metrics → 'revenue').
-   * Used when the survey version did not capture revenue (e.g. the s1_* survey
-   * stores goals but no current revenue). Survey value takes precedence.
+   * Current annual revenue from the single metrics source
+   * (biz.finansy.vyruchka_god, lib/metrics/company-metrics.ts). When present it
+   * WINS over the engine's own survey reading, so Точка Б shows the same
+   * revenue as the Metrics catalog, the dashboard and Точка А (a P&L beats the
+   * questionnaire there; the Point B page input s1_current_revenue_year beats
+   * older survey keys). The survey is read only when no metric value exists.
    */
   currentRevenueYear?: number | null
+  /**
+   * Current values of the lever metrics from the same single source, keyed by
+   * registry id (POINT_B_LEVER_METRICS). Used before survey answers.
+   */
+  metrics?: Readonly<Record<string, number | null | undefined>>
   /**
    * Goal overrides (annual KZT) from companies.target_revenue_12m/3y_kzt — the
    * canonical goal store written by the Point A goal widget. When present these
@@ -497,22 +505,48 @@ function nextStage(current: string): string {
 
 // ─── Growth levers ─────────────────────────────────────────────────────────
 
-function buildLevers(answers: Record<string, unknown>, goals: PointBGoals): Lever[] {
-  const margin = posNum(answers.s2_gross_margin) ?? posNum(answers.s9n_net_margin)
-  const avgCheck = posNum(answers.s7_avg_check) ?? posNum(answers.s2_avg_check)
-  const ltv = posNum(answers.s2_ltv)
-  const cac = posNum(answers.s2_cac)
+/** Registry ids of the lever metrics (the values the Metrics page shows). */
+export const POINT_B_LEVER_METRICS = {
+  leads: 'biz.marketing.lidov_v_mes',
+  conversion: 'biz.marketing.konversiya_lid_klient',
+  avgCheck: 'biz.prodazhi.sredniy_chek',
+  repeat: 'goal.02.repeat_purchase_rate',
+  cac: 'biz.marketing.cac',
+  margin: 'biz.finansy.valovaya_marzha',
+  revenue: 'biz.finansy.vyruchka_god',
+} as const
+
+function metricPos(metrics: PointBOptions['metrics'], id: string): number | null {
+  const v = metrics?.[id]
+  return typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : null
+}
+
+/** Current lever values: the single metrics source first, then the legacy survey keys. */
+function leverValues(answers: Record<string, unknown>, metrics: PointBOptions['metrics']) {
+  return {
+    leads: metricPos(metrics, POINT_B_LEVER_METRICS.leads),
+    conversion: metricPos(metrics, POINT_B_LEVER_METRICS.conversion),
+    repeat: metricPos(metrics, POINT_B_LEVER_METRICS.repeat),
+    // Net margin (s9n) is no gross margin; it stays a last-resort proxy for the lever.
+    margin: metricPos(metrics, POINT_B_LEVER_METRICS.margin) ?? posNum(answers.s2_gross_margin) ?? posNum(answers.s9n_net_margin),
+    avgCheck: metricPos(metrics, POINT_B_LEVER_METRICS.avgCheck) ?? posNum(answers.s7_avg_check) ?? posNum(answers.s2_avg_check),
+    cac: metricPos(metrics, POINT_B_LEVER_METRICS.cac) ?? posNum(answers.s2_cac),
+  }
+}
+
+function buildLevers(answers: Record<string, unknown>, goals: PointBGoals, metrics?: PointBOptions['metrics']): Lever[] {
+  const { leads, conversion, repeat, margin, avgCheck, cac } = leverValues(answers, metrics)
 
   const defs: Lever[] = [
     {
-      key: 'leads', label: 'Количество лидов', current: null, target: null, unit: 'шт/мес',
+      key: 'leads', label: 'Количество лидов', current: leads, target: null, unit: 'шт/мес',
       expected_effect: 'Прямой рост выручки при стабильной конверсии', difficulty: 'medium',
-      priority: 1, linked_block: 'marketing', data_available: false,
+      priority: 1, linked_block: 'marketing', data_available: leads != null,
     },
     {
-      key: 'conversion', label: 'Конверсия в продажу', current: null, target: null, unit: '%',
+      key: 'conversion', label: 'Конверсия в продажу', current: conversion, target: null, unit: '%',
       expected_effect: 'Больше сделок без роста затрат на привлечение', difficulty: 'medium',
-      priority: 2, linked_block: 'sales', data_available: false,
+      priority: 2, linked_block: 'sales', data_available: conversion != null,
     },
     {
       key: 'avg_check', label: 'Средний чек',
@@ -521,9 +555,9 @@ function buildLevers(answers: Record<string, unknown>, goals: PointBGoals): Leve
       priority: 3, linked_block: 'sales', data_available: avgCheck != null || goals.avg_check_target != null,
     },
     {
-      key: 'repeat', label: 'Повторные продажи / удержание', current: null, target: null, unit: '%',
+      key: 'repeat', label: 'Повторные продажи / удержание', current: repeat, target: null, unit: '%',
       expected_effect: 'Рост LTV и снижение зависимости от новых лидов', difficulty: 'medium',
-      priority: 4, linked_block: 'sales', data_available: false,
+      priority: 4, linked_block: 'sales', data_available: repeat != null,
     },
     {
       key: 'cac', label: 'CAC / окупаемость привлечения',
@@ -538,7 +572,6 @@ function buildLevers(answers: Record<string, unknown>, goals: PointBGoals): Leve
       priority: 6, linked_block: 'finance', data_available: margin != null,
     },
   ]
-  void ltv
   return defs
 }
 
@@ -551,6 +584,7 @@ function buildGrowthDecomposition(
   current: number | null,
   goal12m: number | null,
   answers: Record<string, unknown>,
+  metrics?: PointBOptions['metrics'],
 ): GrowthDecomposition {
   if (current == null || current <= 0 || goal12m == null || goal12m <= 0) {
     return {
@@ -565,17 +599,31 @@ function buildGrowthDecomposition(
   // evenly across the 4 levers (their product equals the revenue multiplier).
   const each = Math.pow(mult, 1 / 4)
   const uplift = Math.round((each - 1) * 1000) / 10
-  const avgCheck = posNum(answers.s7_avg_check) ?? posNum(answers.s2_avg_check) ?? posNum(answers.s1_avg_check)
+  const lv = leverValues(answers, metrics)
+  const avgCheck = lv.avgCheck ?? posNum(answers.s1_avg_check)
+  const round1 = (n: number) => Math.round(n * 10) / 10
 
   const steps: GrowthStep[] = [
-    { key: 'leads', label: 'Лиды / трафик', unit: '%', current: null, target: null, uplift_pct: uplift, note: `Нарастить поток заявок примерно на +${uplift}%` },
-    { key: 'conversion', label: 'Конверсия в продажу', unit: '%', current: null, target: null, uplift_pct: uplift, note: `Поднять конверсию из лида в сделку на +${uplift}%` },
+    {
+      key: 'leads', label: 'Лиды / трафик', unit: 'шт/мес',
+      current: lv.leads, target: lv.leads != null ? Math.round(lv.leads * each) : null, uplift_pct: uplift,
+      note: lv.leads != null ? `${Math.round(lv.leads)} → ${Math.round(lv.leads * each)} лидов в месяц` : `Нарастить поток заявок примерно на +${uplift}%`,
+    },
+    {
+      key: 'conversion', label: 'Конверсия в продажу', unit: '%',
+      current: lv.conversion, target: lv.conversion != null ? Math.min(100, round1(lv.conversion * each)) : null, uplift_pct: uplift,
+      note: lv.conversion != null ? `${round1(lv.conversion)}% → ${Math.min(100, round1(lv.conversion * each))}%` : `Поднять конверсию из лида в сделку на +${uplift}%`,
+    },
     {
       key: 'avg_check', label: 'Средний чек', unit: '₸',
       current: avgCheck, target: avgCheck != null ? Math.round(avgCheck * each) : null, uplift_pct: uplift,
       note: avgCheck != null ? `${fmtMoneyShort(avgCheck)} → ${fmtMoneyShort(avgCheck * each)}` : `Увеличить средний чек на +${uplift}%`,
     },
-    { key: 'repeat', label: 'Повторные продажи / удержание', unit: '%', current: null, target: null, uplift_pct: uplift, note: `Повысить повторные покупки и удержание на +${uplift}%` },
+    {
+      key: 'repeat', label: 'Повторные продажи / удержание', unit: '%',
+      current: lv.repeat, target: lv.repeat != null ? Math.min(100, round1(lv.repeat * each)) : null, uplift_pct: uplift,
+      note: lv.repeat != null ? `${round1(lv.repeat)}% → ${Math.min(100, round1(lv.repeat * each))}%` : `Повысить повторные покупки и удержание на +${uplift}%`,
+    },
   ]
 
   return {
@@ -676,11 +724,12 @@ export function calculatePointBV2(
 ): PointBV2 {
   const goals = parseGoals(answers)
 
-  // Current revenue may be absent from the survey (newer s1_* version captures
-  // only goals) — fall back to the metrics-layer value supplied by the caller.
-  if (goals.current_revenue_year == null && options.currentRevenueYear != null && options.currentRevenueYear > 0) {
-    goals.current_revenue_year = options.currentRevenueYear
-    goals.current_revenue_month = Math.round(options.currentRevenueYear / 12)
+  // Current revenue: the single metrics source wins (same value as the Metrics
+  // page, dashboard and Точка А); the engine's survey reading is the fallback.
+  const metricRevenue = options.currentRevenueYear ?? metricPos(options.metrics, POINT_B_LEVER_METRICS.revenue)
+  if (metricRevenue != null && metricRevenue > 0) {
+    goals.current_revenue_year = metricRevenue
+    goals.current_revenue_month = Math.round(metricRevenue / 12)
   }
 
   // Goals from the Point A widget (companies.target_*) are the canonical source
@@ -749,8 +798,8 @@ export function calculatePointBV2(
     data_sufficiency: dataSufficiency(goals, pointA),
     trajectory: { monthly_12m: monthly12m, quarterly_3y },
     scenarios: buildScenarios(cur, goals.goal_12m_revenue_year, goals.goal_3y_revenue_year),
-    levers: buildLevers(answers, goals),
-    growth_decomposition: buildGrowthDecomposition(cur, goals.goal_12m_revenue_year, answers),
+    levers: buildLevers(answers, goals, options.metrics),
+    growth_decomposition: buildGrowthDecomposition(cur, goals.goal_12m_revenue_year, answers, options.metrics),
     target_blocks: targetBlocks,
     target_overall_score: targetOverall,
     target_health_index: targetHealth,

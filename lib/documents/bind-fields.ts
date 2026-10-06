@@ -35,6 +35,7 @@ import { hasOpenRouterKey } from '@/lib/ai/openrouter'
 import { getMetricRegistry } from '@/lib/metrics/registry'
 import type { MetricEntry } from '@/lib/metrics/types'
 import type { MetricSource } from '@/lib/metrics/descriptions'
+import { docTypeMatches } from '@/lib/documents/doc-types'
 
 // ─── Public types ────────────────────────────────────────────
 
@@ -173,7 +174,7 @@ function rankRegistryCandidates(
     // (a) Exact doc_type match is the strongest signal.
     const srcDocType = (source.doc_type ?? '').trim().toLowerCase()
     if (docTypeNorm && srcDocType === docTypeNorm) score += 100
-    else if (docTypeNorm && srcDocType && srcDocType.includes(docTypeNorm)) score += 30
+    else if (docTypeNorm && srcDocType && docTypeMatches(srcDocType, docTypeNorm)) score += 60 // same family (financial_report ↔ pl_report …)
     else if (!srcDocType) score += 5 // generic source
 
     // (b) Namespace preference: biz first.
@@ -190,18 +191,17 @@ function rankRegistryCandidates(
   })
 
   // When the user specified a doc_type, restrict to candidates whose document
-  // source matches exactly OR is generic (no doc_type set). If neither group is
-  // non-empty, return [] so the field stays unbound — preferring "no answer"
-  // over a cross-doc-type misbind (e.g. revenue in a marketing_report doc must
-  // NOT silently snap to the pl_report revenue metric).
+  // source accepts that type (its family — lib/documents/doc-types.ts — or a
+  // generic source). If none does, return [] so the field stays unbound —
+  // preferring "no answer" over a cross-doc-type misbind (e.g. revenue in a
+  // marketing_report doc must NOT silently snap to the pl_report revenue metric).
   if (docTypeNorm) {
     const filtered = scored.filter((c) =>
       c.entry.sources.some(
         (s) =>
           s.type === 'document' &&
           (s.field ?? '').toLowerCase() === canonical.toLowerCase() &&
-          ((s.doc_type ?? '').toLowerCase() === docTypeNorm ||
-            !(s.doc_type ?? '').trim())
+          (!(s.doc_type ?? '').trim() || docTypeMatches((s.doc_type ?? '').toLowerCase(), docTypeNorm))
       )
     )
     filtered.sort((a, b) => b.score - a.score || a.entry.id.localeCompare(b.entry.id))

@@ -21,7 +21,7 @@ const STAGE_RISK: Record<string, { risk: number; label: string }> = {
 
 // ─── Role / user helpers ─────────────────────────────────────────────────────
 
-type UserRole = 'super_admin' | 'admin' | 'owner' | 'expert' | 'manager' | 'client'
+type UserRole = 'super_admin' | 'admin' | 'expert' | 'manager' | 'client'
 
 /**
  * Resolve the caller from the Supabase session (NOT from the unsigned legacy
@@ -48,7 +48,9 @@ async function resolveCallerContext(
     .eq('id', user.id)
     .maybeSingle()
   const rawRole = typeof profile?.role === 'string' ? profile.role : 'client'
-  const role = (['super_admin', 'admin', 'owner', 'expert', 'manager', 'client'].includes(rawRole)
+  // Legacy 'owner' accounts are clients: they see only their own data (they
+  // used to get every CRM deal and every platform client).
+  const role = (['super_admin', 'admin', 'expert', 'manager', 'client'].includes(rawRole)
     ? rawRole
     : 'client') as UserRole
 
@@ -66,7 +68,7 @@ async function resolveCallerContext(
 
 /**
  * Filter CRM deals based on the caller's role.
- * - super_admin / admin / owner: see everything
+ * - super_admin / admin: see everything
  * - manager / expert: only deals assigned to them (ASSIGNED_BY_ID match)
  * - client: empty list (clients should not see CRM Pulse)
  */
@@ -77,7 +79,7 @@ function filterDealsByRole(
   orgName: string | null,
 ): CrmDeal[] {
   // Admins see all
-  if (['super_admin', 'admin', 'owner'].includes(role)) {
+  if (['super_admin', 'admin'].includes(role)) {
     return deals
   }
 
@@ -119,7 +121,7 @@ function filterPlatformClientsByRole(
   role: UserRole,
   userId: string | null,
 ): Array<Record<string, unknown>> {
-  if (['super_admin', 'admin', 'owner'].includes(role)) {
+  if (['super_admin', 'admin'].includes(role)) {
     return clients
   }
 

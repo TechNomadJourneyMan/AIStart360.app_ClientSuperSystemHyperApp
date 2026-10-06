@@ -155,6 +155,7 @@ export async function GET(
         considered: value.considered,
         notes: value.notes,
         raw_value: value.value,
+        ...(value.needs?.length ? { needs: value.needs } : {}),
       },
       computed_at: value.computedAt,
       fresh: isFresh(value.computedAt, now),

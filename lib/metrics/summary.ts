@@ -13,11 +13,12 @@ import type { MetricSummary } from '@/types/metrics'
 import type { MetricEntry } from './types'
 import { getMetricById } from './registry'
 import { isMissingTable, previousValueFor, trendFor, type MetricHistoryRow } from './catalog-helpers'
+import { currentMetricRows } from './company-metrics'
 
 /** Top KPIs returned when no `keys` / `ids` are given (registry ids, display order). */
 export const TOP_KPI_METRIC_IDS: readonly string[] = [
   'biz.finansy.vyruchka_god',          // выручка (год)
-  'biz.finansy.valovaya_marzha',       // маржа (валовая; чистая — когда пришла из шага 9)
+  'biz.finansy.valovaya_marzha',       // валовая маржа
   'biz.klienty.aktivnykh_klientov',    // активные клиенты
   'goal.01.kolichestvo_novykh_klientov', // новые клиенты
   'biz.prodazhi.sredniy_chek',         // средний чек
@@ -122,14 +123,9 @@ export interface MetricSummaryExtra {
   computedAt: string | null
 }
 
-function pickedKey(provenance: unknown): string | null {
-  const picked = (provenance as { picked?: { key?: unknown } } | null)?.picked
-  return typeof picked?.key === 'string' ? picked.key : null
-}
-
-function labelFor(entry: MetricEntry, row: SummaryValueRow): string {
-  // The margin metric accepts the step-9 NET margin as a proxy — say so.
-  if (entry.id === 'biz.finansy.valovaya_marzha' && pickedKey(row.provenance) === 's9n_net_margin') return 'Чистая маржа'
+// The gross-margin metric no longer accepts the step-9 NET margin as a proxy
+// (W4: net ≠ gross), so a summary label is always the registry label.
+function labelFor(entry: MetricEntry): string {
   return entry.label
 }
 
@@ -139,14 +135,8 @@ export function buildMetricSummaries(
   rows: readonly SummaryValueRow[],
   history: readonly MetricHistoryRow[],
 ): Array<MetricSummary & MetricSummaryExtra> {
-  const latest = new Map<string, SummaryValueRow>()
-  for (const r of rows) {
-    if (r.metric_value === null || r.metric_value === undefined) continue
-    const prev = latest.get(r.metric_key)
-    const t = Date.parse(r.computed_at ?? r.recorded_at ?? '')
-    const pt = prev ? Date.parse(prev.computed_at ?? prev.recorded_at ?? '') : NaN
-    if (!prev || (Number.isFinite(t) && (!Number.isFinite(pt) || t > pt))) latest.set(r.metric_key, r)
-  }
+  // The same «current value» rule as every other surface (lib/metrics/company-metrics.ts).
+  const latest = currentMetricRows(rows)
   const out: Array<MetricSummary & MetricSummaryExtra> = []
   for (const id of ids) {
     const entry = getMetricById(id)
@@ -164,7 +154,7 @@ export function buildMetricSummaries(
     const isDefault = DEFAULT_IDS.has(id)
     out.push({
       id,
-      label: labelFor(entry, row),
+      label: labelFor(entry),
       displayValue: formatSummaryValue(value, unit),
       rawValue: value,
       unit,

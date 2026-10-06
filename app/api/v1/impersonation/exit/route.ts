@@ -30,7 +30,7 @@ export async function POST(_req: NextRequest) {
     .select('id')
   if (updated && updated.length) {
     await recordAdminAction(
-      { id: claims.aid, kind: claims.aid.startsWith('giga:') ? 'break_glass' : 'session', email: claims.alabel, role: isStaffRole(claims.arole) ? claims.arole : undefined },
+      { id: claims.aid, kind: 'session', email: claims.alabel, role: isStaffRole(claims.arole) ? claims.arole : undefined },
       { action: 'impersonation.ended', entityType: 'impersonation', entityId: claims.sid, targetUserId: claims.uid, impersonationSessionId: claims.sid },
       _req,
     )

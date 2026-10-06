@@ -8,7 +8,7 @@
 // ============================================================
 
 import type { SupabaseClient } from '@supabase/supabase-js'
-import type { MetricSource } from './descriptions'
+import type { MetricSource } from './format'
 import { resolveAllMetrics, resolveMetric } from './resolver'
 import { getMetricById } from './registry'
 import type {
@@ -45,18 +45,40 @@ const PLAIN_ID = /^[A-Za-z0-9_-]+$/
 function documentsQuery(supabase: SupabaseClient, opts: GatherContextOptions) {
   const q = supabase
     .from('documents')
-    .select('id, doc_type, parsed_data, period_year, period_quarter, uploaded_at, parse_status')
+    .select('id, doc_type, file_name, parsed_data, period_year, period_quarter, uploaded_at, parse_status')
   if (opts.documentsScope === 'company' && PLAIN_ID.test(opts.companyId) && PLAIN_ID.test(opts.userId)) {
     return q.or(`company_id.eq.${opts.companyId},user_id.eq.${opts.userId}`)
   }
   return q.eq('user_id', opts.userId)
 }
 
+/**
+ * Section averages of the owner's current GRI assessment (feed the gri.*
+ * metrics). The table is optional for the resolver: a failed read means «no
+ * assessment», never a failed materialisation of the other 140 metrics.
+ */
+async function griSections(supabase: SupabaseClient, userId: string): Promise<{ sections: Record<string, unknown> | null; at: string | null }> {
+  try {
+    const res = await supabase
+      .from('gri_assessments')
+      .select('section_avgs, created_at')
+      .eq('user_id', userId)
+      .eq('is_current', true)
+      .order('created_at', { ascending: false })
+      .limit(1)
+    const row = (res?.data ?? [])[0] as { section_avgs?: Record<string, unknown> | null; created_at?: string | null } | undefined
+    if (res?.error || !row || !row.section_avgs || typeof row.section_avgs !== 'object') return { sections: null, at: null }
+    return { sections: row.section_avgs, at: row.created_at ?? null }
+  } catch {
+    return { sections: null, at: null }
+  }
+}
+
 export async function gatherResolverContext(
   supabase: SupabaseClient,
   opts: GatherContextOptions,
 ): Promise<ResolverContext> {
-  const [surveyResult, docsResult] = await Promise.all([
+  const [surveyResult, docsResult, gri] = await Promise.all([
     supabase
       .from('survey_answers')
       .select('question_key, answer')
@@ -64,7 +86,13 @@ export async function gatherResolverContext(
     documentsQuery(supabase, opts)
       .eq('parse_status', 'parsed')
       .order('uploaded_at', { ascending: false }),
+    griSections(supabase, opts.userId),
   ])
+
+  // «Could not read the inputs» must never look like «no inputs»: the
+  // materialiser deletes the rows of metrics that no longer resolve.
+  if (surveyResult.error) throw new Error(`metrics: survey answers read failed (${surveyResult.error.code ?? 'unknown'})`)
+  if (docsResult.error) throw new Error(`metrics: documents read failed (${docsResult.error.code ?? 'unknown'})`)
 
   const surveyAnswers: Record<string, unknown> = {}
   for (const row of surveyResult.data ?? []) {
@@ -83,6 +111,7 @@ export async function gatherResolverContext(
     periodYear: (d.period_year as number | null) ?? null,
     periodQuarter: (d.period_quarter as PeriodQuarter | null) ?? null,
     uploadedAt: d.uploaded_at as string,
+    fileName: (d.file_name as string | null | undefined) ?? null,
   }))
 
   return {
@@ -93,6 +122,8 @@ export async function gatherResolverContext(
     prismaSignals: opts.prismaSignals,
     externalSignals: opts.externalSignals,
     manualOverrides: opts.manualOverrides,
+    griSections: gri.sections,
+    griAssessedAt: gri.at,
     preferPeriodYear: opts.preferPeriodYear,
     preferPeriodQuarter: opts.preferPeriodQuarter,
     now: opts.now ?? new Date(),
@@ -101,7 +132,12 @@ export async function gatherResolverContext(
 
 // ─── Row mapping ─────────────────────────────────────────────
 
-function pickedSourceLabel(picked: MetricSource | null): string {
+/**
+ * public.metrics.source of a picked source. A formula and a GRI section are
+ * values the platform calculated: 'calculated' (allowed by the source CHECK
+ * since 016); provenance.picked.type keeps the exact kind.
+ */
+export function pickedSourceLabel(picked: MetricSource | null): string {
   if (!picked) return 'resolver'
   switch (picked.type) {
     case 'survey':     return 'survey'
@@ -109,6 +145,8 @@ function pickedSourceLabel(picked: MetricSource | null): string {
     case 'prisma':     return 'prisma'
     case 'external':   return 'external'
     case 'manual':     return 'manual'
+    case 'formula':    return 'calculated'
+    case 'assessment': return 'calculated'
     case 'missing':    return 'resolver'
   }
 }
@@ -117,6 +155,7 @@ export function toMaterializedRow(
   value: MetricValue,
   companyId: string,
 ): MaterializedRow {
+  const winner = value.picked ? value.considered.find((a) => a.status === 'hit' && a.source === value.picked) : undefined
   return {
     company_id: companyId,
     metric_key: value.metricId,
@@ -131,6 +170,14 @@ export function toMaterializedRow(
       considered: value.considered,
       notes: value.notes,
       raw_value: value.value,
+      // What the value rests on: formula inputs with their sources, the
+      // document field (OCR engine, page, quote, unit conversion) and the
+      // period conversion (quarter → year …).
+      ...(winner?.inputs ? { inputs: winner.inputs } : {}),
+      ...(winner?.document ? { document: winner.document } : {}),
+      ...(winner?.period ? { period: winner.period } : {}),
+      ...(winner?.reason ? { reason: winner.reason } : {}),
+      ...(value.needs?.length ? { needs: value.needs } : {}),
     },
     computed_at: value.computedAt,
   }
@@ -149,7 +196,7 @@ export function sourceIdentity(src: unknown): string | null {
   const s = src as Partial<MetricSource>
   if (typeof s.type !== 'string' || s.type === 'missing') return null
   const c = s.coerce && typeof s.coerce === 'object' ? (s.coerce as { kind?: string; row?: string; column?: string }) : null
-  return [
+  const parts = [
     s.type,
     s.key ?? (Array.isArray(s.keys) ? s.keys.join('+') : ''),
     s.doc_type ?? '',
@@ -157,7 +204,12 @@ export function sourceIdentity(src: unknown): string | null {
     s.model ?? '',
     s.system ?? '',
     c ? [c.kind ?? '', c.row ?? '', c.column ?? ''].join(':') : '',
-  ].join('|')
+  ]
+  // Formula / GRI section ids (appended only for those types, so identities of
+  // the older source kinds stay byte-identical to what earlier runs compared).
+  if (s.type === 'formula') parts.push(s.formula ?? '')
+  if (s.type === 'assessment') parts.push(s.section ?? '')
+  return parts.join('|')
 }
 
 export interface StoredMetricRow {
@@ -197,6 +249,52 @@ export function staleMetricRowIds(rows: ReadonlyArray<StoredMetricRow>): string[
 
 const PRUNE_BATCH = 100
 
+export interface ExistingMetricRow {
+  id: string
+  metric_key: string
+  source: string | null
+  period_year: number | null
+  period_quarter: string | null
+  period_month?: number | null
+  scenario?: string | null
+}
+
+function uniqueKey(r: { metric_key: string; source: string | null; period_year: number | null; period_quarter: string | null }): string {
+  return [r.metric_key, r.source ?? '', r.period_year ?? '', r.period_quarter ?? ''].join('|')
+}
+
+/**
+ * Rows a full materialisation supersedes: a registry metric keeps exactly one
+ * resolver row — the one just written. Rows of the same metric from another
+ * source (the survey value after a P&L was uploaded, a formula value after
+ * the owner typed the number) and rows of metrics that no longer resolve at
+ * all (the answer was cleared) are removed, so every reader of
+ * public.metrics sees the same single current value. Rows with a month or a
+ * scenario (not written by the resolver) and rows of unknown metric keys are
+ * never touched.
+ */
+export function supersededMetricRowIds(
+  existing: ReadonlyArray<ExistingMetricRow>,
+  written: ReadonlyArray<Pick<MaterializedRow, 'metric_key' | 'source' | 'period_year' | 'period_quarter'>>,
+): string[] {
+  const keep = new Set(written.map(uniqueKey))
+  return existing
+    .filter((r) => getMetricById(r.metric_key) && (r.period_month ?? null) === null && (r.scenario ?? null) === null)
+    .filter((r) => !keep.has(uniqueKey(r)))
+    .map((r) => r.id)
+}
+
+async function deleteIds(supabase: SupabaseClient, companyId: string, ids: string[]): Promise<{ deleted: number; error: string | null }> {
+  let deleted = 0
+  for (let i = 0; i < ids.length; i += PRUNE_BATCH) {
+    const batch = ids.slice(i, i + PRUNE_BATCH)
+    const del = await supabase.from('metrics').delete().eq('company_id', companyId).in('id', batch)
+    if (del.error) return { deleted, error: del.error.message }
+    deleted += batch.length
+  }
+  return { deleted, error: null }
+}
+
 /** Delete the company's rows whose picked source is no longer declared (see staleMetricRowIds). */
 export async function pruneStaleMetricRows(
   supabase: SupabaseClient,
@@ -208,14 +306,8 @@ export async function pruneStaleMetricRows(
     .eq('company_id', companyId)
   if (error) return { pruned: 0, error: error.message }
   const ids = staleMetricRowIds((data ?? []) as StoredMetricRow[])
-  let pruned = 0
-  for (let i = 0; i < ids.length; i += PRUNE_BATCH) {
-    const batch = ids.slice(i, i + PRUNE_BATCH)
-    const del = await supabase.from('metrics').delete().eq('company_id', companyId).in('id', batch)
-    if (del.error) return { pruned, error: del.error.message }
-    pruned += batch.length
-  }
-  return { pruned, error: null }
+  const { deleted, error: delError } = await deleteIds(supabase, companyId, ids)
+  return { pruned: deleted, error: delError }
 }
 
 // ─── Upsert ──────────────────────────────────────────────────
@@ -226,6 +318,8 @@ export interface MaterializeResult {
   skipped: number
   /** Rows removed because their source is no longer declared for the metric. */
   pruned: number
+  /** Rows of other sources / of metrics that no longer resolve, removed after the write. */
+  superseded?: number
   errors: Array<{ metricId: string; error: string }>
 }
 
@@ -287,12 +381,30 @@ export async function materializeAll(
     errors.push({ metricId: '*', error: error.message })
   }
 
+  // After a successful write only: one current row per metric.
+  let superseded = 0
+  if (!error) {
+    const existing = await supabase
+      .from('metrics')
+      .select('id, metric_key, source, period_year, period_quarter, period_month, scenario')
+      .eq('company_id', ctx.companyId)
+    if (existing.error) {
+      errors.push({ metricId: '*superseded', error: existing.error.message })
+    } else {
+      const ids = supersededMetricRowIds((existing.data ?? []) as ExistingMetricRow[], rows)
+      const del = await deleteIds(supabase, ctx.companyId, ids)
+      superseded = del.deleted
+      if (del.error) errors.push({ metricId: '*superseded', error: del.error })
+    }
+  }
+
   return {
     result: {
       total: values.length,
       written: error ? 0 : rows.length,
       skipped: values.length - rows.length,
       pruned: prune.pruned,
+      superseded,
       errors,
     },
     values,
