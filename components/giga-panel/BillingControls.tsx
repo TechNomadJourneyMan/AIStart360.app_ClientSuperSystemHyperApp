@@ -52,6 +52,7 @@ const inputCls = 'rounded-md bg-white/[0.04] border border-white/[0.08] px-2 py-
 export function BillingControls({ userId }: { userId: string }) {
   const [plan, setPlan] = useState<EffectivePlan | null>(null)
   const [payments, setPayments] = useState<Payment[] | null>(null)
+  const [paymentsError, setPaymentsError] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null)
@@ -76,6 +77,7 @@ export function BillingControls({ userId }: { userId: string }) {
         setTier(p.d.plan.tier === 'free' ? 'pro' : (p.d.plan.tier as PlanTier))
         setLoadError(null)
       }
+      setPaymentsError(!t.d?.ok)
       setPayments(t.d?.ok ? (t.d.transactions as Payment[]) : [])
     } catch {
       setLoadError('Не удалось загрузить тариф')
@@ -198,6 +200,8 @@ export function BillingControls({ userId }: { userId: string }) {
         <p className="text-[10px] font-mono uppercase tracking-widest text-slate-500 mb-1">История платежей</p>
         {payments === null ? (
           <Loader2 size={12} className="animate-spin text-slate-500" />
+        ) : paymentsError ? (
+          <p className="text-[11px] text-rose-300">Не удалось загрузить историю платежей</p>
         ) : payments.length === 0 ? (
           <p className="text-[11px] text-slate-500">Платежей нет</p>
         ) : (

@@ -65,8 +65,9 @@ describe('kaspi webhook → billing service', () => {
 
     expect(db.rpcCalls.map((c) => c.name)).toEqual(['billing_set_plan'])
     expect(db.rpcCalls[0].args).toMatchObject({ p_org_id: COMPANY, p_user_id: USER, p_tier: 'pro', p_source: 'kaspi', p_provider: 'kaspi', p_actor: 'kaspi:webhook' })
-    const end = new Date(String(db.rpcCalls[0].args.p_period_end)).getTime()
-    expect(end - Date.now()).toBeGreaterThan(27 * 864e5)
+    // The month is added in SQL under the row locks (p_extend_months).
+    expect(db.rpcCalls[0].args.p_extend_months).toBe(1)
+    expect(db.rpcCalls[0].args.p_period_end).toBeNull()
     expect(db.tables.subscriptions[0]).toMatchObject({ tier: 'pro', status: 'active', source: 'kaspi' })
     expect(db.tables.profiles[0].tier).toBe('pro')
     expect(db.rpcCalls[0].args.p_payment_tx).toBe('tx-1')
@@ -77,6 +78,7 @@ describe('kaspi webhook → billing service', () => {
     prismaMock.tx = { ...prismaMock.tx!, planKey: 'pro_onetime', metadata: {} }
     await POST(signed({ paymentId: 'pay_1', status: 'paid' }))
     expect(db.rpcCalls[0].args.p_period_end).toBeNull()
+    expect(db.rpcCalls[0].args.p_extend_months).toBeUndefined()
     expect(db.tables.profiles[0].tier).toBe('pro')
   })
 

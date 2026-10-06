@@ -5,6 +5,8 @@
  * Every test fails on a database built without 106 (the functions do not exist).
  * Run: node scripts/test-db/setup.mjs --db aistart360_w8 && TEST_DATABASE_URL=… npx vitest run tests/integration/db/billing-unify.test.ts
  */
+import fs from 'node:fs'
+import path from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
 import { dbTestsEnabled } from '../../helpers/db-env'
 import { asService, asUser, closeTestPool, inRollback, pgErrorCode, seedCompany, seedUser, type Db } from '../../helpers/pg-rls'
@@ -23,6 +25,7 @@ interface PlanArgs {
   onlyIfExpired?: boolean
   now?: Date
   paymentTx?: string | null
+  extendMonths?: number | null
 }
 
 /** Service-role call inside a savepoint, so a refused call leaves the transaction usable. */
@@ -43,8 +46,8 @@ async function asServiceSafe<T>(db: Db, fn: () => Promise<T>): Promise<T> {
 
 async function setPlan(db: Db, a: PlanArgs) {
   const { rows } = await asServiceSafe(db, () => db.query(
-    `SELECT public.billing_set_plan($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) AS r`,
-    [a.org, a.user, a.tier, a.end ?? null, a.source ?? 'admin', a.provider ?? null, a.note ?? null, a.actor ?? 'staff-1', a.onlyIfExpired ?? false, a.now ?? new Date(), a.paymentTx ?? null],
+    `SELECT public.billing_set_plan($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) AS r`,
+    [a.org, a.user, a.tier, a.end ?? null, a.source ?? 'admin', a.provider ?? null, a.note ?? null, a.actor ?? 'staff-1', a.onlyIfExpired ?? false, a.now ?? new Date(), a.paymentTx ?? null, a.extendMonths ?? null],
   ))
   return rows[0].r as { applied: boolean; reason?: string; profile_tier: string | null; kept_access?: boolean; after: Record<string, unknown> | null }
 }
@@ -143,6 +146,53 @@ describe.skipIf(!dbTestsEnabled)('billing unify (106)', () => {
       const r2 = await setPlan(db, { org: company, user, tier: 'pro', end: new Date(first.getTime() + 31 * DAY), source: 'kaspi', provider: 'kaspi', actor: 'kaspi:webhook', paymentTx: 'tx-dup' })
       expect(r2).toMatchObject({ applied: false, reason: 'payment_already_final' })
       expect((await sub(db, company))?.currentPeriodEnd).toEqual(endAfterFirst)
+    }))
+
+  it('Kaspi monthly: each payment adds a month to the live paid period; an open-ended plan stays open-ended', () =>
+    inRollback(async (db) => {
+      const user = await seedUser(db, { status: 'approved' })
+      const company = await seedCompany(db, user)
+      const tenDays = new Date(Date.now() + 10 * DAY)
+      await insertSub(db, company, 'pro', 'active', null, tenDays)
+      await setPlan(db, { org: company, user, tier: 'pro', source: 'kaspi', provider: 'kaspi', actor: 'kaspi:webhook', extendMonths: 1 })
+      await setPlan(db, { org: company, user, tier: 'pro', source: 'kaspi', provider: 'kaspi', actor: 'kaspi:webhook', extendMonths: 1 })
+      const { rows } = await db.query(
+        `SELECT ("currentPeriodEnd" = (($2::timestamptz AT TIME ZONE 'UTC') + interval '2 months')) AS two_months
+           FROM public.subscriptions WHERE "orgId" = $1`,
+        [company, tenDays],
+      )
+      expect(rows[0].two_months).toBe(true)
+
+      const other = await seedUser(db, { status: 'approved' })
+      await insertSub(db, other, 'enterprise', 'active', null, null)
+      await setPlan(db, { org: other, user: other, tier: 'enterprise', source: 'kaspi', provider: 'kaspi', actor: 'kaspi:webhook', extendMonths: 1 })
+      expect((await sub(db, other))?.currentPeriodEnd).toBeNull()
+    }))
+
+  it('106 backfill: admin Pro hidden behind an old trial row becomes an open-ended admin plan, so the cron keeps it', () =>
+    inRollback(async (db) => {
+      const user = await seedUser(db, { status: 'approved' })
+      const company = await seedCompany(db, user)
+      await insertSub(db, company, 'pilot', 'trialing', new Date(Date.now() - 60 * DAY), null)
+      await db.query(`UPDATE public.profiles SET tier = 'pro' WHERE id = $1`, [user])
+      const paid = await seedUser(db, { email: 'paid-expired@test.local', status: 'approved' })
+      await insertSub(db, paid, 'pro', 'active', null, new Date(Date.now() - 3 * DAY))
+      await db.query(`UPDATE public.profiles SET tier = 'pro' WHERE id = $1`, [paid])
+
+      const notices: string[] = []
+      const onNotice = (n: { message?: string }) => { if (n.message) notices.push(n.message) }
+      db.on('notice', onNotice)
+      try {
+        await db.query(fs.readFileSync(path.resolve(__dirname, '../../../supabase/migrations/106_billing_unify.sql'), 'utf8'))
+      } finally {
+        db.off('notice', onNotice)
+      }
+
+      expect(await sub(db, company)).toMatchObject({ tier: 'pro', status: 'active', currentPeriodEnd: null, source: 'admin', assignedBy: 'migration:106' })
+      const due = await asServiceSafe(db, () => db.query(`SELECT org_id FROM public.billing_due_expirations(now(), 500)`))
+      expect(due.rows.map((r) => r.org_id)).not.toContain(company)
+      expect(notices.find((n) => n.includes('CHECK BEFORE ENABLING')) ?? '').toContain(paid)
+      expect(await profileTier(db, user)).toBe('pro')
     }))
 
   it('expiry: due rows are listed with their owner; the downgrade applies once', () =>

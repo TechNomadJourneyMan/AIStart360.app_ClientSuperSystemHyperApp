@@ -73,6 +73,72 @@ UPDATE public.subscriptions SET "source" = CASE
   END
 WHERE "source" IS NULL;
 
+-- Pro granted by an administrator before 106 lived only in profiles.tier
+-- (the old GIGA editor never wrote subscriptions), often next to the client's
+-- old trial row. Left alone, the expiry cron would read that trial as expired
+-- and take Pro away. The old trial checkout never wrote profiles.tier, so
+-- profiles.tier = 'pro' with a trialing row and no paid row can only come from
+-- an administrator: that row becomes an open-ended admin Pro (other trialing
+-- rows of the same person are closed). Paid rows (active / past_due) with an
+-- expired period are ambiguous (Kaspi month vs. admin grant): they are only
+-- LISTED for a manual check before the cron runs. Idempotent.
+DO $$
+DECLARE
+  v_converted TEXT;
+  v_review    TEXT;
+BEGIN
+  WITH person_rows AS (
+    SELECT p.id AS user_id, s.id AS sub_id, s."orgId" AS org_id, s.status::text AS status,
+           s."trialEndsAt" AS trial_end
+      FROM public.profiles p
+      JOIN public.subscriptions s
+        ON s."orgId" = p.id::text
+        OR s."orgId" IN (SELECT c.id FROM public.companies c WHERE c.user_id = p.id)
+     WHERE p.tier = 'pro'
+  ), people AS (
+    SELECT user_id FROM person_rows
+     GROUP BY user_id
+    HAVING bool_or(status = 'trialing') AND NOT bool_or(status IN ('active', 'past_due'))
+  ), keep AS (
+    SELECT DISTINCT ON (r.user_id) r.user_id, r.sub_id
+      FROM person_rows r JOIN people USING (user_id)
+     WHERE r.status = 'trialing'
+     ORDER BY r.user_id, r.trial_end DESC NULLS LAST, r.sub_id
+  ), closed AS (
+    UPDATE public.subscriptions s
+       SET status = 'canceled', "updatedAt" = (now() AT TIME ZONE 'UTC')
+      FROM person_rows r JOIN people USING (user_id)
+     WHERE s.id = r.sub_id AND r.status = 'trialing'
+       AND r.sub_id NOT IN (SELECT sub_id FROM keep)
+    RETURNING s.id
+  ), converted AS (
+    UPDATE public.subscriptions s
+       SET tier = 'pro', status = 'active', "currentPeriodEnd" = NULL, "source" = 'admin',
+           note = 'Pro назначен администратором до миграции 106 (перенесено из profiles.tier)',
+           "assignedBy" = 'migration:106', "updatedAt" = (now() AT TIME ZONE 'UTC')
+      FROM keep k
+     WHERE s.id = k.sub_id
+    RETURNING s."orgId"
+  )
+  SELECT string_agg("orgId", ', ') INTO v_converted FROM converted;
+  IF v_converted IS NOT NULL THEN
+    RAISE NOTICE '106: admin-granted Pro moved onto subscriptions (old trial rows): %', v_converted;
+  END IF;
+
+  SELECT string_agg(DISTINCT s."orgId", ', ') INTO v_review
+    FROM public.profiles p
+    JOIN public.subscriptions s
+      ON s."orgId" = p.id::text
+      OR s."orgId" IN (SELECT c.id FROM public.companies c WHERE c.user_id = p.id)
+   WHERE p.tier = 'pro'
+     AND s.status IN ('active', 'past_due')
+     AND s."currentPeriodEnd" IS NOT NULL
+     AND s."currentPeriodEnd" <= (now() AT TIME ZONE 'UTC');
+  IF v_review IS NOT NULL THEN
+    RAISE NOTICE '106: CHECK BEFORE ENABLING the billing-expiry cron — profiles with Pro whose paid period has ended (the cron will move them to free): %', v_review;
+  END IF;
+END $$;
+
 -- ─── Expired = entitled status whose end date has passed ────────────────────
 CREATE OR REPLACE FUNCTION public.billing_is_expired(
   p_status TEXT, p_trial_ends_at TIMESTAMP, p_period_end TIMESTAMP, p_now TIMESTAMPTZ
@@ -93,7 +159,13 @@ $$;
 -- marked succeeded in the SAME transaction as the plan change, and only while
 -- it is not final yet — a repeated callback (retry after a lost response,
 -- duplicate delivery) changes nothing, so a month is never added twice.
+-- p_extend_months: a paid month counted from the end of the person's live
+-- paid period (any tenant key), read under the row locks — two payments at
+-- once each add their month. An open-ended live plan stays open-ended.
+-- Lock order (deadlock-free): payment row, then every subscription row of the
+-- person ordered by key, then the profile.
 DROP FUNCTION IF EXISTS public.billing_set_plan(TEXT, UUID, TEXT, TIMESTAMPTZ, TEXT, TEXT, TEXT, TEXT, BOOLEAN, TIMESTAMPTZ);
+DROP FUNCTION IF EXISTS public.billing_set_plan(TEXT, UUID, TEXT, TIMESTAMPTZ, TEXT, TEXT, TEXT, TEXT, BOOLEAN, TIMESTAMPTZ, TEXT);
 CREATE OR REPLACE FUNCTION public.billing_set_plan(
   p_org_id          TEXT,
   p_user_id         UUID,
@@ -105,7 +177,8 @@ CREATE OR REPLACE FUNCTION public.billing_set_plan(
   p_actor           TEXT    DEFAULT NULL,
   p_only_if_expired BOOLEAN DEFAULT false,
   p_now             TIMESTAMPTZ DEFAULT now(),
-  p_payment_tx      TEXT    DEFAULT NULL
+  p_payment_tx      TEXT    DEFAULT NULL,
+  p_extend_months   INTEGER DEFAULT NULL
 ) RETURNS JSONB
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 DECLARE
@@ -130,6 +203,9 @@ BEGIN
   IF p_source IS NULL OR p_source NOT IN ('admin', 'trial', 'kaspi', 'stub', 'system') THEN
     RAISE EXCEPTION 'billing_set_plan: unknown source %', p_source USING ERRCODE = '22023';
   END IF;
+  IF p_extend_months IS NOT NULL AND (p_extend_months < 1 OR p_extend_months > 36 OR p_tier IN ('free', 'pilot')) THEN
+    RAISE EXCEPTION 'billing_set_plan: bad extension' USING ERRCODE = '22023';
+  END IF;
   IF p_tier = 'pilot' AND p_period_end IS NULL THEN
     RAISE EXCEPTION 'billing_set_plan: a trial needs an end date' USING ERRCODE = '22023';
   END IF;
@@ -145,7 +221,22 @@ BEGIN
     END IF;
   END IF;
 
-  SELECT * INTO v_before FROM public.subscriptions WHERE "orgId" = p_org_id FOR UPDATE;
+  -- Sibling tenant keys of the person, then lock all their rows in key order
+  -- before the profile: every caller takes the locks in the same order.
+  IF p_user_id IS NOT NULL THEN
+    SELECT coalesce(array_agg(k ORDER BY k), ARRAY[]::TEXT[]) INTO v_siblings
+      FROM (
+        SELECT c.id AS k FROM public.companies c WHERE c.user_id = p_user_id
+        UNION SELECT p_user_id::text
+      ) keys
+     WHERE k <> p_org_id;
+  END IF;
+  PERFORM 1 FROM public.subscriptions
+   WHERE "orgId" = p_org_id OR "orgId" = ANY (v_siblings)
+   ORDER BY "orgId"
+   FOR UPDATE;
+
+  SELECT * INTO v_before FROM public.subscriptions WHERE "orgId" = p_org_id;
   v_has_before := FOUND;
 
   IF p_only_if_expired AND NOT (
@@ -170,13 +261,24 @@ BEGIN
   -- id). A deliberate change supersedes the other live rows, so one live plan
   -- remains; the expiry job never takes away access that another live row
   -- still pays for.
+  IF p_extend_months IS NOT NULL THEN
+    IF EXISTS (
+      SELECT 1 FROM public.subscriptions s
+       WHERE (s."orgId" = p_org_id OR s."orgId" = ANY (v_siblings))
+         AND s.status IN ('active', 'past_due') AND s."currentPeriodEnd" IS NULL
+    ) THEN
+      v_end_utc := NULL;
+    ELSE
+      SELECT GREATEST(v_now_utc, coalesce(max(s."currentPeriodEnd"), v_now_utc))
+        INTO v_end_utc
+        FROM public.subscriptions s
+       WHERE (s."orgId" = p_org_id OR s."orgId" = ANY (v_siblings))
+         AND s.status IN ('active', 'past_due');
+      v_end_utc := v_end_utc + make_interval(months => p_extend_months);
+    END IF;
+  END IF;
+
   IF p_user_id IS NOT NULL THEN
-    SELECT coalesce(array_agg(k), ARRAY[]::TEXT[]) INTO v_siblings
-      FROM (
-        SELECT c.id AS k FROM public.companies c WHERE c.user_id = p_user_id
-        UNION SELECT p_user_id::text
-      ) keys
-     WHERE k <> p_org_id;
     IF p_only_if_expired THEN
       v_keep_access := EXISTS (
         SELECT 1 FROM public.subscriptions s
@@ -264,8 +366,8 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
 $$;
 
 REVOKE EXECUTE ON FUNCTION public.billing_is_expired(TEXT, TIMESTAMP, TIMESTAMP, TIMESTAMPTZ) FROM PUBLIC, anon, authenticated;
-REVOKE EXECUTE ON FUNCTION public.billing_set_plan(TEXT, UUID, TEXT, TIMESTAMPTZ, TEXT, TEXT, TEXT, TEXT, BOOLEAN, TIMESTAMPTZ, TEXT) FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.billing_set_plan(TEXT, UUID, TEXT, TIMESTAMPTZ, TEXT, TEXT, TEXT, TEXT, BOOLEAN, TIMESTAMPTZ, TEXT, INTEGER) FROM PUBLIC, anon, authenticated;
 REVOKE EXECUTE ON FUNCTION public.billing_due_expirations(TIMESTAMPTZ, INTEGER) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.billing_is_expired(TEXT, TIMESTAMP, TIMESTAMP, TIMESTAMPTZ) TO service_role;
-GRANT EXECUTE ON FUNCTION public.billing_set_plan(TEXT, UUID, TEXT, TIMESTAMPTZ, TEXT, TEXT, TEXT, TEXT, BOOLEAN, TIMESTAMPTZ, TEXT) TO service_role;
+GRANT EXECUTE ON FUNCTION public.billing_set_plan(TEXT, UUID, TEXT, TIMESTAMPTZ, TEXT, TEXT, TEXT, TEXT, BOOLEAN, TIMESTAMPTZ, TEXT, INTEGER) TO service_role;
 GRANT EXECUTE ON FUNCTION public.billing_due_expirations(TIMESTAMPTZ, INTEGER) TO service_role;

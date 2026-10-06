@@ -13,7 +13,12 @@ const s = vi.hoisted(() => ({
 
 vi.mock('@/lib/notifications', () => ({ notifyAdmins: s.notify }))
 vi.mock('@/lib/background', () => ({ runInBackground: async (_l: string, work: () => Promise<unknown>) => { await work() } }))
-vi.mock('@/lib/rate-limit', () => ({ isRateLimitedKey: async () => false, isRateLimited: async () => false }))
+vi.mock('@/lib/rate-limit', () => ({
+  isRateLimitedKey: async () => false,
+  isRateLimited: async () => false,
+  checkRateLimitForRequest: async () => ({ limited: false, reason: 'ok', limit: 20, remaining: 19, retryAfterSeconds: 0, backend: 'memory' }),
+  rateLimitResponse: () => new Response(null, { status: 429 }),
+}))
 vi.mock('@/lib/events/track', () => ({ trackEvent: async () => {} }))
 vi.mock('@/lib/db', () => ({ prisma: { adminRequest: { create: async () => ({ id: 'req-1' }) } } }))
 vi.mock('@/lib/supabase-service', () => ({ createServiceClient: () => ({ from: () => ({ insert: async () => ({ error: null }) }) }) }))

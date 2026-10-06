@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { createServerClient } from '@/lib/supabase-server'
 import { createServiceClient } from '@/lib/supabase-service'
-import { isRateLimited, isRateLimitedKey } from '@/lib/rate-limit'
+import { checkRateLimitForRequest, isRateLimitedKey, rateLimitResponse } from '@/lib/rate-limit'
 import { notifyAdmins } from '@/lib/notifications'
 import { runInBackground } from '@/lib/background'
 
@@ -23,9 +23,8 @@ import { runInBackground } from '@/lib/background'
  */
 export async function POST(req: NextRequest) {
   try {
-    if (await isRateLimited(req, 'client-register-ip', { max: 20, windowMs: 10 * 60_000 })) {
-      return NextResponse.json({ error: 'Слишком много запросов. Попробуйте позже.' }, { status: 429, headers: { 'Retry-After': '600' } })
-    }
+    const ipLimit = await checkRateLimitForRequest(req, 'client-register-ip', { max: 20, windowMs: 10 * 60_000 })
+    if (ipLimit.limited) return rateLimitResponse(ipLimit)
     const { userId, email, name, company } = (await req.json()) as {
       userId: string
       email: string

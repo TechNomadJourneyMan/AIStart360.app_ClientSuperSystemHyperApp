@@ -169,6 +169,11 @@ export interface SetPlanInput {
    * (reason 'payment_already_final').
    */
   paymentTransactionId?: string | null
+  /**
+   * Paid months added to the person's live paid period (any tenant key),
+   * computed in SQL under the row locks; periodEnd is ignored when set.
+   */
+  extendMonths?: number | null
   /** Extra journal metadata (transaction id, months added, …). */
   meta?: Record<string, unknown>
 }
@@ -246,6 +251,7 @@ export async function setPlan(input: SetPlanInput, svc: Svc = createServiceClien
     p_actor: input.actor.id,
     p_only_if_expired: input.onlyIfExpired === true,
     ...(input.paymentTransactionId ? { p_payment_tx: input.paymentTransactionId } : {}),
+    ...(input.extendMonths ? { p_extend_months: input.extendMonths } : {}),
   })
   if (error) {
     const code: BillingErrorCode = isMissingSchema(error)

@@ -6,7 +6,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { createServiceClient } from '@/lib/supabase-service'
 import { logAudit } from '@/lib/audit'
-import { BillingError, KASPI_WEBHOOK_ACTOR, addMonths, getEffectivePlan, setPlan } from '@/lib/payments/billing'
+import { BillingError, KASPI_WEBHOOK_ACTOR, getEffectivePlan, setPlan } from '@/lib/payments/billing'
 
 /**
  * POST /api/webhooks/kaspi — платёжный callback Kaspi-эквайринга.
@@ -141,16 +141,19 @@ export async function POST(req: NextRequest) {
     const userId = await resolveUserId(tx.orgId)
     let planResult: Awaited<ReturnType<typeof setPlan>>
     try {
-      const current = await getEffectivePlan({ orgId: tx.orgId, userId })
+      // Read across both tenant keys (a plan granted under the user id must
+      // not be missed when the payment is keyed by the company).
+      const current = await getEffectivePlan(userId ? { userId } : { orgId: tx.orgId })
       const live = current.status === 'active' || current.status === 'past_due'
       const isMonthly = (tx.planKey ?? '').includes('monthly')
-      const now = new Date()
-      const base = live && current.periodEnd && new Date(current.periodEnd) > now ? new Date(current.periodEnd) : now
       planResult = await setPlan({
         orgId: tx.orgId,
         userId,
         tier: live && current.tier === 'enterprise' ? 'enterprise' : 'pro',
-        periodEnd: isMonthly ? addMonths(base, 1) : null,
+        // Monthly: one month from the end of the live paid period, computed in
+        // SQL under the row locks; one-time: open-ended Pro.
+        periodEnd: null,
+        extendMonths: isMonthly ? 1 : null,
         source: 'kaspi',
         provider: 'kaspi',
         actor: KASPI_WEBHOOK_ACTOR,
