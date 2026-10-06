@@ -143,8 +143,8 @@ async function pdfText(buffer: Buffer, maxChars: number, maxPages: number): Prom
 }
 
 async function docxText(buffer: Buffer, maxChars: number): Promise<StructuredText> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const mod = (await import('mammoth')) as any
+  type MammothModule = typeof import('mammoth')
+  const mod = (await import('mammoth')) as MammothModule & { default?: MammothModule }
   const mammoth = mod.default ?? mod
   const result = await mammoth.extractRawText({ buffer })
   const b = new Builder(maxChars)
