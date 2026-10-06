@@ -1,187 +1,54 @@
 'use client'
 
-// E-commerce cabinet — full dashboard tuned for online retail.
-// Sections: hero · funnel sankey · channel mix · marketplaces · SKU health
-//   · RFM heatmap · cohort LTV · cart recovery · seasonality · 11 e-com goals
+// E-commerce cabinet — dashboard for online retail.
+// Sections: hero · KPI row · funnel · channel mix · marketplaces · SKU health
+//   · RFM · cohort LTV · cart recovery · seasonality · logistics/finance
+//   · typical e-com goals (suggestions, not progress)
 //
-// Data layering:
-//   1. Survey answers (ec_* keys from /client/onboarding-ecommerce) overlay
-//      the hero, KPI row and funnel as soon as the user has filled them.
-//   2. Everything without a survey source renders demo data with a badge.
-//   3. Real integrations (GA4 / WB / Ozon / Kaspi) later replace both via
-//      the same EcommerceData contract (lib/integrations/ecommerce/).
+// Data rules (no demo data, see lib/ecommerce/survey-view.ts):
+//   • Every value comes from the client's own survey answers (ec_* keys saved
+//     by /client/onboarding-ecommerce) or is an arithmetic derivation of them,
+//     labelled «расчёт по анкете».
+//   • Company name: companies.name via GET /api/v1/onboarding/company, else
+//     the neutral «Ваш магазин».
+//   • No invented targets or trends: no survey key provides them → «Цель не
+//     задана» / «—».
+//   • Blocks without a survey source (per-channel, per-marketplace, per-SKU,
+//     RFM, cohorts, cart flows, monthly sales) are honest empty states — the
+//     integrations in lib/integrations/ecommerce/ are not connected yet.
+//
+// ec_* answers are read straight from survey_answers under RLS (own rows
+// only), like /client/onboarding-medical does for medical_* keys:
+// GET /api/v1/onboarding/survey returns only 12-step-wizard keys.
 
 import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import {
+  ECOMMERCE_SURVEY_HREF,
+  INTEGRATION_NOTES,
+  buildEcommerceView,
+  extractEcommerceAnswers,
+  formatKpiValue,
+  formatMoney,
+  formatNumber,
+  formatPercent,
+  formatRatio,
+  type EcommerceView,
+  type KpiTile,
+  type Provenance,
+  type SurveyStep,
+} from '@/lib/ecommerce/survey-view'
 
-// ─── Mock data (shape mirrors what real integrations will produce) ──────
+// ─── Data loading ─────────────────────────────────────────────────────────
 
-const DATA = {
-  company:  { name: 'Demo Shop', industry: 'Электроника · аксессуары', platform: 'Shopify + Wildberries + Kaspi' },
-  revenue:  { current: 84_200_000, target: 110_000_000, trend: 12.4 },
-  aov:      { current: 8_500, target: 10_500, trend: 4.1 },
-  ordersMo: { current: 1_240, target: 1_800, trend: 9.2 },
-  ltvCac:   { current: 4.78, target: 5.0, trend: 0.3 },
+type LoadState =
+  | { status: 'loading' }
+  | { status: 'error' }
+  | { status: 'ready'; answers: Record<string, unknown>; companyName: string | null; companyIndustry: string | null }
 
-  funnel: [
-    { stage: 'Visit',    n: 150_000, conv: 1.00 },
-    { stage: 'Cart',     n: 12_000,  conv: 0.08 },
-    { stage: 'Checkout', n: 4_800,   conv: 0.40 },
-    { stage: 'Paid',     n: 1_240,   conv: 0.26 },
-  ],
-
-  channels: [
-    { name: 'Direct',         revenue: 25_300_000, cac: 0,      roas: Infinity, share: 30 },
-    { name: 'Organic (SEO)',  revenue: 18_500_000, cac: 1_200,  roas: 12.5,     share: 22 },
-    { name: 'Yandex Direct',  revenue: 14_700_000, cac: 4_500,  roas: 3.8,      share: 17 },
-    { name: 'Meta Ads',       revenue: 12_900_000, cac: 5_200,  roas: 3.2,      share: 15 },
-    { name: 'TikTok Ads',     revenue:  7_400_000, cac: 3_800,  roas: 2.5,      share: 9  },
-    { name: 'Email',          revenue:  3_600_000, cac: 200,    roas: 18.0,     share: 4  },
-    { name: 'Реферралы',      revenue:  1_800_000, cac: 0,      roas: Infinity, share: 3  },
-  ],
-
-  marketplaces: [
-    { name: 'Wildberries', share: 38, rating: 4.7, buybox: 72, payout: 86, badge: 'ok'   },
-    { name: 'Ozon',         share: 24, rating: 4.5, buybox: 64, payout: 81, badge: 'ok'   },
-    { name: 'Kaspi',        share: 22, rating: 4.8, buybox: 88, payout: 92, badge: 'ok'   },
-    { name: 'Uzum',         share: 10, rating: 4.2, buybox: 51, payout: 74, badge: 'warn' },
-    { name: 'Trendyol',     share:  6, rating: 4.0, buybox: 42, payout: 68, badge: 'warn' },
-  ],
-
-  sku: [
-    { name: 'iPhone 16 Pro 256',         sales: 142, margin: 18, returns: 1.2, status: 'live'  },
-    { name: 'Чехол Premium Leather',     sales: 528, margin: 64, returns: 2.8, status: 'live'  },
-    { name: 'AirPods Pro USB-C',         sales: 287, margin: 22, returns: 1.0, status: 'live'  },
-    { name: 'Зарядка GaN 65W',           sales: 196, margin: 41, returns: 4.7, status: 'risk'  },
-    { name: 'Чехол силикон базовый',     sales:  18, margin: 12, returns: 0.5, status: 'dead'  },
-    { name: 'Apple Watch S9 GPS',        sales:  78, margin: 14, returns: 2.1, status: 'live'  },
-    { name: 'Стекло защитное HD',        sales: 412, margin: 71, returns: 1.4, status: 'live'  },
-    { name: 'MagSafe powerbank',         sales:   9, margin: 33, returns: 6.2, status: 'dead'  },
-  ],
-
-  rfm: [
-    // 5x5 grid Recency × Frequency, value = customers count
-    [12, 18, 25, 31, 42],
-    [22, 28, 36, 48, 58],
-    [38, 44, 52, 61, 67],
-    [54, 62, 71, 74, 68],
-    [78, 84, 76, 65, 47],
-  ],
-
-  cohort: [
-    { month: 'Янв', months: [100, 42, 28, 22, 19, 17, 15, 14, 13, 12, 11, 10] },
-    { month: 'Фев', months: [100, 45, 31, 24, 21, 18, 16, 15, 14, 13, 12] },
-    { month: 'Мар', months: [100, 48, 33, 27, 23, 20, 18, 17, 15, 14] },
-    { month: 'Апр', months: [100, 52, 36, 29, 25, 22, 19, 18, 16] },
-    { month: 'Май', months: [100, 51, 35, 30, 26, 23, 20, 18] },
-    { month: 'Июн', months: [100, 49, 34, 28, 25, 22, 19] },
-  ],
-
-  cartRecovery: {
-    abandoned:    1_870,
-    recovered:    412,
-    recoveredRev: 3_502_000,
-    rate:         22,
-    flows: [
-      { name: 'Email +1ч',  triggered: 1_870, opened: 980, recovered: 178 },
-      { name: 'Email +24ч', triggered: 1_692, opened: 740, recovered: 134 },
-      { name: 'SMS +3д',    triggered: 1_558, opened: 1_244, recovered: 67 },
-      { name: 'Скидка 10%', triggered: 1_491, opened: 822, recovered: 33  },
-    ],
-  },
-
-  seasonality: [
-    { m: 'Янв', v: 0.62 }, { m: 'Фев', v: 0.55 }, { m: 'Мар', v: 0.78 },
-    { m: 'Апр', v: 0.82 }, { m: 'Май', v: 0.71 }, { m: 'Июн', v: 0.68 },
-    { m: 'Июл', v: 0.72 }, { m: 'Авг', v: 0.85 }, { m: 'Сен', v: 0.92 },
-    { m: 'Окт', v: 0.88 }, { m: 'Ноя', v: 1.00, label: 'BF' }, { m: 'Дек', v: 0.96, label: 'НГ' },
-  ] as Array<{ m: string; v: number; label?: string }>,
-} as const
-
-// ─── Helpers ──────────────────────────────────────────────────────────────
-
-const fmt = (n: number) => new Intl.NumberFormat('ru-KZ').format(n)
-const fmtMoney = (n: number) => `₸${(n / 1_000_000).toFixed(1)}М`
-
-const statusColor = (s: string) =>
-  s === 'live' ? 'text-primary' :
-  s === 'risk' ? 'text-tertiary-container' :
-  s === 'dead' ? 'text-error' :
-  s === 'ok'   ? 'text-primary' :
-  s === 'warn' ? 'text-tertiary-container' :
-  'text-on-surface-variant'
-
-// ─── Survey overlay ────────────────────────────────────────────────────────
-// Pulls ec_* answers saved by /client/onboarding-ecommerce and derives the
-// view model for hero / KPI row / funnel. Missing answers → demo fallback.
-
-interface KpiView { current: number; target: number; trend: number | null }
-
-interface SurveyView {
-  fromSurvey: boolean
-  company: { name: string; industry: string; platform: string }
-  revenue: KpiView
-  aov: KpiView
-  ordersMo: KpiView
-  ltvCac: KpiView
-  funnel: Array<{ stage: string; n: number; conv: number }>
-}
-
-function num(v: unknown): number | null {
-  const n = typeof v === 'string' ? Number(v) : typeof v === 'number' ? v : NaN
-  return Number.isFinite(n) && n > 0 ? n : null
-}
-
-function buildView(answers: Record<string, unknown> | null): SurveyView {
-  const base: SurveyView = {
-    fromSurvey: false,
-    company: { ...DATA.company },
-    revenue: { ...DATA.revenue },
-    aov: { ...DATA.aov },
-    ordersMo: { ...DATA.ordersMo },
-    ltvCac: { ...DATA.ltvCac },
-    funnel: DATA.funnel.map((f) => ({ ...f })),
-  }
-  if (!answers) return base
-
-  const revenue = num(answers.ec_revenue_2024)
-  const aov = num(answers.ec_aov)
-  const visitors = num(answers.ec_visitors_per_month)
-  const crVisitCart = num(answers.ec_cr_visit_to_cart)
-  const crCartPay = num(answers.ec_cr_cart_to_pay)
-  const roas = num(answers.ec_roas)
-  const platforms = Array.isArray(answers.ec_platforms)
-    ? (answers.ec_platforms as string[]).join(' + ')
-    : null
-
-  const anySurvey = Boolean(revenue || aov || visitors || platforms)
-  if (!anySurvey) return base
-
-  base.fromSurvey = true
-  if (platforms) base.company = { ...base.company, name: 'Мой магазин', platform: platforms }
-
-  // Trends are unknown from a one-shot survey → null renders as "—".
-  if (revenue) base.revenue = { current: revenue, target: Math.round(revenue * 1.3), trend: null }
-  if (aov)     base.aov     = { current: aov,     target: Math.round(aov * 1.25),     trend: null }
-  if (roas)    base.ltvCac  = { current: roas,    target: Math.max(3, roas),          trend: null }
-
-  if (visitors && crVisitCart && crCartPay) {
-    const cart = Math.round(visitors * (crVisitCart / 100))
-    const paid = Math.round(cart * (crCartPay / 100))
-    base.funnel = [
-      { stage: 'Visit', n: visitors, conv: 1 },
-      { stage: 'Cart',  n: cart,     conv: crVisitCart / 100 },
-      { stage: 'Paid',  n: paid,     conv: crCartPay / 100 },
-    ]
-    base.ordersMo = { current: paid, target: Math.round(paid * 1.45), trend: null }
-  }
-  return base
-}
-
-function useEcommerceSurveyView(): { view: SurveyView; loading: boolean } {
-  const [answers, setAnswers] = useState<Record<string, unknown> | null>(null)
-  const [loading, setLoading] = useState(true)
+function useEcommerceView(): { state: LoadState; view: EcommerceView | null } {
+  const [state, setState] = useState<LoadState>({ status: 'loading' })
 
   useEffect(() => {
     let cancelled = false
@@ -189,48 +56,112 @@ function useEcommerceSurveyView(): { view: SurveyView; loading: boolean } {
       try {
         const sb = createClient()
         const { data: { user } } = await sb.auth.getUser()
-        if (!user) return
-        const res = await fetch(`/api/v1/onboarding/survey?user_id=${user.id}`, { cache: 'no-store' })
-        if (!res.ok) return
-        const json = await res.json() as { ok: boolean; data?: { answers?: Record<string, unknown> } }
-        if (!cancelled && json.ok && json.data?.answers) setAnswers(json.data.answers)
+        if (!user) {
+          if (!cancelled) setState({ status: 'error' })
+          return
+        }
+        const [answersRes, company] = await Promise.all([
+          sb
+            .from('survey_answers')
+            .select('question_key, answer')
+            .eq('user_id', user.id)
+            .like('question_key', 'ec_%'),
+          // The company record is optional: without it the hero shows «Ваш магазин».
+          fetch('/api/v1/onboarding/company', { cache: 'no-store' })
+            .then((r) => (r.ok ? r.json() : null))
+            .catch(() => null) as Promise<{ ok?: boolean; data?: { name?: unknown; industry?: unknown } | null } | null>,
+        ])
+        if (answersRes.error) throw answersRes.error
+        if (cancelled) return
+        const record = company?.ok ? company.data : null
+        setState({
+          status: 'ready',
+          answers: extractEcommerceAnswers(answersRes.data),
+          companyName: typeof record?.name === 'string' ? record.name : null,
+          companyIndustry: typeof record?.industry === 'string' ? record.industry : null,
+        })
       } catch {
-        // demo fallback already in place
-      } finally {
-        if (!cancelled) setLoading(false)
+        if (!cancelled) setState({ status: 'error' })
       }
     })()
     return () => { cancelled = true }
   }, [])
 
-  const view = useMemo(() => buildView(answers), [answers])
-  return { view, loading }
+  const view = useMemo(
+    () =>
+      state.status === 'ready'
+        ? buildEcommerceView(state.answers, { companyName: state.companyName, companyIndustry: state.companyIndustry })
+        : null,
+    [state],
+  )
+  return { state, view }
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────
 
 export default function DashboardEcommercePage() {
-  const { view } = useEcommerceSurveyView()
+  const { state, view } = useEcommerceView()
   return (
     <div className="min-h-screen bg-surface text-on-surface">
       <Topbar />
 
       <main className="max-w-7xl mx-auto px-6 py-10 space-y-10">
-        <Hero view={view} />
-        <KpiRow view={view} />
-        <FunnelSankey view={view} />
-        <ChannelMix />
-        <MarketplacesStrip />
-        <SkuHealth />
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-          <RFMHeatmap />
-          <CohortLTV />
-        </div>
-        <CartRecovery />
-        <Seasonality />
-        <GoalsStrip />
+        {state.status === 'loading' && <LoadingState />}
+        {state.status === 'error' && <ErrorState />}
+        {view && (
+          <>
+            <Hero view={view} />
+            <KpiRow kpis={view.kpis} />
+            <FunnelSection funnel={view.funnel} />
+            <ChannelMix channels={view.channels} />
+            <MarketplacesStrip marketplaces={view.marketplaces} />
+            <SkuHealth catalog={view.catalog} />
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+              <RFMSection customers={view.customers} />
+              <CohortLTV />
+            </div>
+            <CartRecovery cart={view.cartRecovery} />
+            <Seasonality seasonality={view.seasonality} />
+            <Operations operations={view.operations} />
+            <GoalsStrip />
+          </>
+        )}
       </main>
     </div>
+  )
+}
+
+// ─── States ───────────────────────────────────────────────────────────────
+
+function LoadingState() {
+  return (
+    <div className="space-y-5" aria-busy="true" aria-live="polite">
+      <span className="sr-only">Загружаем данные кабинета…</span>
+      <div className="skeleton h-40 rounded-3xl" />
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {Array.from({ length: 4 }).map((_, i) => <div key={i} className="skeleton h-32 rounded-2xl" />)}
+      </div>
+      <div className="skeleton h-64 rounded-3xl" />
+    </div>
+  )
+}
+
+function ErrorState() {
+  return (
+    <section className="bg-surface-container-low rounded-3xl border border-error/20 p-8 text-center" role="alert">
+      <span className="material-symbols-outlined text-3xl text-error" aria-hidden="true">error</span>
+      <h2 className="font-headline text-2xl font-extrabold mt-2">Не удалось загрузить данные</h2>
+      <p className="text-sm text-on-surface-variant mt-2">
+        Мы не смогли получить ответы анкеты. Обновите страницу или попробуйте позже.
+      </p>
+      <Link
+        href={ECOMMERCE_SURVEY_HREF}
+        className="inline-flex items-center gap-1.5 mt-5 px-5 py-2.5 rounded-xl border border-white/[0.08] hover:border-primary/40 hover:text-primary transition-colors text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
+      >
+        <span className="material-symbols-outlined text-base" aria-hidden="true">edit_note</span>
+        Открыть анкету
+      </Link>
+    </section>
   )
 }
 
@@ -252,17 +183,17 @@ function Topbar() {
         </div>
         <div className="flex items-center gap-4">
           <Link
-            href="/client/onboarding-ecommerce"
+            href={ECOMMERCE_SURVEY_HREF}
             className="text-xs text-on-surface-variant hover:text-primary transition-colors hidden sm:inline-flex items-center gap-1"
           >
-            <span className="material-symbols-outlined text-[14px]">edit_note</span>
+            <span className="material-symbols-outlined text-[14px]" aria-hidden="true">edit_note</span>
             Анкета
           </Link>
           <Link
-            href="/client/onboarding-ecommerce"
+            href="/client/onboarding/documents"
             className="text-xs text-on-surface-variant hover:text-primary transition-colors hidden sm:inline-flex items-center gap-1"
           >
-            <span className="material-symbols-outlined text-[14px]">upload</span>
+            <span className="material-symbols-outlined text-[14px]" aria-hidden="true">upload</span>
             Файлы
           </Link>
           <Link
@@ -277,8 +208,8 @@ function Topbar() {
   )
 }
 
-function Hero({ view }: { view: SurveyView }) {
-  const { company, fromSurvey } = view
+function Hero({ view }: { view: EcommerceView }) {
+  const { company, hasSurvey } = view
   return (
     <section className="bg-surface-container-low rounded-3xl border border-white/[0.06] p-8">
       <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">
@@ -286,44 +217,68 @@ function Hero({ view }: { view: SurveyView }) {
           <div className="flex items-center gap-3 mb-3">
             <p className="text-xs font-mono text-primary uppercase tracking-[0.2em]">КАБИНЕТ · E-COMMERCE</p>
             <span className={`text-[9px] font-mono uppercase px-2 py-0.5 rounded-full border ${
-              fromSurvey
+              hasSurvey
                 ? 'bg-primary/10 border-primary/30 text-primary'
                 : 'bg-surface-container border-white/[0.08] text-on-surface-variant'
             }`}>
-              {fromSurvey ? 'данные из анкеты' : 'демо-данные'}
+              {hasSurvey ? 'данные из анкеты' : 'анкета не заполнена'}
             </span>
           </div>
           <h1 className="font-headline text-3xl lg:text-4xl font-extrabold">{company.name}</h1>
-          <p className="text-on-surface-variant mt-1.5 text-sm">{company.industry} · {company.platform}</p>
+          <p className="text-on-surface-variant mt-1.5 text-sm">
+            {company.details.length
+              ? company.details.join(' · ')
+              : 'Платформа, сайт и стаж магазина появятся после заполнения анкеты'}
+          </p>
         </div>
         <div className="flex gap-3">
-          <Link href="/client/onboarding-ecommerce" className="px-5 py-2.5 rounded-xl border border-white/[0.08] hover:border-primary/40 hover:text-primary transition-colors text-sm">
-            <span className="material-symbols-outlined text-base align-middle mr-1">upload</span>
-            Загрузить отчёт
+          <Link
+            href={ECOMMERCE_SURVEY_HREF}
+            className={`px-5 py-2.5 rounded-xl text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-primary/40 ${
+              hasSurvey
+                ? 'border border-white/[0.08] hover:border-primary/40 hover:text-primary'
+                : 'bg-primary text-on-primary font-semibold hover:bg-primary/90'
+            }`}
+          >
+            <span className="material-symbols-outlined text-base align-middle mr-1" aria-hidden="true">edit_note</span>
+            {hasSurvey ? 'Обновить анкету' : 'Заполнить анкету'}
           </Link>
         </div>
       </div>
+      {!hasSurvey && (
+        <div className="mt-6 rounded-2xl border border-primary/20 bg-primary/[0.04] p-4 text-sm text-on-surface-variant">
+          Анкета e-commerce ещё не заполнена, поэтому показатели ниже пусты. Заполните 7 коротких шагов —
+          и кабинет покажет цифры вашего магазина. Мы не подставляем примерные данные.
+        </div>
+      )}
     </section>
   )
 }
 
-function KpiRow({ view }: { view: SurveyView }) {
-  const t = (v: number | null, suffix = '%') => (v == null ? '—' : `+${v}${suffix}`)
-  const items = [
-    { label: 'Выручка',    cur: fmtMoney(view.revenue.current),  tgt: fmtMoney(view.revenue.target),  trend: t(view.revenue.trend) },
-    { label: 'AOV (чек)',  cur: `₸${fmt(view.aov.current)}`,     tgt: `₸${fmt(view.aov.target)}`,     trend: t(view.aov.trend) },
-    { label: 'Заказов/мес', cur: fmt(view.ordersMo.current),     tgt: fmt(view.ordersMo.target),      trend: t(view.ordersMo.trend) },
-    { label: 'LTV/CAC',    cur: `${view.ltvCac.current}x`,       tgt: `${view.ltvCac.target}x`,       trend: t(view.ltvCac.trend, 'x') },
-  ]
+function KpiRow({ kpis }: { kpis: KpiTile[] }) {
   return (
     <section className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-      {items.map((it) => (
-        <div key={it.label} className="bg-surface-container-low rounded-2xl border border-white/[0.06] p-5">
+      {kpis.map((it) => (
+        <div key={it.key} className="bg-surface-container-low rounded-2xl border border-white/[0.06] p-5 flex flex-col">
           <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider mb-2">{it.label}</p>
-          <p className="font-headline text-2xl font-extrabold text-on-surface">{it.cur}</p>
-          <div className="flex items-center justify-between mt-2 text-[10px] text-on-surface-variant/70">
-            <span>→ {it.tgt}</span>
-            <span className="text-primary font-mono">{it.trend}</span>
+          <p className={`font-headline text-2xl font-extrabold ${it.value == null ? 'text-on-surface-variant' : 'text-on-surface'}`}>
+            {formatKpiValue(it)}
+          </p>
+          {it.value != null && it.provenance ? (
+            <ProvenanceCaption provenance={it.provenance} text={it.basis ?? undefined} className="mt-1" />
+          ) : (
+            <Link
+              href={ECOMMERCE_SURVEY_HREF}
+              className="mt-1 text-[10px] text-on-surface-variant/80 hover:text-primary transition-colors"
+            >
+              Нет данных · заполните шаг «{it.step}»
+            </Link>
+          )}
+          <div className="flex items-center justify-between mt-auto pt-2 text-[10px] text-on-surface-variant/70">
+            <span>{it.target == null ? 'Цель не задана' : `→ ${formatKpiValue({ value: it.target, unit: it.unit })}`}</span>
+            <span className="font-mono" title="Динамика появится, когда будут данные за несколько периодов">
+              {it.trend == null ? '—' : `${it.trend > 0 ? '+' : ''}${it.trend}%`}
+            </span>
           </div>
         </div>
       ))}
@@ -331,222 +286,173 @@ function KpiRow({ view }: { view: SurveyView }) {
   )
 }
 
-function FunnelSankey({ view }: { view: SurveyView }) {
-  const funnel = view.funnel
-  const max = funnel[0].n
+function FunnelSection({ funnel }: { funnel: EcommerceView['funnel'] }) {
+  const { stages, rates, missing, status } = funnel
+  const max = stages[0]?.n ?? 0
   return (
     <SectionCard
       eyebrow="ВОРОНКА"
-      title={funnel.map((f) => f.stage).join(' → ')}
-      hint="Потери на каждом этапе. Цель: поднять Cart→Paid >50%."
+      title="Посетители → Корзина → Оплата"
+      hint="Потери на каждом этапе. Посетители — из анкеты, остальные этапы — расчёт по вашим конверсиям."
     >
-      <div className="space-y-3">
-        {funnel.map((stage, i) => {
-          const widthPct = (stage.n / max) * 100
-          const prevN = i === 0 ? null : funnel[i - 1].n
-          const drop = prevN ? ((1 - stage.n / prevN) * 100).toFixed(1) : null
-          return (
-            <div key={stage.stage} className="flex items-center gap-4">
-              <p className="text-sm font-medium w-24 flex-shrink-0">{stage.stage}</p>
-              <div className="flex-1 h-10 bg-surface-container rounded-xl overflow-hidden relative">
-                <div
-                  className="h-full bg-gradient-to-r from-primary to-primary/60 rounded-xl flex items-center px-4"
-                  style={{ width: `${widthPct}%` }}
-                >
-                  <span className="text-xs font-mono font-bold text-on-primary">{fmt(stage.n)}</span>
-                </div>
-              </div>
-              <p className="text-xs font-mono text-on-surface-variant w-24 flex-shrink-0 text-right">
-                CR {(stage.conv * 100).toFixed(1)}%
-              </p>
-              {drop && (
-                <p className="text-xs font-mono text-error w-20 flex-shrink-0 text-right">
-                  −{drop}%
-                </p>
-              )}
+      {status === 'empty' ? (
+        <SurveyEmpty step="Воронка" what="посещаемость и конверсии" />
+      ) : (
+        <div className="space-y-4">
+          {stages.length > 0 && (
+            <div className="space-y-3">
+              {stages.map((stage, i) => {
+                const widthPct = max > 0 ? Math.max((stage.n / max) * 100, 2) : 0
+                const prevN = i === 0 ? null : stages[i - 1].n
+                const drop = prevN ? ((1 - stage.n / prevN) * 100).toFixed(1) : null
+                return (
+                  <div key={stage.key} className="flex items-center gap-4">
+                    <p className="text-sm font-medium w-24 flex-shrink-0">{stage.label}</p>
+                    <div className="flex-1 h-10 bg-surface-container rounded-xl overflow-hidden relative">
+                      <div
+                        className="h-full bg-gradient-to-r from-primary to-primary/60 rounded-xl flex items-center px-4"
+                        style={{ width: `${widthPct}%` }}
+                      >
+                        <span className="text-xs font-mono font-bold text-on-primary">{formatNumber(stage.n)}</span>
+                      </div>
+                    </div>
+                    <p className="text-xs font-mono text-on-surface-variant w-24 flex-shrink-0 text-right">
+                      {stage.conv == null ? 'из анкеты' : `CR ${formatPercent(stage.conv * 100)}`}
+                    </p>
+                    <p className="text-xs font-mono text-error w-20 flex-shrink-0 text-right">
+                      {drop ? `−${drop}%` : ''}
+                    </p>
+                  </div>
+                )
+              })}
             </div>
-          )
-        })}
-      </div>
+          )}
+          {stages.length === 0 && (
+            <div className="flex flex-wrap gap-3">
+              {rates.visitToCart != null && <Fact label="CR Visit → Cart" value={formatPercent(rates.visitToCart)} provenance="survey" />}
+              {rates.cartToPaid != null && <Fact label="CR Cart → Paid" value={formatPercent(rates.cartToPaid)} provenance="survey" />}
+            </div>
+          )}
+          {stages.some((s) => s.provenance === 'calculated') && (
+            <ProvenanceCaption provenance="calculated" text="расчёт по анкете: посетители × конверсии" />
+          )}
+          {missing.length > 0 && (
+            <p className="text-xs text-on-surface-variant">
+              Для полной воронки не хватает: {missing.join(', ')}.{' '}
+              <Link href={ECOMMERCE_SURVEY_HREF} className="text-primary hover:underline">Дополнить анкету</Link>
+            </p>
+          )}
+        </div>
+      )}
     </SectionCard>
   )
 }
 
-function ChannelMix() {
-  const totalRev = DATA.channels.reduce((s, c) => s + c.revenue, 0)
+function ChannelMix({ channels }: { channels: EcommerceView['channels'] }) {
   return (
     <SectionCard
       eyebrow="КАНАЛЫ ТРАФИКА"
       title="Атрибуция «канал → выручка»"
-      hint="Сравни ROAS — отключи всё ниже 2.5x, докинь в Email и Organic."
+      hint="Активные каналы, бюджет и общий ROAS — из анкеты. Разбивка по каналам — после подключения аналитики."
     >
-      <div className="overflow-x-auto -mx-2">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider">
-              <th className="text-left py-2 px-2">Канал</th>
-              <th className="text-right py-2 px-2">Выручка</th>
-              <th className="text-right py-2 px-2">Доля</th>
-              <th className="text-right py-2 px-2">CAC</th>
-              <th className="text-right py-2 px-2">ROAS</th>
-            </tr>
-          </thead>
-          <tbody>
-            {DATA.channels.map((c) => {
-              const share = (c.revenue / totalRev) * 100
-              return (
-                <tr key={c.name} className="border-t border-white/[0.04]">
-                  <td className="py-3 px-2 font-medium">{c.name}</td>
-                  <td className="py-3 px-2 text-right font-mono">{fmtMoney(c.revenue)}</td>
-                  <td className="py-3 px-2 text-right">
-                    <div className="flex items-center justify-end gap-2">
-                      <div className="w-16 h-1.5 bg-surface-container rounded-full overflow-hidden">
-                        <div className="h-full bg-primary rounded-full" style={{ width: `${share}%` }} />
-                      </div>
-                      <span className="text-xs font-mono w-10">{share.toFixed(0)}%</span>
-                    </div>
-                  </td>
-                  <td className="py-3 px-2 text-right font-mono text-on-surface-variant">
-                    {c.cac > 0 ? `₸${fmt(c.cac)}` : '—'}
-                  </td>
-                  <td className="py-3 px-2 text-right font-mono">
-                    <span className={c.roas === Infinity ? 'text-primary' : c.roas >= 4 ? 'text-primary' : c.roas >= 2.5 ? 'text-tertiary-container' : 'text-error'}>
-                      {c.roas === Infinity ? '∞' : `${c.roas.toFixed(1)}x`}
-                    </span>
-                  </td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
-      </div>
+      {channels.status === 'empty' ? (
+        <SurveyEmpty step="Трафик" what="каналы трафика, рекламный бюджет и ROAS" />
+      ) : (
+        <div className="space-y-5">
+          {channels.active.length > 0 && <Chips label="Активные каналы" items={channels.active} />}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <Fact label="Бюджет рекламы / мес" value={channels.monthlyBudget != null ? formatMoney(channels.monthlyBudget) : null} provenance="survey" />
+            <Fact label="ROAS (выручка / реклама)" value={channels.roas != null ? formatRatio(channels.roas) : null} provenance="survey" />
+            <Fact
+              label="Выручка с рекламы / мес"
+              value={channels.adRevenueMonthly != null ? formatMoney(channels.adRevenueMonthly) : null}
+              provenance="calculated"
+              caption="расчёт по анкете: бюджет × ROAS"
+            />
+          </div>
+        </div>
+      )}
+      <IntegrationNote text={INTEGRATION_NOTES.channels} />
     </SectionCard>
   )
 }
 
-function MarketplacesStrip() {
+function MarketplacesStrip({ marketplaces }: { marketplaces: EcommerceView['marketplaces'] }) {
   return (
     <SectionCard
       eyebrow="МАРКЕТПЛЕЙСЫ"
-      title="WB · Ozon · Kaspi · Uzum · Trendyol"
-      hint="BuyBox, рейтинг, % выкупа. Цель Uzum/Trendyol — поднять до 75%."
+      title="Где вы продаёте"
+      hint="Площадки, доля выручки и топ-категории — из анкеты."
     >
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
-        {DATA.marketplaces.map((mp) => (
-          <div key={mp.name} className="bg-surface-container rounded-2xl border border-white/[0.04] p-4">
-            <div className="flex items-start justify-between mb-3">
-              <p className="font-bold">{mp.name}</p>
-              <span className={`material-symbols-outlined text-base ${statusColor(mp.badge)}`}>
-                {mp.badge === 'ok' ? 'check_circle' : 'warning'}
-              </span>
-            </div>
-            <p className="font-mono text-2xl font-bold text-primary">{mp.share}%</p>
-            <p className="text-[10px] text-on-surface-variant/70 uppercase tracking-wider mt-0.5">доля выручки</p>
-            <div className="mt-3 space-y-1.5 text-xs">
-              <Row k="Рейтинг" v={`${mp.rating}/5`} />
-              <Row k="BuyBox"  v={`${mp.buybox}%`} />
-              <Row k="Выкуп"   v={`${mp.payout}%`} />
-            </div>
+      {marketplaces.status === 'empty' ? (
+        <SurveyEmpty step="Маркетплейсы" what="площадки и долю выручки с маркетплейсов" />
+      ) : marketplaces.notUsed ? (
+        <p className="text-sm text-on-surface-variant">В анкете отмечено: с маркетплейсами вы не работаете.</p>
+      ) : (
+        <div className="space-y-5">
+          {marketplaces.list.length > 0 && <Chips label="Площадки" items={marketplaces.list} />}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Fact label="Доля выручки с маркетплейсов" value={marketplaces.revenueShare != null ? formatPercent(marketplaces.revenueShare) : null} provenance="survey" />
+            <Fact label="Топ-категории" value={marketplaces.topCategories} provenance="survey" />
           </div>
-        ))}
-      </div>
+        </div>
+      )}
+      {!marketplaces.notUsed && <IntegrationNote text={INTEGRATION_NOTES.marketplaces} />}
     </SectionCard>
   )
 }
 
-function Row({ k, v }: { k: string; v: string }) {
-  return (
-    <div className="flex justify-between">
-      <span className="text-on-surface-variant/70">{k}</span>
-      <span className="font-mono text-on-surface">{v}</span>
-    </div>
-  )
-}
-
-function SkuHealth() {
+function SkuHealth({ catalog }: { catalog: EcommerceView['catalog'] }) {
   return (
     <SectionCard
       eyebrow="КАТАЛОГ · SKU HEALTH"
-      title="ABC/XYZ + Dead stock"
-      hint="Чисти dead stock (>180 дн. без продаж) — заморожено ~₸4М."
+      title="Каталог, dead stock и возвраты"
+      hint="Размер каталога, доля dead stock и возвраты — из анкеты."
     >
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider">
-              <th className="text-left py-2 px-2">SKU</th>
-              <th className="text-right py-2 px-2">Продаж/мес</th>
-              <th className="text-right py-2 px-2">Маржа</th>
-              <th className="text-right py-2 px-2">Возвраты</th>
-              <th className="text-right py-2 px-2">Статус</th>
-            </tr>
-          </thead>
-          <tbody>
-            {DATA.sku.map((s) => (
-              <tr key={s.name} className="border-t border-white/[0.04]">
-                <td className="py-3 px-2 font-medium truncate max-w-[280px]">{s.name}</td>
-                <td className="py-3 px-2 text-right font-mono">{s.sales}</td>
-                <td className="py-3 px-2 text-right font-mono">{s.margin}%</td>
-                <td className="py-3 px-2 text-right font-mono">
-                  <span className={s.returns >= 5 ? 'text-error' : s.returns >= 3 ? 'text-tertiary-container' : 'text-on-surface-variant'}>
-                    {s.returns}%
-                  </span>
-                </td>
-                <td className="py-3 px-2 text-right">
-                  <span className={`text-[10px] font-mono uppercase tracking-wider ${statusColor(s.status)}`}>
-                    {s.status === 'live' ? 'LIVE' : s.status === 'risk' ? 'RISK' : 'DEAD'}
-                  </span>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      {catalog.status === 'empty' ? (
+        <SurveyEmpty step="Каталог" what="размер каталога, dead stock и возвраты" />
+      ) : (
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <Fact label="Всего SKU" value={catalog.totalSku != null ? formatNumber(catalog.totalSku) : null} provenance="survey" />
+            <Fact
+              label="Активных за 90 дней"
+              value={catalog.activeSku != null ? formatNumber(catalog.activeSku) : null}
+              provenance="survey"
+              caption={catalog.activeSharePct != null ? `${formatPercent(catalog.activeSharePct)} каталога · расчёт по анкете` : undefined}
+            />
+            <Fact label="Dead stock (>180 дн.)" value={catalog.deadStockPct != null ? formatPercent(catalog.deadStockPct) : null} provenance="survey" />
+            <Fact label="Возвраты" value={catalog.returnsPct != null ? formatPercent(catalog.returnsPct) : null} provenance="survey" />
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+            <Fact label="Продукт-локомотив" value={catalog.flagship} provenance="survey" />
+            <Fact label="Самый маржинальный" value={catalog.mostMarginal} provenance="survey" />
+            <Fact label="Топ-причина возвратов" value={catalog.topReturnReason} provenance="survey" />
+          </div>
+        </div>
+      )}
+      <IntegrationNote text={INTEGRATION_NOTES.catalog} />
     </SectionCard>
   )
 }
 
-function RFMHeatmap() {
-  const labels = ['1', '2', '3', '4', '5']
-  const max = useMemo(() => Math.max(...DATA.rfm.flat()), [])
+function RFMSection({ customers }: { customers: EcommerceView['customers'] }) {
   return (
     <SectionCard
       eyebrow="RFM"
       title="Сегменты базы клиентов"
-      hint="Recency × Frequency. Champions (5×5) — кампания «just for you»."
+      hint="Recency × Frequency строится по истории заказов."
     >
-      <div className="grid grid-cols-[auto_repeat(5,1fr)] gap-1 text-[10px] font-mono text-on-surface-variant">
-        <span />
-        {labels.map((l) => <span key={l} className="text-center">F{l}</span>)}
-        {DATA.rfm.map((row, ri) => (
-          <Row2 key={ri} ri={ri} row={row} max={max} />
-        ))}
-      </div>
-      <div className="mt-3 flex justify-between text-[10px] text-on-surface-variant">
-        <span>← давно покупали</span>
-        <span>покупали недавно →</span>
-      </div>
+      {customers.status === 'empty' ? (
+        <SurveyEmpty step="Воронка" what="долю повторных покупок и NPS" />
+      ) : (
+        <div className="grid grid-cols-2 gap-3">
+          <Fact label="Повторные покупки" value={customers.repeatRatePct != null ? formatPercent(customers.repeatRatePct) : null} provenance="survey" />
+          <Fact label="NPS" value={customers.nps != null ? formatNumber(customers.nps) : null} provenance="survey" />
+        </div>
+      )}
+      <IntegrationNote text={INTEGRATION_NOTES.customers} />
     </SectionCard>
-  )
-}
-
-function Row2({ ri, row, max }: { ri: number; row: readonly number[]; max: number }) {
-  return (
-    <>
-      <span className="self-center text-center">R{ri + 1}</span>
-      {row.map((v, ci) => {
-        const intensity = v / max
-        return (
-          <div
-            key={ci}
-            className="aspect-square rounded-md flex items-center justify-center text-[10px] text-on-primary font-mono font-bold"
-            style={{ backgroundColor: `rgba(110, 255, 192, ${0.15 + intensity * 0.85})` }}
-          >
-            {v}
-          </div>
-        )
-      })}
-    </>
   )
 }
 
@@ -555,157 +461,219 @@ function CohortLTV() {
     <SectionCard
       eyebrow="COHORT LTV"
       title="Удержание по когортам"
-      hint="Каждая строка = месяц первой покупки. % активны через N мес."
+      hint="Каждая строка — месяц первой покупки, % активных через N месяцев."
     >
-      <div className="overflow-x-auto">
-        <table className="w-full text-[10px] font-mono">
-          <thead>
-            <tr className="text-on-surface-variant/60">
-              <th className="text-left py-1 pr-2">Когорта</th>
-              {Array.from({ length: 12 }).map((_, i) => (
-                <th key={i} className="text-center py-1 px-1">M{i}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {DATA.cohort.map((c) => (
-              <tr key={c.month}>
-                <td className="py-0.5 pr-2 text-on-surface">{c.month}</td>
-                {Array.from({ length: 12 }).map((_, i) => {
-                  const v = c.months[i]
-                  if (v == null) return <td key={i} />
-                  const intensity = v / 100
-                  return (
-                    <td key={i} className="py-0.5 px-0.5">
-                      <div
-                        className="aspect-square rounded text-on-primary font-bold flex items-center justify-center text-[9px]"
-                        style={{ backgroundColor: `rgba(110, 255, 192, ${0.1 + intensity * 0.9})` }}
-                      >
-                        {v}
-                      </div>
-                    </td>
-                  )
-                })}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <EmptyBlock icon="table_chart" text="Нет данных. В анкете нет вопросов о когортах — таблица строится по истории заказов." />
+      <IntegrationNote text={INTEGRATION_NOTES.cohorts} />
     </SectionCard>
   )
 }
 
-function CartRecovery() {
-  const { abandoned, recovered, recoveredRev, rate, flows } = DATA.cartRecovery
+function CartRecovery({ cart }: { cart: EcommerceView['cartRecovery'] }) {
   return (
     <SectionCard
       eyebrow="CART RECOVERY"
-      title={`${rate}% брошенных корзин возвращаются`}
-      hint="Email+1ч даёт самый высокий ROI. Скидка 10% — последний триггер."
+      title={cart.abandonPct != null ? `${formatPercent(cart.abandonPct)} корзин брошено` : 'Брошенные корзины'}
+      hint="Доля брошенных корзин — из анкеты. Сценарии возврата — после подключения рассылок."
     >
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 mb-5">
-        <Stat label="Брошено" value={fmt(abandoned)} />
-        <Stat label="Возвращено" value={fmt(recovered)} accent />
-        <Stat label="Выручка" value={fmtMoney(recoveredRev)} accent />
-        <Stat label="Recovery rate" value={`${rate}%`} accent />
-      </div>
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider">
-              <th className="text-left py-2 px-2">Flow</th>
-              <th className="text-right py-2 px-2">Триггер</th>
-              <th className="text-right py-2 px-2">Открыто</th>
-              <th className="text-right py-2 px-2">Куплено</th>
-              <th className="text-right py-2 px-2">Конверсия</th>
-            </tr>
-          </thead>
-          <tbody>
-            {flows.map((f) => {
-              const cr = (f.recovered / f.triggered) * 100
-              return (
-                <tr key={f.name} className="border-t border-white/[0.04]">
-                  <td className="py-3 px-2 font-medium">{f.name}</td>
-                  <td className="py-3 px-2 text-right font-mono">{fmt(f.triggered)}</td>
-                  <td className="py-3 px-2 text-right font-mono">{fmt(f.opened)}</td>
-                  <td className="py-3 px-2 text-right font-mono text-primary">{fmt(f.recovered)}</td>
-                  <td className="py-3 px-2 text-right font-mono">{cr.toFixed(1)}%</td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
-      </div>
+      {cart.status === 'empty' ? (
+        <SurveyEmpty step="Воронка" what="долю брошенных корзин" />
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <Fact label="Cart abandonment rate" value={cart.abandonPct != null ? formatPercent(cart.abandonPct) : null} provenance="survey" />
+        </div>
+      )}
+      <IntegrationNote text={INTEGRATION_NOTES.cartRecovery} />
     </SectionCard>
   )
 }
 
-function Stat({ label, value, accent = false }: { label: string; value: string; accent?: boolean }) {
-  return (
-    <div className="bg-surface-container rounded-xl border border-white/[0.04] p-4">
-      <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider">{label}</p>
-      <p className={`font-headline text-2xl font-extrabold mt-1 ${accent ? 'text-primary' : 'text-on-surface'}`}>{value}</p>
-    </div>
-  )
-}
-
-function Seasonality() {
-  const max = Math.max(...DATA.seasonality.map((s) => s.v))
+function Seasonality({ seasonality }: { seasonality: EcommerceView['seasonality'] }) {
   return (
     <SectionCard
       eyebrow="СЕЗОННОСТЬ"
-      title="Прогноз кэша по месяцам"
-      hint="Пики: BF, НГ, школа, Рамадан. Закупка под пик — за 2 мес."
+      title="Пики продаж"
+      hint="Месяцы пиков — по вашим ответам в анкете. Объём продаж по месяцам — после подключения источника."
     >
-      <div className="grid grid-cols-12 gap-1.5 items-end h-40">
-        {DATA.seasonality.map((s) => {
-          const h = (s.v / max) * 100
-          return (
-            <div key={s.m} className="flex flex-col items-center justify-end h-full">
-              <div
-                className={`w-full rounded-t-md ${s.label ? 'bg-primary' : 'bg-primary/40'}`}
-                style={{ height: `${h}%` }}
-              />
-              <span className="text-[9px] font-mono text-on-surface-variant mt-1">{s.m}</span>
-              {s.label && <span className="text-[9px] font-mono text-primary font-bold">{s.label}</span>}
-            </div>
-          )
-        })}
-      </div>
+      {seasonality.status === 'empty' ? (
+        <SurveyEmpty step="Финансы" what="пики продаж" />
+      ) : seasonality.noPeaks ? (
+        <p className="text-sm text-on-surface-variant">В анкете отмечено: выраженных пиков продаж нет.</p>
+      ) : (
+        <div className="space-y-4">
+          <div className="grid grid-cols-6 lg:grid-cols-12 gap-1.5" role="list" aria-label="Месяцы пиков продаж">
+            {seasonality.months.map((m) => {
+              const peak = m.tags.length > 0
+              return (
+                <div
+                  key={m.label}
+                  role="listitem"
+                  className={`rounded-xl border p-2 text-center min-h-[64px] flex flex-col justify-between ${
+                    peak ? 'bg-primary/15 border-primary/30' : 'bg-surface-container border-white/[0.04]'
+                  }`}
+                >
+                  <span className={`text-[10px] font-mono ${peak ? 'text-primary' : 'text-on-surface-variant'}`}>{m.label}</span>
+                  {peak && <span className="text-[9px] font-mono text-primary font-bold leading-tight">{m.tags.join(' · ')}</span>}
+                </div>
+              )
+            })}
+          </div>
+          {seasonality.floating.length > 0 && <Chips label="Плавающие пики" items={seasonality.floating} />}
+          <ProvenanceCaption provenance="survey" text="пики из анкеты" />
+        </div>
+      )}
+      <IntegrationNote text={INTEGRATION_NOTES.seasonality} />
+    </SectionCard>
+  )
+}
+
+function Operations({ operations }: { operations: EcommerceView['operations'] }) {
+  return (
+    <SectionCard
+      eyebrow="ЛОГИСТИКА · ФИНАНСЫ"
+      title="Операционные показатели"
+      hint="Маржа, поставщики, склад и доставка — из анкеты."
+    >
+      {operations.status === 'empty' ? (
+        <SurveyEmpty step="Логистика" what="доставку, фулфилмент, маржу и оборачиваемость склада" />
+      ) : (
+        <div className="space-y-5">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <Fact label="Валовая маржа" value={operations.grossMarginPct != null ? formatPercent(operations.grossMarginPct) : null} provenance="survey" />
+            <Fact label="Доля топ-1 поставщика" value={operations.supplierConcentrationPct != null ? formatPercent(operations.supplierConcentrationPct) : null} provenance="survey" />
+            <Fact label="Оборачиваемость склада" value={operations.inventoryTurnoverDays != null ? `${formatNumber(operations.inventoryTurnoverDays)} дн.` : null} provenance="survey" />
+            <Fact label="Доставка в среднем" value={operations.deliveryDays != null ? `${formatNumber(operations.deliveryDays)} дн.` : null} provenance="survey" />
+          </div>
+          {operations.fulfillment.length > 0 && <Chips label="Фулфилмент" items={operations.fulfillment} />}
+          {operations.regions && <Fact label="Регионы поставки" value={operations.regions} provenance="survey" />}
+        </div>
+      )}
     </SectionCard>
   )
 }
 
 function GoalsStrip() {
+  // Static reference list of common e-commerce growth levers — suggestions,
+  // not the client's goals or progress.
   const goals = [
-    { n: '01', t: 'Привлечение',  d: 'Атрибуция канал/UTM по выручке' },
-    { n: '02', t: 'Удержание',     d: 'RFM + email/SMS retention flow' },
-    { n: '03', t: 'Чек (AOV)',     d: 'Bundles + free-shipping threshold' },
-    { n: '04', t: 'Частота',       d: 'Subscription / replenishment reminders' },
-    { n: '05', t: 'Сарафан',       d: 'UGC + рейтинги + реф-программа' },
-    { n: '06', t: 'BuyBox',        d: 'Win rate на маркетплейсах' },
-    { n: '07', t: 'Спрос',         d: 'Retargeting + abandoned-cart' },
-    { n: '08', t: 'Time-to-Pay',   d: 'Visit → оплата за минуты' },
-    { n: '09', t: 'CAC',           d: 'ROAS по каналу + LTV/CAC per канал' },
-    { n: '10', t: 'Conversion',    d: 'Visit → Cart → Paid funnel' },
-    { n: '11', t: 'Выбор вас',     d: 'Brand share of search + reviews' },
+    { t: 'Привлечение',  d: 'Атрибуция канал/UTM по выручке' },
+    { t: 'Удержание',     d: 'RFM + email/SMS retention flow' },
+    { t: 'Чек (AOV)',     d: 'Bundles + free-shipping threshold' },
+    { t: 'Частота',       d: 'Subscription / replenishment reminders' },
+    { t: 'Сарафан',       d: 'UGC + рейтинги + реф-программа' },
+    { t: 'BuyBox',        d: 'Win rate на маркетплейсах' },
+    { t: 'Спрос',         d: 'Retargeting + abandoned-cart' },
+    { t: 'Time-to-Pay',   d: 'Visit → оплата за минуты' },
+    { t: 'CAC',           d: 'ROAS по каналу + LTV/CAC per канал' },
+    { t: 'Conversion',    d: 'Visit → Cart → Paid funnel' },
+    { t: 'Выбор вас',     d: 'Brand share of search + reviews' },
   ]
   return (
     <SectionCard
-      eyebrow="11 ЦЕЛЕЙ РОСТА · E-COM"
-      title="План на 90 дней"
-      hint="Стабилизация → Атрибуция → Рычаги. По 3 цели на фазу."
+      eyebrow="ПОДСКАЗКИ · E-COM"
+      title="Типовые цели для e-commerce"
+      hint="Справочный список рычагов роста — это не ваш прогресс. Выберите приоритетные вместе с экспертом."
     >
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+      <ul className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
         {goals.map((g) => (
-          <div key={g.n} className="bg-surface-container rounded-2xl border border-white/[0.04] p-4 hover:border-primary/30 transition-colors">
-            <p className="font-headline text-2xl font-extrabold text-primary">{g.n}</p>
+          <li key={g.t} className="bg-surface-container rounded-2xl border border-white/[0.04] p-4 hover:border-primary/30 transition-colors">
+            <span className="material-symbols-outlined text-xl text-primary/70" aria-hidden="true">lightbulb</span>
             <p className="text-sm font-semibold mt-2">{g.t}</p>
             <p className="text-xs text-on-surface-variant mt-1.5 leading-relaxed">{g.d}</p>
-          </div>
+          </li>
+        ))}
+      </ul>
+    </SectionCard>
+  )
+}
+
+// ─── Small building blocks ────────────────────────────────────────────────
+
+const PROVENANCE_TEXT: Record<Provenance, string> = {
+  survey: 'из анкеты',
+  calculated: 'расчёт по анкете',
+}
+
+function ProvenanceCaption({ provenance, text, className = '' }: { provenance: Provenance; text?: string; className?: string }) {
+  return (
+    <p className={`text-[10px] font-mono uppercase tracking-wider text-on-surface-variant/70 flex items-center gap-1 ${className}`}>
+      <span className="material-symbols-outlined text-[12px]" aria-hidden="true">
+        {provenance === 'calculated' ? 'calculate' : 'assignment'}
+      </span>
+      {text ?? PROVENANCE_TEXT[provenance]}
+    </p>
+  )
+}
+
+function Fact({
+  label, value, provenance, caption,
+}: {
+  label: string
+  value: string | null
+  provenance: Provenance
+  caption?: string
+}) {
+  return (
+    <div className="bg-surface-container rounded-2xl border border-white/[0.04] p-4">
+      <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider">{label}</p>
+      {value != null ? (
+        <>
+          <p className="font-mono text-lg font-bold text-on-surface mt-1 break-words">{value}</p>
+          <ProvenanceCaption provenance={provenance} text={caption} className="mt-1" />
+        </>
+      ) : (
+        <p className="text-sm text-on-surface-variant/70 mt-1">Нет данных</p>
+      )}
+    </div>
+  )
+}
+
+function Chips({ label, items }: { label: string; items: string[] }) {
+  return (
+    <div>
+      <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider mb-2">{label}</p>
+      <div className="flex flex-wrap gap-2">
+        {items.map((it) => (
+          <span key={it} className="px-3 py-1.5 rounded-xl text-xs bg-primary/10 border border-primary/20 text-primary">
+            {it}
+          </span>
         ))}
       </div>
-    </SectionCard>
+      <ProvenanceCaption provenance="survey" className="mt-2" />
+    </div>
+  )
+}
+
+function EmptyBlock({ icon, text, children }: { icon: string; text: string; children?: React.ReactNode }) {
+  return (
+    <div className="rounded-2xl border border-dashed border-white/10 bg-surface-container/40 p-6 text-center">
+      <span className="material-symbols-outlined text-2xl text-on-surface-variant/60" aria-hidden="true">{icon}</span>
+      <p className="text-sm text-on-surface-variant mt-2">{text}</p>
+      {children}
+    </div>
+  )
+}
+
+function SurveyEmpty({ step, what }: { step: SurveyStep; what: string }) {
+  return (
+    <EmptyBlock icon="edit_note" text={`Нет данных. Заполните шаг «${step}» анкеты — ${what}.`}>
+      <Link
+        href={ECOMMERCE_SURVEY_HREF}
+        className="inline-flex items-center gap-1 mt-3 text-xs text-primary hover:underline focus:outline-none focus:ring-2 focus:ring-primary/40 rounded"
+      >
+        Заполнить анкету
+        <span className="material-symbols-outlined text-[14px]" aria-hidden="true">arrow_forward</span>
+      </Link>
+    </EmptyBlock>
+  )
+}
+
+function IntegrationNote({ text }: { text: string }) {
+  return (
+    <div className="mt-5 flex items-start gap-2 rounded-xl border border-white/[0.04] bg-surface-container/60 px-4 py-3">
+      <span className="material-symbols-outlined text-base text-on-surface-variant/70 mt-px" aria-hidden="true">link_off</span>
+      <p className="text-xs text-on-surface-variant leading-relaxed">{text}</p>
+    </div>
   )
 }
 
