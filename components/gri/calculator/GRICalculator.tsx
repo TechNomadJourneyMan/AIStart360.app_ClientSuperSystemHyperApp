@@ -76,6 +76,7 @@ import {
   categoryTranslations,
   type Language,
 } from "@/lib/gri-calculator/translations"
+import { SECTION_TO_CATEGORY } from "@/lib/gri-calculator/assessment-seed"
 import {
   CATEGORIES,
   DEFAULT_SCORES,
@@ -275,18 +276,6 @@ export default function GRICalculator({
 
   // ── Auto-sync from GRI Assessment (aistart_gri_assessment_v1) ──
   useEffect(() => {
-    // Section ID → Calculator category label (Calculator uses
-    // "Founder Ready" instead of "Owner Readiness" — match the actual key).
-    const SECTION_TO_CATEGORY: Record<string, string> = {
-      "product-demand": "Product & Demand",
-      "trust-positioning": "Trust & Positioning",
-      "business-model": "Business Model",
-      "cash-stability": "Cash Stability",
-      "operations": "Operations",
-      "team": "Team",
-      "owner-readiness": "Founder Ready",
-    }
-
     const applyUpdates = (updates: Record<string, number>, griIndex?: number) => {
       if (Object.keys(updates).length > 0) {
         onScoresChange({ ...scoresRef.current, ...updates })

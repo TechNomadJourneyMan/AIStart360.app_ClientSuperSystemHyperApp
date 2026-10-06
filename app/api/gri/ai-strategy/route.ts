@@ -3,6 +3,7 @@ import { chatWithOpenRouter } from '@/lib/ai/openrouter'
 import { createServerClient } from '@/lib/supabase-server'
 import { isRateLimitedKey } from '@/lib/rate-limit'
 import { safeErrorMessage } from '@/lib/api-error'
+import { hasAllScores, knownScores } from '@/lib/gri-calculator/assessment-seed'
 
 /**
  * AI Growth Strategy generator for the GRI Calculator.
@@ -11,7 +12,7 @@ import { safeErrorMessage } from '@/lib/api-error'
  */
 
 interface StrategyRequest {
-  scores: Record<string, number>
+  scores: unknown
   lang?: 'ru' | 'en'
   format?: 'default' | 'action_plan'
 }
@@ -74,10 +75,12 @@ export async function POST(request: NextRequest) {
     }
 
     const body: StrategyRequest = await request.json()
-    const { scores, lang = 'ru', format = 'default' } = body
-
-    if (!scores || typeof scores !== 'object') {
-      return NextResponse.json({ error: 'scores is required' }, { status: 400 })
+    const { lang = 'ru', format = 'default' } = body
+    // Only the seven categories with 0–10 values reach the prompt; the
+    // strategy needs all of them (no template values filling the gaps).
+    const scores = knownScores(body.scores)
+    if (!hasAllScores(scores)) {
+      return NextResponse.json({ error: 'Нужны оценки GRI по всем 7 категориям' }, { status: 400 })
     }
 
     const scoresDescription = Object.entries(scores)

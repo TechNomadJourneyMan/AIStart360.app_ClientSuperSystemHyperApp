@@ -8,7 +8,9 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import GriHero from './GriHero'
+import GriScoresNeeded from './GriScoresNeeded'
 import { DEFAULT_SCORES } from '@/lib/gri-calculator/gri-data'
+import { scoresFromSectionAvgs } from '@/lib/gri-calculator/assessment-seed'
 import type { AssessmentCurrent } from '@/lib/gri-assessment/types'
 
 const GRICalculator = dynamic(() => import('@/components/gri/calculator/GRICalculator'), {
@@ -43,6 +45,11 @@ export default function GriPageShell() {
   const tab: TabKey = TABS.some((t) => t.key === rawTab) ? (rawTab as TabKey) : 'assess'
 
   const [scores, setScores] = useState<Record<string, number>>(DEFAULT_SCORES)
+  // DEFAULT_SCORES are slider starting positions, not the client's data. The
+  // AI tab works only with scores from the saved assessment or the client's
+  // own calculator input. The ref is read inside the mount-stable loader.
+  const scoresOriginRef = useRef<'template' | 'assessment' | 'client'>('template')
+  const [scoresKnown, setScoresKnown] = useState(false)
   const [niche, setNiche] = useState('general')
   const [size, setSize] = useState('small')
   const [assessment, setAssessment] = useState<AssessmentCurrent | null>(null)
@@ -65,6 +72,14 @@ export default function GriPageShell() {
       // GET /api/v1/gri/assessment → { ok, data: { current } }
       const cur = json?.data?.current ?? null
       if (cur && typeof cur.gri_index !== 'undefined') setAssessment(cur as AssessmentCurrent)
+      const seeded = scoresFromSectionAvgs(cur?.section_avgs)
+      // A complete assessment replaces the starting positions or an older
+      // assessment, never the client's own slider edits.
+      if (seeded && scoresOriginRef.current !== 'client') {
+        scoresOriginRef.current = 'assessment'
+        setScores(seeded)
+        setScoresKnown(true)
+      }
     } catch {
       /* оффлайн/аноним — hero покажет «диагностика не пройдена» */
     }
@@ -132,7 +147,11 @@ export default function GriPageShell() {
       {tab === 'calc' && (
         <GRICalculator
           scores={scores}
-          onScoresChange={setScores}
+          onScoresChange={(next) => {
+            scoresOriginRef.current = 'client'
+            setScores(next)
+            setScoresKnown(true)
+          }}
           niche={niche}
           size={size}
           onNicheChange={setNiche}
@@ -147,8 +166,12 @@ export default function GriPageShell() {
       {tab === 'dynamics' && <GriDynamicsPanel />}
       {tab === 'ai' && (
         <div className="space-y-6">
-          <FinancialAnalyst scores={scores} onApplyScores={setScores} />
-          <GrowthStrategy scores={scores} niche={niche} size={size} />
+          <FinancialAnalyst scores={scores} scoresKnown={scoresKnown} onApplyScores={setScores} />
+          {scoresKnown ? (
+            <GrowthStrategy scores={scores} niche={niche} size={size} />
+          ) : (
+            <GriScoresNeeded onGoAssess={() => setTab('assess')} onGoCalc={() => setTab('calc')} />
+          )}
         </div>
       )}
     </div>

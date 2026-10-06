@@ -5,6 +5,7 @@ import { isRateLimitedKey } from '@/lib/rate-limit'
 import { safeErrorMessage } from '@/lib/api-error'
 import { parseDocument } from '@/lib/documents/parse'
 import { fenceUntrusted, UNTRUSTED_DATA_RULES } from '@/lib/ai/gateway'
+import { knownScores } from '@/lib/gri-calculator/assessment-seed'
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024
 
@@ -168,9 +169,13 @@ export async function POST(request: NextRequest) {
         ? `Вы — Старший Финансовый Аналитик (уровня McKinsey) и AI-агент платформы AIStart360. Ваша задача — проанализировать сырые финансовые данные и перевести их в оценки Growth Readiness Index.\n\n${UNTRUSTED_DATA_RULES}`
         : `You are a Senior Financial Analyst (McKinsey-level) and AI agent of the AIStart360 platform. Analyze raw financial data and translate it into Growth Readiness Index assessments.\n\n${UNTRUSTED_DATA_RULES}`
 
-    const scoresDescription = Object.entries(scores)
-      .map(([key, value]) => `${key}: ${value}/10`)
-      .join('\n')
+    // Only the seven categories with 0–10 values reach the prompt. {} = the
+    // client has no GRI scores yet; the model is told so rather than given
+    // the calculator's starting positions.
+    const scoresDescription =
+      Object.entries(knownScores(scores))
+        .map(([key, value]) => `${key}: ${value}/10`)
+        .join('\n') || 'not assessed yet'
 
     const userPrompt = `Analyze the following financial data and return ONLY a JSON object with this exact structure:
 

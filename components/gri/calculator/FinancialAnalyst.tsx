@@ -4,7 +4,7 @@
 // блок «Финансовый аналитик». Файлы (PDF/XLSX/XLS/CSV) реально парсятся на
 // сервере: клиент отправляет multipart-форму на /api/gri/financial-analyst,
 // НЕ читает файл сам и НЕ имитирует стадии парсинга. Всё на русском.
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useRef, useState, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   BarChart3,
@@ -28,6 +28,12 @@ import { getScoreColor } from '@/lib/gri-calculator/gri-data'
 
 export interface FinancialAnalystProps {
   scores: Record<string, number>
+  /**
+   * False while `scores` are still the calculator's starting positions: the
+   * analyst then gets no scores as context instead of template values
+   * presented as the client's.
+   */
+  scoresKnown?: boolean
   onApplyScores: (next: Record<string, number>) => void
 }
 
@@ -79,7 +85,8 @@ const L = {
 
 type FileStage = 'idle' | 'upload' | 'analyze' | 'done'
 
-export default function FinancialAnalyst({ scores, onApplyScores }: FinancialAnalystProps) {
+export default function FinancialAnalyst({ scores, scoresKnown = true, onApplyScores }: FinancialAnalystProps) {
+  const contextScores = useMemo(() => (scoresKnown ? scores : {}), [scoresKnown, scores])
   const [financialData, setFinancialData] = useState('')
   const [financialAnalysis, setFinancialAnalysis] = useState<FinancialAnalysisResult | null>(null)
   const [analyzing, setAnalyzing] = useState(false)
@@ -94,7 +101,7 @@ export default function FinancialAnalyst({ scores, onApplyScores }: FinancialAna
       setFileStage('upload')
       const fd = new FormData()
       fd.append('file', file)
-      fd.append('scores', JSON.stringify(scores))
+      fd.append('scores', JSON.stringify(contextScores))
       fd.append('lang', 'ru')
       try {
         const res = await fetch('/api/gri/financial-analyst', {
@@ -119,7 +126,7 @@ export default function FinancialAnalyst({ scores, onApplyScores }: FinancialAna
       }
       if (fileInputRef.current) fileInputRef.current.value = ''
     },
-    [scores],
+    [contextScores],
   )
 
   const handleFileUpload = useCallback(
@@ -166,7 +173,7 @@ export default function FinancialAnalyst({ scores, onApplyScores }: FinancialAna
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ financialData: financialData.trim(), scores, lang: 'ru' }),
+        body: JSON.stringify({ financialData: financialData.trim(), scores: contextScores, lang: 'ru' }),
       })
       const data = await res.json()
       if (!res.ok || data.error) {
@@ -179,7 +186,7 @@ export default function FinancialAnalyst({ scores, onApplyScores }: FinancialAna
     } finally {
       setAnalyzing(false)
     }
-  }, [financialData, scores])
+  }, [financialData, contextScores])
 
   const applyFinancialAnalysis = useCallback(() => {
     if (!financialAnalysis) return
