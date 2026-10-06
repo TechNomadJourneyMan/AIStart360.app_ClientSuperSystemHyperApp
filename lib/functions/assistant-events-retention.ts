@@ -18,9 +18,9 @@ const RETENTION_DAYS = 90
 export const assistantEventsRetention = inngest.createFunction(
   {
     id: 'assistant-events-retention',
-    // @ts-ignore -- inngest v4 types in this repo mis-resolve the trigger key
-    // (same workaround as lib/functions/calculate-gri.ts's `event`).
-    cron: 'TZ=Europe/Amsterdam 0 3 * * *',
+    // inngest 4.x registers triggers only from `triggers`; the former top-level
+    // `cron` option was ignored, so the retention job never ran.
+    triggers: [{ cron: 'TZ=Europe/Amsterdam 0 3 * * *' }],
   },
   // @ts-ignore -- handler arg types mismatch under the repo's inngest typings
   async () => {
