@@ -218,7 +218,45 @@ Gateway (`lib/ai/gateway.ts`): tier → модель (override из `agent_confi
 |---|---|---|---|
 | На запуск | `agent_configs.per_run_budget_usd` | см. §2 | Запуск прерывается, задача failed `BUDGET_EXCEEDED` |
 | Агент / день | `agent_configs.daily_budget_usd` | $20 для LLM-агентов | Новые задачи агента не берутся до конца суток; WARNING |
-| Компания / день | `system_settings` | $5 | Задачи компании ждут; WARNING |
-| Платформа / день | `system_settings` | $50 | Все LLM-задачи ждут; CRITICAL |
+| Компания / день | `ai_budgets.company_daily_usd` (094), иначе env `AGENT_COMPANY_DAILY_BUDGET_USD` | $5 | Задачи компании ждут; WARNING |
+| Платформа / день | `ai_budgets.platform_daily_usd` (094), иначе env `AGENT_PLATFORM_DAILY_BUDGET_USD` | $50 | Все LLM-задачи ждут; CRITICAL |
+| Провайдер / день | `ai_providers.daily_budget_usd` (094), по умолчанию нет | — | Вызовы этого провайдера отклоняются (`BUDGET_EXCEEDED`), остальные работают |
 
 Текущие вызовы вне агентов (омниканал на Opus 4.8, Journey на GPT-4o, pulse на Gemini через raw fetch) переводятся на gateway в Phase 7, чтобы учёт был полным.
+
+### 8.1 Провайдеры моделей, маршрутизация и бюджеты (миграция 094)
+
+Владелец добавляет OpenAI-совместимых провайдеров и их ключи API из админки и из Telegram-бота; оба вызывают один сервис `lib/ai/providers/service.ts` (мутации — право `settings.manage`, т.е. только Super Admin; расходы — `agents.view`). Таблицы закрыты для API-ролей (RLS, без грантов), читает только сервер.
+
+| Таблица | Что хранит |
+|---|---|
+| `ai_providers` | ключ (`openrouter`, `alem`, …), тип (`openrouter` / `openai_compatible`), base URL, путь на каждую возможность (`chat_path`, `embeddings_path`, `rerank_path`, `ocr_mode`), несекретные заголовки, поддержка `response_format`, дневной бюджет, заметка о приватности |
+| `ai_credentials` | ключи API: только шифртекст AES-256-GCM (`SECRETS_ENCRYPTION_KEY`) и последние 4 символа; статус последней проверки (ошибка без ключа) |
+| `ai_models` | id модели у провайдера для возможности `chat` / `embeddings` / `rerank` / `ocr`, цены за 1M токенов, какой ключ использовать (NULL — первый включённый ключ провайдера) |
+| `ai_routes` | возможность (+ уровень `light` / `standard` / `premium` для chat) → модель |
+| `ai_budgets` | дневные бюджеты платформы и компании (NULL — из env) |
+
+**Маршрутизация** (`lib/ai/providers/router.ts`, кэш ≤ 60 с на инстанс, сбрасывается при каждом изменении через сервис):
+
+1. Явная модель (зашита в коде вызова или `agent_configs.model_override`) → провайдер, у которого эта модель зарегистрирована, иначе OpenRouter.
+2. Иначе маршрут `ai_routes` для возможности и уровня. Функции вне агентов (`chatWithOpenRouter`) переводят сложность в уровень: low/medium → light, high → standard, max → premium.
+3. Нет маршрута или он непригоден (выключен, нет ключа, ключ не расшифровывается) → встроенное поведение до 094: OpenRouter, модель уровня из `AI_MODEL_*` / по умолчанию, ключ `openrouter` из панели или `OPENROUTER_API_KEY`. Для rerank и OCR встроенного варианта нет.
+
+Ключ модели: её собственный ключ → первый включённый ключ провайдера → env (`OPENROUTER_API_KEY` для `openrouter`, `ALEM_API_KEY` для `alem`). Автоматического переключения на другого провайдера при ошибке нет.
+
+**Приватность.** Поля OpenRouter (`provider.data_collection: deny`, `zdr`, `usage.include`, `require_parameters`) отправляются только в OpenRouter. Для других провайдеров режим приватности определяется договором с провайдером (`ai_providers.privacy_note`); правила фенсинга недоверенных данных и PII не меняются.
+
+**Учёт.** `ai_usage_ledger.provider_key` и `agent_runs.provider_key` (у запуска — провайдер последнего вызова). Стоимость: `usage.cost` провайдера (`provider`) → цены модели (`model_price`) → консервативная оценка по уровню (`estimate`). Сводка расходов по провайдеру / модели / функции / компании — `spendSummary()`.
+
+**Статус проверки форматов** (без сети в CI; всё покрыто тестами с подменённым fetch):
+
+| Возможность | Alem Plus | Статус |
+|---|---|---|
+| chat | `POST https://llm.alem.ai/v1/chat/completions`, `Authorization: Bearer <ключ>`, `{"model":"alemllm","messages":[…]}` | **проверено** по спецификации владельца; засеяно (`alem` / `alemllm`) |
+| embeddings | стандартный OpenAI `/embeddings` `{model, input}` | путь и модель — данные, **не проверено** вживую |
+| rerank | предположение Cohere/Jina: `{model, query, documents, top_n}` → `results[].relevance_score` (адаптер `rerankAdapter`) | **не проверено** |
+| OCR | предположение: chat с частью `image_url` (`ocr_mode = chat_vision`) | **не проверено** |
+| Qwen 3 | отдельный ключ, id модели неизвестен | добавляется как модель chat с собственным ключом |
+
+`verifyCredential` делает минимальный реальный вызов (chat с `max_tokens: 1`, embedding одной строки или `GET /models`) и сохраняет результат — так владелец проверяет каждый ключ и путь вживую. Ограничение: вызовы с жёстко заданным id модели OpenRouter (`OPENROUTER_MODELS.*`) остаются на OpenRouter, пока такая модель не зарегистрирована у другого провайдера; размерность эмбеддингов другого провайдера должна совпадать с `vector(1536)`.
+

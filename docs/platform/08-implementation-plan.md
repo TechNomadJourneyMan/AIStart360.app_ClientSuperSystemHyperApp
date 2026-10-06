@@ -15,7 +15,7 @@
 | 2 | Архитектура + БД | `083`–`087`, `lib/tenancy` | ✅ код · ⛔ применение в прод |
 | 3 | Точка А | `lib/point-a/overview.ts`, движок v1, Executive Overview | ✅ |
 | 4 | Метрики | таксономия (13 категорий), каталог, история, `088` | ✅ |
-| 5 | Файлы и обработка документов | `089`, агенты `document_intelligence`, `document_reaper`, загрузчики | ✅ (OCR не проверен вживую — ⛔ B8) |
+| 5 | Файлы и обработка документов | `089`, агенты `document_intelligence`, `document_reaper`, загрузчики, OCR (`lib/documents/ocr.ts`) | ✅ (OCR офлайн работает локально; на Vercel не проверен — ⛔ B8) |
 | 6 | Отчёты | `report_versions` (`085`), `091`, агент `report`, PDF из снимка | ✅ (ссылки на версию — позже) |
 | 7 | Агенты: инфраструктура + пайплайн диагностики | `086`, `090`, `lib/agents/*`, `lib/diagnostics/*` | ✅ |
 | 8 | Admin Agent Control Center | GIGA «ИИ и автоматизация» | ✅ |
@@ -63,7 +63,8 @@
 
 ## Phase 5 — Файлы ✅
 Сделано: `089` (путь, размер, sha256, sniffed MIME, security_status, стадия, попытки, задача-владелец, guard `parsed_data`, дедуп, приватный бакет `client-documents`); серверный finalize `POST /api/v1/documents` (папка вызывающего, лимит 25 МБ, magic bytes, zip/XML-bomb, макросы, скрипты в PDF); агент `document_intelligence` (текст по форматам, извлечение через бюджетный вызов модели, проверка цитат — непроверенные значения не идут в метрики, provenance страница/лист/слайд, явный «прочитан, данных нет»); `document_reaper` (зависшие > 30 мин); все клиентские загрузчики на новом контракте с реальными статусами; ссылки персонала — подписанные.
-⛔ B8: OCR сканов выключен по умолчанию — языковые данные tesseract качаются с CDN, из контейнера недоступно; без него — статус `needs_ocr` с объяснением.
+OCR сканов (`lib/documents/ocr.ts`, `ocr-tessdata.ts`): включён по умолчанию, когда есть языковые данные; tesseract.js с данными из `@tesseract.js-data/*` (rus+eng, kaz через `DOCUMENT_OCR_LANGS`), без сети; до `DOCUMENT_OCR_MAX_PAGES` (15) страниц, дедлайн — частичный результат помечается `partial`/`stop_reason`, без страниц — `needs_ocr` с причиной. Слот удалённого движка `registerRemoteOcr()` (`DOCUMENT_OCR_ENGINE=auto|local|remote`), сбой страницы → локальный. Provenance: `parsed_data.source.ocr` (движок и confidence по страницам), у полей `provenance.ocr_engine`, confidence ≤ 0.7. Скрипты: `npm run ocr:check`, `npm run ocr:file`.
+⛔ B8: OCR не проверен на Vercel (размер функции, время на страницу); удалённый движок не подключён.
 Тесты: `tests/unit/documents/*`, `tests/integration/db/documents-pipeline.test.ts` (12 сценариев, в т.ч. изоляция компаний).
 
 ## Phase 6 — Отчёты ✅

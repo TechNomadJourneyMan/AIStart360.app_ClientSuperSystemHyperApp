@@ -71,6 +71,8 @@ export function AgentCostsPage() {
     { key: 'tasks', header: '', render: (r) => <Link href={`${base}/agents/tasks?company=${encodeURIComponent(r.id)}${r.name ? `&cname=${encodeURIComponent(r.name)}` : ''}`} className="text-[11px] text-blue-300 hover:underline">задачи</Link> },
   ]
 
+  // Since 094 the budgets can be set in the panel; the API says where each value comes from.
+  const sources = (d?.budgets ?? {}) as { platformSource?: 'db' | 'env'; companySource?: 'db' | 'env' }
   const agentBudgets = (dir.agents ?? []).filter((a) => a.limits.dailyBudgetUsd > 0 || a.stats.costUsdToday > 0)
 
   return (
@@ -78,7 +80,7 @@ export function AgentCostsPage() {
       <PageHeader
         crumbs={[{ label: 'GIGA-CRM', href: base }, { label: 'ИИ-агенты', href: `${base}/agents` }, { label: 'Стоимость ИИ' }]}
         title="Стоимость ИИ"
-        description="Фактическая стоимость запусков агентов (по данным OpenRouter): по дням, агентам, моделям и компаниям. Сутки — по UTC."
+        description="Фактическая стоимость запусков агентов (по данным провайдеров): по дням, агентам, моделям и компаниям. Сутки — по UTC. Расходы по провайдерам и функциям — в разделе «Провайдеры и ключи»."
         actions={
           <>
             <Segmented label="Период" value={period} options={PERIODS} onChange={setPeriod} />
@@ -118,11 +120,12 @@ export function AgentCostsPage() {
           </Panel>
 
           <Panel title="Бюджеты на сегодня" description="Суточные лимиты. Запуск, который превысил бы лимит, останавливается с ошибкой BUDGET_EXCEEDED, задача уходит в dead-letter — её можно повторить позже.">
-            <BudgetBar label="Платформа" spent={today} budget={d.budgets.platformDailyUsd} note="AGENT_PLATFORM_DAILY_BUDGET_USD" />
+            <BudgetBar label="Платформа" spent={today} budget={d.budgets.platformDailyUsd} note={budgetNote(sources.platformSource, 'AGENT_PLATFORM_DAILY_BUDGET_USD')} />
             <p className="mt-3 text-[11px] text-slate-500">
               Бюджет одной компании в сутки: <span className="font-mono text-slate-300">{fmtUsd(d.budgets.companyDailyUsd)}</span>
-              <span className="ml-1 font-mono text-[10px] text-slate-600">AGENT_COMPANY_DAILY_BUDGET_USD</span>.
+              <span className="ml-1 font-mono text-[10px] text-slate-600">{budgetNote(sources.companySource, 'AGENT_COMPANY_DAILY_BUDGET_USD')}</span>.
               Сверх него задачи этой компании останавливаются с BUDGET_EXCEEDED.
+              {' '}Изменить бюджеты платформы, компании и провайдеров — <Link href={`${base}/ai-providers`} className="text-blue-300 hover:underline">«Провайдеры и ключи»</Link>.
             </p>
             {agentBudgets.length > 0 && (
               <div className="mt-4 border-t border-white/[0.05] pt-3">
@@ -152,6 +155,10 @@ export function AgentCostsPage() {
       )}
     </RequirePermission>
   )
+}
+
+function budgetNote(source: 'db' | 'env' | undefined, envName: string): string {
+  return source === 'db' ? 'задано в панели' : envName
 }
 
 function Num({ children, strong }: { children: React.ReactNode; strong?: boolean }) {

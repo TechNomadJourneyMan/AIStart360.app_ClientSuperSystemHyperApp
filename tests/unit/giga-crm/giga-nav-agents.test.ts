@@ -23,13 +23,14 @@ describe('группа «ИИ и автоматизация»', () => {
     expect(order[i + 1]).toBe('Платформа')
   })
 
-  it('содержит разделы агентов, отчёты, проверку выводов ИИ и «Модерацию ИИ» (маршрут и право прежние)', () => {
+  it('содержит разделы агентов, провайдеров и ключей, отчёты, проверку выводов ИИ и «Модерацию ИИ» (маршрут и право прежние)', () => {
     const items = group(AI_GROUP)!.items
     expect(items.map((i) => [i.label, i.href.replace(GIGA_BASE, ''), i.permission])).toEqual([
       ['ИИ-агенты', '/agents', 'agents.view'],
       ['Задачи агентов', '/agents/tasks', 'agents.view'],
       ['Одобрения', '/agents/approvals', 'agents.view'],
       ['Стоимость ИИ', '/agents/costs', 'agents.view'],
+      ['Провайдеры и ключи', '/ai-providers', 'agents.view'],
       ['События платформы', '/agents/events', 'agents.view'],
       ['Отчёты', '/reports', 'agents.view'],
       ['Проверка выводов ИИ', '/ai-review', 'insights.moderate'],
@@ -58,7 +59,7 @@ describe('видимость меню по правам', () => {
   })
 
   it('super_admin видит всю группу', () => {
-    expect(labelsFor('super_admin').find((g) => g.label === AI_GROUP)!.items).toHaveLength(8)
+    expect(labelsFor('super_admin').find((g) => g.label === AI_GROUP)!.items).toHaveLength(9)
   })
 
   it('аналитик видит агентов и отчёты, но не модерацию и не проверку выводов ИИ', () => {
@@ -66,6 +67,7 @@ describe('видимость меню по правам', () => {
     expect(items).toContain('ИИ-агенты')
     expect(items).toContain('Одобрения')
     expect(items).toContain('Отчёты')
+    expect(items).toContain('Провайдеры и ключи')
     expect(items).not.toContain('Модерация ИИ')
     expect(items).not.toContain('Проверка выводов ИИ')
   })
@@ -103,6 +105,7 @@ describe('вложенные разделы', () => {
     expect(gigaSectionTitle(`${GIGA_BASE}/moderation`)).toBe('Модерация ИИ')
     expect(gigaSectionTitle(`${GIGA_BASE}/reports`)).toBe('Отчёты')
     expect(gigaSectionTitle(`${GIGA_BASE}/ai-review`)).toBe('Проверка выводов ИИ')
+    expect(gigaSectionTitle(`${GIGA_BASE}/ai-providers`)).toBe('Провайдеры и ключи')
   })
 })
 
