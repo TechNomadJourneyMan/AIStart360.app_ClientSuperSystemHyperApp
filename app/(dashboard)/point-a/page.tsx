@@ -18,6 +18,7 @@ import InsightsFeed from '@/components/point-a/v2/InsightsFeed'
 import PointAQuickPills from '@/components/point-a/v2/PointAQuickPills'
 import PointAFilterSection from '@/components/point-a/v2/PointAFilterSection'
 import ExecutiveOverview from '@/components/point-a/ExecutiveOverview'
+import PublishedReports from '@/components/reports/PublishedReports'
 import { ShareButton } from '@/components/share/ShareButton'
 import { completedStepsFromRows } from '@/lib/survey/steps'
 import { visibleSectionKeysFor } from '@/lib/platform/sections'
@@ -157,6 +158,10 @@ export default async function PointAPage() {
       {/* Level 1 — Executive overview: score, maturity, status, completeness,
           problem zones, risks, gaps, strengths, freshness, sources. */}
       <ExecutiveOverview userId={clientId} />
+
+      {/* The published report (frozen snapshot with provenance + PDF). Only
+          versions a specialist published are shown. */}
+      <PublishedReports />
 
       {/* Level 2 — details below. */}
 

@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { dbError } from '@/lib/api-error'
+import { withReadableAiAnalysis } from '@/lib/point-a/ai-analysis'
 
 // GET /api/v1/diagnostics/current
 // The user is taken from the authenticated session — never from the query —
@@ -24,5 +25,6 @@ export async function GET(_req: NextRequest) {
     return dbError('v1/diagnostics/current', error)
   }
 
-  return NextResponse.json({ ok: true, data: data ?? null })
+  // ai_analysis only when it is an analysis (a pre-091 narrative there is not).
+  return NextResponse.json({ ok: true, data: data ? withReadableAiAnalysis(data) : null })
 }

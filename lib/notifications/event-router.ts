@@ -86,8 +86,21 @@ export async function notificationForEvent(e: PlatformEventRow): Promise<StaffNo
       return { ...base, level: 'INFO', type: 'survey.completed', title: 'Анкета заполнена', lines: clientLine ? [clientLine] : [] }
     case 'CLIENT_CREATED':
       return { ...base, level: 'INFO', type: 'client.created', title: 'Новый клиент', lines: clientLine ? [clientLine] : [] }
-    case 'REPORT_GENERATED':
-      return { ...base, level: 'SUCCESS', type: 'report.generated', title: 'Отчёт сформирован', lines: clientLine ? [clientLine] : [] }
+    case 'REPORT_GENERATED': {
+      // A new report version waits for a person: nothing reaches the client until it is published.
+      const hidden = (num(p.hidden_hypotheses) ?? 0) + (num(p.unreviewed_model_recommendations) ?? 0)
+      const lines = [
+        clientLine,
+        num(p.version) !== null ? `Версия ${num(p.version)} — ждёт проверки и публикации` : 'Ждёт проверки и публикации',
+        num(p.findings) !== null ? `Выводов: ${num(p.findings)}, рекомендаций: ${num(p.recommendations) ?? 0}` : null,
+        hidden ? `Выводов ИИ на проверке (в отчёт не вошли): ${hidden}` : null,
+      ].filter((l): l is string => Boolean(l))
+      return {
+        ...base, level: 'SUCCESS', type: 'report.generated', title: 'Отчёт сформирован', lines,
+        agentKey: str(p.agent_key),
+        link: e.subject_id ? `/admin-giga-panel/reports?focus=${e.subject_id}` : '/admin-giga-panel/reports',
+      }
+    }
     default:
       // FILE_UPLOADED / FILE_PROCESSED / METRIC_UPDATED / ONBOARDING_COMPLETED: activity, not news.
       return null

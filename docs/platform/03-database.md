@@ -101,7 +101,7 @@
 | 088 | `088_metrics_provenance_guard.sql` | `anon`/`authenticated` не пишут `metrics` (значение, источник, provenance пишет только сервер) |
 | 089 | `089_documents_pipeline.sql` | Колонки обработки документов, guard `parsed_data`, дедуп, приватный бакет `client-documents` |
 | 090 | `090_diagnostic_pipeline.sql` | Этапы пайплайна в `diagnostic_sessions` (`stage`, `stages`, `rerun_requested`, задача оркестратора) |
-| 091 | `091_diagnostics_ai_narrative.sql` | 🔄 фаза 6, в работе: разделение `diagnostics.ai_analysis` и нарратива Точки А |
+| 091 | `091_diagnostics_ai_narrative.sql` | `diagnostics.ai_narrative`: нарратив Точки А отдельно от `ai_analysis` (раньше перезаписывали друг друга) |
 | 092 | `092_mfa_flags_app_metadata.sql` | Флаги 2FA в `app_metadata` (не редактируются пользователем) + backfill |
 | 093 | `093_ai_usage_ledger.sql` | Журнал стоимости вызовов моделей вне агентов; входит в дневной лимит платформы |
 

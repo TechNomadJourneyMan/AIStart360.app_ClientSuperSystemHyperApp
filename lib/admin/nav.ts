@@ -37,6 +37,8 @@ export const GIGA_NAV: GigaNavGroup[] = [
     { href: `${GIGA_BASE}/agents/approvals`, label: 'Одобрения', icon: 'stamp', permission: 'agents.view', badge: 'pendingApprovals' },
     { href: `${GIGA_BASE}/agents/costs`, label: 'Стоимость ИИ', icon: 'coins', permission: 'agents.view' },
     { href: `${GIGA_BASE}/agents/events`, label: 'События платформы', icon: 'zap', permission: 'agents.view' },
+    { href: `${GIGA_BASE}/reports`, label: 'Отчёты', icon: 'reports', permission: 'agents.view' },
+    { href: `${GIGA_BASE}/ai-review`, label: 'Проверка выводов ИИ', icon: 'review', permission: 'insights.moderate' },
     { href: `${GIGA_BASE}/moderation`, label: 'Модерация ИИ', icon: 'shieldcheck', permission: 'insights.moderate' },
   ] },
   { label: 'Платформа', items: [

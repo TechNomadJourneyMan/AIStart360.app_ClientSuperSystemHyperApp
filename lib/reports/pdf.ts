@@ -216,6 +216,11 @@ function stampFooters(doc: PDFDoc): void {
   const range = doc.bufferedPageRange()
   for (let i = range.start; i < range.start + range.count; i++) {
     doc.switchToPage(i)
+    // The footer sits below the bottom margin; with the margin in place pdfkit
+    // treats it as overflow and appends a blank page carrying only the footer
+    // (every export used to end with one such page per content page).
+    const bottom = doc.page.margins.bottom
+    doc.page.margins.bottom = 0
     doc
       .font(REPORT_FONTS.mono)
       .fontSize(7.5)
@@ -225,6 +230,7 @@ function stampFooters(doc: PDFDoc): void {
         align: 'center',
         lineBreak: false,
       })
+    doc.page.margins.bottom = bottom
   }
 }
 
@@ -818,3 +824,30 @@ function hasValue(v: unknown): boolean {
   if (typeof v === 'object') return Object.keys(v as object).length > 0
   return true
 }
+
+// ─── Shared layout for other renderers in lib/reports ─────────────────────────
+
+/**
+ * The same theme, fonts, cover and footer for renderers that live next to this
+ * file (lib/reports/version-pdf.ts renders report_versions snapshots). Not a
+ * route-facing API: routes call the render* entrypoints.
+ */
+export const pdfLayout = {
+  newDoc,
+  finalize,
+  drawCover,
+  sectionHeader,
+  subHeader,
+  paragraph,
+  kvRow,
+  bullet,
+  scoreBar,
+  ensureSpace,
+  scoreColor,
+  severityColor,
+  fmtDate,
+  colors: { PRIMARY, INK, TEXT, MUTED, FAINT, HAIR, POSITIVE, WARN, CRIT },
+  MARGIN,
+  CONTENT_W,
+  CONTENT_BOTTOM,
+} as const

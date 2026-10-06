@@ -4,9 +4,12 @@ export const maxDuration = 60
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { generateNarrative, type NarrativeInput, type PointANarrative } from '@/lib/point-a/narrative'
+import { createServiceClient } from '@/lib/supabase-service'
+import { generateNarrative, type NarrativeInput } from '@/lib/point-a/narrative'
+import { readNarrative } from '@/lib/point-a/ai-analysis'
 import type { Company, Diagnostic, PointA } from '@/types/onboarding'
 import { isRateLimitedKey } from '@/lib/rate-limit'
+import { apiError, dbError } from '@/lib/api-error'
 
 /**
  * POST /api/v1/point-a/narrative
@@ -14,10 +17,16 @@ import { isRateLimitedKey } from '@/lib/rate-limit'
  * Body: { regenerate?: boolean }
  *
  * 1. Auth the user.
- * 2. Load the current diagnostic (`is_current=true`) for the user.
- * 3. If `ai_status === 'completed'` and `!regenerate`, return cached `ai_analysis`.
+ * 2. Load the user's current diagnostic (`is_current=true`) with their session (RLS).
+ * 3. Unless `regenerate`, return the stored narrative: `diagnostics.ai_narrative`
+ *    (migration 091), or a narrative left in `ai_analysis` by this route before 091.
  * 4. Otherwise build a `NarrativeInput` from the company + current PointA and call `generateNarrative`.
- * 5. Persist result (`ai_analysis` + `ai_status`) and return it.
+ * 5. Store it in `ai_narrative` only. `ai_analysis` / `ai_status` belong to the
+ *    full AI analysis (POST /api/v1/diagnostics/ai-analyze) and are never touched
+ *    here — before 091 this route overwrote them (lib/point-a/ai-analysis.ts).
+ *    The write goes through the service role, scoped to the caller's own row:
+ *    `diagnostics` has no UPDATE policy for API roles, so a session write was a
+ *    silent no-op.
  */
 export async function POST(req: NextRequest) {
   const sb = await createClient()
@@ -28,12 +37,12 @@ export async function POST(req: NextRequest) {
     error: authErr,
   } = await sb.auth.getUser()
   if (authErr || !user) {
-    return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 })
+    return apiError('Требуется вход в систему', 401)
   }
 
   // Throttle this paid Sonnet narrative generation per user (audit 2026-07-02).
   if (await isRateLimitedKey(user.id, 'point-a-narrative', { max: 6, windowMs: 60_000 })) {
-    return NextResponse.json({ ok: false, error: 'Слишком много запросов. Попробуйте позже.' }, { status: 429 })
+    return apiError('Слишком много запросов. Попробуйте позже.', 429)
   }
 
   // Body — best-effort parse, never throw.
@@ -53,25 +62,15 @@ export async function POST(req: NextRequest) {
     .eq('is_current', true)
     .maybeSingle()
 
-  if (diagErr) {
-    return NextResponse.json({ ok: false, error: diagErr.message }, { status: 500 })
-  }
-  if (!diagRow) {
-    return NextResponse.json(
-      { ok: false, error: 'no current diagnostic' },
-      { status: 404 },
-    )
-  }
+  if (diagErr) return dbError('v1/point-a/narrative', diagErr, 'Не удалось загрузить диагностику')
+  if (!diagRow) return apiError('Диагностика ещё не рассчитана', 404)
 
-  const diagnostic = diagRow as Diagnostic
+  const diagnostic = diagRow as Diagnostic & { ai_narrative?: unknown }
 
-  // 3. Return cached narrative if completed and no regenerate flag
-  if (!regenerate && diagnostic.ai_status === 'completed' && diagnostic.ai_analysis) {
-    return NextResponse.json({
-      ok: true,
-      data: diagnostic.ai_analysis as unknown as PointANarrative,
-      cached: true,
-    })
+  // 3. Stored narrative (never an AI analysis that happens to sit in ai_analysis).
+  const stored = readNarrative(diagnostic)
+  if (!regenerate && stored) {
+    return NextResponse.json({ ok: true, data: stored, cached: true })
   }
 
   // 4. Fetch company
@@ -107,31 +106,27 @@ export async function POST(req: NextRequest) {
     stage: company?.stage ?? null,
   }
 
-  // Mark processing (best effort — never abort flow on error).
-  await sb
-    .from('diagnostics')
-    .update({ ai_status: 'processing' })
-    .eq('id', diagnostic.id)
-
-  // 5. Generate narrative
+  // 5. Generate and store in its own column.
   const narrative = await generateNarrative(input)
-
-  if (narrative) {
-    await sb
-      .from('diagnostics')
-      .update({ ai_analysis: narrative, ai_status: 'completed' })
-      .eq('id', diagnostic.id)
-
-    return NextResponse.json({ ok: true, data: narrative })
+  if (!narrative) {
+    return apiError('Не удалось сформировать резюме: модель недоступна или ответила неверно. Попробуйте позже.', 503)
   }
 
-  // 6. Failure path
-  await sb
+  const { error: saveErr } = await createServiceClient()
     .from('diagnostics')
-    .update({ ai_status: 'failed' })
+    .update({ ai_narrative: narrative })
     .eq('id', diagnostic.id)
-
-  return NextResponse.json({ ok: true, data: null })
+    .eq('user_id', user.id)
+  if (saveErr) {
+    console.error('[v1/point-a/narrative] save failed', saveErr.code ?? '', saveErr.message ?? '')
+    return NextResponse.json({
+      ok: true,
+      data: narrative,
+      persisted: false,
+      warning: 'Резюме сформировано, но не сохранено — при следующем открытии оно будет построено заново.',
+    })
+  }
+  return NextResponse.json({ ok: true, data: narrative, persisted: true })
 }
 
 function emptyBlock() {

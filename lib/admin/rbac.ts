@@ -57,6 +57,13 @@ export const PERMISSIONS = {
   'agents.run': 'ИИ-агенты: ручной запуск и перезапуск задач',
   'agents.manage': 'ИИ-агенты: включение, модели, расписания, бюджеты, права',
   'approvals.decide': 'Решения по действиям агентов (одобрить / отклонить)',
+  /**
+   * Publish a report version to the client, reject a ready one, withdraw a
+   * published one. Separate from content.publish (CMS pages, content managers)
+   * and approvals.decide (one-off agent actions): this decides what a client
+   * reads about their business. Only admin and super_admin hold it.
+   */
+  'reports.publish': 'Отчёты: публикация клиенту, отклонение, отзыв',
 } as const
 
 export type Permission = keyof typeof PERMISSIONS

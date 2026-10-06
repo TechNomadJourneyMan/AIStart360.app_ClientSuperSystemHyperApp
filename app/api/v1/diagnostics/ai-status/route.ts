@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { getSessionUser, getSessionRole, isStaffRole } from '@/lib/api-identity'
+import { readAiAnalysis } from '@/lib/point-a/ai-analysis'
 
 /**
  * GET /api/v1/diagnostics/ai-status?diagnostic_id=xxx
@@ -38,7 +39,8 @@ export async function GET(req: NextRequest) {
     ok: true,
     data: {
       ai_status: data?.ai_status ?? 'none',
-      ai_analysis: data?.ai_analysis ?? null,
+      // A Point A narrative stored here before migration 091 is not an analysis.
+      ai_analysis: readAiAnalysis(data?.ai_analysis),
     },
   })
 }

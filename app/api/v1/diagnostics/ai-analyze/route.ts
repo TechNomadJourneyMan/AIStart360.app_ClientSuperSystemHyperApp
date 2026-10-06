@@ -6,7 +6,9 @@ export const maxDuration = 300
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
+import { createServiceClient } from '@/lib/supabase-service'
 import { analyzePointA } from '@/lib/ai/point-a-analyzer'
+import { mergeAiAnalysis } from '@/lib/point-a/ai-analysis'
 import type { GriExpertNotes } from '@/lib/ai/point-a-analyzer'
 import { calculatePointA } from '@/lib/point-a-engine'
 import type { Company } from '@/types/onboarding'
@@ -21,6 +23,16 @@ import { isRateLimitedKey } from '@/lib/rate-limit'
  * Called asynchronously after rule-based recalculation completes.
  *
  * Body: { diagnostic_id, user_id }
+ *
+ * Storage (lib/point-a/ai-analysis.ts, migration 091): the result goes to
+ * diagnostics.ai_analysis MERGED with the keys of the current value this route
+ * does not own (e.g. `gri`, `pulse` read by the expert routes); the Point A
+ * narrative lives in ai_narrative and is never touched here.
+ * After the caller is authorised, the route reads and writes with the service
+ * role, scoped to the diagnostic of `user_id`: it is usually called
+ * server-to-server without cookies, where the session client is anonymous —
+ * RLS then hid the survey answers and dropped every write (`diagnostics` has
+ * no UPDATE policy for API roles).
  */
 export async function POST(req: NextRequest) {
   try {
@@ -54,14 +66,30 @@ export async function POST(req: NextRequest) {
       ? normalizeLocale(String(bodyLocale))
       : localeFromRequestCookie(req)
 
+    const db = createServiceClient()
+
+    // The diagnostic must belong to user_id — checked before any paid call.
+    const { data: owned, error: ownErr } = await db
+      .from('diagnostics')
+      .select('id')
+      .eq('id', diagnostic_id)
+      .eq('user_id', user_id)
+      .maybeSingle()
+    if (ownErr) {
+      console.error('[ai-analyze] diagnostic lookup failed', ownErr.code ?? '', ownErr.message ?? '')
+      return NextResponse.json({ ok: false, error: 'Не удалось загрузить диагностику' }, { status: 500 })
+    }
+    if (!owned) return NextResponse.json({ ok: false, error: 'Диагностика не найдена' }, { status: 404 })
+
     // 1. Mark as processing
-    await sb
+    await db
       .from('diagnostics')
       .update({ ai_status: 'processing' })
       .eq('id', diagnostic_id)
+      .eq('user_id', user_id)
 
     // 2. Fetch survey answers
-    const { data: rows } = await sb
+    const { data: rows } = await db
       .from('survey_answers')
       .select('question_key, answer')
       .eq('user_id', user_id)
@@ -72,14 +100,14 @@ export async function POST(req: NextRequest) {
     }
 
     // 3. Fetch company
-    const { data: company } = await sb
+    const { data: company } = await db
       .from('companies')
       .select('*')
       .eq('user_id', user_id)
       .maybeSingle()
 
     // 4. Fetch GRI expert notes (step=0, gri_expert_* keys)
-    const { data: expertRows } = await sb
+    const { data: expertRows } = await db
       .from('survey_answers')
       .select('question_key, answer')
       .eq('user_id', user_id)
@@ -102,18 +130,31 @@ export async function POST(req: NextRequest) {
     const aiResult = await analyzePointA(answers, pointA, company as Company | null, expertNotes, locale)
 
     if (aiResult) {
-      // 7. Store result
-      await sb
+      // 7. Store result, keeping keys of the current value this route does not
+      //    own. Re-read right before writing: the analysis takes minutes.
+      const { data: current } = await db
         .from('diagnostics')
-        .update({ ai_analysis: aiResult, ai_status: 'completed' })
+        .select('ai_analysis')
         .eq('id', diagnostic_id)
+        .eq('user_id', user_id)
+        .maybeSingle()
+      const { error: saveErr } = await db
+        .from('diagnostics')
+        .update({ ai_analysis: mergeAiAnalysis(current?.ai_analysis ?? null, aiResult), ai_status: 'completed' })
+        .eq('id', diagnostic_id)
+        .eq('user_id', user_id)
+      if (saveErr) {
+        console.error('[ai-analyze] save failed', saveErr.code ?? '', saveErr.message ?? '')
+        return NextResponse.json({ ok: false, ai_status: 'failed', error: 'Анализ получен, но не сохранён' }, { status: 500 })
+      }
 
       return NextResponse.json({ ok: true, ai_status: 'completed' })
     } else {
-      await sb
+      await db
         .from('diagnostics')
         .update({ ai_status: 'failed' })
         .eq('id', diagnostic_id)
+        .eq('user_id', user_id)
 
       return NextResponse.json({ ok: false, ai_status: 'failed', error: 'AI analysis returned null' })
     }
@@ -123,12 +164,12 @@ export async function POST(req: NextRequest) {
     // Try to mark as failed if we have the diagnostic_id
     try {
       const body = await req.clone().json().catch(() => ({}))
-      if (body.diagnostic_id) {
-        const sb = createServerClient()
-        await sb
+      if (body.diagnostic_id && body.user_id) {
+        await createServiceClient()
           .from('diagnostics')
           .update({ ai_status: 'failed' })
           .eq('id', body.diagnostic_id)
+          .eq('user_id', body.user_id)
       }
     } catch { /* best effort */ }
 

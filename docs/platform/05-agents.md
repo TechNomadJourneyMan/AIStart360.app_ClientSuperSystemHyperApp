@@ -3,7 +3,7 @@
 Назначение: полное описание агентного слоя по решению D3 (+ D4, D7): агенты, права, жизненный цикл, события, безопасность, наблюдаемость, стоимость.
 Обновлено: 2026-10-06
 
-Статус: 🟡 частично реализовано. Рантайм (086), уведомления и одобрения (087) работают. Работают агенты `monitoring`, `document_intelligence`, `document_reaper` и пайплайн диагностики (090): `diagnostic_orchestrator` → `data_collection` → `metrics` → `data_quality` → `benchmark` → `diagnostic` → `recommendation`. Не сделаны `report` (фаза 6) и `admin_assistant` (позже). Код: `lib/agents/**`, `lib/diagnostics/**`.
+Статус: 🟡 частично реализовано. Рантайм (086), уведомления и одобрения (087) работают. Работают агенты `monitoring`, `document_intelligence`, `document_reaper`, пайплайн диагностики (090): `diagnostic_orchestrator` → `data_collection` → `metrics` → `data_quality` → `benchmark` → `diagnostic` → `recommendation`, и агент `report` (фаза 6, §2.2). Не сделан `admin_assistant` (позже). Код: `lib/agents/**`, `lib/diagnostics/**`, `lib/reports/**`.
 Связанные: [03-database.md](03-database.md) (раздел 086), [07-admin-control-center.md](07-admin-control-center.md), [09-security.md](09-security.md).
 
 ## 1. Принципы
@@ -48,6 +48,17 @@
 | Стоимость | Модель вызывается, только если задан ключ, укладывается бюджет (запуск / агент / компания / платформа) и данные изменились: хеш входа сравнивается с прошлой завершённой сессией. Иначе этап завершается без модели, а в записи этапа указано `llm: unavailable / budget / cached / failed` | `modelCall`, `diagnostics.ai_cache` |
 | Сбои | Этап в dead-letter переводит сессию в `failed`. Сессия без живых задач дольше 15 мин переводится в `failed` при обслуживании очереди | `queue.ts afterRun`, `failStalledSessions` |
 | Итог | Снимок Executive Overview в `diagnostic_sessions.overview`, `DIAGNOSTIC_COMPLETED` (индекс, критические выводы, файлы, метрики). Критические риски правил — одно уведомление команде на набор рисков. Критическая гипотеза ИИ — WARNING «нужна проверка» | `diagnostics.finalize`, `event-router.ts` |
+
+### 2.2 Отчёт — как реализовано (085, фаза 6)
+
+| Шаг | Что происходит | Где |
+|---|---|---|
+| Запуск | `DIAGNOSTIC_COMPLETED` (сессия события; чужая сессия отклоняется) или ручной запуск из GIGA (последняя `ready`-сессия). Права: READ_CLIENT_DATA, CREATE_REPORT, CALL_LLM (только для резюме) | `lib/agents/definitions/report.ts` |
+| Снимок | `report.snapshot` собирает `report_versions.content` из БД: баллы и блоки строки `diagnostics` сессии, правила движка (CALCULATED, `engine:point_a_v1`), активные выводы и рекомендации, видимые клиенту; гипотезы ИИ и предложения модели — только после проверки сотрудником. У каждого пункта provenance, confidence, источник, evidence. Плюс полнота, пробелы, источники, дата расчёта. Непроверенное — только счётчик в `provenance.staff` | `lib/reports/snapshot.ts`, `lib/agents/tools/reports.ts` |
+| Версия | `report.create_version` пересобирает снимок, сверяет хеш, пишет версию `ready` (никогда `published`); прежние `draft`/`ready` → `superseded`, опубликованная не трогается. `data_hash` = sha256 канонической сериализации данных снимка без `generated_at` и резюме: те же данные → новой версии нет (это пишется в итог запуска). `REPORT_GENERATED` — один на версию (dedupe) | `lib/reports/versions.ts` |
+| Резюме (опц.) | Выключено по умолчанию; включается `agent_configs.settings = {"narrative": true}`. Premium, бюджет запуска $1, 1 вызов; только при изменившихся данных. Модель видит снимок без названия компании, контактов, цитат evidence (fenced untrusted). Принимается, только если каждое число в тексте есть в данных; хранится как AI_HYPOTHESIS с моделью и версией промпта. Нет ключа / бюджета / прав / непроверяемые числа → версия без резюме, причина в `provenance.staff.narrative` | `lib/reports/snapshot.ts` (`acceptNarrative`) |
+| Публикация | Только человек: GIGA «Отчёты», право `reports.publish` (admin, super_admin), аудит до изменения. Публикация `ready` → `published`, прежняя опубликованная → `superseded`; отклонение и отзыв — с причиной | `app/api/giga-admin/reports/**` |
+| Клиент | `/api/v1/reports*` через сессию (RLS: только `published`) + явный фильтр `published` + `lib/tenancy`; PDF рендерится из `content` по запросу (`pdf_storage_path` не используется) | `app/api/v1/reports/**`, `lib/reports/version-pdf.ts` |
 
 Форма определения (код): `key`, `name`, `description`, `tier`, `tools[]`, `defaultPermissions{}`, `prompt` + `promptVersion`, `triggers` (события / cron), `limits` (`maxTokens`, `maxToolCalls`, `timeoutMs`, `maxAttempts`), `children[]` (кого может ставить в очередь).
 
