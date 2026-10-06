@@ -5,15 +5,18 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useQueryClient } from '@tanstack/react-query'
 import { POINT_A_OVERVIEW_QUERY_KEY, recalcErrorMessage } from '@/hooks/usePointAOverview'
-import { createClient } from '@/lib/supabase-client'
 import { useHrefVisible } from '@/hooks/usePlatformSections'
+import { DocumentUploadDialog } from '@/components/documents/DocumentUploadDialog'
+import { CLIENT_DOCUMENT_ACCEPT } from '@/lib/documents/client-upload'
 
 /**
  * PointAQuickToolbar — sticky multifunction action bar at the top of Точка А.
  *
  * Quick actions (left → right, horizontally scrollable on mobile):
- *   • Загрузить файл  — opens file picker, uploads to Supabase Storage,
- *                       registers via /api/v1/onboarding/documents, triggers parse.
+ *   • Загрузить файл  — opens file picker, then a dialog where the user picks
+ *                       the document type; upload contract of
+ *                       lib/documents/client-upload.ts (private bucket +
+ *                       POST /api/v1/documents, processing starts on its own).
  *   • Заполнить анкету — link to onboarding wizard
  *   • Документы       — link to documents page
  *   • Точка Б         — link to target state
@@ -29,51 +32,15 @@ export default function PointAQuickToolbar({ userId }: { userId: string | null }
   const router = useRouter()
   const queryClient = useQueryClient()
   const fileInputRef = useRef<HTMLInputElement | null>(null)
-  const [uploadState, setUploadState] = useState<'idle' | 'uploading' | 'success' | 'error'>('idle')
-  const [uploadName, setUploadName] = useState<string | null>(null)
+  const [pickedFile, setPickedFile] = useState<File | null>(null)
   const [recalcState, setRecalcState] = useState<'idle' | 'pending' | 'success' | 'error'>('idle')
 
-  // ─── File upload — same flow as components/point-a/FileArea.tsx ─────────
-  const handleFile = useCallback(async (file: File) => {
-    if (!userId) {
-      setUploadState('error')
-      return
-    }
-    setUploadState('uploading')
-    setUploadName(file.name)
-    try {
-      const sb = createClient()
-      const ext = file.name.split('.').pop() || 'bin'
-      const storagePath = `${userId}/${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`
-      const { error: upErr } = await sb.storage
-        .from('user-documents')
-        .upload(storagePath, file, { cacheControl: '3600', upsert: false })
-      if (upErr) throw new Error(upErr.message)
-      const { data: pub } = sb.storage.from('user-documents').getPublicUrl(storagePath)
-      const res = await fetch('/api/v1/onboarding/documents', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          user_id: userId,
-          file_name: file.name,
-          file_url: pub.publicUrl,
-          file_size: file.size,
-          mime_type: file.type,
-          storage_path: storagePath,
-        }),
-      })
-      if (!res.ok) throw new Error(await res.text())
-      setUploadState('success')
-      // Refresh server data so the new document appears
-      router.refresh()
-      setTimeout(() => setUploadState('idle'), 2500)
-    } catch (e) {
-      console.error('[quick-toolbar] upload failed', e)
-      setUploadState('error')
-      setTimeout(() => setUploadState('idle'), 3500)
-    }
-  }, [userId, router])
+  // ─── File upload — shared dialog (explicit document type, live status) ──
+  const onUploaded = useCallback(() => {
+    // Refresh server data and the overview so the new document appears.
+    void queryClient.invalidateQueries({ queryKey: POINT_A_OVERVIEW_QUERY_KEY })
+    router.refresh()
+  }, [queryClient, router])
 
   const openPicker = () => fileInputRef.current?.click()
 
@@ -100,12 +67,6 @@ export default function PointAQuickToolbar({ userId }: { userId: string | null }
   }, [router, queryClient])
 
   // ─── Render ─────────────────────────────────────────────────────────────
-  const uploadLabel =
-    uploadState === 'uploading' ? 'Загружаем…' :
-    uploadState === 'success' ? 'Загружено' :
-    uploadState === 'error' ? 'Ошибка' :
-    'Загрузить файл'
-
   const recalcLabel =
     recalcState === 'pending' ? 'Считаем…' :
     recalcState === 'success' ? 'Готово' :
@@ -121,43 +82,31 @@ export default function PointAQuickToolbar({ userId }: { userId: string | null }
         <button
           type="button"
           onClick={openPicker}
-          disabled={uploadState === 'uploading' || !userId}
-          aria-label={uploadLabel}
-          className={`group flex-shrink-0 inline-flex items-center gap-2 px-4 py-2.5 rounded-xl font-mono text-xs font-bold uppercase tracking-wide transition-all border ${
-            uploadState === 'success'
-              ? 'bg-primary/20 border-primary/50 text-primary'
-              : uploadState === 'error'
-              ? 'bg-error/15 border-error/40 text-error'
-              : 'bg-gradient-to-r from-primary to-[#00e29e] border-primary/40 text-[#003824] hover:shadow-[0_0_20px_rgba(110,255,192,0.35)] disabled:opacity-60'
-          }`}
+          disabled={!userId}
+          aria-label="Загрузить файл"
+          title={userId ? undefined : 'Войдите в систему, чтобы загрузить документ'}
+          className="group flex-shrink-0 inline-flex items-center gap-2 px-4 py-2.5 rounded-xl font-mono text-xs font-bold uppercase tracking-wide transition-all border bg-gradient-to-r from-primary to-[#00e29e] border-primary/40 text-[#003824] hover:shadow-[0_0_20px_rgba(110,255,192,0.35)] disabled:opacity-60 focus:outline-none focus:ring-2 focus:ring-primary/40"
         >
-          <span className="material-symbols-outlined text-base">
-            {uploadState === 'uploading'
-              ? 'progress_activity'
-              : uploadState === 'success'
-              ? 'check_circle'
-              : uploadState === 'error'
-              ? 'error'
-              : 'upload_file'}
-          </span>
-          <span className="whitespace-nowrap">{uploadLabel}</span>
-          {uploadState !== 'idle' && uploadName && (
-            <span className="hidden sm:inline text-[10px] font-normal text-current/70 truncate max-w-[160px]">
-              · {uploadName}
-            </span>
-          )}
+          <span className="material-symbols-outlined text-base" aria-hidden>upload_file</span>
+          <span className="whitespace-nowrap">Загрузить файл</span>
         </button>
 
         <input
           ref={fileInputRef}
           type="file"
-          accept=".pdf,.xlsx,.xls,.csv,.docx,.doc"
+          accept={CLIENT_DOCUMENT_ACCEPT}
           className="hidden"
           onChange={(e) => {
             const f = e.target.files?.[0]
-            if (f) handleFile(f)
+            if (f) setPickedFile(f)
             e.target.value = ''
           }}
+        />
+        <DocumentUploadDialog
+          file={pickedFile}
+          onClose={() => setPickedFile(null)}
+          documentsHref="/point-a#files"
+          onUploaded={onUploaded}
         />
 
         {/* Divider */}

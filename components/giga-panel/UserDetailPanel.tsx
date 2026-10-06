@@ -161,9 +161,11 @@ export function UserDetailPanel({ userId, readOnly = false }: Props) {
     completedSteps: number[]
   } | null>(null)
   const [diag, setDiag] = useState<Record<string, unknown> | null>(null)
+  // download_url: short-lived signed link issued by
+  // GET /api/giga-admin/requests/[id]/documents (file_url is a bare storage path).
   const [docs, setDocs] = useState<Array<{
-    id: string; file_name: string; file_url: string; doc_type: string
-    file_size: number | null; parse_status: string
+    id: string; file_name: string; doc_type: string
+    file_size: number | null; parse_status: string; download_url: string | null
   }>>([])
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState(false)
@@ -398,8 +400,15 @@ export function UserDetailPanel({ userId, readOnly = false }: Props) {
                   <p className="text-[11px] text-slate-300 truncate">{doc.file_name}</p>
                   <span className="text-[9px] text-slate-600">{formatFileSize(doc.file_size)}</span>
                 </div>
-                {doc.file_url && (
-                  <a href={doc.file_url} target="_blank" rel="noopener noreferrer" className="p-1 rounded hover:bg-white/[0.05]">
+                {doc.download_url && (
+                  <a
+                    href={doc.download_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label={`Скачать ${doc.file_name}`}
+                    title="Скачать (ссылка действует 1 час)"
+                    className="p-1 rounded hover:bg-white/[0.05]"
+                  >
                     <Download size={12} className="text-slate-500 hover:text-slate-300" />
                   </a>
                 )}

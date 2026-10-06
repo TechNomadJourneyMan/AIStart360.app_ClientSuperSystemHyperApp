@@ -1,30 +1,12 @@
 // Unit tests for POST /api/v1/documents/[id]/rebind.
 //
-// Mock policy: Supabase server client and next/headers are mocked. The
-// `@/lib/documents/bind-fields` module is currently NOT on disk — it is being
-// built by a parallel agent. The route is designed to dynamically import it
-// and fall back gracefully when the import fails. These tests run under that
-// "not yet available" condition end-to-end, which is the most realistic state
-// for the route at the time of writing.
+// Mock policy: Supabase server client, next/headers and the document
+// repository are mocked; the deterministic binder (lib/documents/bind-fields)
+// runs for real.
 //
-// Coverage:
-//   - 401 (unauthenticated)
-//   - 404 (document not found)
-//   - 409 (document not yet parsed)
-//   - 403 (caller is neither owner nor admin)
-//   - 200 owner path: parsed_data preserved, degrade `note` returned because
-//     bind-fields is unavailable in this build (still a successful response —
-//     `ok: true`, counts match field totals, no write performed)
-//   - 200 admin path: a profile with role='admin' can rebind a document they
-//     do not own; same degrade response shape as owner path
-//
-// DEFERRED: a "true" happy path that asserts metric_id changes after binding
-// requires the bind-fields module to exist on disk. Vitest 4's dynamic-import
-// interception does not register `vi.mock` factories for non-existent path
-// aliases (verified empirically), so we cannot stub it from inside this file
-// alone. Once the parallel agent lands `lib/documents/bind-fields.ts`, this
-// test file should add a happy-path test that mocks the module and asserts
-// the updated count + persisted parsed_data.fields.
+// Coverage: 401, 404, 409 (not parsed), 403 (neither owner nor admin), the
+// owner path (binder runs, result saved once through the server connection,
+// never through the user client) and the admin path.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { NextRequest } from 'next/server'

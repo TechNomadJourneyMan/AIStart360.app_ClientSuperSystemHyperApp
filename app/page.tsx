@@ -638,7 +638,7 @@ export default function LandingPage({
               {
                 icon: 'upload_file',
                 t: 'Файл',
-                d: 'PDF · DOCX · XLSX · CSV · TXT до 50 МБ',
+                d: 'PDF · DOCX · XLSX · CSV · TXT до 25 МБ',
               },
               {
                 icon: 'auto_awesome',

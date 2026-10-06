@@ -8,6 +8,10 @@ import {
   formatSurveyValue,
   getStepFromKey,
 } from '@/lib/survey-labels'
+import { DocumentStageSteps, DocumentStatusChip, toneTextClass } from '@/components/documents/DocumentStatus'
+import { useClientDocuments } from '@/hooks/useClientDocuments'
+import { documentTypeLabel } from '@/lib/documents/doc-type-labels'
+import { documentSize, documentStatusView, formatDocumentSize } from '@/lib/documents/status-view'
 
 interface SurveyData {
   answers: Record<string, unknown>
@@ -19,44 +23,22 @@ interface CompanyData {
   [key: string]: unknown
 }
 
-interface DocumentRow {
-  id: string
-  file_name: string
-  doc_type?: string
-  parse_status?: string
-  file_size?: number
-  uploaded_at?: string
-}
-
 interface Props {
   userId: string | null
-}
-
-const PARSE_LABEL: Record<string, { label: string; color: string }> = {
-  queued:     { label: 'в очереди', color: 'text-on-surface-variant' },
-  parsing:    { label: 'обработка', color: 'text-amber-400' },
-  ai_extract: { label: 'AI извлечение', color: 'text-violet-400' },
-  parsed:     { label: 'готово',  color: 'text-primary' },
-  failed:     { label: 'ошибка',  color: 'text-error' },
-}
-
-function fmtBytes(n?: number) {
-  if (!n) return ''
-  if (n < 1024) return `${n} B`
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`
-  return `${(n / (1024 * 1024)).toFixed(1)} MB`
 }
 
 /**
  * MyDataSection — survey answers grouped by step + uploaded documents list.
  * Mounted as an anchored section inside /client/point-a (#my-data).
- * Self-fetches its own data; degrades quietly on missing data.
+ * Self-fetches its own data; degrades quietly on missing survey data.
+ * Documents show the pipeline's real status and refresh every 5 s while one
+ * is queued / processing (useClientDocuments).
  */
 export default function MyDataSection({ userId }: Props) {
   const [survey, setSurvey] = useState<SurveyData | null>(null)
   const [company, setCompany] = useState<CompanyData | null>(null)
-  const [documents, setDocuments] = useState<DocumentRow[]>([])
   const [loading, setLoading] = useState(true)
+  const { documents, error: documentsError } = useClientDocuments({ enabled: Boolean(userId) })
 
   useEffect(() => {
     if (!userId) {
@@ -66,18 +48,15 @@ export default function MyDataSection({ userId }: Props) {
     let cancelled = false
     ;(async () => {
       try {
-        const [surveyRes, companyRes, docsRes] = await Promise.all([
+        const [surveyRes, companyRes] = await Promise.all([
           fetch(`/api/v1/onboarding/survey?user_id=${userId}`, { credentials: 'include' }),
           fetch(`/api/v1/onboarding/company?user_id=${userId}`, { credentials: 'include' }),
-          fetch(`/api/v1/onboarding/documents?user_id=${userId}`, { credentials: 'include' }),
         ])
         const sJ = await surveyRes.json().catch(() => null)
         const cJ = await companyRes.json().catch(() => null)
-        const dJ = await docsRes.json().catch(() => null)
         if (cancelled) return
         if (sJ?.ok) setSurvey(sJ.data)
         if (cJ?.ok) setCompany(cJ.data)
-        if (dJ?.ok && Array.isArray(dJ.data)) setDocuments(dJ.data as DocumentRow[])
       } catch {
         // silent — section is optional
       } finally {
@@ -165,6 +144,9 @@ export default function MyDataSection({ userId }: Props) {
             Загрузить
           </Link>
         </div>
+        {documentsError && (
+          <p className="mb-2 text-[11px] text-error" role="alert">{documentsError}</p>
+        )}
         {documents.length === 0 ? (
           <div className="rounded-xl border border-dashed border-white/[0.08] p-5 text-center">
             <span className="material-symbols-outlined text-3xl text-on-surface-variant/30 block mb-1">
@@ -177,11 +159,12 @@ export default function MyDataSection({ userId }: Props) {
         ) : (
           <ul className="grid grid-cols-1 md:grid-cols-2 gap-1.5">
             {documents.map((d) => {
-              const ps = PARSE_LABEL[d.parse_status ?? 'queued'] ?? PARSE_LABEL.queued
+              const view = documentStatusView(d)
+              const size = formatDocumentSize(documentSize(d))
               return (
                 <li
                   key={d.id}
-                  className="flex items-center gap-2 bg-surface-container rounded-lg border border-white/[0.04] p-2.5"
+                  className="flex items-start gap-2 bg-surface-container rounded-lg border border-white/[0.04] p-2.5"
                 >
                   <span className="material-symbols-outlined text-base text-primary/60 flex-shrink-0">
                     description
@@ -189,13 +172,20 @@ export default function MyDataSection({ userId }: Props) {
                   <div className="min-w-0 flex-1">
                     <p className="text-xs text-on-surface truncate">{d.file_name}</p>
                     <p className="text-[10px] font-mono text-on-surface-variant/70">
-                      {d.doc_type ? `${d.doc_type} · ` : ''}
-                      {fmtBytes(d.file_size)}
+                      {[documentTypeLabel(d.doc_type), size].filter(Boolean).join(' · ')}
                     </p>
+                    {view.detail && view.tone !== 'success' && (
+                      <p className={`text-[10px] mt-0.5 leading-snug line-clamp-2 ${toneTextClass(view.tone)}`} title={view.detail}>
+                        {view.detail}
+                      </p>
+                    )}
+                    {view.inFlight && (
+                      <div className="mt-1">
+                        <DocumentStageSteps view={view} />
+                      </div>
+                    )}
                   </div>
-                  <span className={`text-[10px] font-mono ${ps.color} whitespace-nowrap`}>
-                    {ps.label}
-                  </span>
+                  <DocumentStatusChip view={view} className="flex-shrink-0" />
                 </li>
               )
             })}

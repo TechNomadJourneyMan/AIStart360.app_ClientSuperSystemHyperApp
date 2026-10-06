@@ -350,7 +350,7 @@ function PointB() {
 
 function Parser() {
   const stages = [
-    { icon: 'upload_file',  t: 'Файл',          d: 'PDF · DOCX · XLSX · CSV · TXT до 50МБ' },
+    { icon: 'upload_file',  t: 'Файл',          d: 'PDF · DOCX · XLSX · CSV · TXT до 25 МБ' },
     { icon: 'auto_awesome', t: 'AI-парсер',     d: 'OpenRouter Sonnet · zod-валидация · fallback' },
     { icon: 'route',        t: 'Поля → отделы', d: 'Выручка → Финансы · CAC → Маркетинг · SKU → Операции' },
   ]

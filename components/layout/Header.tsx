@@ -7,7 +7,8 @@ import { useUIStore } from '@/stores/ui.store'
 import { useNotificationsStore } from '@/stores/notifications.store'
 import { useAuthStore } from '@/stores/auth.store'
 import { hasPermission } from '@/lib/navigation'
-import { createClient } from '@/lib/supabase/client'
+import { DocumentUploadDialog } from '@/components/documents/DocumentUploadDialog'
+import { CLIENT_DOCUMENT_ACCEPT } from '@/lib/documents/client-upload'
 import type { UserRole } from '@/types'
 import { getClientLocale, setClientLocale, type Locale } from '@/lib/i18n/locale'
 
@@ -20,8 +21,9 @@ export function Header() {
   const [showUserMenu, setShowUserMenu] = useState(false)
   const [showQuickAction, setShowQuickAction] = useState(false)
   const [locale, setLocale] = useState<Locale>('ru')
-  const [uploadStatus, setUploadStatus] = useState<'idle' | 'uploading' | 'done' | 'error'>('idle')
-  const [uploadMessage, setUploadMessage] = useState<string>('')
+  // Quick upload: the picked file opens a dialog where the user chooses the
+  // document type; the dialog runs the upload contract and shows the status.
+  const [pickedFile, setPickedFile] = useState<File | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   // Hydrate the toggle from the persisted cookie. The cookie isn't available
@@ -96,61 +98,13 @@ export function Header() {
 
   const triggerFilePicker = () => {
     setShowQuickAction(false)
-    setUploadStatus('idle')
-    setUploadMessage('')
     fileInputRef.current?.click()
   }
 
-  const handleFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
+  const handleFileSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] ?? null
     e.target.value = ''
-    if (!file) return
-    if (!user?.id) {
-      setUploadStatus('error')
-      setUploadMessage('Нужно войти в аккаунт')
-      return
-    }
-    try {
-      setUploadStatus('uploading')
-      setUploadMessage(`Загрузка ${file.name}…`)
-      const sb = createClient()
-      const storagePath = `${user.id}/${Date.now()}_${file.name}`
-      const { error: uploadError } = await sb.storage
-        .from('documents')
-        .upload(storagePath, file, {
-          contentType: file.type || 'application/octet-stream',
-          upsert: false,
-        })
-      if (uploadError) throw new Error(uploadError.message)
-      const { data: { publicUrl } } = sb.storage.from('documents').getPublicUrl(storagePath)
-      const res = await fetch('/api/v1/onboarding/documents', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          user_id: user.id,
-          file_name: file.name,
-          file_url: publicUrl,
-          file_size: file.size,
-          mime_type: file.type,
-          doc_type: 'financial_report',
-        }),
-      })
-      const result = await res.json()
-      if (!result.ok) throw new Error(result.error ?? 'Ошибка загрузки')
-      setUploadStatus('done')
-      setUploadMessage(`✅ ${file.name} загружен`)
-      window.setTimeout(() => {
-        setUploadStatus('idle')
-        setUploadMessage('')
-      }, 3500)
-    } catch (err) {
-      setUploadStatus('error')
-      setUploadMessage(err instanceof Error ? err.message : 'Ошибка загрузки')
-      window.setTimeout(() => {
-        setUploadStatus('idle')
-        setUploadMessage('')
-      }, 5000)
-    }
+    if (file) setPickedFile(file)
   }
 
   const handleLogout = () => {
@@ -268,26 +222,14 @@ export function Header() {
           ref={fileInputRef}
           type="file"
           className="hidden"
-          accept=".pdf,.xlsx,.xls,.csv,.doc,.docx,.txt,.png,.jpg,.jpeg"
+          accept={CLIENT_DOCUMENT_ACCEPT}
           onChange={handleFileSelected}
         />
-
-        {uploadMessage && (
-          <div
-            className={`hidden md:flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-mono border ${
-              uploadStatus === 'uploading'
-                ? 'bg-primary/5 border-primary/20 text-primary'
-                : uploadStatus === 'done'
-                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
-                  : 'bg-error/10 border-error/30 text-error'
-            }`}
-          >
-            {uploadStatus === 'uploading' && (
-              <span className="material-symbols-outlined text-sm animate-pulse">cloud_upload</span>
-            )}
-            <span className="truncate max-w-[220px]">{uploadMessage}</span>
-          </div>
-        )}
+        <DocumentUploadDialog
+          file={pickedFile}
+          onClose={() => setPickedFile(null)}
+          documentsHref="/point-a#files"
+        />
 
         {/* Отчёты — открывает клиентский отчёт (Точка А + цели + данные анкеты) */}
         <Link href="/client/point-a"
