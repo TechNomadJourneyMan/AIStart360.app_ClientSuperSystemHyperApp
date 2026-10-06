@@ -58,7 +58,7 @@ function shimVector(sql, vectorAvailable) {
 
 // Known drift between migration files and production. Each rule rewrites a
 // migration the way prod actually ended up, and is documented in
-// docs/platform/02-database.md (section "Schema drift").
+// docs/platform/03-database.md (section "Schema drift").
 const DRIFT_RULES = {
   // 001 declared company_id UUID → companies(id), but prod `companies.id` is
   // the Prisma TEXT column; later migrations (021/024/032) use TEXT too.
