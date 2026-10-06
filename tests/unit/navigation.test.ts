@@ -32,7 +32,7 @@ describe('navigation (FE-01/02 canonical lowercase roles)', () => {
 
   it('admin and super_admin see the staff pages; user management links go to the GIGA panel', () => {
     for (const role of ['admin', 'super_admin'] as UserRole[]) {
-      const hrefs = getNavForRole(role).map((i) => i.href)
+      const hrefs = getNavForRole(role, { panelAccess: true }).map((i) => i.href)
       expect(hrefs).toContain('/admin-giga-panel/users')
       expect(hrefs).toContain('/admin-giga-panel/requests')
       expect(hrefs).toContain('/clients')
@@ -40,6 +40,14 @@ describe('navigation (FE-01/02 canonical lowercase roles)', () => {
       expect(hrefs).not.toContain('/admin')
       expect(hrefs).not.toContain('/users')
     }
+  })
+
+  it('GIGA links need panel access: a legacy admin without a staff role does not get dead links', () => {
+    const legacy = getNavForRole('admin', { panelAccess: false }).map((i) => i.href)
+    expect(legacy).not.toContain('/admin-giga-panel/users')
+    expect(legacy).not.toContain('/admin-giga-panel/requests')
+    expect(getNavForRole('admin').map((i) => i.href)).not.toContain('/admin-giga-panel/users')
+    expect(getNavForRole('super_admin').map((i) => i.href)).toContain('/admin-giga-panel/users')
   })
 
   it('the legacy owner role navigates exactly like a client', () => {

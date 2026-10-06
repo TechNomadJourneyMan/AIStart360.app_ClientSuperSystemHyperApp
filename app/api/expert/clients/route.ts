@@ -75,7 +75,7 @@ export async function GET() {
     created_at: string
   }
   const clients = await sbFetchAll<ClientRow>(
-    'profiles?role=eq.client&select=id,full_name,email,avatar_url,status,created_at&order=created_at.desc,id.asc',
+    'profiles?role=in.(client,owner)&select=id,full_name,email,avatar_url,status,created_at&order=created_at.desc,id.asc',
   )
   if (!clients) return NextResponse.json({ error: 'failed to load clients' }, { status: 500 })
   if (clients.length === 0) return NextResponse.json({ data: [] })

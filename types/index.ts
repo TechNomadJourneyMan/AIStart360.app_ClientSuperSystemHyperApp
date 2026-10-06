@@ -172,6 +172,8 @@ export interface NavItem {
   href: string
   icon: string
   roles: UserRole[]
+  /** Opens the GIGA panel: shown only to super_admin or a staff_roles member. */
+  panel?: boolean
   badge?: string
   subItems?: Array<Omit<NavItem, 'subItems'>>
 }

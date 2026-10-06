@@ -92,7 +92,7 @@ export function MobileNav() {
   // FE-01/02: canonical lowercase role, default 'client' when missing.
   const role: UserRole = (user?.role as UserRole | undefined) ?? 'client'
   const hiddenPaths = useHiddenSectionPaths()
-  const allowedNav = getNavForRole(role).map(item => item.href).filter((h) => !isHiddenByPlatform(h, hiddenPaths))
+  const allowedNav = getNavForRole(role, { panelAccess: role === 'super_admin' || Boolean(user?.staffRole) }).map(item => item.href).filter((h) => !isHiddenByPlatform(h, hiddenPaths))
 
   // Items locked behind a paid plan for CLIENT role
   const PREMIUM_LOCKED = ['/metrics', '/market', '/point-b']

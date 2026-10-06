@@ -4,6 +4,7 @@ import { requireGiga, isSameOriginMutation } from '@/lib/admin/giga-actor'
 import { expertBlockResponse, resolveExpert } from '@/lib/expert-auth'
 import { createServiceClient } from '@/lib/supabase-service'
 import type { Permission } from '@/lib/admin/rbac'
+import { isClientProfileRole } from '@/lib/profiles/client-roles'
 
 /**
  * Read access to one user's data, shared by GIGA-CRM and the expert portal.
@@ -46,7 +47,8 @@ export async function authorizeUserDataRead(
   const userId = await resolveUserId(sb)
   if (!userId) return { sb, userId: null, viewer: viewer.id }
   const { data } = await sb.from('profiles').select('role').eq('id', userId).maybeSingle()
-  if ((data as { role?: string } | null)?.role !== 'client') {
+  // Legacy 'owner' profiles are clients too (lib/profiles/client-roles.ts).
+  if (!isClientProfileRole((data as { role?: string } | null)?.role)) {
     return { response: NextResponse.json({ error: 'Forbidden' }, { status: 403 }) }
   }
   return { sb, userId, viewer: viewer.id }

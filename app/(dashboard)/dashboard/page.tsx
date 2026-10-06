@@ -263,6 +263,23 @@ export default async function DashboardPage() {
     } catch {
       // fall through — treat as client if role unknown
     }
+    // A legacy profiles.role 'admin' without a staff_roles row has no panel
+    // access (migration 099, owner decision): no platform-wide view either.
+    if (role === 'admin') {
+      let hasStaffRole = false
+      try {
+        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+        const serviceKey = requireServiceRoleKey()
+        const staffRes = await fetch(
+          `${supabaseUrl}/rest/v1/staff_roles?user_id=eq.${user.id}&select=role`,
+          { headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` }, cache: 'no-store' }
+        )
+        hasStaffRole = staffRes.ok && ((await staffRes.json()) as unknown[]).length > 0
+      } catch {
+        hasStaffRole = false
+      }
+      if (!hasStaffRole) role = 'client'
+    }
     // Show client view for: explicit 'client' role, OR unknown role (safety fallback)
     // Only admin/super_admin/expert/manager see the admin dashboard
     const isAdmin = role === 'admin' || role === 'super_admin' || role === 'expert' || role === 'manager'

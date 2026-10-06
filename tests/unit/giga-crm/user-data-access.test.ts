@@ -67,10 +67,12 @@ describe('authorizeUserDataRead', () => {
     expect('response' in r && (await r.response.json()).code).toBe('MFA_STEP_UP_REQUIRED')
   })
 
-  it('a non-staff expert reads clients only', async () => {
+  it('a non-staff expert reads clients only (the legacy owner role is a client)', async () => {
     s.expert = { id: 'e', role: 'expert' }
     expect('response' in (await authorizeUserDataRead(req(), 'users.sensitive', async () => UID))).toBe(false)
     s.targetRole = 'owner'
+    expect('response' in (await authorizeUserDataRead(req(), 'users.sensitive', async () => UID))).toBe(false)
+    s.targetRole = 'admin'
     const r = await authorizeUserDataRead(req(), 'users.sensitive', async () => UID)
     expect('response' in r && r.response.status).toBe(403)
   })

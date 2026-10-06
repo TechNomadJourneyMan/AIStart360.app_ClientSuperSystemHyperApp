@@ -52,23 +52,35 @@ export const SECONDARY_NAV: NavItem[] = [
   { label: 'Психопрофиль', href: '/profile/psych',icon: 'psychology',        roles: CLIENT_OK },
   // User management and registration requests live in the GIGA panel (the old
   // /users and /admin screens were removed).
-  { label: 'Пользователи', href: '/admin-giga-panel/users',    icon: 'manage_accounts',      roles: STAFF_ROLES },
-  { label: 'Заявки',       href: '/admin-giga-panel/requests', icon: 'admin_panel_settings', roles: STAFF_ROLES },
+  // Shown only with panel access (super_admin or a staff_roles row): a legacy
+  // profiles.role 'admin' without one would bounce off the panel gate.
+  { label: 'Пользователи', href: '/admin-giga-panel/users',    icon: 'manage_accounts',      roles: STAFF_ROLES, panel: true },
+  { label: 'Заявки',       href: '/admin-giga-panel/requests', icon: 'admin_panel_settings', roles: STAFF_ROLES, panel: true },
 ]
 
 // Legacy flat list (for backward compat)
 export const NAV_ITEMS: NavItem[] = [...PRIMARY_NAV, ...SECONDARY_NAV]
 
-export function getNavForRole(role: UserRole): NavItem[] {
-  return NAV_ITEMS.filter((item) => item.roles.includes(role))
+export interface NavAccess {
+  /** super_admin or a staff_roles member — may open the GIGA panel. */
+  panelAccess?: boolean
 }
 
-export function getPrimaryNavForRole(role: UserRole): NavItem[] {
-  return PRIMARY_NAV.filter((item) => item.roles.includes(role))
+function visible(item: NavItem, role: UserRole, access: NavAccess): boolean {
+  if (!item.roles.includes(role)) return false
+  return !item.panel || (access.panelAccess ?? role === 'super_admin')
 }
 
-export function getSecondaryNavForRole(role: UserRole): NavItem[] {
-  return SECONDARY_NAV.filter((item) => item.roles.includes(role))
+export function getNavForRole(role: UserRole, access: NavAccess = {}): NavItem[] {
+  return NAV_ITEMS.filter((item) => visible(item, role, access))
+}
+
+export function getPrimaryNavForRole(role: UserRole, access: NavAccess = {}): NavItem[] {
+  return PRIMARY_NAV.filter((item) => visible(item, role, access))
+}
+
+export function getSecondaryNavForRole(role: UserRole, access: NavAccess = {}): NavItem[] {
+  return SECONDARY_NAV.filter((item) => visible(item, role, access))
 }
 
 // Role display labels (Russian UI)

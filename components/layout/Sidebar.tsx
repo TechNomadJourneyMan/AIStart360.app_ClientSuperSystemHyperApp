@@ -39,8 +39,9 @@ export function Sidebar() {
   // least-privileged 'client' when missing (no more toUpperCase bridge).
   const role: UserRole = (user?.role as UserRole | undefined) ?? 'client'
   // Sections switched off / hidden for this user in GIGA-CRM disappear from the menu.
-  const primaryNav = getPrimaryNavForRole(role).filter((i) => !isHiddenByPlatform(i.href, hiddenPaths))
-  const secondaryNav = getSecondaryNavForRole(role).filter((i) => !isHiddenByPlatform(i.href, hiddenPaths))
+  const navAccess = { panelAccess: role === 'super_admin' || Boolean(user?.staffRole) }
+  const primaryNav = getPrimaryNavForRole(role, navAccess).filter((i) => !isHiddenByPlatform(i.href, hiddenPaths))
+  const secondaryNav = getSecondaryNavForRole(role, navAccess).filter((i) => !isHiddenByPlatform(i.href, hiddenPaths))
 
   // Items locked behind a paid plan for CLIENT role
   const PREMIUM_LOCKED = ['/metrics', '/market', '/point-b']
