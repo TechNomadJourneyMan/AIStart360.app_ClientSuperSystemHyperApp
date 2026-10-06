@@ -93,6 +93,11 @@ CREATE TABLE IF NOT EXISTS public.oauth_auth_requests (
 CREATE INDEX IF NOT EXISTS oauth_auth_requests_expires_idx ON public.oauth_auth_requests (expires_at);
 
 -- ── OAuth 2.1: authorization codes ──────────────────────────────────────────
+-- Whether the client sent redirect_uri at /authorize (it may omit it with a
+-- single registered URI): /token then requires it only in that case
+-- (OAuth 2.1 §4.1.3).
+ALTER TABLE public.oauth_auth_requests ADD COLUMN IF NOT EXISTS redirect_uri_explicit BOOLEAN NOT NULL DEFAULT true;
+
 CREATE TABLE IF NOT EXISTS public.oauth_auth_codes (
   id                     UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
   code_hash              TEXT        NOT NULL UNIQUE CHECK (code_hash ~ '^[0-9a-f]{64}$'),
@@ -109,6 +114,7 @@ CREATE TABLE IF NOT EXISTS public.oauth_auth_codes (
   CONSTRAINT oauth_auth_codes_ttl
     CHECK (expires_at >= created_at + interval '60 seconds' AND expires_at <= created_at + interval '10 minutes')
 );
+ALTER TABLE public.oauth_auth_codes ADD COLUMN IF NOT EXISTS redirect_uri_explicit BOOLEAN NOT NULL DEFAULT true;
 CREATE INDEX IF NOT EXISTS oauth_auth_codes_expires_idx ON public.oauth_auth_codes (expires_at);
 
 -- ── OAuth 2.1: access / refresh tokens ──────────────────────────────────────

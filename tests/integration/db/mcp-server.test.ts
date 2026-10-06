@@ -653,6 +653,28 @@ describe.skipIf(!dbTestsEnabled)('MCP server (101)', async () => {
     expect((await implicitGrant.json()).error).toBe('unsupported_grant_type')
   })
 
+  it('code exchange: resource compared like /authorize (host case, trailing slash); redirect_uri required only when it was sent', async () => {
+    const clientId = await registerPublic()
+    const u = new URL(RESOURCE)
+    const variant = `${u.protocol}//${u.host.toUpperCase()}${u.pathname}/`
+    const ok = await exchange(clientId, await codeFor(clientId, ids.analyst), verifier, { resource: variant })
+    expect(ok.status).toBe(200)
+    expect(ok.body.access_token).toBeTruthy()
+
+    // Explicit redirect_uri at /authorize → it is required at /token.
+    const explicit = await codeFor(clientId, ids.analyst)
+    const missing = await tokenRoute.POST(form(`${ORIGIN}/api/oauth/token`, { grant_type: 'authorization_code', code: explicit, client_id: clientId, code_verifier: verifier, resource: RESOURCE }))
+    expect((await missing.json()).error).toBe('invalid_grant')
+
+    // Omitted at /authorize (single registered URI) → may be omitted at /token.
+    const reqId = await oauth.createAuthRequest({ clientId, redirectUri: REDIRECT, redirectUriExplicit: false, codeChallenge: challenge, scopes: ['clients:read'] as never, scopeRequested: true, resource: RESOURCE, state: null })
+    const p = await principal(ids.analyst)
+    const d = await oauth.decideAuthRequest(reqId, ids.analyst, true, oauth.grantableScopes({ scopes: ['clients:read'] as never, scopeRequested: true }, p.allowed))
+    if (!d.ok || !d.code) throw new Error('no code')
+    const implicitRedirect = await tokenRoute.POST(form(`${ORIGIN}/api/oauth/token`, { grant_type: 'authorization_code', code: d.code, client_id: clientId, code_verifier: verifier, resource: RESOURCE }))
+    expect(implicitRedirect.status).toBe(200)
+  })
+
   it('refresh: rotated on every use; replaying an old refresh token revokes the whole family', async () => {
     const clientId = await registerPublic()
     const first = (await exchange(clientId, await codeFor(clientId, ids.analyst))).body

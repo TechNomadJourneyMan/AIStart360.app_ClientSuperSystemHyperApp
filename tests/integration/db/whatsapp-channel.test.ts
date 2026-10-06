@@ -266,6 +266,19 @@ describe.skipIf(!dbTestsEnabled)('whatsapp channel (104)', async () => {
       expect(sendsTo(after.phone)).toHaveLength(0)
     })
 
+    it('a worker that dies before the fence on the last allowed attempt fails the row (never stuck queued)', async () => {
+      const r = await clientRow({ maxAttempts: 1 })
+      const owner = `dead-last-${tag}`
+      const claimed = await prisma.$queryRaw<Array<{ id: string }>>`
+        SELECT id::text FROM public.claim_whatsapp_outbox(${owner}, 1, 30, ${[r.id]}::uuid[])`
+      expect(claimed).toHaveLength(1)
+      await prisma.$executeRaw`UPDATE public.whatsapp_outbox SET lease_until = now() - interval '1 second' WHERE id = ${r.id}::uuid`
+      // The next claim reaps the lease: attempts = max_attempts → failed, not queued.
+      await prisma.$queryRaw`SELECT id FROM public.claim_whatsapp_outbox(${owner}, 1, 30, ${[r.id]}::uuid[])`
+      expect(await row(r.id)).toMatchObject({ status: 'failed', last_error: 'lease_expired_before_send (max_attempts)' })
+      expect(sendsTo(r.phone)).toHaveLength(0)
+    })
+
     it('provider errors retry with backoff, then fail after max_attempts', async () => {
       const r = await clientRow({ maxAttempts: 2 })
       mode = 'http500'
@@ -371,6 +384,16 @@ describe.skipIf(!dbTestsEnabled)('whatsapp channel (104)', async () => {
       expect(stored.verify_code_hash).not.toContain(code)
       expect(stored.pending_phone_e164).toBe(p)
       expect(stored.opt_in_at).toBeNull()
+      // Once sent, the outbox row keeps no plaintext code.
+      const outboxRows = await prisma.$queryRaw<Array<{ params: unknown; fallback_text: string | null; status: string }>>`
+        SELECT params, fallback_text, status FROM public.whatsapp_outbox
+        WHERE user_id = ${u}::uuid AND template_name = 'phone_verification'`
+      expect(outboxRows.length).toBeGreaterThan(0)
+      for (const r of outboxRows) {
+        expect(r.status).toBe('sent')
+        expect(JSON.stringify(r.params)).not.toContain(code)
+        expect(r.fallback_text).toBeNull()
+      }
 
       const wrong = code === '000000' ? '111111' : '000000'
       expect(await links.confirmVerification(u, 'client', wrong)).toEqual({ ok: false, code: 'invalid_code' })

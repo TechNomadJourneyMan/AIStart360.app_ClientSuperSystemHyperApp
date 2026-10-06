@@ -68,6 +68,7 @@ export async function GET(req: NextRequest): Promise<Response> {
     id = await createAuthRequest({
       clientId: client.clientId, redirectUri: presented, codeChallenge: challenge, scopes,
       scopeRequested: rawScope !== null && scopes.length > 0, resource: ourResource, state,
+      redirectUriExplicit: sp.get('redirect_uri') !== null,
     })
   } catch {
     return fail('server_error', 'Authorization request could not be stored')

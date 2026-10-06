@@ -240,26 +240,40 @@ BEGIN
     RAISE EXCEPTION 'invalid whatsapp outbox claim' USING ERRCODE = '22023';
   END IF;
 
-  -- Reap abandoned leases (a worker died mid-run).
+  -- Reap abandoned leases (a worker died mid-run). Before the send fence the
+  -- row goes back to the queue — unless that was its last allowed attempt:
+  -- then it fails (otherwise it would sit 'queued' forever, never claimable
+  -- because attempts = max_attempts). After the fence: delivery_unknown.
   WITH expired AS (
     SELECT id FROM public.whatsapp_outbox
     WHERE status = 'sending' AND lease_until <= v_now
     FOR UPDATE SKIP LOCKED
   ), reaped AS (
     UPDATE public.whatsapp_outbox o
-       SET status = CASE WHEN o.send_started_at IS NULL THEN 'queued' ELSE 'delivery_unknown' END,
-           last_error = CASE WHEN o.send_started_at IS NULL THEN 'lease_expired_before_send' ELSE 'lease_expired_after_send' END,
-           completed_at = CASE WHEN o.send_started_at IS NULL THEN NULL ELSE v_now END,
+       SET status = CASE WHEN o.send_started_at IS NOT NULL THEN 'delivery_unknown'
+                         WHEN o.attempts >= o.max_attempts THEN 'failed'
+                         ELSE 'queued' END,
+           last_error = CASE WHEN o.send_started_at IS NOT NULL THEN 'lease_expired_after_send'
+                             WHEN o.attempts >= o.max_attempts THEN 'lease_expired_before_send (max_attempts)'
+                             ELSE 'lease_expired_before_send' END,
+           completed_at = CASE WHEN o.send_started_at IS NULL AND o.attempts < o.max_attempts THEN NULL ELSE v_now END,
            next_attempt_at = CASE WHEN o.send_started_at IS NULL THEN v_now ELSE o.next_attempt_at END,
+           -- A finished verification message keeps no plaintext code.
+           params = CASE WHEN o.template_name = 'phone_verification'
+                          AND (o.send_started_at IS NOT NULL OR o.attempts >= o.max_attempts)
+                         THEN '{}'::jsonb ELSE o.params END,
+           fallback_text = CASE WHEN o.template_name = 'phone_verification'
+                                 AND (o.send_started_at IS NOT NULL OR o.attempts >= o.max_attempts)
+                                THEN NULL ELSE o.fallback_text END,
            lease_owner = NULL, lease_token = NULL, lease_until = NULL, send_started_at = NULL
       FROM expired
      WHERE o.id = expired.id
-    RETURNING o.delivery_id, o.status
+    RETURNING o.delivery_id, o.status, o.last_error
   )
   UPDATE public.notification_deliveries d
-     SET status = 'failed', error = 'delivery_unknown'
+     SET status = 'failed', error = left(reaped.last_error, 300)
     FROM reaped
-   WHERE d.id = reaped.delivery_id AND reaped.status = 'delivery_unknown';
+   WHERE d.id = reaped.delivery_id AND reaped.status IN ('delivery_unknown', 'failed');
 
   RETURN QUERY
   WITH picked AS (
@@ -392,7 +406,12 @@ BEGIN
          provider_message_id = CASE WHEN p_outcome = 'sent' THEN btrim(p_provider_message_id) ELSE provider_message_id END,
          sent_at = CASE WHEN p_outcome = 'sent' THEN v_now ELSE sent_at END,
          last_error = CASE WHEN p_outcome = 'sent' THEN NULL ELSE COALESCE(v_error, p_outcome) END,
-         completed_at = CASE WHEN v_status = 'queued' THEN NULL ELSE v_now END
+         completed_at = CASE WHEN v_status = 'queued' THEN NULL ELSE v_now END,
+         -- The verification code is only needed until the message is out:
+         -- a finished phone_verification row keeps no plaintext code (only
+         -- its HMAC lives in whatsapp_links).
+         params = CASE WHEN template_name = 'phone_verification' AND v_status <> 'queued' THEN '{}'::jsonb ELSE params END,
+         fallback_text = CASE WHEN template_name = 'phone_verification' AND v_status <> 'queued' THEN NULL ELSE fallback_text END
    WHERE id = v_row.id;
 
   IF v_row.delivery_id IS NOT NULL AND v_status <> 'queued' THEN

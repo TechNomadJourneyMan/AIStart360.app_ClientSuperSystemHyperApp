@@ -30,6 +30,7 @@ import { prisma } from '@/lib/db'
 import { looksLike, newClientId, newSecret, pkceS256Matches, PKCE_CHALLENGE, safeEqual, sha256Hex } from './crypto'
 import { resolveMcpPrincipal } from './principal'
 import { intersectScopes, parseScopeString, scopeString, type McpScope } from './scopes'
+import { sameResource } from './urls'
 
 export const ACCESS_TOKEN_TTL_SECONDS = 60 * 60
 export const REFRESH_TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60
@@ -274,12 +275,14 @@ export interface AuthRequestRow {
 
 export async function createAuthRequest(r: {
   clientId: string; redirectUri: string; codeChallenge: string; scopes: McpScope[]; scopeRequested: boolean; resource: string; state: string | null
+  /** false when the client omitted redirect_uri (single registered URI). */
+  redirectUriExplicit?: boolean
 }): Promise<string> {
   if (!PKCE_CHALLENGE.test(r.codeChallenge)) throw new OAuthError('invalid_request', 'code_challenge: base64url SHA-256 (43 символа)')
   await pruneExpiredGrants()
   const rows = await prisma.$queryRaw<Array<{ id: string }>>`
-    INSERT INTO public.oauth_auth_requests (client_id, redirect_uri, code_challenge, scopes, scope_requested, resource, state, expires_at)
-    VALUES (${r.clientId}, ${r.redirectUri}, ${r.codeChallenge}, ${r.scopes}::text[], ${r.scopeRequested}, ${r.resource},
+    INSERT INTO public.oauth_auth_requests (client_id, redirect_uri, redirect_uri_explicit, code_challenge, scopes, scope_requested, resource, state, expires_at)
+    VALUES (${r.clientId}, ${r.redirectUri}, ${r.redirectUriExplicit ?? true}, ${r.codeChallenge}, ${r.scopes}::text[], ${r.scopeRequested}, ${r.resource},
             ${r.state}, now() + make_interval(secs => ${AUTH_REQUEST_TTL_SECONDS}::int))
     RETURNING id::text`
   return rows[0].id
@@ -343,14 +346,14 @@ export async function decideAuthRequest(id: string, userId: string, approve: boo
     UPDATE public.oauth_auth_requests
     SET used_at = now(), user_id = ${userId}::uuid, decision = ${approve && scopes.length > 0 ? 'approved' : 'denied'}
     WHERE id = ${id}::uuid AND used_at IS NULL AND expires_at > now()
-    RETURNING client_id, redirect_uri, code_challenge, resource, state`
+    RETURNING client_id, redirect_uri, redirect_uri_explicit, code_challenge, resource, state`
   const r = claimed[0]
   if (!r) return { ok: false, reason: 'not_pending' }
   if (!approve || scopes.length === 0) return { ok: true, redirectUri: String(r.redirect_uri), state: (r.state as string | null) ?? null, code: null }
   const code = newSecret('code')
   await prisma.$executeRaw`
-    INSERT INTO public.oauth_auth_codes (code_hash, client_id, user_id, redirect_uri, code_challenge, scopes, resource, expires_at)
-    VALUES (${sha256Hex(code)}, ${String(r.client_id)}, ${userId}::uuid, ${String(r.redirect_uri)}, ${String(r.code_challenge)},
+    INSERT INTO public.oauth_auth_codes (code_hash, client_id, user_id, redirect_uri, redirect_uri_explicit, code_challenge, scopes, resource, expires_at)
+    VALUES (${sha256Hex(code)}, ${String(r.client_id)}, ${userId}::uuid, ${String(r.redirect_uri)}, ${r.redirect_uri_explicit !== false}, ${String(r.code_challenge)},
             ${scopes}::text[], ${String(r.resource)}, now() + make_interval(secs => ${AUTH_CODE_TTL_SECONDS}::int))`
   return { ok: true, redirectUri: String(r.redirect_uri), state: (r.state as string | null) ?? null, code }
 }
@@ -407,7 +410,7 @@ export async function exchangeCode(client: ClientRow, p: {
   const claimed = await prisma.$queryRaw<Array<Record<string, unknown>>>`
     UPDATE public.oauth_auth_codes SET used_at = now()
     WHERE code_hash = ${hash} AND used_at IS NULL AND expires_at > now()
-    RETURNING id::text, client_id, user_id::text, redirect_uri, code_challenge, scopes, resource`
+    RETURNING id::text, client_id, user_id::text, redirect_uri, redirect_uri_explicit, code_challenge, scopes, resource`
   const c = claimed[0]
   if (!c) {
     // A second redemption: revoke what the first one obtained (OAuth 2.1 §4.1.3).
@@ -421,11 +424,15 @@ export async function exchangeCode(client: ClientRow, p: {
     throw new OAuthError('invalid_grant', 'Код авторизации недействителен, истёк или уже использован')
   }
   if (String(c.client_id) !== client.clientId) throw new OAuthError('invalid_grant', 'Код выдан другому клиенту')
-  if (!p.redirectUri || p.redirectUri !== String(c.redirect_uri)) throw new OAuthError('invalid_grant', 'redirect_uri не совпадает с запросом авторизации')
+  // redirect_uri is required at /token exactly when it was sent at /authorize
+  // (OAuth 2.1 §4.1.3); when sent, it must be identical.
+  if (c.redirect_uri_explicit !== false && !p.redirectUri) throw new OAuthError('invalid_grant', 'redirect_uri обязателен: он был передан в запросе авторизации')
+  if (p.redirectUri && p.redirectUri !== String(c.redirect_uri)) throw new OAuthError('invalid_grant', 'redirect_uri не совпадает с запросом авторизации')
   if (!pkceS256Matches(p.codeVerifier, String(c.code_challenge))) throw new OAuthError('invalid_grant', 'code_verifier не соответствует code_challenge')
   const resource = String(c.resource)
-  if (p.resource && p.resource !== resource) throw new OAuthError('invalid_target', 'resource не совпадает с запросом авторизации')
-  if (resource !== ourResource) throw new OAuthError('invalid_target', 'Токен запрошен для другого ресурса')
+  // Same normalisation as /authorize (scheme/host case, one trailing slash).
+  if (p.resource && !sameResource(p.resource, resource)) throw new OAuthError('invalid_target', 'resource не совпадает с запросом авторизации')
+  if (!sameResource(resource, ourResource)) throw new OAuthError('invalid_target', 'Токен запрошен для другого ресурса')
 
   const principal = await resolveMcpPrincipal(String(c.user_id))
   const scopes = principal ? intersectScopes(c.scopes as string[], principal.allowed) : []
@@ -463,8 +470,8 @@ export async function refreshTokens(client: ClientRow, p: {
     }
     if (String(old.client_id) !== client.clientId) throw new OAuthError('invalid_grant', 'refresh_token выдан другому клиенту')
     const resource = String(old.resource)
-    if (p.resource && p.resource !== resource) throw new OAuthError('invalid_target', 'resource не совпадает с выданным токеном')
-    if (resource !== ourResource) throw new OAuthError('invalid_target', 'Токен выдан для другого ресурса')
+    if (p.resource && !sameResource(p.resource, resource)) throw new OAuthError('invalid_target', 'resource не совпадает с выданным токеном')
+    if (!sameResource(resource, ourResource)) throw new OAuthError('invalid_target', 'Токен выдан для другого ресурса')
     const principal = await resolveMcpPrincipal(String(old.user_id))
     let scopes = principal ? intersectScopes(old.scopes as string[], principal.allowed) : []
     if (requested && requested.length > 0) {
