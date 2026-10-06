@@ -20,6 +20,7 @@ import { NextRequest } from 'next/server'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { dbTestsEnabled } from '../../helpers/db-env'
 import type { StaffRole } from '@/lib/admin/rbac'
+import { lockAgentConfig } from '../../helpers/agent-config-lock'
 
 const audit = vi.hoisted(() => ({ calls: [] as Array<{ entry: Record<string, unknown>; opts: Record<string, unknown> }>, fail: false, role: 'admin' }))
 
@@ -136,10 +137,13 @@ describe.skipIf(!dbTestsEnabled)('report agent and report versions', async () =>
   const post = (url: string, body: unknown) =>
     new NextRequest(`http://localhost${url}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
 
-  beforeAll(() => {
+  let unlockReportConfig: (() => Promise<void>) | null = null
+  beforeAll(async () => {
+    // report-review.test.ts writes the same agent_configs row in a parallel worker.
+    unlockReportConfig = await lockAgentConfig('report')
     process.env.AGENT_INLINE_EXECUTION = 'false'
     __useTestAgents([reportAgent])
-  })
+  }, 180_000) // may wait for the other file to release the lock
 
   afterEach(async () => {
     vi.unstubAllGlobals()
@@ -150,6 +154,7 @@ describe.skipIf(!dbTestsEnabled)('report agent and report versions', async () =>
   })
 
   afterAll(async () => {
+    await unlockReportConfig?.()
     if (companies.length) {
       await prisma.$executeRaw`DELETE FROM public.platform_events WHERE company_id = ANY(${companies}::text[])`
       await prisma.$executeRaw`DELETE FROM public.notification_events WHERE company_id = ANY(${companies}::text[])`

@@ -26,6 +26,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import { dbTestsEnabled } from '../../helpers/db-env'
 import type { AuditEntry } from '@/lib/admin/audit'
 import type { AuditWriter } from '@/lib/admin/staff-actions'
+import { lockAgentConfig } from '../../helpers/agent-config-lock'
 
 const spy = vi.hoisted(() => ({
   staff: [] as Array<Record<string, unknown>>,
@@ -127,7 +128,10 @@ describe.skipIf(!dbTestsEnabled)('report review by the expert (103)', async () =
   const decide = (versionId: string, reviewerId: string, decision: 'approve' | 'changes_requested', extra: Partial<Parameters<typeof flow.decideReportReview>[0]> = {}) =>
     flow.decideReportReview({ versionId, reviewerId, decision, channel: 'web', mfaVerified: true, audit, ...extra })
 
-  beforeAll(() => {
+  let unlockReportConfig: (() => Promise<void>) | null = null
+  beforeAll(async () => {
+    // report-agent.test.ts writes the same agent_configs row in a parallel worker.
+    unlockReportConfig = await lockAgentConfig('report')
     process.env.AGENT_INLINE_EXECUTION = 'false'
     process.env.GIGA_COOKIE_SECRET = process.env.GIGA_COOKIE_SECRET || 'w5-test-secret-0123456789abcdef0123456789'
     __useTestAgents([reportAgent])
@@ -136,7 +140,7 @@ describe.skipIf(!dbTestsEnabled)('report review by the expert (103)', async () =
       upload: async (path, bytes) => { stored.set(path, bytes) },
       download: async (path) => stored.get(path) ?? null,
     })
-  })
+  }, 180_000) // may wait for the other file to release the lock
 
   beforeEach(async () => {
     spy.staff.length = 0
@@ -148,6 +152,7 @@ describe.skipIf(!dbTestsEnabled)('report review by the expert (103)', async () =
   })
 
   afterAll(async () => {
+    await unlockReportConfig?.()
     setReportPdfStorage(null)
     await prisma.$executeRaw`DELETE FROM public.system_settings WHERE key = 'staff_require_mfa'`
     if (companies.length) {
