@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { isAuthorizedCron } from '@/lib/cron-auth'
 import { createServiceClient } from '@/lib/supabase-service'
 import { createNotification } from '@/lib/notifications/create'
 import { sendUserEmail } from '@/lib/email'
@@ -103,10 +104,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: false, error: 'CRON_SECRET not configured' }, { status: 500 })
   }
 
-  const authHeader = req.headers.get('authorization')
-  const querySecret = req.nextUrl.searchParams.get('secret')
-  const authorized = authHeader === `Bearer ${cronSecret}` || querySecret === cronSecret
-  if (!authorized) {
+  // Header only, constant-time (Vercel Cron sends `Authorization: Bearer $CRON_SECRET`).
+  if (!isAuthorizedCron(req).ok) {
     return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
   }
 

@@ -6,10 +6,12 @@ import { NextRequest, NextResponse } from 'next/server'
 import { safeCompareTelegramSecret } from '@/lib/telegram/private-bot'
 import { syncTelegramPersonalInbox } from '@/lib/telegram/personal-sync'
 
+// Header only: Vercel Cron sends `Authorization: Bearer $CRON_SECRET`; a secret
+// in the query string would end up in access logs.
 function requestToken(req: NextRequest): string | null {
   const auth = req.headers.get('authorization')
   if (auth?.startsWith('Bearer ')) return auth.slice('Bearer '.length).trim()
-  return req.nextUrl.searchParams.get('secret')
+  return null
 }
 
 function isAuthorized(req: NextRequest): boolean {
