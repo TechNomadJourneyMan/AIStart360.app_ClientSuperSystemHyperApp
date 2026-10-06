@@ -5,14 +5,17 @@
 // provenance. If `public.metrics` has no row for this
 // (company, metric) pair, falls back to a live resolver run
 // (without persisting) so the UI always sees a usable number.
+// Company: lib/tenancy (read access, optional ?companyId=); all
+// reads use the caller's session (RLS). This route never writes.
 // ============================================================
 
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getMetricById } from '@/lib/metrics/registry'
-import { gatherResolverContext } from '@/lib/metrics/materialize'
+import { resolverContextForTenant } from '@/lib/metrics/materialize-tenant'
 import { resolveMetric } from '@/lib/metrics/resolver'
+import { resolveTenantWith, tenantErrorMessage } from '@/lib/tenancy'
 import type { PeriodQuarter } from '@/lib/metrics/types'
 
 const FRESH_WINDOW_MS = 24 * 60 * 60 * 1000
@@ -38,7 +41,7 @@ function isFresh(computedAt: string | null, now: Date): boolean {
 }
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: { id: string } | Promise<{ id: string }> },
 ) {
   try {
@@ -68,26 +71,18 @@ export async function GET(
       )
     }
 
-    // 3. Resolve company_id for this user
-    const { data: companyRow, error: companyError } = await supabase
-      .from('companies')
-      .select('id')
-      .eq('user_id', user.id)
-      .maybeSingle()
-
-    if (companyError) {
+    // 3. Resolve + authorise the company (lib/tenancy)
+    const tenant = await resolveTenantWith(supabase, user.id, {
+      companyId: req.nextUrl?.searchParams.get('companyId') ?? null,
+      access: 'read',
+    })
+    if (!tenant.ok) {
       return NextResponse.json(
-        { ok: false, error: companyError.message },
-        { status: 500 },
+        { ok: false, error: tenant.error === 'no_company' ? 'no_company' : tenantErrorMessage(tenant.error) },
+        { status: tenant.status },
       )
     }
-    if (!companyRow) {
-      return NextResponse.json(
-        { ok: false, error: 'No company found for user' },
-        { status: 404 },
-      )
-    }
-    const companyId = companyRow.id as string
+    const companyId = tenant.tenant.companyId
 
     // 4. Look up latest materialized row
     const { data: rows, error: metricsError } = await supabase
@@ -143,11 +138,7 @@ export async function GET(
     }
 
     // 5. No materialized row → live resolve (no persist)
-    const ctx = await gatherResolverContext(supabase, {
-      userId: user.id,
-      companyId,
-      now,
-    })
+    const ctx = await resolverContextForTenant(supabase, tenant.tenant, now)
     const value = resolveMetric(metricId, ctx, { entry })
 
     const payload: ValuePayload = {

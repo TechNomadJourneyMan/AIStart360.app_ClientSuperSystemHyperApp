@@ -1,11 +1,13 @@
 // ============================================================
 // lib/point-a/aggregator.ts
 // Phase 4 — Aggregator v2.
-// Combines the legacy rule-based PointA with the Phase-1 metric
+// Combines the rule-based PointA with the Phase-1 metric
 // resolver to produce a richer PointA payload that includes
 // department breakdowns, top strengths/gaps, and coverage stats.
-// The legacy `calculatePointA` output is preserved bit-for-bit;
-// the new intelligence lives under `PointA.intelligence`.
+// Metric values that come from documents / manual / external
+// sources feed the rule engine before survey answers
+// (lib/point-a/resolved-inputs.ts); the new intelligence lives
+// under `PointA.intelligence`.
 // ============================================================
 
 import type { SupabaseClient } from '@supabase/supabase-js'
@@ -15,6 +17,7 @@ import {
   gatherResolverContext,
   materializeAll,
 } from '@/lib/metrics/materialize'
+import { resolvedInputsFromValues } from './resolved-inputs'
 import { resolveAllMetrics } from '@/lib/metrics/resolver'
 import { getMetricRegistry } from '@/lib/metrics/registry'
 import {
@@ -29,6 +32,15 @@ export interface AggregateOptions {
    * GET handlers pass this; POST handlers do not.
    */
   skipMaterialize?: boolean
+  /**
+   * Client used for the upsert into `public.metrics`. Routes pass the service
+   * role (lib/supabase-service.ts) after authorising the company: since
+   * migration 088 authenticated users cannot write metrics. Defaults to the
+   * read client (tests / scripts).
+   */
+  writeClient?: SupabaseClient
+  /** 'company' = the company's documents, not only the owner's uploads. */
+  documentsScope?: 'user' | 'company'
 }
 
 const RESOLVER_VERSION = 'phase4-v1'
@@ -84,8 +96,9 @@ function buildIntelligence(
  * Top-level Phase 4 aggregator.
  *
  * 1. Gather resolver context (survey + documents) from Supabase.
- * 2. Compute the rule-based PointA from the survey answers.
- * 3. Run the full metric resolver to get values + provenance.
+ * 2. Run the full metric resolver to get values + provenance.
+ * 3. Compute the rule-based PointA from the survey answers, with
+ *    document / manual metric values taking precedence.
  * 4. (Optional) Best-effort write to `public.metrics` so the UI
  *    can subscribe to realtime changes. Failures are logged and
  *    swallowed — the API still returns a useful payload.
@@ -97,15 +110,15 @@ export async function aggregatePointA(
   companyId: string,
   opts: AggregateOptions = {},
 ): Promise<PointA> {
-  const ctx = await gatherResolverContext(supabase, { userId, companyId })
-
-  const basePointA = calculatePointA(ctx.surveyAnswers)
+  const ctx = await gatherResolverContext(supabase, { userId, companyId, documentsScope: opts.documentsScope })
 
   const values = resolveAllMetrics(ctx)
 
+  const basePointA = calculatePointA(ctx.surveyAnswers, resolvedInputsFromValues(values))
+
   if (!opts.skipMaterialize) {
     try {
-      await materializeAll(supabase, ctx)
+      await materializeAll(opts.writeClient ?? supabase, ctx)
     } catch (err) {
       // Best-effort: never fail the aggregator over a write error.
       const message = err instanceof Error ? err.message : String(err)

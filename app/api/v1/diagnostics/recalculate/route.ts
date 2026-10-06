@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { calculatePointA } from '@/lib/point-a-engine'
+import { loadResolvedInputs } from '@/lib/point-a/resolved-inputs'
 import { notifyAdmins } from '@/lib/notifications'
 import { localeFromRequestCookie } from '@/lib/i18n/locale'
 import { resolveTargetUserId } from '@/lib/api-identity'
@@ -60,8 +61,9 @@ export async function POST(req: NextRequest) {
       .eq('user_id', user_id)
       .single()
 
-    // Calculate Point A
-    const result = calculatePointA(answers)
+    // Calculate Point A. Materialised metric values from documents / manual /
+    // external sources (LTV, CAC, margin) are used before survey answers.
+    const result = calculatePointA(answers, await loadResolvedInputs(sb, company?.id ?? null))
 
     // Retire any previous current diagnostics for this user before inserting the
     // new one, so exactly one row stays is_current=true. Without this, repeated

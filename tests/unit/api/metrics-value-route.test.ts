@@ -34,6 +34,16 @@ vi.mock('@/lib/metrics/registry', () => ({
   getMetricById: (...args: unknown[]) => getMetricByIdMock(...args),
 }))
 
+// ── Mock tenancy (company resolution is unit-tested in tests/unit/tenancy) ──
+const resolveTenantWithMock = vi.fn(async () => ({
+  ok: true,
+  tenant: { userId: 'user-1', companyId: 'co-1', role: 'owner', canManage: true, legacy: false },
+}))
+vi.mock('@/lib/tenancy', () => ({
+  resolveTenantWith: (...args: unknown[]) => resolveTenantWithMock(...(args as [])),
+  tenantErrorMessage: () => 'Нет доступа к компании',
+}))
+
 // Import route after mocks are wired
 import { GET } from '@/app/api/v1/metrics/[id]/value/route'
 

@@ -219,6 +219,16 @@ describe('aggregatePointA', () => {
     await aggregatePointA(client, 'u', 'c')
     expect(upsert).toHaveBeenCalled()
   })
+
+  it('writes metrics with the writeClient (service role), never the read client', async () => {
+    const read = makeMockSupabase({ survey_answers: sampleSurveyRows() })
+    const write = makeMockSupabase({})
+    await aggregatePointA(read.client, 'u', 'c', { writeClient: write.client })
+    expect(read.upsert).not.toHaveBeenCalled()
+    expect(write.upsert).toHaveBeenCalled()
+    const rows = write.upsert.mock.calls[0][0] as Array<{ company_id: string; source: string }>
+    expect(rows.every((r) => r.company_id === 'c')).toBe(true)
+  })
 })
 
 // ─── Direct helper tests ─────────────────────────────────────
