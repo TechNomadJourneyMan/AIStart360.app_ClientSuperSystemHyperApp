@@ -87,7 +87,7 @@ const healthTool = registerTool({
 
 export const monitoringAgent: AgentDefinition<Record<string, never>> = {
   key: 'monitoring',
-  name: 'Monitoring Agent',
+  name: 'Мониторинг платформы',
   description: 'Следит за очередью агентов, обработкой документов, интеграциями и расходом ИИ.',
   version: '1.0.0',
   scope: 'platform',

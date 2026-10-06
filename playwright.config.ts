@@ -23,6 +23,9 @@ export default defineConfig({
       },
   use: {
     baseURL,
+    // A preinstalled browser (e.g. CI images that pin a different build than
+    // this @playwright/test version expects): PLAYWRIGHT_CHROMIUM_PATH=/path/to/chrome.
+    ...(process.env.PLAYWRIGHT_CHROMIUM_PATH ? { launchOptions: { executablePath: process.env.PLAYWRIGHT_CHROMIUM_PATH } } : {}),
     locale: 'ru-RU',
     timezoneId: 'Asia/Almaty',
     colorScheme: 'light',
