@@ -6,6 +6,7 @@ import { requireSupabaseAdmin } from '@/lib/supabase-admin-guard'
 import { createServiceClient } from '@/lib/supabase-service'
 import { recordAdminAction } from '@/lib/admin/audit'
 import { safeErrorMessage } from '@/lib/api-error'
+import { CLIENT_PROFILE_ROLES } from '@/lib/profiles/client-roles'
 
 // POST /api/v1/admin/clients — admin-side client creation (bypasses email
 // confirmation). Admin only. See technical-audit A1.
@@ -98,6 +99,8 @@ export async function GET() {
     const { data: profiles, error } = await sb
       .from('profiles')
       .select('id, email, full_name, status, approved_at, created_at')
+      // Clients only: staff, experts and partners are profiles too.
+      .in('role', [...CLIENT_PROFILE_ROLES])
       .not('status', 'eq', 'rejected')
       .order('created_at', { ascending: false })
 
@@ -120,6 +123,10 @@ export async function GET() {
         .in('user_id', userIds)
         .eq('is_current', true),
     ])
+
+    // A failed read is an error, not "no company / no diagnostic".
+    if (companiesRes.error) throw companiesRes.error
+    if (diagnosticsRes.error) throw diagnosticsRes.error
 
     const companyMap = new Map(
       (companiesRes.data ?? []).map((c) => [c.user_id, c])

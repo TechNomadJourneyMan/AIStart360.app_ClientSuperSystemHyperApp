@@ -3,6 +3,7 @@ export const dynamic = "force-dynamic"
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { cookies } from 'next/headers'
+import { redirect } from 'next/navigation'
 import { KpiCardsGrid } from '@/components/dashboard/KpiCardsGrid'
 import { PortfolioGriPanel } from '@/components/dashboard/PortfolioGriPanel'
 import { GoalsBar } from '@/components/dashboard/GoalsBar'
@@ -60,6 +61,8 @@ interface DashboardData {
   total:    number
   active:   number
   pending:  number
+  /** Profiles created in the last 30 days. */
+  new30:    number
   alerts:   Alert[]
   companies: { id: string; name: string }[]
 }
@@ -69,22 +72,28 @@ async function getDashboardExtendedData(): Promise<DashboardData | null> {
   try {
     const sb = createServerClient()
 
-    // Users from profiles
-    const { data: profiles } = await sb
-      .from('profiles')
-      .select('id, full_name, email, role, status, created_at')
-      .order('created_at', { ascending: false })
-
-    const users = profiles ?? []
-    const total = users.length
-    const active = users.filter(u => u.status === 'approved').length
-    const pending = users.filter(u => u.status === 'pending_approval').length
+    // User counts (count queries: a row list is capped at 1000 by PostgREST).
+    // A failed read throws, so the cards say «не удалось загрузить», not 0.
+    const since30 = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
+    const profiles = () => sb.from('profiles').select('id', { count: 'exact', head: true })
+    const [all, approved, waiting, recent] = await Promise.all([
+      profiles(),
+      profiles().eq('status', 'approved'),
+      profiles().eq('status', 'pending_approval'),
+      profiles().gte('created_at', since30),
+    ])
+    for (const r of [all, approved, waiting, recent]) if (r.error) throw r.error
+    const total = all.count ?? 0
+    const active = approved.count ?? 0
+    const pending = waiting.count ?? 0
+    const new30 = recent.count ?? 0
 
     // Companies
-    const { data: companies } = await sb
+    const { data: companies, error: companiesError } = await sb
       .from('companies')
       .select('id, name')
       .limit(10)
+    if (companiesError) throw companiesError
 
     // Alerts
     const alerts: Alert[] = []
@@ -99,7 +108,7 @@ async function getDashboardExtendedData(): Promise<DashboardData | null> {
       })
     }
 
-    return { total, active, pending, alerts, companies: (companies ?? []) as { id: string; name: string }[] }
+    return { total, active, pending, new30, alerts, companies: (companies ?? []) as { id: string; name: string }[] }
   } catch (e) {
     console.error('[Dashboard] data fetch error:', e)
     return null
@@ -141,8 +150,8 @@ function buildKpi(data: DashboardData | null, griCard: KpiCardData): KpiCardData
     {
       label:    'Пользователи',
       value:    String(data.total),
-      trend:    data.total > 0 ? `+${data.total}` : '0',
-      trendUp:  true,
+      trend:    `+${data.new30} за 30 дн.`,
+      trendUp:  data.new30 > 0,
       icon:     'groups',
       sublabel: 'в системе',
       href:     '/users',
@@ -222,6 +231,9 @@ export default async function DashboardPage() {
   // Detect viewer role — clients get their personal Point A view
   const supabase = createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
+  // Middleware already requires a session here; without one, never fall
+  // through to the platform-wide staff view.
+  if (!user) redirect('/login')
   if (user) {
     // Read role via service-role REST API to bypass RLS (profiles table has RLS recursion issue)
     let role: string | null = null
@@ -583,9 +595,11 @@ export default async function DashboardPage() {
               <section>
                 <div className="flex items-center justify-between mb-4">
                   <h2 className="font-headline text-lg font-bold text-on-surface">Критические сигналы</h2>
-                  <span className="px-2 py-0.5 rounded-full bg-error/10 border border-error/20 text-[10px] font-mono text-error">
-                    {alerts.filter(a => a.severity === 'critical').length} алерта
-                  </span>
+                  {showCrmWidgets && data && (
+                    <span className="px-2 py-0.5 rounded-full bg-error/10 border border-error/20 text-[10px] font-mono text-error">
+                      критических: {alerts.filter(a => a.severity === 'critical').length}
+                    </span>
+                  )}
                 </div>
                 {showCrmWidgets && alerts.length > 0 ? (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -595,8 +609,16 @@ export default async function DashboardPage() {
                   </div>
                 ) : (
                   <div className="bg-surface-container-low border border-white/[0.04] rounded-2xl p-8 text-center">
-                    <span className="material-symbols-outlined text-4xl text-primary/20 mb-2">check_circle</span>
-                    <p className="text-sm text-on-surface-variant">Все системы в норме</p>
+                    <span className="material-symbols-outlined text-4xl text-primary/20 mb-2">
+                      {showCrmWidgets && !data ? 'error' : showCrmWidgets ? 'check_circle' : 'lock'}
+                    </span>
+                    <p className="text-sm text-on-surface-variant">
+                      {!showCrmWidgets
+                        ? 'Сигналы показываются менеджерам и аналитикам'
+                        : !data
+                          ? 'Сигналы не удалось загрузить'
+                          : 'Сигналов нет'}
+                    </p>
                   </div>
                 )}
               </section>

@@ -6,7 +6,8 @@
  * already counted across all tenants), read on the server's direct Postgres
  * connection like the rest of the page:
  *   • audit events — public.audit_logs;
- *   • clients — public.profiles with role 'client': the product's clients.
+ *   • clients — public.profiles with a client role (CLIENT_PROFILE_ROLES:
+ *     'client', 'owner'): the product's clients.
  *     The Prisma `clients` table counted before belongs to the NextAuth-era
  *     CRM (/api/clients, written only through NextAuth sessions) and is not
  *     filled by the current registration / approval flow;
@@ -22,22 +23,15 @@
  * logged), never as 0.
  */
 import { prisma } from '@/lib/db'
-import { getMissingServerEnv } from '@/lib/env'
+import { checkPlatformHealth, type PlatformHealth } from '@/lib/health/platform'
+
+export { checkPlatformHealth, dbStatusFor, type CheckStatus, type PlatformHealth } from '@/lib/health/platform'
 
 export type Stat<T> = { ok: true; value: T } | { ok: false }
 
 export interface AiInsightsCount {
   total: number
   awaitingReview: number
-}
-
-export type CheckStatus = 'online' | 'degraded' | 'offline'
-
-export interface PlatformHealth {
-  db: { status: CheckStatus; latencyMs: number }
-  /** Number of missing critical server env vars (names are not exposed). */
-  missingEnv: number
-  allOnline: boolean
 }
 
 export interface IntelligenceStats {
@@ -56,33 +50,12 @@ async function stat<T>(label: string, read: () => Promise<T>): Promise<Stat<T>> 
   }
 }
 
-/** Same thresholds as GET /api/health (< 150 ms online, < 400 ms degraded). */
-export function dbStatusFor(ok: boolean, latencyMs: number): CheckStatus {
-  if (!ok) return 'offline'
-  return latencyMs < 150 ? 'online' : latencyMs < 400 ? 'degraded' : 'offline'
-}
-
-export async function checkPlatformHealth(): Promise<PlatformHealth> {
-  const t = Date.now()
-  let ok = true
-  try {
-    await prisma.$queryRaw`SELECT 1`
-  } catch (err) {
-    console.error('[intelligence] database check failed:', err)
-    ok = false
-  }
-  const latencyMs = Date.now() - t
-  const db = { status: dbStatusFor(ok, latencyMs), latencyMs }
-  const missingEnv = getMissingServerEnv().length
-  return { db, missingEnv, allOnline: db.status === 'online' && missingEnv === 0 }
-}
-
 export async function getIntelligenceStats(): Promise<IntelligenceStats> {
   const [auditEvents, clients, aiInsights, health] = await Promise.all([
     stat('audit events', () => prisma.auditLog.count()),
     stat('clients', async () => {
       const rows = await prisma.$queryRaw<Array<{ n: number }>>`
-        SELECT count(*)::int AS n FROM public.profiles WHERE role = 'client'`
+        SELECT count(*)::int AS n FROM public.profiles WHERE role IN ('client', 'owner')`
       return Number(rows[0]?.n ?? 0)
     }),
     stat('AI insights', async () => {

@@ -63,7 +63,7 @@ export default async function IntelligencePage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="font-headline text-3xl font-extrabold text-on-surface">Аналитический <span className="text-gradient">центр</span></h1>
-          <p className="text-on-surface-variant text-sm mt-1">Рыночные сигналы, риски и возможности вашей компании</p>
+          <p className="text-on-surface-variant text-sm mt-1">Сводка платформы: события аудита, клиенты, гипотезы ИИ и состояние систем</p>
         </div>
       </div>
 

@@ -1,11 +1,12 @@
 /**
  * /intelligence stat tiles are real: AI insights = active AI_HYPOTHESIS rows
- * of diagnostic_findings (not a constant '0'), clients = profiles with role
- * 'client' (not the NextAuth-era Prisma `clients` table), system status =
+ * of diagnostic_findings (not a constant '0'), clients = profiles with a
+ * client role (not the NextAuth-era Prisma `clients` table), system status =
  * the /api/health checks (not a constant 'Active'). A failed read is reported
  * as failed, never as 0.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { CLIENT_PROFILE_ROLES } from '@/lib/profiles/client-roles'
 
 const s = vi.hoisted(() => ({
   sql: [] as string[],
@@ -69,7 +70,8 @@ describe('getIntelligenceStats', () => {
     expect(s.legacyClientCount).toBe(0)
 
     const clientsSql = s.sql.find((q) => q.includes('FROM public.profiles'))
-    expect(clientsSql).toContain("role = 'client'")
+    // Every client role and only those: staff profiles are not clients.
+    expect(clientsSql).toContain(`role IN (${CLIENT_PROFILE_ROLES.map((r) => `'${r}'`).join(', ')})`)
     const aiSql = s.sql.find((q) => q.includes('FROM public.diagnostic_findings'))
     expect(aiSql).toContain("provenance_type = 'AI_HYPOTHESIS'")
     expect(aiSql).toContain("status = 'active'")

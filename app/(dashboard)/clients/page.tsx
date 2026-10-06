@@ -2,61 +2,97 @@ import type { Metadata } from 'next'
 import { ClientsTable } from '@/components/clients/ClientsTable'
 import { ClientFilters } from '@/components/clients/ClientFilters'
 import { createServerClient } from '@/lib/supabase-server'
+import { CLIENT_PROFILE_ROLES } from '@/lib/profiles/client-roles'
 
 export const metadata: Metadata = { title: 'Клиенты' }
 
-async function getClientStats() {
-  try {
-    const sb = createServerClient()
-    const { data } = await sb
+interface ClientStats {
+  total: number
+  active: number
+  pending: number
+  /** Mean current Point A score, 0–100; null without diagnostics. */
+  avgPointA: number | null
+}
+
+const PAGE = 1000
+
+/**
+ * Counts of client profiles (staff, experts and partners are profiles too)
+ * and the mean current Point A score. Read through the viewer's session, so
+ * RLS decides what is visible. Throws on a failed read: the page shows an
+ * error, never sample numbers.
+ */
+async function getClientStats(): Promise<ClientStats> {
+  const sb = createServerClient()
+  const clients = () =>
+    sb.from('profiles').select('id', { count: 'exact', head: true }).in('role', [...CLIENT_PROFILE_ROLES])
+
+  const [all, active, pending] = await Promise.all([
+    clients().not('status', 'eq', 'rejected'),
+    clients().eq('status', 'approved'),
+    clients().eq('status', 'pending_approval'),
+  ])
+  for (const r of [all, active, pending]) if (r.error) throw r.error
+
+  // Client ids in pages (PostgREST caps a response at 1000 rows), then their
+  // current diagnostics in chunks that keep the request URL short.
+  const ids: string[] = []
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await sb
       .from('profiles')
-      .select('id, status')
+      .select('id')
+      .in('role', [...CLIENT_PROFILE_ROLES])
       .not('status', 'eq', 'rejected')
+      .order('id')
+      .range(from, from + PAGE - 1)
+    if (error) throw error
+    ids.push(...(data ?? []).map((p) => p.id as string))
+    if (!data || data.length < PAGE) break
+  }
 
-    if (!data) return null
-
-    const total = data.length
-    const active = data.filter((p) => p.status === 'approved').length
-    const pending = data.filter((p) => p.status === 'pending_approval').length
-
-    // Average Point A score from diagnostics
-    const userIds = data.map((p) => p.id)
-    if (userIds.length === 0) return { total, active, pending, avgScore: null }
-
-    const { data: diags } = await sb
+  let sum = 0
+  let n = 0
+  for (let i = 0; i < ids.length; i += 200) {
+    const { data, error } = await sb
       .from('diagnostics')
       .select('overall_score')
-      .in('user_id', userIds)
+      .in('user_id', ids.slice(i, i + 200))
       .eq('is_current', true)
       .not('overall_score', 'is', null)
+    if (error) throw error
+    for (const d of data ?? []) {
+      const v = Number(d.overall_score)
+      if (Number.isFinite(v)) { sum += v; n++ }
+    }
+  }
 
-    const scores = (diags ?? []).map((d) => d.overall_score as number)
-    const avgScore = scores.length > 0
-      ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length * 10)
-      : null
-
-    return { total, active, pending, avgScore }
-  } catch {
-    return null
+  return {
+    total: all.count ?? 0,
+    active: active.count ?? 0,
+    pending: pending.count ?? 0,
+    avgPointA: n > 0 ? Math.round(sum / n) : null,
   }
 }
 
 export default async function ClientsPage() {
-  const stats = await getClientStats()
+  let stats: ClientStats | null = null
+  try {
+    stats = await getClientStats()
+  } catch (err) {
+    console.error('[clients] stats', err instanceof Error ? err.message : err)
+  }
 
-  const statCards = stats
-    ? [
-        { label: 'Всего клиентов', value: String(stats.total), icon: 'business_center', color: 'text-primary' },
-        { label: 'Активных', value: String(stats.active), icon: 'check_circle', color: 'text-primary' },
-        { label: 'Ожидают', value: String(stats.pending), icon: 'hourglass_top', color: 'text-tertiary-container' },
-        { label: 'Avg Point A', value: stats.avgScore !== null ? String(stats.avgScore) : '—', icon: 'radar', color: 'text-secondary' },
-      ]
-    : [
-        { label: 'Total Clients', value: '44', icon: 'business_center', color: 'text-primary' },
-        { label: 'Active', value: '38', icon: 'check_circle', color: 'text-primary' },
-        { label: 'Churn Risk', value: '6', icon: 'warning', color: 'text-tertiary-container' },
-        { label: 'Avg GRI', value: '763', icon: 'radar', color: 'text-secondary' },
-      ]
+  const statCards = [
+    { label: 'Всего клиентов', value: stats ? String(stats.total) : '—', icon: 'business_center', color: 'text-primary' },
+    { label: 'Активных', value: stats ? String(stats.active) : '—', icon: 'check_circle', color: 'text-primary' },
+    { label: 'Ожидают', value: stats ? String(stats.pending) : '—', icon: 'hourglass_top', color: 'text-tertiary-container' },
+    {
+      label: 'Средний балл Точки А',
+      value: stats?.avgPointA != null ? `${stats.avgPointA}/100` : '—',
+      icon: 'radar',
+      color: 'text-secondary',
+    },
+  ]
 
   return (
     <div className="space-y-6">
@@ -73,6 +109,11 @@ export default async function ClientsPage() {
       </div>
 
       {/* Stats Row */}
+      {!stats && (
+        <p role="alert" className="text-xs text-error">
+          Статистику клиентов не удалось загрузить — показатели не подменяются примерными.
+        </p>
+      )}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {statCards.map((stat) => (
           <div key={stat.label} className="bg-surface-container-low rounded-xl p-4 flex items-center gap-3">

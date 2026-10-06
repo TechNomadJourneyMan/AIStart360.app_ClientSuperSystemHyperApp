@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server'
-import { prisma } from '@/lib/db'
-import { getMissingServerEnv } from '@/lib/env'
+import { checkPlatformHealth } from '@/lib/health/platform'
 
 /**
  * GET /api/health — public liveness check.
@@ -20,20 +19,10 @@ interface ServiceResult {
 
 const NOT_MEASURED = 'не измеряется'
 
-async function measureDb(): Promise<ServiceResult> {
-  const t = Date.now()
-  try {
-    await prisma.$queryRaw`SELECT 1`
-    const ms = Date.now() - t
-    return { name: 'База данных', status: ms < 150 ? 'online' : ms < 400 ? 'degraded' : 'offline', latencyMs: ms, uptime: NOT_MEASURED }
-  } catch {
-    return { name: 'База данных', status: 'offline', latencyMs: Date.now() - t, uptime: NOT_MEASURED }
-  }
-}
-
 export async function GET() {
-  const db = await measureDb()
-  const missing = getMissingServerEnv().length
+  const health = await checkPlatformHealth()
+  const db: ServiceResult = { name: 'База данных', status: health.db.status, latencyMs: health.db.latencyMs, uptime: NOT_MEASURED }
+  const missing = health.missingEnv
   const config: ServiceResult = {
     name: 'Конфигурация сервера',
     status: missing === 0 ? 'online' : 'offline',
