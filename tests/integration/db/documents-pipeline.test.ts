@@ -371,7 +371,8 @@ describe.skipIf(!dbTestsEnabled)('document_intelligence agent end-to-end', async
     expect((await executeTaskById(id))?.finalStatus).toBe('succeeded')
     const row = await doc(up.document.id)
     expect(row).toMatchObject({ parse_status: 'needs_ocr', processing_stage: 'done', last_error_code: 'NEEDS_OCR' })
-    expect(row.parse_error).toMatch(/OCR/)
+    // OCR runs by default now: the explanation says it is a scan and why it could not be read.
+    expect(row.parse_error).toMatch(/скан/)
     expect(row.parsed_data.empty_reason.code).toBe('NEEDS_OCR')
     expect((await events(up.document.id)).some((e) => e.name === 'FILE_PROCESSED')).toBe(false)
   })

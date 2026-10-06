@@ -19,6 +19,8 @@
     "test:db": "TEST_DATABASE_URL=${TEST_DATABASE_URL:-postgres://postgres:postgres@127.0.0.1:5432/aistart360_test} vitest run",
     "whatsapp-web:bridge": "node --env-file=.env services/whatsapp-web-bridge/server.mjs",
     "whatsapp-web:bridge:check": "npm --prefix services/whatsapp-web-bridge run check",
+    "ocr:file": "tsx scripts/ocr/ocr-file.ts",
+    "ocr:check": "tsx scripts/ocr/check-ocr.ts",
     "postinstall": "prisma generate"
   },
   "dependencies": {
@@ -50,6 +52,9 @@
     "@tanstack/query-sync-storage-persister": "^5.101.1",
     "@tanstack/react-query": "^5.95.2",
     "@tanstack/react-query-persist-client": "^5.101.1",
+    "@tesseract.js-data/eng": "^1.0.0",
+    "@tesseract.js-data/kaz": "^1.0.0",
+    "@tesseract.js-data/rus": "^1.0.0",
     "@types/pdfkit": "^0.17.6",
     "@types/pg": "^8.20.0",
     "@upstash/ratelimit": "^2.0.8",

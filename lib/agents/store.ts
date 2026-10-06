@@ -158,6 +158,8 @@ export async function finishRun(r: {
   runId: string
   status: 'succeeded' | 'failed' | 'awaiting_approval' | 'cancelled'
   model: string | null
+  /** ai_providers.key of the provider of the last model call (094). */
+  providerKey?: string | null
   outputSummary: string | null
   toolsUsed: string[]
   llmCalls: number
@@ -176,6 +178,15 @@ export async function finishRun(r: {
       error_code = ${r.errorCode ?? null}, error_message = ${r.errorMessage?.slice(0, 2000) ?? null},
       finished_at = now(), duration_ms = (extract(epoch FROM now() - started_at) * 1000)::int
     WHERE id = ${r.runId}::uuid`
+  if (r.providerKey) {
+    // Separate statement: before migration 094 the column does not exist and
+    // the run itself must still be recorded.
+    try {
+      await prisma.$executeRaw`UPDATE public.agent_runs SET provider_key = ${r.providerKey} WHERE id = ${r.runId}::uuid`
+    } catch (err) {
+      if (!/provider_key/.test(err instanceof Error ? err.message : '')) throw err
+    }
+  }
 }
 
 export async function insertToolCall(c: {

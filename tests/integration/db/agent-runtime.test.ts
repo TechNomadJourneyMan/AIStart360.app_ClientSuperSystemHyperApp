@@ -263,6 +263,8 @@ describe.skipIf(!enabled)('agent runtime', async () => {
       const [run] = await runs(id)
       expect(run).toMatchObject({ llm_calls: 1, tokens_in: 120, tokens_out: 3, model: 'anthropic/claude-haiku-4.5', output_summary: '4' })
       expect(Number(run.cost_usd)).toBeCloseTo(0.000135, 6)
+      // No route configured (094): the built-in OpenRouter fallback served it.
+      expect(run.provider_key).toBe('openrouter')
     } finally {
       vi.unstubAllGlobals()
       delete process.env.OPENROUTER_API_KEY

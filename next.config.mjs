@@ -37,6 +37,26 @@ const withPWA = withPWAInit({
   },
 })
 
+// Routes that can run the document_intelligence agent (and therefore OCR):
+// Inngest functions, the agents cron, document finalize (inline waitUntil),
+// the manual re-process route and the admin "run agent / retry task" routes.
+// Keys are picomatch globs matched with `contains`, so a prefix also covers
+// nested routes (e.g. /api/v1/onboarding/documents/[id]/process).
+const OCR_ROUTES = [
+  '/api/inngest',
+  '/api/cron/agents',
+  '/api/v1/documents',
+  '/api/v1/onboarding/documents',
+  '/api/giga-admin/agents',
+]
+const OCR_TRACE_FILES = [
+  './node_modules/@tesseract.js-data/*/4.0.0_best_int/*.traineddata.gz',
+  './node_modules/tesseract.js-core/tesseract-core-*lstm.wasm',
+  './node_modules/pdf-parse/dist/pdf-parse/cjs/pdf.worker.mjs',
+  './node_modules/@napi-rs/canvas/**',
+  './node_modules/@napi-rs/canvas-linux-x64-gnu/**',
+]
+
 /** @type {import('next').NextConfig} */
 
 // Origin of the embedded «Рынок» product (Mark-analytics SPA). The /market page
@@ -132,10 +152,26 @@ const nextConfig = {
   // render_failed). Force-trace public/fonts into that route's bundle. In Next
   // 14.2.x this key lives UNDER `experimental` (it only moved to the top level
   // in Next 15); placing it at the top level here made Next ignore it.
+  //
+  // OCR (lib/documents/ocr.ts) runs inside the document_intelligence agent,
+  // i.e. in every route that can execute an agent task. It needs files the
+  // tracer cannot see:
+  //   - tesseract.js spawns a worker_thread from
+  //     node_modules/tesseract.js/src/worker-script/node/index.js (resolved via
+  //     __dirname — so tesseract.js must stay external, webpack would rewrite
+  //     the path), and the worker reads tesseract-core-*-lstm.wasm from disk;
+  //   - language data (@tesseract.js-data/*/4.0.0_best_int — the LSTM-only
+  //     models, ~7.6 MB for rus+eng+kaz) is read by path, never downloaded;
+  //   - pdf-parse renders PDF pages with @napi-rs/canvas (loaded through a
+  //     computed createRequire) and runs pdf.worker.mjs via import(workerSrc)
+  //     relative to its own file — so pdf-parse stays external too.
   experimental: {
-    serverComponentsExternalPackages: ['pdfkit'],
+    serverComponentsExternalPackages: ['pdfkit', 'tesseract.js', 'pdf-parse'],
     outputFileTracingIncludes: {
       '/api/export/report': ['./public/fonts/**'],
+      // pdf-parse (text extraction) is reachable from many API routes.
+      '/api/**': ['./node_modules/pdf-parse/dist/pdf-parse/cjs/pdf.worker.mjs'],
+      ...Object.fromEntries(OCR_ROUTES.map((route) => [route, OCR_TRACE_FILES])),
     },
   },
 }

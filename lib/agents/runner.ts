@@ -23,15 +23,19 @@ import {
   type LlmUsage,
   type ModelTier,
 } from '@/lib/ai/gateway'
+import { effectiveBudgets } from '@/lib/ai/providers/router'
 import { effectivePermissions, type Decision, type Permission } from './permissions'
 import * as store from './store'
 import { getTool, payloadHash, redactArgs, type ToolContext } from './tools'
 import { AgentError, ApprovalRequiredError, type AgentContext, type AgentDefinition, type AgentTaskRow, type SourceRef } from './types'
 
-/** Platform-wide daily AI budget (USD). AGENT_PLATFORM_DAILY_BUDGET_USD overrides. */
-const PLATFORM_DAILY_BUDGET_USD = () => Number(process.env.AGENT_PLATFORM_DAILY_BUDGET_USD ?? 50)
-/** Per-company daily AI budget (USD). AGENT_COMPANY_DAILY_BUDGET_USD overrides. */
-const COMPANY_DAILY_BUDGET_USD = () => Number(process.env.AGENT_COMPANY_DAILY_BUDGET_USD ?? 5)
+/*
+ * Platform-wide and per-company daily AI budgets (USD): the runtime-editable
+ * ai_budgets row (094, admin panel / bot), else AGENT_PLATFORM_DAILY_BUDGET_USD
+ * (default 50) and AGENT_COMPANY_DAILY_BUDGET_USD (default 5). See
+ * effectiveBudgets() in lib/ai/providers/router.ts. A provider's own daily
+ * budget is enforced by the gateway (BUDGET_EXCEEDED result).
+ */
 
 export interface RunReport {
   taskId: string
@@ -76,6 +80,7 @@ export async function runClaimedTask(task: AgentTaskRow, def: AgentDefinition<an
   let tokensOut = 0
   let costUsd = 0
   let lastModel: string | null = null
+  let lastProvider: string | null = null
 
   const log: AgentContext['log'] = (level, type, message, data) =>
     store.insertEvent({ taskId: task.id, runId, agentKey: def.key, companyId: task.company_id, level, type, message, data })
@@ -96,6 +101,7 @@ export async function runClaimedTask(task: AgentTaskRow, def: AgentDefinition<an
     tokensOut += usage.tokensOut
     costUsd += usage.costUsd
     lastModel = usage.model
+    lastProvider = usage.provider ?? lastProvider
   }
 
   /** Budget guard: refuse a call whose worst case would exceed any budget. */
@@ -110,16 +116,17 @@ export async function runClaimedTask(task: AgentTaskRow, def: AgentDefinition<an
     if (costUsd + estimate > perRunBudget) {
       throw new AgentError('BUDGET_EXCEEDED', `бюджет запуска $${perRunBudget} будет превышен`)
     }
-    const [agentDay, companyDay, platformDay] = await Promise.all([
+    const [agentDay, companyDay, platformDay, budgets] = await Promise.all([
       store.spendToday({ agentKey: def.key }),
       task.company_id ? store.spendToday({ companyId: task.company_id }) : Promise.resolve(0),
       store.spendToday(),
+      effectiveBudgets(),
     ])
     if (agentDay + estimate > dailyBudget) throw new AgentError('BUDGET_EXCEEDED', `дневной бюджет агента $${dailyBudget} исчерпан`)
-    if (task.company_id && companyDay + estimate > COMPANY_DAILY_BUDGET_USD()) {
+    if (task.company_id && companyDay + estimate > budgets.companyDailyUsd) {
       throw new AgentError('BUDGET_EXCEEDED', 'дневной бюджет ИИ для компании исчерпан')
     }
-    if (platformDay + estimate > PLATFORM_DAILY_BUDGET_USD()) {
+    if (platformDay + estimate > budgets.platformDailyUsd) {
       throw new AgentError('BUDGET_EXCEEDED', 'дневной бюджет ИИ платформы исчерпан')
     }
   }
@@ -127,9 +134,12 @@ export async function runClaimedTask(task: AgentTaskRow, def: AgentDefinition<an
   const resolveCall = (req: { tier?: ModelTier; maxTokens?: number; model?: string | null }) => {
     if (tier === 'none' && !req.tier) throw new AgentError('PERMISSION_DENIED', 'агент работает без модели')
     const callTier = req.tier ?? (tier as ModelTier)
-    const model = modelForTier(callTier, req.model ?? config?.model_override ?? null)
+    // Only an explicit choice pins the model; otherwise the gateway follows the
+    // owner's tier route (ai_routes) and falls back to modelForTier().
+    const explicitModel = req.model ?? config?.model_override ?? null
+    const model = modelForTier(callTier, explicitModel)
     const maxTokens = Math.min(req.maxTokens ?? maxOutputTokens, maxOutputTokens)
-    return { callTier, model, maxTokens }
+    return { callTier, model, explicitModel, maxTokens }
   }
 
   const ctx: AgentContext = {
@@ -144,18 +154,18 @@ export async function runClaimedTask(task: AgentTaskRow, def: AgentDefinition<an
     spentUsd: () => costUsd,
 
     async llm(req) {
-      const { callTier, model, maxTokens } = resolveCall(req)
+      const { callTier, model, explicitModel, maxTokens } = resolveCall(req)
       await guardBudget({ system: req.system, user: req.user, maxTokens }, callTier, model)
-      const res = await callLlm({ ...req, tier: callTier, model, maxTokens, label: `agent:${def.key}` })
+      const res = await callLlm({ ...req, tier: callTier, model: explicitModel, maxTokens, label: `agent:${def.key}` })
       record(res.usage)
       if (!res.ok) await log('warn', 'llm.error', `модель не ответила: ${res.error}`, { code: res.error })
       return res
     },
 
     async llmJson(req) {
-      const { callTier, model, maxTokens } = resolveCall(req)
+      const { callTier, model, explicitModel, maxTokens } = resolveCall(req)
       await guardBudget({ system: req.system, user: req.user, maxTokens }, callTier, model)
-      const res = await callLlmJson({ ...req, tier: callTier, model, maxTokens, label: `agent:${def.key}` })
+      const res = await callLlmJson({ ...req, tier: callTier, model: explicitModel, maxTokens, label: `agent:${def.key}` })
       record(res.usage)
       if (!res.ok) await log('warn', 'llm.error', `модель не ответила: ${res.error}`, { code: res.error })
       return res
@@ -290,6 +300,7 @@ export async function runClaimedTask(task: AgentTaskRow, def: AgentDefinition<an
     runId,
     status: runStatus,
     model: lastModel,
+    providerKey: lastProvider,
     outputSummary: summary,
     toolsUsed: [...toolsUsed],
     llmCalls, tokensIn, tokensOut, costUsd,

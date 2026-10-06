@@ -53,8 +53,12 @@ export interface FieldProvenance {
   prompt_version: string | null;
   /** Value chosen when chunks disagreed; the alternatives seen. */
   alternatives?: Array<{ value: ParsedFieldValue; quote: string | null; page?: number | null }>;
-  /** OCR-derived text (lower confidence). */
+  /** OCR-derived text (lower confidence, ≤ 0.7). */
   ocr?: boolean;
+  /** Engine that recognised the field's page ('tesseract', 'remote', …). */
+  ocr_engine?: string | null;
+  /** OCR confidence of that page, 0..100 (null when the engine reports none). */
+  ocr_page_confidence?: number | null;
   /** How the metric_id was chosen. */
   binding?: "deterministic" | "ai" | null;
 }

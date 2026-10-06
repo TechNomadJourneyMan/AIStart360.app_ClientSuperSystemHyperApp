@@ -1,11 +1,14 @@
 /**
- * Unified OpenRouter client.
+ * Unified chat / embeddings client for features outside the agent runtime.
  *
- * OpenRouter speaks the OpenAI chat-completions protocol, so we just fetch
- * their /chat/completions endpoint. No SDK needed.
+ * Historically OpenRouter-only (hence the names, kept for the ~14 call sites).
+ * Since 094 every call is resolved by lib/ai/providers/router.ts: the owner can
+ * route tiers / embeddings to any OpenAI-compatible provider (e.g. Alem Plus);
+ * with nothing configured it is OpenRouter's /chat/completions, as before.
  *
  * Env:
- *   OPENROUTER_API_KEY — required for live calls.
+ *   OPENROUTER_API_KEY — the built-in fallback key (required unless the owner
+ *   configured providers and keys in the admin panel).
  *
  * Default model is Claude Sonnet 4.5 (anthropic/claude-sonnet-4.5).
  * Override via `model` param.
@@ -16,8 +19,15 @@
  *   • the provider-reported cost of every call goes to ai_usage_ledger (093).
  */
 
-import { getSiteUrl } from '@/lib/site-url'
-import { privacyProvider } from './privacy'
+import {
+  chatCompletion,
+  computeCost,
+  createEmbeddings,
+  TIER_ESTIMATE_PRICES_PER_MTOK,
+  type ChatMessage,
+} from './providers/client'
+import { hasConfiguredChatRoute, providerBudgetRefusal, resolveTarget } from './providers/router'
+import type { ChatTier, ProviderTarget } from './providers/types'
 import { platformBudgetLeft, recordUsage } from './usage-ledger'
 
 export const OPENROUTER_MODELS = {
@@ -127,112 +137,115 @@ export function resolveModel(opts: {
   return pickModel(autoComplexity(opts))
 }
 
+/**
+ * Is a chat model reachable? OPENROUTER_API_KEY, or (best effort, from the
+ * router's cached configuration) a chat route to a provider with a usable key.
+ */
 export function hasOpenRouterKey(): boolean {
-  return Boolean(process.env.OPENROUTER_API_KEY)
+  return Boolean(process.env.OPENROUTER_API_KEY) || hasConfiguredChatRoute()
+}
+
+/** Complexity → gateway tier, so legacy features follow the owner's tier routes. */
+const COMPLEXITY_TIER: Record<Complexity, ChatTier> = {
+  low: 'light',
+  medium: 'light',
+  high: 'standard',
+  max: 'premium',
+}
+
+function logTag(target: ProviderTarget, suffix = ''): string {
+  return target.kind === 'openrouter' && target.providerKey === 'openrouter'
+    ? `[openrouter${suffix}]`
+    : `[ai:${target.providerKey}${suffix}]`
 }
 
 /**
- * Sends a chat completion via OpenRouter. Returns the assistant message text,
- * or null if the request fails. Never throws.
+ * Sends a chat completion. Returns the assistant message text, or null if the
+ * request fails. Never throws.
+ *
+ * Provider: an explicit `model` pins that model id (OpenRouter unless the owner
+ * registered it under another provider); otherwise the owner's chat route for
+ * the complexity tier (low/medium → light, high → standard, max → premium);
+ * otherwise OpenRouter with the complexity model — the pre-094 behaviour.
  */
 export async function chatWithOpenRouter(opts: ChatOptions): Promise<string | null> {
-  const apiKey = process.env.OPENROUTER_API_KEY
-  if (!apiKey) return null
+  const fallbackModel = resolveModel({
+    model: opts.model,
+    complexity: opts.complexity,
+    user: opts.user,
+    system: opts.system,
+    maxTokens: opts.maxTokens,
+  })
+  const tier = COMPLEXITY_TIER[opts.complexity ?? autoComplexity(opts)]
+  const resolved = await resolveTarget('chat', { tier, model: opts.model ?? null, fallbackModel })
+  if (!resolved.ok) return null
+  const target = resolved.target
 
   const left = await platformBudgetLeft()
   if (left !== null && left <= 0) {
     console.warn(`[openrouter] platform AI budget for today is spent — ${opts.label ?? 'call'} skipped`)
     return null
   }
+  const refusal = await providerBudgetRefusal(target)
+  if (refusal) {
+    console.warn(`${logTag(target)} ${refusal} — ${opts.label ?? 'call'} skipped`)
+    return null
+  }
 
-  const messages: Array<{ role: string; content: string }> = []
+  const messages: ChatMessage[] = []
   if (opts.system) messages.push({ role: 'system', content: opts.system })
   messages.push({ role: 'user', content: opts.user })
 
-  const body: Record<string, unknown> = {
-    model: resolveModel({
-      model: opts.model,
-      complexity: opts.complexity,
-      user: opts.user,
-      system: opts.system,
-      maxTokens: opts.maxTokens,
-    }),
-    messages,
-    max_tokens: opts.maxTokens ?? 2000,
-  }
-  if (opts.temperature !== null) {
-    body.temperature = opts.temperature ?? 0.7
-  }
-  if (opts.jsonSchema) {
-    body.response_format = {
-      type: 'json_schema',
-      json_schema: {
-        name: opts.jsonSchema.name,
-        strict: opts.jsonSchema.strict ?? true,
-        schema: opts.jsonSchema.schema,
-      },
-    }
-    // Do not silently route a strict-schema request through a provider that
-    // ignores response_format and returns merely valid, but contract-wrong JSON.
-    body.provider = { require_parameters: true }
-  } else if (opts.jsonMode) {
-    body.response_format = { type: 'json_object' }
-  }
-  const privacy = privacyProvider()
-  if (privacy) body.provider = { ...((body.provider as Record<string, unknown> | undefined) ?? {}), ...privacy }
-  // Ask OpenRouter to report the real cost of the call.
-  body.usage = { include: true }
-
   const timeoutMs = opts.timeoutMs ?? 45_000
-
-  try {
-    const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-        'HTTP-Referer': getSiteUrl(),
-        'X-Title': 'AIStart360',
-      },
-      body: JSON.stringify(body),
-      // Hard cap so a stalled model/network never hangs the route forever.
-      signal: AbortSignal.timeout(timeoutMs),
-    })
-    if (!res.ok) {
-      if (opts.privacySensitive) {
-        console.error('[openrouter] privacy-sensitive request failed:', res.status)
-      } else {
-        console.error('[openrouter]', res.status, await res.text().catch(() => ''))
-      }
-      return null
-    }
-    const json = await res.json()
-    const usage = json.usage as { prompt_tokens?: number; completion_tokens?: number; cost?: number } | undefined
-    await recordUsage({
-      source: `feature:${opts.label ?? 'chat'}`,
-      model: typeof json.model === 'string' ? json.model : String(body.model),
-      tokensIn: Number(usage?.prompt_tokens ?? 0),
-      tokensOut: Number(usage?.completion_tokens ?? 0),
-      costUsd: Number(usage?.cost ?? 0),
-      costSource: typeof usage?.cost === 'number' ? 'provider' : 'estimate',
-      companyId: opts.companyId ?? null,
-      ok: true,
-    })
-    return json.choices?.[0]?.message?.content ?? null
-  } catch (err) {
-    if (err instanceof Error && err.name === 'TimeoutError') {
-      console.error(`[openrouter] request timed out after ${timeoutMs}ms`)
+  const res = await chatCompletion(target, {
+    messages,
+    maxTokens: opts.maxTokens ?? 2000,
+    temperature: opts.temperature === null ? null : (opts.temperature ?? 0.7),
+    json: opts.jsonMode,
+    jsonSchema: opts.jsonSchema,
+    timeoutMs,
+  })
+  if (!res.ok) {
+    if (res.code === 'TIMEOUT' && res.status === null) {
+      console.error(`${logTag(target)} request timed out after ${timeoutMs}ms`)
     } else if (opts.privacySensitive) {
-      console.error('[openrouter] privacy-sensitive fetch failed')
+      console.error(`${logTag(target)} privacy-sensitive request failed:`, res.status ?? res.message)
+    } else if (res.status !== null) {
+      console.error(logTag(target), res.status, res.detail ?? '')
     } else {
-      console.error('[openrouter] fetch failed:', err)
+      console.error(`${logTag(target)} fetch failed:`, res.message)
     }
     return null
   }
+  const tokensIn = res.tokensIn ?? 0
+  const tokensOut = res.tokensOut ?? 0
+  const cost = computeCost({
+    providerCostUsd: res.providerCostUsd,
+    tokensIn,
+    tokensOut,
+    priceInPerMtok: target.priceInPerMtok,
+    priceOutPerMtok: target.priceOutPerMtok,
+    // OpenRouter reports the real cost; for other providers without prices
+    // record a conservative estimate so budgets still bite.
+    estimatePrices: target.kind === 'openrouter' ? null : TIER_ESTIMATE_PRICES_PER_MTOK[tier],
+  })
+  await recordUsage({
+    source: `feature:${opts.label ?? 'chat'}`,
+    model: res.model,
+    tokensIn,
+    tokensOut,
+    costUsd: cost.costUsd,
+    costSource: cost.costSource,
+    companyId: opts.companyId ?? null,
+    providerKey: target.providerKey,
+    ok: true,
+  })
+  return res.text || null
 }
 
 /**
- * Generate embeddings via OpenRouter's OpenAI-compatible embeddings endpoint.
+ * Generate embeddings via the routed embeddings provider (OpenRouter's
+ * OpenAI-compatible endpoint unless the owner routed `embeddings` elsewhere).
  *
  * Returns an array of embedding vectors (one per input string) or `null` on
  * any failure. Never throws.
@@ -241,60 +254,74 @@ export async function chatWithOpenRouter(opts: ChatOptions): Promise<string | nu
  *   - model: openai/text-embedding-3-small (1536 dims, cheap)
  *   - dimensions: 1536 (matches the pgvector(1536) column on DocumentChunk)
  *
- * Note: not every OpenRouter-routed model honours the `dimensions` parameter.
- * Callers should still verify the returned vector length before persisting.
+ * Note: not every model honours the `dimensions` parameter (other providers
+ * get it only when the caller passes it). Callers must still verify the
+ * returned vector length before persisting.
  */
 export async function embedWithOpenRouter(
   texts: string[],
   opts?: { model?: string; dimensions?: number }
 ): Promise<number[][] | null> {
-  const apiKey = process.env.OPENROUTER_API_KEY
-  if (!apiKey) return null
+  const resolved = await resolveTarget('embeddings', {
+    model: opts?.model ?? null,
+    fallbackModel: opts?.model ?? 'openai/text-embedding-3-small',
+  })
+  if (!resolved.ok) return null
   if (!Array.isArray(texts) || texts.length === 0) return []
+  const target = resolved.target
+  const tag = logTag(target, ':embed')
 
-  const model = opts?.model ?? 'openai/text-embedding-3-small'
-  const dimensions = opts?.dimensions ?? 1536
+  const refusal = await providerBudgetRefusal(target)
+  if (refusal) {
+    console.warn(`${tag} ${refusal}`)
+    return null
+  }
 
-  try {
-    const res = await fetch('https://openrouter.ai/api/v1/embeddings', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-        'HTTP-Referer': getSiteUrl(),
-        'X-Title': 'AIStart360',
-      },
-      body: JSON.stringify({ model, input: texts, dimensions }),
-      // Hard cap so a stalled embeddings call never hangs the pipeline forever.
-      signal: AbortSignal.timeout(20_000),
-    })
-    if (!res.ok) {
-      console.error('[openrouter:embed]', res.status, await res.text().catch(() => ''))
-      return null
-    }
-    const json = (await res.json()) as {
-      data?: Array<{ embedding?: number[] }>
-    }
-    const data = json.data ?? []
-    if (data.length !== texts.length) {
-      console.warn(
-        `[openrouter:embed] length mismatch: requested=${texts.length} got=${data.length}`
-      )
-    }
-    const vectors: number[][] = []
-    for (const item of data) {
-      if (!item || !Array.isArray(item.embedding)) return null
-      vectors.push(item.embedding)
-    }
-    return vectors
-  } catch (err) {
-    if (err instanceof Error && err.name === 'TimeoutError') {
-      console.error('[openrouter:embed] request timed out after 20000ms')
+  const res = await createEmbeddings(target, {
+    input: texts,
+    dimensions: target.kind === 'openrouter' ? (opts?.dimensions ?? 1536) : opts?.dimensions,
+    // Hard cap so a stalled embeddings call never hangs the pipeline forever.
+    timeoutMs: 20_000,
+  })
+  if (!res.ok) {
+    if (res.code === 'TIMEOUT' && res.status === null) {
+      console.error(`${tag} request timed out after 20000ms`)
+    } else if (res.status !== null) {
+      console.error(tag, res.status, res.detail ?? '')
     } else {
-      console.error('[openrouter:embed] fetch failed:', err)
+      console.error(`${tag} fetch failed:`, res.message)
     }
     return null
   }
+  if (res.vectors.length !== texts.length) {
+    console.warn(`${tag} length mismatch: requested=${texts.length} got=${res.vectors.length}`)
+  }
+  const vectors: number[][] = []
+  for (const v of res.vectors) {
+    if (!v) return null
+    vectors.push(v)
+  }
+  if (target.origin === 'db' || res.tokensIn !== null || res.providerCostUsd !== null) {
+    const tokensIn = res.tokensIn ?? 0
+    const cost = computeCost({
+      providerCostUsd: res.providerCostUsd,
+      tokensIn,
+      tokensOut: 0,
+      priceInPerMtok: target.priceInPerMtok,
+      priceOutPerMtok: target.priceOutPerMtok,
+    })
+    await recordUsage({
+      source: 'feature:embeddings',
+      model: res.model,
+      tokensIn,
+      tokensOut: 0,
+      costUsd: cost.costUsd,
+      costSource: cost.costSource,
+      providerKey: target.providerKey,
+      ok: true,
+    })
+  }
+  return vectors
 }
 
 /**

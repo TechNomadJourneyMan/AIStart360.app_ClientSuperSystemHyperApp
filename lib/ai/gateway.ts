@@ -11,17 +11,23 @@
  *   light    — classification, routing, short summaries      → Claude Haiku 4.5
  *   standard — analysis, findings, structured extraction     → Claude Sonnet 4.5
  *   premium  — final report narrative only, opt-in            → Claude Opus 4.8
- * Overrides: AI_MODEL_LIGHT / AI_MODEL_STANDARD / AI_MODEL_PREMIUM env, or
- * per-agent model_override in agent_configs.
+ * Overrides, highest first: explicit model (call site / agent_configs
+ * model_override) → the owner's route for the tier in ai_routes (094, any
+ * provider, lib/ai/providers/router.ts) → AI_MODEL_LIGHT / AI_MODEL_STANDARD /
+ * AI_MODEL_PREMIUM env → DEFAULT_TIER_MODELS. Without a configured route every
+ * call goes to OpenRouter with OPENROUTER_API_KEY, as before 094.
  *
  * Privacy: client data goes to providers that do not retain/train on it.
  * AI_PRIVACY_MODE = 'deny' (default: provider.data_collection = 'deny'),
- * 'strict' (+ zero-data-retention endpoints only), 'off'.
+ * 'strict' (+ zero-data-retention endpoints only), 'off' — OpenRouter only;
+ * other providers get no OpenRouter fields, their privacy is contractual
+ * (ai_providers.privacy_note).
  */
 import type { ZodSchema } from 'zod'
 import { extractJson, OPENROUTER_MODELS } from './openrouter'
-import { getSiteUrl } from '@/lib/site-url'
-import { privacyProvider } from './privacy'
+import { chatCompletion, computeCost, TIER_ESTIMATE_PRICES_PER_MTOK } from './providers/client'
+import { hasConfiguredChatRoute, providerBudgetRefusal, resolveTarget } from './providers/router'
+import type { CostSource } from './providers/types'
 
 export type ModelTier = 'light' | 'standard' | 'premium'
 
@@ -36,11 +42,7 @@ export const DEFAULT_TIER_MODELS: Record<ModelTier, string> = {
  * guard). Recorded costs come from OpenRouter's usage accounting. Deliberately
  * conservative; override with AI_PRICE_TABLE='{"model":{"in":3,"out":15}}'.
  */
-const ESTIMATE_PRICES_PER_MTOK: Record<ModelTier, { in: number; out: number }> = {
-  light: { in: 1, out: 5 },
-  standard: { in: 3, out: 15 },
-  premium: { in: 15, out: 75 },
-}
+const ESTIMATE_PRICES_PER_MTOK: Record<ModelTier, { in: number; out: number }> = TIER_ESTIMATE_PRICES_PER_MTOK
 
 export type LlmErrorCode =
   | 'NO_API_KEY'
@@ -56,9 +58,12 @@ export interface LlmUsage {
   tokensIn: number
   tokensOut: number
   costUsd: number
-  costSource: 'provider' | 'estimate'
+  /** provider-reported; from ai_models prices ('model_price'); or estimated. */
+  costSource: CostSource
   latencyMs: number
   attempts: number
+  /** ai_providers.key of the provider that served the call (094). */
+  provider?: string
 }
 
 export interface LlmRequest {
@@ -84,8 +89,12 @@ export type LlmJsonResult<T> =
   | { ok: true; data: T; usage: LlmUsage }
   | { ok: false; error: LlmErrorCode; message: string; usage: LlmUsage | null }
 
+/**
+ * Is a model reachable? OPENROUTER_API_KEY, or (best effort, from the router's
+ * cached configuration) a chat route to a provider with a usable key.
+ */
 export function hasLlmKey(): boolean {
-  return Boolean(process.env.OPENROUTER_API_KEY)
+  return Boolean(process.env.OPENROUTER_API_KEY) || hasConfiguredChatRoute()
 }
 
 export function modelForTier(tier: ModelTier, override?: string | null): string {
@@ -123,26 +132,21 @@ export function estimateCostUsd(tier: ModelTier, model: string, inputText: strin
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
+/**
+ * One chat call for an agent. The provider comes from the router
+ * (lib/ai/providers/router.ts): an explicit `model` pins that model id; else
+ * the owner's route for the tier (ai_routes); else the built-in OpenRouter
+ * fallback with modelForTier() — exactly the pre-094 behaviour.
+ */
 export async function callLlm(req: LlmRequest): Promise<LlmResult> {
-  const apiKey = process.env.OPENROUTER_API_KEY
-  const model = modelForTier(req.tier, req.model)
-  if (!apiKey) {
-    return { ok: false, error: 'NO_API_KEY', message: 'OPENROUTER_API_KEY не задан', usage: null }
+  const fallbackModel = modelForTier(req.tier, req.model)
+  const resolved = await resolveTarget('chat', { tier: req.tier, model: req.model ?? null, fallbackModel })
+  if (!resolved.ok) {
+    return { ok: false, error: 'NO_API_KEY', message: resolved.message, usage: null }
   }
-  const doFetch = req.fetchImpl ?? fetch
-  const body: Record<string, unknown> = {
-    model,
-    messages: [
-      { role: 'system', content: req.system },
-      { role: 'user', content: req.user },
-    ],
-    max_tokens: req.maxTokens,
-    temperature: req.temperature ?? 0.2,
-    usage: { include: true },
-  }
-  if (req.json) body.response_format = { type: 'json_object' }
-  const provider = privacyProvider()
-  if (provider) body.provider = provider
+  const target = resolved.target
+  const refusal = await providerBudgetRefusal(target)
+  if (refusal) return { ok: false, error: 'BUDGET_EXCEEDED', message: refusal, usage: null }
 
   const started = Date.now()
   let attempts = 0
@@ -150,63 +154,50 @@ export async function callLlm(req: LlmRequest): Promise<LlmResult> {
 
   while (attempts < 2) {
     attempts += 1
-    try {
-      const res = await doFetch('https://openrouter.ai/api/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${apiKey}`,
-          'HTTP-Referer': getSiteUrl(),
-          'X-Title': 'AIStart360',
-        },
-        body: JSON.stringify(body),
-        signal: AbortSignal.timeout(req.timeoutMs ?? 60_000),
-      })
-      if (res.status === 429 || res.status >= 500) {
-        lastError = { code: res.status === 429 ? 'RATE_LIMITED' : 'PROVIDER_ERROR', message: `HTTP ${res.status}` }
-        if (attempts < 2) await sleep(1500 * attempts)
-        continue
-      }
-      if (!res.ok) {
-        return {
-          ok: false,
-          error: 'PROVIDER_ERROR',
-          message: `HTTP ${res.status}`,
-          usage: null,
-        }
-      }
-      const json = (await res.json()) as {
-        model?: string
-        choices?: Array<{ message?: { content?: string | null } }>
-        usage?: { prompt_tokens?: number; completion_tokens?: number; cost?: number }
-      }
-      const tokensIn = json.usage?.prompt_tokens ?? estimateTokens(req.system + req.user)
-      const tokensOut = json.usage?.completion_tokens ?? 0
-      const answeredBy = json.model || model
-      const providerCost = json.usage?.cost
-      const p = priceFor(req.tier, answeredBy)
-      const usage: LlmUsage = {
-        model: answeredBy,
-        tier: req.tier,
-        tokensIn,
-        tokensOut,
-        costUsd: typeof providerCost === 'number' && Number.isFinite(providerCost)
-          ? providerCost
-          : (tokensIn * p.in + tokensOut * p.out) / 1_000_000,
-        costSource: typeof providerCost === 'number' ? 'provider' : 'estimate',
-        latencyMs: Date.now() - started,
-        attempts,
-      }
-      const text = json.choices?.[0]?.message?.content ?? ''
-      if (!text.trim()) {
-        return { ok: false, error: 'INVALID_OUTPUT', message: 'пустой ответ модели', usage }
-      }
-      return { ok: true, text, usage }
-    } catch (err) {
-      const isTimeout = err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError')
-      lastError = { code: isTimeout ? 'TIMEOUT' : 'PROVIDER_ERROR', message: isTimeout ? 'таймаут' : 'сетевая ошибка' }
+    const res = await chatCompletion(target, {
+      messages: [
+        { role: 'system', content: req.system },
+        { role: 'user', content: req.user },
+      ],
+      maxTokens: req.maxTokens,
+      temperature: req.temperature ?? 0.2,
+      json: req.json,
+      timeoutMs: req.timeoutMs ?? 60_000,
+      fetchImpl: req.fetchImpl,
+    })
+    if (!res.ok) {
+      if (!res.retryable) return { ok: false, error: res.code, message: res.message, usage: null }
+      lastError = { code: res.code, message: res.message }
       if (attempts < 2) await sleep(1500 * attempts)
+      continue
     }
+    const tokensIn = res.tokensIn ?? estimateTokens(req.system + req.user)
+    const tokensOut = res.tokensOut ?? 0
+    const answeredBy = res.model || target.model
+    const cost = computeCost({
+      providerCostUsd: res.providerCostUsd,
+      tokensIn,
+      tokensOut,
+      priceInPerMtok: target.priceInPerMtok,
+      priceOutPerMtok: target.priceOutPerMtok,
+      estimatePrices: priceFor(req.tier, answeredBy),
+    })
+    const usage: LlmUsage = {
+      model: answeredBy,
+      tier: req.tier,
+      tokensIn,
+      tokensOut,
+      costUsd: cost.costUsd,
+      costSource: cost.costSource,
+      latencyMs: Date.now() - started,
+      attempts,
+      provider: target.providerKey,
+    }
+    const text = res.text
+    if (!text.trim()) {
+      return { ok: false, error: 'INVALID_OUTPUT', message: 'пустой ответ модели', usage }
+    }
+    return { ok: true, text, usage }
   }
   console.error(`[ai-gateway:${req.label}] failed after ${attempts} attempts: ${lastError.code}`)
   return { ok: false, error: lastError.code, message: lastError.message, usage: null }

@@ -259,7 +259,7 @@ describe('deterministic paths', () => {
 describe('pipeline outcomes', () => {
   it('a scan without text layer is needs_ocr when OCR is off — never "parsed"', async () => {
     const before = process.env.DOCUMENT_OCR_ENABLED
-    delete process.env.DOCUMENT_OCR_ENABLED
+    process.env.DOCUMENT_OCR_ENABLED = 'false'
     try {
       const pdf = await makePdf(['__scan__'])
       const out = await runDocumentPipeline(pipelineInput(pdf, 'scan.pdf'))
@@ -269,7 +269,8 @@ describe('pipeline outcomes', () => {
       expect(out.message).toMatch(/скан/)
       expect(out.payload.fields).toEqual([])
     } finally {
-      if (before !== undefined) process.env.DOCUMENT_OCR_ENABLED = before
+      if (before === undefined) delete process.env.DOCUMENT_OCR_ENABLED
+      else process.env.DOCUMENT_OCR_ENABLED = before
     }
   })
 
@@ -279,8 +280,15 @@ describe('pipeline outcomes', () => {
     png.write('IHDR', 12, 'latin1')
     png.writeUInt32BE(100, 16)
     png.writeUInt32BE(100, 20)
-    const out = await runDocumentPipeline(pipelineInput(png, 'photo.png'))
-    expect(out.status).toBe('needs_ocr')
+    const before = process.env.DOCUMENT_OCR_ENABLED
+    process.env.DOCUMENT_OCR_ENABLED = 'false'
+    try {
+      const out = await runDocumentPipeline(pipelineInput(png, 'photo.png'))
+      expect(out.status).toBe('needs_ocr')
+    } finally {
+      if (before === undefined) delete process.env.DOCUMENT_OCR_ENABLED
+      else process.env.DOCUMENT_OCR_ENABLED = before
+    }
   })
 
   it('with an OCR engine a scan is rasterised, recognised and extracted with lowered confidence', async () => {

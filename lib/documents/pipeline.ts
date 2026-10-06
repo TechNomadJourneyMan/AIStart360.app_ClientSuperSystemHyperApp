@@ -2,7 +2,7 @@
  * lib/documents/pipeline.ts — one document, from checked bytes to parsed_data.
  *
  *   text (pages / sheets / slides)          lib/documents/text.ts
- *     └─ no text layer (scan / photo) → OCR if enabled, else needs_ocr
+ *     └─ no text layer (scan / photo) → OCR (lib/documents/ocr.ts), else needs_ocr
  *   extract                                 lib/documents/extraction.ts
  *     deterministic table rows / transaction rows / regex
  *     model map-reduce only when the deterministic paths do not cover it
@@ -32,7 +32,8 @@ import {
   type LlmFieldExtraction,
   type LlmJsonFn,
 } from './extraction'
-import { ocrDocument, type OcrOutcome } from './ocr'
+import { ocrDocument, ocrEngineLabel, type OcrOutcome, type OcrPage } from './ocr'
+import { syncRemoteOcr } from './ocr-remote'
 import type { DocumentKind } from './preflight'
 import { extractDocumentText, hasNoText, meaningfulChars, structuredFromPages, type StructuredText } from './text'
 
@@ -67,6 +68,71 @@ const TABULAR: ReadonlySet<DocumentKind> = new Set(['xlsx', 'xls', 'csv'])
 export const NEEDS_OCR_MESSAGE =
   'Документ — скан или фото без текстового слоя. Автоматическое распознавание (OCR) сейчас недоступно, поэтому показатели не извлечены. Загрузите PDF с текстом, DOCX или XLSX — или передайте файл эксперту.'
 
+/** Upper bound for any value read from OCR text (the text itself may be wrong). */
+export const OCR_MAX_CONFIDENCE = 0.7
+
+const OCR_LOW_QUALITY_MESSAGE =
+  'Документ — скан, но распознать на нём текст не удалось (низкое качество изображения). Загрузите более чёткую копию или файл с текстом.'
+
+/** Honest needs_ocr message per OCR failure reason. */
+export function needsOcrMessage(ocr: OcrOutcome): string {
+  if (ocr.ok) return OCR_LOW_QUALITY_MESSAGE
+  switch (ocr.reason) {
+    case 'timeout':
+      return 'Документ — скан или фото без текстового слоя. Распознавание (OCR) не уложилось в отведённое время, поэтому показатели не извлечены. Попробуйте файл с меньшим числом страниц, PDF с текстом — или передайте файл эксперту.'
+    case 'failed':
+    case 'no_pages':
+      return 'Документ — скан или фото без текстового слоя. Распознавание (OCR) завершилось ошибкой, поэтому показатели не извлечены. Загрузите более чёткую копию, PDF с текстом, DOCX или XLSX — или передайте файл эксперту.'
+    default:
+      return NEEDS_OCR_MESSAGE
+  }
+}
+
+/** OCR provenance for parsed_data.source.ocr — engine and confidence per page. */
+export function ocrSourceInfo(ocr: Extract<OcrOutcome, { ok: true }>) {
+  return {
+    engine: ocr.engine,
+    engines: ocr.engines ?? [ocr.engine],
+    label: ocrEngineLabel(ocr.engine),
+    langs: ocr.langs ?? null,
+    pages: ocr.pages.length,
+    total_pages: ocr.totalPages,
+    rendered_pages: ocr.renderedPages ?? ocr.pages.length,
+    mean_confidence: ocr.meanConfidence === null ? null : Math.round(ocr.meanConfidence),
+    partial: ocr.partial ?? ocr.pages.length < ocr.totalPages,
+    stop_reason: ocr.stopReason ?? null,
+    fallback: ocr.fallback ?? null,
+    ms: ocr.ms ?? null,
+    page_details: ocr.pages.map((p) => ({
+      page: p.page,
+      engine: p.engine ?? ocr.engine,
+      confidence: p.confidence === null ? null : Math.round(p.confidence),
+      chars: p.text.length,
+      ms: p.ms ?? null,
+    })),
+  }
+}
+
+/** Cap confidence and stamp the OCR engine (of the field's page) into provenance. */
+export function markOcrFields(fields: ParsedDataField[], ocr: Extract<OcrOutcome, { ok: true }>): ParsedDataField[] {
+  const byPage = new Map<number, OcrPage>(ocr.pages.map((p) => [p.page, p]))
+  return fields.map((f) => {
+    const confidence = Math.min(typeof f.confidence === 'number' ? f.confidence : OCR_MAX_CONFIDENCE, OCR_MAX_CONFIDENCE)
+    if (!f.provenance) return { ...f, confidence }
+    const page = typeof f.provenance.page === 'number' ? byPage.get(f.provenance.page) : undefined
+    return {
+      ...f,
+      confidence,
+      provenance: {
+        ...f.provenance,
+        ocr: true,
+        ocr_engine: page?.engine ?? ocr.engine,
+        ocr_page_confidence: page && page.confidence !== null ? Math.round(page.confidence) : null,
+      },
+    }
+  })
+}
+
 function rowsMode(docType: string): 'sales' | 'clients' | null {
   const t = docType.toLowerCase()
   if (SALES_LIKE_TYPES.has(t)) return 'sales'
@@ -83,7 +149,8 @@ function sourceInfo(input: PipelineInput, st: StructuredText, ocr: OcrOutcome | 
     empty_units: st.emptyUnits.slice(0, 50),
     ...(st.encoding ? { encoding: st.encoding } : {}),
     ...(input.preflightFlags?.length ? { preflight_flags: input.preflightFlags } : {}),
-    ...(ocr?.ok ? { ocr: { engine: ocr.engine, pages: ocr.pages.length, total_pages: ocr.totalPages, mean_confidence: Math.round(ocr.meanConfidence) } } : {}),
+    ...(ocr?.ok ? { ocr: ocrSourceInfo(ocr) } : {}),
+    ...(ocr && !ocr.ok ? { ocr_attempt: { reason: ocr.reason, message: ocr.message } } : {}),
   }
 }
 
@@ -95,13 +162,15 @@ export async function runDocumentPipeline(input: PipelineInput): Promise<Pipelin
 
   // ── Scans: OCR or an honest needs_ocr ──────────────────────────────────
   if ((input.kind === 'pdf' || input.kind === 'image') && hasNoText(st)) {
-    const run = input.ocr ?? ((buf, kind, deadlineAt) => ocrDocument(buf, kind, { deadlineAt }))
+    const run = input.ocr ?? (async (buf, kind, deadlineAt) => {
+      // Remote OCR (e.g. DeepSeek OCR on Alem) only when the admin routed «ocr» to it.
+      await syncRemoteOcr()
+      return ocrDocument(buf, kind, { deadlineAt })
+    })
     ocr = await run(input.buffer, input.kind === 'image' ? 'image' : 'pdf', Math.min(input.deadlineAt, Date.now() + 120_000))
     const ocrText = ocr.ok ? ocr.pages.map((p) => p.text).join('\n') : ''
     if (!ocr.ok || meaningfulChars(ocrText) < 20) {
-      const message = ocr.ok
-        ? 'Документ — скан, но распознать на нём текст не удалось (низкое качество изображения). Загрузите более чёткую копию или файл с текстом.'
-        : NEEDS_OCR_MESSAGE
+      const message = needsOcrMessage(ocr)
       return {
         status: 'needs_ocr',
         message,
@@ -124,9 +193,19 @@ export async function runDocumentPipeline(input: PipelineInput): Promise<Pipelin
       }
     }
     st = structuredFromPages(ocr.pages, ocr.totalPages)
-    warnings.push('Текст получен распознаванием скана (OCR) — проверьте значения.')
+    warnings.push(`Текст получен распознаванием скана (${ocrEngineLabel(ocr.engine)}) — проверьте значения.`)
     if (ocr.pages.length < ocr.totalPages) {
-      warnings.push(`Распознаны первые ${ocr.pages.length} из ${ocr.totalPages} страниц.`)
+      const why = ocr.stopReason === 'deadline'
+        ? ' — распознавание остановлено по лимиту времени'
+        : ocr.stopReason === 'page_errors'
+          ? ' — часть страниц распознать не удалось'
+          : ocr.stopReason === 'max_pages'
+            ? ' — ограничение на число страниц для OCR'
+            : ''
+      warnings.push(`Распознано страниц: ${ocr.pages.length} из ${ocr.totalPages}${why}.`)
+    }
+    if (ocr.fallback?.pages) {
+      warnings.push(`Удалённый OCR (${ocr.fallback.from}) не справился — ${ocr.fallback.pages} стр. распознано локально (${ocr.fallback.to}).`)
     }
   }
 
@@ -208,6 +287,9 @@ export async function runDocumentPipeline(input: PipelineInput): Promise<Pipelin
     }
   }
 
+  // OCR text may itself be wrong: every value read from it stays ≤ 0.7.
+  if (ocr?.ok) fields = markOcrFields(fields, ocr)
+
   // ── Bind to the metric registry ────────────────────────────────────────
   await input.onStage?.('binding')
   const bound = await bindFieldsToMetrics(fields, input.docType)
@@ -286,7 +368,7 @@ export async function runDocumentPipeline(input: PipelineInput): Promise<Pipelin
     extraction_version: EXTRACTION_VERSION,
     prompt_version: llmRes ? EXTRACTION_PROMPT_VERSION : null,
     empty_reason: emptyReason,
-    ...(llmRes?.unverified.length ? { unverified_fields: llmRes.unverified } : {}),
+    ...(llmRes?.unverified.length ? { unverified_fields: ocr?.ok ? markOcrFields(llmRes.unverified, ocr) : llmRes.unverified } : {}),
     source: sourceInfo(input, st, ocr),
     coverage: {
       chars_total: st.text.length,
