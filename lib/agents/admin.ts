@@ -239,7 +239,8 @@ export async function listTasks(f: TaskFilter) {
       AND (${f.before ?? null}::timestamptz IS NULL OR t.created_at < ${f.before ?? null}::timestamptz)
     ORDER BY t.created_at DESC
     LIMIT ${limit}`
-  const items = rows.map((r) => ({ ...r, cost_usd: n(r.cost_usd) }))
+  type Row = Record<string, unknown>
+  const items: Row[] = rows.map((r): Row => ({ ...r, cost_usd: n(r.cost_usd) }))
   const last = items[items.length - 1] as { created_at?: Date } | undefined
   return { items, nextCursor: items.length === limit && last?.created_at ? new Date(last.created_at).toISOString() : null }
 }
@@ -266,11 +267,12 @@ export async function getTaskDetail(taskId: string) {
       SELECT id, tool, permission, summary, status, requested_at, expires_at, decided_by, decided_via, decision_reason, decided_at, executed_at
       FROM public.agent_approvals WHERE task_id = ${taskId}::uuid ORDER BY requested_at`,
   ])
+  type Row = Record<string, unknown>
   return {
     task,
-    runs: runs.map((r) => ({ ...r, cost_usd: n(r.cost_usd) })),
-    toolCalls: toolCalls.map((c) => ({ ...c, id: n(c.id) })),
-    events: events.map((e) => ({ ...e, id: n(e.id) })),
+    runs: runs.map((r): Row => ({ ...r, cost_usd: n(r.cost_usd) })),
+    toolCalls: toolCalls.map((c): Row => ({ ...c, id: n(c.id) })),
+    events: events.map((e): Row => ({ ...e, id: n(e.id) })),
     approvals,
   }
 }
