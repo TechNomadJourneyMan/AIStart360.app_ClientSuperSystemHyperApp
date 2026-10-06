@@ -19,6 +19,19 @@
 3. Запустить проект:
 	npm run dev
 
+## Запуск админ-бота, бота экспертов и ключей ИИ
+
+Пошаговая инструкция владельца — [docs/platform/10-bot-and-credentials.md](docs/platform/10-bot-and-credentials.md):
+переменные Vercel, миграции, вебхуки, привязка Telegram, ключи провайдеров
+(GIGA → «Провайдеры и ключи» или `/providers` в боте), WhatsApp, MCP,
+маркетплейсы. Проверка готовности одной командой:
+
+	npx tsx --env-file=.env.local scripts/telegram/go-live-check.ts https://<домен>
+
+Скрипт проверяет окружение, токены ботов, вебхуки (и Deployment Protection),
+миграции 083+ в базе, роль super_admin владельца и привязку бота; секреты не
+печатает. Регистрация вебхуков: `scripts/telegram/set-webhooks.ts`.
+
 Экспериментальная AI-first рабочая область доступна по `/journey` и
 `/client/journey`. Для устойчивого хранения и синхронизации устройств примените
 миграции `069_ai_first_workspace.sql` и `070_ai_journey_device_sync.sql`.

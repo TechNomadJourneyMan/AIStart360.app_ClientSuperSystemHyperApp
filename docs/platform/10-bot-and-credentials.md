@@ -7,7 +7,7 @@
 | Бот | Для кого | Что умеет |
 |---|---|---|
 | **Админ-бот** (`Command_panel_aistart360_bot`) | Сотрудники AIStart360 со staff-ролью | `/status`, `/agents`, `/approvals`, `/users`, `/clients`, `/reports`, `/providers`, `/spend`, `/notifications`, `/mcp`. Права те же, что в GIGA (RBAC). |
-| **Бот экспертов** (`aist360notificationbot`) | Эксперты | `/clients`, `/diagnostics`, `/reports`, уведомления, проверка отчётов (появится после волны 2) |
+| **Бот экспертов** (`aist360notificationbot`) | Эксперты | `/clients`, `/diagnostics`, `/reports`, уведомления, проверка отчётов: PDF версии с кнопками «Подтвердить и опубликовать» / «Нужны правки» |
 
 Токены, секреты и ключи **никогда** не пишутся в git, в чат с ИИ и в логи. Где они хранятся:
 - токены ботов — только в переменных окружения Vercel;
@@ -60,7 +60,15 @@ node scripts/apply-migration.js supabase/migrations/083_security_hardening.sql
 ```
 Скрипт берёт `DIRECT_URL` или `DATABASE_URL` из `.env.local` и записывает каждый применённый файл в `schema_migrations`.
 
-До `099` зарегистрируйтесь на `/login` своим email technomadjourneyman@gmail.com. Миграция выдаёт роль только существующему аккаунту.
+Сейчас это 24 файла: 083–098, затем 099, 100, 101, 102, 103, 104, 105, 106. Одной командой по порядку (bash):
+```bash
+for f in supabase/migrations/{08[3-9],09[0-9],10[0-6]}_*.sql; do node scripts/apply-migration.js "$f" || break; done
+```
+Повторное применение безопасно: каждая миграция идемпотентна. Это проверено на копии базы: весь набор прошёл дважды без ошибок.
+
+До `099` зарегистрируйтесь на `/login` своим email technomadjourneyman@gmail.com. Миграция выдаёт роль только существующему аккаунту. Прочих super_admin и старые профили `admin` она не меняет, а только перечисляет в выводе.
+
+`106` выводит список клиентов, у которых оплаченный период уже закончился. Ночной крон `billing-expiry` переведёт их на free, поэтому просмотрите этот список до первого запуска крона.
 
 ### Шаг 4. Доступ Telegram к вебхуку
 Telegram отправляет обновления POST-запросами на `https://<домен>/api/telegram/admin` и `/api/telegram/expert`.
