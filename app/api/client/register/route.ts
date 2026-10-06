@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { createServerClient } from '@/lib/supabase-server'
+import { createServiceClient } from '@/lib/supabase-service'
 import { isRateLimitedKey } from '@/lib/rate-limit'
 
 /**
@@ -112,7 +113,8 @@ export async function POST(req: NextRequest) {
       const fallbackId = crypto.randomUUID()
       const now = new Date().toISOString()
 
-      const { error: fbError } = await supabaseAdmin.from('admin_requests').insert({
+      // admin_requests is server-only (RLS, migration 083): write with the service role.
+      const { error: fbError } = await createServiceClient().from('admin_requests').insert({
         id: fallbackId,
         type: 'registration',
         status: 'new',

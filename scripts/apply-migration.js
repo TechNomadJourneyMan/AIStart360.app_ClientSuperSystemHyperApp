@@ -25,6 +25,21 @@ function loadEnv(file) {
   }
 }
 
+// Record the file in public.schema_migrations (created by 083). Older
+// databases without the ledger table are left alone.
+async function recordInLedger(client, file, sql) {
+  const checksum = require('crypto').createHash('sha256').update(sql).digest('hex')
+  const { rows } = await client.query(`SELECT to_regclass('public.schema_migrations') AS t`)
+  if (!rows[0].t) return
+  await client.query(
+    `INSERT INTO public.schema_migrations (file, checksum, applied_by)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (file) DO UPDATE SET checksum = EXCLUDED.checksum, applied_at = now(), applied_by = EXCLUDED.applied_by`,
+    [file, checksum, process.env.USER || 'apply-migration.js'],
+  )
+  console.log(`✓ Recorded in schema_migrations (${checksum.slice(0, 12)})`)
+}
+
 async function main() {
   loadEnv(path.resolve(__dirname, '..', '.env.local'))
   loadEnv(path.resolve(__dirname, '..', '.env'))
@@ -56,6 +71,7 @@ async function main() {
   try {
     await client.query(sql)
     console.log(`✓ Migration applied successfully`)
+    await recordInLedger(client, path.basename(absPath), sql)
   } catch (err) {
     console.error(`✗ Migration failed: ${err.message}`)
     if (err.position) console.error(`  at position ${err.position}`)

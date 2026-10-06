@@ -70,7 +70,7 @@ export async function GET(_req: NextRequest) {
   // CRM integration connected?
   try {
     const { count } = await sb
-      .from('crm_integrations')
+      .from('crm_provider_connections')
       .select('id', { count: 'exact', head: true })
       .eq('user_id', user.id)
     signals.hasCrm = (count ?? 0) > 0

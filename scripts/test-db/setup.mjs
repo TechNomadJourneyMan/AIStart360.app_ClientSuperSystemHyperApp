@@ -163,13 +163,8 @@ async function main() {
     }
   }
 
-  // Tables created after the stubs need grants too (default privileges cover
-  // objects created by this role; be explicit for anything else).
-  await client.query(`
-    GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated, service_role;
-    GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated, service_role;
-    GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO anon, authenticated, service_role;
-  `)
+  // Grants come from the stubs' ALTER DEFAULT PRIVILEGES, exactly like
+  // Supabase; a blanket GRANT here would undo the migrations' REVOKEs.
   await client.end()
 
   if (failures.length) {
