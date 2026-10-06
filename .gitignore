@@ -53,3 +53,6 @@ ruvector.db
 /auth_info_baileys/
 .appdeploy
 /.swc
+
+# Playwright output (screenshots, traces, test results)
+/artifacts/
