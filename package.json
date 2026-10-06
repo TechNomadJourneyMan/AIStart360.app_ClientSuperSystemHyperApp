@@ -15,6 +15,8 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
+    "test:db:setup": "node scripts/test-db/setup.mjs",
+    "test:db": "TEST_DATABASE_URL=${TEST_DATABASE_URL:-postgres://postgres:postgres@127.0.0.1:5432/aistart360_test} vitest run",
     "whatsapp-web:bridge": "node --env-file=.env services/whatsapp-web-bridge/server.mjs",
     "whatsapp-web:bridge:check": "npm --prefix services/whatsapp-web-bridge run check",
     "postinstall": "prisma generate"
