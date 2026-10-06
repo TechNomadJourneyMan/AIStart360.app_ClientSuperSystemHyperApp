@@ -211,6 +211,16 @@ export async function runClaimedTask(task: AgentTaskRow, def: AgentDefinition<an
             argsRedacted: redacted, approvalId: id,
           })
           await log('info', 'approval.requested', summary, { approval_id: id })
+          const { emitPlatformEvent } = await import('@/lib/events/platform')
+          await emitPlatformEvent({
+            name: 'APPROVAL_REQUESTED',
+            companyId: task.company_id,
+            subjectType: 'agent_approval',
+            subjectId: id,
+            actor: `agent:${def.key}`,
+            payload: { approval_id: id, agent_key: def.key, summary, permission: tool.permission, task_id: task.id },
+            dedupeKey: `approval_requested:${id}`,
+          }).catch((err) => console.error('[agents] APPROVAL_REQUESTED emit failed', err instanceof Error ? err.message : err))
           throw new ApprovalRequiredError(id, summary)
         }
       }

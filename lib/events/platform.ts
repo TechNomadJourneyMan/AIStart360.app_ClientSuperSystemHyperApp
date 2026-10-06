@@ -3,7 +3,8 @@
  *
  * The event is written to the platform_events outbox (086) and dispatched at
  * once: every agent subscribed to it gets a task (idempotent per event), and
- * the notification router decides whether a human should hear about it. A
+ * the notification router (lib/notifications/event-router.ts) decides whether
+ * a human should hear about it. A
  * failed dispatch is recorded on the row and retried by the maintenance job.
  */
 import { Prisma } from '@prisma/client'
@@ -82,6 +83,12 @@ export async function dispatchEvent(event: PlatformEventRow): Promise<void> {
     }
   } catch (err) {
     errors.push(`agents: ${err instanceof Error ? err.message : String(err)}`)
+  }
+  try {
+    const { routeEventToStaff } = await import('@/lib/notifications/event-router')
+    await routeEventToStaff(event)
+  } catch (err) {
+    errors.push(`notifications: ${err instanceof Error ? err.message : String(err)}`)
   }
   for (const listener of listeners) {
     try {

@@ -53,6 +53,10 @@ export const PERMISSIONS = {
   'leads.manage': 'Лиды: изменение',
   'market.manage': 'Инсайты рынка',
   'insights.moderate': 'Модерация ИИ-инсайтов',
+  'agents.view': 'ИИ-агенты: просмотр задач, запусков, стоимости',
+  'agents.run': 'ИИ-агенты: ручной запуск и перезапуск задач',
+  'agents.manage': 'ИИ-агенты: включение, модели, расписания, бюджеты, права',
+  'approvals.decide': 'Решения по действиям агентов (одобрить / отклонить)',
 } as const
 
 export type Permission = keyof typeof PERMISSIONS
@@ -64,6 +68,7 @@ const CRM_MANAGER: Permission[] = [
   'activity.view', 'cjm.view', 'analytics.view',
   'impersonate.view', 'impersonate.edit',
   'inbox.view', 'inbox.manage', 'leads.view', 'leads.manage', 'market.manage', 'insights.moderate',
+  'agents.view',
 ]
 
 export const ROLE_PERMISSIONS: Record<StaffRole, ReadonlySet<Permission>> = {
@@ -97,6 +102,7 @@ export const ROLE_PERMISSIONS: Record<StaffRole, ReadonlySet<Permission>> = {
   // Aggregates and journeys, but no personal contacts, answers or documents.
   analyst: new Set<Permission>([
     'dashboard.view', 'users.view', 'survey.view', 'gri.view', 'activity.view', 'cjm.view', 'analytics.view',
+    'agents.view',
   ]),
   support: new Set<Permission>([
     'dashboard.view', 'users.view', 'users.sensitive', 'survey.view', 'gri.view', 'activity.view', 'cjm.view',

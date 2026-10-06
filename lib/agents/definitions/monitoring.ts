@@ -11,6 +11,7 @@
 import { z } from 'zod'
 import { prisma } from '@/lib/db'
 import { registerTool } from '../tools'
+import { notifyStaffTool } from '../tools/notify'
 import type { AgentDefinition } from '../types'
 
 export type CheckStatus = 'ok' | 'warn' | 'critical'
@@ -92,7 +93,7 @@ export const monitoringAgent: AgentDefinition<Record<string, never>> = {
   scope: 'platform',
   tier: 'none',
   permissions: { READ_CLIENT_DATA: 'ALLOW', SEND_TELEGRAM: 'ALLOW' },
-  tools: [healthTool.name],
+  tools: [healthTool.name, notifyStaffTool.name],
   triggers: { cron: '*/15 * * * *' },
   limits: { maxAttempts: 2, leaseSeconds: 120, perRunBudgetUsd: 0, dailyBudgetUsd: 0, maxLlmCalls: 0, maxOutputTokens: 256 },
   inputSchema: z.object({}).passthrough() as unknown as z.ZodType<Record<string, never>>,
@@ -105,6 +106,20 @@ export const monitoringAgent: AgentDefinition<Record<string, never>> = {
       })
     }
     const critical = problems.filter((p) => p.status === 'critical').length
+    if (problems.length) {
+      // One alert per hour for the same set of problems (dedupe), so a stuck
+      // queue does not page the team every 15 minutes.
+      const hour = new Date().toISOString().slice(0, 13)
+      const keys = problems.map((p) => p.key).sort().join(',')
+      await ctx.tool('notify.staff', {
+        level: critical ? 'CRITICAL' : 'WARNING',
+        type: 'platform.health',
+        title: critical ? 'Платформа: критичные проблемы' : 'Платформа: требует внимания',
+        lines: problems.slice(0, 10).map((p) => `${p.status === 'critical' ? '🔴' : '🟠'} ${p.label}: ${p.value} (${p.detail})`),
+        dedupe_key: `health:${hour}:${keys}`,
+        link: '/admin-giga-panel/agents',
+      })
+    }
     return {
       summary: problems.length
         ? `проблем: ${problems.length} (критичных: ${critical})`
