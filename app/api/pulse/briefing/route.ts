@@ -6,6 +6,7 @@ import { isRateLimited } from '@/lib/rate-limit'
 import * as bitrix24 from '@/lib/crm/bitrix24'
 import * as amocrm from '@/lib/crm/amocrm'
 import { chatWithOpenRouter, hasOpenRouterKey } from '@/lib/ai/openrouter'
+import { fenceUntrusted, UNTRUSTED_DATA_RULES } from '@/lib/ai/gateway'
 
 const STAGE_RISK: Record<string, number> = {
   NEW: 30, PREPARATION: 40, PREPAYMENT_INVOICE: 25,
@@ -93,6 +94,7 @@ export async function POST(req: NextRequest) {
 
     // Shared client: provider privacy, platform AI budget, spend ledger.
     const content = await chatWithOpenRouter({
+      system: UNTRUSTED_DATA_RULES,
       user: `Ты бизнес-ассистент в системе AIStart360. Дай краткий утренний брифинг для менеджера по продажам на русском языке (3-4 предложения).
 
 Портфель на сегодня:
@@ -102,7 +104,7 @@ export async function POST(req: NextRequest) {
 - Выручка под угрозой: ${lostRevenue.toLocaleString('ru')} ₸
 
 ТОП-5 приоритетных:
-${top5}
+${fenceUntrusted('crm_deals', top5)}
 
 Скажи конкретно: с кем поговорить в первую очередь и почему. Назови названия сделок. Формат: 3-4 предложения, без заголовков и списков.`,
       model: 'google/gemini-2.0-flash-001',

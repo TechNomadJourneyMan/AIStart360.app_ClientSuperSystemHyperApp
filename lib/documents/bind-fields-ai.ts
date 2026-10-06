@@ -31,6 +31,7 @@ import {
 import type { ParsedDataField } from '@/lib/documents/extract'
 import { getMetricRegistry } from '@/lib/metrics/registry'
 import type { MetricEntry } from '@/lib/metrics/types'
+import { fenceUntrusted, UNTRUSTED_DATA_RULES } from '@/lib/ai/gateway'
 
 // ─── Public types ────────────────────────────────────────────
 
@@ -182,7 +183,9 @@ const SYSTEM_PROMPT = `Ты — специалист по сопоставлен
 Возвращай строго JSON: {"metric_id":"<id|null>","confidence":<0..1>,"reasoning":"<russian>"}.
 confidence — это твоя оценка качества сопоставления; ставь >=0.6 только при уверенном совпадении.
 Если несколько кандидатов подходят одинаково — выбери самый узкий/специфичный и снизь confidence.
-Не оборачивай ответ в кодовые блоки.`
+Не оборачивай ответ в кодовые блоки.
+
+${UNTRUSTED_DATA_RULES}`
 
 function buildUserPrompt(
   field: ParsedDataField,
@@ -194,15 +197,18 @@ function buildUserPrompt(
   const lines: string[] = []
   lines.push(`Тип документа: ${docType || 'не указан'}`)
   lines.push('')
+  // Everything below comes from the client's document: data, not instructions.
+  const fieldLines = [
+    `key: ${field.key}`,
+    `label: ${field.label}`,
+    `target_tab: ${field.target_tab}`,
+    `target_parameter: ${field.target_parameter}`,
+    ...(field.source ? [`source_quote: ${field.source.slice(0, 200)}`] : []),
+    ...(typeof field.confidence === 'number' ? [`extractor_confidence: ${field.confidence.toFixed(2)}`] : []),
+    `value_sample: ${stringifyValue(field.value)}`,
+  ]
   lines.push('Извлечённое поле:')
-  lines.push(`  key: ${field.key}`)
-  lines.push(`  label: ${field.label}`)
-  lines.push(`  target_tab: ${field.target_tab}`)
-  lines.push(`  target_parameter: ${field.target_parameter}`)
-  if (field.source) lines.push(`  source_quote: ${field.source.slice(0, 200)}`)
-  if (typeof field.confidence === 'number')
-    lines.push(`  extractor_confidence: ${field.confidence.toFixed(2)}`)
-  lines.push(`  value_sample: ${stringifyValue(field.value)}`)
+  lines.push(fenceUntrusted('document_field', fieldLines.join('\n')))
   lines.push('')
   lines.push('Кандидаты (id — label — релевантные источники):')
 

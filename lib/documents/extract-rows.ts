@@ -35,6 +35,7 @@ import {
   hasOpenRouterKey,
   OPENROUTER_MODELS,
 } from '@/lib/ai/openrouter'
+import { fenceUntrusted, UNTRUSTED_DATA_RULES } from '@/lib/ai/gateway'
 
 // ─── Public types ────────────────────────────────────────────
 
@@ -535,9 +536,10 @@ Each row MUST be { "client_id": string, "amount": number (₸/KZT), "occurred_at
 Optional fields per row: manager_id, manager_name, product_id, product_name, client_name, quantity.
 If the document gives a phone number instead of an id, use the phone digits (E.164 without '+') as client_id.
 Do not invent rows. Do not summarise — emit one row per transaction.
-Cap at 1000 rows.`
+Cap at 1000 rows.
+${UNTRUSTED_DATA_RULES}`
 
-  const userPrompt = `Document text:\n${text.slice(0, 30000)}`
+  const userPrompt = `Document text:\n${fenceUntrusted('document', text, 30000)}`
 
   try {
     const raw = await chatWithOpenRouter({
@@ -575,9 +577,10 @@ Return ONLY a JSON object {"rows":[...]}.
 Each row MUST be { "client_id": string, "name": string, "first_purchase_date": ISO-8601, "last_purchase_date": ISO-8601, "total_spent_kzt": number, "purchase_count": number }.
 If only a phone number is given, use the phone digits (E.164 without '+') as client_id.
 Do not invent rows. Skip rows where the required fields are missing.
-Cap at 2000 rows.`
+Cap at 2000 rows.
+${UNTRUSTED_DATA_RULES}`
 
-  const userPrompt = `Document text:\n${text.slice(0, 30000)}`
+  const userPrompt = `Document text:\n${fenceUntrusted('document', text, 30000)}`
 
   try {
     const raw = await chatWithOpenRouter({

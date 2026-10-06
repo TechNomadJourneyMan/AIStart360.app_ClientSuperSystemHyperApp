@@ -4,6 +4,7 @@ import * as bitrix24 from '@/lib/crm/bitrix24'
 import * as amocrm from '@/lib/crm/amocrm'
 import type { CrmDeal } from '@/lib/crm/types'
 import { chatWithOpenRouter, hasOpenRouterKey } from '@/lib/ai/openrouter'
+import { fenceUntrusted, UNTRUSTED_DATA_RULES } from '@/lib/ai/gateway'
 
 export const dynamic = 'force-dynamic'
 
@@ -382,6 +383,7 @@ export async function GET() {
 
         // Shared client: provider privacy, platform AI budget, spend ledger.
         const content = await chatWithOpenRouter({
+          system: UNTRUSTED_DATA_RULES,
           user: `Ты AI-ассистент продаж в системе AIStart360. Дай краткий утренний брифинг для менеджера на русском языке (3-4 предложения).
 
 Данные портфеля на сегодня:
@@ -392,7 +394,7 @@ export async function GET() {
 - Выручка под угрозой: ${revenueAtRisk.toLocaleString('ru')} ₸
 
 ТОП-5 приоритетных сделок:
-${top5}
+${fenceUntrusted('crm_deals', top5)}
 
 Скажи: с кем поговорить в первую очередь и почему. Будь конкретен — назови название сделки. Формат: 3-4 предложения, без заголовков и списков.`,
           model: 'google/gemini-2.0-flash-001',
