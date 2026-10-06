@@ -8,7 +8,8 @@ import { NextRequest } from 'next/server'
 const s = vi.hoisted(() => ({
   notify: vi.fn(async (..._a: unknown[]) => {}),
   status: 'pending_approval' as string,
-  existingProfile: null as { id: string; status: string } | null,
+  existingProfile: null as { id: string; status: string; role?: string } | null,
+  staff: null as { role: string } | null,
 }))
 
 vi.mock('@/lib/notifications', () => ({ notifyAdmins: s.notify }))
@@ -30,7 +31,7 @@ vi.mock('@/lib/supabase-server', () => ({
       insert: async () => ({ error: null }),
       select: () => ({
         eq: () => ({
-          maybeSingle: async () => ({ data: { status: s.status } }),
+          maybeSingle: async () => ({ data: table === 'staff_roles' ? s.staff : { status: s.status } }),
           single: async () => ({ data: table === 'profiles' ? s.existingProfile : null }),
         }),
       }),
@@ -50,6 +51,7 @@ beforeEach(() => {
   s.notify.mockClear()
   s.status = 'pending_approval'
   s.existingProfile = null
+  s.staff = null
 })
 
 const body = { userId: 'u-1', email: 'a@corp.kz', name: 'Айдар', company: 'ТОО Ромашка' }
@@ -80,5 +82,24 @@ describe('registration notifications (GAP-20)', () => {
     s.existingProfile = { id: 'u-2', status: 'approved' }
     await callback(new NextRequest('http://localhost/auth/callback?code=abc'))
     expect(s.notify).not.toHaveBeenCalled()
+  })
+
+  it('a returning Google sign-in without ?next lands by role; an explicit ?next wins', async () => {
+    s.existingProfile = { id: 'u-2', status: 'approved', role: 'super_admin' }
+    let res = await callback(new NextRequest('http://localhost/auth/callback?code=abc'))
+    expect(res.headers.get('location')).toBe('http://localhost/admin-giga-panel')
+
+    s.existingProfile = { id: 'u-2', status: 'approved', role: 'client' }
+    s.staff = { role: 'analyst' }
+    res = await callback(new NextRequest('http://localhost/auth/callback?code=abc'))
+    expect(res.headers.get('location')).toBe('http://localhost/admin-giga-panel')
+
+    s.staff = null
+    res = await callback(new NextRequest('http://localhost/auth/callback?code=abc'))
+    expect(new URL(res.headers.get('location') ?? '').pathname).not.toBe('/admin-giga-panel')
+
+    s.existingProfile = { id: 'u-2', status: 'approved', role: 'super_admin' }
+    res = await callback(new NextRequest('http://localhost/auth/callback?code=abc&next=/metrics'))
+    expect(res.headers.get('location')).toBe('http://localhost/metrics')
   })
 })

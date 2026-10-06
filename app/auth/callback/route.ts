@@ -7,6 +7,8 @@ import { trackEvent } from '@/lib/events/track'
 import { safeInternalPath } from '@/lib/safe-redirect'
 import { notifyAdmins } from '@/lib/notifications'
 import { runInBackground } from '@/lib/background'
+import { roleLandingPath } from '@/lib/role-landing'
+import type { UserRole } from '@/types'
 
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url)
@@ -14,6 +16,7 @@ export async function GET(request: NextRequest) {
   // Guard against open redirect: `next` is attacker-controllable on this
   // unauthenticated endpoint, so only allow internal paths.
   const next = safeInternalPath(searchParams.get('next'), '/dashboard')
+  const explicitNext = Boolean(searchParams.get('next'))
 
   if (code) {
     const response = NextResponse.redirect(new URL(next, origin))
@@ -43,7 +46,7 @@ export async function GET(request: NextRequest) {
       const supabaseAdmin = createSupabaseAdmin()
       const { data: existingProfile } = await supabaseAdmin
         .from('profiles')
-        .select('id, status')
+        .select('id, status, role')
         .eq('id', user.id)
         .single()
 
@@ -95,6 +98,24 @@ export async function GET(request: NextRequest) {
         return NextResponse.redirect(new URL('/client/waiting-room', origin), {
           headers: response.headers,
         })
+      }
+
+      // No explicit destination: land by role like the password login
+      // (staff → GIGA panel, SuperExpert → /super-expert, expert → cabinet).
+      if (!explicitNext) {
+        const { data: staff } = await supabaseAdmin
+          .from('staff_roles')
+          .select('role')
+          .eq('user_id', user.id)
+          .maybeSingle()
+        const target = roleLandingPath(
+          (existingProfile as { role?: string | null }).role as UserRole | null,
+          existingProfile.status,
+          (staff as { role?: string } | null)?.role ?? null,
+        )
+        if (target !== next) {
+          return NextResponse.redirect(new URL(target, origin), { headers: response.headers })
+        }
       }
     }
 
