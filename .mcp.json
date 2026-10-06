@@ -17,6 +17,10 @@
       "env": {
         "MK_BASE_URL": "http://localhost:8000"
       }
+    },
+    "vercel": {
+      "type": "http",
+      "url": "https://mcp.vercel.com"
     }
   }
 }
