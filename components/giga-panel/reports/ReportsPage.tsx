@@ -7,7 +7,10 @@
  * confidence (data completeness), what went in and what was held back for
  * review. A version opens in a drawer with its frozen snapshot (provenance
  * badges, evidence, sources) and the actions a person decides on:
- *   publish (ready → published, reports.publish), reject (with a reason),
+ *   «Отчёты на проверке» (in_review, reports.review): «Подтвердить и
+ *   опубликовать» / «Нужны правки» — ReviewQueue.tsx, the same decision as
+ *   the expert cabinet and the expert bot;
+ *   publish (legacy ready → published, reports.publish), reject (with a reason),
  *   withdraw a published one (with a reason), PDF preview, and «Собрать
  *   заново» (agents.run) after reviewing model output.
  * Nothing reaches the client without «Опубликовать».
@@ -31,6 +34,7 @@ import {
   NARRATIVE_STATE_LABELS, REPORT_TYPE_LABELS, createdByLabel, fmtConfidence, reportStatusMeta, shortHash, versionActions,
 } from './model'
 import { ReportSnapshotView } from './ReportSnapshotView'
+import { ReviewQueue } from './ReviewQueue'
 
 interface ListResponse { items: ReportVersionListItem[]; can: { publish: boolean; run: boolean } }
 interface ItemResponse { item: ReportVersionFull; can: { publish: boolean; run: boolean } }
@@ -38,6 +42,7 @@ type Action = 'publish' | 'reject' | 'withdraw'
 
 const STATUS_FILTERS = [
   { value: '', label: 'Все' },
+  { value: 'in_review', label: 'На проверке эксперта' },
   { value: 'ready', label: 'Готовы к проверке' },
   { value: 'published', label: 'Опубликованы' },
   { value: 'superseded', label: 'Заменены' },
@@ -50,7 +55,8 @@ export function ReportsPage() {
   const { can } = useStaff()
   const { base } = useWorkspace()
   const sp = useSearchParams()
-  const [status, setStatus] = useState<StatusFilter>(sp.get('status') === 'ready' ? 'ready' : '')
+  const initialStatus = sp.get('status')
+  const [status, setStatus] = useState<StatusFilter>(initialStatus === 'ready' || initialStatus === 'in_review' ? initialStatus : '')
   const [company, setCompany] = useState<PickedCompany | null>(null)
   const [openId, setOpenId] = useState<string | null>(sp.get('focus'))
 
@@ -87,12 +93,26 @@ export function ReportsPage() {
     { key: 'published', header: 'Опубликован', render: (r) => (r.published_at ? <span className="whitespace-nowrap" title={`${fmtDateTime(r.published_at)} · ${shortActor(r.published_by)}`}>{fmtAgo(r.published_at)}</span> : <span className="text-slate-600">—</span>) },
   ]
 
+  // SuperExpert (reports.review without agents.view) sees the review queue only.
+  if (!can('agents.view') && can('reports.review')) {
+    return (
+      <>
+        <PageHeader
+          crumbs={[{ label: 'Кабинет', href: base }, { label: 'Отчёты на проверке' }]}
+          title="Отчёты на проверке"
+          description="Версии отчётов после ИИ-диагностики ждут подтверждения эксперта. «Подтвердить» сразу публикует отчёт клиенту, «Нужны правки» возвращает его агенту с комментарием."
+        />
+        <ReviewQueue />
+      </>
+    )
+  }
+
   return (
     <RequirePermission permission="agents.view">
       <PageHeader
         crumbs={[{ label: 'GIGA-CRM', href: base }, { label: 'ИИ и автоматизация' }, { label: 'Отчёты' }]}
         title="Отчёты"
-        description="Версии отчётов собирает агент «Отчёт» после диагностики — снимок данных с происхождением каждого вывода. Клиент видит версию только после публикации сотрудником; гипотезы ИИ попадают в отчёт только после проверки."
+        description="Версии отчётов собирает агент «Отчёт» после диагностики — снимок данных с происхождением каждого вывода. Клиент видит версию только после подтверждения экспертом; гипотезы ИИ попадают в отчёт только после проверки."
         actions={<Button size="sm" variant="ghost" icon={<RefreshCw size={13} />} loading={q.loading && !!q.data} onClick={() => void q.reload()}>Обновить</Button>}
       />
 
@@ -107,6 +127,8 @@ export function ReportsPage() {
         </p>
       )}
       {q.error && <div className="mb-4"><ErrorState error={q.error} onRetry={() => void q.reload()} /></div>}
+
+      {can('reports.review') && <ReviewQueue onDecided={() => void q.reload()} />}
 
       <Panel title="Версии отчётов" bodyClassName="p-0" description="До 100 последних версий, новые сверху.">
         <DataTable
@@ -176,6 +198,7 @@ function VersionDrawer({ id, base, onClose, onChanged }: { id: string | null; ba
   const p = item?.provenance
   const narrative = p?.staff?.narrative
   const review = (p as (typeof p & { review?: { action: string; by: string; at: string; reason: string } }) | undefined)?.review
+  const REVIEW_ACTION: Record<string, string> = { reject: 'отклонена', withdraw: 'отозвана', changes_requested: 'эксперт запросил правки' }
 
   return (
     <Drawer open={!!id} onClose={onClose} width="max-w-3xl" title={item ? `${item.title} · v${item.version}` : 'Версия отчёта'}>
@@ -194,6 +217,11 @@ function VersionDrawer({ id, base, onClose, onChanged }: { id: string | null; ba
             {can.run && <Button size="sm" variant="ghost" icon={<RotateCcw size={12} />} loading={rerunning} onClick={() => void rerun()}>Собрать заново</Button>}
           </div>
           {!can.publish && item.status === 'ready' && <NoRightHint>{NO_PUBLISH}.</NoRightHint>}
+          {item.status === 'in_review' && (
+            <p className="rounded-xl border border-amber-500/20 bg-amber-500/[0.06] px-3 py-2 text-[11px] text-amber-100">
+              Версия ждёт эксперта: подтверждение или правки — в блоке «Отчёты на проверке» выше, в кабинете эксперта или в боте экспертов.
+            </p>
+          )}
 
           <KV items={[
             ['Компания', item.company_name || item.company_id],
@@ -208,7 +236,7 @@ function VersionDrawer({ id, base, onClose, onChanged }: { id: string | null; ba
             narrative && ['Резюме ИИ', `${NARRATIVE_STATE_LABELS[narrative.state] ?? narrative.state}${narrative.reason ? ` — ${narrative.reason}` : ''}`],
             p?.staff && ['Не вошло до проверки', `гипотез ИИ ${p.staff.hidden_hypotheses}, предложений модели ${p.staff.unreviewed_model_recommendations}`],
             item.session_id && ['Сессия диагностики', <Mono key="s">{item.session_id}</Mono>],
-            review && ['Решение', `${review.action === 'reject' ? 'отклонена' : 'отозвана'} ${fmtDateTime(review.at)} · ${shortActor(review.by)} — «${review.reason}»`],
+            review && ['Решение', `${REVIEW_ACTION[review.action] ?? review.action} ${fmtDateTime(review.at)} · ${shortActor(review.by)} — «${review.reason}»`],
           ]} />
 
           <div className={cx('rounded-2xl border border-white/[0.07] bg-white/[0.02] p-4')}>

@@ -9,6 +9,13 @@
  *             level reaches; approvals go only to staff with approvals.decide,
  *             with Approve / Reject buttons. Legacy TELEGRAM_ADMIN_CHAT_IDS get
  *             the same text without buttons.
+ *   whatsapp  staff with an opted-in, verified WhatsApp number (lib/whatsapp,
+ *             whatsapp_links kind 'staff'): same level / mute / quiet hours /
+ *             cooldown rules as Telegram (platform threshold
+ *             NOTIFY_WHATSAPP_MIN_LEVEL, default WARNING); template staff_alert
+ *             through the durable outbox, the approval buttons become a link to
+ *             GIGA. Falls back to the WhatsApp Web bridge only with
+ *             WHATSAPP_WEB_BRIDGE_FALLBACK=1 (lib/whatsapp/outbox.ts).
  *   email     ADMIN_NOTIFICATION_EMAIL for CRITICAL (by default).
  *   in_app    the event row itself (GIGA feed).
  * Every attempt is a notification_deliveries row (status, error, message id).
@@ -28,6 +35,10 @@ import { sendNotificationEmail } from '@/lib/email/notification'
 import { getSiteUrl } from '@/lib/site-url'
 import { sendBotMessage, tgEscape, type InlineButton } from '@/lib/telegram/bot-api'
 import { staffBot } from '@/lib/telegram/bots/registry'
+import { whatsappTransportAvailable } from '@/lib/whatsapp/config'
+import { optedInRecipients } from '@/lib/whatsapp/links'
+import { enqueueWhatsApp, outboxKey, sendWhatsAppNow, type DrainOptions } from '@/lib/whatsapp/outbox'
+import { staffAlertTemplate } from '@/lib/whatsapp/templates'
 import { approvalCallbackData } from './approval-callback'
 import { inQuietHours, LEVEL_ICONS, LEVEL_LABELS, reaches, routingConfig, type NotificationLevel, type OrderedLevel } from './levels'
 
@@ -104,7 +115,7 @@ export function formatTelegram(n: StaffNotification): string {
  * delivery — no row yet, or an abandoned 'queued' claim. A row that is already
  * sent / failed / skipped, or claimed recently by another run, is left alone.
  */
-async function claimDelivery(eventId: string, channel: string, target: string): Promise<boolean> {
+async function claimDelivery(eventId: string, channel: string, target: string): Promise<string | null> {
   const rows = await prisma.$queryRaw<Array<{ id: string }>>`
     INSERT INTO public.notification_deliveries (event_id, channel, target, status, attempts)
     VALUES (${eventId}::uuid, ${channel}, ${target}, 'queued', 0)
@@ -112,7 +123,7 @@ async function claimDelivery(eventId: string, channel: string, target: string): 
       WHERE public.notification_deliveries.status = 'queued'
         AND public.notification_deliveries.updated_at < now() - make_interval(secs => ${CLAIM_STALE_SECONDS}::int)
     RETURNING id::text`
-  return rows.length > 0
+  return rows[0]?.id ?? null
 }
 
 async function recordDelivery(eventId: string, channel: string, target: string, status: string, extra: {
@@ -128,16 +139,18 @@ async function recordDelivery(eventId: string, channel: string, target: string, 
           attempts = public.notification_deliveries.attempts + EXCLUDED.attempts, sent_at = EXCLUDED.sent_at`
 }
 
-/** Telegram already delivered this type for this company recently (another event). */
-async function inCooldown(n: StaffNotification, eventId: string): Promise<boolean> {
+/** The channel already delivered this type for this company recently (another event). */
+async function inCooldown(n: StaffNotification, eventId: string, channel: 'telegram' | 'whatsapp' = 'telegram'): Promise<boolean> {
   if (n.level === 'CRITICAL' || n.level === 'APPROVAL_REQUIRED' || COOLDOWN_MINUTES <= 0) return false
+  // WhatsApp sends asynchronously (outbox): a queued message counts as delivered.
+  const statuses = channel === 'whatsapp' ? ['sent', 'queued'] : ['sent']
   const rows = await prisma.$queryRaw<Array<{ n: bigint }>>`
     SELECT count(*) AS n FROM public.notification_deliveries d
     JOIN public.notification_events e ON e.id = d.event_id
-    WHERE d.channel = 'telegram' AND d.status = 'sent' AND e.type = ${n.type}
+    WHERE d.channel = ${channel} AND d.status = ANY (${statuses}::text[]) AND e.type = ${n.type}
       AND e.company_id IS NOT DISTINCT FROM ${n.companyId ?? null}
       AND e.id <> ${eventId}::uuid
-      AND d.sent_at > now() - make_interval(mins => ${COOLDOWN_MINUTES}::int)`
+      AND COALESCE(d.sent_at, d.created_at) > now() - make_interval(mins => ${COOLDOWN_MINUTES}::int)`
   return Number(rows[0]?.n ?? 0) > 0
 }
 
@@ -157,7 +170,12 @@ async function recordEvent(n: StaffNotification): Promise<{ id: string; createdA
   return existing[0] ? { id: existing[0].id, createdAt: existing[0].created_at, duplicate: true } : null
 }
 
-export async function notifyStaff(n: StaffNotification, opts: { fetchImpl?: typeof fetch; now?: Date } = {}): Promise<NotifyResult> {
+export async function notifyStaff(n: StaffNotification, opts: {
+  fetchImpl?: typeof fetch
+  now?: Date
+  /** WhatsApp sender options (tests inject the Cloud API / bridge fetch). */
+  whatsapp?: Omit<DrainOptions, 'ids'>
+} = {}): Promise<NotifyResult> {
   const event = await recordEvent(n)
   if (!event) return { eventId: null, duplicate: true, deliveries: [] }
   const eventId = event.id
@@ -216,6 +234,9 @@ export async function notifyStaff(n: StaffNotification, opts: { fetchImpl?: type
     deliveries.push({ channel: 'telegram', target: chatId, status: res.ok ? 'sent' : 'failed', reason: res.ok ? undefined : res.description })
   }
 
+  // ── WhatsApp ──
+  await notifyStaffWhatsApp(n, eventId, event, { cfg, quiet, skip, deliveries, now: opts.now, whatsapp: opts.whatsapp })
+
   // ── Email ──
   const adminEmail = process.env.ADMIN_NOTIFICATION_EMAIL || process.env.ADMIN_EMAIL
   if (adminEmail && reaches(n.level, cfg.emailMinLevel) && n.level !== 'APPROVAL_REQUIRED' && (await claimDelivery(eventId, 'email', adminEmail))) {
@@ -238,4 +259,89 @@ export async function notifyStaff(n: StaffNotification, opts: { fetchImpl?: type
   }
 
   return { eventId, duplicate: event.duplicate, deliveries }
+}
+
+/**
+ * WhatsApp block of notifyStaff: one delivery row per (event, 'whatsapp',
+ * 'wa:<user id>') — the phone number itself never lands in the delivery log —
+ * and one outbox row per person, mirrored back into the delivery row by the
+ * outbox. Messages are sent right away; the cron drain retries.
+ */
+async function notifyStaffWhatsApp(
+  n: StaffNotification,
+  eventId: string,
+  event: { createdAt: Date; duplicate: boolean },
+  ctx: {
+    cfg: ReturnType<typeof routingConfig>
+    quiet: boolean
+    skip: (channel: string, target: string, reason: string) => Promise<void>
+    deliveries: NotifyResult['deliveries']
+    now?: Date
+    whatsapp?: Omit<DrainOptions, 'ids'>
+  },
+): Promise<void> {
+  const env = ctx.whatsapp?.env ?? process.env
+  const transportEnv = { ...env, ...(ctx.whatsapp?.meta?.env ?? {}), ...(ctx.whatsapp?.bridge?.env ?? {}) }
+  if (!whatsappTransportAvailable('staff', transportEnv)) return
+  try {
+    const isApproval = n.level === 'APPROVAL_REQUIRED'
+    const people = (await optedInRecipients('staff', { verifiedBefore: event.duplicate ? event.createdAt : null }))
+      .map((r) => ({ ...r, staffRoleResolved: (r.role === 'super_admin' ? 'super_admin' : isStaffRole(r.staffRole) ? r.staffRole : null) as StaffRole | null }))
+      .filter((r) => r.staffRoleResolved !== null)
+      .filter((r) => (isApproval ? hasPermission(r.staffRoleResolved, 'approvals.decide') : true))
+    if (people.length === 0) return
+    const cooled = await inCooldown(n, eventId, 'whatsapp')
+    const now = ctx.now ?? new Date()
+    const payload = staffAlertTemplate({
+      levelLabel: LEVEL_LABELS[n.level],
+      title: n.title,
+      lines: n.lines ?? [],
+      // Approve / Reject buttons do not exist in WhatsApp: the decision is made in GIGA.
+      path: n.link ?? (isApproval ? '/admin-giga-panel/agents/approvals' : '/admin-giga-panel/notifications'),
+    })
+    const ids: string[] = []
+    for (const p of people) {
+      const target = `wa:${p.userId}`
+      const deliveryId = await claimDelivery(eventId, 'whatsapp', target)
+      if (!deliveryId) continue
+      if (!reaches(n.level, ctx.cfg.whatsappMinLevel)) { await ctx.skip('whatsapp', target, 'below_platform_level'); continue }
+      if (!reaches(n.level, p.minLevel)) { await ctx.skip('whatsapp', target, 'below_personal_level'); continue }
+      if (p.mutedUntil && p.mutedUntil > now && !isApproval && n.level !== 'CRITICAL') { await ctx.skip('whatsapp', target, 'muted'); continue }
+      if (ctx.quiet) { await ctx.skip('whatsapp', target, 'quiet_hours'); continue }
+      if (cooled) { await ctx.skip('whatsapp', target, 'cooldown'); continue }
+      try {
+        const row = await enqueueWhatsApp({
+          idempotencyKey: outboxKey('staff', eventId, p.userId),
+          kind: 'staff',
+          userId: p.userId,
+          phoneE164: p.phone,
+          payload,
+          level: n.level,
+          deliveryId,
+          env,
+        })
+        if (row.created) ids.push(row.id)
+        ctx.deliveries.push({ channel: 'whatsapp', target, status: 'queued' })
+      } catch (err) {
+        const error = err instanceof Error ? err.message.split('\n')[0].slice(0, 300) : 'enqueue_failed'
+        await recordDelivery(eventId, 'whatsapp', target, 'failed', { error })
+        ctx.deliveries.push({ channel: 'whatsapp', target, status: 'failed', reason: error })
+      }
+    }
+    if (ids.length === 0) return
+    await sendWhatsAppNow(ids, { ...ctx.whatsapp, now: ctx.now })
+    // Report what the inline send achieved (the delivery rows mirror the outbox).
+    const final = await prisma.$queryRaw<Array<{ target: string; status: string; error: string | null }>>`
+      SELECT target, status, error FROM public.notification_deliveries
+      WHERE event_id = ${eventId}::uuid AND channel = 'whatsapp'`
+    const byTarget = new Map(final.map((f) => [f.target, f]))
+    for (const d of ctx.deliveries) {
+      if (d.channel !== 'whatsapp' || d.status !== 'queued') continue
+      const f = byTarget.get(d.target)
+      if (f) { d.status = f.status; if (f.error) d.reason = f.error }
+    }
+  } catch (err) {
+    // WhatsApp must never break Telegram / email delivery of the same event.
+    console.error('[notifications] whatsapp fan-out failed:', err instanceof Error ? err.message.split('\n')[0] : 'error')
+  }
 }

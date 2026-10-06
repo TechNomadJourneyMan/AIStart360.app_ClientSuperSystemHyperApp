@@ -750,6 +750,35 @@ export function getSynonymIndex(): Map<string, string> {
 export function matchSynonym(input: string): string | null {
   const norm = normalizeForMatch(input);
   if (!norm) return null;
+  const cached = _matchCache.get(norm);
+  if (cached !== undefined) return cached;
+  const result = matchNormalized(norm);
+  if (_matchCache.size >= MATCH_CACHE_MAX) _matchCache.clear();
+  _matchCache.set(norm, result);
+  return result;
+}
+
+/**
+ * Synonyms of 3+ characters, longest first — built once (the substring scan
+ * used to re-sort the ~560 entries on every call, and the resolver calls it
+ * per field × document source × metric).
+ */
+let _scanEntries: ReadonlyArray<readonly [string, string]> | null = null;
+
+function scanEntries(): ReadonlyArray<readonly [string, string]> {
+  if (_scanEntries) return _scanEntries;
+  // Stable sort: on equal length the index (insertion) order decides, as before.
+  _scanEntries = Array.from(getSynonymIndex().entries())
+    .sort((a, b) => b[0].length - a[0].length)
+    .filter(([syn]) => syn.length >= 3); // skip too-short tokens
+  return _scanEntries;
+}
+
+/** Results by normalised input (the dictionary is static); bounded. */
+const MATCH_CACHE_MAX = 10_000;
+const _matchCache = new Map<string, string | null>();
+
+function matchNormalized(norm: string): string | null {
   const idx = getSynonymIndex();
 
   // 1. Exact match.
@@ -758,14 +787,10 @@ export function matchSynonym(input: string): string | null {
 
   // 2. Substring scan, longest synonym first to avoid false positives
   //    (e.g. "revenue" matching inside "revenue per seller").
-  const entries = Array.from(idx.entries()).sort(
-    (a, b) => b[0].length - a[0].length
-  );
-  for (const [syn, canonical] of entries) {
-    if (syn.length < 3) continue; // skip too-short tokens
-    // word-boundary-ish check: ensure the synonym is surrounded by whitespace
-    // or string boundaries in the normalized input.
-    const padded = ` ${norm} `;
+  //    word-boundary-ish check: the synonym is surrounded by whitespace or
+  //    string boundaries in the normalized input.
+  const padded = ` ${norm} `;
+  for (const [syn, canonical] of scanEntries()) {
     if (padded.includes(` ${syn} `)) return canonical;
   }
   return null;

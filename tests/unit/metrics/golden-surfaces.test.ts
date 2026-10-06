@@ -7,6 +7,7 @@
  *   dashboard heroes            GET /api/v1/metrics (summaries)
  *   Point A                     resolved engine inputs (rows and live values)
  *   Point B                     calculatePointBV2 options from the same rows
+ *   Point A V3 blocks           GET /api/v1/point-a/v3 (loadCompanyMetrics)
  *
  * and every surface must show the same number for the same metric.
  */
@@ -36,6 +37,8 @@ const supabaseMock = {
   from: vi.fn((table: string) => {
     if (table === 'metrics') return stub({ data: metricRows, error: null })
     if (table === 'companies') return stub({ data: { id: 'co-1', user_id: 'owner-1', target_revenue_12m_kzt: null }, error: null })
+    // The owner's questionnaire as stored (V3 reads it for its own inputs).
+    if (table === 'survey_answers') return stub({ data: Object.entries(SURVEY).map(([question_key, value]) => ({ question_key, answer: { value } })), error: null })
     return stub({ data: [], error: null })
   }),
 }
@@ -47,6 +50,8 @@ vi.mock('@/lib/tenancy', () => ({
 
 import { GET as catalogGET } from '@/app/api/v1/metrics/catalog/route'
 import { GET as metricsGET } from '@/app/api/v1/metrics/route'
+import { GET as pointAV3GET } from '@/app/api/v1/point-a/v3/route'
+import type { PointAV3 } from '@/types/point-a-v3'
 
 // ── Inputs ───────────────────────────────────────────────────────────────────
 const SURVEY: Record<string, unknown> = {
@@ -72,7 +77,7 @@ const PL_CSV = [
   'Показатель;Значение',
   'Выручка;72 000 000',
   'Себестоимость;40 000 000',
-  'Валовая маржа;0,44',
+  'Валовая маржа (доля);0,44',
   'Операционные расходы;18 000 000',
   'Чистая прибыль;9 500 000',
 ].join('\n')
@@ -125,7 +130,7 @@ describe('golden: survey + P&L + OCR scan → identical values on every surface'
   it('the resolver reads each source with its meaning', () => {
     const byId = new Map(values.map((v) => [v.metricId, v]))
     expect(byId.get(KEY_METRICS.revenue)).toMatchObject({ numeric: 72_000_000, picked: { type: 'document' } }) // P&L beats the survey
-    expect(byId.get(KEY_METRICS.margin)?.numeric).toBe(44) // 0,44 → 44 %
+    expect(byId.get(KEY_METRICS.margin)?.numeric).toBe(44) // «(доля) 0,44» → 44 %
     expect(byId.get(KEY_METRICS.cac)).toMatchObject({ numeric: 18_500, picked: { type: 'document' } }) // OCR scan
     expect(byId.get(KEY_METRICS.cac)?.confidence).toBeLessThanOrEqual(0.7)
     expect(byId.get(KEY_METRICS.ltvCac)?.numeric).toBeCloseTo(390_000 / 18_500, 3)
@@ -182,5 +187,18 @@ describe('golden: survey + P&L + OCR scan → identical values on every surface'
     expect(lever('conversion')).toBe(expected[KEY_METRICS.conversion])
     expect(lever('repeat')).toBe(expected[KEY_METRICS.repeat])
     expect(lever('avg_check')).toBe(expected[KEY_METRICS.avgCheck])
+  })
+
+  it('Point A V3 blocks show the same numbers (loadCompanyMetrics, not a survey-only resolve)', async () => {
+    const expected = (id: string) => values.find((v) => v.metricId === id)?.numeric ?? null
+    const res = await pointAV3GET()
+    const body = (await (res as Response).json()) as { ok: boolean; data: PointAV3 }
+    expect(body.ok).toBe(true)
+    const b = body.data.blocks
+    expect(b.sales.Rev.value).toBe(expected(KEY_METRICS.revenue)) // the P&L, not the survey's 66 M
+    expect(b.sales.AOV.value).toBe(expected(KEY_METRICS.avgCheck))
+    expect(b.client.LTV.value).toBe(expected(KEY_METRICS.ltv))
+    expect(b.client.CAC.value).toBe(expected(KEY_METRICS.cac)) // OCR scan
+    expect(b.finance.GrossMargin.value).toBe(expected(KEY_METRICS.margin))
   })
 })

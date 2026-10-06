@@ -180,6 +180,10 @@ export async function middleware(request: NextRequest, event?: NextFetchEvent) {
     // dashboard auth gate would redirect them to /login and leave every Meta
     // message workflow stuck after the webhook ACK.
     pathname.startsWith('/.well-known/workflow/') ||
+    // OAuth discovery documents of the MCP server (RFC 9728 / RFC 8414) are
+    // public by definition: MCP clients fetch them before any sign-in.
+    pathname.startsWith('/.well-known/oauth-protected-resource') ||
+    pathname === '/.well-known/oauth-authorization-server' ||
     pathname.startsWith('/logo') ||
     pathname.startsWith('/fonts') ||
     // Static assets in public/ must skip the network auth (getUser + profiles):
@@ -445,7 +449,14 @@ export async function middleware(request: NextRequest, event?: NextFetchEvent) {
   if (user) {
     // Removed legacy screens → their replacement.
     if (matchesAny(pathname, RETIRED_PATHS)) {
-      const dest = role === 'super_admin' || role === 'admin' ? GIGA_PANEL_PATH : role === 'expert' ? '/expert/dashboard' : '/dashboard'
+      // A legacy profiles.role 'admin' opens the panel only with a staff_roles
+      // row (migration 099); otherwise the panel gate would bounce it back.
+      let panel = role === 'super_admin'
+      if (role === 'admin') {
+        const { data: staffRow } = await supabase.from('staff_roles').select('role').eq('user_id', user.id).maybeSingle()
+        panel = isStaffRole(staffRow?.role)
+      }
+      const dest = panel ? GIGA_PANEL_PATH : role === 'expert' ? '/expert/dashboard' : '/dashboard'
       return NextResponse.redirect(new URL(dest, request.url))
     }
 

@@ -18,6 +18,7 @@ import { agentConfirmed, agentEntries, agentSteps, showAgents } from './agents'
 import { adminApprovalCallback, approvalEntries, showApprovals } from './approvals'
 import { clientConfirmed, clientEntries, clientSteps, showClientsMenu } from './clients'
 import { permLabel, resolveStaff, type AdminCtx, type AdminEntry, type StaffPrincipal } from './context'
+import { mcpConfirmed, mcpEntries, mcpSteps, showMcp } from './mcp'
 import { notificationEntries, showNotifications } from './notifications'
 import { providerConfirmed, providerEntries, providerSteps, showProviders } from './providers'
 import { reportConfirmed, reportEntries, reportSteps, showReportsMenu } from './reports'
@@ -37,6 +38,7 @@ export const ADMIN_MENU: MenuItem[] = [
   { label: '🔑 Провайдеры и ключи', command: 'providers', perm: 'agents.view', run: (ctx) => showProviders(ctx) },
   { label: '💸 Расходы и лимиты', command: 'spend', perm: 'agents.view', run: (ctx) => showSpend(ctx, '1', 'p') },
   { label: '🔔 Уведомления', command: 'notifications', perm: 'dashboard.view', run: (ctx) => showNotifications(ctx) },
+  { label: '🔌 MCP-доступ', command: 'mcp', perm: 'dashboard.view', run: (ctx) => showMcp(ctx) },
 ]
 
 export { ADMIN_COMMANDS } from '../commands'
@@ -94,7 +96,7 @@ export function adminRouter(): Router<StaffPrincipal> {
   }
   const callbacks: Record<string, AdminEntry> = {
     ...statusEntries, ...agentEntries, ...approvalEntries, ...userEntries, ...clientEntries,
-    ...reportEntries, ...providerEntries, ...spendEntries, ...notificationEntries,
+    ...reportEntries, ...providerEntries, ...spendEntries, ...notificationEntries, ...mcpEntries,
   }
   return {
     bot: 'admin',
@@ -114,7 +116,7 @@ export function adminRouter(): Router<StaffPrincipal> {
     commands,
     menu,
     callbacks,
-    confirmed: { ...agentConfirmed, ...userConfirmed, ...clientConfirmed, ...reportConfirmed, ...providerConfirmed, ...spendConfirmed },
-    steps: { ...agentSteps, ...userSteps, ...clientSteps, ...reportSteps, ...providerSteps, ...spendSteps },
+    confirmed: { ...agentConfirmed, ...userConfirmed, ...clientConfirmed, ...reportConfirmed, ...providerConfirmed, ...spendConfirmed, ...mcpConfirmed },
+    steps: { ...agentSteps, ...userSteps, ...clientSteps, ...reportSteps, ...providerSteps, ...spendSteps, ...mcpSteps },
   }
 }

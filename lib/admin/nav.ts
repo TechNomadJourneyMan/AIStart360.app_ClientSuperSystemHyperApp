@@ -52,6 +52,8 @@ export const GIGA_NAV: GigaNavGroup[] = [
     { href: `${GIGA_BASE}/staff`, label: 'Роли и права', icon: 'key', permission: 'dashboard.view' },
     { href: `${GIGA_BASE}/impersonation`, label: 'Вход от имени', icon: 'eye', permission: 'impersonate.view' },
     { href: `${GIGA_BASE}/audit`, label: 'Журнал аудита', icon: 'scroll', permission: 'audit.view' },
+    // Own MCP tokens / OAuth sign-ins; the scopes offered follow the role (lib/mcp/scopes.ts).
+    { href: `${GIGA_BASE}/mcp`, label: 'MCP-доступ', icon: 'terminal', permission: 'dashboard.view' },
   ] },
 ]
 
@@ -79,6 +81,8 @@ export const SUPER_EXPERT_NAV: GigaNavGroup[] = [
     { href: `${SUPER_EXPERT_BASE}/surveys`, label: 'Анкеты', icon: 'clipboard', permission: 'survey.view' },
     { href: `${SUPER_EXPERT_BASE}/gri`, label: 'GRI', icon: 'radar', permission: 'gri.view' },
     { href: `${SUPER_EXPERT_BASE}/activity`, label: 'Активность', icon: 'activity', permission: 'activity.view' },
+    // Report versions waiting for the expert (103): approve = publish, or request changes.
+    { href: `${SUPER_EXPERT_BASE}/reports`, label: 'Отчёты на проверке', icon: 'reports', permission: 'reports.review' },
   ] },
   { label: 'Взаимодействие', items: [
     { href: `${SUPER_EXPERT_BASE}/invites`, label: 'Приглашения', icon: 'mail', permission: 'users.invite' },

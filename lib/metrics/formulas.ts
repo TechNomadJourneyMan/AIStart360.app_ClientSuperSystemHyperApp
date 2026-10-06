@@ -91,6 +91,13 @@ export const BASE_INPUTS: readonly MetricEntry[] = [
       coerce: { kind: 'table_sum', column: 'manager_count', match: { column: 'department', pattern: 'продаж|sales|коммерч|сбыт' } },
     }),
   ]),
+  // Churn has no period of its own (goal.02.churn_rate is «за период»). LTV
+  // needs the YEARLY churn: the client-base figure is annualised from its own
+  // period (field label / period, document metadata, file name, text) by
+  // compounding, and is a miss when that period is unknown — never assumed.
+  base('base.churn_rate_year', 'Отток клиентов за год', '%', [
+    { type: 'document', doc_type: 'client_base', field: 'churn_rate', compoundRate: true },
+  ], 'year'),
   base('base.funnel_lead_to_call', 'Конверсия Лид → Звонок', '%', [s('s5n_funnel_lead_to_call', 5, 'Лид -> Звонок (%)', { zeroIsEmpty: true })]),
   base('base.funnel_proposal_to_negotiation', 'Конверсия КП → Переговоры', '%', [s('s5n_funnel_proposal_to_negotiation', 5, 'КП -> Переговоры (%)', { zeroIsEmpty: true })]),
   base('base.funnel_negotiation_to_contract', 'Конверсия Переговоры → Договор', '%', [s('s5n_funnel_negotiation_to_contract', 5, 'Переговоры -> Договор (%)', { zeroIsEmpty: true })]),
@@ -143,7 +150,7 @@ const LTV = 'goal.04.ltv'
 const GROSS_MARGIN = 'biz.finansy.valovaya_marzha'
 const EMPLOYEES = 'biz.hr.kol_vo_sotrudnikov'
 const QUALIFIED_LEADS = 'goal.01.kolichestvo_tselevykh_lidov'
-const CHURN = 'goal.02.churn_rate'
+const CHURN_YEAR = 'base.churn_rate_year'
 const TIME_BETWEEN = 'goal.02.time_between_purchases'
 const REFERRAL_CLIENTS = 'goal.05.referral_rate_kol_vo'
 const COMPETITOR_CLIENTS = 'goal.06.kol_vo_klientov_ot_konkurentov'
@@ -343,9 +350,13 @@ const DEFS: FormulaDef[] = [
   },
   {
     id: 'ltv_from_churn',
-    text: 'Доход на клиента за год ÷ Отток (доля за год)',
+    text: 'Доход на клиента за год ÷ Отток за год (доля)',
     unit: '₸',
-    variants: [{ inputs: [[ARPU, '₸'], [CHURN, '%']], compute: (v) => (v[CHURN] > 0 && v[CHURN] <= 100 ? v[ARPU] / (v[CHURN] / 100) : null) }],
+    variants: [{
+      inputs: [[ARPU, '₸'], [CHURN_YEAR, '%']],
+      compute: (v) => (v[CHURN_YEAR] > 0 && v[CHURN_YEAR] <= 100 ? v[ARPU] / (v[CHURN_YEAR] / 100) : null),
+      note: 'отток приведён к году по периоду, указанному в документе',
+    }],
   },
   {
     id: 'cac_payback',

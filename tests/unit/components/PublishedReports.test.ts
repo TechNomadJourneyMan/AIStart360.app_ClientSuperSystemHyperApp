@@ -45,12 +45,14 @@ describe('ReportSummaryCard', () => {
   it('links the PDF of this version', () => {
     const report: ClientReportSummary = {
       id: 'v-1', report_type: 'point_a', version: 3, title: 'Точка А: ТОО Ромашка', confidence: 0.62, data_hash: 'h',
-      published_at: '2026-10-06T10:00:00.000Z', generated_at: content.generated_at, calculated_at: content.calculated_at,
+      published_at: '2026-10-06T10:00:00.000Z', created_at: '2026-10-05T20:30:00.000Z', generated_at: content.generated_at, calculated_at: content.calculated_at,
       overall_score: 47, findings: 5, recommendations: 2, has_narrative: false,
     }
     const html = renderToStaticMarkup(createElement(ReportSummaryCard, { report, open: false, onToggle: () => {} }))
     expect(html).toContain('href="/api/v1/reports/v-1/pdf"')
-    expect(html).toContain('Версия 3')
+    // Version number and its date in Asia/Almaty (UTC+5): 20:30 UTC on the 5th is the 6th there.
+    expect(html).toContain('Версия 3 · 06.10.2026')
+    expect(html).toContain('Ссылка на эту версию')
     expect(html).toContain('62%')
     expect(html).toContain('aria-expanded="false"')
   })

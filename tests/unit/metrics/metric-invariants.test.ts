@@ -184,11 +184,15 @@ describe('metric catalog invariants', () => {
     expect(problems).toEqual([])
   })
 
-  it('a period is declared only on flow metrics (money / counts), units are from a known set', () => {
+  it('a period is declared only on flow metrics (money / counts) or compounded rates, units are from a known set', () => {
     const units = new Set(['₸', '%', '', 'count', 'days', 'мес', 'мин', 'из 10', 'ч/день', 'раз/год'])
     for (const e of all) {
       expect(units.has(e.unit), `${e.id}: ${e.unit}`).toBe(true)
-      if (e.period) expect(['₸', 'count'], e.id).toContain(e.unit)
+      if (!e.period) continue
+      // A «%» with a period is a rate over that period (yearly churn): every
+      // source must compound it from the value's own period, never rescale ×N.
+      if (e.unit === '%') expect(e.sources.every((s) => s.type === 'document' && s.compoundRate), e.id).toBe(true)
+      else expect(['₸', 'count'], e.id).toContain(e.unit)
     }
   })
 

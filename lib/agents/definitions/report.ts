@@ -2,11 +2,13 @@
  * The `report` agent (docs/platform/05-agents.md §2): turns a finished
  * diagnostic session into a frozen, versioned Point A report with provenance.
  *
- *   trigger  DIAGNOSTIC_COMPLETED (the session of the event) or a manual run
- *            from GIGA (the latest ready session)
- *   output   report_versions row in status 'ready' + REPORT_GENERATED.
- *            A person publishes it to the client in GIGA; this agent has no
- *            way to publish.
+ *   trigger  DIAGNOSTIC_COMPLETED (the session of the event), a manual run
+ *            from GIGA (the latest ready session), or an expert's «Нужны
+ *            правки» (input.review — lib/reports/review-flow.ts, capped per
+ *            session)
+ *   output   report_versions row in status 'in_review' (103) with its PDF +
+ *            REPORT_GENERATED. The expert's «Подтвердить» publishes it to the
+ *            client; this agent has no way to publish.
  *
  * Deterministic by default ($0). The executive narrative by the premium
  * model is OFF unless agent_configs.settings = {"narrative": true}; then it
@@ -32,6 +34,13 @@ const input = z.object({
     subject_type: z.string().nullable().optional(),
     subject_id: z.string().nullable().optional(),
     payload: z.record(z.unknown()).optional(),
+  }).optional(),
+  /** Set when an expert sent a version back with «Нужны правки». */
+  review: z.object({
+    id: z.string().uuid(),
+    version_id: z.string().uuid(),
+    version: z.number().int().optional(),
+    comment: z.string().max(500).optional(),
   }).optional(),
 }).passthrough()
 
@@ -80,7 +89,7 @@ async function narrativeFor(ctx: AgentContext, content: PointAReportContent): Pr
 export const reportAgent: AgentDefinition<z.infer<typeof input>> = {
   key: 'report',
   name: 'Отчёт',
-  description: 'Собирает версию отчёта Точки А из завершённой диагностики: баллы, видимые клиенту выводы и рекомендации с происхождением и уверенностью, полнота данных и источники. Версия ждёт проверки; публикует клиенту только сотрудник.',
+  description: 'Собирает версию отчёта Точки А из завершённой диагностики: баллы, видимые клиенту выводы и рекомендации с происхождением и уверенностью, полнота данных и источники. Версия с PDF уходит эксперту на проверку; публикует клиенту только эксперт кнопкой «Подтвердить».',
   version: '1.0.0',
   scope: 'company',
   tier: 'premium',
@@ -111,6 +120,7 @@ export const reportAgent: AgentDefinition<z.infer<typeof input>> = {
       session_id: snap.session_id ?? sessionId,
       narrative_state: narrative.state,
       narrative_reason: narrative.state === 'done' ? null : narrative.reason,
+      ...(i.review ? { review_version_id: i.review.version_id } : {}),
       ...(narrative.state === 'done'
         ? { narrative_summary: narrative.data.summary, narrative_key_points: narrative.data.key_points, narrative_model: narrative.model }
         : {}),
@@ -133,13 +143,19 @@ export const reportAgent: AgentDefinition<z.infer<typeof input>> = {
       narrative: created.narrative.state,
       narrative_reason: created.narrative.reason,
     }
+    if (created.skipped === 'review_unchanged') {
+      return {
+        summary: `правки эксперта к версии ${created.version}: данные и проверенные выводы не изменились — новая версия не создана, команда уведомлена`,
+        result: { ...result, unchanged: true, review_unchanged: true, review_id: i.review?.id ?? null },
+      }
+    }
     if (!created.created) {
       return { summary: `данные не изменились с версии ${created.version} — новая версия не создана`, result: { ...result, unchanged: true } }
     }
     return {
-      summary: `версия ${created.version} готова к проверке: выводов ${counts.findings}, рекомендаций ${counts.recommendations}`
+      summary: `версия ${created.version} отправлена эксперту на проверку: выводов ${counts.findings}, рекомендаций ${counts.recommendations}`
         + `${hidden ? `; не вошло без проверки сотрудником: ${hidden}` : ''}; ${NARRATIVE_TEXT[created.narrative.state]}`,
-      result,
+      result: i.review ? { ...result, review_id: i.review.id } : result,
     }
   },
 }

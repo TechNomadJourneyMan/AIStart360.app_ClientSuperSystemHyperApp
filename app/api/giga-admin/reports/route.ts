@@ -27,7 +27,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       ok: true,
       items,
-      can: { publish: g.actor.permissions.includes('reports.publish'), run: g.actor.permissions.includes('agents.run') },
+      can: { publish: g.actor.permissions.includes('reports.publish'), run: g.actor.permissions.includes('agents.run'), review: g.actor.permissions.includes('reports.review') },
     })
   } catch (err) {
     return dbError('giga-admin/reports', err as { message?: string; code?: string }, 'Не удалось загрузить версии отчётов')

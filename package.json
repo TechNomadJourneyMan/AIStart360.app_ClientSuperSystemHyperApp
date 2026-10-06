@@ -96,6 +96,7 @@
   },
   "devDependencies": {
     "@modelcontextprotocol/inspector": "^0.21.1",
+    "@modelcontextprotocol/sdk": "^1.32.1",
     "@playwright/test": "1.61.1",
     "@tailwindcss/container-queries": "^0.1.1",
     "@tailwindcss/forms": "^0.5.7",

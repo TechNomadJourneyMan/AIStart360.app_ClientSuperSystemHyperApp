@@ -16,6 +16,7 @@ export const ADMIN_COMMANDS: BotCommand[] = [
   { command: 'providers', description: 'Провайдеры ИИ и ключи' },
   { command: 'spend', description: 'Расходы и лимиты ИИ' },
   { command: 'notifications', description: 'Мои уведомления' },
+  { command: 'mcp', description: 'MCP-доступ: токены для Claude Code' },
   { command: 'cancel', description: 'Отменить ввод' },
 ]
 

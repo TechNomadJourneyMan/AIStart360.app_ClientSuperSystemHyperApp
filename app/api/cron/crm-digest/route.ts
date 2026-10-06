@@ -13,6 +13,8 @@ import {
   type DigestData,
 } from '@/lib/crm/digest'
 import { EXTRA_DIGEST_CHANNELS } from '@/lib/crm/digest-channels'
+import { optedInRecipients } from '@/lib/whatsapp/links'
+import { cloudApiConfigured } from '@/lib/whatsapp/config'
 
 export const dynamic = 'force-dynamic'
 // Дайджест шлёт до трёх каналов на пользователя; на большой базе даём функции
@@ -167,6 +169,7 @@ export async function GET(req: NextRequest) {
           usersNotified: 0,
           emailsSent: 0,
           telegramSent: 0,
+          whatsappSent: 0,
           totalOverdue: 0,
           totalSleeping: 0,
           rescanReminders,
@@ -204,9 +207,21 @@ export async function GET(req: NextRequest) {
       console.warn('[crm-digest] GRI insight skipped', e)
     }
 
+    // WhatsApp: только подтверждённые номера с явным согласием (Настройки › Уведомления).
+    const whatsappByUser = new Map<string, string>()
+    if (cloudApiConfigured()) {
+      try {
+        for (const r of await optedInRecipients('client', { userIds: targets })) whatsappByUser.set(r.userId, r.phone)
+      } catch (e) {
+        console.warn('[crm-digest] WhatsApp recipients skipped', e instanceof Error ? e.message.split('\n')[0] : e)
+      }
+    }
+    const day = now.toISOString().slice(0, 10)
+
     let usersNotified = 0
     let emailsSent = 0
     let telegramSent = 0
+    let whatsappSent = 0
     let totalOverdue = 0
     let totalSleeping = 0
 
@@ -225,7 +240,7 @@ export async function GET(req: NextRequest) {
             hasEmail: Boolean(email),
             hasTelegram: Boolean(chatId),
           })
-          if (!channels.inApp && !channels.email && !channels.telegram) return
+          if (!channels.inApp && !channels.email && !channels.telegram && !whatsappByUser.has(userId)) return
 
           const data: DigestData = {
             overdue,
@@ -271,15 +286,17 @@ export async function GET(req: NextRequest) {
             }
           }
 
-          // Доп-каналы за флагами (Фаза 4C): WhatsApp/SMS. Телефон владельца пока
-          // не хранится в profiles → phone:null, каналы выключены до источника
-          // телефона; isEnabled коротко замыкается на env-флагах (нулевая цена).
-          const recipient = { userId, phone: null }
-          const message = { title, body: buildDigestBody(data) }
+          // Доп-каналы (Фаза 4C): WhatsApp (шаблон digest через очередь) и SMS-заглушка.
+          const waPhone = whatsappByUser.get(userId) ?? null
+          const recipient = { userId, phone: waPhone, whatsappOptIn: waPhone !== null }
+          const message = { title, body: buildDigestBody(data), data, day }
           for (const ch of EXTRA_DIGEST_CHANNELS) {
             if (!ch.isEnabled(recipient)) continue
             const ok = await ch.send(recipient, message)
-            if (ok) delivered = true
+            if (ok) {
+              if (ch.key === 'whatsapp') whatsappSent += 1
+              delivered = true
+            }
           }
 
           if (delivered) {
@@ -296,7 +313,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({
       ok: true,
-      data: { usersNotified, emailsSent, telegramSent, totalOverdue, totalSleeping, rescanReminders },
+      data: { usersNotified, emailsSent, telegramSent, whatsappSent, totalOverdue, totalSleeping, rescanReminders },
     })
   } catch (err) {
     console.error('[crm-digest] sweep failed', err)

@@ -17,6 +17,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { ProvenanceBadge } from '@/components/common/ProvenanceBadge'
 import { producerLabel, SEVERITY_LABELS, type ReportContent, type ReportSeverity } from '@/lib/reports/types'
+import { versionStamp } from '@/lib/reports/version-stamp'
 import type { ClientReport, ClientReportSummary } from '@/lib/reports/client-access'
 
 const CARD = 'rounded-2xl border border-white/[0.04] bg-surface-container p-4 sm:p-5'
@@ -47,13 +48,60 @@ const SEVERITY_CLASS: Record<string, string> = {
 
 // ─── Views ──────────────────────────────────────────────────────────────────
 
+/** «Версия 3 · 06.10.2026» — the same stamp as on the PDF cover and footer. */
+export function versionLabel(report: Pick<ClientReportSummary, 'version' | 'created_at' | 'generated_at'>): string {
+  const at = report.created_at ?? report.generated_at
+  return at ? versionStamp(report.version, at) : `Версия ${report.version}`
+}
+
+type LinkState = { kind: 'idle' } | { kind: 'busy' } | { kind: 'done'; url: string; expires: string; copied: boolean } | { kind: 'error'; message: string }
+
+/** «Ссылка на эту версию»: an expiring link to exactly this version (POST /api/v1/reports/:id/link). */
+function VersionLinkButton({ id }: { id: string }) {
+  const [state, setState] = useState<LinkState>({ kind: 'idle' })
+  const create = async () => {
+    setState({ kind: 'busy' })
+    try {
+      const res = await fetch(`/api/v1/reports/${id}/link`, { method: 'POST' })
+      const body = await res.json().catch(() => null)
+      if (!res.ok || !body?.ok) return setState({ kind: 'error', message: body?.error ?? `Ошибка сервера (${res.status})` })
+      let copied = false
+      try {
+        await navigator.clipboard.writeText(body.data.url)
+        copied = true
+      } catch {
+        copied = false
+      }
+      setState({ kind: 'done', url: body.data.url, expires: body.data.expires_at, copied })
+    } catch {
+      setState({ kind: 'error', message: 'Нет связи с сервером' })
+    }
+  }
+  if (state.kind === 'done') {
+    return (
+      <span className="flex flex-col gap-1 text-[11px] text-on-surface-variant">
+        <span>{state.copied ? 'Ссылка скопирована' : 'Ссылка на эту версию'} · действует до {fmtDate(state.expires)}</span>
+        <input readOnly value={state.url} aria-label="Ссылка на эту версию отчёта" className="w-full max-w-xs rounded-lg border border-white/10 bg-surface-container-low px-2 py-1 font-mono text-[10px] text-on-surface" onFocus={(e) => e.currentTarget.select()} />
+      </span>
+    )
+  }
+  return (
+    <span className="flex flex-col gap-1">
+      <button type="button" onClick={() => void create()} disabled={state.kind === 'busy'} className={BTN_GHOST}>
+        <Icon name="link" className="text-[16px]" /> {state.kind === 'busy' ? 'Создаём ссылку…' : 'Ссылка на эту версию'}
+      </button>
+      {state.kind === 'error' && <span role="alert" className="text-[11px] text-error">{state.message}</span>}
+    </span>
+  )
+}
+
 export function ReportSummaryCard({ report, open, onToggle }: { report: ClientReportSummary; open: boolean; onToggle: () => void }) {
   return (
     <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
       <div className="min-w-0">
         <p className="font-headline text-base font-bold text-on-surface">{report.title}</p>
         <p className="mt-1 text-xs text-on-surface-variant">
-          Версия {report.version} · опубликован {fmtDate(report.published_at)} · расчёт от {fmtDate(report.calculated_at)}
+          <span className="font-mono text-on-surface">{versionLabel(report)}</span> · опубликован {fmtDate(report.published_at)} · расчёт от {fmtDate(report.calculated_at)}
         </p>
         <p className="mt-1 text-xs text-on-surface-variant">
           Выводов: <span className="font-mono text-on-surface">{report.findings}</span> · рекомендаций:{' '}
@@ -62,9 +110,10 @@ export function ReportSummaryCard({ report, open, onToggle }: { report: ClientRe
         </p>
       </div>
       <div className="flex flex-wrap gap-2">
-        <a href={`/api/v1/reports/${report.id}/pdf`} className={BTN_PRIMARY} download>
+        <a href={`/api/v1/reports/${report.id}/pdf`} className={BTN_PRIMARY} download aria-label={`Скачать PDF: ${versionLabel(report)}`}>
           <Icon name="download" className="text-[16px]" /> Скачать PDF
         </a>
+        <VersionLinkButton id={report.id} />
         <button type="button" onClick={onToggle} aria-expanded={open} className={BTN_GHOST}>
           <Icon name={open ? 'expand_less' : 'expand_more'} className="text-[16px]" /> {open ? 'Скрыть' : 'Открыть отчёт'}
         </button>

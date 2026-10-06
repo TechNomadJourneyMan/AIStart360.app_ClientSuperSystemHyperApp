@@ -113,7 +113,8 @@ describe('expert bot', () => {
     expect(await run(press(adminButton))).toBe('bad_signature')
     const r = expertRouter()
     expect(Object.keys(r.confirmed)).toEqual([])
-    expect(Object.keys(r.callbacks).sort()).toEqual(['cl.c', 'cl.l', 'cl.s', 'ds.l', 'en.lv', 'en.mu', 'en.v', 'rp.l'])
+    // rr.*: the decision on a report waiting for review (103) — re-verified by lib/reports/review-flow.ts.
+    expect(Object.keys(r.callbacks).sort()).toEqual(['cl.c', 'cl.l', 'cl.s', 'ds.l', 'en.lv', 'en.mu', 'en.v', 'rp.l', 'rr.ch', 'rr.l', 'rr.ok', 'rr.pdf'])
   })
 
   it('notification level change is audited as the expert', async () => {

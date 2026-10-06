@@ -92,6 +92,8 @@ const gOne = await import('@/app/api/giga-admin/reports/[id]/route')
 const gPdf = await import('@/app/api/giga-admin/reports/[id]/pdf/route')
 const gQueue = await import('@/app/api/giga-admin/ai-review/route')
 const gReview = await import('@/app/api/giga-admin/ai-review/[kind]/[id]/route')
+const gReportReviewList = await import('@/app/api/giga-admin/reports/review/route')
+const gReportReview = await import('@/app/api/giga-admin/reports/[id]/review/route')
 
 const A1 = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1'
 const A2 = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2'
@@ -99,7 +101,7 @@ const B1 = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1'
 const content = buildPointAReportContent(inputs()).content
 const row = (id: string, company: string, status: string, version: number) => ({
   id, company_id: company, report_type: 'point_a', version, title: 'Точка А: ТОО Ромашка', confidence: '0.62', data_hash: 'f'.repeat(64),
-  published_at: status === 'published' ? '2026-10-06T10:00:00.000Z' : null, status, content,
+  published_at: status === 'published' ? '2026-10-06T10:00:00.000Z' : null, created_at: '2026-10-05T20:30:00.000Z', status, content,
   provenance: { staff: { hidden_hypotheses: 3 } },
 })
 
@@ -191,10 +193,12 @@ describe('client: GET /api/v1/reports/:id and /pdf', () => {
   })
 
   it('the PDF of an own published version is rendered from the content', async () => {
+    versions.getReportVersion.mockResolvedValueOnce({ ...row(A1, 'co-a', 'published', 1), confidence: 0.62, pdf_storage_path: null })
     const res = await pdf.GET(get(`/api/v1/reports/${A1}/pdf`), { params: { id: A1 } })
     expect(res.status).toBe(200)
     expect(res.headers.get('content-type')).toBe('application/pdf')
-    expect(res.headers.get('content-disposition')).toContain('attachment; filename="aistart360-point_a-v1.pdf"')
+    // File name carries the version and its date (Asia/Almaty: 20:30 UTC on the 5th is the 6th).
+    expect(res.headers.get('content-disposition')).toContain('attachment; filename="aistart360-point_a-v1-2026-10-06.pdf"')
     expect(res.headers.get('cache-control')).toBe('private, no-store')
     const buf = Buffer.from(await res.arrayBuffer())
     expect(buf.subarray(0, 5).toString('latin1')).toBe('%PDF-')
@@ -206,7 +210,10 @@ describe('GIGA: permissions are checked before any data access', () => {
   const cases: Array<{ name: string; roles: StaffRole[]; call: () => Promise<Response> }> = [
     { name: 'list versions', roles: ['super_expert', 'content_manager', 'support'], call: () => gList.GET(get('/api/giga-admin/reports')) },
     { name: 'view version', roles: ['super_expert', 'content_manager', 'support'], call: () => gOne.GET(get(`/api/giga-admin/reports/${ID}`), { params: { id: ID } }) },
-    { name: 'version PDF', roles: ['super_expert', 'content_manager', 'support'], call: () => gPdf.GET(get(`/api/giga-admin/reports/${ID}/pdf`), { params: { id: ID } }) },
+    // SuperExpert previews PDFs of versions it reviews (reports.review).
+    { name: 'version PDF', roles: ['content_manager', 'support'], call: () => gPdf.GET(get(`/api/giga-admin/reports/${ID}/pdf`), { params: { id: ID } }) },
+    { name: 'reports on review', roles: ['crm_manager', 'content_manager', 'analyst', 'support'], call: () => gReportReviewList.GET(get('/api/giga-admin/reports/review')) },
+    { name: 'report review decision', roles: ['crm_manager', 'content_manager', 'analyst', 'support'], call: () => gReportReview.POST(post(`/api/giga-admin/reports/${ID}/review`, { decision: 'approve' }), { params: { id: ID } }) },
     { name: 'publish', roles: ['super_expert', 'crm_manager', 'content_manager', 'analyst', 'support'], call: () => gOne.POST(post(`/api/giga-admin/reports/${ID}`, { action: 'publish' }), { params: { id: ID } }) },
     { name: 'review queue', roles: ['super_expert', 'analyst', 'support'], call: () => gQueue.GET(get('/api/giga-admin/ai-review')) },
     { name: 'review decision', roles: ['super_expert', 'analyst', 'support'], call: () => gReview.POST(post(`/api/giga-admin/ai-review/finding/${ID}`, { decision: 'approve' }), { params: { kind: 'finding', id: ID } }) },

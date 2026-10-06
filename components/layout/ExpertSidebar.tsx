@@ -12,6 +12,7 @@ export const EXPERT_NAV = [
   { label: 'Отчёты',  href: '/expert/reports',   icon: 'description'     },
   { label: 'GRI',      href: '/expert/gri',        icon: 'radar'           },
   { label: 'Инсайты', href: '/expert/insights',   icon: 'lightbulb'       },
+  { label: 'MCP',      href: '/expert/mcp',        icon: 'terminal'        },
 ]
 
 export function isExpertNavActive(pathname: string, href: string) {

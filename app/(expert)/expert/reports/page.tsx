@@ -7,15 +7,42 @@ import { requireExpert } from '@/lib/expert-auth'
 import { listPublishedReportsForExpert, REPORT_TYPE_LABELS, type ExpertReportItem } from '@/lib/reports/expert-list'
 import { BUSINESS_TIME_ZONE } from '@/lib/format/period'
 import { REPORT_TYPES, type ReportType } from '@/lib/reports/types'
+import { listReportVersions } from '@/lib/reports/versions'
+import { versionStamp } from '@/lib/reports/version-stamp'
+import { ExpertReviewQueue, type ExpertReviewItem } from '@/components/expert/ExpertReviewQueue'
 
 export const metadata: Metadata = { title: 'Отчёты · Expert Portal' }
 
 /**
- * Published report versions (report_versions, Phase 6) the expert may read —
- * lib/reports/expert-list.ts. Reports are assembled by the diagnostic pipeline
- * and published in GIGA → Отчёты; this page only lists them and links the PDF
- * (GET /api/v1/reports/:id/pdf, same access check).
+ * Expert reports:
+ *   • «На проверке» — versions the report agent built after an AI diagnostic
+ *     (status 'in_review', migration 103): PDF of exactly that version and the
+ *     decision — «Подтвердить и опубликовать» (the client sees it at once) or
+ *     «Нужны правки» (comment → the agent rebuilds). components/expert/
+ *     ExpertReviewQueue.tsx → POST /api/expert/reports/:id/review.
+ *   • Published versions the expert may read — lib/reports/expert-list.ts
+ *     (PDF: GET /api/v1/reports/:id/pdf, same access check).
  */
+
+async function loadReviewQueue(): Promise<{ ok: true; items: ExpertReviewItem[] } | { ok: false }> {
+  try {
+    const rows = await listReportVersions({ status: 'in_review', limit: 100 })
+    return {
+      ok: true,
+      items: rows.filter((v) => v.status === 'in_review').map((v) => ({
+        id: v.id,
+        company_id: v.company_id,
+        company_name: v.company_name,
+        title: v.title,
+        stamp: versionStamp(v.version, v.created_at),
+        findings: v.findings,
+        recommendations: v.recommendations,
+      })),
+    }
+  } catch {
+    return { ok: false }
+  }
+}
 
 function formatDate(iso: string | null): string {
   if (!iso) return '—'
@@ -95,11 +122,14 @@ function ReportsTable({ items }: { items: ExpertReportItem[] }) {
   )
 }
 
-export default async function ExpertReportsPage({ searchParams }: { searchParams?: { type?: string } }) {
+export default async function ExpertReportsPage({ searchParams }: { searchParams?: { type?: string; review?: string } }) {
   const viewer = await requireExpert()
   const result = viewer
     ? await listPublishedReportsForExpert(await createClient(), viewer)
     : ({ ok: false, reason: 'forbidden' } as const)
+  // Only after the expert gate (role, approval, 2FA): versions waiting for review are never shown otherwise.
+  const queue = viewer ? await loadReviewQueue() : null
+  const focusId = typeof searchParams?.review === 'string' ? searchParams.review : null
 
   const items = result.ok ? result.items : []
   const present = REPORT_TYPES.filter((t) => items.some((r) => r.report_type === t))
@@ -114,9 +144,23 @@ export default async function ExpertReportsPage({ searchParams }: { searchParams
         <p className="text-xs font-mono text-primary/70 uppercase tracking-[0.2em] mb-3">Expert Portal</p>
         <h1 className="font-headline text-3xl font-extrabold text-on-surface">Отчёты</h1>
         <p className="text-on-surface-variant mt-2 text-sm">
-          Опубликованные версии отчётов клиентов. Отчёты собирает диагностика, публикует сотрудник в GIGA.
+          Отчёты собирает ИИ-диагностика. Новая версия приходит вам на проверку: «Подтвердить» сразу публикует её клиенту.
         </p>
       </section>
+
+      {queue && (
+        <section aria-labelledby="review-heading">
+          <h2 id="review-heading" className="font-headline text-lg font-bold text-on-surface mb-1">На проверке</h2>
+          <p className="text-xs text-on-surface-variant mb-4">
+            Клиент не видит эти версии, пока вы не подтвердите. PDF — с номером версии, датой и пометкой «На проверке эксперта».
+          </p>
+          {!queue.ok && <Notice icon="error" title="Не удалось загрузить отчёты на проверке" text="Попробуйте обновить страницу." tone="error" />}
+          {queue.ok && queue.items.length === 0 && (
+            <Notice icon="task_alt" title="Нет отчётов на проверке" text="Когда диагностика соберёт новую версию отчёта, она появится здесь и в боте экспертов." />
+          )}
+          {queue.ok && queue.items.length > 0 && <ExpertReviewQueue items={queue.items} focusId={focusId} />}
+        </section>
+      )}
 
       <section>
         {result.ok && items.length > 0 && (
@@ -154,7 +198,7 @@ export default async function ExpertReportsPage({ searchParams }: { searchParams
           <Notice
             icon="description"
             title="Отчёты появятся после публикации"
-            text="Здесь будут версии отчётов клиентов, которые сотрудник опубликовал в GIGA → Отчёты."
+            text="Здесь будут версии отчётов клиентов после подтверждения экспертом."
           />
         )}
         {result.ok && items.length > 0 && (

@@ -8,18 +8,31 @@ import { memoryStateStore } from '@/lib/telegram/bots/store'
 
 export interface TgCall { url: string; method: string; body: Record<string, any> }
 
+/**
+ * A multipart body (sendDocument) as a plain object: text fields as strings,
+ * `reply_markup` parsed back from its JSON, files as { name, type, size }.
+ */
+export function formFields(form: FormData): Record<string, any> {
+  const out: Record<string, any> = {}
+  form.forEach((value, key) => {
+    if (typeof value === 'string') out[key] = key === 'reply_markup' ? JSON.parse(value) : value
+    else out[key] = { name: (value as File).name, type: value.type, size: value.size }
+  })
+  return out
+}
+
 export function recordingFetch(opts: { failMethods?: string[] } = {}) {
   const calls: TgCall[] = []
   let messageId = 1000
   const fetchImpl = (async (url: string | URL, init?: RequestInit) => {
     const u = String(url)
     const method = u.split('/').pop()!
-    const body = JSON.parse(String(init?.body ?? '{}'))
+    const body = init?.body instanceof FormData ? formFields(init.body) : JSON.parse(String(init?.body ?? '{}'))
     calls.push({ url: u, method, body })
     if (opts.failMethods?.includes(method)) {
       return new Response(JSON.stringify({ ok: false, description: 'Bad Request: message can\'t be deleted' }), { status: 400 })
     }
-    const result = method === 'sendMessage' ? { message_id: ++messageId } : true
+    const result = method === 'sendMessage' || method === 'sendDocument' ? { message_id: ++messageId } : true
     return new Response(JSON.stringify({ ok: true, result }), { status: 200 })
   }) as unknown as typeof fetch
   return {

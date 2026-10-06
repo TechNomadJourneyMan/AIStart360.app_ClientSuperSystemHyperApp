@@ -1,5 +1,8 @@
 /**
  * Notifications to experts linked in the expert bot:
+ *   report review          REPORT_GENERATED with status 'in_review' (103): the
+ *                          PDF with decision buttons (./review.ts via
+ *                          lib/reports/review-delivery.ts, also email copies)
  *   diagnostic.completed   DIAGNOSTIC_COMPLETED platform event (event-router)
  *   report.published       a report version published in GIGA or the admin bot
  *   client.approved        a registration approved (lib/users/access-requests.ts)
@@ -133,6 +136,16 @@ export async function expertNoticeForEvent(e: PlatformEventRow): Promise<ExpertN
 }
 
 export async function routeEventToExperts(e: PlatformEventRow): Promise<void> {
+  // A report version waiting for the expert: PDF + buttons in the bot and email
+  // copies (each channel decides for itself whether it is configured).
+  if (e.name === 'REPORT_GENERATED' && e.payload?.status === 'in_review' && e.subject_id) {
+    const { deliverReportForReview } = await import('@/lib/reports/review-delivery')
+    const report = await deliverReportForReview(e.subject_id)
+    if (report?.telegram.some((d) => d.status === 'failed')) {
+      console.error(`[telegram/expert] report review delivery: ${report.telegram.filter((d) => d.status === 'failed').length} failed`)
+    }
+    return
+  }
   if (!isBotConfigured('expert')) return
   const n = await expertNoticeForEvent(e)
   if (n) await notifyExperts(n)

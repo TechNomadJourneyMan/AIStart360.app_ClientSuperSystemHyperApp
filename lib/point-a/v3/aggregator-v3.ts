@@ -10,6 +10,7 @@
 // ============================================================
 
 import { resolveAllMetrics } from '@/lib/metrics/resolver'
+import { metricNumber, type CompanyMetrics } from '@/lib/metrics/company-metrics'
 import type {
   AiCommsBlock,
   ClientBlock,
@@ -255,7 +256,9 @@ function buildSales(input: AggregatorV3Input): SalesBlock {
 
   const N = firstNonNull(calcN(docs.sales_count ?? null), s3deals2025)
   const Rev = firstNonNull(calcRev(docs.revenue_total ?? null), metricOf(input, V3_METRIC.revenue), s2rev2025)
-  const AOV = firstNonNull(calcAOV(Rev, N), metricOf(input, V3_METRIC.avgCheck), s2avgCheck)
+  // The company's average check (single source) before Rev ÷ N: N may come
+  // from another source / year than Rev, and the catalog shows the metric.
+  const AOV = firstNonNull(metricOf(input, V3_METRIC.avgCheck), calcAOV(Rev, N), s2avgCheck)
   const NewCount = firstNonNull(calcNew(docs.new_clients_count ?? null), metricOf(input, V3_METRIC.newClients), s2newClients2025)
   const RevNew = calcRevNew(docs.revenue_from_new ?? null)
   const AOVnew = calcAOVnew(RevNew, NewCount)
@@ -1013,7 +1016,28 @@ function metricOf(input: AggregatorV3Input, id: string): number | null {
   return typeof v === 'number' && Number.isFinite(v) ? v : null
 }
 
-/** The resolver's values for the answers (survey keys of every wizard version + formulas). */
+/** Registry ids V3 reads from the company's current metric values. */
+export const V3_METRIC_IDS: readonly string[] = Object.values(V3_METRIC)
+
+/**
+ * `AggregatorV3Input.metrics` from the company's current metrics
+ * (lib/metrics/company-metrics.ts loadCompanyMetrics — public.metrics, which
+ * the resolver fills from survey, documents incl. OCR, formulas and GRI). The
+ * route passes this, so the V3 blocks show the numbers the Metrics page,
+ * dashboard heroes, Точка А and Точка Б show.
+ */
+export function v3MetricsFromCompanyMetrics(m: CompanyMetrics): Record<string, number | null> {
+  const out: Record<string, number | null> = {}
+  for (const id of V3_METRIC_IDS) out[id] = metricNumber(m, id)
+  return out
+}
+
+/**
+ * Fallback for pure callers that pass only survey answers (tests, scripts):
+ * the resolver's values for the answers (survey keys of every wizard version
+ * + formulas). It sees no documents — the API route passes `metrics` from
+ * public.metrics instead (v3MetricsFromCompanyMetrics).
+ */
 function metricsFromAnswers(input: AggregatorV3Input): Record<string, number | null> {
   if (!input.surveyAnswers || Object.keys(input.surveyAnswers).length === 0) return {}
   const values = resolveAllMetrics({

@@ -10,6 +10,7 @@ import { waitUntil } from '@vercel/functions'
 import { NextResponse, type NextRequest } from 'next/server'
 import { start } from 'workflow/api'
 import { applyMyHonorOrderNotificationDeliveryStatus } from '@/lib/integrations/myhonor/order-notification-repository'
+import { applyWhatsAppOutboxStatus } from '@/lib/whatsapp/outbox'
 import { inngest } from '@/lib/inngest'
 import { OMNICHANNEL_MESSAGE_RECEIVED_EVENT } from '@/lib/omnichannel/events'
 import {
@@ -50,6 +51,14 @@ function payloadObject(value: unknown): string | null {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) return null
   const object = (value as { object?: unknown }).object
   return typeof object === 'string' ? object : null
+}
+
+/** Stable error label for a failed status: Meta error codes only, never message text. */
+function outboxErrorCode(metadata: unknown): string {
+  const codes = metadata && typeof metadata === 'object' && Array.isArray((metadata as { errorCodes?: unknown }).errorCodes)
+    ? ((metadata as { errorCodes: unknown[] }).errorCodes.filter((c) => typeof c === 'number') as number[])
+    : []
+  return codes.length > 0 ? `meta.delivery_failed:${codes.slice(0, 3).join(',')}` : 'meta.delivery_failed'
 }
 
 function isOwnedDuplicate(audit: RecordedWebhookEvent): boolean {
@@ -232,6 +241,15 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     for (const event of events) {
       if (event.eventType === 'status') {
+        // Platform notifications (lib/whatsapp/outbox.ts, migration 104) first:
+        // their provider message ids never collide with inbox or MyHonor rows.
+        const notification = await applyWhatsAppOutboxStatus({
+          providerMessageId: event.externalMessageId,
+          status: event.status,
+          occurredAt: event.occurredAt,
+          errorCode: event.status === 'failed' ? outboxErrorCode(event.metadata) : null,
+        })
+        if (notification.matched) continue
         const transactional = await applyMyHonorOrderNotificationDeliveryStatus({
           providerMessageId: event.externalMessageId,
           status: event.status,

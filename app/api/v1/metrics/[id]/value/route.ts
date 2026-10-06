@@ -5,13 +5,17 @@
 // provenance. If `public.metrics` has no row for this
 // (company, metric) pair, falls back to a live resolver run
 // (without persisting) so the UI always sees a usable number.
-// Company: lib/tenancy (read access, optional ?companyId=); all
-// reads use the caller's session (RLS). This route never writes.
+// Company: lib/tenancy (read access, optional ?companyId=); the stored
+// row is read with the caller's session (RLS). The live fallback reads the
+// resolver inputs with the service role after that check, scoped to the
+// company's owner and company_id (lib/metrics/materialize-tenant.ts), so a
+// member sees the same value as the owner. This route never writes.
 // ============================================================
 
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase-service'
 import { getMetricById } from '@/lib/metrics/registry'
 import { resolverContextForTenant } from '@/lib/metrics/materialize-tenant'
 import { resolveMetric } from '@/lib/metrics/resolver'
@@ -136,7 +140,7 @@ export async function GET(
     }
 
     // 5. No materialized row → live resolve (no persist)
-    const ctx = await resolverContextForTenant(supabase, tenant.tenant, now)
+    const ctx = await resolverContextForTenant(createServiceClient(), tenant.tenant, now)
     const value = resolveMetric(metricId, ctx, { entry })
 
     const payload: ValuePayload = {

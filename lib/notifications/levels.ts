@@ -7,7 +7,7 @@
  * Defaults keep Telegram for things that need a human: WARNING and above,
  * plus approvals. Quiet hours hold back non-critical Telegram messages at
  * night (they stay in the admin feed). Overrides by env:
- *   NOTIFY_TELEGRAM_MIN_LEVEL, NOTIFY_EMAIL_MIN_LEVEL (INFO|SUCCESS|WARNING|CRITICAL),
+ *   NOTIFY_TELEGRAM_MIN_LEVEL, NOTIFY_EMAIL_MIN_LEVEL, NOTIFY_WHATSAPP_MIN_LEVEL (INFO|SUCCESS|WARNING|CRITICAL),
  *   NOTIFY_QUIET_HOURS="23-8" (empty = off), NOTIFY_TIMEZONE="Asia/Almaty".
  */
 
@@ -45,6 +45,8 @@ function envLevel(name: string, fallback: OrderedLevel): OrderedLevel {
 export interface RoutingConfig {
   telegramMinLevel: OrderedLevel
   emailMinLevel: OrderedLevel
+  /** Staff WhatsApp (lib/whatsapp): like Telegram, WARNING and above by default. */
+  whatsappMinLevel: OrderedLevel
   quietHours: { from: number; to: number } | null
   timeZone: string
 }
@@ -56,6 +58,7 @@ export function routingConfig(): RoutingConfig {
   return {
     telegramMinLevel: envLevel('NOTIFY_TELEGRAM_MIN_LEVEL', 'WARNING'),
     emailMinLevel: envLevel('NOTIFY_EMAIL_MIN_LEVEL', 'CRITICAL'),
+    whatsappMinLevel: envLevel('NOTIFY_WHATSAPP_MIN_LEVEL', 'WARNING'),
     quietHours: quiet,
     timeZone: process.env.NOTIFY_TIMEZONE?.trim() || 'Asia/Almaty',
   }

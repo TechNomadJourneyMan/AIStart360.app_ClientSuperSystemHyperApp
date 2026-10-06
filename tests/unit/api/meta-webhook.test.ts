@@ -18,6 +18,11 @@ const myhonor = vi.hoisted(() => ({
   applyDeliveryStatus: vi.fn(async () => ({ matched: false })),
 }))
 
+// WhatsApp-уведомления платформы (104): по умолчанию статус к ним не относится.
+const outbox = vi.hoisted(() => ({
+  applyStatus: vi.fn(async (_u: unknown) => ({ matched: false, status: null as string | null })),
+}))
+
 const processingJobs = vi.hoisted(() => ({
   enqueue: vi.fn(),
 }))
@@ -41,6 +46,7 @@ vi.mock('@/lib/omnichannel/repository', () => repository)
 vi.mock('@/lib/integrations/myhonor/order-notification-repository', () => ({
   applyMyHonorOrderNotificationDeliveryStatus: myhonor.applyDeliveryStatus,
 }))
+vi.mock('@/lib/whatsapp/outbox', () => ({ applyWhatsAppOutboxStatus: outbox.applyStatus }))
 vi.mock('@/lib/inngest', () => ({ inngest: queue }))
 vi.mock('@/lib/omnichannel/processing-jobs', () => ({
   enqueueOmnichannelProcessingJob: processingJobs.enqueue,
@@ -573,5 +579,81 @@ describe('/api/webhooks/meta', () => {
     )
     expect(queue.send).not.toHaveBeenCalled()
     expect(await response.text()).not.toContain('workflow provider details')
+  })
+
+  describe('WhatsApp notification statuses (migration 104)', () => {
+    function statusPayload(status: string, extra: Record<string, unknown> = {}) {
+      return {
+        object: 'whatsapp_business_account',
+        entry: [{
+          id: 'waba-1',
+          changes: [{
+            field: 'messages',
+            value: {
+              metadata: { phone_number_id: 'phone-number-1' },
+              statuses: [{ id: 'wamid.notify-1', recipient_id: '77001234567', status, timestamp: '1720000000', ...extra }],
+            },
+          }],
+        }],
+      }
+    }
+
+    it('updates the platform notification row and stops there when it matches', async () => {
+      process.env.META_APP_SECRET = 'app-secret'
+      outbox.applyStatus.mockResolvedValueOnce({ matched: true, status: 'read' })
+
+      const response = await POST(postRequest(JSON.stringify(statusPayload('read')), 'app-secret'))
+
+      expect(response.status).toBe(200)
+      expect(outbox.applyStatus).toHaveBeenCalledWith({
+        providerMessageId: 'wamid.notify-1',
+        status: 'read',
+        occurredAt: expect.any(String),
+        errorCode: null,
+      })
+      expect(myhonor.applyDeliveryStatus).not.toHaveBeenCalled()
+      expect(repository.applyWhatsAppDeliveryStatus).not.toHaveBeenCalled()
+    })
+
+    it('passes Meta error codes (never message text) for a failed status', async () => {
+      process.env.META_APP_SECRET = 'app-secret'
+      outbox.applyStatus.mockResolvedValueOnce({ matched: true, status: 'failed' })
+
+      await POST(postRequest(JSON.stringify(statusPayload('failed', {
+        errors: [{ code: 131026, title: 'Message undeliverable', message: 'secret customer detail' }],
+      })), 'app-secret'))
+
+      expect(outbox.applyStatus).toHaveBeenCalledWith(expect.objectContaining({
+        status: 'failed',
+        errorCode: 'meta.delivery_failed:131026',
+      }))
+    })
+
+    it('falls through to MyHonor and the inbox when the id is not a notification', async () => {
+      process.env.META_APP_SECRET = 'app-secret'
+
+      const response = await POST(postRequest(JSON.stringify(statusPayload('delivered')), 'app-secret'))
+
+      expect(response.status).toBe(200)
+      expect(outbox.applyStatus).toHaveBeenCalledTimes(1)
+      expect(myhonor.applyDeliveryStatus).toHaveBeenCalledTimes(1)
+      expect(repository.applyWhatsAppDeliveryStatus).toHaveBeenCalledTimes(1)
+    })
+
+    it('rejects a wrong X-Hub-Signature-256 before touching any row', async () => {
+      process.env.META_APP_SECRET = 'app-secret'
+
+      const response = await POST(postRequest(JSON.stringify(statusPayload('read')), 'other-secret'))
+
+      expect(response.status).toBe(401)
+      expect(outbox.applyStatus).not.toHaveBeenCalled()
+    })
+
+    it('fails closed when the app secret is not configured', async () => {
+      const response = await POST(postRequest(JSON.stringify(statusPayload('read')), 'app-secret'))
+
+      expect(response.status).toBe(503)
+      expect(outbox.applyStatus).not.toHaveBeenCalled()
+    })
   })
 })

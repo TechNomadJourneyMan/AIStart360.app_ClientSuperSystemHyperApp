@@ -64,6 +64,16 @@ export const PERMISSIONS = {
    * reads about their business. Only admin and super_admin hold it.
    */
   'reports.publish': 'Отчёты: публикация клиенту, отклонение, отзыв',
+  /**
+   * Decide on a report version waiting for the expert (status 'in_review',
+   * migration 103): «Подтвердить и опубликовать» publishes it to the client at
+   * once, «Нужны правки» sends it back to the report agent with a comment.
+   * Narrower than reports.publish (no reject / withdraw of other versions).
+   * Staff roles: admin, super_admin, super_expert. The profile role 'expert'
+   * (not a staff role) gets the same right in lib/reports/review-flow.ts
+   * (canReviewReports) — experts are platform staff (D1).
+   */
+  'reports.review': 'Отчёты: подтверждение версии на проверке (публикация) или запрос правок',
 } as const
 
 export type Permission = keyof typeof PERMISSIONS
@@ -101,6 +111,7 @@ export const ROLE_PERMISSIONS: Record<StaffRole, ReadonlySet<Permission>> = {
     'activity.view', 'cjm.view', 'analytics.view',
     'impersonate.view', 'impersonate.edit',
     'inbox.view', 'leads.view',
+    'reports.review',
   ]),
   crm_manager: new Set(CRM_MANAGER),
   content_manager: new Set<Permission>([

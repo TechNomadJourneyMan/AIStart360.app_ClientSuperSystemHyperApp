@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 import { ActivityLogClient } from '@/components/activity/ActivityLogClient'
 import { BillingPanel } from '@/components/settings/BillingPanel'
 import { AssistantSettingsPanel } from '@/components/settings/AssistantSettingsPanel'
+import { WhatsAppBinding } from '@/components/settings/WhatsAppBinding'
 
 export interface SettingsInitial {
   firstName: string
@@ -645,6 +646,10 @@ function NotificationsPanel({ initial }: { initial?: NotifPrefs }) {
       <TelegramBinding
         telegramOn={prefs.crm?.telegram !== false}
         onToggleTelegram={() => toggle('crm', 'telegram')}
+      />
+      <WhatsAppBinding
+        endpoint="/api/whatsapp/link"
+        purpose="Утренний CRM-дайджест приходит в WhatsApp."
       />
     </Card>
   )

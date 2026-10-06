@@ -6,11 +6,13 @@
 // resolvable value into `public.metrics`. The /metrics page calls this once
 // on first mount (if every catalog value is empty).
 //
-// Authorisation: lib/tenancy (read access to the company). Inputs are read
-// with the caller's session (RLS); the WRITE goes through the service role
-// (lib/metrics/materialize-tenant.ts) — since migration 088 users cannot
-// insert/update metrics themselves, so source / confidence / provenance
-// cannot be forged from the browser.
+// Authorisation: lib/tenancy (read access to the company). After that check
+// the inputs are read AND the rows written with the service role
+// (lib/metrics/materialize-tenant.ts): since migration 088 users cannot
+// insert/update metrics themselves (source / confidence / provenance cannot
+// be forged from the browser), and reading the inputs through the caller's
+// RLS would hide the owner's rows without company_id from a member / partner /
+// staff user — whose recalculation then deleted the owner's values.
 // A failed write (upsert or stale-row cleanup) answers 500 { ok:false }.
 // ============================================================
 

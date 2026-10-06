@@ -14,7 +14,12 @@
 export const REPORT_TYPES = ['point_a', 'full', 'gri', 'point_b'] as const
 export type ReportType = (typeof REPORT_TYPES)[number]
 
-export const REPORT_STATUSES = ['draft', 'ready', 'published', 'superseded', 'failed'] as const
+/**
+ * in_review (103): built by the report agent after a diagnostic, waiting for
+ * the expert («Подтвердить и опубликовать» / «Нужны правки»). Never visible to
+ * the client. 'ready' remains for versions built before 103.
+ */
+export const REPORT_STATUSES = ['draft', 'ready', 'in_review', 'published', 'superseded', 'failed'] as const
 export type ReportStatus = (typeof REPORT_STATUSES)[number]
 
 export type ReportProvenanceType = 'FACT' | 'CALCULATED' | 'INFERRED' | 'AI_HYPOTHESIS' | 'RECOMMENDATION'

@@ -4,7 +4,7 @@
  * Staff notification feed (GET /api/giga-admin/notifications): what the
  * platform and its agents reported to the team, with delivery counts and a
  * link to the task / approval / agent. The signed-in staff member links
- * their Telegram here (no separate «my profile» page in GIGA).
+ * their Telegram and WhatsApp here (no separate «my profile» page in GIGA).
  */
 import { useState } from 'react'
 import Link from 'next/link'
@@ -14,6 +14,7 @@ import { useWorkspace } from '../WorkspaceContext'
 import { Button, EmptyState, ErrorState, PageHeader, Panel, Select, Skeleton, cx, fmtAgo, fmtDateTime, useGigaQuery } from '../kit'
 import { notificationHref, notificationLevelMeta } from './model'
 import { TelegramLinkCard } from './TelegramLinkCard'
+import { WhatsAppLinkCard } from './WhatsAppLinkCard'
 import type { StaffNotificationRow } from './types'
 import { useAgentDirectory } from './useAgentDirectory'
 import { Segmented, StatusChip } from './ui'
@@ -88,7 +89,7 @@ export function NotificationsPage() {
                     <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500">
                       {n.agent_key && <span>агент: {dir.names[n.agent_key] ?? <span className="font-mono">{n.agent_key}</span>}</span>}
                       {n.company_name && <span>клиент: {n.company_name}</span>}
-                      <span title="Доставки в Telegram и на почту">
+                      <span title="Доставки в Telegram, WhatsApp и на почту">
                         доставлено: {n.sent}{n.failed > 0 && <span className="text-red-300"> · ошибок: {n.failed}</span>}
                       </span>
                       <span className="font-mono text-[10px] text-slate-600">{n.type}</span>
@@ -102,6 +103,7 @@ export function NotificationsPage() {
         </Panel>
         <div className="space-y-4">
           <TelegramLinkCard />
+          <WhatsAppLinkCard />
         </div>
       </div>
     </RequirePermission>

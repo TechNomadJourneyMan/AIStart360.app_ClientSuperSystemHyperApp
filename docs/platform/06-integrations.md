@@ -176,7 +176,7 @@ Value — польза для диагностики (1–5). Complexity — с�
 | Новое | Tasks как extension `io.modelcontextprotocol/tasks`; Multi Round-Trip (`input_required`); `resultType`; кэш (`ttlMs`, `cacheScope`); OTel-трассировка в `_meta` |
 | Авторизация | опциональна (HTTP — SHOULD, stdio — SHOULD NOT). MUST: RFC 9728 (Protected Resource Metadata), `resource` по RFC 8707, проверка audience, токен только в `Authorization: Bearer`, не пересылать токены чужого AS, PKCE S256, проверка `iss` (RFC 9207). DCR (RFC 7591) deprecated в пользу Client ID Metadata Documents |
 | Deprecated | Roots, Sampling, Logging |
-| SDK | npm `@modelcontextprotocol/sdk` 1.32.1; поддержка 2026-07-28 — не проверено |
+| SDK | npm `@modelcontextprotocol/sdk` 1.32.1 (latest на 2026-10-06) — **поддерживает протокол только до 2025-11-25** (`LATEST_PROTOCOL_VERSION` в пакете, проверено). Поэтому наш сервер (§3.5) написан по спецификации напрямую, а SDK используется в тестах как клиент старой эпохи |
 
 ### 3.2 Риски и меры
 
@@ -220,9 +220,70 @@ Value — польза для диагностики (1–5). Complexity — с�
 | Инструменты | только чтение: `get_diagnostic_summary`, `list_metrics`, `get_point_a_report`, `search_documents` (+ `list_findings` по D2). Детерминированный порядок `tools/list`, редактирование ПДн на выходе, rate limit, аудит каждого вызова |
 | Первые пользователи | админы (Claude Desktop или Claude Code); позже — клиенты для своих AI-инструментов |
 
+Реализация пункта (a) — §3.5 (отличия от плана: имена инструментов, данные читаются сервером после проверки прав по роли, а не JWT пользователя — у MCP-клиента нет сессии Supabase).
+
 **(b) Внешние MCP-серверы — вернуться позже.** Только из таблицы `mcp_servers_allowlist` (URL, издатель, хэши описаний, разрешённые инструменты, `requires_approval`). OAuth-токены хранятся отдельно на тенанта (зашифрованы, привязаны к issuer), пересылка запрещена. Записи (сделка, сообщение) — только через `agent_approvals` и `step.waitForEvent` (D3/D4). Для Bitrix24 и amoCRM остаются свои REST-адаптеры `lib/crm/*`.
 
 **(c) Реестр инструментов агентов совместим с MCP (D3).** Каждый инструмент: `name`, JSON Schema аргументов, `permission`, handler, привязанный к `company_id` задачи. Read-only подмножество (`READ_CLIENT_DATA`, `READ_FILES`) отдаётся через MCP-сервер из (a) без переписывания; инструменты с `WRITE_*`, `SEND_*`, `DELETE_DATA`, `MODIFY_SYSTEM` наружу не публикуются.
+
+### 3.5 Реализовано: MCP-сервер `/api/mcp` (миграция 101)
+
+Решение владельца «Оба»: этап 1 — личные токены (PAT), этап 2 — OAuth 2.1. Оба работают одновременно.
+
+**Спецификация.** Ревизия **2026-07-28** (https://modelcontextprotocol.io/specification/2026-07-28) — транспорт Streamable HTTP, JSON-ответы без SSE, без сессий. Сервер **двухэпохальный** («dual-era», https://modelcontextprotocol.io/specification/2026-07-28/basic/versioning): клиенты, которые открывают соединение `initialize` (ревизии 2025-11-25 / 2025-06-18 / 2025-03-26 — так сейчас работают Claude Code и Claude Desktop через официальный SDK), обслуживаются на том же адресе. `Mcp-Session-Id` не выдаётся, GET/DELETE → 405.
+
+| Эпоха | Что проверяется |
+|---|---|
+| 2026-07-28 | `_meta["io.modelcontextprotocol/protocolVersion"]` и `…/clientCapabilities` в каждом запросе; заголовки `MCP-Protocol-Version`, `Mcp-Method`, `Mcp-Name` (для `tools/call`, с декодированием `=?base64?…?=`) должны совпадать с телом, иначе 400 и `-32020`; неизвестная версия → 400 и `-32022` со списком наших; неизвестный метод → 404 и `-32601`; `server/discover`; в ответах `resultType: "complete"`, `serverInfo` в `_meta`, `ttlMs`/`cacheScope` (список инструментов зависит от роли → `private`) |
+| ≤ 2025-11-25 | `initialize` с согласованием версии, `ping`, `tools/list`, `tools/call`; заголовок `MCP-Protocol-Version` с неподдерживаемой версией → 400 |
+| Обе | одно JSON-RPC-сообщение на POST (batch → 400), уведомление → 202 без тела, чужой `Origin` → 403 (защита от DNS rebinding) |
+
+**Инструменты (только чтение)** — `lib/mcp/tools.ts`, аргументы проверяются zod, JSON Schema генерируется из той же схемы, порядок `tools/list` детерминированный, аннотации `readOnlyHint: true`:
+
+| Инструмент | Скоуп | Что возвращает |
+|---|---|---|
+| `search_clients` | `clients:read` | клиенты (компании) по названию / имени владельца; по email — только с `clients:pii` |
+| `get_client` | `clients:read` | компания, владелец, контактное лицо, текущая диагностика, последняя сессия, ключевые находки (непроверенные гипотезы ИИ не показываются) |
+| `get_point_a` | `diagnostics:read` | обзор Точки А (`lib/point-a/overview.ts`, тот же, что `GET /api/v1/point-a/overview`) |
+| `list_diagnostics` | `diagnostics:read` | сессии диагностики и их расчёт |
+| `get_metrics` | `metrics:read` | текущие метрики через `loadCompanyMetrics` (`lib/metrics/company-metrics.ts` — единый источник) |
+| `list_reports` | `reports:read` | только `status = 'published'` |
+| `list_agent_tasks` | `agents:read` | задачи агентов (`lib/agents/admin.ts listTasks`) |
+| `get_ai_spend` | `spend:read` | расходы ИИ (`lib/ai/providers/service.ts spendSummary`) |
+
+Видны только **клиентские** компании (владелец — клиент, не сотрудник; правило кабинета эксперта). Списки ≤ 50 строк с курсором, строки обрезаются, ответ ≤ 200 КБ.
+
+**Скоупы ← роли** (`lib/mcp/scopes.ts`; права RBAC не меняли — каждый скоуп выводится из существующих прав `lib/admin/rbac.ts`):
+
+| Скоуп | Право RBAC (любое) | Эксперт |
+|---|---|---|
+| `clients:read` | `users.view` | да |
+| `clients:pii` | `users.sensitive` | да (кабинет эксперта показывает контакты) |
+| `diagnostics:read`, `metrics:read` | `users.view` | да |
+| `reports:read` | `agents.view` или `users.view` | да |
+| `agents:read`, `spend:read` | `agents.view` | нет |
+
+Итог: super_admin, admin, crm_manager — все; super_expert и support — без агентов и расходов; analyst — без контактов; content_manager — ничего. Эффективные права вызова = скоупы токена ∩ скоупы **текущей** роли: роль перечитывается на каждом запросе (и при обновлении OAuth-токена), поэтому отозванный или заблокированный сотрудник теряет доступ сразу. Без `clients:pii` email и телефоны маскируются (`lib/admin/mask.ts`, как в GIGA), в свободном тексте (ошибки) маскируются email и номера.
+
+**Защита каждого вызова.** Bearer-токен → 401 с `WWW-Authenticate: Bearer resource_metadata="…/.well-known/oauth-protected-resource/api/mcp", scope="…"` (RFC 9728 §5.1, RFC 6750 §3). Скоупа нет у токена → 403 `insufficient_scope` с нужным скоупом (step-up); скоуп есть, но роль не даёт → 403 без вызова на повторную авторизацию. Rate limit на токен: 120 запросов в минуту, bucket `mcp` (fail-closed), неверные токены — 30 в минуту на IP (`mcp-auth`). Аудит: `mcp_audit` — кто, токен, метод, инструмент, сводка аргументов без ПДн (id компаний/пользователей, числа и enum; текст запроса — только длина), статус, задержка, хэш IP. Результат `tools/call` не отдаётся, если строку аудита записать не удалось.
+
+**Этап 1 — личные токены.** `a360_pat_` + 256 бит, в БД только SHA-256 и префикс для показа. Создание: GIGA → «Безопасность» → **«MCP-доступ»** (`/admin-giga-panel/mcp`), кабинет эксперта `/expert/mcp` или админ-бот `/mcp`. Права — только из прав своей роли, срок 7 / 30 / 90 / 365 дней, до 20 активных токенов; токен показывается один раз; строка в журнале действий персонала пишется до выпуска токена. Отзыв — там же.
+
+**Этап 2 — OAuth 2.1** (`lib/mcp/oauth.ts`):
+
+| Адрес | Назначение |
+|---|---|
+| `/.well-known/oauth-protected-resource/api/mcp` и `/.well-known/oauth-protected-resource` | RFC 9728: `resource = <домен>/api/mcp`, `authorization_servers = [<домен>]` |
+| `/.well-known/oauth-authorization-server` | RFC 8414: issuer = домен, `code_challenge_methods_supported: ["S256"]`, `authorization_response_iss_parameter_supported: true` |
+| `POST /api/oauth/register` | RFC 7591 (DCR; в 2026-07-28 deprecated в пользу Client ID Metadata Documents, но разрешён). Redirect URI — только https или loopback; секрет конфиденциального клиента хранится хэшем |
+| `GET /api/oauth/authorize` | только `response_type=code` + PKCE S256; redirect URI — точное совпадение (для loopback допускается другой порт, RFC 8252 §7.3); `resource` = наш MCP URL (RFC 8707); ошибки неизвестного клиента/адреса не редиректятся |
+| `/oauth/consent/<id>` | вход Supabase → 2FA по правилам панели (`staffMfaGate`) → экран согласия на русском со списком прав и хостом возврата (предупреждение для localhost) |
+| `POST /api/oauth/token` | `authorization_code` (код одноразовый, 2 минуты; повторное предъявление отзывает выданные по нему токены) и `refresh_token` (ротация при каждом обновлении; повторное использование старого refresh-токена отзывает всю цепочку) |
+| `POST /api/oauth/revoke` | RFC 7009 |
+
+Access-токен — 1 час, refresh — 30 дней; токены привязаны к ресурсу (запрос с токеном, выданным для другого адреса, → 401). В ответах авторизации есть `iss` (RFC 9207). Client ID Metadata Documents не поддерживаются (`client_id_metadata_document_supported: false`) — сервер не загружает документы по URL клиента (нет SSRF-поверхности); в Claude Desktop выбирайте «Register automatically».
+
+**Не проверено вживую:** подключение из Claude Code / Claude Desktop к задеплоенному серверу (нужен деплой с миграцией 101 и выключенной Deployment Protection для `/api/mcp`, `/api/oauth/*`, `/.well-known/oauth-*`, `/oauth/consent/*`). Совместимость с клиентом старой эпохи проверена тестом с официальным SDK-клиентом (`tests/unit/mcp/sdk-client.test.ts`); клиентов эпохи 2026-07-28 ещё нет в npm.
 
 ## 4. n8n, Paperclip, OpenClaw и другие
 
@@ -329,3 +390,77 @@ HubSpot, Salesforce, Pipedrive, Stripe, Google Ads (KZ), Meta Ads (KZ), OneDrive
 | Локализация ПДн (KZ/РФ) | нужна юридическая оценка | регион Supabase, договоры с клиентами РК/РФ | юрист даёт заключение; до него — минимизация ПДн и ZDR |
 | n8n для клиентских коннекторов | Embed-лицензия, цена не опубликована | коммерческое предложение n8n | запрос в отдел продаж n8n; до этого — только внутренние автоматизации |
 | Meta Ads, Google Ads (P2) | App Review, Business Verification, developer token | бизнес-аккаунты Meta и Google Ads | по первому запросу клиента из KZ |
+
+## 7. WhatsApp: шаблоны для одобрения в Meta
+
+Уведомления платформы в WhatsApp (сотрудникам, экспертам, клиентам) уходят только одобренными шаблонами Meta: вне 24-часового окна обслуживания свободный текст не доставляется (https://developers.facebook.com/documentation/business-messaging/whatsapp/templates/overview). Код отправляет только переменные (`lib/whatsapp/templates.ts`), поэтому шаблон в WhatsApp Manager должен совпадать с таблицей ниже **дословно**: имя, категория, язык, текст, число переменных, кнопка. Несовпадение Meta отклоняет (ошибки семейства 132000), очередь записывает такую отправку как окончательно неудачную. Как подключить номер и токен — `docs/platform/10-bot-and-credentials.md`, часть 3.
+
+Общие правила:
+- язык — `ru` (Russian); если одобряете на другом коде языка, задайте его в `WHATSAPP_TEMPLATE_LANG`;
+- `{site}` в URL кнопки — адрес продакшена портала (тот же, что `NEXT_PUBLIC_APP_URL`, например `https://portal.aistart360.app`). Тип кнопки — **Visit website → Dynamic**: URL `{site}/{{1}}`, код подставляет путь;
+- переменные не содержат переносов строк и табуляций (код их заменяет);
+- статус «не проверено вживую»: отправка шаблонов и обратные статусы проверены только на контрактных тестах (запрос собирается по документации, ответ подставной).
+
+| Имя | Категория | Кому | Когда |
+|---|---|---|---|
+| `staff_alert` | Utility | сотрудникам GIGA с привязанным WhatsApp | события уровня «Внимание» и выше, запросы одобрения (решение — по ссылке в GIGA) |
+| `expert_notification` | Utility | экспертам | диагностика завершена, новый клиент одобрен, обращение к эксперту |
+| `report_review` | Utility | экспертам | версия отчёта ждёт проверки (`enqueueReportReviewWhatsApp`) |
+| `digest` | Utility | клиентам, подтвердившим номер | утренний CRM-дайджест |
+| `phone_verification` | Authentication | любому, кто привязывает номер | код подтверждения номера |
+
+### 7.1 `staff_alert` (Utility)
+Текст:
+```
+AIStart360, уведомление команде ({{1}}): {{2}}.
+{{3}}
+Подробности — в панели GIGA.
+```
+Переменные: `{{1}}` уровень (пример: `Внимание`), `{{2}}` заголовок (`Агент не справился с задачей`), `{{3}}` подробности одной строкой (`Агент: report_builder · Ошибка: timeout`).
+Кнопка: Visit website, Dynamic, текст «Открыть в GIGA», URL `{site}/{{1}}`, пример `admin-giga-panel/notifications`.
+
+### 7.2 `expert_notification` (Utility)
+Текст:
+```
+AIStart360, уведомление эксперту: {{1}}.
+{{2}}
+Подробности — в кабинете эксперта.
+```
+Переменные: `{{1}}` событие (`Диагностика завершена`), `{{2}}` подробности (`Клиент: ТОО Ромашка · Точка А: 64/100`).
+Кнопка: Visit website, Dynamic, «Открыть кабинет», URL `{site}/{{1}}`, пример `expert`.
+
+### 7.3 `report_review` (Utility)
+Текст:
+```
+Отчёт «{{1}}», версия {{2}} от {{3}}, клиент: {{4}}.
+Отчёт ждёт вашей проверки: подтвердите публикацию или отправьте его на доработку.
+```
+Переменные: `{{1}}` название (`Диагностика бизнеса`), `{{2}}` номер версии (`3`), `{{3}}` дата версии (`06.10.2026`), `{{4}}` клиент (`ТОО Ромашка`).
+Кнопка: Visit website, Dynamic, «Проверить отчёт», URL `{site}/{{1}}`, пример `expert/reports`.
+
+Вызывается из `deliverReportForReview` (`lib/reports/review-delivery.ts`) при `REPORT_GENERATED` со статусом `in_review`, вместе с Telegram и email; кнопка ведёт в `/expert/reports?review=<id>`. API: `enqueueReportReviewWhatsApp(versionId, recipients?, { reviewPath? })` из `lib/whatsapp/report-review.ts` — по одному сообщению на эксперта и версию (идемпотентно), только экспертам с подтверждённым номером и согласием; `reviewPath` — относительный путь для кнопки (например, подписанная ссылка `/r/v/<token>`).
+
+### 7.4 `digest` (Utility)
+Текст:
+```
+Сводка CRM AIStart360 на сегодня.
+Напоминаний на сегодня и просроченных: {{1}}.
+Клиентов без контакта больше 30 дней: {{2}}.
+Слабый блок GRI: {{3}}.
+Откройте раздел «Клиенты», чтобы связаться с ними.
+```
+Переменные: `{{1}}` число напоминаний (`3`), `{{2}}` число «спящих» клиентов (`5`), `{{3}}` слабый блок GRI или «нет данных» (`Денежная стабильность (2.1)`).
+Кнопка: Visit website, Dynamic, «Открыть «Клиенты»», URL `{site}/{{1}}`, пример `pulse`.
+
+### 7.5 `phone_verification` (Authentication)
+Категория Authentication, тип доставки кода **Copy code**, кнопка «Скопировать код». Текст тела для этой категории Meta формирует сама (код + по желанию рекомендация безопасности и срок действия); включите:
+- «Add security recommendation» (не сообщайте код);
+- «Add expiry time for the code» — 10 минут (код живёт 10 минут: `VERIFY_TTL_MINUTES`).
+
+Переменная одна — 6-значный код; код отправляет его и в тело, и в параметр кнопки копирования.
+
+### 7.6 Транспорт и надёжность
+- Очередь `whatsapp_outbox` (миграция 104): идемпотентный ключ на сообщение, захват строк `FOR UPDATE SKIP LOCKED`, проверка согласия и подтверждённого номера в момент отправки, повторы с экспоненциальной паузой (до 5 попыток), таймаут после отправки — `delivery_unknown` без автоматического повтора. Статусы `sent → delivered → read / failed` приходят на `/api/webhooks/meta` (подпись `X-Hub-Signature-256` секретом `META_APP_SECRET`; без секрета вебхук отвечает 503).
+- Очередь разбирается сразу после постановки и затем кроном (`/api/cron/agents`, Inngest `agents-maintenance` каждую минуту, до 50 строк за проход).
+- Мост WhatsApp Web (`docs/WHATSAPP-WEB-BRIDGE.md`) — только запасной канал для сотрудников: при `WHATSAPP_WEB_BRIDGE_FALLBACK=1`, если Cloud API не настроен или окончательно отклонил сообщение; отправляется простой текст с ключом идемпотентности `wa-outbox:<id>`. Клиентам и экспертам мост не используется никогда (неофициальный транспорт).
+- SMS остаётся заглушкой.

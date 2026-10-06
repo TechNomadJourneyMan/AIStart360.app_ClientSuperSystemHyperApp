@@ -2,7 +2,8 @@
  * Platform events → staff notifications. Decides the level and the wording;
  * notifyStaff decides who gets it on which channel (staff Telegram = the admin
  * bot once configured). Experts linked in the expert bot additionally get
- * DIAGNOSTIC_COMPLETED (lib/telegram/bots/expert/notify.ts). INFO-level events only
+ * DIAGNOSTIC_COMPLETED (lib/telegram/bots/expert/notify.ts), and experts with
+ * an opted-in WhatsApp number get the same notice there (lib/whatsapp/experts.ts). INFO-level events only
  * land in the admin feed by default (Telegram threshold is WARNING).
  */
 import { prisma } from '@/lib/db'
@@ -118,5 +119,12 @@ export async function routeEventToStaff(e: PlatformEventRow): Promise<void> {
     await routeEventToExperts(e)
   } catch (err) {
     console.error('[notifications] expert routing failed:', err instanceof Error ? err.message.split('\n')[0] : err)
+  }
+  // The same expert notice in WhatsApp; a no-op until Cloud API is configured.
+  try {
+    const { routeEventToExpertsWhatsApp } = await import('@/lib/whatsapp/experts')
+    await routeEventToExpertsWhatsApp(e)
+  } catch (err) {
+    console.error('[notifications] expert whatsapp routing failed:', err instanceof Error ? err.message.split('\n')[0] : err)
   }
 }

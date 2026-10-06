@@ -79,6 +79,15 @@ export interface MetricSource {
    * a stored 0 is read as «not answered».
    */
   zeroIsEmpty?: boolean;
+  /**
+   * type 'document': the value is a RATE over its own period (churn — the
+   * share of clients lost in a month / a year). It is brought to the metric's
+   * period by compounding, 1 − (1 − r)^(target ÷ source), and only when the
+   * period of the value is known (field label / period, document metadata,
+   * file name, document text); without a period the source is a miss — a
+   * monthly churn is never taken as a yearly one.
+   */
+  compoundRate?: boolean;
   /** type 'formula': formula id in lib/metrics/formulas.ts. */
   formula?: string;
   /** type 'assessment': gri_assessments.section_avgs key (e.g. 'cash-stability'). */

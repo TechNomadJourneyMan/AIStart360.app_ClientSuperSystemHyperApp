@@ -21,22 +21,28 @@ import {
 } from '@/lib/survey/metrics-table'
 import { METRIC_SYNONYMS, matchSynonym } from '@/lib/documents/synonyms'
 import { docTypeMatches } from '@/lib/documents/doc-types'
-import { coerceNumber, parseNumber, parseScale } from './numbers'
+import { getMetricById, getMetricRegistry } from './registry'
+import { BASE_INPUTS } from './formulas'
+import { coerceNumber, parseNumber, parseScale, timeUnitOf, type RatePeriod, type TimeUnit } from './numbers'
 import {
   monthsOf,
   parsePeriodLabel,
-  periodFactor,
+  periodFromFileName,
   periodFromText,
   periodLength,
   periodRank,
   quarterToPeriod,
+  sourcePeriodFactor,
+  sourcePeriodLabel,
   type DetectedPeriod,
+  type SourcePeriod,
 } from './period'
 import type {
   AttemptDocument,
   AttemptPeriod,
   MetricEntry,
   ParsedDataShape,
+  ParsedFieldProvenance,
   ResolverContext,
   ResolverDocument,
   SourceAttempt,
@@ -90,21 +96,113 @@ function isTenScale(shape: MetricShape): boolean {
 /**
  * The number an answer / cell holds for `shape`, or a miss reason.
  * `percent` is honoured only for «%» metrics; a 10-scale metric accepts
- * «8 из 10»; a money metric refuses another currency.
+ * «8 из 10»; a money metric refuses another currency; a time noun is checked
+ * against the metric's unit (timeAdjusted).
  */
 function numberFor(
   raw: unknown,
   shape: MetricShape,
-): { value: number; period: DetectedPeriod['months'] | null; currency: string | null; percent: boolean } | { miss: string } {
+): { value: number; period: SourcePeriod | null; currency: string | null; percent: boolean; conversion: string | null } | { miss: string } {
   if (isTenScale(shape)) {
     const v = parseScale(raw, 10)
-    return v === null ? { miss: `«${short(raw)}» is not a score on a 0–10 scale` } : { value: v, period: null, currency: null, percent: false }
+    return v === null ? { miss: `«${short(raw)}» is not a score on a 0–10 scale` } : { value: v, period: null, currency: null, percent: false, conversion: null }
   }
   const p = parseNumber(raw)
   if (!p) return { miss: `«${short(raw)}» is not a single number` }
   if (p.percent && shape.unit !== '%') return { miss: `«${short(raw)}» is a percentage, the metric is in «${shape.unit || 'number'}»` }
   if (shape.unit === '₸' && p.currency && p.currency !== '₸') return { miss: `value is in ${p.currency}, the metric is in ₸` }
-  return { value: p.value, period: p.period ? monthsOf(p.period) : null, currency: p.currency, percent: p.percent }
+  const t = timeAdjusted(p.value, p.duration, p.period, shape, raw)
+  if ('miss' in t) return t
+  return { value: t.value, period: t.period, currency: p.currency, percent: p.percent, conversion: t.conversion }
+}
+
+// ─── Time units ──────────────────────────────────────────────
+
+/** Time unit a metric is counted in (its `unit`); null = not a duration metric. */
+const METRIC_TIME_UNIT: Readonly<Record<string, TimeUnit>> = {
+  days: 'day',
+  'мин': 'minute',
+  'мес': 'month',
+  'ч/день': 'hour',
+}
+
+/** Length of a time unit in minutes (calendar: month = 30 days, quarter = 90, year = 365). */
+const UNIT_MINUTES: Readonly<Record<TimeUnit, number>> = {
+  minute: 1,
+  hour: 60,
+  day: 1440,
+  week: 7 * 1440,
+  month: 30 * 1440,
+  quarter: 90 * 1440,
+  year: 365 * 1440,
+}
+
+const UNIT_LABEL: Readonly<Record<TimeUnit, string>> = {
+  minute: 'мин', hour: 'ч', day: 'дн', week: 'нед', month: 'мес', quarter: 'кв', year: 'лет',
+}
+
+const SUB_DAY: ReadonlySet<TimeUnit> = new Set(['minute', 'hour'])
+
+/**
+ * Factor from one duration unit to another, or null when the conversion is
+ * not meaningful: a sub-day duration («45 мин», «2 часа») is never a number
+ * of days / months (working vs calendar time is unknown). Everything else
+ * converts with calendar lengths («3 месяца» → 90 дней, «2 часа» → 120 мин,
+ * «45 дней» → 1.5 мес).
+ */
+export function durationFactor(from: TimeUnit, to: TimeUnit): number | null {
+  if (from === to) return 1
+  if (SUB_DAY.has(from) && !SUB_DAY.has(to)) return null
+  return UNIT_MINUTES[from] / UNIT_MINUTES[to]
+}
+
+/** Times-per-year metrics («раз/год»): a stated rate is converted to a year. */
+const PER_YEAR: Readonly<Record<RatePeriod, number>> = { day: 365, week: 52, month: 12, quarter: 4, year: 1 }
+
+/**
+ * Apply the time words of a value to the metric:
+ *   • a duration («3 месяца», «45 мин», a document unit «мес») is converted
+ *     to the metric's time unit, or refused when the metric is not a duration
+ *     or the conversion is meaningless;
+ *   • a rate («в месяц», «в день») is left to the period rescaling of flow
+ *     metrics (day → month ×30, day → year ×365); a «раз/год» metric converts
+ *     it to a year; a «ч/день» metric accepts only «в день»; a duration metric
+ *     refuses a rate («30 дней в месяц» is no number of days).
+ * Rates on other metrics without a period are ignored as before.
+ */
+function timeAdjusted(
+  value: number,
+  duration: TimeUnit | null,
+  rate: RatePeriod | null,
+  shape: MetricShape,
+  raw: unknown,
+): { value: number; period: SourcePeriod | null; conversion: string | null } | { miss: string } {
+  const target = METRIC_TIME_UNIT[shape.unit] ?? null
+  let v = value
+  let conversion: string | null = null
+  if (duration) {
+    if (!target) return { miss: `«${short(raw)}» is a duration, the metric is in «${shape.unit || 'number'}»` }
+    const f = durationFactor(duration, target)
+    if (f === null) return { miss: `«${short(raw)}» (${UNIT_LABEL[duration]}) cannot be expressed in «${shape.unit}»` }
+    if (f !== 1) {
+      v = round4(value * f)
+      conversion = `${value} ${UNIT_LABEL[duration]} → ${v} ${UNIT_LABEL[target]} (1 мес = 30 дн, 1 год = 365 дн)`
+    }
+  }
+  if (rate) {
+    if (shape.unit === 'ч/день') {
+      if (rate !== 'day') return { miss: `«${short(raw)}» is per ${rate}, the metric is hours per day` }
+      return { value: v, period: null, conversion }
+    }
+    if (target) return { miss: `«${short(raw)}» is a rate per ${rate}, the metric is a duration in «${shape.unit}»` }
+    if (shape.unit === 'раз/год' && !shape.period) {
+      const f = PER_YEAR[rate]
+      return { value: round4(v * f), period: null, conversion: f !== 1 ? `${v} в ${rate} → ×${round4(f)} в год` : conversion }
+    }
+    if (shape.period) return { value: v, period: rate === 'day' || rate === 'week' ? rate : monthsOf(rate), conversion }
+    return { value: v, period: null, conversion }
+  }
+  return { value: v, period: null, conversion }
 }
 
 function short(raw: unknown): string {
@@ -113,14 +211,14 @@ function short(raw: unknown): string {
 }
 
 function periodInfo(
-  sourceMonths: number | null,
+  source: SourcePeriod | null,
   shape: MetricShape,
   basis: AttemptPeriod['basis'],
   detected?: DetectedPeriod | null,
 ): AttemptPeriod {
-  const factor = periodFactor(sourceMonths, shape.period)
+  const factor = sourcePeriodFactor(source, shape.period)
   return {
-    source: sourceMonths ? periodLength(sourceMonths) : null,
+    source: source ? sourcePeriodLabel(source) : null,
     target: shape.period ?? null,
     factor,
     ...(detected ? { year: detected.year, quarter: detected.quarter, month: detected.months === 1 ? detected.endMonth : null } : {}),
@@ -218,13 +316,14 @@ function coerceSurveyAnswer(
   source: MetricSource,
   value: unknown,
   shape: MetricShape,
-): { numeric: number; months: number | null; reason?: string } | { miss: string } {
+): { numeric: number; months: SourcePeriod | null; statedPeriod?: boolean; reason?: string } | { miss: string } {
   const rule = source.coerce
   const sourceMonths = source.period ? monthsOf(source.period) : null
   if (!rule) {
     const n = numberFor(value, shape)
     if ('miss' in n) return n
-    return { numeric: n.value, months: n.period ?? sourceMonths, ...(n.period ? { reason: 'period stated in the answer' } : {}) }
+    const reason = [n.period ? 'period stated in the answer' : null, n.conversion].filter(Boolean).join('; ')
+    return { numeric: n.value, months: n.period ?? sourceMonths, statedPeriod: n.period !== null, ...(reason ? { reason } : {}) }
   }
   switch (rule.kind) {
     case 'flag': {
@@ -336,7 +435,7 @@ export function resolveSurveySource(
     return { source, status: 'miss', reason: coerced.miss, ...(source.legacy ? { legacy: true } : {}) }
   }
 
-  const period = periodInfo(coerced.months, shape, coerced.reason === 'period stated in the answer' ? 'answer' : coerced.months ? 'source' : null)
+  const period = periodInfo(coerced.months, shape, coerced.statedPeriod ? 'answer' : coerced.months ? 'source' : null)
   const numeric = scaled(coerced.numeric, period.factor)
 
   // Keep a short raw answer (option / yes-no) for provenance; a coerced table
@@ -369,6 +468,20 @@ const CANONICAL_KEYS = new Set(Object.keys(METRIC_SYNONYMS))
  * match of its key, then of its label.
  */
 export function fieldCanonicalKey(field: Pick<ParsedField, 'key' | 'label'>): string | null {
+  // The resolver asks for every field once per document source of every
+  // metric: remember the answer per field object (re-checked against its
+  // key / label, so a mutated field is recomputed).
+  if (!field || typeof field !== 'object') return null
+  const cached = canonicalCache.get(field)
+  if (cached && cached.key === field.key && cached.label === field.label) return cached.canonical
+  const canonical = computeCanonicalKey(field)
+  canonicalCache.set(field, { key: field.key, label: field.label, canonical })
+  return canonical
+}
+
+const canonicalCache = new WeakMap<object, { key: unknown; label: unknown; canonical: string | null }>()
+
+function computeCanonicalKey(field: Pick<ParsedField, 'key' | 'label'>): string | null {
   const key = typeof field.key === 'string' ? field.key.trim() : ''
   if (key && CANONICAL_KEYS.has(key)) return key
   return (key ? matchSynonym(key) : null) ?? (field.label ? matchSynonym(field.label) : null)
@@ -389,11 +502,47 @@ function fieldMatchesSource(field: ParsedField, source: MetricSource, metricId: 
  * purchase in the file) and the share of clients with 2+ purchases.
  */
 export function derivedDocumentFields(doc: ResolverDocument): ParsedField[] {
+  // Computed once per document (re-done when its parsed data object changes):
+  // the resolver reads them for every document source of every metric.
+  const cached = derivedCache.get(doc)
+  if (cached && cached.parsedData === doc.parsedData) return cached.fields
+  const fields = computeDerivedFields(doc)
+  derivedCache.set(doc, { parsedData: doc.parsedData, fields })
+  return fields
+}
+
+const derivedCache = new WeakMap<ResolverDocument, { parsedData: ResolverDocument['parsedData']; fields: ParsedField[] }>()
+
+/** OCR info of a document (parsed_data.source.ocr, written by lib/documents/pipeline.ts). */
+function documentOcr(doc: ResolverDocument): { engine: string | null; confidence: number | null } | null {
+  const ocr = doc.parsedData?.source?.ocr
+  if (!ocr || typeof ocr !== 'object') return null
+  const o = ocr as { engine?: unknown; mean_confidence?: unknown }
+  return {
+    engine: typeof o.engine === 'string' ? o.engine : null,
+    confidence: typeof o.mean_confidence === 'number' ? o.mean_confidence : null,
+  }
+}
+
+/** A value read from OCR text is never more certain than this. */
+const OCR_CONFIDENCE_CAP = 0.7
+const ROWS_CONFIDENCE = 0.8
+
+function computeDerivedFields(doc: ResolverDocument): ParsedField[] {
   const rows = doc.parsedData?.client_rows
   if (!Array.isArray(rows) || rows.length === 0) return []
   const parsed = rows
     .map((r) => (r && typeof r === 'object' ? (r as Record<string, unknown>) : null))
     .filter((r): r is Record<string, unknown> => r !== null)
+  // Rows recognised from OCR text: OCR confidence cap and OCR provenance, like
+  // every other OCR-read value (lib/documents/pipeline.ts markOcrFields).
+  const ocr = documentOcr(doc)
+  const confidence = ocr ? Math.min(ROWS_CONFIDENCE, OCR_CONFIDENCE_CAP) : ROWS_CONFIDENCE
+  const provenance: ParsedFieldProvenance = {
+    document_id: doc.id,
+    method: 'rows',
+    ...(ocr ? { ocr: true, ocr_engine: ocr.engine, ocr_page_confidence: ocr.confidence === null ? null : Math.round(ocr.confidence) } : {}),
+  }
   const lastDates = parsed
     .map((r) => Date.parse(String(r.last_purchase_date ?? '')))
     .filter((t) => Number.isFinite(t))
@@ -406,8 +555,8 @@ export function derivedDocumentFields(doc: ResolverDocument): ParsedField[] {
       key: 'active_customers',
       label: 'Активные клиенты (покупка за 12 мес. до последней даты в базе)',
       value: active,
-      confidence: 0.8,
-      provenance: { document_id: doc.id, method: 'rows' },
+      confidence,
+      provenance,
     })
   }
   const counts = parsed.map((r) => coerceNumber(r.purchase_count)).filter((n): n is number => n !== null && n > 0)
@@ -418,15 +567,20 @@ export function derivedDocumentFields(doc: ResolverDocument): ParsedField[] {
       label: 'Доля клиентов с 2+ покупками (по клиентской базе)',
       value: Math.round((repeat / counts.length) * 1000) / 10,
       unit: '%',
-      confidence: 0.8,
-      provenance: { document_id: doc.id, method: 'rows' },
+      confidence,
+      provenance,
     })
   }
   return out
 }
 
-/** Period of a document value: field label → document metadata → file name → document text. */
-function documentFieldPeriod(field: ParsedField, doc: ResolverDocument): { period: DetectedPeriod | null; basis: AttemptPeriod['basis'] } {
+/**
+ * Period of a document value: field period → document metadata → file name
+ * (only when it clearly names a period, periodFromFileName) → document text.
+ * `withLabel` (rate sources, e.g. churn): the field label is read too
+ * («Отток в месяц, %»), right after the field's own period.
+ */
+function documentFieldPeriod(field: ParsedField, doc: ResolverDocument, withLabel = false): { period: DetectedPeriod | null; basis: AttemptPeriod['basis'] } {
   const fromField = parsePeriodLabel(field.period ?? null)
   if (fromField) {
     // «2025» on a field of a quarterly document: the year names the document, not the span.
@@ -436,10 +590,14 @@ function documentFieldPeriod(field: ParsedField, doc: ResolverDocument): { perio
     }
     return { period: fromField, basis: 'field' }
   }
+  if (withLabel) {
+    const fromLabel = parsePeriodLabel(typeof field.label === 'string' ? field.label : null)
+    if (fromLabel) return { period: fromLabel, basis: 'field' }
+  }
   const meta = quarterToPeriod(doc.periodYear, doc.periodQuarter)
   if (meta) return { period: meta, basis: 'document' }
-  const fromName = parsePeriodLabel(doc.fileName ?? null)
-  if (fromName && fromName.year !== null) return { period: fromName, basis: 'text' }
+  const fromName = periodFromFileName(doc.fileName ?? null)
+  if (fromName) return { period: fromName, basis: 'text' }
   const fromText = periodFromText(doc.parsedData?.summary ?? null) ?? periodFromText(doc.parsedData?.raw_text_preview ?? null)
   if (fromText) return { period: fromText, basis: 'text' }
   return { period: null, basis: null }
@@ -455,8 +613,55 @@ interface DocCandidate {
   confidence: number
 }
 
+/** Field key / label / unit that says the value is a share (0..1), not a percent. */
+const SHARE_WORDS = /(дол[яиеюь]|share|fraction|коэфф|coefficient|ratio)/i
+
+/** Document fields of percent metrics (registry + base inputs), by field name. */
+let percentFieldsCache: ReadonlySet<string> | null = null
+function percentFields(): ReadonlySet<string> {
+  if (percentFieldsCache) return percentFieldsCache
+  const out = new Set<string>()
+  for (const e of [...getMetricRegistry(), ...BASE_INPUTS]) {
+    if (e.unit !== '%') continue
+    for (const src of e.sources) if (src.type === 'document' && src.field) out.add(src.field)
+  }
+  percentFieldsCache = out
+  return out
+}
+
+/** Is a parsed field a percent figure that was not written with a «%»? */
+function unstatedPercentValue(field: ParsedField): number | null {
+  const unit = typeof field.unit === 'string' ? field.unit.trim() : ''
+  if (unit === '%' || /%/.test(String(field.label ?? ''))) return null
+  const metricId = typeof field.metric_id === 'string' ? field.metric_id : null
+  const isPercent = metricId ? getMetricById(metricId)?.unit === '%' : false
+  const canonical = fieldCanonicalKey(field)
+  if (!isPercent && !(canonical && percentFields().has(canonical))) return null
+  const p = parseNumber(field.value)
+  return p && !p.percent ? p.value : null
+}
+
+/**
+ * The document's percent column is clearly written as fractions: at least two
+ * percent figures without «%», all within ±1, and some non-integer below 1
+ * (0.34, 0.41 …). Computed once per document.
+ */
+const fractionalCache = new WeakMap<ResolverDocument, { parsedData: ResolverDocument['parsedData']; fractional: boolean }>()
+function percentColumnIsFractional(doc: ResolverDocument): boolean {
+  const cached = fractionalCache.get(doc)
+  if (cached && cached.parsedData === doc.parsedData) return cached.fractional
+  const raw = doc.parsedData?.fields
+  const values = (Array.isArray(raw) ? raw : [])
+    .filter((f): f is ParsedField => Boolean(f) && typeof f === 'object')
+    .map((f) => unstatedPercentValue(f))
+    .filter((v): v is number => v !== null)
+  const fractional = values.length >= 2 && values.every((v) => Math.abs(v) <= 1) && values.some((v) => !Number.isInteger(v) && Math.abs(v) < 1)
+  fractionalCache.set(doc, { parsedData: doc.parsedData, fractional })
+  return fractional
+}
+
 /** Value of a document field in the metric's unit, or a miss reason. */
-function documentNumber(field: ParsedField, shape: MetricShape): { value: number; conversion: string | null } | { miss: string } {
+function documentNumber(field: ParsedField, shape: MetricShape, doc: ResolverDocument): { value: number; conversion: string | null } | { miss: string } {
   const unit = typeof field.unit === 'string' ? field.unit.trim() : ''
   const statedPercent = unit === '%' || /%/.test(String(field.label ?? ''))
   if (isTenScale(shape)) {
@@ -468,23 +673,41 @@ function documentNumber(field: ParsedField, shape: MetricShape): { value: number
   const percent = p.percent || statedPercent
   if (shape.unit === '%') {
     if (percent) return { value: p.value, conversion: null }
-    // A share written as a fraction (0.34) — percent metrics are stored in percent.
-    if (Math.abs(p.value) <= 1 && p.value !== 0) {
-      return { value: Math.round(p.value * 100 * 10_000) / 10_000, conversion: `доля ${p.value} → ${Math.round(p.value * 100 * 100) / 100}%` }
+    // A share written as a fraction (0.34) becomes 34 % only when the field
+    // says so (доля / share / коэффициент) or the document's percent column is
+    // clearly fractional; exactly 1 (and 0) is never converted — «отток 1» is
+    // 1 %, «конверсия 0,8» alone is 0.8 %.
+    const v = p.value
+    const says = SHARE_WORDS.test(`${field.key ?? ''} ${field.label ?? ''} ${unit}`)
+    if (Math.abs(v) < 1 && v !== 0 && (says || percentColumnIsFractional(doc))) {
+      const pct = Math.round(v * 100 * 10_000) / 10_000
+      return { value: pct, conversion: `доля ${v} → ${Math.round(v * 100 * 100) / 100}% (${says ? 'поле указано как доля' : 'все проценты документа записаны долями'})` }
     }
-    return { value: p.value, conversion: null }
+    return { value: v, conversion: null }
   }
   if (percent) return { miss: `value is a percentage, the metric is in «${shape.unit || 'number'}»` }
   const currency = p.currency ?? (/^(\$|usd)$/i.test(unit) ? '$' : /^(€|eur)$/i.test(unit) ? '€' : /^(₽|руб\.?)$/i.test(unit) ? '₽' : null)
   if (shape.unit === '₸' && currency && currency !== '₸') return { miss: `value is in ${currency}, the metric is in ₸` }
-  return { value: p.value, conversion: null }
+  // Time: a duration in the value («3 месяца») or in the field's unit («мес»).
+  const unitDuration = p.duration ?? timeUnitOf(unit)
+  const t = timeAdjusted(p.value, unitDuration, p.period, shape, field.value)
+  if ('miss' in t) return t
+  return { value: t.value, conversion: t.conversion }
 }
 
-function compareCandidates(a: DocCandidate, b: DocCandidate, ctx: ResolverContext): number {
+function compareCandidates(a: DocCandidate, b: DocCandidate, ctx: ResolverContext, shape: MetricShape): number {
   if (ctx.preferPeriodYear) {
     const am = a.detected?.year === ctx.preferPeriodYear ? 0 : 1
     const bm = b.detected?.year === ctx.preferPeriodYear ? 0 : 1
     if (am !== bm) return am - bm
+  }
+  // A flow metric (with a period): a value of unknown period ranks after any
+  // value whose period is known — an undated «ДДС.xlsx» 12 M may be a year, a
+  // quarter or a month; «ДДС Q3 2026.xlsx» 3 M is a quarter → 1 M a month.
+  if (shape.period) {
+    const ak = a.detected ? 0 : 1
+    const bk = b.detected ? 0 : 1
+    if (ak !== bk) return ak - bk
   }
   // A value that covers exactly the metric's period beats a rescaled one.
   const an = a.period.factor === 1 ? 0 : 1
@@ -496,6 +719,17 @@ function compareCandidates(a: DocCandidate, b: DocCandidate, ctx: ResolverContex
   if (ar !== br) return br - ar
   if (a.confidence !== b.confidence) return b.confidence - a.confidence
   return b.doc.uploadedAt.localeCompare(a.doc.uploadedAt)
+}
+
+/**
+ * A rate over `months` (churn %) brought to the metric period by compounding:
+ * 1 − (1 − r)^(target ÷ months). 5 %/мес → 46 %/год.
+ */
+function compoundRate(pct: number, months: number, target: MetricShape['period']): { value: number; factor: number } | null {
+  if (!target || months <= 0 || pct < 0 || pct > 100) return null
+  const exp = monthsOf(target) / months
+  const value = (1 - Math.pow(1 - pct / 100, exp)) * 100
+  return { value: Math.round(value * 100) / 100, factor: exp }
 }
 
 export function resolveDocumentSource(
@@ -523,15 +757,39 @@ export function resolveDocumentSource(
     const fields = [...(Array.isArray(rawFields) ? rawFields : []), ...derivedDocumentFields(doc)]
     for (const field of fields) {
       if (!fieldMatchesSource(field, source, metricId)) continue
-      const n = documentNumber(field, shape)
+      const n = documentNumber(field, shape, doc)
       if ('miss' in n) {
         rejected.push(`${doc.id}: ${n.miss}`)
         continue
       }
-      const { period: detected, basis } = documentFieldPeriod(field, doc)
+      const { period: detected, basis } = documentFieldPeriod(field, doc, source.compoundRate === true)
+      const base = typeof field.confidence === 'number' ? field.confidence : 0.7
+      if (source.compoundRate) {
+        // A rate (churn) needs its own period: never assume a monthly figure is yearly.
+        if (!detected) {
+          rejected.push(`${doc.id}: the period of the rate is unknown (month? year?) — not converted`)
+          continue
+        }
+        const c = compoundRate(n.value, detected.months, shape.period)
+        if (!c) {
+          rejected.push(`${doc.id}: «${short(field.value)}» is not a rate in 0..100 %`)
+          continue
+        }
+        // factor = the multiplier the compounding amounted to (provenance «period.factor»).
+        const period: AttemptPeriod = { ...periodInfo(detected.months, shape, basis, detected), factor: n.value > 0 ? round4(c.value / n.value) : 1 }
+        candidates.push({
+          doc,
+          field,
+          numeric: c.value,
+          unitConversion: [n.conversion, c.factor !== 1 ? `ставка за ${periodLength(detected.months)} → за ${shape.period}: 1 − (1 − ${n.value}%)^${round4(c.factor)} = ${c.value}%` : null].filter(Boolean).join('; ') || null,
+          period,
+          detected,
+          confidence: Math.round(base * (c.factor === 1 ? 1 : 0.85) * 100) / 100,
+        })
+        continue
+      }
       const period = periodInfo(detected?.months ?? null, shape, basis, detected)
       // A rescaled value (quarter → year …) is an estimate: lower confidence.
-      const base = typeof field.confidence === 'number' ? field.confidence : 0.7
       const confidence = Math.round(base * (period.factor === 1 ? 1 : 0.85) * 100) / 100
       candidates.push({
         doc,
@@ -550,7 +808,7 @@ export function resolveDocumentSource(
     return { source, status: 'miss', reason: `field "${source.field}" not found in parsed_data.fields${why}` }
   }
 
-  candidates.sort((a, b) => compareCandidates(a, b, ctx))
+  candidates.sort((a, b) => compareCandidates(a, b, ctx, shape))
   const best = candidates[0]
   const prov = best.field.provenance ?? {}
   const document: AttemptDocument = {
@@ -569,7 +827,9 @@ export function resolveDocumentSource(
   }
   const notes = [
     `from document ${best.doc.id} (${best.doc.docType})`,
-    best.period.factor !== 1 ? `${best.period.source} → ${best.period.target} ×${round4(best.period.factor)}` : null,
+    best.period.factor !== 1
+      ? `${best.period.source} → ${best.period.target} ${source.compoundRate ? '(compounded rate)' : `×${round4(best.period.factor)}`}`
+      : null,
     best.unitConversion,
     prov.ocr ? `OCR (${prov.ocr_engine ?? 'engine unknown'})` : null,
     candidates.length > 1 ? `${candidates.length} candidate values, picked by period then recency` : null,

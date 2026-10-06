@@ -9,7 +9,12 @@
  * for another (an impersonation token is not a staff token and vice versa).
  */
 
-export type SignedTokenType = 'imp' | 'staff'
+/**
+ * imp    impersonation cookie
+ * staff  staff panel cookie
+ * rv     link to one published report version (/r/v/<token>, lib/reports/version-link.ts)
+ */
+export type SignedTokenType = 'imp' | 'staff' | 'rv'
 
 export interface SignedClaims {
   typ: SignedTokenType

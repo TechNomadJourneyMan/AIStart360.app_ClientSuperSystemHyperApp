@@ -7,9 +7,24 @@
  * 810 %). The rules here:
  *
  *   • exactly one number, optionally with a scale word (тыс / млн / млрд / k /
- *     m / bn), a currency (₸ тг тенге KZT $ € ₽), a percent sign, a period word
- *     («в месяц», «/год», «в квартал») and an approximator («около», «~»);
- *   • unit nouns are allowed («30 дней», «12 сотрудников», «45 мин»);
+ *     m / bn), a currency (₸ тг тенге KZT $ € ₽), a percent sign, a RATE
+ *     period («в месяц», «/год», «в квартал», «в день», «в неделю»,
+ *     «ежемесячно») and an approximator («около», «~»);
+ *   • unit nouns are allowed («12 сотрудников», «30 заказов»); a TIME noun
+ *     right after the number is a DURATION («30 дней», «3 месяца», «45 мин»,
+ *     «2 часа») and is reported in `duration` — the source adapters check it
+ *     against the metric's unit (lib/metrics/source-adapters.ts) and convert
+ *     or refuse it, never take «3 месяца» as 3 days;
+ *   • a time word after a preposition («в», «за», «на», «per», «/») or after a
+ *     scale / currency word («5 млн месяц») is a rate period; two different
+ *     rates, two different durations or a rate the metrics cannot use
+ *     («в час») → null;
+ *   • separators: «84 200 000», «84,2», «1.234.567», «84,200,000». A single
+ *     comma OR dot followed by exactly three digits (and a 1–3 digit leading
+ *     group, not «0,») is a THOUSANDS separator when no scale word and no
+ *     percent sign is written («1,200» = «1.200» = 1200); with a scale word or
+ *     a percent sign it is always the decimal separator («1,500 млн» = 1.5 млн,
+ *     «12.345%» = 12.345 %);
  *   • a range («2–3 млн», «от 5 до 7»), a ratio («8 из 10», «8/10», «3:1»),
  *     several numbers or any other words → null (never a guess);
  *   • numeric JSON values pass through unchanged.
@@ -19,14 +34,22 @@
 
 import type { MetricPeriod } from './format'
 
+/** Length of time a duration noun names. */
+export type TimeUnit = 'minute' | 'hour' | 'day' | 'week' | 'month' | 'quarter' | 'year'
+
+/** Period of a rate written next to the number («в месяц», «в день»). */
+export type RatePeriod = MetricPeriod | 'day' | 'week'
+
 export interface ParsedNumber {
   value: number
   /** A percent sign / «процент» was written. */
   percent: boolean
-  /** Period word written next to the number. */
-  period: MetricPeriod | null
+  /** Rate period written next to the number («в месяц», «/год», «в день»). */
+  period: RatePeriod | null
   /** Currency written next to the number. */
   currency: '₸' | '$' | '€' | '₽' | null
+  /** Duration noun right after the number («3 месяца» → 'month', «45 мин» → 'minute'). */
+  duration: TimeUnit | null
 }
 
 /** Words that may accompany a single number without changing its meaning. */
@@ -37,14 +60,45 @@ const ALLOWED_WORDS: readonly RegExp[] = [
   /^(тг|тенге|kzt|usd|eur|руб|рублей|рубля|долл|долларов)$/,
   // percent
   /^(процент(а|ов)?|проц)$/,
-  // period
-  /^(в|за|на|per|a|в\/|ежемесячно|ежеквартально|ежегодно|monthly|quarterly|yearly|annually|annual|month|year|quarter|мес|месяц|месяца|месяцев|кв|квартал|квартала|год|года|году|г|день|сутки)$/,
+  // rate prepositions / adverbs (the time words themselves are TIME_WORDS)
+  /^(в|за|на|per|a|в\/|\/|ежедневно|еженедельно|ежемесячно|ежеквартально|ежегодно|daily|weekly|monthly|quarterly|yearly|annually|annual)$/,
   // approximators
   // (bounds such as «до», «более», «свыше» are not a value → the answer is rejected)
   /^(около|примерно|приблизительно|порядка|где|то|почти|ок|approx|about|around|~)$/,
   // unit nouns
-  /^(дн|дня|дней|день|days?|шт|штук[аи]?|ед|единиц[аы]?|чел|человек[а]?|сотрудник(а|ов)?|клиент(а|ов)?|сдел(ка|ки|ок)|лид(а|ов)?|заказ(а|ов)?|заяв(ка|ки|ок)|звон(ок|ка|ков)|раз[а]?|мин|минут[аы]?|час(а|ов)?|ч|sku|позици[йия]|товар(а|ов)?|подписчик(а|ов)?|визит(а|ов)?|посещени[йея])$/,
+  /^(шт|штук[аи]?|ед|единиц[аы]?|чел|человек[а]?|сотрудник(а|ов)?|клиент(а|ов)?|сдел(ка|ки|ок)|лид(а|ов)?|заказ(а|ов)?|заяв(ка|ки|ок)|звон(ок|ка|ков)|раз[а]?|sku|позици[йия]|товар(а|ов)?|подписчик(а|ов)?|визит(а|ов)?|посещени[йея])$/,
 ]
+
+/** Time nouns: a duration right after the number, a rate period after «в / за / / …». */
+const TIME_WORDS: ReadonlyArray<readonly [RegExp, TimeUnit]> = [
+  [/^(мин|минут[аы]?|min|mins|minutes?)$/, 'minute'],
+  [/^(ч|час|часа|часов|hours?|hrs?)$/, 'hour'],
+  [/^(дн|дня|дней|день|сутки|суток|days?)$/, 'day'],
+  [/^(нед|недел[яиюе]|недель|weeks?)$/, 'week'],
+  [/^(мес|месяц|месяца|месяцев|months?|month)$/, 'month'],
+  [/^(кв|квартал|квартала|кварталов|quarters?)$/, 'quarter'],
+  [/^(год|года|году|лет|г|years?)$/, 'year'],
+]
+
+const RATE_ADVERBS: ReadonlyArray<readonly [RegExp, RatePeriod]> = [
+  [/^(ежедневно|daily)$/, 'day'],
+  [/^(еженедельно|weekly)$/, 'week'],
+  [/^(ежемесячно|monthly)$/, 'month'],
+  [/^(ежеквартально|quarterly)$/, 'quarter'],
+  [/^(ежегодно|yearly|annually|annual)$/, 'year'],
+]
+
+const RATE_PREPOSITION = /^(в|за|на|per|a|в\/|\/)$/
+const SCALE_OR_CURRENCY = [ALLOWED_WORDS[0], ALLOWED_WORDS[1], ALLOWED_WORDS[2]]
+
+/** Duration noun of a word, or null. */
+export function timeUnitOf(word: string): TimeUnit | null {
+  const w = word.trim().toLowerCase().replace(/ё/g, 'е').replace(/\.$/, '')
+  for (const [re, unit] of TIME_WORDS) if (re.test(w)) return unit
+  return null
+}
+
+const NUMBER_MARK = '\u0000'
 
 function hasRange(s: string): boolean {
   if (/\d\s*(?:-|–|—|\.\.\.?|…)\s*\d/.test(s.replace(/^[\s~≈]*[-−–]/, ''))) return true
@@ -57,9 +111,13 @@ function hasRatio(s: string): boolean {
   return /\d\s*(?:из|of|\/|:)\s*\d/i.test(s)
 }
 
-/** Parse the digits of one numeric token: «84 200 000», «84,2», «1.234.567», «84,200,000». */
-function tokenValue(token: string): number | null {
-  let t = token.replace(/[\s   ]/g, '')
+/**
+ * Parse the digits of one numeric token: «84 200 000», «84,2», «1.234.567»,
+ * «84,200,000». `decimalOnly`: a scale word or a percent sign is written —
+ * a single separator is then always the decimal one («1,500 млн» = 1.5 млн).
+ */
+function tokenValue(token: string, decimalOnly = false): number | null {
+  let t = token.replace(/[\s\u00a0\u202f\u2009]/g, '')
   const neg = /^[-−]/.test(t)
   t = t.replace(/^[-−+]/, '')
   if (!/^\d[\d.,]*$/.test(t)) return null
@@ -73,9 +131,12 @@ function tokenValue(token: string): number | null {
     t = t.replace(/,/g, '')
   } else if (dots > 1) {
     t = t.replace(/\./g, '')
-  } else if (commas === 1) {
-    // «84,200» with exactly 3 digits after the comma and a leading group → thousands
-    t = /^\d{1,3},\d{3}$/.test(t) && !/^0,/.test(t) ? t.replace(',', '') : t.replace(',', '.')
+  } else if (commas === 1 || dots === 1) {
+    // One separator, comma or dot alike: «84,200» / «84.200» with exactly 3
+    // digits after it and a 1–3 digit leading group → thousands, unless a
+    // scale word / percent sign makes it a decimal («1,500 млн», «12.345%»).
+    const thousands = !decimalOnly && /^\d{1,3}[.,]\d{3}$/.test(t) && !/^0[.,]/.test(t)
+    t = thousands ? t.replace(/[.,]/, '') : t.replace(',', '.')
   }
   const n = Number(t)
   if (!Number.isFinite(n)) return null
@@ -87,13 +148,6 @@ function detectScale(rest: string): number {
   if (/(?:^|[^a-zа-яё])(млн|миллион\p{L}*|mln|mn|m|м)(?![a-zа-яё])/iu.test(rest)) return 1e6
   if (/(?:^|[^a-zа-яё])(тыс\p{L}*|k|к|т)(?![a-zа-яё])/iu.test(rest)) return 1e3
   return 1
-}
-
-function detectPeriod(rest: string): MetricPeriod | null {
-  if (/(ежемесячн|monthly|per\s*month|a\s*month|(?<!\p{L})мес(?:яц\p{L}*)?(?!\p{L}))/iu.test(rest)) return 'month'
-  if (/(ежекварт|quarterly|per\s*quarter|(?<!\p{L})кв(?:артал\p{L}*)?(?!\p{L}))/iu.test(rest)) return 'quarter'
-  if (/(ежегодн|yearly|annual|per\s*year|a\s*year|(?<!\p{L})(?:год\p{L}*|г)(?!\p{L}))/iu.test(rest)) return 'year'
-  return null
 }
 
 function detectCurrency(s: string): ParsedNumber['currency'] {
@@ -110,10 +164,10 @@ function detectCurrency(s: string): ParsedNumber['currency'] {
  */
 export function parseNumber(raw: unknown): ParsedNumber | null {
   if (raw === null || raw === undefined) return null
-  if (typeof raw === 'number') return Number.isFinite(raw) ? { value: raw, percent: false, period: null, currency: null } : null
-  if (typeof raw === 'boolean') return { value: raw ? 1 : 0, percent: false, period: null, currency: null }
+  if (typeof raw === 'number') return Number.isFinite(raw) ? { value: raw, percent: false, period: null, currency: null, duration: null } : null
+  if (typeof raw === 'boolean') return { value: raw ? 1 : 0, percent: false, period: null, currency: null, duration: null }
   if (typeof raw !== 'string') return null
-  const s = raw.replace(/[   ]/g, ' ').trim()
+  const s = raw.replace(/[\u00a0\u202f\u2009]/g, ' ').trim()
   if (s === '' || !/\d/.test(s)) return null
   if (hasRatio(s) || hasRange(s)) return null
 
@@ -121,29 +175,76 @@ export function parseNumber(raw: unknown): ParsedNumber | null {
   const accountingNeg = /^\(\s*[\d\s.,]+\s*\)/.test(s)
   const body = accountingNeg ? s.replace(/^\(\s*([\d\s.,]+)\s*\)/, '$1') : s
 
-  const tokens = body.match(/[-−+]?\d(?:[\d.,]|[\s ](?=\d{3}(?!\d)))*/g) ?? []
+  const tokens = body.match(/[-−+]?\d(?:[\d.,]|[\s\u00a0](?=\d{3}(?!\d)))*/g) ?? []
   if (tokens.length !== 1) return null
-  let value = tokenValue(tokens[0])
+
+  const rest = body.replace(tokens[0], ` ${NUMBER_MARK} `).toLowerCase()
+  const percent = /%|процент/.test(rest)
+  const scale = percent ? 1 : detectScale(rest.replace(NUMBER_MARK, ' '))
+  let value = tokenValue(tokens[0], percent || scale !== 1)
   if (value === null) return null
   if (accountingNeg) value = -Math.abs(value)
 
-  const rest = body.replace(tokens[0], ' ').toLowerCase()
-  const percent = /%|процент/.test(rest)
   // Every remaining word must be a known companion word.
   const words = rest
-    .replace(/[%₸$€₽~≈±+().,;:!?«»"'/\\]/g, ' ')
+    .replace(/\//g, ' / ')
+    .replace(/[%₸$€₽~≈±+().,;:!?«»"'\\]/g, ' ')
     .split(/\s+/)
     .filter(Boolean)
+  const time = timeAnnotations(words, value)
+  if (!time) return null
   for (const w of words) {
-    if (!ALLOWED_WORDS.some((re) => re.test(w))) return null
+    if (w === NUMBER_MARK) continue
+    if (!ALLOWED_WORDS.some((re) => re.test(w)) && !timeUnitOf(w)) return null
   }
-  const scale = percent ? 1 : detectScale(rest)
   return {
     value: value * scale,
     percent,
-    period: detectPeriod(rest),
+    period: time.period,
     currency: detectCurrency(rest),
+    duration: time.duration,
   }
+}
+
+/**
+ * Rate period and duration of the words around the number; null when they
+ * conflict (two different rates or durations) or name a rate the metrics
+ * cannot use («в час», «в минуту»).
+ */
+function timeAnnotations(words: readonly string[], value: number): { period: RatePeriod | null; duration: TimeUnit | null } | null {
+  let period: RatePeriod | null = null
+  let duration: TimeUnit | null = null
+  const setRate = (p: TimeUnit | RatePeriod): boolean => {
+    if (p === 'minute' || p === 'hour') return false
+    if (period !== null && period !== p) return false
+    period = p
+    return true
+  }
+  for (let i = 0; i < words.length; i++) {
+    const w = words[i]
+    const adverb = RATE_ADVERBS.find(([re]) => re.test(w))
+    if (adverb) {
+      if (!setRate(adverb[1])) return null
+      continue
+    }
+    const unit = timeUnitOf(w)
+    if (!unit) continue
+    const prev = words[i - 1] ?? ''
+    if (RATE_PREPOSITION.test(prev)) {
+      if (!setRate(unit)) return null
+    } else if (prev === NUMBER_MARK) {
+      // «2025 г», «2015 год»: a calendar year, not a duration.
+      if (unit === 'year' && (w === 'г' || (Number.isInteger(value) && value >= 1900 && value <= 2100))) continue
+      if (duration !== null && duration !== unit) return null
+      duration = unit
+    } else if (SCALE_OR_CURRENCY.some((re) => re.test(prev))) {
+      // «5 млн месяц», «500 000 тг мес»: the amount per month.
+      if (!setRate(unit)) return null
+    } else {
+      return null
+    }
+  }
+  return { period, duration }
 }
 
 /**

@@ -4,6 +4,7 @@ import { requireGiga } from '@/lib/admin/giga-actor'
 import { recordAdminAction } from '@/lib/admin/audit'
 import { apiError, dbError } from '@/lib/api-error'
 import { getReportVersion } from '@/lib/reports/versions'
+import { reviewOf } from '@/lib/reports/review-flow'
 import { REPORT_WRONG_STATUS, transitionReportVersion } from '@/lib/admin/staff-actions'
 
 export const dynamic = 'force-dynamic'
@@ -24,10 +25,12 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   try {
     const item = await getReportVersion(params.id)
     if (!item) return apiError('Версия отчёта не найдена', 404)
+    const review = await reviewOf(params.id)
     return NextResponse.json({
       ok: true,
       item,
-      can: { publish: g.actor.permissions.includes('reports.publish'), run: g.actor.permissions.includes('agents.run') },
+      review,
+      can: { publish: g.actor.permissions.includes('reports.publish'), run: g.actor.permissions.includes('agents.run'), review: g.actor.permissions.includes('reports.review') },
     })
   } catch (err) {
     return dbError('giga-admin/reports/:id', err as { message?: string; code?: string }, 'Не удалось загрузить версию отчёта')
@@ -36,8 +39,9 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
 /**
  * POST /api/giga-admin/reports/:id { action: publish | reject | withdraw, reason }
- *   publish   ready → published (the previous published version → superseded)
- *   reject    ready / draft → superseded, with a reason
+ *   publish   ready → published (the previous published version → superseded);
+ *             an in_review version is decided by the expert (…/:id/review)
+ *   reject    ready / draft / in_review → superseded, with a reason
  *   withdraw  published → superseded (the client stops seeing it), with a reason
  * The audit entry is written first; without it nothing changes.
  */

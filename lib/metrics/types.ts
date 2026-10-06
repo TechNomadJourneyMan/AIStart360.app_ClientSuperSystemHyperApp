@@ -132,6 +132,8 @@ export interface ParsedDataShape {
   }>
   /** Client registry rows (client_base / ecommerce_customers). */
   client_rows?: unknown[]
+  /** How the text was obtained (lib/documents/pipeline.ts sourceInfo); `ocr` set for OCR'd scans. */
+  source?: { ocr?: unknown } & Record<string, unknown>
 }
 
 export type SourceAttemptStatus = 'hit' | 'miss' | 'error'

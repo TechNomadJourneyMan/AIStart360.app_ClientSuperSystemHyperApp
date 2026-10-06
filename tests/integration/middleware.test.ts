@@ -135,7 +135,11 @@ describe('RBAC Middleware', () => {
   it('the removed /users and /admin screens send staff to the GIGA panel, others to their home', async () => {
     for (const path of ['/users', '/admin', '/admin/requests']) {
       expect(location(await middleware(createRequest(path, 'client')))).toBe('/dashboard')
-      expect(location(await middleware(createRequest(path, 'admin')))).toBe('/admin-giga-panel')
+      expect(location(await middleware(createRequest(path, 'super_admin')))).toBe('/admin-giga-panel')
+      expect(location(await middleware(createRequest(path, 'admin', 'admin')))).toBe('/admin-giga-panel')
+      // Legacy profiles.role 'admin' without a staff_roles row has no panel
+      // access (099): no redirect into a gate that would bounce it back.
+      expect(location(await middleware(createRequest(path, 'admin')))).toBe('/dashboard')
       expect(location(await middleware(createRequest(path, 'expert')))).toBe('/expert/dashboard')
     }
   })

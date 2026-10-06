@@ -11,6 +11,7 @@ import { PROVENANCE_LABELS, SEVERITY_LABELS, type ReportProvenanceType, type Rep
 export const REPORT_STATUS: Record<ReportStatus, StatusMeta> = {
   draft: { label: 'Черновик', tone: 'neutral' },
   ready: { label: 'Готов к проверке', tone: 'amber', hint: 'клиент не видит, пока сотрудник не опубликует' },
+  in_review: { label: 'На проверке эксперта', tone: 'amber', hint: 'клиент не видит; «Подтвердить» эксперта сразу публикует' },
   published: { label: 'Опубликован', tone: 'green', hint: 'клиент видит эту версию' },
   superseded: { label: 'Заменён', tone: 'neutral', hint: 'есть более новая версия, или версию отклонили / отозвали' },
   failed: { label: 'Ошибка', tone: 'red' },
@@ -77,7 +78,8 @@ export const NARRATIVE_STATE_LABELS: Record<string, string> = {
 export function versionActions(status: string, canPublish: boolean): Array<'publish' | 'reject' | 'withdraw'> {
   if (!canPublish) return []
   if (status === 'ready') return ['publish', 'reject']
-  if (status === 'draft') return ['reject']
+  // in_review is published by the expert decision (reviewActions); staff may still reject it.
+  if (status === 'draft' || status === 'in_review') return ['reject']
   if (status === 'published') return ['withdraw']
   return []
 }
@@ -102,3 +104,24 @@ export const AI_REVIEW_COPY = {
   },
   dismissDialog: 'Клиент это не увидит. Если модель предложит то же самое снова, оно вернётся в очередь. Решение и причина пишутся в журнал аудита.',
 } as const
+
+/** Expert decisions on a version waiting for review (reports.review). */
+export function reviewActions(status: string, canReview: boolean): Array<'approve' | 'changes_requested'> {
+  return canReview && status === 'in_review' ? ['approve', 'changes_requested'] : []
+}
+
+export const REVIEW_DECISION_LABELS: Record<string, string> = {
+  approve: 'подтверждено и опубликовано',
+  changes_requested: 'запрошены правки',
+}
+
+export const REVIEW_CHANNEL_LABELS: Record<string, string> = { web: 'кабинет', telegram: 'Telegram' }
+
+/** What the rebuild after «Нужны правки» did, in staff words. */
+export function rerunLabel(r: { state: string; attempt: number; max: number } | null | undefined): string | null {
+  if (!r) return null
+  if (r.state === 'queued') return `агент «Отчёт» пересоберёт отчёт (попытка ${r.attempt} из ${r.max})`
+  if (r.state === 'cap_reached') return `лимит пересборок (${r.max}) исчерпан — команда уведомлена`
+  if (r.state === 'agent_disabled') return 'агент «Отчёт» выключен — команда уведомлена'
+  return 'пересборку не удалось запустить — команда уведомлена'
+}

@@ -6,8 +6,9 @@
  *                                            its data hash with the latest version
  *   report.create_version  CREATE_REPORT     rebuild the snapshot, check that the
  *                                            data did not change since
- *                                            report.snapshot, store it as a
- *                                            'ready' version, emit REPORT_GENERATED
+ *                                            report.snapshot, store it as an
+ *                                            'in_review' version (103), render
+ *                                            its PDF once, emit REPORT_GENERATED
  *
  * Rules the tools enforce whatever the agent passes:
  *   • both work on ctx.companyId only; a session id from the event is accepted
@@ -16,8 +17,13 @@
  *     (the agent cannot put text into a report); the only model text is the
  *     optional narrative, stored as AI_HYPOTHESIS with model and prompt
  *     version, and accepted only when every number in it is in the snapshot;
- *   • a version is created in status 'ready' — publishing is a human action
- *     (GIGA, reports.publish), there is no tool for it;
+ *   • a version is created in status 'in_review' — publishing is a human
+ *     action (the expert's «Подтвердить», lib/reports/review-flow.ts), there
+ *     is no tool for it;
+ *   • a rebuild requested by «Нужны правки» (review_version_id) on data that
+ *     did not change creates nothing: the same document would go back to the
+ *     expert. Staff are told that the data (or the AI review queue) has to
+ *     change first;
  *   • the same data never creates a second version (data_hash), and
  *     REPORT_GENERATED is deduplicated per version.
  */
@@ -116,11 +122,13 @@ export interface CreateVersionToolResult {
   status: string
   superseded: string[]
   narrative: { state: NarrativeState; reason: string | null }
+  /** review_unchanged: a «Нужны правки» rebuild found the same data — nothing created. */
+  skipped?: 'review_unchanged'
 }
 
 registerTool({
   name: 'report.create_version',
-  description: 'Сохранить снимок отчёта как новую версию в статусе «готов к проверке» (ready), если данные отличаются от последней версии; прежние неопубликованные версии становятся superseded. Публикует клиенту только сотрудник.',
+  description: 'Сохранить снимок отчёта как новую версию в статусе «на проверке эксперта» (in_review), если данные отличаются от последней версии; прежние неопубликованные версии становятся superseded. Публикует клиенту только эксперт кнопкой «Подтвердить».',
   permission: 'CREATE_REPORT',
   companyScoped: true,
   args: z.object({
@@ -131,6 +139,8 @@ registerTool({
     narrative_summary: z.string().max(2500).nullable().optional(),
     narrative_key_points: z.array(z.string().max(300)).max(6).nullable().optional(),
     narrative_model: z.string().max(100).nullable().optional(),
+    /** The version an expert sent back with «Нужны правки» (rebuild requested by the review). */
+    review_version_id: z.string().uuid().nullable().optional(),
   }).strict(),
   redact: ['narrative_summary', 'narrative_key_points'],
   handler: async (ctx, a): Promise<CreateVersionToolResult> => {
@@ -155,6 +165,14 @@ registerTool({
         } else {
           narrative = { state: 'rejected', reason: check.reason }
         }
+      }
+    }
+
+    if (a.review_version_id) {
+      const latest = await latestVersion(companyId, 'point_a')
+      if (latest && latest.id === a.review_version_id && latest.data_hash === snap.dataHash) {
+        await tellStaffReviewUnchanged(companyId, latest)
+        return { created: false, id: latest.id, version: latest.version, status: latest.status, superseded: [], narrative, skipped: 'review_unchanged' }
       }
     }
 
@@ -187,12 +205,16 @@ registerTool({
       createdBy: `agent:${ctx.agentKey}`,
     })
     const head = res.created
-      ? { id: res.id, version: res.version, status: 'ready' as const }
+      ? { id: res.id, version: res.version, status: 'in_review' as const }
       : { id: res.unchanged.id, version: res.unchanged.version, status: res.unchanged.status }
 
-    // One event per version (dedupe key). Re-emitting for an unchanged ready
-    // version is a no-op unless an earlier attempt crashed before emitting.
-    if (head.status === 'ready') {
+    // The PDF for the expert («Версия N · дата», watermark), rendered once and
+    // stored before the event goes out, so every channel sends the same file.
+    if (res.created) await storeReviewPdf(res.id)
+
+    // One event per version (dedupe key). Re-emitting for an unchanged version
+    // waiting for review is a no-op unless an earlier attempt crashed before emitting.
+    if (head.status === 'in_review' || head.status === 'ready') {
       const { emitPlatformEvent } = await import('@/lib/events/platform')
       await emitPlatformEvent({
         name: 'REPORT_GENERATED',
@@ -203,6 +225,8 @@ registerTool({
         dedupeKey: `report_generated:${head.id}`,
         payload: {
           report_version_id: head.id,
+          status: head.status,
+          review_required: head.status === 'in_review',
           report_type: 'point_a',
           version: head.version,
           session_id: b.sessionId,
@@ -226,5 +250,41 @@ registerTool({
     }
   },
   summarize: (r: CreateVersionToolResult) =>
-    r.created ? `версия ${r.version} создана (ready)` : `данные не изменились — версия ${r.version} остаётся`,
+    r.created ? `версия ${r.version} создана (на проверке эксперта)`
+    : r.skipped === 'review_unchanged' ? `правки эксперта к версии ${r.version} не отражены в данных — новая версия не создана`
+    : `данные не изменились — версия ${r.version} остаётся`,
 })
+
+async function storeReviewPdf(versionId: string): Promise<void> {
+  try {
+    const { getReportVersion } = await import('@/lib/reports/versions')
+    const { versionPdf } = await import('@/lib/reports/pdf-store')
+    const v = await getReportVersion(versionId)
+    if (v) await versionPdf(v, { stage: 'review' })
+  } catch (err) {
+    // Delivery renders it again if needed; the version itself is already saved.
+    console.error('[report.create_version] review PDF not stored:', err instanceof Error ? err.message.split('\n')[0] : 'error')
+  }
+}
+
+async function tellStaffReviewUnchanged(companyId: string, v: VersionHead): Promise<void> {
+  try {
+    const { notifyStaff } = await import('@/lib/notifications/staff')
+    await notifyStaff({
+      level: 'WARNING',
+      type: 'report.review_unchanged',
+      title: 'Правки эксперта: данные не изменились',
+      lines: [
+        `Эксперт запросил правки к версии ${v.version}, но данные компании и проверенные выводы остались прежними — тот же отчёт не отправлен эксперту повторно.`,
+        'Поправьте данные или выводы в «Проверке выводов ИИ», затем соберите отчёт заново в GIGA → Отчёты.',
+      ],
+      companyId,
+      entityType: 'report_version',
+      entityId: v.id,
+      dedupeKey: `report.review_unchanged:${v.id}`,
+      link: `/admin-giga-panel/reports?focus=${v.id}`,
+    })
+  } catch (err) {
+    console.error('[report.create_version] staff notification failed:', err instanceof Error ? err.message.split('\n')[0] : 'error')
+  }
+}

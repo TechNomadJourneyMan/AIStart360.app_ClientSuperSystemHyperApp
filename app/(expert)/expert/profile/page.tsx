@@ -4,6 +4,7 @@ import { useAuthStore } from '@/stores/auth.store'
 import { useCallback, useEffect, useState } from 'react'
 import { getAvatarGradient, getInitials } from '@/lib/expert-blocks'
 import { ExpertTelegramLink } from '@/components/expert/ExpertTelegramLink'
+import { WhatsAppBinding } from '@/components/settings/WhatsAppBinding'
 
 interface ExpertProfile {
   id: string
@@ -269,6 +270,12 @@ export default function ExpertProfilePage() {
       </section>
 
       <ExpertTelegramLink />
+      <WhatsAppBinding
+        endpoint="/api/expert/whatsapp-link"
+        purpose="Сюда приходят завершённые диагностики, новые клиенты, обращения к эксперту и отчёты на проверку."
+        showLevels
+        framed
+      />
     </div>
   )
 }

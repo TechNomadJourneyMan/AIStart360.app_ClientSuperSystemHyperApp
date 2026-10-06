@@ -42,6 +42,16 @@ export interface AggregateOptions {
    * read client (tests / scripts).
    */
   writeClient?: SupabaseClient
+  /**
+   * Client the resolver INPUTS (survey answers, documents, GRI assessment)
+   * are read with. Routes pass the service role after authorising the
+   * company, together with documentsScope 'company': under RLS (migration
+   * 084) a member / partner / staff user does not see the owner's rows
+   * without company_id, and a recalculation from fewer inputs deletes the
+   * owner's metric values (lib/metrics/materialize.ts superseded rows).
+   * Defaults to the read client (tests / scripts).
+   */
+  inputClient?: SupabaseClient
   /** 'company' = the company's documents, not only the owner's uploads. */
   documentsScope?: 'user' | 'company'
 }
@@ -167,7 +177,7 @@ export async function aggregatePointA(
   companyId: string,
   opts: AggregateOptions = {},
 ): Promise<PointA> {
-  const ctx = await gatherResolverContext(supabase, { userId, companyId, documentsScope: opts.documentsScope })
+  const ctx = await gatherResolverContext(opts.inputClient ?? supabase, { userId, companyId, documentsScope: opts.documentsScope })
 
   const values = resolveAllMetrics(ctx)
 

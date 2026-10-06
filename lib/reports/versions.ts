@@ -4,11 +4,15 @@
  *
  * Who writes what:
  *   • the `report` agent (through its tools) creates versions in status
- *     'ready' — never 'published' — and supersedes earlier unpublished ones;
- *   • a person in GIGA publishes a 'ready' version (the previous published
- *     one of the same company and type becomes 'superseded'), rejects a
- *     ready one or withdraws a published one. Routes authorise and write the
- *     audit log before calling these functions.
+ *     'in_review' (103) — never 'published' — and supersedes earlier
+ *     unpublished ones (draft / ready / in_review);
+ *   • an expert decides on an in_review version (lib/reports/review-flow.ts):
+ *     approve publishes it at once, «нужны правки» retires it and asks the
+ *     agent to rebuild;
+ *   • a person in GIGA publishes a legacy 'ready' version (the previous
+ *     published one of the same company and type becomes 'superseded'),
+ *     rejects an unpublished one or withdraws a published one. Routes
+ *     authorise and write the audit log before calling these functions.
  * The tenant reads published versions through RLS (report_versions_select),
  * not through this module.
  *
@@ -28,7 +32,7 @@ const json = (v: unknown) => JSON.stringify(v ?? null)
 const iso = (v: Date | string | null | undefined): string | null => (v ? new Date(v).toISOString() : null)
 
 /** Same key as public.report_versions_assign_version(): re-entrant inside one transaction. */
-async function lockCompanyType(tx: Tx, companyId: string, reportType: ReportType): Promise<void> {
+export async function lockCompanyType(tx: Tx, companyId: string, reportType: ReportType): Promise<void> {
   await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('report_versions:' || ${companyId} || ':' || ${reportType}))`
 }
 
@@ -125,19 +129,24 @@ export async function latestVersion(companyId: string, reportType: ReportType): 
  * data changes.
  */
 export function sameDataAsLatest(latest: VersionHead | null, dataHash: string): latest is VersionHead {
-  return Boolean(latest && latest.data_hash === dataHash && (latest.status === 'draft' || latest.status === 'ready' || latest.status === 'published'))
+  return Boolean(latest && latest.data_hash === dataHash && (CIRCULATING as readonly string[]).includes(latest.status))
 }
+
+/** Statuses of a version still in circulation (see sameDataAsLatest). */
+const CIRCULATING = ['draft', 'ready', 'in_review', 'published'] as const
+/** Unpublished statuses a newer build replaces. */
+const UNPUBLISHED = ['draft', 'ready', 'in_review'] as const
 
 export type CreateVersionResult =
   | { created: true; id: string; version: number; superseded: string[] }
   | { created: false; unchanged: VersionHead }
 
 /**
- * Create a 'ready' version unless the latest version of the company and type
- * already has this data hash (see sameDataAsLatest: a failed, rejected or
- * withdrawn version does not count). Earlier
- * unpublished versions (draft / ready) become 'superseded'; a published
- * version stays until a person publishes the new one.
+ * Create a version (status 'in_review' by default — it waits for the expert)
+ * unless the latest version of the company and type already has this data
+ * hash (see sameDataAsLatest: a failed, rejected or withdrawn version does not
+ * count). Earlier unpublished versions (draft / ready / in_review) become
+ * 'superseded'; a published version stays until the new one is published.
  */
 export async function createReadyVersion(args: {
   companyId: string
@@ -149,7 +158,9 @@ export async function createReadyVersion(args: {
   confidence: number | null
   dataHash: string
   createdBy: string
+  status?: 'in_review' | 'ready'
 }): Promise<CreateVersionResult> {
+  const status = args.status ?? 'in_review'
   return prisma.$transaction(async (tx) => {
     await lockCompanyType(tx, args.companyId, args.reportType)
     const [latest] = await tx.$queryRaw<VersionHead[]>`
@@ -161,13 +172,13 @@ export async function createReadyVersion(args: {
     }
     const superseded = await tx.$queryRaw<Array<{ id: string }>>`
       UPDATE public.report_versions SET status = 'superseded'
-      WHERE company_id = ${args.companyId} AND report_type = ${args.reportType} AND status IN ('draft', 'ready')
+      WHERE company_id = ${args.companyId} AND report_type = ${args.reportType} AND status = ANY(${[...UNPUBLISHED]}::text[])
       RETURNING id::text`
     const confidence = args.confidence === null ? null : Math.min(1, Math.max(0, args.confidence)).toFixed(2)
     const [row] = await tx.$queryRaw<Array<{ id: string; version: number }>>`
       INSERT INTO public.report_versions
         (company_id, session_id, report_type, status, title, content, provenance, confidence, data_hash, created_by)
-      VALUES (${args.companyId}, ${args.sessionId}::uuid, ${args.reportType}, 'ready', ${args.title.slice(0, 300)},
+      VALUES (${args.companyId}, ${args.sessionId}::uuid, ${args.reportType}, ${status}, ${args.title.slice(0, 300)},
               ${json(args.content)}::jsonb, ${json(args.provenance)}::jsonb, ${confidence}::text::numeric,
               ${args.dataHash}, ${args.createdBy})
       RETURNING id::text, version`
@@ -205,6 +216,7 @@ export interface ReportVersionFull extends ReportVersionListItem {
   content: ReportContent
   provenance: ReportProvenance
   pdf_storage_path: string | null
+  pdf_rendered_at: string | null
   updated_at: string
 }
 
@@ -268,7 +280,7 @@ export async function listReportVersions(filter: {
 
 export async function getReportVersion(id: string): Promise<ReportVersionFull | null> {
   const rows = await prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
-    `SELECT ${LIST_COLUMNS}, v.content, v.provenance, v.pdf_storage_path, v.updated_at
+    `SELECT ${LIST_COLUMNS}, v.content, v.provenance, v.pdf_storage_path, v.pdf_rendered_at, v.updated_at
      FROM public.report_versions v LEFT JOIN public.companies c ON c.id = v.company_id
      WHERE v.id = $1::uuid`,
     id,
@@ -280,6 +292,7 @@ export async function getReportVersion(id: string): Promise<ReportVersionFull | 
     content: r.content as ReportContent,
     provenance: r.provenance as ReportProvenance,
     pdf_storage_path: (r.pdf_storage_path as string | null) ?? null,
+    pdf_rendered_at: iso(r.pdf_rendered_at as Date | null),
     updated_at: iso(r.updated_at as Date)!,
   }
 }
@@ -290,37 +303,44 @@ export type TransitionResult =
   | { ok: true; status: ReportStatus; superseded: string[] }
   | { ok: false; reason: 'not_found' | 'wrong_status'; status?: ReportStatus }
 
-async function currentStatus(tx: Tx, id: string): Promise<{ status: ReportStatus; company_id: string; report_type: ReportType } | null> {
+export async function currentStatus(tx: Tx, id: string): Promise<{ status: ReportStatus; company_id: string; report_type: ReportType } | null> {
   const rows = await tx.$queryRaw<Array<{ status: ReportStatus; company_id: string; report_type: ReportType }>>`
     SELECT status, company_id, report_type FROM public.report_versions WHERE id = ${id}::uuid`
   return rows[0] ?? null
 }
 
 /**
- * Publish a 'ready' version to the client. The previously published version
- * of the same company and report type becomes 'superseded' in the same
- * transaction, so the client always sees exactly one.
+ * Inside a transaction: publish `id` when its status is one of `from`; the
+ * previously published version of the same company and type becomes
+ * 'superseded', so the client always sees exactly one.
+ */
+export async function publishInTx(tx: Tx, id: string, actorId: string, from: readonly ReportStatus[]): Promise<TransitionResult> {
+  const head = await currentStatus(tx, id)
+  if (!head) return { ok: false as const, reason: 'not_found' as const }
+  await lockCompanyType(tx, head.company_id, head.report_type)
+  const done = await tx.$queryRaw<Array<{ id: string }>>`
+    UPDATE public.report_versions SET status = 'published', published_by = ${actorId}, published_at = now()
+    WHERE id = ${id}::uuid AND status = ANY(${[...from]}::text[])
+    RETURNING id::text`
+  if (!done[0]) {
+    const again = await currentStatus(tx, id)
+    return { ok: false as const, reason: 'wrong_status' as const, status: again?.status }
+  }
+  const superseded = await tx.$queryRaw<Array<{ id: string }>>`
+    UPDATE public.report_versions SET status = 'superseded'
+    WHERE company_id = ${head.company_id} AND report_type = ${head.report_type}
+      AND status = 'published' AND id <> ${id}::uuid
+    RETURNING id::text`
+  return { ok: true as const, status: 'published' as const, superseded: superseded.map((s) => s.id) }
+}
+
+/**
+ * Publish a legacy 'ready' version to the client (GIGA / admin bot,
+ * reports.publish). Versions 'in_review' are published only by an expert
+ * decision (lib/reports/review-flow.ts), which also records the review.
  */
 export async function publishReportVersion(id: string, actorId: string): Promise<TransitionResult> {
-  return prisma.$transaction(async (tx) => {
-    const head = await currentStatus(tx, id)
-    if (!head) return { ok: false as const, reason: 'not_found' as const }
-    await lockCompanyType(tx, head.company_id, head.report_type)
-    const done = await tx.$queryRaw<Array<{ id: string }>>`
-      UPDATE public.report_versions SET status = 'published', published_by = ${actorId}, published_at = now()
-      WHERE id = ${id}::uuid AND status = 'ready'
-      RETURNING id::text`
-    if (!done[0]) {
-      const again = await currentStatus(tx, id)
-      return { ok: false as const, reason: 'wrong_status' as const, status: again?.status }
-    }
-    const superseded = await tx.$queryRaw<Array<{ id: string }>>`
-      UPDATE public.report_versions SET status = 'superseded'
-      WHERE company_id = ${head.company_id} AND report_type = ${head.report_type}
-        AND status = 'published' AND id <> ${id}::uuid
-      RETURNING id::text`
-    return { ok: true as const, status: 'published' as const, superseded: superseded.map((s) => s.id) }
-  })
+  return prisma.$transaction((tx) => publishInTx(tx, id, actorId, ['ready']))
 }
 
 /**
@@ -334,7 +354,7 @@ export async function retireReportVersion(
   actorId: string,
   reason: string,
 ): Promise<TransitionResult> {
-  const from: ReportStatus[] = action === 'reject' ? ['ready', 'draft'] : ['published']
+  const from: ReportStatus[] = action === 'reject' ? ['ready', 'draft', 'in_review'] : ['published']
   const review = json({ action, by: actorId, at: new Date().toISOString(), reason: reason.slice(0, 500) })
   return prisma.$transaction(async (tx) => {
     const head = await currentStatus(tx, id)

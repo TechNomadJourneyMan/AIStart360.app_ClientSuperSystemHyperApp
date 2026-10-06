@@ -212,8 +212,9 @@ function ensureSpace(doc: PDFDoc, space: number): void {
  * layout while sections are still being drawn — `bufferPages: true` makes the
  * page range available. The footer uses Mono (no «₸», so JetBrains is safe).
  */
-function stampFooters(doc: PDFDoc): void {
+function stampFooters(doc: PDFDoc, opts: FinalizeOptions = {}): void {
   const range = doc.bufferedPageRange()
+  const footer = opts.footer ? `© AIStart360 · Конфиденциально · ${opts.footer}` : '© AIStart360 · Конфиденциально'
   for (let i = range.start; i < range.start + range.count; i++) {
     doc.switchToPage(i)
     // The footer sits below the bottom margin; with the margin in place pdfkit
@@ -221,11 +222,12 @@ function stampFooters(doc: PDFDoc): void {
     // (every export used to end with one such page per content page).
     const bottom = doc.page.margins.bottom
     doc.page.margins.bottom = 0
+    if (opts.watermark) stampWatermark(doc, opts.watermark)
     doc
       .font(REPORT_FONTS.mono)
       .fontSize(7.5)
       .fillColor(FAINT)
-      .text('© AIStart360 · Конфиденциально', MARGIN, PAGE_H - 42, {
+      .text(footer, MARGIN, PAGE_H - 42, {
         width: CONTENT_W,
         align: 'center',
         lineBreak: false,
@@ -234,12 +236,40 @@ function stampFooters(doc: PDFDoc): void {
   }
 }
 
+/**
+ * Diagonal translucent stamp across the page (e.g. «На проверке эксперта»
+ * while a report version waits for the expert). Drawn under the footer, over
+ * the content, with the graphics state restored so nothing else is affected.
+ */
+function stampWatermark(doc: PDFDoc, text: string): void {
+  doc.save()
+  doc.rotate(-35, { origin: [PAGE_W / 2, PAGE_H / 2] })
+  doc
+    .font(REPORT_FONTS.bold)
+    .fontSize(46)
+    .fillColor(CRIT)
+    .fillOpacity(0.13)
+    .text(text, 0, PAGE_H / 2 - 30, { width: PAGE_W, align: 'center', lineBreak: false })
+  doc.restore()
+  doc.fillOpacity(1)
+}
+
+/** Extra marks stamped on every page at finalize time. */
+export interface FinalizeOptions {
+  /** Appended to the confidential footer, e.g. «Версия 3 · 06.10.2026». */
+  footer?: string | null
+  /** Diagonal stamp on every page, e.g. «На проверке эксперта». */
+  watermark?: string | null
+}
+
 interface CoverOptions {
   tag: string // mono kicker, e.g. "GROWTH READINESS INDEX"
   title: string // big serif title
   meta: ReportMeta
   /** Optional metric chip shown on the cover (e.g. overall score). */
   headline?: { label: string; value: string } | null
+  /** Optional line under the date, e.g. «Версия 3 · 06.10.2026». */
+  versionLine?: string | null
 }
 
 function drawCover(doc: PDFDoc, opts: CoverOptions): void {
@@ -269,6 +299,11 @@ function drawCover(doc: PDFDoc, opts: CoverOptions): void {
   doc.font(REPORT_FONTS.mono).fontSize(10).fillColor(MUTED)
   doc.text(`Дата формирования: ${fmtDate(opts.meta.generatedAt)}`, MARGIN, y)
   y += 16
+  if (opts.versionLine) {
+    doc.font(REPORT_FONTS.mono).fontSize(10).fillColor(INK).text(opts.versionLine, MARGIN, y)
+    doc.fillColor(MUTED)
+    y += 16
+  }
   if (opts.meta.industry) {
     doc.text(`Отрасль: ${opts.meta.industry}`, MARGIN, y)
     y += 16
@@ -459,10 +494,10 @@ function newDoc(title: string): PDFDoc {
   return doc
 }
 
-function finalize(doc: PDFDoc): Promise<Buffer> {
+function finalize(doc: PDFDoc, opts: FinalizeOptions = {}): Promise<Buffer> {
   const chunks: Buffer[] = []
   doc.on('data', (c: Buffer) => chunks.push(c))
-  stampFooters(doc) // footers on every page, after all content is laid out
+  stampFooters(doc, opts) // footers (and the watermark) on every page, after all content is laid out
   doc.flushPages()
   doc.end()
   return new Promise<Buffer>((resolve, reject) => {

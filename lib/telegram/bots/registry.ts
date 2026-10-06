@@ -200,3 +200,66 @@ export function answerCallbackQuery(bot: BotId, callbackQueryId: string, text: s
 export function deleteMessage(bot: BotId, chatId: string, messageId: number, fetchImpl?: typeof fetch): Promise<BotResult<unknown>> {
   return callApi(bot, 'deleteMessage', { chat_id: chatId, message_id: messageId }, fetchImpl)
 }
+
+// ─── Files ───────────────────────────────────────────────────────────────────
+
+/** Bot API: «Bots can currently send files of any type of up to 50 MB in size» (sendDocument). */
+export const TG_DOCUMENT_MAX_BYTES = 50 * 1024 * 1024
+/** Bot API: document caption «0-1024 characters after entities parsing». */
+export const TG_CAPTION_LIMIT = 1024
+
+export interface TelegramDocument {
+  filename: string
+  bytes: Uint8Array
+  mime: string
+}
+
+/**
+ * Upload a file with sendDocument (https://core.telegram.org/bots/api#senddocument).
+ *
+ * Per the Bot API («Sending files»: "Post the file using multipart/form-data
+ * in the usual way that files are uploaded via the browser", 50 MB for files;
+ * «Making requests»: application/json "except for uploading files"), the
+ * request is multipart/form-data: `chat_id`, `document` (the file part with
+ * its file name), `caption` + `parse_mode=HTML` (≤ 1024 visible characters)
+ * and `reply_markup` as a JSON-serialized object. The boundary is set by
+ * fetch for a FormData body. Never throws; the token never appears in errors
+ * (same redaction as callApi).
+ */
+export async function sendDocument(
+  bot: BotId,
+  chatId: string,
+  file: TelegramDocument,
+  caption?: string | null,
+  replyMarkup?: ReplyMarkup | null,
+  fetchImpl: typeof fetch = fetch,
+): Promise<BotResult<{ message_id: number }>> {
+  const token = botToken(bot)
+  if (!token) return { ok: false, status: 0, description: `${ENV[bot].token} не задан` }
+  if (!file.bytes.byteLength) return { ok: false, status: 0, description: 'empty file' }
+  if (file.bytes.byteLength > TG_DOCUMENT_MAX_BYTES) return { ok: false, status: 0, description: 'file too large (Bot API limit 50 MB)' }
+  const filename = file.filename.replace(/[\\/"\r\n]/g, '_').slice(0, 120) || 'document.pdf'
+  const form = new FormData()
+  form.append('chat_id', chatId)
+  form.append('document', new Blob([new Uint8Array(file.bytes)], { type: file.mime || 'application/octet-stream' }), filename)
+  if (caption) {
+    form.append('caption', truncateTelegramHtml(caption, TG_CAPTION_LIMIT))
+    form.append('parse_mode', 'HTML')
+  }
+  if (replyMarkup) form.append('reply_markup', JSON.stringify(replyMarkup))
+  try {
+    const res = await fetchImpl(`https://api.telegram.org/bot${token}/sendDocument`, {
+      method: 'POST',
+      body: form,
+      signal: AbortSignal.timeout(30_000),
+    })
+    const json = (await res.json().catch(() => null)) as { ok?: boolean; result?: { message_id: number }; description?: string } | null
+    if (!res.ok || !json?.ok) {
+      return { ok: false, status: res.status, description: redact(json?.description?.slice(0, 200) ?? `HTTP ${res.status}`, token) }
+    }
+    return { ok: true, result: json.result as { message_id: number } }
+  } catch (err) {
+    return { ok: false, status: 0, description: err instanceof Error && err.name === 'TimeoutError' ? 'timeout' : 'network error' }
+  }
+}
+

@@ -2,7 +2,7 @@
  * Phase 6 — reports with provenance, on the real database (migration 085 +
  * lib/agents/definitions/report.ts + lib/reports/**):
  *   • the report agent freezes a snapshot of a finished diagnostic session as a
- *     'ready' version — unreviewed model output is not in it, nothing is
+ *     'in_review' version (103) — unreviewed model output is not in it, nothing is
  *     published by the agent, REPORT_GENERATED fires once per version;
  *   • the same data never makes a new version; new data supersedes the
  *     previous unpublished version but never the published one;
@@ -45,7 +45,9 @@ describe.skipIf(!dbTestsEnabled)('report agent and report versions', async () =>
   const { enqueueAgentTask, executeTaskById } = await import('@/lib/agents/queue')
   const { reportAgent } = await import('@/lib/agents/definitions/report')
   const { reviewItem, listReviewQueue } = await import('@/lib/reports/review')
-  const { publishReportVersion } = await import('@/lib/reports/versions')
+  const { publishInTx } = await import('@/lib/reports/versions')
+  // The expert's «Подтвердить» (lib/reports/review-flow.ts) publishes an in_review version; tested in report-review.test.ts.
+  const publishInReview = (id: string, by: string) => prisma.$transaction((tx) => publishInTx(tx, id, by, ['in_review']))
   const reportRoute = await import('@/app/api/giga-admin/reports/[id]/route')
   const reviewRoute = await import('@/app/api/giga-admin/ai-review/[kind]/[id]/route')
   const { asUser, closeTestPool, inRollback, pgErrorCode, seedUser } = await import('../../helpers/pg-rls')
@@ -159,14 +161,14 @@ describe.skipIf(!dbTestsEnabled)('report agent and report versions', async () =>
     await closeTestPool()
   })
 
-  it('freezes the finished session as a ready version without unreviewed model output and announces it once', async () => {
+  it('freezes the finished session as an in_review version without unreviewed model output and announces it once', async () => {
     const s = await seed()
     const { rep, task } = await run(s.companyId, completed(s.sessionId))
     expect(rep?.finalStatus).toBe('succeeded')
-    expect(rep?.summary).toContain('версия 1 готова к проверке')
+    expect(rep?.summary).toContain('версия 1 отправлена эксперту на проверку')
 
     const [v] = await versions(s.companyId)
-    expect(v).toMatchObject({ version: 1, status: 'ready', created_by: 'agent:report', session_id: s.sessionId, published_at: null })
+    expect(v).toMatchObject({ version: 1, status: 'in_review', created_by: 'agent:report', session_id: s.sessionId, published_at: null })
     expect(v.data_hash).toMatch(/^[0-9a-f]{64}$/)
     expect(Number(v.confidence)).toBe(0.55)
 
@@ -190,7 +192,7 @@ describe.skipIf(!dbTestsEnabled)('report agent and report versions', async () =>
 
     const ev = await generatedEvents(s.companyId)
     expect(ev).toHaveLength(1)
-    expect(ev[0]).toMatchObject({ subject_id: v.id, payload: { version: 1, report_type: 'point_a', hidden_hypotheses: 1 } })
+    expect(ev[0]).toMatchObject({ subject_id: v.id, payload: { version: 1, status: 'in_review', review_required: true, report_type: 'point_a', hidden_hypotheses: 1 } })
 
     // Same data again (a manual run): no new version, no second event, and the run says why.
     const again = await run(s.companyId)
@@ -210,17 +212,17 @@ describe.skipIf(!dbTestsEnabled)('report agent and report versions', async () =>
     const r2 = await run(s.companyId, completed(s.sessionId))
     expect(r2.rep?.summary).toContain('версия 2')
     let vs = await versions(s.companyId)
-    expect(vs.map((v) => [v.version, v.status])).toEqual([[1, 'superseded'], [2, 'ready']])
+    expect(vs.map((v) => [v.version, v.status])).toEqual([[1, 'superseded'], [2, 'in_review']])
     expect(JSON.stringify(vs[1].content)).toContain(HIDDEN)
     expect(vs[1].data_hash).not.toBe(vs[0].data_hash)
     expect(vs[1].provenance.staff.hidden_hypotheses).toBe(0)
 
     // A person publishes v2; then the data changes again.
-    expect(await publishReportVersion(vs[1].id, 'staff-1')).toMatchObject({ ok: true, status: 'published' })
+    expect(await publishInReview(vs[1].id, 'staff-1')).toMatchObject({ ok: true, status: 'published' })
     await prisma.$executeRaw`UPDATE public.diagnostic_findings SET title = 'Выручка в анкете и документе расходятся на 60%' WHERE id = ${s.rules}::uuid`
     await run(s.companyId)
     vs = await versions(s.companyId)
-    expect(vs.map((v) => [v.version, v.status])).toEqual([[1, 'superseded'], [2, 'published'], [3, 'ready']])
+    expect(vs.map((v) => [v.version, v.status])).toEqual([[1, 'superseded'], [2, 'published'], [3, 'in_review']])
     expect(vs.every((v) => v.created_by === 'agent:report')).toBe(true)
     expect(vs.filter((v) => v.status === 'published').map((v) => v.published_by)).toEqual(['staff-1'])
     expect(await generatedEvents(s.companyId)).toHaveLength(3)
@@ -229,6 +231,14 @@ describe.skipIf(!dbTestsEnabled)('report agent and report versions', async () =>
   it('a staff publish through GIGA is audited first and supersedes the previously published version', async () => {
     const s = await seed()
     await run(s.companyId)
+    const [built] = await versions(s.companyId)
+    // A version waiting for the expert is not published through the legacy GIGA action.
+    const notLegacy = await reportRoute.POST(post(`/api/giga-admin/reports/${built.id}`, { action: 'publish' }), { params: { id: built.id } })
+    expect(notLegacy.status).toBe(409)
+    expect((await versions(s.companyId))[0].status).toBe('in_review')
+    // Versions built before 103 are 'ready': GIGA still publishes those.
+    await prisma.$executeRaw`UPDATE public.report_versions SET status = 'ready' WHERE id = ${built.id}::uuid`
+    audit.calls.length = 0
     const [v1] = await versions(s.companyId)
 
     // Wrong permission: 403 before anything is written.
@@ -267,6 +277,7 @@ describe.skipIf(!dbTestsEnabled)('report agent and report versions', async () =>
     await reviewItem({ kind: 'finding', id: s.hiddenAi, decision: 'approve', actorId: 'staff-1' })
     await run(s.companyId)
     const v2 = (await versions(s.companyId))[1]
+    await prisma.$executeRaw`UPDATE public.report_versions SET status = 'ready' WHERE id = ${v2.id}::uuid`
     expect((await reportRoute.POST(post(`/api/giga-admin/reports/${v2.id}`, { action: 'publish' }), { params: { id: v2.id } })).status).toBe(200)
     expect((await versions(s.companyId)).map((v) => [v.version, v.status])).toEqual([[1, 'superseded'], [2, 'published']])
 
@@ -280,16 +291,16 @@ describe.skipIf(!dbTestsEnabled)('report agent and report versions', async () =>
     // Rebuilding the same data after a withdraw gives a fresh publishable version (the
     // withdrawn one no longer counts as "unchanged"), and a reject behaves the same way.
     const rebuilt = await run(s.companyId)
-    expect(rebuilt.rep?.summary).toContain('версия 3 готова к проверке')
+    expect(rebuilt.rep?.summary).toContain('версия 3 отправлена эксперту на проверку')
     let vs = await versions(s.companyId)
-    expect(vs.map((v) => [v.version, v.status])).toEqual([[1, 'superseded'], [2, 'superseded'], [3, 'ready']])
+    expect(vs.map((v) => [v.version, v.status])).toEqual([[1, 'superseded'], [2, 'superseded'], [3, 'in_review']])
     expect(vs[2].data_hash).toBe(vs[1].data_hash)
     const rej = await reportRoute.POST(post(`/api/giga-admin/reports/${vs[2].id}`, { action: 'reject', reason: 'Нарратив неточен' }), { params: { id: vs[2].id } })
     expect(rej.status).toBe(200)
     await run(s.companyId)
     vs = await versions(s.companyId)
-    expect(vs.map((v) => [v.version, v.status])).toEqual([[1, 'superseded'], [2, 'superseded'], [3, 'superseded'], [4, 'ready']])
-    // …while a still-ready version with the same data is not duplicated.
+    expect(vs.map((v) => [v.version, v.status])).toEqual([[1, 'superseded'], [2, 'superseded'], [3, 'superseded'], [4, 'in_review']])
+    // …while a version still waiting for review with the same data is not duplicated.
     await run(s.companyId)
     expect(await versions(s.companyId)).toHaveLength(4)
   })
@@ -301,14 +312,14 @@ describe.skipIf(!dbTestsEnabled)('report agent and report versions', async () =>
     await run(b.companyId)
     const [va] = await versions(a.companyId)
     await reviewItem({ kind: 'finding', id: a.hiddenAi, decision: 'approve', actorId: 'staff-1' })
-    await publishReportVersion(va.id, 'staff-1')
-    await run(a.companyId) // v2 ready, unpublished
+    await publishInReview(va.id, 'staff-1')
+    await run(a.companyId) // v2 in_review, unpublished
 
     await inRollback(async (db) => {
       const read = (uid: string) => asUser(db, uid, async () =>
         (await db.query(`SELECT company_id, version, status FROM public.report_versions WHERE company_id = ANY($1) ORDER BY company_id, version`, [[a.companyId, b.companyId]])).rows)
       expect(await read(a.owner)).toEqual([{ company_id: a.companyId, version: 1, status: 'published' }])
-      expect(await read(b.owner)).toEqual([]) // B has only a ready version, and never sees A's
+      expect(await read(b.owner)).toEqual([]) // B has only a version waiting for the expert, and never sees A's
       const staff = await seedUser(db, { role: 'expert', status: 'approved' })
       expect((await read(staff)).length).toBe(3)
       const forge = asUser(db, a.owner, () => db.query(
@@ -432,7 +443,7 @@ describe.skipIf(!dbTestsEnabled)('report agent and report versions', async () =>
       const { rep, task } = await run(s.companyId)
       expect(rep?.summary).toContain('резюме отклонено проверкой')
       const [v] = await versions(s.companyId)
-      expect(v.status).toBe('ready')
+      expect(v.status).toBe('in_review')
       expect(v.content.narrative).toBeNull()
       expect(v.provenance.staff.narrative).toMatchObject({ state: 'rejected', reason: expect.stringContaining('35') })
       expect(task.result_summary).toMatchObject({ narrative: 'rejected' })

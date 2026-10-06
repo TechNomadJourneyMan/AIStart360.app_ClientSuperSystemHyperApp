@@ -4,6 +4,7 @@ import { drainQueue } from '@/lib/agents/queue'
 import { enqueueScheduledAgents } from '@/lib/functions/agents'
 import { redispatchPending } from '@/lib/events/platform'
 import { pruneRateLimits } from '@/lib/rate-limit'
+import { drainWhatsAppOutbox } from '@/lib/whatsapp/outbox'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -22,6 +23,12 @@ export async function GET(req: NextRequest) {
   try {
     const scheduled = await enqueueScheduledAgents(new Date())
     const redispatched = await redispatchPending()
+    // WhatsApp notifications outbox (migration 104): retries and missed inline sends;
+    // bounded (50 rows, 30 s) and before the long agent drain.
+    const whatsapp = await drainWhatsAppOutbox({ limit: 50, budgetMs: 30_000 }).catch((err: unknown) => {
+      console.error('[cron/agents] whatsapp drain failed', err instanceof Error ? err.message.split('\n')[0] : 'error')
+      return null
+    })
     const drained = await drainQueue({ budgetMs: 240_000 })
     const rateLimitsPruned = await pruneRateLimits() // expired rate_limit_hits rows (migration 100); never throws
     return NextResponse.json({
@@ -32,6 +39,7 @@ export async function GET(req: NextRequest) {
       approvalsExpired: drained.approvalsExpired,
       sessionsFailed: drained.sessionsFailed,
       rateLimitsPruned,
+      whatsapp,
       executed: drained.executed.map((r) => ({ taskId: r.taskId, status: r.finalStatus, errorCode: r.errorCode })),
     })
   } catch (err) {

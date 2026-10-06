@@ -4,6 +4,7 @@ import { listAgents } from '@/lib/agents/registry'
 import { loadConfig } from '@/lib/agents/store'
 import { redispatchPending } from '@/lib/events/platform'
 import { cronMatches } from '@/lib/agents/cron'
+import { drainWhatsAppOutbox } from '@/lib/whatsapp/outbox'
 
 /**
  * Inngest wiring of the agent runtime (docs/platform/05-agents.md).
@@ -43,6 +44,8 @@ export const agentsMaintenance = inngest.createFunction(
   async () => {
     const scheduled = await enqueueScheduledAgents(new Date())
     const redispatched = await redispatchPending()
+    // WhatsApp outbox first (bounded, seconds): retries must not wait behind a long agent drain.
+    const whatsapp = await drainWhatsAppOutbox({ limit: 50, budgetMs: 30_000 }).catch(() => null)
     const drained = await drainQueue({ budgetMs: 240_000 })
     return {
       scheduled,
@@ -51,6 +54,7 @@ export const agentsMaintenance = inngest.createFunction(
       approvalsExpired: drained.approvalsExpired,
       sessionsFailed: drained.sessionsFailed,
       executed: drained.executed.length,
+      whatsapp,
     }
   },
 )

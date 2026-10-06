@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase-service'
 import { aggregatePointA } from '@/lib/point-a/aggregator'
 import { resolveTenantWith, tenantErrorMessage, type TenantContext } from '@/lib/tenancy'
-import { companyOwnerId } from '@/lib/metrics/materialize-tenant'
+import { metricsInputOwner } from '@/lib/metrics/materialize-tenant'
 import { safeErrorMessage } from '@/lib/api-error'
 import type { ApiResult, PointA } from '@/types/onboarding'
 
@@ -32,14 +32,19 @@ async function aggregate(req: Request, materialize: boolean): Promise<NextRespon
   const r = await resolve(req)
   if (!r.ok) return r.res
   try {
-    // The questionnaire of the company's primary owner feeds Point A.
-    const ownerId = (await companyOwnerId(r.supabase, r.tenant.companyId)) ?? r.tenant.userId
+    // After the tenant check above, the inputs are read and the metrics
+    // written with the service role, scoped to the company's primary owner
+    // and company_id (lib/metrics/materialize-tenant.ts): under RLS a member /
+    // partner / staff user does not see the owner's rows without company_id,
+    // and their recalculation deleted the owner's values. Users have no write
+    // grant on public.metrics since migration 088.
+    const service = createServiceClient()
+    const ownerId = await metricsInputOwner(service, r.tenant)
     const pointA = await aggregatePointA(r.supabase, ownerId, r.tenant.companyId, {
       skipMaterialize: !materialize,
       documentsScope: 'company',
-      // Writes to public.metrics go through the service role after the
-      // tenant check above (users have no write grant since migration 088).
-      ...(materialize ? { writeClient: createServiceClient() } : {}),
+      inputClient: service,
+      ...(materialize ? { writeClient: service } : {}),
     })
     const body: ApiResult<PointA> = { ok: true, data: pointA }
     return NextResponse.json(body)

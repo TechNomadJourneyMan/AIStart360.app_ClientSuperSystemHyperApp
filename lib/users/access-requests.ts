@@ -97,6 +97,9 @@ export async function decideAccessRequest(
     void import('@/lib/telegram/bots/expert/notify')
       .then((m) => m.notifyClientApprovedSafely(approvedUser))
       .catch(() => {})
+    void import('@/lib/whatsapp/experts')
+      .then((m) => m.notifyClientApprovedWhatsAppSafely(approvedUser))
+      .catch(() => {})
   }
 
   return { ok: true, status: requestStatus, userId }

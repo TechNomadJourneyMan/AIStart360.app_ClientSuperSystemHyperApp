@@ -26,6 +26,21 @@ export type EmailKind =
   | 'gri_completed'
   | 'portal_access_granted'
   | 'notification'
+  | 'report_review'
+
+/**
+ * A file attached to the letter. Resend «Send email» (resend.com/docs/api-reference/emails/send-email):
+ * `attachments` — array of { content: buffer | Base64 string, filename, contentType? },
+ * at most 40 MB per email after Base64 encoding. Passed to the SDK as is.
+ */
+export interface EmailAttachment {
+  filename: string
+  content: Buffer
+  contentType?: string
+}
+
+/** Resend: «max 40MB per email, after Base64 encoding of the attachments». */
+export const EMAIL_ATTACHMENTS_MAX_BASE64_BYTES = 40 * 1024 * 1024
 
 export interface TransactionalEmailInput {
   kind: EmailKind
@@ -36,6 +51,8 @@ export interface TransactionalEmailInput {
   /** Ключ идемпотентности. Без него письмо отправляется всегда. */
   dedupeKey?: string | null
   metadata?: Record<string, unknown>
+  /** Files to attach (see EmailAttachment). Never written to the delivery log. */
+  attachments?: EmailAttachment[]
 }
 
 export interface TransactionalEmailResult {
@@ -148,6 +165,18 @@ export async function sendTransactionalEmail(input: TransactionalEmailInput): Pr
     return { ok: false, error }
   }
 
+  const attachments = input.attachments?.length
+    ? input.attachments.map((a) => ({ filename: a.filename, content: a.content, ...(a.contentType ? { contentType: a.contentType } : {}) }))
+    : null
+  if (attachments) {
+    const base64Bytes = attachments.reduce((sum, a) => sum + Math.ceil(a.content.length / 3) * 4, 0)
+    if (base64Bytes > EMAIL_ATTACHMENTS_MAX_BASE64_BYTES) {
+      const error = 'вложения больше 40 МБ (лимит Resend)'
+      console.error(`[email] ${input.kind} → ${input.to}: ${error}`)
+      return { ok: false, error }
+    }
+  }
+
   const { claimed, rowId } = await claimDedupe(input)
   if (!claimed) {
     console.info(`[email] ${input.kind} → ${input.to}: уже отправлено ранее, пропуск`)
@@ -168,6 +197,7 @@ export async function sendTransactionalEmail(input: TransactionalEmailInput): Pr
         html,
         text,
         ...(replyTo ? { replyTo } : {}),
+        ...(attachments ? { attachments } : {}),
       })
       const err = (res as { error?: unknown } | null)?.error
       if (err) {

@@ -45,6 +45,13 @@ export interface MetaSendFailure {
   code: string | null
   message: string
   retryable: boolean
+  /**
+   * false only when the request provably never left this process (DNS failure,
+   * connection refused, local validation). Absent means "may have reached the
+   * provider" for network errors and timeouts — callers that must not send
+   * twice (lib/whatsapp/outbox.ts) treat that as delivery unknown.
+   */
+  requestSent?: boolean
 }
 
 export type MetaSendResult = MetaSendSuccess | MetaSendFailure
@@ -74,6 +81,13 @@ export interface SendWhatsAppTemplateInput {
   templateName: string
   languageCode: string
   bodyParameters: string[]
+  /**
+   * Button parameters by button index: the dynamic suffix of a URL button, or
+   * the code of an authentication template's copy-code button (both are sent
+   * as `sub_type: "url"`). Meta reference: Cloud API › Messages › Template
+   * object, "components" (button). Не проверено вживую.
+   */
+  buttonParameters?: Array<{ index: number; text: string }>
   /** Fail-closed routing check for the configured Cloud API sender. */
   accountExternalId?: string
 }
@@ -253,7 +267,20 @@ function localFailure(
   message: string,
   retryable = false,
 ): MetaSendFailure {
-  return { ok: false, status: null, code, message, retryable }
+  return { ok: false, status: null, code, message, retryable, requestSent: false }
+}
+
+/** Socket-level errors that happen before any byte reaches the provider. */
+const PRE_CONNECT_ERROR_CODES = new Set([
+  'ENOTFOUND', 'EAI_AGAIN', 'ECONNREFUSED', 'ENETUNREACH', 'EHOSTUNREACH',
+  'UND_ERR_CONNECT_TIMEOUT', 'ERR_INVALID_URL', 'CERT_HAS_EXPIRED',
+  'UNABLE_TO_VERIFY_LEAF_SIGNATURE', 'DEPTH_ZERO_SELF_SIGNED_CERT',
+])
+
+function errorCauseCode(error: unknown): string | null {
+  const cause = asRecord(asRecord(error)?.cause) ?? asRecord(error)
+  const code = cause?.code
+  return typeof code === 'string' ? code : null
 }
 
 function uniqueNonEmptyOptionIds(options: MetaInteractiveOption[]): boolean {
@@ -388,6 +415,7 @@ export class MetaClient {
       const isTimeout =
         controller.signal.aborted ||
         (error instanceof Error && error.name === 'AbortError')
+      const causeCode = isTimeout ? null : errorCauseCode(error)
       return {
         ok: false,
         status: null,
@@ -396,6 +424,7 @@ export class MetaClient {
           ? `Meta API request timed out after ${this.timeoutMs}ms`
           : redactMetaSecrets(error, secrets),
         retryable: true,
+        ...(causeCode && PRE_CONNECT_ERROR_CODES.has(causeCode) ? { requestSent: false } : {}),
       }
     } finally {
       clearTimeout(timer)
@@ -596,6 +625,7 @@ export class MetaClient {
         'WhatsApp template sender does not match the configured phone id',
       )
     }
+    const buttonParameters = input.buttonParameters ?? []
     if (
       !/^[1-9][0-9]{7,14}$/.test(input.recipientId)
       || !/^[a-z0-9_]{1,512}$/.test(input.templateName)
@@ -605,6 +635,16 @@ export class MetaClient {
         parameter !== parameter.trim()
         || parameter.length < 1
         || parameter.length > 1_024,
+      )
+      || buttonParameters.length > 10
+      || new Set(buttonParameters.map((b) => b.index)).size !== buttonParameters.length
+      || buttonParameters.some((button) =>
+        !Number.isInteger(button.index)
+        || button.index < 0
+        || button.index > 9
+        || button.text !== button.text.trim()
+        || button.text.length < 1
+        || button.text.length > 2_000,
       )
     ) {
       return localFailure(
@@ -624,15 +664,25 @@ export class MetaClient {
           policy: 'deterministic',
           code: input.languageCode,
         },
-        ...(input.bodyParameters.length > 0
+        ...(input.bodyParameters.length > 0 || buttonParameters.length > 0
           ? {
-              components: [{
-                type: 'body',
-                parameters: input.bodyParameters.map((parameter) => ({
-                  type: 'text',
-                  text: parameter,
+              components: [
+                ...(input.bodyParameters.length > 0
+                  ? [{
+                      type: 'body',
+                      parameters: input.bodyParameters.map((parameter) => ({
+                        type: 'text',
+                        text: parameter,
+                      })),
+                    }]
+                  : []),
+                ...buttonParameters.map((button) => ({
+                  type: 'button',
+                  sub_type: 'url',
+                  index: String(button.index),
+                  parameters: [{ type: 'text', text: button.text }],
                 })),
-              }],
+              ],
             }
           : {}),
       },

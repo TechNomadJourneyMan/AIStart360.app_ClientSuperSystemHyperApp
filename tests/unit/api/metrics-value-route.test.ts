@@ -15,6 +15,17 @@ vi.mock('@/lib/supabase/server', () => ({
   createClient: vi.fn(async () => supabaseMock),
 }))
 
+// ── Mock the service client (live inputs are read with it after the tenant check) ──
+const serviceMock = {
+  from: vi.fn(() => {
+    const b: Record<string, unknown> = {}
+    for (const m of ['select', 'eq']) b[m] = () => b
+    b.maybeSingle = () => Promise.resolve({ data: { user_id: 'owner-1' }, error: null })
+    return b
+  }),
+}
+vi.mock('@/lib/supabase-service', () => ({ createServiceClient: () => serviceMock }))
+
 // ── Mock the materialize + resolver layer ────────────────────
 const gatherResolverContextMock = vi.fn()
 const resolveMetricMock = vi.fn()
@@ -236,6 +247,9 @@ describe('GET /api/v1/metrics/[id]/value', () => {
     })
 
     expect(gatherResolverContextMock).toHaveBeenCalledTimes(1)
+    // Inputs: service client, scoped to the company's primary owner + company
+    // (a member's RLS would hide the owner's rows without company_id).
+    expect(gatherResolverContextMock).toHaveBeenCalledWith(serviceMock, expect.objectContaining({ userId: 'owner-1', companyId: 'co-1', documentsScope: 'company' }))
     expect(resolveMetricMock).toHaveBeenCalledTimes(1)
   })
 

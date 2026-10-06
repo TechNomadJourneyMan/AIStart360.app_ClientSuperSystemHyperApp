@@ -19,13 +19,13 @@ import { auditFor, can, UUID_RE, type AdminCtx, type AdminEntry, type AdminStep 
 const KIND: Record<string, ReviewKind> = { f: 'finding', r: 'recommendation' }
 const KIND_CODE: Record<ReviewKind, string> = { finding: 'f', recommendation: 'r' }
 const VERSION_STATUS: Record<string, string> = {
-  draft: '📝 черновик', ready: '🟡 готов к проверке', published: '✅ опубликован', superseded: '🗄 заменён',
+  draft: '📝 черновик', ready: '🟡 готов к проверке', in_review: '🧐 на проверке эксперта', published: '✅ опубликован', superseded: '🗄 заменён',
 }
 
 export async function showReportsMenu(ctx: AdminCtx): Promise<void> {
   const rows = [
     can(ctx, 'insights.moderate') ? [ctx.button('🧪 Проверка выводов ИИ', 'rw.l', 0)] : [],
-    can(ctx, 'agents.view') ? [ctx.button('🟡 Готовы к публикации', 'rv.l', '-', 0)] : [],
+    can(ctx, 'agents.view') ? [ctx.button('🧐 На проверке эксперта', 'rv.l', '-', 0)] : [],
   ]
   if (!rows.some((r) => r.length)) return void (await ctx.show('⛔ Недостаточно прав: отчёты и проверка выводов ИИ недоступны вашей роли.'))
   await ctx.show('📄 <b>Отчёты</b>', rows)
@@ -78,9 +78,10 @@ async function review(ctx: AdminCtx, code: string, id: string, decision: 'approv
 }
 
 async function showVersions(ctx: AdminCtx, companyId: string, page: number): Promise<void> {
-  const all = await listReportVersions({ companyId: companyId === '-' ? null : companyId, status: companyId === '-' ? 'ready' : null, limit: 200 })
+  // New versions wait for the expert (in_review, 103): decided in the expert bot, the expert cabinet or GIGA.
+  const all = await listReportVersions({ companyId: companyId === '-' ? null : companyId, status: companyId === '-' ? 'in_review' : null, limit: 200 })
   const slice = all.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
-  const head = companyId === '-' ? `🟡 <b>Версии, готовые к публикации: ${all.length}</b>` : `📄 <b>Версии отчётов</b>${all[0]?.company_name ? ` · ${esc(all[0].company_name)}` : ''}`
+  const head = companyId === '-' ? `🧐 <b>Версии на проверке эксперта: ${all.length}</b>\nРешение («Подтвердить» / «Нужны правки») — в боте экспертов, кабинете эксперта или GIGA → Отчёты.` : `📄 <b>Версии отчётов</b>${all[0]?.company_name ? ` · ${esc(all[0].company_name)}` : ''}`
   const rows = slice.map((v) => [ctx.button(`${(VERSION_STATUS[v.status] ?? v.status).split(' ')[0]} ${cut(v.company_name ?? '', 20)} · ${REPORT_TYPE_LABELS[v.report_type] ?? v.report_type} v${v.version}`, 'rv.c', v.id)])
   rows.push(pagerRow(ctx, 'rv.l', page, all.length > (page + 1) * PAGE_SIZE, companyId))
   await ctx.show(all.length ? head : `${head}\nНет версий.`, rows)

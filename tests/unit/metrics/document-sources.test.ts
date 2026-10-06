@@ -83,8 +83,8 @@ describe('period detection and rescaling', () => {
 })
 
 describe('units', () => {
-  it('a share written as a fraction becomes a percent; a stated % stays', () => {
-    const frac = v('biz.finansy.valovaya_marzha', ctx([doc('p', 'pl_report', [f('gross_margin', 0.34)])]))
+  it('a share written as a fraction becomes a percent when the field says «доля»; a stated % stays', () => {
+    const frac = v('biz.finansy.valovaya_marzha', ctx([doc('p', 'pl_report', [f('gross_margin', 0.34, { label: 'Валовая маржа, доля' })])]))
     expect(frac.numeric).toBe(34)
     expect(frac.considered.find((a) => a.status === 'hit')?.document?.unit_conversion).toMatch(/0.34 → 34%/)
     expect(v('biz.finansy.valovaya_marzha', ctx([doc('p', 'pl_report', [f('gross_margin', '41%')])])).numeric).toBe(41)

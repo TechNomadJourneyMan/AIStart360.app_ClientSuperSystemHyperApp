@@ -13,6 +13,7 @@
  * staff-only part) is not selected at all.
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { BUSINESS_TIME_ZONE } from '@/lib/format/period'
 import { resolveTenantWith, type TenantResult } from '@/lib/tenancy'
 import type { ReportContent, ReportType } from './types'
 
@@ -27,6 +28,8 @@ export interface ClientReport {
   confidence: number | null
   data_hash: string
   published_at: string | null
+  /** When the version was built: the date of «Версия N · дата». */
+  created_at: string | null
   content: ReportContent
 }
 
@@ -38,6 +41,7 @@ export interface ClientReportSummary {
   confidence: number | null
   data_hash: string
   published_at: string | null
+  created_at: string | null
   generated_at: string | null
   calculated_at: string | null
   overall_score: number | null
@@ -46,7 +50,7 @@ export interface ClientReportSummary {
   has_narrative: boolean
 }
 
-export const CLIENT_REPORT_COLUMNS = 'id, company_id, report_type, version, title, confidence, data_hash, published_at, content'
+export const CLIENT_REPORT_COLUMNS = 'id, company_id, report_type, version, title, confidence, data_hash, published_at, created_at, content'
 
 export function toClientReport(row: Record<string, unknown>): ClientReport {
   return {
@@ -58,6 +62,7 @@ export function toClientReport(row: Record<string, unknown>): ClientReport {
     confidence: row.confidence == null ? null : Number(row.confidence),
     data_hash: String(row.data_hash),
     published_at: (row.published_at as string | null) ?? null,
+    created_at: (row.created_at as string | null) ?? null,
     content: row.content as ReportContent,
   }
 }
@@ -72,6 +77,7 @@ export function summarize(r: ClientReport): ClientReportSummary {
     confidence: r.confidence,
     data_hash: r.data_hash,
     published_at: r.published_at,
+    created_at: r.created_at,
     generated_at: c?.generated_at ?? null,
     calculated_at: c?.calculated_at ?? null,
     overall_score: c?.diagnostic?.overall_score ?? null,
@@ -110,10 +116,17 @@ export async function publishedReportForCaller(
   return { ok: true, report: toClientReport(row) }
 }
 
-/** ASCII-safe attachment name plus the UTF-8 one (RFC 6266). */
-export function pdfDisposition(r: { report_type: string; version: number }): string {
-  const ascii = `aistart360-${r.report_type.replace(/[^a-z_]/g, '')}-v${r.version}.pdf`
+/**
+ * ASCII-safe attachment name plus the UTF-8 one (RFC 6266). With the version
+ * date: «Отчёт Точка А — версия 3 от 06.10.2026.pdf» (Asia/Almaty).
+ */
+export function pdfDisposition(r: { report_type: string; version: number; created_at?: string | Date | null }): string {
+  const day = r.created_at ? new Date(r.created_at) : null
+  const valid = day && !Number.isNaN(day.getTime()) ? day : null
+  const isoDay = valid ? new Intl.DateTimeFormat('en-CA', { timeZone: BUSINESS_TIME_ZONE, year: 'numeric', month: '2-digit', day: '2-digit' }).format(valid) : null
+  const ruDay = valid ? new Intl.DateTimeFormat('ru-RU', { timeZone: BUSINESS_TIME_ZONE, day: '2-digit', month: '2-digit', year: 'numeric' }).format(valid) : null
+  const ascii = `aistart360-${r.report_type.replace(/[^a-z_]/g, '')}-v${r.version}${isoDay ? `-${isoDay}` : ''}.pdf`
   const label: Record<string, string> = { point_a: 'Точка А', full: 'Полная диагностика', gri: 'GRI', point_b: 'Точка Б' }
-  const utf8 = encodeURIComponent(`Отчёт ${label[r.report_type] ?? ''} — версия ${r.version}.pdf`.replace(/\s+/g, ' '))
+  const utf8 = encodeURIComponent(`Отчёт ${label[r.report_type] ?? ''} — версия ${r.version}${ruDay ? ` от ${ruDay}` : ''}.pdf`.replace(/\s+/g, ' '))
   return `attachment; filename="${ascii}"; filename*=UTF-8''${utf8}`
 }

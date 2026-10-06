@@ -27,8 +27,15 @@ export interface GatherContextOptions {
   companyId: string
   /**
    * 'user' (default, original behaviour): documents uploaded by `userId`.
-   * 'company': documents of the company (company_id) plus older ones that
-   * carry only the owner's user_id — what a multi-member company uploaded.
+   * 'company': documents of the company (company_id) plus the owner's older
+   * uploads that carry no company_id; the GRI assessment is the owner's for
+   * this company (or one without a company_id).
+   *
+   * Tenant callers (lib/metrics/materialize-tenant.ts, Point A aggregate) pass
+   * the SERVICE client with 'company' after authorising the caller: under RLS
+   * (migration 084) a member / partner / staff user does not see the owner's
+   * rows with company_id NULL, and inputs that differ by who clicks
+   * «пересчитать» would make the materialiser delete the owner's values.
    */
   documentsScope?: 'user' | 'company'
   preferPeriodYear?: number
@@ -42,36 +49,40 @@ export interface GatherContextOptions {
 
 const PLAIN_ID = /^[A-Za-z0-9_-]+$/
 
+function companyScoped(opts: GatherContextOptions): boolean {
+  return opts.documentsScope === 'company' && PLAIN_ID.test(opts.companyId) && PLAIN_ID.test(opts.userId)
+}
+
 function documentsQuery(supabase: SupabaseClient, opts: GatherContextOptions) {
   const q = supabase
     .from('documents')
     .select('id, doc_type, file_name, parsed_data, period_year, period_quarter, uploaded_at, parse_status')
-  if (opts.documentsScope === 'company' && PLAIN_ID.test(opts.companyId) && PLAIN_ID.test(opts.userId)) {
-    return q.or(`company_id.eq.${opts.companyId},user_id.eq.${opts.userId}`)
+  if (companyScoped(opts)) {
+    return q.or(`company_id.eq.${opts.companyId},and(user_id.eq.${opts.userId},company_id.is.null)`)
   }
   return q.eq('user_id', opts.userId)
 }
 
 /**
  * Section averages of the owner's current GRI assessment (feed the gri.*
- * metrics). The table is optional for the resolver: a failed read means «no
- * assessment», never a failed materialisation of the other 140 metrics.
+ * metrics). A failed read throws like the survey / documents reads: «could
+ * not read» must never look like «no assessment», or the materialiser deletes
+ * the gri.* rows and every value calculated from them.
  */
-async function griSections(supabase: SupabaseClient, userId: string): Promise<{ sections: Record<string, unknown> | null; at: string | null }> {
-  try {
-    const res = await supabase
-      .from('gri_assessments')
-      .select('section_avgs, created_at')
-      .eq('user_id', userId)
-      .eq('is_current', true)
-      .order('created_at', { ascending: false })
-      .limit(1)
-    const row = (res?.data ?? [])[0] as { section_avgs?: Record<string, unknown> | null; created_at?: string | null } | undefined
-    if (res?.error || !row || !row.section_avgs || typeof row.section_avgs !== 'object') return { sections: null, at: null }
-    return { sections: row.section_avgs, at: row.created_at ?? null }
-  } catch {
-    return { sections: null, at: null }
-  }
+async function griSections(supabase: SupabaseClient, opts: GatherContextOptions): Promise<{ sections: Record<string, unknown> | null; at: string | null }> {
+  let q = supabase
+    .from('gri_assessments')
+    .select('section_avgs, created_at')
+    .eq('user_id', opts.userId)
+  if (companyScoped(opts)) q = q.or(`company_id.eq.${opts.companyId},company_id.is.null`)
+  const res = await q
+    .eq('is_current', true)
+    .order('created_at', { ascending: false })
+    .limit(1)
+  if (res.error) throw new Error(`metrics: GRI assessment read failed (${res.error.code ?? 'unknown'})`)
+  const row = (res.data ?? [])[0] as { section_avgs?: Record<string, unknown> | null; created_at?: string | null } | undefined
+  if (!row || !row.section_avgs || typeof row.section_avgs !== 'object') return { sections: null, at: null }
+  return { sections: row.section_avgs, at: row.created_at ?? null }
 }
 
 export async function gatherResolverContext(
@@ -86,7 +97,7 @@ export async function gatherResolverContext(
     documentsQuery(supabase, opts)
       .eq('parse_status', 'parsed')
       .order('uploaded_at', { ascending: false }),
-    griSections(supabase, opts.userId),
+    griSections(supabase, opts),
   ])
 
   // «Could not read the inputs» must never look like «no inputs»: the

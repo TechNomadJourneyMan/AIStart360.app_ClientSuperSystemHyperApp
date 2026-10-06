@@ -6,11 +6,13 @@
  * EXPERT_ROLES — the same gate as /api/expert/** (lib/expert-auth.ts).
  * Scope: the same as those routes — experts are platform staff and read every
  * client company (no expert↔client assignment exists, see
- * lib/reports/expert-list.ts); reports: published versions only. Model
+ * lib/reports/expert-list.ts); reports: published versions, plus versions
+ * waiting for the expert (status 'in_review', 103 — ./review.ts). Model
  * hypotheses not yet reviewed are shown because platform staff (incl.
  * 'expert') may read them under RLS 085 — always labelled as unreviewed.
- * Experts change nothing in the system here: the only write is their own
- * notification level / mute.
+ * Writes: their own notification level / mute, and the decision on a report
+ * waiting for review («✅ Подтвердить и опубликовать» / «✏️ Нужны правки»),
+ * re-verified on the server by lib/reports/review-flow.ts.
  */
 import { getSiteUrl } from '@/lib/site-url'
 import { LEVEL_LABELS } from '@/lib/notifications/levels'
@@ -20,9 +22,10 @@ import { renderCompanyCard, sessionLine } from '../cards'
 import { companyCard, recentSessions, searchCompanies } from '../data'
 import type { BotContext, Entry, Router, StepEntry } from '../dispatcher'
 import { LEVEL_CODES, muteUntil, readSettings, renderSettings, writeLevel, writeMute } from '../notify-settings'
-import { sendMessage, type ReplyMarkup } from '../registry'
+import { sendMessage, type InlineButton, type ReplyMarkup } from '../registry'
 import { cut, dt, esc, pageOf, pagerRow, PAGE_SIZE } from '../ui'
 import { consumeExpertLinkCode, expertByTelegramUser, EXPERT_START_PREFIX, type ExpertPrincipal } from './link'
+import { reviewCallbacks, reviewSteps, showInReviewList } from './review'
 
 type Ctx = BotContext<ExpertPrincipal>
 type E = Entry<ExpertPrincipal>
@@ -80,15 +83,16 @@ async function listReports(ctx: Ctx, companyId: string, page: number): Promise<v
   for (const v of slice) lines.push(`• ${esc(cut(v.company_name ?? v.company_id, 30))} · ${esc(REPORT_TYPE_LABELS[v.report_type] ?? v.report_type)} v${v.version} · ${dt(v.published_at)}`)
   if (!slice.length) lines.push('Опубликованных отчётов нет.')
   lines.push('', '<i>PDF открывается в браузере, где вы вошли в кабинет эксперта.</i>')
-  const rows = slice.map((v) => [{ text: `📄 ${cut(v.company_name ?? '', 22)} v${v.version}`, url: getSiteUrl(`/api/v1/reports/${v.id}/pdf`) }, ctx.button('🏢', 'cl.c', v.company_id)])
+  const rows: Array<Array<InlineButton | null>> = slice.map((v) => [{ text: `📄 ${cut(v.company_name ?? '', 22)} v${v.version}`, url: getSiteUrl(`/api/v1/reports/${v.id}/pdf`) }, ctx.button('🏢', 'cl.c', v.company_id)])
   rows.push(pagerRow(ctx, 'rp.l', page, all.length > (page + 1) * PAGE_SIZE, companyId))
+  rows.push([ctx.button('📝 На проверке', 'rr.l')])
   await ctx.show(lines.join('\n'), rows)
 }
 
 async function showNotifications(ctx: Ctx): Promise<void> {
   const s = await readSettings('expert', ctx.principal.userId)
   if (!s) return void (await ctx.show('Telegram не привязан.'))
-  const { text, kb } = renderSettings(ctx, s, 'en', 'Сюда приходят: завершённые диагностики, опубликованные отчёты, одобренные клиенты.')
+  const { text, kb } = renderSettings(ctx, s, 'en', 'Сюда приходят: отчёты на проверке (PDF с кнопками), завершённые диагностики, опубликованные отчёты, одобренные клиенты.')
   await ctx.show(text, kb)
 }
 
@@ -107,6 +111,7 @@ const menuRuns: Record<string, (ctx: Ctx) => Promise<void>> = {
 }
 
 const steps: Record<string, StepEntry<ExpertPrincipal>> = {
+  ...reviewSteps,
   ex_search: {
     async run(ctx) {
       const q = ctx.text.slice(0, 80)
@@ -136,6 +141,7 @@ const callbacks: Record<string, E> = {
   'ds.l': { run: (ctx, [companyId, p]) => listSessions(ctx, companyId ?? '-', pageOf(p)) },
   'rp.l': { run: (ctx, [companyId, p]) => listReports(ctx, companyId ?? '-', pageOf(p)) },
   'en.v': { run: (ctx) => showNotifications(ctx) },
+  ...reviewCallbacks,
   'en.lv': {
     async run(ctx, [code]) {
       const level = LEVEL_CODES[code]
@@ -169,7 +175,7 @@ export function expertRouter(): Router<ExpertPrincipal> {
       const res = await consumeExpertLinkCode({ code: payload.slice(EXPERT_START_PREFIX.length), telegramUserId: from.id, chatId, username: from.username ?? null })
       const expert = res.ok ? await expertByTelegramUser(from.id) : null
       await sendMessage('expert', chatId, expert
-        ? '✅ Telegram привязан к кабинету эксперта AIStart360. Сюда будут приходить завершённые диагностики, опубликованные отчёты и новые клиенты.'
+        ? '✅ Telegram привязан к кабинету эксперта AIStart360. Сюда будут приходить отчёты на проверку (PDF с кнопками «Подтвердить» / «Нужны правки»), завершённые диагностики, опубликованные отчёты и новые клиенты.'
         : 'Ссылка привязки недействительна или истекла. Получите новую в кабинете эксперта → Профиль → «Привязать Telegram».',
       expert ? expertKeyboard() : undefined, deps.fetchImpl)
       return true
@@ -183,6 +189,7 @@ export function expertRouter(): Router<ExpertPrincipal> {
       clients: { run: clientsMenu },
       diagnostics: { run: (ctx) => listSessions(ctx, '-', 0) },
       reports: { run: (ctx) => listReports(ctx, '-', 0) },
+      review: { run: showInReviewList },
       notifications: { run: showNotifications },
     },
     menu,

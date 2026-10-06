@@ -4,18 +4,18 @@
  * what the PDF shows is exactly what the version froze, whenever it is
  * downloaded.
  *
- * The PDF is rendered on demand by the API route instead of being stored
- * (report_versions.pdf_storage_path stays NULL): the content is immutable and
- * rendering takes well under a second, so a stored copy would only add a
- * second source of truth, storage permissions and a cleanup job. If a stored
- * copy is ever needed (e.g. e-mail attachments), render this function's
- * output once and record the path.
+ * Version stamp (owner decision, migration 103): «Версия N · ДД.ММ.ГГГГ»
+ * (the version's creation date in Asia/Almaty) on the cover and in the footer
+ * of every page; while the version waits for the expert the pages carry the
+ * diagonal watermark «На проверке эксперта». lib/reports/pdf-store.ts renders
+ * each stage once and keeps it in private Storage (pdf_storage_path).
  *
  * Every finding and recommendation shows its provenance badge (Факт / Расчёт /
  * Вывод по правилам / Гипотеза ИИ / Рекомендация), confidence and producer;
  * the end of the document lists the data sources and the generation date.
  * Visual language: lib/reports/pdf.ts (A4, IBM Plex, brand-green rules).
  */
+import { versionDateLabel, versionStamp } from './version-stamp'
 import { pdfLayout as L } from './pdf'
 import { REPORT_FONTS } from './fonts'
 import {
@@ -140,9 +140,21 @@ const LEGEND: Array<[ReportProvenanceType, string]> = [
   ['RECOMMENDATION', 'предлагаемое действие на основе выводов диагностики'],
 ]
 
-export async function renderReportVersionPdf(content: ReportContent): Promise<Buffer> {
+export const REVIEW_WATERMARK = 'На проверке эксперта'
+
+export { versionDateLabel, versionStamp }
+
+export interface VersionPdfOptions {
+  /** report_versions.version and created_at: printed as «Версия N · дата». */
+  version?: { number: number; createdAt: string | Date } | null
+  /** Watermark on every page (REVIEW_WATERMARK while in_review), or none. */
+  watermark?: string | null
+}
+
+export async function renderReportVersionPdf(content: ReportContent, opts: VersionPdfOptions = {}): Promise<Buffer> {
   const company = content.company.name?.trim() || 'Компания'
-  const doc = L.newDoc(content.title)
+  const stamp = opts.version ? versionStamp(opts.version.number, opts.version.createdAt) : null
+  const doc = L.newDoc(stamp ? `${content.title} · ${stamp}` : content.title)
   const d = content.diagnostic
 
   L.drawCover(doc, {
@@ -150,6 +162,7 @@ export async function renderReportVersionPdf(content: ReportContent): Promise<Bu
     title: 'Точка А — диагностика бизнеса',
     meta: { companyName: company, generatedAt: content.generated_at, industry: content.company.industry },
     headline: d.overall_score !== null ? { label: 'Индекс Точки А', value: `${Math.round(d.overall_score)}/100` } : null,
+    versionLine: stamp,
   })
 
   // ── Сводка ──────────────────────────────────────────────────────────────
@@ -221,5 +234,5 @@ export async function renderReportVersionPdf(content: ReportContent): Promise<Bu
   }
   L.paragraph(doc, 'Уверенность — насколько вывод подтверждён данными: от низкой к полной.', { size: 9, color: L.colors.MUTED })
 
-  return L.finalize(doc)
+  return L.finalize(doc, { footer: stamp, watermark: opts.watermark ?? null })
 }
