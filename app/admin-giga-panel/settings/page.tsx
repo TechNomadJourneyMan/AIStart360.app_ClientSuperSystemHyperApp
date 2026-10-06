@@ -4,8 +4,8 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import Link from 'next/link'
 import { toast } from 'sonner'
 import {
-  Activity, AlertTriangle, Bell, CheckCircle2, Database, ExternalLink, Eraser, KeyRound, LayoutGrid,
-  Megaphone, RefreshCw, ScrollText, ShieldCheck, Sparkles, UserPlus, Users2, Wrench, XCircle,
+  Activity, AlertTriangle, Bell, Bot, CheckCircle2, Database, ExternalLink, Eraser, KeyRound, LayoutGrid,
+  Megaphone, Plug, RefreshCw, ScrollText, ShieldCheck, Sparkles, UserPlus, Users2, Wrench, XCircle,
 } from 'lucide-react'
 import { RequirePermission, useStaff } from '@/components/giga-panel/StaffContext'
 import {
@@ -550,14 +550,28 @@ interface Health {
   env: Array<{ key: string; label: string; required: boolean; configured: boolean }>
   tables: Array<{ name: string; ok: boolean; rows: number | null; error: string | null }>
   buckets: Array<{ name: string; ok: boolean }>
+  /** Absent on older deployments; null when the table is unavailable. */
+  integrations?: { crm: { active: number; errors: number; plaintextTokens: number; lastSyncAt: string | null } | null }
+  /** Same checks the monitoring agent runs; null until migrations 086–087 are applied. */
+  agents?: Array<{ key: string; label: string; status: 'ok' | 'warn' | 'critical'; value: number; detail: string }> | null
 }
+
+const CHECK_STATUS = {
+  ok: { label: 'норма', cls: 'text-emerald-300' },
+  warn: { label: 'внимание', cls: 'text-amber-300' },
+  critical: { label: 'критично', cls: 'text-red-300' },
+} as const
 
 function HealthCard() {
   const h = useGigaQuery<Health>('/api/giga-admin/system/health')
   const problems = useMemo(() => {
     if (!h.data) return 0
+    const crm = h.data.integrations?.crm
     return h.data.env.filter((e) => e.required && !e.configured).length + h.data.tables.filter((t) => !t.ok).length + h.data.buckets.filter((b) => !b.ok).length
+      + (h.data.agents ?? []).filter((c) => c.status === 'critical').length
+      + (crm && crm.plaintextTokens > 0 ? 1 : 0)
   }, [h.data])
+  const warnings = (h.data?.agents ?? []).filter((c) => c.status === 'warn').length + (h.data?.integrations?.crm?.errors ? 1 : 0)
 
   return (
     <Panel
@@ -566,7 +580,8 @@ function HealthCard() {
       description="Секреты не показываются — только признак «настроено»."
       actions={
         <>
-          {h.data && (problems ? <Badge tone="red">проблем: {problems}</Badge> : <Badge tone="green">всё в порядке</Badge>)}
+          {h.data && (problems ? <Badge tone="red">проблем: {problems}</Badge> : warnings ? null : <Badge tone="green">всё в порядке</Badge>)}
+          {h.data && warnings > 0 && <Badge tone="amber">внимание: {warnings}</Badge>}
           <Button size="sm" variant="ghost" icon={<RefreshCw size={12} />} loading={h.loading} onClick={() => void h.reload()}>Проверить</Button>
         </>
       }
@@ -618,6 +633,60 @@ function HealthCard() {
               <Link href="/admin-giga-panel/audit" className="inline-flex items-center gap-1 text-[11px] text-blue-300 hover:underline"><ScrollText size={11} /> Журнал аудита</Link>
               <Link href="/admin-giga-panel/staff" className="inline-flex items-center gap-1 text-[11px] text-blue-300 hover:underline"><Users2 size={11} /> Сотрудники</Link>
             </div>
+          </div>
+        </div>
+      )}
+      {h.data && (
+        <div className="mt-4 grid gap-4 border-t border-white/[0.05] pt-4 md:grid-cols-3">
+          <div className="md:col-span-2">
+            <p className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500"><Bot size={12} /> Агенты, очереди, документы, расход ИИ</p>
+            {h.data.agents ? (
+              <ul className="space-y-1">
+                {h.data.agents.map((c) => (
+                  <li key={c.key} className="flex items-center justify-between gap-3 text-[11px]" title={c.detail}>
+                    <span className={cx('min-w-0 truncate', c.status === 'ok' ? 'text-slate-300' : CHECK_STATUS[c.status].cls)}>{c.label}</span>
+                    <span className="flex shrink-0 items-center gap-2">
+                      <span className="tabular-nums text-slate-400">{c.value.toLocaleString('ru-RU')}{c.key === 'agent_fail_rate' ? '%' : ''}</span>
+                      <span className="hidden text-slate-600 sm:inline">{c.detail}</span>
+                      <span className={cx('w-16 text-right', CHECK_STATUS[c.status].cls)}>{CHECK_STATUS[c.status].label}</span>
+                      {c.status === 'ok'
+                        ? <CheckCircle2 size={13} className="shrink-0 text-emerald-400" aria-hidden />
+                        : c.status === 'warn'
+                          ? <AlertTriangle size={13} className="shrink-0 text-amber-400" aria-hidden />
+                          : <XCircle size={13} className="shrink-0 text-red-400" aria-hidden />}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-[11px] text-slate-500">Проверки агентов недоступны: похоже, миграции 086–087 ещё не применены.</p>
+            )}
+            <Link href="/admin-giga-panel/agents" className="mt-2 inline-flex items-center gap-1 text-[11px] text-blue-300 hover:underline"><Bot size={11} /> ИИ-агенты</Link>
+          </div>
+          <div>
+            <p className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500"><Plug size={12} /> Интеграции CRM</p>
+            {h.data.integrations?.crm ? (
+              <ul className="space-y-1 text-[11px]">
+                <li className="flex justify-between"><span className="text-slate-500">Активных подключений</span><span className="tabular-nums text-slate-300">{h.data.integrations.crm.active}</span></li>
+                <li className="flex justify-between">
+                  <span className="text-slate-500">С ошибкой синхронизации</span>
+                  <span className={cx('tabular-nums', h.data.integrations.crm.errors ? 'text-amber-300' : 'text-slate-300')}>{h.data.integrations.crm.errors}</span>
+                </li>
+                <li className="flex justify-between"><span className="text-slate-500">Последняя синхронизация</span><span className="text-slate-300">{h.data.integrations.crm.lastSyncAt ? fmtAgo(h.data.integrations.crm.lastSyncAt) : 'не было'}</span></li>
+                <li className="flex justify-between">
+                  <span className="text-slate-500">Токены без шифрования</span>
+                  <span className={cx('tabular-nums', h.data.integrations.crm.plaintextTokens ? 'text-red-300' : 'text-slate-300')}>{h.data.integrations.crm.plaintextTokens}</span>
+                </li>
+              </ul>
+            ) : (
+              <p className="text-[11px] text-slate-500">Нет данных о подключениях CRM (таблица недоступна или API старой версии).</p>
+            )}
+            {!!h.data.integrations?.crm?.plaintextTokens && (
+              <p role="alert" className="mt-2 rounded-xl border border-red-500/25 bg-red-500/10 px-3 py-2 text-[11px] leading-relaxed text-red-200">
+                {h.data.integrations.crm.plaintextTokens} токен(ов) CRM хранятся открытым текстом. Зашифруйте их:{' '}
+                <code className="font-mono text-[10px]">npx tsx scripts/encrypt-crm-tokens.ts --apply</code> (нужны SECRETS_ENCRYPTION_KEY и DIRECT_URL; без --apply — пробный прогон).
+              </p>
+            )}
           </div>
         </div>
       )}

@@ -65,6 +65,14 @@ export const AUDIT_ACTION: Record<string, string> = {
   'insight.published': 'Инсайт опубликован',
   'insight.rejected': 'Инсайт отклонён',
   'insight.edited': 'Инсайт отредактирован',
+  'agent.config.update': 'ИИ-агент: настройки изменены',
+  'agent.permissions.update': 'ИИ-агент: права изменены',
+  'agent.run.manual': 'ИИ-агент запущен вручную',
+  'agent.task.cancel': 'Задача агента отменена',
+  'agent.task.retry': 'Задача агента перезапущена',
+  'agent.approval.decide': 'Решение по действию агента',
+  'staff.telegram.link_requested': 'Запрошена привязка Telegram',
+  'staff.telegram.unlinked': 'Telegram отвязан',
 }
 
 export function auditLabel(action: string): string {

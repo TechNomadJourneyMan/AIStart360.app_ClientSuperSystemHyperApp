@@ -29,6 +29,7 @@ const GROUPS = [
   { value: 'settings.', label: 'Настройки' },
   { value: 'admin.', label: 'Входы в панель' },
   { value: 'insight.', label: 'Модерация' },
+  { value: 'agent.', label: 'ИИ-агенты' },
 ] as const
 
 function Inner() {

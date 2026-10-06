@@ -1,7 +1,9 @@
 import type { Permission } from './rbac'
 
 /** GIGA-CRM navigation. Items the actor lacks permission for are hidden. */
-export interface GigaNavItem { href: string; label: string; icon: string; permission: Permission; exact?: boolean }
+/** Live counters the sidebar may show next to an item (fetched only when the item is visible). */
+export type GigaNavBadge = 'pendingApprovals'
+export interface GigaNavItem { href: string; label: string; icon: string; permission: Permission; exact?: boolean; badge?: GigaNavBadge }
 export interface GigaNavGroup { label: string; items: GigaNavItem[] }
 
 export const GIGA_BASE = '/admin-giga-panel'
@@ -9,6 +11,7 @@ export const GIGA_BASE = '/admin-giga-panel'
 export const GIGA_NAV: GigaNavGroup[] = [
   { label: 'Обзор', items: [
     { href: GIGA_BASE, label: 'Главная', icon: 'dashboard', permission: 'dashboard.view', exact: true },
+    { href: `${GIGA_BASE}/notifications`, label: 'Уведомления', icon: 'bell', permission: 'dashboard.view' },
   ] },
   { label: 'Пользователи', items: [
     { href: `${GIGA_BASE}/users`, label: 'Пользователи', icon: 'users', permission: 'users.view' },
@@ -27,6 +30,13 @@ export const GIGA_NAV: GigaNavGroup[] = [
   { label: 'Коммуникации', items: [
     { href: `${GIGA_BASE}/inbox`, label: 'Instagram / WhatsApp', icon: 'messages', permission: 'inbox.view' },
     { href: `${GIGA_BASE}/market`, label: 'Инсайты рынка', icon: 'lightbulb', permission: 'market.manage' },
+  ] },
+  { label: 'ИИ и автоматизация', items: [
+    { href: `${GIGA_BASE}/agents`, label: 'ИИ-агенты', icon: 'bot', permission: 'agents.view' },
+    { href: `${GIGA_BASE}/agents/tasks`, label: 'Задачи агентов', icon: 'listchecks', permission: 'agents.view' },
+    { href: `${GIGA_BASE}/agents/approvals`, label: 'Одобрения', icon: 'stamp', permission: 'agents.view', badge: 'pendingApprovals' },
+    { href: `${GIGA_BASE}/agents/costs`, label: 'Стоимость ИИ', icon: 'coins', permission: 'agents.view' },
+    { href: `${GIGA_BASE}/agents/events`, label: 'События платформы', icon: 'zap', permission: 'agents.view' },
     { href: `${GIGA_BASE}/moderation`, label: 'Модерация ИИ', icon: 'shieldcheck', permission: 'insights.moderate' },
   ] },
   { label: 'Платформа', items: [
@@ -71,10 +81,14 @@ export const SUPER_EXPERT_NAV: GigaNavGroup[] = [
   ] },
 ]
 
-const TITLES: Array<[RegExp, string]> = [...GIGA_NAV, ...SUPER_EXPERT_NAV].flatMap((g) => g.items).map((i) => [
-  new RegExp(`^${i.href.replace(/[/-]/g, (c) => `\\${c}`)}${i.exact ? '$' : '(/|$)'}`),
-  i.label,
-])
+// Most specific first: «/agents/tasks/…» must resolve to «Задачи агентов», not to «ИИ-агенты».
+const TITLES: Array<[RegExp, string, number]> = [...GIGA_NAV, ...SUPER_EXPERT_NAV].flatMap((g) => g.items)
+  .map((i): [RegExp, string, number] => [
+    new RegExp(`^${i.href.replace(/[/-]/g, (c) => `\\${c}`)}${i.exact ? '$' : '(/|$)'}`),
+    i.label,
+    i.href.length,
+  ])
+  .sort((a, b) => b[2] - a[2])
 
 /** Breadcrumb label for the section a path belongs to. */
 export function gigaSectionTitle(pathname: string): string | null {
@@ -84,4 +98,25 @@ export function gigaSectionTitle(pathname: string): string | null {
 
 export function isNavActive(item: GigaNavItem, pathname: string): boolean {
   return item.exact ? pathname === item.href : pathname === item.href || pathname.startsWith(`${item.href}/`)
+}
+
+/**
+ * The one item to highlight for `pathname`: the most specific match. Nested
+ * sections («ИИ-агенты» → «Задачи агентов») would otherwise both light up.
+ */
+export function activeNavHref(nav: GigaNavGroup[], pathname: string): string | null {
+  let best: GigaNavItem | null = null
+  for (const g of nav) {
+    for (const i of g.items) {
+      if (isNavActive(i, pathname) && (!best || i.href.length > best.href.length)) best = i
+    }
+  }
+  return best?.href ?? null
+}
+
+/** Groups and items the actor may see; empty groups are dropped. */
+export function visibleNav(nav: GigaNavGroup[], can: (p: Permission) => boolean): GigaNavGroup[] {
+  return nav
+    .map((g) => ({ ...g, items: g.items.filter((i) => can(i.permission)) }))
+    .filter((g) => g.items.length > 0)
 }
