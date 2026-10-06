@@ -138,7 +138,12 @@ describe('BENCHMARKS dataset', () => {
       }
       expect(row.overall).toBeGreaterThanOrEqual(0)
       expect(row.overall).toBeLessThanOrEqual(100)
-      expect(row.sampleSize).toBeGreaterThan(0)
+    }
+  })
+
+  it('curated rows claim no sample size — they are expert estimates', () => {
+    for (const row of BENCHMARKS.filter((r) => r.source === 'curated')) {
+      expect(row.sampleSize).toBeNull()
     }
   })
 })
