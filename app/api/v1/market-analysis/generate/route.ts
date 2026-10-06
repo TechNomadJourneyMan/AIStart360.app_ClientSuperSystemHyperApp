@@ -10,6 +10,7 @@ import {
 import { getQuestion } from '@/lib/market-analysis/questions'
 import { loadAnswers, rebuildSnapshot } from '@/lib/market-analysis/persist'
 import { isRateLimitedKey } from '@/lib/rate-limit'
+import { dbError, safeErrorMessage } from '@/lib/api-error'
 
 const UPSTREAM_TIMEOUT_MS = 6000
 
@@ -54,7 +55,8 @@ export async function POST() {
   try {
     existing = await loadAnswers(sb, userId)
   } catch (e) {
-    const msg = e instanceof Error ? e.message : 'load_failed'
+    console.error('[v1/market-analysis/generate]', e instanceof Error ? e.message : e)
+    const msg = safeErrorMessage(e, 'Не удалось загрузить анализ рынка')
     return NextResponse.json({ ok: false, error: msg }, { status: 500 })
   }
   const locked = new Set(
@@ -89,7 +91,7 @@ export async function POST() {
       .from('market_analysis_answers')
       .upsert(rows, { onConflict: 'user_id,question_key' })
     if (upErr) {
-      return NextResponse.json({ ok: false, error: upErr.message }, { status: 500 })
+      return dbError('v1/market-analysis/generate', upErr)
     }
     generated = rows.length
   }

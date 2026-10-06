@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
+import { requireServiceRoleKey } from '@/lib/supabase-service'
 
 const FEATURE_LABELS: Record<string, string> = {
   '/metrics': 'Метрики',
@@ -31,7 +32,7 @@ export async function POST(req: NextRequest) {
 
     const featureLabel = FEATURE_LABELS[featureKey] ?? featureKey
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-    const serviceKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY)!
+    const serviceKey = requireServiceRoleKey()
 
     // Fetch user profile info
     const profileRes = await fetch(

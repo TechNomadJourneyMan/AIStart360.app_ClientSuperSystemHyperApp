@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
+import { dbError } from '@/lib/api-error'
 
 // GET /api/v1/diagnostics/current
 // The user is taken from the authenticated session — never from the query —
@@ -20,7 +21,7 @@ export async function GET(_req: NextRequest) {
     .single()
 
   if (error && error.code !== 'PGRST116') {
-    return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
+    return dbError('v1/diagnostics/current', error)
   }
 
   return NextResponse.json({ ok: true, data: data ?? null })

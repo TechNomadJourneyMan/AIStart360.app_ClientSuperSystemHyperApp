@@ -27,3 +27,18 @@ export function apiError(
 ): NextResponse {
   return NextResponse.json({ ok: false, error: message, ...extra }, { status })
 }
+
+/**
+ * A failed database / Supabase call: the driver message (table and column
+ * names, constraint names, SQL fragments) goes to the server log only; the
+ * client gets a generic Russian message and a stable code.
+ */
+export function dbError(
+  tag: string,
+  err: { message?: string; code?: string } | null | undefined,
+  message = 'Ошибка базы данных. Попробуйте позже.',
+  status = 500,
+): NextResponse {
+  console.error(`[${tag}] db error`, err?.code ?? '', err?.message ?? '')
+  return NextResponse.json({ ok: false, error: message, code: 'DB_ERROR' }, { status })
+}

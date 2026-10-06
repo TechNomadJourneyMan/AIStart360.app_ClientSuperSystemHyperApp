@@ -17,6 +17,7 @@ import { resolverContextForTenant } from '@/lib/metrics/materialize-tenant'
 import { resolveMetric } from '@/lib/metrics/resolver'
 import { resolveTenantWith, tenantErrorMessage } from '@/lib/tenancy'
 import type { PeriodQuarter } from '@/lib/metrics/types'
+import { dbError, safeErrorMessage } from '@/lib/api-error'
 
 const FRESH_WINDOW_MS = 24 * 60 * 60 * 1000
 
@@ -97,10 +98,7 @@ export async function GET(
       .limit(1)
 
     if (metricsError) {
-      return NextResponse.json(
-        { ok: false, error: metricsError.message },
-        { status: 500 },
-      )
+      return dbError('v1/metrics/value', metricsError)
     }
 
     const now = new Date()
@@ -164,7 +162,8 @@ export async function GET(
 
     return NextResponse.json({ ok: true, data: payload })
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown error'
+    console.error('[v1/metrics/[id]/value]', err instanceof Error ? err.message : err)
+    const message = safeErrorMessage(err, 'Не удалось получить значение метрики')
     return NextResponse.json(
       { ok: false, error: message },
       { status: 500 },

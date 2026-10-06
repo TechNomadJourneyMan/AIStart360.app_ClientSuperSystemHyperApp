@@ -14,6 +14,7 @@ import { trackEvent } from '@/lib/events/track'
 import { computeGriIndex, computeSectionAvgs, scoresFingerprint, type GriScores } from '@/lib/gri-assessment/score'
 import { runInBackground } from '@/lib/background'
 import { sendGriCompletedEmail } from '@/lib/email'
+import { dbError } from '@/lib/api-error'
 
 // Scores shape: { [sectionId]: { [criterionId]: number 1..10 } }. The math lives in
 // lib/gri-assessment/score.ts and is shared with the widget.
@@ -147,7 +148,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (insertErr) {
-      return NextResponse.json({ ok: false, error: insertErr.message }, { status: 500 })
+      return dbError('v1/gri/assessment', insertErr)
     }
 
     void trackEvent({ userId, name: 'GRI_COMPLETED', entityType: 'gri_assessment', entityId: inserted?.id ?? null, metadata: { gri_index } })
@@ -203,7 +204,7 @@ export async function GET(req: NextRequest) {
       .limit(20)
 
     if (error) {
-      return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
+      return dbError('v1/gri/assessment', error)
     }
 
     const history = data ?? []
@@ -222,7 +223,7 @@ export async function GET(req: NextRequest) {
     .maybeSingle()
 
   if (error) {
-    return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
+    return dbError('v1/gri/assessment', error)
   }
 
   return NextResponse.json({ ok: true, data: { current: data ?? null } })

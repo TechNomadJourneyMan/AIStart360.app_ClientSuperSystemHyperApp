@@ -33,15 +33,17 @@ export async function upsertUserSecurity(userId: string, patch: Partial<Omit<Use
 
 /**
  * Set the TOTP enforcement flag that middleware reads from the (server-verified)
- * Supabase JWT. Merges into existing user_metadata — does not wipe other keys.
+ * Supabase JWT. Merges into existing metadata — does not wipe other keys.
  */
 export async function setMfaMetadataFlag(userId: string, enabled: boolean): Promise<void> {
-  await admin().auth.admin.updateUserById(userId, { user_metadata: { mfa_totp: enabled } })
+  // app_metadata is the authoritative copy (users cannot edit it); user_metadata
+  // is kept in sync for older readers (lib/mfa/flags.ts ORs both).
+  await admin().auth.admin.updateUserById(userId, { app_metadata: { mfa_totp: enabled }, user_metadata: { mfa_totp: enabled } })
 }
 
 /** Set the passkey (WebAuthn) enforcement flag — middleware gates on TOTP OR passkey. */
 export async function setMfaWebauthnFlag(userId: string, enabled: boolean): Promise<void> {
-  await admin().auth.admin.updateUserById(userId, { user_metadata: { mfa_webauthn: enabled } })
+  await admin().auth.admin.updateUserById(userId, { app_metadata: { mfa_webauthn: enabled }, user_metadata: { mfa_webauthn: enabled } })
 }
 
 /**
@@ -69,6 +71,7 @@ export async function adminResetUserMfa(userId: string): Promise<void> {
   )
   await sb.from('webauthn_credentials').delete().eq('user_id', userId)
   await sb.auth.admin.updateUserById(userId, {
+    app_metadata: { mfa_totp: false, mfa_webauthn: false },
     user_metadata: { mfa_totp: false, mfa_webauthn: false },
   })
 }

@@ -14,6 +14,7 @@ import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
 import { getMetricById } from '@/lib/metrics/registry'
 import { fetchTimeseries, type FetchPeriod } from '@/lib/metrics/timeseries-fetch'
+import { safeErrorMessage } from '@/lib/api-error'
 
 const PeriodSchema = z.enum(['1M', '3M', '6M', '1Y', 'ALL']).default('3M')
 
@@ -70,7 +71,8 @@ export async function GET(
       data,
     })
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown error'
+    console.error('[v1/metrics/[id]/timeseries]', err instanceof Error ? err.message : err)
+    const message = safeErrorMessage(err, 'Не удалось загрузить историю метрики')
     return NextResponse.json({ error: message }, { status: 500 })
   }
 }

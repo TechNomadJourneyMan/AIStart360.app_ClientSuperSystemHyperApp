@@ -14,6 +14,7 @@ import {
   upsertAnswer,
   type AnswerRecord,
 } from '@/lib/market-analysis/persist'
+import { dbError, safeErrorMessage } from '@/lib/api-error'
 
 // =============================================================================
 // GET /api/v1/market-analysis
@@ -32,7 +33,8 @@ export async function GET() {
   try {
     answers = await loadAnswers(sb, userId)
   } catch (e) {
-    const msg = e instanceof Error ? e.message : 'load_failed'
+    console.error('[v1/market-analysis]', e instanceof Error ? e.message : e)
+    const msg = safeErrorMessage(e, 'Не удалось загрузить анализ рынка')
     return NextResponse.json({ ok: false, error: msg }, { status: 500 })
   }
 
@@ -148,7 +150,7 @@ export async function PATCH(req: NextRequest) {
       .eq('question_key', question_key)
       .maybeSingle()
     if (exErr) {
-      return NextResponse.json({ ok: false, error: exErr.message }, { status: 500 })
+      return dbError('v1/market-analysis', exErr)
     }
     if (!existing) {
       return NextResponse.json({ ok: false, error: 'answer_not_found' }, { status: 404 })
@@ -161,7 +163,7 @@ export async function PATCH(req: NextRequest) {
       .eq('user_id', userId)
       .eq('question_key', question_key)
     if (updErr) {
-      return NextResponse.json({ ok: false, error: updErr.message }, { status: 500 })
+      return dbError('v1/market-analysis', updErr)
     }
   }
 

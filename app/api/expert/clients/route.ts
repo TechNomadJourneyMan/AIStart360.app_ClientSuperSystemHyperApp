@@ -12,7 +12,7 @@ const EXPERT_ROLES = new Set(['expert', 'admin', 'super_admin'])
  */
 async function sbFetch<T = unknown>(path: string): Promise<T | null> {
   const url = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? '').replace(/\/$/, '')
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY ?? ''
   if (!url || !key) return null
   try {
     const res = await fetch(`${url}/rest/v1/${path}`, {

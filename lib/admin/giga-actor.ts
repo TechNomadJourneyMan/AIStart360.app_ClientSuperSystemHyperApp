@@ -4,6 +4,8 @@ import { createServerClient } from '@/lib/supabase-server'
 import { createServiceClient } from '@/lib/supabase-service'
 import { verifyToken } from '@/lib/security/signed-token'
 import { getSetting } from '@/lib/settings/store'
+import { MFA_COOKIE_NAME, verifyStepUp } from '@/lib/mfa/step-up'
+import { mfaFlagsEnrolled } from '@/lib/mfa/flags'
 import { canManageTarget, hasPermission, isStaffRole, permissionsFor, type Permission, type StaffRole } from '@/lib/admin/rbac'
 
 /**
@@ -58,7 +60,35 @@ async function staffRoleOf(
   return isStaffRole(r) ? r : null
 }
 
-export async function getGigaActor(req: NextRequest): Promise<GigaActor | null> {
+/** Why a personal session was not admitted although its role allows the panel. */
+export type GigaMfaBlock = 'step_up' | 'enroll'
+
+/**
+ * Second-factor gate for personal staff sessions on the API (middleware only
+ * gates pages; /api/* skips it). Enrolment is read from the database
+ * (user_security, webauthn_credentials) and the JWT flags, never from
+ * user-editable metadata alone; the proof is the signed step-up cookie.
+ */
+export async function staffMfaGate(
+  stepUpCookie: string | null | undefined,
+  user: { id: string; app_metadata?: Record<string, unknown>; user_metadata?: Record<string, unknown> },
+): Promise<'ok' | GigaMfaBlock> {
+  let enrolled = mfaFlagsEnrolled(user)
+  if (!enrolled) {
+    const service = createServiceClient()
+    const [sec, keys] = await Promise.all([
+      service.from('user_security').select('totp_enabled').eq('user_id', user.id).maybeSingle(),
+      service.from('webauthn_credentials').select('user_id', { count: 'exact', head: true }).eq('user_id', user.id),
+    ])
+    if (sec.error || keys.error) throw new Error('mfa state unavailable')
+    enrolled = (sec.data as { totp_enabled?: boolean } | null)?.totp_enabled === true || (keys.count ?? 0) > 0
+  }
+  if (enrolled) return verifyStepUp(stepUpCookie, user.id) ? 'ok' : 'step_up'
+  return (await getSetting('staff_require_mfa')) ? 'enroll' : 'ok'
+}
+
+async function resolveGigaActor(req: NextRequest): Promise<{ actor: GigaActor | null; mfa?: GigaMfaBlock }> {
+  let mfa: GigaMfaBlock | undefined
   // 1) Personal Supabase session.
   try {
     const sb = createServerClient()
@@ -66,20 +96,25 @@ export async function getGigaActor(req: NextRequest): Promise<GigaActor | null> 
     if (user) {
       // Own profile / own staff_roles row are readable under RLS.
       const role = await staffRoleOf(sb, user.id)
-      if (role) return actor(user.id, 'session', role, user.email ?? undefined)
+      if (role) {
+        const gate = await staffMfaGate(req.cookies.get(MFA_COOKIE_NAME)?.value, user)
+        if (gate === 'ok') return { actor: actor(user.id, 'session', role, user.email ?? undefined) }
+        mfa = gate
+      }
     }
   } catch {
     // No session context (or Supabase unreachable) — fall through to cookies.
   }
 
-  // 2) Short-lived personal staff cookie (re-validated against the DB).
+  // 2) Short-lived personal staff cookie (re-validated against the DB). Issued
+  //    only to an admitted session actor (who passed the gate above).
   const staffToken = req.cookies.get(STAFF_COOKIE_NAME)?.value
   if (staffToken) {
     const v = await verifyToken<{ sub: string; email?: string }>('staff', staffToken)
     if (v.ok && typeof v.claims.sub === 'string') {
       try {
         const role = await staffRoleOf(createServiceClient(), v.claims.sub)
-        if (role) return actor(v.claims.sub, 'staff_cookie', role, v.claims.email)
+        if (role) return { actor: actor(v.claims.sub, 'staff_cookie', role, v.claims.email) }
       } catch {
         /* fall through */
       }
@@ -88,10 +123,14 @@ export async function getGigaActor(req: NextRequest): Promise<GigaActor | null> 
 
   // 3) Break-glass signed cookie — unless switched off in platform settings.
   if (verifyGigaRole(req.cookies.get(GIGA_COOKIE_NAME)?.value) === 'super_admin' && (await getSetting('break_glass_enabled'))) {
-    return actor('giga:super_admin', 'break_glass', 'super_admin')
+    return { actor: actor('giga:super_admin', 'break_glass', 'super_admin') }
   }
 
-  return null
+  return { actor: null, mfa }
+}
+
+export async function getGigaActor(req: NextRequest): Promise<GigaActor | null> {
+  return (await resolveGigaActor(req)).actor
 }
 
 /** Boolean convenience kept for older call sites: true only for super_admin. */
@@ -128,7 +167,18 @@ export async function requireGiga(req: NextRequest, permission: Permission | Per
   if (!isSameOriginMutation(req)) {
     return { response: NextResponse.json({ ok: false, error: 'Cross-site request blocked' }, { status: 403 }) }
   }
-  const a = await getGigaActor(req)
+  const { actor: a, mfa } = await resolveGigaActor(req)
+  if (!a && mfa) {
+    return {
+      response: NextResponse.json({
+        ok: false,
+        error: mfa === 'step_up'
+          ? 'Подтвердите вход вторым фактором (страница /2fa), затем повторите действие'
+          : 'Для работы в панели включите двухфакторную аутентификацию (Настройки → Безопасность)',
+        code: mfa === 'step_up' ? 'MFA_STEP_UP_REQUIRED' : 'MFA_ENROLLMENT_REQUIRED',
+      }, { status: 403 }),
+    }
+  }
   if (!a) return { response: NextResponse.json({ ok: false, error: 'Forbidden' }, { status: 403 }) }
   const needed = Array.isArray(permission) ? permission : [permission]
   const missing = needed.filter((p) => !hasPermission(a.role, p))

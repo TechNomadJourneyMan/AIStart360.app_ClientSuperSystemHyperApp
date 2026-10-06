@@ -11,7 +11,7 @@ export const EXPERT_ROLES = new Set(['expert', 'admin', 'super_admin'])
 function srBase() {
   return {
     url: (process.env.NEXT_PUBLIC_SUPABASE_URL ?? '').replace(/\/$/, ''),
-    key: process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    key: process.env.SUPABASE_SERVICE_ROLE_KEY ?? '',
   }
 }
 

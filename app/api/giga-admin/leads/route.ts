@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase-service'
 import { requireGiga } from '@/lib/admin/giga-actor'
+import { dbError } from '@/lib/api-error'
 
 interface RawBlockScore {
   key?: string
@@ -35,7 +36,7 @@ export async function GET(req: NextRequest) {
       .limit(500)
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      return dbError('giga-admin/leads', error)
     }
 
     const leads = (data ?? []).map((r) => {

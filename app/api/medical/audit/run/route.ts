@@ -14,11 +14,12 @@ import { createServerClient } from '@/lib/supabase-server'
 import { segmentPatients } from '@/lib/rfm-segmentation'
 import { computeBundles } from '@/lib/clinic-bundles'
 import { auditRevenueLosses } from '@/lib/revenue-audit'
+import { requireServiceRoleKey } from '@/lib/supabase-service'
 
 function srBase() {
   return {
     url: (process.env.NEXT_PUBLIC_SUPABASE_URL ?? '').replace(/\/$/, ''),
-    key: process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    key: requireServiceRoleKey(),
   }
 }
 

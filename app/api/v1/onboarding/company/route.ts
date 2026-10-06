@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
+import { dbError } from '@/lib/api-error'
 
 // POST /api/v1/onboarding/company — upsert the caller's own company record.
 // user_id comes from the session, never the body. See technical-audit A5.
@@ -40,7 +41,7 @@ export async function POST(req: NextRequest) {
       result = { data, error }
     }
 
-    if (result.error) return NextResponse.json({ ok: false, error: result.error.message }, { status: 500 })
+    if (result.error) return dbError('v1/onboarding/company', result.error)
 
     return NextResponse.json({ ok: true, data: result.data })
   } catch {
@@ -61,7 +62,7 @@ export async function GET(_req: NextRequest) {
     .single()
 
   if (error && error.code !== 'PGRST116') {
-    return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
+    return dbError('v1/onboarding/company', error)
   }
 
   return NextResponse.json({ ok: true, data: data ?? null })

@@ -37,6 +37,7 @@ import type {
   TopTableRow as UiRow,
   TopTableRowKey,
 } from '@/types/point-a-dashboard'
+import { safeErrorMessage } from '@/lib/api-error'
 
 const ALLOWED_PERIODS: TopTablePeriod[] = ['day', 'week', 'month', 'quarter', 'year']
 
@@ -145,9 +146,10 @@ export async function GET(req: NextRequest) {
     }
     return NextResponse.json(body)
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'unknown error'
+    console.error('[v1/point-a/top-table]', err instanceof Error ? err.message : err)
+    const message = safeErrorMessage(err, 'Не удалось построить таблицу')
     return NextResponse.json(
-      { ok: false, error: `top-table failed: ${message}` },
+      { ok: false, error: message },
       { status: 500 },
     )
   }

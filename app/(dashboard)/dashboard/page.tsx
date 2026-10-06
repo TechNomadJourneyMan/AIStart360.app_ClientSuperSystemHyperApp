@@ -33,6 +33,7 @@ import type { PointA, BlockScore } from '@/types/onboarding'
 import { prisma } from '@/lib/db'
 import { getPortfolioGRI } from '@/lib/portfolio-gri'
 import { ShareButton } from '@/components/share/ShareButton'
+import { requireServiceRoleKey } from '@/lib/supabase-service'
 
 export const metadata: Metadata = { title: 'Дэшборд' }
 
@@ -236,7 +237,7 @@ export default async function DashboardPage() {
     let role: string | null = null
     try {
       const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-      const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+      const serviceKey = requireServiceRoleKey()
       const profileRes = await fetch(
         `${supabaseUrl}/rest/v1/profiles?id=eq.${user.id}&select=role`,
         { headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` }, cache: 'no-store' }
@@ -261,7 +262,7 @@ export default async function DashboardPage() {
       let docsCount = 0
       try {
         const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-        const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+        const serviceKey = requireServiceRoleKey()
         const authHeaders = { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` }
         const [diagRes, companyRes, surveyRes, docsRes] = await Promise.all([
           fetch(

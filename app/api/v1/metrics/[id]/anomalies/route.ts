@@ -14,6 +14,7 @@ import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
 import { fetchTimeseries, type FetchPeriod } from '@/lib/metrics/timeseries-fetch'
 import { detectAnomalies } from '@/lib/metrics/anomalies'
+import { safeErrorMessage } from '@/lib/api-error'
 
 const PeriodSchema = z.enum(['1M', '3M', '6M', '1Y', 'ALL']).default('ALL')
 
@@ -54,7 +55,8 @@ export async function GET(
     const data = detectAnomalies(series)
     return NextResponse.json({ data })
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown error'
+    console.error('[v1/metrics/[id]/anomalies]', err instanceof Error ? err.message : err)
+    const message = safeErrorMessage(err, 'Не удалось рассчитать аномалии')
     return NextResponse.json({ error: message }, { status: 500 })
   }
 }

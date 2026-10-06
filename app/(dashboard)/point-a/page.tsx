@@ -21,6 +21,7 @@ import ExecutiveOverview from '@/components/point-a/ExecutiveOverview'
 import { ShareButton } from '@/components/share/ShareButton'
 import { completedStepsFromRows } from '@/lib/survey/steps'
 import { visibleSectionKeysFor } from '@/lib/platform/sections'
+import { requireServiceRoleKey } from '@/lib/supabase-service'
 
 export const metadata: Metadata = { title: 'Точка А — Текущее состояние' }
 
@@ -51,7 +52,7 @@ export default async function PointAPage() {
 
   try {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    const serviceKey = requireServiceRoleKey()
     const headers = { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` }
 
     // Get user's latest diagnostic. Keyed by the SUPABASE user (clientId):

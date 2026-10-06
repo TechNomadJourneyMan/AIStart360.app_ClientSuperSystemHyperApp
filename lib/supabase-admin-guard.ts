@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
-import { staffRoleOfUser } from '@/lib/admin/giga-actor'
+import { cookies } from 'next/headers'
+import { staffMfaGate, staffRoleOfUser } from '@/lib/admin/giga-actor'
+import { MFA_COOKIE_NAME } from '@/lib/mfa/step-up'
 import { canManageTarget, type StaffRole } from '@/lib/admin/rbac'
 
 // Supabase-session admin guard for the legacy /api/v1/admin/* endpoints
@@ -12,7 +14,9 @@ import { canManageTarget, type StaffRole } from '@/lib/admin/rbac'
 //      archived admin gets nothing (previously only the role was checked);
 //   3. the role is read with the service role (fail closed: no anon-key fallback);
 //   4. actions on another person must pass `forbidLegacyTarget` (staff rank),
-//      so an admin cannot block or approve a super_admin.
+//      so an admin cannot block or approve a super_admin;
+//   5. a second factor, when the admin has one (or the platform requires it),
+//      must have been passed in this session (signed step-up cookie).
 
 const ADMIN_STAFF_ROLES = new Set<StaffRole>(['admin', 'super_admin'])
 
@@ -46,6 +50,23 @@ export async function requireSupabaseAdmin(): Promise<AdminGuardResult> {
     me.profileRole === 'admin' ? (me.staffRole === 'super_admin' ? 'super_admin' : 'admin') : me.staffRole
   if (me.status !== 'approved' || !role || !ADMIN_STAFF_ROLES.has(role)) {
     return { error: NextResponse.json({ ok: false, error: 'Forbidden' }, { status: 403 }) }
+  }
+
+  // Same second-factor rule as GIGA (middleware does not gate /api/*).
+  let gate: Awaited<ReturnType<typeof staffMfaGate>>
+  try {
+    gate = await staffMfaGate(cookies().get(MFA_COOKIE_NAME)?.value, user)
+  } catch {
+    return { error: NextResponse.json({ ok: false, error: 'Не удалось проверить второй фактор' }, { status: 503 }) }
+  }
+  if (gate !== 'ok') {
+    return {
+      error: NextResponse.json({
+        ok: false,
+        error: gate === 'step_up' ? 'Подтвердите вход вторым фактором' : 'Включите двухфакторную аутентификацию',
+        code: gate === 'step_up' ? 'MFA_STEP_UP_REQUIRED' : 'MFA_ENROLLMENT_REQUIRED',
+      }, { status: 403 }),
+    }
   }
 
   return { user: { id: user.id, email: user.email }, role }

@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { requireSupabaseAdmin } from '@/lib/supabase-admin-guard'
+import { dbError } from '@/lib/api-error'
 
 // GET /api/v1/admin/pending-users — admin only. See technical-audit A1.
 export async function GET() {
@@ -20,6 +21,6 @@ export async function GET() {
     .eq('status', 'pending_approval')
     .order('created_at', { ascending: true })
 
-  if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
+  if (error) return dbError('v1/admin/pending-users', error)
   return NextResponse.json({ ok: true, data: data ?? [] })
 }

@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase-service'
 import { requireGiga } from '@/lib/admin/giga-actor'
+import { dbError } from '@/lib/api-error'
 
 function mapStatus(s: string): 'pending' | 'approved' | 'rejected' | 'archived' {
   if (s === 'approved') return 'approved'
@@ -123,7 +124,7 @@ export async function POST(req: NextRequest) {
     })
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      return dbError('giga-admin/requests', error)
     }
     return NextResponse.json({ request: { id } }, { status: 201 })
   } catch (error) {

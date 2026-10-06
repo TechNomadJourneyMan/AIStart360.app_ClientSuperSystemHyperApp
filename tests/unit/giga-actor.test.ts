@@ -10,12 +10,18 @@ const db = vi.hoisted(() => ({
   getUser: vi.fn(),
   profile: null as null | { role?: string; status?: string },
   staff: null as null | { role?: string },
+  security: null as null | { totp_enabled?: boolean },
+  passkeys: 0,
+  settings: { break_glass_enabled: true, staff_require_mfa: false } as Record<string, boolean>,
 }))
 const gigaCookie = vi.hoisted(() => ({ verify: vi.fn() }))
 
 function table(name: string) {
-  const row = name === 'profiles' ? db.profile : db.staff
-  return { select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: row }) }) }) }
+  if (name === 'webauthn_credentials') {
+    return { select: () => ({ eq: async () => ({ count: db.passkeys, error: null }) }) }
+  }
+  const row = name === 'profiles' ? db.profile : name === 'user_security' ? db.security : db.staff
+  return { select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: row, error: null }) }) }) }
 }
 
 vi.mock('@/lib/supabase-server', () => ({
@@ -26,13 +32,17 @@ vi.mock('@/lib/giga-cookie', () => ({
   GIGA_COOKIE_NAME: 'aistart360_giga',
   verifyGigaRole: gigaCookie.verify,
 }))
-vi.mock('@/lib/settings/store', () => ({ getSetting: async () => true }))
+vi.mock('@/lib/settings/store', () => ({ getSetting: async (key: string) => db.settings[key] ?? false }))
 
-import { getGigaActor } from '@/lib/admin/giga-actor'
+import { getGigaActor, requireGiga } from '@/lib/admin/giga-actor'
+import { MFA_COOKIE_NAME, signStepUp } from '@/lib/mfa/step-up'
 
-function request(cookie?: string) {
+process.env.AUTH_SECRET = 'test-auth-secret-for-step-up'
+
+function request(cookie?: string, extraCookies: string[] = []) {
+  const cookies = [...(cookie ? [`aistart360_giga=${cookie}`] : []), ...extraCookies]
   return new NextRequest('http://localhost/api/giga-admin/test', {
-    headers: cookie ? { cookie: `aistart360_giga=${cookie}` } : undefined,
+    headers: cookies.length ? { cookie: cookies.join('; ') } : undefined,
   })
 }
 
@@ -41,6 +51,9 @@ describe('getGigaActor', () => {
     vi.resetAllMocks()
     db.profile = null
     db.staff = null
+    db.security = null
+    db.passkeys = 0
+    db.settings = { break_glass_enabled: true, staff_require_mfa: false }
     gigaCookie.verify.mockReturnValue(null)
   })
 
@@ -96,5 +109,54 @@ describe('getGigaActor', () => {
     const actor = await getGigaActor(request('signed-token'))
     expect(actor).toMatchObject({ id: 'giga:super_admin', kind: 'break_glass', role: 'super_admin' })
     expect(gigaCookie.verify).toHaveBeenCalledWith('signed-token')
+  })
+})
+
+describe('second factor on the GIGA API (middleware does not gate /api/*)', () => {
+  beforeEach(() => {
+    vi.resetAllMocks()
+    db.profile = { role: 'super_admin', status: 'approved' }
+    db.staff = null
+    db.security = null
+    db.passkeys = 0
+    db.settings = { break_glass_enabled: true, staff_require_mfa: false }
+    gigaCookie.verify.mockReturnValue(null)
+  })
+
+  const session = (meta: { app?: Record<string, unknown>; user?: Record<string, unknown> } = {}) =>
+    db.getUser.mockResolvedValue({ data: { user: { id: 'admin-1', email: 'a@x.kz', app_metadata: meta.app ?? {}, user_metadata: meta.user ?? {} } } })
+
+  it('an enrolled staff session without the step-up cookie is refused with a clear code', async () => {
+    session({ app: { mfa_totp: true } })
+    expect(await getGigaActor(request())).toBeNull()
+    const guard = await requireGiga(request(), 'users.view')
+    expect(guard.response?.status).toBe(403)
+    expect(await guard.response?.json()).toMatchObject({ code: 'MFA_STEP_UP_REQUIRED' })
+  })
+
+  it('the signed step-up cookie of the same user admits the session', async () => {
+    session({ app: { mfa_totp: true } })
+    const actor = await getGigaActor(request(undefined, [`${MFA_COOKIE_NAME}=${signStepUp('admin-1')}`]))
+    expect(actor).toMatchObject({ id: 'admin-1', kind: 'session' })
+    // Another user's proof does not count.
+    expect(await getGigaActor(request(undefined, [`${MFA_COOKIE_NAME}=${signStepUp('someone-else')}`]))).toBeNull()
+  })
+
+  it('clearing the user-editable flag does not bypass the gate: enrolment is read from the database', async () => {
+    session({ user: { mfa_totp: false } })
+    db.security = { totp_enabled: true }
+    expect(await getGigaActor(request())).toBeNull()
+    db.security = null
+    db.passkeys = 1
+    expect(await getGigaActor(request())).toBeNull()
+  })
+
+  it('when the platform requires 2FA for staff, a session without a second factor must enrol', async () => {
+    session()
+    db.settings.staff_require_mfa = true
+    const guard = await requireGiga(request(), 'users.view')
+    expect(await guard.response?.json()).toMatchObject({ code: 'MFA_ENROLLMENT_REQUIRED' })
+    db.settings.staff_require_mfa = false
+    expect(await getGigaActor(request())).toMatchObject({ id: 'admin-1' })
   })
 })

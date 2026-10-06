@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import type { Metadata } from 'next'
 import { createClient } from '@/lib/supabase/server'
 import { completedStepsFromRows } from '@/lib/survey/steps'
+import { requireServiceRoleKey } from '@/lib/supabase-service'
 
 export const metadata: Metadata = { title: 'Профиль' }
 
@@ -20,7 +21,7 @@ export default async function ProfilePage() {
 
   if (sbUser?.id) {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    const serviceKey = requireServiceRoleKey()
     const headers = { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` }
 
     try {

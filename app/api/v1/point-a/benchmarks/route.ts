@@ -11,6 +11,7 @@ import {
   type BenchmarkBlockKey,
   type BenchmarkRating,
 } from '@/lib/point-a/benchmarks'
+import { safeErrorMessage } from '@/lib/api-error'
 
 const BLOCK_KEYS: BenchmarkBlockKey[] = [
   'finance',
@@ -162,9 +163,10 @@ export async function GET(req: NextRequest) {
     }
     return NextResponse.json(body)
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'unknown error'
+    console.error('[v1/point-a/benchmarks]', err instanceof Error ? err.message : err)
+    const message = safeErrorMessage(err, 'Не удалось загрузить бенчмарки')
     return NextResponse.json(
-      { ok: false, error: `benchmarks route failed: ${message}` },
+      { ok: false, error: message },
       { status: 500 },
     )
   }

@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireExpert, srGet } from '@/lib/expert-auth'
 import { createClient as createSr } from '@supabase/supabase-js'
 import { logAudit } from '@/lib/audit'
+import { dbError } from '@/lib/api-error'
 
 function sr() {
   return createSr(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
@@ -60,7 +61,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     .select('*')
     .maybeSingle()
 
-  if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
+  if (error) return dbError('expert/clients/[id]/point-b-version', error)
 
   logAudit({
     entityType: 'user', entityId: params.id, action: 'expert.point_b_version_created',

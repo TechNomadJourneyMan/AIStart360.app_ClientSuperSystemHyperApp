@@ -146,8 +146,9 @@ export async function POST(req: NextRequest) {
           { source: 'impersonation', impersonationSessionId: imp.sid },
         )
       } catch (e) {
-        const status = e instanceof SurveyEditError ? e.status : 500
-        return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : 'Failed to save answers' }, { status })
+        if (e instanceof SurveyEditError) return NextResponse.json({ ok: false, error: e.message }, { status: e.status })
+        console.error('[onboarding/survey] admin edit failed', e instanceof Error ? e.message : e)
+        return NextResponse.json({ ok: false, error: 'Не удалось сохранить ответы' }, { status: 500 })
       }
     } else {
       const { error } = await sb

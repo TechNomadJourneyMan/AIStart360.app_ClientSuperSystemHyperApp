@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
+import { dbError } from '@/lib/api-error'
 
 /**
  * POST /api/v1/diagnostics/point-b/current-revenue
@@ -43,7 +44,7 @@ export async function POST(req: NextRequest) {
     .upsert(rows, { onConflict: 'user_id,question_key' })
 
   if (error) {
-    return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
+    return dbError('v1/diagnostics/point-b/current-revenue', error)
   }
   return NextResponse.json({ ok: true, data: { revenue_year: year, revenue_month: month } })
 }

@@ -21,6 +21,7 @@ import {
   generateMarketAnswers,
   type MarketGenContext,
 } from '@/lib/market-analysis/generator'
+import { dbError } from '@/lib/api-error'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Auth — verify the HMAC-signed giga super-admin cookie (Node runtime).
@@ -118,14 +119,14 @@ export async function GET(req: NextRequest) {
       .eq('role', 'client')
       .order('created_at', { ascending: false })
     if (pErr) {
-      return NextResponse.json({ ok: false, error: pErr.message }, { status: 500 })
+      return dbError('giga-admin/market-analysis', pErr)
     }
 
     const { data: rows, error: aErr } = await sb
       .from('market_analysis_answers')
       .select('user_id, answer_text, status')
     if (aErr) {
-      return NextResponse.json({ ok: false, error: aErr.message }, { status: 500 })
+      return dbError('giga-admin/market-analysis', aErr)
     }
 
     // Merge counts in JS (two queries, one map).
@@ -295,7 +296,7 @@ export async function POST(req: NextRequest) {
       .from('market_analysis_answers')
       .upsert(rows, { onConflict: 'user_id,question_key' })
     if (upErr) {
-      return NextResponse.json({ ok: false, error: upErr.message }, { status: 500 })
+      return dbError('giga-admin/market-analysis', upErr)
     }
     generated = rows.length
   }

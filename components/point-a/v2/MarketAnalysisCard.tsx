@@ -72,7 +72,7 @@ function formatUpdated(d: Date): string {
 
 export default async function MarketAnalysisCard({ userId }: { userId: string }) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? ''
 
   // Pull the user's market_snapshots row (real OSINT/AI output). Without it the
   // card renders an honest empty state — never fabricated market numbers.

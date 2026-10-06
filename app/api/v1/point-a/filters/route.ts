@@ -17,6 +17,7 @@ export const revalidate = 60
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { discoverFilters, type FilterOption } from '@/lib/point-a/v3/top-table'
+import { safeErrorMessage } from '@/lib/api-error'
 
 interface FiltersResponse {
   ok: true
@@ -61,9 +62,10 @@ export async function GET() {
     }
     return NextResponse.json(body)
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'unknown error'
+    console.error('[v1/point-a/filters]', err instanceof Error ? err.message : err)
+    const message = safeErrorMessage(err, 'Не удалось загрузить фильтры')
     return NextResponse.json<FiltersFail>(
-      { ok: false, error: `filters failed: ${message}` },
+      { ok: false, error: message },
       { status: 500 },
     )
   }

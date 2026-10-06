@@ -10,6 +10,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextResponse, type NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { dbError } from '@/lib/api-error'
 
 interface TargetsBody {
   target_revenue_12m_kzt?: number | null
@@ -32,7 +33,7 @@ export async function GET() {
     .maybeSingle()
 
   if (error) {
-    return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
+    return dbError('v1/companies/targets', error)
   }
 
   return NextResponse.json({
@@ -87,7 +88,7 @@ export async function PATCH(req: NextRequest) {
     .maybeSingle()
 
   if (error) {
-    return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
+    return dbError('v1/companies/targets', error)
   }
 
   return NextResponse.json({

@@ -14,6 +14,7 @@ import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
 import { fetchTimeseries, type FetchPeriod } from '@/lib/metrics/timeseries-fetch'
 import { forecast } from '@/lib/metrics/forecast'
+import { safeErrorMessage } from '@/lib/api-error'
 
 const PeriodSchema = z.enum(['1M', '3M', '6M', '1Y', 'ALL']).default('3M')
 
@@ -54,7 +55,8 @@ export async function GET(
     const points = forecast(series)
     return NextResponse.json({ data: points, confidence: 0.7, method: 'lr+ema' })
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown error'
+    console.error('[v1/metrics/[id]/forecast]', err instanceof Error ? err.message : err)
+    const message = safeErrorMessage(err, 'Не удалось построить прогноз')
     return NextResponse.json({ error: message }, { status: 500 })
   }
 }

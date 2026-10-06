@@ -7,11 +7,12 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { validatePatientBase, type DataQualityReport } from '@/lib/data-quality'
+import { requireServiceRoleKey } from '@/lib/supabase-service'
 
 function srBase() {
   return {
     url: (process.env.NEXT_PUBLIC_SUPABASE_URL ?? '').replace(/\/$/, ''),
-    key: process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    key: requireServiceRoleKey(),
   }
 }
 

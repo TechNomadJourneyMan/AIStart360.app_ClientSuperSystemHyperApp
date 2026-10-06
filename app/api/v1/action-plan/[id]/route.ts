@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { createClient as createSr } from '@supabase/supabase-js'
 import { logAudit } from '@/lib/audit'
+import { dbError } from '@/lib/api-error'
 
 /**
  * PATCH /api/v1/action-plan/:id
@@ -51,7 +52,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   }
 
   const { error } = await admin.from('action_items').update(patch).eq('id', params.id)
-  if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
+  if (error) return dbError('v1/action-plan/[id]', error)
 
   // Audit expert edits of a client's plan.
   if (isStaff) {

@@ -60,7 +60,8 @@ export async function POST(request: Request) {
     })
 
   if (uploadError) {
-    return NextResponse.json({ error: 'Upload failed', details: uploadError.message }, { status: 500 })
+    console.error('[reports/upload] storage upload failed', uploadError.message)
+    return NextResponse.json({ error: 'Не удалось загрузить файл' }, { status: 500 })
   }
 
   // Save to DB

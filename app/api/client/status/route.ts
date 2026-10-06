@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
+import { requireServiceRoleKey } from '@/lib/supabase-service'
 
 /**
  * GET /api/client/status
@@ -22,7 +23,7 @@ export async function GET(_req: NextRequest) {
     const userId = user.id
 
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    const serviceKey = requireServiceRoleKey()
 
     const res = await fetch(
       `${supabaseUrl}/rest/v1/profiles?id=eq.${userId}&select=status`,

@@ -14,6 +14,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { isValidStepKey } from '@/lib/gri/plan-progress'
+import { dbError } from '@/lib/api-error'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -57,7 +58,7 @@ export async function GET(req: NextRequest) {
     if (isMissingRelation(error)) {
       return NextResponse.json({ ok: true, done: [], unavailable: true })
     }
-    return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
+    return dbError('v1/gri/plan-progress', error)
   }
 
   const done = (data ?? [])
@@ -127,7 +128,7 @@ export async function PATCH(req: NextRequest) {
         { status: 503 },
       )
     }
-    return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
+    return dbError('v1/gri/plan-progress', error)
   }
 
   return NextResponse.json({ ok: true, done })

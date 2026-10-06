@@ -5,6 +5,7 @@ import { createServerClient } from '@/lib/supabase-server'
 import { requireExpert } from '@/lib/expert-auth'
 import { calculatePointA } from '@/lib/point-a-engine'
 import { calculatePointB } from '@/lib/point-b-engine'
+import { safeErrorMessage } from '@/lib/api-error'
 
 /**
  * GET /api/clients/:id/analysis/point-b
@@ -39,8 +40,8 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
 
     return NextResponse.json(pointB)
   } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : String(error)
-    console.error('[point-b-api] Error:', msg)
+    const msg = safeErrorMessage(error, 'Не удалось загрузить анализ')
+    console.error('[point-b-api] Error:', error instanceof Error ? error.message : error)
     return NextResponse.json({ error: msg }, { status: 500 })
   }
 }

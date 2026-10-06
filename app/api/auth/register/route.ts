@@ -71,7 +71,8 @@ export async function POST(request: Request) {
       if (error.message.toLowerCase().includes('already registered') || error.message.toLowerCase().includes('already been registered')) {
         return NextResponse.json({ error: 'EMAIL_TAKEN' }, { status: 409 })
       }
-      return NextResponse.json({ error: error.message }, { status: 400 })
+      console.warn('[auth/register] signUp refused', error.status ?? '', error.message)
+      return NextResponse.json({ error: 'Не удалось зарегистрироваться: проверьте email и пароль' }, { status: 400 })
     }
 
     if (!data.user) {

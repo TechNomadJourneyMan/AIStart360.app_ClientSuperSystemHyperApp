@@ -3,6 +3,7 @@ import type { NextFetchEvent, NextRequest } from 'next/server'
 import { updateSession } from '@/lib/supabase/middleware'
 import { GIGA_COOKIE_NAME, verifyGigaRoleEdge } from '@/lib/giga-cookie-edge'
 import { MFA_COOKIE_NAME, verifyStepUpEdge } from '@/lib/mfa/step-up-edge'
+import { mfaFlagsEnrolled } from '@/lib/mfa/flags'
 import { isJourneyPublicDemoEnabled } from '@/lib/journey/public-demo'
 import { IMP_COOKIE_NAME, READ_ONLY_POST_API, isViewModeAllowed, readImpersonation } from '@/lib/impersonation/token'
 import { auditImpersonatedRequestEdge, endImpersonationEdge, isImpersonationActiveEdge } from '@/lib/impersonation/edge'
@@ -312,8 +313,7 @@ export async function middleware(request: NextRequest, event?: NextFetchEvent) {
     // Тот же порядок с 2FA, что и в ГИГА-Панели: включил второй фактор —
     // проходи его и здесь, иначе самый чувствительный экран оказался бы
     // единственным без step-up.
-    const seMeta = user.user_metadata as Record<string, unknown> | undefined
-    const seEnrolled = seMeta?.mfa_totp === true || seMeta?.mfa_webauthn === true
+    const seEnrolled = mfaFlagsEnrolled(user)
     if (seEnrolled && !(await verifyStepUpEdge(request.cookies.get(MFA_COOKIE_NAME)?.value, user.id))) {
       const url = new URL(MFA_CHALLENGE_PATH, request.url)
       url.searchParams.set('from', pathname)
@@ -349,8 +349,7 @@ export async function middleware(request: NextRequest, event?: NextFetchEvent) {
     // never reached and the most privileged surface was the one skipping 2FA.
     // (Break-glass entry has no Supabase user and is unaffected.)
     if (user && !impersonating && !hasGigaAccess) {
-      const gigaMeta = user.user_metadata as Record<string, unknown> | undefined
-      const enrolled = gigaMeta?.mfa_totp === true || gigaMeta?.mfa_webauthn === true
+      const enrolled = mfaFlagsEnrolled(user)
       if (enrolled && !(await verifyStepUpEdge(request.cookies.get(MFA_COOKIE_NAME)?.value, user.id))) {
         const url = new URL(MFA_CHALLENGE_PATH, request.url)
         url.searchParams.set('from', pathname)
@@ -398,11 +397,11 @@ export async function middleware(request: NextRequest, event?: NextFetchEvent) {
 
   // ── MFA step-up gate ──
   // A user who enabled TOTP must pass the second-factor challenge once per
-  // session before any protected page. The `mfa_totp` flag lives in the
-  // (server-verified) Supabase JWT; the proof is the signed step-up cookie.
+  // session before any protected page. The enrolment flags live in the
+  // (server-verified) Supabase JWT — app_metadata, which the user cannot edit
+  // (lib/mfa/flags.ts); the proof is the signed step-up cookie.
   // `/2fa` and public pages are exempt so there is no redirect loop.
-  const meta = user?.user_metadata as Record<string, unknown> | undefined
-  const mfaEnrolled = meta?.mfa_totp === true || meta?.mfa_webauthn === true
+  const mfaEnrolled = mfaFlagsEnrolled(user)
   if (
     user &&
     !isPublic &&

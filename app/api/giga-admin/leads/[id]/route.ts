@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase-service'
 import { requireGiga } from '@/lib/admin/giga-actor'
+import { dbError } from '@/lib/api-error'
 
 /**
  * PATCH /api/giga-admin/leads/:id
@@ -36,7 +37,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       .maybeSingle()
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      return dbError('giga-admin/leads/[id]', error)
     }
     if (!data) {
       return NextResponse.json({ error: 'Not found' }, { status: 404 })

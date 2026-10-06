@@ -53,10 +53,8 @@ export async function POST(
     .single()
 
   if (fetchErr || !doc) {
-    return NextResponse.json(
-      { ok: false, error: fetchErr?.message ?? 'document not found' },
-      { status: 404 },
-    )
+    if (fetchErr && fetchErr.code !== 'PGRST116') console.error('[documents/rebind] load failed', fetchErr.code, fetchErr.message)
+    return NextResponse.json({ ok: false, error: 'document not found' }, { status: 404 })
   }
 
   // 3. Owner-or-admin authorization

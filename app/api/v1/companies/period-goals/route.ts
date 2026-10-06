@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextResponse, type NextRequest } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
+import { dbError } from '@/lib/api-error'
 
 // Short-cycle goals (week / month) live in survey_answers under
 // well-known synthetic step=99 so we don't need a new column on
@@ -34,7 +35,7 @@ export async function GET() {
     .in('question_key', [KEY_WEEK, KEY_MONTH])
 
   if (error) {
-    return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
+    return dbError('v1/companies/period-goals', error)
   }
 
   const out: PeriodGoals = { goal_week: null, goal_month: null }
@@ -103,7 +104,7 @@ export async function PATCH(req: NextRequest) {
     .upsert(rows, { onConflict: 'user_id,question_key' })
 
   if (error) {
-    return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
+    return dbError('v1/companies/period-goals', error)
   }
 
   return NextResponse.json({ ok: true })

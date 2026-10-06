@@ -25,6 +25,18 @@ let _client: SupabaseClient | null = null
  */
 const noStoreFetch: typeof fetch = (input, init) => fetch(input, { ...init, cache: 'no-store' })
 
+/**
+ * The service-role key for server-side REST calls, or an error. There is no
+ * fallback to the anon key: a misconfigured server must fail loudly instead
+ * of silently reading through RLS as an anonymous user (empty pages, writes
+ * dropped) — /api/giga-admin/system/health reports the missing variable.
+ */
+export function requireServiceRoleKey(): string {
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!key) throw new Error('SUPABASE_SERVICE_ROLE_KEY is not configured')
+  return key
+}
+
 export function createServiceClient(): SupabaseClient {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY

@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase-service'
 import { requireGiga } from '@/lib/admin/giga-actor'
+import { dbError } from '@/lib/api-error'
 
 /**
  * GET /api/giga-admin/clients
@@ -27,7 +28,7 @@ export async function GET(req: NextRequest) {
       .order('created_at', { ascending: false })
 
     if (pErr) {
-      return NextResponse.json({ error: pErr.message }, { status: 500 })
+      return dbError('giga-admin/clients', pErr)
     }
 
     // Get companies
