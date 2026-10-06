@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Avatar } from '@/components/ui/Avatar'
 import { StatusBadge } from '@/components/common/StatusBadge'
@@ -8,24 +8,21 @@ import { TableSkeleton } from '@/components/ui/Skeleton'
 import { EmptyState } from '@/components/common/EmptyState'
 import type { AdminClientRow } from '@/app/api/v1/admin/clients/route'
 
-// Unified shape used for rendering — maps both mock and real data
+// Row shape for rendering, mapped from GET /api/v1/admin/clients (Supabase
+// profiles + companies + current Point A diagnostic). There is no mock data.
 interface ClientRow {
   id: string
   name: string
-  email?: string
+  email: string
   industry: string
   stage: string
-  griScore: number       // displayed 0–1000 (real data × 10)
-  previousGriScore?: number
+  /** Point A overall score 0–100; null — no diagnostic yet. */
+  pointAScore: number | null
   status: string
-  website?: string
-  hasRealData: boolean
 }
 
-function toGriScore(score: number | null): number {
-  if (score === null) return 0
-  // Point A engine returns 0–100; divide by 10 for 0–10 display
-  return Math.round(score) / 10
+function toPointAScore(score: number | null): number | null {
+  return typeof score === 'number' && Number.isFinite(score) ? Math.round(score) : null
 }
 
 function statusLabel(status: string): string {
@@ -38,27 +35,26 @@ function statusLabel(status: string): string {
   return map[status] ?? status
 }
 
-function ScoreBar({ score }: { score: number }) {
+function ScoreBar({ score }: { score: number | null }) {
+  if (score === null) {
+    return <span className="font-mono text-base font-bold text-on-surface-variant" title="Диагностика Точки А ещё не рассчитана">—</span>
+  }
   const color =
-    score >= 8 ? 'bg-primary' :
-    score >= 7 ? 'bg-primary-fixed-dim' :
-    score >= 5 ? 'bg-tertiary-container' :
+    score >= 80 ? 'bg-primary' :
+    score >= 70 ? 'bg-primary-fixed-dim' :
+    score >= 50 ? 'bg-tertiary-container' :
     'bg-error'
   const textColor =
-    score >= 8 ? 'text-primary' :
-    score >= 7 ? 'text-primary-fixed-dim' :
-    score >= 5 ? 'text-tertiary-container' :
+    score >= 80 ? 'text-primary' :
+    score >= 70 ? 'text-primary-fixed-dim' :
+    score >= 50 ? 'text-tertiary-container' :
     'text-error'
   return (
     <div className="flex items-center gap-2">
-      <span className={`font-mono text-base font-bold ${textColor}`}>
-        {score > 0 ? score : '—'}
-      </span>
-      {score > 0 && (
-        <div className="w-16 h-1 bg-surface-container-high rounded-full overflow-hidden">
-          <div className={`h-full rounded-full ${color}`} style={{ width: `${score * 10}%` }} />
-        </div>
-      )}
+      <span className={`font-mono text-base font-bold ${textColor}`}>{score}</span>
+      <div className="w-16 h-1 bg-surface-container-high rounded-full overflow-hidden">
+        <div className={`h-full rounded-full ${color}`} style={{ width: `${Math.max(0, Math.min(100, score))}%` }} />
+      </div>
     </div>
   )
 }
@@ -66,34 +62,59 @@ function ScoreBar({ score }: { score: number }) {
 export function ClientsTable() {
   const [clients, setClients] = useState<ClientRow[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [failed, setFailed] = useState(false)
 
-  useEffect(() => {
-    fetch('/api/v1/admin/clients')
-      .then((r) => r.json())
-      .then((json) => {
-        if (json.ok && Array.isArray(json.data) && json.data.length > 0) {
-          const rows: ClientRow[] = (json.data as AdminClientRow[]).map((c) => ({
-            id: c.id,
-            name: c.company_name ?? c.full_name ?? c.email,
-            email: c.email,
-            industry: c.industry ?? '—',
-            stage: c.stage ?? '—',
-            griScore: toGriScore(c.overall_score),
-            status: c.status,
-            hasRealData: c.overall_score !== null,
-          }))
-          setClients(rows)
-        } else {
-          setClients([])
-        }
-      })
-      .catch(() => {
+  const load = useCallback(async () => {
+    setIsLoading(true)
+    setFailed(false)
+    try {
+      const res = await fetch('/api/v1/admin/clients', { cache: 'no-store' })
+      const json = await res.json().catch(() => null)
+      // A failed request is an error, not an empty client base.
+      if (!res.ok || !json?.ok || !Array.isArray(json.data)) {
+        console.error('[ClientsTable] /api/v1/admin/clients failed:', res.status, json?.error)
+        setFailed(true)
         setClients([])
-      })
-      .finally(() => setIsLoading(false))
+        return
+      }
+      setClients((json.data as AdminClientRow[]).map((c) => ({
+        id: c.id,
+        name: c.company_name ?? c.full_name ?? c.email,
+        email: c.email,
+        industry: c.industry ?? '—',
+        stage: c.stage ?? '—',
+        pointAScore: toPointAScore(c.overall_score),
+        status: c.status,
+      })))
+    } catch (err) {
+      console.error('[ClientsTable] load failed:', err)
+      setFailed(true)
+      setClients([])
+    } finally {
+      setIsLoading(false)
+    }
   }, [])
 
+  useEffect(() => { void load() }, [load])
+
   if (isLoading) return <TableSkeleton rows={6} />
+
+  if (failed) {
+    return (
+      <div className="py-16 px-8 text-center" role="alert">
+        <span className="material-symbols-outlined text-5xl text-error/60 mb-3" aria-hidden="true">error</span>
+        <p className="text-sm font-medium text-on-surface mb-1">Не удалось загрузить клиентов</p>
+        <p className="text-xs text-on-surface-variant mb-4">Сервер не ответил или вернул ошибку.</p>
+        <button
+          type="button"
+          onClick={() => void load()}
+          className="text-xs font-mono text-primary bg-primary/10 border border-primary/20 hover:bg-primary/20 px-4 py-2 rounded-xl transition-colors focus:outline-none focus:ring-2 focus:ring-primary/40"
+        >
+          Повторить
+        </button>
+      </div>
+    )
+  }
 
   if (clients.length === 0) {
     return (
@@ -110,7 +131,7 @@ export function ClientsTable() {
       <table className="w-full">
         <thead>
           <tr className="border-b border-outline-variant/20">
-            {['Клиент', 'Отрасль', 'Point A', 'Статус', ''].map((h) => (
+            {['Клиент', 'Отрасль', 'Точка А', 'Статус', ''].map((h) => (
               <th key={h} className="px-5 py-3.5 text-left text-[10px] font-mono uppercase tracking-widest text-on-surface-variant whitespace-nowrap bg-surface-container-high">
                 {h}
               </th>
@@ -126,7 +147,7 @@ export function ClientsTable() {
                   <Avatar name={client.name} size="sm" />
                   <div>
                     <p className="text-sm font-medium text-on-surface group-hover:text-primary transition-colors">{client.name}</p>
-                    <p className="text-xs text-on-surface-variant truncate max-w-[150px]">{client.email ?? client.website ?? ''}</p>
+                    <p className="text-xs text-on-surface-variant truncate max-w-[150px]">{client.email}</p>
                   </div>
                 </Link>
               </td>
@@ -136,7 +157,7 @@ export function ClientsTable() {
 
               {/* Point A Score */}
               <td className="px-5 py-4">
-                <ScoreBar score={client.griScore} />
+                <ScoreBar score={client.pointAScore} />
               </td>
 
               {/* Status */}

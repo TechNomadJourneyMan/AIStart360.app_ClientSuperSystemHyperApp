@@ -2,39 +2,52 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
+import type { AdminClientRow as ApiClientRow } from '@/app/api/v1/admin/clients/route'
 
-type AdminClientRow = {
+type ClientListRow = {
   id: string
   name: string
   industry: string
-  gri: number
+  /** Point A overall score 0–100 (diagnostics, is_current); null — no diagnostic yet. */
+  pointA: number | null
   phase: string
+  /** No assignment of a responsible manager exists in the data yet. */
   manager: string
   status: string
 }
 
-const STATUS_CONFIG = {
-  active:   { label: 'Активен',       color: 'text-primary',   dot: 'bg-primary'   },
-  at_risk:  { label: 'В зоне риска',  color: 'text-secondary', dot: 'bg-secondary' },
-  critical: { label: 'Критично',      color: 'text-error',     dot: 'bg-error'     },
-  pending_approval: { label: 'Ожидает', color: 'text-on-surface-variant', dot: 'bg-on-surface-variant' }
+// profiles.status values (migrations 001, 059). Unknown values are shown as is.
+const STATUS_CONFIG: Record<string, { label: string; color: string; dot: string }> = {
+  approved:               { label: 'Активен',      color: 'text-primary',            dot: 'bg-primary' },
+  pending_approval:       { label: 'Ожидает',      color: 'text-on-surface-variant', dot: 'bg-on-surface-variant' },
+  requires_clarification: { label: 'Уточнение',    color: 'text-secondary',          dot: 'bg-secondary' },
+  blocked:                { label: 'Заблокирован', color: 'text-error',              dot: 'bg-error' },
+  archived:               { label: 'В архиве',     color: 'text-on-surface-variant', dot: 'bg-on-surface-variant' },
 }
 
-function GriBar({ score }: { score: number }) {
-  const color = score >= 7 ? 'bg-primary' : score >= 5 ? 'bg-secondary' : 'bg-error'
-  const textColor = score >= 7 ? 'text-primary' : score >= 5 ? 'text-secondary' : 'text-error'
+function statusView(status: string) {
+  return STATUS_CONFIG[status] ?? { label: status || '—', color: 'text-on-surface-variant', dot: 'bg-on-surface-variant' }
+}
+
+function PointABar({ score }: { score: number | null }) {
+  if (score === null) {
+    return <span className="text-xs font-mono text-on-surface-variant" title="Диагностика Точки А ещё не рассчитана">—</span>
+  }
+  const color = score >= 70 ? 'bg-primary' : score >= 50 ? 'bg-secondary' : 'bg-error'
+  const textColor = score >= 70 ? 'text-primary' : score >= 50 ? 'text-secondary' : 'text-error'
+  const pct = Math.max(0, Math.min(100, score))
   return (
     <div className="flex items-center gap-2 w-24">
       <div className="flex-1 h-1.5 bg-white/[0.06] rounded-full overflow-hidden">
-        <div className={`h-full ${color} rounded-full`} style={{ width: `${(score / 10) * 100}%` }} />
+        <div className={`h-full ${color} rounded-full`} style={{ width: `${pct}%` }} />
       </div>
-      <span className={`text-xs font-mono font-bold w-6 text-right ${textColor}`}>{score}</span>
+      <span className={`text-xs font-mono font-bold w-7 text-right ${textColor}`}>{Math.round(score)}</span>
     </div>
   )
 }
 
 export function AdminClientsList() {
-  const [clients, setClients] = useState<AdminClientRow[]>([])
+  const [clients, setClients] = useState<ClientListRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
 
@@ -47,14 +60,16 @@ export function AdminClientsList() {
       // Guard against a malformed `{ ok:true }` with missing/non-array data —
       // otherwise json.data.map() throws and crashes the whole admin surface.
       if (json.ok && Array.isArray(json.data)) {
-        const mapped = json.data.map((c: any) => ({
+        const mapped: ClientListRow[] = (json.data as ApiClientRow[]).map((c) => ({
           id: c.id,
           name: c.company_name || c.full_name || 'Без названия',
           industry: c.industry || '—',
-          gri: c.overall_score ? Math.round(c.overall_score / 10 * 10) / 10 : 0, // Score is 0-100 in DB, but table uses 0.0 format
+          pointA: typeof c.overall_score === 'number' && Number.isFinite(c.overall_score) ? c.overall_score : null,
           phase: c.stage || '—',
-          manager: 'Марина Р.', // Placeholder for now as manager system isn't in DB yet
-          status: c.status === 'approved' ? 'active' : c.status === 'pending_approval' ? 'pending_approval' : 'at_risk'
+          // GET /api/v1/admin/clients carries no assigned manager (no such
+          // column exists yet) — show a dash, never a made-up name.
+          manager: '—',
+          status: c.status,
         }))
         setClients(mapped)
       } else {
@@ -88,7 +103,7 @@ export function AdminClientsList() {
       <div className="flex items-center justify-between px-5 py-4 border-b border-white/[0.04]">
         <div>
           <h2 className="font-headline text-base font-bold text-on-surface">Клиенты платформы</h2>
-          <p className="text-[10px] text-on-surface-variant">GRI · фаза · ответственный менеджер</p>
+          <p className="text-[10px] text-on-surface-variant">Точка А · фаза · статус</p>
         </div>
         <Link href="/clients" className="text-xs font-mono text-primary hover:underline">Все →</Link>
       </div>
@@ -96,14 +111,14 @@ export function AdminClientsList() {
         <table className="w-full">
           <thead>
             <tr className="border-b border-white/[0.04]">
-              {['Компания', 'Отрасль', 'GRI', 'Фаза', 'Менеджер', 'Статус'].map(h => (
+              {['Компания', 'Отрасль', 'Точка А', 'Фаза', 'Менеджер', 'Статус'].map(h => (
                 <th key={h} className="text-left text-[10px] font-mono text-on-surface-variant uppercase tracking-widest px-4 py-3">{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {clients.map((c) => {
-              const st = STATUS_CONFIG[c.status as keyof typeof STATUS_CONFIG] || STATUS_CONFIG.active
+              const st = statusView(c.status)
               return (
                 <tr key={c.id} className="border-b border-white/[0.02] hover:bg-white/[0.02] transition-colors">
                   <td className="px-4 py-3">
@@ -117,7 +132,7 @@ export function AdminClientsList() {
                     </div>
                   </td>
                   <td className="px-4 py-3"><span className="text-xs text-on-surface-variant">{c.industry}</span></td>
-                  <td className="px-4 py-3"><GriBar score={c.gri} /></td>
+                  <td className="px-4 py-3"><PointABar score={c.pointA} /></td>
                   <td className="px-4 py-3">
                     <span className="text-[10px] font-mono text-on-surface-variant bg-surface-container px-2 py-1 rounded-md whitespace-nowrap">{c.phase}</span>
                   </td>

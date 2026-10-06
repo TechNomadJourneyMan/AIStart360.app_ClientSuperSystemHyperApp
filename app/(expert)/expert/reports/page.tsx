@@ -1,131 +1,167 @@
-'use client'
+export const dynamic = 'force-dynamic'
 
-import { useState } from 'react'
+import type { Metadata } from 'next'
+import Link from 'next/link'
+import { createClient } from '@/lib/supabase/server'
+import { requireExpert } from '@/lib/expert-auth'
+import { listPublishedReportsForExpert, REPORT_TYPE_LABELS, type ExpertReportItem } from '@/lib/reports/expert-list'
+import { BUSINESS_TIME_ZONE } from '@/lib/format/period'
+import { REPORT_TYPES, type ReportType } from '@/lib/reports/types'
 
-const REPORTS = [
-  { id: 'r1', name: 'GRI Full Report Q4 2025',       type: 'pdf',  size: '2.4 MB', date: '24 Mar 2026', status: 'ready',   category: 'GRI'       },
-  { id: 'r2', name: 'Financial Health Analysis H2',  type: 'xlsx', size: '1.1 MB', date: '22 Mar 2026', status: 'ready',   category: 'Financial' },
-  { id: 'r3', name: 'Growth Roadmap 2026',           type: 'pdf',  size: '3.8 MB', date: '20 Mar 2026', status: 'review',  category: 'Growth'    },
-  { id: 'r4', name: 'Market Expansion Research',     type: 'pdf',  size: '5.2 MB', date: '18 Mar 2026', status: 'ready',   category: 'Market'    },
-  { id: 'r5', name: 'Q1 2026 Preliminary Data',      type: 'xlsx', size: '890 KB', date: 'In progress', status: 'pending', category: 'Data'      },
-]
+export const metadata: Metadata = { title: 'Отчёты · Expert Portal' }
 
-const STATUS_STYLES = {
-  ready:   { text: 'text-primary', bg: 'bg-primary/10', border: 'border-primary/20', label: 'Готов' },
-  review:  { text: 'text-tertiary-container', bg: 'bg-tertiary-container/10', border: 'border-tertiary-container/20', label: 'На проверке' },
-  pending: { text: 'text-on-surface-variant', bg: 'bg-surface-container', border: 'border-white/[0.06]', label: 'В ожидании' },
+/**
+ * Published report versions (report_versions, Phase 6) the expert may read —
+ * lib/reports/expert-list.ts. Reports are assembled by the diagnostic pipeline
+ * and published in GIGA → Отчёты; this page only lists them and links the PDF
+ * (GET /api/v1/reports/:id/pdf, same access check).
+ */
+
+function formatDate(iso: string | null): string {
+  if (!iso) return '—'
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return '—'
+  return d.toLocaleDateString('ru-RU', { timeZone: BUSINESS_TIME_ZONE, day: '2-digit', month: 'short', year: 'numeric' })
 }
 
-const TYPE_ICONS = { pdf: 'picture_as_pdf', xlsx: 'table_chart' }
+function Notice({ icon, title, text, tone = 'muted' }: { icon: string; title: string; text: string; tone?: 'muted' | 'error' }) {
+  return (
+    <div
+      className="bg-surface-container-low rounded-2xl border border-white/[0.04] text-center py-16 px-8"
+      role={tone === 'error' ? 'alert' : undefined}
+    >
+      <span
+        className={`material-symbols-outlined text-4xl block mb-3 ${tone === 'error' ? 'text-error/60' : 'text-on-surface-variant/20'}`}
+        aria-hidden="true"
+      >
+        {icon}
+      </span>
+      <p className="text-sm font-medium text-on-surface mb-1">{title}</p>
+      <p className="text-xs text-on-surface-variant max-w-sm mx-auto leading-relaxed">{text}</p>
+    </div>
+  )
+}
 
-export default function ExpertReportsPage() {
-  const [dragging, setDragging] = useState(false)
-  const [filter, setFilter] = useState('Все')
-  const categories = ['Все', 'GRI', 'Financial', 'Growth', 'Market', 'Data']
+function ReportsTable({ items }: { items: ExpertReportItem[] }) {
+  return (
+    <div className="bg-surface-container-low rounded-2xl border border-white/[0.04] overflow-x-auto">
+      <table className="w-full">
+        <thead>
+          <tr className="border-b border-white/[0.04]">
+            {['Отчёт', 'Клиент', 'Тип', 'Опубликован', 'Уверенность', ''].map((h) => (
+              <th key={h} className="text-left text-[10px] font-mono text-on-surface-variant uppercase tracking-widest px-5 py-3">{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((r) => (
+            <tr key={r.id} className="border-b border-white/[0.02] hover:bg-white/[0.02] transition-colors">
+              <td className="px-5 py-3.5">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 bg-primary/10">
+                    <span className="material-symbols-outlined text-base text-primary" aria-hidden="true">description</span>
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-on-surface">{r.title}</p>
+                    <p className="text-[10px] font-mono text-on-surface-variant">версия {r.version}</p>
+                  </div>
+                </div>
+              </td>
+              <td className="px-5 py-3.5 text-sm text-on-surface-variant">{r.company_name ?? '—'}</td>
+              <td className="px-5 py-3.5">
+                <span className="text-xs font-mono bg-surface-container text-on-surface-variant px-2 py-0.5 rounded-md whitespace-nowrap">
+                  {REPORT_TYPE_LABELS[r.report_type]}
+                </span>
+              </td>
+              <td className="px-5 py-3.5 text-sm text-on-surface-variant whitespace-nowrap">{formatDate(r.published_at)}</td>
+              <td className="px-5 py-3.5 text-sm font-mono text-on-surface-variant">
+                {r.confidence !== null ? `${Math.round(r.confidence * 100)}%` : '—'}
+              </td>
+              <td className="px-5 py-3.5">
+                <a
+                  href={`/api/v1/reports/${r.id}/pdf`}
+                  className="inline-flex items-center gap-1 text-xs text-primary hover:underline font-mono rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/40"
+                  aria-label={`Скачать PDF: ${r.title}, версия ${r.version}`}
+                >
+                  <span className="material-symbols-outlined text-sm" aria-hidden="true">download</span>
+                  PDF
+                </a>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
 
-  const filtered = filter === 'Все' ? REPORTS : REPORTS.filter(r => r.category === filter)
+export default async function ExpertReportsPage({ searchParams }: { searchParams?: { type?: string } }) {
+  const viewer = await requireExpert()
+  const result = viewer
+    ? await listPublishedReportsForExpert(await createClient(), viewer)
+    : ({ ok: false, reason: 'forbidden' } as const)
+
+  const items = result.ok ? result.items : []
+  const present = REPORT_TYPES.filter((t) => items.some((r) => r.report_type === t))
+  const selected = (REPORT_TYPES as readonly string[]).includes(searchParams?.type ?? '')
+    ? (searchParams?.type as ReportType)
+    : null
+  const filtered = selected ? items.filter((r) => r.report_type === selected) : items
 
   return (
     <div className="space-y-8">
       <section>
         <p className="text-xs font-mono text-primary/70 uppercase tracking-[0.2em] mb-3">Expert Portal</p>
         <h1 className="font-headline text-3xl font-extrabold text-on-surface">Отчёты</h1>
-        <p className="text-on-surface-variant mt-2 text-sm">Ваши аналитические отчёты и загруженные данные</p>
-      </section>
-
-      {/* Upload zone */}
-      <section
-        onDragOver={(e) => { e.preventDefault(); setDragging(true) }}
-        onDragLeave={() => setDragging(false)}
-        onDrop={(e) => { e.preventDefault(); setDragging(false) }}
-        className={`
-          rounded-2xl border-2 border-dashed p-8 text-center transition-all cursor-pointer
-          ${dragging
-            ? 'border-primary bg-primary/5'
-            : 'border-white/[0.08] hover:border-primary/30 hover:bg-white/[0.02]'}
-        `}
-      >
-        <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center mx-auto mb-4">
-          <span className="material-symbols-outlined text-2xl text-primary">upload_file</span>
-        </div>
-        <p className="text-sm font-medium text-on-surface mb-1">
-          {dragging ? 'Отпустите файл для загрузки' : 'Перетащите файл или нажмите для выбора'}
+        <p className="text-on-surface-variant mt-2 text-sm">
+          Опубликованные версии отчётов клиентов. Отчёты собирает диагностика, публикует сотрудник в GIGA.
         </p>
-        <p className="text-xs text-on-surface-variant">PDF, XLSX, CSV · Максимум 50 MB</p>
-        <button className="mt-4 text-xs font-mono text-primary bg-primary/10 border border-primary/20 hover:bg-primary/20 px-5 py-2 rounded-xl transition-colors">
-          Выбрать файл
-        </button>
       </section>
 
-      {/* Reports list */}
       <section>
-        <div className="flex items-center justify-between mb-5">
-          <h2 className="font-headline text-lg font-bold text-on-surface">Мои отчёты</h2>
-          <div className="flex gap-2">
-            {categories.map((c) => (
-              <button key={c} onClick={() => setFilter(c)}
-                className={`text-xs font-mono px-3 py-1.5 rounded-full border transition-colors ${
-                  filter === c ? 'bg-primary/10 text-primary border-primary/20' : 'text-on-surface-variant border-white/[0.06] hover:border-white/[0.12] hover:text-on-surface'
-                }`}>
-                {c}
-              </button>
-            ))}
+        {result.ok && items.length > 0 && (
+          <div className="flex items-center justify-between gap-3 mb-5 flex-wrap">
+            <h2 className="font-headline text-lg font-bold text-on-surface">Опубликованные отчёты</h2>
+            {present.length > 1 && (
+              <nav className="flex gap-2 flex-wrap" aria-label="Фильтр по типу отчёта">
+                {[null, ...present].map((t) => {
+                  const active = t === selected
+                  return (
+                    <Link
+                      key={t ?? 'all'}
+                      href={t ? `/expert/reports?type=${t}` : '/expert/reports'}
+                      aria-current={active ? 'page' : undefined}
+                      className={`text-xs font-mono px-3 py-1.5 rounded-xl border transition-colors focus:outline-none focus:ring-2 focus:ring-primary/40 ${
+                        active ? 'bg-primary/10 text-primary border-primary/20' : 'text-on-surface-variant border-white/[0.06] hover:border-white/[0.12] hover:text-on-surface'
+                      }`}
+                    >
+                      {t ? REPORT_TYPE_LABELS[t] : 'Все'}
+                    </Link>
+                  )
+                })}
+              </nav>
+            )}
           </div>
-        </div>
+        )}
 
-        <div className="bg-surface-container-low rounded-2xl border border-white/[0.04] overflow-hidden">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-white/[0.04]">
-                {['Отчёт', 'Категория', 'Размер', 'Дата', 'Статус', ''].map((h) => (
-                  <th key={h} className="text-left text-[10px] font-mono text-on-surface-variant uppercase tracking-widest px-5 py-3">{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((r) => {
-                const s = STATUS_STYLES[r.status as keyof typeof STATUS_STYLES]
-                return (
-                  <tr key={r.id} className="border-b border-white/[0.02] hover:bg-white/[0.02] transition-colors">
-                    <td className="px-5 py-3.5">
-                      <div className="flex items-center gap-3">
-                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${r.type === 'pdf' ? 'bg-error/10' : 'bg-primary/10'}`}>
-                          <span className={`material-symbols-outlined text-base ${r.type === 'pdf' ? 'text-error' : 'text-primary'}`}>
-                            {TYPE_ICONS[r.type as keyof typeof TYPE_ICONS]}
-                          </span>
-                        </div>
-                        <span className="text-sm font-medium text-on-surface">{r.name}</span>
-                      </div>
-                    </td>
-                    <td className="px-5 py-3.5">
-                      <span className="text-xs font-mono bg-surface-container text-on-surface-variant px-2 py-0.5 rounded-md">{r.category}</span>
-                    </td>
-                    <td className="px-5 py-3.5 text-sm font-mono text-on-surface-variant">{r.size}</td>
-                    <td className="px-5 py-3.5 text-sm text-on-surface-variant">{r.date}</td>
-                    <td className="px-5 py-3.5">
-                      <span className={`text-[10px] font-mono uppercase px-2.5 py-1 rounded-full border ${s.bg} ${s.text} ${s.border}`}>{s.label}</span>
-                    </td>
-                    <td className="px-5 py-3.5">
-                      {r.status === 'ready' && (
-                        <button className="flex items-center gap-1 text-xs text-primary hover:underline font-mono">
-                          <span className="material-symbols-outlined text-sm">download</span>
-                          Скачать
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-
-          {filtered.length === 0 && (
-            <div className="text-center py-16">
-              <span className="material-symbols-outlined text-4xl text-on-surface-variant/20 block mb-3">description</span>
-              <p className="text-sm text-on-surface-variant">Отчёты не найдены</p>
-            </div>
-          )}
-        </div>
+        {!result.ok && result.reason === 'forbidden' && (
+          <Notice icon="lock" title="Нет доступа" text="Раздел доступен экспертам и администраторам платформы." tone="error" />
+        )}
+        {!result.ok && result.reason === 'db' && (
+          <Notice icon="error" title="Не удалось загрузить отчёты" text="Попробуйте обновить страницу." tone="error" />
+        )}
+        {result.ok && items.length === 0 && (
+          <Notice
+            icon="description"
+            title="Отчёты появятся после публикации"
+            text="Здесь будут версии отчётов клиентов, которые сотрудник опубликовал в GIGA → Отчёты."
+          />
+        )}
+        {result.ok && items.length > 0 && (
+          filtered.length > 0
+            ? <ReportsTable items={filtered} />
+            : <Notice icon="filter_alt_off" title="Отчётов этого типа нет" text="Выберите другой тип или «Все»." />
+        )}
       </section>
     </div>
   )

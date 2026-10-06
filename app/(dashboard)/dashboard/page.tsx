@@ -4,7 +4,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { cookies } from 'next/headers'
 import { KpiCardsGrid } from '@/components/dashboard/KpiCardsGrid'
-import { GriDiagramWidget } from '@/components/dashboard/GriDiagramWidget'
+import { PortfolioGriPanel } from '@/components/dashboard/PortfolioGriPanel'
 import { GoalsBar } from '@/components/dashboard/GoalsBar'
 import { WidgetGrid } from '@/components/dashboard/WidgetGrid'
 import { createServerClient } from '@/lib/supabase-server'
@@ -31,7 +31,15 @@ import PointAFilterSection from '@/components/point-a/v2/PointAFilterSection'
 import ExecutiveOverview from '@/components/point-a/ExecutiveOverview'
 import type { PointA, BlockScore } from '@/types/onboarding'
 import { prisma } from '@/lib/db'
-import { getPortfolioGRI } from '@/lib/portfolio-gri'
+import {
+  aggregatePortfolioGri,
+  griIndexDistribution,
+  loadCurrentGriAssessments,
+  type GriAssessmentRow,
+  type GriIndexDistribution,
+} from '@/lib/portfolio-gri'
+import { quarterLabel } from '@/lib/format/period'
+import { plural } from '@/lib/crm/digest'
 import { ShareButton } from '@/components/share/ShareButton'
 import { requireServiceRoleKey } from '@/lib/supabase-service'
 
@@ -48,19 +56,10 @@ interface KpiCardData {
   href:     string
 }
 
-interface GriDist {
-  excellent:  number
-  strong:     number
-  developing: number
-  critical:   number
-  total:      number
-}
-
 interface DashboardData {
   total:    number
   active:   number
   pending:  number
-  griDist:  GriDist
   alerts:   Alert[]
   companies: { id: string; name: string }[]
 }
@@ -81,20 +80,6 @@ async function getDashboardExtendedData(): Promise<DashboardData | null> {
     const active = users.filter(u => u.status === 'approved').length
     const pending = users.filter(u => u.status === 'pending_approval').length
 
-    // Diagnostics for GRI distribution
-    const { data: diagnostics } = await sb
-      .from('diagnostics')
-      .select('overall_score, user_id')
-
-    const scores = (diagnostics ?? []).map(d => d.overall_score ?? 0)
-    const griDist: GriDist = {
-      excellent:  scores.filter(s => s >= 90).length,
-      strong:     scores.filter(s => s >= 70 && s < 90).length,
-      developing: scores.filter(s => s >= 50 && s < 70).length,
-      critical:   scores.filter(s => s < 50).length,
-      total:      scores.length,
-    }
-
     // Companies
     const { data: companies } = await sb
       .from('companies')
@@ -114,7 +99,7 @@ async function getDashboardExtendedData(): Promise<DashboardData | null> {
       })
     }
 
-    return { total, active, pending, griDist, alerts, companies: (companies ?? []) as { id: string; name: string }[] }
+    return { total, active, pending, alerts, companies: (companies ?? []) as { id: string; name: string }[] }
   } catch (e) {
     console.error('[Dashboard] data fetch error:', e)
     return null
@@ -122,13 +107,33 @@ async function getDashboardExtendedData(): Promise<DashboardData | null> {
 }
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
-function buildKpi(data: DashboardData | null): KpiCardData[] {
+type GriLoad =
+  | { ok: true; rows: GriAssessmentRow[] }
+  | { ok: false }
+
+/** Card «Оценки GRI»: current gri_assessments (one per client), not Point A diagnostics. */
+function buildGriCard(gri: GriLoad, dist: GriIndexDistribution | null): KpiCardData {
+  if (!gri.ok || !dist) {
+    return { label: 'Оценки GRI', value: '—', trend: '—', trendUp: false, icon: 'radar', sublabel: 'не удалось загрузить', href: '/gri' }
+  }
+  return {
+    label:    'Оценки GRI',
+    value:    String(dist.total),
+    trend:    dist.excellent > 0 ? `${dist.excellent} с индексом 8+` : '—',
+    trendUp:  dist.excellent > 0,
+    icon:     'radar',
+    sublabel: dist.excellent > 0 ? 'среди текущих оценок' : 'текущие оценки клиентов',
+    href:     '/gri',
+  }
+}
+
+function buildKpi(data: DashboardData | null, griCard: KpiCardData): KpiCardData[] {
   if (!data) {
     return [
-      { label: 'Пользователи', value: '—',  trend: '—',    trendUp: true,  icon: 'groups',       sublabel: 'загрузка...', href: '/users'   },
-      { label: 'Активных',  value: '—',  trend: '—',    trendUp: true,  icon: 'check_circle', sublabel: 'загрузка...', href: '/users'   },
-      { label: 'Заявки',    value: '—',  trend: '—',    trendUp: false, icon: 'hourglass_top',sublabel: 'загрузка...', href: '/admin/requests' },
-      { label: 'GRI анализов',value: '—', trend: '—',    trendUp: true,  icon: 'radar',        sublabel: 'загрузка...', href: '/gri'       },
+      { label: 'Пользователи', value: '—',  trend: '—',    trendUp: true,  icon: 'groups',       sublabel: 'не удалось загрузить', href: '/users'   },
+      { label: 'Активных',  value: '—',  trend: '—',    trendUp: true,  icon: 'check_circle', sublabel: 'не удалось загрузить', href: '/users'   },
+      { label: 'Заявки',    value: '—',  trend: '—',    trendUp: false, icon: 'hourglass_top',sublabel: 'не удалось загрузить', href: '/admin/requests' },
+      griCard,
     ]
   }
   const activePct = data.total > 0 ? Math.round((data.active / data.total) * 100) : 0
@@ -160,34 +165,19 @@ function buildKpi(data: DashboardData | null): KpiCardData[] {
       sublabel: 'на регистрацию',
       href:     '/admin/requests',
     },
-    {
-      label:    'GRI анализов',
-      value:    String(data.griDist.total),
-      trend:    data.griDist.excellent > 0 ? `${data.griDist.excellent} excellent` : '—',
-      trendUp:  data.griDist.excellent > 0,
-      icon:     'radar',
-      sublabel: 'отчётов сформировано',
-      href:     '/gri',
-    },
+    griCard,
   ]
 }
 
-function buildGriDistRows(griDist: GriDist) {
-  const { excellent, strong, developing, critical, total } = griDist
-  if (total === 0) {
-    return [
-      { label: 'Excellent (90+)', pct: 0, color: 'bg-primary' },
-      { label: 'Strong (70-89)',   pct: 0, color: 'bg-primary-fixed-dim' },
-      { label: 'Developing (50-69)', pct: 0, color: 'bg-tertiary-container' },
-      { label: 'Critical (<50)',    pct: 0, color: 'bg-error' },
-    ]
-  }
-  const p = (n: number) => Math.round((n / total) * 100)
+/** gri_index bands of the current assessments (same bands as /api/admin/overview). */
+function buildGriDistRows(dist: GriIndexDistribution) {
+  const { excellent, strong, developing, critical, total } = dist
+  const p = (n: number) => (total > 0 ? Math.round((n / total) * 100) : 0)
   return [
-    { label: 'Excellent (90+)', pct: p(excellent),  color: 'bg-primary' },
-    { label: 'Strong (70-89)',   pct: p(strong),     color: 'bg-primary-fixed-dim' },
-    { label: 'Developing (50-69)', pct: p(developing), color: 'bg-tertiary-container' },
-    { label: 'Critical (<50)',    pct: p(critical),   color: 'bg-error' },
+    { label: 'Отлично (8–10)',       pct: p(excellent),  color: 'bg-primary' },
+    { label: 'Сильный уровень (6–8)', pct: p(strong),     color: 'bg-primary-fixed-dim' },
+    { label: 'Развивается (4–6)',    pct: p(developing), color: 'bg-tertiary-container' },
+    { label: 'Критично (0–4)',       pct: p(critical),   color: 'bg-error' },
   ]
 }
 
@@ -478,7 +468,9 @@ export default async function DashboardPage() {
     }
   }
 
-  const [data, crmRequests, crmClients] = await Promise.all([
+  // GRI: the clients' current GRI assessments, read once for the card, the
+  // portfolio radar and the band distribution. A failed read is shown as such.
+  const [data, crmRequests, crmClients, gri] = await Promise.all([
     getDashboardExtendedData(),
     prisma.adminRequest.findMany({
       take: 6,
@@ -493,11 +485,20 @@ export default async function DashboardPage() {
       orderBy: { createdAt: 'desc' },
       select: { id: true, name: true, industry: true, stage: true, status: true },
     }).catch(() => []),
+    loadCurrentGriAssessments().then<GriLoad, GriLoad>(
+      (rows) => ({ ok: true, rows }),
+      (err) => {
+        console.error('[Dashboard] GRI assessments read failed:', err)
+        return { ok: false }
+      },
+    ),
   ])
+  const griDist = gri.ok ? griIndexDistribution(gri.rows) : null
+  const portfolioGRI = gri.ok ? aggregatePortfolioGri(gri.rows) : null
 
-  const kpi = buildKpi(data)
+  const kpi = buildKpi(data, buildGriCard(gri, griDist))
   const alerts = data?.alerts ?? []
-  const griDistRows = buildGriDistRows(data?.griDist ?? { excellent: 0, strong: 0, developing: 0, critical: 0, total: 0 })
+  const griDistRows = griDist ? buildGriDistRows(griDist) : []
 
   const crmReqMapped: CrmRequest[] = crmRequests.map((r) => ({
     id: r.id,
@@ -523,17 +524,7 @@ export default async function DashboardPage() {
   const staffRole = cookieStore.get('aistart360_role')?.value ?? null
   const showCrmWidgets = staffRole === 'admin' || staffRole === 'manager' || staffRole === 'analyst'
 
-  const portfolioGRI = await getPortfolioGRI()
-  const griDomains = portfolioGRI ? [
-    { label: 'Продукт и спрос',            score: portfolioGRI.product },
-    { label: 'Доверие и позиционирование', score: portfolioGRI.trust },
-    { label: 'Бизнес-модель',              score: portfolioGRI.bizmodel },
-    { label: 'Финансовая устойчивость',    score: portfolioGRI.cash },
-    { label: 'Операции',                   score: portfolioGRI.ops },
-    { label: 'Команда',                    score: portfolioGRI.team },
-    { label: 'Готовность основателя',      score: portfolioGRI.founder },
-  ] : []
-  const griTotalScore = portfolioGRI?.overall ?? 0
+  const periodLabel = quarterLabel(new Date())
 
   return (
     <div className="space-y-6">
@@ -541,14 +532,13 @@ export default async function DashboardPage() {
       <section>
         <div className="mb-4">
           <p className="text-[11px] font-mono text-primary/60 uppercase tracking-[0.2em] mb-2">
-            Q1 2026 · Текущий период
+            {periodLabel} · Текущий период
           </p>
           <h1 className="font-headline text-3xl lg:text-4xl font-extrabold text-on-surface leading-tight">
-            Ускоряем рост бизнеса до{' '}
-            <span className="text-gradient">$2M в год</span>
+            Обзор платформы
           </h1>
           <p className="text-on-surface-variant mt-2 text-sm max-w-xl leading-relaxed">
-            Система выхода на стабильную скорость роста $2M/год на основе AI-трансформации и сопровождения топ-экспертов
+            Пользователи, заявки и оценки GRI клиентов платформы
           </p>
         </div>
 
@@ -580,13 +570,9 @@ export default async function DashboardPage() {
                  ))}
              </div>
 
-             {/* Right: GRI Widget or Alerts */}
+             {/* Right: portfolio GRI from the clients' current GRI assessments */}
              <div className="xl:col-span-3">
-                 <GriDiagramWidget 
-                    domains={griDomains} 
-                    totalScore={griTotalScore} 
-                    orgName="Портфельный обзор"
-                 />
+                 <PortfolioGriPanel data={portfolioGRI} failed={!gri.ok} />
              </div>
         </div>
       </section>
@@ -633,9 +619,16 @@ export default async function DashboardPage() {
                 />
               )}
 
-              {/* GRI Portfolio Health */}
+              {/* Portfolio health — gri_index bands of the current GRI assessments */}
               <div className="bg-surface-container-low border border-white/[0.04] rounded-2xl p-5">
-                  <h3 className="text-sm font-bold text-on-surface mb-4 uppercase tracking-widest text-[10px]">Здоровье портфеля</h3>
+                  <h3 className="font-bold text-on-surface mb-1 uppercase tracking-widest text-[10px]">Здоровье портфеля · GRI</h3>
+                  <p className="text-[10px] text-on-surface-variant mb-4">
+                    {!griDist
+                      ? 'Не удалось загрузить оценки GRI'
+                      : griDist.total > 0
+                        ? `Индекс GRI по ${griDist.total} ${plural(griDist.total, 'актуальной оценке', 'актуальным оценкам', 'актуальным оценкам')} клиентов`
+                        : 'Оценок GRI пока нет'}
+                  </p>
                   <div className="space-y-4">
                       {griDistRows.map(row => (
                            <div key={row.label}>
