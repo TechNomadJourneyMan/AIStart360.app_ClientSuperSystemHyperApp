@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
-import { requireSupabaseAdmin } from '@/lib/supabase-admin-guard'
+import { forbidLegacyTarget, requireSupabaseAdmin } from '@/lib/supabase-admin-guard'
+import { recordAdminAction } from '@/lib/admin/audit'
 import { applyApprovalDecision, type ProfileStatus } from '@/lib/users/approval'
 
 // POST /api/v1/admin/approve-user — admin only. Previously unauthenticated,
@@ -24,6 +25,15 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: 'Invalid status' }, { status: 400 })
     }
 
+    const denied = await forbidLegacyTarget(guard, String(userId))
+    if (denied) return denied
+    await recordAdminAction(
+      { id: guard.user.id, kind: 'session', role: guard.role, email: guard.user.email ?? undefined },
+      { action: 'user.approval_decision', entityType: 'profile', entityId: String(userId), targetUserId: String(userId), newValue: { status }, metadata: { via: 'api/v1/admin/approve-user' } },
+      req,
+      { required: true },
+    )
+
     const result = await applyApprovalDecision({
       userId,
       status: status as ProfileStatus,
@@ -35,7 +45,8 @@ export async function POST(req: Request) {
     }
 
     return NextResponse.json({ ok: true, data: { id: userId, status }, emailSent: result.emailSent })
-  } catch (err: any) {
-    return NextResponse.json({ ok: false, error: err.message }, { status: 500 })
+  } catch (err) {
+    console.error('[v1/admin/approve-user]', err instanceof Error ? err.message : err)
+    return NextResponse.json({ ok: false, error: 'Внутренняя ошибка сервера' }, { status: 500 })
   }
 }

@@ -3,6 +3,9 @@ export const dynamic = 'force-dynamic'
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { requireSupabaseAdmin } from '@/lib/supabase-admin-guard'
+import { createServiceClient } from '@/lib/supabase-service'
+import { recordAdminAction } from '@/lib/admin/audit'
+import { safeErrorMessage } from '@/lib/api-error'
 
 // POST /api/v1/admin/clients — admin-side client creation (bypasses email
 // confirmation). Admin only. See technical-audit A1.
@@ -11,12 +14,22 @@ export async function POST(req: Request) {
     const guard = await requireSupabaseAdmin()
     if ('error' in guard) return guard.error
 
-    const sb = createServerClient()
+    // auth.admin.createUser needs the service role; the session client cannot do it.
+    const sb = createServiceClient()
     const { email, password, fullName, companyName, industry, stage } = await req.json()
 
     if (!email || !password || !companyName) {
       return NextResponse.json({ ok: false, error: 'email, password, companyName are required' }, { status: 400 })
     }
+    if (String(password).length < 10) {
+      return NextResponse.json({ ok: false, error: 'Пароль: минимум 10 символов' }, { status: 400 })
+    }
+    await recordAdminAction(
+      { id: guard.user.id, kind: 'session', role: guard.role, email: guard.user.email ?? undefined },
+      { action: 'client.create', entityType: 'profile', newValue: { email, companyName } },
+      req,
+      { required: true },
+    )
 
     // 1. Create auth user with service role (email_confirm skipped)
     const { data: authData, error: authError } = await sb.auth.admin.createUser({
@@ -49,8 +62,8 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ ok: true, userId, email, companyName })
   } catch (err) {
-    const msg = err instanceof Error ? err.message : 'Unknown error'
-    return NextResponse.json({ ok: false, error: msg }, { status: 500 })
+    console.error('[v1/admin/clients]', err instanceof Error ? err.message : err)
+    return NextResponse.json({ ok: false, error: safeErrorMessage(err) }, { status: 500 })
   }
 }
 
@@ -147,7 +160,7 @@ export async function GET() {
 
     return NextResponse.json({ ok: true, data: rows })
   } catch (err) {
-    const msg = err instanceof Error ? err.message : 'Unknown error'
-    return NextResponse.json({ ok: false, error: msg }, { status: 500 })
+    console.error('[v1/admin/clients]', err instanceof Error ? err.message : err)
+    return NextResponse.json({ ok: false, error: safeErrorMessage(err) }, { status: 500 })
   }
 }
