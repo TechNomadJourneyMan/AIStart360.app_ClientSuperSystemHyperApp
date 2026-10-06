@@ -88,8 +88,11 @@ export async function POST(req: NextRequest) {
     // `user_id` is supplied it's a server-to-server fire from recalculate — trust
     // only a signed internal token (or a session that owns it). When omitted it's
     // a manual UI call — resolve from the session. Then throttle per user.
+    // The internal token must be bound to exactly this user and diagnostic
+    // (lib/internal-auth v2), so a token minted for another call is refused.
+    const internal = userId ? hasValidInternalToken(req, { userId, diagnosticId }) : false
     if (userId) {
-      if (!hasValidInternalToken(req)) {
+      if (!internal) {
         const caller = await getSessionUser(sb)
         if (!caller) return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
         if (caller.id !== userId && !isStaffRole(await getSessionRole(sb, caller.id))) {
@@ -104,7 +107,7 @@ export async function POST(req: NextRequest) {
       userId = caller.id
     }
 
-    if (!hasValidInternalToken(req) && (await isRateLimitedKey(userId, 'diagnostics-point-b-ai', { max: 6, windowMs: 60_000 }))) {
+    if (!internal && (await isRateLimitedKey(userId, 'diagnostics-point-b-ai', { max: 6, windowMs: 60_000 }))) {
       return NextResponse.json({ ok: false, error: 'Слишком много запросов. Попробуйте позже.' }, { status: 429 })
     }
 

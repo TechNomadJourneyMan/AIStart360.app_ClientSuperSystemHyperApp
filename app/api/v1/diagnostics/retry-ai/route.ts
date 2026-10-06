@@ -5,7 +5,7 @@ import { createServerClient } from '@/lib/supabase-server'
 import { createServiceClient } from '@/lib/supabase-service'
 import { getSessionUser, getSessionRole, isStaffRole } from '@/lib/api-identity'
 import { isRateLimitedKey } from '@/lib/rate-limit'
-import { internalFetchHeaders } from '@/lib/internal-auth'
+import { internalBaseUrl, internalFetchHeaders } from '@/lib/internal-auth'
 
 /**
  * POST /api/v1/diagnostics/retry-ai
@@ -62,11 +62,23 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: 'Не удалось перезапустить анализ' }, { status: 500 })
     }
 
-    // Fire AI analysis asynchronously (signed internal token — no cookies here)
-    const baseUrl = req.nextUrl.origin
-    fetch(`${baseUrl}/api/v1/diagnostics/ai-analyze`, {
+    // Fire AI analysis asynchronously (signed internal token — no cookies here),
+    // bound to the target path, user and diagnostic. The base URL comes from
+    // configuration, never the request Host in production.
+    const baseUrl = internalBaseUrl(req)
+    if (!baseUrl) {
+      console.error('[retry-ai] AI fan-out skipped: no trusted base URL (NEXT_PUBLIC_APP_URL)')
+      await createServiceClient()
+        .from('diagnostics')
+        .update({ ai_status: 'failed' })
+        .eq('id', diagnostic_id)
+        .eq('user_id', diag.user_id)
+      return NextResponse.json({ ok: false, ai_status: 'failed', error: 'Не удалось перезапустить анализ' }, { status: 503 })
+    }
+    const analyzePath = '/api/v1/diagnostics/ai-analyze'
+    fetch(`${baseUrl}${analyzePath}`, {
       method: 'POST',
-      headers: internalFetchHeaders(),
+      headers: internalFetchHeaders({}, { path: analyzePath, userId: String(diag.user_id), diagnosticId: String(diagnostic_id) }),
       body: JSON.stringify({ diagnostic_id, user_id: diag.user_id }),
     }).catch(err => console.error('[retry-ai] Failed to fire ai-analyze:', err))
 

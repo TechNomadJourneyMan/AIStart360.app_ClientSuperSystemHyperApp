@@ -64,9 +64,27 @@ describe('revenue goal', () => {
     expect((await call('revenue')).body.data).toMatchObject({ progress: 100, trajectory: 'on_track' })
   })
 
-  it('no value yet → progress 0 and actualValue null', async () => {
+  it('no value yet → trajectory no_data (never «behind»), progress 0, actualValue null', async () => {
     tables.metrics = { data: [], error: null }
-    expect((await call('revenue')).body.data).toMatchObject({ progress: 0, actualValue: null })
+    expect((await call('revenue')).body.data).toMatchObject({ progress: 0, actualValue: null, trajectory: 'no_data' })
+  })
+
+  it('a failed metrics / company / metric_targets read is a 500, not «no value» / «no goal»', async () => {
+    for (const table of ['metrics', 'companies', 'metric_targets']) {
+      const saved = tables[table]
+      tables[table] = { data: null, error: { code: '57014', message: 'statement timeout' } }
+      const { status, body } = await call('revenue')
+      expect(status, table).toBe(500)
+      expect(body.data, table).toBeNull()
+      tables[table] = saved
+    }
+  })
+
+  it('metric_targets not created yet (before 085) still means «no targets»', async () => {
+    tables.metric_targets = { data: null, error: { code: '42P01', message: 'relation "metric_targets" does not exist' } }
+    const { status, body } = await call('revenue')
+    expect(status).toBe(200)
+    expect(body.data).toMatchObject({ targetValue: 120, progress: 75 })
   })
 
   it('no target → null goal; no session → 401; no company → null', async () => {

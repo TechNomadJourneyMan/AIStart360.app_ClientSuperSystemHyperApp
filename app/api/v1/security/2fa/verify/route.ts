@@ -49,13 +49,39 @@ export async function POST(request: Request) {
   const codes = generateBackupCodes()
   const hashes = await hashBackupCodes(codes)
 
-  await upsertUserSecurity(user.id, {
-    totp_enabled: true,
-    totp_secret_enc: row.totp_pending_enc,
-    totp_pending_enc: null,
-    backup_codes: hashes,
-  })
-  await setMfaMetadataFlag(user.id, true)
+  // Both writes or neither: the factor in user_security and the gate flag in
+  // the JWT metadata (middleware gates on the flag). The DB row goes first —
+  // a flag without an enabled secret would gate a user who cannot verify — and
+  // is restored to the pending state when the flag write fails (the store
+  // throws on any error), so the user never ends up with totp_enabled=true
+  // and no gate.
+  try {
+    await upsertUserSecurity(user.id, {
+      totp_enabled: true,
+      totp_secret_enc: row.totp_pending_enc,
+      totp_pending_enc: null,
+      backup_codes: hashes,
+    })
+  } catch (err) {
+    console.error('[2fa/verify] enable failed', err instanceof Error ? err.message : err)
+    return NextResponse.json({ ok: false, error: 'Не удалось включить 2FA. Попробуйте ещё раз.' }, { status: 500 })
+  }
+  try {
+    await setMfaMetadataFlag(user.id, true)
+  } catch (err) {
+    console.error('[2fa/verify] flag write failed, rolling back', err instanceof Error ? err.message : err)
+    try {
+      await upsertUserSecurity(user.id, {
+        totp_enabled: row.totp_enabled,
+        totp_secret_enc: row.totp_secret_enc,
+        totp_pending_enc: row.totp_pending_enc,
+        backup_codes: row.backup_codes,
+      })
+    } catch (rollbackErr) {
+      console.error('[2fa/verify] rollback failed', rollbackErr instanceof Error ? rollbackErr.message : rollbackErr)
+    }
+    return NextResponse.json({ ok: false, error: 'Не удалось включить 2FA. Попробуйте ещё раз.' }, { status: 500 })
+  }
 
   const jar = await cookies()
   jar.set(MFA_COOKIE_NAME, signStepUp(user.id), MFA_COOKIE_OPTIONS)

@@ -4,8 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { notifyUser } from '@/lib/notifications'
 import { logAudit } from '@/lib/audit'
-
-const EXPERT_ROLES = new Set(['expert', 'admin', 'super_admin'])
+import { expertBlockResponse, resolveExpert } from '@/lib/expert-auth'
 const MAX_TARGET_ID = 200  // see lib/comment-targets.ts — free-form TEXT, cap length
 
 // ── Service-role helper ──────────────────────────────────────────────────────
@@ -112,19 +111,12 @@ function mapComment(row: RawComment) {
   }
 }
 
-// Returns the authenticated user + their profile (via service-role, no RLS)
-async function getViewer() {
-  const sb = createServerClient()
-  const {
-    data: { user },
-  } = await sb.auth.getUser()
-  if (!user) return { user: null, profile: null }
-
+// The expert's display fields (via service-role, no RLS); null if the read failed.
+async function viewerProfile(id: string): Promise<ViewerProfile | null> {
   const rows = await srGet<ViewerProfile[]>(
-    `profiles?id=eq.${user.id}&select=id,role,full_name,expert_title&limit=1`,
+    `profiles?id=eq.${id}&select=id,role,full_name,expert_title&limit=1`,
   )
-  const profile = rows?.[0] ?? null
-  return { user, profile }
+  return rows?.[0] ?? null
 }
 
 // Hydrates author info for a list of comment rows
@@ -148,19 +140,25 @@ async function hydrateAuthors(comments: RawComment[]): Promise<RawComment[]> {
 //     for batch-load; filtering happens client-side)
 //   blockKey (deprecated): alias of targetId — still accepted for old clients
 export async function GET(req: NextRequest) {
-  const { user, profile } = await getViewer()
+  const sb = createServerClient()
+  const {
+    data: { user },
+  } = await sb.auth.getUser()
   if (!user) return NextResponse.json({ error: 'unauthenticated' }, { status: 401 })
 
   const clientIdParam = req.nextUrl.searchParams.get('clientId') ?? 'self'
   const targetId =
     req.nextUrl.searchParams.get('targetId') ?? req.nextUrl.searchParams.get('blockKey')
 
-  const isExpert = profile && EXPERT_ROLES.has(profile.role ?? '')
   const clientId = clientIdParam === 'self' ? user.id : clientIdParam
   if (!clientId) return NextResponse.json({ data: [] })
 
-  if (!isExpert && clientId !== user.id)
-    return NextResponse.json({ error: 'forbidden' }, { status: 403 })
+  // A client reads the comments about itself; anyone else's need an approved
+  // expert with the second factor where required.
+  if (clientId !== user.id) {
+    const auth = await resolveExpert()
+    if (!auth.ok) return expertBlockResponse(auth.block)
+  }
 
   let qs = `expert_comments?client_id=eq.${clientId}`
     + `&select=id,client_id,author_id,author_title,block_key,text,created_at,updated_at`
@@ -183,10 +181,11 @@ export async function GET(req: NextRequest) {
 // registry, OR any free-form ≤200 chars). `blockKey` kept as deprecated alias.
 // null/empty → general feed.
 export async function POST(req: NextRequest) {
-  const { user, profile } = await getViewer()
-  if (!user) return NextResponse.json({ error: 'unauthenticated' }, { status: 401 })
-  if (!profile || !EXPERT_ROLES.has(profile.role ?? ''))
-    return NextResponse.json({ error: 'forbidden' }, { status: 403 })
+  const auth = await resolveExpert()
+  if (!auth.ok) return expertBlockResponse(auth.block)
+  const user = { id: auth.viewer.id }
+  const profile = await viewerProfile(auth.viewer.id)
+  if (!profile) return NextResponse.json({ error: 'Не удалось проверить права' }, { status: 503 })
 
   let body: { clientId?: string; targetId?: string | null; blockKey?: string | null; text?: string }
   try {

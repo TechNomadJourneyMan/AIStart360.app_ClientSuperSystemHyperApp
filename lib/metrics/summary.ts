@@ -12,7 +12,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { MetricSummary } from '@/types/metrics'
 import type { MetricEntry } from './types'
 import { getMetricById } from './registry'
-import { previousValueFor, trendFor, type MetricHistoryRow } from './catalog-helpers'
+import { isMissingTable, previousValueFor, trendFor, type MetricHistoryRow } from './catalog-helpers'
 
 /** Top KPIs returned when no `keys` / `ids` are given (registry ids, display order). */
 export const TOP_KPI_METRIC_IDS: readonly string[] = [
@@ -209,7 +209,11 @@ export async function loadMetricSummaries(
       .limit(1000),
   ])
   if (values.error) throw new Error(`metrics summary: metrics failed (${values.error.code ?? 'unknown'})`)
-  // History is optional (migration 085): absent → no trend, never an error.
+  // History is optional (migration 085): a missing table → no trend. Any other
+  // failed read is an error, not «no history».
+  if (history.error && !isMissingTable(history.error)) {
+    throw new Error(`metrics summary: history failed (${history.error.code ?? 'unknown'})`)
+  }
   const historyRows = history.error ? [] : ((history.data ?? []) as MetricHistoryRow[])
   return buildMetricSummaries(ids, (values.data ?? []) as SummaryValueRow[], historyRows)
 }

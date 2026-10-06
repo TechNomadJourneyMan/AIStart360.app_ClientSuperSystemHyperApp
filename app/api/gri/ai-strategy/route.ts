@@ -6,9 +6,12 @@ import { safeErrorMessage } from '@/lib/api-error'
 import { hasAllScores, knownScores } from '@/lib/gri-calculator/assessment-seed'
 
 /**
- * AI Growth Strategy generator for the GRI Calculator.
- * Uses OpenRouter (Claude Sonnet 4.5) if OPENROUTER_API_KEY is set,
- * else falls back to a static template built from the scores.
+ * AI Growth Strategy generator for the GRI Calculator (OpenRouter).
+ *
+ * The strategy is the model's or nothing: when the model gives no answer
+ * (no key, provider error, timeout, budget spent) the route answers 503
+ * AI_UNAVAILABLE instead of a template dressed up as AI output with an
+ * invented forecast.
  */
 
 interface StrategyRequest {
@@ -17,46 +20,9 @@ interface StrategyRequest {
   format?: 'default' | 'action_plan'
 }
 
-function buildStaticStrategy(scores: Record<string, number>, lang: 'ru' | 'en', format: string): string {
-  const sorted = Object.entries(scores).sort((a, b) => a[1] - b[1])
-  const weakest = sorted.slice(0, 3)
-  const strongest = sorted.slice(-2).reverse()
-
-  if (lang === 'ru') {
-    const parts: string[] = []
-    parts.push(`## ${format === 'action_plan' ? 'План действий' : 'AI Стратегия Роста'}\n`)
-    parts.push(`### Критические зоны\n`)
-    weakest.forEach(([cat, score]) => {
-      parts.push(`**${cat}** (${score}/10)`)
-      parts.push(`- Провести аудит процессов и выделить 2-3 приоритетные задачи`)
-      parts.push(`- Назначить ответственного и зафиксировать дедлайн в 30 дней`)
-      parts.push(`- Измерить результат в конце месяца и скорректировать подход\n`)
-    })
-    parts.push(`### Сильные стороны\n`)
-    strongest.forEach(([cat, score]) => {
-      parts.push(`**${cat}** (${score}/10) — используйте эту зону как фундамент для роста.\n`)
-    })
-    parts.push(`### Ожидаемый эффект на GRI\n`)
-    parts.push(`При фокусе на 3 слабых зонах ожидаемый рост общего GRI +1.5 балла за 90 дней.`)
-    return parts.join('\n')
-  }
-
-  const parts: string[] = []
-  parts.push(`## ${format === 'action_plan' ? 'Action Plan' : 'AI Growth Strategy'}\n`)
-  parts.push(`### Critical zones\n`)
-  weakest.forEach(([cat, score]) => {
-    parts.push(`**${cat}** (${score}/10)`)
-    parts.push(`- Audit current processes and pick 2-3 priority tasks`)
-    parts.push(`- Assign an owner and set a 30-day deadline`)
-    parts.push(`- Measure the outcome at month-end and adjust the approach\n`)
-  })
-  parts.push(`### Strengths\n`)
-  strongest.forEach(([cat, score]) => {
-    parts.push(`**${cat}** (${score}/10) — leverage this as a growth foundation.\n`)
-  })
-  parts.push(`### Expected GRI impact\n`)
-  parts.push(`Focusing on the 3 weakest zones can yield +1.5 GRI points in 90 days.`)
-  return parts.join('\n')
+const AI_UNAVAILABLE = {
+  ru: 'ИИ-стратегия сейчас недоступна (модель не ответила или исчерпан лимит). Попробуйте позже.',
+  en: 'The AI strategy is unavailable right now (the model did not answer or the limit is spent). Try again later.',
 }
 
 export async function POST(request: NextRequest) {
@@ -75,7 +41,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body: StrategyRequest = await request.json()
-    const { lang = 'ru', format = 'default' } = body
+    const lang: 'ru' | 'en' = body.lang === 'en' ? 'en' : 'ru'
     // Only the seven categories with 0–10 values reach the prompt; the
     // strategy needs all of them (no template values filling the gaps).
     const scores = knownScores(body.scores)
@@ -92,7 +58,7 @@ export async function POST(request: NextRequest) {
 For each category with a score below 7, provide:
 1. Root cause analysis (1-2 sentences)
 2. Specific action steps (2-3 bullet points)
-3. Expected impact on the overall GRI
+3. Expected effect in words (which other categories it supports). Do not give numeric forecasts of GRI points, revenue or timelines — there is no data behind such numbers.
 
 Keep the response structured, professional, and actionable. Use markdown formatting.`
 
@@ -103,8 +69,10 @@ Keep the response structured, professional, and actionable. Use markdown formatt
       maxTokens: 2000,
     })
 
-    const strategy = aiResponse ?? buildStaticStrategy(scores, lang, format)
-    return NextResponse.json({ strategy })
+    if (!aiResponse || !aiResponse.trim()) {
+      return NextResponse.json({ error: AI_UNAVAILABLE[lang], code: 'AI_UNAVAILABLE' }, { status: 503 })
+    }
+    return NextResponse.json({ strategy: aiResponse })
   } catch (error) {
     // BE-09: never return the raw error to the client in production.
     return NextResponse.json({ error: safeErrorMessage(error, 'Не удалось сгенерировать стратегию') }, { status: 500 })

@@ -27,7 +27,7 @@ import { registerTool, type ToolContext } from '../tools'
 import {
   acceptNarrative, buildPointAReportContent, narrativeInputText, NARRATIVE_PROMPT_VERSION, type SnapshotResult,
 } from '@/lib/reports/snapshot'
-import { createReadyVersion, latestVersion, loadSnapshotInputs, type VersionHead } from '@/lib/reports/versions'
+import { createReadyVersion, latestVersion, loadSnapshotInputs, type VersionHead, sameDataAsLatest } from '@/lib/reports/versions'
 import type { PointAReportContent, ReportProvenance } from '@/lib/reports/types'
 
 export const REPORT_TOOL_NAMES = ['report.snapshot', 'report.create_version'] as const
@@ -88,7 +88,8 @@ registerTool({
       diagnostic_id: snap.content.diagnostic.id,
       data_hash: snap.dataHash,
       latest,
-      unchanged: Boolean(latest && latest.data_hash === snap.dataHash && latest.status !== 'failed'),
+      // Same rule as createReadyVersion: a rejected or withdrawn version does not count.
+      unchanged: sameDataAsLatest(latest, snap.dataHash),
       counts: {
         findings: snap.content.findings.length,
         recommendations: snap.content.recommendations.length,

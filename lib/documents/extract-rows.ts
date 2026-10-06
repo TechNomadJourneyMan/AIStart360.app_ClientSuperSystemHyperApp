@@ -527,19 +527,38 @@ const clientEnvelopeSchema = z.object({
 
 // ─── AI fallback (Claude Sonnet 4.5 via OpenRouter) ──────────
 
-async function aiExtractSalesRows(text: string): Promise<SalesRow[]> {
+/**
+ * Personal data never reach the model: identity columns become «ID-xxxxxxxx»
+ * pseudonyms, contacts / names are masked (pii-mask.ts). Loaded lazily —
+ * pii-mask itself uses the CSV helpers of this module.
+ */
+async function maskForModel(text: string, tabular: boolean) {
+  const { maskDocumentText, restoreClientId, restorePseudonyms } = await import('./pii-mask')
+  const masked = maskDocumentText(text, { tabular })
+  return {
+    text: masked.text,
+    id: (v: string) => restoreClientId(v, masked.pseudonyms),
+    back: <T extends string | null | undefined>(v: T): T => (typeof v === 'string' ? restorePseudonyms(v, masked.pseudonyms) as T : v),
+  }
+}
+
+const PSEUDONYM_RULE = `Names, phones and emails in the document are replaced by pseudonyms like ID-xxxxxxxx or by [телефон] / [email] / [имя] markers.
+Copy a pseudonym client id exactly as written. Never reconstruct or invent names or phone numbers.`
+
+async function aiExtractSalesRows(text: string, tabular: boolean): Promise<SalesRow[]> {
   if (!hasOpenRouterKey()) return []
+  const masked = await maskForModel(text, tabular)
 
   const systemPrompt = `You extract raw sales transaction rows from a business document.
 Return ONLY a JSON object {"rows":[...]}.
 Each row MUST be { "client_id": string, "amount": number (₸/KZT), "occurred_at": ISO-8601 date string }.
 Optional fields per row: manager_id, manager_name, product_id, product_name, client_name, quantity.
-If the document gives a phone number instead of an id, use the phone digits (E.164 without '+') as client_id.
+${PSEUDONYM_RULE}
 Do not invent rows. Do not summarise — emit one row per transaction.
 Cap at 1000 rows.
 ${UNTRUSTED_DATA_RULES}`
 
-  const userPrompt = `Document text:\n${fenceUntrusted('document', text, 30000)}`
+  const userPrompt = `Document text:\n${fenceUntrusted('document', masked.text, 30000)}`
 
   try {
     const raw = await chatWithOpenRouter({
@@ -561,6 +580,10 @@ ${UNTRUSTED_DATA_RULES}`
     }
     return safe.data.rows.map((r) => ({
       ...r,
+      client_id: masked.id(r.client_id),
+      client_name: masked.back(r.client_name),
+      manager_name: masked.back(r.manager_name),
+      manager_id: masked.back(r.manager_id),
       occurred_at: parseDateIso(r.occurred_at) ?? r.occurred_at,
     }))
   } catch (err) {
@@ -569,18 +592,19 @@ ${UNTRUSTED_DATA_RULES}`
   }
 }
 
-async function aiExtractClientRows(text: string): Promise<ClientBaseRow[]> {
+async function aiExtractClientRows(text: string, tabular: boolean): Promise<ClientBaseRow[]> {
   if (!hasOpenRouterKey()) return []
+  const masked = await maskForModel(text, tabular)
 
   const systemPrompt = `You extract a client/customer base from a business document.
 Return ONLY a JSON object {"rows":[...]}.
 Each row MUST be { "client_id": string, "name": string, "first_purchase_date": ISO-8601, "last_purchase_date": ISO-8601, "total_spent_kzt": number, "purchase_count": number }.
-If only a phone number is given, use the phone digits (E.164 without '+') as client_id.
+${PSEUDONYM_RULE}
 Do not invent rows. Skip rows where the required fields are missing.
 Cap at 2000 rows.
 ${UNTRUSTED_DATA_RULES}`
 
-  const userPrompt = `Document text:\n${fenceUntrusted('document', text, 30000)}`
+  const userPrompt = `Document text:\n${fenceUntrusted('document', masked.text, 30000)}`
 
   try {
     const raw = await chatWithOpenRouter({
@@ -602,6 +626,8 @@ ${UNTRUSTED_DATA_RULES}`
     }
     return safe.data.rows.map((r) => ({
       ...r,
+      client_id: masked.id(r.client_id),
+      name: masked.back(r.name),
       first_purchase_date: parseDateIso(r.first_purchase_date) ?? r.first_purchase_date,
       last_purchase_date: parseDateIso(r.last_purchase_date) ?? r.last_purchase_date,
     }))
@@ -642,7 +668,7 @@ export async function extractSalesRows(
     // CSV-like but headers didn't map → fall through to AI.
   }
 
-  return aiExtractSalesRows(text)
+  return aiExtractSalesRows(text, isLikelyCsv(text, hints))
 }
 
 /**
@@ -663,7 +689,7 @@ export async function extractClientRows(
     if (det && det.length === 0) return []
   }
 
-  return aiExtractClientRows(text)
+  return aiExtractClientRows(text, isLikelyCsv(text, hints))
 }
 
 // ─── Deterministic-only entry points (document_intelligence agent) ──────

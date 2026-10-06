@@ -12,7 +12,7 @@ import { RequirePermission } from '../StaffContext'
 import { useWorkspace } from '../WorkspaceContext'
 import { Button, DataTable, EmptyState, ErrorState, PageHeader, Panel, Skeleton, StatTile, cx, useGigaQuery, type Column } from '../kit'
 import { CostChart } from './CostChart'
-import { budgetUsage, fillDailySeries, fmtTokens, fmtUsd, shareOf, spendOn, toNum, totalsOf } from './model'
+import { budgetLimitLabel, budgetUsage, fillDailySeries, fmtTokens, fmtUsd, platformSpendToday, shareOf, toNum, totalsOf } from './model'
 import type { CostsResponse } from './types'
 import { useAgentDirectory } from './useAgentDirectory'
 import { Segmented } from './ui'
@@ -35,7 +35,8 @@ export function AgentCostsPage() {
 
   const series = useMemo(() => (d ? fillDailySeries(d.byDay, Number(period)) : []), [d, period])
   const totals = totalsOf(series)
-  const today = spendOn(series)
+  // Platform-wide (agents + chat, analysis and other features), as the budget guard counts it.
+  const today = platformSpendToday(d, series)
   const platform = budgetUsage(today, d?.budgets.platformDailyUsd)
 
   const byAgent: AgentCostRow[] = useMemo(() => (d?.byAgent ?? []).map((r) => ({
@@ -174,7 +175,7 @@ function BudgetBar({ label, spent, budget, note, href }: { label: string; spent:
       <div className="flex items-baseline justify-between gap-2 text-xs">
         <span className="truncate text-slate-200">{title}{note && <span className="ml-1.5 font-mono text-[10px] text-slate-600">{note}</span>}</span>
         <span className="shrink-0 font-mono tabular-nums text-slate-300">
-          {fmtUsd(spent)} <span className="text-slate-500">/ {budget > 0 ? fmtUsd(budget) : 'без лимита'}</span>
+          {fmtUsd(spent)} <span className="text-slate-500">/ {budgetLimitLabel(budget)}</span>
         </span>
       </div>
       {usage ? (

@@ -20,15 +20,28 @@ function admin() {
   })
 }
 
+/**
+ * Every write below THROWS on failure. supabase-js reports PostgREST and GoTrue
+ * failures as `{ error }` instead of throwing, so an ignored result would let a
+ * route report "2FA enabled" without the gate flag, or an admin reset that left
+ * the user locked out. The calling route turns the throw into a 5xx.
+ */
+function fail(what: string, error: { message?: string; code?: string; status?: number }): never {
+  throw new Error(`mfa store: ${what} failed (${error.code ?? error.status ?? 'unknown'})`)
+}
+
 export async function getUserSecurity(userId: string): Promise<UserSecurityRow | null> {
-  const { data } = await admin().from('user_security').select('*').eq('user_id', userId).maybeSingle()
+  // A read error is not "no 2FA": callers would report the factor as off.
+  const { data, error } = await admin().from('user_security').select('*').eq('user_id', userId).maybeSingle()
+  if (error) fail('user_security read', error)
   return (data as UserSecurityRow | null) ?? null
 }
 
 export async function upsertUserSecurity(userId: string, patch: Partial<Omit<UserSecurityRow, 'user_id'>>): Promise<void> {
-  await admin()
+  const { error } = await admin()
     .from('user_security')
     .upsert({ user_id: userId, ...patch, updated_at: new Date().toISOString() }, { onConflict: 'user_id' })
+  if (error) fail('user_security upsert', error)
 }
 
 /**
@@ -38,12 +51,14 @@ export async function upsertUserSecurity(userId: string, patch: Partial<Omit<Use
 export async function setMfaMetadataFlag(userId: string, enabled: boolean): Promise<void> {
   // app_metadata is the authoritative copy (users cannot edit it); user_metadata
   // is kept in sync for older readers (lib/mfa/flags.ts ORs both).
-  await admin().auth.admin.updateUserById(userId, { app_metadata: { mfa_totp: enabled }, user_metadata: { mfa_totp: enabled } })
+  const { error } = await admin().auth.admin.updateUserById(userId, { app_metadata: { mfa_totp: enabled }, user_metadata: { mfa_totp: enabled } })
+  if (error) fail('mfa_totp flag', error)
 }
 
 /** Set the passkey (WebAuthn) enforcement flag — middleware gates on TOTP OR passkey. */
 export async function setMfaWebauthnFlag(userId: string, enabled: boolean): Promise<void> {
-  await admin().auth.admin.updateUserById(userId, { app_metadata: { mfa_webauthn: enabled }, user_metadata: { mfa_webauthn: enabled } })
+  const { error } = await admin().auth.admin.updateUserById(userId, { app_metadata: { mfa_webauthn: enabled }, user_metadata: { mfa_webauthn: enabled } })
+  if (error) fail('mfa_webauthn flag', error)
 }
 
 /**
@@ -58,7 +73,7 @@ export async function setMfaWebauthnFlag(userId: string, enabled: boolean): Prom
  */
 export async function adminResetUserMfa(userId: string): Promise<void> {
   const sb = admin()
-  await sb.from('user_security').upsert(
+  const sec = await sb.from('user_security').upsert(
     {
       user_id: userId,
       totp_enabled: false,
@@ -69,9 +84,15 @@ export async function adminResetUserMfa(userId: string): Promise<void> {
     },
     { onConflict: 'user_id' },
   )
-  await sb.from('webauthn_credentials').delete().eq('user_id', userId)
-  await sb.auth.admin.updateUserById(userId, {
+  if (sec.error) fail('user_security reset', sec.error)
+  const keys = await sb.from('webauthn_credentials').delete().eq('user_id', userId)
+  if (keys.error) fail('webauthn_credentials delete', keys.error)
+  // Last: until the gate flags are cleared the reset is NOT done — a failure
+  // here must reach the admin, or the user stays redirected to /2fa with no
+  // factor left. Re-running the reset is safe (every step is idempotent).
+  const { error } = await sb.auth.admin.updateUserById(userId, {
     app_metadata: { mfa_totp: false, mfa_webauthn: false },
     user_metadata: { mfa_totp: false, mfa_webauthn: false },
   })
+  if (error) fail('mfa flags reset', error)
 }

@@ -5,7 +5,8 @@
  *
  * Replaces the old <AIInsightsCarousel /> on the orchestrator page.
  * Pure client component: pulls from `/api/v1/point-a/insights`. When there are
- * no items it shows an empty state — it never fabricates questions.
+ * no items it shows an empty state — it never fabricates questions. A failed
+ * load is an error with «Повторить», not an empty feed with zero counts.
  */
 
 import Link from 'next/link'
@@ -13,6 +14,7 @@ import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { usePointAInsightActions } from '@/hooks/usePointAInsightActions'
 import { InsightItem, type InsightFeedItem } from './InsightItem'
+import { useInsightsFeed } from './useInsightsFeed'
 
 type FilterKey = 'all' | 'ai' | 'expert' | 'client'
 
@@ -23,11 +25,6 @@ interface Counts {
   client: number
   pending: number
   unanswered: number
-}
-
-interface ApiResponse {
-  ok: boolean
-  data?: { items: InsightFeedItem[]; counts: Counts }
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -73,8 +70,7 @@ export function InsightsFeed({
   showSearch = true,
   hideHeader = false,
 }: Props) {
-  const [items, setItems] = useState<InsightFeedItem[]>(initialItems ?? [])
-  const [loading, setLoading] = useState(!initialItems)
+  const { items, setItems, loading, loadError, reload } = useInsightsFeed(50, initialItems)
   const [filter, setFilter] = useState<FilterKey>('all')
   const [query, setQuery] = useState('')
   const [idx, setIdx] = useState(0)
@@ -82,36 +78,11 @@ export function InsightsFeed({
   const actions = usePointAInsightActions()
 
   // Replace the local copy with the row the API stored.
-  const applySaved = useCallback((saved: InsightFeedItem | null) => {
-    if (!saved) return
+  const applySaved = useCallback((saved: InsightFeedItem | null): boolean => {
+    if (!saved) return false
     setItems((prev) => prev.map((it) => (it.id === saved.id ? { ...it, ...saved } : it)))
-  }, [])
-
-  useEffect(() => {
-    if (initialItems) return
-    let cancelled = false
-    setLoading(true)
-    ;(async () => {
-      try {
-        const res = await fetch('/api/v1/point-a/insights?limit=50', { cache: 'no-store' })
-        if (!res.ok) throw new Error(`HTTP ${res.status}`)
-        const json = (await res.json()) as ApiResponse
-        if (cancelled) return
-        if (json?.ok && json.data?.items?.length) {
-          setItems(json.data.items)
-        } else {
-          setItems([])
-        }
-      } catch {
-        if (!cancelled) setItems([])
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [initialItems])
+    return true
+  }, [setItems])
 
   const counts = useMemo(() => deriveCounts(items), [items])
 
@@ -175,7 +146,7 @@ export function InsightsFeed({
           </p>
         </div>
       </div>
-      <div className="flex items-center gap-2 flex-wrap">
+      {!loadError && <div className="flex items-center gap-2 flex-wrap">
         <span className="inline-flex items-center gap-1.5 rounded-xl border border-amber-400/30 bg-amber-400/10 text-amber-300 text-[11px] font-medium px-2.5 py-1">
           <span className="material-symbols-outlined text-[13px]">pending</span>
           {counts.pending} ждут подтверждения
@@ -184,7 +155,7 @@ export function InsightsFeed({
           <span className="material-symbols-outlined text-[13px]">help</span>
           {counts.unanswered} без ответа
         </span>
-      </div>
+      </div>}
     </div>
   )
 
@@ -193,11 +164,12 @@ export function InsightsFeed({
     <div className="flex items-center justify-between gap-3 flex-wrap mb-4">
       <div className="flex items-center gap-1.5 flex-wrap">
         {([
-          ['all', `Все · ${counts.all}`],
-          ['ai', `ИИ · ${counts.ai}`],
-          ['expert', `Эксперт · ${counts.expert}`],
-          ['client', `Клиент · ${counts.client}`],
-        ] as [FilterKey, string][]).map(([key, label]) => {
+          ['all', 'Все', counts.all],
+          ['ai', 'ИИ', counts.ai],
+          ['expert', 'Эксперт', counts.expert],
+          ['client', 'Клиент', counts.client],
+        ] as [FilterKey, string, number][]).map(([key, name, n]) => {
+          const label = loadError ? name : `${name} · ${n}`
           const active = filter === key
           return (
             <button
@@ -243,6 +215,18 @@ export function InsightsFeed({
           <div className="h-3 w-32 bg-white/[0.06] rounded mb-3" />
           <div className="h-4 w-3/4 bg-white/[0.08] rounded mb-2" />
           <div className="h-3 w-1/2 bg-white/[0.05] rounded" />
+        </div>
+      ) : loadError ? (
+        <div className="rounded-2xl border border-error/20 bg-error/5 p-6 text-center" role="alert">
+          <p className="text-sm text-on-surface">{loadError}</p>
+          <button
+            type="button"
+            onClick={reload}
+            className="mt-3 inline-flex items-center gap-1.5 rounded-xl border border-primary/40 bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/15"
+          >
+            <span className="material-symbols-outlined text-[14px]" aria-hidden="true">refresh</span>
+            Повторить
+          </button>
         </div>
       ) : total === 0 ? (
         <div className="rounded-2xl border border-white/[0.04] bg-surface-container-low p-8 text-center">

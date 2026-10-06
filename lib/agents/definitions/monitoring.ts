@@ -11,6 +11,7 @@
 import { z } from 'zod'
 import { prisma } from '@/lib/db'
 import { effectiveBudgets } from '@/lib/ai/providers/router'
+import { spendToday } from '../store'
 import { registerTool } from '../tools'
 import { notifyStaffTool } from '../tools/notify'
 import type { AgentDefinition } from '../types'
@@ -39,13 +40,12 @@ export async function platformHealthSnapshot(): Promise<HealthCheck[]> {
       (SELECT count(*) FROM public.documents WHERE parse_status = 'processing' AND updated_at < now() - interval '30 minutes') AS docs_stuck,
       (SELECT count(*) FROM public.documents WHERE parse_status = 'queued' AND processing_stage IS NOT NULL AND updated_at < now() - interval '1 hour') AS docs_queued,
       (SELECT count(*) FROM public.agent_approvals WHERE status = 'pending' AND requested_at < now() - interval '12 hours') AS approvals_overdue,
-      (SELECT count(*) FROM public.crm_provider_connections WHERE is_active AND last_sync_status = 'error') AS crm_errors,
-      (SELECT coalesce(sum(cost_usd), 0) FROM public.agent_runs WHERE started_at >= date_trunc('day', now())) AS spend_today`
-  // Runtime-editable (ai_budgets, 094) with the env fallback.
-  const budget = (await effectiveBudgets()).platformDailyUsd
+      (SELECT count(*) FROM public.crm_provider_connections WHERE is_active AND last_sync_status = 'error') AS crm_errors`
+  // Runtime-editable (ai_budgets, 094) with the env fallback; spend counted
+  // exactly as the budget guard counts it (agents + reservations + ledger).
+  const [budget, spend] = await Promise.all([effectiveBudgets().then((b) => b.platformDailyUsd), spendToday()])
   const runs = n(q.runs_24h)
   const failRate = runs ? n(q.failed_24h) / runs : 0
-  const spend = n(q.spend_today)
 
   const check = (key: string, label: string, value: number, warnAt: number, critAt: number, detail: string): HealthCheck => ({
     key, label, value, detail,

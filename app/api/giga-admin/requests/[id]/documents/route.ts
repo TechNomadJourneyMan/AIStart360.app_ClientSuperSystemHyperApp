@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { authorizeUserDataRead, resolveRequestUserId } from '@/lib/admin/user-data-access'
 import { isInOwnerFolder, locationForDocument } from '@/lib/documents/storage'
+import { dbError } from '@/lib/api-error'
 
 /**
  * GET /api/giga-admin/requests/[id]/documents
@@ -30,11 +31,8 @@ export async function GET(
       .eq('user_id', userId)
       .order('uploaded_at', { ascending: false })
 
-    if (error) {
-      // Table might not exist yet — return empty
-      console.warn('[giga-admin/requests/[id]/documents] Supabase error:', error.message)
-      return NextResponse.json({ ok: true, data: [] })
-    }
+    // A failed query is an error, never «the client uploaded nothing».
+    if (error) return dbError('giga-admin/requests/[id]/documents', error, 'Не удалось загрузить документы клиента.')
 
     // Short-lived signed download URLs. New rows carry storage_bucket/path
     // (089); legacy rows a Storage URL or a bare path of the `documents` bucket.

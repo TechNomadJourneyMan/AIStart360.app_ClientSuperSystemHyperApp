@@ -3,21 +3,21 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { dbError } from '@/lib/api-error'
+import { expertBlockResponse, resolveExpert } from '@/lib/expert-auth'
 
-const EXPERT_ROLES = new Set(['expert', 'admin', 'super_admin'])
+// Both handlers: approved expert/admin with the second factor where required
+// (resolveExpert); a refused caller gets the MFA code the UI acts on.
 
 // GET /api/expert/profile — current expert's profile fields relevant to the UI
 export async function GET() {
+  const auth = await resolveExpert()
+  if (!auth.ok) return expertBlockResponse(auth.block)
   const sb = createServerClient()
-  const {
-    data: { user },
-  } = await sb.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'unauthenticated' }, { status: 401 })
 
   const { data, error } = await sb
     .from('profiles')
     .select('id, full_name, email, avatar_url, role, expert_title')
-    .eq('id', user.id)
+    .eq('id', auth.viewer.id)
     .maybeSingle()
 
   if (error) return dbError('expert/profile', error)
@@ -26,19 +26,9 @@ export async function GET() {
 
 // PATCH /api/expert/profile  body: { expertTitle?, fullName?, avatarUrl? }
 export async function PATCH(req: NextRequest) {
+  const auth = await resolveExpert()
+  if (!auth.ok) return expertBlockResponse(auth.block)
   const sb = createServerClient()
-  const {
-    data: { user },
-  } = await sb.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'unauthenticated' }, { status: 401 })
-
-  const { data: viewer } = await sb
-    .from('profiles')
-    .select('role')
-    .eq('id', user.id)
-    .maybeSingle()
-  if (!viewer || !EXPERT_ROLES.has(viewer.role ?? ''))
-    return NextResponse.json({ error: 'forbidden' }, { status: 403 })
 
   let body: { expertTitle?: string | null; fullName?: string; avatarUrl?: string | null }
   try {
@@ -66,7 +56,7 @@ export async function PATCH(req: NextRequest) {
   const { data, error } = await sb
     .from('profiles')
     .update(update)
-    .eq('id', user.id)
+    .eq('id', auth.viewer.id)
     .select('id, full_name, email, avatar_url, role, expert_title')
     .single()
 

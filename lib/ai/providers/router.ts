@@ -297,8 +297,9 @@ export async function effectiveBudgets(): Promise<EffectiveBudgets> {
 
 /**
  * Per-provider daily budget guard. Returns a refusal message when the provider
- * of `target` has a daily budget and today's spend reached it; null otherwise
- * (no budget, or spend unknown because the database is unavailable).
+ * of `target` has a daily budget and today's spend reached it, or when that
+ * spend cannot be read and the check fails closed (production, see
+ * budgetFailsClosed in lib/ai/usage-ledger.ts); null otherwise.
  */
 export async function providerBudgetRefusal(target: ProviderTarget): Promise<string | null> {
   if (target.dailyBudgetUsd === null || target.dailyBudgetUsd === undefined) return null
@@ -309,7 +310,13 @@ export async function providerBudgetRefusal(target: ProviderTarget): Promise<str
       return `дневной бюджет провайдера ${target.providerName} ($${target.dailyBudgetUsd}) исчерпан`
     }
   } catch (err) {
-    console.warn('[ai-router] provider budget check unavailable:', err instanceof Error ? err.message.split('\n')[0] : err)
+    const reason = err instanceof Error ? err.message.split('\n')[0] : err
+    const { budgetFailsClosed } = await import('../usage-ledger')
+    if (budgetFailsClosed()) {
+      console.error('[ai-router] provider budget check unavailable — call refused (fail closed):', reason)
+      return `расход провайдера ${target.providerName} не удалось проверить — вызов отклонён`
+    }
+    console.warn('[ai-router] provider budget check unavailable:', reason)
   }
   return null
 }

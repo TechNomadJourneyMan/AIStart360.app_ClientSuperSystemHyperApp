@@ -19,6 +19,8 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { TimeseriesPoint } from '@/types/metrics'
+import { resolveTenantWith, tenantErrorMessage } from '@/lib/tenancy'
+import { isMissingTable } from './catalog-helpers'
 
 export type FetchPeriod = '1M' | '3M' | '6M' | '1Y' | 'ALL'
 
@@ -130,10 +132,6 @@ export function historyToPoints(rows: ReadonlyArray<HistoryRow>, cutoffIso: stri
   return points.sort((a, b) => a.timestamp.localeCompare(b.timestamp))
 }
 
-function isMissingTable(error: { code?: string; message?: string } | null): boolean {
-  return Boolean(error) && (error?.code === '42P01' || error?.code === 'PGRST205' || /does not exist|could not find the table/i.test(error?.message ?? ''))
-}
-
 export async function fetchTimeseries(
   supabase: SupabaseClient,
   opts: FetchTimeseriesOptions,
@@ -151,7 +149,9 @@ export async function fetchTimeseries(
   if (opts.source) history = history.eq('source', opts.source)
   const h = await history
   if (!h.error) return historyToPoints((h.data ?? []) as HistoryRow[], cutoff)
-  if (!isMissingTable(h.error)) return []
+  // A failed read is not «no history»: the routes answer 500 instead of an
+  // empty series that forecast / anomalies would then run on.
+  if (!isMissingTable(h.error)) throw new Error(`metric history read failed (${h.error.code ?? 'unknown'})`)
 
   return fetchFromMetrics(supabase, opts, cutoff)
 }
@@ -173,7 +173,8 @@ async function fetchFromMetrics(
   if (opts.source) query = query.eq('source', opts.source)
 
   const { data, error } = await query
-  if (error || !data) return []
+  if (error) throw new Error(`metric values read failed (${error.code ?? 'unknown'})`)
+  if (!data) return []
 
   const rows = data as MetricRow[]
   const points: TimeseriesPoint[] = []
@@ -191,4 +192,26 @@ async function fetchFromMetrics(
     })
   }
   return points
+}
+
+// ─── Company of a series request ─────────────────────────────
+
+export type SeriesCompany =
+  | { ok: true; companyId: string | null }
+  | { ok: false; status: number; error: string }
+
+/**
+ * The company whose history the caller reads, through lib/tenancy (owner,
+ * member, partner; optional ?companyId=) like the other metric routes.
+ * No company yet (and none requested) → companyId null: there is no history.
+ */
+export async function resolveSeriesCompany(
+  supabase: SupabaseClient,
+  userId: string,
+  companyId: string | null,
+): Promise<SeriesCompany> {
+  const tenant = await resolveTenantWith(supabase, userId, { companyId, access: 'read' })
+  if (tenant.ok) return { ok: true, companyId: tenant.tenant.companyId }
+  if (tenant.error === 'no_company' && !companyId) return { ok: true, companyId: null }
+  return { ok: false, status: tenant.status, error: tenant.error === 'no_company' ? 'no_company' : tenantErrorMessage(tenant.error) }
 }

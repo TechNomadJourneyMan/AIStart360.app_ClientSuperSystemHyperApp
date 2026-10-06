@@ -4,7 +4,8 @@
 
 export type MetricCategory = 'financial' | 'operational' | 'customer' | 'custom'
 export type DataLayer = 'fact' | 'forecast' | 'goal' | 'compare'
-export type GoalTrajectory = 'on_track' | 'at_risk' | 'behind'
+/** 'no_data' — a target exists but the company has no actual value yet (not «behind»). */
+export type GoalTrajectory = 'on_track' | 'at_risk' | 'behind' | 'no_data'
 export type AnomalySeverity = 'info' | 'warning' | 'critical'
 
 export const DEFAULT_METRIC_IDS = ['revenue', 'margin', 'clients', 'avg_check'] as const

@@ -13,6 +13,14 @@
  *   in_app    the event row itself (GIGA feed).
  * Every attempt is a notification_deliveries row (status, error, message id).
  * A per-type, per-company cooldown keeps repeated warnings out of Telegram.
+ *
+ * Crash safety: each recipient is first CLAIMED with a 'queued' delivery row
+ * (one sender per event and target), then resolved to sent / failed / skipped.
+ * A repeated call with the same dedupe key does not re-notify anyone who was
+ * handled already, but resumes the recipients that a crashed or killed earlier
+ * run never reached (no delivery row, or a 'queued' claim older than
+ * CLAIM_STALE_SECONDS). Only recipients linked before the event was recorded
+ * are resumed, so a late link does not receive old news.
  */
 import { prisma } from '@/lib/db'
 import { hasPermission, isStaffRole, type StaffRole } from '@/lib/admin/rbac'
@@ -58,7 +66,10 @@ interface Recipient {
   mutedUntil: Date | null
 }
 
-async function linkedStaff(): Promise<Recipient[]> {
+/** A 'queued' claim older than this is treated as abandoned by a dead run. */
+const CLAIM_STALE_SECONDS = 120
+
+async function linkedStaff(linkedBefore: Date | null): Promise<Recipient[]> {
   const rows = await prisma.$queryRaw<Array<{
     user_id: string; chat_id: string; min_level: OrderedLevel; muted_until: Date | null; profile_role: string | null; staff_role: string | null
   }>>`
@@ -66,7 +77,8 @@ async function linkedStaff(): Promise<Recipient[]> {
     FROM public.staff_telegram_links l
     JOIN public.profiles p ON p.id = l.user_id AND p.status = 'approved'
     LEFT JOIN public.staff_roles s ON s.user_id = l.user_id
-    WHERE l.linked_at IS NOT NULL AND l.chat_id IS NOT NULL`
+    WHERE l.linked_at IS NOT NULL AND l.chat_id IS NOT NULL
+      AND (${linkedBefore}::timestamptz IS NULL OR l.linked_at <= ${linkedBefore}::timestamptz)`
   return rows
     .map((r) => {
       const role: StaffRole | null = r.profile_role === 'super_admin' ? 'super_admin' : isStaffRole(r.staff_role) ? r.staff_role : null
@@ -87,6 +99,22 @@ export function formatTelegram(n: StaffNotification): string {
   return `${head}\n\n${body.join('\n')}${link}`
 }
 
+/**
+ * Claim (event, channel, target) for this run: true when this run owns the
+ * delivery — no row yet, or an abandoned 'queued' claim. A row that is already
+ * sent / failed / skipped, or claimed recently by another run, is left alone.
+ */
+async function claimDelivery(eventId: string, channel: string, target: string): Promise<boolean> {
+  const rows = await prisma.$queryRaw<Array<{ id: string }>>`
+    INSERT INTO public.notification_deliveries (event_id, channel, target, status, attempts)
+    VALUES (${eventId}::uuid, ${channel}, ${target}, 'queued', 0)
+    ON CONFLICT (event_id, channel, target) DO UPDATE SET status = 'queued'
+      WHERE public.notification_deliveries.status = 'queued'
+        AND public.notification_deliveries.updated_at < now() - make_interval(secs => ${CLAIM_STALE_SECONDS}::int)
+    RETURNING id::text`
+  return rows.length > 0
+}
+
 async function recordDelivery(eventId: string, channel: string, target: string, status: string, extra: {
   reason?: string | null; error?: string | null; messageId?: string | null
 } = {}): Promise<void> {
@@ -95,32 +123,44 @@ async function recordDelivery(eventId: string, channel: string, target: string, 
     VALUES (${eventId}::uuid, ${channel}, ${target}, ${status}, ${extra.reason ?? null}, ${extra.error ?? null},
             ${extra.messageId ?? null}, ${status === 'skipped' ? 0 : 1}, ${status === 'sent' ? new Date() : null})
     ON CONFLICT (event_id, channel, target) DO UPDATE
-      SET status = EXCLUDED.status, error = EXCLUDED.error, provider_message_id = EXCLUDED.provider_message_id,
-          attempts = public.notification_deliveries.attempts + 1, sent_at = EXCLUDED.sent_at`
+      SET status = EXCLUDED.status, skip_reason = EXCLUDED.skip_reason, error = EXCLUDED.error,
+          provider_message_id = EXCLUDED.provider_message_id,
+          attempts = public.notification_deliveries.attempts + EXCLUDED.attempts, sent_at = EXCLUDED.sent_at`
 }
 
-async function inCooldown(n: StaffNotification): Promise<boolean> {
+/** Telegram already delivered this type for this company recently (another event). */
+async function inCooldown(n: StaffNotification, eventId: string): Promise<boolean> {
   if (n.level === 'CRITICAL' || n.level === 'APPROVAL_REQUIRED' || COOLDOWN_MINUTES <= 0) return false
   const rows = await prisma.$queryRaw<Array<{ n: bigint }>>`
     SELECT count(*) AS n FROM public.notification_deliveries d
     JOIN public.notification_events e ON e.id = d.event_id
     WHERE d.channel = 'telegram' AND d.status = 'sent' AND e.type = ${n.type}
       AND e.company_id IS NOT DISTINCT FROM ${n.companyId ?? null}
+      AND e.id <> ${eventId}::uuid
       AND d.sent_at > now() - make_interval(mins => ${COOLDOWN_MINUTES}::int)`
   return Number(rows[0]?.n ?? 0) > 0
 }
 
-export async function notifyStaff(n: StaffNotification, opts: { fetchImpl?: typeof fetch; now?: Date } = {}): Promise<NotifyResult> {
-  const inserted = await prisma.$queryRaw<Array<{ id: string }>>`
+/** Insert the feed row, or find the existing one for this dedupe key. */
+async function recordEvent(n: StaffNotification): Promise<{ id: string; createdAt: Date; duplicate: boolean } | null> {
+  const inserted = await prisma.$queryRaw<Array<{ id: string; created_at: Date }>>`
     INSERT INTO public.notification_events
       (level, type, title, body, company_id, entity_type, entity_id, approval_id, agent_key, data, dedupe_key, audience)
     VALUES (${n.level}, ${n.type}, ${n.title.slice(0, 200)}, ${(n.lines ?? []).join('\n').slice(0, 4000)},
             ${n.companyId ?? null}, ${n.entityType ?? null}, ${n.entityId ?? null}, ${n.approvalId ?? null}::uuid,
             ${n.agentKey ?? null}, ${JSON.stringify(n.data ?? {})}::jsonb, ${n.dedupeKey ?? null}, 'staff')
     ON CONFLICT (dedupe_key) DO NOTHING
-    RETURNING id`
-  const eventId = inserted[0]?.id ?? null
-  if (!eventId) return { eventId: null, duplicate: true, deliveries: [] }
+    RETURNING id::text, created_at`
+  if (inserted[0]) return { id: inserted[0].id, createdAt: inserted[0].created_at, duplicate: false }
+  const existing = await prisma.$queryRaw<Array<{ id: string; created_at: Date }>>`
+    SELECT id::text, created_at FROM public.notification_events WHERE dedupe_key = ${n.dedupeKey ?? null}`
+  return existing[0] ? { id: existing[0].id, createdAt: existing[0].created_at, duplicate: true } : null
+}
+
+export async function notifyStaff(n: StaffNotification, opts: { fetchImpl?: typeof fetch; now?: Date } = {}): Promise<NotifyResult> {
+  const event = await recordEvent(n)
+  if (!event) return { eventId: null, duplicate: true, deliveries: [] }
+  const eventId = event.id
 
   const cfg = routingConfig()
   const deliveries: NotifyResult['deliveries'] = []
@@ -133,8 +173,8 @@ export async function notifyStaff(n: StaffNotification, opts: { fetchImpl?: type
   const bot = staffBot()
   const text = formatTelegram(n)
   const quiet = inQuietHours(n.level, cfg, opts.now)
-  const cooled = await inCooldown(n)
-  const staff = await linkedStaff()
+  const cooled = await inCooldown(n, eventId)
+  const staff = await linkedStaff(event.duplicate ? event.createdAt : null)
   const isApproval = n.level === 'APPROVAL_REQUIRED'
   const keyboard: InlineButton[][] | undefined = isApproval && n.approvalId
     ? (() => {
@@ -146,6 +186,7 @@ export async function notifyStaff(n: StaffNotification, opts: { fetchImpl?: type
 
   const targets = staff.filter((s) => (isApproval ? hasPermission(s.role, 'approvals.decide') : true))
   for (const s of targets) {
+    if (!(await claimDelivery(eventId, 'telegram', s.chatId))) continue
     if (!reaches(n.level, cfg.telegramMinLevel)) { await skip('telegram', s.chatId, 'below_platform_level'); continue }
     if (!reaches(n.level, s.minLevel)) { await skip('telegram', s.chatId, 'below_personal_level'); continue }
     if (s.mutedUntil && s.mutedUntil > (opts.now ?? new Date()) && !isApproval && n.level !== 'CRITICAL') { await skip('telegram', s.chatId, 'muted'); continue }
@@ -165,6 +206,7 @@ export async function notifyStaff(n: StaffNotification, opts: { fetchImpl?: type
   const linkedChats = new Set(staff.map((s) => s.chatId))
   for (const chatId of legacyChatIds()) {
     if (linkedChats.has(chatId)) continue
+    if (!(await claimDelivery(eventId, 'telegram', chatId))) continue
     if (!reaches(n.level, cfg.telegramMinLevel)) { await skip('telegram', chatId, 'below_platform_level'); continue }
     if (quiet) { await skip('telegram', chatId, 'quiet_hours'); continue }
     if (cooled) { await skip('telegram', chatId, 'cooldown'); continue }
@@ -176,7 +218,7 @@ export async function notifyStaff(n: StaffNotification, opts: { fetchImpl?: type
 
   // ── Email ──
   const adminEmail = process.env.ADMIN_NOTIFICATION_EMAIL || process.env.ADMIN_EMAIL
-  if (adminEmail && reaches(n.level, cfg.emailMinLevel) && n.level !== 'APPROVAL_REQUIRED') {
+  if (adminEmail && reaches(n.level, cfg.emailMinLevel) && n.level !== 'APPROVAL_REQUIRED' && (await claimDelivery(eventId, 'email', adminEmail))) {
     try {
       const res = await sendNotificationEmail({
         to: adminEmail,
@@ -195,5 +237,5 @@ export async function notifyStaff(n: StaffNotification, opts: { fetchImpl?: type
     }
   }
 
-  return { eventId, duplicate: false, deliveries }
+  return { eventId, duplicate: event.duplicate, deliveries }
 }

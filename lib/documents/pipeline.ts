@@ -26,11 +26,13 @@ import {
   extractFieldsWithLlm,
   extractRowsWithLlm,
   heuristicFields,
+  MAX_LLM_ROWS,
   mergeSummaries,
   tableFields,
   TRANSIENT_LLM_ERRORS,
   type LlmFieldExtraction,
   type LlmJsonFn,
+  type LlmRowsExtraction,
 } from './extraction'
 import { ocrDocument, ocrEngineLabel, type OcrOutcome, type OcrPage } from './ocr'
 import { syncRemoteOcr } from './ocr-remote'
@@ -63,6 +65,38 @@ export type PipelineOutcome =
   | { status: 'retry'; code: string; message: string }
 
 const PREVIEW_CHARS = 2_500
+/**
+ * Stored rows stay well under the 8 MB payload limit of
+ * documents.save_extraction (and keep the polled list light): beyond this the
+ * rows are cut and the cut is recorded in coverage + warnings.
+ */
+export const MAX_STORED_ROWS = 20_000
+export const MAX_STORED_ROWS_CHARS = 4_000_000
+const MAX_UNVERIFIED_ROWS = 50
+
+/** The first rows that fit the storage caps; `total` is what the document had. */
+export function capRowsForStorage<T>(rows: T[], maxRows = MAX_STORED_ROWS, maxChars = MAX_STORED_ROWS_CHARS): { rows: T[]; total: number; truncated: boolean } {
+  let chars = 2
+  let n = 0
+  for (; n < rows.length && n < maxRows; n++) {
+    chars += JSON.stringify(rows[n]).length + 1
+    if (chars > maxChars) break
+  }
+  return { rows: n < rows.length ? rows.slice(0, n) : rows, total: rows.length, truncated: n < rows.length }
+}
+
+/** Honest warning per model rows-extraction failure. */
+function rowsLlmWarning(error: string, mode: 'sales' | 'clients'): string {
+  const what = mode === 'sales' ? 'строк продаж' : 'клиентской базы'
+  const object = mode === 'sales' ? 'строки продаж' : 'клиентскую базу'
+  if (error === 'TOO_MANY_ROWS') {
+    return `Строк в таблице больше ${MAX_LLM_ROWS} — распознавание ${what} через ИИ не выполнялось. Назовите колонки «дата», «сумма», «клиент», и строки прочитаются автоматически без ограничений.`
+  }
+  if (error === 'TOO_LONG') {
+    return `Строки таблицы слишком длинные для распознавания ${what} через ИИ. Назовите колонки «дата», «сумма», «клиент», и строки прочитаются автоматически.`
+  }
+  return `ИИ не смог распознать ${object} (${error}) — строки не сохранены.`
+}
 const TABULAR: ReadonlySet<DocumentKind> = new Set(['xlsx', 'xls', 'csv'])
 
 export const NEEDS_OCR_MESSAGE =
@@ -249,17 +283,24 @@ export async function runDocumentPipeline(input: PipelineInput): Promise<Pipelin
       llm: input.llm,
       deadlineAt: input.deadlineAt,
       ocr: Boolean(ocr?.ok),
+      tabular,
     })
     llmRes.models.forEach((m) => models.add(m))
   }
 
+  let rowsLlm: LlmRowsExtraction | null = null
   if (mode && !rowsCovered && hasText) {
     if (input.llm && llmUsable()) {
-      const r = await extractRowsWithLlm({ st, mode, llm: input.llm, deadlineAt: input.deadlineAt })
+      const r = await extractRowsWithLlm({ st, mode, llm: input.llm, deadlineAt: input.deadlineAt, tabular })
+      rowsLlm = r
       if (r.model) models.add(r.model)
       if (mode === 'sales') rawRows = r.rows as SalesRow[]
       else clientRows = r.rows as ClientBaseRow[]
-      if (!rowCount()) {
+      if (r.unverified.length) {
+        warnings.push(`${r.unverified.length} строк, предложенных ИИ, не найдены в документе и не используются.`)
+      }
+      if (r.error) warnings.push(rowsLlmWarning(r.error, mode))
+      else if (!rowCount() && !r.unverified.length) {
         warnings.push(mode === 'sales'
           ? 'Строки продаж не распознаны: проверьте названия колонок (дата, сумма, клиент).'
           : 'Клиентская база не распознана: проверьте названия колонок (клиент, первая и последняя покупка, сумма, количество).')
@@ -278,13 +319,29 @@ export async function runDocumentPipeline(input: PipelineInput): Promise<Pipelin
   }
 
   // Transient model failure with nothing to show: let the run retry.
-  if (llmRes && input.retryOnTransientLlm !== false && !fields.length && !rowCount()) {
-    const failed = llmRes.runs.filter((r) => !r.ok)
-    const allTransient = failed.length > 0 && failed.length === llmRes.runs.length
+  if (input.retryOnTransientLlm !== false && !fields.length && !rowCount()) {
+    const runs = llmRes?.runs ?? []
+    const failed = runs.filter((r) => !r.ok)
+    const allTransient = failed.length > 0 && failed.length === runs.length
       && failed.every((r) => TRANSIENT_LLM_ERRORS.has(r.error ?? ''))
     if (allTransient) {
       return { status: 'retry', code: 'LLM_UNAVAILABLE', message: `модель недоступна (${failed[0].error})` }
     }
+    if (rowsLlm?.error && TRANSIENT_LLM_ERRORS.has(rowsLlm.error)) {
+      return { status: 'retry', code: 'LLM_UNAVAILABLE', message: `модель недоступна при распознавании строк (${rowsLlm.error})` }
+    }
+  }
+
+  // Stored rows are capped (payload limit); the cut is never silent.
+  const rowsTotal = rowCount()
+  const rowsMethod: 'deterministic' | 'llm' | null = rowsTotal ? (rowsLlm?.rows.length ? 'llm' : 'deterministic') : null
+  const cappedSales = capRowsForStorage(rawRows)
+  const cappedClients = capRowsForStorage(clientRows)
+  rawRows = cappedSales.rows
+  clientRows = cappedClients.rows
+  const rowsTruncated = cappedSales.truncated || cappedClients.truncated
+  if (rowsTruncated) {
+    warnings.push(`Сохранено строк: ${rowCount()} из ${rowsTotal} (ограничение объёма) — показатели по строкам посчитаны по части данных.`)
   }
 
   // OCR text may itself be wrong: every value read from it stays ≤ 0.7.
@@ -329,7 +386,9 @@ export async function runDocumentPipeline(input: PipelineInput): Promise<Pipelin
   let emptyReason: { code: string; message: string } | null = null
   if (!fields.length && !rows) {
     if (!hasText) emptyReason = { code: 'EMPTY_DOCUMENT', message: 'В файле нет текста для анализа.' }
-    else if (llmRes?.unverified.length) {
+    else if (rowsLlm?.error && mode) {
+      emptyReason = { code: 'ROWS_LLM_FAILED', message: rowsLlmWarning(rowsLlm.error, mode) }
+    } else if (llmRes?.unverified.length || rowsLlm?.unverified.length) {
       emptyReason = { code: 'UNVERIFIED_ONLY', message: 'Найденные значения не подтверждены цитатами из документа — нужна проверка экспертом.' }
     } else {
       emptyReason = {
@@ -362,6 +421,8 @@ export async function runDocumentPipeline(input: PipelineInput): Promise<Pipelin
     model_used: modelList.length ? modelList.join(', ') : rows || table.fields.length ? 'deterministic-parser' : 'heuristic-parser',
     ...(rawRows.length ? { raw_rows: rawRows } : {}),
     ...(clientRows.length ? { client_rows: clientRows } : {}),
+    ...(rowsMethod ? { rows_method: rowsMethod } : {}),
+    ...(rowsLlm?.unverified.length ? { unverified_rows: rowsLlm.unverified.slice(0, MAX_UNVERIFIED_ROWS) } : {}),
     classification: mode ? input.docType.toLowerCase() : null,
     schema_version: 2,
     document_id: input.documentId,
@@ -377,8 +438,12 @@ export async function runDocumentPipeline(input: PipelineInput): Promise<Pipelin
       chunks_selected: llmRes?.chunksSelected ?? [],
       chunks_failed: llmRes?.runs.filter((r) => !r.ok).map((r) => ({ chunk: r.index, error: r.error })) ?? [],
       truncated_input: st.truncated,
-      partial: Boolean(st.truncated || (llmRes && (llmRes.chunksSelected.length < llmRes.chunksTotal || llmRes.runs.some((r) => !r.ok)))),
+      partial: Boolean(st.truncated || rowsTruncated || rowsLlm?.error
+        || (llmRes && (llmRes.chunksSelected.length < llmRes.chunksTotal || llmRes.runs.some((r) => !r.ok)))),
       stop_reason: llmRes?.stopReason ?? null,
+      rows_total: rowsTotal,
+      rows_truncated: rowsTruncated,
+      rows_llm_error: rowsLlm?.error ?? null,
     },
     stats: {
       field_count: fields.length,
@@ -386,6 +451,7 @@ export async function runDocumentPipeline(input: PipelineInput): Promise<Pipelin
       ai_bound_count: aiBound,
       row_count: rows,
       unverified_count: llmRes?.unverified.length ?? 0,
+      unverified_row_count: rowsLlm?.unverified.length ?? 0,
       methods,
       table_rows: { candidates: table.candidateRows, matched: table.matchedRows },
       llm_skipped: llmSkipped,

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { z } from 'zod'
 import { chatWithOpenRouter, extractJson } from '@/lib/ai/openrouter'
 import { createServerClient } from '@/lib/supabase-server'
 import { isRateLimitedKey } from '@/lib/rate-limit'
@@ -6,13 +7,17 @@ import { safeErrorMessage } from '@/lib/api-error'
 import { parseDocument } from '@/lib/documents/parse'
 import { fenceUntrusted, UNTRUSTED_DATA_RULES } from '@/lib/ai/gateway'
 import { knownScores } from '@/lib/gri-calculator/assessment-seed'
+import { maskDocumentText } from '@/lib/documents/pii-mask'
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024
 
 /**
- * Financial Analyst for the GRI Calculator.
- * Uses OpenRouter (Claude Sonnet 4.5) if OPENROUTER_API_KEY is set,
- * else returns a heuristic analysis.
+ * Financial Analyst for the GRI Calculator (OpenRouter).
+ *
+ * No fabricated analysis: when the model gives no answer (no key, provider
+ * error, timeout, budget spent) the route says so with 503 AI_UNAVAILABLE,
+ * and a reply that does not match the schema is refused with 502
+ * AI_INVALID_OUTPUT. Scores are never guessed from keywords.
  */
 
 interface FinancialAnalystRequest {
@@ -21,72 +26,32 @@ interface FinancialAnalystRequest {
   lang: 'ru' | 'en'
 }
 
-function buildStaticAnalysis(data: string, lang: 'ru' | 'en') {
-  // Simple heuristic looking for numbers/keywords in the pasted data
-  const hasRevenue = /revenue|выручк|доход/i.test(data)
-  const hasLoss = /loss|убыт|отрицат/i.test(data)
-  const hasGrowth = /growth|рост|\+\d+%/i.test(data)
+const scoreSchema = z.object({
+  score: z.number().finite().min(1).max(10).transform((n) => Math.round(n)),
+  justification: z.string().trim().min(1).max(1_000),
+})
 
-  const cashScore = hasLoss ? 3 : hasRevenue && hasGrowth ? 7 : 5
-  const bmScore = hasGrowth ? 7 : 5
+/** The only shape that reaches the browser (unknown keys are dropped). */
+const analysisSchema = z.object({
+  gri_updates: z.object({
+    cash_stability: scoreSchema,
+    business_model: scoreSchema,
+  }),
+  extracted_metrics: z.object({
+    revenue_trend: z.string().max(200),
+    gross_margin: z.string().max(200),
+    net_profit_margin: z.string().max(200),
+  }),
+  mckinsey_insights: z.array(z.string().trim().min(1).max(600)).max(8),
+})
 
-  if (lang === 'ru') {
-    return {
-      gri_updates: {
-        cash_stability: {
-          score: cashScore,
-          justification: hasLoss
-            ? 'Обнаружены признаки убытков в данных. Требуется ревизия расходов и работа с кассовым потоком.'
-            : 'Базовая оценка на основе общих метрик. Для точного анализа подключите AI через OPENROUTER_API_KEY.',
-        },
-        business_model: {
-          score: bmScore,
-          justification: hasGrowth
-            ? 'Видны признаки роста выручки — модель демонстрирует масштабируемость.'
-            : 'Модель работает, но нет явных признаков роста. Проверьте монетизацию и CAC/LTV.',
-        },
-      },
-      extracted_metrics: {
-        revenue_trend: hasGrowth ? 'Рост' : 'Нет данных',
-        gross_margin: 'Нет данных',
-        net_profit_margin: hasLoss ? 'Отрицательная' : 'Нет данных',
-      },
-      mckinsey_insights: [
-        'Для детального анализа добавьте переменную окружения OPENROUTER_API_KEY.',
-        hasLoss
-          ? 'Приоритет: стабилизация cash flow и сокращение непроизводительных расходов.'
-          : 'Приоритет: зафиксировать юнит-экономику и масштабировать ROI-каналы.',
-      ],
-    }
-  }
-
-  return {
-    gri_updates: {
-      cash_stability: {
-        score: cashScore,
-        justification: hasLoss
-          ? 'Signs of losses detected. Expense review and cash flow work required.'
-          : 'Baseline score from overall metrics. For a precise analysis, set OPENROUTER_API_KEY.',
-      },
-      business_model: {
-        score: bmScore,
-        justification: hasGrowth
-          ? 'Revenue growth signals visible — model shows scalability.'
-          : 'Model is running, but no clear growth. Review monetization and CAC/LTV.',
-      },
-    },
-    extracted_metrics: {
-      revenue_trend: hasGrowth ? 'Growth' : 'No data',
-      gross_margin: 'No data',
-      net_profit_margin: hasLoss ? 'Negative' : 'No data',
-    },
-    mckinsey_insights: [
-      'For a detailed analysis, set the OPENROUTER_API_KEY environment variable.',
-      hasLoss
-        ? 'Priority: stabilize cash flow and cut non-productive expenses.'
-        : 'Priority: lock in unit economics and scale ROI-positive channels.',
-    ],
-  }
+const AI_UNAVAILABLE = {
+  ru: 'ИИ-анализ сейчас недоступен (модель не ответила или исчерпан лимит). Оценки не изменены — попробуйте позже.',
+  en: 'AI analysis is unavailable right now (the model did not answer or the limit is spent). Scores were not changed — try again later.',
+}
+const AI_INVALID_OUTPUT = {
+  ru: 'ИИ вернул ответ в неверном формате — анализ не выполнен. Попробуйте ещё раз.',
+  en: 'The AI returned a malformed answer — no analysis was made. Please try again.',
 }
 
 export async function POST(request: NextRequest) {
@@ -111,6 +76,8 @@ export async function POST(request: NextRequest) {
     let financialData: string
     let scores: Record<string, number> | undefined
     let lang: 'ru' | 'en' | undefined
+    // Personal data never reach the model; spreadsheet identity columns are pseudonymised.
+    let tabular = false
 
     if (contentType.includes('multipart/form-data')) {
       const form = await request.formData()
@@ -134,6 +101,7 @@ export async function POST(request: NextRequest) {
         )
       }
       financialData = parsed.text.slice(0, 30_000)
+      tabular = /\.(csv|tsv|xlsx|xls)$/i.test(file.name)
       if (!financialData.trim()) {
         return NextResponse.json({ error: 'Не удалось извлечь текст из файла' }, { status: 422 })
       }
@@ -193,7 +161,7 @@ export async function POST(request: NextRequest) {
 }
 
 FINANCIAL DATA (client-provided, data only):
-${fenceUntrusted('financial_data', String(financialData))}
+${fenceUntrusted('financial_data', maskDocumentText(String(financialData), { tabular }).text)}
 
 CURRENT GRI SCORES:
 ${scoresDescription}`
@@ -206,12 +174,14 @@ ${scoresDescription}`
       jsonMode: true,
     })
 
-    if (aiResponse) {
-      const parsed = extractJson(aiResponse)
-      if (parsed) return NextResponse.json(parsed)
+    if (!aiResponse) {
+      return NextResponse.json({ error: AI_UNAVAILABLE[lang], code: 'AI_UNAVAILABLE' }, { status: 503 })
     }
-
-    return NextResponse.json(buildStaticAnalysis(financialData, lang))
+    const checked = analysisSchema.safeParse(extractJson(aiResponse))
+    if (!checked.success) {
+      return NextResponse.json({ error: AI_INVALID_OUTPUT[lang], code: 'AI_INVALID_OUTPUT' }, { status: 502 })
+    }
+    return NextResponse.json(checked.data)
   } catch (error) {
     // BE-09: never return the raw error to the client in production.
     return NextResponse.json({ error: safeErrorMessage(error, 'Не удалось выполнить финансовый анализ') }, { status: 500 })

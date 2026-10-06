@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireGiga } from '@/lib/admin/giga-actor'
-import { listTasks } from '@/lib/agents/admin'
+import { listTasks, parseTaskCursor } from '@/lib/agents/admin'
 
 export const dynamic = 'force-dynamic'
 
@@ -12,12 +12,12 @@ export async function GET(req: NextRequest) {
   if (g.response) return g.response
   const q = req.nextUrl.searchParams
   const status = q.get('status')
-  const before = q.get('before')
+  const before = q.get('before')?.slice(0, 100) ?? null
   const result = await listTasks({
     status: status && STATUSES.has(status) ? status : null,
     agentKey: q.get('agent')?.slice(0, 64) || null,
     companyId: q.get('company')?.slice(0, 64) || null,
-    before: before && !Number.isNaN(Date.parse(before)) ? before : null,
+    before: parseTaskCursor(before) ? before : null,
     limit: Number(q.get('limit') ?? 50) || 50,
   })
   return NextResponse.json({ ok: true, ...result })

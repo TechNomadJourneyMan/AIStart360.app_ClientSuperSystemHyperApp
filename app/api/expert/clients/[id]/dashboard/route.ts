@@ -5,7 +5,7 @@ export const dynamic = 'force-dynamic'
 // the specified client. Expert-only; reads via service-role to bypass RLS.
 
 import { NextResponse } from 'next/server'
-import { requireExpert, srGet } from '@/lib/expert-auth'
+import { expertBlockResponse, resolveExpert, srGet } from '@/lib/expert-auth'
 
 interface Diagnostic {
   id: string
@@ -34,8 +34,8 @@ interface Company {
 }
 
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
-  const viewer = await requireExpert()
-  if (!viewer) return NextResponse.json({ error: 'forbidden' }, { status: 403 })
+  const auth = await resolveExpert()
+  if (!auth.ok) return expertBlockResponse(auth.block)
 
   const clientId = params.id
   if (!clientId) return NextResponse.json({ error: 'client id required' }, { status: 400 })

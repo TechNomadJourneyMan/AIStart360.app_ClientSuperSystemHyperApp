@@ -141,6 +141,8 @@ export interface CostsResponse {
   byAgent: Array<Record<string, unknown>>
   byModel: Array<Record<string, unknown>>
   byCompany: Array<Record<string, unknown>>
+  /** Today's platform spend as the budget guard counts it (agents + non-agent features). */
+  platformSpendTodayUsd?: number
   budgets: { platformDailyUsd: number; companyDailyUsd: number }
 }
 

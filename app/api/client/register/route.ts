@@ -5,6 +5,8 @@ import { prisma } from '@/lib/db'
 import { createServerClient } from '@/lib/supabase-server'
 import { createServiceClient } from '@/lib/supabase-service'
 import { isRateLimitedKey } from '@/lib/rate-limit'
+import { notifyAdmins } from '@/lib/notifications'
+import { runInBackground } from '@/lib/background'
 
 /**
  * POST /api/client/register
@@ -14,6 +16,8 @@ import { isRateLimitedKey } from '@/lib/rate-limit'
  *   2. A row in public.companies
  *   3. An AdminRequest record via Prisma (so GIGA-panel sees the request)
  *      Falls back to direct Supabase insert if Prisma fails.
+ *   4. Tells the admins (notifyAdmins 'user_registered' — Telegram / email,
+ *      honours the GIGA toggle), after the response, never with secrets.
  *
  * Body: { userId, email, name, company }
  */
@@ -134,6 +138,17 @@ export async function POST(req: NextRequest) {
       }
     }
     } // end if (!alreadyApproved) — skip approval request in OPEN mode
+
+    void runInBackground('client-register:notify', () =>
+      notifyAdmins('user_registered', {
+        name: name || email,
+        email,
+        role: 'client',
+        organization: company || null,
+        status: alreadyApproved ? 'approved' : 'pending_approval',
+        requestId,
+      }, userId),
+    )
 
     return NextResponse.json({ ok: true, requestId }, { status: 201 })
   } catch (error) {

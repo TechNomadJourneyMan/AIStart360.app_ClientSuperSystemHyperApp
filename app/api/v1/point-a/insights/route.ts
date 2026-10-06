@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { createServerClient } from '@/lib/supabase-server'
+import { getSessionRole, isStaffRole } from '@/lib/api-identity'
 
 // ---------------------------------------------------------------------------
 // Shared helpers
@@ -10,6 +11,8 @@ import { createServerClient } from '@/lib/supabase-server'
 
 const ALLOWED_TYPES = ['ai', 'expert', 'client', 'admin'] as const
 const ANSWERED_STATUS = ['confirmed', 'rejected'] as const
+/** Statuses a client's own new question may start with. */
+const CLIENT_INITIAL_STATUS: ReadonlySet<string> = new Set(['pending_ai', 'awaiting_answer'])
 
 function unauthorized() {
   return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 })
@@ -153,15 +156,24 @@ export async function POST(req: NextRequest) {
   }
   const body = parsed.data
 
+  // SECURITY: type, author and status are provenance («вопрос от эксперта /
+  // ИИ», who asked, already confirmed). Only staff may set them; a client's
+  // question is always type 'client', has no author label and starts open.
+  // (The DB enforces the same since migration 097.)
+  const staff = isStaffRole(await getSessionRole(sb, userId))
+  if (!staff && (body.type !== 'client' || !CLIENT_INITIAL_STATUS.has(body.status))) {
+    return NextResponse.json({ ok: false, error: 'forbidden_insight_fields' }, { status: 403 })
+  }
+
   const companyId = await resolveCompanyId(sb, userId)
 
   const insertRow = {
     user_id: userId,
     company_id: companyId,
-    type: body.type,
+    type: staff ? body.type : 'client',
     category: body.category,
     question_text: body.question_text,
-    author_name: body.author_name ?? null,
+    author_name: staff ? body.author_name ?? null : null,
     status: body.status,
   }
 

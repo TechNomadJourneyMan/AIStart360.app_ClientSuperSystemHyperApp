@@ -5,7 +5,10 @@
  * once: every agent subscribed to it gets a task (idempotent per event), and
  * the notification router (lib/notifications/event-router.ts) decides whether
  * a human should hear about it. A
- * failed dispatch is recorded on the row and retried by the maintenance job.
+ * failed dispatch is recorded on the row (dispatch_error, dispatch_attempts)
+ * and stays undispatched: the maintenance job retries it with backoff, up to
+ * PLATFORM_EVENT_MAX_ATTEMPTS times (fan-out is idempotent per event). An
+ * agent that is disabled is skipped, not a failure.
  */
 import { Prisma } from '@prisma/client'
 import { runInBackground } from '@/lib/background'
@@ -37,6 +40,9 @@ export type EventListener = (event: PlatformEventRow) => Promise<void>
 
 const listeners: EventListener[] = []
 
+/** Dispatch attempts per event (first dispatch included) before it is left for staff. */
+export const PLATFORM_EVENT_MAX_ATTEMPTS = 8
+
 /** Extra consumers (notifications) register here; agents are wired by default. */
 export function onPlatformEvent(listener: EventListener): void {
   if (!listeners.includes(listener)) listeners.push(listener)
@@ -64,7 +70,7 @@ export async function dispatchEvent(event: PlatformEventRow): Promise<void> {
   const errors: string[] = []
   try {
     const { agentsSubscribedTo } = await import('@/lib/agents/registry')
-    const { enqueueAgentTask } = await import('@/lib/agents/queue')
+    const { enqueueAgentTask, AgentDisabledError } = await import('@/lib/agents/queue')
     for (const agent of agentsSubscribedTo(event.name)) {
       if (agent.scope === 'company' && !event.company_id) continue
       try {
@@ -78,6 +84,7 @@ export async function dispatchEvent(event: PlatformEventRow): Promise<void> {
           idempotencyKey: `event:${event.id}:${agent.key}`,
         })
       } catch (err) {
+        if (err instanceof AgentDisabledError) continue // switched off on purpose
         errors.push(`${agent.key}: ${err instanceof Error ? err.message : String(err)}`)
       }
     }
@@ -97,19 +104,49 @@ export async function dispatchEvent(event: PlatformEventRow): Promise<void> {
       errors.push(`listener: ${err instanceof Error ? err.message : String(err)}`)
     }
   }
-  await prisma.$executeRaw`
-    UPDATE public.platform_events
-    SET dispatched_at = now(), dispatch_error = ${errors.length ? errors.join('; ').slice(0, 1000) : null}
-    WHERE id = ${event.id}`
+  const failed = errors.length > 0
+  const error = failed ? errors.join('; ').slice(0, 1000) : null
+  try {
+    await prisma.$executeRaw`
+      UPDATE public.platform_events
+      SET dispatched_at = CASE WHEN ${failed}::boolean THEN NULL ELSE now() END,
+          dispatch_error = ${error},
+          dispatch_attempts = dispatch_attempts + 1
+      WHERE id = ${event.id}`
+  } catch (err) {
+    // Before migration 098 (no dispatch_attempts): a failure still stays undispatched.
+    if (!/dispatch_attempts/.test(err instanceof Error ? err.message : '')) throw err
+    await prisma.$executeRaw`
+      UPDATE public.platform_events
+      SET dispatched_at = CASE WHEN ${failed}::boolean THEN NULL ELSE now() END, dispatch_error = ${error}
+      WHERE id = ${event.id}`
+  }
 }
 
-/** Re-dispatch events whose dispatch never completed (crash between insert and dispatch). */
+/**
+ * Re-dispatch events whose dispatch never completed: a crash between insert
+ * and dispatch, or a dispatch that failed. Attempt n waits 2^n minutes after
+ * the event was created; after PLATFORM_EVENT_MAX_ATTEMPTS the event stays
+ * undispatched with its error (monitoring reports it).
+ */
 export async function redispatchPending(limit = 50): Promise<number> {
-  const rows = await prisma.$queryRaw<PlatformEventRow[]>`
-    SELECT id, name, company_id, subject_type, subject_id, actor, payload
-    FROM public.platform_events
-    WHERE dispatched_at IS NULL AND created_at < now() - interval '1 minute'
-    ORDER BY id LIMIT ${limit}`
+  let rows: PlatformEventRow[]
+  try {
+    rows = await prisma.$queryRaw<PlatformEventRow[]>`
+      SELECT id, name, company_id, subject_type, subject_id, actor, payload
+      FROM public.platform_events
+      WHERE dispatched_at IS NULL
+        AND dispatch_attempts < ${PLATFORM_EVENT_MAX_ATTEMPTS}
+        AND created_at < now() - make_interval(mins => power(2, dispatch_attempts)::int)
+      ORDER BY id LIMIT ${limit}`
+  } catch (err) {
+    if (!/dispatch_attempts/.test(err instanceof Error ? err.message : '')) throw err
+    rows = await prisma.$queryRaw<PlatformEventRow[]>`
+      SELECT id, name, company_id, subject_type, subject_id, actor, payload
+      FROM public.platform_events
+      WHERE dispatched_at IS NULL AND created_at < now() - interval '1 minute'
+      ORDER BY id LIMIT ${limit}`
+  }
   for (const row of rows) await dispatchEvent({ ...row, id: Number(row.id) })
   return rows.length
 }

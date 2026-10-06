@@ -126,6 +126,43 @@ export async function finishTask(args: {
   return rows[0]?.s ?? null
 }
 
+/**
+ * Finish a claimed task of a disabled agent as cancelled (AGENT_DISABLED)
+ * without running it. Returns the final status, or null when the lease was lost.
+ */
+export async function cancelDisabledTask(taskId: string, leaseToken: string): Promise<string | null> {
+  const rows = await prisma.$queryRaw<Array<{ status: string }>>`
+    UPDATE public.agent_tasks
+    SET status = 'cancelled', lease_token = NULL, lease_until = NULL, finished_at = now(),
+        last_error_code = 'AGENT_DISABLED', last_error = 'агент выключен'
+    WHERE id = ${taskId}::uuid AND status = 'running' AND lease_token = ${leaseToken}::uuid
+    RETURNING status`
+  return rows[0]?.status ?? null
+}
+
+/**
+ * The runner just parked a task on `approvalId`, but a human may already have
+ * decided it while the run was finishing (decideApproval leaves a 'running'
+ * task alone). Apply that decision: approved → re-queue, rejected → cancel.
+ * Returns the new task status, or null when there was nothing to apply.
+ */
+export async function applyEarlyApprovalDecision(taskId: string, approvalId: string): Promise<'queued' | 'cancelled' | null> {
+  const rows = await prisma.$queryRaw<Array<{ status: 'queued' | 'cancelled' }>>`
+    UPDATE public.agent_tasks t
+    SET status          = CASE WHEN a.status = 'approved' THEN 'queued' ELSE 'cancelled' END,
+        run_after       = CASE WHEN a.status = 'approved' THEN now() ELSE t.run_after END,
+        trigger         = CASE WHEN a.status = 'approved' THEN 'approval' ELSE t.trigger END,
+        max_attempts    = CASE WHEN a.status = 'approved' THEN least(10, greatest(t.max_attempts, t.attempts + 1)) ELSE t.max_attempts END,
+        finished_at     = CASE WHEN a.status = 'approved' THEN t.finished_at ELSE now() END,
+        last_error_code = CASE WHEN a.status = 'approved' THEN t.last_error_code ELSE 'APPROVAL_REJECTED' END,
+        cancelled_by    = CASE WHEN a.status = 'approved' THEN t.cancelled_by ELSE a.decided_by END
+    FROM public.agent_approvals a
+    WHERE t.id = ${taskId}::uuid AND t.status = 'awaiting_approval'
+      AND a.id = ${approvalId}::uuid AND a.task_id = t.id AND a.status IN ('approved', 'rejected')
+    RETURNING t.status`
+  return rows[0]?.status ?? null
+}
+
 export async function reapExpiredLeases(): Promise<number> {
   const rows = await prisma.$queryRaw<Array<{ n: number }>>`SELECT public.agent_reap_expired_leases() AS n`
   return num(rows[0]?.n)
@@ -269,11 +306,15 @@ export async function markApprovalExecuted(approvalId: string, ok: boolean): Pro
     WHERE id = ${approvalId}::uuid AND status = 'approved'`
 }
 
-/** USD spent today (UTC day) by an agent, a company, or the whole platform. */
 /**
- * Today's model spend: agent runs, plus (unless filtered by agent) the model
- * calls of non-agent features in ai_usage_ledger (093) — the platform and
- * company budgets cover all AI usage, not only agents.
+ * Today's model spend (UTC day) of an agent, a company, or the whole platform:
+ *   agent_runs.cost_usd — written after every LLM call (settleReservation), not
+ *                         only when the run finishes;
+ *   ai_budget_reservations — worst-case cost of agent calls still in flight
+ *                         (098), so parallel runs see each other;
+ *   ai_usage_ledger     — unless filtered by agent: model calls of non-agent
+ *                         features (093); the platform and company budgets
+ *                         cover all AI usage, not only agents.
  */
 export async function spendToday(filter: { agentKey?: string; companyId?: string } = {}): Promise<number> {
   const rows = await prisma.$queryRaw<Array<{ s: unknown }>>`
@@ -282,6 +323,17 @@ export async function spendToday(filter: { agentKey?: string; companyId?: string
       AND (${filter.agentKey ?? null}::text IS NULL OR agent_key = ${filter.agentKey ?? null})
       AND (${filter.companyId ?? null}::text IS NULL OR company_id = ${filter.companyId ?? null})`
   let total = num(rows[0]?.s)
+  try {
+    const reserved = await prisma.$queryRaw<Array<{ s: unknown }>>`
+      SELECT coalesce(sum(amount_usd), 0) AS s FROM public.ai_budget_reservations
+      WHERE created_at >= date_trunc('day', now())
+        AND (${filter.agentKey ?? null}::text IS NULL OR agent_key = ${filter.agentKey ?? null})
+        AND (${filter.companyId ?? null}::text IS NULL OR company_id = ${filter.companyId ?? null})`
+    total += num(reserved[0]?.s)
+  } catch (err) {
+    // Before migration 098 there are no reservations.
+    if (!/ai_budget_reservations/.test(err instanceof Error ? err.message : '')) throw err
+  }
   if (!filter.agentKey) {
     try {
       const ledger = await prisma.$queryRaw<Array<{ s: unknown }>>`
@@ -295,6 +347,88 @@ export async function spendToday(filter: { agentKey?: string; companyId?: string
     }
   }
   return total
+}
+
+export type BudgetScope = 'agent' | 'company' | 'platform'
+
+/**
+ * Reserve `amountUsd` (a call's worst case) against today's agent, company and
+ * platform budgets. Check and insert run under one transaction-scoped advisory
+ * lock, so concurrent runs cannot all pass the check on the same stale total
+ * and jointly overshoot a budget. Returns the exceeded scope when the
+ * reservation would not fit. A budget of null is not checked.
+ */
+export async function reserveBudget(r: {
+  runId: string
+  agentKey: string
+  companyId: string | null
+  amountUsd: number
+  agentDailyUsd: number
+  companyDailyUsd: number | null
+  platformDailyUsd: number
+}): Promise<{ ok: true; reservationId: string | null } | { ok: false; scope: BudgetScope }> {
+  const amount = costText(Math.max(0, r.amountUsd))
+  try {
+    return await prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('ai_budget_reservations'))`
+      const [s] = await tx.$queryRaw<Array<{ agent: unknown; company: unknown; platform: unknown }>>`
+        WITH runs AS (
+          SELECT agent_key, company_id, cost_usd AS c FROM public.agent_runs WHERE started_at >= date_trunc('day', now())
+        ), held AS (
+          SELECT agent_key, company_id, amount_usd AS c FROM public.ai_budget_reservations WHERE created_at >= date_trunc('day', now())
+        ), ledger AS (
+          SELECT company_id, cost_usd AS c FROM public.ai_usage_ledger WHERE created_at >= date_trunc('day', now())
+        )
+        SELECT
+          (SELECT coalesce(sum(c), 0) FROM runs WHERE agent_key = ${r.agentKey})
+            + (SELECT coalesce(sum(c), 0) FROM held WHERE agent_key = ${r.agentKey}) AS agent,
+          (SELECT coalesce(sum(c), 0) FROM runs WHERE company_id = ${r.companyId}::text)
+            + (SELECT coalesce(sum(c), 0) FROM held WHERE company_id = ${r.companyId}::text)
+            + (SELECT coalesce(sum(c), 0) FROM ledger WHERE company_id = ${r.companyId}::text) AS company,
+          (SELECT coalesce(sum(c), 0) FROM runs) + (SELECT coalesce(sum(c), 0) FROM held)
+            + (SELECT coalesce(sum(c), 0) FROM ledger) AS platform`
+      const want = Number(amount)
+      if (num(s.agent) + want > r.agentDailyUsd) return { ok: false as const, scope: 'agent' as const }
+      if (r.companyId && r.companyDailyUsd !== null && num(s.company) + want > r.companyDailyUsd) {
+        return { ok: false as const, scope: 'company' as const }
+      }
+      if (num(s.platform) + want > r.platformDailyUsd) return { ok: false as const, scope: 'platform' as const }
+      await tx.$executeRaw`DELETE FROM public.ai_budget_reservations WHERE created_at < now() - interval '2 days'`
+      const [row] = await tx.$queryRaw<Array<{ id: unknown }>>`
+        INSERT INTO public.ai_budget_reservations (run_id, agent_key, company_id, amount_usd)
+        VALUES (${r.runId}::uuid, ${r.agentKey}, ${r.companyId}, ${amount}::text::numeric)
+        RETURNING id`
+      return { ok: true as const, reservationId: String(row.id) }
+    })
+  } catch (err) {
+    // Before migrations 093/098: no reservation, a plain (unlocked) check.
+    if (!/ai_budget_reservations|ai_usage_ledger/.test(err instanceof Error ? err.message : '')) throw err
+    const [agent, company, platform] = await Promise.all([
+      spendToday({ agentKey: r.agentKey }),
+      r.companyId ? spendToday({ companyId: r.companyId }) : Promise.resolve(0),
+      spendToday(),
+    ])
+    const want = Number(amount)
+    if (agent + want > r.agentDailyUsd) return { ok: false, scope: 'agent' }
+    if (r.companyId && r.companyDailyUsd !== null && company + want > r.companyDailyUsd) return { ok: false, scope: 'company' }
+    if (platform + want > r.platformDailyUsd) return { ok: false, scope: 'platform' }
+    return { ok: true, reservationId: null }
+  }
+}
+
+/**
+ * After the call: drop the reservation and add the real cost to the run, in
+ * one statement, so today's spend never shows the call twice or not at all.
+ */
+export async function settleReservation(reservationId: string | null, runId: string, costUsd: number): Promise<void> {
+  const cost = costText(Math.max(0, costUsd))
+  if (reservationId) {
+    await prisma.$executeRaw`
+      WITH released AS (DELETE FROM public.ai_budget_reservations WHERE id = ${reservationId}::bigint)
+      UPDATE public.agent_runs SET cost_usd = cost_usd + ${cost}::text::numeric WHERE id = ${runId}::uuid`
+  } else {
+    await prisma.$executeRaw`UPDATE public.agent_runs SET cost_usd = cost_usd + ${cost}::text::numeric WHERE id = ${runId}::uuid`
+  }
 }
 
 export async function getTask(taskId: string): Promise<(AgentTaskRow & { run_after: Date }) | null> {

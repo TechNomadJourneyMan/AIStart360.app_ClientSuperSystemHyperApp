@@ -119,6 +119,46 @@ export type ReplyMarkup =
 
 export const TG_TEXT_LIMIT = 4000
 
+const VOID_TAGS = new Set(['br'])
+
+/**
+ * Keep a Telegram HTML message within `limit` VISIBLE characters (Telegram's
+ * 4096 limit counts the text after entity parsing). Never cuts through a tag
+ * or an entity such as &amp;: a cut is made between tokens, marked with «…»,
+ * and every tag still open is closed — slicing the raw HTML could leave a
+ * broken `<a href="…` or `&am` and Telegram would reject the whole message.
+ */
+export function truncateTelegramHtml(html: string, limit = TG_TEXT_LIMIT): string {
+  const tokens = html.match(/<[^>]*>|&[#a-zA-Z0-9]+;|[\s\S]/g) ?? []
+  let visible = 0
+  for (const t of tokens) if (!(t[0] === '<' && t.length > 1)) visible += 1
+  if (visible <= limit) return html
+
+  const open: string[] = []
+  let out = ''
+  let used = 0
+  for (const t of tokens) {
+    if (t[0] === '<' && t.length > 1) {
+      const m = t.match(/^<\s*(\/)?\s*([a-zA-Z][\w-]*)/)
+      if (m) {
+        const name = m[2].toLowerCase()
+        if (m[1]) {
+          const i = open.lastIndexOf(name)
+          if (i >= 0) open.splice(i, 1)
+        } else if (!VOID_TAGS.has(name) && !t.endsWith('/>')) {
+          open.push(name)
+        }
+      }
+      out += t
+      continue
+    }
+    if (used >= limit - 1) break
+    out += t
+    used += 1
+  }
+  return `${out}…${open.reverse().map((n) => `</${n}>`).join('')}`
+}
+
 export function sendMessage(
   bot: BotId,
   chatId: string,
@@ -128,7 +168,7 @@ export function sendMessage(
 ): Promise<BotResult<{ message_id: number }>> {
   return callApi(bot, 'sendMessage', {
     chat_id: chatId,
-    text: html.slice(0, TG_TEXT_LIMIT),
+    text: truncateTelegramHtml(html),
     parse_mode: 'HTML',
     disable_web_page_preview: true,
     ...(markup ? { reply_markup: markup } : {}),
@@ -146,7 +186,7 @@ export function editMessage(
   return callApi(bot, 'editMessageText', {
     chat_id: chatId,
     message_id: messageId,
-    text: html.slice(0, TG_TEXT_LIMIT),
+    text: truncateTelegramHtml(html),
     parse_mode: 'HTML',
     disable_web_page_preview: true,
     reply_markup: { inline_keyboard: keyboard },

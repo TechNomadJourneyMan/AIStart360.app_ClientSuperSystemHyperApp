@@ -130,4 +130,10 @@ describe('GET /api/v1/metrics', () => {
     tables.metrics = { data: null, error: { code: '57014', message: 'timeout' } }
     expect((await call()).status).toBe(500)
   })
+
+  it('500 on a history read error (only a missing history table means «no trend»)', async () => {
+    tables.metrics = { data: [row('biz.finansy.vyruchka_god', 88_000_000, { metric_unit: '₸' })], error: null }
+    tables.metric_value_history = { data: null, error: { code: '57014', message: 'timeout' } }
+    expect((await call('?keys=biz.finansy.vyruchka_god')).status).toBe(500)
+  })
 })

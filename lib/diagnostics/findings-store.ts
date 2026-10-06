@@ -87,13 +87,15 @@ export interface WriteFindingsResult {
   updated: number
   superseded: number
   rejected: number
+  /** Drafts a staff member dismissed before (same fingerprint) — not inserted again. */
+  suppressed: number
   /** Active rows after the write that are new (inserted) and critical. */
   newCritical: Array<{ id: string; title: string; area: string }>
   ids: string[]
 }
 
 export async function replaceFindings(meta: WriteMeta, drafts: FindingDraft[]): Promise<WriteFindingsResult> {
-  const res: WriteFindingsResult = { inserted: 0, updated: 0, superseded: 0, rejected: 0, newCritical: [], ids: [] }
+  const res: WriteFindingsResult = { inserted: 0, updated: 0, superseded: 0, rejected: 0, suppressed: 0, newCritical: [], ids: [] }
   const seen = new Set<string>()
   const valid: Array<FindingDraft & { fingerprint: string }> = []
   for (const d of drafts) {
@@ -142,6 +144,21 @@ export async function replaceFindings(meta: WriteMeta, drafts: FindingDraft[]): 
         res.updated += 1
         res.ids.push(old.id)
       } else {
+        // A staff member dismissed this finding before: it does not come back
+        // as a new unreviewed row. A model hypothesis is matched by its
+        // fingerprint alone (its key is its title; the wording of the body
+        // changes on every run); a rule finding only while its content is the
+        // same — new numbers deserve a new look.
+        const dismissed = await tx.$queryRaw<Array<{ evidence: unknown; title: string; body: string | null; severity: string }>>`
+          SELECT evidence, title, body, severity FROM public.diagnostic_findings
+          WHERE company_id = ${meta.companyId} AND fingerprint = ${f.fingerprint} AND status = 'dismissed'
+          ORDER BY updated_at DESC LIMIT 1`
+        const d = dismissed[0]
+        if (d && (hidden || contentHash({ title: d.title, body: d.body, severity: d.severity, evidence: d.evidence }) ===
+          contentHash({ title: f.title, body: f.body ?? null, severity: f.severity, evidence: JSON.parse(evidence) }))) {
+          res.suppressed += 1
+          continue
+        }
         const rows = await tx.$queryRaw<Array<{ id: string }>>`
           INSERT INTO public.diagnostic_findings
             (company_id, session_id, kind, area, title, body, severity, provenance_type, confidence, evidence,
@@ -191,14 +208,23 @@ export interface WriteRecommendationsResult {
   inserted: number
   superseded: number
   rejected: number
+  /** Drafts that repeat an accepted, rejected or done recommendation (or each other) — not inserted. */
+  suppressed: number
+}
+
+/** Title as compared for «the same action»: case, spacing and trailing punctuation ignored. */
+export function normalizeRecommendationTitle(title: string): string {
+  return title.toLowerCase().replace(/ё/g, 'е').replace(/\s+/g, ' ').replace(/[\s.!;:,…]+$/u, '').trim()
 }
 
 /**
  * Replace the producer's PROPOSED recommendations. Accepted, rejected or done
- * ones are decisions of people and are never touched.
+ * ones are decisions of people and are never touched — and a draft with the
+ * same title as one of them is not proposed again (a rejected action does not
+ * return to the review queue, an accepted one is not duplicated).
  */
 export async function replaceRecommendations(meta: WriteMeta, drafts: RecommendationDraft[]): Promise<WriteRecommendationsResult> {
-  const res: WriteRecommendationsResult = { inserted: 0, superseded: 0, rejected: 0 }
+  const res: WriteRecommendationsResult = { inserted: 0, superseded: 0, rejected: 0, suppressed: 0 }
   const valid = drafts.filter((d) => {
     const ok = d.title.trim().length > 0
     if (!ok) res.rejected += 1
@@ -208,7 +234,17 @@ export async function replaceRecommendations(meta: WriteMeta, drafts: Recommenda
     res.superseded = await tx.$executeRaw`
       UPDATE public.diagnostic_recommendations SET status = 'superseded'
       WHERE company_id = ${meta.companyId} AND produced_by = ${meta.producedBy} AND status = 'proposed'`
+    const decided = await tx.$queryRaw<Array<{ title: string }>>`
+      SELECT title FROM public.diagnostic_recommendations
+      WHERE company_id = ${meta.companyId} AND status IN ('accepted', 'rejected', 'done')`
+    const taken = new Set(decided.map((r) => normalizeRecommendationTitle(r.title)))
     for (const d of valid) {
+      const norm = normalizeRecommendationTitle(d.title)
+      if (taken.has(norm)) {
+        res.suppressed += 1
+        continue
+      }
+      taken.add(norm)
       const model = d.provenance === 'AI_HYPOTHESIS' || meta.model
       const visible = model ? false : d.visibleToClient
       const confidence = model ? Math.min(clamp01(d.confidence), AI_MAX_CONFIDENCE) : clamp01(d.confidence)

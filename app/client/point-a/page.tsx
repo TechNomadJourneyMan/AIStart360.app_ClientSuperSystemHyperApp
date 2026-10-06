@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { useQueryClient } from '@tanstack/react-query'
 import { createClient } from '@/lib/supabase-client'
 import type { Diagnostic, BlockScore, Risk, Insight, QuickWin, AIAnalysis, AIStatus } from '@/types/onboarding'
+import { loadClientPointA } from '@/components/point-a/client-point-a-load'
 import PointAIntelligenceSection from '@/components/point-a/PointAIntelligenceSection'
 import PointADashboardSectionsBoundary from '@/components/dashboard/PointADashboardSections'
 import GrowthSnapshotHero from '@/components/dashboard/GrowthSnapshotHero'
@@ -142,6 +143,8 @@ export default function PointAClientPage() {
   const [company, setCompany] = useState<{ name: string; industry: string | null; employee_count: number | null } | null>(null)
   const [companyId, setCompanyId] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  // A failed diagnostic load is shown as such — not as "no diagnostic yet".
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [isRecalculating, setIsRecalculating] = useState(false)
   const [recalcError, setRecalcError] = useState<string | null>(null)
   const [userId, setUserId] = useState<string | null>(null)
@@ -175,24 +178,20 @@ export default function PointAClientPage() {
   const loadData = useCallback(async () => {
     if (!userId) return
     setIsLoading(true)
-    try {
-      const [diagRes, compRes] = await Promise.all([
-        fetch(`/api/v1/diagnostics/current?user_id=${userId}`),
-        fetch(`/api/v1/onboarding/company?user_id=${userId}`),
-      ])
-      const diagData = await diagRes.json()
-      const compData = await compRes.json()
-      if (diagData.ok) {
-        setDiag(diagData.data)
-        setAiStatus(diagData.data?.ai_status ?? 'none')
-        setAiAnalysis(diagData.data?.ai_analysis ?? null)
-        if (diagData.data?.company_id) setCompanyId(String(diagData.data.company_id))
-      }
-      if (compData.ok) {
-        setCompany(compData.data)
-        if (compData.data?.id) setCompanyId(String(compData.data.id))
-      }
-    } catch {}
+    const r = await loadClientPointA(userId)
+    if (r.company) {
+      setCompany(r.company)
+      if (r.company.id) setCompanyId(String(r.company.id))
+    }
+    if (r.ok) {
+      setLoadError(null)
+      setDiag(r.diagnostic)
+      setAiStatus(r.diagnostic?.ai_status ?? 'none')
+      setAiAnalysis(r.diagnostic?.ai_analysis ?? null)
+      if (r.diagnostic?.company_id) setCompanyId(String(r.diagnostic.company_id))
+    } else {
+      setLoadError(r.error)
+    }
     setIsLoading(false)
   }, [userId])
 
@@ -396,6 +395,19 @@ export default function PointAClientPage() {
               <span className="w-8 h-8 border-2 border-primary/30 border-t-primary rounded-full animate-spin" aria-hidden="true" />
               <p className="text-sm text-on-surface-variant">Загружаем диагностику...</p>
             </div>
+          </div>
+        ) : loadError ? (
+          <div className="rounded-2xl border border-error/20 bg-error/5 p-6 text-center" role="alert">
+            <p className="text-sm text-on-surface">{loadError}</p>
+            <p className="mt-1 text-xs text-on-surface-variant">Блоки диагностики, анализ ИИ и риски не показаны, потому что данные не загрузились.</p>
+            <button
+              type="button"
+              onClick={() => void loadData()}
+              className="mt-3 inline-flex items-center gap-1.5 rounded-xl border border-primary/40 bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/15"
+            >
+              <span className="material-symbols-outlined text-[14px]" aria-hidden="true">refresh</span>
+              Повторить
+            </button>
           </div>
         ) : !diag ? (
           /* No diagnostic yet — the overview above explains what to do next. */

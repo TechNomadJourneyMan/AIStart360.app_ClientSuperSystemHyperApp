@@ -13,7 +13,7 @@ import { prisma } from '@/lib/db'
 import { nextCronRun, isValidCron } from './cron'
 import { effectivePermissions, PERMISSION_CEILING, PERMISSIONS, type Decision, type Permission } from './permissions'
 import { getAgent, listAgents } from './registry'
-import { loadConfig, loadGrants } from './store'
+import { loadConfig, loadGrants, spendToday } from './store'
 import { getTool } from './tools'
 
 const n = (v: unknown) => (v == null ? 0 : Number(v))
@@ -37,35 +37,51 @@ export interface AgentStats {
   lastRunStatus: string | null
 }
 
-async function statsByAgent(): Promise<Map<string, AgentStats>> {
+/**
+ * Per-agent stats for `keys` (the registered agents). Bounded work: run
+ * aggregates read only the last 7 days, the last run is one index probe per
+ * agent (agent_runs_agent_idx), task counts read only open / recent tasks.
+ */
+async function statsByAgent(keys: string[]): Promise<Map<string, AgentStats>> {
+  if (!keys.length) return new Map()
   const rows = await prisma.$queryRaw<Array<Record<string, unknown>>>`
-    WITH r AS (
+    WITH k AS (
+      SELECT unnest(${keys}::text[]) AS agent_key
+    ), r AS (
       SELECT agent_key,
-             count(*) FILTER (WHERE started_at > now() - interval '7 days') AS runs7d,
-             count(*) FILTER (WHERE started_at > now() - interval '7 days' AND status = 'succeeded') AS ok7d,
-             count(*) FILTER (WHERE started_at > now() - interval '7 days' AND status = 'failed') AS failed7d,
-             avg(duration_ms) FILTER (WHERE started_at > now() - interval '7 days' AND duration_ms IS NOT NULL) AS avg_ms,
-             sum(tokens_in) FILTER (WHERE started_at > now() - interval '7 days') AS tin,
-             sum(tokens_out) FILTER (WHERE started_at > now() - interval '7 days') AS tout,
-             sum(cost_usd) FILTER (WHERE started_at > now() - interval '7 days') AS cost7d,
-             sum(cost_usd) FILTER (WHERE started_at >= date_trunc('day', now())) AS cost_today,
-             max(started_at) AS last_at
-      FROM public.agent_runs GROUP BY agent_key
-    ), last AS (
-      SELECT DISTINCT ON (agent_key) agent_key, status AS last_status
-      FROM public.agent_runs ORDER BY agent_key, started_at DESC
+             count(*) AS runs7d,
+             count(*) FILTER (WHERE status = 'succeeded') AS ok7d,
+             count(*) FILTER (WHERE status = 'failed') AS failed7d,
+             avg(duration_ms) FILTER (WHERE duration_ms IS NOT NULL) AS avg_ms,
+             sum(tokens_in) AS tin,
+             sum(tokens_out) AS tout,
+             sum(cost_usd) AS cost7d,
+             sum(cost_usd) FILTER (WHERE started_at >= date_trunc('day', now())) AS cost_today
+      FROM public.agent_runs
+      WHERE started_at > now() - interval '7 days' AND agent_key = ANY (${keys}::text[])
+      GROUP BY agent_key
     ), t AS (
       SELECT agent_key,
              count(*) FILTER (WHERE status = 'queued') AS queued,
              count(*) FILTER (WHERE status = 'running') AS running,
              count(*) FILTER (WHERE status = 'awaiting_approval') AS awaiting,
-             count(*) FILTER (WHERE status = 'dead' AND finished_at > now() - interval '24 hours') AS dead24h
-      FROM public.agent_tasks GROUP BY agent_key
+             count(*) FILTER (WHERE status = 'dead') AS dead24h
+      FROM public.agent_tasks
+      WHERE agent_key = ANY (${keys}::text[])
+        AND (status IN ('queued', 'running', 'awaiting_approval')
+             OR (status = 'dead' AND finished_at > now() - interval '24 hours'))
+      GROUP BY agent_key
     )
-    SELECT coalesce(r.agent_key, t.agent_key) AS agent_key, r.runs7d, r.ok7d, r.failed7d, r.avg_ms, r.tin, r.tout,
-           r.cost7d, r.cost_today, r.last_at, last.last_status, t.queued, t.running, t.awaiting, t.dead24h
-    FROM r FULL OUTER JOIN t ON t.agent_key = r.agent_key
-    LEFT JOIN last ON last.agent_key = coalesce(r.agent_key, t.agent_key)`
+    SELECT k.agent_key, r.runs7d, r.ok7d, r.failed7d, r.avg_ms, r.tin, r.tout,
+           r.cost7d, r.cost_today, last.started_at AS last_at, last.status AS last_status,
+           t.queued, t.running, t.awaiting, t.dead24h
+    FROM k
+    LEFT JOIN r ON r.agent_key = k.agent_key
+    LEFT JOIN t ON t.agent_key = k.agent_key
+    LEFT JOIN LATERAL (
+      SELECT ar.started_at, ar.status FROM public.agent_runs ar
+      WHERE ar.agent_key = k.agent_key ORDER BY ar.started_at DESC LIMIT 1
+    ) last ON TRUE`
   const out = new Map<string, AgentStats>()
   for (const r of rows) {
     const runs = n(r.runs7d)
@@ -115,10 +131,11 @@ export interface AgentOverview {
   stats: AgentStats
 }
 
-export async function listAgentOverviews(now = new Date()): Promise<AgentOverview[]> {
-  const stats = await statsByAgent()
+export async function listAgentOverviews(now = new Date(), only?: string): Promise<AgentOverview[]> {
+  const defs = listAgents().filter((d) => !only || d.key === only)
+  const stats = await statsByAgent(defs.map((d) => d.key))
   const out: AgentOverview[] = []
-  for (const def of listAgents()) {
+  for (const def of defs) {
     const [config, grants] = await Promise.all([loadConfig(def.key), loadGrants(def.key)])
     const cron = config?.schedule_cron ?? def.triggers?.cron ?? null
     const enabled = config ? config.enabled : true
@@ -151,6 +168,11 @@ export async function listAgentOverviews(now = new Date()): Promise<AgentOvervie
   return out
 }
 
+/** One agent's overview (GET / PATCH /api/giga-admin/agents/:key) without loading the others. */
+export async function getAgentOverview(key: string, now = new Date()): Promise<AgentOverview | null> {
+  return (await listAgentOverviews(now, key))[0] ?? null
+}
+
 export interface ConfigPatch {
   enabled?: boolean
   tierOverride?: 'light' | 'standard' | 'premium' | null
@@ -166,24 +188,32 @@ export async function updateAgentConfig(key: string, patch: ConfigPatch, actorId
   if (!def) return { ok: false, error: 'unknown_agent' }
   if (patch.scheduleCron && !isValidCron(patch.scheduleCron)) return { ok: false, error: 'invalid_cron' }
   if (patch.scheduleCron && def.scope !== 'platform') return { ok: false, error: 'schedule_only_for_platform_agents' }
-  const current = await loadConfig(key)
-  const next = {
-    enabled: patch.enabled ?? current?.enabled ?? true,
-    tier: patch.tierOverride !== undefined ? patch.tierOverride : current?.tier_override ?? null,
-    model: patch.modelOverride !== undefined ? patch.modelOverride : current?.model_override ?? null,
-    cron: patch.scheduleCron !== undefined ? patch.scheduleCron : current?.schedule_cron ?? null,
-    perRun: patch.perRunBudgetUsd !== undefined ? patch.perRunBudgetUsd : current?.per_run_budget_usd ?? null,
-    daily: patch.dailyBudgetUsd !== undefined ? patch.dailyBudgetUsd : current?.daily_budget_usd ?? null,
-    maxTok: patch.maxOutputTokens !== undefined ? patch.maxOutputTokens : current?.max_output_tokens ?? null,
+  // Only the fields present in the patch are written; the others keep the
+  // row's CURRENT value (evaluated under the row lock), so concurrent edits —
+  // e.g. the kill switch and a budget change — never undo each other.
+  const has = {
+    enabled: patch.enabled !== undefined,
+    tier: patch.tierOverride !== undefined,
+    model: patch.modelOverride !== undefined,
+    cron: patch.scheduleCron !== undefined,
+    perRun: patch.perRunBudgetUsd !== undefined,
+    daily: patch.dailyBudgetUsd !== undefined,
+    maxTok: patch.maxOutputTokens !== undefined,
   }
   await prisma.$executeRaw`
     INSERT INTO public.agent_configs
       (agent_key, enabled, tier_override, model_override, schedule_cron, per_run_budget_usd, daily_budget_usd, max_output_tokens, updated_by)
-    VALUES (${key}, ${next.enabled}, ${next.tier}, ${next.model}, ${next.cron}, ${next.perRun}, ${next.daily}, ${next.maxTok}, ${actorId})
+    VALUES (${key}, ${patch.enabled ?? true}, ${patch.tierOverride ?? null}, ${patch.modelOverride ?? null},
+            ${patch.scheduleCron ?? null}, ${patch.perRunBudgetUsd ?? null}, ${patch.dailyBudgetUsd ?? null},
+            ${patch.maxOutputTokens ?? null}, ${actorId})
     ON CONFLICT (agent_key) DO UPDATE SET
-      enabled = EXCLUDED.enabled, tier_override = EXCLUDED.tier_override, model_override = EXCLUDED.model_override,
-      schedule_cron = EXCLUDED.schedule_cron, per_run_budget_usd = EXCLUDED.per_run_budget_usd,
-      daily_budget_usd = EXCLUDED.daily_budget_usd, max_output_tokens = EXCLUDED.max_output_tokens,
+      enabled            = CASE WHEN ${has.enabled}::boolean THEN EXCLUDED.enabled ELSE agent_configs.enabled END,
+      tier_override      = CASE WHEN ${has.tier}::boolean THEN EXCLUDED.tier_override ELSE agent_configs.tier_override END,
+      model_override     = CASE WHEN ${has.model}::boolean THEN EXCLUDED.model_override ELSE agent_configs.model_override END,
+      schedule_cron      = CASE WHEN ${has.cron}::boolean THEN EXCLUDED.schedule_cron ELSE agent_configs.schedule_cron END,
+      per_run_budget_usd = CASE WHEN ${has.perRun}::boolean THEN EXCLUDED.per_run_budget_usd ELSE agent_configs.per_run_budget_usd END,
+      daily_budget_usd   = CASE WHEN ${has.daily}::boolean THEN EXCLUDED.daily_budget_usd ELSE agent_configs.daily_budget_usd END,
+      max_output_tokens  = CASE WHEN ${has.maxTok}::boolean THEN EXCLUDED.max_output_tokens ELSE agent_configs.max_output_tokens END,
       updated_by = EXCLUDED.updated_by`
   return { ok: true }
 }
@@ -221,28 +251,48 @@ export interface TaskFilter {
   agentKey?: string | null
   companyId?: string | null
   limit?: number
-  before?: string | null // created_at cursor (ISO)
+  /** Keyset cursor from nextCursor ("<created_at, full precision>|<id>"); a bare timestamp is accepted too. */
+  before?: string | null
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/** Parse a task-list cursor; null when malformed. */
+export function parseTaskCursor(raw: string | null | undefined): { ts: string; id: string | null } | null {
+  if (!raw) return null
+  const [ts, id] = raw.split('|')
+  if (!ts || Number.isNaN(Date.parse(ts))) return null
+  if (id !== undefined && !UUID_RE.test(id)) return null
+  return { ts, id: id ?? null }
 }
 
 export async function listTasks(f: TaskFilter) {
   const limit = Math.min(Math.max(f.limit ?? 50, 1), 200)
+  const cursor = parseTaskCursor(f.before)
+  // Keyset on (created_at, id) at full microsecond precision: a JS Date keeps
+  // milliseconds only, so a millisecond cursor skipped tasks created within the
+  // same millisecond as the last row of a page.
   const rows = await prisma.$queryRaw<Array<Record<string, unknown>>>`
     SELECT t.id, t.agent_key, t.company_id, c.name AS company_name, t.trigger, t.trigger_ref, t.requested_by,
            t.status, t.attempts, t.max_attempts, t.run_after, t.last_error_code, t.last_error,
            t.created_at, t.started_at, t.finished_at,
+           to_char(t.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_ts,
            (SELECT coalesce(sum(cost_usd), 0) FROM public.agent_runs r WHERE r.task_id = t.id) AS cost_usd
     FROM public.agent_tasks t
     LEFT JOIN public.companies c ON c.id = t.company_id
     WHERE (${f.status ?? null}::text IS NULL OR t.status = ${f.status ?? null})
       AND (${f.agentKey ?? null}::text IS NULL OR t.agent_key = ${f.agentKey ?? null})
       AND (${f.companyId ?? null}::text IS NULL OR t.company_id = ${f.companyId ?? null})
-      AND (${f.before ?? null}::timestamptz IS NULL OR t.created_at < ${f.before ?? null}::timestamptz)
-    ORDER BY t.created_at DESC
+      AND (${cursor?.ts ?? null}::text IS NULL
+           OR t.created_at < ${cursor?.ts ?? null}::text::timestamptz
+           OR (${cursor?.id ?? null}::text IS NOT NULL AND t.created_at = ${cursor?.ts ?? null}::text::timestamptz
+               AND t.id < ${cursor?.id ?? null}::text::uuid))
+    ORDER BY t.created_at DESC, t.id DESC
     LIMIT ${limit}`
   type Row = Record<string, unknown>
-  const items: Row[] = rows.map((r): Row => ({ ...r, cost_usd: n(r.cost_usd) }))
-  const last = items[items.length - 1] as { created_at?: Date } | undefined
-  return { items, nextCursor: items.length === limit && last?.created_at ? new Date(last.created_at).toISOString() : null }
+  const items: Row[] = rows.map(({ cursor_ts: _ts, ...r }): Row => ({ ...r, cost_usd: n(r.cost_usd) }))
+  const last = rows[rows.length - 1]
+  return { items, nextCursor: items.length === limit && last ? `${String(last.cursor_ts)}|${String(last.id)}` : null }
 }
 
 export async function getTaskDetail(taskId: string) {
@@ -277,13 +327,35 @@ export async function getTaskDetail(taskId: string) {
   }
 }
 
-/** Cancel a task that has not finished. */
+/**
+ * Cancel a task that has not finished. Its pending approvals are closed in the
+ * same transaction (rejected by the canceller, decided_via 'system'), so they
+ * leave the approval queue and cannot be "approved" afterwards; their Telegram
+ * cards are edited to show the outcome.
+ */
 export async function cancelTask(taskId: string, actorId: string): Promise<boolean> {
-  const count = await prisma.$executeRaw`
-    UPDATE public.agent_tasks
-    SET status = 'cancelled', cancelled_by = ${actorId}, finished_at = now(), lease_token = NULL, lease_until = NULL
-    WHERE id = ${taskId}::uuid AND status IN ('queued', 'awaiting_approval', 'failed')`
-  return count > 0
+  const closed = await prisma.$transaction(async (tx) => {
+    const count = await tx.$executeRaw`
+      UPDATE public.agent_tasks
+      SET status = 'cancelled', cancelled_by = ${actorId}, finished_at = now(), lease_token = NULL, lease_until = NULL
+      WHERE id = ${taskId}::uuid AND status IN ('queued', 'awaiting_approval', 'failed')`
+    if (count === 0) return null
+    return tx.$queryRaw<Array<{ id: string; summary: string }>>`
+      UPDATE public.agent_approvals
+      SET status = 'rejected', decided_by = ${actorId}, decided_via = 'system',
+          decision_reason = 'задача отменена', decided_at = now()
+      WHERE task_id = ${taskId}::uuid AND status = 'pending'
+      RETURNING id, summary`
+  })
+  if (closed === null) return false
+  if (closed.length) {
+    const { closeApprovalCards } = await import('@/lib/notifications/approval-cards')
+    for (const a of closed) {
+      await closeApprovalCards({ approvalId: a.id, status: 'rejected', decidedBy: actorId, via: 'system', summary: a.summary })
+        .catch((err) => console.error('[agents] closing Telegram cards failed', err instanceof Error ? err.message : err))
+    }
+  }
+  return true
 }
 
 /** Put a dead / failed / cancelled task back in the queue with one more attempt. */
@@ -329,7 +401,10 @@ export async function costSummary(days = 30) {
   ])
   const num = (rows: Array<Record<string, unknown>>) =>
     rows.map((r) => Object.fromEntries(Object.entries(r).map(([k, v]) => [k, typeof v === 'bigint' || v instanceof Prisma.Decimal ? Number(v) : v])))
-  return { days: d, byDay: num(byDay), byAgent: num(byAgent), byModel: num(byModel), byCompany: num(byCompany) }
+  // Today's platform spend exactly as the budget guard counts it: agent runs,
+  // in-flight reservations and non-agent model calls (ai_usage_ledger).
+  const platformSpendTodayUsd = await spendToday()
+  return { days: d, byDay: num(byDay), byAgent: num(byAgent), byModel: num(byModel), byCompany: num(byCompany), platformSpendTodayUsd }
 }
 
 export async function listPlatformEvents(f: { name?: string | null; companyId?: string | null; limit?: number }) {

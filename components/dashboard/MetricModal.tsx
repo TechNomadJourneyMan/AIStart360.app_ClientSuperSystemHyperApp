@@ -210,17 +210,21 @@ export function MetricModal() {
                   </span>
                   <div className="flex items-center gap-2">
                     <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full ${
-                      goal.trajectory === 'on_track'
-                        ? 'text-primary bg-primary/10'
-                        : goal.trajectory === 'at_risk'
-                          ? 'text-yellow-400 bg-yellow-400/10'
-                          : 'text-error bg-error/10'
+                      goal.trajectory === 'no_data'
+                        ? 'text-on-surface-variant bg-white/[0.06]'
+                        : goal.trajectory === 'on_track'
+                          ? 'text-primary bg-primary/10'
+                          : goal.trajectory === 'at_risk'
+                            ? 'text-yellow-400 bg-yellow-400/10'
+                            : 'text-error bg-error/10'
                     }`}>
-                      {goal.trajectory === 'on_track' ? 'В норме' : goal.trajectory === 'at_risk' ? 'Под риском' : 'Отстаём'}
+                      {goal.trajectory === 'no_data' ? 'Нет факта' : goal.trajectory === 'on_track' ? 'В норме' : goal.trajectory === 'at_risk' ? 'Под риском' : 'Отстаём'}
                     </span>
-                    <span className="text-xs font-mono font-bold" style={{ color: goal.progress >= 80 ? '#6effc0' : goal.progress >= 50 ? '#ffbd60' : '#ff6b6b' }}>
-                      {goal.progress}%
-                    </span>
+                    {goal.trajectory !== 'no_data' && (
+                      <span className="text-xs font-mono font-bold" style={{ color: goal.progress >= 80 ? '#6effc0' : goal.progress >= 50 ? '#ffbd60' : '#ff6b6b' }}>
+                        {goal.progress}%
+                      </span>
+                    )}
                   </div>
                 </div>
                 <div className="h-1 bg-surface-container-high rounded-full overflow-hidden">

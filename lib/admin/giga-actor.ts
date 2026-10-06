@@ -1,8 +1,9 @@
 import { NextResponse, type NextRequest } from 'next/server'
+import type { User } from '@supabase/supabase-js'
 import { GIGA_COOKIE_NAME, verifyGigaRole } from '@/lib/giga-cookie'
 import { createServerClient } from '@/lib/supabase-server'
 import { createServiceClient } from '@/lib/supabase-service'
-import { verifyToken } from '@/lib/security/signed-token'
+import { signToken, verifyToken } from '@/lib/security/signed-token'
 import { getSetting } from '@/lib/settings/store'
 import { MFA_COOKIE_NAME, verifyStepUp } from '@/lib/mfa/step-up'
 import { mfaFlagsEnrolled } from '@/lib/mfa/flags'
@@ -47,10 +48,12 @@ async function staffRoleOf(
   client: { from: ReturnType<typeof createServiceClient>['from'] },
   userId: string,
 ): Promise<StaffRole | null> {
-  const [{ data: profile }, { data: staff }] = await Promise.all([
+  const [{ data: profile, error: profileError }, { data: staff, error: staffError }] = await Promise.all([
     client.from('profiles').select('role, status').eq('id', userId).maybeSingle(),
     client.from('staff_roles').select('role').eq('user_id', userId).maybeSingle(),
   ])
+  // A failed read is not "no role": callers decide how to fail closed.
+  if (profileError || staffError) throw new Error('staff role unavailable')
   const p = profile as { role?: string; status?: string } | null
   // Only an approved account works in the panel: pending, rejected, blocked
   // and archived profiles get no staff access, whatever their role says.
@@ -87,34 +90,61 @@ export async function staffMfaGate(
   return (await getSetting('staff_require_mfa')) ? 'enroll' : 'ok'
 }
 
-async function resolveGigaActor(req: NextRequest): Promise<{ actor: GigaActor | null; mfa?: GigaMfaBlock }> {
+interface GigaResolution {
+  actor: GigaActor | null
+  /** A staff session was found but its second factor is missing. */
+  mfa?: GigaMfaBlock
+  /**
+   * The caller is staff even though no actor was admitted (MFA-blocked staff
+   * session), or staff status could not be determined (`unavailable`). Shared
+   * routes (expert portal fallbacks) must refuse such callers instead of
+   * treating them as non-staff.
+   */
+  staff: boolean
+  /** The staff role / second-factor state could not be read (DB down). */
+  unavailable?: boolean
+}
+
+async function resolveGigaActor(req: NextRequest): Promise<GigaResolution> {
   let mfa: GigaMfaBlock | undefined
+  let staffSession = false
+  let unavailable = false
   // 1) Personal Supabase session.
+  let sb: ReturnType<typeof createServerClient> | null = null
+  let user: User | null = null
   try {
-    const sb = createServerClient()
-    const { data: { user } } = await sb.auth.getUser()
-    if (user) {
+    sb = createServerClient()
+    user = (await sb.auth.getUser()).data.user
+  } catch {
+    // No session context — fall through to cookies.
+  }
+  if (sb && user) {
+    try {
       // Own profile / own staff_roles row are readable under RLS.
       const role = await staffRoleOf(sb, user.id)
       if (role) {
+        staffSession = true
         const gate = await staffMfaGate(req.cookies.get(MFA_COOKIE_NAME)?.value, user)
-        if (gate === 'ok') return { actor: actor(user.id, 'session', role, user.email ?? undefined) }
+        if (gate === 'ok') return { actor: actor(user.id, 'session', role, user.email ?? undefined), staff: true }
         mfa = gate
       }
+    } catch {
+      // The role or the second-factor state could not be read: never treat
+      // this caller as "not staff" (fail closed); cookies below may still admit.
+      unavailable = true
     }
-  } catch {
-    // No session context (or Supabase unreachable) — fall through to cookies.
   }
 
   // 2) Short-lived personal staff cookie (re-validated against the DB). Issued
-  //    only to an admitted session actor (who passed the gate above).
+  //    only to an admitted session actor (who passed the gate above) — see
+  //    signStaffCookie().
   const staffToken = req.cookies.get(STAFF_COOKIE_NAME)?.value
   if (staffToken) {
     const v = await verifyToken<{ sub: string; email?: string }>('staff', staffToken)
     if (v.ok && typeof v.claims.sub === 'string') {
       try {
         const role = await staffRoleOf(createServiceClient(), v.claims.sub)
-        if (role) return { actor: actor(v.claims.sub, 'staff_cookie', role, v.claims.email) }
+        if (role) return { actor: actor(v.claims.sub, 'staff_cookie', role, v.claims.email), staff: true }
       } catch {
         /* fall through */
       }
@@ -123,14 +153,26 @@ async function resolveGigaActor(req: NextRequest): Promise<{ actor: GigaActor | 
 
   // 3) Break-glass signed cookie — unless switched off in platform settings.
   if (verifyGigaRole(req.cookies.get(GIGA_COOKIE_NAME)?.value) === 'super_admin' && (await getSetting('break_glass_enabled'))) {
-    return { actor: actor('giga:super_admin', 'break_glass', 'super_admin') }
+    return { actor: actor('giga:super_admin', 'break_glass', 'super_admin'), staff: true }
   }
 
-  return { actor: null, mfa }
+  return { actor: null, mfa, staff: staffSession || unavailable, ...(unavailable ? { unavailable } : {}) }
 }
 
 export async function getGigaActor(req: NextRequest): Promise<GigaActor | null> {
   return (await resolveGigaActor(req)).actor
+}
+
+/**
+ * The staff cookie that keeps an admin in the panel while impersonation swaps
+ * the browser's Supabase session. Minted ONLY for a personal session actor who
+ * passed the second-factor gate in this request: a 'staff_cookie' actor must not
+ * re-mint it (that would extend panel access indefinitely without a fresh
+ * second factor), and break-glass has no person to attribute it to.
+ */
+export async function signStaffCookie(a: GigaActor): Promise<string | null> {
+  if (a.kind !== 'session') return null
+  return signToken('staff', { sub: a.id, email: a.email ?? null }, STAFF_COOKIE_TTL_SECONDS)
 }
 
 /** Boolean convenience kept for older call sites: true only for super_admin. */
@@ -157,7 +199,10 @@ export function isSameOriginMutation(req: NextRequest): boolean {
   }
 }
 
-export type GigaGuard = { actor: GigaActor; response?: undefined } | { actor?: undefined; response: NextResponse }
+export type GigaGuard =
+  | { actor: GigaActor; response?: undefined; staff?: undefined }
+  /** `staff`: the caller is (or may be) staff although refused — see GigaResolution. */
+  | { actor?: undefined; response: NextResponse; staff?: boolean }
 
 /**
  * Authorize a GIGA-CRM request: a staff actor holding `permission` (all of
@@ -167,9 +212,10 @@ export async function requireGiga(req: NextRequest, permission: Permission | Per
   if (!isSameOriginMutation(req)) {
     return { response: NextResponse.json({ ok: false, error: 'Cross-site request blocked' }, { status: 403 }) }
   }
-  const { actor: a, mfa } = await resolveGigaActor(req)
+  const { actor: a, mfa, staff, unavailable } = await resolveGigaActor(req)
   if (!a && mfa) {
     return {
+      staff: true,
       response: NextResponse.json({
         ok: false,
         error: mfa === 'step_up'
@@ -179,11 +225,15 @@ export async function requireGiga(req: NextRequest, permission: Permission | Per
       }, { status: 403 }),
     }
   }
-  if (!a) return { response: NextResponse.json({ ok: false, error: 'Forbidden' }, { status: 403 }) }
+  if (!a && unavailable) {
+    return { staff: true, response: NextResponse.json({ ok: false, error: 'Не удалось проверить права' }, { status: 503 }) }
+  }
+  if (!a) return { staff, response: NextResponse.json({ ok: false, error: 'Forbidden' }, { status: 403 }) }
   const needed = Array.isArray(permission) ? permission : [permission]
   const missing = needed.filter((p) => !hasPermission(a.role, p))
   if (missing.length) {
     return {
+      staff: true,
       response: NextResponse.json({ ok: false, error: 'Недостаточно прав', missing }, { status: 403 }),
     }
   }

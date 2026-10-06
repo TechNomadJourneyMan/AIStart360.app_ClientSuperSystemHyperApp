@@ -1,8 +1,8 @@
 export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
-import { createServerClient } from '@/lib/supabase-server'
 import { notifyAdmins } from '@/lib/notifications'
+import { expertBlockResponse, resolveExpert } from '@/lib/expert-auth'
 
 // Service-role helper — bypasses RLS (profiles RLS has infinite recursion bug)
 function srBase() {
@@ -30,11 +30,11 @@ async function srFetch(method: string, path: string, body?: unknown): Promise<Re
 
 // PATCH /api/expert/comments/[id]  body: { text }
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
-  const sb = createServerClient()
-  const {
-    data: { user },
-  } = await sb.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'unauthenticated' }, { status: 401 })
+  // Only an approved expert (second factor where required) edits / deletes,
+  // and only their own comment.
+  const auth = await resolveExpert()
+  if (!auth.ok) return expertBlockResponse(auth.block)
+  const user = auth.viewer
 
   let body: { text?: string }
   try {
@@ -73,11 +73,11 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
 // DELETE /api/expert/comments/[id]
 export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
-  const sb = createServerClient()
-  const {
-    data: { user },
-  } = await sb.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'unauthenticated' }, { status: 401 })
+  // Only an approved expert (second factor where required) edits / deletes,
+  // and only their own comment.
+  const auth = await resolveExpert()
+  if (!auth.ok) return expertBlockResponse(auth.block)
+  const user = auth.viewer
 
   // Check ownership via service-role
   const res = await srFetch('GET', `expert_comments?id=eq.${params.id}&select=author_id&limit=1`)

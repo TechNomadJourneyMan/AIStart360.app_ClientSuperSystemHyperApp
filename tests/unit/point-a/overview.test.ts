@@ -308,4 +308,30 @@ describe('loadPointAOverview', () => {
     const client = fakeClient({ companies: company, diagnostics: { data: null, error: { code: '57014', message: 'timeout' } } })
     await expect(loadPointAOverview(client as never, { companyId: 'co-1' }, NOW)).rejects.toThrow(/diagnostics failed/)
   })
+
+  const base = (): Record<string, Result> => ({
+    companies: company,
+    diagnostics: { data: [diagnosticFrom(CURRENT_TYPICAL)] },
+    survey_answers: { data: surveyRows(CURRENT_TYPICAL) },
+    documents: { data: [] },
+  })
+
+  it('a failed optional read is an error, never a silent 0 / «absent»', async () => {
+    const timeout = { data: null, error: { code: '57014', message: 'statement timeout' } }
+    for (const table of ['crm_provider_connections', 'market_analysis_answers', 'metrics', 'gri_assessments', 'metric_value_history', 'diagnostic_sessions']) {
+      const client = fakeClient({ ...base(), [table]: timeout })
+      await expect(loadPointAOverview(client as never, { companyId: 'co-1' }, NOW), table).rejects.toThrow(new RegExp(`${table} failed`))
+    }
+  })
+
+  it('owner-scoped CRM / market counts come from the authorised counts client (members see the owner\'s CRM)', async () => {
+    // The member's session sees no CRM rows of the owner (RLS: auth.uid() = user_id).
+    const memberSession = fakeClient({ ...base(), crm_provider_connections: { count: 0 }, market_analysis_answers: { count: 0 } })
+    const counts = fakeClient({ crm_provider_connections: { count: 1 }, market_analysis_answers: { count: 3 } })
+    const o = await loadPointAOverview(memberSession as never, { companyId: 'co-1' }, NOW, { ownerCountsClient: counts as never })
+    expect(o.sources.integrationsConnected).toBe(1)
+    expect(o.dataGaps.join(' ')).not.toMatch(/Подключите CRM|Подтвердите рыночный анализ/)
+    expect(counts.calls.sort()).toEqual(['crm_provider_connections', 'market_analysis_answers'])
+    expect(memberSession.calls).not.toContain('crm_provider_connections')
+  })
 })

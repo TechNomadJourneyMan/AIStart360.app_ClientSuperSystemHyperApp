@@ -5,7 +5,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase-service'
 import { sendTelegramMessage } from '@/lib/telegram'
 import { recordAdminAction } from '@/lib/admin/audit'
-import { firstSeenUpdate, handleApprovalCallback, handleStaffStart, type TgCallbackQuery, type TgUser } from '@/lib/telegram/staff-updates'
+import { firstSeenUpdate, forgetUpdate, handleApprovalCallback, handleStaffStart, type TgCallbackQuery, type TgUser } from '@/lib/telegram/staff-updates'
 import { answerCallback } from '@/lib/telegram/bot-api'
 import type { StaffRole } from '@/lib/admin/rbac'
 
@@ -21,8 +21,14 @@ import type { StaffRole } from '@/lib/admin/rbac'
  * одобрения работают ТОЛЬКО при заданном секрете (fail closed); без секрета
  * обрабатывается лишь клиентский /start, как раньше, чтобы не ломать прод до
  * настройки (см. docs/platform/README.md, BLOCKED). Повтор апдейта с тем же
- * update_id игнорируется. Всегда 200 (кроме неверного секрета), чтобы Telegram
- * не ретраил бесконечно.
+ * update_id игнорируется — только при заданном секрете: без аутентификации
+ * защита от повторов бессмысленна, а запись в telegram_updates_seen открыла бы
+ * таблицу для чужих update_id. Если обработка упала, отметка «видели»
+ * снимается и отвечаем 500, чтобы повтор Telegram не потерялся. Иначе всегда
+ * 200 (кроме неверного секрета).
+ *
+ * Решение по одобрению: запись в журнал аудита ДО решения и обязательная
+ * (как в панели); журнал недоступен → решение не принимается.
  */
 function secretMatches(expected: string, got: string | null): boolean {
   if (!got) return false
@@ -45,8 +51,18 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true }) // мусор — молча проглатываем
   }
   if (!update || typeof update !== 'object') return NextResponse.json({ ok: true })
-  if (!(await firstSeenUpdate(update.update_id))) return NextResponse.json({ ok: true })
+  if (staffFeaturesEnabled && !(await firstSeenUpdate(update.update_id))) return NextResponse.json({ ok: true })
 
+  try {
+    return await handleUpdate(req, update, staffFeaturesEnabled)
+  } catch (err) {
+    console.error('[telegram/webhook] update failed', err instanceof Error ? err.message : err)
+    if (staffFeaturesEnabled) await forgetUpdate(update.update_id)
+    return NextResponse.json({ ok: false }, { status: 500 })
+  }
+}
+
+async function handleUpdate(req: NextRequest, update: Record<string, unknown>, staffFeaturesEnabled: boolean): Promise<NextResponse> {
   // ── Кнопки одобрения ──
   const callback = update.callback_query as TgCallbackQuery | undefined
   if (callback?.id) {
@@ -55,17 +71,18 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true })
     }
     await handleApprovalCallback(callback, {
-      audit: async ({ actorId, role, approvalId, decision, ok }) => {
+      audit: async ({ actorId, role, approvalId, decision }) => {
         await recordAdminAction(
-          { id: actorId, kind: 'session', role: role as StaffRole },
+          { id: actorId, kind: 'telegram', role: role as StaffRole },
           {
             action: 'agent.approval.decide',
             entityType: 'agent_approval',
             entityId: approvalId,
-            newValue: { decision, applied: ok },
+            newValue: { decision },
             metadata: { via: 'telegram' },
           },
           req,
+          { required: true },
         )
       },
     })

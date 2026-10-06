@@ -389,6 +389,21 @@ export function budgetUsage(spent: number, budget: number | null | undefined): {
   return { ratio, tone: ratio >= 1 ? 'red' : ratio >= 0.8 ? 'amber' : 'green', label: `${Math.round(ratio * 100)}%` }
 }
 
+/**
+ * The limit shown next to a spend figure. A budget of 0 is not "no limit":
+ * the runtime refuses every model call (spent + estimate > 0).
+ */
+export function budgetLimitLabel(budget: number | null | undefined): string {
+  if (budget == null || !Number.isFinite(budget)) return 'без лимита'
+  return budget > 0 ? fmtUsd(budget) : '$0 (LLM запрещён)'
+}
+
+/** Today's platform spend: the API's guard-equivalent figure, else the agent-runs series. */
+export function platformSpendToday(d: { platformSpendTodayUsd?: number | null } | null | undefined, series: readonly DayPoint[]): number {
+  const v = d?.platformSpendTodayUsd
+  return typeof v === 'number' && Number.isFinite(v) ? v : spendOn(series)
+}
+
 export function shareOf(part: number, total: number): string {
   if (!total) return '—'
   const p = (part / total) * 100

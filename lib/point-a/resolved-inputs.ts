@@ -22,12 +22,19 @@ type InputKey = keyof typeof RESOLVED_INPUT_METRICS
 
 const NON_SURVEY_SOURCES = new Set(['document', 'manual', 'external', 'prisma'])
 
+/**
+ * Inputs that may legitimately be zero or negative. A P&L with a negative gross
+ * margin must win over the survey margin (the engine has rules for it); LTV,
+ * CAC and LTV/CAC are only meaningful above zero.
+ */
+const SIGNED_INPUTS: ReadonlySet<InputKey> = new Set<InputKey>(['grossMargin'])
+
 function build(lookup: (metricId: string) => number | null): PointAResolvedInputs {
   const out: PointAResolvedInputs = {}
   for (const key of Object.keys(RESOLVED_INPUT_METRICS) as InputKey[]) {
     for (const id of RESOLVED_INPUT_METRICS[key]) {
       const v = lookup(id)
-      if (v !== null && Number.isFinite(v) && v > 0) {
+      if (v !== null && Number.isFinite(v) && (v > 0 || SIGNED_INPUTS.has(key))) {
         out[key] = v
         break
       }
@@ -68,19 +75,19 @@ export function resolvedInputsFromMetricRows(rows: ReadonlyArray<ResolvedMetricR
   })
 }
 
-/** Read the materialised non-survey inputs of a company; any error → no inputs (survey only). */
+/**
+ * Read the materialised non-survey inputs of a company. A failed read throws:
+ * «no document values» must never stand in for «could not read them» — the
+ * caller would score from the survey alone and present it as the result.
+ */
 export async function loadResolvedInputs(client: SupabaseClient, companyId: string | null): Promise<PointAResolvedInputs> {
   if (!companyId) return {}
   const ids = Object.values(RESOLVED_INPUT_METRICS).flat()
-  try {
-    const { data, error } = await client
-      .from('metrics')
-      .select('metric_key, metric_value, source, computed_at')
-      .eq('company_id', companyId)
-      .in('metric_key', ids)
-    if (error) return {}
-    return resolvedInputsFromMetricRows((data ?? []) as ResolvedMetricRow[])
-  } catch {
-    return {}
-  }
+  const { data, error } = await client
+    .from('metrics')
+    .select('metric_key, metric_value, source, computed_at')
+    .eq('company_id', companyId)
+    .in('metric_key', ids)
+  if (error) throw new Error(`resolved inputs: metrics read failed (${error.code ?? 'unknown'})`)
+  return resolvedInputsFromMetricRows((data ?? []) as ResolvedMetricRow[])
 }

@@ -3,7 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { createServerClient } from '@/lib/supabase-server'
-import { getSessionRole, isStaffRole } from '@/lib/api-identity'
+import { isStaffRole } from '@/lib/api-identity'
 
 const ALLOWED_STATUS = [
   'pending_ai',
@@ -29,6 +29,13 @@ const patchBodySchema = z
   })
 
 const idParamSchema = z.string().uuid()
+
+/** «Кто ответил» label for a profile role. */
+function answerRoleFor(role: string | null): (typeof ALLOWED_ANSWER_ROLES)[number] {
+  if (role === 'expert') return 'expert'
+  if (isStaffRole(role)) return 'admin'
+  return 'client'
+}
 
 function unauthorized() {
   return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 })
@@ -66,27 +73,28 @@ export async function PATCH(
   }
   const body = parsed.data
 
-  // SECURITY: `answer_author_role` is provenance shown to the client as "кто
-  // ответил". It must reflect the CALLER's real role, not whatever the request
-  // body claims — previously a client could label their own answer as
-  // 'expert'/'admin'. Privileged labels now require a staff profile role; a
-  // non-staff caller writing an answer is always attributed as 'client'.
-  if (
-    body.answer_author_role !== undefined &&
-    body.answer_author_role !== null &&
-    body.answer_author_role !== 'client'
-  ) {
-    const callerRole = await getSessionRole(sb, userData.user.id)
-    if (!isStaffRole(callerRole)) {
-      if (body.answer_text !== undefined) {
-        body.answer_author_role = 'client'
-      } else {
-        return NextResponse.json(
-          { ok: false, error: 'forbidden_author_role' },
-          { status: 403 }
-        )
-      }
-    }
+  // SECURITY: `answer_author_role` / `answer_author_name` are provenance shown
+  // to the client as «кто ответил». Whenever the answer changes they are set
+  // from the CALLER's real profile, never from the body (a client could label
+  // its own answer as an expert's). Without an answer change, only staff may
+  // touch them. (The DB enforces the same for non-staff since migration 097.)
+  const { data: caller, error: callerErr } = await sb
+    .from('profiles')
+    .select('role, full_name')
+    .eq('id', userData.user.id)
+    .maybeSingle()
+  if (callerErr) {
+    return NextResponse.json({ ok: false, error: 'Failed to load profile' }, { status: 500 })
+  }
+  const callerRole = (caller as { role?: string | null } | null)?.role ?? null
+  const staff = isStaffRole(callerRole)
+  if (body.answer_text !== undefined) {
+    body.answer_author_role = body.answer_text === null ? null : answerRoleFor(callerRole)
+    body.answer_author_name = body.answer_text === null
+      ? null
+      : ((caller as { full_name?: string | null } | null)?.full_name ?? null)
+  } else if (!staff && (body.answer_author_role !== undefined || body.answer_author_name !== undefined)) {
+    return NextResponse.json({ ok: false, error: 'forbidden_author_role' }, { status: 403 })
   }
 
   // Load existing row so we can decide whether to bump answered_at. RLS will

@@ -8,8 +8,10 @@
  *                         (default 50)
  *   recordUsage()         append the call's cost and provider to ai_usage_ledger
  *
- * Server-only. Database problems never break the feature: the budget check
- * then allows the call (and logs), recording failures are logged.
+ * Server-only. When today's spend cannot be read (database down, pool
+ * exhausted) the budget check fails CLOSED in production — no paid call
+ * without a cap; set AI_BUDGET_FAIL_OPEN=true to allow calls instead. Outside
+ * production it allows the call (and logs). Recording failures are logged.
  */
 import type { CostSource } from './providers/types'
 
@@ -26,7 +28,18 @@ export interface UsageRecord {
   ok: boolean
 }
 
-/** Remaining platform budget in USD today, or null when it cannot be determined. */
+/**
+ * Fail closed when spend is unknown? Yes in production unless
+ * AI_BUDGET_FAIL_OPEN=true; never outside production.
+ */
+export function budgetFailsClosed(): boolean {
+  return process.env.NODE_ENV === 'production' && process.env.AI_BUDGET_FAIL_OPEN !== 'true'
+}
+
+/**
+ * Remaining platform budget in USD today. When it cannot be determined: 0 when
+ * the check fails closed (budgetFailsClosed), else null (allowed).
+ */
 export async function platformBudgetLeft(): Promise<number | null> {
   try {
     const [{ spendToday }, { effectiveBudgets }] = await Promise.all([
@@ -36,7 +49,12 @@ export async function platformBudgetLeft(): Promise<number | null> {
     const [{ platformDailyUsd }, spent] = await Promise.all([effectiveBudgets(), spendToday()])
     return platformDailyUsd - spent
   } catch (err) {
-    console.warn('[ai-usage] budget check unavailable:', err instanceof Error ? err.message.split('\n')[0] : err)
+    const reason = err instanceof Error ? err.message.split('\n')[0] : err
+    if (budgetFailsClosed()) {
+      console.error('[ai-usage] budget check unavailable — model call refused (fail closed):', reason)
+      return 0
+    }
+    console.warn('[ai-usage] budget check unavailable:', reason)
     return null
   }
 }

@@ -3,13 +3,16 @@
 // Point A executive overview (contract: types/point-a-overview.ts).
 // The company is resolved and authorised by lib/tenancy (read access); every
 // input is read with the caller's own session client, so RLS decides what is
-// visible. 404 { ok:false, error:'no_company' } lets the UI render the
+// visible — except the owner-scoped CRM / market head counts (service role
+// after authorisation, so members and partners do not see a false «0»).
+// 404 { ok:false, error:'no_company' } lets the UI render the
 // «компания ещё не создана» empty state instead of an error.
 
 export const dynamic = 'force-dynamic'
 
 import { NextResponse, type NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase-service'
 import { resolveTenantWith, tenantErrorMessage } from '@/lib/tenancy'
 import { loadPointAOverview } from '@/lib/point-a/overview'
 import { apiError, safeErrorMessage } from '@/lib/api-error'
@@ -29,7 +32,9 @@ export async function GET(req: NextRequest) {
       return apiError(tenantErrorMessage(resolved.error), resolved.status)
     }
 
-    const data = await loadPointAOverview(supabase, resolved.tenant)
+    // CRM / market counts are owner-only under RLS: read them (head counts
+    // only) with the service role, now that the caller is authorised.
+    const data = await loadPointAOverview(supabase, resolved.tenant, new Date(), { ownerCountsClient: createServiceClient() })
     const body: PointAOverviewResponse = { ok: true, data }
     return NextResponse.json(body)
   } catch (err) {

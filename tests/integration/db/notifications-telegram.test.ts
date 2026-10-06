@@ -87,7 +87,41 @@ describe.skipIf(!dbTestsEnabled)('notifications + Telegram approvals', async () 
     expect(info.deliveries.every((d) => d.status === 'skipped' && d.reason === 'below_platform_level')).toBe(true)
 
     const dup = await notifyStaff({ level: 'WARNING', type, title: 'Очередь растёт', dedupeKey: `${type}:w1` }, { fetchImpl: fakeFetch })
-    expect(dup).toEqual({ eventId: null, duplicate: true, deliveries: [] })
+    expect(dup).toEqual({ eventId: warn.eventId, duplicate: true, deliveries: [] })
+  })
+
+  it('a repeated dedupe key resumes recipients a crashed run never reached, and nobody twice (#38)', async () => {
+    // A run recorded the event and died: admin's claim is abandoned, analyst was never reached.
+    const key = `${type}:crash`
+    const [ev] = await prisma.$queryRaw<Array<{ id: string }>>`
+      INSERT INTO public.notification_events (level, type, title, dedupe_key, audience)
+      VALUES ('WARNING', ${`${type}.crash`}, 'Агент упал', ${key}, 'staff') RETURNING id::text`
+    await prisma.$executeRaw`
+      INSERT INTO public.notification_deliveries (event_id, channel, target, status, attempts, updated_at)
+      VALUES (${ev.id}::uuid, 'telegram', ${String(admin.tg)}, 'queued', 0, now() - interval '10 minutes')`
+    calls.length = 0
+    const resumed = await notifyStaff({ level: 'WARNING', type: `${type}.crash`, title: 'Агент упал', dedupeKey: key }, { fetchImpl: fakeFetch })
+    expect(resumed.duplicate).toBe(true)
+    expect(resumed.eventId).toBe(ev.id)
+    expect(resumed.deliveries.filter((d) => d.status === 'sent').map((d) => d.target).sort()).toEqual([String(admin.tg), String(analyst.tg)].sort())
+    expect(calls.filter((c) => c.method === 'sendMessage')).toHaveLength(2)
+
+    // Everyone is handled now: a further repeat sends nothing.
+    calls.length = 0
+    const again = await notifyStaff({ level: 'WARNING', type: `${type}.crash`, title: 'Агент упал', dedupeKey: key }, { fetchImpl: fakeFetch })
+    expect(again.deliveries).toEqual([])
+    expect(calls).toHaveLength(0)
+
+    // A fresh claim belongs to a run still in flight: it is not taken over.
+    const key2 = `${type}:inflight`
+    const [ev2] = await prisma.$queryRaw<Array<{ id: string }>>`
+      INSERT INTO public.notification_events (level, type, title, dedupe_key, audience)
+      VALUES ('CRITICAL', ${`${type}.inflight`}, 'В работе', ${key2}, 'staff') RETURNING id::text`
+    await prisma.$executeRaw`
+      INSERT INTO public.notification_deliveries (event_id, channel, target, status, attempts)
+      VALUES (${ev2.id}::uuid, 'telegram', ${String(admin.tg)}, 'queued', 0)`
+    const inflight = await notifyStaff({ level: 'CRITICAL', type: `${type}.inflight`, title: 'В работе', dedupeKey: key2 }, { fetchImpl: fakeFetch })
+    expect(inflight.deliveries.map((d) => d.target)).toEqual([String(analyst.tg)])
   })
 
   it('cools down repeated warnings of the same type but always delivers CRITICAL', async () => {
@@ -153,15 +187,33 @@ describe.skipIf(!dbTestsEnabled)('notifications + Telegram approvals', async () 
     expect(approveData).toBe(approvalCallbackData(approval.id, 'approve'))
     expect(approveData.length).toBeLessThanOrEqual(64)
 
+    const audited: Array<{ actorId: string; approvalId: string; decision: string }> = []
+    let auditDown = false
+    const audit = async (e: { actorId: string; role: string; approvalId: string; decision: string }) => {
+      if (auditDown) throw new Error('Audit log unavailable — action refused')
+      audited.push({ actorId: e.actorId, approvalId: e.approvalId, decision: e.decision })
+    }
     const press = (from: number, data: string) =>
-      handleApprovalCallback({ id: `cb-${Math.random()}`, from: { id: from }, data }, { fetchImpl: fakeFetch })
+      handleApprovalCallback({ id: `cb-${Math.random()}`, from: { id: from }, data }, { fetchImpl: fakeFetch, audit })
+    const approvalStatus = async () => (await prisma.$queryRaw<Array<{ status: string }>>`
+      SELECT status FROM public.agent_approvals WHERE id = ${approval.id}::uuid`)[0].status
 
     expect(await press(admin.tg, approveData.replace(/:a:/, ':r:'))).toBe('bad_signature') // flipped action, old signature
     expect(await press(123456, approveData)).toBe('not_linked')
     expect(await press(analyst.tg, approveData)).toBe('no_permission')
+    expect(audited).toEqual([])
+
+    // The journal is down: no decision is taken, the approver is told why (#37).
+    auditDown = true
+    calls.length = 0
+    expect(await press(admin.tg, approveData)).toBe('audit_unavailable')
+    expect(await approvalStatus()).toBe('pending')
+    expect(calls.find((c) => c.method === 'answerCallbackQuery')?.body.text).toContain('Журнал аудита недоступен')
+    auditDown = false
 
     calls.length = 0
     expect(await press(admin.tg, approveData)).toBe('decided')
+    expect(audited).toEqual([{ actorId: admin.id, approvalId: approval.id, decision: 'approve' }])
     const [row] = await prisma.$queryRaw<Array<{ status: string; decided_via: string; decided_by: string }>>`
       SELECT status, decided_via, decided_by FROM public.agent_approvals WHERE id = ${approval.id}::uuid`
     expect(row).toEqual({ status: 'approved', decided_via: 'telegram', decided_by: admin.id })

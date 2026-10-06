@@ -126,9 +126,10 @@ export class NoSurveyDataError extends Error {
 }
 
 /**
- * Score the company for a session: reuse the current diagnostic when nothing
- * changed since it was calculated, otherwise calculate and store a new current
- * version (the previous one stays as history).
+ * Score the company for a session: reuse the current diagnostic when the
+ * recalculated result equals it (its calculated_at moves to now — it was
+ * verified against the current inputs), otherwise calculate and store a new
+ * current version (the previous one stays as history).
  */
 export async function scoreCompany(companyId: string, sessionId: string | null): Promise<ScoreResult> {
   const company = await companyProfile(companyId)
@@ -143,10 +144,17 @@ export async function scoreCompany(companyId: string, sessionId: string | null):
     company.ownerId)
   const current = currentRows[0]
   if (current && samePointA(rowToPointA(current), pointA)) {
-    await prisma.$executeRaw`
-      UPDATE public.diagnostics SET session_id = ${sessionId}::uuid, company_id = coalesce(company_id, ${companyId})
-      WHERE id = ${current.id}::uuid`
-    return { diagnosticId: current.id, reused: true, pointA: rowToPointA(current), calculatedAt: current.calculated_at, answeredKeys }
+    // The score was just recomputed from the current inputs and came out the
+    // same: the row is current as of now. Without moving calculated_at the
+    // overview compared it with the newer inputs and reported «stale» right
+    // after a successful run.
+    const touched = await prisma.$queryRaw<Array<{ calculated_at: Date }>>`
+      UPDATE public.diagnostics SET session_id = ${sessionId}::uuid, company_id = coalesce(company_id, ${companyId}),
+             calculated_at = now()
+      WHERE id = ${current.id}::uuid
+      RETURNING calculated_at`
+    const calculatedAt = touched[0]?.calculated_at ?? current.calculated_at
+    return { diagnosticId: current.id, reused: true, pointA: rowToPointA(current), calculatedAt, answeredKeys }
   }
 
   const j = (v: unknown) => JSON.stringify(v ?? null)

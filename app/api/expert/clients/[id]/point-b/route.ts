@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic'
 // computes on the fly, does not persist (the client's own page owns persistence).
 
 import { NextResponse } from 'next/server'
-import { requireExpert, srGet } from '@/lib/expert-auth'
+import { expertBlockResponse, resolveExpert, srGet } from '@/lib/expert-auth'
 import { calculatePointBV2, type PointBOptions } from '@/lib/point-b/engine'
 import type { PointA, BlockScore } from '@/types/onboarding'
 
@@ -54,8 +54,8 @@ function mapGriTop5(raw: unknown): PointBOptions['griTop5'] {
 }
 
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
-  const viewer = await requireExpert()
-  if (!viewer) return NextResponse.json({ ok: false, error: 'forbidden' }, { status: 403 })
+  const auth = await resolveExpert()
+  if (!auth.ok) return expertBlockResponse(auth.block)
 
   const clientId = params.id
   if (!clientId) return NextResponse.json({ ok: false, error: 'client id required' }, { status: 400 })

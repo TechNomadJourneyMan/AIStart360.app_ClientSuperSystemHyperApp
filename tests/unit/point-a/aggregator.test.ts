@@ -22,6 +22,8 @@ interface CannedResponses {
   documents?: unknown[]
   companies?: unknown[]
   metrics?: { error?: unknown }
+  /** metric_value_history rows, or an error result. */
+  history?: unknown[] | { error: { code?: string; message: string } }
 }
 
 function makeMockSupabase(canned: CannedResponses = {}) {
@@ -33,16 +35,18 @@ function makeMockSupabase(canned: CannedResponses = {}) {
   const surveyRows = canned.survey_answers ?? []
   const docRows = canned.documents ?? []
 
-  function makeBuilder(rows: unknown[]) {
+  function makeBuilder(rows: unknown[], error: unknown = null) {
     const builder: Record<string, unknown> = {
       select: vi.fn(() => builder),
       eq: vi.fn(() => builder),
+      in: vi.fn(() => builder),
       order: vi.fn(() => builder),
       limit: vi.fn(() => builder),
-      maybeSingle: vi.fn().mockResolvedValue({ data: rows[0] ?? null, error: null }),
+      delete: vi.fn(() => builder),
+      maybeSingle: vi.fn().mockResolvedValue({ data: rows[0] ?? null, error }),
       upsert,
       then: (resolve: (v: unknown) => unknown) =>
-        Promise.resolve({ data: rows, error: null }).then(resolve),
+        Promise.resolve({ data: error ? null : rows, error }).then(resolve),
     }
     return builder
   }
@@ -52,6 +56,10 @@ function makeMockSupabase(canned: CannedResponses = {}) {
     if (table === 'documents') return makeBuilder(docRows)
     if (table === 'companies') return makeBuilder(canned.companies ?? [])
     if (table === 'metrics') return makeBuilder([])
+    if (table === 'metric_value_history') {
+      const h = canned.history ?? []
+      return Array.isArray(h) ? makeBuilder(h) : makeBuilder([], h.error)
+    }
     return makeBuilder([])
   })
 
@@ -114,11 +122,39 @@ describe('aggregatePointA', () => {
     expect(Array.isArray(intel!.top_strengths)).toBe(true)
     expect(Array.isArray(intel!.top_gaps)).toBe(true)
     expect(Array.isArray(intel!.trends)).toBe(true)
+    // No history rows → no trends (never invented).
     expect(intel!.trends).toHaveLength(0)
     expect(intel!.resolver_version).toBe('phase4-v1')
     expect(typeof intel!.generated_at).toBe('string')
     expect(intel!.coverage).toBeDefined()
     expect(typeof intel!.coverage.overall).toBe('number')
+  })
+
+  it('trends come from metric_value_history: previous distinct value of the same series', async () => {
+    // s2_avg_check = 12 000 now (biz.prodazhi.sredniy_chek, survey); 10 000 before.
+    const hist = (metric_key: string, value: number, recorded_at: string) =>
+      ({ metric_key, value, source: 'survey', period_year: null, period_quarter: null, period_month: null, recorded_at })
+    const { client } = makeMockSupabase({
+      survey_answers: sampleSurveyRows(),
+      history: [
+        hist('biz.prodazhi.sredniy_chek', 12_000, '2026-10-01T00:00:00Z'),
+        hist('biz.prodazhi.sredniy_chek', 10_000, '2026-09-01T00:00:00Z'),
+        // another source is another series — not a change over time
+        { ...hist('biz.marketing.cac', 9_000, '2026-09-01T00:00:00Z'), source: 'document' },
+      ],
+    })
+    const result = await aggregatePointA(client, 'u', 'c', { skipMaterialize: true })
+    const trends = result.intelligence!.trends
+    expect(trends).toContainEqual({ metric_id: 'biz.prodazhi.sredniy_chek', direction: 'up', delta_pct: 20 })
+    expect(trends.find((t) => t.metric_id === 'biz.marketing.cac')).toBeUndefined()
+  })
+
+  it('a failed history read is an error, a missing history table is «no trends»', async () => {
+    const failing = makeMockSupabase({ survey_answers: sampleSurveyRows(), history: { error: { code: '57014', message: 'timeout' } } })
+    await expect(aggregatePointA(failing.client, 'u', 'c', { skipMaterialize: true })).rejects.toThrow(/metric history failed/)
+    const missing = makeMockSupabase({ survey_answers: sampleSurveyRows(), history: { error: { code: '42P01', message: 'relation does not exist' } } })
+    const result = await aggregatePointA(missing.client, 'u', 'c', { skipMaterialize: true })
+    expect(result.intelligence!.trends).toEqual([])
   })
 
   it('coverage reflects resolved/total ratio correctly', async () => {

@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireGiga } from '@/lib/admin/giga-actor'
 import { createServiceClient } from '@/lib/supabase-service'
 import { platformHealthSnapshot } from '@/lib/agents/definitions/monitoring'
-import { envChecks } from '@/lib/admin/system-health'
+import { classifyCheckError, crmHealthFrom, envChecks, type CheckFailure, type CrmHealth } from '@/lib/admin/system-health'
 
 /**
  * GET /api/giga-admin/system/health — configuration and data-layer status.
@@ -41,27 +41,27 @@ export async function GET(req: NextRequest) {
     buckets = BUCKETS.map((name) => ({ name, ok: false }))
   }
 
-  // CRM connections: health without exposing tokens (counts only).
-  let crm: { active: number; errors: number; plaintextTokens: number; lastSyncAt: string | null } | null = null
+  // CRM connections: health without exposing tokens (counts only). A failed
+  // read is reported as such (crm null + crmError), never as zero rows.
+  let crm: CrmHealth | null = null
+  let crmError: string | null = null
   try {
-    const { data } = await sb.from('crm_provider_connections').select('is_active, last_sync_status, last_sync_at, access_token')
-    const rows = (data ?? []) as Array<{ is_active: boolean; last_sync_status: string | null; last_sync_at: string | null; access_token: string }>
-    crm = {
-      active: rows.filter((r) => r.is_active).length,
-      errors: rows.filter((r) => r.is_active && r.last_sync_status === 'error').length,
-      plaintextTokens: rows.filter((r) => !String(r.access_token).startsWith('v1:')).length,
-      lastSyncAt: rows.map((r) => r.last_sync_at).filter(Boolean).sort().pop() ?? null,
-    }
-  } catch {
-    crm = null
+    const checked = crmHealthFrom(await sb.from('crm_provider_connections').select('is_active, last_sync_status, last_sync_at, access_token'))
+    crm = checked.crm
+    crmError = checked.error
+  } catch (err) {
+    crmError = err instanceof Error ? err.message : String(err)
   }
+  if (crmError) console.error('[system/health] CRM connections check failed:', crmError)
 
   // Agent runtime / queue / documents / AI spend (same checks the monitoring agent runs).
   let agents: Awaited<ReturnType<typeof platformHealthSnapshot>> | null = null
+  let agentsError: CheckFailure | null = null
   try {
     agents = await platformHealthSnapshot()
-  } catch {
-    agents = null // migrations 086–087 not applied yet
+  } catch (err) {
+    agentsError = classifyCheckError(err)
+    console.error('[system/health] platform health snapshot failed:', agentsError.message)
   }
 
   return NextResponse.json({
@@ -72,7 +72,8 @@ export async function GET(req: NextRequest) {
     env,
     tables,
     buckets,
-    integrations: { crm },
+    integrations: { crm, crmError },
     agents,
+    agentsError,
   })
 }

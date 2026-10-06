@@ -1,6 +1,14 @@
 import 'dotenv/config'
 import { PrismaClient } from '@prisma/client'
 import bcrypt from 'bcryptjs'
+import { seedRefusal } from './seed-guard'
+
+// Refuse BEFORE connecting: the seed wipes tables (see prisma/seed-guard.ts).
+const refusal = seedRefusal(process.env)
+if (refusal) {
+  console.error(`[seed] refusing to run: ${refusal}`)
+  process.exit(1)
+}
 
 const prisma = new PrismaClient()
 

@@ -16,7 +16,10 @@ import { calculatePointA } from '@/lib/point-a-engine'
 import {
   gatherResolverContext,
   materializeAll,
+  toMaterializedRow,
 } from '@/lib/metrics/materialize'
+import { isMissingTable, previousValueFor, trendFor, type MetricHistoryRow } from '@/lib/metrics/catalog-helpers'
+import type { MetricValue } from '@/lib/metrics/types'
 import { resolvedInputsFromValues } from './resolved-inputs'
 import { resolveAllMetrics } from '@/lib/metrics/resolver'
 import { getMetricRegistry } from '@/lib/metrics/registry'
@@ -55,6 +58,7 @@ function round2(n: number): number {
  */
 function buildIntelligence(
   values: ReturnType<typeof resolveAllMetrics>,
+  trends: PointAIntelligence['trends'],
 ): PointAIntelligence {
   const entries = getMetricRegistry()
 
@@ -86,10 +90,62 @@ function buildIntelligence(
     top_strengths,
     top_gaps,
     coverage,
-    trends: [], // Phase 5 will populate from history snapshots.
+    trends,
     generated_at: new Date().toISOString(),
     resolver_version: RESOLVER_VERSION,
   }
+}
+
+/**
+ * Trends of the resolved values against metric_value_history (pure): the
+ * previous distinct value of the same series (metric, source, period) →
+ * direction + relative change. Metrics without such a previous value (or with
+ * a previous value of 0, where a percentage is undefined) are left out.
+ */
+export function buildTrends(
+  values: ReadonlyArray<MetricValue>,
+  history: ReadonlyArray<MetricHistoryRow>,
+  companyId: string,
+): PointAIntelligence['trends'] {
+  const out: PointAIntelligence['trends'] = []
+  for (const v of values) {
+    if (v.picked === null || v.numeric === null) continue
+    const row = toMaterializedRow(v, companyId)
+    const previous = previousValueFor({
+      metric_key: v.metricId,
+      value: v.numeric,
+      source: row.source,
+      period_year: row.period_year,
+      period_quarter: row.period_quarter,
+      period_month: null,
+    }, history)
+    const t = trendFor(v.numeric, previous)
+    if (t.trend === 'unknown' || t.deltaPct === null) continue
+    out.push({ metric_id: v.metricId, direction: t.trend, delta_pct: t.deltaPct })
+  }
+  return out
+}
+
+/** History of the resolved metrics (newest first). Missing table (before 085) → none; other errors throw. */
+async function loadHistory(
+  supabase: SupabaseClient,
+  companyId: string,
+  values: ReadonlyArray<MetricValue>,
+): Promise<MetricHistoryRow[]> {
+  const ids = values.filter((v) => v.picked !== null && v.numeric !== null).map((v) => v.metricId)
+  if (ids.length === 0) return []
+  const { data, error } = await supabase
+    .from('metric_value_history')
+    .select('metric_key, value, source, period_year, period_quarter, period_month, recorded_at')
+    .eq('company_id', companyId)
+    .in('metric_key', ids)
+    .order('recorded_at', { ascending: false })
+    .limit(2000)
+  if (error) {
+    if (isMissingTable(error)) return []
+    throw new Error(`point-a aggregate: metric history failed (${error.code ?? 'unknown'})`)
+  }
+  return (data ?? []) as MetricHistoryRow[]
 }
 
 /**
@@ -102,7 +158,8 @@ function buildIntelligence(
  * 4. (Optional) Best-effort write to `public.metrics` so the UI
  *    can subscribe to realtime changes. Failures are logged and
  *    swallowed — the API still returns a useful payload.
- * 5. Build the `intelligence` block and merge it into PointA.
+ * 5. Build the `intelligence` block (trends from metric_value_history)
+ *    and merge it into PointA.
  */
 export async function aggregatePointA(
   supabase: SupabaseClient,
@@ -115,6 +172,8 @@ export async function aggregatePointA(
   const values = resolveAllMetrics(ctx)
 
   const basePointA = calculatePointA(ctx.surveyAnswers, resolvedInputsFromValues(values))
+  // Read before materialising: the trend compares with what was stored before this run.
+  const history = await loadHistory(supabase, companyId, values)
 
   if (!opts.skipMaterialize) {
     try {
@@ -127,7 +186,7 @@ export async function aggregatePointA(
     }
   }
 
-  const intelligence = buildIntelligence(values)
+  const intelligence = buildIntelligence(values, buildTrends(values, history, companyId))
 
   return {
     ...basePointA,

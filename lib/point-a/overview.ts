@@ -495,16 +495,36 @@ function failOn(error: PgError, what: string): void {
   if (error) throw new Error(`point-a overview: ${what} failed (${error.code ?? 'unknown'})`)
 }
 
+/** An optional table may be missing (migration not applied → «absent»); any other error is an error. */
+function failUnlessMissing(error: PgError, what: string): void {
+  if (error && !isMissingRelation(error)) failOn(error, what)
+}
+
+export interface LoadOverviewOptions {
+  /**
+   * Client for the owner-scoped counts (CRM connections, confirmed market
+   * answers). Their RLS shows rows to the owner only, so a member or partner
+   * reading with their own session would get 0 and be told to «connect a CRM»
+   * the owner already connected. Routes pass the service role AFTER lib/tenancy
+   * authorised the caller for the company; only head counts are read with it.
+   */
+  ownerCountsClient?: SupabaseClient
+}
+
 /**
  * Gather every input of the overview for `tenant.companyId`. Core tables
  * (companies, diagnostics, survey_answers, documents) must answer; optional
- * ones (findings, history, sessions, CRM, market) degrade to «absent».
+ * ones (findings, history, sessions, CRM, market, GRI, metrics) degrade to
+ * «absent» only when the table does not exist — a failed read is an error,
+ * never a silent zero.
  */
 export async function loadPointAOverview(
   client: SupabaseClient,
   tenant: Pick<TenantContext, 'companyId'>,
   now: Date = new Date(),
+  opts: LoadOverviewOptions = {},
 ): Promise<PointAOverview> {
+  const counts = opts.ownerCountsClient ?? client
   const companyId = tenant.companyId
 
   const company = await client.from('companies').select('id, name, user_id').eq('id', companyId).maybeSingle()
@@ -519,17 +539,30 @@ export async function loadPointAOverview(
     ? `company_id.eq.${companyId},user_id.eq.${ownerId}`
     : `company_id.eq.${safe(companyId) ? companyId : '00000000-0000-0000-0000-000000000000'}`
 
+  // Diagnostics, GRI and company-scoped survey rows are trusted only when
+  // written by the primary owner or an active member. Before migration 096
+  // any client could stamp another company's id on its own rows (the INSERT
+  // policies checked only user_id); rows planted that way stay in the table,
+  // so they are ignored here. company_members missing or unreadable ⇒ owner
+  // only (stricter).
+  const members = await client.from('company_members').select('user_id')
+    .eq('company_id', companyId).eq('status', 'active')
+  const writers = [...new Set([
+    ...(ownerId ? [ownerId] : []),
+    ...(members.error ? [] : ((members.data ?? []) as Array<{ user_id: string }>).map((m) => m.user_id)),
+  ])].filter(safe)
+
   const diagColumns =
     'overall_score, health_index, stage, finance_score, sales_score, operations_score, marketing_score, strategy_score, risks, insights, data_gaps, calculated_at'
 
   const [diag, survey, docs, gri, metricRows] = await Promise.all([
-    client.from('diagnostics').select(diagColumns).or(scope).eq('is_current', true)
+    client.from('diagnostics').select(diagColumns).or(scope).in('user_id', writers).eq('is_current', true)
       .order('calculated_at', { ascending: false }).limit(1),
     ownerId
       ? client.from('survey_answers').select('question_key, answer, answered_at, step').eq('user_id', ownerId)
-      : client.from('survey_answers').select('question_key, answer, answered_at, step').eq('company_id', companyId),
+      : client.from('survey_answers').select('question_key, answer, answered_at, step').eq('company_id', companyId).in('user_id', writers),
     client.from('documents').select('parse_status, uploaded_at, doc_type, fields:parsed_data->fields').or(scope),
-    client.from('gri_assessments').select('gri_index, is_current, created_at, section_avgs').or(scope)
+    client.from('gri_assessments').select('gri_index, is_current, created_at, section_avgs').or(scope).in('user_id', writers)
       .order('created_at', { ascending: false }),
     client.from('metrics').select('metric_key, metric_value').eq('company_id', companyId).not('metric_value', 'is', null),
   ])
@@ -546,13 +579,19 @@ export async function loadPointAOverview(
     client.from('diagnostic_sessions').select('id').eq('company_id', companyId)
       .in('status', ['collecting', 'processing']).limit(1),
     ownerId
-      ? client.from('crm_provider_connections').select('id', { count: 'exact', head: true }).eq('user_id', ownerId).eq('is_active', true)
+      ? counts.from('crm_provider_connections').select('id', { count: 'exact', head: true }).eq('user_id', ownerId).eq('is_active', true)
       : Promise.resolve({ count: 0, error: null }),
     ownerId
-      ? client.from('market_analysis_answers').select('id', { count: 'exact', head: true }).eq('user_id', ownerId).eq('status', 'confirmed')
+      ? counts.from('market_analysis_answers').select('id', { count: 'exact', head: true }).eq('user_id', ownerId).eq('status', 'confirmed')
       : Promise.resolve({ count: 0, error: null }),
   ])
-  if (findings.error && !isMissingRelation(findings.error)) failOn(findings.error, 'diagnostic_findings')
+  failUnlessMissing(findings.error, 'diagnostic_findings')
+  failUnlessMissing(metricRows.error, 'metrics')
+  failUnlessMissing(gri.error, 'gri_assessments')
+  failUnlessMissing(history.error, 'metric_value_history')
+  failUnlessMissing(sessions.error, 'diagnostic_sessions')
+  failUnlessMissing(crm.error, 'crm_provider_connections')
+  failUnlessMissing(market.error, 'market_analysis_answers')
 
   // Metrics with a value: registry keys with a non-null row + GRI blocks scored by the assessment.
   const registry = getMetricRegistry()

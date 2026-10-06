@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic'
 // Staff-only; the client reads the approved version via /api/v1/diagnostics/point-b.
 
 import { NextRequest, NextResponse } from 'next/server'
-import { requireExpert, srGet } from '@/lib/expert-auth'
+import { expertBlockResponse, resolveExpert, srGet } from '@/lib/expert-auth'
 import { createClient as createSr } from '@supabase/supabase-js'
 import { logAudit } from '@/lib/audit'
 import { dbError } from '@/lib/api-error'
@@ -25,8 +25,8 @@ async function currentDiagId(clientId: string): Promise<string | null> {
 }
 
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
-  const viewer = await requireExpert()
-  if (!viewer) return NextResponse.json({ ok: false, error: 'forbidden' }, { status: 403 })
+  const auth = await resolveExpert()
+  if (!auth.ok) return expertBlockResponse(auth.block)
   const diagId = await currentDiagId(params.id)
   if (!diagId) return NextResponse.json({ ok: true, data: null })
   const rows = await srGet<Array<Record<string, unknown>>>(
@@ -36,8 +36,9 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
 }
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
-  const viewer = await requireExpert()
-  if (!viewer) return NextResponse.json({ ok: false, error: 'forbidden' }, { status: 403 })
+  const auth = await resolveExpert()
+  if (!auth.ok) return expertBlockResponse(auth.block)
+  const viewer = auth.viewer
 
   const body = await req.json().catch(() => null) as { expert_notes?: string; roadmap?: unknown } | null
   const notes = String(body?.expert_notes ?? '').trim()

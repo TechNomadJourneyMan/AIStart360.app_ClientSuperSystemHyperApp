@@ -6,11 +6,13 @@ export const dynamic = 'force-dynamic'
 // assessment first). A category without an answer is null, and a client
 // without any assessment gets nulls and hasAssessment=false — the tab still
 // renders every category so the expert can comment, but no score is invented.
+// A failed read answers 503 (the tab shows its error state), never
+// hasAssessment=false.
 // (It used to read diagnostics.ai_analysis.gri, which nothing writes, and
 // fell back to fixed sample scores shown as the client's.)
 
 import { NextResponse } from 'next/server'
-import { requireExpert, srGet } from '@/lib/expert-auth'
+import { expertBlockResponse, resolveExpert, srGet } from '@/lib/expert-auth'
 import { CATEGORIES } from '@/lib/gri-calculator/gri-data'
 
 /** Expert tab category → gri_assessments.section_avgs key. */
@@ -38,8 +40,8 @@ function num(v: unknown): number | null {
 }
 
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
-  const viewer = await requireExpert()
-  if (!viewer) return NextResponse.json({ error: 'forbidden' }, { status: 403 })
+  const auth = await resolveExpert()
+  if (!auth.ok) return expertBlockResponse(auth.block)
 
   const clientId = params.id
   if (!/^[0-9a-f-]{36}$/i.test(clientId)) return NextResponse.json({ error: 'bad id' }, { status: 400 })
@@ -47,7 +49,12 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
   const rows = await srGet<AssessmentRow[]>(
     `gri_assessments?user_id=eq.${clientId}&select=gri_index,section_avgs,updated_at,created_at&order=is_current.desc,created_at.desc&limit=1`,
   )
-  const a = rows?.[0] ?? null
+  // srGet: null = the read failed, [] = no assessment. Only the latter is a
+  // fact about the client («не проходил GRI»).
+  if (rows === null) {
+    return NextResponse.json({ ok: false, error: 'Не удалось загрузить GRI-оценку клиента' }, { status: 503 })
+  }
+  const a = rows[0] ?? null
 
   const categoryScores: Record<string, number | null> = {}
   for (const cat of CATEGORIES) categoryScores[cat] = num(a?.section_avgs?.[GRI_SECTION_BY_CATEGORY[cat]])

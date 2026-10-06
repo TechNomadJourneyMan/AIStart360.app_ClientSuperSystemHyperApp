@@ -130,8 +130,8 @@ describe('ai gateway', () => {
   })
 
   it('estimates an upper-bound cost before the call', () => {
-    const light = estimateCostUsd('light', 'm', 'x'.repeat(3500), 1000)
-    const premium = estimateCostUsd('premium', 'm', 'x'.repeat(3500), 1000)
+    const light = estimateCostUsd('light', modelForTier('light'), 'x'.repeat(3500), 1000)
+    const premium = estimateCostUsd('premium', modelForTier('premium'), 'x'.repeat(3500), 1000)
     expect(light).toBeGreaterThan(0)
     expect(premium).toBeGreaterThan(light * 10)
   })

@@ -59,9 +59,12 @@ function companiesTable() {
   return chain
 }
 
+/** Who is signed in (staff may save a client's survey). */
+let sessionUserId = USER
+
 const fakeServerClient = {
   from: (t: string) => (t === 'companies' ? companiesTable() : surveyTable()),
-  auth: { getUser: () => Promise.resolve({ data: { user: { id: USER, email: 'qa@example.com' } }, error: null }) },
+  auth: { getUser: () => Promise.resolve({ data: { user: { id: sessionUserId, email: 'qa@example.com' } }, error: null }) },
 }
 
 const PROFILE_EMAIL = 'client@example.com'
@@ -120,6 +123,11 @@ vi.mock('@/lib/integrations/google-sheets', () => ({
   spreadsheetUrl: () => 'https://docs.google.com/spreadsheets/d/test/edit',
   upsertRowByKey: (h: string[], v: string[]) => upsertRowByKey(h, v),
 }))
+// Platform events (diagnostic pipeline triggers) are captured, not dispatched.
+const platformEvents: Array<{ name: string; actor?: string | null; dedupeKey?: string | null }> = []
+vi.mock('@/lib/events/platform', () => ({
+  emitPlatformEventSafely: (e: { name: string; actor?: string | null; dedupeKey?: string | null }) => { platformEvents.push(e) },
+}))
 // Capture background work so tests can await it.
 vi.mock('@/lib/background', () => ({
   runInBackground: (_label: string, work: () => Promise<unknown>) => { const p = work(); pending.push(p); return p },
@@ -164,6 +172,8 @@ beforeEach(() => {
   clientEmail.mockClear()
   upsertRowByKey.mockClear()
   pending.splice(0)
+  platformEvents.splice(0)
+  sessionUserId = USER
 })
 
 // ─── тесты ───────────────────────────────────────────────────────────────────
@@ -252,6 +262,26 @@ describe('POST /api/v1/onboarding/survey', () => {
     const note = db.answers.find((r) => r.question_key === 'gri_expert_finance')!
     expect(note.step).toBe(0)
     expect(note.answer).toEqual({ value: 'заметка эксперта' })
+  })
+
+  it('platform events: ONBOARDING_COMPLETED once on completion, later explicit submits are QUESTIONNAIRE_COMPLETED', async () => {
+    await post(12, oneAnswerPerStep(), { final: true })
+    expect(platformEvents.map((e) => e.name)).toEqual(['ONBOARDING_COMPLETED'])
+    expect(platformEvents[0].dedupeKey).toBe('onboarding_completed:co-1')
+
+    await post(3, { s3n_problem: 'обновил' }, { final: true })
+    expect(platformEvents.map((e) => e.name)).toEqual(['ONBOARDING_COMPLETED', 'QUESTIONNAIRE_COMPLETED'])
+    expect(platformEvents[1].dedupeKey).toMatch(/^questionnaire_completed:co-1:/)
+
+    // An autosave / step save that is not a submit and changes nothing about completion: no event.
+    await post(3, { s3n_problem: 'ещё правка' })
+    expect(platformEvents).toHaveLength(2)
+  })
+
+  it('platform events name who made the change (staff saving for a client), not the client', async () => {
+    sessionUserId = 'staff-1'
+    await post(12, oneAnswerPerStep(), { final: true })
+    expect(platformEvents[0]).toMatchObject({ name: 'ONBOARDING_COMPLETED', actor: 'user:staff-1' })
   })
 
   it('отклоняет некорректный шаг', async () => {

@@ -14,6 +14,9 @@ export async function GET(request: Request) {
   const search = searchParams.get('search') ?? ''
   const status = searchParams.get('status')
   const orgId  = (session!.user as any).orgId
+  // Without an organisation Prisma would drop the undefined filter and list
+  // every organisation's clients.
+  if (!orgId) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const where = {
     orgId,
@@ -59,6 +62,8 @@ const createSchema = z.object({
 export async function POST(request: Request) {
   const { session, error } = await requireAuth()
   if (error) return error
+  const orgId = (session!.user as any).orgId
+  if (!orgId) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const body = await request.json()
   const parsed = createSchema.safeParse(body)
@@ -66,8 +71,6 @@ export async function POST(request: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: 'Validation failed', details: parsed.error.flatten() }, { status: 400 })
   }
-
-  const orgId = (session!.user as any).orgId
 
   try {
     const client = await prisma.client.create({

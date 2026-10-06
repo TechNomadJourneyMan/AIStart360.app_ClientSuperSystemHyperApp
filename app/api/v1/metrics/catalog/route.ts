@@ -6,7 +6,8 @@
 //
 // Filters: namespace, department (biz), category / subcategory
 // (lib/metrics/taxonomy.ts), search. Sorts: label, value, confidence,
-// freshness, trend_up / trend_down (by deltaPct from metric_value_history).
+// freshness, trend_up / trend_down (by deltaPct from metric_value_history,
+// signed by the metric's better direction: a falling CAC is an improvement).
 //
 // With includeValues=true (default) and a session, the company is resolved by
 // lib/tenancy (read access, optional ?companyId=) and every item carries its
@@ -30,6 +31,7 @@ import {
   applyGriSectionScores,
   countByNamespace,
   enrichMetric,
+  isMissingTable,
   type EnrichmentContext,
   type MetricHistoryRow,
   type MetricTargetRow,
@@ -38,6 +40,7 @@ import {
 import { METRIC_CATEGORIES, classifyMetric, countByCategory } from '@/lib/metrics/taxonomy'
 import { resolveTenantWith, tenantErrorMessage } from '@/lib/tenancy'
 import { apiError, safeErrorMessage } from '@/lib/api-error'
+import { isLowerBetter } from '@/components/metrics/catalog-model'
 
 const FRESH_WINDOW_MS = 24 * 60 * 60 * 1000
 /** History rows read per request (newest first) — enough for the previous value of every metric. */
@@ -212,6 +215,12 @@ function numericValue(v: number | string | null): number | null {
   return Number.isFinite(n) ? n : null
 }
 
+/** Relative change in the metric's good direction (+ = better), null without history. */
+function improvementPct(item: CatalogItem): number | null {
+  if (item.deltaPct === null || item.deltaPct === undefined) return null
+  return isLowerBetter(item) ? -item.deltaPct : item.deltaPct
+}
+
 function sortItems(items: CatalogItem[], sort: Query['sort']): CatalogItem[] {
   const arr = items.slice()
   switch (sort) {
@@ -234,12 +243,13 @@ function sortItems(items: CatalogItem[], sort: Query['sort']): CatalogItem[] {
       arr.sort((a, b) => compareTimestampsDesc(a.computedAt, b.computedAt))
       break
     case 'trend_up':
-      // Biggest relative growth first; metrics without history last.
-      arr.sort((a, b) => compareWithNullsLast(a.deltaPct, b.deltaPct, 'desc'))
+      // «Лучшая динамика»: biggest improvement first — growth, or a drop for
+      // metrics where lower is better (CAC, costs, churn …); no history last.
+      arr.sort((a, b) => compareWithNullsLast(improvementPct(a), improvementPct(b), 'desc'))
       break
     case 'trend_down':
-      // Biggest relative drop first; metrics without history last.
-      arr.sort((a, b) => compareWithNullsLast(a.deltaPct, b.deltaPct, 'asc'))
+      // «Худшая динамика»: biggest deterioration first; no history last.
+      arr.sort((a, b) => compareWithNullsLast(improvementPct(a), improvementPct(b), 'asc'))
       break
   }
   return arr
@@ -290,14 +300,20 @@ function mergeRow(item: CatalogItemBase, row: MetricRow | undefined, now: Date):
   }
 }
 
-/** Optional table (085): a read error means «absent», never a failed catalog. */
-async function optionalRows<T>(p: PromiseLike<{ data: unknown; error: unknown }>): Promise<T[]> {
-  try {
-    const { data, error } = await p
-    return error ? [] : ((data ?? []) as T[])
-  } catch {
-    return []
+/**
+ * Optional table (085): a table that does not exist yet means «absent». Any
+ * other read error fails the catalog (500) — otherwise every item silently
+ * showed «нет цели» / «нет истории» and the trend sorts fell back to registry
+ * order while looking valid.
+ */
+async function optionalRows<T>(what: string, p: PromiseLike<{ data: unknown; error: { code?: string; message?: string } | null }>): Promise<T[]> {
+  const { data, error } = await p
+  if (error) {
+    if (isMissingTable(error)) return []
+    console.error(`[api/v1/metrics/catalog] ${what}`, error.code ?? '', error.message ?? '')
+    throw new Error(`metrics catalog: ${what} read failed (${error.code ?? 'unknown'})`)
   }
+  return (data ?? []) as T[]
 }
 
 // ── Route handler ────────────────────────────────────────────
@@ -347,9 +363,11 @@ export async function GET(req: NextRequest) {
             .order('metric_key', { ascending: true })
             .order('computed_at', { ascending: false, nullsFirst: false }),
           optionalRows<MetricTargetRow>(
+            'metric_targets',
             supabase.from('metric_targets').select('metric_key, target_value, direction, period_label, source').eq('company_id', companyId),
           ),
           optionalRows<MetricHistoryRow>(
+            'metric_value_history',
             supabase
               .from('metric_value_history')
               .select('metric_key, value, source, period_year, period_quarter, period_month, recorded_at')
@@ -388,6 +406,7 @@ export async function GET(req: NextRequest) {
           const griQuery = supabase.from('gri_assessments').select('section_avgs, created_at')
           const scoped = ownerId ? griQuery.eq('user_id', ownerId) : griQuery.eq('company_id', companyId)
           const griRows = await optionalRows<{ section_avgs: Record<string, unknown> | null; created_at: string | null }>(
+            'gri_assessments',
             scoped.order('created_at', { ascending: false }).limit(1),
           )
           const before = new Set(bases.filter((b) => b.value !== null).map((b) => b.id))

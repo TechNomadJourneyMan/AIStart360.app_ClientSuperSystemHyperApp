@@ -5,6 +5,8 @@ import { createServerClient as createSupabaseAdmin } from '@/lib/supabase-server
 import { prisma } from '@/lib/db'
 import { trackEvent } from '@/lib/events/track'
 import { safeInternalPath } from '@/lib/safe-redirect'
+import { notifyAdmins } from '@/lib/notifications'
+import { runInBackground } from '@/lib/background'
 
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url)
@@ -77,6 +79,10 @@ export async function GET(request: NextRequest) {
         } catch (e) {
           console.error('[auth/callback] AdminRequest creation error:', e)
         }
+
+        void runInBackground('auth-callback:notify', () =>
+          notifyAdmins('user_registered', { name: fullName, email: user.email ?? null, role: 'client', organization: null, status: 'pending_approval', via: 'google_oauth' }, user.id),
+        )
 
         // Redirect to waiting room instead of dashboard
         return NextResponse.redirect(new URL('/client/waiting-room', origin), {

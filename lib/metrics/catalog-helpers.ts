@@ -269,6 +269,14 @@ export interface MetricHistoryRow {
   recorded_at: string
 }
 
+/**
+ * Table not created yet (migration not applied): Postgres 42P01 / PostgREST
+ * PGRST205. Only this may read as «no rows»; any other read error is an error.
+ */
+export function isMissingTable(error: { code?: string; message?: string } | null | undefined): boolean {
+  return Boolean(error) && (error?.code === '42P01' || error?.code === 'PGRST205' || /does not exist|could not find the table/i.test(error?.message ?? ''))
+}
+
 /** Changes smaller than this (in %) read as «flat». */
 export const FLAT_TREND_PCT = 1
 

@@ -41,6 +41,49 @@ export const TIER_ESTIMATE_PRICES_PER_MTOK: Record<ChatTier, { in: number; out: 
   premium: { in: 15, out: 75 },
 }
 
+/**
+ * Price class of the model ids the platform uses by default (lib/ai/openrouter.ts
+ * OPENROUTER_MODELS), at the conservative tier prices above. Lets a budget
+ * estimate price an override by the model actually called instead of by the
+ * agent's tier (an Opus override on a light agent is not a Haiku call).
+ */
+const KNOWN_MODEL_PRICE_TIER: Record<string, ChatTier> = {
+  'anthropic/claude-haiku-4.5': 'light',
+  'anthropic/claude-sonnet-4.5': 'standard',
+  'anthropic/claude-sonnet-5': 'standard',
+  'anthropic/claude-opus-4.8': 'premium',
+  'anthropic/claude-opus-4.1': 'premium',
+  'openai/gpt-4o': 'standard',
+  'openai/gpt-4o-mini': 'light',
+}
+
+/**
+ * Known per-1M-token prices of a model id: AI_PRICE_TABLE='{"model":{"in":3,"out":15}}'
+ * first, then the built-in price class; null when the model is unknown.
+ */
+export function knownModelPrices(model: string | null | undefined): { in: number; out: number } | null {
+  if (!model) return null
+  try {
+    const table = process.env.AI_PRICE_TABLE ? JSON.parse(process.env.AI_PRICE_TABLE) : null
+    const row = table?.[model]
+    if (row && Number.isFinite(row.in) && Number.isFinite(row.out)) return { in: row.in, out: row.out }
+  } catch {
+    // malformed override → built-in prices
+  }
+  const tier = KNOWN_MODEL_PRICE_TIER[model]
+  return tier ? TIER_ESTIMATE_PRICES_PER_MTOK[tier] : null
+}
+
+/** Rough token count: ~3.5 chars per token for mixed RU/EN text, rounded up. */
+export function estimateTokens(text: string): number {
+  return Math.ceil(text.length / 3.5)
+}
+
+/** Upper-bound cost of a call: the input as sent, the output at maxTokens. */
+export function worstCaseCostUsd(prices: { in: number; out: number }, inputText: string, maxTokens: number): number {
+  return (estimateTokens(inputText) * prices.in + maxTokens * prices.out) / 1_000_000
+}
+
 export type ContentPart =
   | { type: 'text'; text: string }
   | { type: 'image_url'; image_url: { url: string } }

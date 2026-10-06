@@ -25,7 +25,14 @@
  */
 import type { ZodSchema } from 'zod'
 import { extractJson, OPENROUTER_MODELS } from './openrouter'
-import { chatCompletion, computeCost, TIER_ESTIMATE_PRICES_PER_MTOK } from './providers/client'
+import {
+  chatCompletion,
+  computeCost,
+  estimateTokens,
+  knownModelPrices,
+  TIER_ESTIMATE_PRICES_PER_MTOK,
+  worstCaseCostUsd,
+} from './providers/client'
 import { hasConfiguredChatRoute, providerBudgetRefusal, resolveTarget } from './providers/router'
 import type { CostSource } from './providers/types'
 
@@ -38,9 +45,11 @@ export const DEFAULT_TIER_MODELS: Record<ModelTier, string> = {
 }
 
 /**
- * USD per 1M tokens, used ONLY to estimate a call before it is made (budget
- * guard). Recorded costs come from OpenRouter's usage accounting. Deliberately
- * conservative; override with AI_PRICE_TABLE='{"model":{"in":3,"out":15}}'.
+ * USD per 1M tokens by tier (deliberately conservative). The pre-call budget
+ * estimate prices the model actually called (AI_PRICE_TABLE, then the
+ * built-in prices of known ids) and an unknown model at the premium rate, so
+ * an expensive override on a cheap tier is never under-estimated. A recorded
+ * cost comes from the provider, else the model's configured price, else these.
  */
 const ESTIMATE_PRICES_PER_MTOK: Record<ModelTier, { in: number; out: number }> = TIER_ESTIMATE_PRICES_PER_MTOK
 
@@ -107,26 +116,23 @@ export function modelForTier(tier: ModelTier, override?: string | null): string 
   return env?.trim() || DEFAULT_TIER_MODELS[tier]
 }
 
-function priceFor(tier: ModelTier, model: string): { in: number; out: number } {
-  try {
-    const table = process.env.AI_PRICE_TABLE ? JSON.parse(process.env.AI_PRICE_TABLE) : null
-    const row = table?.[model]
-    if (row && Number.isFinite(row.in) && Number.isFinite(row.out)) return row
-  } catch {
-    // malformed override → defaults
+/** Prices to record a call with when neither the provider nor the model row gives one. */
+function recordingPrices(tier: ModelTier, ...models: Array<string | null | undefined>): { in: number; out: number } {
+  for (const m of models) {
+    const known = knownModelPrices(m)
+    if (known) return known
   }
   return ESTIMATE_PRICES_PER_MTOK[tier]
 }
 
-/** Rough token count: ~4 chars per token for mixed RU/EN text, rounded up. */
-export function estimateTokens(text: string): number {
-  return Math.ceil(text.length / 3.5)
-}
+export { estimateTokens }
 
-/** Upper-bound cost of a call (input as sent, output at maxTokens). */
-export function estimateCostUsd(tier: ModelTier, model: string, inputText: string, maxTokens: number): number {
-  const p = priceFor(tier, model)
-  return (estimateTokens(inputText) * p.in + maxTokens * p.out) / 1_000_000
+/**
+ * Upper-bound cost of a call (input as sent, output at maxTokens), priced by
+ * `model`; an unknown model id is priced at the premium rate.
+ */
+export function estimateCostUsd(_tier: ModelTier, model: string, inputText: string, maxTokens: number): number {
+  return worstCaseCostUsd(knownModelPrices(model) ?? ESTIMATE_PRICES_PER_MTOK.premium, inputText, maxTokens)
 }
 
 
@@ -151,6 +157,15 @@ export async function callLlm(req: LlmRequest): Promise<LlmResult> {
   const started = Date.now()
   let attempts = 0
   let lastError: { code: LlmErrorCode; message: string } = { code: 'PROVIDER_ERROR', message: 'unknown' }
+  // A timed-out attempt may still be generated and billed by the provider:
+  // count its worst case, so budgets and agent_runs.cost_usd do not see $0.
+  let lostCostUsd = 0
+  const lostUsage = (): LlmUsage | null => lostCostUsd > 0
+    ? {
+        model: target.model, tier: req.tier, tokensIn: estimateTokens(req.system + req.user), tokensOut: 0,
+        costUsd: lostCostUsd, costSource: 'estimate', latencyMs: Date.now() - started, attempts, provider: target.providerKey,
+      }
+    : null
 
   while (attempts < 2) {
     attempts += 1
@@ -166,7 +181,10 @@ export async function callLlm(req: LlmRequest): Promise<LlmResult> {
       fetchImpl: req.fetchImpl,
     })
     if (!res.ok) {
-      if (!res.retryable) return { ok: false, error: res.code, message: res.message, usage: null }
+      if (res.code === 'TIMEOUT') {
+        lostCostUsd += worstCaseCostUsd(recordingPrices(req.tier, target.model), req.system + req.user, req.maxTokens)
+      }
+      if (!res.retryable) return { ok: false, error: res.code, message: res.message, usage: lostUsage() }
       lastError = { code: res.code, message: res.message }
       if (attempts < 2) await sleep(1500 * attempts)
       continue
@@ -180,14 +198,14 @@ export async function callLlm(req: LlmRequest): Promise<LlmResult> {
       tokensOut,
       priceInPerMtok: target.priceInPerMtok,
       priceOutPerMtok: target.priceOutPerMtok,
-      estimatePrices: priceFor(req.tier, answeredBy),
+      estimatePrices: recordingPrices(req.tier, answeredBy, target.model),
     })
     const usage: LlmUsage = {
       model: answeredBy,
       tier: req.tier,
       tokensIn,
       tokensOut,
-      costUsd: cost.costUsd,
+      costUsd: cost.costUsd + lostCostUsd,
       costSource: cost.costSource,
       latencyMs: Date.now() - started,
       attempts,
@@ -200,7 +218,7 @@ export async function callLlm(req: LlmRequest): Promise<LlmResult> {
     return { ok: true, text, usage }
   }
   console.error(`[ai-gateway:${req.label}] failed after ${attempts} attempts: ${lastError.code}`)
-  return { ok: false, error: lastError.code, message: lastError.message, usage: null }
+  return { ok: false, error: lastError.code, message: lastError.message, usage: lostUsage() }
 }
 
 /** JSON call validated by a Zod schema (the schema is authoritative). */

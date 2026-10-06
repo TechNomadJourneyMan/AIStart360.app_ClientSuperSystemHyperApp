@@ -3,7 +3,8 @@
  * agents/approvals) with the SAME signed buttons as the notification cards
  * («ap:…», lib/notifications/approval-callback.ts). A press is handled by
  * lib/telegram/staff-updates.ts handleApprovalCallback: linked staff with
- * approvals.decide, atomic decideApproval, cards closed, audit entry.
+ * approvals.decide, a required audit entry first, then atomic decideApproval
+ * and the cards closed.
  */
 import { listApprovals } from '@/lib/agents/admin'
 import { approvalCallbackData } from '@/lib/notifications/approval-callback'
@@ -53,10 +54,12 @@ export async function adminApprovalCallback(q: TgCallbackQuery, deps: BotDeps): 
   const outcome = await handleApprovalCallback(q, {
     bot: 'admin',
     fetchImpl: deps.fetchImpl,
-    audit: async ({ actorId, role, approvalId, decision, ok }) => {
+    // Written before the decision and required: no journal entry → no decision.
+    audit: async ({ actorId, role, approvalId, decision }) => {
       await deps.audit(
         { id: actorId, kind: 'telegram', role: role as StaffRole },
-        { action: 'agent.approval.decide', entityType: 'agent_approval', entityId: approvalId, newValue: { decision, applied: ok }, metadata: { via: 'telegram' } },
+        { action: 'agent.approval.decide', entityType: 'agent_approval', entityId: approvalId, newValue: { decision }, metadata: { via: 'telegram' } },
+        { required: true },
       )
     },
   })

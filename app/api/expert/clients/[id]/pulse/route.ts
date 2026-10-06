@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic'
 // renders «—» and the expert can still leave comments).
 
 import { NextResponse } from 'next/server'
-import { requireExpert, srGet } from '@/lib/expert-auth'
+import { expertBlockResponse, resolveExpert, srGet } from '@/lib/expert-auth'
 
 interface PulseMetrics {
   avgCheck: number | null
@@ -33,8 +33,8 @@ function emptyMetrics(): PulseMetrics {
 }
 
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
-  const viewer = await requireExpert()
-  if (!viewer) return NextResponse.json({ error: 'forbidden' }, { status: 403 })
+  const auth = await resolveExpert()
+  if (!auth.ok) return expertBlockResponse(auth.block)
 
   const clientId = params.id
   if (!/^[0-9a-f-]{36}$/i.test(clientId)) return NextResponse.json({ error: 'bad id' }, { status: 400 })

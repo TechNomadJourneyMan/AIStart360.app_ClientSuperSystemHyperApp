@@ -9,13 +9,16 @@
  * Wires to `/api/v1/point-a/insights` (GET list, POST composer) and
  * `/api/v1/point-a/insights/[id]` (PATCH confirm / answer). When the API has no
  * items the feed shows an explicit empty state — never fabricated questions;
- * a new question appears only after the API saved it.
+ * a new question appears only after the API saved it. A failed load is shown
+ * as an error with «Повторить» (no zero counts), and a failed save is shown
+ * whatever the feed state.
  */
 
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { InsightItem, type InsightFeedItem } from '@/components/point-a/v2/InsightItem'
+import { useInsightsFeed } from '@/components/point-a/v2/useInsightsFeed'
 import { usePointAInsightActions } from '@/hooks/usePointAInsightActions'
 
 type FilterKey = 'all' | 'ai' | 'expert' | 'client'
@@ -29,57 +32,27 @@ interface Counts {
   unanswered: number
 }
 
-interface ApiResponse {
-  ok: boolean
-  data?: { items: InsightFeedItem[]; counts: Counts }
-}
-
 // ─── Page ────────────────────────────────────────────────────────────────────
 
 const PAGE_SIZE = 5
 
 export default function InsightsPage() {
-  const [items, setItems] = useState<InsightFeedItem[]>([])
-  const [loading, setLoading] = useState(true)
+  const { items, setItems, loading, loadError, reload } = useInsightsFeed(100)
   const [filter, setFilter] = useState<FilterKey>('all')
   const [query, setQuery] = useState('')
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE)
   const router = useRouter()
   const actions = usePointAInsightActions()
 
-  const applySaved = useCallback((saved: InsightFeedItem | null) => {
-    if (!saved) return
+  const applySaved = useCallback((saved: InsightFeedItem | null): boolean => {
+    if (!saved) return false
     setItems((prev) => prev.map((it) => (it.id === saved.id ? { ...it, ...saved } : it)))
-  }, [])
+    return true
+  }, [setItems])
 
   const [composerOpen, setComposerOpen] = useState(false)
   const [composerText, setComposerText] = useState('')
   const [composerCategory, setComposerCategory] = useState('СТРАТЕГИЯ')
-
-  useEffect(() => {
-    let cancelled = false
-    setLoading(true)
-    ;(async () => {
-      try {
-        const res = await fetch('/api/v1/point-a/insights?limit=100', { cache: 'no-store' })
-        if (!res.ok) throw new Error(`HTTP ${res.status}`)
-        const json = (await res.json()) as ApiResponse
-        if (cancelled) return
-        if (json?.ok && json.data?.items?.length) {
-          setItems(json.data.items)
-        } else {
-          setItems([])
-        }
-      } catch {
-        if (!cancelled) setItems([])
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [])
 
   const counts = useMemo(() => {
     const c: Counts = { all: items.length, ai: 0, expert: 0, client: 0, pending: 0, unanswered: 0 }
@@ -138,7 +111,7 @@ export default function InsightsPage() {
                 Лента уточняющих вопросов
               </h1>
               <p className="text-xs text-on-surface-variant mt-1">
-                Вопросы от ИИ, экспертов и клиента · {counts.all} обсуждений
+                Вопросы от ИИ, экспертов и клиента{loadError ? '' : ` · ${counts.all} обсуждений`}
               </p>
             </div>
             <button
@@ -154,11 +127,12 @@ export default function InsightsPage() {
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <div className="flex items-center gap-1.5 flex-wrap">
               {([
-                ['all', `Все · ${counts.all}`],
-                ['ai', `ИИ · ${counts.ai}`],
-                ['expert', `Эксперт · ${counts.expert}`],
-                ['client', `Клиент · ${counts.client}`],
-              ] as [FilterKey, string][]).map(([key, label]) => {
+                ['all', 'Все', counts.all],
+                ['ai', 'ИИ', counts.ai],
+                ['expert', 'Эксперт', counts.expert],
+                ['client', 'Клиент', counts.client],
+              ] as [FilterKey, string, number][]).map(([key, name, n]) => {
+                const label = loadError ? name : `${name} · ${n}`
                 const active = filter === key
                 return (
                   <button
@@ -246,6 +220,13 @@ export default function InsightsPage() {
           </div>
         )}
 
+        {/* Save errors show whatever the feed state (also on an empty feed). */}
+        {actions.error && (
+          <p className="mb-3 text-xs text-error" role="alert">
+            {actions.error}
+          </p>
+        )}
+
         {/* Feed body */}
         {loading ? (
           <div className="space-y-3">
@@ -260,6 +241,19 @@ export default function InsightsPage() {
               </div>
             ))}
           </div>
+        ) : loadError ? (
+          <div className="rounded-2xl border border-error/20 bg-error/5 p-6 text-center" role="alert">
+            <p className="text-sm text-on-surface">{loadError}</p>
+            <p className="mt-1 text-xs text-on-surface-variant">Вопросы могут быть — мы просто не смогли их получить.</p>
+            <button
+              type="button"
+              onClick={reload}
+              className="mt-3 inline-flex items-center gap-1.5 rounded-xl border border-primary/40 bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/15"
+            >
+              <span className="material-symbols-outlined text-[14px]" aria-hidden="true">refresh</span>
+              Повторить
+            </button>
+          </div>
         ) : visible.length === 0 ? (
           <div className="rounded-2xl border border-white/[0.04] bg-surface-container-low p-10 text-center">
             <span className="material-symbols-outlined text-on-surface-variant/40 text-4xl">
@@ -271,11 +265,6 @@ export default function InsightsPage() {
           </div>
         ) : (
           <>
-            {actions.error && (
-              <p className="mb-3 text-xs text-error" role="alert">
-                {actions.error}
-              </p>
-            )}
             {visible.map((it) => (
               <InsightItem
                 key={it.id}

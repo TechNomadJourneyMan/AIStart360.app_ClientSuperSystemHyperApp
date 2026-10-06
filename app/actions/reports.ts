@@ -4,9 +4,9 @@ import { mkdir, writeFile } from 'fs/promises'
 import path from 'path'
 import { randomUUID } from 'crypto'
 import { revalidatePath } from 'next/cache'
-import { cookies } from 'next/headers'
 import { z } from 'zod'
 import { prisma } from '@/lib/db'
+import { requireExpert, type ExpertViewer } from '@/lib/expert-auth'
 
 type DbClient = {
   reportDocument: {
@@ -34,18 +34,21 @@ function toExtension(fileName: string): 'pdf' | 'xlsx' | 'csv' | 'docx' | null {
   return null
 }
 
-export async function createReportMetadata(
-  input: {
-    name: string
-    clientName: string
-    category: 'GRI' | 'Financial' | 'Growth' | 'Market' | 'Custom'
-    type: 'pdf' | 'xlsx' | 'csv' | 'docx'
-    fileUrl: string
-    fileSizeBytes: number
-    uploadedBy: string
-  },
-  db: DbClient = prisma,
-) {
+/**
+ * Every export of this 'use server' module is a public RPC endpoint (callable
+ * with a Next-Action header from any page), so each one authorizes on its own:
+ * the /reports page is staff-only in middleware, and so are these actions —
+ * an approved admin / super_admin who passed the second factor
+ * (requireExpert: approved status + staffMfaGate).
+ */
+const REPORT_HUB_ROLES = new Set(['admin', 'super_admin'])
+
+async function reportHubStaff(): Promise<ExpertViewer | null> {
+  const viewer = await requireExpert()
+  return viewer && REPORT_HUB_ROLES.has(viewer.role ?? '') ? viewer : null
+}
+
+async function insertReportMetadata(input: z.input<typeof reportMetadataSchema>, db: DbClient) {
   const parsed = reportMetadataSchema.safeParse(input)
   if (!parsed.success) {
     throw new Error('VALIDATION_ERROR')
@@ -56,8 +59,33 @@ export async function createReportMetadata(
   })
 }
 
-export async function getReportDocuments(db: DbClient = prisma) {
-  return db.reportDocument.findMany({
+/**
+ * Insert a report_documents row. With an explicit `db` (server code and tests
+ * pass a transaction — an RPC caller cannot send a client object) the caller
+ * has authorized already; without one this is the RPC path: staff only, and
+ * the uploader is the session's identity, never the caller's claim.
+ */
+export async function createReportMetadata(
+  input: {
+    name: string
+    clientName: string
+    category: 'GRI' | 'Financial' | 'Growth' | 'Market' | 'Custom'
+    type: 'pdf' | 'xlsx' | 'csv' | 'docx'
+    fileUrl: string
+    fileSizeBytes: number
+    uploadedBy: string
+  },
+  db?: DbClient,
+) {
+  if (db) return insertReportMetadata(input, db)
+  const staff = await reportHubStaff()
+  if (!staff) throw new Error('UNAUTHORIZED')
+  return insertReportMetadata({ ...input, uploadedBy: staff.email ?? staff.id }, prisma)
+}
+
+export async function getReportDocuments() {
+  if (!(await reportHubStaff())) throw new Error('UNAUTHORIZED')
+  return prisma.reportDocument.findMany({
     orderBy: { createdAt: 'desc' },
     // Cap the list — the Reports hub shows recent docs, not an unbounded dump.
     take: 100,
@@ -65,6 +93,10 @@ export async function getReportDocuments(db: DbClient = prisma) {
 }
 
 export async function uploadReport(formData: FormData) {
+  // Authorize before touching the file or the disk.
+  const staff = await reportHubStaff()
+  if (!staff) return { error: 'UNAUTHORIZED' }
+
   try {
     const file = formData.get('file')
     const name = String(formData.get('name') || '')
@@ -94,17 +126,10 @@ export async function uploadReport(formData: FormData) {
     const buffer = Buffer.from(await file.arrayBuffer())
     await writeFile(diskPath, buffer)
 
-    const cookieStore = await cookies()
-    const userId = cookieStore.get('aistart360_user_id')?.value
-    let uploadedBy = 'System'
+    // The uploader is the authenticated session, never a client-set cookie.
+    const uploadedBy = staff.email ?? staff.id
 
-    if (userId) {
-      const user = await prisma.user.findUnique({ where: { id: userId } })
-      if (user?.name) uploadedBy = user.name
-      else if (user?.email) uploadedBy = user.email
-    }
-
-    await createReportMetadata({
+    await insertReportMetadata({
       name: name || file.name,
       clientName: clientName || 'Без клиента',
       category,
@@ -112,7 +137,7 @@ export async function uploadReport(formData: FormData) {
       fileUrl: publicUrl,
       fileSizeBytes: file.size,
       uploadedBy,
-    })
+    }, prisma)
 
     revalidatePath('/reports')
     revalidatePath('/owner/reports')

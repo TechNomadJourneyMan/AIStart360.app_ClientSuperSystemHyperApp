@@ -120,6 +120,18 @@ type GriLoad =
   | { ok: true; rows: GriAssessmentRow[] }
   | { ok: false }
 
+/** A CRM read for the staff widgets: a failure is logged and shown, never an empty list. */
+type CrmLoad<T> = { ok: true; rows: T[] } | { ok: false }
+function crmLoad<T>(what: string, p: Promise<T[]>): Promise<CrmLoad<T>> {
+  return p.then<CrmLoad<T>, CrmLoad<T>>(
+    (rows) => ({ ok: true, rows }),
+    (err) => {
+      console.error(`[Dashboard] CRM ${what} read failed:`, err)
+      return { ok: false }
+    },
+  )
+}
+
 /** Card «Оценки GRI»: current gri_assessments (one per client), not Point A diagnostics. */
 function buildGriCard(gri: GriLoad, dist: GriIndexDistribution | null): KpiCardData {
   if (!gri.ok || !dist) {
@@ -482,21 +494,21 @@ export default async function DashboardPage() {
 
   // GRI: the clients' current GRI assessments, read once for the card, the
   // portfolio radar and the band distribution. A failed read is shown as such.
-  const [data, crmRequests, crmClients, gri] = await Promise.all([
+  const [data, crmRequestsLoad, crmClientsLoad, gri] = await Promise.all([
     getDashboardExtendedData(),
-    prisma.adminRequest.findMany({
+    crmLoad('requests', prisma.adminRequest.findMany({
       take: 6,
       orderBy: { createdAt: 'desc' },
       select: {
         id: true, type: true, status: true, priority: true, createdAt: true,
         company: { select: { name: true } },
       },
-    }).catch(() => []),
-    prisma.client.findMany({
+    })),
+    crmLoad('clients', prisma.client.findMany({
       take: 5,
       orderBy: { createdAt: 'desc' },
       select: { id: true, name: true, industry: true, stage: true, status: true },
-    }).catch(() => []),
+    })),
     loadCurrentGriAssessments().then<GriLoad, GriLoad>(
       (rows) => ({ ok: true, rows }),
       (err) => {
@@ -511,6 +523,11 @@ export default async function DashboardPage() {
   const kpi = buildKpi(data, buildGriCard(gri, griDist))
   const alerts = data?.alerts ?? []
   const griDistRows = griDist ? buildGriDistRows(griDist) : []
+
+  // Either CRM read failing makes the widget say so (no "Нет заявок", no 0 pending).
+  const crmFailed = !crmRequestsLoad.ok || !crmClientsLoad.ok
+  const crmRequests = crmRequestsLoad.ok ? crmRequestsLoad.rows : []
+  const crmClients = crmClientsLoad.ok ? crmClientsLoad.rows : []
 
   const crmReqMapped: CrmRequest[] = crmRequests.map((r) => ({
     id: r.id,
@@ -633,7 +650,14 @@ export default async function DashboardPage() {
           </div>
 
           <aside className="space-y-6">
-              {showCrmWidgets && (
+              {showCrmWidgets && crmFailed && (
+                <div className="bg-surface-container-low border border-error/20 rounded-2xl p-5" role="alert">
+                  <p className="text-sm font-medium text-on-surface">Активность CRM</p>
+                  <p className="mt-1 text-xs text-error">Не удалось загрузить заявки и клиентов CRM — список и число ожидающих заявок неизвестны. Обновите страницу.</p>
+                  <Link href="/admin/requests" className="mt-2 inline-block text-[11px] font-mono text-primary hover:underline">Открыть заявки</Link>
+                </div>
+              )}
+              {showCrmWidgets && !crmFailed && (
                 <CrmActivity
                   requests={crmReqMapped}
                   clients={crmClientsMapped}

@@ -551,9 +551,11 @@ interface Health {
   tables: Array<{ name: string; ok: boolean; rows: number | null; error: string | null }>
   buckets: Array<{ name: string; ok: boolean }>
   /** Absent on older deployments; null when the table is unavailable. */
-  integrations?: { crm: { active: number; errors: number; plaintextTokens: number; lastSyncAt: string | null } | null }
+  integrations?: { crm: { active: number; errors: number; plaintextTokens: number; lastSyncAt: string | null } | null; crmError?: string | null }
   /** Same checks the monitoring agent runs; null until migrations 086–087 are applied. */
   agents?: Array<{ key: string; label: string; status: 'ok' | 'warn' | 'critical'; value: number; detail: string }> | null
+  /** The agent checks could not run: migrations missing, or a real failure. */
+  agentsError?: { kind: 'not_migrated' | 'failed'; message: string } | null
 }
 
 const CHECK_STATUS = {
@@ -570,6 +572,9 @@ function HealthCard() {
     return h.data.env.filter((e) => e.required && !e.configured).length + h.data.tables.filter((t) => !t.ok).length + h.data.buckets.filter((b) => !b.ok).length
       + (h.data.agents ?? []).filter((c) => c.status === 'critical').length
       + (crm && crm.plaintextTokens > 0 ? 1 : 0)
+      // A check that could not run is not "all clear".
+      + (h.data.integrations?.crmError ? 1 : 0)
+      + (h.data.agentsError?.kind === 'failed' ? 1 : 0)
   }, [h.data])
   const warnings = (h.data?.agents ?? []).filter((c) => c.status === 'warn').length + (h.data?.integrations?.crm?.errors ? 1 : 0)
 
@@ -659,7 +664,11 @@ function HealthCard() {
                 ))}
               </ul>
             ) : (
-              <p className="text-[11px] text-slate-500">Проверки агентов недоступны: похоже, миграции 086–087 ещё не применены.</p>
+              h.data.agentsError?.kind === 'failed' ? (
+                <p role="alert" className="text-[11px] text-red-300" title={h.data.agentsError.message}>Проверки агентов не выполнены: {h.data.agentsError.message}</p>
+              ) : (
+                <p className="text-[11px] text-slate-500">Проверки агентов недоступны: похоже, миграции 086–087 ещё не применены.</p>
+              )
             )}
             <Link href="/admin-giga-panel/agents" className="mt-2 inline-flex items-center gap-1 text-[11px] text-blue-300 hover:underline"><Bot size={11} /> ИИ-агенты</Link>
           </div>
@@ -679,7 +688,11 @@ function HealthCard() {
                 </li>
               </ul>
             ) : (
-              <p className="text-[11px] text-slate-500">Нет данных о подключениях CRM (таблица недоступна или API старой версии).</p>
+              h.data.integrations?.crmError ? (
+                <p role="alert" className="text-[11px] text-red-300" title={h.data.integrations.crmError}>Проверка CRM-подключений не выполнена — нет данных (в том числе о токенах без шифрования): {h.data.integrations.crmError}</p>
+              ) : (
+                <p className="text-[11px] text-slate-500">Нет данных о подключениях CRM (таблица недоступна или API старой версии).</p>
+              )
             )}
             {!!h.data.integrations?.crm?.plaintextTokens && (
               <p role="alert" className="mt-2 rounded-xl border border-red-500/25 bg-red-500/10 px-3 py-2 text-[11px] leading-relaxed text-red-200">

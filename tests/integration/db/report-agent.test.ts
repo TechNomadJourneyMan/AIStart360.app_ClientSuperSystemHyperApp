@@ -276,6 +276,22 @@ describe.skipIf(!dbTestsEnabled)('report agent and report versions', async () =>
     const after = (await versions(s.companyId))[1]
     expect(after.status).toBe('superseded')
     expect(after.provenance.review).toMatchObject({ action: 'withdraw', by: 'staff-reviewer-1', reason: 'Цифры выручки на перепроверке' })
+
+    // Rebuilding the same data after a withdraw gives a fresh publishable version (the
+    // withdrawn one no longer counts as "unchanged"), and a reject behaves the same way.
+    const rebuilt = await run(s.companyId)
+    expect(rebuilt.rep?.summary).toContain('версия 3 готова к проверке')
+    let vs = await versions(s.companyId)
+    expect(vs.map((v) => [v.version, v.status])).toEqual([[1, 'superseded'], [2, 'superseded'], [3, 'ready']])
+    expect(vs[2].data_hash).toBe(vs[1].data_hash)
+    const rej = await reportRoute.POST(post(`/api/giga-admin/reports/${vs[2].id}`, { action: 'reject', reason: 'Нарратив неточен' }), { params: { id: vs[2].id } })
+    expect(rej.status).toBe(200)
+    await run(s.companyId)
+    vs = await versions(s.companyId)
+    expect(vs.map((v) => [v.version, v.status])).toEqual([[1, 'superseded'], [2, 'superseded'], [3, 'superseded'], [4, 'ready']])
+    // …while a still-ready version with the same data is not duplicated.
+    await run(s.companyId)
+    expect(await versions(s.companyId)).toHaveLength(4)
   })
 
   it('RLS: a client reads only published versions of its own company and cannot write any', async () => {

@@ -23,7 +23,10 @@ import {
   chatCompletion,
   computeCost,
   createEmbeddings,
+  estimateTokens,
+  knownModelPrices,
   TIER_ESTIMATE_PRICES_PER_MTOK,
+  worstCaseCostUsd,
   type ChatMessage,
 } from './providers/client'
 import { hasConfiguredChatRoute, providerBudgetRefusal, resolveTarget } from './providers/router'
@@ -197,15 +200,36 @@ export async function chatWithOpenRouter(opts: ChatOptions): Promise<string | nu
   messages.push({ role: 'user', content: opts.user })
 
   const timeoutMs = opts.timeoutMs ?? 45_000
+  const maxTokens = opts.maxTokens ?? 2000
+  // Prices for a call whose cost the provider did not report: the model's own
+  // (AI_PRICE_TABLE / known ids), else the conservative tier estimate.
+  const fallbackPrices = (answeredBy?: string) =>
+    knownModelPrices(answeredBy) ?? knownModelPrices(target.model) ?? TIER_ESTIMATE_PRICES_PER_MTOK[tier]
   const res = await chatCompletion(target, {
     messages,
-    maxTokens: opts.maxTokens ?? 2000,
+    maxTokens,
     temperature: opts.temperature === null ? null : (opts.temperature ?? 0.7),
     json: opts.jsonMode,
     jsonSchema: opts.jsonSchema,
     timeoutMs,
   })
   if (!res.ok) {
+    if (res.code === 'TIMEOUT') {
+      // The provider may have generated (and billed) the answer we stopped
+      // waiting for: record its worst case so the platform budget sees it.
+      const input = `${opts.system ?? ''}${opts.user}`
+      await recordUsage({
+        source: `feature:${opts.label ?? 'chat'}`,
+        model: target.model,
+        tokensIn: estimateTokens(input),
+        tokensOut: 0,
+        costUsd: worstCaseCostUsd(fallbackPrices(), input, maxTokens),
+        costSource: 'estimate',
+        companyId: opts.companyId ?? null,
+        providerKey: target.providerKey,
+        ok: false,
+      })
+    }
     if (res.code === 'TIMEOUT' && res.status === null) {
       console.error(`${logTag(target)} request timed out after ${timeoutMs}ms`)
     } else if (opts.privacySensitive) {
@@ -225,9 +249,9 @@ export async function chatWithOpenRouter(opts: ChatOptions): Promise<string | nu
     tokensOut,
     priceInPerMtok: target.priceInPerMtok,
     priceOutPerMtok: target.priceOutPerMtok,
-    // OpenRouter reports the real cost; for other providers without prices
-    // record a conservative estimate so budgets still bite.
-    estimatePrices: target.kind === 'openrouter' ? null : TIER_ESTIMATE_PRICES_PER_MTOK[tier],
+    // OpenRouter normally reports the real cost; when it (or another provider
+    // without configured prices) does not, record an estimate, never $0.
+    estimatePrices: fallbackPrices(res.model),
   })
   await recordUsage({
     source: `feature:${opts.label ?? 'chat'}`,

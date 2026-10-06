@@ -66,7 +66,9 @@ export const loadDocumentTool = registerTool({
       if (err instanceof StorageError) {
         if (err.code === 'NOT_FOUND') throw new AgentError('FILE_MISSING', 'файл не найден в хранилище')
         if (err.code === 'TOO_LARGE') throw new AgentError('TOO_LARGE', 'файл больше допустимого размера')
-        throw new AgentError('STORAGE_UNAVAILABLE', `хранилище недоступно: ${err.message}`, true)
+        // The storage message stays in the server log: run errors are tenant-readable.
+        console.error(`[agents] document ${document.id}: storage download failed (${err.code})`, err.message)
+        throw new AgentError('STORAGE_UNAVAILABLE', `хранилище недоступно (${err.code})`, true)
       }
       throw new AgentError('STORAGE_UNAVAILABLE', 'ошибка загрузки файла', true)
     }

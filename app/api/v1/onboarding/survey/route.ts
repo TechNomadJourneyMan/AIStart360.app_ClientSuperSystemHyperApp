@@ -188,12 +188,21 @@ export async function POST(req: NextRequest) {
   }
 
   // Platform events drive the diagnostic pipeline (diagnostic_orchestrator):
-  // the first completion once per company, later explicit submits as updates.
-  if (company_id && (announce || finalSubmitted)) {
+  // ONBOARDING_COMPLETED when the questionnaire has just become complete (once
+  // per company — dedupe key), QUESTIONNAIRE_COMPLETED for any other explicit
+  // submit (an update). The choice follows the completion transition, not
+  // `announce` (which is true on every final submit, so later submits were
+  // dropped as duplicates of the one-time event and never re-ran the pipeline).
+  // The actor is who made the change: the admin in edit mode, staff saving for
+  // a client, otherwise the client.
+  const justCompleted = progress.is_complete && !wasComplete
+  if (company_id && (justCompleted || finalSubmitted)) {
     const payload = { completed_steps: progress.completed, total_steps: progress.total_steps, is_complete: progress.is_complete }
-    emitPlatformEventSafely(announce
-      ? { name: 'ONBOARDING_COMPLETED', companyId: company_id, subjectType: 'survey', subjectId: targetUserId, actor: `user:${targetUserId}`, payload, dedupeKey: `onboarding_completed:${company_id}` }
-      : { name: 'QUESTIONNAIRE_COMPLETED', companyId: company_id, subjectType: 'survey', subjectId: targetUserId, actor: `user:${targetUserId}`, payload, dedupeKey: `questionnaire_completed:${company_id}:${new Date().toISOString().slice(0, 16)}` })
+    const actorId = imp?.aid ?? sessionUser?.id ?? targetUserId
+    const actor = actorId.includes(':') ? actorId : `user:${actorId}`
+    emitPlatformEventSafely(justCompleted
+      ? { name: 'ONBOARDING_COMPLETED', companyId: company_id, subjectType: 'survey', subjectId: targetUserId, actor, payload, dedupeKey: `onboarding_completed:${company_id}` }
+      : { name: 'QUESTIONNAIRE_COMPLETED', companyId: company_id, subjectType: 'survey', subjectId: targetUserId, actor, payload, dedupeKey: `questionnaire_completed:${company_id}:${new Date().toISOString().slice(0, 16)}` })
   }
 
   // Autosaves skip the Sheets mirror: one mirror per explicit save is enough,

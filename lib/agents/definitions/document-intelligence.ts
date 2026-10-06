@@ -38,6 +38,8 @@ const RUN_DEADLINE_MS = 230_000
 const LIMITS = {
   maxAttempts: 3,
   leaseSeconds: 360,
+  /** RUN_DEADLINE_MS plus saving and bookkeeping (lib/agents/queue.ts drainQueue). */
+  maxRunSeconds: 270,
   perRunBudgetUsd: 0.75,
   dailyBudgetUsd: 15,
   maxLlmCalls: 12,
@@ -205,7 +207,9 @@ export const documentIntelligenceAgent: AgentDefinition<Input> = {
           dedupeKey: `file_processed:${documentId}:${processingRun}`,
         })
       } catch (err) {
-        await ctx.log('warn', 'event.failed', `FILE_PROCESSED не записано: ${err instanceof Error ? err.message : String(err)}`)
+        // Raw DB text only in the server log: agent events are tenant-readable.
+        console.error(`[agents] document ${documentId}: FILE_PROCESSED emit failed`, err instanceof Error ? err.message : err)
+        await ctx.log('warn', 'event.failed', 'FILE_PROCESSED не записано')
       }
 
       const summary = outcome.payload.empty_reason

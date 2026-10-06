@@ -1,7 +1,8 @@
 /**
  * POST /api/v1/onboarding/documents/[id]/process no longer parses inline: it
  * resets the document and enqueues a document_intelligence task (202),
- * idempotent per document + processing attempt, owner-or-staff authz.
+ * idempotent per document + processing attempt. Authz: staff, a company
+ * manager, or the uploader while still a non-viewer member of the company.
  */
 import { NextRequest } from 'next/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -16,6 +17,8 @@ const s = vi.hoisted(() => ({
   live: null as { id: string; status: string } | null,
   enqueued: [] as Array<Record<string, unknown>>,
   existingKeys: new Map<string, { id: string; status: string }>(),
+  /** Role of the session user in the document's company (null = not a member). */
+  tenantRole: 'owner' as string | null,
 }))
 
 vi.mock('next/headers', () => ({ cookies: () => ({ getAll: () => [], get: () => undefined, set: vi.fn() }) }))
@@ -25,7 +28,11 @@ vi.mock('@/lib/api-identity', () => ({
   getSessionRole: async () => s.role,
   isStaffRole: (r: string | null) => ['admin', 'super_admin', 'expert', 'manager', 'analyst'].includes(r ?? ''),
 }))
-vi.mock('@/lib/tenancy', () => ({ resolveTenant: async () => ({ ok: false, status: 404, error: 'no_company' }) }))
+vi.mock('@/lib/tenancy', () => ({
+  resolveTenant: async ({ companyId }: { companyId: string }) => (s.tenantRole && s.user
+    ? { ok: true, tenant: { userId: s.user.id, companyId, role: s.tenantRole, canManage: ['owner', 'admin', 'staff'].includes(s.tenantRole), legacy: false } }
+    : { ok: false, status: 404, error: 'no_company' }),
+}))
 vi.mock('@/lib/rate-limit', () => ({ isRateLimitedKey: async () => false }))
 vi.mock('@/lib/agents/queue', () => ({
   enqueueAgentTask: vi.fn(async (opts: Record<string, unknown>) => {
@@ -57,6 +64,7 @@ beforeEach(() => {
   s.live = null
   s.enqueued = []
   s.existingKeys.clear()
+  s.tenantRole = 'owner'
 })
 
 describe('POST …/documents/[id]/process', () => {
@@ -64,7 +72,21 @@ describe('POST …/documents/[id]/process', () => {
     s.user = null
     expect((await call()).status).toBe(401)
     s.user = { id: 'stranger' }
+    s.tenantRole = null
     expect((await call()).status).toBe(404)
+  })
+
+  it('a viewer cannot get their own (PostgREST-inserted) row processed; a removed member neither', async () => {
+    s.tenantRole = 'viewer'
+    expect(await call()).toMatchObject({ status: 403, body: { code: 'FORBIDDEN' } })
+    s.tenantRole = null // no longer a member of the company
+    expect((await call()).status).toBe(404)
+    expect(s.enqueued).toEqual([])
+  })
+
+  it('a plain member may reprocess the document they uploaded', async () => {
+    s.tenantRole = 'member'
+    expect((await call()).status).toBe(202)
   })
 
   it('enqueues a manual document_intelligence task keyed by document + attempt (202)', async () => {
@@ -98,6 +120,7 @@ describe('POST …/documents/[id]/process', () => {
   it('platform staff may reprocess another user’s document', async () => {
     s.user = { id: 'staff-1' }
     s.role = 'expert'
+    s.tenantRole = null
     expect((await call()).status).toBe(202)
     expect(s.enqueued[0].requestedBy).toBe('staff-1')
   })

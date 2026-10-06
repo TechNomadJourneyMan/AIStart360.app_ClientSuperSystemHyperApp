@@ -12,7 +12,7 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
-import { fetchTimeseries, type FetchPeriod } from '@/lib/metrics/timeseries-fetch'
+import { fetchTimeseries, resolveSeriesCompany, type FetchPeriod } from '@/lib/metrics/timeseries-fetch'
 import { forecast } from '@/lib/metrics/forecast'
 import { safeErrorMessage } from '@/lib/api-error'
 
@@ -41,13 +41,13 @@ export async function GET(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { data: companyRow } = await supabase
-      .from('companies')
-      .select('id')
-      .eq('user_id', user.id)
-      .maybeSingle()
-
-    const companyId = companyRow?.id as string | undefined
+    // Same tenancy as the catalog / value routes: members and partners read
+    // the company's history too, and ?companyId= picks one of several.
+    const company = await resolveSeriesCompany(supabase, user.id, req.nextUrl.searchParams.get('companyId'))
+    if (!company.ok) {
+      return NextResponse.json({ error: company.error }, { status: company.status })
+    }
+    const companyId = company.companyId
     const series = companyId
       ? await fetchTimeseries(supabase, { companyId, metricKey: metricId, period })
       : []

@@ -15,6 +15,11 @@ import { segmentPatients } from '@/lib/rfm-segmentation'
 import { computeBundles } from '@/lib/clinic-bundles'
 import { auditRevenueLosses } from '@/lib/revenue-audit'
 import { requireServiceRoleKey } from '@/lib/supabase-service'
+import { documentStorage, isInOwnerFolder, locationForDocument, StorageError } from '@/lib/documents/storage'
+import { documentMaxBytes } from '@/lib/documents/preflight'
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const isUuid = (v: unknown): v is string => typeof v === 'string' && UUID_RE.test(v)
 
 function srBase() {
   return {
@@ -63,14 +68,31 @@ async function srDelete(path: string): Promise<Response> {
   })
 }
 
-async function downloadFromStorage(objectPath: string): Promise<ArrayBuffer | null> {
-  const { url, key } = srBase()
-  const res = await fetch(`${url}/storage/v1/object/documents/${objectPath}`, {
-    headers: { apikey: key, Authorization: `Bearer ${key}` },
-    cache: 'no-store',
-  })
-  if (!res.ok) return null
-  return res.arrayBuffer()
+/**
+ * Download the bytes of the CALLER's own document. The location comes from
+ * locationForDocument (storage_bucket/storage_path, a Supabase Storage URL or
+ * a bare `documents` path) — never from joining file_url into a URL — and an
+ * object outside the caller's `<uid>/` folder is refused: the download runs
+ * with the service key, so a row pointing at someone else's object (or a
+ * crafted `../` path) must not be readable through this route.
+ */
+async function downloadOwnDocument(
+  doc: { user_id: string; file_url: string | null; storage_bucket?: string | null; storage_path?: string | null },
+  userId: string,
+): Promise<{ ok: true; buf: Buffer } | { ok: false; status: number; error: string }> {
+  const loc = locationForDocument(doc)
+  if (!loc || !isInOwnerFolder(loc, userId)) {
+    return { ok: false, status: 403, error: 'file is outside your storage folder' }
+  }
+  try {
+    return { ok: true, buf: await documentStorage().download(loc, { maxBytes: documentMaxBytes() }) }
+  } catch (err) {
+    const code = err instanceof StorageError ? err.code : 'UNAVAILABLE'
+    console.error('[medical] storage download failed', code)
+    if (code === 'TOO_LARGE') return { ok: false, status: 413, error: 'file too large' }
+    if (code === 'NOT_FOUND') return { ok: false, status: 404, error: 'file not found in storage' }
+    return { ok: false, status: 500, error: 'failed to download file' }
+  }
 }
 
 export async function POST(req: NextRequest) {
@@ -78,16 +100,21 @@ export async function POST(req: NextRequest) {
   const { data: { user } } = await sb.auth.getUser()
   if (!user) return NextResponse.json({ error: 'unauthenticated' }, { status: 401 })
 
-  let body: { documentId?: string } = {}
+  let body: { documentId?: unknown } = {}
   try { body = await req.json() } catch { /* empty body ok */ }
 
   // 1. Resolve document (explicit or latest patient_base)
-  interface DocRow { id: string; user_id: string; file_name: string; file_url: string; doc_type: string }
+  interface DocRow { id: string; user_id: string; file_name: string; file_url: string | null; doc_type: string; storage_bucket: string | null; storage_path: string | null }
   let doc: DocRow | null = null
 
-  if (body.documentId) {
+  if (body.documentId !== undefined && body.documentId !== null && body.documentId !== '') {
+    // The id goes into a PostgREST filter: anything but a UUID could inject
+    // extra filters (`x&user_id=eq.…`), so refuse it before building the query.
+    if (!isUuid(body.documentId)) {
+      return NextResponse.json({ error: 'invalid documentId' }, { status: 400 })
+    }
     const rows = await srGet<DocRow[]>(
-      `documents?id=eq.${body.documentId}&select=id,user_id,file_name,file_url,doc_type&limit=1`,
+      `documents?id=eq.${encodeURIComponent(body.documentId)}&select=id,user_id,file_name,file_url,doc_type,storage_bucket,storage_path&limit=1`,
     )
     doc = rows?.[0] ?? null
     if (doc && doc.user_id !== user.id) {
@@ -95,7 +122,7 @@ export async function POST(req: NextRequest) {
     }
   } else {
     const rows = await srGet<DocRow[]>(
-      `documents?user_id=eq.${user.id}&doc_type=eq.patient_base&select=id,user_id,file_name,file_url,doc_type&order=created_at.desc&limit=1`,
+      `documents?user_id=eq.${user.id}&doc_type=eq.patient_base&select=id,user_id,file_name,file_url,doc_type,storage_bucket,storage_path&order=created_at.desc&limit=1`,
     )
     doc = rows?.[0] ?? null
   }
@@ -105,8 +132,9 @@ export async function POST(req: NextRequest) {
   }
 
   // 2. Download + segment
-  const buf = await downloadFromStorage(doc.file_url)
-  if (!buf) return NextResponse.json({ error: 'failed to download file' }, { status: 500 })
+  const dl = await downloadOwnDocument(doc, user.id)
+  if (!dl.ok) return NextResponse.json({ error: dl.error }, { status: dl.status })
+  const buf = dl.buf
 
   const seg = segmentPatients(buf, doc.file_name)
   if (!seg) {

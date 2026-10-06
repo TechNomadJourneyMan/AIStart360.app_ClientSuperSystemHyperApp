@@ -11,6 +11,8 @@ const db = vi.hoisted(() => ({
   profile: null as null | { role?: string; status?: string },
   staff: null as null | { role?: string },
   security: null as null | { totp_enabled?: boolean },
+  securityError: null as null | { message: string },
+  profileError: null as null | { message: string },
   passkeys: 0,
   settings: { break_glass_enabled: true, staff_require_mfa: false } as Record<string, boolean>,
 }))
@@ -21,7 +23,8 @@ function table(name: string) {
     return { select: () => ({ eq: async () => ({ count: db.passkeys, error: null }) }) }
   }
   const row = name === 'profiles' ? db.profile : name === 'user_security' ? db.security : db.staff
-  return { select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: row, error: null }) }) }) }
+  const error = name === 'user_security' ? db.securityError : name === 'profiles' ? db.profileError : null
+  return { select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: row, error }) }) }) }
 }
 
 vi.mock('@/lib/supabase-server', () => ({
@@ -34,7 +37,8 @@ vi.mock('@/lib/giga-cookie', () => ({
 }))
 vi.mock('@/lib/settings/store', () => ({ getSetting: async (key: string) => db.settings[key] ?? false }))
 
-import { getGigaActor, requireGiga } from '@/lib/admin/giga-actor'
+import { getGigaActor, requireGiga, signStaffCookie, type GigaActor } from '@/lib/admin/giga-actor'
+import { verifyToken } from '@/lib/security/signed-token'
 import { MFA_COOKIE_NAME, signStepUp } from '@/lib/mfa/step-up'
 
 process.env.AUTH_SECRET = 'test-auth-secret-for-step-up'
@@ -52,6 +56,8 @@ describe('getGigaActor', () => {
     db.profile = null
     db.staff = null
     db.security = null
+    db.securityError = null
+    db.profileError = null
     db.passkeys = 0
     db.settings = { break_glass_enabled: true, staff_require_mfa: false }
     gigaCookie.verify.mockReturnValue(null)
@@ -118,6 +124,8 @@ describe('second factor on the GIGA API (middleware does not gate /api/*)', () =
     db.profile = { role: 'super_admin', status: 'approved' }
     db.staff = null
     db.security = null
+    db.securityError = null
+    db.profileError = null
     db.passkeys = 0
     db.settings = { break_glass_enabled: true, staff_require_mfa: false }
     gigaCookie.verify.mockReturnValue(null)
@@ -158,5 +166,45 @@ describe('second factor on the GIGA API (middleware does not gate /api/*)', () =
     expect(await guard.response?.json()).toMatchObject({ code: 'MFA_ENROLLMENT_REQUIRED' })
     db.settings.staff_require_mfa = false
     expect(await getGigaActor(request())).toMatchObject({ id: 'admin-1' })
+  })
+
+  it('an MFA-blocked staff refusal is marked as staff, so shared routes do not fall back to the expert path', async () => {
+    session({ app: { mfa_totp: true } })
+    const guard = await requireGiga(request(), 'users.view')
+    expect(guard.staff).toBe(true)
+    // A plain client session is not staff.
+    db.profile = { role: 'client', status: 'approved' }
+    expect((await requireGiga(request(), 'users.view')).staff).toBe(false)
+  })
+
+  it('a failing second-factor lookup is a 503 for a staff caller, never a silent non-staff fall-through', async () => {
+    session()
+    db.securityError = { message: 'timeout' }
+    const guard = await requireGiga(request(), 'users.view')
+    expect(guard.response?.status).toBe(503)
+    expect(guard.staff).toBe(true)
+  })
+
+  it('a failing role lookup is not "no role"', async () => {
+    session()
+    db.profileError = { message: 'timeout' }
+    const guard = await requireGiga(request(), 'users.view')
+    expect(guard.response?.status).toBe(503)
+    expect(guard.staff).toBe(true)
+  })
+})
+
+describe('signStaffCookie (impersonation keeps the admin in the panel)', () => {
+  const base = { role: 'super_admin' as const, permissions: [], email: 'a@x.kz' }
+  it('is minted for a personal session actor', async () => {
+    const token = await signStaffCookie({ ...base, id: 'admin-1', kind: 'session' } as GigaActor)
+    expect(token).toBeTruthy()
+    const v = await verifyToken<{ sub: string }>('staff', token!)
+    expect(v.ok && v.claims.sub).toBe('admin-1')
+  })
+
+  it('is NOT re-minted for a staff-cookie actor (no indefinite extension without a second factor) or break-glass', async () => {
+    expect(await signStaffCookie({ ...base, id: 'admin-1', kind: 'staff_cookie' } as GigaActor)).toBeNull()
+    expect(await signStaffCookie({ ...base, id: 'giga:super_admin', kind: 'break_glass' } as GigaActor)).toBeNull()
   })
 })

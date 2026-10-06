@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requireGiga } from '@/lib/admin/giga-actor'
 import { recordAdminAction } from '@/lib/admin/audit'
-import { listAgentOverviews, listTasks } from '@/lib/agents/admin'
+import { getAgentOverview, listTasks } from '@/lib/agents/admin'
 import { updateAgentConfigAudited } from '@/lib/admin/staff-actions'
 
 export const dynamic = 'force-dynamic'
@@ -13,7 +13,7 @@ type Ctx = { params: { key: string } }
 export async function GET(req: NextRequest, { params }: Ctx) {
   const g = await requireGiga(req, 'agents.view')
   if (g.response) return g.response
-  const agent = (await listAgentOverviews()).find((a) => a.key === params.key)
+  const agent = await getAgentOverview(params.key)
   if (!agent) return NextResponse.json({ ok: false, error: 'Агент не найден' }, { status: 404 })
   const tasks = await listTasks({ agentKey: params.key, limit: 30 })
   return NextResponse.json({ ok: true, agent, tasks: tasks.items })

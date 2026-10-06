@@ -28,6 +28,22 @@ const PERIOD_LABEL: Record<string, string> = {
   year: 'Год',
 }
 
+/**
+ * /api/v1/metrics accepts period / product / manager but does not apply them
+ * (materialised values are company-wide, each for its own period). So the
+ * tiles are never labelled with the URL filters; when a filter is picked the
+ * hero says plainly that it does not apply here.
+ */
+export function unappliedFilterNote(f: { period: string | null; product: string | null; manager: string | null }): string | null {
+  const picked = [
+    f.period ? `период «${PERIOD_LABEL[f.period] ?? f.period}»` : null,
+    f.product ? `продукт «${f.product}»` : null,
+    f.manager ? `менеджер «${f.manager}»` : null,
+  ].filter(Boolean)
+  if (!picked.length) return null
+  return `Фильтр (${picked.join(', ')}) к этим показателям пока не применяется: показаны значения по всей компании, каждое за свой период.`
+}
+
 export interface HeroSpec {
   /** Registry id (lib/metrics/registry.ts) requested from /api/v1/metrics. */
   id: string
@@ -167,18 +183,11 @@ function MetricTile({ spec, metric, onOpen }: { spec: HeroSpec; metric: MetricSu
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function KeyMetricsHero() {
-  // URL-driven filters from PointAFilterSection (period / product / manager).
+  // URL filters from PointAFilterSection (period / product / manager) are not
+  // applied by /api/v1/metrics — they are not sent and not shown as chips.
   const params = useSearchParams()
-  const filters = useMemo(
-    () => ({
-      period: params.get('period'),
-      product: params.get('product'),
-      manager: params.get('manager'),
-      keys: HERO_METRIC_IDS,
-    }),
-    [params],
-  )
-  const periodLabel = PERIOD_LABEL[filters.period ?? 'month'] ?? 'Месяц'
+  const filterNote = unappliedFilterNote({ period: params.get('period'), product: params.get('product'), manager: params.get('manager') })
+  const filters = useMemo(() => ({ keys: HERO_METRIC_IDS }), [])
   const { data: live = [], isLoading, isError, refetch } = useMetrics(filters)
   const [open, setOpen] = useState<MetricSummary | null>(null)
 
@@ -203,21 +212,11 @@ export default function KeyMetricsHero() {
             <p className="text-xs text-on-surface-variant mt-1 leading-relaxed">
               6 главных показателей · с данными: <span className="font-mono text-on-surface">{filled} из 6</span>
             </p>
-            <div className="flex flex-wrap items-center gap-1.5 mt-2">
-              <span className="text-[10px] font-mono uppercase tracking-widest rounded-full px-2 py-0.5 border border-primary/30 bg-primary/10 text-primary">
-                Период: {periodLabel}
-              </span>
-              {filters.product && (
-                <span className="text-[10px] font-mono uppercase tracking-widest rounded-full px-2 py-0.5 border border-white/[0.08] bg-surface-container text-on-surface-variant">
-                  Продукт: {filters.product}
-                </span>
-              )}
-              {filters.manager && (
-                <span className="text-[10px] font-mono uppercase tracking-widest rounded-full px-2 py-0.5 border border-white/[0.08] bg-surface-container text-on-surface-variant">
-                  Менеджер: {filters.manager}
-                </span>
-              )}
-            </div>
+            {filterNote && (
+              <p className="mt-2 text-[11px] leading-relaxed text-on-surface-variant" role="note">
+                {filterNote}
+              </p>
+            )}
           </div>
         </div>
         <Link

@@ -10,7 +10,9 @@
 // Progress = the company's latest public.metrics value vs the target
 // (tenant resolved by lib/tenancy, read through the caller's session → RLS).
 // Without a target → { data: null } («цель не задана»). Without a value →
-// progress 0 and actualValue null (the UI says «нет факта»).
+// trajectory 'no_data', progress 0 and actualValue null (the UI says «нет
+// факта», never «отстаём»). A failed read answers 500 — it is not «no goal» /
+// «no value».
 // ============================================================
 
 export const dynamic = 'force-dynamic'
@@ -23,6 +25,7 @@ import { getMetricById } from '@/lib/metrics/registry'
 import {
   REVENUE_METRIC_IDS,
   goalProgress,
+  isMissingTable,
   statusForValue,
   targetForMetric,
   type MetricTargetRow,
@@ -34,6 +37,7 @@ function trajectoryFor(value: number | null, target: MetricTarget): GoalTrajecto
   switch (statusForValue(value, target)) {
     case 'on_track': return 'on_track'
     case 'at_risk': return 'at_risk'
+    case 'no_data': return 'no_data'
     default: return 'behind'
   }
 }
@@ -75,8 +79,14 @@ export async function GET(
       .limit(1),
   ])
 
+  // metric_targets is optional until migration 085 is applied (missing table
+  // → no targets); any other failed read is an error, not «no goal» / «no value».
+  const readError = companyRes.error ?? (targetsRes.error && !isMissingTable(targetsRes.error) ? targetsRes.error : null) ?? valuesRes.error
+  if (readError) {
+    console.error('[api/v1/metrics/[id]/goals] read failed', readError.code ?? '', readError.message ?? '')
+    return NextResponse.json({ data: null as MetricGoal | null, error: 'Не удалось загрузить цель метрики' }, { status: 500 })
+  }
   const revenueTarget = companyRes.data?.target_revenue_12m_kzt == null ? null : Number(companyRes.data.target_revenue_12m_kzt)
-  // metric_targets is optional until migration 085 is applied.
   const targetRows = (targetsRes.error ? [] : (targetsRes.data ?? [])) as MetricTargetRow[]
   const target = metricIds
     .map((m) => targetForMetric(m, targetRows, revenueTarget))
@@ -86,7 +96,7 @@ export async function GET(
     return NextResponse.json({ data: null as MetricGoal | null })
   }
 
-  const rawValue = valuesRes.error ? null : (valuesRes.data?.[0]?.metric_value ?? null)
+  const rawValue = valuesRes.data?.[0]?.metric_value ?? null
   const actual = rawValue === null ? null : Number(rawValue)
   const value = actual !== null && Number.isFinite(actual) ? actual : null
 

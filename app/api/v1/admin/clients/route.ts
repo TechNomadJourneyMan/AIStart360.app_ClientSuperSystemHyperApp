@@ -10,14 +10,26 @@ import { CLIENT_PROFILE_ROLES } from '@/lib/profiles/client-roles'
 
 // POST /api/v1/admin/clients — admin-side client creation (bypasses email
 // confirmation). Admin only. See technical-audit A1.
+//
+// Steps: auth user → approved profile → company. If any step after the auth
+// user fails, the auth user is deleted again (profile and company cascade), so
+// a failed creation leaves no orphan approved account and can be retried with
+// the same email. The write-ahead audit entry is followed by a
+// `client.create.failed` entry in that case.
 export async function POST(req: Request) {
+  let createdUserId: string | null = null
+  let sb: ReturnType<typeof createServiceClient> | null = null
+  let actor: Parameters<typeof recordAdminAction>[0] | null = null
+  let email: unknown = null
   try {
     const guard = await requireSupabaseAdmin()
     if ('error' in guard) return guard.error
 
     // auth.admin.createUser needs the service role; the session client cannot do it.
-    const sb = createServiceClient()
-    const { email, password, fullName, companyName, industry, stage } = await req.json()
+    sb = createServiceClient()
+    const body = await req.json()
+    const { password, fullName, companyName, industry, stage } = body
+    email = body.email
 
     if (!email || !password || !companyName) {
       return NextResponse.json({ ok: false, error: 'email, password, companyName are required' }, { status: 400 })
@@ -25,8 +37,9 @@ export async function POST(req: Request) {
     if (String(password).length < 10) {
       return NextResponse.json({ ok: false, error: 'Пароль: минимум 10 символов' }, { status: 400 })
     }
+    actor = { id: guard.user.id, kind: 'session', role: guard.role, email: guard.user.email ?? undefined }
     await recordAdminAction(
-      { id: guard.user.id, kind: 'session', role: guard.role, email: guard.user.email ?? undefined },
+      actor,
       { action: 'client.create', entityType: 'profile', newValue: { email, companyName } },
       req,
       { required: true },
@@ -34,13 +47,14 @@ export async function POST(req: Request) {
 
     // 1. Create auth user with service role (email_confirm skipped)
     const { data: authData, error: authError } = await sb.auth.admin.createUser({
-      email,
+      email: String(email),
       password,
       email_confirm: true,
       user_metadata: { full_name: fullName ?? companyName, company: companyName },
     })
     if (authError) throw new Error(authError.message)
     const userId = authData.user.id
+    createdUserId = userId
 
     // 2. Upsert profile as approved
     const { error: profileError } = await sb.from('profiles').upsert({
@@ -52,18 +66,34 @@ export async function POST(req: Request) {
     }, { onConflict: 'id' })
     if (profileError) throw new Error(profileError.message)
 
-    // 3. Upsert company
-    const { error: companyError } = await sb.from('companies').upsert({
+    // 3. Company. A plain insert: the user was created a moment ago, so it has
+    // no company yet. (An upsert ON CONFLICT (user_id) cannot work — the only
+    // unique index on companies.user_id is partial, WHERE user_id IS NOT NULL.)
+    const { error: companyError } = await sb.from('companies').insert({
       user_id: userId,
       name: companyName,
       ...(industry ? { industry } : {}),
       ...(stage    ? { stage }    : {}),
-    }, { onConflict: 'user_id' })
+    })
     if (companyError) throw new Error(companyError.message)
 
     return NextResponse.json({ ok: true, userId, email, companyName })
   } catch (err) {
     console.error('[v1/admin/clients]', err instanceof Error ? err.message : err)
+    let rolledBack = false
+    if (sb && createdUserId) {
+      // Compensate: no half-created, already approved account stays behind.
+      const { error: deleteError } = await sb.auth.admin.deleteUser(createdUserId)
+      if (deleteError) console.error('[v1/admin/clients] rollback of auth user failed', createdUserId, deleteError.message)
+      else rolledBack = true
+    }
+    if (actor) {
+      await recordAdminAction(
+        actor,
+        { action: 'client.create.failed', entityType: 'profile', newValue: { email }, metadata: { authUserCreated: Boolean(createdUserId), rolledBack } },
+        req,
+      )
+    }
     return NextResponse.json({ ok: false, error: safeErrorMessage(err) }, { status: 500 })
   }
 }

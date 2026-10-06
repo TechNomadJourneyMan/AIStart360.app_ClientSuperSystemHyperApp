@@ -68,8 +68,9 @@ describe('expert API smoke tests', () => {
       })
       // Even if auth passes, text validation catches empty body
       const res = await post({ clientId: 'abc', text: '' })
-      // Either 400 (validation) or 403 (no profile fetched in mocked sb)
-      expect([400, 403].includes(res.status)).toBe(true)
+      // 400 (validation), 403 (not an expert) or 503 — without the service
+      // key the expert gate cannot read the profile and fails closed.
+      expect([400, 403, 503].includes(res.status)).toBe(true)
     })
 
     it('rejects oversized targetId', async () => {
@@ -79,7 +80,7 @@ describe('expert API smoke tests', () => {
       })
       const longId = 'x'.repeat(500)
       const res = await post({ clientId: 'abc', text: 'ok', targetId: longId })
-      expect([400, 403].includes(res.status)).toBe(true)
+      expect([400, 403, 503].includes(res.status)).toBe(true)
     })
   })
 

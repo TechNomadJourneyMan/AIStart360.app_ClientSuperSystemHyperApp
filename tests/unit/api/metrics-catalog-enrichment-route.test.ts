@@ -126,12 +126,43 @@ describe('catalog enrichment', () => {
     expect(byId.get('gri.komanda')).toMatchObject({ value: 6.5, provenanceType: 'CALCULATED', lastUpdated: '2026-10-01T00:00:00Z' })
   })
 
-  it('trend_up / trend_down sort by deltaPct, metrics without history last', async () => {
+  it('trend_up / trend_down sort by the change in the good direction, metrics without history last', async () => {
+    // Average check 40 000 → 50 000 (+25%, better). CAC 10 000 → 15 000 (+50%,
+    // but lower is better: −50% improvement). Raw growth would rank CAC «best».
+    tables.metric_value_history = {
+      data: [
+        hist('biz.marketing.cac', 15_000, '2026-10-05T10:00:00Z'),
+        hist('biz.prodazhi.sredniy_chek', 50_000, '2026-10-05T10:00:00Z'),
+        hist('biz.marketing.cac', 10_000, '2026-09-01T10:00:00Z'),
+        hist('biz.prodazhi.sredniy_chek', 40_000, '2026-09-01T10:00:00Z'),
+      ],
+      error: null,
+    }
     const up = (await call({ sort: 'trend_up', pageSize: '200' })).body.data.items
     expect(up.slice(0, 2).map((i: { id: string }) => i.id)).toEqual(['biz.prodazhi.sredniy_chek', 'biz.marketing.cac'])
+    expect(up[1].deltaPct).toBe(50)
     expect(up[2].deltaPct).toBeNull()
     const down = (await call({ sort: 'trend_down', pageSize: '200' })).body.data.items
     expect(down.slice(0, 2).map((i: { id: string }) => i.id)).toEqual(['biz.marketing.cac', 'biz.prodazhi.sredniy_chek'])
+  })
+
+  it('a failed metric_targets / history / GRI read is a 500, not «нет цели» / «нет истории»', async () => {
+    for (const table of ['metric_targets', 'metric_value_history', 'gri_assessments']) {
+      tables[table] = { data: null, error: { message: 'statement timeout', code: '57014' } as { message: string } }
+      const { status, body } = await call({ pageSize: '200' })
+      expect(status, table).toBe(500)
+      expect(body.ok, table).toBe(false)
+      tables[table] = { data: [], error: null }
+    }
+  })
+
+  it('a missing optional table (before migration 085) still reads as «absent»', async () => {
+    tables.metric_targets = { data: null, error: { message: 'relation "metric_targets" does not exist', code: '42P01' } as { message: string } }
+    tables.metric_value_history = { data: null, error: { message: "Could not find the table 'public.metric_value_history'", code: 'PGRST205' } as { message: string } }
+    const { status, body } = await call({ pageSize: '200' })
+    expect(status).toBe(200)
+    const cac = body.data.items.find((i: { id: string }) => i.id === 'biz.marketing.cac')
+    expect(cac).toMatchObject({ target: null, deltaPct: null })
   })
 
   it('an inaccessible explicit companyId is a 404 no_company', async () => {

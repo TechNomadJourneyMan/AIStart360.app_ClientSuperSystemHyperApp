@@ -5,7 +5,8 @@
  * may see it: hypotheses of the `diagnostic` agent (AI_HYPOTHESIS) and
  * proposals of the `recommendation` agent's model step. Each card shows the
  * claim, its confidence, the model and prompt version, and the evidence it
- * cites. Approve → visible to the client (and in the next report version);
+ * cites. Approve → visible to the client at once (Точка А reads it through
+ * RLS) and in the next published report version;
  * dismiss → hidden for good, with a reason (insights.moderate, audited).
  */
 import { useEffect, useMemo, useState } from 'react'
@@ -21,7 +22,7 @@ import {
 import { CompanyPicker, type PickedCompany } from '../agents/CompanyPicker'
 import { Mono, StatusChip } from '../agents/ui'
 import type { ReviewItem } from '@/lib/reports/review'
-import { EVIDENCE_TYPE_LABELS, fmtConfidence, provenanceMeta, severityMeta } from './model'
+import { AI_REVIEW_COPY, EVIDENCE_TYPE_LABELS, fmtConfidence, provenanceMeta, severityMeta } from './model'
 
 interface QueueResponse { items: ReviewItem[]; can: { run: boolean } }
 type Tab = 'finding' | 'recommendation'
@@ -39,9 +40,7 @@ export function AiReviewPage() {
 
   const onDone = (item: ReviewItem, decision: 'approve' | 'dismiss') => {
     q.setData((d) => (d ? { ...d, items: d.items.filter((i) => !(i.kind === item.kind && i.id === item.id)) } : d))
-    toast.success(decision === 'approve'
-      ? 'Одобрено: клиент увидит это после следующей сборки отчёта и публикации'
-      : 'Отклонено: клиент это не увидит')
+    toast.success(decision === 'approve' ? AI_REVIEW_COPY.approveToast : AI_REVIEW_COPY.dismissToast)
   }
 
   return (
@@ -49,7 +48,7 @@ export function AiReviewPage() {
       <PageHeader
         crumbs={[{ label: 'GIGA-CRM', href: base }, { label: 'ИИ и автоматизация' }, { label: 'Проверка выводов ИИ' }]}
         title="Проверка выводов ИИ"
-        description="Гипотезы и предложения языковой модели скрыты от клиента, пока их не проверит сотрудник. Проверьте ссылки на данные: одобренное попадёт в следующую версию отчёта, отклонённое — никогда."
+        description={AI_REVIEW_COPY.header}
         actions={<Button size="sm" variant="ghost" icon={<RefreshCw size={13} />} loading={q.loading && !!q.data} onClick={() => void q.reload()}>Обновить</Button>}
       />
 
@@ -65,7 +64,7 @@ export function AiReviewPage() {
         <div className="w-full max-w-sm"><CompanyPicker value={company} onChange={setCompany} compact /></div>
       </div>
       <p className="mb-3 text-[11px] text-slate-500">
-        После решений соберите отчёт заново в разделе <Link href={`${base}/reports`} className="text-blue-300 hover:underline">«Отчёты»</Link> — версия, которую видит клиент, не меняется сама.
+        После решений соберите отчёт заново в разделе <Link href={`${base}/reports`} className="text-blue-300 hover:underline">«Отчёты»</Link> — опубликованная клиенту версия отчёта сама не меняется (а «Точка А» показывает одобренное сразу).
       </p>
       {q.error && <div className="mb-4"><ErrorState error={q.error} onRetry={() => void q.reload()} /></div>}
 
@@ -195,9 +194,7 @@ function DecisionModal({ state, onClose, onDone, onStale }: {
             <p className="mt-1 text-[11px] text-slate-500">{state.item.company_name || state.item.company_id} · уверенность {fmtConfidence(state.item.confidence)}</p>
           </div>
           <p className="leading-relaxed text-slate-400">
-            {approve
-              ? 'Клиент увидит это с пометкой «Гипотеза ИИ» после следующей сборки и публикации отчёта. Решение пишется в журнал аудита.'
-              : 'Клиент это не увидит. Если модель предложит то же самое снова, оно вернётся в очередь. Решение и причина пишутся в журнал аудита.'}
+            {approve ? AI_REVIEW_COPY.approveDialog(state.item.kind) : AI_REVIEW_COPY.dismissDialog}
           </p>
           <Field label={approve ? 'Комментарий (необязательно)' : 'Причина (обязательно)'} hint={`${reason.length}/500`}>
             <textarea value={reason} maxLength={500} rows={3} onChange={(e) => setReason(e.target.value)} className={inputClass} placeholder={approve ? 'Например: проверил по выгрузке CRM' : 'Например: вывод противоречит данным документа'} />

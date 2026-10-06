@@ -107,18 +107,20 @@ function buildComparison(
 }
 
 /**
- * GET /api/v1/point-a/benchmarks?industry=X&stage=Y[&user_id=Z]
+ * GET /api/v1/point-a/benchmarks?industry=X&stage=Y
  *
- * Returns the matching benchmark row plus, when a current diagnostic exists,
- * a per-block comparison (percentile + rating). If no diagnostic is available
- * the `comparison` field is null and clients should render the benchmark alone.
+ * Returns the matching benchmark row plus, when the CALLER has a current
+ * diagnostic, a per-block comparison (percentile + rating). If no diagnostic is
+ * available the `comparison` field is null and clients should render the
+ * benchmark alone. The comparison is always the session user's own: a
+ * `user_id` parameter is ignored (it used to select anyone's diagnostic, which
+ * RLS let staff read).
  */
 export async function GET(req: NextRequest) {
   try {
     const url = req.nextUrl
     const industry = url.searchParams.get('industry')
     const stage = url.searchParams.get('stage')
-    const explicitUserId = url.searchParams.get('user_id')
 
     const benchmark = findBenchmark(industry, stage)
 
@@ -136,12 +138,8 @@ export async function GET(req: NextRequest) {
     }
 
     const supabase = createServerClient()
-
-    let userId: string | null = explicitUserId
-    if (!userId) {
-      const { data: auth } = await supabase.auth.getUser()
-      userId = auth?.user?.id ?? null
-    }
+    const { data: auth } = await supabase.auth.getUser()
+    const userId = auth?.user?.id ?? null
 
     let comparison: ComparisonPayload | null = null
     if (userId) {
@@ -152,7 +150,9 @@ export async function GET(req: NextRequest) {
         .eq('is_current', true)
         .maybeSingle()
 
-      if (!error && diagnostic) {
+      // A failed read is not "no diagnostic".
+      if (error) throw new Error(`diagnostics read failed (${error.code ?? 'unknown'})`)
+      if (diagnostic) {
         comparison = buildComparison(benchmark, diagnostic as Record<string, unknown>)
       }
     }

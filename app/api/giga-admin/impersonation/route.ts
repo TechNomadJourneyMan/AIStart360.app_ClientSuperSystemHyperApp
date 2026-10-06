@@ -4,13 +4,12 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { cookies } from 'next/headers'
 import { getSetting } from '@/lib/settings/store'
-import { requireGiga, staffRoleOfUser, STAFF_COOKIE_NAME, STAFF_COOKIE_TTL_SECONDS } from '@/lib/admin/giga-actor'
+import { requireGiga, signStaffCookie, staffRoleOfUser, STAFF_COOKIE_NAME, STAFF_COOKIE_TTL_SECONDS } from '@/lib/admin/giga-actor'
 import { canImpersonate, hasPermission } from '@/lib/admin/rbac'
 import { recordAdminAction } from '@/lib/admin/audit'
 import { createServiceClient } from '@/lib/supabase-service'
 import { createServerClient } from '@/lib/supabase-server'
 import { isRateLimitedKey } from '@/lib/rate-limit'
-import { signToken } from '@/lib/security/signed-token'
 import { IMP_COOKIE_NAME, IMP_COOKIE_OPTIONS, signImpersonation } from '@/lib/impersonation/token'
 import { trackEvent } from '@/lib/events/track'
 
@@ -175,8 +174,12 @@ export async function POST(req: NextRequest) {
   // A personal staff session is about to be replaced by the user's: keep the
   // admin in the panel with a short-lived personal staff cookie.
   const jar = cookies()
-  if (actor.kind !== 'break_glass') {
-    jar.set(STAFF_COOKIE_NAME, await signToken('staff', { sub: actor.id, email: actor.email ?? null }, STAFF_COOKIE_TTL_SECONDS), {
+  // Only a personal Supabase session earns a staff cookie: a staff_cookie actor
+  // must not re-mint its own cookie (that would extend access past the
+  // step-up proof indefinitely), and break-glass never gets one.
+  const staffToken = await signStaffCookie(actor)
+  if (staffToken) {
+    jar.set(STAFF_COOKIE_NAME, staffToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',

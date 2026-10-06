@@ -32,6 +32,23 @@ export interface InsightFeedItem {
   created_at: string
 }
 
+/**
+ * Save an inline answer. The draft is cleared (`done`) only when the save
+ * succeeded — a failed save keeps the typed text so nothing has to be retyped.
+ */
+export async function submitAnswerDraft(
+  id: string,
+  draft: string,
+  save: (id: string, text: string) => Promise<boolean>,
+  done: () => void,
+): Promise<boolean> {
+  const text = draft.trim()
+  if (text.length < 4) return false
+  const saved = await save(id, text)
+  if (saved) done()
+  return saved
+}
+
 interface Props {
   item: InsightFeedItem
   /**
@@ -44,8 +61,11 @@ interface Props {
   onAnswer?: (id: string) => void
   onAnswerViaSurvey?: (id: string) => void
   onRunAI?: (id: string) => void
-  /** Save an inline answer (enables «Ответить» + the answer field). */
-  onSubmitAnswer?: (id: string, text: string) => Promise<unknown> | void
+  /**
+   * Save an inline answer (enables «Ответить» + the answer field). Resolves
+   * true when saved; on false the typed answer stays in the field.
+   */
+  onSubmitAnswer?: (id: string, text: string) => Promise<boolean>
   /** true while an action for this item is being saved. */
   busy?: boolean
   /** Optional viewer role to pick action set. Defaults to 'client'. */
@@ -166,11 +186,11 @@ export function InsightItem({
   const showAnswerField = canAnswerInline && (answerOpen || Boolean(showCommentInput))
 
   const submitAnswer = async () => {
-    const text = draft.trim()
-    if (!onSubmitAnswer || text.length < 4) return
-    await onSubmitAnswer(item.id, text)
-    setDraft('')
-    setAnswerOpen(false)
+    if (!onSubmitAnswer) return
+    await submitAnswerDraft(item.id, draft, onSubmitAnswer, () => {
+      setDraft('')
+      setAnswerOpen(false)
+    })
   }
 
   const actionButtons = useMemo(() => {

@@ -7,6 +7,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const state = vi.hoisted(() => ({ rows: null as unknown, paths: [] as string[] }))
 vi.mock('@/lib/expert-auth', () => ({
   requireExpert: async () => ({ id: 'expert-1', role: 'expert' }),
+  resolveExpert: async () => ({ ok: true, viewer: { id: 'expert-1', role: 'expert', email: null } }),
+  expertBlockResponse: () => new Response(null, { status: 403 }),
   srGet: async (path: string) => { state.paths.push(path); return state.rows },
 }))
 
@@ -34,6 +36,15 @@ describe('expert GRI tab', () => {
     expect(body.data.hasAssessment).toBe(false)
     expect(body.data.overall).toBeNull()
     expect(Object.values(body.data.categoryScores).every((v) => v === null)).toBe(true)
+  })
+
+  it('a failed read (srGet null) is an error, not «клиент не проходил GRI»', async () => {
+    state.rows = null
+    const res = await call(griGET)
+    expect(res.status).toBe(503)
+    const body = await res.json()
+    expect(body.ok).toBe(false)
+    expect(body.data).toBeUndefined()
   })
 
   it('rejects a malformed client id before querying', async () => {

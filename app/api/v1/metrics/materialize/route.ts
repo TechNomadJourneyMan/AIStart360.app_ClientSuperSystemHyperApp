@@ -11,6 +11,7 @@
 // (lib/metrics/materialize-tenant.ts) — since migration 088 users cannot
 // insert/update metrics themselves, so source / confidence / provenance
 // cannot be forged from the browser.
+// A failed write (upsert or stale-row cleanup) answers 500 { ok:false }.
 // ============================================================
 
 import { NextResponse } from 'next/server'
@@ -49,13 +50,22 @@ async function run(req: Request): Promise<NextResponse> {
 
   try {
     const { result } = await materializeForTenant(supabase, createServiceClient(), tenant.tenant)
+    const errors = result.errors.map((e) => ({ metricId: e.metricId, error: safeErrorMessage(new Error(e.error), 'Ошибка записи метрик') }))
+    if (errors.length > 0) {
+      // A failed write is an error, not «no values yet»: with ok:true the
+      // client refetched an empty catalog and asked the user to fill the survey.
+      console.error('[api/v1/metrics/materialize] write failed', result.errors)
+      return apiError('Не удалось записать значения метрик', 500, {
+        data: { written: result.written, total: result.total, skipped: result.skipped, errors },
+      })
+    }
     const body: OkBody = {
       ok: true,
       data: {
         written: result.written,
         total: result.total,
         skipped: result.skipped,
-        errors: result.errors.map((e) => ({ metricId: e.metricId, error: safeErrorMessage(new Error(e.error), 'Ошибка записи метрик') })),
+        errors: [],
       },
     }
     return NextResponse.json(body, { status: 200 })

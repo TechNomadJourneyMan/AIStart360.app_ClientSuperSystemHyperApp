@@ -58,14 +58,22 @@ async function rpcValue<T>(
   return { value: (data ?? null) as T | null, missing: false }
 }
 
+/** PostgREST / Postgres "relation does not exist" — the table's migration is not applied yet. */
+function isMissingRelation(error: { code?: string; message?: string } | null): boolean {
+  if (!error) return false
+  return error.code === '42P01' || error.code === 'PGRST205' || /could not find the table|relation .* does not exist/i.test(error.message ?? '')
+}
+
 async function legacyOwnedCompany(client: SupabaseClient, userId: string): Promise<string | null> {
-  const { data } = await client
+  const { data, error } = await client
     .from('companies')
     .select('id')
     .eq('user_id', userId)
     .order('id', { ascending: true })
     .limit(1)
     .maybeSingle()
+  // A failed read is not "no company": report it instead of a false 404.
+  if (error) throw new Error(`tenancy: companies lookup failed (${error.code ?? 'unknown'})`)
   return (data?.id as string | undefined) ?? null
 }
 
@@ -78,7 +86,9 @@ async function defaultCompany(client: SupabaseClient, userId: string): Promise<{
     .eq('status', 'active')
   if (error) {
     // Table missing (42P01 / PGRST205) ⇒ 084 not applied: legacy rule.
-    return { id: await legacyOwnedCompany(client, userId), legacy: true }
+    if (isMissingRelation(error)) return { id: await legacyOwnedCompany(client, userId), legacy: true }
+    // Anything else (timeout, 5xx) is an outage, not "no company".
+    throw new Error(`tenancy: company_members lookup failed (${error.code ?? 'unknown'})`)
   }
   const rows = (data ?? []) as Array<{ company_id: string; role: string }>
   const order = ['owner', 'admin', 'member', 'viewer']

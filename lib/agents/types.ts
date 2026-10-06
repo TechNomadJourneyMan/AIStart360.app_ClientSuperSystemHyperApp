@@ -33,6 +33,12 @@ export interface AgentLimits {
   dailyBudgetUsd: number
   maxLlmCalls: number
   maxOutputTokens: number
+  /**
+   * Worst-case wall time of one run, when the agent bounds it itself (e.g. a
+   * run deadline). The queue drain only claims a task whose run still fits
+   * in the invocation; without it the drain derives one from maxLlmCalls.
+   */
+  maxRunSeconds?: number
 }
 
 export interface AgentDefinition<I = Record<string, unknown>> {

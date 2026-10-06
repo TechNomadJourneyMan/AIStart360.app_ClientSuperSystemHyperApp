@@ -81,3 +81,24 @@ export function versionActions(status: string, canPublish: boolean): Array<'publ
   if (status === 'published') return ['withdraw']
   return []
 }
+
+/**
+ * What approving / dismissing model output does, in the moderator's words.
+ * Approval sets visible_to_client at once (lib/reports/review.ts): an approved
+ * hypothesis shows in the client's «Точка А» immediately, through RLS — a
+ * report rebuild and publication are NOT a second gate. Report versions are
+ * frozen snapshots, so the item enters a report only with the next build that
+ * a person publishes.
+ */
+export const AI_REVIEW_COPY = {
+  header:
+    'Гипотезы и предложения языковой модели скрыты от клиента, пока их не проверит сотрудник. Проверьте ссылки на данные: одобренное клиент видит сразу и оно войдёт в следующую версию отчёта, отклонённое — никогда.',
+  approveToast: 'Одобрено: клиент уже видит это; в отчёт попадёт после следующей сборки и публикации',
+  dismissToast: 'Отклонено: клиент это не увидит',
+  approveDialog(kind: 'finding' | 'recommendation'): string {
+    return kind === 'finding'
+      ? 'Клиент увидит это сразу после одобрения — в «Точке А», с пометкой «Гипотеза ИИ». В отчёт вывод попадёт после следующей сборки и публикации. Решение пишется в журнал аудита.'
+      : 'Рекомендация станет доступна клиенту сразу после одобрения и войдёт в следующую собранную и опубликованную версию отчёта. Решение пишется в журнал аудита.'
+  },
+  dismissDialog: 'Клиент это не увидит. Если модель предложит то же самое снова, оно вернётся в очередь. Решение и причина пишутся в журнал аудита.',
+} as const

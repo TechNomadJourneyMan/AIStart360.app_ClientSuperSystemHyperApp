@@ -32,9 +32,12 @@ const LIVE = new Set(['queued', 'running', 'awaiting_approval'])
  *   202 { ok: true, task_id, status, already_queued?: true, data?: document }
  *   401 / 404 / 409 { ok: false, code, error } / 429 / 503
  *
- * Authz: the uploader, platform staff, or a manager of the document's company.
- * Writes go through the server connection after authz (the 089 guard blocks
- * pipeline columns for PostgREST callers).
+ * Authz: platform staff, a manager of the document's company, or the
+ * uploader while they are still a non-viewer member of that company (a
+ * viewer cannot upload, so they cannot get a row processed by inserting it
+ * through PostgREST either; a removed member loses access). Writes go through
+ * the server connection after authz (the 089 guard blocks pipeline columns
+ * for PostgREST callers).
  */
 export async function POST(_req: NextRequest, { params }: { params: { id: string } }) {
   const sb = createServerClient()
@@ -47,7 +50,12 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
   const notFound = NextResponse.json({ ok: false, code: 'NOT_FOUND', error: 'Документ не найден' }, { status: 404 })
   if (!isUuid(params.id)) return notFound
   const doc = await getDocument(params.id)
-  if (!doc || !(await mayProcess(sb, user.id, doc))) return notFound
+  if (!doc) return notFound
+  const access = await mayProcess(sb, user.id, doc)
+  if (access === 'viewer') {
+    return NextResponse.json({ ok: false, code: 'FORBIDDEN', error: 'Роль «наблюдатель» не может обрабатывать документы.' }, { status: 403 })
+  }
+  if (access !== 'ok') return notFound
 
   if (doc.parse_status === 'rejected' || doc.security_status === 'rejected') {
     return NextResponse.json({
@@ -104,11 +112,20 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
   }
 }
 
-async function mayProcess(sb: ReturnType<typeof createServerClient>, userId: string, doc: DocumentRow): Promise<boolean> {
-  if (doc.user_id === userId) return true
+async function mayProcess(
+  sb: ReturnType<typeof createServerClient>,
+  userId: string,
+  doc: DocumentRow,
+): Promise<'ok' | 'viewer' | 'denied'> {
   if (doc.company_id) {
     const tenant = await resolveTenant({ companyId: doc.company_id, access: 'read' }).catch(() => null)
-    if (tenant?.ok && (tenant.tenant.role === 'staff' || tenant.tenant.canManage)) return true
+    if (tenant?.ok) {
+      if (tenant.tenant.role === 'staff' || tenant.tenant.canManage) return 'ok'
+      if (doc.user_id === userId) return tenant.tenant.role === 'viewer' ? 'viewer' : 'ok'
+    }
+  } else if (doc.user_id === userId) {
+    // Not attached yet: only the uploader's own company can be attached below.
+    return 'ok'
   }
-  return isStaffRole(await getSessionRole(sb, userId))
+  return isStaffRole(await getSessionRole(sb, userId)) ? 'ok' : 'denied'
 }

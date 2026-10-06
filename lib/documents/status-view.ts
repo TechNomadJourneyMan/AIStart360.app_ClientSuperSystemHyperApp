@@ -39,6 +39,37 @@ export interface ClientDocument {
   parsed_data?: Record<string, unknown> | null
 }
 
+/** Columns GET /api/v1/onboarding/documents selects (exactly ClientDocument). */
+export const CLIENT_DOCUMENT_COLUMNS = [
+  'id', 'file_name', 'doc_type', 'file_size', 'size_bytes', 'mime_type', 'sniffed_mime',
+  'period_quarter', 'period_year', 'parse_status', 'processing_stage', 'security_status',
+  'security_reason', 'last_error_code', 'parse_error', 'attempts', 'processed_at',
+  'uploaded_at', 'updated_at', 'storage_bucket', 'storage_path', 'file_url', 'parsed_data',
+].join(', ')
+
+/** Row-level arrays of parsed_data the list never needs (thousands of rows each). */
+const LIST_HEAVY_KEYS = ['raw_rows', 'client_rows', 'unverified_rows', 'rows'] as const
+
+/**
+ * parsed_data as the polled document list ships it: everything the status
+ * line and the field cards read, without the row arrays (their count is kept
+ * in stats.row_count).
+ */
+export function parsedDataForList(parsed: unknown): Record<string, unknown> | null {
+  if (!isRecord(parsed)) return null
+  const heavy = LIST_HEAVY_KEYS.filter((k) => Array.isArray(parsed[k]))
+  if (!heavy.length) return parsed
+  const out: Record<string, unknown> = { ...parsed }
+  let rows = 0
+  for (const k of heavy) {
+    if (k !== 'unverified_rows') rows += (parsed[k] as unknown[]).length
+    delete out[k]
+  }
+  const stats = isRecord(parsed.stats) ? parsed.stats : {}
+  out.stats = { ...stats, row_count: finiteNumber(stats.row_count) ?? rows }
+  return out
+}
+
 export type DocumentTone = 'neutral' | 'progress' | 'success' | 'warning' | 'error'
 
 export interface DocumentStatusView {

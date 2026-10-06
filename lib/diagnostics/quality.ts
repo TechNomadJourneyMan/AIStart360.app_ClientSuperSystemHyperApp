@@ -4,7 +4,8 @@
  *
  *   inconsistency  the same metric, period and scenario differs by > 30 %
  *                  between two sources (survey vs document vs CRM / manual)
- *   anomaly        an impossible value (negative money or count, a percent
+ *   anomaly        an impossible value (a negative revenue, cost, price or
+ *                  count — cash flow and profit may be negative —, a percent
  *                  below −100, a flag that is not 0/1)
  *   data_gap       stale inputs (financial documents older than last year,
  *                  questionnaire not updated for a year) and documents that
@@ -51,6 +52,21 @@ export const INCONSISTENCY_THRESHOLD = 0.3
 const FINANCIAL_DOC_TYPES = new Set(['pl_report', 'financial_report', 'balance_sheet'])
 const MONEY_UNITS = new Set(['₸', 'kzt', 'тг', 'тенге', 'руб', '$', 'usd'])
 const COUNT_UNITS = new Set(['count', 'шт', 'чел', 'клиентов', 'сделок'])
+/**
+ * Money metrics that can legitimately be below zero (a loss-making month, a
+ * negative result). Matched on the registry id or label; everything else in
+ * money / count units (revenue, costs, CAC, CPL, average check, counts) cannot.
+ */
+const SIGNED_MONEY_METRICS = new Set(['biz.finansy.cash_flow_mes'])
+const SIGNED_MONEY_LABEL = /cash\s*flow|денежн\w* поток|прибыл|убыт|profit|ebitda|net income|сальдо|финансов\w* результат/i
+
+/** False for metrics whose value may be negative (cash flow, profit, …). */
+export function cannotBeNegative(metricKey: string, unit: string): boolean {
+  if (!MONEY_UNITS.has(unit) && !COUNT_UNITS.has(unit)) return false
+  if (SIGNED_MONEY_METRICS.has(metricKey)) return false
+  const label = getMetricById(metricKey)?.label ?? metricKey
+  return !SIGNED_MONEY_LABEL.test(label)
+}
 const SOURCE_LABELS: Record<string, string> = {
   survey: 'анкета', document: 'документ', manual: 'ручной ввод', external: 'внешняя система', prisma: 'CRM', calculated: 'расчёт',
 }
@@ -132,7 +148,7 @@ export function impossibleValueFindings(metrics: QualityMetricRow[]): FindingDra
     const unit = (m.metric_unit ?? entry?.unit ?? '').trim().toLowerCase()
     const v = m.metric_value
     let problem: string | null = null
-    if (v < 0 && (MONEY_UNITS.has(unit) || COUNT_UNITS.has(unit))) problem = 'отрицательное значение для денежной или количественной метрики'
+    if (v < 0 && cannotBeNegative(m.metric_key, unit)) problem = 'отрицательное значение для метрики, которая не бывает отрицательной'
     else if (unit === '%' && v < -100) problem = 'процент ниже −100%'
     else if (entry?.valueKind === 'flag' && v !== 0 && v !== 1) problem = 'флаг «есть / нет» должен быть 0 или 1'
     if (!problem) continue

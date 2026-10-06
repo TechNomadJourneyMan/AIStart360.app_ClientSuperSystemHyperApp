@@ -3,7 +3,9 @@ import { prisma } from '@/lib/db'
 import { requireAuth } from '@/lib/api-utils'
 import { createClient } from '@supabase/supabase-js'
 
-// Staff roles may access any report. Everyone else needs an ownership link.
+// Staff roles may access reports of their OWN organization's clients only
+// (the same tenant rule as POST /api/reports/upload). Everyone else needs an
+// ownership link.
 const STAFF_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ANALYST']
 
 type ReportWithClient = NonNullable<Awaited<ReturnType<typeof loadReport>>>
@@ -11,19 +13,26 @@ type ReportWithClient = NonNullable<Awaited<ReturnType<typeof loadReport>>>
 function loadReport(id: string) {
   return prisma.report.findUnique({
     where: { id },
-    include: { client: { select: { managerId: true } } },
+    include: { client: { select: { managerId: true, orgId: true } } },
   })
 }
 
+interface Caller {
+  id?: string
+  role?: string
+  orgId?: string
+}
+
 /**
- * Authorize a caller against a report. Allowed when the caller is staff, the
- * report's uploader, or the manager of the report's client. Returns false
- * otherwise — callers should respond 404 to avoid id enumeration.
+ * Authorize a caller against a report. Allowed when the caller is staff of the
+ * organization that owns the report's client, the report's uploader, or the
+ * manager of the report's client. Returns false otherwise — callers should
+ * respond 404 to avoid id enumeration.
  */
-function canAccessReport(report: ReportWithClient, userId: string, role: string): boolean {
-  if (STAFF_ROLES.includes(role)) return true
-  if (report.uploadedBy === userId) return true
-  if (report.client?.managerId === userId) return true
+function canAccessReport(report: ReportWithClient, caller: Caller): boolean {
+  if (caller.role && STAFF_ROLES.includes(caller.role) && caller.orgId && report.client?.orgId === caller.orgId) return true
+  if (caller.id && report.uploadedBy === caller.id) return true
+  if (caller.id && report.client?.managerId === caller.id) return true
   return false
 }
 
@@ -35,9 +44,7 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
 
   // 404 (not 403) both for missing reports and unauthorized access, so the
   // existence of another tenant's report cannot be probed via id enumeration.
-  const userId = (session!.user as any).id as string
-  const role = (session!.user as any).role as string
-  if (!report || !canAccessReport(report, userId, role)) {
+  if (!report || !canAccessReport(report, session!.user as Caller)) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 })
   }
 
@@ -70,9 +77,7 @@ export async function DELETE(_: Request, { params }: { params: { id: string } })
   const report = await loadReport(params.id)
 
   // 404 (not 403) for both missing and unauthorized, to avoid id enumeration.
-  const userId = (session!.user as any).id as string
-  const role = (session!.user as any).role as string
-  if (!report || !canAccessReport(report, userId, role)) {
+  if (!report || !canAccessReport(report, session!.user as Caller)) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 })
   }
 
@@ -85,7 +90,12 @@ export async function DELETE(_: Request, { params }: { params: { id: string } })
 
   const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
-  await supabase.storage.from('reports').remove([report.filePath])
+  // Drop the row only once the object is gone — otherwise the file would stay
+  // in storage with nothing left pointing at it.
+  const { error: removeError } = await supabase.storage.from('reports').remove([report.filePath])
+  if (removeError) {
+    return NextResponse.json({ error: 'Failed to delete the file' }, { status: 502 })
+  }
   await prisma.report.delete({ where: { id: params.id } })
 
   return NextResponse.json({ success: true })

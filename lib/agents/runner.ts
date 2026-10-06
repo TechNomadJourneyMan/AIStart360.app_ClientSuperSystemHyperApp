@@ -12,7 +12,10 @@
  *                                approved action is allowed once)
  *   AgentError(retryable)      → retried with backoff, then dead-letter
  *   AgentError(non-retryable)  → dead immediately (e.g. BUDGET_EXCEEDED, bad input)
- *   unexpected error           → treated as retryable
+ *   unexpected error           → treated as retryable; tenant-readable rows get
+ *                                only the code (raw text → server log and a
+ *                                staff-only debug event)
+ *   agent disabled             → task cancelled (AGENT_DISABLED), nothing runs
  */
 import {
   callLlm,
@@ -37,6 +40,9 @@ import { AgentError, ApprovalRequiredError, type AgentContext, type AgentDefinit
  * budget is enforced by the gateway (BUDGET_EXCEEDED result).
  */
 
+/** What tenant-readable rows say about an unexpected (non-AgentError) failure. */
+export const UNEXPECTED_MESSAGE = 'внутренняя ошибка агента'
+
 export interface RunReport {
   taskId: string
   runId: string | null
@@ -55,6 +61,12 @@ export async function runClaimedTask(task: AgentTaskRow, def: AgentDefinition<an
   const lease = task.lease_token
 
   const [config, grants] = await Promise.all([store.loadConfig(def.key), store.loadGrants(def.key)])
+  if (config && !config.enabled) {
+    // The kill switch: queued work, backoff retries, approval re-queues and
+    // admin retries of a disabled agent are cancelled, not run.
+    const finalStatus = await store.cancelDisabledTask(task.id, lease)
+    return { taskId: task.id, runId: null, finalStatus, summary: null, errorCode: 'AGENT_DISABLED' }
+  }
   const permissions = effectivePermissions(def.permissions, grants)
   const tier: ModelTier | 'none' = (config?.tier_override as ModelTier | null) ?? def.tier
   const perRunBudget = config?.per_run_budget_usd ?? def.limits.perRunBudgetUsd
@@ -104,8 +116,13 @@ export async function runClaimedTask(task: AgentTaskRow, def: AgentDefinition<an
     lastProvider = usage.provider ?? lastProvider
   }
 
-  /** Budget guard: refuse a call whose worst case would exceed any budget. */
-  async function guardBudget(req: Pick<LlmRequest, 'system' | 'user' | 'maxTokens'>, callTier: ModelTier, model: string) {
+  /**
+   * Budget guard: refuse a call whose worst case would exceed any budget, and
+   * reserve that worst case against the daily budgets (released and replaced by
+   * the real cost in settle()) so parallel runs cannot jointly overshoot them.
+   * Returns the reservation id.
+   */
+  async function guardBudget(req: Pick<LlmRequest, 'system' | 'user' | 'maxTokens'>, callTier: ModelTier, model: string): Promise<string | null> {
     if (permissions.CALL_LLM !== 'ALLOW') {
       throw new AgentError('PERMISSION_DENIED', 'агенту не разрешено вызывать языковую модель')
     }
@@ -116,18 +133,33 @@ export async function runClaimedTask(task: AgentTaskRow, def: AgentDefinition<an
     if (costUsd + estimate > perRunBudget) {
       throw new AgentError('BUDGET_EXCEEDED', `бюджет запуска $${perRunBudget} будет превышен`)
     }
-    const [agentDay, companyDay, platformDay, budgets] = await Promise.all([
-      store.spendToday({ agentKey: def.key }),
-      task.company_id ? store.spendToday({ companyId: task.company_id }) : Promise.resolve(0),
-      store.spendToday(),
-      effectiveBudgets(),
-    ])
-    if (agentDay + estimate > dailyBudget) throw new AgentError('BUDGET_EXCEEDED', `дневной бюджет агента $${dailyBudget} исчерпан`)
-    if (task.company_id && companyDay + estimate > budgets.companyDailyUsd) {
-      throw new AgentError('BUDGET_EXCEEDED', 'дневной бюджет ИИ для компании исчерпан')
+    const budgets = await effectiveBudgets()
+    const reservation = await store.reserveBudget({
+      runId,
+      agentKey: def.key,
+      companyId: task.company_id,
+      amountUsd: estimate,
+      agentDailyUsd: dailyBudget,
+      companyDailyUsd: budgets.companyDailyUsd,
+      platformDailyUsd: budgets.platformDailyUsd,
+    })
+    if (!reservation.ok) {
+      const message = reservation.scope === 'agent' ? `дневной бюджет агента $${dailyBudget} исчерпан`
+        : reservation.scope === 'company' ? 'дневной бюджет ИИ для компании исчерпан'
+        : 'дневной бюджет ИИ платформы исчерпан'
+      throw new AgentError('BUDGET_EXCEEDED', message)
     }
-    if (platformDay + estimate > budgets.platformDailyUsd) {
-      throw new AgentError('BUDGET_EXCEEDED', 'дневной бюджет ИИ платформы исчерпан')
+    return reservation.reservationId
+  }
+
+  /** Release the reservation and persist the call's real cost on the run at once. */
+  async function settle(reservationId: string | null, usage: LlmUsage | null | undefined) {
+    try {
+      await store.settleReservation(reservationId, runId, usage?.costUsd ?? 0)
+    } catch (err) {
+      // The reservation then stays counted until the day ends (conservative);
+      // finishRun still writes the run's total.
+      console.error(`[agents] ${def.key}: settling LLM spend failed`, err instanceof Error ? err.message.split('\n')[0] : err)
     }
   }
 
@@ -155,8 +187,10 @@ export async function runClaimedTask(task: AgentTaskRow, def: AgentDefinition<an
 
     async llm(req) {
       const { callTier, model, explicitModel, maxTokens } = resolveCall(req)
-      await guardBudget({ system: req.system, user: req.user, maxTokens }, callTier, model)
+      const reservation = await guardBudget({ system: req.system, user: req.user, maxTokens }, callTier, model)
       const res = await callLlm({ ...req, tier: callTier, model: explicitModel, maxTokens, label: `agent:${def.key}` })
+        .catch(async (err) => { await settle(reservation, null); throw err })
+      await settle(reservation, res.usage)
       record(res.usage)
       if (!res.ok) await log('warn', 'llm.error', `модель не ответила: ${res.error}`, { code: res.error })
       return res
@@ -164,8 +198,10 @@ export async function runClaimedTask(task: AgentTaskRow, def: AgentDefinition<an
 
     async llmJson(req) {
       const { callTier, model, explicitModel, maxTokens } = resolveCall(req)
-      await guardBudget({ system: req.system, user: req.user, maxTokens }, callTier, model)
+      const reservation = await guardBudget({ system: req.system, user: req.user, maxTokens }, callTier, model)
       const res = await callLlmJson({ ...req, tier: callTier, model: explicitModel, maxTokens, label: `agent:${def.key}` })
+        .catch(async (err) => { await settle(reservation, null); throw err })
+      await settle(reservation, res.usage)
       record(res.usage)
       if (!res.ok) await log('warn', 'llm.error', `модель не ответила: ${res.error}`, { code: res.error })
       return res
@@ -264,6 +300,7 @@ export async function runClaimedTask(task: AgentTaskRow, def: AgentDefinition<an
   let errorCode: string | null = null
   let errorMessage: string | null = null
   let retryable = true
+  let parkedApprovalId: string | null = null
 
   try {
     if (def.scope === 'company' && !task.company_id) {
@@ -280,6 +317,7 @@ export async function runClaimedTask(task: AgentTaskRow, def: AgentDefinition<an
     await log('info', 'run.succeeded', out.summary)
   } catch (err) {
     if (err instanceof ApprovalRequiredError) {
+      parkedApprovalId = err.approvalId
       runStatus = 'awaiting_approval'
       outcome = 'awaiting_approval'
       summary = `ожидает одобрения: ${err.message}`
@@ -290,9 +328,16 @@ export async function runClaimedTask(task: AgentTaskRow, def: AgentDefinition<an
       retryable = err.retryable
       await log('error', 'run.failed', `${err.code}: ${err.message}`)
     } else {
+      // Raw exception text (Prisma/Postgres errors name tables, constraints and
+      // columns) never goes to rows tenants can read (agent_runs.error_message,
+      // agent_tasks.last_error, info/warn/error agent_events): only the code.
+      // The detail goes to the server log and a debug event (staff-only).
       errorCode = 'UNEXPECTED'
-      errorMessage = err instanceof Error ? err.message.slice(0, 500) : 'unknown error'
-      await log('error', 'run.failed', `UNEXPECTED: ${errorMessage}`)
+      errorMessage = UNEXPECTED_MESSAGE
+      const detail = err instanceof Error ? `${err.name}: ${err.message}` : String(err)
+      console.error(`[agents] ${def.key} task ${task.id}: unexpected error`, detail)
+      await log('debug', 'run.error_detail', detail.slice(0, 1000)).catch(() => undefined)
+      await log('error', 'run.failed', `UNEXPECTED: ${UNEXPECTED_MESSAGE}`)
     }
   }
 
@@ -308,7 +353,7 @@ export async function runClaimedTask(task: AgentTaskRow, def: AgentDefinition<an
     errorCode,
     errorMessage,
   })
-  const finalStatus = await store.finishTask({
+  let finalStatus = await store.finishTask({
     taskId: task.id,
     leaseToken: lease,
     outcome,
@@ -317,5 +362,17 @@ export async function runClaimedTask(task: AgentTaskRow, def: AgentDefinition<an
     result: result ?? (summary ? { summary } : null),
     retryable,
   })
+  if (finalStatus === 'awaiting_approval' && parkedApprovalId) {
+    // A human may have decided while this run was still finishing (the
+    // approval is visible as soon as it is created): apply that decision now.
+    const applied = await store.applyEarlyApprovalDecision(task.id, parkedApprovalId)
+    if (applied) {
+      finalStatus = applied
+      if (applied === 'queued') {
+        const { kickTask } = await import('./queue')
+        kickTask(task.id)
+      }
+    }
+  }
   return { taskId: task.id, runId, finalStatus, summary, errorCode }
 }

@@ -20,6 +20,10 @@ const h = vi.hoisted(() => ({
   calls: [] as Array<{ client: string; table: string; op: string; payload?: Row; filters: Array<[string, unknown]> }>,
   user: null as { id: string } | null,
   saveError: null as { message: string; code?: string } | null,
+  /** Table whose reads fail (select only). */
+  readError: null as { table: string; error: { message: string; code?: string } } | null,
+  /** Service-role update of ai_analysis fails. */
+  analysisSaveError: null as { message: string; code?: string } | null,
 }))
 
 function fakeClient(name: string) {
@@ -32,9 +36,11 @@ function fakeClient(name: string) {
         h.calls.push({ client: name, ...q })
         if (q.op === 'update') {
           if (h.saveError && name === 'service' && 'ai_narrative' in (q.payload ?? {})) return { data: null, error: h.saveError }
+          if (h.analysisSaveError && name === 'service' && 'ai_analysis' in (q.payload ?? {})) return { data: null, error: h.analysisSaveError }
           for (const r of rows()) Object.assign(r, q.payload)
           return { data: null, error: null }
         }
+        if (h.readError?.table === table) return { data: null, error: h.readError.error }
         const found = rows()
         return single ? { data: found[0] ?? null, error: null } : { data: found, error: null }
       }
@@ -56,7 +62,7 @@ vi.mock('@/lib/supabase/server', () => ({ createClient: async () => fakeClient('
 vi.mock('@/lib/supabase-server', () => ({ createServerClient: () => fakeClient('session') }))
 vi.mock('@/lib/supabase-service', () => ({ createServiceClient: () => fakeClient('service') }))
 vi.mock('@/lib/rate-limit', () => ({ isRateLimitedKey: async () => false }))
-vi.mock('@/lib/internal-auth', () => ({ hasValidInternalToken: () => true, internalFetchHeaders: () => ({}) }))
+vi.mock('@/lib/internal-auth', () => ({ hasValidInternalToken: () => true, internalFetchHeaders: () => ({}), internalBaseUrl: () => 'http://localhost' }))
 
 const narrativeMock = vi.hoisted(() => ({ generate: vi.fn() }))
 vi.mock('@/lib/point-a/narrative', () => ({ generateNarrative: (...a: unknown[]) => narrativeMock.generate(...a) }))
@@ -98,7 +104,14 @@ beforeEach(() => {
   h.calls = []
   h.user = { id: USER }
   h.saveError = null
-  h.tables = { diagnostics: [diag()], companies: [{ id: 'co', user_id: USER, name: 'ТОО', industry: 'Розница', stage: 'early' }], survey_answers: [], profiles: [] }
+  h.readError = null
+  h.analysisSaveError = null
+  h.tables = {
+    diagnostics: [diag()],
+    companies: [{ id: 'co', user_id: USER, name: 'ТОО', industry: 'Розница', stage: 'early' }],
+    survey_answers: [{ user_id: USER, question_key: 's2_revenue_2025', answer: { value: 95_000_000 } }],
+    profiles: [],
+  }
   narrativeMock.generate.mockReset()
   analyzerMock.analyze.mockReset()
 })
@@ -186,6 +199,47 @@ describe('POST /api/v1/diagnostics/ai-analyze', () => {
     expect(res.status).toBe(404)
     expect(analyzerMock.analyze).not.toHaveBeenCalled()
     expect(updates()).toEqual([])
+  })
+
+  it('a failed save is written as ai_status failed, not left «processing»', async () => {
+    analyzerMock.analyze.mockResolvedValue(ANALYSIS)
+    h.analysisSaveError = { message: 'value too long', code: '22001' }
+    const res = await analyzeRoute.POST(post('/api/v1/diagnostics/ai-analyze', { diagnostic_id: DIAG, user_id: USER }))
+    expect(res.status).toBe(500)
+    expect(h.tables.diagnostics[0].ai_status).toBe('failed')
+  })
+
+  it('an exception after the body was read still marks the verified diagnostic failed', async () => {
+    analyzerMock.analyze.mockRejectedValue(new Error('provider exploded'))
+    const res = await analyzeRoute.POST(post('/api/v1/diagnostics/ai-analyze', { diagnostic_id: DIAG, user_id: USER }))
+    expect(res.status).toBe(500)
+    expect(h.tables.diagnostics[0].ai_status).toBe('failed')
+  })
+
+  it('an exception before the ownership check never touches any row', async () => {
+    const bad = new NextRequest('http://localhost/api/v1/diagnostics/ai-analyze', { method: 'POST', body: 'not json' })
+    const res = await analyzeRoute.POST(bad)
+    expect(res.status).toBe(500)
+    expect(updates()).toEqual([])
+  })
+
+  it('a failed survey / company / expert-notes read stops before the model call and marks failed', async () => {
+    for (const table of ['survey_answers', 'companies']) {
+      h.tables.diagnostics = [diag()]
+      h.readError = { table, error: { message: 'statement timeout', code: '57014' } }
+      const res = await analyzeRoute.POST(post('/api/v1/diagnostics/ai-analyze', { diagnostic_id: DIAG, user_id: USER }))
+      expect(res.status, table).toBe(500)
+      expect(h.tables.diagnostics[0].ai_status, table).toBe('failed')
+    }
+    expect(analyzerMock.analyze).not.toHaveBeenCalled()
+  })
+
+  it('no survey answers → 422 and failed, no paid call on empty input', async () => {
+    h.tables.survey_answers = []
+    const res = await analyzeRoute.POST(post('/api/v1/diagnostics/ai-analyze', { diagnostic_id: DIAG, user_id: USER }))
+    expect(res.status).toBe(422)
+    expect(h.tables.diagnostics[0].ai_status).toBe('failed')
+    expect(analyzerMock.analyze).not.toHaveBeenCalled()
   })
 
   it('a failed analysis marks the status and keeps the stored analysis', async () => {

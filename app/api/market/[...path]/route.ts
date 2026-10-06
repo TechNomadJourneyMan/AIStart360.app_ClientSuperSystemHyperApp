@@ -39,6 +39,38 @@ function isAllowed(path: string): boolean {
   return ALLOWLIST.some((prefix) => path === prefix || path.startsWith(`${prefix}/`))
 }
 
+/**
+ * Next hands us DECODED segments: `%2e%2e` arrives as '..', `%2F` as a '/'
+ * inside one segment, `%3F` as '?'. Joined raw, fetch's URL normalisation
+ * would then leave the allowlisted prefix (companies/../admin) while carrying
+ * the user's bearer token. Refuse dot segments, empty segments and anything
+ * that could change the URL structure.
+ */
+function isSafeSegment(segment: string): boolean {
+  if (segment === '' || segment === '.' || segment === '..') return false
+  for (let i = 0; i < segment.length; i++) {
+    const c = segment.charCodeAt(i)
+    if (c < 0x20 || c === 0x7f) return false // control characters
+  }
+  return !/[/\\?#]/.test(segment)
+}
+
+/** Upstream URL for `segments`, or null when it would leave the allowlist. */
+function upstreamUrl(baseUrl: string, segments: string[], search: string): string | null {
+  if (!segments.every(isSafeSegment)) return null
+  let target: string
+  try {
+    target = `${baseUrl}/${segments.map(encodeURIComponent).join('/')}${search}`
+    const basePath = new URL(baseUrl).pathname.replace(/\/+$/, '')
+    const pathname = new URL(target).pathname
+    const rel = pathname.startsWith(`${basePath}/`) ? decodeURIComponent(pathname.slice(basePath.length + 1)) : null
+    if (rel === null || rel !== segments.join('/') || !isAllowed(rel)) return null
+  } catch {
+    return null
+  }
+  return target
+}
+
 function getBaseUrl(): string | null {
   const raw = process.env.MARKET_API_URL
   if (!raw) return null
@@ -50,10 +82,10 @@ async function handle(
   ctx: { params: { path?: string[] } },
   method: 'GET' | 'POST',
 ): Promise<NextResponse> {
-  const segments = ctx.params.path
-  const path = (segments ?? []).join('/')
+  const segments = ctx.params.path ?? []
+  const path = segments.join('/')
 
-  if (!isAllowed(path)) {
+  if (!segments.every(isSafeSegment) || !isAllowed(path)) {
     return NextResponse.json({ ok: false, error: 'not_found' }, { status: 404 })
   }
 
@@ -82,7 +114,10 @@ async function handle(
   const accessToken = session?.access_token
 
   const search = new URL(req.url).search
-  const target = `${baseUrl}/${path}${search}`
+  const target = upstreamUrl(baseUrl, segments, search)
+  if (!target) {
+    return NextResponse.json({ ok: false, error: 'not_found' }, { status: 404 })
+  }
 
   const headers: Record<string, string> = { Accept: 'application/json' }
   if (accessToken) headers.Authorization = `Bearer ${accessToken}`

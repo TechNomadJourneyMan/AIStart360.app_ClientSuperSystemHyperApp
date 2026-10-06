@@ -115,13 +115,27 @@ export async function latestVersion(companyId: string, reportType: ReportType): 
   return rows[0] ?? null
 }
 
+/**
+ * Does the latest version already carry this exact data? Only a version that
+ * is still in circulation (draft / ready / published) counts. A 'failed' one
+ * does not, and neither does a 'superseded' latest version: the newest version
+ * is only superseded when a person rejected or withdrew it (retireReportVersion),
+ * and a rebuild of the same data must then produce a fresh 'ready' version —
+ * otherwise the company could never get a publishable report again until its
+ * data changes.
+ */
+export function sameDataAsLatest(latest: VersionHead | null, dataHash: string): latest is VersionHead {
+  return Boolean(latest && latest.data_hash === dataHash && (latest.status === 'draft' || latest.status === 'ready' || latest.status === 'published'))
+}
+
 export type CreateVersionResult =
   | { created: true; id: string; version: number; superseded: string[] }
   | { created: false; unchanged: VersionHead }
 
 /**
  * Create a 'ready' version unless the latest version of the company and type
- * already has this data hash (a failed version does not count). Earlier
+ * already has this data hash (see sameDataAsLatest: a failed, rejected or
+ * withdrawn version does not count). Earlier
  * unpublished versions (draft / ready) become 'superseded'; a published
  * version stays until a person publishes the new one.
  */
@@ -142,7 +156,7 @@ export async function createReadyVersion(args: {
       SELECT id::text, version, status, data_hash FROM public.report_versions
       WHERE company_id = ${args.companyId} AND report_type = ${args.reportType}
       ORDER BY version DESC LIMIT 1`
-    if (latest && latest.data_hash === args.dataHash && latest.status !== 'failed') {
+    if (sameDataAsLatest(latest ?? null, args.dataHash)) {
       return { created: false as const, unchanged: latest }
     }
     const superseded = await tx.$queryRaw<Array<{ id: string }>>`

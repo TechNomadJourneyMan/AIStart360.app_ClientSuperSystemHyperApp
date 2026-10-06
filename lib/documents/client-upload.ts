@@ -393,23 +393,64 @@ function signedUrlErrorMessage(raw: string): string {
 export type DownloadUrlOutcome = { ok: true; url: string } | { ok: false; error: string }
 
 /**
+ * Legacy rows store a Supabase Storage URL in file_url — some of them a
+ * year-long SIGNED url (a bearer token kept in the database). Parse the
+ * bucket/path out of it so a fresh short-lived link can be signed instead.
+ */
+function legacyStorageLocation(raw: string): { bucket: string; path: string; signed: boolean } | null {
+  let url: URL
+  try {
+    url = new URL(raw)
+  } catch {
+    return null
+  }
+  const m = url.pathname.match(/\/storage\/v1\/object\/(public|sign|authenticated)\/([^/]+)\/(.+)$/)
+  if (!m) return null
+  try {
+    return {
+      bucket: decodeURIComponent(m[2]),
+      path: m[3].split('/').map((s) => decodeURIComponent(s)).join('/'),
+      signed: m[1] !== 'public',
+    }
+  } catch {
+    return null
+  }
+}
+
+async function signedUrl(bucket: string, path: string, deps: ClientDeps): Promise<DownloadUrlOutcome | null> {
+  try {
+    const { data, error } = await supabaseOf(deps).storage.from(bucket).createSignedUrl(path, 3600)
+    if (data?.signedUrl) return { ok: true, url: data.signedUrl }
+    if (error) return { ok: false, error: signedUrlErrorMessage(error.message) }
+  } catch (err) {
+    return { ok: false, error: signedUrlErrorMessage(err instanceof Error ? err.message : String(err)) }
+  }
+  return null
+}
+
+/**
  * A short-lived link to the caller's own document. New rows: a signed URL of
  * storage_bucket/storage_path (storage RLS lets the owner sign their folder).
- * Legacy rows: their stored http(s) URL.
+ * Legacy rows with a Supabase Storage URL: a fresh 1-hour link for the parsed
+ * bucket/path — the stored long-lived signed URL is never handed out again (a
+ * public-bucket URL, readable anyway, is the fallback when signing is refused).
+ * Other legacy http(s) URLs (non-Supabase hosts): as stored.
  */
 export async function documentDownloadUrl(
   doc: Pick<ClientDocument, 'storage_bucket' | 'storage_path' | 'file_url'>,
   deps: ClientDeps = {},
 ): Promise<DownloadUrlOutcome> {
   if (doc.storage_bucket && doc.storage_path) {
-    try {
-      const { data, error } = await supabaseOf(deps).storage.from(doc.storage_bucket).createSignedUrl(doc.storage_path, 3600)
-      if (data?.signedUrl) return { ok: true, url: data.signedUrl }
-      if (error) return { ok: false, error: signedUrlErrorMessage(error.message) }
-    } catch (err) {
-      return { ok: false, error: signedUrlErrorMessage(err instanceof Error ? err.message : String(err)) }
-    }
+    const fresh = await signedUrl(doc.storage_bucket, doc.storage_path, deps)
+    if (fresh) return fresh
   }
-  if (doc.file_url && /^https?:\/\//i.test(doc.file_url)) return { ok: true, url: doc.file_url }
+  if (doc.file_url && /^https?:\/\//i.test(doc.file_url)) {
+    const legacy = legacyStorageLocation(doc.file_url)
+    if (!legacy) return { ok: true, url: doc.file_url }
+    const fresh = await signedUrl(legacy.bucket, legacy.path, deps)
+    if (fresh?.ok) return fresh
+    if (!legacy.signed) return { ok: true, url: doc.file_url }
+    return fresh ?? { ok: false, error: 'Файл недоступен для просмотра.' }
+  }
   return { ok: false, error: 'Файл недоступен для просмотра.' }
 }

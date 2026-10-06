@@ -33,8 +33,16 @@ import { isRateLimitedKey } from '@/lib/rate-limit'
  * server-to-server without cookies, where the session client is anonymous —
  * RLS then hid the survey answers and dropped every write (`diagnostics` has
  * no UPDATE policy for API roles).
+ *
+ * Status: once the diagnostic is verified, any later failure (a failed input
+ * read, no survey answers, a model error, a failed save, an exception) writes
+ * ai_status='failed' — callers fire and forget, and the client polls
+ * ai-status, which would otherwise show «AI анализирует…» forever.
  */
 export async function POST(req: NextRequest) {
+  // Set only after the ownership check: a caller that is not authorised must
+  // never be able to flip someone's status, even through an error path.
+  let target: { diagnosticId: string; userId: string } | null = null
   try {
     const { diagnostic_id, user_id, locale: bodyLocale } = await req.json()
     if (!diagnostic_id || !user_id) {
@@ -48,7 +56,7 @@ export async function POST(req: NextRequest) {
     // carry a signed internal token (cookies aren't forwarded). Accept that
     // token; otherwise require a session that owns `user_id` (or staff), and
     // throttle that direct path. Anonymous callers can no longer burn credits.
-    if (!hasValidInternalToken(req)) {
+    if (!hasValidInternalToken(req, { userId: String(user_id), diagnosticId: String(diagnostic_id) })) {
       const caller = await getSessionUser(sb)
       if (!caller) return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 })
       if (caller.id !== user_id && !isStaffRole(await getSessionRole(sb, caller.id))) {
@@ -80,6 +88,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: 'Не удалось загрузить диагностику' }, { status: 500 })
     }
     if (!owned) return NextResponse.json({ ok: false, error: 'Диагностика не найдена' }, { status: 404 })
+    target = { diagnosticId: String(diagnostic_id), userId: String(user_id) }
+    const fail = async (status: number, error: string, logDetail?: { code?: string; message?: string } | null) => {
+      if (logDetail) console.error('[ai-analyze]', error, logDetail.code ?? '', logDetail.message ?? '')
+      await markFailed(target)
+      return NextResponse.json({ ok: false, ai_status: 'failed', error }, { status })
+    }
 
     // 1. Mark as processing
     await db
@@ -88,31 +102,38 @@ export async function POST(req: NextRequest) {
       .eq('id', diagnostic_id)
       .eq('user_id', user_id)
 
-    // 2. Fetch survey answers
-    const { data: rows } = await db
+    // 2. Fetch survey answers. A failed read must not become an analysis of
+    // «no data» stored as the client's personal result (and a paid call).
+    const { data: rows, error: surveyErr } = await db
       .from('survey_answers')
       .select('question_key, answer')
       .eq('user_id', user_id)
+    if (surveyErr) return fail(500, 'Не удалось загрузить ответы анкеты', surveyErr)
 
     const answers: Record<string, unknown> = {}
     for (const row of (rows ?? [])) {
-      answers[row.question_key] = (row.answer as { value: unknown }).value
+      answers[row.question_key] = (row.answer as { value: unknown } | null)?.value
+    }
+    if (Object.keys(answers).length === 0) {
+      return fail(422, 'Анкета не заполнена — анализировать нечего')
     }
 
     // 3. Fetch company
-    const { data: company } = await db
+    const { data: company, error: companyErr } = await db
       .from('companies')
       .select('*')
       .eq('user_id', user_id)
       .maybeSingle()
+    if (companyErr) return fail(500, 'Не удалось загрузить компанию', companyErr)
 
     // 4. Fetch GRI expert notes (step=0, gri_expert_* keys)
-    const { data: expertRows } = await db
+    const { data: expertRows, error: expertErr } = await db
       .from('survey_answers')
       .select('question_key, answer')
       .eq('user_id', user_id)
       .eq('step', 0)
       .like('question_key', 'gri_expert_%')
+    if (expertErr) return fail(500, 'Не удалось загрузить заметки эксперта', expertErr)
 
     const expertNotes: GriExpertNotes = {}
     for (const row of (expertRows ?? [])) {
@@ -143,36 +164,33 @@ export async function POST(req: NextRequest) {
         .update({ ai_analysis: mergeAiAnalysis(current?.ai_analysis ?? null, aiResult), ai_status: 'completed' })
         .eq('id', diagnostic_id)
         .eq('user_id', user_id)
-      if (saveErr) {
-        console.error('[ai-analyze] save failed', saveErr.code ?? '', saveErr.message ?? '')
-        return NextResponse.json({ ok: false, ai_status: 'failed', error: 'Анализ получен, но не сохранён' }, { status: 500 })
-      }
+      if (saveErr) return fail(500, 'Анализ получен, но не сохранён', saveErr)
 
       return NextResponse.json({ ok: true, ai_status: 'completed' })
     } else {
-      await db
-        .from('diagnostics')
-        .update({ ai_status: 'failed' })
-        .eq('id', diagnostic_id)
-        .eq('user_id', user_id)
-
+      await markFailed(target)
       return NextResponse.json({ ok: false, ai_status: 'failed', error: 'AI analysis returned null' })
     }
   } catch (error) {
     console.error('[ai-analyze] Error:', error)
-
-    // Try to mark as failed if we have the diagnostic_id
-    try {
-      const body = await req.clone().json().catch(() => ({}))
-      if (body.diagnostic_id && body.user_id) {
-        await createServiceClient()
-          .from('diagnostics')
-          .update({ ai_status: 'failed' })
-          .eq('id', body.diagnostic_id)
-          .eq('user_id', body.user_id)
-      }
-    } catch { /* best effort */ }
-
+    // The body was already consumed (req.clone() would throw here); the ids
+    // verified above are kept in `target`.
+    await markFailed(target)
     return NextResponse.json({ ok: false, error: 'AI analysis failed' }, { status: 500 })
+  }
+}
+
+/** Write ai_status='failed' on the verified diagnostic; never throws. */
+async function markFailed(target: { diagnosticId: string; userId: string } | null): Promise<void> {
+  if (!target) return
+  try {
+    const { error } = await createServiceClient()
+      .from('diagnostics')
+      .update({ ai_status: 'failed' })
+      .eq('id', target.diagnosticId)
+      .eq('user_id', target.userId)
+    if (error) console.error('[ai-analyze] could not mark failed', error.code ?? '', error.message ?? '')
+  } catch (err) {
+    console.error('[ai-analyze] could not mark failed', err instanceof Error ? err.message : err)
   }
 }

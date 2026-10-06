@@ -10,6 +10,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { MetricSource } from './descriptions'
 import { resolveAllMetrics, resolveMetric } from './resolver'
+import { getMetricById } from './registry'
 import type {
   MaterializedRow,
   MetricValue,
@@ -135,19 +136,105 @@ export function toMaterializedRow(
   }
 }
 
+// ─── Stale rows (sources that are no longer declared) ─────────
+
+/**
+ * Identity of a metric source: what a stored `provenance.picked` is compared
+ * with. Labels / notes are presentation and are ignored; the coercion rule is
+ * part of the identity only where it selects a different number (table row /
+ * column of the step-8 metrics table).
+ */
+export function sourceIdentity(src: unknown): string | null {
+  if (!src || typeof src !== 'object') return null
+  const s = src as Partial<MetricSource>
+  if (typeof s.type !== 'string' || s.type === 'missing') return null
+  const c = s.coerce && typeof s.coerce === 'object' ? (s.coerce as { kind?: string; row?: string; column?: string }) : null
+  return [
+    s.type,
+    s.key ?? (Array.isArray(s.keys) ? s.keys.join('+') : ''),
+    s.doc_type ?? '',
+    s.field ?? '',
+    s.model ?? '',
+    s.system ?? '',
+    c ? [c.kind ?? '', c.row ?? '', c.column ?? ''].join(':') : '',
+  ].join('|')
+}
+
+export interface StoredMetricRow {
+  id: string
+  metric_key: string
+  picked: unknown
+}
+
+/**
+ * Rows the resolver wrote from a source the metric no longer declares (e.g.
+ * «CAC» once resolved from the whole marketing budget, s9n_expense_marketing,
+ * before that source was removed from lib/metrics/descriptions.ts). Such a
+ * value is not a measurement of the metric and must not keep being served as
+ * its latest value.
+ *
+ * Only rows that carry resolver provenance (`provenance.picked` with a source
+ * type) of a metric that is still in the registry are judged; rows of unknown
+ * metric keys or without provenance are never touched.
+ */
+export function staleMetricRowIds(rows: ReadonlyArray<StoredMetricRow>): string[] {
+  const declared = new Map<string, Set<string>>()
+  const out: string[] = []
+  for (const r of rows) {
+    const picked = sourceIdentity(r.picked)
+    if (picked === null) continue
+    const entry = getMetricById(r.metric_key)
+    if (!entry) continue
+    let ids = declared.get(entry.id)
+    if (!ids) {
+      ids = new Set(entry.sources.map(sourceIdentity).filter((x): x is string => x !== null))
+      declared.set(entry.id, ids)
+    }
+    if (!ids.has(picked)) out.push(r.id)
+  }
+  return out
+}
+
+const PRUNE_BATCH = 100
+
+/** Delete the company's rows whose picked source is no longer declared (see staleMetricRowIds). */
+export async function pruneStaleMetricRows(
+  supabase: SupabaseClient,
+  companyId: string,
+): Promise<{ pruned: number; error: string | null }> {
+  const { data, error } = await supabase
+    .from('metrics')
+    .select('id, metric_key, picked:provenance->picked')
+    .eq('company_id', companyId)
+  if (error) return { pruned: 0, error: error.message }
+  const ids = staleMetricRowIds((data ?? []) as StoredMetricRow[])
+  let pruned = 0
+  for (let i = 0; i < ids.length; i += PRUNE_BATCH) {
+    const batch = ids.slice(i, i + PRUNE_BATCH)
+    const del = await supabase.from('metrics').delete().eq('company_id', companyId).in('id', batch)
+    if (del.error) return { pruned, error: del.error.message }
+    pruned += batch.length
+  }
+  return { pruned, error: null }
+}
+
 // ─── Upsert ──────────────────────────────────────────────────
 
 export interface MaterializeResult {
   total: number
   written: number
   skipped: number
+  /** Rows removed because their source is no longer declared for the metric. */
+  pruned: number
   errors: Array<{ metricId: string; error: string }>
 }
 
 /**
  * Resolves every metric in the catalog and upserts the result
  * to public.metrics. Skips rows where the resolver found no
- * source — those would just be NULL noise.
+ * source — those would just be NULL noise. Rows the resolver wrote
+ * earlier from a source the metric no longer declares are deleted
+ * first (pruneStaleMetricRows).
  *
  * The unique index on `(company_id, metric_key, period_year,
  * period_quarter, source)` is honored via on_conflict.
@@ -171,12 +258,18 @@ export async function materializeAll(
     rows.push(toMaterializedRow(v, ctx.companyId))
   }
 
+  // Before the upsert: a stale row can share the unique key of a fresh one
+  // (same metric / period / source label), and the upsert must win then.
+  const prune = await pruneStaleMetricRows(supabase, ctx.companyId)
+  if (prune.error) errors.push({ metricId: '*prune', error: prune.error })
+
   if (!rows.length) {
     return {
       result: {
         total: values.length,
         written: 0,
         skipped: values.length,
+        pruned: prune.pruned,
         errors,
       },
       values,
@@ -199,6 +292,7 @@ export async function materializeAll(
       total: values.length,
       written: error ? 0 : rows.length,
       skipped: values.length - rows.length,
+      pruned: prune.pruned,
       errors,
     },
     values,

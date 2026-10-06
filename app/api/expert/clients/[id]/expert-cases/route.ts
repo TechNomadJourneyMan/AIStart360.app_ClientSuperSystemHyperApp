@@ -6,11 +6,11 @@ export const dynamic = 'force-dynamic'
 //   PATCH — expert updates a single case (status new→in_progress→resolved→closed,
 //           priority, assigned_to, expert_action_recommended) via service role,
 //           then notifies the client ('expert_case_updated') that an expert engaged.
-// Reads/writes go through the service role (RLS bypass) after requireExpert().
+// Reads/writes go through the service role (RLS bypass) after resolveExpert().
 // The client reads their own cases via session-scoped routes — never this one.
 
 import { NextRequest, NextResponse } from 'next/server'
-import { requireExpert, srGet } from '@/lib/expert-auth'
+import { expertBlockResponse, resolveExpert, srGet } from '@/lib/expert-auth'
 import { notifyUser, notifyAdmins } from '@/lib/notifications'
 import type { ExpertCase } from '@/lib/assistant/types'
 
@@ -45,8 +45,8 @@ async function srFetch(method: string, path: string, body?: unknown): Promise<Re
 
 // GET /api/expert/clients/[id]/expert-cases — list cases for one client
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
-  const viewer = await requireExpert()
-  if (!viewer) return NextResponse.json({ ok: false, error: 'forbidden' }, { status: 403 })
+  const auth = await resolveExpert()
+  if (!auth.ok) return expertBlockResponse(auth.block)
 
   const clientId = params.id
   if (!clientId) return NextResponse.json({ ok: false, error: 'client id required' }, { status: 400 })
@@ -65,8 +65,8 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
 // PATCH /api/expert/clients/[id]/expert-cases
 //   body: { caseId, status?, priority?, assigned_to?, expert_action_recommended? }
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
-  const viewer = await requireExpert()
-  if (!viewer) return NextResponse.json({ ok: false, error: 'forbidden' }, { status: 403 })
+  const auth = await resolveExpert()
+  if (!auth.ok) return expertBlockResponse(auth.block)
 
   const clientId = params.id
   if (!clientId) return NextResponse.json({ ok: false, error: 'client id required' }, { status: 400 })
