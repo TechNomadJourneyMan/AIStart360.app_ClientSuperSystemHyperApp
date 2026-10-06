@@ -9,7 +9,8 @@
  * the rows are aggregated deterministically:
  *
  *   orders_count            distinct order ids (or sale rows) that are neither
- *                           cancelled nor returns
+ *                           cancelled nor returns (absent when no sale row
+ *                           was seen — never «0 orders» from fees / returns)
  *   marketplace_revenue     sum of the amount column over sales
  *   marketplace_commission  sum of the commission column (as the report signs it)
  *   marketplace_payout      sum of the payout column
@@ -39,8 +40,28 @@ const SALE_RE = /продаж|реализац|sale/i
 const CANCEL_RE = /отмен|cancel/i
 const COMPLETED_RE = /выдан|заверш|доставлен|completed|выкуплен/i
 
-/** Columns that only a marketplace / accounting export has (used for unclassified uploads). */
-const SIGNATURE: readonly MarketplaceColumn[] = ['commission', 'payout', 'doc_type', 'returned_quantity', 'stock']
+/**
+ * Columns that only a marketplace export has — required for an upload whose
+ * type is not a marketplace / inventory export (e.g. `other`). Not doc_type
+ * («Операция») or stock («Остаток»): a bank statement «Дата;Операция;Сумма;
+ * Остаток» or a price list «Код;Наименование;Цена;Остаток» has those too.
+ */
+const SIGNATURE: readonly MarketplaceColumn[] = ['commission', 'payout', 'returned_quantity']
+/**
+ * Exact (normalised) headers that only the official WB / Kaspi / Ozon /
+ * МойСклад reports use — the other way an unclassified upload qualifies.
+ */
+const SIGNATURE_HEADERS: ReadonlySet<string> = new Set([
+  // Wildberries «Отчёт о реализации» (13-finances.yaml field descriptions)
+  'тип документа', 'обоснование для оплаты', 'артикул wb', 'wildberries реализовал товар пр',
+  'цена розничная с учетом согласованной скидки', 'srid', 'id сборочного задания', 'количество доставок',
+  // Kaspi Магазин orders (guide.kaspi.kz …/orders/q3201)
+  'общая сумма заказа',
+  // Ozon «Отчёт о реализации»
+  'номер отправления', 'вознаграждение ozon', 'реализовано на сумму', 'возвращено клиенту на сумму',
+  // МойСклад «Прибыльность»
+  'проданное количество', 'возвращенное количество',
+].map((h) => normalizeForMatch(h)))
 const MEASURES: readonly MarketplaceColumn[] = ['amount', 'quantity', 'stock', 'commission', 'payout', 'returned_quantity']
 
 export interface ExportHeader {
@@ -49,6 +70,8 @@ export interface ExportHeader {
   /** Canonical column → index. Exact header matches win over contained ones. */
   columns: Partial<Record<MarketplaceColumn, number>>
   quote: string
+  /** A marketplace-only column or an exact marketplace report header is present. */
+  signature: boolean
 }
 
 /** Header of an export: ≥ 2 recognised columns, at least one of them a measure. */
@@ -61,7 +84,9 @@ export function detectExportHeader(lines: readonly string[]): ExportHeader | nul
     if (cells.length < 2) continue
     const columns: Partial<Record<MarketplaceColumn, number>> = {}
     const exact = new Set<MarketplaceColumn>()
+    let signatureHeader = false
     cells.forEach((cell, idx) => {
+      if (SIGNATURE_HEADERS.has(normalizeForMatch(cell))) signatureHeader = true
       const col = matchMarketplaceColumn(cell)
       if (!col) return
       const isExact = isExactSynonym(normalizeForMatch(cell), col)
@@ -72,7 +97,8 @@ export function detectExportHeader(lines: readonly string[]): ExportHeader | nul
     })
     const found = Object.keys(columns) as MarketplaceColumn[]
     if (found.length >= 2 && found.some((c) => MEASURES.includes(c))) {
-      return { line: i, delimiter, columns, quote: raw.slice(0, 200) }
+      const signature = signatureHeader || SIGNATURE.some((c) => columns[c] !== undefined)
+      return { line: i, delimiter, columns, quote: raw.slice(0, 200), signature }
     }
   }
   return null
@@ -138,6 +164,8 @@ export function aggregateExport(lines: readonly string[], header: ExportHeader):
   let sawCommission = false
   let sawPayout = false
   let sawReturns = false
+  /** A row was counted as a sale / order (no orders_count without one). */
+  let sawSale = false
   let from: string | null = null
   let to: string | null = null
 
@@ -189,6 +217,7 @@ export function aggregateExport(lines: readonly string[], header: ExportHeader):
     }
     // A row with a document type that is neither a sale nor a return (logistics, fines) is no sale.
     if (c.doc_type !== undefined && kind && !SALE_RE.test(kind)) continue
+    sawSale = true
     const order = cell(cells, c.order_id)
     if (order) orders.add(order)
     else orderRows += 1
@@ -199,7 +228,9 @@ export function aggregateExport(lines: readonly string[], header: ExportHeader):
   }
 
   const transactional = c.doc_type !== undefined || c.status !== undefined || c.order_id !== undefined
-  const ordersCount = c.order_id !== undefined ? orders.size + orderRows : transactional ? orderRows : null
+  // Only rows that were sales say how many orders there were: a file with
+  // returns / payments / fees only has no order count (not «0 orders»).
+  const ordersCount = !sawSale ? null : c.order_id !== undefined ? orders.size + orderRows : transactional ? orderRows : null
   return {
     rows,
     orders: ordersCount,
@@ -221,8 +252,9 @@ const round2 = (n: number) => Math.round(n * 100) / 100
 
 /**
  * Fields of a marketplace export, or [] when the text is not one.
- * `requireSignature`: for unclassified uploads — only a header with a
- * marketplace-specific column counts.
+ * `requireSignature`: for uploads not typed as a marketplace / inventory
+ * export — only a header with a marketplace-only column (commission, payout,
+ * returned quantity) or an exact WB / Kaspi / Ozon / МойСклад header counts.
  */
 export function marketplaceExportFields(st: StructuredText, documentId: string, opts: { requireSignature?: boolean } = {}): ParsedDataField[] {
   let best: { header: ExportHeader; agg: ExportAggregate; lines: string[]; offset: number } | null = null
@@ -231,7 +263,7 @@ export function marketplaceExportFields(st: StructuredText, documentId: string, 
     const lines = body.split('\n')
     const header = detectExportHeader(lines)
     if (!header) continue
-    if (opts.requireSignature && !SIGNATURE.some((s) => header.columns[s] !== undefined)) continue
+    if (opts.requireSignature && !header.signature) continue
     const agg = aggregateExport(lines, header)
     if (!best || agg.rows > best.agg.rows) {
       const offset = seg.start + lines.slice(0, header.line).reduce((n, l) => n + l.length + 1, 0)

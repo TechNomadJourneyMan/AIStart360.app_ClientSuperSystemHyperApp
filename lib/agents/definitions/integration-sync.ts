@@ -19,7 +19,7 @@
  */
 import { z } from 'zod'
 import { prisma } from '@/lib/db'
-import { runDueSyncs, type SyncOutcome } from '@/lib/integrations/sync'
+import { runDueSyncs, type BatchResult, type SyncOutcome } from '@/lib/integrations/sync'
 import { registerTool } from '../tools'
 import { AgentError, type AgentDefinition } from '../types'
 
@@ -75,7 +75,8 @@ export const syncDueTool = registerTool({
     for (const o of res.outcomes) ctx.source({ type: 'integration', ref: `${o.provider}:${o.connectionId}` })
     return res
   },
-  summarize: (r: { outcomes: SyncOutcome[] }) => {
+  summarize: (r: { outcomes: SyncOutcome[]; notConfigured?: string }) => {
+    if (r.notConfigured) return 'хранилище ключей не настроено (SECRETS_ENCRYPTION_KEY) — синхронизация пропущена'
     const synced = r.outcomes.filter((o) => o.status === 'synced').length
     return `подключений: ${r.outcomes.length}, успешно: ${synced}, фактов: ${r.outcomes.reduce((s, o) => s + o.factsWritten, 0)}`
   },
@@ -123,7 +124,7 @@ export const integrationSyncAgent: AgentDefinition<Record<string, never>> = {
   inputSchema: z.object({}).passthrough() as unknown as z.ZodType<Record<string, never>>,
 
   async run(ctx) {
-    const res = await ctx.tool<{ outcomes: SyncOutcome[]; companiesWithNewFacts: string[] }>('integrations.sync_due', {
+    const res = await ctx.tool<BatchResult>('integrations.sync_due', {
       limit: MAX_CONNECTIONS_PER_RUN,
       deadline_seconds: RUN_DEADLINE_SECONDS,
     })
@@ -148,6 +149,13 @@ export const integrationSyncAgent: AgentDefinition<Record<string, never>> = {
       })
     }
     const synced = res.outcomes.filter((o) => o.status === 'synced').length
+    if (res.notConfigured) {
+      // A deployment problem, not a connection's: nothing was claimed, no status changed.
+      return {
+        summary: 'хранилище ключей не настроено (SECRETS_ENCRYPTION_KEY) — синхронизация пропущена',
+        result: { outcomes: [], refreshed: 0, notConfigured: true },
+      }
+    }
     return {
       summary: res.outcomes.length
         ? `подключений: ${res.outcomes.length}, успешно: ${synced}, метрики пересчитаны: ${refreshed}`

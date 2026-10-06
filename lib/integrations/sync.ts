@@ -10,7 +10,16 @@
  *                    INTEGRATION_FAILED platform event at once
  *   rate limit     → not a failure: next run after the provider's hint
  *   budget spent   → not a failure: the window halves (cursor.window_days), the
- *                    next run continues; at one day it becomes a failure
+ *                    next run continues; at one day it becomes a failure. A
+ *                    later run that uses at most half of the budget doubles
+ *                    the window back towards the adapter's maxDaysPerRun.
+ *   deadline       → (the batch ran out of time, DeadlineReached) not a failure
+ *                    and not a budget signal: cursor, window, status and error
+ *                    count stay; the connection is due again in a few minutes
+ *   no key store   → SECRETS_ENCRYPTION_KEY missing / invalid on this server:
+ *                    runDueSyncs claims nothing (logged once, 'not_configured');
+ *                    a connection already claimed is released unchanged. Only
+ *                    a decrypt failure WITH a valid key means needs_reauth.
  *   other errors   → error_count + 1, exponential backoff; at
  *                    FAILURE_ALERT_THRESHOLD consecutive failures status 'error'
  *                    and an INTEGRATION_FAILED event to staff (once per day)
@@ -19,9 +28,10 @@
  * and stops at its deadline; an adapter stops at its request budget.
  */
 import { emitPlatformEvent, type PlatformEventInput } from '@/lib/events/platform'
-import { CredentialsUnavailableError, openCredentials, secretValues } from './credentials'
-import { BudgetExhausted, IntegrationError, sanitizeMessage, type ErrorKind } from './http'
+import { CredentialsStorageNotReadyError, CredentialsUnavailableError, credentialsStorageReady, openCredentials, secretValues } from './credentials'
+import { BudgetExhausted, DeadlineReached, IntegrationError, sanitizeMessage, type ErrorKind } from './http'
 import { adapterFor } from './providers'
+import type { ProviderAdapter } from './providers/types'
 import { providerLabel } from './registry'
 import {
   claimConnection,
@@ -29,6 +39,7 @@ import {
   finishSyncFailure,
   finishSyncSuccess,
   isIntegrationsTableMissing,
+  releaseSync,
   type ClaimedConnection,
   type ConnectionStatus,
 } from './store'
@@ -36,6 +47,8 @@ import {
 export const FAILURE_ALERT_THRESHOLD = 3
 export const LEASE_SECONDS = 180
 const MAX_BACKOFF_MINUTES = 24 * 60
+/** A connection released unchanged because the key store is not configured is retried after this. */
+const NOT_CONFIGURED_RETRY_MINUTES = 15
 
 export interface SyncDeps {
   fetch?: typeof fetch
@@ -46,7 +59,12 @@ export interface SyncDeps {
   emit?: (e: PlatformEventInput) => Promise<unknown>
 }
 
-export type SyncOutcomeStatus = 'synced' | 'failed' | 'needs_reauth' | 'rate_limited' | 'partial' | 'lease_lost'
+/**
+ * partial         the request budget ran out: window halved, next run soon
+ * deferred        the run's deadline passed: nothing changed, next run soon
+ * not_configured  no key store on this server: released unchanged
+ */
+export type SyncOutcomeStatus = 'synced' | 'failed' | 'needs_reauth' | 'rate_limited' | 'partial' | 'deferred' | 'not_configured' | 'lease_lost'
 
 export interface SyncOutcome {
   connectionId: string
@@ -84,6 +102,22 @@ async function alert(deps: SyncDeps, conn: ClaimedConnection, kind: ErrorKind, m
 function windowDays(cursor: Record<string, unknown>): number | null {
   const n = Number(cursor.window_days)
   return Number.isInteger(n) && n >= 1 ? n : null
+}
+
+/**
+ * Cursor after a successful run: a window that was halved earlier doubles
+ * back towards the adapter's maxDaysPerRun once a run fetched something and
+ * used at most half of its request budget (the key disappears at the maximum).
+ */
+export function relaxWindow(cursor: Record<string, unknown>, requestsUsed: number, adapter: Pick<ProviderAdapter, 'maxDaysPerRun' | 'requestBudget'>): Record<string, unknown> {
+  const current = windowDays(cursor)
+  if (current === null) return cursor
+  const rest = { ...cursor }
+  delete rest.window_days
+  if (current >= adapter.maxDaysPerRun) return rest
+  if (requestsUsed <= 0 || requestsUsed * 2 > adapter.requestBudget) return cursor
+  const next = Math.min(current * 2, adapter.maxDaysPerRun)
+  return next >= adapter.maxDaysPerRun ? rest : { ...rest, window_days: next }
 }
 
 export async function syncClaimed(conn: ClaimedConnection, deps: SyncDeps = {}): Promise<SyncOutcome> {
@@ -128,6 +162,12 @@ export async function syncClaimed(conn: ClaimedConnection, deps: SyncDeps = {}):
     secret = openCredentials(conn.secretCiphertext)
     secrets = secretValues(secret)
   } catch (err) {
+    if (err instanceof CredentialsStorageNotReadyError) {
+      // This server cannot open any key — not the connection's fault: release it unchanged.
+      logNotConfiguredOnce()
+      const res = await releaseSync(conn, minutes(now, NOT_CONFIGURED_RETRY_MINUTES))
+      return { ...base, status: res.leaseLost ? 'lease_lost' : 'not_configured', factsWritten: 0, errorKind: 'config', message: err.message, alerted: false }
+    }
     return fail('auth', err instanceof CredentialsUnavailableError ? err.message : 'ключ интеграции недоступен')
   }
 
@@ -135,10 +175,16 @@ export async function syncClaimed(conn: ClaimedConnection, deps: SyncDeps = {}):
   try {
     const result = await adapter.sync(secret, conn.settings, conn.cursor, ctx)
     const next = minutes(now, result.caughtUp ? adapter.refreshIntervalMinutes : adapter.backfillIntervalMinutes)
-    const done = await finishSyncSuccess(conn, { facts: result.facts, cursor: result.cursor, accountLabel: result.accountLabel ?? null, nextSyncAt: next })
+    const cursor = relaxWindow(result.cursor, adapter.requestBudget - ctx.budget.remaining, adapter)
+    const done = await finishSyncSuccess(conn, { facts: result.facts, cursor, accountLabel: result.accountLabel ?? null, nextSyncAt: next })
     if (done.leaseLost) return { ...base, status: 'lease_lost', factsWritten: 0, alerted: false }
     return { ...base, status: 'synced', factsWritten: done.written, alerted: false }
   } catch (err) {
+    if (err instanceof DeadlineReached) {
+      // The batch ran out of time — says nothing about the provider: keep everything, come back soon.
+      const res = await releaseSync(conn, minutes(now, adapter.backfillIntervalMinutes))
+      return { ...base, status: res.leaseLost ? 'lease_lost' : 'deferred', factsWritten: 0, message: 'время запуска истекло — продолжение в следующем запуске', alerted: false }
+    }
     if (err instanceof BudgetExhausted) {
       const current = windowDays(conn.cursor) ?? adapter.maxDaysPerRun
       if (current <= 1) {
@@ -163,10 +209,26 @@ export interface BatchResult {
   outcomes: SyncOutcome[]
   /** Companies whose facts changed (their metrics need recalculation). */
   companiesWithNewFacts: string[]
+  /** Set when nothing was claimed because this server has no key store (SECRETS_ENCRYPTION_KEY). */
+  notConfigured?: 'not_configured'
+}
+
+let notConfiguredLogged = false
+
+function logNotConfiguredOnce(): void {
+  if (notConfiguredLogged) return
+  notConfiguredLogged = true
+  console.error('[integrations] SECRETS_ENCRYPTION_KEY is not configured — integration syncs are skipped, connections keep their status')
 }
 
 /** Due connections, at most `limit`, until `deadlineMs` (epoch ms). */
 export async function runDueSyncs(opts: { limit: number; deadlineMs: number }, deps: SyncDeps = {}): Promise<BatchResult> {
+  // Without a key store no credential can be opened: claim nothing rather than
+  // turning every connection into needs_reauth.
+  if (!credentialsStorageReady()) {
+    logNotConfiguredOnce()
+    return { outcomes: [], companiesWithNewFacts: [], notConfigured: 'not_configured' }
+  }
   let claimed: ClaimedConnection[]
   try {
     claimed = await claimDueConnections(opts.limit, LEASE_SECONDS)

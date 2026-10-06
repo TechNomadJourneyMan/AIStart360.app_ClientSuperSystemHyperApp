@@ -30,7 +30,7 @@ describe.skipIf(!dbTestsEnabled)('integration connections (105)', async () => {
   const { syncConnectionNow, runDueSyncs, FAILURE_ALERT_THRESHOLD } = await import('@/lib/integrations/sync')
   const { sealCredentials } = await import('@/lib/integrations/credentials')
   const { materializeForTenant } = await import('@/lib/metrics/materialize-tenant')
-  const { integrationsSnapshot } = await import('@/lib/integrations/service')
+  const { integrationsSnapshot, testIntegration } = await import('@/lib/integrations/service')
   const { addDays } = await import('@/lib/integrations/period')
 
   const tag = `w7${Date.now()}`
@@ -257,6 +257,86 @@ describe.skipIf(!dbTestsEnabled)('integration connections (105)', async () => {
     await makeDue(conn.id)
     expect((await syncConnectionNow(conn.id, deps))?.status).toBe('synced')
     expect(await connRow(conn.id)).toMatchObject({ status: 'connected', error_count: 0, last_error: null })
+  })
+
+  it('a run that hits its deadline keeps cursor and window, counts nothing and is due again in minutes', async () => {
+    const { owner, company } = await mkCompany()
+    const conn = await connectKaspi(company, owner)
+    kaspiMode = 'ok'
+    events.length = 0
+    await prisma.$executeRaw`UPDATE public.integration_connections SET cursor = '{"filled_to":"2026-09-10"}'::jsonb WHERE id = ${conn.id}::uuid`
+    // The batch already ran long: every run of this connection stops at the deadline.
+    for (let i = 0; i < 5; i++) {
+      const out = await syncConnectionNow(conn.id, { ...deps, deadlineAt: Date.now() - 1 })
+      expect(out).toMatchObject({ status: 'deferred', factsWritten: 0, alerted: false })
+      expect(out?.errorKind).toBeUndefined()
+      const row = await connRow(conn.id)
+      expect(row.cursor).toEqual({ filled_to: '2026-09-10' }) // no window_days halving
+      expect(row).toMatchObject({ status: 'connected', error_count: 0, last_error: null, last_error_kind: null })
+      expect(row.next_sync_at.getTime() - NOW.getTime()).toBeLessThanOrEqual(10 * 60_000)
+      expect(row.next_sync_at.getTime()).toBeGreaterThan(NOW.getTime())
+    }
+    expect(events).toHaveLength(0)
+  })
+
+  it('a halved window grows back after runs that stay well within the request budget', async () => {
+    const { owner, company } = await mkCompany()
+    const conn = await connectKaspi(company, owner)
+    kaspiMode = 'ok'
+    await prisma.$executeRaw`UPDATE public.integration_connections SET cursor = '{"window_days":1}'::jsonb WHERE id = ${conn.id}::uuid`
+    const windows: Array<unknown> = []
+    for (let i = 0; i < 3; i++) {
+      expect((await syncConnectionNow(conn.id, deps))?.status).toBe('synced')
+      windows.push((await connRow(conn.id)).cursor.window_days)
+    }
+    // Kaspi: 6 requests of 60 per one-day run → 1 → 2 → 4 → back to the adapter default (key removed).
+    expect(windows).toEqual([2, 4, undefined])
+  })
+
+  it('without SECRETS_ENCRYPTION_KEY nothing is claimed and no status changes; a key that does not open WITH a valid key → needs_reauth', async () => {
+    await prisma.$executeRaw`UPDATE public.integration_connections SET next_sync_at = now() + interval '1 day' WHERE company_id = ANY (${companies}::text[])`
+    const { owner, company } = await mkCompany()
+    const conn = await connectKaspi(company, owner)
+    await makeDue(conn.id)
+    kaspiMode = 'ok'
+    events.length = 0
+    const key = process.env.SECRETS_ENCRYPTION_KEY
+    const unchanged = { status: 'connected', error_count: 0, last_error: null, last_error_kind: null }
+    try {
+      for (const broken of [undefined, 'not-a-32-byte-key']) {
+        if (broken === undefined) delete process.env.SECRETS_ENCRYPTION_KEY
+        else process.env.SECRETS_ENCRYPTION_KEY = broken
+        const batch = await runDueSyncs({ limit: 5, deadlineMs: Date.now() + 30_000 }, deps)
+        expect(batch).toMatchObject({ outcomes: [], companiesWithNewFacts: [], notConfigured: 'not_configured' })
+        expect(await connRow(conn.id)).toMatchObject(unchanged)
+
+        // A manual sync that already holds the connection releases it unchanged.
+        const manual = await syncConnectionNow(conn.id, deps)
+        expect(manual).toMatchObject({ status: 'not_configured', errorKind: 'config', alerted: false })
+        expect(await connRow(conn.id)).toMatchObject(unchanged)
+
+        // «Проверить»: a configuration error, the status stays.
+        const test = await testIntegration({ companyId: company, provider: 'kaspi' }, { fetch: fakeFetch, now: NOW })
+        expect(test).toMatchObject({ ok: false, status: 503, kind: 'config' })
+        expect(await connRow(conn.id)).toMatchObject(unchanged)
+        await makeDue(conn.id)
+      }
+      expect(events).toHaveLength(0)
+
+      // The key is back: the connection is claimable and syncs.
+      process.env.SECRETS_ENCRYPTION_KEY = key
+      expect((await syncConnectionNow(conn.id, deps))?.status).toBe('synced')
+
+      // A different VALID key: the stored value does not decrypt → the connection needs new credentials.
+      process.env.SECRETS_ENCRYPTION_KEY = randomBytes(32).toString('hex')
+      expect((await testIntegration({ companyId: company, provider: 'kaspi' }, { fetch: fakeFetch, now: NOW }))).toMatchObject({ ok: false, kind: 'auth' })
+      expect((await connRow(conn.id)).status).toBe('needs_reauth')
+      await prisma.$executeRaw`UPDATE public.integration_connections SET status = 'connected' WHERE id = ${conn.id}::uuid`
+      expect(await syncConnectionNow(conn.id, deps)).toMatchObject({ status: 'needs_reauth', errorKind: 'auth' })
+      expect((await connRow(conn.id)).status).toBe('needs_reauth')
+    } finally {
+      process.env.SECRETS_ENCRYPTION_KEY = key
+    }
   })
 
   it('the default emitter writes one INTEGRATION_FAILED platform event (dedupe)', async () => {

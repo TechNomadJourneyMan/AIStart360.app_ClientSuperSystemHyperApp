@@ -9,13 +9,34 @@
 import * as XLSX from 'xlsx'
 import { describe, expect, it } from 'vitest'
 import { runDocumentPipeline } from '@/lib/documents/pipeline'
-import { detectExportHeader } from '@/lib/documents/marketplace-export'
+import { detectExportHeader, marketplaceExportFields } from '@/lib/documents/marketplace-export'
 import { matchMarketplaceColumn } from '@/lib/documents/synonyms'
+import { structuredFromPages } from '@/lib/documents/text'
 import { resolveMetric } from '@/lib/metrics/resolver'
+import { FIELD_SYSTEM_PROMPT, type LlmJsonFn } from '@/lib/documents/extraction'
+import type { LlmJsonResult } from '@/lib/ai/gateway'
 import type { ParsedDataField } from '@/lib/documents/extract'
 import type { ResolverContext } from '@/lib/metrics/types'
 
-async function parse(content: string | Buffer, docType: string, kind: 'csv' | 'xlsx' = 'csv') {
+const usage = { model: 'test/model', tier: 'standard' as const, tokensIn: 1, tokensOut: 1, costUsd: 0, costSource: 'estimate' as const, latencyMs: 1, attempts: 1 }
+
+/**
+ * A model that finds nothing and counts its field-extraction calls (did the
+ * pipeline ask it to read the document? — binding calls are not counted).
+ */
+function countingLlm(): { llm: LlmJsonFn; calls: () => number } {
+  let n = 0
+  const fn = async <T,>(req: { system: string; schema: { safeParse(v: unknown): { success: boolean; data?: T } } }) => {
+    if (req.system === FIELD_SYSTEM_PROMPT) n += 1
+    const parsed = req.schema.safeParse({ summary: 'Нет показателей.', fields: [] })
+    return parsed.success
+      ? ({ ok: true, data: parsed.data as T, usage } as LlmJsonResult<T>)
+      : ({ ok: false, error: 'INVALID_OUTPUT', message: 'schema', usage } as LlmJsonResult<T>)
+  }
+  return { llm: fn as unknown as LlmJsonFn, calls: () => n }
+}
+
+async function parse(content: string | Buffer, docType: string, kind: 'csv' | 'xlsx' = 'csv', llm: LlmJsonFn | null = null) {
   const out = await runDocumentPipeline({
     documentId: '00000000-0000-4000-8000-000000000001',
     docType,
@@ -23,8 +44,8 @@ async function parse(content: string | Buffer, docType: string, kind: 'csv' | 'x
     buffer: Buffer.isBuffer(content) ? content : Buffer.from(content, 'utf8'),
     kind,
     mime: kind === 'csv' ? 'text/csv' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    llm: null,
-    aiBudgetLeft: () => false,
+    llm,
+    aiBudgetLeft: () => llm !== null,
     deadlineAt: Date.now() + 30_000,
   })
   expect(out.status).toBe('parsed')
@@ -139,5 +160,48 @@ describe('marketplace exports through the documents pipeline', () => {
     expect((await parse(generic, 'other')).fields.find((f) => f.key === 'orders_count')).toBeUndefined()
     const wb = ['Тип документа,Количество,Сумма продаж,Комиссия', 'Продажа,1,1000,-100', 'Возврат,1,1000,100'].join('\n')
     expect(field((await parse(wb, 'other')).fields, 'returns_count')?.value).toBe(1)
+  })
+
+  it('a bank statement or a price list uploaded as `other` is no export: no orders / returns / SKU facts, the model reads it', async () => {
+    const bank = ['Дата;Операция;Сумма;Остаток', '01.09.2026;Поступление от ТОО Альфа;1500000;2500000', '02.09.2026;Оплата аренды;-400000;2100000', '03.09.2026;Возврат средств покупателю;-50000;2050000', '04.09.2026;Поступление от ТОО Бета;900000;2950000'].join('\n')
+    const prices = ['Код;Наименование;Цена;Остаток', 'A1;Чай;1200;10', 'A2;Кофе;3000;0', 'A3;Сахар;500;7'].join('\n')
+    for (const csv of [bank, prices]) {
+      expect(marketplaceExportFields(structuredFromPages([{ page: 1, text: csv }], 1), 'd', { requireSignature: true })).toEqual([])
+      const m = countingLlm()
+      const p = await parse(csv, 'other', 'csv', m.llm)
+      for (const key of ['orders_count', 'returns_count', 'sku_count', 'sku_in_stock']) expect(field(p.fields, key), key).toBeUndefined()
+      expect(p.stats?.llm_skipped).not.toBe('export_aggregated_deterministically')
+      expect(m.calls()).toBeGreaterThan(0)
+    }
+  })
+
+  it('a real export uploaded as `other` keeps its aggregates but the model still runs', async () => {
+    const wb = ['Тип документа;Количество;Сумма продаж;Комиссия', 'Продажа;1;1000;-100', 'Продажа;2;2000;-200', 'Возврат;1;1000;100'].join('\n')
+    const m = countingLlm()
+    const p = await parse(wb, 'other', 'csv', m.llm)
+    expect(field(p.fields, 'returns_count')?.value).toBe(1)
+    expect(field(p.fields, 'marketplace_commission')?.value).toBe(-200)
+    expect(p.stats?.llm_skipped).not.toBe('export_aggregated_deterministically')
+    expect(m.calls()).toBeGreaterThan(0)
+  })
+
+  it('no sale row → no orders_count (returns / fees only are not «0 orders»)', async () => {
+    const csv = ['Тип документа;Обоснование для оплаты;Количество;Сумма продаж;Комиссия', 'Возврат;Возврат;1;1000;100', 'Логистика;Логистика;0;0;-150', 'Штраф;Штраф;0;0;-300'].join('\n')
+    const p = await parse(csv, 'marketplace_report')
+    expect(field(p.fields, 'orders_count')).toBeUndefined()
+    expect(field(p.fields, 'returns_count')?.value).toBe(1)
+  })
+
+  it('a KPI sheet with «…заказов» rows is not «covered» by marketplace synonyms: the model reads it, no orders_count', async () => {
+    const csv = [
+      'Показатель;Значение', 'Выручка;1000000', 'Количество повторных заказов;300', 'Доля повторных заказов, %;25',
+      'Количество новых заказов;900', 'Частота заказов;1.4', 'Средняя сумма заказов;15000',
+    ].join('\n')
+    const m = countingLlm()
+    const p = await parse(csv, 'other', 'csv', m.llm)
+    expect(p.stats?.llm_skipped).not.toBe('table_covered_deterministically')
+    expect(m.calls()).toBeGreaterThan(0)
+    expect(field(p.fields, 'revenue')?.value).toBe(1000000)
+    expect(field(p.fields, 'orders_count')).toBeUndefined()
   })
 })

@@ -5,7 +5,7 @@
  * the connection's non-secret settings and cursor, an injected fetch and a
  * request budget, and returns facts plus the next cursor. It never touches the
  * database, never logs credentials and throws IntegrationError (classified)
- * or BudgetExhausted (stop and keep the cursor).
+ * BudgetExhausted or DeadlineReached (stop and keep the cursor).
  */
 import type { FactInput } from '../facts'
 import type { RequestBudget } from '../http'
@@ -43,7 +43,11 @@ export interface ProviderAdapter {
     cursor: Record<string, unknown>,
     ctx: AdapterContext,
   ): Promise<SyncResult>
-  /** Days one run fetches at most (the engine halves it via cursor.window_days when the budget runs out). */
+  /**
+   * Days one run fetches at most. The engine halves it via cursor.window_days
+   * when the request budget runs out and doubles it back towards this value
+   * after runs that used at most half of the budget (a deadline stop changes nothing).
+   */
   maxDaysPerRun: number
   /** Requests one run may spend (the provider's rate limit decides). */
   requestBudget: number

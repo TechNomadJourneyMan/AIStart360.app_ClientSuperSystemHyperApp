@@ -5,9 +5,10 @@
  */
 import { randomBytes } from 'node:crypto'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { BudgetExhausted, classifyStatus, IntegrationError, requestJson, sanitizeMessage, take } from '@/lib/integrations/http'
+import { BudgetExhausted, classifyStatus, DeadlineReached, IntegrationError, requestJson, sanitizeMessage, take } from '@/lib/integrations/http'
 import { addDays, advanceCursor, BACKFILL_DAYS, maxDaysFor, planDays, REFRESH_DAYS } from '@/lib/integrations/period'
-import { CredentialsUnavailableError, openCredentials, sealCredentials, secretValues } from '@/lib/integrations/credentials'
+import { CredentialsStorageNotReadyError, CredentialsUnavailableError, openCredentials, sealCredentials, secretValues } from '@/lib/integrations/credentials'
+import { relaxWindow } from '@/lib/integrations/sync'
 
 describe('http: classification and sanitising', () => {
   it('maps HTTP statuses to error kinds', () => {
@@ -56,7 +57,28 @@ describe('http: classification and sanitising', () => {
     const budget = { remaining: 1 }
     take(budget)
     expect(() => take(budget)).toThrow(BudgetExhausted)
-    expect(() => take({ remaining: 5, deadlineAt: Date.now() - 1 })).toThrow(BudgetExhausted)
+  })
+
+  it('a passed deadline is DeadlineReached, never BudgetExhausted (it must not shrink the window)', () => {
+    let err: unknown = null
+    try {
+      take({ remaining: 5, deadlineAt: Date.now() - 1 })
+    } catch (e) {
+      err = e
+    }
+    expect(err).toBeInstanceOf(DeadlineReached)
+    expect(err).not.toBeInstanceOf(BudgetExhausted)
+    // A spent budget stays BudgetExhausted even after the deadline.
+    expect(() => take({ remaining: 0, deadlineAt: Date.now() - 1 })).toThrow(BudgetExhausted)
+  })
+
+  it('relaxWindow: a halved window doubles back after a run within half of the budget', () => {
+    const adapter = { maxDaysPerRun: 7, requestBudget: 60 }
+    expect(relaxWindow({ filled_to: '2026-10-01', window_days: 1 }, 6, adapter)).toEqual({ filled_to: '2026-10-01', window_days: 2 })
+    expect(relaxWindow({ window_days: 4 }, 30, adapter)).toEqual({}) // 8 ≥ 7: back to the default
+    expect(relaxWindow({ window_days: 2 }, 31, adapter)).toEqual({ window_days: 2 }) // not comfortable
+    expect(relaxWindow({ window_days: 2 }, 0, adapter)).toEqual({ window_days: 2 }) // nothing fetched, no evidence
+    expect(relaxWindow({ filled_to: '2026-10-01' }, 6, adapter)).toEqual({ filled_to: '2026-10-01' })
   })
 })
 
@@ -108,5 +130,24 @@ describe('credentials: sealed or refused', () => {
   it('refuses to store without an encryption key (no plaintext fallback)', () => {
     delete process.env.SECRETS_ENCRYPTION_KEY
     expect(() => sealCredentials({ token: 'x' })).toThrow(CredentialsUnavailableError)
+  })
+
+  it('opening without a (valid) server key is «storage not ready», not a bad client key', () => {
+    const sealed = sealCredentials({ token: 'abc-123-secret' })
+    for (const key of [undefined, 'too-short']) {
+      if (key === undefined) delete process.env.SECRETS_ENCRYPTION_KEY
+      else process.env.SECRETS_ENCRYPTION_KEY = key
+      let err: unknown = null
+      try {
+        openCredentials(sealed)
+      } catch (e) {
+        err = e
+      }
+      expect(err).toBeInstanceOf(CredentialsStorageNotReadyError)
+      expect(err).not.toBeInstanceOf(CredentialsUnavailableError)
+    }
+    // A valid key that does not open the value: the connection needs new credentials.
+    process.env.SECRETS_ENCRYPTION_KEY = randomBytes(32).toString('hex')
+    expect(() => openCredentials(sealed)).toThrow(CredentialsUnavailableError)
   })
 })

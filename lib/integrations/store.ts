@@ -350,6 +350,21 @@ export async function finishSyncFailure(conn: ClaimedConnection, input: FailureI
   return rows[0] ? { errorCount: Number(rows[0].error_count), leaseLost: false } : { errorCount: conn.errorCount, leaseLost: true }
 }
 
+/**
+ * Give a claimed connection back without a verdict (the run hit its deadline,
+ * or credentials storage is not configured on this worker): status, cursor,
+ * error count and last error stay as they are; only the next run time moves.
+ */
+export async function releaseSync(conn: ClaimedConnection, nextSyncAt: Date): Promise<{ leaseLost: boolean }> {
+  const n = await prisma.$executeRaw`
+    UPDATE public.integration_connections SET
+      next_sync_at = ${nextSyncAt},
+      sync_lease_until = NULL, sync_lease_token = NULL
+    WHERE id = ${conn.id}::uuid AND sync_lease_token = ${conn.leaseToken}::uuid
+      AND status IN ('connected', 'error')`
+  return { leaseLost: n === 0 }
+}
+
 /** Record a failed «Проверить» on an existing connection (auth → needs_reauth). */
 export async function markTestResult(companyId: string, provider: ProviderKey, result: { ok: true; accountLabel: string | null } | { ok: false; kind: ErrorKind; message: string }): Promise<void> {
   if (result.ok) {

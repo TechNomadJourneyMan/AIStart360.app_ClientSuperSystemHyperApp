@@ -8,7 +8,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { getMetricRegistry } from '@/lib/metrics/registry'
 import { loadCompanyMetrics, type CompanyMetricValue } from '@/lib/metrics/company-metrics'
-import { credentialsStorageReady, CredentialsUnavailableError, openCredentials, sealCredentials, secretValues } from './credentials'
+import { CredentialsStorageNotReadyError, credentialsStorageReady, CredentialsUnavailableError, openCredentials, sealCredentials, secretValues } from './credentials'
 import { IntegrationError, sanitizeMessage, type ErrorKind } from './http'
 import { adapterFor } from './providers'
 import { INTEGRATION_PROVIDERS, parseCredentials, providerCatalog, type ProviderKey } from './registry'
@@ -33,11 +33,14 @@ export type ServiceResult<T> = { ok: true; data: T } | { ok: false; status: numb
 /** Request budget of a connect / test call (a test is one or two documented reads). */
 const TEST_BUDGET = 3
 
+const STORAGE_NOT_READY = 'Хранилище ключей не настроено (SECRETS_ENCRYPTION_KEY) — подключение невозможно'
+
 function failure(err: unknown, secrets: readonly string[]): { status: number; error: string; kind: ErrorKind } {
   if (err instanceof IntegrationError) {
     const status = err.kind === 'auth' || err.kind === 'config' ? 400 : err.kind === 'rate_limit' ? 429 : 502
     return { status, error: sanitizeMessage(err.message, secrets), kind: err.kind }
   }
+  if (err instanceof CredentialsStorageNotReadyError) return { status: 503, error: err.message, kind: 'config' }
   if (err instanceof CredentialsUnavailableError) return { status: 409, error: err.message, kind: 'auth' }
   return { status: 502, error: 'Сервис интеграции не ответил — попробуйте позже', kind: 'transient' }
 }
@@ -57,7 +60,7 @@ export async function connectIntegration(
     return { ok: true, data: conn }
   }
   if (!credentialsStorageReady()) {
-    return { ok: false, status: 503, error: 'Хранилище ключей не настроено (SECRETS_ENCRYPTION_KEY) — подключение невозможно', kind: 'config' }
+    return { ok: false, status: 503, error: STORAGE_NOT_READY, kind: 'config' }
   }
   const parsed = parseCredentials(input.provider, input.fields)
   if (!parsed.ok) return { ok: false, status: 422, error: parsed.error, field: parsed.field, kind: 'config' }
@@ -96,6 +99,9 @@ export async function testIntegration(
   const row = await connectionSecret(input.companyId, input.provider)
   if (!row) return { ok: false, status: 404, error: 'Интеграция не подключена' }
   if (row.status === 'disconnected' || !row.secretCiphertext) return { ok: false, status: 409, error: 'Интеграция отключена — подключите заново', kind: 'auth' }
+  // A server without its key store is a configuration problem, not the client's
+  // key: report it and leave the connection's status alone.
+  if (!credentialsStorageReady()) return { ok: false, status: 503, error: 'Хранилище ключей не настроено (SECRETS_ENCRYPTION_KEY) — проверка невозможна', kind: 'config' }
   let secrets: string[] = []
   try {
     const secret = openCredentials(row.secretCiphertext)
@@ -107,7 +113,9 @@ export async function testIntegration(
     return { ok: true, data: { accountLabel: t.accountLabel } }
   } catch (err) {
     const f = failure(err, secrets)
-    await markTestResult(input.companyId, input.provider, { ok: false, kind: f.kind, message: f.error })
+    if (!(err instanceof CredentialsStorageNotReadyError)) {
+      await markTestResult(input.companyId, input.provider, { ok: false, kind: f.kind, message: f.error })
+    }
     return { ok: false, ...f }
   }
 }

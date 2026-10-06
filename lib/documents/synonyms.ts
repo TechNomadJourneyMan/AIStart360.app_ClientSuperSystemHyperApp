@@ -246,6 +246,10 @@ export const METRIC_SYNONYMS: Record<string, string[]> = {
   ],
   frequency: [
     'частота покупок',
+    // Longer than «число / количество заказов» (orders_count), so a per-client
+    // figure is never read as the number of orders.
+    'заказов на клиента',
+    'заказов на покупателя',
     'frequency',
     'purchase frequency',
     'кол-во покупок',
@@ -686,12 +690,17 @@ export const METRIC_SYNONYMS: Record<string, string[]> = {
 
   // ─── Marketplace exports (W7: Kaspi / WB / Ozon / МойСклад) ─────────────
   // Aggregates computed from row-level exports (lib/documents/marketplace-export.ts).
-  orders_count: ['количество заказов', 'кол-во заказов', 'число заказов', 'заказов', 'orders count', 'orders'],
+  // matchSynonym also finds a synonym CONTAINED in a label, so only specific
+  // phrases belong here: bare «заказов», «orders», «payout», «выкуп» turned
+  // «Доля повторных заказов», «Частота заказов», «Payout ratio» into these keys
+  // (and a KPI sheet counted as covered, skipping the model). Export column
+  // headers are matched separately (MARKETPLACE_COLUMN_SYNONYMS below).
+  orders_count: ['количество заказов', 'кол-во заказов', 'число заказов', 'orders count'],
   marketplace_revenue: ['выручка маркетплейса', 'продажи на маркетплейсе', 'сумма продаж маркетплейса', 'marketplace revenue'],
   marketplace_commission: ['комиссия маркетплейса', 'вознаграждение маркетплейса', 'комиссия площадки', 'marketplace commission'],
-  marketplace_payout: ['к перечислению продавцу', 'к выплате продавцу', 'итого к начислению', 'payout'],
+  marketplace_payout: ['к перечислению продавцу', 'к выплате продавцу', 'итого к начислению'],
   returns_count: ['количество возвратов', 'кол-во возвратов', 'число возвратов', 'returns count'],
-  buyout_rate: ['процент выкупа', '% выкупа', 'доля выкупа', 'выкуп', 'buyout rate'],
+  buyout_rate: ['процент выкупа', '% выкупа', 'доля выкупа', 'buyout rate'],
   sku_in_stock: ['sku в наличии', 'товаров в наличии', 'позиций с остатком', 'sku in stock'],
 
   // ─── Time-related funnel ──────────────────────────────────────────────

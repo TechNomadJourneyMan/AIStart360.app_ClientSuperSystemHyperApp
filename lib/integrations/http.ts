@@ -3,6 +3,8 @@
  *
  *   • a request budget per run (no unbounded paging: an adapter that runs out
  *     stops and keeps its cursor, the next run continues);
+ *   • the run's deadline (DeadlineReached — distinct from BudgetExhausted:
+ *     a batch that ran out of time says nothing about the provider's window);
  *   • a timeout per request;
  *   • error classification: auth (401 → the connection needs new
  *     credentials), rate_limit (429, with the provider's retry hint),
@@ -32,6 +34,19 @@ export class BudgetExhausted extends Error {
   constructor() {
     super('request budget exhausted')
     this.name = 'BudgetExhausted'
+  }
+}
+
+/**
+ * The run's deadline passed before the next request: stop, keep the cursor
+ * and continue soon. Not a sign that the provider window is too large (the
+ * batch simply ran long), so the sync engine neither shrinks the window nor
+ * counts a failure.
+ */
+export class DeadlineReached extends Error {
+  constructor() {
+    super('run deadline reached')
+    this.name = 'DeadlineReached'
   }
 }
 
@@ -108,10 +123,10 @@ function providerDetail(body: unknown): string {
   return String(b.message ?? b.detail ?? b.title ?? b.error_description ?? b.error ?? '')
 }
 
-/** Take one request from the budget or stop the run. */
+/** Take one request from the budget or stop the run (budget spent / deadline passed). */
 export function take(budget: RequestBudget): void {
   if (budget.remaining <= 0) throw new BudgetExhausted()
-  if (budget.deadlineAt !== undefined && Date.now() > budget.deadlineAt) throw new BudgetExhausted()
+  if (budget.deadlineAt !== undefined && Date.now() > budget.deadlineAt) throw new DeadlineReached()
   budget.remaining -= 1
 }
 

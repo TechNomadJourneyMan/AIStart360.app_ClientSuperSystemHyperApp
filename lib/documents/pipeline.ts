@@ -264,11 +264,15 @@ export async function runDocumentPipeline(input: PipelineInput): Promise<Pipelin
   const tableCovered = table.candidateRows >= 3 && table.matchedRows / table.candidateRows >= 0.6
   // Marketplace / accounting exports (W7): column aggregates (orders, revenue,
   // commission, returns, buyout, SKU) — deterministic, no model needed.
+  // An upload typed `other` qualifies only with a marketplace-only column or an
+  // exact marketplace report header, and even then the model still reads it:
+  // the aggregates join its fields instead of replacing them.
   const docTypeKey = input.docType.toLowerCase()
-  const exportFields = tabular && (MARKETPLACE_EXPORT_TYPES.has(docTypeKey) || docTypeKey === 'other')
-    ? marketplaceExportFields(st, input.documentId, { requireSignature: docTypeKey === 'other' })
+  const declaredExport = MARKETPLACE_EXPORT_TYPES.has(docTypeKey)
+  const exportFields = tabular && (declaredExport || docTypeKey === 'other')
+    ? marketplaceExportFields(st, input.documentId, { requireSignature: !declaredExport })
     : []
-  const exportCovered = exportFields.length >= 2
+  const exportCovered = declaredExport && exportFields.length >= 2
 
   // ── Model, only when needed ────────────────────────────────────────────
   const models = new Set<string>()

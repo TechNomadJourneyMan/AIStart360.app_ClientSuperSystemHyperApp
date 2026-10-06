@@ -7,6 +7,7 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { requireGiga } from '@/lib/admin/giga-actor'
 import { recordAdminAction } from '@/lib/admin/audit'
+import { credentialsStorageReady } from '@/lib/integrations/credentials'
 import { auditUnavailable, checkCompany } from '@/lib/integrations/giga'
 import { providerParam, serverError, unknownProvider } from '@/lib/integrations/route-auth'
 import { getConnection } from '@/lib/integrations/store'
@@ -26,6 +27,10 @@ export async function POST(req: NextRequest, { params }: { params: { companyId: 
   try {
     const conn = await getConnection(params.companyId, provider)
     if (!conn) return NextResponse.json({ ok: false, error: 'Интеграция не подключена' }, { status: 404 })
+    if (!credentialsStorageReady()) {
+      // Configuration of this server, not the connection: nothing is claimed or changed.
+      return NextResponse.json({ ok: false, error: 'Хранилище ключей не настроено (SECRETS_ENCRYPTION_KEY) — синхронизация невозможна', kind: 'config' }, { status: 503 })
+    }
     const audited = await recordAdminAction(guard.actor, {
       action: 'integration.sync', entityType: 'company', entityId: params.companyId, metadata: { provider },
     }, req, { required: true })

@@ -128,3 +128,25 @@ describe('METRIC_SYNONYMS coverage', () => {
     }
   });
 });
+
+describe('marketplace keys (W7) do not swallow generic KPI labels', () => {
+  it('«…заказов», «Payout ratio», «Выкуп …» rows are not orders_count / marketplace_payout / buyout_rate', () => {
+    for (const label of [
+      'Количество повторных заказов', 'Доля повторных заказов', 'Доля повторных заказов, %', 'Количество новых заказов',
+      'Частота заказов', 'Средняя сумма заказов', 'Стоимость заказов', 'Доля отменённых заказов', 'Отмененных заказов',
+      'Orders', 'Заказов за месяц', 'Payout ratio', 'Выкуп', 'Выкуп товаров со склада',
+    ]) {
+      expect(['orders_count', 'marketplace_payout', 'buyout_rate'], label).not.toContain(matchSynonym(label));
+    }
+    // A per-client count is a frequency, never the number of orders.
+    expect(matchSynonym('Число заказов на клиента')).toBe('frequency');
+  });
+
+  it('specific phrases still map', () => {
+    expect(matchSynonym('Количество заказов')).toBe('orders_count');
+    expect(matchSynonym('Количество заказов в месяц')).toBe('orders_count');
+    expect(matchSynonym('Число заказов')).toBe('orders_count');
+    expect(matchSynonym('К перечислению продавцу')).toBe('marketplace_payout');
+    expect(matchSynonym('Процент выкупа')).toBe('buyout_rate');
+  });
+});
