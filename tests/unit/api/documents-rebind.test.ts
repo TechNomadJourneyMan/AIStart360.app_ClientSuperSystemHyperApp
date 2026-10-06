@@ -109,8 +109,14 @@ vi.mock('@/lib/supabase/server', () => ({
   }),
 }))
 
+// Persistence goes through the server connection (lib/documents/repository)
+// after authz — the 089 guard blocks parsed_data for PostgREST callers.
+const repo = vi.hoisted(() => ({ saveParsedData: vi.fn(async (..._args: unknown[]) => true) }))
+vi.mock('@/lib/documents/repository', () => ({ saveParsedData: repo.saveParsedData }))
+
 beforeEach(() => {
   resetState()
+  repo.saveParsedData.mockClear()
 })
 
 // ─── Helper ───────────────────────────────────────────────────────────────────
@@ -241,8 +247,10 @@ describe('POST /api/v1/documents/[id]/rebind', () => {
     expect(typeof body.data.updated).toBe('number')
     // Module is available — no degrade note.
     expect(body.note).toBeUndefined()
-    // Persistence happens once.
-    expect(state.updateCalls).toHaveLength(1)
+    // Persistence happens once, server-side, never through the user client.
+    expect(repo.saveParsedData).toHaveBeenCalledTimes(1)
+    expect(repo.saveParsedData.mock.calls[0][0]).toBe('doc-1')
+    expect(state.updateCalls).toHaveLength(0)
   })
 
   it("allows a profile with role='admin' to rebind a document they do not own", async () => {
@@ -271,5 +279,7 @@ describe('POST /api/v1/documents/[id]/rebind', () => {
     expect(body.data.total).toBe(sampleFields.length)
     expect(typeof body.data.updated).toBe('number')
     expect(body.note).toBeUndefined()
+    // The admin's write lands (it used to update 0 rows through RLS).
+    expect(repo.saveParsedData).toHaveBeenCalledTimes(1)
   })
 })
