@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { testProvider } from '@/lib/crm/provider-client'
+import { sealCrmToken } from '@/lib/crm/token-store'
 import type { CrmProvider } from '@/lib/crm/types'
 
 const PROVIDERS: CrmProvider[] = ['bitrix24', 'amocrm']
@@ -60,6 +61,7 @@ export async function POST(req: NextRequest) {
   }
 
   // Честная проверка связи до сохранения — не даём «подключить» нерабочий токен.
+  // testProvider сначала проверяет домен (allowlist CRM + только публичные адреса).
   const test = await testProvider(provider, baseUrl, token)
   if (!test.ok) {
     return NextResponse.json({ ok: false, error: test.error ?? 'Не удалось подключиться к CRM' }, { status: 400 })
@@ -72,7 +74,7 @@ export async function POST(req: NextRequest) {
         user_id: user.id,
         provider,
         base_url: baseUrl,
-        access_token: token,
+        access_token: sealCrmToken(token),
         connection_name: body?.connection_name?.trim() || null,
         is_active: true,
         last_sync_status: null,

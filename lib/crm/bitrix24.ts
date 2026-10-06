@@ -48,8 +48,12 @@ async function callApi(config: Bitrix24Config, method: string, params?: Record<s
     })
 
     if (!res.ok) {
-      const text = await res.text()
-      throw new Error(`Bitrix24 API (${res.status}): ${text.slice(0, 200)}`)
+      // The upstream body may echo internal details; log a short excerpt, show only the status.
+      const text = await res.text().catch(() => '')
+      console.warn(`[crm] Bitrix24 HTTP ${res.status}: ${text.slice(0, 120)}`)
+      throw new Error(res.status === 401 || res.status === 403
+        ? 'CRM отклонила доступ: проверьте ключ или права интеграции'
+        : `CRM ответила ошибкой (HTTP ${res.status})`)
     }
 
     return res.json()

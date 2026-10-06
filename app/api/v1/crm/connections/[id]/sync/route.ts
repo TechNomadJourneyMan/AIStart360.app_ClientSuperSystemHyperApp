@@ -6,6 +6,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { fetchProviderRecords } from '@/lib/crm/provider-client'
 import { mapProviderRecords } from '@/lib/crm/provider-sync'
+import { openCrmToken } from '@/lib/crm/token-store'
+import { emitPlatformEventSafely } from '@/lib/events/platform'
+import { resolveTenant } from '@/lib/tenancy'
 import type { CrmProvider } from '@/lib/crm/types'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -42,17 +45,28 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
     ;({ contacts, deals } = await fetchProviderRecords(
       provider,
       conn.base_url as string,
-      conn.access_token as string,
+      openCrmToken(conn.access_token as string),
       MAX_RECORDS,
     ))
   } catch (e) {
-    const msg = e instanceof Error ? e.message : 'sync failed'
+    const msg = e instanceof Error ? e.message.slice(0, 300) : 'sync failed'
     await sb
       .from('crm_provider_connections')
       .update({ last_sync_at: new Date().toISOString(), last_sync_status: 'error', last_sync_error: msg })
       .eq('id', conn.id)
       .eq('user_id', user.id)
-    return NextResponse.json({ ok: false, error: 'Не удалось получить данные из CRM' }, { status: 502 })
+    const tenant = await resolveTenant().catch(() => null)
+    emitPlatformEventSafely({
+      name: 'INTEGRATION_FAILED',
+      companyId: tenant && tenant.ok ? tenant.tenant.companyId : null,
+      subjectType: 'crm_connection',
+      subjectId: conn.id as string,
+      actor: user.id,
+      payload: { provider, error: msg },
+      // One alert per connection per hour.
+      dedupeKey: `integration_failed:${conn.id}:${new Date().toISOString().slice(0, 13)}`,
+    })
+    return NextResponse.json({ ok: false, error: msg }, { status: 502 })
   }
 
   const drafts = mapProviderRecords(provider, contacts, deals).slice(0, MAX_RECORDS)

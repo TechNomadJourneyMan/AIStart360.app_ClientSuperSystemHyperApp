@@ -37,8 +37,12 @@ async function callApi(config: AmoCrmConfig, path: string, params?: Record<strin
     })
 
     if (!res.ok) {
-      const text = await res.text()
-      throw new Error(`AmoCRM API (${res.status}): ${text.slice(0, 200)}`)
+      // The upstream body may echo internal details; log a short excerpt, show only the status.
+      const text = await res.text().catch(() => '')
+      console.warn(`[crm] AmoCRM HTTP ${res.status}: ${text.slice(0, 120)}`)
+      throw new Error(res.status === 401 || res.status === 403
+        ? 'CRM отклонила доступ: проверьте ключ или права интеграции'
+        : `CRM ответила ошибкой (HTTP ${res.status})`)
     }
 
     return res.json()
