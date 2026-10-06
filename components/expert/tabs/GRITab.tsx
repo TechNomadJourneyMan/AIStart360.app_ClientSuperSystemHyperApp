@@ -21,8 +21,9 @@ function toNum(v: unknown): number {
 
 interface GRIData {
   reportId: string | null
-  overall: number
-  categoryScores: Record<string, number>
+  hasAssessment?: boolean
+  overall: number | null
+  categoryScores: Record<string, number | null>
   lastCalculatedAt: string | null
 }
 
@@ -110,6 +111,9 @@ export function GRITab({ clientId }: Props) {
           <p className="text-4xl font-mono font-bold text-primary mt-1">
             {fmt(data?.overall)}
           </p>
+          {data && data.hasAssessment === false && (
+            <p className="text-[10px] text-on-surface-variant mt-1">Клиент ещё не проходил GRI-оценку</p>
+          )}
           {data?.lastCalculatedAt && (
             <p className="text-[10px] text-on-surface-variant mt-1">
               Обновлён {new Date(data.lastCalculatedAt).toLocaleDateString('ru-RU')}
@@ -122,7 +126,8 @@ export function GRITab({ clientId }: Props) {
       {/* Categories */}
       <div className="space-y-3">
         {CATEGORIES.map((cat) => {
-          const score = toNum(data?.categoryScores[cat])
+          const raw = data?.categoryScores[cat]
+          const score = raw === null || raw === undefined ? null : toNum(raw)
           const isExpanded = expanded.has(cat)
           const subs = SUB_FACTORS[cat] ?? []
 
@@ -142,8 +147,8 @@ export function GRITab({ clientId }: Props) {
                     </h3>
                   </div>
                   <div className="flex items-center gap-3 flex-shrink-0">
-                    <span className={`text-xl font-mono font-bold ${scoreColor(score)}`}>
-                      {score.toFixed(1)}
+                    <span className={`text-xl font-mono font-bold ${score === null ? 'text-on-surface-variant' : scoreColor(score)}`}>
+                      {score === null ? '—' : score.toFixed(1)}
                     </span>
                     <span className="text-[10px] font-mono text-on-surface-variant">
                       / 10
