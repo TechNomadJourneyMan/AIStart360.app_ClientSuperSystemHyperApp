@@ -1,7 +1,9 @@
 /**
  * POST /api/auth/demo-access
  *
- * Generates a fresh demo account on demand:
+ * Generates a fresh demo account on demand (closed in invite-only mode or with
+ * DEMO_ACCESS_ENABLED=false; accounts older than 24 h are removed daily by the
+ * Inngest function demo-accounts-cleanup):
  *   1. Creates auth.users row via Supabase admin API (service-role).
  *   2. Profile is auto-created by the on_auth_user_created trigger.
  *   3. Forces profile status='approved' so the demo user skips the
@@ -15,6 +17,7 @@
 import { NextResponse } from 'next/server'
 import { createClient as createSupabaseAdmin } from '@supabase/supabase-js'
 import { isRateLimited } from '@/lib/rate-limit'
+import { getRegistrationMode } from '@/lib/settings/system-settings'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -54,12 +57,21 @@ export async function POST(request: Request) {
     )
   }
 
+  // Demo accounts are approved accounts: they follow the platform's
+  // registration policy (closed in invite-only mode) and can be switched off.
+  if (process.env.DEMO_ACCESS_ENABLED === 'false' || (await getRegistrationMode()) === 'invite') {
+    return NextResponse.json(
+      { ok: false, error: 'demo_access_disabled', detail: 'Демо-доступ сейчас выключен' },
+      { status: 403 },
+    )
+  }
+
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 
   if (!url || !serviceKey) {
     return NextResponse.json(
-      { ok: false, error: 'demo_access_unavailable', detail: 'Supabase admin credentials missing on server' },
+      { ok: false, error: 'demo_access_unavailable', detail: 'Демо-доступ временно недоступен' },
       { status: 500 },
     )
   }
@@ -79,15 +91,17 @@ export async function POST(request: Request) {
     email_confirm: true,
     user_metadata: {
       full_name: 'Демо · гость',
-      role: 'client',
       demo: true,
       created_via: 'demo_access_button',
     },
+    // Trusted marker (only the service role can write app_metadata): cleanup
+    // relies on this, not on user_metadata that a user can edit themselves.
+    app_metadata: { demo: true, role: 'client', status: 'pending_approval' },
   })
 
   if (createErr || !created?.user) {
     return NextResponse.json(
-      { ok: false, error: 'create_user_failed', detail: createErr?.message ?? 'unknown' },
+      { ok: false, error: 'create_user_failed', detail: 'Не удалось создать демо-аккаунт' },
       { status: 500 },
     )
   }

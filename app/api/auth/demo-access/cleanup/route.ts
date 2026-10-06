@@ -48,7 +48,10 @@ export async function POST(req: Request) {
     // Already gone — treat as success.
     return NextResponse.json({ ok: true, note: 'not_found' }, { status: 200 })
   }
-  const isDemo = target.user.user_metadata?.demo === true
+  // app_metadata is server-only; user_metadata could be set by the user, so it
+  // only counts together with the generated demo e-mail address.
+  const isDemo = target.user.app_metadata?.demo === true
+    || (target.user.user_metadata?.demo === true && /^demo-[a-z0-9]+@aistart360\.app$/.test(target.user.email ?? ''))
   if (!isDemo) {
     return NextResponse.json(
       { ok: false, error: 'not_a_demo_user' },
@@ -59,7 +62,7 @@ export async function POST(req: Request) {
   const { error: delErr } = await admin.auth.admin.deleteUser(userId)
   if (delErr) {
     return NextResponse.json(
-      { ok: false, error: 'delete_failed', detail: delErr.message },
+      { ok: false, error: 'delete_failed' },
       { status: 500 },
     )
   }
