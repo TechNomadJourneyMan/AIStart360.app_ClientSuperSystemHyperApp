@@ -21,8 +21,15 @@ import type {
 // ─── Context gatherer ────────────────────────────────────────
 
 export interface GatherContextOptions {
+  /** Whose survey answers to read — the company's primary owner (companies.user_id). */
   userId: string
   companyId: string
+  /**
+   * 'user' (default, original behaviour): documents uploaded by `userId`.
+   * 'company': documents of the company (company_id) plus older ones that
+   * carry only the owner's user_id — what a multi-member company uploaded.
+   */
+  documentsScope?: 'user' | 'company'
   preferPeriodYear?: number
   preferPeriodQuarter?: PeriodQuarter
   prismaSignals?: Record<string, unknown>
@@ -30,6 +37,18 @@ export interface GatherContextOptions {
   manualOverrides?: Record<string, unknown>
   /** Inject a clock — defaults to now(). */
   now?: Date
+}
+
+const PLAIN_ID = /^[A-Za-z0-9_-]+$/
+
+function documentsQuery(supabase: SupabaseClient, opts: GatherContextOptions) {
+  const q = supabase
+    .from('documents')
+    .select('id, doc_type, parsed_data, period_year, period_quarter, uploaded_at, parse_status')
+  if (opts.documentsScope === 'company' && PLAIN_ID.test(opts.companyId) && PLAIN_ID.test(opts.userId)) {
+    return q.or(`company_id.eq.${opts.companyId},user_id.eq.${opts.userId}`)
+  }
+  return q.eq('user_id', opts.userId)
 }
 
 export async function gatherResolverContext(
@@ -41,10 +60,7 @@ export async function gatherResolverContext(
       .from('survey_answers')
       .select('question_key, answer')
       .eq('user_id', opts.userId),
-    supabase
-      .from('documents')
-      .select('id, doc_type, parsed_data, period_year, period_quarter, uploaded_at, parse_status')
-      .eq('user_id', opts.userId)
+    documentsQuery(supabase, opts)
       .eq('parse_status', 'parsed')
       .order('uploaded_at', { ascending: false }),
   ])
