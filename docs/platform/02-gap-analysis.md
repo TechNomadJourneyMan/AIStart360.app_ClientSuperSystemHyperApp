@@ -71,28 +71,30 @@
 | `tests/e2e/journey.spec.ts` + `playwright.config.ts:19-24` | e2e с `JOURNEY_FORCE_DEMO=1` | ок |
 | `scripts/ai-smoke.test.ts`, `ai-probe.test.ts` | живые LLM-вызовы | только вручную (B3) |
 
-### 2.3 Реальные product flows с фейковыми данными (исправить)
+### 2.3 Реальные product flows с фейковыми данными
 
-| Где | Что видит пользователь | Кто видит | Фаза |
-|---|---|---|---|
-| `lib/metrics/descriptions.ts` — 67 `current_state` (`:78`, `:846`, `:896`…) → `MetricDrillDownModalV2.tsx:637-642`, `MetricsPageClient.tsx:501-505,623-636` | «Текущее состояние: ₸84.2М при цели ₸110М», «Команда 2.55/10 — критический уровень», «Факт ~90 млрд ₸» | каждый клиент | 3 |
-| `components/point-a/v2/MetricZonesGrid.tsx:82-103` | «Зелёная зона — в плане» для любой метрики со значением | клиент | 3 |
-| `GriPageShell.tsx:45,148-152` + `lib/gri-calculator/gri-data.ts:21-29` | AI-стратегия по баллам 5/4/3/6/2/5/4 | клиент | 3 |
-| `app/api/expert/clients/[id]/gri/route.ts:21,29` | те же дефолтные баллы GRI | эксперт | 3 |
-| `components/point-a/v2/PointAQuickPills.tsx:95,183` | всегда «5 Потерь» | клиент | 3 |
-| `app/client/point-a/page.tsx:253,366-369` | дата отчёта = сегодня | клиент | 3 |
-| `app/client/dashboard-ecommerce/page.tsx:10,18-60` | «Demo Shop», выручка 84.2M, воронка, SKU (бейдж только у hero) | клиент e-com | 3 |
-| `app/(dashboard)/dashboard/page.tsx:536-541` | «Q1 2026 · Текущий период», «до $2M в год» | персонал | 13 |
-| `components/dashboard/GoalsBar.tsx:10-21` | цели «Выйти на $2M ARR», «Маржа 40%+» (Zustand) | персонал | 13 |
-| `lib/portfolio-gri.ts:57-66` + `dashboard/page.tsx:518-528` | «GRI»-радар из блоков Точки А (Team=Operations) по всем тенантам | персонал | 13 |
-| `dashboard/page.tsx:83-94,161-168` | «GRI анализов» = счётчики `diagnostics.overall_score` | персонал | 13 |
-| `app/(dashboard)/intelligence/page.tsx:30-31` | «AI Инсайты 0», «Статус систем Active» — константы | персонал | 13 |
-| `app/(expert)/expert/reports/page.tsx:5-11` | список отчётов захардкожен | эксперт | 13 |
-| `components/dashboard/admin/AdminClientsList.tsx:56` | менеджер «Марина Р.» | персонал | 13 |
-| `app/(dashboard)/users` (`shared/api/users.service.ts:1-4`) | пользователи из localStorage | персонал | 13 |
-| `app/api/health/route.ts:21,53-69` | uptime «99.8%», латентности `db*1.6+12` | публично | 13 |
-| `lib/point-a/benchmarks.ts:8-10,26-28` | «curated» бенчмарки с синтетическим `sampleSize` (через сиротский `/api/v1/point-a/benchmarks`) | API | 4 |
-| `components/clients/ClientsTable.tsx:11` | «maps both mock and real data» (`/pulse`) | персонал | 13 |
+| Где | Что видит пользователь | Кто видит | Фаза | Статус |
+|---|---|---|---|---|
+| `lib/metrics/descriptions.ts` — 67 `current_state` (`:78`, `:846`, `:896`…) → `MetricDrillDownModalV2.tsx:637-642`, `MetricsPageClient.tsx:501-505,623-636` | «Текущее состояние: ₸84.2М при цели ₸110М», «Команда 2.55/10 — критический уровень», «Факт ~90 млрд ₸» | каждый клиент | 3 | ✅ тексты `current_state` не уходят клиенту (`lib/metrics/catalog-helpers.ts`) |
+| `components/point-a/v2/MetricZonesGrid.tsx:82-103` | «Зелёная зона — в плане» для любой метрики со значением | клиент | 3 | ✅ зона — по цели или ориентиру, без них «Без оценки» |
+| `GriPageShell.tsx:45,148-152` + `lib/gri-calculator/gri-data.ts:21-29` | AI-стратегия по баллам 5/4/3/6/2/5/4 | клиент | 3 | ✅ AI-вкладка только с баллами из диагностики или калькулятора клиента; роуты пропускают в промпт только 7 категорий |
+| `app/api/expert/clients/[id]/gri/route.ts:21,29` | те же дефолтные баллы GRI | эксперт | 3 | ✅ реальные `gri_assessments`, без оценки — null |
+| `components/point-a/v2/PointAQuickPills.tsx:95,183` | всегда «5 Потерь» | клиент | 3 | ✅ число потерь из данных |
+| `app/client/point-a/page.tsx:253,366-369` | дата отчёта = сегодня | клиент | 3 | ✅ «Расчёт от» = дата диагностики |
+| `app/client/dashboard-ecommerce/page.tsx:10,18-60` | «Demo Shop», выручка 84.2M, воронка, SKU (бейдж только у hero) | клиент e-com | 3 | ✅ только ответы анкеты `ec_*` или пометка «расчёт по анкете»; без данных — пустые состояния (`lib/ecommerce/survey-view.ts`) |
+| `app/(dashboard)/dashboard/page.tsx:536-541` | «Q1 2026 · Текущий период», «до $2M в год» | персонал | 13 | ✅ текущий квартал (Asia/Almaty), нейтральный заголовок |
+| `components/dashboard/GoalsBar.tsx:10-21` | цели «Выйти на $2M ARR», «Маржа 40%+» (Zustand) | персонал | 13 | — оставлено: это пресеты-подсказки, по умолчанию ничего не закреплено |
+| `lib/portfolio-gri.ts:57-66` + `dashboard/page.tsx:518-528` | «GRI»-радар из блоков Точки А (Team=Operations) по всем тенантам | персонал | 13 | ✅ средние `gri_assessments.section_avgs`, пустая секция — «нет данных» |
+| `dashboard/page.tsx:83-94,161-168` | «GRI анализов» = счётчики `diagnostics.overall_score` | персонал | 13 | ✅ карточка «Оценки GRI» по `gri_assessments` |
+| `app/(dashboard)/intelligence/page.tsx:30-31` | «AI Инсайты 0», «Статус систем Active» — константы | персонал | 13 | ✅ гипотезы ИИ из `diagnostic_findings`, клиенты по ролям, проверки `/api/health` |
+| `app/(expert)/expert/reports/page.tsx:5-11` | список отчётов захардкожен | эксперт | 13 | ✅ опубликованные `report_versions` под RLS эксперта |
+| `components/dashboard/admin/AdminClientsList.tsx:56` | менеджер «Марина Р.» | персонал | 13 | ✅ менеджер «—» (поля нет), колонка «Точка А» |
+| `app/(dashboard)/users` (`shared/api/users.service.ts:1-4`) | пользователи из localStorage | персонал | 13 | ⛔ legacy, вывод — решение владельца |
+| `app/api/health/route.ts:21,53-69` | uptime «99.8%», латентности `db*1.6+12` | публично | 13 | ✅ только измеряемое; общая проверка `lib/health/platform.ts` |
+| `lib/point-a/benchmarks.ts:8-10,26-28` | «curated» бенчмарки с синтетическим `sampleSize` (через сиротский `/api/v1/point-a/benchmarks`) | API | 4 | ✅ у curated-строк `sampleSize: null` |
+| `components/clients/ClientsTable.tsx:11` | «maps both mock and real data» (`/pulse`) | персонал | 13 | ✅ мок-путей нет, ошибка загрузки видна |
+| `app/(dashboard)/clients/page.tsx:54-59` | при ошибке чтения — «44 / 38 / 6 / Avg GRI 763»; средний балл ×10; персонал считался клиентами | персонал | 13 | ✅ счётчики по клиентским ролям (`lib/profiles/client-roles.ts`), ошибка видна, балл 0–100 |
+| `app/api/v1/admin/clients/route.ts:98-102` | персонал и эксперты в таблицах «клиентов» | персонал | 13 | ✅ только клиентские роли; ошибка чтения — 500 |
 
 Не фейк, но риск: `app/api/auth/demo-access/*` + кнопка на прод-логине — реальная функция, создающая одобренные аккаунты без auth (см. [09](09-security.md)).
 
