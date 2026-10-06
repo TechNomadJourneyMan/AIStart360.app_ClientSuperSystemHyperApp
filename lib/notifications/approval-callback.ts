@@ -15,8 +15,19 @@ export type CallbackAction = 'approve' | 'reject'
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-function secret(): string | null {
-  return process.env.TELEGRAM_CALLBACK_SECRET?.trim() || process.env.TELEGRAM_WEBHOOK_SECRET?.trim() || null
+/**
+ * Signing keys in priority order: TELEGRAM_CALLBACK_SECRET, the admin bot's
+ * webhook secret, the client bot's. New buttons are signed with the first;
+ * a press is accepted with any, so configuring the admin bot does not
+ * invalidate cards already sent.
+ */
+function secrets(): string[] {
+  const all = [
+    process.env.TELEGRAM_CALLBACK_SECRET?.trim(),
+    process.env.TELEGRAM_ADMIN_WEBHOOK_SECRET?.trim(),
+    process.env.TELEGRAM_WEBHOOK_SECRET?.trim(),
+  ].filter((k): k is string => Boolean(k))
+  return [...new Set(all)]
 }
 
 function sign(key: string, approvalId: string, action: 'a' | 'r'): string {
@@ -24,19 +35,22 @@ function sign(key: string, approvalId: string, action: 'a' | 'r'): string {
 }
 
 export function approvalCallbackData(approvalId: string, action: CallbackAction): string | null {
-  const key = secret()
+  const key = secrets()[0]
   if (!key || !UUID.test(approvalId)) return null
   const a = action === 'approve' ? 'a' : 'r'
   return `ap:${approvalId.toLowerCase()}:${a}:${sign(key, approvalId.toLowerCase(), a)}`
 }
 
 export function parseApprovalCallback(data: string): { approvalId: string; action: CallbackAction } | null {
-  const key = secret()
-  if (!key) return null
+  const keys = secrets()
+  if (!keys.length) return null
   const m = data.match(/^ap:([0-9a-f-]{36}):([ar]):([A-Za-z0-9_-]{22})$/)
   if (!m || !UUID.test(m[1])) return null
-  const expected = Buffer.from(sign(key, m[1], m[2] as 'a' | 'r'))
   const got = Buffer.from(m[3])
-  if (expected.length !== got.length || !timingSafeEqual(expected, got)) return null
+  const valid = keys.some((key) => {
+    const expected = Buffer.from(sign(key, m[1], m[2] as 'a' | 'r'))
+    return expected.length === got.length && timingSafeEqual(expected, got)
+  })
+  if (!valid) return null
   return { approvalId: m[1], action: m[2] === 'a' ? 'approve' : 'reject' }
 }

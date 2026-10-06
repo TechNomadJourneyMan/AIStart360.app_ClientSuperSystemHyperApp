@@ -1,0 +1,162 @@
+/**
+ * lib/telegram/bots/registry.ts — the platform's Telegram bots.
+ *
+ *   client  TELEGRAM_BOT_TOKEN / TELEGRAM_BOT_USERNAME / TELEGRAM_WEBHOOK_SECRET
+ *           client reminders and chat linking (/api/telegram/webhook)
+ *   admin   TELEGRAM_ADMIN_BOT_TOKEN / _USERNAME / TELEGRAM_ADMIN_WEBHOOK_SECRET
+ *           the control panel for staff (/api/telegram/admin)
+ *   expert  TELEGRAM_EXPERT_BOT_TOKEN / _USERNAME / TELEGRAM_EXPERT_WEBHOOK_SECRET
+ *           clients and diagnostics for experts (/api/telegram/expert)
+ *
+ * Tokens come from env only and never leave this module: errors carry the
+ * Telegram description, never the URL. Staff notifications and approval
+ * buttons go to the admin bot once it is configured (token + secret), and to
+ * the client bot otherwise — today's behaviour before the env is set.
+ */
+
+export const BOT_IDS = ['client', 'admin', 'expert'] as const
+export type BotId = (typeof BOT_IDS)[number]
+
+export function isBotId(v: unknown): v is BotId {
+  return typeof v === 'string' && (BOT_IDS as readonly string[]).includes(v)
+}
+
+const ENV: Record<BotId, { token: string; username: string; secret: string }> = {
+  client: { token: 'TELEGRAM_BOT_TOKEN', username: 'TELEGRAM_BOT_USERNAME', secret: 'TELEGRAM_WEBHOOK_SECRET' },
+  admin: { token: 'TELEGRAM_ADMIN_BOT_TOKEN', username: 'TELEGRAM_ADMIN_BOT_USERNAME', secret: 'TELEGRAM_ADMIN_WEBHOOK_SECRET' },
+  expert: { token: 'TELEGRAM_EXPERT_BOT_TOKEN', username: 'TELEGRAM_EXPERT_BOT_USERNAME', secret: 'TELEGRAM_EXPERT_WEBHOOK_SECRET' },
+}
+
+/** Names of the env variables of a bot (for docs, health and the setup script). */
+export function botEnvNames(bot: BotId): { token: string; username: string; secret: string } {
+  return { ...ENV[bot] }
+}
+
+const read = (name: string): string | null => process.env[name]?.trim() || null
+
+export function botToken(bot: BotId): string | null {
+  return read(ENV[bot].token)
+}
+
+/** @username without the leading @, or null. */
+export function botUsernameOf(bot: BotId): string | null {
+  return read(ENV[bot].username)?.replace(/^@/, '') || null
+}
+
+export function botWebhookSecret(bot: BotId): string | null {
+  return read(ENV[bot].secret)
+}
+
+/** Token and webhook secret are both set: the bot can send and safely receive. */
+export function isBotConfigured(bot: BotId): boolean {
+  return Boolean(botToken(bot) && botWebhookSecret(bot))
+}
+
+/** Bot that carries staff notifications and approval cards. */
+export function staffBot(): BotId {
+  return isBotConfigured('admin') ? 'admin' : 'client'
+}
+
+/** Staff linking works: the staff bot can send and its webhook is protected. */
+export function staffBotReady(): boolean {
+  return isBotConfigured(staffBot())
+}
+
+export function deepLink(bot: BotId, startParam: string): string | null {
+  const u = botUsernameOf(bot)
+  return u ? `https://t.me/${u}?start=${encodeURIComponent(startParam)}` : null
+}
+
+// ─── Bot API ─────────────────────────────────────────────────────────────────
+
+export type BotResult<T> = { ok: true; result: T } | { ok: false; status: number; description: string }
+
+/**
+ * Call a Bot API method. Never throws: network problems and HTTP errors come
+ * back as { ok: false }. `fetchImpl` lets tests (and the container without
+ * network) replace the transport.
+ */
+export async function callApi<T = unknown>(
+  bot: BotId,
+  method: string,
+  params: Record<string, unknown>,
+  fetchImpl: typeof fetch = fetch,
+): Promise<BotResult<T>> {
+  const token = botToken(bot)
+  if (!token) return { ok: false, status: 0, description: `${ENV[bot].token} не задан` }
+  if (!/^[A-Za-z]{3,40}$/.test(method)) return { ok: false, status: 0, description: 'bad method' }
+  try {
+    const res = await fetchImpl(`https://api.telegram.org/bot${token}/${method}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params),
+      signal: AbortSignal.timeout(8000),
+    })
+    const json = (await res.json().catch(() => null)) as { ok?: boolean; result?: T; description?: string } | null
+    if (!res.ok || !json?.ok) {
+      return { ok: false, status: res.status, description: redact(json?.description?.slice(0, 200) ?? `HTTP ${res.status}`, token) }
+    }
+    return { ok: true, result: json.result as T }
+  } catch (err) {
+    return { ok: false, status: 0, description: err instanceof Error && err.name === 'TimeoutError' ? 'timeout' : 'network error' }
+  }
+}
+
+function redact(text: string, token: string): string {
+  return token ? text.split(token).join('***') : text
+}
+
+export interface InlineButton {
+  text: string
+  callback_data?: string
+  url?: string
+}
+
+export type ReplyMarkup =
+  | { inline_keyboard: InlineButton[][] }
+  | { keyboard: Array<Array<{ text: string }>>; resize_keyboard?: boolean; is_persistent?: boolean; input_field_placeholder?: string }
+  | { remove_keyboard: true }
+
+export const TG_TEXT_LIMIT = 4000
+
+export function sendMessage(
+  bot: BotId,
+  chatId: string,
+  html: string,
+  markup?: ReplyMarkup,
+  fetchImpl?: typeof fetch,
+): Promise<BotResult<{ message_id: number }>> {
+  return callApi(bot, 'sendMessage', {
+    chat_id: chatId,
+    text: html.slice(0, TG_TEXT_LIMIT),
+    parse_mode: 'HTML',
+    disable_web_page_preview: true,
+    ...(markup ? { reply_markup: markup } : {}),
+  }, fetchImpl)
+}
+
+export function editMessage(
+  bot: BotId,
+  chatId: string,
+  messageId: number,
+  html: string,
+  keyboard: InlineButton[][] = [],
+  fetchImpl?: typeof fetch,
+): Promise<BotResult<unknown>> {
+  return callApi(bot, 'editMessageText', {
+    chat_id: chatId,
+    message_id: messageId,
+    text: html.slice(0, TG_TEXT_LIMIT),
+    parse_mode: 'HTML',
+    disable_web_page_preview: true,
+    reply_markup: { inline_keyboard: keyboard },
+  }, fetchImpl)
+}
+
+export function answerCallbackQuery(bot: BotId, callbackQueryId: string, text: string, fetchImpl?: typeof fetch, alert = false): Promise<BotResult<unknown>> {
+  return callApi(bot, 'answerCallbackQuery', { callback_query_id: callbackQueryId, text: text.slice(0, 190), show_alert: alert }, fetchImpl)
+}
+
+export function deleteMessage(bot: BotId, chatId: string, messageId: number, fetchImpl?: typeof fetch): Promise<BotResult<unknown>> {
+  return callApi(bot, 'deleteMessage', { chat_id: chatId, message_id: messageId }, fetchImpl)
+}

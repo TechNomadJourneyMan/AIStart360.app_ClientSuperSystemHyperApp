@@ -10,6 +10,7 @@ import { decideApproval } from '@/lib/agents/approvals'
 import { closeApprovalCards } from '@/lib/notifications/approval-cards'
 import { parseApprovalCallback } from '@/lib/notifications/approval-callback'
 import { answerCallback, sendBotMessage } from './bot-api'
+import type { BotId } from './bots/registry'
 import { consumeStaffLinkCode, staffByTelegramUser, STAFF_START_PREFIX } from './staff-link'
 
 export interface TgUser { id: number; username?: string; first_name?: string }
@@ -28,8 +29,12 @@ export async function firstSeenUpdate(updateId: unknown): Promise<boolean> {
   }
 }
 
-/** Handles `/start staff_<code>`; returns false when the text is not a staff link. */
-export async function handleStaffStart(text: string, from: TgUser | undefined, chatId: string, fetchImpl?: typeof fetch): Promise<boolean> {
+/**
+ * Handles `/start staff_<code>`; returns false when the text is not a staff
+ * link. `bot` — the bot that received it (client by default; the admin bot
+ * once configured).
+ */
+export async function handleStaffStart(text: string, from: TgUser | undefined, chatId: string, fetchImpl?: typeof fetch, bot: BotId = 'client'): Promise<boolean> {
   const m = text.trim().match(/^\/start\s+(\S+)/)
   if (!m || !m[1].startsWith(STAFF_START_PREFIX)) return false
   if (!from?.id) return true
@@ -42,6 +47,7 @@ export async function handleStaffStart(text: string, from: TgUser | undefined, c
       : 'Ссылка привязки недействительна или истекла. Получите новую в панели GIGA → Профиль → Telegram.',
     undefined,
     fetchImpl,
+    bot,
   )
   return true
 }
@@ -51,21 +57,27 @@ export type CallbackOutcome =
 
 export async function handleApprovalCallback(
   q: TgCallbackQuery,
-  deps: { fetchImpl?: typeof fetch; audit?: (entry: { actorId: string; role: string; approvalId: string; decision: string; ok: boolean }) => Promise<void> } = {},
+  deps: {
+    fetchImpl?: typeof fetch
+    audit?: (entry: { actorId: string; role: string; approvalId: string; decision: string; ok: boolean }) => Promise<void>
+    /** Bot that received the press (client by default). */
+    bot?: BotId
+  } = {},
 ): Promise<CallbackOutcome> {
+  const bot = deps.bot ?? 'client'
   if (!q.data?.startsWith('ap:')) return 'not_ours'
   const parsed = parseApprovalCallback(q.data)
   if (!parsed) {
-    await answerCallback(q.id, 'Кнопка недействительна.', deps.fetchImpl)
+    await answerCallback(q.id, 'Кнопка недействительна.', deps.fetchImpl, bot)
     return 'bad_signature'
   }
   const staff = await staffByTelegramUser(q.from.id)
   if (!staff) {
-    await answerCallback(q.id, 'Telegram не привязан к аккаунту сотрудника.', deps.fetchImpl)
+    await answerCallback(q.id, 'Telegram не привязан к аккаунту сотрудника.', deps.fetchImpl, bot)
     return 'not_linked'
   }
   if (!hasPermission(staff.role, 'approvals.decide')) {
-    await answerCallback(q.id, 'Нет права принимать решения по действиям агентов.', deps.fetchImpl)
+    await answerCallback(q.id, 'Нет права принимать решения по действиям агентов.', deps.fetchImpl, bot)
     return 'no_permission'
   }
 
@@ -78,7 +90,7 @@ export async function handleApprovalCallback(
   await deps.audit?.({ actorId: staff.userId, role: staff.role, approvalId: parsed.approvalId, decision: parsed.action, ok: result.ok })
 
   if (!result.ok) {
-    await answerCallback(q.id, result.reason === 'not_pending' ? 'Решение уже принято или срок истёк.' : 'Запрос не найден.', deps.fetchImpl)
+    await answerCallback(q.id, result.reason === 'not_pending' ? 'Решение уже принято или срок истёк.' : 'Запрос не найден.', deps.fetchImpl, bot)
     return result.reason === 'not_pending' ? 'not_pending' : 'not_found'
   }
   await closeApprovalCards({
@@ -89,6 +101,6 @@ export async function handleApprovalCallback(
     summary: result.summary,
     fetchImpl: deps.fetchImpl,
   })
-  await answerCallback(q.id, result.status === 'approved' ? 'Одобрено' : 'Отклонено', deps.fetchImpl)
+  await answerCallback(q.id, result.status === 'approved' ? 'Одобрено' : 'Отклонено', deps.fetchImpl, bot)
   return 'decided'
 }

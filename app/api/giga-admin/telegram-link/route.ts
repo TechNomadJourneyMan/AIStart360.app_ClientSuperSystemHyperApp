@@ -3,13 +3,15 @@ import { requireGiga } from '@/lib/admin/giga-actor'
 import { recordAdminAction } from '@/lib/admin/audit'
 import { prisma } from '@/lib/db'
 import { createStaffLinkCode, unlinkStaffTelegram } from '@/lib/telegram/staff-link'
+import { staffBot, staffBotReady } from '@/lib/telegram/bots/registry'
 
 export const dynamic = 'force-dynamic'
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 /**
- * Telegram of the signed-in staff member (notifications + approval buttons).
+ * Telegram of the signed-in staff member (notifications + approval buttons +
+ * the admin bot's control panel when TELEGRAM_ADMIN_BOT_* is configured).
  *   GET    → link status
  *   POST   → one-time deep link (15 min) to bind this account in the bot
  *   DELETE → unlink
@@ -35,15 +37,19 @@ export async function GET(req: NextRequest) {
     linked: Boolean(r?.linked_at),
     username: r?.telegram_username ?? null,
     minLevel: r?.min_level ?? 'WARNING',
-    botConfigured: Boolean(process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_WEBHOOK_SECRET),
+    botConfigured: staffBotReady(),
+    bot: staffBot(),
   })
 }
 
 export async function POST(req: NextRequest) {
   const g = await guard(req)
   if (g.response) return g.response
-  if (!process.env.TELEGRAM_BOT_TOKEN || !process.env.TELEGRAM_WEBHOOK_SECRET) {
-    return NextResponse.json({ ok: false, error: 'Бот не настроен: нужны TELEGRAM_BOT_TOKEN и TELEGRAM_WEBHOOK_SECRET' }, { status: 503 })
+  if (!staffBotReady()) {
+    return NextResponse.json({
+      ok: false,
+      error: 'Бот не настроен: нужны TELEGRAM_ADMIN_BOT_TOKEN и TELEGRAM_ADMIN_WEBHOOK_SECRET (или TELEGRAM_BOT_TOKEN и TELEGRAM_WEBHOOK_SECRET)',
+    }, { status: 503 })
   }
   const link = await createStaffLinkCode(g.actor.id)
   await recordAdminAction(g.actor, { action: 'staff.telegram.link_requested', entityType: 'staff_telegram_link', entityId: g.actor.id }, req)

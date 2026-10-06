@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requireGiga } from '@/lib/admin/giga-actor'
 import { recordAdminAction } from '@/lib/admin/audit'
-import { cancelTask, getTaskDetail, retryTask } from '@/lib/agents/admin'
-import { kickTask } from '@/lib/agents/queue'
+import { getTaskDetail } from '@/lib/agents/admin'
+import { agentTaskAction } from '@/lib/admin/staff-actions'
 
 export const dynamic = 'force-dynamic'
 
@@ -29,17 +29,11 @@ export async function POST(req: NextRequest, { params }: Ctx) {
   if (!UUID.test(params.id)) return NextResponse.json({ ok: false, error: 'Задача не найдена' }, { status: 404 })
   const parsed = Action.safeParse(await req.json().catch(() => null))
   if (!parsed.success) return NextResponse.json({ ok: false, error: 'Неверное действие' }, { status: 400 })
-  await recordAdminAction(g.actor, {
-    action: `agent.task.${parsed.data.action}`, entityType: 'agent_task', entityId: params.id,
-  }, req, { required: true })
-  if (parsed.data.action === 'cancel') {
-    const ok = await cancelTask(params.id, g.actor.id)
-    return ok
-      ? NextResponse.json({ ok: true })
-      : NextResponse.json({ ok: false, error: 'Задачу нельзя отменить в текущем статусе' }, { status: 409 })
-  }
-  const ok = await retryTask(params.id)
-  if (!ok) return NextResponse.json({ ok: false, error: 'Повторить можно только завершившуюся неуспешно задачу' }, { status: 409 })
-  kickTask(params.id)
-  return NextResponse.json({ ok: true })
+  const res = await agentTaskAction({
+    taskId: params.id,
+    action: parsed.data.action,
+    actorId: g.actor.id,
+    audit: (entry, opts) => recordAdminAction(g.actor, entry, req, opts),
+  })
+  return res.ok ? NextResponse.json({ ok: true }) : NextResponse.json({ ok: false, error: res.error }, { status: 409 })
 }

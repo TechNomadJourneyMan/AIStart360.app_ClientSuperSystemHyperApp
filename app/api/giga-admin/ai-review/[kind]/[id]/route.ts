@@ -3,7 +3,8 @@ import { z } from 'zod'
 import { requireGiga } from '@/lib/admin/giga-actor'
 import { recordAdminAction } from '@/lib/admin/audit'
 import { apiError, dbError } from '@/lib/api-error'
-import { reviewItem, reviewItemCompany, type ReviewKind, type ReviewResult } from '@/lib/reports/review'
+import type { ReviewKind } from '@/lib/reports/review'
+import { reviewAiItem } from '@/lib/admin/staff-actions'
 
 export const dynamic = 'force-dynamic'
 
@@ -31,36 +32,22 @@ export async function POST(req: NextRequest, { params }: { params: { kind: strin
   const { decision } = parsed.data
   const reason = parsed.data.reason?.trim() || null
 
-  let target
-  try {
-    target = await reviewItemCompany(kind, params.id)
-  } catch (err) {
-    return dbError('giga-admin/ai-review', err as { message?: string; code?: string }, 'Не удалось загрузить элемент')
-  }
-  if (!target) return apiError('Элемент не найден', 404)
-
-  try {
-    await recordAdminAction(g.actor, {
-      action: `ai_review.${kind}.${decision}`,
-      entityType: kind === 'finding' ? 'diagnostic_finding' : 'diagnostic_recommendation',
-      entityId: params.id,
-      newValue: { decision, reason },
-      metadata: { company_id: target.company_id, title: target.title.slice(0, 300) },
-    }, req, { required: true })
-  } catch {
-    return apiError('Журнал аудита недоступен — решение не сохранено', 503)
-  }
-
-  let res: ReviewResult
-  try {
-    res = await reviewItem({ kind, id: params.id, decision, actorId: g.actor.id })
-  } catch (err) {
-    return dbError('giga-admin/ai-review', err as { message?: string; code?: string }, 'Не удалось сохранить решение')
-  }
+  const res = await reviewAiItem({
+    kind,
+    id: params.id,
+    decision,
+    reason,
+    actorId: g.actor.id,
+    audit: (entry, opts) => recordAdminAction(g.actor, entry, req, opts),
+  })
   if (!res.ok) {
-    return res.reason === 'not_found'
-      ? apiError('Элемент не найден', 404)
-      : apiError('Решение по этому элементу уже принято', 409)
+    switch (res.code) {
+      case 'db_load': return dbError('giga-admin/ai-review', res.err, 'Не удалось загрузить элемент')
+      case 'db_write': return dbError('giga-admin/ai-review', res.err, 'Не удалось сохранить решение')
+      case 'audit_unavailable': return apiError('Журнал аудита недоступен — решение не сохранено', 503)
+      case 'not_found': return apiError('Элемент не найден', 404)
+      default: return apiError('Решение по этому элементу уже принято', 409)
+    }
   }
-  return NextResponse.json({ ok: true, item: res })
+  return NextResponse.json({ ok: true, item: res.item })
 }

@@ -1,6 +1,8 @@
 /**
  * Platform events → staff notifications. Decides the level and the wording;
- * notifyStaff decides who gets it on which channel. INFO-level events only
+ * notifyStaff decides who gets it on which channel (staff Telegram = the admin
+ * bot once configured). Experts linked in the expert bot additionally get
+ * DIAGNOSTIC_COMPLETED (lib/telegram/bots/expert/notify.ts). INFO-level events only
  * land in the admin feed by default (Telegram threshold is WARNING).
  */
 import { prisma } from '@/lib/db'
@@ -110,4 +112,11 @@ export async function notificationForEvent(e: PlatformEventRow): Promise<StaffNo
 export async function routeEventToStaff(e: PlatformEventRow): Promise<void> {
   const n = await notificationForEvent(e)
   if (n) await notifyStaff(n)
+  // Experts linked in the expert bot (DIAGNOSTIC_COMPLETED); a no-op until it is configured.
+  try {
+    const { routeEventToExperts } = await import('@/lib/telegram/bots/expert/notify')
+    await routeEventToExperts(e)
+  } catch (err) {
+    console.error('[notifications] expert routing failed:', err instanceof Error ? err.message.split('\n')[0] : err)
+  }
 }

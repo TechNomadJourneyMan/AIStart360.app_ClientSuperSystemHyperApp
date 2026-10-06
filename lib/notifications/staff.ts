@@ -3,7 +3,9 @@
  *
  * notifyStaff() records a notification_events row (the admin feed, deduped by
  * key) and delivers it per channel rules (levels.ts):
- *   telegram  linked staff whose own threshold and the platform threshold the
+ *   telegram  (the admin bot when TELEGRAM_ADMIN_BOT_* is configured, else the
+ *             client bot — lib/telegram/bots/registry.ts staffBot())
+ *             linked staff whose own threshold and the platform threshold the
  *             level reaches; approvals go only to staff with approvals.decide,
  *             with Approve / Reject buttons. Legacy TELEGRAM_ADMIN_CHAT_IDS get
  *             the same text without buttons.
@@ -17,6 +19,7 @@ import { hasPermission, isStaffRole, type StaffRole } from '@/lib/admin/rbac'
 import { sendNotificationEmail } from '@/lib/email/notification'
 import { getSiteUrl } from '@/lib/site-url'
 import { sendBotMessage, tgEscape, type InlineButton } from '@/lib/telegram/bot-api'
+import { staffBot } from '@/lib/telegram/bots/registry'
 import { approvalCallbackData } from './approval-callback'
 import { inQuietHours, LEVEL_ICONS, LEVEL_LABELS, reaches, routingConfig, type NotificationLevel, type OrderedLevel } from './levels'
 
@@ -127,6 +130,7 @@ export async function notifyStaff(n: StaffNotification, opts: { fetchImpl?: type
   }
 
   // ── Telegram ──
+  const bot = staffBot()
   const text = formatTelegram(n)
   const quiet = inQuietHours(n.level, cfg, opts.now)
   const cooled = await inCooldown(n)
@@ -147,7 +151,7 @@ export async function notifyStaff(n: StaffNotification, opts: { fetchImpl?: type
     if (s.mutedUntil && s.mutedUntil > (opts.now ?? new Date()) && !isApproval && n.level !== 'CRITICAL') { await skip('telegram', s.chatId, 'muted'); continue }
     if (quiet) { await skip('telegram', s.chatId, 'quiet_hours'); continue }
     if (cooled) { await skip('telegram', s.chatId, 'cooldown'); continue }
-    const res = await sendBotMessage(s.chatId, text, keyboard, opts.fetchImpl)
+    const res = await sendBotMessage(s.chatId, text, keyboard, opts.fetchImpl, bot)
     if (res.ok) {
       await recordDelivery(eventId, 'telegram', s.chatId, 'sent', { messageId: String(res.result.message_id) })
       deliveries.push({ channel: 'telegram', target: s.chatId, status: 'sent' })
@@ -165,7 +169,7 @@ export async function notifyStaff(n: StaffNotification, opts: { fetchImpl?: type
     if (quiet) { await skip('telegram', chatId, 'quiet_hours'); continue }
     if (cooled) { await skip('telegram', chatId, 'cooldown'); continue }
     const legacyText = isApproval ? `${text}\n\nРешение — в панели GIGA (кнопки доступны после привязки Telegram к аккаунту сотрудника).` : text
-    const res = await sendBotMessage(chatId, legacyText, undefined, opts.fetchImpl)
+    const res = await sendBotMessage(chatId, legacyText, undefined, opts.fetchImpl, bot)
     await recordDelivery(eventId, 'telegram', chatId, res.ok ? 'sent' : 'failed', res.ok ? { messageId: String(res.result.message_id) } : { error: res.description })
     deliveries.push({ channel: 'telegram', target: chatId, status: res.ok ? 'sent' : 'failed', reason: res.ok ? undefined : res.description })
   }

@@ -97,7 +97,7 @@ export function TelegramLinkCard() {
         <div className="space-y-3 text-xs">
           {!s.botConfigured ? (
             <p className="rounded-xl border border-amber-500/25 bg-amber-500/[0.08] px-3 py-2 text-[11px] leading-relaxed text-amber-200">
-              Бот не настроен: на сервере нужны TELEGRAM_BOT_TOKEN и TELEGRAM_WEBHOOK_SECRET. Пока их нет, уведомления видны только здесь, в ленте.
+              Бот не настроен: на сервере нужны TELEGRAM_ADMIN_BOT_TOKEN и TELEGRAM_ADMIN_WEBHOOK_SECRET (бот-панель управления) или TELEGRAM_BOT_TOKEN и TELEGRAM_WEBHOOK_SECRET. Пока их нет, уведомления видны только здесь, в ленте.
             </p>
           ) : s.linked ? (
             <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/[0.06] px-3 py-2.5">
@@ -109,6 +109,7 @@ export function TelegramLinkCard() {
           ) : (
             <p className="leading-relaxed text-slate-400">
               Нажмите «Привязать Telegram» — откроется бот. Нажмите в нём «Start», и аккаунт привяжется к вашему профилю сотрудника.
+              {s.bot === 'admin' && ' В боте-панели доступны статус платформы, агенты, одобрения, заявки, клиенты, отчёты, ключи и расходы — в пределах прав вашей роли.'}
             </p>
           )}
 

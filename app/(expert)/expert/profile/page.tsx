@@ -3,6 +3,7 @@
 import { useAuthStore } from '@/stores/auth.store'
 import { useCallback, useEffect, useState } from 'react'
 import { getAvatarGradient, getInitials } from '@/lib/expert-blocks'
+import { ExpertTelegramLink } from '@/components/expert/ExpertTelegramLink'
 
 interface ExpertProfile {
   id: string
@@ -266,6 +267,8 @@ export default function ExpertProfilePage() {
           )}
         </div>
       </section>
+
+      <ExpertTelegramLink />
     </div>
   )
 }

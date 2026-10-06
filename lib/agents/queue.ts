@@ -130,5 +130,7 @@ export async function drainQueue(opts: { limit?: number; budgetMs?: number } = {
   }
   const { failStalledSessions } = await import('@/lib/diagnostics/sessions')
   const sessionsFailed = (await failStalledSessions()).length
+  // Telegram bots: expired conversation state and old update ids (095); never throws.
+  await (await import('@/lib/telegram/bots/store')).purgeBotHousekeeping()
   return { reaped, approvalsExpired, sessionsFailed, executed }
 }

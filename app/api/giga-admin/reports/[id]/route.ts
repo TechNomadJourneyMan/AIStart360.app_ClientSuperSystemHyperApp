@@ -3,7 +3,8 @@ import { z } from 'zod'
 import { requireGiga } from '@/lib/admin/giga-actor'
 import { recordAdminAction } from '@/lib/admin/audit'
 import { apiError, dbError } from '@/lib/api-error'
-import { getReportVersion, publishReportVersion, retireReportVersion, type TransitionResult } from '@/lib/reports/versions'
+import { getReportVersion } from '@/lib/reports/versions'
+import { REPORT_WRONG_STATUS, transitionReportVersion } from '@/lib/admin/staff-actions'
 
 export const dynamic = 'force-dynamic'
 
@@ -14,13 +15,6 @@ const Schema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('reject'), reason: z.string().trim().min(3).max(500) }).strict(),
   z.object({ action: z.literal('withdraw'), reason: z.string().trim().min(3).max(500) }).strict(),
 ])
-
-const TARGET: Record<'publish' | 'reject' | 'withdraw', string> = { publish: 'published', reject: 'superseded', withdraw: 'superseded' }
-const WRONG_STATUS: Record<'publish' | 'reject' | 'withdraw', string> = {
-  publish: 'Опубликовать можно только версию в статусе «Готов к проверке»',
-  reject: 'Отклонить можно только неопубликованную версию',
-  withdraw: 'Отозвать можно только опубликованную версию',
-}
 
 /** GET /api/giga-admin/reports/:id — one version with its frozen content and provenance. */
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
@@ -58,39 +52,21 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const { action } = parsed.data
   const reason = parsed.data.reason?.trim() || null
 
-  let current
-  try {
-    current = await getReportVersion(params.id)
-  } catch (err) {
-    return dbError('giga-admin/reports/:id', err as { message?: string; code?: string }, 'Не удалось загрузить версию отчёта')
-  }
-  if (!current) return apiError('Версия отчёта не найдена', 404)
-
-  try {
-    await recordAdminAction(g.actor, {
-      action: `report.${action}`,
-      entityType: 'report_version',
-      entityId: params.id,
-      oldValue: { status: current.status },
-      newValue: { status: TARGET[action], reason },
-      metadata: { company_id: current.company_id, report_type: current.report_type, version: current.version, data_hash: current.data_hash },
-    }, req, { required: true })
-  } catch {
-    return apiError('Журнал аудита недоступен — действие не выполнено', 503)
-  }
-
-  let res: TransitionResult
-  try {
-    res = action === 'publish'
-      ? await publishReportVersion(params.id, g.actor.id)
-      : await retireReportVersion(params.id, action, g.actor.id, reason ?? '')
-  } catch (err) {
-    return dbError('giga-admin/reports/:id', err as { message?: string; code?: string }, 'Не удалось изменить статус версии')
-  }
+  const res = await transitionReportVersion({
+    id: params.id,
+    action,
+    reason,
+    actorId: g.actor.id,
+    audit: (entry, opts) => recordAdminAction(g.actor, entry, req, opts),
+  })
   if (!res.ok) {
-    return res.reason === 'not_found'
-      ? apiError('Версия отчёта не найдена', 404)
-      : apiError(WRONG_STATUS[action], 409, { status: res.status ?? null })
+    switch (res.code) {
+      case 'db_load': return dbError('giga-admin/reports/:id', res.err, 'Не удалось загрузить версию отчёта')
+      case 'db_write': return dbError('giga-admin/reports/:id', res.err, 'Не удалось изменить статус версии')
+      case 'audit_unavailable': return apiError('Журнал аудита недоступен — действие не выполнено', 503)
+      case 'not_found': return apiError('Версия отчёта не найдена', 404)
+      default: return apiError(REPORT_WRONG_STATUS[action], 409, { status: res.status ?? null })
+    }
   }
   return NextResponse.json({ ok: true, status: res.status, superseded: res.superseded })
 }

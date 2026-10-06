@@ -2,7 +2,8 @@
  * Binding a Telegram account to a staff user (staff_telegram_links, 087).
  *
  * A staff member asks GIGA for a link; we store only the SHA-256 of a random
- * code with a 15-minute TTL and give back t.me/<bot>?start=staff_<code>.
+ * code with a 15-minute TTL and give back t.me/<bot>?start=staff_<code>
+ * (<bot> = the admin bot when TELEGRAM_ADMIN_BOT_* is configured).
  * When the bot receives that /start from Telegram, the sender's Telegram user
  * id and chat are bound to the staff account. From then on a button press is
  * attributed to a person, and only people with `approvals.decide` can decide.
@@ -10,7 +11,7 @@
 import { createHash, randomBytes } from 'node:crypto'
 import { prisma } from '@/lib/db'
 import { isStaffRole, type StaffRole } from '@/lib/admin/rbac'
-import { botUsername } from '@/lib/telegram'
+import { deepLink, staffBot } from './bots/registry'
 
 const TTL_MINUTES = 15
 export const STAFF_START_PREFIX = 'staff_'
@@ -24,8 +25,9 @@ export async function createStaffLinkCode(userId: string): Promise<{ code: strin
     INSERT INTO public.staff_telegram_links (user_id, link_code_hash, link_code_expires_at)
     VALUES (${userId}::uuid, ${hash(code)}, ${expiresAt})
     ON CONFLICT (user_id) DO UPDATE SET link_code_hash = EXCLUDED.link_code_hash, link_code_expires_at = EXCLUDED.link_code_expires_at`
-  const bot = botUsername()
-  return { code, deepLink: bot ? `https://t.me/${bot}?start=${STAFF_START_PREFIX}${code}` : null, expiresAt }
+  // The admin bot once it is configured; the client bot otherwise (as before).
+  const start = `${STAFF_START_PREFIX}${code}`
+  return { code, deepLink: deepLink(staffBot(), start) ?? deepLink('client', start), expiresAt }
 }
 
 export type ConsumeResult = { ok: true; userId: string } | { ok: false; reason: 'invalid_or_expired' }

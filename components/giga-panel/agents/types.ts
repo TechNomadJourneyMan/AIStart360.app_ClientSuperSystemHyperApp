@@ -178,4 +178,4 @@ export interface StaffNotificationRow {
   [key: string]: unknown
 }
 
-export interface TelegramLinkStatus { linked: boolean; username: string | null; minLevel: string; botConfigured: boolean }
+export interface TelegramLinkStatus { linked: boolean; username: string | null; minLevel: string; botConfigured: boolean; bot?: 'admin' | 'client' }
