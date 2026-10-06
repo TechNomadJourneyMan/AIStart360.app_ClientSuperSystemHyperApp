@@ -157,6 +157,18 @@ export interface SourceAttempt {
   inputs?: FormulaInput[]
   /** Survey key that was read (legacy keys are flagged). */
   legacy?: boolean
+  /** type 'external' fed by a connected integration: provider, period, fetch time. */
+  external?: AttemptExternal
+}
+
+/** Provenance of a value from an integration (lib/integrations/signals.ts). */
+export interface AttemptExternal {
+  provider: string
+  period_start: string
+  period_end: string
+  fetched_at: string
+  days: number
+  basis: string
 }
 
 export interface AttemptPeriod {

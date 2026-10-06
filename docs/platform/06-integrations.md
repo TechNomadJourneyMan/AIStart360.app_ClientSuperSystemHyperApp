@@ -26,7 +26,7 @@
 | MyHonor (заказы) | ← / → WA | Bearer (+ ключ `_PREVIOUS`) | env | real | нет | нет |
 | Kaspi эквайринг | ↔ | HMAC `x-kaspi-signature` | env | real при настройке, иначе stub | нет | нет (тариф) |
 | Stripe / CloudPayments / Halyk / Mir | → | — | — | stub | нет | нет |
-| E-commerce адаптеры (19: kaspi, ga4, yandex-metrika, meta-ads, wildberries, ozon…) | ← | — | — | stub (throw) | нет | нет |
+| E-commerce интеграции (W7, миграция 105): МойСклад, Kaspi Магазин, Wildberries, GA4, Яндекс Метрика, Shopify — live; Ozon, InSales, Tilda, 1С-Битрикс, Meta Ads, Директ, Google Ads — BLOCKED, только выгрузки | ← pull | токен / JSON-ключ сервисного аккаунта / OAuth-токен клиента | `integration_connections.secret_ciphertext` (только `v1:…`) | live: не проверено вживую | GIGA › Интеграции, монитор агента | **да**: факты → `externalSignals` → метрики `source='external'` (§8) |
 | Mark-analytics market API | → | JWT пользователя + allowlist путей | env | real при настройке | нет | да (рынок) |
 | WhatsApp Cloud (эскалации, дайджест) | → | Graph token | env | эскалации за флагом; дайджест не срабатывает (phone = null) | нет | нет |
 | SMS | → | — | — | stub | нет | нет |
@@ -364,8 +364,8 @@ Access-токен — 1 час, refresh — 30 дней; токены привя
 | CRM v2 | OAuth-приложения Bitrix24 и amoCRM с `refresh_token` и сериализованной ротацией; `company_id` в подключениях (D1); плановая синхронизация; воронки, этапы, активности и звонки, а не только 200 сделок и контактов |
 | МойСклад | throttle 100 запр./5 с, 5 параллельных; токен только на чтение |
 | 1С | пилот OData read-only у одного клиента + шаблон выгрузки как запасной путь |
-| Kaspi Магазин API | заказы и товары для e-com клиентов; заменить заглушку `kaspi` в `lib/integrations/ecommerce` |
-| Яндекс.Метрика, GA4, Яндекс.Директ | throttle Метрики: 3 параллельных; заменить заглушки `ga4`, `yandex-metrika`; остальные заглушки скрыть из UI |
+| Kaspi Магазин API | сделано в W7 (§8): заказы, выручка, возвраты; осталось — товары и живая проверка ключом продавца |
+| Яндекс.Метрика, GA4, Яндекс.Директ | GA4 (сервисный аккаунт) и Метрика (OAuth-токен клиента) сделаны в W7 (§8); Директ — BLOCKED |
 | Google Drive | `drive.file` + Picker → конвейер документов (D6) |
 | Embeddings, OCR, STT | pgvector + RLS; OCR только для сканов; STT для звонков из CRM с согласием |
 | Langfuse | переход на OTel-SDK v5, Cloud EU, маскирование ПДн |
@@ -382,7 +382,7 @@ HubSpot, Salesforce, Pipedrive, Stripe, Google Ads (KZ), Meta Ads (KZ), OneDrive
 | P0.2 allowlist доменов | полный список облачных доменов Bitrix24 и amoCRM/Kommo не проверен | официальный список TLD/доменов | сверить с документацией вендоров, зафиксировать в конфиге |
 | CRM v2: OAuth Bitrix24 | нужно зарегистрированное приложение (локальное или тиражное) | `client_id`, `client_secret`, redirect URI, аккаунт разработчика | владелец регистрирует приложение, секреты — в Vercel env |
 | CRM v2: OAuth amoCRM/Kommo | нужна публичная интеграция | `client_id`, `client_secret`, redirect URI | владелец создаёт интеграцию в аккаунте разработчика amoCRM |
-| GA4, Sheets, Drive | sensitive scopes требуют OAuth-клиента и верификации приложения Google | проект GCP, OAuth consent screen, домен, политика конфиденциальности | владелец создаёт проект и проходит верификацию; Drive только `drive.file` (без CASA) |
+| GA4 (вход через Google), Sheets, Drive | sensitive scopes требуют OAuth-клиента и верификации приложения Google. GA4 уже работает без OAuth — JSON-ключ сервисного аккаунта клиента (§8) | проект GCP, OAuth consent screen, домен, политика конфиденциальности | владелец создаёт проект и проходит верификацию; Drive только `drive.file` (без CASA) |
 | Метрика, Директ | нужно OAuth-приложение Яндекса; для Директа — заявка на доступ к API | `client_id`/`secret`, одобренная заявка Директа | владелец регистрирует приложение и подаёт заявку |
 | 1С, МойСклад, Kaspi Магазин | данные у клиента | пилотный клиент: публикация OData/VPN (1С), токен МойСклад, токен Kaspi от руководителя | менеджер договаривается с пилотным клиентом |
 | OCR и STT | не выбран провайдер, нет ключей, не решена резидентность данных | ключ выбранного провайдера, решение юриста | владелец выбирает провайдера после §5 |
@@ -464,3 +464,98 @@ AIStart360, уведомление эксперту: {{1}}.
 - Очередь разбирается сразу после постановки и затем кроном (`/api/cron/agents`, Inngest `agents-maintenance` каждую минуту, до 50 строк за проход).
 - Мост WhatsApp Web (`docs/WHATSAPP-WEB-BRIDGE.md`) — только запасной канал для сотрудников: при `WHATSAPP_WEB_BRIDGE_FALLBACK=1`, если Cloud API не настроен или окончательно отклонил сообщение; отправляется простой текст с ключом идемпотентности `wa-outbox:<id>`. Клиентам и экспертам мост не используется никогда (неофициальный транспорт).
 - SMS остаётся заглушкой.
+
+
+## 8. E-commerce: маркетплейсы, учёт, аналитика, сайт и реклама (W7, миграция 105)
+
+Решение владельца: «E-commerce нужно полностью адаптировать и доделать». Приоритет: МойСклад, Kaspi Магазин, Wildberries + Ozon, GA4 + Яндекс Метрика, сайт и реклама (Tilda / InSales / Shopify / Битрикс; Meta Ads, Директ, Google Ads), плюс импорт CSV/XLSX.
+
+Правила: адаптер пишется только по официальной документации, прочитанной из контура (ссылки — в шапке каждого файла `lib/integrations/providers/*.ts`, базовые URL и версии API — константы); каждый live-адаптер помечен «**не проверено вживую**» (`verifiedLive: false`) до проверки ключом продавца; где документация недоступна или нужен OAuth-клиент, которого у платформы нет, — BLOCKED: запись подключения без ключей + импорт выгрузок.
+
+### 8.1 Статус по провайдерам
+
+| Провайдер | Статус | Авторизация | Что забираем (факты по дням) | Документация (прочитана 2026-10-06) |
+|---|---|---|---|---|
+| МойСклад | **live**, не проверено вживую | `Authorization: Bearer <токен>`, обязательный `Accept-Encoding: gzip`; база `https://api.moysklad.ru/api/remap/1.2` | заказы и сумма заказов (`/report/orders/plotseries`, interval=day), продажи и выручка (`/report/sales/plotseries`), возвраты покупателей (`/entity/salesreturn`, moment, applicable), SKU в каталоге (`/entity/product` meta.size), SKU с остатком (`/report/stock/all`, stockMode=positiveOnly), валюта учёта (`/entity/currency`, default=true) | https://dev.moysklad.ru/doc/api/remap/1.2/ (SPA рендерит md из официального репозитория github.com/moysklad/api-remap-1.2-doc: `_general.md`, `_restrictions.md`, `reports/_report_sales_orders.md`, `reports/_report_stock.md`, `documents/_sales_return.md`, `dictionaries/_currency.md`) |
+| Kaspi Магазин | **live**, не проверено вживую | `X-Auth-Token`, `Content-Type: application/vnd.api+json`; база `https://kaspi.kz/shop/api/v2` | заказы (кроме отменённых) и их сумма, продажи (COMPLETED) и выручка, возвраты (RETURNED, KASPI_DELIVERY_RETURN_REQUESTED) — все 6 состояний, страницы по 100, окно creationDate в мс, дни по Алматы | https://guide.kaspi.kz/partner/ru/shop/api/general/q3196 (токен), https://guide.kaspi.kz/partner/ru/shop/api/orders/q3201 (список заказов), https://guide.kaspi.kz/partner/ru/shop/api/general/q3198 (коды ответа) |
+| Wildberries | **live**, не проверено вживую | токен в заголовке `Authorization` (apiKey, без схемы), категория «Статистика»; база `https://statistics-api.wildberries.ru` | заказы (`/api/v1/supplier/orders`, flag=1, без отменённых), продажи / возвраты по `saleID` S… / R…, выручка, к перечислению (`forPay`). Деньги — «в валюте продавца» (`seller_currency`), в ₸-метрики не идут. Один день за запуск (лимит 1 запрос/мин на метод) | dev.wildberries.ru отдаёт антибот-страницу, но официальные OpenAPI-файлы портала доступны: https://dev.wildberries.ru/api/swagger/yaml/ru/01-general.yaml (авторизация, `/ping`), https://dev.wildberries.ru/api/swagger/yaml/ru/12-reports.yaml (заказы, продажи, лимиты), https://dev.wildberries.ru/api/swagger/yaml/ru/13-finances.yaml (колонки «Отчёта о реализации» для импорта) |
+| Google Analytics 4 | **live** (сервисный аккаунт), не проверено вживую | JWT RS256 сервисного аккаунта клиента → `https://oauth2.googleapis.com/token` (jwt-bearer), scope `analytics.readonly`; `POST https://analyticsdata.googleapis.com/v1beta/properties/{id}:runReport` | визиты (`sessions`), посетители (`activeUsers`), покупки (`ecommercePurchases`), доход (`purchaseRevenue`, `currencyCode: KZT`) по дням | https://developers.google.com/analytics/devguides/reporting/data/v1/rest/v1beta/properties/runReport, …/api-schema, …/quotas, https://developers.google.com/identity/protocols/oauth2/service-account |
+| Яндекс Метрика | **live** (OAuth-токен клиента), не проверено вживую | `Authorization: OAuth <токен>`; `GET https://api-metrika.yandex.net/stat/v1/data` | визиты, посетители, заказы e-commerce по дням (`ym:s:date`, accuracy=full). Доход не берём: параметр currency Метрики — только RUB/USD/EUR/YND | https://yandex.ru/dev/metrika/ru/intro/authorization, …/stat/openapi/data_1, …/intro/quotas, …/stat/metrics/visits/ecommerce, …/stat/param |
+| Shopify | **live** для существующего admin-created custom app, не проверено вживую | `X-Shopify-Access-Token`; `POST https://{shop}.myshopify.com/admin/api/2026-10/graphql.json` | заказы по дням (`ordersCount`), сумма заказов (`orders` … `totalPriceSet`, не более 4 страниц по 250 в день — иначе суммы нет) | https://shopify.dev/docs/apps/build/authentication-authorization/access-tokens/generate-app-access-tokens-admin, …/queries/ordersCount, …/queries/orders, https://shopify.dev/docs/api/admin-graphql (THROTTLED / ACCESS_DENIED) |
+| Ozon | **BLOCKED**, выгрузки | — | «Отчёт о реализации» (CSV/XLSX) | docs.ozon.ru — антибот-страница с JavaScript |
+| InSales | **BLOCKED**, выгрузки | — | выгрузка заказов | api.insales.ru (справочник), wiki.insales.ru — HTTP 403 |
+| Tilda | **BLOCKED** (нет данных в API), выгрузки | — | заявки из CRM Тильды | https://help-ru.tilda.cc/api |
+| 1С-Битрикс (магазин) | **BLOCKED**, выгрузки; сделки Битрикс24 — раздел CRM | — | выгрузка заказов | https://dev.1c-bitrix.ru/rest_help/ |
+| Meta Ads | **BLOCKED**, выгрузки | — | отчёт Ads Manager | https://developers.facebook.com/docs/marketing-api/insights/ |
+| Яндекс Директ | **BLOCKED**, выгрузки | — | «Мастер отчётов» | https://yandex.ru/dev/direct/doc/ru/concepts/auth-token, …/reports, …/headers |
+| Google Ads | **BLOCKED**, выгрузки | — | отчёт Google Ads | https://developers.google.com/google-ads/api/docs/start |
+
+BLOCKED (формат W7):
+
+- **BLOCKED** Ozon live-адаптер
+  Reason: официальная документация Ozon Seller API (docs.ozon.ru/api/seller) не открывается из контура: антибот-проверка с JavaScript (curl с cookie — 403 «Antibot Challenge Page», WebFetch — egress blocked); открытой OpenAPI-спецификации от Ozon нет; писать по сторонним клиентам запрещено.
+  Required input: доступ к docs.ozon.ru (или официальный OpenAPI-файл от Ozon) и Client-Id + Api-Key продавца для живой проверки.
+  How to unblock: открыть сеть контура к docs.ozon.ru, написать адаптер по документации, проверить ключом продавца; до этого — «Отчёт о реализации» в «Файлы» (тип «Отчёт маркетплейса»).
+- **BLOCKED** InSales live-адаптер
+  Reason: api.insales.ru описывает методы и Basic-авторизацию, но не выпуск ключа продавцом; wiki.insales.ru отвечает 403; `orders.json` фильтрует только по `updated_since` — без документации по лимитам и ключам инкрементальную выгрузку не спроектировать.
+  Required input: официальная инструкция по ключу API InSales (или OAuth-приложение), тестовый магазин с ключом.
+  How to unblock: открыть wiki.insales.ru / получить инструкцию, затем адаптер; до этого — выгрузка заказов.
+- **BLOCKED** Tilda
+  Reason: официальный API Тильды отдаёт только проекты и страницы; заказов и аналитики в нём нет (заказы — вебхуком форм или в CRM).
+  Required input: решение владельца — приёмник вебхука форм Тильды (эндпоинт + секрет) или CRM клиента.
+  How to unblock: спроектировать приёмник вебхука по документации Тильды; до этого — выгрузка заявок (CSV).
+- **BLOCKED** 1С-Битрикс (интернет-магазин)
+  Reason: у коробочного сайта нет стандартного внешнего REST для заказов; модуль sale доступен через REST только в Битрикс24 / при установленном модуле REST.
+  Required input: тип установки клиента, входящий вебхук с правами sale, тестовый магазин.
+  How to unblock: для Битрикс24 — адаптер `sale.order.list` по dev.1c-bitrix.ru/rest_help; для коробки — выгрузка заказов.
+- **BLOCKED** Meta Ads
+  Reason: Marketing API (Insights) требует приложение Meta с ads_read (Advanced Access после App Review) и OAuth/системного пользователя; приложение платформы настроено только для WhatsApp.
+  Required input: приложение Meta с одобренным ads_read, `META_ADS_APP_ID` / `META_ADS_APP_SECRET`, рекламный аккаунт клиента.
+  How to unblock: App Review на ads_read, ключи в env, затем OAuth-подключение и адаптер Insights; до этого — экспорт Ads Manager.
+- **BLOCKED** Яндекс Директ
+  Reason: нужно зарегистрированное приложение с одобренной заявкой на доступ к API Директа и получение токенов в автоматическом режиме для многих пользователей.
+  Required input: `YANDEX_DIRECT_CLIENT_ID` / `SECRET`, одобренная заявка, рекламный аккаунт клиента.
+  How to unblock: регистрация приложения и заявка, затем OAuth-подключение и адаптер Reports (`returnMoneyInMicros: false`, офлайн-режим); до этого — «Мастер отчётов».
+- **BLOCKED** Google Ads
+  Reason: нужны developer token (управляющий аккаунт, проверка Google) и OAuth-клиент; их нет.
+  Required input: developer token, `GOOGLE_ADS_CLIENT_ID` / `SECRET`, аккаунт клиента.
+  How to unblock: получить токен и клиента, затем OAuth-подключение и адаптер GAQL; до этого — экспорт отчёта.
+- **BLOCKED** вход через Google (OAuth) для GA4 и OAuth-подключения Shopify для новых магазинов
+  Reason: у платформы нет OAuth-клиента Google и приложения Shopify (Shopify больше не даёт создавать admin-created custom apps).
+  Required input: OAuth-клиент Google (verified app), приложение Shopify в Dev Dashboard (client id / secret, redirect URI).
+  How to unblock: владелец создаёт приложения и кладёт ключи в env; до этого — GA4 по JSON-ключу сервисного аккаунта, Shopify — по токену существующего custom app.
+
+### 8.2 Хранение и доступ
+
+- `integration_connections` (одна строка на компанию и провайдера): `secret_ciphertext` / `refresh_ciphertext` принимают только `v1:…` (CHECK), без `SECRETS_ENCRYPTION_KEY` подключение по ключу невозможно (503) — открытого хранения нет. Отключение удаляет ключи сразу (строка остаётся «disconnected» ради истории; запись «только выгрузки» удаляется). `last_error` — очищенный текст (без ключей, query-строк, длинных токенов), `last_error_kind`: auth / rate_limit / transient / config / permanent.
+- RLS: чтение — участники компании (`can_read_company(...) IS TRUE`) и персонал (`is_platform_staff() IS TRUE`); колонки секретов не выданы `authenticated` (column grants), `anon` — ничего; записи только сервером.
+- API клиента: `GET/POST /api/integrations`, `POST /api/integrations/:provider/test`, `DELETE /api/integrations/:provider`, `GET /api/integrations/snapshot`; чтение — read-доступ к компании, изменения — manage (владелец / админ компании). Ключ проверяется документированным запросом **до** сохранения. Лимит: 10 подключений и 10 проверок за 10 минут на человека.
+- GIGA: «Интеграции» (`/admin-giga-panel/integrations`, право `users.view`); подключить / проверить / синхронизировать / отключить — `company.edit`, каждое действие пишется в `admin_audit_log` (обязательно, без ключа) до выполнения.
+
+### 8.3 Синхронизация
+
+Агент `integration_sync` (платформенный, cron `*/15 * * * *`, без модели; права `RUN_INTEGRATION` и `UPDATE_METRICS`, оба ALLOW в потолке): за запуск ≤ 10 подключений, срок 110 с; у каждого адаптера бюджет запросов (МойСклад 30, Kaspi 60, Shopify 40, GA4 4, Метрика 3, WB 3). Новое подключение заполняет 35 дней истории окнами (МойСклад, GA4, Метрика — сразу; Kaspi, Shopify — по 7 дней; WB — по 1 дню), затем раз в 2–6 часов перечитывает последние 3 дня. Факты и курсор пишутся одной транзакцией по аренде (`sync_lease_token`) — повтор того же дня перезаписывает те же строки. 401 → `needs_reauth` и событие `INTEGRATION_FAILED` сразу; 429 — не ошибка, следующий запуск после подсказки провайдера; прочие ошибки — экспоненциальная пауза, с 3-й подряд `status='error'` и `INTEGRATION_FAILED` персоналу (одно событие в день). Исчерпан бюджет — окно уменьшается вдвое (`cursor.window_days`). После новых фактов агент пересчитывает метрики компании (`integrations.refresh_metrics`, компания берётся из подключения).
+
+### 8.4 Факты → метрики (приоритет источников)
+
+`lib/integrations/signals.ts` — единственное место, где факты становятся числами: и для метрик (`gatherResolverContext` → `externalSignals`), и для блоков дашборда. Окно — последние 30 полных дней с фактами за **каждый** день (иначе значения нет), данные не старше 4 дней, провайдеры не суммируются (МойСклад обычно уже содержит заказы маркетплейсов), денежные метрики ₸ — только из фактов в KZT.
+
+| Метрика | Источник `integration:…` | Провайдеры (по порядку) |
+|---|---|---|
+| Посещений сайта/мес, Посещений сайта (KPI) | `sessions_month` | GA4, Метрика |
+| eCommerce средний чек, Средний чек eCommerce (KPI) | `aov` | Shopify, GA4, Kaspi, МойСклад |
+| Кол-во SKU, Среднее число SKU (KPI) | `sku_count` | МойСклад |
+| Активных SKU | `sku_in_stock` | МойСклад |
+| Брак / возвраты | `returns_rate` | МойСклад, Wildberries, Kaspi |
+
+**Приоритет источников (решение W7).** Подключённая интеграция — система учёта для этих метрик: измеренные данные за 30 дней выше одноразовой оценки из анкеты и расчёта из неё (приоритет 72 > анкета 70 > формула 65), но ниже документа, который загрузил владелец (80), оценки GRI (75) и ручного ввода (100). Остальные внешние источники (1С, CRM … — без поставщика данных) остаются на минимальном приоритете 40. В `public.metrics` такое значение пишется с `source='external'` и `provenance.external = {provider, period_start, period_end, fetched_at, days, basis}`.
+
+Дашборд e-commerce (`/client/dashboard-ecommerce`) читает `GET /api/integrations/snapshot`: значения метрик — из `public.metrics` (`lib/metrics/company-metrics.ts`, единый источник), разбивка по провайдерам — из тех же правил окна. Без подключения блоки честно пишут «Интеграция пока не подключена» со ссылкой на Настройки › Интеграции.
+
+### 8.5 Импорт выгрузок (CSV/XLSX)
+
+`lib/documents/marketplace-export.ts` распознаёт заголовок выгрузки по `MARKETPLACE_COLUMN_SYNONYMS` (`lib/documents/synonyms.ts`) и считает поля без модели: заказы, выручка, комиссия маркетплейса, к перечислению, возвраты, доля возвратов (`defect_rate`, %), процент выкупа, средний чек заказа (если сумма — на заказ), SKU и SKU в наличии. Работает для типов «Отчёт маркетплейса» и «Остатки»; неклассифицированный файл — только при колонке, характерной для маркетплейса (комиссия, к перечислению, тип документа, возвраты, остаток). Источники названий колонок: WB — описания полей официального финансового API (13-finances.yaml), Kaspi — атрибуты заказа API, МойСклад — поля отчётов «Прибыльность» / «Остатки»; для Ozon документация недоступна — общие формулировки отчёта, распознаются только вместе с колонками количества / суммы. Семья типов `ops_report` принимает `marketplace_report`, поэтому доля возвратов из выгрузки кормит «Брак / возвраты».
+
+### 8.6 Где продавец берёт ключ
+
+См. docs/platform/10-bot-and-credentials.md, «Часть 5. Подключение маркетплейсов и аналитики».

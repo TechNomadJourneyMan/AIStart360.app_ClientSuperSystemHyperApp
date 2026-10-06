@@ -14,7 +14,7 @@
  * persists the result.
  */
 import { bindFieldsToMetrics } from './bind-fields'
-import { CLIENT_LIKE_TYPES, SALES_LIKE_TYPES } from './doc-types'
+import { CLIENT_LIKE_TYPES, MARKETPLACE_EXPORT_TYPES, SALES_LIKE_TYPES } from './doc-types'
 import type { ParsedDataField, ParsedDataPayload } from './extract'
 import type { ClientBaseRow, SalesRow } from './extract-rows'
 import {
@@ -34,6 +34,7 @@ import {
   type LlmJsonFn,
   type LlmRowsExtraction,
 } from './extraction'
+import { marketplaceExportFields } from './marketplace-export'
 import { ocrDocument, ocrEngineLabel, type OcrOutcome, type OcrPage } from './ocr'
 import { syncRemoteOcr } from './ocr-remote'
 import type { DocumentKind } from './preflight'
@@ -261,6 +262,13 @@ export async function runDocumentPipeline(input: PipelineInput): Promise<Pipelin
   const rowCount = () => rawRows.length + clientRows.length
   const rowsCovered = rowCount() > 0
   const tableCovered = table.candidateRows >= 3 && table.matchedRows / table.candidateRows >= 0.6
+  // Marketplace / accounting exports (W7): column aggregates (orders, revenue,
+  // commission, returns, buyout, SKU) — deterministic, no model needed.
+  const docTypeKey = input.docType.toLowerCase()
+  const exportFields = tabular && (MARKETPLACE_EXPORT_TYPES.has(docTypeKey) || docTypeKey === 'other')
+    ? marketplaceExportFields(st, input.documentId, { requireSignature: docTypeKey === 'other' })
+    : []
+  const exportCovered = exportFields.length >= 2
 
   // ── Model, only when needed ────────────────────────────────────────────
   const models = new Set<string>()
@@ -271,6 +279,7 @@ export async function runDocumentPipeline(input: PipelineInput): Promise<Pipelin
 
   if (!hasText) llmSkipped = 'no_text'
   else if (rowsCovered) llmSkipped = 'rows_extracted_deterministically'
+  else if (exportCovered) llmSkipped = 'export_aggregated_deterministically'
   else if (tableCovered) llmSkipped = 'table_covered_deterministically'
   else if (!input.llm) llmSkipped = 'llm_not_available'
   else if (!llmUsable()) llmSkipped = 'budget_exhausted'
@@ -289,7 +298,7 @@ export async function runDocumentPipeline(input: PipelineInput): Promise<Pipelin
   }
 
   let rowsLlm: LlmRowsExtraction | null = null
-  if (mode && !rowsCovered && hasText) {
+  if (mode && !rowsCovered && !exportCovered && hasText) {
     if (input.llm && llmUsable()) {
       const r = await extractRowsWithLlm({ st, mode, llm: input.llm, deadlineAt: input.deadlineAt, tabular })
       rowsLlm = r
@@ -312,6 +321,10 @@ export async function runDocumentPipeline(input: PipelineInput): Promise<Pipelin
 
   const llmFields = llmRes?.fields ?? []
   let fields: ParsedDataField[] = combineFields(table.fields, llmFields)
+  if (exportFields.length) {
+    const known = new Set(fields.map((f) => f.key))
+    fields = [...fields, ...exportFields.filter((f) => !known.has(f.key))]
+  }
   const llmProducedFacts = llmFields.length > 0
   if (!llmProducedFacts && !tabular && hasText) {
     const known = new Set(fields.map((f) => f.key))
@@ -418,7 +431,7 @@ export async function runDocumentPipeline(input: PipelineInput): Promise<Pipelin
     fields,
     raw_text_preview: st.text.slice(0, PREVIEW_CHARS),
     extracted_at: extractedAt(),
-    model_used: modelList.length ? modelList.join(', ') : rows || table.fields.length ? 'deterministic-parser' : 'heuristic-parser',
+    model_used: modelList.length ? modelList.join(', ') : rows || table.fields.length || exportFields.length ? 'deterministic-parser' : 'heuristic-parser',
     ...(rawRows.length ? { raw_rows: rawRows } : {}),
     ...(clientRows.length ? { client_rows: clientRows } : {}),
     ...(rowsMethod ? { rows_method: rowsMethod } : {}),

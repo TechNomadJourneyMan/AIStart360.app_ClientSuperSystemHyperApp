@@ -9,9 +9,9 @@
 //     The survey has no target-like or trend-like ec_* keys, so `target` and
 //     `trend` stay null until a real source provides them.
 //   • Per-channel / per-marketplace / per-SKU / RFM / cohort / cart-flow /
-//     monthly-sales data has no survey source; those blocks are honest empty
-//     states. The adapters in lib/integrations/ecommerce/ are stubs that only
-//     throw, so they are not wired here.
+//     monthly-sales data has no survey source. Connected integrations fill the
+//     channel / marketplace / catalog blocks (lib/ecommerce/integrations-view.ts);
+//     RFM, cohorts, cart flows and monthly sales have no source yet.
 //   • Garbage values (non-numeric strings, negatives, 0, percentages > 100)
 //     are treated as missing.
 //
@@ -506,9 +506,9 @@ export function buildEcommerceView(
 
 /** Where per-item data will come from once an integration is connected. */
 export const INTEGRATION_NOTES = {
-  channels: 'Выручка, CAC и ROAS по каждому каналу появятся после подключения источника (GA4 / рекламные кабинеты). Интеграция пока не подключена.',
-  marketplaces: 'Рейтинг, BuyBox и % выкупа по каждой площадке появятся после подключения кабинетов маркетплейсов. Интеграция пока не подключена.',
-  catalog: 'Продажи, маржа и возвраты по каждому SKU появятся после подключения каталога (платформа магазина / маркетплейсы). Интеграция пока не подключена.',
+  channels: 'Визиты и покупки по данным веб-аналитики появятся после подключения GA4 или Яндекс Метрики. Интеграция пока не подключена.',
+  marketplaces: 'Заказы, выручка, средний чек и возвраты по каждой площадке появятся после подключения кабинетов маркетплейсов или МоегоСклада. Интеграция пока не подключена.',
+  catalog: 'Число SKU, остатки и доля возвратов появятся после подключения МоегоСклада или кабинета маркетплейса. Интеграция пока не подключена.',
   customers: 'RFM-сегменты строятся по базе заказов — появятся после подключения источника (платформа магазина / CRM). Интеграция пока не подключена.',
   cohorts: 'Удержание по когортам появится после подключения источника заказов (платформа магазина / CRM). Интеграция пока не подключена.',
   cartRecovery: 'Сценарии возврата корзин (email / SMS) и их конверсия появятся после подключения источника (Mindbox / Sendpulse). Интеграция пока не подключена.',

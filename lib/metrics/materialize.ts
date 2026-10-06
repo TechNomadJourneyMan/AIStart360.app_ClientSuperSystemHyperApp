@@ -11,6 +11,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { MetricSource } from './format'
 import { resolveAllMetrics, resolveMetric } from './resolver'
 import { getMetricById } from './registry'
+import { loadIntegrationSignals } from '@/lib/integrations/signals'
 import type {
   MaterializedRow,
   MetricValue,
@@ -89,7 +90,8 @@ export async function gatherResolverContext(
   supabase: SupabaseClient,
   opts: GatherContextOptions,
 ): Promise<ResolverContext> {
-  const [surveyResult, docsResult, gri] = await Promise.all([
+  const now = opts.now ?? new Date()
+  const [surveyResult, docsResult, gri, externalSignals] = await Promise.all([
     supabase
       .from('survey_answers')
       .select('question_key, answer')
@@ -98,6 +100,12 @@ export async function gatherResolverContext(
       .eq('parse_status', 'parsed')
       .order('uploaded_at', { ascending: false }),
     griSections(supabase, opts),
+    // Connected integrations (migration 105) feed the 'external' sources whose
+    // system is «integration:…». Read on every path that builds a context, so
+    // a recalculation from Точка А / the materialiser never drops them.
+    opts.externalSignals !== undefined
+      ? Promise.resolve(opts.externalSignals)
+      : loadIntegrationSignals(supabase, opts.companyId, now),
   ])
 
   // «Could not read the inputs» must never look like «no inputs»: the
@@ -131,13 +139,13 @@ export async function gatherResolverContext(
     surveyAnswers,
     documents,
     prismaSignals: opts.prismaSignals,
-    externalSignals: opts.externalSignals,
+    externalSignals,
     manualOverrides: opts.manualOverrides,
     griSections: gri.sections,
     griAssessedAt: gri.at,
     preferPeriodYear: opts.preferPeriodYear,
     preferPeriodQuarter: opts.preferPeriodQuarter,
-    now: opts.now ?? new Date(),
+    now,
   }
 }
 
@@ -188,6 +196,7 @@ export function toMaterializedRow(
       ...(winner?.document ? { document: winner.document } : {}),
       ...(winner?.period ? { period: winner.period } : {}),
       ...(winner?.reason ? { reason: winner.reason } : {}),
+      ...(winner?.external ? { external: winner.external } : {}),
       ...(value.needs?.length ? { needs: value.needs } : {}),
     },
     computed_at: value.computedAt,

@@ -310,6 +310,7 @@ const CORE_BIZ_METRIC_DESCRIPTIONS: Record<string, Record<string, MetricDescript
       sources: [
         { type: "document", doc_type: "marketing_report", field: "website_visits" },
         { type: "external", system: "Google Analytics 4", note: "Active users / Sessions за период" },
+        { type: "external", system: "integration:sessions_month", note: "Подключение GA4 / Яндекс Метрики: визиты за последние 30 полных дней" },
         { type: "external", system: "Яндекс.Метрика", note: "Уникальные посетители и источники трафика" },
       ],
     },
@@ -367,6 +368,7 @@ const CORE_BIZ_METRIC_DESCRIPTIONS: Record<string, Record<string, MetricDescript
         { type: "document", doc_type: "marketplace_report", field: "avg_order_value" },
         { type: "document", doc_type: "marketplace_report", field: "avg_check" },
         { type: "external", system: "POS|Shopify|Kaspi.kz", note: "AOV из админки интернет-магазина" },
+        { type: "external", system: "integration:aov", note: "Подключение магазина / маркетплейса / GA4: выручка ÷ заказы за 30 дней, только в ₸" },
       ],
     },
     "Win Rate": {
@@ -522,6 +524,7 @@ const CORE_BIZ_METRIC_DESCRIPTIONS: Record<string, Record<string, MetricDescript
       unit: "count",
       sources: [
         { type: "document", doc_type: "inventory_csv", field: "sku_count" },
+        { type: "external", system: "integration:sku_count", note: "Подключение МоегоСклада: товаров в каталоге" },
         { type: "survey", step: 5, key: "s3_product_count", label: "Кол-во продуктов", zeroIsEmpty: true },
       ],
     },
@@ -535,6 +538,7 @@ const CORE_BIZ_METRIC_DESCRIPTIONS: Record<string, Record<string, MetricDescript
       range: [0, 100],
       sources: [
         { type: "document", doc_type: "ops_report", field: "defect_rate" },
+        { type: "external", system: "integration:returns_rate", note: "Подключение МоегоСклада / Wildberries / Kaspi: возвраты ÷ продажи за 30 дней" },
       ],
     },
     "Производительность": {
@@ -677,6 +681,7 @@ const CORE_BIZ_METRIC_DESCRIPTIONS: Record<string, Record<string, MetricDescript
       unit: "count",
       sources: [
         { type: "document", doc_type: "inventory_csv", field: "sku_count" },
+        { type: "external", system: "integration:sku_in_stock", note: "Подключение МоегоСклада: SKU с положительным остатком" },
         { type: "survey", step: 5, key: "s3_product_count", label: "Кол-во продуктов", zeroIsEmpty: true },
       ],
     },
@@ -978,6 +983,7 @@ export const KPI_DESCRIPTIONS: Record<string, KpiDescription> = {
       { type: "document", doc_type: "inventory_csv", field: "sku_count" },
       { type: "survey", step: 5, key: "s3_product_count", label: "Кол-во продуктов", zeroIsEmpty: true },
       { type: "external", system: "ERP/1C", note: "Внутренний справочник SKU" },
+      { type: "external", system: "integration:sku_count", note: "Подключение МоегоСклада: товаров в каталоге" },
     ],
   },
   "Себестоимость (KPI)": {
@@ -1011,6 +1017,7 @@ export const KPI_DESCRIPTIONS: Record<string, KpiDescription> = {
     sources: [
       { type: "document", doc_type: "marketing_report", field: "website_visits" },
       { type: "external", system: "Google Analytics 4", note: "Sessions report" },
+      { type: "external", system: "integration:sessions_month", note: "Подключение GA4 / Яндекс Метрики: визиты за последние 30 полных дней" },
       { type: "external", system: "Яндекс.Метрика", note: "Сводный отчёт" },
     ],
   },
@@ -1046,6 +1053,7 @@ export const KPI_DESCRIPTIONS: Record<string, KpiDescription> = {
       { type: "document", doc_type: "marketplace_report", field: "avg_check" },
       { type: "external", system: "POS-система (1C-Розница / RKeeper)", note: "Чеки розницы" },
       { type: "external", system: "CRM e-commerce", note: "Заказы" },
+      { type: "external", system: "integration:aov", note: "Подключение магазина / маркетплейса / GA4: выручка ÷ заказы за 30 дней, только в ₸" },
     ],
   },
   "Время доставки (KPI)": {

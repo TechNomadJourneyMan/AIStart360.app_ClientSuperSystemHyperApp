@@ -6,8 +6,8 @@
 // resolver itself remains trivially testable.
 //
 // Order of a metric's sources: manual > document > assessment >
-// survey (current wizard) > formula > survey (older-form key) >
-// prisma > external. A source that yields no number for this
+// connected integration (external «integration:…») > survey (current
+// wizard) > formula > survey (older-form key) > prisma > other external. A source that yields no number for this
 // metric (free text, a range, a value in the wrong unit, outside
 // the metric's plausible range) is a miss and never blocks the
 // next one. Formula sources are evaluated after their inputs
@@ -42,8 +42,21 @@ const SOURCE_PRIORITY: Record<MetricSourceType, number> = {
 /** A key the current wizard no longer writes: below a calculation from current answers. */
 const LEGACY_SURVEY_PRIORITY = 62
 
+/**
+ * A connected integration (external source «integration:…», migration 105) on
+ * a metric whose system of record it is (visits from GA4 / Метрика, the online
+ * average check from the shop / marketplace, SKU from МойСклад, returns from
+ * the marketplace): measured data of the last 30 days beats the owner's
+ * one-time survey estimate and a calculation from it, but stays below a
+ * manual override, a document the owner uploaded and the GRI assessment.
+ * Other external sources (1C, CRM … — no producer) keep the lowest priority.
+ * Decision W7, docs/platform/06-integrations.md «Приоритет источников».
+ */
+const INTEGRATION_NATIVE_PRIORITY = 72
+
 function priority(src: MetricSource): number {
   if (src.type === 'survey' && src.legacy) return LEGACY_SURVEY_PRIORITY
+  if (src.type === 'external' && src.system?.startsWith('integration:')) return INTEGRATION_NATIVE_PRIORITY
   return SOURCE_PRIORITY[src.type] ?? 0
 }
 

@@ -18,6 +18,8 @@ export const GIGA_NAV: GigaNavGroup[] = [
     { href: `${GIGA_BASE}/requests`, label: 'Заявки', icon: 'inbox', permission: 'users.view' },
     { href: `${GIGA_BASE}/invites`, label: 'Приглашения', icon: 'mail', permission: 'users.view' },
     { href: `${GIGA_BASE}/clients`, label: 'Клиенты', icon: 'building', permission: 'users.view' },
+    // E-commerce integrations of client companies (W7, migration 105); changes need company.edit (checked by the API).
+    { href: `${GIGA_BASE}/integrations`, label: 'Интеграции', icon: 'plug', permission: 'users.view' },
     { href: `${GIGA_BASE}/duplicates`, label: 'Дубликаты', icon: 'copy', permission: 'users.sensitive' },
     { href: `${GIGA_BASE}/leads`, label: 'Лиды', icon: 'sparkles', permission: 'leads.view' },
   ] },

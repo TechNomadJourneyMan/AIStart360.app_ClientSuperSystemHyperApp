@@ -5,6 +5,7 @@
 import { registerAgent } from '../registry'
 import { documentIntelligenceAgent } from './document-intelligence'
 import { documentReaperAgent } from './document-reaper'
+import { integrationSyncAgent } from './integration-sync'
 import { DIAGNOSTIC_AGENTS } from './diagnostics'
 import { monitoringAgent } from './monitoring'
 import { reportAgent } from './report'
@@ -14,3 +15,4 @@ registerAgent(documentIntelligenceAgent)
 registerAgent(documentReaperAgent)
 for (const agent of DIAGNOSTIC_AGENTS) registerAgent(agent)
 registerAgent(reportAgent)
+registerAgent(integrationSyncAgent)

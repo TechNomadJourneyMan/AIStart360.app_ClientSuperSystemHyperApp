@@ -24,6 +24,16 @@ export function isDocumentType(value: unknown): value is DocumentTypeValue {
   return typeof value === 'string' && (DOCUMENT_TYPES as readonly string[]).includes(value)
 }
 
+/**
+ * Marketplace / accounting exports (Kaspi orders, WB «Отчёт о реализации»,
+ * Ozon «Отчёт о реализации», МойСклад «Прибыльность» / «Остатки»): besides
+ * row extraction, lib/documents/marketplace-export.ts aggregates their columns
+ * into fields (orders, revenue, commission, returns, buyout, SKU). An
+ * unclassified upload ('other') is aggregated only when its header carries a
+ * marketplace-specific column (commission, payout, document type, returns).
+ */
+export const MARKETPLACE_EXPORT_TYPES: ReadonlySet<string> = new Set(['marketplace_report', 'inventory_csv'])
+
 /** Sales-transaction feeds: row extraction produces parsed_data.raw_rows. */
 export const SALES_LIKE_TYPES: ReadonlySet<string> = new Set([
   'sales_report', 'crm_export', 'marketplace_report', 'ads_report', 'cart_funnel', 'inventory_csv', 'ga4_export',
@@ -48,7 +58,8 @@ export const DOC_TYPE_FAMILIES: Readonly<Record<string, readonly string[]>> = {
   crm_export: ['crm_export', 'sales_report', 'client_base'],
   sales_report: ['sales_report', 'crm_export', 'marketplace_report'],
   client_base: ['client_base', 'crm_export', 'ecommerce_customers'],
-  ops_report: ['ops_report', 'inventory_csv'],
+  // Returns share («Брак / возвраты») of a marketplace export (W7) is an operations fact too.
+  ops_report: ['ops_report', 'inventory_csv', 'marketplace_report'],
   inventory_csv: ['inventory_csv', 'ops_report', 'marketplace_report'],
   marketplace_report: ['marketplace_report', 'sales_report', 'cart_funnel', 'ecommerce_customers'],
 }

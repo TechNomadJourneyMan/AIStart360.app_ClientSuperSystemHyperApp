@@ -6,6 +6,7 @@ import { ActivityLogClient } from '@/components/activity/ActivityLogClient'
 import { BillingPanel } from '@/components/settings/BillingPanel'
 import { AssistantSettingsPanel } from '@/components/settings/AssistantSettingsPanel'
 import { WhatsAppBinding } from '@/components/settings/WhatsAppBinding'
+import { IntegrationsPanel } from '@/components/settings/IntegrationsPanel'
 
 export interface SettingsInitial {
   firstName: string
@@ -810,161 +811,6 @@ function AppearancePanel() {
   )
 }
 
-// ── Интеграции ────────────────────────────────────────────────────────────────
-interface CrmRow { id: string; provider: string; domain: string; isActive: boolean; lastSyncStatus: string | null; syncedDeals: number; syncedContacts: number }
-
-const STUB_INTEGRATIONS = [
-  { id: 'telegram', name: 'Telegram', icon: 'send', status: 'coming', desc: 'Уведомления и алерты в Telegram' },
-  { id: 'whatsapp', name: 'WhatsApp', icon: 'chat', status: 'coming', desc: 'Уведомления в WhatsApp' },
-  { id: 'sheets',   name: 'Google Sheets', icon: 'table_view', status: 'available', desc: 'Экспорт метрик и базы клиентов' },
-  { id: 'notion',   name: 'Notion', icon: 'description', status: 'coming', desc: 'Синхронизация заметок и отчётов' },
-  { id: 'slack',    name: 'Slack', icon: 'tag', status: 'coming', desc: 'Алерты в рабочий канал' },
-  { id: 'webhooks', name: 'Webhooks', icon: 'webhook', status: 'needs_setup', desc: 'Исходящие вебхуки на события' },
-  { id: 'apikeys',  name: 'API-ключи', icon: 'key', status: 'available', desc: 'Программный доступ к API портала' },
-] as const
-
-const STATUS_BADGE: Record<string, { label: string; cls: string }> = {
-  connected:   { label: 'Подключено',         cls: 'text-primary bg-primary/10 border-primary/20' },
-  available:   { label: 'Доступно',           cls: 'text-secondary bg-secondary/10 border-secondary/20' },
-  coming:      { label: 'Скоро',              cls: 'text-on-surface-variant bg-surface-container-high border-outline-variant/30' },
-  needs_setup: { label: 'Требуется настройка', cls: 'text-tertiary-container bg-tertiary-container/10 border-tertiary-container/20' },
-  error:       { label: 'Ошибка',             cls: 'text-error bg-error/10 border-error/20' },
-}
-
-function IntegrationsPanel() {
-  const [crm, setCrm] = useState<CrmRow[]>([])
-  const [noOrg, setNoOrg] = useState(false)
-  const [loading, setLoading] = useState(true)
-  const [connecting, setConnecting] = useState<string | null>(null)
-  const [form, setForm] = useState({ domain: '', accessToken: '' })
-  const [busy, setBusy] = useState(false)
-
-  const load = useCallback(async () => {
-    setLoading(true)
-    try {
-      const res = await fetch('/api/crm', { credentials: 'include' })
-      if (res.status === 403) { setNoOrg(true); setCrm([]); return }
-      const json = await res.json().catch(() => ({}))
-      setCrm(Array.isArray(json.integrations) ? json.integrations : [])
-    } catch { /* keep empty */ } finally { setLoading(false) }
-  }, [])
-  useEffect(() => { load() }, [load])
-
-  const connected = (provider: string) => crm.find((c) => c.provider === provider && c.isActive)
-
-  const connect = async (provider: string) => {
-    if (!form.domain || !form.accessToken) return toast.error('Укажите домен и токен')
-    setBusy(true)
-    try {
-      const res = await fetch('/api/crm', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-        body: JSON.stringify({ provider, domain: form.domain, accessToken: form.accessToken }),
-      })
-      const json = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(json.error || 'fail')
-      toast.success('Интеграция подключена')
-      setConnecting(null); setForm({ domain: '', accessToken: '' }); load()
-    } catch (e) { toast.error(e instanceof Error && /organization/i.test(e.message) ? 'Нет организации — обратитесь к администратору' : 'Не удалось подключить (проверьте домен/токен)') } finally { setBusy(false) }
-  }
-
-  const sync = async (id: string) => {
-    setBusy(true)
-    try {
-      const res = await fetch('/api/crm/sync', { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ id }) })
-      if (!res.ok) throw new Error()
-      toast.success('Синхронизация запущена'); load()
-    } catch { toast.error('Ошибка синхронизации') } finally { setBusy(false) }
-  }
-
-  const disconnect = async (id: string) => {
-    if (!confirm('Отключить интеграцию?')) return
-    setBusy(true)
-    try {
-      const res = await fetch('/api/crm', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ id }) })
-      if (!res.ok) throw new Error()
-      toast.success('Интеграция отключена'); load()
-    } catch { toast.error('Не удалось отключить') } finally { setBusy(false) }
-  }
-
-  const CrmCard = ({ provider, name }: { provider: string; name: string }) => {
-    const conn = connected(provider)
-    const isOpen = connecting === provider
-    return (
-      <div className="bg-surface-container-high rounded-xl p-4 border border-white/[0.04]">
-        <div className="flex items-start justify-between mb-2">
-          <div className="flex items-center gap-3">
-            <span className="material-symbols-outlined text-2xl text-primary/70">hub</span>
-            <div><p className="text-sm font-semibold text-on-surface">{name}</p><p className="text-xs text-on-surface-variant">Синхронизация сделок и контактов</p></div>
-          </div>
-          <Badge status={conn ? 'connected' : 'available'} />
-        </div>
-        {conn ? (
-          <div className="mt-3">
-            <p className="text-xs text-on-surface-variant mb-2">{conn.domain} · сделок: {conn.syncedDeals} · контактов: {conn.syncedContacts}</p>
-            <div className="flex gap-2">
-              <button type="button" onClick={() => sync(conn.id)} disabled={busy} className="text-xs px-3 py-1.5 rounded-lg bg-primary/10 border border-primary/20 text-primary hover:bg-primary/15 transition-colors disabled:opacity-50">Синхронизировать</button>
-              <button type="button" onClick={() => disconnect(conn.id)} disabled={busy} className="text-xs px-3 py-1.5 rounded-lg border border-error/30 text-error hover:bg-error/10 transition-colors disabled:opacity-50">Отключить</button>
-            </div>
-          </div>
-        ) : isOpen ? (
-          <div className="mt-3 space-y-2">
-            <input value={form.domain} onChange={(e) => setForm((f) => ({ ...f, domain: e.target.value }))} placeholder={provider === 'bitrix24' ? 'company.bitrix24.ru' : 'company.amocrm.ru'}
-              className="w-full bg-surface-container border border-outline-variant/30 rounded-lg px-3 py-2 text-xs text-on-surface placeholder:text-on-surface-variant/40 focus:outline-none focus:border-primary/50" />
-            <input value={form.accessToken} onChange={(e) => setForm((f) => ({ ...f, accessToken: e.target.value }))} placeholder="Access token / webhook key" type="password"
-              className="w-full bg-surface-container border border-outline-variant/30 rounded-lg px-3 py-2 text-xs text-on-surface placeholder:text-on-surface-variant/40 focus:outline-none focus:border-primary/50" />
-            <div className="flex gap-2">
-              <button type="button" onClick={() => connect(provider)} disabled={busy} className="text-xs px-3 py-1.5 rounded-lg bg-primary text-on-primary hover:bg-primary/90 transition-colors disabled:opacity-50">{busy ? 'Проверка…' : 'Подключить'}</button>
-              <button type="button" onClick={() => setConnecting(null)} className="text-xs px-3 py-1.5 rounded-lg text-on-surface-variant hover:text-on-surface">Отмена</button>
-            </div>
-          </div>
-        ) : (
-          <button type="button" onClick={() => { setConnecting(provider); setForm({ domain: '', accessToken: '' }) }}
-            className="mt-3 text-xs px-3 py-1.5 rounded-lg border border-outline-variant/30 text-on-surface-variant hover:text-on-surface hover:border-primary/30 transition-colors">Подключить</button>
-        )}
-      </div>
-    )
-  }
-
-  return (
-    <>
-      <Card title="CRM" subtitle="Подтяните сделки и контакты для аналитики.">
-        {noOrg && (
-          <div className="mb-3 flex items-center gap-2 text-xs text-on-surface-variant bg-surface-container-high rounded-lg px-3 py-2">
-            <span className="material-symbols-outlined text-base text-tertiary-container">info</span>
-            CRM-интеграции доступны на уровне организации — обратитесь к администратору для подключения.
-          </div>
-        )}
-        {loading ? <div className="h-24 bg-surface-container-high rounded-xl animate-pulse" /> : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <CrmCard provider="bitrix24" name="Bitrix24" />
-            <CrmCard provider="amocrm" name="AmoCRM" />
-          </div>
-        )}
-      </Card>
-
-      <Card title="Каналы и сервисы" subtitle="Уведомления, экспорт, вебхуки и API.">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {STUB_INTEGRATIONS.map((s) => (
-            <div key={s.id} className="bg-surface-container-high rounded-xl p-4 border border-white/[0.04]">
-              <div className="flex items-start justify-between mb-2">
-                <div className="flex items-center gap-3">
-                  <span className="material-symbols-outlined text-2xl text-on-surface-variant/60">{s.icon}</span>
-                  <div><p className="text-sm font-semibold text-on-surface">{s.name}</p><p className="text-xs text-on-surface-variant">{s.desc}</p></div>
-                </div>
-                <Badge status={s.status} />
-              </div>
-              <button type="button" disabled title="В разработке"
-                className="mt-2 text-xs px-3 py-1.5 rounded-lg border border-outline-variant/30 text-on-surface-variant opacity-50 cursor-not-allowed">
-                {s.status === 'available' ? 'Подключить' : s.status === 'needs_setup' ? 'Настроить' : 'Скоро'}
-              </button>
-            </div>
-          ))}
-        </div>
-      </Card>
-    </>
-  )
-}
-
 // ── shared ────────────────────────────────────────────────────────────────────
 function Card({ title, subtitle, icon, children }: { title: string; subtitle?: string; icon?: string; children: React.ReactNode }) {
   return (
@@ -981,11 +827,6 @@ function Card({ title, subtitle, icon, children }: { title: string; subtitle?: s
   )
 }
 
-
-function Badge({ status }: { status: string }) {
-  const b = STATUS_BADGE[status] ?? STATUS_BADGE.coming
-  return <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full border shrink-0 ${b.cls}`}>{b.label}</span>
-}
 
 function ComingSoon({ icon, title, points }: { icon: string; title: string; points: string[] }) {
   return (

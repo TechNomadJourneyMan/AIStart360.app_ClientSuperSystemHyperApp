@@ -23,6 +23,7 @@ import { METRIC_SYNONYMS, matchSynonym } from '@/lib/documents/synonyms'
 import { docTypeMatches } from '@/lib/documents/doc-types'
 import { getMetricById, getMetricRegistry } from './registry'
 import { BASE_INPUTS } from './formulas'
+import { asIntegrationSignal, INTEGRATION_SYSTEM_PREFIX } from '@/lib/integrations/signals'
 import { coerceNumber, parseNumber, parseScale, timeUnitOf, type RatePeriod, type TimeUnit } from './numbers'
 import {
   monthsOf,
@@ -895,15 +896,54 @@ export function resolvePrismaSource(
   return { source, status: 'hit', value: value as SourceAttempt['value'], numeric, confidence: 0.95 }
 }
 
-// ─── External adapter (stub) ─────────────────────────────────
+// ─── External adapter ────────────────────────────────────────
+
+/** Confidence of a value synchronised from a connected integration (system of record, recent window). */
+export const INTEGRATION_CONFIDENCE = 0.9
+
+/**
+ * A source of a connected integration (system «integration:…»,
+ * lib/integrations/signals.ts): the signal carries the value, the provider, the
+ * period it covers and when it was fetched — all of it lands in
+ * public.metrics.provenance.external. The unit is checked against the metric
+ * (a ₸ metric never takes a value in another currency).
+ */
+function resolveIntegrationSource(source: MetricSource, ctx: ResolverContext, shape: MetricShape): SourceAttempt {
+  const signal = asIntegrationSignal(ctx.externalSignals?.[source.system ?? ''])
+  if (!signal) return { source, status: 'miss', reason: `integration «${source.system}»: no connected provider with a complete window` }
+  const unitOk = shape.unit === '₸' ? signal.unit === 'KZT' : shape.unit === '%' ? signal.unit === '%' : signal.unit === 'count' || signal.unit === shape.unit
+  if (!unitOk) return { source, status: 'miss', reason: `integration «${source.system}» is in ${signal.unit}, the metric is in «${shape.unit || 'number'}»` }
+  const months = signal.days >= 28 && signal.days <= 31 ? 1 : null
+  return {
+    source,
+    status: 'hit',
+    value: signal.value,
+    numeric: signal.value,
+    confidence: INTEGRATION_CONFIDENCE,
+    reason: `${signal.provider}: ${signal.basis} (${signal.period_start} — ${signal.period_end}), получено ${signal.fetched_at.slice(0, 16).replace('T', ' ')}`,
+    ...(shape.period === 'month' && months
+      ? { period: { source: 'month', target: 'month', factor: 1, basis: 'source' as const } }
+      : {}),
+    external: {
+      provider: signal.provider,
+      period_start: signal.period_start,
+      period_end: signal.period_end,
+      fetched_at: signal.fetched_at,
+      days: signal.days,
+      basis: signal.basis,
+    },
+  }
+}
 
 export function resolveExternalSource(
   source: MetricSource,
   ctx: ResolverContext,
+  shape: MetricShape = NO_SHAPE(''),
 ): SourceAttempt {
   if (source.type !== 'external') {
     return { source, status: 'error', reason: 'wrong adapter' }
   }
+  if (source.system?.startsWith(INTEGRATION_SYSTEM_PREFIX)) return resolveIntegrationSource(source, ctx, shape)
   const signals = ctx.externalSignals
   if (!signals || !source.system) {
     return { source, status: 'miss', reason: `external system "${source.system}" not connected` }
@@ -958,7 +998,7 @@ export function tryResolveSource(
     case 'survey':     return resolveSurveySource(source, ctx, shape)
     case 'document':   return resolveDocumentSource(source, ctx, metricId, shape)
     case 'prisma':     return resolvePrismaSource(source, ctx)
-    case 'external':   return resolveExternalSource(source, ctx)
+    case 'external':   return resolveExternalSource(source, ctx, shape)
     case 'manual':     return resolveManualSource(source, ctx, metricId, shape)
     case 'assessment': return resolveAssessmentSource(source, ctx)
     case 'formula':    return { source, status: 'error', reason: 'formula sources are evaluated by the resolver' }

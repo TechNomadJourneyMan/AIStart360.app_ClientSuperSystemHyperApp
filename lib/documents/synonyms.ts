@@ -684,6 +684,16 @@ export const METRIC_SYNONYMS: Record<string, string[]> = {
   competitive_win_rate: ['выбравших вас', 'выигрыш у конкурентов', 'победы над конкурентами', 'competitive win rate'],
   competitive_loss_rate: ['выбравших конкурента', 'проигрыш конкурентам', 'ушли к конкуренту', 'competitive loss rate'],
 
+  // ─── Marketplace exports (W7: Kaspi / WB / Ozon / МойСклад) ─────────────
+  // Aggregates computed from row-level exports (lib/documents/marketplace-export.ts).
+  orders_count: ['количество заказов', 'кол-во заказов', 'число заказов', 'заказов', 'orders count', 'orders'],
+  marketplace_revenue: ['выручка маркетплейса', 'продажи на маркетплейсе', 'сумма продаж маркетплейса', 'marketplace revenue'],
+  marketplace_commission: ['комиссия маркетплейса', 'вознаграждение маркетплейса', 'комиссия площадки', 'marketplace commission'],
+  marketplace_payout: ['к перечислению продавцу', 'к выплате продавцу', 'итого к начислению', 'payout'],
+  returns_count: ['количество возвратов', 'кол-во возвратов', 'число возвратов', 'returns count'],
+  buyout_rate: ['процент выкупа', '% выкупа', 'доля выкупа', 'выкуп', 'buyout rate'],
+  sku_in_stock: ['sku в наличии', 'товаров в наличии', 'позиций с остатком', 'sku in stock'],
+
   // ─── Time-related funnel ──────────────────────────────────────────────
   time_between_purchases: [
     'time between purchases',
@@ -794,4 +804,81 @@ function matchNormalized(norm: string): string | null {
     if (padded.includes(` ${syn} `)) return canonical;
   }
   return null;
+}
+
+
+// ─── Marketplace export columns ─────────────────────────────────────────────
+
+/**
+ * Column headers of marketplace / accounting exports → canonical column
+ * (lib/documents/marketplace-export.ts). Sources of the header texts:
+ *   Wildberries «Отчёт о реализации» (детализация): the column names are the
+ *     field descriptions of the official finance API (SalesReportsDetailedRes in
+ *     https://dev.wildberries.ru/api/swagger/yaml/ru/13-finances.yaml): «Тип
+ *     документа», «Обоснование для оплаты», «Артикул продавца», «Количество»,
+ *     «Wildberries реализовал Товар (Пр)», «Цена розничная с учётом согласованной
+ *     скидки», «Вознаграждение с продаж до вычета услуг поверенного, без НДС»,
+ *     «К перечислению продавцу за реализованный товар», «Количество возврата».
+ *   Kaspi Магазин orders export: the order attributes of the official API
+ *     (https://guide.kaspi.kz/partner/ru/shop/api/orders/q3201): «Номер заказа»,
+ *     «Общая сумма заказа», «Статус заказа», «Дата создания заказа».
+ *   МойСклад «Прибыльность» / «Остатки»: the report fields of the official
+ *     docs (md/reports/_report_pnl.md, _report_stock.md): «Проданное
+ *     количество», «Сумма продаж», «Возвращенное количество», «Сумма возвратов»,
+ *     «Остаток», «Доступно».
+ *   Ozon «Отчёт о реализации»: docs.ozon.ru is not reachable from the sandbox —
+ *     the headers below are the generic Russian wording of the report
+ *     («Реализовано», «Возвращено», «Комиссия», «Итого к начислению») and are
+ *     matched only together with a quantity / amount column.
+ * Matching is on normalizeForMatch() text: exact first, then the longest
+ * synonym contained in the header.
+ */
+export type MarketplaceColumn =
+  | 'doc_type' | 'status' | 'order_id' | 'sku' | 'quantity' | 'returned_quantity'
+  | 'amount' | 'returns_amount' | 'commission' | 'payout' | 'stock' | 'date'
+
+export const MARKETPLACE_COLUMN_SYNONYMS: Record<MarketplaceColumn, string[]> = {
+  doc_type: ['тип документа', 'обоснование для оплаты', 'тип операции', 'тип начисления', 'операция'],
+  status: ['статус заказа', 'статус', 'состояние заказа', 'order status'],
+  order_id: ['номер заказа', '№ заказа', 'id заказа', 'код заказа', 'номер отправления', 'srid', 'id сборочного задания', 'order id', 'order number'],
+  sku: ['артикул продавца', 'артикул wb', 'артикул', 'код номенклатуры', 'баркод', 'sku', 'код товара', 'код', 'vendor code'],
+  quantity: ['проданное количество', 'продано шт', 'продано', 'реализовано кол во', 'реализовано шт', 'кол во', 'количество', 'qty', 'quantity'],
+  returned_quantity: ['количество возврата', 'возвращенное количество', 'возвращено кол во', 'возвращено клиенту кол во', 'возвращено шт', 'возвращено', 'возвраты шт'],
+  amount: [
+    'wildberries реализовал товар пр', 'цена розничная с учетом согласованной скидки', 'общая сумма заказа', 'сумма заказа',
+    'сумма продаж', 'реализовано на сумму', 'выручка', 'сумма', 'стоимость', 'итого сумма', 'amount', 'revenue',
+  ],
+  returns_amount: ['сумма возвратов', 'возвращено на сумму', 'возвращено клиенту на сумму', 'сумма возврата'],
+  commission: [
+    'вознаграждение с продаж до вычета услуг поверенного без ндс', 'вознаграждение wildberries вв без ндс',
+    'комиссия маркетплейса', 'комиссия за продажу', 'вознаграждение ozon', 'комиссия', 'commission',
+  ],
+  payout: ['к перечислению продавцу за реализованный товар', 'к перечислению продавцу', 'итого к начислению', 'к выплате', 'payout'],
+  stock: ['остаток', 'доступно', 'остаток на складе', 'в наличии', 'stock'],
+  date: ['дата создания заказа', 'дата поступления заказа', 'дата продажи', 'дата заказа', 'дата операции', 'дата и время продажи', 'дата', 'date'],
+}
+
+let _columnIndex: Array<{ syn: string; column: MarketplaceColumn }> | null = null
+
+function columnIndex(): Array<{ syn: string; column: MarketplaceColumn }> {
+  if (_columnIndex) return _columnIndex
+  const out: Array<{ syn: string; column: MarketplaceColumn }> = []
+  for (const [column, syns] of Object.entries(MARKETPLACE_COLUMN_SYNONYMS) as Array<[MarketplaceColumn, string[]]>) {
+    for (const syn of syns) out.push({ syn: normalizeForMatch(syn), column })
+  }
+  _columnIndex = out.sort((a, b) => b.syn.length - a.syn.length)
+  return _columnIndex
+}
+
+/** Canonical column of an export header, or null. */
+export function matchMarketplaceColumn(header: string): MarketplaceColumn | null {
+  const norm = normalizeForMatch(header)
+  if (!norm) return null
+  const idx = columnIndex()
+  const exact = idx.find((e) => e.syn === norm)
+  if (exact) return exact.column
+  const padded = ` ${norm} `
+  // Contained synonym: only multi-word / long ones, so «код» does not catch «код города».
+  const contained = idx.find((e) => (e.syn.length >= 8 || e.syn.includes(' ')) && padded.includes(` ${e.syn} `))
+  return contained?.column ?? null
 }

@@ -13,9 +13,14 @@
 //     the neutral «Ваш магазин».
 //   • No invented targets or trends: no survey key provides them → «Цель не
 //     задана» / «—».
-//   • Blocks without a survey source (per-channel, per-marketplace, per-SKU,
-//     RFM, cohorts, cart flows, monthly sales) are honest empty states — the
-//     integrations in lib/integrations/ecommerce/ are not connected yet.
+//   • Connected integrations (Settings › Интеграции, W7): GET
+//     /api/integrations/snapshot gives the integration-fed metrics from
+//     public.metrics (the single source, lib/metrics/company-metrics.ts) and
+//     the per-provider 30-day summary (lib/integrations/signals.ts — the same
+//     rules that feed those metrics). Without a connection the blocks say so
+//     («Интеграция пока не подключена») and link to Settings › Интеграции.
+//   • Blocks with no source at all (RFM, cohorts, cart flows, monthly sales)
+//     stay honest empty states.
 //
 // ec_* answers are read straight from survey_answers under RLS (own rows
 // only), like /client/onboarding-medical does for medical_* keys:
@@ -39,15 +44,31 @@ import {
   type Provenance,
   type SurveyStep,
 } from '@/lib/ecommerce/survey-view'
+import {
+  INTEGRATIONS_SETTINGS_HREF,
+  buildIntegrationsView,
+  moneyLabel,
+  type IntegrationsSnapshot,
+  type IntegrationsView,
+  type MetricTile,
+  type ProviderRow,
+} from '@/lib/ecommerce/integrations-view'
 
 // ─── Data loading ─────────────────────────────────────────────────────────
 
 type LoadState =
   | { status: 'loading' }
   | { status: 'error' }
-  | { status: 'ready'; answers: Record<string, unknown>; companyName: string | null; companyIndustry: string | null }
+  | {
+      status: 'ready'
+      answers: Record<string, unknown>
+      companyName: string | null
+      companyIndustry: string | null
+      /** null = not loaded (no company yet / request failed) — the blocks show «нет подключения». */
+      integrations?: IntegrationsSnapshot | null
+    }
 
-function useEcommerceView(): { state: LoadState; view: EcommerceView | null } {
+function useEcommerceView(): { state: LoadState; view: EcommerceView | null; integrations: IntegrationsView } {
   const [state, setState] = useState<LoadState>({ status: 'loading' })
 
   useEffect(() => {
@@ -60,7 +81,7 @@ function useEcommerceView(): { state: LoadState; view: EcommerceView | null } {
           if (!cancelled) setState({ status: 'error' })
           return
         }
-        const [answersRes, company] = await Promise.all([
+        const [answersRes, company, integrations] = await Promise.all([
           sb
             .from('survey_answers')
             .select('question_key, answer')
@@ -70,6 +91,11 @@ function useEcommerceView(): { state: LoadState; view: EcommerceView | null } {
           fetch('/api/v1/onboarding/company', { cache: 'no-store' })
             .then((r) => (r.ok ? r.json() : null))
             .catch(() => null) as Promise<{ ok?: boolean; data?: { name?: unknown; industry?: unknown } | null } | null>,
+          // Integration snapshot is optional too: a failure leaves the survey view intact.
+          fetch('/api/integrations/snapshot', { cache: 'no-store' })
+            .then((r) => (r.ok ? r.json() : null))
+            .then((b: { ok?: boolean; data?: IntegrationsSnapshot } | null) => (b?.ok && b.data ? b.data : null))
+            .catch(() => null) as Promise<IntegrationsSnapshot | null>,
         ])
         if (answersRes.error) throw answersRes.error
         if (cancelled) return
@@ -79,6 +105,7 @@ function useEcommerceView(): { state: LoadState; view: EcommerceView | null } {
           answers: extractEcommerceAnswers(answersRes.data),
           companyName: typeof record?.name === 'string' ? record.name : null,
           companyIndustry: typeof record?.industry === 'string' ? record.industry : null,
+          integrations,
         })
       } catch {
         if (!cancelled) setState({ status: 'error' })
@@ -94,13 +121,17 @@ function useEcommerceView(): { state: LoadState; view: EcommerceView | null } {
         : null,
     [state],
   )
-  return { state, view }
+  const integrations = useMemo(
+    () => buildIntegrationsView(state.status === 'ready' ? state.integrations : null),
+    [state],
+  )
+  return { state, view, integrations }
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────
 
 export default function DashboardEcommercePage() {
-  const { state, view } = useEcommerceView()
+  const { state, view, integrations } = useEcommerceView()
   return (
     <div className="min-h-screen bg-surface text-on-surface">
       <Topbar />
@@ -111,11 +142,12 @@ export default function DashboardEcommercePage() {
         {view && (
           <>
             <Hero view={view} />
-            <KpiRow kpis={view.kpis} />
+            <KpiRow kpis={view.kpis} aovMetric={integrations.metrics.aov ?? null} />
+            <IntegrationsSection integrations={integrations} />
             <FunnelSection funnel={view.funnel} />
-            <ChannelMix channels={view.channels} />
-            <MarketplacesStrip marketplaces={view.marketplaces} />
-            <SkuHealth catalog={view.catalog} />
+            <ChannelMix channels={view.channels} integrations={integrations} />
+            <MarketplacesStrip marketplaces={view.marketplaces} integrations={integrations} />
+            <SkuHealth catalog={view.catalog} integrations={integrations} />
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
               <RFMSection customers={view.customers} />
               <CohortLTV />
@@ -255,10 +287,28 @@ function Hero({ view }: { view: EcommerceView }) {
   )
 }
 
-function KpiRow({ kpis }: { kpis: KpiTile[] }) {
+function KpiRow({ kpis, aovMetric }: { kpis: KpiTile[]; aovMetric: MetricTile | null }) {
   return (
     <section className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-      {kpis.map((it) => (
+      {kpis.map((tile) => {
+        // The online average check of public.metrics wins when an integration fed it
+        // (measured last-30-days value, provenance shown) — same number as on the Metrics page.
+        const fromIntegration = tile.key === 'aov' && aovMetric?.source === 'external'
+        const it: KpiTile = fromIntegration && aovMetric ? { ...tile, value: aovMetric.value } : tile
+        if (fromIntegration && aovMetric) {
+          return (
+            <div key={it.key} className="bg-surface-container-low rounded-2xl border border-white/[0.06] p-5 flex flex-col">
+              <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider mb-2">{it.label}</p>
+              <p className="font-headline text-2xl font-extrabold text-on-surface">{formatKpiValue(it)}</p>
+              <IntegrationCaption text={`из подключения${aovMetric.basis ? ` · ${aovMetric.basis}` : ''}`} className="mt-1" />
+              <div className="flex items-center justify-between mt-auto pt-2 text-[10px] text-on-surface-variant/70">
+                <span>Цель не задана</span>
+                <span className="font-mono">—</span>
+              </div>
+            </div>
+          )
+        }
+        return (
         <div key={it.key} className="bg-surface-container-low rounded-2xl border border-white/[0.06] p-5 flex flex-col">
           <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider mb-2">{it.label}</p>
           <p className={`font-headline text-2xl font-extrabold ${it.value == null ? 'text-on-surface-variant' : 'text-on-surface'}`}>
@@ -281,7 +331,8 @@ function KpiRow({ kpis }: { kpis: KpiTile[] }) {
             </span>
           </div>
         </div>
-      ))}
+        )
+      })}
     </section>
   )
 }
@@ -348,7 +399,7 @@ function FunnelSection({ funnel }: { funnel: EcommerceView['funnel'] }) {
   )
 }
 
-function ChannelMix({ channels }: { channels: EcommerceView['channels'] }) {
+function ChannelMix({ channels, integrations }: { channels: EcommerceView['channels']; integrations: IntegrationsView }) {
   return (
     <SectionCard
       eyebrow="КАНАЛЫ ТРАФИКА"
@@ -372,12 +423,14 @@ function ChannelMix({ channels }: { channels: EcommerceView['channels'] }) {
           </div>
         </div>
       )}
-      <IntegrationNote text={INTEGRATION_NOTES.channels} />
+      {integrations.analytics.length > 0 || integrations.metrics.sessions
+        ? <AnalyticsRows rows={integrations.analytics} sessions={integrations.metrics.sessions ?? null} />
+        : <IntegrationNote text={INTEGRATION_NOTES.channels} link />}
     </SectionCard>
   )
 }
 
-function MarketplacesStrip({ marketplaces }: { marketplaces: EcommerceView['marketplaces'] }) {
+function MarketplacesStrip({ marketplaces, integrations }: { marketplaces: EcommerceView['marketplaces']; integrations: IntegrationsView }) {
   return (
     <SectionCard
       eyebrow="МАРКЕТПЛЕЙСЫ"
@@ -397,12 +450,16 @@ function MarketplacesStrip({ marketplaces }: { marketplaces: EcommerceView['mark
           </div>
         </div>
       )}
-      {!marketplaces.notUsed && <IntegrationNote text={INTEGRATION_NOTES.marketplaces} />}
+      {integrations.marketplaces.length > 0
+        ? <MarketplaceRows rows={integrations.marketplaces} />
+        : !marketplaces.notUsed && <IntegrationNote text={INTEGRATION_NOTES.marketplaces} link />}
     </SectionCard>
   )
 }
 
-function SkuHealth({ catalog }: { catalog: EcommerceView['catalog'] }) {
+function SkuHealth({ catalog, integrations }: { catalog: EcommerceView['catalog']; integrations: IntegrationsView }) {
+  const { sku, skuInStock, returnsRate } = integrations.metrics
+  const fromIntegration = [sku, skuInStock, returnsRate].filter((m): m is MetricTile => m?.source === 'external')
   return (
     <SectionCard
       eyebrow="КАТАЛОГ · SKU HEALTH"
@@ -431,7 +488,15 @@ function SkuHealth({ catalog }: { catalog: EcommerceView['catalog'] }) {
           </div>
         </div>
       )}
-      <IntegrationNote text={INTEGRATION_NOTES.catalog} />
+      {fromIntegration.length > 0 ? (
+        <div className="mt-5 grid grid-cols-1 sm:grid-cols-3 gap-3">
+          {sku?.source === 'external' && <IntegrationFact label="SKU в каталоге" value={formatNumber(sku.value)} basis={sku.basis} />}
+          {skuInStock?.source === 'external' && <IntegrationFact label="SKU с остатком" value={formatNumber(skuInStock.value)} basis={skuInStock.basis} />}
+          {returnsRate?.source === 'external' && <IntegrationFact label="Возвраты (30 дней)" value={formatPercent(returnsRate.value)} basis={returnsRate.basis} />}
+        </div>
+      ) : (
+        <IntegrationNote text={INTEGRATION_NOTES.catalog} link />
+      )}
     </SectionCard>
   )
 }
@@ -668,11 +733,144 @@ function SurveyEmpty({ step, what }: { step: SurveyStep; what: string }) {
   )
 }
 
-function IntegrationNote({ text }: { text: string }) {
+function IntegrationNote({ text, link = false }: { text: string; link?: boolean }) {
   return (
     <div className="mt-5 flex items-start gap-2 rounded-xl border border-white/[0.04] bg-surface-container/60 px-4 py-3">
       <span className="material-symbols-outlined text-base text-on-surface-variant/70 mt-px" aria-hidden="true">link_off</span>
-      <p className="text-xs text-on-surface-variant leading-relaxed">{text}</p>
+      <p className="text-xs text-on-surface-variant leading-relaxed">
+        {text}
+        {link && (
+          <>
+            {' '}
+            <Link href={INTEGRATIONS_SETTINGS_HREF} className="text-primary hover:underline">Подключить в Настройках</Link>
+          </>
+        )}
+      </p>
+    </div>
+  )
+}
+
+// ─── Connected integrations ───────────────────────────────────────────────
+
+function IntegrationCaption({ text, className = '' }: { text: string; className?: string }) {
+  return (
+    <p className={`text-[10px] font-mono uppercase tracking-wider text-on-surface-variant/70 flex items-center gap-1 ${className}`}>
+      <span className="material-symbols-outlined text-[12px]" aria-hidden="true">sync</span>
+      {text}
+    </p>
+  )
+}
+
+function IntegrationFact({ label, value, basis }: { label: string; value: string; basis: string | null }) {
+  return (
+    <div className="bg-surface-container rounded-2xl border border-white/[0.04] p-4">
+      <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider">{label}</p>
+      <p className="font-mono text-lg font-bold text-on-surface mt-1">{value}</p>
+      <IntegrationCaption text={`из подключения${basis ? ` · ${basis}` : ''}`} className="mt-1" />
+    </div>
+  )
+}
+
+function rowStatus(r: ProviderRow): string | null {
+  if (r.file) return 'данные — из загруженных выгрузок (раздел «Файлы»)'
+  if (r.status === 'needs_reauth') return 'ключ больше не принимается — переподключите'
+  if (r.status === 'error') return r.lastError ? `ошибка синхронизации: ${r.lastError}` : 'ошибка синхронизации'
+  if (r.filling) return 'история загружается — полные 30 дней появятся после нескольких синхронизаций'
+  return null
+}
+
+function IntegrationsSection({ integrations }: { integrations: IntegrationsView }) {
+  return (
+    <SectionCard
+      eyebrow="ПОДКЛЮЧЕНИЯ"
+      title="Данные из ваших кабинетов"
+      hint="Заказы, выручка, возвраты, остатки и трафик за последние 30 полных дней — напрямую из подключённых сервисов."
+    >
+      {integrations.state === 'none' ? (
+        <EmptyBlock icon="link_off" text="Интеграция пока не подключена. Подключите маркетплейсы, МойСклад или веб-аналитику — и здесь появятся ваши заказы, выручка и возвраты.">
+          <Link
+            href={INTEGRATIONS_SETTINGS_HREF}
+            className="inline-flex items-center gap-1 mt-3 text-xs text-primary hover:underline focus:outline-none focus:ring-2 focus:ring-primary/40 rounded"
+          >
+            Открыть Настройки › Интеграции
+            <span className="material-symbols-outlined text-[14px]" aria-hidden="true">arrow_forward</span>
+          </Link>
+        </EmptyBlock>
+      ) : (
+        <div className="flex flex-wrap gap-2">
+          {[...integrations.marketplaces, ...integrations.analytics].map((r) => (
+            <span key={r.provider} className="px-3 py-1.5 rounded-xl text-xs bg-primary/10 border border-primary/20 text-primary">
+              {r.label}{r.period ? ` · ${r.period}` : ''}
+            </span>
+          ))}
+        </div>
+      )}
+    </SectionCard>
+  )
+}
+
+function MarketplaceRows({ rows }: { rows: ProviderRow[] }) {
+  return (
+    <div className="mt-5 space-y-3">
+      {rows.map((r) => {
+        const note = rowStatus(r)
+        return (
+          <div key={r.provider} className="rounded-2xl border border-white/[0.06] bg-surface-container p-4">
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <p className="text-sm font-semibold">{r.label}</p>
+              {r.period && <IntegrationCaption text={`30 дней · ${r.period}`} />}
+            </div>
+            {note && <p className="text-xs text-on-surface-variant mt-1">{note}</p>}
+            {!r.file && (r.orders !== null || r.revenue || r.sku !== null) && (
+              <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mt-3">
+                <MiniFact label="Заказы" value={r.orders !== null ? formatNumber(r.orders) : null} />
+                <MiniFact label="Выручка" value={moneyLabel(r.revenue ?? r.ordersAmount, formatMoney)} />
+                <MiniFact label="Средний чек" value={moneyLabel(r.averageOrder, formatMoney)} />
+                <MiniFact label="Возвраты" value={r.returnsRatePct !== null ? formatPercent(r.returnsRatePct) : null} />
+                <MiniFact label={r.payout ? 'К перечислению' : 'SKU'} value={r.payout ? moneyLabel(r.payout, formatMoney) : r.sku !== null ? formatNumber(r.sku) : null} />
+              </div>
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function AnalyticsRows({ rows, sessions }: { rows: ProviderRow[]; sessions: MetricTile | null }) {
+  return (
+    <div className="mt-5 space-y-3">
+      {sessions && (
+        <IntegrationFact label="Визиты за 30 дней (метрика)" value={formatNumber(sessions.value)} basis={sessions.basis} />
+      )}
+      {rows.map((r) => {
+        const note = rowStatus(r)
+        return (
+          <div key={r.provider} className="rounded-2xl border border-white/[0.06] bg-surface-container p-4">
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <p className="text-sm font-semibold">{r.label}</p>
+              {r.period && <IntegrationCaption text={`30 дней · ${r.period}`} />}
+            </div>
+            {note && <p className="text-xs text-on-surface-variant mt-1">{note}</p>}
+            {(r.sessions !== null || r.users !== null) && (
+              <div className="grid grid-cols-3 gap-3 mt-3">
+                <MiniFact label="Визиты" value={r.sessions !== null ? formatNumber(r.sessions) : null} />
+                <MiniFact label="Посетители" value={r.users !== null ? formatNumber(r.users) : null} />
+                <MiniFact label="Покупки" value={r.purchases !== null ? formatNumber(r.purchases) : null} />
+              </div>
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function MiniFact({ label, value }: { label: string; value: string | null }) {
+  return (
+    <div>
+      <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-wider">{label}</p>
+      <p className={`font-mono text-sm font-bold mt-0.5 ${value ? 'text-on-surface' : 'text-on-surface-variant/60'}`}>{value ?? '—'}</p>
     </div>
   )
 }
