@@ -1,6 +1,5 @@
 import { serve } from 'inngest/next'
 import { inngest } from '@/lib/inngest'
-import { parseDocumentFn } from '@/lib/functions/parse-document'
 import { assistantEventsRetention } from '@/lib/functions/assistant-events-retention'
 import { agentsMaintenance, agentsTaskRequested } from '@/lib/functions/agents'
 import { demoAccountsCleanup } from '@/lib/functions/demo-cleanup'
@@ -16,8 +15,10 @@ export const maxDuration = 300
 
 export const { GET, POST, PUT } = serve({
   client: inngest,
+  // Document parsing runs as the document_intelligence agent (agentsTaskRequested
+  // / agentsMaintenance); the old `document/parse` function never had a trigger
+  // under inngest 4 and was removed.
   functions: [
-    parseDocumentFn,
     assistantEventsRetention,
     processOmnichannelMessage,
     backfillOmnichannel,

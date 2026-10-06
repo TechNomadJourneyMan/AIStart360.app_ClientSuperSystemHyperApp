@@ -18,7 +18,7 @@ import { isDocumentType } from './doc-types'
 import { documentMaxBytes, fileExtension, preflightDocument } from './preflight'
 import type { DocumentRow, InsertDocumentInput } from './repository'
 import { DuplicateDocumentError } from './repository'
-import { checkUploadLocation, StorageError, type DocumentStorage, type StorageLocation } from './storage'
+import { checkUploadLocation, StorageError, stripControlChars, type DocumentStorage, type StorageLocation } from './storage'
 
 export interface FinalizeRequest {
   userId: string
@@ -50,8 +50,7 @@ const QUARTERS = new Set(['Q1', 'Q2', 'Q3', 'Q4'])
 
 /** Display name: no control characters, no path, bounded length. */
 export function sanitizeFileName(name: string, fallbackPath: string): string {
-  // eslint-disable-next-line no-control-regex
-  const base = (name ?? '').split(/[\\/]/).pop()?.replace(/[\u0000-\u001f\u007f]/g, '').trim() ?? ''
+  const base = stripControlChars((name ?? '').split(/[\\/]/).pop() ?? '').trim()
   const fallback = fallbackPath.split('/').pop() ?? 'document'
   const chosen = base || fallback
   if (chosen.length <= 255) return chosen

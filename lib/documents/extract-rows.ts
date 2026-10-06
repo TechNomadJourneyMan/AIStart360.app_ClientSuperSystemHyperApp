@@ -661,6 +661,27 @@ export async function extractClientRows(
   return aiExtractClientRows(text)
 }
 
+// ─── Deterministic-only entry points (document_intelligence agent) ──────
+// The agent runs the header-mapped CSV parsers itself and does its own LLM
+// fallback through the agent gateway (budgets, fencing, provenance), so it
+// must not reach the chatWithOpenRouter fallback above.
+
+/** Header-mapped CSV → sales rows. `null` = the headers did not map. */
+export function salesRowsFromCsv(text: string): SalesRow[] | null {
+  return csvToSalesRows(text)
+}
+
+/** Header-mapped CSV → client base rows. `null` = the headers did not map. */
+export function clientRowsFromCsv(text: string): ClientBaseRow[] | null {
+  return csvToClientRows(text)
+}
+
+/** Zod envelopes for model-extracted rows (`{ rows: [...] }`). */
+export const SALES_ROWS_ENVELOPE = salesEnvelopeSchema
+export const CLIENT_ROWS_ENVELOPE = clientEnvelopeSchema
+
+export { parseCsvLine, detectDelimiter }
+
 // ─── Test-only exports ───────────────────────────────────────
 // Exposed for unit tests; not part of the documented public API.
 export const __internal = {

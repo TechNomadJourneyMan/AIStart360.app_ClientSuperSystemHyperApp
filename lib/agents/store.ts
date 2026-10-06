@@ -15,6 +15,13 @@ import type { AgentTaskRow, SourceRef, TaskTrigger } from './types'
 
 const json = (v: unknown) => JSON.stringify(v ?? {})
 const num = (v: unknown): number => (v == null ? 0 : Number(v))
+/**
+ * USD amounts are bound as text and cast in SQL: Prisma prepares a raw
+ * statement with the type of the first value it saw, so a JS float bound to a
+ * NUMERIC column after an integer (0 for runs without a model) fails with
+ * 22P03 "incorrect binary data format".
+ */
+const costText = (v: number): string => (Number.isFinite(v) ? v.toFixed(8) : '0')
 
 export interface AgentConfigRow {
   agent_key: string
@@ -164,7 +171,7 @@ export async function finishRun(r: {
     UPDATE public.agent_runs SET
       status = ${r.status}, model = ${r.model}, output_summary = ${r.outputSummary?.slice(0, 4000) ?? null},
       tools_used = ${r.toolsUsed}::text[], llm_calls = ${r.llmCalls}, tokens_in = ${r.tokensIn},
-      tokens_out = ${r.tokensOut}, cost_usd = ${r.costUsd}, sources = ${json(r.sources)}::jsonb,
+      tokens_out = ${r.tokensOut}, cost_usd = ${costText(r.costUsd)}::text::numeric, sources = ${json(r.sources)}::jsonb,
       error_code = ${r.errorCode ?? null}, error_message = ${r.errorMessage?.slice(0, 2000) ?? null},
       finished_at = now(), duration_ms = (extract(epoch FROM now() - started_at) * 1000)::int
     WHERE id = ${r.runId}::uuid`

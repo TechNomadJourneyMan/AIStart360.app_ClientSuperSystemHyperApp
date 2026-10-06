@@ -8,7 +8,7 @@ import {
   type ClientBaseRow,
 } from "@/lib/documents/extract-rows";
 
-type ParsedFieldValue = string | number | boolean | string[] | number[];
+export type ParsedFieldValue = string | number | boolean | string[] | number[];
 
 export interface ParsedDataField {
   key: string;
@@ -24,6 +24,39 @@ export interface ParsedDataField {
    * couldn't find a confident match; `undefined` means the binder hasn't run.
    */
   metric_id?: string | null;
+  /** Unit as stated in the document (₸, %, шт, …) — value is in base units. */
+  unit?: string | null;
+  /** Period the value refers to, as stated («2025», «2025-Q1», «март 2025»). */
+  period?: string | null;
+  /** Where the value came from (document_intelligence agent, extraction v2+). */
+  provenance?: FieldProvenance;
+}
+
+/**
+ * Field-level provenance written by the document_intelligence agent.
+ * `quote_verified` = the quote was found verbatim (whitespace-insensitive) in
+ * the document text; page/sheet/slide are derived from where it was found,
+ * not from what the model claimed.
+ */
+export interface FieldProvenance {
+  document_id: string;
+  method: "llm" | "table" | "heuristic";
+  quote: string | null;
+  quote_verified: boolean;
+  page?: number | null;
+  sheet?: string | null;
+  slide?: number | null;
+  /** Character offset of the quote in the extracted text. */
+  offset?: number | null;
+  chunk?: number | null;
+  model: string | null;
+  prompt_version: string | null;
+  /** Value chosen when chunks disagreed; the alternatives seen. */
+  alternatives?: Array<{ value: ParsedFieldValue; quote: string | null; page?: number | null }>;
+  /** OCR-derived text (lower confidence). */
+  ocr?: boolean;
+  /** How the metric_id was chosen. */
+  binding?: "deterministic" | "ai" | null;
 }
 
 export interface DocumentExtraction {
@@ -55,6 +88,22 @@ export interface ParsedDataPayload {
    * `client-base-loader.ts` already special-cases this field.
    */
   classification?: string | null;
+  /**
+   * Extraction v2 (document_intelligence agent, lib/documents/pipeline.ts):
+   * versioning, provenance and honesty markers. Optional for older rows.
+   */
+  schema_version?: number;
+  document_id?: string;
+  extraction_version?: string;
+  prompt_version?: string | null;
+  /** Set when nothing usable was extracted: machine code + Russian message. */
+  empty_reason?: { code: string; message: string } | null;
+  /** Fields whose quote could not be found in the document (never bound to metrics). */
+  unverified_fields?: ParsedDataField[];
+  source?: Record<string, unknown>;
+  coverage?: Record<string, unknown>;
+  stats?: Record<string, unknown>;
+  warnings?: string[];
 }
 
 interface ExtractFromDocumentInput {
@@ -90,7 +139,7 @@ const extractionSchema = z.object({
   fields: z.array(fieldSchema).max(60),
 });
 
-const TARGET_HINTS: Array<{ pattern: RegExp; tab: string; parameter: string }> = [
+export const TARGET_HINTS: Array<{ pattern: RegExp; tab: string; parameter: string }> = [
   { pattern: /revenue|выруч|доход/i, tab: "Финансы", parameter: "Выручка" },
   { pattern: /net_profit|profit|прибыл/i, tab: "Финансы", parameter: "Чистая прибыль" },
   { pattern: /margin|марж/i, tab: "Финансы", parameter: "Маржинальность" },
@@ -105,7 +154,7 @@ const TARGET_HINTS: Array<{ pattern: RegExp; tab: string; parameter: string }> =
   { pattern: /staff|employee|штат|сотруд/i, tab: "Орг. структура", parameter: "Команда / штат" },
 ];
 
-const HEURISTIC_PATTERNS: Array<{
+export const HEURISTIC_PATTERNS: Array<{
   key: string;
   label: string;
   pattern: RegExp;
@@ -160,7 +209,7 @@ function compactText(text: string): string {
   return text.replace(/\s+/g, " ").trim();
 }
 
-function normalizeNumber(raw: string, unit?: string): string | number {
+export function normalizeNumber(raw: string, unit?: string): string | number {
   const normalized = raw.replace(/\s/g, "").replace(",", ".");
   const number = Number(normalized);
   if (!Number.isFinite(number)) return raw.trim();
@@ -172,7 +221,7 @@ function normalizeNumber(raw: string, unit?: string): string | number {
   return number;
 }
 
-function inferTarget(key: string, fallbackTab: string, fallbackParameter: string) {
+export function inferTarget(key: string, fallbackTab: string, fallbackParameter: string) {
   const hint = TARGET_HINTS.find(item => item.pattern.test(key));
   return {
     target_tab: hint?.tab ?? fallbackTab,

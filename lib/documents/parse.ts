@@ -1,4 +1,5 @@
 import * as XLSX from "xlsx";
+import { decodeText } from "@/lib/documents/preflight";
 
 export type DocumentType = "pdf" | "docx" | "xlsx" | "csv" | "txt" | "unknown";
 
@@ -64,7 +65,12 @@ export async function parseDocument(
       const parser = new pdfModule.PDFParse({ data: buffer });
       try {
         const data = await parser.getText();
-        const text = data.text.trim();
+        // Join page texts ourselves: the joined `data.text` carries page
+        // markers ("-- 1 of 3 --") that made scanned PDFs look non-empty.
+        const text = (data.pages?.length
+          ? data.pages.map((p) => p.text ?? "").join("\n\n")
+          : data.text
+        ).trim();
         return {
           text,
           metadata: {
@@ -116,7 +122,7 @@ export async function parseDocument(
     }
 
     case "txt": {
-      const text = buffer.toString("utf-8");
+      const text = decodeText(buffer)?.text ?? buffer.toString("utf-8");
       return {
         text: text.trim(),
         metadata: {
@@ -128,7 +134,8 @@ export async function parseDocument(
     }
 
     case "csv": {
-      const text = buffer.toString("utf-8");
+      // UTF-8 / UTF-16 (BOM) / Windows-1251 exports (1C, banks) all decode.
+      const text = decodeText(buffer)?.text ?? buffer.toString("utf-8");
       return {
         text: text.trim(),
         metadata: {

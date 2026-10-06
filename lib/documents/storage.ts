@@ -48,6 +48,25 @@ export const LEGACY_UPLOAD_BUCKETS: readonly string[] = ['client-documents', 'do
 
 // ─── Path validation ────────────────────────────────────────────────────────
 
+/** C0 control characters or DEL. */
+export function hasControlChars(s: string): boolean {
+  for (let i = 0; i < s.length; i += 1) {
+    const c = s.charCodeAt(i)
+    if (c < 0x20 || c === 0x7f) return true
+  }
+  return false
+}
+
+/** `s` without C0 control characters and DEL. */
+export function stripControlChars(s: string): string {
+  let out = ''
+  for (let i = 0; i < s.length; i += 1) {
+    const c = s.charCodeAt(i)
+    if (c >= 0x20 && c !== 0x7f) out += s[i]
+  }
+  return out
+}
+
 export type PathCheck = { ok: true; location: StorageLocation } | { ok: false; reason: string }
 
 /** The object must be in an allowed bucket and inside the uploader's own folder. */
@@ -61,8 +80,7 @@ export function checkUploadLocation(
   if (typeof path !== 'string' || path.length === 0 || path.length > 1024) {
     return { ok: false, reason: 'Некорректный путь к файлу.' }
   }
-  // eslint-disable-next-line no-control-regex
-  if (/[\u0000-\u001f\u007f\\]/.test(path) || path.startsWith('/')) {
+  if (hasControlChars(path) || path.includes('\\') || path.startsWith('/')) {
     return { ok: false, reason: 'Некорректный путь к файлу.' }
   }
   const segments = path.split('/')

@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { authorizeUserDataRead, resolveRequestUserId } from '@/lib/admin/user-data-access'
+import { isInOwnerFolder, locationForDocument } from '@/lib/documents/storage'
 
 /**
  * GET /api/giga-admin/requests/[id]/documents
@@ -25,7 +26,7 @@ export async function GET(
 
     const { data: documents, error } = await supabase
       .from('documents')
-      .select('id, file_name, doc_type, file_size, mime_type, parse_status, uploaded_at, file_url')
+      .select('id, user_id, file_name, doc_type, file_size, mime_type, parse_status, uploaded_at, file_url, storage_bucket, storage_path')
       .eq('user_id', userId)
       .order('uploaded_at', { ascending: false })
 
@@ -35,18 +36,20 @@ export async function GET(
       return NextResponse.json({ ok: true, data: [] })
     }
 
-    // Generate signed download URLs for each document
+    // Short-lived signed download URLs. New rows carry storage_bucket/path
+    // (089); legacy rows a Storage URL or a bare path of the `documents` bucket.
     const docsWithUrls = await Promise.all(
       (documents ?? []).map(async (doc) => {
-        let downloadUrl = doc.file_url
-        if (doc.file_url && !doc.file_url.startsWith('http')) {
-          // file_url is a storage path — generate signed URL
+        let downloadUrl: string | null = /^https?:\/\//i.test(doc.file_url ?? '') ? doc.file_url : null
+        const loc = locationForDocument(doc)
+        if (loc && isInOwnerFolder(loc, doc.user_id)) {
           const { data: signed } = await supabase.storage
-            .from('documents')
-            .createSignedUrl(doc.file_url, 3600) // 1 hour
+            .from(loc.bucket)
+            .createSignedUrl(loc.path, 3600) // 1 hour
           if (signed?.signedUrl) downloadUrl = signed.signedUrl
         }
-        return { ...doc, download_url: downloadUrl }
+        const { user_id: _owner, storage_bucket: _bucket, storage_path: _path, ...rest } = doc
+        return { ...rest, download_url: downloadUrl }
       })
     )
 
