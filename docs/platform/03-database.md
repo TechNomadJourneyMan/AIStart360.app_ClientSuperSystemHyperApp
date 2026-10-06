@@ -1,4 +1,4 @@
-# 03 — База данных: текущая модель, drift, план миграций 083–088
+# 03 — База данных: текущая модель, drift, миграции 083–093
 
 Назначение: описать модель данных как она есть, расхождения репо и прода, и точный план новых таблиц по решениям D1–D6.
 Обновлено: 2026-10-06
@@ -87,7 +87,23 @@
 
 Комментарий в `setup.mjs` ссылается на `docs/platform/02-database.md` — актуальный файл этот (`03-database.md`).
 
-## 3. План миграций 083–088
+## 3. Миграции 083–093
+
+Статус всех: ✅ код и DB-тесты на зеркале прод-схемы · ⛔ применение в прод (B1 в [README](README.md)). Фактическая нумерация разошлась с первоначальным планом: 088 — защита метрик, файлы — 089, дальше 090–093 (таблица ниже). Таблицы 084–087 ниже — проектные; итоговые колонки — в самих SQL-файлах.
+
+| № | Файл | Что делает |
+|---|---|---|
+| 083 | `083_security_hardening.sql` | P0 регистрации, guard `profiles`, RLS на Prisma-таблицах, леджер `schema_migrations` |
+| 084 | `084_tenancy_partners_members.sql` | Партнёры, участники компаний, хелперы доступа, SELECT-политики по компании |
+| 085 | `085_diagnostics_provenance_reports.sql` | Сессии, выводы и рекомендации с provenance, история и цели метрик, `report_versions` |
+| 086 | `086_agents_runtime.sql` | Очередь, запуски, вызовы инструментов, одобрения, журнал, outbox событий |
+| 087 | `087_notifications_telegram_approvals.sql` | Уведомления по уровням, доставки, привязка Telegram персонала |
+| 088 | `088_metrics_provenance_guard.sql` | `anon`/`authenticated` не пишут `metrics` (значение, источник, provenance пишет только сервер) |
+| 089 | `089_documents_pipeline.sql` | Колонки обработки документов, guard `parsed_data`, дедуп, приватный бакет `client-documents` |
+| 090 | `090_diagnostic_pipeline.sql` | Этапы пайплайна в `diagnostic_sessions` (`stage`, `stages`, `rerun_requested`, задача оркестратора) |
+| 091 | `091_diagnostics_ai_narrative.sql` | 🔄 фаза 6, в работе: разделение `diagnostics.ai_analysis` и нарратива Точки А |
+| 092 | `092_mfa_flags_app_metadata.sql` | Флаги 2FA в `app_metadata` (не редактируются пользователем) + backfill |
+| 093 | `093_ai_usage_ledger.sql` | Журнал стоимости вызовов моделей вне агентов; входит в дневной лимит платформы |
 
 Общий базис (D1) для новых таблиц: `company_id TEXT REFERENCES companies(id)`; RLS ON; `REVOKE INSERT, UPDATE, DELETE FROM anon, authenticated`; запись только service role из API после авторизации; `timestamptz` + `set_updated_at()`; TEXT + CHECK; актор — TEXT (`user:<uuid>` / `agent:<key>` / `giga:super_admin`), как `admin_audit_log.actor_id`.
 Чтение: клиентские таблицы — `can_read_company(company_id)`. Для `agent_*` и `notification_*` **предлагается** сузить до `is_platform_staff()` (там непроверенный AI-вывод и данные персонала) — требует подтверждения ведущего.
@@ -95,7 +111,7 @@
 ### 083 — security hardening ✅ код / ⛔ прод
 `schema_migrations`; `handle_new_user` (S1); `profiles_guard_privileged_columns` (S2); RLS+REVOKE на 25 Prisma-таблицах (S3); `security_invoker` на 2 view (S4); `search_path` для `set_updated_at`. Подробно — [09](09-security.md).
 
-### 084 — тенантность (D1) 🔄
+### 084 — тенантность (D1) ✅
 
 | Объект | Ключевые колонки | PK / FK | Индексы | RLS | Жизненный цикл / аудит |
 |---|---|---|---|---|---|
@@ -106,7 +122,7 @@
 | Функции | `is_platform_staff()`; `company_member_role(text)`; `can_read_company(text)`; `can_manage_company(text)` | SECURITY DEFINER, STABLE, `search_path` закреплён | — | EXECUTE для authenticated | `is_platform_staff` = `profiles.role` ∈ {super_admin, admin, manager, analyst, expert} или одобренная строка `staff_roles` |
 | Аддитивные SELECT-политики | `companies`, `diagnostics`, `metrics`, `documents`, `survey_answers`, `gri_assessments` → `can_read_company(company_id::text)` | — | индексы на `company_id` там, где их нет (`survey_answers`, `documents` — R14) | Только SELECT; существующие `user_id`-политики не трогаются | Строки с `company_id IS NULL` — по-прежнему только владелец |
 
-### 085 — диагностика и provenance (D2, D5) ⬜
+### 085 — диагностика и provenance (D2, D5) ✅
 
 | Объект | Ключевые колонки | PK / FK | Индексы | RLS | Статусы / soft delete / аудит |
 |---|---|---|---|---|---|
@@ -121,7 +137,7 @@
 
 Также в 085: partial unique `diagnostics(user_id) WHERE is_current` и запись диагностик через service role (R8); `search_path` для оставшихся 4 триггер-функций; фильтр `is_approved` в `point_b_versions_owner_read` (R7).
 
-### 086 — агенты (D3) ⬜
+### 086 — агенты (D3) ✅
 
 | Объект | Ключевые колонки | PK / FK | Индексы | Статусы / аудит |
 |---|---|---|---|---|
@@ -136,7 +152,7 @@
 
 Все таблицы 086: RLS ON, запись — service role; чтение — см. базис выше.
 
-### 087 — уведомления и Telegram (D4) ⬜
+### 087 — уведомления и Telegram (D4) ✅
 
 | Объект | Ключевые колонки | PK / FK | Индексы | Статусы / аудит |
 |---|---|---|---|---|
@@ -145,7 +161,7 @@
 | `staff_telegram_links` | `telegram_user_id`, `chat_id`, `linked_at`, `link_code_hash`, `link_code_expires_at` | PK `user_id`; UNIQUE `telegram_user_id` | — | Привязка/отвязка → `admin_audit_log`; код хранится только хэшем |
 | `system_settings['notification_routing']` | мин. уровень на канал, тихие часы, mute по типу | — | — | INFO в Telegram по умолчанию не отправляется |
 
-### 088 — файлы (D6) ⬜
+### 089 — файлы (D6) ✅ (в плане значилась как 088)
 
 | Объект | Изменение |
 |---|---|
