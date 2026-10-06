@@ -21,6 +21,7 @@
 import type { ZodSchema } from 'zod'
 import { extractJson, OPENROUTER_MODELS } from './openrouter'
 import { getSiteUrl } from '@/lib/site-url'
+import { privacyProvider } from './privacy'
 
 export type ModelTier = 'light' | 'standard' | 'premium'
 
@@ -119,12 +120,6 @@ export function estimateCostUsd(tier: ModelTier, model: string, inputText: strin
   return (estimateTokens(inputText) * p.in + maxTokens * p.out) / 1_000_000
 }
 
-function privacyProvider(): Record<string, unknown> | undefined {
-  const mode = (process.env.AI_PRIVACY_MODE ?? 'deny').toLowerCase()
-  if (mode === 'off') return undefined
-  if (mode === 'strict') return { data_collection: 'deny', zdr: true }
-  return { data_collection: 'deny' }
-}
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 

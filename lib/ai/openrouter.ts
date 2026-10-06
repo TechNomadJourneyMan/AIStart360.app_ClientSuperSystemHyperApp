@@ -9,9 +9,16 @@
  *
  * Default model is Claude Sonnet 4.5 (anthropic/claude-sonnet-4.5).
  * Override via `model` param.
+ *
+ * Cost and privacy controls (same rules as the agent gateway, lib/ai/gateway.ts):
+ *   • providers may not store or train on prompts (AI_PRIVACY_MODE, lib/ai/privacy.ts);
+ *   • no call once today's platform AI spend reached AGENT_PLATFORM_DAILY_BUDGET_USD;
+ *   • the provider-reported cost of every call goes to ai_usage_ledger (093).
  */
 
 import { getSiteUrl } from '@/lib/site-url'
+import { privacyProvider } from './privacy'
+import { platformBudgetLeft, recordUsage } from './usage-ledger'
 
 export const OPENROUTER_MODELS = {
   sonnet5: 'anthropic/claude-sonnet-5',
@@ -98,6 +105,10 @@ interface ChatOptions {
   timeoutMs?: number
   /** Avoid logging provider bodies/errors that may echo customer content. */
   privacySensitive?: boolean
+  /** Feature name for the spend ledger (ai_usage_ledger.source = `feature:<label>`). */
+  label?: string
+  /** Company the call is made for, when known (company spend). */
+  companyId?: string | null
 }
 
 /**
@@ -127,6 +138,12 @@ export function hasOpenRouterKey(): boolean {
 export async function chatWithOpenRouter(opts: ChatOptions): Promise<string | null> {
   const apiKey = process.env.OPENROUTER_API_KEY
   if (!apiKey) return null
+
+  const left = await platformBudgetLeft()
+  if (left !== null && left <= 0) {
+    console.warn(`[openrouter] platform AI budget for today is spent — ${opts.label ?? 'call'} skipped`)
+    return null
+  }
 
   const messages: Array<{ role: string; content: string }> = []
   if (opts.system) messages.push({ role: 'system', content: opts.system })
@@ -161,6 +178,10 @@ export async function chatWithOpenRouter(opts: ChatOptions): Promise<string | nu
   } else if (opts.jsonMode) {
     body.response_format = { type: 'json_object' }
   }
+  const privacy = privacyProvider()
+  if (privacy) body.provider = { ...((body.provider as Record<string, unknown> | undefined) ?? {}), ...privacy }
+  // Ask OpenRouter to report the real cost of the call.
+  body.usage = { include: true }
 
   const timeoutMs = opts.timeoutMs ?? 45_000
 
@@ -186,6 +207,17 @@ export async function chatWithOpenRouter(opts: ChatOptions): Promise<string | nu
       return null
     }
     const json = await res.json()
+    const usage = json.usage as { prompt_tokens?: number; completion_tokens?: number; cost?: number } | undefined
+    await recordUsage({
+      source: `feature:${opts.label ?? 'chat'}`,
+      model: typeof json.model === 'string' ? json.model : String(body.model),
+      tokensIn: Number(usage?.prompt_tokens ?? 0),
+      tokensOut: Number(usage?.completion_tokens ?? 0),
+      costUsd: Number(usage?.cost ?? 0),
+      costSource: typeof usage?.cost === 'number' ? 'provider' : 'estimate',
+      companyId: opts.companyId ?? null,
+      ok: true,
+    })
     return json.choices?.[0]?.message?.content ?? null
   } catch (err) {
     if (err instanceof Error && err.name === 'TimeoutError') {

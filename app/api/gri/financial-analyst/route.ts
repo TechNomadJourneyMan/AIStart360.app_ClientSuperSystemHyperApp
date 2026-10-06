@@ -193,6 +193,7 @@ CURRENT GRI SCORES:
 ${scoresDescription}`
 
     const aiResponse = await chatWithOpenRouter({
+      label: 'gri.financial_analyst',
       system: systemPrompt,
       user: userPrompt,
       maxTokens: 2000,

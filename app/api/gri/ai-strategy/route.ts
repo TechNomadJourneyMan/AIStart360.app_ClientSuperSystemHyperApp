@@ -94,6 +94,7 @@ For each category with a score below 7, provide:
 Keep the response structured, professional, and actionable. Use markdown formatting.`
 
     const aiResponse = await chatWithOpenRouter({
+      label: 'gri.ai_strategy',
       system: systemPrompt,
       user: `Analyze these GRI scores and generate a growth strategy:\n\n${scoresDescription}`,
       maxTokens: 2000,

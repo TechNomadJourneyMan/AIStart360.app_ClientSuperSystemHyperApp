@@ -3,7 +3,7 @@ import { createServerClient } from '@/lib/supabase-server'
 import * as bitrix24 from '@/lib/crm/bitrix24'
 import * as amocrm from '@/lib/crm/amocrm'
 import type { CrmDeal } from '@/lib/crm/types'
-import { getSiteUrl } from '@/lib/site-url'
+import { chatWithOpenRouter, hasOpenRouterKey } from '@/lib/ai/openrouter'
 
 export const dynamic = 'force-dynamic'
 
@@ -370,8 +370,7 @@ export async function GET() {
 
     // ── 4. AI daily briefing via OpenRouter ──
     let aiBriefing: string | null = null
-    const openrouterKey = process.env.OPENROUTER_API_KEY
-    if (openrouterKey && todayClients.length > 0) {
+    if (hasOpenRouterKey() && todayClients.length > 0) {
       try {
         const top5 = todayClients
           .sort((a, b) => (b.riskScore as number) - (a.riskScore as number))
@@ -381,18 +380,9 @@ export async function GET() {
 
         const totalRevenue = todayClients.reduce((s, c) => s + ((c.avgCheck as number) || 0), 0)
 
-        const aiRes = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${openrouterKey}`,
-            'Content-Type': 'application/json',
-            'HTTP-Referer': getSiteUrl(),
-          },
-          body: JSON.stringify({
-            model: 'google/gemini-2.0-flash-001',
-            messages: [{
-              role: 'user',
-              content: `Ты AI-ассистент продаж в системе AIStart360. Дай краткий утренний брифинг для менеджера на русском языке (3-4 предложения).
+        // Shared client: provider privacy, platform AI budget, spend ledger.
+        const content = await chatWithOpenRouter({
+          user: `Ты AI-ассистент продаж в системе AIStart360. Дай краткий утренний брифинг для менеджера на русском языке (3-4 предложения).
 
 Данные портфеля на сегодня:
 - Всего сделок: ${todayClients.length}
@@ -404,18 +394,14 @@ export async function GET() {
 ТОП-5 приоритетных сделок:
 ${top5}
 
-Скажи: с кем поговорить в первую очередь и почему. Будь конкретен — назови название сделки. Формат: 3-4 предложения, без заголовков и списков.`
-            }],
-            max_tokens: 250,
-            temperature: 0.7,
-          }),
-          signal: AbortSignal.timeout(8000),
+Скажи: с кем поговорить в первую очередь и почему. Будь конкретен — назови название сделки. Формат: 3-4 предложения, без заголовков и списков.`,
+          model: 'google/gemini-2.0-flash-001',
+          maxTokens: 250,
+          temperature: 0.7,
+          timeoutMs: 8000,
+          label: 'pulse.briefing',
         })
-
-        if (aiRes.ok) {
-          const aiData = await aiRes.json()
-          aiBriefing = aiData.choices?.[0]?.message?.content?.trim() || null
-        }
+        aiBriefing = content?.trim() || null
       } catch (aiErr) {
         console.error('[pulse] AI briefing error (non-fatal):', aiErr)
       }

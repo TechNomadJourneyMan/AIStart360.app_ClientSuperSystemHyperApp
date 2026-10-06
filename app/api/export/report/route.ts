@@ -45,6 +45,7 @@ import {
 import { calculatePointBV2, type PointBOptions } from '@/lib/point-b/engine'
 import type { PointA, BlockScore, AIAnalysis } from '@/types/onboarding'
 import type { PointBStrategy } from '@/types/point-b'
+import { REVENUE_METRIC_IDS } from '@/lib/metrics/catalog-helpers'
 
 type ReportType = 'gri' | 'point-a' | 'point-b' | 'survey'
 const VALID_TYPES = new Set<ReportType>(['gri', 'point-a', 'point-b', 'survey'])
@@ -207,7 +208,7 @@ async function resolveSubject(
   // Service-role read so the staff viewer can see a company they don't own.
   const { url, key } = {
     url: (process.env.NEXT_PUBLIC_SUPABASE_URL ?? '').replace(/\/$/, ''),
-    key: process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '',
+    key: process.env.SUPABASE_SERVICE_ROLE_KEY ?? '',
   }
   if (!url || !key) return null
   try {
@@ -386,7 +387,7 @@ async function loadPointB(
       .from('metrics')
       .select('metric_value, period_year')
       .eq('company_id', subject.companyId)
-      .eq('metric_key', 'revenue')
+      .in('metric_key', [...REVENUE_METRIC_IDS])
       .gt('metric_value', 0)
       .order('period_year', { ascending: false })
       .limit(1)

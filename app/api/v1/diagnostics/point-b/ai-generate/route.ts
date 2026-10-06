@@ -13,6 +13,7 @@ import { localeFromRequestCookie, normalizeLocale } from '@/lib/i18n/locale'
 import { hasValidInternalToken } from '@/lib/internal-auth'
 import { getSessionUser, getSessionRole, isStaffRole } from '@/lib/api-identity'
 import { isRateLimitedKey } from '@/lib/rate-limit'
+import { REVENUE_METRIC_IDS } from '@/lib/metrics/catalog-helpers'
 
 /**
  * POST /api/v1/diagnostics/point-b/ai-generate
@@ -149,7 +150,7 @@ export async function POST(req: NextRequest) {
         .from('metrics')
         .select('metric_value, period_year')
         .eq('company_id', companyId)
-        .eq('metric_key', 'revenue')
+        .in('metric_key', [...REVENUE_METRIC_IDS])
         .gt('metric_value', 0)
         .order('period_year', { ascending: false })
         .limit(1)

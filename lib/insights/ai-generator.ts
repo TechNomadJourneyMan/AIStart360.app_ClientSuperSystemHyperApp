@@ -18,6 +18,8 @@ import {
   OPENROUTER_MODELS,
 } from '@/lib/ai/openrouter'
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { fenceUntrusted, UNTRUSTED_DATA_RULES } from '@/lib/ai/gateway'
+import { withoutPersonalData } from '@/lib/ai/pii'
 
 export const INSIGHTS_PROMPT_VERSION = 'point-a-insights-v1'
 export const INSIGHTS_MODEL = OPENROUTER_MODELS.sonnet
@@ -66,10 +68,11 @@ interface Snapshot {
   surveyAnswers: Array<{ question_key: string; answer: unknown }>
   recentMetrics: Array<{
     metric_key: string
-    value_numeric: number | null
-    value_text: string | null
+    metric_value: number | string | null
+    metric_unit: string | null
+    source: string | null
     period_year: number | null
-    period_quarter: number | null
+    period_quarter: string | null
   }>
   company: Record<string, unknown> | null
 }
@@ -96,7 +99,8 @@ async function loadSnapshot(sb: SupabaseClient, userId: string): Promise<Snapsho
   // Company snapshot (revenue targets / vertical / branding live here).
   const { data: company } = await sb
     .from('companies')
-    .select('id, name, vertical, employee_count, monthly_revenue, target_revenue_12m, target_revenue_3y')
+    // No name or contacts: the model needs the business profile only.
+    .select('id, industry, stage, size, business_model, employee_count, target_revenue_12m_kzt, target_revenue_3y_kzt')
     .eq('user_id', userId)
     .limit(1)
     .maybeSingle()
@@ -106,7 +110,8 @@ async function loadSnapshot(sb: SupabaseClient, userId: string): Promise<Snapsho
   if (company?.id) {
     const { data: metrics } = await sb
       .from('metrics')
-      .select('metric_key, value_numeric, value_text, period_year, period_quarter')
+      .select('metric_key, metric_value, metric_unit, source, period_year, period_quarter')
+      .not('metric_value', 'is', null)
       .eq('company_id', company.id)
       .order('period_year', { ascending: false })
       .order('period_quarter', { ascending: false })
@@ -116,7 +121,8 @@ async function loadSnapshot(sb: SupabaseClient, userId: string): Promise<Snapsho
 
   return {
     diagnostic: (diagnostic as Record<string, unknown> | null) ?? null,
-    surveyAnswers: (survey ?? []) as Snapshot['surveyAnswers'],
+    // Contact and identity answers never reach the model (lib/ai/pii.ts).
+    surveyAnswers: withoutPersonalData((survey ?? []) as Snapshot['surveyAnswers']),
     recentMetrics,
     company: (company as Record<string, unknown> | null) ?? null,
   }
@@ -178,10 +184,10 @@ function buildUserPrompt(snapshot: Snapshot): string {
     lines.push(`## Свежие метрики (${snapshot.recentMetrics.length} шт.)`)
     for (const m of snapshot.recentMetrics.slice(0, 30)) {
       const period = m.period_quarter
-        ? `${m.period_year}Q${m.period_quarter}`
+        ? `${m.period_year ?? ''} ${m.period_quarter}`.trim()
         : m.period_year ?? '—'
-      const value = m.value_numeric ?? m.value_text ?? '—'
-      lines.push(`- [${period}] ${m.metric_key} = ${value}`)
+      const value = m.metric_value ?? '—'
+      lines.push(`- [${period}] ${m.metric_key} = ${value}${m.metric_unit ? ` ${m.metric_unit}` : ''}${m.source ? ` (источник: ${m.source})` : ''}`)
     }
     lines.push('')
   } else {
@@ -230,10 +236,12 @@ export async function generatePointAInsights(
     return { ok: false, error: 'Failed to load Point A snapshot' }
   }
 
-  const userPrompt = buildUserPrompt(snapshot)
+  // Client-provided text is data, not instructions.
+  const userPrompt = fenceUntrusted('client_snapshot', buildUserPrompt(snapshot))
 
   const raw = await chatWithOpenRouter({
-    system: SYSTEM_PROMPT,
+    label: 'point_a.insights',
+    system: `${SYSTEM_PROMPT}\n\n${UNTRUSTED_DATA_RULES}`,
     user: userPrompt,
     model: INSIGHTS_MODEL,
     maxTokens: 1800,

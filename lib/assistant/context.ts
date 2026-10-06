@@ -8,7 +8,7 @@
  *   - survey_answers flat-map (answer.value unwrap)
  *   - gri_assessments.top_5_limits / gri_index
  *   - companies.target_revenue_12m/3y_kzt
- *   - metrics 'revenue'                    → current revenue
+ *   - metrics biz.finansy.vyruchka_god     → current revenue (REVENUE_METRIC_IDS)
  *   - calculatePointBV2()                  → gap / realism / data_sufficiency
  *
  * CRITICAL ANTI-HALLUCINATION BOUNDARY: the object returned here is the ONLY
@@ -27,6 +27,7 @@ import type {
   AssistantPointB,
   AssistantGri,
 } from './types'
+import { REVENUE_METRIC_IDS } from '@/lib/metrics/catalog-helpers'
 
 // ─── Point A reconstruction (mirrors point-b/route.ts diagToPointA) ─────────
 
@@ -179,7 +180,7 @@ export async function buildAssistantContext(
       .from('metrics')
       .select('metric_value, period_year')
       .eq('company_id', companyId)
-      .eq('metric_key', 'revenue')
+      .in('metric_key', [...REVENUE_METRIC_IDS])
       .gt('metric_value', 0)
       .order('period_year', { ascending: false })
       .limit(1)

@@ -98,6 +98,7 @@ export async function generateObjectViaOpenRouter<T>(
       jsonSchema: useProviderSchema ? strictSchema : undefined,
       privacySensitive,
       timeoutMs: opts.timeoutMs,
+      label,
     })
     if (!raw) continue
 

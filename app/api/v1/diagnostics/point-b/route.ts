@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { calculatePointBV2, type PointBOptions, type PointBV2 } from '@/lib/point-b/engine'
 import type { PointA, BlockScore } from '@/types/onboarding'
+import { REVENUE_METRIC_IDS } from '@/lib/metrics/catalog-helpers'
 
 /**
  * GET /api/v1/diagnostics/point-b
@@ -113,7 +114,7 @@ export async function GET(_req: NextRequest) {
         .from('metrics')
         .select('metric_value, period_year')
         .eq('company_id', companyId)
-        .eq('metric_key', 'revenue')
+        .in('metric_key', [...REVENUE_METRIC_IDS])
         .gt('metric_value', 0)
         .order('period_year', { ascending: false })
         .limit(1)

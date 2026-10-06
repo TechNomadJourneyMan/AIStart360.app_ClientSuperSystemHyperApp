@@ -259,13 +259,31 @@ export async function markApprovalExecuted(approvalId: string, ok: boolean): Pro
 }
 
 /** USD spent today (UTC day) by an agent, a company, or the whole platform. */
+/**
+ * Today's model spend: agent runs, plus (unless filtered by agent) the model
+ * calls of non-agent features in ai_usage_ledger (093) — the platform and
+ * company budgets cover all AI usage, not only agents.
+ */
 export async function spendToday(filter: { agentKey?: string; companyId?: string } = {}): Promise<number> {
   const rows = await prisma.$queryRaw<Array<{ s: unknown }>>`
     SELECT coalesce(sum(cost_usd), 0) AS s FROM public.agent_runs
     WHERE started_at >= date_trunc('day', now())
       AND (${filter.agentKey ?? null}::text IS NULL OR agent_key = ${filter.agentKey ?? null})
       AND (${filter.companyId ?? null}::text IS NULL OR company_id = ${filter.companyId ?? null})`
-  return num(rows[0]?.s)
+  let total = num(rows[0]?.s)
+  if (!filter.agentKey) {
+    try {
+      const ledger = await prisma.$queryRaw<Array<{ s: unknown }>>`
+        SELECT coalesce(sum(cost_usd), 0) AS s FROM public.ai_usage_ledger
+        WHERE created_at >= date_trunc('day', now())
+          AND (${filter.companyId ?? null}::text IS NULL OR company_id = ${filter.companyId ?? null})`
+      total += num(ledger[0]?.s)
+    } catch (err) {
+      // Before migration 093 the ledger does not exist: agents only.
+      if (!/ai_usage_ledger/.test(err instanceof Error ? err.message : '')) throw err
+    }
+  }
+  return total
 }
 
 export async function getTask(taskId: string): Promise<(AgentTaskRow & { run_after: Date }) | null> {

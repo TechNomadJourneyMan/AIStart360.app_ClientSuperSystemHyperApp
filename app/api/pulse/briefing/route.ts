@@ -3,9 +3,9 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { isRateLimited } from '@/lib/rate-limit'
-import { getSiteUrl } from '@/lib/site-url'
 import * as bitrix24 from '@/lib/crm/bitrix24'
 import * as amocrm from '@/lib/crm/amocrm'
+import { chatWithOpenRouter, hasOpenRouterKey } from '@/lib/ai/openrouter'
 
 const STAGE_RISK: Record<string, number> = {
   NEW: 30, PREPARATION: 40, PREPAYMENT_INVOICE: 25,
@@ -40,8 +40,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ briefing: null, error: 'Слишком часто. Попробуйте позже.' }, { status: 429 })
     }
 
-    const openrouterKey = process.env.OPENROUTER_API_KEY
-    if (!openrouterKey) {
+    if (!hasOpenRouterKey()) {
       return NextResponse.json({ briefing: null, error: 'OpenRouter not configured' })
     }
 
@@ -92,19 +91,9 @@ export async function POST(req: NextRequest) {
     const highRisk = ranked.filter(d => d.risk >= 60).length
     const lostRevenue = ranked.filter(d => d.risk >= 60).reduce((s, d) => s + d.amount, 0)
 
-    // Call OpenRouter
-    const aiRes = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${openrouterKey}`,
-        'Content-Type': 'application/json',
-        'HTTP-Referer': getSiteUrl(),
-      },
-      body: JSON.stringify({
-        model: 'google/gemini-2.0-flash-001',
-        messages: [{
-          role: 'user',
-          content: `Ты бизнес-ассистент в системе AIStart360. Дай краткий утренний брифинг для менеджера по продажам на русском языке (3-4 предложения).
+    // Shared client: provider privacy, platform AI budget, spend ledger.
+    const content = await chatWithOpenRouter({
+      user: `Ты бизнес-ассистент в системе AIStart360. Дай краткий утренний брифинг для менеджера по продажам на русском языке (3-4 предложения).
 
 Портфель на сегодня:
 - Всего сделок: ${deals.length}
@@ -115,23 +104,15 @@ export async function POST(req: NextRequest) {
 ТОП-5 приоритетных:
 ${top5}
 
-Скажи конкретно: с кем поговорить в первую очередь и почему. Назови названия сделок. Формат: 3-4 предложения, без заголовков и списков.`
-        }],
-        max_tokens: 250,
-        temperature: 0.7,
-      }),
-      signal: AbortSignal.timeout(10000),
+Скажи конкретно: с кем поговорить в первую очередь и почему. Назови названия сделок. Формат: 3-4 предложения, без заголовков и списков.`,
+      model: 'google/gemini-2.0-flash-001',
+      maxTokens: 250,
+      temperature: 0.7,
+      timeoutMs: 10000,
+      label: 'pulse.briefing',
     })
-
-    if (!aiRes.ok) {
-      const errText = await aiRes.text()
-      return NextResponse.json({ briefing: null, error: `OpenRouter ${aiRes.status}: ${errText.slice(0, 100)}` })
-    }
-
-    const aiData = await aiRes.json()
-    const briefing = aiData.choices?.[0]?.message?.content?.trim() || null
-
-    return NextResponse.json({ briefing })
+    if (!content) return NextResponse.json({ briefing: null, error: 'Модель не ответила' })
+    return NextResponse.json({ briefing: content.trim() || null })
   } catch (error) {
     console.error('[pulse/briefing] Error:', error)
     return NextResponse.json({ briefing: null, error: 'Failed to generate briefing' })
