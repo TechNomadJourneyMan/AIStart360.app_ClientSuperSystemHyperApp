@@ -1,414 +1,391 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
-import MetricSearchBox from './MetricSearchBox'
-import DepartmentChips from './DepartmentChips'
-import MetricSortToggle from './MetricSortToggle'
-import NamespaceTabs from './NamespaceTabs'
-import { SORT_OPTIONS, NAMESPACE_TABS, type SortMode, type Namespace } from './_utils'
-import dynamic from 'next/dynamic'
-import MetricHealthCard from '@/components/dashboard/MetricHealthCard'
+/**
+ * MetricsLiveCatalog — the «Метрики» catalog (level 2 of Point A).
+ *
+ * Navigation: 13 categories (counts from the API) + subcategory chips for
+ * «Цели роста». Filters: status, source, min confidence, period (client-side
+ * over the fully-loaded category). Search + sort are server-side (incl. the
+ * real «Лучшая / Худшая динамика»). Cards open the drill-down modal.
+ *
+ * Deep links: /metrics?category=finance&status=off_track,at_risk&source=document
+ * (legacy ?zone=red|yellow|green is mapped onto statuses).
+ */
+
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
+import { useQueryClient } from '@tanstack/react-query'
+import type { MetricCategoryKey, MetricStatus } from '@/types/metric-catalog'
+import { useMetricCatalog } from '@/hooks/useMetricCatalog'
 import { useRealtimeMetrics } from '@/hooks/useRealtimeMetrics'
-// The 171 KB descriptions catalog is imported dynamically when a drill-down is
-// opened (see the effect below) — kept out of the /metrics first-load bundle.
+import MetricSearchBox from './MetricSearchBox'
+import MetricSortToggle from './MetricSortToggle'
+import ChipNav from './ChipNav'
+import MetricFiltersBar from './MetricFiltersBar'
+import MetricCatalogCard from './MetricCatalogCard'
+import MetricDrillDownHost from './MetricDrillDownHost'
+import type { SortMode } from './_utils'
+import {
+  CATEGORY_ICONS,
+  DEFAULT_CLIENT_FILTERS,
+  METRIC_CATEGORY_KEYS,
+  SOURCE_FILTER_OPTIONS,
+  STATUS_FILTER_OPTIONS,
+  applyClientFilters,
+  categoryLabel,
+  countByCategory,
+  isCategoryKey,
+  periodOptions,
+  subcategoryChips,
+  type CatalogClientFilters,
+  type CatalogItem,
+  type SourceBucket,
+} from './catalog-model'
 
-// recharts lives inside the drill-down modal — load it lazily, only when the
-// drill-down is opened, so it stays out of the metrics page first-load JS.
-const MetricDrillDownModalV2 = dynamic(() => import('@/components/dashboard/MetricDrillDownModalV2'), {
-  ssr: false,
-})
+const PAGE = 30
 
-interface CatalogItem {
-  id: string
-  label: string
-  namespace: 'biz' | 'kpi' | 'gri' | 'goal'
-  department: string | null
-  goalNumber: string | null
-  unit: string
-  formula: string | null
-  sources: Array<{ type: string; key?: string; field?: string; doc_type?: string; system?: string }>
-  value: number | string | null
-  confidence: number | null
-  source: string | null
-  computedAt: string | null
-  fresh: boolean
+const ZONE_TO_STATUS: Record<string, MetricStatus[]> = {
+  red: ['off_track'],
+  yellow: ['at_risk'],
+  green: ['on_track'],
+  neutral: ['no_target', 'no_data'],
 }
 
-interface CatalogResponse {
-  ok: boolean
-  data?: {
-    total: number
-    counts?: Partial<Record<Namespace, number>>
-    page: number
-    pageSize: number
-    items: CatalogItem[]
+function filtersFromUrl(params: URLSearchParams | null): {
+  category: MetricCategoryKey | 'all'
+  filters: CatalogClientFilters
+} {
+  const category = params?.get('category')
+  const statusParam = params?.get('status')
+  const zone = params?.get('zone')
+  const sourceParam = params?.get('source')
+  const validStatus = new Set(STATUS_FILTER_OPTIONS.map((o) => o.value))
+  const validSource = new Set(SOURCE_FILTER_OPTIONS.map((o) => o.value))
+  const statuses = statusParam
+    ? (statusParam.split(',').filter((s) => validStatus.has(s as MetricStatus)) as MetricStatus[])
+    : zone && ZONE_TO_STATUS[zone]
+      ? ZONE_TO_STATUS[zone]
+      : []
+  const sources = sourceParam
+    ? (sourceParam.split(',').filter((s) => validSource.has(s as SourceBucket)) as SourceBucket[])
+    : []
+  return {
+    category: isCategoryKey(category) ? category : 'all',
+    filters: { ...DEFAULT_CLIENT_FILTERS, statuses, sources },
   }
-  error?: string
-}
-
-async function fetchCatalog(params: URLSearchParams): Promise<CatalogResponse['data'] & { ok: true }> {
-  const res = await fetch(`/api/v1/metrics/catalog?${params.toString()}`, { cache: 'no-store' })
-  const json = (await res.json()) as CatalogResponse
-  if (!json.ok || !json.data) throw new Error(json.error ?? 'Ошибка каталога')
-  return { ok: true as const, ...json.data }
 }
 
 interface Props {
   userId?: string | null
+  /** Company id — scopes the realtime subscription on `metrics`. */
+  companyId?: string | null
 }
 
-export default function MetricsLiveCatalog({ userId }: Props) {
+export default function MetricsLiveCatalog({ companyId = null }: Props) {
   const qc = useQueryClient()
-  const [namespace, setNamespace] = useState<Namespace>('all')
-  const [department, setDepartment] = useState<string | null>(null)
+  const searchParams = useSearchParams()
+  const initial = useMemo(() => filtersFromUrl(searchParams), [searchParams])
+
+  const [category, setCategory] = useState<MetricCategoryKey | 'all'>(initial.category)
+  const [filters, setFilters] = useState<CatalogClientFilters>(initial.filters)
   const [search, setSearch] = useState('')
   const [sort, setSort] = useState<SortMode>('label_asc')
-  const [page, setPage] = useState(1)
-  const pageSize = 30
-
-  const [drillId, setDrillId] = useState<string | null>(null)
+  const [visible, setVisible] = useState(PAGE)
   const [drillItem, setDrillItem] = useState<CatalogItem | null>(null)
 
-  // Reset page when filters change
+  // Deep links can change while the page is open (e.g. a zone link).
   useEffect(() => {
-    setPage(1)
-  }, [namespace, department, search, sort])
+    setCategory(initial.category)
+    setFilters(initial.filters)
+  }, [initial])
 
-  const params = useMemo(() => {
-    const p = new URLSearchParams()
-    p.set('namespace', namespace)
-    if (department) p.set('department', department)
-    if (search) p.set('search', search)
-    p.set('sort', sort)
-    p.set('page', String(page))
-    p.set('pageSize', String(pageSize))
-    p.set('includeValues', 'true')
-    return p
-  }, [namespace, department, search, sort, page])
+  useEffect(() => {
+    setVisible(PAGE)
+  }, [category, filters, search, sort])
 
-  const { data, isLoading, isError, error, refetch } = useQuery({
-    queryKey: ['metrics-catalog', namespace, department, search, sort, page] as const,
-    queryFn: () => fetchCatalog(params),
-    staleTime: 30_000,
-    retry: 1,
+  const { data, isLoading, isError, error, refetch, isFetching, isPlaceholderData } = useMetricCatalog({
+    category,
+    search,
+    sort,
   })
+  useRealtimeMetrics(companyId)
 
-  // Wire realtime invalidation when user has a userId
-  useRealtimeMetrics(userId ?? null)
+  const items = useMemo(() => data?.items ?? [], [data])
 
-  // ── Auto-materialize when every catalog item is null ──────────────────────
-  // Single-shot per mount: if the response has items but every `value` is
-  // null, kick the resolver via POST /api/v1/metrics/materialize, then
-  // re-fetch the catalog. Subsequent renders never retry.
+  // ── Auto-materialize once when every value is empty ──────────────────────
   const materializeAttempted = useRef(false)
-  const [materializeStatus, setMaterializeStatus] = useState<
-    'idle' | 'running' | 'error'
-  >('idle')
+  const [materializeStatus, setMaterializeStatus] = useState<'idle' | 'running' | 'error'>('idle')
 
-  async function runMaterialize(force = false) {
-    if (!force && materializeAttempted.current) return
-    materializeAttempted.current = true
-    setMaterializeStatus('running')
-    try {
-      const res = await fetch('/api/v1/metrics/materialize', {
-        method: 'POST',
-        cache: 'no-store',
-      })
-      const json = (await res.json()) as
-        | { ok: true; data: { written: number; total: number; skipped: number } }
-        | { ok: false; error: string }
-      if (!json.ok) {
-        // `no_company` is an expected empty state, not a hard failure.
-        if ('error' in json && json.error === 'no_company') {
-          setMaterializeStatus('idle')
-          return
+  const runMaterialize = useCallback(
+    async (force = false) => {
+      if (!force && materializeAttempted.current) return
+      materializeAttempted.current = true
+      setMaterializeStatus('running')
+      try {
+        const res = await fetch('/api/v1/metrics/materialize', { method: 'POST', cache: 'no-store' })
+        const json = (await res.json().catch(() => null)) as { ok?: boolean; error?: string } | null
+        if (!json?.ok) {
+          // `no_company` is an expected empty state, not a failure.
+          if (json?.error === 'no_company') {
+            setMaterializeStatus('idle')
+            return
+          }
+          throw new Error(json?.error ?? 'materialize failed')
         }
-        throw new Error('error' in json ? json.error : 'materialize failed')
+        await qc.invalidateQueries({ queryKey: ['metrics-catalog'] })
+        setMaterializeStatus('idle')
+      } catch (err) {
+        console.error('[metrics] materialize failed', err)
+        setMaterializeStatus('error')
       }
-      await qc.invalidateQueries({ queryKey: ['metrics-catalog'] })
-      await refetch()
-      setMaterializeStatus('idle')
-    } catch (err) {
-      console.error('[metrics] materialize failed', err)
-      setMaterializeStatus('error')
-    }
-  }
+    },
+    [qc],
+  )
 
   useEffect(() => {
-    if (materializeAttempted.current) return
-    if (isLoading || isError) return
-    const list = data?.items ?? []
-    if (list.length === 0) return
-    const allNull = list.every((it) => it.value === null)
-    if (allNull) {
-      void runMaterialize()
+    if (materializeAttempted.current || isLoading || isError) return
+    if (category !== 'all' || search) return
+    if (items.length > 0 && items.every((it) => it.value === null)) void runMaterialize()
+  }, [items, isLoading, isError, category, search, runMaterialize])
+
+  // ── Category counts (API first; else counted from the full «Все» load) ───
+  const lastCounts = useRef<Record<string, number> | null>(null)
+  const counts = useMemo<Record<string, number>>(() => {
+    if (data?.categoryCounts) {
+      lastCounts.current = data.categoryCounts
+      return data.categoryCounts
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, isLoading, isError])
-
-  const total = data?.total ?? 0
-  const totalPages = Math.max(1, Math.ceil(total / pageSize))
-
-  // Derive department list from current page (will be replaced by full-catalog count when backend exposes it)
-  const departments = useMemo(() => {
-    const items = data?.items ?? []
-    const set = new Map<string, number>()
-    for (const it of items) {
-      if (it.department) set.set(it.department, (set.get(it.department) ?? 0) + 1)
+    if (data && category === 'all') {
+      const derived = countByCategory(items)
+      lastCounts.current = derived
+      return derived
     }
-    return Array.from(set.entries()).map(([name, count]) => ({ name, count }))
-  }, [data])
+    return lastCounts.current ?? {}
+  }, [data, category, items])
 
-  const items = data?.items ?? []
+  const allCount = typeof counts.all === 'number' ? counts.all : category === 'all' ? items.length : null
 
-  function openDrill(item: CatalogItem) {
-    setDrillId(item.id)
-    setDrillItem(item)
+  const categoryOptions = useMemo(
+    () =>
+      METRIC_CATEGORY_KEYS.map((key) => ({
+        value: key,
+        label: categoryLabel(key, data?.categories ?? undefined),
+        icon: CATEGORY_ICONS[key],
+        count: typeof counts[key] === 'number' ? counts[key] : null,
+      })),
+    [counts, data?.categories],
+  )
+
+  // Items of the selected category (server-filtered; re-checked client-side).
+  const categoryItems = useMemo(
+    () => (category === 'all' ? items : items.filter((it) => it.category === category)),
+    [items, category],
+  )
+
+  const apiCategory = category === 'all' ? null : data?.categories?.find((c) => c.key === category) ?? null
+  const apiSubcategories = apiCategory?.subcategories
+  const subChips = useMemo(
+    () =>
+      category === 'growth_goals' || (apiSubcategories && apiSubcategories.length > 0)
+        ? subcategoryChips(categoryItems, apiSubcategories)
+        : [],
+    [category, categoryItems, apiSubcategories],
+  )
+
+  const effectiveFilters: CatalogClientFilters = useMemo(() => ({ ...filters, category }), [filters, category])
+  const filtered = useMemo(() => applyClientFilters(items, effectiveFilters), [items, effectiveFilters])
+
+  const statusCounts = useMemo(() => {
+    const base = applyClientFilters(items, { ...effectiveFilters, statuses: [] })
+    const rec: Partial<Record<MetricStatus, number>> = {}
+    for (const it of base) rec[it.status] = (rec[it.status] ?? 0) + 1
+    return rec
+  }, [items, effectiveFilters])
+
+  const periods = useMemo(() => periodOptions(categoryItems), [categoryItems])
+  const shown = filtered.slice(0, visible)
+  const withValue = items.filter((it) => it.value !== null).length
+
+  const resetAll = () => {
+    setFilters(DEFAULT_CLIENT_FILTERS)
+    setCategory('all')
+    setSearch('')
   }
-
-  // Pull description for the drill modal. The descriptions catalog is heavy
-  // (171 KB), so load it dynamically only once a drill-down is opened.
-  const [drillDescription, setDrillDescription] = useState<
-    { what: string; why: string; how: string; current_state?: string } | undefined
-  >(undefined)
-  useEffect(() => {
-    if (!drillItem) { setDrillDescription(undefined); return }
-    let cancelled = false
-    void import('@/lib/metrics/descriptions').then(
-      ({ getBizDescription, getKpiDescription, getGriDescription }) => {
-        if (cancelled) return
-        let d: { what: string; why: string; how: string; current_state?: string } | undefined
-        if (drillItem.namespace === 'biz' && drillItem.department) {
-          d = getBizDescription(drillItem.department, drillItem.label)
-        } else if (drillItem.namespace === 'kpi') {
-          d = getKpiDescription(drillItem.label)
-        } else if (drillItem.namespace === 'gri') {
-          d = getGriDescription(drillItem.label)
-        }
-        setDrillDescription(
-          d ? { what: d.what, why: d.why, how: d.how, current_state: d.current_state } : undefined,
-        )
-      },
-    )
-    return () => { cancelled = true }
-  }, [drillItem])
-
-  // Build provenance for drill modal from the resolver's source array
-  const drillProvenance = useMemo(() => {
-    if (!drillItem) return undefined
-    const considered = drillItem.sources.map((s) => ({
-      type: s.type,
-      label:
-        s.type === 'survey'
-          ? `Анкета: ${s.key ?? ''}`
-          : s.type === 'document'
-          ? `Документ (${s.doc_type ?? '—'}) поле ${s.field ?? '—'}`
-          : s.type === 'prisma'
-          ? `БД`
-          : s.type === 'external'
-          ? `Внешний: ${s.system ?? '—'}`
-          : s.type,
-      status: (drillItem.source === s.type ? 'hit' : 'miss') as 'hit' | 'miss' | 'error',
-      confidence: drillItem.source === s.type ? drillItem.confidence ?? undefined : undefined,
-    }))
-    const picked = considered.find((c) => c.status === 'hit')
-    return {
-      picked: picked ? { type: picked.type, label: picked.label } : null,
-      considered,
-      computedAt: drillItem.computedAt ?? undefined,
-    }
-  }, [drillItem])
-
-  // Server-side per-namespace totals (search-aware). Kept across tab switches
-  // so «Все» never collapses to 0 while another tab is loading (E2E bug #8).
-  const lastCountsRef = useRef<Record<Namespace, number> | null>(null)
-  const counts: Record<Namespace, number> = useMemo(() => {
-    const base: Record<Namespace, number> = lastCountsRef.current
-      ? { ...lastCountsRef.current }
-      : { all: 0, biz: 0, kpi: 0, gri: 0, goal: 0 }
-    const server = data?.counts
-    if (server) {
-      for (const k of Object.keys(base) as Namespace[]) {
-        if (typeof server[k] === 'number') base[k] = server[k] as number
-      }
-    } else if (data) {
-      base[namespace] = total
-    }
-    lastCountsRef.current = base
-    return base
-  }, [data, namespace, total])
 
   return (
-    <section data-tour="metrics-catalog" className="space-y-5">
+    <section data-tour="metrics-catalog" id="metrics-catalog" aria-labelledby="metrics-catalog-title" className="space-y-4">
+      {/* Header */}
       <div className="flex flex-wrap items-end justify-between gap-3 border-b border-outline-variant/10 pb-4">
         <div>
-          <p className="text-xs font-mono text-primary/70 uppercase tracking-[0.2em] mb-1">
-            Каталог метрик · Real-time
-          </p>
-          <h2 className="font-headline text-xl font-bold text-on-surface">
-            Точка А: 122 показателя
+          <p className="text-xs font-mono text-primary/70 uppercase tracking-[0.2em] mb-1">Метрики · Точка А</p>
+          <h2 id="metrics-catalog-title" className="font-headline text-xl font-bold text-on-surface">
+            {allCount !== null ? `Каталог: ${allCount} показателей` : 'Каталог показателей'}
           </h2>
-          <p className="text-xs text-on-surface-variant mt-1 font-mono">
-            Найдено: <span className="text-primary">{total}</span> · страница {page}/{totalPages}
+          <p className="text-xs text-on-surface-variant mt-1 font-mono" aria-live="polite">
+            Показано <span className="text-primary">{filtered.length}</span>
+            {category !== 'all' && ` · ${categoryLabel(category, data?.categories ?? undefined)}`}
+            {category === 'all' && !search && items.length > 0 && ` · со значением ${withValue}`}
+            {isFetching && !isLoading && ' · обновляется…'}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {materializeStatus === 'running' && (
             <span className="inline-flex items-center gap-1.5 text-on-surface-variant font-mono text-[10px] px-2.5 py-1 rounded-full bg-surface-container border border-white/[0.04]">
-              <span className="material-symbols-outlined text-[12px] animate-spin">progress_activity</span>
+              <span className="material-symbols-outlined text-[12px] animate-spin" aria-hidden="true">progress_activity</span>
               Считаем метрики…
             </span>
           )}
           {materializeStatus === 'error' && (
-            <span className="inline-flex items-center gap-1.5 text-error font-mono text-[10px] px-2.5 py-1 rounded-full bg-error/5 border border-error/20">
-              <span className="material-symbols-outlined text-[12px]">error</span>
+            <span className="inline-flex items-center gap-1.5 text-error font-mono text-[10px] px-2.5 py-1 rounded-full bg-error/5 border border-error/20" role="alert">
+              <span className="material-symbols-outlined text-[12px]" aria-hidden="true">error</span>
               Не удалось рассчитать метрики
             </span>
           )}
           <MetricSortToggle value={sort} onChange={setSort} />
           <button
-            onClick={() => {
-              void runMaterialize(true)
-            }}
-            className="inline-flex items-center gap-1.5 text-xs font-mono text-on-surface-variant border border-white/[0.04] hover:border-primary/40 hover:text-primary rounded-xl px-3 py-2 transition-colors"
-            title="Пересчитать"
+            type="button"
+            onClick={() => void runMaterialize(true)}
+            disabled={materializeStatus === 'running'}
+            className="inline-flex items-center gap-1.5 text-xs font-mono text-on-surface-variant border border-white/[0.04] hover:border-primary/40 hover:text-primary rounded-xl px-3 py-2 transition-colors disabled:opacity-60 focus:outline-none focus:ring-2 focus:ring-primary/40"
+            title="Пересчитать значения метрик из анкеты и документов"
           >
-            <span className="material-symbols-outlined text-base">refresh</span>
+            <span className="material-symbols-outlined text-base" aria-hidden="true">refresh</span>
             Пересчитать
           </button>
         </div>
       </div>
 
-      {/* Controls row 1 — namespace tabs */}
-      <NamespaceTabs value={namespace} counts={counts} onChange={setNamespace} />
+      {/* Categories */}
+      <ChipNav
+        ariaLabel="Категории метрик"
+        options={categoryOptions}
+        value={category === 'all' ? null : category}
+        onChange={(next) => {
+          setCategory(isCategoryKey(next) ? next : 'all')
+          setFilters((f) => ({ ...f, subcategory: null }))
+        }}
+        allCount={allCount}
+      />
 
-      {/* Controls row 2 — search + department chips */}
-      <div className="space-y-3">
-        <MetricSearchBox
-          value={search}
-          onChange={setSearch}
-          resultsCount={total}
+      {apiCategory?.description && categoryItems.length > 0 && (
+        <p className="text-xs text-on-surface-variant leading-relaxed max-w-3xl">{apiCategory.description}</p>
+      )}
+
+      {subChips.length > 0 && (
+        <ChipNav
+          ariaLabel="Подкатегории"
+          size="sm"
+          options={subChips.map((s) => ({ value: s.key, label: s.label, count: s.count }))}
+          value={filters.subcategory}
+          onChange={(next) => setFilters((f) => ({ ...f, subcategory: next }))}
+          allLabel="Все цели"
+          allCount={categoryItems.length}
         />
-        {namespace === 'biz' && departments.length > 0 && (
-          <DepartmentChips
-            departments={departments}
-            selected={department}
-            onSelect={setDepartment}
-          />
-        )}
-      </div>
+      )}
 
-      {/* Status row */}
+      {/* Search + filters */}
+      <MetricSearchBox value={search} onChange={setSearch} resultsCount={filtered.length} />
+      <MetricFiltersBar
+        filters={filters}
+        periods={periods}
+        statusCounts={statusCounts}
+        onChange={setFilters}
+        onReset={() => setFilters((f) => ({ ...DEFAULT_CLIENT_FILTERS, subcategory: f.subcategory }))}
+      />
+
       {isError && (
-        <div className="bg-error/[0.04] border border-error/30 rounded-xl p-4 text-sm text-on-surface">
-          {error instanceof Error ? error.message : 'Ошибка загрузки каталога'}
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-error/30 bg-error/[0.04] p-4 text-sm text-on-surface" role="alert">
+          <span>{error instanceof Error ? error.message : 'Ошибка загрузки каталога'}</span>
+          <button
+            type="button"
+            onClick={() => void refetch()}
+            className="inline-flex items-center gap-1 rounded-xl border border-white/10 px-3 py-1.5 text-xs hover:bg-white/[0.04] focus:outline-none focus:ring-2 focus:ring-primary/40"
+          >
+            <span className="material-symbols-outlined text-[14px]" aria-hidden="true">refresh</span>
+            Повторить
+          </button>
         </div>
       )}
 
-      {/* Grid */}
-      {isLoading ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+      {/* Grid — previous results stay visible while the next category loads,
+          but never flash an empty state for it. */}
+      {isLoading || (isPlaceholderData && filtered.length === 0) ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3" aria-busy="true" aria-label="Загружаем метрики">
           {Array.from({ length: 6 }).map((_, i) => (
-            <div
-              key={i}
-              className="bg-surface-container rounded-2xl border border-white/[0.04] p-5 h-36 animate-pulse"
-            />
+            <div key={i} className="h-40 rounded-2xl border border-white/[0.04] bg-surface-container animate-pulse" />
           ))}
         </div>
-      ) : items.length === 0 ? (
-        <div className="bg-surface-container-low border border-dashed border-white/[0.06] rounded-2xl p-12 text-center">
-          <span className="material-symbols-outlined text-3xl text-on-surface-variant/40 mb-3 block">
+      ) : !isError && items.length > 0 && withValue === 0 && category === 'all' && !search && filtered.length === items.length ? (
+        <>
+          <div className="rounded-2xl border border-dashed border-white/10 bg-surface-container-low p-5 text-sm">
+            <p className="font-medium text-on-surface">Значений пока нет</p>
+            <p className="mt-1 text-xs text-on-surface-variant leading-relaxed">
+              Метрики считаются из ответов анкеты и загруженных документов. Заполните анкету или загрузите P&L,
+              выгрузку CRM — значения появятся здесь автоматически.
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Link href="/client/onboarding" className="inline-flex items-center gap-1.5 rounded-xl bg-primary/10 border border-primary/30 px-3 py-1.5 text-xs text-primary hover:bg-primary/15">
+                <span className="material-symbols-outlined text-[14px]" aria-hidden="true">edit_note</span>
+                Заполнить анкету
+              </Link>
+              <Link href="/client/onboarding/documents" className="inline-flex items-center gap-1.5 rounded-xl border border-white/10 px-3 py-1.5 text-xs text-on-surface-variant hover:text-on-surface">
+                <span className="material-symbols-outlined text-[14px]" aria-hidden="true">upload_file</span>
+                Загрузить документы
+              </Link>
+            </div>
+          </div>
+          <CardsGrid items={shown} onOpen={setDrillItem} />
+        </>
+      ) : filtered.length === 0 && !isError && category !== 'all' && categoryItems.length === 0 && !search ? (
+        /* The category itself has no metrics yet — say why (taxonomy emptyReason). */
+        <div className="bg-surface-container-low border border-dashed border-white/[0.06] rounded-2xl p-10 text-center">
+          <span className="material-symbols-outlined text-3xl text-on-surface-variant/40 mb-3 block" aria-hidden="true">
+            {CATEGORY_ICONS[category]}
+          </span>
+          <p className="text-sm text-on-surface">В категории «{categoryLabel(category, data?.categories ?? undefined)}» пока нет метрик</p>
+          <p className="mt-1 text-xs text-on-surface-variant max-w-md mx-auto leading-relaxed">
+            {apiCategory?.emptyReason ?? apiCategory?.description ?? 'Метрики появятся, когда для категории будут собраны данные.'}
+          </p>
+        </div>
+      ) : filtered.length === 0 && !isError ? (
+        <div className="bg-surface-container-low border border-dashed border-white/[0.06] rounded-2xl p-10 text-center">
+          <span className="material-symbols-outlined text-3xl text-on-surface-variant/40 mb-3 block" aria-hidden="true">
             search_off
           </span>
-          <p className="text-sm text-on-surface-variant">Метрик по фильтрам не найдено</p>
-          <button
-            onClick={() => {
-              setSearch('')
-              setDepartment(null)
-              setNamespace('all')
-            }}
-            className="mt-3 text-xs font-mono text-primary hover:text-primary/80"
-          >
+          <p className="text-sm text-on-surface-variant">Метрик по выбранным фильтрам не найдено</p>
+          <button type="button" onClick={resetAll} className="mt-3 text-xs font-mono text-primary hover:text-primary/80">
             Сбросить фильтры
           </button>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-          {items.map((it) => (
-            <MetricHealthCard
-              key={it.id}
-              metricId={it.id}
-              label={it.label}
-              value={it.value}
-              unit={it.unit}
-              confidence={it.confidence ?? undefined}
-              source={(it.source as 'survey' | 'document' | 'prisma' | 'external' | 'manual' | null) ?? null}
-              icon={
-                it.namespace === 'biz'
-                  ? 'analytics'
-                  : it.namespace === 'kpi'
-                  ? 'leaderboard'
-                  : it.namespace === 'gri'
-                  ? 'radar'
-                  : 'flag'
-              }
-              onClick={() => openDrill(it)}
-              highlight={
-                it.value !== null && it.confidence !== null && it.confidence >= 0.8
-                  ? 'strength'
-                  : it.value === null
-                  ? 'gap'
-                  : null
-              }
-            />
-          ))}
-        </div>
+        <CardsGrid items={shown} onOpen={setDrillItem} />
       )}
 
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="flex justify-center items-center gap-2 pt-2">
+      {filtered.length > shown.length && (
+        <div className="flex justify-center pt-1">
           <button
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
-            disabled={page === 1}
-            className="text-xs font-mono px-3 py-1.5 rounded-xl border border-white/[0.04] hover:border-primary/40 hover:text-primary disabled:opacity-40 disabled:hover:border-white/[0.04] disabled:hover:text-on-surface-variant"
+            type="button"
+            onClick={() => setVisible((v) => v + PAGE)}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-white/[0.06] bg-surface-container-low px-4 py-2 text-xs font-mono text-on-surface-variant hover:border-primary/40 hover:text-primary focus:outline-none focus:ring-2 focus:ring-primary/40"
           >
-            ‹ Назад
-          </button>
-          <span className="text-xs font-mono text-on-surface-variant">
-            {page} / {totalPages}
-          </span>
-          <button
-            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-            disabled={page === totalPages}
-            className="text-xs font-mono px-3 py-1.5 rounded-xl border border-white/[0.04] hover:border-primary/40 hover:text-primary disabled:opacity-40 disabled:hover:border-white/[0.04] disabled:hover:text-on-surface-variant"
-          >
-            Вперёд ›
+            <span className="material-symbols-outlined text-[14px]" aria-hidden="true">expand_more</span>
+            Показать ещё ({filtered.length - shown.length})
           </button>
         </div>
       )}
 
-      {/* Drill-down modal */}
-      {drillId && drillItem && (
-        <MetricDrillDownModalV2
-          open={drillId !== null}
-          onClose={() => {
-            setDrillId(null)
-            setDrillItem(null)
-          }}
-          metricId={drillId}
-          metricLabel={drillItem.label}
-          unit={drillItem.unit}
-          description={drillDescription}
-          provenance={drillProvenance}
-          liveValue={
-            drillItem.value !== null
-              ? { value: drillItem.value }
-              : undefined
-          }
-        />
-      )}
+      {drillItem && <MetricDrillDownHost item={drillItem} onClose={() => setDrillItem(null)} />}
     </section>
+  )
+}
+
+function CardsGrid({ items, onOpen }: { items: CatalogItem[]; onOpen: (item: CatalogItem) => void }) {
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+      {items.map((it) => (
+        <MetricCatalogCard key={it.id} item={it} onOpen={onOpen} />
+      ))}
+    </div>
   )
 }

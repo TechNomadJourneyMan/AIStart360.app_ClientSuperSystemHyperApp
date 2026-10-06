@@ -6,7 +6,8 @@
  * Pills (left → right):
  *   1. "Данные (NN%)"        → anchor #company-data    (amber <80, primary ≥80)
  *   2. "Снимок · Точка А"    → anchor #growth-snapshot (neutral)
- *   3. "5 Потерь"            → anchor #loss-map        (error ≥3, amber otherwise)
+ *   3. "N потерь"            → anchor #loss-map        (real count of loss buckets > 0;
+ *                                                       «Карта потерь» until it is known)
  *   4. "GRI · 7 блоков"      → window event 'aistart360:open-gri' (primary, disabled if no GRI)
  *   5. "Карта роста · 90 дней" → anchor #growth-map    (primary, fallback /point-b)
  *
@@ -17,11 +18,8 @@
  *   • Mobile (< sm): horizontal scroll-snap row.
  *   • Hidden below 380px (avoids overlap with content).
  *
- * NOTE for orchestrator: the GRI pill dispatches a global
- *   `window` CustomEvent named 'aistart360:open-gri'. The
- *   GrowthSnapshotHero must subscribe to this event and call its
- *   internal `setGriModalOpen(true)`. That bridge is NOT wired here —
- *   leave the orchestrator wiring to a follow-up. (TODO bridge)
+ * The GRI pill dispatches a global `window` CustomEvent named
+ * 'aistart360:open-gri'; GrowthSnapshotHero listens and opens its GRI modal.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -69,6 +67,17 @@ interface GriAssessmentResponse {
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
+/** «Карта потерь» (unknown) · «Потерь нет» · «1 потеря» · «3 потери» · «5 потерь». */
+export function lossPillLabel(count: number | null): string {
+  if (count === null) return 'Карта потерь'
+  if (count === 0) return 'Потерь нет'
+  const m10 = count % 10
+  const m100 = count % 100
+  const word =
+    m10 === 1 && m100 !== 11 ? 'потеря' : m10 >= 2 && m10 <= 4 && (m100 < 10 || m100 >= 20) ? 'потери' : 'потерь'
+  return `${count} ${word}`
+}
+
 function variantClasses(variant: PillVariant, isActive: boolean): string {
   const base = 'border transition-colors duration-150'
   if (variant === 'disabled') {
@@ -92,7 +101,8 @@ function variantClasses(variant: PillVariant, isActive: boolean): string {
 
 export default function PointAQuickPills({ visibleSections }: { visibleSections?: string[] } = {}) {
   const [surveyPercent, setSurveyPercent] = useState<number>(0)
-  const [lossCount, setLossCount] = useState<number>(5) // sane default per brief
+  // null until /loss-map answers — the label never shows a made-up number.
+  const [lossCount, setLossCount] = useState<number | null>(null)
   const [hasGri, setHasGri] = useState<boolean>(false)
   const [activeId, setActiveId] = useState<string | null>(null)
   const [hovered, setHovered] = useState<string | null>(null)
@@ -122,8 +132,6 @@ export default function PointAQuickPills({ visibleSections }: { visibleSections?
           const j = (await lossRes.json()) as ApiResult<LossMapResponse>
           const buckets = j?.data?.buckets ?? []
           const active = buckets.filter((b) => (b.loss_kzt_per_year ?? 0) > 0).length
-          // Pill label says "5 Потерь" — show full catalogue size when empty,
-          // but use the active count for the danger/warning colour.
           setLossCount(active)
         }
 
@@ -154,7 +162,8 @@ export default function PointAQuickPills({ visibleSections }: { visibleSections?
 
   const pills: PillSpec[] = useMemo(() => {
     const dataVariant: PillVariant = surveyPercent >= 80 ? 'primary' : 'warning'
-    const lossVariant: PillVariant = lossCount >= 3 ? 'danger' : 'warning'
+    const lossVariant: PillVariant =
+      lossCount === null ? 'neutral' : lossCount >= 3 ? 'danger' : lossCount > 0 ? 'warning' : 'neutral'
 
     const all: PillSpec[] = [
       {
@@ -180,7 +189,7 @@ export default function PointAQuickPills({ visibleSections }: { visibleSections?
         anchorId: 'loss-map',
         hashHref: '#loss-map',
         icon: 'warning',
-        label: '5 Потерь',
+        label: lossPillLabel(lossCount),
         tooltip: 'Карта потерь выручки — где утекают деньги',
         variant: lossVariant,
       },

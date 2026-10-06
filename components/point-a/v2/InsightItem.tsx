@@ -7,7 +7,7 @@
  * Self-contained: no external imports from data-agent's files.
  */
 
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 
 export type InsightAuthorRole = 'ai' | 'expert' | 'client' | 'admin'
 
@@ -34,13 +34,20 @@ export interface InsightFeedItem {
 
 interface Props {
   item: InsightFeedItem
-  /** Optional callbacks — feed parent decides what each action does. */
+  /**
+   * Optional callbacks — feed parent decides what each action does. A button
+   * whose callback is not provided is NOT rendered (no dead buttons).
+   */
   onConfirm?: (id: string) => void
   onEdit?: (id: string) => void
   onRefine?: (id: string) => void
   onAnswer?: (id: string) => void
   onAnswerViaSurvey?: (id: string) => void
   onRunAI?: (id: string) => void
+  /** Save an inline answer (enables «Ответить» + the answer field). */
+  onSubmitAnswer?: (id: string, text: string) => Promise<unknown> | void
+  /** true while an action for this item is being saved. */
+  busy?: boolean
   /** Optional viewer role to pick action set. Defaults to 'client'. */
   viewerRole?: InsightAuthorRole
   /** Render comments thread (used on the full page). */
@@ -145,12 +152,26 @@ export function InsightItem({
   onAnswer,
   onAnswerViaSurvey,
   onRunAI,
+  onSubmitAnswer,
+  busy = false,
   comments,
   showCommentInput,
 }: Props) {
   const role = ROLE_STYLE[item.type] ?? ROLE_STYLE.ai
   const status = STATUS_STYLE[item.status] ?? STATUS_STYLE.awaiting_answer
   const answerRole = item.answer_author_role ? ROLE_STYLE[item.answer_author_role] : null
+  const [answerOpen, setAnswerOpen] = useState(false)
+  const [draft, setDraft] = useState('')
+  const canAnswerInline = Boolean(onSubmitAnswer) && !item.answer_text && item.status === 'awaiting_answer'
+  const showAnswerField = canAnswerInline && (answerOpen || Boolean(showCommentInput))
+
+  const submitAnswer = async () => {
+    const text = draft.trim()
+    if (!onSubmitAnswer || text.length < 4) return
+    await onSubmitAnswer(item.id, text)
+    setDraft('')
+    setAnswerOpen(false)
+  }
 
   const actionButtons = useMemo(() => {
     const btnPrimary =
@@ -158,51 +179,76 @@ export function InsightItem({
     const btnGhost =
       'inline-flex items-center gap-1.5 rounded-xl border border-white/[0.08] hover:border-white/20 bg-transparent text-on-surface-variant hover:text-on-surface text-xs font-medium px-3 py-1.5 transition-colors focus:outline-none focus:ring-2 focus:ring-primary/30'
 
+    const nodes: JSX.Element[] = []
     switch (item.status) {
       case 'pending_confirmation':
-        return (
-          <>
-            <button className={btnPrimary} onClick={() => onConfirm?.(item.id)}>
-              <span className="material-symbols-outlined text-[14px]">check</span>
+        if (onConfirm)
+          nodes.push(
+            <button key="confirm" type="button" disabled={busy} className={btnPrimary} onClick={() => onConfirm(item.id)}>
+              <span className="material-symbols-outlined text-[14px]" aria-hidden="true">check</span>
               Подтвердить
-            </button>
-            <button className={btnGhost} onClick={() => onEdit?.(item.id)}>
-              <span className="material-symbols-outlined text-[14px]">edit</span>
+            </button>,
+          )
+        if (onEdit)
+          nodes.push(
+            <button key="edit" type="button" className={btnGhost} onClick={() => onEdit(item.id)}>
+              <span className="material-symbols-outlined text-[14px]" aria-hidden="true">edit</span>
               Редактировать
-            </button>
-          </>
-        )
+            </button>,
+          )
+        break
       case 'confirmed':
-        return (
-          <button className={btnGhost} onClick={() => onRefine?.(item.id)}>
-            <span className="material-symbols-outlined text-[14px]">tune</span>
-            Уточнить
-          </button>
-        )
+        if (onRefine)
+          nodes.push(
+            <button key="refine" type="button" className={btnGhost} onClick={() => onRefine(item.id)}>
+              <span className="material-symbols-outlined text-[14px]" aria-hidden="true">tune</span>
+              Уточнить
+            </button>,
+          )
+        break
       case 'awaiting_answer':
-        return (
-          <>
-            <button className={btnPrimary} onClick={() => onAnswer?.(item.id)}>
-              <span className="material-symbols-outlined text-[14px]">reply</span>
+        if (canAnswerInline && !showCommentInput)
+          nodes.push(
+            <button
+              key="answer"
+              type="button"
+              className={btnPrimary}
+              aria-expanded={answerOpen}
+              onClick={() => setAnswerOpen((v) => !v)}
+            >
+              <span className="material-symbols-outlined text-[14px]" aria-hidden="true">reply</span>
               Ответить
-            </button>
-            <button className={btnGhost} onClick={() => onAnswerViaSurvey?.(item.id)}>
-              <span className="material-symbols-outlined text-[14px]">assignment</span>
+            </button>,
+          )
+        else if (onAnswer)
+          nodes.push(
+            <button key="answer" type="button" className={btnPrimary} onClick={() => onAnswer(item.id)}>
+              <span className="material-symbols-outlined text-[14px]" aria-hidden="true">reply</span>
+              Ответить
+            </button>,
+          )
+        if (onAnswerViaSurvey)
+          nodes.push(
+            <button key="survey" type="button" className={btnGhost} onClick={() => onAnswerViaSurvey(item.id)}>
+              <span className="material-symbols-outlined text-[14px]" aria-hidden="true">assignment</span>
               Через анкету
-            </button>
-          </>
-        )
+            </button>,
+          )
+        break
       case 'pending_ai':
-        return (
-          <button className={btnPrimary} onClick={() => onRunAI?.(item.id)}>
-            <span className="material-symbols-outlined text-[14px]">auto_awesome</span>
-            Запустить анализ ИИ
-          </button>
-        )
+        if (onRunAI)
+          nodes.push(
+            <button key="ai" type="button" disabled={busy} className={btnPrimary} onClick={() => onRunAI(item.id)}>
+              <span className="material-symbols-outlined text-[14px]" aria-hidden="true">auto_awesome</span>
+              Запустить анализ ИИ
+            </button>,
+          )
+        break
       default:
-        return null
+        break
     }
-  }, [item.status, item.id, onConfirm, onEdit, onRefine, onAnswer, onAnswerViaSurvey, onRunAI])
+    return nodes.length ? <>{nodes}</> : null
+  }, [item.status, item.id, onConfirm, onEdit, onRefine, onAnswer, onAnswerViaSurvey, onRunAI, busy, canAnswerInline, showCommentInput, answerOpen])
 
   return (
     <article
@@ -300,21 +346,38 @@ export function InsightItem({
         </div>
       )}
 
-      {/* Comment input (full-page mode) */}
-      {showCommentInput && (
-        <div className="mt-3 pt-3 border-t border-white/[0.04] flex items-center gap-2">
+      {/* Inline answer — only when the parent can save it (no dead input). */}
+      {showAnswerField && (
+        <form
+          className="mt-3 pt-3 border-t border-white/[0.04] flex items-center gap-2"
+          onSubmit={(e) => {
+            e.preventDefault()
+            void submitAnswer()
+          }}
+        >
+          <label htmlFor={`answer-${item.id}`} className="sr-only">
+            Ваш ответ
+          </label>
           <input
+            id={`answer-${item.id}`}
             type="text"
-            placeholder="Ответить как эксперт/клиент…"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            placeholder="Ваш ответ…"
+            maxLength={4000}
             className="flex-1 rounded-xl bg-surface-container border border-white/[0.06] focus:border-primary/40 focus:outline-none focus:ring-2 focus:ring-primary/20 text-xs text-on-surface px-3 py-2 placeholder:text-on-surface-variant/60"
           />
           <button
+            type="submit"
             aria-label="Отправить ответ"
-            className="rounded-xl bg-primary/90 hover:bg-primary text-[#04140a] px-3 py-2 transition-colors"
+            disabled={busy || draft.trim().length < 4}
+            className="rounded-xl bg-primary/90 hover:bg-primary disabled:opacity-50 text-on-primary px-3 py-2 transition-colors focus:outline-none focus:ring-2 focus:ring-primary/40"
           >
-            <span className="material-symbols-outlined text-[16px]">send</span>
+            <span className="material-symbols-outlined text-[16px]" aria-hidden="true">
+              {busy ? 'progress_activity' : 'send'}
+            </span>
           </button>
-        </div>
+        </form>
       )}
     </article>
   )

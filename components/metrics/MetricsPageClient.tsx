@@ -377,7 +377,17 @@ function sourceIcon(type: MetricSource['type']): { icon: string; cls: string } {
   }
 }
 
-// ─── Metric Detail Modal (kept from previous version) ────────────────────────
+// ─── GRI block detail modal ──────────────────────────────────────────────────
+// Real data only: the section score and its criteria from the user's own GRI
+// assessment + the generic definition of the block. The former «Текущее
+// состояние» texts were case-company samples and are never shown.
+interface GriSectionDetail {
+  score: number
+  tone: ReturnType<typeof griTone>
+  assessedAt: string | null
+  criteria: Array<{ id: string; text: string; score: number | null }>
+}
+
 interface ModalProps {
   open: boolean
   onClose: () => void
@@ -385,7 +395,7 @@ interface ModalProps {
   what: string
   why: string
   how: string
-  current_state?: string
+  section?: GriSectionDetail
   formula?: string
   benchmark?: string
   owner?: string | null
@@ -401,7 +411,7 @@ function MetricDetailModal({
   what,
   why,
   how,
-  current_state,
+  section,
   formula,
   benchmark,
   owner,
@@ -464,6 +474,40 @@ function MetricDetailModal({
               )}
             </div>
           )}
+          {section && (
+            <section className="bg-surface-container rounded-xl border border-white/[0.04] px-4 py-3" data-testid="gri-section-detail">
+              <div className="flex items-baseline justify-between gap-3 mb-3">
+                <p className="text-[10px] font-mono text-primary/70 uppercase tracking-[0.2em]">Ваша оценка раздела</p>
+                <p className={`font-mono text-lg font-bold ${section.tone.text}`}>
+                  {section.score > 0 ? `${section.score.toFixed(2)} / 10` : 'не оценён'}
+                </p>
+              </div>
+              {section.criteria.length > 0 ? (
+                <ul className="space-y-1.5">
+                  {section.criteria.map((c) => (
+                    <li key={c.id} className="flex items-start gap-3 text-xs">
+                      <span
+                        className={`font-mono w-10 flex-shrink-0 text-right ${
+                          c.score === null ? 'text-on-surface-variant/50' : griTone(c.score).text
+                        }`}
+                      >
+                        {c.score === null ? '—' : c.score}
+                      </span>
+                      <span className="text-on-surface-variant leading-relaxed">{c.text}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-xs text-on-surface-variant">Критерии этого раздела ещё не оценены.</p>
+              )}
+              {section.assessedAt && (
+                <p className="mt-3 text-[10px] font-mono text-on-surface-variant/70">
+                  Оценка от{' '}
+                  {new Date(section.assessedAt).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })}
+                </p>
+              )}
+            </section>
+          )}
           {what && (
             <section>
               <p className="text-[10px] font-mono text-primary/70 uppercase tracking-[0.2em] mb-2">Что это</p>
@@ -496,12 +540,6 @@ function MetricDetailModal({
               <span className="inline-block text-xs font-mono uppercase px-3 py-1 rounded-full bg-secondary/10 border border-secondary/20 text-secondary">
                 {benchmark}
               </span>
-            </section>
-          )}
-          {current_state && (
-            <section className="bg-primary/5 border border-primary/20 rounded-xl px-4 py-3">
-              <p className="text-[10px] font-mono text-primary uppercase tracking-[0.2em] mb-1">Текущее состояние</p>
-              <p className="text-sm text-on-surface leading-relaxed">{current_state}</p>
             </section>
           )}
           {sources && sources.length > 0 && (
@@ -620,18 +658,34 @@ export default function MetricsPageClient({
     }
   }, [sectionRows])
 
-  async function openGriBlockModal(label: string) {
-    // Lazy-load the heavy descriptions catalog only when a block is opened.
+  async function openGriBlockModal(row: SectionRow) {
+    // Lazy-load the heavy descriptions catalog only when a block is opened —
+    // only the generic definition (what / why / how) is used from it.
     const { getGriDescription } = await import('@/lib/metrics/descriptions')
-    const desc = getGriDescription(label)
+    const desc = getGriDescription(row.label)
+    const sec = GRI_SECTIONS.find((s) => s.id === row.id)
+    const raw = griAssessment?.scores?.[row.id] ?? {}
+    const criteria = (sec?.criteria ?? [])
+      .map((c) => {
+        const v = (raw as Record<string, unknown>)[c.id]
+        const n = typeof v === 'number' ? v : Number(v)
+        return { id: c.id, text: c.text, score: Number.isFinite(n) && n > 0 ? n : null }
+      })
+      // Weakest scored criteria first, unscored last.
+      .sort((a, b) => (a.score ?? 99) - (b.score ?? 99))
     setModal({
       open: true,
       onClose: () => setModal(null),
-      title: label,
-      what: desc?.what ?? 'Описание скоро будет добавлено.',
+      title: row.label,
+      what: desc?.what ?? '',
       why: desc?.why ?? '',
       how: desc?.how ?? '',
-      current_state: desc?.current_state,
+      section: {
+        score: row.score,
+        tone: row.tone,
+        assessedAt: griAssessment?.created_at ?? null,
+        criteria,
+      },
       sources: desc?.sources ?? [],
     })
   }
@@ -676,7 +730,7 @@ export default function MetricsPageClient({
       </section>
 
       {/* Live catalog */}
-      <MetricsLiveCatalog userId={userId ?? undefined} />
+      <MetricsLiveCatalog userId={userId ?? undefined} companyId={company?.id ?? null} />
 
       {/* Tab switcher — UX-12: scroll on mobile instead of wrapping to 2 rows */}
       <div data-tour="metrics-tabs" className="flex gap-1 bg-surface-container rounded-xl p-1 max-w-full overflow-x-auto no-scrollbar">
@@ -807,8 +861,8 @@ export default function MetricsPageClient({
           <div className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-5 flex items-start gap-3">
             <span className="material-symbols-outlined text-primary text-base mt-0.5">info</span>
             <p className="text-sm text-on-surface-variant leading-relaxed">
-              Все 122 показателя отображаются в каталоге выше (Точка А — Real-time). Используйте поиск, фильтр по
-              namespace и отделу — значения тянутся из таблицы <code className="font-mono text-primary">public.metrics</code>.
+              Все показатели Точки А — в каталоге выше: 13 категорий, фильтры по статусу, источнику, уверенности и
+              периоду, поиск и сортировка по динамике. Значения обновляются в реальном времени.
             </p>
           </div>
         </div>
@@ -888,7 +942,7 @@ export default function MetricsPageClient({
                   <button
                     key={row.id}
                     type="button"
-                    onClick={() => openGriBlockModal(row.label)}
+                    onClick={() => void openGriBlockModal(row)}
                     className="group relative bg-surface-container-low rounded-xl border border-white/[0.04] p-4 flex items-center gap-4 w-full text-left hover:bg-white/[0.02] hover:border-white/[0.08] transition-colors cursor-pointer"
                   >
                     <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${row.tone.bg}`}>

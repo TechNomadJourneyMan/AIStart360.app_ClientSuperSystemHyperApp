@@ -1,65 +1,59 @@
 export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
 
 import { NextRequest, NextResponse } from 'next/server'
-import { createServerClient } from '@/lib/supabase-server'
 import { getSessionUser } from '@/lib/api-identity'
+import { countRowsForLocation, deleteDocumentCascade, getDocument, isUuid } from '@/lib/documents/repository'
+import { documentStorage, isInOwnerFolder, locationForDocument } from '@/lib/documents/storage'
+import { createServerClient } from '@/lib/supabase-server'
 
 /**
  * DELETE /api/v1/onboarding/documents/[id]
- * Deletes a document record and its file from Supabase storage.
+ *
+ * Deletes a document the caller uploaded, together with everything derived
+ * from it:
+ *   - the storage object, located by storage_bucket/storage_path (legacy rows:
+ *     parsed from file_url — public AND signed URLs, or a bare path); only
+ *     objects inside the owner's folder are ever removed;
+ *   - RAG summaries (document_summaries; their chunks cascade);
+ *   - queued processing tasks (cancelled).
  *
  * SECURITY (audit 2026-07-02): identity comes from the Supabase session, not a
- * client-supplied `user_id` query param (was an IDOR — any caller could target
- * another user's document id).
+ * client-supplied `user_id` query param.
  */
-export async function DELETE(
-  _req: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
   const sb = createServerClient()
   const user = await getSessionUser(sb)
   if (!user) {
     return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 })
   }
-  const userId = user.id
 
-  // Fetch the document to get the storage path
-  const { data: doc, error: fetchError } = await sb
-    .from('documents')
-    .select('id, file_url, user_id')
-    .eq('id', params.id)
-    .eq('user_id', userId)
-    .single()
-
-  if (fetchError || !doc) {
+  const doc = isUuid(params.id) ? await getDocument(params.id) : null
+  if (!doc || doc.user_id !== user.id) {
     return NextResponse.json({ ok: false, error: 'Document not found' }, { status: 404 })
   }
 
-  // Delete from storage if possible (extract path from URL)
-  if (doc.file_url) {
-    try {
-      const url = new URL(doc.file_url)
-      // Supabase storage URL format: .../storage/v1/object/public/<bucket>/<path>
-      const match = url.pathname.match(/\/storage\/v1\/object\/public\/([^/]+)\/(.+)$/)
-      if (match) {
-        const [, bucket, filePath] = match
-        await sb.storage.from(bucket).remove([filePath])
+  let storageRemoved = false
+  const loc = locationForDocument(doc)
+  if (loc && isInOwnerFolder(loc, doc.user_id)) {
+    const shared = doc.storage_bucket ? await countRowsForLocation(loc.bucket, loc.path, doc.id) : 0
+    if (shared === 0) {
+      try {
+        await documentStorage().remove(loc)
+        storageRemoved = true
+      } catch (err) {
+        // Best-effort: the row is still deleted; the orphan is logged.
+        console.error('[documents/delete] storage object not removed', doc.id, err instanceof Error ? err.message : err)
       }
-    } catch {
-      // Storage delete is best-effort — continue with DB delete
     }
   }
 
-  // Delete from database
-  const { error: deleteError } = await sb
-    .from('documents')
-    .delete()
-    .eq('id', params.id)
-    .eq('user_id', userId)
-
-  if (deleteError) {
-    return NextResponse.json({ ok: false, error: deleteError.message }, { status: 500 })
+  const result = await deleteDocumentCascade(doc.id)
+  if (!result.deleted) {
+    return NextResponse.json({ ok: false, error: 'Document not found' }, { status: 404 })
   }
-
-  return NextResponse.json({ ok: true })
+  return NextResponse.json({
+    ok: true,
+    data: { storage_removed: storageRemoved, summaries_deleted: result.summaries, tasks_cancelled: result.tasksCancelled },
+  })
 }

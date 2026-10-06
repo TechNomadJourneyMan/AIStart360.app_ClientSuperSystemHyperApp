@@ -51,6 +51,25 @@ function freshnessValue(days: number | null): number {
 }
 
 /**
+ * Weighted share (0..1) of the data the diagnosis can use — the same formula
+ * as the confidence score, but always defined: it measures what is present,
+ * it does not claim trust. Used for Point A «полнота данных».
+ */
+export function dataCompletenessShare(s: TrustSignals): number {
+  return (
+    WEIGHTS.completion * Math.min(Math.max(s.surveyCompletion ?? 0, 0), 1) +
+    WEIGHTS.financials * (s.hasFinancials ? 1 : 0) +
+    WEIGHTS.consistency * (s.financialsConsistent ? 1 : 0) +
+    WEIGHTS.documents * Math.min(s.documentsCount / 3, 1) +
+    WEIGHTS.crm * (s.hasCrm ? 1 : 0) +
+    WEIGHTS.metrics * (s.hasMetrics ? 1 : 0) +
+    WEIGHTS.history * Math.min(s.griHistoryCount / 3, 1) +
+    WEIGHTS.freshness * freshnessValue(s.dataFreshnessDays) +
+    WEIGHTS.market * Math.min(s.marketConfirmedCount / 5, 1)
+  )
+}
+
+/**
  * Data-confidence score, or `null` when there is too little to honestly assess
  * (fewer than 3 signals present). Never fabricates a number from thin air.
  */
@@ -69,18 +88,7 @@ export function computeDataConfidence(s: TrustSignals): DataConfidence | null {
 
   if (present < 3) return null
 
-  const contributions =
-    WEIGHTS.completion * (s.surveyCompletion ?? 0) +
-    WEIGHTS.financials * (s.hasFinancials ? 1 : 0) +
-    WEIGHTS.consistency * (s.financialsConsistent ? 1 : 0) +
-    WEIGHTS.documents * Math.min(s.documentsCount / 3, 1) +
-    WEIGHTS.crm * (s.hasCrm ? 1 : 0) +
-    WEIGHTS.metrics * (s.hasMetrics ? 1 : 0) +
-    WEIGHTS.history * Math.min(s.griHistoryCount / 3, 1) +
-    WEIGHTS.freshness * freshnessValue(s.dataFreshnessDays) +
-    WEIGHTS.market * Math.min(s.marketConfirmedCount / 5, 1)
-
-  const score = Math.round(contributions * 100)
+  const score = Math.round(dataCompletenessShare(s) * 100)
   const level = score >= 67 ? 'high' : score >= 34 ? 'medium' : 'low'
 
   const missing: string[] = []

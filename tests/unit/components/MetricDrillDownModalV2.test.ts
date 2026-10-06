@@ -135,15 +135,27 @@ describe('MetricDrillDownModalV2 — empty state', () => {
 // ─── Description sections ─────────────────────────────────────────────────
 
 describe('MetricDrillDownModalV2 — description sections', () => {
-  it('component renders all four description headings in Russian', () => {
+  it('component renders the three description headings in Russian', () => {
     expect(COMPONENT_SRC).toContain('Что это?')
     expect(COMPONENT_SRC).toContain('Почему важно?')
     expect(COMPONENT_SRC).toContain('Как считаем?')
-    expect(COMPONENT_SRC).toContain('Текущее состояние')
   })
 
-  it('description sections are gated behind the optional prop', () => {
-    expect(COMPONENT_SRC).toMatch(/\{description &&[\s\S]*Что это\?/)
+  it('never renders the sample «Текущее состояние» texts (case-company data)', () => {
+    expect(COMPONENT_SRC).not.toContain('Текущее состояние')
+    expect(COMPONENT_SRC).not.toContain('current_state')
+  })
+
+  it('description sections are gated behind the optional props', () => {
+    expect(COMPONENT_SRC).toMatch(/\{\(description \|\| calculationMethod\) &&[\s\S]*Что это\?/)
+  })
+
+  it('shows target, labelled benchmark and the provenance chain', () => {
+    expect(COMPONENT_SRC).toContain('drilldown-target-benchmark')
+    expect(COMPONENT_SRC).toContain('Ориентир')
+    expect(COMPONENT_SRC).toContain('benchmark.label')
+    expect(COMPONENT_SRC).toContain('Откуда это число')
+    expect(COMPONENT_SRC).toMatch(/provenanceChain\.map/)
   })
 })
 

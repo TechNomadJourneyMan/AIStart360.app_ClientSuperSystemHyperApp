@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
+import { useQueryClient } from '@tanstack/react-query'
 import { createClient } from '@/lib/supabase-client'
 import type { Diagnostic, BlockScore, Risk, Insight, QuickWin, AIAnalysis, AIStatus } from '@/types/onboarding'
 import PointAIntelligenceSection from '@/components/point-a/PointAIntelligenceSection'
@@ -12,6 +13,8 @@ import MyDataSection from '@/components/client/MyDataSection'
 import AssistantHintWidget from '@/components/assistant/AssistantHintWidget'
 import { ShareButton } from '@/components/share/ShareButton'
 import NextBestActionCard from '@/components/nba/NextBestActionCard'
+import ExecutiveOverview from '@/components/point-a/ExecutiveOverview'
+import { POINT_A_OVERVIEW_QUERY_KEY, recalcErrorMessage } from '@/hooks/usePointAOverview'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function blockLabel(status: string | undefined): { text: string; color: string } {
@@ -29,23 +32,6 @@ function riskIcon(level: string): { icon: string; color: string; bg: string } {
   if (level === 'critical') return { icon: 'error', color: 'text-error', bg: 'bg-error/10' }
   if (level === 'important') return { icon: 'warning', color: 'text-amber-400', bg: 'bg-amber-400/10' }
   return { icon: 'info', color: 'text-on-surface-variant', bg: 'bg-surface-container' }
-}
-
-function ScoreGauge({ score, size = 120 }: { score: number; size?: number }) {
-  const r = (size / 2) - 12
-  const circ = 2 * Math.PI * r
-  const arc = circ * 0.75
-  const dash = (score / 100) * arc
-  const offset = circ * 0.125
-
-  const color = score >= 70 ? '#6EFFC0' : score >= 45 ? '#FBBF24' : '#EF4444'
-
-  return (
-    <svg width={size} height={size} className="rotate-[135deg]">
-      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth={10} strokeDasharray={`${arc} ${circ - arc}`} strokeDashoffset={-offset} strokeLinecap="round" />
-      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={color} strokeWidth={10} strokeDasharray={`${dash} ${circ - dash}`} strokeDashoffset={-offset} strokeLinecap="round" style={{ transition: 'stroke-dasharray 1s ease' }} />
-    </svg>
-  )
 }
 
 function BlockCard({ title, icon, score, aiBlock }: {
@@ -157,18 +143,33 @@ export default function PointAClientPage() {
   const [companyId, setCompanyId] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isRecalculating, setIsRecalculating] = useState(false)
+  const [recalcError, setRecalcError] = useState<string | null>(null)
   const [userId, setUserId] = useState<string | null>(null)
+  // 'checking' until the Supabase session is read. Without a session the page
+  // used to spin forever (loadData bailed out before clearing isLoading).
+  const [sessionState, setSessionState] = useState<'checking' | 'signed_in' | 'signed_out'>('checking')
+  const queryClient = useQueryClient()
   const [aiAnalysis, setAiAnalysis] = useState<AIAnalysis | null>(null)
   const [aiStatus, setAiStatus] = useState<AIStatus>('none')
 
   useEffect(() => {
     const sb = createClient()
-    sb.auth.getSession().then(({ data }) => {
-      const u = data.session?.user
-      if (u?.id) {
-        setUserId(u.id)
-      }
-    })
+    sb.auth
+      .getSession()
+      .then(({ data }) => {
+        const u = data.session?.user
+        if (u?.id) {
+          setUserId(u.id)
+          setSessionState('signed_in')
+        } else {
+          setSessionState('signed_out')
+          setIsLoading(false)
+        }
+      })
+      .catch(() => {
+        setSessionState('signed_out')
+        setIsLoading(false)
+      })
   }, [])
 
   const loadData = useCallback(async () => {
@@ -223,16 +224,25 @@ export default function PointAClientPage() {
   const recalculate = async () => {
     if (!userId) return
     setIsRecalculating(true)
-    setAiAnalysis(null)
-    setAiStatus('none')
+    setRecalcError(null)
     try {
-      await fetch('/api/v1/diagnostics/recalculate', {
+      const res = await fetch('/api/v1/diagnostics/recalculate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user_id: userId }),
       })
-      await loadData()
-    } catch {}
+      if (!res.ok) {
+        // 422 «нет ответов», 429 rate limit… — keep the current analysis.
+        setRecalcError(recalcErrorMessage(res.status))
+      } else {
+        setAiAnalysis(null)
+        setAiStatus('none')
+        await queryClient.invalidateQueries({ queryKey: POINT_A_OVERVIEW_QUERY_KEY })
+        await loadData()
+      }
+    } catch {
+      setRecalcError(recalcErrorMessage(0))
+    }
     setIsRecalculating(false)
   }
 
@@ -249,8 +259,11 @@ export default function PointAClientPage() {
     } catch {}
   }
 
-  const score = diag?.overall_score ?? 0
-  const today = new Date().toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })
+  // Date of the diagnostic itself — not «today» (the chip used to read as the
+  // report date while showing the current day).
+  const calculatedAtLabel = diag?.calculated_at
+    ? new Date(diag.calculated_at).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })
+    : null
 
   const blocks = [
     { key: 'finance',    title: 'Финансы',    icon: 'payments',   data: diag?.finance_score },
@@ -276,7 +289,7 @@ export default function PointAClientPage() {
             </Link>
             <button
               onClick={recalculate}
-              disabled={isRecalculating}
+              disabled={isRecalculating || !userId}
               className="flex items-center gap-1.5 text-xs font-mono text-on-surface-variant hover:text-primary border border-white/[0.08] rounded-lg px-3 py-1.5 transition-all disabled:opacity-60"
             >
               <span className={`material-symbols-outlined text-sm ${isRecalculating ? 'animate-spin' : ''}`}>refresh</span>
@@ -302,83 +315,93 @@ export default function PointAClientPage() {
       </header>
 
       <main className="max-w-7xl mx-auto px-6 py-8 space-y-8">
+        {sessionState === 'signed_out' ? (
+          /* No Supabase session in the browser — say so instead of spinning. */
+          <section
+            aria-label="Требуется вход"
+            className="bg-surface-container-low rounded-2xl border border-white/[0.06] p-8 text-center max-w-xl mx-auto"
+          >
+            <div className="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-4">
+              <span className="material-symbols-outlined text-2xl text-primary" aria-hidden="true">login</span>
+            </div>
+            <h1 className="font-headline text-xl font-bold text-on-surface mb-2">Войдите, чтобы увидеть Точку А</h1>
+            <p className="text-sm text-on-surface-variant mb-6">
+              Сессия не найдена или истекла. Отчёт по Точке А доступен только в вашем кабинете.
+            </p>
+            <Link
+              href="/login?from=%2Fclient%2Fpoint-a"
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-on-primary font-semibold text-sm hover:bg-primary/90 transition-colors focus:outline-none focus:ring-2 focus:ring-primary/40"
+            >
+              <span className="material-symbols-outlined text-base" aria-hidden="true">login</span>
+              Войти
+            </Link>
+          </section>
+        ) : (
+        <>
+        {/* Welcome line — the score itself lives in the overview below (shown once). */}
+        <section aria-label="Компания">
+          <p className="text-xs font-mono text-primary/70 uppercase tracking-[0.2em] mb-2">Точка А · Текущее состояние</p>
+          <h1 className="font-headline text-2xl font-extrabold text-on-surface mb-1">
+            Добро пожаловать{company?.name ? `, ${company.name}` : ''}!
+          </h1>
+          <p className="text-xs text-on-surface-variant max-w-2xl">
+            Ваш отчёт по Точке А — главное о бизнесе, цели на 1–3 года, диагностика по 5 блокам и данные анкеты в одном месте.
+          </p>
+          <div className="flex flex-wrap gap-2 mt-3">
+            {company?.industry && (
+              <span className="flex items-center gap-1.5 text-xs bg-surface-container px-3 py-1.5 rounded-lg text-on-surface-variant">
+                <span className="material-symbols-outlined text-sm" aria-hidden="true">business</span>
+                {company.industry}
+              </span>
+            )}
+            {company?.employee_count && (
+              <span className="flex items-center gap-1.5 text-xs bg-surface-container px-3 py-1.5 rounded-lg text-on-surface-variant">
+                <span className="material-symbols-outlined text-sm" aria-hidden="true">people</span>
+                {company.employee_count} сотрудников
+              </span>
+            )}
+            {calculatedAtLabel && (
+              <span
+                className="flex items-center gap-1.5 text-xs bg-surface-container px-3 py-1.5 rounded-lg text-on-surface-variant"
+                title="Дата расчёта диагностики"
+              >
+                <span className="material-symbols-outlined text-sm" aria-hidden="true">calendar_today</span>
+                Расчёт от {calculatedAtLabel}
+              </span>
+            )}
+            {diag && (
+              <a
+                href="#my-data"
+                className="flex items-center gap-1.5 text-xs bg-primary/10 hover:bg-primary/15 border border-primary/30 px-3 py-1.5 rounded-lg text-primary transition-colors"
+              >
+                <span className="material-symbols-outlined text-sm" aria-hidden="true">folder_managed</span>
+                Мои данные
+              </a>
+            )}
+          </div>
+          {recalcError && (
+            <p className="mt-3 text-xs text-error" role="alert">{recalcError}</p>
+          )}
+        </section>
+
+        {/* Level 1 — executive overview (score, maturity, status, gaps, risks…) */}
+        <ExecutiveOverview userId={userId} onRecalculated={loadData} />
 
         {/* Next Best Action — the single most important step right now */}
         <NextBestActionCard />
 
         {isLoading ? (
-          <div className="flex items-center justify-center py-20">
+          <div className="flex items-center justify-center py-12" role="status">
             <div className="flex flex-col items-center gap-4">
-              <span className="w-10 h-10 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
+              <span className="w-8 h-8 border-2 border-primary/30 border-t-primary rounded-full animate-spin" aria-hidden="true" />
               <p className="text-sm text-on-surface-variant">Загружаем диагностику...</p>
             </div>
           </div>
         ) : !diag ? (
-          <div className="text-center py-20">
-            <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-4">
-              <span className="material-symbols-outlined text-3xl text-primary">analytics</span>
-            </div>
-            <h2 className="font-headline text-xl font-bold text-on-surface mb-2">Диагностика не рассчитана</h2>
-            <p className="text-sm text-on-surface-variant mb-6">Заполните анкету и нажмите «Пересчитать»</p>
-            <div className="flex gap-3 justify-center">
-              <Link href="/client/onboarding" className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-primary to-[#00e29e] text-[#003824] font-bold text-sm">
-                Заполнить анкету
-              </Link>
-              <button onClick={recalculate} disabled={isRecalculating}
-                className="px-5 py-2.5 rounded-xl border border-white/[0.08] text-on-surface-variant text-sm hover:text-on-surface transition-all">
-                Пересчитать
-              </button>
-            </div>
-          </div>
+          /* No diagnostic yet — the overview above explains what to do next. */
+          null
         ) : (
           <>
-            {/* 1. Welcome Hero — company name + health gauge at the very top */}
-            <section className="bg-surface-container-low rounded-2xl border border-white/[0.06] p-6">
-              <div className="flex flex-col md:flex-row items-center md:items-start gap-6">
-                <div className="relative flex-shrink-0">
-                  <ScoreGauge score={score} size={140} />
-                  <div className="absolute inset-0 flex flex-col items-center justify-center">
-                    <span className="font-mono text-3xl font-extrabold text-on-surface">{(score / 10).toFixed(1)}</span>
-                    <span className="text-xs text-on-surface-variant">/10</span>
-                  </div>
-                </div>
-                <div className="flex-1 text-center md:text-left">
-                  <p className="text-xs font-mono text-primary/70 uppercase tracking-[0.2em] mb-2">Индекс готовности к росту</p>
-                  <h1 className="font-headline text-2xl font-extrabold text-on-surface mb-1">
-                    Добро пожаловать{company?.name ? `, ${company.name}` : ''}!
-                  </h1>
-                  <p className="text-xs text-on-surface-variant max-w-md mx-auto md:mx-0">
-                    Ваш отчёт по Точке А — снимок текущего состояния, цели на 1–3 года, диагностика по 7 блокам и данные анкеты в одном месте.
-                  </p>
-                  <div className="flex flex-wrap gap-2 justify-center md:justify-start mt-3">
-                    {company?.industry && (
-                      <span className="flex items-center gap-1.5 text-xs bg-surface-container px-3 py-1.5 rounded-lg text-on-surface-variant">
-                        <span className="material-symbols-outlined text-sm">business</span>
-                        {company.industry}
-                      </span>
-                    )}
-                    {company?.employee_count && (
-                      <span className="flex items-center gap-1.5 text-xs bg-surface-container px-3 py-1.5 rounded-lg text-on-surface-variant">
-                        <span className="material-symbols-outlined text-sm">people</span>
-                        {company.employee_count} сотрудников
-                      </span>
-                    )}
-                    <span className="flex items-center gap-1.5 text-xs bg-surface-container px-3 py-1.5 rounded-lg text-on-surface-variant">
-                      <span className="material-symbols-outlined text-sm">calendar_today</span>
-                      {today}
-                    </span>
-                    <a
-                      href="#my-data"
-                      className="flex items-center gap-1.5 text-xs bg-primary/10 hover:bg-primary/15 border border-primary/30 px-3 py-1.5 rounded-lg text-primary transition-colors"
-                    >
-                      <span className="material-symbols-outlined text-sm">folder_managed</span>
-                      Мои данные
-                    </a>
-                  </div>
-                </div>
-              </div>
-            </section>
-
             {/* 1b. Assistant readiness — анкета completion ring, top issues, call-expert CTA */}
             <AssistantHintWidget />
 
@@ -632,6 +655,8 @@ export default function PointAClientPage() {
             )}
             <MyDataSection userId={userId} />
           </>
+        )}
+        </>
         )}
       </main>
       {/* Assistant dock is provided once by app/client/layout.tsx — do not mount

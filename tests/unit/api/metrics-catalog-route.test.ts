@@ -15,6 +15,20 @@ vi.mock('@/lib/supabase/server', () => ({
   createClient: vi.fn(async () => supabaseMock),
 }))
 
+// ── Mock tenancy (company resolution is unit-tested in tests/unit/tenancy) ──
+const resolveTenantWithMock = vi.fn()
+vi.mock('@/lib/tenancy', () => ({
+  resolveTenantWith: (...args: unknown[]) => resolveTenantWithMock(...args),
+  tenantErrorMessage: (e: string) => (e === 'no_company' ? 'Компания не найдена' : 'Нет доступа к компании'),
+}))
+
+function tenantOk(companyId = 'co-1') {
+  resolveTenantWithMock.mockResolvedValue({
+    ok: true,
+    tenant: { userId: 'user-1', companyId, role: 'owner', canManage: true, legacy: false },
+  })
+}
+
 // ── Mock registry ────────────────────────────────────────────
 const getMetricRegistryMock = vi.fn()
 vi.mock('@/lib/metrics/registry', () => ({
@@ -48,44 +62,39 @@ interface MetricsRow {
   source: string | null
   computed_at: string | null
   recorded_at: string | null
+  period_year?: number | null
+  period_quarter?: string | null
+  period_month?: number | null
 }
 
-function makeCompaniesStub(companyId: string | null) {
-  const stub: Record<string, unknown> = {}
-  stub.select = vi.fn(() => stub)
-  stub.eq = vi.fn(() => stub)
-  stub.maybeSingle = vi.fn(() =>
-    Promise.resolve({
-      data: companyId ? { id: companyId } : null,
-      error: null,
-    }),
-  )
-  return stub
+type Result = { data: unknown; error: { message: string } | null }
+
+/** Chainable PostgREST stand-in: every filter returns itself; awaiting yields `result`. */
+function stub(result: Result) {
+  const b: Record<string, unknown> = {}
+  for (const m of ['select', 'eq', 'in', 'order', 'limit', 'not']) b[m] = vi.fn(() => b)
+  b.maybeSingle = vi.fn(() => Promise.resolve({ data: Array.isArray(result.data) ? result.data[0] ?? null : result.data, error: result.error }))
+  b.then = (res: (r: Result) => unknown, rej?: (e: unknown) => unknown) => Promise.resolve(result).then(res, rej)
+  return b
+}
+
+function makeCompaniesStub(companyId: string | null, extra: Record<string, unknown> = {}) {
+  return stub({ data: companyId ? { id: companyId, user_id: 'user-1', target_revenue_12m_kzt: null, ...extra } : null, error: null })
 }
 
 function makeMetricsStub(rows: MetricsRow[]) {
-  // The route chains: .select(...).eq(...).in(...).order(...).order(...)
-  // and awaits the result of the last `.order(...)`.
-  const stub: Record<string, unknown> = {}
-  stub.select = vi.fn(() => stub)
-  stub.eq = vi.fn(() => stub)
-  stub.in = vi.fn(() => stub)
-  // First .order() returns stub; second .order() returns thenable.
-  let orderCalls = 0
-  stub.order = vi.fn(() => {
-    orderCalls += 1
-    if (orderCalls >= 2) {
-      return Promise.resolve({ data: rows, error: null })
-    }
-    return stub
-  })
-  return stub
+  return stub({ data: rows, error: null })
 }
 
 function wireFrom(handlers: Record<string, () => unknown>) {
   supabaseMock.from.mockImplementation((table: string) => {
     const factory = handlers[table]
-    if (!factory) throw new Error(`unexpected table: ${table}`)
+    // Optional tables of migration 085 (targets / history) and the GRI overlay
+    // default to «no rows»; anything else must be wired explicitly.
+    if (!factory) {
+      if (['metric_targets', 'metric_value_history', 'gri_assessments'].includes(table)) return stub({ data: [], error: null })
+      throw new Error(`unexpected table: ${table}`)
+    }
     return factory()
   })
 }
@@ -174,6 +183,7 @@ function makeRegistry(): MetricEntry[] {
 beforeEach(() => {
   vi.clearAllMocks()
   getMetricRegistryMock.mockReturnValue(makeRegistry())
+  tenantOk()
 })
 
 // ─────────────────────────────────────────────────────────────

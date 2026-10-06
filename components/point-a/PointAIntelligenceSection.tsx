@@ -2,7 +2,8 @@
 
 import { useMemo, useState } from 'react'
 import type { PointA, Risk, QuickWin } from '@/types/onboarding'
-import { usePointAAggregate, useRecalculatePointA } from '@/hooks/usePointAAggregate'
+import Link from 'next/link'
+import { NO_COMPANY, usePointAAggregate, useRecalculatePointA } from '@/hooks/usePointAAggregate'
 import { useRealtimePointA } from '@/hooks/useRealtimePointA'
 import PointAInsightCard from '@/components/point-a/PointAInsightCard'
 // Shared ru formatter: '₸', '%', 'days' → «дн.», 'count' → bare number. Rendering
@@ -15,12 +16,15 @@ interface Props {
 }
 
 export default function PointAIntelligenceSection({ userId, companyId }: Props) {
-  const { data, isLoading, isError, error, refetch } = usePointAAggregate()
+  const { data: result, isLoading, isError, error, refetch } = usePointAAggregate()
   const recalc = useRecalculatePointA()
   const realtime = useRealtimePointA(userId, companyId)
 
   const [departmentFilter, setDepartmentFilter] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<'strengths' | 'gaps' | 'departments' | 'actions'>('strengths')
+
+  const noCompany = result === NO_COMPANY
+  const data: PointA | null = result && result !== NO_COMPANY ? result : null
 
   const intelligence = data?.intelligence ?? null
   const risks: Risk[] = data?.risks ?? []
@@ -64,6 +68,27 @@ export default function PointAIntelligenceSection({ userId, companyId }: Props) 
             </button>
           </div>
         </div>
+      </section>
+    )
+  }
+
+  if (noCompany) {
+    return (
+      <section className="bg-surface-container-low border border-dashed border-white/[0.06] rounded-2xl p-8 text-center">
+        <span className="material-symbols-outlined text-3xl text-on-surface-variant/40 mb-3 block" aria-hidden="true">
+          domain_add
+        </span>
+        <p className="text-sm text-on-surface">Профиль компании ещё не создан</p>
+        <p className="text-xs text-on-surface-variant mt-1 max-w-md mx-auto">
+          Интеллект-слой строится по данным компании. Заполните первый шаг анкеты — профиль создастся автоматически.
+        </p>
+        <Link
+          href="/client/onboarding"
+          className="mt-4 inline-flex items-center gap-1.5 rounded-xl bg-primary/10 border border-primary/30 px-4 py-2 text-xs font-medium text-primary hover:bg-primary/15 focus:outline-none focus:ring-2 focus:ring-primary/40"
+        >
+          <span className="material-symbols-outlined text-[16px]" aria-hidden="true">play_arrow</span>
+          Пройти анкету
+        </Link>
       </section>
     )
   }

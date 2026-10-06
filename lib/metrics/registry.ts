@@ -1,7 +1,9 @@
 // ============================================================
 // lib/metrics/registry.ts
-// Flat catalog of all 122 metrics built from the declaration
-// objects in `descriptions.ts`. Provides stable namespaced IDs
+// Flat catalog of every metric (148 on 2026-10-06: biz 70 = 7 business
+// departments (50) + Автоматизация/Цифровизация/Управление (20), kpi 12,
+// gri 7, goal 59) built from the declaration
+// objects in `descriptions.ts`. Categories for the UI live in taxonomy.ts. Provides stable namespaced IDs
 // (e.g. "biz.finance.vyruchka_god", "kpi.roe", "gri.product",
 // "goal.01.win_rate") plus lookup helpers used by the resolver,
 // the materialize layer, and the UI drill-down components.
@@ -56,7 +58,7 @@ export function getMetricRegistry(): MetricEntry[] {
   if (cache) return cache
   const entries: MetricEntry[] = []
 
-  // BIZ — 48 metrics across 7 departments
+  // BIZ — 7 business departments + Автоматизация / Цифровизация / Управление
   for (const [dept, metrics] of Object.entries(BIZ_METRIC_DESCRIPTIONS)) {
     for (const [label, desc] of Object.entries(metrics)) {
       entries.push({
@@ -64,7 +66,8 @@ export function getMetricRegistry(): MetricEntry[] {
         namespace: 'biz',
         department: dept,
         label,
-        unit: inferUnit(label),
+        unit: desc.unit ?? inferUnit(label),
+        ...(desc.valueKind ? { valueKind: desc.valueKind } : {}),
         sources: desc.sources,
       })
     }
@@ -92,7 +95,7 @@ export function getMetricRegistry(): MetricEntry[] {
     })
   }
 
-  // Growth goals — 55 metrics across 11 goals
+  // Growth goals — 59 metrics across 11 goals
   for (const goal of METRIC_GOAL_DESCRIPTIONS) {
     for (const item of goal.items) {
       entries.push({
@@ -100,7 +103,7 @@ export function getMetricRegistry(): MetricEntry[] {
         namespace: 'goal',
         goalNumber: goal.number,
         label: item.label,
-        unit: inferUnit(item.label, item.formula),
+        unit: item.unit ?? inferUnit(item.label, item.formula),
         formula: item.formula,
         sources: item.sources,
       })

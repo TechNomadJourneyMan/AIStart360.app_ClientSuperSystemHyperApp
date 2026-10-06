@@ -43,6 +43,12 @@ export interface MetricSummary {
   goalCategory: string | null
   isDefault: boolean
   isRemovable: boolean
+  /** Registry id of the metric (lib/metrics/registry.ts). Added 2026-10. */
+  metricKey?: string
+  /** public.metrics.source of the value (survey / document / …). */
+  source?: string | null
+  confidence?: number | null
+  computedAt?: string | null
 }
 
 // Time series point
@@ -91,6 +97,12 @@ export interface MetricGoal {
   deadline: string | null
   progress: number              // 0-100
   trajectory: GoalTrajectory
+  /**
+   * Current value the progress is computed from (same unit as targetValue),
+   * null when the company has no value yet — then progress is 0 and the UI
+   * should say «нет фактического значения», not «отстаём». Added 2026-10.
+   */
+  actualValue?: number | null
 }
 
 // Breakdown item (drill-down)

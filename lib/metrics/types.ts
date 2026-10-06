@@ -27,8 +27,10 @@ export interface MetricEntry {
   goalNumber?: string
   /** Human-readable Russian label as it appears in the catalog. */
   label: string
-  /** Inferred unit: "₸" | "%" | "days" | "count" | "". */
+  /** Unit: "₸" | "%" | "days" | "count" | "" (inferred) or an explicit one from the description ("ч/день", "из 10", "раз/год"). */
   unit: string
+  /** 'flag' = the value is 1/0 (есть / нет); absent = an ordinary number. */
+  valueKind?: 'number' | 'flag'
   /** Optional formula text for goal metrics. */
   formula?: string
   /** Declared sources from descriptions.ts. */

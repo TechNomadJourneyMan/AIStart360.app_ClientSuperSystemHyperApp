@@ -9,7 +9,9 @@
  */
 
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { usePointAInsightActions } from '@/hooks/usePointAInsightActions'
 import { InsightItem, type InsightFeedItem } from './InsightItem'
 
 type FilterKey = 'all' | 'ai' | 'expert' | 'client'
@@ -76,6 +78,14 @@ export function InsightsFeed({
   const [filter, setFilter] = useState<FilterKey>('all')
   const [query, setQuery] = useState('')
   const [idx, setIdx] = useState(0)
+  const router = useRouter()
+  const actions = usePointAInsightActions()
+
+  // Replace the local copy with the row the API stored.
+  const applySaved = useCallback((saved: InsightFeedItem | null) => {
+    if (!saved) return
+    setItems((prev) => prev.map((it) => (it.id === saved.id ? { ...it, ...saved } : it)))
+  }, [])
 
   useEffect(() => {
     if (initialItems) return
@@ -247,7 +257,21 @@ export function InsightsFeed({
         <>
           {/* Slide stage */}
           <div className="relative">
-            {current && <InsightItem key={current.id} item={current} />}
+            {current && (
+              <InsightItem
+                key={current.id}
+                item={current}
+                busy={actions.pendingId === current.id}
+                onConfirm={async (id) => applySaved(await actions.confirm(id))}
+                onSubmitAnswer={async (id, text) => applySaved(await actions.answer(id, text))}
+                onAnswerViaSurvey={() => router.push('/client/onboarding')}
+              />
+            )}
+            {actions.error && (
+              <p className="mt-1 text-xs text-error" role="alert">
+                {actions.error}
+              </p>
+            )}
           </div>
 
           {/* Slideshow controls */}

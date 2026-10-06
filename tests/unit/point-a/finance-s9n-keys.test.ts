@@ -5,8 +5,8 @@ import { calculatePointA } from '@/lib/point-a-engine'
  * COR-01: the 12-step onboarding writes the finance answers under `s9n_*` keys
  * (Step9FinanceForm), but the base engine's finance block read only the legacy
  * `s2_*` keys — so a current submission scored ~0 on margin / breakeven / debt.
- * These pin the alias mapping. No LTV/CAC exists in the new step, so those stay
- * "missing" (never fabricated).
+ * These pin the alias mapping. LTV/CAC are not on step 9 — they come from the
+ * step-8 metrics table (s8n_metrics_table) and stay "missing" when it is empty.
  */
 describe('Point A finance block — new s9n_* finance-step keys', () => {
   // A current-form finance submission (no legacy s2_* finance keys at all).

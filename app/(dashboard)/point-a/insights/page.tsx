@@ -3,21 +3,20 @@
 /**
  * /point-a/insights — full timeline of clarifying questions.
  *
- * Social-feed style: sticky filter bar, "Создать вопрос" composer, per-item
- * comments thread with mock replies, "Загрузить ещё" pagination.
+ * Social-feed style: sticky filter bar, "Создать вопрос" composer, inline
+ * answers, "Загрузить ещё" pagination.
  *
- * Wires to `/api/v1/point-a/insights`. When the API has no items the feed shows
- * an explicit empty state — never fabricated AI/expert/client questions.
- * The composer adds locally-created client questions to the in-memory list.
+ * Wires to `/api/v1/point-a/insights` (GET list, POST composer) and
+ * `/api/v1/point-a/insights/[id]` (PATCH confirm / answer). When the API has no
+ * items the feed shows an explicit empty state — never fabricated questions;
+ * a new question appears only after the API saved it.
  */
 
 import Link from 'next/link'
-import { useEffect, useMemo, useState } from 'react'
-import {
-  InsightItem,
-  type InsightFeedItem,
-  type InsightComment,
-} from '@/components/point-a/v2/InsightItem'
+import { useRouter } from 'next/navigation'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { InsightItem, type InsightFeedItem } from '@/components/point-a/v2/InsightItem'
+import { usePointAInsightActions } from '@/hooks/usePointAInsightActions'
 
 type FilterKey = 'all' | 'ai' | 'expert' | 'client'
 
@@ -45,7 +44,13 @@ export default function InsightsPage() {
   const [filter, setFilter] = useState<FilterKey>('all')
   const [query, setQuery] = useState('')
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE)
-  const [expandedComments, setExpandedComments] = useState<Set<string>>(new Set())
+  const router = useRouter()
+  const actions = usePointAInsightActions()
+
+  const applySaved = useCallback((saved: InsightFeedItem | null) => {
+    if (!saved) return
+    setItems((prev) => prev.map((it) => (it.id === saved.id ? { ...it, ...saved } : it)))
+  }, [])
 
   const [composerOpen, setComposerOpen] = useState(false)
   const [composerText, setComposerText] = useState('')
@@ -104,29 +109,15 @@ export default function InsightsPage() {
   const visible = filtered.slice(0, visibleCount)
   const hasMore = filtered.length > visibleCount
 
-  function submitComposer() {
-    if (!composerText.trim()) return
-    const newItem: InsightFeedItem = {
-      id: `local-${Date.now()}`,
-      type: 'client',
-      category: composerCategory,
-      question_text: composerText.trim(),
-      author_name: 'Вы',
-      status: 'pending_ai',
-      created_at: new Date().toISOString(),
-    }
-    setItems((prev) => [newItem, ...prev])
+  async function submitComposer() {
+    const text = composerText.trim()
+    if (text.length < 4) return
+    // Saved via POST /api/v1/point-a/insights — shown only once stored.
+    const saved = await actions.create({ question_text: text, category: composerCategory })
+    if (!saved) return
+    setItems((prev) => [saved, ...prev])
     setComposerText('')
     setComposerOpen(false)
-  }
-
-  function toggleComments(id: string) {
-    setExpandedComments((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
   }
 
   return (
@@ -242,11 +233,13 @@ export default function InsightsPage() {
                 Отмена
               </button>
               <button
-                onClick={submitComposer}
-                disabled={!composerText.trim()}
+                onClick={() => void submitComposer()}
+                disabled={composerText.trim().length < 4 || actions.pendingId === '__new__'}
                 className="inline-flex items-center gap-1.5 rounded-xl bg-primary/90 hover:bg-primary disabled:bg-white/[0.06] disabled:text-on-surface-variant/50 text-[#04140a] text-xs font-medium px-3 py-1.5 transition-colors"
               >
-                <span className="material-symbols-outlined text-[14px]">send</span>
+                <span className="material-symbols-outlined text-[14px]" aria-hidden="true">
+                  {actions.pendingId === '__new__' ? 'progress_activity' : 'send'}
+                </span>
                 Опубликовать
               </button>
             </div>
@@ -278,29 +271,22 @@ export default function InsightsPage() {
           </div>
         ) : (
           <>
-            {visible.map((it) => {
-              const comments: InsightComment[] = []
-              const expanded = expandedComments.has(it.id)
-              const previewComments = expanded ? comments : comments.slice(0, 2)
-              const hiddenComments = comments.length - previewComments.length
-              return (
-                <div key={it.id}>
-                  <InsightItem
-                    item={it}
-                    comments={previewComments}
-                    showCommentInput
-                  />
-                  {hiddenComments > 0 && (
-                    <button
-                      onClick={() => toggleComments(it.id)}
-                      className="text-[11px] text-primary hover:text-primary/80 transition-colors ml-5 -mt-2 mb-3"
-                    >
-                      + {hiddenComments} комментариев
-                    </button>
-                  )}
-                </div>
-              )
-            })}
+            {actions.error && (
+              <p className="mb-3 text-xs text-error" role="alert">
+                {actions.error}
+              </p>
+            )}
+            {visible.map((it) => (
+              <InsightItem
+                key={it.id}
+                item={it}
+                showCommentInput
+                busy={actions.pendingId === it.id}
+                onConfirm={async (id) => applySaved(await actions.confirm(id))}
+                onSubmitAnswer={async (id, text) => applySaved(await actions.answer(id, text))}
+                onAnswerViaSurvey={() => router.push('/client/onboarding')}
+              />
+            ))}
             {hasMore && (
               <div className="text-center mt-4">
                 <button

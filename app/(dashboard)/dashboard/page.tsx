@@ -28,6 +28,7 @@ import { completedStepsFromRows } from '@/lib/survey/steps'
 import { visibleSectionKeysFor } from '@/lib/platform/sections'
 import PointAQuickPills from '@/components/point-a/v2/PointAQuickPills'
 import PointAFilterSection from '@/components/point-a/v2/PointAFilterSection'
+import ExecutiveOverview from '@/components/point-a/ExecutiveOverview'
 import type { PointA, BlockScore } from '@/types/onboarding'
 import { prisma } from '@/lib/db'
 import { getPortfolioGRI } from '@/lib/portfolio-gri'
@@ -302,8 +303,6 @@ export default async function DashboardPage() {
       }
 
       const pointA = diag ? diagToPointA(diag as Record<string, unknown>) : null
-      const totalScore = pointA?.overall_score ?? 0
-      const healthIndex = pointA?.health_index ?? 0
 
       // Sections switched off in GIGA-CRM disappear from the cabinet entirely:
       // their blocks and shortcuts are not rendered, not just unreachable.
@@ -344,14 +343,22 @@ export default async function DashboardPage() {
               </div>
             </div>
 
+            {/* Level 1 — Point A executive overview (score, maturity, status,
+                completeness, problem zones, risks, gaps, strengths). */}
+            <div className="mb-6">
+              <ExecutiveOverview userId={user.id} />
+            </div>
+
             {/* New Growth Snapshot Hero — owns goal capture, plan/fact gap,
                 GRI CTA, consultation link, and onboarding-progress shortcuts.
                 Replaces the previous AI-insights carousel + CTA stack. */}
             <GrowthSnapshotHero visibleSections={Array.from(visibleKeys)} />
 
-            {pointA ? (
+            {pointA || (surveyStepsDone === 0 && docsCount === 0) ? (
               /* Inline AIInsightsCarousel removed — InsightsFeed below owns the
-                 unified AI / Эксперт / Клиент Q&A stream. */
+                 unified AI / Эксперт / Клиент Q&A stream. With nothing filled
+                 yet the overview above already shows the same 3-step start
+                 (survey → documents → GRI), so the wizard is not repeated. */
               null
             ) : (
               /* First-run wizard (ON-1): consolidated 3-step path to the GRI

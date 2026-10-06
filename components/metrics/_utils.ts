@@ -24,8 +24,8 @@ export const SORT_OPTIONS: ReadonlyArray<SortOption> = [
   { value: 'label_desc', label: 'По названию (Я→А)' },
   { value: 'value_desc', label: 'По значению ↓' },
   { value: 'value_asc', label: 'По значению ↑' },
-  { value: 'trend_up', label: 'Лучший тренд' },
-  { value: 'trend_down', label: 'Худший тренд' },
+  { value: 'trend_up', label: 'Лучшая динамика' },
+  { value: 'trend_down', label: 'Худшая динамика' },
   { value: 'confidence_desc', label: 'По уверенности' },
   { value: 'freshness_desc', label: 'Самые свежие' },
 ]

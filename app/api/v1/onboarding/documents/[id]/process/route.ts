@@ -1,169 +1,114 @@
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
+// The queued run may start in the background of this request (waitUntil).
 export const maxDuration = 300
 
 import { NextRequest, NextResponse } from 'next/server'
-import { createServerClient } from '@/lib/supabase-server'
+import { enqueueAgentTask } from '@/lib/agents/queue'
+import { getSessionRole, getSessionUser, isStaffRole } from '@/lib/api-identity'
 import {
-  extractFromDocument,
-  type ParsedDataPayload,
-} from '@/lib/documents/extract'
-import { parseDocument } from '@/lib/documents/parse'
-import { getSessionUser, getSessionRole, isStaffRole } from '@/lib/api-identity'
-import { isSupabaseStorageUrl } from '@/lib/upload-url'
+  attachOwnerCompany,
+  getDocument,
+  isUuid,
+  liveTaskForDocument,
+  resetForReprocess,
+  taskStatus,
+  type DocumentRow,
+} from '@/lib/documents/repository'
 import { isRateLimitedKey } from '@/lib/rate-limit'
+import { createServerClient } from '@/lib/supabase-server'
+import { resolveTenant } from '@/lib/tenancy'
 
-// POST /api/v1/onboarding/documents/[id]/process
-// Inline document parsing. Fetches the document, parses it, runs LLM extraction,
-// and stores the result in documents.parsed_data. Idempotent for in-flight work
-// (re-entry while parse_status='processing' is a no-op).
-export async function POST(
-  _req: NextRequest,
-  { params }: { params: { id: string } },
-) {
+const LIVE = new Set(['queued', 'running', 'awaiting_approval'])
+
+/**
+ * POST /api/v1/onboarding/documents/[id]/process — (re)process a document.
+ *
+ * No longer parses inline: it puts the document back in the queue and enqueues
+ * a `document_intelligence` agent task (manual trigger, idempotent per
+ * document + processing attempt). If a task for the document is already
+ * queued or running, that task is returned instead.
+ *
+ *   202 { ok: true, task_id, status, already_queued?: true, data?: document }
+ *   401 / 404 / 409 { ok: false, code, error } / 429 / 503
+ *
+ * Authz: the uploader, platform staff, or a manager of the document's company.
+ * Writes go through the server connection after authz (the 089 guard blocks
+ * pipeline columns for PostgREST callers).
+ */
+export async function POST(_req: NextRequest, { params }: { params: { id: string } }) {
   const sb = createServerClient()
-
-  // SECURITY (audit 2026-07-02): this endpoint fetches doc.file_url server-side
-  // and runs a paid LLM extraction. It had NO auth — an attacker could trigger
-  // processing (and, via the SSRF in the old insert path, exfiltrate fetched
-  // content). Require an authenticated owner (or staff) and throttle per user.
   const user = await getSessionUser(sb)
-  if (!user) return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 })
+  if (!user) return NextResponse.json({ ok: false, code: 'UNAUTHENTICATED', error: 'unauthorized' }, { status: 401 })
   if (await isRateLimitedKey(user.id, 'documents-process', { max: 20, windowMs: 60_000 })) {
-    return NextResponse.json({ ok: false, error: 'Слишком много запросов. Попробуйте позже.' }, { status: 429 })
+    return NextResponse.json({ ok: false, code: 'RATE_LIMITED', error: 'Слишком много запросов. Попробуйте позже.' }, { status: 429 })
   }
 
-  const { data: doc, error: fetchErr } = await sb
-    .from('documents')
-    .select('id, user_id, file_url, file_name, mime_type, doc_type, parse_status')
-    .eq('id', params.id)
-    .single()
+  const notFound = NextResponse.json({ ok: false, code: 'NOT_FOUND', error: 'Документ не найден' }, { status: 404 })
+  if (!isUuid(params.id)) return notFound
+  const doc = await getDocument(params.id)
+  if (!doc || !(await mayProcess(sb, user.id, doc))) return notFound
 
-  if (fetchErr || !doc) {
-    return NextResponse.json({ ok: false, error: 'Документ не найден' }, { status: 404 })
-  }
-
-  // Owner-or-staff: don't let one user process another user's document.
-  if (doc.user_id !== user.id && !isStaffRole(await getSessionRole(sb, user.id))) {
-    return NextResponse.json({ ok: false, error: 'Документ не найден' }, { status: 404 })
-  }
-
-  // Defense-in-depth: even though insert now validates file_url, re-check before
-  // the server-side fetch so a legacy/tampered row can't drive an SSRF.
-  if (!isSupabaseStorageUrl(doc.file_url)) {
-    return NextResponse.json({ ok: false, error: 'Некорректный источник файла' }, { status: 400 })
-  }
-
-  if (doc.parse_status === 'processing') {
-    return NextResponse.json({ ok: true, note: 'already_processing' })
-  }
-
-  await sb
-    .from('documents')
-    .update({ parse_status: 'processing', parse_error: null })
-    .eq('id', doc.id)
-
-  try {
-    const fileRes = await fetch(doc.file_url)
-    if (!fileRes.ok) {
-      throw new Error(`Не удалось скачать файл (HTTP ${fileRes.status})`)
-    }
-    const buffer = Buffer.from(await fileRes.arrayBuffer())
-
-    const { extraction, rawTextPreview, modelUsed, rawRows, clientRows, classification } =
-      await extractFromDocument({
-        buffer,
-        fileName: doc.file_name,
-        mimeType: doc.mime_type,
-        docType: doc.doc_type,
-      })
-
-    const payload: ParsedDataPayload = {
-      summary: extraction.summary,
-      fields: extraction.fields,
-      raw_text_preview: rawTextPreview,
-      extracted_at: new Date().toISOString(),
-      model_used: modelUsed,
-      ...(rawRows && rawRows.length > 0 ? { raw_rows: rawRows } : {}),
-      ...(clientRows && clientRows.length > 0 ? { client_rows: clientRows } : {}),
-      ...(classification ? { classification } : {}),
-    }
-
-    const { error: updateErr } = await sb
-      .from('documents')
-      .update({
-        parse_status: 'parsed',
-        parsed_data: payload,
-        parse_error: null,
-      })
-      .eq('id', doc.id)
-
-    if (updateErr) throw new Error(updateErr.message)
-
-    // Fire-and-forget: chunk + embed the parsed text into pgvector storage so
-    // it becomes available to RAG. Gated behind ENABLE_DOCUMENT_EMBEDDINGS so
-    // production traffic doesn't burn embedding credits until we're ready.
-    void (async () => {
-      if (process.env.ENABLE_DOCUMENT_EMBEDDINGS !== 'true') return
-      try {
-        const { prisma } = await import('@/lib/db')
-        const { embedAndStoreChunks } = await import('@/lib/documents/embed')
-
-        // Best-effort owner → Client lookup. The Supabase `documents.user_id`
-        // → `profiles.id` chain doesn't map 1:1 to the Prisma `Client` model
-        // in every environment, so we skip silently if no client is found.
-        const ownerClient = await prisma.client.findFirst({
-          where: { managerId: (doc as { user_id?: string }).user_id ?? '__none__' },
-          select: { id: true },
-        }).catch(() => null)
-        if (!ownerClient) return
-
-        // Re-parse to obtain full text (extract.ts only retains a preview).
-        const reFile = await fetch(doc.file_url).catch(() => null)
-        if (!reFile || !reFile.ok) return
-        const reBuffer = Buffer.from(await reFile.arrayBuffer())
-        const parsed = await parseDocument(
-          reBuffer,
-          doc.file_name,
-          doc.mime_type ?? undefined,
-        )
-        if (!parsed.text?.trim()) return
-
-        const summary = await prisma.documentSummary.create({
-          data: {
-            clientId: ownerClient.id,
-            content: parsed.text,
-            metadata: { source_document_id: doc.id },
-          },
-        })
-
-        // Record the direct owner for RAG scoping (migration 046). Done via raw
-        // SQL so it does not depend on the regenerated Prisma client field.
-        const ownerUserId = (doc as { user_id?: string }).user_id
-        if (ownerUserId) {
-          await prisma.$executeRaw`UPDATE document_summaries SET user_id = ${ownerUserId} WHERE id = ${summary.id}`
-        }
-
-        const result = await embedAndStoreChunks(summary.id, parsed.text)
-        if (result.error) {
-          console.warn('[documents/process] embed result', result)
-        }
-      } catch (e) {
-        console.warn('[documents/process] embed failed', e)
-      }
-    })()
-
+  if (doc.parse_status === 'rejected' || doc.security_status === 'rejected') {
     return NextResponse.json({
-      ok: true,
-      fields_count: payload.fields.length,
-    })
-  } catch (err) {
-    const message = err instanceof Error ? err.message : 'Неизвестная ошибка'
-    console.error('[documents/process] failed for', doc.id, message)
-    await sb
-      .from('documents')
-      .update({ parse_status: 'error', parse_error: message })
-      .eq('id', doc.id)
-    return NextResponse.json({ ok: false, error: message }, { status: 500 })
+      ok: false,
+      code: 'REJECTED',
+      error: doc.security_reason ?? 'Файл отклонён проверкой безопасности. Загрузите другой файл.',
+    }, { status: 409 })
   }
+
+  const companyId = doc.company_id ?? (await attachOwnerCompany(doc.id))
+  if (!companyId) {
+    return NextResponse.json({
+      ok: false,
+      code: 'NO_COMPANY',
+      error: 'Документ не привязан к компании. Заполните данные компании и повторите.',
+    }, { status: 409 })
+  }
+
+  const live = await liveTaskForDocument(doc.id)
+  if (live) {
+    return NextResponse.json({ ok: true, task_id: live.id, status: live.status, already_queued: true }, { status: 202 })
+  }
+
+  const reset = await resetForReprocess(doc.id)
+  if (!reset) {
+    return NextResponse.json({ ok: false, code: 'REJECTED', error: 'Документ нельзя обработать повторно.' }, { status: 409 })
+  }
+
+  const key = `doc_process:${doc.id}:${reset.attempts}`
+  const enqueue = (idempotencyKey: string) => enqueueAgentTask({
+    agentKey: 'document_intelligence',
+    companyId,
+    trigger: 'manual',
+    triggerRef: 'documents.process',
+    requestedBy: user.id,
+    input: { document_id: doc.id },
+    idempotencyKey,
+  })
+  try {
+    let task = await enqueue(key)
+    if (!task.created && !LIVE.has((await taskStatus(task.id)) ?? '')) {
+      // Same attempt number, but that task already finished without taking
+      // the document (e.g. it found it busy) — start a fresh one.
+      task = await enqueue(`${key}:${Date.now()}`)
+    }
+    return NextResponse.json({ ok: true, task_id: task.id, status: 'queued', data: reset }, { status: 202 })
+  } catch (err) {
+    console.error('[documents/process] enqueue failed', doc.id, err instanceof Error ? err.message : err)
+    return NextResponse.json({
+      ok: false,
+      code: 'AGENT_UNAVAILABLE',
+      error: 'Обработка документов временно недоступна. Документ останется в очереди.',
+    }, { status: 503 })
+  }
+}
+
+async function mayProcess(sb: ReturnType<typeof createServerClient>, userId: string, doc: DocumentRow): Promise<boolean> {
+  if (doc.user_id === userId) return true
+  if (doc.company_id) {
+    const tenant = await resolveTenant({ companyId: doc.company_id, access: 'read' }).catch(() => null)
+    if (tenant?.ok && (tenant.tenant.role === 'staff' || tenant.tenant.canManage)) return true
+  }
+  return isStaffRole(await getSessionRole(sb, userId))
 }

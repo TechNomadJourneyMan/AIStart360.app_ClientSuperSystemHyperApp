@@ -3,6 +3,8 @@
 import { useRef, useState, useCallback } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import { useQueryClient } from '@tanstack/react-query'
+import { POINT_A_OVERVIEW_QUERY_KEY, recalcErrorMessage } from '@/hooks/usePointAOverview'
 import { createClient } from '@/lib/supabase-client'
 import { useHrefVisible } from '@/hooks/usePlatformSections'
 
@@ -25,6 +27,7 @@ export default function PointAQuickToolbar({ userId }: { userId: string | null }
   const pointBOn = useHrefVisible('/point-b')
   const metricsOn = useHrefVisible('/metrics')
   const router = useRouter()
+  const queryClient = useQueryClient()
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const [uploadState, setUploadState] = useState<'idle' | 'uploading' | 'success' | 'error'>('idle')
   const [uploadName, setUploadName] = useState<string | null>(null)
@@ -84,15 +87,17 @@ export default function PointAQuickToolbar({ userId }: { userId: string | null }
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({}),
       })
-      if (!res.ok) throw new Error('recalc failed')
+      if (!res.ok) throw new Error(recalcErrorMessage(res.status))
       setRecalcState('success')
+      // The executive overview is client-side (React Query) — refresh it too.
+      void queryClient.invalidateQueries({ queryKey: POINT_A_OVERVIEW_QUERY_KEY })
       router.refresh()
       setTimeout(() => setRecalcState('idle'), 2500)
     } catch {
       setRecalcState('error')
       setTimeout(() => setRecalcState('idle'), 3500)
     }
-  }, [router])
+  }, [router, queryClient])
 
   // ─── Render ─────────────────────────────────────────────────────────────
   const uploadLabel =

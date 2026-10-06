@@ -17,6 +17,7 @@ import MarketAnalysisCard from '@/components/point-a/v2/MarketAnalysisCard'
 import InsightsFeed from '@/components/point-a/v2/InsightsFeed'
 import PointAQuickPills from '@/components/point-a/v2/PointAQuickPills'
 import PointAFilterSection from '@/components/point-a/v2/PointAFilterSection'
+import ExecutiveOverview from '@/components/point-a/ExecutiveOverview'
 import { ShareButton } from '@/components/share/ShareButton'
 import { completedStepsFromRows } from '@/lib/survey/steps'
 import { visibleSectionKeysFor } from '@/lib/platform/sections'
@@ -40,11 +41,10 @@ export default async function PointAPage() {
 
   let clientId = supabaseUserId ?? session?.user?.id ?? null
 
-  // Fetch data from Supabase REST API (bypasses RLS)
-  let docsCount = 0
-  let avgScore = 0
+  // Fetch data from Supabase REST API (bypasses RLS). The overall score, its
+  // date and the documents count live in <ExecutiveOverview/> (level 1) —
+  // this page only loads what the level-2 sections below need.
   let domainScores: Array<{ id: string; label: string; score: number; max: number; icon: string }> = []
-  let latestReports: Array<{ id: string; score: number; calculatedAt: string; clientName: string }> = []
   const surveyAnswers: Record<string, unknown> = {}
   const surveyCompletedSteps: number[] = []
   let companyId: string | null = null
@@ -53,18 +53,6 @@ export default async function PointAPage() {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
     const headers = { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` }
-
-    // Count user's uploaded documents
-    if (clientId) {
-      const docsRes = await fetch(
-        `${supabaseUrl}/rest/v1/documents?user_id=eq.${clientId}&select=id`,
-        { headers, cache: 'no-store' }
-      )
-      if (docsRes.ok) {
-        const docs = await docsRes.json()
-        docsCount = Array.isArray(docs) ? docs.length : 0
-      }
-    }
 
     // Get user's latest diagnostic. Keyed by the SUPABASE user (clientId):
     // it used to require a NextAuth session, which Supabase-authenticated
@@ -79,8 +67,6 @@ export default async function PointAPage() {
         const diags = await diagRes.json()
         const diag = diags[0]
         if (diag) {
-          avgScore = diag.overall_score ?? 0
-
           const blocks: Record<string, { label: string; icon: string }> = {
             finance: { label: 'Финансы', icon: 'payments' },
             sales: { label: 'Продажи', icon: 'trending_up' },
@@ -96,13 +82,6 @@ export default async function PointAPage() {
               : 0
             return { id: key, label: meta.label, score, max: 100, icon: meta.icon }
           })
-
-          latestReports = [{
-            id: diag.id,
-            score: diag.overall_score ?? 0,
-            calculatedAt: diag.calculated_at ?? diag.created_at,
-            clientName: session?.user?.email ?? 'Клиент',
-          }]
         }
       }
     }
@@ -173,6 +152,12 @@ export default async function PointAPage() {
           </div>
         </div>
       </section>
+
+      {/* Level 1 — Executive overview: score, maturity, status, completeness,
+          problem zones, risks, gaps, strengths, freshness, sources. */}
+      <ExecutiveOverview userId={clientId} />
+
+      {/* Level 2 — details below. */}
 
       {/* Growth Snapshot Hero — Точка А snapshot + AI carta rosta + GRI CTA */}
       <section id="growth-snapshot">
@@ -296,35 +281,6 @@ export default async function PointAPage() {
       {/* Interactive File Area */}
       <section className="animate-in fade-in slide-in-from-bottom-4 duration-500 delay-300">
         <FileArea userId={clientId ?? ''} />
-      </section>
-
-      {/* Latest reports */}
-      <section>
-        <h2 className="font-headline text-lg font-bold text-on-surface mb-5">Последние расчёты</h2>
-        <div className="grid grid-cols-1 gap-3">
-          {latestReports.map((report) => (
-            <div key={report.id} className="bg-surface-container-low rounded-2xl border border-white/[0.04] p-5 flex items-center justify-between gap-4">
-              <div className="flex items-center gap-4">
-                <div className={`w-10 h-10 rounded-full flex items-center justify-center font-mono font-bold border ${report.score >= 50 ? 'bg-primary/10 border-primary/20 text-primary' : 'bg-error/10 border-error/20 text-error'}`}>
-                  {report.score}
-                </div>
-                <div>
-                  <h3 className="text-sm font-bold text-on-surface">{report.clientName}</h3>
-                  <p className="text-xs text-on-surface-variant font-mono">
-                    {new Date(report.calculatedAt).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })}
-                  </p>
-                </div>
-              </div>
-            </div>
-          ))}
-          {latestReports.length === 0 && (
-            <div className="bg-surface-container-low rounded-2xl border border-dashed border-white/10 p-12 text-center">
-              <span className="material-symbols-outlined text-4xl text-on-surface-variant/20 mb-4 block">insert_chart</span>
-              <p className="text-sm text-on-surface-variant font-medium">Нет данных диагностики</p>
-              <p className="text-xs text-on-surface-variant/60 mt-1">Заполните анкету для расчёта Точки А</p>
-            </div>
-          )}
-        </div>
       </section>
     </div>
   )

@@ -31,6 +31,15 @@ import {
 import { GRIAssessmentRadarWidget } from './GRIAssessmentRadarWidget'
 import { GRI_CRITERIA_COUNT } from '@/lib/gri-assessment/sections'
 import { usePlatformSections } from '@/hooks/usePlatformSections'
+import { metricsFromEnvelope, type MetricsEnvelope } from '@/hooks/useMetrics'
+
+/**
+ * Annual-revenue metric ids of the registry (lib/metrics/registry.ts), in
+ * priority order. /api/v1/metrics returns { source, data: MetricSummary[] };
+ * the hero shows a monthly figure, so the annual value is divided by 12 and
+ * labelled «среднемес.» — never presented as the current month.
+ */
+const ANNUAL_REVENUE_KEYS = ['biz.finansy.vyruchka_god', 'kpi.obschaya_vyruchka_god'] as const
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface TargetsData {
@@ -120,7 +129,7 @@ export default function GrowthSnapshotHero({ visibleSections }: { visibleSection
         fetch('/api/v1/companies/period-goals', { credentials: 'include' }),
         fetch('/api/v1/onboarding/status', { credentials: 'include' }),
         fetch('/api/v1/gri/assessment', { credentials: 'include' }),
-        fetch('/api/v1/metrics?keys=revenue,revenue_monthly,monthly_revenue', {
+        fetch(`/api/v1/metrics?keys=${ANNUAL_REVENUE_KEYS.join(',')}`, {
           credentials: 'include',
         }),
       ])
@@ -129,17 +138,17 @@ export default function GrowthSnapshotHero({ visibleSections }: { visibleSection
       const gJ = await gRes.json().catch(() => ({}))
       const oJ = await oRes.json().catch(() => ({}))
       const griJ = await griRes.json().catch(() => ({}))
-      const mJ = await mRes.json().catch(() => ({}))
+      const mJ = (mRes.ok ? await mRes.json().catch(() => null) : null) as MetricsEnvelope | null
 
-      // Live monthly revenue — first hit among the candidate metric keys.
-      const items: Array<{ id?: string; value?: number | null; unit?: string }> =
-        (mJ?.ok && Array.isArray(mJ.data?.items) ? mJ.data.items : []) ?? []
-      const revenueItem = items.find((it) => {
-        const v = typeof it.value === 'number' ? it.value : null
-        return v !== null && v > 0
-      })
-      if (revenueItem && typeof revenueItem.value === 'number') {
-        setLiveMonthlyRevenue(revenueItem.value)
+      // Live revenue — first annual-revenue metric with a positive value,
+      // shown as the monthly average (annual / 12).
+      const metrics = metricsFromEnvelope(mJ)
+      for (const key of ANNUAL_REVENUE_KEYS) {
+        const m = metrics.find((it) => it.id === key)
+        if (m && Number.isFinite(m.rawValue) && m.rawValue > 0) {
+          setLiveMonthlyRevenue(m.rawValue / 12)
+          break
+        }
       }
 
       if (tJ?.ok) setTargets(tJ.data)
@@ -185,16 +194,17 @@ export default function GrowthSnapshotHero({ visibleSections }: { visibleSection
   // month × 12. Dividing by 36 showed a 15 М/мес goal as 5 М/мес.
   const monthlyPlan3y = target3y ? Math.round(target3y / 12) : null
 
-  // Current revenue: live metric (documents) → the owner's own answer on
-  // survey step 1 → unknown. The old fallback «58 % of plan · оценка» showed a
-  // made-up number next to the real one the owner had typed.
-  const isLiveRevenue = liveMonthlyRevenue !== null && liveMonthlyRevenue > 0
+  // Current revenue: the owner's own current-month answer (survey step 1) →
+  // the annual-revenue metric averaged per month (anketa step 9 / P&L) →
+  // unknown. The monthly answer wins because the annual metric may describe a
+  // past year. The old fallback «58 % of plan · оценка» showed a made-up number.
   const surveyMonthly = onboarding?.survey?.current_revenue_month ?? null
-  const isSurveyRevenue = !isLiveRevenue && surveyMonthly !== null && surveyMonthly > 0
-  const currentMonthly: number | null = isLiveRevenue
-    ? Math.round(liveMonthlyRevenue!)
-    : isSurveyRevenue
-      ? Math.round(surveyMonthly!)
+  const isSurveyRevenue = surveyMonthly !== null && surveyMonthly > 0
+  const isLiveRevenue = !isSurveyRevenue && liveMonthlyRevenue !== null && liveMonthlyRevenue > 0
+  const currentMonthly: number | null = isSurveyRevenue
+    ? Math.round(surveyMonthly!)
+    : isLiveRevenue
+      ? Math.round(liveMonthlyRevenue!)
       : null
   const runRate12 = currentMonthly ? currentMonthly * 12 : null
 
@@ -385,7 +395,7 @@ export default function GrowthSnapshotHero({ visibleSections }: { visibleSection
                             borderColor: 'rgba(232,122,53,0.4)',
                             background: 'rgba(232,122,53,0.08)',
                           }}
-                          title="Значение собрано из анкеты и загруженных файлов"
+                          title="Годовая выручка из анкеты и загруженных файлов, делённая на 12"
                         >
                           LIVE
                         </span>
@@ -395,7 +405,7 @@ export default function GrowthSnapshotHero({ visibleSections }: { visibleSection
                       {currentMonthly ? formatKztCompact(currentMonthly) : '—'}
                     </p>
                     <p className="text-[11px] text-on-surface-variant font-mono mt-2">
-                      выручка / мес · {monthLabel}
+                      выручка / мес · {isLiveRevenue ? 'среднемес. за год' : monthLabel}
                       {isSurveyRevenue && (
                         <span className="text-on-surface-variant/70"> · из анкеты</span>
                       )}

@@ -4,6 +4,7 @@ export const runtime = 'nodejs'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import type { ParsedDataField } from '@/lib/documents/extract'
+import { saveParsedData } from '@/lib/documents/repository'
 
 // POST /api/v1/documents/[id]/rebind
 // Re-runs metric binding on an already-parsed document without re-extracting.
@@ -22,7 +23,8 @@ import type { ParsedDataField } from '@/lib/documents/extract'
 //   - Dynamically imports `@/lib/documents/bind-fields` (which is being built in
 //     parallel). If the import fails, the route returns the existing fields
 //     unchanged with a `note` field — instead of erroring out.
-//   - Persists `parsed_data = { ...existing, fields: rebound, rebound_at }`.
+//   - Persists `parsed_data = { ...existing, fields: rebound, rebound_at }`
+//     through the server connection (service privileges) after authz.
 export async function POST(
   _req: NextRequest,
   { params }: { params: { id: string } },
@@ -160,16 +162,18 @@ export async function POST(
     rebound_at: nowISO,
   }
 
-  const { error: updateErr } = await sb
-    .from('documents')
-    .update({ parsed_data: newPayload })
-    .eq('id', doc.id)
-
-  if (updateErr) {
-    return NextResponse.json(
-      { ok: false, error: updateErr.message },
-      { status: 500 },
-    )
+  // Written through the server connection after the authz above: the 089
+  // guard blocks parsed_data for PostgREST callers, and staff have no UPDATE
+  // policy on other users' rows (the old user-scoped update silently changed
+  // 0 rows and still answered ok:true).
+  try {
+    const saved = await saveParsedData(doc.id, newPayload)
+    if (!saved) {
+      return NextResponse.json({ ok: false, error: 'document not found' }, { status: 404 })
+    }
+  } catch (err) {
+    console.error('[documents/rebind] save failed', doc.id, err instanceof Error ? err.message : err)
+    return NextResponse.json({ ok: false, error: 'save failed' }, { status: 500 })
   }
 
   return NextResponse.json({

@@ -6,6 +6,12 @@
 // ============================================================
 
 import type { MetricSource } from './descriptions'
+import {
+  isMetricsTableRow,
+  metricsTableCell,
+  metricsTableColumnLabel,
+  readMetricsTable,
+} from '@/lib/survey/metrics-table'
 import type {
   ParsedDataShape,
   ResolverContext,
@@ -99,11 +105,116 @@ function unwrapAnswer(raw: unknown): unknown {
   return raw
 }
 
+/** Undefined / null / blank string / empty array — "not answered", never a zero. */
+function isUnanswered(value: unknown): boolean {
+  return (
+    value === undefined ||
+    value === null ||
+    (typeof value === 'string' && value.trim() === '') ||
+    (Array.isArray(value) && value.length === 0)
+  )
+}
+
+/** Choice values and free-text answers that mean «no / none». */
+const NEGATIVE_ANSWERS = new Set([
+  'none', 'no', 'false', '0', '-', '—', 'нет', 'отсутствует', 'не используем', 'не используется', 'никакой', 'никакие',
+])
+
+function isNegativeAnswer(value: unknown, extra: readonly string[] = []): boolean {
+  if (value === false || value === 0) return true
+  if (typeof value !== 'string') return false
+  const v = value.trim().toLowerCase()
+  return NEGATIVE_ANSWERS.has(v) || extra.some((x) => x.toLowerCase() === v)
+}
+
+/** Items of a multi-select (array) or a list typed as text («SEO, SMM; Telegram»). */
+function listItems(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.map((x) => (typeof x === 'string' ? x.trim() : x == null ? '' : String(x))).filter((x) => x !== '')
+  }
+  if (typeof value === 'string') return value.split(/[,;\n]+/).map((x) => x.trim()).filter((x) => x !== '')
+  return []
+}
+
+/**
+ * Apply `source.coerce` to an answered value. Returns `{ numeric }` for a hit
+ * or `{ miss }` when the answer cannot honestly be turned into a number for
+ * this rule (an option outside the map, an empty table cell …).
+ */
+function coerceSurveyAnswer(
+  source: MetricSource,
+  value: unknown,
+): { numeric: number | null; reason?: string } | { miss: string } {
+  const rule = source.coerce
+  if (!rule) return { numeric: coerceNumeric(value) }
+  switch (rule.kind) {
+    case 'flag': {
+      if (typeof value === 'boolean') return { numeric: value ? 1 : 0 }
+      if (isNegativeAnswer(value, rule.falseValues)) return { numeric: 0 }
+      return { numeric: 1 }
+    }
+    case 'choice': {
+      const v = typeof value === 'string' ? value.trim() : String(value)
+      const mapped = rule.map[v]
+      if (typeof mapped !== 'number') return { miss: `option "${v}" has no numeric meaning for this metric` }
+      return { numeric: mapped }
+    }
+    case 'count_selected': {
+      const items = listItems(value).filter((x) => !isNegativeAnswer(x, rule.exclude))
+      return { numeric: items.length }
+    }
+    case 'table_cell': {
+      if (!isMetricsTableRow(rule.row)) return { miss: `unknown metrics-table row "${rule.row}"` }
+      const hit = metricsTableCell(readMetricsTable(value), rule.row, rule.column ?? 'latest')
+      if (!hit) return { miss: `metrics table row "${rule.row}" is empty` }
+      return { numeric: hit.value, reason: `metrics table ${rule.row} / ${metricsTableColumnLabel(hit.column)}` }
+    }
+  }
+}
+
+/**
+ * Composite survey source: `source.keys` read together. Only
+ * `coerce.kind = 'count_selected'` is supported — the number of keys whose
+ * answer is a real value (not «нет», not in `exclude`). A miss when none of
+ * the keys was answered at all.
+ */
+function resolveCompositeSurveySource(source: MetricSource, ctx: ResolverContext): SourceAttempt {
+  const keys = source.keys ?? []
+  if (source.coerce?.kind !== 'count_selected') {
+    return { source, status: 'error', reason: 'composite survey source needs coerce.kind = "count_selected"' }
+  }
+  const exclude = source.coerce.exclude ?? []
+  const answered: Record<string, unknown> = {}
+  for (const k of keys) {
+    const v = unwrapAnswer(ctx.surveyAnswers[k])
+    if (!isUnanswered(v)) answered[k] = v
+  }
+  const answeredKeys = Object.keys(answered)
+  if (answeredKeys.length === 0) {
+    return { source, status: 'miss', reason: `none of ${keys.join(', ')} answered` }
+  }
+  const counted = answeredKeys.filter((k) => {
+    const v = answered[k]
+    if (typeof v === 'boolean') return v
+    if (Array.isArray(v)) return listItems(v).some((x) => !isNegativeAnswer(x, exclude))
+    return !isNegativeAnswer(v, exclude)
+  })
+  return {
+    source,
+    status: 'hit',
+    value: counted.length,
+    numeric: counted.length,
+    confidence: 0.9,
+    reason: `${counted.length} of ${answeredKeys.length} answered (${counted.join(', ') || '—'})`,
+  }
+}
+
 /**
  * Resolve a declared survey-sourced metric against the pre-fetched
  * `surveyAnswers` map. Maps `source.key` (the survey question_key) to
- * the owner's answer, coercing to a number when possible. Returns a
- * `miss` (never fabricates) when the answer is absent or empty.
+ * the owner's answer, coercing to a number when possible (see
+ * `MetricSource.coerce`). Returns a `miss` (never fabricates) when the
+ * answer is absent or empty.
  */
 export function resolveSurveySource(
   source: MetricSource,
@@ -111,6 +222,9 @@ export function resolveSurveySource(
 ): SourceAttempt {
   if (source.type !== 'survey') {
     return { source, status: 'error', reason: 'wrong adapter' }
+  }
+  if (source.keys && source.keys.length > 0) {
+    return resolveCompositeSurveySource(source, ctx)
   }
   const key = source.key
   if (!key) {
@@ -120,21 +234,25 @@ export function resolveSurveySource(
 
   // Treat undefined / null / empty-string / whitespace / empty-array as
   // "not answered" — missing means miss, never a fabricated zero.
-  const isEmpty =
-    value === undefined ||
-    value === null ||
-    (typeof value === 'string' && value.trim() === '') ||
-    (Array.isArray(value) && value.length === 0)
-  if (isEmpty) {
+  if (isUnanswered(value)) {
     return { source, status: 'miss', reason: `survey key "${key}" not answered` }
   }
 
+  const coerced = coerceSurveyAnswer(source, value)
+  if ('miss' in coerced) {
+    return { source, status: 'miss', reason: coerced.miss }
+  }
+
+  // Keep a short raw answer (option / yes-no) for provenance; a coerced table
+  // or list is represented by its number, not the whole structure.
+  const keepRaw = !source.coerce || typeof value === 'string' || typeof value === 'boolean' || typeof value === 'number'
   return {
     source,
     status: 'hit',
-    value,
-    numeric: coerceNumeric(value),
+    value: keepRaw ? value : coerced.numeric,
+    numeric: coerced.numeric,
     confidence: 0.9,
+    ...(coerced.reason ? { reason: coerced.reason } : {}),
   }
 }
 

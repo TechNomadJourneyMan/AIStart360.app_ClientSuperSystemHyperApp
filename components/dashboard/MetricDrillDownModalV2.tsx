@@ -26,7 +26,17 @@ import {
 import { useTimeseries, useForecast, useMetricGoal, useAnomalies } from '@/hooks/useTimeseries'
 import type { Period } from '@/types/periods'
 import type { AnomalyPoint } from '@/types/metrics'
+import type { MetricBenchmark, MetricStatus, MetricTarget } from '@/types/metric-catalog'
 import { Skeleton } from '@/components/ui/Skeleton'
+import { ProvenanceBadge } from '@/components/common/ProvenanceBadge'
+import {
+  BENCHMARK_KIND_LABEL,
+  STATUS_META,
+  TARGET_SOURCE_LABEL,
+  targetPeriodLabel,
+  targetProgress,
+  type ProvenanceStep,
+} from '@/components/metrics/catalog-model'
 
 import {
   V2_PERIOD_OPTIONS,
@@ -54,10 +64,32 @@ export interface MetricDrillDownModalV2Props {
   metricId: string
   metricLabel: string
   unit?: string
-  /** Description text from lib/metrics/descriptions.ts (what/why/how). */
-  description?: { what: string; why: string; how: string; current_state?: string }
+  /**
+   * What the metric measures and why (catalog `description`, or the generic
+   * what/why/how of lib/metrics/descriptions.ts). Never a sample «current
+   * state» — those were case-company texts shown as the user's own data.
+   */
+  description?: { what: string; why?: string; how?: string }
+  /** How the value is computed (catalog `calculationMethod` / formula). */
+  calculationMethod?: string | null
+  /** Target from metric_targets (owner / expert / agent / survey). */
+  target?: MetricTarget | null
+  /** Benchmark with the label of where it comes from. */
+  benchmark?: MetricBenchmark | null
+  /** Status against target / benchmark. */
+  status?: MetricStatus | null
+  /** FACT | CALCULATED. */
+  provenanceType?: 'FACT' | 'CALCULATED' | null
+  /** Confidence of the current value, 0..1. */
+  confidence?: number | null
+  /** Human label of the value period («2025», «Q3 2026»). */
+  period?: string | null
+  /** Source → raw value → transformation → metric. */
+  provenanceChain?: ProvenanceStep[]
   /** Provenance from resolver. */
   provenance?: DrillProvenance
+  /** Pre-formatted value (e.g. «Да» / «Нет» for flag metrics) — replaces the number. */
+  displayValue?: string
   /** Optional override — if the value is already known, render it directly. */
   liveValue?: {
     value: number | string | null
@@ -264,8 +296,17 @@ export function MetricDrillDownModalV2({
   metricLabel,
   unit,
   description,
+  calculationMethod,
+  target,
+  benchmark,
+  status,
+  provenanceType,
+  confidence,
+  period: valuePeriod,
+  provenanceChain,
   provenance,
   liveValue,
+  displayValue,
 }: MetricDrillDownModalV2Props) {
   const [period, setPeriod] = useState<Period>(DEFAULT_DRILL_PERIOD)
   const [activeLayers, setActiveLayers] = useState<DrillLayer[]>([...DEFAULT_DRILL_LAYERS])
@@ -286,8 +327,8 @@ export function MetricDrillDownModalV2({
   const showAnomalies = activeLayers.includes('anomalies')
   const showFact = activeLayers.includes('fact')
 
-  const factPoints = tsData?.data ?? []
-  const forecastPoints = fData?.data ?? []
+  const factPoints = useMemo(() => tsData?.data ?? [], [tsData])
+  const forecastPoints = useMemo(() => fData?.data ?? [], [fData])
 
   const chartData = useMemo(
     () => mergeFactForecast(factPoints, forecastPoints, showForecast),
@@ -378,6 +419,25 @@ export function MetricDrillDownModalV2({
                       <Dialog.Description className="sr-only">
                         Детальный разбор метрики {metricLabel}
                       </Dialog.Description>
+                      {(status || provenanceType || valuePeriod) && (
+                        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                          {status && (
+                            <span
+                              className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-mono uppercase tracking-[0.12em] ${STATUS_META[status].chip}`}
+                            >
+                              {STATUS_META[status].label}
+                            </span>
+                          )}
+                          {provenanceType && (
+                            <ProvenanceBadge type={provenanceType} confidence={confidence ?? undefined} size="sm" />
+                          )}
+                          {valuePeriod && (
+                            <span className="text-[10px] font-mono uppercase tracking-widest text-on-surface-variant">
+                              Период: {valuePeriod}
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </div>
 
                     <div className="flex items-center gap-3 flex-shrink-0">
@@ -413,7 +473,7 @@ export function MetricDrillDownModalV2({
                     {/* Big value tile */}
                     <div className="flex md:flex-col items-baseline md:items-start gap-3 md:gap-1.5 md:py-4 md:px-4 rounded-2xl md:bg-surface-container-high md:border md:border-white/[0.04]">
                       <p className="font-mono text-4xl md:text-5xl text-on-surface leading-none">
-                        {formatMetricNumber(liveValue?.value ?? null)}
+                        {displayValue ?? formatMetricNumber(liveValue?.value ?? null)}
                       </p>
                       {unit && (
                         <p className="text-xs font-mono text-on-surface-variant uppercase tracking-widest">
@@ -613,35 +673,121 @@ export function MetricDrillDownModalV2({
                     </div>
                   </div>
 
-                  {/* Description */}
-                  {description && (
-                    <section className="mb-5 grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <SectionHeading>Что это?</SectionHeading>
-                        <p className="text-sm text-on-surface-variant leading-relaxed">
-                          {description.what}
-                        </p>
-                      </div>
-                      <div>
-                        <SectionHeading>Почему важно?</SectionHeading>
-                        <p className="text-sm text-on-surface-variant leading-relaxed">
-                          {description.why}
-                        </p>
-                      </div>
-                      <div>
-                        <SectionHeading>Как считаем?</SectionHeading>
-                        <p className="text-sm text-on-surface-variant leading-relaxed">
-                          {description.how}
-                        </p>
-                      </div>
-                      {description.current_state && (
+                  {/* Description — what / why / how. No «current state» sample texts. */}
+                  {(description || calculationMethod) && (
+                    <section className="mb-5 grid grid-cols-1 md:grid-cols-2 gap-4" data-testid="drilldown-description">
+                      {description?.what && (
                         <div>
-                          <SectionHeading>Текущее состояние</SectionHeading>
+                          <SectionHeading>Что это?</SectionHeading>
                           <p className="text-sm text-on-surface-variant leading-relaxed">
-                            {description.current_state}
+                            {description.what}
                           </p>
                         </div>
                       )}
+                      {description?.why && (
+                        <div>
+                          <SectionHeading>Почему важно?</SectionHeading>
+                          <p className="text-sm text-on-surface-variant leading-relaxed">
+                            {description.why}
+                          </p>
+                        </div>
+                      )}
+                      {(calculationMethod || description?.how) && (
+                        <div className="md:col-span-2">
+                          <SectionHeading>Как считаем?</SectionHeading>
+                          <p className="text-sm text-on-surface-variant leading-relaxed">
+                            {calculationMethod || description?.how}
+                          </p>
+                        </div>
+                      )}
+                    </section>
+                  )}
+
+                  {/* Target + benchmark */}
+                  {(target || benchmark) && (
+                    <section
+                      className="mb-5 grid grid-cols-1 md:grid-cols-2 gap-3"
+                      data-testid="drilldown-target-benchmark"
+                    >
+                      {target && (
+                        <div className="p-4 rounded-2xl bg-surface-container-high border border-white/[0.04]">
+                          <SectionHeading>Цель</SectionHeading>
+                          <p className="font-mono text-xl text-on-surface">
+                            {formatMetricNumber(target.value)}
+                            {unit ? <span className="ml-1 text-xs text-on-surface-variant">{unit}</span> : null}
+                          </p>
+                          <p className="mt-1 text-[11px] text-on-surface-variant">
+                            {[targetPeriodLabel(target.periodLabel), TARGET_SOURCE_LABEL[target.source]]
+                              .filter(Boolean)
+                              .join(' · ')}
+                            {target.direction === 'lower_is_better' ? ' · чем ниже, тем лучше' : ''}
+                          </p>
+                          {(() => {
+                            const p = targetProgress({ value: liveValue?.value ?? null, target })
+                            if (p === null) return null
+                            const pct = Math.round(p * 100)
+                            return (
+                              <div className="mt-3">
+                                <div
+                                  className="h-1.5 rounded-full bg-surface-container overflow-hidden"
+                                  role="progressbar"
+                                  aria-label="Достижение цели"
+                                  aria-valuemin={0}
+                                  aria-valuemax={100}
+                                  aria-valuenow={pct}
+                                >
+                                  <div
+                                    className={`h-full rounded-full ${pct >= 95 ? 'bg-primary' : pct >= 80 ? 'bg-tertiary-container' : 'bg-error'}`}
+                                    style={{ width: `${pct}%` }}
+                                  />
+                                </div>
+                                <p className="mt-1 text-[10px] font-mono text-on-surface-variant">{pct}% цели</p>
+                              </div>
+                            )
+                          })()}
+                        </div>
+                      )}
+                      {benchmark && (
+                        <div className="p-4 rounded-2xl bg-surface-container-high border border-white/[0.04]">
+                          <SectionHeading>Ориентир</SectionHeading>
+                          <p className="font-mono text-xl text-on-surface">
+                            {formatMetricNumber(benchmark.value)}
+                            {benchmark.unit ? (
+                              <span className="ml-1 text-xs text-on-surface-variant">{benchmark.unit}</span>
+                            ) : null}
+                          </p>
+                          <p className="mt-1 text-[11px] text-on-surface-variant">
+                            {benchmark.label}
+                            {BENCHMARK_KIND_LABEL[benchmark.kind] &&
+                            !benchmark.label.toLowerCase().includes(BENCHMARK_KIND_LABEL[benchmark.kind])
+                              ? ` · ${BENCHMARK_KIND_LABEL[benchmark.kind]}`
+                              : ''}
+                          </p>
+                        </div>
+                      )}
+                    </section>
+                  )}
+
+                  {/* Provenance chain: source → raw value → transformation → metric */}
+                  {provenanceChain && provenanceChain.length > 0 && (
+                    <section className="mb-5" data-testid="drilldown-provenance-chain">
+                      <SectionHeading>Откуда это число</SectionHeading>
+                      <ol className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+                        {provenanceChain.map((step, i) => (
+                          <li
+                            key={step.key}
+                            className={[
+                              'relative rounded-xl border border-white/[0.04] bg-surface-container-high p-3',
+                              step.muted ? 'opacity-70' : '',
+                            ].join(' ')}
+                          >
+                            <p className="text-[10px] font-mono uppercase tracking-widest text-primary/70 mb-1">
+                              {i + 1}. {step.title}
+                            </p>
+                            <p className="text-xs text-on-surface leading-relaxed break-words">{step.body}</p>
+                          </li>
+                        ))}
+                      </ol>
                     </section>
                   )}
 

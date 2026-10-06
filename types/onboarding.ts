@@ -170,6 +170,15 @@ export interface BlockScore {
   status: BlockStatus
   top_issues: string[]
   recommendations: string[]
+  /**
+   * Explainability (engine 2026-10): score = round(earned / possible × 100).
+   * `possible` counts only checks whose input the platform can collect;
+   * `excluded_checks` lists the ones left out of the denominator. Absent on
+   * diagnostics calculated before 2026-10.
+   */
+  earned?: number
+  possible?: number
+  excluded_checks?: string[]
 }
 
 export interface Risk {
@@ -182,6 +191,8 @@ export interface Risk {
 export interface Insight {
   text: string
   area: string
+  /** What the observation means for the business (engine 2026-10; absent on older rows). */
+  kind?: 'strength' | 'risk' | 'opportunity'
 }
 
 export interface QuickWin {

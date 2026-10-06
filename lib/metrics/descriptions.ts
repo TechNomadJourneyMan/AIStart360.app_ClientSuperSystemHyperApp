@@ -24,14 +24,23 @@
 export type { MetricSourceType, MetricSource } from "./format";
 export { formatSource } from "./format";
 import type { MetricSource } from "./format";
+import { MATURITY_METRIC_DESCRIPTIONS } from "./descriptions-maturity";
 
 export interface MetricDescription {
   label: string;
   what: string;
   why: string;
   how: string;
+  /**
+   * Sample interpretation text written for a demo company. NEVER show it to a
+   * client as their «current state» and never return it from an API.
+   */
   current_state?: string;
   sources: MetricSource[];
+  /** Explicit unit; when absent the registry infers it from the label. */
+  unit?: string;
+  /** 'flag' = 1/0 (есть / нет) answer, rendered as «Да / Нет», not as a number. */
+  valueKind?: "number" | "flag";
 }
 
 export interface KpiDescription extends MetricDescription {
@@ -44,6 +53,8 @@ export interface GoalMetricDescription {
   label: string;
   formula: string;
   benchmark: string;
+  /** Explicit unit; when absent the registry infers it from label + formula. */
+  unit?: string;
   what: string;
   why: string;
   how: string;
@@ -68,7 +79,7 @@ export interface GoalDescriptions {
 // BIZ METRICS BY DEPARTMENT
 // ============================================================
 
-export const BIZ_METRIC_DESCRIPTIONS: Record<string, Record<string, MetricDescription>> = {
+const CORE_BIZ_METRIC_DESCRIPTIONS: Record<string, Record<string, MetricDescription>> = {
   "Финансы": {
     "Выручка (год)": {
       label: "Выручка (год)",
@@ -188,9 +199,10 @@ export const BIZ_METRIC_DESCRIPTIONS: Record<string, Record<string, MetricDescri
       how: "CAC = (Расходы на маркетинг + Расходы на продажи) / Количество новых клиентов за тот же период.",
       current_state: "Сейчас ₸45 000 при цели ≤₸38 000 — перебор на ~18%. Статус 'ok' выставлен по тренду (−8.3%), но абсолютное значение пока выше нормы.",
       sources: [
+        { type: "survey", step: 8, key: "s8n_metrics_table", label: "Таблица метрик: CAC", coerce: { kind: "table_cell", row: "cac" } },
+        // NOTE: s9n_expense_marketing / s5_marketing_budget_pct / client counts are INPUTS of the CAC formula, not CAC itself — they used to resolve «CAC = весь маркетинговый бюджет». Only CAC-valued sources stay.
         { type: "survey", step: 2, key: "s2_cac", label: "CAC — стоимость клиента (₸)" },
         { type: "document", doc_type: "marketing_report", field: "cac" },
-        { type: "survey", step: 9, key: "s9n_expense_marketing", label: "Расходы: маркетинг" },
         { type: "external", system: "CRM (Bitrix24/AmoCRM)", note: "Количество новых клиентов" },
         { type: "prisma", model: "CrmIntegration", field: "syncedDeals" },
       ],
@@ -202,6 +214,7 @@ export const BIZ_METRIC_DESCRIPTIONS: Record<string, Record<string, MetricDescri
       how: "LTV/CAC = LTV (средний доход с клиента за всё время) / CAC.",
       current_state: "4.78x при цели 5x — почти у нормы, тренд +0.3x положительный. До цели остаётся 1 шаг: либо снизить CAC, либо нарастить повторные покупки.",
       sources: [
+        { type: "survey", step: 8, key: "s8n_metrics_table", label: "Таблица метрик: LTV:CAC", coerce: { kind: "table_cell", row: "ltv_cac" } },
         { type: "survey", step: 2, key: "s2_ltv", label: "LTV — ценность клиента (₸)" },
         { type: "survey", step: 2, key: "s2_cac", label: "CAC — стоимость клиента (₸)" },
         { type: "survey", step: 5, key: "s5n_upsell_crosssell", label: "Допродажи (upsell / cross-sell)" },
@@ -216,6 +229,7 @@ export const BIZ_METRIC_DESCRIPTIONS: Record<string, Record<string, MetricDescri
       how: "CPL = Расходы на рекламу за период / Количество полученных лидов за тот же период.",
       current_state: "₸8 200 при цели ≤₸7 000 — превышение на 17%, тренд −5.1% (улучшается). Пока выше нормы, но движемся в правильном направлении.",
       sources: [
+        { type: "survey", step: 8, key: "s8n_metrics_table", label: "Таблица метрик: CPL", coerce: { kind: "table_cell", row: "cpl" } },
         { type: "external", system: "Google Analytics", note: "Конверсии и стоимость источников по UTM" },
         { type: "external", system: "Facebook Ads / Instagram Ads", note: "Расход и leads по кампаниям" },
         { type: "external", system: "TikTok Ads", note: "Расход и lead form completions" },
@@ -230,6 +244,7 @@ export const BIZ_METRIC_DESCRIPTIONS: Record<string, Record<string, MetricDescri
       how: "Сумма уникальных заявок по всем каналам за календарный месяц (только новых, без повторов).",
       current_state: "340 при цели 500+, тренд +22% — растём активно. Статус 'ok' за счёт сильной динамики, но до цели остаётся 47%.",
       sources: [
+        { type: "survey", step: 7, key: "s7_leads_per_month", label: "Лидов в месяц (входящие)" },
         { type: "external", system: "CRM (Bitrix24/AmoCRM)", note: "Количество новых лидов за период" },
         { type: "prisma", model: "CrmIntegration", field: "syncedDeals" },
         { type: "external", system: "Google Analytics", note: "Goal completions и form submissions" },
@@ -259,6 +274,7 @@ export const BIZ_METRIC_DESCRIPTIONS: Record<string, Record<string, MetricDescri
       how: "% Промоутеров (9–10) − % Критиков (0–6). Нейтралы (7–8) в формуле не участвуют. Шкала: от −100 до +100.",
       current_state: "35 при цели 50+ — зона 'нормально, но не вау'. Тренд +3 положительный. Чтобы перейти в зону лояльности, нужно работать с критиками.",
       sources: [
+        { type: "survey", step: 7, key: "s7_nps_score", label: "Текущий NPS" },
         { type: "survey", step: 5, key: "s5n_will_return_nps", label: "Вернутся ли (NPS)" },
         { type: "survey", step: 5, key: "s5n_improve_suggestions", label: "Предложения по улучшению" },
         { type: "survey", step: 5, key: "s5n_top_questions", label: "Топ-вопросы клиентов" },
@@ -318,6 +334,7 @@ export const BIZ_METRIC_DESCRIPTIONS: Record<string, Record<string, MetricDescri
       how: "Сумма выручки за период ÷ количество закрытых сделок (или чеков) за тот же период.",
       current_state: "₸180 000 при цели ₸210 000 — отставание ~14%. Тренд +8.2% положительный, нужно ускорить через апсейл и пакеты.",
       sources: [
+        { type: "survey", step: 8, key: "s8n_metrics_table", label: "Таблица метрик: Средний чек", coerce: { kind: "table_cell", row: "avg_check" } },
         { type: "survey", step: 2, key: "s2_avg_check", label: "Средний чек (₸)" },
         { type: "prisma", model: "PulseMetric", field: "avgCheck" },
         { type: "document", doc_type: "pl_report", field: "avg_check" },
@@ -400,6 +417,28 @@ export const BIZ_METRIC_DESCRIPTIONS: Record<string, Record<string, MetricDescri
         { type: "survey", step: 9, key: "s9n_revenue_2024", label: "Выручка 2024" },
         { type: "document", doc_type: "pl_report", field: "revenue" },
         { type: "external", system: "AmoCRM|Bitrix24|1С ЗУП", note: "Выручка по ответственному менеджеру" },
+      ],
+    },
+    // Step 7 «Воронка и AI-коммуникации» asks these directly (s7_*); added 2026-10 so
+    // the answers reach the metric catalog instead of living only in the loss map.
+    "Доля неявок (no-show)": {
+      label: "Доля неявок (no-show)",
+      what: "Какая доля клиентов, записавшихся на встречу, консультацию или визит, в итоге не пришла.",
+      why: "Каждая неявка — оплаченный лид и занятый слот без выручки. Высокий no-show съедает конверсию воронки и загрузку команды.",
+      how: "Неявки ÷ Все записи за период × 100%. Сейчас — оценка владельца в анкете (шаг 7); точнее — из CRM / журнала записей.",
+      sources: [
+        { type: "survey", step: 7, key: "s7_no_show_rate", label: "Доля no-show (%)" },
+        { type: "external", system: "CRM / система записи", note: "Статусы визитов" },
+      ],
+    },
+    "Доля пропущенных звонков": {
+      label: "Доля пропущенных звонков",
+      what: "Какая доля входящих звонков осталась без ответа.",
+      why: "Пропущенный звонок — потерянный тёплый лид: клиент чаще всего звонит следующему поставщику.",
+      how: "Пропущенные ÷ Все входящие звонки × 100%. Сейчас — оценка владельца (анкета, шаг 7); точнее — из IP-телефонии.",
+      sources: [
+        { type: "survey", step: 7, key: "s7_missed_calls_rate", label: "Пропущенных звонков (%)" },
+        { type: "external", system: "IP-телефония", note: "Журнал вызовов" },
       ],
     },
   },
@@ -700,6 +739,7 @@ export const BIZ_METRIC_DESCRIPTIONS: Record<string, Record<string, MetricDescri
       how: "% Promoters (9–10) − % Detractors (0–6).",
       current_state: "35 из 50+ (70%). +3 за период — движется вверх медленно. Адресно работать с детракторами через s5n_improve_suggestions.",
       sources: [
+        { type: "survey", step: 7, key: "s7_nps_score", label: "Текущий NPS" },
         { type: "survey", step: 5, key: "s5n_will_return_nps", label: "Вернутся ли (NPS)" },
         { type: "survey", step: 5, key: "s5n_improve_suggestions", label: "Предложения по улучшению" },
         { type: "survey", step: 5, key: "s5n_top_questions", label: "Топ-вопросы клиентов" },
@@ -749,6 +789,16 @@ export const BIZ_METRIC_DESCRIPTIONS: Record<string, Record<string, MetricDescri
       ],
     },
   },
+};
+
+/**
+ * BIZ catalog = the original 7 departments + the maturity departments
+ * (Автоматизация / Цифровизация / Управление) backed by real survey keys —
+ * see lib/metrics/descriptions-maturity.ts.
+ */
+export const BIZ_METRIC_DESCRIPTIONS: Record<string, Record<string, MetricDescription>> = {
+  ...CORE_BIZ_METRIC_DESCRIPTIONS,
+  ...MATURITY_METRIC_DESCRIPTIONS,
 };
 
 // ============================================================
@@ -1071,6 +1121,7 @@ export const KPI_DESCRIPTIONS: Record<string, KpiDescription> = {
     how: "NPS = % промоутеров (9–10) − % детракторов (0–6). Опрос отправляется после ключевых касаний.",
     current_state: "Ответственный: Cust. Service. 35 — средний уровень. Цель 50+ — фикс топ-3 жалоб и follow-up за 24 ч.",
     sources: [
+      { type: "survey", step: 7, key: "s7_nps_score", label: "Текущий NPS" },
       { type: "survey", step: 5, key: "s5n_will_return_nps", label: "Вернутся ли (NPS)" },
       { type: "survey", step: 5, key: "s5n_improve_suggestions", label: "Предложения по улучшению" },
       { type: "manual", note: "Регулярные NPS-опросы (SurveyMonkey/Typeform)" },
@@ -1096,6 +1147,7 @@ export const METRIC_GOAL_DESCRIPTIONS: GoalDescriptions[] = [
         why: "Без устойчивого роста новых клиентов на 15% месяц-к-месяцу выручка не масштабируется до целевых $2M.",
         how: "Из CRM (новые сделки оплачено) или из опросника s2_new_clients_*; уточняется по выручке и числу сделок.",
         sources: [
+          { type: "survey", step: 8, key: "s8n_metrics_table", label: "Таблица метрик: Кол-во новых продаж", coerce: { kind: "table_cell", row: "new_sales_count", column: "latest_full_year" } },
           { type: "survey", step: 2, key: "s2_new_clients_2025", label: "Новых клиентов 2025" },
           { type: "prisma", model: "FinancialSnapshot", field: "clientsCount" },
           { type: "external", system: "CrmIntegration (Bitrix24/AmoCRM)", note: "deals.won" },
@@ -1136,9 +1188,9 @@ export const METRIC_GOAL_DESCRIPTIONS: GoalDescriptions[] = [
         why: "Если LTV не превышает CAC в 3 раза, модель убыточна: каждый клиент уносит маржу, а не приносит.",
         how: "Из s2_cac или расчёт: расходы на маркетинг + ФОТ продаж / новые клиенты.",
         sources: [
+          { type: "survey", step: 8, key: "s8n_metrics_table", label: "Таблица метрик: CAC", coerce: { kind: "table_cell", row: "cac" } },
+          // NOTE: s9n_expense_marketing / s5_marketing_budget_pct / client counts are INPUTS of the CAC formula, not CAC itself — they used to resolve «CAC = весь маркетинговый бюджет». Only CAC-valued sources stay.
           { type: "survey", step: 2, key: "s2_cac", label: "CAC — стоимость клиента (₸)" },
-          { type: "survey", step: 9, key: "s9n_expense_marketing", label: "Расходы: маркетинг" },
-          { type: "survey", step: 5, key: "s5_marketing_budget_pct", label: "Бюджет маркетинга (% выручки)" },
           { type: "document", doc_type: "marketing_report", field: "cac" },
         ],
       },
@@ -1150,6 +1202,7 @@ export const METRIC_GOAL_DESCRIPTIONS: GoalDescriptions[] = [
         why: "Рост CPL на 20–30% — ранее предупреждение, что каналы выгорают и CAC поднимется через 1–2 месяца.",
         how: "s9n_expense_marketing / количество лидов из CRM; разрез по каналам — s5_marketing_channels.",
         sources: [
+          { type: "survey", step: 8, key: "s8n_metrics_table", label: "Таблица метрик: CPL", coerce: { kind: "table_cell", row: "cpl" } },
           { type: "survey", step: 9, key: "s9n_expense_marketing", label: "Расходы: маркетинг" },
           { type: "survey", step: 5, key: "s5_marketing_channels", label: "Каналы маркетинга" },
           { type: "survey", step: 7, key: "s7n_channels_table", label: "Таблица каналов маркетинга" },
@@ -1246,12 +1299,14 @@ export const METRIC_GOAL_DESCRIPTIONS: GoalDescriptions[] = [
       },
       {
         label: "LTV (Lifetime Value)",
+        unit: "₸", // formula mentions «срок жизни»; the value is money
         formula: "Средний чек × Частота × Срок жизни",
         benchmark: "LTV/CAC ≥ 3",
         what: "Сколько денег приносит один клиент за всё время сотрудничества. Главная метрика юнит-экономики.",
         why: "LTV/CAC ≥ 3 — обязательное условие масштабирования. Меньше — рост сжигает деньги.",
         how: "s2_ltv или расчёт: s2_avg_check × Frequency × Срок жизни (1/Churn).",
         sources: [
+          { type: "survey", step: 8, key: "s8n_metrics_table", label: "Таблица метрик: LTV", coerce: { kind: "table_cell", row: "ltv" } },
           { type: "survey", step: 2, key: "s2_ltv", label: "LTV — ценность клиента (₸)" },
           { type: "survey", step: 2, key: "s2_avg_check", label: "Средний чек (₸)" },
           { type: "prisma", model: "PulseMetric", field: "avgCheck" },
@@ -1266,6 +1321,7 @@ export const METRIC_GOAL_DESCRIPTIONS: GoalDescriptions[] = [
         why: "Если интервал больше Client.orderCycle — клиент 'засыпает', пора запускать триггер реактивации.",
         how: "Из CRM (разница дат сделок); валидация через Client.orderCycle и PulseMetric.daysSince.",
         sources: [
+          { type: "survey", step: 7, key: "s7_repeat_freq_days", label: "Частота повторной покупки (дни)" },
           { type: "prisma", model: "Client", field: "orderCycle" },
           { type: "prisma", model: "PulseMetric", field: "daysSince" },
           { type: "prisma", model: "PulseMetric", field: "lastOrder" },
@@ -1314,8 +1370,9 @@ export const METRIC_GOAL_DESCRIPTIONS: GoalDescriptions[] = [
         why: "Рост среднего чека на 10% даёт +10% к выручке без расходов на привлечение — быстрый путь к $2M.",
         how: "s2_avg_check или: s9n_revenue_2024 / s3_deals_2024; PulseMetric.avgCheck.",
         sources: [
+          { type: "survey", step: 8, key: "s8n_metrics_table", label: "Таблица метрик: Средний чек", coerce: { kind: "table_cell", row: "avg_check" } },
+          // NOTE: s9n_revenue_2024 (annual revenue) is an input of «Выручка / сделки», not the average check.
           { type: "survey", step: 2, key: "s2_avg_check", label: "Средний чек (₸)" },
-          { type: "survey", step: 9, key: "s9n_revenue_2024", label: "Выручка 2024" },
           { type: "prisma", model: "PulseMetric", field: "avgCheck" },
           { type: "document", doc_type: "pl_report", field: "avg_check" },
         ],
@@ -1429,6 +1486,7 @@ export const METRIC_GOAL_DESCRIPTIONS: GoalDescriptions[] = [
         why: "Если интервал > orderCycle, нужна автоматизация (email/звонок/бонус) — иначе клиент потеряется.",
         how: "Client.orderCycle задаёт ожидание; PulseMetric.daysSince — текущее отклонение.",
         sources: [
+          { type: "survey", step: 7, key: "s7_repeat_freq_days", label: "Частота повторной покупки (дни)" },
           { type: "prisma", model: "Client", field: "orderCycle" },
           { type: "prisma", model: "PulseMetric", field: "daysSince" },
           { type: "external", system: "CrmIntegration", note: "Даты сделок" },
@@ -1442,6 +1500,7 @@ export const METRIC_GOAL_DESCRIPTIONS: GoalDescriptions[] = [
         why: "Frequency и LTV — связанная пара: рост частоты автоматически тянет LTV.",
         how: "s2_ltv или расчёт через avgCheck × Frequency × Срок жизни.",
         sources: [
+          { type: "survey", step: 8, key: "s8n_metrics_table", label: "Таблица метрик: LTV", coerce: { kind: "table_cell", row: "ltv" } },
           { type: "survey", step: 2, key: "s2_ltv", label: "LTV — ценность клиента (₸)" },
           { type: "survey", step: 2, key: "s2_avg_check", label: "Средний чек (₸)" },
           { type: "prisma", model: "PulseMetric", field: "avgCheck" },
@@ -1500,6 +1559,7 @@ export const METRIC_GOAL_DESCRIPTIONS: GoalDescriptions[] = [
         why: "NPS ≥ 50 — топ-квартиль: сарафанное радио становится основным каналом, снижает CAC на 30–50%.",
         how: "Прямой ответ s5n_will_return_nps; для регулярного замера — отдельный опрос (s8n_metrics_table).",
         sources: [
+          { type: "survey", step: 7, key: "s7_nps_score", label: "Текущий NPS" },
           { type: "survey", step: 5, key: "s5n_will_return_nps", label: "Вернутся ли (NPS)" },
           { type: "survey", step: 8, key: "s8n_metrics_table", label: "Таблица ключевых метрик" },
           { type: "manual", note: "Внешний NPS-опрос клиентов" },
@@ -1781,10 +1841,9 @@ export const METRIC_GOAL_DESCRIPTIONS: GoalDescriptions[] = [
         why: "Если CAC выше трети LTV — бизнес покупает клиентов в убыток. Главный показатель здоровья unit-экономики.",
         how: "Ежемесячно: бюджет маркетинга + ФОТ продаж + прочие / число новых клиентов месяца.",
         sources: [
+          { type: "survey", step: 8, key: "s8n_metrics_table", label: "Таблица метрик: CAC", coerce: { kind: "table_cell", row: "cac" } },
+          // NOTE: s9n_expense_marketing / s5_marketing_budget_pct / client counts are INPUTS of the CAC formula, not CAC itself — they used to resolve «CAC = весь маркетинговый бюджет». Only CAC-valued sources stay.
           { type: "survey", step: 2, key: "s2_cac", label: "CAC — стоимость клиента (₸)" },
-          { type: "survey", step: 5, key: "s5_marketing_budget_pct", label: "Бюджет маркетинга (% выручки)" },
-          { type: "survey", step: 9, key: "s9n_expense_marketing", label: "Расходы: маркетинг" },
-          { type: "survey", step: 2, key: "s2_new_clients_2024", label: "Новых клиентов 2024" },
           { type: "document", doc_type: "marketing_report", field: "cac" },
         ],
       },
@@ -1796,6 +1855,7 @@ export const METRIC_GOAL_DESCRIPTIONS: GoalDescriptions[] = [
         why: "Норма ≥3x: ниже — бизнес не зарабатывает на масштабе; 5x+ — резерв для агрессивного маркетинга.",
         how: "LTV (средний чек × частота × срок жизни) / CAC.",
         sources: [
+          { type: "survey", step: 8, key: "s8n_metrics_table", label: "Таблица метрик: LTV:CAC", coerce: { kind: "table_cell", row: "ltv_cac" } },
           { type: "survey", step: 2, key: "s2_ltv", label: "LTV — ценность клиента (₸)" },
           { type: "survey", step: 2, key: "s2_cac", label: "CAC — стоимость клиента (₸)" },
           { type: "survey", step: 2, key: "s2_avg_check", label: "Средний чек (₸)" },

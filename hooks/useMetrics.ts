@@ -2,35 +2,60 @@
 
 import { useQuery } from '@tanstack/react-query'
 import type { MetricSummary, MetricDefinition } from '@/types/metrics'
+import {
+  catalogItemToDefinition,
+  normalizeCatalogItem,
+  type CatalogApiData,
+} from '@/components/metrics/catalog-model'
 
 export interface MetricsFilters {
   period?: string | null
   product?: string | null
   manager?: string | null
+  /** Restrict to these metric ids (GET /api/v1/metrics?keys=a,b). */
+  keys?: ReadonlyArray<string> | null
 }
 
-function buildMetricsQuery(filters?: MetricsFilters): string {
+export function buildMetricsQuery(filters?: MetricsFilters): string {
   if (!filters) return ''
   const qs = new URLSearchParams()
   if (filters.period) qs.set('period', filters.period)
   if (filters.product) qs.set('product', filters.product)
   if (filters.manager) qs.set('manager', filters.manager)
+  if (filters.keys && filters.keys.length > 0) qs.set('keys', filters.keys.join(','))
   const s = qs.toString()
   return s ? `?${s}` : ''
 }
 
+/** Envelope of GET /api/v1/metrics: { source: 'db' | 'empty', data: MetricSummary[] }. */
+export interface MetricsEnvelope {
+  source?: 'db' | 'empty' | 'error' | string
+  data?: unknown
+}
+
+/** Pure envelope → list mapping (exported for tests and GrowthSnapshotHero). */
+export function metricsFromEnvelope(json: MetricsEnvelope | null | undefined): MetricSummary[] {
+  if (!json || !Array.isArray(json.data)) return []
+  return (json.data as MetricSummary[]).filter((m) => m && typeof m.id === 'string')
+}
+
 async function fetchMetrics(filters?: MetricsFilters): Promise<MetricSummary[]> {
-  const res = await fetch(`/api/v1/metrics${buildMetricsQuery(filters)}`)
-  if (!res.ok) throw new Error('Failed to fetch metrics')
-  const json = await res.json()
-  return json.data as MetricSummary[]
+  const res = await fetch(`/api/v1/metrics${buildMetricsQuery(filters)}`, { credentials: 'include' })
+  // 401 → honest empty list (the hero renders «нет данных»), never a crash.
+  if (res.status === 401) return []
+  if (!res.ok) throw new Error('Не удалось загрузить метрики')
+  const json = (await res.json().catch(() => null)) as MetricsEnvelope | null
+  return metricsFromEnvelope(json)
 }
 
 async function fetchCatalog(): Promise<MetricDefinition[]> {
-  const res = await fetch('/api/v1/metrics/catalog')
-  if (!res.ok) throw new Error('Failed to fetch catalog')
-  const json = await res.json()
-  return json.data as MetricDefinition[]
+  // The catalog is paginated (max 200 per page) and returns
+  // { ok, data: { total, counts, items } } — not a bare array.
+  const res = await fetch('/api/v1/metrics/catalog?includeValues=false&pageSize=200', { credentials: 'include' })
+  if (!res.ok) throw new Error('Не удалось загрузить каталог метрик')
+  const json = (await res.json().catch(() => null)) as { ok?: boolean; data?: CatalogApiData } | null
+  const items = json?.ok && Array.isArray(json.data?.items) ? json.data!.items : []
+  return items.map((raw) => catalogItemToDefinition(normalizeCatalogItem(raw)))
 }
 
 /** Convert a catalog definition to a MetricSummary with placeholder values */
@@ -56,7 +81,13 @@ function catalogToSummary(def: MetricDefinition): MetricSummary {
 
 export function useMetrics(filters?: MetricsFilters) {
   return useQuery({
-    queryKey: ['metrics', filters?.period ?? null, filters?.product ?? null, filters?.manager ?? null],
+    queryKey: [
+      'metrics',
+      filters?.period ?? null,
+      filters?.product ?? null,
+      filters?.manager ?? null,
+      filters?.keys?.join(',') ?? null,
+    ],
     queryFn: () => fetchMetrics(filters),
     staleTime: 5 * 60_000,
   })
