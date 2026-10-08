@@ -84,4 +84,10 @@ export async function purgeBotHousekeeping(): Promise<void> {
   } catch {
     /* before 095 — nothing to purge */
   }
+  try {
+    // Assistant memory lives 24 hours (109).
+    await prisma.$executeRaw`DELETE FROM public.bot_ai_messages WHERE created_at < now() - interval '24 hours'`
+  } catch {
+    /* before 109 — nothing to purge */
+  }
 }
