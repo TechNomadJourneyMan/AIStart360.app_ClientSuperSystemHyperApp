@@ -20,6 +20,10 @@
  *   in_app    the event row itself (GIGA feed).
  * Every attempt is a notification_deliveries row (status, error, message id).
  * A per-type, per-company cooldown keeps repeated warnings out of Telegram.
+ * A notification may narrow its audience to staff with one permission
+ * (audiencePermission, e.g. agents.view), carry its own Telegram buttons
+ * (telegramKeyboard) and be a scheduled digest staff opted into (scheduled:
+ * thresholds, quiet hours and cooldown do not apply; a mute does).
  *
  * Crash safety: each recipient is first CLAIMED with a 'queued' delivery row
  * (one sender per event and target), then resolved to sent / failed / skipped.
@@ -30,11 +34,11 @@
  * are resumed, so a late link does not receive old news.
  */
 import { prisma } from '@/lib/db'
-import { hasPermission, isStaffRole, type StaffRole } from '@/lib/admin/rbac'
+import { hasPermission, isStaffRole, type Permission, type StaffRole } from '@/lib/admin/rbac'
 import { sendNotificationEmail } from '@/lib/email/notification'
 import { getSiteUrl } from '@/lib/site-url'
 import { sendBotMessage, tgEscape, type InlineButton } from '@/lib/telegram/bot-api'
-import { staffBot } from '@/lib/telegram/bots/registry'
+import { staffBot, type BotId } from '@/lib/telegram/bots/registry'
 import { whatsappTransportAvailable } from '@/lib/whatsapp/config'
 import { optedInRecipients } from '@/lib/whatsapp/links'
 import { enqueueWhatsApp, outboxKey, sendWhatsAppNow, type DrainOptions } from '@/lib/whatsapp/outbox'
@@ -58,6 +62,23 @@ export interface StaffNotification {
   dedupeKey?: string | null
   /** Admin-panel path for the "open" link, e.g. '/admin-giga-panel/agents/runs/<id>'. */
   link?: string | null
+  /**
+   * Only staff whose role has this permission (Telegram and WhatsApp), e.g.
+   * 'agents.view' for agent lifecycle news. Legacy env chats are unaffected.
+   */
+  audiencePermission?: Permission | null
+  /**
+   * Inline keyboard for linked staff in Telegram, built for the bot that
+   * carries staff traffic (signed callbacks are bot-specific). Ignored for
+   * approvals (they get Approve / Reject) and for legacy env chats.
+   */
+  telegramKeyboard?: ((bot: BotId) => InlineButton[][] | undefined) | null
+  /**
+   * A scheduled summary staff opted into (e.g. the daily agents digest):
+   * delivered regardless of the platform / personal level thresholds, quiet
+   * hours and cooldown. A personal mute still applies.
+   */
+  scheduled?: boolean
 }
 
 export interface NotifyResult {
@@ -194,22 +215,28 @@ export async function notifyStaff(n: StaffNotification, opts: {
   const cooled = await inCooldown(n, eventId)
   const staff = await linkedStaff(event.duplicate ? event.createdAt : null)
   const isApproval = n.level === 'APPROVAL_REQUIRED'
+  const scheduled = n.scheduled === true && !isApproval
   const keyboard: InlineButton[][] | undefined = isApproval && n.approvalId
     ? (() => {
         const yes = approvalCallbackData(n.approvalId!, 'approve')
         const no = approvalCallbackData(n.approvalId!, 'reject')
         return yes && no ? [[{ text: '✅ Одобрить', callback_data: yes }, { text: '❌ Отклонить', callback_data: no }]] : undefined
       })()
-    : undefined
+    : (() => {
+        const kb = n.telegramKeyboard?.(bot)?.filter((row) => row.length > 0)
+        return kb && kb.length ? kb : undefined
+      })()
 
-  const targets = staff.filter((s) => (isApproval ? hasPermission(s.role, 'approvals.decide') : true))
+  const targets = staff.filter((s) => (isApproval
+    ? hasPermission(s.role, 'approvals.decide')
+    : n.audiencePermission ? hasPermission(s.role, n.audiencePermission) : true))
   for (const s of targets) {
     if (!(await claimDelivery(eventId, 'telegram', s.chatId))) continue
-    if (!reaches(n.level, cfg.telegramMinLevel)) { await skip('telegram', s.chatId, 'below_platform_level'); continue }
-    if (!reaches(n.level, s.minLevel)) { await skip('telegram', s.chatId, 'below_personal_level'); continue }
+    if (!scheduled && !reaches(n.level, cfg.telegramMinLevel)) { await skip('telegram', s.chatId, 'below_platform_level'); continue }
+    if (!scheduled && !reaches(n.level, s.minLevel)) { await skip('telegram', s.chatId, 'below_personal_level'); continue }
     if (s.mutedUntil && s.mutedUntil > (opts.now ?? new Date()) && !isApproval && n.level !== 'CRITICAL') { await skip('telegram', s.chatId, 'muted'); continue }
-    if (quiet) { await skip('telegram', s.chatId, 'quiet_hours'); continue }
-    if (cooled) { await skip('telegram', s.chatId, 'cooldown'); continue }
+    if (!scheduled && quiet) { await skip('telegram', s.chatId, 'quiet_hours'); continue }
+    if (!scheduled && cooled) { await skip('telegram', s.chatId, 'cooldown'); continue }
     const res = await sendBotMessage(s.chatId, text, keyboard, opts.fetchImpl, bot)
     if (res.ok) {
       await recordDelivery(eventId, 'telegram', s.chatId, 'sent', { messageId: String(res.result.message_id) })
@@ -225,9 +252,9 @@ export async function notifyStaff(n: StaffNotification, opts: {
   for (const chatId of legacyChatIds()) {
     if (linkedChats.has(chatId)) continue
     if (!(await claimDelivery(eventId, 'telegram', chatId))) continue
-    if (!reaches(n.level, cfg.telegramMinLevel)) { await skip('telegram', chatId, 'below_platform_level'); continue }
-    if (quiet) { await skip('telegram', chatId, 'quiet_hours'); continue }
-    if (cooled) { await skip('telegram', chatId, 'cooldown'); continue }
+    if (!scheduled && !reaches(n.level, cfg.telegramMinLevel)) { await skip('telegram', chatId, 'below_platform_level'); continue }
+    if (!scheduled && quiet) { await skip('telegram', chatId, 'quiet_hours'); continue }
+    if (!scheduled && cooled) { await skip('telegram', chatId, 'cooldown'); continue }
     const legacyText = isApproval ? `${text}\n\nРешение — в панели GIGA (кнопки доступны после привязки Telegram к аккаунту сотрудника).` : text
     const res = await sendBotMessage(chatId, legacyText, undefined, opts.fetchImpl, bot)
     await recordDelivery(eventId, 'telegram', chatId, res.ok ? 'sent' : 'failed', res.ok ? { messageId: String(res.result.message_id) } : { error: res.description })
@@ -288,7 +315,9 @@ async function notifyStaffWhatsApp(
     const people = (await optedInRecipients('staff', { verifiedBefore: event.duplicate ? event.createdAt : null }))
       .map((r) => ({ ...r, staffRoleResolved: (r.role === 'super_admin' ? 'super_admin' : isStaffRole(r.staffRole) ? r.staffRole : null) as StaffRole | null }))
       .filter((r) => r.staffRoleResolved !== null)
-      .filter((r) => (isApproval ? hasPermission(r.staffRoleResolved, 'approvals.decide') : true))
+      .filter((r) => (isApproval
+        ? hasPermission(r.staffRoleResolved, 'approvals.decide')
+        : n.audiencePermission ? hasPermission(r.staffRoleResolved, n.audiencePermission) : true))
     if (people.length === 0) return
     const cooled = await inCooldown(n, eventId, 'whatsapp')
     const now = ctx.now ?? new Date()
