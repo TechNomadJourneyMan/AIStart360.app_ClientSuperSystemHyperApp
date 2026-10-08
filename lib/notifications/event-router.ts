@@ -52,17 +52,9 @@ export async function notificationForEvent(e: PlatformEventRow): Promise<StaffNo
       }
     }
     case 'AGENT_FAILED':
-      return {
-        ...base, level: 'WARNING', type: 'agent.failed', title: 'Агент не справился с задачей',
-        lines: [
-          `Агент: ${str(p.agent_key) ?? 'неизвестен'}`,
-          clientLine,
-          str(p.error_code) ? `Ошибка: ${str(p.error_code)}` : null,
-          'Задача ушла в dead-letter после всех попыток.',
-        ].filter((l): l is string => Boolean(l)),
-        agentKey: str(p.agent_key),
-        link: e.subject_id ? `/admin-giga-panel/agents/tasks/${e.subject_id}` : '/admin-giga-panel/agents',
-      }
+      // Dead-letter is told by the agent notifier (lib/agents/lifecycle.ts) as
+      // CRITICAL with «Открыть» / «Повторить» buttons — one message, not two.
+      return null
     case 'APPROVAL_REQUESTED':
       return {
         ...base, level: 'APPROVAL_REQUIRED', type: 'agent.approval', title: 'Агент просит одобрения',

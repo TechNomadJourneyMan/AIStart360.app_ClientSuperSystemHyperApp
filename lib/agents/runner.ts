@@ -10,7 +10,9 @@
  *   ApprovalRequiredError      → task awaiting_approval (a human decides; on
  *                                approval the task is re-queued and the exact
  *                                approved action is allowed once)
- *   AgentError(retryable)      → retried with backoff, then dead-letter
+ *   AgentError(retryable)      → retried with backoff, then dead-letter (only
+ *                                while the agents_auto_retry setting is on;
+ *                                off → dead-letter at once)
  *   AgentError(non-retryable)  → dead immediately (e.g. BUDGET_EXCEEDED, bad input)
  *   unexpected error           → treated as retryable; tenant-readable rows get
  *                                only the code (raw text → server log and a
@@ -27,6 +29,7 @@ import {
   type ModelTier,
 } from '@/lib/ai/gateway'
 import { effectiveBudgets } from '@/lib/ai/providers/router'
+import { automationEnabled } from './automation'
 import { effectivePermissions, type Decision, type Permission } from './permissions'
 import * as store from './store'
 import { getTool, payloadHash, redactArgs, type ToolContext } from './tools'
@@ -49,6 +52,8 @@ export interface RunReport {
   finalStatus: string | null
   summary: string | null
   errorCode: string | null
+  /** Tenant-safe error text (AgentError message or the generic UNEXPECTED one). */
+  errorMessage?: string | null
 }
 
 function summarizeInput(input: Record<string, unknown>): string {
@@ -65,7 +70,7 @@ export async function runClaimedTask(task: AgentTaskRow, def: AgentDefinition<an
     // The kill switch: queued work, backoff retries, approval re-queues and
     // admin retries of a disabled agent are cancelled, not run.
     const finalStatus = await store.cancelDisabledTask(task.id, lease)
-    return { taskId: task.id, runId: null, finalStatus, summary: null, errorCode: 'AGENT_DISABLED' }
+    return { taskId: task.id, runId: null, finalStatus, summary: null, errorCode: 'AGENT_DISABLED', errorMessage: null }
   }
   const permissions = effectivePermissions(def.permissions, grants)
   const tier: ModelTier | 'none' = (config?.tier_override as ModelTier | null) ?? def.tier
@@ -341,6 +346,11 @@ export async function runClaimedTask(task: AgentTaskRow, def: AgentDefinition<an
     }
   }
 
+  if (outcome === 'failed' && retryable && !(await automationEnabled('agents_auto_retry'))) {
+    // Automatic retries switched off in GIGA: a failure goes to dead-letter now.
+    retryable = false
+  }
+
   await store.finishRun({
     runId,
     status: runStatus,
@@ -374,5 +384,5 @@ export async function runClaimedTask(task: AgentTaskRow, def: AgentDefinition<an
       }
     }
   }
-  return { taskId: task.id, runId, finalStatus, summary, errorCode }
+  return { taskId: task.id, runId, finalStatus, summary, errorCode, errorMessage }
 }

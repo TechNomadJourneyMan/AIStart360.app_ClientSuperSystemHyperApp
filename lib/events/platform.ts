@@ -71,18 +71,27 @@ export async function dispatchEvent(event: PlatformEventRow): Promise<void> {
   try {
     const { agentsSubscribedTo } = await import('@/lib/agents/registry')
     const { enqueueAgentTask, AgentDisabledError } = await import('@/lib/agents/queue')
+    const { AUTO_DIAGNOSTIC_EVENTS, enqueueAutoDiagnostic } = await import('@/lib/agents/automation')
+    const { ORCHESTRATOR_KEY } = await import('@/lib/diagnostics/pipeline')
     for (const agent of agentsSubscribedTo(event.name)) {
       if (agent.scope === 'company' && !event.company_id) continue
+      const task = {
+        agentKey: agent.key,
+        companyId: agent.scope === 'company' ? event.company_id : null,
+        trigger: 'event' as const,
+        triggerRef: event.name,
+        requestedBy: event.actor ?? 'system',
+        input: { event: { id: event.id, name: event.name, subject_type: event.subject_type, subject_id: event.subject_id, payload: event.payload } },
+      }
       try {
-        await enqueueAgentTask({
-          agentKey: agent.key,
-          companyId: agent.scope === 'company' ? event.company_id : null,
-          trigger: 'event',
-          triggerRef: event.name,
-          requestedBy: event.actor ?? 'system',
-          input: { event: { id: event.id, name: event.name, subject_type: event.subject_type, subject_id: event.subject_id, payload: event.payload } },
-          idempotencyKey: `event:${event.id}:${agent.key}`,
-        })
+        if (agent.key === ORCHESTRATOR_KEY && (AUTO_DIAGNOSTIC_EVENTS as readonly string[]).includes(event.name)) {
+          // Automatic company diagnostic: switchable, at most once per company per day.
+          await enqueueAutoDiagnostic(event, (slot) => enqueueAgentTask({
+            ...task, idempotencyKey: slot.idempotencyKey, runAfter: slot.runAfter, kick: slot.runAfter === null,
+          }))
+          continue
+        }
+        await enqueueAgentTask({ ...task, idempotencyKey: `event:${event.id}:${agent.key}` })
       } catch (err) {
         if (err instanceof AgentDisabledError) continue // switched off on purpose
         errors.push(`${agent.key}: ${err instanceof Error ? err.message : String(err)}`)

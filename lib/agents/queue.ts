@@ -12,6 +12,7 @@
  */
 import { runInBackground } from '@/lib/background'
 import { inngest } from '@/lib/inngest'
+import { alertStuckTasks, notifyTaskFinished, notifyTaskStarted, safely } from './lifecycle'
 import { getAgent, listAgents } from './registry'
 import { runClaimedTask, type RunReport } from './runner'
 import type { AgentDefinition, AgentTaskRow } from './types'
@@ -72,7 +73,19 @@ export async function executeTaskById(taskId: string): Promise<RunReport | null>
   }
   const claimed = await store.claimTask(taskId, def.limits.leaseSeconds)
   if (!claimed) return null
-  return afterRun(await runClaimedTask(claimed, def), claimed)
+  return runAndReport(claimed, def)
+}
+
+/**
+ * The one place a claimed task runs, whichever path claimed it: lifecycle
+ * notification «started» → run → outcome handling → lifecycle notification of
+ * the new status (lib/agents/lifecycle.ts). Notifications never fail a run.
+ */
+async function runAndReport(task: AgentTaskRow, def: AgentDefinition<any>): Promise<RunReport> {
+  await safely('started', () => notifyTaskStarted(task))
+  const report = await afterRun(await runClaimedTask(task, def), task)
+  await safely('finished', () => notifyTaskFinished(task, report))
+  return report
 }
 
 async function afterRun(report: RunReport, task: Pick<AgentTaskRow, 'agent_key' | 'company_id' | 'session_id'>): Promise<RunReport> {
@@ -138,6 +151,8 @@ export async function drainQueue(opts: { limit?: number; budgetMs?: number; maxD
   const budgetMs = opts.budgetMs ?? 240_000
   const maxDurationMs = opts.maxDurationMs ?? 300_000
   const limit = opts.limit ?? 20
+  // Stuck-task signal first: the reaper below returns expired leases to the queue.
+  await safely('stuck', () => alertStuckTasks())
   const reaped = await store.reapExpiredLeases()
   const approvalsExpired = await store.expireApprovals()
   const executed: RunReport[] = []
@@ -160,7 +175,7 @@ export async function drainQueue(opts: { limit?: number; budgetMs?: number; maxD
       })
       continue
     }
-    executed.push(await afterRun(await runClaimedTask(task, def), task))
+    executed.push(await runAndReport(task, def))
   }
   const { failStalledSessions } = await import('@/lib/diagnostics/sessions')
   const sessionsFailed = (await failStalledSessions()).length
