@@ -16,6 +16,7 @@ import {
   CAPABILITIES,
   CAPABILITY_HINT,
   CAPABILITY_LABEL,
+  TRI_LABEL,
   buildBudgetsPayload,
   buildModelPayload,
   buildProviderPayload,
@@ -36,6 +37,9 @@ import {
 } from './model'
 import type { BudgetsDto, CredentialDto, ModelDto, ProviderDto, VerifyResultDto } from './types'
 import { VerifyOutcome } from './views'
+
+const CHAT_TIERS_UI = ['light', 'standard', 'premium'] as const
+const TRI_VALUES = ['', 'yes', 'no'] as const
 
 const errMsg = (e: unknown) => (e instanceof GigaApiError || e instanceof Error ? e.message : 'Не удалось выполнить действие')
 
@@ -392,7 +396,7 @@ export function ModelDialog({ open, provider, model, onClose, onDone }: {
           <input value={d.label} onChange={(e) => set('label', e.target.value)} className={errClass(!!errors.label)} maxLength={120} />
           <FieldError text={errors.label} />
         </Field>
-        <Field label="Ключ" hint="Без привязки берётся первый включённый ключ провайдера">
+        <Field label="Ключ" hint="Без привязки берётся ключ, у которого модель найдена при обнаружении, иначе первый включённый ключ провайдера">
           <select value={d.credentialId} onChange={(e) => set('credentialId', e.target.value)} className={cx(inputClass, 'bg-[#0b1128]')}>
             <option value="">любой включённый ключ провайдера</option>
             {provider.credentials.map((c) => <option key={c.id} value={c.id}>{c.label} {c.masked}{c.enabled ? '' : ' (выключен)'}</option>)}
@@ -408,7 +412,30 @@ export function ModelDialog({ open, provider, model, onClose, onDone }: {
             <FieldError text={errors.priceOut} />
           </Field>
         </div>
-        <Check checked={d.enabled} onChange={(v) => set('enabled', v)} label="Модель включена" hint="Выключенная модель не используется маршрутами — работает встроенный вариант" />
+        {d.capability === 'chat' && (
+          <div className="grid gap-3 sm:grid-cols-3">
+            <Field label="Уровень" hint="Для какого уровня автоматическая маршрутизация берёт модель первой">
+              <select value={d.tierHint} onChange={(e) => set('tierHint', e.target.value as ModelDraft['tierHint'])} className={cx(inputClass, 'bg-[#0b1128]')}>
+                <option value="">любой</option>
+                {CHAT_TIERS_UI.map((t) => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </Field>
+            <Field label="Картинки на входе">
+              <select value={d.vision} onChange={(e) => set('vision', e.target.value as ModelDraft['vision'])} className={cx(inputClass, 'bg-[#0b1128]')}>
+                {TRI_VALUES.map((v) => <option key={v} value={v}>{TRI_LABEL[v]}</option>)}
+              </select>
+            </Field>
+            <Field label="Вызов инструментов">
+              <select value={d.tools} onChange={(e) => set('tools', e.target.value as ModelDraft['tools'])} className={cx(inputClass, 'bg-[#0b1128]')}>
+                {TRI_VALUES.map((v) => <option key={v} value={v}>{TRI_LABEL[v]}</option>)}
+              </select>
+            </Field>
+          </div>
+        )}
+        <Check checked={d.enabled} onChange={(v) => set('enabled', v)} label="Модель включена" hint="Выключенная модель не используется — запросы уходят к другим доступным моделям" />
+        {model?.source === 'discovered' && (
+          <p className="text-[11px] text-slate-500">Модель найдена автоматически (GET /models). После сохранения она станет «ручной» — обнаружение больше не будет её менять.</p>
+        )}
       </div>
     </Modal>
   )

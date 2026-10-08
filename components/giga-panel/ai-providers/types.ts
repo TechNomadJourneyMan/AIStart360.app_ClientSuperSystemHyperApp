@@ -4,7 +4,7 @@
  * a key's secret never appears here — only `masked` («••••abcd»).
  */
 export type ProviderKind = 'openrouter' | 'openai_compatible'
-export type Capability = 'chat' | 'embeddings' | 'rerank' | 'ocr'
+export type Capability = 'chat' | 'embeddings' | 'rerank' | 'ocr' | 'transcribe'
 export type ChatTier = 'light' | 'standard' | 'premium'
 export type OcrMode = 'chat_vision'
 export type SpendGroupBy = 'provider' | 'model' | 'feature' | 'company'
@@ -19,6 +19,10 @@ export interface CredentialDto {
   last_verified_at: string | null
   last_verify_ok: boolean | null
   last_verify_error: string | null
+  /** Model ids GET /models returned for this key (107); null = never discovered. */
+  discovered_models?: string[] | null
+  models_discovered_at?: string | null
+  discovery_error?: string | null
   created_by: string | null
   created_at: string
   rotated_at: string | null
@@ -35,6 +39,12 @@ export interface ModelDto {
   price_in_per_mtok: number | null
   price_out_per_mtok: number | null
   enabled: boolean
+  /** 107: 'manual' (entered by the owner) | 'discovered' (GET /models). */
+  source?: 'manual' | 'discovered'
+  discovered_at?: string | null
+  supports_vision?: boolean | null
+  supports_tools?: boolean | null
+  tier_hint?: ChatTier | null
   created_at: string
   updated_at: string
 }
@@ -101,10 +111,47 @@ export interface SpendRowDto { key: string | null; costUsd: number; calls: numbe
 
 export interface SpendResponse { ok: true; days: number; groupBy: SpendGroupBy; totalUsd: number; rows: SpendRowDto[] }
 
+export interface DiscoveryResultDto {
+  credentialId: string
+  credentialLabel: string
+  providerKey: string
+  ok: boolean
+  error: string | null
+  ids: string[]
+  added: number
+  bound: number
+  refreshed: number
+}
+
+export interface DiscoverResponse { ok: true; results: DiscoveryResultDto[] }
+
+export interface SlotTargetDto {
+  providerKey: string
+  providerName: string
+  model: string
+  origin: 'db' | 'env'
+  credentialLabel: string | null
+  healthy: boolean
+}
+
+export interface SlotStatusDto {
+  capability: Capability
+  tier: ChatTier | null
+  current: SlotTargetDto | null
+  next: SlotTargetDto[]
+  lastError: string | null
+  lastErrorAt: string | null
+  unhealthyUntil: string | null
+  problem: string | null
+}
+
+export interface StatusResponse { ok: true; slots: SlotStatusDto[]; checkedAt: string }
+
 export interface VerifyResultDto {
   ok: boolean
   error: string | null
   checkedWith: 'chat' | 'embeddings' | 'models'
   model: string | null
   credential: CredentialDto
+  discovery?: DiscoveryResultDto | null
 }

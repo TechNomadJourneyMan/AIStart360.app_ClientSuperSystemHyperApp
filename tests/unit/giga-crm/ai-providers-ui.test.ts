@@ -12,6 +12,8 @@ import {
   buildModelPayload,
   buildProviderPayload,
   budgetsDraftFrom,
+  discoveryMeta,
+  discoverySummary,
   modelOptionsFor,
   parseHeaders,
   parseMoney,
@@ -19,12 +21,13 @@ import {
   providerFieldOfError,
   routeProblem,
   secretError,
+  slotHealth,
   spendKeyLabel,
   verifyMeta,
 } from '@/components/giga-panel/ai-providers/model'
-import { BudgetsSummary, ProviderCard, RoutingTable, SpendView, VerifyOutcome } from '@/components/giga-panel/ai-providers/views'
+import { BudgetsSummary, ProviderCard, RoutingTable, SpendView, VerifyOutcome, WhoAnswersPanel } from '@/components/giga-panel/ai-providers/views'
 import { CredentialDialog } from '@/components/giga-panel/ai-providers/dialogs'
-import type { BudgetsDto, CredentialDto, ModelDto, ProviderDto, RouteDto } from '@/components/giga-panel/ai-providers/types'
+import type { BudgetsDto, CredentialDto, DiscoveryResultDto, ModelDto, ProviderDto, RouteDto, SlotStatusDto } from '@/components/giga-panel/ai-providers/types'
 
 const render = (el: ReactElement) => renderToStaticMarkup(el)
 const T = '2026-10-01T10:00:00.000Z'
@@ -136,10 +139,19 @@ describe('keys and models', () => {
 
   it('model body; rerank / OCR need the provider to support them', () => {
     const p = provider()
-    expect(buildModelPayload({ modelId: 'alemllm', capability: 'chat', label: '', credentialId: '', priceIn: '0.5', priceOut: '', enabled: true }, p).payload)
-      .toEqual({ providerId: 'p-alem', modelId: 'alemllm', capability: 'chat', credentialId: null, label: null, priceInPerMtok: 0.5, priceOutPerMtok: null, enabled: true })
-    expect(buildModelPayload({ modelId: 'r', capability: 'rerank', label: '', credentialId: '', priceIn: '', priceOut: '', enabled: true }, p).errors.capability).toContain('rerank')
-    expect(buildModelPayload({ modelId: 'bad id', capability: 'chat', label: '', credentialId: '', priceIn: '', priceOut: '', enabled: true }, p).errors.modelId).toBeTruthy()
+    const meta = { tierHint: '' as const, vision: '' as const, tools: '' as const }
+    expect(buildModelPayload({ modelId: 'alemllm', capability: 'chat', label: '', credentialId: '', priceIn: '0.5', priceOut: '', enabled: true, ...meta }, p).payload)
+      .toEqual({
+        providerId: 'p-alem', modelId: 'alemllm', capability: 'chat', credentialId: null, label: null, priceInPerMtok: 0.5, priceOutPerMtok: null, enabled: true,
+        tierHint: null, supportsVision: null, supportsTools: null,
+      })
+    expect(buildModelPayload({ modelId: 'q', capability: 'chat', label: '', credentialId: '', priceIn: '', priceOut: '', enabled: true, tierHint: 'light', vision: 'yes', tools: 'no' }, p).payload)
+      .toMatchObject({ tierHint: 'light', supportsVision: true, supportsTools: false })
+    // Chat-only metadata is not sent for other capabilities.
+    expect(buildModelPayload({ modelId: 'stt', capability: 'transcribe', label: '', credentialId: '', priceIn: '', priceOut: '', enabled: true, ...meta }, p).payload)
+      .not.toHaveProperty('tierHint')
+    expect(buildModelPayload({ modelId: 'r', capability: 'rerank', label: '', credentialId: '', priceIn: '', priceOut: '', enabled: true, ...meta }, p).errors.capability).toContain('rerank')
+    expect(buildModelPayload({ modelId: 'bad id', capability: 'chat', label: '', credentialId: '', priceIn: '', priceOut: '', enabled: true, ...meta }, p).errors.modelId).toBeTruthy()
   })
 })
 
@@ -232,8 +244,9 @@ describe('ProviderCard', () => {
 describe('RoutingTable', () => {
   it('manage: a select per slot with the default (env) option; rerank / OCR fallback explained', () => {
     const html = render(createElement(RoutingTable, { providers: [provider(), openrouter], routes: [route()], canManage: true }))
-    expect(html.match(/<select/g)).toHaveLength(6)
-    expect(html).toContain('по умолчанию (OpenRouter из env)')
+    expect(html.match(/<select/g)).toHaveLength(7)
+    expect(html).toContain('автоматически (доступные модели, затем OpenRouter из env)')
+    expect(html).toContain('Речь в текст')
     expect(html).toContain('Alem Plus · Alem LLM (alemllm)')
     expect(html).toContain('встроенного варианта нет')
     expect(html).toContain('Нет моделей с возможностью «OCR»')
@@ -289,5 +302,59 @@ describe('CredentialDialog', () => {
     expect(html).toContain('Сменить ключ «Основной»')
     expect(html).toContain('••••wxyz')
     expect(html).toMatch(/<input[^>]*type="password"[^>]*value=""/)
+  })
+})
+
+describe('discovery and «who answers now» (A1)', () => {
+  const result = (over: Partial<DiscoveryResultDto> = {}): DiscoveryResultDto => ({
+    credentialId: 'k1', credentialLabel: 'Alem LLM', providerKey: 'alem', ok: true, error: null, ids: ['AlemLLM'], added: 1, bound: 0, refreshed: 0, ...over,
+  })
+
+  it('discovery state of a key', () => {
+    expect(discoveryMeta({ discovered_models: null, models_discovered_at: null, discovery_error: null })).toMatchObject({ text: 'обнаружение не выполнялось' })
+    expect(discoveryMeta({ discovered_models: null, discovery_error: 'HTTP 404' })).toMatchObject({ tone: 'amber', error: 'HTTP 404' })
+    expect(discoveryMeta({ discovered_models: ['a', 'b'], models_discovered_at: T })).toMatchObject({ text: 'найдено моделей: 2', tone: 'green' })
+  })
+
+  it('summary of a run over several keys', () => {
+    expect(discoverySummary([result(), result({ credentialLabel: 'STT', ok: false, error: 'HTTP 404', ids: [], added: 0 })]))
+      .toEqual({ tone: 'ok', text: 'Обнаружение завершено: ключей 1 из 2, новых моделей — 1. Без списка моделей: «STT» (HTTP 404)' })
+    expect(discoverySummary([])).toMatchObject({ tone: 'error' })
+  })
+
+  it('the key row shows found models, the time and a discover button for managers', () => {
+    const p = provider({ credentials: [cred({ discovered_models: ['AlemLLM', 'Embedder'], models_discovered_at: T })] })
+    const html = render(createElement(ProviderCard, { provider: p, spentTodayUsd: 0, canManage: true, encryptionConfigured: true }))
+    expect(html).toContain('найдено моделей: 2')
+    expect(html).toContain('Embedder')
+    expect(html).toContain('Обнаружить модели')
+    const ro = render(createElement(ProviderCard, { provider: p, spentTodayUsd: 0, canManage: false, encryptionConfigured: true }))
+    expect(ro).not.toContain('Обнаружить модели')
+  })
+
+  it('discovered models are marked; capabilities shown', () => {
+    const p = provider({ models: [modelRow({ source: 'discovered', supports_vision: true, tier_hint: 'light' })] })
+    const html = render(createElement(ProviderCard, { provider: p, spentTodayUsd: 0, canManage: false, encryptionConfigured: true }))
+    expect(html).toContain('найдена')
+    expect(html).toContain('картинки')
+  })
+
+  it('who answers now: current model, health, last error, failover order, problems', () => {
+    const slots: SlotStatusDto[] = [
+      {
+        capability: 'chat', tier: 'light', next: [{ providerKey: 'openrouter', providerName: 'OpenRouter', model: 'anthropic/claude-haiku-4.5', origin: 'env', credentialLabel: null, healthy: true }],
+        current: { providerKey: 'o66', providerName: 'Alem LLM', model: 'AlemLLM', origin: 'db', credentialLabel: 'Alem LLM', healthy: false },
+        lastError: 'HTTP 503', lastErrorAt: T, unhealthyUntil: T, problem: null,
+      },
+      { capability: 'rerank', tier: null, current: null, next: [], lastError: null, lastErrorAt: null, unhealthyUntil: null, problem: 'для «rerank» не настроен маршрут модели' },
+    ]
+    expect(slotHealth(slots[0])).toMatchObject({ tone: 'amber' })
+    expect(slotHealth(slots[1])).toMatchObject({ label: 'нет модели', tone: 'red' })
+    const html = render(createElement(WhoAnswersPanel, { slots, checkedAt: T }))
+    expect(html).toContain('Чат · light')
+    expect(html).toContain('AlemLLM')
+    expect(html).toContain('HTTP 503')
+    expect(html).toContain('openrouter/anthropic/claude-haiku-4.5')
+    expect(html).toContain('не настроен маршрут')
   })
 })
