@@ -64,7 +64,8 @@ export async function POST(req: NextRequest) {
         id: userId,
         email,
         full_name: name || email,
-        role: 'client',
+        // role/status are owned by handle_new_user + service-role routes; the
+        // guard trigger (migration 084) rejects any change from a user session.
       },
       { onConflict: 'id' }
     )
@@ -119,7 +120,8 @@ export async function POST(req: NextRequest) {
       const fallbackId = crypto.randomUUID()
       const now = new Date().toISOString()
 
-      // admin_requests is server-only (RLS, migration 083): write with the service role.
+      // Service role: admin_requests is a Prisma table closed to anon /
+      // authenticated (migration 084); the caller was verified above.
       const { error: fbError } = await createServiceClient().from('admin_requests').insert({
         id: fallbackId,
         type: 'registration',

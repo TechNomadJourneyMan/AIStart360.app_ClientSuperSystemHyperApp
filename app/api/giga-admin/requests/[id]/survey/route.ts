@@ -2,7 +2,6 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
-import { prisma } from '@/lib/db'
 import { authorizeUserDataRead, resolveRequestUserId } from '@/lib/admin/user-data-access'
 import { requireGiga, staffRoleOfUser } from '@/lib/admin/giga-actor'
 import { canManageTarget } from '@/lib/admin/rbac'
@@ -19,14 +18,6 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   const access = await authorizeUserDataRead(req, ['survey.view', 'users.sensitive'], async (sb) => {
-    // Prisma admin_requests first (legacy), then the Supabase table / profile id.
-    try {
-      const adminRequest = await prisma.adminRequest.findUnique({ where: { id: params.id } })
-      const fromPrisma = ((adminRequest?.payload ?? {}) as Record<string, string>).userId
-      if (fromPrisma) return fromPrisma
-    } catch {
-      // Prisma unavailable — fall through to Supabase
-    }
     return resolveRequestUserId(sb, params.id)
   })
   if ('response' in access) return access.response

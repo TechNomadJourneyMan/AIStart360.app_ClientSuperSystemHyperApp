@@ -7,7 +7,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import {
   Activity, Bell, Bot, Building2, ClipboardList, Coins, CopyCheck, Eye, FileBarChart, FileText, InboxIcon, KeyRound, LayoutDashboard, LayoutGrid,
   Lightbulb, ListChecks, LogOut, Mail, MessagesSquare, PlugZap, Radar, Route, ScanSearch, ScrollText, Settings, Shield, ShieldCheck, Sparkles, Stamp,
-  Terminal, Users2, X, Zap, type LucideIcon,
+  Terminal, Users2, X, Zap, Siren, Sun, UserCheck, type LucideIcon,
 } from 'lucide-react'
 import { activeNavHref, visibleNav, type GigaNavBadge, type GigaNavGroup } from '@/lib/admin/nav'
 import { useWorkspace } from './WorkspaceContext'
@@ -24,6 +24,7 @@ const ICONS: Record<string, LucideIcon> = {
   key: KeyRound, eye: Eye, scroll: ScrollText, mail: Mail, copy: CopyCheck,
   bell: Bell, bot: Bot, listchecks: ListChecks, stamp: Stamp, coins: Coins, zap: Zap,
   reports: FileBarChart, review: ScanSearch, plug: PlugZap, terminal: Terminal,
+  sun: Sun, checklist: ListChecks, siren: Siren, experts: UserCheck,
 }
 
 const BADGE_REFRESH_MS = 60_000
@@ -52,6 +53,23 @@ function useNavBadges(groups: GigaNavGroup[], pathname: string): Partial<Record<
   return counts
 }
 
+/** Бейдж «Эскалации»: открытые кейсы, красный — если есть просроченные. */
+function useCasesBadge(enabled: boolean): { open: number; overdue: number } | null {
+  const [v, setV] = useState<{ open: number; overdue: number } | null>(null)
+  useEffect(() => {
+    if (!enabled) return
+    let alive = true
+    const load = () => fetch('/api/giga-admin/cases/summary', { credentials: 'include' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (alive && d?.ok) setV({ open: Number(d.open) || 0, overdue: Number(d.overdue) || 0 }) })
+      .catch(() => {})
+    void load()
+    const id = setInterval(load, 120_000)
+    return () => { alive = false; clearInterval(id) }
+  }, [enabled])
+  return v
+}
+
 interface GigaSidebarProps { isOpen?: boolean; onClose?: () => void }
 
 export function GigaSidebar({ isOpen = false, onClose }: GigaSidebarProps) {
@@ -67,6 +85,7 @@ export function GigaSidebar({ isOpen = false, onClose }: GigaSidebarProps) {
     if (!activeHref) return
     document.querySelectorAll<HTMLElement>('aside nav a[aria-current="page"]').forEach((el) => el.scrollIntoView({ block: 'nearest' }))
   }, [activeHref, isOpen])
+  const casesBadge = useCasesBadge(!loading && nav.some((g) => g.items.some((i) => i.badge === 'cases' && can(i.permission))))
 
   useEffect(() => {
     const handleEsc = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose?.() }
@@ -77,7 +96,7 @@ export function GigaSidebar({ isOpen = false, onClose }: GigaSidebarProps) {
   const logout = async () => {
     try {
       await fetch('/api/giga-admin/auth', { method: 'DELETE' })
-      if (me?.kind === 'session') await createClient().auth.signOut()
+      await createClient().auth.signOut()
     } finally {
       window.location.href = loginPath
     }
@@ -135,6 +154,17 @@ export function GigaSidebar({ isOpen = false, onClose }: GigaSidebarProps) {
                             aria-label={`ожидают решения: ${count}`}
                           >
                             {count > 99 ? '99+' : count}
+                          </span>
+                        )}
+                        {item.badge === 'cases' && casesBadge && casesBadge.open > 0 && (
+                          <span
+                            title={casesBadge.overdue ? `Просрочено: ${casesBadge.overdue}` : 'Открытые эскалации'}
+                            className={cx(
+                              'ml-auto rounded-full px-1.5 text-[10px] font-semibold tabular-nums',
+                              casesBadge.overdue ? 'bg-red-500/80 text-white' : 'bg-white/[0.08] text-slate-300',
+                            )}
+                          >
+                            {casesBadge.overdue || casesBadge.open}
                           </span>
                         )}
                       </Link>

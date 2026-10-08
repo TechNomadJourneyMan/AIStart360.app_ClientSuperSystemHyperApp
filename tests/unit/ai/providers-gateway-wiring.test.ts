@@ -133,7 +133,7 @@ describe('callLlm (agents)', () => {
 describe('chatWithOpenRouter / generateObjectViaOpenRouter / embedWithOpenRouter (features)', () => {
   it('chat follows the complexity tier route and records spend under the provider', async () => {
     configureAlem({ tiers: ['light'], prices: true })
-    expect(await chatWithOpenRouter({ user: 'u', complexity: 'low', label: 'test.feature', companyId: 'c1' })).toBe('ответ')
+    expect(await chatWithOpenRouter({ feature: 'ai_chat', user: 'u', complexity: 'low', label: 'test.feature', companyId: 'c1' })).toBe('ответ')
     expect(call()[0]).toBe('https://llm.alem.ai/v1/chat/completions')
     expect(body()).not.toHaveProperty('provider')
     expect(ledger.records).toEqual([expect.objectContaining({
@@ -143,7 +143,7 @@ describe('chatWithOpenRouter / generateObjectViaOpenRouter / embedWithOpenRouter
 
   it('chat without configuration is unchanged: OpenRouter, privacy, provider cost', async () => {
     fetchSpy.mockResolvedValue(ok('ok', { model: 'anthropic/claude-haiku-4.5', usage: { prompt_tokens: 1, completion_tokens: 1, cost: 0.002 } }))
-    expect(await chatWithOpenRouter({ user: 'u', complexity: 'low', label: 'f' })).toBe('ok')
+    expect(await chatWithOpenRouter({ feature: 'ai_chat', user: 'u', complexity: 'low', label: 'f' })).toBe('ok')
     expect(call()[0]).toBe('https://openrouter.ai/api/v1/chat/completions')
     expect(body()).toMatchObject({ model: 'anthropic/claude-haiku-4.5', provider: { data_collection: 'deny' }, usage: { include: true } })
     expect(ledger.records[0]).toMatchObject({ providerKey: 'openrouter', costSource: 'provider', costUsd: 0.002 })
@@ -152,20 +152,20 @@ describe('chatWithOpenRouter / generateObjectViaOpenRouter / embedWithOpenRouter
   it('structured generation routes through the same chat path', async () => {
     configureAlem()
     fetchSpy.mockResolvedValue(ok('{"title":"Отчёт"}'))
-    const out = await generateObjectViaOpenRouter({ system: 's', user: 'u', schema: z.object({ title: z.string() }), complexity: 'high', label: 'test.structured' })
+    const out = await generateObjectViaOpenRouter({ feature: 'ai_chat', system: 's', user: 'u', schema: z.object({ title: z.string() }), complexity: 'high', label: 'test.structured' })
     expect(out).toEqual({ title: 'Отчёт' })
     expect(call()[0]).toBe('https://llm.alem.ai/v1/chat/completions')
   })
 
   it('embeddings use the embeddings route when configured, OpenRouter otherwise', async () => {
     fetchSpy.mockImplementation(async () => new Response(JSON.stringify({ data: [{ embedding: [1, 2] }], usage: { prompt_tokens: 3 } }), { status: 200 }))
-    expect(await embedWithOpenRouter(['a'])).toEqual([[1, 2]])
+    expect(await embedWithOpenRouter(['a'], { feature: 'doc_embed' })).toEqual([[1, 2]])
     expect(call(0)[0]).toBe('https://openrouter.ai/api/v1/embeddings')
     expect(body(0)).toEqual({ model: 'openai/text-embedding-3-small', input: ['a'], dimensions: 1536 })
 
     configureAlem({ embeddings: true })
     invalidateProviderCache()
-    expect(await embedWithOpenRouter(['a'])).toEqual([[1, 2]])
+    expect(await embedWithOpenRouter(['a'], { feature: 'doc_embed' })).toEqual([[1, 2]])
     expect(call(1)[0]).toBe('https://llm.alem.ai/v1/embeddings')
     expect(body(1)).toEqual({ model: 'alem-embedder', input: ['a'] })
     expect(ledger.records.at(-1)).toMatchObject({ source: 'feature:embeddings', providerKey: 'alem', model: 'alem-embedder' })
@@ -173,8 +173,8 @@ describe('chatWithOpenRouter / generateObjectViaOpenRouter / embedWithOpenRouter
 
   it('returns null without any key, as before', async () => {
     delete process.env.OPENROUTER_API_KEY
-    expect(await chatWithOpenRouter({ user: 'u' })).toBeNull()
-    expect(await embedWithOpenRouter(['a'])).toBeNull()
+    expect(await chatWithOpenRouter({ feature: 'ai_chat', user: 'u' })).toBeNull()
+    expect(await embedWithOpenRouter(['a'], { feature: 'doc_embed' })).toBeNull()
     expect(fetchSpy).not.toHaveBeenCalled()
     expect((await resolveTarget('chat', { tier: 'light', fallbackModel: 'm' })).ok).toBe(false)
   })

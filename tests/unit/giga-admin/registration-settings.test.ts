@@ -5,12 +5,16 @@ const setMock = vi.hoisted(() => ({ fn: vi.fn() as any }))
 
 // Panel access comes from a personal staff session (the shared-password
 // break-glass cookie was removed); the REAL RBAC matrix decides permissions.
+// state.role === 'super_admin' ⇒ a super_admin session actor, anything else ⇒ none.
 vi.mock('@/lib/admin/giga-actor', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/admin/giga-actor')>()
   const { makeRequireGiga } = await import('../_giga-guard')
+  const current = () => (state.role === 'super_admin' ? { id: '00000000-0000-4000-8000-0000000000aa', kind: 'session' as const, role: 'super_admin' as const } : null)
   return {
     ...actual,
-    requireGiga: makeRequireGiga(() => (state.role === 'super_admin' ? { id: '00000000-0000-4000-8000-0000000000aa', kind: 'session', role: 'super_admin' as const } : null)),
+    requireGiga: makeRequireGiga(current),
+    getGigaActor: async () => { const a = current(); return a ? { ...a, permissions: [] } : null },
+    isGigaSuperAdmin: async () => current() !== null,
   }
 })
 

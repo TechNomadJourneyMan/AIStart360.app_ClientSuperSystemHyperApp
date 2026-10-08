@@ -72,7 +72,7 @@ describe('матрица прав SuperExpert', () => {
 
   it('не получает системных и опасных прав', () => {
     for (const p of [
-      'settings.manage', 'roles.manage', 'platform.sections', 'users.manage', 'users.archive',
+      'settings.manage', 'roles.manage', 'platform.sections', 'users.manage', 'users.archive', 'users.delete',
       'survey.delete', 'gri.edit', 'gri.delete', 'audit.view',
       'content.edit', 'content.publish',
     ] as const) {

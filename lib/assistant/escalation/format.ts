@@ -53,9 +53,9 @@ export function resolveEnabled(overrideRaw: string | undefined, credsReady: bool
   return credsReady
 }
 
-/** The experts dashboard URL (AUTH_URL base + /expert/dashboard). */
+/** Рабочее место эксперта: «Мой день» кабинета SuperExpert (старый /expert/dashboard выведен). */
 export function expertDashboardUrl(): string {
-  return getSiteUrl('/expert/dashboard')
+  return getSiteUrl('/super-expert/today')
 }
 
 /** Russian label for the case company (name from summary is already embedded). */

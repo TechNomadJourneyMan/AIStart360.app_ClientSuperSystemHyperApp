@@ -92,6 +92,7 @@ ${serializeForInsight(ctx)}
 
   try {
     const result = await generateObjectViaOpenRouter({
+      feature: 'assistant_insight',
       label: 'mascot:insight',
       complexity: 'low', // one short line — the fast tier is enough.
       maxTokens: 300,

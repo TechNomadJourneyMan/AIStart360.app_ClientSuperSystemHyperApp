@@ -20,7 +20,8 @@ export function roleLandingPath(
 ): string {
   if (staffRole === 'super_expert') return '/super-expert'
   if (staffRole) return '/admin-giga-panel'
-  switch (role) {
+  // A leftover legacy 'owner' row behaves like a client (the owner cabinet was removed).
+  switch ((role as string | null | undefined) === 'owner' ? 'client' : role) {
     case 'super_admin':
       return '/admin-giga-panel'
     case 'expert':
@@ -28,9 +29,6 @@ export function roleLandingPath(
     case 'admin':
       return '/dashboard'
     case 'client':
-    // 'owner' is a legacy role that behaves like a client (the owner cabinet
-    // was removed).
-    case 'owner':
       // /client/home = User Assessment Dashboard (survey profile + GRI); Точка А is one click away.
       return status === 'approved' ? '/client/home' : '/client/waiting-room'
     default:

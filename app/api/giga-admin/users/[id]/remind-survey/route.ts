@@ -9,6 +9,7 @@ import { isRateLimitedKey } from '@/lib/rate-limit'
 import { sendSurveyReminderEmail } from '@/lib/email'
 import { buildUserProfileSummary } from '@/lib/user-dashboard/summary'
 import { isWizardVisibleKey, SURVEY_TOTAL_STEPS } from '@/lib/survey/steps'
+import { guardClientAccess } from '@/lib/admin/client-scope'
 
 /**
  * POST /api/giga-admin/users/:id/remind-survey { note? } — письмо «допройдите
@@ -28,6 +29,8 @@ const bodySchema = z.object({ note: z.string().trim().max(300).optional() })
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const guard = await requireGiga(req, ['users.invite', 'users.sensitive'])
   if (guard.response) return guard.response
+  const scopeDenied = await guardClientAccess(guard.actor, params.id)
+  if (scopeDenied) return scopeDenied
   if (!UUID_RE.test(params.id)) return NextResponse.json({ ok: false, error: 'invalid id' }, { status: 400 })
 
   const parsed = bodySchema.safeParse(await req.json().catch(() => ({})))

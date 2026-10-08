@@ -147,6 +147,7 @@ export async function generateMarketAnswers(
 
   for (let attempt = 0; attempt < 2; attempt++) {
     const raw = await chatWithOpenRouter({
+      feature: 'market_analysis',
       label: 'market_analysis',
       system: SYSTEM_PROMPT,
       user: userPrompt,

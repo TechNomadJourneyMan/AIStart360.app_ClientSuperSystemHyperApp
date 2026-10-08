@@ -66,7 +66,7 @@ const IS_PUBLIC_JOURNEY_PREVIEW =
 
 const PUBLIC_PATHS = ['/login', '/register', '/forgot-password', '/auth/callback', '/auth/reset-password']
 
-const VALID_ROLES = ['admin', 'expert', 'owner', 'client', 'super_admin'] as const
+const VALID_ROLES = ['admin', 'expert', 'client', 'super_admin'] as const
 type ValidRole = typeof VALID_ROLES[number]
 
 const GIGA_PANEL_PATH = '/admin-giga-panel'
@@ -231,8 +231,9 @@ export async function middleware(request: NextRequest, event?: NextFetchEvent) {
   // Refresh Supabase session cookies and get current user
   const { supabase, response, user } = await updateSession(request)
 
-  const metadataRole = user && typeof user.user_metadata?.role === 'string' ? user.user_metadata.role : null
-  const resolved = user ? await resolveRoleAndStatus(supabase, user.id, metadataRole) : null
+  // Role comes from profiles only: user_metadata is editable by the user
+  // (auth.updateUser) and must never grant a role (F-001).
+  const resolved = user ? await resolveRoleAndStatus(supabase, user.id, null) : null
   const role = resolved?.role ?? null
 
   // ── Impersonation («кабинет от имени пользователя») ──
@@ -343,7 +344,7 @@ export async function middleware(request: NextRequest, event?: NextFetchEvent) {
   // staff-cookie во время impersonation). Права по разделам проверяет каждый
   // API-маршрут (lib/admin/rbac.ts).
   if (pathname.startsWith(GIGA_PANEL_PATH)) {
-    let isStaff = role === 'super_admin' || e2eSeam !== null
+    let isStaff = (role === 'super_admin' && resolved?.status === 'approved') || e2eSeam !== null
     if (!isStaff) {
       const staffToken = request.cookies.get(STAFF_COOKIE_NAME)?.value
       if (staffToken && (await verifyToken('staff', staffToken)).ok) isStaff = true

@@ -7,7 +7,7 @@ import { getSetting } from '@/lib/settings/store'
 import { MFA_COOKIE_NAME, verifyStepUp } from '@/lib/mfa/step-up'
 import { mfaFlagsEnrolled } from '@/lib/mfa/flags'
 import { e2eSeamEnabled } from '@/lib/admin/e2e-auth-seam-edge'
-import { canManageTarget, hasPermission, isStaffRole, permissionsFor, type Permission, type StaffRole } from '@/lib/admin/rbac'
+import { canManageTarget, effectiveClientScope, hasPermission, isStaffRole, permissionsFor, type ClientScope, type Permission, type StaffRole } from '@/lib/admin/rbac'
 
 /**
  * Actor resolution for /api/giga-admin/* routes (GIGA-CRM).
@@ -28,6 +28,9 @@ import { canManageTarget, hasPermission, isStaffRole, permissionsFor, type Permi
  * Test-only: the E2E auth seam (lib/admin/e2e-auth-seam-edge.ts) resolves a
  * seeded user's real staff role from the database. It is compiled out of
  * production builds and needs E2E_AUTH_SEAM_SECRET (≥32 chars) otherwise.
+ * The owner may also sign in with email + a password whose hash lives only in
+ * the environment (app/api/giga-admin/auth); that yields an ordinary personal
+ * session, which goes through the same checks.
  *
  * Routes authorize with `requireGiga(req, permission)` — never with a bare
  * non-null check: different staff roles see different parts of the panel.
@@ -43,20 +46,30 @@ export interface GigaActor {
   role: StaffRole
   email?: string
   permissions: Permission[]
+  /**
+   * Каких клиентов видит сотрудник: всех или только назначенных ему
+   * (`staff_roles.client_scope`, миграция 086). Проверяется в
+   * lib/admin/client-scope.ts на каждом маршруте с данными клиента.
+   */
+  clientScope: ClientScope
 }
 
-function actor(id: string, kind: GigaActor['kind'], role: StaffRole, email?: string): GigaActor {
-  return { id, kind, role, email, permissions: permissionsFor(role) }
+interface StaffIdentity { role: StaffRole; clientScope: ClientScope }
+
+function actor(id: string, kind: GigaActor['kind'], who: StaffIdentity, email?: string): GigaActor {
+  return { id, kind, role: who.role, email, permissions: permissionsFor(who.role), clientScope: who.clientScope }
 }
 
 /** Staff role of a person: super_admin profile, else their `staff_roles` row. */
 async function staffRoleOf(
   client: { from: ReturnType<typeof createServiceClient>['from'] },
   userId: string,
-): Promise<StaffRole | null> {
+): Promise<StaffIdentity | null> {
   const [{ data: profile, error: profileError }, { data: staff, error: staffError }] = await Promise.all([
     client.from('profiles').select('role, status').eq('id', userId).maybeSingle(),
-    client.from('staff_roles').select('role').eq('user_id', userId).maybeSingle(),
+    // '*' а не список колонок: client_scope появляется миграцией 086, и до её
+    // применения явный select упал бы и лишил доступа весь персонал.
+    client.from('staff_roles').select('*').eq('user_id', userId).maybeSingle(),
   ])
   // A failed read is not "no role": callers decide how to fail closed.
   if (profileError || staffError) throw new Error('staff role unavailable')
@@ -64,9 +77,10 @@ async function staffRoleOf(
   // Only an approved account works in the panel: pending, rejected, blocked
   // and archived profiles get no staff access, whatever their role says.
   if (p?.status !== 'approved') return null
-  if (p.role === 'super_admin') return 'super_admin'
-  const r = (staff as { role?: string } | null)?.role
-  return isStaffRole(r) ? r : null
+  const row = staff as { role?: string; client_scope?: string } | null
+  if (p.role === 'super_admin') return { role: 'super_admin', clientScope: 'all' }
+  const r = row?.role
+  return isStaffRole(r) ? { role: r, clientScope: effectiveClientScope(r, row?.client_scope) } : null
 }
 
 /** Why a personal session was not admitted although its role allows the panel. */
@@ -117,7 +131,10 @@ async function resolveGigaActor(req: NextRequest): Promise<GigaResolution> {
   if (e2eSeamEnabled()) {
     const { resolveE2eSeamIdentity } = await import('@/lib/admin/e2e-auth-seam')
     const seam = await resolveE2eSeamIdentity(req.cookies)
-    if (seam) return { actor: actor(seam.userId, 'session', seam.role, seam.email), staff: true }
+    if (seam) {
+      const who = { role: seam.role, clientScope: effectiveClientScope(seam.role, null) }
+      return { actor: actor(seam.userId, 'session', who, seam.email), staff: true }
+    }
   }
 
   let mfa: GigaMfaBlock | undefined
@@ -252,7 +269,7 @@ export async function requireGiga(req: NextRequest, permission: Permission | Per
 /** Current staff role of any user (for target checks). */
 export async function staffRoleOfUser(userId: string): Promise<{ staffRole: StaffRole | null; profileRole: string | null; status: string | null; email: string | null }> {
   const sb = createServiceClient()
-  const [{ data: profile }, { data: staff }] = await Promise.all([
+  const [{ data: profile, error: profileError }, { data: staff, error: staffError }] = await Promise.all([
     sb.from('profiles').select('role, status, email').eq('id', userId).maybeSingle(),
     sb.from('staff_roles').select('role').eq('user_id', userId).maybeSingle(),
   ])

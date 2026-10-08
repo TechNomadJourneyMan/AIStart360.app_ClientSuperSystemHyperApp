@@ -5,6 +5,7 @@ import { z } from 'zod'
 import { requireGiga } from '@/lib/admin/giga-actor'
 import { recordAdminAction } from '@/lib/admin/audit'
 import { createServiceClient } from '@/lib/supabase-service'
+import { guardClientAccess } from '@/lib/admin/client-scope'
 
 /**
  * PATCH  /api/giga-admin/users/:id/notes/:noteId { body?, pinned? }
@@ -29,6 +30,8 @@ async function loadNote(noteId: string, userId: string) {
 export async function PATCH(req: NextRequest, { params }: { params: { id: string; noteId: string } }) {
   const guard = await requireGiga(req, ['users.view', 'users.sensitive'])
   if (guard.response) return guard.response
+  const scopeDenied = await guardClientAccess(guard.actor, params.id)
+  if (scopeDenied) return scopeDenied
   if (!UUID_RE.test(params.id) || !UUID_RE.test(params.noteId)) {
     return NextResponse.json({ ok: false, error: 'invalid id' }, { status: 400 })
   }
@@ -60,6 +63,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 export async function DELETE(req: NextRequest, { params }: { params: { id: string; noteId: string } }) {
   const guard = await requireGiga(req, ['users.view', 'users.sensitive'])
   if (guard.response) return guard.response
+  const scopeDenied = await guardClientAccess(guard.actor, params.id)
+  if (scopeDenied) return scopeDenied
   if (!UUID_RE.test(params.id) || !UUID_RE.test(params.noteId)) {
     return NextResponse.json({ ok: false, error: 'invalid id' }, { status: 400 })
   }

@@ -6,6 +6,7 @@ import { requireGiga, staffRoleOfUser } from '@/lib/admin/giga-actor'
 import { canManageTarget } from '@/lib/admin/rbac'
 import { recordAdminAction } from '@/lib/admin/audit'
 import { createServiceClient } from '@/lib/supabase-service'
+import { guardClientAccess } from '@/lib/admin/client-scope'
 
 /**
  * PATCH /api/giga-admin/users/:id/company — данные компании и контакта.
@@ -62,6 +63,8 @@ function clean<T extends Record<string, unknown>>(patch: T): Partial<T> {
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   const guard = await requireGiga(req, ['company.edit', 'users.sensitive'])
   if (guard.response) return guard.response
+  const scopeDenied = await guardClientAccess(guard.actor, params.id)
+  if (scopeDenied) return scopeDenied
   if (!UUID_RE.test(params.id)) return NextResponse.json({ ok: false, error: 'invalid id' }, { status: 400 })
 
   const parsed = bodySchema.safeParse(await req.json().catch(() => null))

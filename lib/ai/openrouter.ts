@@ -16,7 +16,9 @@
  * Cost and privacy controls (same rules as the agent gateway, lib/ai/gateway.ts):
  *   • providers may not store or train on prompts (AI_PRIVACY_MODE, lib/ai/privacy.ts);
  *   • no call once today's platform AI spend reached AGENT_PLATFORM_DAILY_BUDGET_USD;
- *   • the provider-reported cost of every call goes to ai_usage_ledger (093).
+ *   • the provider-reported cost of every call goes to ai_usage_ledger (093)
+ *     (platform / provider / company budgets) and, per user and feature, to
+ *     ai_usage (091, lib/ai/usage.ts — per-tier user budgets and the GIGA report).
  */
 
 import {
@@ -32,6 +34,9 @@ import {
 import { hasConfiguredChatRoute, providerBudgetRefusal, resolveTarget } from './providers/router'
 import type { ChatTier, ProviderTarget } from './providers/types'
 import { platformBudgetLeft, recordUsage } from './usage-ledger'
+import { recordAiUsage, type AiFeature } from './usage'
+
+export type { AiFeature } from './usage'
 
 export const OPENROUTER_MODELS = {
   sonnet5: 'anthropic/claude-sonnet-5',
@@ -91,6 +96,10 @@ export function autoComplexity(opts: { user: string; system?: string; maxTokens?
 }
 
 interface ChatOptions {
+  /** Cost-accounting tag (ai_usage.feature). Required on every call site. */
+  feature: AiFeature
+  /** Who the call is for; defaults to the request actor set by `assertAiBudget`. */
+  userId?: string | null
   system?: string
   user: string
   /** Explicit model id. Wins over `complexity`. */
@@ -118,7 +127,7 @@ interface ChatOptions {
   timeoutMs?: number
   /** Avoid logging provider bodies/errors that may echo customer content. */
   privacySensitive?: boolean
-  /** Feature name for the spend ledger (ai_usage_ledger.source = `feature:<label>`). */
+  /** Feature name for the spend ledger (ai_usage_ledger.source = `feature:<label>`); defaults to `feature`. */
   label?: string
   /** Company the call is made for, when known (company spend). */
   companyId?: string | null
@@ -162,6 +171,12 @@ function logTag(target: ProviderTarget, suffix = ''): string {
     : `[ai:${target.providerKey}${suffix}]`
 }
 
+interface OpenRouterResponseJson {
+  model?: string
+  choices?: Array<{ message?: { content?: string | null } }>
+  usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number; cost?: number }
+}
+
 /**
  * Sends a chat completion. Returns the assistant message text, or null if the
  * request fails. Never throws.
@@ -186,12 +201,12 @@ export async function chatWithOpenRouter(opts: ChatOptions): Promise<string | nu
 
   const left = await platformBudgetLeft()
   if (left !== null && left <= 0) {
-    console.warn(`[openrouter] platform AI budget for today is spent — ${opts.label ?? 'call'} skipped`)
+    console.warn(`[openrouter] platform AI budget for today is spent — ${opts.label ?? opts.feature} skipped`)
     return null
   }
   const refusal = await providerBudgetRefusal(target)
   if (refusal) {
-    console.warn(`${logTag(target)} ${refusal} — ${opts.label ?? 'call'} skipped`)
+    console.warn(`${logTag(target)} ${refusal} — ${opts.label ?? opts.feature} skipped`)
     return null
   }
 
@@ -201,6 +216,8 @@ export async function chatWithOpenRouter(opts: ChatOptions): Promise<string | nu
 
   const timeoutMs = opts.timeoutMs ?? 45_000
   const maxTokens = opts.maxTokens ?? 2000
+  const started = Date.now()
+  const label = opts.label ?? opts.feature
   // Prices for a call whose cost the provider did not report: the model's own
   // (AI_PRICE_TABLE / known ids), else the conservative tier estimate.
   const fallbackPrices = (answeredBy?: string) =>
@@ -219,7 +236,7 @@ export async function chatWithOpenRouter(opts: ChatOptions): Promise<string | nu
       // waiting for: record its worst case so the platform budget sees it.
       const input = `${opts.system ?? ''}${opts.user}`
       await recordUsage({
-        source: `feature:${opts.label ?? 'chat'}`,
+        source: `feature:${label}`,
         model: target.model,
         tokensIn: estimateTokens(input),
         tokensOut: 0,
@@ -230,6 +247,7 @@ export async function chatWithOpenRouter(opts: ChatOptions): Promise<string | nu
         ok: false,
       })
     }
+    await recordAiUsage({ feature: opts.feature, model: target.model, ok: false, latencyMs: Date.now() - started, userId: opts.userId })
     if (res.code === 'TIMEOUT' && res.status === null) {
       console.error(`${logTag(target)} request timed out after ${timeoutMs}ms`)
     } else if (opts.privacySensitive) {
@@ -254,7 +272,7 @@ export async function chatWithOpenRouter(opts: ChatOptions): Promise<string | nu
     estimatePrices: fallbackPrices(res.model),
   })
   await recordUsage({
-    source: `feature:${opts.label ?? 'chat'}`,
+    source: `feature:${label}`,
     model: res.model,
     tokensIn,
     tokensOut,
@@ -263,6 +281,16 @@ export async function chatWithOpenRouter(opts: ChatOptions): Promise<string | nu
     companyId: opts.companyId ?? null,
     providerKey: target.providerKey,
     ok: true,
+  })
+  await recordAiUsage({
+    feature: opts.feature,
+    model: res.model,
+    promptTokens: tokensIn,
+    completionTokens: tokensOut,
+    providerCostUsd: cost.costUsd,
+    latencyMs: Date.now() - started,
+    ok: Boolean(res.text),
+    userId: opts.userId,
   })
   return res.text || null
 }
@@ -284,7 +312,7 @@ export async function chatWithOpenRouter(opts: ChatOptions): Promise<string | nu
  */
 export async function embedWithOpenRouter(
   texts: string[],
-  opts?: { model?: string; dimensions?: number }
+  opts: { feature: AiFeature; model?: string; dimensions?: number; userId?: string | null }
 ): Promise<number[][] | null> {
   const resolved = await resolveTarget('embeddings', {
     model: opts?.model ?? null,
@@ -294,6 +322,7 @@ export async function embedWithOpenRouter(
   if (!Array.isArray(texts) || texts.length === 0) return []
   const target = resolved.target
   const tag = logTag(target, ':embed')
+  const started = Date.now()
 
   const refusal = await providerBudgetRefusal(target)
   if (refusal) {
@@ -308,6 +337,7 @@ export async function embedWithOpenRouter(
     timeoutMs: 20_000,
   })
   if (!res.ok) {
+    await recordAiUsage({ feature: opts.feature, model: target.model, ok: false, latencyMs: Date.now() - started, userId: opts.userId })
     if (res.code === 'TIMEOUT' && res.status === null) {
       console.error(`${tag} request timed out after 20000ms`)
     } else if (res.status !== null) {
@@ -345,6 +375,16 @@ export async function embedWithOpenRouter(
       ok: true,
     })
   }
+  await recordAiUsage({
+    feature: opts.feature,
+    model: res.model,
+    promptTokens: res.tokensIn,
+    completionTokens: 0,
+    providerCostUsd: res.providerCostUsd,
+    latencyMs: Date.now() - started,
+    ok: true,
+    userId: opts.userId,
+  })
   return vectors
 }
 

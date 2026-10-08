@@ -7,6 +7,7 @@ import { createServerClient } from '@/lib/supabase-server'
 import { isRateLimitedKey } from '@/lib/rate-limit'
 import { safeErrorMessage } from '@/lib/api-error'
 import { runSimulation, type SimInput } from '@/lib/simulator/core'
+import { trackUserAction } from '@/lib/events/server'
 
 /**
  * GET  /api/v1/simulator            → { ok, simulations }
@@ -86,5 +87,6 @@ export async function POST(req: NextRequest) {
     .single()
 
   if (error) return NextResponse.json({ ok: false, error: safeErrorMessage(error) }, { status: 500 })
+  void trackUserAction({ userId: user.id, name: 'SIMULATION_RUN', entityType: 'simulation', entityId: data?.id ?? null, metadata: { sim_type: parsed.data.input.simType, horizon: parsed.data.input.horizonMonths } })
   return NextResponse.json({ ok: true, id: data?.id, result })
 }

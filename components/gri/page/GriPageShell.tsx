@@ -12,6 +12,7 @@ import GriScoresNeeded from './GriScoresNeeded'
 import { DEFAULT_SCORES } from '@/lib/gri-calculator/gri-data'
 import { scoresFromSectionAvgs } from '@/lib/gri-calculator/assessment-seed'
 import type { AssessmentCurrent } from '@/lib/gri-assessment/types'
+import { track } from '@/lib/events/client'
 
 const GRICalculator = dynamic(() => import('@/components/gri/calculator/GRICalculator'), {
   loading: () => <div className="animate-pulse h-[400px] bg-white/[0.03] rounded-2xl" />,
@@ -96,6 +97,16 @@ export default function GriPageShell() {
     window.addEventListener('gri:assessment-updated', onUpdate)
     return () => window.removeEventListener('gri:assessment-updated', onUpdate)
   }, [loadAssessment])
+
+  // Product event: the result tab was actually opened for a saved assessment
+  // (once per assessment per page visit).
+  const viewedRef = useRef<string | null>(null)
+  const assessmentId = (assessment as { id?: string } | null)?.id ?? null
+  useEffect(() => {
+    if (tab !== 'result' || !assessmentId || viewedRef.current === assessmentId) return
+    viewedRef.current = assessmentId
+    track('GRI_RESULT_VIEWED', { entityType: 'gri_assessment', entityId: assessmentId })
+  }, [tab, assessmentId])
 
   return (
     <div className="px-4 py-4 space-y-5 max-w-6xl mx-auto">

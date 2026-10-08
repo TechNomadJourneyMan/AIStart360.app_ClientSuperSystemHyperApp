@@ -10,6 +10,8 @@ import { createExpertCase } from '@/lib/assistant/escalation/adapter'
 import { localeFromRequestCookie } from '@/lib/i18n/locale'
 import { isRateLimitedKey } from '@/lib/rate-limit'
 import { gateFeature } from '@/lib/access/gate'
+import { guardAiBudget } from '@/lib/ai/budget'
+import { validateAiText } from '@/lib/ai/validation/apply'
 
 /**
  * POST /api/v1/assistant/ask
@@ -52,6 +54,8 @@ export async function POST(req: NextRequest) {
   // при системном тумблере access_gates (default OFF).
   const gated = await gateFeature(sb, user.id, 'ai_chat')
   if (gated) return gated
+  const overBudget = await guardAiBudget(user.id, 'assistant_ask')
+  if (overBudget) return overBudget
 
   let raw: unknown
   try {
@@ -74,12 +78,17 @@ export async function POST(req: NextRequest) {
     const ctx = await buildAssistantContext(user.id, sb)
     const result = await answerUserQuestion(ctx, question, locale)
 
+    // F-072: the same validator as the report chat — a failed answer becomes
+    // the safe template, never the raw model text.
+    const checked = result?.answer ? await validateAiText(result.answer) : null
+
     // Escalate when the model can't/shouldn't answer from the data.
     const mustEscalate =
       result == null ||
       !result.can_answer ||
       result.needs_expert ||
-      result.confidence === 'low'
+      result.confidence === 'low' ||
+      (checked != null && checked.meta.status === 'blocked')
 
     if (mustEscalate) {
       await createExpertCase(ctx, {
@@ -90,14 +99,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({
         ok: true,
         escalated: true,
-        answer: result?.answer ?? null,
+        answer: checked?.text ?? null,
+        validation: checked?.meta ?? null,
       })
     }
 
     return NextResponse.json({
       ok: true,
       escalated: false,
-      answer: result.answer,
+      answer: checked?.text ?? result.answer,
+      validation: checked?.meta ?? null,
     })
   } catch (error) {
     console.error('[assistant/ask] error:', error)

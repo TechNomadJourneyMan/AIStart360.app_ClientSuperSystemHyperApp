@@ -34,6 +34,7 @@ export async function orchestrateJourneyTurn(
   }
 
   const update = await generateObjectViaOpenRouter({
+    feature: 'journey',
     system: JOURNEY_SYSTEM_PROMPT,
     user: buildJourneyUserPrompt(current, message),
     schema: journeyAiUpdateSchema,

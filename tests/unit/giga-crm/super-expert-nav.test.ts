@@ -34,8 +34,13 @@ describe('навигация SuperExpert', () => {
     expect(gigaSectionTitle(`${GIGA_BASE}/audit`)).toBe('Журнал аудита')
   })
 
+  it('«Мой день» — первый пункт меню', () => {
+    expect(items[0].href).toBe(`${SUPER_EXPERT_BASE}/today`)
+    expect(items[0].label).toBe('Мой день')
+  })
+
   it('«Главная» подсвечивается только на самой главной', () => {
-    const home = items[0]
+    const home = items.find((i) => i.href === SUPER_EXPERT_BASE)!
     expect(isNavActive(home, SUPER_EXPERT_BASE)).toBe(true)
     expect(isNavActive(home, `${SUPER_EXPERT_BASE}/users`)).toBe(false)
   })

@@ -8,8 +8,10 @@ import { flushEvents, track } from '@/lib/events/client'
  * Page views + explicit clicks for the user-facing app. Clicks are recorded
  * only for elements marked `data-track="label"` — no blanket click capture.
  */
-export default function ActivityTracker() {
-  const pathname = usePathname()
+export default function ActivityTracker({ pageAlias }: { pageAlias?: string } = {}) {
+  const rawPath = usePathname()
+  // A path that carries a secret (/r/<token>) is recorded under its alias.
+  const pathname = pageAlias ?? rawPath
   const last = useRef<string | null>(null)
 
   useEffect(() => {
@@ -22,7 +24,7 @@ export default function ActivityTracker() {
     const onClick = (e: MouseEvent) => {
       const el = (e.target as HTMLElement | null)?.closest?.('[data-track]') as HTMLElement | null
       if (!el) return
-      track('BUTTON_CLICKED', { metadata: { label: (el.dataset.track || '').slice(0, 80) } })
+      track('BUTTON_CLICKED', { ...(pageAlias ? { page: pageAlias } : {}), metadata: { label: (el.dataset.track || '').slice(0, 80) } })
     }
     const onHide = () => { if (document.visibilityState === 'hidden') flushEvents(true) }
     document.addEventListener('click', onClick, { capture: true })
@@ -33,7 +35,7 @@ export default function ActivityTracker() {
       document.removeEventListener('visibilitychange', onHide)
       window.removeEventListener('pagehide', onHide)
     }
-  }, [])
+  }, [pageAlias])
 
   return null
 }

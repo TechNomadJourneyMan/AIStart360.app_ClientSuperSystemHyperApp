@@ -26,6 +26,7 @@ describe('structured OpenRouter options', () => {
     vi.stubGlobal('fetch', fetchMock)
 
     await expect(generateObjectViaOpenRouter({
+      feature: 'omnichannel',
       label: 'omnichannel:test',
       model: OPENROUTER_MODELS.sonnet5,
       temperature: null,

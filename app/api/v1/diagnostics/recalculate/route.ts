@@ -6,12 +6,13 @@ import { createServiceClient } from '@/lib/supabase-service'
 import { calculatePointA } from '@/lib/point-a-engine'
 import { loadResolvedInputs } from '@/lib/point-a/resolved-inputs'
 import { notifyAdmins } from '@/lib/notifications'
+import { notifyPointARecalculated } from '@/lib/notifications/product'
+import { runInBackground } from '@/lib/background'
 import { localeFromRequestCookie } from '@/lib/i18n/locale'
 import { getSessionUser, resolveTargetUserId } from '@/lib/api-identity'
 import { isRateLimitedKey } from '@/lib/rate-limit'
 import { trackEvent } from '@/lib/events/track'
 import { internalBaseUrl, internalFetchHeaders } from '@/lib/internal-auth'
-import { runInBackground } from '@/lib/background'
 
 // POST /api/v1/diagnostics/recalculate
 // Body: { user_id? } — the target user; defaults to the session user.
@@ -208,6 +209,11 @@ export async function POST(req: NextRequest) {
         }
       })
     }
+
+    // Клиенту: «Точка А пересчитана» (лента; email — по настройке «reports»).
+    runInBackground('point-a-notify', () =>
+      notifyPointARecalculated(user_id, { diagnosticId: diag?.id ?? null, overallScore: Number(result.overall_score) }),
+    )
 
     // Notify admins about diagnostic recalculation
     notifyAdmins('diagnostic_recalculated', {

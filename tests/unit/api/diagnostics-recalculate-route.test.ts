@@ -73,6 +73,7 @@ vi.mock('@/lib/supabase-server', () => ({ createServerClient: () => fakeClient('
 vi.mock('@/lib/supabase-service', () => ({ createServiceClient: () => fakeClient('service') }))
 vi.mock('@/lib/rate-limit', () => ({ isRateLimitedKey: async () => false }))
 vi.mock('@/lib/notifications', () => ({ notifyAdmins: () => undefined }))
+vi.mock('@/lib/notifications/product', () => ({ notifyPointARecalculated: async () => undefined }))
 vi.mock('@/lib/events/track', () => ({ trackEvent: async () => undefined }))
 vi.mock('@/lib/background', () => ({ runInBackground: (_l: string, work: () => Promise<unknown>) => { const p = work(); h.pending.push(p); return p } }))
 vi.mock('@/lib/agents/queue', () => ({ enqueueAgentTask: async (t: Record<string, unknown>) => { h.enqueued.push(t); return { id: 't1' } } }))

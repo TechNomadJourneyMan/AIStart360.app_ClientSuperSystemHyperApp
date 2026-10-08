@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { GRI_SECTIONS } from '@/lib/gri-assessment/sections'
 import { dbError } from '@/lib/api-error'
+import { trackUserAction } from '@/lib/events/server'
 
 // The 7 GRI section ids — derived from sections.ts so the pulse always tracks
 // the same blocks as the full diagnostic. Used to validate POST bodies.
@@ -155,6 +156,7 @@ export async function POST(req: NextRequest) {
       return dbError('v1/gri/pulse', upsertErr)
     }
 
+    void trackUserAction({ userId, name: 'PULSE_SUBMITTED', entityType: 'gri_pulse', entityId: (saved as { id?: string } | null)?.id ?? null, metadata: { week_start, pulse_index } })
     return NextResponse.json({ ok: true, data: saved })
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'Invalid request'

@@ -1,13 +1,51 @@
+'use client'
+
 import Link from 'next/link'
-import { UserRound } from 'lucide-react'
+import { useState } from 'react'
+import { Eye, EyeOff, Lock, Mail, UserRound } from 'lucide-react'
 
 /**
  * Entry page of the GIGA panel. The shared-password («break-glass») form was
  * removed: staff sign in with their personal account (+ 2FA) and come back to
- * the panel through `?from=`. Middleware sends an already admitted super_admin
- * straight to the panel.
+ * the panel through `?from=`. The owner may also sign in with the email +
+ * password checked against GIGA_OWNER_PASSWORD_HASH (/api/giga-admin/auth),
+ * which then opens an ordinary personal session. Middleware sends an already
+ * admitted super_admin straight to the panel.
  */
 export default function GigaPanelLoginPage() {
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setError('')
+    setLoading(true)
+
+    try {
+      const res = await fetch('/api/giga-admin/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      })
+
+      if (res.ok) {
+        window.location.href = '/admin-giga-panel'
+      } else if (res.status === 429) {
+        setError('Слишком много попыток. Попробуйте позже.')
+      } else {
+        const d = await res.json().catch(() => null)
+        setError(d?.error || 'Неверный email или пароль')
+      }
+    } catch {
+      setError('Ошибка соединения')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   return (
     <div
       className="min-h-screen flex items-center justify-center"
@@ -57,9 +95,78 @@ export default function GigaPanelLoginPage() {
             </span>
           </Link>
 
-          <p className="text-[11px] text-slate-500 text-center leading-relaxed">
-            Вход в панель — только через личный аккаунт сотрудника AIStart360
-            с двухфакторной аутентификацией. Нет доступа — обратитесь к Super Admin.
+          <p className="mb-4 text-center text-[11px] uppercase tracking-[0.15em] text-slate-600">
+            или вход владельца
+          </p>
+
+          <form onSubmit={handleSubmit} className="space-y-4" autoComplete="on">
+            <div className="relative">
+              <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">
+                <Mail size={15} />
+              </div>
+              <input
+                id="giga-email"
+                type="email"
+                name="username"
+                autoComplete="username"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="Email"
+                className="w-full bg-white/[0.05] border border-white/[0.08] rounded-xl
+                  pl-9 pr-3 py-3 text-sm text-slate-200 placeholder:text-slate-600
+                  focus:outline-none focus:border-blue-500/50 focus:bg-white/[0.07]
+                  transition-all"
+                autoFocus
+              />
+            </div>
+
+            <div className="relative">
+              <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">
+                <Lock size={15} />
+              </div>
+              <input
+                id="giga-password"
+                type={showPassword ? 'text' : 'password'}
+                name="password"
+                autoComplete="current-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Пароль"
+                className="w-full bg-white/[0.05] border border-white/[0.08] rounded-xl
+                  pl-9 pr-10 py-3 text-sm text-slate-200 placeholder:text-slate-600
+                  focus:outline-none focus:border-blue-500/50 focus:bg-white/[0.07]
+                  transition-all"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((v) => !v)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+                aria-label={showPassword ? 'Скрыть пароль' : 'Показать пароль'}
+              >
+                {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+              </button>
+            </div>
+
+            {error && (
+              <p className="text-red-400 text-xs text-center">{error}</p>
+            )}
+
+            <button
+              type="submit"
+              disabled={loading || !email || !password}
+              className="w-full py-3 rounded-xl bg-blue-500/20 border border-blue-500/30
+                text-blue-300 text-sm font-medium
+                hover:bg-blue-500/30 hover:border-blue-500/50
+                disabled:opacity-40 disabled:cursor-not-allowed
+                transition-all duration-200"
+            >
+              {loading ? 'Проверка...' : 'Войти'}
+            </button>
+          </form>
+
+          <p className="mt-4 text-[11px] text-slate-500 text-center leading-relaxed">
+            Сотрудники входят через личный аккаунт с 2FA; форма владельца — только
+            для владельца платформы. Нет доступа — обратитесь к Super Admin.
           </p>
         </div>
       </div>

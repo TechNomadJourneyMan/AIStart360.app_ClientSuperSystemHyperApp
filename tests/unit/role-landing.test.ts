@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest'
+import type { UserRole } from '@/types'
 import { postLoginPath, roleLandingPath } from '@/lib/role-landing'
+
+// 'owner' left the UserRole type (removed 2026-09-24); legacy rows still carry it.
+const LEGACY_OWNER = 'owner' as unknown as UserRole
 
 describe('roleLandingPath (FE-06)', () => {
   it('routes staff roles to their home', () => {
@@ -16,8 +20,8 @@ describe('roleLandingPath (FE-06)', () => {
   })
 
   it('treats the legacy owner role as a client (the owner cabinet was removed)', () => {
-    expect(roleLandingPath('owner', 'approved')).toBe('/client/home')
-    expect(roleLandingPath('owner', 'pending_approval')).toBe('/client/waiting-room')
+    expect(roleLandingPath(LEGACY_OWNER, 'approved')).toBe('/client/home')
+    expect(roleLandingPath(LEGACY_OWNER, 'pending_approval')).toBe('/client/waiting-room')
   })
 
   it('sends staff to their panel whatever profiles.role says', () => {

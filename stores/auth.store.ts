@@ -250,7 +250,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
           email: input.email,
           password: input.password,
           name: input.name,
-          role: input.role ?? 'client',
+          role: 'client', // self-registration creates clients only
           organization: input.organization,
           position: input.position,
         }),

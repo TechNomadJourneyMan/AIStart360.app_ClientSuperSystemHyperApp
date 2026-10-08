@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { toast } from 'sonner'
-import { Archive, Ban, KeyRound, LayoutGrid, RotateCcw, ShieldOff, UserCog } from 'lucide-react'
+import { Archive, Ban, KeyRound, LayoutGrid, RotateCcw, ShieldOff, Trash2, UserCog } from 'lucide-react'
 import { Badge, Button, ConfirmDialog, Field, GigaApiError, Panel, Select, Timeline, fmtAgo, fmtDateTime, gigaFetch, inputClass } from '../kit'
 import { AccessControls } from '../UserDetailPanel'
 import { UserSettingsModal } from '../UserSettingsModal'
@@ -20,15 +20,43 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
   )
 }
 
-type Pending = null | 'block' | 'unblock' | 'archive' | 'restore' | '2fa' | 'role'
+type Pending = null | 'block' | 'unblock' | 'archive' | 'restore' | '2fa' | 'role' | 'purge'
 
-export function ProfileTab({ data, onChanged }: { data: User360Profile; onChanged: () => void }) {
+const PURGE_COUNT_LABELS: Record<string, string> = {
+  companies: 'компаний', documents: 'документов', files: 'файлов', survey_answers: 'ответов анкеты',
+  gri_assessments: 'прохождений GRI', diagnostics: 'диагностик', ai_conversations: 'ИИ-диалогов',
+}
+
+export function ProfileTab({ data, onChanged, onPurged }: { data: User360Profile; onChanged: () => void; onPurged?: () => void }) {
   const p = data.profile
   const [pending, setPending] = useState<Pending>(null)
   const [busy, setBusy] = useState(false)
   const [reason, setReason] = useState('')
   const [role, setRole] = useState<StaffRole | ''>(data.staffRole ?? '')
   const [widgetsOpen, setWidgetsOpen] = useState(false)
+  const [purgeCounts, setPurgeCounts] = useState<Record<string, number> | null>(null)
+
+  const openPurge = () => {
+    setPurgeCounts(null)
+    setPending('purge')
+    gigaFetch<{ counts: Record<string, number> }>(`/api/giga-admin/users/${p.id}/purge`)
+      .then((r) => setPurgeCounts(r.counts))
+      .catch((e) => toast.error(e instanceof GigaApiError ? e.message : 'Не удалось получить объём данных'))
+  }
+
+  const purge = async () => {
+    setBusy(true)
+    try {
+      const r = await gigaFetch<{ filesFailed: number }>(`/api/giga-admin/users/${p.id}/purge`, { method: 'POST', json: { confirmEmail: p.email, reason } })
+      toast.success(r.filesFailed ? `Пользователь удалён, но ${r.filesFailed} файл(ов) не удалось стереть из хранилища` : 'Пользователь удалён навсегда')
+      setPending(null)
+      onPurged?.()
+    } catch (e) {
+      toast.error(e instanceof GigaApiError ? e.message : 'Удаление не выполнено')
+    } finally {
+      setBusy(false)
+    }
+  }
 
   const run = async (fn: () => Promise<unknown>, ok: string) => {
     setBusy(true)
@@ -98,7 +126,8 @@ export function ProfileTab({ data, onChanged }: { data: User360Profile; onChange
               ? <Button variant="secondary" icon={<RotateCcw size={13} />} onClick={() => setPending('restore')}>Восстановить из архива</Button>
               : <Button variant="danger" icon={<Archive size={13} />} onClick={() => setPending('archive')}>Архивировать (удалить)</Button>
           )}
-          {!data.can.manage && !data.can.archive && !data.can.roles && <p className="text-xs text-slate-500">Для вашей роли действия недоступны.</p>}
+          {data.can.purge && p.email && <Button variant="danger" icon={<Trash2 size={13} />} onClick={openPurge}>Удалить навсегда</Button>}
+          {!data.can.manage && !data.can.archive && !data.can.roles && !data.can.purge && <p className="text-xs text-slate-500">Для вашей роли действия недоступны.</p>}
         </div>
       </Panel>
 
@@ -106,11 +135,13 @@ export function ProfileTab({ data, onChanged }: { data: User360Profile; onChange
         open={pending === 'block'}
         onClose={() => setPending(null)}
         title="Заблокировать пользователя?"
-        text="Вход будет закрыт немедленно: статус «заблокирован» и бан сессий. Данные сохраняются."
+        text="Вход будет закрыт немедленно: статус «заблокирован» и бан сессий. Данные сохраняются. Причина попадёт в журнал действий."
         confirmLabel="Заблокировать"
         loading={busy}
-        onConfirm={() => run(() => gigaFetch(`/api/giga-admin/users/${p.id}/block`, { method: 'POST', json: {} }), 'Пользователь заблокирован')}
-      />
+        onConfirm={() => run(() => gigaFetch(`/api/giga-admin/users/${p.id}/block`, { method: 'POST', json: { reason } }), 'Пользователь заблокирован')}
+      >
+        <Field label="Причина"><input value={reason} onChange={(e) => setReason(e.target.value)} className={inputClass} maxLength={300} placeholder="Например: спам, нарушение правил" /></Field>
+      </ConfirmDialog>
       <ConfirmDialog
         open={pending === 'unblock'}
         onClose={() => setPending(null)}
@@ -118,8 +149,10 @@ export function ProfileTab({ data, onChanged }: { data: User360Profile; onChange
         title="Разблокировать пользователя?"
         confirmLabel="Разблокировать"
         loading={busy}
-        onConfirm={() => run(() => gigaFetch(`/api/giga-admin/users/${p.id}/unblock`, { method: 'POST', json: {} }), 'Пользователь разблокирован')}
-      />
+        onConfirm={() => run(() => gigaFetch(`/api/giga-admin/users/${p.id}/unblock`, { method: 'POST', json: { reason } }), 'Пользователь разблокирован')}
+      >
+        <Field label="Причина (необязательно)"><input value={reason} onChange={(e) => setReason(e.target.value)} className={inputClass} maxLength={300} /></Field>
+      </ConfirmDialog>
       <ConfirmDialog
         open={pending === '2fa'}
         onClose={() => setPending(null)}
@@ -146,6 +179,25 @@ export function ProfileTab({ data, onChanged }: { data: User360Profile; onChange
           () => gigaFetch(`/api/giga-admin/users/${p.id}/archive`, { method: 'POST', json: { action: pending === 'archive' ? 'archive' : 'restore', reason } }),
           pending === 'archive' ? 'Пользователь в архиве' : 'Пользователь восстановлен',
         )}
+      >
+        <Field label="Причина"><input value={reason} onChange={(e) => setReason(e.target.value)} className={inputClass} maxLength={300} /></Field>
+      </ConfirmDialog>
+      <ConfirmDialog
+        open={pending === 'purge'}
+        onClose={() => setPending(null)}
+        title="Удалить пользователя навсегда?"
+        text={<>
+          Учётная запись, профиль, компания, анкета, GRI, документы и файлы будут <b className="text-rose-300">удалены из платформы и базы без возможности восстановления</b>. В журнале останется только запись об удалении. Если нужно просто закрыть доступ — используйте архивацию.
+          <span className="mt-2 block text-slate-300">
+            {purgeCounts
+              ? `Будет удалено: ${Object.entries(purgeCounts).filter(([, n]) => n > 0).map(([k, n]) => `${n} ${PURGE_COUNT_LABELS[k] ?? k}`).join(', ') || 'только учётная запись'}.`
+              : 'Считаю объём данных…'}
+          </span>
+        </>}
+        confirmLabel="Удалить навсегда"
+        requireText={p.email ?? undefined}
+        loading={busy}
+        onConfirm={purge}
       >
         <Field label="Причина"><input value={reason} onChange={(e) => setReason(e.target.value)} className={inputClass} maxLength={300} /></Field>
       </ConfirmDialog>

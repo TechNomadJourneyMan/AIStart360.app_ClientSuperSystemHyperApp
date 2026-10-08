@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Eye, EyeOff, Lock, Mail, MailCheck, ShieldCheck } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
@@ -31,6 +31,13 @@ export default function SuperExpertLoginPage() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [linkState, setLinkState] = useState<'idle' | 'sending' | 'sent'>('idle')
+
+  // ?denied=1 — сюда приводят тех, у кого нет роли персонала.
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('denied') === '1') {
+      setError('У этой учётной записи нет доступа к кабинету SuperExpert — попросите администратора выдать вам эту роль.')
+    }
+  }, [])
 
   // Вход по одноразовой ссылке: письмо шлём мы сами (см. /api/v1/auth/email-link),
   // поэтому настройки Supabase на него не влияют. Ответ сервера намеренно

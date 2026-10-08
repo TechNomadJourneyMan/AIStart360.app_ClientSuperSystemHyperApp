@@ -6,6 +6,8 @@ import { createServiceClient } from '@/lib/supabase-service'
 import { buildJourney, JOURNEY_STAGES, type JourneyStageKey } from '@/lib/admin/journey'
 import { hasPermission } from '@/lib/admin/rbac'
 import { maskEmail } from '@/lib/admin/mask'
+import { isSurveyCompleted } from '@/lib/survey/completion'
+import { filterByScope, scopedClientIds } from '@/lib/admin/client-scope'
 
 // GET /api/giga-admin/cjm?stage=&page=&stalledDays=14
 // Funnel with conversions, where people stop, and who is stuck at a stage.
@@ -13,7 +15,10 @@ const PAGE = 25
 
 interface Row {
   user_id: string; registered_at: string | null; approved_at: string | null; survey_started_at: string | null
-  survey_steps: number; survey_updated_at: string | null; point_a_at: string | null; gri_started_at: string | null
+  survey_steps: number; survey_updated_at: string | null
+  /** Единое определение «анкета заполнена» (lib/survey/completion.ts, миграция 090). */
+  survey_completed_at?: string | null
+  point_a_at: string | null; gri_started_at: string | null
   gri_completed_at: string | null; point_b_at: string | null; content_viewed_at: string | null; last_seen_at: string | null
 }
 
@@ -28,7 +33,9 @@ export async function GET(req: NextRequest) {
   const sb = createServiceClient()
   const { data, error } = await sb.rpc('admin_journey_stages')
   if (error) return NextResponse.json({ ok: false, error: 'Не удалось построить CJM' }, { status: 500 })
-  const rows = (data ?? []) as Row[]
+  // Эксперт со scope 'assigned' видит воронку и «застрявших» только по своим клиентам.
+  const allowed = await scopedClientIds(guard.actor)
+  const rows = filterByScope((data ?? []) as Row[], allowed, (r) => r.user_id)
 
   const now = Date.now()
   const journeys = rows.map((r) => ({
@@ -38,7 +45,10 @@ export async function GET(req: NextRequest) {
       registered: r.registered_at,
       approved: r.approved_at,
       survey_started: r.survey_started_at,
-      survey_completed: r.survey_steps >= 12 ? r.survey_updated_at : null,
+      survey_completed: r.survey_completed_at !== undefined
+        ? r.survey_completed_at ?? null
+        // До применения 090 у RPC нет колонки — старое правило как фолбэк.
+        : isSurveyCompleted({ filledSteps: r.survey_steps }) ? r.survey_updated_at : null,
       point_a: r.point_a_at,
       gri_started: r.gri_started_at,
       gri_completed: r.gri_completed_at,

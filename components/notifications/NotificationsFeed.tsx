@@ -18,6 +18,7 @@ interface Notif {
 const CAT_ICON: Record<string, string> = {
   security: 'lock', profile: 'person', settings: 'settings', integration: 'hub',
   team: 'group', report: 'description', system: 'notifications', billing: 'credit_card',
+  gri: 'insights', expert: 'support_agent', reminders: 'schedule', digest: 'mail', crm: 'call', survey: 'assignment_turned_in',
 }
 const PRIO_DOT: Record<string, string> = {
   critical: 'bg-error', high: 'bg-tertiary-container', medium: 'bg-primary', low: 'bg-on-surface-variant/40',

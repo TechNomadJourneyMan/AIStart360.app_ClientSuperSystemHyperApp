@@ -3,10 +3,11 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { isRateLimited } from '@/lib/rate-limit'
+import { getDailyBriefing } from '@/lib/pulse/briefing'
 import * as bitrix24 from '@/lib/crm/bitrix24'
 import * as amocrm from '@/lib/crm/amocrm'
-import { chatWithOpenRouter, hasOpenRouterKey } from '@/lib/ai/openrouter'
-import { fenceUntrusted, UNTRUSTED_DATA_RULES } from '@/lib/ai/gateway'
+import { hasOpenRouterKey } from '@/lib/ai/openrouter'
+import { fenceUntrusted } from '@/lib/ai/gateway'
 
 const STAGE_RISK: Record<string, number> = {
   NEW: 30, PREPARATION: 40, PREPAYMENT_INVOICE: 25,
@@ -18,8 +19,9 @@ const STAGE_RISK: Record<string, number> = {
 const PULSE_ROLES = new Set(['super_admin', 'admin', 'expert', 'manager'])
 
 /**
- * POST /api/pulse/briefing — generate or refresh daily sales briefing
- * Caches in setting 'pulse_briefing' for 1 day
+ * POST /api/pulse/briefing — daily sales briefing from the connected CRM.
+ * Generation goes through lib/pulse/briefing.ts: shared OpenRouter client,
+ * validator, per-user day cache (ai_briefing_cache) and 10/hour limit.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -37,7 +39,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
-    // Throttle the paid AI call per caller.
+    // Throttle the route per caller (the paid generation itself is also
+    // limited per user per hour inside getDailyBriefing).
     if (await isRateLimited(req, 'pulse-briefing')) {
       return NextResponse.json({ briefing: null, error: 'Слишком часто. Попробуйте позже.' }, { status: 429 })
     }
@@ -93,10 +96,7 @@ export async function POST(req: NextRequest) {
     const highRisk = ranked.filter(d => d.risk >= 60).length
     const lostRevenue = ranked.filter(d => d.risk >= 60).reduce((s, d) => s + d.amount, 0)
 
-    // Shared client: provider privacy, platform AI budget, spend ledger.
-    const content = await chatWithOpenRouter({
-      system: UNTRUSTED_DATA_RULES,
-      user: `Ты бизнес-ассистент в системе AIStart360. Дай краткий утренний брифинг для менеджера по продажам на русском языке (3-4 предложения).
+    const prompt = `Ты бизнес-ассистент в системе AIStart360. Дай краткий утренний брифинг для менеджера по продажам на русском языке (3-4 предложения).
 
 Портфель на сегодня:
 - Всего сделок: ${deals.length}
@@ -107,15 +107,17 @@ export async function POST(req: NextRequest) {
 ТОП-5 приоритетных:
 ${fenceUntrusted('crm_deals', top5)}
 
-Скажи конкретно: с кем поговорить в первую очередь и почему. Назови названия сделок. Формат: 3-4 предложения, без заголовков и списков.`,
-      model: 'google/gemini-2.0-flash-001',
-      maxTokens: 250,
-      temperature: 0.7,
-      timeoutMs: 10000,
-      label: 'pulse.briefing',
-    })
-    if (!content) return NextResponse.json({ briefing: null, error: 'Модель не ответила' })
-    return NextResponse.json({ briefing: content.trim() || null })
+Скажи конкретно: с кем поговорить в первую очередь и почему. Назови названия сделок. Опирайся только на эти данные. Формат: 3-4 предложения, без заголовков и списков.`
+
+    // Shared client (provider privacy, budgets, spend ledger) + validator +
+    // per-user day cache — lib/pulse/briefing.ts.
+    const result = await getDailyBriefing(user.id, prompt)
+    if (result.limited) {
+      return NextResponse.json({ briefing: null, error: 'Слишком часто. Попробуйте позже.' }, { status: 429 })
+    }
+    const briefing = result.text
+
+    return NextResponse.json({ briefing, cached: result.cached, validation: result.validation })
   } catch (error) {
     console.error('[pulse/briefing] Error:', error)
     return NextResponse.json({ briefing: null, error: 'Failed to generate briefing' })

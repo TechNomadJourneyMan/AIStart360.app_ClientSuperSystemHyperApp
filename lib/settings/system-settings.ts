@@ -93,7 +93,7 @@ async function setBoolSetting(key: string, enabled: boolean, updatedBy?: string 
 }
 
 /**
- * №15/6B: авто-одобрение self-serve регистраций (client/owner) в режиме
+ * №15/6B: авто-одобрение self-serve регистраций (client) в режиме
  * 'approval'. Default TRUE — решение ПО 2026-07-09 (главное трение активации);
  * ручная модерация возвращается выключением этого тумблера в giga-admin.
  */

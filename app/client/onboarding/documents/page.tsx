@@ -24,6 +24,7 @@ import {
   formatDocumentSize,
   type DocumentStatusView,
 } from '@/lib/documents/status-view'
+import { trackLogout } from '@/lib/events/client'
 
 interface ParsedDocumentData {
   summary?: unknown
@@ -535,6 +536,7 @@ export default function DocumentsPage() {
             <button onClick={async () => {
                 // End the Supabase session too, or middleware bounces the user
                 // right back (couldn't sign out from the documents step).
+                trackLogout()
                 try {
                   await createClient().auth.signOut()
                 } catch (err) {

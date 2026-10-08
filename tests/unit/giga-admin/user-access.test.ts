@@ -16,15 +16,21 @@ const audit = vi.hoisted(() => ({ fn: vi.fn() }))
 // W8: tier changes go through the billing service (subscriptions + profiles.tier).
 const billing = vi.hoisted(() => ({ setPlan: vi.fn(async () => ({ applied: true })) }))
 vi.mock('@/lib/payments/billing', () => ({ setPlan: billing.setPlan }))
+const events = vi.hoisted(() => ({ track: vi.fn(async () => undefined) }))
+vi.mock('@/lib/events/track', () => ({ trackEvent: events.track }))
 
 // Panel access comes from a personal staff session (the shared-password
 // break-glass cookie was removed); the REAL RBAC matrix decides permissions.
+// giga.role === 'super_admin' ⇒ a super_admin session actor, anything else ⇒ none.
 vi.mock('@/lib/admin/giga-actor', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/admin/giga-actor')>()
   const { makeRequireGiga } = await import('../_giga-guard')
+  const current = () => (giga.role === 'super_admin' ? { id: '00000000-0000-4000-8000-0000000000aa', kind: 'session' as const, role: 'super_admin' as const } : null)
   return {
     ...actual,
-    requireGiga: makeRequireGiga(() => (giga.role === 'super_admin' ? { id: '00000000-0000-4000-8000-0000000000aa', kind: 'session', role: 'super_admin' as const } : null)),
+    requireGiga: makeRequireGiga(current),
+    getGigaActor: async () => { const a = current(); return a ? { ...a, permissions: [] } : null },
+    isGigaSuperAdmin: async () => current() !== null,
   }
 })
 vi.mock('@/lib/audit', () => ({ logAudit: (...a: unknown[]) => audit.fn(...a) }))
@@ -65,6 +71,7 @@ describe('giga-admin user access PATCH', () => {
     db.lastPatch = null
     audit.fn.mockReset()
     billing.setPlan.mockClear()
+    events.track.mockClear()
   })
 
   it('403 for non-super_admin', async () => {
@@ -78,6 +85,27 @@ describe('giga-admin user access PATCH', () => {
     expect(res.status).toBe(200)
     expect(billing.setPlan).toHaveBeenCalledWith(expect.objectContaining({ userId: UID, tier: 'pro', source: 'admin' }))
     expect(db.lastPatch).toBeNull()
+  })
+
+  it('emits TIER_CHANGED (source admin) when the billing service actually changed the access tier', async () => {
+    billing.setPlan.mockResolvedValueOnce({
+      applied: true,
+      before: { accessTier: 'free' },
+      after: { accessTier: 'pro' },
+    } as never)
+    await PATCH(req({ tier: 'pro' }), { params: { id: UID } })
+    expect(events.track).toHaveBeenCalledWith(expect.objectContaining({
+      userId: UID,
+      name: 'TIER_CHANGED',
+      source: 'admin',
+      metadata: expect.objectContaining({ from: 'free', to: 'pro', by: 'staff' }),
+    }))
+  })
+
+  it('no TIER_CHANGED when the plan change was not applied', async () => {
+    billing.setPlan.mockResolvedValueOnce({ applied: false } as never)
+    await PATCH(req({ tier: 'pro' }), { params: { id: UID } })
+    expect(events.track).not.toHaveBeenCalled()
   })
 
   it('updates feature_flags and audits', async () => {

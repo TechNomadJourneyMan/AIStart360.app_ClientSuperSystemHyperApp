@@ -562,6 +562,7 @@ ${UNTRUSTED_DATA_RULES}`
 
   try {
     const raw = await chatWithOpenRouter({
+      feature: 'doc_extract',
       label: 'documents.extract_rows',
       model: OPENROUTER_MODELS.sonnet,
       system: systemPrompt,
@@ -608,6 +609,7 @@ ${UNTRUSTED_DATA_RULES}`
 
   try {
     const raw = await chatWithOpenRouter({
+      feature: 'doc_extract',
       label: 'documents.extract_rows',
       model: OPENROUTER_MODELS.sonnet,
       system: systemPrompt,

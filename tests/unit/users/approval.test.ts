@@ -35,6 +35,14 @@ vi.mock('@/lib/email', () => ({
   },
 }))
 
+const inApp = vi.hoisted(() => ({ fn: vi.fn() }))
+vi.mock('@/lib/notifications/product', () => ({
+  notifyAccessGranted: (...args: any[]) => {
+    inApp.fn(...args)
+    return Promise.resolve({ ok: true, delivered: { inApp: true, email: false, telegram: false } })
+  },
+}))
+
 import { applyApprovalDecision } from '@/lib/users/approval'
 
 describe('applyApprovalDecision — single source of truth for profiles.status', () => {
@@ -58,6 +66,8 @@ describe('applyApprovalDecision — single source of truth for profiles.status',
     expect(calls.update.approved_by).toBe('admin-uuid')
     expect(emailMock.fn).toHaveBeenCalledTimes(1)
     expect(r.emailSent).toBe(true)
+    // «Доступ открыт» ещё и в ленте клиента (notifyClient, категория security).
+    expect(inApp.fn).toHaveBeenCalledWith('u1')
   })
 
   it('affected=0 and NO email when no profile matches (never silent success)', async () => {

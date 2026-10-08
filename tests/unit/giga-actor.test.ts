@@ -260,7 +260,7 @@ describe('second factor on the GIGA API (middleware does not gate /api/*)', () =
 })
 
 describe('signStaffCookie (impersonation keeps the admin in the panel)', () => {
-  const base = { role: 'super_admin' as const, permissions: [], email: 'a@x.kz' }
+  const base = { role: 'super_admin' as const, permissions: [], email: 'a@x.kz', clientScope: 'all' as const }
   it('is minted for a personal session actor', async () => {
     const token = await signStaffCookie({ ...base, id: 'admin-1', kind: 'session' } as GigaActor)
     expect(token).toBeTruthy()

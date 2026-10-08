@@ -3,8 +3,9 @@ import { createServerClient } from '@/lib/supabase-server'
 import * as bitrix24 from '@/lib/crm/bitrix24'
 import * as amocrm from '@/lib/crm/amocrm'
 import type { CrmDeal } from '@/lib/crm/types'
-import { chatWithOpenRouter, hasOpenRouterKey } from '@/lib/ai/openrouter'
-import { fenceUntrusted, UNTRUSTED_DATA_RULES } from '@/lib/ai/gateway'
+import { hasOpenRouterKey } from '@/lib/ai/openrouter'
+import { fenceUntrusted } from '@/lib/ai/gateway'
+import { getDailyBriefing } from '@/lib/pulse/briefing'
 
 export const dynamic = 'force-dynamic'
 
@@ -371,22 +372,19 @@ export async function GET() {
       dailyTarget: 6,
     }
 
-    // ── 4. AI daily briefing via OpenRouter ──
+    // ── 4. AI daily briefing (shared OpenRouter client, validated, cached per
+    // user per day, 10 generations/hour — lib/pulse/briefing.ts) ──
     let aiBriefing: string | null = null
     if (hasOpenRouterKey() && todayClients.length > 0) {
-      try {
-        const top5 = todayClients
-          .sort((a, b) => (b.riskScore as number) - (a.riskScore as number))
-          .slice(0, 5)
-          .map((c, i) => `${i + 1}. "${c.name}" — ${(c.avgCheck as number)?.toLocaleString('ru')} ₸, риск ${c.riskScore}/100, ${c.sector}, ${c.comment || 'без комментария'}`)
-          .join('\n')
+      const top5 = todayClients
+        .sort((a, b) => (b.riskScore as number) - (a.riskScore as number))
+        .slice(0, 5)
+        .map((c, i) => `${i + 1}. "${c.name}" — ${(c.avgCheck as number)?.toLocaleString('ru')} ₸, риск ${c.riskScore}/100, ${c.sector}, ${c.comment || 'без комментария'}`)
+        .join('\n')
 
-        const totalRevenue = todayClients.reduce((s, c) => s + ((c.avgCheck as number) || 0), 0)
+      const totalRevenue = todayClients.reduce((s, c) => s + ((c.avgCheck as number) || 0), 0)
 
-        // Shared client: provider privacy, platform AI budget, spend ledger.
-        const content = await chatWithOpenRouter({
-          system: UNTRUSTED_DATA_RULES,
-          user: `Ты AI-ассистент продаж в системе AIStart360. Дай краткий утренний брифинг для менеджера на русском языке (3-4 предложения).
+      const prompt = `Ты AI-ассистент продаж в системе AIStart360. Дай краткий утренний брифинг для менеджера на русском языке (3-4 предложения).
 
 Данные портфеля на сегодня:
 - Всего сделок: ${todayClients.length}
@@ -398,17 +396,10 @@ export async function GET() {
 ТОП-5 приоритетных сделок:
 ${fenceUntrusted('crm_deals', top5)}
 
-Скажи: с кем поговорить в первую очередь и почему. Будь конкретен — назови название сделки. Формат: 3-4 предложения, без заголовков и списков.`,
-          model: 'google/gemini-2.0-flash-001',
-          maxTokens: 250,
-          temperature: 0.7,
-          timeoutMs: 8000,
-          label: 'pulse.briefing',
-        })
-        aiBriefing = content?.trim() || null
-      } catch (aiErr) {
-        console.error('[pulse] AI briefing error (non-fatal):', aiErr)
-      }
+Скажи: с кем поговорить в первую очередь и почему. Будь конкретен — назови название сделки. Опирайся только на эти данные, ничего не выдумывай. Формат: 3-4 предложения, без заголовков и списков.`
+
+      const briefing = await getDailyBriefing(userId, prompt)
+      aiBriefing = briefing.text
     }
 
     return NextResponse.json({ stats, todayClients, aiBriefing })

@@ -177,6 +177,7 @@ export async function converseWithGree(
 
   try {
     const result = await generateObjectViaOpenRouter({
+      feature: 'assistant_converse',
       label: 'gree:chat',
       complexity: 'high', // dialogue grounding over the snapshot + scope police.
       maxTokens: 700,

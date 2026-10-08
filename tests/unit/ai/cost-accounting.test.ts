@@ -84,7 +84,7 @@ describe('gateway: timed-out attempts', () => {
 describe('chatWithOpenRouter: spend ledger', () => {
   it('records an estimate, not $0, when OpenRouter omits usage.cost', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => answer({ prompt_tokens: 3000, completion_tokens: 1000 })))
-    expect(await chatWithOpenRouter({ user: 'u', model: HAIKU, label: 't' })).toBe('ok')
+    expect(await chatWithOpenRouter({ feature: 'ai_chat', user: 'u', model: HAIKU, label: 't' })).toBe('ok')
     expect(ledger.records).toHaveLength(1)
     expect(ledger.records[0]).toMatchObject({ costSource: 'estimate', ok: true })
     expect(ledger.records[0].costUsd).toBeCloseTo((3000 * 1 + 1000 * 5) / 1e6, 9)
@@ -93,7 +93,7 @@ describe('chatWithOpenRouter: spend ledger', () => {
   it('records the worst case of a timed-out call as a failed row', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined)
     vi.stubGlobal('fetch', vi.fn(async () => { throw timeout() }))
-    expect(await chatWithOpenRouter({ user: 'u', model: HAIKU, maxTokens: 1000, label: 't', companyId: 'c1' })).toBeNull()
+    expect(await chatWithOpenRouter({ feature: 'ai_chat', user: 'u', model: HAIKU, maxTokens: 1000, label: 't', companyId: 'c1' })).toBeNull()
     expect(ledger.records).toHaveLength(1)
     expect(ledger.records[0]).toMatchObject({ ok: false, costSource: 'estimate', companyId: 'c1', source: 'feature:t' })
     expect(Number(ledger.records[0].costUsd)).toBeGreaterThan(0.004)

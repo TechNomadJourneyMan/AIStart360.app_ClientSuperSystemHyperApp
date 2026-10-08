@@ -6,6 +6,7 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase-client'
 import type { ApprovalStatus } from '@/types/onboarding'
+import { trackLogout } from '@/lib/events/client'
 
 type StatusConfig = {
   label: string
@@ -122,6 +123,7 @@ export default function WaitingRoomPage() {
               // Must end the Supabase session, not just the legacy cookie —
               // otherwise middleware sees a live session and bounces the user
               // straight back in (pending client could never sign out).
+              trackLogout()
               try { await createClient().auth.signOut() } catch {}
               document.cookie = 'aistart360_role=; path=/; max-age=0'
               document.cookie = 'aistart360_user_id=; path=/; max-age=0'

@@ -7,6 +7,7 @@ import { prisma } from '@/lib/db'
 import { createServiceClient } from '@/lib/supabase-service'
 import { logAudit } from '@/lib/audit'
 import { BillingError, KASPI_WEBHOOK_ACTOR, getEffectivePlan, setPlan } from '@/lib/payments/billing'
+import { trackEvent } from '@/lib/events/track'
 
 /**
  * POST /api/webhooks/kaspi — платёжный callback Kaspi-эквайринга.
@@ -168,6 +169,14 @@ export async function POST(req: NextRequest) {
     if (!planResult.applied) {
       // A concurrent duplicate got here first: the payment is already final.
       return NextResponse.json({ ok: true, note: 'already_finalized' })
+    }
+
+    // Product event: tier change caused by a payment (no event on a renewal).
+    const tierUserId = planResult.userId ?? userId
+    const fromTier = planResult.before.tier
+    const toTier = planResult.after?.tier ?? 'pro'
+    if (tierUserId && fromTier !== toTier) {
+      void trackEvent({ userId: tierUserId, name: 'TIER_CHANGED', entityType: 'user', entityId: tierUserId, metadata: { from: fromTier, to: toTier, by: 'payment' }, source: 'server' })
     }
 
     await logAudit({

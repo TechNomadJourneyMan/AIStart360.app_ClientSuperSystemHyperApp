@@ -37,19 +37,19 @@ const body = () => JSON.parse(fetchSpy.mock.calls[0][1].body as string)
 
 describe('chatWithOpenRouter controls', () => {
   it('forbids providers to keep the data and asks for the real cost', async () => {
-    expect(await chatWithOpenRouter({ user: 'u', label: 'test.feature' })).toBe('ok')
+    expect(await chatWithOpenRouter({ feature: 'ai_chat', user: 'u', label: 'test.feature' })).toBe('ok')
     expect(body().provider).toEqual({ data_collection: 'deny' })
     expect(body().usage).toEqual({ include: true })
   })
 
   it('keeps require_parameters for strict schemas and adds the privacy rule', async () => {
     process.env.AI_PRIVACY_MODE = 'strict'
-    await chatWithOpenRouter({ user: 'u', jsonSchema: { name: 's', schema: { type: 'object' } } })
+    await chatWithOpenRouter({ feature: 'ai_chat', user: 'u', jsonSchema: { name: 's', schema: { type: 'object' } } })
     expect(body().provider).toEqual({ require_parameters: true, data_collection: 'deny', zdr: true })
   })
 
   it('records the provider-reported cost under the feature label', async () => {
-    await chatWithOpenRouter({ user: 'u', label: 'test.feature', companyId: 'c1' })
+    await chatWithOpenRouter({ feature: 'ai_chat', user: 'u', label: 'test.feature', companyId: 'c1' })
     expect(ledger.records).toEqual([expect.objectContaining({
       source: 'feature:test.feature', model: 'anthropic/claude-sonnet-4.5', tokensIn: 100, tokensOut: 20,
       costUsd: 0.0006, costSource: 'provider', companyId: 'c1',
@@ -58,12 +58,12 @@ describe('chatWithOpenRouter controls', () => {
 
   it('does not call the model once the platform budget for today is spent', async () => {
     ledger.left = 0
-    expect(await chatWithOpenRouter({ user: 'u' })).toBeNull()
+    expect(await chatWithOpenRouter({ feature: 'ai_chat', user: 'u' })).toBeNull()
     expect(fetchSpy).not.toHaveBeenCalled()
   })
 
   it('still works when the budget cannot be determined (database unavailable)', async () => {
     ledger.left = null
-    expect(await chatWithOpenRouter({ user: 'u' })).toBe('ok')
+    expect(await chatWithOpenRouter({ feature: 'ai_chat', user: 'u' })).toBe('ok')
   })
 })

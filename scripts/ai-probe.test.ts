@@ -15,6 +15,7 @@ const run = hasOpenRouterKey() ? describe : describe.skip
 async function timed(label: string, model: string, words: number) {
   const t0 = Date.now()
   const out = await chatWithOpenRouter({
+    feature: 'ai_chat',
     system: 'You are a business consultant. Respond in English, dense and specific.',
     user: `Write exactly ${words} words analysing a Kazakhstan coffee chain's finance and sales. Use numbers.`,
     model,

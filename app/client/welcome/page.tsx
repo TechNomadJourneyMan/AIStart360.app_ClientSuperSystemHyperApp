@@ -18,7 +18,6 @@ import { VERTICALS, isValidVerticalId, type VerticalId } from '@/lib/verticals'
 const ANKETA_ROUTE: Record<VerticalId, string> = {
   generic:   '/client/onboarding',
   medical:   '/client/onboarding-medical',
-  ecommerce: '/client/onboarding-ecommerce',
 }
 
 type Step = 'vertical' | 'path'

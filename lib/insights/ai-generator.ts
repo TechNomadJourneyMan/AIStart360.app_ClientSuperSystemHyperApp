@@ -240,6 +240,7 @@ export async function generatePointAInsights(
   const userPrompt = fenceUntrusted('client_snapshot', buildUserPrompt(snapshot))
 
   const raw = await chatWithOpenRouter({
+    feature: 'point_a_insights',
     label: 'point_a.insights',
     system: `${SYSTEM_PROMPT}\n\n${UNTRUSTED_DATA_RULES}`,
     user: userPrompt,

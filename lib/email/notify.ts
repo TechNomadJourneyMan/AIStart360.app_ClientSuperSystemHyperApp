@@ -10,17 +10,20 @@
  *   QuestionnaireCompleted→ sendQuestionnaireCompletedEmail
  *   GRICompleted          → sendGriCompletedEmail
  *   PortalAccessGranted   → sendPortalAccessGrantedEmail
+ *   ExpertReviewPublished → sendExpertReviewPublishedEmail
  */
 
 import { getSiteUrl } from '@/lib/site-url'
 import { sendTransactionalEmail, type TransactionalEmailResult } from './send'
 import {
   buildAccessGrantedEmail,
+  buildExpertReviewPublishedEmail,
   buildSurveyReminderEmail,
   buildGriCompletedEmail,
   buildInvitationEmail,
   buildQuestionnaireCompletedEmail,
   type AccessGrantedEmailInput,
+  type ExpertReviewEmailInput,
   type GriEmailInput,
   type InvitationEmailInput,
   type QuestionnaireEmailInput,
@@ -133,5 +136,29 @@ export async function sendPortalAccessGrantedEmail(
     userId: input.userId ?? null,
     dedupeKey: null,
     metadata: { roleLabel: input.roleLabel ?? null },
+  })
+}
+
+/**
+ * Эксперт опубликовал разбор — ОДНО письмо на публикацию, сколько бы
+ * комментариев в него ни вошло. Ключ идемпотентности — конкретный разбор:
+ * повторная обработка той же публикации письмо не продублирует.
+ */
+export async function sendExpertReviewPublishedEmail(
+  to: string,
+  input: Omit<ExpertReviewEmailInput, 'url'> & { url?: string; userId?: string | null; reviewId: string },
+): Promise<TransactionalEmailResult> {
+  const { subject, content } = buildExpertReviewPublishedEmail({
+    ...input,
+    url: input.url ?? portalUrl('/client/home#expert'),
+  })
+  return sendTransactionalEmail({
+    kind: 'expert_review_published',
+    to,
+    subject,
+    content,
+    userId: input.userId ?? null,
+    dedupeKey: `expert_review_published:${input.reviewId}`,
+    metadata: { reviewId: input.reviewId, commentsCount: input.commentsCount },
   })
 }

@@ -8,7 +8,7 @@ import {
   ROLE_PERMISSIONS,
 } from '@/lib/navigation'
 
-const ALL_ROLES: UserRole[] = ['client', 'expert', 'owner', 'admin', 'super_admin']
+const ALL_ROLES: UserRole[] = ['client', 'expert', 'admin', 'super_admin']
 
 describe('navigation (FE-01/02 canonical lowercase roles)', () => {
   it('every canonical role has a label and a permission entry (no crash on lookup)', () => {
@@ -50,9 +50,11 @@ describe('navigation (FE-01/02 canonical lowercase roles)', () => {
     expect(getNavForRole('super_admin').map((i) => i.href)).toContain('/admin-giga-panel/users')
   })
 
-  it('the legacy owner role navigates exactly like a client', () => {
-    expect(getNavForRole('owner').map((i) => i.href)).toEqual(getNavForRole('client').map((i) => i.href))
-    expect(ROLE_PERMISSIONS.owner).toEqual(ROLE_PERMISSIONS.client)
+  it("'owner' is no longer a role (removed 2026-09-24): no label, no permission entry", () => {
+    // Legacy owner rows are normalised to 'client' before reaching navigation
+    // (stores/auth.store.ts normalizeRole, middleware, lib/role-landing.ts).
+    expect(Object.keys(ROLE_LABELS)).not.toContain('owner')
+    expect(Object.keys(ROLE_PERMISSIONS)).not.toContain('owner')
   })
 
   it('primary nav for a client includes Точка А / Метрики', () => {
@@ -63,9 +65,6 @@ describe('navigation (FE-01/02 canonical lowercase roles)', () => {
 
   it('permissions: wildcards, scoping and denials work per role', () => {
     expect(hasPermission('super_admin', 'anything.at.all')).toBe(true)
-    expect(hasPermission('owner', 'anything.at.all')).toBe(false)
-    expect(hasPermission('owner', 'clients.read')).toBe(false)
-    expect(hasPermission('owner', 'own.gri')).toBe(true)
     expect(hasPermission('admin', 'clients.read')).toBe(true)   // clients.* wildcard
     expect(hasPermission('admin', 'billing.write')).toBe(true)  // billing.* wildcard
     expect(hasPermission('expert', 'clients.read')).toBe(true)

@@ -13,7 +13,7 @@ import { classifyCheckError, crmHealthFrom, envChecks, type CheckFailure, type C
 const TABLES = [
   'profiles', 'survey_answers', 'gri_assessments', 'user_events', 'admin_audit_log',
   'staff_roles', 'impersonation_sessions', 'survey_answer_history', 'cms_pages',
-  'platform_sections', 'system_settings', 'documents',
+  'platform_sections', 'system_settings', 'documents', 'ai_usage',
 ]
 
 const BUCKETS = ['cms-media', 'documents']

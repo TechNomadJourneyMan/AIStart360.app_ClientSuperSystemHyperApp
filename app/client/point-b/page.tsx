@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase-client'
 import PointBContainer from '@/components/point-b/PointBContainer'
 import { ShareButtonAuto } from '@/components/share/ShareButtonAuto'
+import { trackLogout } from '@/lib/events/client'
 
 export default function ClientPointBPage() {
   return (
@@ -23,6 +24,7 @@ export default function ClientPointBPage() {
             <button
               onClick={async () => {
                 const sb = createClient()
+                trackLogout()
                 await sb.auth.signOut()
                 window.location.href = '/login'
               }}

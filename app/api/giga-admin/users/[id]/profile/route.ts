@@ -3,21 +3,36 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { requireGiga, staffRoleOfUser } from '@/lib/admin/giga-actor'
 import { createServiceClient } from '@/lib/supabase-service'
-import { prisma } from '@/lib/db'
 import { isWizardVisibleKey } from '@/lib/survey/steps'
 import { buildUserProfileSummary } from '@/lib/user-dashboard/summary'
 import { buildJourney } from '@/lib/admin/journey'
 import { canImpersonate, canManageTarget, hasPermission } from '@/lib/admin/rbac'
 import { maskEmail, maskPhone } from '@/lib/admin/mask'
+import { isSurveyCompleted, loadSurveyCompletionMarkers, surveyCompletedAt } from '@/lib/survey/completion'
+import { guardClientAccess } from '@/lib/admin/client-scope'
 
 // GET /api/giga-admin/users/:id/profile — User 360 header data: identity,
 // status, survey summary, Точка А, GRI, journey (CJM), counters, and what the
 // current staff member may do with this person.
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
+async function markClientViewed(sb: ReturnType<typeof createServiceClient>, staffId: string, userId: string): Promise<void> {
+  if (!UUID_RE.test(staffId) || staffId === userId) return
+  try {
+    const { error } = await sb
+      .from('staff_client_views')
+      .upsert({ staff_id: staffId, user_id: userId, last_viewed_at: new Date().toISOString() }, { onConflict: 'staff_id,user_id' })
+    if (error) console.warn('[giga-admin/users/profile] staff_client_views:', error.message)
+  } catch (e) {
+    console.warn('[giga-admin/users/profile] staff_client_views failed', e)
+  }
+}
+
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
   const guard = await requireGiga(req, 'users.view')
   if (guard.response) return guard.response
+  const scopeDenied = await guardClientAccess(guard.actor, params.id)
+  if (scopeDenied) return scopeDenied
   const userId = params.id
   if (!UUID_RE.test(userId)) return NextResponse.json({ ok: false, error: 'invalid id' }, { status: 400 })
   const role = guard.actor.role
@@ -51,6 +66,8 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     if (at && (!surveyLast || at > surveyLast)) surveyLast = at
   }
   const summary = buildUserProfileSummary(answers)
+  const surveyMarkers = await loadSurveyCompletionMarkers(sb, userId)
+  const surveyFacts = { ...surveyMarkers, filledSteps: summary.startedSteps, lastAnswerAt: surveyLast }
 
   const diags = diagRes.data ?? []
   const diagIds = diags.map((d) => d.id)
@@ -68,7 +85,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     registered: profile.created_at,
     approved: profile.status === 'approved' ? profile.approved_at ?? profile.created_at : null,
     survey_started: surveyFirst,
-    survey_completed: summary.startedSteps >= summary.totalSteps ? surveyLast : null,
+    survey_completed: isSurveyCompleted(surveyFacts) ? surveyCompletedAt(surveyFacts) ?? surveyLast : null,
     point_a: diags[0]?.calculated_at ?? null,
     gri_started: griStarted,
     gri_completed: griFirst,
@@ -76,12 +93,9 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     content: contentRes.data?.[0]?.created_at ?? null,
   })
 
-  let legacyAuditCount = 0
-  try {
-    legacyAuditCount = await prisma.auditLog.count({ where: { entityId: userId } })
-  } catch {
-    legacyAuditCount = 0
-  }
+  // «Мой день» сравнивает изменения у клиента с моментом, когда сотрудник
+  // последний раз открывал его карточку. Сбой записи карточку не ломает.
+  await markClientViewed(sb, guard.actor.id, userId)
 
   return NextResponse.json({
     ok: true,
@@ -110,11 +124,12 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
         draftUpdatedAt: draftRes.data?.updated_at ?? null,
       },
       journey,
-      counters: { documents: docsRes.count ?? 0, events: eventsCountRes.count ?? 0, legacyAudit: legacyAuditCount },
+      counters: { documents: docsRes.count ?? 0, events: eventsCountRes.count ?? 0 },
       impersonationActive: (impRes.data ?? []).length > 0,
       can: {
         manage: hasPermission(role, 'users.manage') && canManageTarget(role, target.staffRole),
         archive: hasPermission(role, 'users.archive') && canManageTarget(role, target.staffRole),
+        purge: hasPermission(role, 'users.delete') && userId !== guard.actor.id && target.profileRole !== 'super_admin' && target.staffRole !== 'super_admin',
         editSurvey: hasPermission(role, 'survey.edit') && canManageTarget(role, target.staffRole),
         viewSurvey: hasPermission(role, 'survey.view') && sensitive,
         editGri: hasPermission(role, 'gri.edit') && canManageTarget(role, target.staffRole),
@@ -124,6 +139,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
         activity: hasPermission(role, 'activity.view'),
         audit: hasPermission(role, 'audit.view'),
         roles: hasPermission(role, 'roles.manage'),
+        review: hasPermission(role, 'clients.review') && profile.role === 'client' && !target.staffRole,
         sensitive,
       },
     },

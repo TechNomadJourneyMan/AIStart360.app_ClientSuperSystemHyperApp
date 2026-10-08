@@ -8,6 +8,7 @@ import { canManageTarget } from '@/lib/admin/rbac'
 import { adminEditSurvey, SurveyEditError } from '@/lib/admin/survey-admin'
 import { isWizardVisibleKey } from '@/lib/survey/steps'
 import { buildUserProfileSummary } from '@/lib/user-dashboard/summary'
+import { guardClientAccess } from '@/lib/admin/client-scope'
 
 // GET   /api/giga-admin/users/:id/survey?historyPage=1 — all answers grouped by
 //       theme + change history (who / when / old → new).
@@ -18,6 +19,8 @@ const HISTORY_PAGE = 30
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
   const guard = await requireGiga(req, ['survey.view', 'users.sensitive'])
   if (guard.response) return guard.response
+  const scopeDenied = await guardClientAccess(guard.actor, params.id)
+  if (scopeDenied) return scopeDenied
   if (!UUID_RE.test(params.id)) return NextResponse.json({ ok: false, error: 'invalid id' }, { status: 400 })
   const page = Math.max(1, Number(req.nextUrl.searchParams.get('historyPage')) || 1)
   const key = req.nextUrl.searchParams.get('key')
@@ -82,6 +85,8 @@ const patchSchema = z.object({
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   const guard = await requireGiga(req, ['survey.edit', 'users.sensitive'])
   if (guard.response) return guard.response
+  const scopeDenied = await guardClientAccess(guard.actor, params.id)
+  if (scopeDenied) return scopeDenied
   if (!UUID_RE.test(params.id)) return NextResponse.json({ ok: false, error: 'invalid id' }, { status: 400 })
   const parsed = patchSchema.safeParse(await req.json().catch(() => null))
   if (!parsed.success) return NextResponse.json({ ok: false, error: 'Неверный формат изменений' }, { status: 400 })
@@ -107,6 +112,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
   const guard = await requireGiga(req, ['survey.delete', 'users.sensitive'])
   if (guard.response) return guard.response
+  const scopeDenied = await guardClientAccess(guard.actor, params.id)
+  if (scopeDenied) return scopeDenied
   if (!UUID_RE.test(params.id)) return NextResponse.json({ ok: false, error: 'invalid id' }, { status: 400 })
   const body = (await req.json().catch(() => null)) as { reason?: unknown; confirm?: unknown } | null
   const reason = typeof body?.reason === 'string' ? body.reason.trim() : ''

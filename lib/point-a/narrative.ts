@@ -170,6 +170,7 @@ export async function generateNarrative(
   }
 
   const raw = await chatWithOpenRouter({
+    feature: 'point_a_narrative',
     system: SYSTEM_PROMPT,
     user: buildUserPrompt(input),
     model: OPENROUTER_MODELS.sonnet,

@@ -10,6 +10,8 @@ import { readNarrative } from '@/lib/point-a/ai-analysis'
 import type { Company, Diagnostic, PointA } from '@/types/onboarding'
 import { isRateLimitedKey } from '@/lib/rate-limit'
 import { apiError, dbError } from '@/lib/api-error'
+import { guardAiBudget } from '@/lib/ai/budget'
+import { recordAiCacheHit } from '@/lib/ai/usage'
 
 /**
  * POST /api/v1/point-a/narrative
@@ -70,8 +72,12 @@ export async function POST(req: NextRequest) {
   // 3. Stored narrative (never an AI analysis that happens to sit in ai_analysis).
   const stored = readNarrative(diagnostic)
   if (!regenerate && stored) {
+    void recordAiCacheHit('point_a_narrative', { userId: user.id })
     return NextResponse.json({ ok: true, data: stored, cached: true })
   }
+
+  const overBudget = await guardAiBudget(user.id, 'point_a_narrative')
+  if (overBudget) return overBudget
 
   // 4. Fetch company
   const { data: companyRow } = await sb

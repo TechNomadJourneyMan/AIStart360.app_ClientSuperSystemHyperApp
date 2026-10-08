@@ -6,6 +6,7 @@ import { logAudit } from '@/lib/audit'
 import { adminResetUserMfa } from '@/lib/mfa/store'
 import { createServiceClient } from '@/lib/supabase-service'
 import { sendNotificationEmail } from '@/lib/email'
+import { guardClientAccess } from '@/lib/admin/client-scope'
 
 /**
  * POST /api/giga-admin/users/:id/2fa-reset
@@ -22,6 +23,8 @@ import { sendNotificationEmail } from '@/lib/email'
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const guard = await requireGiga(req, 'users.manage')
   if (guard.response) return guard.response
+  const scopeDenied = await guardClientAccess(guard.actor, params.id)
+  if (scopeDenied) return scopeDenied
   const actor = guard.actor
   const denied = await forbidTarget(guard.actor, params.id)
   if (denied) return denied

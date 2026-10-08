@@ -11,6 +11,6 @@ export async function GET(req: NextRequest) {
   const a = guard.actor
   return NextResponse.json({
     ok: true,
-    data: { id: a.id, kind: a.kind, email: a.email ?? null, role: a.role, roleLabel: STAFF_ROLE_LABELS[a.role], permissions: a.permissions },
+    data: { id: a.id, kind: a.kind, email: a.email ?? null, role: a.role, roleLabel: STAFF_ROLE_LABELS[a.role], permissions: a.permissions, clientScope: a.clientScope ?? 'all' },
   })
 }

@@ -5,6 +5,7 @@ import { createServerClient } from '@/lib/supabase-server'
 import { generatePointAInsights } from '@/lib/insights/ai-generator'
 import { hasOpenRouterKey } from '@/lib/ai/openrouter'
 import { isRateLimitedKey } from '@/lib/rate-limit'
+import { guardAiBudget } from '@/lib/ai/budget'
 import { getInsightModerationEnabled } from '@/lib/settings/system-settings'
 
 // ---------------------------------------------------------------------------
@@ -47,6 +48,8 @@ export async function POST() {
   if (await isRateLimitedKey(userId, 'point-a-insights-ai', { max: 6, windowMs: 60_000 })) {
     return NextResponse.json({ ok: false, error: 'Слишком много запросов. Попробуйте позже.' }, { status: 429 })
   }
+  const overBudget = await guardAiBudget(userId, 'point_a_insights')
+  if (overBudget) return overBudget
 
   const result = await generatePointAInsights(sb, userId)
   if (!result.ok) {

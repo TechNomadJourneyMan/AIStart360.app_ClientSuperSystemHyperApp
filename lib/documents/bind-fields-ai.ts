@@ -310,6 +310,7 @@ export async function bindFieldWithAI(
 
   // Use Sonnet for single-field (quality path).
   const raw = await chatWithOpenRouter({
+    feature: 'doc_bind_fields',
     label: 'documents.bind_fields',
     model: OPENROUTER_MODELS.sonnet,
     system: SYSTEM_PROMPT,
@@ -430,6 +431,7 @@ export async function bindFieldsWithAI(
 
       // (5) Haiku for batched throughput.
       const raw = await chatWithOpenRouter({
+        feature: 'doc_bind_fields',
         label: 'documents.bind_fields',
         model: OPENROUTER_MODELS.haiku,
         system: SYSTEM_PROMPT,

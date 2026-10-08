@@ -1,5 +1,6 @@
 import { createServiceClient } from '@/lib/supabase-service'
 import { sendPortalAccessGrantedEmail, sendUserEmail } from '@/lib/email'
+import { notifyAccessGranted } from '@/lib/notifications/product'
 
 /**
  * SINGLE SOURCE OF TRUTH for user access status.
@@ -7,7 +8,8 @@ import { sendPortalAccessGrantedEmail, sendUserEmail } from '@/lib/email'
  * `profiles.status` is the ONLY field the login flow and waiting-room read to
  * grant portal access (middleware gates on role; the status redirect lives in
  * the login page + `/api/client/status`). So EVERY approve / reject / clarify
- * path — giga panel, /api/v1/admin/*, and the Prisma /api/admin/* routes —
+ * path (giga panel, self-registration auto-approve; the legacy /api/v1/admin/*
+ * and Prisma /api/admin/* routes were removed 2026-09-24) —
  * funnels the authoritative write through here, instead of each writing its own
  * field (the old bug: three backends wrote three different fields/tables and the
  * giga one wrote nothing that stuck).
@@ -71,6 +73,10 @@ export async function applyApprovalDecision(input: ApplyApprovalInput): Promise<
   const notify = input.sendEmail !== false && input.status !== 'pending_approval'
   if (profile?.email && notify) {
     emailSent = (await sendDecisionEmail(profile.email, profile.full_name, input.status, input.reason)).ok
+  }
+  // Запись «Доступ открыт» в ленте клиента (письмо ушло выше). Best-effort.
+  if (profile && notify && input.status === 'approved') {
+    await notifyAccessGranted(profile.id).catch(() => undefined)
   }
 
   return { affected: updated?.length ?? 0, profile, emailSent }

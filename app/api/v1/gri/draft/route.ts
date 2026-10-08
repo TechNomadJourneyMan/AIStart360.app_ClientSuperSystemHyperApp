@@ -4,6 +4,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { createServerClient } from '@/lib/supabase-server'
 import { trackEventOnce } from '@/lib/events/track'
+import { trackUserAction } from '@/lib/events/server'
+import { newlyCompletedSections } from '@/lib/gri-assessment/section-events'
 import { isRateLimitedKey } from '@/lib/rate-limit'
 
 // Server-side draft of the full GRI test (migration 072). One row per user;
@@ -45,11 +47,21 @@ export async function PUT(req: NextRequest) {
   const parsed = draftSchema.safeParse(await req.json().catch(() => null))
   if (!parsed.success) return NextResponse.json({ ok: false, error: 'invalid draft' }, { status: 400 })
 
+  // Previous draft → which sections became completed with THIS save.
+  let before: unknown = null
+  try {
+    const { data: prev } = await sb.from('gri_assessment_drafts').select('state').eq('user_id', userId).maybeSingle()
+    before = (prev as { state?: { completedSections?: unknown } } | null)?.state?.completedSections ?? null
+  } catch { /* no previous draft */ }
+
   const { error } = await sb
     .from('gri_assessment_drafts')
     .upsert({ user_id: userId, state: parsed.data, updated_at: new Date().toISOString() }, { onConflict: 'user_id' })
   if (error) return NextResponse.json({ ok: false, error: 'Failed to save draft' }, { status: 500 })
   void trackEventOnce({ userId, name: 'GRI_STARTED', entityType: 'gri_draft' })
+  for (const section of newlyCompletedSections(before, parsed.data.completedSections)) {
+    void trackUserAction({ userId, name: 'GRI_SECTION_COMPLETED', entityType: 'gri_section', entityId: section, metadata: { section } })
+  }
   return NextResponse.json({ ok: true })
 }
 

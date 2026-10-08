@@ -7,6 +7,8 @@ import { logAudit } from '@/lib/audit'
 import { normalizeOverrides, normalizeTier } from '@/lib/access/entitlements'
 import { setPlan } from '@/lib/payments/billing'
 import { billingErrorResponse } from '@/lib/payments/billing-http'
+import { trackEvent } from '@/lib/events/track'
+import { guardClientAccess } from '@/lib/admin/client-scope'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -14,6 +16,8 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
   const guard = await requireGiga(req, 'users.view')
   if (guard.response) return guard.response
+  const scopeDenied = await guardClientAccess(guard.actor, params.id)
+  if (scopeDenied) return scopeDenied
   if (!UUID_RE.test(params.id)) {
     return NextResponse.json({ error: 'invalid id' }, { status: 400 })
   }
@@ -57,6 +61,8 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   const guard = await requireGiga(req, 'users.manage')
   if (guard.response) return guard.response
+  const scopeDenied = await guardClientAccess(guard.actor, params.id)
+  if (scopeDenied) return scopeDenied
   const actor = guard.actor
   const denied = await forbidTarget(guard.actor, params.id)
   if (denied) return denied
@@ -78,7 +84,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   // Тариф — только через billing-сервис (единственный писатель).
   if (body.tier !== undefined) {
     try {
-      await setPlan({
+      const result = await setPlan({
         userId: params.id,
         tier: normalizeTier(body.tier),
         periodEnd: null,
@@ -87,6 +93,19 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
         req,
         meta: { via: 'access' },
       })
+      // Product event: subject = the user, actor = staff (source 'admin' → not the user's own activity).
+      const fromTier = result?.before?.accessTier
+      const toTier = result?.after?.accessTier
+      if (result?.applied && toTier && fromTier !== toTier) {
+        void trackEvent({
+          userId: params.id,
+          name: 'TIER_CHANGED',
+          entityType: 'user',
+          entityId: params.id,
+          metadata: { from: fromTier ?? null, to: toTier, by: 'staff', actor_role: actor.role ?? null },
+          source: 'admin',
+        })
+      }
     } catch (e) {
       return billingErrorResponse(e, 'giga-admin/users/access')
     }

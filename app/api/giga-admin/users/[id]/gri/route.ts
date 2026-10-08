@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { requireGiga } from '@/lib/admin/giga-actor'
 import { createServiceClient } from '@/lib/supabase-service'
+import { guardClientAccess } from '@/lib/admin/client-scope'
 
 // GET /api/giga-admin/users/:id/gri — every assessment with answers, plus the
 // unfinished draft. Answers are business self-assessment data → sensitive.
@@ -11,6 +12,8 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
   const guard = await requireGiga(req, ['gri.view', 'users.sensitive'])
   if (guard.response) return guard.response
+  const scopeDenied = await guardClientAccess(guard.actor, params.id)
+  if (scopeDenied) return scopeDenied
   if (!UUID_RE.test(params.id)) return NextResponse.json({ ok: false, error: 'invalid id' }, { status: 400 })
   const sb = createServiceClient()
   const [assessments, draft] = await Promise.all([

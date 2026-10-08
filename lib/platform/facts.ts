@@ -14,6 +14,7 @@ export async function getUserFacts(userId: string | null | undefined): Promise<U
     vertical: String(d.vertical ?? 'generic'),
     created_at: d.created_at ? String(d.created_at) : null,
     survey_steps: Number(d.survey_steps ?? 0),
+    survey_completed: d.survey_completed === true,
     gri_runs: Number(d.gri_runs ?? 0),
     is_staff: d.is_staff === true,
   }

@@ -6,6 +6,8 @@
  * контент рендерится в in-app / email / Telegram (последний — с HTML-экранированием).
  */
 
+import { resolveChannels } from '@/lib/notifications/preferences'
+
 /** Русская форма множественного числа (1 / 2-4 / 5+). */
 export function plural(n: number, one: string, few: string, many: string): string {
   const mod10 = n % 10
@@ -28,28 +30,17 @@ export interface DigestChannels {
   telegram: boolean
 }
 
-interface NotifCrmPrefs {
-  in_app?: boolean
-  email?: boolean
-  telegram?: boolean
-}
-
 /**
- * Каналы доставки из preferences.notifications.crm (по умолчанию всё включено),
- * с учётом наличия адреса/чата. Канал считается включённым, если пользователь
- * его явно не выключил (!== false) И есть куда слать.
+ * Каналы доставки из preferences.notifications.crm с учётом наличия
+ * адреса/чата. Правила и значения по умолчанию — общие для всех категорий
+ * (lib/notifications/preferences.ts), чтобы экран настроек и рассылка не
+ * расходились.
  */
 export function selectChannels(
   prefs: unknown,
   opts: { hasEmail: boolean; hasTelegram: boolean },
 ): DigestChannels {
-  const crm =
-    (prefs as { notifications?: { crm?: NotifCrmPrefs } } | null)?.notifications?.crm ?? {}
-  return {
-    inApp: crm.in_app !== false,
-    email: crm.email !== false && opts.hasEmail,
-    telegram: crm.telegram !== false && opts.hasTelegram,
-  }
+  return resolveChannels(prefs, 'crm', opts)
 }
 
 /** RU-подписи 7 блоков GRI (sections.ts хранит английские shortTitle). */

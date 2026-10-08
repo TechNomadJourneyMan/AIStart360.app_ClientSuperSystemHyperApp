@@ -22,20 +22,23 @@ vi.mock('@/lib/rate-limit', () => ({
 }))
 vi.mock('@/lib/events/track', () => ({ trackEvent: async () => {} }))
 vi.mock('@/lib/db', () => ({ prisma: { adminRequest: { create: async () => ({ id: 'req-1' }) } } }))
-vi.mock('@/lib/supabase-service', () => ({ createServiceClient: () => ({ from: () => ({ insert: async () => ({ error: null }) }) }) }))
+const fakeFrom = vi.hoisted(() => (table: string) => ({
+  upsert: async () => ({ error: null }),
+  insert: async () => ({ error: null }),
+  select: () => ({
+    eq: () => ({
+      maybeSingle: async () => ({ data: table === 'staff_roles' ? s.staff : { status: s.status } }),
+      single: async () => ({ data: table === 'profiles' ? s.existingProfile : null }),
+    }),
+  }),
+}))
+// The OAuth callback reads/creates the profile with the service role (the
+// fresh session is not in the request cookies yet); /register uses the session.
+vi.mock('@/lib/supabase-service', () => ({ createServiceClient: () => ({ from: fakeFrom }) }))
 vi.mock('@/lib/supabase-server', () => ({
   createServerClient: () => ({
     auth: { getUser: async () => ({ data: { user: { id: 'u-1' } } }) },
-    from: (table: string) => ({
-      upsert: async () => ({ error: null }),
-      insert: async () => ({ error: null }),
-      select: () => ({
-        eq: () => ({
-          maybeSingle: async () => ({ data: table === 'staff_roles' ? s.staff : { status: s.status } }),
-          single: async () => ({ data: table === 'profiles' ? s.existingProfile : null }),
-        }),
-      }),
-    }),
+    from: fakeFrom,
   }),
 }))
 vi.mock('@supabase/ssr', () => ({

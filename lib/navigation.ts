@@ -4,17 +4,17 @@ import type { NavItem, UserRole } from '@/types'
 // keeps them in ADMIN_PATHS — a CLIENT hitting them is silently redirected to
 // /dashboard, so they must NOT appear in the client sidebar (dead links).
 // (manager/analyst were legacy Prisma roles that never exist at runtime; expert
-// navigates in its own route group. 'owner' is a legacy role treated as a
-// client — the separate owner cabinet was removed.)
+// navigates in its own route group with its own sidebar. 'owner' was removed
+// from the product on 2026-09-24 — legacy owner rows are treated as clients.)
 const STAFF_ROLES: UserRole[] = ['super_admin', 'admin']
 // What a CLIENT may actually open — mirrors middleware CLIENT_DASHBOARD_PATHS.
-const CLIENT_OK: UserRole[] = ['super_admin', 'admin', 'client', 'owner']
+const CLIENT_OK: UserRole[] = ['super_admin', 'admin', 'client']
 
 // PRIMARY navigation — shown directly in the sidebar
 export const PRIMARY_NAV: NavItem[] = [
   // The client's landing page (survey profile + GRI status). Lives outside the
   // (dashboard) group, so this entry is the way back to it from the portal.
-  { label: 'Мой профиль', href: '/client/home', icon: 'badge', roles: ['client', 'owner'] },
+  { label: 'Мой профиль', href: '/client/home', icon: 'badge', roles: ['client'] },
   { label: 'Дэшборд',   href: '/dashboard', icon: 'dashboard',   roles: CLIENT_OK },
   { label: 'GRI',       href: '/gri',        icon: 'radar',       roles: CLIENT_OK },
   // /pulse is now the lightweight CRM (own client base «Кому звонить сегодня»)
@@ -87,17 +87,15 @@ export function getSecondaryNavForRole(role: UserRole, access: NavAccess = {}): 
 export const ROLE_LABELS: Record<UserRole, string> = {
   client:      'Клиент',
   expert:      'Эксперт',
-  owner:       'Владелец',
   admin:       'Администратор',
   super_admin: 'Супер-админ',
 }
 
-// Role permissions map. expert validates AI output and reads client data.
-// 'owner' is a legacy role that now behaves exactly like a client.
+// Role permissions map. expert validates AI output and reads assigned clients.
+// ('owner' was removed from the product on 2026-09-24.)
 const CLIENT_PERMISSIONS = ['own.gri', 'own.reports', 'own.profile', 'support']
 export const ROLE_PERMISSIONS: Record<UserRole, string[]> = {
   super_admin: ['*'],
-  owner:       CLIENT_PERMISSIONS,
   admin:       ['clients.*', 'reports.*', 'analytics.*', 'team.*', 'settings.*', 'billing.*'],
   expert:      ['clients.read', 'reports.read', 'analytics.read', 'intelligence.read'],
   client:      CLIENT_PERMISSIONS,

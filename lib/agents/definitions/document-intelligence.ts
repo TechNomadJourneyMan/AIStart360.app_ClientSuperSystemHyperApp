@@ -28,7 +28,13 @@ import { sha256Hex } from '@/lib/documents/finalize'
 import { runDocumentPipeline } from '@/lib/documents/pipeline'
 import { fileExtension, preflightDocument } from '@/lib/documents/preflight'
 import { isUuid } from '@/lib/documents/repository'
-import { DocumentParseError } from '@/lib/documents/text'
+import { DocumentParseError, extractDocumentText } from '@/lib/documents/text'
+import type { ParsedDataField } from '@/lib/documents/extract'
+import type { DocumentKind } from '@/lib/documents/preflight'
+import type { DocumentRow } from '@/lib/documents/repository'
+import { trackEvent } from '@/lib/events/track'
+import { notifyDocumentParsed } from '@/lib/notifications/product'
+import { runInBackground } from '@/lib/background'
 import { loadDocumentTool, saveExtractionTool, updateStatusTool, type LoadedDocument, type StatusResult } from '../document-tools'
 import { AgentError, type AgentContext, type AgentDefinition } from '../types'
 
@@ -212,6 +218,8 @@ export const documentIntelligenceAgent: AgentDefinition<Input> = {
         await ctx.log('warn', 'event.failed', 'FILE_PROCESSED не записано')
       }
 
+      await afterParsed(ctx, doc, outcome.payload.fields, { buffer: loaded.buffer, kind: check.kind })
+
       const summary = outcome.payload.empty_reason
         ? `обработан без показателей: ${outcome.payload.empty_reason.message}`
         : `обработан: показателей ${outcome.fieldCount} (с метриками ${stats?.bound_count ?? 0}), строк ${outcome.rowCount}`
@@ -231,6 +239,54 @@ export const documentIntelligenceAgent: AgentDefinition<Input> = {
       throw err instanceof DocumentParseError ? new AgentError('PARSE_FAILED', err.message) : err
     }
   },
+}
+
+/**
+ * Side effects for the document's owner once a parse is saved (none of them
+ * may fail the run): the product event, the «документ разобран» notification,
+ * survey-answer suggestions from the extracted metrics (F-076, never
+ * overwrites a typed answer) and, behind ENABLE_DOCUMENT_EMBEDDINGS, chunking +
+ * embedding the full text for chat retrieval (F-073).
+ */
+async function afterParsed(
+  ctx: AgentContext,
+  doc: DocumentRow,
+  fields: ReadonlyArray<ParsedDataField>,
+  source: { buffer: Buffer; kind: DocumentKind },
+): Promise<void> {
+  const ownerUserId = doc.user_id
+  if (!ownerUserId) return
+  void trackEvent({
+    userId: ownerUserId,
+    name: 'DOCUMENT_PARSED',
+    entityType: 'document',
+    entityId: doc.id,
+    metadata: { doc_type: doc.doc_type ?? null, fields: fields.length, agent: ctx.agentKey },
+    source: 'server',
+  })
+  void runInBackground('document-parsed-notify', () =>
+    notifyDocumentParsed(ownerUserId, { documentId: doc.id, fileName: doc.file_name, fieldsCount: fields.length }),
+  )
+  try {
+    const { storeDocumentSuggestions } = await import('@/lib/documents/survey-suggestions')
+    const { createServiceClient } = await import('@/lib/supabase-service')
+    await storeDocumentSuggestions(createServiceClient(), { userId: ownerUserId, documentId: doc.id, fields })
+  } catch (e) {
+    console.warn(`[agents] document ${doc.id}: survey suggestions failed (non-fatal)`, e instanceof Error ? e.message : e)
+  }
+  if (process.env.ENABLE_DOCUMENT_EMBEDDINGS === 'true') {
+    void runInBackground('document-embed', async () => {
+      try {
+        const { indexDocumentForRetrieval } = await import('@/lib/documents/embed')
+        const st = await extractDocumentText(source.buffer, source.kind)
+        if (!st.text.trim()) return
+        const result = await indexDocumentForRetrieval({ documentId: doc.id, userId: ownerUserId, text: st.text })
+        if (result.error) console.warn(`[agents] document ${doc.id}: embed result`, result.error)
+      } catch (e) {
+        console.warn(`[agents] document ${doc.id}: embed failed`, e instanceof Error ? e.message : e)
+      }
+    })
+  }
 }
 
 /** Leave the document in an honest state for whatever the runner does next. */

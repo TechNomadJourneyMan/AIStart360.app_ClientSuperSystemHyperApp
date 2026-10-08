@@ -7,6 +7,7 @@ import { hasPermission } from '@/lib/admin/rbac'
 import { maskEmail, maskPhone } from '@/lib/admin/mask'
 import { isWizardVisibleKey } from '@/lib/survey/steps'
 import { buildUserProfileSummary } from '@/lib/user-dashboard/summary'
+import { guardClientAccess } from '@/lib/admin/client-scope'
 
 // GET /api/giga-admin/surveys/:userId/preview — light data for the hover card
 // in «Анкеты»: who, key business facts, fill per theme. Two queries only.
@@ -15,6 +16,8 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 export async function GET(req: NextRequest, { params }: { params: { userId: string } }) {
   const guard = await requireGiga(req, 'survey.view')
   if (guard.response) return guard.response
+  const scopeDenied = await guardClientAccess(guard.actor, params.userId)
+  if (scopeDenied) return scopeDenied
   if (!UUID_RE.test(params.userId)) return NextResponse.json({ ok: false, error: 'invalid id' }, { status: 400 })
   const sb = createServiceClient()
   const [profileRes, answersRes] = await Promise.all([

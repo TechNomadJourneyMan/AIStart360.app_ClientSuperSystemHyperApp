@@ -5,6 +5,7 @@ import { requireGiga } from '@/lib/admin/giga-actor'
 import { createServiceClient } from '@/lib/supabase-service'
 import { isWizardVisibleKey } from '@/lib/survey/steps'
 import { SURVEY_LABELS } from '@/lib/survey-labels'
+import { NO_ID, scopedClientIds } from '@/lib/admin/client-scope'
 
 /**
  * GET /api/giga-admin/surveys/search?q=найм[&key=s2_revenue_2024&min=&max=]
@@ -49,6 +50,8 @@ export async function GET(req: NextRequest) {
   const sb = createServiceClient()
   let query = sb.from('survey_answers').select('user_id, question_key, answer').limit(20000)
   if (key) query = query.eq('question_key', key)
+  const allowed = await scopedClientIds(guard.actor)
+  if (allowed) query = query.in('user_id', allowed.length ? allowed : [NO_ID])
   const { data, error } = await query
   if (error) return NextResponse.json({ ok: false, error: 'Не удалось выполнить поиск' }, { status: 500 })
 

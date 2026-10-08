@@ -1,14 +1,17 @@
 import { NextResponse } from 'next/server'
 import { checkPlatformHealth } from '@/lib/health/platform'
 
+export const dynamic = 'force-dynamic'
+
 /**
  * GET /api/health — public liveness check.
  *
  * Only what is actually measured is reported: database round-trip and whether
  * the server configuration is complete. Uptime is not tracked here, so it is
  * reported as «не измеряется» rather than a made-up percentage, and names of
- * missing environment variables are not disclosed publicly (staff see them in
- * GIGA → Настройки → Система, /api/giga-admin/system/health).
+ * missing environment variables are not disclosed publicly (audit S20; staff
+ * see them in GIGA → Настройки → Система, /api/giga-admin/system/health).
+ * Responds 503 when a check fails, so uptime probes can rely on the status.
  */
 interface ServiceResult {
   name: string
@@ -31,8 +34,13 @@ export async function GET() {
   }
   const services = [db, config]
   const degradedCount = services.filter((s) => s.status !== 'online').length
+  const dbOk = db.status !== 'offline'
+  const configOk = missing === 0
+  const ok = dbOk && configOk
 
   return NextResponse.json({
+    ok,
+    checks: { db: dbOk ? 'ok' : 'fail', config: configOk ? 'ok' : 'fail' },
     services,
     allOnline: degradedCount === 0,
     degradedCount,
@@ -44,6 +52,7 @@ export async function GET() {
         : 'База данных отвечает медленно или недоступна',
     timestamp: new Date().toISOString(),
   }, {
+    status: ok ? 200 : 503,
     headers: { 'Cache-Control': 'no-store, max-age=0' },
   })
 }

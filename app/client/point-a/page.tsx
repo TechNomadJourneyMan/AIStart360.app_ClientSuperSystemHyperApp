@@ -16,6 +16,7 @@ import { ShareButton } from '@/components/share/ShareButton'
 import NextBestActionCard from '@/components/nba/NextBestActionCard'
 import ExecutiveOverview from '@/components/point-a/ExecutiveOverview'
 import { POINT_A_OVERVIEW_QUERY_KEY, recalcErrorMessage } from '@/hooks/usePointAOverview'
+import { trackLogout } from '@/lib/events/client'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function blockLabel(status: string | undefined): { text: string; color: string } {
@@ -301,6 +302,7 @@ export default function PointAClientPage() {
             <button
               onClick={async () => {
                 const sb = createClient()
+                trackLogout()
                 await sb.auth.signOut()
                 window.location.href = '/login'
               }}

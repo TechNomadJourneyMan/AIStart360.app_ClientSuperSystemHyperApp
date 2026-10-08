@@ -15,9 +15,11 @@ import { buildReportChatSystemPrompt } from '@/lib/ai/report-chat/prompt'
 import { reportChatAnswerSchema, parseReportChatAnswer, sanitizeUsedSources } from '@/lib/ai/report-chat/answer'
 import { runAnswerValidation } from '@/lib/ai/validation'
 import { renderTemplate } from '@/lib/ai/validation/templates'
-import { retrieveUserChunks } from '@/lib/ai/retrieval'
+import { retrieveUserChunks, documentIndexStatus, DOCUMENTS_NOT_INDEXED_NOTICE } from '@/lib/ai/retrieval'
+import { guardAiBudget } from '@/lib/ai/budget'
 import { generateObjectViaOpenRouter } from '@/lib/ai/structured'
 import { hasOpenRouterKey } from '@/lib/ai/openrouter'
+import { trackUserAction } from '@/lib/events/server'
 
 /**
  * POST /api/v1/ai/chat  { message, personaId?, surface?, conversationId? }
@@ -80,6 +82,8 @@ export async function POST(req: NextRequest) {
   if (await isRateLimitedKey(user.id, 'ai-chat', { max: 10, windowMs: 60_000 })) {
     return NextResponse.json({ ok: false, error: 'Слишком много сообщений. Подождите минуту.' }, { status: 429 })
   }
+  const overBudget = await guardAiBudget(user.id, 'ai_chat')
+  if (overBudget) return overBudget
 
   let raw: unknown
   try {
@@ -129,12 +133,23 @@ export async function POST(req: NextRequest) {
   }
 
   const locale = localeFromRequestCookie(req)
+  // Analytics: only lengths/ids, never the question text (PII).
+  void trackUserAction({ userId: user.id, name: 'AI_CHAT_ASKED', entityType: 'ai_chat', metadata: { surface, persona: persona.id, chars: message.length } })
 
   try {
     // 1. Curated context (the only source of facts) + document retrieval.
     const ctx = await buildAssistantContext(user.id, sb)
     const snapshotText = serializeSnapshot(ctx, locale)
-    const retrieved = await retrieveUserChunks(user.id, message)
+    const [retrieved, docIndex] = await Promise.all([
+      retrieveUserChunks(user.id, message),
+      documentIndexStatus(user.id),
+    ])
+    // Documents uploaded but not embedded yet → say so instead of silently
+    // answering as if the user had no documents (F-073).
+    const docsNotIndexed = retrieved.length === 0 && docIndex.state === 'not_indexed'
+    const docsNote = docsNotIndexed
+      ? `ДОКУМЕНТЫ: пользователь загрузил ${docIndex.documents} док., но поиск по ним ещё не построен — их содержимого нет в ДАННЫХ. Если вопрос о документах, прямо скажи, что они пока не проиндексированы.`
+      : null
 
     // 2. Compose the grounded system prompt + the list of citable sources.
     const { system, providedSources } = buildReportChatSystemPrompt({
@@ -144,10 +159,12 @@ export async function POST(req: NextRequest) {
       retrieved,
       availableRefs: AVAILABLE_REFS,
       personalization,
+      reportSummary: docsNote,
     })
 
     // 3. Structured answer from the model.
     const rawAnswer = await generateObjectViaOpenRouter({
+      feature: 'ai_chat',
       label: 'ai-chat',
       complexity: 'high',
       maxTokens: 900,
@@ -164,7 +181,16 @@ export async function POST(req: NextRequest) {
       await persist(sb, user.id, surface, persona.id, parsed.data.conversationId, message, {
         content: fallback, grounding: [], validation: { status: 'needs_revision', risk_level: 'low' },
       })
-      return NextResponse.json({ ok: true, answer: fallback, status: 'needs_revision', needs_expert: true, used_sources: [] })
+      void trackUserAction({ userId: user.id, name: 'AI_CHAT_ANSWERED', entityType: 'ai_chat', metadata: { surface, status: 'needs_revision', answered: false, sources: 0 } })
+      return NextResponse.json({
+        ok: true,
+        answer: docsNotIndexed ? `${fallback}\n\n${DOCUMENTS_NOT_INDEXED_NOTICE}` : fallback,
+        notice: docsNotIndexed ? DOCUMENTS_NOT_INDEXED_NOTICE : null,
+        documents_index: docIndex.state,
+        status: 'needs_revision',
+        needs_expert: true,
+        used_sources: [],
+      })
     }
     const sanitized = sanitizeUsedSources(parsedAnswer, providedSources)
 
@@ -181,11 +207,29 @@ export async function POST(req: NextRequest) {
       grounding: sanitized.used_sources,
       validation: { status: validation.status, risk_level: validation.riskLevel, template: validation.templateId },
     })
+    void trackUserAction({
+      userId: user.id,
+      name: 'AI_CHAT_ANSWERED',
+      entityType: 'ai_conversation',
+      entityId: conversationId ?? null,
+      metadata: {
+        surface,
+        status: validation.status,
+        risk: validation.riskLevel ?? null,
+        template: validation.templateId ?? null,
+        answered: true,
+        sources: sanitized.used_sources.length,
+        needs_expert: !!sanitized.needs_expert,
+      },
+    })
 
     return NextResponse.json({
       ok: true,
       conversationId,
-      answer: validation.finalAnswer,
+      answer: docsNotIndexed ? `${validation.finalAnswer}\n\n${DOCUMENTS_NOT_INDEXED_NOTICE}` : validation.finalAnswer,
+      notice: docsNotIndexed ? DOCUMENTS_NOT_INDEXED_NOTICE : null,
+      documents_index: docIndex.state,
+      validation: { status: validation.status, risk_level: validation.riskLevel, template: validation.templateId },
       used_sources: sanitized.used_sources,
       confidence: sanitized.confidence,
       needs_expert: sanitized.needs_expert,

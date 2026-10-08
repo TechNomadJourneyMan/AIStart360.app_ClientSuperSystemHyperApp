@@ -14,10 +14,15 @@ import {
   chatWithOpenRouter,
   extractJson,
   hasOpenRouterKey as hasConfiguredOpenRouterKey,
+  type AiFeature,
   type Complexity,
 } from './openrouter'
 
 interface GenerateObjectOptions<T> {
+  /** Cost-accounting tag (ai_usage.feature). Required on every call site. */
+  feature: AiFeature
+  /** Who the call is for; defaults to the request actor set by `assertAiBudget`. */
+  userId?: string | null
   system: string
   user: string
   schema: ZodSchema<T>
@@ -88,6 +93,8 @@ export async function generateObjectViaOpenRouter<T>(
     const user = `${opts.user}${retryInstruction}${inBandSchema}`
 
     const raw = await chatWithOpenRouter({
+      feature: opts.feature,
+      userId: opts.userId,
       system: opts.system,
       user,
       model: opts.model,

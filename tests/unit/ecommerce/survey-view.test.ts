@@ -3,8 +3,6 @@
 // an honest empty state — no demo shop, no invented targets, ROAS is never
 // shown as LTV/CAC, garbage answers count as missing.
 import { describe, expect, it } from 'vitest'
-import { readFileSync } from 'node:fs'
-import path from 'node:path'
 import {
   COMPANY_NAME_FALLBACK,
   buildEcommerceView,
@@ -244,21 +242,5 @@ describe('extractEcommerceAnswers', () => {
       { question_key: 'ec_raw', answer: 5 },
     ])).toEqual({ ec_aov: 9000, ec_platforms: ['Shopify'], ec_raw: 5 })
     expect(extractEcommerceAnswers(null)).toEqual({})
-  })
-})
-
-describe('dashboard-ecommerce page source', () => {
-  const src = readFileSync(path.resolve(__dirname, '../../../app/client/dashboard-ecommerce/page.tsx'), 'utf8')
-
-  it('carries no demo dataset', () => {
-    for (const demo of ['Demo Shop', 'iPhone', 'AirPods', '84_200_000', 'демо-данные', 'const DATA']) {
-      expect(src).not.toContain(demo)
-    }
-  })
-
-  it('builds the view from the shared survey view model and never labels ROAS as LTV/CAC', () => {
-    expect(src).toContain("from '@/lib/ecommerce/survey-view'")
-    expect(src).toContain('buildEcommerceView(')
-    expect(src).not.toMatch(/label:\s*'LTV\/CAC'/)
   })
 })

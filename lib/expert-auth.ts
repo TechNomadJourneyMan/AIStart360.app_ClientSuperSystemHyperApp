@@ -121,14 +121,3 @@ export function expertBlockResponse(block: ExpertBlock): NextResponse {
       return NextResponse.json({ ok: false, error: 'Не удалось проверить права' }, { status: 503 })
   }
 }
-
-/**
- * Privileged-viewer gate for read-only endpoints shared between Giga Panel
- * (super_admin cookie) and Expert portal (Supabase session with expert role).
- * Returns true if the caller has EITHER credential.
- */
-export async function isPrivilegedViewer(cookieValue: string | null): Promise<boolean> {
-  if (cookieValue === 'super_admin') return true
-  const viewer = await requireExpert()
-  return viewer !== null
-}

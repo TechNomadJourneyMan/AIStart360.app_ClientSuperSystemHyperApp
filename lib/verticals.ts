@@ -2,7 +2,10 @@
 // Welcome-screen renders one card per entry; migration 008 keeps the DB in sync
 // via CHECK constraint — if adding a new id, update the migration too.
 
-export type VerticalId = 'generic' | 'medical' | 'ecommerce'
+// 'ecommerce' was removed as a selectable vertical (2026-09-24): its intake and
+// dashboard showed demo data. The DB CHECK (migration 025) still allows it, so
+// legacy rows may hold it — getVertical() resolves them to 'generic'.
+export type VerticalId = 'generic' | 'medical'
 
 export interface Vertical {
   id: VerticalId
@@ -47,23 +50,6 @@ export const VERTICALS: Vertical[] = [
     description:
       'AI-усиление для клиник: работа с базой пациентов, сегментация, карта потерь ' +
       'выручки, 9 связок роста и готовые сценарии для WhatsApp / обзвона.',
-    productName: 'AIStart360',
-  },
-  {
-    id: 'ecommerce',
-    label: 'Интернет-магазин',
-    subtitle: 'eCom, маркетплейсы, D2C',
-    icon: 'shopping_cart',
-    features: [
-      'SKU-эконом + ABC/XYZ-анализ',
-      'Funnel: visit → cart → paid + recovery',
-      'Атрибуция канал → выручка по UTM',
-      'Маркетплейсы: WB · Ozon · Kaspi · Uzum',
-    ],
-    description:
-      'AI-операционка для онлайн-ритейла: каталог, воронка, маркетплейсы, юнит-эконом ' +
-      'по каналам. RFM-сегментация, cohort LTV, cart-recovery flow и сезонный прогноз ' +
-      'кэша. Подключаем GA4 / Meta / Yandex / WB / Ozon / Kaspi и считаем сами.',
     productName: 'AIStart360',
   },
 ]
