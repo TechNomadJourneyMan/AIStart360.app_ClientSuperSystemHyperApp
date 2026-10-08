@@ -6,6 +6,7 @@
     { "path": "/api/cron/client-digest", "schedule": "0 4 * * 1" },
     { "path": "/api/telegram/personal/sync", "schedule": "0 5 * * *" },
     { "path": "/api/cron/reminders", "schedule": "0 6 * * *" },
-    { "path": "/api/cron/analytics-rollup", "schedule": "0 22 * * *" }
+    { "path": "/api/cron/analytics-rollup", "schedule": "0 22 * * *" },
+    { "path": "/api/cron/ai-discovery", "schedule": "30 1 * * *" }
   ]
 }

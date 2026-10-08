@@ -30,15 +30,19 @@ import {
   sanitizeProviderText,
   type ClientFailure,
 } from './client'
+import { discoverAllModels, discoverCredentialModels, type DiscoveryOutcome } from './discovery'
 import { invalidateProviderCache } from './router'
 import * as store from './store'
 import {
+  ALL_CAPABILITIES,
   CAPABILITIES,
+  MODEL_ID_RE,
   CHAT_TIERS,
   OCR_MODES,
   PROVIDER_KINDS,
+  capabilityOf,
+  type AiCapability,
   type BudgetsRow,
-  type Capability,
   type ChatTier,
   type CredentialRow,
   type MaskedCredential,
@@ -131,13 +135,17 @@ const labelSchema = z.string().trim().min(1, 'укажите название').
 
 export const modelInputSchema = z.object({
   providerId: uuid,
-  modelId: z.string().trim().min(1).max(200).regex(/^[\w.:/@+-]+$/, 'id модели: латиница, цифры и . : / @ + - _'),
-  capability: z.enum(CAPABILITIES),
+  modelId: z.string().trim().min(1).max(200).regex(MODEL_ID_RE, 'id модели: латиница, цифры и . : / @ + - _'),
+  capability: z.enum(ALL_CAPABILITIES),
   credentialId: uuid.nullable().default(null),
   label: z.string().trim().max(120).nullable().default(null),
   priceInPerMtok: money.nullable().default(null),
   priceOutPerMtok: money.nullable().default(null),
   enabled: z.boolean().default(true),
+  /** 107; omitted = keep the stored value. */
+  supportsVision: z.boolean().nullable().optional(),
+  supportsTools: z.boolean().nullable().optional(),
+  tierHint: z.enum(CHAT_TIERS).nullable().optional(),
 }).strict()
 export type ModelInput = z.input<typeof modelInputSchema>
 
@@ -343,7 +351,56 @@ function requireEncryption(): void {
   }
 }
 
-export async function addCredential(actor: ProviderActor, providerId: string, label: string, secret: string): Promise<MaskedCredential> {
+// ── model discovery (107) ──────────────────────────────────────────────────
+
+export interface DiscoverOptions { fetchImpl?: typeof fetch; resolve?: Resolver; timeoutMs?: number }
+
+/**
+ * Discovery right after a key is added / replaced / verified. On by default;
+ * off under the test runner unless a test passes `discover` (no network in
+ * unit tests). Best effort: a failure is stored on the key, never thrown.
+ */
+async function autoDiscover(credentialId: string, discover: boolean | DiscoverOptions | undefined): Promise<DiscoveryOutcome | null> {
+  const enabled = discover === undefined ? process.env.NODE_ENV !== 'test' : discover !== false
+  if (!enabled) return null
+  const opts = typeof discover === 'object' ? discover : {}
+  try {
+    return await discoverCredentialModels(credentialId, { timeoutMs: 10_000, ...opts })
+  } catch (err) {
+    console.warn('[ai-providers] model discovery failed:', err instanceof Error ? err.message.split('\n')[0] : err)
+    return null
+  }
+}
+
+/**
+ * «Обнаружить модели»: GET /models with one key (`credentialId`), every key of
+ * one provider (`providerId`) or every enabled key, then merge into ai_models
+ * (discovery.ts). Audited before it runs (required).
+ */
+export async function discoverModels(
+  actor: ProviderActor,
+  target: { credentialId?: string | null; providerId?: string | null } = {},
+  opts: DiscoverOptions = {},
+): Promise<DiscoveryOutcome[]> {
+  if (target.credentialId) await requireCredential(target.credentialId)
+  if (target.providerId) await requireProvider(target.providerId)
+  await audit(actor, 'ai.models.discover', target.credentialId ? 'ai_credential' : target.providerId ? 'ai_provider' : 'ai_models',
+    target.credentialId ?? target.providerId ?? null, { metadata: { scope: target.credentialId ? 'credential' : target.providerId ? 'provider' : 'all' } })
+  try {
+    if (target.credentialId) return [await discoverCredentialModels(target.credentialId, opts)]
+    return await discoverAllModels({ ...opts, providerId: target.providerId ?? undefined })
+  } finally {
+    invalidateProviderCache()
+  }
+}
+
+export async function addCredential(
+  actor: ProviderActor,
+  providerId: string,
+  label: string,
+  secret: string,
+  opts: { discover?: boolean | DiscoverOptions } = {},
+): Promise<MaskedCredential> {
   const provider = await requireProvider(providerId)
   const l = parse(labelSchema, label)
   const s = parse(secretSchema, secret)
@@ -356,7 +413,9 @@ export async function addCredential(actor: ProviderActor, providerId: string, la
   })
   try {
     const row = await store.insertCredential({ id, providerId, label: l, ciphertext, hint, enabled: true, createdBy: actorTag(actor) })
-    return maskCredential(row)
+    invalidateProviderCache()
+    const found = await autoDiscover(row.id, opts.discover)
+    return maskCredential(found ? (await store.getCredential(row.id)) ?? row : row)
   } finally {
     invalidateProviderCache()
   }
@@ -378,7 +437,12 @@ export async function updateCredential(actor: ProviderActor, id: string, patch: 
   }
 }
 
-export async function rotateCredential(actor: ProviderActor, id: string, newSecret: string): Promise<MaskedCredential> {
+export async function rotateCredential(
+  actor: ProviderActor,
+  id: string,
+  newSecret: string,
+  opts: { discover?: boolean | DiscoverOptions } = {},
+): Promise<MaskedCredential> {
   const old = await requireCredential(id)
   const s = parse(secretSchema, newSecret)
   requireEncryption()
@@ -390,7 +454,9 @@ export async function rotateCredential(actor: ProviderActor, id: string, newSecr
   try {
     const row = await store.rotateCredentialSecret(id, ciphertext, hint)
     if (!row) throw new ProviderServiceError('NOT_FOUND', 'ключ не найден')
-    return maskCredential(row)
+    invalidateProviderCache()
+    const found = await autoDiscover(id, opts.discover)
+    return maskCredential(found ? (await store.getCredential(id)) ?? row : row)
   } finally {
     invalidateProviderCache()
   }
@@ -417,6 +483,8 @@ export interface VerifyResult {
   checkedWith: 'chat' | 'embeddings' | 'models'
   model: string | null
   credential: MaskedCredential
+  /** Model discovery run after the check (null = not run). */
+  discovery?: DiscoveryOutcome | null
 }
 
 function verifyError(f: ClientFailure, key: string): string {
@@ -435,7 +503,7 @@ function verifyError(f: ClientFailure, key: string): string {
 export async function verifyCredential(
   actor: ProviderActor,
   id: string,
-  opts: { fetchImpl?: typeof fetch; resolve?: Resolver; timeoutMs?: number } = {},
+  opts: { fetchImpl?: typeof fetch; resolve?: Resolver; timeoutMs?: number; discover?: boolean } = {},
 ): Promise<VerifyResult> {
   const cred = await requireCredential(id)
   const provider = await requireProvider(cred.provider_id)
@@ -487,7 +555,11 @@ export async function verifyCredential(
   }, actor.req ?? null)
   const row = await store.recordVerification(id, ok, error)
   invalidateProviderCache()
-  return { ok, error, checkedWith, model: pick?.model_id ?? null, credential: maskCredential(row ?? cred) }
+  const discovery = await autoDiscover(id, opts.discover === undefined
+    ? undefined
+    : opts.discover && { fetchImpl: opts.fetchImpl, resolve: opts.resolve, timeoutMs: opts.timeoutMs })
+  const fresh = discovery ? (await store.getCredential(id)) ?? row : row
+  return { ok, error, checkedWith, model: pick?.model_id ?? null, credential: maskCredential(fresh ?? cred), discovery }
 }
 
 // ── models ─────────────────────────────────────────────────────────────────
@@ -508,6 +580,7 @@ export async function upsertModel(actor: ProviderActor, input: ModelInput): Prom
   const write: store.ModelWrite = {
     providerId: provider.id, credentialId: v.credentialId, modelId: v.modelId, capability: v.capability,
     label: v.label, priceInPerMtok: v.priceInPerMtok, priceOutPerMtok: v.priceOutPerMtok, enabled: v.enabled,
+    supportsVision: v.supportsVision, supportsTools: v.supportsTools, tierHint: v.tierHint,
   }
   await audit(actor, 'ai.model.upsert', 'ai_model', `${provider.key}/${v.modelId}/${v.capability}`, { newValue: write })
   try {
@@ -534,7 +607,7 @@ export async function deleteModel(actor: ProviderActor, id: string): Promise<{ d
 // ── routes ─────────────────────────────────────────────────────────────────
 
 export interface RouteView {
-  capability: Capability
+  capability: AiCapability
   tier: ChatTier | null
   modelRowId: string
   modelId: string
@@ -564,11 +637,11 @@ export async function listRoutes(): Promise<RouteView[]> {
  */
 export async function setRoute(
   actor: ProviderActor,
-  capability: Capability,
+  capability: AiCapability,
   tier: ChatTier | null,
   modelRowId: string | null,
 ): Promise<RouteRow | null> {
-  const cap = parse(z.enum(CAPABILITIES), capability)
+  const cap = parse(z.enum(ALL_CAPABILITIES), capability)
   const t = parse(z.enum(CHAT_TIERS).nullable(), tier ?? null)
   if (cap === 'chat' && !t) throw new ProviderServiceError('VALIDATION', 'для chat укажите уровень: light, standard или premium')
   if (cap !== 'chat' && t) throw new ProviderServiceError('VALIDATION', `для ${cap} уровень не указывается`)
@@ -585,7 +658,7 @@ export async function setRoute(
   parse(uuid, modelRowId)
   const model = await store.getModel(modelRowId)
   if (!model) throw new ProviderServiceError('NOT_FOUND', 'модель не найдена')
-  if (model.capability !== cap) {
+  if (capabilityOf(model) !== cap) {
     throw new ProviderServiceError('VALIDATION', `модель ${model.model_id} зарегистрирована для «${model.capability}», а не для «${cap}»`)
   }
   if (!model.enabled) throw new ProviderServiceError('VALIDATION', `модель ${model.model_id} выключена`)

@@ -174,3 +174,6 @@ export interface ProviderTarget {
   supportsTools?: boolean | null
   tierHint?: ChatTier | null
 }
+
+/** A model id the panel accepts (manual entry and discovery alike). */
+export const MODEL_ID_RE = /^[\w.:/@+-]{1,200}$/
