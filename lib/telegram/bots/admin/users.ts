@@ -64,7 +64,7 @@ async function showUser(ctx: AdminCtx, id: string): Promise<void> {
 }
 
 /** admin_requests id of the user's request when one exists, else the profile id (orphaned registration). */
-async function requestIdFor(userId: string): Promise<string> {
+export async function requestIdFor(userId: string): Promise<string> {
   const rows = await prisma.$queryRaw<Array<{ id: string }>>`
     SELECT id FROM public.admin_requests WHERE "userId" = ${userId} ORDER BY "createdAt" DESC LIMIT 1`.catch(() => [])
   return rows[0]?.id ?? userId

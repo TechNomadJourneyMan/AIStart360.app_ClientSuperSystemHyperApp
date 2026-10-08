@@ -17,6 +17,7 @@ export const ADMIN_COMMANDS: BotCommand[] = [
   { command: 'spend', description: 'Расходы и лимиты ИИ' },
   { command: 'notifications', description: 'Мои уведомления' },
   { command: 'mcp', description: 'MCP-доступ: токены для Claude Code' },
+  { command: 'new', description: 'Ассистент: начать разговор заново' },
   { command: 'cancel', description: 'Отменить ввод' },
 ]
 
@@ -26,6 +27,7 @@ export const EXPERT_COMMANDS: BotCommand[] = [
   { command: 'diagnostics', description: 'Последние диагностики' },
   { command: 'reports', description: 'Опубликованные отчёты' },
   { command: 'notifications', description: 'Мои уведомления' },
+  { command: 'new', description: 'Ассистент: начать разговор заново' },
   { command: 'cancel', description: 'Отменить ввод' },
 ]
 

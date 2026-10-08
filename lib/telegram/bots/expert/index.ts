@@ -20,7 +20,7 @@ import { REPORT_TYPE_LABELS } from '@/lib/reports/expert-list'
 import { listReportVersions } from '@/lib/reports/versions'
 import { renderCompanyCard, sessionLine } from '../cards'
 import { companyCard, recentSessions, searchCompanies } from '../data'
-import type { BotContext, Entry, Router, StepEntry } from '../dispatcher'
+import type { BotContext, BrainInput, Entry, Router, StepEntry } from '../dispatcher'
 import { LEVEL_CODES, muteUntil, readSettings, renderSettings, writeLevel, writeMute } from '../notify-settings'
 import { sendMessage, type InlineButton, type ReplyMarkup } from '../registry'
 import { cut, dt, esc, pageOf, pagerRow, PAGE_SIZE } from '../ui'
@@ -43,7 +43,13 @@ export function expertKeyboard(): ReplyMarkup {
 }
 
 async function welcome(ctx: Ctx): Promise<void> {
-  await ctx.reply(`👋 ${esc(ctx.principal.name ?? 'Эксперт')}, это бот экспертов AIStart360: клиенты, диагностики и отчёты. Выберите раздел ниже.`, expertKeyboard())
+  await ctx.reply(`👋 ${esc(ctx.principal.name ?? 'Эксперт')}, это бот экспертов AIStart360: клиенты, диагностики и отчёты. Выберите раздел ниже.\n\n🤖 Можно просто написать вопрос, прислать голосовое, фото или файл — ассистент разберёт клиента, перескажет отчёт на проверке или подготовит черновик комментария. /new — начать разговор заново.`, expertKeyboard())
+}
+
+/** Free text, voice, photos and files → the assistant (lib/telegram/brain), client tools only. */
+async function brain(ctx: Ctx, input: BrainInput): Promise<void> {
+  const { runExpertBrain } = await import('@/lib/telegram/brain')
+  await runExpertBrain(ctx, input)
 }
 
 async function clientsMenu(ctx: Ctx): Promise<void> {
@@ -182,8 +188,10 @@ export function expertRouter(): Router<ExpertPrincipal> {
     },
     unlinkedText: '⛔ Этот бот — для экспертов AIStart360. Привяжите Telegram в кабинете эксперта → Профиль → «Привязать Telegram».',
     welcome,
+    brain,
     commands: {
       start: { run: welcome },
+      new: { run: async (ctx) => (await import('@/lib/telegram/brain')).resetBrainMemory(ctx) },
       menu: { run: welcome },
       help: { run: welcome },
       clients: { run: clientsMenu },
