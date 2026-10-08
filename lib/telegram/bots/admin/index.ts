@@ -16,6 +16,7 @@ import { sendMessage, type ReplyMarkup } from '../registry'
 import { esc } from '../ui'
 import { agentConfirmed, agentEntries, agentSteps, showAgents } from './agents'
 import { adminApprovalCallback, approvalEntries, showApprovals } from './approvals'
+import { automationConfirmed, automationEntries } from './automation'
 import { clientConfirmed, clientEntries, clientSteps, showClientsMenu } from './clients'
 import { permLabel, resolveStaff, type AdminCtx, type AdminEntry, type StaffPrincipal } from './context'
 import { mcpConfirmed, mcpEntries, mcpSteps, showMcp } from './mcp'
@@ -95,7 +96,7 @@ export function adminRouter(): Router<StaffPrincipal> {
     commands[item.command] = menuEntry(item)
   }
   const callbacks: Record<string, AdminEntry> = {
-    ...statusEntries, ...agentEntries, ...approvalEntries, ...userEntries, ...clientEntries,
+    ...statusEntries, ...agentEntries, ...automationEntries, ...approvalEntries, ...userEntries, ...clientEntries,
     ...reportEntries, ...providerEntries, ...spendEntries, ...notificationEntries, ...mcpEntries,
   }
   return {
@@ -116,7 +117,7 @@ export function adminRouter(): Router<StaffPrincipal> {
     commands,
     menu,
     callbacks,
-    confirmed: { ...agentConfirmed, ...userConfirmed, ...clientConfirmed, ...reportConfirmed, ...providerConfirmed, ...spendConfirmed, ...mcpConfirmed },
+    confirmed: { ...agentConfirmed, ...automationConfirmed, ...userConfirmed, ...clientConfirmed, ...reportConfirmed, ...providerConfirmed, ...spendConfirmed, ...mcpConfirmed },
     steps: { ...agentSteps, ...userSteps, ...clientSteps, ...reportSteps, ...providerSteps, ...spendSteps, ...mcpSteps },
   }
 }

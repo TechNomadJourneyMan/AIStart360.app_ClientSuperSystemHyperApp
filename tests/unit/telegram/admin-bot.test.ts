@@ -67,6 +67,25 @@ vi.mock('@/lib/reports/versions', () => ({
   listReportVersions: async () => [],
 }))
 vi.mock('@/lib/reports/review', () => ({ listReviewQueue: async () => [] }))
+const settingsStore = vi.hoisted(() => ({
+  values: {} as Record<string, unknown>,
+  order: [] as string[],
+}))
+vi.mock('@/lib/settings/store', () => ({
+  getSetting: async (key: string) => {
+    const { SETTINGS } = await import('@/lib/settings/registry')
+    return key in settingsStore.values ? settingsStore.values[key] : (SETTINGS as Record<string, { default: unknown }>)[key].default
+  },
+  getAllSettings: async () => {
+    const { SETTINGS, SETTING_KEYS } = await import('@/lib/settings/registry')
+    return { values: Object.fromEntries(SETTING_KEYS.map((k) => [k, k in settingsStore.values ? settingsStore.values[k] : SETTINGS[k].default])), meta: {} }
+  },
+  saveSettings: vi.fn(async (values: Record<string, unknown>) => {
+    settingsStore.order.push('save')
+    Object.assign(settingsStore.values, values)
+  }),
+  invalidateSettings: () => undefined,
+}))
 
 const providers = vi.hoisted(() => {
   class ProviderServiceError extends Error {
@@ -175,6 +194,9 @@ describe('admin bot', () => {
     { name: 'edit budget (settings.manage)', role: 'crm_manager', data: () => btn('bg.e', 'p'), spy: () => providers.setBudgets },
     { name: 'rotate key (settings.manage)', role: 'admin', data: () => btn('cr.rot', CRED), spy: () => providers.rotateCredential },
     { name: 'view providers (agents.view)', role: 'content_manager', data: () => btn('pv.l'), spy: () => providers.listProviders },
+    { name: 'retry from a notification (agents.run)', role: 'analyst', data: () => btn('tk.rq', UUID), spy: () => actions.agentTaskAction },
+    { name: 'automation switch (settings.manage)', role: 'admin', data: () => btn('au.t', 'r', '0'), spy: () => actions.agentTaskAction },
+    { name: 'stuck threshold (settings.manage)', role: 'crm_manager', data: () => btn('au.m', '30'), spy: () => actions.agentTaskAction },
   ]
   for (const f of forbidden) {
     it(`refuses ${f.name} for ${f.role} and changes nothing`, async () => {
@@ -326,5 +348,78 @@ describe('admin bot', () => {
   it('ignores group chats', async () => {
     expect(await run(msg('/status', TG_USER, { chat: { id: -100, type: 'supergroup' } }))).toBe('ignored')
     expect(tg.calls).toHaveLength(0)
+  })
+
+  describe('agent notifications and automation', () => {
+    beforeEach(() => {
+      settingsStore.values = {}
+      settingsStore.order = []
+    })
+
+    it('«Повторить» under a dead-letter notification: confirmation, then retry audited as the bot actor', async () => {
+      const { lifecycleKeyboard } = await import('@/lib/agents/lifecycle')
+      const retry = lifecycleKeyboard('dead', UUID, 'admin').flat().find((b) => b.text.includes('Повторить'))!.callback_data!
+      s.role = 'admin'
+      expect(await run(press(retry))).toBe('callback')
+      expect(actions.agentTaskAction).not.toHaveBeenCalled()
+      expect(tg.lastText()).toContain('Повторить задачу')
+      expect(await run(press(buttonData(tg.lastButtons(), 'Подтвердить')))).toBe('confirmed')
+      expect(actions.agentTaskAction).toHaveBeenCalledWith(expect.objectContaining({ taskId: UUID, action: 'retry', actorId: 'b0b0b0b0-0000-4000-8000-000000000001' }))
+    })
+
+    it('«Отменить» under a retry notification goes through the same confirmed cancel', async () => {
+      const { lifecycleKeyboard } = await import('@/lib/agents/lifecycle')
+      const cancel = lifecycleKeyboard('retrying', UUID, 'admin').flat().find((b) => b.text.includes('Отменить'))!.callback_data!
+      s.role = 'super_admin'
+      await run(press(cancel))
+      expect(actions.agentTaskAction).not.toHaveBeenCalled()
+      expect(await run(press(buttonData(tg.lastButtons(), 'Подтвердить')))).toBe('confirmed')
+      expect(actions.agentTaskAction).toHaveBeenCalledWith(expect.objectContaining({ taskId: UUID, action: 'cancel' }))
+    })
+
+    it('«⚙️ Автоматизация»: everyone with agents.view sees the switches, only settings.manage gets buttons', async () => {
+      s.role = 'analyst'
+      await run(press(btn('ag.l', '0')))
+      const open = buttonData(tg.lastButtons(), 'Автоматизация')
+      expect(await run(press(open))).toBe('callback')
+      expect(tg.lastText()).toContain('Автоматизация агентов')
+      expect(tg.lastText()).toContain('🟢 Авто-повтор упавших задач')
+      expect(tg.lastText()).toContain('Менять может роль')
+      expect(tg.lastButtons().map((b) => b.text).join('|')).not.toContain('Выключить')
+
+      s.role = 'support' // no agents.view
+      expect(await run(press(btn('au.v')))).toBe('forbidden')
+    })
+
+    it('a switch changes only after confirmation, with the audit entry written before the setting', async () => {
+      s.role = 'super_admin'
+      await run(press(btn('au.v')))
+      const off = buttonData(tg.lastButtons(), 'Выключить: Авто-повтор')
+      expect(await run(press(off))).toBe('callback')
+      expect(settingsStore.order).toEqual([])
+      expect(tg.lastText()).toContain('Выключить «Авто-повтор упавших задач»')
+      h.audit.mockImplementation(async () => { settingsStore.order.push('audit'); return true })
+      expect(await run(press(buttonData(tg.lastButtons(), 'Подтвердить')))).toBe('confirmed')
+      expect(settingsStore.order).toEqual(['audit', 'save'])
+      expect(settingsStore.values.agents_auto_retry).toBe(false)
+      expect(h.audit).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: 'telegram', role: 'super_admin' }),
+        expect.objectContaining({ action: 'settings.changed', entityId: 'agents_auto_retry', newValue: { agents_auto_retry: false } }),
+        { required: true },
+      )
+      expect(tg.lastText()).toContain('⏸ Авто-повтор упавших задач')
+
+      await run(press(buttonData(tg.lastButtons(), '30 мин')))
+      expect(await run(press(buttonData(tg.lastButtons(), 'Подтвердить')))).toBe('confirmed')
+      expect(settingsStore.values.agents_stuck_minutes).toBe(30)
+    })
+
+    it('rejects forged switch arguments even when signed', async () => {
+      s.role = 'super_admin'
+      expect(await run(press(btn('au.m', '7')))).toBe('callback')
+      expect(await run(press(btn('au.t', 'zz', '1')))).toBe('callback')
+      expect(h.state.dump().size).toBe(0)
+      expect(settingsStore.order).toEqual([])
+    })
   })
 })

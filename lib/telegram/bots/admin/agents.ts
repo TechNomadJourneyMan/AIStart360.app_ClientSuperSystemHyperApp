@@ -7,7 +7,9 @@
  *   run (company agents: pick a company by name / email)
  *                                    agents.run    (POST agents/:key/run)
  *   retry                            agents.run    (POST tasks/:id retry)
+ *   retry from a notification (tk.rq) agents.run + confirmation
  *   cancel                           agents.run + confirmation
+ *   ⚙️ Автоматизация                 agents.view; switches: settings.manage (automation.ts)
  * Mutations go through lib/admin/staff-actions.ts (the routes' own code) and
  * are audited with actor kind 'telegram'.
  */
@@ -53,6 +55,7 @@ export async function showAgents(ctx: AdminCtx, page = 0): Promise<void> {
   const rows = slice.map((a) => [ctx.button(`${a.enabled ? '🟢' : '⏸'} ${cut(a.name, 40)}`, 'ag.c', agentRef(a.key))])
   rows.push(pagerRow(ctx, 'ag.l', page, all.length > (page + 1) * PAGE_SIZE))
   rows.push([ctx.button('📋 Все задачи', 'tk.l', '-', '-', 0), ctx.button('💀 Dead-letter', 'tk.l', '-', 'd', 0)])
+  rows.push([ctx.button('⚙️ Автоматизация', 'au.v')])
   await ctx.show(lines.join('\n'), rows)
 }
 
@@ -256,6 +259,14 @@ export const agentEntries: Record<string, AdminEntry> = {
       await ctx.confirm(`✖️ Отменить задачу <code>${esc(id.slice(0, 8))}</code>?`, 'tk.cn', [id])
     },
   },
+  // «Повторить» under a lifecycle notification (lib/agents/lifecycle.ts): asks first.
+  'tk.rq': {
+    perm: 'agents.run',
+    async run(ctx, [id]) {
+      if (!UUID_RE.test(id)) return
+      await ctx.confirm(`🔁 Повторить задачу <code>${esc(id.slice(0, 8))}</code>? Она снова встанет в очередь с одной дополнительной попыткой.`, 'tk.rq', [id])
+    },
+  },
 }
 
 /** Reached only through the confirmation button. */
@@ -275,6 +286,15 @@ export const agentConfirmed: Record<string, AdminEntry> = {
     async run(ctx, [id]) {
       const res = await agentTaskAction({ taskId: id, action: 'cancel', actorId: ctx.principal.userId, audit: auditFor(ctx) })
       await ctx.toast(res.ok ? 'Задача отменена' : res.error, !res.ok)
+      await showTask(ctx, id)
+    },
+  },
+  'tk.rq': {
+    perm: 'agents.run',
+    async run(ctx, [id]) {
+      if (!UUID_RE.test(id)) return
+      const res = await agentTaskAction({ taskId: id, action: 'retry', actorId: ctx.principal.userId, audit: auditFor(ctx) })
+      await ctx.toast(res.ok ? 'Задача снова в очереди' : res.error, !res.ok)
       await showTask(ctx, id)
     },
   },
