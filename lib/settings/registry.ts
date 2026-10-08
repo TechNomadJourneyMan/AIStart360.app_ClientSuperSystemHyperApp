@@ -172,6 +172,37 @@ export const SETTINGS = {
     help: 'Заявки на доступ, которые ждут дольше этого срока, попадают в утреннюю сводку администраторам (08:00 Алматы) с числом и возрастом самой старой.',
     schema: z.number().int().min(1).max(168), default: 4, critical: false,
   },
+  // ── Автоматизация ИИ-агентов (lib/agents/automation.ts, lifecycle.ts, digest.ts) ──
+  agents_notify_lifecycle: {
+    group: 'agents', label: 'Уведомления о работе агентов',
+    help: 'Бот администраторов и лента GIGA: задача запущена и выполнена (уровень «Информация»), упала и будет повторена («Внимание»). Сбой после всех попыток и зависшие задачи («Критично») приходят всегда. Получают сотрудники с правом просмотра агентов — по своему уровню уведомлений и с учётом «без звука».',
+    schema: z.boolean(), default: true, critical: false,
+  },
+  agents_auto_retry: {
+    group: 'agents', label: 'Авто-повтор упавших задач',
+    help: 'Задача, упавшая по временной причине (модель недоступна, таймаут, сбой хранилища), повторяется сама с растущей паузой: 30 с, 2 мин, 8 мин, 32 мин, затем раз в час — пока не кончатся попытки агента. Выключено — первая же ошибка отправляет задачу в dead-letter.',
+    schema: z.boolean(), default: true, critical: false,
+  },
+  agents_auto_diagnostic: {
+    group: 'agents', label: 'Авто-запуск диагностики по событиям',
+    help: 'Анкета заполнена или документ обработан → диагностика компании запускается сама, не чаще раза в сутки (по Алматы). Событие в тот же день переносит пересчёт на начало следующих суток. Выключено — диагностику запускают вручную.',
+    schema: z.boolean(), default: true, critical: false,
+  },
+  agents_daily_digest: {
+    group: 'agents', label: 'Ежедневная сводка агентов в бот',
+    help: 'В 09:00 (Алматы): сколько задач было за сутки, успехи и ошибки, расход ИИ за сегодня и вчера, что ждёт одобрения и частые ошибки. Получают сотрудники с правом просмотра агентов, привязавшие Telegram.',
+    schema: z.boolean(), default: true, critical: false,
+  },
+  agents_stuck_alerts: {
+    group: 'agents', label: 'Сигнал о зависших задачах',
+    help: 'Критичное уведомление (один раз на задачу), если у выполняющейся задачи истекла аренда или от неё нет прогресса дольше заданного времени.',
+    schema: z.boolean(), default: true, critical: false,
+  },
+  agents_stuck_minutes: {
+    group: 'agents', label: 'Задача зависла, если нет прогресса, минут',
+    help: 'Сколько минут выполняющаяся задача может не писать ни одного события, прежде чем считаться зависшей.',
+    schema: z.number().int().min(5).max(240), default: 20, critical: false,
+  },
 } as const
 
 export type SettingKey = keyof typeof SETTINGS
@@ -186,6 +217,7 @@ export const SETTING_GROUPS = {
   analytics: { label: 'Аналитика', icon: 'activity' },
   notifications: { label: 'Уведомления', icon: 'bell' },
   automation: { label: 'Автоматические касания', icon: 'send' },
+  agents: { label: 'Автоматизация агентов', icon: 'bot' },
 } as const
 
 export function isAdminNotificationType(v: string): v is AdminNotificationType {

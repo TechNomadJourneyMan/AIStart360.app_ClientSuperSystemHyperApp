@@ -32,6 +32,12 @@ const CONFIRM: Partial<Record<SettingKey, (next: boolean) => string>> = {
   staff_require_mfa: (on) => on
     ? 'Сотрудники без 2FA не смогут открыть панель, пока не включат её в своём профиле. Убедитесь, что у вас 2FA уже включена.'
     : 'Сотрудники смогут входить в панель без второго фактора.',
+  agents_auto_retry: (on) => on
+    ? 'Задачи, упавшие по временной причине, снова будут повторяться сами с растущей паузой.'
+    : 'Любая ошибка агента сразу отправит задачу в dead-letter — временные сбои модели перестанут исправляться сами.',
+  agents_auto_diagnostic: (on) => on
+    ? 'Диагностика компании будет запускаться сама после анкеты и обработанных документов, не чаще раза в сутки.'
+    : 'Диагностика перестанет запускаться после анкеты и новых документов — только вручную.',
 }
 
 export default function SettingsPage() {
@@ -206,6 +212,29 @@ export default function SettingsPage() {
               />
             </SettingRow>
             <Links items={[{ href: '/admin-giga-panel/requests', label: 'Заявки на доступ' }]} />
+          </Panel>
+
+          <Panel
+            title={<Title icon={<Bot size={14} />}>Автоматизация агентов</Title>}
+            description="Те же переключатели есть в боте администраторов: «🤖 Агенты» → «⚙️ Автоматизация». Сбои после всех попыток и зависшие задачи приходят всегда — как критичные."
+          >
+            {(['agents_notify_lifecycle', 'agents_auto_retry', 'agents_auto_diagnostic', 'agents_daily_digest', 'agents_stuck_alerts'] as const).map((k) => (
+              <SettingRow key={k} k={k} meta={meta}>
+                <Toggle checked={v[k]} disabled={!canEdit || !!saving} onChange={(n) => toggle(k, n)} label={SETTINGS[k].label} />
+              </SettingRow>
+            ))}
+            <SettingRow k="agents_stuck_minutes" meta={meta} note={!v.agents_stuck_alerts ? 'Сигнал о зависших задачах выключен — порог сейчас не действует.' : undefined}>
+              <NumberSetting
+                value={v.agents_stuck_minutes} min={5} max={240} step={5} suffix="мин"
+                disabled={!canEdit} saving={saving === 'agents_stuck_minutes'}
+                onSave={(n) => save({ agents_stuck_minutes: n }, 'Порог зависания')}
+              />
+            </SettingRow>
+            <Links items={[
+              { href: '/admin-giga-panel/agents', label: 'ИИ-агенты' },
+              { href: '/admin-giga-panel/agents/tasks', label: 'Задачи агентов' },
+              { href: '/admin-giga-panel/notifications', label: 'Уведомления' },
+            ]} />
           </Panel>
 
           {canEdit && <HealthCard />}
