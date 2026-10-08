@@ -97,13 +97,27 @@ describe('callLlm (agents)', () => {
     expect(body()).toMatchObject({ model: 'anthropic/claude-haiku-4.5', provider: { data_collection: 'deny' }, usage: { include: true } })
   })
 
-  it('only routes the configured tiers; an explicit model is honoured', async () => {
+  it('an unrouted tier uses an available model; the route wins over an unregistered explicit model', async () => {
     configureAlem({ tiers: ['light'] })
+    // A1: premium has no route → any usable chat model before the built-in OpenRouter.
     await callLlm({ tier: 'premium', system: 's', user: 'u', maxTokens: 10, label: 't' })
-    expect(call(0)[0]).toBe('https://openrouter.ai/api/v1/chat/completions')
+    expect(call(0)[0]).toBe('https://llm.alem.ai/v1/chat/completions')
+    // An unregistered explicit id comes after the owner's route…
     await callLlm({ tier: 'light', model: 'openai/gpt-4o-mini', system: 's', user: 'u', maxTokens: 10, label: 't' })
-    expect(call(1)[0]).toBe('https://openrouter.ai/api/v1/chat/completions')
-    expect(body(1).model).toBe('openai/gpt-4o-mini')
+    expect(call(1)[0]).toBe('https://llm.alem.ai/v1/chat/completions')
+    // …and is used through OpenRouter when the route fails.
+    fetchSpy.mockResolvedValueOnce(new Response('down', { status: 503 }))
+    const r = await callLlm({ tier: 'light', model: 'openai/gpt-4o-mini', system: 's', user: 'u', maxTokens: 10, label: 't' })
+    expect(r).toMatchObject({ ok: true, usage: { provider: 'openrouter', attempts: 2 } })
+    expect(call(3)[0]).toBe('https://openrouter.ai/api/v1/chat/completions')
+    expect(body(3).model).toBe('openai/gpt-4o-mini')
+  })
+
+  it('an explicit model registered by the owner wins over the route', async () => {
+    const alem = configureAlem({ tiers: ['light'] })
+    seedModel({ provider_id: alem.id, model_id: 'kazllm', capability: 'chat' })
+    await callLlm({ tier: 'light', model: 'kazllm', system: 's', user: 'u', maxTokens: 10, label: 't' })
+    expect(body(0).model).toBe('kazllm')
   })
 
   it('works with an Alem key only (no OPENROUTER_API_KEY)', async () => {
@@ -114,11 +128,21 @@ describe('callLlm (agents)', () => {
   })
 
   it('refuses with BUDGET_EXCEEDED once the provider budget is spent, without calling it', async () => {
+    delete process.env.OPENROUTER_API_KEY
     configureAlem({ budget: 1 })
     fakeDb.spendToday.alem = 1
     const r = await callLlm({ tier: 'light', system: 's', user: 'u', maxTokens: 10, label: 't' })
     expect(r).toMatchObject({ ok: false, error: 'BUDGET_EXCEEDED' })
     expect(fetchSpy).not.toHaveBeenCalled()
+  })
+
+  it('skips a provider whose budget is spent and answers from the next candidate', async () => {
+    configureAlem({ budget: 1 })
+    fakeDb.spendToday.alem = 1
+    const r = await callLlm({ tier: 'light', system: 's', user: 'u', maxTokens: 10, label: 't' })
+    expect(r).toMatchObject({ ok: true, usage: { provider: 'openrouter' } })
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+    expect(call()[0]).toBe('https://openrouter.ai/api/v1/chat/completions')
   })
 
   it('callLlmJson validates Alem JSON with the schema', async () => {

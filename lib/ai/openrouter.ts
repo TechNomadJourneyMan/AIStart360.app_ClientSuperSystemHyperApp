@@ -27,11 +27,14 @@ import {
   createEmbeddings,
   estimateTokens,
   knownModelPrices,
+  knownModelTier,
   TIER_ESTIMATE_PRICES_PER_MTOK,
   worstCaseCostUsd,
   type ChatMessage,
+  type ClientFailure,
 } from './providers/client'
-import { hasConfiguredChatRoute, providerBudgetRefusal, resolveTarget } from './providers/router'
+import { runWithFailover } from './providers/failover'
+import { hasConfiguredChatRoute, providerBudgetRefusal, resolveCandidates, resolveTarget } from './providers/router'
 import type { ChatTier, ProviderTarget } from './providers/types'
 import { platformBudgetLeft, recordUsage } from './usage-ledger'
 import { recordAiUsage, type AiFeature } from './usage'
@@ -151,7 +154,8 @@ export function resolveModel(opts: {
 
 /**
  * Is a chat model reachable? OPENROUTER_API_KEY, or (best effort, from the
- * router's cached configuration) a chat route to a provider with a usable key.
+ * router's cached configuration) any usable chat target: a route, or a manual /
+ * discovered chat model on an enabled provider with a key.
  */
 export function hasOpenRouterKey(): boolean {
   return Boolean(process.env.OPENROUTER_API_KEY) || hasConfiguredChatRoute()
@@ -181,10 +185,14 @@ interface OpenRouterResponseJson {
  * Sends a chat completion. Returns the assistant message text, or null if the
  * request fails. Never throws.
  *
- * Provider: an explicit `model` pins that model id (OpenRouter unless the owner
- * registered it under another provider); otherwise the owner's chat route for
- * the complexity tier (low/medium → light, high → standard, max → premium);
- * otherwise OpenRouter with the complexity model — the pre-094 behaviour.
+ * Provider: the router's candidates (lib/ai/providers/router.ts
+ * resolveCandidates) for the tier — `complexity` (low/medium → light, high →
+ * standard, max → premium), else the tier of a known explicit model, else the
+ * automatic estimate. An explicit `model` registered by the owner wins; an
+ * unregistered one is used through OpenRouter after the owner's route, and
+ * when OpenRouter has no key the call transparently goes to an available chat
+ * model of the same tier. A failover-worthy error tries the next candidate.
+ * With nothing configured: OpenRouter with the complexity model, as before 094.
  */
 export async function chatWithOpenRouter(opts: ChatOptions): Promise<string | null> {
   const fallbackModel = resolveModel({
@@ -194,19 +202,13 @@ export async function chatWithOpenRouter(opts: ChatOptions): Promise<string | nu
     system: opts.system,
     maxTokens: opts.maxTokens,
   })
-  const tier = COMPLEXITY_TIER[opts.complexity ?? autoComplexity(opts)]
-  const resolved = await resolveTarget('chat', { tier, model: opts.model ?? null, fallbackModel })
+  const tier = chatTierOf(opts)
+  const resolved = await resolveCandidates('chat', { tier, model: opts.model ?? null, fallbackModel })
   if (!resolved.ok) return null
-  const target = resolved.target
 
   const left = await platformBudgetLeft()
   if (left !== null && left <= 0) {
     console.warn(`[openrouter] platform AI budget for today is spent — ${opts.label ?? opts.feature} skipped`)
-    return null
-  }
-  const refusal = await providerBudgetRefusal(target)
-  if (refusal) {
-    console.warn(`${logTag(target)} ${refusal} — ${opts.label ?? opts.feature} skipped`)
     return null
   }
 
@@ -220,45 +222,52 @@ export async function chatWithOpenRouter(opts: ChatOptions): Promise<string | nu
   const label = opts.label ?? opts.feature
   // Prices for a call whose cost the provider did not report: the model's own
   // (AI_PRICE_TABLE / known ids), else the conservative tier estimate.
-  const fallbackPrices = (answeredBy?: string) =>
+  const fallbackPrices = (target: ProviderTarget, answeredBy?: string) =>
     knownModelPrices(answeredBy) ?? knownModelPrices(target.model) ?? TIER_ESTIMATE_PRICES_PER_MTOK[tier]
-  const res = await chatCompletion(target, {
-    messages,
-    maxTokens,
-    temperature: opts.temperature === null ? null : (opts.temperature ?? 0.7),
-    json: opts.jsonMode,
-    jsonSchema: opts.jsonSchema,
-    timeoutMs,
-  })
-  if (!res.ok) {
-    if (res.code === 'TIMEOUT') {
-      // The provider may have generated (and billed) the answer we stopped
-      // waiting for: record its worst case so the platform budget sees it.
-      const input = `${opts.system ?? ''}${opts.user}`
-      await recordUsage({
-        source: `feature:${label}`,
-        model: target.model,
-        tokensIn: estimateTokens(input),
-        tokensOut: 0,
-        costUsd: worstCaseCostUsd(fallbackPrices(), input, maxTokens),
-        costSource: 'estimate',
-        companyId: opts.companyId ?? null,
-        providerKey: target.providerKey,
-        ok: false,
-      })
+
+  const run = await runWithFailover(
+    resolved.candidates,
+    (target) => chatCompletion(target, {
+      messages,
+      maxTokens,
+      temperature: opts.temperature === null ? null : (opts.temperature ?? 0.7),
+      json: opts.jsonMode,
+      jsonSchema: opts.jsonSchema,
+      timeoutMs,
+    }),
+    {
+      budgetCheck: providerBudgetRefusal,
+      onFailure: async (target, res) => {
+        if (res.code === 'TIMEOUT') {
+          // The provider may have generated (and billed) the answer we stopped
+          // waiting for: record its worst case so the platform budget sees it.
+          const input = `${opts.system ?? ''}${opts.user}`
+          await recordUsage({
+            source: `feature:${label}`,
+            model: target.model,
+            tokensIn: estimateTokens(input),
+            tokensOut: 0,
+            costUsd: worstCaseCostUsd(fallbackPrices(target), input, maxTokens),
+            costSource: 'estimate',
+            companyId: opts.companyId ?? null,
+            providerKey: target.providerKey,
+            ok: false,
+          })
+        }
+        logFailure(target, res, timeoutMs, opts.privacySensitive)
+      },
+    },
+  )
+  if (!run.ok) {
+    if (!run.failure) {
+      console.warn(`[openrouter] ${run.refusal ?? 'provider budget spent'} — ${label} skipped`)
+      return null
     }
+    const target = run.target ?? resolved.candidates[0]
     await recordAiUsage({ feature: opts.feature, model: target.model, ok: false, latencyMs: Date.now() - started, userId: opts.userId })
-    if (res.code === 'TIMEOUT' && res.status === null) {
-      console.error(`${logTag(target)} request timed out after ${timeoutMs}ms`)
-    } else if (opts.privacySensitive) {
-      console.error(`${logTag(target)} privacy-sensitive request failed:`, res.status ?? res.message)
-    } else if (res.status !== null) {
-      console.error(logTag(target), res.status, res.detail ?? '')
-    } else {
-      console.error(`${logTag(target)} fetch failed:`, res.message)
-    }
     return null
   }
+  const { result: res, target } = run
   const tokensIn = res.tokensIn ?? 0
   const tokensOut = res.tokensOut ?? 0
   const cost = computeCost({
@@ -269,7 +278,7 @@ export async function chatWithOpenRouter(opts: ChatOptions): Promise<string | nu
     priceOutPerMtok: target.priceOutPerMtok,
     // OpenRouter normally reports the real cost; when it (or another provider
     // without configured prices) does not, record an estimate, never $0.
-    estimatePrices: fallbackPrices(res.model),
+    estimatePrices: fallbackPrices(target, res.model),
   })
   await recordUsage({
     source: `feature:${label}`,
@@ -293,6 +302,24 @@ export async function chatWithOpenRouter(opts: ChatOptions): Promise<string | nu
     userId: opts.userId,
   })
   return res.text || null
+}
+
+/** Chat tier of a feature call: complexity, else a known explicit model's tier, else the estimate. */
+function chatTierOf(opts: Pick<ChatOptions, 'complexity' | 'model' | 'user' | 'system' | 'maxTokens'>): ChatTier {
+  if (opts.complexity) return COMPLEXITY_TIER[opts.complexity]
+  return knownModelTier(opts.model) ?? COMPLEXITY_TIER[autoComplexity(opts)]
+}
+
+function logFailure(target: ProviderTarget, res: ClientFailure, timeoutMs: number, privacySensitive?: boolean): void {
+  if (res.code === 'TIMEOUT' && res.status === null) {
+    console.error(`${logTag(target)} request timed out after ${timeoutMs}ms`)
+  } else if (privacySensitive) {
+    console.error(`${logTag(target)} privacy-sensitive request failed:`, res.status ?? res.message)
+  } else if (res.status !== null) {
+    console.error(logTag(target), res.status, res.detail ?? '')
+  } else {
+    console.error(`${logTag(target)} fetch failed:`, res.message)
+  }
 }
 
 /**

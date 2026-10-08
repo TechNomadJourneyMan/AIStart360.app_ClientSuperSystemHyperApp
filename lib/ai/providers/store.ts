@@ -9,8 +9,8 @@
  */
 import { prisma } from '@/lib/db'
 import type {
+  AiCapability,
   BudgetsRow,
-  Capability,
   ChatTier,
   CredentialRow,
   ModelRow,
@@ -161,6 +161,24 @@ export async function recordVerification(id: string, ok: boolean, error: string 
   return rows[0] ?? null
 }
 
+/**
+ * Outcome of GET /models with a key (107). Success: the id list, its time,
+ * error cleared. Failure: only the error — the last good list stays (the key
+ * keeps working; discovery is best effort).
+ */
+export async function recordDiscovery(id: string, ids: string[] | null, error: string | null): Promise<void> {
+  if (ids) {
+    await prisma.$executeRaw`
+      UPDATE public.ai_credentials SET
+        discovered_models = ${ids}::text[], models_discovered_at = now(), discovery_error = NULL
+      WHERE id = ${id}::uuid`
+  } else {
+    await prisma.$executeRaw`
+      UPDATE public.ai_credentials SET discovery_error = ${(error ?? 'ошибка').slice(0, 500)}
+      WHERE id = ${id}::uuid`
+  }
+}
+
 export async function deleteCredentialRow(id: string): Promise<boolean> {
   const n = await prisma.$executeRaw`DELETE FROM public.ai_credentials WHERE id = ${id}::uuid`
   return n > 0
@@ -185,26 +203,81 @@ export interface ModelWrite {
   providerId: string
   credentialId: string | null
   modelId: string
-  capability: Capability
+  capability: AiCapability
   label: string | null
   priceInPerMtok: number | null
   priceOutPerMtok: number | null
   enabled: boolean
+  /** 107 metadata; undefined = keep the stored value (null on insert). */
+  supportsVision?: boolean | null
+  supportsTools?: boolean | null
+  tierHint?: ChatTier | null
 }
 
-/** Insert or update by (provider, model id, capability). */
+/**
+ * Insert or update by (provider, model id, capability). An owner's write makes
+ * the row 'manual' (discovery never edits it afterwards).
+ */
 export async function upsertModelRow(m: ModelWrite): Promise<ModelRow> {
+  const keepVision = m.supportsVision === undefined
+  const keepTools = m.supportsTools === undefined
+  const keepTier = m.tierHint === undefined
   const rows = await prisma.$queryRaw<Array<Record<string, unknown>>>`
     INSERT INTO public.ai_models
-      (provider_id, credential_id, model_id, capability, label, price_in_per_mtok, price_out_per_mtok, enabled)
+      (provider_id, credential_id, model_id, capability, label, price_in_per_mtok, price_out_per_mtok, enabled,
+       source, supports_vision, supports_tools, tier_hint)
     VALUES (${m.providerId}::uuid, ${m.credentialId}::uuid, ${m.modelId}, ${m.capability}, ${m.label},
-            ${numText(m.priceInPerMtok)}::text::numeric, ${numText(m.priceOutPerMtok)}::text::numeric, ${m.enabled})
+            ${numText(m.priceInPerMtok)}::text::numeric, ${numText(m.priceOutPerMtok)}::text::numeric, ${m.enabled},
+            'manual', ${m.supportsVision ?? null}::boolean, ${m.supportsTools ?? null}::boolean, ${m.tierHint ?? null}::text)
     ON CONFLICT (provider_id, model_id, capability) DO UPDATE SET
       credential_id = EXCLUDED.credential_id, label = EXCLUDED.label,
       price_in_per_mtok = EXCLUDED.price_in_per_mtok, price_out_per_mtok = EXCLUDED.price_out_per_mtok,
-      enabled = EXCLUDED.enabled, updated_at = now()
+      enabled = EXCLUDED.enabled, source = 'manual',
+      supports_vision = CASE WHEN ${keepVision}::boolean THEN ai_models.supports_vision ELSE EXCLUDED.supports_vision END,
+      supports_tools  = CASE WHEN ${keepTools}::boolean THEN ai_models.supports_tools ELSE EXCLUDED.supports_tools END,
+      tier_hint       = CASE WHEN ${keepTier}::boolean THEN ai_models.tier_hint ELSE EXCLUDED.tier_hint END,
+      updated_at = now()
     RETURNING *`
   return model(rows[0])
+}
+
+/** A model found by discovery (107): inserted only when (provider, id, capability) is new. */
+export async function insertDiscoveredModel(m: {
+  providerId: string
+  credentialId: string
+  modelId: string
+  capability: AiCapability
+  supportsVision: boolean | null
+}): Promise<ModelRow | null> {
+  const rows = await prisma.$queryRaw<Array<Record<string, unknown>>>`
+    INSERT INTO public.ai_models
+      (provider_id, credential_id, model_id, capability, enabled, source, discovered_at, supports_vision)
+    VALUES (${m.providerId}::uuid, ${m.credentialId}::uuid, ${m.modelId}, ${m.capability}, TRUE,
+            'discovered', now(), ${m.supportsVision}::boolean)
+    ON CONFLICT (provider_id, model_id, capability) DO NOTHING
+    RETURNING *`
+  return rows[0] ? model(rows[0]) : null
+}
+
+/**
+ * A discovered row seen again: discovered_at = now(); `credentialId` (when
+ * given) rebinds it. Never touches a manual row.
+ */
+export async function touchDiscoveredModel(id: string, credentialId: string | null): Promise<void> {
+  await prisma.$executeRaw`
+    UPDATE public.ai_models SET
+      discovered_at = now(),
+      credential_id = coalesce(${credentialId}::uuid, credential_id),
+      updated_at = CASE WHEN ${credentialId}::uuid IS NULL THEN updated_at ELSE now() END
+    WHERE id = ${id}::uuid AND source = 'discovered'`
+}
+
+/** Bind a key to a model without one (manual rows: only when unambiguous — the caller decides). */
+export async function bindModelCredential(id: string, credentialId: string): Promise<boolean> {
+  const n = await prisma.$executeRaw`
+    UPDATE public.ai_models SET credential_id = ${credentialId}::uuid, updated_at = now()
+    WHERE id = ${id}::uuid AND credential_id IS NULL`
+  return n > 0
 }
 
 export async function deleteModelRow(id: string): Promise<boolean> {
@@ -218,7 +291,7 @@ export async function listRoutes(): Promise<RouteRow[]> {
   return prisma.$queryRaw<RouteRow[]>`SELECT * FROM public.ai_routes ORDER BY capability, tier`
 }
 
-export async function upsertRoute(capability: Capability, tier: ChatTier | null, modelRowId: string, by: string): Promise<RouteRow> {
+export async function upsertRoute(capability: AiCapability, tier: ChatTier | null, modelRowId: string, by: string): Promise<RouteRow> {
   const rows = await prisma.$queryRaw<RouteRow[]>`
     INSERT INTO public.ai_routes (capability, tier, model_id, updated_by)
     VALUES (${capability}, ${tier}, ${modelRowId}::uuid, ${by})
@@ -228,7 +301,7 @@ export async function upsertRoute(capability: Capability, tier: ChatTier | null,
   return rows[0]
 }
 
-export async function deleteRoute(capability: Capability, tier: ChatTier | null): Promise<boolean> {
+export async function deleteRoute(capability: AiCapability, tier: ChatTier | null): Promise<boolean> {
   const n = await prisma.$executeRaw`
     DELETE FROM public.ai_routes WHERE capability = ${capability} AND coalesce(tier, '') = coalesce(${tier}::text, '')`
   return n > 0

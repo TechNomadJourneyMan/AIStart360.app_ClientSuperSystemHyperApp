@@ -20,6 +20,7 @@ import {
   CANCELLABLE, LIVE_TASK_STATUSES, RETRYABLE, approvalStatusMeta, decidedViaLabel, decisionMeta, durationBetween, eventLevelMeta,
   fmtCountdown, fmtDuration, fmtTokens, fmtUsd, runStatusMeta, shortActor, taskStatusMeta, tierLabel, toNum, toolCallStatusMeta, triggerLabel,
 } from './model'
+import { errorCodeText } from './run-model'
 import type { AgentEventRow, RunRow, TaskDetailResponse } from './types'
 import { useAgentDirectory } from './useAgentDirectory'
 import { ChipFilter, JsonDetails, KV, Metric, Mono, NoRightHint, StatusChip, useNow } from './ui'
@@ -149,6 +150,7 @@ export function AgentTaskDetailPage({ taskId }: { taskId: string }) {
               <AlertTriangle size={16} className="mt-0.5 shrink-0 text-red-400" />
               <div className="min-w-0 text-xs">
                 <p className="font-mono text-red-200">{task.last_error_code || 'Ошибка'}</p>
+                {errorCodeText(task.last_error_code) && <p className="mt-1 text-red-100">{errorCodeText(task.last_error_code)}</p>}
                 {task.last_error && <p className="mt-1 whitespace-pre-wrap break-words text-red-100/80">{task.last_error}</p>}
               </div>
             </div>

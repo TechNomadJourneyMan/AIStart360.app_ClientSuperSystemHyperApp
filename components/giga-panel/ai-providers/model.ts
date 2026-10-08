@@ -16,7 +16,9 @@ import type {
   ProviderDto,
   ProviderKind,
   ProviderRouteRef,
+  DiscoveryResultDto,
   RouteDto,
+  SlotStatusDto,
   SpendGroupBy,
 } from './types'
 
@@ -36,6 +38,7 @@ export const CAPABILITY_LABEL: Record<Capability, string> = {
   embeddings: 'Эмбеддинги',
   rerank: 'Rerank',
   ocr: 'OCR',
+  transcribe: 'Речь в текст',
 }
 
 export const CAPABILITY_HINT: Record<Capability, string> = {
@@ -43,9 +46,10 @@ export const CAPABILITY_HINT: Record<Capability, string> = {
   embeddings: 'векторный поиск по документам',
   rerank: 'переранжирование найденных фрагментов',
   ocr: 'распознавание сканов через vision-модель',
+  transcribe: 'распознавание голосовых сообщений',
 }
 
-export const CAPABILITY_TONE: Record<Capability, Tone> = { chat: 'blue', embeddings: 'violet', rerank: 'amber', ocr: 'green' }
+export const CAPABILITY_TONE: Record<Capability, Tone> = { chat: 'blue', embeddings: 'violet', rerank: 'amber', ocr: 'green', transcribe: 'neutral' }
 
 export const TIER_LABEL: Record<ChatTier, string> = { light: 'light', standard: 'standard', premium: 'premium' }
 
@@ -56,7 +60,7 @@ export const GROUP_LABEL: Record<SpendGroupBy, string> = {
   company: 'Компания',
 }
 
-export const CAPABILITIES: readonly Capability[] = ['chat', 'embeddings', 'rerank', 'ocr']
+export const CAPABILITIES: readonly Capability[] = ['chat', 'embeddings', 'rerank', 'ocr', 'transcribe']
 
 // ─── Routing ─────────────────────────────────────────────────────────────────
 
@@ -64,12 +68,13 @@ export interface RouteSlot { capability: Capability; tier: ChatTier | null; labe
 
 /** Every routable slot, in display order. */
 export const ROUTE_SLOTS: readonly RouteSlot[] = [
-  { capability: 'chat', tier: 'light', label: 'Чат · light', hint: 'простые задачи: классификация, короткие ответы', fallback: 'OpenRouter, модель уровня light из env' },
-  { capability: 'chat', tier: 'standard', label: 'Чат · standard', hint: 'основная работа агентов и анализа', fallback: 'OpenRouter, модель уровня standard из env' },
-  { capability: 'chat', tier: 'premium', label: 'Чат · premium', hint: 'сложные отчёты и выводы', fallback: 'OpenRouter, модель уровня premium из env' },
-  { capability: 'embeddings', tier: null, label: 'Эмбеддинги', hint: 'векторный поиск по документам', fallback: 'OpenRouter, модель эмбеддингов из env' },
-  { capability: 'rerank', tier: null, label: 'Rerank', hint: 'переранжирование найденных фрагментов', fallback: 'встроенного варианта нет — rerank не выполняется' },
-  { capability: 'ocr', tier: null, label: 'OCR', hint: 'распознавание сканов', fallback: 'встроенного варианта нет — работает локальный OCR' },
+  { capability: 'chat', tier: 'light', label: 'Чат · light', hint: 'простые задачи: классификация, короткие ответы', fallback: 'другие доступные чат-модели (сначала уровня light), затем OpenRouter из env' },
+  { capability: 'chat', tier: 'standard', label: 'Чат · standard', hint: 'основная работа агентов и анализа', fallback: 'другие доступные чат-модели (сначала уровня standard), затем OpenRouter из env' },
+  { capability: 'chat', tier: 'premium', label: 'Чат · premium', hint: 'сложные отчёты и выводы', fallback: 'другие доступные чат-модели (сначала уровня premium), затем OpenRouter из env' },
+  { capability: 'embeddings', tier: null, label: 'Эмбеддинги', hint: 'векторный поиск по документам', fallback: 'OpenRouter, модель эмбеддингов из env (без переключения: векторы разных моделей несовместимы)' },
+  { capability: 'rerank', tier: null, label: 'Rerank', hint: 'переранжирование найденных фрагментов', fallback: 'любая доступная rerank-модель; встроенного варианта нет — rerank не выполняется' },
+  { capability: 'ocr', tier: null, label: 'OCR', hint: 'распознавание сканов', fallback: 'любая доступная OCR-модель; встроенного варианта нет — работает локальный OCR' },
+  { capability: 'transcribe', tier: null, label: 'Речь в текст', hint: 'голосовые сообщения в ботах', fallback: 'любая модель «Речь в текст», иначе аудио-модель OpenRouter (если есть ключ)' },
 ]
 
 export function slotKey(capability: Capability, tier: ChatTier | null): string {
@@ -98,8 +103,8 @@ export function modelOptionsFor(providers: readonly ProviderDto[], capability: C
 /** Why a configured route will not be used right now (the router falls back), or null. */
 export function routeProblem(route: RouteDto | null, providers: readonly ProviderDto[]): string | null {
   if (!route) return null
-  if (!route.providerEnabled) return 'провайдер выключен — используется встроенный вариант'
-  if (!route.modelEnabled) return 'модель выключена — используется встроенный вариант'
+  if (!route.providerEnabled) return 'провайдер выключен — отвечают другие доступные модели'
+  if (!route.modelEnabled) return 'модель выключена — отвечают другие доступные модели'
   const p = providers.find((x) => x.key === route.providerKey)
   if (p) {
     const m = p.models.find((x) => x.id === route.modelRowId)
@@ -295,15 +300,26 @@ export interface ModelDraft {
   priceIn: string
   priceOut: string
   enabled: boolean
+  /** '' = any tier. */
+  tierHint: '' | ChatTier
+  /** '' = unknown. */
+  vision: '' | 'yes' | 'no'
+  tools: '' | 'yes' | 'no'
 }
+
+const triOf = (v: boolean | null | undefined): '' | 'yes' | 'no' => (v === true ? 'yes' : v === false ? 'no' : '')
+const triValue = (v: '' | 'yes' | 'no'): boolean | null => (v === 'yes' ? true : v === 'no' ? false : null)
+
+export const TRI_LABEL: Record<'' | 'yes' | 'no', string> = { '': 'неизвестно', yes: 'да', no: 'нет' }
 
 export type ModelField = keyof ModelDraft
 
 export function modelDraftFrom(m?: ModelDto | null): ModelDraft {
-  if (!m) return { modelId: '', capability: 'chat', label: '', credentialId: '', priceIn: '', priceOut: '', enabled: true }
+  if (!m) return { modelId: '', capability: 'chat', label: '', credentialId: '', priceIn: '', priceOut: '', enabled: true, tierHint: '', vision: '', tools: '' }
   return {
     modelId: m.model_id, capability: m.capability, label: m.label ?? '', credentialId: m.credential_id ?? '',
     priceIn: moneyText(m.price_in_per_mtok), priceOut: moneyText(m.price_out_per_mtok), enabled: m.enabled,
+    tierHint: m.tier_hint ?? '', vision: triOf(m.supports_vision), tools: triOf(m.supports_tools),
   }
 }
 
@@ -314,6 +330,7 @@ export function capabilityAvailability(p: Pick<ProviderDto, 'rerank_path' | 'ocr
     embeddings: null,
     rerank: p.rerank_path ? null : 'у провайдера не задан путь rerank',
     ocr: p.ocr_mode === 'chat_vision' ? null : 'у провайдера не включён режим OCR (chat_vision)',
+    transcribe: null,
   }
 }
 
@@ -340,6 +357,9 @@ export function buildModelPayload(d: ModelDraft, provider: Pick<ProviderDto, 'id
       priceInPerMtok: pin.ok ? pin.value : null,
       priceOutPerMtok: pout.ok ? pout.value : null,
       enabled: d.enabled,
+      ...(d.capability === 'chat'
+        ? { tierHint: d.tierHint || null, supportsVision: triValue(d.vision), supportsTools: triValue(d.tools) }
+        : {}),
     },
     errors,
   }
@@ -423,4 +443,51 @@ export function spendKeyLabel(groupBy: SpendGroupBy, key: string | null, provide
 /** The provider's model a key is bound to, for the key row. */
 export function modelsUsingKey(p: Pick<ProviderDto, 'models'>, credentialId: string): ModelDto[] {
   return p.models.filter((m) => m.credential_id === credentialId)
+}
+
+// ─── Discovery and «who answers now» (A1) ────────────────────────────────────
+
+export const MODEL_SOURCE_LABEL: Record<'manual' | 'discovered', string> = { manual: 'вручную', discovered: 'найдена' }
+
+/** «найдено 4 модели · 08.10 12:00», the error, or «не выполнялось». */
+export function discoveryMeta(c: Pick<CredentialDto, 'discovered_models' | 'models_discovered_at' | 'discovery_error'>): { text: string; tone: Tone; error: string | null } {
+  const n = Array.isArray(c.discovered_models) ? c.discovered_models.length : null
+  if (n === null) {
+    return c.discovery_error
+      ? { text: 'модели не обнаружены', tone: 'amber', error: c.discovery_error }
+      : { text: 'обнаружение не выполнялось', tone: 'neutral', error: null }
+  }
+  return { text: `найдено моделей: ${n}`, tone: n > 0 ? 'green' : 'neutral', error: c.discovery_error ?? null }
+}
+
+/** Human text of one discovery run. */
+export function discoveryResultText(r: Pick<DiscoveryResultDto, 'ok' | 'error' | 'ids' | 'added' | 'bound' | 'credentialLabel'>): string {
+  if (!r.ok) return `«${r.credentialLabel}»: ${r.error ?? 'список моделей недоступен'}`
+  const parts = [`«${r.credentialLabel}»: моделей у ключа — ${r.ids.length}`]
+  if (r.added) parts.push(`новых — ${r.added}`)
+  if (r.bound) parts.push(`ключ привязан к ${r.bound}`)
+  return parts.join(', ')
+}
+
+/** Summary line of a discovery over several keys. */
+export function discoverySummary(results: readonly DiscoveryResultDto[]): { tone: 'ok' | 'error'; text: string } {
+  if (!results.length) return { tone: 'error', text: 'Нет включённых ключей для обнаружения моделей' }
+  const failed = results.filter((r) => !r.ok)
+  const added = results.reduce((s, r) => s + r.added, 0)
+  const head = failed.length === results.length
+    ? 'Модели не обнаружены'
+    : `Обнаружение завершено: ключей ${results.length - failed.length} из ${results.length}, новых моделей — ${added}`
+  const tail = failed.length ? `. Без списка моделей: ${failed.map((r) => `«${r.credentialLabel}» (${r.error ?? 'ошибка'})`).join('; ')}` : ''
+  return { tone: failed.length === results.length ? 'error' : 'ok', text: `${head}${tail}` }
+}
+
+export function slotLabel(s: Pick<SlotStatusDto, 'capability' | 'tier'>): string {
+  return s.tier ? `${CAPABILITY_LABEL[s.capability]} · ${s.tier}` : CAPABILITY_LABEL[s.capability]
+}
+
+/** Health of a slot for the badge. */
+export function slotHealth(s: Pick<SlotStatusDto, 'current' | 'problem' | 'unhealthyUntil'>): { label: string; tone: Tone } {
+  if (!s.current) return { label: 'нет модели', tone: s.problem ? 'red' : 'neutral' }
+  if (!s.current.healthy || s.unhealthyUntil) return { label: 'сбой — пробуем другие', tone: 'amber' }
+  return { label: 'работает', tone: 'green' }
 }

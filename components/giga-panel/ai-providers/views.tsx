@@ -10,7 +10,7 @@
  * a read-only explanation instead.
  */
 import type { ReactNode } from 'react'
-import { CheckCircle2, Coins, KeyRound, Pencil, Plus, RotateCcw, ShieldAlert, ShieldCheck, Trash2, XCircle } from 'lucide-react'
+import { Activity, CheckCircle2, Coins, KeyRound, Pencil, Plus, Radar, RotateCcw, ShieldAlert, ShieldCheck, Trash2, XCircle } from 'lucide-react'
 import { Badge, BarList, Button, DataTable, EmptyState, cx, fmtDateTime, inputClass, type Column } from '../kit'
 import { NoRightHint, Toggle } from '../agents/ui'
 import {
@@ -19,9 +19,11 @@ import {
   CHECKED_WITH_LABEL,
   GROUP_LABEL,
   KIND_LABEL,
+  MODEL_SOURCE_LABEL,
   ROUTE_SLOTS,
   SOURCE_LABEL,
   budgetUsage,
+  discoveryMeta,
   fmtPrice,
   fmtTokens,
   fmtUsd,
@@ -32,11 +34,13 @@ import {
   routeLabel,
   routeProblem,
   shareOf,
+  slotHealth,
   slotKey,
+  slotLabel,
   spendKeyLabel,
   verifyMeta,
 } from './model'
-import type { BudgetsDto, CredentialDto, ModelDto, ProviderDto, RouteDto, SpendGroupBy, SpendRowDto, VerifyResultDto } from './types'
+import type { BudgetsDto, CredentialDto, ModelDto, ProviderDto, RouteDto, SlotStatusDto, SlotTargetDto, SpendGroupBy, SpendRowDto, VerifyResultDto } from './types'
 
 export const READ_ONLY_TEXT = 'Режим просмотра: изменять провайдеров, ключи, модели, маршруты и бюджеты может только Super Admin (право «Системные настройки»).'
 
@@ -87,6 +91,7 @@ export interface KeyHandlers {
   onToggle?: (c: CredentialDto, enabled: boolean) => void
   onVerify?: (c: CredentialDto) => void
   onDelete?: (c: CredentialDto) => void
+  onDiscover?: (c: CredentialDto) => void
 }
 
 export function VerifyOutcome({ result }: { result: VerifyResultDto }) {
@@ -102,17 +107,20 @@ export function VerifyOutcome({ result }: { result: VerifyResultDto }) {
   )
 }
 
-export function CredentialRow({ provider, credential: c, canManage, encryptionConfigured, verifying, verifyResult, handlers }: {
+export function CredentialRow({ provider, credential: c, canManage, encryptionConfigured, verifying, discovering, verifyResult, handlers }: {
   provider: Pick<ProviderDto, 'models'>
   credential: CredentialDto
   canManage: boolean
   encryptionConfigured: boolean
   verifying?: boolean
+  discovering?: boolean
   verifyResult?: VerifyResultDto | null
   handlers?: KeyHandlers
 }) {
   const v = verifyMeta(c)
+  const d = discoveryMeta(c)
   const bound = modelsUsingKey(provider, c.id)
+  const found = Array.isArray(c.discovered_models) ? c.discovered_models : []
   return (
     <li className="rounded-xl border border-white/[0.05] bg-white/[0.02] px-3 py-2.5" data-testid="credential-row">
       <div className="flex flex-wrap items-center gap-2">
@@ -126,6 +134,17 @@ export function CredentialRow({ provider, credential: c, canManage, encryptionCo
           <span className="ml-auto flex flex-wrap items-center gap-1.5">
             <Toggle checked={c.enabled} label={c.enabled ? `Выключить ключ ${c.label}` : `Включить ключ ${c.label}`} onChange={(next) => handlers?.onToggle?.(c, next)} />
             <Button size="sm" variant="secondary" icon={<ShieldCheck size={12} />} loading={verifying} onClick={() => handlers?.onVerify?.(c)}>Проверить</Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              icon={<Radar size={12} />}
+              loading={discovering}
+              disabled={!c.enabled}
+              title={c.enabled ? 'Запросить у провайдера список моделей этого ключа (GET /models)' : 'Ключ выключен'}
+              onClick={() => handlers?.onDiscover?.(c)}
+            >
+              Обнаружить модели
+            </Button>
             <Button
               size="sm"
               variant="ghost"
@@ -144,6 +163,13 @@ export function CredentialRow({ provider, credential: c, canManage, encryptionCo
         <p className="mt-1 break-words text-[11px] text-red-300/80">{c.last_verify_error}</p>
       )}
       {verifyResult && <VerifyOutcome result={verifyResult} />}
+      <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[10px]" data-testid="credential-discovery">
+        <Badge tone={d.tone}>{d.text}</Badge>
+        {c.models_discovered_at && <span className="text-slate-600">{fmtDateTime(c.models_discovered_at)}</span>}
+        {found.slice(0, 12).map((id) => <span key={id} className="rounded-md bg-white/[0.04] px-1.5 py-0.5 font-mono text-slate-400">{id}</span>)}
+        {found.length > 12 && <span className="text-slate-600">и ещё {found.length - 12}</span>}
+      </div>
+      {d.error && <p className="mt-1 break-words text-[10px] text-amber-300/80">Последнее обнаружение: {d.error}. Ключ продолжает работать; модель можно добавить вручную.</p>}
       {(bound.length > 0 || c.rotated_at) && (
         <p className="mt-1 text-[10px] text-slate-600">
           {bound.length > 0 && <>Закреплён за: {bound.map((m) => m.model_id).join(', ')}. </>}
@@ -189,9 +215,16 @@ export function ModelsTable({ provider, canManage, onEdit, onDelete }: {
                   <span className="font-mono text-[11px] text-slate-200">{m.model_id}</span>
                   {m.label && <span className="ml-1.5 text-[11px] text-slate-500">{m.label}</span>}
                   {!m.enabled && <Badge tone="neutral" className="ml-1.5">выключена</Badge>}
+                  {m.source === 'discovered' && (
+                    <Badge tone="violet" className="ml-1.5" title={m.discovered_at ? `Найдена через GET /models ${fmtDateTime(m.discovered_at)}` : 'Найдена через GET /models'}>{MODEL_SOURCE_LABEL.discovered}</Badge>
+                  )}
+                  {m.tier_hint && <Badge tone="blue" className="ml-1.5" title="Уровень, для которого автоматическая маршрутизация берёт модель в первую очередь">{m.tier_hint}</Badge>}
+                  {m.supports_vision && <Badge tone="green" className="ml-1.5">картинки</Badge>}
+                  {m.supports_tools === true && <Badge tone="green" className="ml-1.5">инструменты</Badge>}
+                  {m.supports_tools === false && <Badge tone="neutral" className="ml-1.5">без инструментов</Badge>}
                 </td>
                 <td className="px-2 py-2"><Badge tone={CAPABILITY_TONE[m.capability]}>{CAPABILITY_LABEL[m.capability]}</Badge></td>
-                <td className="px-2 py-2 text-[11px] text-slate-400">{cred ? <>{cred.label} <span className="font-mono">{cred.masked}</span></> : 'любой включённый'}</td>
+                <td className="px-2 py-2 text-[11px] text-slate-400">{cred ? <>{cred.label} <span className="font-mono">{cred.masked}</span></> : 'ключ, у которого найдена модель, иначе первый включённый'}</td>
                 <td className="px-2 py-2 text-right font-mono tabular-nums text-slate-300">{fmtPrice(m.price_in_per_mtok)}</td>
                 <td className="px-2 py-2 text-right font-mono tabular-nums text-slate-300">{fmtPrice(m.price_out_per_mtok)}</td>
                 <td className="px-2 py-2">
@@ -222,6 +255,7 @@ export interface ProviderCardProps {
   canManage: boolean
   encryptionConfigured: boolean
   verifyingId?: string | null
+  discoveringId?: string | null
   verifyResults?: Record<string, VerifyResultDto>
   onEdit?: (p: ProviderDto) => void
   onToggle?: (p: ProviderDto, enabled: boolean) => void
@@ -324,6 +358,7 @@ export function ProviderCard(props: ProviderCardProps) {
                   canManage={canManage}
                   encryptionConfigured={encryptionConfigured}
                   verifying={props.verifyingId === c.id}
+                  discovering={props.discoveringId === c.id}
                   verifyResult={props.verifyResults?.[c.id] ?? null}
                   handlers={props.keyHandlers}
                 />
@@ -351,7 +386,7 @@ export function ProviderCard(props: ProviderCardProps) {
 // ─── Routing ─────────────────────────────────────────────────────────────────
 
 export const ROUTING_EXPLANATION =
-  'Маршрут направляет возможность (для чата — уровень) на модель конкретного провайдера. Без маршрута, а также если модель или провайдер выключены или у них нет ключа, работает встроенный вариант: OpenRouter с моделью из env. Автоматического переключения на другого провайдера при ошибке нет.'
+  'Маршрут направляет возможность (для чата — уровень) на модель конкретного провайдера — она отвечает первой. Если маршрута нет, модель выключена, у неё нет ключа или она ответила ошибкой (401/403/404/408/429/5xx, таймаут), запрос автоматически уходит к другим доступным моделям этой возможности (для чата — сначала того же уровня), последним — встроенный OpenRouter с моделью из env, если у него есть ключ. Сбойная модель 5 минут пропускается. Эмбеддинги не переключаются: векторы разных моделей несовместимы.'
 
 export function RoutingTable({ providers, routes, canManage, drafts, savingKey, onDraft, onSave }: {
   providers: readonly ProviderDto[]
@@ -397,7 +432,7 @@ export function RoutingTable({ providers, routes, canManage, drafts, savingKey, 
                       onChange={(e) => onDraft?.(key, e.target.value)}
                       className={cx(inputClass, 'bg-[#0b1128] py-1.5 text-xs')}
                     >
-                      <option value="">по умолчанию (OpenRouter из env)</option>
+                      <option value="">автоматически (доступные модели, затем OpenRouter из env)</option>
                       {options.map((o) => (
                         <option key={o.value} value={o.value} disabled={o.disabled && o.value !== current?.modelRowId}>
                           {o.label}{o.reason ? ` — ${o.reason}` : ''}
@@ -406,7 +441,7 @@ export function RoutingTable({ providers, routes, canManage, drafts, savingKey, 
                     </select>
                   ) : (
                     <span className={cx('font-mono text-[11px]', current ? 'text-slate-200' : 'text-slate-500')}>
-                      {current ? `${current.providerKey} · ${current.modelId}` : 'по умолчанию (OpenRouter из env)'}
+                      {current ? `${current.providerKey} · ${current.modelId}` : 'автоматически (доступные модели, затем OpenRouter из env)'}
                     </span>
                   )}
                   {options.length === 0 && <p className="mt-1 text-[10px] text-slate-600">Нет моделей с возможностью «{CAPABILITY_LABEL[slot.capability]}».</p>}
@@ -424,6 +459,64 @@ export function RoutingTable({ providers, routes, canManage, drafts, savingKey, 
           })}
         </tbody>
       </table>
+    </div>
+  )
+}
+
+// ─── Who answers now (A1) ────────────────────────────────────────────────────
+
+function TargetLine({ t }: { t: SlotTargetDto }) {
+  return (
+    <span className="inline-flex flex-wrap items-baseline gap-1">
+      <span className="text-slate-200">{t.providerName}</span>
+      <span className="font-mono text-[11px] text-slate-300">{t.model}</span>
+      {t.origin === 'env' && <span className="text-[10px] text-slate-500">встроенный</span>}
+      {t.credentialLabel && <span className="text-[10px] text-slate-500">ключ «{t.credentialLabel}»</span>}
+    </span>
+  )
+}
+
+/**
+ * «Кто отвечает сейчас»: per capability (chat per tier) the model a call would
+ * use right now, its health and last error on this server, and the failover
+ * order. Read-only.
+ */
+export function WhoAnswersPanel({ slots, checkedAt }: { slots: readonly SlotStatusDto[]; checkedAt?: string | null }) {
+  return (
+    <div className="space-y-2" data-testid="who-answers">
+      <ul className="divide-y divide-white/[0.04]">
+        {slots.map((s) => {
+          const h = slotHealth(s)
+          return (
+            <li key={slotKey(s.capability, s.tier)} className="grid gap-1 py-2.5 sm:grid-cols-[10rem_minmax(0,1fr)]" data-testid="who-answers-slot">
+              <div className="flex items-center gap-1.5 text-xs text-slate-300">
+                <Activity size={12} className="text-slate-500" />
+                {slotLabel(s)}
+              </div>
+              <div className="min-w-0 space-y-1 text-xs">
+                <div className="flex flex-wrap items-center gap-2">
+                  {s.current ? <TargetLine t={s.current} /> : <span className="text-slate-500">{s.problem ?? 'нет доступной модели'}</span>}
+                  <Badge tone={h.tone}>{h.label}</Badge>
+                </div>
+                {s.lastError && (
+                  <p className="break-words text-[11px] text-amber-300/80">
+                    Последняя ошибка: {s.lastError}{s.lastErrorAt ? ` · ${fmtDateTime(s.lastErrorAt)}` : ''}
+                    {s.unhealthyUntil ? ` · пропускается до ${fmtDateTime(s.unhealthyUntil)}` : ''}
+                  </p>
+                )}
+                {s.next.length > 0 && (
+                  <p className="text-[11px] text-slate-500">
+                    Если не ответит: {s.next.map((t, i) => <span key={`${t.providerKey}/${t.model}/${i}`}>{i > 0 && ' → '}<span className="font-mono">{t.providerKey}/{t.model}</span>{!t.healthy && ' (сбой)'}</span>)}
+                  </p>
+                )}
+              </div>
+            </li>
+          )
+        })}
+      </ul>
+      <p className="text-[10px] text-slate-600">
+        Здоровье моделей — по данным этого сервера за последние 5 минут{checkedAt ? `, проверено ${fmtDateTime(checkedAt)}` : ''}. Ключи не показываются.
+      </p>
     </div>
   )
 }

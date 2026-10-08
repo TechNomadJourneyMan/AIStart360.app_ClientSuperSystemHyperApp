@@ -38,6 +38,9 @@ export const AI_FEATURES = {
   doc_bind_fields: 'Документы: привязка полей',
   doc_embed: 'Документы: индексация',
   doc_retrieval: 'Документы: поиск',
+  bot_assistant: 'Бот: ассистент сотрудника',
+  bot_transcribe: 'Бот: распознавание голоса',
+  bot_vision: 'Бот: разбор изображения',
 } as const
 
 export type AiFeature = keyof typeof AI_FEATURES

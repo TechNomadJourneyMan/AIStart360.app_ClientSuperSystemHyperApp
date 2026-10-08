@@ -249,11 +249,14 @@ describe('models, routes, budgets', () => {
     process.env.OPENROUTER_API_KEY = 'or-env'
     const p = await createProvider(staff, alemInput)
     await addCredential(staff, p.id, 'main', SECRET)
-    const m = await upsertModel(staff, { providerId: p.id, modelId: 'alemllm', capability: 'chat' })
     expect(await resolveTarget('chat', { tier: 'light', fallbackModel: 'fb' })).toMatchObject({ ok: true, target: { providerKey: 'openrouter' } })
+    const m = await upsertModel(staff, { providerId: p.id, modelId: 'alemllm', capability: 'chat' })
+    // A1: a usable chat model is used before the built-in OpenRouter, even without a route.
+    expect(await resolveTarget('chat', { tier: 'light', fallbackModel: 'fb' })).toMatchObject({ ok: true, target: { providerKey: 'alem2', apiKey: SECRET } })
     await setRoute(staff, 'chat', 'light', m.id)
     expect(await resolveTarget('chat', { tier: 'light', fallbackModel: 'fb' })).toMatchObject({ ok: true, target: { providerKey: 'alem2', apiKey: SECRET } })
     await setRoute(staff, 'chat', 'light', null)
+    await upsertModel(staff, { providerId: p.id, modelId: 'alemllm', capability: 'chat', enabled: false })
     expect(await resolveTarget('chat', { tier: 'light', fallbackModel: 'fb' })).toMatchObject({ ok: true, target: { providerKey: 'openrouter' } })
   })
 

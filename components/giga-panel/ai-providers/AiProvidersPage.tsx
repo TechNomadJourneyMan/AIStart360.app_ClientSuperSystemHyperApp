@@ -9,25 +9,27 @@
  */
 import { useCallback, useState } from 'react'
 import Link from 'next/link'
-import { AlertTriangle, CheckCircle2, Coins, Cpu, Lock, Plus, RefreshCw, Server, Wallet, X } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Coins, Cpu, Lock, Plus, Radar, RefreshCw, Server, Wallet, X } from 'lucide-react'
 import { RequirePermission, useStaff } from '../StaffContext'
 import { useWorkspace } from '../WorkspaceContext'
 import { Button, ConfirmDialog, EmptyState, ErrorState, PageHeader, Panel, Skeleton, StatTile, Tabs, cx, gigaFetch, useGigaQuery, type GigaApiError } from '../kit'
 import { NoRightHint, Segmented } from '../agents/ui'
 import { BudgetsDialog, CredentialDialog, ModelDialog, ProviderDialog } from './dialogs'
-import { API, GROUP_LABEL, ROUTE_SLOTS, fmtTokens, fmtUsd, slotKey } from './model'
+import { API, GROUP_LABEL, ROUTE_SLOTS, discoveryResultText, discoverySummary, fmtTokens, fmtUsd, slotKey } from './model'
 import type {
   BudgetsResponse,
   CredentialDto,
+  DiscoverResponse,
   ModelDto,
   ProviderDto,
   ProvidersResponse,
   RoutesResponse,
   SpendGroupBy,
   SpendResponse,
+  StatusResponse,
   VerifyResultDto,
 } from './types'
-import { BudgetsSummary, ProviderCard, READ_ONLY_TEXT, ROUTING_EXPLANATION, RoutingTable, SpendView } from './views'
+import { BudgetsSummary, ProviderCard, READ_ONLY_TEXT, ROUTING_EXPLANATION, RoutingTable, SpendView, WhoAnswersPanel } from './views'
 
 type Tab = 'providers' | 'routing' | 'budgets' | 'spend'
 type Days = '1' | '7' | '30'
@@ -64,6 +66,7 @@ function AiProvidersContent() {
   const routes = useGigaQuery<RoutesResponse>(`${API}/routes`)
   const budgets = useGigaQuery<BudgetsResponse>(`${API}/budgets`)
   const spend = useGigaQuery<SpendResponse>(tab === 'spend' ? `${API}/spend?days=${days}&groupBy=${groupBy}` : null)
+  const status = useGigaQuery<StatusResponse>(tab === 'routing' ? `${API}/status` : null)
 
   const providers = list.data?.providers ?? null
   const encryptionConfigured = list.data?.encryptionConfigured ?? true
@@ -76,6 +79,8 @@ function AiProvidersContent() {
   const [confirm, setConfirm] = useState<Confirm | null>(null)
   const [busy, setBusy] = useState(false)
   const [verifyingId, setVerifyingId] = useState<string | null>(null)
+  const [discoveringId, setDiscoveringId] = useState<string | null>(null)
+  const [discoveringAll, setDiscoveringAll] = useState(false)
   const [verifyResults, setVerifyResults] = useState<Record<string, VerifyResultDto>>({})
   const [routeDrafts, setRouteDrafts] = useState<Record<string, string>>({})
   const [savingRoute, setSavingRoute] = useState<string | null>(null)
@@ -83,9 +88,10 @@ function AiProvidersContent() {
   const reloadList = list.reload
   const reloadRoutes = routes.reload
   const reloadBudgets = budgets.reload
+  const reloadStatus = status.reload
   const reloadAll = useCallback(async () => {
-    await Promise.all([reloadList(), reloadRoutes(), reloadBudgets()])
-  }, [reloadList, reloadRoutes, reloadBudgets])
+    await Promise.all([reloadList(), reloadRoutes(), reloadBudgets(), reloadStatus()])
+  }, [reloadList, reloadRoutes, reloadBudgets, reloadStatus])
 
   const done = useCallback((text: string) => {
     setFlash({ tone: 'ok', text })
@@ -121,6 +127,33 @@ function AiProvidersContent() {
     }
   }
 
+  async function discoverKey(c: CredentialDto) {
+    setDiscoveringId(c.id)
+    try {
+      const r = await gigaFetch<DiscoverResponse>(`${API}/discover`, { method: 'POST', json: { credentialId: c.id } })
+      const one = r.results[0]
+      setFlash({ tone: one?.ok ? 'ok' : 'error', text: one ? discoveryResultText(one) : 'Ключ не найден' })
+      void reloadAll()
+    } catch (e) {
+      fail(e)
+    } finally {
+      setDiscoveringId(null)
+    }
+  }
+
+  async function discoverAll() {
+    setDiscoveringAll(true)
+    try {
+      const r = await gigaFetch<DiscoverResponse>(`${API}/discover`, { method: 'POST', json: {} })
+      setFlash(discoverySummary(r.results))
+      void reloadAll()
+    } catch (e) {
+      fail(e)
+    } finally {
+      setDiscoveringAll(false)
+    }
+  }
+
   function askRoute(slot: string) {
     const value = routeDrafts[slot] ?? ''
     const s = ROUTE_SLOTS.find((x) => slotKey(x.capability, x.tier) === slot)
@@ -129,7 +162,7 @@ function AiProvidersContent() {
       : null
     const text = value && target
       ? `«${s?.label ?? slot}» будет обслуживаться моделью ${target.m.model_id} провайдера ${target.p.name}. Изменение действует в течение минуты на всех серверах.`
-      : `«${s?.label ?? slot}» вернётся к встроенному варианту: ${s?.fallback ?? 'OpenRouter из env'}.`
+      : `«${s?.label ?? slot}» перейдёт на автоматический выбор: ${s?.fallback ?? 'OpenRouter из env'}.`
     setConfirm({ kind: 'route', slot, modelRowId: value || null, text })
   }
 
@@ -151,7 +184,7 @@ function AiProvidersContent() {
       setSavingRoute(slot)
       const ok = await act(
         () => gigaFetch(`${API}/routes`, { method: 'PUT', json: { capability: s.capability, tier: s.tier, modelRowId } }),
-        modelRowId ? `Маршрут «${s.label}» сохранён` : `Маршрут «${s.label}» сброшен — работает встроенный вариант`,
+        modelRowId ? `Маршрут «${s.label}» сохранён` : `Маршрут «${s.label}» сброшен — модель выбирается автоматически`,
       )
       setSavingRoute(null)
       if (ok) {
@@ -200,6 +233,18 @@ function AiProvidersContent() {
         actions={
           <>
             <Button size="sm" variant="ghost" icon={<RefreshCw size={13} />} loading={list.loading && !!list.data} onClick={() => void reloadAll()}>Обновить</Button>
+            {canManage && tab === 'providers' && (
+              <Button
+                size="sm"
+                variant="secondary"
+                icon={<Radar size={13} />}
+                loading={discoveringAll}
+                title="Запросить список моделей (GET /models) у всех включённых ключей"
+                onClick={() => void discoverAll()}
+              >
+                Обнаружить модели
+              </Button>
+            )}
             {canManage && tab === 'providers' && (
               <Button size="sm" variant="primary" icon={<Plus size={13} />} onClick={() => setProviderDialog({ provider: null })}>Добавить провайдера</Button>
             )}
@@ -265,6 +310,7 @@ function AiProvidersContent() {
               canManage={canManage}
               encryptionConfigured={encryptionConfigured}
               verifyingId={verifyingId}
+              discoveringId={discoveringId}
               verifyResults={verifyResults}
               onEdit={(x) => setProviderDialog({ provider: x })}
               onToggle={(x, enabled) => void act(
@@ -283,11 +329,25 @@ function AiProvidersContent() {
                   enabled ? `Ключ «${c.label}» включён` : `Ключ «${c.label}» выключен`,
                 ),
                 onVerify: (c) => void verifyKey(c),
+                onDiscover: (c) => void discoverKey(c),
                 onDelete: (c) => setConfirm({ kind: 'key', provider: p, credential: c }),
               }}
             />
           ))}
         </div>
+      )}
+
+      {tab === 'routing' && (
+        <Panel
+          className="mb-4"
+          title="Кто отвечает сейчас"
+          description="Модель, которая примет запрос прямо сейчас, по каждой возможности, и порядок переключения при сбое."
+          actions={<Button size="sm" variant="ghost" icon={<RefreshCw size={12} />} loading={status.loading && !!status.data} onClick={() => void status.reload()}>Проверить</Button>}
+        >
+          {status.error && <ErrorState error={status.error} onRetry={() => void status.reload()} />}
+          {!status.data && status.loading && <Skeleton className="h-40" />}
+          {status.data && <WhoAnswersPanel slots={status.data.slots} checkedAt={status.data.checkedAt} />}
+        </Panel>
       )}
 
       {tab === 'routing' && (

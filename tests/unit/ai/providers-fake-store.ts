@@ -7,6 +7,7 @@
  */
 import { randomUUID } from 'node:crypto'
 import type {
+  AiCapability,
   BudgetsRow,
   Capability,
   ChatTier,
@@ -17,6 +18,7 @@ import type {
   RouteRow,
 } from '@/lib/ai/providers/types'
 import type { ModelWrite, ProviderWrite, SpendGroupBy, SpendRow } from '@/lib/ai/providers/store'
+import { resetHealth } from '@/lib/ai/providers/health'
 
 export const fakeDb = {
   providers: [] as ProviderRow[],
@@ -36,6 +38,7 @@ export function resetFakeDb(): void {
   fakeDb.budgets = null
   fakeDb.spendToday = {}
   fakeDb.loads = 0
+  resetHealth()
 }
 
 const now = () => new Date()
@@ -83,7 +86,7 @@ export function seedCredential(c: Partial<CredentialRow> & { provider_id: string
   return row
 }
 
-export function seedModel(m: Partial<ModelRow> & { provider_id: string; model_id: string; capability: Capability }): ModelRow {
+export function seedModel(m: Omit<Partial<ModelRow>, 'capability'> & { provider_id: string; model_id: string; capability: AiCapability }): ModelRow {
   const row: ModelRow = {
     id: randomUUID(),
     credential_id: null,
@@ -94,13 +97,14 @@ export function seedModel(m: Partial<ModelRow> & { provider_id: string; model_id
     created_at: now(),
     updated_at: now(),
     ...m,
+    capability: m.capability as Capability,
   }
   fakeDb.models.push(row)
   return row
 }
 
-export function seedRoute(capability: Capability, tier: ChatTier | null, modelRowId: string): RouteRow {
-  const row: RouteRow = { id: randomUUID(), capability, tier, model_id: modelRowId, updated_by: 'test', updated_at: now() }
+export function seedRoute(capability: AiCapability, tier: ChatTier | null, modelRowId: string): RouteRow {
+  const row: RouteRow = { id: randomUUID(), capability: capability as Capability, tier, model_id: modelRowId, updated_by: 'test', updated_at: now() }
   fakeDb.routes.push(row)
   return row
 }
@@ -159,6 +163,12 @@ export const fakeStoreModule = {
     Object.assign(row, { last_verified_at: now(), last_verify_ok: ok, last_verify_error: error })
     return row
   },
+  async recordDiscovery(id: string, ids: string[] | null, error: string | null) {
+    const row = fakeDb.credentials.find((c) => c.id === id)
+    if (!row) return
+    if (ids) Object.assign(row, { discovered_models: ids, models_discovered_at: now(), discovery_error: null })
+    else row.discovery_error = error
+  },
   async deleteCredentialRow(id: string) {
     const before = fakeDb.credentials.length
     fakeDb.credentials = fakeDb.credentials.filter((c) => c.id !== id)
@@ -173,10 +183,32 @@ export const fakeStoreModule = {
     const existing = fakeDb.models.find((x) => x.provider_id === m.providerId && x.model_id === m.modelId && x.capability === m.capability)
     const fields = {
       credential_id: m.credentialId, label: m.label, price_in_per_mtok: m.priceInPerMtok,
-      price_out_per_mtok: m.priceOutPerMtok, enabled: m.enabled,
+      price_out_per_mtok: m.priceOutPerMtok, enabled: m.enabled, source: 'manual' as const,
+      ...(m.supportsVision !== undefined ? { supports_vision: m.supportsVision } : {}),
+      ...(m.supportsTools !== undefined ? { supports_tools: m.supportsTools } : {}),
+      ...(m.tierHint !== undefined ? { tier_hint: m.tierHint } : {}),
     }
     if (existing) return Object.assign(existing, fields)
     return seedModel({ provider_id: m.providerId, model_id: m.modelId, capability: m.capability, ...fields })
+  },
+  async insertDiscoveredModel(m: { providerId: string; credentialId: string; modelId: string; capability: AiCapability; supportsVision: boolean | null }) {
+    if (fakeDb.models.some((x) => x.provider_id === m.providerId && x.model_id === m.modelId && x.capability === m.capability)) return null
+    return seedModel({
+      provider_id: m.providerId, credential_id: m.credentialId, model_id: m.modelId, capability: m.capability,
+      source: 'discovered', discovered_at: now(), supports_vision: m.supportsVision,
+    })
+  },
+  async touchDiscoveredModel(id: string, credentialId: string | null) {
+    const row = fakeDb.models.find((x) => x.id === id && x.source === 'discovered')
+    if (!row) return
+    row.discovered_at = now()
+    if (credentialId) row.credential_id = credentialId
+  },
+  async bindModelCredential(id: string, credentialId: string) {
+    const row = fakeDb.models.find((x) => x.id === id && x.credential_id === null)
+    if (!row) return false
+    row.credential_id = credentialId
+    return true
   },
   async deleteModelRow(id: string) {
     const before = fakeDb.models.length
@@ -185,13 +217,13 @@ export const fakeStoreModule = {
     return fakeDb.models.length < before
   },
   async listRoutes() { return [...fakeDb.routes] },
-  async upsertRoute(capability: Capability, tier: ChatTier | null, modelRowId: string, by: string) {
+  async upsertRoute(capability: AiCapability, tier: ChatTier | null, modelRowId: string, by: string) {
     fakeDb.routes = fakeDb.routes.filter((r) => !(r.capability === capability && r.tier === tier))
     const row = seedRoute(capability, tier, modelRowId)
     row.updated_by = by
     return row
   },
-  async deleteRoute(capability: Capability, tier: ChatTier | null) {
+  async deleteRoute(capability: AiCapability, tier: ChatTier | null) {
     const before = fakeDb.routes.length
     fakeDb.routes = fakeDb.routes.filter((r) => !(r.capability === capability && r.tier === tier))
     return fakeDb.routes.length < before

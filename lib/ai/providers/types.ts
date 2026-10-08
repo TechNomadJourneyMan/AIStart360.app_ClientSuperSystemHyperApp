@@ -6,8 +6,26 @@
 export const PROVIDER_KINDS = ['openrouter', 'openai_compatible'] as const
 export type ProviderKind = (typeof PROVIDER_KINDS)[number]
 
+/**
+ * The capabilities of migration 094. Kept as the type of ModelRow/RouteRow so
+ * the pre-107 clients (the Telegram admin bot labels exactly these) compile
+ * unchanged; since 107 a row may also hold 'transcribe' — read it with
+ * capabilityOf() and use AiCapability / ALL_CAPABILITIES in new code.
+ */
 export const CAPABILITIES = ['chat', 'embeddings', 'rerank', 'ocr'] as const
 export type Capability = (typeof CAPABILITIES)[number]
+
+/** Every capability a model / route can have (107 adds speech-to-text). */
+export const ALL_CAPABILITIES = ['chat', 'embeddings', 'rerank', 'ocr', 'transcribe'] as const
+export type AiCapability = (typeof ALL_CAPABILITIES)[number]
+
+/** The real capability of a model / route row (may be 'transcribe' since 107). */
+export function capabilityOf(row: { capability: string }): AiCapability {
+  return row.capability as AiCapability
+}
+
+/** ai_models.source (107). */
+export type ModelSource = 'manual' | 'discovered'
 
 /** Same values as gateway ModelTier (kept here to avoid an import cycle). */
 export const CHAT_TIERS = ['light', 'standard', 'premium'] as const
@@ -66,6 +84,10 @@ export interface CredentialRow {
   last_verified_at: Date | null
   last_verify_ok: boolean | null
   last_verify_error: string | null
+  /** Model ids GET /models returned for this key (107); null = never discovered. */
+  discovered_models?: string[] | null
+  models_discovered_at?: Date | null
+  discovery_error?: string | null
   created_by: string | null
   created_at: Date
   rotated_at: Date | null
@@ -85,6 +107,15 @@ export interface ModelRow {
   price_in_per_mtok: number | null
   price_out_per_mtok: number | null
   enabled: boolean
+  /** 107: 'manual' (owner) | 'discovered' (GET /models). Missing before 107 = manual. */
+  source?: ModelSource
+  discovered_at?: Date | null
+  /** Image input; null/undefined = unknown. */
+  supports_vision?: boolean | null
+  /** OpenAI tools / tool_calls; null/undefined = unknown (tried). */
+  supports_tools?: boolean | null
+  /** Chat tier the automatic routing uses the model for first; null = any. */
+  tier_hint?: ChatTier | null
   created_at: Date
   updated_at: Date
 }
@@ -138,4 +169,11 @@ export interface ProviderTarget {
   priceInPerMtok: number | null
   priceOutPerMtok: number | null
   dailyBudgetUsd: number | null
+  /** Model metadata (107); null = unknown. */
+  supportsVision?: boolean | null
+  supportsTools?: boolean | null
+  tierHint?: ChatTier | null
 }
+
+/** A model id the panel accepts (manual entry and discovery alike). */
+export const MODEL_ID_RE = /^[\w.:/@+-]{1,200}$/

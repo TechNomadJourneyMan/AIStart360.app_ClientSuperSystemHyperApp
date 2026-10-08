@@ -74,6 +74,11 @@ export function knownModelPrices(model: string | null | undefined): { in: number
   return tier ? TIER_ESTIMATE_PRICES_PER_MTOK[tier] : null
 }
 
+/** Chat tier of a known default model id (haiku → light, …); null when unknown. */
+export function knownModelTier(model: string | null | undefined): ChatTier | null {
+  return model ? KNOWN_MODEL_PRICE_TIER[model] ?? null : null
+}
+
 /** Rough token count: ~3.5 chars per token for mixed RU/EN text, rounded up. */
 export function estimateTokens(text: string): number {
   return Math.ceil(text.length / 3.5)
@@ -87,6 +92,13 @@ export function worstCaseCostUsd(prices: { in: number; out: number }, inputText:
 export type ContentPart =
   | { type: 'text'; text: string }
   | { type: 'image_url'; image_url: { url: string } }
+  /** Audio input (OpenRouter audio-capable chat models): base64 data + format (wav, mp3, ogg, …). */
+  | { type: 'input_audio'; input_audio: { data: string; format: string } }
+
+/** True when any message carries an image part (vision request). */
+export function hasImageParts(messages: ReadonlyArray<{ content?: unknown }>): boolean {
+  return messages.some((m) => Array.isArray(m.content) && m.content.some((p) => p && typeof p === 'object' && (p as { type?: unknown }).type === 'image_url'))
+}
 
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant'
@@ -298,6 +310,174 @@ export async function chatCompletion(target: ProviderTarget, p: ChatParams): Pro
   }
 }
 
+// ── chat with tools (OpenAI tools / tool_calls) ────────────────────────────
+
+/** An OpenAI function tool: JSON-schema parameters. */
+export interface ToolDefinition {
+  type: 'function'
+  function: { name: string; description?: string; parameters: Record<string, unknown> }
+}
+
+export interface ToolCall {
+  id: string
+  type: 'function'
+  /** `arguments` is the JSON text the model produced (not validated here). */
+  function: { name: string; arguments: string }
+}
+
+export type ToolChoice = 'auto' | 'none' | 'required' | { type: 'function'; function: { name: string } }
+
+/** Messages of a tool loop: the usual roles plus assistant tool calls and tool results. */
+export type ToolChatMessage =
+  | { role: 'system' | 'user'; content: string | ContentPart[] }
+  | { role: 'assistant'; content: string | null; tool_calls?: ToolCall[] }
+  | { role: 'tool'; tool_call_id: string; content: string }
+
+export interface ToolChatSuccess {
+  ok: true
+  message: { content: string; tool_calls: ToolCall[] }
+  finishReason: string | null
+  model: string
+  tokensIn: number | null
+  tokensOut: number | null
+  providerCostUsd: number | null
+}
+
+/**
+ * Normalise `choices[0].message.tool_calls`: only function calls with a name;
+ * object arguments are serialised, missing ones become '{}', a missing id is
+ * generated (some OpenAI-compatible proxies omit it).
+ */
+export function parseToolCalls(raw: unknown): ToolCall[] {
+  if (!Array.isArray(raw)) return []
+  const out: ToolCall[] = []
+  raw.forEach((item, i) => {
+    const it = item as { id?: unknown; type?: unknown; function?: { name?: unknown; arguments?: unknown } } | null
+    const name = it?.function?.name
+    if (!it || typeof name !== 'string' || !name.trim()) return
+    if (it.type !== undefined && it.type !== 'function') return
+    const args = it.function?.arguments
+    out.push({
+      id: typeof it.id === 'string' && it.id ? it.id : `call_${i}`,
+      type: 'function',
+      function: {
+        name: name.trim(),
+        arguments: typeof args === 'string' ? (args.trim() || '{}') : args && typeof args === 'object' ? JSON.stringify(args) : '{}',
+      },
+    })
+  })
+  return out
+}
+
+export async function chatCompletionWithTools(
+  target: ProviderTarget,
+  p: {
+    messages: ToolChatMessage[]
+    tools: ToolDefinition[]
+    toolChoice?: ToolChoice
+    maxTokens: number
+    temperature?: number | null
+    timeoutMs?: number
+    fetchImpl?: typeof fetch
+  },
+): Promise<ToolChatSuccess | ClientFailure> {
+  const body = buildChatBody(target, {
+    messages: p.messages as unknown as ChatMessage[],
+    maxTokens: p.maxTokens,
+    temperature: p.temperature,
+  })
+  if (p.tools.length) {
+    body.tools = p.tools
+    body.tool_choice = p.toolChoice ?? 'auto'
+    // OpenRouter: only route to upstream providers that support tools.
+    if (target.kind === 'openrouter') body.provider = { ...((body.provider as Record<string, unknown> | undefined) ?? {}), require_parameters: true }
+  }
+  const r = await postJson(target, target.chatPath, body, p.timeoutMs ?? 45_000, p.fetchImpl)
+  if (!r.ok) return r
+  const choices = r.json.choices as Array<{ message?: { content?: unknown; tool_calls?: unknown }; finish_reason?: unknown }> | undefined
+  const msg = choices?.[0]?.message
+  const usage = usageOf(r.json)
+  return {
+    ok: true,
+    message: { content: textOf(msg?.content), tool_calls: parseToolCalls(msg?.tool_calls) },
+    finishReason: typeof choices?.[0]?.finish_reason === 'string' ? (choices[0].finish_reason as string) : null,
+    model: typeof r.json.model === 'string' && r.json.model ? r.json.model : target.model,
+    tokensIn: usage.tokensIn,
+    tokensOut: usage.tokensOut,
+    providerCostUsd: usage.cost,
+  }
+}
+
+// ── speech-to-text (OpenAI-compatible /audio/transcriptions) ───────────────
+
+export const TRANSCRIPTIONS_PATH = '/audio/transcriptions'
+
+export interface TranscribeSuccess {
+  ok: true
+  text: string
+  model: string
+  /** Audio length when the provider reports it. */
+  durationSec: number | null
+  providerCostUsd: number | null
+}
+
+/**
+ * POST <base>/audio/transcriptions as multipart/form-data: `file` (the audio
+ * bytes with its file name and MIME type), `model`, optional `language`
+ * (ISO-639-1) and `response_format=json`. ASSUMED for Alem's Speech-to-Text
+ * keys from the OpenAI-compatible (LiteLLM) proxy shape; answers `{text}`
+ * (JSON) or plain text.
+ */
+export async function transcribeAudioRequest(
+  target: ProviderTarget,
+  p: { bytes: Uint8Array; filename: string; mime: string; language?: string; timeoutMs?: number; fetchImpl?: typeof fetch },
+): Promise<TranscribeSuccess | ClientFailure> {
+  const doFetch = p.fetchImpl ?? fetch
+  const form = new FormData()
+  const copy = new Uint8Array(p.bytes.byteLength)
+  copy.set(p.bytes)
+  form.append('file', new Blob([copy.buffer], { type: p.mime || 'application/octet-stream' }), p.filename || 'audio')
+  form.append('model', target.model)
+  form.append('response_format', 'json')
+  if (p.language) form.append('language', p.language)
+  const headers = headersFor(target)
+  delete headers['Content-Type'] // fetch sets the multipart boundary
+  let res: Response
+  try {
+    res = await doFetch(joinUrl(target.baseUrl, TRANSCRIPTIONS_PATH), {
+      method: 'POST',
+      headers,
+      body: form,
+      signal: AbortSignal.timeout(p.timeoutMs ?? 60_000),
+    })
+  } catch (err) {
+    return thrownFailure(err)
+  }
+  if (!res.ok) return httpFailure(res, target.apiKey)
+  let raw: string
+  try {
+    raw = await res.text()
+  } catch (err) {
+    return thrownFailure(err)
+  }
+  let text = raw.trim()
+  let durationSec: number | null = null
+  let cost: number | null = null
+  if (text.startsWith('{')) {
+    try {
+      const json = JSON.parse(text) as { text?: unknown; duration?: unknown; usage?: { seconds?: unknown; cost?: unknown } }
+      if (typeof json.text !== 'string') return failure('INVALID_OUTPUT', 'неизвестный формат ответа распознавания', res.status, false)
+      text = json.text.trim()
+      const d = typeof json.duration === 'number' ? json.duration : typeof json.usage?.seconds === 'number' ? json.usage.seconds : null
+      durationSec = d !== null && Number.isFinite(d) ? d : null
+      cost = typeof json.usage?.cost === 'number' && Number.isFinite(json.usage.cost) ? json.usage.cost : null
+    } catch {
+      return failure('INVALID_OUTPUT', 'некорректный ответ распознавания', res.status, false)
+    }
+  }
+  return { ok: true, text, model: target.model, durationSec, providerCostUsd: cost }
+}
+
 // ── embeddings ─────────────────────────────────────────────────────────────
 
 export async function createEmbeddings(
@@ -415,7 +595,7 @@ export async function ocrImage(
 export async function listRemoteModels(
   target: ProviderTarget,
   p: { timeoutMs?: number; fetchImpl?: typeof fetch } = {},
-): Promise<{ ok: true; count: number } | ClientFailure> {
+): Promise<{ ok: true; count: number; ids: string[] } | ClientFailure> {
   const doFetch = p.fetchImpl ?? fetch
   let res: Response
   try {
@@ -428,8 +608,35 @@ export async function listRemoteModels(
     return thrownFailure(err)
   }
   if (!res.ok) return httpFailure(res, target.apiKey)
-  const json = (await res.json().catch(() => null)) as { data?: unknown } | null
-  return { ok: true, count: Array.isArray(json?.data) ? json.data.length : 0 }
+  const json = (await res.json().catch(() => null)) as unknown
+  const ids = modelIdsOf(json)
+  return { ok: true, count: ids.length, ids }
+}
+
+const MAX_DISCOVERED_MODELS = 500
+
+/**
+ * Model ids of a GET /models answer: OpenAI / LiteLLM `{data: [{id}]}`, also
+ * `{models: [...]}` and a bare array of objects or strings. Ids are trimmed,
+ * 1–200 printable characters, de-duplicated, at most 500.
+ */
+export function modelIdsOf(json: unknown): string[] {
+  const obj = json as { data?: unknown; models?: unknown } | null
+  const list = Array.isArray(json) ? json : Array.isArray(obj?.data) ? obj?.data : Array.isArray(obj?.models) ? obj?.models : []
+  const out: string[] = []
+  const seen = new Set<string>()
+  for (const item of list as unknown[]) {
+    const raw = typeof item === 'string' ? item : (item as { id?: unknown; model?: unknown; name?: unknown } | null)?.id
+      ?? (item as { model?: unknown } | null)?.model ?? (item as { name?: unknown } | null)?.name
+    if (typeof raw !== 'string') continue
+    const id = raw.trim()
+    // eslint-disable-next-line no-control-regex
+    if (!id || id.length > 200 || /[\u0000-\u001f\u007f]/.test(id) || seen.has(id)) continue
+    seen.add(id)
+    out.push(id)
+    if (out.length >= MAX_DISCOVERED_MODELS) break
+  }
+  return out
 }
 
 // ── cost ───────────────────────────────────────────────────────────────────

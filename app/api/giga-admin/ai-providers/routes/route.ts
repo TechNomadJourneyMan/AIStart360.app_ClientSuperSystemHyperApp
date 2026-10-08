@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { requireGiga } from '@/lib/admin/giga-actor'
 import { providerErrorResponse, readBody, toProviderActor } from '@/lib/admin/ai-providers-http'
 import { listRoutes, setRoute } from '@/lib/ai/providers/service'
-import { CAPABILITIES, CHAT_TIERS } from '@/lib/ai/providers/types'
+import { ALL_CAPABILITIES, CHAT_TIERS } from '@/lib/ai/providers/types'
 
 export const dynamic = 'force-dynamic'
 
@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
 }
 
 const Body = z.object({
-  capability: z.enum(CAPABILITIES, { errorMap: () => ({ message: 'возможность: chat, embeddings, rerank или ocr' }) }),
+  capability: z.enum(ALL_CAPABILITIES, { errorMap: () => ({ message: 'возможность: chat, embeddings, rerank, ocr или transcribe' }) }),
   tier: z.enum(CHAT_TIERS, { errorMap: () => ({ message: 'уровень: light, standard или premium' }) }).nullable().default(null),
   /** null = remove the route (back to the built-in OpenRouter fallback). */
   modelRowId: z.string().nullable(),
