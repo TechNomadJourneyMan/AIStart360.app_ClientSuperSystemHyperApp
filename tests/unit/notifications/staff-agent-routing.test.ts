@@ -115,6 +115,16 @@ describe('agent notifications through notifyStaff', () => {
     expect(tg.calls).toHaveLength(0)
   })
 
+  it('the agents topic level (agents_notify_telegram_level) replaces the platform and personal thresholds', async () => {
+    db.staff = [link(1, 'super_admin', 'WARNING'), link(2, 'admin', 'WARNING', new Date(Date.now() + 3_600_000))]
+    const tg = recordingFetch()
+    const r = await notifyStaff({ ...lifecycleNotification({ ...base, kind: 'started' }), telegramMinLevel: 'INFO' }, { fetchImpl: tg.fetchImpl })
+    expect(sentTo(r)).toEqual(['101'])
+    expect(reasonOf(r, '102')).toBe('muted')
+    const critOnly = await notifyStaff({ ...lifecycleNotification({ ...base, kind: 'retrying' }), telegramMinLevel: 'CRITICAL' }, { fetchImpl: tg.fetchImpl })
+    expect(reasonOf(critOnly, '101')).toBe('below_platform_level')
+  })
+
   it('a mute holds back WARNING but not CRITICAL', async () => {
     const until = new Date(Date.now() + 3_600_000)
     db.staff = [link(1, 'admin', 'INFO', until)]

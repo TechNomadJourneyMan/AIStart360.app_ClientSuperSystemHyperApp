@@ -79,6 +79,12 @@ export interface StaffNotification {
    * hours and cooldown. A personal mute still applies.
    */
   scheduled?: boolean
+  /**
+   * Telegram threshold of this topic (e.g. agent lifecycle, setting
+   * agents_notify_telegram_level): replaces the platform and personal levels
+   * for this notification. Mute, quiet hours and cooldown still apply.
+   */
+  telegramMinLevel?: OrderedLevel | null
 }
 
 export interface NotifyResult {
@@ -232,8 +238,8 @@ export async function notifyStaff(n: StaffNotification, opts: {
     : n.audiencePermission ? hasPermission(s.role, n.audiencePermission) : true))
   for (const s of targets) {
     if (!(await claimDelivery(eventId, 'telegram', s.chatId))) continue
-    if (!scheduled && !reaches(n.level, cfg.telegramMinLevel)) { await skip('telegram', s.chatId, 'below_platform_level'); continue }
-    if (!scheduled && !reaches(n.level, s.minLevel)) { await skip('telegram', s.chatId, 'below_personal_level'); continue }
+    if (!scheduled && !reaches(n.level, n.telegramMinLevel ?? cfg.telegramMinLevel)) { await skip('telegram', s.chatId, 'below_platform_level'); continue }
+    if (!scheduled && !reaches(n.level, n.telegramMinLevel ?? s.minLevel)) { await skip('telegram', s.chatId, 'below_personal_level'); continue }
     if (s.mutedUntil && s.mutedUntil > (opts.now ?? new Date()) && !isApproval && n.level !== 'CRITICAL') { await skip('telegram', s.chatId, 'muted'); continue }
     if (!scheduled && quiet) { await skip('telegram', s.chatId, 'quiet_hours'); continue }
     if (!scheduled && cooled) { await skip('telegram', s.chatId, 'cooldown'); continue }
@@ -252,7 +258,7 @@ export async function notifyStaff(n: StaffNotification, opts: {
   for (const chatId of legacyChatIds()) {
     if (linkedChats.has(chatId)) continue
     if (!(await claimDelivery(eventId, 'telegram', chatId))) continue
-    if (!scheduled && !reaches(n.level, cfg.telegramMinLevel)) { await skip('telegram', chatId, 'below_platform_level'); continue }
+    if (!scheduled && !reaches(n.level, n.telegramMinLevel ?? cfg.telegramMinLevel)) { await skip('telegram', chatId, 'below_platform_level'); continue }
     if (!scheduled && quiet) { await skip('telegram', chatId, 'quiet_hours'); continue }
     if (!scheduled && cooled) { await skip('telegram', chatId, 'cooldown'); continue }
     const legacyText = isApproval ? `${text}\n\nРешение — в панели GIGA (кнопки доступны после привязки Telegram к аккаунту сотрудника).` : text

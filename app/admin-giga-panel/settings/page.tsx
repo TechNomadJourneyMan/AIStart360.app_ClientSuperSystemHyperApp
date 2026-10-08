@@ -223,6 +223,18 @@ export default function SettingsPage() {
                 <Toggle checked={v[k]} disabled={!canEdit || !!saving} onChange={(n) => toggle(k, n)} label={SETTINGS[k].label} />
               </SettingRow>
             ))}
+            <SettingRow k="agents_notify_telegram_level" meta={meta} stacked note={!v.agents_notify_lifecycle ? 'Уведомления о работе агентов выключены — уровень действует только для сбоев и зависших задач.' : undefined}>
+              <Segmented
+                value={v.agents_notify_telegram_level}
+                disabled={!canEdit || !!saving}
+                options={[
+                  { value: 'INFO', label: 'Все: запуски и завершения' },
+                  { value: 'WARNING', label: 'Сбои' },
+                  { value: 'CRITICAL', label: 'Только критичное' },
+                ]}
+                onChange={(level) => void save({ agents_notify_telegram_level: level }, 'Уровень уведомлений об агентах')}
+              />
+            </SettingRow>
             <SettingRow k="agents_stuck_minutes" meta={meta} note={!v.agents_stuck_alerts ? 'Сигнал о зависших задачах выключен — порог сейчас не действует.' : undefined}>
               <NumberSetting
                 value={v.agents_stuck_minutes} min={5} max={240} step={5} suffix="мин"

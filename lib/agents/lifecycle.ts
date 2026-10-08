@@ -34,6 +34,8 @@
  */
 import { prisma } from '@/lib/db'
 import { notifyStaff, type StaffNotification } from '@/lib/notifications/staff'
+import type { OrderedLevel } from '@/lib/notifications/levels'
+import { getSetting } from '@/lib/settings/store'
 import { getSiteUrl } from '@/lib/site-url'
 import { signCallback } from '@/lib/telegram/bots/callback'
 import type { BotId, InlineButton } from '@/lib/telegram/bots/registry'
@@ -156,6 +158,19 @@ export function lifecycleNotification(i: LifecycleInput): StaffNotification {
   }
 }
 
+/** Lifecycle news go to Telegram from the level set in agents_notify_telegram_level (default INFO). */
+function withAgentsTelegramLevel(fn: typeof notifyStaff): typeof notifyStaff {
+  return async (n, opts) => {
+    let level: OrderedLevel = 'INFO'
+    try {
+      level = await getSetting('agents_notify_telegram_level')
+    } catch {
+      /* settings unavailable: default */
+    }
+    return fn({ ...n, telegramMinLevel: level }, opts)
+  }
+}
+
 export interface NotifyDeps {
   notify?: typeof notifyStaff
   now?: Date
@@ -191,7 +206,7 @@ export type StartedOutcome = 'disabled' | 'repeat_attempt' | 'sent' | 'summary'
 
 /** A task was claimed and is about to run. */
 export async function notifyTaskStarted(task: TaskLike, deps: NotifyDeps = {}): Promise<StartedOutcome> {
-  const notify = deps.notify ?? notifyStaff
+  const notify = withAgentsTelegramLevel(deps.notify ?? notifyStaff)
   if (!(await automationEnabled('agents_notify_lifecycle'))) return 'disabled'
   // One «started» per task: retries, approval re-runs and recovered leases are not news.
   if (task.attempts > 1) return 'repeat_attempt'
@@ -232,7 +247,7 @@ export type FinishedOutcome = 'disabled' | 'ignored' | LifecycleKind
 
 /** A run finished: report the task's new status (runner's finalStatus). */
 export async function notifyTaskFinished(task: TaskLike, report: RunReport, deps: NotifyDeps = {}): Promise<FinishedOutcome> {
-  const notify = deps.notify ?? notifyStaff
+  const notify = withAgentsTelegramLevel(deps.notify ?? notifyStaff)
   let kind: LifecycleKind | null = null
   if (report.finalStatus === 'succeeded') kind = 'succeeded'
   // 'queued' after a failure = a retry is scheduled (an early approval re-queue is not a failure).
@@ -295,7 +310,7 @@ export async function findStuckTasks(minutes: number): Promise<StuckTask[]> {
  * leases): one CRITICAL per task. Returns the number of tasks reported.
  */
 export async function alertStuckTasks(deps: NotifyDeps = {}): Promise<number> {
-  const notify = deps.notify ?? notifyStaff
+  const notify = withAgentsTelegramLevel(deps.notify ?? notifyStaff)
   if (!(await automationEnabled('agents_stuck_alerts'))) return 0
   const minutes = await automationSetting('agents_stuck_minutes')
   const stuck = await findStuckTasks(minutes)
