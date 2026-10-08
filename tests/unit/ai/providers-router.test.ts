@@ -13,6 +13,7 @@ import {
   hasConfiguredChatRoute,
   invalidateProviderCache,
   providerBudgetRefusal,
+  resolveCandidates,
   resolveTarget,
   ROUTER_CACHE_TTL_MS,
 } from '@/lib/ai/providers/router'
@@ -97,8 +98,11 @@ describe('resolveTarget — configured routes', () => {
         priceInPerMtok: 0.5, priceOutPerMtok: 1.5,
       },
     })
-    // Other tiers stay on the fallback.
-    expect(await resolveTarget('chat', { tier: 'premium', fallbackModel: 'x/premium' })).toMatchObject({ ok: true, target: { providerKey: 'openrouter', model: 'x/premium' } })
+    // A1: other tiers use any usable chat model before the built-in OpenRouter…
+    expect(await resolveTarget('chat', { tier: 'premium', fallbackModel: 'x/premium' })).toMatchObject({ ok: true, target: { providerKey: 'alem', model: 'alemllm' } })
+    // …which stays the last candidate.
+    const c = await resolveCandidates('chat', { tier: 'premium', fallbackModel: 'x/premium' })
+    expect(c.ok && c.candidates.map((t) => `${t.providerKey}/${t.model}`)).toEqual(['alem/alemllm', 'openrouter/x/premium'])
   })
 
   it('an explicit model id picks the provider that registered it, otherwise OpenRouter', async () => {

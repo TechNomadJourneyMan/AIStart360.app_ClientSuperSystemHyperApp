@@ -17,6 +17,7 @@ import type {
   RouteRow,
 } from '@/lib/ai/providers/types'
 import type { ModelWrite, ProviderWrite, SpendGroupBy, SpendRow } from '@/lib/ai/providers/store'
+import { resetHealth } from '@/lib/ai/providers/health'
 
 export const fakeDb = {
   providers: [] as ProviderRow[],
@@ -36,6 +37,7 @@ export function resetFakeDb(): void {
   fakeDb.budgets = null
   fakeDb.spendToday = {}
   fakeDb.loads = 0
+  resetHealth()
 }
 
 const now = () => new Date()

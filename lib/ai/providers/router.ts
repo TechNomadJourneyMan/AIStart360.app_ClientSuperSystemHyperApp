@@ -1,21 +1,21 @@
 /**
  * lib/ai/providers/router.ts — which provider, model and key serve a call.
  *
- * resolveTarget(capability, { tier, model, fallbackModel }):
- *   1. explicit `model` (a call site or agent override pins a model id):
- *      an enabled ai_models row with that model_id for the capability (a routed
- *      one first) whose provider is enabled and has a usable key → that provider;
- *      otherwise the built-in OpenRouter fallback with that model id.
- *   2. no explicit model: ai_routes (capability, tier) → model → provider → key.
- *   3. nothing configured / route unusable (disabled, no key, undecryptable):
- *      the built-in behaviour — OpenRouter with `fallbackModel` (the env/default
- *      tier model) and the OpenRouter key (an owner-entered key of the
- *      `openrouter` provider, else OPENROUTER_API_KEY). Embeddings fall back the
- *      same way; rerank and OCR have no built-in fallback (NOT_CONFIGURED).
+ * resolveCandidates(capability, { tier, model, fallbackModel }) → an ordered
+ * list of call targets (see the function for the order: registered explicit
+ * model → route → explicit model via OpenRouter → any usable model of the
+ * capability, tier_hint first → built-in OpenRouter with `fallbackModel`),
+ * healthy targets first (health.ts). Callers try them in order on failover-
+ * worthy errors (failover.ts). resolveTarget = the first candidate.
+ * With nothing configured it is the pre-094 behaviour: OpenRouter with
+ * `fallbackModel` and the OpenRouter key (an owner-entered key of the
+ * `openrouter` provider, else OPENROUTER_API_KEY). Rerank, OCR and transcribe
+ * have no built-in fallback (NOT_CONFIGURED). Embeddings never switch models.
  *
- * Keys: a model's own credential (credential_id) if enabled; else the
- * provider's first enabled credential; else the env key of that provider
- * (OPENROUTER_API_KEY for `openrouter`, ALEM_API_KEY for `alem`).
+ * Keys: a model's own credential (credential_id) if enabled; else a key whose
+ * discovery listed the model; else the provider's first enabled credential;
+ * else the env key of that provider (OPENROUTER_API_KEY for `openrouter`,
+ * ALEM_API_KEY for `alem`).
  *
  * The configuration snapshot (all small tables) and decrypted keys are cached
  * in memory for ≤ 60 s per server instance; every mutation through service.ts
@@ -24,14 +24,17 @@
  * everything falls back to the built-in behaviour.
  */
 import { decryptSecret } from '@/lib/crypto/secrets'
-import type {
-  Capability,
-  ChatTier,
-  CredentialRow,
-  ModelRow,
-  ProviderRow,
-  ProviderSnapshot,
-  ProviderTarget,
+import { knownModelTier } from './client'
+import { healthKey, isHealthy } from './health'
+import {
+  capabilityOf,
+  type AiCapability,
+  type ChatTier,
+  type CredentialRow,
+  type ModelRow,
+  type ProviderRow,
+  type ProviderSnapshot,
+  type ProviderTarget,
 } from './types'
 
 export const ROUTER_CACHE_TTL_MS = 60_000
@@ -118,7 +121,16 @@ function envKey(providerKey: string): string | null {
   return v && v.trim() ? v.trim() : null
 }
 
-/** The key a model row (or, with model = null, the provider) uses. */
+/**
+ * The key a model row (or, with model = null, the provider) uses:
+ *   1. the model's own credential (credential_id) — only that one;
+ *   2. credential_id NULL: an enabled key whose last discovery (GET /models)
+ *      listed this model id — Alem issues one key per model, so the provider's
+ *      first key is often the wrong one;
+ *   3. else the provider's enabled keys in order, keys not known to miss the
+ *      model first (discovery never ran for them);
+ *   4. else the env key of the provider.
+ */
 function keyFor(c: Cache, provider: ProviderRow, model: ModelRow | null): { apiKey: string; credentialId: string | null } | null {
   const creds = c.snapshot.credentials.filter((x) => x.provider_id === provider.id)
   if (model?.credential_id) {
@@ -127,8 +139,16 @@ function keyFor(c: Cache, provider: ProviderRow, model: ModelRow | null): { apiK
     const k = decrypt(c, own)
     return k ? { apiKey: k, credentialId: own.id } : null
   }
-  for (const cred of creds) {
-    if (!cred.enabled) continue
+  const enabled = creds.filter((x) => x.enabled)
+  const lists = (x: CredentialRow) => Array.isArray(x.discovered_models)
+  const ordered = model
+    ? [
+        ...enabled.filter((x) => lists(x) && x.discovered_models!.includes(model.model_id)),
+        ...enabled.filter((x) => !lists(x)),
+        ...enabled.filter((x) => lists(x) && !x.discovered_models!.includes(model.model_id)),
+      ]
+    : enabled
+  for (const cred of ordered) {
     const k = decrypt(c, cred)
     if (k) return { apiKey: k, credentialId: cred.id }
   }
@@ -156,13 +176,24 @@ function targetOf(provider: ProviderRow, model: ModelRow, key: { apiKey: string;
     priceInPerMtok: model.price_in_per_mtok,
     priceOutPerMtok: model.price_out_per_mtok,
     dailyBudgetUsd: provider.daily_budget_usd,
+    supportsVision: model.supports_vision ?? null,
+    supportsTools: model.supports_tools ?? null,
+    tierHint: model.tier_hint ?? null,
   }
+}
+
+/** Can the provider serve this capability at all (rerank needs a path, OCR a mode)? */
+function providerServes(provider: ProviderRow, capability: AiCapability): boolean {
+  if (capability === 'rerank') return Boolean(provider.rerank_path)
+  if (capability === 'ocr') return provider.ocr_mode === 'chat_vision'
+  return true
 }
 
 function usable(c: Cache, model: ModelRow | undefined): ProviderTarget | null {
   if (!model || !model.enabled) return null
   const provider = c.snapshot.providers.find((p) => p.id === model.provider_id)
   if (!provider || !provider.enabled) return null
+  if (!providerServes(provider, capabilityOf(model))) return null
   const key = keyFor(c, provider, model)
   return key ? targetOf(provider, model, key) : null
 }
@@ -174,10 +205,20 @@ export interface ResolveOptions {
   model?: string | null
   /** Model of the built-in OpenRouter fallback (env/default tier model). */
   fallbackModel?: string
+  /** Tool calling: skip models known not to support tools (supports_tools = false). */
+  requireTools?: boolean
+  /** Image input: skip models known to be text-only, vision models first. */
+  requireVision?: boolean
+  /** Upper bound of the candidate list (default 6). */
+  maxCandidates?: number
 }
 
 export type ResolveResult =
   | { ok: true; target: ProviderTarget }
+  | { ok: false; code: 'NO_API_KEY' | 'NOT_CONFIGURED'; message: string }
+
+export type CandidatesResult =
+  | { ok: true; candidates: ProviderTarget[] }
   | { ok: false; code: 'NO_API_KEY' | 'NOT_CONFIGURED'; message: string }
 
 const warned = new Set<string>()
@@ -187,8 +228,9 @@ function warnOnce(key: string, message: string) {
   console.warn(message)
 }
 
-function fallback(c: Cache, capability: Capability, model: string | undefined): ResolveResult {
-  if (capability === 'rerank' || capability === 'ocr' || !model) {
+/** The built-in OpenRouter target for `model`, or why there is none. */
+function builtin(c: Cache, capability: AiCapability, model: string | null | undefined): ResolveResult {
+  if ((capability !== 'chat' && capability !== 'embeddings') || !model) {
     return { ok: false, code: 'NOT_CONFIGURED', message: `для «${capability}» не настроен маршрут модели` }
   }
   const row = c.snapshot.providers.find((p) => p.key === 'openrouter')
@@ -221,39 +263,139 @@ function fallback(c: Cache, capability: Capability, model: string | undefined): 
       priceInPerMtok: null,
       priceOutPerMtok: null,
       dailyBudgetUsd: row?.daily_budget_usd ?? null,
+      supportsVision: null,
+      supportsTools: null,
+      tierHint: null,
     },
   }
 }
 
-export async function resolveTarget(capability: Capability, opts: ResolveOptions = {}): Promise<ResolveResult> {
-  const c = await current()
-  const routed = new Set(c.snapshot.routes.map((r) => r.model_id))
+const TIER_ORDER: Record<ChatTier, number> = { light: 0, standard: 1, premium: 2 }
 
-  if (opts.model) {
-    const candidates = c.snapshot.models
-      .filter((m) => m.model_id === opts.model && m.capability === capability)
-      .sort((a, b) => Number(routed.has(b.id)) - Number(routed.has(a.id)))
-    for (const m of candidates) {
-      const t = usable(c, m)
-      if (t) return { ok: true, target: t }
-    }
-    return fallback(c, capability, opts.model)
+/**
+ * Ordered call targets for one call (A1 automatic routing):
+ *   1. an explicit `model` registered in ai_models with a usable key (an owner
+ *      decision: agent model_override, a registered OpenRouter id, …);
+ *   2. the route of (capability, tier) from ai_routes, when usable;
+ *   3. an explicit `model` that is not registered — through the built-in
+ *      OpenRouter, when it has a key;
+ *   4. any other usable model of the capability on any enabled provider with a
+ *      key — for chat the ones whose tier_hint matches first, then unhinted,
+ *      then the other tiers; routed and manually entered models before
+ *      discovered ones;
+ *   5. the built-in OpenRouter with `fallbackModel` (chat / embeddings), when
+ *      it has a key.
+ * Healthy targets come before ones that failed in the last 5 minutes
+ * (health.ts). An explicit model that is unavailable (no OpenRouter key) thus
+ * transparently becomes the chat model of the matching tier.
+ *
+ * Embeddings never switch models (vectors of different models are not
+ * comparable): exactly one candidate — the explicit / routed / built-in model,
+ * else the single usable embeddings model; no health reordering.
+ */
+export async function resolveCandidates(capability: AiCapability, opts: ResolveOptions = {}): Promise<CandidatesResult> {
+  const c = await current()
+  const tier: ChatTier | null = capability === 'chat'
+    ? (opts.tier ?? knownModelTier(opts.model) ?? 'standard')
+    : null
+  const max = Math.max(1, opts.maxCandidates ?? 6)
+  const routedIds = new Set(c.snapshot.routes.map((r) => r.model_id))
+  const ofCapability = c.snapshot.models.filter((m) => capabilityOf(m) === capability)
+  const out: ProviderTarget[] = []
+  const seen = new Set<string>()
+  const push = (t: ProviderTarget | null) => {
+    if (!t) return
+    if (opts.requireTools && t.supportsTools === false) return
+    if (opts.requireVision && t.supportsVision === false) return
+    const k = healthKey(t)
+    if (seen.has(k)) return
+    seen.add(k)
+    out.push(t)
   }
 
-  const tier = capability === 'chat' ? (opts.tier ?? 'standard') : null
-  const route = c.snapshot.routes.find((r) => r.capability === capability && (r.tier ?? null) === tier)
+  // 1. explicit model registered by the owner
+  if (opts.model) {
+    ofCapability
+      .filter((m) => m.model_id === opts.model)
+      .sort((a, b) => Number(routedIds.has(b.id)) - Number(routedIds.has(a.id)))
+      .forEach((m) => push(usable(c, m)))
+  }
+  // 2. the owner's route
+  const route = c.snapshot.routes.find((r) => capabilityOf(r) === capability && (r.tier ?? null) === tier)
   if (route) {
     const t = usable(c, c.snapshot.models.find((m) => m.id === route.model_id))
-    if (t) return { ok: true, target: t }
-    warnOnce(`${capability}:${tier ?? ''}:${route.model_id}`,
-      `[ai-router] route ${capability}${tier ? `/${tier}` : ''} is unusable (model/provider disabled or no key) — using the built-in fallback`)
+    if (t) push(t)
+    else {
+      warnOnce(`${capability}:${tier ?? ''}:${route.model_id}`,
+        `[ai-router] route ${capability}${tier ? `/${tier}` : ''} is unusable (model/provider disabled or no key) — trying other models`)
+    }
   }
-  return fallback(c, capability, opts.fallbackModel)
+  // 3. explicit, unregistered model through the built-in OpenRouter
+  const explicitBuiltin = opts.model ? builtin(c, capability, opts.model) : null
+  if (explicitBuiltin?.ok) push(explicitBuiltin.target)
+
+  if (capability === 'embeddings') {
+    const fb = builtin(c, capability, opts.fallbackModel)
+    if (fb.ok) push(fb.target)
+    if (out.length === 0) {
+      const all = ofCapability.map((m) => usable(c, m)).filter((t): t is ProviderTarget => t !== null)
+      if (all.length === 1) push(all[0])
+    }
+    if (out.length) return { ok: true, candidates: out.slice(0, 1) }
+    return fb.ok ? { ok: false, code: 'NOT_CONFIGURED', message: 'для «embeddings» не настроен маршрут модели' } : fb
+  }
+
+  // 4. any other usable model of the capability
+  const tierRank = (m: ModelRow): number => {
+    if (!tier) return 0
+    const hint = m.tier_hint ?? null
+    if (hint === tier) return 0
+    if (hint === null) return 1
+    return 1 + Math.abs(TIER_ORDER[hint] - TIER_ORDER[tier])
+  }
+  const rank = (m: ModelRow): number[] => [
+    tierRank(m),
+    opts.requireVision ? (m.supports_vision === true ? 0 : 1) : 0,
+    opts.requireTools ? (m.supports_tools === true ? 0 : 1) : 0,
+    routedIds.has(m.id) ? 0 : 1,
+    (m.source ?? 'manual') === 'manual' ? 0 : 1,
+  ]
+  ofCapability
+    .map((m) => ({ m, r: rank(m) }))
+    .sort((a, b) => {
+      for (let i = 0; i < a.r.length; i++) if (a.r[i] !== b.r[i]) return a.r[i] - b.r[i]
+      return 0
+    })
+    .forEach(({ m }) => push(usable(c, m)))
+
+  // 5. the built-in OpenRouter with the default model of the tier
+  const fb = builtin(c, capability, opts.fallbackModel)
+  if (fb.ok) push(fb.target)
+
+  if (out.length === 0) {
+    if (explicitBuiltin && !explicitBuiltin.ok && explicitBuiltin.code === 'NO_API_KEY' && !opts.fallbackModel) return explicitBuiltin
+    return fb.ok ? { ok: false, code: 'NOT_CONFIGURED', message: `для «${capability}» нет доступной модели` } : fb
+  }
+  // vision: known vision models first (stable otherwise)
+  const ordered = opts.requireVision
+    ? [...out.filter((t) => t.supportsVision === true), ...out.filter((t) => t.supportsVision !== true)]
+    : out
+  const now = Date.now()
+  const healthy = ordered.filter((t) => isHealthy(t, now))
+  const sick = ordered.filter((t) => !isHealthy(t, now))
+  return { ok: true, candidates: [...healthy, ...sick].slice(0, max) }
+}
+
+/** The first candidate (backward compatible single-target API). */
+export async function resolveTarget(capability: AiCapability, opts: ResolveOptions = {}): Promise<ResolveResult> {
+  const r = await resolveCandidates(capability, opts)
+  return r.ok ? { ok: true, target: r.candidates[0] } : r
 }
 
 /**
- * Synchronous best-effort: does the cached configuration route at least one
- * chat tier to a usable model? Used by the sync hasLlmKey()/hasOpenRouterKey()
+ * Synchronous best-effort: does the cached configuration have at least one
+ * usable chat target (a route, or any manual/discovered chat model on an
+ * enabled provider with a key)? Used by the sync hasLlmKey()/hasOpenRouterKey()
  * so an Alem-only deployment (no OPENROUTER_API_KEY) still counts as "AI
  * available". Cold cache → starts loading and answers false this time.
  */
@@ -263,7 +405,7 @@ export function hasConfiguredChatRoute(): boolean {
     if (!cache) return false
   }
   const c = cache
-  return c.snapshot.routes.some((r) => r.capability === 'chat' && usable(c, c.snapshot.models.find((m) => m.id === r.model_id)) !== null)
+  return c.snapshot.models.some((m) => capabilityOf(m) === 'chat' && usable(c, m) !== null)
 }
 
 // ── budgets ────────────────────────────────────────────────────────────────
