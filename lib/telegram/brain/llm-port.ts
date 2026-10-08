@@ -81,7 +81,7 @@ type AnyFn = (args: Record<string, unknown>) => Promise<unknown>
 async function loadToolsChat(): Promise<Record<string, unknown> | null> {
   const name = 'tools-chat'
   try {
-    return (await import(/* webpackInclude: /tools-chat\.ts$/ */ `@/lib/ai/${name}`)) as Record<string, unknown>
+    return (await import(/* webpackInclude: /tools-chat\.ts$/ */ /* @vite-ignore */ `@/lib/ai/${name}`)) as Record<string, unknown>
   } catch {
     return null
   }
