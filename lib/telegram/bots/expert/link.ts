@@ -7,11 +7,12 @@
  * «Привязать Telegram») for a link; only the SHA-256 of a random code is
  * stored with a 15-minute TTL; t.me/<expert bot>?start=expert_<code> binds
  * the sender. Access is re-checked on every update: an approved profile whose
- * role is one of EXPERT_ROLES (expert / admin / super_admin — lib/expert-auth.ts).
+ * role is one of EXPERT_ROLES (expert / admin / super_admin), or the person is
+ * a SuperExpert (staff_roles) — lib/expert-auth.ts isExpertBotMember.
  */
 import { createHash, randomBytes } from 'node:crypto'
 import { prisma } from '@/lib/db'
-import { EXPERT_ROLES } from '@/lib/expert-auth'
+import { expertBotRole, isExpertBotMember } from '@/lib/expert-auth'
 import { deepLink } from '../registry'
 
 const TTL_MINUTES = 15
@@ -62,16 +63,17 @@ export interface ExpertPrincipal {
   name: string | null
 }
 
-/** The expert behind a Telegram account: linked, approved, role in EXPERT_ROLES. */
+/** The expert behind a Telegram account: linked, approved, expert-bot member (expert portal role or SuperExpert). */
 export async function expertByTelegramUser(telegramUserId: number): Promise<ExpertPrincipal | null> {
-  const rows = await prisma.$queryRaw<Array<{ user_id: string; role: string; email: string | null; full_name: string | null }>>`
-    SELECT l.user_id::text, p.role, p.email, p.full_name
+  const rows = await prisma.$queryRaw<Array<{ user_id: string; role: string; staff_role: string | null; email: string | null; full_name: string | null }>>`
+    SELECT l.user_id::text, p.role, s.role AS staff_role, p.email, p.full_name
     FROM public.telegram_bot_links l
     JOIN public.profiles p ON p.id = l.user_id AND p.status = 'approved'
+    LEFT JOIN public.staff_roles s ON s.user_id = l.user_id
     WHERE l.bot = 'expert' AND l.telegram_user_id = ${BigInt(telegramUserId)} AND l.linked_at IS NOT NULL`
   const r = rows[0]
-  if (!r || !EXPERT_ROLES.has(r.role)) return null
-  return { userId: r.user_id, role: r.role, email: r.email, name: r.full_name }
+  if (!r || !isExpertBotMember(r.role, r.staff_role)) return null
+  return { userId: r.user_id, role: expertBotRole(r.role, r.staff_role), email: r.email, name: r.full_name }
 }
 
 export async function expertLinkStatus(userId: string): Promise<{ linked: boolean; username: string | null; minLevel: string }> {

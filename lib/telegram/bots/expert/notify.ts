@@ -15,7 +15,7 @@
  * configured nothing is read or sent.
  */
 import { prisma } from '@/lib/db'
-import { EXPERT_ROLES } from '@/lib/expert-auth'
+import { expertBotRole, isExpertBotMember } from '@/lib/expert-auth'
 import { inQuietHours, LEVEL_ICONS, reaches, routingConfig, type OrderedLevel } from '@/lib/notifications/levels'
 import type { PlatformEventRow } from '@/lib/events/platform'
 import { getSiteUrl } from '@/lib/site-url'
@@ -46,12 +46,15 @@ export interface ExpertDelivery { chatId: string; status: 'sent' | 'failed' | 's
 interface Recipient { userId: string; chatId: string; minLevel: OrderedLevel; mutedUntil: Date | null; role: string }
 
 async function linkedExperts(): Promise<Recipient[]> {
-  const rows = await prisma.$queryRaw<Array<{ user_id: string; chat_id: string; min_level: OrderedLevel; muted_until: Date | null; role: string }>>`
-    SELECT l.user_id::text, l.chat_id, l.min_level, l.muted_until, p.role
+  const rows = await prisma.$queryRaw<Array<{ user_id: string; chat_id: string; min_level: OrderedLevel; muted_until: Date | null; role: string; staff_role: string | null }>>`
+    SELECT l.user_id::text, l.chat_id, l.min_level, l.muted_until, p.role, s.role AS staff_role
     FROM public.telegram_bot_links l
     JOIN public.profiles p ON p.id = l.user_id AND p.status = 'approved'
+    LEFT JOIN public.staff_roles s ON s.user_id = l.user_id
     WHERE l.bot = 'expert' AND l.linked_at IS NOT NULL AND l.chat_id IS NOT NULL`
-  return rows.filter((r) => EXPERT_ROLES.has(r.role)).map((r) => ({ userId: r.user_id, chatId: r.chat_id, minLevel: r.min_level, mutedUntil: r.muted_until, role: r.role }))
+  return rows
+    .filter((r) => isExpertBotMember(r.role, r.staff_role))
+    .map((r) => ({ userId: r.user_id, chatId: r.chat_id, minLevel: r.min_level, mutedUntil: r.muted_until, role: expertBotRole(r.role, r.staff_role) }))
 }
 
 async function claim(key: string, chatId: string, status: 'sent' | 'skipped', reason: string | null): Promise<boolean> {

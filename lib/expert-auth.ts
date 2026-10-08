@@ -13,6 +13,20 @@ import { MFA_COOKIE_NAME } from '@/lib/mfa/step-up'
 
 export const EXPERT_ROLES = new Set(['expert', 'admin', 'super_admin'])
 
+/**
+ * Who the expert Telegram bot admits: a profile role in EXPERT_ROLES (expert
+ * portal) or the SuperExpert staff role (their profile role is usually
+ * 'client'; the role lives in staff_roles).
+ */
+export function isExpertBotMember(profileRole: string | null | undefined, staffRole: string | null | undefined): boolean {
+  return EXPERT_ROLES.has(profileRole ?? '') || staffRole === 'super_expert'
+}
+
+/** Role label for an expert-bot member: the profile role, or 'super_expert'. */
+export function expertBotRole(profileRole: string | null | undefined, staffRole: string | null | undefined): string {
+  return EXPERT_ROLES.has(profileRole ?? '') ? (profileRole as string) : staffRole === 'super_expert' ? 'super_expert' : (profileRole ?? '')
+}
+
 function srBase() {
   return {
     url: (process.env.NEXT_PUBLIC_SUPABASE_URL ?? '').replace(/\/$/, ''),
@@ -86,6 +100,42 @@ export async function resolveExpert(): Promise<ExpertAuth> {
   if (gate !== 'ok') return { ok: false, block: gate }
 
   return { ok: true, viewer: { id: viewer.id, role: viewer.role, email: user.email ?? null } }
+}
+
+/**
+ * Gate of the expert-bot link API (/api/expert/telegram-link): the expert
+ * portal gate, widened to SuperExpert staff (approved, same second-factor
+ * rule). Does NOT open the rest of /api/expert/* to SuperExperts.
+ */
+export async function resolveExpertBotUser(): Promise<ExpertAuth> {
+  const sb = createServerClient()
+  const {
+    data: { user },
+  } = await sb.auth.getUser()
+  if (!user) return { ok: false, block: 'unauthenticated' }
+
+  const [profiles, staff] = await Promise.all([
+    srGet<Array<{ id: string; role: string | null; status: string | null }>>(
+      `profiles?id=eq.${encodeURIComponent(user.id)}&select=id,role,status&limit=1`,
+    ),
+    srGet<Array<{ role: string | null }>>(`staff_roles?user_id=eq.${encodeURIComponent(user.id)}&select=role&limit=1`),
+  ])
+  if (profiles === null || staff === null) return { ok: false, block: 'unavailable' }
+  const viewer = profiles[0] ?? null
+  const staffRole = staff[0]?.role ?? null
+  if (!viewer || viewer.status !== 'approved' || !isExpertBotMember(viewer.role, staffRole)) {
+    return { ok: false, block: 'forbidden' }
+  }
+
+  let gate: Awaited<ReturnType<typeof staffMfaGate>>
+  try {
+    gate = await staffMfaGate(cookies().get(MFA_COOKIE_NAME)?.value, user)
+  } catch {
+    return { ok: false, block: 'unavailable' }
+  }
+  if (gate !== 'ok') return { ok: false, block: gate }
+
+  return { ok: true, viewer: { id: viewer.id, role: expertBotRole(viewer.role, staffRole), email: user.email ?? null } }
 }
 
 /**

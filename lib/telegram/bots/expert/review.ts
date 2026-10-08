@@ -18,6 +18,7 @@
  * rule and the version status. A second press, or a press after a colleague
  * decided, changes nothing and says so.
  */
+import { isExpertBotMember } from '@/lib/expert-auth'
 import { prisma } from '@/lib/db'
 import type { AuditWriter } from '@/lib/admin/staff-actions'
 import type { ReportReviewPackage, ReportReviewRecipient } from '@/lib/reports/review-delivery'
@@ -65,8 +66,8 @@ export async function sendReviewDocuments(
   const caption = reviewCaption(pkg)
   const key = `report_review:${pkg.versionId}`
   const out: Array<{ chatId: string; status: 'sent' | 'failed' | 'skipped'; reason?: string }> = []
-  // Only people the expert bot itself admits (profile role in EXPERT_ROLES).
-  const chats = recipients.filter((r) => r.expertBotChatId && ['expert', 'admin', 'super_admin'].includes(r.profileRole ?? ''))
+  // Only people the expert bot itself admits (expert portal role or SuperExpert).
+  const chats = recipients.filter((r) => r.expertBotChatId && isExpertBotMember(r.profileRole, r.staffRole))
   for (const r of chats) {
     const chatId = r.expertBotChatId as string
     if (!(await claim(key, chatId))) {

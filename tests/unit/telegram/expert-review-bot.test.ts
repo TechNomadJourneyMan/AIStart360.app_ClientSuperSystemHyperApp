@@ -92,11 +92,13 @@ describe('expert bot: report review', () => {
     }
     const recipients = [
       { userId: EXPERT, name: 'Эксперт', email: null, phone: null, profileRole: 'expert', staffRole: null, expertBotChatId: '555000111', isExpert: true },
-      // A SuperExpert without an expert-bot profile role is not sent to the bot (it decides in its cabinet).
+      // A SuperExpert (staff role, profile 'client') is an expert-bot member too.
       { userId: 'u2', name: 'SE', email: null, phone: null, profileRole: 'client', staffRole: 'super_expert', expertBotChatId: '999', isExpert: true },
+      // An admin-staff person without an expert role is not.
+      { userId: 'u4', name: 'CRM', email: null, phone: null, profileRole: 'client', staffRole: 'crm_manager', expertBotChatId: '777', isExpert: false },
       { userId: 'u3', name: 'Нет бота', email: null, phone: null, profileRole: 'expert', staffRole: null, expertBotChatId: null, isExpert: true },
     ]
-    expect(await sendReviewDocuments(pkg, recipients, tg.fetchImpl)).toEqual([{ chatId: '555000111', status: 'sent' }])
+    expect(await sendReviewDocuments(pkg, recipients, tg.fetchImpl)).toEqual([{ chatId: '555000111', status: 'sent' }, { chatId: '999', status: 'sent' }])
     const call = tg.calls.find((c) => c.method === 'sendDocument')!
     expect(call.body).toMatchObject({ chat_id: '555000111', parse_mode: 'HTML', document: { name: pkg.filename, type: 'application/pdf' } })
     expect(call.body.caption).toContain('Отчёт на проверке')
@@ -104,8 +106,11 @@ describe('expert bot: report review', () => {
     const buttons = call.body.reply_markup.inline_keyboard.flat()
     expect(buttons.map((b: { text: string }) => b.text)).toEqual(['✅ Подтвердить и опубликовать', '✏️ Нужны правки'])
     // Again: deduplicated.
-    expect(await sendReviewDocuments(pkg, recipients, tg.fetchImpl)).toEqual([{ chatId: '555000111', status: 'skipped', reason: 'duplicate' }])
-    expect(tg.calls.filter((c) => c.method === 'sendDocument')).toHaveLength(1)
+    expect(await sendReviewDocuments(pkg, recipients, tg.fetchImpl)).toEqual([
+      { chatId: '555000111', status: 'skipped', reason: 'duplicate' },
+      { chatId: '999', status: 'skipped', reason: 'duplicate' },
+    ])
+    expect(tg.calls.filter((c) => c.method === 'sendDocument')).toHaveLength(2)
   })
 
   it('«Подтвердить» decides as this expert over Telegram (no web 2FA proof) and removes the buttons', async () => {
