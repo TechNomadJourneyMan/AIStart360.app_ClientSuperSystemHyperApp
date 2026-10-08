@@ -7,7 +7,9 @@
  *     mismatch — the only non-200 Telegram ever sees from a configured bot);
  *   • update_id dedupe per bot (replays are acknowledged and dropped);
  *   • handler errors are logged and acknowledged with 200, so Telegram does
- *     not retry the same update forever.
+ *     not retry the same update forever;
+ *   • with `defer` (the routes) the handling runs AFTER the answer: the checks
+ *     above happen first, then 200 'accepted' goes back at once.
  */
 import { timingSafeEqual } from 'node:crypto'
 import { handleUpdate, type BotDeps, type Outcome, type Router, type TgUpdate } from './dispatcher'
@@ -23,7 +25,7 @@ export function secretMatches(expected: string, got: string | null): boolean {
 
 export interface WebhookResult {
   status: number
-  outcome: Outcome | 'not_configured' | 'bad_secret' | 'bad_json' | 'duplicate'
+  outcome: Outcome | 'not_configured' | 'bad_secret' | 'bad_json' | 'duplicate' | 'accepted'
 }
 
 export async function processWebhook<P>(args: {
@@ -33,6 +35,13 @@ export async function processWebhook<P>(args: {
   router: () => Router<P>
   deps: BotDeps
   seen?: (bot: BotId, updateId: unknown) => Promise<boolean>
+  /**
+   * Background mode (the routes pass lib/telegram/bots/defer.ts deferOrAwait):
+   * after the secret check, parsing and the update_id dedupe the update is
+   * handed over and — when it was deferred — 200 'accepted' is returned at
+   * once. 'awaited' means it already ran; its outcome is returned as before.
+   */
+  defer?: (work: Promise<unknown>) => Promise<'deferred' | 'awaited'>
 }): Promise<WebhookResult> {
   const secret = botWebhookSecret(args.bot)
   if (!secret || !botToken(args.bot)) return { status: 503, outcome: 'not_configured' }
@@ -47,10 +56,14 @@ export async function processWebhook<P>(args: {
   if (!update || typeof update !== 'object') return { status: 200, outcome: 'bad_json' }
   if (!(await (args.seen ?? firstSeenBotUpdate)(args.bot, update.update_id))) return { status: 200, outcome: 'duplicate' }
 
-  try {
-    return { status: 200, outcome: await handleUpdate(args.router(), update, args.deps) }
-  } catch (err) {
-    console.error(`[telegram/${args.bot}] update failed:`, err instanceof Error ? err.message.split('\n')[0] : err)
-    return { status: 200, outcome: 'error' }
-  }
+  const work = (async (): Promise<Outcome> => {
+    try {
+      return await handleUpdate(args.router(), update, args.deps)
+    } catch (err) {
+      console.error(`[telegram/${args.bot}] update failed:`, err instanceof Error ? err.message.split('\n')[0] : err)
+      return 'error'
+    }
+  })()
+  if (args.defer && (await args.defer(work)) === 'deferred') return { status: 200, outcome: 'accepted' }
+  return { status: 200, outcome: await work }
 }

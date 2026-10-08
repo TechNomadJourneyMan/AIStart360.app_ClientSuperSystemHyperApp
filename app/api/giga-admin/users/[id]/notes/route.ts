@@ -6,6 +6,7 @@ import { requireGiga } from '@/lib/admin/giga-actor'
 import { recordAdminAction } from '@/lib/admin/audit'
 import { createServiceClient } from '@/lib/supabase-service'
 import { guardClientAccess } from '@/lib/admin/client-scope'
+import { addClientNote } from '@/lib/admin/client-actions'
 
 /**
  * GET  /api/giga-admin/users/:id/notes — заметки сотрудников о клиенте.
@@ -54,24 +55,14 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     return NextResponse.json({ ok: false, error: parsed.error.issues[0]?.message ?? 'Неверная заметка' }, { status: 400 })
   }
 
-  const { data, error } = await createServiceClient()
-    .from('user_notes')
-    .insert({
-      user_id: params.id,
-      author_id: guard.actor.id,
-      author_email: guard.actor.email ?? null,
-      author_role: guard.actor.role,
-      body: parsed.data.body,
-      pinned: parsed.data.pinned ?? false,
-    })
-    .select('id, body, pinned, author_id, author_email, author_role, created_at, updated_at')
-    .single()
-  if (error) return NextResponse.json({ ok: false, error: 'Не удалось сохранить заметку' }, { status: 500 })
+  const res = await addClientNote({
+    userId: params.id,
+    body: parsed.data.body,
+    pinned: parsed.data.pinned ?? false,
+    author: { id: guard.actor.id, email: guard.actor.email ?? null, role: guard.actor.role },
+    audit: (entry, opts) => recordAdminAction(guard.actor, entry, req, opts),
+  })
+  if (!res.ok) return NextResponse.json({ ok: false, error: res.error }, { status: res.status })
 
-  await recordAdminAction(guard.actor, {
-    action: 'user.note_added', entityType: 'user', entityId: params.id, targetUserId: params.id,
-    metadata: { noteId: (data as { id: string }).id },
-  }, req)
-
-  return NextResponse.json({ ok: true, data })
+  return NextResponse.json({ ok: true, data: res.note })
 }

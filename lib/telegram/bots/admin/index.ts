@@ -11,7 +11,7 @@
 import { hasPermission, STAFF_ROLE_LABELS, type Permission } from '@/lib/admin/rbac'
 import { handleStaffStart } from '@/lib/telegram/staff-updates'
 import { STAFF_START_PREFIX } from '@/lib/telegram/staff-link'
-import type { Router } from '../dispatcher'
+import type { BrainInput, Router } from '../dispatcher'
 import { sendMessage, type ReplyMarkup } from '../registry'
 import { esc } from '../ui'
 import { agentConfirmed, agentEntries, agentSteps, showAgents } from './agents'
@@ -66,9 +66,17 @@ async function welcome(ctx: AdminCtx): Promise<void> {
     return
   }
   await ctx.reply(
-    `👋 Панель AIStart360. Роль: <b>${esc(STAFF_ROLE_LABELS[ctx.principal.role])}</b>.\nВыберите раздел в меню ниже. Разделы и кнопки показываются по правам вашей роли.`,
+    `👋 Панель AIStart360. Роль: <b>${esc(STAFF_ROLE_LABELS[ctx.principal.role])}</b>.\nВыберите раздел в меню ниже. Разделы и кнопки показываются по правам вашей роли.\n\n🤖 Можно просто написать вопрос, прислать голосовое, фото или файл — ответит ассистент (в пределах прав роли; любые изменения — только после вашего подтверждения). /new — начать разговор заново.`,
     mainKeyboard(ctx.principal),
   )
+}
+
+/** Free text, voice, photos and files → the assistant (lib/telegram/brain). */
+async function brain(ctx: AdminCtx, input: BrainInput): Promise<void> {
+  // A pasted key never goes to the model: delete it as before.
+  if (!input.media && LOOKS_LIKE_KEY.test(input.text)) return welcome(ctx)
+  const { runAdminBrain } = await import('@/lib/telegram/brain')
+  await runAdminBrain(ctx, input)
 }
 
 function menuEntry(item: MenuItem): AdminEntry {
@@ -90,6 +98,7 @@ export function adminRouter(): Router<StaffPrincipal> {
     start: { run: welcome },
     menu: { run: welcome },
     help: { run: welcome },
+    new: { run: async (ctx) => (await import('@/lib/telegram/brain')).resetBrainMemory(ctx) },
   }
   for (const item of ADMIN_MENU) {
     menu[item.label] = menuEntry(item)
@@ -114,10 +123,15 @@ export function adminRouter(): Router<StaffPrincipal> {
     rawCallback: adminApprovalCallback,
     unlinkedText: '⛔ Этот бот — панель управления AIStart360 для сотрудников. Доступ только после привязки: GIGA → «Уведомления» → «Привязать Telegram».',
     welcome,
+    brain,
     commands,
     menu,
     callbacks,
-    confirmed: { ...agentConfirmed, ...automationConfirmed, ...userConfirmed, ...clientConfirmed, ...reportConfirmed, ...providerConfirmed, ...spendConfirmed, ...mcpConfirmed },
+    confirmed: {
+      // ✅ of an assistant action card (lib/telegram/brain/actions.ts re-checks rights and scope).
+      'ai.act': { run: async (ctx, args) => (await import('@/lib/telegram/brain/actions')).executeBrainAction(ctx, args) },
+      ...agentConfirmed, ...automationConfirmed, ...userConfirmed, ...clientConfirmed, ...reportConfirmed, ...providerConfirmed, ...spendConfirmed, ...mcpConfirmed,
+    },
     steps: { ...agentSteps, ...userSteps, ...clientSteps, ...reportSteps, ...providerSteps, ...spendSteps, ...mcpSteps },
   }
 }

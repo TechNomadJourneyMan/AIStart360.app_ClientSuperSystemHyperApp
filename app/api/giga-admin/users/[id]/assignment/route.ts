@@ -6,6 +6,7 @@ import { requireGiga } from '@/lib/admin/giga-actor'
 import { recordAdminAction } from '@/lib/admin/audit'
 import { createServiceClient } from '@/lib/supabase-service'
 import { guardClientAccess } from '@/lib/admin/client-scope'
+import { setClientAssignment } from '@/lib/admin/client-actions'
 
 /**
  * GET / PUT /api/giga-admin/users/:id/assignment { assigneeId: uuid | null }
@@ -51,32 +52,13 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
   if (!parsed.success) return NextResponse.json({ ok: false, error: 'Неверный ответственный' }, { status: 400 })
   const assigneeId = parsed.data.assigneeId
 
-  const sb = createServiceClient()
-  if (assigneeId) {
-    // Ответственным может быть только сотрудник: иначе клиента «назначат» на
-    // другого клиента, и задача уйдёт в никуда.
-    const { data: staff } = await sb.from('staff_roles').select('user_id').eq('user_id', assigneeId).maybeSingle()
-    if (!staff) return NextResponse.json({ ok: false, error: 'Ответственным может быть только сотрудник' }, { status: 400 })
-  }
-
-  const { data: before } = await sb.from('user_assignments').select('assignee_id').eq('user_id', params.id).maybeSingle()
-
-  const now = new Date().toISOString()
-  const { error } = await sb.from('user_assignments').upsert({
-    user_id: params.id,
-    assignee_id: assigneeId,
-    assigned_by: guard.actor.id,
-    assigned_at: now,
-    updated_at: now,
-  }, { onConflict: 'user_id' })
-  if (error) return NextResponse.json({ ok: false, error: 'Не удалось назначить' }, { status: 500 })
-
-  await recordAdminAction(guard.actor, {
-    action: assigneeId ? 'user.assigned' : 'user.unassigned',
-    entityType: 'user', entityId: params.id, targetUserId: params.id,
-    oldValue: { assignee_id: (before as { assignee_id?: string } | null)?.assignee_id ?? null },
-    newValue: { assignee_id: assigneeId },
-  }, req)
+  const res = await setClientAssignment({
+    userId: params.id,
+    assigneeId,
+    actorId: guard.actor.id,
+    audit: (entry, opts) => recordAdminAction(guard.actor, entry, req, opts),
+  })
+  if (!res.ok) return NextResponse.json({ ok: false, error: res.error }, { status: res.status })
 
   return NextResponse.json({ ok: true })
 }

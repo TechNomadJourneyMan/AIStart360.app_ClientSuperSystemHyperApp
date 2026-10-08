@@ -27,11 +27,50 @@ import {
 import { dbStateStore, type ConversationState, type StateStore } from './store'
 
 export interface TgUser { id: number; username?: string; first_name?: string; is_bot?: boolean }
+export interface TgFileRef { file_id: string; file_unique_id?: string; file_size?: number }
+export interface TgPhotoSize extends TgFileRef { width?: number; height?: number }
 export interface TgMessage {
   message_id: number
   chat: { id: number | string; type?: string }
   from?: TgUser
   text?: string
+  /** Caption of a photo / document / voice / audio. */
+  caption?: string
+  voice?: TgFileRef & { duration?: number; mime_type?: string }
+  audio?: TgFileRef & { duration?: number; mime_type?: string; file_name?: string }
+  /** Sizes of one photo, smallest first. */
+  photo?: TgPhotoSize[]
+  document?: TgFileRef & { file_name?: string; mime_type?: string }
+}
+
+/** A file the person sent with the message (what the assistant receives). */
+export interface IncomingMedia {
+  kind: 'voice' | 'audio' | 'photo' | 'document'
+  fileId: string
+  fileSize: number | null
+  fileName: string | null
+  mime: string | null
+}
+
+/** Input of the bot assistant: free text and/or one file. */
+export interface BrainInput {
+  text: string
+  media: IncomingMedia | null
+}
+
+const str = (v: unknown): string | null => (typeof v === 'string' && v ? v : null)
+const size = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null)
+
+/** The file of a message, if any: voice, audio, the LARGEST photo size, or a document. */
+export function mediaOf(msg: TgMessage): IncomingMedia | null {
+  if (msg.voice?.file_id) return { kind: 'voice', fileId: msg.voice.file_id, fileSize: size(msg.voice.file_size), fileName: 'voice.ogg', mime: str(msg.voice.mime_type) ?? 'audio/ogg' }
+  if (msg.audio?.file_id) return { kind: 'audio', fileId: msg.audio.file_id, fileSize: size(msg.audio.file_size), fileName: str(msg.audio.file_name) ?? 'audio.mp3', mime: str(msg.audio.mime_type) ?? 'audio/mpeg' }
+  if (Array.isArray(msg.photo) && msg.photo.length) {
+    const best = [...msg.photo].filter((p) => p?.file_id).sort((a, b) => (a.file_size ?? (a.width ?? 0) * (a.height ?? 0)) - (b.file_size ?? (b.width ?? 0) * (b.height ?? 0))).pop()
+    if (best) return { kind: 'photo', fileId: best.file_id, fileSize: size(best.file_size), fileName: 'photo.jpg', mime: 'image/jpeg' }
+  }
+  if (msg.document?.file_id) return { kind: 'document', fileId: msg.document.file_id, fileSize: size(msg.document.file_size), fileName: str(msg.document.file_name), mime: str(msg.document.mime_type) }
+  return null
 }
 export interface TgCallbackQuery {
   id: string
@@ -123,6 +162,12 @@ export interface Router<P> {
   rawCallback?(q: TgCallbackQuery, deps: BotDeps): Promise<boolean>
   unlinkedText: string
   welcome(ctx: BotContext<P>): Promise<void>
+  /**
+   * The assistant: free text that is not a command, a menu label or a
+   * pending input, and every voice / audio / photo / document. Without it
+   * such messages get the welcome, as before.
+   */
+  brain?(ctx: BotContext<P>, input: BrainInput): Promise<void>
   commands: Record<string, Entry<P>>
   /** Reply-keyboard labels (exact text). */
   menu: Record<string, Entry<P>>
@@ -133,7 +178,7 @@ export interface Router<P> {
 
 export type Outcome =
   | 'ignored' | 'bad_signature' | 'rate_limited' | 'not_linked' | 'forbidden' | 'start'
-  | 'cancelled' | 'step' | 'command' | 'menu' | 'callback' | 'confirmed' | 'confirm_expired' | 'raw' | 'welcome' | 'error'
+  | 'cancelled' | 'step' | 'command' | 'menu' | 'callback' | 'confirmed' | 'confirm_expired' | 'raw' | 'welcome' | 'brain' | 'error'
 
 const CONFIRM_TTL_MINUTES = 5
 
@@ -234,6 +279,8 @@ export async function handleUpdate<P>(router: Router<P>, update: TgUpdate, deps:
   // Private chats only: a group would expose cards to people we never checked.
   if (msg.chat?.type && msg.chat.type !== 'private') return 'ignored'
   const text = typeof msg.text === 'string' ? msg.text.trim() : ''
+  const media = mediaOf(msg)
+  const caption = typeof msg.caption === 'string' ? msg.caption.trim() : ''
 
   if (await deps.rateLimit(`${router.bot}:${chatId}`)) {
     await sendMessage(router.bot, chatId, 'Слишком много запросов. Подождите минуту.', undefined, deps.fetchImpl)
@@ -248,7 +295,18 @@ export async function handleUpdate<P>(router: Router<P>, update: TgUpdate, deps:
     await sendMessage(router.bot, chatId, router.unlinkedText, { remove_keyboard: true }, deps.fetchImpl)
     return 'not_linked'
   }
-  const ctx = makeContext(router, deps, { chatId, from, principal, messageId: msg.message_id ?? null, isCallback: false, text })
+  const ctx = makeContext(router, deps, { chatId, from, principal, messageId: msg.message_id ?? null, isCallback: false, text: text || caption })
+
+  // A file (voice, photo, document) always goes to the assistant: menus and
+  // multi-step inputs only take text.
+  if (media) {
+    if (!router.brain) {
+      await router.welcome(ctx)
+      return 'welcome'
+    }
+    if (!(await safeRun(ctx, () => router.brain!(ctx, { text: caption, media })))) return 'error'
+    return 'brain'
+  }
 
   if (/^\/cancel(@\w+)?$/i.test(text) || /^(отмена|✖️ отмена)$/i.test(text)) {
     await ctx.clearState()
@@ -277,6 +335,12 @@ export async function handleUpdate<P>(router: Router<P>, update: TgUpdate, deps:
       if (!(await safeRun(ctx, () => step.run(ctx, state)))) return 'error'
       return 'step'
     }
+  }
+
+  // Free text — a question to the assistant (an unknown /command is not one).
+  if (router.brain && text && !text.startsWith('/')) {
+    if (!(await safeRun(ctx, () => router.brain!(ctx, { text, media: null })))) return 'error'
+    return 'brain'
   }
 
   await router.welcome(ctx)

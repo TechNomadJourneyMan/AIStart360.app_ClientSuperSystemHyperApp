@@ -233,6 +233,28 @@ export const supabaseDocumentStorage: DocumentStorage = {
   },
 }
 
+/**
+ * Server-side upload of an object (service role) — for files that reach the
+ * platform outside the browser uploader, e.g. a document a staff member sends
+ * to the admin bot and attaches to a client (lib/telegram/brain/attach.ts).
+ * The caller puts it under the client's folder (`<userId>/…`), the same rule
+ * checkUploadLocation enforces; an existing object is never overwritten.
+ */
+export async function uploadDocumentObject(loc: StorageLocation, bytes: Buffer, contentType: string): Promise<void> {
+  const { url, key } = serviceConfig()
+  const res = await fetch(objectUrl(url, loc), {
+    method: 'POST',
+    headers: { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': contentType || 'application/octet-stream', 'x-upsert': 'false' },
+    body: new Uint8Array(bytes),
+    cache: 'no-store',
+    signal: AbortSignal.timeout(60_000),
+  }).catch(() => null)
+  if (!res?.ok) {
+    await res?.body?.cancel().catch(() => {})
+    throw new StorageError('UNAVAILABLE', `не удалось сохранить файл в хранилище${res ? ` (HTTP ${res.status})` : ''}`)
+  }
+}
+
 // ─── Injection point ────────────────────────────────────────────────────────
 
 let active: DocumentStorage | null = null

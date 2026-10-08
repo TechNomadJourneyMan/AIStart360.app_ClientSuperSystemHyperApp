@@ -263,3 +263,104 @@ export async function sendDocument(
   }
 }
 
+// ─── Chat actions ────────────────────────────────────────────────────────────
+
+export type ChatAction = 'typing' | 'upload_document' | 'record_voice'
+
+/** «печатает…» for ~5 seconds (https://core.telegram.org/bots/api#sendchataction). Never throws. */
+export function sendChatAction(bot: BotId, chatId: string, action: ChatAction = 'typing', fetchImpl?: typeof fetch): Promise<BotResult<unknown>> {
+  return callApi(bot, 'sendChatAction', { chat_id: chatId, action }, fetchImpl)
+}
+
+/**
+ * Keep «печатает…» visible while a long answer is being prepared: one action
+ * now and one every `everyMs` (Telegram shows it for ~5 s). Returns `stop`.
+ */
+export function startTyping(bot: BotId, chatId: string, fetchImpl?: typeof fetch, everyMs = 4000): () => void {
+  let stopped = false
+  void sendChatAction(bot, chatId, 'typing', fetchImpl)
+  const timer = setInterval(() => {
+    if (!stopped) void sendChatAction(bot, chatId, 'typing', fetchImpl)
+  }, everyMs)
+  // Never keep a process alive only for the indicator.
+  ;(timer as { unref?: () => void }).unref?.()
+  return () => {
+    stopped = true
+    clearInterval(timer)
+  }
+}
+
+// ─── Downloads (getFile) ─────────────────────────────────────────────────────
+
+/** Bot API: «For the moment, bots can download files of up to 20MB in size» (getFile). */
+export const TG_DOWNLOAD_MAX_BYTES = 20 * 1024 * 1024
+
+export type DownloadResult =
+  | { ok: true; bytes: Buffer; filePath: string }
+  | { ok: false; reason: 'not_configured' | 'too_large' | 'not_found' | 'unavailable' }
+
+const FILE_ID_RE = /^[A-Za-z0-9_-]{1,256}$/
+const FILE_PATH_RE = /^[A-Za-z0-9_\-./]{1,256}$/
+
+/**
+ * Download a file a person sent to the bot: getFile → GET
+ * https://api.telegram.org/file/bot<token>/<file_path>. The URL carries the
+ * token, so it is built here and never returned, logged or put into an error.
+ * The body is read with a byte cap (`maxBytes`, ≤ 20 MB — the Bot API limit);
+ * a bigger file is refused before or while downloading. Never throws.
+ */
+export async function downloadTelegramFile(
+  bot: BotId,
+  fileId: string,
+  opts: { maxBytes?: number; fetchImpl?: typeof fetch; timeoutMs?: number } = {},
+): Promise<DownloadResult> {
+  const token = botToken(bot)
+  if (!token) return { ok: false, reason: 'not_configured' }
+  const maxBytes = Math.min(opts.maxBytes ?? TG_DOWNLOAD_MAX_BYTES, TG_DOWNLOAD_MAX_BYTES)
+  if (typeof fileId !== 'string' || !FILE_ID_RE.test(fileId)) return { ok: false, reason: 'not_found' }
+  const info = await callApi<{ file_id: string; file_size?: number; file_path?: string }>(bot, 'getFile', { file_id: fileId }, opts.fetchImpl)
+  if (!info.ok) return { ok: false, reason: /too big/i.test(info.description) ? 'too_large' : info.status === 400 ? 'not_found' : 'unavailable' }
+  const filePath = info.result?.file_path
+  if (typeof info.result?.file_size === 'number' && info.result.file_size > maxBytes) return { ok: false, reason: 'too_large' }
+  if (!filePath || !FILE_PATH_RE.test(filePath) || filePath.includes('..')) return { ok: false, reason: 'not_found' }
+  try {
+    const res = await (opts.fetchImpl ?? fetch)(`https://api.telegram.org/file/bot${token}/${filePath}`, {
+      method: 'GET',
+      signal: AbortSignal.timeout(opts.timeoutMs ?? 30_000),
+    })
+    if (res.status === 404) return { ok: false, reason: 'not_found' }
+    if (!res.ok) return { ok: false, reason: 'unavailable' }
+    const declared = Number(res.headers.get('content-length'))
+    if (Number.isFinite(declared) && declared > maxBytes) {
+      await res.body?.cancel().catch(() => {})
+      return { ok: false, reason: 'too_large' }
+    }
+    const bytes = await readCappedBody(res, maxBytes)
+    return bytes ? { ok: true, bytes, filePath } : { ok: false, reason: 'too_large' }
+  } catch {
+    return { ok: false, reason: 'unavailable' }
+  }
+}
+
+/** Read a response body; null as soon as it exceeds `maxBytes` (the stream is cancelled). */
+async function readCappedBody(res: Response, maxBytes: number): Promise<Buffer | null> {
+  if (!res.body) {
+    const buf = Buffer.from(await res.arrayBuffer())
+    return buf.length > maxBytes ? null : buf
+  }
+  const reader = res.body.getReader()
+  const chunks: Buffer[] = []
+  let total = 0
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    total += value.byteLength
+    if (total > maxBytes) {
+      await reader.cancel().catch(() => {})
+      return null
+    }
+    chunks.push(Buffer.from(value))
+  }
+  return Buffer.concat(chunks, total)
+}
+

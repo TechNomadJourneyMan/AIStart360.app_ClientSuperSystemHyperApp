@@ -161,7 +161,8 @@ describe('expert bot: report review', () => {
   it('/cancel leaves the comment step without a decision', async () => {
     await run(press(signCallback('expert', 'rr.ch', VID)))
     expect(await run(msg('/cancel'))).toBe('cancelled')
-    expect(await run(msg('Теперь это просто текст'))).toBe('welcome')
+    // No pending step any more: free text is a question to the assistant, not a comment.
+    expect(await run(msg('Теперь это просто текст'))).toBe('brain')
     expect(flow.decideReportReview).not.toHaveBeenCalled()
   })
 
