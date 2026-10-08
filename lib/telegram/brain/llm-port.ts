@@ -65,6 +65,8 @@ export interface BrainLlm {
   describeImage(req: { userId: string; dataUrl: string; prompt: string; timeoutMs: number }): Promise<BrainTextResult>
   /** Personal daily AI budget of the person (staff budget). false = spent. Fail-open. */
   withinBudget(userId: string): Promise<boolean>
+  /** Run the turn with the person as the AI actor (ai_usage attribution). */
+  withActor<T>(userId: string, fn: () => Promise<T>): Promise<T>
 }
 
 export const AI_UNAVAILABLE: BrainChatResult & { ok: false } = { ok: false, code: 'AI_UNAVAILABLE', message: 'AI layer not available' }
@@ -178,5 +180,15 @@ export const defaultBrainLlm: BrainLlm = {
     } catch {
       return true
     }
+  },
+
+  async withActor(userId, fn) {
+    let run: typeof import('@/lib/ai/usage').runWithAiActor | null = null
+    try {
+      run = (await import('@/lib/ai/usage')).runWithAiActor
+    } catch {
+      run = null
+    }
+    return run ? run({ userId }, fn) : fn()
   },
 }

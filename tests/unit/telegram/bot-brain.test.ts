@@ -133,6 +133,7 @@ function fakeLlm(script: Step[] = []) {
     transcribe: vi.fn(async () => ({ ok: true as const, text: 'Сколько новых заявок?' })),
     describeImage: vi.fn(async () => ({ ok: true as const, text: 'На фото — отчёт о продажах: выручка **120 млн** ₸.' })),
     withinBudget: vi.fn(async () => true),
+    withActor: vi.fn(async <T,>(_userId: string, fn: () => Promise<T>) => fn()) as BrainLlm['withActor'],
   }
   return llm
 }

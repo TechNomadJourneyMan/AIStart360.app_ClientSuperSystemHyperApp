@@ -18,7 +18,7 @@ import type { StaffPrincipal } from '../bots/admin/context'
 import type { ExpertPrincipal } from '../bots/expert/link'
 import { startTyping } from '../bots/registry'
 import { brainDeps } from './deps'
-import { runTurn } from './engine'
+import { runTurn, type TurnInput } from './engine'
 import { prepareMedia } from './media'
 import type { MemoryBot } from './memory'
 import { mcpScopesFor, toolsFor } from './toolset'
@@ -50,35 +50,40 @@ async function runBrain(ctx: BotContext<unknown>, role: BrainRole, input: BrainI
   }
   const stopTyping = startTyping(ctx.bot, ctx.chatId, ctx.deps.fetchImpl)
   try {
-    const mcpScopes = mcpScopesFor(role)
-    const t: ToolRunContext = {
-      role,
-      scope: await deps.scope(role.userId),
-      pii: mcpScopes.includes('clients:pii'),
-      mcpScopes,
-      now: deps.now(),
-      ctx,
-      deps,
-      turn: { proposed: false, file: null },
-    }
-    let turnInput: Parameters<typeof runTurn>[0]['input']
-    if (input.media) {
-      const prepared = await prepareMedia(ctx, deps, role, input.media, input.text)
-      if (prepared.kind === 'done') return
-      turnInput = prepared.input
-      t.turn.file = prepared.file
-    } else {
-      const text = input.text.slice(0, 4000)
-      turnInput = { text, display: text }
-    }
-    if (!t.turn.file && role.bot === 'admin') t.turn.file = await deps.memory.lastFile(bot, ctx.chatId)
-    await runTurn({ ctx, role, tools: toolsFor(role, mcpScopes), t, deps, input: turnInput })
+    await deps.llm.withActor(role.userId, () => turn(ctx, role, input, deps))
   } catch (err) {
     console.error(`[telegram/brain/${bot}] turn failed:`, err instanceof Error ? err.message.split('\n')[0] : err)
     await ctx.reply(BRAIN_ERROR_TEXT).catch(() => {})
   } finally {
     stopTyping()
   }
+}
+
+async function turn(ctx: BotContext<unknown>, role: BrainRole, input: BrainInput, deps: BrainDeps): Promise<void> {
+  const bot = ctx.bot as MemoryBot
+  const mcpScopes = mcpScopesFor(role)
+  const t: ToolRunContext = {
+    role,
+    scope: await deps.scope(role.userId),
+    pii: mcpScopes.includes('clients:pii'),
+    mcpScopes,
+    now: deps.now(),
+    ctx,
+    deps,
+    turn: { proposed: false, file: null },
+  }
+  let turnInput: TurnInput
+  if (input.media) {
+    const prepared = await prepareMedia(ctx, deps, role, input.media, input.text)
+    if (prepared.kind === 'done') return
+    turnInput = prepared.input
+    t.turn.file = prepared.file
+  } else {
+    const text = input.text.slice(0, 4000)
+    turnInput = { text, display: text }
+  }
+  if (!t.turn.file && role.bot === 'admin') t.turn.file = await deps.memory.lastFile(bot, ctx.chatId)
+  await runTurn({ ctx, role, tools: toolsFor(role, mcpScopes), t, deps, input: turnInput })
 }
 
 export function runAdminBrain(ctx: BotContext<StaffPrincipal>, input: BrainInput): Promise<void> {

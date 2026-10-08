@@ -130,7 +130,7 @@ export const ADMIN_READ_TOOLS: BrainTool[] = [
       const a = (raw as { limit: number })
       const { items, hasMore } = await pendingRegistrations(0, a.limit)
       return {
-        items: items.map((r) => ({ request_user_id: r.user_id, full_name: r.full_name, email: email(r.email, t.pii), organization: r.organization, created_at: iso(r.created_at) })),
+        items: items.map((r) => ({ user_id: r.user_id, full_name: r.full_name, email: email(r.email, t.pii), organization: r.organization, created_at: iso(r.created_at) })),
         has_more: hasMore,
       }
     },
