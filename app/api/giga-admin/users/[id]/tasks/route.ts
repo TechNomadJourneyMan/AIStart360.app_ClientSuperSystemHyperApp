@@ -6,6 +6,7 @@ import { requireGiga } from '@/lib/admin/giga-actor'
 import { recordAdminAction } from '@/lib/admin/audit'
 import { createServiceClient } from '@/lib/supabase-service'
 import { guardClientAccess } from '@/lib/admin/client-scope'
+import { createClientTask } from '@/lib/admin/client-actions'
 
 /**
  * GET  /api/giga-admin/users/:id/tasks — задачи по клиенту.
@@ -66,25 +67,15 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     return NextResponse.json({ ok: false, error: parsed.error.issues[0]?.message ?? 'Неверная задача' }, { status: 400 })
   }
 
-  const { data, error } = await createServiceClient()
-    .from('staff_tasks')
-    .insert({
-      user_id: params.id,
-      title: parsed.data.title,
-      due_at: parsed.data.dueAt ?? null,
-      // Без явного исполнителя задача остаётся за тем, кто её завёл, —
-      // задача без владельца не делается никогда.
-      assignee_id: parsed.data.assigneeId ?? (UUID_RE.test(guard.actor.id) ? guard.actor.id : null),
-      created_by: guard.actor.id,
-    })
-    .select('id, title, due_at, status, assignee_id, created_by, created_at, done_at')
-    .single()
-  if (error) return NextResponse.json({ ok: false, error: 'Не удалось создать задачу' }, { status: 500 })
+  const res = await createClientTask({
+    userId: params.id,
+    title: parsed.data.title,
+    dueAt: parsed.data.dueAt ?? null,
+    assigneeId: parsed.data.assigneeId ?? null,
+    actorId: guard.actor.id,
+    audit: (entry, opts) => recordAdminAction(guard.actor, entry, req, opts),
+  })
+  if (!res.ok) return NextResponse.json({ ok: false, error: res.error }, { status: res.status })
 
-  await recordAdminAction(guard.actor, {
-    action: 'user.task_created', entityType: 'user', entityId: params.id, targetUserId: params.id,
-    metadata: { taskId: (data as { id: string }).id, title: parsed.data.title },
-  }, req)
-
-  return NextResponse.json({ ok: true, data })
+  return NextResponse.json({ ok: true, data: res.task })
 }
