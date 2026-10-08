@@ -66,6 +66,8 @@ const model = await import('@/app/api/giga-admin/ai-providers/models/[modelId]/r
 const routes = await import('@/app/api/giga-admin/ai-providers/routes/route')
 const budgets = await import('@/app/api/giga-admin/ai-providers/budgets/route')
 const spend = await import('@/app/api/giga-admin/ai-providers/spend/route')
+const discover = await import('@/app/api/giga-admin/ai-providers/discover/route')
+const status = await import('@/app/api/giga-admin/ai-providers/status/route')
 
 const SECRET = 'sk-alem-SUPERSECRET-0123456789abcdef'
 const SECRET2 = 'sk-alem-ROTATED-fedcba9876543210zz'
@@ -136,6 +138,7 @@ describe('permissions: refused before the service is called', () => {
     { name: 'delete model', call: () => model.DELETE(req(`/api/giga-admin/ai-providers/models/${ID}`, 'DELETE'), { params: { modelId: ID } }) },
     { name: 'set route', call: () => routes.PUT(req('/api/giga-admin/ai-providers/routes', 'PUT', { capability: 'chat', tier: 'light', modelRowId: null })) },
     { name: 'set budgets', call: () => budgets.PUT(req('/api/giga-admin/ai-providers/budgets', 'PUT', { platformDailyUsd: 1 })) },
+    { name: 'discover models', call: () => discover.POST(req('/api/giga-admin/ai-providers/discover', 'POST', {})) },
   ]
 
   for (const m of mutations) {
@@ -157,6 +160,7 @@ describe('permissions: refused before the service is called', () => {
     { name: 'routes', call: () => routes.GET(req('/api/giga-admin/ai-providers/routes')) },
     { name: 'budgets', call: () => budgets.GET(req('/api/giga-admin/ai-providers/budgets')) },
     { name: 'spend', call: () => spend.GET(req('/api/giga-admin/ai-providers/spend?days=7')) },
+    { name: 'status', call: () => status.GET(req('/api/giga-admin/ai-providers/status')) },
   ]
   for (const r of reads) {
     it(`${r.name}: 403 without agents.view`, async () => {
@@ -172,6 +176,34 @@ describe('permissions: refused before the service is called', () => {
     seedAlem()
     s.role = 'analyst'
     for (const r of reads.filter((x) => x.name !== 'one provider')) expect((await r.call()).status, r.name).toBe(200)
+  })
+})
+
+describe('discovery and «who answers now»', () => {
+  it('discover: GET /models with the key, models added, audited; status shows the answering model without keys', async () => {
+    const { p } = seedAlem()
+    seedCredential({ provider_id: p.id, label: 'main', secret_ciphertext: (await import('@/lib/crypto/secrets')).encryptSecret(SECRET) })
+    const fetchSpy = vi.fn(async () => new Response(JSON.stringify({ data: [{ id: 'alemllm' }, { id: 'alem-embedder' }] }), { status: 200 }))
+    vi.stubGlobal('fetch', fetchSpy)
+    const r = await json(await discover.POST(req('/api/giga-admin/ai-providers/discover', 'POST', { providerId: p.id })))
+    expect(r.status).toBe(200)
+    expect(r.body.results).toEqual([expect.objectContaining({ ok: true, ids: ['alemllm', 'alem-embedder'], added: 1 })])
+    expect((fetchSpy.mock.calls[0] as unknown as [string, RequestInit])[0]).toBe('https://llm.alem.ai/v1/models')
+    expect(s.audits.map((a) => a.entry.action)).toEqual(['ai.models.discover'])
+    expect(fakeDb.models.find((m) => m.model_id === 'alem-embedder')).toMatchObject({ capability: 'embeddings', source: 'discovered' })
+
+    s.role = 'analyst'
+    const st = await json(await status.GET(req('/api/giga-admin/ai-providers/status')))
+    expect(st.status).toBe(200)
+    expect(st.body.slots.find((x: { capability: string; tier: string | null }) => x.capability === 'chat' && x.tier === 'light'))
+      .toMatchObject({ current: { providerKey: 'alem', model: 'alemllm', healthy: true, credentialLabel: 'main' } })
+    expect(st.body.slots.find((x: { capability: string }) => x.capability === 'rerank')).toMatchObject({ current: null, problem: expect.any(String) })
+    expect(st.text).not.toContain(SECRET)
+  })
+
+  it('discover validates the body', async () => {
+    expect((await discover.POST(req('/api/giga-admin/ai-providers/discover', 'POST', { providerId: 'nope' }))).status).toBe(400)
+    expect(s.storeCalls).toBe(0)
   })
 })
 
