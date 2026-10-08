@@ -11,11 +11,14 @@
  *   light    — classification, routing, short summaries      → Claude Haiku 4.5
  *   standard — analysis, findings, structured extraction     → Claude Sonnet 4.5
  *   premium  — final report narrative only, opt-in            → Claude Opus 4.8
- * Overrides, highest first: explicit model (call site / agent_configs
- * model_override) → the owner's route for the tier in ai_routes (094, any
- * provider, lib/ai/providers/router.ts) → AI_MODEL_LIGHT / AI_MODEL_STANDARD /
- * AI_MODEL_PREMIUM env → DEFAULT_TIER_MODELS. Without a configured route every
- * call goes to OpenRouter with OPENROUTER_API_KEY, as before 094.
+ * Candidates, in order (lib/ai/providers/router.ts resolveCandidates): an
+ * explicit model (call site / agent_configs model_override) registered in
+ * ai_models → the owner's route for the tier in ai_routes → an unregistered
+ * explicit model through OpenRouter → any other usable chat model (tier_hint
+ * first, A1) → OpenRouter with AI_MODEL_LIGHT / AI_MODEL_STANDARD /
+ * AI_MODEL_PREMIUM env → DEFAULT_TIER_MODELS. A failover-worthy error moves on
+ * to the next candidate. With nothing configured every call goes to OpenRouter
+ * with OPENROUTER_API_KEY, as before 094.
  *
  * Privacy: client data goes to providers that do not retain/train on it.
  * AI_PRIVACY_MODE = 'deny' (default: provider.data_collection = 'deny'),
