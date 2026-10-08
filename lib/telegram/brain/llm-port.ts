@@ -12,12 +12,15 @@
  *   image input           OpenAI content parts { type: 'image_url', image_url: { url: 'data:…' } } in chatWithTools messages
  *   lib/ai/budget.ts      assertAiBudget(userId, feature) — the staff member's personal daily budget
  *
- * The module is loaded lazily; when it (or the export) is missing — the AI
- * layer is not merged yet, or failed to load — every call answers
- * { ok: false, code: 'AI_UNAVAILABLE' } and the bot says «ИИ временно недоступен».
- * New AiFeature names: 'bot_assistant', 'bot_transcribe', 'bot_vision'
- * (added to lib/ai/usage.ts AI_FEATURES by the AI layer; cast here until then).
+ * Failures of the AI layer ({ ok: false, error, message }) are mapped to
+ * { ok: false, code } — e.g. NOT_CONFIGURED / BUDGET_EXCEEDED — and the brain
+ * answers in Russian. AiFeature names: 'bot_assistant', 'bot_transcribe',
+ * 'bot_vision' (lib/ai/usage.ts AI_FEATURES).
  */
+
+import { chatWithTools, transcribeAudio, type ChatWithToolsResult, type ToolChatMessage } from '@/lib/ai/tools-chat'
+import { assertAiBudget, isAiBudgetError } from '@/lib/ai/budget'
+import { runWithAiActor } from '@/lib/ai/usage'
 
 // ─── Port (what the brain needs) ─────────────────────────────────────────────
 
@@ -73,55 +76,28 @@ export const AI_UNAVAILABLE: BrainChatResult & { ok: false } = { ok: false, code
 
 // ─── Default binding ─────────────────────────────────────────────────────────
 
-type AnyFn = (args: Record<string, unknown>) => Promise<unknown>
 
-/**
- * `@/lib/ai/tools-chat`, loaded once on demand. The specifier is built at
- * runtime (webpack bundles the matching file of lib/ai when it exists) so this
- * file compiles before the module is merged.
- */
-async function loadToolsChat(): Promise<Record<string, unknown> | null> {
-  const name = 'tools-chat'
-  try {
-    return (await import(/* webpackInclude: /tools-chat\.ts$/ */ /* @vite-ignore */ `@/lib/ai/${name}`)) as Record<string, unknown>
-  } catch {
-    return null
-  }
+function failure(r: { error?: string; code?: string }, fallback: string): { ok: false; code: string; message: string } {
+  return { ok: false, code: r.error ?? r.code ?? fallback, message: 'AI call failed' }
 }
 
-async function fn(name: string): Promise<AnyFn | null> {
-  const mod = await loadToolsChat()
-  const f = mod?.[name]
-  return typeof f === 'function' ? (f as AnyFn) : null
-}
-
-function normalizeChat(raw: unknown): BrainChatResult {
-  const r = raw as { ok?: unknown; message?: { content?: unknown; tool_calls?: unknown }; model?: unknown; providerKey?: unknown; code?: unknown } | null
-  if (!r || r.ok !== true) {
-    return { ok: false, code: typeof r?.code === 'string' ? r.code : 'AI_ERROR', message: 'AI call failed' }
-  }
-  const calls = Array.isArray(r.message?.tool_calls) ? r.message!.tool_calls as Array<Record<string, unknown>> : []
+function normalizeChat(r: ChatWithToolsResult): BrainChatResult {
+  if (!r.ok) return failure(r, 'AI_ERROR')
   return {
     ok: true,
     message: {
-      content: typeof r.message?.content === 'string' ? r.message.content : null,
-      tool_calls: calls
-        .map((c) => {
-          // Accept both { id, name, arguments } and OpenAI's { id, function: { name, arguments } }.
-          const f = (c.function ?? c) as Record<string, unknown>
-          return { id: String(c.id ?? ''), name: String(f.name ?? ''), arguments: typeof f.arguments === 'string' ? f.arguments : JSON.stringify(f.arguments ?? {}) }
-        })
+      content: r.message.content ? r.message.content : null,
+      tool_calls: r.message.tool_calls
+        .map((c) => ({ id: c.id, name: c.function.name, arguments: c.function.arguments }))
         .filter((c) => c.id && c.name),
     },
-    model: typeof r.model === 'string' ? r.model : undefined,
-    providerKey: typeof r.providerKey === 'string' ? r.providerKey : undefined,
+    model: r.model,
+    providerKey: r.providerKey,
   }
 }
 
 export const defaultBrainLlm: BrainLlm = {
   async chat(req) {
-    const chatWithTools = await fn('chatWithTools')
-    if (!chatWithTools) return AI_UNAVAILABLE
     try {
       return normalizeChat(await chatWithTools({
         feature: req.feature,
@@ -129,7 +105,7 @@ export const defaultBrainLlm: BrainLlm = {
         companyId: req.companyId ?? null,
         userId: req.userId,
         tier: req.tier,
-        messages: req.messages,
+        messages: req.messages as ToolChatMessage[],
         tools: req.tools,
         ...(req.toolChoice ? { toolChoice: req.toolChoice } : {}),
         timeoutMs: req.timeoutMs,
@@ -141,13 +117,13 @@ export const defaultBrainLlm: BrainLlm = {
   },
 
   async transcribe(req) {
-    const transcribeAudio = await fn('transcribeAudio')
-    if (!transcribeAudio) return { ok: false, code: 'AI_UNAVAILABLE', message: 'AI layer not available' }
     try {
-      const r = (await transcribeAudio({
-        feature: 'bot_transcribe', userId: req.userId, bytes: req.bytes, filename: req.filename, mime: req.mime, language: req.language ?? 'ru',
-      })) as { ok?: unknown; text?: unknown; code?: unknown }
-      return r?.ok === true && typeof r.text === 'string' ? { ok: true, text: r.text } : { ok: false, code: typeof r?.code === 'string' ? r.code : 'AI_ERROR', message: 'transcription failed' }
+      // No language hint by default: the speech model detects Russian / Kazakh itself.
+      const r = await transcribeAudio({
+        feature: 'bot_transcribe', userId: req.userId, bytes: req.bytes, filename: req.filename, mime: req.mime,
+        ...(req.language ? { language: req.language } : {}),
+      })
+      return r.ok ? { ok: true, text: r.text } : failure(r, 'AI_ERROR')
     } catch {
       return { ok: false, code: 'AI_ERROR', message: 'transcription failed' }
     }
@@ -169,26 +145,14 @@ export const defaultBrainLlm: BrainLlm = {
 
   async withinBudget(userId) {
     try {
-      const { assertAiBudget, isAiBudgetError } = await import('@/lib/ai/budget')
-      try {
-        // 'bot_assistant' is added to AI_FEATURES by the AI layer (Part A1).
-        await assertAiBudget(userId, 'bot_assistant' as Parameters<typeof assertAiBudget>[1])
-        return true
-      } catch (err) {
-        return !isAiBudgetError(err)
-      }
-    } catch {
+      await assertAiBudget(userId, 'bot_assistant')
       return true
+    } catch (err) {
+      return !isAiBudgetError(err)
     }
   },
 
-  async withActor(userId, fn) {
-    let run: typeof import('@/lib/ai/usage').runWithAiActor | null = null
-    try {
-      run = (await import('@/lib/ai/usage')).runWithAiActor
-    } catch {
-      run = null
-    }
-    return run ? run({ userId }, fn) : fn()
+  withActor(userId, fn) {
+    return runWithAiActor({ userId }, fn)
   },
 }

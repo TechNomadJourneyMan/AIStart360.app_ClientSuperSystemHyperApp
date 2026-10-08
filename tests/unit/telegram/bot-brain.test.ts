@@ -271,9 +271,9 @@ describe('bot assistant', () => {
     await admin(msg('Привет'))
     expect(api.lastText()).toContain('ИИ временно недоступен')
     expect(api.texts().join(' ')).not.toContain('ECONNREFUSED')
-    // The real binding before the AI layer is merged: lib/ai/tools-chat does not exist.
+    // The real binding maps an AI-layer failure ({ error }) to { code }.
     expect(await defaultBrainLlm.chat({ feature: 'bot_assistant', label: 't', userId: STAFF_ID, tier: 'light', messages: [], tools: [], timeoutMs: 1000 }))
-      .toMatchObject({ ok: false, code: 'AI_UNAVAILABLE' })
+      .toMatchObject({ ok: false, code: 'INVALID_INPUT' })
   })
 
   it('tier: light for short questions, standard for analysis or documents', () => {

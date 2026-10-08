@@ -82,7 +82,7 @@ export async function prepareMedia(ctx: BotContext<unknown>, deps: BrainDeps, ro
   }
 
   if (media.kind === 'voice' || media.kind === 'audio') {
-    const r = await deps.llm.transcribe({ userId: role.userId, bytes: dl.bytes, filename: media.fileName ?? 'voice.ogg', mime: media.mime ?? 'audio/ogg', language: 'ru' })
+    const r = await deps.llm.transcribe({ userId: role.userId, bytes: dl.bytes, filename: media.fileName ?? 'voice.ogg', mime: media.mime ?? 'audio/ogg' })
     if (!r.ok) {
       await ctx.reply(/UNAVAILABLE|NO_API_KEY|NO_ROUTE/i.test(r.code)
         ? '🤖 Распознавание речи сейчас недоступно. Напишите вопрос текстом.'
