@@ -5,6 +5,10 @@
  * Company-scoped agents need a company; platform agents run without one.
  * Optional JSON input is validated here as an object and by the agent's own
  * schema on the server.
+ *
+ * Diagnostic pipeline stages («Сбор данных», …) cannot run on their own (they
+ * need a diagnostic session): for them the dialog starts the whole diagnostic
+ * of the chosen company instead (the orchestrator, run-model.ts).
  */
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
@@ -13,6 +17,7 @@ import { toast } from 'sonner'
 import { Button, Field, Modal, cx, gigaFetch, inputClass } from '../kit'
 import { CompanyPicker, type PickedCompany } from './CompanyPicker'
 import { parseRunInput, scopeLabel } from './model'
+import { diagnosticRunRequest, pipelineStageLabel } from './run-model'
 
 export interface RunnableAgent { key: string; name: string; scope: 'company' | 'platform'; enabled: boolean }
 
@@ -36,21 +41,29 @@ export function RunAgentDialog({ agent, open, onClose, onStarted, base }: {
   }, [open, agent?.key])
 
   if (!agent) return null
+  const stage = pipelineStageLabel(agent.key)
   const parsed = parseRunInput(inputText)
-  const needsCompany = agent.scope === 'company'
-  const ready = agent.enabled && parsed.ok && (!needsCompany || !!company)
+  const needsCompany = agent.scope === 'company' || !!stage
+  const ready = stage ? !!company : agent.enabled && parsed.ok && (!needsCompany || !!company)
 
   const run = async () => {
-    if (!parsed.ok) return
+    if (!parsed.ok && !stage) return
     setBusy(true)
     setError(null)
     try {
-      const body: Record<string, unknown> = {}
-      if (needsCompany && company) body.companyId = company.id
-      if (parsed.value) body.input = parsed.value
-      const r = await gigaFetch<{ taskId: string }>(`/api/giga-admin/agents/${encodeURIComponent(agent.key)}/run`, { method: 'POST', json: body })
+      let r: { taskId: string }
+      if (stage) {
+        const d = diagnosticRunRequest(company!.id, stage)
+        r = await gigaFetch<{ taskId: string }>(d.url, { method: 'POST', json: d.body })
+        toast.success(company!.name ? `Диагностика компании «${company!.name}» запущена` : 'Диагностика компании запущена')
+      } else {
+        const body: Record<string, unknown> = {}
+        if (needsCompany && company) body.companyId = company.id
+        if (parsed.ok && parsed.value) body.input = parsed.value
+        r = await gigaFetch<{ taskId: string }>(`/api/giga-admin/agents/${encodeURIComponent(agent.key)}/run`, { method: 'POST', json: body })
+        toast.success(`${agent.name}: задача поставлена в очередь`)
+      }
       setTaskId(r.taskId)
-      toast.success(`${agent.name}: задача поставлена в очередь`)
       onStarted?.(r.taskId)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Не удалось запустить агента')
@@ -63,7 +76,7 @@ export function RunAgentDialog({ agent, open, onClose, onStarted, base }: {
     <Modal
       open={open}
       onClose={busy ? () => {} : onClose}
-      title={`Запустить: ${agent.name}`}
+      title={stage ? 'Запустить диагностику компании' : `Запустить: ${agent.name}`}
       footer={taskId ? (
         <>
           <Button variant="ghost" onClick={onClose}>Закрыть</Button>
@@ -74,7 +87,7 @@ export function RunAgentDialog({ agent, open, onClose, onStarted, base }: {
       ) : (
         <>
           <Button variant="ghost" onClick={onClose} disabled={busy}>Отмена</Button>
-          <Button variant="primary" icon={<Play size={13} />} loading={busy} disabled={!ready} onClick={() => void run()}>Запустить</Button>
+          <Button variant="primary" icon={<Play size={13} />} loading={busy} disabled={!ready} onClick={() => void run()}>{stage ? 'Запустить диагностику компании' : 'Запустить'}</Button>
         </>
       )}
     >
@@ -82,10 +95,24 @@ export function RunAgentDialog({ agent, open, onClose, onStarted, base }: {
         <div className="flex items-start gap-3 rounded-xl border border-emerald-500/25 bg-emerald-500/[0.08] p-3">
           <CheckCircle2 size={18} className="mt-0.5 shrink-0 text-emerald-400" />
           <div className="text-xs text-slate-300">
-            <p className="font-medium text-emerald-200">Задача поставлена в очередь</p>
+            <p className="font-medium text-emerald-200">{stage ? 'Диагностика поставлена в очередь' : 'Задача поставлена в очередь'}</p>
             <p className="mt-1">Исполнитель возьмёт её в ближайшие секунды. Статус, попытки, вызовы инструментов и стоимость — на странице задачи.</p>
             <p className="mt-1 font-mono text-[10px] text-slate-500">{taskId}</p>
           </div>
+        </div>
+      ) : stage ? (
+        <div className="space-y-4 text-xs" data-testid="stage-run">
+          <p className="rounded-xl border border-blue-500/25 bg-blue-500/[0.08] px-3 py-2 leading-relaxed text-blue-100">
+            «{stage}» — этап диагностики компании. Отдельно он не запускается: этапы работают только внутри диагностики и идут по порядку
+            (сбор данных → метрики → качество данных → бенчмарки → гипотезы → рекомендации).
+          </p>
+          <p className="leading-relaxed text-slate-400">
+            Запустите диагностику выбранной компании — оркестратор откроет сессию и выполнит все этапы, включая «{stage}». Запуск записывается в журнал аудита.
+          </p>
+          <Field label="Для какой компании" hint="Диагностика работает только с данными выбранной компании.">
+            <CompanyPicker value={company} onChange={setCompany} autoFocus />
+          </Field>
+          {error && <p role="alert" className="rounded-xl border border-red-500/25 bg-red-500/10 px-3 py-2 text-[11px] text-red-200">{error}</p>}
         </div>
       ) : (
         <div className="space-y-4 text-xs">

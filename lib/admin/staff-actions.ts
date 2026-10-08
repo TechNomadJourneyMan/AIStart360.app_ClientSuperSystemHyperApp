@@ -14,6 +14,7 @@ import { listAgentOverviews, cancelTask, retryTask, updateAgentConfig, type Conf
 import { enqueueAgentTask, kickTask } from '@/lib/agents/queue'
 import { getAgent } from '@/lib/agents/registry'
 import { prisma } from '@/lib/db'
+import { STAGE_LABELS, isDiagnosticStage } from '@/lib/diagnostics/pipeline'
 import { getReportVersion, publishReportVersion, retireReportVersion, type TransitionResult } from '@/lib/reports/versions'
 import { reviewItem, reviewItemCompany, type ReviewKind, type ReviewResult } from '@/lib/reports/review'
 
@@ -35,6 +36,15 @@ export async function runAgentManually(args: {
 }): Promise<RunAgentResult> {
   const def = getAgent(args.key)
   if (!def) return { ok: false, code: 'not_found', error: 'Агент не найден' }
+  // A pipeline stage needs a diagnostic session (it would fail with NO_SESSION):
+  // the orchestrator (`diagnostic_orchestrator`) opens one and runs the stages.
+  if (isDiagnosticStage(def.key)) {
+    return {
+      ok: false,
+      code: 'bad_request',
+      error: `Этап «${STAGE_LABELS[def.key]}» запускается только внутри диагностики компании. Запустите диагностику компании — все этапы пройдут по порядку.`,
+    }
+  }
   const companyId = args.companyId ?? undefined
   if (def.scope === 'company') {
     if (!companyId) return { ok: false, code: 'bad_request', error: 'Выберите компанию' }

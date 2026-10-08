@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { DataTable, EmptyState, HoverCard, fmtAgo, fmtDateTime, type Column } from '../kit'
 import { durationBetween, fmtDuration, fmtUsd, taskStatusMeta, triggerLabel } from './model'
+import { errorCodeText } from './run-model'
 import type { TaskRow } from './types'
 import { StatusChip } from './ui'
 
@@ -68,6 +69,7 @@ export function TasksTable({ rows, loading, base, agentNames, hideAgent, onCompa
           {() => (
             <div className="text-xs">
               <p className="font-mono text-[11px] text-red-300">{t.last_error_code || 'Ошибка'}</p>
+              {errorCodeText(t.last_error_code) && <p className="mt-1 text-slate-200">{errorCodeText(t.last_error_code)}</p>}
               {t.last_error && <p className="mt-1 whitespace-pre-wrap break-words text-slate-300">{t.last_error}</p>}
             </div>
           )}
