@@ -3,6 +3,7 @@
     { "path": "/api/cron/billing-expiry", "schedule": "15 0 * * *" },
     { "path": "/api/cron/staff-digest", "schedule": "0 3 * * *" },
     { "path": "/api/cron/crm-digest", "schedule": "0 4 * * *" },
+    { "path": "/api/cron/agents-digest", "schedule": "0 4 * * *" },
     { "path": "/api/cron/client-digest", "schedule": "0 4 * * 1" },
     { "path": "/api/telegram/personal/sync", "schedule": "0 5 * * *" },
     { "path": "/api/cron/reminders", "schedule": "0 6 * * *" },
