@@ -10,6 +10,12 @@ import { materializeAll, sourceIdentity, staleMetricRowIds } from '@/lib/metrics
 import { getMetricById } from '@/lib/metrics/registry'
 import type { ResolverContext } from '@/lib/metrics/types'
 
+// The data layer (metric_facts / data_discrepancies) has its own tests
+// (tests/unit/data-layer/sync.test.ts); this fake client only knows public.metrics.
+vi.mock('@/lib/data-layer/sync', () => ({
+  syncDataLayer: vi.fn(async () => ({ facts: 0, opened: 0, updated: 0, autoResolved: 0, openedDrafts: [], error: null })),
+}))
+
 const CAC_BUDGET = { type: 'survey', step: 9, key: 's9n_expense_marketing', label: 'Расходы: маркетинг' }
 
 describe('staleMetricRowIds', () => {

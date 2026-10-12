@@ -7,6 +7,7 @@
 //     resolve + upsert into public.metrics with provenance.
 // ============================================================
 
+import { syncDataLayer, type DataLayerSyncResult } from '@/lib/data-layer/sync'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { MetricSource } from './format'
 import { resolveAllMetrics, resolveMetric } from './resolver'
@@ -15,6 +16,7 @@ import { loadIntegrationSignals } from '@/lib/integrations/signals'
 import type {
   MaterializedRow,
   MetricValue,
+  PeriodOverride,
   PeriodQuarter,
   ResolverContext,
   ResolverDocument,
@@ -91,7 +93,7 @@ export async function gatherResolverContext(
   opts: GatherContextOptions,
 ): Promise<ResolverContext> {
   const now = opts.now ?? new Date()
-  const [surveyResult, docsResult, gri, externalSignals] = await Promise.all([
+  const [surveyResult, docsResult, gri, externalSignals, overrides] = await Promise.all([
     supabase
       .from('survey_answers')
       .select('question_key, answer, answered_at')
@@ -106,6 +108,7 @@ export async function gatherResolverContext(
     opts.externalSignals !== undefined
       ? Promise.resolve(opts.externalSignals)
       : loadIntegrationSignals(supabase, opts.companyId, now),
+    periodOverrides(supabase, opts),
   ])
 
   // «Could not read the inputs» must never look like «no inputs»: the
@@ -144,12 +147,41 @@ export async function gatherResolverContext(
     prismaSignals: opts.prismaSignals,
     externalSignals,
     manualOverrides: opts.manualOverrides,
+    periodOverrides: overrides,
     griSections: gri.sections,
     griAssessedAt: gri.at,
     preferPeriodYear: opts.preferPeriodYear,
     preferPeriodQuarter: opts.preferPeriodQuarter,
     now,
   }
+}
+
+/**
+ * Values the owner / an expert set for a period (public.metric_overrides,
+ * migration 110). Before the migration the table does not exist → none. Any
+ * other failure throws like the other inputs.
+ */
+async function periodOverrides(supabase: SupabaseClient, opts: GatherContextOptions): Promise<PeriodOverride[]> {
+  if (!opts.companyId) return []
+  const res = await supabase
+    .from('metric_overrides')
+    .select('id, metric_key, period_key, value, note, set_by, updated_at')
+    .eq('company_id', opts.companyId)
+  if (res.error) {
+    if (res.error.code === '42P01') return []
+    throw new Error(`metrics: period overrides read failed (${res.error.code ?? 'unknown'})`)
+  }
+  return ((res.data ?? []) as Array<Record<string, unknown>>)
+    .map((r) => ({
+      id: String(r.id),
+      metricId: String(r.metric_key),
+      periodKey: String(r.period_key),
+      value: Number(r.value),
+      note: (r.note as string | null) ?? null,
+      setBy: (r.set_by as string | null) ?? null,
+      setAt: (r.updated_at as string | null) ?? null,
+    }))
+    .filter((o) => Number.isFinite(o.value))
 }
 
 // ─── Row mapping ─────────────────────────────────────────────
@@ -365,7 +397,7 @@ const METRICS_CONFLICT_TARGET = 'company_id,metric_key,period_year,period_quarte
 export async function materializeAll(
   supabase: SupabaseClient,
   ctx: ResolverContext,
-): Promise<{ result: MaterializeResult; values: MetricValue[] }> {
+): Promise<{ result: MaterializeResult; values: MetricValue[]; dataLayer?: DataLayerSyncResult }> {
   const values = resolveAllMetrics(ctx)
   const rows: MaterializedRow[] = []
   const errors: MaterializeResult['errors'] = []
@@ -421,7 +453,16 @@ export async function materializeAll(
     }
   }
 
+  // The period facts and discrepancies of the same inputs (migration 110).
+  // Never fails the materialisation.
+  let dataLayer: DataLayerSyncResult | undefined
+  if (!error) {
+    dataLayer = await syncDataLayer(supabase, ctx)
+    if (dataLayer.error && dataLayer.error !== 'not_migrated') errors.push({ metricId: '*data-layer', error: dataLayer.error })
+  }
+
   return {
+    dataLayer,
     result: {
       total: values.length,
       written: error ? 0 : rows.length,
