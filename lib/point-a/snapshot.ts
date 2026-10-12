@@ -27,6 +27,7 @@ import { RESOLVED_INPUT_METRICS, resolvedInputsFromValues } from './resolved-inp
 import { calculatePointAV4, toCompatPointA, type PointAV4, type V4Block } from './v4/engine'
 import { BLOCK_LIBRARY } from './v4/config'
 import { loadBlockConfig } from './v4/store'
+import { carryOverHypotheses } from './v4/hypotheses'
 import { changeReasons, hashOf, inputsHash, type ChangeReason, type SnapshotInputs } from './snapshot-diff'
 
 export type SnapshotTrigger = 'event' | 'manual' | 'schedule' | 'expert'
@@ -59,7 +60,7 @@ export interface SnapshotDeps {
   materialize: (service: SupabaseClient, companyId: string, ownerId: string) => Promise<{ values: MetricValue[]; surveyAnswers: Record<string, unknown> }>
   useV4: () => Promise<boolean>
   store: typeof import('./diagnostic-row').storeCurrentDiagnostic
-  afterWrite: (o: { companyId: string; ownerId: string; diagnosticId: string; snapshotId: string | null; engine: 'v1' | 'v4'; written: PointA; changes: ChangeReason[]; trigger: SnapshotTrigger; locale: string }) => void
+  afterWrite: (o: { companyId: string; ownerId: string; diagnosticId: string; snapshotId: string | null; engine: 'v1' | 'v4'; written: PointA; changes: ChangeReason[]; trigger: SnapshotTrigger; locale: string; blocks: V4Block[]; industry: string | null }) => void
 }
 
 const defaultDeps: SnapshotDeps = {
@@ -89,8 +90,26 @@ const defaultDeps: SnapshotDeps = {
       const baseUrl = internalBaseUrl({})
       if (process.env.OPENROUTER_API_KEY && baseUrl) fireAiFanOut({ baseUrl, diagnosticId: o.diagnosticId, userId: o.ownerId, locale: o.locale })
       startDiagnosticPipeline({ companyId: o.companyId, diagnosticId: o.diagnosticId, requestedBy: 'system:point-a', trigger: o.trigger === 'manual' ? 'manual' : 'event', reason: 'пересчёт Точки А после изменения данных' })
+      if (o.snapshotId && process.env.OPENROUTER_API_KEY) await addHypotheses(o.snapshotId, o.blocks, o.industry, o.ownerId)
     })().catch((err) => console.error('[point-a/snapshot] after-write failed', err instanceof Error ? err.message : err))
   },
+}
+
+/** AI hypotheses of the blocks without data, written into the snapshot (budget-guarded). */
+async function addHypotheses(snapshotId: string, blocks: V4Block[], industry: string | null, ownerId: string): Promise<void> {
+  const { blocksNeedingHypothesis, generateHypotheses } = await import('./v4/hypotheses')
+  if (!blocksNeedingHypothesis(blocks).length) return
+  const { assertAiBudget, isAiBudgetError } = await import('@/lib/ai/budget')
+  try {
+    await assertAiBudget(ownerId, 'point_a_hypothesis')
+  } catch (err) {
+    if (isAiBudgetError(err)) return
+    throw err
+  }
+  const { blocks: withHyp, generated } = await generateHypotheses(blocks, { industry, userId: ownerId })
+  if (!generated) return
+  const { error } = await createServiceClient().from('point_a_snapshots').update({ blocks: withHyp }).eq('id', snapshotId)
+  if (error) console.error('[point-a/snapshot] hypotheses not stored', error.code ?? '', error.message ?? '')
 }
 
 function missingTable(e: { code?: string } | null | undefined): boolean {
@@ -157,7 +176,9 @@ export async function buildPointASnapshot(companyId: string, opts: SnapshotOptio
   const config = await loadBlockConfig(service, companyId, industry)
   const resolved = resolvedInputsFromValues(values)
   const v1 = calculatePointA(surveyAnswers, resolved)
-  const v4 = calculatePointAV4({ answers: surveyAnswers, resolved, blocks: config.blocks, conflictMetrics: new Set(conflicts) })
+  const computed = calculatePointAV4({ answers: surveyAnswers, resolved, blocks: config.blocks, conflictMetrics: new Set(conflicts) })
+  // AI hypotheses of blocks whose inputs did not change are kept (no new AI call).
+  const v4: PointAV4 = { ...computed, blocks: carryOverHypotheses(computed.blocks, prev?.blocks) }
 
   const inputs = snapshotInputs(values, surveyAnswers, conflicts, config.version)
   const hash = inputsHash(inputs)
@@ -201,6 +222,6 @@ export async function buildPointASnapshot(companyId: string, opts: SnapshotOptio
   if (ins.error) console.error('[point-a/snapshot] snapshot not stored', ins.error.code ?? '', ins.error.message ?? '')
   const snapshotId = (ins.data as { id?: string } | null)?.id ?? null
 
-  deps.afterWrite({ companyId, ownerId, diagnosticId, snapshotId, engine, written, changes, trigger: opts.trigger, locale: opts.locale ?? 'ru' })
+  deps.afterWrite({ companyId, ownerId, diagnosticId, snapshotId, engine, written, changes, trigger: opts.trigger, locale: opts.locale ?? 'ru', blocks: v4.blocks, industry })
   return { status: 'written', snapshotId, diagnosticId, diagnostic: stored.diag, engine, written, v4, changes }
 }

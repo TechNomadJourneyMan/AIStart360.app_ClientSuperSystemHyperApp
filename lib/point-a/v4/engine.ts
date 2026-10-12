@@ -24,6 +24,7 @@ import type { BlockScore, DiagnosticStage, PointA } from '@/types/onboarding'
 import { BLOCK_LIBRARY, type BlockKey, type EffectiveBlock } from './config'
 import { answeredSteps, CHECK_LABELS, isAnswered } from './check-inputs'
 import { productChecks, teamChecks } from './extra-blocks'
+import { hashOf } from '../snapshot-diff'
 
 export const POINT_A_V4_ENGINE = 'engine:point_a_v4'
 
@@ -66,7 +67,9 @@ export interface V4Block {
   needs: string[]
   /** Open data discrepancies of the block's metrics. */
   conflicts: string[]
-  /** AI estimate of a block without data (phase 2b) — never a FACT. */
+  /** Hash of what the block's checks found — an AI hypothesis is reused while it stays the same. */
+  inputsHash: string
+  /** AI estimate of a block without data — never a FACT. */
   hypothesis?: V4Hypothesis
 }
 
@@ -145,6 +148,7 @@ function scoreBlock(eb: EffectiveBlock, raw: PointACheck[], ctx: { aliased: Reco
     recommendations: answered.filter((c) => c.rec).map((c) => c.rec as string).slice(0, 3),
     needs: included.filter((c) => !c.answered).map((c) => c.missing ?? `Не заполнено: ${CHECK_LABELS[c.id] ?? c.id}`).slice(0, 5),
     conflicts,
+    inputsHash: hashOf(checks.map((c) => [c.id, c.answered, c.earned, c.issue ?? null])),
   }
 }
 
