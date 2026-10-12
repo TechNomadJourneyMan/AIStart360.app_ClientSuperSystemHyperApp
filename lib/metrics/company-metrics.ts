@@ -34,12 +34,12 @@ export interface MetricRowLike {
   period_month?: number | null
 }
 
-/** Tie-break between rows computed at the same instant. */
+/** Tie-break between rows computed at the same instant (the survey is the base — spec 2026-10-12 §1.4). */
 const SOURCE_RANK: Readonly<Record<string, number>> = {
   manual: 7,
-  document: 6,
-  calculated: 5,
-  survey: 4,
+  survey: 6,
+  document: 5,
+  calculated: 4,
   prisma: 3,
   external: 2,
   resolver: 1,
@@ -56,7 +56,19 @@ function numeric(v: number | string | null | undefined): number | null {
   return Number.isFinite(n) ? n : null
 }
 
-/** The current row per metric key: a value, newest computation, then the stronger source. */
+/** End of the row's calendar period in months, null when the row has no period. */
+function rowPeriod(r: MetricRowLike): number | null {
+  if (typeof r.period_year !== 'number') return null
+  const q = r.period_quarter ? Number(String(r.period_quarter).replace(/^q/i, '')) : null
+  const end = typeof r.period_month === 'number' ? r.period_month : q && q >= 1 && q <= 4 ? q * 3 : 12
+  return r.period_year * 12 + end
+}
+
+/**
+ * The current row per metric key: a value; of two rows with a calendar period
+ * the more recent period; otherwise the newest computation, then the stronger
+ * source.
+ */
 export function currentMetricRows<T extends MetricRowLike>(rows: ReadonlyArray<T>): Map<string, T> {
   const out = new Map<string, T>()
   for (const r of rows) {
@@ -64,6 +76,12 @@ export function currentMetricRows<T extends MetricRowLike>(rows: ReadonlyArray<T
     const prev = out.get(r.metric_key)
     if (!prev) {
       out.set(r.metric_key, r)
+      continue
+    }
+    const rp = rowPeriod(r)
+    const pp = rowPeriod(prev)
+    if (rp !== null && pp !== null && rp !== pp) {
+      if (rp > pp) out.set(r.metric_key, r)
       continue
     }
     const d = ts(r) - ts(prev)

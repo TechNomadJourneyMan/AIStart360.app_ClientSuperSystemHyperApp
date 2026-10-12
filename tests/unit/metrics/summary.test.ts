@@ -74,12 +74,12 @@ describe('buildMetricSummaries', () => {
     expect(out[0]).toMatchObject({ rawValue: 18, label: 'Валовая маржа', displayValue: '18%' })
   })
 
-  it('on equal computation time the stronger source wins', () => {
+  it('on equal computation time the stronger source wins (the survey is the base, spec 2026-10-12 §1.4)', () => {
     const out = buildMetricSummaries(['biz.finansy.vyruchka_god'], [
-      row('biz.finansy.vyruchka_god', 40_000_000, { source: 'survey' }),
       row('biz.finansy.vyruchka_god', 52_000_000, { source: 'document' }),
+      row('biz.finansy.vyruchka_god', 40_000_000, { source: 'survey' }),
     ], [])
-    expect(out[0].rawValue).toBe(52_000_000)
+    expect(out[0].rawValue).toBe(40_000_000)
   })
 })
 
