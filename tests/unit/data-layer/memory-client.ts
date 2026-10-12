@@ -32,7 +32,10 @@ export function memoryClient(tables: Record<string, Row[]> = {}, opts: { missing
           if (cap !== null) found = found.slice(0, cap)
           out = single ? found[0] ?? null : found
         }
-        if (op === 'delete') db[table] = rows.filter((r) => !match(r))
+        if (op === 'delete') {
+          out = rows.filter(match)
+          db[table] = rows.filter((r) => !match(r))
+        }
         if (op === 'insert') {
           for (const p of Array.isArray(payload) ? payload : [payload!]) {
             const row = { id: `id${++seq}`, created_at: new Date(2026, 0, seq).toISOString(), ...p }
@@ -46,8 +49,10 @@ export function memoryClient(tables: Record<string, Row[]> = {}, opts: { missing
           for (const p of Array.isArray(payload) ? payload : [payload!]) {
             const hit = rows.find((r) => conflict.every((c) => r[c] === p[c]))
             if (hit) Object.assign(hit, p)
-            else rows.push({ id: `id${++seq}`, ...p })
+            else rows.push({ id: `id${++seq}`, created_at: new Date(2026, 0, seq).toISOString(), ...p })
+            inserted.push(hit ?? rows[rows.length - 1])
           }
+          if (single) out = inserted[0] ?? null
         }
         return { data: out, error: null }
       }

@@ -11,6 +11,9 @@ export const dynamic = 'force-dynamic'
 import { NextResponse, type NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { dbError } from '@/lib/api-error'
+import { createServiceClient } from '@/lib/supabase-service'
+import { syncRevenueGoal } from '@/lib/goals/store'
+import { emitPlatformEventSafely } from '@/lib/events/platform'
 
 interface TargetsBody {
   target_revenue_12m_kzt?: number | null
@@ -89,6 +92,25 @@ export async function PATCH(req: NextRequest) {
 
   if (error) {
     return dbError('v1/companies/targets', error)
+  }
+
+  // The goals live in metric_targets (lib/goals/store.ts): mirror the revenue
+  // targets there and let Point A / Point B recalculate. A failed mirror is
+  // logged — the targets themselves are saved.
+  if (data?.id) {
+    const companyId = String(data.id)
+    try {
+      const service = createServiceClient()
+      for (const [field, period] of [['target_revenue_12m_kzt', '12m'], ['target_revenue_3y_kzt', '3y']] as const) {
+        if (field in patch) await syncRevenueGoal(service, companyId, period, patch[field], user.id)
+      }
+    } catch (err) {
+      console.error('[v1/companies/targets] goal mirror failed', err instanceof Error ? err.message : err)
+    }
+    emitPlatformEventSafely({
+      name: 'TARGET_CHANGED', companyId, subjectType: 'company', subjectId: companyId, actor: `user:${user.id}`,
+      payload: { fields: Object.keys(patch) }, dedupeKey: `target_changed:${companyId}:${Date.now()}`,
+    })
   }
 
   return NextResponse.json({

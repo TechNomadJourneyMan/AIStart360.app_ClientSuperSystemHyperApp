@@ -16,6 +16,7 @@ import {
 import { buildSurveySummary, syncSurveyToGoogleSheet } from '@/lib/survey/export'
 import { spreadsheetUrl } from '@/lib/integrations/google-sheets'
 import { annualGoalFromAnswers } from '@/lib/survey/targets'
+import { syncRevenueGoal } from '@/lib/goals/store'
 import { claimCompletionNotice, shouldAnnounceCompletion } from '@/lib/survey/completion-notice'
 import { createServiceClient } from '@/lib/supabase-service'
 import { runInBackground } from '@/lib/background'
@@ -341,6 +342,10 @@ async function syncCompanyTargetsFromAnswers(
     if (!Object.keys(patch).length) return
     patch.updated_at = new Date().toISOString()
     await sb.from('companies').update(patch).eq('id', company.id)
+    // The goals live in metric_targets (lib/goals/store.ts): mirror there too.
+    const service = createServiceClient()
+    if (typeof patch.target_revenue_12m_kzt === 'number') await syncRevenueGoal(service, String(company.id), '12m', patch.target_revenue_12m_kzt, userId)
+    if (typeof patch.target_revenue_3y_kzt === 'number') await syncRevenueGoal(service, String(company.id), '3y', patch.target_revenue_3y_kzt, userId)
   } catch (e) {
     console.error('[onboarding/survey] target sync failed', e)
   }
