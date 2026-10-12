@@ -45,6 +45,8 @@ export interface Fact {
   observedAt: string | null
   /** Survey value that describes the current situation (no year of its own). */
   current?: boolean
+  /** Manual facts: signature of the other sources when the value was set. */
+  basis?: string | null
   note?: string
 }
 

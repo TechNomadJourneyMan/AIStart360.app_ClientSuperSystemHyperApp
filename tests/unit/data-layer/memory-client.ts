@@ -7,6 +7,8 @@ export function memoryClient(tables: Record<string, Row[]> = {}, opts: { missing
   let seq = 0
   const db: Record<string, Row[]> = { metric_facts: [], data_discrepancies: [], metric_overrides: [], ...tables }
   const client = {
+    // replace_metric_facts (migration 111) is not emulated: the caller falls back to delete + insert.
+    rpc: async () => ({ data: null, error: { code: 'PGRST202', message: 'Could not find the function' } }),
     from(table: string) {
       let op: 'select' | 'delete' | 'insert' | 'update' | 'upsert' = 'select'
       let payload: Row | Row[] | null = null

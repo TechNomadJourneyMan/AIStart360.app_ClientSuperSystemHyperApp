@@ -135,15 +135,16 @@ function documentFacts(entry: MetricEntry, ctx: ResolverContext, seen: Set<strin
 function overrideFacts(entry: MetricEntry, ctx: ResolverContext): Fact[] {
   return (ctx.periodOverrides ?? [])
     .filter((o) => o.metricId === entry.id && Number.isFinite(o.value))
-    .map((o) =>
-      fact(entry, parsePeriodKey(o.periodKey), o.value, {
+    .map((o) => ({
+      ...fact(entry, parsePeriodKey(o.periodKey), o.value, {
         sourceKind: 'manual',
         sourceRef: `manual:${o.id}`,
         confidence: 1,
         observedAt: o.setAt ?? null,
         ...(o.note ? { note: o.note } : {}),
       }),
-    )
+      basis: o.basis ?? null,
+    }))
 }
 
 function integrationFacts(entry: MetricEntry, ctx: ResolverContext): Fact[] {

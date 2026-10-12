@@ -165,7 +165,7 @@ async function periodOverrides(supabase: SupabaseClient, opts: GatherContextOpti
   if (!opts.companyId) return []
   const res = await supabase
     .from('metric_overrides')
-    .select('id, metric_key, period_key, value, note, set_by, updated_at')
+    .select('*')
     .eq('company_id', opts.companyId)
   if (res.error) {
     if (res.error.code === '42P01' || res.error.code === 'PGRST205') return []
@@ -180,6 +180,7 @@ async function periodOverrides(supabase: SupabaseClient, opts: GatherContextOpti
       note: (r.note as string | null) ?? null,
       setBy: (r.set_by as string | null) ?? null,
       setAt: (r.updated_at as string | null) ?? null,
+      basis: (r.basis_signature as string | null | undefined) ?? null,
     }))
     .filter((o) => Number.isFinite(o.value))
 }

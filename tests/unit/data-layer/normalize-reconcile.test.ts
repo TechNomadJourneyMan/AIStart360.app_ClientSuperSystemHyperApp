@@ -102,3 +102,25 @@ describe('reconcile', () => {
     expect(conflicts[0].candidates.map((c) => c.value)).toEqual([10_000_000, 14_000_000])
   })
 })
+
+describe('review fixes', () => {
+  it('I2: several invalid values of one period are ONE discrepancy', () => {
+    const d = reconcile([f(null, 1, 'survey', 'a', { flags: ['invalid'] }), f(null, 2, 'document', 'b', { flags: ['invalid'] })])
+    expect(d.filter((x) => x.kind === 'invalid')).toHaveLength(1)
+    expect(d[0].candidates).toHaveLength(2)
+  })
+
+  it('I1: a monthly answer ×12 does not conflict with the yearly answer of the same year', () => {
+    expect(reconcile([f(2026, 66_000_000, 'survey', 'survey:s1_current_revenue_year'), f(2026, 80_000_000, 'survey', 'survey:s1_current_revenue_month', { flags: ['rescaled'] })])).toEqual([])
+  })
+
+  it('I5: a manual value reopens when the other sources change, not before', () => {
+    const basis = 'document:d1#revenue=14000000|survey:s9n_revenue_2024=10000000'
+    const manual = f(2024, 12_000_000, 'manual', 'manual:o1', { basis })
+    expect(reconcile([manual, f(2024, 10_000_000, 'survey', 'survey:s9n_revenue_2024'), f(2024, 14_000_000, 'document', 'document:d1#revenue')])).toEqual([])
+    const reopened = reconcile([manual, f(2024, 10_000_000, 'survey', 'survey:s9n_revenue_2024'), f(2024, 18_000_000, 'document', 'document:d2#revenue')])
+    expect(reopened).toHaveLength(1)
+    expect(reopened[0]).toMatchObject({ kind: 'conflict', chosenValue: 12_000_000 })
+    expect(reopened[0].candidates[0].sourceKind).toBe('manual')
+  })
+})

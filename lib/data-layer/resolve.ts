@@ -16,6 +16,9 @@
  * Service role; the caller has authorised the company (manage access).
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { getMetricById } from '@/lib/metrics/registry'
+import { isPlausibleFor } from '@/lib/metrics/resolver'
+import { basisSignature } from './reconcile'
 import type { DiscrepancyCandidate } from './types'
 
 export type ResolveChoice =
@@ -72,7 +75,8 @@ export async function resolveDiscrepancy(
     // The first candidate is the value in use already.
     writeOverride = row.kind === 'conflict' && input.index > 0
   } else if (input.choice === 'custom') {
-    if (!Number.isFinite(input.value)) return { ok: false, status: 400, error: 'bad_value' }
+    const entry = getMetricById(row.metric_key)
+    if (!Number.isFinite(input.value) || (entry && !isPlausibleFor(entry, input.value))) return { ok: false, status: 400, error: 'bad_value' }
     value = input.value
     writeOverride = true
   }
@@ -80,20 +84,25 @@ export async function resolveDiscrepancy(
   const overrides: string[] = []
   if (writeOverride && value !== null) {
     const metrics = await siblingMetrics(client, row, candidates)
-    const now = new Date().toISOString()
-    const up = await client.from('metric_overrides').upsert(
-      metrics.map((metric_key) => ({
-        company_id: companyId,
-        metric_key,
-        period_key: row.period_key,
-        value,
-        note: input.note ?? null,
-        set_by: actor.userId,
-        discrepancy_id: row.id,
-        updated_at: now,
-      })),
-      { onConflict: 'company_id,metric_key,period_key' },
-    )
+    const now = new Date()
+    // A value of an unknown period (an undated older answer) is the current one.
+    const periodKey = row.period_key === 'unknown' ? String(now.getUTCFullYear()) : row.period_key
+    const rows = metrics.map((metric_key) => ({
+      company_id: companyId,
+      metric_key,
+      period_key: periodKey,
+      value,
+      note: input.note ?? null,
+      set_by: actor.userId,
+      discrepancy_id: row.id,
+      updated_at: now.toISOString(),
+      basis_signature: basisSignature(candidates),
+    }))
+    let up = await client.from('metric_overrides').upsert(rows, { onConflict: 'company_id,metric_key,period_key' })
+    // Before migration 111 there is no basis_signature column.
+    if (up.error && (up.error.code === 'PGRST204' || up.error.code === '42703')) {
+      up = await client.from('metric_overrides').upsert(rows.map(({ basis_signature: _b, ...r }) => r), { onConflict: 'company_id,metric_key,period_key' })
+    }
     if (up.error) return { ok: false, status: 500, error: 'override_failed' }
     overrides.push(...metrics)
   }
@@ -119,12 +128,17 @@ async function siblingMetrics(client: SupabaseClient, row: Row, candidates: read
   const refs = candidates.map((c) => c.sourceRef).filter(Boolean)
   const out = new Set<string>([row.metric_key])
   if (!refs.length) return [...out]
+  // Same period, same source, same unit: a metric that reads the same field
+  // in another unit («раз/год» vs a bare count) is not the same value.
+  const unit = candidates[0]?.unit ?? ''
   const { data } = await client
     .from('metric_facts')
-    .select('metric_key')
+    .select('metric_key, unit')
     .eq('company_id', row.company_id)
     .eq('period_key', row.period_key)
     .in('source_ref', refs)
-  for (const r of (data ?? []) as Array<{ metric_key: string }>) out.add(r.metric_key)
+  for (const r of (data ?? []) as Array<{ metric_key: string; unit: string | null }>) {
+    if ((r.unit ?? '') === unit) out.add(r.metric_key)
+  }
   return [...out]
 }

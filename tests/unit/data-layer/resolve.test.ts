@@ -60,3 +60,23 @@ describe('resolveDiscrepancy', () => {
     expect(await resolveDiscrepancy(client, 'co', String(conflict.id), { choice: 'ignore' }, owner)).toMatchObject({ ok: false, status: 409 })
   })
 })
+
+describe('resolveDiscrepancy — review fixes', () => {
+  it('M2: an implausible custom value is refused', async () => {
+    const m = memoryClient({ data_discrepancies: [{ id: 'n', company_id: 'co', metric_key: 'biz.klienty.nps', period_key: '2026', kind: 'invalid', status: 'open', candidates: [{ value: 810, unit: '', sourceKind: 'survey', sourceRef: 'survey:s7_nps_score', confidence: 0.9 }] }] })
+    expect(await resolveDiscrepancy(m.client, 'co', 'n', { choice: 'custom', value: 900 }, owner)).toMatchObject({ ok: false, status: 400 })
+    expect(await resolveDiscrepancy(m.client, 'co', 'n', { choice: 'custom', value: 42 }, owner)).toMatchObject({ ok: true })
+  })
+
+  it('I5: the manual value records what it was decided against', async () => {
+    const { client, db, conflict } = await seeded()
+    await resolveDiscrepancy(client, 'co', String(conflict.id), { choice: 'candidate', index: 1 }, owner)
+    expect(db.metric_overrides[0].basis_signature).toBe('document:d1#revenue=14000000|survey:s9n_revenue_2024=10000000')
+  })
+
+  it('I4: a value for an unknown period is stored as the current year', async () => {
+    const m = memoryClient({ data_discrepancies: [{ id: 'x', company_id: 'co', metric_key: 'biz.marketing.cac', period_key: 'unknown', kind: 'invalid', status: 'open', candidates: [{ value: -1, unit: '₸', sourceKind: 'survey', sourceRef: 'survey:s2_cac', confidence: 0.7 }] }] })
+    await resolveDiscrepancy(m.client, 'co', 'x', { choice: 'custom', value: 15_000 }, owner)
+    expect(m.db.metric_overrides[0].period_key).toBe(String(new Date().getUTCFullYear()))
+  })
+})

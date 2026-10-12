@@ -108,6 +108,12 @@ export interface PeriodOverride {
   note?: string | null
   setBy?: string | null
   setAt?: string | null
+  /**
+   * Signature of the other sources' values when the value was set
+   * (lib/data-layer/reconcile.ts basisSignature). New data of the period
+   * (another P&L, a changed answer) reopens the period as a conflict.
+   */
+  basis?: string | null
 }
 
 export interface ResolverDocument {

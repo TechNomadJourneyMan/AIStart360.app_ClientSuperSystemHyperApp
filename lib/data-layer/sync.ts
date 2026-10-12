@@ -79,6 +79,16 @@ export function sameCandidates(a: readonly DiscrepancyCandidate[] | null, b: rea
   return sig(a ?? []) === sig(b)
 }
 
+function sameValue(a: number | string | null | undefined, b: number | null): boolean {
+  if (a === null || a === undefined) return b === null
+  return b !== null && Number(a) === b
+}
+
+/** PostgREST: the RPC does not exist yet (migration 111 not applied). */
+function isMissingFunction(e: { code?: string; message?: string }): boolean {
+  return e.code === 'PGRST202' || e.code === '42883' || /could not find the function/i.test(e.message ?? '')
+}
+
 function err(e: { code?: string; message?: string } | null | undefined): string | null {
   if (!e) return null
   return e.code && MISSING_TABLE.has(e.code) ? 'not_migrated' : e.message ?? e.code ?? 'error'
@@ -90,13 +100,18 @@ export async function syncDataLayer(client: SupabaseClient, ctx: ResolverContext
     const now = ctx.now.toISOString()
     const facts = normalizeFacts(collectFacts(ctx), ctx.now)
 
-    // 1. Facts
-    const del = await client.from('metric_facts').delete().eq('company_id', ctx.companyId)
-    if (del.error) return { ...out, error: err(del.error) }
+    // 1. Facts — replaced atomically under a per-company lock
+    // (public.replace_metric_facts, migration 111); before 111: delete + insert.
     const rows = facts.map((f) => factRow(ctx.companyId, f, now))
-    for (let i = 0; i < rows.length; i += INSERT_BATCH) {
-      const ins = await client.from('metric_facts').insert(rows.slice(i, i + INSERT_BATCH))
-      if (ins.error) return { ...out, error: err(ins.error) }
+    const rpc = await client.rpc('replace_metric_facts', { p_company_id: ctx.companyId, p_rows: rows })
+    if (rpc.error) {
+      if (!isMissingFunction(rpc.error)) return { ...out, error: err(rpc.error) }
+      const del = await client.from('metric_facts').delete().eq('company_id', ctx.companyId)
+      if (del.error) return { ...out, error: err(del.error) }
+      for (let i = 0; i < rows.length; i += INSERT_BATCH) {
+        const ins = await client.from('metric_facts').insert(rows.slice(i, i + INSERT_BATCH))
+        if (ins.error) return { ...out, error: err(ins.error) }
+      }
     }
     out.facts = rows.length
 
@@ -124,7 +139,7 @@ export async function syncDataLayer(client: SupabaseClient, ctx: ResolverContext
       draftKeys.add(k)
       const row = open.get(k)
       if (row) {
-        if (sameCandidates(row.candidates, d.candidates) && Number(row.chosen_value ?? NaN) === Number(d.chosenValue ?? NaN)) continue
+        if (sameCandidates(row.candidates, d.candidates) && sameValue(row.chosen_value, d.chosenValue)) continue
         const up = await client
           .from('data_discrepancies')
           .update({ candidates: d.candidates, chosen_value: d.chosenValue, detail: d.detail })
@@ -146,7 +161,9 @@ export async function syncDataLayer(client: SupabaseClient, ctx: ResolverContext
         detail: d.detail,
         status: 'open',
       })
-      if (ins.error) return { ...out, error: err(ins.error) }
+      // 23505: a concurrent run opened the same one — not an error.
+      if (ins.error && ins.error.code !== '23505') return { ...out, error: err(ins.error) }
+      if (ins.error) continue
       out.opened++
       out.openedDrafts.push(d)
     }
