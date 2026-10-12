@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useMetricsStore } from '@/stores/metrics.store'
 import { useAllVisibleMetrics } from '@/hooks/useMetrics'
-import { useUIStore } from '@/stores/ui.store'
+import { useGoals } from '@/hooks/useGoals'
 import { AddMetricModal } from './AddMetricModal'
 import dynamic from 'next/dynamic'
 import { MAX_METRICS } from '@/types/metrics'
@@ -184,7 +184,7 @@ function EmptyMetrics({ onShowAll, hasHidden }: { onShowAll: () => void; hasHidd
 export function KpiCardsGrid() {
   const [addOpen, setAddOpen] = useState(false)
   const { visibleMetricIds, hiddenMetricIds, setActiveMetric, hideMetric, removeMetric, showAllMetrics, activeMetricId } = useMetricsStore()
-  const pinnedGoals = useUIStore((s) => s.pinnedGoals)
+  const { data: goals = [] } = useGoals()
   const { data: visibleMetrics, isLoading } = useAllVisibleMetrics(visibleMetricIds)
 
   const totalCount = visibleMetricIds.length + hiddenMetricIds.length
@@ -226,13 +226,13 @@ export function KpiCardsGrid() {
             : visibleMetrics.length === 0
               ? <EmptyMetrics onShowAll={showAllMetrics} hasHidden={hiddenMetricIds.length > 0} />
               : visibleMetrics.map((metric) => {
-                  const goal = pinnedGoals.find(
-                    (g) => g.category === metric.goalCategory && g.targetValue != null && g.targetValue > 0
-                  )
-                  const progress =
-                    goal && metric.rawValue > 0
-                      ? Math.min(100, (metric.rawValue / goal.targetValue!) * 100)
-                      : null
+                  // The nearest goal on this metric (server goals, /api/v1/goals).
+                  const goal = goals.find((g) => g.goal.metricId === metric.id && g.evaluation.current !== null)
+                  const progress = goal
+                    ? goal.evaluation.progress ?? (goal.goal.targetValue > 0 && goal.goal.direction !== 'lower_is_better'
+                      ? Math.min(100, ((goal.evaluation.current ?? 0) / goal.goal.targetValue) * 100)
+                      : null)
+                    : null
 
                   return (
                     <MetricCard

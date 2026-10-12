@@ -28,6 +28,9 @@ import { calculatePointAV4, toCompatPointA, type PointAV4, type V4Block } from '
 import { BLOCK_LIBRARY } from './v4/config'
 import { loadBlockConfig } from './v4/store'
 import { carryOverHypotheses } from './v4/hypotheses'
+import { loadGoals } from '@/lib/goals/store'
+import { evaluateGoals } from '@/lib/goals/current'
+import { companyMetricsFromValues } from '@/lib/metrics/company-metrics'
 import { changeReasons, hashOf, inputsHash, type ChangeReason, type SnapshotInputs } from './snapshot-diff'
 
 export type SnapshotTrigger = 'event' | 'manual' | 'schedule' | 'expert'
@@ -180,7 +183,14 @@ export async function buildPointASnapshot(companyId: string, opts: SnapshotOptio
   // AI hypotheses of blocks whose inputs did not change are kept (no new AI call).
   const v4: PointAV4 = { ...computed, blocks: carryOverHypotheses(computed.blocks, prev?.blocks) }
 
-  const inputs = snapshotInputs(values, surveyAnswers, conflicts, config.version)
+  // Goals (lib/goals): part of the inputs (a changed goal is a new snapshot)
+  // and evaluated against the same values the calculation used.
+  const goals = await loadGoals(service, companyId).catch((err) => {
+    console.error('[point-a/snapshot] goals not loaded', err instanceof Error ? err.message : err)
+    return []
+  })
+  const goalEvaluations = evaluateGoals(goals, companyMetricsFromValues(values, companyId), new Date())
+  const inputs = { ...snapshotInputs(values, surveyAnswers, conflicts, config.version), goals: Object.fromEntries(goals.map((g) => [`${g.metricId}|${g.periodLabel}`, `${g.targetValue}|${g.deadline ?? ''}|${g.direction}`])) }
   const hash = inputsHash(inputs)
   if (!opts.force && prev && prev.inputs_hash === hash && prev.config_version === config.version) {
     return { status: 'unchanged', snapshotId: prev.id }
@@ -209,7 +219,7 @@ export async function buildPointASnapshot(companyId: string, opts: SnapshotOptio
       coverage: v4.coverage,
       stage: v4.stage,
       blocks: v4.blocks,
-      v4: { strengths: v4.strengths, upload_checklist: v4.upload_checklist, blocks_without_data: v4.blocks_without_data, health_index: v4.health_index },
+      v4: { strengths: v4.strengths, upload_checklist: v4.upload_checklist, blocks_without_data: v4.blocks_without_data, health_index: v4.health_index, goals: goalEvaluations.map((g) => g.evaluation) },
       v1_overall: v1.overall_score,
       v1_blocks: v1.blocks,
       inputs,

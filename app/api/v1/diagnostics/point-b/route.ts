@@ -1,5 +1,6 @@
 export const dynamic = 'force-dynamic'
 
+import { loadGoalsWithEvaluation } from '@/lib/goals/current'
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { calculatePointBV2, type PointBOptions, type PointBV2 } from '@/lib/point-b/engine'
@@ -204,6 +205,14 @@ export async function GET(_req: NextRequest) {
     // null/'none'; the persisted row may hold a completed strategy).
     pointB.ai_strategy = aiStrategy
     pointB.ai_status = aiStatus
+
+    // Goals on any metric (lib/goals): the gap А→Б, pace and realism of each.
+    if (companyId) {
+      pointB.metric_goals = await loadGoalsWithEvaluation(sb, companyId).catch((err) => {
+        console.error('[point-b] goals not loaded (non-fatal):', err instanceof Error ? err.message : err)
+        return []
+      })
+    }
 
     // 7. Latest APPROVED expert correction (so the client sees the expert version).
     //    Unapproved versions (saved by an expert, awaiting Admin review — migration

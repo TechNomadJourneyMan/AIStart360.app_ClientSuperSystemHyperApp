@@ -1,17 +1,11 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import type { Goal } from '@/types'
 
 // PERF-09: toasts are handled by the single global `sonner` <Toaster>; this
-// store owns only sidebar + pinned-goals UI state now.
+// store owns only the sidebar state now. Growth goals moved to the server
+// (public.metric_targets, /api/v1/goals — hooks/useGoals.ts).
 interface UIState {
   sidebarCollapsed: boolean
-
-  // Pinned growth goals
-  pinnedGoals: Goal[]
-  addGoal: (goal: Goal) => void
-  removeGoal: (goalId: string) => void
-  updateGoal: (goalId: string, data: Partial<Goal>) => void
 
   // Actions
   toggleSidebar: () => void
@@ -22,21 +16,13 @@ export const useUIStore = create<UIState>()(
   persist(
     (set) => ({
       sidebarCollapsed: false,
-      pinnedGoals: [],
 
       toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
       setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
-
-      addGoal: (goal) => set((s) => ({ pinnedGoals: [...s.pinnedGoals, goal] })),
-      removeGoal: (id) => set((s) => ({ pinnedGoals: s.pinnedGoals.filter((g) => g.id !== id) })),
-      updateGoal: (id, data) =>
-        set((s) => ({
-          pinnedGoals: s.pinnedGoals.map((g) => (g.id === id ? { ...g, ...data } : g)),
-        })),
     }),
     {
       name: 'aistart360-ui',
-      partialize: (s) => ({ sidebarCollapsed: s.sidebarCollapsed, pinnedGoals: s.pinnedGoals }),
+      partialize: (s) => ({ sidebarCollapsed: s.sidebarCollapsed }),
     }
   )
 )

@@ -86,6 +86,17 @@ describe('buildPointASnapshot', () => {
     expect((m.db.point_a_snapshots[0].inputs as { conflicts: string[] }).conflicts).toEqual(['biz.finansy.vyruchka_god'])
   })
 
+  it('a changed goal is a new snapshot; goals are evaluated in it', async () => {
+    const { m, deps } = setup()
+    await buildPointASnapshot('co', { trigger: 'event' }, deps)
+    m.db.metric_targets = [{ id: 'g1', company_id: 'co', metric_key: 'biz.finansy.vyruchka_god', target_value: 200_000_000, direction: 'higher_is_better', period_label: '12m', source: 'owner', created_at: '2026-10-12T00:00:00Z' }]
+    const r = await buildPointASnapshot('co', { trigger: 'event', reasons: ['TARGET_CHANGED'] }, deps)
+    expect(r.status).toBe('written')
+    const snap = m.db.point_a_snapshots[1]
+    expect((snap.change_reasons as Array<{ type: string; text: string }>).find((c) => c.type === 'goals')?.text).toBe('Изменены цели: 1')
+    expect((snap.v4 as { goals: Array<{ metricId: string; target: number }> }).goals[0]).toMatchObject({ metricId: 'biz.finansy.vyruchka_god', target: 200_000_000 })
+  })
+
   it('skips: before migration 111, a company without owner, no answers', async () => {
     const a = setup()
     const notMigrated = memoryClient({}, { missing: ['point_a_snapshots'] })

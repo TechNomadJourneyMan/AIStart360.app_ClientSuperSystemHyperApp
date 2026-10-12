@@ -22,6 +22,8 @@ export interface SnapshotInputs {
   /** Metric ids with an open data discrepancy. */
   conflicts: string[]
   config: string
+  /** Goals: `metric|period` → target (deadline) — a changed goal is a new snapshot. */
+  goals?: Record<string, string>
 }
 
 export type ChangeReason =
@@ -30,6 +32,7 @@ export type ChangeReason =
   | { type: 'answers'; step: number | null; count: number; text: string }
   | { type: 'conflicts'; opened: number; closed: number; text: string }
   | { type: 'config'; from: string; to: string; text: string }
+  | { type: 'goals'; count: number; text: string }
   | { type: 'first'; text: string }
 
 function stable(v: unknown): string {
@@ -105,6 +108,11 @@ export function changeReasons(
   if (opened || closed) {
     out.push({ type: 'conflicts', opened, closed, text: [opened ? `найдено расхождений: ${opened}` : null, closed ? `закрыто расхождений: ${closed}` : null].filter(Boolean).join(', ').replace(/^./, (c) => c.toUpperCase()) })
   }
+
+  const pg = prev.inputs.goals ?? {}
+  const ng = next.inputs.goals ?? {}
+  const goalChanges = [...new Set([...Object.keys(pg), ...Object.keys(ng)])].filter((k) => pg[k] !== ng[k]).length
+  if (goalChanges) out.push({ type: 'goals', count: goalChanges, text: `Изменены цели: ${goalChanges}` })
 
   if (prev.inputs.config !== next.inputs.config) {
     out.push({ type: 'config', from: prev.inputs.config, to: next.inputs.config, text: 'Изменена настройка блоков' })

@@ -126,6 +126,11 @@ export interface TargetBlock {
 export interface PointBV2 {
   diagnostic_id: string | null
   generated_at: string
+  /**
+   * Goals on any metric (public.metric_targets — lib/goals) with their gap,
+   * pace, realism and status; attached by GET /api/v1/diagnostics/point-b.
+   */
+  metric_goals?: Array<{ goal: import('@/lib/goals/evaluate').Goal; evaluation: import('@/lib/goals/evaluate').GoalEvaluation }>
 
   goals: PointBGoals
   gap: GapEntry[]
