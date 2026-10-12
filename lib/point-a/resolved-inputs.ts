@@ -28,6 +28,7 @@ export const RESOLVED_INPUT_METRICS = {
   dealCycleDays: ['biz.prodazhi.tsikl_zakrytiya_sdelki', 'goal.08.sredniy_tsikl_zakrytiya'],
   repeatSharePct: ['goal.02.repeat_purchase_rate', 'goal.04.repeat_purchase_rate'],
   refusalPct: ['goal.06.loss_rate', 'goal.11.loss_rate'],
+  nps: ['biz.klienty.nps', 'biz.marketing.nps', 'goal.05.nps'],
 } as const
 
 type InputKey = keyof typeof RESOLVED_INPUT_METRICS
@@ -38,7 +39,7 @@ type InputKey = keyof typeof RESOLVED_INPUT_METRICS
  * repeat share or refusal rate is a real answer. LTV, CAC, LTV/CAC and the deal
  * cycle are only meaningful above zero.
  */
-const SIGNED_INPUTS: ReadonlySet<InputKey> = new Set<InputKey>(['grossMargin'])
+const SIGNED_INPUTS: ReadonlySet<InputKey> = new Set<InputKey>(['grossMargin', 'nps'])
 const NON_NEGATIVE_INPUTS: ReadonlySet<InputKey> = new Set<InputKey>(['repeatSharePct', 'refusalPct'])
 
 function accepts(key: InputKey, v: number): boolean {

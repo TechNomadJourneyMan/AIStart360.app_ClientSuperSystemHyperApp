@@ -47,6 +47,8 @@ export interface PointAResolvedInputs {
   repeatSharePct?: number | null
   /** Refusals ÷ (deals + refusals) in percent (goal.06.loss_rate). */
   refusalPct?: number | null
+  /** NPS −100..100 (biz.klienty.nps) — read by the v4 «Продукт» block only. */
+  nps?: number | null
 }
 
 /** Engine identity, recorded with findings derived from this output. */
@@ -58,7 +60,7 @@ function clamp(v: number, min = 0, max = 100): number {
   return Math.max(min, Math.min(max, v))
 }
 
-function present(v: unknown): boolean {
+export function present(v: unknown): boolean {
   if (v === undefined || v === null) return false
   if (typeof v === 'string') return v.trim().length > 0
   if (Array.isArray(v)) return v.length > 0
@@ -69,7 +71,7 @@ const NO_ANSWER_RE = /^(нет|no|none|-|—|отсутствует|не\s*ис�
 const UNKNOWN_RE = /^(нет|no|none|-|—|не\s*знаю|не\s*считали|неизвестно|не\s*рассчитывали)$/i
 
 /** A text answer that names something (not blank, not «нет»). Presence is the criterion. */
-function namesSomething(v: unknown): boolean {
+export function namesSomething(v: unknown): boolean {
   return typeof v === 'string' && v.trim() !== '' && !NO_ANSWER_RE.test(v.trim())
 }
 
