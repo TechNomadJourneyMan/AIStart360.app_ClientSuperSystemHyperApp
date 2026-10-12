@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { collectFacts } from '@/lib/data-layer/facts'
+import { getMetricById } from '@/lib/metrics/registry'
 import type { ResolverContext, ResolverDocument } from '@/lib/metrics/types'
 
 const NOW = new Date('2026-10-12T00:00:00Z')
@@ -81,5 +82,10 @@ describe('collectFacts — empty number fields', () => {
   it('a 0 of money / a count from the survey is not an answer (no false discrepancy)', () => {
     const facts = collectFacts(ctx({ surveyAnswers: { s2_revenue_2025: 0, s8n_metrics_table: [{ metric_name: 'Сумма продаж', y2025: 120_000_000 }] } }), ONLY_REVENUE)
     expect(facts.map((f) => f.sourceRef)).toEqual(['survey:s8n_metrics_table#sales_amount/y2025'])
+  })
+  it('…but 0 ad spend / 0 leads is a real answer', () => {
+    const entry = getMetricById('goal.01.raskhody_na_reklamu')!
+    const facts = collectFacts(ctx({ surveyAnswers: { s9n_expense_marketing: 0 } }), new Set([entry.id]))
+    expect(facts.map((f) => f.value)).toEqual([0])
   })
 })

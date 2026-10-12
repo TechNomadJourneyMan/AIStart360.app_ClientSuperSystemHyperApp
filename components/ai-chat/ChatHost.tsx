@@ -19,7 +19,7 @@ type Preview = { title: string; before: string | null; after: string; note?: str
 type Item =
   | { kind: 'user'; text: string }
   | { kind: 'assistant'; text: string }
-  | { kind: 'action'; id: string; preview?: Preview; status: 'pending' | 'applied' | 'rejected' | 'expired' | 'failed' | 'busy' }
+  | { kind: 'action'; id: string; preview?: Preview; status: 'pending' | 'applied' | 'rejected' | 'expired' | 'failed' | 'decided' | 'busy' }
 
 const SUGGESTIONS: Record<Surface, string[]> = {
   point_a: ['Почему у меня такой балл?', 'Что улучшить в первую очередь?', 'Каких данных не хватает?'],
@@ -60,13 +60,15 @@ function ActionCard({ item, onDecide }: { item: Extract<Item, { kind: 'action' }
       {item.status === 'pending' || item.status === 'busy' ? (
         <div className="mt-2 flex gap-2">
           <button type="button" disabled={item.status === 'busy'} onClick={() => onDecide(item.id, 'apply')}
+            aria-label={`Применить: ${p?.title ?? 'изменение'}`}
             className="rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-on-primary disabled:opacity-60">Применить</button>
           <button type="button" disabled={item.status === 'busy'} onClick={() => onDecide(item.id, 'reject')}
+            aria-label={`Отменить: ${p?.title ?? 'изменение'}`}
             className="rounded-lg border border-white/10 px-3 py-1.5 text-xs text-on-surface-variant hover:text-on-surface">Отмена</button>
         </div>
       ) : (
         <p className={cn('mt-2 text-xs font-mono', item.status === 'applied' ? 'text-primary' : 'text-on-surface-variant')}>
-          {item.status === 'applied' ? '✓ Применено — Точка А пересчитается' : item.status === 'rejected' ? 'Отменено' : item.status === 'expired' ? 'Предложение устарело' : 'Не удалось применить'}
+          {item.status === 'applied' ? '✓ Применено — Точка А пересчитается' : item.status === 'rejected' ? 'Отменено' : item.status === 'expired' ? 'Предложение устарело' : item.status === 'decided' ? 'Уже решено в другой вкладке' : 'Не удалось применить'}
         </p>
       )}
     </div>
@@ -82,62 +84,74 @@ export function ChatHost() {
   const [status, setStatus] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [input, setInput] = useState('')
-  const [conversationId, setConversationId] = useState<string | null>(null)
+  // A ref, not state: the open handler runs a question right after load(),
+  // and a stale closure would send the previous screen's conversation id.
+  const conversationRef = useRef<string | null>(null)
   const loaded = useRef<string | null>(null)
-  const endRef = useRef<HTMLDivElement>(null)
+  const busyRef = useRef(false)
+  const listRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
+  const returnFocus = useRef<HTMLElement | null>(null)
 
   const load = useCallback(async (s: Surface) => {
     if (loaded.current === s) return
-    loaded.current = s
     try {
       const res = await fetch(`/api/v1/ai/assistant?surface=${s}`, { cache: 'no-store' })
       const body = await res.json()
       if (!body?.ok) return
+      loaded.current = s
       const msgs = (body.data.messages as Array<{ role: 'user' | 'assistant'; content: string }>).map((m): Item => ({ kind: m.role, text: m.content }))
-      const acts = (body.data.actions as Array<{ id: string; preview: Preview; status: Item extends { status: infer S } ? S : never; expires_at: string }>)
+      const acts = (body.data.actions as Array<{ id: string; preview: Preview; status: string; expires_at: string }>)
         .filter((a) => a.status === 'pending' && Date.parse(a.expires_at) > Date.now())
         .map((a): Item => ({ kind: 'action', id: a.id, preview: a.preview, status: 'pending' }))
-      setItems([...msgs, ...acts])
-      setConversationId(body.data.conversationId)
-    } catch { /* offline — an empty chat */ }
+      // Keep what was asked while the history was loading.
+      setItems((list) => [...msgs, ...acts, ...list])
+      conversationRef.current = body.data.conversationId ?? null
+    } catch { /* offline — an empty chat; the next open tries again */ }
   }, [])
 
   const ask = useCallback(async (text: string, s: Surface, f: OpenChatDetail['focus']) => {
     const q = text.trim()
-    if (!q || busy) return
+    if (!q || busyRef.current) return
+    busyRef.current = true
     setBusy(true)
     setInput('')
+    if (inputRef.current) inputRef.current.style.height = 'auto'
     setStatus('Думаю…')
     setItems((list) => [...list, { kind: 'user', text: q }])
+    let replied = false
     try {
       const res = await fetch('/api/v1/ai/assistant', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: q, surface: s, focus: f ? { block: f.block ?? null, metric: f.metric ?? null } : undefined, conversationId }),
+        body: JSON.stringify({ message: q, surface: s, focus: f ? { block: f.block ?? null, metric: f.metric ?? null } : undefined, conversationId: conversationRef.current }),
       })
       if (!res.ok) {
         const body = await res.json().catch(() => null)
-        setItems((list) => [...list, { kind: 'assistant', text: body?.error ?? 'Не удалось ответить — попробуйте ещё раз.' }])
+        replied = true
+        setItems((list) => [...list, { kind: 'assistant', text: body?.message ?? (typeof body?.error === 'string' && !/^[a-z_]+$/.test(body.error) ? body.error : 'Не удалось ответить — попробуйте ещё раз.') }])
         return
       }
       await readEvents(res, (e: StreamEvent) => {
         if (e.type === 'status') setStatus(e.text)
         else if (e.type === 'proposal') setItems((list) => [...list, { kind: 'action', id: e.action.id, preview: e.action.preview, status: 'pending' }])
-        else if (e.type === 'answer' || e.type === 'error') setItems((list) => [...list, { kind: 'assistant', text: e.text }])
-        else if (e.type === 'done' && e.conversationId) setConversationId(e.conversationId)
+        else if (e.type === 'answer' || e.type === 'error') { replied = true; setItems((list) => [...list, { kind: 'assistant', text: e.text }]) }
+        else if (e.type === 'done' && e.conversationId) conversationRef.current = e.conversationId
       })
-    } catch {
-      setItems((list) => [...list, { kind: 'assistant', text: 'Связь прервалась — попробуйте ещё раз.' }])
-    } finally {
+    } catch { /* below */ } finally {
+      // The stream ended without an answer (timeout, network) — say so.
+      if (!replied) setItems((list) => [...list, { kind: 'assistant', text: 'Связь прервалась — попробуйте ещё раз.' }])
+      busyRef.current = false
       setBusy(false)
       setStatus(null)
     }
-  }, [busy, conversationId])
+  }, [])
 
   useEffect(() => {
     const onOpen = (ev: Event) => {
       const d = (ev as CustomEvent<OpenChatDetail>).detail ?? {}
       const s = d.surface ?? surfaceFromPath(window.location.pathname)
-      if (s !== surface) { setItems([]); setConversationId(null) }
+      if (s !== surface) { setItems([]); conversationRef.current = null; loaded.current = null }
+      returnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
       setSurface(s)
       setFocus(d.focus ?? {})
       setOpen(true)
@@ -147,23 +161,40 @@ export function ChatHost() {
     return () => window.removeEventListener(OPEN_CHAT_EVENT, onOpen)
   }, [ask, load, surface])
 
-  useEffect(() => { endRef.current?.scrollIntoView({ block: 'end' }) }, [items, status])
+  const close = useCallback(() => {
+    setOpen(false)
+    returnFocus.current?.focus?.()
+  }, [])
+
+  // Scroll the message list only — scrollIntoView would also move the page
+  // under the sheet (and the window on mobile with the keyboard open).
+  useEffect(() => {
+    const el = listRef.current
+    if (el) el.scrollTop = el.scrollHeight
+  }, [items, status, open])
   useEffect(() => {
     if (!open) return
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false)
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [open])
+    inputRef.current?.focus({ preventScroll: true })
+    // Capture + stop: Esc closes the chat only, not a panel open under it.
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      e.stopPropagation()
+      close()
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [open, close])
 
   const decide = async (id: string, decision: 'apply' | 'reject') => {
     setItems((list) => list.map((it) => (it.kind === 'action' && it.id === id ? { ...it, status: 'busy' } : it)))
     try {
       const res = await fetch(`/api/v1/ai/actions/${id}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ decision }) })
       const body = await res.json().catch(() => null)
-      const next: Extract<Item, { kind: 'action' }>['status'] = res.ok ? (decision === 'apply' ? 'applied' : 'rejected') : res.status === 410 ? 'expired' : 'failed'
+      const next: Extract<Item, { kind: 'action' }>['status'] = res.ok ? (decision === 'apply' ? 'applied' : 'rejected') : res.status === 410 ? 'expired' : res.status === 409 && body?.error === 'already_decided' ? 'decided' : 'failed'
+      const reason = !res.ok && typeof body?.error === 'string' && !/^[a-z_]+$/.test(body.error) ? body.error : null
       setItems((list) => [
         ...list.map((it) => (it.kind === 'action' && it.id === id ? { ...it, status: next } : it)),
-        ...(!res.ok && body?.error ? [{ kind: 'assistant' as const, text: body.error as string }] : []),
+        ...(reason ? [{ kind: 'assistant' as const, text: reason }] : []),
       ])
       if (res.ok && decision === 'apply') void qc.invalidateQueries()
     } catch {
@@ -174,19 +205,19 @@ export function ChatHost() {
   if (!open) return null
   return (
     <BodyPortal>
-      <div className="fixed inset-0 z-[70] flex items-end sm:items-stretch sm:justify-end" onClick={() => setOpen(false)}>
+      <div className="fixed inset-0 z-[70] flex items-end sm:items-stretch sm:justify-end" onClick={close}>
         <div className="absolute inset-0 bg-black/50 backdrop-blur-[2px]" />
         <aside role="dialog" aria-modal="true" aria-label="AI-чат" onClick={(e) => e.stopPropagation()}
-          className="relative z-10 flex w-full flex-col sm:max-w-md h-[88vh] sm:h-full bg-surface-container-low border-t sm:border-t-0 sm:border-l border-white/[0.08] rounded-t-2xl sm:rounded-none">
+          className="relative z-10 flex w-full flex-col sm:max-w-md h-[88dvh] sm:h-full bg-surface-container-low border-t sm:border-t-0 sm:border-l border-white/[0.08] rounded-t-2xl sm:rounded-none">
           <header className="flex items-center justify-between gap-2 border-b border-white/[0.06] px-4 py-3">
             <div className="min-w-0">
               <p className="font-headline text-base font-bold text-on-surface flex items-center gap-1.5"><Icon name="auto_awesome" className="text-[18px] text-primary" />AI-аналитик</p>
               <p className="truncate text-[11px] text-on-surface-variant">Отвечает по данным вашей компании{focus?.label ? ` · ${focus.label}` : ''}</p>
             </div>
-            <button type="button" onClick={() => setOpen(false)} aria-label="Закрыть" className="h-9 w-9 rounded-lg text-on-surface-variant hover:bg-white/[0.06]"><Icon name="close" className="text-xl" /></button>
+            <button type="button" onClick={close} aria-label="Закрыть" className="h-9 w-9 rounded-lg text-on-surface-variant hover:bg-white/[0.06]"><Icon name="close" className="text-xl" /></button>
           </header>
 
-          <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3" aria-live="polite">
+          <div ref={listRef} className="flex-1 overflow-y-auto overscroll-contain px-4 py-3 space-y-3" aria-live="polite">
             {items.length === 0 && (
               <div className="space-y-2">
                 <p className="text-sm text-on-surface-variant">Спросите о своём бизнесе — отвечу по вашим данным, с периодом и источником каждой цифры. Изменить данные могу только с вашего подтверждения.</p>
@@ -203,15 +234,20 @@ export function ChatHost() {
                 </div>
               ))}
             {status && <p className="flex items-center gap-1.5 text-xs text-on-surface-variant"><Icon name="progress_activity" className="text-[14px] animate-spin" />{status}</p>}
-            <div ref={endRef} />
           </div>
 
-          <form className="flex gap-2 border-t border-white/[0.06] p-3" onSubmit={(e) => { e.preventDefault(); void ask(input, surface, focus) }}>
+          <form className="flex items-end gap-2 border-t border-white/[0.06] p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]" onSubmit={(e) => { e.preventDefault(); void ask(input, surface, focus) }}>
             <label className="flex-1">
               <span className="sr-only">Вопрос</span>
-              <textarea value={input} onChange={(e) => setInput(e.target.value)} rows={1} maxLength={2000}
+              <textarea ref={inputRef} value={input} rows={1} maxLength={2000}
+                onChange={(e) => {
+                  setInput(e.target.value)
+                  // Grow with the text up to ~5 lines.
+                  e.target.style.height = 'auto'
+                  e.target.style.height = `${Math.min(e.target.scrollHeight, 132)}px`
+                }}
                 onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void ask(input, surface, focus) } }}
-                placeholder="Спросите о выручке, марже, целях…"
+                placeholder="Ваш вопрос…"
                 className="w-full resize-none rounded-xl border border-white/10 bg-surface-container px-3 py-2 text-base sm:text-sm text-on-surface focus:outline-none focus:border-primary/50" />
             </label>
             <button type="submit" disabled={busy || !input.trim()} aria-label="Отправить" className="h-10 w-10 shrink-0 rounded-xl bg-primary text-on-primary disabled:opacity-50"><Icon name="send" className="text-[18px]" /></button>

@@ -92,7 +92,7 @@ function Picker({ state, onClose, readonly }: { state: PointAPageState; onClose:
           <>
             <label className="block mb-2">
               <span className="sr-only">Найти метрику</span>
-              <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Найти метрику: выручка, конверсия, NPS…"
+              <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Поиск: выручка, NPS…"
                 className="w-full rounded-xl border border-white/10 bg-surface-container px-3 py-2 text-base sm:text-sm text-on-surface focus:outline-none focus:border-primary/50" />
             </label>
             <ul className="max-h-56 overflow-y-auto space-y-1 mb-4">

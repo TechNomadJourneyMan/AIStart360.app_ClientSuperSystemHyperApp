@@ -44,7 +44,11 @@ export function memoryClient(tables: Record<string, Row[]> = {}, opts: { missing
           }
           if (single) out = inserted[0] ?? null
         }
-        if (op === 'update') for (const r of rows) if (match(r)) Object.assign(r, payload)
+        if (op === 'update') {
+          const hit = rows.filter(match)
+          for (const r of hit) Object.assign(r, payload)
+          out = single ? hit[0] ?? null : hit
+        }
         if (op === 'upsert') {
           for (const p of Array.isArray(payload) ? payload : [payload!]) {
             const hit = rows.find((r) => conflict.every((c) => r[c] === p[c]))
@@ -66,6 +70,8 @@ export function memoryClient(tables: Record<string, Row[]> = {}, opts: { missing
         upsert: (p: Row | Row[], o?: { onConflict?: string }) => { op = 'upsert'; payload = p; conflict = (o?.onConflict ?? 'id').split(','); return b },
         eq: (c: string, v: unknown) => { filters.push((r) => r[c] === v); return b },
         in: (c: string, vs: unknown[]) => { filters.push((r) => vs.includes(r[c])); return b },
+        gt: (c: string, v: unknown) => { filters.push((r) => String(r[c]) > String(v)); return b },
+        lt: (c: string, v: unknown) => { filters.push((r) => String(r[c]) < String(v)); return b },
         maybeSingle: () => { single = true; return Promise.resolve(run()) },
         single: () => { single = true; return Promise.resolve(run()) },
         then: (res: (v: unknown) => unknown, rej?: (e: unknown) => unknown) => Promise.resolve(run()).then(res, rej),

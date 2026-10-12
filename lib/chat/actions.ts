@@ -35,8 +35,20 @@ export async function loadPending(service: SupabaseClient, id: string, userId: s
   return (data as PendingRow | null) ?? null
 }
 
-async function finish(service: SupabaseClient, id: string, status: 'applied' | 'rejected' | 'expired' | 'failed', result: Record<string, unknown> | null) {
-  await service.from('ai_pending_actions').update({ status, result, decided_at: new Date().toISOString() }).eq('id', id).eq('status', 'pending')
+async function finish(service: SupabaseClient, id: string, status: 'applied' | 'expired' | 'failed', result: Record<string, unknown> | null, from: 'pending' | 'applying' = 'applying') {
+  await service.from('ai_pending_actions').update({ status, result, decided_at: new Date().toISOString() }).eq('id', id).eq('status', from)
+}
+
+/**
+ * Moves a still-pending, unexpired action to `to` in one statement: of two
+ * parallel «Применить» (double click, two tabs) only one gets the row.
+ */
+async function claim(service: SupabaseClient, id: string, to: 'applying' | 'rejected'): Promise<boolean> {
+  const patch: Record<string, unknown> = { status: to }
+  if (to === 'rejected') patch.decided_at = new Date().toISOString()
+  const { data, error } = await service.from('ai_pending_actions').update(patch).eq('id', id).eq('status', 'pending').gt('expires_at', new Date().toISOString()).select('id').maybeSingle()
+  if (error) throw new Error(error.code ?? 'claim')
+  return Boolean(data)
 }
 
 /**
@@ -51,21 +63,25 @@ export async function decideAction(
 ): Promise<ApplyOutcome> {
   if (row.status !== 'pending') return { ok: false, status: 409, error: 'already_decided' }
   if (Date.parse(row.expires_at) < Date.now()) {
-    await finish(service, row.id, 'expired', null)
+    await finish(service, row.id, 'expired', null, 'pending')
     return { ok: false, status: 410, error: 'expired' }
   }
   if (decision === 'reject') {
-    await finish(service, row.id, 'rejected', null)
+    if (!(await claim(service, row.id, 'rejected'))) return { ok: false, status: 409, error: 'already_decided' }
     return { ok: true, status: 'rejected', companyId: row.company_id, kind: row.kind, event: null }
   }
   if (!actor.canManage) return { ok: false, status: 403, error: 'forbidden' }
+  if (!(await claim(service, row.id, 'applying'))) return { ok: false, status: 409, error: 'already_decided' }
 
   const p = row.payload
   try {
     if (row.kind === 'set_value') {
       const metric = getMetricById(String(p.metric_id))
       const value = Number(p.value)
-      if (!metric || !Number.isFinite(value) || !isPlausibleFor(metric, value)) return { ok: false, status: 400, error: 'bad_value' }
+      if (!metric || !Number.isFinite(value) || !isPlausibleFor(metric, value)) {
+        await finish(service, row.id, 'failed', { error: 'bad_value' })
+        return { ok: false, status: 400, error: 'bad_value' }
+      }
       const { error } = await service.from('metric_overrides').upsert({
         company_id: row.company_id, metric_key: metric.id, period_key: String(p.period_key), value,
         note: (p.note as string | null) ?? 'Подтверждено в AI-чате', set_by: actor.userId, updated_at: new Date().toISOString(),

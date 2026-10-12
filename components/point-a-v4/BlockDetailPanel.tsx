@@ -124,7 +124,7 @@ export function BlockDetailPanel({ blockKey, title, onClose, preview }: { blockK
     <div className="fixed inset-0 z-[60] flex items-end sm:items-stretch sm:justify-end" onClick={onClose}>
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
       <aside role="dialog" aria-modal="true" aria-label={`Раздел «${title}»`} onClick={(e) => e.stopPropagation()}
-        className="relative z-10 w-full sm:max-w-xl max-h-[92vh] sm:max-h-none sm:h-full overflow-y-auto bg-surface-container-low border-t sm:border-t-0 sm:border-l border-white/[0.08] rounded-t-2xl sm:rounded-none p-5">
+        className="relative z-10 w-full sm:max-w-xl max-h-[92vh] sm:max-h-none sm:h-full overflow-y-auto bg-surface-container-low border-t sm:border-t-0 sm:border-l border-white/[0.08] rounded-t-2xl sm:rounded-none p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
         <div className="sticky -top-5 -mx-5 -mt-5 mb-4 flex items-center justify-between bg-surface-container-low/95 px-5 py-4 backdrop-blur">
           <h2 className="font-headline text-lg font-bold text-on-surface">{title}</h2>
           <button type="button" onClick={onClose} aria-label="Закрыть" className="h-9 w-9 rounded-lg text-on-surface-variant hover:bg-white/[0.06]"><Icon name="close" className="text-xl" /></button>

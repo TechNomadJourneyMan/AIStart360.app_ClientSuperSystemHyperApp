@@ -66,6 +66,16 @@ describe('decideAction', () => {
     expect(await decideAction(f.m.client, f.row, 'reject', { ...actor, canManage: false })).toMatchObject({ ok: true, status: 'rejected' })
   })
 
+  it('two parallel «Применить» — only one applies, the other is already decided', async () => {
+    const m = memoryClient({ ai_pending_actions: [{ ...base, kind: 'set_value', payload: { metric_id: 'biz.finansy.vyruchka_god', period_key: '2024', value: 14_000_000 } }] })
+    const row = { ...(m.db.ai_pending_actions[0] as object) } as never
+    const [a, b] = await Promise.all([decideAction(m.client, row, 'apply', actor), decideAction(m.client, row, 'apply', actor)])
+    expect([a, b].filter((o) => o.ok)).toHaveLength(1)
+    expect([a, b].find((o) => !o.ok)).toMatchObject({ status: 409, error: 'already_decided' })
+    expect(m.db.metric_overrides).toHaveLength(1)
+    expect(m.db.ai_pending_actions[0].status).toBe('applied')
+  })
+
   it('apply set_goal → the goals store', async () => {
     const m = memoryClient({ companies: [{ id: 'co' }], metric_targets: [], metrics: [], ai_pending_actions: [{ ...base, kind: 'set_goal', payload: { metricId: 'biz.finansy.valovaya_marzha', targetValue: 40, periodLabel: '12m', label: 'Маржа' } }] })
     const out = await decideAction(m.client, m.db.ai_pending_actions[0] as never, 'apply', actor)

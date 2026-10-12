@@ -36,10 +36,12 @@ export function GoalsSection({ state, readonly }: { state: PointAPageState; read
                 <p className="text-sm font-semibold text-on-surface">{goal.label}</p>
                 <span className={cn(CHIP, st.cls)}>{st.text}</span>
               </div>
-              <p className="mt-1 text-sm font-mono text-on-surface">
-                {fmtValue(e.current, goal.unit)} <Icon name="arrow_forward" className="text-[14px] align-middle text-on-surface-variant" /> {fmtValue(goal.targetValue, goal.unit)}
-                <span className="ml-2 text-[11px] text-on-surface-variant" suppressHydrationWarning>до {new Date(e.deadline).toLocaleDateString('ru-RU')}</span>
+              <p className="mt-1 flex flex-wrap items-center gap-x-1.5 text-sm font-mono text-on-surface">
+                <span className="whitespace-nowrap">{fmtValue(e.current, goal.unit)}</span>
+                <Icon name="arrow_forward" className="text-[14px] text-on-surface-variant" />
+                <span className="whitespace-nowrap">{fmtValue(goal.targetValue, goal.unit)}</span>
               </p>
+              <p className="text-[11px] text-on-surface-variant" suppressHydrationWarning>до {new Date(e.deadline).toLocaleDateString('ru-RU')}</p>
               {e.progress !== null && (
                 <div className="mt-2 h-1.5 rounded-full bg-white/[0.06]" role="progressbar" aria-valuenow={e.progress} aria-valuemin={0} aria-valuemax={100} aria-label="Прогресс к цели">
                   <div className="h-full rounded-full bg-primary" style={{ width: `${e.progress}%` }} />

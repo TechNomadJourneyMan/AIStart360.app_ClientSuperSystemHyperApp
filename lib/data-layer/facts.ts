@@ -77,6 +77,9 @@ function surveyVariants(src: MetricSource): Array<{ src: MetricSource; ref: stri
   return [{ src, ref: `survey:${key}` }]
 }
 
+/** Survey metrics where 0 is a legitimate answer, not an empty field. */
+const ZERO_IS_AN_ANSWER = /(lidov_v_mes|novykh_lidov|novykh_klientov|raskhody_na_reklamu|biznes_sistemy_v_rabote|tsifrovye_kanaly|tsifrovoe_prisutstvie)/
+
 function surveyFacts(entry: MetricEntry, ctx: ResolverContext, seen: Set<string>): Fact[] {
   const out: Fact[] = []
   for (const declared of entry.sources) {
@@ -88,8 +91,9 @@ function surveyFacts(entry: MetricEntry, ctx: ResolverContext, seen: Set<string>
       if (a.status !== 'hit' || typeof a.numeric !== 'number' || !Number.isFinite(a.numeric)) continue
       // The wizard writes 0 for an empty number field (`Number(x) || 0`): a 0
       // of money or a count from the survey is «not answered», not a value
-      // (it produced false «расхождения» against the real figure).
-      if (a.numeric === 0 && (entry.unit === '₸' || entry.unit === 'count')) continue
+      // (it produced false «расхождения» against the real figure) — except
+      // where 0 is a real answer (no ad spend, no leads, no digital channels).
+      if (a.numeric === 0 && (entry.unit === '₸' || entry.unit === 'count') && !ZERO_IS_AN_ANSWER.test(entry.id)) continue
       const key = declared.key
       const answeredAt = ctx.surveyAnsweredAt?.[key] ?? null
       const column = src.coerce?.kind === 'table_cell' && src.coerce.column ? tableColumnPeriod(src.coerce.column) : null

@@ -13,6 +13,8 @@ import { isRateLimitedKey } from '@/lib/rate-limit'
 import { buildPointASnapshot } from '@/lib/point-a/snapshot'
 
 export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
+export const maxDuration = 60
 
 export async function POST(req: Request): Promise<NextResponse> {
   const supabase = await createClient()

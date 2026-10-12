@@ -11,6 +11,7 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase-service'
+import { isPointAExpert } from '@/lib/point-a/expert-access'
 import { resolveTenantWith, tenantErrorMessage } from '@/lib/tenancy'
 import { apiError } from '@/lib/api-error'
 import { BLOCK_KEYS } from '@/lib/point-a/v4/config'
@@ -45,11 +46,12 @@ export async function PATCH(req: Request): Promise<NextResponse> {
   const tenant = await resolveTenantWith(supabase, user.id, { companyId: new URL(req.url).searchParams.get('companyId'), access: expertChange ? 'read' : 'manage' })
   if (!tenant.ok) return apiError(tenantErrorMessage(tenant.error), tenant.status)
   const { companyId, role } = tenant.tenant
-  const expert = role === 'staff' || role === 'partner_expert' || role === 'partner_admin'
-  if (expertChange && !expert) return apiError('Веса и шаблон блоков меняет эксперт', 403)
   if (parsed.data.clientView && !tenant.tenant.canManage) return apiError('Нет доступа к настройке вида', 403)
-
   const service = createServiceClient()
+  // Experts / admins of the platform, or the company's partner expert — not
+  // every staff member (support, analysts …).
+  if (expertChange && !(await isPointAExpert(service, user.id, role))) return apiError('Веса и шаблон блоков меняет эксперт', 403)
+
   const cur = await service.from('pa_company_config').select('template_key, expert_overrides, client_view, version').eq('company_id', companyId).maybeSingle()
   if (cur.error) {
     console.error('[api/v1/point-a/config] read failed', cur.error.code ?? '')
@@ -74,7 +76,7 @@ export async function PATCH(req: Request): Promise<NextResponse> {
   const scoreChange = expertChange || parsed.data.clientView?.added !== undefined
   if (scoreChange) emitPlatformEventSafely({
     name: 'BLOCK_CONFIG_CHANGED', companyId, subjectType: 'company', subjectId: companyId, actor: `user:${user.id}`,
-    payload: { by: expert ? 'expert' : 'client', version: row.version }, dedupeKey: `block_config:${companyId}:${row.version}`,
+    payload: { by: expertChange ? 'expert' : 'client', version: row.version }, dedupeKey: `block_config:${companyId}:${row.version}`,
   })
   return NextResponse.json({ ok: true, data: { version: row.version, clientView: row.client_view, expertOverrides: row.expert_overrides, templateKey: row.template_key } })
 }

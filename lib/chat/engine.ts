@@ -10,10 +10,18 @@ import { zodToJsonSchema } from 'zod-to-json-schema'
 import { fenceUntrusted, UNTRUSTED_DATA_RULES } from '@/lib/ai/gateway'
 import type { ChatWithToolsOptions, ChatWithToolsResult, ToolCall, ToolChatMessage, ToolDefinition } from '@/lib/ai/tools-chat'
 import { ChatToolError, type ChatTool, type ToolContext } from './tools'
+import { BLOCK_LIBRARY, isBlockKey } from '@/lib/point-a/v4/config'
+import { getMetricById } from '@/lib/metrics/registry'
 
 export const MAX_STEPS = 6
 const MAX_TOOL_CALLS_PER_STEP = 6
 const TOOL_RESULT_MAX_CHARS = 12_000
+/** All tool results of one turn together — the context stays bounded. */
+export const TURN_TOOL_CHARS_BUDGET = 40_000
+/** One model call never waits longer than this (the turn has its own deadline). */
+const STEP_TIMEOUT_MS = 25_000
+/** Below this much time left no new model step starts. */
+const MIN_STEP_MS = 4_000
 
 export type ChatSurface = 'point_a' | 'gri' | 'point_b' | 'dashboard' | 'global'
 
@@ -30,7 +38,7 @@ export type ChatEvent =
   | { type: 'answer'; text: string }
   | { type: 'error'; text: string }
 
-export type ChatLlm = (opts: Pick<ChatWithToolsOptions, 'messages' | 'tools' | 'toolChoice' | 'tier'>) => Promise<ChatWithToolsResult>
+export type ChatLlm = (opts: Pick<ChatWithToolsOptions, 'messages' | 'tools' | 'toolChoice' | 'tier' | 'timeoutMs'>) => Promise<ChatWithToolsResult>
 
 const STATUS_RU: Record<string, string> = {
   get_point_a: 'Смотрю Точку А…',
@@ -64,10 +72,19 @@ export function systemPrompt(surface: ChatSurface, focus: ChatFocus, canManage: 
     canManage
       ? 'Менять данные ты не можешь. Если пользователь просит исправить значение, решить расхождение или поставить цель — вызови propose_* инструмент: пользователь увидит карточку и сам нажмёт «Применить». Скажи об этом одной фразой.'
       : 'Менять данные ты не можешь, предложения изменений этому пользователю недоступны — направь к владельцу компании.',
-    `Пользователь сейчас на экране: ${SURFACE_RU[surface]}.${focus.block ? ` Открыт раздел: ${focus.block}.` : ''}${focus.metric ? ` Вопрос о метрике: ${focus.metric}.` : ''}`,
+    `Пользователь сейчас на экране: ${SURFACE_RU[surface]}.${focusText(focus)}`,
     `Сегодня ${now.toISOString().slice(0, 10)}.`,
     UNTRUSTED_DATA_RULES,
   ].join('\n')
+}
+
+/** Only known blocks / metrics reach the prompt (focus comes from the client). */
+function focusText(focus: ChatFocus): string {
+  let out = ''
+  if (focus.block && isBlockKey(focus.block)) out += ` Открыт раздел: ${BLOCK_LIBRARY[focus.block].title} (${focus.block}).`
+  const m = focus.metric ? getMetricById(focus.metric) : null
+  if (m) out += ` Вопрос о метрике: ${m.label} (${m.id}).`
+  return out
 }
 
 export function toolSpec(t: ChatTool): ToolDefinition {
@@ -105,7 +122,7 @@ export interface TurnResult {
   answer: string
   proposals: string[]
   toolsUsed: string[]
-  outcome: 'answered' | 'proposed' | 'ai_error' | 'step_cap'
+  outcome: 'answered' | 'proposed' | 'ai_error' | 'step_cap' | 'timeout' | 'aborted'
 }
 
 export async function runChatTurn(args: {
@@ -117,8 +134,13 @@ export async function runChatTurn(args: {
   history: Array<{ role: 'user' | 'assistant'; content: string }>
   message: string
   onEvent?: (e: ChatEvent) => void
+  /** Epoch ms by which the turn must have answered (the function's time limit). */
+  deadlineAt?: number
+  /** The client went away — stop spending tokens. */
+  signal?: AbortSignal
 }): Promise<TurnResult> {
   const { llm, tools, ctx, onEvent } = args
+  const deadlineAt = args.deadlineAt ?? Number.POSITIVE_INFINITY
   const messages: ToolChatMessage[] = [
     { role: 'system', content: systemPrompt(args.surface, args.focus, ctx.canManage, ctx.now) },
     ...args.history.slice(-12).map((m): ToolChatMessage => (m.role === 'user' ? { role: 'user', content: m.content } : { role: 'assistant', content: m.content })),
@@ -127,10 +149,24 @@ export async function runChatTurn(args: {
   const specs = tools.map(toolSpec)
   const proposals: string[] = []
   const used: string[] = []
+  let toolChars = 0
+  const finish = (text: string, outcome: TurnResult['outcome']): TurnResult => {
+    onEvent?.({ type: 'answer', text })
+    return { answer: text, proposals, toolsUsed: used, outcome }
+  }
+  const left = () => deadlineAt - Date.now()
+  const timeoutMs = () => Math.max(1_000, Math.min(STEP_TIMEOUT_MS, left() - 1_000))
+  // The tools stay declared even when no more calls are allowed: the history
+  // holds tool calls, and some providers reject such a request without them.
+  const closing = (msgs: ToolChatMessage[]) => llm({ messages: msgs, tools: specs, toolChoice: 'none', tier: 'standard', timeoutMs: timeoutMs() })
 
   for (let step = 0; step < MAX_STEPS; step++) {
-    const last = step === MAX_STEPS - 1
-    const res = await llm({ messages, tools: last ? [] : specs, toolChoice: last ? 'none' : 'auto', tier: 'standard' })
+    if (args.signal?.aborted) return { answer: '', proposals, toolsUsed: used, outcome: 'aborted' }
+    if (left() < MIN_STEP_MS) {
+      return finish(proposals.length ? 'Подготовил изменение — проверьте карточку и нажмите «Применить».' : 'Не успел собрать ответ — спросите короче или по частям.', 'timeout')
+    }
+    const last = step === MAX_STEPS - 1 || toolChars >= TURN_TOOL_CHARS_BUDGET
+    const res = last ? await closing(messages) : await llm({ messages, tools: specs, toolChoice: 'auto', tier: 'standard', timeoutMs: timeoutMs() })
     if (!res.ok) {
       const text = 'AI сейчас недоступен — попробуйте ещё раз через минуту.'
       onEvent?.({ type: 'error', text })
@@ -139,14 +175,16 @@ export async function runChatTurn(args: {
     const calls = res.message.tool_calls.slice(0, MAX_TOOL_CALLS_PER_STEP)
     if (!calls.length || last) {
       const text = (res.message.content ?? '').trim() || (proposals.length ? 'Подготовил изменение — проверьте карточку и нажмите «Применить».' : 'Не получилось сформулировать ответ — переформулируйте вопрос.')
-      onEvent?.({ type: 'answer', text })
-      return { answer: text, proposals, toolsUsed: used, outcome: calls.length ? 'step_cap' : proposals.length ? 'proposed' : 'answered' }
+      return finish(text, calls.length ? 'step_cap' : proposals.length ? 'proposed' : 'answered')
     }
-    messages.push({ role: 'assistant', content: res.message.content ?? null, tool_calls: calls })
+    messages.push({ role: 'assistant', content: res.message.content || null, tool_calls: calls })
     for (const call of calls) {
       used.push(call.function.name)
       onEvent?.({ type: 'status', text: STATUS_RU[call.function.name] ?? 'Работаю с данными…' })
-      const r = await runToolCall(call, tools, ctx)
+      const r = toolChars >= TURN_TOOL_CHARS_BUDGET
+        ? { content: JSON.stringify({ error: 'Лимит данных на один вопрос исчерпан — отвечай по уже полученным.' }), proposed: null }
+        : await runToolCall(call, tools, ctx)
+      toolChars += r.content.length
       if (r.proposed) {
         proposals.push(r.proposed)
         onEvent?.({ type: 'proposal', actionId: r.proposed })
@@ -155,13 +193,10 @@ export async function runChatTurn(args: {
     }
     // A proposal ends the work of this turn: one short sentence, no more tools.
     if (proposals.length) {
-      const fin = await llm({ messages, tools: [], toolChoice: 'none', tier: 'standard' })
-      const text = (fin.ok ? fin.message.content?.trim() : '') || 'Подготовил изменение — проверьте карточку и нажмите «Применить».'
-      onEvent?.({ type: 'answer', text })
-      return { answer: text, proposals, toolsUsed: used, outcome: 'proposed' }
+      const fin = left() >= MIN_STEP_MS && !args.signal?.aborted ? await closing(messages) : null
+      const text = (fin?.ok ? fin.message.content?.trim() : '') || 'Подготовил изменение — проверьте карточку и нажмите «Применить».'
+      return finish(text, 'proposed')
     }
   }
-  const text = 'Вопрос оказался слишком большим — разбейте его на части.'
-  onEvent?.({ type: 'answer', text })
-  return { answer: text, proposals, toolsUsed: used, outcome: 'step_cap' }
+  return finish('Вопрос оказался слишком большим — разбейте его на части.', 'step_cap')
 }

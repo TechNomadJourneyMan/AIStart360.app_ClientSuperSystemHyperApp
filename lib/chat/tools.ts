@@ -6,7 +6,7 @@
  *          discrepancies, goals, GRI, Point B, the uploaded documents
  * propose  a change (a metric value for a period, a discrepancy decision, a
  *          goal): NOTHING is written — a card «было → станет» goes to the
- *          user; only «Применить» (POST /api/v1/ai/actions/[id]/apply, which
+ *          user; only «Применить» (POST /api/v1/ai/actions/[id], which
  *          re-checks access) executes it. Owners / admins only.
  *
  * The company and the user come from the session (ToolContext), never from
@@ -131,7 +131,7 @@ export const CHAT_TOOLS: readonly ChatTool[] = [
     name: 'get_metrics',
     description: 'Текущие значения метрик компании с периодом, источником, динамикой и нормой. Передай ids из каталога или query — часть названия («выручка», «конверсия», «NPS»).',
     kind: 'read',
-    input: z.object({ ids: z.array(z.string()).max(15).optional(), query: z.string().max(80).optional() }).strict(),
+    input: z.object({ ids: z.array(z.string()).max(15).optional(), query: z.string().trim().min(2).max(80).optional() }).strict(),
     async run(raw, t) {
       const a = raw as { ids?: string[]; query?: string }
       const ids = [...(a.ids ?? []).filter((id) => getMetricById(id)), ...(a.query ? findMetrics(a.query) : [])].slice(0, 15)
@@ -185,7 +185,10 @@ export const CHAT_TOOLS: readonly ChatTool[] = [
     input: z.object({}).strict(),
     async run(_a, t) {
       let q = t.sb.from('gri_assessments').select('gri_index, section_avgs, top_5_limits, created_at').eq('is_current', true)
-      q = t.ownerId ? q.or(`company_id.eq.${t.companyId},user_id.eq.${t.ownerId}`) : q.eq('company_id', t.companyId)
+      // The company's own assessment, or the owner's one not tied to any company
+      // (is_current is per user — an owner's other company must not leak in).
+      // Both ids come from the server (session / companies row), not the model.
+      q = t.ownerId ? q.or(`company_id.eq.${t.companyId},and(user_id.eq.${t.ownerId},company_id.is.null)`) : q.eq('company_id', t.companyId)
       const { data } = await q.order('created_at', { ascending: false }).limit(1)
       const g = (data ?? [])[0] as Record<string, unknown> | undefined
       if (!g) return { status: 'not_assessed' }
@@ -198,11 +201,14 @@ export const CHAT_TOOLS: readonly ChatTool[] = [
     kind: 'read',
     input: z.object({}).strict(),
     async run(_a, t) {
-      const { data: diag } = await t.sb.from('diagnostics').select('id').eq('company_id', t.companyId).eq('is_current', true).maybeSingle()
+      const { data: diags } = await t.sb.from('diagnostics').select('id').eq('company_id', t.companyId).eq('is_current', true).order('created_at', { ascending: false }).limit(1)
+      const diag = (diags ?? [])[0] as { id: string } | undefined
       if (!diag) return { status: 'not_calculated' }
-      const { data } = await t.sb.from('point_b_analysis').select('roadmap, calculated_at').eq('diagnostic_id', (diag as { id: string }).id).eq('is_current', true).maybeSingle()
-      const r = (data as { roadmap?: Record<string, unknown> } | null)?.roadmap
-      if (!r) return { status: 'not_calculated' }
+      const { data } = await t.sb.from('point_b_analysis').select('roadmap, calculated_at').eq('diagnostic_id', diag.id).eq('is_current', true).order('calculated_at', { ascending: false }).limit(1)
+      const r = ((data ?? [])[0] as { roadmap?: Record<string, unknown> } | undefined)?.roadmap
+      // Point B is readable by the diagnostic's owner and staff only (RLS 029):
+      // for other members say so instead of «not calculated».
+      if (!r) return { status: t.ownerId && t.ownerId !== t.userId ? 'no_access' : 'not_calculated' }
       return { gap: r.gap, realism: r.realism, target_overall: r.target_overall_score, horizons: r.horizons, levers: r.levers }
     },
   },
@@ -228,9 +234,12 @@ export const CHAT_TOOLS: readonly ChatTool[] = [
       if (!e) throw new ChatToolError('Неизвестная метрика')
       if (!parsePeriodKey(a.period)) throw new ChatToolError('Период: «2024», «2025-Q2» или «2025-03»')
       if (!isPlausibleFor(e, a.value)) throw new ChatToolError(`Значение ${a.value} вне допустимого диапазона метрики`)
-      const [cur] = await loadMetricViews(t.sb, t.companyId, [e.id])
+      // «было» = what the data layer holds for THIS period (the value used in
+      // the calculation first), not the latest period of the metric.
+      const { data: facts } = await t.sb.from('metric_facts').select('value, source_kind, confidence').eq('company_id', t.companyId).eq('metric_key', e.id).eq('period_key', a.period).order('confidence', { ascending: false }).limit(1)
+      const was = (facts ?? [])[0] as { value: number | string } | undefined
       const id = await t.propose('set_value', { metric_id: e.id, period_key: a.period, value: a.value, note: a.reason }, {
-        title: `${e.label} · ${periodLabel(a.period)}`, before: cur?.value !== null && cur?.value !== undefined ? `${fmt(cur.value, e.unit)}${cur.period ? ` (${cur.period})` : ''}` : null, after: fmt(a.value, e.unit), note: a.reason,
+        title: `${e.label} · ${periodLabel(a.period)}`, before: was ? fmt(Number(was.value), e.unit) : null, after: fmt(a.value, e.unit), note: a.reason,
       })
       return { status: 'proposed', action_id: id, note: 'Ничего не изменено: пользователь подтвердит карточку сам.' }
     },

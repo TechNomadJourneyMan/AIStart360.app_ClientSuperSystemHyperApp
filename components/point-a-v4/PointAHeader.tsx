@@ -23,10 +23,13 @@ export function PointAHeader({
   const queued = !busy && state.recalculation === 'queued'
   const withoutData = s?.blocks.filter((b) => b.score === null && !b.informational).length ?? 0
   return (
-    <section className={cn(CARD, 'relative overflow-hidden')} aria-labelledby="pa-title">
+    // overflow-clip, not overflow-hidden: the glow sticks out of the card, and a
+    // hidden-overflow box can still be scrolled (focus, scrollIntoView) — that
+    // shifted the whole header left and cut the gauge.
+    <section className={cn(CARD, 'relative overflow-clip')} aria-labelledby="pa-title">
       <div className="pointer-events-none absolute -top-24 -right-24 h-64 w-64 rounded-full bg-primary/10 blur-3xl" aria-hidden />
-      <div className="relative flex flex-col sm:flex-row sm:items-center gap-5">
-        <ScoreGauge score={s?.overall ?? null} size={132} />
+      <div className="relative flex flex-col md:flex-row md:items-center gap-4 md:gap-5">
+        <div className="self-center md:self-auto"><ScoreGauge score={s?.overall ?? null} size={132} /></div>
         <div className="flex-1 min-w-0 space-y-3">
           <div>
             <p className="text-xs font-mono text-primary/70 uppercase tracking-[0.2em]">Точка А</p>
@@ -51,7 +54,7 @@ export function PointAHeader({
           <div className="max-w-sm"><ConfidenceBar value={s?.confidence ?? null} /></div>
           {s && <p className="text-[11px] text-on-surface-variant" suppressHydrationWarning>Обновлено {formatRelativeRuLong(s.createdAt)}</p>}
         </div>
-        <div className="flex flex-row sm:flex-col gap-2 sm:items-stretch">
+        <div className="grid grid-cols-2 gap-2 md:flex md:flex-col md:items-stretch md:min-w-[11rem] [&>*:first-child:nth-last-child(odd)]:col-span-2 [&>*:only-child]:col-span-2">
           {state.canManage && (
             <button type="button" className={BTN_PRIMARY} onClick={onRecalc} disabled={busy} aria-busy={busy}>
               <Icon name={busy ? 'progress_activity' : 'refresh'} className={cn('text-[16px]', busy && 'animate-spin')} />

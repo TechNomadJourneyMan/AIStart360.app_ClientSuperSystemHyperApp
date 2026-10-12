@@ -71,6 +71,47 @@ export async function retrieveUserChunks(
   }
 }
 
+/**
+ * Chunks of ONE company's documents (documents.company_id) — the unified AI
+ * chat (migration 116). The per-user RPC above mixes the companies of an
+ * owner who runs several. The embedding is billed to `billUserId` (the person
+ * asking). Degrades to [] like retrieveUserChunks.
+ */
+export async function retrieveCompanyChunks(
+  companyId: string,
+  query: string,
+  opts: { billUserId: string; limit?: number; minSimilarity?: number },
+): Promise<RetrievedChunk[]> {
+  if (!companyId || !query.trim()) return []
+  let vector: number[] | null = null
+  try {
+    const vectors = await embedWithOpenRouter([query], { feature: 'doc_retrieval', userId: opts.billUserId })
+    vector = vectors?.[0] ?? null
+  } catch {
+    return []
+  }
+  if (!vector) return []
+  try {
+    const { data, error } = await createServiceClient().rpc('match_company_document_chunks', {
+      p_company_id: companyId,
+      p_query: vector as unknown as string,
+      p_limit: opts.limit ?? 6,
+      p_min_similarity: opts.minSimilarity ?? 0.25,
+    })
+    if (error || !Array.isArray(data)) return []
+    const out: RetrievedChunk[] = []
+    let total = 0
+    for (const r of data as Array<{ chunk_id: string; document_id: string; document_name: string; content: string; similarity: number }>) {
+      total += r.content.length
+      if (total > MAX_CONTEXT_CHARS && out.length > 0) break
+      out.push({ chunkId: r.chunk_id, documentId: r.document_id, documentName: r.document_name, content: r.content, similarity: r.similarity })
+    }
+    return out
+  } catch {
+    return []
+  }
+}
+
 // ─── Index status (F-073) ────────────────────────────────────────────────────
 
 export type DocumentIndexState = 'none' | 'not_indexed' | 'partial' | 'indexed'

@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const h = vi.hoisted(() => ({
   tenant: { ok: true, tenant: { userId: 'u-1', companyId: 'co-1', role: 'owner', canManage: true, legacy: false } } as Record<string, unknown>,
   row: null as Record<string, unknown> | null,
+  roles: { profiles: null, staff_roles: null } as Record<string, Record<string, unknown> | null>,
   upserted: [] as Array<Record<string, unknown>>,
   emit: vi.fn(),
 }))
@@ -10,11 +11,11 @@ const h = vi.hoisted(() => ({
 vi.mock('@/lib/supabase/server', () => ({ createClient: async () => ({ auth: { getUser: async () => ({ data: { user: { id: 'u-1' } }, error: null }) } }) }))
 vi.mock('@/lib/supabase-service', () => ({
   createServiceClient: () => ({
-    from: () => {
+    from: (table: string) => {
       const b: Record<string, unknown> = {}
       b.select = () => b
       b.eq = () => b
-      b.maybeSingle = async () => ({ data: h.row, error: null })
+      b.maybeSingle = async () => ({ data: table in h.roles ? h.roles[table] : h.row, error: null })
       b.upsert = async (r: Record<string, unknown>) => { h.upserted.push(r); return { error: null } }
       return b
     },
@@ -33,6 +34,7 @@ beforeEach(() => {
   h.tenant = { ok: true, tenant: { userId: 'u-1', companyId: 'co-1', role: 'owner', canManage: true, legacy: false } }
   h.row = { client_view: { hidden: ['team'] }, expert_overrides: { finance: { weight: 0.4 } }, version: 3 }
   h.upserted = []
+  h.roles = { profiles: null, staff_roles: null }
   h.emit.mockReset()
 })
 
@@ -59,6 +61,15 @@ describe('PATCH /api/v1/point-a/config', () => {
     h.tenant = { ok: true, tenant: { userId: 'u-1', companyId: 'co-1', role: 'partner_expert', canManage: false, legacy: false } }
     expect((await patch({ expertOverrides: { product: { enabled: false } } })).status).toBe(200)
     expect(h.upserted[0].expert_overrides).toEqual({ finance: { weight: 0.4 }, product: { enabled: false } })
+  })
+  it('platform staff: experts / admins yes, support / analysts no', async () => {
+    h.tenant = { ok: true, tenant: { userId: 'u-1', companyId: 'co-1', role: 'staff', canManage: false, legacy: false } }
+    h.roles = { profiles: { role: 'client' }, staff_roles: { role: 'support' } }
+    expect((await patch({ expertOverrides: { finance: { weight: 1 } } })).status).toBe(403)
+    h.roles = { profiles: { role: 'expert' }, staff_roles: null }
+    expect((await patch({ expertOverrides: { finance: { weight: 1 } } })).status).toBe(200)
+    h.roles = { profiles: { role: 'client' }, staff_roles: { role: 'super_expert' } }
+    expect((await patch({ templateKey: 'ecommerce' })).status).toBe(200)
   })
   it('unknown blocks and empty bodies are refused', async () => {
     expect((await patch({ clientView: { hidden: ['nope'] } })).status).toBe(400)
