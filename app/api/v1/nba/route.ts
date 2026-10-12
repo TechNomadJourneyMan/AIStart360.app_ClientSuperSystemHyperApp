@@ -1,6 +1,7 @@
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
+import { DIAGNOSTIC_POINT_A_COLUMNS, pointAFromDiagnosticRow } from '@/lib/point-a/from-row'
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { isRateLimitedKey } from '@/lib/rate-limit'
@@ -117,15 +118,22 @@ export async function GET(_req: NextRequest) {
     }
   } catch { /* crm tables absent — skip */ }
 
-  // Point A red zones (S2) — compute over the user's survey answers.
+  // Point A red zones (S2) — the stored current Point A (the score the client
+  // sees); computed from the survey only when there is none yet.
   try {
-    const { data: sa } = await sb.from('survey_answers').select('question_key, answer').eq('user_id', user.id)
-    if (sa && sa.length > 0) {
-      const answers: Record<string, unknown> = {}
-      for (const r of sa as Array<{ question_key: string; answer: unknown }>) {
-        answers[r.question_key] = (r.answer as { value?: unknown } | null)?.value ?? r.answer
+    const { data: cur } = await sb.from('diagnostics').select(DIAGNOSTIC_POINT_A_COLUMNS).eq('user_id', user.id).eq('is_current', true).maybeSingle()
+    let pa = pointAFromDiagnosticRow(cur as Record<string, unknown> | null)
+    if (!pa) {
+      const { data: sa } = await sb.from('survey_answers').select('question_key, answer').eq('user_id', user.id)
+      if (sa && sa.length > 0) {
+        const answers: Record<string, unknown> = {}
+        for (const r of sa as Array<{ question_key: string; answer: unknown }>) {
+          answers[r.question_key] = (r.answer as { value?: unknown } | null)?.value ?? r.answer
+        }
+        pa = calculatePointA(answers)
       }
-      const pa = calculatePointA(answers)
+    }
+    if (pa) {
       const reds = Object.entries(pa.blocks)
         .filter(([, b]) => (b as { status?: string }).status === 'weak')
         .map(([k, b]) => ({ key: k, label: POINT_A_LABELS[k] ?? k, score: (b as { score: number }).score }))

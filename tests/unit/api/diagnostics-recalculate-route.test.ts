@@ -77,6 +77,10 @@ vi.mock('@/lib/notifications/product', () => ({ notifyPointARecalculated: async 
 vi.mock('@/lib/events/track', () => ({ trackEvent: async () => undefined }))
 vi.mock('@/lib/background', () => ({ runInBackground: (_l: string, work: () => Promise<unknown>) => { const p = work(); h.pending.push(p); return p } }))
 vi.mock('@/lib/agents/queue', () => ({ enqueueAgentTask: async (t: Record<string, unknown>) => { h.enqueued.push(t); return { id: 't1' } } }))
+// The snapshot path (lib/point-a/snapshot.ts) has its own tests; here it is
+// «before migration 111» unless a test switches it on — the direct path below.
+const snap = vi.hoisted(() => ({ result: { status: 'skipped', reason: 'not_migrated' } as Record<string, unknown>, calls: [] as unknown[][] }))
+vi.mock('@/lib/point-a/snapshot', () => ({ buildPointASnapshot: async (...args: unknown[]) => { snap.calls.push(args); return snap.result } }))
 
 const { POST } = await import('@/app/api/v1/diagnostics/recalculate/route')
 const { verifyInternalToken, INTERNAL_TOKEN_HEADER } = await import('@/lib/internal-auth')
@@ -95,6 +99,8 @@ beforeEach(() => {
   h.enqueued = []
   h.pending = []
   h.seq = 0
+  snap.result = { status: 'skipped', reason: 'not_migrated' }
+  snap.calls = []
   h.tables = {
     survey_answers: [{ user_id: 'client-1', question_key: 's2_revenue_2025', answer: { value: 95_000_000 } }],
     companies: [{ id: 'co-1', user_id: 'client-1' }],
@@ -104,6 +110,18 @@ beforeEach(() => {
 })
 
 describe('POST /api/v1/diagnostics/recalculate', () => {
+  it('a company recalculates through the snapshot path (forced, manual) and answers with its diagnostic', async () => {
+    snap.result = { status: 'written', snapshotId: 's1', diagnosticId: 'diag-v4', diagnostic: { id: 'diag-v4' }, engine: 'v4', written: { overall_score: 61, stage: 'early' }, v4: {}, changes: [] }
+    const res = await post()
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.data).toMatchObject({ diagnostic: { id: 'diag-v4' }, point_a: { overall_score: 61 }, snapshot_id: 's1', engine: 'v4' })
+    expect(snap.calls[0][0]).toBe('co-1')
+    expect(snap.calls[0][1]).toMatchObject({ trigger: 'manual', force: true })
+    // the direct path did not run
+    expect(current().map((r) => r.id)).toEqual(['diag-old'])
+  })
+
   it('a repeated recalculation leaves exactly one current diagnostic', async () => {
     expect((await post()).status).toBe(200)
     expect((await post()).status).toBe(200)

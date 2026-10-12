@@ -14,6 +14,7 @@ import { isRateLimitedKey } from '@/lib/rate-limit'
 import { trackEvent } from '@/lib/events/track'
 import { internalBaseUrl } from '@/lib/internal-auth'
 import { fireAiFanOut, startDiagnosticPipeline, storeCurrentDiagnostic } from '@/lib/point-a/diagnostic-row'
+import { buildPointASnapshot } from '@/lib/point-a/snapshot'
 
 // POST /api/v1/diagnostics/recalculate
 // Body: { user_id? } — the target user; defaults to the session user.
@@ -79,6 +80,23 @@ export async function POST(req: NextRequest) {
     if (companyErr) {
       console.error('[recalculate] company lookup failed', companyErr.code ?? '', companyErr.message ?? '')
       return NextResponse.json({ ok: false, error: 'Failed to load company' }, { status: 500 })
+    }
+
+    // A company's Point A is one snapshot path (lib/point-a/snapshot.ts):
+    // materialised metrics, v1 + v4, the point_a_v4 setting, history with
+    // change reasons, AI fan-out and the pipeline. Before migration 111 (or on
+    // any failure there) the direct calculation below keeps working.
+    if (company?.id) {
+      const snap = await buildPointASnapshot(String(company.id), { trigger: 'manual', force: true, locale })
+        .catch((err) => { console.error('[recalculate] snapshot path failed, direct calculation', err instanceof Error ? err.message : err); return null })
+      if (snap?.status === 'written') {
+        void trackEvent({ userId: user_id, name: 'POINT_A_CALCULATED', entityType: 'diagnostic', entityId: snap.diagnosticId, metadata: { overall_score: Number(snap.written.overall_score), engine: snap.engine } })
+        runInBackground('point-a-notify', () =>
+          notifyPointARecalculated(user_id, { diagnosticId: snap.diagnosticId, overallScore: Number(snap.written.overall_score) }),
+        )
+        notifyAdmins('diagnostic_recalculated', { overallScore: snap.written.overall_score, stage: snap.written.stage ?? null, diagnosticId: snap.diagnosticId }, user_id)
+        return NextResponse.json({ ok: true, data: { diagnostic: snap.diagnostic, point_a: snap.written, snapshot_id: snap.snapshotId, engine: snap.engine } })
+      }
     }
 
     // Calculate Point A. Materialised metric values from documents / manual /

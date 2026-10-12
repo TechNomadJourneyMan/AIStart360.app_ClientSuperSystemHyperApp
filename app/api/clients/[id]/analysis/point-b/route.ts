@@ -1,5 +1,6 @@
 export const dynamic = 'force-dynamic'
 
+import { DIAGNOSTIC_POINT_A_COLUMNS, pointAFromDiagnosticRow } from '@/lib/point-a/from-row'
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { requireExpert } from '@/lib/expert-auth'
@@ -34,8 +35,15 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
       answers[row.question_key] = (row.answer as { value?: unknown })?.value ?? row.answer
     }
 
-    // Calculate Point A then Point B
-    const pointA = calculatePointA(answers)
+    // The client's stored Point A (the score they see), then Point B; the
+    // survey-only engine only when no diagnostic exists yet.
+    const { data: cur } = await sb
+      .from('diagnostics')
+      .select(DIAGNOSTIC_POINT_A_COLUMNS)
+      .eq('user_id', params.id)
+      .eq('is_current', true)
+      .maybeSingle()
+    const pointA = pointAFromDiagnosticRow(cur as Record<string, unknown> | null) ?? calculatePointA(answers)
     const pointB = calculatePointB(pointA, answers)
 
     return NextResponse.json(pointB)

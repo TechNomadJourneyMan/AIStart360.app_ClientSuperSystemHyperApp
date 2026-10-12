@@ -4,6 +4,7 @@ export const dynamic = 'force-dynamic'
 // recalculate, polled via ai-status), so a generous budget is fine.
 export const maxDuration = 300
 
+import { DIAGNOSTIC_POINT_A_COLUMNS, pointAFromDiagnosticRow } from '@/lib/point-a/from-row'
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase-server'
 import { createServiceClient } from '@/lib/supabase-service'
@@ -85,7 +86,7 @@ export async function POST(req: NextRequest) {
     // The diagnostic must belong to user_id — checked before any paid call.
     const { data: owned, error: ownErr } = await db
       .from('diagnostics')
-      .select('id')
+      .select(DIAGNOSTIC_POINT_A_COLUMNS)
       .eq('id', diagnostic_id)
       .eq('user_id', user_id)
       .maybeSingle()
@@ -150,8 +151,10 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 5. Run rule-based engine to get PointA structure
-    const pointA = calculatePointA(answers)
+    // 5. The Point A this diagnostic stores (the score the client sees, with
+    // document / manual values and v4); the survey-only engine only for a
+    // row without one.
+    const pointA = pointAFromDiagnosticRow(owned as Record<string, unknown>) ?? calculatePointA(answers)
 
     // 6. Run AI analysis (with expert notes) — or reuse a previous analysis of
     // EXACTLY the same input (4 LLM calls saved per unchanged recalculation).
@@ -173,7 +176,7 @@ export async function POST(req: NextRequest) {
             .eq('narrative_input_hash', hash)
             .eq('ai_status', 'completed')
             .not('ai_analysis', 'is', null)
-            .order('created_at', { ascending: false })
+            .order('calculated_at', { ascending: false }) // diagnostics has no created_at
             .limit(1)
             .maybeSingle()
           const cached = error ? null : readAiAnalysis(data?.ai_analysis) // error: e.g. migration 091 not applied yet

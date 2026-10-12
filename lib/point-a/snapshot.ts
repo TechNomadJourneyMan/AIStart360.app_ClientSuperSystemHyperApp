@@ -47,6 +47,7 @@ export type SnapshotResult =
       status: 'written'
       snapshotId: string | null
       diagnosticId: string
+      diagnostic: Record<string, unknown>
       engine: 'v1' | 'v4'
       written: PointA
       v4: PointAV4
@@ -201,5 +202,5 @@ export async function buildPointASnapshot(companyId: string, opts: SnapshotOptio
   const snapshotId = (ins.data as { id?: string } | null)?.id ?? null
 
   deps.afterWrite({ companyId, ownerId, diagnosticId, snapshotId, engine, written, changes, trigger: opts.trigger, locale: opts.locale ?? 'ru' })
-  return { status: 'written', snapshotId, diagnosticId, engine, written, v4, changes }
+  return { status: 'written', snapshotId, diagnosticId, diagnostic: stored.diag, engine, written, v4, changes }
 }
