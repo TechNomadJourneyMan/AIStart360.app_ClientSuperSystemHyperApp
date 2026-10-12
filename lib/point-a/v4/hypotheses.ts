@@ -14,7 +14,7 @@ export const MAX_HYPOTHESIS_CONFIDENCE = 0.4
 
 /** Blocks that need a hypothesis: no score, but something to go on. */
 export function blocksNeedingHypothesis(blocks: readonly V4Block[]): V4Block[] {
-  return blocks.filter((b) => b.status === 'insufficient_data' && !b.informational && b.coverage > 0 && !b.hypothesis)
+  return blocks.filter((b) => b.status === 'insufficient_data' && !b.informational && b.coverage > 0 && !b.hypothesis && !b.expertReview)
 }
 
 /** Hypotheses of the previous snapshot whose block inputs did not change. */
@@ -23,6 +23,8 @@ export function carryOverHypotheses(blocks: readonly V4Block[], prev: readonly V
   const byKey = new Map(prev.map((b) => [b.key, b]))
   return blocks.map((b) => {
     const p = byKey.get(b.key)
+    // A rejected hypothesis stays gone; a confirmed one keeps its text.
+    if (b.expertReview?.decision === 'rejected') return b
     return b.status === 'insufficient_data' && p?.hypothesis && p.inputsHash === b.inputsHash ? { ...b, hypothesis: p.hypothesis } : b
   })
 }

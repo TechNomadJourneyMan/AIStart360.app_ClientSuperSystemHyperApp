@@ -45,3 +45,31 @@ describe('AI hypotheses of blocks without data', () => {
     expect(changed.find((b) => b.key === 'sales')!.hypothesis).toBeUndefined()
   })
 })
+
+describe('expert decisions on hypotheses (spec §7)', () => {
+  const base = () => calculatePointAV4({ answers: CURRENT_TYPICAL, blocks: effectiveBlocks(DEFAULT_TEMPLATE) })
+  const salesHash = () => base().blocks.find((b) => b.key === 'sales')!.inputsHash
+
+  it('confirmed → the block is scored by the hypothesis (inferred, low confidence) and counts in the overall', () => {
+    const before = base()
+    const after = calculatePointAV4({ answers: CURRENT_TYPICAL, blocks: effectiveBlocks(DEFAULT_TEMPLATE), reviews: { sales: { decision: 'confirmed', inputsHash: salesHash(), score: 30, rationale: 'r', by: 'Эксперт', at: '2026-10-12' } } })
+    const sales = after.blocks.find((b) => b.key === 'sales')!
+    expect(sales).toMatchObject({ score: 30, basis: 'inferred', expertReview: { decision: 'confirmed', by: 'Эксперт' } })
+    expect(sales.confidence).toBeLessThanOrEqual(0.4)
+    expect(after.overall).not.toBe(before.overall)
+    expect(after.blocks_without_data).not.toContain('sales')
+    expect(after.strengths.map((s) => s.block)).not.toContain('sales')
+  })
+
+  it('a decision on other inputs (new data) is void', () => {
+    const after = calculatePointAV4({ answers: CURRENT_TYPICAL, blocks: effectiveBlocks(DEFAULT_TEMPLATE), reviews: { sales: { decision: 'confirmed', inputsHash: 'stale', score: 30, rationale: null, by: null, at: '2026-10-12' } } })
+    expect(after.blocks.find((b) => b.key === 'sales')!.score).toBeNull()
+  })
+
+  it('rejected → no hypothesis is generated or carried over', () => {
+    const after = calculatePointAV4({ answers: CURRENT_TYPICAL, blocks: effectiveBlocks(DEFAULT_TEMPLATE), reviews: { sales: { decision: 'rejected', inputsHash: salesHash(), score: null, rationale: null, by: 'Эксперт', at: '2026-10-12' } } })
+    expect(blocksNeedingHypothesis(after.blocks).map((b) => b.key)).not.toContain('sales')
+    const prev = base().blocks.map((b) => (b.key === 'sales' ? { ...b, hypothesis: { score: 50, confidence: 0.3, rationale: 'x', generatedAt: 'z' } } : b))
+    expect(carryOverHypotheses(after.blocks, prev).find((b) => b.key === 'sales')!.hypothesis).toBeUndefined()
+  })
+})

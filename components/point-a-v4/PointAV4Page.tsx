@@ -18,6 +18,7 @@ import { GoalsSection } from './GoalsSection'
 import { BenchmarksCard, GriCard, SourcesCard } from './SideCards'
 import { HistorySection } from './HistorySection'
 import { KeyMetricsStrip } from './KeyMetricsStrip'
+import { ExpertNotes } from './ExpertNotes'
 import type { BlockKey } from '@/lib/point-a/v4/config'
 import type { BlockDetail } from '@/lib/point-a/v4/metric-views'
 import { BTN_PRIMARY, CARD, Icon } from './ui'
@@ -78,6 +79,7 @@ export default function PointAV4Page({ preview, previewDetails }: { preview?: Po
       ) : (
         <>
           <KeyMetricsStrip state={state} readonly={!!preview} />
+          <ExpertNotes state={state} />
           <AttentionPanel state={state} readonly={!!preview} />
           <OverviewSection snapshot={state.snapshot} />
           <BlocksSection state={state} customize={customize} previewDetails={previewDetails} />

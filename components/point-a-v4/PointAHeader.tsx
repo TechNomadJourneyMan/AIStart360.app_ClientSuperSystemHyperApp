@@ -39,7 +39,16 @@ export function PointAHeader({
             {s?.stage && <span className={cn(CHIP, 'bg-primary/10 text-primary')}>{STAGE_RU[s.stage] ?? s.stage}</span>}
             {s && <span className={cn(CHIP, 'bg-white/[0.04] text-on-surface-variant')}>Полнота данных {pct(s.coverage)}</span>}
             {withoutData > 0 && <span className={cn(CHIP, 'bg-amber-300/10 text-amber-200')}>Без данных: {withoutData}</span>}
-            {s?.reviewedAt && <span className={cn(CHIP, 'bg-emerald-400/10 text-emerald-300')}><Icon name="verified" className="text-[12px]" />Проверено экспертом</span>}
+            {state.review?.status === 'current' && (
+              <span className={cn(CHIP, 'bg-emerald-400/10 text-emerald-300')} suppressHydrationWarning>
+                <Icon name="verified" className="text-[12px]" />Проверено экспертом{state.review.by ? ` ${state.review.by}` : ''}, {new Date(state.review.at).toLocaleDateString('ru-RU')}
+              </span>
+            )}
+            {state.review?.status === 'earlier' && (
+              <span className={cn(CHIP, 'bg-white/[0.04] text-on-surface-variant')} title={`${state.review.by ?? 'Эксперт'}, ${new Date(state.review.at).toLocaleDateString('ru-RU')}`} suppressHydrationWarning>
+                <Icon name="history" className="text-[12px]" />Проверено ранее, есть изменения
+              </span>
+            )}
             {busy && (
               <span className={cn(CHIP, 'bg-primary/10 text-primary')} aria-live="polite">
                 <Icon name="progress_activity" className="text-[12px] animate-spin" />Пересчитывается…

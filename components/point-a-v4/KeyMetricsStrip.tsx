@@ -18,7 +18,7 @@ import { BodyPortal } from '@/components/ui/body-portal'
 
 const MAX = 8
 
-function Tile({ m, goal }: { m: MetricView; goal?: PointAPageState['goals'][number] }) {
+export function KeyMetricTile({ m, goal }: { m: MetricView; goal?: PointAPageState['goals'][number] }) {
   return (
     <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-3 min-w-0" title={m.what ?? undefined}>
       <p className="truncate text-[11px] text-on-surface-variant">{m.label}</p>
@@ -128,7 +128,7 @@ export function KeyMetricsStrip({ state, readonly }: { state: PointAPageState; r
         <span id="pa-key">Главные метрики</span>
       </SectionTitle>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
-        {state.keyMetrics.map((m) => <Tile key={m.id} m={m} goal={goalOf(m.id)} />)}
+        {state.keyMetrics.map((m) => <KeyMetricTile key={m.id} m={m} goal={goalOf(m.id)} />)}
       </div>
       {!state.keyMetricsCustom && state.canManage && (
         <p className="mt-2 text-[11px] text-on-surface-variant">Это набор по умолчанию — выберите показатели, за которыми следите сами.</p>

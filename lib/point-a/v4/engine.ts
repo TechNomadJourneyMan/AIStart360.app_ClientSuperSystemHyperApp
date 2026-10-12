@@ -72,7 +72,25 @@ export interface V4Block {
   inputsHash: string
   /** AI estimate of a block without data — never a FACT. */
   hypothesis?: V4Hypothesis
+  /** 'inferred': scored by an AI hypothesis an expert confirmed (not by facts). */
+  basis?: 'facts' | 'inferred'
+  /** The expert's decision on the block's AI hypothesis (spec §7). */
+  expertReview?: { decision: 'confirmed' | 'rejected'; by: string | null; at: string }
 }
+
+/** An expert decision on a block hypothesis (public.point_a_hypothesis_reviews). */
+export interface HypothesisReview {
+  decision: 'confirmed' | 'rejected'
+  /** The block inputs the decision was made on — new data makes it void. */
+  inputsHash: string
+  score: number | null
+  rationale: string | null
+  by: string | null
+  at: string
+}
+
+/** Confidence of a block scored by a confirmed hypothesis (inferred, never a fact). */
+export const INFERRED_CONFIDENCE = 0.4
 
 export interface UploadItem {
   block: BlockKey
@@ -101,6 +119,24 @@ export interface V4Input {
   blocks: readonly EffectiveBlock[]
   /** Metric ids with an open data discrepancy. */
   conflictMetrics?: ReadonlySet<string>
+  /** Expert decisions on AI hypotheses, by block. */
+  reviews?: Partial<Record<BlockKey, HypothesisReview>>
+}
+
+/**
+ * Applies the expert's decisions to blocks without data whose inputs are the
+ * ones decided on: confirmed → scored by the hypothesis (basis 'inferred',
+ * low confidence), rejected → marked (no hypothesis is shown or generated).
+ */
+export function applyReviews(blocks: readonly V4Block[], reviews: V4Input['reviews']): V4Block[] {
+  if (!reviews) return [...blocks]
+  return blocks.map((b) => {
+    const r = reviews[b.key]
+    if (!r || b.status !== 'insufficient_data' || r.inputsHash !== b.inputsHash) return b
+    const mark = { decision: r.decision, by: r.by, at: r.at }
+    if (r.decision === 'rejected' || r.score === null) return { ...b, hypothesis: undefined, expertReview: mark }
+    return { ...b, score: r.score, basis: 'inferred' as const, confidence: Math.min(Math.max(b.confidence, INFERRED_CONFIDENCE), INFERRED_CONFIDENCE), expertReview: mark }
+  })
 }
 
 function round(n: number, digits = 0): number {
@@ -158,7 +194,7 @@ export function calculatePointAV4(input: V4Input): PointAV4 {
   const aliased = withCurrentAliases(input.answers)
   const ctx = { aliased, steps: answeredSteps(input.answers), resolved, conflicts: input.conflictMetrics ?? new Set<string>() }
   const raw = allChecks(input.answers, resolved)
-  const blocks = input.blocks.map((eb) => scoreBlock(eb, raw[eb.key], ctx))
+  const blocks = applyReviews(input.blocks.map((eb) => scoreBlock(eb, raw[eb.key], ctx)), input.reviews)
 
   const weighted = blocks.filter((b) => !b.informational)
   const scored = weighted.filter((b) => b.score !== null)

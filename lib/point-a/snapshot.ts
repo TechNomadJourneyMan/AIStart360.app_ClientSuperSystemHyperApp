@@ -27,8 +27,8 @@ import type { PointA } from '@/types/onboarding'
 import type { MetricValue } from '@/lib/metrics/types'
 import { pickedSourceLabel } from '@/lib/metrics/materialize'
 import { RESOLVED_INPUT_METRICS, resolvedInputsFromValues } from './resolved-inputs'
-import { calculatePointAV4, toCompatPointA, type PointAV4, type V4Block } from './v4/engine'
-import { BLOCK_LIBRARY } from './v4/config'
+import { calculatePointAV4, toCompatPointA, type HypothesisReview, type PointAV4, type V4Block } from './v4/engine'
+import { BLOCK_LIBRARY, isBlockKey, type BlockKey } from './v4/config'
 import { loadBlockConfig } from './v4/store'
 import { carryOverHypotheses } from './v4/hypotheses'
 import { loadGoals } from '@/lib/goals/store'
@@ -140,6 +140,24 @@ async function addHypotheses(snapshotId: string, blocks: V4Block[], industry: st
   if (error) console.error('[point-a/snapshot] hypotheses not stored', error.code ?? '', error.message ?? '')
 }
 
+/** Expert decisions on AI hypotheses (migration 117); none before it. */
+async function loadHypothesisReviews(service: SupabaseClient, companyId: string): Promise<Partial<Record<BlockKey, HypothesisReview>>> {
+  const { data, error } = await service.from('point_a_hypothesis_reviews').select('block_key, inputs_hash, decision, score, rationale, decided_by_name, decided_at').eq('company_id', companyId)
+  if (error) {
+    if (missingTable(error)) return {}
+    throw new Error(`point-a: hypothesis reviews read failed (${error.code ?? 'unknown'})`)
+  }
+  const out: Partial<Record<BlockKey, HypothesisReview>> = {}
+  for (const r of (data ?? []) as Array<Record<string, unknown>>) {
+    if (!isBlockKey(r.block_key) || (r.decision !== 'confirmed' && r.decision !== 'rejected')) continue
+    out[r.block_key] = {
+      decision: r.decision, inputsHash: String(r.inputs_hash), score: r.score === null || r.score === undefined ? null : Number(r.score),
+      rationale: (r.rationale as string | null) ?? null, by: (r.decided_by_name as string | null) ?? null, at: String(r.decided_at),
+    }
+  }
+  return out
+}
+
 function missingTable(e: { code?: string } | null | undefined): boolean {
   return !!e && (e.code === '42P01' || e.code === 'PGRST205')
 }
@@ -214,9 +232,10 @@ async function build(companyId: string, opts: SnapshotOptions, deps: SnapshotDep
   const conflicts = [...new Set(((open.data ?? []) as Array<{ metric_key: string }>).map((r) => r.metric_key))]
 
   const config = await loadBlockConfig(service, companyId, industry)
+  const reviews = await loadHypothesisReviews(service, companyId)
   const resolved = resolvedInputsFromValues(values)
   const v1 = calculatePointA(surveyAnswers, resolved)
-  const computed = calculatePointAV4({ answers: surveyAnswers, resolved, blocks: config.blocks, conflictMetrics: new Set(conflicts) })
+  const computed = calculatePointAV4({ answers: surveyAnswers, resolved, blocks: config.blocks, conflictMetrics: new Set(conflicts), reviews })
   // AI hypotheses of blocks whose inputs did not change are kept (no new AI call).
   const v4: PointAV4 = { ...computed, blocks: carryOverHypotheses(computed.blocks, prev?.blocks) }
 
@@ -232,7 +251,12 @@ async function build(companyId: string, opts: SnapshotOptions, deps: SnapshotDep
   // No v4 score at all (too little data): the row stays v1 — never a 0.
   const engine: 'v1' | 'v4' = wantV4 && v4.overall !== null ? 'v4' : 'v1'
   const version = `${config.version}|${wantV4 ? 'v4' : 'v1'}`
-  const inputs = { ...snapshotInputs(values, surveyAnswers, conflicts, version), goals: Object.fromEntries(goals.map((g) => [`${g.metricId}|${g.periodLabel}`, `${g.targetValue}|${g.deadline ?? ''}|${g.direction}`])) }
+  const inputs = {
+    ...snapshotInputs(values, surveyAnswers, conflicts, version),
+    goals: Object.fromEntries(goals.map((g) => [`${g.metricId}|${g.periodLabel}`, `${g.targetValue}|${g.deadline ?? ''}|${g.direction}`])),
+    // An expert decision on a hypothesis changes the score — a new Point A.
+    ...(Object.keys(reviews).length ? { reviews: Object.fromEntries(Object.entries(reviews).map(([k, r]) => [k, `${r!.decision}|${r!.score ?? ''}|${r!.inputsHash}`])) } : {}),
+  }
   const hash = inputsHash(inputs)
   // Unchanged only if the previous run got as far as its diagnostic.
   if (!opts.force && prev && prev.diagnostic_id && prev.inputs_hash === hash && prev.config_version === version) {

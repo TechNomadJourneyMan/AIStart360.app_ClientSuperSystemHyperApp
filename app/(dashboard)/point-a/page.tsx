@@ -7,14 +7,11 @@ import { getSetting } from '@/lib/settings/store'
 import { FileArea } from '@/components/point-a/FileArea'
 import PointAQuickToolbar from '@/components/point-a/PointAQuickToolbar'
 import { SurveyOverview } from '@/components/point-a/SurveyOverview'
-import PointAIntelligenceSection from '@/components/point-a/PointAIntelligenceSection'
-import PointADashboardSectionsBoundary from '@/components/dashboard/PointADashboardSections'
 import { OnboardingStatusBadges } from '@/components/dashboard/OnboardingStatusBadges'
 import GrowthSnapshotHero from '@/components/dashboard/GrowthSnapshotHero'
 import KeyMetricsHero from '@/components/point-a/v2/KeyMetricsHero'
 import MetricZonesGrid from '@/components/point-a/v2/MetricZonesGrid'
 import CompanyDataCard from '@/components/point-a/v2/CompanyDataCard'
-import MarketAnalysisCard from '@/components/point-a/v2/MarketAnalysisCard'
 import InsightsFeed from '@/components/point-a/v2/InsightsFeed'
 import PointAQuickPills from '@/components/point-a/v2/PointAQuickPills'
 import PointAFilterSection from '@/components/point-a/v2/PointAFilterSection'
@@ -47,7 +44,6 @@ export default async function PointAPage() {
   // Fetch data from Supabase REST API (bypasses RLS). The overall score, its
   // date and the documents count live in <ExecutiveOverview/> (level 1) —
   // this page only loads what the level-2 sections below need.
-  let domainScores: Array<{ id: string; label: string; score: number; max: number; icon: string }> = []
   const surveyAnswers: Record<string, unknown> = {}
   const surveyCompletedSteps: number[] = []
   let companyId: string | null = null
@@ -57,37 +53,6 @@ export default async function PointAPage() {
     const serviceKey = requireServiceRoleKey()
     const headers = { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` }
 
-    // Get user's latest diagnostic. Keyed by the SUPABASE user (clientId):
-    // it used to require a NextAuth session, which Supabase-authenticated
-    // clients never have, so «Диагностика по блокам» stayed hidden and the
-    // page said «Нет данных диагностики» even after a recalculation.
-    if (clientId) {
-      const diagRes = await fetch(
-        `${supabaseUrl}/rest/v1/diagnostics?user_id=eq.${clientId}&order=calculated_at.desc&limit=1`,
-        { headers, cache: 'no-store' }
-      )
-      if (diagRes.ok) {
-        const diags = await diagRes.json()
-        const diag = diags[0]
-        if (diag) {
-          const blocks: Record<string, { label: string; icon: string }> = {
-            finance: { label: 'Финансы', icon: 'payments' },
-            sales: { label: 'Продажи', icon: 'trending_up' },
-            operations: { label: 'Операции', icon: 'settings' },
-            marketing: { label: 'Маркетинг', icon: 'campaign' },
-            strategy: { label: 'Стратегия', icon: 'flag' },
-          }
-
-          domainScores = Object.entries(blocks).map(([key, meta]) => {
-            const blockData = diag[`${key}_score`]
-            const score = typeof blockData === 'object' && blockData !== null
-              ? (blockData as { score?: number }).score ?? 0
-              : 0
-            return { id: key, label: meta.label, score, max: 100, icon: meta.icon }
-          })
-        }
-      }
-    }
     // Fetch first company for this user (for Point A intelligence aggregator)
     if (clientId) {
       const companyRes = await fetch(
@@ -191,20 +156,6 @@ export default async function PointAPage() {
         </section>
       )}
 
-      {/* Market analysis — full-width row, big tiles + Гига Рынок CTA */}
-      {clientId && (
-        <section id="market-analysis" aria-label="Анализ рынка">
-          <MarketAnalysisCard userId={clientId} />
-        </section>
-      )}
-
-      {/* Spec-driven sections — keeps Filters + Retention + RFM + Loss Map.
-          (Top Sales table is sr-only inside; 6-blocks list removed — both
-          replaced above.) */}
-      <section id="loss-map">
-        <PointADashboardSectionsBoundary />
-      </section>
-
       {/* Survey Data */}
       <section>
         <div className="flex justify-between items-end border-b border-outline-variant/10 pb-4 mb-4">
@@ -227,63 +178,12 @@ export default async function PointAPage() {
         <SurveyOverview answers={surveyAnswers} completedSteps={surveyCompletedSteps} />
       </section>
 
-      {/* Domain Diagnostics */}
-      {domainScores.length > 0 && (
-        <section>
-          <div className="flex justify-between items-end border-b border-outline-variant/10 pb-4 mb-6">
-            <div>
-              <h2 className="font-headline text-lg font-bold text-on-surface">Диагностика по блокам</h2>
-              <p className="text-xs text-on-surface-variant mt-1">Текущий уровень по каждому направлению</p>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {domainScores.map((domain) => {
-              const pct = (domain.score / domain.max) * 100
-              const isStrong = pct >= 70
-              const isCritical = pct < 50
-              return (
-                <div key={domain.id} className="bg-surface-container-low rounded-2xl border border-white/[0.04] hover:border-primary/10 p-5 transition-all group hover:scale-[1.01]">
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="w-10 h-10 rounded-xl bg-surface-container flex items-center justify-center border border-white/[0.04]">
-                      <span className="material-symbols-outlined text-lg text-primary">{domain.icon}</span>
-                    </div>
-                    <span className={`text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded-full border ${
-                      isCritical ? 'text-error border-error/20 bg-error/5' :
-                      isStrong ? 'text-primary border-primary/20 bg-primary/5' :
-                      'text-tertiary-container border-tertiary-container/20 bg-tertiary-container/5'
-                    }`}>
-                      {isCritical ? 'Критично' : isStrong ? 'Сильно' : 'Средне'}
-                    </span>
-                  </div>
-                  <h3 className="text-sm font-bold text-on-surface mb-3">{domain.label}</h3>
-                  <div className="flex items-end justify-between mb-2">
-                    <span className="text-3xl font-mono font-bold text-on-surface">{domain.score}</span>
-                    <span className="text-[10px] text-on-surface-variant font-mono uppercase tracking-widest">/ {domain.max}</span>
-                  </div>
-                  <div className="h-1.5 bg-surface-container rounded-full overflow-hidden border border-white/[0.02]">
-                    <div className={`h-full rounded-full transition-all duration-1000 ${
-                      isCritical ? 'bg-error' : isStrong ? 'bg-primary' : 'bg-tertiary-container'
-                    }`} style={{ width: `${pct}%` }} />
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        </section>
-      )}
-
       {/* GRI Assessment — moved into the popup opened via «Открыть GRI» in GrowthSnapshotHero */}
 
       {/* Insights mega-block — AI / Эксперт / Клиент Q&A feed (replaces AIInsightsCarousel) */}
       <section id="insights" aria-label="Уточняющие вопросы">
         <InsightsFeed />
       </section>
-
-      {/* Phase 6 final — Real-time intelligence layer (live resolver + realtime sync) */}
-      {clientId && (
-        <PointAIntelligenceSection userId={clientId} companyId={companyId} />
-      )}
 
       {/* Interactive File Area */}
       <section className="animate-in fade-in slide-in-from-bottom-4 duration-500 delay-300">

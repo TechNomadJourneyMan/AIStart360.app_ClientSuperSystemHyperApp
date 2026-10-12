@@ -15,14 +15,16 @@ import { BLOCK_LIBRARY, type BlockKey } from '@/lib/point-a/v4/config'
 import type { BlockDetail } from '@/lib/point-a/v4/metric-views'
 import { BlockDetailPanel } from './BlockDetailPanel'
 import type { V4Block } from '@/lib/point-a/v4/engine'
+import type { PointAComment } from '@/lib/point-a/v4/state'
 import { BTN_GHOST, CARD, CHIP, ConfidenceBar, Icon, SectionTitle, fmtValue, toneColor } from './ui'
 import { cn } from '@/lib/utils'
 import { BodyPortal } from '@/components/ui/body-portal'
 
 type Metric = NonNullable<PointAPageState['snapshot']>['metrics'][number]
 
-function BlockCard({ block, metrics, hidden, customize, onToggle, onMove, onOpen, first, last, saving }: {
+function BlockCard({ block, metrics, hidden, customize, onToggle, onMove, onOpen, first, last, saving, comments }: {
   saving?: boolean
+  comments: PointAComment[]
   block: V4Block
   metrics: Metric[]
   hidden: boolean
@@ -51,7 +53,12 @@ function BlockCard({ block, metrics, hidden, customize, onToggle, onMove, onOpen
               </div>
             ) : <span className={cn(CHIP, 'bg-amber-300/10 text-amber-200')}>данных не хватает</span>
           ) : (
-            <span className="font-mono text-2xl font-bold" style={{ color }}>{block.score}</span>
+            <div>
+              <span className="font-mono text-2xl font-bold" style={{ color }}>{block.basis === 'inferred' ? '~' : ''}{block.score}</span>
+              {block.basis === 'inferred' && (
+                <span className={cn(CHIP, 'block mt-1 bg-violet-400/10 text-violet-200')} title={block.hypothesis?.rationale}>гипотеза · подтверждена экспертом</span>
+              )}
+            </div>
           )}
         </div>
       </header>
@@ -67,7 +74,13 @@ function BlockCard({ block, metrics, hidden, customize, onToggle, onMove, onOpen
         {!block.informational && <span className={cn(CHIP, 'bg-white/[0.04] text-on-surface-variant')}>вес {Math.round(block.weight * 100)}%</span>}
       </div>
 
-      {insufficient && block.hypothesis && <p className="text-xs text-on-surface-variant">{block.hypothesis.rationale}</p>}
+      {(insufficient || block.basis === 'inferred') && block.hypothesis && <p className="text-xs text-on-surface-variant">{block.hypothesis.rationale}</p>}
+      {comments[0] && (
+        <p className="rounded-lg border border-sky-300/15 bg-sky-300/[0.05] px-2.5 py-1.5 text-xs text-on-surface">
+          <span className="font-mono text-[10px] uppercase tracking-wider text-sky-200">Эксперт{comments[0].authorName ? ` · ${comments[0].authorName}` : ''}:</span> <span className="line-clamp-2">{comments[0].body}</span>
+          {comments.length > 1 && <span className="text-[10px] text-on-surface-variant"> ещё {comments.length - 1}</span>}
+        </p>
+      )}
       {!insufficient && block.top_issues.length > 0 && (
         <ul className="space-y-1">
           {block.top_issues.map((t, i) => <li key={i} className="flex gap-1.5 text-xs text-on-surface"><Icon name="arrow_right" className="text-[14px] text-amber-300" />{t}</li>)}
@@ -134,6 +147,8 @@ export function BlocksSection({ state, customize, previewDetails }: { state: Poi
     void save({ order: next })
   }
   const metricsOf = (k: BlockKey) => snapshot.metrics.filter((m) => BLOCK_LIBRARY[k].metrics.includes(m.id))
+  const comments = state.comments ?? []
+  const commentsOf = (k: BlockKey) => comments.filter((c) => (c.targetKind === 'block' && c.targetKey === k) || (c.targetKind === 'metric' && !!c.targetKey && BLOCK_LIBRARY[k].metrics.includes(c.targetKey)))
 
   return (
     <section aria-labelledby="pa-blocks">
@@ -146,11 +161,11 @@ export function BlocksSection({ state, customize, previewDetails }: { state: Poi
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         {visible.map((b, i) => (
           <BlockCard key={b.key} block={b} metrics={metricsOf(b.key)} hidden={hidden.has(b.key)} customize={customize}
-            onToggle={() => toggle(b.key)} onMove={(d) => move(b.key, d)} onOpen={() => setOpenKey(b.key)} first={i === 0} last={i === visible.length - 1} saving={view.isPending} />
+            onToggle={() => toggle(b.key)} onMove={(d) => move(b.key, d)} onOpen={() => setOpenKey(b.key)} first={i === 0} last={i === visible.length - 1} saving={view.isPending} comments={commentsOf(b.key)} />
         ))}
       </div>
       {openKey && (
-        <BodyPortal><BlockDetailPanel blockKey={openKey} title={BLOCK_LIBRARY[openKey].title} onClose={() => setOpenKey(null)} preview={previewDetails?.[openKey]} /></BodyPortal>
+        <BodyPortal><BlockDetailPanel blockKey={openKey} title={BLOCK_LIBRARY[openKey].title} onClose={() => setOpenKey(null)} preview={previewDetails?.[openKey]} comments={commentsOf(openKey)} /></BodyPortal>
       )}
       {customize && notInConfig.length > 0 && (
         <div className="mt-3 flex flex-wrap gap-2">

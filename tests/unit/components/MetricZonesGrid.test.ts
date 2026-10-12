@@ -21,7 +21,6 @@ import {
   type RawCatalogItem,
 } from '@/components/metrics/catalog-model'
 import { MetricCatalogCard } from '@/components/metrics/MetricCatalogCard'
-import { lossPillLabel } from '@/components/point-a/v2/PointAQuickPills'
 import { heroDeltaTone, HERO_METRIC_IDS } from '@/components/point-a/v2/KeyMetricsHero'
 import { metricsFromEnvelope, buildMetricsQuery } from '@/hooks/useMetrics'
 
@@ -255,14 +254,6 @@ describe('MetricCatalogCard', () => {
 // ─── Small fixes ────────────────────────────────────────────────────────────
 
 describe('quick pills / key metrics hero / metrics envelope', () => {
-  it('loss pill shows the real count, never a fixed «5 Потерь»', () => {
-    expect(lossPillLabel(null)).toBe('Карта потерь')
-    expect(lossPillLabel(0)).toBe('Потерь нет')
-    expect(lossPillLabel(1)).toBe('1 потеря')
-    expect(lossPillLabel(3)).toBe('3 потери')
-    expect(lossPillLabel(5)).toBe('5 потерь')
-  })
-
   it('key metrics hero asks /api/v1/metrics for registry ids', () => {
     expect(HERO_METRIC_IDS).toHaveLength(6)
     expect(buildMetricsQuery({ keys: HERO_METRIC_IDS })).toContain('keys=biz.finansy.vyruchka_god%2C')

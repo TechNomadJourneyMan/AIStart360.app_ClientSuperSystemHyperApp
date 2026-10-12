@@ -38,6 +38,18 @@ export interface PointASnapshotView {
   metrics: Array<{ id: string; label: string; unit: string; value: number; source: string | null; period: string | null }>
   reviewedBy: string | null
   reviewedAt: string | null
+  /** Name of the expert who marked this snapshot «проверено» (117). */
+  reviewedByName: string | null
+}
+
+export interface PointAComment {
+  id: string
+  targetKind: 'overall' | 'block' | 'metric'
+  targetKey: string | null
+  body: string
+  authorName: string | null
+  authorRole: string | null
+  createdAt: string
 }
 
 export interface PointAState {
@@ -71,6 +83,10 @@ export interface PointAState {
   keyMetricsCustom: boolean
   /** Metrics that can be pinned to the strip. */
   metricCatalog: Array<{ id: string; label: string; group: string; unit: string }>
+  /** The expert's notes (overall / block / metric), newest first. */
+  comments: PointAComment[]
+  /** «Проверено экспертом»: this snapshot, or an earlier one (then «есть изменения»). */
+  review: { status: 'current' | 'earlier'; by: string | null; at: string } | null
 }
 
 function missing(e: { code?: string } | null | undefined): boolean {
@@ -116,6 +132,7 @@ export function snapshotView(row: Record<string, unknown>): PointASnapshotView {
     metrics: metricsOf(row.inputs as SnapshotInputs | null),
     reviewedBy: (row.reviewed_by as string | null) ?? null,
     reviewedAt: (row.reviewed_at as string | null) ?? null,
+    reviewedByName: (row.reviewed_by_name as string | null) ?? null,
   }
 }
 
@@ -130,11 +147,16 @@ export async function loadPointAState(client: SupabaseClient, service: SupabaseC
     // The history needs only the summary of each snapshot (not inputs / blocks).
     client.from('point_a_snapshots').select('id, created_at, overall, confidence, change_reasons').eq('company_id', companyId).order('created_at', { ascending: false }).limit(30),
     client.from('data_discrepancies').select('id, metric_key, period_key, kind, detail, chosen_value, candidates').eq('company_id', companyId).eq('status', 'open').order('created_at', { ascending: false }).limit(50),
-    (ownerId && /^[0-9a-f-]{36}$/i.test(ownerId) ? griQuery.or(`company_id.eq.${companyId},user_id.eq.${ownerId}`) : griQuery.eq('company_id', companyId))
+    // The owner's assessment counts only when it is not tied to another company.
+    (ownerId && /^[0-9a-f-]{36}$/i.test(ownerId) ? griQuery.or(`company_id.eq.${companyId},and(user_id.eq.${ownerId},company_id.is.null)`) : griQuery.eq('company_id', companyId))
       .order('created_at', { ascending: false }).limit(1),
     client.from('documents').select('parse_status').eq('company_id', companyId),
     client.from('metrics').select('metric_key').eq('company_id', companyId).not('metric_value', 'is', null),
     service.from('point_a_recalc_queue').select('started_at, due_at, last_error').eq('company_id', companyId).maybeSingle(),
+  ])
+  const [commentRows, reviewed] = await Promise.all([
+    client.from('point_a_comments').select('id, target_kind, target_key, body, author_name, author_role, created_at').eq('company_id', companyId).is('deleted_at', null).order('created_at', { ascending: false }).limit(100),
+    client.from('point_a_snapshots').select('reviewed_at, reviewed_by_name').eq('company_id', companyId).not('reviewed_at', 'is', null).order('reviewed_at', { ascending: false }).limit(1),
   ])
   for (const r of [latest, snaps, disc]) if (r.error && !missing(r.error)) throw new Error(`point-a state: read failed (${r.error.code ?? 'unknown'})`)
 
@@ -181,6 +203,20 @@ export async function loadPointAState(client: SupabaseClient, service: SupabaseC
     : null
 
   const docRows = (docs.error ? [] : docs.data ?? []) as Array<{ parse_status: string | null }>
+  // Before migration 117 there are no comments / reviewer names.
+  const comments: PointAComment[] = ((commentRows.error ? [] : commentRows.data ?? []) as Array<Record<string, unknown>>).map((c) => ({
+    id: String(c.id),
+    targetKind: c.target_kind === 'block' || c.target_kind === 'metric' ? c.target_kind : 'overall',
+    targetKey: (c.target_key as string | null) ?? null,
+    body: String(c.body),
+    authorName: (c.author_name as string | null) ?? null,
+    authorRole: (c.author_role as string | null) ?? null,
+    createdAt: String(c.created_at),
+  }))
+  const lastReviewed = ((reviewed.error ? [] : reviewed.data ?? []) as Array<{ reviewed_at: string; reviewed_by_name: string | null }>)[0]
+  const review: PointAState['review'] = snapshot?.reviewedAt
+    ? { status: 'current', by: snapshot.reviewedByName, at: snapshot.reviewedAt }
+    : lastReviewed ? { status: 'earlier', by: lastReviewed.reviewed_by_name ?? null, at: lastReviewed.reviewed_at } : null
   // A row backing off after a failed run is not «running» for the page.
   const q = queue.error ? null : (queue.data as { started_at: string | null; last_error: string | null } | null)
 
@@ -232,5 +268,7 @@ export async function loadPointAState(client: SupabaseClient, service: SupabaseC
     keyMetrics,
     keyMetricsCustom: chosen.length > 0,
     metricCatalog: keyMetricCatalog(),
+    comments,
+    review,
   }
 }

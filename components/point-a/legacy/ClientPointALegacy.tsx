@@ -7,8 +7,6 @@ import { useQueryClient } from '@tanstack/react-query'
 import { createClient } from '@/lib/supabase-client'
 import type { Diagnostic, BlockScore, Risk, Insight, QuickWin, AIAnalysis, AIStatus } from '@/types/onboarding'
 import { loadClientPointA } from '@/components/point-a/client-point-a-load'
-import PointAIntelligenceSection from '@/components/point-a/PointAIntelligenceSection'
-import PointADashboardSectionsBoundary from '@/components/dashboard/PointADashboardSections'
 import GrowthSnapshotHero from '@/components/dashboard/GrowthSnapshotHero'
 import MyDataSection from '@/components/client/MyDataSection'
 import AssistantHintWidget from '@/components/assistant/AssistantHintWidget'
@@ -422,10 +420,6 @@ export default function PointAClientPage() {
             {/* 2. Growth Snapshot Hero — Точка А snapshot + AI карта роста + GRI */}
             <GrowthSnapshotHero />
 
-            {/* 3. New spec-driven cabinet sections (Top Sales Table,
-                Retention Curve, 6 metric blocks, RFM, Loss Map) */}
-            <PointADashboardSectionsBoundary />
-
             {/* AI Executive Summary */}
             {aiStatus === 'processing' && (
               <section className="bg-violet-500/5 rounded-2xl border border-violet-500/15 p-6">
@@ -625,13 +619,6 @@ export default function PointAClientPage() {
                   <h2 className="text-sm font-bold text-on-surface">Отраслевой контекст</h2>
                 </div>
                 <p className="text-sm text-on-surface-variant leading-relaxed">{aiAnalysis.industry_context}</p>
-              </section>
-            )}
-
-            {/* 5b. Phase 6 final — Real-time Intelligence Section */}
-            {userId && (
-              <section>
-                <PointAIntelligenceSection userId={userId} companyId={companyId} />
               </section>
             )}
 

@@ -61,7 +61,7 @@ export function previewState(): PointAPageState {
     snapshot: {
       id: 's3', createdAt: iso(0.02), engine: 'v4', trigger: 'event', overall: v4.overall, confidence: v4.confidence, coverage: v4.coverage,
       stage: v4.stage, healthIndex: v4.health_index, blocks: v4.blocks, strengths: v4.strengths, uploadChecklist: v4.upload_checklist,
-      changeReasons: [], reviewedBy: null, reviewedAt: null,
+      changeReasons: [], reviewedBy: null, reviewedAt: null, reviewedByName: null,
       metrics: [
         { id: 'biz.finansy.vyruchka_god', label: 'Выручка (год)', unit: '₸', value: 66_000_000, source: 'анкета', period: '10.2026' },
         { id: 'biz.finansy.valovaya_marzha', label: 'Валовая маржа', unit: '%', value: 22, source: 'анкета', period: '2024' },
@@ -97,5 +97,10 @@ export function previewState(): PointAPageState {
     keyMetrics: views(DEFAULT_KEY_METRICS),
     keyMetricsCustom: false,
     metricCatalog: keyMetricCatalog(),
+    comments: [
+      { id: 'c1', targetKind: 'block', targetKey: 'finance', body: 'Выручку за 2024 сверил с ОПиУ — берите цифру из документа, в анкете округление.', authorName: 'Эксперт AIStart360', authorRole: 'super_expert', createdAt: new Date(Date.now() - 3 * 3600e3).toISOString() },
+      { id: 'c2', targetKind: 'overall', targetKey: null, body: 'Главный рычаг на квартал — повторные продажи: база есть, касаний нет.', authorName: 'Эксперт AIStart360', authorRole: 'super_expert', createdAt: new Date(Date.now() - 5 * 3600e3).toISOString() },
+    ],
+    review: { status: 'earlier', by: 'Эксперт AIStart360', at: new Date(Date.now() - 2 * 86400e3).toISOString() },
   }
 }

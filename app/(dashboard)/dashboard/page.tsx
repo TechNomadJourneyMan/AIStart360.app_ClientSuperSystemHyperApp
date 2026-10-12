@@ -7,6 +7,7 @@ import { redirect } from 'next/navigation'
 import { KpiCardsGrid } from '@/components/dashboard/KpiCardsGrid'
 import { PortfolioGriPanel } from '@/components/dashboard/PortfolioGriPanel'
 import { GoalsBar } from '@/components/dashboard/GoalsBar'
+import { DashboardKeyMetrics } from '@/components/dashboard/DashboardKeyMetrics'
 import { WidgetGrid } from '@/components/dashboard/WidgetGrid'
 import { createServerClient } from '@/lib/supabase-server'
 import { AlertCard } from '@/components/dashboard/AlertCard'
@@ -15,15 +16,12 @@ import type { CrmRequest, CrmClient } from '@/components/dashboard/CrmActivity'
 import type { Alert } from '@/types'
 import type { AlertCardProps } from '@/components/dashboard/AlertCard'
 import { OnboardingStatusBadges } from '@/components/dashboard/OnboardingStatusBadges'
-import PointAIntelligenceSection from '@/components/point-a/PointAIntelligenceSection'
-import PointADashboardSectionsBoundary from '@/components/dashboard/PointADashboardSections'
 import GrowthSnapshotHero from '@/components/dashboard/GrowthSnapshotHero'
 import { NextBestActionCard } from '@/components/dashboard/NextBestActionCard'
 import { FirstRunWizard } from '@/components/dashboard/FirstRunWizard'
 import KeyMetricsHero from '@/components/point-a/v2/KeyMetricsHero'
 import MetricZonesGrid from '@/components/point-a/v2/MetricZonesGrid'
 import CompanyDataCard from '@/components/point-a/v2/CompanyDataCard'
-import MarketAnalysisCard from '@/components/point-a/v2/MarketAnalysisCard'
 import InsightsFeed from '@/components/point-a/v2/InsightsFeed'
 import { completedStepsFromRows } from '@/lib/survey/steps'
 import { visibleSectionKeysFor } from '@/lib/platform/sections'
@@ -468,25 +466,10 @@ export default async function DashboardPage() {
             <CompanyDataCard userId={user.id} />
           </section>
 
-          {/* Market analysis — full-width row, big tiles + Гига Рынок CTA */}
-          {visibleKeys.has('market') && (
-            <section id="market-analysis" aria-label="Анализ рынка">
-              <MarketAnalysisCard userId={user.id} />
-            </section>
-          )}
-
-          {/* Spec-compliant sections: Retention curve · RFM · Loss map (TopSales sr-only) */}
-          <section id="loss-map">
-            <PointADashboardSectionsBoundary />
-          </section>
-
           {/* Insights mega-block — AI / Эксперт / Клиент Q&A feed */}
           <section id="insights" aria-label="Уточняющие вопросы">
             <InsightsFeed />
           </section>
-
-          {/* Phase 6 final — Real-time Intelligence layer */}
-          <PointAIntelligenceSection userId={user.id} companyId={companyId} />
 
           {/* Quick nav — only the sections that are switched on */}
           {shortcuts.length > 0 && (
@@ -594,26 +577,9 @@ export default async function DashboardPage() {
         </div>
 
         <div className="grid grid-cols-1 xl:grid-cols-5 gap-6 items-start">
-             {/* Left: KPI Cards 2x2 */}
-             <div className="xl:col-span-2 grid grid-cols-2 gap-3">
-                 {kpi.map(card => (
-                      <Link key={card.label} href={card.href}
-                        className="bg-surface-container-low rounded-2xl p-5 border border-white/[0.04] hover:border-primary/20 transition-all group cursor-pointer relative overflow-hidden"
-                      >
-                         <div className="flex items-start justify-between mb-3">
-                            <p className="text-[10px] font-mono text-on-surface-variant uppercase tracking-widest">{card.label}</p>
-                            <span className="material-symbols-outlined text-base text-primary/40 group-hover:text-primary transition-colors">{card.icon}</span>
-                         </div>
-                         <h3 className="text-3xl font-mono font-bold text-on-surface mb-2">{card.value}</h3>
-                         <div className="flex items-center gap-1.5 text-[10px] text-on-surface-variant">
-                             <span className={`material-symbols-outlined text-sm ${card.trendUp ? 'text-primary' : 'text-error'}`}>
-                                {card.trendUp ? 'trending_up' : 'trending_down'}
-                             </span>
-                             <span className={card.trendUp ? 'text-primary' : 'text-error'}>{card.trend}</span>
-                             <span>{card.sublabel}</span>
-                         </div>
-                      </Link>
-                 ))}
+             {/* Left: the main metrics of the viewer's company (platform counters below them) */}
+             <div className="xl:col-span-2">
+                 <DashboardKeyMetrics platform={kpi} />
              </div>
 
              {/* Right: portfolio GRI from the clients' current GRI assessments */}

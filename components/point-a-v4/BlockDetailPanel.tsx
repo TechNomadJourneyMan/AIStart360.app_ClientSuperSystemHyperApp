@@ -16,8 +16,10 @@ import { CHIP, ConfidenceBar, Icon, toneColor } from './ui'
 import { MetricRow } from './MetricParts'
 import { cn } from '@/lib/utils'
 import { openAiChat } from '@/components/ai-chat/open'
+import type { PointAComment } from '@/lib/point-a/v4/state'
+import { ExpertComment } from './ExpertNotes'
 
-function Body({ d }: { d: BlockDetail }) {
+function Body({ d, comments }: { d: BlockDetail; comments: PointAComment[] }) {
   const b = d.block
   const withValue = d.metrics.filter((m) => m.value !== null)
   const without = d.metrics.filter((m) => m.value === null)
@@ -48,9 +50,19 @@ function Body({ d }: { d: BlockDetail }) {
       )}
       {b?.hypothesis && (
         <div className="rounded-xl border border-violet-400/20 bg-violet-400/[0.05] p-3 text-xs text-on-surface">
-          <span className={cn(CHIP, 'mb-1 bg-violet-400/10 text-violet-200')}>гипотеза AI · не факт</span>
+          <span className={cn(CHIP, 'mb-1 bg-violet-400/10 text-violet-200')}>
+            {b.basis === 'inferred' ? `гипотеза AI · подтверждена экспертом${b.expertReview?.by ? ` (${b.expertReview.by})` : ''}` : 'гипотеза AI · не факт'}
+          </span>
           <p>{b.hypothesis.rationale}</p>
         </div>
+      )}
+      {comments.length > 0 && (
+        <section>
+          <h3 className="mb-2 font-mono text-[11px] uppercase tracking-wider text-on-surface-variant">Комментарии эксперта</h3>
+          <ul className="space-y-2">
+            {comments.map((c) => <ExpertComment key={c.id} c={c} metricLabel={c.targetKind === 'metric' ? d.metrics.find((m) => m.id === c.targetKey)?.label ?? null : null} />)}
+          </ul>
+        </section>
       )}
       {b && b.conflicts.length > 0 && (
         <p className="rounded-xl border border-amber-300/20 bg-amber-300/[0.05] p-3 text-xs text-amber-100">
@@ -112,7 +124,7 @@ function Body({ d }: { d: BlockDetail }) {
   )
 }
 
-export function BlockDetailPanel({ blockKey, title, onClose, preview }: { blockKey: string; title: string; onClose: () => void; preview?: BlockDetail }) {
+export function BlockDetailPanel({ blockKey, title, onClose, preview, comments = [] }: { blockKey: string; title: string; onClose: () => void; preview?: BlockDetail; comments?: PointAComment[] }) {
   const live = useBlockDetail(preview ? null : blockKey)
   const data = preview ?? live.data
   useEffect(() => {
@@ -129,7 +141,7 @@ export function BlockDetailPanel({ blockKey, title, onClose, preview }: { blockK
           <h2 className="font-headline text-lg font-bold text-on-surface">{title}</h2>
           <button type="button" onClick={onClose} aria-label="Закрыть" className="h-9 w-9 rounded-lg text-on-surface-variant hover:bg-white/[0.06]"><Icon name="close" className="text-xl" /></button>
         </div>
-        {data ? <Body d={data} /> : live.isError ? (
+        {data ? <Body d={data} comments={comments} /> : live.isError ? (
           <p className="text-sm text-on-surface" role="alert">Не удалось загрузить раздел.</p>
         ) : (
           <div className="space-y-3" aria-busy="true">{Array.from({ length: 5 }).map((_, i) => <div key={i} className="h-16 rounded-xl bg-white/[0.03] animate-pulse" />)}</div>
