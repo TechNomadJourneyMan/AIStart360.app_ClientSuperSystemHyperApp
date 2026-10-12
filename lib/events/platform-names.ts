@@ -16,6 +16,15 @@ export const PLATFORM_EVENTS = [
   'INTEGRATION_FAILED',
   'CRITICAL_RISK_FOUND',
   'APPROVAL_REQUESTED',
+  // Point A data layer (spec 2026-10-12): any change of the client's data
+  // re-calculates Point A.
+  'SURVEY_ANSWER_CHANGED',
+  'DOCUMENT_DELETED',
+  'DISCREPANCY_FOUND',
+  'DISCREPANCY_RESOLVED',
+  'TARGET_CHANGED',
+  'BLOCK_CONFIG_CHANGED',
+  'POINT_A_UPDATED',
 ] as const
 
 export type PlatformEventName = (typeof PLATFORM_EVENTS)[number]
@@ -38,4 +47,11 @@ export const PLATFORM_EVENT_LABELS: Record<PlatformEventName, string> = {
   INTEGRATION_FAILED: 'Сбой интеграции',
   CRITICAL_RISK_FOUND: 'Найден критический риск',
   APPROVAL_REQUESTED: 'Требуется одобрение',
+  SURVEY_ANSWER_CHANGED: 'Анкета изменена',
+  DOCUMENT_DELETED: 'Документ удалён',
+  DISCREPANCY_FOUND: 'Найдено расхождение в данных',
+  DISCREPANCY_RESOLVED: 'Расхождение в данных закрыто',
+  TARGET_CHANGED: 'Цель изменена',
+  BLOCK_CONFIG_CHANGED: 'Конфигурация блоков изменена',
+  POINT_A_UPDATED: 'Точка А обновлена',
 }

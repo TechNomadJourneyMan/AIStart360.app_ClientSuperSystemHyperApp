@@ -6,6 +6,8 @@ import { getSessionUser } from '@/lib/api-identity'
 import { countRowsForLocation, deleteDocumentCascade, getDocument, isUuid } from '@/lib/documents/repository'
 import { documentStorage, isInOwnerFolder, locationForDocument } from '@/lib/documents/storage'
 import { createServerClient } from '@/lib/supabase-server'
+import { emitPlatformEventSafely } from '@/lib/events/platform'
+import { companyOfOwner, refreshCompanyDataInBackground } from '@/lib/data-layer/refresh'
 
 /**
  * DELETE /api/v1/onboarding/documents/[id]
@@ -16,7 +18,9 @@ import { createServerClient } from '@/lib/supabase-server'
  *     parsed from file_url — public AND signed URLs, or a bare path); only
  *     objects inside the owner's folder are ever removed;
  *   - RAG summaries (document_summaries; their chunks cascade);
- *   - queued processing tasks (cancelled).
+ *   - queued processing tasks (cancelled);
+ *   - the values read from it: metrics, period facts and discrepancies are
+ *     rebuilt in the background (DOCUMENT_DELETED).
  *
  * SECURITY (audit 2026-07-02): identity comes from the Supabase session, not a
  * client-supplied `user_id` query param.
@@ -51,6 +55,17 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
   const result = await deleteDocumentCascade(doc.id)
   if (!result.deleted) {
     return NextResponse.json({ ok: false, error: 'Document not found' }, { status: 404 })
+  }
+
+  // Values read from the document leave the metrics, period facts and
+  // discrepancies now, not at the next recalculation.
+  const companyId = doc.company_id ?? (await companyOfOwner(user.id).catch(() => null))
+  if (companyId) {
+    emitPlatformEventSafely({
+      name: 'DOCUMENT_DELETED', companyId, subjectType: 'document', subjectId: doc.id, actor: `user:${user.id}`,
+      payload: { file_name: doc.file_name, doc_type: doc.doc_type }, dedupeKey: `document_deleted:${doc.id}`,
+    })
+    refreshCompanyDataInBackground(companyId)
   }
   return NextResponse.json({
     ok: true,

@@ -196,6 +196,17 @@ export async function POST(req: NextRequest) {
   // The actor is who made the change: the admin in edit mode, staff saving for
   // a client, otherwise the client.
   const justCompleted = progress.is_complete && !wasComplete
+  // Any explicit save of answers (not a keystroke autosave) changes the data
+  // Point A is built from (spec 2026-10-12 §1.6); one event per minute.
+  if (company_id && !autosave && rows.length) {
+    const actorId = imp?.aid ?? sessionUser?.id ?? targetUserId
+    emitPlatformEventSafely({
+      name: 'SURVEY_ANSWER_CHANGED', companyId: company_id, subjectType: 'survey', subjectId: targetUserId,
+      actor: actorId.includes(':') ? actorId : `user:${actorId}`,
+      payload: { step: bodyStep, keys: rows.slice(0, 50).map((r) => r.question_key) },
+      dedupeKey: `survey_changed:${company_id}:${new Date().toISOString().slice(0, 16)}`,
+    })
+  }
   if (company_id && (justCompleted || finalSubmitted)) {
     const payload = { completed_steps: progress.completed, total_steps: progress.total_steps, is_complete: progress.is_complete }
     const actorId = imp?.aid ?? sessionUser?.id ?? targetUserId

@@ -26,6 +26,8 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { TenantContext } from '@/lib/tenancy'
 import { gatherResolverContext, materializeAll, type MaterializeResult } from './materialize'
 import type { MetricValue, ResolverContext } from './types'
+import type { DataLayerSyncResult } from '@/lib/data-layer/sync'
+import { emitPlatformEventSafely } from '@/lib/events/platform'
 
 /** Company of an authorised request; `role` (when known) is the caller's role in it. */
 export type MetricsTenant = Pick<TenantContext, 'companyId' | 'userId'> & { role?: TenantContext['role'] }
@@ -75,6 +77,28 @@ export async function resolverContextForTenant(
   })
 }
 
+/** METRIC_UPDATED after a write; DISCREPANCY_FOUND when new discrepancies opened. */
+function announce(companyId: string, result: MaterializeResult, dataLayer: DataLayerSyncResult | undefined): void {
+  const minute = new Date().toISOString().slice(0, 16)
+  if (result.written > 0) {
+    emitPlatformEventSafely({
+      name: 'METRIC_UPDATED', companyId, subjectType: 'company', subjectId: companyId, actor: 'system',
+      payload: { written: result.written, superseded: result.superseded ?? 0, facts: dataLayer?.facts ?? null },
+      dedupeKey: `metric_updated:${companyId}:${minute}`,
+    })
+  }
+  if (dataLayer && dataLayer.opened > 0) {
+    emitPlatformEventSafely({
+      name: 'DISCREPANCY_FOUND', companyId, subjectType: 'company', subjectId: companyId, actor: 'system',
+      payload: {
+        opened: dataLayer.opened,
+        items: dataLayer.openedDrafts.slice(0, 10).map((d) => ({ metric: d.metricId, period: d.periodKey, kind: d.kind, detail: d.detail })),
+      },
+      dedupeKey: `discrepancy_found:${companyId}:${minute}`,
+    })
+  }
+}
+
 /**
  * Resolve + write the company's metrics. `_sessionClient` (the caller's
  * session) is kept for call-site compatibility only: inputs and writes both go
@@ -86,6 +110,7 @@ export async function materializeForTenant(
   tenant: MetricsTenant,
 ): Promise<{ result: MaterializeResult; values: MetricValue[]; ctx: ResolverContext }> {
   const ctx = await resolverContextForTenant(serviceClient, tenant)
-  const { result, values } = await materializeAll(serviceClient, ctx)
+  const { result, values, dataLayer } = await materializeAll(serviceClient, ctx)
+  announce(tenant.companyId, result, dataLayer)
   return { result, values, ctx }
 }
