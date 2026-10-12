@@ -458,7 +458,8 @@ export async function materializeAll(
   let dataLayer: DataLayerSyncResult | undefined
   if (!error) {
     dataLayer = await syncDataLayer(supabase, ctx)
-    if (dataLayer.error && dataLayer.error !== 'not_migrated') errors.push({ metricId: '*data-layer', error: dataLayer.error })
+    // Logged, not a metrics write error: the metric values are written.
+    if (dataLayer.error && dataLayer.error !== 'not_migrated') console.error('[metrics/materialize] data layer sync failed', ctx.companyId, dataLayer.error)
   }
 
   return {

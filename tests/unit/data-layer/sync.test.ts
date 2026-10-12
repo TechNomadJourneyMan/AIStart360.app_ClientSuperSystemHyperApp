@@ -1,45 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import type { SupabaseClient } from '@supabase/supabase-js'
 import { syncDataLayer, sameCandidates } from '@/lib/data-layer/sync'
 import type { ResolverContext, ResolverDocument } from '@/lib/metrics/types'
-
-type Row = Record<string, unknown>
-
-/** In-memory tables with the subset of the query builder syncDataLayer uses. */
-function memoryClient(tables: Record<string, Row[]> = {}, opts: { missing?: string[] } = {}) {
-  let seq = 0
-  const db: Record<string, Row[]> = { metric_facts: [], data_discrepancies: [], ...tables }
-  const client = {
-    from(table: string) {
-      let op: 'select' | 'delete' | 'insert' | 'update' = 'select'
-      let payload: Row | Row[] | null = null
-      const filters: Array<(r: Row) => boolean> = []
-      const b: Record<string, unknown> = {
-        select: () => b,
-        order: () => b,
-        limit: () => b,
-        delete: () => { op = 'delete'; return b },
-        insert: (p: Row | Row[]) => { op = 'insert'; payload = p; return b },
-        update: (p: Row) => { op = 'update'; payload = p; return b },
-        eq: (c: string, v: unknown) => { filters.push((r) => r[c] === v); return b },
-        in: (c: string, vs: unknown[]) => { filters.push((r) => vs.includes(r[c])); return b },
-        then: (res: (v: unknown) => unknown, rej?: (e: unknown) => unknown) => {
-          if (opts.missing?.includes(table)) return Promise.resolve({ data: null, error: { code: '42P01', message: 'missing' } }).then(res, rej)
-          const rows = (db[table] ??= [])
-          const match = (r: Row) => filters.every((f) => f(r))
-          let out: unknown = null
-          if (op === 'select') out = rows.filter(match)
-          if (op === 'delete') db[table] = rows.filter((r) => !match(r))
-          if (op === 'insert') for (const p of Array.isArray(payload) ? payload : [payload!]) rows.push({ id: `id${++seq}`, created_at: new Date(2026, 0, seq).toISOString(), ...p })
-          if (op === 'update') for (const r of rows) if (match(r)) Object.assign(r, payload)
-          return Promise.resolve({ data: out, error: null }).then(res, rej)
-        },
-      }
-      return b
-    },
-  }
-  return { client: client as unknown as SupabaseClient, db }
-}
+import { memoryClient, type Row } from './memory-client'
 
 const NOW = new Date('2026-10-12T00:00:00Z')
 function pl(revenue: number): ResolverDocument {
