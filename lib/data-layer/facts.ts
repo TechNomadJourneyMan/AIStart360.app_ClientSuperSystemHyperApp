@@ -86,6 +86,10 @@ function surveyFacts(entry: MetricEntry, ctx: ResolverContext, seen: Set<string>
       seen.add(ref)
       const a = resolveSurveySource(src, ctx, entry)
       if (a.status !== 'hit' || typeof a.numeric !== 'number' || !Number.isFinite(a.numeric)) continue
+      // The wizard writes 0 for an empty number field (`Number(x) || 0`): a 0
+      // of money or a count from the survey is «not answered», not a value
+      // (it produced false «расхождения» against the real figure).
+      if (a.numeric === 0 && (entry.unit === '₸' || entry.unit === 'count')) continue
       const key = declared.key
       const answeredAt = ctx.surveyAnsweredAt?.[key] ?? null
       const column = src.coerce?.kind === 'table_cell' && src.coerce.column ? tableColumnPeriod(src.coerce.column) : null

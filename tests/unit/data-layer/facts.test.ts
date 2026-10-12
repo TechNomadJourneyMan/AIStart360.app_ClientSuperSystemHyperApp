@@ -76,3 +76,10 @@ describe('collectFacts', () => {
     expect(facts.find((f) => f.sourceRef === 'survey:s2_cac')?.periodKey).toBe('unknown')
   })
 })
+
+describe('collectFacts — empty number fields', () => {
+  it('a 0 of money / a count from the survey is not an answer (no false discrepancy)', () => {
+    const facts = collectFacts(ctx({ surveyAnswers: { s2_revenue_2025: 0, s8n_metrics_table: [{ metric_name: 'Сумма продаж', y2025: 120_000_000 }] } }), ONLY_REVENUE)
+    expect(facts.map((f) => f.sourceRef)).toEqual(['survey:s8n_metrics_table#sales_amount/y2025'])
+  })
+})
