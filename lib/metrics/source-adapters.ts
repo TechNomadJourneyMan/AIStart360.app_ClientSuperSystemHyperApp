@@ -12,6 +12,7 @@
 // other metrics), see lib/metrics/resolver.ts.
 // ============================================================
 
+import { surveyKeyPeriod, tableColumnPeriod } from '@/lib/data-layer/survey-periods'
 import type { MetricSource } from './format'
 import {
   isMetricsTableRow,
@@ -317,7 +318,7 @@ function coerceSurveyAnswer(
   source: MetricSource,
   value: unknown,
   shape: MetricShape,
-): { numeric: number; months: SourcePeriod | null; statedPeriod?: boolean; reason?: string } | { miss: string } {
+): { numeric: number; months: SourcePeriod | null; statedPeriod?: boolean; column?: string; reason?: string } | { miss: string } {
   const rule = source.coerce
   const sourceMonths = source.period ? monthsOf(source.period) : null
   if (!rule) {
@@ -346,7 +347,7 @@ function coerceSurveyAnswer(
       if (!isMetricsTableRow(rule.row)) return { miss: `unknown metrics-table row "${rule.row}"` }
       const hit = metricsTableCell(readMetricsTable(value), rule.row, rule.column ?? 'latest')
       if (!hit) return { miss: `metrics table row "${rule.row}" is empty` }
-      return { numeric: hit.value, months: sourceMonths, reason: `metrics table ${rule.row} / ${metricsTableColumnLabel(hit.column)}` }
+      return { numeric: hit.value, months: sourceMonths, column: hit.column, reason: `metrics table ${rule.row} / ${metricsTableColumnLabel(hit.column)}` }
     }
     case 'table_sum': {
       const hit = tableSum(value, rule.column, rule.match)
@@ -438,6 +439,11 @@ export function resolveSurveySource(
 
   const period = periodInfo(coerced.months, shape, coerced.statedPeriod ? 'answer' : coerced.months ? 'source' : null)
   const numeric = scaled(coerced.numeric, period.factor)
+  // Which calendar year the answer describes: the column of the metrics table,
+  // the year in the key (s9n_revenue_2024) or, for the current situation, the
+  // year the answer was given. The resolver prefers the most recent period.
+  const column = coerced.column ? tableColumnPeriod(coerced.column) : null
+  period.year = column?.year ?? surveyKeyPeriod(key, ctx.surveyAnsweredAt?.[key], ctx.now).period.year
 
   // Keep a short raw answer (option / yes-no) for provenance; a coerced table
   // or list is represented by its number, not the whole structure.
@@ -450,7 +456,7 @@ export function resolveSurveySource(
     numeric,
     confidence: source.legacy ? LEGACY_SURVEY_CONFIDENCE : SURVEY_CONFIDENCE,
     ...(reasons.length ? { reason: reasons.join('; ') } : {}),
-    ...(period.source || period.factor !== 1 ? { period } : {}),
+    period,
     ...(source.legacy ? { legacy: true } : {}),
   }
 }

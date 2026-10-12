@@ -57,6 +57,13 @@ export interface ResolverContext {
   /** Flat map: question_key → answer.value (e.g. "s2_revenue_2024" → 84200000). */
   surveyAnswers: Record<string, unknown>
 
+  /**
+   * When each survey answer was given (question_key → answered_at ISO). An
+   * answer without a year in its key describes the current situation of that
+   * year (lib/data-layer/survey-periods.ts). Absent ⇒ `now`.
+   */
+  surveyAnsweredAt?: Record<string, string>
+
   /** Documents the company has uploaded, newest first. */
   documents: ResolverDocument[]
 

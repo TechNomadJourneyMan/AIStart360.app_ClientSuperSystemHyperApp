@@ -144,3 +144,21 @@ describe('registry metrics resolve from the current wizard', () => {
     expect(r.picked).toBeNull()
   })
 })
+
+describe('survey answers carry the calendar year they describe', () => {
+  const src = (key: string): MetricSource => ({ type: 'survey', step: 9, key })
+  it('year from the key', () => {
+    const a = resolveSurveySource(src('s9n_revenue_2024'), ctx({ s9n_revenue_2024: 84_000_000 }))
+    expect(a.status).toBe('hit')
+    expect(a.period?.year).toBe(2024)
+  })
+  it('an answer without a year: the year it was given', () => {
+    const c = { ...ctx({ s9n_net_profit: 5_000_000 }), surveyAnsweredAt: { s9n_net_profit: '2025-11-02T00:00:00Z' } }
+    expect(resolveSurveySource(src('s9n_net_profit'), c).period?.year).toBe(2025)
+    expect(resolveSurveySource(src('s9n_net_profit'), ctx({ s9n_net_profit: 5_000_000 })).period?.year).toBe(2026)
+  })
+  it('a metrics-table cell: the year of its column', () => {
+    const s: MetricSource = { type: 'survey', step: 8, key: 's8n_metrics_table', coerce: { kind: 'table_cell', row: 'avg_check', column: 'y2024' } }
+    expect(resolveSurveySource(s, ctx({ s8n_metrics_table: TABLE })).period?.year).toBe(2024)
+  })
+})

@@ -94,7 +94,7 @@ export async function gatherResolverContext(
   const [surveyResult, docsResult, gri, externalSignals] = await Promise.all([
     supabase
       .from('survey_answers')
-      .select('question_key, answer')
+      .select('question_key, answer, answered_at')
       .eq('user_id', opts.userId),
     documentsQuery(supabase, opts)
       .eq('parse_status', 'parsed')
@@ -114,7 +114,9 @@ export async function gatherResolverContext(
   if (docsResult.error) throw new Error(`metrics: documents read failed (${docsResult.error.code ?? 'unknown'})`)
 
   const surveyAnswers: Record<string, unknown> = {}
+  const surveyAnsweredAt: Record<string, string> = {}
   for (const row of surveyResult.data ?? []) {
+    if (typeof row.answered_at === 'string') surveyAnsweredAt[row.question_key as string] = row.answered_at
     const ans = row.answer as { value?: unknown } | null
     if (ans && 'value' in ans) {
       surveyAnswers[row.question_key as string] = ans.value
@@ -137,6 +139,7 @@ export async function gatherResolverContext(
     companyId: opts.companyId,
     userId: opts.userId,
     surveyAnswers,
+    surveyAnsweredAt,
     documents,
     prismaSignals: opts.prismaSignals,
     externalSignals,

@@ -52,6 +52,12 @@ describe('gatherResolverContext: read failures throw', () => {
     expect(ctx.griSections).toBeNull()
     expect(ctx.surveyAnswers.s1_current_revenue_year).toBe(66_000_000)
   })
+
+  it('keeps when each answer was given', async () => {
+    const { client: c } = client({ survey_answers: { data: [{ question_key: 's9n_net_profit', answer: { value: 5 }, answered_at: '2026-03-05T10:00:00Z' }], error: null } })
+    const ctx = await gatherResolverContext(c, { userId: 'u', companyId: 'co' })
+    expect(ctx.surveyAnsweredAt).toEqual({ s9n_net_profit: '2026-03-05T10:00:00Z' })
+  })
 })
 
 describe('tenant inputs: owner attribution', () => {
