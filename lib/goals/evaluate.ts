@@ -13,7 +13,7 @@
 
 export type GoalDirection = 'higher_is_better' | 'lower_is_better' | 'range'
 export type GoalRealism = 'realistic' | 'ambitious' | 'aggressive' | 'unrealistic' | 'unknown'
-export type GoalStatus = 'achieved' | 'on_track' | 'at_risk' | 'behind' | 'overdue' | 'no_data'
+export type GoalStatus = 'achieved' | 'on_track' | 'at_risk' | 'behind' | 'overdue' | 'no_data' | 'unknown'
 
 export interface Goal {
   id: string
@@ -31,6 +31,8 @@ export interface Goal {
   source: 'owner' | 'expert' | 'agent' | 'survey'
   note: string | null
   createdAt: string | null
+  /** When the baseline was taken / the goal last set: the start of its horizon. */
+  baselineAt?: string | null
 }
 
 export interface GoalEvaluation {
@@ -68,9 +70,22 @@ function addMonths(d: Date, m: number): Date {
 }
 
 /** The deadline of a goal: explicit, else from its period label. */
-export function goalDeadline(goal: Pick<Goal, 'deadline' | 'periodLabel' | 'createdAt'>, now: Date): Date {
-  if (goal.deadline && Number.isFinite(Date.parse(goal.deadline))) return new Date(goal.deadline)
-  const from = goal.createdAt && Number.isFinite(Date.parse(goal.createdAt)) ? new Date(goal.createdAt) : now
+/** Start of the goal's horizon: when it was last set, else created. */
+export function goalStart(goal: Pick<Goal, 'createdAt' | 'baselineAt'>): string | null {
+  const at = goal.baselineAt ?? goal.createdAt
+  return at && Number.isFinite(Date.parse(at)) ? at : null
+}
+
+export function goalDeadline(goal: Pick<Goal, 'deadline' | 'periodLabel' | 'createdAt' | 'baselineAt'>, now: Date): Date {
+  if (goal.deadline) {
+    // A date deadline is the END of that day (in UTC+5 a goal «до 31.12» is
+    // not overdue on the morning of the 31st).
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(goal.deadline)
+    if (m) return new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 23, 59, 59))
+    if (Number.isFinite(Date.parse(goal.deadline))) return new Date(goal.deadline)
+  }
+  const start = goalStart(goal)
+  const from = start ? new Date(start) : now
   const p = goal.periodLabel.trim()
   let m = /^(\d+)\s*m$/i.exec(p)
   if (m) return addMonths(from, Number(m[1]))
@@ -133,6 +148,9 @@ export function evaluateGoal(goal: Goal, current: { value: number | null; period
     const p = requiredPointsPerYear
     realism = p <= 5 ? 'realistic' : p <= 15 ? 'ambitious' : p <= 30 ? 'aggressive' : 'unrealistic'
     realismText = `${LEVEL_TEXT[realism]}: нужно ${lower ? 'снижение' : 'рост'} на ~${p} п. п. в год`
+  } else if (value === 0 && t > 0 && !lower) {
+    realism = 'aggressive'
+    realismText = 'Старт с нуля: темп в процентах не посчитать — ориентируйтесь на план Точки Б'
   } else if (value > 0 && t > 0) {
     const mult = lower ? value / t : t / value
     requiredCagr = round((Math.pow(mult, 1 / years) - 1) * 100)
@@ -155,13 +173,16 @@ export function evaluateGoal(goal: Goal, current: { value: number | null; period
   } else if (goal.baselineValue !== null && goal.baselineValue !== t) {
     const p = (value - goal.baselineValue) / (t - goal.baselineValue)
     progress = round(Math.max(0, Math.min(1, p)) * 100)
-    const start = goal.createdAt && Number.isFinite(Date.parse(goal.createdAt)) ? Date.parse(goal.createdAt) : now.getTime()
+    const startAt = goalStart(goal)
+    const start = startAt ? Date.parse(startAt) : now.getTime()
     const total = deadline.getTime() - start
     const elapsed = total > 0 ? Math.max(0, Math.min(1, (now.getTime() - start) / total)) : 0
     status = p >= elapsed - 0.1 ? 'on_track' : p >= elapsed - 0.3 ? 'at_risk' : 'behind'
   } else {
-    // No baseline: judged by the pace it needs.
-    status = realism === 'realistic' || realism === 'ambitious' ? 'on_track' : realism === 'aggressive' ? 'at_risk' : 'behind'
+    // No baseline: judged by the pace it needs; a pace that cannot be judged is no verdict.
+    status = realism === 'unknown' ? 'unknown'
+      : realism === 'realistic' || realism === 'ambitious' ? 'on_track'
+      : realism === 'aggressive' ? 'at_risk' : 'behind'
   }
 
   return { ...base, gap, gapPct, requiredCagr, requiredPointsPerYear, requiredMonthly, realism, realismText, status, progress }

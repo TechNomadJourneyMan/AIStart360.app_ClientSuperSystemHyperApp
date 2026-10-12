@@ -188,7 +188,7 @@ async function build(companyId: string, opts: SnapshotOptions, deps: SnapshotDep
   // Before migration 111 there is nowhere to keep snapshots: do nothing.
   const prevQ = await service
     .from('point_a_snapshots')
-    .select('id, blocks, inputs, inputs_hash, config_version')
+    .select('id, diagnostic_id, blocks, inputs, inputs_hash, config_version')
     .eq('company_id', companyId)
     .order('created_at', { ascending: false })
     .limit(1)
@@ -196,7 +196,7 @@ async function build(companyId: string, opts: SnapshotOptions, deps: SnapshotDep
     if (missingTable(prevQ.error)) return { status: 'skipped', reason: 'not_migrated' }
     throw new Error(`point-a: snapshot read failed (${prevQ.error.code ?? 'unknown'})`)
   }
-  const prev = ((prevQ.data ?? [])[0] ?? null) as { id: string; blocks: V4Block[]; inputs: SnapshotInputs; inputs_hash: string; config_version: string } | null
+  const prev = ((prevQ.data ?? [])[0] ?? null) as { id: string; diagnostic_id: string | null; blocks: V4Block[]; inputs: SnapshotInputs; inputs_hash: string; config_version: string } | null
 
   const { data: company, error: companyErr } = await service.from('companies').select('id, user_id, industry').eq('id', companyId).maybeSingle()
   if (companyErr) throw new Error(`point-a: company read failed (${companyErr.code ?? 'unknown'})`)
@@ -220,10 +220,9 @@ async function build(companyId: string, opts: SnapshotOptions, deps: SnapshotDep
 
   // Goals (lib/goals): part of the inputs (a changed goal is a new snapshot)
   // and evaluated against the same values the calculation used.
-  const goals = await loadGoals(service, companyId).catch((err) => {
-    console.error('[point-a/snapshot] goals not loaded', err instanceof Error ? err.message : err)
-    return []
-  })
+  // A failed read is an error (the queue retries), not «no goals»: an empty
+  // list would write a snapshot «Изменены цели» and fan out AI for nothing.
+  const goals = await loadGoals(service, companyId)
   const goalEvaluations = evaluateGoals(goals, companyMetricsFromValues(values, companyId), new Date())
   // The engine shown is part of the version: switching point_a_v4 writes a new
   // Point A on the next pass instead of stopping at «inputs unchanged».
@@ -233,7 +232,8 @@ async function build(companyId: string, opts: SnapshotOptions, deps: SnapshotDep
   const version = `${config.version}|${wantV4 ? 'v4' : 'v1'}`
   const inputs = { ...snapshotInputs(values, surveyAnswers, conflicts, version), goals: Object.fromEntries(goals.map((g) => [`${g.metricId}|${g.periodLabel}`, `${g.targetValue}|${g.deadline ?? ''}|${g.direction}`])) }
   const hash = inputsHash(inputs)
-  if (!opts.force && prev && prev.inputs_hash === hash && prev.config_version === version) {
+  // Unchanged only if the previous run got as far as its diagnostic.
+  if (!opts.force && prev && prev.diagnostic_id && prev.inputs_hash === hash && prev.config_version === version) {
     return { status: 'unchanged', snapshotId: prev.id }
   }
 
@@ -273,11 +273,14 @@ async function build(companyId: string, opts: SnapshotOptions, deps: SnapshotDep
     aiStatus: process.env.OPENROUTER_API_KEY ? 'processing' : 'none',
   })
   if (!stored.ok) {
-    await service.from('point_a_snapshots').delete().eq('id', snapshotId)
+    const del = await service.from('point_a_snapshots').delete().eq('id', snapshotId)
+    if (del.error) console.error('[point-a/snapshot] orphan snapshot not removed', snapshotId, del.error.code ?? '')
     throw new Error(`point-a: diagnostic not stored (${stored.error})`)
   }
   const diagnosticId = String(stored.diag.id)
-  const link = await service.from('point_a_snapshots').update({ diagnostic_id: diagnosticId }).eq('id', snapshotId)
+  let link = await service.from('point_a_snapshots').update({ diagnostic_id: diagnosticId }).eq('id', snapshotId)
+  if (link.error) link = await service.from('point_a_snapshots').update({ diagnostic_id: diagnosticId }).eq('id', snapshotId)
+  // Without the link the next pass is not «unchanged» and writes again — never stuck.
   if (link.error) console.error('[point-a/snapshot] diagnostic link not stored', link.error.code ?? '', link.error.message ?? '')
 
   deps.afterWrite({ companyId, ownerId, diagnosticId, snapshotId, engine, written, changes, trigger: opts.trigger, locale: opts.locale ?? 'ru', blocks: v4.blocks, industry })

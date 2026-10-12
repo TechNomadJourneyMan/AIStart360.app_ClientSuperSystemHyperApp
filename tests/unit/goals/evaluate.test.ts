@@ -60,3 +60,19 @@ describe('evaluateGoal', () => {
     expect(evaluateGoal(g, { value: 78_000_000 }, NOW).status).toBe('at_risk')
   })
 })
+
+describe('review fixes', () => {
+  it('a date deadline is the end of that day', () => {
+    expect(goalDeadline(goal({ deadline: '2026-10-12' }), NOW).toISOString()).toBe('2026-10-12T23:59:59.000Z')
+    expect(evaluateGoal(goal({ deadline: '2026-10-12' }), { value: 60_000_000 }, new Date('2026-10-12T10:00:00Z')).status).not.toBe('overdue')
+  })
+  it('a goal set again starts its horizon from the change (baselineAt)', () => {
+    const g = goal({ createdAt: '2025-12-12T00:00:00Z', baselineAt: '2026-10-12T00:00:00Z', baselineValue: 60_000_000 })
+    expect(goalDeadline(g, NOW).toISOString().slice(0, 10)).toBe('2027-10-12')
+    expect(evaluateGoal(g, { value: 60_000_000 }, NOW).status).toBe('on_track')
+  })
+  it('a pace that cannot be judged is no verdict, a start from zero is aggressive', () => {
+    expect(evaluateGoal(goal({ direction: 'lower_is_better', metricId: 'biz.marketing.cac', targetValue: 0 }), { value: 20_000 }, NOW).status).toBe('unknown')
+    expect(evaluateGoal(goal(), { value: 0 }, NOW)).toMatchObject({ realism: 'aggressive', status: 'at_risk' })
+  })
+})

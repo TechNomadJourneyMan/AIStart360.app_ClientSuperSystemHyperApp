@@ -333,15 +333,19 @@ async function syncCompanyTargetsFromAnswers(
     const followsSurvey = (stored: unknown, previous: number | null) =>
       stored == null || (previous != null && Number(stored) === previous)
     const patch: Record<string, number | string> = {}
-    if (goal12 && Number(company.target_revenue_12m_kzt) !== goal12 && followsSurvey(company.target_revenue_12m_kzt, prev12)) {
+    // Only when the survey goal itself changed: a goal the owner removed on
+    // the dashboard (column → null) must not come back on the next step save.
+    if (goal12 && goal12 !== prev12 && Number(company.target_revenue_12m_kzt) !== goal12 && followsSurvey(company.target_revenue_12m_kzt, prev12)) {
       patch.target_revenue_12m_kzt = goal12
     }
-    if (goal3y && Number(company.target_revenue_3y_kzt) !== goal3y && followsSurvey(company.target_revenue_3y_kzt, prev3y)) {
+    if (goal3y && goal3y !== prev3y && Number(company.target_revenue_3y_kzt) !== goal3y && followsSurvey(company.target_revenue_3y_kzt, prev3y)) {
       patch.target_revenue_3y_kzt = goal3y
     }
     if (!Object.keys(patch).length) return
     patch.updated_at = new Date().toISOString()
-    await sb.from('companies').update(patch).eq('id', company.id)
+    const { data: updated, error: updateErr } = await sb.from('companies').update(patch).eq('id', company.id).select('id')
+    // Mirror only what was really written (RLS may drop the update silently).
+    if (updateErr || !updated?.length) return
     // The goals live in metric_targets (lib/goals/store.ts): mirror there too.
     const service = createServiceClient()
     if (typeof patch.target_revenue_12m_kzt === 'number') await syncRevenueGoal(service, String(company.id), '12m', patch.target_revenue_12m_kzt, userId)

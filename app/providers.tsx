@@ -18,6 +18,8 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
+const NOT_PERSISTED = new Set(['goals', 'point-a-state'])
+
 export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(
     () =>
@@ -47,7 +49,12 @@ export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <PersistQueryClientProvider
       client={queryClient}
-      persistOptions={{ persister, maxAge: 24 * 60 * 60 * 1000, buster: 'v1' }}
+      persistOptions={{
+        persister, maxAge: 24 * 60 * 60 * 1000, buster: 'v1',
+        // Goals and Point A are company data: never kept in localStorage (a
+        // shared device would show them to the next user before a refetch).
+        dehydrateOptions: { shouldDehydrateQuery: (q) => q.state.status === 'success' && !NOT_PERSISTED.has(String(q.queryKey[0])) },
+      }}
     >
       <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
         <AuthProvider>

@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useMetricsStore } from '@/stores/metrics.store'
 import { useAllVisibleMetrics } from '@/hooks/useMetrics'
 import { useGoals } from '@/hooks/useGoals'
+import { KPI_ALIASES } from '@/lib/metrics/kpi-aliases'
 import { AddMetricModal } from './AddMetricModal'
 import dynamic from 'next/dynamic'
 import { MAX_METRICS } from '@/types/metrics'
@@ -227,7 +228,9 @@ export function KpiCardsGrid() {
               ? <EmptyMetrics onShowAll={showAllMetrics} hasHidden={hiddenMetricIds.length > 0} />
               : visibleMetrics.map((metric) => {
                   // The nearest goal on this metric (server goals, /api/v1/goals).
-                  const goal = goals.find((g) => g.goal.metricId === metric.id && g.evaluation.current !== null)
+                  // Tiles may carry the older short ids (revenue, margin …): match by registry id.
+                  const metricId = KPI_ALIASES[metric.id] ?? metric.id
+                  const goal = goals.find((g) => g.goal.metricId === metricId && g.evaluation.current !== null)
                   const progress = goal
                     ? goal.evaluation.progress ?? (goal.goal.targetValue > 0 && goal.goal.direction !== 'lower_is_better'
                       ? Math.min(100, ((goal.evaluation.current ?? 0) / goal.goal.targetValue) * 100)

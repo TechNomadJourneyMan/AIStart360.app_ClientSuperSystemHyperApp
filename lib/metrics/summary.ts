@@ -28,18 +28,8 @@ export const TOP_KPI_METRIC_IDS: readonly string[] = [
   'biz.prodazhi.dolya_neyavok_no_show', // доля неявок
 ]
 
-/** Short names the older UI used → registry ids. */
-export const KPI_ALIASES: Readonly<Record<string, string>> = {
-  revenue: 'biz.finansy.vyruchka_god',
-  margin: 'biz.finansy.valovaya_marzha',
-  clients: 'biz.klienty.aktivnykh_klientov',
-  new_clients: 'goal.01.kolichestvo_novykh_klientov',
-  avg_check: 'biz.prodazhi.sredniy_chek',
-  ltv: 'goal.04.ltv',
-  cac: 'biz.marketing.cac',
-  ltv_cac: 'biz.marketing.ltv_cac',
-  no_show_rate: 'biz.prodazhi.dolya_neyavok_no_show',
-}
+export { KPI_ALIASES } from './kpi-aliases'
+import { KPI_ALIASES } from './kpi-aliases'
 
 /** The default tiles of the dashboard (types/metrics DEFAULT_METRIC_IDS, by meaning). */
 const DEFAULT_IDS = new Set(['biz.finansy.vyruchka_god', 'biz.finansy.valovaya_marzha', 'biz.klienty.aktivnykh_klientov', 'biz.prodazhi.sredniy_chek'])

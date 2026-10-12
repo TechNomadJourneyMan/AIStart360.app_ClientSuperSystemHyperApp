@@ -125,12 +125,6 @@ export class NoSurveyDataError extends Error {
   }
 }
 
-/**
- * Score the company for a session: reuse the current diagnostic when the
- * recalculated result equals it (its calculated_at moves to now — it was
- * verified against the current inputs), otherwise calculate and store a new
- * current version (the previous one stays as history).
- */
 /** The diagnostic of the company's latest Point A snapshot (migration 111), if any. */
 async function isSnapshotDiagnostic(companyId: string, diagnosticId: string): Promise<boolean> {
   try {
@@ -143,6 +137,12 @@ async function isSnapshotDiagnostic(companyId: string, diagnosticId: string): Pr
   }
 }
 
+/**
+ * Score the company for a session: reuse the current diagnostic when the
+ * recalculated result equals it (its calculated_at moves to now — it was
+ * verified against the current inputs), otherwise calculate and store a new
+ * current version (the previous one stays as history).
+ */
 export async function scoreCompany(companyId: string, sessionId: string | null): Promise<ScoreResult> {
   const company = await companyProfile(companyId)
   if (!company?.ownerId) throw new NoSurveyDataError()
@@ -158,7 +158,22 @@ export async function scoreCompany(companyId: string, sessionId: string | null):
   // The current row was written by the Point A snapshot (lib/point-a/snapshot.ts —
   // v4 when point_a_v4 is on, with the same materialised inputs): it IS the
   // company's Point A. Recomputing v1 here and inserting it would replace v4.
-  if (current && (samePointA(rowToPointA(current), pointA) || (await isSnapshotDiagnostic(companyId, current.id)))) {
+  // The current row is the Point A snapshot's (v4 when point_a_v4 is on): the
+  // snapshot path owns it — rebuild through it (a no-op when the inputs are
+  // unchanged) instead of overwriting it with a v1 row.
+  if (current && !samePointA(rowToPointA(current), pointA) && (await isSnapshotDiagnostic(companyId, current.id))) {
+    const { buildPointASnapshot } = await import('@/lib/point-a/snapshot')
+    const r = await buildPointASnapshot(companyId, { trigger: 'event', reasons: ['DIAGNOSTIC_PIPELINE'], lock: true }).catch((err: unknown) => {
+      console.error('[diagnostics/scoring] snapshot rebuild failed', err instanceof Error ? err.message : err)
+      return null
+    })
+    const id = r?.status === 'written' ? r.diagnosticId : current.id
+    const rows = await prisma.$queryRawUnsafe<DiagnosticRow[]>(`SELECT ${DIAG_COLUMNS} FROM public.diagnostics WHERE id = $1::uuid`, id)
+    const row = rows[0] ?? current
+    await prisma.$executeRaw`UPDATE public.diagnostics SET session_id = ${sessionId}::uuid WHERE id = ${row.id}::uuid`
+    return { diagnosticId: row.id, reused: r?.status !== 'written', pointA: rowToPointA(row), calculatedAt: row.calculated_at, answeredKeys }
+  }
+  if (current && samePointA(rowToPointA(current), pointA)) {
     // The score was just recomputed from the current inputs and came out the
     // same: the row is current as of now. Without moving calculated_at the
     // overview compared it with the newer inputs and reported «stale» right

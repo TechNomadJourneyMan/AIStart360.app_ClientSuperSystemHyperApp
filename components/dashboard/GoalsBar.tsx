@@ -7,7 +7,7 @@
  * plans for it. Before, the presets lived only in the browser (zustand) and
  * nothing else in the product knew about them.
  */
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { useDeleteGoal, useGoals, useSaveGoal, type GoalItem } from '@/hooks/useGoals'
 
@@ -40,6 +40,7 @@ const STATUS: Record<string, { text: string; cls: string }> = {
   behind: { text: 'отстаём', cls: 'text-red-300' },
   overdue: { text: 'срок прошёл', cls: 'text-red-300' },
   no_data: { text: 'нет факта', cls: 'text-on-surface-variant/60' },
+  unknown: { text: 'темп не оценить', cls: 'text-on-surface-variant/60' },
 }
 
 function fmt(n: number | null, rawUnit: string): string {
@@ -74,8 +75,38 @@ function GoalChip({ item, onRemove }: { item: GoalItem; onRemove: () => void }) 
   )
 }
 
+/**
+ * Goals pinned before they were saved on the server lived only in this
+ * browser (localStorage «aistart360-ui».pinnedGoals). They had no metric and
+ * no horizon, so they cannot be converted — the owner sees them once to set
+ * them again.
+ */
+function useLegacyGoals(): [string[], () => void] {
+  const [labels, setLabels] = useState<string[]>([])
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem('aistart360-ui')
+      const pinned = raw ? (JSON.parse(raw)?.state?.pinnedGoals as Array<{ label?: string }> | undefined) : undefined
+      if (Array.isArray(pinned) && pinned.length) setLabels(pinned.map((g) => String(g.label ?? '')).filter(Boolean))
+    } catch { /* storage unavailable */ }
+  }, [])
+  const dismiss = () => {
+    try {
+      const raw = window.localStorage.getItem('aistart360-ui')
+      const parsed = raw ? JSON.parse(raw) : null
+      if (parsed?.state) {
+        delete parsed.state.pinnedGoals
+        window.localStorage.setItem('aistart360-ui', JSON.stringify(parsed))
+      }
+    } catch { /* storage unavailable */ }
+    setLabels([])
+  }
+  return [labels, dismiss]
+}
+
 export function GoalsBar() {
   const { data: items = [], isLoading } = useGoals()
+  const [legacy, dismissLegacy] = useLegacyGoals()
   const save = useSaveGoal()
   const remove = useDeleteGoal()
   const [open, setOpen] = useState(false)
@@ -111,6 +142,12 @@ export function GoalsBar() {
 
   return (
     <>
+      {legacy.length > 0 && (
+        <div className="mb-2 rounded-xl border border-amber-300/20 bg-amber-300/[0.05] p-3 text-xs text-on-surface" role="status">
+          <p>Цели теперь сохраняются в профиле компании и учитываются в Точке А и Точке Б. Ваши прежние цели были только в этом браузере — задайте их заново с числом и сроком: {legacy.join(', ')}.</p>
+          <button type="button" onClick={dismissLegacy} className="mt-2 font-mono text-[11px] text-primary hover:underline">Понятно</button>
+        </div>
+      )}
       <div className="flex flex-wrap items-center gap-2">
         {items.length > 0 && (
           <span className="text-[10px] font-mono text-on-surface-variant/40 uppercase tracking-widest flex-shrink-0">Цели:</span>

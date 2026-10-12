@@ -12,6 +12,7 @@
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { getMetricById } from '@/lib/metrics/registry'
+import { benchmarkForMetric } from '@/lib/metrics/catalog-helpers'
 import type { Goal, GoalDirection } from './evaluate'
 
 export const REVENUE_GOAL_METRIC = 'biz.finansy.vyruchka_god'
@@ -56,6 +57,7 @@ export function goalFromRow(r: Record<string, unknown>): Goal {
     source: (['owner', 'expert', 'agent', 'survey'].includes(String(r.source)) ? r.source : 'owner') as Goal['source'],
     note: (r.note as string | null) ?? null,
     createdAt: (r.created_at as string | null) ?? null,
+    baselineAt: (r.baseline_at as string | null) ?? null,
   }
 }
 
@@ -63,7 +65,7 @@ export function goalFromRow(r: Record<string, unknown>): Goal {
 export async function loadGoals(client: SupabaseClient, companyId: string): Promise<Goal[]> {
   const [targets, company] = await Promise.all([
     client.from('metric_targets').select('*').eq('company_id', companyId).order('created_at', { ascending: true }),
-    client.from('companies').select('target_revenue_12m_kzt, target_revenue_3y_kzt, created_at').eq('id', companyId).maybeSingle(),
+    client.from('companies').select('target_revenue_12m_kzt, target_revenue_3y_kzt').eq('id', companyId).maybeSingle(),
   ])
   if (targets.error && !missingTable(targets.error)) throw new Error(`goals: read failed (${targets.error.code ?? 'unknown'})`)
   if (company.error) throw new Error(`goals: company read failed (${company.error.code ?? 'unknown'})`)
@@ -74,7 +76,7 @@ export async function loadGoals(client: SupabaseClient, companyId: string): Prom
     if (goals.some((g) => g.metricId === REVENUE_GOAL_METRIC && g.periodLabel === period)) continue
     goals.push(goalFromRow({
       id: `company-${period}`, metric_key: REVENUE_GOAL_METRIC, target_value: v, direction: 'higher_is_better', period_label: period,
-      source: 'survey', created_at: (company.data as Record<string, unknown> | null)?.created_at ?? null,
+      source: 'survey', created_at: null,
     }))
   }
   return goals
@@ -98,30 +100,35 @@ export async function upsertGoal(
   input: GoalInput,
   opts: { actorId: string; baseline?: { value: number | null; period: string | null } },
 ): Promise<Goal> {
-  if (!getMetricById(input.metricId)) throw new Error('goals: unknown metric')
+  const entry = getMetricById(input.metricId)
+  if (!entry) throw new Error('goals: unknown metric')
   const row: Record<string, unknown> = {
     company_id: companyId,
     metric_key: input.metricId,
     target_value: input.targetValue,
-    direction: input.direction ?? 'higher_is_better',
+    // The catalog knows which way a metric is good (CAC, cycle — lower).
+    direction: input.direction ?? benchmarkForMetric(entry)?.direction ?? 'higher_is_better',
     period_label: input.periodLabel,
     source: input.source ?? 'owner',
     set_by: opts.actorId,
     note: input.note ?? null,
     updated_at: new Date().toISOString(),
   }
-  const extended: Record<string, unknown> = {
+  // Setting a goal (again) starts its horizon now, from the current value.
+  const v112: Record<string, unknown> = {
     ...row,
     deadline: input.deadline ?? null,
     label: input.label ?? null,
     updated_by: opts.actorId,
     ...(opts.baseline ? { baseline_value: opts.baseline.value, baseline_period: opts.baseline.period } : {}),
   }
-  let res = await service.from('metric_targets').upsert(extended, { onConflict: 'company_id,metric_key,period_label' }).select('*').single()
-  // Before migration 112: the goal without deadline / baseline / label.
-  if (res.error && missingColumn(res.error)) {
-    res = await service.from('metric_targets').upsert(row, { onConflict: 'company_id,metric_key,period_label' }).select('*').single()
-  }
+  const v115 = { ...v112, baseline_at: new Date().toISOString() }
+  const write = (r: Record<string, unknown>) =>
+    service.from('metric_targets').upsert(r, { onConflict: 'company_id,metric_key,period_label' }).select('*').single()
+  let res = await write(v115)
+  // Before migration 115 (no baseline_at) / 112 (no deadline, baseline, label).
+  if (res.error && missingColumn(res.error)) res = await write(v112)
+  if (res.error && missingColumn(res.error)) res = await write(row)
   if (res.error || !res.data) throw new Error(`goals: write failed (${res.error?.code ?? 'unknown'})`)
   await syncRevenueColumn(service, companyId, input.metricId, input.periodLabel, input.targetValue)
   return goalFromRow(res.data as Record<string, unknown>)

@@ -28,7 +28,7 @@ export const dynamic = 'force-dynamic'
 const Body = z.object({
   metricId: z.string().min(3).max(120),
   targetValue: z.number().finite(),
-  periodLabel: z.string().trim().regex(/^(\d{1,3}m|\d{1,2}y|\d{4}-Q[1-4]|\d{4})$/i),
+  periodLabel: z.string().trim().regex(/^([1-9]\d{0,2}m|[1-9]\d?y|\d{4}-Q[1-4]|\d{4})$/i),
   direction: z.enum(['higher_is_better', 'lower_is_better', 'range']).optional(),
   deadline: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
   label: z.string().trim().max(200).nullable().optional(),

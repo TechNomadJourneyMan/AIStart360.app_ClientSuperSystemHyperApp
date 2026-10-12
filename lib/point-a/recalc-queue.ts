@@ -81,7 +81,10 @@ export async function requestPointARecalc(
         ON CONFLICT (company_id) DO UPDATE SET
           reasons = (SELECT ARRAY(SELECT DISTINCT x FROM unnest(point_a_recalc_queue.reasons || EXCLUDED.reasons) AS x)),
           requested_at = now(),
-          due_at = LEAST(EXCLUDED.due_at, point_a_recalc_queue.first_requested_at + make_interval(secs => ${MAX_WAIT_SECONDS}::int))`
+          due_at = GREATEST(
+            LEAST(EXCLUDED.due_at, point_a_recalc_queue.first_requested_at + make_interval(secs => ${MAX_WAIT_SECONDS}::int)),
+            -- a failed run backs off; new events do not cut the backoff short
+            CASE WHEN point_a_recalc_queue.last_error IS NOT NULL THEN point_a_recalc_queue.due_at ELSE '-infinity'::timestamptz END)`
     }
     if (inngestConfigured()) {
       const { inngest } = await import('@/lib/inngest')
@@ -147,11 +150,15 @@ export async function claimCompany(companyId: string, reason: string): Promise<C
 
 /** Done: remove the row unless a new event arrived meanwhile (then run once more). */
 export async function finish(c: Claimed): Promise<void> {
+  // Compared in SQL with the row's own started_at (microseconds): a JS Date
+  // parameter is truncated to milliseconds and almost never matched.
   const removed = await prisma.$executeRaw`
-    DELETE FROM public.point_a_recalc_queue WHERE company_id = ${c.company_id} AND requested_at <= ${c.started_at}`
+    DELETE FROM public.point_a_recalc_queue WHERE company_id = ${c.company_id} AND requested_at <= started_at`
   if (removed === 0) {
     await prisma.$executeRaw`
-      UPDATE public.point_a_recalc_queue SET started_at = NULL, attempts = 0, last_error = NULL WHERE company_id = ${c.company_id}`
+      UPDATE public.point_a_recalc_queue
+      SET started_at = NULL, attempts = 0, last_error = NULL, first_requested_at = requested_at
+      WHERE company_id = ${c.company_id}`
   }
 }
 
