@@ -3,6 +3,7 @@ import { inngest } from '@/lib/inngest'
 import { assistantEventsRetention } from '@/lib/functions/assistant-events-retention'
 import { agentsMaintenance, agentsTaskRequested } from '@/lib/functions/agents'
 import { demoAccountsCleanup } from '@/lib/functions/demo-cleanup'
+import { pointANightly, pointARecalc } from '@/lib/functions/point-a'
 import { processOmnichannelMessage } from '@/lib/functions/process-omnichannel-message'
 import { backfillOmnichannel } from '@/lib/functions/backfill-omnichannel'
 import {
@@ -27,5 +28,7 @@ export const { GET, POST, PUT } = serve({
     agentsTaskRequested,
     agentsMaintenance,
     demoAccountsCleanup,
+    pointARecalc,
+    pointANightly,
   ],
 })

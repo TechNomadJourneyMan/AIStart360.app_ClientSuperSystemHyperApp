@@ -46,7 +46,11 @@ export const agentsMaintenance = inngest.createFunction(
     const redispatched = await redispatchPending()
     // WhatsApp outbox first (bounded, seconds): retries must not wait behind a long agent drain.
     const whatsapp = await drainWhatsAppOutbox({ limit: 50, budgetMs: 30_000 }).catch(() => null)
-    const drained = await drainQueue({ budgetMs: 240_000 })
+    // Point A recalculations that are due (works without Inngest too).
+    const pointA = await import('@/lib/point-a/recalc-queue')
+      .then((q) => q.drainPointARecalc({ budgetMs: 60_000 }))
+      .catch((err: unknown) => ({ error: err instanceof Error ? err.message : String(err) }))
+    const drained = await drainQueue({ budgetMs: 180_000 })
     return {
       scheduled,
       redispatched,
@@ -55,6 +59,7 @@ export const agentsMaintenance = inngest.createFunction(
       sessionsFailed: drained.sessionsFailed,
       executed: drained.executed.length,
       whatsapp,
+      pointA,
     }
   },
 )

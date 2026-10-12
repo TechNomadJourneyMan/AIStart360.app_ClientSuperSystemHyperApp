@@ -100,6 +100,16 @@ export async function dispatchEvent(event: PlatformEventRow): Promise<void> {
   } catch (err) {
     errors.push(`agents: ${err instanceof Error ? err.message : String(err)}`)
   }
+  // Point A is rebuilt from the company's data: every data event queues a
+  // debounced recalculation (lib/point-a/recalc-queue.ts). Never fails dispatch.
+  if (event.company_id) {
+    try {
+      const { POINT_A_TRIGGER_EVENTS, requestPointARecalc } = await import('@/lib/point-a/recalc-queue')
+      if (POINT_A_TRIGGER_EVENTS.has(event.name)) await requestPointARecalc(event.company_id, event.name)
+    } catch (err) {
+      console.error('[platform-events] point A recalc not queued', err instanceof Error ? err.message : err)
+    }
+  }
   try {
     const { routeEventToStaff } = await import('@/lib/notifications/event-router')
     await routeEventToStaff(event)

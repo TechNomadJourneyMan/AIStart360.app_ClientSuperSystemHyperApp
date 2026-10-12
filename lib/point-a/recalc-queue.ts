@@ -1,0 +1,178 @@
+/**
+ * lib/point-a/recalc-queue.ts — event-driven Point A recalculation with a
+ * per-company debounce (spec 2026-10-12 §2.4; table point_a_recalc_queue,
+ * migration 111).
+ *
+ *   requestPointARecalc  every data event of a company upserts ONE row:
+ *                        due_at slides to now + 20 s, the reason is added.
+ *                        Ten uploads in a row → one recalculation.
+ *   drainPointARecalc    claims due rows (FOR UPDATE SKIP LOCKED, one
+ *                        recalculation per company at a time), builds the
+ *                        snapshot, then removes the row — or keeps it when a
+ *                        new event arrived during the run (one more pass).
+ *
+ * Drained by the Inngest function `point-a-recalc` (debounced per company,
+ * when Inngest is configured) and, in any case, every minute by
+ * agentsMaintenance — so it works without Inngest too.
+ */
+import { prisma } from '@/lib/db'
+
+export const RECALC_DEBOUNCE_MS = 20_000
+export const POINT_A_RECALC_EVENT = 'point-a/recalc.requested'
+const MAX_ATTEMPTS = 5
+const STALE_CLAIM_MINUTES = 10
+
+/** Data events that change what Point A is built from. */
+export const POINT_A_TRIGGER_EVENTS: ReadonlySet<string> = new Set([
+  'SURVEY_ANSWER_CHANGED',
+  'QUESTIONNAIRE_COMPLETED',
+  'ONBOARDING_COMPLETED',
+  'FILE_PROCESSED',
+  'DOCUMENT_DELETED',
+  'DISCREPANCY_RESOLVED',
+  'TARGET_CHANGED',
+  'BLOCK_CONFIG_CHANGED',
+  'METRIC_UPDATED',
+])
+
+function missingTable(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err)
+  return /point_a_recalc_queue/.test(msg) && /(does not exist|42P01)/i.test(msg)
+}
+
+function inngestConfigured(): boolean {
+  return Boolean(process.env.INNGEST_EVENT_KEY) || process.env.INNGEST_DEV === '1'
+}
+
+/**
+ * Queue a recalculation of the company. Never throws; false when the
+ * automatic recalculation is switched off or the queue does not exist yet.
+ */
+export async function requestPointARecalc(companyId: string, reason: string, delayMs = RECALC_DEBOUNCE_MS): Promise<boolean> {
+  try {
+    const { getSetting } = await import('@/lib/settings/store')
+    if (!(await getSetting('point_a_auto_recalc'))) return false
+    const seconds = Math.max(0, Math.round(delayMs / 1000))
+    await prisma.$executeRaw`
+      INSERT INTO public.point_a_recalc_queue (company_id, reasons, requested_at, due_at)
+      VALUES (${companyId}, ARRAY[${reason}]::text[], now(), now() + make_interval(secs => ${seconds}))
+      ON CONFLICT (company_id) DO UPDATE SET
+        reasons = (SELECT ARRAY(SELECT DISTINCT x FROM unnest(point_a_recalc_queue.reasons || EXCLUDED.reasons) AS x)),
+        requested_at = now(),
+        due_at = EXCLUDED.due_at`
+    if (inngestConfigured()) {
+      const { inngest } = await import('@/lib/inngest')
+      await inngest.send({ name: POINT_A_RECALC_EVENT, data: { companyId } }).catch((err: unknown) => {
+        console.error('[point-a/queue] inngest send failed', err instanceof Error ? err.message : err)
+      })
+    }
+    return true
+  } catch (err) {
+    if (!missingTable(err)) console.error('[point-a/queue] request failed', companyId, err instanceof Error ? err.message : err)
+    return false
+  }
+}
+
+interface Claimed {
+  company_id: string
+  reasons: string[]
+  started_at: Date
+  attempts: number
+}
+
+async function claimDue(limit: number, companyId?: string): Promise<Claimed[]> {
+  return companyId
+    ? prisma.$queryRaw<Claimed[]>`
+        UPDATE public.point_a_recalc_queue q SET started_at = now(), attempts = q.attempts + 1
+        WHERE q.company_id IN (
+          SELECT company_id FROM public.point_a_recalc_queue
+          WHERE company_id = ${companyId} AND due_at <= now() + interval '5 seconds'
+            AND (started_at IS NULL OR started_at < now() - make_interval(mins => ${STALE_CLAIM_MINUTES}))
+          FOR UPDATE SKIP LOCKED)
+        RETURNING q.company_id, q.reasons, q.started_at, q.attempts`
+    : prisma.$queryRaw<Claimed[]>`
+        UPDATE public.point_a_recalc_queue q SET started_at = now(), attempts = q.attempts + 1
+        WHERE q.company_id IN (
+          SELECT company_id FROM public.point_a_recalc_queue
+          WHERE due_at <= now()
+            AND (started_at IS NULL OR started_at < now() - make_interval(mins => ${STALE_CLAIM_MINUTES}))
+          ORDER BY due_at
+          LIMIT ${limit}
+          FOR UPDATE SKIP LOCKED)
+        RETURNING q.company_id, q.reasons, q.started_at, q.attempts`
+}
+
+/** Done: remove the row unless a new event arrived meanwhile (then run once more). */
+async function finish(c: Claimed): Promise<void> {
+  const removed = await prisma.$executeRaw`
+    DELETE FROM public.point_a_recalc_queue WHERE company_id = ${c.company_id} AND requested_at <= ${c.started_at}`
+  if (removed === 0) {
+    await prisma.$executeRaw`
+      UPDATE public.point_a_recalc_queue SET started_at = NULL, attempts = 0, last_error = NULL WHERE company_id = ${c.company_id}`
+  }
+}
+
+/** Failed: retry with a growing delay; give up after MAX_ATTEMPTS. */
+async function fail(c: Claimed, error: string): Promise<void> {
+  if (c.attempts >= MAX_ATTEMPTS) {
+    console.error('[point-a/queue] giving up', c.company_id, error)
+    await prisma.$executeRaw`DELETE FROM public.point_a_recalc_queue WHERE company_id = ${c.company_id}`
+    return
+  }
+  await prisma.$executeRaw`
+    UPDATE public.point_a_recalc_queue
+    SET started_at = NULL, last_error = ${error.slice(0, 500)}, due_at = now() + make_interval(mins => ${c.attempts})
+    WHERE company_id = ${c.company_id}`
+}
+
+export interface DrainReport {
+  done: Array<{ companyId: string; status: string }>
+  failed: Array<{ companyId: string; error: string }>
+}
+
+export interface DrainDeps {
+  claim: typeof claimDue
+  finish: typeof finish
+  fail: typeof fail
+  build: (companyId: string, reasons: string[]) => Promise<{ status: string }>
+}
+
+const defaultDrainDeps: DrainDeps = {
+  claim: claimDue,
+  finish,
+  fail,
+  build: async (companyId, reasons) => {
+    const { buildPointASnapshot } = await import('./snapshot')
+    return buildPointASnapshot(companyId, { trigger: reasons.includes('nightly') ? 'schedule' : 'event', reasons })
+  },
+}
+
+/** Run the due recalculations (all, or of one company) within `budgetMs`. */
+export async function drainPointARecalc(
+  opts: { budgetMs?: number; companyId?: string; batch?: number } = {},
+  deps: DrainDeps = defaultDrainDeps,
+): Promise<DrainReport> {
+  const report: DrainReport = { done: [], failed: [] }
+  const deadline = Date.now() + (opts.budgetMs ?? 60_000)
+  try {
+    while (Date.now() < deadline) {
+      const claimed = await deps.claim(opts.batch ?? 3, opts.companyId)
+      if (!claimed.length) break
+      for (const c of claimed) {
+        try {
+          const r = await deps.build(c.company_id, c.reasons ?? [])
+          await deps.finish(c)
+          report.done.push({ companyId: c.company_id, status: r.status })
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err)
+          report.failed.push({ companyId: c.company_id, error: msg })
+          await deps.fail(c, msg).catch(() => undefined)
+        }
+      }
+      if (opts.companyId) break
+    }
+  } catch (err) {
+    if (!missingTable(err)) throw err
+  }
+  return report
+}
