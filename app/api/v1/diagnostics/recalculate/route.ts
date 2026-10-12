@@ -12,7 +12,8 @@ import { localeFromRequestCookie } from '@/lib/i18n/locale'
 import { getSessionUser, resolveTargetUserId } from '@/lib/api-identity'
 import { isRateLimitedKey } from '@/lib/rate-limit'
 import { trackEvent } from '@/lib/events/track'
-import { internalBaseUrl, internalFetchHeaders } from '@/lib/internal-auth'
+import { internalBaseUrl } from '@/lib/internal-auth'
+import { fireAiFanOut, startDiagnosticPipeline, storeCurrentDiagnostic } from '@/lib/point-a/diagnostic-row'
 
 // POST /api/v1/diagnostics/recalculate
 // Body: { user_id? } — the target user; defaults to the session user.
@@ -93,121 +94,33 @@ export async function POST(req: NextRequest) {
     }
     const result = calculatePointA(answers, resolvedInputs)
 
-    // Retire the previous current diagnostic(s) of this user before inserting
-    // the new one, so exactly one row stays is_current=true (downstream
-    // `.single()/.maybeSingle()` reads — Point A current, Point B — need it).
-    const { data: currentRows, error: currentErr } = await db
-      .from('diagnostics')
-      .select('id')
-      .eq('user_id', user_id)
-      .eq('is_current', true)
-      .order('calculated_at', { ascending: false })
-    if (currentErr) {
-      console.error('[recalculate] current lookup failed', currentErr.code ?? '', currentErr.message ?? '')
-      return NextResponse.json({ ok: false, error: 'Failed to store diagnostic' }, { status: 500 })
-    }
-    const retiredIds = ((currentRows ?? []) as Array<{ id: string }>).map((r) => r.id)
-    if (retiredIds.length) {
-      const { error: retireErr } = await db
-        .from('diagnostics')
-        .update({ is_current: false })
-        .eq('user_id', user_id)
-        .in('id', retiredIds)
-      if (retireErr) {
-        console.error('[recalculate] retire failed', retireErr.code ?? '', retireErr.message ?? '')
-        return NextResponse.json({ ok: false, error: 'Failed to store diagnostic' }, { status: 500 })
-      }
-    }
-
-    // Store in diagnostics table
-    const { data: diag, error: diagErr } = await db
-      .from('diagnostics')
-      .insert({
-        user_id,
-        company_id: company?.id ?? null,
-        overall_score: result.overall_score,
-        health_index: result.health_index,
-        stage: result.stage,
-        finance_score: result.blocks.finance,
-        marketing_score: result.blocks.marketing,
-        operations_score: result.blocks.operations,
-        strategy_score: result.blocks.strategy,
-        sales_score: result.blocks.sales,
-        risks: result.risks,
-        insights: result.insights,
-        quick_wins: result.quick_wins,
-        data_gaps: result.data_gaps,
-        is_current: true,
-        ai_status: process.env.OPENROUTER_API_KEY ? 'processing' : 'none',
-      })
-      .select()
-      .single()
-
-    if (diagErr) {
-      console.error('[recalculate] insert failed', diagErr.code ?? '', diagErr.message ?? '')
-      // Put the previous current row back: the user must not lose their Point A.
-      if (retiredIds[0]) {
-        const { error: restoreErr } = await db
-          .from('diagnostics')
-          .update({ is_current: true })
-          .eq('user_id', user_id)
-          .eq('id', retiredIds[0])
-        if (restoreErr) console.error('[recalculate] restore failed', restoreErr.code ?? '', restoreErr.message ?? '')
-      }
-      return NextResponse.json({ ok: false, error: 'Failed to store diagnostic' }, { status: 500 })
-    }
+    // Retire the previous current diagnostic(s) of this user and insert the
+    // new one (exactly one row stays is_current=true; a failed insert puts the
+    // previous row back — lib/point-a/diagnostic-row.ts).
+    const stored = await storeCurrentDiagnostic(db, {
+      userId: user_id,
+      companyId: company?.id ?? null,
+      result,
+      aiStatus: process.env.OPENROUTER_API_KEY ? 'processing' : 'none',
+    })
+    if (!stored.ok) return NextResponse.json({ ok: false, error: 'Failed to store diagnostic' }, { status: 500 })
+    const diag = stored.diag
     void trackEvent({ userId: user_id, name: 'POINT_A_CALCULATED', entityType: 'diagnostic', entityId: diag?.id ?? null, metadata: { overall_score: Number(result.overall_score) } })
 
-    // Fire async AI analysis (non-blocking)
-    // Base URL from configuration, never the request Host in production (a
-    // spoofed Host would receive the token); unknown → no fan-out.
+    // Fire async AI analysis + Point B bridge (non-blocking). Base URL from
+    // configuration, never the request Host in production (a spoofed Host
+    // would receive the token); unknown → no fan-out.
     const baseUrl = internalBaseUrl(req)
     if (process.env.OPENROUTER_API_KEY && diag?.id && baseUrl) {
-      const diagnosticId = String(diag.id)
-      // Point A full analysis. Cookies aren't forwarded, so pass locale in body
-      // and a signed internal token, bound to the target path, user and
-      // diagnostic, so the (guarded) endpoint trusts exactly this call.
-      const analyzePath = '/api/v1/diagnostics/ai-analyze'
-      fetch(`${baseUrl}${analyzePath}`, {
-        method: 'POST',
-        headers: internalFetchHeaders({}, { path: analyzePath, userId: user_id, diagnosticId }),
-        body: JSON.stringify({ diagnostic_id: diagnosticId, user_id, locale }),
-      }).catch(err => console.error('[recalculate] Failed to fire AI analysis:', err))
-
-      // Point B strategic bridge (AUTO trigger). Self-guards on insufficient
-      // data, so firing it unconditionally here is safe. Pass locale in body.
-      const pointBPath = '/api/v1/diagnostics/point-b/ai-generate'
-      fetch(`${baseUrl}${pointBPath}`, {
-        method: 'POST',
-        headers: internalFetchHeaders({}, { path: pointBPath, userId: user_id, diagnosticId }),
-        body: JSON.stringify({ diagnostic_id: diagnosticId, user_id, locale }),
-      }).catch(err => console.error('[recalculate] Failed to fire Point B AI generate:', err))
+      fireAiFanOut({ baseUrl, diagnosticId: String(diag.id), userId: user_id, locale })
     } else if (process.env.OPENROUTER_API_KEY && diag?.id) {
       console.error('[recalculate] AI fan-out skipped: no trusted base URL (NEXT_PUBLIC_APP_URL)')
     }
 
-    // The diagnostic pipeline (metrics → data quality → benchmarks → hypotheses
-    // → recommendations) runs as agents; it reuses this calculation when the
-    // inputs are unchanged. Never blocks or fails the response.
+    // The diagnostic pipeline runs as agents; it reuses this calculation when
+    // the inputs are unchanged. Never blocks or fails the response.
     if (company?.id && diag?.id) {
-      const companyId = String(company.id)
-      const diagnosticId = String(diag.id)
-      void runInBackground('diagnostic-orchestrator', async () => {
-        try {
-          const { enqueueAgentTask } = await import('@/lib/agents/queue')
-          await enqueueAgentTask({
-            agentKey: 'diagnostic_orchestrator',
-            companyId,
-            trigger: 'manual',
-            triggerRef: 'recalculate',
-            requestedBy,
-            input: { action: 'start', trigger: 'manual', reason: 'пересчёт по запросу' },
-            idempotencyKey: `recalc:${diagnosticId}`,
-          })
-        } catch (err) {
-          console.error('[recalculate] diagnostic pipeline not started:', err instanceof Error ? err.message : err)
-        }
-      })
+      startDiagnosticPipeline({ companyId: String(company.id), diagnosticId: String(diag.id), requestedBy, trigger: 'manual', reason: 'пересчёт по запросу' })
     }
 
     // Клиенту: «Точка А пересчитана» (лента; email — по настройке «reports»).

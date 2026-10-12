@@ -28,6 +28,16 @@ const notificationShape = Object.fromEntries(
 const safeHref = z.string().max(300).refine((v) => v === '' || (v.startsWith('/') && !v.startsWith('//')) || v.startsWith('https://'), 'Ссылка: https:// или путь /…')
 
 export const SETTINGS = {
+  point_a_v4: {
+    group: 'point_a', label: 'Новый расчёт Точки А (v4)',
+    help: 'Клиент видит Точку А v4: 7 настраиваемых блоков, достоверность, «данных не хватает» вместо нулей. Выключено — клиент видит прежний расчёт, а v4 считается в тени (сравнение в снимках Точки А).',
+    schema: z.boolean(), default: false, critical: true,
+  },
+  point_a_auto_recalc: {
+    group: 'point_a', label: 'Автопересчёт Точки А',
+    help: 'Пересчитывать Точку А при любом изменении данных клиента (анкета, документы, метрики, расхождения, цели) — не чаще раза в 20 секунд на компанию.',
+    schema: z.boolean(), default: true, critical: false,
+  },
   registration_mode: {
     group: 'registration', label: 'Режим регистрации',
     help: 'Открытая — вход сразу; по подтверждению — после одобрения (или авто-одобрения); по приглашению — регистрация закрыта.',
@@ -223,6 +233,7 @@ export const SETTING_GROUPS = {
   notifications: { label: 'Уведомления', icon: 'bell' },
   automation: { label: 'Автоматические касания', icon: 'send' },
   agents: { label: 'Автоматизация агентов', icon: 'bot' },
+  point_a: { label: 'Точка А', icon: 'target' },
 } as const
 
 export function isAdminNotificationType(v: string): v is AdminNotificationType {
