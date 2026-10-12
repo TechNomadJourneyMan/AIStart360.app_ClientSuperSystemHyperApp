@@ -129,7 +129,7 @@ describe('golden: survey + P&L + OCR scan → identical values on every surface'
 
   it('the resolver reads each source with its meaning', () => {
     const byId = new Map(values.map((v) => [v.metricId, v]))
-    expect(byId.get(KEY_METRICS.revenue)).toMatchObject({ numeric: 72_000_000, picked: { type: 'document' } }) // P&L beats the survey
+    expect(byId.get(KEY_METRICS.revenue)).toMatchObject({ numeric: 66_000_000, picked: { type: 'survey' } }) // the survey's current year (2026) beats the 2025 P&L
     expect(byId.get(KEY_METRICS.margin)?.numeric).toBe(44) // «(доля) 0,44» → 44 %
     expect(byId.get(KEY_METRICS.cac)).toMatchObject({ numeric: 18_500, picked: { type: 'document' } }) // OCR scan
     expect(byId.get(KEY_METRICS.cac)?.confidence).toBeLessThanOrEqual(0.7)
@@ -195,7 +195,7 @@ describe('golden: survey + P&L + OCR scan → identical values on every surface'
     const body = (await (res as Response).json()) as { ok: boolean; data: PointAV3 }
     expect(body.ok).toBe(true)
     const b = body.data.blocks
-    expect(b.sales.Rev.value).toBe(expected(KEY_METRICS.revenue)) // the P&L, not the survey's 66 M
+    expect(b.sales.Rev.value).toBe(expected(KEY_METRICS.revenue)) // the survey's current year, not the 2025 P&L
     expect(b.sales.AOV.value).toBe(expected(KEY_METRICS.avgCheck))
     expect(b.client.LTV.value).toBe(expected(KEY_METRICS.ltv))
     expect(b.client.CAC.value).toBe(expected(KEY_METRICS.cac)) // OCR scan

@@ -5,9 +5,13 @@
 // `gatherResolverContext()` lives in `materialize.ts` so the
 // resolver itself remains trivially testable.
 //
-// Order of a metric's sources: manual > document > assessment >
-// connected integration (external «integration:…») > survey (current
-// wizard) > formula > survey (older-form key) > prisma > other external. A source that yields no number for this
+// Pick: the most recent known period first (a 2025 P&L beats the 2024 survey
+// answer; the current-situation answer beats a 2024 document), then — within
+// that period, or for sources without a period — the source order:
+// manual > survey (current wizard, the owner's word is the base — decision
+// of 2026-10-12, docs/superpowers/specs/2026-10-12-point-a-full-design.md §1.4)
+// > document > assessment > connected integration (external «integration:…»)
+// > formula > survey (older-form key) > prisma > other external. A source that yields no number for this
 // metric (free text, a range, a value in the wrong unit, outside
 // the metric's plausible range) is a miss and never blocks the
 // next one. Formula sources are evaluated after their inputs
@@ -30,9 +34,9 @@ import type {
 
 const SOURCE_PRIORITY: Record<MetricSourceType, number> = {
   manual:     100,
+  survey:     85,
   document:   80,
   assessment: 75,
-  survey:     70,
   formula:    65,
   prisma:     60,
   external:   40,
@@ -46,9 +50,10 @@ const LEGACY_SURVEY_PRIORITY = 62
  * A connected integration (external source «integration:…», migration 105) on
  * a metric whose system of record it is (visits from GA4 / Метрика, the online
  * average check from the shop / marketplace, SKU from МойСклад, returns from
- * the marketplace): measured data of the last 30 days beats the owner's
- * one-time survey estimate and a calculation from it, but stays below a
- * manual override, a document the owner uploaded and the GRI assessment.
+ * the marketplace): measured data of the last 30 days beats a calculation,
+ * but stays below a manual override, the owner's survey answer (the base of
+ * Point A since 2026-10-12; a different measured value is surfaced as a data
+ * discrepancy), a document the owner uploaded and the GRI assessment.
  * Other external sources (1C, CRM … — no producer) keep the lowest priority.
  * Decision W7, docs/platform/06-integrations.md «Приоритет источников».
  */
@@ -84,6 +89,17 @@ export function isPlausibleFor(entry: Pick<MetricEntry, 'unit' | 'range'>, numer
   if (!isPlausibleForUnit(entry.unit, numeric)) return false
   if (numeric !== null && entry.range) return numeric >= entry.range[0] && numeric <= entry.range[1]
   return true
+}
+
+// ─── Period of an attempt ────────────────────────────────────
+
+/** End of the attempt's period in months (year·12 + month), null when unknown. */
+function attemptOrdinal(a: SourceAttempt): number | null {
+  const p = a.period
+  if (!p || typeof p.year !== 'number') return null
+  const q = typeof p.quarter === 'string' ? Number(p.quarter.replace(/^q/i, '')) : null
+  const end = typeof p.month === 'number' ? p.month : q && q >= 1 && q <= 4 ? q * 3 : 12
+  return p.year * 12 + end
 }
 
 // ─── Confidence blending ─────────────────────────────────────
@@ -274,9 +290,19 @@ function resolveWith(metricId: string, session: Session, explicit?: MetricEntry)
       needs: unresolvedNeeds(entry, attempts),
     }
   } else {
-    // Among hits, the highest-priority source wins. Within the same
-    // priority bucket the higher raw confidence wins (declaration order on a tie).
-    const picked = hits.reduce((best, cur) => {
+    // Hits of an older period than the most recent known one drop out
+    // (sources without a period stay). Among the rest the highest-priority
+    // source wins; within a priority bucket the higher raw confidence wins
+    // (declaration order on a tie).
+    const latest = hits.reduce<number | null>((m, a) => {
+      const o = attemptOrdinal(a)
+      return o !== null && (m === null || o > m) ? o : m
+    }, null)
+    const current = latest === null ? hits : hits.filter((a) => {
+      const o = attemptOrdinal(a)
+      return o === null || o === latest
+    })
+    const picked = current.reduce((best, cur) => {
       const bp = priority(best.source)
       const cp = priority(cur.source)
       if (cp > bp) return cur
@@ -292,6 +318,9 @@ function resolveWith(metricId: string, session: Session, explicit?: MetricEntry)
       confidence: blendConfidence(picked),
       picked: picked.source,
       considered: attempts,
+      // The calendar period of the value lives in provenance (picked.period):
+      // period_year / period_quarter are part of the public.metrics row key
+      // and of the metric_value_history series, which must stay stable.
       periodYear: ctx.preferPeriodYear ?? null,
       periodQuarter: ctx.preferPeriodQuarter ?? null,
       computedAt,

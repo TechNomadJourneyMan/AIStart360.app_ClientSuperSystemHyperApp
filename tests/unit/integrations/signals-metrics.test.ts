@@ -82,16 +82,20 @@ describe('integration signals in the resolver', () => {
     })
   })
 
-  it('beats the survey answer, loses to a document the owner uploaded', () => {
+  it('fills a metric the survey left empty; loses to a document the owner uploaded and to the survey answer', () => {
+    // Spec 2026-10-12 §1.4: manual > survey > document > integration — the
+    // owner's answer is the base; a different integration value is surfaced
+    // as a data discrepancy (lib/data-layer/reconcile.ts), not silently taken.
     const survey = { s3_product_count: 999 }
     const sku = [{ provider: 'moysklad', metric_key: 'sku_count', period_start: '2026-10-06', period_end: '2026-10-06', value: 412, unit: 'count', fetched_at: FETCHED }]
     const skuSignals = buildIntegrationSignals(sku, NOW)
-    expect(resolveMetric(ECOM_METRIC_IDS.sku, ctx(skuSignals, { surveyAnswers: survey })).numeric).toBe(412)
+    expect(resolveMetric(ECOM_METRIC_IDS.sku, ctx(skuSignals)).numeric).toBe(412)
+    expect(resolveMetric(ECOM_METRIC_IDS.sku, ctx(skuSignals, { surveyAnswers: survey })).numeric).toBe(999)
     const doc = {
       id: 'd1', docType: 'inventory_csv', periodYear: null, periodQuarter: null, uploadedAt: '2026-10-01T00:00:00Z',
       parsedData: { fields: [{ key: 'sku_count', label: 'Количество SKU', value: 450 }] },
     }
-    expect(resolveMetric(ECOM_METRIC_IDS.sku, ctx(skuSignals, { surveyAnswers: survey, documents: [doc] })).numeric).toBe(450)
+    expect(resolveMetric(ECOM_METRIC_IDS.sku, ctx(skuSignals, { documents: [doc] })).numeric).toBe(450)
   })
 
   it('a ₸ metric refuses a non-KZT signal', () => {

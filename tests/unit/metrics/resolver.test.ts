@@ -229,7 +229,7 @@ describe('resolveMetric', () => {
     expect(r.notes).toMatch(/unknown metric id/)
   })
 
-  it('picks document over survey when both hit', () => {
+  it('picks the survey over a document of the same period (the owner\'s answer is the base)', () => {
     const entry = {
       id: 'test.metric',
       namespace: 'biz' as const,
@@ -252,9 +252,28 @@ describe('resolveMetric', () => {
       }],
     })
     const r = resolveMetric('test.metric', ctx, { entry })
-    expect(r.picked?.type).toBe('document')
-    expect(r.numeric).toBe(84200000)
+    expect(r.picked?.type).toBe('survey')
+    expect(r.numeric).toBe(70000000)
     expect(r.considered).toHaveLength(2)
+  })
+
+  it('a more recent period wins over the source order', () => {
+    const entry = {
+      id: 'test.metric', namespace: 'biz' as const, label: 'Test', unit: '₸',
+      sources: [
+        { type: 'survey', key: 's2_revenue_2024' } as MetricSource,
+        { type: 'document', doc_type: 'pl_report', field: 'revenue' } as MetricSource,
+      ],
+    }
+    const doc = (year: number) => ({
+      id: `d${year}`, docType: 'pl_report', parsedData: { fields: [{ key: 'revenue', value: 84200000, confidence: 0.9 }] },
+      periodYear: year, periodQuarter: null, uploadedAt: '2026-05-10T00:00:00Z',
+    })
+    const newer = resolveMetric('test.metric', makeCtx({ surveyAnswers: { s2_revenue_2024: 70000000 }, documents: [doc(2025)] }), { entry })
+    expect(newer.picked?.type).toBe('document')
+    expect(newer.numeric).toBe(84200000)
+    const older = resolveMetric('test.metric', makeCtx({ surveyAnswers: { s2_revenue_2024: 70000000 }, documents: [doc(2023)] }), { entry })
+    expect(older.picked?.type).toBe('survey')
   })
 
   it('picks manual override above everything', () => {

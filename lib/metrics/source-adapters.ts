@@ -442,8 +442,12 @@ export function resolveSurveySource(
   // Which calendar year the answer describes: the column of the metrics table,
   // the year in the key (s9n_revenue_2024) or, for the current situation, the
   // year the answer was given. The resolver prefers the most recent period.
+  // An older-form key without a year of its own gets no year: it must not
+  // outrank a dated answer of the current wizard.
   const column = coerced.column ? tableColumnPeriod(coerced.column) : null
-  period.year = column?.year ?? surveyKeyPeriod(key, ctx.surveyAnsweredAt?.[key], ctx.now).period.year
+  const fromKey = surveyKeyPeriod(key, ctx.surveyAnsweredAt?.[key], ctx.now)
+  const year = column?.year ?? (source.legacy && fromKey.basis === 'answered' ? null : fromKey.period.year)
+  if (year !== null) period.year = year
 
   // Keep a short raw answer (option / yes-no) for provenance; a coerced table
   // or list is represented by its number, not the whole structure.
