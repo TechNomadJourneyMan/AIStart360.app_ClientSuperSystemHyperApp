@@ -10,7 +10,7 @@ function pad2(n: number): string {
 /** '2024' | '2024-Q2' | '2024-03' | '2026-YTD' | 'unknown'. */
 export function periodKey(p: PeriodRef | null | undefined): string {
   if (!p) return 'unknown'
-  if (p.ytd) return `${p.year}-YTD`
+  if (p.ytd) return p.months ? `${p.year}-M${p.months}` : `${p.year}-YTD`
   if (p.month) return `${p.year}-${pad2(p.month)}`
   if (p.quarter) return `${p.year}-Q${p.quarter}`
   return String(p.year)
@@ -19,7 +19,7 @@ export function periodKey(p: PeriodRef | null | undefined): string {
 /** End of the period in months since year 0 (for ordering), null when unknown. */
 export function periodOrdinal(p: PeriodRef | null | undefined): number | null {
   if (!p) return null
-  const endMonth = p.month ?? (p.quarter ? p.quarter * 3 : 12)
+  const endMonth = p.month ?? (p.quarter ? p.quarter * 3 : p.ytd && p.months ? p.months : 12)
   return p.year * 12 + endMonth
 }
 
@@ -53,6 +53,8 @@ export function parsePeriodKey(key: string): PeriodRef | null {
   }
   m = /^(\d{4})-YTD$/.exec(key)
   if (m) return { year: Number(m[1]), quarter: null, month: null, ytd: true }
+  m = /^(\d{4})-M(\d{1,2})$/.exec(key)
+  if (m && Number(m[2]) >= 1 && Number(m[2]) <= 12) return { year: Number(m[1]), quarter: null, month: null, ytd: true, months: Number(m[2]) }
   return null
 }
 
@@ -60,7 +62,7 @@ export function parsePeriodKey(key: string): PeriodRef | null {
 export function periodLabel(key: string): string {
   const p = parsePeriodKey(key)
   if (!p) return 'период неизвестен'
-  if (p.ytd) return `${p.year} (с начала года)`
+  if (p.ytd) return p.months ? `${p.months} мес. ${p.year}` : `${p.year} (с начала года)`
   if (p.month) return `${pad2(p.month)}.${p.year}`
   if (p.quarter) return `${['I', 'II', 'III', 'IV'][p.quarter - 1]} кв. ${p.year}`
   return String(p.year)

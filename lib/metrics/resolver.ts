@@ -60,6 +60,12 @@ const LEGACY_SURVEY_PRIORITY = 62
  */
 const INTEGRATION_NATIVE_PRIORITY = 72
 
+/** The order before 2026-10-12 (document above the survey) — formula base inputs declare it. */
+function declaredPriority(src: MetricSource): number {
+  if (src.type === 'survey') return src.legacy ? LEGACY_SURVEY_PRIORITY : 70
+  return priority(src)
+}
+
 function priority(src: MetricSource): number {
   if (src.type === 'survey' && src.legacy) return LEGACY_SURVEY_PRIORITY
   if (src.type === 'external' && src.system?.startsWith('integration:')) return INTEGRATION_NATIVE_PRIORITY
@@ -327,7 +333,12 @@ function resolveWith(metricId: string, session: Session, explicit?: MetricEntry)
     // (sources without a period stay). Among the rest the highest-priority
     // source wins; within a priority bucket the higher raw confidence wins
     // (declaration order on a tie).
-    const latest = hits.reduce<number | null>((m, a) => {
+    //
+    // Formula base inputs (base.*) keep their declared order without the
+    // period filter: base.revenue_fin must be the revenue of the reporting
+    // year the step-9 expenses refer to (P&L, then 2024), not the newest one.
+    const isBase = !getMetricById(metricId) && getBaseInput(metricId) !== undefined
+    const latest = isBase ? null : hits.reduce<number | null>((m, a) => {
       const o = attemptOrdinal(a)
       return o !== null && (m === null || o > m) ? o : m
     }, null)
@@ -335,9 +346,10 @@ function resolveWith(metricId: string, session: Session, explicit?: MetricEntry)
       const o = attemptOrdinal(a)
       return o === null || o === latest
     })
+    const rank = isBase ? declaredPriority : priority
     const picked = current.reduce((best, cur) => {
-      const bp = priority(best.source)
-      const cp = priority(cur.source)
+      const bp = rank(best.source)
+      const cp = rank(cur.source)
       if (cp > bp) return cur
       if (cp < bp) return best
       return (cur.confidence ?? 0) > (best.confidence ?? 0) ? cur : best

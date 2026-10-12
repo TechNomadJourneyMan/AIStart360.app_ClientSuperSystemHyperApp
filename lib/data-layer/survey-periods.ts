@@ -20,12 +20,39 @@ function plausibleYear(y: number, now: Date): boolean {
   return y >= 2000 && y <= now.getUTCFullYear() + 1
 }
 
-function answeredYear(answeredAt: string | null | undefined, now: Date): number {
+function answeredDate(answeredAt: string | null | undefined, now: Date): Date {
   const t = answeredAt ? Date.parse(answeredAt) : NaN
-  return Number.isFinite(t) ? new Date(t).getUTCFullYear() : now.getUTCFullYear()
+  return Number.isFinite(t) ? new Date(t) : now
+}
+
+function answeredYear(answeredAt: string | null | undefined, now: Date): number {
+  return answeredDate(answeredAt, now).getUTCFullYear()
+}
+
+/** Month (1..12) a current-situation answer was given — how fresh it is. */
+export function answeredMonth(answeredAt: string | null | undefined, now: Date): number {
+  return answeredDate(answeredAt, now).getUTCMonth() + 1
+}
+
+/**
+ * Keys without a year of their own that the wizard asks for a stated year:
+ * step 9 «Финансы» — «Чистая прибыль/убыток 2024» and the expense lines /
+ * margin of the same reporting year (lib/metrics/formulas.ts base.revenue_fin
+ * pairs them with the 2024 revenue). Keep in sync with
+ * components/onboarding/steps/Step9FinanceForm.tsx.
+ */
+export const SURVEY_KEY_YEAR: Readonly<Record<string, number>> = {
+  s9n_net_profit: 2024,
+  s9n_net_margin: 2024,
+  s9n_expense_cogs: 2024,
+  s9n_expense_marketing: 2024,
+  s9n_expense_rent: 2024,
+  s9n_expense_other: 2024,
 }
 
 export function surveyKeyPeriod(key: string, answeredAt: string | null | undefined, now: Date): SurveyPeriod {
+  const stated = SURVEY_KEY_YEAR[key]
+  if (stated) return { period: { year: stated, quarter: null, month: null }, basis: 'key' }
   const vs = /(?:^|_)vs_(\d{4})(?:_|$)/.exec(key)
   if (vs && plausibleYear(Number(vs[1]), now)) {
     return { period: { year: Number(vs[1]) + 1, quarter: null, month: null }, basis: 'key' }

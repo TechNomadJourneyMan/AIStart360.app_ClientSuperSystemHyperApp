@@ -59,8 +59,8 @@ function periodOfDetected(d: DetectedPeriod | null): PeriodRef | null {
   if (d.months === 1 && d.endMonth) return { year: d.year, quarter: Math.ceil(d.endMonth / 3) as 1 | 2 | 3 | 4, month: d.endMonth }
   if (d.months === 3 && d.quarter) return { year: d.year, quarter: Number(d.quarter.slice(1)) as 1 | 2 | 3 | 4, month: null }
   if (d.months === 12) return { year: d.year, quarter: null, month: null }
-  // «9 месяцев 2025»: a part of the year — comparable only with another part-year value.
-  return { year: d.year, quarter: null, month: null, ytd: true }
+  // «9 месяцев 2025»: a part of the year — comparable only with the same span.
+  return { year: d.year, quarter: null, month: null, ytd: true, months: d.months }
 }
 
 /** Table-cell sources expanded to one source per observed year column. */

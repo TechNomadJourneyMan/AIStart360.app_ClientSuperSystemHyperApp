@@ -12,7 +12,7 @@
 // other metrics), see lib/metrics/resolver.ts.
 // ============================================================
 
-import { surveyKeyPeriod, tableColumnPeriod } from '@/lib/data-layer/survey-periods'
+import { answeredMonth, surveyKeyPeriod, tableColumnPeriod } from '@/lib/data-layer/survey-periods'
 import type { MetricSource } from './format'
 import {
   isMetricsTableRow,
@@ -448,6 +448,12 @@ export function resolveSurveySource(
   const fromKey = surveyKeyPeriod(key, ctx.surveyAnsweredAt?.[key], ctx.now)
   const year = column?.year ?? (source.legacy && fromKey.basis === 'answered' ? null : fromKey.period.year)
   if (year !== null) period.year = year
+  // A current-situation answer is as fresh as the month it was given: a P&L
+  // of September beats an answer given in January of the same year.
+  if (year !== null && !column && fromKey.basis === 'answered' && period.month == null) {
+    period.month = answeredMonth(ctx.surveyAnsweredAt?.[key], ctx.now)
+    period.basis = period.basis ?? 'answer'
+  }
 
   // Keep a short raw answer (option / yes-no) for provenance; a coerced table
   // or list is represented by its number, not the whole structure.

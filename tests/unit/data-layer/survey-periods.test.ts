@@ -16,10 +16,15 @@ describe('surveyKeyPeriod', () => {
   })
 
   it('places an answer without a year in the year it was given', () => {
-    expect(surveyKeyPeriod('s9n_net_profit', '2026-03-05T10:00:00Z', NOW)).toEqual({ period: y(2026), basis: 'answered' })
-    expect(surveyKeyPeriod('s9n_net_profit', '2025-12-31T10:00:00Z', NOW)).toEqual({ period: y(2025), basis: 'answered' })
-    expect(surveyKeyPeriod('s9n_net_profit', null, NOW)).toEqual({ period: y(2026), basis: 'answered' })
+    expect(surveyKeyPeriod('s9n_debts_amount', '2026-03-05T10:00:00Z', NOW)).toEqual({ period: y(2026), basis: 'answered' })
+    expect(surveyKeyPeriod('s9n_debts_amount', '2025-12-31T10:00:00Z', NOW)).toEqual({ period: y(2025), basis: 'answered' })
+    expect(surveyKeyPeriod('s9n_debts_amount', null, NOW)).toEqual({ period: y(2026), basis: 'answered' })
     expect(surveyKeyPeriod('s8n_metrics_table', null, NOW).basis).toBe('answered')
+  })
+
+  it('step-9 lines of the stated reporting year (Чистая прибыль/убыток 2024 …)', () => {
+    expect(surveyKeyPeriod('s9n_net_profit', '2026-03-05T10:00:00Z', NOW)).toEqual({ period: y(2024), basis: 'key' })
+    expect(surveyKeyPeriod('s9n_expense_cogs', null, NOW).period.year).toBe(2024)
   })
 
   it('does not take other numbers for years', () => {

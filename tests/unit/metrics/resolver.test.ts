@@ -417,3 +417,33 @@ describe('period overrides (public.metric_overrides)', () => {
     expect(r.numeric).toBe(66_000_000)
   })
 })
+
+describe('review C1: the 2024 step-9 block vs a 2025 P&L', () => {
+  const ctx = makeCtx({
+    surveyAnswers: { s9n_revenue_2024: 100_000_000, s1_current_revenue_year: 200_000_000, s9n_net_profit: 10_000_000 },
+    documents: [{
+      id: 'pl25', docType: 'pl_report', periodYear: 2025, periodQuarter: null, uploadedAt: '2026-03-01T00:00:00Z',
+      parsedData: { fields: [{ key: 'revenue', value: 150_000_000, confidence: 0.9 }, { key: 'net_profit', value: 25_000_000, confidence: 0.9 }] },
+    }],
+  })
+  it('the reporting-year revenue of the formulas is the P&L, not the current run-rate', () => {
+    expect(resolveMetric('base.revenue_fin', ctx).numeric).toBe(150_000_000)
+  })
+  it('«Чистая прибыль 2024» from the survey is 2024 and loses to the 2025 P&L', () => {
+    const r = resolveMetric('base.net_profit', ctx)
+    expect(r.numeric).toBe(25_000_000)
+  })
+  it('the current revenue is the current-situation answer (2026) over the 2025 P&L', () => {
+    expect(resolveMetric('biz.finansy.vyruchka_god', ctx).numeric).toBe(200_000_000)
+  })
+  it('a current-situation answer given in January loses to a September document of the same year', () => {
+    const c = makeCtx({
+      now: new Date('2026-10-12T00:00:00Z'),
+      surveyAnswers: { s1_current_revenue_year: 200_000_000 },
+      surveyAnsweredAt: { s1_current_revenue_year: '2026-01-15T00:00:00Z' },
+      documents: [{ id: 'q3', docType: 'pl_report', periodYear: 2026, periodQuarter: 'Q3', uploadedAt: '2026-10-01T00:00:00Z', parsedData: { fields: [{ key: 'revenue', value: 60_000_000, confidence: 0.9 }] } }],
+    })
+    const r = resolveMetric('biz.finansy.vyruchka_god', c)
+    expect(r.picked?.type).toBe('document')
+  })
+})

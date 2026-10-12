@@ -18,6 +18,8 @@ export interface PeriodRef {
   month: number | null
   /** Year-to-date value (partial year): never compared with a full-year one. */
   ytd?: boolean
+  /** Months a partial-year value covers («9 месяцев 2025» = 9), when known. */
+  months?: number
 }
 
 export type FactFlag = 'invalid' | 'anomaly' | 'stale' | 'rescaled' | 'confirmed'
