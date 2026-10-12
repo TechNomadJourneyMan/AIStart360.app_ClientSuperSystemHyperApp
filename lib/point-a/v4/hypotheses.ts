@@ -8,7 +8,7 @@
  */
 import { z } from 'zod'
 import type { V4Block, V4Hypothesis } from './engine'
-import { CHECK_LABELS } from './check-inputs'
+import { CHECK_LABELS } from './check-labels'
 
 export const MAX_HYPOTHESIS_CONFIDENCE = 0.4
 

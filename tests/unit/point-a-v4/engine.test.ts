@@ -42,7 +42,7 @@ describe('block configuration', () => {
   })
 
   it('config version', () => {
-    expect(configVersion(DEFAULT_TEMPLATE, { version: 3 })).toBe('default@1/3/r1')
+    expect(configVersion(DEFAULT_TEMPLATE, { version: 3 })).toBe('default@1/r1')
   })
 })
 

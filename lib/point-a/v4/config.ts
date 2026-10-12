@@ -181,11 +181,16 @@ export function effectiveBlocks(template: BlockTemplate, cfg: CompanyBlockConfig
 export const POINT_A_RULES_VERSION = 'r1'
 
 /** Stable version of the effective configuration (for snapshots). */
-export function configVersion(template: BlockTemplate, cfg: CompanyBlockConfig = {}): string {
-  return `${template.key}@${template.version}/${cfg.version ?? 0}/${POINT_A_RULES_VERSION}`
+/**
+ * What the score depends on: the template, the expert's overrides and the
+ * rules. The client's view (hidden / order / added) is not part of it — hiding
+ * a block changes no score and must not write a new Point A.
+ */
+export function configVersion(template: BlockTemplate, _cfg: CompanyBlockConfig = {}): string {
+  return `${template.key}@${template.version}/${POINT_A_RULES_VERSION}`
 }
 
-/** A template / company config edit changes its content even without a version bump. */
+/** A template / expert edit changes the content even without a version bump. */
 export function configFingerprint(template: BlockTemplate, cfg: CompanyBlockConfig = {}): string {
-  return JSON.stringify([template.blocks, cfg.templateKey ?? null, cfg.expertOverrides ?? {}, cfg.clientView ?? {}])
+  return JSON.stringify([template.blocks, cfg.templateKey ?? null, cfg.expertOverrides ?? {}, (cfg.clientView?.added ?? []).slice().sort()])
 }

@@ -14,6 +14,8 @@ export type WatchedTable =
   | 'documents'
   | 'gri_assessments'
   | 'companies'
+  | 'point_a_snapshots'
+  | 'data_discrepancies'
 
 export type RealtimeEvent = 'INSERT' | 'UPDATE' | 'DELETE' | '*'
 

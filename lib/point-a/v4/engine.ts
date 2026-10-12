@@ -22,7 +22,8 @@ import {
 } from '@/lib/point-a-engine'
 import type { BlockScore, DiagnosticStage, PointA } from '@/types/onboarding'
 import { BLOCK_LIBRARY, type BlockKey, type EffectiveBlock } from './config'
-import { answeredSteps, CHECK_LABELS, isAnswered } from './check-inputs'
+import { answeredSteps, isAnswered } from './check-inputs'
+import { CHECK_LABELS } from './check-labels'
 import { productChecks, teamChecks } from './extra-blocks'
 import { hashOf } from '../snapshot-diff'
 

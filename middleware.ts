@@ -208,6 +208,8 @@ export async function middleware(request: NextRequest, event?: NextFetchEvent) {
     // Canonical production keeps the normal Supabase gate because the flag is
     // absent there.
     (IS_PUBLIC_JOURNEY_PREVIEW && matchesRoute(pathname, '/journey')) ||
+    // Dev-only fixture previews (the page itself 404s in production).
+    (process.env.NODE_ENV !== 'production' && pathname.startsWith('/dev/')) ||
     pathname.startsWith('/gri-free') ||
     // Public legal pages — linked from the registration consent checkbox.
     pathname.startsWith('/terms') ||
