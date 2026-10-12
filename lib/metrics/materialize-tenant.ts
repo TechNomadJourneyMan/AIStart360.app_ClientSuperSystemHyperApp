@@ -108,9 +108,12 @@ export async function materializeForTenant(
   _sessionClient: SupabaseClient,
   serviceClient: SupabaseClient,
   tenant: MetricsTenant,
-): Promise<{ result: MaterializeResult; values: MetricValue[]; ctx: ResolverContext }> {
+  opts: { announce?: boolean } = {},
+): Promise<{ result: MaterializeResult; values: MetricValue[]; ctx: ResolverContext; dataLayer?: DataLayerSyncResult }> {
   const ctx = await resolverContextForTenant(serviceClient, tenant)
   const { result, values, dataLayer } = await materializeAll(serviceClient, ctx)
-  announce(tenant.companyId, result, dataLayer)
-  return { result, values, ctx }
+  // The Point A recalculation materialises itself: announcing METRIC_UPDATED
+  // from there would request the next recalculation — an endless loop.
+  if (opts.announce !== false) announce(tenant.companyId, result, dataLayer)
+  return { result, values, ctx, dataLayer }
 }

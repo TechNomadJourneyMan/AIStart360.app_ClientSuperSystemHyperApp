@@ -15,14 +15,32 @@ export function memoryClient(tables: Record<string, Row[]> = {}, opts: { missing
       let conflict: string[] = []
       let single = false
       const filters: Array<(r: Row) => boolean> = []
+      let inserted: Row[] = []
+      let sort: { col: string; asc: boolean } | null = null
+      let cap: number | null = null
       const run = () => {
         if (opts.missing?.includes(table)) return { data: null, error: { code: '42P01', message: 'missing' } }
         const rows = (db[table] ??= [])
         const match = (r: Row) => filters.every((f) => f(r))
         let out: unknown = null
-        if (op === 'select') out = single ? rows.find(match) ?? null : rows.filter(match)
+        if (op === 'select') {
+          let found = rows.filter(match)
+          if (sort) {
+            const { col, asc } = sort
+            found = [...found].sort((a, b) => (String(a[col]) < String(b[col]) ? -1 : String(a[col]) > String(b[col]) ? 1 : 0) * (asc ? 1 : -1))
+          }
+          if (cap !== null) found = found.slice(0, cap)
+          out = single ? found[0] ?? null : found
+        }
         if (op === 'delete') db[table] = rows.filter((r) => !match(r))
-        if (op === 'insert') for (const p of Array.isArray(payload) ? payload : [payload!]) rows.push({ id: `id${++seq}`, created_at: new Date(2026, 0, seq).toISOString(), ...p })
+        if (op === 'insert') {
+          for (const p of Array.isArray(payload) ? payload : [payload!]) {
+            const row = { id: `id${++seq}`, created_at: new Date(2026, 0, seq).toISOString(), ...p }
+            rows.push(row)
+            inserted.push(row)
+          }
+          if (single) out = inserted[0] ?? null
+        }
         if (op === 'update') for (const r of rows) if (match(r)) Object.assign(r, payload)
         if (op === 'upsert') {
           for (const p of Array.isArray(payload) ? payload : [payload!]) {
@@ -35,8 +53,8 @@ export function memoryClient(tables: Record<string, Row[]> = {}, opts: { missing
       }
       const b: Record<string, unknown> = {
         select: () => b,
-        order: () => b,
-        limit: () => b,
+        order: (col: string, o?: { ascending?: boolean }) => { sort = { col, asc: o?.ascending !== false }; return b },
+        limit: (n: number) => { cap = n; return b },
         delete: () => { op = 'delete'; return b },
         insert: (p: Row | Row[]) => { op = 'insert'; payload = p; return b },
         update: (p: Row) => { op = 'update'; payload = p; return b },
@@ -44,6 +62,7 @@ export function memoryClient(tables: Record<string, Row[]> = {}, opts: { missing
         eq: (c: string, v: unknown) => { filters.push((r) => r[c] === v); return b },
         in: (c: string, vs: unknown[]) => { filters.push((r) => vs.includes(r[c])); return b },
         maybeSingle: () => { single = true; return Promise.resolve(run()) },
+        single: () => { single = true; return Promise.resolve(run()) },
         then: (res: (v: unknown) => unknown, rej?: (e: unknown) => unknown) => Promise.resolve(run()).then(res, rej),
       }
       return b
