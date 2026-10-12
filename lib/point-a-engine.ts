@@ -266,7 +266,7 @@ function staffingTableHasKpi(a: Record<string, unknown>): boolean {
 
 // ─── Checks → block ──────────────────────────────────────────────────────────
 
-interface Check {
+export interface PointACheck {
   id: string
   max: number
   earned: number
@@ -279,7 +279,9 @@ interface Check {
   rec?: string
 }
 
-function toBlock(checks: Check[]): BlockScore {
+type Check = PointACheck
+
+export function toBlock(checks: Check[]): BlockScore {
   const included = checks.filter((c) => !c.excluded)
   const possible = included.reduce((s, c) => s + c.max, 0)
   const earned = included.reduce((s, c) => s + c.earned, 0)
@@ -310,7 +312,7 @@ function loyaltyCheck(a: Record<string, unknown>, rec: string): Check {
 
 // ─── Finance Block (weight 30%) ───────────────────────────────────────────────
 
-function scoreFinance(inp: Inputs): BlockScore {
+function financeChecks(inp: Inputs): Check[] {
   const { a } = inp
   const checks: Check[] = []
 
@@ -364,12 +366,16 @@ function scoreFinance(inp: Inputs): BlockScore {
     checks.push({ id: 'revenue_trend', max: 15, earned: 0 })
   }
 
-  return toBlock(checks)
+  return checks
+}
+
+function scoreFinance(inp: Inputs): BlockScore {
+  return toBlock(financeChecks(inp))
 }
 
 // ─── Sales Block (weight 25%) ─────────────────────────────────────────────────
 
-function scoreSales(inp: Inputs): BlockScore {
+function salesChecks(inp: Inputs): Check[] {
   const { a } = inp
   const checks: Check[] = []
 
@@ -420,12 +426,16 @@ function scoreSales(inp: Inputs): BlockScore {
   }
 
   checks.push(loyaltyCheck(a, 'Запустить NPS-опрос и программу лояльности'))
-  return toBlock(checks)
+  return checks
+}
+
+function scoreSales(inp: Inputs): BlockScore {
+  return toBlock(salesChecks(inp))
 }
 
 // ─── Operations Block (weight 20%) ───────────────────────────────────────────
 
-function scoreOperations(inp: Inputs): BlockScore {
+function operationsChecks(inp: Inputs): Check[] {
   const { a } = inp
   const checks: Check[] = []
 
@@ -461,12 +471,16 @@ function scoreOperations(inp: Inputs): BlockScore {
     checks.push({ id: 'management_method', max: 10, earned: 10 })
   }
 
-  return toBlock(checks)
+  return checks
+}
+
+function scoreOperations(inp: Inputs): BlockScore {
+  return toBlock(operationsChecks(inp))
 }
 
 // ─── Marketing Block (weight 15%) ────────────────────────────────────────────
 
-function scoreMarketing(inp: Inputs): BlockScore {
+function marketingChecks(inp: Inputs): Check[] {
   const { a } = inp
   const checks: Check[] = []
 
@@ -499,12 +513,16 @@ function scoreMarketing(inp: Inputs): BlockScore {
     ? { id: 'usp', max: 5, earned: 5 }
     : { id: 'usp', max: 5, earned: 0, issue: 'УТП (уникальное торговое предложение) не сформулировано' })
 
-  return toBlock(checks)
+  return checks
+}
+
+function scoreMarketing(inp: Inputs): BlockScore {
+  return toBlock(marketingChecks(inp))
 }
 
 // ─── Strategy Block (weight 10%) ─────────────────────────────────────────────
 
-function scoreStrategy(inp: Inputs): BlockScore {
+function strategyChecks(inp: Inputs): Check[] {
   const { a } = inp
   const checks: Check[] = []
 
@@ -528,7 +546,11 @@ function scoreStrategy(inp: Inputs): BlockScore {
     ? { id: 'growth_blockers', max: 10, earned: 10 }
     : { id: 'growth_blockers', max: 10, earned: 0, issue: 'Барьеры роста не определены', rec: 'Провести стратегическую сессию по барьерам' })
 
-  return toBlock(checks)
+  return checks
+}
+
+function scoreStrategy(inp: Inputs): BlockScore {
+  return toBlock(strategyChecks(inp))
 }
 
 // ─── Risk Generator ───────────────────────────────────────────────────────────
@@ -709,6 +731,23 @@ export function withCurrentAliases(input: Record<string, unknown>): Record<strin
     a.s2_knows_breakeven = Number.isFinite(be) ? be > 0 : !UNKNOWN_RE.test(String(a.s9n_breakeven_point).trim())
   }
   return a
+}
+
+/**
+ * The checks behind each block of `calculatePointA` (same inputs, same
+ * aliases). Point A v4 (lib/point-a/v4/engine.ts) scores them with coverage
+ * and configurable weights; `toBlock(checks)` reproduces the v1 block.
+ */
+export function pointAChecks(rawAnswers: Record<string, unknown>, resolved: PointAResolvedInputs = {}): Record<'finance' | 'sales' | 'operations' | 'marketing' | 'strategy', PointACheck[]> {
+  const answers = withCurrentAliases(rawAnswers)
+  const inp: Inputs = { a: answers, table: readMetricsTable(answers.s8n_metrics_table), resolved }
+  return {
+    finance: financeChecks(inp),
+    sales: salesChecks(inp),
+    operations: operationsChecks(inp),
+    marketing: marketingChecks(inp),
+    strategy: strategyChecks(inp),
+  }
 }
 
 // ─── Main Export ──────────────────────────────────────────────────────────────
