@@ -35,16 +35,19 @@ export async function PATCH(req: Request): Promise<NextResponse> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return apiError(tenantErrorMessage('unauthenticated'), 401)
-  const tenant = await resolveTenantWith(supabase, user.id, { companyId: new URL(req.url).searchParams.get('companyId'), access: 'manage' })
-  if (!tenant.ok) return apiError(tenantErrorMessage(tenant.error), tenant.status)
   const parsed = Body.safeParse(await req.json().catch(() => null))
   if (!parsed.success) return apiError('Неверный запрос', 400)
   if (parsed.data.clientView?.keyMetrics?.some((id) => !getMetricById(id))) return apiError('Неизвестная метрика', 400)
+  const expertChange = !!parsed.data.expertOverrides || parsed.data.templateKey !== undefined
+  // The client's view needs manage access (owner / admin). Weights and the
+  // template are an expert's: platform staff or the company's partner expert
+  // — who do not have manage access (can_manage_company), only read + role.
+  const tenant = await resolveTenantWith(supabase, user.id, { companyId: new URL(req.url).searchParams.get('companyId'), access: expertChange ? 'read' : 'manage' })
+  if (!tenant.ok) return apiError(tenantErrorMessage(tenant.error), tenant.status)
   const { companyId, role } = tenant.tenant
   const expert = role === 'staff' || role === 'partner_expert' || role === 'partner_admin'
-  if ((parsed.data.expertOverrides || parsed.data.templateKey !== undefined) && !expert) {
-    return apiError('Веса и шаблон блоков меняет эксперт', 403)
-  }
+  if (expertChange && !expert) return apiError('Веса и шаблон блоков меняет эксперт', 403)
+  if (parsed.data.clientView && !tenant.tenant.canManage) return apiError('Нет доступа к настройке вида', 403)
 
   const service = createServiceClient()
   const cur = await service.from('pa_company_config').select('template_key, expert_overrides, client_view, version').eq('company_id', companyId).maybeSingle()
@@ -66,7 +69,10 @@ export async function PATCH(req: Request): Promise<NextResponse> {
     console.error('[api/v1/point-a/config] write failed', up.error.code ?? '')
     return apiError(up.error.code === '23503' ? 'Неизвестный шаблон' : 'Не удалось сохранить настройку блоков', up.error.code === '23503' ? 400 : 500)
   }
-  emitPlatformEventSafely({
+  // Only what the score depends on recalculates Point A (hidden / order /
+  // key metrics change the view only).
+  const scoreChange = expertChange || parsed.data.clientView?.added !== undefined
+  if (scoreChange) emitPlatformEventSafely({
     name: 'BLOCK_CONFIG_CHANGED', companyId, subjectType: 'company', subjectId: companyId, actor: `user:${user.id}`,
     payload: { by: expert ? 'expert' : 'client', version: row.version }, dedupeKey: `block_config:${companyId}:${row.version}`,
   })

@@ -163,7 +163,7 @@ export async function scoreCompany(companyId: string, sessionId: string | null):
   // unchanged) instead of overwriting it with a v1 row.
   if (current && !samePointA(rowToPointA(current), pointA) && (await isSnapshotDiagnostic(companyId, current.id))) {
     const { buildPointASnapshot } = await import('@/lib/point-a/snapshot')
-    const r = await buildPointASnapshot(companyId, { trigger: 'event', reasons: ['DIAGNOSTIC_PIPELINE'], lock: true }).catch((err: unknown) => {
+    const r = await buildPointASnapshot(companyId, { trigger: 'event', reasons: ['DIAGNOSTIC_PIPELINE'], lock: true, fromPipeline: true }).catch((err: unknown) => {
       console.error('[diagnostics/scoring] snapshot rebuild failed', err instanceof Error ? err.message : err)
       return null
     })

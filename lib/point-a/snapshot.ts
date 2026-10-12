@@ -50,6 +50,8 @@ export interface SnapshotOptions {
    * of one company at once. A running one → { status: 'skipped', reason: 'busy' }.
    */
   lock?: boolean
+  /** Called from the diagnostic pipeline itself: do not start another pipeline run. */
+  fromPipeline?: boolean
   locale?: string
 }
 
@@ -73,7 +75,7 @@ export interface SnapshotDeps {
   useV4: () => Promise<boolean>
   store: typeof import('./diagnostic-row').storeCurrentDiagnostic
   lock: (companyId: string) => Promise<{ release: () => Promise<void> } | null>
-  afterWrite: (o: { companyId: string; ownerId: string; diagnosticId: string; snapshotId: string | null; engine: 'v1' | 'v4'; written: PointA; changes: ChangeReason[]; trigger: SnapshotTrigger; locale: string; blocks: V4Block[]; industry: string | null }) => void
+  afterWrite: (o: { fromPipeline?: boolean; companyId: string; ownerId: string; diagnosticId: string; snapshotId: string | null; engine: 'v1' | 'v4'; written: PointA; changes: ChangeReason[]; trigger: SnapshotTrigger; locale: string; blocks: V4Block[]; industry: string | null }) => void
 }
 
 const defaultDeps: SnapshotDeps = {
@@ -114,7 +116,7 @@ const defaultDeps: SnapshotDeps = {
       })
       const baseUrl = internalBaseUrl({})
       if (process.env.OPENROUTER_API_KEY && baseUrl) fireAiFanOut({ baseUrl, diagnosticId: o.diagnosticId, userId: o.ownerId, locale: o.locale })
-      startDiagnosticPipeline({ companyId: o.companyId, diagnosticId: o.diagnosticId, requestedBy: 'system:point-a', trigger: o.trigger === 'manual' ? 'manual' : 'event', reason: 'пересчёт Точки А после изменения данных' })
+      if (!o.fromPipeline) startDiagnosticPipeline({ companyId: o.companyId, diagnosticId: o.diagnosticId, requestedBy: 'system:point-a', trigger: o.trigger === 'manual' ? 'manual' : 'event', reason: 'пересчёт Точки А после изменения данных' })
       void trackEvent({ userId: o.ownerId, name: 'POINT_A_CALCULATED', entityType: 'diagnostic', entityId: o.diagnosticId, metadata: { overall_score: Number(o.written.overall_score), engine: o.engine, trigger: o.trigger } })
       if (o.snapshotId && process.env.OPENROUTER_API_KEY) await addHypotheses(o.snapshotId, o.blocks, o.industry, o.ownerId)
     })
@@ -283,6 +285,6 @@ async function build(companyId: string, opts: SnapshotOptions, deps: SnapshotDep
   // Without the link the next pass is not «unchanged» and writes again — never stuck.
   if (link.error) console.error('[point-a/snapshot] diagnostic link not stored', link.error.code ?? '', link.error.message ?? '')
 
-  deps.afterWrite({ companyId, ownerId, diagnosticId, snapshotId, engine, written, changes, trigger: opts.trigger, locale: opts.locale ?? 'ru', blocks: v4.blocks, industry })
+  deps.afterWrite({ fromPipeline: opts.fromPipeline, companyId, ownerId, diagnosticId, snapshotId, engine, written, changes, trigger: opts.trigger, locale: opts.locale ?? 'ru', blocks: v4.blocks, industry })
   return { status: 'written', snapshotId, diagnosticId, diagnostic: stored.diag, engine, written, v4, changes }
 }

@@ -164,9 +164,12 @@ export async function syncRevenueGoal(service: SupabaseClient, companyId: string
     if (error && !missingTable(error)) throw new Error(`goals: revenue goal not removed (${error.code ?? 'unknown'})`)
     return
   }
-  const { error } = await service.from('metric_targets').upsert(
-    { company_id: companyId, metric_key: REVENUE_GOAL_METRIC, target_value: value, direction: 'higher_is_better', period_label: periodLabel, source: 'owner', set_by: actorId, updated_at: new Date().toISOString() },
-    { onConflict: 'company_id,metric_key,period_label' },
-  )
+  // A changed revenue goal starts a new horizon (baseline_at, migration 115).
+  const base = { company_id: companyId, metric_key: REVENUE_GOAL_METRIC, target_value: value, direction: 'higher_is_better', period_label: periodLabel, source: 'owner', set_by: actorId, updated_at: new Date().toISOString() }
+  const existing = await service.from('metric_targets').select('target_value').eq('company_id', companyId).eq('metric_key', REVENUE_GOAL_METRIC).eq('period_label', periodLabel).maybeSingle()
+  const changed = existing.error || !existing.data || Number((existing.data as { target_value: unknown }).target_value) !== value
+  const row = changed ? { ...base, baseline_at: new Date().toISOString(), baseline_value: null, baseline_period: null } : base
+  let { error } = await service.from('metric_targets').upsert(row, { onConflict: 'company_id,metric_key,period_label' })
+  if (error && missingColumn(error)) ({ error } = await service.from('metric_targets').upsert(base, { onConflict: 'company_id,metric_key,period_label' }))
   if (error && !missingTable(error)) throw new Error(`goals: revenue goal not synced (${error.code ?? 'unknown'})`)
 }

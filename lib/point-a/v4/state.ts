@@ -120,29 +120,38 @@ export function snapshotView(row: Record<string, unknown>): PointASnapshotView {
 }
 
 export async function loadPointAState(client: SupabaseClient, service: SupabaseClient, companyId: string): Promise<PointAState> {
-  const [snaps, disc, company, gri, docs, metricsCount, queue] = await Promise.all([
-    client.from('point_a_snapshots').select('*').eq('company_id', companyId).order('created_at', { ascending: false }).limit(30),
-    client.from('data_discrepancies').select('id, metric_key, period_key, kind, detail, chosen_value, candidates').eq('company_id', companyId).eq('status', 'open').order('created_at', { ascending: false }).limit(50),
-    client.from('companies').select('id, user_id, industry').eq('id', companyId).maybeSingle(),
-    client.from('gri_assessments').select('gri_index, created_at').eq('company_id', companyId).eq('is_current', true).order('created_at', { ascending: false }).limit(1),
-    client.from('documents').select('parse_status').eq('company_id', companyId),
-    client.from('metrics').select('metric_key', { count: 'exact', head: true }).eq('company_id', companyId),
-    service.from('point_a_recalc_queue').select('started_at, due_at').eq('company_id', companyId).maybeSingle(),
-  ])
-  for (const r of [snaps, disc]) if (r.error && !missing(r.error)) throw new Error(`point-a state: read failed (${r.error.code ?? 'unknown'})`)
+  const company = await client.from('companies').select('id, user_id, industry').eq('id', companyId).maybeSingle()
   if (company.error) throw new Error(`point-a state: company read failed (${company.error.code ?? 'unknown'})`)
+  const ownerId = (company.data as { user_id?: string } | null)?.user_id ?? null
+  // GRI taken before the company existed carries only the owner's user_id.
+  const griQuery = client.from('gri_assessments').select('gri_index, created_at').eq('is_current', true)
+  const [latest, snaps, disc, gri, docs, metricRows, queue] = await Promise.all([
+    client.from('point_a_snapshots').select('*').eq('company_id', companyId).order('created_at', { ascending: false }).limit(1),
+    // The history needs only the summary of each snapshot (not inputs / blocks).
+    client.from('point_a_snapshots').select('id, created_at, overall, confidence, change_reasons').eq('company_id', companyId).order('created_at', { ascending: false }).limit(30),
+    client.from('data_discrepancies').select('id, metric_key, period_key, kind, detail, chosen_value, candidates').eq('company_id', companyId).eq('status', 'open').order('created_at', { ascending: false }).limit(50),
+    (ownerId && /^[0-9a-f-]{36}$/i.test(ownerId) ? griQuery.or(`company_id.eq.${companyId},user_id.eq.${ownerId}`) : griQuery.eq('company_id', companyId))
+      .order('created_at', { ascending: false }).limit(1),
+    client.from('documents').select('parse_status').eq('company_id', companyId),
+    client.from('metrics').select('metric_key').eq('company_id', companyId).not('metric_value', 'is', null),
+    service.from('point_a_recalc_queue').select('started_at, due_at, last_error').eq('company_id', companyId).maybeSingle(),
+  ])
+  for (const r of [latest, snaps, disc]) if (r.error && !missing(r.error)) throw new Error(`point-a state: read failed (${r.error.code ?? 'unknown'})`)
 
   const rows = (snaps.error ? [] : snaps.data ?? []) as Array<Record<string, unknown>>
-  const snapshot = rows[0] ? snapshotView(rows[0]) : null
+  const latestRow = ((latest.error ? [] : latest.data ?? []) as Array<Record<string, unknown>>)[0]
+  const snapshot = latestRow ? snapshotView(latestRow) : null
 
-  const ownerId = (company.data as { user_id?: string } | null)?.user_id ?? null
   const industry = (company.data as { industry?: string | null } | null)?.industry ?? null
   const survey = ownerId
     ? await client.from('survey_answers').select('question_key, step, answer').eq('user_id', ownerId)
     : { data: [], error: null }
   const progress = surveyProgressFromRows(((survey.data ?? []) as Array<{ question_key: string; step: number | null; answer: unknown }>))
 
-  const goals = await loadGoalsWithEvaluation(client, companyId).catch(() => [])
+  const goals = await loadGoalsWithEvaluation(client, companyId).catch((err) => {
+    console.error('[point-a/state] goals not loaded', err instanceof Error ? err.message : err)
+    return []
+  })
   const cfg = await loadBlockConfig(client, companyId, industry)
   const chosen = (cfg.company.clientView?.keyMetrics ?? []).filter((id) => getMetricById(id))
   const keyMetricIds = (chosen.length ? chosen : DEFAULT_KEY_METRICS).slice(0, MAX_KEY_METRICS)
@@ -172,7 +181,8 @@ export async function loadPointAState(client: SupabaseClient, service: SupabaseC
     : null
 
   const docRows = (docs.error ? [] : docs.data ?? []) as Array<{ parse_status: string | null }>
-  const q = queue.error ? null : (queue.data as { started_at: string | null } | null)
+  // A row backing off after a failed run is not «running» for the page.
+  const q = queue.error ? null : (queue.data as { started_at: string | null; last_error: string | null } | null)
 
   return {
     snapshot,
@@ -205,12 +215,13 @@ export async function loadPointAState(client: SupabaseClient, service: SupabaseC
       survey: { percent: progress.percent, completed: progress.completed, total: progress.total_steps },
       documents: {
         parsed: docRows.filter((d) => d.parse_status === 'parsed' || d.parse_status === 'completed').length,
-        processing: docRows.filter((d) => d.parse_status === 'queued' || d.parse_status === 'pending' || d.parse_status === 'processing').length,
-        failed: docRows.filter((d) => d.parse_status === 'failed' || d.parse_status === 'error').length,
+        processing: docRows.filter((d) => d.parse_status === 'queued' || d.parse_status === 'pending' || d.parse_status === 'processing' || d.parse_status === 'needs_ocr').length,
+        failed: docRows.filter((d) => d.parse_status === 'failed' || d.parse_status === 'error' || d.parse_status === 'rejected').length,
       },
-      metrics: metricsCount.count ?? 0,
+      // distinct metrics, not rows (a metric may have several periods / sources)
+      metrics: new Set(((metricRows.error ? [] : metricRows.data ?? []) as Array<{ metric_key: string }>).map((r) => r.metric_key)).size,
     },
-    recalculation: q ? (q.started_at ? 'running' : 'queued') : 'idle',
+    recalculation: !q ? 'idle' : q.started_at ? 'running' : q.last_error ? 'idle' : 'queued',
     config: {
       template: cfg.template.key,
       templateTitle: cfg.template.title,

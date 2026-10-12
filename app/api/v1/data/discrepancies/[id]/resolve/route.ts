@@ -26,7 +26,11 @@ export const dynamic = 'force-dynamic'
 
 const Note = z.string().trim().max(1000).optional()
 const Body = z.discriminatedUnion('choice', [
-  z.object({ choice: z.literal('candidate'), index: z.number().int().min(0).max(50), note: Note }),
+  z.object({
+    choice: z.literal('candidate'), index: z.number().int().min(0).max(50), note: Note,
+    // What the owner saw: a candidate list refreshed meanwhile → 409, not a wrong value.
+    expected: z.object({ sourceRef: z.string().max(300), value: z.number().finite() }).optional(),
+  }),
   z.object({ choice: z.literal('custom'), value: z.number().finite(), note: Note }),
   z.object({ choice: z.literal('ignore'), note: Note }),
 ])
@@ -36,6 +40,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const ERRORS: Record<string, string> = {
   not_found: 'Расхождение не найдено',
   already_closed: 'Расхождение уже закрыто',
+  stale_candidates: 'Данные обновились — обновите страницу и выберите ещё раз',
   bad_candidate: 'Неверный вариант',
   invalid_value_needs_custom: 'Это значение вне допустимого диапазона — введите корректное',
   bad_value: 'Неверное значение',

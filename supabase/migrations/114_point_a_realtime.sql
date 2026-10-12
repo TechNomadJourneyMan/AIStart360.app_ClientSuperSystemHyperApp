@@ -21,5 +21,7 @@ BEGIN
   END LOOP;
 END $$;
 
-ALTER TABLE public.point_a_snapshots REPLICA IDENTITY FULL;
+-- Discrepancies are updated in place (status): the full old row lets an
+-- UPDATE match the company filter. Snapshots are only inserted / linked —
+-- default identity, no large jsonb in the WAL.
 ALTER TABLE public.data_discrepancies REPLICA IDENTITY FULL;

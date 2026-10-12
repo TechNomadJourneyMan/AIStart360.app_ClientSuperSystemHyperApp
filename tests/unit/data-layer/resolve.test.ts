@@ -80,3 +80,12 @@ describe('resolveDiscrepancy — review fixes', () => {
     expect(m.db.metric_overrides[0].period_key).toBe(String(new Date().getUTCFullYear()))
   })
 })
+
+describe('resolveDiscrepancy — stale candidates', () => {
+  it('the candidate the owner saw changed → 409, nothing written', async () => {
+    const { client, db, conflict } = await seeded()
+    const out = await resolveDiscrepancy(client, 'co', String(conflict.id), { choice: 'candidate', index: 1, expected: { sourceRef: 'document:other#revenue', value: 1 } }, owner)
+    expect(out).toMatchObject({ ok: false, status: 409, error: 'stale_candidates' })
+    expect(db.metric_overrides).toEqual([])
+  })
+})

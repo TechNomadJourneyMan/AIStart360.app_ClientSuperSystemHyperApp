@@ -10,6 +10,7 @@
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { BodyPortal } from '@/components/ui/body-portal'
+import { LEGACY_GOALS_KEY } from '@/stores/ui.store'
 import { useDeleteGoal, useGoals, useSaveGoal, type GoalItem } from '@/hooks/useGoals'
 
 const MAX_GOALS = 8
@@ -78,7 +79,7 @@ function GoalChip({ item, onRemove }: { item: GoalItem; onRemove: () => void }) 
 
 /**
  * Goals pinned before they were saved on the server lived only in this
- * browser (localStorage «aistart360-ui».pinnedGoals). They had no metric and
+ * browser (kept aside by stores/ui.store.ts under LEGACY_GOALS_KEY). They had no metric and
  * no horizon, so they cannot be converted — the owner sees them once to set
  * them again.
  */
@@ -86,20 +87,13 @@ function useLegacyGoals(): [string[], () => void] {
   const [labels, setLabels] = useState<string[]>([])
   useEffect(() => {
     try {
-      const raw = window.localStorage.getItem('aistart360-ui')
-      const pinned = raw ? (JSON.parse(raw)?.state?.pinnedGoals as Array<{ label?: string }> | undefined) : undefined
+      const raw = window.localStorage.getItem(LEGACY_GOALS_KEY)
+      const pinned = raw ? (JSON.parse(raw) as Array<{ label?: string }>) : null
       if (Array.isArray(pinned) && pinned.length) setLabels(pinned.map((g) => String(g.label ?? '')).filter(Boolean))
     } catch { /* storage unavailable */ }
   }, [])
   const dismiss = () => {
-    try {
-      const raw = window.localStorage.getItem('aistart360-ui')
-      const parsed = raw ? JSON.parse(raw) : null
-      if (parsed?.state) {
-        delete parsed.state.pinnedGoals
-        window.localStorage.setItem('aistart360-ui', JSON.stringify(parsed))
-      }
-    } catch { /* storage unavailable */ }
+    try { window.localStorage.removeItem(LEGACY_GOALS_KEY) } catch { /* storage unavailable */ }
     setLabels([])
   }
   return [labels, dismiss]

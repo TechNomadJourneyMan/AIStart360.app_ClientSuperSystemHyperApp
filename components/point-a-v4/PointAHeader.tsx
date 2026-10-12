@@ -16,7 +16,10 @@ export function PointAHeader({
   onCustomize: () => void
 }) {
   const s = state.snapshot
-  const busy = recalcPending || state.recalculation !== 'idle'
+  // Only a running recalculation blocks the button: a queued one (debounce,
+  // backoff) is taken over by the manual run (claimCompany).
+  const busy = recalcPending || state.recalculation === 'running'
+  const queued = !busy && state.recalculation === 'queued'
   const withoutData = s?.blocks.filter((b) => b.score === null && !b.informational).length ?? 0
   return (
     <section className={cn(CARD, 'relative overflow-hidden')} aria-labelledby="pa-title">
@@ -38,15 +41,22 @@ export function PointAHeader({
                 <Icon name="progress_activity" className="text-[12px] animate-spin" />Пересчитывается…
               </span>
             )}
+            {queued && (
+              <span className={cn(CHIP, 'bg-white/[0.04] text-on-surface-variant')} aria-live="polite">
+                <Icon name="schedule" className="text-[12px]" />Данные изменились — скоро пересчитаем
+              </span>
+            )}
           </div>
           <div className="max-w-sm"><ConfidenceBar value={s?.confidence ?? null} /></div>
           {s && <p className="text-[11px] text-on-surface-variant" suppressHydrationWarning>Обновлено {formatRelativeRuLong(s.createdAt)}</p>}
         </div>
         <div className="flex flex-row sm:flex-col gap-2 sm:items-stretch">
-          <button type="button" className={BTN_PRIMARY} onClick={onRecalc} disabled={busy} aria-busy={busy}>
-            <Icon name={busy ? 'progress_activity' : 'refresh'} className={cn('text-[16px]', busy && 'animate-spin')} />
-            {busy ? 'Считаем…' : 'Обновить'}
-          </button>
+          {state.canManage && (
+            <button type="button" className={BTN_PRIMARY} onClick={onRecalc} disabled={busy} aria-busy={busy}>
+              <Icon name={busy ? 'progress_activity' : 'refresh'} className={cn('text-[16px]', busy && 'animate-spin')} />
+              {busy ? 'Считаем…' : 'Обновить'}
+            </button>
+          )}
           {state.canManage && (
             <button type="button" className={BTN_GHOST} onClick={onCustomize} aria-pressed={customize}>
               <Icon name="tune" className="text-[16px]" />{customize ? 'Готово' : 'Настроить блоки'}

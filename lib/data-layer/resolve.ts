@@ -22,7 +22,7 @@ import { basisSignature } from './reconcile'
 import type { DiscrepancyCandidate } from './types'
 
 export type ResolveChoice =
-  | { choice: 'candidate'; index: number; note?: string }
+  | { choice: 'candidate'; index: number; expected?: { sourceRef: string; value: number }; note?: string }
   | { choice: 'custom'; value: number; note?: string }
   | { choice: 'ignore'; note?: string }
 
@@ -70,6 +70,9 @@ export async function resolveDiscrepancy(
   if (input.choice === 'candidate') {
     const c = candidates[input.index]
     if (!c) return { ok: false, status: 400, error: 'bad_candidate' }
+    if (input.expected && (c.sourceRef !== input.expected.sourceRef || Number(c.value) !== input.expected.value)) {
+      return { ok: false, status: 409, error: 'stale_candidates' }
+    }
     if (row.kind === 'invalid') return { ok: false, status: 400, error: 'invalid_value_needs_custom' }
     value = Number(c.value)
     // The first candidate is the value in use already.

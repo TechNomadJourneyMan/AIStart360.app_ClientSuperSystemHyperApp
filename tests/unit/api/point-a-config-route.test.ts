@@ -37,19 +37,26 @@ beforeEach(() => {
 })
 
 describe('PATCH /api/v1/point-a/config', () => {
-  it('the owner changes the view; weights are kept, version bumped, event sent', async () => {
+  it('the owner changes the view; weights are kept, version bumped, no recalculation for hide / order', async () => {
     const { status } = await patch({ clientView: { order: ['team', 'finance'] } })
     expect(status).toBe(200)
     expect(h.upserted[0]).toMatchObject({ company_id: 'co-1', version: 4, client_view: { hidden: ['team'], order: ['team', 'finance'] }, expert_overrides: { finance: { weight: 0.4 } } })
+    expect(h.emit).not.toHaveBeenCalled()
+    await patch({ clientView: { added: ['product'] } })
     expect(h.emit).toHaveBeenCalledWith(expect.objectContaining({ name: 'BLOCK_CONFIG_CHANGED', companyId: 'co-1' }))
+  })
+
+  it('an expert without manage access cannot change the client view', async () => {
+    h.tenant = { ok: true, tenant: { userId: 'u-1', companyId: 'co-1', role: 'partner_expert', canManage: false, legacy: false } }
+    expect((await patch({ clientView: { hidden: ['team'] } })).status).toBe(403)
   })
   it('the owner cannot change weights or the template', async () => {
     expect((await patch({ expertOverrides: { finance: { weight: 1 } } })).status).toBe(403)
     expect((await patch({ templateKey: 'ecommerce' })).status).toBe(403)
     expect(h.upserted).toEqual([])
   })
-  it('an expert can', async () => {
-    h.tenant = { ok: true, tenant: { userId: 'u-1', companyId: 'co-1', role: 'partner_expert', canManage: true, legacy: false } }
+  it('an expert (read access + expert role, no manage) can', async () => {
+    h.tenant = { ok: true, tenant: { userId: 'u-1', companyId: 'co-1', role: 'partner_expert', canManage: false, legacy: false } }
     expect((await patch({ expertOverrides: { product: { enabled: false } } })).status).toBe(200)
     expect(h.upserted[0].expert_overrides).toEqual({ finance: { weight: 0.4 }, product: { enabled: false } })
   })

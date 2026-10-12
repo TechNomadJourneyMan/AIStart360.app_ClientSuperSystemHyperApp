@@ -21,7 +21,8 @@ import { BodyPortal } from '@/components/ui/body-portal'
 
 type Metric = NonNullable<PointAPageState['snapshot']>['metrics'][number]
 
-function BlockCard({ block, metrics, hidden, customize, onToggle, onMove, onOpen, first, last }: {
+function BlockCard({ block, metrics, hidden, customize, onToggle, onMove, onOpen, first, last, saving }: {
+  saving?: boolean
   block: V4Block
   metrics: Metric[]
   hidden: boolean
@@ -86,11 +87,11 @@ function BlockCard({ block, metrics, hidden, customize, onToggle, onMove, onOpen
 
       {customize ? (
         <div className="flex flex-wrap gap-2 pt-1">
-          <button type="button" className={BTN_GHOST} onClick={onToggle} aria-pressed={!hidden}>
+          <button type="button" className={BTN_GHOST} onClick={onToggle} disabled={saving} aria-label={`${hidden ? 'Показать' : 'Скрыть'} блок «${block.title}»`}>
             <Icon name={hidden ? 'visibility' : 'visibility_off'} className="text-[16px]" />{hidden ? 'Показать' : 'Скрыть'}
           </button>
-          <button type="button" className={BTN_GHOST} onClick={() => onMove(-1)} disabled={first} aria-label={`Переместить «${block.title}» выше`}><Icon name="arrow_upward" className="text-[16px]" /></button>
-          <button type="button" className={BTN_GHOST} onClick={() => onMove(1)} disabled={last} aria-label={`Переместить «${block.title}» ниже`}><Icon name="arrow_downward" className="text-[16px]" /></button>
+          <button type="button" className={BTN_GHOST} onClick={() => onMove(-1)} disabled={first || saving} aria-label={`Переместить «${block.title}» выше`}><Icon name="arrow_upward" className="text-[16px]" /></button>
+          <button type="button" className={BTN_GHOST} onClick={() => onMove(1)} disabled={last || saving} aria-label={`Переместить «${block.title}» ниже`}><Icon name="arrow_downward" className="text-[16px]" /></button>
         </div>
       ) : (
         <button type="button" className={cn(BTN_GHOST, 'self-start mt-auto')} onClick={onOpen}>
@@ -125,7 +126,7 @@ export function BlocksSection({ state, customize, previewDetails }: { state: Poi
   }
   const toggle = (k: BlockKey) => void save({ hidden: hidden.has(k) ? [...hidden].filter((x) => x !== k) : [...hidden, k] })
   const move = (k: BlockKey, dir: -1 | 1) => {
-    const next = order.slice()
+    const next = ordered.map((b) => b.key)
     const i = next.indexOf(k)
     const j = i + dir
     if (j < 0 || j >= next.length) return
@@ -145,7 +146,7 @@ export function BlocksSection({ state, customize, previewDetails }: { state: Poi
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         {visible.map((b, i) => (
           <BlockCard key={b.key} block={b} metrics={metricsOf(b.key)} hidden={hidden.has(b.key)} customize={customize}
-            onToggle={() => toggle(b.key)} onMove={(d) => move(b.key, d)} onOpen={() => setOpenKey(b.key)} first={i === 0} last={i === visible.length - 1} />
+            onToggle={() => toggle(b.key)} onMove={(d) => move(b.key, d)} onOpen={() => setOpenKey(b.key)} first={i === 0} last={i === visible.length - 1} saving={view.isPending} />
         ))}
       </div>
       {openKey && (

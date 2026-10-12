@@ -47,13 +47,14 @@ export function usePointAState(opts: { enabled?: boolean } = {}) {
 export function useRecalculatePointA() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async () => json<unknown>(await fetch('/api/v1/diagnostics/recalculate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })),
+    // Company-scoped (a member / admin recalculates the company, not their own questionnaire).
+    mutationFn: async () => json<unknown>(await fetch('/api/v1/point-a/recalculate', { method: 'POST' })),
     onSettled: () => qc.invalidateQueries({ queryKey: POINT_A_STATE_KEY }),
   })
 }
 
 export type ResolveBody =
-  | { choice: 'candidate'; index: number; note?: string }
+  | { choice: 'candidate'; index: number; expected?: { sourceRef: string; value: number }; note?: string }
   | { choice: 'custom'; value: number; note?: string }
   | { choice: 'ignore'; note?: string }
 

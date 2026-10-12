@@ -35,7 +35,7 @@ function CustomValue({ d, onDone }: { d: Disc; onDone: () => void }) {
     <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
       <label>
         <span className="sr-only">Верное значение</span>
-        <input autoFocus inputMode="decimal" value={value} onChange={(e) => setValue(e.target.value)} placeholder={`Верное значение${d.candidates[0]?.unit ? `, ${d.candidates[0].unit}` : ''}`}
+        <input inputMode="decimal" value={value} onChange={(e) => setValue(e.target.value)} placeholder={`Верное значение${d.candidates[0]?.unit ? `, ${d.candidates[0].unit}` : ''}`}
           className="w-full rounded-xl border border-white/10 bg-surface-container-low px-3 py-2 text-base sm:text-sm text-on-surface focus:outline-none focus:border-primary/50" />
       </label>
       <label>
@@ -75,8 +75,8 @@ function DiscrepancyRow({ d, canManage }: { d: Disc; canManage: boolean }) {
                   {i === 0 && d.kind === 'conflict' && <span className="ml-2 text-[10px] font-mono text-primary/80">сейчас в расчёте</span>}
                 </span>
                 {canManage && d.kind !== 'invalid' && (
-                  <button type="button" className={cn(BTN_GHOST, 'py-1 min-h-[30px]')} disabled={resolve.isPending}
-                    onClick={() => void decide({ choice: 'candidate', index: i }, i === 0 ? 'Оставили значение — расхождение закрыто' : 'Взяли значение — Точка А пересчитается')}>
+                  <button type="button" className={cn(BTN_GHOST, 'py-1.5 min-h-[40px]')} disabled={resolve.isPending}
+                    onClick={() => void decide({ choice: 'candidate', index: i, expected: { sourceRef: c.sourceRef, value: c.value } }, i === 0 ? 'Оставили значение — расхождение закрыто' : 'Взяли значение — Точка А пересчитается')}>
                     {c.sourceKind === 'survey' ? 'Верно из анкеты' : c.sourceKind === 'document' ? 'Взять из документа' : 'Это верно'}
                   </button>
                 )}
@@ -85,8 +85,8 @@ function DiscrepancyRow({ d, canManage }: { d: Disc; canManage: boolean }) {
           </ul>
           {canManage && (
             <div className="mt-2 flex flex-wrap gap-2">
-              <button type="button" className={cn(BTN_GHOST, 'py-1 min-h-[30px]')} onClick={() => setCustom((v) => !v)} aria-expanded={custom}>Ввести другое</button>
-              <button type="button" className={cn(BTN_GHOST, 'py-1 min-h-[30px]')} disabled={resolve.isPending}
+              <button type="button" className={cn(BTN_GHOST, 'py-1.5 min-h-[40px]')} onClick={() => setCustom((v) => !v)} aria-expanded={custom}>Ввести другое</button>
+              <button type="button" className={cn(BTN_GHOST, 'py-1.5 min-h-[40px]')} disabled={resolve.isPending}
                 onClick={() => void decide({ choice: 'ignore' }, 'Скрыто')}>Не важно</button>
             </div>
           )}
@@ -106,11 +106,12 @@ export function AttentionPanel({ state, readonly }: { state: PointAPageState; re
       {state.discrepancies.length > 0 && (
         <>
           <p className="text-xs text-on-surface-variant mb-2">
-            Найдено расхождений в данных: {state.discrepancies.length}. Пока они не решены, в расчёте используется значение из анкеты, а достоверность снижена.
+            Найдено расхождений в данных: {state.discrepancies.length}. Пока они не решены, в расчёте используется значение с пометкой «сейчас в расчёте», а достоверность снижена.
           </p>
           <ul className="space-y-2 mb-4">
             {state.discrepancies.slice(0, 6).map((d) => <DiscrepancyRow key={d.id} d={d} canManage={state.canManage && !readonly} />)}
           </ul>
+          {state.discrepancies.length > 6 && <p className="-mt-2 mb-4 text-xs text-on-surface-variant">И ещё {state.discrepancies.length - 6} — решите эти, остальные появятся здесь.</p>}
         </>
       )}
       {checklist.length > 0 && (

@@ -78,8 +78,8 @@ export function goalStart(goal: Pick<Goal, 'createdAt' | 'baselineAt'>): string 
 
 export function goalDeadline(goal: Pick<Goal, 'deadline' | 'periodLabel' | 'createdAt' | 'baselineAt'>, now: Date): Date {
   if (goal.deadline) {
-    // A date deadline is the END of that day (in UTC+5 a goal «до 31.12» is
-    // not overdue on the morning of the 31st).
+    // A date deadline is the END of that day (UTC): a goal «до 31.12» is not
+    // overdue during the 31st anywhere in Kazakhstan (it turns at 05:00 on the 1st).
     const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(goal.deadline)
     if (m) return new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 23, 59, 59))
     if (Number.isFinite(Date.parse(goal.deadline))) return new Date(goal.deadline)

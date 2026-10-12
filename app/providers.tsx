@@ -50,7 +50,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
     <PersistQueryClientProvider
       client={queryClient}
       persistOptions={{
-        persister, maxAge: 24 * 60 * 60 * 1000, buster: 'v1',
+        persister, maxAge: 24 * 60 * 60 * 1000, buster: 'v2', // v2: drops goals cached before they stopped being persisted
         // Goals and Point A are company data: never kept in localStorage (a
         // shared device would show them to the next user before a refetch).
         dehydrateOptions: { shouldDehydrateQuery: (q) => q.state.status === 'success' && !NOT_PERSISTED.has(String(q.queryKey[0])) },
