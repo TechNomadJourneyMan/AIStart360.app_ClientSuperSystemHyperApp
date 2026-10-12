@@ -87,10 +87,12 @@ export async function POST(req: NextRequest) {
     // change reasons, AI fan-out and the pipeline. Before migration 111 (or on
     // any failure there) the direct calculation below keeps working.
     if (company?.id) {
-      const snap = await buildPointASnapshot(String(company.id), { trigger: 'manual', force: true, locale })
+      const snap = await buildPointASnapshot(String(company.id), { trigger: 'manual', force: true, lock: true, locale })
         .catch((err) => { console.error('[recalculate] snapshot path failed, direct calculation', err instanceof Error ? err.message : err); return null })
+      if (snap?.status === 'skipped' && snap.reason === 'busy') {
+        return NextResponse.json({ ok: false, error: 'Точка А уже пересчитывается — обновите страницу через минуту' }, { status: 409 })
+      }
       if (snap?.status === 'written') {
-        void trackEvent({ userId: user_id, name: 'POINT_A_CALCULATED', entityType: 'diagnostic', entityId: snap.diagnosticId, metadata: { overall_score: Number(snap.written.overall_score), engine: snap.engine } })
         runInBackground('point-a-notify', () =>
           notifyPointARecalculated(user_id, { diagnosticId: snap.diagnosticId, overallScore: Number(snap.written.overall_score) }),
         )

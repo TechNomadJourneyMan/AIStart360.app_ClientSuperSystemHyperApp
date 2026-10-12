@@ -3,6 +3,7 @@ import { isAuthorizedCron } from '@/lib/cron-auth'
 import { drainQueue } from '@/lib/agents/queue'
 import { enqueueScheduledAgents } from '@/lib/functions/agents'
 import { redispatchPending } from '@/lib/events/platform'
+import { drainPointARecalc } from '@/lib/point-a/recalc-queue'
 import { pruneRateLimits } from '@/lib/rate-limit'
 import { drainWhatsAppOutbox } from '@/lib/whatsapp/outbox'
 
@@ -29,7 +30,13 @@ export async function GET(req: NextRequest) {
       console.error('[cron/agents] whatsapp drain failed', err instanceof Error ? err.message.split('\n')[0] : 'error')
       return null
     })
-    const drained = await drainQueue({ budgetMs: 240_000 })
+    // Point A recalculations that are due (lib/point-a/recalc-queue.ts): the
+    // path without Inngest; bounded, never fails the cron.
+    const pointA = await drainPointARecalc({ budgetMs: 60_000 }).catch((err: unknown) => {
+      console.error('[cron/agents] point A drain failed', err instanceof Error ? err.message.split('\n')[0] : 'error')
+      return null
+    })
+    const drained = await drainQueue({ budgetMs: 180_000 })
     const rateLimitsPruned = await pruneRateLimits() // expired rate_limit_hits rows (migration 100); never throws
     return NextResponse.json({
       ok: true,
@@ -40,6 +47,7 @@ export async function GET(req: NextRequest) {
       sessionsFailed: drained.sessionsFailed,
       rateLimitsPruned,
       whatsapp,
+      pointA: pointA ? { done: pointA.done.length, failed: pointA.failed.length } : null,
       executed: drained.executed.map((r) => ({ taskId: r.taskId, status: r.finalStatus, errorCode: r.errorCode })),
     })
   } catch (err) {

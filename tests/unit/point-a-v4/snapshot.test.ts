@@ -14,7 +14,7 @@ function setup(answers: Record<string, unknown> = CURRENT_TYPICAL, tables: Recor
     diagnostics: [],
     ...tables,
   })
-  const state = { answers, useV4: false }
+  const state = { answers, useV4: false, busy: false, released: 0 }
   const after = vi.fn()
   const store = vi.fn(async (_db: unknown, o: { result: { overall_score: number } }) => ({ ok: true as const, diag: { id: `diag-${store.mock.calls.length}`, overall_score: o.result.overall_score } }))
   const deps: SnapshotDeps = {
@@ -25,6 +25,7 @@ function setup(answers: Record<string, unknown> = CURRENT_TYPICAL, tables: Recor
     }),
     useV4: async () => state.useV4,
     store: store as unknown as SnapshotDeps['store'],
+    lock: async () => (state.busy ? null : { release: async () => { state.released++ } }),
     afterWrite: after,
   }
   return { m, state, deps, after, store }
@@ -95,6 +96,47 @@ describe('buildPointASnapshot', () => {
     const snap = m.db.point_a_snapshots[1]
     expect((snap.change_reasons as Array<{ type: string; text: string }>).find((c) => c.type === 'goals')?.text).toBe('Изменены цели: 1')
     expect((snap.v4 as { goals: Array<{ metricId: string; target: number }> }).goals[0]).toMatchObject({ metricId: 'biz.finansy.vyruchka_god', target: 200_000_000 })
+  })
+
+  it('switching point_a_v4 writes a new Point A even with unchanged inputs', async () => {
+    const { state, deps, store } = setup()
+    await buildPointASnapshot('co', { trigger: 'event' }, deps)
+    state.useV4 = true
+    const r = await buildPointASnapshot('co', { trigger: 'event' }, deps)
+    expect(r.status).toBe('written')
+    expect(store).toHaveBeenCalledTimes(2)
+  })
+
+  it('v4 without any score stays v1 in diagnostics (no silent 0)', async () => {
+    const { state, deps } = setup({ s6_main_pain: 'Нет клиентов' })
+    state.useV4 = true
+    const r = await buildPointASnapshot('co', { trigger: 'event' }, deps)
+    if (r.status !== 'written') throw new Error(r.status)
+    expect(r.v4.overall).toBeNull()
+    expect(r.engine).toBe('v1')
+  })
+
+  it('a snapshot that cannot be stored writes no diagnostic and fails (queue retry)', async () => {
+    const { m, deps, store } = setup()
+    const broken = { ...m.client, from: (t: string) => (t === 'point_a_snapshots' ? { ...m.client.from(t), insert: () => ({ select: () => ({ single: async () => ({ data: null, error: { code: '23514' } }) }) }) } : m.client.from(t)) }
+    await expect(buildPointASnapshot('co', { trigger: 'event' }, { ...deps, service: () => broken as never })).rejects.toThrow(/snapshot not stored/)
+    expect(store).not.toHaveBeenCalled()
+  })
+
+  it('a diagnostic that cannot be stored removes its snapshot', async () => {
+    const { m, deps } = setup()
+    const failing = vi.fn(async () => ({ ok: false as const, error: 'insert' }))
+    await expect(buildPointASnapshot('co', { trigger: 'event' }, { ...deps, store: failing as unknown as SnapshotDeps['store'] })).rejects.toThrow(/diagnostic not stored/)
+    expect(m.db.point_a_snapshots).toHaveLength(0)
+  })
+
+  it('lock: busy company is skipped; the lock is released after a run', async () => {
+    const { state, deps } = setup()
+    state.busy = true
+    expect(await buildPointASnapshot('co', { trigger: 'manual', lock: true }, deps)).toEqual({ status: 'skipped', reason: 'busy' })
+    state.busy = false
+    await buildPointASnapshot('co', { trigger: 'manual', lock: true }, deps)
+    expect(state.released).toBe(1)
   })
 
   it('skips: before migration 111, a company without owner, no answers', async () => {

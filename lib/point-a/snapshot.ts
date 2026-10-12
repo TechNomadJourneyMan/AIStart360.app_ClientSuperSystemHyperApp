@@ -19,6 +19,9 @@
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { createServiceClient } from '@/lib/supabase-service'
+import { runInBackground } from '@/lib/background'
+import { trackEvent } from '@/lib/events/track'
+import { isWizardVisibleKey } from '@/lib/survey/steps'
 import { calculatePointA } from '@/lib/point-a-engine'
 import type { PointA } from '@/types/onboarding'
 import type { MetricValue } from '@/lib/metrics/types'
@@ -41,11 +44,17 @@ export interface SnapshotOptions {
   reasons?: string[]
   /** Write even when nothing changed (a manual recalculation). */
   force?: boolean
+  /**
+   * Hold the company in the recalculation queue while running (a call from
+   * outside the drain — the manual «Пересчитать»): never two recalculations
+   * of one company at once. A running one → { status: 'skipped', reason: 'busy' }.
+   */
+  lock?: boolean
   locale?: string
 }
 
 export type SnapshotResult =
-  | { status: 'skipped'; reason: 'not_migrated' | 'no_owner' | 'no_answers' }
+  | { status: 'skipped'; reason: 'not_migrated' | 'no_owner' | 'no_answers' | 'busy' }
   | { status: 'unchanged'; snapshotId: string }
   | {
       status: 'written'
@@ -63,6 +72,7 @@ export interface SnapshotDeps {
   materialize: (service: SupabaseClient, companyId: string, ownerId: string) => Promise<{ values: MetricValue[]; surveyAnswers: Record<string, unknown> }>
   useV4: () => Promise<boolean>
   store: typeof import('./diagnostic-row').storeCurrentDiagnostic
+  lock: (companyId: string) => Promise<{ release: () => Promise<void> } | null>
   afterWrite: (o: { companyId: string; ownerId: string; diagnosticId: string; snapshotId: string | null; engine: 'v1' | 'v4'; written: PointA; changes: ChangeReason[]; trigger: SnapshotTrigger; locale: string; blocks: V4Block[]; industry: string | null }) => void
 }
 
@@ -78,8 +88,20 @@ const defaultDeps: SnapshotDeps = {
     return getSetting('point_a_v4')
   },
   store: async (...args) => (await import('./diagnostic-row')).storeCurrentDiagnostic(...args),
+  lock: async (companyId) => {
+    const q = await import('./recalc-queue')
+    try {
+      const claimed = await q.claimCompany(companyId, 'manual')
+      return claimed ? { release: () => q.finish(claimed) } : null
+    } catch (err) {
+      // Before migration 111 there is no queue to lock in: run unlocked.
+      console.error('[point-a/snapshot] lock unavailable', err instanceof Error ? err.message : err)
+      return { release: async () => undefined }
+    }
+  },
   afterWrite: (o) => {
-    void (async () => {
+    // Registered with waitUntil: on Vercel un-awaited work after the response is dropped.
+    void runInBackground('point-a-after-write', async () => {
       const [{ emitPlatformEventSafely }, { fireAiFanOut, startDiagnosticPipeline }, { internalBaseUrl }] = await Promise.all([
         import('@/lib/events/platform'),
         import('./diagnostic-row'),
@@ -93,8 +115,9 @@ const defaultDeps: SnapshotDeps = {
       const baseUrl = internalBaseUrl({})
       if (process.env.OPENROUTER_API_KEY && baseUrl) fireAiFanOut({ baseUrl, diagnosticId: o.diagnosticId, userId: o.ownerId, locale: o.locale })
       startDiagnosticPipeline({ companyId: o.companyId, diagnosticId: o.diagnosticId, requestedBy: 'system:point-a', trigger: o.trigger === 'manual' ? 'manual' : 'event', reason: 'пересчёт Точки А после изменения данных' })
+      void trackEvent({ userId: o.ownerId, name: 'POINT_A_CALCULATED', entityType: 'diagnostic', entityId: o.diagnosticId, metadata: { overall_score: Number(o.written.overall_score), engine: o.engine, trigger: o.trigger } })
       if (o.snapshotId && process.env.OPENROUTER_API_KEY) await addHypotheses(o.snapshotId, o.blocks, o.industry, o.ownerId)
-    })().catch((err) => console.error('[point-a/snapshot] after-write failed', err instanceof Error ? err.message : err))
+    })
   },
 }
 
@@ -143,11 +166,23 @@ export function snapshotInputs(values: readonly MetricValue[], answers: Record<s
     metrics[v.metricId] = { value: v.numeric, source: pickedSourceLabel(v.picked), period: pickedPeriod(v) }
   }
   const hashed: Record<string, string> = {}
-  for (const k of Object.keys(answers).sort()) hashed[k] = hashOf(answers[k], 12)
+  // Only what the engines read: expert notes / free goal texts do not move a score.
+  for (const k of Object.keys(answers).sort()) if (isWizardVisibleKey(k)) hashed[k] = hashOf(answers[k], 12)
   return { metrics, answers: hashed, conflicts: [...conflicts].sort(), config }
 }
 
 export async function buildPointASnapshot(companyId: string, opts: SnapshotOptions, deps: SnapshotDeps = defaultDeps): Promise<SnapshotResult> {
+  if (!opts.lock) return build(companyId, opts, deps)
+  const held = await deps.lock(companyId)
+  if (!held) return { status: 'skipped', reason: 'busy' }
+  try {
+    return await build(companyId, opts, deps)
+  } finally {
+    await held.release().catch((err) => console.error('[point-a/snapshot] release failed', err instanceof Error ? err.message : err))
+  }
+}
+
+async function build(companyId: string, opts: SnapshotOptions, deps: SnapshotDeps): Promise<SnapshotResult> {
   const service = deps.service()
 
   // Before migration 111 there is nowhere to keep snapshots: do nothing.
@@ -190,27 +225,28 @@ export async function buildPointASnapshot(companyId: string, opts: SnapshotOptio
     return []
   })
   const goalEvaluations = evaluateGoals(goals, companyMetricsFromValues(values, companyId), new Date())
-  const inputs = { ...snapshotInputs(values, surveyAnswers, conflicts, config.version), goals: Object.fromEntries(goals.map((g) => [`${g.metricId}|${g.periodLabel}`, `${g.targetValue}|${g.deadline ?? ''}|${g.direction}`])) }
+  // The engine shown is part of the version: switching point_a_v4 writes a new
+  // Point A on the next pass instead of stopping at «inputs unchanged».
+  const wantV4 = await deps.useV4()
+  // No v4 score at all (too little data): the row stays v1 — never a 0.
+  const engine: 'v1' | 'v4' = wantV4 && v4.overall !== null ? 'v4' : 'v1'
+  const version = `${config.version}|${wantV4 ? 'v4' : 'v1'}`
+  const inputs = { ...snapshotInputs(values, surveyAnswers, conflicts, version), goals: Object.fromEntries(goals.map((g) => [`${g.metricId}|${g.periodLabel}`, `${g.targetValue}|${g.deadline ?? ''}|${g.direction}`])) }
   const hash = inputsHash(inputs)
-  if (!opts.force && prev && prev.inputs_hash === hash && prev.config_version === config.version) {
+  if (!opts.force && prev && prev.inputs_hash === hash && prev.config_version === version) {
     return { status: 'unchanged', snapshotId: prev.id }
   }
 
-  const engine: 'v1' | 'v4' = (await deps.useV4()) ? 'v4' : 'v1'
   const written = engine === 'v4' ? toCompatPointA(v4, v1) : v1
-  const stored = await deps.store(service, {
-    userId: ownerId, companyId, result: written,
-    aiStatus: process.env.OPENROUTER_API_KEY ? 'processing' : 'none',
-  })
-  if (!stored.ok) throw new Error(`point-a: diagnostic not stored (${stored.error})`)
-  const diagnosticId = String(stored.diag.id)
-
   const changes = changeReasons(prev ? { blocks: prev.blocks ?? [], inputs: prev.inputs } : null, { blocks: v4.blocks, inputs })
+
+  // The snapshot first: a recalculation that cannot be recorded must not write
+  // a diagnostic (the next pass would compare with the old snapshot, write
+  // again and fan out AI again — a loop). The failure goes to the queue retry.
   const ins = await service
     .from('point_a_snapshots')
     .insert({
       company_id: companyId,
-      diagnostic_id: diagnosticId,
       engine,
       trigger: opts.trigger,
       reasons: opts.reasons ?? [],
@@ -224,13 +260,25 @@ export async function buildPointASnapshot(companyId: string, opts: SnapshotOptio
       v1_blocks: v1.blocks,
       inputs,
       inputs_hash: hash,
-      config_version: config.version,
+      config_version: version,
       change_reasons: changes,
     })
     .select('id')
     .single()
-  if (ins.error) console.error('[point-a/snapshot] snapshot not stored', ins.error.code ?? '', ins.error.message ?? '')
   const snapshotId = (ins.data as { id?: string } | null)?.id ?? null
+  if (ins.error || !snapshotId) throw new Error(`point-a: snapshot not stored (${ins.error?.code ?? 'no id'})`)
+
+  const stored = await deps.store(service, {
+    userId: ownerId, companyId, result: written,
+    aiStatus: process.env.OPENROUTER_API_KEY ? 'processing' : 'none',
+  })
+  if (!stored.ok) {
+    await service.from('point_a_snapshots').delete().eq('id', snapshotId)
+    throw new Error(`point-a: diagnostic not stored (${stored.error})`)
+  }
+  const diagnosticId = String(stored.diag.id)
+  const link = await service.from('point_a_snapshots').update({ diagnostic_id: diagnosticId }).eq('id', snapshotId)
+  if (link.error) console.error('[point-a/snapshot] diagnostic link not stored', link.error.code ?? '', link.error.message ?? '')
 
   deps.afterWrite({ companyId, ownerId, diagnosticId, snapshotId, engine, written, changes, trigger: opts.trigger, locale: opts.locale ?? 'ru', blocks: v4.blocks, industry })
   return { status: 'written', snapshotId, diagnosticId, diagnostic: stored.diag, engine, written, v4, changes }

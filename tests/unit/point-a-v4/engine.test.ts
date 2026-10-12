@@ -42,7 +42,7 @@ describe('block configuration', () => {
   })
 
   it('config version', () => {
-    expect(configVersion(DEFAULT_TEMPLATE, { version: 3 })).toBe('default@1/3')
+    expect(configVersion(DEFAULT_TEMPLATE, { version: 3 })).toBe('default@1/3/r1')
   })
 })
 
@@ -124,5 +124,22 @@ describe('calculatePointAV4', () => {
     expect(row.overall_score).toBe(r.overall ?? 0)
     expect(row.risks).toEqual(v1.risks)
     expect(Object.keys(row.blocks).sort()).toEqual(['finance', 'marketing', 'operations', 'sales', 'strategy'])
+  })
+})
+
+describe('review fixes: answered or not', () => {
+  it('M1: «нет» on loyalty is an answer (a weakness), not a gap', () => {
+    const r = calculatePointAV4({ answers: { ...CURRENT_FULL_STRONG, s3_has_loyalty: false }, blocks: effectiveBlocks(DEFAULT_TEMPLATE) })
+    const loyalty = r.blocks.find((b) => b.key === 'sales')!.checks.find((c) => c.id === 'loyalty')!
+    expect(loyalty.answered).toBe(true)
+  })
+  it('M2: a cleared number field (0) is not an answer', () => {
+    const r = calculatePointAV4({ answers: { s5_marketing_budget_pct: 0 }, blocks: effectiveBlocks(DEFAULT_TEMPLATE) })
+    expect(r.blocks.find((b) => b.key === 'marketing')!.checks.find((c) => c.id === 'budget')!.answered).toBe(false)
+  })
+  it('compat: a block without a v4 score keeps its v1 block; no score at all → v1 row', () => {
+    const v1 = calculatePointA({ s6_main_pain: 'x' })
+    const r = calculatePointAV4({ answers: { s6_main_pain: 'x' }, blocks: effectiveBlocks(DEFAULT_TEMPLATE) })
+    expect(toCompatPointA(r, v1)).toEqual(v1)
   })
 })

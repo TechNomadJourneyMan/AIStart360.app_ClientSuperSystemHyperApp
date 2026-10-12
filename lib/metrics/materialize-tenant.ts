@@ -78,9 +78,9 @@ export async function resolverContextForTenant(
 }
 
 /** METRIC_UPDATED after a write; DISCREPANCY_FOUND when new discrepancies opened. */
-function announce(companyId: string, result: MaterializeResult, dataLayer: DataLayerSyncResult | undefined): void {
+function announce(companyId: string, result: MaterializeResult, dataLayer: DataLayerSyncResult | undefined, metricUpdated: boolean): void {
   const minute = new Date().toISOString().slice(0, 16)
-  if (result.written > 0) {
+  if (metricUpdated && result.written > 0) {
     emitPlatformEventSafely({
       name: 'METRIC_UPDATED', companyId, subjectType: 'company', subjectId: companyId, actor: 'system',
       payload: { written: result.written, superseded: result.superseded ?? 0, facts: dataLayer?.facts ?? null },
@@ -108,12 +108,17 @@ export async function materializeForTenant(
   _sessionClient: SupabaseClient,
   serviceClient: SupabaseClient,
   tenant: MetricsTenant,
+  /**
+   * announce: false — no METRIC_UPDATED (the Point A recalculation
+   * materialises itself; announcing it would request the next recalculation).
+   * New data discrepancies are announced either way.
+   */
   opts: { announce?: boolean } = {},
 ): Promise<{ result: MaterializeResult; values: MetricValue[]; ctx: ResolverContext; dataLayer?: DataLayerSyncResult }> {
   const ctx = await resolverContextForTenant(serviceClient, tenant)
   const { result, values, dataLayer } = await materializeAll(serviceClient, ctx)
   // The Point A recalculation materialises itself: announcing METRIC_UPDATED
   // from there would request the next recalculation — an endless loop.
-  if (opts.announce !== false) announce(tenant.companyId, result, dataLayer)
+  announce(tenant.companyId, result, dataLayer, opts.announce !== false)
   return { result, values, ctx, dataLayer }
 }

@@ -131,6 +131,18 @@ export class NoSurveyDataError extends Error {
  * verified against the current inputs), otherwise calculate and store a new
  * current version (the previous one stays as history).
  */
+/** The diagnostic of the company's latest Point A snapshot (migration 111), if any. */
+async function isSnapshotDiagnostic(companyId: string, diagnosticId: string): Promise<boolean> {
+  try {
+    const rows = await prisma.$queryRaw<Array<{ diagnostic_id: string | null }>>`
+      SELECT diagnostic_id::text AS diagnostic_id FROM public.point_a_snapshots
+      WHERE company_id = ${companyId} ORDER BY created_at DESC LIMIT 1`
+    return rows[0]?.diagnostic_id === diagnosticId
+  } catch {
+    return false // before migration 111
+  }
+}
+
 export async function scoreCompany(companyId: string, sessionId: string | null): Promise<ScoreResult> {
   const company = await companyProfile(companyId)
   if (!company?.ownerId) throw new NoSurveyDataError()
@@ -143,7 +155,10 @@ export async function scoreCompany(companyId: string, sessionId: string | null):
     `SELECT ${DIAG_COLUMNS} FROM public.diagnostics WHERE user_id = $1::uuid AND is_current ORDER BY calculated_at DESC LIMIT 1`,
     company.ownerId)
   const current = currentRows[0]
-  if (current && samePointA(rowToPointA(current), pointA)) {
+  // The current row was written by the Point A snapshot (lib/point-a/snapshot.ts —
+  // v4 when point_a_v4 is on, with the same materialised inputs): it IS the
+  // company's Point A. Recomputing v1 here and inserting it would replace v4.
+  if (current && (samePointA(rowToPointA(current), pointA) || (await isSnapshotDiagnostic(companyId, current.id)))) {
     // The score was just recomputed from the current inputs and came out the
     // same: the row is current as of now. Without moving calculated_at the
     // overview compared it with the newer inputs and reported «stale» right

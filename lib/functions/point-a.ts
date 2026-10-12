@@ -11,7 +11,7 @@ export const pointARecalc = inngest.createFunction(
   {
     id: 'point-a-recalc',
     retries: 0, // retries are the queue's job (attempts + backoff in Postgres)
-    debounce: { key: 'event.data.companyId', period: '20s' },
+    debounce: { key: 'event.data.companyId', period: '20s', timeout: '2m' },
     concurrency: { limit: 1, key: 'event.data.companyId' },
     triggers: [{ event: POINT_A_RECALC_EVENT }],
   },
@@ -39,7 +39,7 @@ export const pointANightly = inngest.createFunction(
     let queued = 0
     for (const r of rows) {
       // Spread over the hour so the minute drain is never flooded.
-      if (await requestPointARecalc(r.id, 'nightly', (queued % 60) * 60_000)) queued++
+      if (await requestPointARecalc(r.id, 'nightly', (queued % 60) * 60_000, { slide: false })) queued++
     }
     // Retention (spec §2.5): every snapshot of the last 90 days; older ones —
     // the last of each week; snapshots reviewed by an expert are kept forever.

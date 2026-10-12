@@ -172,7 +172,20 @@ export function effectiveBlocks(template: BlockTemplate, cfg: CompanyBlockConfig
   return out.sort((a, b) => a.order - b.order)
 }
 
+/**
+ * Version of the scoring rules (checks, coverage, weights logic). Bump it with
+ * a change of lib/point-a-engine.ts / lib/point-a/v4/* that changes scores:
+ * the next recalculation of every company then writes a new Point A instead
+ * of stopping at «inputs unchanged».
+ */
+export const POINT_A_RULES_VERSION = 'r1'
+
 /** Stable version of the effective configuration (for snapshots). */
 export function configVersion(template: BlockTemplate, cfg: CompanyBlockConfig = {}): string {
-  return `${template.key}@${template.version}/${cfg.version ?? 0}`
+  return `${template.key}@${template.version}/${cfg.version ?? 0}/${POINT_A_RULES_VERSION}`
+}
+
+/** A template / company config edit changes its content even without a version bump. */
+export function configFingerprint(template: BlockTemplate, cfg: CompanyBlockConfig = {}): string {
+  return JSON.stringify([template.blocks, cfg.templateKey ?? null, cfg.expertOverrides ?? {}, cfg.clientView ?? {}])
 }

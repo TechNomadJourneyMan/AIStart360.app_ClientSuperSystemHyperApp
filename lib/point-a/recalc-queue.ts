@@ -35,10 +35,16 @@ export const POINT_A_TRIGGER_EVENTS: ReadonlySet<string> = new Set([
   'METRIC_UPDATED',
 ])
 
+/** The queue table itself is missing (migration 111 not applied) — not any other error. */
 function missingTable(err: unknown): boolean {
+  const meta = (err as { meta?: { code?: string } } | null)?.meta
+  if (meta?.code === '42P01') return true
   const msg = err instanceof Error ? err.message : String(err)
-  return /point_a_recalc_queue/.test(msg) && /(does not exist|42P01)/i.test(msg)
+  return /relation "(public\.)?point_a_recalc_queue" does not exist/i.test(msg)
 }
+
+/** Longest a stream of events may postpone a recalculation (debounce ceiling). */
+const MAX_WAIT_SECONDS = 120
 
 function inngestConfigured(): boolean {
   return Boolean(process.env.INNGEST_EVENT_KEY) || process.env.INNGEST_DEV === '1'
@@ -48,18 +54,35 @@ function inngestConfigured(): boolean {
  * Queue a recalculation of the company. Never throws; false when the
  * automatic recalculation is switched off or the queue does not exist yet.
  */
-export async function requestPointARecalc(companyId: string, reason: string, delayMs = RECALC_DEBOUNCE_MS): Promise<boolean> {
+export async function requestPointARecalc(
+  companyId: string,
+  reason: string,
+  delayMs = RECALC_DEBOUNCE_MS,
+  opts: { slide?: boolean } = {},
+): Promise<boolean> {
   try {
     const { getSetting } = await import('@/lib/settings/store')
     if (!(await getSetting('point_a_auto_recalc'))) return false
     const seconds = Math.max(0, Math.round(delayMs / 1000))
-    await prisma.$executeRaw`
-      INSERT INTO public.point_a_recalc_queue (company_id, reasons, requested_at, due_at)
-      VALUES (${companyId}, ARRAY[${reason}]::text[], now(), now() + make_interval(secs => ${seconds}))
-      ON CONFLICT (company_id) DO UPDATE SET
-        reasons = (SELECT ARRAY(SELECT DISTINCT x FROM unnest(point_a_recalc_queue.reasons || EXCLUDED.reasons) AS x)),
-        requested_at = now(),
-        due_at = EXCLUDED.due_at`
+    // An event slides the due time (debounce), but never further than
+    // MAX_WAIT_SECONDS after the first pending request; a scheduled request
+    // (slide: false) never postpones one that is already due earlier.
+    if (opts.slide === false) {
+      await prisma.$executeRaw`
+        INSERT INTO public.point_a_recalc_queue (company_id, reasons, requested_at, due_at, first_requested_at)
+        VALUES (${companyId}, ARRAY[${reason}]::text[], now(), now() + make_interval(secs => ${seconds}::int), now())
+        ON CONFLICT (company_id) DO UPDATE SET
+          reasons = (SELECT ARRAY(SELECT DISTINCT x FROM unnest(point_a_recalc_queue.reasons || EXCLUDED.reasons) AS x)),
+          due_at = LEAST(point_a_recalc_queue.due_at, EXCLUDED.due_at)`
+    } else {
+      await prisma.$executeRaw`
+        INSERT INTO public.point_a_recalc_queue (company_id, reasons, requested_at, due_at, first_requested_at)
+        VALUES (${companyId}, ARRAY[${reason}]::text[], now(), now() + make_interval(secs => ${seconds}::int), now())
+        ON CONFLICT (company_id) DO UPDATE SET
+          reasons = (SELECT ARRAY(SELECT DISTINCT x FROM unnest(point_a_recalc_queue.reasons || EXCLUDED.reasons) AS x)),
+          requested_at = now(),
+          due_at = LEAST(EXCLUDED.due_at, point_a_recalc_queue.first_requested_at + make_interval(secs => ${MAX_WAIT_SECONDS}::int))`
+    }
     if (inngestConfigured()) {
       const { inngest } = await import('@/lib/inngest')
       await inngest.send({ name: POINT_A_RECALC_EVENT, data: { companyId } }).catch((err: unknown) => {
@@ -73,7 +96,7 @@ export async function requestPointARecalc(companyId: string, reason: string, del
   }
 }
 
-interface Claimed {
+export interface Claimed {
   company_id: string
   reasons: string[]
   started_at: Date
@@ -87,7 +110,7 @@ async function claimDue(limit: number, companyId?: string): Promise<Claimed[]> {
         WHERE q.company_id IN (
           SELECT company_id FROM public.point_a_recalc_queue
           WHERE company_id = ${companyId} AND due_at <= now() + interval '5 seconds'
-            AND (started_at IS NULL OR started_at < now() - make_interval(mins => ${STALE_CLAIM_MINUTES}))
+            AND (started_at IS NULL OR started_at < now() - make_interval(mins => ${STALE_CLAIM_MINUTES}::int))
           FOR UPDATE SKIP LOCKED)
         RETURNING q.company_id, q.reasons, q.started_at, q.attempts`
     : prisma.$queryRaw<Claimed[]>`
@@ -95,15 +118,35 @@ async function claimDue(limit: number, companyId?: string): Promise<Claimed[]> {
         WHERE q.company_id IN (
           SELECT company_id FROM public.point_a_recalc_queue
           WHERE due_at <= now()
-            AND (started_at IS NULL OR started_at < now() - make_interval(mins => ${STALE_CLAIM_MINUTES}))
+            AND (started_at IS NULL OR started_at < now() - make_interval(mins => ${STALE_CLAIM_MINUTES}::int))
           ORDER BY due_at
-          LIMIT ${limit}
+          LIMIT ${limit}::int
           FOR UPDATE SKIP LOCKED)
         RETURNING q.company_id, q.reasons, q.started_at, q.attempts`
 }
 
+/**
+ * Hold the company for a recalculation outside the drain (the manual
+ * «Пересчитать»): claims its queue row — pending or not — so the drain never
+ * runs the same company at the same time. null = a recalculation is running.
+ * Release with `finish`.
+ */
+export async function claimCompany(companyId: string, reason: string): Promise<Claimed | null> {
+  const rows = await prisma.$queryRaw<Claimed[]>`
+    INSERT INTO public.point_a_recalc_queue (company_id, reasons, requested_at, due_at, first_requested_at, started_at, attempts)
+    VALUES (${companyId}, ARRAY[${reason}]::text[], now(), now(), now(), now(), 1)
+    ON CONFLICT (company_id) DO UPDATE SET
+      started_at = now(),
+      attempts = point_a_recalc_queue.attempts + 1,
+      reasons = (SELECT ARRAY(SELECT DISTINCT x FROM unnest(point_a_recalc_queue.reasons || EXCLUDED.reasons) AS x))
+    WHERE point_a_recalc_queue.started_at IS NULL
+       OR point_a_recalc_queue.started_at < now() - make_interval(mins => ${STALE_CLAIM_MINUTES}::int)
+    RETURNING company_id, reasons, started_at, attempts`
+  return rows[0] ?? null
+}
+
 /** Done: remove the row unless a new event arrived meanwhile (then run once more). */
-async function finish(c: Claimed): Promise<void> {
+export async function finish(c: Claimed): Promise<void> {
   const removed = await prisma.$executeRaw`
     DELETE FROM public.point_a_recalc_queue WHERE company_id = ${c.company_id} AND requested_at <= ${c.started_at}`
   if (removed === 0) {
@@ -113,7 +156,7 @@ async function finish(c: Claimed): Promise<void> {
 }
 
 /** Failed: retry with a growing delay; give up after MAX_ATTEMPTS. */
-async function fail(c: Claimed, error: string): Promise<void> {
+export async function fail(c: Claimed, error: string): Promise<void> {
   if (c.attempts >= MAX_ATTEMPTS) {
     console.error('[point-a/queue] giving up', c.company_id, error)
     await prisma.$executeRaw`DELETE FROM public.point_a_recalc_queue WHERE company_id = ${c.company_id}`
@@ -121,7 +164,7 @@ async function fail(c: Claimed, error: string): Promise<void> {
   }
   await prisma.$executeRaw`
     UPDATE public.point_a_recalc_queue
-    SET started_at = NULL, last_error = ${error.slice(0, 500)}, due_at = now() + make_interval(mins => ${c.attempts})
+    SET started_at = NULL, last_error = ${error.slice(0, 500)}, due_at = now() + make_interval(mins => ${c.attempts}::int)
     WHERE company_id = ${c.company_id}`
 }
 
@@ -143,7 +186,7 @@ const defaultDrainDeps: DrainDeps = {
   fail,
   build: async (companyId, reasons) => {
     const { buildPointASnapshot } = await import('./snapshot')
-    return buildPointASnapshot(companyId, { trigger: reasons.includes('nightly') ? 'schedule' : 'event', reasons })
+    return buildPointASnapshot(companyId, { trigger: reasons.length > 0 && reasons.every((r) => r === 'nightly') ? 'schedule' : 'event', reasons })
   },
 }
 

@@ -171,7 +171,7 @@ export function calculatePointAV4(input: V4Input): PointAV4 {
   const over50 = (k: BlockKey) => ((byKey.get(k)?.score ?? 0) > 50 ? 1 : 0)
   const health_index = overall === null ? null : round(Math.min(100, overall * 0.6 + over50('finance') * 20 + over50('sales') * 10 + over50('operations') * 10))
 
-  const strengths = blocks
+  const strengths = weighted
     .filter((b) => b.score !== null && b.confidence >= 0.6 && (b.score as number) >= 70)
     .sort((a, b) => (b.score as number) - (a.score as number))
     .slice(0, 3)
@@ -201,9 +201,13 @@ export function calculatePointAV4(input: V4Input): PointAV4 {
   }
 }
 
-/** A v4 block as the v1 BlockScore columns of public.diagnostics store it. */
+/**
+ * A v4 block as the v1 BlockScore columns of public.diagnostics store it. A
+ * block without a v4 score keeps its v1 block (the columns have no «нет
+ * данных»; a 0 / critical would be the silent zero v4 removes).
+ */
 function blockScoreOf(b: V4Block | undefined, fallback: BlockScore): BlockScore {
-  if (!b || b.score === null) return { ...fallback, score: 0, status: 'critical', top_issues: b?.needs.slice(0, 3) ?? fallback.top_issues }
+  if (!b || b.score === null) return fallback
   return {
     score: b.score,
     status: b.score >= 85 ? 'excellent' : b.score >= 70 ? 'strong' : b.score >= 50 ? 'average' : b.score >= 30 ? 'weak' : 'critical',
@@ -219,6 +223,8 @@ function blockScoreOf(b: V4Block | undefined, fallback: BlockScore): BlockScore 
  * the v4 blocks, risks / insights / quick wins / data gaps of v1 (same rules).
  */
 export function toCompatPointA(v4: PointAV4, v1: PointA): PointA {
+  // No v4 score at all: the row stays v1 (the snapshot records engine 'v1').
+  if (v4.overall === null) return v1
   const get = (k: BlockKey) => v4.blocks.find((b) => b.key === k)
   return {
     ...v1,

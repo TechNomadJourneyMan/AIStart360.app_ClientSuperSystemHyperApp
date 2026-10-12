@@ -57,6 +57,15 @@ export async function emitPlatformEvent(e: PlatformEventInput): Promise<{ id: nu
     RETURNING id, name, company_id, subject_type, subject_id, actor, payload`
   const row = rows[0]
   if (!row) {
+    // A duplicate (same dedupe key — e.g. a second survey save within the
+    // minute) is not dispatched again, but its data change must still reach
+    // Point A: queueing is idempotent.
+    if (e.companyId) {
+      try {
+        const { POINT_A_TRIGGER_EVENTS, requestPointARecalc } = await import('@/lib/point-a/recalc-queue')
+        if (POINT_A_TRIGGER_EVENTS.has(e.name)) await requestPointARecalc(e.companyId, e.name)
+      } catch { /* never fails the emit */ }
+    }
     const existing = await prisma.$queryRaw<Array<{ id: number }>>`
       SELECT id FROM public.platform_events WHERE dedupe_key = ${e.dedupeKey ?? null}`
     return { id: Number(existing[0]?.id ?? 0), duplicate: true }

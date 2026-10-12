@@ -5,9 +5,11 @@
  * lib/point-a/v4/config.ts are used, so Point A always has a configuration.
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { hashOf } from '../snapshot-diff'
 import {
   BLOCK_KEYS,
   CODE_TEMPLATES,
+  configFingerprint,
   configVersion,
   effectiveBlocks,
   isBlockKey,
@@ -73,7 +75,10 @@ export async function loadBlockConfig(client: SupabaseClient, companyId: string,
   }
 
   const template = (company.templateKey && templates.find((t) => t.key === company.templateKey)) || pickTemplate(industry, templates)
-  return { template, company, blocks: effectiveBlocks(template, company), version: configVersion(template, company) }
+  return {
+    template, company, blocks: effectiveBlocks(template, company),
+    version: `${configVersion(template, company)}#${hashOf(configFingerprint(template, company), 10)}`,
+  }
 }
 
 export { BLOCK_KEYS }
