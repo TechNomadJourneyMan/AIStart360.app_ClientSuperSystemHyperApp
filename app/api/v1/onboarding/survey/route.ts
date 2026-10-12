@@ -197,8 +197,9 @@ export async function POST(req: NextRequest) {
   // a client, otherwise the client.
   const justCompleted = progress.is_complete && !wasComplete
   // Any explicit save of answers (not a keystroke autosave) changes the data
-  // Point A is built from (spec 2026-10-12 §1.6); one event per minute.
-  if (company_id && !autosave && rows.length) {
+  // Point A is built from (spec 2026-10-12 §1.6); one event per minute. A
+  // submit already announces the change below (ONBOARDING_ / QUESTIONNAIRE_COMPLETED).
+  if (company_id && !autosave && rows.length && !justCompleted && !finalSubmitted) {
     const actorId = imp?.aid ?? sessionUser?.id ?? targetUserId
     emitPlatformEventSafely({
       name: 'SURVEY_ANSWER_CHANGED', companyId: company_id, subjectType: 'survey', subjectId: targetUserId,

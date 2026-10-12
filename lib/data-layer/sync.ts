@@ -44,7 +44,8 @@ interface StoredDiscrepancy {
 }
 
 const INSERT_BATCH = 500
-const MISSING_TABLE = '42P01'
+/** Postgres «relation does not exist» / PostgREST «table not in the schema cache». */
+const MISSING_TABLE = new Set(['42P01', 'PGRST205'])
 
 function factRow(companyId: string, f: Fact, computedAt: string) {
   return {
@@ -80,7 +81,7 @@ export function sameCandidates(a: readonly DiscrepancyCandidate[] | null, b: rea
 
 function err(e: { code?: string; message?: string } | null | undefined): string | null {
   if (!e) return null
-  return e.code === MISSING_TABLE ? 'not_migrated' : e.message ?? e.code ?? 'error'
+  return e.code && MISSING_TABLE.has(e.code) ? 'not_migrated' : e.message ?? e.code ?? 'error'
 }
 
 export async function syncDataLayer(client: SupabaseClient, ctx: ResolverContext): Promise<DataLayerSyncResult> {

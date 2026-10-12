@@ -168,7 +168,7 @@ async function periodOverrides(supabase: SupabaseClient, opts: GatherContextOpti
     .select('id, metric_key, period_key, value, note, set_by, updated_at')
     .eq('company_id', opts.companyId)
   if (res.error) {
-    if (res.error.code === '42P01') return []
+    if (res.error.code === '42P01' || res.error.code === 'PGRST205') return []
     throw new Error(`metrics: period overrides read failed (${res.error.code ?? 'unknown'})`)
   }
   return ((res.data ?? []) as Array<Record<string, unknown>>)

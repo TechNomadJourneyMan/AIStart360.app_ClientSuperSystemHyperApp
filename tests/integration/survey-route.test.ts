@@ -274,9 +274,11 @@ describe('POST /api/v1/onboarding/survey', () => {
     expect(platformEvents.map((e) => e.name)).toEqual(['ONBOARDING_COMPLETED', 'QUESTIONNAIRE_COMPLETED'])
     expect(platformEvents[1].dedupeKey).toMatch(/^questionnaire_completed:co-1:/)
 
-    // An autosave / step save that is not a submit and changes nothing about completion: no event.
+    // A step save that is not a submit: no completion event, but the data
+    // Point A is built from changed → SURVEY_ANSWER_CHANGED (spec 2026-10-12 §1.6).
     await post(3, { s3n_problem: 'ещё правка' })
-    expect(platformEvents).toHaveLength(2)
+    expect(platformEvents.map((e) => e.name)).toEqual(['ONBOARDING_COMPLETED', 'QUESTIONNAIRE_COMPLETED', 'SURVEY_ANSWER_CHANGED'])
+    expect(platformEvents[2].dedupeKey).toMatch(/^survey_changed:co-1:/)
   })
 
   it('platform events name who made the change (staff saving for a client), not the client', async () => {
