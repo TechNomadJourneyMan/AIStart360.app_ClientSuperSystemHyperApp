@@ -25,6 +25,7 @@ export const PLATFORM_EVENTS = [
   'TARGET_CHANGED',
   'BLOCK_CONFIG_CHANGED',
   'POINT_A_UPDATED',
+  'MANUAL_VALUE_SET',
 ] as const
 
 export type PlatformEventName = (typeof PLATFORM_EVENTS)[number]
@@ -54,4 +55,5 @@ export const PLATFORM_EVENT_LABELS: Record<PlatformEventName, string> = {
   TARGET_CHANGED: 'Цель изменена',
   BLOCK_CONFIG_CHANGED: 'Конфигурация блоков изменена',
   POINT_A_UPDATED: 'Точка А обновлена',
+  MANUAL_VALUE_SET: 'Значение метрики подтверждено вручную',
 }

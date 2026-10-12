@@ -15,6 +15,7 @@ import { CHECK_LABELS } from '@/lib/point-a/v4/check-labels'
 import { CHIP, ConfidenceBar, Icon, toneColor } from './ui'
 import { MetricRow } from './MetricParts'
 import { cn } from '@/lib/utils'
+import { openAiChat } from '@/components/ai-chat/open'
 
 function Body({ d }: { d: BlockDetail }) {
   const b = d.block
@@ -23,6 +24,10 @@ function Body({ d }: { d: BlockDetail }) {
   return (
     <div className="space-y-5">
       <p className="text-sm text-on-surface-variant">{d.description}</p>
+      <button type="button" onClick={() => openAiChat({ surface: 'point_a', focus: { block: d.key, label: d.title }, question: `Объясни раздел «${d.title}»: почему такой балл и что сделать в первую очередь?` })}
+        className="inline-flex items-center gap-1.5 rounded-xl border border-primary/30 px-3 py-2 text-xs text-primary hover:bg-primary/10">
+        <Icon name="auto_awesome" className="text-[16px]" />Спросить AI о разделе
+      </button>
 
       {b && (
         <div className="grid grid-cols-[auto_1fr] items-center gap-4">

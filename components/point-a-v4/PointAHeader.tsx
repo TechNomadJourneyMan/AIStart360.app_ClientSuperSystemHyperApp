@@ -5,6 +5,7 @@ import { formatRelativeRuLong } from '@/components/point-a/executive-overview-mo
 import type { PointAPageState } from '@/hooks/usePointAState'
 import { BTN_GHOST, BTN_PRIMARY, CARD, CHIP, ConfidenceBar, Icon, STAGE_RU, pct } from './ui'
 import { cn } from '@/lib/utils'
+import { openAiChat } from '@/components/ai-chat/open'
 
 export function PointAHeader({
   state, onRecalc, recalcPending, customize, onCustomize,
@@ -57,6 +58,9 @@ export function PointAHeader({
               {busy ? 'Считаем…' : 'Обновить'}
             </button>
           )}
+          <button type="button" className={BTN_GHOST} onClick={() => openAiChat({ surface: 'point_a' })}>
+            <Icon name="auto_awesome" className="text-[16px]" />Спросить AI
+          </button>
           {state.canManage && (
             <button type="button" className={BTN_GHOST} onClick={onCustomize} aria-pressed={customize}>
               <Icon name="tune" className="text-[16px]" />{customize ? 'Готово' : 'Настроить блоки'}

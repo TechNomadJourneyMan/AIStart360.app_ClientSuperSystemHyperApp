@@ -3,7 +3,7 @@ import { Suspense } from 'react'
 import dynamic from 'next/dynamic'
 import { OnboardingStatusBadges } from '@/components/dashboard/OnboardingStatusBadges'
 import { ShareButtonAuto } from '@/components/share/ShareButtonAuto'
-import ReportChatPanel from '@/components/report-chat/ReportChatPanel'
+import { AskAiButton } from '@/components/ai-chat/AskAiButton'
 
 export const metadata: Metadata = { title: 'GRI — Growth Readiness Index' }
 
@@ -15,7 +15,8 @@ export default function GriPage() {
   return (
     <>
       <div className="flex items-center justify-end gap-2 px-4 pt-4">
-        <ReportChatPanel />
+        {/* One AI chat over the company's data (components/ai-chat/ChatHost) */}
+        <AskAiButton surface="gri" />
         <ShareButtonAuto type="gri" />
         <OnboardingStatusBadges />
       </div>

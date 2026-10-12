@@ -19,6 +19,7 @@
  * fresh); ready-made questions still go through /chat (deterministic hydrate).
  */
 
+import { openAiChat } from '@/components/ai-chat/open'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { getSection } from '@/lib/assistant/sections'
@@ -492,6 +493,15 @@ export function AssistantChatPanel({
             </div>
           </div>
           <div className="flex items-center gap-1">
+            {/* Гри is a second entry into the unified AI chat over the company's data. */}
+            <button
+              onClick={() => { onClose(); openAiChat() }}
+              aria-label="Открыть AI-аналитика по данным компании"
+              title="AI-аналитик по данным компании"
+              className="w-8 h-8 rounded-lg flex items-center justify-center text-primary hover:bg-primary/10 transition-all"
+            >
+              <span className="material-symbols-outlined text-lg">auto_awesome</span>
+            </button>
             {relevantSections && (
               <button
                 onClick={() => {

@@ -33,6 +33,7 @@ export const POINT_A_TRIGGER_EVENTS: ReadonlySet<string> = new Set([
   'TARGET_CHANGED',
   'BLOCK_CONFIG_CHANGED',
   'METRIC_UPDATED',
+  'MANUAL_VALUE_SET',
 ])
 
 /** The queue table itself is missing (migration 111 not applied) — not any other error. */

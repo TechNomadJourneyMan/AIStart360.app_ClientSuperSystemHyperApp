@@ -18,6 +18,7 @@ import { estimateCostUsd } from './pricing'
 /** Every place that spends AI tokens. Keep in sync with the report in the admin tile. */
 export const AI_FEATURES = {
   ai_chat: 'Чат по отчёту',
+  unified_chat: 'AI-чат по данным компании',
   assistant_ask: 'Ассистент: вопрос',
   assistant_converse: 'Ассистент: диалог с Гри',
   assistant_insight: 'Ассистент: инсайт экрана',

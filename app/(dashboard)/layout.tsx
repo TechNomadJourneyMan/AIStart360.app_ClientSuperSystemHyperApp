@@ -5,6 +5,7 @@ import { Header } from '@/components/layout/Header'
 import { MobileNav } from '@/components/layout/MobileNav'
 import { DashboardShell } from '@/components/layout/DashboardShell'
 import { MascotLauncher } from '@/components/assistant/mascot/MascotLauncher'
+import { ChatHost } from '@/components/ai-chat/ChatHost'
 import { NotificationsBellSync } from '@/components/notifications/NotificationsBellSync'
 import AnnouncementBar from '@/components/platform/AnnouncementBar'
 import { PlatformSectionsProvider } from '@/hooks/usePlatformSections'
@@ -49,6 +50,7 @@ export default async function DashboardLayout({
       {/* Floating AI assistant — the mascot «Гри» (falls back to the static
           launcher when NEXT_PUBLIC_FEATURE_MASCOT='0' or on a mascot crash) */}
       <MascotLauncher />
+      <ChatHost />
 
       {/* Keeps the header bell's unread badge in sync with the real feed */}
       <NotificationsBellSync />
