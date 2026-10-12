@@ -97,7 +97,7 @@ function DiscrepancyRow({ d, canManage }: { d: Disc; canManage: boolean }) {
   )
 }
 
-export function AttentionPanel({ state }: { state: PointAPageState }) {
+export function AttentionPanel({ state, readonly }: { state: PointAPageState; readonly?: boolean }) {
   const checklist = state.snapshot?.uploadChecklist.slice(0, 3) ?? []
   if (!state.discrepancies.length && !checklist.length) return null
   return (
@@ -109,7 +109,7 @@ export function AttentionPanel({ state }: { state: PointAPageState }) {
             Найдено расхождений в данных: {state.discrepancies.length}. Пока они не решены, в расчёте используется значение из анкеты, а достоверность снижена.
           </p>
           <ul className="space-y-2 mb-4">
-            {state.discrepancies.slice(0, 6).map((d) => <DiscrepancyRow key={d.id} d={d} canManage={state.canManage} />)}
+            {state.discrepancies.slice(0, 6).map((d) => <DiscrepancyRow key={d.id} d={d} canManage={state.canManage && !readonly} />)}
           </ul>
         </>
       )}

@@ -74,3 +74,21 @@ export function useBlockView() {
     onSettled: () => qc.invalidateQueries({ queryKey: POINT_A_STATE_KEY }),
   })
 }
+
+export function useBlockDetail(key: string | null) {
+  return useQuery({
+    queryKey: [...POINT_A_STATE_KEY, 'block', key],
+    enabled: !!key,
+    queryFn: async () => json<import('@/lib/point-a/v4/metric-views').BlockDetail>(await fetch(`/api/v1/point-a/block/${encodeURIComponent(key as string)}`, { cache: 'no-store' })),
+    staleTime: 30_000,
+  })
+}
+
+export function useKeyMetrics() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (keyMetrics: string[]) =>
+      json<unknown>(await fetch('/api/v1/point-a/config', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ clientView: { keyMetrics } }) })),
+    onSettled: () => qc.invalidateQueries({ queryKey: POINT_A_STATE_KEY }),
+  })
+}

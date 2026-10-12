@@ -17,7 +17,8 @@ const STATUS: Record<string, { text: string; cls: string }> = {
   unknown: { text: 'Темп не оценить', cls: 'bg-white/[0.04] text-on-surface-variant' },
 }
 
-export function GoalsSection({ state }: { state: PointAPageState }) {
+/** `readonly`: the dev preview — no live goal editing (it would write to the real account). */
+export function GoalsSection({ state, readonly }: { state: PointAPageState; readonly?: boolean }) {
   return (
     <section className={CARD} aria-labelledby="pa-goals">
       <SectionTitle icon="flag" aside={<Link href="/client/point-b" className="text-[11px] font-mono text-primary/80 hover:text-primary">План в Точке Б →</Link>}>
@@ -37,7 +38,7 @@ export function GoalsSection({ state }: { state: PointAPageState }) {
               </div>
               <p className="mt-1 text-sm font-mono text-on-surface">
                 {fmtValue(e.current, goal.unit)} <Icon name="arrow_forward" className="text-[14px] align-middle text-on-surface-variant" /> {fmtValue(goal.targetValue, goal.unit)}
-                <span className="ml-2 text-[11px] text-on-surface-variant">до {new Date(e.deadline).toLocaleDateString('ru-RU')}</span>
+                <span className="ml-2 text-[11px] text-on-surface-variant" suppressHydrationWarning>до {new Date(e.deadline).toLocaleDateString('ru-RU')}</span>
               </p>
               {e.progress !== null && (
                 <div className="mt-2 h-1.5 rounded-full bg-white/[0.06]" role="progressbar" aria-valuenow={e.progress} aria-valuemin={0} aria-valuemax={100} aria-label="Прогресс к цели">
@@ -49,7 +50,7 @@ export function GoalsSection({ state }: { state: PointAPageState }) {
           )
         })}
       </ul>
-      {state.canManage && <GoalsBar />}
+      {state.canManage && !readonly && <GoalsBar />}
     </section>
   )
 }

@@ -17,6 +17,9 @@ import { BlocksSection } from './BlocksSection'
 import { GoalsSection } from './GoalsSection'
 import { BenchmarksCard, GriCard, SourcesCard } from './SideCards'
 import { HistorySection } from './HistorySection'
+import { KeyMetricsStrip } from './KeyMetricsStrip'
+import type { BlockKey } from '@/lib/point-a/v4/config'
+import type { BlockDetail } from '@/lib/point-a/v4/metric-views'
 import { BTN_PRIMARY, CARD, Icon } from './ui'
 import { cn } from '@/lib/utils'
 
@@ -32,7 +35,7 @@ function Skeleton() {
 }
 
 /** `preview` (dev-only /dev/point-a-preview): render the given state, no requests. */
-export default function PointAV4Page({ preview }: { preview?: PointAPageState } = {}) {
+export default function PointAV4Page({ preview, previewDetails }: { preview?: PointAPageState; previewDetails?: Partial<Record<BlockKey, BlockDetail>> } = {}) {
   const live = usePointAState({ enabled: !preview })
   const { isLoading, error, refetch } = live
   const state = preview ?? live.data
@@ -59,7 +62,7 @@ export default function PointAV4Page({ preview }: { preview?: PointAPageState } 
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-6 space-y-4">
-      <PointAHeader state={state} onRecalc={runRecalc} recalcPending={recalc.isPending} customize={customize} onCustomize={() => setCustomize((v) => !v)} />
+      <PointAHeader state={state} onRecalc={preview ? () => toast.info('Предпросмотр: пересчёт отключён') : runRecalc} recalcPending={recalc.isPending} customize={customize} onCustomize={() => setCustomize((v) => !v)} />
 
       {!state.snapshot ? (
         <section className={CARD}>
@@ -74,12 +77,13 @@ export default function PointAV4Page({ preview }: { preview?: PointAPageState } 
         </section>
       ) : (
         <>
-          <AttentionPanel state={state} />
+          <KeyMetricsStrip state={state} readonly={!!preview} />
+          <AttentionPanel state={state} readonly={!!preview} />
           <OverviewSection snapshot={state.snapshot} />
-          <BlocksSection state={state} customize={customize} />
+          <BlocksSection state={state} customize={customize} previewDetails={previewDetails} />
           <div className="grid gap-4 lg:grid-cols-[2fr_1fr]">
             <div className="space-y-4">
-              <GoalsSection state={state} />
+              <GoalsSection state={state} readonly={!!preview} />
               <HistorySection history={state.history} />
             </div>
             <div className="space-y-4">

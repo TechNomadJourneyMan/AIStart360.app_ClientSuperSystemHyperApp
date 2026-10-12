@@ -18,6 +18,7 @@ import type { ChangeReason, SnapshotInputs } from '@/lib/point-a/snapshot-diff'
 import type { UploadItem, V4Block } from './engine'
 import { BLOCK_LIBRARY, BLOCK_KEYS, type BlockKey } from './config'
 import { loadBlockConfig } from './store'
+import { DEFAULT_KEY_METRICS, MAX_KEY_METRICS, keyMetricCatalog, loadMetricViews, type MetricView } from './metric-views'
 
 export interface PointASnapshotView {
   id: string
@@ -65,6 +66,11 @@ export interface PointAState {
   /** The company's blocks as configured now (client view: hidden, order). */
   config: { template: string; templateTitle: string; added: string[]; blocks: Array<{ key: BlockKey; title: string; weight: number; hiddenForClient: boolean; informational: boolean; order: number }> }
   library: Array<{ key: BlockKey; title: string; description: string }>
+  /** The top strip: the company's chosen key metrics (default set until chosen). */
+  keyMetrics: MetricView[]
+  keyMetricsCustom: boolean
+  /** Metrics that can be pinned to the strip. */
+  metricCatalog: Array<{ id: string; label: string; group: string; unit: string }>
 }
 
 function missing(e: { code?: string } | null | undefined): boolean {
@@ -138,6 +144,12 @@ export async function loadPointAState(client: SupabaseClient, service: SupabaseC
 
   const goals = await loadGoalsWithEvaluation(client, companyId).catch(() => [])
   const cfg = await loadBlockConfig(client, companyId, industry)
+  const chosen = (cfg.company.clientView?.keyMetrics ?? []).filter((id) => getMetricById(id))
+  const keyMetricIds = (chosen.length ? chosen : DEFAULT_KEY_METRICS).slice(0, MAX_KEY_METRICS)
+  const keyMetrics = await loadMetricViews(client, companyId, keyMetricIds).catch((err) => {
+    console.error('[point-a/state] key metrics not loaded', err instanceof Error ? err.message : err)
+    return []
+  })
 
   const bench = findBenchmark(industry, snapshot?.stage ?? null)
   const benchmarks = bench && snapshot
@@ -206,5 +218,8 @@ export async function loadPointAState(client: SupabaseClient, service: SupabaseC
       blocks: cfg.blocks.map((b) => ({ key: b.key, title: b.title, weight: b.weight, hiddenForClient: b.hiddenForClient, informational: b.informational, order: b.order })),
     },
     library: BLOCK_KEYS.map((k) => ({ key: k, title: BLOCK_LIBRARY[k].title, description: BLOCK_LIBRARY[k].description })),
+    keyMetrics,
+    keyMetricsCustom: chosen.length > 0,
+    metricCatalog: keyMetricCatalog(),
   }
 }

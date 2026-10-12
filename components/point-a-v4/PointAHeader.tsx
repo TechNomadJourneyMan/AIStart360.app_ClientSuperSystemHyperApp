@@ -40,7 +40,7 @@ export function PointAHeader({
             )}
           </div>
           <div className="max-w-sm"><ConfidenceBar value={s?.confidence ?? null} /></div>
-          {s && <p className="text-[11px] text-on-surface-variant">Обновлено {formatRelativeRuLong(s.createdAt)}</p>}
+          {s && <p className="text-[11px] text-on-surface-variant" suppressHydrationWarning>Обновлено {formatRelativeRuLong(s.createdAt)}</p>}
         </div>
         <div className="flex flex-row sm:flex-col gap-2 sm:items-stretch">
           <button type="button" className={BTN_PRIMARY} onClick={onRecalc} disabled={busy} aria-busy={busy}>

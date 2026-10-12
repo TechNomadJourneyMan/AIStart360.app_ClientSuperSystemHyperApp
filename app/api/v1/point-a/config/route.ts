@@ -14,6 +14,7 @@ import { createServiceClient } from '@/lib/supabase-service'
 import { resolveTenantWith, tenantErrorMessage } from '@/lib/tenancy'
 import { apiError } from '@/lib/api-error'
 import { BLOCK_KEYS } from '@/lib/point-a/v4/config'
+import { getMetricById } from '@/lib/metrics/registry'
 import { emitPlatformEventSafely } from '@/lib/events/platform'
 
 export const dynamic = 'force-dynamic'
@@ -24,6 +25,7 @@ const Body = z.object({
     hidden: z.array(Block).max(7).optional(),
     order: z.array(Block).max(7).optional(),
     added: z.array(Block).max(7).optional(),
+    keyMetrics: z.array(z.string().min(3).max(120)).max(8).optional(),
   }).optional(),
   expertOverrides: z.record(Block, z.object({ weight: z.number().min(0).max(10).optional(), enabled: z.boolean().optional() })).optional(),
   templateKey: z.string().regex(/^[a-z0-9_-]{2,40}$/).nullable().optional(),
@@ -37,6 +39,7 @@ export async function PATCH(req: Request): Promise<NextResponse> {
   if (!tenant.ok) return apiError(tenantErrorMessage(tenant.error), tenant.status)
   const parsed = Body.safeParse(await req.json().catch(() => null))
   if (!parsed.success) return apiError('Неверный запрос', 400)
+  if (parsed.data.clientView?.keyMetrics?.some((id) => !getMetricById(id))) return apiError('Неизвестная метрика', 400)
   const { companyId, role } = tenant.tenant
   const expert = role === 'staff' || role === 'partner_expert' || role === 'partner_admin'
   if ((parsed.data.expertOverrides || parsed.data.templateKey !== undefined) && !expert) {

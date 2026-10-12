@@ -17,7 +17,7 @@ export function GriCard({ gri }: { gri: PointAPageState['gri'] }) {
       <p className="mt-2 text-xs text-on-surface-variant">
         Точка А — где бизнес сейчас. GRI — насколько он готов расти. Это разные показатели: сильная Точка А не гарантирует готовность к рывку.
       </p>
-      <Link href="/gri" className="mt-3 inline-flex text-xs font-mono text-primary/80 hover:text-primary">
+      <Link href="/gri" className="mt-3 inline-flex text-xs font-mono text-primary/80 hover:text-primary" suppressHydrationWarning>
         {gri.index100 === null ? 'Пройти оценку GRI →' : `Оценка ${formatRelativeRuLong(gri.assessedAt)} · открыть →`}
       </Link>
     </section>

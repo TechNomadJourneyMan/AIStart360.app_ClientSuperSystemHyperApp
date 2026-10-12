@@ -9,6 +9,7 @@
  */
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
+import { BodyPortal } from '@/components/ui/body-portal'
 import { useDeleteGoal, useGoals, useSaveGoal, type GoalItem } from '@/hooks/useGoals'
 
 const MAX_GOALS = 8
@@ -171,6 +172,7 @@ export function GoalsBar() {
       </div>
 
       {open && (
+        <BodyPortal>
         <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={() => setOpen(false)}>
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
           <div
@@ -241,6 +243,7 @@ export function GoalsBar() {
             </div>
           </div>
         </div>
+        </BodyPortal>
       )}
     </>
   )

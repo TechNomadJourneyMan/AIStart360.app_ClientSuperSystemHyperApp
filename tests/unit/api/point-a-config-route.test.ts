@@ -58,3 +58,12 @@ describe('PATCH /api/v1/point-a/config', () => {
     expect((await patch({})).status).toBe(400)
   })
 })
+
+describe('PATCH /api/v1/point-a/config — key metrics', () => {
+  it('the owner pins key metrics (catalog ids only, max 8)', async () => {
+    expect((await patch({ clientView: { keyMetrics: ['biz.finansy.vyruchka_god', 'biz.klienty.nps'] } })).status).toBe(200)
+    expect((h.upserted[0].client_view as { keyMetrics: string[] }).keyMetrics).toEqual(['biz.finansy.vyruchka_god', 'biz.klienty.nps'])
+    expect((await patch({ clientView: { keyMetrics: ['nope.metric'] } })).status).toBe(400)
+    expect((await patch({ clientView: { keyMetrics: Array.from({ length: 9 }, () => 'biz.klienty.nps') } })).status).toBe(400)
+  })
+})

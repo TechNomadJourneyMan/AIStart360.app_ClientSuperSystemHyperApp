@@ -117,7 +117,8 @@ export function pickTemplate(industry: string | null | undefined, templates: rea
 export interface CompanyBlockConfig {
   templateKey?: string | null
   expertOverrides?: Partial<Record<BlockKey, { weight?: number; enabled?: boolean }>>
-  clientView?: { hidden?: string[]; order?: string[]; added?: string[] }
+  /** keyMetrics: the metrics of the top strip of the Point A page (no score effect). */
+  clientView?: { hidden?: string[]; order?: string[]; added?: string[]; keyMetrics?: string[] }
   version?: number
 }
 

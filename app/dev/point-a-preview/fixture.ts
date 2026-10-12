@@ -2,6 +2,44 @@ import { calculatePointAV4 } from '@/lib/point-a/v4/engine'
 import { DEFAULT_TEMPLATE, effectiveBlocks, BLOCK_KEYS, BLOCK_LIBRARY } from '@/lib/point-a/v4/config'
 import { evaluateGoal, type Goal } from '@/lib/goals/evaluate'
 import type { PointAPageState } from '@/hooks/usePointAState'
+import { getMetricById } from '@/lib/metrics/registry'
+import { DEFAULT_KEY_METRICS, blockMetricIds, keyMetricCatalog, toMetricView, type BlockDetail, type MetricView } from '@/lib/point-a/v4/metric-views'
+import type { BlockKey } from '@/lib/point-a/v4/config'
+
+/** value, period, source, recent values (oldest first) */
+const VALUES: Record<string, [number, string, string, number[]]> = {
+  'biz.finansy.vyruchka_god': [66_000_000, '10.2026', 'survey', [48_000_000, 52_000_000, 60_000_000, 66_000_000]],
+  'biz.finansy.valovaya_marzha': [22, '2024', 'survey', [25, 22]],
+  'biz.finansy.ebitda': [9_500_000, '2025', 'document', [7_200_000, 9_500_000]],
+  'biz.finansy.debitorskaya_zadolzhennost': [4_100_000, '2025', 'document', []],
+  'biz.prodazhi.sredniy_chek': [185_000, '2025', 'survey', [160_000, 172_000, 185_000]],
+  'biz.prodazhi.tsikl_zakrytiya_sdelki': [21, '2026', 'survey', [28, 21]],
+  'biz.prodazhi.win_rate': [18, '2026', 'calculated', [15, 18]],
+  'biz.klienty.aktivnykh_klientov': [356, '2026', 'survey', [290, 356]],
+  'biz.klienty.nps': [41, '2026', 'survey', [35, 41]],
+  'biz.marketing.cac': [24_000, '2025', 'document', [27_000, 24_000]],
+  'biz.marketing.ltv_cac': [2.4, '2025', 'calculated', [2.1, 2.4]],
+  'biz.marketing.lidov_v_mes': [300, '2026', 'survey', []],
+  'biz.hr.kol_vo_sotrudnikov': [18, '2026', 'survey', [15, 18]],
+}
+
+function views(ids: readonly string[]): MetricView[] {
+  return ids.flatMap((id) => {
+    const e = getMetricById(id)
+    if (!e) return []
+    const v = VALUES[id]
+    return [toMetricView(e, v ? { value: v[0], period: v[1], source: v[2], confidence: v[2] === 'document' ? 0.85 : 0.9 } : undefined, v?.[3] ?? [])]
+  })
+}
+
+export function previewDetails(blocks: PointAPageState['snapshot'] extends infer S ? S extends { blocks: infer B } ? B : never : never): Partial<Record<BlockKey, BlockDetail>> {
+  const out: Partial<Record<BlockKey, BlockDetail>> = {}
+  for (const b of blocks) {
+    const metrics = views(blockMetricIds(b.key))
+    out[b.key] = { key: b.key, title: b.title, description: BLOCK_LIBRARY[b.key].description, block: b, metrics: [...metrics.filter((m) => m.value !== null), ...metrics.filter((m) => m.value === null)] }
+  }
+  return out
+}
 
 const ANSWERS: Record<string, unknown> = {
   s1_current_revenue_year: 66_000_000, s9n_revenue_2024: 52_000_000, s9n_change_vs_2023: '+18%', s9n_net_margin: 22,
@@ -56,5 +94,8 @@ export function previewState(): PointAPageState {
     recalculation: 'idle',
     config: { template: 'default', templateTitle: 'Универсальный', added: [], blocks: effectiveBlocks(DEFAULT_TEMPLATE).map((b) => ({ key: b.key, title: b.title, weight: b.weight, hiddenForClient: false, informational: b.informational, order: b.order })) },
     library: BLOCK_KEYS.map((k) => ({ key: k, title: BLOCK_LIBRARY[k].title, description: BLOCK_LIBRARY[k].description })),
+    keyMetrics: views(DEFAULT_KEY_METRICS),
+    keyMetricsCustom: false,
+    metricCatalog: keyMetricCatalog(),
   }
 }

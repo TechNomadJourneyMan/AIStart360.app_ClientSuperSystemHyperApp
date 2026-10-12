@@ -33,7 +33,7 @@ export function HistorySection({ history }: { history: PointAPageState['history'
       <ol className="mt-3 space-y-3">
         {history.slice(0, 8).map((h) => (
           <li key={h.id} className="border-l-2 border-primary/30 pl-3">
-            <p className="text-[11px] font-mono text-on-surface-variant">
+            <p className="text-[11px] font-mono text-on-surface-variant" suppressHydrationWarning>
               {new Date(h.createdAt).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
               {h.overall !== null && <span className="ml-2 text-on-surface">балл {h.overall}</span>}
             </p>

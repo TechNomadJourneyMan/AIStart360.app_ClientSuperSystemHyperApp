@@ -12,27 +12,28 @@ import { toast } from 'sonner'
 import type { PointAPageState } from '@/hooks/usePointAState'
 import { useBlockView } from '@/hooks/usePointAState'
 import { BLOCK_LIBRARY, type BlockKey } from '@/lib/point-a/v4/config'
-import { CHECK_LABELS } from '@/lib/point-a/v4/check-labels'
+import type { BlockDetail } from '@/lib/point-a/v4/metric-views'
+import { BlockDetailPanel } from './BlockDetailPanel'
 import type { V4Block } from '@/lib/point-a/v4/engine'
 import { BTN_GHOST, CARD, CHIP, ConfidenceBar, Icon, SectionTitle, fmtValue, toneColor } from './ui'
 import { cn } from '@/lib/utils'
+import { BodyPortal } from '@/components/ui/body-portal'
 
 type Metric = NonNullable<PointAPageState['snapshot']>['metrics'][number]
 
-function BlockCard({ block, metrics, hidden, customize, onToggle, onMove, first, last }: {
+function BlockCard({ block, metrics, hidden, customize, onToggle, onMove, onOpen, first, last }: {
   block: V4Block
   metrics: Metric[]
   hidden: boolean
   customize: boolean
   onToggle: () => void
+  onOpen: () => void
   onMove: (dir: -1 | 1) => void
   first: boolean
   last: boolean
 }) {
-  const [open, setOpen] = useState(false)
   const insufficient = block.score === null
   const color = toneColor(block.score)
-  const answered = block.checks.filter((c) => c.answered && !c.excluded)
   return (
     <article className={cn(CARD, 'flex flex-col gap-3', hidden && 'opacity-50')} aria-labelledby={`blk-${block.key}`}>
       <header className="flex items-start justify-between gap-3">
@@ -72,6 +73,17 @@ function BlockCard({ block, metrics, hidden, customize, onToggle, onMove, first,
         </ul>
       )}
 
+      {metrics.length > 0 && (
+        <ul className="space-y-1 border-t border-white/[0.05] pt-2">
+          {metrics.slice(0, 3).map((m) => (
+            <li key={m.id} className="flex items-center justify-between gap-2 text-xs">
+              <span className="truncate text-on-surface-variant">{m.label}</span>
+              <span className="font-mono text-on-surface whitespace-nowrap">{fmtValue(m.value, m.unit)}{m.period && <span className="ml-1 text-[10px] text-on-surface-variant">{m.period}</span>}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+
       {customize ? (
         <div className="flex flex-wrap gap-2 pt-1">
           <button type="button" className={BTN_GHOST} onClick={onToggle} aria-pressed={!hidden}>
@@ -81,59 +93,17 @@ function BlockCard({ block, metrics, hidden, customize, onToggle, onMove, first,
           <button type="button" className={BTN_GHOST} onClick={() => onMove(1)} disabled={last} aria-label={`Переместить «${block.title}» ниже`}><Icon name="arrow_downward" className="text-[16px]" /></button>
         </div>
       ) : (
-        <button type="button" className="self-start text-xs font-mono text-primary/80 hover:text-primary" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
-          {open ? 'Свернуть' : 'Подробнее'}
+        <button type="button" className={cn(BTN_GHOST, 'self-start mt-auto')} onClick={onOpen}>
+          <Icon name="open_in_full" className="text-[16px]" />Подробнее: показатели и расчёт
         </button>
-      )}
-
-      {open && !customize && (
-        <div className="space-y-3 border-t border-white/[0.06] pt-3">
-          {metrics.length > 0 && (
-            <div>
-              <p className="text-[10px] font-mono uppercase tracking-wider text-on-surface-variant mb-1.5">Показатели</p>
-              <ul className="space-y-1">
-                {metrics.map((m) => (
-                  <li key={m.id} className="flex flex-wrap items-center justify-between gap-2 text-xs">
-                    <span className="text-on-surface">{m.label}</span>
-                    <span className="font-mono text-on-surface">{fmtValue(m.value, m.unit)}
-                      <span className="ml-1.5 text-[10px] text-on-surface-variant">{[m.period, m.source].filter(Boolean).join(' · ')}</span>
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-          <div>
-            <p className="text-[10px] font-mono uppercase tracking-wider text-on-surface-variant mb-1.5">Проверки</p>
-            <ul className="space-y-1">
-              {answered.map((c) => (
-                <li key={c.id} className="flex items-center justify-between gap-2 text-xs">
-                  <span className="text-on-surface">{CHECK_LABELS[c.id] ?? c.id}</span>
-                  <span className="font-mono text-on-surface-variant">{c.earned}/{c.max}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-          {block.needs.length > 0 && (
-            <div>
-              <p className="text-[10px] font-mono uppercase tracking-wider text-on-surface-variant mb-1.5">Нужно данных</p>
-              <ul className="space-y-1">{block.needs.map((n, i) => <li key={i} className="text-xs text-amber-100/90">• {n}</li>)}</ul>
-            </div>
-          )}
-          {block.recommendations.length > 0 && (
-            <div>
-              <p className="text-[10px] font-mono uppercase tracking-wider text-on-surface-variant mb-1.5">Что сделать</p>
-              <ul className="space-y-1">{block.recommendations.map((r, i) => <li key={i} className="text-xs text-on-surface">• {r}</li>)}</ul>
-            </div>
-          )}
-        </div>
       )}
     </article>
   )
 }
 
-export function BlocksSection({ state, customize }: { state: PointAPageState; customize: boolean }) {
+export function BlocksSection({ state, customize, previewDetails }: { state: PointAPageState; customize: boolean; previewDetails?: Partial<Record<BlockKey, BlockDetail>> }) {
   const view = useBlockView()
+  const [openKey, setOpenKey] = useState<BlockKey | null>(null)
   const snapshot = state.snapshot
   const cfg = state.config.blocks
   const hidden = useMemo(() => new Set(cfg.filter((b) => b.hiddenForClient).map((b) => b.key)), [cfg])
@@ -146,6 +116,7 @@ export function BlocksSection({ state, customize }: { state: PointAPageState; cu
   const notInConfig = state.library.filter((l) => !cfg.some((c) => c.key === l.key))
 
   const save = async (patch: { hidden?: string[]; order?: string[]; added?: string[] }) => {
+    if (previewDetails) return toast.info('Предпросмотр: настройка не сохраняется')
     try {
       await view.mutateAsync(patch)
     } catch (e) {
@@ -174,9 +145,12 @@ export function BlocksSection({ state, customize }: { state: PointAPageState; cu
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         {visible.map((b, i) => (
           <BlockCard key={b.key} block={b} metrics={metricsOf(b.key)} hidden={hidden.has(b.key)} customize={customize}
-            onToggle={() => toggle(b.key)} onMove={(d) => move(b.key, d)} first={i === 0} last={i === visible.length - 1} />
+            onToggle={() => toggle(b.key)} onMove={(d) => move(b.key, d)} onOpen={() => setOpenKey(b.key)} first={i === 0} last={i === visible.length - 1} />
         ))}
       </div>
+      {openKey && (
+        <BodyPortal><BlockDetailPanel blockKey={openKey} title={BLOCK_LIBRARY[openKey].title} onClose={() => setOpenKey(null)} preview={previewDetails?.[openKey]} /></BodyPortal>
+      )}
       {customize && notInConfig.length > 0 && (
         <div className="mt-3 flex flex-wrap gap-2">
           {notInConfig.map((l) => (
