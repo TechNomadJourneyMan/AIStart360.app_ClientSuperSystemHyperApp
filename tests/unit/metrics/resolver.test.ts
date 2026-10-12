@@ -398,3 +398,22 @@ describe('toMaterializedRow', () => {
     expect(row.source).toBe('resolver')
   })
 })
+
+describe('period overrides (public.metric_overrides)', () => {
+  it('a value set for the current period beats every source of that period, even if the metric declares no manual source', () => {
+    const r = resolveMetric('biz.finansy.vyruchka_god', makeCtx({
+      surveyAnswers: { s1_current_revenue_year: 66_000_000 },
+      periodOverrides: [{ id: 'o1', metricId: 'biz.finansy.vyruchka_god', periodKey: '2026', value: 70_000_000 }],
+    }))
+    expect(r.numeric).toBe(70_000_000)
+    expect(r.picked?.type).toBe('manual')
+  })
+
+  it('an override of a past period does not replace a newer value', () => {
+    const r = resolveMetric('biz.finansy.vyruchka_god', makeCtx({
+      surveyAnswers: { s1_current_revenue_year: 66_000_000 },
+      periodOverrides: [{ id: 'o1', metricId: 'biz.finansy.vyruchka_god', periodKey: '2024', value: 50_000_000 }],
+    }))
+    expect(r.numeric).toBe(66_000_000)
+  })
+})

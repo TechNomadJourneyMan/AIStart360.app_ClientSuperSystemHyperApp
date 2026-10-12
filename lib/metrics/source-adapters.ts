@@ -743,24 +743,17 @@ function compoundRate(pct: number, months: number, target: MetricShape['period']
   return { value: Math.round(value * 100) / 100, factor: exp }
 }
 
-export function resolveDocumentSource(
+/**
+ * Every value of a document source across the given documents (not only the
+ * best one): the data layer (lib/data-layer/facts.ts) keeps all of them as
+ * period facts; resolveDocumentSource sorts them and takes the first.
+ */
+function collectDocumentCandidates(
   source: MetricSource,
-  ctx: ResolverContext,
+  docs: readonly ResolverDocument[],
   metricId: string,
-  shape: MetricShape = NO_SHAPE(metricId),
-): SourceAttempt {
-  if (source.type !== 'document') {
-    return { source, status: 'error', reason: 'wrong adapter' }
-  }
-  if (!ctx.documents.length) {
-    return { source, status: 'miss', reason: 'no documents uploaded' }
-  }
-
-  const docs = ctx.documents.filter((d) => docTypeMatches(source.doc_type, d.docType))
-  if (!docs.length) {
-    return { source, status: 'miss', reason: `no documents of type "${source.doc_type}"` }
-  }
-
+  shape: MetricShape,
+): { candidates: DocCandidate[]; rejected: string[] } {
   const candidates: DocCandidate[] = []
   const rejected: string[] = []
   for (const doc of docs) {
@@ -813,6 +806,70 @@ export function resolveDocumentSource(
       })
     }
   }
+
+  return { candidates, rejected }
+}
+
+export interface DocumentCandidate {
+  documentId: string
+  docType: string
+  fieldKey: string
+  fieldLabel: string | null
+  /** In the metric's unit and period. */
+  numeric: number
+  confidence: number
+  /** Period of the value as stated (before rescaling), null when unknown. */
+  detected: DetectedPeriod | null
+  /** Multiplier applied to bring the value to the metric's period. */
+  factor: number
+  uploadedAt: string
+}
+
+/** All values a document source yields for a metric, with their own periods. */
+export function documentCandidates(
+  source: MetricSource,
+  ctx: ResolverContext,
+  metricId: string,
+  shape: MetricShape = NO_SHAPE(metricId),
+): { candidates: DocumentCandidate[]; rejected: string[] } {
+  if (source.type !== 'document') return { candidates: [], rejected: [] }
+  const docs = ctx.documents.filter((d) => docTypeMatches(source.doc_type, d.docType))
+  const { candidates, rejected } = collectDocumentCandidates(source, docs, metricId, shape)
+  return {
+    rejected,
+    candidates: candidates.map((c) => ({
+      documentId: c.doc.id,
+      docType: c.doc.docType,
+      fieldKey: c.field.key,
+      fieldLabel: c.field.label ?? null,
+      numeric: c.numeric,
+      confidence: c.confidence,
+      detected: c.detected,
+      factor: c.period.factor,
+      uploadedAt: c.doc.uploadedAt,
+    })),
+  }
+}
+
+export function resolveDocumentSource(
+  source: MetricSource,
+  ctx: ResolverContext,
+  metricId: string,
+  shape: MetricShape = NO_SHAPE(metricId),
+): SourceAttempt {
+  if (source.type !== 'document') {
+    return { source, status: 'error', reason: 'wrong adapter' }
+  }
+  if (!ctx.documents.length) {
+    return { source, status: 'miss', reason: 'no documents uploaded' }
+  }
+
+  const docs = ctx.documents.filter((d) => docTypeMatches(source.doc_type, d.docType))
+  if (!docs.length) {
+    return { source, status: 'miss', reason: `no documents of type "${source.doc_type}"` }
+  }
+
+  const { candidates, rejected } = collectDocumentCandidates(source, docs, metricId, shape)
 
   if (!candidates.length) {
     const why = rejected.length ? ` (${rejected.slice(0, 2).join('; ')})` : ''

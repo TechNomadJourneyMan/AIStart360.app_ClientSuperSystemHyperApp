@@ -22,6 +22,7 @@ import type { MetricSource, MetricSourceType } from './format'
 import { getMetricById, getMetricRegistry } from './registry'
 import { formulaInputIds, getBaseInput, getFormula, type FormulaDef } from './formulas'
 import { tryResolveSource } from './source-adapters'
+import { parsePeriodKey } from '@/lib/data-layer/period-key'
 import type {
   FormulaInput,
   MetricEntry,
@@ -100,6 +101,35 @@ function attemptOrdinal(a: SourceAttempt): number | null {
   const q = typeof p.quarter === 'string' ? Number(p.quarter.replace(/^q/i, '')) : null
   const end = typeof p.month === 'number' ? p.month : q && q >= 1 && q <= 4 ? q * 3 : 12
   return p.year * 12 + end
+}
+
+/**
+ * A value the owner / an expert set for one period of the metric
+ * (ctx.periodOverrides, public.metric_overrides): a manual source of that
+ * period. Declared or not, every metric can be corrected this way.
+ */
+function overrideAttempts(metricId: string, entry: MetricEntry, ctx: ResolverContext): SourceAttempt[] {
+  const list = ctx.periodOverrides?.filter((o) => o.metricId === metricId) ?? []
+  return list.map((o) => {
+    const p = parsePeriodKey(o.periodKey)
+    return {
+      source: { type: 'manual', note: o.note ?? 'Значение, подтверждённое вручную' } as MetricSource,
+      status: 'hit' as const,
+      value: o.value,
+      numeric: o.value,
+      confidence: 1,
+      reason: `manual override ${o.id}${o.setBy ? ` by ${o.setBy}` : ''}`,
+      period: {
+        source: null,
+        target: entry.period ?? null,
+        factor: 1,
+        year: p?.year ?? null,
+        quarter: p?.quarter ? `Q${p.quarter}` : null,
+        month: p?.month ?? null,
+        basis: 'source' as const,
+      },
+    }
+  })
 }
 
 // ─── Confidence blending ─────────────────────────────────────
@@ -255,9 +285,12 @@ function resolveWith(metricId: string, session: Session, explicit?: MetricEntry)
   // Try every source, sorted by priority (stable: declaration order within a
   // priority). We try them all so the provenance log shows the full picture.
   const sorted = [...entry.sources].sort((a, b) => priority(b) - priority(a))
-  const raw: SourceAttempt[] = sorted.map((src) =>
-    src.type === 'formula' ? evaluateFormula(src, entry, session) : tryResolveSource(src, ctx, metricId, entry),
-  )
+  const raw: SourceAttempt[] = [
+    ...overrideAttempts(metricId, entry, ctx),
+    ...sorted.map((src) =>
+      src.type === 'formula' ? evaluateFormula(src, entry, session) : tryResolveSource(src, ctx, metricId, entry),
+    ),
+  ]
 
   // A hit must be a finite number plausible for the metric (unit + range):
   // «Валовая маржа = 119.1 млн%» (a ₸ key wired into a % metric) or an NPS of

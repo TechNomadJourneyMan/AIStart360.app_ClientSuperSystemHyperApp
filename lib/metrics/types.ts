@@ -77,6 +77,13 @@ export interface ResolverContext {
   manualOverrides?: Record<string, unknown>
 
   /**
+   * Values set by the owner or an expert for one period of a metric
+   * (public.metric_overrides — e.g. the resolution of a data discrepancy).
+   * Highest priority within their period, for every metric.
+   */
+  periodOverrides?: PeriodOverride[]
+
+  /**
    * Section averages (0..10) of the company's current GRI assessment
    * (gri_assessments.section_avgs), keyed by section id ('cash-stability' …).
    */
@@ -90,6 +97,17 @@ export interface ResolverContext {
 
   /** Injected clock — defaults to `new Date()`. Lets tests freeze time. */
   now: Date
+}
+
+export interface PeriodOverride {
+  id: string
+  metricId: string
+  /** lib/data-layer/period-key.ts periodKey: '2024' | '2024-Q2' | '2024-03' | '2026-YTD' */
+  periodKey: string
+  value: number
+  note?: string | null
+  setBy?: string | null
+  setAt?: string | null
 }
 
 export interface ResolverDocument {
