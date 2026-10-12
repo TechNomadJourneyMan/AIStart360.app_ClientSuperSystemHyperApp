@@ -27,7 +27,7 @@ describe('loadClientPointA', () => {
   })
 
   it('the page renders the load error with a retry instead of nothing', () => {
-    const src = readFileSync('app/client/point-a/page.tsx', 'utf8')
+    const src = readFileSync('components/point-a/legacy/ClientPointALegacy.tsx', 'utf8') // the previous page (point_a_v4 off)
     expect(src).toContain('loadClientPointA(userId)')
     expect(src).toMatch(/loadError \? \(/)
     expect(src).not.toMatch(/\} catch \{\}\n\s*setIsLoading\(false\)/)
